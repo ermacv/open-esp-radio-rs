@@ -15,6 +15,7 @@ use open_esp_radio_esp32s31_wifi_mac::{
         StaTxBlockAckSessionsError, TxBlockAckResponse,
     },
 };
+use open_esp_radio_ieee80211::station::{StaDisconnect, StaDisconnectKind};
 use open_esp_radio_ieee80211::station_power_save::StaPowerManagement;
 use open_esp_radio_wifi_sta::{
     link_monitor::{StaBeaconLossConfig, StaBeaconLossConfigError, StaBeaconMonitor},
@@ -50,7 +51,33 @@ pub enum ConnectedControlProgress {
     Idle,
     More,
     TxPending,
-    Disconnected,
+    Disconnected(ConnectedDisconnectReason),
+}
+
+/// Protocol reason which ended one connected station epoch.
+///
+/// This remains below the public radio facade: applications normally need
+/// only link state, while the station lifecycle and qualification harness need
+/// the exact cause in order to choose and verify reconnect policy.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ConnectedDisconnectReason {
+    BeaconLoss,
+    PeerDeauthentication { reason_code: u16 },
+    PeerDisassociation { reason_code: u16 },
+    ActiveStateRestoreFailed,
+}
+
+impl From<StaDisconnect> for ConnectedDisconnectReason {
+    fn from(disconnect: StaDisconnect) -> Self {
+        match disconnect.kind {
+            StaDisconnectKind::Deauthentication => Self::PeerDeauthentication {
+                reason_code: disconnect.reason_code,
+            },
+            StaDisconnectKind::Disassociation => Self::PeerDisassociation {
+                reason_code: disconnect.reason_code,
+            },
+        }
+    }
 }
 
 /// Control frame currently owning the shared ordinary TX transaction.
@@ -510,7 +537,9 @@ impl Esp32s31ConnectedControlCore {
 
                     if advertised == StaPowerManagement::Active && !success {
                         self.pending_doze_permit = None;
-                        return Ok(ConnectedControlProgress::Disconnected);
+                        return Ok(ConnectedControlProgress::Disconnected(
+                            ConnectedDisconnectReason::ActiveStateRestoreFailed,
+                        ));
                     }
                     if self.has_pending_traffic(context, control_event_pending)
                         && self
@@ -566,7 +595,9 @@ impl Esp32s31ConnectedControlCore {
                 }
             }
             self.beacon_lost = true;
-            return Ok(ConnectedControlProgress::Disconnected);
+            return Ok(ConnectedControlProgress::Disconnected(
+                ConnectedDisconnectReason::BeaconLoss,
+            ));
         }
 
         if context.network_tx_pending
@@ -611,6 +642,9 @@ impl Esp32s31ConnectedControlCore {
         X: ConnectedControlTx,
         R: ConnectedControlReorder,
     {
+        if let ConnectedRxControlEvent::PeerDisconnect(disconnect) = event {
+            return Ok(ConnectedControlProgress::Disconnected(disconnect.into()));
+        }
         if let ConnectedRxControlEvent::Beacon(observation) = event {
             if let Some(monitor) = &mut self.beacon_monitor {
                 monitor.observe(tx.now_micros(), observation)?;

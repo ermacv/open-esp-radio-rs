@@ -105,13 +105,14 @@ use open_esp_radio_esp32s31_wifi_esp_hal::mac_interrupt_epoch::{
     EspHalMacInterruptRoute, service_mac_interrupt, service_power_interrupt,
 };
 use open_esp_radio_wifi_embassy::{
+    await_stack_boundary,
     connected_tasks::{
         ConnectedTaskControlError, ConnectedTaskControlResources, ConnectedTaskEndpoint,
         ConnectedTaskReservation,
     },
     station_network::{RunningStationNetwork, StationNetworkResources},
 };
-use static_cell::{ConstStaticCell, StaticCell};
+use static_cell::ConstStaticCell;
 
 use crate::station::{
     ControlTx, ProductionStationBoardResources, ProductionStationRuntime, RX_BUFFER_SIZE,
@@ -375,7 +376,8 @@ static RX_REORDER_STORAGE: RxReorderFrameStorage<RX_STAGE_CAPACITY, RX_REORDER_B
 // Reorder machines and retained RX lease tokens are long-lived protocol
 // state. Keeping their arena static prevents this multi-kilobyte owner table
 // from being copied through the connected async state machine's stack frame.
-static RX_PROTOCOL_RUNTIME: StaticCell<ConnectedRxProtocolStorage> = StaticCell::new();
+static RX_PROTOCOL_RUNTIME: ConstStaticCell<ConnectedRxProtocolStorage> =
+    ConstStaticCell::new(Esp32s31ConnectedRxProtocolStorage::new());
 static CONTROL_RESOURCES: ConstStaticCell<ControlResources> =
     ConstStaticCell::new(ControlResources::new());
 // Network RX slots, pinned TX slots and Embassy socket state are the largest
@@ -408,7 +410,8 @@ static TX_AMPDU_DMA_STORAGE: ConstStaticCell<AmpduDmaStorage<TX_AMPDU_FRAME_COUN
 // Network lease tokens and their descriptor identities live for an entire
 // connected epoch. Keep this multi-slot arena static so it is borrowed by the
 // movable TX handle instead of being copied through nested async stack frames.
-static TX_AMPDU_RETENTION: StaticCell<ConnectedAmpduRetention> = StaticCell::new();
+static TX_AMPDU_RETENTION: ConstStaticCell<ConnectedAmpduRetention> =
+    ConstStaticCell::new(RetainedAmpduDmaStorage::new());
 #[cfg(feature = "qualification")]
 static MAC_IRQ_OBSERVER: Mutex<
     CriticalSectionRawMutex,
@@ -657,7 +660,7 @@ type ConnectedNetworkStarted<'state, 'security> = Esp32s31ConnectedNetworkStarte
 /// Normal outcome returned after all connected owners are quiescent.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ConnectedStationOutcome {
-    Disconnected,
+    Disconnected(open_esp_radio_esp32s31_wifi_embassy::connected_runner::ConnectedDisconnectReason),
     ReconnectRequested,
     StationStopped(Esp32s31StationCommand),
     HardwareFailure,
@@ -805,7 +808,7 @@ pub(super) fn initialize_ethernet_frame() -> &'static mut [u8] {
 /// epoch receives and returns this exact lease through the station owner.
 pub(super) fn initialize_connected_rx_protocol_runtime() -> &'static mut ConnectedRxProtocolStorage
 {
-    RX_PROTOCOL_RUNTIME.init_with(Esp32s31ConnectedRxProtocolStorage::new)
+    RX_PROTOCOL_RUNTIME.take()
 }
 
 /// Bind the one-time A-MPDU descriptor arena before the radio supervisor can
@@ -814,7 +817,7 @@ pub(super) fn initialize_connected_static_resources()
 -> Result<InitialConnectedInitialization, HtAmpduTxError> {
     let aggregate = AggregateTxResources::single(
         HtAmpduTxResources::pin_static(TX_AMPDU_STORAGE.take(), TX_AMPDU_DMA_STORAGE.take())?,
-        TX_AMPDU_RETENTION.init_with(RetainedAmpduDmaStorage::new),
+        TX_AMPDU_RETENTION.take(),
     );
     let registers: &'static Esp32s31RadioRegistersArena = REGISTER_ARENA.take();
     Ok(InitialConnectedInitialization {
@@ -918,6 +921,10 @@ pub(super) const fn connected_config() -> Esp32s31ConnectedStaConfig {
 }
 
 /// Enter the real connected PAC/Embassy owner graph.
+#[allow(
+    large_assignments,
+    reason = "the connected teardown result is a unique owner graph returned in place; the post-LTO stack-frame audit remains authoritative for live stack use"
+)]
 pub async fn run_connected<'state, 'security>(
     station_control: &mut Esp32s31StationCommandReceiver<'_, CriticalSectionRawMutex>,
     resources: ConnectedStationResources<'state, 'security>,
@@ -1244,6 +1251,10 @@ pub async fn run_connected<'state, 'security>(
         report.aggregate_tx_rate.nominal_kbps(),
     );
     #[cfg(feature = "qualification")]
+    (qualification
+        .expect("qualification build must retain its configured lifecycle observer")
+        .station_lifecycle)(crate::Esp32s31StationLifecycleObservation::Connected);
+    #[cfg(feature = "qualification")]
     {
         QUALIFICATION_DATA_RATE_KBPS.store(report.data_tx_rate.nominal_kbps(), Ordering::Relaxed);
         QUALIFICATION_AGGREGATE_RATE_KBPS
@@ -1255,7 +1266,7 @@ pub async fn run_connected<'state, 'security>(
     }
 
     let mut observer = NoopEsp32s31ConnectedRunObserver;
-    let stopped = match run_and_quiesce_esp32s31_connected_epoch(
+    let stopped = match await_stack_boundary!(run_and_quiesce_esp32s31_connected_epoch(
         interrupt_epoch,
         platform,
         radio_runner,
@@ -1277,23 +1288,27 @@ pub async fn run_connected<'state, 'security>(
                 );
             }
             match exit {
-                Esp32s31ConnectedStationExit::Disconnected => {
-                    ConnectedStationOutcome::Disconnected
-                },
+                Esp32s31ConnectedStationExit::Disconnected(reason) => {
+                    #[cfg(feature = "qualification")]
+                    (qualification
+                        .expect("qualification build must retain its configured lifecycle observer")
+                        .station_lifecycle)(
+                        crate::Esp32s31StationLifecycleObservation::Disconnected(reason),
+                    );
+                    ConnectedStationOutcome::Disconnected(reason)
+                }
                 Esp32s31ConnectedStationExit::ReconnectRequested { .. } => {
                     ConnectedStationOutcome::ReconnectRequested
-                },
+                }
                 Esp32s31ConnectedStationExit::StationStopped(command) => {
                     ConnectedStationOutcome::StationStopped(command)
-                },
+                }
                 Esp32s31ConnectedStationExit::HardwareFailure(_) => {
                     ConnectedStationOutcome::HardwareFailure
-                },
+                }
             }
         },
-    )
-    .await
-    {
+    )) {
         Ok(stopped) => stopped,
         Err(mut pending) => loop {
             qualification_event!(
@@ -1301,7 +1316,7 @@ pub async fn run_connected<'state, 'security>(
                 pending.error
             );
             Timer::after_millis(1).await;
-            match pending.retry_quiesce(platform).await {
+            match await_stack_boundary!(pending.retry_quiesce(platform)) {
                 Ok(stopped) => break stopped,
                 Err(returned) => pending = returned,
             }

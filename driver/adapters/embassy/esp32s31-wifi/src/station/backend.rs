@@ -5,6 +5,7 @@ use core::future::Future;
 use embassy_futures::select::{Either, select};
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use embassy_time::Timer;
+use open_esp_radio_wifi_embassy::await_stack_boundary;
 use open_esp_radio_wifi_sta::station::{
     StaAttemptContext, StaAttemptOutcome, StaBackoffOutcome, StaBackoffReason, StaLifecycleBackend,
 };
@@ -106,9 +107,7 @@ where
                     }
                 }
             }
-            self.runner
-                .run_attempt(owner, context, &mut self.control)
-                .await
+            await_stack_boundary!(self.runner.run_attempt(owner, context, &mut self.control))
         }
     }
 

@@ -10,6 +10,7 @@ use embassy_sync::{
     blocking_mutex::raw::RawMutex,
     channel::{Channel, Receiver, Sender, TrySendError},
 };
+use open_esp_radio_wifi_embassy::{await_stack_boundary, stack_boundary::stack_poll};
 
 use crate::{
     MonitorRequest, RadioController, StationRequest, WifiIdle, WifiScanFailure, WifiScanReport,
@@ -595,10 +596,12 @@ where
         };
 
         let next_generation = generation.next();
-        match runner
-            .run_epoch(&mut endpoint, stopped, service, next_generation)
-            .await
-        {
+        match await_stack_boundary!(runner.run_epoch(
+            &mut endpoint,
+            stopped,
+            service,
+            next_generation
+        )) {
             EmbassyWifiRoleEpochOutcome::NotStarted(returned) => stopped = returned,
             EmbassyWifiRoleEpochOutcome::Stopped(returned) => {
                 stopped = returned;
@@ -665,7 +668,7 @@ pub async fn drive_embassy_wifi_active_role<M, E, C, F, R>(
     endpoint: &mut EmbassyWifiSupervisorEndpoint<'_, M, E>,
     control: &mut C,
     role: F,
-    mut active_start_error: R,
+    active_start_error: R,
 ) -> EmbassyWifiActiveRoleExit<F::Output>
 where
     M: RawMutex,
@@ -674,9 +677,28 @@ where
     R: FnMut(EmbassyWifiStartKind) -> E,
 {
     let mut role = core::pin::pin!(role);
+    drive_embassy_wifi_active_role_pinned(endpoint, control, role.as_mut(), active_start_error)
+        .await
+}
+
+/// Borrowed variant for callers which already store a large role future in
+/// their own async state. This avoids moving that future through another
+/// owner future solely to service the supervisor mailbox.
+pub async fn drive_embassy_wifi_active_role_pinned<M, E, C, F, R>(
+    endpoint: &mut EmbassyWifiSupervisorEndpoint<'_, M, E>,
+    control: &mut C,
+    mut role: core::pin::Pin<&mut F>,
+    mut active_start_error: R,
+) -> EmbassyWifiActiveRoleExit<F::Output>
+where
+    M: RawMutex,
+    C: EmbassyWifiActiveRoleControl,
+    F: Future,
+    R: FnMut(EmbassyWifiStartKind) -> E,
+{
     let mut stop_requested = false;
     loop {
-        match select(role.as_mut(), endpoint.receive()).await {
+        match select(stack_poll(role.as_mut()), endpoint.receive()).await {
             Either::First(output) => {
                 return EmbassyWifiActiveRoleExit {
                     output,

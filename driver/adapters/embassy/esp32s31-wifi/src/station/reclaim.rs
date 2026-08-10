@@ -89,6 +89,9 @@ impl<R> Esp32s31StationPhaseReclaimed<R> {
 pub enum Esp32s31StationPhaseReclaimError {
     Registers(Esp32s31RadioRegistersArenaError),
     InvalidChannel(WifiChannelError),
+    /// The phase still owns an active connected data-plane transaction and
+    /// therefore has not reached a reclaimable stop frontier.
+    ConnectedActive,
 }
 
 /// Failed phase reclaim with the exact original phase still retained.
@@ -261,7 +264,7 @@ pub enum Esp32s31StationRuntimeReclaimFailure<O> {
 /// before a peer had been selected. The caller updates the role-neutral radio
 /// context only after independently proving that its IRQ epoch is inactive.
 #[allow(clippy::type_complexity)]
-pub fn try_reclaim_esp32s31_station_phase<'arena, S, J, N, DN, DR, A, C, E>(
+pub fn try_reclaim_esp32s31_station_phase<'arena, S, J, N, DN, DR, A, C, E, K>(
     phase: Esp32s31StationServicePhase<
         RadioRegisters,
         S,
@@ -269,6 +272,7 @@ pub fn try_reclaim_esp32s31_station_phase<'arena, S, J, N, DN, DR, A, C, E>(
         N,
         Esp32s31DisconnectedStaEpoch<DN, CooperativeRadioHardware<'arena>, DR, A, C>,
         Esp32s31ReconnectedStaEpoch<CooperativeRadioHardware<'arena>, J, E, A, C>,
+        K,
     >,
 ) -> Result<
     Esp32s31StationPhaseReclaimed<
@@ -282,6 +286,7 @@ pub fn try_reclaim_esp32s31_station_phase<'arena, S, J, N, DN, DR, A, C, E>(
             N,
             Esp32s31DisconnectedStaEpoch<DN, CooperativeRadioHardware<'arena>, DR, A, C>,
             Esp32s31ReconnectedStaEpoch<CooperativeRadioHardware<'arena>, J, E, A, C>,
+            K,
         >,
     >,
 > {
@@ -299,6 +304,12 @@ pub fn try_reclaim_esp32s31_station_phase<'arena, S, J, N, DN, DR, A, C, E>(
                     });
                 }
             }
+        }
+        Esp32s31StationServicePhase::Connected { .. } => {
+            return Err(Esp32s31StationPhaseReclaimFailure {
+                error: Esp32s31StationPhaseReclaimError::ConnectedActive,
+                phase,
+            });
         }
     };
     let (registers, resources, primary_channel) = match phase {
@@ -407,6 +418,12 @@ pub fn try_reclaim_esp32s31_station_phase<'arena, S, J, N, DN, DR, A, C, E>(
                 primary_channel,
             )
         }
+        Esp32s31StationServicePhase::Connected { connected } => {
+            return Err(Esp32s31StationPhaseReclaimFailure {
+                error: Esp32s31StationPhaseReclaimError::ConnectedActive,
+                phase: Esp32s31StationServicePhase::Connected { connected },
+            });
+        }
     };
     Ok(Esp32s31StationPhaseReclaimed {
         registers,
@@ -418,7 +435,7 @@ pub fn try_reclaim_esp32s31_station_phase<'arena, S, J, N, DN, DR, A, C, E>(
 /// Republish a role-neutral PAC into the exact arena retained by a stopped
 /// connected phase, or directly restore a scan/join phase.
 #[allow(clippy::type_complexity)]
-pub fn try_restore_esp32s31_station_phase<'arena, S, J, N, DN, DR, A, C, E>(
+pub fn try_restore_esp32s31_station_phase<'arena, S, J, N, DN, DR, A, C, E, K>(
     registers: RadioRegisters,
     resources: Esp32s31StationStoppedPhaseResources<'arena, S, J, N, DN, DR, A, C, E>,
 ) -> Result<
@@ -429,6 +446,7 @@ pub fn try_restore_esp32s31_station_phase<'arena, S, J, N, DN, DR, A, C, E>(
         N,
         Esp32s31DisconnectedStaEpoch<DN, CooperativeRadioHardware<'arena>, DR, A, C>,
         Esp32s31ReconnectedStaEpoch<CooperativeRadioHardware<'arena>, J, E, A, C>,
+        K,
     >,
     Esp32s31StationPhaseRestoreFailure<
         Esp32s31StationStoppedPhaseResources<'arena, S, J, N, DN, DR, A, C, E>,
@@ -747,6 +765,7 @@ pub fn try_reclaim_esp32s31_station_runtime<
     A,
     C,
     E,
+    K,
     const RECORDS: usize,
 >(
     owner: Esp32s31StationServiceOwner<
@@ -768,6 +787,7 @@ pub fn try_reclaim_esp32s31_station_runtime<
             N,
             Esp32s31DisconnectedStaEpoch<DN, CooperativeRadioHardware<'arena>, DR, A, C>,
             Esp32s31ReconnectedStaEpoch<CooperativeRadioHardware<'arena>, J, E, A, C>,
+            K,
         >,
     >,
 ) -> Result<
@@ -802,6 +822,7 @@ pub fn try_reclaim_esp32s31_station_runtime<
                 N,
                 Esp32s31DisconnectedStaEpoch<DN, CooperativeRadioHardware<'arena>, DR, A, C>,
                 Esp32s31ReconnectedStaEpoch<CooperativeRadioHardware<'arena>, J, E, A, C>,
+                K,
             >,
         >,
     >,

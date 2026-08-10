@@ -20,7 +20,7 @@ use open_esp_radio_esp32s31_wifi_sta::single_mpdu_tx::{
     Esp32s31SingleMpduTx, SingleMpduTxConfig, SingleMpduTxOutcome, WifiTxPowerPair,
     WifiTxPowerProfile, WifiTxTimer,
 };
-use open_esp_radio_ieee80211::station::StaTxSequenceCounters;
+use open_esp_radio_ieee80211::station::{StaDisconnect, StaDisconnectKind, StaTxSequenceCounters};
 use open_esp_radio_ieee80211::station_beacon::{StaBeaconObservation, StaTimObservation};
 use open_esp_radio_ieee80211::station_power_save::StaPowerManagement;
 use open_esp_radio_ieee80211::wmm::WmmAccessCategory;
@@ -551,12 +551,45 @@ fn beacon_loss_deadline_disables_block_ack_and_disconnects() {
     embassy_futures::block_on(control.wait_ready(&mut tx));
     assert_eq!(
         embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
-        Ok(WifiControlProgress::Disconnected)
+        Ok(WifiControlProgress::Disconnected(
+            crate::connected_runner::ConnectedDisconnectReason::BeaconLoss
+        ))
     );
     assert!(control.beacon_lost());
     assert_eq!(
         hardware.he_tid[..3],
         [Some((0, false)), Some((7, false)), Some((5, false))]
+    );
+}
+
+#[test]
+fn peer_deauthentication_disconnects_with_its_reason_code() {
+    let resources = ConnectedControlResources::<NoopRawMutex, 1>::new();
+    let (mut publisher, receiver) = resources.split();
+    let mut control = Esp32s31ConnectedControl::new(
+        receiver,
+        BSSID,
+        false,
+        StaTxBlockAckSessions::new(32, 100_000, true).unwrap(),
+    );
+    let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
+    let mut hardware = Hardware {
+        prepare: true,
+        ..Hardware::default()
+    };
+    let mut tx = make_tx(slot.as_mut(), &mut hardware, 1);
+
+    publisher.publish(ConnectedRxEvent::PeerDisconnect(StaDisconnect {
+        kind: StaDisconnectKind::Deauthentication,
+        reason_code: 4,
+    }));
+    assert_eq!(
+        embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
+        Ok(WifiControlProgress::Disconnected(
+            crate::connected_runner::ConnectedDisconnectReason::PeerDeauthentication {
+                reason_code: 4,
+            }
+        ))
     );
 }
 
@@ -943,7 +976,9 @@ fn failed_pm_zero_disconnects_instead_of_releasing_queued_data() {
     finish_tx(&mut hardware, &mut tx, 5);
     assert_eq!(
         embassy_futures::block_on(control.service_with_context(&mut hardware, &mut tx, pending,)),
-        Ok(WifiControlProgress::Disconnected)
+        Ok(WifiControlProgress::Disconnected(
+            crate::connected_runner::ConnectedDisconnectReason::ActiveStateRestoreFailed
+        ))
     );
     assert_eq!(
         control.power_save().unwrap().state(),

@@ -5,6 +5,7 @@ use core::{
     sync::atomic::{AtomicU32, Ordering},
 };
 
+use embassy_futures::select::select;
 use embassy_sync::channel::{Channel, Receiver, Sender, TryReceiveError, TrySendError};
 use open_esp_radio_embassy_net::RawMutex;
 use open_esp_radio_esp32s31_wifi_mac::connected_rx::{
@@ -39,6 +40,7 @@ fn scheduled_connected_control(event: ConnectedRxEvent<'_>) -> Option<ConnectedR
         event @ (ConnectedRxControlEvent::Beacon(_) | ConnectedRxControlEvent::BlockAck(_)) => {
             Some(event)
         }
+        event @ ConnectedRxControlEvent::PeerDisconnect(_) => Some(event),
         ConnectedRxControlEvent::Trigger { .. } | ConnectedRxControlEvent::Ndpa { .. } => None,
     }
 }
@@ -101,6 +103,7 @@ impl<const CAPACITY: usize> Default for ConnectedControlQueue<CAPACITY> {
 /// Static Embassy mailbox for owned connected control events.
 pub struct ConnectedControlResources<M: RawMutex, const CAPACITY: usize> {
     channel: Channel<M, ConnectedRxControlEvent, CAPACITY>,
+    terminal: Channel<M, ConnectedRxControlEvent, 1>,
     dropped: AtomicU32,
 }
 
@@ -108,6 +111,7 @@ impl<M: RawMutex, const CAPACITY: usize> ConnectedControlResources<M, CAPACITY> 
     pub const fn new() -> Self {
         Self {
             channel: Channel::new(),
+            terminal: Channel::new(),
             dropped: AtomicU32::new(0),
         }
     }
@@ -131,10 +135,12 @@ impl<M: RawMutex, const CAPACITY: usize> ConnectedControlResources<M, CAPACITY> 
         (
             ConnectedControlPublisher {
                 sender: resources.channel.sender(),
+                terminal: resources.terminal.sender(),
                 dropped: &resources.dropped,
             },
             ConnectedControlReceiver {
                 receiver: resources.channel.receiver(),
+                terminal: resources.terminal.receiver(),
                 dropped: &resources.dropped,
                 dropped_at_start: resources.dropped.load(Ordering::Relaxed),
             },
@@ -153,6 +159,7 @@ impl<M: RawMutex, const CAPACITY: usize> Default for ConnectedControlResources<M
 #[derive(Clone, Copy)]
 pub struct ConnectedControlPublisher<'resources, M: RawMutex, const CAPACITY: usize> {
     sender: Sender<'resources, M, ConnectedRxControlEvent, CAPACITY>,
+    terminal: Sender<'resources, M, ConnectedRxControlEvent, 1>,
     dropped: &'resources AtomicU32,
 }
 
@@ -163,7 +170,12 @@ impl<M: RawMutex, const CAPACITY: usize> ConnectedRxSink
         let Some(event) = scheduled_connected_control(event) else {
             return;
         };
-        if let Err(TrySendError::Full(_)) = self.sender.try_send(event) {
+        let result = if matches!(event, ConnectedRxControlEvent::PeerDisconnect(_)) {
+            self.terminal.try_send(event)
+        } else {
+            self.sender.try_send(event)
+        };
+        if let Err(TrySendError::Full(_)) = result {
             self.dropped.fetch_add(1, Ordering::Relaxed);
         }
     }
@@ -172,12 +184,16 @@ impl<M: RawMutex, const CAPACITY: usize> ConnectedRxSink
 /// Scheduler-side control capability; it cannot publish borrowed RX data.
 pub struct ConnectedControlReceiver<'resources, M: RawMutex, const CAPACITY: usize> {
     receiver: Receiver<'resources, M, ConnectedRxControlEvent, CAPACITY>,
+    terminal: Receiver<'resources, M, ConnectedRxControlEvent, 1>,
     dropped: &'resources AtomicU32,
     dropped_at_start: u32,
 }
 
 impl<M: RawMutex, const CAPACITY: usize> ConnectedControlReceiver<'_, M, CAPACITY> {
     pub fn try_receive(&self) -> Option<ConnectedRxControlEvent> {
+        if let Ok(event) = self.terminal.try_receive() {
+            return Some(event);
+        }
         match self.receiver.try_receive() {
             Ok(event) => Some(event),
             Err(TryReceiveError::Empty) => None,
@@ -185,11 +201,17 @@ impl<M: RawMutex, const CAPACITY: usize> ConnectedControlReceiver<'_, M, CAPACIT
     }
 
     pub fn ready(&self) -> impl Future<Output = ()> + '_ {
-        self.receiver.ready_to_receive()
+        async {
+            select(
+                self.terminal.ready_to_receive(),
+                self.receiver.ready_to_receive(),
+            )
+            .await;
+        }
     }
 
     pub fn len(&self) -> usize {
-        self.receiver.len()
+        self.terminal.len() + self.receiver.len()
     }
 
     pub fn dropped(&self) -> u32 {
@@ -206,7 +228,10 @@ mod tests {
         connected_rx::{ConnectedRxControlEvent, ConnectedRxEvent, ConnectedRxSink},
         tx_ampdu::BlockAckAction,
     };
-    use open_esp_radio_ieee80211::data::EthernetFrameParts;
+    use open_esp_radio_ieee80211::{
+        data::EthernetFrameParts,
+        station::{StaDisconnect, StaDisconnectKind},
+    };
 
     use super::*;
 
@@ -272,6 +297,38 @@ mod tests {
             Some(ConnectedRxControlEvent::BlockAck(first))
         );
         assert_eq!(receiver.try_receive(), None);
+    }
+
+    #[test]
+    fn peer_disconnect_has_a_reserved_terminal_slot_and_priority() {
+        let resources = ConnectedControlResources::<NoopRawMutex, 1>::new();
+        let (mut publisher, receiver) = resources.split();
+        let action = BlockAckAction::Delba {
+            tid: 1,
+            initiator: true,
+            reason: 2,
+        };
+        let disconnect = StaDisconnect {
+            kind: StaDisconnectKind::Disassociation,
+            reason_code: 8,
+        };
+
+        publisher.publish(ConnectedRxEvent::BlockAck {
+            action,
+            body: &[3, 2, 0, 0, 2, 0],
+        });
+        publisher.publish(ConnectedRxEvent::PeerDisconnect(disconnect));
+
+        assert_eq!(receiver.len(), 2);
+        assert_eq!(receiver.dropped(), 0);
+        assert_eq!(
+            receiver.try_receive(),
+            Some(ConnectedRxControlEvent::PeerDisconnect(disconnect))
+        );
+        assert_eq!(
+            receiver.try_receive(),
+            Some(ConnectedRxControlEvent::BlockAck(action))
+        );
     }
 
     #[test]

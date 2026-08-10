@@ -421,7 +421,9 @@ mod tests {
             &'a mut self,
             _control: &'a mut Esp32s31StationCommandReceiver<'_, NoopRawMutex>,
         ) -> impl Future<Output = Esp32s31ConnectedStationExit<Self::Error>> + 'a {
-            ready(Esp32s31ConnectedStationExit::Disconnected)
+            ready(Esp32s31ConnectedStationExit::Disconnected(
+                crate::connected_runner::ConnectedDisconnectReason::BeaconLoss,
+            ))
         }
     }
 
@@ -486,7 +488,12 @@ mod tests {
             tasks,
             &mut observer,
             |exit, runner| {
-                assert!(matches!(exit, Esp32s31ConnectedStationExit::Disconnected));
+                assert!(matches!(
+                    exit,
+                    Esp32s31ConnectedStationExit::Disconnected(
+                        crate::connected_runner::ConnectedDisconnectReason::BeaconLoss
+                    )
+                ));
                 assert_eq!(runner.services, 31);
                 assert_eq!(order.get(), 2);
                 order.set(3);

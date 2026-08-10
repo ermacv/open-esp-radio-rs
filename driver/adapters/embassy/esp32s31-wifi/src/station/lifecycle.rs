@@ -1,6 +1,7 @@
 use core::{fmt, marker::PhantomData};
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
+use open_esp_radio_wifi_embassy::await_stack_boundary;
 use open_esp_radio_wifi_sta::station::{
     StaAttemptFailure, StaLifecycleExit, StaLifecycleProgress, StaLifecycleService,
     StaReconnectPolicy,
@@ -201,7 +202,15 @@ where
     M: RawMutex,
     R: Esp32s31StationAttemptRunner<M>,
 {
-    pub async fn run(mut self) -> Esp32s31StationExit<R::Owner, R, R::Error, R::Fault> {
+    /// Run the task in its existing owner-held storage.
+    ///
+    /// The task contains the complete station owner graph. Borrowing it here
+    /// is intentional: consuming `self` would make async lowering construct
+    /// and move another copy-sized future through the live CPU stack before
+    /// it reaches its already-static Embassy parent task. Every owned field is
+    /// still taken exactly once, and [`Drop`] remains fail-closed until the
+    /// terminal completion has been published.
+    pub async fn run(&mut self) -> Esp32s31StationExit<R::Owner, R, R::Error, R::Fault> {
         let owner = self
             .resources
             .take()
@@ -211,7 +220,7 @@ where
             .lifecycle
             .take()
             .expect("station task starts with exactly one lifecycle");
-        let outcome = lifecycle.run(owner).await;
+        let outcome = await_stack_boundary!(lifecycle.run(owner));
         let (receiver, runner) = lifecycle.into_backend().into_parts();
         let (exit, completion) = match outcome {
             StaLifecycleExit::Stopped { owner, progress } => (

@@ -1,6 +1,42 @@
 //! Allocation-free station attempt and reconnect orchestration.
 
-use core::future::Future;
+use core::{
+    future::{Future, poll_fn},
+    pin::{Pin, pin},
+    task::{Context, Poll},
+};
+
+/// Poll a child state machine through a real call boundary.
+///
+/// The future remains stored in its parent future. Only the CPU stack used by
+/// its `poll` implementation is isolated, preventing fat LTO from merging a
+/// complete MLME attempt into the outer retry loop.
+async fn poll_with_stack_boundary<F: Future>(future: F) -> F::Output {
+    let mut future = pin!(future);
+    let mut output = None;
+    poll_fn(|context| poll_pinned_future(future.as_mut(), &mut output, context)).await;
+    output.expect("completed stack boundary stores its output")
+}
+
+#[inline(never)]
+fn poll_pinned_future<F: Future>(
+    future: Pin<&mut F>,
+    output: &mut Option<F::Output>,
+    context: &mut Context<'_>,
+) -> Poll<()> {
+    type PollFn<F> = for<'future, 'context, 'wake> fn(
+        Pin<&'future mut F>,
+        &'context mut Context<'wake>,
+    ) -> Poll<<F as Future>::Output>;
+    let poll: PollFn<F> = F::poll;
+    match core::hint::black_box(poll)(future, context) {
+        Poll::Pending => Poll::Pending,
+        Poll::Ready(value) => {
+            *output = Some(value);
+            Poll::Ready(())
+        }
+    }
+}
 
 /// Protocol/hardware phase which rejected one station attempt.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -73,6 +109,10 @@ pub struct StaAttemptContext {
 /// without pretending that it can re-enter the normal station lifecycle.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StaAttemptOutcome<O, E, F = core::convert::Infallible> {
+    /// One finite protocol phase completed and returned the exact owner at the
+    /// next phase frontier. The lifecycle immediately dispatches that phase
+    /// without consuming retry budget, incrementing the attempt or waiting.
+    Advanced { owner: O },
     /// A connected epoch ended and automatic reconnection may continue.
     Disconnected {
         owner: O,
@@ -276,7 +316,16 @@ where
                 attempt: generation_attempt,
                 refresh_candidate,
             };
-            match self.backend.run_attempt(owner, context).await {
+            let outcome = loop {
+                match poll_with_stack_boundary(self.backend.run_attempt(owner, context)).await {
+                    StaAttemptOutcome::Advanced { owner: advanced } => owner = advanced,
+                    outcome => break outcome,
+                }
+            };
+            match outcome {
+                StaAttemptOutcome::Advanced { .. } => {
+                    unreachable!("advanced phases are consumed by the inner attempt loop")
+                }
                 StaAttemptOutcome::Stopped { owner } => {
                     return StaLifecycleExit::Stopped { owner, progress };
                 }
@@ -288,14 +337,12 @@ where
                     progress.last_failure_stage = None;
                     generation_attempt = 1;
                     refresh_candidate = next_candidate == StaNextCandidate::Refresh;
-                    owner = match self
-                        .backend
-                        .wait_backoff(
-                            returned,
-                            self.policy.disconnect_backoff_millis(),
-                            StaBackoffReason::Disconnected,
-                        )
-                        .await
+                    owner = match poll_with_stack_boundary(self.backend.wait_backoff(
+                        returned,
+                        self.policy.disconnect_backoff_millis(),
+                        StaBackoffReason::Disconnected,
+                    ))
+                    .await
                     {
                         StaBackoffOutcome::Elapsed { owner } => owner,
                         StaBackoffOutcome::Stopped { owner } => {
@@ -324,17 +371,15 @@ where
                     }
                     refresh_candidate =
                         failure.disposition == StaFailureDisposition::RefreshCandidate;
-                    owner = match self
-                        .backend
-                        .wait_backoff(
-                            returned,
-                            self.policy.retry_backoff_millis(generation_attempt),
-                            StaBackoffReason::AttemptFailed {
-                                stage: failure.stage,
-                                attempt: generation_attempt,
-                            },
-                        )
-                        .await
+                    owner = match poll_with_stack_boundary(self.backend.wait_backoff(
+                        returned,
+                        self.policy.retry_backoff_millis(generation_attempt),
+                        StaBackoffReason::AttemptFailed {
+                            stage: failure.stage,
+                            attempt: generation_attempt,
+                        },
+                    ))
+                    .await
                     {
                         StaBackoffOutcome::Elapsed { owner } => owner,
                         StaBackoffOutcome::Stopped { owner } => {
@@ -364,6 +409,7 @@ mod tests {
 
     #[derive(Clone, Copy)]
     enum Planned {
+        Advanced,
         Disconnected(StaNextCandidate),
         Stopped,
         Failed(StaLifecycleStage, StaFailureDisposition, u8),
@@ -392,6 +438,7 @@ mod tests {
                 self.contexts.push(context);
                 let owner = owner + 1;
                 match self.outcomes.pop_front().expect("planned attempt") {
+                    Planned::Advanced => StaAttemptOutcome::Advanced { owner },
                     Planned::Disconnected(next_candidate) => StaAttemptOutcome::Disconnected {
                         owner,
                         next_candidate,
@@ -458,6 +505,28 @@ mod tests {
             StaReconnectPolicy::new(0, 1, 1, 1),
             Err(StaReconnectPolicyError::ZeroAttemptLimit)
         );
+    }
+
+    #[test]
+    fn advanced_phases_share_one_attempt_without_backoff() {
+        let backend = backend([Planned::Advanced, Planned::Advanced, Planned::Stopped]);
+        let mut service = StaLifecycleService::new(backend, policy(3));
+        let exit = block_on(service.run(0));
+        let StaLifecycleExit::Stopped { owner, progress } = exit else {
+            panic!("advanced test must stop cleanly")
+        };
+        assert_eq!(owner, 3);
+        assert_eq!(progress.attempts_started, 1);
+        assert_eq!(progress.final_generation_attempt, 1);
+        assert_eq!(service.backend().contexts.len(), 3);
+        assert!(
+            service
+                .backend()
+                .contexts
+                .iter()
+                .all(|context| *context == service.backend().contexts[0])
+        );
+        assert!(service.backend().backoffs.is_empty());
     }
 
     #[test]

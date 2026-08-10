@@ -14,6 +14,7 @@ use open_esp_radio_esp32s31_wifi_embassy::{
     },
 };
 use open_esp_radio_esp32s31_wifi_mac::{irq::MacInterruptRoute, rx::RxPhyInfo};
+use open_esp_radio_wifi_embassy::await_stack_boundary;
 use open_esp_radio_wifi_softmac::MonitorSink;
 
 use crate::{
@@ -24,8 +25,9 @@ use crate::{
         EmbassyWifiRoleEpochRunner, EmbassyWifiRoleFrontier, EmbassyWifiStartKind,
         EmbassyWifiSupervisorControlResources, EmbassyWifiSupervisorEndpoint,
         EmbassyWifiSupervisorPort, EmbassyWifiSupervisorPrepareFailure,
-        EmbassyWifiSupervisorResponse, EmbassyWifiSupervisorTask, drive_embassy_wifi_active_role,
-        finish_embassy_wifi_active_role, prepare_embassy_wifi_supervisor,
+        EmbassyWifiSupervisorResponse, EmbassyWifiSupervisorTask,
+        drive_embassy_wifi_active_role_pinned, finish_embassy_wifi_active_role,
+        prepare_embassy_wifi_supervisor,
     },
 };
 
@@ -115,7 +117,15 @@ where
     R: Esp32s31StationAttemptRunner<M>,
     Reject: FnMut(EmbassyWifiStartKind) -> E,
 {
-    drive_embassy_wifi_active_role(endpoint, controller, task.run(), reject_while_active).await
+    let mut task = task;
+    let role = task.run();
+    let mut role = core::pin::pin!(role);
+    await_stack_boundary!(drive_embassy_wifi_active_role_pinned(
+        endpoint,
+        controller,
+        role.as_mut(),
+        reject_while_active,
+    ))
 }
 
 /// Owned input for one station role epoch.
@@ -228,9 +238,19 @@ where
         )))
         .await;
 
-    let exit =
-        drive_esp32s31_station_role(endpoint, &mut controller, task, reject_while_active).await;
-    match finish_embassy_wifi_active_role(endpoint, generation, exit, classify, fault_error).await {
+    let exit = await_stack_boundary!(drive_esp32s31_station_role(
+        endpoint,
+        &mut controller,
+        task,
+        reject_while_active,
+    ));
+    match await_stack_boundary!(finish_embassy_wifi_active_role(
+        endpoint,
+        generation,
+        exit,
+        classify,
+        fault_error,
+    )) {
         EmbassyWifiRoleFrontier::Stopped(stopped) => EmbassyWifiRoleEpochOutcome::Stopped(stopped),
         EmbassyWifiRoleFrontier::Faulted(faulted) => EmbassyWifiRoleEpochOutcome::Faulted(faulted),
     }
@@ -273,11 +293,12 @@ where
     S: MonitorSink<RxPhyInfo>,
     Reject: FnMut(EmbassyWifiStartKind) -> E,
 {
-    drive_embassy_wifi_active_role(
+    let role = task.run_to_exit();
+    let mut role = core::pin::pin!(role);
+    await_stack_boundary!(drive_embassy_wifi_active_role_pinned(
         endpoint,
         controller,
-        task.run_to_exit(),
+        role.as_mut(),
         reject_while_active,
-    )
-    .await
+    ))
 }

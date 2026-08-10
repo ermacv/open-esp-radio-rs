@@ -80,19 +80,20 @@ use open_esp_radio_esp32s31_wifi_embassy::{
     scan_rx::{Esp32s31RunningScanRx, Esp32s31ScanFrameObserver, Esp32s31ScanRx},
     sta_tx_epoch::Esp32s31StaTxEpochExt,
     station::{
-        Esp32s31StationCommandReceiver, Esp32s31StationConfig, Esp32s31StationControlResources,
-        Esp32s31StationController, Esp32s31StationDmaResources, Esp32s31StationEngine,
-        Esp32s31StationEnginePort, Esp32s31StationExit, Esp32s31StationInitialJoinPhase,
-        Esp32s31StationInitialScanExit, Esp32s31StationInitialScanFailures,
-        Esp32s31StationInitialScanPhase, Esp32s31StationInitialScanReturned,
-        Esp32s31StationJoinOutcome, Esp32s31StationJoinResources, Esp32s31StationPrepareFailure,
-        Esp32s31StationRadioResources, Esp32s31StationReconnectedPhase,
-        Esp32s31StationRunningScanCompletion, Esp32s31StationRunningScanExit,
-        Esp32s31StationRunningScanPhase, Esp32s31StationRuntimeReclaimFailure,
-        Esp32s31StationRuntimeResources, Esp32s31StationScanDecision, Esp32s31StationScanPlan,
-        Esp32s31StationScanResources, Esp32s31StationServiceOwner, Esp32s31StationServicePhase,
-        Esp32s31StationStartResources, Esp32s31StationStopped,
-        Esp32s31StationStoppedPhaseResources, Esp32s31StationStorageResources, Esp32s31StationTask,
+        Esp32s31StationCommandReceiver, Esp32s31StationConfig, Esp32s31StationConnectedPhase,
+        Esp32s31StationControlResources, Esp32s31StationController, Esp32s31StationDmaResources,
+        Esp32s31StationEngine, Esp32s31StationEnginePort, Esp32s31StationExit,
+        Esp32s31StationInitialJoinPhase, Esp32s31StationInitialScanExit,
+        Esp32s31StationInitialScanFailures, Esp32s31StationInitialScanPhase,
+        Esp32s31StationInitialScanReturned, Esp32s31StationJoinExit, Esp32s31StationJoinOutcome,
+        Esp32s31StationJoinResources, Esp32s31StationPrepareFailure, Esp32s31StationRadioResources,
+        Esp32s31StationReconnectedPhase, Esp32s31StationRunningScanCompletion,
+        Esp32s31StationRunningScanExit, Esp32s31StationRunningScanPhase,
+        Esp32s31StationRuntimeReclaimFailure, Esp32s31StationRuntimeResources,
+        Esp32s31StationScanDecision, Esp32s31StationScanPlan, Esp32s31StationScanResources,
+        Esp32s31StationServiceOwner, Esp32s31StationServicePhase, Esp32s31StationStartResources,
+        Esp32s31StationStopped, Esp32s31StationStoppedPhaseResources,
+        Esp32s31StationStorageResources, Esp32s31StationTask,
         complete_esp32s31_station_initial_scan, complete_esp32s31_station_running_scan,
         esp32s31_station_scan_failure_disposition, materialize_esp32s31_station,
         prepare_esp32s31_station_task, run_esp32s31_station_join, run_esp32s31_station_scan,
@@ -104,6 +105,7 @@ use open_esp_radio_esp32s31_wifi_embassy::{
 use open_esp_radio_esp32s31_wifi_esp_hal::{
     EspHalRadioPeripheral, mac_interrupt_epoch::EspHalMacInterruptRoute,
 };
+use open_esp_radio_wifi_embassy::await_stack_boundary;
 use static_cell::StaticCell;
 
 #[cfg(feature = "qualification")]
@@ -204,23 +206,16 @@ type ProductionStationPhase = Esp32s31StationServicePhase<
     StationNetwork,
     ConnectedDisconnectedEpoch,
     ConnectedReconnectedEpoch,
+    ProductionConnectedPhase,
 >;
 
-enum ProductionStationJoinPhase {
-    InitialJoin {
-        hardware: RadioRegisters,
-        receive: Esp32s31PreconnectedRx<
-            'static,
-            EmbassyEsp32s31PreconnectedRxDelay,
-            RX_DESCRIPTOR_COUNT,
-            RX_BUFFER_SIZE,
-        >,
-        network: StationNetwork,
-    },
-    Reconnected {
-        epoch: ConnectedReconnectedEpoch,
-        network: StationNetwork,
-    },
+struct ProductionConnectedPhase {
+    epoch: ConnectedStationEpoch,
+    network: StationNetwork,
+    station: Esp32s31StaAttemptStation,
+    peer: open_esp_radio::esp32s31::wifi::sta::peer::Esp32s31ConnectedStaPeer,
+    pairwise: open_esp_radio::esp32s31::wifi::mac::crypto::StaPairwiseCcmpSlot,
+    group: open_esp_radio::esp32s31::wifi::mac::crypto::StaGroupCcmpSlot,
 }
 
 type ProductionStationOwner<'state, 'security> = Esp32s31StationServiceOwner<
@@ -319,7 +314,7 @@ pub struct Esp32s31RadioRunner {
 
 impl Esp32s31RadioRunner {
     pub async fn run(self) -> ! {
-        self.supervisor.run().await
+        await_stack_boundary!(self.supervisor.run())
     }
 }
 
@@ -444,29 +439,6 @@ fn try_reclaim_production_station<'security>(
     ))
 }
 
-struct ProductionStationJoinOwner<'state, 'security> {
-    phase: ProductionStationJoinPhase,
-    runtime: ProductionStationRuntime<'state>,
-    station: Esp32s31StaAttemptStation,
-    security: Esp32s31StaAttemptSecurity<'security>,
-}
-
-impl<'state, 'security> ProductionStationJoinOwner<'state, 'security> {
-    fn new(
-        runtime: ProductionStationRuntime<'state>,
-        phase: ProductionStationJoinPhase,
-        station: Esp32s31StaAttemptStation,
-        security: Esp32s31StaAttemptSecurity<'security>,
-    ) -> Self {
-        Self {
-            phase,
-            runtime,
-            station,
-            security,
-        }
-    }
-}
-
 pub(super) struct ProductionStationBoardResources {
     pub(super) interface: BoundVirtualInterface,
     pub(super) rx_protocol_runtime: &'static mut ConnectedRxProtocolStorage,
@@ -524,6 +496,7 @@ pub(super) fn production_station_runtime<'state>(
 }
 
 impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'state, 'security>> {
+    #[inline(never)]
     async fn run_initial_scan_epoch(
         &self,
         phase: Esp32s31StationInitialScanPhase<
@@ -642,22 +615,29 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
         )
     }
 
+    #[inline(never)]
     async fn run_connected_epoch(
         &mut self,
-        runtime: ProductionStationRuntime<'state>,
-        epoch: ConnectedStationEpoch,
-        network: StationNetwork,
-        station: Esp32s31StaAttemptStation,
-        security: Esp32s31StaAttemptSecurity<'security>,
-        peer: open_esp_radio::esp32s31::wifi::sta::peer::Esp32s31ConnectedStaPeer,
-        pairwise: open_esp_radio::esp32s31::wifi::mac::crypto::StaPairwiseCcmpSlot,
-        group: open_esp_radio::esp32s31::wifi::mac::crypto::StaGroupCcmpSlot,
+        phase: Esp32s31StationConnectedPhase<
+            'security,
+            ProductionStationRuntime<'state>,
+            ProductionConnectedPhase,
+        >,
         control: &mut Esp32s31StationCommandReceiver<'_, CriticalSectionRawMutex>,
     ) -> StaAttemptOutcome<
         ProductionStationOwner<'state, 'security>,
         Esp32s31StaAttemptStage,
         ProductionStationFault<'state, 'security>,
     > {
+        let (runtime, connected, security) = phase.into_parts();
+        let ProductionConnectedPhase {
+            epoch,
+            network,
+            station,
+            peer,
+            pairwise,
+            group,
+        } = connected;
         let interface = runtime.board().interface;
         let returned = run_connected(
             control,
@@ -694,12 +674,11 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
             returned.security,
         );
         match returned.outcome {
-            ConnectedStationOutcome::Disconnected | ConnectedStationOutcome::ReconnectRequested => {
-                StaAttemptOutcome::Disconnected {
-                    owner,
-                    next_candidate: StaNextCandidate::Refresh,
-                }
-            }
+            ConnectedStationOutcome::Disconnected(_)
+            | ConnectedStationOutcome::ReconnectRequested => StaAttemptOutcome::Disconnected {
+                owner,
+                next_candidate: StaNextCandidate::Refresh,
+            },
             ConnectedStationOutcome::StationStopped(_) => StaAttemptOutcome::Stopped { owner },
             ConnectedStationOutcome::HardwareFailure => StaAttemptOutcome::Failed {
                 owner,
@@ -712,6 +691,7 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
         }
     }
 
+    #[inline(never)]
     async fn run_running_scan_epoch(
         &mut self,
         phase: Esp32s31StationRunningScanPhase<
@@ -854,262 +834,275 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
 }
 
 impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'state, 'security>> {
-    fn run_phase<'a>(
+    #[inline(never)]
+    async fn run_initial_join_epoch<'a>(
         &'a mut self,
-        owner: ProductionStationJoinOwner<'state, 'security>,
-        context: StaAttemptContext,
-        control: &'a mut Esp32s31StationCommandReceiver<'_, CriticalSectionRawMutex>,
-    ) -> impl Future<
-        Output = StaAttemptOutcome<
-            ProductionStationOwner<'state, 'security>,
-            Esp32s31StaAttemptStage,
-            ProductionStationFault<'state, 'security>,
+        phase: Esp32s31StationInitialJoinPhase<
+            'security,
+            ProductionStationRuntime<'state>,
+            RadioRegisters,
+            Esp32s31PreconnectedRx<
+                'static,
+                EmbassyEsp32s31PreconnectedRxDelay,
+                RX_DESCRIPTOR_COUNT,
+                RX_BUFFER_SIZE,
+            >,
+            StationNetwork,
         >,
-    > + 'a
+        context: StaAttemptContext,
+    ) -> Esp32s31StationJoinExit<
+        'security,
+        ProductionStationRuntime<'state>,
+        ProductionConnectedPhase,
+        ProductionStationOwner<'state, 'security>,
+        Esp32s31StaAttemptStage,
+        ProductionStationFault<'state, 'security>,
+    >
     where
         'security: 'a,
         'state: 'a,
     {
-        async move {
-            qualification_event!(
-                "open-radio: station lifecycle attempt generation={} attempt={}",
-                context.generation,
-                context.attempt
-            );
-            let ProductionStationJoinOwner {
-                phase,
-                mut runtime,
-                station,
-                security,
-            } = owner;
-            let outcome = match phase {
-                ProductionStationJoinPhase::InitialJoin {
-                    mut hardware,
-                    receive,
-                    network,
-                } => {
-                    let (radio_resources, storage_resources, _) = runtime.split_mut();
-                    let (phy, platform, _) = radio_resources.parts_mut();
-                    let (dma, tx_storage, _, frame, _) = storage_resources.parts_mut();
-                    let join = run_esp32s31_station_join::<
-                        _,
-                        _,
-                        _,
-                        EmbassyEsp32s31PhyDelay,
-                        _,
-                        _,
-                        (),
-                        _,
-                        RX_DESCRIPTOR_COUNT,
-                        RX_BUFFER_SIZE,
-                        RX_BUFFER_STORAGE_SIZE,
-                    >(Esp32s31StationJoinResources {
-                        hardware: &mut hardware,
-                        phy,
-                        platform,
-                        phy_observer: NoopPhyTargetObserver,
-                        receive,
-                        rx_storage: dma.storage(),
-                        transmit: tx_storage
-                            .control_mut()
-                            .expect("station attempt owns ordinary TX"),
-                        frame,
-                        station,
+        qualification_event!(
+            "open-radio: station lifecycle attempt generation={} attempt={}",
+            context.generation,
+            context.attempt
+        );
+        let (mut runtime, mut hardware, receive, network, station, security) = phase.into_parts();
+        let (radio_resources, storage_resources, _) = runtime.split_mut();
+        let (phy, platform, _) = radio_resources.parts_mut();
+        let (dma, tx_storage, _, frame, _) = storage_resources.parts_mut();
+        let join = run_esp32s31_station_join::<
+            _,
+            _,
+            _,
+            EmbassyEsp32s31PhyDelay,
+            _,
+            _,
+            (),
+            _,
+            RX_DESCRIPTOR_COUNT,
+            RX_BUFFER_SIZE,
+            RX_BUFFER_STORAGE_SIZE,
+        >(Esp32s31StationJoinResources {
+            hardware: &mut hardware,
+            phy,
+            platform,
+            phy_observer: NoopPhyTargetObserver,
+            receive,
+            rx_storage: dma.storage(),
+            transmit: tx_storage
+                .control_mut()
+                .expect("station attempt owns ordinary TX"),
+            frame,
+            station,
+            security,
+            attempt_observer: ProductionAttemptObserver,
+        })
+        .await;
+        match join {
+            Esp32s31StationJoinOutcome::Failed {
+                returned,
+                stage,
+                disposition,
+                error,
+                progress,
+                ..
+            } => {
+                qualification_event!(
+                    "open-radio: station attempt failed stage={stage:?} \
+                     disposition={disposition:?} completed={} error={error:?}",
+                    progress.completed_count()
+                );
+                Esp32s31StationJoinExit::complete(StaAttemptOutcome::Failed {
+                    owner: ProductionStationOwner::new(
+                        runtime,
+                        ProductionStationPhase::InitialJoin {
+                            hardware,
+                            receive: returned.receive,
+                            network,
+                            station: returned.station,
+                        },
+                        returned.security,
+                    ),
+                    failure: StaAttemptFailure::new(stage.lifecycle_stage(), disposition, stage),
+                })
+            }
+            Esp32s31StationJoinOutcome::Connected {
+                returned,
+                peer,
+                pairwise,
+                group,
+                report,
+                progress,
+            } => {
+                qualification_event!(
+                    "open-radio: station joined phases={} auth={} assoc={} wpa2={} m4={}",
+                    progress.completed_count(),
+                    report.authentication.is_some(),
+                    report.association.is_some(),
+                    report.wpa2.is_some(),
+                    report.message4.is_some()
+                );
+                Esp32s31StationJoinExit::connected_ready(
+                    runtime,
+                    ProductionConnectedPhase {
+                        epoch: ConnectedStationEpoch::Initial {
+                            hardware,
+                            receive: returned.receive,
+                        },
+                        network,
+                        station: returned.station,
+                        peer,
+                        pairwise,
+                        group,
+                    },
+                    returned.security,
+                )
+            }
+        }
+    }
+
+    #[inline(never)]
+    async fn run_reconnected_epoch<'a>(
+        &'a mut self,
+        phase: Esp32s31StationReconnectedPhase<
+            'security,
+            ProductionStationRuntime<'state>,
+            ConnectedReconnectedEpoch,
+            StationNetwork,
+        >,
+        context: StaAttemptContext,
+    ) -> Esp32s31StationJoinExit<
+        'security,
+        ProductionStationRuntime<'state>,
+        ProductionConnectedPhase,
+        ProductionStationOwner<'state, 'security>,
+        Esp32s31StaAttemptStage,
+        ProductionStationFault<'state, 'security>,
+    >
+    where
+        'security: 'a,
+        'state: 'a,
+    {
+        qualification_event!(
+            "open-radio: station lifecycle attempt generation={} attempt={}",
+            context.generation,
+            context.attempt
+        );
+        let (mut runtime, mut reconnect, network, station, security) = phase.into_parts();
+        let (hardware, receive_slot) = reconnect.hardware_and_rx_mut();
+        let receive = match receive_slot.take() {
+            Ok(receive) => receive,
+            Err(_) => {
+                return Esp32s31StationJoinExit::complete(StaAttemptOutcome::Failed {
+                    owner: ProductionStationOwner::new(
+                        runtime,
+                        ProductionStationPhase::Reconnected {
+                            epoch: reconnect,
+                            network,
+                            station,
+                        },
                         security,
-                        attempt_observer: ProductionAttemptObserver,
-                    })
-                    .await;
-                    match join {
-                        Esp32s31StationJoinOutcome::Failed {
-                            returned,
-                            stage,
-                            disposition,
-                            error,
-                            progress,
-                            ..
-                        } => {
-                            qualification_event!(
-                                "open-radio: station attempt failed stage={stage:?} \
-                                 disposition={disposition:?} completed={} error={error:?}",
-                                progress.completed_count()
-                            );
-                            StaAttemptOutcome::Failed {
-                                owner: ProductionStationOwner::new(
-                                    runtime,
-                                    ProductionStationPhase::InitialJoin {
-                                        hardware,
-                                        receive: returned.receive,
-                                        network,
-                                        station: returned.station,
-                                    },
-                                    returned.security,
-                                ),
-                                failure: StaAttemptFailure::new(
-                                    stage.lifecycle_stage(),
-                                    disposition,
-                                    stage,
-                                ),
-                            }
-                        }
-                        Esp32s31StationJoinOutcome::Connected {
-                            returned,
-                            peer,
-                            pairwise,
-                            group,
-                            report,
-                            progress,
-                        } => {
-                            qualification_event!(
-                                "open-radio: station joined phases={} auth={} assoc={} wpa2={} m4={}",
-                                progress.completed_count(),
-                                report.authentication.is_some(),
-                                report.association.is_some(),
-                                report.wpa2.is_some(),
-                                report.message4.is_some()
-                            );
-                            self.run_connected_epoch(
-                                runtime,
-                                ConnectedStationEpoch::Initial {
-                                    hardware,
-                                    receive: returned.receive,
-                                },
-                                network,
-                                returned.station,
-                                returned.security,
-                                peer,
-                                pairwise,
-                                group,
-                                control,
-                            )
-                            .await
-                        }
-                    }
-                }
-                ProductionStationJoinPhase::Reconnected {
-                    epoch: mut reconnect,
-                    network,
-                } => {
-                    let (hardware, receive_slot) = reconnect.hardware_and_rx_mut();
-                    let receive = match receive_slot.take() {
-                        Ok(receive) => receive,
-                        Err(_) => {
-                            return StaAttemptOutcome::Failed {
-                                owner: ProductionStationOwner::new(
-                                    runtime,
-                                    ProductionStationPhase::Reconnected {
-                                        epoch: reconnect,
-                                        network,
-                                        station,
-                                    },
-                                    security,
-                                ),
-                                failure: StaAttemptFailure::new(
-                                    open_esp_radio::wifi::sta::station::StaLifecycleStage::Hardware,
-                                    open_esp_radio::wifi::sta::station::StaFailureDisposition::Terminal,
-                                    Esp32s31StaAttemptStage::Candidate,
-                                ),
-                            };
-                        }
-                    };
-                    let (radio_resources, storage_resources, _) = runtime.split_mut();
-                    let (phy, platform, _) = radio_resources.parts_mut();
-                    let (dma, tx_storage, _, frame, _) = storage_resources.parts_mut();
-                    let join = run_esp32s31_station_join::<
-                        _,
-                        _,
-                        _,
-                        EmbassyEsp32s31PhyDelay,
-                        _,
-                        _,
-                        (),
-                        _,
-                        RX_DESCRIPTOR_COUNT,
-                        RX_BUFFER_SIZE,
-                        RX_BUFFER_STORAGE_SIZE,
-                    >(Esp32s31StationJoinResources {
-                        hardware,
-                        phy,
-                        platform,
-                        phy_observer: NoopPhyTargetObserver,
-                        receive,
-                        rx_storage: dma.storage(),
-                        transmit: tx_storage
-                            .control_mut()
-                            .expect("station attempt owns ordinary TX"),
-                        frame,
-                        station,
-                        security,
-                        attempt_observer: ProductionAttemptObserver,
-                    })
-                    .await;
-                    match join {
-                        Esp32s31StationJoinOutcome::Failed {
-                            returned,
-                            stage,
-                            disposition,
-                            error,
-                            progress,
-                            ..
-                        } => {
-                            qualification_event!(
-                                "open-radio: reconnect attempt failed stage={stage:?} \
-                                 disposition={disposition:?} completed={} error={error:?}",
-                                progress.completed_count()
-                            );
-                            let (_, receive_slot) = reconnect.hardware_and_rx_mut();
-                            *receive_slot = returned.receive;
-                            StaAttemptOutcome::Failed {
-                                owner: ProductionStationOwner::new(
-                                    runtime,
-                                    ProductionStationPhase::Reconnected {
-                                        epoch: reconnect,
-                                        network,
-                                        station: returned.station,
-                                    },
-                                    returned.security,
-                                ),
-                                failure: StaAttemptFailure::new(
-                                    stage.lifecycle_stage(),
-                                    disposition,
-                                    stage,
-                                ),
-                            }
-                        }
-                        Esp32s31StationJoinOutcome::Connected {
-                            returned,
-                            peer,
-                            pairwise,
-                            group,
-                            report,
-                            progress,
-                        } => {
-                            qualification_event!(
-                                "open-radio: station rejoined phases={} auth={} assoc={} wpa2={} m4={}",
-                                progress.completed_count(),
-                                report.authentication.is_some(),
-                                report.association.is_some(),
-                                report.wpa2.is_some(),
-                                report.message4.is_some()
-                            );
-                            let (_, receive_slot) = reconnect.hardware_and_rx_mut();
-                            *receive_slot = returned.receive;
-                            self.run_connected_epoch(
-                                runtime,
-                                ConnectedStationEpoch::Reconnected(reconnect),
-                                network,
-                                returned.station,
-                                returned.security,
-                                peer,
-                                pairwise,
-                                group,
-                                control,
-                            )
-                            .await
-                        }
-                    }
-                }
-            };
-            outcome
+                    ),
+                    failure: StaAttemptFailure::new(
+                        open_esp_radio::wifi::sta::station::StaLifecycleStage::Hardware,
+                        open_esp_radio::wifi::sta::station::StaFailureDisposition::Terminal,
+                        Esp32s31StaAttemptStage::Candidate,
+                    ),
+                });
+            }
+        };
+        let (radio_resources, storage_resources, _) = runtime.split_mut();
+        let (phy, platform, _) = radio_resources.parts_mut();
+        let (dma, tx_storage, _, frame, _) = storage_resources.parts_mut();
+        let join = run_esp32s31_station_join::<
+            _,
+            _,
+            _,
+            EmbassyEsp32s31PhyDelay,
+            _,
+            _,
+            (),
+            _,
+            RX_DESCRIPTOR_COUNT,
+            RX_BUFFER_SIZE,
+            RX_BUFFER_STORAGE_SIZE,
+        >(Esp32s31StationJoinResources {
+            hardware,
+            phy,
+            platform,
+            phy_observer: NoopPhyTargetObserver,
+            receive,
+            rx_storage: dma.storage(),
+            transmit: tx_storage
+                .control_mut()
+                .expect("station attempt owns ordinary TX"),
+            frame,
+            station,
+            security,
+            attempt_observer: ProductionAttemptObserver,
+        })
+        .await;
+        match join {
+            Esp32s31StationJoinOutcome::Failed {
+                returned,
+                stage,
+                disposition,
+                error,
+                progress,
+                ..
+            } => {
+                qualification_event!(
+                    "open-radio: reconnect attempt failed stage={stage:?} \
+                     disposition={disposition:?} completed={} error={error:?}",
+                    progress.completed_count()
+                );
+                let (_, receive_slot) = reconnect.hardware_and_rx_mut();
+                *receive_slot = returned.receive;
+                Esp32s31StationJoinExit::complete(StaAttemptOutcome::Failed {
+                    owner: ProductionStationOwner::new(
+                        runtime,
+                        ProductionStationPhase::Reconnected {
+                            epoch: reconnect,
+                            network,
+                            station: returned.station,
+                        },
+                        returned.security,
+                    ),
+                    failure: StaAttemptFailure::new(stage.lifecycle_stage(), disposition, stage),
+                })
+            }
+            Esp32s31StationJoinOutcome::Connected {
+                returned,
+                peer,
+                pairwise,
+                group,
+                report,
+                progress,
+            } => {
+                qualification_event!(
+                    "open-radio: station rejoined phases={} auth={} assoc={} wpa2={} m4={}",
+                    progress.completed_count(),
+                    report.authentication.is_some(),
+                    report.association.is_some(),
+                    report.wpa2.is_some(),
+                    report.message4.is_some()
+                );
+                let (_, receive_slot) = reconnect.hardware_and_rx_mut();
+                *receive_slot = returned.receive;
+                Esp32s31StationJoinExit::connected_ready(
+                    runtime,
+                    ProductionConnectedPhase {
+                        epoch: ConnectedStationEpoch::Reconnected(reconnect),
+                        network,
+                        station: returned.station,
+                        peer,
+                        pairwise,
+                        group,
+                    },
+                    returned.security,
+                )
+            }
         }
     }
 }
@@ -1135,6 +1128,7 @@ impl<'state, 'security> Esp32s31StationEnginePort<'security, CriticalSectionRawM
     type Network = StationNetwork;
     type Disconnected = ConnectedDisconnectedEpoch;
     type Reconnected = ConnectedReconnectedEpoch;
+    type Connected = ProductionConnectedPhase;
     type Error = Esp32s31StaAttemptStage;
     type Fault = ProductionStationFault<'state, 'security>;
 
@@ -1179,9 +1173,12 @@ impl<'state, 'security> Esp32s31StationEnginePort<'security, CriticalSectionRawM
             Self::Network,
         >,
         context: StaAttemptContext,
-        control: &'a mut Esp32s31StationCommandReceiver<'_, CriticalSectionRawMutex>,
+        _control: &'a mut Esp32s31StationCommandReceiver<'_, CriticalSectionRawMutex>,
     ) -> impl Future<
-        Output = StaAttemptOutcome<
+        Output = Esp32s31StationJoinExit<
+            'security,
+            Self::Runtime,
+            Self::Connected,
             ProductionStationOwner<'state, 'security>,
             Self::Error,
             Self::Fault,
@@ -1191,21 +1188,7 @@ impl<'state, 'security> Esp32s31StationEnginePort<'security, CriticalSectionRawM
         'security: 'a,
         'state: 'a,
     {
-        let (runtime, hardware, receive, network, station, security) = phase.into_parts();
-        self.run_phase(
-            ProductionStationJoinOwner::new(
-                runtime,
-                ProductionStationJoinPhase::InitialJoin {
-                    hardware,
-                    receive,
-                    network,
-                },
-                station,
-                security,
-            ),
-            context,
-            control,
-        )
+        self.run_initial_join_epoch(phase, context)
     }
 
     fn run_running_scan<'a>(
@@ -1241,6 +1224,28 @@ impl<'state, 'security> Esp32s31StationEnginePort<'security, CriticalSectionRawM
             Self::Network,
         >,
         context: StaAttemptContext,
+        _control: &'a mut Esp32s31StationCommandReceiver<'_, CriticalSectionRawMutex>,
+    ) -> impl Future<
+        Output = Esp32s31StationJoinExit<
+            'security,
+            Self::Runtime,
+            Self::Connected,
+            ProductionStationOwner<'state, 'security>,
+            Self::Error,
+            Self::Fault,
+        >,
+    > + 'a
+    where
+        'security: 'a,
+        'state: 'a,
+    {
+        self.run_reconnected_epoch(phase, context)
+    }
+
+    fn run_connected<'a>(
+        &'a mut self,
+        phase: Esp32s31StationConnectedPhase<'security, Self::Runtime, Self::Connected>,
+        _context: StaAttemptContext,
         control: &'a mut Esp32s31StationCommandReceiver<'_, CriticalSectionRawMutex>,
     ) -> impl Future<
         Output = StaAttemptOutcome<
@@ -1253,17 +1258,7 @@ impl<'state, 'security> Esp32s31StationEnginePort<'security, CriticalSectionRawM
         'security: 'a,
         'state: 'a,
     {
-        let (runtime, epoch, network, station, security) = phase.into_parts();
-        self.run_phase(
-            ProductionStationJoinOwner::new(
-                runtime,
-                ProductionStationJoinPhase::Reconnected { epoch, network },
-                station,
-                security,
-            ),
-            context,
-            control,
-        )
+        self.run_connected_epoch(phase, control)
     }
 
     fn candidate_refresh_contract_error(&mut self) -> Self::Error {
@@ -1494,6 +1489,103 @@ fn standalone_scan_report(
     )
 }
 
+impl ProductionWifiEpochRunner {
+    async fn run_station_service(
+        &self,
+        endpoint: &mut EmbassyWifiSupervisorEndpoint<
+            '_,
+            CriticalSectionRawMutex,
+            Esp32s31RadioError,
+        >,
+        stopped: ProductionSupervisorStopped,
+        request: StationRequest,
+        generation: open_esp_radio::RadioSubsystemGeneration,
+    ) -> EmbassyWifiRoleEpochOutcome<ProductionSupervisorStopped, ProductionWifiFault> {
+        let parked_monitor = &self.parked_monitor;
+        await_stack_boundary!(run_esp32s31_station_supervisor_epoch(
+            endpoint,
+            Esp32s31StationSupervisorEpoch::new(stopped, request, generation),
+            |stopped, request| self.prepare_station_task(stopped, request, false),
+            Esp32s31StationSupervisorHooks::new(
+                |output| {
+                    let resources = match output {
+                        Esp32s31StationExit::Stopped {
+                            resources,
+                            progress,
+                            reason,
+                        } => {
+                            qualification_event!(
+                                "open-radio: station epoch stopped attempts={} connected_epochs={} reason={reason:?}",
+                                progress.attempts_started,
+                                progress.connected_epochs,
+                            );
+                            resources
+                        }
+                        Esp32s31StationExit::RetryExhausted {
+                            resources,
+                            progress,
+                            failure,
+                        } => {
+                            qualification_event!(
+                                "open-radio: station epoch exhausted attempts={} stage={:?}",
+                                progress.attempts_started,
+                                failure.stage,
+                            );
+                            resources
+                        }
+                        Esp32s31StationExit::Terminal {
+                            resources,
+                            progress,
+                            failure,
+                        } => {
+                            qualification_event!(
+                                "open-radio: station epoch ended attempts={} stage={:?}",
+                                progress.attempts_started,
+                                failure.stage,
+                            );
+                            resources
+                        }
+                        Esp32s31StationExit::Faulted { fault, runner, .. } => {
+                            return EmbassyWifiRoleFrontier::Faulted(
+                                ProductionWifiFault::Station {
+                                    _fault: fault,
+                                    _runner: runner,
+                                },
+                            );
+                        }
+                    };
+                    let (owner, runner) = resources.into_parts();
+                    match try_reclaim_production_station(owner) {
+                        Ok(stopped) => match parked_monitor.borrow_mut().take() {
+                            Some(monitor) => EmbassyWifiRoleFrontier::Stopped(
+                                Esp32s31WifiSupervisorStopped::new(
+                                    stopped.wifi,
+                                    ProductionStationResources::Returned(stopped.resources),
+                                    monitor,
+                                ),
+                            ),
+                            None => EmbassyWifiRoleFrontier::Faulted(
+                                ProductionWifiFault::StationResourceInvariant {
+                                    _stopped: stopped,
+                                    _runner: runner,
+                                },
+                            ),
+                        },
+                        Err(failure) => {
+                            EmbassyWifiRoleFrontier::Faulted(ProductionWifiFault::Reclaim {
+                                _station: failure,
+                                _runner: runner,
+                            })
+                        }
+                    }
+                },
+                Esp32s31RadioError::RoleActive,
+                |_faulted: &ProductionWifiFault| Esp32s31RadioError::HardwareFault,
+            ),
+        ))
+    }
+}
+
 impl EmbassyWifiRoleEpochRunner<CriticalSectionRawMutex> for ProductionWifiEpochRunner {
     type Stopped = ProductionSupervisorStopped;
     type Faulted = ProductionWifiFault;
@@ -1518,7 +1610,7 @@ impl EmbassyWifiRoleEpochRunner<CriticalSectionRawMutex> for ProductionWifiEpoch
         async move {
             match service {
                 WifiServiceRequest::StandaloneScan { request, .. } => {
-                    let (controller, task) = match self.prepare_station_task(
+                    let (controller, mut task) = match self.prepare_station_task(
                         stopped,
                         standalone_scan_station_request(request),
                         true,
@@ -1535,7 +1627,7 @@ impl EmbassyWifiRoleEpochRunner<CriticalSectionRawMutex> for ProductionWifiEpoch
                             return EmbassyWifiRoleEpochOutcome::Faulted(faulted);
                         }
                     };
-                    let output = task.run().await;
+                    let output = await_stack_boundary!(task.run());
                     drop(controller);
                     let resources = match output {
                         Esp32s31StationExit::Stopped { resources, .. }
@@ -1649,10 +1741,9 @@ impl EmbassyWifiRoleEpochRunner<CriticalSectionRawMutex> for ProductionWifiEpoch
                         }
                     };
                     let mut observer = NoopPhyTargetObserver;
-                    if let Err(error) = task
-                        .switch_channel::<EmbassyEsp32s31PhyDelay, _>(channel, &mut observer)
-                        .await
-                    {
+                    if let Err(error) = await_stack_boundary!(
+                        task.switch_channel::<EmbassyEsp32s31PhyDelay, _>(channel, &mut observer),
+                    ) {
                         let faulted = ProductionWifiFault::MonitorChannel {
                             _error: error,
                             _task: task,
@@ -1670,14 +1761,13 @@ impl EmbassyWifiRoleEpochRunner<CriticalSectionRawMutex> for ProductionWifiEpoch
                             WifiStartReport::new(generation),
                         )))
                         .await;
-                    let exit = drive_esp32s31_monitor_role(
+                    let exit = await_stack_boundary!(drive_esp32s31_monitor_role(
                         endpoint,
                         &mut controller,
                         task,
                         Esp32s31RadioError::RoleActive,
-                    )
-                    .await;
-                    let frontier = finish_embassy_wifi_active_role(
+                    ));
+                    let frontier = await_stack_boundary!(finish_embassy_wifi_active_role(
                         endpoint,
                         generation,
                         exit,
@@ -1703,8 +1793,7 @@ impl EmbassyWifiRoleEpochRunner<CriticalSectionRawMutex> for ProductionWifiEpoch
                             }
                         },
                         |_faulted| Esp32s31RadioError::HardwareFault,
-                    )
-                    .await;
+                    ));
                     return match frontier {
                         EmbassyWifiRoleFrontier::Stopped(stopped) => {
                             EmbassyWifiRoleEpochOutcome::Stopped(stopped)
@@ -1715,94 +1804,9 @@ impl EmbassyWifiRoleEpochRunner<CriticalSectionRawMutex> for ProductionWifiEpoch
                     };
                 }
                 WifiServiceRequest::Station { request, .. } => {
-                    let station_runner: &ProductionWifiEpochRunner = self;
-                    let parked_monitor = &self.parked_monitor;
-                    run_esp32s31_station_supervisor_epoch(
-                        endpoint,
-                        Esp32s31StationSupervisorEpoch::new(stopped, request, generation),
-                        |stopped, request| {
-                            station_runner.prepare_station_task(stopped, request, false)
-                        },
-                        Esp32s31StationSupervisorHooks::new(
-                            |output| {
-                                let resources = match output {
-                                    Esp32s31StationExit::Stopped {
-                                        resources,
-                                        progress,
-                                        reason,
-                                    } => {
-                                        qualification_event!(
-                                            "open-radio: station epoch stopped attempts={} connected_epochs={} reason={reason:?}",
-                                            progress.attempts_started,
-                                            progress.connected_epochs,
-                                        );
-                                        resources
-                                    }
-                                    Esp32s31StationExit::RetryExhausted {
-                                        resources,
-                                        progress,
-                                        failure,
-                                    } => {
-                                        qualification_event!(
-                                            "open-radio: station epoch exhausted attempts={} stage={:?}",
-                                            progress.attempts_started,
-                                            failure.stage,
-                                        );
-                                        resources
-                                    }
-                                    Esp32s31StationExit::Terminal {
-                                        resources,
-                                        progress,
-                                        failure,
-                                    } => {
-                                        qualification_event!(
-                                            "open-radio: station epoch ended attempts={} stage={:?}",
-                                            progress.attempts_started,
-                                            failure.stage,
-                                        );
-                                        resources
-                                    }
-                                    Esp32s31StationExit::Faulted { fault, runner, .. } => {
-                                        return EmbassyWifiRoleFrontier::Faulted(
-                                            ProductionWifiFault::Station {
-                                                _fault: fault,
-                                                _runner: runner,
-                                            },
-                                        );
-                                    }
-                                };
-                                let (owner, runner) = resources.into_parts();
-                                match try_reclaim_production_station(owner) {
-                                    Ok(stopped) => match parked_monitor.borrow_mut().take() {
-                                        Some(monitor) => EmbassyWifiRoleFrontier::Stopped(
-                                            Esp32s31WifiSupervisorStopped::new(
-                                                stopped.wifi,
-                                                ProductionStationResources::Returned(
-                                                    stopped.resources,
-                                                ),
-                                                monitor,
-                                            ),
-                                        ),
-                                        None => EmbassyWifiRoleFrontier::Faulted(
-                                            ProductionWifiFault::StationResourceInvariant {
-                                                _stopped: stopped,
-                                                _runner: runner,
-                                            },
-                                        ),
-                                    },
-                                    Err(failure) => EmbassyWifiRoleFrontier::Faulted(
-                                        ProductionWifiFault::Reclaim {
-                                            _station: failure,
-                                            _runner: runner,
-                                        },
-                                    ),
-                                }
-                            },
-                            Esp32s31RadioError::RoleActive,
-                            |_faulted: &ProductionWifiFault| Esp32s31RadioError::HardwareFault,
-                        ),
+                    await_stack_boundary!(
+                        self.run_station_service(endpoint, stopped, request, generation)
                     )
-                    .await
                 }
             }
         }
@@ -1812,6 +1816,10 @@ impl EmbassyWifiRoleEpochRunner<CriticalSectionRawMutex> for ProductionWifiEpoch
 /// Materialize the public controller, persistent network device and sole
 /// owner-holding runner. This function does not start a Wi-Fi role and does
 /// not construct an IP stack.
+#[allow(
+    large_assignments,
+    reason = "radio start returns one unique typed owner graph; the post-LTO stack-frame audit rejects any actual oversized live frame"
+)]
 pub async fn new(
     worker_spawner: SendSpawner,
     platform: EspHalRadioPeripheral,
@@ -1846,13 +1854,12 @@ pub async fn new(
     if let Some(maximum) = maximum_tx_power_quarter_dbm {
         wifi_start = wifi_start.with_maximum_tx_power_quarter_dbm(maximum);
     }
-    let started = start_esp32s31_radio::<_, EmbassyEsp32s31PhyDelay, _>(
+    let started = await_stack_boundary!(start_esp32s31_radio::<_, EmbassyEsp32s31PhyDelay, _>(
         owned,
         Esp32s31RadioStartConfig::new(topology, wifi_start),
         calibration_cache,
         NoopPhyTargetObserver,
-    )
-    .await
+    ))
     .map_err(|_| Esp32s31NewError::RadioStart)?;
     let station = started
         .try_into_station()

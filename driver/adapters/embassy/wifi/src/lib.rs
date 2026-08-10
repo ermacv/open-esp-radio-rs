@@ -11,6 +11,7 @@
 //! leases and metadata, not frame-sized arrays.
 
 pub mod connected_tasks;
+pub mod stack_boundary;
 pub mod station_network;
 
 #[cfg(test)]

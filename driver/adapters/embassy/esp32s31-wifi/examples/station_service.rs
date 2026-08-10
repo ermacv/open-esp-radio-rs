@@ -64,7 +64,7 @@ impl ConnectedTaskGroup for ProtocolTasks {
 fn main() {
     let policy = StaReconnectPolicy::new(3, 100, 1_000, 100).unwrap();
     let control = Esp32s31StationControlResources::<NoopRawMutex>::new();
-    let (controller, runner) = prepare_esp32s31_station_task(
+    let (controller, mut runner) = prepare_esp32s31_station_task(
         Esp32s31StationConfig::new(policy),
         Esp32s31StationStartResources::new(StationOwner { dma_generation: 7 }),
         &control,

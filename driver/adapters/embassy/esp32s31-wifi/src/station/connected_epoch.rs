@@ -9,7 +9,9 @@ use open_esp_radio_wifi_softmac::interface::BoundVirtualInterface;
 
 use crate::connected_sta_port::Esp32s31ConnectedStaConfig;
 use crate::{
-    connected_runner::{ConnectedRunner, ConnectedRunnerExit, ConnectedRunnerServices},
+    connected_runner::{
+        ConnectedDisconnectReason, ConnectedRunner, ConnectedRunnerExit, ConnectedRunnerServices,
+    },
     embassy_irq::{Esp32s31MacInterruptEpoch, Esp32s31MacInterruptEpochActivateError},
 };
 
@@ -31,7 +33,7 @@ pub enum Esp32s31StationReconnectSource {
 /// terminal command from leaking into a replacement epoch when peer loss wins
 /// the same scheduler turn.
 pub enum Esp32s31ConnectedStationExit<E> {
-    Disconnected,
+    Disconnected(ConnectedDisconnectReason),
     ReconnectRequested {
         source: Esp32s31StationReconnectSource,
     },
@@ -149,6 +151,7 @@ where
 
 pub(super) fn coalesce_disconnected_station_command<E, M: RawMutex>(
     control: &mut Esp32s31StationCommandReceiver<'_, M>,
+    reason: ConnectedDisconnectReason,
 ) -> Esp32s31ConnectedStationExit<E> {
     match control.try_take() {
         Some(Esp32s31StationCommand::Reconnect) => {
@@ -160,7 +163,7 @@ pub(super) fn coalesce_disconnected_station_command<E, M: RawMutex>(
             control.record_terminal(command);
             Esp32s31ConnectedStationExit::StationStopped(command)
         }
-        None => Esp32s31ConnectedStationExit::Disconnected,
+        None => Esp32s31ConnectedStationExit::Disconnected(reason),
     }
 }
 
@@ -219,7 +222,9 @@ where
         requested_command.set(Some(control.wait().await));
     };
     match runner.run_until(station_stop).await {
-        Ok(ConnectedRunnerExit::Disconnected) => coalesce_disconnected_station_command(control),
+        Ok(ConnectedRunnerExit::Disconnected(reason)) => {
+            coalesce_disconnected_station_command(control, reason)
+        }
         Ok(ConnectedRunnerExit::Stopped) => {
             let command = requested_command
                 .get()

@@ -32,13 +32,13 @@ pub use command::{
     Esp32s31StationControlError, Esp32s31StationControlResources, Esp32s31StationController,
 };
 pub use composer::{
-    Esp32s31StationEngine, Esp32s31StationEngineObserver, Esp32s31StationEngineOwner,
-    Esp32s31StationEnginePort, Esp32s31StationInitialJoinPhase, Esp32s31StationInitialScanExit,
-    Esp32s31StationInitialScanPhase, Esp32s31StationReconnectedPhase,
-    Esp32s31StationRunningScanCompletion, Esp32s31StationRunningScanExit,
-    Esp32s31StationRunningScanPhase, Esp32s31StationServiceOwner, Esp32s31StationServicePhase,
-    Esp32s31StationServicePhaseKind, NoopEsp32s31StationEngineObserver,
-    complete_esp32s31_station_running_scan,
+    Esp32s31StationConnectedPhase, Esp32s31StationEngine, Esp32s31StationEngineObserver,
+    Esp32s31StationEngineOwner, Esp32s31StationEnginePort, Esp32s31StationInitialJoinPhase,
+    Esp32s31StationInitialScanExit, Esp32s31StationInitialScanPhase, Esp32s31StationJoinExit,
+    Esp32s31StationReconnectedPhase, Esp32s31StationRunningScanCompletion,
+    Esp32s31StationRunningScanExit, Esp32s31StationRunningScanPhase, Esp32s31StationServiceOwner,
+    Esp32s31StationServicePhase, Esp32s31StationServicePhaseKind,
+    NoopEsp32s31StationEngineObserver, complete_esp32s31_station_running_scan,
 };
 pub use connected_assembly::{
     Esp32s31ConnectedDriverAssembly, Esp32s31ConnectedDriverAssemblyFailure,

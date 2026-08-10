@@ -12,6 +12,7 @@ use open_esp_radio_esp32s31_wifi_sta::attempt::{
     Esp32s31StaAttemptSecurity, Esp32s31StaAttemptStation, Esp32s31StaIdentity,
 };
 use open_esp_radio_ieee80211::scan::ScanRecord;
+use open_esp_radio_wifi_embassy::await_stack_boundary;
 use open_esp_radio_wifi_sta::request::StationDiscovery;
 use open_esp_radio_wifi_sta::station::{
     StaAttemptContext, StaAttemptFailure, StaAttemptOutcome, StaBackoffReason,
@@ -27,7 +28,7 @@ use super::{Esp32s31StationAttemptRunner, Esp32s31StationCommand, Esp32s31Statio
 /// `RunningScan` contains the complete disconnected epoch returned by a clean
 /// connected teardown. `Reconnected` may only be constructed from the exact
 /// epoch returned by that running scan.
-pub enum Esp32s31StationServicePhase<H, S, R, N, D, E> {
+pub enum Esp32s31StationServicePhase<H, S, R, N, D, E, C> {
     InitialScan {
         hardware: H,
         receive: S,
@@ -49,6 +50,9 @@ pub enum Esp32s31StationServicePhase<H, S, R, N, D, E> {
         network: N,
         station: Esp32s31StaAttemptStation,
     },
+    Connected {
+        connected: C,
+    },
 }
 
 /// Value-only identity of the currently owned station phase.
@@ -61,6 +65,7 @@ pub enum Esp32s31StationServicePhaseKind {
     InitialJoin,
     RunningScan,
     Reconnected,
+    Connected,
 }
 
 /// Complete movable owner for the board-independent station lifecycle.
@@ -237,6 +242,32 @@ pub struct Esp32s31StationReconnectedPhase<'security, R, E, N> {
     security: Esp32s31StaAttemptSecurity<'security>,
 }
 
+/// Exact owner set entering one connected data-plane epoch.
+///
+/// Join and connected service are deliberately separate async transactions:
+/// a join future returns this frontier, then the outer lifecycle polls a new
+/// future. This prevents both protocol state machines and their owner-return
+/// temporaries from occupying one live CPU stack frame.
+pub struct Esp32s31StationConnectedPhase<'security, R, C> {
+    runtime: R,
+    connected: C,
+    security: Esp32s31StaAttemptSecurity<'security>,
+}
+
+impl<'security, R, C> Esp32s31StationConnectedPhase<'security, R, C> {
+    fn new(runtime: R, connected: C, security: Esp32s31StaAttemptSecurity<'security>) -> Self {
+        Self {
+            runtime,
+            connected,
+            security,
+        }
+    }
+
+    pub fn into_parts(self) -> (R, C, Esp32s31StaAttemptSecurity<'security>) {
+        (self.runtime, self.connected, self.security)
+    }
+}
+
 impl<'security, R, E, N> Esp32s31StationReconnectedPhase<'security, R, E, N> {
     fn new(
         runtime: R,
@@ -309,6 +340,32 @@ impl<'security, R, H, X, N, O, E, F>
 pub enum Esp32s31StationRunningScanExit<'security, R, E, N, O, X, F = core::convert::Infallible> {
     JoinReady(Esp32s31StationReconnectedPhase<'security, R, E, N>),
     Complete(StaAttemptOutcome<O, X, F>),
+}
+
+/// Finite result of either initial or reconnected join.
+///
+/// Success returns a connected frontier instead of entering the data-plane
+/// loop from the join future. Every other result is already a complete outer
+/// lifecycle outcome.
+pub enum Esp32s31StationJoinExit<'security, R, C, O, E, F = core::convert::Infallible> {
+    ConnectedReady(Esp32s31StationConnectedPhase<'security, R, C>),
+    Complete(StaAttemptOutcome<O, E, F>),
+}
+
+impl<'security, R, C, O, E, F> Esp32s31StationJoinExit<'security, R, C, O, E, F> {
+    pub fn connected_ready(
+        runtime: R,
+        connected: C,
+        security: Esp32s31StaAttemptSecurity<'security>,
+    ) -> Self {
+        Self::ConnectedReady(Esp32s31StationConnectedPhase::new(
+            runtime, connected, security,
+        ))
+    }
+
+    pub const fn complete(outcome: StaAttemptOutcome<O, E, F>) -> Self {
+        Self::Complete(outcome)
+    }
 }
 
 impl<'security, R, E, N, O, X, F> Esp32s31StationRunningScanExit<'security, R, E, N, O, X, F> {
@@ -395,6 +452,7 @@ pub trait Esp32s31StationEnginePort<'security, M: RawMutex> {
     type Network;
     type Disconnected;
     type Reconnected;
+    type Connected;
     type Error;
     /// Exact non-reusable owner returned when a phase cannot prove the normal
     /// station frontier reusable. This is data, not a request to reset.
@@ -440,7 +498,10 @@ pub trait Esp32s31StationEnginePort<'security, M: RawMutex> {
         context: StaAttemptContext,
         control: &'a mut Esp32s31StationCommandReceiver<'_, M>,
     ) -> impl Future<
-        Output = StaAttemptOutcome<
+        Output = Esp32s31StationJoinExit<
+            'security,
+            Self::Runtime,
+            Self::Connected,
             Esp32s31StationEngineOwner<'security, M, Self>,
             Self::Error,
             Self::Fault,
@@ -479,6 +540,25 @@ pub trait Esp32s31StationEnginePort<'security, M: RawMutex> {
             Self::Reconnected,
             Self::Network,
         >,
+        context: StaAttemptContext,
+        control: &'a mut Esp32s31StationCommandReceiver<'_, M>,
+    ) -> impl Future<
+        Output = Esp32s31StationJoinExit<
+            'security,
+            Self::Runtime,
+            Self::Connected,
+            Esp32s31StationEngineOwner<'security, M, Self>,
+            Self::Error,
+            Self::Fault,
+        >,
+    > + 'a
+    where
+        Self: Sized + 'a,
+        'security: 'a;
+
+    fn run_connected<'a>(
+        &'a mut self,
+        phase: Esp32s31StationConnectedPhase<'security, Self::Runtime, Self::Connected>,
         context: StaAttemptContext,
         control: &'a mut Esp32s31StationCommandReceiver<'_, M>,
     ) -> impl Future<
@@ -557,6 +637,7 @@ pub type Esp32s31StationEngineOwner<'security, M, E> = Esp32s31StationServiceOwn
         <E as Esp32s31StationEnginePort<'security, M>>::Network,
         <E as Esp32s31StationEnginePort<'security, M>>::Disconnected,
         <E as Esp32s31StationEnginePort<'security, M>>::Reconnected,
+        <E as Esp32s31StationEnginePort<'security, M>>::Connected,
     >,
 >;
 
@@ -636,6 +717,9 @@ where
                 Esp32s31StationServicePhase::Reconnected { .. } => {
                     Esp32s31StationServicePhaseKind::Reconnected
                 }
+                Esp32s31StationServicePhase::Connected { .. } => {
+                    Esp32s31StationServicePhaseKind::Connected
+                }
             };
             self.observer.attempt_started(context, phase_kind);
             let (runtime, phase, security) = owner.into_parts();
@@ -646,20 +730,29 @@ where
                     network,
                     identity,
                 } => {
-                    match self
-                        .port
-                        .run_initial_scan(
-                            Esp32s31StationInitialScanPhase::new(
-                                runtime, hardware, receive, network, identity, security,
-                            ),
-                            self.discovery,
-                            context,
-                            control,
-                        )
-                        .await
-                    {
+                    match await_stack_boundary!(self.port.run_initial_scan(
+                        Esp32s31StationInitialScanPhase::new(
+                            runtime, hardware, receive, network, identity, security,
+                        ),
+                        self.discovery,
+                        context,
+                        control,
+                    )) {
                         Esp32s31StationInitialScanExit::JoinReady(phase) => {
-                            self.port.run_initial_join(phase, context, control).await
+                            let (runtime, hardware, receive, network, station, security) =
+                                phase.into_parts();
+                            StaAttemptOutcome::Advanced {
+                                owner: Esp32s31StationServiceOwner::new(
+                                    runtime,
+                                    Esp32s31StationServicePhase::InitialJoin {
+                                        hardware,
+                                        receive,
+                                        network,
+                                        station,
+                                    },
+                                    security,
+                                ),
+                            }
                         }
                         Esp32s31StationInitialScanExit::Complete(outcome) => outcome,
                     }
@@ -670,38 +763,56 @@ where
                     network,
                     station,
                 } => {
-                    self.port
-                        .run_initial_join(
-                            Esp32s31StationInitialJoinPhase::new(
-                                runtime, hardware, receive, network, station, security,
-                            ),
-                            context,
-                            control,
-                        )
-                        .await
+                    match await_stack_boundary!(self.port.run_initial_join(
+                        Esp32s31StationInitialJoinPhase::new(
+                            runtime, hardware, receive, network, station, security,
+                        ),
+                        context,
+                        control,
+                    )) {
+                        Esp32s31StationJoinExit::ConnectedReady(phase) => {
+                            let (runtime, connected, security) = phase.into_parts();
+                            StaAttemptOutcome::Advanced {
+                                owner: Esp32s31StationServiceOwner::new(
+                                    runtime,
+                                    Esp32s31StationServicePhase::Connected { connected },
+                                    security,
+                                ),
+                            }
+                        }
+                        Esp32s31StationJoinExit::Complete(outcome) => outcome,
+                    }
                 }
                 Esp32s31StationServicePhase::RunningScan {
                     disconnected,
                     station,
                 } => {
                     if context.refresh_candidate {
-                        match self
-                            .port
-                            .run_running_scan(
-                                Esp32s31StationRunningScanPhase::new(
-                                    runtime,
-                                    disconnected,
-                                    station,
-                                    security,
-                                ),
-                                self.discovery,
-                                context,
-                                control,
-                            )
-                            .await
-                        {
+                        match await_stack_boundary!(self.port.run_running_scan(
+                            Esp32s31StationRunningScanPhase::new(
+                                runtime,
+                                disconnected,
+                                station,
+                                security,
+                            ),
+                            self.discovery,
+                            context,
+                            control,
+                        )) {
                             Esp32s31StationRunningScanExit::JoinReady(phase) => {
-                                self.port.run_reconnected(phase, context, control).await
+                                let (runtime, epoch, network, station, security) =
+                                    phase.into_parts();
+                                StaAttemptOutcome::Advanced {
+                                    owner: Esp32s31StationServiceOwner::new(
+                                        runtime,
+                                        Esp32s31StationServicePhase::Reconnected {
+                                            epoch,
+                                            network,
+                                            station,
+                                        },
+                                        security,
+                                    ),
+                                }
                             }
                             Esp32s31StationRunningScanExit::Complete(outcome) => outcome,
                         }
@@ -729,15 +840,32 @@ where
                     network,
                     station,
                 } => {
-                    self.port
-                        .run_reconnected(
-                            Esp32s31StationReconnectedPhase::new(
-                                runtime, epoch, network, station, security,
-                            ),
-                            context,
-                            control,
-                        )
-                        .await
+                    match await_stack_boundary!(self.port.run_reconnected(
+                        Esp32s31StationReconnectedPhase::new(
+                            runtime, epoch, network, station, security,
+                        ),
+                        context,
+                        control,
+                    )) {
+                        Esp32s31StationJoinExit::ConnectedReady(phase) => {
+                            let (runtime, connected, security) = phase.into_parts();
+                            StaAttemptOutcome::Advanced {
+                                owner: Esp32s31StationServiceOwner::new(
+                                    runtime,
+                                    Esp32s31StationServicePhase::Connected { connected },
+                                    security,
+                                ),
+                            }
+                        }
+                        Esp32s31StationJoinExit::Complete(outcome) => outcome,
+                    }
+                }
+                Esp32s31StationServicePhase::Connected { connected } => {
+                    await_stack_boundary!(self.port.run_connected(
+                        Esp32s31StationConnectedPhase::new(runtime, connected, security),
+                        context,
+                        control,
+                    ))
                 }
             };
             self.observer.attempt_finished(context, &outcome).await;
@@ -802,6 +930,7 @@ mod tests {
         type Network = u64;
         type Disconnected = u128;
         type Reconnected = usize;
+        type Connected = ();
         type Error = FakeError;
         type Fault = core::convert::Infallible;
 
@@ -846,7 +975,10 @@ mod tests {
             _context: StaAttemptContext,
             _control: &'a mut Esp32s31StationCommandReceiver<'_, NoopRawMutex>,
         ) -> impl Future<
-            Output = StaAttemptOutcome<
+            Output = Esp32s31StationJoinExit<
+                'security,
+                Self::Runtime,
+                Self::Connected,
                 Esp32s31StationEngineOwner<'security, NoopRawMutex, Self>,
                 Self::Error,
             >,
@@ -890,7 +1022,10 @@ mod tests {
             _context: StaAttemptContext,
             _control: &'a mut Esp32s31StationCommandReceiver<'_, NoopRawMutex>,
         ) -> impl Future<
-            Output = StaAttemptOutcome<
+            Output = Esp32s31StationJoinExit<
+                'security,
+                Self::Runtime,
+                Self::Connected,
                 Esp32s31StationEngineOwner<'security, NoopRawMutex, Self>,
                 Self::Error,
             >,
@@ -899,6 +1034,23 @@ mod tests {
             'security: 'a,
         {
             async { panic!("refresh-contract test must not enter reconnect") }
+        }
+
+        fn run_connected<'a>(
+            &'a mut self,
+            _phase: Esp32s31StationConnectedPhase<'security, Self::Runtime, Self::Connected>,
+            _context: StaAttemptContext,
+            _control: &'a mut Esp32s31StationCommandReceiver<'_, NoopRawMutex>,
+        ) -> impl Future<
+            Output = StaAttemptOutcome<
+                Esp32s31StationEngineOwner<'security, NoopRawMutex, Self>,
+                Self::Error,
+            >,
+        > + 'a
+        where
+            'security: 'a,
+        {
+            async { panic!("refresh-contract test must not enter connected") }
         }
 
         fn candidate_refresh_contract_error(&mut self) -> Self::Error {
@@ -946,6 +1098,7 @@ mod tests {
         type Network = u64;
         type Disconnected = u128;
         type Reconnected = usize;
+        type Connected = ();
         type Error = FakeError;
         type Fault = core::convert::Infallible;
 
@@ -1007,7 +1160,10 @@ mod tests {
             _context: StaAttemptContext,
             _control: &'a mut Esp32s31StationCommandReceiver<'_, NoopRawMutex>,
         ) -> impl Future<
-            Output = StaAttemptOutcome<
+            Output = Esp32s31StationJoinExit<
+                'security,
+                Self::Runtime,
+                Self::Connected,
                 Esp32s31StationEngineOwner<'security, NoopRawMutex, Self>,
                 Self::Error,
             >,
@@ -1020,7 +1176,7 @@ mod tests {
                 assert_eq!((hardware, receive, network), (11, 41, 13));
                 assert_eq!(station.access_point.channel, 6);
                 self.initial_joined = true;
-                StaAttemptOutcome::Stopped {
+                Esp32s31StationJoinExit::complete(StaAttemptOutcome::Stopped {
                     owner: Esp32s31StationServiceOwner::new(
                         runtime,
                         Esp32s31StationServicePhase::InitialJoin {
@@ -1031,7 +1187,7 @@ mod tests {
                         },
                         security,
                     ),
-                }
+                })
             }
         }
 
@@ -1072,7 +1228,10 @@ mod tests {
             _context: StaAttemptContext,
             _control: &'a mut Esp32s31StationCommandReceiver<'_, NoopRawMutex>,
         ) -> impl Future<
-            Output = StaAttemptOutcome<
+            Output = Esp32s31StationJoinExit<
+                'security,
+                Self::Runtime,
+                Self::Connected,
                 Esp32s31StationEngineOwner<'security, NoopRawMutex, Self>,
                 Self::Error,
             >,
@@ -1084,7 +1243,7 @@ mod tests {
                 let (runtime, epoch, network, station, security) = phase.into_parts();
                 assert_eq!((epoch, network), (23, 29));
                 self.reconnected = true;
-                StaAttemptOutcome::Stopped {
+                Esp32s31StationJoinExit::complete(StaAttemptOutcome::Stopped {
                     owner: Esp32s31StationServiceOwner::new(
                         runtime,
                         Esp32s31StationServicePhase::Reconnected {
@@ -1094,8 +1253,25 @@ mod tests {
                         },
                         security,
                     ),
-                }
+                })
             }
+        }
+
+        fn run_connected<'a>(
+            &'a mut self,
+            _phase: Esp32s31StationConnectedPhase<'security, Self::Runtime, Self::Connected>,
+            _context: StaAttemptContext,
+            _control: &'a mut Esp32s31StationCommandReceiver<'_, NoopRawMutex>,
+        ) -> impl Future<
+            Output = StaAttemptOutcome<
+                Esp32s31StationEngineOwner<'security, NoopRawMutex, Self>,
+                Self::Error,
+            >,
+        > + 'a
+        where
+            'security: 'a,
+        {
+            async { panic!("transition test does not enter connected") }
         }
 
         fn candidate_refresh_contract_error(&mut self) -> Self::Error {
@@ -1114,7 +1290,7 @@ mod tests {
         };
         let owner = Esp32s31StationServiceOwner::new(
             7_u8,
-            Esp32s31StationServicePhase::<u16, i16, u32, u64, u128, usize>::InitialJoin {
+            Esp32s31StationServicePhase::<u16, i16, u32, u64, u128, usize, ()>::InitialJoin {
                 hardware: 11,
                 receive: 12,
                 network: 13,
@@ -1155,7 +1331,7 @@ mod tests {
         };
         let owner = Esp32s31StationServiceOwner::new(
             7_u8,
-            Esp32s31StationServicePhase::<u16, i16, u32, u64, u128, usize>::RunningScan {
+            Esp32s31StationServicePhase::<u16, i16, u32, u64, u128, usize, ()>::RunningScan {
                 disconnected: 19,
                 station,
             },
@@ -1210,7 +1386,7 @@ mod tests {
         };
         let owner = Esp32s31StationServiceOwner::new(
             7_u8,
-            Esp32s31StationServicePhase::<u16, i16, u32, u64, u128, usize>::InitialScan {
+            Esp32s31StationServicePhase::<u16, i16, u32, u64, u128, usize, ()>::InitialScan {
                 hardware: 11,
                 receive: -17,
                 network: 13,
@@ -1235,14 +1411,25 @@ mod tests {
             },
             &mut receiver,
         ));
-        let StaAttemptOutcome::Stopped { owner } = outcome else {
-            panic!("initial join test must return its terminal owner");
+        let StaAttemptOutcome::Advanced { owner } = outcome else {
+            panic!("initial scan must return the next finite phase");
         };
-        let Esp32s31StationServicePhase::InitialJoin { station, .. } = owner.phase else {
+        let Esp32s31StationServicePhase::InitialJoin { ref station, .. } = owner.phase else {
             panic!("candidate selection must precede initial join");
         };
         assert_eq!(station.station_address, identity.station_address);
         assert_eq!(station.access_point.channel, 6);
+        assert!(!runner.port().initial_joined);
+        let outcome = block_on(runner.run_attempt(
+            owner,
+            StaAttemptContext {
+                generation: 0,
+                attempt: 1,
+                refresh_candidate: true,
+            },
+            &mut receiver,
+        ));
+        assert!(matches!(outcome, StaAttemptOutcome::Stopped { .. }));
         assert!(runner.into_port().initial_joined);
     }
 
@@ -1257,7 +1444,7 @@ mod tests {
         };
         let owner = Esp32s31StationServiceOwner::new(
             7_u8,
-            Esp32s31StationServicePhase::<u16, i16, u32, u64, u128, usize>::RunningScan {
+            Esp32s31StationServicePhase::<u16, i16, u32, u64, u128, usize, ()>::RunningScan {
                 disconnected: 19,
                 station,
             },
@@ -1280,8 +1467,8 @@ mod tests {
             },
             &mut receiver,
         ));
-        let StaAttemptOutcome::Stopped { owner } = outcome else {
-            panic!("reconnected test phase must return its terminal owner");
+        let StaAttemptOutcome::Advanced { owner } = outcome else {
+            panic!("running scan must return the next finite phase");
         };
         assert!(matches!(
             owner.phase,
@@ -1291,6 +1478,17 @@ mod tests {
                 ..
             }
         ));
+        assert!(!runner.port().reconnected);
+        let outcome = block_on(runner.run_attempt(
+            owner,
+            StaAttemptContext {
+                generation: 2,
+                attempt: 1,
+                refresh_candidate: true,
+            },
+            &mut receiver,
+        ));
+        assert!(matches!(outcome, StaAttemptOutcome::Stopped { .. }));
         assert!(runner.into_port().reconnected);
     }
 

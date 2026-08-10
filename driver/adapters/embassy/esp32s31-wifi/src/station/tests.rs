@@ -88,7 +88,10 @@ fn peer_disconnect_coalesces_a_pending_reconnect_without_leaking_it() {
     let (controller, mut receiver) = resources.split().unwrap();
     assert!(controller.request_reconnect());
     assert!(matches!(
-        coalesce_disconnected_station_command::<(), _>(&mut receiver),
+        coalesce_disconnected_station_command::<(), _>(
+            &mut receiver,
+            crate::connected_runner::ConnectedDisconnectReason::BeaconLoss,
+        ),
         Esp32s31ConnectedStationExit::ReconnectRequested {
             source: Esp32s31StationReconnectSource::CoalescedDisconnect,
         }
@@ -110,7 +113,7 @@ fn terminal_connected_command_records_the_public_stop_reason() {
 #[test]
 fn controller_stop_returns_the_exact_owner_and_reason() {
     let control = Esp32s31StationControlResources::<NoopRawMutex>::new();
-    let (mut controller, runner) = prepare_esp32s31_station_task(
+    let (mut controller, mut runner) = prepare_esp32s31_station_task(
         Esp32s31StationConfig::new(policy(2)),
         Esp32s31StationStartResources::new(41),
         &control,
@@ -140,7 +143,7 @@ fn controller_stop_returns_the_exact_owner_and_reason() {
 #[test]
 fn retry_exhaustion_preserves_failure_and_owner() {
     let control = Esp32s31StationControlResources::<NoopRawMutex>::new();
-    let (mut controller, runner) = prepare_esp32s31_station_task(
+    let (mut controller, mut runner) = prepare_esp32s31_station_task(
         Esp32s31StationConfig::new(policy(1)),
         Esp32s31StationStartResources::new(77),
         &control,
@@ -171,7 +174,7 @@ fn retry_exhaustion_preserves_failure_and_owner() {
 #[test]
 fn cancelled_station_task_reports_fault_instead_of_claiming_quiescence() {
     let control = Esp32s31StationControlResources::<NoopRawMutex>::new();
-    let (mut controller, task) = prepare_esp32s31_station_task(
+    let (mut controller, mut task) = prepare_esp32s31_station_task(
         Esp32s31StationConfig::new(policy(1)),
         Esp32s31StationStartResources::new(99),
         &control,
@@ -197,7 +200,7 @@ fn cancelled_station_task_reports_fault_instead_of_claiming_quiescence() {
 #[test]
 fn clean_station_completion_allows_a_later_epoch() {
     let control = Esp32s31StationControlResources::<NoopRawMutex>::new();
-    let (mut controller, task) = prepare_esp32s31_station_task(
+    let (mut controller, mut task) = prepare_esp32s31_station_task(
         Esp32s31StationConfig::new(policy(1)),
         Esp32s31StationStartResources::new(17),
         &control,
@@ -214,7 +217,7 @@ fn clean_station_completion_allows_a_later_epoch() {
 #[test]
 fn later_epoch_waits_for_both_previous_control_endpoints_to_drop() {
     let control = Esp32s31StationControlResources::<NoopRawMutex>::new();
-    let (controller, task) = prepare_esp32s31_station_task(
+    let (controller, mut task) = prepare_esp32s31_station_task(
         Esp32s31StationConfig::new(policy(1)),
         Esp32s31StationStartResources::new(23),
         &control,

@@ -16,6 +16,7 @@ use open_esp_radio_embassy_net::{
 };
 pub use open_esp_radio_esp32s31_wifi_sta::connected_control::{
     ConnectedControlContext as WifiControlContext, ConnectedControlProgress as WifiControlProgress,
+    ConnectedDisconnectReason,
 };
 pub use open_esp_radio_esp32s31_wifi_sta::tx::{WifiTxProgress, WifiTxWake};
 
@@ -41,7 +42,7 @@ pub enum WifiRxProgress {
 pub enum ConnectedRunnerExit {
     /// Connected policy proved that the peer is no longer reachable and the
     /// runner published link-down before returning.
-    Disconnected,
+    Disconnected(ConnectedDisconnectReason),
     /// The outer station lifecycle requested a finite stop. The runner waited
     /// for any active TX transaction to release hardware, published link-down
     /// and returned the same owners as a disconnect without claiming peer

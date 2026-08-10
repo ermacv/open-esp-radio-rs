@@ -82,7 +82,9 @@ impl ConnectedRunnerServices<'static, NoopRawMutex, FRAME_CAPACITY, HEADROOM, TR
         async move {
             self.network_pending_seen |= context.network_tx_pending;
             if self.disconnect {
-                return Ok(WifiControlProgress::Disconnected);
+                return Ok(WifiControlProgress::Disconnected(
+                    ConnectedDisconnectReason::BeaconLoss,
+                ));
             }
             if !self.control_pending {
                 return Ok(WifiControlProgress::Idle);
@@ -617,7 +619,9 @@ fn disconnected_control_edge_publishes_link_down_and_returns() {
 
     assert_eq!(
         embassy_futures::block_on(runner.run()),
-        Ok(ConnectedRunnerExit::Disconnected)
+        Ok(ConnectedRunnerExit::Disconnected(
+            ConnectedDisconnectReason::BeaconLoss
+        ))
     );
     let mut context = Context::from_waker(core::task::Waker::noop());
     assert!(matches!(

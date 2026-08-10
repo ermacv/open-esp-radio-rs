@@ -71,11 +71,11 @@ where
                     self.drive_active_tx().await?;
                     continue;
                 }
-                WifiControlProgress::Disconnected => {
+                WifiControlProgress::Disconnected(reason) => {
                     self.services.cancel_prepared_tx()?;
                     self.network
                         .set_link_state(open_esp_radio_embassy_net::LinkState::Down);
-                    return Ok(ConnectedRunnerExit::Disconnected);
+                    return Ok(ConnectedRunnerExit::Disconnected(reason));
                 }
                 WifiControlProgress::Idle => {}
             }
@@ -145,12 +145,12 @@ where
                             WifiControlProgress::TxPending => {
                                 self.drive_active_tx().await?;
                             }
-                            WifiControlProgress::Disconnected => {
+                            WifiControlProgress::Disconnected(reason) => {
                                 drop(frame);
                                 self.services.cancel_prepared_tx()?;
                                 self.network
                                     .set_link_state(open_esp_radio_embassy_net::LinkState::Down);
-                                return Ok(ConnectedRunnerExit::Disconnected);
+                                return Ok(ConnectedRunnerExit::Disconnected(reason));
                             }
                             WifiControlProgress::Idle => break,
                         }

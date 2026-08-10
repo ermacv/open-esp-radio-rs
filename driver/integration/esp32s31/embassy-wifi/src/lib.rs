@@ -37,6 +37,8 @@ pub use monitor::{
     ESP32S31_MONITOR_CAPTURE_CAPACITY, Esp32s31MonitorCaptureStatistics, Esp32s31MonitorFrame,
     Esp32s31MonitorFrames,
 };
+#[cfg(feature = "qualification")]
+pub use open_esp_radio_esp32s31_wifi_embassy::connected_runner::ConnectedDisconnectReason;
 pub use station::{Esp32s31RadioRunner, new};
 
 /// Board-derived radio identity. Reading eFuse remains an application
@@ -104,4 +106,13 @@ pub struct Esp32s31QualificationHooks {
     pub aggregate_tx: &'static dyn open_esp_radio_esp32s31_wifi_embassy::aggregate_tx_observer::AggregateTxObserver,
     pub connected_rx: &'static dyn Esp32s31ConnectedRxObserver,
     pub mac_irq: fn(Esp32s31MacIrqObservation),
+    pub station_lifecycle: fn(Esp32s31StationLifecycleObservation),
+}
+
+/// Value-only connected-link edge emitted to qualification firmware.
+#[cfg(feature = "qualification")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Esp32s31StationLifecycleObservation {
+    Connected,
+    Disconnected(ConnectedDisconnectReason),
 }

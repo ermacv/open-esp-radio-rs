@@ -13,7 +13,7 @@ use open_esp_radio_ieee80211::{
         plan_data_decapsulation,
     },
     ndpa::{HeNdpa, HeNdpaError},
-    station::StaRxDuplicateFilter,
+    station::{StaDisconnect, StaRxDuplicateFilter, parse_sta_disconnect},
     station_beacon::{StaBeaconError, StaBeaconObservation, parse_sta_beacon},
     trigger::{TriggerCommonInfo, TriggerParseError, parse_trigger_frame},
 };
@@ -32,6 +32,8 @@ const TRIGGER_FRAME_CONTROL: u16 = 0x0024;
 const NDPA_FRAME_CONTROL: u16 = 0x0054;
 const ACTION_FRAME_CONTROL: u16 = 0x00d0;
 const BEACON_FRAME_CONTROL: u16 = 0x0080;
+const DISASSOCIATION_FRAME_CONTROL: u16 = 0x00a0;
+const DEAUTHENTICATION_FRAME_CONTROL: u16 = 0x00c0;
 const DATA_TYPE_MASK: u16 = 0x000c;
 const DATA_TYPE: u16 = 0x0008;
 const PROTECTED: u16 = 0x4000;
@@ -92,6 +94,7 @@ pub enum ConnectedRxEvent<'frame> {
         action: BlockAckAction,
         body: &'frame [u8],
     },
+    PeerDisconnect(StaDisconnect),
     Ethernet {
         frame: EthernetFrameParts<'frame>,
         raw: &'frame [u8],
@@ -120,6 +123,7 @@ pub enum ConnectedRxControlEvent {
         addressed_to_station: bool,
     },
     BlockAck(BlockAckAction),
+    PeerDisconnect(StaDisconnect),
 }
 
 impl ConnectedRxEvent<'_> {
@@ -145,6 +149,9 @@ impl ConnectedRxEvent<'_> {
                 addressed_to_station,
             }),
             Self::BlockAck { action, .. } => Some(ConnectedRxControlEvent::BlockAck(action)),
+            Self::PeerDisconnect(disconnect) => {
+                Some(ConnectedRxControlEvent::PeerDisconnect(disconnect))
+            }
             Self::Ethernet { .. } => None,
         }
     }
@@ -174,6 +181,7 @@ pub enum ConnectedRxDispatch {
     Trigger,
     Ndpa,
     BlockAck,
+    PeerDisconnect,
     Data {
         ethernet_frames: u8,
         amsdu: bool,
@@ -386,6 +394,25 @@ impl ConnectedRxDispatcher {
                 sink.publish(ConnectedRxEvent::BlockAck { action, body });
                 ConnectedRxDispatch::BlockAck
             }
+            DISASSOCIATION_FRAME_CONTROL | DEAUTHENTICATION_FRAME_CONTROL => {
+                let management = match extract_management(
+                    core::slice::from_ref(&segment),
+                    self.config.ingress,
+                    mpdu,
+                ) {
+                    Ok(management) => management,
+                    Err(error) => return rejected(protection, ConnectedRxError::Rx(error)),
+                };
+                let Some(disconnect) = parse_sta_disconnect(
+                    &mpdu[..management.length],
+                    self.config.station_address,
+                    self.config.bssid,
+                ) else {
+                    return ConnectedRxDispatch::Ignored;
+                };
+                sink.publish(ConnectedRxEvent::PeerDisconnect(disconnect));
+                ConnectedRxDispatch::PeerDisconnect
+            }
             _ => self.dispatch_data(segment, raw, frame_control, protection, sink),
         }
     }
@@ -571,6 +598,7 @@ mod tests {
         ethernet: Vec<Vec<u8>>,
         ethernet_metadata: Vec<MacRxMetadata<RxPhyInfo>>,
         block_ack: Vec<BlockAckAction>,
+        peer_disconnects: Vec<StaDisconnect>,
     }
 
     impl ConnectedRxSink for RecordingSink {
@@ -592,6 +620,9 @@ mod tests {
                     self.ethernet_metadata.push(metadata);
                 }
                 ConnectedRxEvent::BlockAck { action, .. } => self.block_ack.push(action),
+                ConnectedRxEvent::PeerDisconnect(disconnect) => {
+                    self.peer_disconnects.push(disconnect);
+                }
                 ConnectedRxEvent::Trigger { .. } | ConnectedRxEvent::Ndpa { .. } => {}
             }
         }
@@ -851,5 +882,52 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn routes_only_peer_disconnects_addressed_to_this_station() {
+        const MPDU: usize = 26;
+        const SIGNAL: usize = MPDU + 4;
+        let mut storage = [0_u8; 192];
+        set_tail(&mut storage, SIGNAL);
+        let frame = &mut storage[FRAME_OFFSET..FRAME_OFFSET + MPDU];
+        frame[..2].copy_from_slice(&DEAUTHENTICATION_FRAME_CONTROL.to_le_bytes());
+        frame[4..10].copy_from_slice(&STATION);
+        frame[10..16].copy_from_slice(&BSSID);
+        frame[16..22].copy_from_slice(&BSSID);
+        frame[24..26].copy_from_slice(&7_u16.to_le_bytes());
+
+        let mut dispatcher = ConnectedRxDispatcher::new(config());
+        let mut sink = RecordingSink::default();
+        let mut mpdu = [0_u8; 128];
+        let mut ethernet = [0_u8; 128];
+        assert_eq!(
+            dispatcher.dispatch(
+                segment(&storage, SIGNAL),
+                &mut mpdu,
+                &mut ethernet,
+                &mut sink,
+            ),
+            ConnectedRxDispatch::PeerDisconnect
+        );
+        assert_eq!(
+            sink.peer_disconnects,
+            [StaDisconnect {
+                kind: open_esp_radio_ieee80211::station::StaDisconnectKind::Deauthentication,
+                reason_code: 7,
+            }]
+        );
+
+        storage[FRAME_OFFSET + 4..FRAME_OFFSET + 10].copy_from_slice(&SOURCE);
+        assert_eq!(
+            dispatcher.dispatch(
+                segment(&storage, SIGNAL),
+                &mut mpdu,
+                &mut ethernet,
+                &mut sink,
+            ),
+            ConnectedRxDispatch::Ignored
+        );
+        assert_eq!(sink.peer_disconnects.len(), 1);
     }
 }

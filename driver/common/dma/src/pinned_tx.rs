@@ -15,6 +15,8 @@ const SLOT_FREE: u8 = 0;
 const SLOT_NETWORK: u8 = 1;
 const SLOT_READY: u8 = 2;
 const SLOT_RADIO: u8 = 3;
+const DMA_OVERRUN_GUARD_SIZE: usize = 32;
+const DMA_OVERRUN_GUARD_BYTE: u8 = 0xa5;
 
 #[repr(C)]
 struct PinnedTxBytes<const FRAME_CAPACITY: usize, const HEADROOM: usize, const TRAILER: usize> {
@@ -38,6 +40,10 @@ impl<const FRAME_CAPACITY: usize, const HEADROOM: usize, const TRAILER: usize>
 #[repr(C, align(16))]
 struct PinnedTxSlot<const FRAME_CAPACITY: usize, const HEADROOM: usize, const TRAILER: usize> {
     bytes: UnsafeCell<PinnedTxBytes<FRAME_CAPACITY, HEADROOM, TRAILER>>,
+    // Hardware only owns `bytes`. Keep a checked boundary before CPU-only
+    // ownership metadata so a late or overlong DMA write fails closed instead
+    // of silently turning a free slot into a forged state transition.
+    dma_overrun_guard: UnsafeCell<[u8; DMA_OVERRUN_GUARD_SIZE]>,
     length: AtomicUsize,
     state: AtomicU8,
 }
@@ -48,37 +54,95 @@ impl<const FRAME_CAPACITY: usize, const HEADROOM: usize, const TRAILER: usize>
     const fn new() -> Self {
         Self {
             bytes: UnsafeCell::new(PinnedTxBytes::new()),
+            // DMA pools normally live in a zero-initialized linker section.
+            // `pin_static` installs the non-zero diagnostic marker before the
+            // allocation can be published to hardware.
+            dma_overrun_guard: UnsafeCell::new([DMA_OVERRUN_GUARD_BYTE; DMA_OVERRUN_GUARD_SIZE]),
             length: AtomicUsize::new(0),
             state: AtomicU8::new(SLOT_FREE),
         }
     }
 
-    fn claim(&self, from: u8, to: u8, message: &str) {
+    fn claim(&self, index: u8, from: u8, to: u8, message: &str) {
+        self.assert_dma_boundary(index);
+        let observed = self
+            .state
+            .compare_exchange(from, to, Ordering::AcqRel, Ordering::Acquire);
         assert_eq!(
-            self.state
-                .compare_exchange(from, to, Ordering::AcqRel, Ordering::Acquire),
+            observed,
             Ok(from),
-            "{message}"
+            "{message}; slot={index} expected={from} requested={to}"
         );
     }
 
-    fn publish_ready(&self, length: usize) {
+    #[allow(
+        unsafe_code,
+        reason = "the guard observes whether a hardware actor crossed the DMA region boundary"
+    )]
+    fn assert_dma_boundary(&self, index: u8) {
+        // SAFETY: CPU writers never mutate this guard after initialization.
+        // A differing byte is diagnostic evidence that the external DMA actor
+        // violated the region exposed by StableDmaBacking; no recovery follows.
+        let guard = unsafe { &*self.dma_overrun_guard.get() };
+        if let Some((offset, byte)) = guard
+            .iter()
+            .copied()
+            .enumerate()
+            .find(|(_, byte)| *byte != DMA_OVERRUN_GUARD_BYTE)
+        {
+            let prefix = u64::from_le_bytes(guard[..8].try_into().unwrap());
+            panic!(
+                "pinned TX DMA crossed its backing boundary; slot={index} offset={offset} value={byte} guard_prefix={prefix:#018x}"
+            );
+        }
+    }
+
+    #[allow(
+        unsafe_code,
+        reason = "the pool audit observes whether a hardware actor crossed a DMA region boundary"
+    )]
+    fn dma_boundary_damage(&self) -> Option<(usize, u8)> {
+        // SAFETY: see `assert_dma_boundary`; the guard is never a CPU write
+        // target after the pool has been pinned.
+        let guard = unsafe { &*self.dma_overrun_guard.get() };
+        guard
+            .iter()
+            .copied()
+            .enumerate()
+            .find(|(_, byte)| *byte != DMA_OVERRUN_GUARD_BYTE)
+    }
+
+    #[allow(
+        unsafe_code,
+        reason = "the diagnostic reads the same hardware-observable guard as dma_boundary_damage"
+    )]
+    fn dma_boundary_prefix(&self) -> u64 {
+        // SAFETY: see `assert_dma_boundary`; this is an observation-only read.
+        let guard = unsafe { &*self.dma_overrun_guard.get() };
+        u64::from_le_bytes(guard[..8].try_into().unwrap())
+    }
+
+    fn publish_ready(&self, index: u8, length: usize) {
+        self.assert_dma_boundary(index);
         self.length.store(length, Ordering::Relaxed);
+        let observed = self.state.compare_exchange(
+            SLOT_NETWORK,
+            SLOT_READY,
+            Ordering::Release,
+            Ordering::Acquire,
+        );
         assert_eq!(
-            self.state.compare_exchange(
-                SLOT_NETWORK,
-                SLOT_READY,
-                Ordering::Release,
-                Ordering::Acquire
-            ),
+            observed,
             Ok(SLOT_NETWORK),
-            "only the network lease may publish a pinned TX slot"
+            "only the network lease may publish a pinned TX slot; slot={index}"
         );
     }
 
-    fn release_radio(&self) {
+    fn release_radio(&self, index: u8) {
+        self.assert_dma_boundary(index);
         self.length.store(0, Ordering::Relaxed);
         self.claim(
+            index,
             SLOT_RADIO,
             SLOT_FREE,
             "only the radio lease may return a pinned TX slot",
@@ -152,6 +216,9 @@ impl<
     }
 
     pub fn pin_static(storage: &'static mut Self) -> Pin<&'static mut Self> {
+        for slot in &mut storage.slots {
+            *slot.dma_overrun_guard.get_mut() = [DMA_OVERRUN_GUARD_BYTE; DMA_OVERRUN_GUARD_SIZE];
+        }
         Pin::static_mut(storage)
     }
 
@@ -159,11 +226,23 @@ impl<
         &self,
         index: u8,
     ) -> PinnedDmaTxNetworkLease<'_, FRAME_CAPACITY, HEADROOM, TRAILER> {
+        if let Some((damaged_slot, (offset, byte))) = self
+            .slots
+            .iter()
+            .enumerate()
+            .find_map(|(slot, value)| value.dma_boundary_damage().map(|damage| (slot, damage)))
+        {
+            let prefix = self.slots[damaged_slot].dma_boundary_prefix();
+            panic!(
+                "pinned TX pool boundary changed before a network claim; requested={index} damaged_slot={damaged_slot} offset={offset} value={byte} guard_prefix={prefix:#018x}"
+            );
+        }
         let slot = self
             .slots
             .get(usize::from(index))
             .expect("pinned TX index belongs to this pool");
         slot.claim(
+            index,
             SLOT_FREE,
             SLOT_NETWORK,
             "free-channel entry did not name a free pinned TX slot",
@@ -184,6 +263,7 @@ impl<
             .get(usize::from(index))
             .expect("pinned TX index belongs to this pool");
         slot.claim(
+            index,
             SLOT_READY,
             SLOT_RADIO,
             "ready-channel entry did not name a ready pinned TX slot",
@@ -247,13 +327,14 @@ impl<const FRAME_CAPACITY: usize, const HEADROOM: usize, const TRAILER: usize>
             )
         };
         let result = write(&mut storage[HEADROOM..HEADROOM + length]);
-        self.slot.publish_ready(length);
+        self.slot.publish_ready(self.index, length);
         self.live = false;
         (self.index, result)
     }
 
     pub fn release(mut self) -> u8 {
         self.slot.claim(
+            self.index,
             SLOT_NETWORK,
             SLOT_FREE,
             "only the network lease may return a pinned TX slot",
@@ -269,6 +350,7 @@ impl<const FRAME_CAPACITY: usize, const HEADROOM: usize, const TRAILER: usize> D
     fn drop(&mut self) {
         if self.live {
             self.slot.claim(
+                self.index,
                 SLOT_NETWORK,
                 SLOT_FREE,
                 "only the live network lease may return a pinned TX slot",
@@ -338,7 +420,7 @@ impl<const FRAME_CAPACITY: usize, const HEADROOM: usize, const TRAILER: usize>
     }
 
     pub fn release(mut self) -> u8 {
-        self.slot.release_radio();
+        self.slot.release_radio(self.index);
         self.live = false;
         self.index
     }
@@ -444,7 +526,7 @@ impl<const FRAME_CAPACITY: usize, const HEADROOM: usize, const TRAILER: usize> D
 {
     fn drop(&mut self) {
         if self.live {
-            self.slot.release_radio();
+            self.slot.release_radio(self.index);
         }
     }
 }

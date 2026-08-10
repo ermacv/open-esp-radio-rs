@@ -16,6 +16,10 @@ use open_esp_radio_esp32s31_hal::{
 use crate::{
     HARDWARE_EDGE_LIMIT, PhyRegisterPort,
     phy_bb::{PhyBbExternalBinding, PhyBbInitCompletion},
+    phy_bluetooth::{
+        PhyBluetoothTxGainInitCompletion, PhyBluetoothTxGainInitExternalBinding,
+        PhyBluetoothTxPowerCompletion, PhyBluetoothTxPowerExternalBinding,
+    },
     phy_channel::{
         PhyChipChannelAction, PhyChipChannelCompletion, PhyChipChannelExternalBinding,
         PhyChipChannelFailure, PhyChipChannelOutcome, PhyChipChannelRequest,
@@ -76,12 +80,12 @@ use crate::{
         PhyTxIqLoopbackExternalBinding, PhyTxIqMisPowerCompletion, PhyTxIqMisPowerExternalBinding,
     },
     target_executor::{
-        PhyAsyncDelay, PhyTargetPortError, complete_channel_i2c, complete_dcode_i2c,
-        complete_final_i2c, complete_masked_i2c, complete_rfpll_i2c,
-        complete_rx_dc_calibration_pbus, complete_rx_dco_pbus, complete_rx_gain_dc_pbus,
-        complete_rx_gain_publish_pbus, complete_rx_saturation_pbus, complete_rxiq_adjusted_tx_i2c,
-        complete_rxiq_gain_i2c, complete_rxiq_gain_pbus, complete_rxiq_init_i2c,
-        complete_rxiq_init_pbus, complete_temperature_i2c,
+        PhyAsyncDelay, PhyTargetPortError, complete_bluetooth_i2c, complete_bluetooth_pbus,
+        complete_channel_i2c, complete_dcode_i2c, complete_final_i2c, complete_masked_i2c,
+        complete_rfpll_i2c, complete_rx_dc_calibration_pbus, complete_rx_dco_pbus,
+        complete_rx_gain_dc_pbus, complete_rx_gain_publish_pbus, complete_rx_saturation_pbus,
+        complete_rxiq_adjusted_tx_i2c, complete_rxiq_gain_i2c, complete_rxiq_gain_pbus,
+        complete_rxiq_init_i2c, complete_rxiq_init_pbus, complete_temperature_i2c,
         complete_tx_calibration_environment_pbus, complete_tx_dc_pwdet_pbus,
         complete_tx_dc_pwdet_search_pbus, complete_tx_power_i2c, complete_txiq_init_i2c,
         complete_txiq_pbus,
@@ -268,6 +272,82 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
             PhyTxPowerExternalBinding::Point(binding) => Ok(PhyTxPowerCompletion::Point(
                 Self::complete_power_control_point(binding, registers).await?,
             )),
+        }
+    }
+
+    async fn complete_bluetooth_tx_power<
+        P: PhyPowerDetectorPlatformControl + PhyI2cMasterControl,
+    >(
+        binding: PhyBluetoothTxPowerExternalBinding,
+        platform: &mut P,
+        registers: &mut RadioRegisters,
+    ) -> Result<PhyBluetoothTxPowerCompletion, PhyTargetPortError> {
+        match binding {
+            PhyBluetoothTxPowerExternalBinding::I2c(binding) => {
+                complete_bluetooth_i2c::<D>(binding, platform).await
+            }
+            PhyBluetoothTxPowerExternalBinding::Prepare(binding) => {
+                Ok(PhyBluetoothTxPowerCompletion::Prepare(
+                    Self::complete_tx_calibration_environment(binding, platform, registers).await?,
+                ))
+            }
+            PhyBluetoothTxPowerExternalBinding::Cleanup(binding) => {
+                Ok(PhyBluetoothTxPowerCompletion::Cleanup(
+                    Self::complete_tx_calibration_environment(binding, platform, registers).await?,
+                ))
+            }
+            PhyBluetoothTxPowerExternalBinding::Pbus(binding) => {
+                complete_bluetooth_pbus::<D>(binding, registers).await
+            }
+            PhyBluetoothTxPowerExternalBinding::ReadPbus(binding) => {
+                Ok(binding.execute_target(registers))
+            }
+            PhyBluetoothTxPowerExternalBinding::Calibration(binding) => {
+                Ok(PhyBluetoothTxPowerCompletion::Calibration(
+                    Self::complete_tx_power(binding, platform, registers).await?,
+                ))
+            }
+        }
+    }
+
+    async fn complete_bluetooth_tx_gain<
+        P: PhyPowerDetectorPlatformControl + PhyI2cMasterControl,
+        O: PhyTargetObserver,
+    >(
+        binding: PhyBluetoothTxGainInitExternalBinding,
+        platform: &mut P,
+        registers: &mut RadioRegisters,
+        observer: &mut O,
+    ) -> Result<PhyBluetoothTxGainInitCompletion, PhyTargetPortError> {
+        match binding {
+            PhyBluetoothTxGainInitExternalBinding::Rfpll(binding) => {
+                Ok(PhyBluetoothTxGainInitCompletion::Rfpll(
+                    Self::complete_rfpll(binding, platform, registers).await?,
+                ))
+            }
+            PhyBluetoothTxGainInitExternalBinding::TxCap(binding) => {
+                Ok(PhyBluetoothTxGainInitCompletion::TxCap(
+                    Self::complete_tx_power(binding, platform, registers).await?,
+                ))
+            }
+            PhyBluetoothTxGainInitExternalBinding::TxDc(binding) => {
+                Ok(PhyBluetoothTxGainInitCompletion::TxDc(
+                    Self::complete_tx_dc(binding, registers, observer).await?,
+                ))
+            }
+            PhyBluetoothTxGainInitExternalBinding::TxPower(binding) => {
+                Ok(PhyBluetoothTxGainInitCompletion::TxPower(
+                    Self::complete_bluetooth_tx_power(binding, platform, registers).await?,
+                ))
+            }
+            PhyBluetoothTxGainInitExternalBinding::TxDcPwdet(binding) => {
+                Ok(PhyBluetoothTxGainInitCompletion::TxDcPwdet(
+                    Self::complete_tx_dc_pwdet(binding, platform, registers).await?,
+                ))
+            }
+            PhyBluetoothTxGainInitExternalBinding::Publish(binding) => {
+                Ok(binding.execute_target(registers))
+            }
         }
     }
 
@@ -1065,6 +1145,12 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
             PhyBbExternalBinding::TxCfr(binding) => Ok(PhyBbInitCompletion::TxCfr(
                 binding.execute_target(registers),
             )),
+            PhyBbExternalBinding::BluetoothTxGain(binding) => {
+                Ok(PhyBbInitCompletion::BluetoothTxGain(
+                    Self::complete_bluetooth_tx_gain(binding, platform, registers, observer)
+                        .await?,
+                ))
+            }
             PhyBbExternalBinding::PbusMemory(binding) => Ok(PhyBbInitCompletion::PbusMemory(
                 binding
                     .execute_target(registers)

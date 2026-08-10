@@ -12,8 +12,9 @@ use crate::{
     },
     phy_bluetooth::{
         PhyBluetoothTxDcPwdetTransition, PhyBluetoothTxDcTransition, PhyBluetoothTxGainImage,
-        PhyBluetoothTxGainParameters, PhyBluetoothTxPowerOutcome, PhyBluetoothTxPowerParameters,
-        PhyBluetoothTxPowerTransition, calculate_bluetooth_tx_gain,
+        PhyBluetoothTxGainInitOutcome, PhyBluetoothTxGainInitParameters,
+        PhyBluetoothTxGainInitTransition, PhyBluetoothTxGainParameters, PhyBluetoothTxPowerOutcome,
+        PhyBluetoothTxPowerParameters, PhyBluetoothTxPowerTransition, calculate_bluetooth_tx_gain,
     },
     phy_channel::{PhyChipChannelOutcome, PhyChipChannelParameters},
     phy_dcode::{PhyDcodeOutcome, PhyDcodeParameters},
@@ -574,6 +575,30 @@ impl PhyState {
         calculate_bluetooth_tx_gain(self.bluetooth_tx_gain_parameters())
     }
 
+    pub fn bluetooth_tx_gain_init_transition(&self) -> PhyBluetoothTxGainInitTransition {
+        PhyBluetoothTxGainInitTransition::new(PhyBluetoothTxGainInitParameters {
+            crystal_selector: self.common.crystal_selector,
+            capacitance: self.wifi.tx_capacitance,
+            tx_dc_calibrated: self.bluetooth.tx_dc_calibrated,
+            tx_dc: PhyTxDcParameters {
+                pbus_rx_path_value: self.config.pbus_rx_path,
+            },
+            tx_path_value: self.config.bluetooth_tx_path,
+            tx_power: self.bluetooth_tx_power_parameters(),
+            tx_dc_pwdet: PhyTxDcPwdetParameters {
+                dco: self.bluetooth.tx_dco,
+                clear_tone_after_ready: self.common.clear_tone_after_ready,
+            },
+            gain: self.bluetooth_tx_gain_parameters(),
+        })
+    }
+
+    pub fn apply_bluetooth_tx_gain_init_outcome(&mut self, outcome: PhyBluetoothTxGainInitOutcome) {
+        self.bluetooth.tx_dc_calibrated = outcome.tx_dc_calibrated;
+        self.bluetooth.tx_dco = outcome.dco;
+        self.apply_bluetooth_tx_power_outcome(outcome.tx_power);
+    }
+
     pub fn set_ble_channel_base(&mut self, value: u8) {
         self.bluetooth.channel_base = value;
     }
@@ -935,63 +960,6 @@ impl PhyState {
         self.clear_calibration_status();
     }
 
-    pub fn begin_partial_wifi_calibration(
-        &mut self,
-        config: PhyConfig,
-        cache: &PhyCalibrationCache,
-    ) {
-        let snapshot = cache.snapshot();
-        self.config = config;
-        self.config.initial_attenuation = snapshot.wifi.calibrated_attenuation;
-
-        self.common.temperature = snapshot.common.temperature;
-        self.common.sensor_index = snapshot.common.sensor_index;
-        self.common.crystal_selector = snapshot.common.crystal_selector;
-        self.common.rc_result = snapshot.common.rc_result;
-        self.common.filter_dcap = snapshot.common.filter_dcap;
-        self.common.rc_calibrated = snapshot.common.rc_calibrated;
-        self.common.dcode = snapshot.common.dcode;
-        self.common.pbus_saved_registers = snapshot.common.pbus_saved_registers;
-        self.common.bbpll_register_snapshot = snapshot.common.bbpll_register_snapshot;
-        self.common.i2c_frequency_parameter = snapshot.common.i2c_frequency_parameter;
-        self.common.xtal_duty = snapshot.common.xtal_duty;
-        self.common.clear_tone_after_ready = snapshot.common.clear_tone_after_ready;
-        self.common.frequency_table_initialized = false;
-
-        self.wifi.baseband_calibrated = snapshot.wifi.baseband_calibrated;
-        self.wifi.pwdet_calibrated = snapshot.wifi.pwdet_calibrated;
-        self.wifi.tx_power_calibrated = snapshot.wifi.tx_power_calibrated;
-        self.wifi.tx_iq_calibrated = snapshot.wifi.tx_iq_calibrated;
-        self.wifi.rx_gain_dc_calibrated = snapshot.wifi.rx_gain_dc_calibrated;
-        self.wifi.rx_gain_tables_initialized = snapshot.wifi.rx_gain_tables_initialized;
-        self.wifi.rx_saturation_detected = snapshot.wifi.rx_saturation_detected;
-        self.wifi.tx_dco = snapshot.wifi.tx_dco;
-        self.wifi.tx_reference_codes = snapshot.wifi.tx_reference_codes;
-        self.wifi.tx_capacitance = snapshot.wifi.tx_capacitance;
-        self.wifi.tx_power_curve = snapshot.wifi.tx_power_curve;
-        self.wifi.tx_power_corrections = snapshot.wifi.tx_power_corrections;
-        self.wifi.tx_power_adjustment = snapshot.wifi.tx_power_adjustment;
-        self.wifi.tx_iq_config = snapshot.wifi.tx_iq_config;
-        self.wifi.tx_iq_coefficient = snapshot.wifi.tx_iq_coefficient;
-        self.wifi.rx_iq_coefficients = snapshot.wifi.rx_iq_coefficients;
-        self.wifi.external_dcode = snapshot.wifi.external_dcode;
-        self.wifi.calibration_temperature = snapshot.wifi.calibration_temperature;
-        self.wifi.current_channel = snapshot.wifi.calibration_channel;
-        self.wifi.wifi_rx_table_last_index = snapshot.wifi.wifi_rx_table_last_index;
-        self.wifi.shared_rx_table_last_index = snapshot.wifi.shared_rx_table_last_index;
-        self.wifi.wifi_index_dc = snapshot.wifi.wifi_index_dc;
-        self.wifi.wifi_dc_base = snapshot.wifi.wifi_dc_base;
-        self.wifi.shared_index_dc = snapshot.wifi.shared_index_dc;
-        self.wifi.rxbb_dc_adjustments = snapshot.wifi.rxbb_dc_adjustments;
-
-        self.bluetooth.tx_dc_calibrated = snapshot.bluetooth.tx_dc_calibrated;
-        self.bluetooth.tx_power_calibrated = snapshot.bluetooth.tx_power_calibrated;
-        self.bluetooth.tx_dco = snapshot.bluetooth.tx_dco;
-        self.bluetooth.tx_power_curve = snapshot.bluetooth.tx_power_curve;
-        self.bluetooth.tx_power_corrections = snapshot.bluetooth.tx_power_corrections;
-        self.bluetooth.tx_power_adjustment = snapshot.bluetooth.tx_power_adjustment;
-    }
-
     const fn calibration_snapshot(
         &self,
         identity: crate::phy_register::PhyCalibrationIdentity,
@@ -1214,7 +1182,7 @@ mod tests {
         };
 
     #[test]
-    fn cache_restores_calibration_but_not_runtime_role_state() {
+    fn cache_contains_calibration_but_not_runtime_role_state() {
         let mut calibrated = PhyState::new(PhyConfig::production());
         calibrated.set_dot11p_configuration(1, 4);
         calibrated.set_current_level(9);
@@ -1233,12 +1201,15 @@ mod tests {
         });
 
         let cache = calibrated.calibration_cache(IDENTITY);
-        let mut restored = PhyState::new(PhyConfig::esp32s31_default());
-        restored.begin_partial_wifi_calibration(PhyConfig::production(), &cache);
+        let snapshot = cache.snapshot();
+        assert!(snapshot.wifi.baseband_calibrated);
+        assert!(snapshot.wifi.tx_power_calibrated);
+        assert_eq!(snapshot.wifi.calibrated_attenuation, 13);
+        assert_eq!(snapshot.wifi.tx_power_curve, [-3, 4, 5]);
+        assert_eq!(snapshot.wifi.tx_power_corrections, [6, -7, 8]);
+        assert_eq!(snapshot.wifi.tx_power_adjustment, -9);
 
-        assert!(restored.baseband_calibration_complete());
-        assert!(restored.tx_power_parameters().already_calibrated);
-        assert_eq!(restored.tx_power_parameters().initial_attenuation, 13);
+        let restored = PhyState::new(PhyConfig::esp32s31_default());
         assert_eq!(
             restored.dot11p_configuration(),
             PhyDot11pConfiguration {
@@ -1258,7 +1229,7 @@ mod tests {
     }
 
     #[test]
-    fn cache_schema_is_checked_before_state_can_be_restored() {
+    fn cache_schema_is_checked_before_artifact_admission() {
         let state = PhyState::new(PhyConfig::production());
         let cache = state.calibration_cache(IDENTITY);
         let mut snapshot = cache.into_snapshot();

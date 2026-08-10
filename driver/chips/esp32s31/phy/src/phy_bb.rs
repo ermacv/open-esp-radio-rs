@@ -612,11 +612,6 @@ pub struct PhyBbInitOutcome {
 }
 
 /// Terminal failures from the owned children of `phy_bb_init`.
-///
-/// `phy_bt_tx_gain_init` does not yet have a variant. Its complete relocation
-/// graph reaches shared RFPLL, TXDC and PWDET calibration in addition to BT
-/// gain publication, so callers must not treat the current omission as a
-/// proved Wi-Fi-only optimization.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyBbInitFailure {
     TxDc(crate::phy_txdc::PhyTxDcFailure),
@@ -630,6 +625,7 @@ pub enum PhyBbInitFailure {
     TxDcPwdet(crate::phy_txdc_pwdet::PhyTxDcPwdetFailure),
     Dcode(crate::phy_dcode::PhyDcodeFailure),
     TxIq(crate::phy_txiq::PhyTxIqInitFailure),
+    BluetoothTxGain(crate::phy_bluetooth::PhyBluetoothTxGainInitFailure),
     RxIq(crate::phy_rxiq::PhyRxIqInitFailure),
     RxSaturation(crate::phy_rx_saturation::PhyRxSaturationOutcome),
     RxGain(crate::phy_rx_gain::PhyRxGainInitFailure),
@@ -650,6 +646,7 @@ pub enum PhyBbInitAction {
     Dcode(crate::phy_dcode::PhyDcodeAction),
     TxIq(crate::phy_txiq::PhyTxIqInitAction),
     TxCfr(PhyTxCfrAction),
+    BluetoothTxGain(crate::phy_bluetooth::PhyBluetoothTxGainInitAction),
     PbusMemory(crate::phy_pbus_memory::PhyPbusMemoryAction),
     RxIq(crate::phy_rxiq::PhyRxIqInitAction),
     RxSaturation(crate::phy_rx_saturation::PhyRxSaturationAction),
@@ -670,6 +667,7 @@ pub enum PhyBbInitCompletion {
     Dcode(crate::phy_dcode::PhyDcodeCompletion),
     TxIq(crate::phy_txiq::PhyTxIqInitCompletion),
     TxCfr(PhyTxCfrCompletion),
+    BluetoothTxGain(crate::phy_bluetooth::PhyBluetoothTxGainInitCompletion),
     PbusMemory(crate::phy_pbus_memory::PhyPbusMemoryCompletion),
     RxIq(crate::phy_rxiq::PhyRxIqInitCompletion),
     RxSaturation(crate::phy_rx_saturation::PhyRxSaturationCompletion),
@@ -700,6 +698,7 @@ pub enum PhyBbExternalBinding {
     Dcode(crate::phy_dcode::PhyDcodeExternalBinding),
     TxIq(crate::phy_txiq::PhyTxIqInitExternalBinding),
     TxCfr(PhyTxCfrMmioBinding),
+    BluetoothTxGain(crate::phy_bluetooth::PhyBluetoothTxGainInitExternalBinding),
     PbusMemory(crate::phy_pbus_memory::PhyPbusMemoryMmioBinding),
     RxIq(crate::phy_rxiq::PhyRxIqInitExternalBinding),
     RxSaturation(crate::phy_rx_saturation::PhyRxSaturationExternalBinding),
@@ -752,6 +751,11 @@ impl PhyBbExternalBinding {
             PhyBbInitAction::TxCfr(action) => PhyTxCfrMmioBinding::new(action)
                 .map(Self::TxCfr)
                 .map_err(|_| PhyBbExternalBindingError::UnsupportedAction),
+            PhyBbInitAction::BluetoothTxGain(action) => {
+                crate::phy_bluetooth::PhyBluetoothTxGainInitExternalBinding::lower(action)
+                    .map(Self::BluetoothTxGain)
+                    .map_err(|_| PhyBbExternalBindingError::UnsupportedAction)
+            }
             PhyBbInitAction::PbusMemory(action) => {
                 crate::phy_pbus_memory::PhyPbusMemoryMmioBinding::new(action)
                     .map(Self::PbusMemory)
@@ -804,6 +808,7 @@ enum PhyBbInitStep {
     Dcode(crate::phy_dcode::PhyDcodeTransition),
     TxIq(crate::phy_txiq::PhyTxIqInitTransition),
     TxCfr(PhyTxCfrTransition),
+    BluetoothTxGain(crate::phy_bluetooth::PhyBluetoothTxGainInitTransition),
     PbusMemory(crate::phy_pbus_memory::PhyPbusMemoryTransition),
     TemperatureSecond(crate::phy_temperature::PhyTemperatureTransition),
     RxIq(crate::phy_rxiq::PhyRxIqInitTransition),
@@ -1009,10 +1014,27 @@ impl PhyBbInitTransition {
             },
             PhyBbInitStep::TxCfr(transition) => match transition.action() {
                 PhyTxCfrAction::Complete(_) => {
-                    // The next vendor call is `phy_bt_tx_gain_init`. Its
-                    // relocation graph includes shared RFPLL, TXDC and PWDET
-                    // calibration, so this remains a known parent-graph gap
-                    // until those operations have a Rust-owned transition.
+                    self.step = PhyBbInitStep::BluetoothTxGain(
+                        self.state.bluetooth_tx_gain_init_transition(),
+                    );
+                    PhyBbInitLocalStep::StateAdvanced
+                }
+                action => PhyBbInitLocalStep::External(PhyBbInitAction::TxCfr(action)),
+            },
+            PhyBbInitStep::BluetoothTxGain(mut transition) => match transition
+                .step_local()
+                .map_err(|_| PhyBbInitTransitionError::WrongCompletion)?
+            {
+                crate::phy_bluetooth::PhyBluetoothTxGainInitLocalStep::StateAdvanced => {
+                    self.step = PhyBbInitStep::BluetoothTxGain(transition);
+                    PhyBbInitLocalStep::StateAdvanced
+                }
+                crate::phy_bluetooth::PhyBluetoothTxGainInitLocalStep::External(action) => {
+                    self.step = PhyBbInitStep::BluetoothTxGain(transition);
+                    PhyBbInitLocalStep::External(PhyBbInitAction::BluetoothTxGain(action))
+                }
+                crate::phy_bluetooth::PhyBluetoothTxGainInitLocalStep::Complete(outcome) => {
+                    self.state.apply_bluetooth_tx_gain_init_outcome(outcome);
                     self.step = PhyBbInitStep::PbusMemory(
                         crate::phy_pbus_memory::PhyPbusMemoryTransition::new(
                             self.state.pbus_memory_parameters(),
@@ -1020,7 +1042,10 @@ impl PhyBbInitTransition {
                     );
                     PhyBbInitLocalStep::StateAdvanced
                 }
-                action => PhyBbInitLocalStep::External(PhyBbInitAction::TxCfr(action)),
+                crate::phy_bluetooth::PhyBluetoothTxGainInitLocalStep::Failed(failure) => {
+                    self.begin_failure(PhyBbInitFailure::BluetoothTxGain(failure));
+                    PhyBbInitLocalStep::StateAdvanced
+                }
             },
             PhyBbInitStep::PbusMemory(transition) => match transition.action() {
                 crate::phy_pbus_memory::PhyPbusMemoryAction::Complete(outcome) => {
@@ -1188,6 +1213,15 @@ impl PhyBbInitTransition {
                     .advance(completed)
                     .map_err(|_| PhyBbInitTransitionError::WrongCompletion)?;
                 PhyBbInitStep::TxCfr(transition)
+            }
+            (
+                PhyBbInitStep::BluetoothTxGain(mut transition),
+                PhyBbInitCompletion::BluetoothTxGain(completed),
+            ) => {
+                transition
+                    .advance_external(completed)
+                    .map_err(|_| PhyBbInitTransitionError::WrongCompletion)?;
+                PhyBbInitStep::BluetoothTxGain(transition)
             }
             (
                 PhyBbInitStep::PbusMemory(mut transition),
@@ -1638,7 +1672,7 @@ mod tests {
     }
 
     #[test]
-    fn complete_parent_skips_only_the_bt_coexistence_child() {
+    fn complete_parent_enters_the_recovered_bluetooth_gain_parent() {
         let mut transition = super::PhyBbInitTransition::new(crate::phy_state::PhyState::default());
         transition.step = super::PhyBbInitStep::TxCfr(PhyTxCfrTransition::new());
         transition
@@ -1667,8 +1701,8 @@ mod tests {
         );
         assert!(matches!(
             transition.step_local().unwrap(),
-            super::PhyBbInitLocalStep::External(super::PhyBbInitAction::PbusMemory(
-                crate::phy_pbus_memory::PhyPbusMemoryAction::Program(_)
+            super::PhyBbInitLocalStep::External(super::PhyBbInitAction::BluetoothTxGain(
+                crate::phy_bluetooth::PhyBluetoothTxGainInitAction::Rfpll(_)
             ))
         ));
     }

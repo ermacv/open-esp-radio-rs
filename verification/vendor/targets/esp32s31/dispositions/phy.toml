@@ -173,9 +173,13 @@ disposition = "state-transition"
 protocol = "shared"
 rust-component = "open_esp_radio_esp32s31_phy::phy_bb::PhyBbInitTransition"
 hil-evidence = "qualification/targets/esp32s31/records/2026-07-31-driver-repo-he20-bidirectional.md"
-[[functions.blocked-by]]
+
+[[functions]]
 source = "archive"
 symbol = "phy_bt_tx_gain_init"
+disposition = "replaced-by-composition"
+protocol = "shared"
+rust-component = "open_esp_radio_esp32s31_phy::phy_bluetooth::PhyBluetoothTxGainInitTransition"
 
 [[functions]]
 source = "archive"

@@ -674,6 +674,584 @@ impl PhyBluetoothTxDcPwdetTransition {
     }
 }
 
+/// Complete semantic inputs of archive `phy_bt_tx_gain_init`.
+///
+/// The values are grouped by the Rust transitions which consume them; no
+/// field represents an offset in the former vendor parameter image.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PhyBluetoothTxGainInitParameters {
+    pub crystal_selector: u8,
+    pub capacitance: [u8; 6],
+    pub tx_dc_calibrated: bool,
+    pub tx_dc: crate::phy_txdc::PhyTxDcParameters,
+    pub tx_path_value: u8,
+    pub tx_power: PhyBluetoothTxPowerParameters,
+    pub tx_dc_pwdet: crate::phy_txdc_pwdet::PhyTxDcPwdetParameters,
+    pub gain: PhyBluetoothTxGainParameters,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PhyBluetoothTxGainInitOutcome {
+    pub tx_dc_calibrated: bool,
+    pub dco: [[u16; 4]; 3],
+    pub tx_power: PhyBluetoothTxPowerOutcome,
+    pub gain: PhyBluetoothTxGainImage,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PhyBluetoothTxGainInitFailure {
+    Rfpll(crate::phy_rfpll::RfpllFrequencyFailure),
+    TxDc(crate::phy_txdc::PhyTxDcFailure),
+    TxPower(PhyBluetoothTxPowerFailure),
+    TxDcPwdet(crate::phy_txdc_pwdet::PhyTxDcPwdetFailure),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PhyBluetoothTxGainInitAction {
+    Rfpll(crate::phy_rfpll::RfpllFrequencyAction),
+    TxCap(crate::phy_tx_power::PhyTxPowerAction),
+    TxDc(crate::phy_txdc::PhyTxDcAction),
+    TxPower(PhyBluetoothTxPowerAction),
+    TxDcPwdet(crate::phy_txdc_pwdet::PhyTxDcPwdetAction),
+    Publish(PhyBluetoothTxGainPublication),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PhyBluetoothTxGainInitCompletion {
+    Rfpll(crate::phy_rfpll::RfpllFrequencyCompletion),
+    TxCap(crate::phy_tx_power::PhyTxPowerCompletion),
+    TxDc(crate::phy_txdc::PhyTxDcCompletion),
+    TxPower(PhyBluetoothTxPowerCompletion),
+    TxDcPwdet(crate::phy_txdc_pwdet::PhyTxDcPwdetCompletion),
+    Published(PhyBluetoothTxGainPublication),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PhyBluetoothTxGainInitLocalStep {
+    StateAdvanced,
+    External(PhyBluetoothTxGainInitAction),
+    Complete(PhyBluetoothTxGainInitOutcome),
+    Failed(PhyBluetoothTxGainInitFailure),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PhyBluetoothTxGainInitTransitionError {
+    WrongCompletion,
+    AlreadyComplete,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PhyBluetoothTxGainInitStep {
+    Rfpll(crate::phy_rfpll::RfpllFrequencyTransition),
+    TxCap,
+    TxDc(PhyBluetoothTxDcTransition),
+    TxPower(PhyBluetoothTxPowerTransition),
+    TxDcPwdet(PhyBluetoothTxDcPwdetTransition),
+    Publish(PhyBluetoothTxGainPublication),
+    Complete(PhyBluetoothTxGainInitOutcome),
+    Failed(PhyBluetoothTxGainInitFailure),
+}
+
+/// Exact source-owned parent for archive `phy_bt_tx_gain_init`.
+///
+/// Vendor flag checks remain semantic: retained TX-DC and TX-power results
+/// skip their respective expensive children, while RFPLL selection,
+/// channel-six TX-cap publication, shared PWDET adjustment and gain-table
+/// publication still run in the recovered parent order.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PhyBluetoothTxGainInitTransition {
+    parameters: PhyBluetoothTxGainInitParameters,
+    step: PhyBluetoothTxGainInitStep,
+    dco: [[u16; 4]; 3],
+    power: Option<PhyBluetoothTxPowerOutcome>,
+    gain: PhyBluetoothTxGainParameters,
+}
+
+impl PhyBluetoothTxGainInitTransition {
+    pub const fn new(parameters: PhyBluetoothTxGainInitParameters) -> Self {
+        Self {
+            step: PhyBluetoothTxGainInitStep::Rfpll(
+                crate::phy_rfpll::RfpllFrequencyTransition::new(
+                    crate::phy_rfpll::RfpllFrequencyRequest {
+                        crystal_selector: parameters.crystal_selector,
+                        frequency_code: 0x985,
+                        offset: 0,
+                    },
+                ),
+            ),
+            dco: parameters.tx_dc_pwdet.dco,
+            power: None,
+            gain: parameters.gain,
+            parameters,
+        }
+    }
+
+    const fn packed_seed(rows: [[u16; 4]; 3]) -> [u32; 6] {
+        let mut seed = [0; 6];
+        let mut index = 0;
+        while index != seed.len() {
+            let first = rows[index / 2][(index % 2) * 2];
+            let second = rows[index / 2][(index % 2) * 2 + 1];
+            seed[index] = first as u32 | ((second as u32) << 16);
+            index += 1;
+        }
+        seed
+    }
+
+    fn tx_power_transition(&self) -> PhyBluetoothTxPowerTransition {
+        let mut parameters = self.parameters.tx_power;
+        parameters.dco = self.dco[0];
+        PhyBluetoothTxPowerTransition::new(parameters)
+    }
+
+    fn tx_dc_pwdet_transition(&self) -> PhyBluetoothTxDcPwdetTransition {
+        let mut parameters = self.parameters.tx_dc_pwdet;
+        parameters.dco = self.dco;
+        PhyBluetoothTxDcPwdetTransition::new(parameters, self.parameters.tx_path_value)
+    }
+
+    pub fn step_local(
+        &mut self,
+    ) -> Result<PhyBluetoothTxGainInitLocalStep, PhyBluetoothTxGainInitTransitionError> {
+        let local = match self.step {
+            PhyBluetoothTxGainInitStep::Rfpll(transition) => match transition.action() {
+                crate::phy_rfpll::RfpllFrequencyAction::Complete(_) => {
+                    self.step = PhyBluetoothTxGainInitStep::TxCap;
+                    PhyBluetoothTxGainInitLocalStep::StateAdvanced
+                }
+                crate::phy_rfpll::RfpllFrequencyAction::Failed(failure) => {
+                    self.step = PhyBluetoothTxGainInitStep::Failed(
+                        PhyBluetoothTxGainInitFailure::Rfpll(failure),
+                    );
+                    PhyBluetoothTxGainInitLocalStep::StateAdvanced
+                }
+                action => PhyBluetoothTxGainInitLocalStep::External(
+                    PhyBluetoothTxGainInitAction::Rfpll(action),
+                ),
+            },
+            PhyBluetoothTxGainInitStep::TxCap => {
+                PhyBluetoothTxGainInitLocalStep::External(PhyBluetoothTxGainInitAction::TxCap(
+                    crate::phy_tx_power::bluetooth_tx_cap_action(self.parameters.capacitance),
+                ))
+            }
+            PhyBluetoothTxGainInitStep::TxDc(transition) => match transition.action() {
+                crate::phy_txdc::PhyTxDcAction::Complete(outcome) => {
+                    let mut row = 0;
+                    while row != self.dco.len() {
+                        self.dco[row] = outcome.dco[row];
+                        row += 1;
+                    }
+                    self.step = PhyBluetoothTxGainInitStep::TxPower(self.tx_power_transition());
+                    PhyBluetoothTxGainInitLocalStep::StateAdvanced
+                }
+                crate::phy_txdc::PhyTxDcAction::Failed(failure) => {
+                    self.step = PhyBluetoothTxGainInitStep::Failed(
+                        PhyBluetoothTxGainInitFailure::TxDc(failure),
+                    );
+                    PhyBluetoothTxGainInitLocalStep::StateAdvanced
+                }
+                action => PhyBluetoothTxGainInitLocalStep::External(
+                    PhyBluetoothTxGainInitAction::TxDc(action),
+                ),
+            },
+            PhyBluetoothTxGainInitStep::TxPower(transition) => match transition.action() {
+                PhyBluetoothTxPowerAction::Complete(outcome) => {
+                    if outcome.calibration.calibration_performed {
+                        self.gain.calibration_curve = [
+                            outcome.calibration.power_curve[0] as u8,
+                            outcome.calibration.power_curve[1] as u8,
+                            outcome.calibration.power_curve[2] as u8,
+                        ];
+                        self.gain.correction = outcome.calibration.power_adjustment;
+                    }
+                    self.power = Some(outcome);
+                    self.step =
+                        PhyBluetoothTxGainInitStep::TxDcPwdet(self.tx_dc_pwdet_transition());
+                    PhyBluetoothTxGainInitLocalStep::StateAdvanced
+                }
+                PhyBluetoothTxPowerAction::Failed(failure) => {
+                    self.step = PhyBluetoothTxGainInitStep::Failed(
+                        PhyBluetoothTxGainInitFailure::TxPower(failure),
+                    );
+                    PhyBluetoothTxGainInitLocalStep::StateAdvanced
+                }
+                action => PhyBluetoothTxGainInitLocalStep::External(
+                    PhyBluetoothTxGainInitAction::TxPower(action),
+                ),
+            },
+            PhyBluetoothTxGainInitStep::TxDcPwdet(transition) => match transition.action() {
+                crate::phy_txdc_pwdet::PhyTxDcPwdetAction::Complete(outcome) => {
+                    self.dco = outcome.dco;
+                    self.gain.seed = Self::packed_seed(self.dco);
+                    let publication =
+                        PhyBluetoothTxGainPublication::new(calculate_bluetooth_tx_gain(self.gain));
+                    self.step = PhyBluetoothTxGainInitStep::Publish(publication);
+                    PhyBluetoothTxGainInitLocalStep::StateAdvanced
+                }
+                crate::phy_txdc_pwdet::PhyTxDcPwdetAction::Failed(failure) => {
+                    self.step = PhyBluetoothTxGainInitStep::Failed(
+                        PhyBluetoothTxGainInitFailure::TxDcPwdet(failure),
+                    );
+                    PhyBluetoothTxGainInitLocalStep::StateAdvanced
+                }
+                action => PhyBluetoothTxGainInitLocalStep::External(
+                    PhyBluetoothTxGainInitAction::TxDcPwdet(action),
+                ),
+            },
+            PhyBluetoothTxGainInitStep::Publish(publication) => {
+                PhyBluetoothTxGainInitLocalStep::External(PhyBluetoothTxGainInitAction::Publish(
+                    publication,
+                ))
+            }
+            PhyBluetoothTxGainInitStep::Complete(outcome) => {
+                PhyBluetoothTxGainInitLocalStep::Complete(outcome)
+            }
+            PhyBluetoothTxGainInitStep::Failed(failure) => {
+                PhyBluetoothTxGainInitLocalStep::Failed(failure)
+            }
+        };
+        Ok(local)
+    }
+
+    pub fn advance_external(
+        &mut self,
+        completion: PhyBluetoothTxGainInitCompletion,
+    ) -> Result<(), PhyBluetoothTxGainInitTransitionError> {
+        self.step = match (self.step, completion) {
+            (
+                PhyBluetoothTxGainInitStep::Rfpll(mut transition),
+                PhyBluetoothTxGainInitCompletion::Rfpll(completion),
+            ) => {
+                transition
+                    .advance(completion)
+                    .map_err(|_| PhyBluetoothTxGainInitTransitionError::WrongCompletion)?;
+                PhyBluetoothTxGainInitStep::Rfpll(transition)
+            }
+            (
+                PhyBluetoothTxGainInitStep::TxCap,
+                PhyBluetoothTxGainInitCompletion::TxCap(
+                    crate::phy_tx_power::PhyTxPowerCompletion::I2cWritten { address, value },
+                ),
+            ) if crate::phy_tx_power::bluetooth_tx_cap_action(self.parameters.capacitance)
+                == crate::phy_tx_power::PhyTxPowerAction::WriteI2c { address, value } =>
+            {
+                if self.parameters.tx_dc_calibrated {
+                    PhyBluetoothTxGainInitStep::TxPower(self.tx_power_transition())
+                } else {
+                    PhyBluetoothTxGainInitStep::TxDc(PhyBluetoothTxDcTransition::new(
+                        self.parameters.tx_dc,
+                        self.parameters.tx_path_value,
+                    ))
+                }
+            }
+            (
+                PhyBluetoothTxGainInitStep::TxDc(mut transition),
+                PhyBluetoothTxGainInitCompletion::TxDc(completion),
+            ) => {
+                transition
+                    .advance(completion)
+                    .map_err(|_| PhyBluetoothTxGainInitTransitionError::WrongCompletion)?;
+                PhyBluetoothTxGainInitStep::TxDc(transition)
+            }
+            (
+                PhyBluetoothTxGainInitStep::TxPower(mut transition),
+                PhyBluetoothTxGainInitCompletion::TxPower(completion),
+            ) => {
+                transition
+                    .advance(completion)
+                    .map_err(|_| PhyBluetoothTxGainInitTransitionError::WrongCompletion)?;
+                PhyBluetoothTxGainInitStep::TxPower(transition)
+            }
+            (
+                PhyBluetoothTxGainInitStep::TxDcPwdet(mut transition),
+                PhyBluetoothTxGainInitCompletion::TxDcPwdet(completion),
+            ) => {
+                transition
+                    .advance(completion)
+                    .map_err(|_| PhyBluetoothTxGainInitTransitionError::WrongCompletion)?;
+                PhyBluetoothTxGainInitStep::TxDcPwdet(transition)
+            }
+            (
+                PhyBluetoothTxGainInitStep::Publish(publication),
+                PhyBluetoothTxGainInitCompletion::Published(completed),
+            ) if publication == completed => {
+                let power = self
+                    .power
+                    .ok_or(PhyBluetoothTxGainInitTransitionError::WrongCompletion)?;
+                PhyBluetoothTxGainInitStep::Complete(PhyBluetoothTxGainInitOutcome {
+                    tx_dc_calibrated: true,
+                    dco: self.dco,
+                    tx_power: power,
+                    gain: publication.image(),
+                })
+            }
+            (
+                PhyBluetoothTxGainInitStep::Complete(_) | PhyBluetoothTxGainInitStep::Failed(_),
+                _,
+            ) => return Err(PhyBluetoothTxGainInitTransitionError::AlreadyComplete),
+            _ => return Err(PhyBluetoothTxGainInitTransitionError::WrongCompletion),
+        };
+        Ok(())
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PhyBluetoothExternalBindingError {
+    UnsupportedAction,
+    IncompleteTransaction,
+    UnexpectedOutcome,
+}
+
+/// Non-cloneable owner of one Bluetooth-parent PHY-I2C request.
+#[derive(Debug, Eq, PartialEq)]
+pub struct PhyBluetoothI2cBinding {
+    request: crate::phy_cold::PhyColdI2cRequest,
+    transaction: crate::phy_cold::PhyColdI2cTransaction,
+}
+
+impl PhyBluetoothI2cBinding {
+    pub const fn new(request: crate::phy_cold::PhyColdI2cRequest) -> Self {
+        Self {
+            request,
+            transaction: crate::phy_cold::PhyColdI2cTransaction::new(request),
+        }
+    }
+
+    pub const fn action(&self) -> crate::phy_cold::PhyColdI2cAction {
+        self.transaction.action()
+    }
+
+    #[cfg(target_arch = "riscv32")]
+    pub fn start_target(
+        &mut self,
+        platform: &mut impl open_esp_radio_esp32s31_hal::phy_i2c::PhyI2cMasterControl,
+    ) -> Result<(), crate::phy_cold::PhyColdI2cError> {
+        self.transaction.start_target(platform)
+    }
+
+    #[cfg(target_arch = "riscv32")]
+    pub fn observe_target_edge(
+        &mut self,
+        platform: &mut impl open_esp_radio_esp32s31_hal::phy_i2c::PhyI2cMasterControl,
+    ) -> Result<crate::phy_cold::PhyColdI2cObservation, crate::phy_cold::PhyColdI2cError> {
+        self.transaction.observe_target_edge(platform)
+    }
+
+    pub fn into_completion(
+        self,
+    ) -> Result<PhyBluetoothTxPowerCompletion, PhyBluetoothExternalBindingError> {
+        let crate::phy_cold::PhyColdI2cAction::Complete(outcome) = self.transaction.action() else {
+            return Err(PhyBluetoothExternalBindingError::IncompleteTransaction);
+        };
+        if outcome
+            == match self.request {
+                crate::phy_cold::PhyColdI2cRequest::ReadByte { address }
+                | crate::phy_cold::PhyColdI2cRequest::ReadMasked { address, .. } => {
+                    let crate::phy_cold::PhyColdI2cOutcome::Read { value, .. } = outcome else {
+                        return Err(PhyBluetoothExternalBindingError::UnexpectedOutcome);
+                    };
+                    crate::phy_cold::PhyColdI2cOutcome::Read { address, value }
+                }
+                crate::phy_cold::PhyColdI2cRequest::WriteByte { address, .. }
+                | crate::phy_cold::PhyColdI2cRequest::WriteMasked { address, .. } => {
+                    crate::phy_cold::PhyColdI2cOutcome::Written { address }
+                }
+            }
+        {
+            Ok(PhyBluetoothTxPowerCompletion::I2c(outcome))
+        } else {
+            Err(PhyBluetoothExternalBindingError::UnexpectedOutcome)
+        }
+    }
+}
+
+/// Bounded PBus force-test used by the Bluetooth power parent.
+#[derive(Debug, Eq, PartialEq)]
+pub struct PhyBluetoothPbusBinding {
+    inner: crate::phy_pbus::PhyPbusHardwareBinding,
+}
+
+impl PhyBluetoothPbusBinding {
+    pub const fn new(transaction: crate::phy_pbus::PhyPbusForceTest) -> Self {
+        Self {
+            inner: crate::phy_pbus::PhyPbusHardwareBinding::new(transaction),
+        }
+    }
+
+    #[cfg(target_arch = "riscv32")]
+    pub fn start_target(
+        &mut self,
+        registers: &mut open_esp_radio_esp32s31_hal::RadioRegisters,
+    ) -> Result<(), crate::phy_pbus::PhyPbusHardwareBindingError> {
+        self.inner.start_target(registers)
+    }
+
+    #[cfg(target_arch = "riscv32")]
+    pub fn observe_target_edge(
+        &mut self,
+        registers: &mut open_esp_radio_esp32s31_hal::RadioRegisters,
+    ) -> Result<
+        crate::phy_pbus::PhyPbusHardwareObservation,
+        crate::phy_pbus::PhyPbusHardwareBindingError,
+    > {
+        self.inner.observe_target_edge(registers)
+    }
+
+    pub fn into_completion(
+        self,
+    ) -> Result<PhyBluetoothTxPowerCompletion, PhyBluetoothExternalBindingError> {
+        self.inner
+            .into_transaction()
+            .map(PhyBluetoothTxPowerCompletion::PbusCompleted)
+            .map_err(|_| PhyBluetoothExternalBindingError::IncompleteTransaction)
+    }
+
+    pub fn into_timeout_completion(self) -> PhyBluetoothTxPowerCompletion {
+        PhyBluetoothTxPowerCompletion::PbusTimedOut(self.inner.into_timeout_transaction())
+    }
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub struct PhyBluetoothPbusReadBinding {
+    selector: u8,
+    path: u8,
+}
+
+impl PhyBluetoothPbusReadBinding {
+    pub const fn new(selector: u8, path: u8) -> Self {
+        Self { selector, path }
+    }
+
+    #[cfg(target_arch = "riscv32")]
+    pub fn execute_target(
+        self,
+        registers: &mut open_esp_radio_esp32s31_hal::RadioRegisters,
+    ) -> PhyBluetoothTxPowerCompletion {
+        let value =
+            open_esp_radio_esp32s31_hal::pbus::read_result(registers, self.selector, self.path);
+        debug_assert!(
+            value.is_some(),
+            "Bluetooth parent emitted an unknown PBus selector"
+        );
+        PhyBluetoothTxPowerCompletion::PbusRead {
+            selector: self.selector,
+            path: self.path,
+            value: value.unwrap_or(0),
+        }
+    }
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub enum PhyBluetoothTxPowerExternalBinding {
+    I2c(PhyBluetoothI2cBinding),
+    Prepare(crate::phy_tx_cal::PhyTxCalibrationEnvironmentExternalBinding),
+    Cleanup(crate::phy_tx_cal::PhyTxCalibrationEnvironmentExternalBinding),
+    Pbus(PhyBluetoothPbusBinding),
+    ReadPbus(PhyBluetoothPbusReadBinding),
+    Calibration(crate::phy_tx_power::PhyTxPowerExternalBinding),
+}
+
+impl PhyBluetoothTxPowerExternalBinding {
+    pub fn lower(
+        action: PhyBluetoothTxPowerAction,
+    ) -> Result<Self, PhyBluetoothExternalBindingError> {
+        match action {
+            PhyBluetoothTxPowerAction::I2c(request) => {
+                Ok(Self::I2c(PhyBluetoothI2cBinding::new(request)))
+            }
+            PhyBluetoothTxPowerAction::Prepare(action) => {
+                crate::phy_tx_cal::PhyTxCalibrationEnvironmentExternalBinding::lower(action)
+                    .map(Self::Prepare)
+                    .map_err(|_| PhyBluetoothExternalBindingError::UnsupportedAction)
+            }
+            PhyBluetoothTxPowerAction::Cleanup(action) => {
+                crate::phy_tx_cal::PhyTxCalibrationEnvironmentExternalBinding::lower(action)
+                    .map(Self::Cleanup)
+                    .map_err(|_| PhyBluetoothExternalBindingError::UnsupportedAction)
+            }
+            PhyBluetoothTxPowerAction::ForcePbus(transaction) => {
+                Ok(Self::Pbus(PhyBluetoothPbusBinding::new(transaction)))
+            }
+            PhyBluetoothTxPowerAction::ReadPbus { selector, path } => Ok(Self::ReadPbus(
+                PhyBluetoothPbusReadBinding::new(selector, path),
+            )),
+            PhyBluetoothTxPowerAction::Calibration(action) => {
+                crate::phy_tx_power::PhyTxPowerExternalBinding::lower(action)
+                    .map(Self::Calibration)
+                    .map_err(|_| PhyBluetoothExternalBindingError::UnsupportedAction)
+            }
+            PhyBluetoothTxPowerAction::Complete(_) | PhyBluetoothTxPowerAction::Failed(_) => {
+                Err(PhyBluetoothExternalBindingError::UnsupportedAction)
+            }
+        }
+    }
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub struct PhyBluetoothTxGainPublicationBinding {
+    publication: PhyBluetoothTxGainPublication,
+}
+
+impl PhyBluetoothTxGainPublicationBinding {
+    pub const fn new(publication: PhyBluetoothTxGainPublication) -> Self {
+        Self { publication }
+    }
+
+    #[cfg(target_arch = "riscv32")]
+    pub fn execute_target(
+        self,
+        registers: &mut open_esp_radio_esp32s31_hal::RadioRegisters,
+    ) -> PhyBluetoothTxGainInitCompletion {
+        self.publication.execute_target(registers);
+        PhyBluetoothTxGainInitCompletion::Published(self.publication)
+    }
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub enum PhyBluetoothTxGainInitExternalBinding {
+    Rfpll(crate::phy_rfpll::RfpllFrequencyExternalBinding),
+    TxCap(crate::phy_tx_power::PhyTxPowerExternalBinding),
+    TxDc(crate::phy_txdc::PhyTxDcExternalBinding),
+    TxPower(PhyBluetoothTxPowerExternalBinding),
+    TxDcPwdet(crate::phy_txdc_pwdet::PhyTxDcPwdetExternalBinding),
+    Publish(PhyBluetoothTxGainPublicationBinding),
+}
+
+impl PhyBluetoothTxGainInitExternalBinding {
+    pub fn lower(
+        action: PhyBluetoothTxGainInitAction,
+    ) -> Result<Self, PhyBluetoothExternalBindingError> {
+        match action {
+            PhyBluetoothTxGainInitAction::Rfpll(action) => {
+                crate::phy_rfpll::RfpllFrequencyExternalBinding::lower(action)
+                    .map(Self::Rfpll)
+                    .map_err(|_| PhyBluetoothExternalBindingError::UnsupportedAction)
+            }
+            PhyBluetoothTxGainInitAction::TxCap(action) => {
+                crate::phy_tx_power::PhyTxPowerExternalBinding::lower(action)
+                    .map(Self::TxCap)
+                    .map_err(|_| PhyBluetoothExternalBindingError::UnsupportedAction)
+            }
+            PhyBluetoothTxGainInitAction::TxDc(action) => {
+                crate::phy_txdc::PhyTxDcExternalBinding::lower(action)
+                    .map(Self::TxDc)
+                    .map_err(|_| PhyBluetoothExternalBindingError::UnsupportedAction)
+            }
+            PhyBluetoothTxGainInitAction::TxPower(action) => {
+                PhyBluetoothTxPowerExternalBinding::lower(action).map(Self::TxPower)
+            }
+            PhyBluetoothTxGainInitAction::TxDcPwdet(action) => {
+                crate::phy_txdc_pwdet::PhyTxDcPwdetExternalBinding::lower(action)
+                    .map(Self::TxDcPwdet)
+                    .map_err(|_| PhyBluetoothExternalBindingError::UnsupportedAction)
+            }
+            PhyBluetoothTxGainInitAction::Publish(publication) => Ok(Self::Publish(
+                PhyBluetoothTxGainPublicationBinding::new(publication),
+            )),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -895,5 +1473,60 @@ mod tests {
             state.bluetooth_tx_power_result(),
             ([-3, 4, 5], [6, -7, 8], -9)
         );
+    }
+
+    #[test]
+    fn bluetooth_gain_parent_starts_with_the_recovered_full_frequency_rfpll() {
+        let mut transition =
+            crate::phy_state::PhyState::default().bluetooth_tx_gain_init_transition();
+
+        assert!(matches!(
+            transition.step_local().unwrap(),
+            PhyBluetoothTxGainInitLocalStep::External(PhyBluetoothTxGainInitAction::Rfpll(
+                crate::phy_rfpll::RfpllFrequencyAction::WriteMasked { .. }
+            ))
+        ));
+        assert_eq!(
+            transition.advance_external(PhyBluetoothTxGainInitCompletion::Published(
+                PhyBluetoothTxGainPublication::new(
+                    crate::phy_state::PhyState::default().bluetooth_tx_gain_image(),
+                ),
+            )),
+            Err(PhyBluetoothTxGainInitTransitionError::WrongCompletion)
+        );
+    }
+
+    #[test]
+    fn retained_bluetooth_calibration_skips_only_expensive_children() {
+        let mut transition =
+            crate::phy_state::PhyState::default().bluetooth_tx_gain_init_transition();
+        transition.parameters.tx_dc_calibrated = true;
+        transition
+            .parameters
+            .tx_power
+            .calibration
+            .already_calibrated = true;
+        transition.step = PhyBluetoothTxGainInitStep::TxCap;
+
+        let PhyBluetoothTxGainInitLocalStep::External(PhyBluetoothTxGainInitAction::TxCap(
+            crate::phy_tx_power::PhyTxPowerAction::WriteI2c { address, value },
+        )) = transition.step_local().unwrap()
+        else {
+            panic!("Bluetooth parent did not publish channel-six TX-cap first");
+        };
+        transition
+            .advance_external(PhyBluetoothTxGainInitCompletion::TxCap(
+                crate::phy_tx_power::PhyTxPowerCompletion::I2cWritten { address, value },
+            ))
+            .unwrap();
+
+        assert_eq!(
+            transition.step_local().unwrap(),
+            PhyBluetoothTxGainInitLocalStep::StateAdvanced
+        );
+        assert!(matches!(
+            transition.step_local().unwrap(),
+            PhyBluetoothTxGainInitLocalStep::External(PhyBluetoothTxGainInitAction::TxDcPwdet(_))
+        ));
     }
 }

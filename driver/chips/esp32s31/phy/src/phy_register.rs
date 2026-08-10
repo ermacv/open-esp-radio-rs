@@ -100,17 +100,12 @@ pub enum PhyCalibrationPath {
     FullUncached,
     /// No retained cache was supplied; a fresh cache is produced.
     FullForCache,
-    /// The supplied cache failed validation; full calibration replaces it.
+    /// A supplied cache could not be safely replayed; full calibration
+    /// replaces it.
     FullAfterRejectedCache,
-    /// The supplied cache was valid and its retained state was restored.
-    PartialRestored,
 }
 
 impl PhyCalibrationPath {
-    pub const fn full_calibration_performed(self) -> bool {
-        !matches!(self, Self::PartialRestored)
-    }
-
     pub const fn cache_available(self) -> bool {
         !matches!(self, Self::FullUncached)
     }
@@ -253,7 +248,7 @@ impl PhyRegisterTransition {
             calibration_candidate,
             calibration_cache_ready: false,
             calibration_path: if calibration_candidate {
-                PhyCalibrationPath::PartialRestored
+                PhyCalibrationPath::FullAfterRejectedCache
             } else {
                 PhyCalibrationPath::FullForCache
             },
@@ -298,8 +293,11 @@ impl PhyRegisterTransition {
         )
     }
 
-    /// Return a validated restored cache or a freshly completed full cache.
-    /// Failed/in-progress transitions never expose a cache as persistable.
+    /// Return the freshly completed full-calibration cache.
+    ///
+    /// A supplied cache is validation input only until complete hardware
+    /// replay exists. Failed/in-progress transitions never expose a cache as
+    /// persistable.
     pub fn calibration_cache(&self) -> Option<&crate::phy_state::PhyCalibrationCache> {
         self.calibration_cache_ready
             .then_some(())
@@ -406,29 +404,18 @@ impl PhyRegisterTransition {
                     .state
                     .as_mut()
                     .ok_or(PhyRegisterTransitionError::MissingStateOwner)?;
-                let restored = if self.calibration_candidate {
-                    let identity = self
-                        .calibration_identity
-                        .ok_or(PhyRegisterTransitionError::MissingStateOwner)?;
-                    let cache = self
-                        .calibration_cache
-                        .as_ref()
-                        .ok_or(PhyRegisterTransitionError::MissingStateOwner)?;
-                    if cache.matches(identity) {
-                        state.begin_partial_wifi_calibration(config, cache);
-                        self.calibration_cache_ready = true;
-                        self.calibration_path = PhyCalibrationPath::PartialRestored;
-                        true
-                    } else {
-                        self.calibration_path = PhyCalibrationPath::FullAfterRejectedCache;
-                        false
-                    }
-                } else {
-                    false
-                };
-                if !restored {
-                    state.begin_full_wifi_calibration(config);
+                // A retained snapshot owns calibrated values, but the current
+                // driver does not yet own the complete hardware replay which
+                // republishes every skipped RF/baseband register after reset.
+                // HIL proved that restoring software flags alone produces an
+                // unstable link. Until that replay is a typed transition, a
+                // supplied cache is untrusted for cold admission and is
+                // replaced by a complete calibration.
+                if self.calibration_candidate {
+                    self.calibration_path = PhyCalibrationPath::FullAfterRejectedCache;
                 }
+                self.calibration_cache_ready = false;
+                state.begin_full_wifi_calibration(config);
                 // Pinned parent saves this flag word before either child can
                 // mutate it and uses the snapshot after both return.
                 self.temperature_control = Some(state.register_temperature_control());
@@ -569,13 +556,11 @@ impl PhyRegisterTransition {
                         .as_mut()
                         .ok_or(PhyRegisterTransitionError::MissingStateOwner)?
                         .apply_register_temperature_outcome(control, outcome);
-                    self.phase = Some(Phase::Tail(
-                        if self.calibration_path.full_calibration_performed() {
-                            TailStep::BackupCalibration
-                        } else {
-                            TailStep::BbpllOff
-                        },
-                    ));
+                    // Cache replay is intentionally not exposed until the
+                    // driver owns restoration of every retained RF/baseband
+                    // hardware value. Every supported path therefore backs up
+                    // the fresh full-calibration result.
+                    self.phase = Some(Phase::Tail(TailStep::BackupCalibration));
                     Ok(PhyRegisterLocalStep::StateAdvanced)
                 }
                 crate::phy_temperature::PhyTemperatureAction::Failed(failure) => {
@@ -894,7 +879,7 @@ impl PhyRegisterTransition {
                     micros: 1,
                 },
             ) => Phase::Complete(PhyRegisterOutcome {
-                full_calibration_performed: self.calibration_path.full_calibration_performed(),
+                full_calibration_performed: true,
                 calibration_path: self.calibration_path,
             }),
             (
@@ -1630,7 +1615,7 @@ mod tests {
     }
 
     #[test]
-    fn valid_caller_cache_selects_partial_calibration_and_invalidates_cold_hardware_state() {
+    fn structurally_valid_cache_is_replaced_until_hardware_replay_is_owned() {
         let cache = retained_cache(CALIBRATION_IDENTITY);
         let mut transition = PhyRegisterTransition::with_production_config_and_calibration(
             CALIBRATION_IDENTITY,
@@ -1644,12 +1629,12 @@ mod tests {
         );
         assert_eq!(
             transition.calibration_path,
-            PhyCalibrationPath::PartialRestored
+            PhyCalibrationPath::FullAfterRejectedCache
         );
-        assert!(transition.calibration_cache().is_some());
-        assert!(transition.state().unwrap().baseband_calibration_complete());
+        assert!(transition.calibration_cache().is_none());
+        assert!(!transition.state().unwrap().baseband_calibration_complete());
         assert!(
-            transition
+            !transition
                 .state()
                 .unwrap()
                 .tx_power_parameters()
@@ -1657,7 +1642,7 @@ mod tests {
         );
         let temperature = transition.temperature_control.unwrap();
         assert!(temperature.updates_offset_130());
-        assert!(!temperature.updates_reference_copies());
+        assert!(temperature.updates_reference_copies());
     }
 
     #[test]

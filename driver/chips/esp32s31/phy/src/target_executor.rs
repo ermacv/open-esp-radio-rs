@@ -11,6 +11,9 @@ use open_esp_radio_esp32s31_hal::{RadioRegisters, phy_i2c::PhyI2cMasterControl};
 
 use crate::{
     HARDWARE_EDGE_LIMIT,
+    phy_bluetooth::{
+        PhyBluetoothI2cBinding, PhyBluetoothPbusBinding, PhyBluetoothTxPowerCompletion,
+    },
     phy_channel::{PhyChipChannelCompletion, PhyChipChannelI2cBinding},
     phy_cold::{PhyColdI2cAction, PhyColdI2cError, PhyColdI2cObservation},
     phy_dcode::{PhyDcodeCompletion, PhyDcodeI2cBinding},
@@ -236,6 +239,11 @@ define_i2c_executor!(
     PhyTxPowerI2cBinding,
     PhyTxPowerCompletion
 );
+define_i2c_executor!(
+    complete_bluetooth_i2c,
+    PhyBluetoothI2cBinding,
+    PhyBluetoothTxPowerCompletion
+);
 define_i2c_executor!(complete_dcode_i2c, PhyDcodeI2cBinding, PhyDcodeCompletion);
 define_i2c_executor!(
     complete_txiq_init_i2c,
@@ -266,6 +274,11 @@ define_pbus_executor!(
     complete_tx_calibration_environment_pbus,
     PhyTxCalibrationEnvironmentPbusBinding,
     PhyTxCalibrationEnvironmentCompletion
+);
+define_timeout_pbus_executor!(
+    complete_bluetooth_pbus,
+    PhyBluetoothPbusBinding,
+    PhyBluetoothTxPowerCompletion
 );
 define_timeout_pbus_executor!(
     complete_tx_dc_pwdet_search_pbus,

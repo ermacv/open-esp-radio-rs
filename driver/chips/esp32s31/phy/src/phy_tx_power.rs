@@ -179,6 +179,15 @@ const fn tx_cap_value(capacitance: [u8; 6], channel_code: u16) -> u8 {
     capacitance[index] | 0xc0
 }
 
+/// Direct channel-six TX-cap publication used by vendor
+/// `phy_bt_tx_gain_init` before its Bluetooth calibration children.
+pub(crate) const fn bluetooth_tx_cap_action(capacitance: [u8; 6]) -> PhyTxPowerAction {
+    PhyTxPowerAction::WriteI2c {
+        address: TX_CAP_ADDRESS,
+        value: tx_cap_value(capacitance, 6),
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PhyPowerControlPointRequest {
     pub identity: u8,

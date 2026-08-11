@@ -1830,6 +1830,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "open-esp-radio-esp32s31-coex"
+version = "0.1.0"
+dependencies = [
+ "open-esp-radio-esp32s31-registers",
+]
+
+[[package]]
+name = "open-esp-radio-esp32s31-coex-embassy"
+version = "0.1.0"
+dependencies = [
+ "embassy-futures",
+ "embassy-sync 0.8.0",
+ "open-esp-radio-esp32s31-coex",
+]
+
+[[package]]
 name = "open-esp-radio-esp32s31-hal"
 version = "0.1.0"
 dependencies = [

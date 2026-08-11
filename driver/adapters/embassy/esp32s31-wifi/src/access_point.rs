@@ -54,6 +54,27 @@ use crate::{
 const EAPOL_ETHERTYPE: u16 = 0x888e;
 const EAPOL_CAPACITY: usize = 512;
 
+/// Wait for AP work in protocol priority order.
+///
+/// `embassy_futures::select4` is intentionally biased toward its first ready
+/// future. Stop remains the ownership boundary, but an elapsed TBTT must win
+/// over RX and network traffic: otherwise a continuously ready RX signal can
+/// postpone beacons by complete intervals in a busy channel.
+async fn wait_for_ap_work<S, B, R, N>(
+    stop: S,
+    beacon: B,
+    rx: R,
+    network: N,
+) -> Either4<S::Output, B::Output, R::Output, N::Output>
+where
+    S: Future,
+    B: Future,
+    R: Future,
+    N: Future,
+{
+    select4(stop, beacon, rx, network).await
+}
+
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct Esp32s31AccessPointControlReport {
     pub missed_beacon_intervals: u32,
@@ -688,16 +709,20 @@ where
             let (_, beacon_delay_ms) = self
                 .next_beacon_delay(now_micros as u32)
                 .ok_or(Esp32s31AccessPointRunError::InvalidBeaconSchedule)?;
-            match select4(
+            match wait_for_ap_work(
                 stop.as_mut(),
-                interrupts.mac_runtime().wait_rx(),
                 Timer::after_millis(u64::from(beacon_delay_ms)),
+                interrupts.mac_runtime().wait_rx(),
                 network.receive_tx(),
             )
             .await
             {
                 Either4::First(()) => stopping = true,
                 Either4::Second(()) => {
+                    self.publish_beacon(hardware, Instant::now().as_micros())
+                        .map_err(Esp32s31AccessPointRunError::Control)?;
+                }
+                Either4::Third(()) => {
                     // One IRQ publication may represent several completed
                     // descriptors. Drain until the walker reports no further
                     // ownership instead of requiring a second interrupt edge
@@ -728,10 +753,6 @@ where
                         });
                         network_link_up = authorized;
                     }
-                }
-                Either4::Third(()) => {
-                    self.publish_beacon(hardware, Instant::now().as_micros())
-                        .map_err(Esp32s31AccessPointRunError::Control)?;
                 }
                 Either4::Fourth(frame) => {
                     self.report.network_tx_frames_observed =
@@ -892,5 +913,26 @@ fn ethernet_protocol(frame: &[u8]) -> Option<EthernetProtocol> {
             _ => Some(EthernetProtocol::Other),
         },
         _ => Some(EthernetProtocol::Other),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use core::future::{pending, ready};
+
+    use embassy_futures::{block_on, select::Either4};
+
+    use super::wait_for_ap_work;
+
+    #[test]
+    fn elapsed_tbtt_wins_over_simultaneously_ready_rx() {
+        let selected = block_on(wait_for_ap_work(
+            pending::<()>(),
+            ready(()),
+            ready(()),
+            pending::<()>(),
+        ));
+
+        assert!(matches!(selected, Either4::Second(())));
     }
 }

@@ -1,9 +1,10 @@
 # open-esp-radio-rs
 
 Source-only, `no_std` Embassy radio driver and verification workspace for
-Espressif chips. The current implementation target is ESP32-S31 Wi-Fi STA and
-standalone monitor. AP, ESP32-C5, Bluetooth/BLE, IEEE 802.15.4 and coexistence
-are future work, not placeholder public APIs. The normal workspace and HIL
+Espressif chips. The current implementation target is ESP32-S31 Wi-Fi STA,
+single-client WPA2 AP and standalone normalized monitor. AP+STA, ESP32-C5,
+Bluetooth/BLE, IEEE 802.15.4 and coexistence are future work, not placeholder
+public APIs. The normal workspace and HIL
 do not link `esp-wifi-sys`, vendor Wi-Fi
 archives, or a radio/Wi-Fi ROM ABI. The isolated vendor-oracle workspace is the
 only opt-in exception.
@@ -22,7 +23,7 @@ only opt-in exception.
 | `driver/adapters/embassy/esp32s31-platform` | ESP32-S31 Embassy executor/time platform binding |
 | `driver/adapters/embassy/esp32s31-wifi` | Internal ESP32-S31 Wi-Fi Embassy implementation |
 | `driver/adapters/esp-hal/esp32s31-wifi` | ESP32-S31 `esp-hal` peripheral binding |
-| `driver/integration/esp32s31/embassy-wifi` | Production station/monitor composition |
+| `driver/integration/esp32s31/embassy-wifi` | Production station/AP/monitor composition |
 | `driver/chips/esp32s31/pac-raw` | Internal generated svd2rust backend |
 | `driver/chips/esp32s31/pac` | Closed typed radio peripheral-access API |
 | `driver/chips/esp32s31/hal` | Finite hardware operations and async boundaries |

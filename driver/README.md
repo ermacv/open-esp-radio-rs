@@ -16,7 +16,7 @@ application (embassy-net Stack, DHCP, sockets)
 ESP32-S31 Embassy Wi-Fi runner (sole PAC/DMA/ISR owner)
             │
     ┌───────┴────────┐
-    │ Wi-Fi STA/HMAC │ portable frame, MLME and WPA2 logic
+    │ Wi-Fi HMAC     │ portable STA/AP frame, MLME and WPA2 logic
     │ S31 LMAC/DMA   │ queues, IRQ, descriptors and time-critical MAC work
     │ S31 RF/PHY     │ calibration, clocks, channel and baseband transitions
     │ registers/PAC  │ typed transactions and generated MMIO access
@@ -30,10 +30,10 @@ adapter API.
 - `radio`: public requests and typed role lifecycle.
 - `wifi/{ieee80211,softmac,sta,wpa2}`: portable Wi-Fi protocol logic.
 - `chips/esp32s31/{pac,registers,hal,phy}`: chip RF/register implementation.
-- `chips/esp32s31/wifi/{dma,mac,sta}`: ESP32-S31 Wi-Fi backend.
+- `chips/esp32s31/wifi/{dma,mac,sta,ap}`: ESP32-S31 Wi-Fi backend.
 - `adapters/embassy/esp32s31-wifi`: internal concrete runtime implementation.
 - `integration/esp32s31/embassy-wifi`: production composition and the only
-  place applications enter the current ESP32-S31 station/monitor service.
+  place applications enter the current ESP32-S31 station/AP/monitor service.
 - `common/dma`: audited generic pinned-memory foundation.
 
 `embassy-net::Stack`, DHCP, sockets and network tasks are application-owned.
@@ -51,23 +51,26 @@ hardware.
 Radio runner: Starting -> Ready -> Faulted
 Wi-Fi:        Idle -> Station -> Idle
               Idle -> Scan -> Idle
+              Idle -> AccessPoint -> Idle
               Idle -> Monitor -> Idle
 ```
 
-`WifiIdle`, `WifiStation` and `WifiMonitor` are affine. Starting consumes idle;
-stopping consumes the role and returns idle only after the runner has masked
-the source, drained pending IRQ work, completed or quarantined TX, stopped RX,
-detached queues and published link down. If quiescence cannot be proved, the
-runner enters a terminal fault and no reusable idle owner is fabricated.
+`WifiIdle`, `WifiStation`, `WifiAccessPoint` and `WifiMonitor` are affine.
+Starting consumes idle; stopping consumes the role and returns idle only after
+the runner has masked the source, drained pending IRQ work, completed or
+quarantined TX, stopped RX, detached queues and published link down. If
+quiescence cannot be proved, the runner enters a terminal fault and no reusable
+idle owner is fabricated.
 
 `WifiIdle::scan` is a finite operation: it consumes idle, actively scans the
 requested channels, returns a bounded value-only report and restores idle.
 It cannot associate. Station owns its separate candidate scan plus
 authentication, association, WPA2, connected and reconnect policy. Monitor is
 an exclusive capture role. The production STA API is deliberately always
-awake; the internal power-save protocol work is not a supported lifecycle.
-AP, BLE, Bluetooth, IEEE 802.15.4 and coexistence are not implemented and
-therefore have no placeholder public owner types.
+awake. AP v1 owns one 20 MHz ERP BSS, one WPA2-PSK/CCMP client and pairwise
+unicast Ethernet; it does not claim HT, AP+STA, group-data TX or power save.
+BLE, Bluetooth, IEEE 802.15.4 and coexistence are not implemented and have no
+placeholder public owner types.
 
 ISR handlers are private backend details: they record pending work and wake the
 runner. Examples contain no ISR, PAC, DMA or register assembly.
@@ -85,7 +88,7 @@ cannot manufacture register, descriptor or interrupt ownership. See
 
 ## Extension rules
 
-- Add AP as a peer Wi-Fi role, not inside STA.
+- Extend AP only through its peer Wi-Fi role; never place AP policy inside STA.
 - Add ESP32-C5 as a peer chip backend. Extract shared code only after both
   chips demonstrate the same semantic operation; matching offsets are not an
   abstraction.
@@ -100,4 +103,4 @@ cannot manufacture register, descriptor or interrupt ownership. See
 - target checks build station, monitor and HIL with the pinned toolchain;
 - examples contain no unsafe/ISR/PAC/DMA code;
 - driver safety audit finds unsafe only in listed leaves;
-- UDP/TCP/ICMP HIL qualification guards the existing STA datapath.
+- UDP/TCP/ICMP HIL qualification independently guards STA and AP datapaths.

@@ -6,7 +6,7 @@
 //! borrow the same register owner between finite TX hardware transactions.
 
 use open_esp_radio_esp32s31_hal::RadioRegisters;
-use open_esp_radio_esp32s31_registers::{
+use open_esp_radio_esp32s31_pac::{
     MacHe20PeerConfig, MacHe20PeerError, MacHeBeamformingReportProfile, MacHeErSuAckRateProfile,
     MacHeTbLinkReservation, MacHeTbProgramError, MacHeTbTidLimit, MacHeTid,
     MacHeTriggerTxQueueSnapshot, MacHeTxProgram, MacHeTxVectorSnapshot,

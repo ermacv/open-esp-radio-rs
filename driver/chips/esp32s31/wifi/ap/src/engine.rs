@@ -4,7 +4,7 @@ use crate::{
     beacon::Esp32s31ApBeacon,
     security::{Esp32s31ApSecurity, Esp32s31ApSecurityError, Esp32s31ApSecurityStopReport},
 };
-use open_esp_radio_esp32s31_registers::RadioRegisters;
+use open_esp_radio_esp32s31_pac::RadioRegisters;
 use open_esp_radio_esp32s31_wifi_mac::{
     ap_policy::{ApRxPolicyHardware, configure_ap_receive_policy},
     crypto::{CcmpKeyHardware, CryptoKeyError},
@@ -396,6 +396,14 @@ impl<'storage> Esp32s31ApEngine<'storage> {
         self.service.peer()
     }
 
+    /// Return the only admitted peer after WPA2 has opened its controlled
+    /// port. A securing peer must never become a network TX/RX destination.
+    pub fn authorized_peer(&self) -> Option<[u8; 6]> {
+        (self.service.peer_phase() == Some(ApPeerPhase::Authorized))
+            .then(|| self.service.peer())
+            .flatten()
+    }
+
     pub fn stop<H: Esp32s31ApRuntimeHardware>(
         self,
         hardware: &mut H,
@@ -414,7 +422,7 @@ impl<'storage> Esp32s31ApEngine<'storage> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use open_esp_radio_esp32s31_registers::MacKeyInstallOutcome;
+    use open_esp_radio_esp32s31_pac::MacKeyInstallOutcome;
     use open_esp_radio_wpa2::{
         OwnedEapolFrame, Pmk, PtkContext, Wpa2Interface,
         frames::{OwnedRsnIe, Wpa2Gtk, Wpa2TxFrame},

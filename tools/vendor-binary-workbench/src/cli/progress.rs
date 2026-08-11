@@ -33,7 +33,7 @@ pub(super) fn command_span(command: &Command) -> Option<Span> {
         Command::RegisterValidate(_) => "Register validation",
         Command::RegisterReview(_) => "Register review",
         Command::RegisterExportSvd(_) => "SVD export",
-        Command::RegisterGeneratePac(_) => "PAC generation",
+        Command::RegisterGeneratePacRaw(_) => "raw PAC generation",
         Command::RegisterGenerateBindings(_) => "PAC binding generation",
         Command::SymbolInventory(_) => "Symbol inventory",
         Command::InterfaceDiscover(_) => "Interface discovery",

@@ -21,9 +21,9 @@ mod register_evidence;
 mod register_lints;
 
 pub use pac_api::{
-    FixedRegisterImage, FixedRegisterWrite, FullRegisterWrite, InterruptSnapshot,
-    MaskedRegisterModify, PacApiOptions, PacApiPack, RegisterImageWrite, ZeroBasedFieldWrite,
-    ZeroRegisterWrite,
+    BoundedDomain, EnumDomain, EnumValue, FixedRegisterImage, FixedRegisterWrite, FlagDomain,
+    FlagValue, FullRegisterWrite, InterruptSnapshot, MaskedRegisterModify, OpaqueDomain,
+    PacApiOptions, PacApiPack, RegisterImageWrite, ZeroBasedFieldWrite, ZeroRegisterWrite,
 };
 pub use pac_bindings::{generate_pac_binding_index, validate_pac_crate_name};
 pub use register_evidence::{

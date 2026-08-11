@@ -1,6 +1,6 @@
 //! Fallible, side-effect-free HT/HE register-image preparation.
 
-use open_esp_radio_esp32s31_registers::{
+use open_esp_radio_esp32s31_pac::{
     MacHeTbLinkReservation, MacHeTbProgramError, MacHeTbTidLimit, MacHeTid, MacHeTxProgram,
     MacHtTxProgram,
 };

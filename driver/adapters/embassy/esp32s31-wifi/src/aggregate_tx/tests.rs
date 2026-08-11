@@ -7,7 +7,7 @@ use core::{
 use open_esp_radio_embassy_net::{
     Driver as _, NoopRawMutex, PinnedDevice, PinnedResources, PinnedTxPool, TxToken as _,
 };
-use open_esp_radio_esp32s31_registers::{
+use open_esp_radio_esp32s31_pac::{
     MacHeTbLinkReservation, MacHeTbProgramError, MacHeTbTidLimit, MacHeTid,
     MacHeTriggerTxQueueSnapshot, MacHeTxProgram, MacHtAmpduCompletionRegisters, MacHtTxProgram,
     MacKeyInstallOutcome, MacLegacyTxProgram, MacTxCompletionRegisters, MacTxDetachOutcome,

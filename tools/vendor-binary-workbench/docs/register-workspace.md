@@ -5,7 +5,9 @@ The project register workspace separates three kinds of data:
 - generated MMIO `facts` record what vendor code actually accessed;
 - the versioned `model` is the editable hardware description committed to the
   project;
-- CMSIS-SVD, Rust PAC source and audit reports are derived outputs.
+- CMSIS-SVD, the internal `svd2rust` PAC source and audit reports are derived
+  outputs. The application-facing PAC is a separate closed crate which keeps
+  this generated crate private.
 
 SVD is an interchange and code-generation format. It is not the review
 database and does not carry artifact paths, function names, discovery notes or
@@ -30,8 +32,8 @@ linked-ir = [
 [registers.svd]
 output = "generated/svd/device.svd"
 
-[registers.pac]
-output = "generated/pac/src/lib.rs"
+[registers.pac-raw]
+output = "generated/pac-raw/src/lib.rs"
 target = "none"
 edition = "2024"
 
@@ -41,6 +43,7 @@ crate-name = "device_pac"
 
 [registers.api]
 pack = "registers/api.toml"
+output = "generated/pac/src/generated.rs"
 
 [registers.lints]
 pack = "registers/lints.toml"
@@ -49,7 +52,7 @@ pack = "registers/lints.toml"
 catalogs = ["registers/evidence.toml"]
 ```
 
-All paths are relative to `vendor-project.toml`. PAC target is `none` or
+All paths are relative to `vendor-project.toml`. Raw PAC target is `none` or
 `riscv`; edition is `2021` or `2024`. Command-line `--output`, `--target` and
 `--edition` override these defaults. `crate-name` is the Rust import name
 (normally the Cargo package name with `-` replaced by `_`), not a package name.
@@ -347,11 +350,21 @@ whole-register images, zero-based field writes, zero writes and partitioned
 masked read-modify-write operations. For example:
 
 ```toml
-schema = 1
+schema = 2
 
 [options]
 peripheral-ownership = true
 device-access = true
+
+[[flag-domains]]
+name = "InterruptMask"
+description = "Reviewed writable interrupt bits."
+
+[[flag-domains.values]]
+name = "RX_READY"
+value = 0x00000008
+description = "Enable the receive-ready interrupt."
+sources = ["REVIEWED_IRQ_ENABLE"]
 
 [[masked-register-modifies]]
 name = "publish_command"
@@ -363,6 +376,11 @@ set-mask = 0x0000000f
 sources = ["REVIEWED_COMMAND_BODY"]
 ```
 
+Dynamic operations may bind their input to a declared domain. For example, a
+`full-register-write` with `domain = "InterruptMask"` produces a crate-private
+typed bridge from the closed PAC to the raw helper. Target capability methods
+call that bridge; they do not reconstruct `value.bits()` themselves.
+
 The pack does not define addresses, fields, W1C behavior or reset values. Those
 remain in the editable register model. Loading the pack proves that every
 referenced peripheral/register/field exists in the release SVD and checks the
@@ -370,18 +388,23 @@ required access, width, write constraints, enum variants, modified-write
 semantics and mask partition. RTOS, NVS, logging and delay semantics do not
 belong in this pack.
 
+`[registers.api].output` is a generated Rust module for the closed PAC. Flag
+domains have private integer fields, reviewed constants and composition, but
+no public integer constructor. Numeric `bits()` is observation-only; it does
+not create another writable value.
+
 Generate deterministic, formatted `svd2rust` source from the same in-memory
 release SVD:
 
 ```console
-cargo vendor-binary-workbench registers generate-pac \
+cargo vendor-binary-workbench registers generate-pac-raw \
   --project verification/vendor/targets/esp32s31/vendor-project.toml
 ```
 
 And verify it in CI:
 
 ```console
-cargo vendor-binary-workbench registers generate-pac \
+cargo vendor-binary-workbench registers generate-pac-raw \
   --project verification/vendor/targets/esp32s31/vendor-project.toml \
   --check
 ```
@@ -421,8 +444,8 @@ Use `--check --deny-unreviewed` in CI. `--output` and `--crate-name` override
 does not require a generated SVD file: both SVD and index are rendered from the
 schema-2 model in memory.
 
-Direct SVD, PAC and binding generation emits the typed `svd-publication`,
-`pac-publication` or `binding-publication` report in JSON/JSONL mode. These are
+Direct SVD, raw-PAC and binding generation emits one typed publication report
+in JSON/JSONL mode. These are
 the same typed leaf results suppressed and aggregated by `project publish`.
 
 For ESP32-S31 this project-owned command reproduces

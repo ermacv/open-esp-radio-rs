@@ -22,7 +22,8 @@ mod tests;
 
 use options::{Options, resolve_options};
 use render::{
-    render_manifest, render_memory, render_platform, render_readme, render_run_spec, render_target,
+    render_manifest, render_memory, render_platform, render_readme, render_register_api,
+    render_run_spec, render_target,
 };
 
 #[derive(Serialize)]
@@ -124,6 +125,8 @@ fn write_project(root: &Path, options: &Options) -> Result<()> {
     fs::write(root.join("local.example.toml"), render_run_spec(options))?;
     fs::write(root.join("README.md"), render_readme(options))?;
     fs::write(root.join(".gitignore"), "/generated/\n/local.toml\n")?;
+    fs::create_dir_all(root.join("registers"))?;
+    fs::write(root.join("registers/api.toml"), render_register_api())?;
 
     let model = root.join("registers/device.toml");
     if let Some(input) = options.import_svd.as_deref() {
@@ -158,6 +161,7 @@ fn validate_project(root: &Path) -> Result<()> {
     let model = RegisterModel::load(&project.registers.as_ref().unwrap().model)?;
     let _ = model.render_svd()?;
     let _ = validate_register_model_memory_map(&model, &memory)?;
+    let _ = crate::registers::validate_pac_api(project.registers.as_ref().unwrap())?;
     let _ = project.function_ir_reports()?;
     Ok(())
 }

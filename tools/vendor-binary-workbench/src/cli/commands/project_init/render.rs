@@ -55,13 +55,16 @@ output = \"generated/reports/register-review.md\"\n\
 linked-ir = [{linked_ir}]\n\
 \n[registers.svd]\n\
 output = \"generated/svd/device.svd\"\n\
-\n[registers.pac]\n\
-output = \"generated/pac/src/lib.rs\"\n\
+\n[registers.pac-raw]\n\
+output = \"generated/pac-raw/src/lib.rs\"\n\
 target = \"none\"\n\
 edition = \"2024\"\n\
 \n[registers.bindings]\n\
 output = \"generated/svd/device.bindings.toml\"\n\
 crate-name = \"{}\"\n\
+\n[registers.api]\n\
+pack = \"registers/api.toml\"\n\
+output = \"generated/pac/src/generated.rs\"\n\
 \n[interfaces]\n\
 facts = \"generated/findings/interfaces.json\"\n\
 pack = \"interfaces/reviewed.toml\"\n\
@@ -70,10 +73,21 @@ pack = \"functions/reviewed.toml\"\n\
 profiles = [{profiles}]\n\
 \n[functions.review]\n\
 output = \"generated/reports/function-review.md\"\n",
-        options.pac_crate_name,
+        options.pac_raw_crate_name,
         owned_ranges = quoted_list(options.ranges.iter().map(|range| range.name.clone()))
     ));
     output
+}
+
+pub(super) fn render_register_api() -> String {
+    "# Reviewed public domains and transactions bridged to the internal raw PAC.\n\
+# Keep this pack empty until a vendor access has exact evidence and policy.\n\
+schema = 2\n\
+\n[options]\n\
+peripheral-ownership = false\n\
+device-access = false\n\
+allow-clippy-empty-docs = false\n"
+        .to_owned()
 }
 
 pub(super) fn render_platform(options: &Options) -> String {
@@ -158,7 +172,7 @@ cargo vendor-binary-workbench registers review --project vendor-project.toml\n\
 ```\n\n\
 Review `code/boundaries.toml`, `registers/peripherals/*.toml`,\n\
 `interfaces/reviewed.toml` and `functions/reviewed.toml`. Then use `project analyze` to refresh evidence,\n\
-`project analyze --check` in analysis CI, and `project publish --check` for SVD/PAC.\n",
+`project analyze --check` in analysis CI, and `project publish --check` for SVD/raw-PAC.\n",
         options.id,
         bindings = bindings
     )

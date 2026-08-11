@@ -3,7 +3,8 @@
 #![forbid(unsafe_code)]
 
 use super::{
-    MacInterruptSnapshot, MacPowerInterruptSnapshot, RadioRegisters, device_fence,
+    MacInterruptMask, MacInterruptSnapshot, MacPowerInterruptSnapshot, RadioRegisters,
+    device_fence,
     svd::{self, interrupt_snapshot},
 };
 
@@ -80,12 +81,15 @@ impl MacInterruptSetup {
     /// The CPU interrupt route must still be unbound while this transaction
     /// executes. The returned value should be installed in its final static
     /// storage before the platform route is enabled.
-    pub fn activate(self, event_mask: u32) -> (MacInterruptRegisters, MacPowerInterruptRegisters) {
+    pub fn activate(
+        self,
+        event_mask: MacInterruptMask,
+    ) -> (MacInterruptRegisters, MacPowerInterruptRegisters) {
         // Preserve the HIL-qualified task order: publish the complete MAC
         // mask, explicitly keep the still-unqualified WDEVPWR causes masked,
         // acknowledge every stale event, then order all MMIO writes before
         // the caller exposes either ISR capability.
-        svd::full_register_write::mac_interrupt_enable(&self.peripheral, event_mask);
+        super::generated::mac_interrupt_enable(&self.peripheral, event_mask);
         svd::fixed_register_write::mask_mac_power_interrupts(&self.power_peripheral);
         svd::full_register_write::mac_interrupt_clear(&self.peripheral, u32::MAX);
         svd::full_register_write::mac_power_interrupt_clear(&self.power_peripheral, u32::MAX);
@@ -124,7 +128,9 @@ impl MacPowerInterruptRegisters {
     /// SOURCE: complete `libpp.a[hal_tsf.o]::
     /// hal_pwr_interrupt_get_event` reads `0x2010_d8bc`.
     pub fn power_interrupt_status(&self) -> MacPowerInterruptSnapshot {
-        interrupt_snapshot::sample_mac_power_interrupt(&self.peripheral)
+        MacPowerInterruptSnapshot(interrupt_snapshot::sample_mac_power_interrupt(
+            &self.peripheral,
+        ))
     }
 
     /// Acknowledge the complete sampled WDEVPWR event image.
@@ -132,7 +138,7 @@ impl MacPowerInterruptRegisters {
     /// SOURCE: complete `libpp.a[hal_tsf.o]::
     /// hal_pwr_interrupt_clr_event` stores its argument to `0x2010_d8c0`.
     pub fn acknowledge_power_interrupts(&mut self, snapshot: MacPowerInterruptSnapshot) {
-        interrupt_snapshot::acknowledge_mac_power_interrupt(&self.peripheral, snapshot);
+        interrupt_snapshot::acknowledge_mac_power_interrupt(&self.peripheral, snapshot.0);
         device_fence();
     }
 }
@@ -154,7 +160,7 @@ impl MacInterruptRegisters {
     /// status image. The runtime mask is configured before IRQ activation and
     /// is not sampled by the vendor FIQ transaction.
     pub fn mac_interrupt_status(&self) -> MacInterruptSnapshot {
-        interrupt_snapshot::sample_mac_interrupt(&self.peripheral)
+        MacInterruptSnapshot(interrupt_snapshot::sample_mac_interrupt(&self.peripheral))
     }
 
     /// Acknowledge the complete sampled event image, then order the ISR edge.
@@ -162,7 +168,7 @@ impl MacInterruptRegisters {
     /// SOURCE: complete `libpp.a::hal_mac_interrupt_clr_event` is one
     /// full-width store to the generated write-to-clear register.
     pub fn acknowledge_mac_interrupts(&mut self, snapshot: MacInterruptSnapshot) {
-        interrupt_snapshot::acknowledge_mac_interrupt(&self.peripheral, snapshot);
+        interrupt_snapshot::acknowledge_mac_interrupt(&self.peripheral, snapshot.0);
         device_fence();
     }
 
@@ -174,7 +180,7 @@ impl MacInterruptRegisters {
     /// [`MacInterruptSetup::activate`] transaction possible without stealing
     /// either PAC peripheral a second time.
     pub fn deactivate(self, power: MacPowerInterruptRegisters) -> MacInterruptSetup {
-        svd::full_register_write::mac_interrupt_enable(&self.peripheral, 0);
+        super::generated::mac_interrupt_enable(&self.peripheral, MacInterruptMask::NONE);
         svd::fixed_register_write::mask_mac_power_interrupts(&power.peripheral);
         svd::full_register_write::mac_interrupt_clear(&self.peripheral, u32::MAX);
         svd::full_register_write::mac_power_interrupt_clear(&power.peripheral, u32::MAX);

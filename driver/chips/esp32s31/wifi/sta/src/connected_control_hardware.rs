@@ -5,7 +5,7 @@
 //! describes TSF, RX BlockAck and HE-TID operations, but no executor wakeups
 //! or Embassy task lifecycle.
 
-use open_esp_radio_esp32s31_registers::{MacHeTid, RadioRegisters};
+use open_esp_radio_esp32s31_pac::{MacHeTid, RadioRegisters};
 use open_esp_radio_esp32s31_wifi_mac::{
     crypto::{CryptoKeyError, StaGroupCcmpSlot, replace_sta_group_ccmp},
     rx_ampdu_hw::{self, S31RxBlockAckAgreement, S31RxBlockAckAgreementError},

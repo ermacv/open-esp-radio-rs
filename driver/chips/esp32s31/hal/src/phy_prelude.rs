@@ -4,7 +4,7 @@
 //! RF initializer. Numeric MMIO identities stay in the generated PAC.
 
 #[cfg(target_arch = "riscv32")]
-use open_esp_radio_esp32s31_registers::RadioRegisters;
+use open_esp_radio_esp32s31_pac::RadioRegisters;
 
 /// Platform operation required by the fixed-crystal PHY prelude.
 ///

@@ -6,7 +6,7 @@
 //! `svd/esp32s31-radio.svd`.
 
 #[cfg(target_arch = "riscv32")]
-use open_esp_radio_esp32s31_registers::RadioRegisters;
+use open_esp_radio_esp32s31_pac::RadioRegisters;
 
 /// Clear the two low Wi-Fi control bits at the start of PHY ownership.
 ///

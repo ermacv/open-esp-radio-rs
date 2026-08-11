@@ -2,9 +2,9 @@
 
 use core::sync::atomic::{AtomicU32, Ordering};
 
-use open_esp_radio_esp32s31_registers::{
-    MacInterruptRegisters, MacInterruptSnapshot, MacPowerInterruptRegisters,
-    MacPowerInterruptSnapshot,
+use open_esp_radio_esp32s31_pac::{
+    MacInterruptEvents, MacInterruptMask, MacInterruptRegisters, MacInterruptSnapshot,
+    MacPowerInterruptRegisters, MacPowerInterruptSnapshot,
 };
 
 /// Platform route which lends both interrupt-register capabilities to hard
@@ -25,7 +25,7 @@ pub trait MacInterruptRoute {
         &mut self,
         platform: &Self::Platform,
         setup: Self::Setup,
-        event_mask: u32,
+        event_mask: MacInterruptMask,
     ) -> Result<(), (Self::Error, Self::Setup)>;
 
     fn quiesce(&mut self, platform: &Self::Platform) -> Result<Self::Setup, Self::Error>;
@@ -43,9 +43,9 @@ pub const MAC_INT_TX_TIMEOUT: u32 = 0x0008_0000;
 /// hardware semantics remain unknown, so they intentionally stay outside
 /// [`HANDLED_MAC_MASK`].
 pub const MAC_INT_RX_ASSOCIATED_AUXILIARY_5: u32 =
-    open_esp_radio_esp32s31_registers::mac::int_status::RX_ASSOCIATED_AUXILIARY_5.mask();
+    MacInterruptEvents::RX_ASSOCIATED_AUXILIARY_5.bits();
 pub const MAC_INT_RX_ASSOCIATED_AUXILIARY_24: u32 =
-    open_esp_radio_esp32s31_registers::mac::int_status::RX_ASSOCIATED_AUXILIARY_24.mask();
+    MacInterruptEvents::RX_ASSOCIATED_AUXILIARY_24.bits();
 pub const MAC_INT_RX_ASSOCIATED_AUXILIARY_MASK: u32 =
     MAC_INT_RX_ASSOCIATED_AUXILIARY_5 | MAC_INT_RX_ASSOCIATED_AUXILIARY_24;
 

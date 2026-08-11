@@ -121,6 +121,12 @@ pub(super) fn load(path: &Path) -> Result<ProjectSpec> {
             if let Some(overlay) = table.get("overlay") {
                 return Err(source.item(Some(overlay), "unknown project registers key \"overlay\"; use the schema-2 \"model\" workspace"));
             }
+            if let Some(pac) = table.get("pac") {
+                return Err(source.item(
+                    Some(pac),
+                    "unknown project registers key \"pac\"; generated svd2rust output belongs in [registers.pac-raw]",
+                ));
+            }
             let model = table_string(table, "model", "project registers", source)?;
             let owned_ranges = required_table_string_array(
                 table,
@@ -134,28 +140,28 @@ pub(super) fn load(path: &Path) -> Result<ProjectSpec> {
             let non_operational_functions =
                 nested_string_array(table, "review", "non-operational-functions", source)?;
             let svd_output = nested_output_path(table, base, "svd", source)?;
-            let pac = table
-                .get("pac")
-                .map(|item| -> Result<PacOutputSpec> {
-                    let pac = item
+            let pac_raw = table
+                .get("pac-raw")
+                .map(|item| -> Result<PacRawOutputSpec> {
+                    let pac_raw = item
                         .as_table()
-                        .ok_or_else(|| source.item(Some(item), "project registers.pac must be a table"))?;
-                    let target = optional_table_string(pac, "target", "project registers.pac", source)?
+                        .ok_or_else(|| source.item(Some(item), "project registers.pac-raw must be a table"))?;
+                    let target = optional_table_string(pac_raw, "target", "project registers.pac-raw", source)?
                         .unwrap_or_else(|| "none".to_owned());
                     if !matches!(target.as_str(), "none" | "riscv") {
-                        return Err(source.table_key(pac, "target", format!(
-                            "project registers.pac target must be \"none\" or \"riscv\", got {target:?}"
+                        return Err(source.table_key(pac_raw, "target", format!(
+                            "project registers.pac-raw target must be \"none\" or \"riscv\", got {target:?}"
                         )));
                     }
-                    let edition = optional_table_string(pac, "edition", "project registers.pac", source)?
+                    let edition = optional_table_string(pac_raw, "edition", "project registers.pac-raw", source)?
                         .unwrap_or_else(|| "2024".to_owned());
                     if !matches!(edition.as_str(), "2021" | "2024") {
-                        return Err(source.table_key(pac, "edition", format!(
-                            "project registers.pac edition must be \"2021\" or \"2024\", got {edition:?}"
+                        return Err(source.table_key(pac_raw, "edition", format!(
+                            "project registers.pac-raw edition must be \"2021\" or \"2024\", got {edition:?}"
                         )));
                     }
-                    Ok(PacOutputSpec {
-                        output: resolve_path(base, &table_string(pac, "output", "project registers.pac", source)?),
+                    Ok(PacRawOutputSpec {
+                        output: resolve_path(base, &table_string(pac_raw, "output", "project registers.pac-raw", source)?),
                         target,
                         edition,
                     })
@@ -176,18 +182,25 @@ pub(super) fn load(path: &Path) -> Result<ProjectSpec> {
                     })
                 })
                 .transpose()?;
-            let api_pack = table
+            let api = table
                 .get("api")
-                .map(|item| -> Result<PathBuf> {
+                .map(|item| -> Result<(PathBuf, Option<PathBuf>)> {
                     let api = item
                         .as_table()
                         .ok_or_else(|| source.item(Some(item), "project registers.api must be a table"))?;
-                    Ok(resolve_path(
-                        base,
-                        &table_string(api, "pack", "project registers.api", source)?,
+                    Ok((
+                        resolve_path(
+                            base,
+                            &table_string(api, "pack", "project registers.api", source)?,
+                        ),
+                        optional_table_string(api, "output", "project registers.api", source)?
+                            .map(|path| resolve_path(base, &path)),
                     ))
                 })
                 .transpose()?;
+            let (api_pack, api_output) = api
+                .map(|(pack, output)| (Some(pack), output))
+                .unwrap_or((None, None));
             let evidence_catalogs =
                 nested_path_array(table, base, "evidence", "catalogs", source)?;
             let lint_pack = table
@@ -213,9 +226,10 @@ pub(super) fn load(path: &Path) -> Result<ProjectSpec> {
                 review_output,
                 review_ir_reports,
                 svd_output,
-                pac,
+                pac_raw,
                 bindings,
                 api_pack,
+                api_output,
                 lint_pack,
                 evidence_catalogs,
             })
@@ -393,11 +407,14 @@ pub(super) fn load(path: &Path) -> Result<ProjectSpec> {
             if let Some(path) = &paths.svd_output {
                 generated.push(("generated SVD", path));
             }
-            if let Some(pac) = &paths.pac {
-                generated.push(("generated PAC", &pac.output));
+            if let Some(pac_raw) = &paths.pac_raw {
+                generated.push(("generated raw PAC", &pac_raw.output));
             }
             if let Some(bindings) = &paths.bindings {
                 generated.push(("generated PAC bindings", &bindings.output));
+            }
+            if let Some(path) = &paths.api_output {
+                generated.push(("generated closed PAC domains", path));
             }
         }
         if let Some(paths) = &interfaces {

@@ -51,11 +51,15 @@ fn collect_workspace(context: &ProjectContext<'_>, report: &mut DoctorReport) {
                         .field("review-ir-reports", paths.review_ir_reports.len())
                         .field("svd-output", display_optional(paths.svd_output.as_deref()))
                         .field(
-                            "pac-output",
-                            paths.pac.as_ref().map_or_else(
+                            "pac-raw-output",
+                            paths.pac_raw.as_ref().map_or_else(
                                 || "-".to_owned(),
                                 |pac| pac.output.display().to_string(),
                             ),
+                        )
+                        .field(
+                            "pac-api-output",
+                            display_optional(paths.api_output.as_deref()),
                         )
                         .field(
                             "bindings-output",
@@ -186,11 +190,13 @@ fn collect_pac_api(context: &ProjectContext<'_>, report: &mut DoctorReport) {
         Some((paths, path)) => match validate_pac_api(paths) {
             Ok(Some(pack)) => CapabilityReport::new("pac-api", "available")
                 .field("schema", pack.schema as usize)
+                .field("domains", pack.domain_count())
                 .field("operations", pack.operation_count())
                 .field("sources", pack.source_ids().len())
                 .field("peripheral-ownership", pack.options.peripheral_ownership)
                 .field("device-access", pack.options.device_access)
-                .field("pack", path.display().to_string()),
+                .field("pack", path.display().to_string())
+                .field("output", display_optional(paths.api_output.as_deref())),
             Ok(None) => unreachable!("PAC API path was configured before validation"),
             Err(error) => {
                 report.error();

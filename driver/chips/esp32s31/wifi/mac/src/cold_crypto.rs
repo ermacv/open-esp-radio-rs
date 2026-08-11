@@ -1,6 +1,6 @@
 //! Ownership boundary for the cold hardware-crypto bypass state.
 
-use open_esp_radio_esp32s31_registers::ColdRadioRegisters;
+use open_esp_radio_esp32s31_pac::ColdRadioRegisters;
 
 pub trait MacColdCryptoHardware {
     fn initialize_crypto_bypass(&mut self);

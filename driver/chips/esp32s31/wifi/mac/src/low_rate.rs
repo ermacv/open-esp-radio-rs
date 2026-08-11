@@ -1,6 +1,6 @@
 //! Cross-layer ownership boundary for the PHY low-rate path.
 
-use open_esp_radio_esp32s31_registers::ColdRadioRegisters;
+use open_esp_radio_esp32s31_pac::ColdRadioRegisters;
 
 /// Narrow PHY capability needed by the MAC cold-start policy.
 ///

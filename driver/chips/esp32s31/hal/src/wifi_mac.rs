@@ -5,7 +5,7 @@
 //! Bluetooth, BLE or IEEE 802.15.4 PHY paths.
 
 #[cfg(target_arch = "riscv32")]
-use open_esp_radio_esp32s31_registers::RadioRegisters;
+use open_esp_radio_esp32s31_pac::RadioRegisters;
 
 /// Apply complete rev0 ROM `phy_enable_cca` or `phy_disable_cca`.
 #[cfg(target_arch = "riscv32")]

@@ -1,7 +1,7 @@
 //! Owned access to the recovered ESP32-S31 PHY PBus registers.
 
 #[cfg(target_arch = "riscv32")]
-use open_esp_radio_esp32s31_registers::RadioRegisters;
+use open_esp_radio_esp32s31_pac::RadioRegisters;
 
 /// A PBus command could not be published or completed.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

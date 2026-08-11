@@ -175,7 +175,7 @@ impl ScanRecord {
     /// SOURCE: the complete IEs copied by this module from Beacon/Probe
     /// Response frames; the ESP32-S31 mapping from above/below to CBW 2/3 is
     /// independently recovered in
-    /// `open-esp-radio-esp32s31-registers/src/frequency.rs::bss_tx_offset` from the
+    /// `open-esp-radio-esp32s31-pac/src/frequency.rs::bss_tx_offset` from the
     /// complete rev0 ROM `phy_bb_bss_cbw40`.
     pub fn ht40_secondary_channel(&self) -> Option<HtSecondaryChannel> {
         let capability = self.ht_capability_ie_bytes()?;

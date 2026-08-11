@@ -1,6 +1,6 @@
 //! ESP32-S31 HE20 peer installation at the protocol/PAC boundary.
 
-use open_esp_radio_esp32s31_registers::{MacHe20PeerConfig, MacHe20PeerError, RadioRegisters};
+use open_esp_radio_esp32s31_pac::{MacHe20PeerConfig, MacHe20PeerError, RadioRegisters};
 use open_esp_radio_ieee80211::he::{He20PeerState, HeElementError, parse_he20_peer_state};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

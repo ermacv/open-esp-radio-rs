@@ -1,10 +1,26 @@
-# Reviewed ESP32-S31 safe PAC transactions; no discovery facts or hardware metadata.
-schema = 1
+# Reviewed ESP32-S31 closed-PAC domains and safe transactions; no discovery facts or hardware metadata.
+schema = 2
 
 [options]
 peripheral-ownership = true
 device-access = true
 allow-clippy-empty-docs = true
+
+[[flag-domains]]
+name = "MacInterruptMask"
+description = "Reviewed writable images for the MAC interrupt-enable register."
+
+[[flag-domains.values]]
+name = "NONE"
+value = 0x00000000
+description = "Keep every MAC interrupt source disabled."
+sources = ["BLOB_LIBPP_HAL_ENABLE_MAC"]
+
+[[flag-domains.values]]
+name = "COLD_RX"
+value = 0x19a879e0
+description = "Complete mask published by the qualified cold receive initializer."
+sources = ["BLOB_LIBPP_HAL_INIT_TAIL"]
 
 [[zero-based-field-writes]]
 name = "coex_timer_configuration"
@@ -41,6 +57,7 @@ name = "mac_interrupt_enable"
 peripheral = "WIFI_MAC_INTERRUPT"
 register = "ENABLE"
 field = "EVENT_MASK"
+domain = "MacInterruptMask"
 sources = ["BLOB_LIBPP_HAL_ENABLE_MAC", "BLOB_LIBPP_HAL_INIT_TAIL"]
 
 [[full-register-writes]]

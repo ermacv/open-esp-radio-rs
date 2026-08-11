@@ -23,8 +23,8 @@ only opt-in exception.
 | `driver/adapters/embassy/esp32s31-wifi` | Internal ESP32-S31 Wi-Fi Embassy implementation |
 | `driver/adapters/esp-hal/esp32s31-wifi` | ESP32-S31 `esp-hal` peripheral binding |
 | `driver/integration/esp32s31/embassy-wifi` | Production station/monitor composition |
-| `driver/chips/esp32s31/pac` | Generated peripheral-access crate |
-| `driver/chips/esp32s31/registers` | Handwritten typed radio register transactions |
+| `driver/chips/esp32s31/pac-raw` | Internal generated svd2rust backend |
+| `driver/chips/esp32s31/pac` | Closed typed radio peripheral-access API |
 | `driver/chips/esp32s31/hal` | Finite hardware operations and async boundaries |
 | `driver/chips/esp32s31/phy` | PHY initialization and calibration state machines |
 | `driver/chips/esp32s31/wifi/dma` | Audited ESP32-S31 descriptor, ring and DMA-storage leaf |

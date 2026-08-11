@@ -5,7 +5,7 @@
 //! publication; WPA2 derivation and long-lived secret ownership remain in the
 //! protocol crate.
 
-use open_esp_radio_esp32s31_registers::{MacKeyInstallOutcome, RadioRegisters};
+use open_esp_radio_esp32s31_pac::{MacKeyInstallOutcome, RadioRegisters};
 use open_esp_radio_ieee80211::ccmp::ccmp_header;
 
 const STA_PAIRWISE_HARDWARE_INDEX: u8 = 4;

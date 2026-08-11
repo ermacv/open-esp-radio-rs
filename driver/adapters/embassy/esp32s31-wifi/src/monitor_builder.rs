@@ -4,8 +4,8 @@
 
 use open_esp_radio_embassy_net::RawMutex;
 use open_esp_radio_esp32s31_hal::RadioRegisters;
+use open_esp_radio_esp32s31_pac::MacInterruptSetup;
 use open_esp_radio_esp32s31_phy::{PhyAsyncDelay, PhyTargetObserver, PhyTargetPortError};
-use open_esp_radio_esp32s31_registers::MacInterruptSetup;
 use open_esp_radio_esp32s31_wifi::{
     mac_start::Esp32s31WifiMacStartReport,
     runtime::{Esp32s31WifiRuntimeContext, Esp32s31WifiStopped},

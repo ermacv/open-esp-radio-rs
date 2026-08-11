@@ -33,6 +33,8 @@ platform.toml               reviewed platform composition, initially neutral
 memory.toml                 editable address spaces and MMIO regions
 registers/device.toml       schema-2 editable register-model root
 registers/peripherals/      one fragment per declared MMIO window
+registers/api.toml          schema-2 transactions and public domains (initially empty)
+generated/pac/src/generated.rs  derived closed-PAC domains after publication
 local.example.toml            template for caller-local artifact bindings
 README.md                   project-local bootstrap commands
 .gitignore                  local.toml and generated outputs
@@ -48,8 +50,8 @@ The files have deliberately different owners:
   offsets, fields, access rules and reset metadata there.
 - `local.toml` binds source IDs to licensed local ELF/archive paths and remains
   untracked.
-- `generated/` contains reproducible findings, reading views, SVD, PAC and
-  bindings. It is never the review database.
+- `generated/` contains reproducible findings, reading views, SVD, the raw
+  svd2rust backend and bindings. It is never the review database.
 - `generated/findings/navigation.json` associates the generated symbol, IR and
   interface facts for manual browsing; it is regenerated, not edited.
 - interface and function packs are initialized after their first discovery
@@ -110,8 +112,12 @@ cargo vendor-binary-workbench functions init-pack --project PATH/vendor-project.
 
 After manual review, `project analyze` refreshes generated analysis evidence,
 `project analyze --check` verifies it without writes, and `project publish`
-derives the clean SVD, Rust PAC and binding manifest from reviewed register
-data.
+derives the clean SVD, internal raw PAC and binding manifest from reviewed
+register data, and emits the configured closed-PAC domain module. The
+application-facing PAC is a separate closed crate which includes that module;
+typed transaction bridges expect its private raw dependency to be named
+`svd` inside the crate. See
+[Closed PAC workflow](closed-pac.md).
 
 ## Starting with an existing SVD
 
@@ -137,7 +143,7 @@ The initializer currently emits `architecture = "riscv32"`,
 `calling-convention = "riscv-ilp32"`, `endianness = "little"`, 32-bit
 pointers, and defaults the Rust target to
 `riscv32imac-unknown-none-elf`. `--rust-target` may select a compatible Rust
-triple and `--pac-crate-name` may override the generated PAC import name. A
+triple and `--pac-raw-crate-name` may override the generated raw-PAC import name. A
 future architecture initializer should be a separate template selected by an
 explicit option; it should not make the generic project silently infer an ABI
 from vendor filenames.

@@ -10,7 +10,7 @@ extern crate alloc;
 use alloc::boxed::Box;
 
 pub use open_esp_radio_dma::{HardwareOwnedTxDma, PreparedTxDma};
-use open_esp_radio_esp32s31_registers::{
+use open_esp_radio_esp32s31_pac::{
     ColdRadioRegisters, MacHeTbTidLimit, MacHeTid, MacHeTxProgram, MacHeTxVectorSnapshot,
     MacHtTxProgram, MacLegacyTxProgram, MacPartialRuPowerSelector, MacTxCompletionRegisters,
     MacTxDetachOutcome, MacTxDetachReason, MacTxQueueDetached, RadioRegisters,

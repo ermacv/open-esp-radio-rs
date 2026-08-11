@@ -70,6 +70,7 @@ pub(super) struct RegisterWorkspaceDocument<'a> {
 #[derive(Serialize)]
 pub(super) struct PacApiDocument<'a> {
     pub(super) schema: u32,
+    pub(super) domains: usize,
     pub(super) operations: usize,
     pub(super) sources: usize,
     pub(super) pack: &'a Path,
@@ -203,8 +204,8 @@ pub(super) fn print_workspace_human(report: &RegisterWorkspaceDocument<'_>) {
             "PAC API".into(),
             "valid".into(),
             format!(
-                "schema={} operations={} sources={}",
-                pack.schema, pack.operations, pack.sources
+                "schema={} domains={} operations={} sources={}",
+                pack.schema, pack.domains, pack.operations, pack.sources
             ),
         ]);
     }

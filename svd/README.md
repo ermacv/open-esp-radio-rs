@@ -12,32 +12,33 @@ discovery paths or target code-generation extensions. Do not edit it directly.
 Run:
 
 ```console
-cargo pac-gen
+cargo vendor-binary-workbench project publish \
+  --project verification/vendor/targets/esp32s31/vendor-project.toml
 ```
 
-This materializes the SVD from the project model, applies the reviewed
-ESP32-S31 add-on only in memory, and generates
-`driver/chips/esp32s31/pac/src/lib.rs`. `cargo pac-gen --check` verifies the
-SVD, PAC and binding index and rejects invalid or stale add-on references. A
-direct edit of a generated file therefore fails CI.
-`driver/chips/esp32s31/registers/src/power.rs` is the shrinking compatibility
-facade for code not yet moved to the generated API; it must not acquire
-official system peripherals already delegated to `esp-hal`.
+This materializes the SVD from the project model, validates the reviewed
+`registers/api.toml` transaction pack, and generates the internal
+`driver/chips/esp32s31/pac-raw/src/lib.rs`, plus the reviewed public domains in
+`driver/chips/esp32s31/pac/src/generated.rs`. Workbench `project publish
+--check` verifies the SVD, raw PAC, closed-PAC module and binding index and
+rejects invalid or stale reviewed API references. A direct edit of a generated
+file therefore fails CI. Application and HAL code use the separate closed
+`driver/chips/esp32s31/pac` crate and cannot import raw register pointers.
 
-`verification/vendor/targets/esp32s31/registers/pac-addon.xml` is target-owned
-and is not CMSIS-SVD. It describes safe compound transactions, constrained
-register-image helpers, ownership partitions, MMIO evidence windows and the
-provenance catalog. `pac-gen` validates every add-on register/field reference
-against the generic model before emitting Rust. Generic validator and SVD
-code therefore contain no ESP32-S31 helper semantics.
+`verification/vendor/targets/esp32s31/registers/api.toml` is target-owned
+reviewed policy, not CMSIS-SVD. It describes qualified compound transactions,
+constrained register-image helpers and ownership partitions. The adjacent
+evidence catalogs retain their provenance. Workbench validates every API
+register/field reference against the generic model before emitting Rust, so
+generic register/SVD code contains no ESP32-S31 helper semantics.
 
 `esp32s31-platform-radio-deps.svd` is a separate, validator-only catalog for
 official-PAC registers reached from the vendor radio call graph. A project
-run loads it together with the schema-2 radio model; direct legacy target-spec
+run loads it together with the schema-2 radio model; direct target-spec
 invocations load it together with `esp32s31-radio.svd`. It is not an input to
-`cargo pac-gen`, generates no runtime crate, and creates no second peripheral
+the radio raw PAC, generates no runtime crate, and creates no second peripheral
 owner. Its definitions are pinned to the same `esp-pacs` revision as the
-workspace lockfile. In particular, it now mirrors all 23 contiguous
+workspace lockfile. In particular, it mirrors all 23 contiguous
 `MODEM_LPCON` registers at `0x2010_f000..0x2010_f05c` from that PAC, so vendor
 clock, reset, retention-memory and wakeup accesses receive stable register
 identities instead of merely falling inside a broad MMIO window.

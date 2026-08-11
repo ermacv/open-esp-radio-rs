@@ -81,8 +81,11 @@ pub(super) fn collect(context: &ProjectContext<'_>) -> Phase {
             output(context, "svd", paths.svd_output.is_some(), || {
                 registers::prepare_project_svd(paths, &publication_mmio)
             }),
-            output(context, "pac", paths.pac.is_some(), || {
-                registers::prepare_project_pac(paths, &publication_mmio)
+            output(context, "pac-raw", paths.pac_raw.is_some(), || {
+                registers::prepare_project_pac_raw(paths, &publication_mmio)
+            }),
+            output(context, "pac-api", paths.api_output.is_some(), || {
+                registers::prepare_project_pac_api(paths)
             }),
             output(context, "bindings", paths.bindings.is_some(), || {
                 registers::prepare_project_bindings(paths, &publication_mmio)

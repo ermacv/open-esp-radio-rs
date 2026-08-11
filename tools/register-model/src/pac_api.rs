@@ -13,6 +13,14 @@ pub struct PacApiPack {
     #[serde(default)]
     pub options: PacApiOptions,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub flag_domains: Vec<FlagDomain>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub enum_domains: Vec<EnumDomain>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub bounded_domains: Vec<BoundedDomain>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub opaque_domains: Vec<OpaqueDomain>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub interrupt_snapshots: Vec<InterruptSnapshot>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub full_register_writes: Vec<FullRegisterWrite>,
@@ -41,6 +49,64 @@ pub struct PacApiOptions {
     pub allow_clippy_empty_docs: bool,
 }
 
+/// Closed writable bit-mask domain emitted into the public PAC facade.
+///
+/// Values are reviewed capabilities, not an exhaustive description of every
+/// hardware bit. The generated type has no public integer constructor.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct FlagDomain {
+    pub name: String,
+    pub description: String,
+    pub values: Vec<FlagValue>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct FlagValue {
+    pub name: String,
+    pub value: u32,
+    pub description: String,
+    pub sources: Vec<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct EnumDomain {
+    pub name: String,
+    pub description: String,
+    pub values: Vec<EnumValue>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct EnumValue {
+    pub name: String,
+    pub value: u32,
+    pub description: String,
+    pub sources: Vec<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct BoundedDomain {
+    pub name: String,
+    pub description: String,
+    pub min: u32,
+    pub max: u32,
+    pub sources: Vec<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct OpaqueDomain {
+    pub name: String,
+    pub description: String,
+    pub peripheral: String,
+    pub register: String,
+    pub sources: Vec<String>,
+}
+
 macro_rules! common_operation {
     ($name:ident { $($field:ident: $type:ty),* $(,)? }) => {
         #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -59,10 +125,17 @@ common_operation!(InterruptSnapshot {
     clear_register: String,
     clear_field: String,
 });
-common_operation!(FullRegisterWrite {
-    register: String,
-    field: String,
-});
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct FullRegisterWrite {
+    pub name: String,
+    pub peripheral: String,
+    pub register: String,
+    pub field: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub domain: Option<String>,
+    pub sources: Vec<String>,
+}
 common_operation!(FixedRegisterWrite {
     register: String,
     field: String,
@@ -96,12 +169,14 @@ impl PacApiPack {
     }
 
     pub fn validate(&self) -> Result<()> {
-        if self.schema != 1 {
+        if self.schema != 2 {
             return Err(Error::message(format!(
-                "PAC API pack requires schema = 1, got {}",
+                "PAC API pack requires schema = 2, got {}",
                 self.schema
             )));
         }
+        self.validate_domains()?;
+        let domain_names = self.domain_names();
         if self.options.peripheral_ownership && self.interrupt_snapshots.is_empty() {
             return Err(Error::message(
                 "PAC API peripheral-ownership requires at least one interrupt snapshot",
@@ -122,6 +197,28 @@ impl PacApiPack {
         }
         for operation in &self.full_register_writes {
             validate_component("field", &operation.name, &operation.field)?;
+            if let Some(domain) = &operation.domain {
+                if !domain_names.contains(domain.as_str()) {
+                    return Err(Error::message(format!(
+                        "PAC API full-register-write {:?} references unknown domain {domain:?}",
+                        operation.name
+                    )));
+                }
+                if let Some(opaque) = self
+                    .opaque_domains
+                    .iter()
+                    .find(|candidate| candidate.name == *domain)
+                {
+                    if opaque.peripheral != operation.peripheral
+                        || opaque.register != operation.register
+                    {
+                        return Err(Error::message(format!(
+                            "PAC API full-register-write {:?} uses opaque domain {domain:?} outside its register {}.{}",
+                            operation.name, opaque.peripheral, opaque.register
+                        )));
+                    }
+                }
+            }
         }
         for operation in &self.interrupt_snapshots {
             validate_component(
@@ -181,21 +278,232 @@ impl PacApiPack {
             + self.masked_register_modifies.len()
     }
 
+    pub fn domain_count(&self) -> usize {
+        self.flag_domains.len()
+            + self.enum_domains.len()
+            + self.bounded_domains.len()
+            + self.opaque_domains.len()
+    }
+
     pub fn source_ids(&self) -> BTreeSet<&str> {
-        self.interrupt_snapshots
+        self.flag_domains
             .iter()
-            .map(Operation::sources)
-            .chain(self.full_register_writes.iter().map(Operation::sources))
-            .chain(self.fixed_register_writes.iter().map(Operation::sources))
-            .chain(self.fixed_register_images.iter().map(Operation::sources))
-            .chain(self.register_image_writes.iter().map(Operation::sources))
-            .chain(self.zero_based_field_writes.iter().map(Operation::sources))
-            .chain(self.zero_register_writes.iter().map(Operation::sources))
-            .chain(self.masked_register_modifies.iter().map(Operation::sources))
-            .flatten()
+            .flat_map(|domain| &domain.values)
+            .flat_map(|value| &value.sources)
             .map(String::as_str)
+            .chain(
+                self.enum_domains
+                    .iter()
+                    .flat_map(|domain| &domain.values)
+                    .flat_map(|value| &value.sources)
+                    .map(String::as_str),
+            )
+            .chain(
+                self.bounded_domains
+                    .iter()
+                    .flat_map(|domain| &domain.sources)
+                    .map(String::as_str),
+            )
+            .chain(
+                self.opaque_domains
+                    .iter()
+                    .flat_map(|domain| &domain.sources)
+                    .map(String::as_str),
+            )
+            .chain(
+                self.interrupt_snapshots
+                    .iter()
+                    .map(Operation::sources)
+                    .chain(self.full_register_writes.iter().map(Operation::sources))
+                    .chain(self.fixed_register_writes.iter().map(Operation::sources))
+                    .chain(self.fixed_register_images.iter().map(Operation::sources))
+                    .chain(self.register_image_writes.iter().map(Operation::sources))
+                    .chain(self.zero_based_field_writes.iter().map(Operation::sources))
+                    .chain(self.zero_register_writes.iter().map(Operation::sources))
+                    .chain(self.masked_register_modifies.iter().map(Operation::sources))
+                    .flatten()
+                    .map(String::as_str),
+            )
             .collect()
     }
+
+    fn validate_domains(&self) -> Result<()> {
+        let mut domain_names = BTreeSet::new();
+        for domain in &self.flag_domains {
+            validate_domain_header("flag", &domain.name, &domain.description, &mut domain_names)?;
+            if domain.description.trim().is_empty() || domain.values.is_empty() {
+                return Err(Error::message(format!(
+                    "PAC API flag domain {:?} requires a description and at least one value",
+                    domain.name
+                )));
+            }
+            let mut value_names = BTreeSet::new();
+            let mut values = BTreeSet::new();
+            for value in &domain.values {
+                if !is_upper_snake_case(&value.name) {
+                    return Err(Error::message(format!(
+                        "PAC API flag value {}::{:?} is not UPPER_SNAKE_CASE",
+                        domain.name, value.name
+                    )));
+                }
+                if !value_names.insert(value.name.as_str()) || !values.insert(value.value) {
+                    return Err(Error::message(format!(
+                        "PAC API flag domain {:?} repeats a name or numeric value",
+                        domain.name
+                    )));
+                }
+                if value.description.trim().is_empty() || value.sources.is_empty() {
+                    return Err(Error::message(format!(
+                        "PAC API flag value {}::{} requires a description and evidence sources",
+                        domain.name, value.name
+                    )));
+                }
+                let mut sources = BTreeSet::new();
+                if value
+                    .sources
+                    .iter()
+                    .any(|source| source.is_empty() || !sources.insert(source))
+                {
+                    return Err(Error::message(format!(
+                        "PAC API flag value {}::{} has an empty or duplicate source",
+                        domain.name, value.name
+                    )));
+                }
+            }
+        }
+        for domain in &self.enum_domains {
+            validate_domain_header("enum", &domain.name, &domain.description, &mut domain_names)?;
+            if domain.values.is_empty() {
+                return Err(Error::message(format!(
+                    "PAC API enum domain {:?} requires at least one value",
+                    domain.name
+                )));
+            }
+            let mut value_names = BTreeSet::new();
+            let mut values = BTreeSet::new();
+            for value in &domain.values {
+                if !is_upper_camel_case(&value.name) {
+                    return Err(Error::message(format!(
+                        "PAC API enum value {}::{:?} is not UpperCamelCase",
+                        domain.name, value.name
+                    )));
+                }
+                if !value_names.insert(value.name.as_str()) || !values.insert(value.value) {
+                    return Err(Error::message(format!(
+                        "PAC API enum domain {:?} repeats a name or numeric value",
+                        domain.name
+                    )));
+                }
+                validate_domain_evidence(
+                    "enum value",
+                    &format!("{}::{}", domain.name, value.name),
+                    &value.description,
+                    &value.sources,
+                )?;
+            }
+        }
+        for domain in &self.bounded_domains {
+            validate_domain_header(
+                "bounded",
+                &domain.name,
+                &domain.description,
+                &mut domain_names,
+            )?;
+            if domain.min > domain.max {
+                return Err(Error::message(format!(
+                    "PAC API bounded domain {:?} has min greater than max",
+                    domain.name
+                )));
+            }
+            validate_sources("bounded domain", &domain.name, &domain.sources)?;
+        }
+        for domain in &self.opaque_domains {
+            validate_domain_header(
+                "opaque",
+                &domain.name,
+                &domain.description,
+                &mut domain_names,
+            )?;
+            validate_component("peripheral", &domain.name, &domain.peripheral)?;
+            validate_component("register", &domain.name, &domain.register)?;
+            validate_sources("opaque domain", &domain.name, &domain.sources)?;
+        }
+        Ok(())
+    }
+
+    fn domain_names(&self) -> BTreeSet<&str> {
+        self.flag_domains
+            .iter()
+            .map(|domain| domain.name.as_str())
+            .chain(self.enum_domains.iter().map(|domain| domain.name.as_str()))
+            .chain(
+                self.bounded_domains
+                    .iter()
+                    .map(|domain| domain.name.as_str()),
+            )
+            .chain(
+                self.opaque_domains
+                    .iter()
+                    .map(|domain| domain.name.as_str()),
+            )
+            .collect()
+    }
+}
+
+fn validate_domain_header<'a>(
+    kind: &str,
+    name: &'a str,
+    description: &str,
+    names: &mut BTreeSet<&'a str>,
+) -> Result<()> {
+    if !is_upper_camel_case(name) {
+        return Err(Error::message(format!(
+            "PAC API {kind} domain name {name:?} is not UpperCamelCase"
+        )));
+    }
+    if !names.insert(name) {
+        return Err(Error::message(format!(
+            "PAC API contains duplicate domain {name:?}"
+        )));
+    }
+    if description.trim().is_empty() {
+        return Err(Error::message(format!(
+            "PAC API {kind} domain {name:?} requires a description"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_domain_evidence(
+    kind: &str,
+    name: &str,
+    description: &str,
+    sources: &[String],
+) -> Result<()> {
+    if description.trim().is_empty() {
+        return Err(Error::message(format!(
+            "PAC API {kind} {name} requires a description"
+        )));
+    }
+    validate_sources(kind, name, sources)
+}
+
+fn validate_sources(kind: &str, name: &str, sources: &[String]) -> Result<()> {
+    if sources.is_empty() {
+        return Err(Error::message(format!(
+            "PAC API {kind} {name} requires evidence sources"
+        )));
+    }
+    let mut unique = BTreeSet::new();
+    if sources
+        .iter()
+        .any(|source| source.is_empty() || !unique.insert(source))
+    {
+        return Err(Error::message(format!(
+            "PAC API {kind} {name} has an empty or duplicate source"
+        )));
+    }
+    Ok(())
 }
 
 trait Operation {
@@ -301,14 +609,31 @@ fn is_lower_snake_case(value: &str) -> bool {
             .all(|byte| byte == b'_' || byte.is_ascii_lowercase() || byte.is_ascii_digit())
 }
 
+fn is_upper_snake_case(value: &str) -> bool {
+    value.as_bytes().first().is_some_and(u8::is_ascii_uppercase)
+        && value
+            .bytes()
+            .all(|byte| byte == b'_' || byte.is_ascii_uppercase() || byte.is_ascii_digit())
+}
+
+fn is_upper_camel_case(value: &str) -> bool {
+    value.as_bytes().first().is_some_and(u8::is_ascii_uppercase)
+        && value.bytes().all(|byte| byte.is_ascii_alphanumeric())
+        && !value.contains('_')
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn empty_pack() -> PacApiPack {
         PacApiPack {
-            schema: 1,
+            schema: 2,
             options: PacApiOptions::default(),
+            flag_domains: Vec::new(),
+            enum_domains: Vec::new(),
+            bounded_domains: Vec::new(),
+            opaque_domains: Vec::new(),
             interrupt_snapshots: Vec::new(),
             full_register_writes: Vec::new(),
             fixed_register_writes: Vec::new(),
@@ -318,6 +643,24 @@ mod tests {
             zero_register_writes: Vec::new(),
             masked_register_modifies: Vec::new(),
         }
+    }
+
+    #[test]
+    fn validates_closed_flag_domains() {
+        let mut pack = empty_pack();
+        pack.flag_domains.push(FlagDomain {
+            name: "InterruptMask".to_owned(),
+            description: "Reviewed writable interrupt bits.".to_owned(),
+            values: vec![FlagValue {
+                name: "RX_READY".to_owned(),
+                value: 1 << 3,
+                description: "Enable the receive-ready interrupt.".to_owned(),
+                sources: vec!["VENDOR_IRQ_ENABLE".to_owned()],
+            }],
+        });
+        assert_eq!(pack.domain_count(), 1);
+        assert!(pack.validate().is_ok());
+        assert_eq!(pack.source_ids(), BTreeSet::from(["VENDOR_IRQ_ENABLE"]));
     }
 
     #[test]
@@ -352,5 +695,36 @@ mod tests {
             sources: vec!["REVIEW".to_owned()],
         });
         assert!(pack.validate().is_err());
+    }
+
+    #[test]
+    fn rejects_removed_schema_one_without_compatibility() {
+        let mut pack = empty_pack();
+        pack.schema = 1;
+        assert!(
+            pack.validate()
+                .unwrap_err()
+                .to_string()
+                .contains("requires schema = 2")
+        );
+    }
+
+    #[test]
+    fn typed_register_write_requires_a_declared_domain() {
+        let mut pack = empty_pack();
+        pack.full_register_writes.push(FullRegisterWrite {
+            name: "write_interrupt_mask".to_owned(),
+            peripheral: "RADIO".to_owned(),
+            register: "ENABLE".to_owned(),
+            field: "EVENTS".to_owned(),
+            domain: Some("InterruptMask".to_owned()),
+            sources: vec!["VENDOR_IRQ".to_owned()],
+        });
+        assert!(
+            pack.validate()
+                .unwrap_err()
+                .to_string()
+                .contains("unknown domain")
+        );
     }
 }

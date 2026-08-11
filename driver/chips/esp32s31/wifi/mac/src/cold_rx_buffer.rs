@@ -1,6 +1,6 @@
 //! Ownership boundary for RX buffer geometry before ring publication.
 
-use open_esp_radio_esp32s31_registers::ColdRadioRegisters;
+use open_esp_radio_esp32s31_pac::ColdRadioRegisters;
 
 pub trait MacColdRxBufferHardware {
     fn initialize_rx_buffer_prefix(&mut self);

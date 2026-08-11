@@ -4,7 +4,7 @@
 //! module only sequences radio-internal registers described by the SVD/PAC.
 
 #[cfg(target_arch = "riscv32")]
-use open_esp_radio_esp32s31_registers::RadioRegisters;
+use open_esp_radio_esp32s31_pac::RadioRegisters;
 
 /// Apply complete pinned `libphy.a[phy_init.o]::phy_close_fe_bb_clk`.
 #[cfg(target_arch = "riscv32")]

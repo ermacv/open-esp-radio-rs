@@ -93,10 +93,10 @@ pub(crate) fn generate_pac_with_api(
     if let Some(api) = api {
         source.push_str(&api.render_rust(svd)?);
     }
-    format_generated(&source, edition)
+    format_generated_rust(&source, edition)
 }
 
-fn format_generated(source: &str, edition: PacEdition) -> Result<String> {
+pub(crate) fn format_generated_rust(source: &str, edition: PacEdition) -> Result<String> {
     let mut child = Command::new("rustfmt")
         .args([
             "--edition",

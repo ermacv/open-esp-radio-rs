@@ -120,17 +120,18 @@ non-operational-functions = [
 [registers.svd]
 output = "../../../../svd/esp32s31-radio.svd"
 
-[registers.pac]
-output = "../../../../driver/chips/esp32s31/pac/src/lib.rs"
+[registers.pac-raw]
+output = "../../../../driver/chips/esp32s31/pac-raw/src/lib.rs"
 target = "none"
 edition = "2024"
 
 [registers.bindings]
 output = "../../../../svd/esp32s31-radio.bindings.toml"
-crate-name = "open_esp_radio_esp32s31_pac"
+crate-name = "open_esp_radio_esp32s31_pac_raw"
 
 [registers.api]
 pack = "registers/api.toml"
+output = "../../../../driver/chips/esp32s31/pac/src/generated.rs"
 
 [registers.lints]
 pack = "registers/lints.toml"

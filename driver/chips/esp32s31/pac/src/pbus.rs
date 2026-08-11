@@ -87,7 +87,7 @@ impl RadioRegisters {
     /// RX-DCO passes signed halfword images, and the complete encoder retains
     /// their low eleven bits while composing the physical command word.
     pub fn publish_pbus_force_test(&mut self, selector: u8, path: u8, test_value: u16) {
-        open_esp_radio_esp32s31_pac::masked_register_modify::publish_pbus_force_test(
+        open_esp_radio_esp32s31_pac_raw::masked_register_modify::publish_pbus_force_test(
             &self.peripherals.phy_pbus,
             pbus_force_test_arguments(selector, path, test_value),
         );
@@ -218,7 +218,6 @@ impl RadioRegisters {
 #[cfg(test)]
 mod tests {
     use super::pbus_force_test_command_image;
-    use crate::power::phy_pbus;
 
     #[test]
     fn force_test_encoder_matches_complete_rom_images() {
@@ -234,19 +233,5 @@ mod tests {
         // `-251_i16 as u16 == 0xff05`. ROM keeps the low eleven value bits,
         // so their upper two bits combine with path one into physical path 3.
         assert_eq!(pbus_force_test_command_image(0, 3, 1, 0xff05), 0x0001_c14e);
-    }
-
-    #[test]
-    fn selector_zero_windows_belong_to_the_rom_a0_word() {
-        assert_eq!(phy_pbus::READ_RESULT_3.address(), 0x2010_08a0);
-        assert_eq!(
-            phy_pbus::read_result_3::RESULT_WINDOW_1_UNKNOWN.mask(),
-            0x0003_fe00
-        );
-        assert_eq!(
-            phy_pbus::read_result_3::RESULT_WINDOW_2_UNKNOWN.mask(),
-            0x07fc_0000
-        );
-        assert_eq!(phy_pbus::READ_RESULT_4.address(), 0x2010_08a4);
     }
 }

@@ -1,8 +1,8 @@
 //! Role-neutral ownership after the one-way cold-MAC/runtime transition.
 
 use open_esp_radio_esp32s31_hal::RadioRegisters;
+use open_esp_radio_esp32s31_pac::MacInterruptSetup;
 use open_esp_radio_esp32s31_phy::{PhyCalibrationCache, PhyState};
-use open_esp_radio_esp32s31_registers::MacInterruptSetup;
 use open_esp_radio_ieee80211::channel::WifiChannel;
 
 use crate::mac_start::{Esp32s31WifiMacReady, Esp32s31WifiMacStartReport};
@@ -140,7 +140,7 @@ pub fn enter_esp32s31_wifi_runtime<P>(
     let cold_interrupt_mask = {
         let (_, registers) = mac.radio_mut().cold_parts_mut();
         let mask = registers.mac_interrupt_enable();
-        registers.mask_and_clear_mac_interrupts(u32::MAX);
+        registers.mask_and_clear_all_mac_interrupts();
         mask
     };
     let (radio, phy, calibration_cache, start_report) = mac.into_parts();

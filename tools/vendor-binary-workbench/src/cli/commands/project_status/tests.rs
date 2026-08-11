@@ -19,7 +19,7 @@ fn initialized_project_reports_incomplete_without_mutating_owned_outputs() {
         mmio: vec!["radio=0x20000000..0x20010000".parse().unwrap()],
         source: Vec::new(),
         rust_target: None,
-        pac_crate_name: None,
+        pac_raw_crate_name: None,
         import_svd: None,
     })
     .unwrap();
@@ -96,7 +96,7 @@ fn initialized_project_reports_incomplete_without_mutating_owned_outputs() {
     );
     assert_eq!(document["phases"]["publication"]["status"], "incomplete");
     assert!(!directory.join("generated/svd/device.svd").exists());
-    assert!(!directory.join("generated/pac/src/lib.rs").exists());
+    assert!(!directory.join("generated/pac-raw/src/lib.rs").exists());
 
     fs::remove_dir_all(root).unwrap();
 }

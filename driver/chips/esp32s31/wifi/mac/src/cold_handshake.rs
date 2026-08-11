@@ -1,6 +1,6 @@
 //! Ownership boundary for the finite cold MAC handshake prefix.
 
-use open_esp_radio_esp32s31_registers::ColdRadioRegisters;
+use open_esp_radio_esp32s31_pac::ColdRadioRegisters;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum MacColdStartError {

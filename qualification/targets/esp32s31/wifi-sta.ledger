@@ -129,7 +129,7 @@ hil-proof qualified
 async-proof bounded
 owner driver/chips/esp32s31/wifi/mac/src/irq.rs IrqState
 owner driver/chips/esp32s31/wifi/mac/src/irq.rs MacInterruptRoute
-owner driver/chips/esp32s31/registers/src/mac_interrupt.rs MacInterruptRegisters
+owner driver/chips/esp32s31/pac/src/mac_interrupt.rs MacInterruptRegisters
 owner driver/adapters/embassy/esp32s31-wifi/src/embassy_irq/mac_runtime.rs EmbassyMacIrqRuntime
 owner driver/adapters/embassy/esp32s31-wifi/src/embassy_irq/epoch.rs Esp32s31MacInterruptEpoch
 owner driver/adapters/esp-hal/esp32s31-wifi/src/mac_interrupt_epoch.rs EspHalMacInterruptRoute

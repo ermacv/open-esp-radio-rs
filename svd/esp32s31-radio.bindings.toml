@@ -1,5 +1,5 @@
 schema = 2
-crate-name = "open_esp_radio_esp32s31_pac"
+crate-name = "open_esp_radio_esp32s31_pac_raw"
 
 [[registers]]
 address = 537919516

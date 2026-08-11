@@ -8,7 +8,7 @@ repository.workspace = true
 description = "Allocation-free ESP32-S31 radio coexistence policy and timer ownership"
 
 [dependencies]
-open-esp-radio-esp32s31-registers = { path = "../registers" }
+open-esp-radio-esp32s31-pac = { path = "../pac" }
 
 [lints]
 workspace = true

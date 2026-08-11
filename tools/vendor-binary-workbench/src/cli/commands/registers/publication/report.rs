@@ -73,7 +73,7 @@ pub(super) fn emit_pac(
 ) {
     let report = PacPublicationDocument {
         schema: 1,
-        command: "registers generate-pac",
+        command: "registers generate-pac-raw",
         status,
         target: target.label(),
         edition: edition.label(),

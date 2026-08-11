@@ -9,7 +9,7 @@
 //! the returned report, but do not reproduce these policy or hardware
 //! decisions.
 
-use open_esp_radio_esp32s31_registers::MacHeBeamformingReportProfileError;
+use open_esp_radio_esp32s31_pac::MacHeBeamformingReportProfileError;
 use open_esp_radio_esp32s31_wifi_mac::{
     edca::EdcaParametersError,
     he::{He20InstallError, He20PeerHardware, program_he20_peer_state},
@@ -243,7 +243,7 @@ impl Esp32s31StaPeerPort {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use open_esp_radio_esp32s31_registers::{
+    use open_esp_radio_esp32s31_pac::{
         MacHe20PeerConfig, MacHe20PeerError, MacHeBeamformingReportProfile, MacHeErSuAckRateProfile,
     };
     use open_esp_radio_esp32s31_wifi_mac::rate_schedule::RateScheduleKind;

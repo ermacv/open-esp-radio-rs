@@ -1,6 +1,6 @@
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use open_esp_radio_embassy_net::RawMutex as NetworkRawMutex;
-use open_esp_radio_esp32s31_registers::{ConnectedStaWithoutPowerSavePrepared, MacInterruptSetup};
+use open_esp_radio_esp32s31_pac::{ConnectedStaWithoutPowerSavePrepared, MacInterruptSetup};
 use open_esp_radio_esp32s31_wifi_mac::crypto::{StaGroupCcmpSlot, StaPairwiseCcmpSlot};
 use open_esp_radio_esp32s31_wifi_mac::{init::MAC_COLD_RX_INTERRUPT_MASK, irq::MacInterruptRoute};
 use open_esp_radio_esp32s31_wifi_sta::{

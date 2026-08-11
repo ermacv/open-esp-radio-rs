@@ -1,6 +1,6 @@
 //! Ownership boundary for MAC interface-address publication.
 
-use open_esp_radio_esp32s31_registers::ColdRadioRegisters;
+use open_esp_radio_esp32s31_pac::ColdRadioRegisters;
 
 /// Finite hardware capability needed to publish the two cold-path addresses.
 pub trait MacInterfaceAddressHardware {

@@ -1,6 +1,6 @@
 //! Safe register-side authority required by the A-MPDU lifecycle.
 
-use open_esp_radio_esp32s31_registers::{
+use open_esp_radio_esp32s31_pac::{
     MacHeTbLinkReservation, MacHeTbProgramError, MacHeTbTidLimit, MacHeTid,
     MacHeTriggerTxQueueSnapshot, MacHtAmpduCompletionRegisters, RadioRegisters,
 };

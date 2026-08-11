@@ -8,7 +8,7 @@ use crate::{
     },
     tx::{HeEdcaTxopLimit, HeMcs, HtPeerAmpduParameters},
 };
-use open_esp_radio_esp32s31_registers::RadioRegisters;
+use open_esp_radio_esp32s31_pac::RadioRegisters;
 use open_esp_radio_ieee80211::{
     he::{
         He20Capabilities, He20PeerState, HeDcmConstellation, HeElementError, HeMcsNssSupport,

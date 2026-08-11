@@ -8,7 +8,7 @@ use alloc::boxed::Box;
 use core::{ops::Deref, pin::Pin};
 
 use open_esp_radio_dma::StableDmaBacking;
-use open_esp_radio_esp32s31_registers::{MacTxDetachOutcome, MacTxDetachReason};
+use open_esp_radio_esp32s31_pac::{MacTxDetachOutcome, MacTxDetachReason};
 use open_esp_radio_esp32s31_wifi_dma::tx_ampdu_storage::{
     AmpduDmaState, AmpduDmaStorage, AmpduDmaStorageError, PinnedAmpduDmaStorage, RetainedAmpduDma,
     RetainedAmpduDmaStorage,

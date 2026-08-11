@@ -59,7 +59,7 @@ Register discovery facts and coverage remain in the workbench facade. The
 shared register-model crate knows neither artifacts nor targets. A project may
 attach reviewed safe PAC transactions through `[registers.api]` and evidence
 catalogs through `[registers.toml]`; their contents remain target-owned.
-The project-owned register commands are the primitive SVD/PAC publication
+The project-owned register commands are the primitive SVD/raw-PAC publication
 operations; `project publish` is their strict, preflighted project-level entry
 point.
 

@@ -122,7 +122,7 @@ impl RadioRegisters {
         if !config.extended_range_single_user_disabled {
             // The complete ER-SU-permitted leaf writes all four baseline
             // ACK-rate bytes to 0x80.
-            open_esp_radio_esp32s31_pac::zero_based_field_write::ersu_ack_rate_baseline(
+            open_esp_radio_esp32s31_pac_raw::zero_based_field_write::ersu_ack_rate_baseline(
                 init, 0x80, 0x80, 0x80, 0x80,
             );
         }

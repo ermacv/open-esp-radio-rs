@@ -83,9 +83,8 @@ production_packages=(
     open-esp-radio-dma
     open-esp-radio-embassy-net
     open-esp-radio-esp32s31-hal
-    open-esp-radio-esp32s31-registers
-    open-esp-radio-esp32s31-phy
     open-esp-radio-esp32s31-pac
+    open-esp-radio-esp32s31-phy
     open-esp-radio-esp32s31-wifi-embassy
     open-esp-radio-esp32s31-wifi-dma
     open-esp-radio-esp32s31-wifi-esp-hal

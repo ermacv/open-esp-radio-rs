@@ -1,6 +1,6 @@
 //! Ownership boundary for the open promiscuous receive frontier.
 
-use open_esp_radio_esp32s31_registers::{ColdRadioRegisters, RadioRegisters};
+use open_esp_radio_esp32s31_pac::{ColdRadioRegisters, RadioRegisters};
 
 pub trait MacSnifferHardware {
     fn configure_open_promiscuous_receive(&mut self);

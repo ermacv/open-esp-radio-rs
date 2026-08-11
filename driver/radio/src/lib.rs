@@ -55,8 +55,8 @@ pub mod wifi {
 #[cfg(feature = "esp32s31")]
 pub mod esp32s31 {
     pub use open_esp_radio_esp32s31_hal as hal;
+    pub use open_esp_radio_esp32s31_pac as registers;
     pub use open_esp_radio_esp32s31_phy as phy;
-    pub use open_esp_radio_esp32s31_registers as registers;
 
     #[cfg(feature = "esp32s31-wifi")]
     pub mod wifi {
@@ -68,6 +68,9 @@ pub mod esp32s31 {
 
         #[cfg(feature = "esp32s31-wifi-embassy")]
         pub mod embassy {
+            #[doc(hidden)]
+            pub use open_esp_radio_wifi_embassy::await_stack_boundary;
+
             pub mod resources {
                 pub use open_esp_radio_esp32s31_wifi_embassy::resource_profile::{
                     ESP32S31_DEFAULT_CONTROL_QUEUE_DEPTH, ESP32S31_DEFAULT_NETWORK_FRAME_CAPACITY,
@@ -79,8 +82,8 @@ pub mod esp32s31 {
                     ESP32S31_DEFAULT_SCAN_FRAME_CAPACITY, ESP32S31_DEFAULT_SCAN_RECORD_CAPACITY,
                     ESP32S31_DEFAULT_TX_AMPDU_FRAME_COUNT, ESP32S31_DEFAULT_TX_BUFFER_SIZE,
                     Esp32s31DefaultRxDmaStorage, Esp32s31DefaultScanTable,
-                    Esp32s31DefaultStationMemory, Esp32s31DefaultStationMemoryError,
-                    Esp32s31DefaultStationMemoryLease, Esp32s31DefaultWifiResourceProfile,
+                    Esp32s31DefaultWifiMemory, Esp32s31DefaultWifiMemoryError,
+                    Esp32s31DefaultWifiMemoryLease, Esp32s31DefaultWifiResourceProfile,
                 };
             }
 

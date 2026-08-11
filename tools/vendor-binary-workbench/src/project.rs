@@ -115,15 +115,16 @@ pub(crate) struct RegisterWorkspacePaths {
     pub(crate) review_output: Option<PathBuf>,
     pub(crate) review_ir_reports: Vec<PathBuf>,
     pub(crate) svd_output: Option<PathBuf>,
-    pub(crate) pac: Option<PacOutputSpec>,
+    pub(crate) pac_raw: Option<PacRawOutputSpec>,
     pub(crate) bindings: Option<PacBindingsOutputSpec>,
     pub(crate) api_pack: Option<PathBuf>,
+    pub(crate) api_output: Option<PathBuf>,
     pub(crate) lint_pack: Option<PathBuf>,
     pub(crate) evidence_catalogs: Vec<PathBuf>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct PacOutputSpec {
+pub(crate) struct PacRawOutputSpec {
     pub(crate) output: PathBuf,
     pub(crate) target: String,
     pub(crate) edition: String,

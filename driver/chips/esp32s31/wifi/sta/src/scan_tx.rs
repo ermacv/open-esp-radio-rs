@@ -5,7 +5,7 @@
 //! retains the exact descriptor across successful and passive-fallback paths.
 
 use crate::scan::Esp32s31ActiveProbeOutcome;
-use open_esp_radio_esp32s31_registers::MacInterruptSetup;
+use open_esp_radio_esp32s31_pac::MacInterruptSetup;
 use open_esp_radio_esp32s31_wifi_mac::tx::{TxCompletion, TxHardware};
 use open_esp_radio_ieee80211::management::ProbeRequest;
 
@@ -202,7 +202,7 @@ mod tests {
         task::{Context, Poll},
     };
 
-    use open_esp_radio_esp32s31_registers::{
+    use open_esp_radio_esp32s31_pac::{
         MacLegacyTxProgram, MacTxCompletionRegisters, MacTxDetachOutcome, MacTxDetachReason,
         MacTxQueueDetached,
     };

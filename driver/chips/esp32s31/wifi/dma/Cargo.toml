@@ -13,7 +13,7 @@ validation-raw-dma = []
 
 [dependencies]
 open-esp-radio-dma = { path = "../../../../common/dma" }
-open-esp-radio-esp32s31-registers = { path = "../../registers" }
+open-esp-radio-esp32s31-pac = { path = "../../pac" }
 pin-project = "1.1.13"
 vcell = "0.1.3"
 

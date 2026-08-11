@@ -109,22 +109,22 @@ pub const CRYPTO_KEY_VALID_BITMAP: Register32 =
 /// These aliases are generated from `svd/esp32s31-radio.svd`; the explicit
 /// arrays hide the hardware's descending 0x7c-byte queue-bank layout.
 pub const TX_BLOCK_ACK_CONTROL_SEQUENCE: [Register32; 4] = [
-    crate::power::wifi_mac_rx_dma::TX_BLOCK_ACK_CONTROL_SEQUENCE_Q0,
-    crate::power::wifi_mac_rx_dma::TX_BLOCK_ACK_CONTROL_SEQUENCE_Q1,
-    crate::power::wifi_mac_rx_dma::TX_BLOCK_ACK_CONTROL_SEQUENCE_Q2,
-    crate::power::wifi_mac_rx_dma::TX_BLOCK_ACK_CONTROL_SEQUENCE_Q3,
+    Register32::described(0x2010_5530, RegisterAccess::ReadOnly, None),
+    Register32::described(0x2010_54b4, RegisterAccess::ReadOnly, None),
+    Register32::described(0x2010_5438, RegisterAccess::ReadOnly, None),
+    Register32::described(0x2010_53bc, RegisterAccess::ReadOnly, None),
 ];
 pub const TX_BLOCK_ACK_BITMAP_LOW: [Register32; 4] = [
-    crate::power::wifi_mac_rx_dma::TX_BLOCK_ACK_BITMAP_LOW_Q0,
-    crate::power::wifi_mac_rx_dma::TX_BLOCK_ACK_BITMAP_LOW_Q1,
-    crate::power::wifi_mac_rx_dma::TX_BLOCK_ACK_BITMAP_LOW_Q2,
-    crate::power::wifi_mac_rx_dma::TX_BLOCK_ACK_BITMAP_LOW_Q3,
+    Register32::described(0x2010_552c, RegisterAccess::ReadOnly, None),
+    Register32::described(0x2010_54b0, RegisterAccess::ReadOnly, None),
+    Register32::described(0x2010_5434, RegisterAccess::ReadOnly, None),
+    Register32::described(0x2010_53b8, RegisterAccess::ReadOnly, None),
 ];
 pub const TX_BLOCK_ACK_BITMAP_HIGH: [Register32; 4] = [
-    crate::power::wifi_mac_rx_dma::TX_BLOCK_ACK_BITMAP_HIGH_Q0,
-    crate::power::wifi_mac_rx_dma::TX_BLOCK_ACK_BITMAP_HIGH_Q1,
-    crate::power::wifi_mac_rx_dma::TX_BLOCK_ACK_BITMAP_HIGH_Q2,
-    crate::power::wifi_mac_rx_dma::TX_BLOCK_ACK_BITMAP_HIGH_Q3,
+    Register32::described(0x2010_5528, RegisterAccess::ReadOnly, None),
+    Register32::described(0x2010_54ac, RegisterAccess::ReadOnly, None),
+    Register32::described(0x2010_5430, RegisterAccess::ReadOnly, None),
+    Register32::described(0x2010_53b4, RegisterAccess::ReadOnly, None),
 ];
 
 pub const CRYPTO_KEY_ENTRY_COUNT: u8 = 25;

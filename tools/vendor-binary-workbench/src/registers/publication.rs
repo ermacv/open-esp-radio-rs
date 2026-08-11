@@ -74,15 +74,15 @@ pub(crate) fn prepare_project_svd(
     })
 }
 
-#[tracing::instrument(name = "prepare_project_pac", skip_all)]
-pub(crate) fn prepare_project_pac(
+#[tracing::instrument(name = "prepare_project_pac_raw", skip_all)]
+pub(crate) fn prepare_project_pac_raw(
     paths: &crate::project::RegisterWorkspacePaths,
     publication_mmio: &BTreeSet<(u32, u8)>,
 ) -> crate::Result<PreparedPublication> {
     let configured = paths
-        .pac
+        .pac_raw
         .as_ref()
-        .ok_or("project PAC publication is not configured")
+        .ok_or("project raw PAC publication is not configured")
         .map_err(crate::Error::invalid)?;
     let target = PacTarget::parse(&configured.target)?;
     let edition = PacEdition::parse(&configured.edition)?;
@@ -97,7 +97,39 @@ pub(crate) fn prepare_project_pac(
     Ok(PreparedPublication {
         output: configured.output.clone(),
         contents,
-        kind: "PAC",
+        kind: "raw PAC",
+    })
+}
+
+#[tracing::instrument(name = "prepare_project_pac_api", skip_all)]
+pub(crate) fn prepare_project_pac_api(
+    paths: &crate::project::RegisterWorkspacePaths,
+) -> crate::Result<PreparedPublication> {
+    let pack_path = paths
+        .api_pack
+        .as_deref()
+        .ok_or("project closed PAC API pack is not configured")
+        .map_err(crate::Error::invalid)?;
+    let output = paths
+        .api_output
+        .clone()
+        .ok_or("project closed PAC API output is not configured")
+        .map_err(crate::Error::invalid)?;
+    let pack = validate_pac_api(paths)?.ok_or_else(|| {
+        crate::Error::invalid(format!(
+            "project closed PAC API pack {} is not configured",
+            pack_path.display()
+        ))
+    })?;
+    let edition = paths
+        .pac_raw
+        .as_ref()
+        .map_or(Ok(PacEdition::E2024), |pac| PacEdition::parse(&pac.edition))?;
+    let contents = format_generated_rust(&pack.render_facade_rust()?, edition)?;
+    Ok(PreparedPublication {
+        output,
+        contents,
+        kind: "closed PAC API",
     })
 }
 

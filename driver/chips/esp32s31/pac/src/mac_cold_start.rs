@@ -2,7 +2,7 @@
 
 #![forbid(unsafe_code)]
 
-use super::ColdRadioRegisters;
+use super::{ColdRadioRegisters, MacInterruptMask};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct MacColdHandshakeOutcome {
@@ -47,7 +47,7 @@ impl ColdRadioRegisters {
         };
 
         let interrupt = &self.interrupts.wifi_mac_interrupt;
-        super::svd::full_register_write::mac_interrupt_enable(interrupt, 0);
+        super::generated::mac_interrupt_enable(interrupt, MacInterruptMask::NONE);
         super::svd::full_register_write::mac_interrupt_clear(interrupt, u32::MAX);
 
         Ok(MacColdHandshakeOutcome { samples, value })

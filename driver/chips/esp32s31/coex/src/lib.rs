@@ -4,7 +4,7 @@
 #[cfg(test)]
 extern crate std;
 
-use open_esp_radio_esp32s31_registers::RadioRegisters;
+use open_esp_radio_esp32s31_pac::RadioRegisters;
 
 pub const COEX_EVENT_COUNT: usize = 48;
 pub const COEX_TIMER_COUNT: usize = 5;

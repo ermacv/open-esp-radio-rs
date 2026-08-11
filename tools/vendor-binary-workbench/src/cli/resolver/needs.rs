@@ -84,7 +84,7 @@ impl ResolutionNeeds {
             | Command::InterfaceInitPack(_)
             | Command::RegisterReview(_)
             | Command::RegisterExportSvd(_)
-            | Command::RegisterGeneratePac(_)
+            | Command::RegisterGeneratePacRaw(_)
             | Command::RegisterGenerateBindings(_) => {
                 Self::new(true, false, false, false, false, false, false)
             }

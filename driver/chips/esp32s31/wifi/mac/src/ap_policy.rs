@@ -1,6 +1,6 @@
 //! Ownership boundary for role-neutral to active-AP receive policy.
 
-use open_esp_radio_esp32s31_registers::RadioRegisters;
+use open_esp_radio_esp32s31_pac::RadioRegisters;
 
 pub trait ApRxPolicyHardware {
     fn apply_ap_link_policy(&mut self, access_point: [u8; 6]);

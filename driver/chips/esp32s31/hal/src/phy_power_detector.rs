@@ -5,7 +5,7 @@
 //! in the PHY state machines.
 
 #[cfg(target_arch = "riscv32")]
-use open_esp_radio_esp32s31_registers::RadioRegisters;
+use open_esp_radio_esp32s31_pac::RadioRegisters;
 
 /// Apply the complete power-detector register initialization leaf.
 ///

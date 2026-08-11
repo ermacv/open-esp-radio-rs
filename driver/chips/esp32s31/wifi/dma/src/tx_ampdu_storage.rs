@@ -7,7 +7,7 @@
 use core::{marker::PhantomPinned, mem, pin::Pin};
 
 use open_esp_radio_dma::{HardwareOwnedTxDma, PreparedTxDma, StableDmaBacking, StableDmaRange};
-use open_esp_radio_esp32s31_registers::MacTxQueueDetached;
+use open_esp_radio_esp32s31_pac::MacTxQueueDetached;
 use pin_project::pin_project;
 
 use crate::descriptor::{

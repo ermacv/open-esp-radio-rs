@@ -17,7 +17,7 @@ pub(super) struct Options {
     pub(super) ranges: Vec<NamedAddressRange>,
     pub(super) sources: Vec<String>,
     pub(super) rust_target: String,
-    pub(super) pac_crate_name: String,
+    pub(super) pac_raw_crate_name: String,
     pub(super) import_svd: Option<PathBuf>,
 }
 
@@ -31,7 +31,7 @@ pub(super) fn resolve_options(arguments: ProjectInitArgs) -> Result<Options> {
         .map(|source| source.into_string())
         .collect::<Vec<_>>();
     let rust_target = arguments.rust_target;
-    let pac_crate_name = arguments.pac_crate_name;
+    let pac_raw_crate_name = arguments.pac_raw_crate_name;
     let import_svd = arguments.import_svd;
 
     validate_directory(&directory)?;
@@ -53,8 +53,8 @@ pub(super) fn resolve_options(arguments: ProjectInitArgs) -> Result<Options> {
     }
     let rust_target = rust_target.unwrap_or_else(|| DEFAULT_RUST_TARGET.to_owned());
     validate_token(&rust_target, "Rust target")?;
-    let pac_crate_name = pac_crate_name.unwrap_or_else(|| default_pac_crate_name(&id));
-    open_esp_radio_register_model::validate_pac_crate_name(&pac_crate_name)?;
+    let pac_raw_crate_name = pac_raw_crate_name.unwrap_or_else(|| default_pac_raw_crate_name(&id));
+    open_esp_radio_register_model::validate_pac_crate_name(&pac_raw_crate_name)?;
     if import_svd.as_ref().is_some_and(|path| !path.is_file()) {
         return Err(crate::Error::invalid(format!(
             "project init SVD input does not exist: {}",
@@ -68,7 +68,7 @@ pub(super) fn resolve_options(arguments: ProjectInitArgs) -> Result<Options> {
         ranges,
         sources,
         rust_target,
-        pac_crate_name,
+        pac_raw_crate_name,
         import_svd,
     })
 }
@@ -131,7 +131,7 @@ fn validate_token(value: &str, kind: &str) -> Result<()> {
     Ok(())
 }
 
-fn default_pac_crate_name(id: &str) -> String {
+fn default_pac_raw_crate_name(id: &str) -> String {
     let mut name = id
         .chars()
         .map(|character| {
@@ -145,6 +145,6 @@ fn default_pac_crate_name(id: &str) -> String {
     if name.as_bytes().first().is_some_and(u8::is_ascii_digit) {
         name.insert_str(0, "project_");
     }
-    name.push_str("_pac");
+    name.push_str("_pac_raw");
     name
 }

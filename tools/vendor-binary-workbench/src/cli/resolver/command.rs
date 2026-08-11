@@ -185,10 +185,10 @@ pub(super) fn resolve_command(
                 memory_map,
             }
         }
-        Command::RegisterGeneratePac(arguments) => {
+        Command::RegisterGeneratePacRaw(arguments) => {
             let (project, memory_map) = environment.into_project_registers()?;
             ResolvedInvocation::RegisterWorkspace {
-                command: RegisterWorkspaceCommand::GeneratePac(arguments),
+                command: RegisterWorkspaceCommand::GeneratePacRaw(arguments),
                 project,
                 memory_map,
             }

@@ -85,8 +85,8 @@ non-operational-functions = ["archive:register_dump"]
 [registers.svd]
 output = "generated/device.svd"
 
-[registers.pac]
-output = "generated/pac/src/lib.rs"
+[registers.pac-raw]
+output = "generated/pac-raw/src/lib.rs"
 target = "none"
 edition = "2024"
 
@@ -192,8 +192,8 @@ match-floor = 2
             review_output: Some(directory.join("generated/register-review.md")),
             review_ir_reports: vec![directory.join("generated/vendor.ir")],
             svd_output: Some(directory.join("generated/device.svd")),
-            pac: Some(PacOutputSpec {
-                output: directory.join("generated/pac/src/lib.rs"),
+            pac_raw: Some(PacRawOutputSpec {
+                output: directory.join("generated/pac-raw/src/lib.rs"),
                 target: "none".to_owned(),
                 edition: "2024".to_owned(),
             }),
@@ -202,6 +202,7 @@ match-floor = 2
                 crate_name: "fixture_pac".to_owned(),
             }),
             api_pack: Some(directory.join("registers/api.toml")),
+            api_output: None,
             lint_pack: Some(directory.join("registers/lints.toml")),
             evidence_catalogs: vec![directory.join("registers/evidence.toml")],
         })
@@ -287,9 +288,15 @@ fn nested_project_errors_retain_the_exact_manifest_value_span() {
         ),
         (
             "wrong-pac-edition.toml",
-            "schema = 1\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[registers]\nfacts = \"facts.json\"\nmodel = \"registers.toml\"\nowned-ranges = [\"radio\"]\n[registers.pac]\noutput = \"pac.rs\"\nedition = \"2018\"\n",
+            "schema = 1\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[registers]\nfacts = \"facts.json\"\nmodel = \"registers.toml\"\nowned-ranges = [\"radio\"]\n[registers.pac-raw]\noutput = \"pac.rs\"\nedition = \"2018\"\n",
             "\"2018\"",
             "edition must be",
+        ),
+        (
+            "removed-pac-key.toml",
+            "schema = 1\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[registers]\nfacts = \"facts.json\"\nmodel = \"registers.toml\"\nowned-ranges = [\"radio\"]\n[registers.pac]\noutput = \"pac.rs\"\n",
+            "[registers.pac]",
+            "[registers.pac-raw]",
         ),
         (
             "removed-interface-key.toml",

@@ -27,6 +27,37 @@ The normal user path must remain project-oriented:
 4. reproduce with `project analyze --check`;
 5. publish SVD/PAC/bindings separately with `project publish`.
 
+## Closed PAC migration (2026-08-11)
+
+- [x] Split ESP32-S31 register access into private, non-publishable `pac-raw`
+  and application-facing `pac` crates. Remove raw SVD and physical-register
+  reexports from the HAL.
+- [x] Rename project configuration and publication status to
+  `[registers.pac-raw]` / `pac-raw-publication`; the old `[registers.pac]`
+  key has no compatibility path.
+- [x] Make new projects create an empty reviewed `registers/api.toml` and
+  document the practical MMIO -> TOML -> SVD -> raw PAC -> closed PAC order.
+- [x] Close MAC interrupt-enable writes behind `MacInterruptMask`; status and
+  acknowledgement retain separate finite snapshot types.
+- [x] Delete the legacy `power.rs` physical-address catalog. The remaining
+  `Register32`/`Field32` catalog exists only behind the hidden host-test
+  feature and is absent from ordinary PAC/HAL builds.
+- [ ] Generate the closed PAC facade from reviewed API schema 2. Writable
+  inputs must be flags, enums, bounded values, fixed images, or
+  register-specific opaque domains; naked cross-register `u32` writers are
+  forbidden by default.
+  - [x] Generate evidence-backed flag, enum, bounded and register-specific
+    opaque value domains into `[registers.api].output`; generated flags have
+    no public integer constructor.
+  - [ ] Bind reviewed transactions to those domains and generate the public
+    capability methods which privately dispatch to `pac-raw`.
+    - [x] Prove the vertical path with `mac_interrupt_enable`: its reviewed
+      operation names `MacInterruptMask`, the generator owns the typed raw
+      bridge, and every ESP32-S31 caller uses that bridge.
+- [ ] Migrate the remaining ESP32-S31 public numeric transaction parameters
+  to generated domains and add compile-fail fixtures for addresses, raw PAC
+  imports, arbitrary mask construction and unreviewed writes.
+
 Leaf commands are focused inspection and repair tools, not a second workflow
 that every user must learn.
 

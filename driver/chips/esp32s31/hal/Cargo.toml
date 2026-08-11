@@ -8,11 +8,11 @@ repository.workspace = true
 description = "Ownership and async HAL boundaries for the ESP32-S31 radio"
 
 [dependencies]
-open-esp-radio-esp32s31-registers = { path = "../registers" }
+open-esp-radio-esp32s31-pac = { path = "../pac" }
 
 [dev-dependencies]
 critical-section = { version = "1.2.0", features = ["std"] }
-open-esp-radio-esp32s31-registers = { path = "../registers", features = ["validation-probes"] }
+open-esp-radio-esp32s31-pac = { path = "../pac", features = ["validation-probes"] }
 
 [lints]
 workspace = true

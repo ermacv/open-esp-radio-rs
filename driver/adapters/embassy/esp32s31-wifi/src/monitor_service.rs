@@ -9,6 +9,7 @@ use embassy_futures::{
     yield_now,
 };
 use open_esp_radio_embassy_net::RawMutex;
+use open_esp_radio_esp32s31_pac::MacInterruptMask;
 use open_esp_radio_esp32s31_wifi_mac::{
     init::MAC_COLD_RX_INTERRUPT_MASK,
     irq::MacInterruptRoute,
@@ -30,7 +31,7 @@ use crate::{
 /// This is deliberately the complete recovered cold-RX mask rather than only
 /// `RX_SUCCESS`. It retains acknowledgement of status which accompanies RX
 /// on sustained traffic and whose independent semantics are not qualified.
-pub const ESP32S31_STANDALONE_MONITOR_INTERRUPT_MASK: u32 = MAC_COLD_RX_INTERRUPT_MASK;
+pub const ESP32S31_STANDALONE_MONITOR_INTERRUPT_MASK: MacInterruptMask = MAC_COLD_RX_INTERRUPT_MASK;
 
 /// Aggregate progress for one finite monitor run.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]

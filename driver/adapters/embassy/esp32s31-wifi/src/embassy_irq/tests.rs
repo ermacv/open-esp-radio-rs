@@ -33,7 +33,7 @@ impl MacInterruptRoute for Route {
         &mut self,
         platform: &Self::Platform,
         setup: Self::Setup,
-        _event_mask: u32,
+        _event_mask: open_esp_radio_esp32s31_pac::MacInterruptMask,
     ) -> Result<(), (Self::Error, Self::Setup)> {
         if platform.get() == 10 {
             return Err((RouteError::Activation, setup));
@@ -73,7 +73,7 @@ impl MacInterruptRoute for DropObservedRoute {
         &mut self,
         platform: &Self::Platform,
         _setup: Self::Setup,
-        _event_mask: u32,
+        _event_mask: open_esp_radio_esp32s31_pac::MacInterruptMask,
     ) -> Result<(), (Self::Error, Self::Setup)> {
         platform.set(1);
         Ok(())
@@ -153,7 +153,12 @@ fn irq_epoch_recovers_setup_before_draining_every_executor_wake() {
     let mut epoch = Esp32s31MacInterruptEpoch::new(Route { active: false }, 7, &mac, &power);
 
     assert_eq!(epoch.setup(), Ok(&7));
-    epoch.activate(&platform, 0x1234).unwrap();
+    epoch
+        .activate(
+            &platform,
+            open_esp_radio_esp32s31_pac::MacInterruptMask::COLD_RX,
+        )
+        .unwrap();
     assert!(epoch.is_active());
     assert_eq!(
         epoch.setup(),
@@ -196,7 +201,12 @@ fn active_irq_epoch_cannot_release_its_route_or_setup() {
     let power = EmbassyPowerIrqRuntime::<NoopRawMutex>::new();
     let platform = Cell::new(0);
     let mut epoch = Esp32s31MacInterruptEpoch::new(Route { active: false }, 9, &mac, &power);
-    epoch.activate(&platform, 0x1234).unwrap();
+    epoch
+        .activate(
+            &platform,
+            open_esp_radio_esp32s31_pac::MacInterruptMask::COLD_RX,
+        )
+        .unwrap();
 
     let mut epoch = match epoch.try_into_inactive_parts() {
         Ok(_) => panic!("an active route must not be extractable"),
@@ -221,14 +231,22 @@ fn irq_epoch_retains_the_exact_frontier_on_each_route_failure() {
     let mut epoch = Esp32s31MacInterruptEpoch::new(Route { active: false }, 7, &mac, &power);
 
     assert_eq!(
-        epoch.activate(&platform, 0x1234),
+        epoch.activate(
+            &platform,
+            open_esp_radio_esp32s31_pac::MacInterruptMask::COLD_RX,
+        ),
         Err(Esp32s31MacInterruptEpochActivateError::Route(
             RouteError::Activation
         ))
     );
     assert_eq!(epoch.setup(), Ok(&7));
     platform.set(0);
-    epoch.activate(&platform, 0x1234).unwrap();
+    epoch
+        .activate(
+            &platform,
+            open_esp_radio_esp32s31_pac::MacInterruptMask::COLD_RX,
+        )
+        .unwrap();
     platform.set(20);
     assert_eq!(
         epoch.quiesce(&platform),
@@ -260,7 +278,12 @@ fn active_irq_epoch_drop_retains_the_installed_route_without_panicking() {
         &mac,
         &power,
     );
-    epoch.activate(&platform, 0x1234).unwrap();
+    epoch
+        .activate(
+            &platform,
+            open_esp_radio_esp32s31_pac::MacInterruptMask::COLD_RX,
+        )
+        .unwrap();
 
     drop(epoch);
 

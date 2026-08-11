@@ -7,8 +7,8 @@ use core::cell::RefCell;
 use crate::EspHalRadioPeripheral;
 use critical_section::Mutex;
 use esp_hal::interrupt::InterruptHandler;
-use open_esp_radio_esp32s31_registers::{
-    MacInterruptRegisters, MacInterruptSetup, MacPowerInterruptRegisters,
+use open_esp_radio_esp32s31_pac::{
+    MacInterruptMask, MacInterruptRegisters, MacInterruptSetup, MacPowerInterruptRegisters,
 };
 use open_esp_radio_esp32s31_wifi_mac::irq::{
     IrqSink, MacInterruptRoute, PowerIrqSink, handle_mac_irq, handle_power_irq,
@@ -83,7 +83,7 @@ impl MacInterruptRoute for EspHalMacInterruptRoute {
         &mut self,
         platform: &Self::Platform,
         setup: Self::Setup,
-        event_mask: u32,
+        event_mask: MacInterruptMask,
     ) -> Result<(), (Self::Error, Self::Setup)> {
         if self.active {
             return Err((EspHalMacInterruptRouteError::AlreadyActive, setup));

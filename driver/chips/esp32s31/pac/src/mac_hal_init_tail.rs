@@ -2,7 +2,7 @@
 
 #![forbid(unsafe_code)]
 
-use super::ColdRadioRegisters;
+use super::{ColdRadioRegisters, MacInterruptMask};
 
 impl ColdRadioRegisters {
     /// Apply the complete direct tail through `hal_timer_update_by_rtc`.
@@ -15,17 +15,14 @@ impl ColdRadioRegisters {
     /// does not fit the exact eighteen-bit field consumed by the blob.
     pub fn initialize_mac_hal_tail(
         &mut self,
-        event_mask: u32,
+        event_mask: MacInterruptMask,
         slow_clock_calibration: u32,
     ) -> bool {
         if slow_clock_calibration > 0x0003_ffff {
             return false;
         }
 
-        super::svd::full_register_write::mac_interrupt_enable(
-            &self.interrupts.wifi_mac_interrupt,
-            event_mask,
-        );
+        super::generated::mac_interrupt_enable(&self.interrupts.wifi_mac_interrupt, event_mask);
 
         // This is deliberately a repeated edge: mac_txrx_init already set the
         // same bit, and complete hal_init samples and sets it again here.

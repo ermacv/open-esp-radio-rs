@@ -19,7 +19,7 @@ wifi = [
 ]
 esp32s31 = [
     "dep:open-esp-radio-esp32s31-hal",
-    "dep:open-esp-radio-esp32s31-registers",
+    "dep:open-esp-radio-esp32s31-pac",
     "dep:open-esp-radio-esp32s31-phy",
 ]
 esp32s31-wifi = [
@@ -53,7 +53,7 @@ open-esp-radio-esp32s31-wifi-mac = { path = "../chips/esp32s31/wifi/mac", option
 open-esp-radio-esp32s31-wifi-ap = { path = "../chips/esp32s31/wifi/ap", optional = true }
 open-esp-radio-esp32s31-wifi-sta = { path = "../chips/esp32s31/wifi/sta", optional = true }
 open-esp-radio-esp32s31-wifi-embassy = { path = "../adapters/embassy/esp32s31-wifi", optional = true }
-open-esp-radio-esp32s31-registers = { path = "../chips/esp32s31/registers", optional = true }
+open-esp-radio-esp32s31-pac = { path = "../chips/esp32s31/pac", optional = true }
 open-esp-radio-esp32s31-phy = { path = "../chips/esp32s31/phy", optional = true }
 open-esp-radio-ieee80211 = { path = "../wifi/ieee80211", optional = true }
 open-esp-radio-wifi-ap = { path = "../wifi/ap", optional = true }

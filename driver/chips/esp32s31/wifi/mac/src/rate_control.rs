@@ -10,7 +10,7 @@ use crate::tx::{
     HeDcmRate, HeMcs, HeRate, HtChannelWidth, HtGuardInterval, HtMcs, HtRate, LegacyRate,
     TxCompletion, TxPhyRate,
 };
-use open_esp_radio_esp32s31_registers::{
+use open_esp_radio_esp32s31_pac::{
     MacHeBeamformingReportProfile, MacHeBeamformingReportProfileError, MacHeErSuAckRateProfile,
     RadioRegisters,
 };

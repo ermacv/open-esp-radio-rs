@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use open_esp_radio_dma::{HardwareOwnedTxDma, PreparedTxDma};
-use open_esp_radio_esp32s31_registers::{
+use open_esp_radio_esp32s31_pac::{
     MacHtTxProgram, MacKeyInstallOutcome, MacLegacyTxProgram, MacTxCompletionRegisters,
     MacTxDetachOutcome, MacTxDetachReason, MacTxQueueDetached, Register32,
     mac::{self, init as mac_init},
@@ -378,11 +378,11 @@ impl MacColdAntennaHardware for MockMmio {
 impl MacColdHalTailHardware for MockMmio {
     fn initialize_hal_tail(
         &mut self,
-        event_mask: u32,
+        event_mask: open_esp_radio_esp32s31_pac::MacInterruptMask,
         slow_clock_calibration: MacSlowClockCalibration,
     ) {
         self.operations.push(Operation::InitializeHalTail(
-            event_mask,
+            event_mask.bits(),
             slow_clock_calibration,
         ));
     }
@@ -410,12 +410,12 @@ impl MacColdHeHardware for MockMmio {
 }
 
 impl MacColdEnableHardware for MockMmio {
-    fn enable_mac_interrupts(&mut self, event_mask: u32) {
+    fn enable_mac_interrupts(&mut self, event_mask: open_esp_radio_esp32s31_pac::MacInterruptMask) {
         let current = self.read32(mac_init::R_4C00);
         self.write32(mac_init::R_4C00, current & !0x0000_00f0);
-        self.interrupt_enable = event_mask;
+        self.interrupt_enable = event_mask.bits();
         self.operations
-            .push(Operation::WriteInterruptEnable(event_mask));
+            .push(Operation::WriteInterruptEnable(event_mask.bits()));
     }
 }
 

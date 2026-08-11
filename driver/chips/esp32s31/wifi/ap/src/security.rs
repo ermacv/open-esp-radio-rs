@@ -133,7 +133,7 @@ impl Esp32s31ApSecurity {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use open_esp_radio_esp32s31_registers::MacKeyInstallOutcome;
+    use open_esp_radio_esp32s31_pac::MacKeyInstallOutcome;
     use open_esp_radio_esp32s31_wifi_mac::crypto::CcmpKeyHardware;
     use open_esp_radio_wpa2::{Pmk, PtkContext};
 

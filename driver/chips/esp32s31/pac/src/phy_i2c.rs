@@ -17,7 +17,7 @@ impl RadioRegisters {
             return false;
         }
         let bytes = command.to_le_bytes();
-        open_esp_radio_esp32s31_pac::zero_based_field_write::phy_i2c_command_memory(
+        open_esp_radio_esp32s31_pac_raw::zero_based_field_write::phy_i2c_command_memory(
             &self.peripherals.phy_i2c_command_ram,
             index,
             bytes[0],

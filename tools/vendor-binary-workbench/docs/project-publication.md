@@ -32,7 +32,8 @@ schema-2 model:
 | --- | --- | --- |
 | `register-validation` | `[registers]`, optional API/lint/evidence packs and memory map | read-only validation |
 | `svd-publication` | `[registers.svd]` | clean release SVD |
-| `pac-publication` | `[registers.pac]`, optional `[registers.api]` | formatted Rust PAC source |
+| `pac-raw-publication` | `[registers.pac-raw]`, optional `[registers.api]` | internal formatted `svd2rust` source and reviewed low-level transactions |
+| `pac-api-publication` | `[registers.api].pack` plus `[registers.api].output` | closed public value domains with no integer constructors |
 | `binding-publication` | `[registers.bindings]` | address-to-PAC-path index |
 
 An absent output table is reported as `not-configured`, not as a failure. This
@@ -73,7 +74,7 @@ intentionally cannot publish a public hardware API. `project publish` owns
 reviewed register outputs and intentionally cannot refresh evidence from
 proprietary inputs.
 
-The individual `registers validate`, `export-svd`, `generate-pac`, and
+The individual `registers validate`, `export-svd`, `generate-pac-raw`, and
 `generate-bindings` commands remain useful for debugging one stage, selecting
 an audit SVD profile, disabling an API pack for inspection, or overriding one
 output path. Project CI and release checks should prefer `project publish

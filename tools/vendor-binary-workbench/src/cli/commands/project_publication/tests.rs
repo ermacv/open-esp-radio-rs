@@ -2,7 +2,7 @@ use std::{fs, path::PathBuf};
 
 use super::*;
 use crate::project::{
-    PacBindingsOutputSpec, PacOutputSpec, RegisterWorkspacePaths, ReviewWorkspaceSpec,
+    PacBindingsOutputSpec, PacRawOutputSpec, RegisterWorkspacePaths, ReviewWorkspaceSpec,
 };
 
 #[test]
@@ -12,7 +12,8 @@ fn publishes_and_checks_a_complete_register_project() {
     assert!(run(CheckArgs::default(), &project, None).unwrap());
     let paths = project.registers.as_ref().unwrap();
     assert!(paths.svd_output.as_ref().unwrap().is_file());
-    assert!(paths.pac.as_ref().unwrap().output.is_file());
+    assert!(paths.pac_raw.as_ref().unwrap().output.is_file());
+    assert!(paths.api_output.as_ref().unwrap().is_file());
     assert!(paths.bindings.as_ref().unwrap().output.is_file());
     assert!(run(CheckArgs { check: true }, &project, None).unwrap());
 
@@ -26,7 +27,8 @@ fn skips_outputs_absent_from_a_partial_project() {
     assert!(run(CheckArgs::default(), &project, None).unwrap());
     let paths = project.registers.as_ref().unwrap();
     assert!(paths.svd_output.as_ref().unwrap().is_file());
-    assert!(paths.pac.is_none());
+    assert!(paths.pac_raw.is_none());
+    assert!(paths.api_output.is_none());
     assert!(paths.bindings.is_none());
     assert!(run(CheckArgs { check: true }, &project, None).unwrap());
 
@@ -40,7 +42,7 @@ fn generation_failure_does_not_write_an_earlier_prepared_output() {
         .registers
         .as_mut()
         .unwrap()
-        .pac
+        .pac_raw
         .as_mut()
         .unwrap()
         .target = "invalid".to_owned();
@@ -48,7 +50,8 @@ fn generation_failure_does_not_write_an_earlier_prepared_output() {
     assert!(!run(CheckArgs::default(), &project, None).unwrap());
     let paths = project.registers.as_ref().unwrap();
     assert!(!paths.svd_output.as_ref().unwrap().exists());
-    assert!(!paths.pac.as_ref().unwrap().output.exists());
+    assert!(!paths.pac_raw.as_ref().unwrap().output.exists());
+    assert!(!paths.api_output.as_ref().unwrap().exists());
 
     fs::remove_dir_all(directory).unwrap();
 }
@@ -57,7 +60,7 @@ fn generation_failure_does_not_write_an_earlier_prepared_output() {
 fn rejects_shared_output_paths_before_publication() {
     let (directory, mut project) = fixture_project("shared-output", true, true, true);
     let paths = project.registers.as_mut().unwrap();
-    paths.pac.as_mut().unwrap().output = paths.svd_output.clone().unwrap();
+    paths.pac_raw.as_mut().unwrap().output = paths.svd_output.clone().unwrap();
 
     let error = run(CheckArgs::default(), &project, None).unwrap_err();
     assert!(error.to_string().contains("share"));
@@ -121,6 +124,13 @@ bitWidth = 1
 "#,
     )
     .unwrap();
+    if pac {
+        fs::write(
+            directory.join("registers/api.toml"),
+            "schema = 2\n\n[options]\n",
+        )
+        .unwrap();
+    }
 
     let paths = RegisterWorkspacePaths {
         facts: directory.join("generated/mmio.json"),
@@ -130,8 +140,8 @@ bitWidth = 1
         review_output: None,
         review_ir_reports: Vec::new(),
         svd_output: svd.then(|| directory.join("generated/device.svd")),
-        pac: pac.then(|| PacOutputSpec {
-            output: directory.join("generated/pac/src/lib.rs"),
+        pac_raw: pac.then(|| PacRawOutputSpec {
+            output: directory.join("generated/pac-raw/src/lib.rs"),
             target: "none".to_owned(),
             edition: "2024".to_owned(),
         }),
@@ -139,7 +149,8 @@ bitWidth = 1
             output: directory.join("generated/device.bindings.toml"),
             crate_name: "fixture_pac".to_owned(),
         }),
-        api_pack: None,
+        api_pack: pac.then(|| directory.join("registers/api.toml")),
+        api_output: pac.then(|| directory.join("generated/pac/src/generated.rs")),
         lint_pack: None,
         evidence_catalogs: Vec::new(),
     };

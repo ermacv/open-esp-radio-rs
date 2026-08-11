@@ -64,8 +64,8 @@ linked-ir = ["generated/findings/vendor.ir"]
 [registers.svd]
 output = "generated/svd/device.svd"
 
-[registers.pac]
-output = "generated/pac/src/lib.rs"
+[registers.pac-raw]
+output = "generated/pac-raw/src/lib.rs"
 target = "none"
 edition = "2024"
 
@@ -75,6 +75,7 @@ crate-name = "device_pac"
 
 [registers.api]
 pack = "registers/api.toml"
+output = "generated/pac/src/generated.rs"
 
 [registers.toml]
 catalogs = ["registers/evidence.toml"]
@@ -454,7 +455,7 @@ Commands now request the knowledge they actually consume:
 | `interfaces discover` | yes | no | no |
 | `interfaces init-pack` / `validate` | no | no | no |
 | `functions init-pack` / `validate` / `review` | no | no | no |
-| `registers init-model` / `import-svd` / `review` / `export-svd` / `generate-pac` / `generate-bindings` | no | no | no |
+| `registers init-model` / `import-svd` / `review` / `export-svd` / `generate-pac-raw` / `generate-bindings` | no | no | no |
 | `registers validate` | no | optional containment/evidence validation | no |
 | `mmio discover` | yes | explicit/project ranges | no |
 | `ir export` | yes | optional | optional enrichment |

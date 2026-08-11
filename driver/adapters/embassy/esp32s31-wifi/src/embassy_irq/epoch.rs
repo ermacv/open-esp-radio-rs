@@ -1,4 +1,5 @@
 use open_esp_radio_embassy_net::RawMutex;
+use open_esp_radio_esp32s31_pac::MacInterruptMask;
 use open_esp_radio_esp32s31_wifi_mac::irq::MacInterruptRoute;
 
 use super::{EmbassyMacIrqDrain, EmbassyMacIrqRuntime, EmbassyPowerIrqRuntime};
@@ -97,7 +98,7 @@ where
     pub fn activate(
         &mut self,
         platform: &R::Platform,
-        event_mask: u32,
+        event_mask: MacInterruptMask,
     ) -> Result<(), Esp32s31MacInterruptEpochActivateError<R::Error>> {
         let setup = self
             .setup

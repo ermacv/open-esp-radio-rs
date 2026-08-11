@@ -178,6 +178,14 @@ impl PacApiPack {
             require_size_access(&operation.name, binding, Access::ReadWrite, "read-write")?;
             require_ordinary(&operation.name, binding.info)?;
         }
+        for domain in &self.opaque_domains {
+            ordinary_writable_register(
+                &device,
+                &domain.name,
+                &domain.peripheral,
+                &domain.register,
+            )?;
+        }
         Ok(())
     }
 }

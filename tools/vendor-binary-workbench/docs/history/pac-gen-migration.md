@@ -19,7 +19,7 @@ after every responsibility below had an executable project-owned replacement.
 | Provenance source and confidence vocabulary | functional catalogs under `registers/evidence/` | migrated |
 | Evidence ranges and their source references | `RegisterEvidenceSet` plus project MMIO regions | migrated |
 | Safe compound transactions and ownership helpers | reviewed `registers/api.toml`, cross-validated against the release SVD | migrated |
-| PAC source generation | `registers generate-pac --check` | migrated; byte-for-byte parity |
+| Raw PAC source generation | `registers generate-pac-raw --check` | migrated; byte-for-byte parity |
 | Address-to-PAC binding index | `registers generate-bindings --check` | migrated; byte-for-byte parity |
 | Platform-owned dependency SVD parsing | project SVD catalog loaded by `registers validate` | migrated |
 | XML dimension-child ordering | deterministic output of the pinned encoder; the clean generated SVD is the checked artifact | redundant serialization assertion |

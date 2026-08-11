@@ -6,7 +6,7 @@
 
 #![forbid(unsafe_code)]
 
-use open_esp_radio_esp32s31_registers::RadioRegisters;
+use open_esp_radio_esp32s31_pac::RadioRegisters;
 
 const RX_BLOCK_ACK_CAPACITY: u8 = 8;
 /// Highest receive BlockAck TID accepted by the vendor net80211 state machine.

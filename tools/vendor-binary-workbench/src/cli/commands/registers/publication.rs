@@ -39,17 +39,17 @@ pub(super) fn export_svd(
     Ok(true)
 }
 
-#[tracing::instrument(name = "generate_pac", skip_all)]
-pub(super) fn generate_pac_source(
-    arguments: RegisterPacArgs,
+#[tracing::instrument(name = "generate_pac_raw", skip_all)]
+pub(super) fn generate_pac_raw_source(
+    arguments: RegisterPacRawArgs,
     paths: &crate::project::RegisterWorkspacePaths,
 ) -> Result<bool> {
-    let configured = paths.pac.as_ref();
+    let configured = paths.pac_raw.as_ref();
     let output = arguments
         .output
         .as_deref()
         .or_else(|| configured.map(|pac| pac.output.as_path()))
-        .ok_or("registers generate-pac requires --output PATH or [registers.pac] output")
+        .ok_or("registers generate-pac-raw requires --output PATH or [registers.pac-raw] output")
         .map_err(crate::Error::invalid)?;
     let target = arguments
         .target

@@ -1,6 +1,6 @@
 //! Ownership boundary for bounded complete `hal_he_init` transactions.
 
-use open_esp_radio_esp32s31_registers::{
+use open_esp_radio_esp32s31_pac::{
     ColdRadioRegisters, MAC_TX_POWER_RATE_COUNT, MacTxPowerPair, MacTxPowerTable,
 };
 

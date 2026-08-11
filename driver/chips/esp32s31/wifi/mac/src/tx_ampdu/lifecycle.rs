@@ -2,7 +2,7 @@
 
 use core::pin::Pin;
 
-use open_esp_radio_esp32s31_registers::MacHeTriggerTxQueueSnapshot;
+use open_esp_radio_esp32s31_pac::MacHeTriggerTxQueueSnapshot;
 
 use super::{
     HtAmpduHardware, HtAmpduTxCompletion, HtAmpduTxError, HtAmpduTxStorage,

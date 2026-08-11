@@ -194,10 +194,17 @@ production gate. The PAC can still be checked directly when diagnosing that
 single stage:
 
 ```console
-cargo vendor-binary-workbench-esp32s31 registers generate-pac \
+cargo vendor-binary-workbench-esp32s31 registers generate-pac-raw \
   --project verification/vendor/targets/esp32s31/vendor-project.toml \
-  --check --deny-unreviewed
+  --check
 ```
+
+This leaf check verifies only raw-PAC freshness. Use `project publish --check`
+for the production gate: it validates the reviewed publication scopes and
+then checks SVD, raw PAC, generated closed-PAC domains and binding outputs
+together. `--deny-unreviewed` on a leaf register command intentionally audits
+every discovery observation, including findings outside those publication
+scopes.
 
 The pack is cross-validated against the clean schema-2 register model and
 produces the checked-in PAC byte-for-byte. Use `--no-api-pack --output PATH`
@@ -209,7 +216,7 @@ modeled registers against `memory.toml`. `registers/lints.toml` retains the
 ESP32-S31 policy against synthetic `PRESERVED` fields without imposing that
 naming rule on generic projects. The retired generator migration and current
 publication ownership are recorded in
-[`pac-gen-migration.md`](../../../../tools/vendor-binary-workbench/docs/pac-gen-migration.md).
+[`pac-gen-migration.md`](../../../../tools/vendor-binary-workbench/docs/history/pac-gen-migration.md).
 
 The project also owns the neutral PAC address/path index. Diagnose that stage
 independently of the production PAC with:

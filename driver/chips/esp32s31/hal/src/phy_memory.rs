@@ -1,8 +1,8 @@
 //! Owned access to the shared ESP32-S31 PHY table-memory aperture.
 
 #[cfg(target_arch = "riscv32")]
-use open_esp_radio_esp32s31_registers::RadioRegisters;
-pub use open_esp_radio_esp32s31_registers::{PbusMemoryGroupBoundary, PhyMemoryError};
+use open_esp_radio_esp32s31_pac::RadioRegisters;
+pub use open_esp_radio_esp32s31_pac::{PbusMemoryGroupBoundary, PhyMemoryError};
 
 /// Publish one entry of the PBUS-memory table.
 ///

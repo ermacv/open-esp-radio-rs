@@ -6,7 +6,7 @@
 //! uses the same field around its bounded measurement graph.
 
 #[cfg(target_arch = "riscv32")]
-use open_esp_radio_esp32s31_registers::RadioRegisters;
+use open_esp_radio_esp32s31_pac::RadioRegisters;
 
 /// Capture and clear the two RX-DCO calibration-control bits.
 ///

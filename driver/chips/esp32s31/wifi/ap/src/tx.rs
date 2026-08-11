@@ -197,7 +197,7 @@ mod tests {
         task::{Context, Poll},
     };
 
-    use open_esp_radio_esp32s31_registers::{
+    use open_esp_radio_esp32s31_pac::{
         MacLegacyTxProgram, MacTxCompletionRegisters, MacTxDetachOutcome, MacTxDetachReason,
         MacTxQueueDetached,
     };

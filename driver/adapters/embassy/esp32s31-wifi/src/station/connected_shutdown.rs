@@ -255,7 +255,7 @@ mod tests {
 
     use embassy_futures::block_on;
     use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
-    use open_esp_radio_esp32s31_registers::MacKeyInstallOutcome;
+    use open_esp_radio_esp32s31_pac::MacKeyInstallOutcome;
     use open_esp_radio_esp32s31_wifi_mac::{
         crypto::{install_sta_group_ccmp, install_sta_pairwise_ccmp},
         irq::MacInterruptRoute,
@@ -280,7 +280,7 @@ mod tests {
             &mut self,
             _platform: &Self::Platform,
             setup: Self::Setup,
-            _event_mask: u32,
+            _event_mask: open_esp_radio_esp32s31_pac::MacInterruptMask,
         ) -> Result<(), (Self::Error, Self::Setup)> {
             self.active = true;
             let _ = setup;
@@ -322,7 +322,9 @@ mod tests {
             EmbassyPowerIrqRuntime::new();
         let mut epoch =
             Esp32s31MacInterruptEpoch::new(TestRoute { active: false }, 40, &MAC, &POWER);
-        epoch.activate(&(), 1).expect("test route activates");
+        epoch
+            .activate(&(), open_esp_radio_esp32s31_pac::MacInterruptMask::COLD_RX)
+            .expect("test route activates");
         epoch
     }
 

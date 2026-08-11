@@ -164,12 +164,12 @@ impl RadioRegisters {
         let images = rx_block_ack_images(interface, peer, tid, window);
         let peer_tail = images.peer_tail_and_policy as u16;
 
-        open_esp_radio_esp32s31_pac::zero_based_field_write::rx_block_ack_peer_head(
+        open_esp_radio_esp32s31_pac_raw::zero_based_field_write::rx_block_ack_peer_head(
             block,
             register_index,
             images.peer_head,
         );
-        open_esp_radio_esp32s31_pac::zero_based_field_write::rx_block_ack_peer_tail_and_policy(
+        open_esp_radio_esp32s31_pac_raw::zero_based_field_write::rx_block_ack_peer_tail_and_policy(
             block,
             register_index,
             peer_tail,
@@ -182,11 +182,11 @@ impl RadioRegisters {
         block
             .rx_block_ack_entry_control(register_index)
             .modify(|_, w| w.valid().clear_bit());
-        open_esp_radio_esp32s31_pac::zero_register_write::clear_rx_block_ack_bitmap_low_load(
+        open_esp_radio_esp32s31_pac_raw::zero_register_write::clear_rx_block_ack_bitmap_low_load(
             block,
             register_index,
         );
-        open_esp_radio_esp32s31_pac::zero_register_write::clear_rx_block_ack_bitmap_high_load(
+        open_esp_radio_esp32s31_pac_raw::zero_register_write::clear_rx_block_ack_bitmap_high_load(
             block,
             register_index,
         );
@@ -197,7 +197,7 @@ impl RadioRegisters {
             w.ordinary_entry_update()
                 .set(r.ordinary_entry_update().bits() | update_bit)
         });
-        open_esp_radio_esp32s31_pac::zero_based_field_write::rx_block_ack_active_control(
+        open_esp_radio_esp32s31_pac_raw::zero_based_field_write::rx_block_ack_active_control(
             block,
             register_index,
             true,
@@ -218,11 +218,11 @@ impl RadioRegisters {
         block
             .rx_block_ack_entry_control(register_index)
             .modify(|_, w| w.valid().clear_bit());
-        open_esp_radio_esp32s31_pac::zero_register_write::clear_rx_block_ack_bitmap_low_load(
+        open_esp_radio_esp32s31_pac_raw::zero_register_write::clear_rx_block_ack_bitmap_low_load(
             block,
             register_index,
         );
-        open_esp_radio_esp32s31_pac::zero_register_write::clear_rx_block_ack_bitmap_high_load(
+        open_esp_radio_esp32s31_pac_raw::zero_register_write::clear_rx_block_ack_bitmap_high_load(
             block,
             register_index,
         );
@@ -230,7 +230,7 @@ impl RadioRegisters {
             .rx_block_ack_entry_control(register_index)
             .modify(|_, w| w.valid().set_bit());
         // The final full-word zero is a distinct observable edge in the blob.
-        open_esp_radio_esp32s31_pac::zero_register_write::clear_rx_block_ack_entry_control(
+        open_esp_radio_esp32s31_pac_raw::zero_register_write::clear_rx_block_ack_entry_control(
             block,
             register_index,
         );

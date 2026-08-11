@@ -6,7 +6,7 @@ use crate::{cli::resolver::RegisterWorkspaceCommand, project::ProjectSpec, regis
 mod publication;
 mod report;
 
-use publication::{export_svd, generate_bindings, generate_pac_source};
+use publication::{export_svd, generate_bindings, generate_pac_raw_source};
 use report::*;
 
 pub(super) fn run(
@@ -27,7 +27,9 @@ pub(super) fn run(
         RegisterWorkspaceCommand::Validate(arguments) => validate(arguments, memory_map, paths),
         RegisterWorkspaceCommand::Review(arguments) => review(arguments, paths),
         RegisterWorkspaceCommand::ExportSvd(arguments) => export_svd(arguments, paths),
-        RegisterWorkspaceCommand::GeneratePac(arguments) => generate_pac_source(arguments, paths),
+        RegisterWorkspaceCommand::GeneratePacRaw(arguments) => {
+            generate_pac_raw_source(arguments, paths)
+        }
         RegisterWorkspaceCommand::GenerateBindings(arguments) => {
             generate_bindings(arguments, paths)
         }
@@ -196,6 +198,7 @@ fn validate(
         model: &paths.model,
         pac_api: api_pack.as_ref().map(|pack| PacApiDocument {
             schema: pack.schema,
+            domains: pack.domain_count(),
             operations: pack.operation_count(),
             sources: pack.source_ids().len(),
             pack: paths

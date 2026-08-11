@@ -1268,14 +1268,16 @@ dependencies = [
  "embassy-futures",
  "embassy-sync 0.8.0",
  "open-esp-radio-esp32s31-hal",
+ "open-esp-radio-esp32s31-pac",
  "open-esp-radio-esp32s31-phy",
- "open-esp-radio-esp32s31-registers",
  "open-esp-radio-esp32s31-wifi",
+ "open-esp-radio-esp32s31-wifi-ap",
  "open-esp-radio-esp32s31-wifi-dma",
  "open-esp-radio-esp32s31-wifi-embassy",
  "open-esp-radio-esp32s31-wifi-mac",
  "open-esp-radio-esp32s31-wifi-sta",
  "open-esp-radio-ieee80211",
+ "open-esp-radio-wifi-ap",
  "open-esp-radio-wifi-embassy",
  "open-esp-radio-wifi-softmac",
  "open-esp-radio-wifi-sta",
@@ -1329,11 +1331,19 @@ dependencies = [
 name = "open-esp-radio-esp32s31-hal"
 version = "0.1.0"
 dependencies = [
- "open-esp-radio-esp32s31-registers",
+ "open-esp-radio-esp32s31-pac",
 ]
 
 [[package]]
 name = "open-esp-radio-esp32s31-pac"
+version = "0.1.0"
+dependencies = [
+ "open-esp-radio-dma",
+ "open-esp-radio-esp32s31-pac-raw",
+]
+
+[[package]]
+name = "open-esp-radio-esp32s31-pac-raw"
 version = "0.1.0"
 dependencies = [
  "critical-section",
@@ -1345,14 +1355,6 @@ name = "open-esp-radio-esp32s31-phy"
 version = "0.1.0"
 dependencies = [
  "open-esp-radio-esp32s31-hal",
-]
-
-[[package]]
-name = "open-esp-radio-esp32s31-registers"
-version = "0.1.0"
-dependencies = [
- "open-esp-radio-dma",
- "open-esp-radio-esp32s31-pac",
 ]
 
 [[package]]
@@ -1378,11 +1380,25 @@ name = "open-esp-radio-esp32s31-wifi"
 version = "0.1.0"
 dependencies = [
  "open-esp-radio-esp32s31-hal",
+ "open-esp-radio-esp32s31-pac",
  "open-esp-radio-esp32s31-phy",
- "open-esp-radio-esp32s31-registers",
  "open-esp-radio-esp32s31-wifi-mac",
  "open-esp-radio-ieee80211",
  "open-esp-radio-wifi-softmac",
+]
+
+[[package]]
+name = "open-esp-radio-esp32s31-wifi-ap"
+version = "0.1.0"
+dependencies = [
+ "open-esp-radio-esp32s31-pac",
+ "open-esp-radio-esp32s31-phy",
+ "open-esp-radio-esp32s31-wifi",
+ "open-esp-radio-esp32s31-wifi-mac",
+ "open-esp-radio-ieee80211",
+ "open-esp-radio-wifi-ap",
+ "open-esp-radio-wifi-softmac",
+ "open-esp-radio-wpa2",
 ]
 
 [[package]]
@@ -1390,7 +1406,7 @@ name = "open-esp-radio-esp32s31-wifi-dma"
 version = "0.1.0"
 dependencies = [
  "open-esp-radio-dma",
- "open-esp-radio-esp32s31-registers",
+ "open-esp-radio-esp32s31-pac",
  "pin-project",
  "vcell",
 ]
@@ -1404,9 +1420,10 @@ dependencies = [
  "embassy-time",
  "open-esp-radio-embassy-net",
  "open-esp-radio-esp32s31-hal",
+ "open-esp-radio-esp32s31-pac",
  "open-esp-radio-esp32s31-phy",
- "open-esp-radio-esp32s31-registers",
  "open-esp-radio-esp32s31-wifi",
+ "open-esp-radio-esp32s31-wifi-ap",
  "open-esp-radio-esp32s31-wifi-dma",
  "open-esp-radio-esp32s31-wifi-mac",
  "open-esp-radio-esp32s31-wifi-sta",
@@ -1425,8 +1442,8 @@ dependencies = [
  "critical-section",
  "esp-hal",
  "open-esp-radio-esp32s31-hal",
+ "open-esp-radio-esp32s31-pac",
  "open-esp-radio-esp32s31-phy",
- "open-esp-radio-esp32s31-registers",
  "open-esp-radio-esp32s31-wifi",
  "open-esp-radio-esp32s31-wifi-mac",
 ]
@@ -1436,7 +1453,7 @@ name = "open-esp-radio-esp32s31-wifi-mac"
 version = "0.1.0"
 dependencies = [
  "open-esp-radio-dma",
- "open-esp-radio-esp32s31-registers",
+ "open-esp-radio-esp32s31-pac",
  "open-esp-radio-esp32s31-wifi-dma",
  "open-esp-radio-ieee80211",
  "open-esp-radio-wifi-softmac",
@@ -1448,8 +1465,8 @@ name = "open-esp-radio-esp32s31-wifi-sta"
 version = "0.1.0"
 dependencies = [
  "open-esp-radio-esp32s31-hal",
+ "open-esp-radio-esp32s31-pac",
  "open-esp-radio-esp32s31-phy",
- "open-esp-radio-esp32s31-registers",
  "open-esp-radio-esp32s31-wifi",
  "open-esp-radio-esp32s31-wifi-mac",
  "open-esp-radio-ieee80211",
@@ -1461,6 +1478,14 @@ dependencies = [
 [[package]]
 name = "open-esp-radio-ieee80211"
 version = "0.1.0"
+
+[[package]]
+name = "open-esp-radio-wifi-ap"
+version = "0.1.0"
+dependencies = [
+ "open-esp-radio-ieee80211",
+ "open-esp-radio-wpa2",
+]
 
 [[package]]
 name = "open-esp-radio-wifi-embassy"

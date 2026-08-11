@@ -27,9 +27,9 @@ pub(crate) struct ProjectInitArgs {
     /// Rust compilation target used by generated project artifacts.
     #[arg(long)]
     pub(crate) rust_target: Option<String>,
-    /// Crate name assigned to the generated PAC.
+    /// Crate name assigned to the generated internal raw PAC.
     #[arg(long)]
-    pub(crate) pac_crate_name: Option<String>,
+    pub(crate) pac_raw_crate_name: Option<String>,
     /// Existing SVD to import into the initial register workspace.
     #[arg(long)]
     pub(crate) import_svd: Option<PathBuf>,
@@ -245,7 +245,7 @@ pub(crate) struct RegisterExportArgs {
 }
 
 #[derive(Clone, Debug, Default, Args)]
-pub(crate) struct RegisterPacArgs {
+pub(crate) struct RegisterPacRawArgs {
     /// Directory in which the PAC crate is generated.
     #[arg(long)]
     pub(crate) output: Option<PathBuf>,

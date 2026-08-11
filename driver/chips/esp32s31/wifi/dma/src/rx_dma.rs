@@ -6,7 +6,7 @@
 //! PAC above the register leaf.
 
 use open_esp_radio_dma::StableDmaRange;
-use open_esp_radio_esp32s31_registers::{ColdRadioRegisters, RadioRegisters};
+use open_esp_radio_esp32s31_pac::{ColdRadioRegisters, RadioRegisters};
 
 use crate::descriptor::{DESCRIPTOR_BYTES, Descriptor};
 

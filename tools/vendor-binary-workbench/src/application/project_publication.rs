@@ -10,8 +10,8 @@ use crate::{
     project::{ProjectSpec, RegisterWorkspacePaths},
     registers::{
         PreparedPublication, ProjectRegisterWorkspace, prepare_project_bindings,
-        prepare_project_pac, prepare_project_svd, validate_pac_api, validate_register_evidence,
-        validate_register_lints, validate_register_memory_map,
+        prepare_project_pac_api, prepare_project_pac_raw, prepare_project_svd, validate_pac_api,
+        validate_register_evidence, validate_register_lints, validate_register_memory_map,
     },
 };
 
@@ -26,6 +26,7 @@ pub(crate) trait ProjectPublicationOperations {
     fn validate_registers(&mut self) -> Result<bool>;
     fn prepare_svd(&mut self) -> Result<Self::Prepared>;
     fn prepare_pac(&mut self) -> Result<Self::Prepared>;
+    fn prepare_pac_api(&mut self) -> Result<Self::Prepared>;
     fn prepare_bindings(&mut self) -> Result<Self::Prepared>;
     fn publish(&mut self, publication: &Self::Prepared, check: bool) -> Result<bool>;
 }
@@ -107,10 +108,16 @@ fn run_with_operations<O: ProjectPublicationOperations>(
             || operations.prepare_svd(),
         ),
         prepare_stage(
-            "pac-publication",
-            paths.pac.is_some(),
-            "[registers.pac] is absent",
+            "pac-raw-publication",
+            paths.pac_raw.is_some(),
+            "[registers.pac-raw] is absent",
             || operations.prepare_pac(),
+        ),
+        prepare_stage(
+            "pac-api-publication",
+            paths.api_output.is_some(),
+            "[registers.api] output is absent",
+            || operations.prepare_pac_api(),
         ),
         prepare_stage(
             "binding-publication",
@@ -178,7 +185,11 @@ impl ProjectPublicationOperations for RegisterPublicationOperations<'_> {
     }
 
     fn prepare_pac(&mut self) -> Result<Self::Prepared> {
-        prepare_project_pac(self.paths, &self.publication_mmio)
+        prepare_project_pac_raw(self.paths, &self.publication_mmio)
+    }
+
+    fn prepare_pac_api(&mut self) -> Result<Self::Prepared> {
+        prepare_project_pac_api(self.paths)
     }
 
     fn prepare_bindings(&mut self) -> Result<Self::Prepared> {
@@ -236,9 +247,14 @@ fn report_blocked_publications(paths: &RegisterWorkspacePaths, summary: &mut Pip
             "[registers.svd] is absent",
         ),
         (
-            "pac-publication",
-            paths.pac.is_some(),
-            "[registers.pac] is absent",
+            "pac-raw-publication",
+            paths.pac_raw.is_some(),
+            "[registers.pac-raw] is absent",
+        ),
+        (
+            "pac-api-publication",
+            paths.api_output.is_some(),
+            "[registers.api] output is absent",
         ),
         (
             "binding-publication",
@@ -260,8 +276,11 @@ fn validate_output_paths(paths: &RegisterWorkspacePaths) -> Result<()> {
     if let Some(path) = paths.svd_output.as_deref() {
         outputs.push(("svd-publication", path));
     }
-    if let Some(pac) = paths.pac.as_ref() {
-        outputs.push(("pac-publication", pac.output.as_path()));
+    if let Some(pac_raw) = paths.pac_raw.as_ref() {
+        outputs.push(("pac-raw-publication", pac_raw.output.as_path()));
+    }
+    if let Some(path) = paths.api_output.as_deref() {
+        outputs.push(("pac-api-publication", path));
     }
     if let Some(bindings) = paths.bindings.as_ref() {
         outputs.push(("binding-publication", bindings.output.as_path()));

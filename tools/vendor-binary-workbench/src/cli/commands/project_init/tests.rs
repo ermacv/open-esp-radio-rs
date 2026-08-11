@@ -11,12 +11,12 @@ fn parses_generic_sources_ranges_and_defaults() {
         mmio: vec!["radio=0x20000000..0x20010000".parse().unwrap()],
         source: vec!["rom".parse().unwrap(), "archive".parse().unwrap()],
         rust_target: None,
-        pac_crate_name: None,
+        pac_raw_crate_name: None,
         import_svd: None,
     })
     .unwrap();
     assert_eq!(options.sources, ["rom", "archive"]);
-    assert_eq!(options.pac_crate_name, "radio_rev0_pac");
+    assert_eq!(options.pac_raw_crate_name, "radio_rev0_pac_raw");
     assert_eq!(options.rust_target, DEFAULT_RUST_TARGET);
     assert_eq!(options.ranges[0].start, 0x2000_0000);
 }
@@ -38,7 +38,7 @@ fn creates_a_valid_project_and_refuses_to_overwrite_it() {
         mmio: vec!["radio=0x20000000..0x20010000".parse().unwrap()],
         source: Vec::new(),
         rust_target: None,
-        pac_crate_name: None,
+        pac_raw_crate_name: None,
         import_svd: None,
     };
 
@@ -74,6 +74,24 @@ fn creates_a_valid_project_and_refuses_to_overwrite_it() {
     assert!(project.functions.is_some());
     assert!(project.code.is_some());
     assert_eq!(project.registers.as_ref().unwrap().owned_ranges, ["radio"]);
+    assert_eq!(
+        project
+            .registers
+            .as_ref()
+            .unwrap()
+            .pac_raw
+            .as_ref()
+            .map(|pac| pac.output.as_path()),
+        Some(directory.join("generated/pac-raw/src/lib.rs").as_path())
+    );
+    let api = crate::registers::PacApiPack::load(&directory.join("registers/api.toml")).unwrap();
+    assert_eq!(api.operation_count(), 0);
+    assert_eq!(api.schema, 2);
+    assert_eq!(api.domain_count(), 0);
+    assert_eq!(
+        project.registers.as_ref().unwrap().api_output.as_deref(),
+        Some(directory.join("generated/pac/src/generated.rs").as_path())
+    );
     target.require_available_backend().unwrap();
     assert_eq!(memory.mmio_ranges().unwrap().len(), 1);
     assert_eq!(model.render_svd().unwrap().1.peripherals, 1);
@@ -114,7 +132,7 @@ fn rejects_overlapping_ranges_before_creating_a_directory() {
         ],
         source: Vec::new(),
         rust_target: None,
-        pac_crate_name: None,
+        pac_raw_crate_name: None,
         import_svd: None,
     })
     .unwrap_err();
@@ -166,7 +184,7 @@ fn imported_svd_must_fit_the_declared_mmio_map() {
         mmio: vec!["radio=0x20000000..0x20010000".parse().unwrap()],
         source: Vec::new(),
         rust_target: None,
-        pac_crate_name: None,
+        pac_raw_crate_name: None,
         import_svd: Some(input),
     })
     .unwrap_err();

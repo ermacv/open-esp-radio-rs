@@ -1,7 +1,7 @@
 //! Owned access to the ESP32-S31 PHY analog-register I2C master.
 
 #[cfg(target_arch = "riscv32")]
-use open_esp_radio_esp32s31_registers::RadioRegisters;
+use open_esp_radio_esp32s31_pac::RadioRegisters;
 
 /// One of the two analog-register command hosts.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

@@ -1264,7 +1264,13 @@ fn project_publication_json_is_one_typed_report() {
     assert_eq!(document["command"], "project publish");
     assert_eq!(document["mode"], "check");
     assert_eq!(document["status"], "ok");
-    assert_eq!(document["stages"].as_array().unwrap().len(), 4);
+    let stages = document["stages"].as_array().unwrap();
+    assert_eq!(stages.len(), 5);
+    assert!(
+        stages.iter().any(|stage| {
+            stage["name"] == "pac-api-publication" && stage["status"] == "verified"
+        })
+    );
     std::fs::remove_dir_all(directory).unwrap();
 }
 
@@ -1283,7 +1289,13 @@ fn register_lifecycle_commands_emit_one_typed_report() {
             "verified",
         ),
         (
-            vec!["registers", "generate-pac", "--check", "--project", project],
+            vec![
+                "registers",
+                "generate-pac-raw",
+                "--check",
+                "--project",
+                project,
+            ],
             "pac-publication",
             "verified",
         ),

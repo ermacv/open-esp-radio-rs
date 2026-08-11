@@ -5,7 +5,7 @@ use crate::tx::{
     HeAmpduTxConfig, HeEdcaTxopLimit, HeRate, HtAmpduDensity, HtAmpduTxConfig, HtRate, TxHardware,
 };
 use open_esp_radio_dma::{HardwareOwnedTxDma, PinnedDmaTxPool, PreparedTxDma};
-use open_esp_radio_esp32s31_registers::{
+use open_esp_radio_esp32s31_pac::{
     MacHeTbTidLimit, MacHeTid, MacHeTxVectorSnapshot, MacHtAmpduCompletionRegisters,
     MacHtTxProgram, MacLegacyTxProgram, MacTxCompletionRegisters, MacTxDetachOutcome,
     MacTxDetachReason, MacTxQueueDetached,

@@ -319,7 +319,7 @@ leaf_commands!(RegisterCommand {
     Validate(ValidationArgs) => Command::RegisterValidate, Validation,
     Review(RegisterReviewArgs) => Command::RegisterReview, RegisterReview,
     ExportSvd(RegisterExportArgs) => Command::RegisterExportSvd, RegisterExport,
-    GeneratePac(RegisterPacArgs) => Command::RegisterGeneratePac, RegisterPac,
+    GeneratePacRaw(RegisterPacRawArgs) => Command::RegisterGeneratePacRaw, RegisterPacRaw,
     GenerateBindings(RegisterBindingsArgs) => Command::RegisterGenerateBindings, RegisterBindings,
 });
 
@@ -444,7 +444,7 @@ pub(crate) enum Command {
     RegisterValidate(ValidationArgs),
     RegisterReview(RegisterReviewArgs),
     RegisterExportSvd(RegisterExportArgs),
-    RegisterGeneratePac(RegisterPacArgs),
+    RegisterGeneratePacRaw(RegisterPacRawArgs),
     RegisterGenerateBindings(RegisterBindingsArgs),
     AuditImageTargets(ImageAuditArgs),
     DiscoverMmio(MmioDiscoverArgs),
@@ -575,9 +575,13 @@ mod tests {
 
     #[test]
     fn exposes_nested_help_from_the_same_grammar() {
+        assert!(
+            ParsedInvocation::parse(["registers".to_owned(), "generate-pac".to_owned(),]).is_err(),
+            "the old command must not survive as a compatibility alias"
+        );
         let error = ParsedInvocation::parse([
             "registers".to_owned(),
-            "generate-pac".to_owned(),
+            "generate-pac-raw".to_owned(),
             "--help".to_owned(),
         ])
         .unwrap_err();

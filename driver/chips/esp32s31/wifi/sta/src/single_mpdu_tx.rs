@@ -582,7 +582,7 @@ mod tests {
         pin::Pin,
     };
 
-    use open_esp_radio_esp32s31_registers::{
+    use open_esp_radio_esp32s31_pac::{
         MacKeyInstallOutcome, MacLegacyTxProgram, MacTxCompletionRegisters, MacTxDetachOutcome,
         MacTxDetachReason, MacTxQueueDetached,
     };

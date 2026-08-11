@@ -1,8 +1,8 @@
 //! Common ownership boundary between stopped Wi-Fi and one station role.
 
 use open_esp_radio_esp32s31_hal::RadioRegisters;
+use open_esp_radio_esp32s31_pac::MacInterruptSetup;
 use open_esp_radio_esp32s31_phy::PhyState;
-use open_esp_radio_esp32s31_registers::MacInterruptSetup;
 use open_esp_radio_esp32s31_wifi::runtime::{
     Esp32s31WifiRuntimeContext, Esp32s31WifiRuntimeParts, Esp32s31WifiStopped,
 };

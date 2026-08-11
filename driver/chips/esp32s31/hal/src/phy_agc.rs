@@ -7,7 +7,7 @@
 #![forbid(unsafe_code)]
 
 #[cfg(target_arch = "riscv32")]
-use open_esp_radio_esp32s31_registers::{ForcedRxGain, RadioRegisters};
+use open_esp_radio_esp32s31_pac::{ForcedRxGain, RadioRegisters};
 
 /// Apply complete rev0 ROM `phy_bb_agc_reg_update`.
 ///

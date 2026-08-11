@@ -1,6 +1,6 @@
 //! Ownership boundary for the complete cold COEX/PTI transaction.
 
-use open_esp_radio_esp32s31_registers::ColdRadioRegisters;
+use open_esp_radio_esp32s31_pac::ColdRadioRegisters;
 
 /// The four OSI coexistence event numbers queried by complete cold init.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

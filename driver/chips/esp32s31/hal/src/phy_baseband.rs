@@ -7,7 +7,7 @@
 #![forbid(unsafe_code)]
 
 #[cfg(target_arch = "riscv32")]
-use open_esp_radio_esp32s31_registers::{CfrValue, RadioRegisters};
+use open_esp_radio_esp32s31_pac::{CfrValue, RadioRegisters};
 
 /// Enable the two IQ-correction modes selected by PHY initialization.
 ///

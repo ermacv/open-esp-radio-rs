@@ -32,7 +32,7 @@ the ignored `generated/` tree rather than in a public target pack.
 | `analysis` | Complete symbol inventory, linked-IR/pseudo-Rust profiles, MMIO/interface facts, and the optional navigation index |
 | `review` | Register coverage and policy packs, interface anchors/slots, functions and context fields |
 | `verification` | Parsed scenario profiles, dispositions and the accepted evidence baseline |
-| `publication` | Exact current SVD, Rust PAC and binding index derived from reviewed registers |
+| `publication` | Exact current SVD, internal raw PAC and binding index derived from reviewed registers |
 
 The status collectors call the same parsers and validators as the individual
 workflows. Publication readiness prepares expected outputs in memory and

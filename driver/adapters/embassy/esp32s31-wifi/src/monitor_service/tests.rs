@@ -149,13 +149,13 @@ impl MacInterruptRoute for Route<'_> {
         &mut self,
         _: &Self::Platform,
         setup: Self::Setup,
-        event_mask: u32,
+        event_mask: open_esp_radio_esp32s31_pac::MacInterruptMask,
     ) -> Result<(), (Self::Error, Self::Setup)> {
         if self.fail_activate {
             return Err((RouteError::Activate, setup));
         }
         self.active.set(true);
-        self.event_mask.set(event_mask);
+        self.event_mask.set(event_mask.bits());
         Ok(())
     }
 
@@ -325,7 +325,7 @@ fn one_irq_epoch_services_durable_rx_then_returns_every_owner() {
     assert_eq!(report.receive.recycled_descriptors, 1);
     assert_eq!(
         runtime.event_mask.get(),
-        ESP32S31_STANDALONE_MONITOR_INTERRUPT_MASK
+        ESP32S31_STANDALONE_MONITOR_INTERRUPT_MASK.bits()
     );
     assert!(!runtime.active.get());
     assert_eq!(owner.receive_phase(), Esp32s31RxRingPhase::Halted);

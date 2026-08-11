@@ -7,9 +7,7 @@ extern crate std;
 use core::future::Future;
 use core::marker::PhantomData;
 
-pub use open_esp_radio_esp32s31_registers::{
-    CfrValue, ColdRadioRegisters, ForcedRxGain, RadioRegisters, power as radio_registers, svd,
-};
+pub use open_esp_radio_esp32s31_pac::{CfrValue, ColdRadioRegisters, ForcedRxGain, RadioRegisters};
 pub mod analog_i2c;
 pub mod pbus;
 pub mod phy_agc;
@@ -90,9 +88,7 @@ impl<P> Radio<P, state::Owned> {
             return Err(peripheral);
         };
         #[cfg(test)]
-        let registers = ColdRadioRegisters::from_peripherals(
-            svd::peripheral_ownership::peripherals_for_validation(),
-        );
+        let registers = ColdRadioRegisters::for_validation();
         Ok(Self {
             peripheral,
             registers,

@@ -199,7 +199,7 @@ impl RadioRegisters {
         // SOURCE: complete pinned `libpp.a[hal_mac.o]`
         // `hal_mac_set_bssid`, size 0x5a.
         bssid.modify(|_, w| w.address_check_enable().clear_bit());
-        open_esp_radio_esp32s31_pac::zero_based_field_write::mac_bssid_address_low(
+        open_esp_radio_esp32s31_pac_raw::zero_based_field_write::mac_bssid_address_low(
             bssids,
             0,
             u32::from_le_bytes([
@@ -264,7 +264,7 @@ impl RadioRegisters {
 
         // `ic_set_bssid(1, ap)` / complete `hal_mac_set_bssid`.
         bssid.modify(|_, w| w.address_check_enable().clear_bit());
-        open_esp_radio_esp32s31_pac::zero_based_field_write::mac_bssid_address_low(
+        open_esp_radio_esp32s31_pac_raw::zero_based_field_write::mac_bssid_address_low(
             bssids,
             1,
             u32::from_le_bytes([

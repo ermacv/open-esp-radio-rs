@@ -228,8 +228,14 @@ where
         }
     }
 
-    /// Consume a finite protocol owner, start its DMA frontier if necessary,
-    /// and return the exact live ring required by connected RX.
+    /// Consume the finite protocol owner and materialize a connected RX epoch.
+    ///
+    /// The pre-connected port deliberately stops and republishes the walker
+    /// between finite authentication/WPA2 receive phases. Connected RX cannot
+    /// inherit that port's partial completion frontier as though it were the
+    /// vendor's continuously owned `wDevCtrl` list. Confirming walker stop and
+    /// rebuilding the complete static ring makes the connected publication a
+    /// new, explicit DMA ownership epoch; this is not a MAC or software reset.
     ///
     /// The complete pre-connected owner is returned on every failure. The
     /// application/HIL therefore cannot strand a halted or prepared ring
@@ -246,9 +252,12 @@ where
     where
         M: RxDma,
     {
-        if self.phase() != Esp32s31PreconnectedRxPhase::Live
-            && let Err(error) = self.start_with_storage(hardware, storage).await
+        if self.phase() == Esp32s31PreconnectedRxPhase::Live
+            && let Err(error) = self.stop(hardware)
         {
+            return Err(Esp32s31PreconnectedRxIntoLiveFailure { owner: self, error });
+        }
+        if let Err(error) = self.start_with_storage(hardware, storage).await {
             return Err(Esp32s31PreconnectedRxIntoLiveFailure { owner: self, error });
         }
         match self.take_live() {

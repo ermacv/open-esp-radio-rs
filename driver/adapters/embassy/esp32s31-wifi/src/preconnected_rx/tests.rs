@@ -24,6 +24,9 @@ impl Esp32s31PreconnectedRxDelay for ReadyDelay {
 struct Hardware {
     walker: bool,
     descriptor_base: u32,
+    enable_count: u32,
+    disable_count: u32,
+    reload_count: u32,
 }
 
 impl RxDma for Hardware {
@@ -46,18 +49,22 @@ impl RxDma for Hardware {
     fn publish_walker_enable(&mut self, _: &RxDmaBinding) {
         self.walker = true;
     }
-    fn request_reload(&mut self, _: &RxDmaBinding) {}
+    fn request_reload(&mut self, _: &RxDmaBinding) {
+        self.reload_count += 1;
+    }
     fn try_enable_walker(&mut self, _: &RxDmaBinding) -> bool {
         if self.walker {
             false
         } else {
             self.walker = true;
+            self.enable_count += 1;
             true
         }
     }
     fn try_disable_walker(&mut self) -> bool {
         if self.walker {
             self.walker = false;
+            self.disable_count += 1;
             true
         } else {
             false
@@ -137,9 +144,23 @@ fn consuming_connected_promotion_returns_live_ring_or_exact_owner() {
         Esp32s31PreconnectedRx::<ReadyDelay, COUNT, BUFFER_SIZE>::from_halted(halted);
     embassy_futures::block_on(already_live.start_with_storage(&mut hardware, &storage))
         .expect("finite protocol phase starts the ring");
+    storage.descriptors()[0].write_word0(storage.descriptors()[0].word0() | BIT_30);
+    already_live
+        .service_completed(&mut hardware, &storage, |_| {
+            Esp32s31PreconnectedRxDirective::Stop
+        })
+        .expect("the final protocol frame remains observed before promotion");
+    let enable_count = hardware.enable_count;
+    let disable_count = hardware.disable_count;
+    let reload_count = hardware.reload_count;
     let live =
         embassy_futures::block_on(already_live.try_into_live_with_storage(&mut hardware, &storage))
-            .unwrap_or_else(|_| panic!("an existing live frontier must not start twice"));
+            .unwrap_or_else(|_| panic!("an existing live frontier must transfer cleanly"));
+    assert_eq!(hardware.enable_count, enable_count + 1);
+    assert_eq!(hardware.disable_count, disable_count + 1);
+    assert_eq!(hardware.reload_count, reload_count);
+    assert_eq!(storage.descriptors()[0].word0() & BIT_30, 0);
+    assert_eq!(live.observed_mask(), 0);
     let halted = match live.try_stop(&mut hardware) {
         Ok(halted) => halted,
         Err(_) => panic!("mock walker must stop after the live handoff"),

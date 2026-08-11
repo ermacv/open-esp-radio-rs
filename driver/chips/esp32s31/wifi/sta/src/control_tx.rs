@@ -365,6 +365,7 @@ where
                 },
                 hardware_mic_length: publication.hardware_mic_length,
                 hardware_key_selector: publication.hardware_key_selector,
+                interface: open_esp_radio_esp32s31_wifi::ordinary_tx::OrdinaryTxInterface::Station,
                 scheduler_priority: publication.scheduler_priority,
                 packet_priority: publication.packet_priority,
             },
@@ -661,6 +662,7 @@ mod tests {
         assert!(matches!(result, Ok(TxCompletion { status: 0, .. })));
         assert_eq!(hardware.publications, 1);
         let (_, program) = hardware.legacy.expect("management publication");
+        assert_eq!(program.interface, 0);
         assert_eq!(program.scheduler_priority, 1);
         assert_eq!(program.packet_priority, 1);
         assert_eq!(tx.ordinary.slot.state(), TxSlotState::Free);
@@ -835,6 +837,8 @@ mod tests {
                     },
                     hardware_mic_length: 0,
                     hardware_key_selector: 0,
+                    interface:
+                        open_esp_radio_esp32s31_wifi::ordinary_tx::OrdinaryTxInterface::Station,
                     scheduler_priority: 1,
                     packet_priority: 1,
                 },

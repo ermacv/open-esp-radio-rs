@@ -186,9 +186,13 @@ where
                 continue;
             };
             progress.completed = progress.completed.saturating_add(1);
-            if observe(completed.segment()) == Esp32s31PreconnectedRxDirective::Stop {
-                progress.stopped = true;
-                return Ok(progress);
+            match observe(completed.segment()) {
+                Esp32s31PreconnectedRxDirective::Continue => {}
+                Esp32s31PreconnectedRxDirective::Pause => break,
+                Esp32s31PreconnectedRxDirective::Stop => {
+                    progress.stopped = true;
+                    return Ok(progress);
+                }
             }
         }
 

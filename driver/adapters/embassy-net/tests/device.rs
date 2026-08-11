@@ -255,6 +255,27 @@ fn pinned_tx_slot_moves_between_network_and_radio_without_copying() {
 }
 
 #[test]
+fn pinned_device_observes_role_selected_hardware_address() {
+    type TestResources = PinnedResources<NoopRawMutex, FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 1>;
+    type TestPool = PinnedTxPool<FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 1>;
+    let resources = Box::leak(Box::new(TestResources::new()));
+    let pool = TestPool::pin_static(Box::leak(Box::new(TestPool::new())));
+    let station = [2, 0, 0, 0, 0, 1];
+    let access_point = [2, 0, 0, 0, 0, 2];
+    let (device, radio) = resources.split(pool, station);
+
+    assert_eq!(
+        device.hardware_address(),
+        HardwareAddress::Ethernet(station)
+    );
+    radio.set_hardware_address(access_point);
+    assert_eq!(
+        device.hardware_address(),
+        HardwareAddress::Ethernet(access_point)
+    );
+}
+
+#[test]
 fn dropped_pinned_tx_token_returns_its_reserved_slot() {
     type TestResources = PinnedResources<NoopRawMutex, FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 1>;
     type TestPool = PinnedTxPool<FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 1>;

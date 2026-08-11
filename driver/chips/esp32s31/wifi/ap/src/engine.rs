@@ -12,10 +12,10 @@ use open_esp_radio_esp32s31_wifi_mac::{
 use open_esp_radio_ieee80211::{
     ap::{
         ApAssociationResponseError, ApDataFrame, ApDataFrameError, ApManagementRequest,
-        ApProtectedDataFrame, parse_ap_management_request,
-        write_bgn_ht20_association_response_frame, write_open_authentication_response,
+        ApProtectedDataFrame, parse_ap_management_request, write_bg_association_response_frame,
+        write_open_authentication_response,
     },
-    beacon::{ApBeaconBuildError, WPA2_HT20_BEACON_CAPACITY, write_wpa2_ht20_beacon},
+    beacon::{ApBeaconBuildError, WPA2_BEACON_CAPACITY, write_wpa2_erp_beacon},
     ssid::WifiSsid,
 };
 use open_esp_radio_wifi_ap::{
@@ -77,7 +77,7 @@ impl From<ApWpa2Error> for Esp32s31ApEngineError {
 
 pub struct Esp32s31ApEngineStartFailure<'storage> {
     pub service: AccessPointService,
-    pub beacon_storage: &'storage mut [u8; WPA2_HT20_BEACON_CAPACITY],
+    pub beacon_storage: &'storage mut [u8; WPA2_BEACON_CAPACITY],
     pub error: Esp32s31ApEngineError,
 }
 
@@ -103,7 +103,7 @@ pub struct Esp32s31ApProtectedFrame {
 
 pub struct Esp32s31ApEngineStop<'storage> {
     pub service: AccessPointService,
-    pub beacon_storage: &'storage mut [u8; WPA2_HT20_BEACON_CAPACITY],
+    pub beacon_storage: &'storage mut [u8; WPA2_BEACON_CAPACITY],
     pub security: Esp32s31ApSecurityStopReport,
     pub report: Esp32s31ApEngineReport,
 }
@@ -127,22 +127,24 @@ pub struct Esp32s31ApEngine<'storage> {
     service: AccessPointService,
     beacon: Esp32s31ApBeacon<'storage>,
     security: Esp32s31ApSecurity,
-    primary_channel: u8,
     report: Esp32s31ApEngineReport,
 }
 
 impl<'storage> Esp32s31ApEngine<'storage> {
-    #[allow(clippy::too_many_arguments)]
+    // Start failure must return the affine service and caller-owned beacon
+    // storage. This no-alloc driver cannot box that rollback value merely to
+    // shrink the Result discriminant.
+    #[allow(clippy::result_large_err, clippy::too_many_arguments)]
     pub fn start<H: Esp32s31ApRuntimeHardware>(
         hardware: &mut H,
         service: AccessPointService,
-        beacon_storage: &'storage mut [u8; WPA2_HT20_BEACON_CAPACITY],
+        beacon_storage: &'storage mut [u8; WPA2_BEACON_CAPACITY],
         ssid: &WifiSsid,
         primary_channel: u8,
         beacon_interval_tu: u16,
         dtim_period: u8,
     ) -> Result<Self, Esp32s31ApEngineStartFailure<'storage>> {
-        let beacon_len = match write_wpa2_ht20_beacon(
+        let beacon_len = match write_wpa2_erp_beacon(
             beacon_storage,
             service.address(),
             ssid,
@@ -177,19 +179,15 @@ impl<'storage> Esp32s31ApEngine<'storage> {
             service,
             beacon,
             security,
-            primary_channel,
             report: Esp32s31ApEngineReport::default(),
         })
     }
 
     pub fn prepare_beacon(&mut self, executor_timestamp_micros: u64) -> Option<&mut [u8]> {
         let management_sequence = self.service.next_management_sequence();
-        let beacon = self.beacon.prepare(
-            executor_timestamp_micros,
-            management_sequence,
-            self.service.group_pending(),
-            self.service.tim_bitmap_byte(),
-        );
+        let beacon = self
+            .beacon
+            .prepare(executor_timestamp_micros, management_sequence, false, 0);
         if beacon.is_some() {
             self.report.beacons_prepared = self.report.beacons_prepared.saturating_add(1);
         }
@@ -198,6 +196,14 @@ impl<'storage> Esp32s31ApEngine<'storage> {
 
     pub const fn next_beacon_delay(&self, now_micros: u32) -> Option<(u32, u32)> {
         self.beacon.next_delay(now_micros)
+    }
+
+    pub const fn beacon_publication_due(&self, now_micros: u32) -> bool {
+        self.beacon.publication_due(now_micros)
+    }
+
+    pub const fn beacon_publication_lateness(&self, now_micros: u32) -> (u32, u32) {
+        self.beacon.publication_lateness(now_micros)
     }
 
     /// Build handshake message one after the successful Association Response
@@ -260,13 +266,12 @@ impl<'storage> Esp32s31ApEngine<'storage> {
                     unreachable!("associate_wpa2 has one response action")
                 };
                 let sequence = self.service.next_management_sequence();
-                let len = write_bgn_ht20_association_response_frame(
+                let len = write_bg_association_response_frame(
                     output,
                     self.service.address(),
                     peer,
                     status,
                     association_id.unwrap_or(0),
-                    self.primary_channel,
                     sequence,
                 )?;
                 self.report.association_responses_prepared =
@@ -346,7 +351,12 @@ impl<'storage> Esp32s31ApEngine<'storage> {
             payload: frame.as_bytes(),
         }
         .encode(output)?;
-        debug_assert_eq!(self.service.next_data_sequence(), sequence_number);
+        // Consume protocol state in ordinary code. Keeping this call inside
+        // `debug_assert_eq!` made release builds transmit every AP data MPDU
+        // with sequence number zero because the assertion expression is
+        // compiled out.
+        let consumed_sequence_number = self.service.next_data_sequence();
+        debug_assert_eq!(consumed_sequence_number, sequence_number);
         Ok(len)
     }
 
@@ -377,7 +387,11 @@ impl<'storage> Esp32s31ApEngine<'storage> {
             ethernet,
         }
         .encode(output)?;
-        debug_assert_eq!(self.service.next_data_sequence(), sequence_number);
+        // Advance only after the complete protected frame fits, but never as
+        // an assertion side effect: release qualification must own the same
+        // monotonic sequence space as debug tests.
+        let consumed_sequence_number = self.service.next_data_sequence();
+        debug_assert_eq!(consumed_sequence_number, sequence_number);
         Ok(Esp32s31ApProtectedFrame {
             length,
             hardware_key_selector,
@@ -471,7 +485,7 @@ mod tests {
     fn active_epoch_owns_policy_group_key_management_and_stop_frontier() {
         let ap = [2, 0, 0, 0, 0, 1];
         let peer = [2, 0, 0, 0, 0, 2];
-        let mut beacon = [0; WPA2_HT20_BEACON_CAPACITY];
+        let mut beacon = [0; WPA2_BEACON_CAPACITY];
         let ssid = WifiSsid::new(b"ap").unwrap();
         let mut hardware = Hardware::default();
         let mut engine =
@@ -520,7 +534,7 @@ mod tests {
         const SNONCE: [u8; 32] = [8; 32];
         let ap = [2, 0, 0, 0, 0, 1];
         let peer = [2, 0, 0, 0, 0, 2];
-        let mut beacon = [0; WPA2_HT20_BEACON_CAPACITY];
+        let mut beacon = [0; WPA2_BEACON_CAPACITY];
         let ssid = WifiSsid::new(b"ap").unwrap();
         let mut hardware = Hardware::default();
         let mut engine =
@@ -609,6 +623,7 @@ mod tests {
         assert_eq!(&protected[22..24], &0x0010_u16.to_le_bytes());
         assert_eq!(&protected[24..32], &[3, 0, 0, 0x20, 0, 0, 0, 0]);
         assert_eq!(&protected[40..44], &[1, 2, 3, 4]);
+        assert_eq!(engine.service.current_data_sequence(), 2);
 
         let _stopped = engine.stop(&mut hardware);
         assert_eq!(hardware.installed, [2, 8]);

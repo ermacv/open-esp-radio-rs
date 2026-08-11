@@ -20,6 +20,16 @@ impl<D, R, S> StationNetworkResources<D, R, S> {
     pub const fn is_started(&self) -> bool {
         matches!(self, Self::Running(_))
     }
+
+    /// Borrow the persistent radio-side network endpoint without changing
+    /// the station-specific one-time start marker. Standalone AP epochs use
+    /// the same queues and must not fabricate a second Embassy device.
+    pub const fn radio_runner(&self) -> &R {
+        match self {
+            Self::Unstarted { runner, .. } => runner,
+            Self::Running(network) => &network.runner,
+        }
+    }
 }
 
 /// Stack and radio-side network owner retained across association epochs.
@@ -35,6 +45,13 @@ impl<S, R> RunningStationNetwork<S, R> {
 
     pub fn into_parts(self) -> (S, R) {
         (self.stack, self.runner)
+    }
+
+    /// Borrow the radio-side endpoint while another role temporarily owns
+    /// the shared Wi-Fi hardware. This does not restart or duplicate the
+    /// network stack.
+    pub const fn radio_runner(&self) -> &R {
+        &self.runner
     }
 }
 

@@ -1,13 +1,13 @@
 //! Bounded AP beacon storage and executor-time TSF publication.
 
 use open_esp_radio_ieee80211::{
-    beacon::{ApBeaconBuildError, WPA2_HT20_BEACON_CAPACITY, dtim, stamp, write_wpa2_ht20_beacon},
+    beacon::{ApBeaconBuildError, WPA2_BEACON_CAPACITY, dtim, stamp, write_wpa2_erp_beacon},
     ssid::WifiSsid,
     tbtt::next_tbtt_delay,
 };
 
 pub struct Esp32s31ApBeacon<'storage> {
-    storage: &'storage mut [u8; WPA2_HT20_BEACON_CAPACITY],
+    storage: &'storage mut [u8; WPA2_BEACON_CAPACITY],
     len: usize,
     interval_micros: u32,
     last_publication_tick: u32,
@@ -15,7 +15,7 @@ pub struct Esp32s31ApBeacon<'storage> {
 
 impl<'storage> Esp32s31ApBeacon<'storage> {
     pub fn new(
-        storage: &'storage mut [u8; WPA2_HT20_BEACON_CAPACITY],
+        storage: &'storage mut [u8; WPA2_BEACON_CAPACITY],
         access_point: [u8; 6],
         ssid: &WifiSsid,
         primary_channel: u8,
@@ -23,7 +23,7 @@ impl<'storage> Esp32s31ApBeacon<'storage> {
         dtim_period: u8,
         management_sequence: u16,
     ) -> Result<Self, ApBeaconBuildError> {
-        let len = write_wpa2_ht20_beacon(
+        let len = write_wpa2_erp_beacon(
             storage,
             access_point,
             ssid,
@@ -41,7 +41,7 @@ impl<'storage> Esp32s31ApBeacon<'storage> {
     }
 
     pub(crate) const fn from_initialized(
-        storage: &'storage mut [u8; WPA2_HT20_BEACON_CAPACITY],
+        storage: &'storage mut [u8; WPA2_BEACON_CAPACITY],
         len: usize,
         beacon_interval_tu: u16,
     ) -> Self {
@@ -81,7 +81,35 @@ impl<'storage> Esp32s31ApBeacon<'storage> {
         next_tbtt_delay(self.last_publication_tick, self.interval_micros, now_micros)
     }
 
-    pub fn into_storage(self) -> &'storage mut [u8; WPA2_HT20_BEACON_CAPACITY] {
+    /// Whether the current beacon interval has elapsed since publication.
+    ///
+    /// `next_tbtt_delay` deliberately skips an already missed TBTT, matching
+    /// the recovered vendor timer calculation. An executor which was occupied
+    /// by an uninterruptible TX exchange must test this edge first, otherwise
+    /// repeated completions just after TBTT can postpone every beacon by one
+    /// more interval.
+    pub const fn publication_due(&self, now_micros: u32) -> bool {
+        now_micros.wrapping_sub(self.last_publication_tick) >= self.interval_micros
+    }
+
+    /// Return whole beacon intervals skipped and lateness beyond the next
+    /// expected publication. The first publication establishes the epoch and
+    /// therefore has no preceding deadline to miss.
+    pub const fn publication_lateness(&self, now_micros: u32) -> (u32, u32) {
+        if self.last_publication_tick == 0 || self.interval_micros == 0 {
+            return (0, 0);
+        }
+        let elapsed = now_micros.wrapping_sub(self.last_publication_tick);
+        if elapsed <= self.interval_micros {
+            return (0, 0);
+        }
+        (
+            elapsed / self.interval_micros - 1,
+            elapsed - self.interval_micros,
+        )
+    }
+
+    pub fn into_storage(self) -> &'storage mut [u8; WPA2_BEACON_CAPACITY] {
         self.storage
     }
 }
@@ -92,7 +120,7 @@ mod tests {
 
     #[test]
     fn static_storage_owns_beacon_dtim_and_next_deadline() {
-        let mut storage = [0; WPA2_HT20_BEACON_CAPACITY];
+        let mut storage = [0; WPA2_BEACON_CAPACITY];
         let ssid = WifiSsid::new(b"ap").unwrap();
         let mut beacon = Esp32s31ApBeacon::new(&mut storage, [2; 6], &ssid, 6, 100, 2, 3).unwrap();
         let frame = beacon.prepare(102_400, 4, true, 0x02).unwrap();
@@ -102,5 +130,10 @@ mod tests {
         assert_eq!(frame[offset + 5], 0x02);
         assert_eq!(&frame[22..24], &0x0040_u16.to_le_bytes());
         assert_eq!(beacon.next_delay(102_400), Some((204_800, 103)));
+        assert!(!beacon.publication_due(204_799));
+        assert!(beacon.publication_due(204_800));
+        assert!(beacon.publication_due(204_801));
+        assert_eq!(beacon.publication_lateness(204_801), (0, 1));
+        assert_eq!(beacon.publication_lateness(307_201), (1, 102_401));
     }
 }

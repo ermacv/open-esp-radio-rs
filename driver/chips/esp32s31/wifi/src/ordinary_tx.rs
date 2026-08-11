@@ -28,6 +28,54 @@ pub const TX_CCMP_MIC_SIZE: usize = 8;
 pub const TX_FCS_SIZE: usize = 4;
 const TX_ABORT_SETTLE_US: u64 = 16;
 
+/// ESP32-S31 MAC interface context selected for one ordinary TX queue.
+///
+/// This selector is independent from the hardware key-slot number. Vendor
+/// `ppInstallKey` installs station keys in context zero and AP keys in context
+/// one; the TX queue must select the same context for hardware CCMP to find
+/// the installed key.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum OrdinaryTxInterface {
+    Station,
+    AccessPoint,
+}
+
+impl OrdinaryTxInterface {
+    const fn hardware_index(self) -> u8 {
+        match self {
+            Self::Station => 0,
+            Self::AccessPoint => 1,
+        }
+    }
+}
+
+/// Compact hardware route retained across retries.
+///
+/// Queue and interface each fit in two bits. Keeping them in one byte avoids
+/// growing every suspended TX/supervisor future merely to retain the AP/STA
+/// selector until a retry publication.
+#[derive(Clone, Copy)]
+struct ActiveTxRoute(u8);
+
+impl ActiveTxRoute {
+    const fn new(queue: LegacyTxQueue, interface: OrdinaryTxInterface) -> Self {
+        Self((queue as u8) | (interface.hardware_index() << 2))
+    }
+
+    const fn queue(self) -> LegacyTxQueue {
+        match self.0 & 0x03 {
+            0 => LegacyTxQueue::Voice,
+            1 => LegacyTxQueue::Video,
+            2 => LegacyTxQueue::BestEffort,
+            _ => LegacyTxQueue::Background,
+        }
+    }
+
+    const fn interface_index(self) -> u8 {
+        (self.0 >> 2) & 0x03
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct OrdinaryTxReport {
     /// Portable terminal exchange status consumed by HMAC policy.
@@ -102,6 +150,7 @@ pub struct OrdinaryTxPlan {
     pub exchange: MacTxPlan<TxPhyRate>,
     pub hardware_mic_length: usize,
     pub hardware_key_selector: u8,
+    pub interface: OrdinaryTxInterface,
     pub scheduler_priority: u8,
     pub packet_priority: u8,
 }
@@ -112,7 +161,7 @@ struct ActiveTx {
     frame_length: usize,
     descriptor_capacity: u32,
     transfer_length: u32,
-    queue: LegacyTxQueue,
+    route: ActiveTxRoute,
     hardware_mic_length: usize,
     hardware_key_selector: u8,
     scheduler_priority: u8,
@@ -339,7 +388,10 @@ where
             descriptor_capacity,
             transfer_length: u32::try_from(transfer_length)
                 .map_err(|_| OrdinaryTxError::BufferSizeOverflow)?,
-            queue: LegacyTxQueue::from_access_category(plan.exchange.access_category),
+            route: ActiveTxRoute::new(
+                LegacyTxQueue::from_access_category(plan.exchange.access_category),
+                plan.interface,
+            ),
             hardware_mic_length: plan.hardware_mic_length,
             hardware_key_selector: plan.hardware_key_selector,
             scheduler_priority: plan.scheduler_priority,
@@ -589,7 +641,7 @@ where
         cookie: TxCookie,
         active: &ActiveTx,
     ) -> Result<(), OrdinaryTxError> {
-        let queue = active.queue;
+        let queue = active.route.queue();
         let rate = active.retry.current_rate()?;
         let contention = self.policy.contention_parameters(queue);
         let contention_window = self.policy.select_backoff(queue, self.entropy.next_u32());
@@ -617,6 +669,7 @@ where
                 config.pti_count = 1;
                 config.group_receiver = active.group_receiver;
                 config.hardware_key_selector = active.hardware_key_selector;
+                config.interface = active.route.interface_index();
                 self.slot
                     .as_mut()
                     .submit_legacy(hardware, cookie, queue, config)?;
@@ -642,6 +695,7 @@ where
                 config.pti = active.packet_priority;
                 config.pti_count = 1;
                 config.hardware_key_selector = active.hardware_key_selector;
+                config.interface = active.route.interface_index();
                 self.slot
                     .as_mut()
                     .submit_ht(hardware, cookie, queue, config)?;

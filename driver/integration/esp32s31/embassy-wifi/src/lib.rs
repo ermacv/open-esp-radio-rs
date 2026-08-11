@@ -21,7 +21,7 @@ macro_rules! qualification_event {
 mod connected;
 mod facade;
 mod monitor;
-mod station;
+mod runtime;
 
 pub use connected::Esp32s31WifiDevice;
 #[cfg(feature = "qualification")]
@@ -41,7 +41,7 @@ pub use monitor::{
 pub use open_esp_radio_esp32s31_wifi_embassy::connected_runner::ConnectedDisconnectReason;
 #[cfg(feature = "qualification")]
 pub use open_esp_radio_esp32s31_wifi_embassy::network_rx::RxNetworkDeliveryObserver;
-pub use station::{Esp32s31RadioRunner, new};
+pub use runtime::{Esp32s31RadioRunner, new};
 
 /// Board-derived radio identity. Reading eFuse remains an application
 /// responsibility; credentials are supplied separately to `start_station`.
@@ -112,6 +112,49 @@ pub struct Esp32s31QualificationHooks {
     >,
     pub mac_irq: fn(Esp32s31MacIrqObservation),
     pub station_lifecycle: fn(Esp32s31StationLifecycleObservation),
+    pub access_point: fn(Esp32s31AccessPointObservation),
+}
+
+/// Value-only terminal AP epoch evidence emitted after TX, RX and IRQ have
+/// quiesced but before their typed owners return to role-neutral Wi-Fi.
+#[cfg(feature = "qualification")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Esp32s31AccessPointObservation {
+    pub channel: u8,
+    pub beacons_transmitted: u32,
+    pub missed_beacon_intervals: u32,
+    pub maximum_beacon_lateness_micros: u32,
+    pub authentication_responses: u32,
+    pub association_responses: u32,
+    pub authorized_peers: u32,
+    pub peer_removals: u32,
+    pub completed_rx_descriptors: u32,
+    pub ignored_rx_frames: u32,
+    pub rx_mic_failures: u32,
+    pub rx_quarantined_frames: u32,
+    pub rx_view_rejected: u32,
+    pub control_frames_staged: u32,
+    pub control_frames_dropped_while_busy: u32,
+    pub ethernet_frames_staged: u32,
+    pub ethernet_arp_requests_staged: u32,
+    pub ethernet_tcp_frames_staged: u32,
+    pub network_tx_frames_observed: u32,
+    pub network_tx_arp_requests: u32,
+    pub network_tx_arp_replies: u32,
+    pub network_tx_rejected_no_peer: u32,
+    pub network_tx_rejected_destination: u32,
+    pub network_tx_frames_rejected: u32,
+    pub data_frames_transmitted: u32,
+    pub tx_hardware_failures: u8,
+    pub tx_hardware_timeouts: u8,
+    pub tx_collision_limits: u8,
+    pub tx_last_hardware_status: u8,
+    pub protected_data_frames: u32,
+    pub protected_data_unauthorized: u32,
+    pub protected_data_foreign: u32,
+    pub protected_data_duplicates: u32,
+    pub protected_data_radio_rejected: u32,
+    pub protected_data_protocol_rejected: u32,
 }
 
 /// Value-only connected-link edge emitted to qualification firmware.

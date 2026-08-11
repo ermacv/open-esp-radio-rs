@@ -56,6 +56,11 @@ repository = "https://github.com/ermacv/open-esp-radio-rs"
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "deny"
 
+[workspace.lints.clippy]
+# A mutable call inside `debug_assert!` disappears from optimized firmware.
+# Driver protocol state must advance identically in debug and release builds.
+debug_assert_with_mut_call = "deny"
+
 [profile.release]
 opt-level = 3
 debug = true

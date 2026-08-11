@@ -9,25 +9,21 @@ use crate::{
     data::{DataInterfaceRole, ETHERNET_HEADER_LEN, plan_data_encapsulation},
 };
 
-pub const AP_ASSOCIATION_RESPONSE_BODY_LEN: usize = 103;
+pub const AP_ASSOCIATION_RESPONSE_BODY_LEN: usize = 51;
 pub const AP_AUTHENTICATION_RESPONSE_LEN: usize = 30;
 pub const AP_ASSOCIATION_RESPONSE_LEN: usize = 24 + AP_ASSOCIATION_RESPONSE_BODY_LEN;
 
 const MANAGEMENT_HEADER_LEN: usize = 24;
 
-const AP_BGN_HT20_ASSOCIATION_RESPONSE: [u8; AP_ASSOCIATION_RESPONSE_BODY_LEN] = [
+const AP_BG_ASSOCIATION_RESPONSE: [u8; AP_ASSOCIATION_RESPONSE_BODY_LEN] = [
     0x31, 0x04, 0x00, 0x00, 0x01, 0xc0, 0x01, 0x08, 0x8b, 0x96, 0x82, 0x84, 0x0c, 0x18, 0x30, 0x60,
-    0x32, 0x04, 0x6c, 0x12, 0x24, 0x48, 0x2a, 0x01, 0x00, 0x2d, 0x1a, 0x6e, 0x11, 0x00, 0xff, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x3d, 0x16, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xdd, 0x18, 0x00,
-    0x50, 0xf2, 0x02, 0x01, 0x01, 0x04, 0x00, 0x03, 0xa4, 0x00, 0x00, 0x27, 0xa4, 0x00, 0x00, 0x42,
-    0x43, 0x5e, 0x00, 0x62, 0x32, 0x2f, 0x00,
+    0x32, 0x04, 0x6c, 0x12, 0x24, 0x48, 0x2a, 0x01, 0x00, 0xdd, 0x18, 0x00, 0x50, 0xf2, 0x02, 0x01,
+    0x01, 0x04, 0x00, 0x03, 0xa4, 0x00, 0x00, 0x27, 0xa4, 0x00, 0x00, 0x42, 0x43, 0x5e, 0x00, 0x62,
+    0x32, 0x2f, 0x00,
 ];
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ApAssociationResponseError {
-    InvalidChannel,
     MissingAssociationId,
     InvalidSequenceNumber,
     OutputTooSmall { required: usize },
@@ -279,14 +275,13 @@ pub fn write_open_authentication_response(
     Ok(AP_AUTHENTICATION_RESPONSE_LEN)
 }
 
-/// Encode the measured B/G/N HT20 association response as one complete MPDU.
-pub fn write_bgn_ht20_association_response_frame(
+/// Encode the AP-v1 B/G ERP association response as one complete MPDU.
+pub fn write_bg_association_response_frame(
     output: &mut [u8],
     access_point: [u8; 6],
     peer: [u8; 6],
     status: u16,
     association_id: u16,
-    primary_channel: u8,
     management_sequence: u16,
 ) -> Result<usize, ApAssociationResponseError> {
     if management_sequence > 0x0fff {
@@ -303,7 +298,7 @@ pub fn write_bgn_ht20_association_response_frame(
     let body: &mut [u8; AP_ASSOCIATION_RESPONSE_BODY_LEN] = (&mut frame[MANAGEMENT_HEADER_LEN..])
         .try_into()
         .expect("checked association response body length");
-    write_bgn_ht20_association_response(body, status, association_id, primary_channel)?;
+    write_bg_association_response(body, status, association_id)?;
     Ok(AP_ASSOCIATION_RESPONSE_LEN)
 }
 
@@ -321,24 +316,20 @@ fn write_management_header(
     frame[22..24].copy_from_slice(&(management_sequence << 4).to_le_bytes());
 }
 
-/// Build the measured ESP32-S31 B/G/N HT20 association response body.
+/// Build the finite AP-v1 B/G ERP association response body.
 ///
-/// The fixed capability and rate elements describe the first qualified S31
-/// AP profile. This is an ordinary IEEE 802.11 byte transform and has no chip
-/// register dependency.
-pub fn write_bgn_ht20_association_response(
+/// HT records are intentionally absent until AP RX can atomically hand every
+/// A-MSDU subframe to the network owner. This is an ordinary IEEE 802.11 byte
+/// transform and has no chip register dependency.
+pub fn write_bg_association_response(
     body: &mut [u8; AP_ASSOCIATION_RESPONSE_BODY_LEN],
     status: u16,
     association_id: u16,
-    primary_channel: u8,
 ) -> Result<(), ApAssociationResponseError> {
-    if !(1..=13).contains(&primary_channel) {
-        return Err(ApAssociationResponseError::InvalidChannel);
-    }
     if status == 0 && association_id & 0x3fff == 0 {
         return Err(ApAssociationResponseError::MissingAssociationId);
     }
-    body.copy_from_slice(&AP_BGN_HT20_ASSOCIATION_RESPONSE);
+    body.copy_from_slice(&AP_BG_ASSOCIATION_RESPONSE);
     body[2..4].copy_from_slice(&status.to_le_bytes());
     let encoded_association_id = if status == 0 {
         0xc000 | (association_id & 0x3fff)
@@ -346,7 +337,6 @@ pub fn write_bgn_ht20_association_response(
         0
     };
     body[4..6].copy_from_slice(&encoded_association_id.to_le_bytes());
-    body[55] = primary_channel;
     Ok(())
 }
 
@@ -490,16 +480,17 @@ mod tests {
     }
 
     #[test]
-    fn association_response_owns_status_aid_and_channel() {
+    fn association_response_owns_status_and_aid_without_false_ht_capability() {
         let mut body = [0; AP_ASSOCIATION_RESPONSE_BODY_LEN];
-        write_bgn_ht20_association_response(&mut body, 17, 0x0123, 11).unwrap();
+        write_bg_association_response(&mut body, 17, 0x0123).unwrap();
         assert_eq!(&body[2..4], &17_u16.to_le_bytes());
         assert_eq!(&body[4..6], &[0, 0]);
-        assert_eq!(body[55], 11);
-        write_bgn_ht20_association_response(&mut body, 0, 1, 11).unwrap();
+        write_bg_association_response(&mut body, 0, 1).unwrap();
         assert_eq!(&body[4..6], &0xc001_u16.to_le_bytes());
+        assert!(!body.windows(2).any(|window| window == [45, 26]));
+        assert!(!body.windows(2).any(|window| window == [61, 22]));
         assert_eq!(
-            write_bgn_ht20_association_response(&mut body, 0, 0, 1),
+            write_bg_association_response(&mut body, 0, 0),
             Err(ApAssociationResponseError::MissingAssociationId)
         );
     }
@@ -580,16 +571,8 @@ mod tests {
         assert_eq!(&authentication[28..30], &17_u16.to_le_bytes());
 
         let mut association = [0; AP_ASSOCIATION_RESPONSE_LEN];
-        write_bgn_ht20_association_response_frame(
-            &mut association,
-            access_point,
-            peer,
-            0,
-            0xc001,
-            6,
-            8,
-        )
-        .unwrap();
+        write_bg_association_response_frame(&mut association, access_point, peer, 0, 0xc001, 8)
+            .unwrap();
         assert_eq!(&association[..2], &0x0010_u16.to_le_bytes());
         assert_eq!(&association[22..24], &0x0080_u16.to_le_bytes());
         assert_eq!(&association[28..30], &0xc001_u16.to_le_bytes());

@@ -1,15 +1,13 @@
 //! Bounded single-peer AP MLME and security ownership.
 
-use open_esp_radio_ieee80211::ap::{
-    ApPowerSaveObservation, observe_ap_power_save, updated_tim_bitmap_byte,
-};
+use open_esp_radio_ieee80211::beacon::WPA2_PERSONAL_CCMP_PSK_RSN_IE;
 use open_esp_radio_wpa2::{
     OwnedEapolFrame, Pmk, Ptk, PtkContext,
     aes::{SoftwareAesKeyWrapError, software_aes128_key_wrap},
-    ap::{ValidatedWpa2ApRsn, validate_wpa2_ap_rsn},
+    ap::validate_wpa2_ap_rsn,
     frames::{
-        WPA2_PLAIN_KEY_DATA_CAPACITY, Wpa2FrameError, Wpa2Gtk, Wpa2PlainKeyData, Wpa2TxFrame,
-        build_ap_action_frame,
+        OwnedRsnIe, WPA2_PLAIN_KEY_DATA_CAPACITY, Wpa2FrameError, Wpa2Gtk, Wpa2PlainKeyData,
+        Wpa2TxFrame, build_ap_action_frame,
     },
     state::{
         PtkContext as Wpa2StatePtkContext, Wpa2ApAction, Wpa2ApPhase, Wpa2ApState, Wpa2StateError,
@@ -46,14 +44,6 @@ pub enum ApMlmeAction {
         peer: [u8; 6],
     },
     None,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ApPowerSaveAction {
-    None,
-    PeerSleeping,
-    PeerActive,
-    ReleaseOneBufferedUnicast,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -112,9 +102,6 @@ impl From<Wpa2StateError> for ApServiceError {
 struct ApPeer {
     address: [u8; 6],
     phase: ApPeerPhase,
-    sleeping: bool,
-    unicast_pending: bool,
-    rsn: Option<ValidatedWpa2ApRsn>,
     wpa2: Option<Wpa2ApState>,
     pending_ptk: Option<Ptk>,
 }
@@ -124,9 +111,6 @@ impl ApPeer {
         Self {
             address,
             phase: ApPeerPhase::Authenticated,
-            sleeping: false,
-            unicast_pending: false,
-            rsn: None,
             wpa2: None,
             pending_ptk: None,
         }
@@ -143,7 +127,6 @@ pub struct AccessPointService {
     pmk: Pmk,
     gtk: Wpa2Gtk,
     peer: Option<ApPeer>,
-    group_pending: bool,
     next_management_sequence: u16,
     next_data_sequence: u16,
 }
@@ -155,7 +138,6 @@ impl AccessPointService {
             pmk,
             gtk,
             peer: None,
-            group_pending: false,
             next_management_sequence: 0,
             next_data_sequence: 0,
         }
@@ -226,16 +208,13 @@ impl AccessPointService {
         if existing.phase != ApPeerPhase::Authenticated {
             return Err(ApServiceError::WrongPeerPhase);
         }
-        let rsn = match validate_wpa2_ap_rsn(rsn_ie) {
-            Ok(rsn) => rsn,
-            Err(_) => {
-                return Ok(ApMlmeAction::AssociationResponse {
-                    peer,
-                    status: AP_STATUS_INVALID_RSN,
-                    association_id: None,
-                });
-            }
-        };
+        if validate_wpa2_ap_rsn(rsn_ie).is_err() {
+            return Ok(ApMlmeAction::AssociationResponse {
+                peer,
+                status: AP_STATUS_INVALID_RSN,
+                association_id: None,
+            });
+        }
         let wpa2 = Wpa2ApState::new(
             self.address,
             peer,
@@ -243,7 +222,6 @@ impl AccessPointService {
             initial_replay_counter,
         )?;
         existing.phase = ApPeerPhase::Securing;
-        existing.rsn = Some(rsn);
         existing.wpa2 = Some(wpa2);
         Ok(ApMlmeAction::AssociationResponse {
             peer,
@@ -379,14 +357,9 @@ impl AccessPointService {
             _ => return Err(ApWpa2Error::UnexpectedAction),
         };
 
-        let rsn = self
-            .checked_peer(peer)?
-            .rsn
-            .as_ref()
-            .ok_or(ApServiceError::WrongPeerPhase)?
-            .owned()
-            .clone();
-        let plain = Wpa2PlainKeyData::<WPA2_PLAIN_KEY_DATA_CAPACITY>::build(&rsn, &self.gtk)?;
+        let authenticator_rsn = OwnedRsnIe::<64>::try_copy(&WPA2_PERSONAL_CCMP_PSK_RSN_IE)?;
+        let plain =
+            Wpa2PlainKeyData::<WPA2_PLAIN_KEY_DATA_CAPACITY>::build(&authenticator_rsn, &self.gtk)?;
         let wrapped = software_aes128_key_wrap(ptk.kek(), plain.as_bytes())?;
         let action = self
             .checked_peer_mut(peer)?
@@ -422,12 +395,9 @@ impl AccessPointService {
             .pending_ptk
             .as_ref()
             .ok_or(ApWpa2Error::MissingPairwiseKey)?;
-        let rsn = existing
-            .rsn
-            .as_ref()
-            .ok_or(ApServiceError::WrongPeerPhase)?;
+        let authenticator_rsn = OwnedRsnIe::<64>::try_copy(&WPA2_PERSONAL_CCMP_PSK_RSN_IE)?;
         let plain =
-            Wpa2PlainKeyData::<WPA2_PLAIN_KEY_DATA_CAPACITY>::build(rsn.owned(), &self.gtk)?;
+            Wpa2PlainKeyData::<WPA2_PLAIN_KEY_DATA_CAPACITY>::build(&authenticator_rsn, &self.gtk)?;
         let wrapped = software_aes128_key_wrap(ptk.kek(), plain.as_bytes())?;
         let response =
             build_ap_action_frame(state, transmit, [0; 8], wrapped.as_bytes())?.authenticate(ptk);
@@ -463,68 +433,6 @@ impl AccessPointService {
         Ok(ApMlmeAction::PeerRemoved { peer })
     }
 
-    pub fn observe_power_save(&mut self, frame: &[u8]) -> ApPowerSaveAction {
-        let Some(observation) = observe_ap_power_save(frame) else {
-            return ApPowerSaveAction::None;
-        };
-        match observation {
-            ApPowerSaveObservation::Sleeping { peer } => {
-                let Ok(existing) = self.checked_authorized_peer_mut(peer) else {
-                    return ApPowerSaveAction::None;
-                };
-                existing.sleeping = true;
-                ApPowerSaveAction::PeerSleeping
-            }
-            ApPowerSaveObservation::Active { peer } => {
-                let Ok(existing) = self.checked_authorized_peer_mut(peer) else {
-                    return ApPowerSaveAction::None;
-                };
-                existing.sleeping = false;
-                ApPowerSaveAction::PeerActive
-            }
-            ApPowerSaveObservation::PsPoll {
-                peer,
-                association_id,
-            } => {
-                let Ok(existing) = self.checked_authorized_peer_mut(peer) else {
-                    return ApPowerSaveAction::None;
-                };
-                if association_id != AP_ASSOCIATION_ID || !existing.unicast_pending {
-                    return ApPowerSaveAction::None;
-                }
-                existing.unicast_pending = false;
-                ApPowerSaveAction::ReleaseOneBufferedUnicast
-            }
-        }
-    }
-
-    pub fn set_unicast_pending(
-        &mut self,
-        peer: [u8; 6],
-        pending: bool,
-    ) -> Result<(), ApServiceError> {
-        let existing = self.checked_authorized_peer_mut(peer)?;
-        existing.unicast_pending = pending;
-        Ok(())
-    }
-
-    pub const fn set_group_pending(&mut self, pending: bool) {
-        self.group_pending = pending;
-    }
-
-    pub fn group_pending(&self) -> bool {
-        self.group_pending
-    }
-
-    pub fn tim_bitmap_byte(&self) -> u8 {
-        match self.peer.as_ref() {
-            Some(peer) if peer.unicast_pending => {
-                updated_tim_bitmap_byte(0, AP_ASSOCIATION_ID, true)
-            }
-            _ => 0,
-        }
-    }
-
     fn checked_peer(&self, peer: [u8; 6]) -> Result<&ApPeer, ApServiceError> {
         self.peer
             .as_ref()
@@ -538,25 +446,16 @@ impl AccessPointService {
             .filter(|existing| existing.address == peer)
             .ok_or(ApServiceError::UnknownPeer)
     }
-
-    fn checked_authorized_peer_mut(
-        &mut self,
-        peer: [u8; 6],
-    ) -> Result<&mut ApPeer, ApServiceError> {
-        let existing = self.checked_peer_mut(peer)?;
-        if existing.phase != ApPeerPhase::Authorized {
-            return Err(ApServiceError::WrongPeerPhase);
-        }
-        Ok(existing)
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use open_esp_radio_ieee80211::beacon::WPA2_PERSONAL_CCMP_PSK_RSN_IE;
     use open_esp_radio_wpa2::{
         EapolKeyMessage, OwnedEapolFrame, PtkContext, Wpa2Interface,
-        frames::{OwnedRsnIe, Wpa2Gtk, Wpa2TxFrame},
+        aes::software_aes128_key_unwrap,
+        frames::{OwnedRsnIe, Wpa2Gtk, Wpa2TxFrame, parse_gtk_key_data},
         state::{Wpa2ApAction, Wpa2Ticket},
     };
 
@@ -565,6 +464,9 @@ mod tests {
     const OTHER: [u8; 6] = [0x02, 0, 0, 0, 0, 3];
     const WPA2_RSN: [u8; 22] = [
         0x30, 20, 1, 0, 0, 0x0f, 0xac, 4, 1, 0, 0, 0x0f, 0xac, 4, 1, 0, 0, 0x0f, 0xac, 2, 0, 0,
+    ];
+    const SUPPLICANT_RSN: [u8; 22] = [
+        0x30, 20, 1, 0, 0, 0x0f, 0xac, 4, 1, 0, 0, 0x0f, 0xac, 4, 1, 0, 0, 0x0f, 0xac, 2, 0x0c, 0,
     ];
 
     fn service() -> AccessPointService {
@@ -626,7 +528,11 @@ mod tests {
 
         let mut service = service();
         service.authenticate_open(PEER);
-        service.associate_wpa2(PEER, &WPA2_RSN, ANONCE, 9).unwrap();
+        // Supplicants may add their own RSN capabilities. Message 3 must not
+        // reflect those bytes back: it authenticates the AP's beacon RSN IE.
+        service
+            .associate_wpa2(PEER, &SUPPLICANT_RSN, ANONCE, 9)
+            .unwrap();
         let message1 = service.begin_wpa2_frame::<512>(PEER).unwrap();
         assert_eq!(
             message1.key_frame().message(),
@@ -641,7 +547,7 @@ mod tests {
                 authenticator_nonce: ANONCE,
                 supplicant_nonce: SNONCE,
             });
-        let rsn = OwnedRsnIe::<64>::try_copy(&WPA2_RSN).unwrap();
+        let rsn = OwnedRsnIe::<64>::try_copy(&SUPPLICANT_RSN).unwrap();
         let message2 = Wpa2TxFrame::<512>::message2(AP, 9, SNONCE, &rsn)
             .unwrap()
             .authenticate(&ptk);
@@ -656,6 +562,15 @@ mod tests {
             EapolKeyMessage::PairwiseMessage3
         );
         assert!(message3.key_frame().verify_mic(&ptk));
+        let plaintext = software_aes128_key_unwrap(ptk.kek(), message3.key_frame().key_data())
+            .expect("AP wrapped its Message 3 key data");
+        assert!(
+            parse_gtk_key_data(plaintext.as_bytes(), &WPA2_PERSONAL_CCMP_PSK_RSN_IE, &[],).is_ok()
+        );
+        assert!(matches!(
+            parse_gtk_key_data(plaintext.as_bytes(), &SUPPLICANT_RSN, &[]),
+            Err(Wpa2FrameError::RsnIeMismatch)
+        ));
 
         let message4 = Wpa2TxFrame::<512>::message4(AP, 10)
             .unwrap()

@@ -7,11 +7,13 @@
 use core::{future::Future, pin::pin};
 
 use embassy_futures::{
-    select::{Either, Either3, select, select3},
+    select::{Either, Either4, select, select4},
     yield_now,
 };
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use embassy_time::{Instant, Timer};
+
+use open_esp_radio_embassy_net::{FrameLengthError, LinkState, SplitPinnedRadioRunner};
 
 use open_esp_radio_esp32s31_wifi::{
     ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxResources, WifiTxTimer},
@@ -20,6 +22,10 @@ use open_esp_radio_esp32s31_wifi::{
 use open_esp_radio_esp32s31_wifi_ap::{
     engine::{Esp32s31ApRuntimeHardware, Esp32s31ApWpa2Outcome},
     mac::{Esp32s31ApMac, Esp32s31ApMacError, Esp32s31ApMacReport, Esp32s31ApTxCompletionAction},
+    rx::{
+        Esp32s31ApRxConfig, Esp32s31ApRxDispatch, Esp32s31ApRxDispatcher, Esp32s31ApRxError,
+        Esp32s31ApRxEvent, Esp32s31ApRxSink,
+    },
 };
 use open_esp_radio_esp32s31_wifi_mac::{
     init::MAC_COLD_RX_INTERRUPT_MASK,
@@ -50,10 +56,30 @@ const EAPOL_CAPACITY: usize = 512;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct Esp32s31AccessPointControlReport {
+    pub missed_beacon_intervals: u32,
+    pub maximum_beacon_lateness_micros: u32,
     pub completed_rx_descriptors: u32,
     pub ignored_rx_frames: u32,
+    pub rx_mic_failures: u32,
+    pub rx_quarantined_frames: u32,
+    pub rx_view_rejected: u32,
     pub control_frames_staged: u32,
     pub control_frames_dropped_while_busy: u32,
+    pub ethernet_frames_staged: u32,
+    pub ethernet_arp_requests_staged: u32,
+    pub ethernet_tcp_frames_staged: u32,
+    pub network_tx_frames_observed: u32,
+    pub network_tx_arp_requests: u32,
+    pub network_tx_arp_replies: u32,
+    pub network_tx_rejected_no_peer: u32,
+    pub network_tx_rejected_destination: u32,
+    pub network_tx_frames_rejected: u32,
+    pub protected_data_frames: u32,
+    pub protected_data_unauthorized: u32,
+    pub protected_data_foreign: u32,
+    pub protected_data_duplicates: u32,
+    pub protected_data_radio_rejected: u32,
+    pub protected_data_protocol_rejected: u32,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -68,12 +94,14 @@ pub enum Esp32s31AccessPointRunError<E> {
     InterruptActivate(Esp32s31MacInterruptEpochActivateError<E>),
     InterruptQuiesce(Esp32s31MacInterruptEpochQuiesceError<E>),
     InvalidBeaconSchedule,
+    Network(FrameLengthError),
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct Esp32s31AccessPointRunReport {
     pub control: Esp32s31AccessPointControlReport,
     pub mac: Esp32s31ApMacReport,
+    pub engine: open_esp_radio_esp32s31_wifi_ap::engine::Esp32s31ApEngineReport,
     pub interrupt_drain: Esp32s31MacInterruptEpochDrain,
 }
 
@@ -124,6 +152,7 @@ impl From<open_esp_radio_esp32s31_wifi_ap::engine::Esp32s31ApEngineError>
 enum StagedControlFrame {
     Management { length: usize },
     Eapol { length: usize },
+    Ethernet,
 }
 
 /// Control-plane owner for one active AP role.
@@ -145,6 +174,7 @@ pub struct Esp32s31AccessPointControl<
     mac: Esp32s31ApMac<'beacon, 'slot, P, E, T, TX_BUFFER_SIZE>,
     rx_frame: &'storage mut [u8],
     tx_frame: &'storage mut [u8],
+    data_rx: Esp32s31ApRxDispatcher,
     report: Esp32s31AccessPointControlReport,
 }
 
@@ -187,12 +217,21 @@ where
         rx_frame: &'storage mut [u8],
         tx_frame: &'storage mut [u8],
     ) -> Self {
+        let access_point = mac.engine().service_address();
         Self {
             receive,
             storage,
             mac,
             rx_frame,
             tx_frame,
+            data_rx: Esp32s31ApRxDispatcher::new(Esp32s31ApRxConfig {
+                access_point,
+                ingress: RxIngressConfig {
+                    ring_entry_limit: 1,
+                    csi_config: 0,
+                    flags: 0,
+                },
+            }),
             report: Esp32s31AccessPointControlReport::default(),
         }
     }
@@ -225,42 +264,125 @@ where
         hardware: &mut H,
         authenticator_nonce: [u8; 32],
         initial_replay_counter: u64,
-    ) -> Result<(), Esp32s31AccessPointControlError>
+    ) -> Result<Option<usize>, Esp32s31AccessPointControlError>
     where
         H: RxDma + TxHardware + Esp32s31ApRuntimeHardware,
     {
         if self.mac.tx_pending() {
-            return Ok(());
+            return Ok(None);
         }
         let mut staged = None;
+        let mut ethernet_length = None;
         let rx_frame = &mut *self.rx_frame;
+        let authorized_peer = self.mac.engine().authorized_peer();
+        let data_rx = &mut self.data_rx;
+        let report = &mut self.report;
         let progress = self
             .receive
             .service_completed(hardware, self.storage, |segment| {
                 if staged.is_some() {
-                    self.report.control_frames_dropped_while_busy = self
-                        .report
-                        .control_frames_dropped_while_busy
-                        .saturating_add(1);
-                    return Esp32s31PreconnectedRxDirective::Continue;
+                    report.control_frames_dropped_while_busy =
+                        report.control_frames_dropped_while_busy.saturating_add(1);
+                    return Esp32s31PreconnectedRxDirective::Pause;
                 }
-                let Ok(frame) = view_normalized_rx_frame(
+                let frame = match view_normalized_rx_frame(
                     &segment,
                     RxIngressConfig {
                         ring_entry_limit: 1,
                         csi_config: 0,
                         flags: 0,
                     },
-                ) else {
-                    self.report.ignored_rx_frames = self.report.ignored_rx_frames.saturating_add(1);
-                    return Esp32s31PreconnectedRxDirective::Continue;
+                ) {
+                    Ok(frame) => frame,
+                    Err(error) => {
+                        match error {
+                            open_esp_radio_esp32s31_wifi_mac::rx::RxError::MicFailure => {
+                                report.rx_mic_failures = report.rx_mic_failures.saturating_add(1);
+                            }
+                            open_esp_radio_esp32s31_wifi_mac::rx::RxError::Quarantined => {
+                                report.rx_quarantined_frames =
+                                    report.rx_quarantined_frames.saturating_add(1);
+                            }
+                            _ => {
+                                report.rx_view_rejected = report.rx_view_rejected.saturating_add(1);
+                            }
+                        }
+                        report.ignored_rx_frames = report.ignored_rx_frames.saturating_add(1);
+                        return Esp32s31PreconnectedRxDirective::Continue;
+                    }
                 };
+                let frame_control = u16::from_le_bytes([frame.mpdu[0], frame.mpdu[1]]);
+                if frame_control & 0x000c == 0x0008 && frame_control & 0x4000 != 0 {
+                    struct StageEthernet<'a> {
+                        storage: &'a mut [u8],
+                        length: &'a mut Option<usize>,
+                    }
+
+                    impl Esp32s31ApRxSink for StageEthernet<'_> {
+                        fn publish(&mut self, event: Esp32s31ApRxEvent<'_>) {
+                            if self.length.is_some() || event.frame.length() > self.storage.len() {
+                                return;
+                            }
+                            if event.frame.copy_to(self.storage).is_ok() {
+                                *self.length = Some(event.frame.length());
+                            }
+                        }
+                    }
+
+                    let mut sink = StageEthernet {
+                        storage: rx_frame,
+                        length: &mut ethernet_length,
+                    };
+                    report.protected_data_frames = report.protected_data_frames.saturating_add(1);
+                    match data_rx.dispatch_protected(segment, authorized_peer, &mut sink) {
+                        Esp32s31ApRxDispatch::Data { .. } => {}
+                        Esp32s31ApRxDispatch::Duplicate => {
+                            report.protected_data_duplicates =
+                                report.protected_data_duplicates.saturating_add(1);
+                        }
+                        Esp32s31ApRxDispatch::ForeignPeer => {
+                            report.protected_data_foreign =
+                                report.protected_data_foreign.saturating_add(1);
+                        }
+                        Esp32s31ApRxDispatch::Unauthorized => {
+                            report.protected_data_unauthorized =
+                                report.protected_data_unauthorized.saturating_add(1);
+                        }
+                        Esp32s31ApRxDispatch::Rejected(Esp32s31ApRxError::Radio(_)) => {
+                            report.protected_data_radio_rejected =
+                                report.protected_data_radio_rejected.saturating_add(1);
+                        }
+                        Esp32s31ApRxDispatch::Rejected(Esp32s31ApRxError::Data(_)) => {
+                            report.protected_data_protocol_rejected =
+                                report.protected_data_protocol_rejected.saturating_add(1);
+                        }
+                    }
+                    if ethernet_length.is_some() {
+                        report.ethernet_frames_staged =
+                            report.ethernet_frames_staged.saturating_add(1);
+                        let ethernet = &rx_frame[..ethernet_length.unwrap_or(0)];
+                        match ethernet_protocol(ethernet) {
+                            Some(EthernetProtocol::ArpRequest) => {
+                                report.ethernet_arp_requests_staged =
+                                    report.ethernet_arp_requests_staged.saturating_add(1);
+                            }
+                            Some(EthernetProtocol::Ipv4Tcp) => {
+                                report.ethernet_tcp_frames_staged =
+                                    report.ethernet_tcp_frames_staged.saturating_add(1);
+                            }
+                            _ => {}
+                        }
+                        staged = Some(StagedControlFrame::Ethernet);
+                        return Esp32s31PreconnectedRxDirective::Pause;
+                    }
+                    report.ignored_rx_frames = report.ignored_rx_frames.saturating_add(1);
+                    return Esp32s31PreconnectedRxDirective::Continue;
+                }
                 if frame.mpdu.len() > rx_frame.len() {
-                    self.report.ignored_rx_frames = self.report.ignored_rx_frames.saturating_add(1);
+                    report.ignored_rx_frames = report.ignored_rx_frames.saturating_add(1);
                     return Esp32s31PreconnectedRxDirective::Continue;
                 }
                 rx_frame[..frame.mpdu.len()].copy_from_slice(frame.mpdu);
-                let frame_control = u16::from_le_bytes([frame.mpdu[0], frame.mpdu[1]]);
                 staged = if frame_control & 0x000c == 0 {
                     Some(StagedControlFrame::Management {
                         length: frame.mpdu.len(),
@@ -270,10 +392,14 @@ where
                         length: frame.mpdu.len(),
                     })
                 } else {
-                    self.report.ignored_rx_frames = self.report.ignored_rx_frames.saturating_add(1);
+                    report.ignored_rx_frames = report.ignored_rx_frames.saturating_add(1);
                     None
                 };
-                Esp32s31PreconnectedRxDirective::Continue
+                if staged.is_some() {
+                    Esp32s31PreconnectedRxDirective::Pause
+                } else {
+                    Esp32s31PreconnectedRxDirective::Continue
+                }
             })?;
         self.report.completed_rx_descriptors = self
             .report
@@ -281,7 +407,7 @@ where
             .saturating_add(progress.completed);
 
         let Some(staged) = staged else {
-            return Ok(());
+            return Ok(None);
         };
         match staged {
             StagedControlFrame::Management { length } => {
@@ -305,8 +431,9 @@ where
             StagedControlFrame::Eapol { length } => {
                 self.service_eapol(hardware, length)?;
             }
+            StagedControlFrame::Ethernet => {}
         }
-        Ok(())
+        Ok(ethernet_length)
     }
 
     fn service_eapol<H>(
@@ -402,6 +529,10 @@ where
         self.mac.next_beacon_delay(now_micros)
     }
 
+    pub const fn beacon_publication_due(&self, now_micros: u32) -> bool {
+        self.mac.beacon_publication_due(now_micros)
+    }
+
     pub fn wait_tx_deadline(&mut self) -> impl core::future::Future<Output = ()> + '_ {
         self.mac.wait_tx_deadline()
     }
@@ -411,6 +542,11 @@ where
         hardware: &mut H,
         now_micros: u64,
     ) -> Result<(), Esp32s31AccessPointControlError> {
+        let (missed, lateness) = self.mac.beacon_publication_lateness(now_micros as u32);
+        self.report.missed_beacon_intervals =
+            self.report.missed_beacon_intervals.saturating_add(missed);
+        self.report.maximum_beacon_lateness_micros =
+            self.report.maximum_beacon_lateness_micros.max(lateness);
         self.mac.publish_beacon(hardware, now_micros)?;
         Ok(())
     }
@@ -437,21 +573,45 @@ where
     /// routing is masked. RX is then stopped cooperatively; `Busy` means the
     /// walker has not yet acknowledged the request and is retried without
     /// weakening ownership.
-    pub async fn run_until_stopped<R, M, H, F, N>(
+    pub async fn run_until_stopped<
+        R,
+        M,
+        NM,
+        H,
+        F,
+        N,
+        const FRAME_CAPACITY: usize,
+        const HEADROOM: usize,
+        const TRAILER: usize,
+        const RX_QUEUE_DEPTH: usize,
+        const TX_QUEUE_DEPTH: usize,
+    >(
         &mut self,
         hardware: &mut H,
         interrupts: &mut Esp32s31MacInterruptEpoch<'_, R, M>,
         platform: &R::Platform,
+        network: &SplitPinnedRadioRunner<
+            '_,
+            NM,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            RX_QUEUE_DEPTH,
+            TX_QUEUE_DEPTH,
+        >,
         stop: F,
         mut security_material: N,
     ) -> Result<Esp32s31AccessPointRunReport, Esp32s31AccessPointRunError<R::Error>>
     where
         R: MacInterruptRoute,
         M: RawMutex,
+        NM: RawMutex,
         H: RxDma + TxHardware + Esp32s31ApRuntimeHardware,
         F: Future<Output = ()>,
         N: FnMut() -> ([u8; 32], u64),
     {
+        network.set_link_state(LinkState::Down);
+        network.set_hardware_address(self.mac.engine().service_address());
         self.start(hardware)
             .await
             .map_err(Esp32s31AccessPointRunError::Control)?;
@@ -464,6 +624,7 @@ where
 
         let mut stop = pin!(stop);
         let mut stopping = false;
+        let mut network_link_up = false;
         loop {
             if self.tx_pending() {
                 let tx_edge = select(interrupts.mac_runtime().wait_tx(), self.wait_tx_deadline());
@@ -492,29 +653,104 @@ where
             }
 
             let now_micros = Instant::now().as_micros();
+            // A data publication may finish just after TBTT. The recovered
+            // next-deadline calculation intentionally advances past an
+            // already missed edge, so publish the overdue beacon before
+            // admitting another network frame. The active descriptor above
+            // still always reaches a terminal outcome first.
+            if self.beacon_publication_due(now_micros as u32) {
+                self.publish_beacon(hardware, now_micros)
+                    .map_err(Esp32s31AccessPointRunError::Control)?;
+                continue;
+            }
             let (_, beacon_delay_ms) = self
                 .next_beacon_delay(now_micros as u32)
                 .ok_or(Esp32s31AccessPointRunError::InvalidBeaconSchedule)?;
-            match select3(
+            match select4(
                 stop.as_mut(),
                 interrupts.mac_runtime().wait_rx(),
                 Timer::after_millis(u64::from(beacon_delay_ms)),
+                network.receive_tx(),
             )
             .await
             {
-                Either3::First(()) => stopping = true,
-                Either3::Second(()) => {
-                    let (nonce, replay_counter) = security_material();
-                    self.service_rx(hardware, nonce, replay_counter)
+                Either4::First(()) => stopping = true,
+                Either4::Second(()) => {
+                    // One IRQ publication may represent several completed
+                    // descriptors. Drain until the walker reports no further
+                    // ownership instead of requiring a second interrupt edge
+                    // for work which was already complete when the first edge
+                    // was acknowledged.
+                    loop {
+                        let (nonce, replay_counter) = security_material();
+                        let completed_before = self.report.completed_rx_descriptors;
+                        let ethernet_length = self
+                            .service_rx(hardware, nonce, replay_counter)
+                            .map_err(Esp32s31AccessPointRunError::Control)?;
+                        if let Some(length) = ethernet_length {
+                            network
+                                .send_rx(&self.rx_frame[..length])
+                                .await
+                                .map_err(Esp32s31AccessPointRunError::Network)?;
+                        }
+                        if self.report.completed_rx_descriptors == completed_before {
+                            break;
+                        }
+                    }
+                    let authorized = self.mac.engine().authorized_peer().is_some();
+                    if authorized != network_link_up {
+                        network.set_link_state(if authorized {
+                            LinkState::Up
+                        } else {
+                            LinkState::Down
+                        });
+                        network_link_up = authorized;
+                    }
+                }
+                Either4::Third(()) => {
+                    self.publish_beacon(hardware, Instant::now().as_micros())
                         .map_err(Esp32s31AccessPointRunError::Control)?;
                 }
-                Either3::Third(()) => {
-                    self.publish_beacon(hardware, Instant::now().as_micros())
+                Either4::Fourth(frame) => {
+                    self.report.network_tx_frames_observed =
+                        self.report.network_tx_frames_observed.saturating_add(1);
+                    match ethernet_protocol(frame.as_slice()) {
+                        Some(EthernetProtocol::ArpRequest) => {
+                            self.report.network_tx_arp_requests =
+                                self.report.network_tx_arp_requests.saturating_add(1);
+                        }
+                        Some(EthernetProtocol::ArpReply) => {
+                            self.report.network_tx_arp_replies =
+                                self.report.network_tx_arp_replies.saturating_add(1);
+                        }
+                        _ => {}
+                    }
+                    let Some(peer) = self.mac.engine().authorized_peer() else {
+                        self.report.network_tx_rejected_no_peer =
+                            self.report.network_tx_rejected_no_peer.saturating_add(1);
+                        self.report.network_tx_frames_rejected =
+                            self.report.network_tx_frames_rejected.saturating_add(1);
+                        continue;
+                    };
+                    if frame.as_slice().get(..6) != Some(peer.as_slice()) {
+                        // AP v1 deliberately has no GTK TX packet-number
+                        // owner. Group and foreign-unicast Ethernet therefore
+                        // remain outside the advertised data service.
+                        self.report.network_tx_rejected_destination = self
+                            .report
+                            .network_tx_rejected_destination
+                            .saturating_add(1);
+                        self.report.network_tx_frames_rejected =
+                            self.report.network_tx_frames_rejected.saturating_add(1);
+                        continue;
+                    }
+                    self.publish_ethernet(hardware, peer, frame.as_slice())
                         .map_err(Esp32s31AccessPointRunError::Control)?;
                 }
             }
         }
 
+        network.set_link_state(LinkState::Down);
         let interrupt_drain = interrupts
             .quiesce(platform)
             .map_err(Esp32s31AccessPointRunError::InterruptQuiesce)?;
@@ -532,6 +768,7 @@ where
         Ok(Esp32s31AccessPointRunReport {
             control: self.report(),
             mac: self.mac_report(),
+            engine: self.mac.engine().report(),
             interrupt_drain,
         })
     }
@@ -564,6 +801,7 @@ where
             mac,
             rx_frame,
             tx_frame,
+            data_rx,
             report,
         } = self;
         let ring = match receive.try_into_halted() {
@@ -575,6 +813,7 @@ where
                     mac,
                     rx_frame,
                     tx_frame,
+                    data_rx,
                     report,
                 });
             }
@@ -588,11 +827,13 @@ where
                     mac,
                     rx_frame,
                     tx_frame,
+                    data_rx,
                     report,
                 });
             }
         };
         let engine = engine.stop(hardware);
+        let _ = data_rx;
         Ok(Esp32s31AccessPointStopped {
             ring,
             storage,
@@ -603,5 +844,31 @@ where
             control_report: report,
             mac_report,
         })
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum EthernetProtocol {
+    ArpRequest,
+    ArpReply,
+    Ipv4Tcp,
+    Ipv4Other,
+    Other,
+}
+
+fn ethernet_protocol(frame: &[u8]) -> Option<EthernetProtocol> {
+    let ether_type = u16::from_be_bytes([*frame.get(12)?, *frame.get(13)?]);
+    match ether_type {
+        0x0800 => Some(if *frame.get(23)? == 6 {
+            EthernetProtocol::Ipv4Tcp
+        } else {
+            EthernetProtocol::Ipv4Other
+        }),
+        0x0806 => match u16::from_be_bytes([*frame.get(20)?, *frame.get(21)?]) {
+            1 => Some(EthernetProtocol::ArpRequest),
+            2 => Some(EthernetProtocol::ArpReply),
+            _ => Some(EthernetProtocol::Other),
+        },
+        _ => Some(EthernetProtocol::Other),
     }
 }

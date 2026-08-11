@@ -116,7 +116,7 @@ use open_esp_radio_wifi_embassy::{
 };
 use static_cell::ConstStaticCell;
 
-use crate::station::{
+use crate::runtime::{
     ControlTx, ProductionStationBoardResources, ProductionStationRuntime, RX_BUFFER_SIZE,
     RX_DESCRIPTOR_COUNT, RxStorage, TxStorage, production_station_runtime,
 };
@@ -1602,7 +1602,7 @@ pub async fn run_connected<'state, 'security>(
             scan_table,
             frame,
             ethernet,
-            crate::station::ProductionStationBoardResources {
+            crate::runtime::ProductionStationBoardResources {
                 interface,
                 rx_protocol_runtime,
                 initial_connected,

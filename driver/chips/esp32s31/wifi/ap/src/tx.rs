@@ -7,8 +7,9 @@
 
 use open_esp_radio_esp32s31_wifi::{
     ordinary_tx::{
-        OrdinaryTxError, OrdinaryTxOutcome, OrdinaryTxOwner, OrdinaryTxPlan, TX_CCMP_MIC_SIZE,
-        TX_METADATA_SIZE, WifiTxEntropy, WifiTxPowerProfile, WifiTxResources, WifiTxTimer,
+        OrdinaryTxError, OrdinaryTxInterface, OrdinaryTxOutcome, OrdinaryTxOwner, OrdinaryTxPlan,
+        TX_CCMP_MIC_SIZE, TX_METADATA_SIZE, WifiTxEntropy, WifiTxPowerProfile, WifiTxResources,
+        WifiTxTimer,
     },
     tx::{WifiTxProgress, WifiTxWake},
 };
@@ -52,6 +53,17 @@ impl Esp32s31ApTxClass {
         match self {
             Self::Beacon | Self::Management | Self::Eapol => LegacyTxQueue::Voice,
             Self::Data => LegacyTxQueue::BestEffort,
+        }
+    }
+
+    const fn initial_rate(self) -> LegacyRate {
+        match self {
+            // AP v1 advertises an ERP BSS, so every associated peer supports
+            // the mandatory 24 Mbit/s OFDM rate. Keep discovery and controlled
+            // port setup on the maximally compatible 1 Mbit/s path, but do
+            // not serialize ordinary data at that management rate.
+            Self::Data => LegacyRate::Ofdm24M,
+            Self::Beacon | Self::Management | Self::Eapol => LegacyRate::Dsss1MLong,
         }
     }
 }
@@ -148,12 +160,13 @@ where
                 descriptor_capacity: None,
                 exchange: MacTxPlan {
                     access_category: queue.access_category(),
-                    initial_rate: TxPhyRate::Legacy(LegacyRate::Dsss1MLong),
+                    initial_rate: TxPhyRate::Legacy(class.initial_rate()),
                     publication_limit: class.publication_limit(self.config),
                     publication_timeout_micros: self.config.publication_timeout_micros,
                 },
                 hardware_mic_length,
                 hardware_key_selector,
+                interface: OrdinaryTxInterface::AccessPoint,
                 scheduler_priority: queue.vendor_data_scheduler_priority(),
                 packet_priority: queue.vendor_data_packet_priority(),
             },
@@ -224,6 +237,7 @@ mod tests {
     struct Hardware {
         prepare: bool,
         publications: u8,
+        legacy_program: Option<MacLegacyTxProgram>,
         completion: Option<MacTxCompletionRegisters>,
     }
 
@@ -232,8 +246,9 @@ mod tests {
             &mut self,
             _dma: &dyn PreparedTxDma,
             _queue: u8,
-            _program: MacLegacyTxProgram,
+            program: MacLegacyTxProgram,
         ) -> bool {
+            self.legacy_program = Some(program);
             self.prepare
         }
 
@@ -301,6 +316,18 @@ mod tests {
     }
 
     #[test]
+    fn data_uses_mandatory_erp_rate_without_changing_control_rates() {
+        assert_eq!(Esp32s31ApTxClass::Data.initial_rate(), LegacyRate::Ofdm24M);
+        for class in [
+            Esp32s31ApTxClass::Beacon,
+            Esp32s31ApTxClass::Management,
+            Esp32s31ApTxClass::Eapol,
+        ] {
+            assert_eq!(class.initial_rate(), LegacyRate::Dsss1MLong);
+        }
+    }
+
+    #[test]
     fn beacon_is_one_publication_and_resources_return_only_after_completion() {
         let mut slot = pin!(TxSlot::<256>::new_model());
         let resources = WifiTxResources {
@@ -337,6 +364,7 @@ mod tests {
         );
         assert_eq!(tx.queue_state(), MacTxQueueState::Backpressured);
         assert_eq!(hardware.publications, 1);
+        assert_eq!(hardware.legacy_program.unwrap().interface, 1);
 
         let progress = block_on(tx.service(
             &mut hardware,

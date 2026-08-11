@@ -3653,6 +3653,18 @@ fn protected_legacy_profile_publishes_sta_pairwise_slot_in_plcp1() {
 }
 
 #[test]
+fn protected_legacy_profile_composes_ap_interface_and_pairwise_slot_in_plcp1() {
+    let mut config = LegacyTxConfig::management_1m(0x99);
+    config.interface = 1;
+    config.hardware_key_selector = 8;
+    let image = legacy_q0_image(0x2f00_0100, config).unwrap();
+    // Descriptor control byte 0x48 occupies PLCP1 bits 24:17.
+    assert_eq!(image.plcp1, 0x0090_0099);
+    // LENGTH_CONTROL owns the key index, not the BSSID selector.
+    assert_eq!(image.length_control, 0x0040_0004);
+}
+
+#[test]
 fn legacy_q0_image_derives_the_recovered_format_from_receiver_class() {
     let mut config = LegacyTxConfig::management_1m(0x22);
     let image = legacy_q0_image(0x2f00_0100, config).unwrap();

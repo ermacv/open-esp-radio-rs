@@ -38,7 +38,20 @@ pub struct Esp32s31ApMacReport {
     pub association_responses_transmitted: u32,
     pub eapol_frames_transmitted: u32,
     pub data_frames_transmitted: u32,
-    pub failed_publications: u32,
+    pub tx_failures: Esp32s31ApTxFailureReport,
+}
+
+/// Compact semantic classification of terminal AP TX failures.
+///
+/// Each counter saturates independently. Four bytes replace the former
+/// undifferentiated `u32`, so retaining evidence does not enlarge the live AP
+/// owner or its executor future.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct Esp32s31ApTxFailureReport {
+    pub hardware_failures: u8,
+    pub hardware_timeouts: u8,
+    pub collision_limits: u8,
+    pub last_hardware_status: u8,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -113,6 +126,14 @@ where
 
     pub const fn next_beacon_delay(&self, now_micros: u32) -> Option<(u32, u32)> {
         self.engine.next_beacon_delay(now_micros)
+    }
+
+    pub const fn beacon_publication_due(&self, now_micros: u32) -> bool {
+        self.engine.beacon_publication_due(now_micros)
+    }
+
+    pub const fn beacon_publication_lateness(&self, now_micros: u32) -> (u32, u32) {
+        self.engine.beacon_publication_lateness(now_micros)
     }
 
     pub fn wait_tx_deadline(&mut self) -> impl core::future::Future<Output = ()> + '_ {
@@ -236,7 +257,25 @@ where
             .take_last_outcome()
             .expect("terminal AP TX retains an outcome");
         if !matches!(outcome, OrdinaryTxOutcome::Success(_)) {
-            self.report.failed_publications = self.report.failed_publications.saturating_add(1);
+            match outcome {
+                OrdinaryTxOutcome::HardwareFailure(report) => {
+                    self.report.tx_failures.hardware_failures =
+                        self.report.tx_failures.hardware_failures.saturating_add(1);
+                    self.report.tx_failures.last_hardware_status = report
+                        .completion
+                        .map(|completion| completion.status)
+                        .unwrap_or(0);
+                }
+                OrdinaryTxOutcome::HardwareTimeout(_) => {
+                    self.report.tx_failures.hardware_timeouts =
+                        self.report.tx_failures.hardware_timeouts.saturating_add(1);
+                }
+                OrdinaryTxOutcome::CollisionLimit(_) => {
+                    self.report.tx_failures.collision_limits =
+                        self.report.tx_failures.collision_limits.saturating_add(1);
+                }
+                OrdinaryTxOutcome::Success(_) => unreachable!("checked failed AP publication"),
+            }
             return Ok((progress, Esp32s31ApTxCompletionAction::PublicationFailed));
         }
         let action = match pending {
@@ -341,7 +380,7 @@ mod tests {
         tx::{HardwareOwnedTxDma, PreparedTxDma, TxSlot},
         tx_runtime::WifiTxRuntimePolicy,
     };
-    use open_esp_radio_ieee80211::{beacon::WPA2_HT20_BEACON_CAPACITY, ssid::WifiSsid};
+    use open_esp_radio_ieee80211::{beacon::WPA2_BEACON_CAPACITY, ssid::WifiSsid};
     use open_esp_radio_wifi_ap::AccessPointService;
     use open_esp_radio_wpa2::{Pmk, frames::Wpa2Gtk};
 
@@ -453,7 +492,7 @@ mod tests {
     fn prepared_beacon_becomes_evidence_only_after_terminal_success() {
         let ap = [2, 0, 0, 0, 0, 1];
         let mut hardware = Hardware::default();
-        let mut beacon = [0; WPA2_HT20_BEACON_CAPACITY];
+        let mut beacon = [0; WPA2_BEACON_CAPACITY];
         let engine = Esp32s31ApEngine::start(
             &mut hardware,
             AccessPointService::new(

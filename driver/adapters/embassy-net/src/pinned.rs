@@ -1,6 +1,7 @@
 //! Permanently located RX/TX slots for bounded, copy-minimal network ownership.
 
 use core::{
+    cell::Cell,
     pin::Pin,
     sync::atomic::{AtomicBool, Ordering},
     task::{Context, Poll},
@@ -8,6 +9,7 @@ use core::{
 
 use embassy_net_driver::{Capabilities, Driver, HardwareAddress, LinkState};
 use embassy_sync::{
+    blocking_mutex::Mutex,
     blocking_mutex::raw::RawMutex,
     channel::{Channel, Receiver, Sender, TryReceiveError, TrySendError},
 };
@@ -19,6 +21,33 @@ use open_esp_radio_dma::{
 use crate::{
     ETHERNET_HEADER_LEN, FrameLengthError, IngressPollFairness, RxEnqueueError, SharedLinkState,
 };
+
+/// Role-selected Ethernet identity shared by the persistent network device
+/// and the currently active radio epoch.
+///
+/// The address is changed only while the link is down. Keeping it beside the
+/// queues allows one `embassy-net` device to survive sequential STA and AP
+/// epochs without manufacturing a second network owner or retaining the STA
+/// address in AP mode.
+struct SharedHardwareAddress<M: RawMutex> {
+    address: Mutex<M, Cell<[u8; 6]>>,
+}
+
+impl<M: RawMutex> SharedHardwareAddress<M> {
+    const fn new(address: [u8; 6]) -> Self {
+        Self {
+            address: Mutex::new(Cell::new(address)),
+        }
+    }
+
+    fn set(&self, address: [u8; 6]) {
+        self.address.lock(|current| current.set(address));
+    }
+
+    fn get(&self) -> [u8; 6] {
+        self.address.lock(Cell::get)
+    }
+}
 
 /// Static resources for copy-minimal RX and copy-free TX ownership boundaries.
 ///
@@ -45,6 +74,7 @@ pub struct SplitPinnedResources<
     free_tx: Channel<M, u8, TX_QUEUE_DEPTH>,
     ready_tx: Channel<M, u8, TX_QUEUE_DEPTH>,
     link: SharedLinkState<M>,
+    hardware_address: SharedHardwareAddress<M>,
     split: AtomicBool,
 }
 
@@ -86,6 +116,7 @@ impl<
             free_tx: Channel::new(),
             ready_tx: Channel::new(),
             link: SharedLinkState::new(),
+            hardware_address: SharedHardwareAddress::new([0; 6]),
             split: AtomicBool::new(false),
         }
     }
@@ -142,6 +173,7 @@ impl<
         let pool: &'resources PinnedTxPool<FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH> =
             Pin::into_ref(pool).get_ref();
         let resources: &Self = self;
+        resources.hardware_address.set(station_address);
 
         (
             SplitPinnedDevice {
@@ -153,7 +185,7 @@ impl<
                 ready_tx: resources.ready_tx.sender(),
                 tx_pool: pool,
                 link: &resources.link,
-                station_address,
+                hardware_address: &resources.hardware_address,
                 reserved_tx: None,
                 tx_reservation: (),
                 ingress_fairness: IngressPollFairness::new(RX_QUEUE_DEPTH.min(TX_QUEUE_DEPTH)),
@@ -167,6 +199,7 @@ impl<
                 ready_tx: resources.ready_tx.receiver(),
                 tx_pool: pool,
                 link: &resources.link,
+                hardware_address: &resources.hardware_address,
             },
         )
     }
@@ -204,7 +237,7 @@ pub struct SplitPinnedDevice<
     ready_tx: Sender<'resources, M, u8, TX_QUEUE_DEPTH>,
     tx_pool: &'resources PinnedTxPool<FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
     link: &'resources SharedLinkState<M>,
-    station_address: [u8; 6],
+    hardware_address: &'resources SharedHardwareAddress<M>,
     reserved_tx: Option<u8>,
     tx_reservation: (),
     ingress_fairness: IngressPollFairness,
@@ -474,7 +507,7 @@ impl<
     }
 
     fn hardware_address(&self) -> HardwareAddress {
-        HardwareAddress::Ethernet(self.station_address)
+        HardwareAddress::Ethernet(self.hardware_address.get())
     }
 }
 
@@ -654,6 +687,7 @@ pub struct SplitPinnedRadioRunner<
     ready_tx: Receiver<'resources, M, u8, TX_QUEUE_DEPTH>,
     tx_pool: &'resources PinnedTxPool<FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
     link: &'resources SharedLinkState<M>,
+    hardware_address: &'resources SharedHardwareAddress<M>,
 }
 
 /// Compatibility form with equal receive and transmit queue depths.
@@ -708,6 +742,12 @@ impl<
 
     pub fn set_link_state(&self, state: LinkState) {
         self.link.set(state);
+    }
+
+    /// Select the MAC address for the next role while the persistent link is
+    /// down. The next link-up wake makes `embassy-net` observe the new value.
+    pub fn set_hardware_address(&self, address: [u8; 6]) {
+        self.hardware_address.set(address);
     }
 
     pub fn try_send_rx(&self, frame: &[u8]) -> Result<(), RxEnqueueError> {

@@ -125,6 +125,37 @@ fn owner_services_a_terminal_descriptor_and_round_trips_between_phases() {
 }
 
 #[test]
+fn pause_bounds_one_service_pass_without_retaining_a_terminal_descriptor() {
+    let storage = Esp32s31RxDmaStorage::<COUNT, BUFFER_SIZE, STORAGE_SIZE>::new();
+    let mut hardware = Hardware::default();
+    let mut rx = Esp32s31PreconnectedRx::<ReadyDelay, COUNT, BUFFER_SIZE>::from_halted(
+        halted_ring(&mut hardware, &storage),
+    );
+    embassy_futures::block_on(rx.start_with_storage(&mut hardware, &storage)).unwrap();
+    for descriptor in storage.descriptors() {
+        descriptor.write_word0(descriptor.word0() | BIT_30);
+    }
+
+    let first = rx
+        .service_completed(&mut hardware, &storage, |_| {
+            Esp32s31PreconnectedRxDirective::Pause
+        })
+        .unwrap();
+    assert_eq!(first.completed, 1);
+    assert!(!first.stopped);
+    assert_eq!(storage.descriptors()[0].word0() & BIT_30, 0);
+
+    let second = rx
+        .service_completed(&mut hardware, &storage, |_| {
+            Esp32s31PreconnectedRxDirective::Continue
+        })
+        .unwrap();
+    assert_eq!(second.completed, 1);
+    assert!(!second.stopped);
+    assert_eq!(storage.descriptors()[1].word0() & BIT_30, 0);
+}
+
+#[test]
 fn consuming_connected_promotion_returns_live_ring_or_exact_owner() {
     let storage = Esp32s31RxDmaStorage::<COUNT, BUFFER_SIZE, STORAGE_SIZE>::new();
     let mut hardware = Hardware::default();

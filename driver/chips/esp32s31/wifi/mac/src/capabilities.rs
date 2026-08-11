@@ -32,7 +32,7 @@ pub const ESP32S31_MAC_SERVICE_CAPABILITIES: MacServiceCapabilities = MacService
         // This is the currently implemented owner graph, not the number of
         // address-match slots visible in hardware.
         station_interfaces: 1,
-        access_point_interfaces: 0,
+        access_point_interfaces: 1,
         simultaneous_station_access_point: false,
         standalone_monitor: true,
         monitor_with_interfaces: false,
@@ -68,10 +68,8 @@ pub const ESP32S31_MAC_SERVICE_CAPABILITIES: MacServiceCapabilities = MacService
         // not the size of the underlying hardware key table.
         station_pairwise_ccmp_slots: 1,
         station_group_ccmp_slots: 1,
-        // AP hardware entries are proven below the capability boundary, but
-        // remain unadvertised until the AP owner graph passes HIL qualification.
-        access_point_pairwise_ccmp_slots: 0,
-        access_point_group_ccmp_slots: 0,
+        access_point_pairwise_ccmp_slots: 1,
+        access_point_group_ccmp_slots: 1,
     },
 };
 
@@ -120,7 +118,7 @@ mod tests {
     fn profile_advertises_only_materialized_interface_and_monitor_topologies() {
         let interfaces = ESP32S31_MAC_SERVICE_CAPABILITIES.interfaces;
         assert_eq!(interfaces.station_interfaces, 1);
-        assert_eq!(interfaces.access_point_interfaces, 0);
+        assert_eq!(interfaces.access_point_interfaces, 1);
         assert!(!interfaces.simultaneous_station_access_point);
         assert!(interfaces.standalone_monitor);
         assert!(!interfaces.monitor_with_interfaces);

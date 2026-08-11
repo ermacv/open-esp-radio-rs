@@ -52,6 +52,11 @@ pub struct Esp32s31PreconnectedRxIntoLiveFailure<
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Esp32s31PreconnectedRxDirective {
     Continue,
+    /// End this bounded service pass after recycling every descriptor already
+    /// observed by it. The live RX epoch remains owned by this phase.
+    Pause,
+    /// Retain the terminal descriptor for a typed transfer into another
+    /// protocol phase. This is not a scheduling/batching directive.
     Stop,
 }
 

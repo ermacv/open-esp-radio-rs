@@ -15,6 +15,8 @@ const STA_GROUP_HARDWARE_INDEX: u8 = 1;
 const AP_PAIRWISE_HARDWARE_INDEX: u8 = 8;
 const AP_GROUP_HARDWARE_INDEX_BASE: u8 = 1;
 const MAX_WPA2_GTK_ID: u8 = 3;
+const STA_CONNECTION_CONTEXT: u32 = 0;
+const AP_CONNECTION_CONTEXT: u32 = 1;
 const PAIRWISE_LOGICAL_KEY_INDEX: u32 = 0;
 const CCMP_ALGORITHM: u32 = 3;
 const CCMP_KEY_BYTES: usize = 16;
@@ -253,6 +255,7 @@ pub fn install_sta_pairwise_ccmp<H: CcmpKeyHardware>(
     let cipher = CCMP_ALGORITHM << 18;
     let direction = 3_u32;
     let control = (direction << 5)
+        | (STA_CONNECTION_CONTEXT << 8)
         | (u32::from(PAIRWISE_LOGICAL_KEY_INDEX != 3) << 11)
         | (PAIRWISE_LOGICAL_KEY_INDEX << 14)
         | ((cipher >> 16) & 0x341f);
@@ -293,6 +296,7 @@ pub fn install_sta_group_ccmp<H: CcmpKeyHardware>(
     let direction = 6_u32;
     let logical_key_index = u32::from(key_id);
     let control = (direction << 5)
+        | (STA_CONNECTION_CONTEXT << 8)
         | (u32::from(logical_key_index != 3) << 11)
         | (logical_key_index << 14)
         | ((cipher >> 16) & 0x341f);
@@ -320,7 +324,10 @@ pub fn install_sta_group_ccmp<H: CcmpKeyHardware>(
 /// The slot and direction encoding are evidenced by the retained vendor AP
 /// qualification: AP peer identity one selected descriptor key byte `0x48`,
 /// and `hal_crypto_set_key_entry` uses pairwise direction three for entries
-/// above the four group-key slots.
+/// above the four group-key slots. The complete vendor path
+/// `esp_wifi_set_ap_key_internal -> ic_set_key -> wDev_Insert_KeyEntry ->
+/// hal_crypto_set_key_entry` passes connection context one and encodes it in
+/// bits 8..=9 of the key-entry control halfword. The station path passes zero.
 pub fn install_ap_pairwise_ccmp<H: CcmpKeyHardware>(
     hardware: &mut H,
     peer: [u8; 6],
@@ -331,6 +338,7 @@ pub fn install_ap_pairwise_ccmp<H: CcmpKeyHardware>(
     let cipher = CCMP_ALGORITHM << 18;
     let direction = 3_u32;
     let control = (direction << 5)
+        | (AP_CONNECTION_CONTEXT << 8)
         | (u32::from(PAIRWISE_LOGICAL_KEY_INDEX != 3) << 11)
         | (PAIRWISE_LOGICAL_KEY_INDEX << 14)
         | ((cipher >> 16) & 0x341f);
@@ -369,6 +377,7 @@ pub fn install_ap_group_ccmp<H: CcmpKeyHardware>(
     let direction = 6_u32;
     let logical_key_index = u32::from(key_id);
     let control = (direction << 5)
+        | (AP_CONNECTION_CONTEXT << 8)
         | (u32::from(logical_key_index != 3) << 11)
         | (logical_key_index << 14)
         | ((cipher >> 16) & 0x341f);

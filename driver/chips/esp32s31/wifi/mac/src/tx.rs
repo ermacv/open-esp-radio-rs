@@ -1917,9 +1917,20 @@ pub struct LegacyTxConfig {
     /// by the vendor authentication capture and by repeated open STA
     /// authentication/association/WPA2/DHCP runs.
     pub group_receiver: bool,
-    /// Low byte of the recovered descriptor control word. Zero is plaintext;
-    /// protected STA pairwise traffic uses its owned hardware key slot.
+    /// Six-bit key-entry index. Zero is plaintext; protected traffic uses its
+    /// owned hardware key slot. The formatter combines this with
+    /// [`Self::interface`] in the recovered PLCP1 descriptor-control byte.
     pub hardware_key_selector: u8,
+}
+
+/// Compose the byte consumed by `mac_tx_set_plcp1`.
+///
+/// Bits 5:0 select the key entry while bits 7:6 select the BSSID/interface.
+/// The vendor AP peer-one path therefore publishes `0x48`: AP interface one
+/// (`0x40`) plus pairwise key slot eight (`0x08`). The independent EDCA
+/// interface field is still required and is programmed separately.
+const fn plcp1_descriptor_control(hardware_key_selector: u8, interface: u8) -> u8 {
+    hardware_key_selector | (interface << 6)
 }
 
 /// Inputs for one finite, non-aggregate HT MPDU attempt.
@@ -1987,6 +1998,7 @@ impl HtTxConfig {
             && self.contention_window <= 0x03ff
             && self.timeout <= 0x0fff
             && self.interface <= 3
+            && self.hardware_key_selector <= 0x3f
             && self.scheduler_priority <= 0x0f
             && self.pti <= 0x0f
             && self.pti_count <= 0x0fff
@@ -2075,6 +2087,7 @@ impl HeSmpduTxConfig {
             && self.contention_window <= 0x03ff
             && self.timeout <= 0x0fff
             && self.interface <= 3
+            && self.hardware_key_selector <= 0x3f
             && self.scheduler_priority <= 0x0f
             && self.pti <= 0x0f
             && self.pti_count <= 0x0fff
@@ -2146,6 +2159,7 @@ impl HtAmpduTxConfig {
             && self.contention_window <= 0x03ff
             && self.timeout <= 0x0fff
             && self.interface <= 3
+            && self.hardware_key_selector <= 0x3f
             && self.scheduler_priority <= 0x0f
             && self.pti <= 0x0f
             && self.pti_count <= 0x0fff
@@ -2338,6 +2352,7 @@ impl HeAmpduTxConfig {
             && self.contention_window <= 0x03ff
             && self.timeout <= 0x0fff
             && self.interface <= 3
+            && self.hardware_key_selector <= 0x3f
             && self.scheduler_priority <= 0x0f
             && self.pti <= 0x0f
             && self.pti_count <= 0x0fff
@@ -2449,6 +2464,7 @@ impl LegacyTxConfig {
             && self.contention_window <= 0x03ff
             && self.timeout <= 0x0fff
             && self.interface <= 3
+            && self.hardware_key_selector <= 0x3f
             && self.scheduler_priority <= 0x0f
             && self.pti <= 0x0f
             && self.pti_count <= 0x0fff
@@ -2529,7 +2545,10 @@ pub const fn he_smpdu_q0_image(
         // PLCP0 format one. HE A-MPDU's separate formatter selects format
         // five and must not be reused here.
         plcp0: basic_plcp0_word(dma_head_address as usize, HE_SMPDU_DESCRIPTOR_FLAGS),
-        plcp1: he_plcp1_word(rate, config.hardware_key_selector),
+        plcp1: he_plcp1_word(
+            rate,
+            plcp1_descriptor_control(config.hardware_key_selector, config.interface),
+        ),
         he_signal_a1: he_su_signal_a1(config.rate, config.bss_color, config.spatial_reuse),
         // S-MPDU leaves the A-MPDU selector at bit 28 clear.
         he_signal_a2_length: (he_su_signal_a2_control(config.rate) as u32)
@@ -2580,7 +2599,7 @@ pub const fn ht_q0_image(descriptor_address: u32, config: HtTxConfig) -> Option<
         plcp1: basic_non_he_plcp1_word(
             rate,
             HT_SINGLE_DESCRIPTOR_FLAGS,
-            config.hardware_key_selector,
+            plcp1_descriptor_control(config.hardware_key_selector, config.interface),
             descriptor_word1,
             0,
         ),
@@ -2633,7 +2652,7 @@ pub const fn ht_ampdu_q0_image(
         plcp1: basic_non_he_plcp1_word(
             rate,
             HT_AMPDU_DESCRIPTOR_FLAGS,
-            config.hardware_key_selector,
+            plcp1_descriptor_control(config.hardware_key_selector, config.interface),
             descriptor_word1,
             0,
         ),
@@ -2676,7 +2695,10 @@ pub const fn he_ampdu_q0_image(
     let he_signal_a1 = he_su_signal_a1(config.rate, config.bss_color, config.spatial_reuse);
     Some(HeQ0Image {
         plcp0: he_ampdu_plcp0_word(dma_head_address as usize),
-        plcp1: he_plcp1_word(rate, config.hardware_key_selector),
+        plcp1: he_plcp1_word(
+            rate,
+            plcp1_descriptor_control(config.hardware_key_selector, config.interface),
+        ),
         he_signal_a1,
         he_signal_a2_length: (he_su_signal_a2_control(config.rate) as u32)
             | ((config.aggregate_length as u32) << 11)
@@ -2728,7 +2750,7 @@ pub const fn legacy_q0_image(
         plcp1: basic_non_he_plcp1_word(
             config.rate.code(),
             0,
-            config.hardware_key_selector,
+            plcp1_descriptor_control(config.hardware_key_selector, config.interface),
             0,
             config.signal as u32,
         ),

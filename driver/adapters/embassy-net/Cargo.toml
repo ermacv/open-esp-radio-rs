@@ -17,5 +17,10 @@ embassy-net-driver = "0.2"
 embassy-sync = "0.8.0"
 open-esp-radio-dma = { path = "../../common/dma" }
 
+[dev-dependencies]
+embassy-executor = { version = "0.10.0", features = ["executor-thread", "platform-std"] }
+embassy-net = { version = "0.9.0", features = ["icmp", "medium-ethernet", "proto-ipv4", "std"] }
+embassy-time = { version = "0.5.0", features = ["std"] }
+
 [lints]
 workspace = true

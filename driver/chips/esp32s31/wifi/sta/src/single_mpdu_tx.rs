@@ -331,6 +331,8 @@ where
                     },
                     hardware_mic_length,
                     hardware_key_selector: self.key.hardware_index(),
+                    interface:
+                        open_esp_radio_esp32s31_wifi::ordinary_tx::OrdinaryTxInterface::Station,
                     scheduler_priority: LegacyTxQueue::BestEffort.vendor_data_scheduler_priority(),
                     packet_priority: LegacyTxQueue::BestEffort.vendor_data_packet_priority(),
                 },
@@ -399,6 +401,8 @@ where
                     exchange: self.config.exchange,
                     hardware_mic_length: TX_CCMP_MIC_SIZE,
                     hardware_key_selector: self.key.hardware_index(),
+                    interface:
+                        open_esp_radio_esp32s31_wifi::ordinary_tx::OrdinaryTxInterface::Station,
                     scheduler_priority: LegacyTxQueue::BestEffort.vendor_data_scheduler_priority(),
                     packet_priority: LegacyTxQueue::BestEffort.vendor_data_packet_priority(),
                 },
@@ -454,6 +458,8 @@ where
                     },
                     hardware_mic_length: TX_CCMP_MIC_SIZE,
                     hardware_key_selector: self.key.hardware_index(),
+                    interface:
+                        open_esp_radio_esp32s31_wifi::ordinary_tx::OrdinaryTxInterface::Station,
                     scheduler_priority: LegacyTxQueue::Voice.vendor_data_scheduler_priority(),
                     packet_priority: LegacyTxQueue::Voice.vendor_data_packet_priority(),
                 },
@@ -504,6 +510,8 @@ where
                     },
                     hardware_mic_length: 0,
                     hardware_key_selector: 0,
+                    interface:
+                        open_esp_radio_esp32s31_wifi::ordinary_tx::OrdinaryTxInterface::Station,
                     scheduler_priority: config.scheduler_priority,
                     packet_priority: config.packet_priority,
                 },
@@ -552,6 +560,8 @@ where
                     },
                     hardware_mic_length: 0,
                     hardware_key_selector: 0,
+                    interface:
+                        open_esp_radio_esp32s31_wifi::ordinary_tx::OrdinaryTxInterface::Station,
                     scheduler_priority: ActionTxConfig::VENDOR_MANAGEMENT.scheduler_priority,
                     packet_priority: ActionTxConfig::VENDOR_MANAGEMENT.packet_priority,
                 },
@@ -866,6 +876,7 @@ mod tests {
         );
         let (queue, program) = hardware.legacy.expect("legacy queue image");
         assert_eq!(queue, 0);
+        assert_eq!(program.interface, 0);
         assert_eq!(program.scheduler_priority, 0);
         assert_eq!(program.packet_priority, 0);
         assert_eq!(program.plcp1 & 0xfff, 34);

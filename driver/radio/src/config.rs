@@ -24,12 +24,20 @@ mod tests {
 
         let access_point = WifiConfig::access_point(WifiAccessPointConfig::new(
             WifiMacAddress::new([0x02, 0, 0, 0, 0, 2]).unwrap(),
-        ));
+        ))
+        .validate(crate::esp32s31::wifi::mac::capabilities::ESP32S31_MAC_SERVICE_CAPABILITIES)
+        .unwrap();
+        assert!(access_point.access_point().is_some());
+
+        let station_access_point = WifiConfig::station_access_point(
+            WifiStationConfig::new(WifiMacAddress::new([0x02, 0, 0, 0, 0, 1]).unwrap()),
+            WifiAccessPointConfig::new(WifiMacAddress::new([0x02, 0, 0, 0, 0, 2]).unwrap()),
+        );
         assert_eq!(
-            access_point.validate(
+            station_access_point.validate(
                 crate::esp32s31::wifi::mac::capabilities::ESP32S31_MAC_SERVICE_CAPABILITIES,
             ),
-            Err(WifiConfigError::UnsupportedAccessPoint),
+            Err(WifiConfigError::UnsupportedStationAccessPoint),
         );
 
         let monitor = WifiConfig::monitor(WifiMonitorConfig::normalized())

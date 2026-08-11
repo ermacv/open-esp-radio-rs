@@ -14,6 +14,5 @@ pub mod service;
 
 pub use service::{
     AP_ASSOCIATION_ID, AP_STATUS_INVALID_RSN, AP_STATUS_SUCCESS, AP_STATUS_TOO_MANY_STATIONS,
-    AccessPointService, ApMlmeAction, ApPeerPhase, ApPowerSaveAction, ApServiceError, ApWpa2Error,
-    ApWpa2Progress,
+    AccessPointService, ApMlmeAction, ApPeerPhase, ApServiceError, ApWpa2Error, ApWpa2Progress,
 };

@@ -150,6 +150,11 @@ impl PhyExpectation {
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum Workload {
     BootSmoke,
+    Timebase {
+        boots: u8,
+        intervals: u16,
+        period_millis: u16,
+    },
     Udp {
         direction: Direction,
         duration_seconds: u16,
@@ -280,6 +285,15 @@ impl Scenario {
         }
         match &self.workload {
             Workload::BootSmoke => {}
+            Workload::Timebase {
+                boots,
+                intervals,
+                period_millis,
+            } => {
+                bounded(*boots, 1, 20, self, "boots")?;
+                bounded(*intervals, 2, 100, self, "intervals")?;
+                bounded(*period_millis, 1, 1_000, self, "period_millis")?;
+            }
             Workload::Udp {
                 direction,
                 duration_seconds,

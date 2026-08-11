@@ -1,0 +1,13 @@
+schema = 2
+id = "wifi-scan"
+description = "Standalone full-band scan with target-side dwell timing"
+image = "qualification"
+isolation = "reset"
+tags = ["qualification", "wifi", "scanner"]
+
+[workload]
+kind = "wifi-role"
+operation = "scan"
+timeout_seconds = 90
+
+[criteria]

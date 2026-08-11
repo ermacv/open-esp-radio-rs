@@ -168,8 +168,9 @@ fn qualify(
     let scan = scan(capture, options.timeout)?;
     report_stack(capture, options.timeout, "scan-complete")?;
     println!(
-        "wifi_scan_generation={} observed_frames={} unique_bss={} configured_ssid_channel={} configured_ssid_rssi_dbm={}",
+        "wifi_scan_generation={} elapsed_micros={} observed_frames={} unique_bss={} configured_ssid_channel={} configured_ssid_rssi_dbm={}",
         scan.generation,
+        scan.elapsed_micros,
         scan.observed_frames,
         scan.unique_bss,
         scan.configured_ssid_channel,
@@ -208,9 +209,16 @@ fn qualify(
     if stopped.captured_frames == 0 || stopped.captured_bytes == 0 {
         return Err("monitor epoch captured no frames".into());
     }
+    validate_elapsed(
+        "monitor lifecycle",
+        stopped.elapsed_micros,
+        options.monitor_duration,
+        150,
+    )?;
     println!(
-        "wifi_monitor_generation={} channel={} captured_frames={} captured_bytes={} channel_unavailable={} last_observed_channel={}",
+        "wifi_monitor_generation={} elapsed_micros={} channel={} captured_frames={} captured_bytes={} channel_unavailable={} last_observed_channel={}",
         stopped.generation,
+        stopped.elapsed_micros,
         stopped.channel,
         stopped.captured_frames,
         stopped.captured_bytes,
@@ -256,17 +264,37 @@ pub(crate) fn start_station(
 }
 
 pub(crate) fn scan(capture: &SerialCapture, timeout: Duration) -> Result<WifiScanEvidence> {
-    let evidence = capture.wait_wifi_scan(
-        capture.request_wifi_scan(WifiScanRequest {
-            channel_mask_2_4_ghz: 0x1fff,
-            dwell_millis: DEFAULT_SCAN_DWELL_MILLIS,
-        })?,
-        timeout,
-    )?;
+    let request = WifiScanRequest {
+        channel_mask_2_4_ghz: 0x1fff,
+        dwell_millis: DEFAULT_SCAN_DWELL_MILLIS,
+    };
+    let evidence = capture.wait_wifi_scan(capture.request_wifi_scan(request)?, timeout)?;
     if !evidence.configured_ssid_found {
         return Err(format!("scan did not find the configured SSID: {evidence:?}").into());
     }
+    let expected = Duration::from_millis(
+        u64::from(request.dwell_millis) * u64::from(request.channel_mask_2_4_ghz.count_ones()),
+    );
+    validate_elapsed("standalone scan", evidence.elapsed_micros, expected, 150)?;
     Ok(evidence)
+}
+
+fn validate_elapsed(
+    operation: &str,
+    observed_micros: u64,
+    expected: Duration,
+    maximum_percent: u64,
+) -> Result<()> {
+    let expected_micros = expected.as_micros().min(u128::from(u64::MAX)) as u64;
+    let minimum = expected_micros * 95 / 100;
+    let maximum = expected_micros * maximum_percent / 100;
+    if observed_micros < minimum || observed_micros > maximum {
+        return Err(format!(
+            "{operation} timing is outside the qualified range: expected_us={expected_micros} observed_us={observed_micros} range={minimum}..={maximum}"
+        )
+        .into());
+    }
+    Ok(())
 }
 
 pub(crate) fn require_transition(

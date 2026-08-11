@@ -205,11 +205,11 @@ struct ProductionAttemptObserver;
 
 impl Esp32s31StaAttemptObserver for ProductionAttemptObserver {
     fn stage_started(&mut self, stage: Esp32s31StaAttemptStage) {
-        qualification_event!("open-radio: attempt stage={stage:?} state=start");
+        qualification_debug!("open-radio: attempt stage={stage:?} state=start");
     }
 
     fn stage_completed(&mut self, stage: Esp32s31StaAttemptStage) {
-        qualification_event!("open-radio: attempt stage={stage:?} state=complete");
+        qualification_debug!("open-radio: attempt stage={stage:?} state=complete");
     }
 }
 

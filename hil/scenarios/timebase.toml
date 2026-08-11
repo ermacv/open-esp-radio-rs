@@ -1,0 +1,14 @@
+schema = 2
+id = "timebase"
+description = "Alarm and monotonic-clock agreement before radio initialization"
+image = "qualification"
+isolation = "reset"
+tags = ["qualification", "timebase"]
+
+[workload]
+kind = "timebase"
+boots = 3
+intervals = 20
+period_millis = 100
+
+[criteria]

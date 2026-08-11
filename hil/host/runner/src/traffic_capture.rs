@@ -16,12 +16,13 @@ use std::{
 
 use open_esp_radio_hil_protocol::{
     Capabilities, Command, DecodeCounters, Direction, Envelope, Event, EvidenceRecord, Finished,
-    FrameDecoder, FrameEncoder, OperationStatus, RadioEvidence, RxDeliveryEvidence,
+    FrameDecoder, FrameEncoder, LinkHealth, OperationStatus, RadioEvidence, RxDeliveryEvidence,
     RxRadioEvidence, SessionConfig, SessionLinkRequirements, SessionReady, SessionState,
     StackUsage, StartupArtifactChunk, StartupArtifactStatus, StateChange, StationEpochEvidence,
-    StationLifecycleEvent, Transport, TransportEvidence, TxRadioEvidence,
-    WifiMonitorCaptureRequest, WifiMonitorEvidence, WifiMonitorFrameChunk, WifiMonitorRequest,
-    WifiRoleTransitionEvidence, WifiScanEvidence, WifiScanRequest, evidence_crc32c,
+    StationLifecycleEvent, TimebaseProbeEvidence, TimebaseProbeRequest, Transport,
+    TransportEvidence, TxRadioEvidence, WifiMonitorCaptureRequest, WifiMonitorEvidence,
+    WifiMonitorFrameChunk, WifiMonitorRequest, WifiRoleTransitionEvidence, WifiScanEvidence,
+    WifiScanRequest, evidence_crc32c,
 };
 use zeroize::Zeroizing;
 
@@ -49,32 +50,19 @@ struct ProtocolHealth {
     boot_id: Option<u64>,
     next_sequence: u32,
     counters: DecodeCounters,
+    #[serde(skip)]
+    decoder_baseline: DecodeCounters,
     failure: Option<String>,
 }
 
 impl ProtocolHealth {
-    fn observe(&mut self, message: &Envelope<Event>) {
+    fn observe(&mut self, message: &Envelope<Event>, decoder_counters: DecodeCounters) {
         match self.boot_id {
             None => {
-                self.active = true;
-                self.boot_id = Some(message.boot_id);
-                self.next_sequence = message.message_sequence.wrapping_add(1);
-                if message.message_sequence != 0 {
-                    self.fail(format!(
-                        "boot {} began at target message sequence {}, expected 0",
-                        message.boot_id, message.message_sequence
-                    ));
-                }
+                self.begin_boot(message, decoder_counters);
             }
             Some(boot_id) if boot_id != message.boot_id => {
-                self.boot_id = Some(message.boot_id);
-                self.next_sequence = message.message_sequence.wrapping_add(1);
-                if message.message_sequence != 0 {
-                    self.fail(format!(
-                        "new boot {} began at target message sequence {}, expected 0",
-                        message.boot_id, message.message_sequence
-                    ));
-                }
+                self.begin_boot(message, decoder_counters);
             }
             Some(_) if message.message_sequence != self.next_sequence => {
                 let expected = self.next_sequence;
@@ -86,6 +74,25 @@ impl ProtocolHealth {
             }
             Some(_) => self.next_sequence = self.next_sequence.wrapping_add(1),
         }
+    }
+
+    fn begin_boot(&mut self, message: &Envelope<Event>, decoder_counters: DecodeCounters) {
+        self.active = true;
+        self.boot_id = Some(message.boot_id);
+        self.next_sequence = message.message_sequence.wrapping_add(1);
+        self.decoder_baseline = decoder_counters;
+        self.counters = DecodeCounters::default();
+        self.failure = None;
+        if message.message_sequence != 0 || !matches!(message.body, Event::Hello(_)) {
+            self.fail(format!(
+                "boot {} began with {:?} at target message sequence {}, expected Hello at 0",
+                message.boot_id, message.body, message.message_sequence
+            ));
+        }
+    }
+
+    fn update_decoder_counters(&mut self, totals: DecodeCounters) {
+        self.counters = decode_counter_delta(totals, self.decoder_baseline);
     }
 
     fn decode_error(&mut self, error: impl std::fmt::Display) {
@@ -100,6 +107,34 @@ impl ProtocolHealth {
         if self.failure.is_none() {
             self.failure = Some(failure);
         }
+    }
+}
+
+fn decode_counter_delta(totals: DecodeCounters, baseline: DecodeCounters) -> DecodeCounters {
+    DecodeCounters {
+        frames: totals.frames.saturating_sub(baseline.frames),
+        cobs_errors: totals.cobs_errors.saturating_sub(baseline.cobs_errors),
+        too_short: totals.too_short.saturating_sub(baseline.too_short),
+        header_errors: totals.header_errors.saturating_sub(baseline.header_errors),
+        framing_version_errors: totals
+            .framing_version_errors
+            .saturating_sub(baseline.framing_version_errors),
+        message_kind_errors: totals
+            .message_kind_errors
+            .saturating_sub(baseline.message_kind_errors),
+        protocol_version_errors: totals
+            .protocol_version_errors
+            .saturating_sub(baseline.protocol_version_errors),
+        payload_length_errors: totals
+            .payload_length_errors
+            .saturating_sub(baseline.payload_length_errors),
+        checksum_errors: totals
+            .checksum_errors
+            .saturating_sub(baseline.checksum_errors),
+        deserialize_errors: totals
+            .deserialize_errors
+            .saturating_sub(baseline.deserialize_errors),
+        overflows: totals.overflows.saturating_sub(baseline.overflows),
     }
 }
 
@@ -311,8 +346,10 @@ impl SessionEvidence {
             .saturating_add(tx.empty_block_ack);
         if tx.block_ack_samples != tx.aggregate_publications
             || classified != tx.block_ack_samples
-            || tx.block_ack_received != tx.full_block_ack.saturating_add(tx.partial_block_ack)
-            || tx.empty_block_ack != tx.block_ack_samples.saturating_sub(tx.block_ack_received)
+            // Receipt and bitmap coverage are independent axes. A received
+            // BlockAck may contain an empty bitmap; a missing BlockAck is also
+            // classified as empty because it acknowledges no subframes.
+            || tx.block_ack_received > tx.block_ack_samples
             || tx.success_without_block_ack != 0
             || tx.nonzero_block_ack_control != 0
         {
@@ -460,13 +497,14 @@ impl SerialCapture {
                 match serial.read(&mut buffer) {
                     Ok(length) => {
                         append(&worker_bytes, &buffer[..length]);
+                        let decoder_counters_before_read = decoder.counters();
                         decoder.feed::<Event>(&buffer[..length], |message| match message {
                             Ok(message) => {
                                 worker_protocol
                                     .health
                                     .lock()
                                     .unwrap_or_else(std::sync::PoisonError::into_inner)
-                                    .observe(&message);
+                                    .observe(&message, decoder_counters_before_read);
                                 let mut messages = worker_protocol
                                     .messages
                                     .lock()
@@ -497,7 +535,7 @@ impl SerialCapture {
                             .health
                             .lock()
                             .unwrap_or_else(std::sync::PoisonError::into_inner)
-                            .counters = decoder.counters();
+                            .update_decoder_counters(decoder.counters());
                     }
                     Err(error) if error.kind() == std::io::ErrorKind::TimedOut => {}
                     Err(error) => {
@@ -1004,6 +1042,32 @@ impl SerialCapture {
         }
     }
 
+    pub(crate) fn query_link_health(&self, timeout: Duration) -> Result<LinkHealth> {
+        let response = self.send_command(0, Command::QueryLinkHealth, timeout)?;
+        match response.body {
+            Event::LinkHealth(health) => Ok(health),
+            Event::Rejected(reason) => {
+                Err(format!("device rejected link-health query: {reason:?}").into())
+            }
+            _ => Err("device returned an invalid link-health response".into()),
+        }
+    }
+
+    pub(crate) fn probe_timebase(
+        &self,
+        request: TimebaseProbeRequest,
+        timeout: Duration,
+    ) -> Result<TimebaseProbeEvidence> {
+        let response = self.send_command(0, Command::ProbeTimebase(request), timeout)?;
+        match response.body {
+            Event::TimebaseProbeCompleted(evidence) => Ok(evidence),
+            Event::Rejected(reason) => {
+                Err(format!("device rejected timebase probe: {reason:?}").into())
+            }
+            _ => Err("device returned an invalid timebase-probe response".into()),
+        }
+    }
+
     pub(crate) fn request_station_start(&self, lab: &LabConfig) -> Result<WifiCommandHandle> {
         self.request_wifi_command(
             Command::StartStation(lab.station.protocol_credentials()?),
@@ -1236,6 +1300,9 @@ impl SerialCapture {
         cursor: &mut usize,
         timeout: Duration,
     ) -> Result<Option<StationLifecycleEvent>> {
+        let boot_id = self
+            .latest_boot_id()
+            .ok_or("device did not publish a current HIL boot identity")?;
         let deadline = Instant::now() + timeout;
         let mut messages = self
             .protocol
@@ -1243,17 +1310,7 @@ impl SerialCapture {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         loop {
-            if let Some((relative, event)) = messages
-                .get(*cursor..)
-                .unwrap_or_default()
-                .iter()
-                .enumerate()
-                .find_map(|(relative, message)| match &message.body {
-                    Event::StationLifecycle(event) => Some((relative, *event)),
-                    _ => None,
-                })
-            {
-                *cursor += relative + 1;
+            if let Some(event) = next_station_lifecycle_event(&messages, cursor, boot_id) {
                 return Ok(Some(event));
             }
             *cursor = messages.len();
@@ -1410,6 +1467,18 @@ impl SerialCapture {
     /// and the decoded target event stream. Host commands are deliberately not
     /// logged because station/AP commands can contain credentials.
     pub(crate) fn finish_to(mut self, output: &Path) -> Result<String> {
+        let protocol_active = self
+            .protocol
+            .health
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .active;
+        let target_health = protocol_active
+            .then(|| {
+                self.query_link_health(PROTOCOL_READY_TIMEOUT)
+                    .map_err(|error| error.to_string())
+            })
+            .transpose();
         self.stop_and_join();
         let bytes = self
             .bytes
@@ -1440,10 +1509,37 @@ impl SerialCapture {
         }
         serde_json::to_writer(
             &mut protocol_log,
-            &serde_json::json!({"record": "link-health", "health": health}),
+            &serde_json::json!({"record": "link-health", "health": &health}),
+        )?;
+        protocol_log.push(b'\n');
+        serde_json::to_writer(
+            &mut protocol_log,
+            &serde_json::json!({"record": "target-link-health", "health": &target_health}),
         )?;
         protocol_log.push(b'\n');
         fs::write(output.join("protocol.jsonl"), protocol_log)?;
+        if !decode_counters_are_clean(health.counters) {
+            return Err(format!(
+                "host reported unhealthy HIL frame decoding: {:?}",
+                health.counters
+            )
+            .into());
+        }
+        if let Some(failure) = health.failure {
+            return Err(format!("HIL protocol health failed: {failure}").into());
+        }
+        if protocol_active {
+            let target_health = target_health
+                .map_err(|error| format!("target link-health query failed: {error}"))?
+                .ok_or("target link-health query returned no result")?;
+            validate_target_link_health(target_health)?;
+            if target_health.text_dropped != 0 || target_health.text_truncated != 0 {
+                eprintln!(
+                    "diagnostic_text_loss=dropped:{} truncated:{}",
+                    target_health.text_dropped, target_health.text_truncated,
+                );
+            }
+        }
         Ok(uart)
     }
 
@@ -1453,6 +1549,56 @@ impl SerialCapture {
             let _ = worker.join();
         }
     }
+}
+
+fn next_station_lifecycle_event(
+    messages: &[Envelope<Event>],
+    cursor: &mut usize,
+    boot_id: u64,
+) -> Option<StationLifecycleEvent> {
+    let (relative, event) = messages
+        .get(*cursor..)
+        .unwrap_or_default()
+        .iter()
+        .enumerate()
+        .find_map(|(relative, message)| {
+            if message.boot_id != boot_id {
+                return None;
+            }
+            match &message.body {
+                Event::StationLifecycle(event) => Some((relative, *event)),
+                _ => None,
+            }
+        })?;
+    *cursor += relative + 1;
+    Some(event)
+}
+
+fn decode_counters_are_clean(counters: DecodeCounters) -> bool {
+    counters.cobs_errors == 0
+        && counters.too_short == 0
+        && counters.header_errors == 0
+        && counters.framing_version_errors == 0
+        && counters.message_kind_errors == 0
+        && counters.protocol_version_errors == 0
+        && counters.payload_length_errors == 0
+        && counters.checksum_errors == 0
+        && counters.deserialize_errors == 0
+        && counters.overflows == 0
+}
+
+fn validate_target_link_health(health: LinkHealth) -> Result<()> {
+    if health.rx_cobs_errors != 0
+        || health.rx_checksum_errors != 0
+        || health.rx_decode_errors != 0
+        || health.rx_overflows != 0
+        || health.tx_dropped != 0
+    {
+        return Err(
+            format!("target reported unhealthy serialized console transport: {health:?}").into(),
+        );
+    }
+    Ok(())
 }
 
 fn open_serial_after_busy_release(
@@ -1696,11 +1842,46 @@ pub(crate) fn await_udp_tx_ready(
 #[cfg(test)]
 mod tests {
     use open_esp_radio_hil_protocol::{
-        Direction, Envelope, Event, Finished, RadioEvidence, ResultSummary, RxRadioEvidence,
-        SessionLinkRequirements, SessionReady, StackUsage, StackWatermark, TransportEvidence,
+        Capabilities, DecodeCounters, Direction, Envelope, Event, FeatureCapabilities, Finished,
+        RadioEvidence, ResultSummary, RxRadioEvidence, SessionLinkRequirements, SessionReady,
+        StackUsage, StackWatermark, StationLifecycleEvent, TransportEvidence,
     };
 
-    use super::{ProtocolHealth, SessionEvidence, session_ready_covers, validate_stack_usage};
+    use super::{
+        ProtocolHealth, SessionEvidence, next_station_lifecycle_event, session_ready_covers,
+        validate_stack_usage,
+    };
+
+    fn hello(boot_id: u64, message_sequence: u32) -> Envelope<Event> {
+        Envelope::new(
+            boot_id,
+            message_sequence,
+            0,
+            0,
+            Event::Hello(Capabilities {
+                features: FeatureCapabilities {
+                    udp: true,
+                    tcp: true,
+                    rx: true,
+                    tx: true,
+                    bidirectional: true,
+                    runtime_initialization: true,
+                    runtime_configuration: true,
+                    structured_evidence: true,
+                    startup_artifact: true,
+                    station_epoch_control: true,
+                    wifi_role_control: true,
+                    wifi_access_point: true,
+                    wifi_monitor_capture: true,
+                    station_lifecycle_events: true,
+                    rx_delivery_evidence: true,
+                    timebase_probe: true,
+                },
+                maximum_payload_bytes: 1,
+                maximum_wire_frame_bytes: 1,
+            }),
+        )
+    }
 
     fn session_with_rx(rx: RxRadioEvidence) -> SessionEvidence {
         SessionEvidence {
@@ -1864,8 +2045,11 @@ mod tests {
     #[test]
     fn target_sequence_discontinuity_is_a_fatal_protocol_error() {
         let mut health = ProtocolHealth::default();
-        health.observe(&Envelope::new(7, 0, 0, 0, Event::Accepted));
-        health.observe(&Envelope::new(7, 2, 0, 0, Event::Accepted));
+        health.observe(&hello(7, 0), DecodeCounters::default());
+        health.observe(
+            &Envelope::new(7, 2, 0, 0, Event::Accepted),
+            DecodeCounters::default(),
+        );
         assert!(
             health
                 .failure
@@ -1877,13 +2061,61 @@ mod tests {
     #[test]
     fn a_new_boot_must_restart_its_target_sequence() {
         let mut health = ProtocolHealth::default();
-        health.observe(&Envelope::new(7, 0, 0, 0, Event::Accepted));
-        health.observe(&Envelope::new(8, 3, 0, 0, Event::Accepted));
+        health.observe(&hello(7, 0), DecodeCounters::default());
+        health.observe(
+            &Envelope::new(8, 3, 0, 0, Event::Accepted),
+            DecodeCounters::default(),
+        );
         assert!(
             health
                 .failure
                 .as_deref()
-                .is_some_and(|failure| { failure.contains("new boot 8") })
+                .is_some_and(|failure| { failure.contains("boot 8") })
         );
+    }
+
+    #[test]
+    fn a_valid_new_boot_clears_previous_boot_failure() {
+        let mut health = ProtocolHealth::default();
+        health.observe(&hello(7, 0), DecodeCounters::default());
+        health.observe(
+            &Envelope::new(7, 2, 0, 0, Event::Accepted),
+            DecodeCounters::default(),
+        );
+        assert!(health.failure.is_some());
+        health.observe(&hello(8, 0), DecodeCounters::default());
+        assert_eq!(health.boot_id, Some(8));
+        assert_eq!(health.failure, None);
+    }
+
+    #[test]
+    fn lifecycle_cursor_ignores_events_from_the_previous_boot() {
+        let messages = [
+            Envelope::new(
+                7,
+                1,
+                0,
+                0,
+                Event::StationLifecycle(StationLifecycleEvent::RetryExhausted {
+                    generation: 1,
+                    attempts: 3,
+                    stage: open_esp_radio_hil_protocol::StationFailureStage::CandidateSelection,
+                    reason: open_esp_radio_hil_protocol::StationAttemptFailureReason::NoCandidate,
+                }),
+            ),
+            Envelope::new(
+                8,
+                1,
+                0,
+                0,
+                Event::StationLifecycle(StationLifecycleEvent::Connected { generation: 0 }),
+            ),
+        ];
+        let mut cursor = 0;
+        assert_eq!(
+            next_station_lifecycle_event(&messages, &mut cursor, 8),
+            Some(StationLifecycleEvent::Connected { generation: 0 })
+        );
+        assert_eq!(cursor, 2);
     }
 }

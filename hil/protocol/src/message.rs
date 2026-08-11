@@ -3,7 +3,7 @@ use core::fmt;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-pub const PROTOCOL_VERSION: u16 = 34;
+pub const PROTOCOL_VERSION: u16 = 35;
 // Keep command envelopes small: startup artifacts are transferred as an
 // ordered CRC-protected stream, so a large per-command inline buffer only
 // inflates UART queues and executor futures without improving semantics.
@@ -166,6 +166,37 @@ pub struct FeatureCapabilities {
     /// UDP RX sessions can return typed evidence for every delivery frontier
     /// from post-reorder publication through the application socket.
     pub rx_delivery_evidence: bool,
+    /// This image can compare Embassy alarm deadlines with the target's
+    /// monotonic clock before radio initialization.
+    pub timebase_probe: bool,
+}
+
+/// Bounded alarm/clock agreement probe. It is intentionally independent of
+/// Wi-Fi initialization so a broken platform timer cannot qualify radio code.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct TimebaseProbeRequest {
+    pub intervals: u16,
+    pub period_micros: u32,
+}
+
+impl TimebaseProbeRequest {
+    pub const fn validate(self) -> bool {
+        self.intervals >= 2
+            && self.intervals <= 100
+            && self.period_micros >= 1_000
+            && self.period_micros <= 1_000_000
+    }
+}
+
+/// Target-side timing evidence for one timebase probe.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct TimebaseProbeEvidence {
+    pub intervals: u16,
+    pub period_micros: u32,
+    pub elapsed_micros: u64,
+    pub minimum_interval_micros: u32,
+    pub maximum_interval_micros: u32,
+    pub early_intervals: u16,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -412,6 +443,11 @@ pub enum Command {
     /// Return the boot-lifetime CPU stack high-water marks. This diagnostic
     /// query is valid only outside an active traffic session.
     QueryStackUsage,
+    /// Return boot-lifetime transport and serialized-text health counters.
+    QueryLinkHealth,
+    /// Compare alarm deadlines with the monotonic clock before initializing
+    /// the radio/network runtime.
+    ProbeTimebase(TimebaseProbeRequest),
     UploadStartupArtifact(StartupArtifactChunk),
     /// Initialize calibration and the network stack without materializing a
     /// Wi-Fi role. This command is accepted exactly once per boot.
@@ -725,6 +761,7 @@ pub struct WifiRoleTransitionEvidence {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct WifiScanEvidence {
     pub generation: u32,
+    pub elapsed_micros: u64,
     pub observed_frames: u32,
     pub unique_bss: u8,
     pub dropped_unique_bss: u32,
@@ -737,6 +774,7 @@ pub struct WifiScanEvidence {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct WifiMonitorEvidence {
     pub generation: u32,
+    pub elapsed_micros: u64,
     pub channel: u8,
     pub captured_frames: u32,
     pub captured_bytes: u64,
@@ -1017,9 +1055,15 @@ pub struct TxRadioEvidence {
     pub publication_micros: u32,
     pub exchange_micros: u32,
     pub block_ack_samples: u32,
+    /// Publications for which hardware reported a physically received
+    /// BlockAck frame. This is independent of bitmap coverage: a received
+    /// BlockAck may acknowledge zero subframes.
     pub block_ack_received: u32,
     pub success_without_block_ack: u32,
     pub nonzero_block_ack_control: u32,
+    /// BlockAck-processing samples classified by acknowledged bitmap
+    /// coverage. `full + partial + empty == block_ack_samples`; `empty` also
+    /// includes publications for which no BlockAck frame was received.
     pub full_block_ack: u32,
     pub partial_block_ack: u32,
     pub empty_block_ack: u32,
@@ -1157,6 +1201,10 @@ pub enum Event {
     Initialized,
     /// Correlated response to [`Command::QueryStackUsage`].
     StackUsage(StackUsage),
+    /// Correlated response to [`Command::QueryLinkHealth`].
+    LinkHealth(LinkHealth),
+    /// Correlated response to [`Command::ProbeTimebase`].
+    TimebaseProbeCompleted(TimebaseProbeEvidence),
     Accepted,
     Rejected(RejectReason),
     State(StateChange),

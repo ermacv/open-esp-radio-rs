@@ -1,0 +1,15 @@
+schema = 2
+id = "wifi-monitor-lifecycle"
+description = "Station to monitor ownership transition and station restoration"
+image = "qualification"
+isolation = "reset"
+tags = ["qualification", "wifi", "monitor", "lifecycle"]
+
+[workload]
+kind = "wifi-role"
+operation = "monitor"
+timeout_seconds = 90
+dwell_seconds = 3
+snapshot_length = 256
+
+[criteria]

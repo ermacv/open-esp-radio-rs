@@ -1351,7 +1351,7 @@ pub async fn run_connected<'state, 'security>(
         report.aggregate_tx_rate.nominal_kbps(),
     );
     #[cfg(feature = "qualification")]
-    qualification_event!(
+    qualification_debug!(
         "open-radio: connected RX policy: {:?}",
         radio_runner
             .services()
@@ -1359,7 +1359,7 @@ pub async fn run_connected<'state, 'security>(
             .sta_receive_policy_snapshot(),
     );
     #[cfg(feature = "qualification")]
-    qualification_event!(
+    qualification_debug!(
         "open-radio: connected RX statistics: {:?}",
         radio_runner
             .services()
@@ -1369,7 +1369,7 @@ pub async fn run_connected<'state, 'security>(
             .rx_statistics_snapshot(),
     );
     #[cfg(feature = "qualification")]
-    qualification_event!(
+    qualification_debug!(
         "open-radio: connected RX DMA: {:?}",
         radio_runner.services().hardware().mac_rx_dma_snapshot(),
     );
@@ -1401,11 +1401,11 @@ pub async fn run_connected<'state, 'security>(
             {
                 let control = runner.services().control();
                 let beacon = control.beacon_monitor();
-                qualification_event!(
+                qualification_debug!(
                     "open-radio: connected exit RX policy: {:?}",
                     runner.services().hardware().sta_receive_policy_snapshot(),
                 );
-                qualification_event!(
+                qualification_debug!(
                     "open-radio: connected exit RX statistics: {:?}",
                     runner
                         .services()
@@ -1414,12 +1414,12 @@ pub async fn run_connected<'state, 'security>(
                         .borrow()
                         .rx_statistics_snapshot(),
                 );
-                qualification_event!(
+                qualification_debug!(
                     "open-radio: connected exit RX DMA: {:?}",
                     runner.services().hardware().mac_rx_dma_snapshot(),
                 );
                 log_rx_ring_topology("exit", runner.services().rx());
-                qualification_event!(
+                qualification_debug!(
                     "open-radio: connected exit evidence beacon_lost={} beacons={} deadline={:?} last_event={:?} stale_addba_responses={} last_stale_addba_token={:?} dropped_events={} security={:?}",
                     control.beacon_lost(),
                     beacon.map_or(0, |monitor| monitor.observed()),

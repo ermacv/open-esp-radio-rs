@@ -13,6 +13,7 @@ use embassy_futures::{
     yield_now,
 };
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::Channel};
+use embassy_time::{Instant, Timer};
 use embedded_io_async::{Read as _, Write as _};
 use esp_hal::{
     Async,
@@ -25,10 +26,11 @@ use open_esp_radio_hil_protocol::{
     PROTOCOL_VERSION, RejectReason, ResultSummary, RxDeliveryEvidence,
     STARTUP_ARTIFACT_CHUNK_MAX_LEN, SessionConfig, SessionState, StartupArtifactChunk,
     StartupArtifactDisposition, StartupArtifactStatus, StateChange, StationEpochEvidence,
-    StationLifecycleEvent, Transport, TransportEvidence, WifiAccessPointEvidence,
-    WifiAccessPointRequest, WifiMonitorCaptureRequest, WifiMonitorEvidence, WifiMonitorFrameChunk,
-    WifiMonitorRequest, WifiRole, WifiRoleFailureEvidence, WifiRoleTransitionEvidence,
-    WifiScanEvidence, WifiScanRequest, evidence_crc32c, startup_artifact_crc32c,
+    StationLifecycleEvent, TimebaseProbeEvidence, TimebaseProbeRequest, Transport,
+    TransportEvidence, WifiAccessPointEvidence, WifiAccessPointRequest, WifiMonitorCaptureRequest,
+    WifiMonitorEvidence, WifiMonitorFrameChunk, WifiMonitorRequest, WifiRole,
+    WifiRoleFailureEvidence, WifiRoleTransitionEvidence, WifiScanEvidence, WifiScanRequest,
+    evidence_crc32c, startup_artifact_crc32c,
 };
 
 const MESSAGE_CAPACITY: usize = 384;
@@ -586,6 +588,29 @@ pub async fn protocol_task(capabilities: Capabilities) {
                             } else {
                                 Event::Rejected(RejectReason::InvalidState)
                             };
+                        publish_event_reliably(session_id, request_id, response).await;
+                    }
+                    Command::QueryLinkHealth => {
+                        let response = if session_id == 0 {
+                            Event::LinkHealth(link_health_snapshot())
+                        } else {
+                            Event::Rejected(RejectReason::InvalidState)
+                        };
+                        publish_event_reliably(session_id, request_id, response).await;
+                    }
+                    Command::ProbeTimebase(request) => {
+                        let response = if !capabilities.features.timebase_probe {
+                            Event::Rejected(RejectReason::Unsupported)
+                        } else if initialized
+                            || state != SessionState::WaitingForInitialization
+                            || session_id != 0
+                        {
+                            Event::Rejected(RejectReason::InvalidState)
+                        } else if !request.validate() {
+                            Event::Rejected(RejectReason::InvalidConfiguration)
+                        } else {
+                            Event::TimebaseProbeCompleted(run_timebase_probe(request).await)
+                        };
                         publish_event_reliably(session_id, request_id, response).await;
                     }
                     Command::UploadStartupArtifact(chunk) => {
@@ -1156,6 +1181,35 @@ fn link_health_snapshot() -> LinkHealth {
     }
 }
 
+async fn run_timebase_probe(request: TimebaseProbeRequest) -> TimebaseProbeEvidence {
+    let started = Instant::now();
+    let mut previous = started;
+    let mut minimum_interval_micros = u32::MAX;
+    let mut maximum_interval_micros = 0_u32;
+    let mut early_intervals = 0_u16;
+    for _ in 0..request.intervals {
+        Timer::after_micros(u64::from(request.period_micros)).await;
+        let now = Instant::now();
+        let measured = now
+            .duration_since(previous)
+            .as_micros()
+            .min(u64::from(u32::MAX)) as u32;
+        minimum_interval_micros = minimum_interval_micros.min(measured);
+        maximum_interval_micros = maximum_interval_micros.max(measured);
+        early_intervals =
+            early_intervals.saturating_add(u16::from(measured < request.period_micros));
+        previous = now;
+    }
+    TimebaseProbeEvidence {
+        intervals: request.intervals,
+        period_micros: request.period_micros,
+        elapsed_micros: Instant::now().duration_since(started).as_micros(),
+        minimum_interval_micros,
+        maximum_interval_micros,
+        early_intervals,
+    }
+}
+
 /// Runs the runtime transport worker.
 ///
 /// Spawn this task once the Embassy executor starts. Before it starts, records
@@ -1409,7 +1463,7 @@ impl ::log::Log for ConsoleLogger {
 pub fn init_logger() {
     static LOGGER: ConsoleLogger = ConsoleLogger;
     if ::log::set_logger(&LOGGER).is_ok() {
-        ::log::set_max_level(::log::STATIC_MAX_LEVEL);
+        ::log::set_max_level(::log::LevelFilter::Info);
     }
 }
 

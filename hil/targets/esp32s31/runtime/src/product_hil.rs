@@ -61,9 +61,9 @@ use crate::console::{
     WifiControlRequest, complete_access_point_start, complete_access_point_stop,
     complete_initialization, complete_monitor_capture, complete_monitor_start,
     complete_monitor_stop, complete_station_epoch_cycle, complete_wifi_role_failure,
-    complete_wifi_role_transition, complete_wifi_scan, publish_event_reliably, runtime_log,
+    complete_wifi_role_transition, complete_wifi_scan, publish_event_reliably,
     publish_monitor_frame, publish_startup_artifact, publish_station_lifecycle,
-    receive_wifi_control_request, set_wifi_role,
+    receive_wifi_control_request, runtime_log, set_wifi_role,
 };
 
 mod rx_qualification;
@@ -445,6 +445,7 @@ async fn run_finite_monitor_capture(
         .await
         .unwrap_or_else(|error| panic!("production finite monitor start failed: {error:?}"));
     let generation = owner.generation().value();
+    let capture_started = Instant::now();
     set_wifi_role(WifiRole::Monitor);
     complete_monitor_start(
         request_id,
@@ -490,6 +491,7 @@ async fn run_finite_monitor_capture(
             }
         }
     }
+    let elapsed_micros = capture_started.elapsed().as_micros();
     let idle = owner
         .stop()
         .await
@@ -500,6 +502,7 @@ async fn run_finite_monitor_capture(
         request_id,
         WifiMonitorEvidence {
             generation,
+            elapsed_micros,
             channel: request.channel,
             captured_frames,
             captured_bytes,
@@ -552,6 +555,7 @@ pub const fn hil_capabilities() -> Capabilities {
             wifi_monitor_capture: true,
             station_lifecycle_events: true,
             rx_delivery_evidence: OPEN_RADIO_RX_DELIVERY_TELEMETRY,
+            timebase_probe: true,
         },
         maximum_payload_bytes: OPEN_RADIO_TCP_CHUNK_CAPACITY as u16,
         maximum_wire_frame_bytes: MAX_WIRE_FRAME_BYTES as u16,
@@ -884,6 +888,7 @@ async fn wifi_role_task(
         Monitor {
             owner: open_esp_radio::WifiMonitor<P>,
             channel: u8,
+            started_at_micros: u64,
             captured_frames: u32,
             captured_bytes: u64,
             generation_mismatches: u32,
@@ -1115,6 +1120,7 @@ async fn wifi_role_task(
                     let scan_channels =
                         StationScanChannels::from_primary_channels(&channels[..channel_count])
                             .expect("console validates the scan channel mask");
+                    let started_at = Instant::now();
                     let completed = idle
                         .scan(DriverWifiScanRequest::new(
                             scan_channels,
@@ -1134,6 +1140,7 @@ async fn wifi_role_task(
                     });
                     let evidence = WifiScanEvidence {
                         generation: report.generation().value(),
+                        elapsed_micros: started_at.elapsed().as_micros(),
                         observed_frames: report.observed_frames,
                         unique_bss: report.results().len() as u8,
                         dropped_unique_bss: report.dropped_unique_bss,
@@ -1179,6 +1186,7 @@ async fn wifi_role_task(
                     ProductWifiRole::Monitor {
                         owner: monitor,
                         channel: request.channel,
+                        started_at_micros: Instant::now().as_micros(),
                         captured_frames: 0,
                         captured_bytes: 0,
                         generation_mismatches: 0,
@@ -1198,6 +1206,7 @@ async fn wifi_role_task(
             ProductWifiRole::Monitor {
                 owner,
                 channel,
+                started_at_micros,
                 mut captured_frames,
                 mut captured_bytes,
                 mut generation_mismatches,
@@ -1246,6 +1255,9 @@ async fn wifi_role_task(
                     request_id,
                     WifiMonitorEvidence {
                         generation,
+                        elapsed_micros: Instant::now()
+                            .as_micros()
+                            .saturating_sub(started_at_micros),
                         channel,
                         captured_frames,
                         captured_bytes,

@@ -142,7 +142,7 @@ fn qualify(serial: &SerialCapture, lab: &LabConfig, options: &Options) -> Result
         stack.cpu1.capacity_bytes,
         stack.minimum_free_percent,
     );
-    validate_summary(&capture, channel)?;
+    validate_summary(&capture, channel, options.duration)?;
     let assembly = assembly::assemble(capture.chunks.clone())?;
     Ok(CaptureResult {
         capture,
@@ -151,7 +151,11 @@ fn qualify(serial: &SerialCapture, lab: &LabConfig, options: &Options) -> Result
     })
 }
 
-fn validate_summary(capture: &MonitorCaptureEvidence, channel: u8) -> Result<()> {
+fn validate_summary(
+    capture: &MonitorCaptureEvidence,
+    channel: u8,
+    requested_duration: Duration,
+) -> Result<()> {
     let summary = capture.summary;
     if summary.channel != channel
         || summary.generation_mismatches != 0
@@ -161,6 +165,16 @@ fn validate_summary(capture: &MonitorCaptureEvidence, channel: u8) -> Result<()>
     }
     if summary.exported_frames == 0 || summary.captured_bytes == 0 {
         return Err("finite monitor capture exported no frames".into());
+    }
+    let requested_micros = requested_duration.as_micros().min(u128::from(u64::MAX)) as u64;
+    let minimum = requested_micros * 95 / 100;
+    let maximum = requested_micros * 110 / 100;
+    if summary.elapsed_micros < minimum || summary.elapsed_micros > maximum {
+        return Err(format!(
+            "finite monitor timing is outside the qualified range: requested_us={requested_micros} observed_us={} range={minimum}..={maximum}",
+            summary.elapsed_micros,
+        )
+        .into());
     }
     if summary.exported_frames != summary.captured_frames {
         return Err(format!(

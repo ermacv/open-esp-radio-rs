@@ -31,6 +31,7 @@ mod station_ap_absence;
 mod station_ap_loss;
 mod station_lifecycle;
 mod tcp_traffic;
+mod timebase;
 mod traffic_capture;
 mod tx_traffic;
 mod udp_socket;
@@ -389,8 +390,34 @@ fn execute_workload(
 ) -> Result<()> {
     use scenario::{Direction, Workload};
 
+    // Ordinary station workloads own their AP fixture for the complete run.
+    // Loss/absence and Wi-Fi-role workloads manage that lifetime internally;
+    // target-AP and timebase workloads must not materialize a station AP.
+    let _station_ap = matches!(
+        &selected.workload,
+        Workload::Udp { .. }
+            | Workload::Tcp { .. }
+            | Workload::Icmp { .. }
+            | Workload::StationReconnect { .. }
+    )
+    .then(|| controlled_ap::ControlledAp::start(&lab.station, &lab.openwrt))
+    .transpose()?;
+
     match &selected.workload {
         Workload::BootSmoke => boot_smoke(output, lab),
+        Workload::Timebase {
+            boots,
+            intervals,
+            period_millis,
+        } => timebase::run(
+            timebase::Config {
+                boots: *boots,
+                intervals: *intervals,
+                period_millis: *period_millis,
+            },
+            output,
+            lab,
+        ),
         Workload::Udp {
             direction,
             duration_seconds,
@@ -653,6 +680,7 @@ fn build_resolved(
     local_esp_hal: Option<&Path>,
 ) -> Result<Artifacts> {
     ensure_no_old_application_dependency(root)?;
+    ensure_no_competing_log_writers(root)?;
     let manifest = root.join("hil/targets/esp32s31/Cargo.toml");
     let output =
         root.join("target/hil/esp32s31")
@@ -766,6 +794,7 @@ fn build_resolved(
     eprintln!("placement_audit=PASS");
     eprintln!("stack_frame_audit=PASS");
     eprintln!("autonomous_source_graph=PASS");
+    eprintln!("serialized_log_writer_audit=PASS");
     Ok(Artifacts {
         output,
         runtime_elf,
@@ -1041,6 +1070,67 @@ fn ensure_vendor_oracle_isolated(root: &Path) -> Result<()> {
     )
 }
 
+fn ensure_no_competing_log_writers(root: &Path) -> Result<()> {
+    let scopes = [
+        root.join("driver"),
+        root.join("hil/targets/esp32s31/runtime/src"),
+        root.join("hil/targets/esp32s31/bootstrap/src"),
+    ];
+    let mut sources = Vec::new();
+    for scope in scopes {
+        collect_rust_sources(&scope, &mut sources)?;
+    }
+    for source in sources {
+        let relative = source.strip_prefix(root).unwrap_or(&source);
+        let text = fs::read_to_string(&source)?;
+        for (line_index, line) in text.lines().enumerate() {
+            let code = line.trim_start();
+            if code.starts_with("//") {
+                continue;
+            }
+            for token in [
+                "esp_println",
+                "ets_printf",
+                "emergency_log",
+                "UsbSerialJtag",
+            ] {
+                if code.contains(token) && !log_writer_token_allowed(relative, token) {
+                    return Err(format!(
+                        "{}:{} uses competing log writer token `{token}`",
+                        relative.display(),
+                        line_index + 1,
+                    )
+                    .into());
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn collect_rust_sources(directory: &Path, output: &mut Vec<PathBuf>) -> Result<()> {
+    for entry in fs::read_dir(directory)? {
+        let path = entry?.path();
+        if path.is_dir() {
+            collect_rust_sources(&path, output)?;
+        } else if path.extension().is_some_and(|extension| extension == "rs") {
+            output.push(path);
+        }
+    }
+    Ok(())
+}
+
+fn log_writer_token_allowed(path: &Path, token: &str) -> bool {
+    match path.to_string_lossy().as_ref() {
+        "hil/targets/esp32s31/runtime/src/console.rs" => token != "esp_println",
+        "hil/targets/esp32s31/runtime/src/main.rs" => {
+            matches!(token, "ets_printf" | "emergency_log")
+        }
+        "hil/targets/esp32s31/bootstrap/src/main.rs" => token == "ets_printf",
+        _ => false,
+    }
+}
+
 fn pack_runtime(path: &Path) -> Result<u32> {
     let mut bytes = fs::read(path)?;
     if bytes.len() < RUNTIME_HEADER_BYTES {
@@ -1194,6 +1284,7 @@ mod tests {
         let root = repository_root().unwrap();
         assert!(root.join("hil/targets/esp32s31/Cargo.toml").is_file());
         ensure_vendor_oracle_isolated(&root).unwrap();
+        ensure_no_competing_log_writers(&root).unwrap();
     }
 
     #[test]

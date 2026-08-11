@@ -13,8 +13,18 @@ macro_rules! qualification_event {
     ($($argument:tt)*) => { log::info!($($argument)*) };
 }
 
+#[cfg(feature = "qualification")]
+macro_rules! qualification_debug {
+    ($($argument:tt)*) => { log::debug!($($argument)*) };
+}
+
 #[cfg(not(feature = "qualification"))]
 macro_rules! qualification_event {
+    ($($argument:tt)*) => {{}};
+}
+
+#[cfg(not(feature = "qualification"))]
+macro_rules! qualification_debug {
     ($($argument:tt)*) => {{}};
 }
 

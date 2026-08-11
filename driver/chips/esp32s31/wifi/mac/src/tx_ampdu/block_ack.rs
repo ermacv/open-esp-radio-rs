@@ -58,7 +58,6 @@ pub const STA_TX_BLOCK_ACK_TIDS: [u8; 3] = [0, 7, 5];
 pub enum StaTxBlockAckSessionsError {
     UnsupportedTid(u8),
     MalformedResponse,
-    UnexpectedDialogToken(u8),
     Session { tid: u8, error: TxBlockAckError },
 }
 
@@ -66,6 +65,16 @@ pub enum StaTxBlockAckSessionsError {
 pub struct StaTxBlockAckResponse {
     pub tid: u8,
     pub response: TxBlockAckResponse,
+}
+
+/// Classification of a received ADDBA response against the currently owned
+/// negotiations.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StaTxBlockAckResponseDisposition {
+    Matched(StaTxBlockAckResponse),
+    /// The response belongs to an expired or otherwise unowned negotiation.
+    /// It must not mutate a newer live session or terminate the station link.
+    StaleDialogToken(u8),
 }
 
 /// Fixed, allocation-free owner for all TX BlockAck agreements created when
@@ -152,7 +161,7 @@ impl StaTxBlockAckSessions {
     pub fn on_response(
         &mut self,
         body: &[u8],
-    ) -> Result<StaTxBlockAckResponse, StaTxBlockAckSessionsError> {
+    ) -> Result<StaTxBlockAckResponseDisposition, StaTxBlockAckSessionsError> {
         let action =
             parse_block_ack_action(body).ok_or(StaTxBlockAckSessionsError::MalformedResponse)?;
         self.on_response_action(action)
@@ -168,7 +177,7 @@ impl StaTxBlockAckSessions {
     pub fn on_response_action(
         &mut self,
         action: BlockAckAction,
-    ) -> Result<StaTxBlockAckResponse, StaTxBlockAckSessionsError> {
+    ) -> Result<StaTxBlockAckResponseDisposition, StaTxBlockAckSessionsError> {
         let BlockAckAction::AddbaResponse {
             dialog_token: response_token,
             ..
@@ -176,19 +185,27 @@ impl StaTxBlockAckSessions {
         else {
             return Err(StaTxBlockAckSessionsError::MalformedResponse);
         };
-        let index = self
+        let Some(index) = self
             .sessions
             .iter()
             .position(|session| session.awaiting_dialog_token() == Some(response_token))
-            .ok_or(StaTxBlockAckSessionsError::UnexpectedDialogToken(
+        else {
+            // A response may cross the finite negotiation timeout in either
+            // direction. Like mac80211, classify a token which owns no live
+            // negotiation as stale. The response cannot be applied to a new
+            // session, but peer timing must not become a hardware failure.
+            return Ok(StaTxBlockAckResponseDisposition::StaleDialogToken(
                 response_token,
-            ))?;
+            ));
+        };
         let tid = STA_TX_BLOCK_ACK_TIDS[index];
         let response = self.sessions[index]
             .on_response_action(action)
             .map_err(|error| StaTxBlockAckSessionsError::Session { tid, error })?;
         self.alarms[index] = None;
-        Ok(StaTxBlockAckResponse { tid, response })
+        Ok(StaTxBlockAckResponseDisposition::Matched(
+            StaTxBlockAckResponse { tid, response },
+        ))
     }
 
     /// Consume at most one due alarm. Repeated calls drain simultaneous

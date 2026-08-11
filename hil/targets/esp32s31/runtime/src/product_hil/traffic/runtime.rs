@@ -59,6 +59,12 @@ static BIDIRECTIONAL_RESULTS: BidirectionalResultChannel = Channel::new();
 fn runtime_code_marker() {}
 
 async fn run_workload(stack: Stack<'static>, qualification: Esp32s31QualificationSnapshot) -> ! {
+    log::info!(
+        "OPEN_RADIO_HIL stage=traffic-workload-start tcp={} tx={} bidirectional={}",
+        OPEN_RADIO_TCP_BENCH,
+        OPEN_RADIO_TX_BENCH,
+        OPEN_RADIO_BIDIRECTIONAL_BENCH,
+    );
     if OPEN_RADIO_TCP_BENCH {
         run_open_radio_tcp_benchmark(
             stack,
@@ -164,6 +170,7 @@ async fn run_workload(stack: Stack<'static>, qualification: Esp32s31Qualificatio
         )
         .await
     } else {
+        log::info!("OPEN_RADIO_HIL stage=udp-rx-workload-enter");
         run_open_radio_udp_rx_benchmark(
             stack,
             UdpSocketBuffers::new(rx_metadata, rx_buffer, tx_metadata, tx_buffer),

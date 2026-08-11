@@ -1,5 +1,6 @@
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use open_esp_radio_embassy_net::RawMutex as NetworkRawMutex;
+use open_esp_radio_esp32s31_registers::{ConnectedStaWithoutPowerSavePrepared, MacInterruptSetup};
 use open_esp_radio_esp32s31_wifi_mac::crypto::{StaGroupCcmpSlot, StaPairwiseCcmpSlot};
 use open_esp_radio_esp32s31_wifi_mac::{init::MAC_COLD_RX_INTERRUPT_MASK, irq::MacInterruptRoute};
 use open_esp_radio_esp32s31_wifi_sta::{
@@ -139,9 +140,10 @@ pub struct Esp32s31ConnectedServiceParts<'security, R, E, N> {
 pub fn activate_esp32s31_connected_epoch<'runtime, R, M>(
     interrupt: &mut Esp32s31MacInterruptEpoch<'runtime, R, M>,
     platform: &R::Platform,
+    _prepared: ConnectedStaWithoutPowerSavePrepared,
 ) -> Result<(), Esp32s31MacInterruptEpochActivateError<R::Error>>
 where
-    R: MacInterruptRoute,
+    R: MacInterruptRoute<Setup = MacInterruptSetup>,
     M: RawMutex,
 {
     interrupt.activate(platform, MAC_COLD_RX_INTERRUPT_MASK)?;

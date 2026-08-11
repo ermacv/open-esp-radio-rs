@@ -7,6 +7,11 @@ license.workspace = true
 repository.workspace = true
 description = "Bounded, owned Ethernet frame boundary between open ESP radio tasks and embassy-net"
 
+[features]
+default = []
+# Exposes the exact pre-publication edge only to diagnostic compositions.
+rx-delivery-observation = []
+
 [dependencies]
 embassy-net-driver = "0.2"
 embassy-sync = "0.8.0"

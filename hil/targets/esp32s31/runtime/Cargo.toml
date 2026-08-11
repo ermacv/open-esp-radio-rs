@@ -20,7 +20,9 @@ open-radio-hil = [
     "dep:embassy-sync",
     "dep:embedded-io-async",
     "dep:log",
+    "dep:heapless",
     "dep:open-esp-radio",
+    "dep:open-esp-radio-embassy-net",
     "dep:open-esp-radio-esp32s31-embassy-wifi",
     "dep:open-esp-radio-esp32s31-wifi-esp-hal",
     "dep:open-esp-radio-hil-protocol",
@@ -32,10 +34,9 @@ open-radio-hil = [
 # residence. Keep it out of ordinary throughput qualification because the
 # per-poll timer reads and atomics are intentionally observable overhead.
 task-poll-telemetry = []
-# Diagnostic overlay correlating application UDP order with the public
-# 802.11 sequence/TID carried by each received MPDU. Ordinary throughput
-# images compile the observer branch out completely.
-rx-order-telemetry = []
+# Diagnostic overlay proving each UDP RX delivery frontier from software
+# reorder output through network admission and application consumption.
+rx-delivery-telemetry = []
 
 [dependencies]
 embassy-executor.workspace = true
@@ -46,7 +47,9 @@ embassy-time.workspace = true
 embedded-io-async = { workspace = true, optional = true }
 esp-hal = { workspace = true, features = ["esp32s31", "rt", "unstable"] }
 log = { workspace = true, optional = true }
+heapless = { workspace = true, optional = true }
 open-esp-radio = { workspace = true, optional = true }
+open-esp-radio-embassy-net = { workspace = true, optional = true }
 open-esp-radio-esp32s31-embassy-wifi = { workspace = true, optional = true }
 open-esp-radio-esp32s31-embassy-runtime.workspace = true
 open-esp-radio-esp32s31-wifi-esp-hal = { workspace = true, features = ["esp32s31"], optional = true }

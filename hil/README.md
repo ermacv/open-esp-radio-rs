@@ -25,8 +25,19 @@ explicit build/flash orchestration.
 Run the host interface through the workspace alias:
 
 ```console
+cp hil/local.example.toml hil/local.toml
+chmod 0600 hil/local.toml
 cargo hil doctor
 ```
+
+`hil/local.toml` is the only source for the serial device, station network,
+startup artifact and OpenWrt fixture. It is ignored by Git; there are no
+environment-variable, positional-IP or per-command serial fallbacks.
+
+The controlled OpenWrt AP and the HIL host share its laboratory LAN; reverse
+flows use the local IPv4 route selected for the discovered target. The
+upstream FRITZ!Box supplies Internet access and optional HE20 compatibility
+smoke tests, but is not an exact-delivery fixture.
 
 The Linux helper is installed separately because its narrowly scoped AP,
 monitor and USB-reset operations require root privileges:

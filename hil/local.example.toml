@@ -1,0 +1,25 @@
+# Copy to hil/local.toml and chmod 0600. The local file is never committed.
+
+[device]
+serial = "/dev/ttyACM0"
+# Optional opaque calibration/startup state persisted by the HIL runner.
+startup_artifact = "target/hil/esp32s31/startup-artifact.bin"
+
+[station]
+ssid = "laboratory-ssid"
+passphrase = "replace-me"
+
+[station.ipv4]
+mode = "dhcp"
+# Static alternative:
+# mode = "static"
+# address = "192.168.1.182/24"
+# gateway = "192.168.1.1"
+
+[openwrt]
+# Configure this as an SSH alias with key authentication.
+ssh_target = "open-radio-ap"
+wireless_interface = "phy0-ap0"
+ingress_interface = "br-lan"
+# Set false when this router is only the Ethernet transit path to an external AP.
+observe_ap = true

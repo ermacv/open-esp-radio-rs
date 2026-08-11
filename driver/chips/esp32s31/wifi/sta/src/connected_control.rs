@@ -11,8 +11,9 @@ use open_esp_radio_esp32s31_wifi_mac::{
     rx_ampdu_hw::S31RxBlockAckAgreementError,
     tx::TxHardware,
     tx_ampdu::{
-        BlockAckAction, STA_TX_BLOCK_ACK_TIDS, StaTxBlockAckResponse, StaTxBlockAckSessions,
-        StaTxBlockAckSessionsError, TxBlockAckResponse,
+        BlockAckAction, STA_TX_BLOCK_ACK_TIDS, StaTxBlockAckResponse,
+        StaTxBlockAckResponseDisposition, StaTxBlockAckSessions, StaTxBlockAckSessionsError,
+        TxBlockAckResponse,
     },
 };
 use open_esp_radio_ieee80211::station::{StaDisconnect, StaDisconnectKind};
@@ -287,6 +288,8 @@ struct ConnectedControlObservations {
     last_event: Option<ConnectedRxControlEvent>,
     last_tx_failure: Option<ConnectedControlTxFailure>,
     last_expired_tid: Option<u8>,
+    stale_tx_block_ack_responses: u32,
+    last_stale_tx_block_ack_token: Option<u8>,
 }
 
 /// Complete protocol state for one ESP32-S31 station association.
@@ -368,6 +371,14 @@ impl Esp32s31ConnectedControlCore {
 
     pub const fn last_expired_tid(&self) -> Option<u8> {
         self.observations.last_expired_tid
+    }
+
+    pub const fn stale_tx_block_ack_responses(&self) -> u32 {
+        self.observations.stale_tx_block_ack_responses
+    }
+
+    pub const fn last_stale_tx_block_ack_token(&self) -> Option<u8> {
+        self.observations.last_stale_tx_block_ack_token
     }
 
     pub const fn beacon_monitor(&self) -> Option<&StaBeaconMonitor> {
@@ -720,8 +731,18 @@ impl Esp32s31ConnectedControlCore {
                 self.start_rx_addba_response(hardware, tx, reorder, activation)
             }
             BlockAckAction::AddbaResponse { .. } => {
-                let StaTxBlockAckResponse { tid, response } =
-                    self.tx_block_ack.on_response_action(action)?;
+                let response = match self.tx_block_ack.on_response_action(action)? {
+                    StaTxBlockAckResponseDisposition::Matched(response) => response,
+                    StaTxBlockAckResponseDisposition::StaleDialogToken(token) => {
+                        self.observations.stale_tx_block_ack_responses = self
+                            .observations
+                            .stale_tx_block_ack_responses
+                            .saturating_add(1);
+                        self.observations.last_stale_tx_block_ack_token = Some(token);
+                        return Ok(ConnectedControlProgress::More);
+                    }
+                };
+                let StaTxBlockAckResponse { tid, response } = response;
                 if let Some(index) = STA_TX_BLOCK_ACK_TIDS
                     .into_iter()
                     .position(|candidate| candidate == tid)

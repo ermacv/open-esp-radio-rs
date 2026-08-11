@@ -87,6 +87,13 @@ where
             .ok_or(Esp32s31MacInterruptEpochStateError::Active)
     }
 
+    /// Mutably borrow the task-side setup capability while the route is idle.
+    pub fn setup_mut(&mut self) -> Result<&mut R::Setup, Esp32s31MacInterruptEpochStateError> {
+        self.setup
+            .as_mut()
+            .ok_or(Esp32s31MacInterruptEpochStateError::Active)
+    }
+
     pub fn activate(
         &mut self,
         platform: &R::Platform,

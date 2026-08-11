@@ -85,6 +85,12 @@ impl<'security, R, E, S, N, T> Esp32s31ConnectedNetworkStarted<'security, R, E, 
             security: self.security,
         }
     }
+
+    /// Borrow the runtime and hardware frontier together for the final
+    /// pre-activation ownership transaction.
+    pub fn runtime_and_epoch_mut(&mut self) -> (&mut R, &mut E) {
+        (&mut self.runtime, &mut self.epoch)
+    }
 }
 
 /// Named network-started decomposition used by the concrete driver assembler.

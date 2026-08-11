@@ -389,17 +389,13 @@ impl RadioRegisters {
         pti.modify(|_, w| w.pti_3().set(program.packet_priority));
         pti.modify(|_, w| w.count().set(program.priority_count));
 
-        // SOURCE: complete hal_mac_tx_config_edca. Preserve three distinct
-        // hardware edges in the recovered order.
-        control_bank
-            .config(bank)
-            .modify(|_, w| w.aifsn().set(program.aifsn));
-        control_bank
-            .config(bank)
-            .modify(|_, w| w.contention_window().set(program.contention_window));
-        control_bank
-            .config(bank)
-            .modify(|_, w| w.interface().set(program.interface));
+        mac_tx_queue::configure_edca(
+            control_bank,
+            u32::from(queue),
+            program.aifsn,
+            program.contention_window,
+            program.interface,
+        );
         true
     }
 
@@ -513,15 +509,13 @@ impl RadioRegisters {
         pti.modify(|_, w| w.pti_3().set(program.packet_priority));
         pti.modify(|_, w| w.count().set(program.priority_count));
 
-        control_bank
-            .config(bank)
-            .modify(|_, w| w.aifsn().set(program.aifsn));
-        control_bank
-            .config(bank)
-            .modify(|_, w| w.contention_window().set(program.contention_window));
-        control_bank
-            .config(bank)
-            .modify(|_, w| w.interface().set(program.interface));
+        mac_tx_queue::configure_edca(
+            control_bank,
+            u32::from(queue),
+            program.aifsn,
+            program.contention_window,
+            program.interface,
+        );
         true
     }
 
@@ -649,15 +643,13 @@ impl RadioRegisters {
         pti.modify(|_, w| w.pti_3().set(program.packet_priority));
         pti.modify(|_, w| w.count().set(program.priority_count));
 
-        control_bank
-            .config(bank)
-            .modify(|_, w| w.aifsn().set(program.aifsn));
-        control_bank
-            .config(bank)
-            .modify(|_, w| w.contention_window().set(program.contention_window));
-        control_bank
-            .config(bank)
-            .modify(|_, w| w.interface().set(program.interface));
+        mac_tx_queue::configure_edca(
+            control_bank,
+            u32::from(queue),
+            program.aifsn,
+            program.contention_window,
+            program.interface,
+        );
         true
     }
 

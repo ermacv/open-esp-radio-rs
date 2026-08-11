@@ -181,6 +181,28 @@ fn pinned_rx_slot_keeps_one_address_across_network_ownership() {
     assert_eq!(first_address, second_address);
 }
 
+#[cfg(feature = "rx-delivery-observation")]
+#[test]
+fn observed_pinned_admission_precedes_network_visibility() {
+    type TestResources = PinnedResources<NoopRawMutex, FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 1>;
+    type TestPool = PinnedTxPool<FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 1>;
+    let resources = Box::leak(Box::new(TestResources::new()));
+    let pool = TestPool::pin_static(Box::leak(Box::new(TestPool::new())));
+    let (mut device, radio) = resources.split(pool, [0; 6]);
+    let mut publisher = radio.rx_publisher();
+    let mut callback_ran = false;
+
+    publisher
+        .try_send_parts_observed([1; 6], [2; 6], 0x0800, &[3; 8], || {
+            callback_ran = true;
+            assert!(device.receive(&mut context()).is_none());
+        })
+        .unwrap();
+
+    assert!(callback_ran);
+    assert!(device.receive(&mut context()).is_some());
+}
+
 #[test]
 fn link_and_device_metadata_match_radio_state() {
     let mut resources = Resources::<NoopRawMutex, FRAME_CAPACITY, 2>::new();

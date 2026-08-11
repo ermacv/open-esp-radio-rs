@@ -28951,6 +28951,596 @@ bit-width = 32
 access = "read-write"
 
 [[registers]]
+address = 537981952
+width = 32
+access = "read-write"
+identity = "COEX_HW_TIMER.CONFIGURATION0"
+peripheral = "COEX_HW_TIMER"
+peripheral-type = "CoexHwTimer"
+peripheral-module = "coex_hw_timer"
+scope = []
+register-method = "configuration"
+register-index = 0
+
+[[registers.fields]]
+svd-name = "PRIMARY_TICK_IMAGE"
+method = "primary_tick_image"
+bit-offset = 0
+bit-width = 24
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "PARAMETER_2"
+method = "parameter_2"
+bit-offset = 24
+bit-width = 4
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "PARAMETER_1"
+method = "parameter_1"
+bit-offset = 28
+bit-width = 2
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "HIGH_UNKNOWN"
+method = "high_unknown"
+bit-offset = 30
+bit-width = 2
+access = "read-write"
+
+[[registers]]
+address = 537981956
+width = 32
+access = "read-write"
+identity = "COEX_HW_TIMER.SECONDARY_TARGET0"
+peripheral = "COEX_HW_TIMER"
+peripheral-type = "CoexHwTimer"
+peripheral-module = "coex_hw_timer"
+scope = []
+register-method = "secondary_target"
+register-index = 0
+
+[[registers.fields]]
+svd-name = "SECONDARY_TICK_IMAGE"
+method = "secondary_tick_image"
+bit-offset = 0
+bit-width = 24
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "HIGH_UNKNOWN"
+method = "high_unknown"
+bit-offset = 24
+bit-width = 8
+access = "read-write"
+
+[[registers]]
+address = 537981960
+width = 32
+access = "read-write"
+identity = "COEX_HW_TIMER.ENABLE_CONTROL0"
+peripheral = "COEX_HW_TIMER"
+peripheral-type = "CoexHwTimer"
+peripheral-module = "coex_hw_timer"
+scope = []
+register-method = "enable_control"
+register-index = 0
+
+[[registers.fields]]
+svd-name = "ENABLE"
+method = "enable"
+bit-offset = 0
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "UNKNOWN"
+method = "unknown"
+bit-offset = 1
+bit-width = 31
+access = "read-write"
+
+[[registers]]
+address = 537981964
+width = 32
+access = "read-write"
+identity = "COEX_HW_TIMER.DISABLE_CONTROL0"
+peripheral = "COEX_HW_TIMER"
+peripheral-type = "CoexHwTimer"
+peripheral-module = "coex_hw_timer"
+scope = []
+register-method = "disable_control"
+register-index = 0
+
+[[registers.fields]]
+svd-name = "DISABLE"
+method = "disable"
+bit-offset = 0
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "UNKNOWN"
+method = "unknown"
+bit-offset = 1
+bit-width = 31
+access = "read-write"
+
+[[registers]]
+address = 537981968
+width = 32
+access = "read-write"
+identity = "COEX_HW_TIMER.CONFIGURATION1"
+peripheral = "COEX_HW_TIMER"
+peripheral-type = "CoexHwTimer"
+peripheral-module = "coex_hw_timer"
+scope = []
+register-method = "configuration"
+register-index = 1
+
+[[registers.fields]]
+svd-name = "PRIMARY_TICK_IMAGE"
+method = "primary_tick_image"
+bit-offset = 0
+bit-width = 24
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "PARAMETER_2"
+method = "parameter_2"
+bit-offset = 24
+bit-width = 4
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "PARAMETER_1"
+method = "parameter_1"
+bit-offset = 28
+bit-width = 2
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "HIGH_UNKNOWN"
+method = "high_unknown"
+bit-offset = 30
+bit-width = 2
+access = "read-write"
+
+[[registers]]
+address = 537981972
+width = 32
+access = "read-write"
+identity = "COEX_HW_TIMER.SECONDARY_TARGET1"
+peripheral = "COEX_HW_TIMER"
+peripheral-type = "CoexHwTimer"
+peripheral-module = "coex_hw_timer"
+scope = []
+register-method = "secondary_target"
+register-index = 1
+
+[[registers.fields]]
+svd-name = "SECONDARY_TICK_IMAGE"
+method = "secondary_tick_image"
+bit-offset = 0
+bit-width = 24
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "HIGH_UNKNOWN"
+method = "high_unknown"
+bit-offset = 24
+bit-width = 8
+access = "read-write"
+
+[[registers]]
+address = 537981976
+width = 32
+access = "read-write"
+identity = "COEX_HW_TIMER.ENABLE_CONTROL1"
+peripheral = "COEX_HW_TIMER"
+peripheral-type = "CoexHwTimer"
+peripheral-module = "coex_hw_timer"
+scope = []
+register-method = "enable_control"
+register-index = 1
+
+[[registers.fields]]
+svd-name = "ENABLE"
+method = "enable"
+bit-offset = 0
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "UNKNOWN"
+method = "unknown"
+bit-offset = 1
+bit-width = 31
+access = "read-write"
+
+[[registers]]
+address = 537981980
+width = 32
+access = "read-write"
+identity = "COEX_HW_TIMER.DISABLE_CONTROL1"
+peripheral = "COEX_HW_TIMER"
+peripheral-type = "CoexHwTimer"
+peripheral-module = "coex_hw_timer"
+scope = []
+register-method = "disable_control"
+register-index = 1
+
+[[registers.fields]]
+svd-name = "DISABLE"
+method = "disable"
+bit-offset = 0
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "UNKNOWN"
+method = "unknown"
+bit-offset = 1
+bit-width = 31
+access = "read-write"
+
+[[registers]]
+address = 537981984
+width = 32
+access = "read-write"
+identity = "COEX_HW_TIMER.CONFIGURATION2"
+peripheral = "COEX_HW_TIMER"
+peripheral-type = "CoexHwTimer"
+peripheral-module = "coex_hw_timer"
+scope = []
+register-method = "configuration"
+register-index = 2
+
+[[registers.fields]]
+svd-name = "PRIMARY_TICK_IMAGE"
+method = "primary_tick_image"
+bit-offset = 0
+bit-width = 24
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "PARAMETER_2"
+method = "parameter_2"
+bit-offset = 24
+bit-width = 4
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "PARAMETER_1"
+method = "parameter_1"
+bit-offset = 28
+bit-width = 2
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "HIGH_UNKNOWN"
+method = "high_unknown"
+bit-offset = 30
+bit-width = 2
+access = "read-write"
+
+[[registers]]
+address = 537981988
+width = 32
+access = "read-write"
+identity = "COEX_HW_TIMER.SECONDARY_TARGET2"
+peripheral = "COEX_HW_TIMER"
+peripheral-type = "CoexHwTimer"
+peripheral-module = "coex_hw_timer"
+scope = []
+register-method = "secondary_target"
+register-index = 2
+
+[[registers.fields]]
+svd-name = "SECONDARY_TICK_IMAGE"
+method = "secondary_tick_image"
+bit-offset = 0
+bit-width = 24
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "HIGH_UNKNOWN"
+method = "high_unknown"
+bit-offset = 24
+bit-width = 8
+access = "read-write"
+
+[[registers]]
+address = 537981992
+width = 32
+access = "read-write"
+identity = "COEX_HW_TIMER.ENABLE_CONTROL2"
+peripheral = "COEX_HW_TIMER"
+peripheral-type = "CoexHwTimer"
+peripheral-module = "coex_hw_timer"
+scope = []
+register-method = "enable_control"
+register-index = 2
+
+[[registers.fields]]
+svd-name = "ENABLE"
+method = "enable"
+bit-offset = 0
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "UNKNOWN"
+method = "unknown"
+bit-offset = 1
+bit-width = 31
+access = "read-write"
+
+[[registers]]
+address = 537981996
+width = 32
+access = "read-write"
+identity = "COEX_HW_TIMER.DISABLE_CONTROL2"
+peripheral = "COEX_HW_TIMER"
+peripheral-type = "CoexHwTimer"
+peripheral-module = "coex_hw_timer"
+scope = []
+register-method = "disable_control"
+register-index = 2
+
+[[registers.fields]]
+svd-name = "DISABLE"
+method = "disable"
+bit-offset = 0
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "UNKNOWN"
+method = "unknown"
+bit-offset = 1
+bit-width = 31
+access = "read-write"
+
+[[registers]]
+address = 537982000
+width = 32
+access = "read-write"
+identity = "COEX_HW_TIMER.CONFIGURATION3"
+peripheral = "COEX_HW_TIMER"
+peripheral-type = "CoexHwTimer"
+peripheral-module = "coex_hw_timer"
+scope = []
+register-method = "configuration"
+register-index = 3
+
+[[registers.fields]]
+svd-name = "PRIMARY_TICK_IMAGE"
+method = "primary_tick_image"
+bit-offset = 0
+bit-width = 24
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "PARAMETER_2"
+method = "parameter_2"
+bit-offset = 24
+bit-width = 4
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "PARAMETER_1"
+method = "parameter_1"
+bit-offset = 28
+bit-width = 2
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "HIGH_UNKNOWN"
+method = "high_unknown"
+bit-offset = 30
+bit-width = 2
+access = "read-write"
+
+[[registers]]
+address = 537982004
+width = 32
+access = "read-write"
+identity = "COEX_HW_TIMER.SECONDARY_TARGET3"
+peripheral = "COEX_HW_TIMER"
+peripheral-type = "CoexHwTimer"
+peripheral-module = "coex_hw_timer"
+scope = []
+register-method = "secondary_target"
+register-index = 3
+
+[[registers.fields]]
+svd-name = "SECONDARY_TICK_IMAGE"
+method = "secondary_tick_image"
+bit-offset = 0
+bit-width = 24
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "HIGH_UNKNOWN"
+method = "high_unknown"
+bit-offset = 24
+bit-width = 8
+access = "read-write"
+
+[[registers]]
+address = 537982008
+width = 32
+access = "read-write"
+identity = "COEX_HW_TIMER.ENABLE_CONTROL3"
+peripheral = "COEX_HW_TIMER"
+peripheral-type = "CoexHwTimer"
+peripheral-module = "coex_hw_timer"
+scope = []
+register-method = "enable_control"
+register-index = 3
+
+[[registers.fields]]
+svd-name = "ENABLE"
+method = "enable"
+bit-offset = 0
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "UNKNOWN"
+method = "unknown"
+bit-offset = 1
+bit-width = 31
+access = "read-write"
+
+[[registers]]
+address = 537982012
+width = 32
+access = "read-write"
+identity = "COEX_HW_TIMER.DISABLE_CONTROL3"
+peripheral = "COEX_HW_TIMER"
+peripheral-type = "CoexHwTimer"
+peripheral-module = "coex_hw_timer"
+scope = []
+register-method = "disable_control"
+register-index = 3
+
+[[registers.fields]]
+svd-name = "DISABLE"
+method = "disable"
+bit-offset = 0
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "UNKNOWN"
+method = "unknown"
+bit-offset = 1
+bit-width = 31
+access = "read-write"
+
+[[registers]]
+address = 537982016
+width = 32
+access = "read-write"
+identity = "COEX_HW_TIMER.CONFIGURATION4"
+peripheral = "COEX_HW_TIMER"
+peripheral-type = "CoexHwTimer"
+peripheral-module = "coex_hw_timer"
+scope = []
+register-method = "configuration"
+register-index = 4
+
+[[registers.fields]]
+svd-name = "PRIMARY_TICK_IMAGE"
+method = "primary_tick_image"
+bit-offset = 0
+bit-width = 24
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "PARAMETER_2"
+method = "parameter_2"
+bit-offset = 24
+bit-width = 4
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "PARAMETER_1"
+method = "parameter_1"
+bit-offset = 28
+bit-width = 2
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "HIGH_UNKNOWN"
+method = "high_unknown"
+bit-offset = 30
+bit-width = 2
+access = "read-write"
+
+[[registers]]
+address = 537982020
+width = 32
+access = "read-write"
+identity = "COEX_HW_TIMER.SECONDARY_TARGET4"
+peripheral = "COEX_HW_TIMER"
+peripheral-type = "CoexHwTimer"
+peripheral-module = "coex_hw_timer"
+scope = []
+register-method = "secondary_target"
+register-index = 4
+
+[[registers.fields]]
+svd-name = "SECONDARY_TICK_IMAGE"
+method = "secondary_tick_image"
+bit-offset = 0
+bit-width = 24
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "HIGH_UNKNOWN"
+method = "high_unknown"
+bit-offset = 24
+bit-width = 8
+access = "read-write"
+
+[[registers]]
+address = 537982024
+width = 32
+access = "read-write"
+identity = "COEX_HW_TIMER.ENABLE_CONTROL4"
+peripheral = "COEX_HW_TIMER"
+peripheral-type = "CoexHwTimer"
+peripheral-module = "coex_hw_timer"
+scope = []
+register-method = "enable_control"
+register-index = 4
+
+[[registers.fields]]
+svd-name = "ENABLE"
+method = "enable"
+bit-offset = 0
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "UNKNOWN"
+method = "unknown"
+bit-offset = 1
+bit-width = 31
+access = "read-write"
+
+[[registers]]
+address = 537982028
+width = 32
+access = "read-write"
+identity = "COEX_HW_TIMER.DISABLE_CONTROL4"
+peripheral = "COEX_HW_TIMER"
+peripheral-type = "CoexHwTimer"
+peripheral-module = "coex_hw_timer"
+scope = []
+register-method = "disable_control"
+register-index = 4
+
+[[registers.fields]]
+svd-name = "DISABLE"
+method = "disable"
+bit-offset = 0
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "UNKNOWN"
+method = "unknown"
+bit-offset = 1
+bit-width = 31
+access = "read-write"
+
+[[registers]]
 address = 537984000
 width = 32
 access = "write-only"

@@ -13,15 +13,12 @@ use open_esp_radio_hil_protocol::WifiMonitorCaptureRequest;
 
 use crate::{
     Result,
-    controlled_ap::{
-        ControlledAp, require_controlled_ap_credentials_environment,
-        require_station_credentials_environment,
-    },
+    controlled_ap::{ControlledAp, require_station_credentials},
+    lab_config::LabConfig,
     traffic_capture::{MonitorCaptureEvidence, SerialCapture},
     wifi_control::{scan, start_station, stop_station},
 };
 
-const DEFAULT_SERIAL: &str = "/dev/ttyACM0";
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(90);
 const DEFAULT_CAPTURE_DURATION: Duration = Duration::from_secs(3);
 
@@ -35,7 +32,7 @@ struct Options {
     external_ap: bool,
 }
 
-pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
+pub(crate) fn run(arguments: Vec<String>, root: &Path, lab: &LabConfig) -> Result<()> {
     if arguments
         .first()
         .is_some_and(|value| matches!(value.as_str(), "help" | "--help" | "-h"))
@@ -43,13 +40,12 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
         print_help();
         return Ok(());
     }
-    let options = parse_options(&arguments)?;
+    let options = parse_options(&arguments, lab)?;
     let _access_point = if options.external_ap {
-        require_station_credentials_environment()?;
+        require_station_credentials(&lab.station)?;
         None
     } else {
-        require_controlled_ap_credentials_environment()?;
-        Some(ControlledAp::start()?)
+        Some(ControlledAp::start(&lab.station, &lab.openwrt)?)
     };
     let artifact_dir = root.join("target/hil/esp32s31/qualification/wifi-capture");
     fs::create_dir_all(&artifact_dir)?;
@@ -60,7 +56,7 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
     }
 
     let serial = SerialCapture::start_with_reset(&options.serial);
-    let result = qualify(&serial, &options);
+    let result = qualify(&serial, lab, &options);
     let log = serial.finish();
     fs::write(artifact_dir.join("uart.log"), log)?;
     let result = result?;
@@ -101,8 +97,8 @@ struct CaptureResult {
     host_anchor_micros: u64,
 }
 
-fn qualify(serial: &SerialCapture, options: &Options) -> Result<CaptureResult> {
-    let capabilities = serial.prepare_protocol()?;
+fn qualify(serial: &SerialCapture, lab: &LabConfig, options: &Options) -> Result<CaptureResult> {
+    let capabilities = serial.prepare_protocol(lab)?;
     if !capabilities.features.wifi_monitor_capture {
         return Err("firmware does not advertise typed monitor capture".into());
     }
@@ -196,8 +192,8 @@ fn validate_summary(capture: &MonitorCaptureEvidence, channel: u8) -> Result<()>
     Ok(())
 }
 
-fn parse_options(arguments: &[String]) -> Result<Options> {
-    let mut serial = PathBuf::from(DEFAULT_SERIAL);
+fn parse_options(arguments: &[String], lab: &LabConfig) -> Result<Options> {
+    let serial = lab.device.serial.clone();
     let mut output = None;
     let mut timeout = DEFAULT_TIMEOUT;
     let mut duration = DEFAULT_CAPTURE_DURATION;
@@ -207,10 +203,6 @@ fn parse_options(arguments: &[String]) -> Result<Options> {
     let mut index = 0;
     while index < arguments.len() {
         match arguments[index].as_str() {
-            "--serial" => {
-                index += 1;
-                serial = PathBuf::from(arguments.get(index).ok_or("--serial requires a path")?);
-            }
             "--output" => {
                 index += 1;
                 output = Some(PathBuf::from(
@@ -279,7 +271,6 @@ fn parse_options(arguments: &[String]) -> Result<Options> {
 fn print_help() {
     println!(
         "cargo hil wifi capture --output <capture.pcapng> [options]\n\n\
-         --serial <path>          diagnostics device (default /dev/ttyACM0)\n\
          --output <path>          required PCAPNG destination\n\
          --seconds <1..=30>       finite capture duration (default 3)\n\
          --channel <1..=13>       default: channel discovered by standalone scan\n\
@@ -295,17 +286,21 @@ mod tests {
 
     #[test]
     fn parser_requires_output_and_bounds_capture() {
-        assert!(parse_options(&[]).is_err());
-        let options = parse_options(&[
-            "--output".into(),
-            "capture.pcapng".into(),
-            "--seconds".into(),
-            "5".into(),
-            "--channel".into(),
-            "11".into(),
-            "--snapshot-length".into(),
-            "512".into(),
-        ])
+        let lab = LabConfig::for_test();
+        assert!(parse_options(&[], &lab).is_err());
+        let options = parse_options(
+            &[
+                "--output".into(),
+                "capture.pcapng".into(),
+                "--seconds".into(),
+                "5".into(),
+                "--channel".into(),
+                "11".into(),
+                "--snapshot-length".into(),
+                "512".into(),
+            ],
+            &lab,
+        )
         .unwrap();
         assert_eq!(options.output, PathBuf::from("capture.pcapng"));
         assert_eq!(options.duration, Duration::from_secs(5));
@@ -316,12 +311,15 @@ mod tests {
     #[test]
     fn parser_rejects_unbounded_values() {
         assert!(
-            parse_options(&[
-                "--output".into(),
-                "capture.pcapng".into(),
-                "--seconds".into(),
-                "31".into(),
-            ])
+            parse_options(
+                &[
+                    "--output".into(),
+                    "capture.pcapng".into(),
+                    "--seconds".into(),
+                    "31".into(),
+                ],
+                &LabConfig::for_test()
+            )
             .is_err()
         );
     }

@@ -8,6 +8,7 @@ mod agc_runtime;
 mod baseband;
 mod cfr;
 pub mod clock;
+mod coex;
 mod frequency;
 mod iq_estimator;
 pub mod mac;
@@ -47,8 +48,10 @@ mod table_memory;
 pub mod validation;
 pub use agc_runtime::ForcedRxGain;
 pub use cfr::CfrValue;
+pub use coex::{COEX_TIMER_COUNT, CoexTimerRegisterError};
 pub use mac_block_ack::{
-    InternalTxBlockAckSnapshot, TxBlockAckDiagnosticSnapshot, TxBlockAckRegisterImage,
+    InternalTxBlockAckSnapshot, TxBlockAckDiagnosticSnapshot, TxBlockAckPayload,
+    TxBlockAckRegisterImage,
 };
 pub use mac_cold_start::{MacColdHandshakeOutcome, MacColdHandshakeTimeout};
 pub use mac_crypto::MacKeyInstallOutcome;
@@ -66,10 +69,15 @@ pub use mac_he_ofdma::{
 };
 pub use mac_he_peer::{MacHe20PeerConfig, MacHe20PeerError};
 pub use mac_he_tb::{MacHeTbStatistics, MacHeTbTxDiagnostics};
-pub use mac_interrupt::{MacInterruptRegisters, MacInterruptSetup, MacPowerInterruptRegisters};
+pub use mac_interrupt::{
+    ConnectedStaWithoutPowerSavePrepared, MacInterruptRegisters, MacInterruptSetup,
+    MacPowerInterruptRegisters,
+};
 pub use mac_modem_wakeup::{
     StaBeaconMissLimit, StaModemSleepLimit, StaModemWakeConfig, StaTbttAutoPeriod,
 };
+pub use mac_rx_dma::MacRxDmaSnapshot;
+pub use mac_rx_policy::MacStaReceivePolicySnapshot;
 pub use mac_rx_statistics::{
     MacHeColorCollisionSnapshot, MacRxDecodeErrorStatistics, MacRxHangStatistics,
     MacRxPrimaryStatistics, MacRxPrimaryStatisticsDelta, MacRxStatisticsSnapshot,
@@ -683,7 +691,7 @@ mod tests {
     fn generated_mac_enable_gate_matches_complete_leaf() {
         // This host test inspects generated register pointers only and
         // performs no volatile access.
-        let registers = ColdRadioRegisters::for_test();
+        let registers = ColdRadioRegisters::for_validation();
         assert_eq!(
             registers
                 .peripherals
@@ -706,7 +714,7 @@ mod tests {
     fn generated_debug_oracle_registers_keep_one_canonical_owner() {
         // This host test inspects generated register pointers only and
         // performs no volatile access.
-        let registers = ColdRadioRegisters::for_test();
+        let registers = ColdRadioRegisters::for_validation();
         let he = &registers.peripherals.wifi_mac_he_init_prefix;
         assert_eq!(he.parent_enable().as_ptr() as usize, 0x2010_4c2c);
         assert_eq!(he.interrupt_1_raw().as_ptr() as usize, 0x2010_4c30);
@@ -1153,7 +1161,7 @@ mod tests {
     fn mac_hal_tail_rejects_out_of_range_calibration_before_mmio() {
         // SAFETY: the rejected input returns before any generated register is
         // accessed; the host test therefore performs no volatile MMIO.
-        let mut registers = ColdRadioRegisters::for_test();
+        let mut registers = ColdRadioRegisters::for_validation();
         assert!(!registers.initialize_mac_hal_tail(0x19a8_79e0, 0x0004_0000));
         assert!(!registers.initialize_mac_hal_tail(0, u32::MAX));
     }

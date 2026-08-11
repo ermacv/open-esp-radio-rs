@@ -9,11 +9,14 @@ publish = false
 description = "Host build, placement-audit and HIL runner for open ESP radio"
 
 [dependencies]
+fs2 = "0.4"
 libc = "0.2"
 open-esp-radio-hil-protocol = { path = "../../protocol" }
 open-esp-radio-ieee80211 = { path = "../../../driver/wifi/ieee80211" }
 open-esp-radio-memory-report = { path = "../../../tools/memory-report" }
 serialport = { version = "4.8.1", default-features = false }
+serde = { version = "1.0", features = ["derive"] }
+toml = "1.1"
 zeroize = "1.8.1"
 
 [lints]

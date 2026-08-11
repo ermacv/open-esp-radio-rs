@@ -330,6 +330,14 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
         self.core.last_expired_tid()
     }
 
+    pub const fn stale_tx_block_ack_responses(&self) -> u32 {
+        self.core.stale_tx_block_ack_responses()
+    }
+
+    pub const fn last_stale_tx_block_ack_token(&self) -> Option<u8> {
+        self.core.last_stale_tx_block_ack_token()
+    }
+
     pub const fn beacon_monitor(&self) -> Option<&StaBeaconMonitor> {
         self.core.beacon_monitor()
     }

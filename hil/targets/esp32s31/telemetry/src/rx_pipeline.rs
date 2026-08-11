@@ -59,11 +59,15 @@ pub struct RxPipelineCounters {
     reorder_first_samples: AtomicU32,
     reorder_last_first: AtomicU32,
     reorder_last_first_distance: AtomicU32,
+    reorder_ingress: AtomicU32,
+    reorder_ingress_retries: AtomicU32,
+    reorder_direct: AtomicU32,
     reorder_buffered: AtomicU32,
     reorder_released: AtomicU32,
     reorder_missing: AtomicU32,
     reorder_stale: AtomicU32,
     reorder_gap_expiries: AtomicU32,
+    reorder_discarded: AtomicU32,
     reorder_current_occupied: AtomicU32,
     reorder_maximum_occupied: AtomicU32,
     network_ready_waits: AtomicU32,
@@ -136,11 +140,15 @@ impl RxPipelineCounters {
             reorder_first_samples: AtomicU32::new(0),
             reorder_last_first: AtomicU32::new(0),
             reorder_last_first_distance: AtomicU32::new(0),
+            reorder_ingress: AtomicU32::new(0),
+            reorder_ingress_retries: AtomicU32::new(0),
+            reorder_direct: AtomicU32::new(0),
             reorder_buffered: AtomicU32::new(0),
             reorder_released: AtomicU32::new(0),
             reorder_missing: AtomicU32::new(0),
             reorder_stale: AtomicU32::new(0),
             reorder_gap_expiries: AtomicU32::new(0),
+            reorder_discarded: AtomicU32::new(0),
             reorder_current_occupied: AtomicU32::new(0),
             reorder_maximum_occupied: AtomicU32::new(0),
             network_ready_waits: AtomicU32::new(0),
@@ -287,11 +295,15 @@ impl RxPipelineCounters {
             reorder_first_samples: self.reorder_first_samples.load(Ordering::Relaxed),
             reorder_last_first: self.reorder_last_first.load(Ordering::Relaxed),
             reorder_last_first_distance: self.reorder_last_first_distance.load(Ordering::Relaxed),
+            reorder_ingress: self.reorder_ingress.load(Ordering::Relaxed),
+            reorder_ingress_retries: self.reorder_ingress_retries.load(Ordering::Relaxed),
+            reorder_direct: self.reorder_direct.load(Ordering::Relaxed),
             reorder_buffered: self.reorder_buffered.load(Ordering::Relaxed),
             reorder_released: self.reorder_released.load(Ordering::Relaxed),
             reorder_missing: self.reorder_missing.load(Ordering::Relaxed),
             reorder_stale: self.reorder_stale.load(Ordering::Relaxed),
             reorder_gap_expiries: self.reorder_gap_expiries.load(Ordering::Relaxed),
+            reorder_discarded: self.reorder_discarded.load(Ordering::Relaxed),
             reorder_current_occupied: self.reorder_current_occupied.load(Ordering::Relaxed),
             reorder_maximum_occupied: self.reorder_maximum_occupied.load(Ordering::Relaxed),
             network_ready_waits: self.network_ready_waits.load(Ordering::Relaxed),
@@ -495,6 +507,16 @@ impl RxPipelineCounters {
         );
     }
 
+    pub(crate) fn record_reorder_ingress(&self, active: bool, retry: bool) {
+        self.reorder_ingress.fetch_add(1, Ordering::Relaxed);
+        if retry {
+            self.reorder_ingress_retries.fetch_add(1, Ordering::Relaxed);
+        }
+        if !active {
+            self.reorder_direct.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
     pub(crate) fn record_reorder_release(
         &self,
         buffered: bool,
@@ -516,6 +538,10 @@ impl RxPipelineCounters {
 
     pub(crate) fn record_reorder_gap_expiry(&self) {
         self.reorder_gap_expiries.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub(crate) fn record_reorder_discard(&self) {
+        self.reorder_discarded.fetch_add(1, Ordering::Relaxed);
     }
 
     pub(crate) fn record_reorder_occupied(&self, occupied: u32) {
@@ -594,6 +620,9 @@ impl RxPipelineObserver for RxPipelineCounters {
                 start,
                 sequence,
             } => self.record_reorder_first(tid, start, sequence),
+            RxPipelineObservation::ReorderIngress { active, retry } => {
+                self.record_reorder_ingress(active, retry)
+            }
             RxPipelineObservation::ReorderReleased {
                 buffered,
                 released,
@@ -601,6 +630,7 @@ impl RxPipelineObserver for RxPipelineCounters {
                 stale,
             } => self.record_reorder_release(buffered, released, missing, stale),
             RxPipelineObservation::ReorderGapExpired => self.record_reorder_gap_expiry(),
+            RxPipelineObservation::ReorderDiscarded => self.record_reorder_discard(),
             RxPipelineObservation::ReorderOccupied { occupied } => {
                 self.record_reorder_occupied(occupied)
             }
@@ -673,11 +703,15 @@ pub struct RxPipelineCounterSnapshot {
     /// Last packed `tid[27:24] | start[23:12] | first_sequence[11:0]`.
     pub reorder_last_first: u32,
     pub reorder_last_first_distance: u32,
+    pub reorder_ingress: u32,
+    pub reorder_ingress_retries: u32,
+    pub reorder_direct: u32,
     pub reorder_buffered: u32,
     pub reorder_released: u32,
     pub reorder_missing: u32,
     pub reorder_stale: u32,
     pub reorder_gap_expiries: u32,
+    pub reorder_discarded: u32,
     pub reorder_current_occupied: u32,
     pub reorder_maximum_occupied: u32,
     pub network_ready_waits: u32,
@@ -795,6 +829,11 @@ impl RxPipelineCounterSnapshot {
                 .wrapping_sub(earlier.reorder_first_samples),
             reorder_last_first: self.reorder_last_first,
             reorder_last_first_distance: self.reorder_last_first_distance,
+            reorder_ingress: self.reorder_ingress.wrapping_sub(earlier.reorder_ingress),
+            reorder_ingress_retries: self
+                .reorder_ingress_retries
+                .wrapping_sub(earlier.reorder_ingress_retries),
+            reorder_direct: self.reorder_direct.wrapping_sub(earlier.reorder_direct),
             reorder_buffered: self.reorder_buffered.wrapping_sub(earlier.reorder_buffered),
             reorder_released: self.reorder_released.wrapping_sub(earlier.reorder_released),
             reorder_missing: self.reorder_missing.wrapping_sub(earlier.reorder_missing),
@@ -802,6 +841,9 @@ impl RxPipelineCounterSnapshot {
             reorder_gap_expiries: self
                 .reorder_gap_expiries
                 .wrapping_sub(earlier.reorder_gap_expiries),
+            reorder_discarded: self
+                .reorder_discarded
+                .wrapping_sub(earlier.reorder_discarded),
             reorder_current_occupied: self.reorder_current_occupied,
             reorder_maximum_occupied: self.reorder_maximum_occupied,
             network_ready_waits: self

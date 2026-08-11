@@ -35,7 +35,14 @@ where
             return Some(self.dispatch_owned_frame(frame).await);
         };
         let tid = usize::from(key.tid);
-        if tid >= self.runtime.reorders.len() || self.runtime.reorders[tid].is_none() {
+        let active = tid < self.runtime.reorders.len() && self.runtime.reorders[tid].is_some();
+        if let Some(observer) = self.pipeline_observer {
+            observer.observe(RxPipelineObservation::ReorderIngress {
+                active,
+                retry: key.retry,
+            });
+        }
+        if !active {
             return Some(self.dispatch_owned_frame(frame).await);
         }
         if let Some(start) = self.runtime.reorder_first_starts[tid].take()
@@ -55,6 +62,9 @@ where
         {
             Ok(retain) => retain,
             Err(error) => {
+                if let Some(observer) = self.pipeline_observer {
+                    observer.observe(RxPipelineObservation::ReorderDiscarded);
+                }
                 drop(frame);
                 self.irq.notify_rx_capacity();
                 return Some(if matches!(error, RxAmpduError::DuplicateSequence(_)) {
@@ -73,6 +83,9 @@ where
             let Some(storage) = self.reorder_storage else {
                 // An agreement must never retain the finite hot staging pool
                 // when its independent backing was omitted by the composition.
+                if let Some(observer) = self.pipeline_observer {
+                    observer.observe(RxPipelineObservation::ReorderDiscarded);
+                }
                 drop(frame);
                 self.irq.notify_rx_capacity();
                 return Some(ConnectedRxDispatch::Ignored);
@@ -80,6 +93,9 @@ where
             match storage.try_reserve() {
                 Ok(reservation) => Some(reservation),
                 Err(_) => {
+                    if let Some(observer) = self.pipeline_observer {
+                        observer.observe(RxPipelineObservation::ReorderDiscarded);
+                    }
                     drop(frame);
                     self.irq.notify_rx_capacity();
                     return Some(ConnectedRxDispatch::Ignored);
@@ -109,6 +125,9 @@ where
         {
             Ok(release) => release,
             Err(error) => {
+                if let Some(observer) = self.pipeline_observer {
+                    observer.observe(RxPipelineObservation::ReorderDiscarded);
+                }
                 drop(reservation);
                 drop(frame);
                 self.irq.notify_rx_capacity();
@@ -132,6 +151,9 @@ where
             let retained = match reservation.copy_from(frame.segment()) {
                 Ok(retained) => retained,
                 Err((_error, reservation)) => {
+                    if let Some(observer) = self.pipeline_observer {
+                        observer.observe(RxPipelineObservation::ReorderDiscarded);
+                    }
                     let mut reorder = self.runtime.reorders[tid]
                         .take()
                         .expect("active reorder owns the failed retained copy");

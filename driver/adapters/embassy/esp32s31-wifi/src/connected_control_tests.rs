@@ -495,6 +495,26 @@ fn tx_addba_response_and_delba_toggle_he_tid_ownership() {
     );
     publisher.publish(ConnectedRxEvent::BlockAck {
         action: BlockAckAction::AddbaResponse {
+            dialog_token: 42,
+            status: 0,
+            tid: 0,
+            immediate: true,
+            amsdu: true,
+            window: 16,
+            timeout_tu: 0,
+        },
+        body: &[0; 9],
+    });
+    assert_eq!(
+        embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
+        Ok(WifiControlProgress::More)
+    );
+    assert_eq!(control.stale_tx_block_ack_responses(), 1);
+    assert_eq!(control.last_stale_tx_block_ack_token(), Some(42));
+    assert!(control.tx_block_ack().alarm(0).is_some());
+
+    publisher.publish(ConnectedRxEvent::BlockAck {
+        action: BlockAckAction::AddbaResponse {
             dialog_token: 1,
             status: 0,
             tid: 0,

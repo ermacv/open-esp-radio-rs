@@ -235,12 +235,13 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
                     session.session_id,
                     OpenRadioBidirectionalDirection::Tx,
                     evidence,
+                    None,
                     send_errors == 0,
                 )
                 .await;
             }
             UdpTxSessionSource::Console => {
-                complete_session(session.session_id, evidence, send_errors == 0).await;
+                complete_session(session.session_id, evidence, None, send_errors == 0).await;
             }
         }
     }

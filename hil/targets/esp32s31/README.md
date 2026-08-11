@@ -23,9 +23,9 @@ Use the host runner as the only command surface:
 cargo hil scenarios
 cargo hil doctor
 cargo hil build <scenario>
-cargo hil flash <scenario> --port /dev/ttyACM0
-cargo hil station reconnect|ap-loss|ap-absence --serial /dev/ttyACM0
-cargo hil wifi stop|start|scan|monitor|roundtrip --serial /dev/ttyACM0
+cargo hil flash <scenario>
+cargo hil station reconnect|ap-loss|ap-absence
+cargo hil wifi stop|start|scan|monitor|roundtrip
 cargo hil traffic rx|tx|bidirectional|tcp-rx|tcp-tx|tcp-bidirectional|icmp ...
 ```
 

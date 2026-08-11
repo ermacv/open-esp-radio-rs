@@ -102,6 +102,12 @@ impl<O, R> Esp32s31StationReturnedResources<O, R> {
     pub fn into_parts(self) -> (O, R) {
         (self.owner, self.runner)
     }
+
+    /// Borrow the returned owner for value-only observation before consuming
+    /// the complete reusable frontier.
+    pub const fn owner(&self) -> &O {
+        &self.owner
+    }
 }
 
 /// Why a station runner returned through its normal stopped edge.

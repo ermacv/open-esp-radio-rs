@@ -68,6 +68,7 @@ pub enum ConnectedRxProtection {
 pub struct ConnectedRxReorderKey {
     pub tid: u8,
     pub sequence: u16,
+    pub retry: bool,
 }
 
 /// One semantic event emitted by the connected frame dispatcher.
@@ -276,6 +277,7 @@ impl ConnectedRxDispatcher {
         Some(ConnectedRxReorderKey {
             tid: *raw.get(qos_offset)? & 0x0f,
             sequence: sequence_control >> 4,
+            retry: frame_control & RETRY != 0,
         })
     }
 
@@ -815,6 +817,7 @@ mod tests {
             Some(ConnectedRxReorderKey {
                 tid: 0,
                 sequence: 0x123,
+                retry: false,
             })
         );
         assert!(dispatcher.may_publish_amsdu(segment));

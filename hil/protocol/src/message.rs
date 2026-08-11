@@ -3,7 +3,7 @@ use core::fmt;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-pub const PROTOCOL_VERSION: u16 = 22;
+pub const PROTOCOL_VERSION: u16 = 23;
 pub const STARTUP_ARTIFACT_CHUNK_MAX_LEN: usize = 384;
 // Keep the largest protocol enum comfortably below one RX frame. This value
 // bounds executor poll-stack pressure as well as wire latency; complete MPDUs
@@ -142,6 +142,9 @@ pub struct FeatureCapabilities {
     /// This image reliably reports connected generations and proved peer-loss
     /// transitions independently of lossy text diagnostics.
     pub station_lifecycle_events: bool,
+    /// UDP RX sessions can return typed evidence for every delivery frontier
+    /// from post-reorder publication through the application socket.
+    pub rx_delivery_evidence: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -804,6 +807,78 @@ pub struct TransportEvidence {
     pub transport_errors: u32,
 }
 
+/// Sequence evidence collected at one finite UDP RX delivery stage.
+///
+/// Qualification traffic uses non-negative, non-wrapping `i32` sequence
+/// numbers. Negative control markers are counted separately and never enter
+/// the data-unit accounting.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct RxSequenceStageEvidence {
+    pub data_units: u32,
+    pub first: Option<u32>,
+    pub highest: Option<u32>,
+    pub gap_events: u32,
+    pub forward_missing: u32,
+    pub late_recovered: u32,
+    pub duplicates: u32,
+    pub backward_unclassified: u32,
+    pub first_anomaly: Option<u32>,
+    pub control_markers: u32,
+    pub data_after_terminal: u32,
+}
+
+/// Exact reconciliation of successful network admissions with UDP socket
+/// consumption through a bounded qualification-only shadow ledger.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct RxConsumerLedgerEvidence {
+    pub matched: u32,
+    pub enqueued_not_consumed: u32,
+    pub skipped_before_observed: u32,
+    pub unexpected_consumer: u32,
+    pub overflow: u32,
+    pub first_expected: Option<u32>,
+    pub first_observed: Option<u32>,
+}
+
+/// Correlation of application-level ordering defects with public QoS MAC
+/// sequence/TID progression at the post-reorder frontier.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct RxMacOrderEvidence {
+    pub backward_mac_backward: u32,
+    pub backward_mac_same: u32,
+    pub backward_mac_forward: u32,
+    pub backward_mac_other_tid: u32,
+    pub backward_mac_unavailable: u32,
+}
+
+/// Reorder decisions relevant to delivery loss during one session.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct RxReorderDeliveryEvidence {
+    pub ingress: u32,
+    pub ingress_retries: u32,
+    pub direct: u32,
+    pub buffered: u32,
+    pub released: u32,
+    pub missing: u32,
+    pub stale: u32,
+    pub gap_expiries: u32,
+    pub maximum_occupied: u32,
+    pub discarded: u32,
+}
+
+/// Complete typed evidence for the three UDP RX delivery frontiers.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct RxDeliveryEvidence {
+    pub post_reorder: RxSequenceStageEvidence,
+    pub network_enqueued: RxSequenceStageEvidence,
+    pub udp_consumer: RxSequenceStageEvidence,
+    pub consumer_ledger: RxConsumerLedgerEvidence,
+    pub mac_order: RxMacOrderEvidence,
+    pub reorder: RxReorderDeliveryEvidence,
+    pub network_queue_full: u32,
+    pub network_invalid_length: u32,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct LinkHealth {
     pub rx_frames: u32,
@@ -834,6 +909,7 @@ pub struct StackUsage {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum EvidenceRecord {
     Transport(TransportEvidence),
+    RxDelivery(RxDeliveryEvidence),
     Link(LinkHealth),
     Stack(StackUsage),
 }

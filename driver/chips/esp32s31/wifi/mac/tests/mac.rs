@@ -1442,6 +1442,24 @@ fn live_rx_ring_owns_rotated_handoff_reload_and_rom_base_repair() {
         mmio.words.get(&RX_DESCRIPTOR_BASE),
         Some(&(BASE + 2 * DESCRIPTOR_BYTES))
     );
+    let disable = mmio
+        .operations()
+        .iter()
+        .position(|operation| *operation == Operation::Write(RX_CONTROL, 0))
+        .unwrap();
+    let retained_last = mmio
+        .operations()
+        .iter()
+        .position(|operation| *operation == Operation::Read(RX_LAST_DESCRIPTOR))
+        .unwrap();
+    assert!(disable < retained_last);
+    assert!(mmio.operations()[disable + 1..retained_last].contains(&Operation::Fence));
+    let topology = stopped.topology_snapshot();
+    assert!(topology.valid);
+    assert_eq!(topology.start_index, 2);
+    assert_eq!(topology.tail_index, 1);
+    assert_eq!(topology.visited_descriptors, COUNT);
+    assert_eq!(topology.terminal_descriptors, 1);
 
     let mut live = stopped.start(&mut mmio).unwrap();
     let completed = BUFFER_SIZE | (80 << LENGTH_SHIFT) | BIT_30 | BIT_31;
@@ -1503,6 +1521,87 @@ fn live_rx_ring_owns_rotated_handoff_reload_and_rom_base_repair() {
     assert_eq!(live.accepted_tail(), 3);
     assert!(live.reload_pending());
     assert!(live.try_stop(&mut mmio).is_ok());
+}
+
+#[test]
+fn stopped_rx_ring_validates_every_retained_last_rotation() {
+    const COUNT: usize = 32;
+    const BASE: u32 = 0x2f00_1000;
+    const BUFFER_SIZE: u32 = 256;
+
+    for retained_index in 0..COUNT {
+        let descriptors = [const { Descriptor::new() }; COUNT];
+        let buffers = core::array::from_fn(|index| 0x2f01_0000 + index as u32 * 0x400);
+        let mut mmio = MockMmio::default();
+        mmio.set(
+            RX_LAST_DESCRIPTOR,
+            BASE + retained_index as u32 * DESCRIPTOR_BYTES,
+        );
+
+        let stopped =
+            RxRingStopped::prepare(&mut mmio, &descriptors, BASE, &buffers, BUFFER_SIZE, |_| {
+                Ok(())
+            })
+            .unwrap();
+        let expected_start = (retained_index + 1) % COUNT;
+        let topology = stopped.topology_snapshot();
+        assert_eq!(stopped.initial_start(), expected_start);
+        assert_eq!(stopped.accepted_tail(), retained_index);
+        assert!(topology.valid, "retained descriptor {retained_index}");
+        assert_eq!(topology.start_index, expected_start);
+        assert_eq!(topology.tail_index, retained_index);
+        assert_eq!(topology.visited_descriptors, COUNT);
+        assert_eq!(topology.terminal_descriptors, 1);
+        assert_eq!(descriptors[retained_index].next_address(), 0);
+    }
+}
+
+#[test]
+fn stopped_rx_ring_uses_zero_for_an_invalid_retained_last_pointer() {
+    const COUNT: usize = 4;
+    const BASE: u32 = 0x2f00_1000;
+    const BUFFER_SIZE: u32 = 256;
+    let buffers = [0x2f00_2000, 0x2f00_2200, 0x2f00_2400, 0x2f00_2600];
+
+    for retained_last in [0, BASE + 1, BASE + COUNT as u32 * DESCRIPTOR_BYTES] {
+        let descriptors = [const { Descriptor::new() }; COUNT];
+        let mut mmio = MockMmio::default();
+        mmio.set(RX_LAST_DESCRIPTOR, retained_last);
+        let stopped =
+            RxRingStopped::prepare(&mut mmio, &descriptors, BASE, &buffers, BUFFER_SIZE, |_| {
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(stopped.initial_start(), 0);
+        assert!(stopped.topology_snapshot().valid);
+    }
+}
+
+#[test]
+fn stopped_rx_ring_rejects_corrupt_topology_before_walker_enable() {
+    const COUNT: usize = 4;
+    const BASE: u32 = 0x2f00_1000;
+    const BUFFER_SIZE: u32 = 256;
+    let descriptors = [const { Descriptor::new() }; COUNT];
+    let buffers = [0x2f00_2000, 0x2f00_2200, 0x2f00_2400, 0x2f00_2600];
+    let mut mmio = MockMmio::default();
+    mmio.set(RX_CONTROL, 0);
+    let stopped =
+        RxRingStopped::prepare(&mut mmio, &descriptors, BASE, &buffers, BUFFER_SIZE, |_| {
+            Ok(())
+        })
+        .unwrap();
+    assert!(stopped.topology_snapshot().valid);
+
+    descriptors[0].publish(descriptors[0].word0(), buffers[0], 0);
+    assert!(!stopped.topology_snapshot().valid);
+    let (stopped, error) = match stopped.try_start(&mut mmio) {
+        Ok(_) => panic!("corrupt RX topology started"),
+        Err(failure) => failure,
+    };
+    assert_eq!(error, RxRingError::Corrupt);
+    assert!(!mmio.walker_enabled());
+    assert!(!stopped.topology_snapshot().valid);
 }
 
 #[test]

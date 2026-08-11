@@ -77,6 +77,25 @@ pub(crate) fn publish_queue(registers: &svd::WifiMacTxQueueControl, queue: u32) 
     0
 }
 
+/// Publish the three independent EDCA fields for one ordinary logical queue.
+///
+/// SOURCE: complete `libpp.a[hal_mac_tx.o]::hal_mac_tx_config_edca`.
+/// Each field is a separate fresh-read RMW edge in this exact order.
+#[inline(always)]
+pub(crate) fn configure_edca(
+    registers: &svd::WifiMacTxQueueControl,
+    queue: u32,
+    aifsn: u8,
+    contention_window: u16,
+    interface: u8,
+) -> u32 {
+    let config = registers.config(physical_bank(queue));
+    config.modify(|_, writer| writer.aifsn().set(aifsn));
+    config.modify(|_, writer| writer.contention_window().set(contention_window));
+    config.modify(|_, writer| writer.interface().set(interface));
+    0
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

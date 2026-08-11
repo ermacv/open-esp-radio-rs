@@ -582,6 +582,77 @@ mod tests {
     }
 
     #[test]
+    fn maximum_rx_delivery_evidence_fits_and_round_trips() {
+        use crate::{
+            EvidenceRecord, RxConsumerLedgerEvidence, RxDeliveryEvidence, RxMacOrderEvidence,
+            RxReorderDeliveryEvidence, RxSequenceStageEvidence,
+        };
+
+        let stage = RxSequenceStageEvidence {
+            data_units: u32::MAX,
+            first: Some(u32::MAX),
+            highest: Some(u32::MAX),
+            gap_events: u32::MAX,
+            forward_missing: u32::MAX,
+            late_recovered: u32::MAX,
+            duplicates: u32::MAX,
+            backward_unclassified: u32::MAX,
+            first_anomaly: Some(u32::MAX),
+            control_markers: u32::MAX,
+            data_after_terminal: u32::MAX,
+        };
+        let delivery = RxDeliveryEvidence {
+            post_reorder: stage,
+            network_enqueued: stage,
+            udp_consumer: stage,
+            consumer_ledger: RxConsumerLedgerEvidence {
+                matched: u32::MAX,
+                enqueued_not_consumed: u32::MAX,
+                skipped_before_observed: u32::MAX,
+                unexpected_consumer: u32::MAX,
+                overflow: u32::MAX,
+                first_expected: Some(u32::MAX),
+                first_observed: Some(u32::MAX),
+            },
+            mac_order: RxMacOrderEvidence {
+                backward_mac_backward: u32::MAX,
+                backward_mac_same: u32::MAX,
+                backward_mac_forward: u32::MAX,
+                backward_mac_other_tid: u32::MAX,
+                backward_mac_unavailable: u32::MAX,
+            },
+            reorder: RxReorderDeliveryEvidence {
+                ingress: u32::MAX,
+                ingress_retries: u32::MAX,
+                direct: u32::MAX,
+                buffered: u32::MAX,
+                released: u32::MAX,
+                missing: u32::MAX,
+                stale: u32::MAX,
+                gap_expiries: u32::MAX,
+                maximum_occupied: u32::MAX,
+                discarded: u32::MAX,
+            },
+            network_queue_full: u32::MAX,
+            network_invalid_length: u32::MAX,
+        };
+        let expected = Envelope::new(
+            7,
+            2,
+            9,
+            2,
+            Event::Evidence(EvidenceRecord::RxDelivery(delivery)),
+        );
+        let mut encoder = FrameEncoder::new();
+        let frame = encoder.encode(&expected).unwrap();
+        assert!(frame.len() <= MAX_WIRE_FRAME_BYTES);
+        let mut decoder = FrameDecoder::new();
+        let mut observed = None;
+        decoder.feed(frame, |result| observed = Some(result.unwrap()));
+        assert_eq!(observed, Some(expected));
+    }
+
+    #[test]
     fn startup_artifact_chunk_rejects_empty_and_out_of_range_payloads() {
         assert!(StartupArtifactChunk::try_new(0, 0, 0, &[1]).is_err());
         assert!(StartupArtifactChunk::try_new(1, 0, 0, &[]).is_err());
@@ -604,7 +675,9 @@ mod tests {
             rx_bytes: 2_400,
             ..match first {
                 EvidenceRecord::Transport(evidence) => evidence,
-                EvidenceRecord::Link(_) | EvidenceRecord::Stack(_) => unreachable!(),
+                EvidenceRecord::RxDelivery(_)
+                | EvidenceRecord::Link(_)
+                | EvidenceRecord::Stack(_) => unreachable!(),
             }
         });
 

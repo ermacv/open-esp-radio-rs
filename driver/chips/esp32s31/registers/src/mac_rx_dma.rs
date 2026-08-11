@@ -6,6 +6,16 @@ use open_esp_radio_dma::StableDmaRange;
 
 use super::{RadioRegisters, device_fence, svd};
 
+/// Read-only hardware frontier of the MAC RX descriptor walker.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MacRxDmaSnapshot {
+    pub walker_enabled: bool,
+    pub reload_pending: bool,
+    pub descriptor_base: u32,
+    pub next_descriptor_low: u32,
+    pub last_descriptor_low: u32,
+}
+
 #[inline(always)]
 pub(crate) fn set_walker_enabled(registers: &svd::WifiMacRxDma, enabled: bool) {
     registers.rx_control().modify(|_, writer| {
@@ -60,6 +70,19 @@ pub(crate) fn request_descriptor_reload(registers: &svd::WifiMacRxDma) {
 }
 
 impl RadioRegisters {
+    /// Snapshot the complete published RX walker frontier without changing it.
+    pub fn mac_rx_dma_snapshot(&self) -> MacRxDmaSnapshot {
+        let dma = &self.peripherals.wifi_mac_rx_dma;
+        let control = dma.rx_control().read();
+        MacRxDmaSnapshot {
+            walker_enabled: control.walker_enable().bit(),
+            reload_pending: control.append_descriptor_reload().bit(),
+            descriptor_base: dma.rx_descriptor_base().read().bits(),
+            next_descriptor_low: dma.rx_next_descriptor().read().bits() & 0x000f_ffff,
+            last_descriptor_low: dma.rx_last_descriptor().read().bits() & 0x000f_ffff,
+        }
+    }
+
     /// Initialize the RX buffer geometry without publishing a descriptor.
     ///
     /// SOURCE: first four RMWs of complete pinned

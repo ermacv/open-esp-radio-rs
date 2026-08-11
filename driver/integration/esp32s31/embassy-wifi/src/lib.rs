@@ -39,6 +39,8 @@ pub use monitor::{
 };
 #[cfg(feature = "qualification")]
 pub use open_esp_radio_esp32s31_wifi_embassy::connected_runner::ConnectedDisconnectReason;
+#[cfg(feature = "qualification")]
+pub use open_esp_radio_esp32s31_wifi_embassy::network_rx::RxNetworkDeliveryObserver;
 pub use station::{Esp32s31RadioRunner, new};
 
 /// Board-derived radio identity. Reading eFuse remains an application
@@ -105,6 +107,9 @@ pub struct Esp32s31QualificationHooks {
     pub rx_pipeline: &'static dyn open_esp_radio_esp32s31_wifi_embassy::rx_pipeline_observer::RxPipelineObserver,
     pub aggregate_tx: &'static dyn open_esp_radio_esp32s31_wifi_embassy::aggregate_tx_observer::AggregateTxObserver,
     pub connected_rx: &'static dyn Esp32s31ConnectedRxObserver,
+    pub rx_delivery: Option<
+        &'static dyn open_esp_radio_esp32s31_wifi_embassy::network_rx::RxNetworkDeliveryObserver,
+    >,
     pub mac_irq: fn(Esp32s31MacIrqObservation),
     pub station_lifecycle: fn(Esp32s31StationLifecycleObservation),
 }
@@ -115,4 +120,12 @@ pub struct Esp32s31QualificationHooks {
 pub enum Esp32s31StationLifecycleObservation {
     Connected,
     Disconnected(ConnectedDisconnectReason),
+    AttemptFailed {
+        attempt: u16,
+        stage: open_esp_radio::wifi::sta::station::StaLifecycleStage,
+    },
+    RetryExhausted {
+        attempts: u16,
+        stage: open_esp_radio::wifi::sta::station::StaLifecycleStage,
+    },
 }

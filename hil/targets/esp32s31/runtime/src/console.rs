@@ -22,7 +22,7 @@ use esp_hal::{
 use open_esp_radio_hil_protocol::{
     Capabilities, Command, Completion, Direction, Envelope, Event, EvidenceRecord, Finished,
     FrameDecoder, FrameEncoder, NetworkConfiguration, PROTOCOL_VERSION, RejectReason,
-    ResultSummary, STARTUP_ARTIFACT_CHUNK_MAX_LEN, SessionConfig, SessionState,
+    ResultSummary, RxDeliveryEvidence, STARTUP_ARTIFACT_CHUNK_MAX_LEN, SessionConfig, SessionState,
     StartupArtifactChunk, StartupArtifactDisposition, StartupArtifactStatus, StateChange,
     StationEpochEvidence, StationLifecycleEvent, Transport, TransportEvidence,
     WifiMonitorCaptureRequest, WifiMonitorEvidence, WifiMonitorFrameChunk, WifiMonitorRequest,
@@ -203,6 +203,7 @@ impl StartupArtifactAssembler {
 struct SessionResult {
     session_id: u64,
     evidence: TransportEvidence,
+    rx_delivery: Option<RxDeliveryEvidence>,
     passed: bool,
 }
 
@@ -452,11 +453,17 @@ pub async fn publish_station_lifecycle(event: StationLifecycleEvent) {
 ///
 /// USB serialization happens in another task and therefore cannot extend the
 /// benchmark's measured interval.
-pub async fn complete_session(session_id: u64, evidence: TransportEvidence, passed: bool) {
+pub async fn complete_session(
+    session_id: u64,
+    evidence: TransportEvidence,
+    rx_delivery: Option<RxDeliveryEvidence>,
+    passed: bool,
+) {
     SESSION_RESULTS
         .send(SessionResult {
             session_id,
             evidence,
+            rx_delivery,
             passed,
         })
         .await;
@@ -961,12 +968,21 @@ async fn transition_state(
 }
 
 async fn publish_result(result: SessionResult, request_id: u32) {
-    let evidence = [
-        EvidenceRecord::Transport(result.evidence),
-        EvidenceRecord::Stack(crate::stack_usage_snapshot()),
-    ];
-    let checksum = evidence_crc32c(&evidence)
+    let mut evidence = heapless::Vec::<EvidenceRecord, 3>::new();
+    evidence
+        .push(EvidenceRecord::Transport(result.evidence))
+        .expect("session evidence has fixed capacity");
+    if let Some(rx_delivery) = result.rx_delivery {
+        evidence
+            .push(EvidenceRecord::RxDelivery(rx_delivery))
+            .expect("session evidence has fixed capacity");
+    }
+    evidence
+        .push(EvidenceRecord::Stack(crate::stack_usage_snapshot()))
+        .expect("session evidence has fixed capacity");
+    let checksum = evidence_crc32c(evidence.as_slice())
         .expect("transport and stack evidence fit the protocol digest buffer");
+    let evidence_records = evidence.len() as u16;
     for record in evidence {
         publish_event_reliably(result.session_id, request_id, Event::Evidence(record)).await;
     }
@@ -976,7 +992,7 @@ async fn publish_result(result: SessionResult, request_id: u32) {
         Event::Finished(Finished {
             summary: ResultSummary {
                 passed: result.passed,
-                evidence_records: evidence.len() as u16,
+                evidence_records,
             },
             evidence_crc32c: checksum,
         }),

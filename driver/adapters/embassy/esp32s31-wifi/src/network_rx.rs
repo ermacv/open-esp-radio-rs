@@ -12,6 +12,18 @@ use crate::{
     },
 };
 
+/// Qualification-only observation of the exact network admission decision.
+///
+/// This interface and its publication hook are absent unless the explicit
+/// `rx-delivery-observation` feature is enabled. Diagnostic implementations
+/// must remain finite and non-blocking.
+#[cfg(feature = "rx-delivery-observation")]
+pub trait RxNetworkDeliveryObserver: Sync {
+    fn admitted(&self, event: &ConnectedRxEvent<'_>);
+
+    fn dropped(&self, event: &ConnectedRxEvent<'_>, error: RxEnqueueError);
+}
+
 /// Copies Ethernet events into the bounded network queue and forwards every
 /// semantic event to a protocol observer.
 pub struct EmbassyNetConnectedRxSink<
@@ -27,6 +39,8 @@ pub struct EmbassyNetConnectedRxSink<
     dropped: u32,
     last_enqueue_error: Option<RxEnqueueError>,
     pipeline_observer: Option<&'resources dyn RxPipelineObserver>,
+    #[cfg(feature = "rx-delivery-observation")]
+    delivery_observer: Option<&'resources dyn RxNetworkDeliveryObserver>,
 }
 
 impl<'resources, M: RawMutex, O, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize>
@@ -43,7 +57,18 @@ impl<'resources, M: RawMutex, O, const FRAME_CAPACITY: usize, const QUEUE_DEPTH:
             dropped: 0,
             last_enqueue_error: None,
             pipeline_observer: None,
+            #[cfg(feature = "rx-delivery-observation")]
+            delivery_observer: None,
         }
+    }
+
+    #[cfg(feature = "rx-delivery-observation")]
+    pub fn with_delivery_observer(
+        mut self,
+        delivery_observer: Option<&'resources dyn RxNetworkDeliveryObserver>,
+    ) -> Self {
+        self.delivery_observer = delivery_observer;
+        self
     }
 
     pub fn with_pipeline_observer(mut self, observer: &'resources dyn RxPipelineObserver) -> Self {
@@ -85,18 +110,38 @@ impl<M: RawMutex, O: ConnectedRxSink, const FRAME_CAPACITY: usize, const QUEUE_D
                 return;
             }
             let publish_started = self.pipeline_observer.map(|observer| observer.now_micros());
+            #[cfg(not(feature = "rx-delivery-observation"))]
             let result = self.network.try_send_parts(
                 frame.destination,
                 frame.source,
                 frame.ether_type,
                 frame.payload,
             );
+            #[cfg(feature = "rx-delivery-observation")]
+            let result = {
+                let delivery_observer = self.delivery_observer;
+                self.network.try_send_parts_observed(
+                    frame.destination,
+                    frame.source,
+                    frame.ether_type,
+                    frame.payload,
+                    || {
+                        if let Some(observer) = delivery_observer {
+                            observer.admitted(&event);
+                        }
+                    },
+                )
+            };
             let outcome = match result {
                 Ok(()) => {
                     self.enqueued = self.enqueued.saturating_add(1);
                     RxNetworkPublicationOutcome::Enqueued
                 }
                 Err(error) => {
+                    #[cfg(feature = "rx-delivery-observation")]
+                    if let Some(observer) = self.delivery_observer {
+                        observer.dropped(&event, error);
+                    }
                     self.dropped = self.dropped.saturating_add(1);
                     self.last_enqueue_error = Some(error);
                     RxNetworkPublicationOutcome::Dropped

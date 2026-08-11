@@ -314,6 +314,7 @@ pub(in crate::product_hil) async fn run_open_radio_tcp_benchmark<'a>(
                 elapsed_micros: elapsed_us,
                 transport_errors,
             },
+            None,
             passed,
         )
         .await;

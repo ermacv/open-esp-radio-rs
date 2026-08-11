@@ -59,6 +59,11 @@ pub enum RxPipelineObservation {
         start: u16,
         sequence: u16,
     },
+    /// One addressed protected QoS MPDU before agreement/reorder handling.
+    ReorderIngress {
+        active: bool,
+        retry: bool,
+    },
     ReorderReleased {
         buffered: bool,
         released: u8,
@@ -66,6 +71,7 @@ pub enum RxPipelineObservation {
         stale: bool,
     },
     ReorderGapExpired,
+    ReorderDiscarded,
     ReorderOccupied {
         occupied: u32,
     },

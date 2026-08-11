@@ -8,7 +8,7 @@ use core::sync::atomic::{AtomicU8, Ordering};
 
 use crate::{
     descriptor::{
-        BIT_30, BIT_31, DESCRIPTOR_BYTES, Descriptor, LENGTH_MASK, LENGTH_SHIFT, SIZE_MASK,
+        BIT_29, BIT_30, BIT_31, DESCRIPTOR_BYTES, Descriptor, LENGTH_MASK, LENGTH_SHIFT, SIZE_MASK,
         descriptor_address_valid, dma_range_valid, length as descriptor_length, rx_armed_word,
         rx_done, rx_rearm_word, size as descriptor_size,
     },
@@ -50,6 +50,38 @@ pub enum RxRingError {
     Busy,
     Corrupt,
     ResetRequired,
+}
+
+/// One allocation-free observation of an RX descriptor.
+///
+/// The snapshot copies volatile words once. It is intended for qualification
+/// and fault reporting without exposing the descriptor for mutation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RxDescriptorSnapshot {
+    pub index: usize,
+    pub address: u32,
+    pub word0: u32,
+    pub buffer_address: u32,
+    pub next_address: u32,
+}
+
+/// Compact proof that a zero-terminated RX list is complete and coherent.
+///
+/// `valid` means the walk starting at `start_index` visited every descriptor
+/// exactly once, followed the expected rotated order, found exactly one
+/// terminal node at `tail_index`, retained the configured buffer binding and,
+/// for a stopped ring, observed an armed ownership word on every node.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RxRingTopologySnapshot {
+    pub descriptor_base: u32,
+    pub start_index: usize,
+    pub head_address: u32,
+    pub head_next_address: u32,
+    pub tail_index: usize,
+    pub tail_address: u32,
+    pub visited_descriptors: usize,
+    pub terminal_descriptors: usize,
+    pub valid: bool,
 }
 
 /// Persistent state of the static RX arena, independent of a movable ring
@@ -391,13 +423,18 @@ impl<'a, const COUNT: usize> RxRingStopped<'a, COUNT> {
     {
         validate_live_ring_geometry::<COUNT>()?;
         let binding = RxDmaBinding::new(descriptors, descriptor_base).ok_or(RxRingError::Count)?;
+        if mmio.walker_enabled() {
+            disable_receive(mmio)?;
+        }
+        // RX_LAST_DESCRIPTOR belongs to the walker. It is a stable handoff
+        // frontier only after WALKER_ENABLE has been confirmed clear. Reading
+        // it before this edge can rotate the rebuilt list from a descriptor
+        // that hardware advances concurrently.
+        mmio.fence();
         let retained_last_low = mmio.last_descriptor_low();
         let initial_start = descriptor_index(retained_last_low, descriptor_base, COUNT)
             .map_or(0, |index| if index + 1 == COUNT { 0 } else { index + 1 });
 
-        if mmio.walker_enabled() {
-            disable_receive(mmio)?;
-        }
         for index in 0..COUNT {
             prepare_buffer(index)?;
         }
@@ -435,6 +472,22 @@ impl<'a, const COUNT: usize> RxRingStopped<'a, COUNT> {
         self.retained_last_low
     }
 
+    /// Observe one descriptor without exposing mutation authority.
+    pub fn descriptor_snapshot(&self, index: usize) -> Option<RxDescriptorSnapshot> {
+        descriptor_snapshot(self.descriptors, self.descriptor_base, index)
+    }
+
+    /// Validate the complete stopped list before it becomes hardware-owned.
+    pub fn topology_snapshot(&self) -> RxRingTopologySnapshot {
+        ring_topology_snapshot(
+            self.descriptors,
+            self.descriptor_base,
+            self.buffer_addresses,
+            self.initial_start,
+            true,
+        )
+    }
+
     /// Opens the walker and consumes the stopped-state authority.
     ///
     /// The caller owns any platform-specific settle delay between
@@ -443,6 +496,9 @@ impl<'a, const COUNT: usize> RxRingStopped<'a, COUNT> {
         self,
         mmio: &mut M,
     ) -> Result<RxRingLive<'a, COUNT>, (Self, RxRingError)> {
+        if !self.topology_snapshot().valid {
+            return Err((self, RxRingError::Corrupt));
+        }
         if let Err(error) = enable_receive_inner(mmio, &self.binding) {
             return Err((self, error));
         }
@@ -481,6 +537,27 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
 
     pub(crate) const fn buffer_addresses(&self) -> &'a [u32; COUNT] {
         self.buffer_addresses
+    }
+
+    /// Observe one live descriptor without transferring its ownership.
+    pub fn descriptor_snapshot(&self, index: usize) -> Option<RxDescriptorSnapshot> {
+        descriptor_snapshot(self.descriptors, self.descriptor_base, index)
+    }
+
+    /// Walk the links from the current recycle frontier.
+    ///
+    /// Unlike the stopped proof this does not validate ownership words: the
+    /// hardware may be changing those words while the snapshot is taken.
+    /// `valid` still proves the address, link, buffer and terminal topology
+    /// observed during this finite walk.
+    pub fn topology_snapshot(&self) -> RxRingTopologySnapshot {
+        ring_topology_snapshot(
+            self.descriptors,
+            self.descriptor_base,
+            self.buffer_addresses,
+            self.recycle_start,
+            false,
+        )
     }
 
     /// Irreversibly poison the static arena after an ownership invariant can
@@ -1026,6 +1103,118 @@ fn descriptor_address(descriptor_base: u32, index: usize) -> Result<u32, RxRingE
                 .ok_or(RxRingError::Overflow)?,
         )
         .ok_or(RxRingError::Overflow)
+}
+
+fn descriptor_snapshot<const COUNT: usize>(
+    descriptors: &[Descriptor; COUNT],
+    descriptor_base: u32,
+    index: usize,
+) -> Option<RxDescriptorSnapshot> {
+    let descriptor = descriptors.get(index)?;
+    Some(RxDescriptorSnapshot {
+        index,
+        address: descriptor_address(descriptor_base, index).ok()?,
+        word0: descriptor.word0(),
+        buffer_address: descriptor.buffer_address(),
+        next_address: descriptor.next_address(),
+    })
+}
+
+fn descriptor_index_full(address: u32, descriptor_base: u32, count: usize) -> Option<usize> {
+    let offset = address.checked_sub(descriptor_base)?;
+    if offset % DESCRIPTOR_BYTES != 0 {
+        return None;
+    }
+    let index = usize::try_from(offset / DESCRIPTOR_BYTES).ok()?;
+    (index < count).then_some(index)
+}
+
+fn ring_topology_snapshot<const COUNT: usize>(
+    descriptors: &[Descriptor; COUNT],
+    descriptor_base: u32,
+    buffer_addresses: &[u32; COUNT],
+    start: usize,
+    require_armed: bool,
+) -> RxRingTopologySnapshot {
+    let tail_index = if COUNT == 0 || start >= COUNT {
+        0
+    } else {
+        wrap_sub_one::<COUNT>(start)
+    };
+    let head_address = descriptor_address(descriptor_base, start).unwrap_or(0);
+    let tail_address = descriptor_address(descriptor_base, tail_index).unwrap_or(0);
+    let mut snapshot = RxRingTopologySnapshot {
+        descriptor_base,
+        start_index: start,
+        head_address,
+        head_next_address: 0,
+        tail_index,
+        tail_address,
+        visited_descriptors: 0,
+        terminal_descriptors: 0,
+        valid: false,
+    };
+    if validate_live_ring_geometry::<COUNT>().is_err()
+        || start >= COUNT
+        || !descriptor_address_valid(descriptor_base)
+    {
+        return snapshot;
+    }
+
+    let mut visited = 0_u64;
+    let mut index = start;
+    for step in 0..COUNT {
+        let bit = 1_u64 << index;
+        if visited & bit != 0 {
+            return snapshot;
+        }
+        visited |= bit;
+        snapshot.visited_descriptors += 1;
+
+        let descriptor = &descriptors[index];
+        let word0 = descriptor.word0();
+        let buffer_address = descriptor.buffer_address();
+        let next_address = descriptor.next_address();
+        if step == 0 {
+            snapshot.head_next_address = next_address;
+        }
+        if buffer_address != buffer_addresses[index] {
+            return snapshot;
+        }
+        if require_armed {
+            let capacity = descriptor_size(word0);
+            if capacity == 0
+                || !dma_range_valid(buffer_address, capacity)
+                || descriptor_length(word0) != capacity
+                || word0 & BIT_31 == 0
+                || word0 & (BIT_29 | BIT_30) != 0
+            {
+                return snapshot;
+            }
+        }
+
+        if next_address == 0 {
+            snapshot.terminal_descriptors += 1;
+            if step + 1 != COUNT || index != tail_index {
+                return snapshot;
+            }
+            snapshot.valid =
+                snapshot.visited_descriptors == COUNT && snapshot.terminal_descriptors == 1;
+            return snapshot;
+        }
+        if step + 1 == COUNT {
+            return snapshot;
+        }
+        let Some(next_index) = descriptor_index_full(next_address, descriptor_base, COUNT) else {
+            return snapshot;
+        };
+        let expected_index = wrap_add::<COUNT>(index, 1);
+        if next_index != expected_index {
+            return snapshot;
+        }
+        index = next_index;
+    }
+    snapshot
 }
 
 fn descriptor_index(low_address: u32, descriptor_base: u32, count: usize) -> Option<usize> {

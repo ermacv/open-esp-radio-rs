@@ -4731,6 +4731,12 @@
               <name>ENABLES_UNKNOWN</name>
               <bitOffset>0</bitOffset>
               <bitWidth>3</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>7</maximum>
+                </range>
+              </writeConstraint>
             </field>
           </fields>
         </register>
@@ -10546,6 +10552,139 @@
               <name>VALUE</name>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
+            </field>
+          </fields>
+        </register>
+      </registers>
+    </peripheral>
+    <peripheral>
+      <name>COEX_HW_TIMER</name>
+      <description>Five-entry coexistence timer bank. Complete libcoexist leaves address entry index as 0x2010f400 + index*0x10. The independent 46-event coex_core_timer_idx_get table returns only timer indices zero through four or 0xff for an invalid event.</description>
+      <baseAddress>0x2010F400</baseAddress>
+      <registers>
+        <register>
+          <dim>5</dim>
+          <dimIncrement>0x10</dimIncrement>
+          <dimIndex>0-4</dimIndex>
+          <name>CONFIGURATION%s</name>
+          <description>Primary timer word. coex_hw_timer_set replaces both high nibbles and the low 24-bit tick image through separate fresh-read RMW operations. coex_hw_timer_force clears the low 24 bits; coex_hw_timer_unforce replaces them with 1000.</description>
+          <addressOffset>0x0</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <fields>
+            <field>
+              <name>PRIMARY_TICK_IMAGE</name>
+              <description>Low 24 bits returned by coex_hw_timer_tick_get for the first timer value. The exact counter epoch and units remain part of the reviewed timer conversion rather than the register geometry.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>24</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>16777215</maximum>
+                </range>
+              </writeConstraint>
+            </field>
+            <field>
+              <name>PARAMETER_2</name>
+              <description>Low nibble of the third coex_hw_timer_set argument.</description>
+              <bitOffset>24</bitOffset>
+              <bitWidth>4</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>15</maximum>
+                </range>
+              </writeConstraint>
+            </field>
+            <field>
+              <name>PARAMETER_1</name>
+              <description>Low two bits of the second coex_hw_timer_set argument. Bits 31:30 are preserved by the complete vendor RMW.</description>
+              <bitOffset>28</bitOffset>
+              <bitWidth>2</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>3</maximum>
+                </range>
+              </writeConstraint>
+            </field>
+            <field>
+              <name>HIGH_UNKNOWN</name>
+              <description>Bits preserved by coex_hw_timer_set while PARAMETER_1 is replaced.</description>
+              <bitOffset>30</bitOffset>
+              <bitWidth>2</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <dim>5</dim>
+          <dimIncrement>0x10</dimIncrement>
+          <dimIndex>0-4</dimIndex>
+          <name>SECONDARY_TARGET%s</name>
+          <description>Secondary timer word. coex_hw_timer_set preserves the high byte and replaces the low 24 bits with the converted fourth timer-value argument.</description>
+          <addressOffset>0x4</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <fields>
+            <field>
+              <name>SECONDARY_TICK_IMAGE</name>
+              <bitOffset>0</bitOffset>
+              <bitWidth>24</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>16777215</maximum>
+                </range>
+              </writeConstraint>
+            </field>
+            <field>
+              <name>HIGH_UNKNOWN</name>
+              <bitOffset>24</bitOffset>
+              <bitWidth>8</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <dim>5</dim>
+          <dimIncrement>0x10</dimIncrement>
+          <dimIndex>0-4</dimIndex>
+          <name>ENABLE_CONTROL%s</name>
+          <description>coex_hw_timer_enable sets bit zero here after clearing bit zero in the paired disable-control word. coex_hw_timer_disable performs the inverse transaction.</description>
+          <addressOffset>0x8</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <fields>
+            <field>
+              <name>ENABLE</name>
+              <bitOffset>0</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>UNKNOWN</name>
+              <bitOffset>1</bitOffset>
+              <bitWidth>31</bitWidth>
+            </field>
+          </fields>
+        </register>
+        <register>
+          <dim>5</dim>
+          <dimIncrement>0x10</dimIncrement>
+          <dimIndex>0-4</dimIndex>
+          <name>DISABLE_CONTROL%s</name>
+          <description>coex_hw_timer_disable sets bit zero here after clearing bit zero in the paired enable-control word. coex_hw_timer_enable performs the inverse transaction.</description>
+          <addressOffset>0xC</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <fields>
+            <field>
+              <name>DISABLE</name>
+              <bitOffset>0</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>UNKNOWN</name>
+              <bitOffset>1</bitOffset>
+              <bitWidth>31</bitWidth>
             </field>
           </fields>
         </register>

@@ -234,6 +234,11 @@ impl<H, R, E, A, C> Esp32s31ReconnectedStaEpoch<H, R, E, A, C> {
         (&mut self.hardware, &mut self.rx)
     }
 
+    /// Borrow the sole connected hardware owner before the epoch is started.
+    pub fn hardware_mut(&mut self) -> &mut H {
+        &mut self.hardware
+    }
+
     /// Consume the successful join frontier for connected-service assembly.
     pub fn into_parts(self) -> Esp32s31ReconnectedStaEpochParts<H, R, E, A, C> {
         Esp32s31ReconnectedStaEpochParts {

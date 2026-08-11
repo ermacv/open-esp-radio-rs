@@ -4,7 +4,60 @@
 
 use super::{RadioRegisters, device_fence};
 
+/// Read-only associated-STA receive-policy evidence.
+///
+/// The two policy words are retained as exact register images because several
+/// still-undocumented bits participate in the vendor transaction. All known
+/// address and enable fields are decoded through the PAC so qualification
+/// code does not need raw MMIO access.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MacStaReceivePolicySnapshot {
+    pub queue_zero_policy: u32,
+    pub queue_three_policy: u32,
+    pub bssid: [u8; 6],
+    pub association_id: u16,
+    pub minimum_mpdu_start_spacing: u8,
+    pub bssid_address_check_enabled: bool,
+    pub interface_is_soft_ap: bool,
+    pub interface_rx_policy_enabled: bool,
+    pub beacon_filter_control: u8,
+}
+
 impl RadioRegisters {
+    /// Snapshot every register frontier that can suppress associated-STA
+    /// beacons while still admitting directed management traffic.
+    pub fn sta_receive_policy_snapshot(&self) -> MacStaReceivePolicySnapshot {
+        let filters = &self.peripherals.wifi_mac_rx_filter;
+        let bssids = &self.peripherals.wifi_mac_bssid_policy;
+        let bssid_low = bssids.bssid_low(0).read().bytes_0_3().bits();
+        let bssid_high = bssids.bssid_high(0).read();
+        let interface = self
+            .peripherals
+            .wifi_mac_interface_address
+            .address_high(0)
+            .read();
+        let low = bssid_low.to_le_bytes();
+        let high = bssid_high.bssid_high().bits().to_le_bytes();
+
+        MacStaReceivePolicySnapshot {
+            queue_zero_policy: filters.policy(0).read().bits(),
+            queue_three_policy: filters.policy(3).read().bits(),
+            bssid: [low[0], low[1], low[2], low[3], high[0], high[1]],
+            association_id: bssid_high.association_id().bits(),
+            minimum_mpdu_start_spacing: bssid_high.minimum_mpdu_start_spacing().bits(),
+            bssid_address_check_enabled: bssid_high.address_check_enable().bit_is_set(),
+            interface_is_soft_ap: bssid_high.interface_is_soft_ap().bit_is_set(),
+            interface_rx_policy_enabled: interface.rx_policy_enable().bit_is_set(),
+            beacon_filter_control: self
+                .peripherals
+                .wifi_mac_sta_beacon_filter
+                .control()
+                .read()
+                .enables_unknown()
+                .bits(),
+        }
+    }
+
     /// Apply the complete four-queue cold policy transaction from `hal_init`.
     ///
     /// SOURCE: complete pinned `libpp.a[hal_mac.o]::hal_init`,
@@ -154,6 +207,7 @@ impl RadioRegisters {
         // 2026-07-28.
         filter.modify(|_, w| w.receive_unicast_check_bssid().set_bit());
         filter.modify(|_, w| w.dump_unicast_check_bssid().set_bit());
+
         device_fence();
     }
 }

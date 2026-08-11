@@ -24,7 +24,12 @@ static_cell = "2.1.1"
 [features]
 default = []
 high-throughput = ["open-esp-radio-esp32s31-wifi-embassy/high-throughput"]
-qualification = ["dep:esp-println", "high-throughput"]
+qualification = [
+    "dep:esp-println",
+    "high-throughput",
+    "open-esp-radio-embassy-net/rx-delivery-observation",
+    "open-esp-radio-esp32s31-wifi-embassy/rx-delivery-observation",
+]
 
 [lints.rust]
 unsafe_op_in_unsafe_fn = "deny"

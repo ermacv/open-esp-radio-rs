@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::Channel};
-use open_esp_radio_hil_protocol::{Direction, TransportEvidence};
+use open_esp_radio_hil_protocol::{Direction, RxDeliveryEvidence, TransportEvidence};
 
 use crate::console::{ActiveSession, complete_session, receive_session_start};
 
@@ -21,6 +21,7 @@ pub(in crate::product_hil) struct OpenRadioBidirectionalResult {
     session_id: u64,
     direction: OpenRadioBidirectionalDirection,
     evidence: TransportEvidence,
+    rx_delivery: Option<RxDeliveryEvidence>,
     passed: bool,
 }
 
@@ -88,6 +89,11 @@ pub(in crate::product_hil) async fn run_open_radio_bidirectional_session_coordin
                 complete_session(
                     session.session_id,
                     evidence,
+                    if first.direction == OpenRadioBidirectionalDirection::Rx {
+                        first.rx_delivery
+                    } else {
+                        second.rx_delivery
+                    },
                     valid_pair && first.passed && second.passed,
                 )
                 .await;
@@ -104,7 +110,13 @@ async fn complete_single_direction(
     let valid = result.session_id == session_id && result.direction == expected_direction;
     let mut evidence = result.evidence;
     evidence.transport_errors = evidence.transport_errors.saturating_add(u32::from(!valid));
-    complete_session(session_id, evidence, valid && result.passed).await;
+    complete_session(
+        session_id,
+        evidence,
+        result.rx_delivery,
+        valid && result.passed,
+    )
+    .await;
 }
 
 pub(in crate::product_hil) async fn complete_open_radio_bidirectional_direction(
@@ -112,6 +124,7 @@ pub(in crate::product_hil) async fn complete_open_radio_bidirectional_direction(
     session_id: u64,
     direction: OpenRadioBidirectionalDirection,
     evidence: TransportEvidence,
+    rx_delivery: Option<RxDeliveryEvidence>,
     passed: bool,
 ) {
     results
@@ -119,6 +132,7 @@ pub(in crate::product_hil) async fn complete_open_radio_bidirectional_direction(
             session_id,
             direction,
             evidence,
+            rx_delivery,
             passed,
         })
         .await;

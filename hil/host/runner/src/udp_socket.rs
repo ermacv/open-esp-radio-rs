@@ -53,6 +53,17 @@ pub(crate) fn configure_qualification_receive_buffer(socket: &UdpSocket) -> io::
     usize::try_from(actual).map_err(|_| io::Error::other("negative SO_RCVBUF read-back"))
 }
 
+/// Opens the reverse conntrack path without inheriting a late ICMP error from
+/// a preceding reset-separated run that reused the same UDP four-tuple.
+pub(crate) fn open_reverse_flow(socket: &UdpSocket) -> io::Result<()> {
+    // A target reset closes its bound UDP port. A delayed ICMP Port
+    // Unreachable can be associated with the next connected host socket when
+    // the qualification deliberately reuses the fixed port. It describes the
+    // preceding epoch, so drain it before sending the new epoch's probe.
+    socket.take_error()?;
+    socket.send(&[0]).map(|_| ())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

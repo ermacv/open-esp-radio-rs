@@ -14,6 +14,7 @@ use open_esp_radio_hil_protocol::{
 
 use crate::{
     Result, invalidate_previous_report,
+    lab_config::LabConfig,
     paced_tcp::{
         Config as PacedTcpConfig, HostReception, HostTransmission, exchange, receive, send,
     },
@@ -61,19 +62,23 @@ struct TargetSample {
     pattern_ok: bool,
 }
 
-pub(crate) fn run_rx(arguments: Vec<String>, root: &Path) -> Result<()> {
-    run(arguments, root, Direction::Rx)
+pub(crate) fn run_rx(arguments: Vec<String>, root: &Path, lab: &LabConfig) -> Result<()> {
+    run(arguments, root, lab, Direction::Rx)
 }
 
-pub(crate) fn run_tx(arguments: Vec<String>, root: &Path) -> Result<()> {
-    run(arguments, root, Direction::Tx)
+pub(crate) fn run_tx(arguments: Vec<String>, root: &Path, lab: &LabConfig) -> Result<()> {
+    run(arguments, root, lab, Direction::Tx)
 }
 
-pub(crate) fn run_bidirectional(arguments: Vec<String>, root: &Path) -> Result<()> {
-    run(arguments, root, Direction::Bidirectional)
+pub(crate) fn run_bidirectional(
+    arguments: Vec<String>,
+    root: &Path,
+    lab: &LabConfig,
+) -> Result<()> {
+    run(arguments, root, lab, Direction::Bidirectional)
 }
 
-fn run(arguments: Vec<String>, root: &Path, direction: Direction) -> Result<()> {
+fn run(arguments: Vec<String>, root: &Path, lab: &LabConfig, direction: Direction) -> Result<()> {
     if arguments
         .first()
         .is_some_and(|value| matches!(value.as_str(), "help" | "--help" | "-h"))
@@ -81,8 +86,7 @@ fn run(arguments: Vec<String>, root: &Path, direction: Direction) -> Result<()> 
         print_help(direction);
         return Ok(());
     }
-    let mut options = parse_options(&arguments, direction)?;
-    reject_overlapping_ipv4_links(options.device)?;
+    let mut options = parse_options(&arguments, lab, direction)?;
     let mode = direction_name(direction);
     let output = root.join(format!(
         "target/hil/esp32s31/qualification/open-radio-tcp-{mode}"
@@ -92,6 +96,7 @@ fn run(arguments: Vec<String>, root: &Path, direction: Direction) -> Result<()> 
     let capture = SerialCapture::start_with_reset(&options.serial);
     let ready = match await_tcp_ready(
         &capture,
+        lab,
         options.device,
         options.port,
         direction,
@@ -108,6 +113,7 @@ fn run(arguments: Vec<String>, root: &Path, direction: Direction) -> Result<()> 
         return Err("TCP firmware did not advertise a runtime session".into());
     }
     options.device = ready.address;
+    reject_overlapping_ipv4_links(options.device)?;
     let session = capture.start_session(SessionConfig {
         transport: Transport::Tcp,
         direction,
@@ -438,13 +444,9 @@ fn write_report(
     Ok(())
 }
 
-fn parse_options(arguments: &[String], direction: Direction) -> Result<Options> {
-    let device = arguments
-        .first()
-        .ok_or("missing ESP32-S31 IPv4 address")?
-        .parse::<Ipv4Addr>()?;
+fn parse_options(arguments: &[String], lab: &LabConfig, direction: Direction) -> Result<Options> {
     let mut options = Options {
-        device,
+        device: Ipv4Addr::UNSPECIFIED,
         direction,
         port: DEFAULT_PORT,
         duration: DEFAULT_DURATION,
@@ -464,9 +466,9 @@ fn parse_options(arguments: &[String], direction: Direction) -> Result<Options> 
             Direction::Tx => Some(DEFAULT_TX_FLOOR_BPS),
             Direction::Bidirectional => Some(DEFAULT_BIDIRECTIONAL_TX_FLOOR_BPS),
         },
-        serial: PathBuf::from("/dev/ttyACM0"),
+        serial: lab.device.serial.clone(),
     };
-    let mut index = 1;
+    let mut index = 0;
     while index < arguments.len() {
         let value = arguments
             .get(index + 1)
@@ -489,7 +491,6 @@ fn parse_options(arguments: &[String], direction: Direction) -> Result<Options> 
                 }
             }
             "--port" => options.port = value.parse()?,
-            "--serial" => options.serial = PathBuf::from(value),
             option => return Err(format!("unsupported TCP option `{option}`").into()),
         }
         index += 2;
@@ -535,14 +536,13 @@ const fn direction_name(direction: Direction) -> &'static str {
 
 fn print_help(direction: Direction) {
     println!(
-        "cargo hil traffic tcp-{} <device-ipv4> [options]\n\
+        "cargo hil traffic tcp-{} [options]\n\
          --rx-rate <bps>   host-to-target offered rate\n\
          --tx-rate <bps>   target-to-host offered rate\n\
          --tx-floor <bps>  required target-to-host measured rate\n\
          --seconds <5..300> session duration (default 12)\n\
          --chunk <64..32768> application chunk (default 32768)\n\
          --port <port>      TCP service/host listener port (default 4325)\n\
-         --serial <path>    diagnostics device (default /dev/ttyACM0)\n\n\
          Flash `cargo hil flash tcp` first.",
         direction_name(direction),
     );
@@ -588,7 +588,7 @@ mod tests {
 
     #[test]
     fn tcp_tx_defaults_separate_offer_from_acceptance_floor() {
-        let options = parse_options(&["192.0.2.10".into()], Direction::Tx).unwrap();
+        let options = parse_options(&[], &LabConfig::for_test(), Direction::Tx).unwrap();
 
         assert_eq!(options.chunk_bytes, 32_768);
         assert_eq!(options.tx_rate_bps, Some(60_000_000));
@@ -600,7 +600,8 @@ mod tests {
     fn direction_rejects_an_inapplicable_flow_option() {
         assert!(
             parse_options(
-                &["192.0.2.10".into(), "--tx-rate".into(), "1000000".into(),],
+                &["--tx-rate".into(), "1000000".into(),],
+                &LabConfig::for_test(),
                 Direction::Rx,
             )
             .is_err()

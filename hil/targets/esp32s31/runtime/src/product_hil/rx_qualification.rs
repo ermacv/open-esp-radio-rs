@@ -6,39 +6,46 @@
 
 #![forbid(unsafe_code)]
 
-#[cfg(feature = "rx-order-telemetry")]
+#[cfg(feature = "rx-delivery-telemetry")]
 use core::cell::RefCell;
 use core::sync::atomic::{AtomicU32, Ordering};
 
-#[cfg(feature = "rx-order-telemetry")]
+#[cfg(feature = "rx-delivery-telemetry")]
 use embassy_sync::blocking_mutex::{Mutex, raw::CriticalSectionRawMutex};
-#[cfg(feature = "rx-order-telemetry")]
+#[cfg(feature = "rx-delivery-telemetry")]
+use open_esp_radio::esp32s31::wifi::mac::connected_rx::ConnectedRxEvent as MacConnectedRxEvent;
+#[cfg(feature = "rx-delivery-telemetry")]
 use open_esp_radio::esp32s31::wifi::mac::rx::PUBLIC_HEADER_SIZE;
 use open_esp_radio::{
     esp32s31::wifi::mac::{connected_rx::ConnectedRxEvent, rx::decode_rx_phy_info},
     wifi::ieee80211::data::EthernetFrameParts,
 };
+#[cfg(feature = "rx-delivery-telemetry")]
+use open_esp_radio_embassy_net::{FrameLengthError, RxEnqueueError};
 use open_esp_radio_esp32s31_embassy_wifi::Esp32s31ConnectedRxObserver;
+#[cfg(feature = "rx-delivery-telemetry")]
+use open_esp_radio_esp32s31_embassy_wifi::RxNetworkDeliveryObserver;
+#[cfg(feature = "rx-delivery-telemetry")]
+use open_esp_radio_hil_esp32s31_telemetry::rx_delivery::{NetworkDropReason, RxDeliveryTracker};
 use open_esp_radio_hil_esp32s31_telemetry::rx_evidence::{
     RxAmpduCounters, RxPhyCounters, RxSmpduCounters,
 };
-#[cfg(feature = "rx-order-telemetry")]
-use open_esp_radio_hil_esp32s31_telemetry::rx_order::{RxOrderCounters, RxOrderTracker};
+#[cfg(feature = "rx-delivery-telemetry")]
+use open_esp_radio_hil_protocol::{RxDeliveryEvidence, RxReorderDeliveryEvidence};
 
 pub(crate) static RX_PHY: RxPhyCounters = RxPhyCounters::new();
 pub(crate) static RX_S_MPDU: RxSmpduCounters = RxSmpduCounters::new();
 pub(crate) static BEACON_S_MPDU: RxSmpduCounters = RxSmpduCounters::new();
 pub(crate) static RX_AMPDU: RxAmpduCounters = RxAmpduCounters::new();
-#[cfg(feature = "rx-order-telemetry")]
-pub(crate) static RX_ORDER: RxOrderCounters = RxOrderCounters::new();
+#[cfg(feature = "rx-delivery-telemetry")]
+static RX_DELIVERY: Mutex<CriticalSectionRawMutex, RefCell<Option<RxDeliveryTracker<128>>>> =
+    Mutex::new(RefCell::new(None));
 pub(crate) static LAST_FORMAT: AtomicU32 = AtomicU32::new(u32::MAX);
 pub(crate) static LAST_PHY: AtomicU32 = AtomicU32::new(u32::MAX);
 
 pub(crate) struct HilConnectedRxObserver {
     udp_port: u16,
     phy_sample_cursor: AtomicU32,
-    #[cfg(feature = "rx-order-telemetry")]
-    order: Mutex<CriticalSectionRawMutex, RefCell<Option<RxOrderTracker>>>,
 }
 
 impl HilConnectedRxObserver {
@@ -46,9 +53,39 @@ impl HilConnectedRxObserver {
         Self {
             udp_port,
             phy_sample_cursor: AtomicU32::new(0),
-            #[cfg(feature = "rx-order-telemetry")]
-            order: Mutex::new(RefCell::new(None)),
         }
+    }
+
+    #[cfg(feature = "rx-delivery-telemetry")]
+    pub(crate) fn begin_delivery_session(session_id: u64) {
+        RX_DELIVERY.lock(|tracker| {
+            let mut tracker = tracker.borrow_mut();
+            tracker
+                .get_or_insert_with(RxDeliveryTracker::new)
+                .begin(session_id);
+        });
+    }
+
+    #[cfg(feature = "rx-delivery-telemetry")]
+    pub(crate) fn observe_udp_consumer(session_id: u64, sequence: i32) {
+        RX_DELIVERY.lock(|tracker| {
+            if let Some(tracker) = tracker.borrow_mut().as_mut() {
+                tracker.consumed(session_id, sequence);
+            }
+        });
+    }
+
+    #[cfg(feature = "rx-delivery-telemetry")]
+    pub(crate) fn finish_delivery_session(
+        session_id: u64,
+        reorder: RxReorderDeliveryEvidence,
+    ) -> Option<RxDeliveryEvidence> {
+        RX_DELIVERY.lock(|tracker| {
+            tracker
+                .borrow_mut()
+                .as_mut()
+                .and_then(|tracker| tracker.finish(session_id, reorder))
+        })
     }
 }
 
@@ -64,17 +101,6 @@ impl Esp32s31ConnectedRxObserver for HilConnectedRxObserver {
                 metadata,
                 ..
             } if ipv4_udp_destination_port(frame) == Some(self.udp_port) => {
-                #[cfg(feature = "rx-order-telemetry")]
-                if let Some(sequence) = ipv4_udp_sequence(frame, self.udp_port) {
-                    self.order.lock(|tracker| {
-                        tracker.borrow_mut().get_or_insert_default().observe(
-                            &RX_ORDER,
-                            sequence,
-                            public_qos_sequence(raw),
-                        );
-                    });
-                }
-
                 RX_S_MPDU.observe(metadata.s_mpdu);
                 RX_AMPDU.observe(metadata.ampdu);
                 if self.phy_sample_cursor.fetch_add(1, Ordering::Relaxed) & 63 == 0
@@ -108,6 +134,43 @@ impl Esp32s31ConnectedRxObserver for HilConnectedRxObserver {
     }
 }
 
+#[cfg(feature = "rx-delivery-telemetry")]
+impl RxNetworkDeliveryObserver for HilConnectedRxObserver {
+    fn admitted(&self, event: &MacConnectedRxEvent<'_>) {
+        let MacConnectedRxEvent::Ethernet { frame, raw, .. } = *event else {
+            return;
+        };
+        let Some(sequence) = ipv4_udp_sequence(frame, self.udp_port) else {
+            return;
+        };
+        RX_DELIVERY.lock(|tracker| {
+            if let Some(tracker) = tracker.borrow_mut().as_mut() {
+                tracker.admitted(sequence, public_qos_sequence(raw));
+            }
+        });
+    }
+
+    fn dropped(&self, event: &MacConnectedRxEvent<'_>, error: RxEnqueueError) {
+        let MacConnectedRxEvent::Ethernet { frame, raw, .. } = *event else {
+            return;
+        };
+        let Some(sequence) = ipv4_udp_sequence(frame, self.udp_port) else {
+            return;
+        };
+        let reason = match error {
+            RxEnqueueError::QueueFull => NetworkDropReason::QueueFull,
+            RxEnqueueError::InvalidLength(
+                FrameLengthError::TooShort | FrameLengthError::TooLong,
+            ) => NetworkDropReason::InvalidLength,
+        };
+        RX_DELIVERY.lock(|tracker| {
+            if let Some(tracker) = tracker.borrow_mut().as_mut() {
+                tracker.dropped(sequence, public_qos_sequence(raw), reason);
+            }
+        });
+    }
+}
+
 fn ipv4_udp_destination_port(frame: EthernetFrameParts<'_>) -> Option<u16> {
     if frame.ether_type != 0x0800 {
         return None;
@@ -126,7 +189,7 @@ fn ipv4_udp_destination_port(frame: EthernetFrameParts<'_>) -> Option<u16> {
     ]))
 }
 
-#[cfg(feature = "rx-order-telemetry")]
+#[cfg(feature = "rx-delivery-telemetry")]
 fn ipv4_udp_sequence(frame: EthernetFrameParts<'_>, destination_port: u16) -> Option<i32> {
     if ipv4_udp_destination_port(frame) != Some(destination_port) {
         return None;
@@ -141,7 +204,7 @@ fn ipv4_udp_sequence(frame: EthernetFrameParts<'_>, destination_port: u16) -> Op
     Some(i32::from_be_bytes(encoded))
 }
 
-#[cfg(feature = "rx-order-telemetry")]
+#[cfg(feature = "rx-delivery-telemetry")]
 fn public_qos_sequence(raw: &[u8]) -> Option<(u8, u16)> {
     const DATA_TYPE: u16 = 0x0008;
     const DATA_TYPE_MASK: u16 = 0x000c;

@@ -3,9 +3,40 @@
 #![forbid(unsafe_code)]
 
 use super::{
-    MacInterruptSnapshot, MacPowerInterruptSnapshot, device_fence,
+    MacInterruptSnapshot, MacPowerInterruptSnapshot, RadioRegisters, device_fence,
     svd::{self, interrupt_snapshot},
 };
+
+const STA_BEACON_FILTER_INTERRUPT: u32 = 1 << 15;
+
+/// Proof that the connected-STA hardware policy was applied before IRQ activation.
+///
+/// Construction is private to the exact two-register transaction below. The
+/// connected runtime consumes this value when it activates its interrupt
+/// epoch, so removing the transaction from that lifecycle becomes a compile
+/// error rather than an intermittent runtime regression.
+#[must_use = "connected STA interrupt activation requires this preparation proof"]
+pub struct ConnectedStaWithoutPowerSavePrepared {
+    _private: (),
+}
+
+#[inline(always)]
+fn disable_sta_beacon_filter(
+    control: &svd::WifiMacStaBeaconFilter,
+    interrupt: &svd::WifiMacInterrupt,
+) {
+    // Complete libpp.a[hal_mac.o]::hal_disable_sta_beacon_filter. Preserve
+    // the two independent fresh-read RMW edges and their order: hardware
+    // filtering is disabled before its matching interrupt source is masked.
+    control
+        .control()
+        .modify(|_, writer| writer.enables_unknown().set(0));
+    interrupt.enable().modify(|reader, writer| {
+        writer
+            .event_mask()
+            .set(reader.event_mask().bits() & !STA_BEACON_FILTER_INTERRUPT)
+    });
+}
 
 /// Task-side setup token for one MAC interrupt handoff epoch.
 ///
@@ -25,6 +56,23 @@ impl MacInterruptSetup {
             peripheral: peripherals.wifi_mac_interrupt,
             power_peripheral: peripherals.wifi_mac_power_interrupt,
         }
+    }
+
+    /// Disable vendor hardware beacon filtering before a connected STA epoch.
+    ///
+    /// The operation requires both still-disjoint task owners and therefore
+    /// cannot race an active ISR. It is the complete vendor disable leaf:
+    /// CONTROL bits 2:0 are cleared before interrupt-enable bit 15.
+    pub fn prepare_connected_sta_without_power_save(
+        &mut self,
+        registers: &mut RadioRegisters,
+    ) -> ConnectedStaWithoutPowerSavePrepared {
+        disable_sta_beacon_filter(
+            &registers.peripherals.wifi_mac_sta_beacon_filter,
+            &self.peripheral,
+        );
+        device_fence();
+        ConnectedStaWithoutPowerSavePrepared { _private: () }
     }
 
     /// Publish the runtime event mask and create the finite ISR capability.
@@ -51,6 +99,14 @@ impl MacInterruptSetup {
             },
         )
     }
+}
+
+#[cfg(feature = "validation-probes")]
+pub(crate) fn disable_sta_beacon_filter_for_validation(
+    control: &svd::WifiMacStaBeaconFilter,
+    interrupt: &svd::WifiMacInterrupt,
+) {
+    disable_sta_beacon_filter(control, interrupt);
 }
 
 /// Disjoint generated register capability intended for the hard power ISR.

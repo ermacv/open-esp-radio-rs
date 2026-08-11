@@ -564,6 +564,39 @@ impl<'resources, M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: us
         Ok(())
     }
 
+    /// Publish one Ethernet frame while exposing the exact ownership edge at
+    /// which the claimed slot becomes visible to the network consumer.
+    ///
+    /// This method is absent from ordinary builds. `before_publish` runs after
+    /// the frame copy but before insertion into `ready_rx`; failed admission
+    /// never calls it.
+    #[cfg(feature = "rx-delivery-observation")]
+    pub fn try_send_parts_observed(
+        &mut self,
+        destination: [u8; 6],
+        source: [u8; 6],
+        ether_type: u16,
+        payload: &[u8],
+        before_publish: impl FnOnce(),
+    ) -> Result<(), RxEnqueueError> {
+        let length = ETHERNET_HEADER_LEN
+            .checked_add(payload.len())
+            .ok_or(RxEnqueueError::InvalidLength(FrameLengthError::TooLong))?;
+        Self::validate_length(length).map_err(RxEnqueueError::InvalidLength)?;
+        let lease = self.try_claim_slot()?;
+        let (index, ()) = lease.publish(length, |frame| {
+            frame[..6].copy_from_slice(&destination);
+            frame[6..12].copy_from_slice(&source);
+            frame[12..14].copy_from_slice(&ether_type.to_be_bytes());
+            frame[14..].copy_from_slice(payload);
+        });
+        before_publish();
+        if let Err(TrySendError::Full(_)) = self.ready_rx.try_send(index) {
+            unreachable!("one ready entry exists per non-free pinned RX slot");
+        }
+        Ok(())
+    }
+
     pub async fn send(&mut self, frame: &[u8]) -> Result<(), FrameLengthError> {
         Self::validate_length(frame.len())?;
         self.wait_ready().await;

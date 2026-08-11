@@ -20,6 +20,8 @@ use embassy_sync::{
 use embassy_time::Timer;
 use open_esp_radio::esp32s31::wifi::device::register_arena::Esp32s31RadioRegistersArena;
 #[cfg(feature = "qualification")]
+use open_esp_radio::esp32s31::wifi::dma::descriptor::{rx_done, rx_rearm_word};
+#[cfg(feature = "qualification")]
 use open_esp_radio::esp32s31::wifi::mac::connected_rx::{
     ConnectedRxEvent, ConnectedRxSink as MacConnectedRxSink,
 };
@@ -217,6 +219,59 @@ type ConnectedLiveRx = Esp32s31ConnectedRx<
     RX_BUFFER_SIZE,
     { RX_BUFFER_SIZE + 4 },
 >;
+
+#[cfg(feature = "qualification")]
+fn log_rx_ring_topology(label: &str, rx: &ConnectedLiveRx) {
+    let topology = rx.ring().topology_snapshot();
+    let mut armed_mask = 0_u64;
+    let mut completed_mask = 0_u64;
+    let mut invalid_mask = 0_u64;
+    for index in 0..RX_DESCRIPTOR_COUNT {
+        let Some(descriptor) = rx.ring().descriptor_snapshot(index) else {
+            invalid_mask |= 1_u64 << index;
+            continue;
+        };
+        if rx_done(descriptor.word0) {
+            completed_mask |= 1_u64 << index;
+        } else if rx_rearm_word(descriptor.word0) == Some(descriptor.word0) {
+            armed_mask |= 1_u64 << index;
+        } else {
+            invalid_mask |= 1_u64 << index;
+        }
+    }
+    qualification_event!(
+        "open-radio: connected RX topology label={} valid={} base={:#010x} start={} head={:#010x} head_next={:#010x} tail={} tail_address={:#010x} visited={} terminals={} armed_mask={:#018x} completed_mask={:#018x} invalid_mask={:#018x}",
+        label,
+        topology.valid,
+        topology.descriptor_base,
+        topology.start_index,
+        topology.head_address,
+        topology.head_next_address,
+        topology.tail_index,
+        topology.tail_address,
+        topology.visited_descriptors,
+        topology.terminal_descriptors,
+        armed_mask,
+        completed_mask,
+        invalid_mask,
+    );
+    if !topology.valid {
+        for index in 0..RX_DESCRIPTOR_COUNT {
+            if let Some(descriptor) = rx.ring().descriptor_snapshot(index) {
+                qualification_event!(
+                    "open-radio: connected RX descriptor label={} index={} address={:#010x} word0={:#010x} buffer={:#010x} next={:#010x}",
+                    label,
+                    descriptor.index,
+                    descriptor.address,
+                    descriptor.word0,
+                    descriptor.buffer_address,
+                    descriptor.next_address,
+                );
+            }
+        }
+    }
+}
+
 pub type ConnectedHardware = CooperativeRadioHardware<'static>;
 pub(super) type ConnectedStoppedRx = Esp32s31StoppedRx<
     'static,
@@ -589,6 +644,16 @@ impl<S: ConnectedRxProtocolSink> ConnectedRxProtocolSink for ObservedConnectedRx
 
 #[cfg(feature = "qualification")]
 impl Esp32s31QualificationSnapshot {
+    /// Snapshot the associated-STA receive filters and BSSID identity while
+    /// the connected epoch owns the register arena.
+    pub fn sta_receive_policy(
+        self,
+    ) -> Option<open_esp_radio::esp32s31::registers::MacStaReceivePolicySnapshot> {
+        self.registers
+            .try_with_ref(|registers| registers.sta_receive_policy_snapshot())
+            .ok()
+    }
+
     /// Snapshot hardware RX counters only while a connected epoch owns the
     /// register arena. `None` means the role is stopped/transitioning or a
     /// driver transaction currently has the bounded borrow.
@@ -963,9 +1028,28 @@ pub async fn run_connected<'state, 'security>(
     };
     let mut started = prepared.start_network(|_runtime, (), _plan| ((), ()));
     let activation = {
-        let (radio, _storage, _board) = started.runtime_mut().split_mut();
+        let (runtime, epoch) = started.runtime_and_epoch_mut();
+        let (radio, _storage, _board) = runtime.split_mut();
         let (_phy, platform, interrupt) = radio.parts_mut();
-        activate_esp32s31_connected_epoch(interrupt, platform)
+        let setup = interrupt.setup_mut().map_err(|_| {
+            open_esp_radio_esp32s31_wifi_embassy::embassy_irq::Esp32s31MacInterruptEpochActivateError::AlreadyActive
+        });
+        match setup {
+            Ok(setup) => {
+                let prepared = match epoch {
+                    Esp32s31ConnectedEpochResources::Initial { hardware, .. } => {
+                        setup.prepare_connected_sta_without_power_save(hardware)
+                    }
+                    Esp32s31ConnectedEpochResources::Reconnected(reconnected) => {
+                        let access = reconnected.hardware_mut().register_access();
+                        let mut registers = access.borrow_mut();
+                        setup.prepare_connected_sta_without_power_save(&mut registers)
+                    }
+                };
+                activate_esp32s31_connected_epoch(interrupt, platform, prepared)
+            }
+            Err(error) => Err(error),
+        }
     };
     if let Err(error) = activation {
         qualification_event!(
@@ -1127,6 +1211,8 @@ pub async fn run_connected<'state, 'security>(
         control: control_resources,
     } = started;
     #[cfg(feature = "qualification")]
+    log_rx_ring_topology("started", &rx);
+    #[cfg(feature = "qualification")]
     let rx = rx.with_pipeline_observer(
         qualification
             .expect("qualification build must retain its configured pipeline observer")
@@ -1137,11 +1223,13 @@ pub async fn run_connected<'state, 'security>(
     let (control_publisher, control_receiver) = control_resources.split();
     let rx_sink = EmbassyNetConnectedRxSink::new(network_rx, control_publisher);
     #[cfg(feature = "qualification")]
-    let rx_sink = rx_sink.with_pipeline_observer(
-        qualification
-            .expect("qualification build must retain its configured pipeline observer")
-            .rx_pipeline,
-    );
+    let rx_sink = {
+        let hooks = qualification
+            .expect("qualification build must retain its configured pipeline observer");
+        rx_sink
+            .with_delivery_observer(hooks.rx_delivery)
+            .with_pipeline_observer(hooks.rx_pipeline)
+    };
     #[cfg(feature = "qualification")]
     let rx_sink = ObservedConnectedRxSink {
         inner: rx_sink,
@@ -1263,6 +1351,29 @@ pub async fn run_connected<'state, 'security>(
         report.aggregate_tx_rate.nominal_kbps(),
     );
     #[cfg(feature = "qualification")]
+    qualification_event!(
+        "open-radio: connected RX policy: {:?}",
+        radio_runner
+            .services()
+            .hardware()
+            .sta_receive_policy_snapshot(),
+    );
+    #[cfg(feature = "qualification")]
+    qualification_event!(
+        "open-radio: connected RX statistics: {:?}",
+        radio_runner
+            .services()
+            .hardware()
+            .register_access()
+            .borrow()
+            .rx_statistics_snapshot(),
+    );
+    #[cfg(feature = "qualification")]
+    qualification_event!(
+        "open-radio: connected RX DMA: {:?}",
+        radio_runner.services().hardware().mac_rx_dma_snapshot(),
+    );
+    #[cfg(feature = "qualification")]
     (qualification
         .expect("qualification build must retain its configured lifecycle observer")
         .station_lifecycle)(crate::Esp32s31StationLifecycleObservation::Connected);
@@ -1291,11 +1402,31 @@ pub async fn run_connected<'state, 'security>(
                 let control = runner.services().control();
                 let beacon = control.beacon_monitor();
                 qualification_event!(
-                    "open-radio: connected exit evidence beacon_lost={} beacons={} deadline={:?} last_event={:?} dropped_events={} security={:?}",
+                    "open-radio: connected exit RX policy: {:?}",
+                    runner.services().hardware().sta_receive_policy_snapshot(),
+                );
+                qualification_event!(
+                    "open-radio: connected exit RX statistics: {:?}",
+                    runner
+                        .services()
+                        .hardware()
+                        .register_access()
+                        .borrow()
+                        .rx_statistics_snapshot(),
+                );
+                qualification_event!(
+                    "open-radio: connected exit RX DMA: {:?}",
+                    runner.services().hardware().mac_rx_dma_snapshot(),
+                );
+                log_rx_ring_topology("exit", runner.services().rx());
+                qualification_event!(
+                    "open-radio: connected exit evidence beacon_lost={} beacons={} deadline={:?} last_event={:?} stale_addba_responses={} last_stale_addba_token={:?} dropped_events={} security={:?}",
                     control.beacon_lost(),
                     beacon.map_or(0, |monitor| monitor.observed()),
                     beacon.and_then(|monitor| monitor.deadline_micros()),
                     control.last_event(),
+                    control.stale_tx_block_ack_responses(),
+                    control.last_stale_tx_block_ack_token(),
                     control.dropped_events(),
                     control.wpa2_security().map(|security| security.evidence()),
                 );
@@ -1316,7 +1447,9 @@ pub async fn run_connected<'state, 'security>(
                 Esp32s31ConnectedStationExit::StationStopped(command) => {
                     ConnectedStationOutcome::StationStopped(command)
                 }
-                Esp32s31ConnectedStationExit::HardwareFailure(_) => {
+                Esp32s31ConnectedStationExit::HardwareFailure(error) => {
+                    #[cfg(feature = "qualification")]
+                    qualification_event!("open-radio: connected hardware failure: {error:?}");
                     ConnectedStationOutcome::HardwareFailure
                 }
             }

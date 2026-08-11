@@ -17,8 +17,9 @@ use crate::{
     Result,
     bidirectional::{AmpduEvidence, post_block_ack_delivery_loss_lower_bound, qualify_tx_log},
     invalidate_previous_report,
+    lab_config::LabConfig,
     traffic_capture::{SerialCapture, await_device_marker},
-    udp_socket::configure_qualification_receive_buffer,
+    udp_socket::{configure_qualification_receive_buffer, open_reverse_flow},
 };
 
 const DEFAULT_PORT: u16 = 9_002;
@@ -180,7 +181,7 @@ impl ActiveBurst {
     }
 }
 
-pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
+pub(crate) fn run(arguments: Vec<String>, root: &Path, lab: &LabConfig) -> Result<()> {
     if arguments
         .first()
         .is_some_and(|value| matches!(value.as_str(), "help" | "--help" | "-h"))
@@ -188,7 +189,7 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
         print_help();
         return Ok(());
     }
-    let mut options = parse_options(&arguments)?;
+    let mut options = parse_options(&arguments, lab)?;
     let output = root.join("target/hil/esp32s31/qualification/open-radio-tx");
     fs::create_dir_all(&output)?;
     invalidate_previous_report(&output)?;
@@ -198,6 +199,7 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
     let capture = SerialCapture::start_with_reset(&options.serial);
     let discovered_address = match await_device_marker(
         &capture,
+        lab,
         DEVICE_TX_READY_MARKER,
         options.device,
         DEVICE_READY_TIMEOUT,
@@ -210,9 +212,8 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
         }
     };
     options.device = discovered_address.address;
-    let route_probe = UdpSocket::bind(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0))?;
-    route_probe.connect(SocketAddrV4::new(options.device, DEVICE_SOURCE_PORT))?;
-    let host_address = match route_probe.local_addr()? {
+    socket.connect(SocketAddrV4::new(options.device, DEVICE_SOURCE_PORT))?;
+    let host_address = match socket.local_addr()? {
         SocketAddr::V4(address) => *address.ip(),
         SocketAddr::V6(_) => return Err("TX qualification requires IPv4".into()),
     };
@@ -220,7 +221,11 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
     // without changing firewall policy. The TX-only firmware owns a bounded
     // one-packet RX queue on this port, so the probe cannot grow unbounded or
     // enter the measured radio TX accounting.
-    socket.send_to(&[0], SocketAddrV4::new(options.device, DEVICE_SOURCE_PORT))?;
+    if let Err(error) = open_reverse_flow(&socket) {
+        let log = capture.finish();
+        fs::write(output.join("uart.log"), &log)?;
+        return Err(error.into());
+    }
 
     let session = if discovered_address.runtime_session {
         let session = capture.start_session(SessionConfig {
@@ -289,8 +294,9 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
     let minimum_bursts = if structured.is_some() { 1 } else { 2 };
     if qualified.len() < minimum_bursts {
         return Err(format!(
-            "received only {} complete TX bursts; required {minimum_bursts}",
-            qualified.len()
+            "received only {} complete TX bursts; required {minimum_bursts}; {}",
+            qualified.len(),
+            describe_bursts(&bursts),
         )
         .into());
     }
@@ -438,35 +444,30 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
 
 fn print_help() {
     println!(
-        "cargo hil traffic tx <device-ipv4> [options]\n\
+        "cargo hil traffic tx [options]\n\
          \n\
          --seconds <8..300> capture duration (default 16)\n\
          --payload <64..1472> UDP payload bytes (default 1472)\n\
          --rate <bps>       optional target offered-load bound\n\
          --port <port>      host UDP sink (default 9002)\n\
-         --serial <path>    diagnostics device (default /dev/ttyACM0)\n\
          --phy <he20|ht40> required TX bandwidth/rate floor (default he20)\n\n\
          Flash `cargo hil flash udp-tx`; host address and traffic parameters \
          are provisioned at runtime."
     );
 }
 
-fn parse_options(arguments: &[String]) -> Result<Options> {
-    let device = arguments
-        .first()
-        .ok_or("missing ESP32-S31 IPv4 address")?
-        .parse::<Ipv4Addr>()?;
+fn parse_options(arguments: &[String], lab: &LabConfig) -> Result<Options> {
     let mut options = Options {
-        device,
+        device: Ipv4Addr::UNSPECIFIED,
         port: DEFAULT_PORT,
         duration: DEFAULT_DURATION,
         payload: DEFAULT_PAYLOAD,
         offered_rate_bps: None,
-        serial: PathBuf::from("/dev/ttyACM0"),
+        serial: lab.device.serial.clone(),
         bandwidth_mhz: 20,
         minimum_rate_kbps: 114_700,
     };
-    let mut index = 1;
+    let mut index = 0;
     while index < arguments.len() {
         let value = arguments
             .get(index + 1)
@@ -487,7 +488,6 @@ fn parse_options(arguments: &[String]) -> Result<Options> {
                 }
             }
             "--rate" => options.offered_rate_bps = Some(parse_rate(value)?),
-            "--serial" => options.serial = PathBuf::from(value),
             "--phy" => match value.as_str() {
                 "he20" => {
                     options.bandwidth_mhz = 20;
@@ -536,6 +536,7 @@ pub(crate) fn receive_bursts(
     let mut packet = [0_u8; 2_048];
     let mut active: Option<ActiveBurst> = None;
     let mut bursts = Vec::new();
+    let mut ignored_reverse_probe_error = false;
     while Instant::now() < deadline {
         match socket.recv_from(&mut packet) {
             Ok((length, source)) => {
@@ -569,6 +570,17 @@ pub(crate) fn receive_bursts(
                     bursts.push(active.take().expect("checked active burst").finish());
                 }
             }
+            // The only host-to-target datagram on this connected socket is a
+            // one-byte conntrack probe. A reset-separated run can associate
+            // its delayed ICMP Port Unreachable with the reused four-tuple.
+            // Ignore at most that single asynchronous error; burst count and
+            // sequence validation still reject absent or defective TX data.
+            Err(error)
+                if error.kind() == std::io::ErrorKind::ConnectionRefused
+                    && !ignored_reverse_probe_error =>
+            {
+                ignored_reverse_probe_error = true;
+            }
             Err(error) => return Err(error),
         }
     }
@@ -576,6 +588,17 @@ pub(crate) fn receive_bursts(
         bursts.push(active.finish());
     }
     Ok(bursts)
+}
+
+pub(crate) fn describe_bursts(bursts: &[Burst]) -> String {
+    let datagrams = bursts.iter().map(|burst| burst.datagrams).sum::<u64>();
+    let zero_started = bursts.iter().filter(|burst| burst.started_at_zero).count();
+    let lowest = bursts.iter().map(|burst| burst.lowest_sequence).min();
+    let highest = bursts.iter().map(|burst| burst.highest_sequence).max();
+    format!(
+        "observed_bursts={} observed_datagrams={datagrams} zero_started={zero_started} sequence_range={lowest:?}..={highest:?}",
+        bursts.len(),
+    )
 }
 
 struct TxReport<'a> {
@@ -726,17 +749,19 @@ mod tests {
 
     #[test]
     fn parses_tx_options() {
-        let options = parse_options(&[
-            "192.168.178.141".into(),
-            "--seconds".into(),
-            "8".into(),
-            "--payload".into(),
-            "1200".into(),
-            "--rate".into(),
-            "80M".into(),
-            "--phy".into(),
-            "ht40".into(),
-        ])
+        let options = parse_options(
+            &[
+                "--seconds".into(),
+                "8".into(),
+                "--payload".into(),
+                "1200".into(),
+                "--rate".into(),
+                "80M".into(),
+                "--phy".into(),
+                "ht40".into(),
+            ],
+            &LabConfig::for_test(),
+        )
         .unwrap();
         assert_eq!(options.duration, Duration::from_secs(8));
         assert_eq!(options.payload, 1_200);
@@ -808,5 +833,23 @@ mod tests {
         assert!(!BurstFraming::ProtocolSession.splits_on_sequence_restart());
         assert!(BurstFraming::IdleDelimited.splits_on_idle());
         assert!(BurstFraming::IdleDelimited.splits_on_sequence_restart());
+    }
+
+    #[test]
+    fn incomplete_burst_summary_distinguishes_missing_sequence_zero_from_no_traffic() {
+        let bursts = [Burst {
+            datagrams: 17,
+            lowest_sequence: 41,
+            highest_sequence: 57,
+            ..Burst::default()
+        }];
+        assert_eq!(
+            describe_bursts(&bursts),
+            "observed_bursts=1 observed_datagrams=17 zero_started=0 sequence_range=Some(41)..=Some(57)"
+        );
+        assert_eq!(
+            describe_bursts(&[]),
+            "observed_bursts=0 observed_datagrams=0 zero_started=0 sequence_range=None..=None"
+        );
     }
 }

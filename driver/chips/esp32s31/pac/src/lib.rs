@@ -11700,7 +11700,7 @@ pub mod wifi_mac_sta_beacon_filter {
         #[doc = "Field `ENABLES_UNKNOWN` reader - "]
         pub type EnablesUnknownR = crate::FieldReader;
         #[doc = "Field `ENABLES_UNKNOWN` writer - "]
-        pub type EnablesUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 3>;
+        pub type EnablesUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 3, u8, crate::Safe>;
         impl R {
             #[doc = "Bits 0:2"]
             #[inline(always)]
@@ -25064,6 +25064,359 @@ pub mod wifi_mac_tsf_timer {
         }
     }
 }
+#[doc = "Five-entry coexistence timer bank. Complete libcoexist leaves address entry index as 0x2010f400 + index*0x10. The independent 46-event coex_core_timer_idx_get table returns only timer indices zero through four or 0xff for an invalid event."]
+pub type CoexHwTimer = crate::Periph<coex_hw_timer::RegisterBlock, 0x2010_f400>;
+impl core::fmt::Debug for CoexHwTimer {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        f.debug_struct("CoexHwTimer").finish()
+    }
+}
+#[doc = "Five-entry coexistence timer bank. Complete libcoexist leaves address entry index as 0x2010f400 + index*0x10. The independent 46-event coex_core_timer_idx_get table returns only timer indices zero through four or 0xff for an invalid event."]
+pub mod coex_hw_timer {
+    #[repr(C)]
+    #[doc = "Register block"]
+    pub struct RegisterBlock {
+        configuration: (),
+        _reserved1: [u8; 0x04],
+        secondary_target: (),
+        _reserved2: [u8; 0x04],
+        enable_control: (),
+        _reserved3: [u8; 0x04],
+        disable_control: (),
+    }
+    impl RegisterBlock {
+        #[doc = "0x00..0x14 - Primary timer word. coex_hw_timer_set replaces both high nibbles and the low 24-bit tick image through separate fresh-read RMW operations. coex_hw_timer_force clears the low 24 bits; coex_hw_timer_unforce replaces them with 1000."]
+        #[inline(always)]
+        pub const fn configuration(&self, n: usize) -> &Configuration {
+            #[allow(clippy::no_effect)]
+            [(); 5][n];
+            unsafe { &*core::ptr::from_ref(self).cast::<u8>().add(16 * n).cast() }
+        }
+        #[doc = "Iterator for array of:"]
+        #[doc = "0x00..0x14 - Primary timer word. coex_hw_timer_set replaces both high nibbles and the low 24-bit tick image through separate fresh-read RMW operations. coex_hw_timer_force clears the low 24 bits; coex_hw_timer_unforce replaces them with 1000."]
+        #[inline(always)]
+        pub fn configuration_iter(&self) -> impl Iterator<Item = &Configuration> {
+            (0..5).map(move |n| unsafe {
+                &*core::ptr::from_ref(self).cast::<u8>().add(16 * n).cast()
+            })
+        }
+        #[doc = "0x04..0x18 - Secondary timer word. coex_hw_timer_set preserves the high byte and replaces the low 24 bits with the converted fourth timer-value argument."]
+        #[inline(always)]
+        pub const fn secondary_target(&self, n: usize) -> &SecondaryTarget {
+            #[allow(clippy::no_effect)]
+            [(); 5][n];
+            unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(4)
+                    .add(16 * n)
+                    .cast()
+            }
+        }
+        #[doc = "Iterator for array of:"]
+        #[doc = "0x04..0x18 - Secondary timer word. coex_hw_timer_set preserves the high byte and replaces the low 24 bits with the converted fourth timer-value argument."]
+        #[inline(always)]
+        pub fn secondary_target_iter(&self) -> impl Iterator<Item = &SecondaryTarget> {
+            (0..5).map(move |n| unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(4)
+                    .add(16 * n)
+                    .cast()
+            })
+        }
+        #[doc = "0x08..0x1c - coex_hw_timer_enable sets bit zero here after clearing bit zero in the paired disable-control word. coex_hw_timer_disable performs the inverse transaction."]
+        #[inline(always)]
+        pub const fn enable_control(&self, n: usize) -> &EnableControl {
+            #[allow(clippy::no_effect)]
+            [(); 5][n];
+            unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(8)
+                    .add(16 * n)
+                    .cast()
+            }
+        }
+        #[doc = "Iterator for array of:"]
+        #[doc = "0x08..0x1c - coex_hw_timer_enable sets bit zero here after clearing bit zero in the paired disable-control word. coex_hw_timer_disable performs the inverse transaction."]
+        #[inline(always)]
+        pub fn enable_control_iter(&self) -> impl Iterator<Item = &EnableControl> {
+            (0..5).map(move |n| unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(8)
+                    .add(16 * n)
+                    .cast()
+            })
+        }
+        #[doc = "0x0c..0x20 - coex_hw_timer_disable sets bit zero here after clearing bit zero in the paired enable-control word. coex_hw_timer_enable performs the inverse transaction."]
+        #[inline(always)]
+        pub const fn disable_control(&self, n: usize) -> &DisableControl {
+            #[allow(clippy::no_effect)]
+            [(); 5][n];
+            unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(12)
+                    .add(16 * n)
+                    .cast()
+            }
+        }
+        #[doc = "Iterator for array of:"]
+        #[doc = "0x0c..0x20 - coex_hw_timer_disable sets bit zero here after clearing bit zero in the paired enable-control word. coex_hw_timer_enable performs the inverse transaction."]
+        #[inline(always)]
+        pub fn disable_control_iter(&self) -> impl Iterator<Item = &DisableControl> {
+            (0..5).map(move |n| unsafe {
+                &*core::ptr::from_ref(self)
+                    .cast::<u8>()
+                    .add(12)
+                    .add(16 * n)
+                    .cast()
+            })
+        }
+    }
+    #[doc = "CONFIGURATION (rw) register accessor: Primary timer word. coex_hw_timer_set replaces both high nibbles and the low 24-bit tick image through separate fresh-read RMW operations. coex_hw_timer_force clears the low 24 bits; coex_hw_timer_unforce replaces them with 1000.\n\nYou can [`read`](crate::Reg::read) this register and get [`configuration::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`configuration::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@configuration`] module"]
+    #[doc(alias = "CONFIGURATION")]
+    pub type Configuration = crate::Reg<configuration::ConfigurationSpec>;
+    #[doc = "Primary timer word. coex_hw_timer_set replaces both high nibbles and the low 24-bit tick image through separate fresh-read RMW operations. coex_hw_timer_force clears the low 24 bits; coex_hw_timer_unforce replaces them with 1000."]
+    pub mod configuration {
+        #[doc = "Register `CONFIGURATION%s` reader"]
+        pub type R = crate::R<ConfigurationSpec>;
+        #[doc = "Register `CONFIGURATION%s` writer"]
+        pub type W = crate::W<ConfigurationSpec>;
+        #[doc = "Field `PRIMARY_TICK_IMAGE` reader - Low 24 bits returned by coex_hw_timer_tick_get for the first timer value. The exact counter epoch and units remain part of the reviewed timer conversion rather than the register geometry."]
+        pub type PrimaryTickImageR = crate::FieldReader<u32>;
+        #[doc = "Field `PRIMARY_TICK_IMAGE` writer - Low 24 bits returned by coex_hw_timer_tick_get for the first timer value. The exact counter epoch and units remain part of the reviewed timer conversion rather than the register geometry."]
+        pub type PrimaryTickImageW<'a, REG> = crate::FieldWriter<'a, REG, 24, u32, crate::Safe>;
+        #[doc = "Field `PARAMETER_2` reader - Low nibble of the third coex_hw_timer_set argument."]
+        pub type Parameter2R = crate::FieldReader;
+        #[doc = "Field `PARAMETER_2` writer - Low nibble of the third coex_hw_timer_set argument."]
+        pub type Parameter2W<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
+        #[doc = "Field `PARAMETER_1` reader - Low two bits of the second coex_hw_timer_set argument. Bits 31:30 are preserved by the complete vendor RMW."]
+        pub type Parameter1R = crate::FieldReader;
+        #[doc = "Field `PARAMETER_1` writer - Low two bits of the second coex_hw_timer_set argument. Bits 31:30 are preserved by the complete vendor RMW."]
+        pub type Parameter1W<'a, REG> = crate::FieldWriter<'a, REG, 2, u8, crate::Safe>;
+        #[doc = "Field `HIGH_UNKNOWN` reader - Bits preserved by coex_hw_timer_set while PARAMETER_1 is replaced."]
+        pub type HighUnknownR = crate::FieldReader;
+        #[doc = "Field `HIGH_UNKNOWN` writer - Bits preserved by coex_hw_timer_set while PARAMETER_1 is replaced."]
+        pub type HighUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        impl R {
+            #[doc = "Bits 0:23 - Low 24 bits returned by coex_hw_timer_tick_get for the first timer value. The exact counter epoch and units remain part of the reviewed timer conversion rather than the register geometry."]
+            #[inline(always)]
+            pub fn primary_tick_image(&self) -> PrimaryTickImageR {
+                PrimaryTickImageR::new(self.bits & 0x00ff_ffff)
+            }
+            #[doc = "Bits 24:27 - Low nibble of the third coex_hw_timer_set argument."]
+            #[inline(always)]
+            pub fn parameter_2(&self) -> Parameter2R {
+                Parameter2R::new(((self.bits >> 24) & 0x0f) as u8)
+            }
+            #[doc = "Bits 28:29 - Low two bits of the second coex_hw_timer_set argument. Bits 31:30 are preserved by the complete vendor RMW."]
+            #[inline(always)]
+            pub fn parameter_1(&self) -> Parameter1R {
+                Parameter1R::new(((self.bits >> 28) & 3) as u8)
+            }
+            #[doc = "Bits 30:31 - Bits preserved by coex_hw_timer_set while PARAMETER_1 is replaced."]
+            #[inline(always)]
+            pub fn high_unknown(&self) -> HighUnknownR {
+                HighUnknownR::new(((self.bits >> 30) & 3) as u8)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:23 - Low 24 bits returned by coex_hw_timer_tick_get for the first timer value. The exact counter epoch and units remain part of the reviewed timer conversion rather than the register geometry."]
+            #[inline(always)]
+            pub fn primary_tick_image(&mut self) -> PrimaryTickImageW<'_, ConfigurationSpec> {
+                PrimaryTickImageW::new(self, 0)
+            }
+            #[doc = "Bits 24:27 - Low nibble of the third coex_hw_timer_set argument."]
+            #[inline(always)]
+            pub fn parameter_2(&mut self) -> Parameter2W<'_, ConfigurationSpec> {
+                Parameter2W::new(self, 24)
+            }
+            #[doc = "Bits 28:29 - Low two bits of the second coex_hw_timer_set argument. Bits 31:30 are preserved by the complete vendor RMW."]
+            #[inline(always)]
+            pub fn parameter_1(&mut self) -> Parameter1W<'_, ConfigurationSpec> {
+                Parameter1W::new(self, 28)
+            }
+            #[doc = "Bits 30:31 - Bits preserved by coex_hw_timer_set while PARAMETER_1 is replaced."]
+            #[inline(always)]
+            pub fn high_unknown(&mut self) -> HighUnknownW<'_, ConfigurationSpec> {
+                HighUnknownW::new(self, 30)
+            }
+        }
+        #[doc = "Primary timer word. coex_hw_timer_set replaces both high nibbles and the low 24-bit tick image through separate fresh-read RMW operations. coex_hw_timer_force clears the low 24 bits; coex_hw_timer_unforce replaces them with 1000.\n\nYou can [`read`](crate::Reg::read) this register and get [`configuration::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`configuration::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct ConfigurationSpec;
+        impl crate::RegisterSpec for ConfigurationSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`configuration::R`](R) reader structure"]
+        impl crate::Readable for ConfigurationSpec {}
+        #[doc = "`write(|w| ..)` method takes [`configuration::W`](W) writer structure"]
+        impl crate::Writable for ConfigurationSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "SECONDARY_TARGET (rw) register accessor: Secondary timer word. coex_hw_timer_set preserves the high byte and replaces the low 24 bits with the converted fourth timer-value argument.\n\nYou can [`read`](crate::Reg::read) this register and get [`secondary_target::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`secondary_target::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@secondary_target`] module"]
+    #[doc(alias = "SECONDARY_TARGET")]
+    pub type SecondaryTarget = crate::Reg<secondary_target::SecondaryTargetSpec>;
+    #[doc = "Secondary timer word. coex_hw_timer_set preserves the high byte and replaces the low 24 bits with the converted fourth timer-value argument."]
+    pub mod secondary_target {
+        #[doc = "Register `SECONDARY_TARGET%s` reader"]
+        pub type R = crate::R<SecondaryTargetSpec>;
+        #[doc = "Register `SECONDARY_TARGET%s` writer"]
+        pub type W = crate::W<SecondaryTargetSpec>;
+        #[doc = "Field `SECONDARY_TICK_IMAGE` reader - "]
+        pub type SecondaryTickImageR = crate::FieldReader<u32>;
+        #[doc = "Field `SECONDARY_TICK_IMAGE` writer - "]
+        pub type SecondaryTickImageW<'a, REG> = crate::FieldWriter<'a, REG, 24, u32, crate::Safe>;
+        #[doc = "Field `HIGH_UNKNOWN` reader - "]
+        pub type HighUnknownR = crate::FieldReader;
+        #[doc = "Field `HIGH_UNKNOWN` writer - "]
+        pub type HighUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        impl R {
+            #[doc = "Bits 0:23"]
+            #[inline(always)]
+            pub fn secondary_tick_image(&self) -> SecondaryTickImageR {
+                SecondaryTickImageR::new(self.bits & 0x00ff_ffff)
+            }
+            #[doc = "Bits 24:31"]
+            #[inline(always)]
+            pub fn high_unknown(&self) -> HighUnknownR {
+                HighUnknownR::new(((self.bits >> 24) & 0xff) as u8)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:23"]
+            #[inline(always)]
+            pub fn secondary_tick_image(&mut self) -> SecondaryTickImageW<'_, SecondaryTargetSpec> {
+                SecondaryTickImageW::new(self, 0)
+            }
+            #[doc = "Bits 24:31"]
+            #[inline(always)]
+            pub fn high_unknown(&mut self) -> HighUnknownW<'_, SecondaryTargetSpec> {
+                HighUnknownW::new(self, 24)
+            }
+        }
+        #[doc = "Secondary timer word. coex_hw_timer_set preserves the high byte and replaces the low 24 bits with the converted fourth timer-value argument.\n\nYou can [`read`](crate::Reg::read) this register and get [`secondary_target::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`secondary_target::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct SecondaryTargetSpec;
+        impl crate::RegisterSpec for SecondaryTargetSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`secondary_target::R`](R) reader structure"]
+        impl crate::Readable for SecondaryTargetSpec {}
+        #[doc = "`write(|w| ..)` method takes [`secondary_target::W`](W) writer structure"]
+        impl crate::Writable for SecondaryTargetSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "ENABLE_CONTROL (rw) register accessor: coex_hw_timer_enable sets bit zero here after clearing bit zero in the paired disable-control word. coex_hw_timer_disable performs the inverse transaction.\n\nYou can [`read`](crate::Reg::read) this register and get [`enable_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`enable_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@enable_control`] module"]
+    #[doc(alias = "ENABLE_CONTROL")]
+    pub type EnableControl = crate::Reg<enable_control::EnableControlSpec>;
+    #[doc = "coex_hw_timer_enable sets bit zero here after clearing bit zero in the paired disable-control word. coex_hw_timer_disable performs the inverse transaction."]
+    pub mod enable_control {
+        #[doc = "Register `ENABLE_CONTROL%s` reader"]
+        pub type R = crate::R<EnableControlSpec>;
+        #[doc = "Register `ENABLE_CONTROL%s` writer"]
+        pub type W = crate::W<EnableControlSpec>;
+        #[doc = "Field `ENABLE` reader - "]
+        pub type EnableR = crate::BitReader;
+        #[doc = "Field `ENABLE` writer - "]
+        pub type EnableW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `UNKNOWN` reader - "]
+        pub type UnknownR = crate::FieldReader<u32>;
+        #[doc = "Field `UNKNOWN` writer - "]
+        pub type UnknownW<'a, REG> = crate::FieldWriter<'a, REG, 31, u32>;
+        impl R {
+            #[doc = "Bit 0"]
+            #[inline(always)]
+            pub fn enable(&self) -> EnableR {
+                EnableR::new((self.bits & 1) != 0)
+            }
+            #[doc = "Bits 1:31"]
+            #[inline(always)]
+            pub fn unknown(&self) -> UnknownR {
+                UnknownR::new((self.bits >> 1) & 0x7fff_ffff)
+            }
+        }
+        impl W {
+            #[doc = "Bit 0"]
+            #[inline(always)]
+            pub fn enable(&mut self) -> EnableW<'_, EnableControlSpec> {
+                EnableW::new(self, 0)
+            }
+            #[doc = "Bits 1:31"]
+            #[inline(always)]
+            pub fn unknown(&mut self) -> UnknownW<'_, EnableControlSpec> {
+                UnknownW::new(self, 1)
+            }
+        }
+        #[doc = "coex_hw_timer_enable sets bit zero here after clearing bit zero in the paired disable-control word. coex_hw_timer_disable performs the inverse transaction.\n\nYou can [`read`](crate::Reg::read) this register and get [`enable_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`enable_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct EnableControlSpec;
+        impl crate::RegisterSpec for EnableControlSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`enable_control::R`](R) reader structure"]
+        impl crate::Readable for EnableControlSpec {}
+        #[doc = "`write(|w| ..)` method takes [`enable_control::W`](W) writer structure"]
+        impl crate::Writable for EnableControlSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+    #[doc = "DISABLE_CONTROL (rw) register accessor: coex_hw_timer_disable sets bit zero here after clearing bit zero in the paired enable-control word. coex_hw_timer_enable performs the inverse transaction.\n\nYou can [`read`](crate::Reg::read) this register and get [`disable_control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`disable_control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@disable_control`] module"]
+    #[doc(alias = "DISABLE_CONTROL")]
+    pub type DisableControl = crate::Reg<disable_control::DisableControlSpec>;
+    #[doc = "coex_hw_timer_disable sets bit zero here after clearing bit zero in the paired enable-control word. coex_hw_timer_enable performs the inverse transaction."]
+    pub mod disable_control {
+        #[doc = "Register `DISABLE_CONTROL%s` reader"]
+        pub type R = crate::R<DisableControlSpec>;
+        #[doc = "Register `DISABLE_CONTROL%s` writer"]
+        pub type W = crate::W<DisableControlSpec>;
+        #[doc = "Field `DISABLE` reader - "]
+        pub type DisableR = crate::BitReader;
+        #[doc = "Field `DISABLE` writer - "]
+        pub type DisableW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `UNKNOWN` reader - "]
+        pub type UnknownR = crate::FieldReader<u32>;
+        #[doc = "Field `UNKNOWN` writer - "]
+        pub type UnknownW<'a, REG> = crate::FieldWriter<'a, REG, 31, u32>;
+        impl R {
+            #[doc = "Bit 0"]
+            #[inline(always)]
+            pub fn disable(&self) -> DisableR {
+                DisableR::new((self.bits & 1) != 0)
+            }
+            #[doc = "Bits 1:31"]
+            #[inline(always)]
+            pub fn unknown(&self) -> UnknownR {
+                UnknownR::new((self.bits >> 1) & 0x7fff_ffff)
+            }
+        }
+        impl W {
+            #[doc = "Bit 0"]
+            #[inline(always)]
+            pub fn disable(&mut self) -> DisableW<'_, DisableControlSpec> {
+                DisableW::new(self, 0)
+            }
+            #[doc = "Bits 1:31"]
+            #[inline(always)]
+            pub fn unknown(&mut self) -> UnknownW<'_, DisableControlSpec> {
+                UnknownW::new(self, 1)
+            }
+        }
+        #[doc = "coex_hw_timer_disable sets bit zero here after clearing bit zero in the paired enable-control word. coex_hw_timer_enable performs the inverse transaction.\n\nYou can [`read`](crate::Reg::read) this register and get [`disable_control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`disable_control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct DisableControlSpec;
+        impl crate::RegisterSpec for DisableControlSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`disable_control::R`](R) reader structure"]
+        impl crate::Readable for DisableControlSpec {}
+        #[doc = "`write(|w| ..)` method takes [`disable_control::W`](W) writer structure"]
+        impl crate::Writable for DisableControlSpec {
+            type Safety = crate::Unsafe;
+        }
+    }
+}
 #[doc = "Runtime receive-beacon and individual-TWT COEX/PTI words recovered from five complete hal_coex.o leaves. Register addresses, masks and RMW order are exact; fields whose electrical meaning is not established retain UNKNOWN names."]
 pub type WifiMacCoexRuntime = crate::Periph<wifi_mac_coex_runtime::RegisterBlock, 0x2010_d89c>;
 impl core::fmt::Debug for WifiMacCoexRuntime {
@@ -31386,6 +31739,8 @@ pub struct Peripherals {
     pub wifi_mac_interrupt: WifiMacInterrupt,
     #[doc = "WIFI_MAC_TSF_TIMER"]
     pub wifi_mac_tsf_timer: WifiMacTsfTimer,
+    #[doc = "COEX_HW_TIMER"]
+    pub coex_hw_timer: CoexHwTimer,
     #[doc = "WIFI_MAC_COEX_RUNTIME"]
     pub wifi_mac_coex_runtime: WifiMacCoexRuntime,
     #[doc = "WIFI_MAC_POWER_INTERRUPT"]
@@ -31494,6 +31849,7 @@ impl Peripherals {
             wifi_mac_core_enable: unsafe { WifiMacCoreEnable::steal() },
             wifi_mac_interrupt: unsafe { WifiMacInterrupt::steal() },
             wifi_mac_tsf_timer: unsafe { WifiMacTsfTimer::steal() },
+            coex_hw_timer: unsafe { CoexHwTimer::steal() },
             wifi_mac_coex_runtime: unsafe { WifiMacCoexRuntime::steal() },
             wifi_mac_power_interrupt: unsafe { WifiMacPowerInterrupt::steal() },
             wifi_mac_cold_handshake: unsafe { WifiMacColdHandshake::steal() },
@@ -31655,6 +32011,7 @@ pub mod peripheral_ownership {
         pub wifi_mac_last_rx_buffer: crate::WifiMacLastRxBuffer,
         pub wifi_mac_core_enable: crate::WifiMacCoreEnable,
         pub wifi_mac_tsf_timer: crate::WifiMacTsfTimer,
+        pub coex_hw_timer: crate::CoexHwTimer,
         pub wifi_mac_coex_runtime: crate::WifiMacCoexRuntime,
         pub wifi_mac_cold_handshake: crate::WifiMacColdHandshake,
         pub wifi_mac_rx_dma: crate::WifiMacRxDma,
@@ -31738,6 +32095,7 @@ pub mod peripheral_ownership {
             wifi_mac_core_enable,
             wifi_mac_interrupt,
             wifi_mac_tsf_timer,
+            coex_hw_timer,
             wifi_mac_coex_runtime,
             wifi_mac_power_interrupt,
             wifi_mac_cold_handshake,
@@ -31813,6 +32171,7 @@ pub mod peripheral_ownership {
                 wifi_mac_last_rx_buffer,
                 wifi_mac_core_enable,
                 wifi_mac_tsf_timer,
+                coex_hw_timer,
                 wifi_mac_coex_runtime,
                 wifi_mac_cold_handshake,
                 wifi_mac_rx_dma,
@@ -32500,6 +32859,44 @@ pub mod register_image_write {
 
 /// Safe, SVD-declared field writes based on an all-zero register image.
 pub mod zero_based_field_write {
+
+    /// Write `PRIMARY_TICK_IMAGE`, `PARAMETER_2`, `PARAMETER_1` in `COEX_HW_TIMER`.`CONFIGURATION%s` while publishing zero to every other register bit.
+    #[inline]
+    pub fn coex_timer_configuration(
+        registers: &crate::CoexHwTimer,
+        index: usize,
+        primary_tick_image_value: u32,
+        parameter_2_value: u8,
+        parameter_1_value: u8,
+    ) {
+        // SAFETY: the SVD extension explicitly qualifies the zero-based
+        // transaction, and generator validation proves every selected field
+        // accepts every value representable by its public argument type.
+        unsafe {
+            registers.configuration(index).write_with_zero(|writer| {
+                writer
+                    .primary_tick_image()
+                    .set(primary_tick_image_value)
+                    .parameter_2()
+                    .set(parameter_2_value)
+                    .parameter_1()
+                    .set(parameter_1_value)
+            });
+        }
+    }
+
+    /// Write `SECONDARY_TICK_IMAGE` in `COEX_HW_TIMER`.`SECONDARY_TARGET%s` while publishing zero to every other register bit.
+    #[inline]
+    pub fn coex_timer_secondary_target(registers: &crate::CoexHwTimer, index: usize, value: u32) {
+        // SAFETY: the SVD extension explicitly qualifies the zero-based
+        // transaction, and generator validation proves every selected field
+        // accepts every value representable by its public argument type.
+        unsafe {
+            registers
+                .secondary_target(index)
+                .write_with_zero(|writer| writer.secondary_tick_image().set(value));
+        }
+    }
 
     /// Write `RATE_0`, `RATE_1`, `RATE_2`, `RATE_3` in `WIFI_MAC_HE_INIT_SUFFIX`.`ERSU_ACK_RATE` while publishing zero to every other register bit.
     #[inline]

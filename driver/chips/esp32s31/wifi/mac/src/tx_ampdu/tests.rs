@@ -1258,16 +1258,18 @@ fn station_sessions_own_vendor_tid_order_response_routing_and_alarms() {
     ];
     assert_eq!(
         sessions.on_response(&response),
-        Ok(StaTxBlockAckResponse {
-            tid: 7,
-            response: TxBlockAckResponse::Operational(OperationalTxBlockAck {
+        Ok(StaTxBlockAckResponseDisposition::Matched(
+            StaTxBlockAckResponse {
                 tid: 7,
-                window: 16,
-                timeout_tu: 0,
-                starting_sequence: 0x200,
-                amsdu: false,
-            }),
-        })
+                response: TxBlockAckResponse::Operational(OperationalTxBlockAck {
+                    tid: 7,
+                    window: 16,
+                    timeout_tu: 0,
+                    starting_sequence: 0x200,
+                    amsdu: false,
+                }),
+            }
+        ))
     );
     assert_eq!(sessions.alarm(7), None);
     assert_eq!(sessions.expire_next(100_000), Some(0));
@@ -1291,22 +1293,24 @@ fn parsed_response_can_cross_the_staged_rx_ownership_boundary() {
             window: 16,
             timeout_tu: 7,
         }),
-        Ok(StaTxBlockAckResponse {
-            tid: 0,
-            response: TxBlockAckResponse::Operational(OperationalTxBlockAck {
+        Ok(StaTxBlockAckResponseDisposition::Matched(
+            StaTxBlockAckResponse {
                 tid: 0,
-                window: 16,
-                timeout_tu: 7,
-                starting_sequence: 0x123,
-                amsdu: true,
-            }),
-        })
+                response: TxBlockAckResponse::Operational(OperationalTxBlockAck {
+                    tid: 0,
+                    window: 16,
+                    timeout_tu: 7,
+                    starting_sequence: 0x123,
+                    amsdu: true,
+                }),
+            }
+        ))
     );
     assert_eq!(sessions.alarm(0), None);
 }
 
 #[test]
-fn station_sessions_reject_unowned_tid_and_stale_dialog_token() {
+fn station_sessions_reject_unowned_tid_and_classify_stale_dialog_token() {
     let mut sessions = StaTxBlockAckSessions::new(32, 100_000, false).unwrap();
     assert_eq!(
         sessions.begin(3, 0, 0),
@@ -1314,7 +1318,7 @@ fn station_sessions_reject_unowned_tid_and_stale_dialog_token() {
     );
     assert_eq!(
         sessions.on_response(&[3, 1, 42, 0, 0, 0, 0, 0, 0]),
-        Err(StaTxBlockAckSessionsError::UnexpectedDialogToken(42))
+        Ok(StaTxBlockAckResponseDisposition::StaleDialogToken(42))
     );
     assert!(!sessions.stop(3));
 }

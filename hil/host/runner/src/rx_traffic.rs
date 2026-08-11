@@ -19,7 +19,10 @@ use crate::{
         udp_sequence_markdown, validate_exact_rx_delivery,
     },
     invalidate_previous_report,
+    lab_config::LabConfig,
+    openwrt_fixture::OpenWrtRxCapture,
     paced_udp::{Config as PacedUdpConfig, send as send_paced_udp},
+    rx_delivery,
     traffic_capture::{SerialCapture, await_udp_rx_ready},
 };
 
@@ -41,7 +44,7 @@ struct Options {
     phy: &'static str,
 }
 
-pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
+pub(crate) fn run(arguments: Vec<String>, root: &Path, lab: &LabConfig) -> Result<()> {
     if arguments
         .first()
         .is_some_and(|value| matches!(value.as_str(), "help" | "--help" | "-h"))
@@ -49,13 +52,14 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
         print_help();
         return Ok(());
     }
-    let mut options = parse_options(&arguments)?;
+    let mut options = parse_options(&arguments, lab)?;
     let output = root.join("target/hil/esp32s31/qualification/open-radio-rx");
     fs::create_dir_all(&output)?;
     invalidate_previous_report(&output)?;
     let capture = SerialCapture::start_with_reset(&options.serial);
     let discovered_address = match await_udp_rx_ready(
         &capture,
+        lab,
         options.address,
         options.port,
         DEVICE_READY_TIMEOUT,
@@ -68,6 +72,18 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
         }
     };
     options.address = discovered_address.address;
+    let openwrt_capture = lab
+        .openwrt
+        .observe_ap
+        .then(|| {
+            OpenWrtRxCapture::start(
+                &lab.openwrt,
+                options.address,
+                options.port,
+                options.duration,
+            )
+        })
+        .transpose()?;
     let session = if discovered_address.runtime_session {
         let duration_millis = u32::try_from(options.duration.as_millis())?;
         Some(capture.start_session(SessionConfig {
@@ -114,6 +130,7 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
         thread::sleep(Duration::from_secs(5));
         None
     };
+    let openwrt = openwrt_capture.map(OpenWrtRxCapture::finish).transpose()?;
     let log = capture.finish();
     fs::write(output.join("uart.log"), &log)?;
     let assessment = assess_rx_log(&log, options.expected_rx_format)?;
@@ -177,6 +194,13 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
         validate_exact_rx_delivery(host.datagrams, rx.received_datagrams, rx.sequence, rx.order)
             .err()
             .map(|error| error.to_string());
+    let typed_delivery_failure = structured
+        .and_then(|evidence| evidence.rx_delivery)
+        .and_then(|delivery| {
+            let assessment = rx_delivery::assess(host.datagrams, delivery);
+            (!assessment.exact())
+                .then(|| format!("typed RX delivery frontier is {}", assessment.frontier()))
+        });
     let acceptance_failure = if host.throughput_bps() < minimum_bps {
         Some(String::from(
             "host failed to offer at least 90% of the requested RX rate",
@@ -189,8 +213,19 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
     } else {
         delivery_failure
     };
+    let fixture_failure = openwrt.and_then(|openwrt| {
+        let expected = host.datagrams.saturating_add(1);
+        (openwrt.wireless_packets != expected).then(|| {
+            format!(
+                "host/OpenWrt Wi-Fi egress mismatch: expected={} observed={} packets",
+                expected, openwrt.wireless_packets
+            )
+        })
+    });
     let failure = assessment
         .failure
+        .or(fixture_failure)
+        .or(typed_delivery_failure)
         .or(structured_failure)
         .or(acceptance_failure);
     let result = if failure.is_some() { "FAIL" } else { "PASS" };
@@ -215,6 +250,23 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
             )
         })
         .unwrap_or_else(|| String::from("- Typed session evidence: compatibility mode\n"));
+    let openwrt_report = openwrt.map_or_else(
+        || String::from("- AP-side evidence: `external AP; not observed`\n"),
+        |openwrt| format!(
+            "- OpenWrt filtered DSA ingress (diagnostic) / Wi-Fi egress (exact): `{}` / `{}`; interface RX/TX: `{}` / `{}`; station TX/retries/failed: `{}` / `{}` / `{}`; ath10k MSDU queued/dropped, MPDU requeued, SW-retry dropped: `{}` / `{}` / `{}` / `{}`\n",
+            openwrt.ingress_packets,
+            openwrt.wireless_packets,
+            openwrt.ingress_interface_rx_packets,
+            openwrt.wireless_interface_tx_packets,
+            openwrt.station_tx_packets,
+            openwrt.station_tx_retries,
+            openwrt.station_tx_failed,
+            openwrt.firmware_msdu_queued,
+            openwrt.firmware_msdu_dropped,
+            openwrt.firmware_mpdu_requeued,
+            openwrt.firmware_sw_retry_dropped,
+        ),
+    );
     let pipeline = rx.pipeline;
     let irq = rx.irq;
     let average_service_us = pipeline.service_us as f64 / pipeline.admitted_frames.max(1) as f64;
@@ -229,6 +281,14 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
     let udp_sequence_report = udp_sequence_markdown(rx.sequence, host.datagrams);
     let rx_order_report = rx_order_markdown(rx.order);
     let rx_reorder_report = rx_reorder_markdown(rx.reorder);
+    let typed_delivery_report = structured
+        .and_then(|evidence| evidence.rx_delivery)
+        .map(|evidence| rx_delivery::markdown(host.datagrams, evidence))
+        .unwrap_or_else(|| {
+            String::from(
+                "## Typed RX delivery frontier\n\nNot collected in this image. Use the explicit RX-delivery profile.\n\n",
+            )
+        });
     fs::write(
         output.join("report.md"),
         format!(
@@ -239,6 +299,7 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
              - Requested/actual host offer: `{:.3}` / `{:.3} Mbit/s`\n\
              - Host payload: `{}` bytes in `{}` datagrams\n\
              {structured_report}\
+             {openwrt_report}\
              - Host pacing maximum lateness/catch-up/deadline resets: `{} us` / `{}` datagrams / `{}`\n\
              - Device RX median: `{:.3} Mbit/s` across `{}` samples; received UDP datagrams: `{}`\n\
              - Enqueued/software-dropped frames: `{}` / `{}`\n\
@@ -251,6 +312,7 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
              {udp_sequence_report}\
              {rx_order_report}\
              {rx_reorder_report}\
+             {typed_delivery_report}\
              ## RX pipeline\n\n\
              - DMA service calls/frontier/admitted: `{}` / `{}` / `{}`; max frontier/admitted: `{}` / `{}`\n\
              - Service-observed BUFFER_FULL increments/samples: `{}` / `{}`; last boot service/counter/frontier/admitted/pool/queue/service time: `{}` / `{}` / `{}` / `{}` / `{}` / `{}` / `{} us`\n\
@@ -384,34 +446,29 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
 
 fn print_help() {
     println!(
-        "cargo hil traffic rx <device-ipv4> [options]\n\
+        "cargo hil traffic rx [options]\n\
          \n\
          --rate <bps>       paced host-to-device rate (default 20M)\n\
          --seconds <5..300> traffic duration (default 12)\n\
          --payload <64..1472> UDP payload bytes (default 1200)\n\
          --port <port>      device UDP sink (default 4323)\n\
-         --serial <path>    diagnostics device (default /dev/ttyACM0)\n\
          --phy <he20|ht20|ht40> expected RX vector (default he20)\n\n\
          Flash `cargo hil flash radio` and wait for DHCP first."
     );
 }
 
-fn parse_options(arguments: &[String]) -> Result<Options> {
-    let address = arguments
-        .first()
-        .ok_or("missing ESP32-S31 IPv4 address")?
-        .parse::<Ipv4Addr>()?;
+fn parse_options(arguments: &[String], lab: &LabConfig) -> Result<Options> {
     let mut options = Options {
-        address,
+        address: Ipv4Addr::UNSPECIFIED,
         port: DEFAULT_PORT,
         rate_bps: DEFAULT_RATE_BPS,
         duration: DEFAULT_DURATION,
         payload: DEFAULT_PAYLOAD,
-        serial: PathBuf::from("/dev/ttyACM0"),
+        serial: lab.device.serial.clone(),
         expected_rx_format: 4,
         phy: "he20",
     };
-    let mut index = 1;
+    let mut index = 0;
     while index < arguments.len() {
         let value = arguments
             .get(index + 1)
@@ -432,7 +489,6 @@ fn parse_options(arguments: &[String]) -> Result<Options> {
                 }
             }
             "--port" => options.port = value.parse::<u16>()?,
-            "--serial" => options.serial = PathBuf::from(value),
             "--phy" => match value.as_str() {
                 "he20" => {
                     options.expected_rx_format = 4;
@@ -482,19 +538,20 @@ mod tests {
     #[test]
     fn parses_rx_options_and_rates() {
         assert_eq!(parse_rate("20M").unwrap(), 20_000_000);
-        let options = parse_options(&[
-            "192.168.178.141".into(),
-            "--rate".into(),
-            "40M".into(),
-            "--phy".into(),
-            "ht40".into(),
-        ])
+        let lab = test_lab_config();
+        let options = parse_options(
+            &["--rate".into(), "40M".into(), "--phy".into(), "ht40".into()],
+            &lab,
+        )
         .unwrap();
         assert_eq!(options.rate_bps, 40_000_000);
         assert_eq!(options.expected_rx_format, 2);
-        let ht20 =
-            parse_options(&["192.168.178.141".into(), "--phy".into(), "ht20".into()]).unwrap();
+        let ht20 = parse_options(&["--phy".into(), "ht20".into()], &lab).unwrap();
         assert_eq!(ht20.expected_rx_format, 2);
         assert_eq!(ht20.phy, "ht20");
+    }
+
+    fn test_lab_config() -> LabConfig {
+        LabConfig::for_test()
     }
 }

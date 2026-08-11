@@ -10,10 +10,14 @@ use std::{
 
 mod bidirectional;
 mod controlled_ap;
+mod fixture_lock;
 mod icmp_latency;
+mod lab_config;
+mod openwrt_fixture;
 mod paced_tcp;
 mod paced_udp;
 mod packet_socket;
+mod rx_delivery;
 mod rx_traffic;
 mod stack_audit;
 mod startup_artifact;
@@ -70,7 +74,8 @@ fn main() {
 
 fn run() -> Result<()> {
     let root = repository_root()?;
-    let mut arguments = env::args().skip(1);
+    let (lab_path, raw_arguments) = extract_lab_config_argument(env::args().skip(1).collect())?;
+    let mut arguments = raw_arguments.into_iter();
     match arguments.next().as_deref() {
         Some("profiles") if arguments.next().is_none() => {
             println!("{QUALIFIED_PROFILE}");
@@ -80,7 +85,9 @@ fn run() -> Result<()> {
             print_scenarios();
             Ok(())
         }
-        Some("doctor") if arguments.next().is_none() => doctor(&root),
+        Some("doctor") if arguments.next().is_none() => {
+            doctor(&root, &lab_config::LabConfig::load(&lab_path)?)
+        }
         Some("build") => {
             let scenario = arguments
                 .next()
@@ -103,51 +110,69 @@ fn run() -> Result<()> {
             Ok(())
         }
         Some("flash") => {
-            let (scenario, port) = parse_flash_arguments(arguments)?;
+            let scenario = parse_flash_arguments(arguments)?;
+            let lab = lab_config::LabConfig::load(&lab_path)?;
             let artifacts = build(&root, scenario)?;
-            flash(&root, &artifacts, &port)?;
+            let _fixture = fixture_lock::FixtureLock::acquire(&root)?;
+            flash(&root, &artifacts, &lab.device.serial)?;
             println!("profile={QUALIFIED_PROFILE}");
             println!("scenario={}", scenario.name());
-            println!("port={}", port.display());
+            println!("port={}", lab.device.serial.display());
             println!("flash=PASS");
             Ok(())
         }
-        Some("traffic") => match arguments.next().as_deref() {
-            Some("bidirectional") => bidirectional::run(arguments.collect(), &root),
-            Some("icmp") => icmp_latency::run(arguments.collect(), &root),
-            Some("rx") => rx_traffic::run(arguments.collect(), &root),
-            Some("tcp-rx") => tcp_traffic::run_rx(arguments.collect(), &root),
-            Some("tcp-tx") => tcp_traffic::run_tx(arguments.collect(), &root),
+        Some("traffic") => {
+            let lab = lab_config::LabConfig::load(&lab_path)?;
+            let _fixture = fixture_lock::FixtureLock::acquire(&root)?;
+            match arguments.next().as_deref() {
+            Some("bidirectional") => bidirectional::run(arguments.collect(), &root, &lab),
+            Some("icmp") => icmp_latency::run(arguments.collect(), &root, &lab),
+            Some("rx") => rx_traffic::run(arguments.collect(), &root, &lab),
+            Some("tcp-rx") => tcp_traffic::run_rx(arguments.collect(), &root, &lab),
+            Some("tcp-tx") => tcp_traffic::run_tx(arguments.collect(), &root, &lab),
             Some("tcp-bidirectional") => {
-                tcp_traffic::run_bidirectional(arguments.collect(), &root)
+                tcp_traffic::run_bidirectional(arguments.collect(), &root, &lab)
             }
-            Some("tx") => tx_traffic::run(arguments.collect(), &root),
+            Some("tx") => tx_traffic::run(arguments.collect(), &root, &lab),
             Some("trigger") => trigger::run(&arguments.collect::<Vec<_>>()),
-            Some("trigger-hil") => trigger::run_hil(&arguments.collect::<Vec<_>>(), &root),
+            Some("trigger-hil") => trigger::run_hil(&arguments.collect::<Vec<_>>(), &root, &lab),
             _ => Err(
                 "usage: cargo hil traffic <rx|tx|bidirectional|tcp-rx|tcp-tx|tcp-bidirectional|icmp|trigger|trigger-hil> ..."
                     .into(),
             ),
-        },
-        Some("station") => match arguments.next().as_deref() {
-            Some("ap-absence") => station_ap_absence::run(arguments.collect(), &root),
-            Some("ap-loss") => station_ap_loss::run(arguments.collect(), &root),
-            Some("reconnect") => station_lifecycle::run(arguments.collect(), &root),
-            _ => Err("usage: cargo hil station \
+        }
+        }
+        Some("station") => {
+            let lab = lab_config::LabConfig::load(&lab_path)?;
+            let _fixture = fixture_lock::FixtureLock::acquire(&root)?;
+            match arguments.next().as_deref() {
+                Some("ap-absence") => station_ap_absence::run(arguments.collect(), &root, &lab),
+                Some("ap-loss") => station_ap_loss::run(arguments.collect(), &root, &lab),
+                Some("reconnect") => station_lifecycle::run(arguments.collect(), &root, &lab),
+                _ => Err("usage: cargo hil station \
                  <reconnect|ap-loss|ap-absence> [options]"
-                .into()),
-        },
-        Some("wifi") => match arguments.next() {
-            Some(operation) if operation == "capture" => {
-                wifi_capture::run(arguments.collect(), &root)
+                    .into()),
             }
-            Some(operation) => wifi_control::run(&operation, arguments.collect(), &root),
-            None => Err(
-                "usage: cargo hil wifi <stop|start|scan|monitor|roundtrip|capture> [options]"
-                    .into(),
-            ),
-        },
-        Some("oracle") => oracle_command(&root, arguments.collect()),
+        }
+        Some("wifi") => {
+            let lab = lab_config::LabConfig::load(&lab_path)?;
+            let _fixture = fixture_lock::FixtureLock::acquire(&root)?;
+            match arguments.next() {
+                Some(operation) if operation == "capture" => {
+                    wifi_capture::run(arguments.collect(), &root, &lab)
+                }
+                Some(operation) => wifi_control::run(&operation, arguments.collect(), &root, &lab),
+                None => Err(
+                    "usage: cargo hil wifi <stop|start|scan|monitor|roundtrip|capture> [options]"
+                        .into(),
+                ),
+            }
+        }
+        Some("oracle") => {
+            let lab = lab_config::LabConfig::load(&lab_path)?;
+            let _fixture = fixture_lock::FixtureLock::acquire(&root)?;
+            oracle_command(&root, arguments.collect(), &lab)
+        }
         Some("help" | "--help" | "-h") | None => {
             print_help();
             Ok(())
@@ -156,16 +181,35 @@ fn run() -> Result<()> {
     }
 }
 
+fn extract_lab_config_argument(arguments: Vec<String>) -> Result<(PathBuf, Vec<String>)> {
+    let mut path = lab_config::LabConfig::default_path()?;
+    let mut retained = Vec::with_capacity(arguments.len());
+    let mut iterator = arguments.into_iter();
+    let mut seen = false;
+    while let Some(argument) = iterator.next() {
+        if argument == "--lab-config" {
+            if seen {
+                return Err("--lab-config may be specified only once".into());
+            }
+            path = PathBuf::from(iterator.next().ok_or("--lab-config requires a path")?);
+            seen = true;
+        } else {
+            retained.push(argument);
+        }
+    }
+    Ok((path, retained))
+}
+
 fn repository_root() -> Result<PathBuf> {
     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     manifest
         .ancestors()
-        .find(|path| path.join(".git").is_dir() && path.join("Cargo.toml").is_file())
+        .find(|path| path.join(".git").exists() && path.join("Cargo.toml").is_file())
         .map(PathBuf::from)
         .ok_or_else(|| "HIL runner must live inside the repository".into())
 }
 
-fn doctor(root: &std::path::Path) -> Result<()> {
+fn doctor(root: &std::path::Path, lab: &lab_config::LabConfig) -> Result<()> {
     let firmware = root.join("hil/targets/esp32s31/Cargo.toml");
     if !firmware.is_file() {
         return Err(format!("missing embedded HIL workspace: {}", firmware.display()).into());
@@ -174,6 +218,17 @@ fn doctor(root: &std::path::Path) -> Result<()> {
     println!("firmware_workspace={}", firmware.display());
     println!("target={TARGET}");
     println!("qualified_profile={QUALIFIED_PROFILE}");
+    println!("lab_config={}", lab.path().display());
+    if !lab.device.serial.exists() {
+        return Err(format!(
+            "serial device does not exist: {}",
+            lab.device.serial.display()
+        )
+        .into());
+    }
+    println!("serial_device=PASS");
+    openwrt_fixture::doctor(&lab.openwrt)?;
+    println!("openwrt_fixture=PASS");
     for program in ["cargo", "llvm-objcopy", "llvm-nm", "espflash"] {
         require_program(program)?;
         println!("tool_{program}=PASS");
@@ -191,16 +246,16 @@ fn print_help() {
         "Open ESP radio HIL\n\n\
          cargo hil profiles\n\
          cargo hil scenarios\n\
-         cargo hil doctor\n\
+         cargo hil [--lab-config <path>] doctor\n\
          cargo hil build [scenario]\n\n\
-         cargo hil flash [scenario] [--port /dev/ttyACM0]\n\
-         cargo hil traffic rx <device-ipv4> [options]\n\
-         cargo hil traffic tx <device-ipv4> [options]\n\
-         cargo hil traffic bidirectional <ipv4> [options]\n\
-         cargo hil traffic tcp-rx <device-ipv4> [options]\n\
-         cargo hil traffic tcp-tx <device-ipv4> [options]\n\
-         cargo hil traffic tcp-bidirectional <device-ipv4> [options]\n\
-         cargo hil traffic icmp <device-ipv4> [options]\n\
+         cargo hil flash [scenario]\n\
+         cargo hil traffic rx [options]\n\
+         cargo hil traffic tx [options]\n\
+         cargo hil traffic bidirectional [options]\n\
+         cargo hil traffic tcp-rx [options]\n\
+         cargo hil traffic tcp-tx [options]\n\
+         cargo hil traffic tcp-bidirectional [options]\n\
+         cargo hil traffic icmp [options]\n\
          cargo hil traffic trigger <monitor-interface> [options]\n\
          cargo hil traffic trigger-hil <monitor-interface> [options]\n\
          cargo hil station ap-absence [options]\n\
@@ -213,15 +268,13 @@ fn print_help() {
          cargo hil wifi roundtrip [options]\n\
          cargo hil wifi capture --output <capture.pcapng> [options]\n\
          cargo hil oracle build\n\
-         cargo hil oracle flash [--port /dev/ttyACM0]\n\n\
+         cargo hil oracle flash\n\n\
          The build command compiles and packs both HIL stages, audits the \
          PSRAM/SRAM placement and stack-frame budgets, and emits an ESP \
          application image.\n\
-         Traffic commands provision Wi-Fi at runtime from \
-         OPEN_RADIO_HIL_STA_SSID and OPEN_RADIO_HIL_STA_PASSWORD. Set \
-         OPEN_RADIO_HIL_STA_IPV4_CIDR and, optionally, \
-         OPEN_RADIO_HIL_STA_GATEWAY_IPV4 for an isolated static-IP cell; \
-         otherwise the target uses DHCP.\n\
+         Device, network and OpenWrt fixture settings come only from \
+         hil/local.toml (mode 0600). Copy hil/local.example.toml once; \
+         --lab-config selects another complete lab description.\n\
          Run `cargo hil scenarios` for the firmware scenario list."
     );
 }
@@ -254,7 +307,7 @@ struct OracleArtifacts {
     application_image: PathBuf,
 }
 
-fn oracle_command(root: &Path, arguments: Vec<String>) -> Result<()> {
+fn oracle_command(root: &Path, arguments: Vec<String>, lab: &lab_config::LabConfig) -> Result<()> {
     let mut arguments = arguments.into_iter();
     match arguments.next().as_deref() {
         Some("build") if arguments.next().is_none() => {
@@ -268,19 +321,21 @@ fn oracle_command(root: &Path, arguments: Vec<String>) -> Result<()> {
             Ok(())
         }
         Some("flash") => {
-            let port = parse_oracle_flash_arguments(arguments)?;
+            if arguments.next().is_some() {
+                return Err("usage: cargo hil oracle flash".into());
+            }
             let artifacts = build_oracle(root)?;
-            flash_oracle(root, &artifacts, &port)?;
+            flash_oracle(root, &artifacts, &lab.device.serial)?;
             println!("oracle_elf={}", artifacts.elf.display());
             println!(
                 "application_image={}",
                 artifacts.application_image.display()
             );
-            println!("port={}", port.display());
+            println!("port={}", lab.device.serial.display());
             println!("oracle_flash=PASS");
             Ok(())
         }
-        _ => Err("usage: cargo hil oracle <build|flash [--port /dev/ttyACM0]>".into()),
+        _ => Err("usage: cargo hil oracle <build|flash>".into()),
     }
 }
 
@@ -396,10 +451,10 @@ enum Scenario {
     BootSmoke,
     Radio,
     RadioPollProfile,
-    RadioRxOrderProfile,
+    RadioRxDeliveryProfile,
     UdpTx,
     Bidirectional,
-    BidirectionalRxOrderProfile,
+    BidirectionalRxDeliveryProfile,
     Tcp,
 }
 
@@ -408,10 +463,10 @@ impl Scenario {
         Self::BootSmoke,
         Self::Radio,
         Self::RadioPollProfile,
-        Self::RadioRxOrderProfile,
+        Self::RadioRxDeliveryProfile,
         Self::UdpTx,
         Self::Bidirectional,
-        Self::BidirectionalRxOrderProfile,
+        Self::BidirectionalRxDeliveryProfile,
         Self::Tcp,
     ];
 
@@ -420,13 +475,14 @@ impl Scenario {
             "boot-smoke" => Ok(Self::BootSmoke),
             "radio" | "open-radio-hil" => Ok(Self::Radio),
             "radio-poll-profile" | "open-radio-poll-profile" => Ok(Self::RadioPollProfile),
-            "radio-rx-order-profile" | "open-radio-rx-order-profile" => {
-                Ok(Self::RadioRxOrderProfile)
+            "radio-rx-delivery-profile" | "open-radio-rx-delivery-profile" => {
+                Ok(Self::RadioRxDeliveryProfile)
             }
             "udp-tx" | "open-radio-udp-tx" => Ok(Self::UdpTx),
             "bidirectional" | "open-radio-bidirectional" => Ok(Self::Bidirectional),
-            "bidirectional-rx-order-profile" | "open-radio-bidirectional-rx-order-profile" => {
-                Ok(Self::BidirectionalRxOrderProfile)
+            "bidirectional-rx-delivery-profile"
+            | "open-radio-bidirectional-rx-delivery-profile" => {
+                Ok(Self::BidirectionalRxDeliveryProfile)
             }
             "tcp" | "tcp-rx" | "open-radio-tcp" | "open-radio-tcp-rx" => Ok(Self::Tcp),
             _ => Err(format!(
@@ -441,10 +497,10 @@ impl Scenario {
             Self::BootSmoke => "boot-smoke",
             Self::Radio => "radio",
             Self::RadioPollProfile => "radio-poll-profile",
-            Self::RadioRxOrderProfile => "radio-rx-order-profile",
+            Self::RadioRxDeliveryProfile => "radio-rx-delivery-profile",
             Self::UdpTx => "udp-tx",
             Self::Bidirectional => "bidirectional",
-            Self::BidirectionalRxOrderProfile => "bidirectional-rx-order-profile",
+            Self::BidirectionalRxDeliveryProfile => "bidirectional-rx-delivery-profile",
             Self::Tcp => "tcp",
         }
     }
@@ -454,10 +510,10 @@ impl Scenario {
             Self::BootSmoke => "boot-smoke",
             Self::Radio => "open-radio-hil",
             Self::RadioPollProfile => "open-radio-poll-profile",
-            Self::RadioRxOrderProfile => "open-radio-rx-order-profile",
+            Self::RadioRxDeliveryProfile => "open-radio-rx-delivery-profile",
             Self::UdpTx => "open-radio-udp-tx",
             Self::Bidirectional => "open-radio-bidirectional",
-            Self::BidirectionalRxOrderProfile => "open-radio-bidirectional-rx-order-profile",
+            Self::BidirectionalRxDeliveryProfile => "open-radio-bidirectional-rx-delivery-profile",
             Self::Tcp => "open-radio-tcp",
         }
     }
@@ -467,19 +523,20 @@ impl Scenario {
             Self::BootSmoke => "boot-smoke",
             Self::Radio => "open-radio-hil",
             Self::RadioPollProfile => "open-radio-hil,task-poll-telemetry",
-            Self::RadioRxOrderProfile => "open-radio-hil,rx-order-telemetry",
-            Self::BidirectionalRxOrderProfile => "open-radio-hil,rx-order-telemetry",
+            Self::RadioRxDeliveryProfile => "open-radio-hil,rx-delivery-telemetry",
+            Self::BidirectionalRxDeliveryProfile => "open-radio-hil,rx-delivery-telemetry",
             Self::UdpTx | Self::Bidirectional | Self::Tcp => "open-radio-hil",
         }
     }
 
     const fn environment(self) -> &'static [(&'static str, &'static str)] {
         match self {
-            Self::BootSmoke | Self::Radio | Self::RadioPollProfile | Self::RadioRxOrderProfile => {
-                &[]
-            }
+            Self::BootSmoke
+            | Self::Radio
+            | Self::RadioPollProfile
+            | Self::RadioRxDeliveryProfile => &[],
             Self::UdpTx => &[("OPEN_RADIO_TX_BENCH", "1")],
-            Self::Bidirectional | Self::BidirectionalRxOrderProfile => &[
+            Self::Bidirectional | Self::BidirectionalRxDeliveryProfile => &[
                 ("OPEN_RADIO_TX_BENCH", "1"),
                 ("OPEN_RADIO_BIDIRECTIONAL_BENCH", "1"),
             ],
@@ -494,13 +551,13 @@ impl Scenario {
             Self::RadioPollProfile => {
                 "radio HIL with diagnostic Embassy Future::poll residence telemetry"
             }
-            Self::RadioRxOrderProfile => {
-                "radio HIL correlating UDP and 802.11 receive sequence order"
+            Self::RadioRxDeliveryProfile => {
+                "radio HIL proving UDP delivery across reorder, network enqueue and socket consumption"
             }
             Self::UdpTx => "production ConnectedRunner embassy-net UDP throughput",
             Self::Bidirectional => "production ConnectedRunner simultaneous RX/TX throughput",
-            Self::BidirectionalRxOrderProfile => {
-                "simultaneous RX/TX with UDP and 802.11 receive-order correlation"
+            Self::BidirectionalRxDeliveryProfile => {
+                "simultaneous RX/TX with typed UDP receive-frontier evidence"
             }
             Self::Tcp => "production ConnectedRunner embassy-net TCP RX/TX/full-duplex throughput",
         }
@@ -721,44 +778,15 @@ impl Drop for TrackedFileSnapshot {
     }
 }
 
-fn parse_flash_arguments(
-    mut arguments: impl Iterator<Item = String>,
-) -> Result<(Scenario, PathBuf)> {
+fn parse_flash_arguments(mut arguments: impl Iterator<Item = String>) -> Result<Scenario> {
     let mut scenario = Scenario::BootSmoke;
-    let mut port = env::var_os("ESPFLASH_PORT")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("/dev/ttyACM0"));
-    let mut scenario_seen = false;
-    while let Some(argument) = arguments.next() {
-        if argument == "--port" {
-            port = arguments
-                .next()
-                .map(PathBuf::from)
-                .ok_or("--port requires a serial device")?;
-        } else if !scenario_seen {
-            scenario = Scenario::parse(&argument)?;
-            scenario_seen = true;
-        } else {
-            return Err(format!("unknown flash argument `{argument}`").into());
-        }
+    if let Some(argument) = arguments.next() {
+        scenario = Scenario::parse(&argument)?;
     }
-    Ok((scenario, port))
-}
-
-fn parse_oracle_flash_arguments(mut arguments: impl Iterator<Item = String>) -> Result<PathBuf> {
-    let mut port = env::var_os("ESPFLASH_PORT")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("/dev/ttyACM0"));
-    while let Some(argument) = arguments.next() {
-        if argument != "--port" {
-            return Err(format!("unknown oracle flash argument `{argument}`").into());
-        }
-        port = arguments
-            .next()
-            .map(PathBuf::from)
-            .ok_or("--port requires a serial device")?;
+    if let Some(argument) = arguments.next() {
+        return Err(format!("unknown flash argument `{argument}`").into());
     }
-    Ok(port)
+    Ok(scenario)
 }
 
 fn flash(root: &Path, artifacts: &Artifacts, port: &Path) -> Result<()> {
@@ -1174,12 +1202,12 @@ mod tests {
             "open-radio-hil,task-poll-telemetry"
         );
         assert_eq!(
-            Scenario::parse("radio-rx-order-profile").unwrap(),
-            Scenario::RadioRxOrderProfile
+            Scenario::parse("radio-rx-delivery-profile").unwrap(),
+            Scenario::RadioRxDeliveryProfile
         );
         assert_eq!(
-            Scenario::RadioRxOrderProfile.runtime_feature(),
-            "open-radio-hil,rx-order-telemetry"
+            Scenario::RadioRxDeliveryProfile.runtime_feature(),
+            "open-radio-hil,rx-delivery-telemetry"
         );
         assert_eq!(Scenario::parse("udp-tx").unwrap(), Scenario::UdpTx);
         assert_eq!(
@@ -1205,7 +1233,7 @@ mod tests {
     fn scenario_environment_selects_one_reproducible_mode() {
         assert!(Scenario::Radio.environment().is_empty());
         assert!(Scenario::RadioPollProfile.environment().is_empty());
-        assert!(Scenario::RadioRxOrderProfile.environment().is_empty());
+        assert!(Scenario::RadioRxDeliveryProfile.environment().is_empty());
         assert_eq!(
             Scenario::UdpTx.environment(),
             &[("OPEN_RADIO_TX_BENCH", "1")]

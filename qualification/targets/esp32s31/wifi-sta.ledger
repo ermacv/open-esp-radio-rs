@@ -73,7 +73,7 @@ scope Descriptor lifetime staging publication and finite TX completion for the c
 implementation complete
 host-proof covered
 vendor-proof mapped
-hil-proof partial
+hil-proof qualified
 async-proof bounded
 owner driver/chips/esp32s31/wifi/mac/src/rx_pool.rs RxStageReloadPending
 owner driver/chips/esp32s31/wifi/dma/src/rx_storage.rs RxDmaStorage
@@ -115,9 +115,9 @@ hil-evidence qualification/targets/esp32s31/records/2026-08-04-esp32s31-connecte
 hil-evidence qualification/targets/esp32s31/records/2026-08-04-esp32s31-rx-s-mpdu-metadata.md HIL_ESP32S31_RX_S_MPDU_METADATA_2026_08_04
 hil-evidence qualification/targets/esp32s31/records/2026-08-04-esp32s31-ht-rx-aggregation-metadata.md HIL_ESP32S31_HT_RX_AGGREGATION_METADATA_2026_08_04
 hil-evidence qualification/targets/esp32s31/records/2026-08-04-esp32s31-he-rx-ampdu-containment.md HIL_ESP32S31_HE_RX_AMPDU_CONTAINMENT_2026_08_04
+hil-evidence qualification/targets/esp32s31/records/2026-08-10-esp32s31-rx-delivery-frontier.md HIL_ESP32S31_RX_DELIVERY_FRONTIER_2026_08_10
 depends-on interrupt-recovery
 gap vendor dma-root-contracts-not-executable
-gap hil rx-reload-async-boundary-needs-requalification
 
 capability interrupt-recovery
 title Interrupt acknowledgement and recovery ordering
@@ -199,7 +199,7 @@ scope Production PHY I2C PBus IQ-estimator RX reload and protocol waits contain 
 implementation complete
 host-proof covered
 vendor-proof mapped
-hil-proof partial
+hil-proof qualified
 async-proof bounded
 owner driver/chips/esp32s31/phy/src/target_executor.rs complete_final_i2c
 owner driver/adapters/embassy/esp32s31-wifi/src/embassy_rx.rs await_staged_rx_reload
@@ -210,8 +210,8 @@ test driver/wifi/wpa2/src/retry.rs each_alarm_edge_emits_at_most_one_bounded_ret
 vendor-root rom phy_iq_est_enable
 vendor-anchor verification/vendor/targets/esp32s31/registers/evidence/vendor-rom.toml wDev_AppendRxBlocks
 hil-evidence qualification/targets/esp32s31/records/2026-07-31-driver-repo-he20-bidirectional.md HIL_OPEN_HE20_DRIVER_REPO_BIDIRECTIONAL_2026_07_31
+hil-evidence qualification/targets/esp32s31/records/2026-08-10-esp32s31-rx-delivery-frontier.md HIL_ESP32S31_RX_DELIVERY_FRONTIER_2026_08_10
 gap vendor remaining-wait-contracts-not-bound
-gap hil rx-async-deadline-needs-requalification
 
 capability radio-cold-start
 title Always-awake radio cold start

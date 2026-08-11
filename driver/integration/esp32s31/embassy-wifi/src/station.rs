@@ -44,7 +44,7 @@ use open_esp_radio::{
             Esp32s31MonitorChannelSwitchError, Esp32s31MonitorTaskExit,
             prepare_esp32s31_monitor_task,
         },
-        wifi::mac::{init::activate_promiscuous_receive, tx::TxSlot},
+        wifi::mac::{init::activate_promiscuous_receive, rx::RxRingError, tx::TxSlot},
         wifi::sta::control_tx::Esp32s31ControlTx,
     },
     wifi::{
@@ -55,8 +55,8 @@ use open_esp_radio::{
         },
         softmac::interface::BoundVirtualInterface,
         sta::station::{
-            StaAttemptContext, StaAttemptFailure, StaAttemptOutcome, StaFailureDisposition,
-            StaNextCandidate, StaReconnectPolicy,
+            StaAttemptContext, StaAttemptFailure, StaAttemptOutcome, StaBackoffReason,
+            StaFailureDisposition, StaNextCandidate, StaReconnectPolicy,
         },
         wpa2::Pmk,
     },
@@ -82,8 +82,8 @@ use open_esp_radio_esp32s31_wifi_embassy::{
     station::{
         Esp32s31StationCommandReceiver, Esp32s31StationConfig, Esp32s31StationConnectedPhase,
         Esp32s31StationControlResources, Esp32s31StationController, Esp32s31StationDmaResources,
-        Esp32s31StationEngine, Esp32s31StationEnginePort, Esp32s31StationExit,
-        Esp32s31StationInitialJoinPhase, Esp32s31StationInitialScanExit,
+        Esp32s31StationEngine, Esp32s31StationEngineObserver, Esp32s31StationEnginePort,
+        Esp32s31StationExit, Esp32s31StationInitialJoinPhase, Esp32s31StationInitialScanExit,
         Esp32s31StationInitialScanFailures, Esp32s31StationInitialScanPhase,
         Esp32s31StationInitialScanReturned, Esp32s31StationJoinExit, Esp32s31StationJoinOutcome,
         Esp32s31StationJoinResources, Esp32s31StationPrepareFailure, Esp32s31StationRadioResources,
@@ -354,6 +354,9 @@ enum ProductionWifiFault {
     Resume {
         _fault: ProductionStationResumeFault,
     },
+    InitialRx {
+        _fault: ProductionInitialRxFault,
+    },
     MonitorBuild {
         _failure: ProductionMonitorBuildFailure,
         _station: ProductionStationResources,
@@ -371,6 +374,24 @@ enum ProductionWifiFault {
         _stopped: ProductionStationStopped<'static>,
         _runner: ProductionStationRunner<'static, 'static>,
     },
+}
+
+struct ProductionInitialRxFault {
+    _error: RxRingError,
+    _owner: open_esp_radio_esp32s31_wifi_embassy::station::Esp32s31StationRoleOwner<
+        EspHalRadioPeripheral,
+    >,
+    _registers: RadioRegisters,
+    _interrupt_setup: open_esp_radio::esp32s31::registers::MacInterruptSetup,
+    _dma: Esp32s31StationDmaResources<'static, RxStorage, RX_DESCRIPTOR_COUNT>,
+    _tx_storage: &'static mut TxStorage,
+    _scan_table: &'static mut ScanTable,
+    _scan_frame: &'static mut [u8],
+    _ethernet: &'static mut [u8],
+    _network: StationNetwork,
+    _board: ProductionStationBoardResources,
+    _station_address: [u8; 6],
+    _security: Esp32s31StaAttemptSecurity<'static>,
 }
 
 struct ProductionStationResumeFault {
@@ -1107,10 +1128,42 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
     }
 }
 
+#[cfg(not(feature = "qualification"))]
 type ProductionStationRunner<'state, 'security> = Esp32s31StationEngine<
     'security,
     ProductionStationEnginePort<ProductionStationOwner<'state, 'security>>,
 >;
+
+#[cfg(feature = "qualification")]
+type ProductionStationRunner<'state, 'security> = Esp32s31StationEngine<
+    'security,
+    ProductionStationEnginePort<ProductionStationOwner<'state, 'security>>,
+    ProductionStationObserver,
+>;
+
+#[cfg(feature = "qualification")]
+#[derive(Clone, Copy)]
+struct ProductionStationObserver {
+    lifecycle: Option<fn(crate::Esp32s31StationLifecycleObservation)>,
+}
+
+#[cfg(feature = "qualification")]
+impl<'state, 'security>
+    Esp32s31StationEngineObserver<
+        'security,
+        CriticalSectionRawMutex,
+        ProductionStationEnginePort<ProductionStationOwner<'state, 'security>>,
+    > for ProductionStationObserver
+{
+    fn backoff_started(&mut self, _delay_millis: u32, reason: StaBackoffReason) {
+        let StaBackoffReason::AttemptFailed { stage, attempt } = reason else {
+            return;
+        };
+        if let Some(lifecycle) = self.lifecycle {
+            lifecycle(crate::Esp32s31StationLifecycleObservation::AttemptFailed { attempt, stage });
+        }
+    }
+}
 
 impl<'state, 'security> Esp32s31StationEnginePort<'security, CriticalSectionRawMutex>
     for ProductionStationEnginePort<ProductionStationOwner<'state, 'security>>
@@ -1272,6 +1325,12 @@ type ProductionStationTask = Esp32s31StationTask<
     ProductionStationRunner<'static, 'static>,
 >;
 type ProductionStationControl = Esp32s31StationController<'static, CriticalSectionRawMutex>;
+type ProductionStationExit = Esp32s31StationExit<
+    ProductionStationOwner<'static, 'static>,
+    ProductionStationRunner<'static, 'static>,
+    Esp32s31StaAttemptStage,
+    ProductionStationFault<'static, 'static>,
+>;
 
 impl ProductionWifiEpochRunner {
     fn fresh_security(&self, security: StationSecurity) -> Esp32s31StaAttemptSecurity<'static> {
@@ -1301,12 +1360,21 @@ impl ProductionWifiEpochRunner {
         let owner = match station_resources {
             ProductionStationResources::Fresh(fresh) => {
                 let mut materialized = materialize_esp32s31_station(wifi, fresh);
-                let fresh = materialized.resources;
+                let ProductionStationFreshResources {
+                    dma,
+                    tx_slot,
+                    scan_table,
+                    scan_frame,
+                    ethernet,
+                    network,
+                    board,
+                    station_address,
+                } = materialized.resources;
                 let mut registers = materialized.registers;
                 let (phy, _) = materialized.owner.radio_mut();
                 let tx_storage = TX_STATE.init_with(|| {
                     TxStorage::from_slot(
-                        fresh.tx_slot,
+                        tx_slot,
                         phy.tx_target_power_profile(),
                         tx_entropy as fn() -> u32,
                         open_esp_radio_esp32s31_wifi_embassy::tx_time::EmbassyWifiTxTimer,
@@ -1318,30 +1386,50 @@ impl ProductionWifiEpochRunner {
                     )
                 });
                 activate_promiscuous_receive(&mut registers);
-                let scan_rx = Esp32s31ScanRx::prepare_initial(
+                let scan_rx = match Esp32s31ScanRx::prepare_initial(
                     &mut registers,
-                    fresh.dma.storage(),
-                    fresh.dma.descriptor_base(),
-                    fresh.dma.buffer_addresses(),
-                )
-                .unwrap_or_else(|error| panic!("initial RX DMA ring failed: {error:?}"));
+                    dma.storage(),
+                    dma.descriptor_base(),
+                    dma.buffer_addresses(),
+                ) {
+                    Ok(scan_rx) => scan_rx,
+                    Err(error) => {
+                        return Err(ProductionWifiFault::InitialRx {
+                            _fault: ProductionInitialRxFault {
+                                _error: error,
+                                _owner: materialized.owner,
+                                _registers: registers,
+                                _interrupt_setup: materialized.interrupt_setup,
+                                _dma: dma,
+                                _tx_storage: tx_storage,
+                                _scan_table: scan_table,
+                                _scan_frame: scan_frame,
+                                _ethernet: ethernet,
+                                _network: network,
+                                _board: board,
+                                _station_address: station_address,
+                                _security: security,
+                            },
+                        });
+                    }
+                };
                 ProductionStationOwner::new(
                     production_station_runtime(
                         materialized.owner,
                         mac_interrupt_epoch(materialized.interrupt_setup),
-                        fresh.dma,
+                        dma,
                         tx_storage,
-                        fresh.scan_table,
-                        fresh.scan_frame,
-                        fresh.ethernet,
-                        fresh.board,
+                        scan_table,
+                        scan_frame,
+                        ethernet,
+                        board,
                     ),
                     ProductionStationPhase::InitialScan {
                         hardware: registers,
                         receive: scan_rx,
-                        network: fresh.network,
+                        network,
                         identity: Esp32s31StaIdentity {
-                            station_address: fresh.station_address,
+                            station_address,
                             association_preference: discovery.scan().association_preference(),
                         },
                     },
@@ -1425,18 +1513,30 @@ impl ProductionWifiEpochRunner {
                 )
             }
         };
+        let port = if scan_only {
+            ProductionStationEnginePort::standalone_scan()
+        } else {
+            ProductionStationEnginePort::new()
+        };
+        #[cfg(feature = "qualification")]
+        let runner = ProductionStationRunner::with_observer(
+            port,
+            discovery,
+            ProductionStationObserver {
+                lifecycle: owner
+                    .runtime
+                    .board()
+                    .qualification
+                    .map(|hooks| hooks.station_lifecycle),
+            },
+        );
+        #[cfg(not(feature = "qualification"))]
+        let runner = ProductionStationRunner::new(port, discovery);
         prepare_esp32s31_station_task(
             Esp32s31StationConfig::new(reconnect),
             Esp32s31StationStartResources::new(owner),
             self.station_control,
-            ProductionStationRunner::new(
-                if scan_only {
-                    ProductionStationEnginePort::standalone_scan()
-                } else {
-                    ProductionStationEnginePort::new()
-                },
-                discovery,
-            ),
+            runner,
         )
         .map_err(|failure| ProductionWifiFault::TaskPreparation { _failure: failure })
     }
@@ -1507,7 +1607,7 @@ impl ProductionWifiEpochRunner {
             Esp32s31StationSupervisorEpoch::new(stopped, request, generation),
             |stopped, request| self.prepare_station_task(stopped, request, false),
             Esp32s31StationSupervisorHooks::new(
-                |output| {
+                |output: ProductionStationExit| {
                     let resources = match output {
                         Esp32s31StationExit::Stopped {
                             resources,
@@ -1531,6 +1631,15 @@ impl ProductionWifiEpochRunner {
                                 progress.attempts_started,
                                 failure.stage,
                             );
+                            #[cfg(feature = "qualification")]
+                            if let Some(hooks) = resources.owner().runtime.board().qualification {
+                                (hooks.station_lifecycle)(
+                                    crate::Esp32s31StationLifecycleObservation::RetryExhausted {
+                                        attempts: progress.final_generation_attempt,
+                                        stage: failure.stage,
+                                    },
+                                );
+                            }
                             resources
                         }
                         Esp32s31StationExit::Terminal {

@@ -48,7 +48,8 @@ use open_esp_radio_hil_esp32s31_telemetry::{
 use open_esp_radio_hil_protocol::{
     Capabilities, Event as HilEvent, FeatureCapabilities, MAX_WIRE_FRAME_BYTES, NetworkInfo,
     NetworkIpv4Configuration, StartupArtifactDisposition, StationDisconnectReason,
-    StationEpochEvidence, StationLifecycleEvent, WIFI_MONITOR_FRAME_CHUNK_MAX_LEN,
+    StationAttemptFailureReason, StationEpochEvidence, StationFailureStage,
+    StationLifecycleEvent, WIFI_MONITOR_FRAME_CHUNK_MAX_LEN,
     WifiMonitorCaptureRequest, WifiMonitorEvidence, WifiMonitorEvidenceSource,
     WifiMonitorFrameChunk, WifiMonitorObserved, WifiMonitorPhyEvidence, WifiMonitorPhyFormat,
     WifiRole, WifiRoleTransitionEvidence, WifiScanEvidence,
@@ -75,6 +76,7 @@ pub(crate) const OPEN_RADIO_TX_BENCH: bool = option_env!("OPEN_RADIO_TX_BENCH").
 pub(crate) const OPEN_RADIO_BIDIRECTIONAL_BENCH: bool =
     option_env!("OPEN_RADIO_BIDIRECTIONAL_BENCH").is_some();
 pub(crate) const OPEN_RADIO_TASK_POLL_TELEMETRY: bool = cfg!(feature = "task-poll-telemetry");
+pub(crate) const OPEN_RADIO_RX_DELIVERY_TELEMETRY: bool = cfg!(feature = "rx-delivery-telemetry");
 pub(crate) const OPEN_RADIO_TCP_CHUNK_CAPACITY: usize = 32_768;
 
 static DIAGNOSTIC_STAGE: AtomicU32 = AtomicU32::new(0);
@@ -91,9 +93,18 @@ static STATION_LIFECYCLE: Channel<CriticalSectionRawMutex, StationLinkEdge, 16> 
 enum StationLinkEdge {
     Connected,
     Disconnected(StationDisconnectReason),
+    AttemptFailed {
+        attempt: u16,
+        stage: open_esp_radio::wifi::sta::station::StaLifecycleStage,
+    },
+    RetryExhausted {
+        attempts: u16,
+        stage: open_esp_radio::wifi::sta::station::StaLifecycleStage,
+    },
 }
 
 fn observe_station_lifecycle(observation: Esp32s31StationLifecycleObservation) {
+    log_station_rx_frontier(observation);
     let edge = match observation {
         Esp32s31StationLifecycleObservation::Connected => StationLinkEdge::Connected,
         Esp32s31StationLifecycleObservation::Disconnected(reason) => {
@@ -113,10 +124,37 @@ fn observe_station_lifecycle(observation: Esp32s31StationLifecycleObservation) {
                 }
             })
         }
+        Esp32s31StationLifecycleObservation::AttemptFailed { attempt, stage } => {
+            StationLinkEdge::AttemptFailed { attempt, stage }
+        }
+        Esp32s31StationLifecycleObservation::RetryExhausted { attempts, stage } => {
+            StationLinkEdge::RetryExhausted { attempts, stage }
+        }
     };
     STATION_LIFECYCLE
         .try_send(edge)
         .expect("qualification station lifecycle queue must not overflow");
+}
+
+fn log_station_rx_frontier(observation: Esp32s31StationLifecycleObservation) {
+    let pipeline = RX_PIPELINE.snapshot();
+    let irq = MAC_IRQ.snapshot();
+    emergency_log(format_args!(
+        "ORLC event={observation:?} irq_epochs={} irq_rx_only={} irq_rx_mixed={} \
+         service_calls={} frontier={} admitted={} protocol_frames={} data_frames={} \
+         network_enqueued={} network_dropped={} buffer_full={}",
+        pipeline.rx_irq_epochs,
+        irq.rx_only_entries,
+        irq.rx_mixed_entries,
+        pipeline.service_calls,
+        pipeline.completion_frontier_frames,
+        pipeline.admitted_frames,
+        pipeline.protocol_frames,
+        pipeline.protocol_data_frames,
+        pipeline.network_enqueued,
+        pipeline.network_dropped,
+        pipeline.dma_buffer_full_increments,
+    ));
 }
 
 // Qualification observers execute on the RX/TX hot paths. Their atomics stay
@@ -356,6 +394,7 @@ pub const fn hil_capabilities() -> Capabilities {
             wifi_role_control: true,
             wifi_monitor_capture: true,
             station_lifecycle_events: true,
+            rx_delivery_evidence: OPEN_RADIO_RX_DELIVERY_TELEMETRY,
         },
         maximum_payload_bytes: if OPEN_RADIO_TCP_BENCH {
             OPEN_RADIO_TCP_CHUNK_CAPACITY as u16
@@ -407,7 +446,52 @@ async fn station_lifecycle_task() {
                     connected = false;
                 }
             }
+            StationLinkEdge::AttemptFailed { attempt, stage } => {
+                publish_station_lifecycle(StationLifecycleEvent::AttemptFailed {
+                    generation,
+                    attempt,
+                    stage: hil_failure_stage(stage),
+                    reason: hil_failure_reason(stage),
+                })
+                .await;
+            }
+            StationLinkEdge::RetryExhausted { attempts, stage } => {
+                publish_station_lifecycle(StationLifecycleEvent::RetryExhausted {
+                    generation,
+                    attempts,
+                    stage: hil_failure_stage(stage),
+                    reason: hil_failure_reason(stage),
+                })
+                .await;
+            }
         }
+    }
+}
+
+const fn hil_failure_stage(
+    stage: open_esp_radio::wifi::sta::station::StaLifecycleStage,
+) -> StationFailureStage {
+    use open_esp_radio::wifi::sta::station::StaLifecycleStage as DriverStage;
+    match stage {
+        DriverStage::CandidateSelection => StationFailureStage::CandidateSelection,
+        DriverStage::Authentication => StationFailureStage::Authentication,
+        DriverStage::Association => StationFailureStage::Association,
+        DriverStage::Security => StationFailureStage::Security,
+        DriverStage::Connected => StationFailureStage::Connected,
+        DriverStage::Hardware => StationFailureStage::Hardware,
+    }
+}
+
+const fn hil_failure_reason(
+    stage: open_esp_radio::wifi::sta::station::StaLifecycleStage,
+) -> StationAttemptFailureReason {
+    use open_esp_radio::wifi::sta::station::StaLifecycleStage as DriverStage;
+    match stage {
+        DriverStage::CandidateSelection => StationAttemptFailureReason::NoCandidate,
+        DriverStage::Authentication | DriverStage::Association | DriverStage::Security => {
+            StationAttemptFailureReason::PeerProtocol
+        }
+        DriverStage::Connected | DriverStage::Hardware => StationAttemptFailureReason::Hardware,
     }
 }
 
@@ -495,6 +579,7 @@ pub async fn run(
         .expect("ESP32-S31 station eFuse address must be unicast");
     let access_point_mac = WifiMacAddress::new(access_point_address)
         .expect("ESP32-S31 AP eFuse address must be unicast");
+    let connected_rx_observer = CONNECTED_RX_OBSERVER.take();
     let config = Esp32s31RadioConfig::new(
         station_mac,
         access_point_mac,
@@ -509,7 +594,17 @@ pub async fn run(
     .with_qualification_hooks(Esp32s31QualificationHooks {
         rx_pipeline: &RX_PIPELINE,
         aggregate_tx: &AGGREGATE_TX,
-        connected_rx: CONNECTED_RX_OBSERVER.take(),
+        connected_rx: connected_rx_observer,
+        rx_delivery: {
+            #[cfg(feature = "rx-delivery-telemetry")]
+            {
+                Some(connected_rx_observer)
+            }
+            #[cfg(not(feature = "rx-delivery-telemetry"))]
+            {
+                None
+            }
+        },
         mac_irq: observe_mac_irq,
         station_lifecycle: observe_station_lifecycle,
     });

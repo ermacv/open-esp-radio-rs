@@ -9,12 +9,9 @@ use std::{
 use open_esp_radio_hil_protocol::{StationDisconnectReason, StationLifecycleEvent};
 
 use crate::{
-    Result,
-    controlled_ap::{ControlledAp, require_controlled_ap_credentials_environment},
-    traffic_capture::SerialCapture,
+    Result, controlled_ap::ControlledAp, lab_config::LabConfig, traffic_capture::SerialCapture,
 };
 
-const DEFAULT_SERIAL: &str = "/dev/ttyACM0";
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(120);
 
 struct Options {
@@ -22,7 +19,7 @@ struct Options {
     timeout: Duration,
 }
 
-pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
+pub(crate) fn run(arguments: Vec<String>, root: &Path, lab: &LabConfig) -> Result<()> {
     if arguments
         .first()
         .is_some_and(|value| matches!(value.as_str(), "help" | "--help" | "-h"))
@@ -30,15 +27,14 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
         print_help();
         return Ok(());
     }
-    let options = parse_options(&arguments)?;
-    require_controlled_ap_credentials_environment()?;
+    let options = parse_options(&arguments, lab)?;
     let output = root.join("target/hil/esp32s31/qualification/station-ap-loss");
     fs::create_dir_all(&output)?;
 
-    let mut ap = ControlledAp::start()?;
+    let mut ap = ControlledAp::start(&lab.station, &lab.openwrt)?;
     let capture = SerialCapture::start_with_reset(&options.serial);
     let mut cursor = capture.station_lifecycle_cursor();
-    let result = qualify(&capture, &mut cursor, &mut ap, options.timeout);
+    let result = qualify(&capture, lab, &mut cursor, &mut ap, options.timeout);
     let log = capture.finish();
     fs::write(output.join("uart.log"), &log)?;
     drop(ap);
@@ -51,11 +47,12 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
 
 fn qualify(
     capture: &SerialCapture,
+    lab: &LabConfig,
     cursor: &mut usize,
     ap: &mut ControlledAp,
     timeout: Duration,
 ) -> Result<()> {
-    let capabilities = capture.prepare_protocol()?;
+    let capabilities = capture.prepare_protocol(lab)?;
     if !capabilities.features.station_lifecycle_events {
         return Err("firmware does not advertise reliable station lifecycle events".into());
     }
@@ -132,22 +129,14 @@ fn validate_event(
     Ok(())
 }
 
-fn parse_options(arguments: &[String]) -> Result<Options> {
+fn parse_options(arguments: &[String], lab: &LabConfig) -> Result<Options> {
     let mut options = Options {
-        serial: PathBuf::from(DEFAULT_SERIAL),
+        serial: lab.device.serial.clone(),
         timeout: DEFAULT_TIMEOUT,
     };
     let mut index = 0;
     while index < arguments.len() {
         match arguments[index].as_str() {
-            "--serial" => {
-                index += 1;
-                options.serial = PathBuf::from(
-                    arguments
-                        .get(index)
-                        .ok_or("--serial requires a device path")?,
-                );
-            }
             "--timeout-seconds" => {
                 index += 1;
                 let seconds = arguments
@@ -169,7 +158,6 @@ fn parse_options(arguments: &[String]) -> Result<Options> {
 fn print_help() {
     println!(
         "cargo hil station ap-loss [options]\n\n\
-         --serial <path>          diagnostics device (default /dev/ttyACM0)\n\
          --timeout-seconds <n>    deadline for each lifecycle edge, 30..=300 (default 120)\n\n\
          Starts the repository-controlled HE20 AP, waits for generation zero,\n\
          removes the AP, requires a typed BeaconLoss edge, restores the AP and\n\
@@ -184,14 +172,12 @@ mod tests {
 
     #[test]
     fn parser_keeps_one_bounded_edge_deadline() {
-        let options = parse_options(&[
-            "--serial".into(),
-            "/dev/test-radio".into(),
-            "--timeout-seconds".into(),
-            "75".into(),
-        ])
+        let options = parse_options(
+            &["--timeout-seconds".into(), "75".into()],
+            &LabConfig::for_test(),
+        )
         .unwrap();
-        assert_eq!(options.serial, PathBuf::from("/dev/test-radio"));
+        assert_eq!(options.serial, PathBuf::from("/dev/ttyACM0"));
         assert_eq!(options.timeout, Duration::from_secs(75));
     }
 

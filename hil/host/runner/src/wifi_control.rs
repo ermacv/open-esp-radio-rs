@@ -13,14 +13,11 @@ use open_esp_radio_hil_protocol::{
 
 use crate::{
     Result,
-    controlled_ap::{
-        ControlledAp, require_controlled_ap_credentials_environment,
-        require_station_credentials_environment,
-    },
+    controlled_ap::{ControlledAp, require_station_credentials},
+    lab_config::LabConfig,
     traffic_capture::SerialCapture,
 };
 
-const DEFAULT_SERIAL: &str = "/dev/ttyACM0";
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(90);
 const DEFAULT_MONITOR_DURATION: Duration = Duration::from_secs(3);
 const DEFAULT_SCAN_DWELL_MILLIS: u16 = 200;
@@ -66,7 +63,12 @@ struct Options {
     external_ap: bool,
 }
 
-pub(crate) fn run(operation: &str, arguments: Vec<String>, root: &Path) -> Result<()> {
+pub(crate) fn run(
+    operation: &str,
+    arguments: Vec<String>,
+    root: &Path,
+    lab: &LabConfig,
+) -> Result<()> {
     let operation = Operation::parse(operation)?;
     if arguments
         .first()
@@ -75,13 +77,12 @@ pub(crate) fn run(operation: &str, arguments: Vec<String>, root: &Path) -> Resul
         print_help(operation);
         return Ok(());
     }
-    let options = parse_options(&arguments)?;
+    let options = parse_options(&arguments, lab)?;
     let _access_point = if options.external_ap {
-        require_station_credentials_environment()?;
+        require_station_credentials(&lab.station)?;
         None
     } else {
-        require_controlled_ap_credentials_environment()?;
-        Some(ControlledAp::start()?)
+        Some(ControlledAp::start(&lab.station, &lab.openwrt)?)
     };
     let output = root.join(format!(
         "target/hil/esp32s31/qualification/wifi-{}",
@@ -89,7 +90,7 @@ pub(crate) fn run(operation: &str, arguments: Vec<String>, root: &Path) -> Resul
     ));
     fs::create_dir_all(&output)?;
     let capture = SerialCapture::start_with_reset(&options.serial);
-    let result = qualify(&capture, operation, &options);
+    let result = qualify(&capture, lab, operation, &options);
     let log = capture.finish();
     fs::write(output.join("uart.log"), &log)?;
     result?;
@@ -98,8 +99,13 @@ pub(crate) fn run(operation: &str, arguments: Vec<String>, root: &Path) -> Resul
     Ok(())
 }
 
-fn qualify(capture: &SerialCapture, operation: Operation, options: &Options) -> Result<()> {
-    let capabilities = capture.prepare_protocol()?;
+fn qualify(
+    capture: &SerialCapture,
+    lab: &LabConfig,
+    operation: Operation,
+    options: &Options,
+) -> Result<()> {
+    let capabilities = capture.prepare_protocol(lab)?;
     if !capabilities.features.wifi_role_control {
         return Err("firmware does not advertise explicit Wi-Fi role control".into());
     }
@@ -231,9 +237,9 @@ fn require_transition(
     Ok(())
 }
 
-fn parse_options(arguments: &[String]) -> Result<Options> {
+fn parse_options(arguments: &[String], lab: &LabConfig) -> Result<Options> {
     let mut options = Options {
-        serial: PathBuf::from(DEFAULT_SERIAL),
+        serial: lab.device.serial.clone(),
         timeout: DEFAULT_TIMEOUT,
         monitor_duration: DEFAULT_MONITOR_DURATION,
         monitor_channel: None,
@@ -243,14 +249,6 @@ fn parse_options(arguments: &[String]) -> Result<Options> {
     let mut index = 0;
     while index < arguments.len() {
         match arguments[index].as_str() {
-            "--serial" => {
-                index += 1;
-                options.serial = PathBuf::from(
-                    arguments
-                        .get(index)
-                        .ok_or("--serial requires a device path")?,
-                );
-            }
             "--timeout-seconds" => {
                 index += 1;
                 let seconds = arguments
@@ -306,7 +304,6 @@ fn parse_options(arguments: &[String]) -> Result<Options> {
 fn print_help(operation: Operation) {
     println!(
         "cargo hil wifi {} [options]\n\n\
-         --serial <path>          diagnostics device (default /dev/ttyACM0)\n\
          --timeout-seconds <n>    role-transition deadline, 10..=180 (default 90)\n\
          --external-ap            use a caller-owned access point\n\
          --monitor-seconds <n>    monitor dwell, 1..=30 (default 3)\n\
@@ -322,15 +319,18 @@ mod tests {
 
     #[test]
     fn parses_monitor_controls() {
-        let options = parse_options(&[
-            "--channel".into(),
-            "11".into(),
-            "--monitor-seconds".into(),
-            "5".into(),
-            "--snapshot-length".into(),
-            "512".into(),
-            "--external-ap".into(),
-        ])
+        let options = parse_options(
+            &[
+                "--channel".into(),
+                "11".into(),
+                "--monitor-seconds".into(),
+                "5".into(),
+                "--snapshot-length".into(),
+                "512".into(),
+                "--external-ap".into(),
+            ],
+            &LabConfig::for_test(),
+        )
         .unwrap();
         assert_eq!(options.monitor_channel, Some(11));
         assert_eq!(options.monitor_duration, Duration::from_secs(5));
@@ -340,7 +340,7 @@ mod tests {
 
     #[test]
     fn rejects_invalid_monitor_channel() {
-        assert!(parse_options(&["--channel".into(), "14".into()]).is_err());
+        assert!(parse_options(&["--channel".into(), "14".into()], &LabConfig::for_test()).is_err());
     }
 
     #[test]

@@ -21,10 +21,13 @@ use open_esp_radio_hil_protocol::{
 
 use crate::{
     Result, invalidate_previous_report,
+    lab_config::LabConfig,
+    openwrt_fixture::{OpenWrtRxCapture, OpenWrtRxEvidence},
     paced_udp::{Config as PacedUdpConfig, HostTransmission, send as send_paced_udp},
+    rx_delivery,
     traffic_capture::{SerialCapture, SessionEvidence, await_udp_rx_ready},
-    tx_traffic::{Burst, BurstFraming, receive_bursts},
-    udp_socket::configure_qualification_receive_buffer,
+    tx_traffic::{Burst, BurstFraming, describe_bursts, receive_bursts},
+    udp_socket::{configure_qualification_receive_buffer, open_reverse_flow},
 };
 
 const DEFAULT_PORT: u16 = 4_323;
@@ -96,6 +99,7 @@ struct BidirectionalEvidence {
     session: Option<SessionEvidence>,
     ampdu: AmpduEvidence,
     host_receive_buffer_bytes: usize,
+    openwrt_rx: Option<OpenWrtRxEvidence>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -966,7 +970,7 @@ struct DeviceReport {
     failures: Vec<String>,
 }
 
-pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
+pub(crate) fn run(arguments: Vec<String>, root: &Path, lab: &LabConfig) -> Result<()> {
     if arguments
         .first()
         .is_some_and(|value| matches!(value.as_str(), "help" | "--help" | "-h"))
@@ -974,7 +978,7 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
         print_help();
         return Ok(());
     }
-    let mut options = parse_options(&arguments)?;
+    let mut options = parse_options(&arguments, lab)?;
     let output = root.join("target/hil/esp32s31/qualification/open-radio-bidirectional");
     fs::create_dir_all(&output)?;
     invalidate_previous_report(&output)?;
@@ -984,6 +988,7 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
     let capture = SerialCapture::start_with_reset(&options.serial);
     let discovered_address = match await_udp_rx_ready(
         &capture,
+        lab,
         options.address,
         options.port,
         DEVICE_READY_TIMEOUT,
@@ -1002,7 +1007,23 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
         SocketAddr::V6(_) => return Err("bidirectional qualification requires IPv4".into()),
     };
     // Admit the reverse flow through stateful host firewalls before `Start`.
-    tx_sink.send(&[0])?;
+    if let Err(error) = open_reverse_flow(&tx_sink) {
+        let log = capture.finish();
+        fs::write(output.join("uart.log"), &log)?;
+        return Err(error.into());
+    }
+    let openwrt_capture = lab
+        .openwrt
+        .observe_ap
+        .then(|| {
+            OpenWrtRxCapture::start(
+                &lab.openwrt,
+                options.address,
+                options.port,
+                options.duration,
+            )
+        })
+        .transpose()?;
     let session = if discovered_address.runtime_session {
         Some(capture.start_session(SessionConfig {
             transport: Transport::Udp,
@@ -1065,10 +1086,13 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
         thread::sleep(Duration::from_secs(5));
         None
     };
+    let openwrt_rx = openwrt_capture.map(OpenWrtRxCapture::finish).transpose()?;
     let log = capture.finish();
     let report = parse_device_report(&log);
     fs::write(output.join("uart.log"), &log)?;
-    let rx = qualify(&options, host, &report)?;
+    let rx_assessment = assess_rx_report(&report, options.phy.expected_rx_format())?;
+    let rx = rx_assessment.rx;
+    let mut qualification_failure = rx_assessment.failure;
     let rx_median = rx.throughput_median_kbps;
     let tx_floor = report
         .tx
@@ -1083,8 +1107,9 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
         .collect();
     if qualified_tx_bursts.len() != 1 {
         return Err(format!(
-            "expected one complete target-to-host burst, received {}",
-            qualified_tx_bursts.len()
+            "expected one complete target-to-host burst, received {}; {}",
+            qualified_tx_bursts.len(),
+            describe_bursts(&tx_bursts),
         )
         .into());
     }
@@ -1093,45 +1118,91 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
         let measured_device = tx_floor.saturating_mul(1_000);
         let measured_host = host_tx.throughput_kbps().saturating_mul(1_000);
         if measured_device < required_floor || measured_host < required_floor {
-            return Err(format!(
+            qualification_failure.get_or_insert_with(|| format!(
                 "concurrent TX is below the configured floor: required={} device={} host={} bit/s",
                 required_floor, measured_device, measured_host
-            )
-            .into());
+            ));
         }
     }
+    let minimum_bps = options.rate_bps.saturating_mul(9) / 10;
+    if host.throughput_bps() < minimum_bps {
+        qualification_failure.get_or_insert_with(|| {
+            String::from("host failed to offer at least 90% of the requested rate")
+        });
+    } else if rx.throughput_median_kbps < minimum_bps / 1_000 {
+        qualification_failure.get_or_insert_with(|| {
+            format!(
+                "device RX {} kbit/s is below the acceptance floor",
+                rx.throughput_median_kbps,
+            )
+        });
+    }
+    if let Some(openwrt_rx) = openwrt_rx {
+        let expected_fixture_packets = host.datagrams.saturating_add(1);
+        if openwrt_rx.wireless_packets != expected_fixture_packets {
+            qualification_failure.get_or_insert_with(|| {
+                format!(
+                    "host/OpenWrt Wi-Fi egress mismatch: expected={} observed={} packets",
+                    expected_fixture_packets, openwrt_rx.wireless_packets
+                )
+            });
+        }
+    }
+    let legacy_delivery_failure =
+        validate_exact_rx_delivery(host.datagrams, rx.received_datagrams, rx.sequence, rx.order)
+            .err()
+            .map(|error| error.to_string());
+    let (required_width, minimum_rate) = options.phy.required_tx();
+    let tx_vector_failure = qualify_tx_samples(&report, required_width, minimum_rate)
+        .err()
+        .map(|error| error.to_string());
+    let tx_ampdu_failure = qualify_ampdu(&report).err().map(|error| error.to_string());
     if let Some(evidence) = structured {
         let expected_rx_bytes = evidence
             .transport
             .rx_units
             .saturating_mul(options.payload as u64);
         if !evidence.finished.summary.passed || evidence.transport.transport_errors != 0 {
-            return Err(format!(
-                "target did not complete bidirectional session cleanly: passed={} errors={}",
-                evidence.finished.summary.passed, evidence.transport.transport_errors
-            )
-            .into());
+            qualification_failure.get_or_insert_with(|| {
+                format!(
+                    "target did not complete bidirectional session cleanly: passed={} errors={}",
+                    evidence.finished.summary.passed, evidence.transport.transport_errors
+                )
+            });
+        }
+        if let Some(delivery) = evidence.rx_delivery {
+            let assessment = rx_delivery::assess(host.datagrams, delivery);
+            if !assessment.exact() {
+                qualification_failure.get_or_insert_with(|| {
+                    format!(
+                        "typed bidirectional RX delivery frontier is {}",
+                        assessment.frontier()
+                    )
+                });
+            }
         }
         if evidence.transport.rx_units != rx.received_datagrams
             || evidence.transport.rx_bytes != expected_rx_bytes
         {
-            return Err(format!(
-                "typed/text bidirectional RX mismatch: typed={}/{} text_units={}",
-                evidence.transport.rx_bytes, evidence.transport.rx_units, rx.received_datagrams
-            )
-            .into());
+            qualification_failure.get_or_insert_with(|| {
+                format!(
+                    "typed/text bidirectional RX mismatch: typed={}/{} text_units={}",
+                    evidence.transport.rx_bytes, evidence.transport.rx_units, rx.received_datagrams
+                )
+            });
         }
         if evidence.transport.rx_units != host.datagrams
             || evidence.transport.rx_bytes != host.bytes
         {
-            return Err(format!(
-                "host/target bidirectional RX delivery mismatch: host={}/{} target={}/{}",
-                host.bytes,
-                host.datagrams,
-                evidence.transport.rx_bytes,
-                evidence.transport.rx_units
-            )
-            .into());
+            qualification_failure.get_or_insert_with(|| {
+                format!(
+                    "host/target bidirectional RX delivery mismatch: host={}/{} target={}/{}",
+                    host.bytes,
+                    host.datagrams,
+                    evidence.transport.rx_bytes,
+                    evidence.transport.rx_units
+                )
+            });
         }
     }
     let ampdu = AmpduEvidence::from_report(&report);
@@ -1139,7 +1210,7 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
         let target_tx_units = structured.map(|evidence| evidence.transport.tx_units);
         let post_block_ack_loss = target_tx_units
             .and_then(|units| post_block_ack_delivery_loss_lower_bound(ampdu, host_tx, units));
-        return Err(format!(
+        qualification_failure.get_or_insert_with(|| format!(
             "host observed concurrent TX sequence defects: missing={} reordered={} duplicates={} \
              missing_runs={} maximum_missing_run={} maximum_missing_range={:?}..={:?} \
              target_tx_units={target_tx_units:?} ampdu_subframes={} block_acknowledged={} \
@@ -1153,21 +1224,26 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
             host_tx.maximum_missing_run_end,
             ampdu.subframes,
             ampdu.acknowledged,
-        )
-        .into());
+        ));
     }
     if let Some(evidence) = structured
         && (evidence.transport.tx_units != host_tx.datagrams
             || evidence.transport.tx_bytes != host_tx.bytes)
     {
-        return Err(format!(
-            "typed/host bidirectional TX mismatch: target={}/{} host={}/{}",
-            evidence.transport.tx_bytes,
-            evidence.transport.tx_units,
-            host_tx.bytes,
-            host_tx.datagrams
-        )
-        .into());
+        qualification_failure.get_or_insert_with(|| {
+            format!(
+                "typed/host bidirectional TX mismatch: target={}/{} host={}/{}",
+                evidence.transport.tx_bytes,
+                evidence.transport.tx_units,
+                host_tx.bytes,
+                host_tx.datagrams
+            )
+        });
+    }
+    if qualification_failure.is_none() {
+        qualification_failure = legacy_delivery_failure
+            .or(tx_vector_failure)
+            .or(tx_ampdu_failure);
     }
     write_report(
         &output,
@@ -1180,8 +1256,13 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
             session: structured,
             ampdu,
             host_receive_buffer_bytes,
+            openwrt_rx,
         },
+        qualification_failure.as_deref(),
     )?;
+    if let Some(failure) = qualification_failure {
+        return Err(failure.into());
+    }
     println!(
         "OPENRADIOHOST result=PASS mode={}-bidirectional offered_kbps={} \
          host_kbps={} rx_median_kbps={rx_median} concurrent_tx_floor_kbps={tx_floor} \
@@ -1224,7 +1305,7 @@ pub(crate) fn post_block_ack_delivery_loss_lower_bound(
 
 fn print_help() {
     println!(
-        "cargo hil traffic bidirectional <ipv4> [options]\n\
+        "cargo hil traffic bidirectional [options]\n\
          \n\
          --rate <bps>       paced host-to-device rate (default 10M)\n\
          --seconds <5..300> traffic duration (default 12)\n\
@@ -1234,19 +1315,14 @@ fn print_help() {
          --tx-port <port>   host UDP sink (default 9002)\n\
          --tx-rate <bps>    optional target-to-host offered-load bound\n\
          --tx-floor <bps>   required device and host TX rate; default 90% of --tx-rate\n\
-         --serial <path>    diagnostics device (default /dev/ttyACM0)\n\
          --phy <ht40|he20> expected negotiated PHY (default he20)\n\n\
          Flash `cargo hil flash bidirectional` and wait for DHCP first."
     );
 }
 
-fn parse_options(arguments: &[String]) -> Result<Options> {
-    let address = arguments
-        .first()
-        .ok_or("missing ESP32-S31 IPv4 address")?
-        .parse::<Ipv4Addr>()?;
+fn parse_options(arguments: &[String], lab: &LabConfig) -> Result<Options> {
     let mut options = Options {
-        address,
+        address: Ipv4Addr::UNSPECIFIED,
         port: DEFAULT_PORT,
         rate_bps: DEFAULT_RATE_BPS,
         duration: DEFAULT_DURATION,
@@ -1255,10 +1331,10 @@ fn parse_options(arguments: &[String]) -> Result<Options> {
         tx_payload: DEFAULT_TX_PAYLOAD,
         tx_rate_bps: None,
         tx_floor_bps: None,
-        serial: PathBuf::from("/dev/ttyACM0"),
+        serial: lab.device.serial.clone(),
         phy: Phy::He20,
     };
-    let mut index = 1;
+    let mut index = 0;
     while index < arguments.len() {
         let value = arguments
             .get(index + 1)
@@ -1288,7 +1364,6 @@ fn parse_options(arguments: &[String]) -> Result<Options> {
             "--tx-port" => options.tx_port = value.parse::<u16>()?,
             "--tx-rate" => options.tx_rate_bps = Some(parse_rate(value)?),
             "--tx-floor" => options.tx_floor_bps = Some(parse_rate(value)?),
-            "--serial" => options.serial = PathBuf::from(value),
             "--phy" => {
                 options.phy = match value.as_str() {
                     "ht40" => Phy::Ht40,
@@ -2380,6 +2455,7 @@ fn assess_rx_report(report: &DeviceReport, expected_format: u8) -> Result<RxAsse
     })
 }
 
+#[cfg(test)]
 fn qualify_rx_report(report: &DeviceReport, expected_format: u8) -> Result<RxQualification> {
     let assessment = assess_rx_report(report, expected_format)?;
     if let Some(failure) = assessment.failure {
@@ -2411,6 +2487,7 @@ pub(crate) fn qualify_tx_log(
     })
 }
 
+#[cfg(test)]
 fn qualify(
     options: &Options,
     host: HostTransmission,
@@ -2648,7 +2725,12 @@ pub(crate) fn rx_reorder_markdown(reorder: RxReorderEvidence) -> String {
     )
 }
 
-fn write_report(output: &Path, options: &Options, evidence: BidirectionalEvidence) -> Result<()> {
+fn write_report(
+    output: &Path,
+    options: &Options,
+    evidence: BidirectionalEvidence,
+    failure: Option<&str>,
+) -> Result<()> {
     let BidirectionalEvidence {
         host_offer: host,
         target_rx: rx,
@@ -2657,6 +2739,7 @@ fn write_report(output: &Path, options: &Options, evidence: BidirectionalEvidenc
         session: structured,
         ampdu,
         host_receive_buffer_bytes,
+        openwrt_rx,
     } = evidence;
     let rx_median = rx.throughput_median_kbps;
     let pipeline = rx.pipeline;
@@ -2689,6 +2772,14 @@ fn write_report(output: &Path, options: &Options, evidence: BidirectionalEvidenc
     let udp_sequence_report = udp_sequence_markdown(rx.sequence, host.datagrams);
     let rx_order_report = rx_order_markdown(rx.order);
     let rx_reorder_report = rx_reorder_markdown(rx.reorder);
+    let typed_delivery_report = structured
+        .and_then(|evidence| evidence.rx_delivery)
+        .map(|delivery| rx_delivery::markdown(host.datagrams, delivery))
+        .unwrap_or_else(|| {
+            String::from(
+                "## Typed RX delivery frontier\n\nNot collected in this image. Use the explicit RX-delivery profile.\n\n",
+            )
+        });
     let target_tx_rate = options
         .tx_rate_bps
         .map(|rate| format!("{:.3} Mbit/s", rate as f64 / 1_000_000.0))
@@ -2723,11 +2814,32 @@ fn write_report(output: &Path, options: &Options, evidence: BidirectionalEvidenc
             )
         })
         .unwrap_or_else(|| String::from("- Typed session evidence: compatibility mode\n"));
+    let openwrt_report = openwrt_rx.map_or_else(
+        || String::from("- AP-side evidence: `external AP; not observed`\n"),
+        |openwrt_rx| format!(
+            "- OpenWrt filtered DSA ingress (diagnostic) / Wi-Fi egress (exact): `{}` / `{}`; interface RX/TX: `{}` / `{}`; station TX/retries/failed: `{}` / `{}` / `{}`; ath10k MSDU queued/dropped, MPDU requeued, SW-retry dropped: `{}` / `{}` / `{}` / `{}`\n",
+            openwrt_rx.ingress_packets,
+            openwrt_rx.wireless_packets,
+            openwrt_rx.ingress_interface_rx_packets,
+            openwrt_rx.wireless_interface_tx_packets,
+            openwrt_rx.station_tx_packets,
+            openwrt_rx.station_tx_retries,
+            openwrt_rx.station_tx_failed,
+            openwrt_rx.firmware_msdu_queued,
+            openwrt_rx.firmware_msdu_dropped,
+            openwrt_rx.firmware_mpdu_requeued,
+            openwrt_rx.firmware_sw_retry_dropped,
+        ),
+    );
+    let result = if failure.is_some() { "FAIL" } else { "PASS" };
+    let failure_report = failure
+        .map(|failure| format!("- Acceptance failure: `{failure}`\n"))
+        .unwrap_or_default();
     fs::write(
         output.join("report.md"),
         format!(
             "# Open-radio {} bidirectional HIL\n\n\
-             - Result: `PASS`\n\
+             - Result: `{result}`\n\
              - Device: `{}`\n\
              - Requested downlink: `{:.3} Mbit/s`\n\
              - Actual host offer: `{:.3} Mbit/s`\n\
@@ -2738,7 +2850,9 @@ fn write_report(output: &Path, options: &Options, evidence: BidirectionalEvidenc
              - Host target-TX missing/reordered/duplicate datagrams: `{host_tx_missing}` / `{host_tx_reordered}` / `{host_tx_duplicates}`\n\
              - Host target-TX maximum packet interarrival: `{host_tx_maximum_interarrival_us}` us before sequence `{host_tx_sequence_after_maximum_interarrival:?}`\n\
              - Host UDP `SO_RCVBUF` read-back: `{host_receive_buffer_bytes}` bytes\n\
+             {failure_report}\
              {structured_report}\
+             {openwrt_report}\
              - Host pacing maximum lateness/catch-up/deadline resets: `{} us` / `{}` datagrams / `{}`\n\
             - Direct RX median: `{:.3} Mbit/s`\n\
              - Received host UDP datagrams: `{}` / `{}`\n\
@@ -2747,6 +2861,7 @@ fn write_report(output: &Path, options: &Options, evidence: BidirectionalEvidenc
              {udp_sequence_report}\
              {rx_order_report}\
              {rx_reorder_report}\
+             {typed_delivery_report}\
              ## RX evidence\n\n\
              - Enqueued/software-dropped frames: `{}` / `{}`\n\
              - Sampled HE-SU MCS0..11 frame histogram: `{:?}`; other sampled PHY frames: `{}`\n\
@@ -2955,21 +3070,24 @@ mod tests {
 
     #[test]
     fn parses_rates_and_options() {
+        let lab = LabConfig::for_test();
         assert_eq!(parse_rate("10M").unwrap(), 10_000_000);
         assert_eq!(parse_rate("2500K").unwrap(), 2_500_000);
-        let options = parse_options(&[
-            "192.168.178.141".into(),
-            "--phy".into(),
-            "he20".into(),
-            "--seconds".into(),
-            "5".into(),
-            "--tx-payload".into(),
-            "1300".into(),
-            "--tx-rate".into(),
-            "50M".into(),
-            "--tx-port".into(),
-            "9100".into(),
-        ])
+        let options = parse_options(
+            &[
+                "--phy".into(),
+                "he20".into(),
+                "--seconds".into(),
+                "5".into(),
+                "--tx-payload".into(),
+                "1300".into(),
+                "--tx-rate".into(),
+                "50M".into(),
+                "--tx-port".into(),
+                "9100".into(),
+            ],
+            &lab,
+        )
         .unwrap();
         assert_eq!(options.phy, Phy::He20);
         assert_eq!(options.duration, Duration::from_secs(5));
@@ -2978,23 +3096,27 @@ mod tests {
         assert_eq!(options.tx_floor_bps, Some(45_000_000));
         assert_eq!(options.tx_port, 9_100);
 
-        let explicit_floor = parse_options(&[
-            "192.168.178.141".into(),
-            "--tx-rate".into(),
-            "50M".into(),
-            "--tx-floor".into(),
-            "40M".into(),
-        ])
+        let explicit_floor = parse_options(
+            &[
+                "--tx-rate".into(),
+                "50M".into(),
+                "--tx-floor".into(),
+                "40M".into(),
+            ],
+            &lab,
+        )
         .unwrap();
         assert_eq!(explicit_floor.tx_floor_bps, Some(40_000_000));
         assert!(
-            parse_options(&[
-                "192.168.178.141".into(),
-                "--tx-rate".into(),
-                "40M".into(),
-                "--tx-floor".into(),
-                "41M".into(),
-            ])
+            parse_options(
+                &[
+                    "--tx-rate".into(),
+                    "40M".into(),
+                    "--tx-floor".into(),
+                    "41M".into(),
+                ],
+                &lab
+            )
             .is_err()
         );
     }
@@ -3183,7 +3305,7 @@ mod tests {
              ORTP task=benchmark polls=5000 poll_us=125000 poll_boot_max_us=90 over_100us=0 over_500us=0 over_1000us=0 over_5000us=0\n\
              OPEN_RADIO_PHY_HIL result=BENCH stage=udp-rx-path buffer_full=0 fifo_overflow=0 enqueued=5000 queue_dropped=0 rx_format=4\n",
         );
-        let options = parse_options(&["192.168.178.141".into()]).unwrap();
+        let options = parse_options(&[], &LabConfig::for_test()).unwrap();
         let host = HostTransmission {
             bytes: 6_250_000,
             datagrams: 5_000,

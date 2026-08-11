@@ -15,17 +15,16 @@ use std::{
 
 use open_esp_radio_hil_protocol::{
     Capabilities, Command, Direction, Envelope, Event, EvidenceRecord, Finished, FrameDecoder,
-    FrameEncoder, NetworkConfiguration, NetworkCredentials, NetworkIpv4Configuration,
-    SessionConfig, SessionLinkRequirements, SessionReady, SessionState, StackUsage,
-    StartupArtifactChunk, StartupArtifactStatus, StateChange, StationEpochEvidence,
-    StationLifecycleEvent, Transport, TransportEvidence, WifiMonitorCaptureRequest,
-    WifiMonitorEvidence, WifiMonitorFrameChunk, WifiMonitorRequest, WifiRoleTransitionEvidence,
-    WifiScanEvidence, WifiScanRequest, evidence_crc32c,
+    FrameEncoder, RxDeliveryEvidence, SessionConfig, SessionLinkRequirements, SessionReady,
+    SessionState, StackUsage, StartupArtifactChunk, StartupArtifactStatus, StateChange,
+    StationEpochEvidence, StationLifecycleEvent, Transport, TransportEvidence,
+    WifiMonitorCaptureRequest, WifiMonitorEvidence, WifiMonitorFrameChunk, WifiMonitorRequest,
+    WifiRoleTransitionEvidence, WifiScanEvidence, WifiScanRequest, evidence_crc32c,
 };
 use zeroize::Zeroizing;
 
-use crate::Result;
 use crate::startup_artifact;
+use crate::{Result, lab_config::LabConfig};
 
 const RX_BENCH_INTERVAL_COMPLETE_MARKER: &str = "stage=udp-rx-interval-complete";
 const RADIO_RUNNER_FAILURE_MARKER: &str = "result=FAIL stage=production-runner";
@@ -34,6 +33,8 @@ const RX_PROBE_RESPONSE_TIMEOUT: Duration = Duration::from_secs(2);
 const DHCP_DISCOVERY_GRACE: Duration = Duration::from_millis(500);
 const PROTOCOL_READY_TIMEOUT: Duration = Duration::from_secs(10);
 const STARTUP_ARTIFACT_TIMEOUT: Duration = Duration::from_secs(30);
+const SERIAL_OPEN_BUSY_TIMEOUT: Duration = Duration::from_secs(2);
+const SERIAL_OPEN_BUSY_RETRY: Duration = Duration::from_millis(50);
 
 struct ProtocolEvents {
     messages: Mutex<Vec<Envelope<Event>>>,
@@ -90,6 +91,7 @@ pub(crate) struct WifiCommandHandle {
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct SessionEvidence {
     pub(crate) transport: TransportEvidence,
+    pub(crate) rx_delivery: Option<RxDeliveryEvidence>,
     pub(crate) stack: StackUsage,
     pub(crate) finished: Finished,
 }
@@ -155,10 +157,7 @@ impl SerialCapture {
         let worker_protocol = Arc::clone(&protocol);
         let port = port.to_owned();
         let worker = thread::spawn(move || {
-            let mut serial = match serialport::new(port.to_string_lossy(), 115_200)
-                .timeout(Duration::from_millis(20))
-                .open()
-            {
+            let mut serial = match open_serial_after_busy_release(&port) {
                 Ok(serial) => serial,
                 Err(error) => {
                     append(
@@ -251,26 +250,26 @@ impl SerialCapture {
     }
 
     /// Establishes the typed link and provisions this boot from host-owned
-    /// environment secrets. The passphrase is never echoed by the target or
+    /// local configuration. The passphrase is never echoed by the target or
     /// appended to the UART capture.
-    pub(crate) fn prepare_protocol(&self) -> Result<Capabilities> {
+    pub(crate) fn prepare_protocol(&self, lab: &LabConfig) -> Result<Capabilities> {
         let capabilities = self.request_capabilities(PROTOCOL_READY_TIMEOUT)?;
-        let artifact_path = startup_artifact::configured_path()?;
+        let artifact_path = lab.device.startup_artifact.as_deref();
         if artifact_path.is_some() && !capabilities.features.startup_artifact {
             return Err("firmware does not support a host-owned startup artifact".into());
         }
         let artifact_event_start = self.protocol_event_count();
         if capabilities.features.startup_artifact
-            && let Some(path) = artifact_path.as_deref()
+            && let Some(path) = artifact_path
             && let Some(bytes) = startup_artifact::load_if_present(path)?
         {
             self.upload_startup_artifact(&bytes, PROTOCOL_READY_TIMEOUT)?;
         }
         if capabilities.features.network_provisioning {
-            self.provision_network(PROTOCOL_READY_TIMEOUT)?;
+            self.provision_network(lab, PROTOCOL_READY_TIMEOUT)?;
         }
         if capabilities.features.startup_artifact
-            && let Some(path) = artifact_path.as_deref()
+            && let Some(path) = artifact_path
         {
             let status = self.wait_for_startup_artifact_status_after(
                 artifact_event_start,
@@ -385,18 +384,8 @@ impl SerialCapture {
         }
     }
 
-    fn provision_network(&self, timeout: Duration) -> Result<()> {
-        let ssid = network_environment("OPEN_RADIO_HIL_STA_SSID", "OPEN_RADIO_STA_SSID")?;
-        let passphrase = Zeroizing::new(network_environment(
-            "OPEN_RADIO_HIL_STA_PASSWORD",
-            "OPEN_RADIO_STA_PASSWORD",
-        )?);
-        let credentials = NetworkCredentials::try_new(ssid.as_bytes(), passphrase.as_bytes())
-            .map_err(|error| format!("invalid HIL network credentials: {error}"))?;
-        let configuration = NetworkConfiguration {
-            credentials,
-            ipv4: network_ipv4_configuration()?,
-        };
+    fn provision_network(&self, lab: &LabConfig, timeout: Duration) -> Result<()> {
+        let configuration = lab.station.network_configuration()?;
         let response = self.send_command(0, Command::ProvisionNetwork(configuration), timeout)?;
         match response.body {
             Event::Accepted
@@ -541,17 +530,36 @@ impl SerialCapture {
             Event::Finished(finished) => finished,
             _ => unreachable!("session completion predicate accepted only Finished"),
         };
-        if finished.summary.evidence_records != 2 {
-            return Err(format!(
-                "device reported {} evidence records, host received two",
-                finished.summary.evidence_records
-            )
-            .into());
+        let rx_delivery = match finished.summary.evidence_records {
+            2 => None,
+            3 => {
+                let delivery = self
+                    .wait_for_protocol_after(session.first_event, Duration::ZERO, |message| {
+                        message.session_id == session.session_id
+                            && matches!(
+                                message.body,
+                                Event::Evidence(EvidenceRecord::RxDelivery(_))
+                            )
+                    })
+                    .ok_or("device counted RX delivery evidence but did not publish it")?;
+                match delivery.body {
+                    Event::Evidence(EvidenceRecord::RxDelivery(delivery)) => Some(delivery),
+                    _ => unreachable!("RX delivery predicate accepted only delivery evidence"),
+                }
+            }
+            count => {
+                return Err(format!(
+                    "device reported unsupported session evidence record count {count}"
+                )
+                .into());
+            }
+        };
+        let mut records = Vec::with_capacity(usize::from(finished.summary.evidence_records));
+        records.push(EvidenceRecord::Transport(transport));
+        if let Some(delivery) = rx_delivery {
+            records.push(EvidenceRecord::RxDelivery(delivery));
         }
-        let records = [
-            EvidenceRecord::Transport(transport),
-            EvidenceRecord::Stack(stack),
-        ];
+        records.push(EvidenceRecord::Stack(stack));
         let checksum = evidence_crc32c(&records)
             .map_err(|error| format!("cannot checksum structured HIL evidence: {error}"))?;
         if checksum != finished.evidence_crc32c {
@@ -563,6 +571,7 @@ impl SerialCapture {
         }
         Ok(SessionEvidence {
             transport,
+            rx_delivery,
             stack,
             finished,
         })
@@ -812,6 +821,15 @@ impl SerialCapture {
         cursor: &mut usize,
         timeout: Duration,
     ) -> Result<StationLifecycleEvent> {
+        self.wait_station_lifecycle_event_optional(cursor, timeout)?
+            .ok_or_else(|| "device did not publish the next station lifecycle event".into())
+    }
+
+    pub(crate) fn wait_station_lifecycle_event_optional(
+        &self,
+        cursor: &mut usize,
+        timeout: Duration,
+    ) -> Result<Option<StationLifecycleEvent>> {
         let deadline = Instant::now() + timeout;
         let mut messages = self
             .protocol
@@ -830,12 +848,12 @@ impl SerialCapture {
                 })
             {
                 *cursor += relative + 1;
-                return Ok(event);
+                return Ok(Some(event));
             }
             *cursor = messages.len();
             let now = Instant::now();
             if now >= deadline {
-                return Err("device did not publish the next station lifecycle event".into());
+                return Ok(None);
             }
             let (next, result) = self
                 .protocol
@@ -844,7 +862,7 @@ impl SerialCapture {
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             messages = next;
             if result.timed_out() {
-                return Err("device did not publish the next station lifecycle event".into());
+                return Ok(None);
             }
         }
     }
@@ -1009,6 +1027,28 @@ impl SerialCapture {
     }
 }
 
+fn open_serial_after_busy_release(
+    port: &Path,
+) -> serialport::Result<Box<dyn serialport::SerialPort>> {
+    let deadline = Instant::now() + SERIAL_OPEN_BUSY_TIMEOUT;
+    loop {
+        match serialport::new(port.to_string_lossy(), 115_200)
+            .timeout(Duration::from_millis(20))
+            .open()
+        {
+            Ok(serial) => return Ok(serial),
+            Err(error)
+                if error.kind == serialport::ErrorKind::NoDevice
+                    && port.exists()
+                    && Instant::now() < deadline =>
+            {
+                thread::sleep(SERIAL_OPEN_BUSY_RETRY);
+            }
+            Err(error) => return Err(error),
+        }
+    }
+}
+
 fn session_ready_covers(
     configured: Direction,
     reported: SessionReady,
@@ -1029,12 +1069,13 @@ fn session_ready_covers(
 /// measured host connection is the sole stream owned by that session.
 pub(crate) fn await_tcp_ready(
     capture: &SerialCapture,
+    lab: &LabConfig,
     address_hint: Ipv4Addr,
     port: u16,
     direction: Direction,
     timeout: Duration,
 ) -> Result<TcpReady> {
-    let capabilities = capture.prepare_protocol()?;
+    let capabilities = capture.prepare_protocol(lab)?;
     let direction_supported = match direction {
         Direction::Rx => capabilities.features.rx,
         Direction::Tx => capabilities.features.tx,
@@ -1071,6 +1112,30 @@ pub(crate) fn await_tcp_ready(
     .into())
 }
 
+/// Provisions the station and returns only the typed `NetworkReady` address.
+pub(crate) fn await_network_ready(
+    capture: &SerialCapture,
+    lab: &LabConfig,
+    timeout: Duration,
+) -> Result<Ipv4Addr> {
+    capture.prepare_protocol(lab)?;
+    let deadline = Instant::now() + timeout;
+    while Instant::now() < deadline {
+        if capture.contains(RADIO_RUNNER_FAILURE_MARKER) {
+            return Err("radio runner failed before the network became ready".into());
+        }
+        if let Some(address) = capture.observed_protocol_ipv4() {
+            return Ok(address);
+        }
+        thread::sleep(Duration::from_millis(20));
+    }
+    Err(format!(
+        "device did not publish typed network readiness within {} seconds",
+        timeout.as_secs()
+    )
+    .into())
+}
+
 /// Reset an ESP USB-Serial/JTAG target without giving up the capture handle.
 ///
 /// This is the `espflash` `reset_after_flash` USB-Serial/JTAG sequence. DTR is
@@ -1099,66 +1164,6 @@ fn append(bytes: &Mutex<Vec<u8>>, chunk: &[u8]) {
         .extend_from_slice(chunk);
 }
 
-fn network_environment(primary: &str, compatibility: &str) -> Result<String> {
-    std::env::var(primary)
-        .or_else(|_| std::env::var(compatibility))
-        .map_err(|_| {
-            format!(
-                "missing `{primary}`; provide network credentials to the HIL runner environment"
-            )
-            .into()
-        })
-}
-
-fn network_ipv4_configuration() -> Result<NetworkIpv4Configuration> {
-    let address = std::env::var("OPEN_RADIO_HIL_STA_IPV4_CIDR").ok();
-    let gateway = std::env::var("OPEN_RADIO_HIL_STA_GATEWAY_IPV4").ok();
-    parse_network_ipv4_configuration(address.as_deref(), gateway.as_deref())
-}
-
-fn parse_network_ipv4_configuration(
-    address: Option<&str>,
-    gateway: Option<&str>,
-) -> Result<NetworkIpv4Configuration> {
-    let Some(address) = address else {
-        if gateway.is_some() {
-            return Err(
-                "OPEN_RADIO_HIL_STA_GATEWAY_IPV4 requires OPEN_RADIO_HIL_STA_IPV4_CIDR".into(),
-            );
-        }
-        return Ok(NetworkIpv4Configuration::Dhcp);
-    };
-    let (address, prefix_length) = address
-        .split_once('/')
-        .ok_or("OPEN_RADIO_HIL_STA_IPV4_CIDR must be an IPv4 CIDR")?;
-    let address = address
-        .parse::<Ipv4Addr>()
-        .map_err(|error| format!("invalid OPEN_RADIO_HIL_STA_IPV4_CIDR address: {error}"))?
-        .octets();
-    let prefix_length = prefix_length
-        .parse::<u8>()
-        .map_err(|error| format!("invalid OPEN_RADIO_HIL_STA_IPV4_CIDR prefix: {error}"))?;
-    let gateway = gateway
-        .map(|gateway| {
-            gateway
-                .parse::<Ipv4Addr>()
-                .map(|address| address.octets())
-                .map_err(|error| {
-                    format!("invalid OPEN_RADIO_HIL_STA_GATEWAY_IPV4 address: {error}")
-                })
-        })
-        .transpose()?;
-    let configuration = NetworkIpv4Configuration::Static {
-        address,
-        prefix_length,
-        gateway,
-    };
-    if !configuration.validate() {
-        return Err("invalid static HIL IPv4 configuration".into());
-    }
-    Ok(configuration)
-}
-
 /// Wait until the target owns its IPv4 address and UDP RX service.
 ///
 /// Runtime-session images require a typed service-ready edge emitted only
@@ -1168,11 +1173,12 @@ fn parse_network_ipv4_configuration(
 /// path before a measured stream begins.
 pub(crate) fn await_udp_rx_ready(
     capture: &SerialCapture,
+    lab: &LabConfig,
     address_hint: Ipv4Addr,
     port: u16,
     timeout: Duration,
 ) -> Result<UdpRxReady> {
-    let capabilities = capture.prepare_protocol()?;
+    let capabilities = capture.prepare_protocol(lab)?;
     if !capabilities.features.udp || !capabilities.features.rx {
         return Err("firmware does not advertise UDP RX capability".into());
     }
@@ -1183,7 +1189,9 @@ pub(crate) fn await_udp_rx_ready(
         capabilities.features.runtime_configuration && capabilities.features.structured_evidence;
     let socket = UdpSocket::bind(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0))?;
     let mut address = address_hint;
-    socket.connect(SocketAddrV4::new(address, port))?;
+    if !address.is_unspecified() {
+        socket.connect(SocketAddrV4::new(address, port))?;
+    }
     socket.set_write_timeout(Some(Duration::from_millis(250)))?;
     let mut packet = [0x5a; RX_PROBE_PAYLOAD];
     let deadline = Instant::now() + timeout;
@@ -1275,11 +1283,12 @@ pub(crate) fn await_udp_rx_ready(
 
 pub(crate) fn await_device_marker(
     capture: &SerialCapture,
+    lab: &LabConfig,
     marker: &str,
     address_hint: Ipv4Addr,
     timeout: Duration,
 ) -> Result<UdpTxReady> {
-    let capabilities = capture.prepare_protocol()?;
+    let capabilities = capture.prepare_protocol(lab)?;
     if !capabilities.features.udp || !capabilities.features.tx {
         return Err("firmware does not advertise UDP TX capability".into());
     }
@@ -1341,10 +1350,7 @@ mod tests {
         Direction, SessionLinkRequirements, SessionReady, StackUsage, StackWatermark,
     };
 
-    use super::{
-        NetworkIpv4Configuration, observed_network_ipv4, parse_network_ipv4_configuration,
-        session_ready_covers, validate_stack_usage,
-    };
+    use super::{observed_network_ipv4, session_ready_covers, validate_stack_usage};
 
     #[test]
     fn runtime_stack_policy_rejects_low_headroom_on_either_core() {
@@ -1429,30 +1435,5 @@ mod tests {
             observed_network_ipv4(transcript),
             Some("192.168.178.121".parse().unwrap())
         );
-    }
-
-    #[test]
-    fn parses_runtime_static_ipv4_configuration() {
-        assert_eq!(
-            parse_network_ipv4_configuration(Some("10.42.0.138/24"), Some("10.42.0.1")).unwrap(),
-            NetworkIpv4Configuration::Static {
-                address: [10, 42, 0, 138],
-                prefix_length: 24,
-                gateway: Some([10, 42, 0, 1]),
-            }
-        );
-    }
-
-    #[test]
-    fn defaults_runtime_ipv4_configuration_to_dhcp() {
-        assert_eq!(
-            parse_network_ipv4_configuration(None, None).unwrap(),
-            NetworkIpv4Configuration::Dhcp
-        );
-    }
-
-    #[test]
-    fn rejects_gateway_without_static_address() {
-        assert!(parse_network_ipv4_configuration(None, Some("10.42.0.1")).is_err());
     }
 }

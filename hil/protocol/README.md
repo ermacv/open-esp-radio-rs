@@ -38,6 +38,11 @@ each direction. TCP evidence accounts for bytes and EOF-completed streams.
 ICMP records response latency. Full duplex requires both directional readiness
 events before host traffic starts.
 
+The explicit RX-delivery profile additionally reconciles post-BlockAck
+reorder, network enqueue and UDP consumption, and correlates late UDP units
+with MAC sequence order. Any missing, duplicated or reordered unit remains a
+failed exact-delivery result even when later stages match.
+
 Wi-Fi lifecycle commands acknowledge admission first and publish a separate
 correlated completion only after the production typestate transition returns:
 

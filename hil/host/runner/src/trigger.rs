@@ -7,6 +7,7 @@ use open_esp_radio_ieee80211::trigger::{
 
 use crate::{
     Result,
+    lab_config::LabConfig,
     packet_socket::{PacketSocket, ensure_monitor_interface},
     traffic_capture::SerialCapture,
 };
@@ -33,7 +34,6 @@ struct Options {
     count: u32,
     interval: Duration,
     dry_run: bool,
-    serial: String,
     baseline: Duration,
     post_injection: Duration,
 }
@@ -103,7 +103,7 @@ pub(crate) fn run(args: &[String]) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn run_hil(args: &[String], root: &Path) -> Result<()> {
+pub(crate) fn run_hil(args: &[String], root: &Path, lab: &LabConfig) -> Result<()> {
     if matches!(
         args.first().map(String::as_str),
         None | Some("help" | "--help" | "-h")
@@ -119,7 +119,7 @@ pub(crate) fn run_hil(args: &[String], root: &Path) -> Result<()> {
     ensure_monitor_interface(&options.interface)?;
     let socket = PacketSocket::bind(&options.interface)?;
 
-    let capture = SerialCapture::start(Path::new(&options.serial));
+    let capture = SerialCapture::start(&lab.device.serial);
     thread::sleep(options.baseline);
     send_packets(&socket, &packet, &options)?;
     thread::sleep(options.post_injection);
@@ -212,7 +212,6 @@ fn print_hil_help() {
          \n\
          Trigger options are identical to `cargo hil traffic trigger`, with HIL-safe\n\
          defaults of 10,000 frames at a 1-ms interval. Additional options:\n\
-           --serial <port>             device UART (default: /dev/ttyACM0)\n\
            --baseline-seconds <10..60> capture a pre-injection counter (default: 11)\n\
            --post-seconds <10..60>     capture a post-injection counter (default: 12)\n\
          \n\
@@ -243,7 +242,6 @@ fn parse_options(args: &[String], hil: bool) -> Result<Options> {
         count: if hil { 10_000 } else { 10 },
         interval: Duration::from_millis(if hil { 1 } else { 100 }),
         dry_run: false,
-        serial: "/dev/ttyACM0".into(),
         baseline: Duration::from_secs(11),
         post_injection: Duration::from_secs(12),
     };
@@ -313,7 +311,6 @@ fn parse_options(args: &[String], hil: bool) -> Result<Options> {
                         let millis = parse_bounded(value, 1_u64, 1_000, "--interval-ms")?;
                         options.interval = Duration::from_millis(millis);
                     }
-                    "--serial" if hil => options.serial.clone_from(value),
                     "--baseline-seconds" if hil => {
                         options.baseline = Duration::from_secs(parse_bounded(
                             value,
@@ -697,7 +694,7 @@ mod tests {
     }
 
     #[test]
-    fn hil_parser_owns_serial_and_sustained_injection_defaults() {
+    fn hil_parser_owns_sustained_injection_defaults() {
         let options = parse_options(
             &[
                 "mon0".into(),
@@ -705,30 +702,12 @@ mod tests {
                 "70:15:fb:a8:48:f0".into(),
                 "--aid".into(),
                 "1".into(),
-                "--serial".into(),
-                "/dev/ttyACM1".into(),
             ],
             true,
         )
         .unwrap();
         assert_eq!(options.count, 10_000);
         assert_eq!(options.interval, Duration::from_millis(1));
-        assert_eq!(options.serial, "/dev/ttyACM1");
-        assert!(
-            parse_options(
-                &[
-                    "mon0".into(),
-                    "--transmitter".into(),
-                    "70:15:fb:a8:48:f0".into(),
-                    "--aid".into(),
-                    "1".into(),
-                    "--serial".into(),
-                    "/dev/ttyACM0".into(),
-                ],
-                false
-            )
-            .is_err()
-        );
     }
 
     #[test]

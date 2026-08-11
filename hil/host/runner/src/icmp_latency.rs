@@ -9,12 +9,17 @@ use std::{
 };
 
 use crate::Result;
+use crate::{
+    lab_config::LabConfig,
+    traffic_capture::{SerialCapture, await_network_ready},
+};
 
 const DEFAULT_COUNT: u16 = 100;
 const DEFAULT_INTERVAL: Duration = Duration::from_millis(20);
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(1);
 const DEFAULT_PAYLOAD_BYTES: usize = 56;
 const MAX_PAYLOAD_BYTES: usize = 1_400;
+const NETWORK_READY_TIMEOUT: Duration = Duration::from_secs(45);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct Options {
@@ -47,7 +52,7 @@ impl LatencySummary {
     }
 }
 
-pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
+pub(crate) fn run(arguments: Vec<String>, root: &Path, lab: &LabConfig) -> Result<()> {
     if arguments
         .first()
         .is_some_and(|value| matches!(value.as_str(), "help" | "--help" | "-h"))
@@ -55,7 +60,9 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
         print_help();
         return Ok(());
     }
-    let options = parse_options(&arguments)?;
+    let mut options = parse_options(&arguments)?;
+    let capture = SerialCapture::start_with_reset(&lab.device.serial);
+    options.device = await_network_ready(&capture, lab, NETWORK_READY_TIMEOUT)?;
     let socket = IcmpSocket::connect(options.device)?;
     let summary = measure(&socket, options)?;
     let acceptance_failure = if options.count - summary.received > options.maximum_lost {
@@ -207,12 +214,8 @@ fn report(options: Options, summary: &LatencySummary, acceptance_failure: Option
 
 fn parse_options(arguments: &[String]) -> Result<Options> {
     let mut arguments = arguments.iter();
-    let device = arguments
-        .next()
-        .ok_or("missing device IPv4 address")?
-        .parse::<Ipv4Addr>()?;
     let mut options = Options {
-        device,
+        device: Ipv4Addr::UNSPECIFIED,
         count: DEFAULT_COUNT,
         interval: DEFAULT_INTERVAL,
         timeout: DEFAULT_TIMEOUT,
@@ -251,7 +254,7 @@ fn parse_options(arguments: &[String]) -> Result<Options> {
 
 fn print_help() {
     println!(
-        "cargo hil traffic icmp <device-ipv4> [options]\n\n\
+        "cargo hil traffic icmp [options]\n\n\
          --count <1..65535>       echo requests (default 100)\n\
          --interval-ms <ms>       interval between requests (default 20)\n\
          --timeout-ms <ms>        per-request reply timeout (default 1000)\n\
@@ -423,7 +426,6 @@ mod tests {
     #[test]
     fn parses_bounded_latency_options() {
         let arguments = [
-            "10.42.0.138",
             "--count",
             "20",
             "--interval-ms",

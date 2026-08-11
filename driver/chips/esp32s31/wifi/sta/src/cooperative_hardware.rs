@@ -11,7 +11,8 @@ use open_esp_radio_esp32s31_registers::{
     MacHeTbLinkReservation, MacHeTbProgramError, MacHeTbTidLimit, MacHeTid,
     MacHeTriggerTxQueueSnapshot, MacHeTxProgram, MacHeTxVectorSnapshot,
     MacHtAmpduCompletionRegisters, MacHtTxProgram, MacKeyInstallOutcome, MacLegacyTxProgram,
-    MacTxCompletionRegisters, MacTxDetachOutcome, MacTxDetachReason, MacTxQueueDetached,
+    MacRxDmaSnapshot, MacStaReceivePolicySnapshot, MacTxCompletionRegisters, MacTxDetachOutcome,
+    MacTxDetachReason, MacTxQueueDetached,
 };
 use open_esp_radio_esp32s31_wifi::register_arena::{
     Esp32s31PublishedRadioRegisters, Esp32s31RadioRegistersAccess,
@@ -62,6 +63,17 @@ impl<'arena> CooperativeRadioHardware<'arena> {
     /// must stop those tasks before consuming this hardware facade.
     pub const fn register_access(&self) -> Esp32s31RadioRegistersAccess<'arena> {
         self.registers.access()
+    }
+
+    /// Read the associated-STA RX policy through the same serialized PAC
+    /// owner used by the live service.
+    pub fn sta_receive_policy_snapshot(&self) -> MacStaReceivePolicySnapshot {
+        self.registers.borrow().sta_receive_policy_snapshot()
+    }
+
+    /// Read the live MAC RX walker frontier through the serialized PAC owner.
+    pub fn mac_rx_dma_snapshot(&self) -> MacRxDmaSnapshot {
+        self.registers.borrow().mac_rx_dma_snapshot()
     }
 
     /// Recover the exact PAC owner after every child task and synchronous

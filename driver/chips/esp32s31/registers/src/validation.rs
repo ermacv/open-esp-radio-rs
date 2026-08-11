@@ -46,6 +46,15 @@ pub fn hal_mac_interrupt_clr_event(registers: &svd::WifiMacInterrupt, events: u3
     events
 }
 
+/// Execute the production two-register connected-STA beacon-filter disable.
+#[inline(always)]
+pub fn hal_disable_sta_beacon_filter(
+    control: &svd::WifiMacStaBeaconFilter,
+    interrupt: &svd::WifiMacInterrupt,
+) {
+    crate::mac_interrupt::disable_sta_beacon_filter_for_validation(control, interrupt);
+}
+
 #[inline(always)]
 pub fn hal_pwr_interrupt_get_event(registers: &svd::WifiMacPowerInterrupt) -> u32 {
     svd::interrupt_snapshot::sample_mac_power_interrupt(registers).bits()
@@ -140,6 +149,22 @@ pub fn hal_mac_txq_enable_register_slice(
     queue: u32,
 ) -> u32 {
     crate::mac_tx_queue::publish_queue(registers, queue)
+}
+
+#[inline(always)]
+pub fn hal_mac_tx_config_edca(
+    registers: &svd::WifiMacTxQueueControl,
+    queue: u32,
+    aifsn: u8,
+    contention_window: u16,
+    interface: u8,
+) -> u32 {
+    crate::mac_tx_queue::configure_edca(registers, queue, aifsn, contention_window, interface)
+}
+
+#[inline(always)]
+pub fn hal_mac_tx_get_blockack(queue: u8) -> Option<crate::TxBlockAckPayload> {
+    radio_registers().read_tx_block_ack_payload(queue)
 }
 
 #[inline(always)]

@@ -5,3 +5,5 @@ driver/integration/**/Cargo.lock
 **/*.swo
 /_oracles/
 /oracle-regression.json
+/hil/local.toml
+/hil/*.local.toml

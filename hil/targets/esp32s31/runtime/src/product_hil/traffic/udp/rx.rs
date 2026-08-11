@@ -12,6 +12,8 @@ use open_esp_radio_esp32s31_embassy_wifi::Esp32s31QualificationSnapshot;
 use open_esp_radio_hil_esp32s31_telemetry::{
     rx_evidence::RX_HE_MCS_BUCKETS, rx_pipeline::RxPipelineCounters, task_poll::TaskPollSet,
 };
+#[cfg(feature = "rx-delivery-telemetry")]
+use open_esp_radio_hil_protocol::RxReorderDeliveryEvidence;
 use open_esp_radio_hil_protocol::{
     Direction as HilDirection, Event as HilEvent, ServiceInfo, SessionReady,
     Transport as HilTransport, TransportEvidence,
@@ -124,6 +126,8 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
                 Either::Second(_) => {}
             }
         };
+        #[cfg(feature = "rx-delivery-telemetry")]
+        rx_qualification::HilConnectedRxObserver::begin_delivery_session(session.session_id);
         publish_event_reliably(
             session.session_id,
             0,
@@ -151,8 +155,6 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
         let s_mpdu_start = rx_qualification::RX_S_MPDU.snapshot();
         let beacon_s_mpdu_start = rx_qualification::BEACON_S_MPDU.snapshot();
         let ampdu_start = rx_qualification::RX_AMPDU.snapshot();
-        #[cfg(feature = "rx-order-telemetry")]
-        let order_start = rx_qualification::RX_ORDER.snapshot();
         let expected_payload_bytes = usize::from(
             session
                 .config
@@ -165,6 +167,13 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
             let (length, sequence) = socket
                 .recv_from_with(|packet, _| (packet.len(), iperf2_udp_sequence(packet)))
                 .await;
+            #[cfg(feature = "rx-delivery-telemetry")]
+            if let Some(sequence) = sequence {
+                rx_qualification::HilConnectedRxObserver::observe_udp_consumer(
+                    session.session_id,
+                    sequence,
+                );
+            }
             if sequence.is_some_and(|sequence| sequence < 0) {
                 continue;
             }
@@ -187,10 +196,34 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
             .await
             {
                 Ok((_, Some(value))) if value < 0 => {
+                    #[cfg(feature = "rx-delivery-telemetry")]
+                    rx_qualification::HilConnectedRxObserver::observe_udp_consumer(
+                        session.session_id,
+                        value,
+                    );
                     terminal_seen = true;
+                    #[cfg(feature = "rx-delivery-telemetry")]
+                    while let Ok(Some(sequence)) = with_timeout(
+                        config.idle_timeout,
+                        socket.recv_from_with(|packet, _| iperf2_udp_sequence(packet)),
+                    )
+                    .await
+                    {
+                        rx_qualification::HilConnectedRxObserver::observe_udp_consumer(
+                            session.session_id,
+                            sequence,
+                        );
+                    }
                     break;
                 }
                 Ok((length, packet_sequence)) => {
+                    #[cfg(feature = "rx-delivery-telemetry")]
+                    if let Some(sequence) = packet_sequence {
+                        rx_qualification::HilConnectedRxObserver::observe_udp_consumer(
+                            session.session_id,
+                            sequence,
+                        );
+                    }
                     receive_errors =
                         receive_errors.saturating_add(u32::from(length != expected_payload_bytes));
                     let received_at = Instant::now();
@@ -232,6 +265,27 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
         let irq_auxiliary_status_or = crate::product_hil::MAC_IRQ.take_auxiliary_status_or();
         let irq_unknown_status_or = crate::product_hil::MAC_IRQ.take_unknown_status_or();
         let pipeline_end = telemetry.pipeline.snapshot();
+        #[cfg(feature = "rx-delivery-telemetry")]
+        let rx_delivery = {
+            let reorder = pipeline_end.wrapping_delta_since(pipeline_start);
+            rx_qualification::HilConnectedRxObserver::finish_delivery_session(
+                session.session_id,
+                RxReorderDeliveryEvidence {
+                    ingress: reorder.reorder_ingress,
+                    ingress_retries: reorder.reorder_ingress_retries,
+                    direct: reorder.reorder_direct,
+                    buffered: reorder.reorder_buffered,
+                    released: reorder.reorder_released,
+                    missing: reorder.reorder_missing,
+                    stale: reorder.reorder_stale,
+                    gap_expiries: reorder.reorder_gap_expiries,
+                    maximum_occupied: reorder.reorder_maximum_occupied,
+                    discarded: reorder.reorder_discarded,
+                },
+            )
+        };
+        #[cfg(not(feature = "rx-delivery-telemetry"))]
+        let rx_delivery = None;
         let queue_dropped = pipeline_end
             .network_dropped
             .wrapping_sub(pipeline_start.network_dropped);
@@ -287,26 +341,6 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
             sequence.maximum_interarrival_micros,
             sequence.maximum_interarrival_at.unwrap_or(u32::MAX),
         ));
-        #[cfg(feature = "rx-order-telemetry")]
-        {
-            let order = rx_qualification::RX_ORDER
-                .snapshot()
-                .wrapping_delta_since(order_start);
-            emergency_log(format_args!(
-                "ORXO gap_events={} forward_missing={} backward={} adjacent_duplicates={} \
-                 backward_mac_backward={} backward_mac_same={} backward_mac_forward={} \
-                 backward_mac_other_tid={} backward_mac_unavailable={}",
-                order.gap_events,
-                order.forward_missing,
-                order.backward,
-                order.adjacent_duplicates,
-                order.backward_mac_backward,
-                order.backward_mac_same,
-                order.backward_mac_forward,
-                order.backward_mac_other_tid,
-                order.backward_mac_unavailable,
-            ));
-        }
         let rx_s_mpdu = rx_qualification::RX_S_MPDU
             .snapshot()
             .wrapping_delta_since(s_mpdu_start);
@@ -388,12 +422,13 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
                     session.session_id,
                     OpenRadioBidirectionalDirection::Rx,
                     evidence,
+                    rx_delivery,
                     passed,
                 )
                 .await;
             }
             UdpRxSessionSource::Console => {
-                complete_session(session.session_id, evidence, passed).await;
+                complete_session(session.session_id, evidence, rx_delivery, passed).await;
             }
         }
     }

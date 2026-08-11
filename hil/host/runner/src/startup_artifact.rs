@@ -3,7 +3,7 @@
 use std::{
     fs::{self, OpenOptions},
     io::{ErrorKind, Write},
-    path::{Path, PathBuf},
+    path::Path,
 };
 
 use open_esp_radio_hil_protocol::{
@@ -11,18 +11,6 @@ use open_esp_radio_hil_protocol::{
 };
 
 use crate::Result;
-
-pub(crate) const PATH_ENVIRONMENT: &str = "OPEN_RADIO_HIL_STARTUP_ARTIFACT";
-
-pub(crate) fn configured_path() -> Result<Option<PathBuf>> {
-    let Some(path) = std::env::var_os(PATH_ENVIRONMENT) else {
-        return Ok(None);
-    };
-    if path.is_empty() {
-        return Err(format!("`{PATH_ENVIRONMENT}` must not be empty").into());
-    }
-    Ok(Some(PathBuf::from(path)))
-}
 
 pub(crate) fn load_if_present(path: &Path) -> Result<Option<Vec<u8>>> {
     match fs::read(path) {

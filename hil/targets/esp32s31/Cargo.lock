@@ -1294,6 +1294,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "open-esp-radio-esp32s31-coex"
+version = "0.1.0"
+dependencies = [
+ "open-esp-radio-esp32s31-registers",
+]
+
+[[package]]
 name = "open-esp-radio-esp32s31-embassy-runtime"
 version = "0.1.0"
 dependencies = [
@@ -1405,6 +1412,7 @@ version = "0.1.0"
 dependencies = [
  "critical-section",
  "esp-hal",
+ "open-esp-radio-esp32s31-coex",
  "open-esp-radio-esp32s31-hal",
  "open-esp-radio-esp32s31-phy",
  "open-esp-radio-esp32s31-registers",
@@ -1467,8 +1475,10 @@ dependencies = [
  "embassy-time",
  "embedded-io-async 0.7.0",
  "esp-hal",
+ "heapless 0.9.3",
  "log",
  "open-esp-radio",
+ "open-esp-radio-embassy-net",
  "open-esp-radio-esp32s31-embassy-runtime",
  "open-esp-radio-esp32s31-embassy-wifi",
  "open-esp-radio-esp32s31-wifi-esp-hal",
@@ -1485,6 +1495,7 @@ version = "0.1.0"
 dependencies = [
  "open-esp-radio-esp32s31-wifi-embassy",
  "open-esp-radio-esp32s31-wifi-mac",
+ "open-esp-radio-hil-protocol",
  "open-esp-radio-wifi-softmac",
 ]
 

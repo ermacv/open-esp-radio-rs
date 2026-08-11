@@ -413,6 +413,8 @@ mod tests {
                 tx_ampdu_max_subframes: 32,
                 station_pairwise_ccmp_slots: 1,
                 station_group_ccmp_slots: 1,
+                access_point_pairwise_ccmp_slots: 1,
+                access_point_group_ccmp_slots: 1,
             },
         }
     }

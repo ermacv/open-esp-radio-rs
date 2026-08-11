@@ -1,4 +1,4 @@
-//! Executor-independent platform ports and resources for ESP32-S31 STA TX.
+//! Executor-independent platform ports and resources for ESP32-S31 Wi-Fi TX.
 //!
 //! The ordinary TX owner may await these ports, but this module does not pick
 //! an executor, timer driver or entropy peripheral. It also translates the
@@ -8,9 +8,9 @@
 use core::{future::Future, pin::Pin};
 
 use open_esp_radio_esp32s31_phy::PhyTxTargetPowerProfile;
-use open_esp_radio_esp32s31_wifi_mac::{tx::TxSlot, tx_runtime::StaTxRuntimePolicy};
+use open_esp_radio_esp32s31_wifi_mac::{tx::TxSlot, tx_runtime::WifiTxRuntimePolicy};
 
-/// State of one finite ESP32-S31 STA TX transaction.
+/// State of one finite ESP32-S31 Wi-Fi TX transaction.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum WifiTxProgress {
     /// DMA, acknowledgement or a bounded retry is still in flight.
@@ -63,7 +63,7 @@ impl WifiTxPowerProfile for PhyTxTargetPowerProfile {
     }
 }
 
-/// Monotonic time and the two bounded asynchronous edges used by STA TX.
+/// Monotonic time and the two bounded asynchronous edges used by Wi-Fi TX.
 pub trait WifiTxTimer {
     fn now_micros(&self) -> u64;
     fn wait_until(&mut self, deadline_micros: u64) -> impl Future<Output = ()> + '_;
@@ -89,7 +89,7 @@ pub struct ControlTxConfig {
 /// is introduced.
 pub struct WifiTxResources<'slot, P, E, T, const BUFFER_SIZE: usize> {
     pub slot: Pin<&'slot mut TxSlot<BUFFER_SIZE>>,
-    pub policy: StaTxRuntimePolicy,
+    pub policy: WifiTxRuntimePolicy,
     pub power: P,
     pub entropy: E,
     pub timer: T,

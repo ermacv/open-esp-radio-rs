@@ -9,7 +9,7 @@ use open_esp_radio_ieee80211::{
     },
 };
 
-use crate::tx::WifiTxPowerProfile;
+use open_esp_radio_esp32s31_wifi::tx::WifiTxPowerProfile;
 
 /// Recovered minimum power advertised by the ESP32-S31 HE STA.
 ///
@@ -68,7 +68,7 @@ pub fn esp32s31_sta_association_profile<P: WifiTxPowerProfile>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tx::WifiTxPowerPair;
+    use open_esp_radio_esp32s31_wifi::tx::WifiTxPowerPair;
 
     const HE20_MCS9_CAPABILITY: [u8; 24] = [
         255, 22, 35, 0x03, 0x18, 0x9c, 0xca, 0x10, 0x80, 0x00, 0x10, 0x8a, 0x1b, 0x0d, 0xc0, 0x1f,

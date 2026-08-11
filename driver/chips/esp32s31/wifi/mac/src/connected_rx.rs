@@ -9,11 +9,11 @@
 use open_esp_radio_esp32s31_wifi_dma::rx_ring::RxSegment;
 use open_esp_radio_ieee80211::{
     data::{
-        DataDecapError, DataInterfaceRole, EthernetFrameParts, amsdu_subframes,
+        DataDecapError, DataInterfaceRole, EthernetFrameParts, RxDuplicateFilter, amsdu_subframes,
         plan_data_decapsulation,
     },
     ndpa::{HeNdpa, HeNdpaError},
-    station::{StaDisconnect, StaRxDuplicateFilter, parse_sta_disconnect},
+    station::{StaDisconnect, parse_sta_disconnect},
     station_beacon::{StaBeaconError, StaBeaconObservation, parse_sta_beacon},
     trigger::{TriggerCommonInfo, TriggerParseError, parse_trigger_frame},
 };
@@ -198,14 +198,14 @@ pub enum ConnectedRxDispatch {
 /// Unique protocol-routing state for one connected station.
 pub struct ConnectedRxDispatcher {
     config: ConnectedRxConfig,
-    duplicate_filter: StaRxDuplicateFilter,
+    duplicate_filter: RxDuplicateFilter,
 }
 
 impl ConnectedRxDispatcher {
     pub const fn new(config: ConnectedRxConfig) -> Self {
         Self {
             config,
-            duplicate_filter: StaRxDuplicateFilter::new(),
+            duplicate_filter: RxDuplicateFilter::new(),
         }
     }
 

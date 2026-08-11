@@ -12,12 +12,12 @@ use open_esp_radio_esp32s31_hal::{
 };
 use open_esp_radio_esp32s31_phy::{PhyAsyncDelay, PhyState, PhyTargetObserver, PhyTargetPortError};
 use open_esp_radio_esp32s31_registers::MacInterruptSetup;
+use open_esp_radio_esp32s31_wifi::ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer};
 use open_esp_radio_esp32s31_wifi_mac::tx::TxHardware;
 use open_esp_radio_esp32s31_wifi_sta::{
     attempt::{Esp32s31StaAttemptSecurity, Esp32s31StaIdentity},
     channel::Esp32s31ScanPhy,
     control_tx::{ControlTxError, Esp32s31ControlTx},
-    ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer},
     scan::{Esp32s31StaScanBackend, Esp32s31StaScanConfig, Esp32s31StaScanError},
     scan_tx::{Esp32s31RunningScanTx, Esp32s31ScanTxSummary},
 };

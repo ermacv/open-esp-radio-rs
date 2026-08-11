@@ -10,7 +10,7 @@ use core::future::Future;
 use open_esp_radio_esp32s31_wifi_mac::{
     crypto::StaPairwiseCcmpSlot,
     tx::{LegacyTxQueue, TxError, TxHardware, TxPhyRate},
-    tx_runtime::{StaTxRuntimePolicy, UnicastRetryError},
+    tx_runtime::{UnicastRetryError, WifiTxRuntimePolicy},
 };
 use open_esp_radio_ieee80211::station::{
     StaActionFrame, StaProtectedDataFrame, StaProtectedEthernetFrame, StaTxSequenceCounters,
@@ -19,15 +19,15 @@ use open_esp_radio_ieee80211::station::{
 use open_esp_radio_ieee80211::station_power_save::{StaNullDataFrame, StaPowerManagement};
 use open_esp_radio_wifi_softmac::{MacTxPlan, MacTxQueueState};
 
-use crate::ordinary_tx::{
+use open_esp_radio_esp32s31_wifi::ordinary_tx::{
     OrdinaryTxError, OrdinaryTxOwner, OrdinaryTxPlan, TX_CCMP_MIC_SIZE, TX_METADATA_SIZE,
 };
-pub use crate::ordinary_tx::{
+pub use open_esp_radio_esp32s31_wifi::ordinary_tx::{
     OrdinaryTxOutcome as SingleMpduTxOutcome, OrdinaryTxReport as SingleMpduTxReport,
     TxResetReason, WifiTxEntropy, WifiTxPowerPair, WifiTxPowerProfile, WifiTxResources,
     WifiTxTimer,
 };
-use crate::tx::{WifiTxProgress, WifiTxWake};
+use open_esp_radio_esp32s31_wifi::tx::{WifiTxProgress, WifiTxWake};
 
 /// Association-derived inputs for the first ordinary connected-data slice.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -174,11 +174,11 @@ where
         self.ordinary.descriptor_word0()
     }
 
-    pub const fn policy(&self) -> &StaTxRuntimePolicy {
+    pub const fn policy(&self) -> &WifiTxRuntimePolicy {
         self.ordinary.policy()
     }
 
-    pub fn policy_mut(&mut self) -> &mut StaTxRuntimePolicy {
+    pub fn policy_mut(&mut self) -> &mut WifiTxRuntimePolicy {
         self.ordinary.policy_mut()
     }
 
@@ -740,7 +740,7 @@ mod tests {
         Esp32s31SingleMpduTx::new(
             WifiTxResources {
                 slot,
-                policy: StaTxRuntimePolicy::vendor_defaults(),
+                policy: WifiTxRuntimePolicy::vendor_defaults(),
                 power: Power,
                 entropy,
                 timer: TestTimer::default(),

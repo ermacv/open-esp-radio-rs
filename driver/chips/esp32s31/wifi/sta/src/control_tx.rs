@@ -6,14 +6,14 @@
 
 use core::future::Future;
 
-pub use crate::tx::ControlTxConfig;
+pub use open_esp_radio_esp32s31_wifi::tx::ControlTxConfig;
 use open_esp_radio_esp32s31_wifi_mac::{
     edca::EdcaParametersError,
     tx::{
         HtPeerAmpduParameters, LegacyRate, LegacyTxQueue, TxCompletion, TxError, TxHardware,
         TxPhyRate,
     },
-    tx_runtime::{StaTxRuntimePolicy, UnicastRetryError},
+    tx_runtime::{UnicastRetryError, WifiTxRuntimePolicy},
 };
 use open_esp_radio_ieee80211::{
     management::{ProbeRequest, ProbeRequestError},
@@ -26,19 +26,20 @@ use open_esp_radio_ieee80211::{
 use open_esp_radio_wifi_softmac::MacTxPlan;
 
 use crate::{
-    join::Esp32s31StaJoinTransmit,
+    join::Esp32s31StaJoinTransmit, peer::Esp32s31StaPeerTransmit,
+    single_mpdu_tx::Esp32s31SingleMpduTx, wpa2::Esp32s31Wpa2Transmit,
+};
+
+use open_esp_radio_esp32s31_wifi::{
     ordinary_tx::{
         OrdinaryTxError, OrdinaryTxOutcome, OrdinaryTxOwner, OrdinaryTxPlan, TX_CCMP_MIC_SIZE,
         TX_METADATA_SIZE, TxResetReason, WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer,
     },
-    peer::Esp32s31StaPeerTransmit,
-    single_mpdu_tx::Esp32s31SingleMpduTx,
     tx::WifiTxProgress,
-    wpa2::Esp32s31Wpa2Transmit,
 };
 
-pub use crate::ordinary_tx::WifiTxResources;
 pub use crate::single_mpdu_tx::ConnectedTxHandoff;
+pub use open_esp_radio_esp32s31_wifi::ordinary_tx::WifiTxResources;
 
 // SOURCE: complete `libnet80211.a[ieee80211_output.o]` passes
 // coexistence events 5/6 for Probe and Authentication/Association. Complete
@@ -137,16 +138,30 @@ where
         }
     }
 
-    pub const fn policy(&self) -> &StaTxRuntimePolicy {
+    pub const fn policy(&self) -> &WifiTxRuntimePolicy {
         self.ordinary.policy()
     }
 
-    pub fn policy_mut(&mut self) -> &mut StaTxRuntimePolicy {
+    pub fn policy_mut(&mut self) -> &mut WifiTxRuntimePolicy {
         self.ordinary.policy_mut()
     }
 
     pub const fn power_profile(&self) -> &P {
         self.ordinary.power()
+    }
+
+    /// Return the role-neutral ordinary descriptor while it is idle.
+    ///
+    /// This is the supervisor transition used when stopped Wi-Fi changes
+    /// role. A live or quarantined transaction returns the complete STA owner
+    /// unchanged, so AP cannot steal a descriptor from DMA.
+    #[allow(clippy::result_large_err)]
+    pub fn try_into_resources(self) -> Result<WifiTxResources<'slot, P, E, T, BUFFER_SIZE>, Self> {
+        let Self { ordinary, config } = self;
+        match ordinary.try_into_resources() {
+            Ok(resources) => Ok(resources),
+            Err(ordinary) => Err(Self { ordinary, config }),
+        }
     }
 
     pub fn install_ht_ampdu_policy(&mut self, parameters: HtPeerAmpduParameters) {
@@ -480,8 +495,8 @@ mod tests {
     use open_esp_radio_ieee80211::station::StaTxSequenceCounters;
 
     use super::*;
-    use crate::ordinary_tx::WifiTxPowerPair;
     use crate::single_mpdu_tx::SingleMpduTxConfig;
+    use open_esp_radio_esp32s31_wifi::ordinary_tx::WifiTxPowerPair;
 
     #[derive(Default)]
     struct Hardware {
@@ -611,7 +626,7 @@ mod tests {
         Esp32s31ControlTx::new(
             WifiTxResources {
                 slot,
-                policy: StaTxRuntimePolicy::vendor_defaults(),
+                policy: WifiTxRuntimePolicy::vendor_defaults(),
                 power: Power,
                 entropy,
                 timer: Timer::default(),

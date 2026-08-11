@@ -16,9 +16,11 @@ pub mod supervisor;
 
 #[cfg(feature = "wifi")]
 pub use config::{
-    WifiConfig, WifiConfigError, WifiMacAddress, WifiMacAddressError, WifiMonitorConfig, WifiPlan,
-    WifiStandaloneMonitorPlan, WifiStationConfig,
+    WifiAccessPointConfig, WifiConfig, WifiConfigError, WifiMacAddress, WifiMacAddressError,
+    WifiMonitorConfig, WifiPlan, WifiStandaloneMonitorPlan, WifiStationConfig,
 };
+#[cfg(feature = "wifi")]
+pub use open_esp_radio_ieee80211::ssid::{WifiSsid, WifiSsidError};
 #[cfg(feature = "wifi")]
 pub use open_esp_radio_wifi_softmac::{
     MonitorDropReason, MonitorFilter, MonitorFrame, MonitorFrameType, MonitorFrameTypeMask,
@@ -26,23 +28,25 @@ pub use open_esp_radio_wifi_softmac::{
 };
 #[cfg(feature = "wifi")]
 pub use requests::{
-    MonitorCapturePolicy, MonitorRequest, StationDiscovery, StationRequest, StationScanChannelIter,
+    AccessPointRequest, AccessPointRequestError, AccessPointSecurity, MonitorCapturePolicy,
+    MonitorRequest, StationDiscovery, StationRequest, StationScanChannelIter,
     StationScanChannelOrderIter, StationScanChannels, StationScanChannelsError, StationScanPolicy,
     StationSecurity, WifiScanRequest, WifiServicePlanningError, WifiServicePlanningFailure,
-    WifiServiceRequest, WifiServiceRequestError, WifiServiceRequestFailure, WifiSsid,
-    WifiSsidError, WifiSupervisorConfiguration,
+    WifiServiceRequest, WifiServiceRequestError, WifiServiceRequestFailure,
+    WifiSupervisorConfiguration,
 };
 #[cfg(feature = "wifi")]
 pub use supervisor::{
-    RadioController, RadioSubsystemGeneration, WIFI_SCAN_RESULT_CAPACITY, WifiIdle, WifiMonitor,
-    WifiRoleStartFailure, WifiRoleStopFailure, WifiScanCompleted, WifiScanFailure,
-    WifiScanOperationFailure, WifiScanReport, WifiScanResult, WifiStartFailure, WifiStartReport,
-    WifiStartResult, WifiStation, WifiStopReport, WifiSupervisorPort,
+    RadioController, RadioSubsystemGeneration, WIFI_SCAN_RESULT_CAPACITY, WifiAccessPoint,
+    WifiIdle, WifiMonitor, WifiRoleStartFailure, WifiRoleStopFailure, WifiScanCompleted,
+    WifiScanFailure, WifiScanOperationFailure, WifiScanReport, WifiScanResult, WifiStartFailure,
+    WifiStartReport, WifiStartResult, WifiStation, WifiStopReport, WifiSupervisorPort,
 };
 
 #[cfg(feature = "wifi")]
 pub mod wifi {
     pub use open_esp_radio_ieee80211 as ieee80211;
+    pub use open_esp_radio_wifi_ap as ap;
     pub use open_esp_radio_wifi_softmac as softmac;
     pub use open_esp_radio_wifi_sta as sta;
     pub use open_esp_radio_wpa2 as wpa2;
@@ -57,6 +61,7 @@ pub mod esp32s31 {
     #[cfg(feature = "esp32s31-wifi")]
     pub mod wifi {
         pub use open_esp_radio_esp32s31_wifi as device;
+        pub use open_esp_radio_esp32s31_wifi_ap as ap;
         pub use open_esp_radio_esp32s31_wifi_dma as dma;
         pub use open_esp_radio_esp32s31_wifi_mac as mac;
         pub use open_esp_radio_esp32s31_wifi_sta as sta;
@@ -139,10 +144,7 @@ pub mod esp32s31 {
     mod start;
     #[cfg(all(feature = "esp32s31-wifi", target_arch = "riscv32"))]
     pub use start::{
-        Esp32s31MonitorMacStartFailure, Esp32s31MonitorReady, Esp32s31PreparedMonitor,
-        Esp32s31PreparedStation, Esp32s31RadioStartConfig, Esp32s31RadioStartFailure,
-        Esp32s31RoleMaterializationFailure, Esp32s31RoleMaterializationReason,
-        Esp32s31StartedRadio, Esp32s31StationMacStartFailure, Esp32s31StationReady,
+        Esp32s31RadioReady, Esp32s31RadioStartConfig, Esp32s31RadioStartFailure,
         Esp32s31WifiMacPlatform, Esp32s31WifiMacReady, Esp32s31WifiMacStartConfig,
         Esp32s31WifiMacStartFailure, Esp32s31WifiMacStartReport,
         Esp32s31WifiRuntimeTransitionReport, Esp32s31WifiStart, Esp32s31WifiStartConfig,

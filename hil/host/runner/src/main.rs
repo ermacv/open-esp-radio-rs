@@ -163,7 +163,7 @@ fn run() -> Result<()> {
                 }
                 Some(operation) => wifi_control::run(&operation, arguments.collect(), &root, &lab),
                 None => Err(
-                    "usage: cargo hil wifi <stop|start|scan|monitor|roundtrip|capture> [options]"
+                    "usage: cargo hil wifi <stop|start|scan|monitor|ap|roundtrip|capture> [options]"
                         .into(),
                 ),
             }
@@ -265,6 +265,7 @@ fn print_help() {
          cargo hil wifi start [options]\n\
          cargo hil wifi scan [options]\n\
          cargo hil wifi monitor [options]\n\
+         cargo hil wifi ap [options]\n\
          cargo hil wifi roundtrip [options]\n\
          cargo hil wifi capture --output <capture.pcapng> [options]\n\
          cargo hil oracle build\n\

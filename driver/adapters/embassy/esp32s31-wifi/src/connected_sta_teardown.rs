@@ -13,10 +13,8 @@ use open_esp_radio_esp32s31_wifi_mac::{
 };
 use open_esp_radio_ieee80211::station::StaTxSequenceCounters;
 
-use open_esp_radio_esp32s31_wifi_sta::{
-    ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer},
-    single_mpdu_tx::WifiTxResources,
-};
+use open_esp_radio_esp32s31_wifi::ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer};
+use open_esp_radio_esp32s31_wifi_sta::single_mpdu_tx::WifiTxResources;
 
 use crate::{
     aggregate_tx::{AggregateTxResources, Esp32s31ConnectedTx, Esp32s31ConnectedTxTeardownParts},

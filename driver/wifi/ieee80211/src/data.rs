@@ -29,6 +29,49 @@ pub enum DataInterfaceRole {
     AccessPoint,
 }
 
+/// Per-traffic-class IEEE 802.11 receive history.
+///
+/// A retransmission is a duplicate only when Retry is set and the complete
+/// Sequence Control value matches the last accepted MPDU in the same legacy
+/// or QoS/TID sequence space. The owner is role-neutral and is reset at every
+/// STA association or AP peer epoch.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RxDuplicateFilter {
+    last_sequence_control: [u16; 17],
+    valid: u32,
+}
+
+impl RxDuplicateFilter {
+    pub const fn new() -> Self {
+        Self {
+            last_sequence_control: [0; 17],
+            valid: 0,
+        }
+    }
+
+    #[inline(never)]
+    pub fn is_duplicate(&mut self, retry: bool, sequence_control: u16, tid: Option<u8>) -> bool {
+        let index = match tid {
+            Some(tid @ 0..=15) => usize::from(tid) + 1,
+            _ => 0,
+        };
+        let mask = 1_u32 << index;
+        if retry && self.valid & mask != 0 && self.last_sequence_control[index] == sequence_control
+        {
+            return true;
+        }
+        self.last_sequence_control[index] = sequence_control;
+        self.valid |= mask;
+        false
+    }
+}
+
+impl Default for RxDuplicateFilter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// HE-Control policy for an ordinary QoS data MPDU.
 ///
 /// The ESP32-S31 vendor path sets Frame Control's Order bit while keeping

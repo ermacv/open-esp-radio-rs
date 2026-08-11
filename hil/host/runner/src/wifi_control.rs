@@ -8,7 +8,8 @@ use std::{
 };
 
 use open_esp_radio_hil_protocol::{
-    WifiMonitorRequest, WifiRole, WifiRoleTransitionEvidence, WifiScanEvidence, WifiScanRequest,
+    NetworkCredentials, WifiAccessPointRequest, WifiMonitorRequest, WifiRole,
+    WifiRoleTransitionEvidence, WifiScanEvidence, WifiScanRequest,
 };
 
 use crate::{
@@ -28,6 +29,7 @@ enum Operation {
     Start,
     Scan,
     Monitor,
+    AccessPoint,
     Roundtrip,
 }
 
@@ -38,6 +40,7 @@ impl Operation {
             "start" => Ok(Self::Start),
             "scan" => Ok(Self::Scan),
             "monitor" => Ok(Self::Monitor),
+            "ap" => Ok(Self::AccessPoint),
             "roundtrip" => Ok(Self::Roundtrip),
             _ => Err(format!("unknown Wi-Fi lifecycle operation `{value}`").into()),
         }
@@ -49,6 +52,7 @@ impl Operation {
             Self::Start => "start",
             Self::Scan => "scan",
             Self::Monitor => "monitor",
+            Self::AccessPoint => "ap",
             Self::Roundtrip => "roundtrip",
         }
     }
@@ -121,6 +125,47 @@ fn qualify(
     if operation == Operation::Start {
         start_station(capture, options.timeout)?;
         report_stack(capture, options.timeout, "station-started")?;
+        return Ok(());
+    }
+
+    if operation == Operation::AccessPoint {
+        if !capabilities.features.wifi_access_point {
+            return Err("firmware does not advertise the access-point role".into());
+        }
+        let channel = options.monitor_channel.unwrap_or(6);
+        let (ssid, passphrase) = lab.station.credentials();
+        let request = WifiAccessPointRequest {
+            credentials: NetworkCredentials::try_new(ssid.as_bytes(), passphrase.as_bytes())
+                .map_err(|error| format!("invalid AP credentials: {error}"))?,
+            channel,
+        };
+        let started = capture.wait_access_point_start(
+            capture.request_access_point_start(request)?,
+            options.timeout,
+        )?;
+        require_transition(started, WifiRole::Idle, WifiRole::AccessPoint)?;
+        report_stack(capture, options.timeout, "access-point-started")?;
+        thread::sleep(options.monitor_duration);
+        let stopped = capture
+            .wait_access_point_stop(capture.request_access_point_stop()?, options.timeout)?;
+        if stopped.generation != started.generation
+            || stopped.channel != channel
+            || stopped.beacons_transmitted == 0
+        {
+            return Err(format!("access point returned inconsistent evidence: {stopped:?}").into());
+        }
+        println!(
+            "wifi_ap_generation={} channel={} beacons={} auth_responses={} assoc_responses={} authorized_peers={} peer_removals={}",
+            stopped.generation,
+            stopped.channel,
+            stopped.beacons_transmitted,
+            stopped.authentication_responses,
+            stopped.association_responses,
+            stopped.authorized_peers,
+            stopped.peer_removals,
+        );
+        start_station(capture, options.timeout)?;
+        report_stack(capture, options.timeout, "station-restarted")?;
         return Ok(());
     }
 
@@ -307,7 +352,7 @@ fn print_help(operation: Operation) {
          --timeout-seconds <n>    role-transition deadline, 10..=180 (default 90)\n\
          --external-ap            use a caller-owned access point\n\
          --monitor-seconds <n>    monitor dwell, 1..=30 (default 3)\n\
-         --channel <1..=13>       monitor channel; default is discovered by scan\n\
+         --channel <1..=13>       monitor channel, or AP channel (default 6)\n\
          --snapshot-length <n>    0 for complete frames, otherwise 1..=2304",
         operation.name()
     );

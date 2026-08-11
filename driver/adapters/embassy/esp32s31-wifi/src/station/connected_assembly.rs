@@ -8,9 +8,7 @@
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use open_esp_radio_embassy_net::{PinnedTxFrame, SplitPinnedRadioRunner};
-use open_esp_radio_esp32s31_wifi_sta::ordinary_tx::{
-    WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer,
-};
+use open_esp_radio_esp32s31_wifi::ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer};
 
 use crate::{
     aggregate_tx::Esp32s31ConnectedTx,

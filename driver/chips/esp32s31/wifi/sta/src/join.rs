@@ -10,10 +10,8 @@ use core::future::Future;
 use open_esp_radio_esp32s31_wifi_mac::tx::TxCompletion;
 use open_esp_radio_ieee80211::station::{AssociationRequest, OpenAuthenticationRequest};
 
-use crate::{
-    association::{Esp32s31StaAssociationProfile, Esp32s31StaAssociationProfileError},
-    tx::WifiTxPowerProfile,
-};
+use crate::association::{Esp32s31StaAssociationProfile, Esp32s31StaAssociationProfileError};
+use open_esp_radio_esp32s31_wifi::tx::WifiTxPowerProfile;
 
 /// RX capability consumed by a concrete ESP32-S31 join adapter.
 pub trait Esp32s31StaJoinReceive<H> {

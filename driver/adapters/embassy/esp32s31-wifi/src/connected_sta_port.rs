@@ -7,6 +7,7 @@
 
 use embassy_sync::channel::Receiver;
 use open_esp_radio_embassy_net::{PinnedTxFrame, RawMutex};
+use open_esp_radio_esp32s31_wifi::ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer};
 use open_esp_radio_esp32s31_wifi_mac::{
     capabilities::ESP32S31_MAC_SERVICE_CAPABILITIES,
     connected_rx::{ConnectedRxConfig, ConnectedRxDispatcher},
@@ -22,7 +23,6 @@ use open_esp_radio_esp32s31_wifi_mac::{
 use open_esp_radio_esp32s31_wifi_sta::peer::{Esp32s31ConnectedStaPeer, Esp32s31StaConnectedLink};
 use open_esp_radio_esp32s31_wifi_sta::{
     control_tx::Esp32s31ControlTx,
-    ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer},
     single_mpdu_tx::{ConnectedTxHandoff, SingleMpduTxConfig},
 };
 use open_esp_radio_ieee80211::{

@@ -5,12 +5,9 @@
 //! exists; placeholder switches are deliberately absent.
 
 pub use open_esp_radio_wifi_softmac::{
-    WifiConfig, WifiConfigError, WifiMacAddress, WifiMacAddressError, WifiMonitorConfig, WifiPlan,
-    WifiStandaloneMonitorPlan, WifiStationConfig,
+    WifiAccessPointConfig, WifiConfig, WifiConfigError, WifiMacAddress, WifiMacAddressError,
+    WifiMonitorConfig, WifiPlan, WifiStandaloneMonitorPlan, WifiStationConfig,
 };
-
-#[cfg(test)]
-use open_esp_radio_wifi_softmac::WifiAccessPointConfig;
 
 #[cfg(all(test, feature = "esp32s31-wifi"))]
 mod tests {

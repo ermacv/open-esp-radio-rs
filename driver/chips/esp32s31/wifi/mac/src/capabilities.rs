@@ -68,6 +68,10 @@ pub const ESP32S31_MAC_SERVICE_CAPABILITIES: MacServiceCapabilities = MacService
         // not the size of the underlying hardware key table.
         station_pairwise_ccmp_slots: 1,
         station_group_ccmp_slots: 1,
+        // AP hardware entries are proven below the capability boundary, but
+        // remain unadvertised until the AP owner graph passes HIL qualification.
+        access_point_pairwise_ccmp_slots: 0,
+        access_point_group_ccmp_slots: 0,
     },
 };
 

@@ -23,7 +23,43 @@ pub struct MacStaReceivePolicySnapshot {
     pub beacon_filter_control: u8,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MacApReceivePolicySnapshot {
+    pub queue_one_policy: u32,
+    pub bssid: [u8; 6],
+    pub bssid_address_check_enabled: bool,
+    pub interface_is_soft_ap: bool,
+    pub interface_rx_policy_enabled: bool,
+}
+
 impl RadioRegisters {
+    pub fn ap_receive_policy_snapshot(&self) -> MacApReceivePolicySnapshot {
+        let bssids = &self.peripherals.wifi_mac_bssid_policy;
+        let bssid_low = bssids.bssid_low(1).read().bytes_0_3().bits().to_le_bytes();
+        let bssid_high = bssids.bssid_high(1).read();
+        let high = bssid_high.bssid_high().bits().to_le_bytes();
+        MacApReceivePolicySnapshot {
+            queue_one_policy: self.peripherals.wifi_mac_rx_filter.policy(1).read().bits(),
+            bssid: [
+                bssid_low[0],
+                bssid_low[1],
+                bssid_low[2],
+                bssid_low[3],
+                high[0],
+                high[1],
+            ],
+            bssid_address_check_enabled: bssid_high.address_check_enable().bit_is_set(),
+            interface_is_soft_ap: bssid_high.interface_is_soft_ap().bit_is_set(),
+            interface_rx_policy_enabled: self
+                .peripherals
+                .wifi_mac_interface_address
+                .address_high(1)
+                .read()
+                .rx_policy_enable()
+                .bit_is_set(),
+        }
+    }
+
     /// Snapshot every register frontier that can suppress associated-STA
     /// beacons while still admitting directed management traffic.
     pub fn sta_receive_policy_snapshot(&self) -> MacStaReceivePolicySnapshot {
@@ -208,6 +244,53 @@ impl RadioRegisters {
         filter.modify(|_, w| w.receive_unicast_check_bssid().set_bit());
         filter.modify(|_, w| w.dump_unicast_check_bssid().set_bit());
 
+        device_fence();
+    }
+
+    /// Activate the exact first-interface SoftAP receive policy.
+    ///
+    /// SOURCE: complete `libnet80211.a::wifi_set_rx_policy`, case eight,
+    /// executed through the workbench with `a0=8`. It calls
+    /// `ic_set_mac(1, ap)`, `ic_set_bssid(1, ap)` and
+    /// `ic_set_rx_policy(1, 0, 1, 1)`. Unlike station policy six it does not
+    /// call `ic_set_rx_policy_ubssid_check`.
+    pub fn apply_ap_receive_policy(&mut self, access_point: [u8; 6]) {
+        self.program_receive_interface_address(1, access_point);
+
+        let filter = self.peripherals.wifi_mac_rx_filter.policy(1);
+        let bssids = &self.peripherals.wifi_mac_bssid_policy;
+        let bssid = bssids.bssid_high(1);
+        let interface = self.peripherals.wifi_mac_interface_address.address_high(1);
+
+        // `ic_set_bssid(1, ap)` / complete `hal_mac_set_bssid`.
+        bssid.modify(|_, w| w.address_check_enable().clear_bit());
+        open_esp_radio_esp32s31_pac::zero_based_field_write::mac_bssid_address_low(
+            bssids,
+            1,
+            u32::from_le_bytes([
+                access_point[0],
+                access_point[1],
+                access_point[2],
+                access_point[3],
+            ]),
+        );
+        bssid.modify(|_, w| {
+            w.bssid_high()
+                .set(u16::from_le_bytes([access_point[4], access_point[5]]))
+        });
+        bssid.modify(|_, w| w.address_check_enable().set_bit());
+
+        // `ic_set_rx_policy(interface=1, mode=0, control=1, management=1)`.
+        filter.modify(|_, w| {
+            w.receive_management_not_check_bssid()
+                .clear_bit()
+                .pass_beacon()
+                .clear_bit()
+        });
+        bssid.modify(|_, w| w.interface_is_soft_ap().set_bit());
+        filter.modify(|_, w| w.dump_management_not_check_bssid().clear_bit());
+        bssid.modify(|_, w| w.address_check_enable().set_bit());
+        interface.modify(|_, w| w.rx_policy_enable().set_bit());
         device_fence();
     }
 }

@@ -7,84 +7,12 @@
 
 use core::{fmt, num::NonZeroU16};
 
-use open_esp_radio_ieee80211::{management::MAX_SSID_LEN, station::StaAssociationPreference};
+pub use open_esp_radio_ieee80211::ssid::{WifiSsid, WifiSsidError};
+use open_esp_radio_ieee80211::station::StaAssociationPreference;
 
 const CHANNEL_ONE_BIT: u16 = 1;
 const CHANNEL_FOURTEEN_BIT: u16 = 1 << 13;
 const ALL_2_4_GHZ_CHANNEL_BITS: u16 = (CHANNEL_FOURTEEN_BIT << 1) - 1;
-
-/// Binary IEEE 802.11 SSID with its protocol length validated once.
-///
-/// An SSID is not required to be UTF-8. Keeping bytes here prevents an
-/// application facade from inventing a text-only restriction absent from the
-/// wire protocol.
-#[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd)]
-pub struct WifiSsid {
-    bytes: [u8; MAX_SSID_LEN],
-    length: u8,
-}
-
-impl WifiSsid {
-    pub fn new(bytes: &[u8]) -> Result<Self, WifiSsidError> {
-        if bytes.is_empty() {
-            return Err(WifiSsidError::Empty);
-        }
-        if bytes.len() > MAX_SSID_LEN {
-            return Err(WifiSsidError::TooLong {
-                length: bytes.len(),
-                maximum: MAX_SSID_LEN,
-            });
-        }
-        let mut stored = [0; MAX_SSID_LEN];
-        stored[..bytes.len()].copy_from_slice(bytes);
-        Ok(Self {
-            bytes: stored,
-            length: bytes.len() as u8,
-        })
-    }
-
-    pub fn as_bytes(&self) -> &[u8] {
-        &self.bytes[..usize::from(self.length)]
-    }
-
-    pub const fn len(&self) -> usize {
-        self.length as usize
-    }
-
-    pub const fn is_empty(&self) -> bool {
-        false
-    }
-}
-
-impl fmt::Debug for WifiSsid {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("WifiSsid")
-            .field("bytes", &self.as_bytes())
-            .finish()
-    }
-}
-
-/// Invalid station SSID.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum WifiSsidError {
-    Empty,
-    TooLong { length: usize, maximum: usize },
-}
-
-impl fmt::Display for WifiSsidError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Empty => formatter.write_str("a station SSID cannot be empty"),
-            Self::TooLong { length, maximum } => write!(
-                formatter,
-                "station SSID contains {length} bytes; the maximum is {maximum}"
-            ),
-        }
-    }
-}
-
-impl core::error::Error for WifiSsidError {}
 
 /// Allocation-free set of 2.4-GHz primary channels selected for scanning.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -285,6 +213,7 @@ impl StationDiscovery {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use open_esp_radio_ieee80211::management::MAX_SSID_LEN;
 
     #[test]
     fn ssid_is_binary_and_length_checked() {

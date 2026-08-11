@@ -10,6 +10,7 @@
 #[cfg(test)]
 extern crate std;
 
+pub mod ap_policy;
 pub mod capabilities;
 pub mod channel_state;
 mod cold_antenna;

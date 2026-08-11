@@ -304,6 +304,7 @@ pub fn set_wifi_role(role: WifiRole) {
         WifiRole::Idle => 1,
         WifiRole::Station => 2,
         WifiRole::Monitor => 3,
+        WifiRole::AccessPoint => 4,
     };
     WIFI_ROLE_STATE.store(encoded, Ordering::Release);
 }
@@ -313,6 +314,7 @@ fn wifi_role_is(role: WifiRole) -> bool {
         WifiRole::Idle => 1,
         WifiRole::Station => 2,
         WifiRole::Monitor => 3,
+        WifiRole::AccessPoint => 4,
     };
     WIFI_ROLE_STATE.load(Ordering::Acquire) == expected
 }
@@ -839,6 +841,18 @@ pub async fn protocol_task(capabilities: Capabilities) {
                         };
                         publish_event_reliably(session_id, request_id, response).await;
                     }
+                    Command::StartAccessPoint(_) | Command::StopAccessPoint => {
+                        // The wire contract is available before the production
+                        // target advertises AP capability. Do not enqueue a
+                        // role request until AP owns complete DMA/IRQ and
+                        // network-lifecycle implementations.
+                        publish_event_reliably(
+                            session_id,
+                            request_id,
+                            Event::Rejected(RejectReason::Unsupported),
+                        )
+                        .await;
+                    }
                     Command::CaptureMonitor(request) => {
                         let valid = (1..=13).contains(&request.channel)
                             && request.snapshot_length <= 2_304
@@ -1081,6 +1095,8 @@ async fn write_event_async(
                 | Event::WifiMonitorStarted(_)
                 | Event::WifiMonitorStopped(_)
                 | Event::WifiMonitorCaptureCompleted(_)
+                | Event::WifiAccessPointStarted(_)
+                | Event::WifiAccessPointStopped(_)
         ) {
             SERIALIZED_WIFI_EVENT_NEXT
                 .store(event.message_sequence.wrapping_add(1), Ordering::Release);

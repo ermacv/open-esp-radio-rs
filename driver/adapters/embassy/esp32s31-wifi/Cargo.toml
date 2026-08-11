@@ -18,6 +18,7 @@ open-esp-radio-esp32s31-phy = { path = "../../../chips/esp32s31/phy" }
 open-esp-radio-esp32s31-wifi = { path = "../../../chips/esp32s31/wifi" }
 open-esp-radio-esp32s31-wifi-dma = { path = "../../../chips/esp32s31/wifi/dma" }
 open-esp-radio-esp32s31-wifi-mac = { path = "../../../chips/esp32s31/wifi/mac" }
+open-esp-radio-esp32s31-wifi-ap = { path = "../../../chips/esp32s31/wifi/ap" }
 open-esp-radio-esp32s31-wifi-sta = { path = "../../../chips/esp32s31/wifi/sta" }
 open-esp-radio-ieee80211 = { path = "../../../wifi/ieee80211" }
 open-esp-radio-wifi-softmac = { path = "../../../wifi/softmac" }

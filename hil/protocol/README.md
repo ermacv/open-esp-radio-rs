@@ -51,6 +51,8 @@ correlated completion only after the production typestate transition returns:
 - `StopStation` / `StartStation`: `Station <-> Idle`;
 - `ScanWifi`: finite `Idle -> Scan -> Idle` plus a compact scan summary;
 - `StartMonitor` / `StopMonitor`: `Idle <-> Monitor` plus capture counts;
+- `StartAccessPoint` / `StopAccessPoint`: bounded WPA2-Personal
+  `Idle <-> AccessPoint`; availability is a separate advertised capability;
 - unsolicited lifecycle: connected, peer loss, attempt failure and retry
   exhaustion.
 

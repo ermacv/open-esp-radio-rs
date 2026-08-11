@@ -14,7 +14,7 @@ use open_esp_radio_esp32s31_wifi_mac::{
     rx_ampdu_hw::{S31RxBlockAckAgreement, S31RxBlockAckAgreementError},
     tx::{HardwareOwnedTxDma, LegacyRate, PreparedTxDma, TxCompletion, TxHardware, TxSlot},
     tx_ampdu::{BlockAckAction, STA_TX_BLOCK_ACK_TIDS, StaTxBlockAckSessions},
-    tx_runtime::StaTxRuntimePolicy,
+    tx_runtime::WifiTxRuntimePolicy,
 };
 use open_esp_radio_esp32s31_wifi_sta::single_mpdu_tx::{
     Esp32s31SingleMpduTx, SingleMpduTxConfig, SingleMpduTxOutcome, WifiTxPowerPair,
@@ -191,7 +191,7 @@ fn make_tx<'a>(
     Esp32s31SingleMpduTx::new(
         open_esp_radio_esp32s31_wifi_sta::single_mpdu_tx::WifiTxResources {
             slot,
-            policy: StaTxRuntimePolicy::vendor_defaults(),
+            policy: WifiTxRuntimePolicy::vendor_defaults(),
             power: Power,
             entropy,
             timer: Timer::default(),

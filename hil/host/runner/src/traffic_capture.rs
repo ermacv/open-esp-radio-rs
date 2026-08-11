@@ -677,6 +677,17 @@ impl SerialCapture {
         self.request_wifi_command(Command::StopMonitor, "monitor stop")
     }
 
+    pub(crate) fn request_access_point_start(
+        &self,
+        request: open_esp_radio_hil_protocol::WifiAccessPointRequest,
+    ) -> Result<WifiCommandHandle> {
+        self.request_wifi_command(Command::StartAccessPoint(request), "access-point start")
+    }
+
+    pub(crate) fn request_access_point_stop(&self) -> Result<WifiCommandHandle> {
+        self.request_wifi_command(Command::StopAccessPoint, "access-point stop")
+    }
+
     pub(crate) fn request_monitor_capture(
         &self,
         request: WifiMonitorCaptureRequest,
@@ -732,6 +743,40 @@ impl SerialCapture {
         match event.body {
             Event::WifiMonitorStarted(evidence) => Ok(evidence),
             _ => unreachable!("monitor-start predicate accepted only its completion event"),
+        }
+    }
+
+    pub(crate) fn wait_access_point_start(
+        &self,
+        handle: WifiCommandHandle,
+        timeout: Duration,
+    ) -> Result<WifiRoleTransitionEvidence> {
+        let event = self
+            .wait_for_protocol_after(handle.first_event, timeout, |message| {
+                message.request_id == handle.request_id
+                    && matches!(message.body, Event::WifiAccessPointStarted(_))
+            })
+            .ok_or("device did not complete the access-point start")?;
+        match event.body {
+            Event::WifiAccessPointStarted(evidence) => Ok(evidence),
+            _ => unreachable!("AP-start predicate accepted only its completion event"),
+        }
+    }
+
+    pub(crate) fn wait_access_point_stop(
+        &self,
+        handle: WifiCommandHandle,
+        timeout: Duration,
+    ) -> Result<open_esp_radio_hil_protocol::WifiAccessPointEvidence> {
+        let event = self
+            .wait_for_protocol_after(handle.first_event, timeout, |message| {
+                message.request_id == handle.request_id
+                    && matches!(message.body, Event::WifiAccessPointStopped(_))
+            })
+            .ok_or("device did not complete the access-point stop")?;
+        match event.body {
+            Event::WifiAccessPointStopped(evidence) => Ok(evidence),
+            _ => unreachable!("AP-stop predicate accepted only its completion event"),
         }
     }
 

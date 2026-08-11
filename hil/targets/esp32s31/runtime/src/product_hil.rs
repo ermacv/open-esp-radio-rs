@@ -47,12 +47,11 @@ use open_esp_radio_hil_esp32s31_telemetry::{
 };
 use open_esp_radio_hil_protocol::{
     Capabilities, Event as HilEvent, FeatureCapabilities, MAX_WIRE_FRAME_BYTES, NetworkInfo,
-    NetworkIpv4Configuration, StartupArtifactDisposition, StationDisconnectReason,
-    StationAttemptFailureReason, StationEpochEvidence, StationFailureStage,
-    StationLifecycleEvent, WIFI_MONITOR_FRAME_CHUNK_MAX_LEN,
-    WifiMonitorCaptureRequest, WifiMonitorEvidence, WifiMonitorEvidenceSource,
-    WifiMonitorFrameChunk, WifiMonitorObserved, WifiMonitorPhyEvidence, WifiMonitorPhyFormat,
-    WifiRole, WifiRoleTransitionEvidence, WifiScanEvidence,
+    NetworkIpv4Configuration, StartupArtifactDisposition, StationAttemptFailureReason,
+    StationDisconnectReason, StationEpochEvidence, StationFailureStage, StationLifecycleEvent,
+    WIFI_MONITOR_FRAME_CHUNK_MAX_LEN, WifiMonitorCaptureRequest, WifiMonitorEvidence,
+    WifiMonitorEvidenceSource, WifiMonitorFrameChunk, WifiMonitorObserved, WifiMonitorPhyEvidence,
+    WifiMonitorPhyFormat, WifiRole, WifiRoleTransitionEvidence, WifiScanEvidence,
 };
 use static_cell::ConstStaticCell;
 
@@ -392,6 +391,7 @@ pub const fn hil_capabilities() -> Capabilities {
             startup_artifact: true,
             station_epoch_control: true,
             wifi_role_control: true,
+            wifi_access_point: false,
             wifi_monitor_capture: true,
             station_lifecycle_events: true,
             rx_delivery_evidence: OPEN_RADIO_RX_DELIVERY_TELEMETRY,

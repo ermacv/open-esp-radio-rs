@@ -11,10 +11,10 @@ use core::future::Future;
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use embassy_time::Timer;
+use open_esp_radio_esp32s31_wifi::ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer};
 use open_esp_radio_esp32s31_wifi_mac::{rx::RxDma, tx::TxHardware};
 use open_esp_radio_esp32s31_wifi_sta::{
     control_tx::ControlTxError,
-    ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer},
     scan::{Esp32s31ActiveProbeOutcome, Esp32s31StaScanPort},
     scan_tx::{Esp32s31RunningScanTx, Esp32s31ScanProbeReport, Esp32s31ScanProbeRequest},
 };

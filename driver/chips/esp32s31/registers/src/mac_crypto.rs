@@ -1,4 +1,4 @@
-//! Generated-PAC ownership for finite STA CCMP key-table transactions.
+//! Generated-PAC ownership for finite Wi-Fi CCMP key-table transactions.
 
 #![forbid(unsafe_code)]
 
@@ -8,6 +8,7 @@ const KEY_ENTRY_COUNT: u8 = 25;
 const KEY_ENTRY_WORDS: usize = 10;
 const PROGRAMMED_CCMP_WORDS: usize = 6;
 const STA_INTERFACE: usize = 0;
+const AP_INTERFACE: usize = 1;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum MacKeyInstallOutcome {
@@ -65,7 +66,30 @@ impl RadioRegisters {
         index: u8,
         words: [u32; PROGRAMMED_CCMP_WORDS],
     ) -> MacKeyInstallOutcome {
+        self.install_ccmp_key_entry(STA_INTERFACE, index, words)
+    }
+
+    /// Install one six-word AP CCMP image into an invalid hardware entry.
+    ///
+    /// SOURCE: complete `wDev_Insert_KeyEntry` passes interface one to the
+    /// same `hal_crypto_enable` transaction. AP group keys occupy logical
+    /// slots 1..=4; the first associated AP peer observed hardware slot 8.
+    pub fn install_ap_ccmp_key_entry(
+        &mut self,
+        index: u8,
+        words: [u32; PROGRAMMED_CCMP_WORDS],
+    ) -> MacKeyInstallOutcome {
+        self.install_ccmp_key_entry(AP_INTERFACE, index, words)
+    }
+
+    fn install_ccmp_key_entry(
+        &mut self,
+        interface: usize,
+        index: u8,
+        words: [u32; PROGRAMMED_CCMP_WORDS],
+    ) -> MacKeyInstallOutcome {
         assert!(index < KEY_ENTRY_COUNT);
+        assert!(interface <= AP_INTERFACE);
         let valid_bit = 1_u32 << index;
         let validity = self
             .peripherals
@@ -95,7 +119,7 @@ impl RadioRegisters {
         );
         super::svd::zero_based_field_write::mac_crypto_interface_control(
             control,
-            STA_INTERFACE,
+            interface,
             0x0003_0103,
             0,
         );
@@ -103,7 +127,7 @@ impl RadioRegisters {
             .policy_control()
             .modify(|_, w| w.ordinary_enable_clear_unknown().set(0));
         control
-            .interface_control(STA_INTERFACE)
+            .interface_control(interface)
             .modify(|_, w| w.mode_high_unknown().set(0));
         device_fence();
 

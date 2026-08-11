@@ -19,6 +19,7 @@ pub mod he;
 pub mod management;
 pub mod ndpa;
 pub mod scan;
+pub mod ssid;
 pub mod station;
 pub mod station_beacon;
 pub mod station_power_save;

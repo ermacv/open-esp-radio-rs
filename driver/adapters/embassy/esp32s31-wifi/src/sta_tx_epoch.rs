@@ -2,10 +2,12 @@
 
 use core::pin::Pin;
 
-use open_esp_radio_esp32s31_wifi_mac::{tx::TxSlot, tx_runtime::StaTxRuntimePolicy};
+use open_esp_radio_esp32s31_wifi::tx::{
+    ControlTxConfig, WifiTxEntropy, WifiTxPowerProfile, WifiTxResources, WifiTxTimer,
+};
+use open_esp_radio_esp32s31_wifi_mac::{tx::TxSlot, tx_runtime::WifiTxRuntimePolicy};
 use open_esp_radio_esp32s31_wifi_sta::{
     control_tx::Esp32s31ControlTx,
-    tx::{ControlTxConfig, WifiTxEntropy, WifiTxPowerProfile, WifiTxResources, WifiTxTimer},
     tx_epoch::{Esp32s31StaTxEpoch, Esp32s31StaTxEpochError},
 };
 
@@ -61,7 +63,7 @@ where
         Self::new(
             WifiTxResources {
                 slot,
-                policy: StaTxRuntimePolicy::vendor_defaults(),
+                policy: WifiTxRuntimePolicy::vendor_defaults(),
                 power,
                 entropy,
                 timer,

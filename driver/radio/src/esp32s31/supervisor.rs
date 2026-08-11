@@ -67,23 +67,30 @@ where
 /// epochs. Starting a role consumes the corresponding resource graph together
 /// with `wifi`; a clean exit must return both before this value can exist
 /// again.
-pub struct Esp32s31WifiSupervisorStopped<P, S, M> {
+pub struct Esp32s31WifiSupervisorStopped<P, S, A, M> {
     pub wifi: Esp32s31WifiStopped<P>,
     pub station: S,
+    pub access_point: A,
     pub monitor: M,
 }
 
-impl<P, S, M> Esp32s31WifiSupervisorStopped<P, S, M> {
-    pub const fn new(wifi: Esp32s31WifiStopped<P>, station: S, monitor: M) -> Self {
+impl<P, S, A, M> Esp32s31WifiSupervisorStopped<P, S, A, M> {
+    pub const fn new(
+        wifi: Esp32s31WifiStopped<P>,
+        station: S,
+        access_point: A,
+        monitor: M,
+    ) -> Self {
         Self {
             wifi,
             station,
+            access_point,
             monitor,
         }
     }
 
-    pub fn into_parts(self) -> (Esp32s31WifiStopped<P>, S, M) {
-        (self.wifi, self.station, self.monitor)
+    pub fn into_parts(self) -> (Esp32s31WifiStopped<P>, S, A, M) {
+        (self.wifi, self.station, self.access_point, self.monitor)
     }
 }
 

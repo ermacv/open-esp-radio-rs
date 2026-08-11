@@ -16,16 +16,16 @@ use open_esp_radio_esp32s31_wifi_mac::{
         HtTxConfig, LegacyTxConfig, LegacyTxQueue, TxCompletion, TxCookie, TxError, TxHardware,
         TxPhyRate, TxSlot, TxSlotState,
     },
-    tx_runtime::{StaTxRuntimePolicy, UnicastRetryDecision, UnicastRetryError, UnicastRetryState},
+    tx_runtime::{UnicastRetryDecision, UnicastRetryError, UnicastRetryState, WifiTxRuntimePolicy},
 };
 use open_esp_radio_wifi_softmac::{MacTxPlan, MacTxQueueState, MacTxResult, MacTxStatus};
 
 use crate::tx::{WifiTxProgress, WifiTxWake};
 
-pub(crate) const TX_METADATA_SIZE: usize = 8;
+pub const TX_METADATA_SIZE: usize = 8;
 /// Hardware-appended CCMP MIC bytes accounted for by descriptor publication.
 pub const TX_CCMP_MIC_SIZE: usize = 8;
-pub(crate) const TX_FCS_SIZE: usize = 4;
+pub const TX_FCS_SIZE: usize = 4;
 const TX_ABORT_SETTLE_US: u64 = 16;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -95,7 +95,7 @@ impl From<UnicastRetryError> for OrdinaryTxError {
 
 /// Everything needed to publish one already encoded MPDU.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct OrdinaryTxPlan {
+pub struct OrdinaryTxPlan {
     pub frame_length: usize,
     pub descriptor_capacity: Option<u32>,
     /// Portable exchange policy translated by this ESP32-S31 adapter.
@@ -123,12 +123,12 @@ struct ActiveTx {
 }
 
 /// Unique ordinary-MPDU descriptor and retry owner shared by protocol phases.
-pub(crate) struct OrdinaryTxOwner<'slot, P, E, T, const BUFFER_SIZE: usize> {
-    pub(crate) slot: Pin<&'slot mut TxSlot<BUFFER_SIZE>>,
-    policy: StaTxRuntimePolicy,
+pub struct OrdinaryTxOwner<'slot, P, E, T, const BUFFER_SIZE: usize> {
+    pub slot: Pin<&'slot mut TxSlot<BUFFER_SIZE>>,
+    policy: WifiTxRuntimePolicy,
     power: P,
     entropy: E,
-    pub(crate) timer: T,
+    pub timer: T,
     active: Option<ActiveTx>,
     last_outcome: Option<OrdinaryTxOutcome>,
 }
@@ -163,12 +163,12 @@ where
     }
 
     /// Exact descriptor lifecycle state retained for ownership diagnostics.
-    pub(crate) fn slot_state(&self) -> TxSlotState {
+    pub fn slot_state(&self) -> TxSlotState {
         self.slot.as_ref().get_ref().state()
     }
 
     /// Current hardware-visible descriptor ownership word.
-    pub(crate) fn descriptor_word0(&self) -> u32 {
+    pub fn descriptor_word0(&self) -> u32 {
         self.slot.as_ref().get_ref().descriptor_word0()
     }
 
@@ -185,11 +185,11 @@ where
         }
     }
 
-    pub const fn policy(&self) -> &StaTxRuntimePolicy {
+    pub const fn policy(&self) -> &WifiTxRuntimePolicy {
         &self.policy
     }
 
-    pub fn policy_mut(&mut self) -> &mut StaTxRuntimePolicy {
+    pub fn policy_mut(&mut self) -> &mut WifiTxRuntimePolicy {
         &mut self.policy
     }
 
@@ -203,9 +203,7 @@ where
     /// callers must drive it to a terminal outcome or reset the radio before
     /// attempting a station lifecycle transition again.
     #[allow(clippy::result_large_err)]
-    pub(crate) fn try_into_resources(
-        self,
-    ) -> Result<WifiTxResources<'slot, P, E, T, BUFFER_SIZE>, Self> {
+    pub fn try_into_resources(self) -> Result<WifiTxResources<'slot, P, E, T, BUFFER_SIZE>, Self> {
         if self.queue_state() != MacTxQueueState::Ready {
             return Err(self);
         }
@@ -227,7 +225,7 @@ where
         })
     }
 
-    pub(crate) fn contention_publication(
+    pub fn contention_publication(
         &mut self,
         queue: LegacyTxQueue,
     ) -> (EdcaContentionParameters, u16) {
@@ -236,19 +234,19 @@ where
         (parameters, backoff)
     }
 
-    pub(crate) fn record_retry_failure(&mut self, queue: LegacyTxQueue) {
+    pub fn record_retry_failure(&mut self, queue: LegacyTxQueue) {
         self.policy.record_retry_failure(queue);
     }
 
-    pub(crate) fn record_success(&mut self, queue: LegacyTxQueue) {
+    pub fn record_success(&mut self, queue: LegacyTxQueue) {
         self.policy.record_success(queue);
     }
 
-    pub(crate) fn reset_terminal_exchange(&mut self, queue: LegacyTxQueue) {
+    pub fn reset_terminal_exchange(&mut self, queue: LegacyTxQueue) {
         self.policy.reset_terminal_exchange(queue);
     }
 
-    pub(crate) fn after_micros(&mut self, micros: u64) -> impl Future<Output = ()> + '_ {
+    pub fn after_micros(&mut self, micros: u64) -> impl Future<Output = ()> + '_ {
         self.timer.after_micros(micros)
     }
 

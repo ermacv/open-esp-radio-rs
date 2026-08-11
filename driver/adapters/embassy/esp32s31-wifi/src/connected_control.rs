@@ -51,9 +51,9 @@ impl<P, E, T, const BUFFER_SIZE: usize> ConnectedControlTimer
         BUFFER_SIZE,
     >
 where
-    P: open_esp_radio_esp32s31_wifi_sta::ordinary_tx::WifiTxPowerProfile,
-    E: open_esp_radio_esp32s31_wifi_sta::ordinary_tx::WifiTxEntropy,
-    T: open_esp_radio_esp32s31_wifi_sta::ordinary_tx::WifiTxTimer,
+    P: open_esp_radio_esp32s31_wifi::ordinary_tx::WifiTxPowerProfile,
+    E: open_esp_radio_esp32s31_wifi::ordinary_tx::WifiTxEntropy,
+    T: open_esp_radio_esp32s31_wifi::ordinary_tx::WifiTxTimer,
 {
     fn wait_until_micros(&mut self, deadline_micros: u64) -> impl Future<Output = ()> + '_ {
         open_esp_radio_esp32s31_wifi_sta::single_mpdu_tx::Esp32s31SingleMpduTx::wait_until_micros(

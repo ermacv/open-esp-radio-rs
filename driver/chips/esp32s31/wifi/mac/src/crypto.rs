@@ -10,6 +10,10 @@ use open_esp_radio_ieee80211::ccmp::ccmp_header;
 
 const STA_PAIRWISE_HARDWARE_INDEX: u8 = 4;
 const STA_GROUP_HARDWARE_INDEX: u8 = 1;
+// The first statically provisioned vendor AP peer used pairwise slot 8.
+// AP GTK key id one maps to `1 + key_id`, therefore slot 2.
+const AP_PAIRWISE_HARDWARE_INDEX: u8 = 8;
+const AP_GROUP_HARDWARE_INDEX_BASE: u8 = 1;
 const MAX_WPA2_GTK_ID: u8 = 3;
 const PAIRWISE_LOGICAL_KEY_INDEX: u32 = 0;
 const CCMP_ALGORITHM: u32 = 3;
@@ -29,6 +33,13 @@ pub trait CcmpKeyHardware {
         index: u8,
         words: [u32; CCMP_ENTRY_WORDS],
     ) -> MacKeyInstallOutcome;
+    fn install_ap_ccmp_entry(
+        &mut self,
+        index: u8,
+        words: [u32; CCMP_ENTRY_WORDS],
+    ) -> MacKeyInstallOutcome {
+        self.install_sta_ccmp_entry(index, words)
+    }
     fn clear_ccmp_entry(&mut self, index: u8);
 
     /// Query one hardware entry when the implementation exposes validity.
@@ -44,6 +55,14 @@ impl CcmpKeyHardware for RadioRegisters {
         words: [u32; CCMP_ENTRY_WORDS],
     ) -> MacKeyInstallOutcome {
         self.install_sta_ccmp_key_entry(index, words)
+    }
+
+    fn install_ap_ccmp_entry(
+        &mut self,
+        index: u8,
+        words: [u32; CCMP_ENTRY_WORDS],
+    ) -> MacKeyInstallOutcome {
+        self.install_ap_ccmp_key_entry(index, words)
     }
 
     fn clear_ccmp_entry(&mut self, index: u8) {
@@ -79,6 +98,27 @@ pub struct StaPairwiseCcmpSlot {
 pub struct StaGroupCcmpSlot {
     key_id: u8,
     installed: bool,
+}
+
+/// Authority for the first AP peer pairwise CCMP entry.
+#[must_use = "the installed hardware key must remain owned until it is explicitly cleared"]
+pub struct ApPairwiseCcmpSlot {
+    peer: [u8; 6],
+    tx_pn_low: u32,
+    tx_pn_high: u32,
+}
+
+/// Authority for the one group key exposed by the first AP service.
+#[must_use = "the installed hardware key must remain owned until it is explicitly cleared"]
+pub struct ApGroupCcmpSlot {
+    key_id: u8,
+    hardware_index: u8,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ApCcmpClearReport {
+    pub pairwise_hardware_index: u8,
+    pub group_hardware_index: u8,
 }
 
 /// Hardware indices cleared at the connected-to-disconnected boundary.
@@ -127,6 +167,53 @@ impl StaPairwiseCcmpSlot {
     pub fn clear<H: CcmpKeyHardware>(self, hardware: &mut H) {
         hardware.clear_ccmp_entry(STA_PAIRWISE_HARDWARE_INDEX);
     }
+}
+
+impl ApPairwiseCcmpSlot {
+    pub const fn hardware_index(&self) -> u8 {
+        AP_PAIRWISE_HARDWARE_INDEX
+    }
+
+    pub const fn peer(&self) -> &[u8; 6] {
+        &self.peer
+    }
+
+    pub fn next_tx_ccmp_header(&mut self) -> [u8; 8] {
+        (self.tx_pn_low, self.tx_pn_high) = advance_esp32s31_tx_pn(self.tx_pn_low, self.tx_pn_high);
+        ccmp_header(self.tx_pn_low, self.tx_pn_high, 0)
+    }
+
+    pub fn clear<H: CcmpKeyHardware>(self, hardware: &mut H) {
+        hardware.clear_ccmp_entry(AP_PAIRWISE_HARDWARE_INDEX);
+    }
+}
+
+impl ApGroupCcmpSlot {
+    pub const fn hardware_index(&self) -> u8 {
+        self.hardware_index
+    }
+
+    pub const fn key_id(&self) -> u8 {
+        self.key_id
+    }
+
+    pub fn clear<H: CcmpKeyHardware>(self, hardware: &mut H) {
+        hardware.clear_ccmp_entry(self.hardware_index);
+    }
+}
+
+pub fn clear_ap_ccmp_slots<H: CcmpKeyHardware>(
+    hardware: &mut H,
+    pairwise: ApPairwiseCcmpSlot,
+    group: ApGroupCcmpSlot,
+) -> ApCcmpClearReport {
+    let report = ApCcmpClearReport {
+        pairwise_hardware_index: pairwise.hardware_index(),
+        group_hardware_index: group.hardware_index(),
+    };
+    group.clear(hardware);
+    pairwise.clear(hardware);
+    report
 }
 
 /// Consume and clear both association-scoped station key authorities.
@@ -228,6 +315,82 @@ pub fn install_sta_group_ccmp<H: CcmpKeyHardware>(
     })
 }
 
+/// Install the first AP client's pairwise CCMP key into hardware slot 8.
+///
+/// The slot and direction encoding are evidenced by the retained vendor AP
+/// qualification: AP peer identity one selected descriptor key byte `0x48`,
+/// and `hal_crypto_set_key_entry` uses pairwise direction three for entries
+/// above the four group-key slots.
+pub fn install_ap_pairwise_ccmp<H: CcmpKeyHardware>(
+    hardware: &mut H,
+    peer: [u8; 6],
+    temporal_key: &[u8; CCMP_KEY_BYTES],
+) -> Result<ApPairwiseCcmpSlot, CryptoKeyError> {
+    let peer_low = u32::from_le_bytes(peer[..4].try_into().expect("fixed peer low word"));
+    let peer_high = u16::from_le_bytes(peer[4..].try_into().expect("fixed peer high word"));
+    let cipher = CCMP_ALGORITHM << 18;
+    let direction = 3_u32;
+    let control = (direction << 5)
+        | (u32::from(PAIRWISE_LOGICAL_KEY_INDEX != 3) << 11)
+        | (PAIRWISE_LOGICAL_KEY_INDEX << 14)
+        | ((cipher >> 16) & 0x341f);
+
+    let mut words = [0_u32; CCMP_ENTRY_WORDS];
+    words[0] = peer_low;
+    words[1] = u32::from(peer_high) | (control << 16);
+    for (word, bytes) in temporal_key.chunks_exact(4).enumerate() {
+        words[word + 2] = u32::from_le_bytes(bytes.try_into().expect("four-byte TK word"));
+    }
+
+    match hardware.install_ap_ccmp_entry(AP_PAIRWISE_HARDWARE_INDEX, words) {
+        MacKeyInstallOutcome::Installed => {}
+        MacKeyInstallOutcome::Occupied => return Err(CryptoKeyError::Occupied),
+        MacKeyInstallOutcome::Rejected => return Err(CryptoKeyError::HardwareRejected),
+    }
+    Ok(ApPairwiseCcmpSlot {
+        peer,
+        tx_pn_low: 0,
+        tx_pn_high: 0,
+    })
+}
+
+/// Install one AP GTK. Vendor AP group slots map directly to `1 + key_id`;
+/// the first service provisions key id one and therefore owns slot 2.
+pub fn install_ap_group_ccmp<H: CcmpKeyHardware>(
+    hardware: &mut H,
+    key_id: u8,
+    temporal_key: &[u8; CCMP_KEY_BYTES],
+) -> Result<ApGroupCcmpSlot, CryptoKeyError> {
+    if key_id > MAX_WPA2_GTK_ID {
+        return Err(CryptoKeyError::InvalidGroupKeyId);
+    }
+    let hardware_index = AP_GROUP_HARDWARE_INDEX_BASE + key_id;
+    let cipher = CCMP_ALGORITHM << 18;
+    let direction = 6_u32;
+    let logical_key_index = u32::from(key_id);
+    let control = (direction << 5)
+        | (u32::from(logical_key_index != 3) << 11)
+        | (logical_key_index << 14)
+        | ((cipher >> 16) & 0x341f);
+
+    let mut words = [0_u32; CCMP_ENTRY_WORDS];
+    words[0] = u32::MAX;
+    words[1] = u32::from(u16::MAX) | (control << 16);
+    for (word, bytes) in temporal_key.chunks_exact(4).enumerate() {
+        words[word + 2] = u32::from_le_bytes(bytes.try_into().expect("four-byte GTK word"));
+    }
+
+    match hardware.install_ap_ccmp_entry(hardware_index, words) {
+        MacKeyInstallOutcome::Installed => {}
+        MacKeyInstallOutcome::Occupied => return Err(CryptoKeyError::Occupied),
+        MacKeyInstallOutcome::Rejected => return Err(CryptoKeyError::HardwareRejected),
+    }
+    Ok(ApGroupCcmpSlot {
+        key_id,
+        hardware_index,
+    })
+}
+
 /// Replace the association-owned STA group key in its single hardware slot.
 ///
 /// The existing token remains the unique authority for slot 1. Clearing is
@@ -267,12 +430,13 @@ mod tests {
         reject_next: bool,
         installs: u8,
         clears: u8,
+        last_index: Option<u8>,
     }
 
     impl CcmpKeyHardware for Hardware {
         fn install_sta_ccmp_entry(
             &mut self,
-            _index: u8,
+            index: u8,
             _words: [u32; CCMP_ENTRY_WORDS],
         ) -> MacKeyInstallOutcome {
             if self.reject_next {
@@ -284,6 +448,7 @@ mod tests {
             }
             self.occupied = true;
             self.installs += 1;
+            self.last_index = Some(index);
             MacKeyInstallOutcome::Installed
         }
 
@@ -291,6 +456,22 @@ mod tests {
             self.occupied = false;
             self.clears += 1;
         }
+    }
+
+    #[test]
+    fn first_ap_peer_and_gtk_own_the_evidenced_disjoint_slots() {
+        let mut hardware = Hardware::default();
+        let pairwise =
+            install_ap_pairwise_ccmp(&mut hardware, [1, 2, 3, 4, 5, 6], &[7; 16]).unwrap();
+        assert_eq!(pairwise.hardware_index(), 8);
+        assert_eq!(hardware.last_index, Some(8));
+        pairwise.clear(&mut hardware);
+
+        let group = install_ap_group_ccmp(&mut hardware, 1, &[9; 16]).unwrap();
+        assert_eq!(group.hardware_index(), 2);
+        assert_eq!(hardware.last_index, Some(2));
+        group.clear(&mut hardware);
+        assert_eq!(hardware.clears, 2);
     }
 
     #[test]

@@ -364,58 +364,6 @@ impl StaTxSequenceCounters {
     }
 }
 
-/// Per-traffic-class receive history for IEEE 802.11 duplicate suppression.
-///
-/// A retransmission is a duplicate only when its Retry bit is set and its
-/// complete Sequence Control value (sequence plus fragment number) matches
-/// the last accepted MPDU in the same non-QoS or QoS/TID sequence space.
-///
-/// SOURCE: the wire fields and comparison rule are the IEEE 802.11 Retry and
-/// Sequence Control contract. The pinned vendor receive owner implementing
-/// this boundary is `libnet80211.a[ieee80211_input.o]`; keeping the
-/// state here avoids leaking its node-layout offsets into the open driver.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct StaRxDuplicateFilter {
-    last_sequence_control: [u16; 17],
-    valid: u32,
-}
-
-impl StaRxDuplicateFilter {
-    pub const fn new() -> Self {
-        Self {
-            last_sequence_control: [0; 17],
-            valid: 0,
-        }
-    }
-
-    /// Observes one valid MPDU and returns whether it must be discarded.
-    ///
-    /// `tid` is `None` for the legacy/non-QoS sequence space and `0..=15` for
-    /// a QoS data TID. An invalid TID is treated as a new non-QoS frame so a
-    /// malformed caller value cannot poison a valid QoS history slot.
-    #[inline(never)]
-    pub fn is_duplicate(&mut self, retry: bool, sequence_control: u16, tid: Option<u8>) -> bool {
-        let index = match tid {
-            Some(tid @ 0..=15) => usize::from(tid) + 1,
-            _ => 0,
-        };
-        let mask = 1_u32 << index;
-        if retry && self.valid & mask != 0 && self.last_sequence_control[index] == sequence_control
-        {
-            return true;
-        }
-        self.last_sequence_control[index] = sequence_control;
-        self.valid |= mask;
-        false
-    }
-}
-
-impl Default for StaRxDuplicateFilter {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StationFrameError {
     InvalidBssid,
@@ -3319,7 +3267,7 @@ mod tests {
 
     #[test]
     fn sta_rx_duplicate_filter_requires_retry_and_matching_sequence_space() {
-        let mut filter = StaRxDuplicateFilter::new();
+        let mut filter = crate::data::RxDuplicateFilter::new();
         assert!(!filter.is_duplicate(false, 0x1230, None));
         assert!(filter.is_duplicate(true, 0x1230, None));
         assert!(!filter.is_duplicate(false, 0x1230, None));

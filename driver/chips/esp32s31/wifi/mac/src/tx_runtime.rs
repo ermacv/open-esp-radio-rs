@@ -23,13 +23,13 @@ const HARDWARE_BLOCK_ACK_WINDOW: usize = 32;
 /// ad-hoc fields. Entropy is supplied by the platform at the point where a
 /// hardware queue is published.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct StaTxRuntimePolicy {
+pub struct WifiTxRuntimePolicy {
     ht_ampdu: HtPeerAmpduParameters,
     he_bss_color: u8,
     edca: EdcaQueues,
 }
 
-impl StaTxRuntimePolicy {
+impl WifiTxRuntimePolicy {
     /// Start with the same cold values as the complete vendor LMAC init.
     pub const fn vendor_defaults() -> Self {
         Self {
@@ -87,7 +87,7 @@ impl StaTxRuntimePolicy {
     }
 }
 
-impl Default for StaTxRuntimePolicy {
+impl Default for WifiTxRuntimePolicy {
     fn default() -> Self {
         Self::vendor_defaults()
     }
@@ -169,7 +169,7 @@ impl UnicastRetryState {
     /// bounded retry candidates; every other status terminates the exchange.
     pub fn observe_completion(
         &mut self,
-        policy: &mut StaTxRuntimePolicy,
+        policy: &mut WifiTxRuntimePolicy,
         status: u8,
     ) -> UnicastRetryDecision {
         if status == 0 {
@@ -189,7 +189,7 @@ impl UnicastRetryState {
     /// timeout path while publications remain in the transaction budget.
     pub fn observe_hardware_timeout(
         &mut self,
-        policy: &mut StaTxRuntimePolicy,
+        policy: &mut WifiTxRuntimePolicy,
     ) -> UnicastRetryDecision {
         if self.attempt < self.attempt_limit {
             policy.record_retry_failure(self.queue);
@@ -206,7 +206,7 @@ impl UnicastRetryState {
     /// A collision consumes the same bounded publication/EDCA budget as the
     /// recovered timeout retry body, but the caller does not set the 802.11
     /// Retry bit: hardware never completed the original MPDU exchange.
-    pub fn observe_collision(&mut self, policy: &mut StaTxRuntimePolicy) -> UnicastRetryDecision {
+    pub fn observe_collision(&mut self, policy: &mut WifiTxRuntimePolicy) -> UnicastRetryDecision {
         if self.attempt < self.attempt_limit {
             policy.record_retry_failure(self.queue);
             self.attempt += 1;
@@ -218,7 +218,7 @@ impl UnicastRetryState {
     }
 
     /// End ownership after a non-retryable executor or hardware error.
-    pub fn abort(&self, policy: &mut StaTxRuntimePolicy) {
+    pub fn abort(&self, policy: &mut WifiTxRuntimePolicy) {
         policy.reset_terminal_exchange(self.queue);
     }
 }
@@ -430,7 +430,7 @@ mod tests {
 
     #[test]
     fn sta_runtime_policy_owns_peer_and_vendor_edca_state() {
-        let mut policy = StaTxRuntimePolicy::vendor_defaults();
+        let mut policy = WifiTxRuntimePolicy::vendor_defaults();
         assert_eq!(policy.he_bss_color(), 0);
         assert_eq!(
             policy.contention_parameters(LegacyTxQueue::BestEffort),
@@ -453,7 +453,7 @@ mod tests {
 
     #[test]
     fn ordinary_retry_owns_rate_ladder_and_edca_transitions() {
-        let mut policy = StaTxRuntimePolicy::vendor_defaults();
+        let mut policy = WifiTxRuntimePolicy::vendor_defaults();
         let queue = LegacyTxQueue::BestEffort;
         let mut retry =
             UnicastRetryState::new(queue, TxPhyRate::Legacy(LegacyRate::Ofdm54M), 4).unwrap();
@@ -494,7 +494,7 @@ mod tests {
     #[test]
     fn ordinary_retry_limit_and_abort_restore_the_minimum_cw() {
         let queue = LegacyTxQueue::Voice;
-        let mut policy = StaTxRuntimePolicy::vendor_defaults();
+        let mut policy = WifiTxRuntimePolicy::vendor_defaults();
         let mut retry =
             UnicastRetryState::new(queue, TxPhyRate::Legacy(LegacyRate::Ofdm6M), 2).unwrap();
         assert_eq!(

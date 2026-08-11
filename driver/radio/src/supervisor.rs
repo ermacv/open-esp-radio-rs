@@ -6,7 +6,7 @@
 
 use core::{fmt, future::Future};
 
-use crate::{MonitorRequest, StationRequest, WifiScanRequest};
+use crate::{AccessPointRequest, MonitorRequest, StationRequest, WifiScanRequest};
 
 pub const WIFI_SCAN_RESULT_CAPACITY: usize = 32;
 
@@ -242,6 +242,11 @@ pub trait WifiSupervisorPort {
         request: StationRequest,
     ) -> impl Future<Output = WifiStartResult<StationRequest, Self::Error>> + '_;
 
+    fn start_access_point(
+        &mut self,
+        request: AccessPointRequest,
+    ) -> impl Future<Output = WifiStartResult<AccessPointRequest, Self::Error>> + '_;
+
     fn start_monitor(
         &mut self,
         request: MonitorRequest,
@@ -302,6 +307,28 @@ impl<P: WifiSupervisorPort> WifiIdle<P> {
     ) -> Result<WifiStation<P>, WifiRoleStartFailure<Self, StationRequest, P::Error>> {
         match self.port.start_station(request).await {
             Ok(report) => Ok(WifiStation {
+                port: self.port,
+                generation: report.generation(),
+            }),
+            Err(WifiStartFailure::Rejected { request, error }) => {
+                Err(WifiRoleStartFailure::Rejected {
+                    wifi: self,
+                    request,
+                    error,
+                })
+            }
+            Err(WifiStartFailure::Faulted { error }) => {
+                Err(WifiRoleStartFailure::Faulted { error })
+            }
+        }
+    }
+
+    pub async fn start_access_point(
+        mut self,
+        request: AccessPointRequest,
+    ) -> Result<WifiAccessPoint<P>, WifiRoleStartFailure<Self, AccessPointRequest, P::Error>> {
+        match self.port.start_access_point(request).await {
+            Ok(report) => Ok(WifiAccessPoint {
                 port: self.port,
                 generation: report.generation(),
             }),
@@ -382,6 +409,28 @@ impl<W, R: fmt::Debug, E: fmt::Debug> fmt::Debug for WifiRoleStartFailure<W, R, 
 pub struct WifiStation<P> {
     port: P,
     generation: RadioSubsystemGeneration,
+}
+
+/// Active access-point role. The handle contains control capability only;
+/// the AP peer, key, beacon, DMA and interrupt owners remain in the physical
+/// supervisor actor.
+pub struct WifiAccessPoint<P> {
+    port: P,
+    generation: RadioSubsystemGeneration,
+}
+
+impl<P: WifiSupervisorPort> WifiAccessPoint<P> {
+    pub const fn generation(&self) -> RadioSubsystemGeneration {
+        self.generation
+    }
+
+    pub async fn stop(mut self) -> Result<WifiIdle<P>, WifiRoleStopFailure<P::Error>> {
+        match self.port.stop().await {
+            Ok(report) if report.generation() == self.generation => Ok(WifiIdle::new(self.port)),
+            Ok(_) => Err(WifiRoleStopFailure::GenerationMismatch),
+            Err(error) => Err(WifiRoleStopFailure::Faulted(error)),
+        }
+    }
 }
 
 impl<P: WifiSupervisorPort> WifiStation<P> {

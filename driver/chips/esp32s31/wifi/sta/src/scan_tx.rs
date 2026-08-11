@@ -9,10 +9,8 @@ use open_esp_radio_esp32s31_registers::MacInterruptSetup;
 use open_esp_radio_esp32s31_wifi_mac::tx::{TxCompletion, TxHardware};
 use open_esp_radio_ieee80211::management::ProbeRequest;
 
-use crate::{
-    control_tx::{ControlTxError, Esp32s31ControlTx},
-    ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer},
-};
+use crate::control_tx::{ControlTxError, Esp32s31ControlTx};
+use open_esp_radio_esp32s31_wifi::ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer};
 
 /// Complete inputs for one active-scan Probe Request publication.
 pub struct Esp32s31ScanProbeRequest<'a> {
@@ -210,14 +208,12 @@ mod tests {
     };
     use open_esp_radio_esp32s31_wifi_mac::{
         tx::{HardwareOwnedTxDma, PreparedTxDma, TxSlot},
-        tx_runtime::StaTxRuntimePolicy,
+        tx_runtime::WifiTxRuntimePolicy,
     };
 
     use super::*;
-    use crate::{
-        control_tx::{ControlTxConfig, WifiTxResources},
-        ordinary_tx::WifiTxPowerPair,
-    };
+    use crate::control_tx::{ControlTxConfig, WifiTxResources};
+    use open_esp_radio_esp32s31_wifi::ordinary_tx::WifiTxPowerPair;
 
     #[derive(Default)]
     struct ScanTxHardware {
@@ -323,7 +319,7 @@ mod tests {
         Esp32s31RunningScanTx::new_for_test(Esp32s31ControlTx::new(
             WifiTxResources {
                 slot,
-                policy: StaTxRuntimePolicy::vendor_defaults(),
+                policy: WifiTxRuntimePolicy::vendor_defaults(),
                 power: ScanTxPower,
                 entropy,
                 timer: ScanTxTimer::default(),

@@ -34,6 +34,7 @@ mod mac_rx_dma;
 mod mac_rx_policy;
 mod mac_rx_statistics;
 mod mac_sniffer;
+mod mac_softap_tsf;
 mod mac_tsf;
 mod mac_tx;
 mod mac_tx_power_init;
@@ -77,7 +78,7 @@ pub use mac_modem_wakeup::{
     StaBeaconMissLimit, StaModemSleepLimit, StaModemWakeConfig, StaTbttAutoPeriod,
 };
 pub use mac_rx_dma::MacRxDmaSnapshot;
-pub use mac_rx_policy::MacStaReceivePolicySnapshot;
+pub use mac_rx_policy::{MacApReceivePolicySnapshot, MacStaReceivePolicySnapshot};
 pub use mac_rx_statistics::{
     MacHeColorCollisionSnapshot, MacRxDecodeErrorStatistics, MacRxHangStatistics,
     MacRxPrimaryStatistics, MacRxPrimaryStatisticsDelta, MacRxStatisticsSnapshot,

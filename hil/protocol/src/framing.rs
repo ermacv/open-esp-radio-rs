@@ -391,6 +391,30 @@ mod tests {
     }
 
     #[test]
+    fn access_point_request_round_trips_without_debugging_the_secret() {
+        extern crate std;
+
+        use crate::{NetworkCredentials, WifiAccessPointRequest};
+
+        let request = WifiAccessPointRequest {
+            credentials: NetworkCredentials::try_new(b"open-radio-ap", b"private-password")
+                .unwrap(),
+            channel: 6,
+        };
+        assert_eq!(request.validate(), Ok(()));
+        let debug = std::format!("{request:?}");
+        assert!(!debug.contains("private-password"));
+
+        let expected = Envelope::new(7, 1, 0, 2, Command::StartAccessPoint(request));
+        let mut encoder = FrameEncoder::new();
+        let frame = encoder.encode(&expected).unwrap();
+        let mut decoder = FrameDecoder::new();
+        let mut observed = None;
+        decoder.feed(frame, |result| observed = Some(result.unwrap()));
+        assert_eq!(observed, Some(expected));
+    }
+
+    #[test]
     fn asymmetric_bidirectional_session_round_trips() {
         let expected = Envelope::new(
             7,

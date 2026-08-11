@@ -13,7 +13,7 @@ impl RadioRegisters {
     /// The complete leaf performs three ordered hardware operations. In
     /// particular, the enable edge is a fresh-read RMW and must not be folded
     /// into the preceding full-word high-address store.
-    fn program_receive_interface_address(&mut self, interface: usize, address: [u8; 6]) {
+    pub(crate) fn program_receive_interface_address(&mut self, interface: usize, address: [u8; 6]) {
         let addresses = &self.peripherals.wifi_mac_interface_address;
         super::svd::zero_based_field_write::mac_interface_address_low(
             addresses,

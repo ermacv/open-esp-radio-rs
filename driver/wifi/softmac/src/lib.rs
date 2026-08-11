@@ -95,6 +95,10 @@ pub struct MacResourceLimits {
     pub station_pairwise_ccmp_slots: u8,
     /// Group CCMP slots exposed for one station interface.
     pub station_group_ccmp_slots: u8,
+    /// Pairwise CCMP slots exposed for one access-point interface.
+    pub access_point_pairwise_ccmp_slots: u8,
+    /// Group CCMP slots exposed for one access-point interface.
+    pub access_point_group_ccmp_slots: u8,
 }
 
 /// Virtual-interface roles implemented by the complete driver today.
@@ -419,6 +423,8 @@ mod tests {
             tx_ampdu_max_subframes: 32,
             station_pairwise_ccmp_slots: 1,
             station_group_ccmp_slots: 1,
+            access_point_pairwise_ccmp_slots: 1,
+            access_point_group_ccmp_slots: 1,
         },
     };
 

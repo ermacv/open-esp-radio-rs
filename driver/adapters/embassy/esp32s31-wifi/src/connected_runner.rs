@@ -14,11 +14,11 @@ use embassy_futures::{
 use open_esp_radio_embassy_net::{
     PinnedTxConsumer, PinnedTxFrame, RawMutex, SplitPinnedRadioRunner,
 };
+pub use open_esp_radio_esp32s31_wifi::tx::{WifiTxProgress, WifiTxWake};
 pub use open_esp_radio_esp32s31_wifi_sta::connected_control::{
     ConnectedControlContext as WifiControlContext, ConnectedControlProgress as WifiControlProgress,
     ConnectedDisconnectReason,
 };
-pub use open_esp_radio_esp32s31_wifi_sta::tx::{WifiTxProgress, WifiTxWake};
 
 use crate::embassy_irq::EmbassyMacIrqRuntime;
 

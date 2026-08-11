@@ -13,6 +13,7 @@ use open_esp_radio_esp32s31_registers::{
     MacKeyInstallOutcome, MacLegacyTxProgram, MacTxCompletionRegisters, MacTxDetachOutcome,
     MacTxDetachReason, MacTxQueueDetached,
 };
+use open_esp_radio_esp32s31_wifi::ordinary_tx::{WifiTxPowerPair, WifiTxResources};
 use open_esp_radio_esp32s31_wifi_mac::{
     crypto::{CcmpKeyHardware, install_sta_pairwise_ccmp},
     rx::HeGuardIntervalAndLtf,
@@ -21,11 +22,10 @@ use open_esp_radio_esp32s31_wifi_mac::{
         LegacyRate, PreparedTxDma, TxSlot,
     },
     tx_ampdu::HtAmpduTxStorage,
-    tx_runtime::StaTxRuntimePolicy,
+    tx_runtime::WifiTxRuntimePolicy,
 };
 use open_esp_radio_esp32s31_wifi_sta::{
     connected_control::ConnectedControlTx,
-    ordinary_tx::{WifiTxPowerPair, WifiTxResources},
     single_mpdu_tx::{ActionTxConfig, ConnectedTxHandoff, SingleMpduTxConfig},
 };
 use open_esp_radio_ieee80211::station::{
@@ -277,7 +277,7 @@ fn make_ordinary<'a, const BUFFER_SIZE: usize>(
     Esp32s31SingleMpduTx::new(
         WifiTxResources {
             slot,
-            policy: StaTxRuntimePolicy::vendor_defaults(),
+            policy: WifiTxRuntimePolicy::vendor_defaults(),
             power: Power,
             entropy,
             timer: Timer::default(),

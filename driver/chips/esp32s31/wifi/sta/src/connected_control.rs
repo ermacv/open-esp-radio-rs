@@ -166,9 +166,9 @@ pub trait ConnectedControlTx {
 impl<P, E, T, const BUFFER_SIZE: usize> ConnectedControlTx
     for Esp32s31SingleMpduTx<'_, P, E, T, BUFFER_SIZE>
 where
-    P: crate::ordinary_tx::WifiTxPowerProfile,
-    E: crate::ordinary_tx::WifiTxEntropy,
-    T: crate::ordinary_tx::WifiTxTimer,
+    P: open_esp_radio_esp32s31_wifi::ordinary_tx::WifiTxPowerProfile,
+    E: open_esp_radio_esp32s31_wifi::ordinary_tx::WifiTxEntropy,
+    T: open_esp_radio_esp32s31_wifi::ordinary_tx::WifiTxTimer,
 {
     fn take_last_outcome(&mut self) -> Option<SingleMpduTxOutcome> {
         Esp32s31SingleMpduTx::take_last_outcome(self)

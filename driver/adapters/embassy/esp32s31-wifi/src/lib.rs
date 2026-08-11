@@ -10,6 +10,7 @@
 #[cfg(test)]
 extern crate std;
 
+pub mod access_point;
 pub mod aggregate_tx;
 pub mod aggregate_tx_observer;
 mod connected_control;

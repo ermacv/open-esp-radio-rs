@@ -3,7 +3,7 @@ use core::fmt;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-pub const PROTOCOL_VERSION: u16 = 23;
+pub const PROTOCOL_VERSION: u16 = 24;
 pub const STARTUP_ARTIFACT_CHUNK_MAX_LEN: usize = 384;
 // Keep the largest protocol enum comfortably below one RX frame. This value
 // bounds executor poll-stack pressure as well as wire latency; complete MPDUs
@@ -136,6 +136,9 @@ pub struct FeatureCapabilities {
     pub station_epoch_control: bool,
     /// This image exposes explicit role-neutral Wi-Fi lifecycle commands.
     pub wifi_role_control: bool,
+    /// This image can materialize and stop the bounded WPA2-Personal access
+    /// point role described by [`WifiAccessPointRequest`].
+    pub wifi_access_point: bool,
     /// This image can run one finite normalized monitor capture and export
     /// typed frame chunks without using UART text as a data protocol.
     pub wifi_monitor_capture: bool,
@@ -443,6 +446,12 @@ pub enum Command {
     StartMonitor(WifiMonitorRequest),
     /// Stop the active monitor and return to role-neutral Wi-Fi ownership.
     StopMonitor,
+    /// Materialize one bounded WPA2-Personal access point from role-neutral
+    /// Wi-Fi ownership. Credentials belong to this AP epoch and are cleared
+    /// when the command value is dropped.
+    StartAccessPoint(WifiAccessPointRequest),
+    /// Stop the active access point and return to role-neutral Wi-Fi ownership.
+    StopAccessPoint,
     /// Run one finite monitor epoch, export its captured frames, return to
     /// idle and publish a terminal capture summary.
     CaptureMonitor(WifiMonitorCaptureRequest),
@@ -491,6 +500,44 @@ pub enum WifiRole {
     Idle,
     Station,
     Monitor,
+    AccessPoint,
+}
+
+/// Complete target-neutral configuration for the first AP role.
+///
+/// Beacon interval (100 TU), DTIM period (2), HT20 width and the one-peer
+/// limit are driver guarantees rather than HIL tuning parameters.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct WifiAccessPointRequest {
+    pub credentials: NetworkCredentials,
+    pub channel: u8,
+}
+
+impl WifiAccessPointRequest {
+    pub fn validate(&self) -> Result<(), WifiAccessPointRequestError> {
+        self.credentials
+            .validate()
+            .map_err(WifiAccessPointRequestError::Credentials)?;
+        if !(1..=13).contains(&self.channel) {
+            return Err(WifiAccessPointRequestError::Channel);
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum WifiAccessPointRequestError {
+    Credentials(NetworkCredentialsError),
+    Channel,
+}
+
+impl fmt::Display for WifiAccessPointRequestError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Credentials(error) => error.fmt(formatter),
+            Self::Channel => formatter.write_str("AP channel must be in 1..=13"),
+        }
+    }
 }
 
 /// Compact, target-neutral standalone scan request.
@@ -668,6 +715,21 @@ pub struct WifiMonitorEvidence {
     /// Frames whose complete ordered chunk set was admitted to the protocol
     /// queue before this terminal evidence.
     pub exported_frames: u32,
+}
+
+/// Bounded evidence retained for one access-point ownership epoch.
+///
+/// These counters describe MAC/runtime work only. IP services and host-side
+/// client observations belong to the qualification report, not the driver.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct WifiAccessPointEvidence {
+    pub generation: u32,
+    pub channel: u8,
+    pub beacons_transmitted: u32,
+    pub authentication_responses: u32,
+    pub association_responses: u32,
+    pub authorized_peers: u32,
+    pub peer_removals: u32,
 }
 
 impl StationEpochEvidence {
@@ -945,6 +1007,10 @@ pub enum Event {
     WifiMonitorStarted(WifiRoleTransitionEvidence),
     /// Reliable completion of `StopMonitor` and its bounded capture summary.
     WifiMonitorStopped(WifiMonitorEvidence),
+    /// Reliable completion of `StartAccessPoint`.
+    WifiAccessPointStarted(WifiRoleTransitionEvidence),
+    /// Reliable completion of `StopAccessPoint` and its bounded AP summary.
+    WifiAccessPointStopped(WifiAccessPointEvidence),
     /// One ordered chunk emitted by `CaptureMonitor`.
     WifiMonitorFrame(WifiMonitorFrameChunk),
     /// Terminal completion of one finite `CaptureMonitor` request.

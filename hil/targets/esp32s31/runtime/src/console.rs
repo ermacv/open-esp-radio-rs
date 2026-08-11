@@ -298,6 +298,15 @@ pub fn emergency_log(args: Arguments<'_>) {
     write_line_immediate(args);
 }
 
+/// Queues one best-effort diagnostic line on the runtime USB transport.
+///
+/// Unlike [`emergency_log`], this path is serialized by [`logger_task`] with
+/// binary protocol frames. Runtime code must use this function so a ROM write
+/// cannot overtake a USB packet that the asynchronous HAL has only submitted.
+pub fn runtime_log(args: Arguments<'_>) {
+    submit_line(args);
+}
+
 /// Returns the number of records discarded because the queue was full or
 /// another core/interrupt was already using the immediate writer.
 pub fn dropped_records() -> u32 {

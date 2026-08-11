@@ -21,7 +21,7 @@ use open_esp_radio_hil_protocol::{
 
 use super::UdpSocketBuffers;
 use crate::{
-    console::{emergency_log, publish_event_reliably},
+    console::{publish_event_reliably, runtime_log},
     product_hil::{
         rx_qualification,
         traffic::{
@@ -88,7 +88,7 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
         }),
     )
     .await;
-    emergency_log(format_args!(
+    runtime_log(format_args!(
         "OPEN_RADIO_HIL result=PASS stage=udp-rx-ready port={} queue={} payload={}",
         config.local_port, config.queue_depth, config.payload_capacity,
     ));
@@ -292,7 +292,7 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
             .saturating_mul(8_000)
             .checked_div(elapsed_us)
             .unwrap_or(0);
-        emergency_log(format_args!(
+        runtime_log(format_args!(
             "ORX b={bytes} d={datagrams} u={elapsed_us} k={throughput_kbps} e={receive_errors} \
              terminal={} first={} highest={} missing={} backward={} duplicate={} gap_us={} \
              mpdu={} success={} fcs={} full={} overflow={} irq={} code={}",
@@ -311,12 +311,14 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
             rx_irq_posts,
             config.code_address,
         ));
-        emergency_log(format_args!(
+        yield_now().await;
+        runtime_log(format_args!(
             "ORXP f={} p={}",
             rx_qualification::LAST_FORMAT.load(Ordering::Relaxed),
             rx_qualification::LAST_PHY.load(Ordering::Relaxed),
         ));
-        emergency_log(format_args!(
+        yield_now().await;
+        runtime_log(format_args!(
             "ORXQ first={} highest={} next={} gap_events={} forward_missing={} \
              maximum_gap={} maximum_gap_at={} first_gap_at={} last_gap_at={} backward={} \
              adjacent_duplicates={} unsequenced={} maximum_interarrival_us={} \
@@ -339,6 +341,7 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
             sequence.maximum_interarrival_micros,
             sequence.maximum_interarrival_at.unwrap_or(u32::MAX),
         ));
+        yield_now().await;
         let rx_s_mpdu = rx_qualification::RX_S_MPDU
             .snapshot()
             .wrapping_delta_since(s_mpdu_start);
@@ -348,7 +351,7 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
         let rx_ampdu = rx_qualification::RX_AMPDU
             .snapshot()
             .wrapping_delta_since(ampdu_start);
-        emergency_log(format_args!(
+        runtime_log(format_args!(
             "ORXSM s_mpdu={} not_s_mpdu={} unavailable={} beacon_s_mpdu={} \
              beacon_not_s_mpdu={} beacon_unavailable={}",
             rx_s_mpdu.s_mpdu_frames,
@@ -358,7 +361,8 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
             beacon_s_mpdu.not_s_mpdu_frames,
             beacon_s_mpdu.unavailable_frames,
         ));
-        emergency_log(format_args!(
+        yield_now().await;
+        runtime_log(format_args!(
             "ORXAG ampdu={} not_ampdu={} hardware_ampdu={} hardware_not_ampdu={} \
              protocol_ampdu={} protocol_not_ampdu={} unavailable={}",
             rx_ampdu.ampdu_frames,
@@ -369,11 +373,12 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
             rx_ampdu.protocol_not_ampdu_frames,
             rx_ampdu.unavailable_frames,
         ));
+        yield_now().await;
         let phy_end = rx_qualification::RX_PHY.snapshot();
         let mcs = core::array::from_fn::<_, RX_HE_MCS_BUCKETS, _>(|index| {
             phy_end.he_mcs[index].wrapping_sub(phy_start.he_mcs[index])
         });
-        emergency_log(format_args!(
+        runtime_log(format_args!(
             "ORXM m0={} m1={} m2={} m3={} m4={} m5={} m6={} m7={} m8={} m9={} \
              m10={} m11={} other={}",
             mcs[0],
@@ -390,6 +395,7 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
             mcs[11],
             phy_end.other.wrapping_sub(phy_start.other),
         ));
+        yield_now().await;
         log_open_radio_rx_pipeline_interval(
             pipeline_start,
             rx_irq_posts,
@@ -398,12 +404,14 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
             irq_auxiliary_status_or,
             irq_unknown_status_or,
             telemetry.pipeline,
-        );
+        )
+        .await;
         log_open_radio_task_poll_interval(
             task_poll_start,
             config.task_poll_telemetry,
             telemetry.task_polls,
-        );
+        )
+        .await;
         let evidence = TransportEvidence {
             rx_bytes: bytes,
             tx_bytes: 0,

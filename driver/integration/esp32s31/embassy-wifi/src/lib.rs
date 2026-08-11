@@ -10,7 +10,7 @@
 
 #[cfg(feature = "qualification")]
 macro_rules! qualification_event {
-    ($($argument:tt)*) => { esp_println::println!($($argument)*) };
+    ($($argument:tt)*) => { log::info!($($argument)*) };
 }
 
 #[cfg(not(feature = "qualification"))]
@@ -127,6 +127,8 @@ pub struct Esp32s31AccessPointObservation {
     pub tx_interrupt_wakes: u32,
     pub tx_deadline_wakes: u32,
     pub maximum_tx_pending_micros: u32,
+    pub maximum_rx_service_micros: u32,
+    pub maximum_network_backpressure_micros: u32,
     pub authentication_responses: u32,
     pub association_responses: u32,
     pub authorized_peers: u32,

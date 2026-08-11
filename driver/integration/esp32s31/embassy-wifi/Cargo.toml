@@ -13,7 +13,7 @@ embassy-futures = "0.1.2"
 embassy-sync = "0.8.0"
 embassy-time = "0.5.1"
 esp-hal = { git = "https://github.com/ermacv/esp-hal", branch = "esp32s31-async-platform", default-features = false, features = ["esp32s31", "rt", "unstable"] }
-esp-println = { git = "https://github.com/ermacv/esp-hal", branch = "esp32s31-async-platform", default-features = false, features = ["auto", "esp32s31", "log-04"], optional = true }
+log = { version = "0.4.29", optional = true }
 open-esp-radio = { path = "../../../radio", default-features = false, features = ["esp32s31-wifi-embassy"] }
 open-esp-radio-embassy-net = { path = "../../../adapters/embassy-net" }
 open-esp-radio-esp32s31-wifi-embassy = { path = "../../../adapters/embassy/esp32s31-wifi" }
@@ -25,7 +25,7 @@ static_cell = "2.1.1"
 default = []
 high-throughput = ["open-esp-radio-esp32s31-wifi-embassy/high-throughput"]
 qualification = [
-    "dep:esp-println",
+    "dep:log",
     "high-throughput",
     "open-esp-radio-embassy-net/rx-delivery-observation",
     "open-esp-radio-esp32s31-wifi-embassy/rx-delivery-observation",

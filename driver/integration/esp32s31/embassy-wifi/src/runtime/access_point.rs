@@ -777,7 +777,12 @@ impl ProductionWifiEpochRunner {
             engine,
             transmit,
             Esp32s31ApTxConfig {
-                unicast_publication_limit: 4,
+                // The recovered 24 Mbit/s vendor ladder is 24M x2, 18M x2,
+                // 6M x3, then 5.5M. Four publications stopped before the
+                // first robust OFDM rung and exposed ordinary RF loss directly
+                // to UDP. Eight is the shortest complete prefix which reaches
+                // every pre-CCK rung plus one final basic-rate publication.
+                unicast_publication_limit: 8,
                 publication_timeout_micros: TX_COMPLETION_TIMEOUT_US,
             },
         );
@@ -1025,6 +1030,10 @@ impl ProductionWifiEpochRunner {
                 tx_interrupt_wakes: report.control.tx_interrupt_wakes,
                 tx_deadline_wakes: report.control.tx_deadline_wakes,
                 maximum_tx_pending_micros: report.control.maximum_tx_pending_micros,
+                maximum_rx_service_micros: report.control.maximum_rx_service_micros,
+                maximum_network_backpressure_micros: report
+                    .control
+                    .maximum_network_backpressure_micros,
                 authentication_responses: report.mac.authentication_responses_transmitted,
                 association_responses: report.mac.association_responses_transmitted,
                 authorized_peers: report.engine.authorized_peers,

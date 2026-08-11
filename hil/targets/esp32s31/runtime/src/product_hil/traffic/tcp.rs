@@ -16,7 +16,7 @@ use open_esp_radio_hil_protocol::{
     stream_pattern_matches,
 };
 
-use crate::console::{complete_session, emergency_log, publish_event_reliably};
+use crate::console::{complete_session, publish_event_reliably, runtime_log};
 use crate::product_hil::OPEN_RADIO_TCP_CHUNK_CAPACITY;
 
 use super::{SessionChannel, log_open_radio_ampdu_interval, wait_session_link_requirements};
@@ -120,7 +120,7 @@ pub(in crate::product_hil) async fn run_open_radio_tcp_benchmark<'a>(
         )
         .await;
     }
-    emergency_log(format_args!(
+    runtime_log(format_args!(
         "OPEN_RADIO_PHY_HIL result=PASS stage=tcp-ready port={} rx_buffer={} \
          tx_buffer={} io_buffer={} session_protocol=required directions=rx,tx,bidirectional",
         config.local_port,
@@ -148,7 +148,7 @@ pub(in crate::product_hil) async fn run_open_radio_tcp_benchmark<'a>(
             }
         };
         let duration = Duration::from_millis(u64::from(duration_millis));
-        emergency_log(format_args!(
+        runtime_log(format_args!(
             "OPEN_RADIO_PHY_HIL result=PASS stage=tcp-session-start session={} \
              direction={:?} duration_ms={}",
             session.session_id, session.config.direction, duration_millis,
@@ -162,13 +162,13 @@ pub(in crate::product_hil) async fn run_open_radio_tcp_benchmark<'a>(
             match with_timeout(connection_timeout, socket.accept(config.local_port)).await {
                 Ok(Ok(())) => true,
                 Ok(Err(error)) => {
-                    emergency_log(format_args!(
+                    runtime_log(format_args!(
                         "OPEN_RADIO_PHY_HIL result=FAIL stage=tcp-accept error={error:?}"
                     ));
                     false
                 }
                 Err(_) => {
-                    emergency_log(format_args!(
+                    runtime_log(format_args!(
                         "OPEN_RADIO_PHY_HIL result=FAIL stage=tcp-accept error=Timeout"
                     ));
                     false
@@ -292,7 +292,7 @@ pub(in crate::product_hil) async fn run_open_radio_tcp_benchmark<'a>(
                 HilDirection::Tx => tx.units == 1,
                 HilDirection::Bidirectional => rx.units == 1 && tx.units == 1 && rx.pattern_ok,
             };
-        emergency_log(format_args!(
+        runtime_log(format_args!(
             "OTCP dir={:?} rb={} tb={} ru={} tu={} u={} e={} bf={} fo={} enq={} drop={} eof={} pat={}",
             session.config.direction,
             rx.bytes,
@@ -308,7 +308,7 @@ pub(in crate::product_hil) async fn run_open_radio_tcp_benchmark<'a>(
             u8::from(rx.eof),
             u8::from(rx.pattern_ok),
         ));
-        log_open_radio_ampdu_interval(aggregate_start, aggregate_counters);
+        log_open_radio_ampdu_interval(aggregate_start, aggregate_counters).await;
         complete_session(
             session.session_id,
             TransportEvidence {

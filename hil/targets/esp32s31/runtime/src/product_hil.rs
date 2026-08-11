@@ -61,7 +61,7 @@ use crate::console::{
     WifiControlRequest, complete_access_point_start, complete_access_point_stop,
     complete_initialization, complete_monitor_capture, complete_monitor_start,
     complete_monitor_stop, complete_station_epoch_cycle, complete_wifi_role_failure,
-    complete_wifi_role_transition, complete_wifi_scan, emergency_log, publish_event_reliably,
+    complete_wifi_role_transition, complete_wifi_scan, publish_event_reliably, runtime_log,
     publish_monitor_frame, publish_startup_artifact, publish_station_lifecycle,
     receive_wifi_control_request, set_wifi_role,
 };
@@ -94,6 +94,8 @@ static AP_MAXIMUM_BEACON_LATENESS_MICROS: AtomicU32 = AtomicU32::new(0);
 static AP_TX_INTERRUPT_WAKES: AtomicU32 = AtomicU32::new(0);
 static AP_TX_DEADLINE_WAKES: AtomicU32 = AtomicU32::new(0);
 static AP_MAXIMUM_TX_PENDING_MICROS: AtomicU32 = AtomicU32::new(0);
+static AP_MAXIMUM_RX_SERVICE_MICROS: AtomicU32 = AtomicU32::new(0);
+static AP_MAXIMUM_NETWORK_BACKPRESSURE_MICROS: AtomicU32 = AtomicU32::new(0);
 static AP_AUTHENTICATIONS: AtomicU32 = AtomicU32::new(0);
 static AP_ASSOCIATIONS: AtomicU32 = AtomicU32::new(0);
 static AP_AUTHORIZATIONS: AtomicU32 = AtomicU32::new(0);
@@ -134,6 +136,11 @@ fn observe_access_point(observation: Esp32s31AccessPointObservation) {
     AP_TX_INTERRUPT_WAKES.store(observation.tx_interrupt_wakes, Ordering::Release);
     AP_TX_DEADLINE_WAKES.store(observation.tx_deadline_wakes, Ordering::Release);
     AP_MAXIMUM_TX_PENDING_MICROS.store(observation.maximum_tx_pending_micros, Ordering::Release);
+    AP_MAXIMUM_RX_SERVICE_MICROS.store(observation.maximum_rx_service_micros, Ordering::Release);
+    AP_MAXIMUM_NETWORK_BACKPRESSURE_MICROS.store(
+        observation.maximum_network_backpressure_micros,
+        Ordering::Release,
+    );
     AP_AUTHENTICATIONS.store(observation.authentication_responses, Ordering::Release);
     AP_ASSOCIATIONS.store(observation.association_responses, Ordering::Release);
     AP_AUTHORIZATIONS.store(observation.authorized_peers, Ordering::Release);
@@ -199,6 +206,9 @@ fn access_point_evidence(generation: u32, requested_channel: u8) -> WifiAccessPo
         tx_interrupt_wakes: AP_TX_INTERRUPT_WAKES.load(Ordering::Acquire),
         tx_deadline_wakes: AP_TX_DEADLINE_WAKES.load(Ordering::Acquire),
         maximum_tx_pending_micros: AP_MAXIMUM_TX_PENDING_MICROS.load(Ordering::Acquire),
+        maximum_rx_service_micros: AP_MAXIMUM_RX_SERVICE_MICROS.load(Ordering::Acquire),
+        maximum_network_backpressure_micros: AP_MAXIMUM_NETWORK_BACKPRESSURE_MICROS
+            .load(Ordering::Acquire),
         authentication_responses: AP_AUTHENTICATIONS.load(Ordering::Acquire),
         association_responses: AP_ASSOCIATIONS.load(Ordering::Acquire),
         authorized_peers: AP_AUTHORIZATIONS.load(Ordering::Acquire),
@@ -285,7 +295,7 @@ fn observe_station_lifecycle(observation: Esp32s31StationLifecycleObservation) {
 fn log_station_rx_frontier(observation: Esp32s31StationLifecycleObservation) {
     let pipeline = RX_PIPELINE.snapshot();
     let irq = MAC_IRQ.snapshot();
-    emergency_log(format_args!(
+    runtime_log(format_args!(
         "ORLC event={observation:?} irq_epochs={} irq_rx_only={} irq_rx_mixed={} \
          service_calls={} frontier={} admitted={} protocol_frames={} data_frames={} \
          network_enqueued={} network_dropped={} buffer_full={}",
@@ -706,7 +716,7 @@ async fn report_network(stack: Stack<'static>) -> ! {
                 }),
             )
             .await;
-            emergency_log(format_args!(
+            runtime_log(format_args!(
                 "OPEN_RADIO_HIL result=PASS stage=network-ready address={} gateway={:?}",
                 config.address, config.gateway,
             ));

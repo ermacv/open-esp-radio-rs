@@ -13,7 +13,9 @@ use embassy_futures::{
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use embassy_time::{Instant, Timer};
 
-use open_esp_radio_embassy_net::{FrameLengthError, LinkState, SplitPinnedRadioRunner};
+use open_esp_radio_embassy_net::{
+    FrameLengthError, LinkState, RxEnqueueError, SplitPinnedRadioRunner,
+};
 
 use open_esp_radio_esp32s31_wifi::{
     ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxResources, WifiTxTimer},
@@ -82,6 +84,8 @@ pub struct Esp32s31AccessPointControlReport {
     pub tx_interrupt_wakes: u32,
     pub tx_deadline_wakes: u32,
     pub maximum_tx_pending_micros: u32,
+    pub maximum_rx_service_micros: u32,
+    pub maximum_network_backpressure_micros: u32,
     pub completed_rx_descriptors: u32,
     pub ignored_rx_frames: u32,
     pub rx_mic_failures: u32,
@@ -650,6 +654,9 @@ where
         let mut stopping = false;
         let mut network_link_up = false;
         let mut tx_pending_since_micros = None;
+        let mut pending_network_rx = None;
+        let mut network_backpressure_since_micros = None;
+        let mut network_rx = network.rx_publisher();
         loop {
             if self.tx_pending() {
                 let pending_since =
@@ -692,7 +699,9 @@ where
                 continue;
             }
             if stopping {
-                break;
+                if pending_network_rx.is_none() {
+                    break;
+                }
             }
 
             let now_micros = Instant::now().as_micros();
@@ -709,6 +718,43 @@ where
             let (_, beacon_delay_ms) = self
                 .next_beacon_delay(now_micros as u32)
                 .ok_or(Esp32s31AccessPointRunError::InvalidBeaconSchedule)?;
+            if let Some(length) = pending_network_rx {
+                let ready = select(
+                    Timer::after_millis(u64::from(beacon_delay_ms)),
+                    network_rx.wait_ready(),
+                );
+                let ready = if stopping {
+                    ready.await
+                } else {
+                    match select(stop.as_mut(), ready).await {
+                        Either::First(()) => {
+                            stopping = true;
+                            continue;
+                        }
+                        Either::Second(ready) => ready,
+                    }
+                };
+                match ready {
+                    Either::First(()) => {
+                        self.publish_beacon(hardware, Instant::now().as_micros())
+                            .map_err(Esp32s31AccessPointRunError::Control)?;
+                    }
+                    Either::Second(()) => {
+                        network_rx
+                            .try_send(&self.rx_frame[..length])
+                            .expect("wait_ready reserved one pinned AP RX slot");
+                        if let Some(started) = network_backpressure_since_micros.take() {
+                            let elapsed = Instant::now().as_micros().saturating_sub(started);
+                            self.report.maximum_network_backpressure_micros = self
+                                .report
+                                .maximum_network_backpressure_micros
+                                .max(u32::try_from(elapsed).unwrap_or(u32::MAX));
+                        }
+                        pending_network_rx = None;
+                    }
+                }
+                continue;
+            }
             match wait_for_ap_work(
                 stop.as_mut(),
                 Timer::after_millis(u64::from(beacon_delay_ms)),
@@ -727,18 +773,39 @@ where
                     // descriptors. Drain until the walker reports no further
                     // ownership instead of requiring a second interrupt edge
                     // for work which was already complete when the first edge
-                    // was acknowledged.
+                    // was acknowledged. TBTT is checked between descriptors;
+                    // this is a deadline budget rather than a packet-count
+                    // batch and therefore cannot impose an artificial RX
+                    // throughput ceiling.
                     loop {
+                        if self.beacon_publication_due(Instant::now().as_micros() as u32) {
+                            break;
+                        }
                         let (nonce, replay_counter) = security_material();
                         let completed_before = self.report.completed_rx_descriptors;
+                        let service_started = Instant::now().as_micros();
                         let ethernet_length = self
                             .service_rx(hardware, nonce, replay_counter)
                             .map_err(Esp32s31AccessPointRunError::Control)?;
+                        let service_elapsed =
+                            Instant::now().as_micros().saturating_sub(service_started);
+                        self.report.maximum_rx_service_micros = self
+                            .report
+                            .maximum_rx_service_micros
+                            .max(u32::try_from(service_elapsed).unwrap_or(u32::MAX));
                         if let Some(length) = ethernet_length {
-                            network
-                                .send_rx(&self.rx_frame[..length])
-                                .await
-                                .map_err(Esp32s31AccessPointRunError::Network)?;
+                            match network_rx.try_send(&self.rx_frame[..length]) {
+                                Ok(()) => {}
+                                Err(RxEnqueueError::QueueFull) => {
+                                    pending_network_rx = Some(length);
+                                    network_backpressure_since_micros =
+                                        Some(Instant::now().as_micros());
+                                    break;
+                                }
+                                Err(RxEnqueueError::InvalidLength(error)) => {
+                                    return Err(Esp32s31AccessPointRunError::Network(error));
+                                }
+                            }
                         }
                         if self.report.completed_rx_descriptors == completed_before {
                             break;

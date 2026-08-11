@@ -12,7 +12,7 @@ use open_esp_radio_hil_protocol::{
 
 use super::UdpSocketBuffers;
 use crate::{
-    console::{emergency_log, publish_event_reliably},
+    console::{publish_event_reliably, runtime_log},
     product_hil::traffic::{
         BidirectionalResultChannel, BidirectionalSessionChannel, OpenRadioBidirectionalDirection,
         complete_open_radio_bidirectional_direction, log_open_radio_ampdu_interval,
@@ -63,7 +63,7 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
         buffers.tx,
     );
     if let Err(error) = socket.bind(config.source_port) {
-        emergency_log(format_args!(
+        runtime_log(format_args!(
             "OPEN_RADIO_PHY_HIL result=FAIL stage=udp-tx-bind error={error:?}"
         ));
         loop {
@@ -85,7 +85,7 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
         }),
     )
     .await;
-    emergency_log(format_args!(
+    runtime_log(format_args!(
         "OPEN_RADIO_PHY_HIL result=PASS stage=udp-tx-ready \
          source_port={} queue={} payload_capacity={} tx_mode=ampdu session_protocol=required",
         config.source_port, config.queue_depth, config.payload_capacity,
@@ -132,7 +132,7 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
         } else {
             1
         };
-        emergency_log(format_args!(
+        runtime_log(format_args!(
             "OPEN_RADIO_PHY_HIL result=PASS stage=udp-tx-session-start \
              session={} target={server}:{server_port} payload={payload_bytes} \
              duration_ms={} offered_bps={offered_rate_bps:?}",
@@ -215,7 +215,7 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
             session.config.link_requirements.tx_block_ack_tid.is_none() || tx_vector.is_some(),
             "BlockAck-qualified TX session retains its associated link vector",
         );
-        emergency_log(format_args!(
+        runtime_log(format_args!(
             "OTX b={bytes} d={datagrams} u={elapsed_us} k={throughput_kbps} \
              e={send_errors} p={} pg={} w={} r={} code={}",
             offered_rate_bps.unwrap_or(0) / 1_000,
@@ -227,7 +227,7 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
         let aggregate = aggregate_start
             .map(|earlier| aggregate_counters.snapshot().wrapping_delta_since(earlier));
         if let Some(aggregate_start) = aggregate_start {
-            log_open_radio_ampdu_interval(aggregate_start, aggregate_counters);
+            log_open_radio_ampdu_interval(aggregate_start, aggregate_counters).await;
         }
         let evidence = TransportEvidence {
             rx_bytes: 0,

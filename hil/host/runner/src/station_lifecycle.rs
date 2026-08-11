@@ -70,6 +70,12 @@ fn qualify(
     cycles: u8,
     initial_hold: Duration,
 ) -> Result<()> {
+    // Arm the unsolicited-event cursor before provisioning can make the
+    // station connect. With a correctly clocked target, scan/join may finish
+    // before `prepare_station` returns its correlated acknowledgement; taking
+    // the cursor afterwards skips that already-published Connected edge and
+    // waits forever for a second one.
+    let mut lifecycle_cursor = capture.station_lifecycle_cursor();
     let capabilities = capture.prepare_station(lab, timeout)?;
     if !capabilities.features.station_epoch_control {
         return Err("firmware does not advertise station epoch control".into());
@@ -77,7 +83,6 @@ fn qualify(
     // Network provisioning is acknowledged before the radio task finishes
     // scan/join/WPA2.  A lifecycle command is valid only after the unsolicited
     // connected edge has published the Station owner at the public boundary.
-    let mut lifecycle_cursor = capture.station_lifecycle_cursor();
     let generation = capture.wait_for_connected_station(timeout)?;
     wait_for_connected_generation(capture, &mut lifecycle_cursor, generation, timeout)?;
     qualify_initial_hold(capture, &mut lifecycle_cursor, generation, initial_hold)?;

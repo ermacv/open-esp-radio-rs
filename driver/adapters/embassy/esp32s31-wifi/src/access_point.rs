@@ -58,6 +58,9 @@ const EAPOL_CAPACITY: usize = 512;
 pub struct Esp32s31AccessPointControlReport {
     pub missed_beacon_intervals: u32,
     pub maximum_beacon_lateness_micros: u32,
+    pub tx_interrupt_wakes: u32,
+    pub tx_deadline_wakes: u32,
+    pub maximum_tx_pending_micros: u32,
     pub completed_rx_descriptors: u32,
     pub ignored_rx_frames: u32,
     pub rx_mic_failures: u32,
@@ -625,13 +628,16 @@ where
         let mut stop = pin!(stop);
         let mut stopping = false;
         let mut network_link_up = false;
+        let mut tx_pending_since_micros = None;
         loop {
             if self.tx_pending() {
+                let pending_since =
+                    *tx_pending_since_micros.get_or_insert_with(|| Instant::now().as_micros());
                 let tx_edge = select(interrupts.mac_runtime().wait_tx(), self.wait_tx_deadline());
-                let wake = if stopping {
+                let (wake, deadline) = if stopping {
                     match tx_edge.await {
-                        Either::First(events) => WifiTxWake::Interrupt { events },
-                        Either::Second(()) => WifiTxWake::Deadline,
+                        Either::First(events) => (WifiTxWake::Interrupt { events }, false),
+                        Either::Second(()) => (WifiTxWake::Deadline, true),
                     }
                 } else {
                     match select(stop.as_mut(), tx_edge).await {
@@ -639,13 +645,29 @@ where
                             stopping = true;
                             continue;
                         }
-                        Either::Second(Either::First(events)) => WifiTxWake::Interrupt { events },
-                        Either::Second(Either::Second(())) => WifiTxWake::Deadline,
+                        Either::Second(Either::First(events)) => {
+                            (WifiTxWake::Interrupt { events }, false)
+                        }
+                        Either::Second(Either::Second(())) => (WifiTxWake::Deadline, true),
                     }
                 };
+                if deadline {
+                    self.report.tx_deadline_wakes = self.report.tx_deadline_wakes.saturating_add(1);
+                } else {
+                    self.report.tx_interrupt_wakes =
+                        self.report.tx_interrupt_wakes.saturating_add(1);
+                }
                 self.service_tx(hardware, wake)
                     .await
                     .map_err(Esp32s31AccessPointRunError::Control)?;
+                if !self.tx_pending() {
+                    let elapsed = Instant::now().as_micros().saturating_sub(pending_since);
+                    self.report.maximum_tx_pending_micros = self
+                        .report
+                        .maximum_tx_pending_micros
+                        .max(u32::try_from(elapsed).unwrap_or(u32::MAX));
+                    tx_pending_since_micros = None;
+                }
                 continue;
             }
             if stopping {

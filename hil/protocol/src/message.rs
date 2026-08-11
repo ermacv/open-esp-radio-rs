@@ -3,7 +3,7 @@ use core::fmt;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-pub const PROTOCOL_VERSION: u16 = 32;
+pub const PROTOCOL_VERSION: u16 = 33;
 // Keep command envelopes small: startup artifacts are transferred as an
 // ordered CRC-protected stream, so a large per-command inline buffer only
 // inflates UART queues and executor futures without improving semantics.
@@ -768,6 +768,9 @@ pub struct WifiAccessPointEvidence {
     pub beacons_transmitted: u32,
     pub missed_beacon_intervals: u32,
     pub maximum_beacon_lateness_micros: u32,
+    pub tx_interrupt_wakes: u32,
+    pub tx_deadline_wakes: u32,
+    pub maximum_tx_pending_micros: u32,
     pub authentication_responses: u32,
     pub association_responses: u32,
     pub authorized_peers: u32,

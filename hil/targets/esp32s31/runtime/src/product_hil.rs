@@ -91,6 +91,9 @@ static AP_CHANNEL: AtomicU32 = AtomicU32::new(0);
 static AP_BEACONS: AtomicU32 = AtomicU32::new(0);
 static AP_MISSED_BEACON_INTERVALS: AtomicU32 = AtomicU32::new(0);
 static AP_MAXIMUM_BEACON_LATENESS_MICROS: AtomicU32 = AtomicU32::new(0);
+static AP_TX_INTERRUPT_WAKES: AtomicU32 = AtomicU32::new(0);
+static AP_TX_DEADLINE_WAKES: AtomicU32 = AtomicU32::new(0);
+static AP_MAXIMUM_TX_PENDING_MICROS: AtomicU32 = AtomicU32::new(0);
 static AP_AUTHENTICATIONS: AtomicU32 = AtomicU32::new(0);
 static AP_ASSOCIATIONS: AtomicU32 = AtomicU32::new(0);
 static AP_AUTHORIZATIONS: AtomicU32 = AtomicU32::new(0);
@@ -128,6 +131,9 @@ fn observe_access_point(observation: Esp32s31AccessPointObservation) {
         observation.maximum_beacon_lateness_micros,
         Ordering::Release,
     );
+    AP_TX_INTERRUPT_WAKES.store(observation.tx_interrupt_wakes, Ordering::Release);
+    AP_TX_DEADLINE_WAKES.store(observation.tx_deadline_wakes, Ordering::Release);
+    AP_MAXIMUM_TX_PENDING_MICROS.store(observation.maximum_tx_pending_micros, Ordering::Release);
     AP_AUTHENTICATIONS.store(observation.authentication_responses, Ordering::Release);
     AP_ASSOCIATIONS.store(observation.association_responses, Ordering::Release);
     AP_AUTHORIZATIONS.store(observation.authorized_peers, Ordering::Release);
@@ -190,6 +196,9 @@ fn access_point_evidence(generation: u32, requested_channel: u8) -> WifiAccessPo
         beacons_transmitted: AP_BEACONS.load(Ordering::Acquire),
         missed_beacon_intervals: AP_MISSED_BEACON_INTERVALS.load(Ordering::Acquire),
         maximum_beacon_lateness_micros: AP_MAXIMUM_BEACON_LATENESS_MICROS.load(Ordering::Acquire),
+        tx_interrupt_wakes: AP_TX_INTERRUPT_WAKES.load(Ordering::Acquire),
+        tx_deadline_wakes: AP_TX_DEADLINE_WAKES.load(Ordering::Acquire),
+        maximum_tx_pending_micros: AP_MAXIMUM_TX_PENDING_MICROS.load(Ordering::Acquire),
         authentication_responses: AP_AUTHENTICATIONS.load(Ordering::Acquire),
         association_responses: AP_ASSOCIATIONS.load(Ordering::Acquire),
         authorized_peers: AP_AUTHORIZATIONS.load(Ordering::Acquire),
@@ -979,6 +988,9 @@ async fn wifi_role_task(
                     AP_BEACONS.store(0, Ordering::Release);
                     AP_MISSED_BEACON_INTERVALS.store(0, Ordering::Release);
                     AP_MAXIMUM_BEACON_LATENESS_MICROS.store(0, Ordering::Release);
+                    AP_TX_INTERRUPT_WAKES.store(0, Ordering::Release);
+                    AP_TX_DEADLINE_WAKES.store(0, Ordering::Release);
+                    AP_MAXIMUM_TX_PENDING_MICROS.store(0, Ordering::Release);
                     AP_AUTHENTICATIONS.store(0, Ordering::Release);
                     AP_ASSOCIATIONS.store(0, Ordering::Release);
                     AP_AUTHORIZATIONS.store(0, Ordering::Release);

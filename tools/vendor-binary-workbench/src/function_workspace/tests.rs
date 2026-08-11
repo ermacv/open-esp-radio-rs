@@ -79,8 +79,10 @@ fn write_ir(path: &std::path::Path) {
         origins: vec!["rom::vendor_helper".to_owned()],
     };
     let mut irq_effects = crate::LinkedEffectSummary {
+        transitive_effects_materialized: true,
         call_graph_closed: true,
-        reachable_functions: vec!["rom::vendor_helper".to_owned()],
+        reachable_function_count: 1,
+        context_projection_materialized: true,
         context_projection_complete: true,
         ..crate::LinkedEffectSummary::default()
     };
@@ -113,7 +115,9 @@ fn write_ir(path: &std::path::Path) {
     irq_effects.semantic_operations.push(semantic_summary());
 
     let mut helper_effects = crate::LinkedEffectSummary {
+        transitive_effects_materialized: true,
         call_graph_closed: true,
+        context_projection_materialized: true,
         context_projection_complete: true,
         ..crate::LinkedEffectSummary::default()
     };
@@ -176,6 +180,7 @@ fn write_ir(path: &std::path::Path) {
         return_value: "?".to_owned(),
         return_provenance: provenance(),
         dependencies: Vec::new(),
+        local_value_flow: Vec::new(),
         calls,
         direct_mmio_predicates: Vec::new(),
         mmio_accesses: Vec::new(),

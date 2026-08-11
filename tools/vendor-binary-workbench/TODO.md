@@ -49,11 +49,16 @@ The normal user path must remain project-oriented:
   - [x] Generate evidence-backed flag, enum, bounded and register-specific
     opaque value domains into `[registers.api].output`; generated flags have
     no public integer constructor.
-  - [ ] Bind reviewed transactions to those domains and generate the public
-    capability methods which privately dispatch to `pac-raw`.
+  - [x] Bind every complete-register write to a reviewed domain and generate
+    its private typed bridge to `pac-raw`. Target-owned public capability
+    methods keep lifecycle, sequencing and ownership policy handwritten.
     - [x] Prove the vertical path with `mac_interrupt_enable`: its reviewed
       operation names `MacInterruptMask`, the generator owns the typed raw
       bridge, and every ESP32-S31 caller uses that bridge.
+    - [x] Migrate all fourteen ESP32-S31 full-register writes and all twelve
+      caller-built complete-image writes, plus all five masked RMW inputs.
+      Reject every direct raw-PAC path in those classes outside generated or
+      validation code with an architecture test.
 - [ ] Migrate the remaining ESP32-S31 public numeric transaction parameters
   to generated domains and add compile-fail fixtures for addresses, raw PAC
   imports, arbitrary mask construction and unreviewed writes.
@@ -63,7 +68,7 @@ that every user must learn.
 
 ## Focused investigation migration (2026-08-11)
 
-- [x] Replace the removed monolithic linked-IR JSON file with schema-v45
+- [x] Replace the removed monolithic linked-IR JSON file with schema-v47
   random-access bundles. Functions, call graph, registers and data objects
   have deterministic indexes; status/doctor/cache/navigation/review consumers
   use only the required member.
@@ -211,7 +216,7 @@ that every user must learn.
   uncovered TX roots `hal_mac_tx_config_edca` and
   `hal_mac_tx_get_blockack`.
 - [x] Turn publication scopes into an actionable root-cause queue. Linked-IR
-  schema 45 carries typed diagnostic kind/site/root IDs, review-scope schema 7
+  schema 47 carries typed diagnostic kind/site/root IDs, review-scope schema 7
   groups repeated causes and joins replacement coverage, and the read-only TUI
   exposes a Blockers view with function navigation. Parallel legacy string
   blocker arrays were removed from the persistent IR schema.
@@ -303,6 +308,10 @@ that every user must learn.
   as inventory/origin authority, then bind adapter table instances and only
   the external-call execution models required by `coex-core`, `coex-timer`,
   `coex-scheduler` and `ble-advertising` scenarios.
+- [x] Promote the structurally complete four-leaf COEX timer-control scope to
+  a required feature with production equivalence over all five timer banks.
+  Keep `coex_hw_timer_set` in the wider non-gating scope until its direct and
+  reference blockers are closed.
 - [ ] Turn reviewed static objects into editable logical type/table bindings.
   Initializer bytes and xrefs are evidence; field names, element counts and
   nominal type unification must remain explicit review claims.
@@ -373,14 +382,14 @@ that every user must learn.
   catalog operations; only explicit compiled call models authorize execution.
 - [x] Complete executable external-call behavior beyond scalar results. The
   generic contract, structural analysis, generated reference ABI, concrete
-  executor, profile schema 2 and linked-IR schema 45 now preserve independent
+  executor, profile schema 2 and linked-IR schema 47 now preserve independent
   RV32 `a0`/`a1` returns and reviewed private-stack byte outputs. This covers
   `queue_send_from_isr`, coexistence PTI output and `esp_timer_get_time`
   without weakening them to one `SymbolicU32`. Reviewed zeroing allocators now
   produce affine allocation objects in static IR and fresh zeroed CPU-owned
   arenas in concrete execution; allocation site, requested size and capacity
   are retained as environment evidence.
-  The schema-v45 real-project run persists 148 modeled libpp call sites (75
+  The schema-v46 real-project run persists 148 modeled libpp call sites (75
   `symbolic-u32`, 17 `symbolic-u64`, 55 `void`, one constant) and 18 independent
   private-stack outputs. It removes two Wi-Fi RX call-graph blockers and one
   Wi-Fi interrupt blocker; remaining release blockers are predominantly memory
@@ -513,6 +522,55 @@ that every user must learn.
 
 ## Real-project resource baseline
 
+### Active memory-safety regression (2026-08-11)
+
+An unrestricted artifact-wide run exhausted the host and killed the enclosing
+tmux/Codex session. Until a new cold baseline is recorded, historical
+measurements below are diagnostic history, not permission to run the current
+schema without isolation.
+
+- [x] Make one worker the CLI default and reject `--jobs 0`; parallelism is an
+  explicit measured opt-in in the range `1..=8`.
+- [x] Add `scripts/run-limited`: prefer a 1-GiB/no-swap user systemd scope and
+  fall back to a stricter 1-GiB address-space `prlimit`; both paths have a
+  15-minute wall limit and there is no unrestricted fallback.
+- [x] Remove project-wide concatenated pseudo-Rust outputs and their generated
+  ESP32-S31 files. Pseudo remains per function and as a focused prefix export.
+- [x] Stream every linked-IR bundle member into a private staging directory,
+  compare check-mode output in 64-KiB buffers, enforce a 512-MiB bundle limit,
+  and publish only a complete directory.
+- [x] Remove quadratic copies of reachable-function identities and transitive
+  blocker messages from every function summary. The graph and direct typed
+  diagnostics remain the lossless sources; focused analysis materializes the
+  selected closure without copying it into every artifact-wide root.
+- [x] Stop retaining every transitive projected semantic action in every root
+  function. The current checked artifacts show why: effect summaries account
+  for 81% of `libnet80211-all/functions.jsonl`, and projected semantic actions
+  alone account for about 91 MiB. Spool root projections or derive them for a
+  selected review/inspection root while preserving direct call arguments and
+  guard evidence.
+  - [x] Schema v47 persists direct facts and the call graph once, computes
+    exact closure scalars, and marks heavyweight root projections as
+    deferred. Prefix-focused exports retain complete paths/actions; artifact-wide
+    register indexes retain the bounded guard-backed semantic subset.
+- [x] Record a cold, non-cached ESP32-S31 `--jobs 1` baseline through
+  `scripts/run-limited`. The worst isolated profile (`wifi-sta-lifecycle`,
+  2997 functions) completed in 9.72 s at 498,096 KiB and emitted a 151.5-MiB
+  bundle. No functions, direct paths, MMIO, memory, call or blocker facts were
+  dropped; transitive root projections are explicitly deferred to focused
+  analysis.
+- [x] Preflight every selected IR artifact, inventory and companion before
+  loading catalogs. Missing generated images now identify the profile, typed
+  run-spec role and exact path. The schema-v47 real `btbb-all` write/check
+  smoke test reproduces 186 functions, 111 registers and 277 field candidates
+  in 0.40/0.35 s at 168,588/168,048 KiB through the hard-limit runner.
+- [ ] Reduce the all-profile single-process high-water from 580,824 KiB to the
+  isolated-profile target (at most 512 MiB). Every profile is dropped and
+  glibc-trimmed to about 53 MiB before the next one; remaining allocator
+  fragmentation can be removed by profile process isolation if measurements
+  justify the extra worker protocol. The current 1-GiB hard runner remains
+  mandatory meanwhile.
+
 Recorded 2026-08-09. The old feature-enabled debug path, excluding Cargo
 compilation/linking, was:
 
@@ -552,9 +610,9 @@ of the duplicate one-artifact summary reduced the same 1,312-function debug
 build to 16.69 s at 591,684 KiB. The complete four-profile `ir build --jobs 4`
 finished in 1:58.29 at 1,252,836 KiB; the thirteen-stage `project analyze`
 finished in 5:49.29 at 1,252,008 KiB after final canonical-input regeneration.
-This is the current baseline. The gap is
-now repeated document parsing, review/navigation projection and non-streaming
-serialization, not instruction analysis or runaway symbolic recursion.
+That was the baseline at this point in the schema history. Subsequent evidence
+growth invalidated it; the active regression section above owns the current
+safety criteria.
 
 ROM IR contains 1,935 roots, 453 MMIO identities and 426 complete functions;
 schema 38 inventories 593 CFG-reachable unsupported instruction sites across

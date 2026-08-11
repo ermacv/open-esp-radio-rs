@@ -17,8 +17,6 @@ pub struct LinkedIrProfileDetail {
     pub functions: usize,
     pub registers: usize,
     pub field_candidates: usize,
-    pub pseudo_rust: Option<String>,
-    pub pseudo_status: &'static str,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]

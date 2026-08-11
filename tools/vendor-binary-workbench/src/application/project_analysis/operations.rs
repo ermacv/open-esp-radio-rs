@@ -239,10 +239,7 @@ impl ResolvedProjectAnalysisOperations<'_> {
             .project
             .ir_profiles
             .iter()
-            .flat_map(|profile| {
-                crate::artifacts::bundle_files(&profile.output)
-                    .chain(profile.pseudo_rust.iter().cloned())
-            })
+            .flat_map(|profile| crate::artifacts::bundle_files(&profile.output))
             .collect()
     }
 }

@@ -64,6 +64,18 @@ pub(crate) enum WorkbenchError {
         #[source]
         source: io::Error,
     },
+    #[error("IR profile {profile:?} cannot read {role} {path}")]
+    #[diagnostic(
+        code(workbench::project::ir_input),
+        help("build or restore the named artifact, or correct its binding in the run spec")
+    )]
+    ProjectIrInput {
+        profile: String,
+        role: String,
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
     #[error("{message}")]
     #[diagnostic(code(workbench::input::line))]
     InputLine { line: usize, message: String },

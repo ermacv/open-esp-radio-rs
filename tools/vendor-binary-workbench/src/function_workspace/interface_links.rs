@@ -73,18 +73,75 @@ pub(crate) fn link_reviewed_interfaces(
             .or_default()
             .push(function);
     }
+    // Keep transitive reachability as a temporary graph of borrowed
+    // identities. Persisting every root's closure made artifact-wide profiles
+    // quadratic in both RAM and JSON size.
+    let identities = workspace
+        .facts
+        .functions
+        .iter()
+        .map(|function| {
+            (
+                (function.profile.as_str(), function.identity.as_str()),
+                function.identity.as_str(),
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    let mut symbols = BTreeMap::<(&str, &str, &str), Vec<&str>>::new();
+    for function in &workspace.facts.functions {
+        symbols
+            .entry((
+                function.profile.as_str(),
+                function.source.as_str(),
+                function.symbol.as_str(),
+            ))
+            .or_default()
+            .push(function.identity.as_str());
+    }
+    let mut adjacency = BTreeMap::<(&str, &str), Vec<&str>>::new();
+    for function in &workspace.facts.functions {
+        let targets = adjacency
+            .entry((function.profile.as_str(), function.identity.as_str()))
+            .or_default();
+        for call in &function.calls {
+            if !matches!(call.kind.as_str(), "internal" | "project-linked") {
+                continue;
+            }
+            let target = identities
+                .get(&(function.profile.as_str(), call.target.as_str()))
+                .copied()
+                .or_else(|| {
+                    let candidates = symbols.get(&(
+                        function.profile.as_str(),
+                        function.source.as_str(),
+                        call.target.as_str(),
+                    ))?;
+                    (candidates.len() == 1).then_some(candidates[0])
+                });
+            if let Some(target) = target {
+                targets.push(target);
+            }
+        }
+        targets.sort_unstable();
+        targets.dedup();
+    }
     let mut output = Vec::new();
     for reviewed_function in &workspace.facts.functions {
-        let reachable = std::iter::once(reviewed_function.identity.as_str())
-            .chain(
-                reviewed_function
-                    .is_root()
-                    .then_some(&reviewed_function.reachable_functions)
+        let mut reachable = BTreeSet::from([reviewed_function.identity.as_str()]);
+        if reviewed_function.is_root() {
+            let mut pending = vec![reviewed_function.identity.as_str()];
+            while let Some(source) = pending.pop() {
+                for target in adjacency
+                    .get(&(reviewed_function.profile.as_str(), source))
                     .into_iter()
                     .flatten()
-                    .map(String::as_str),
-            )
-            .collect::<BTreeSet<_>>();
+                {
+                    if reachable.insert(*target) {
+                        pending.push(*target);
+                    }
+                }
+            }
+        }
         for binding in bindings {
             let mut calls = BTreeSet::new();
             for call in &binding.calls {

@@ -276,10 +276,10 @@ fn cached_interface_workspace<'a>(
     })
 }
 
-fn cached_optional<'a, T>(
-    cache: &'a OnceLock<std::result::Result<Option<T>, String>>,
+fn cached_optional<T>(
+    cache: &OnceLock<std::result::Result<Option<T>, String>>,
     load: impl FnOnce() -> Result<Option<T>>,
-) -> Result<Option<&'a T>> {
+) -> Result<Option<&T>> {
     match cache.get_or_init(|| load().map_err(|error| error.to_string())) {
         Ok(value) => Ok(value.as_ref()),
         Err(message) => Err(crate::Error::invalid(message.clone())),

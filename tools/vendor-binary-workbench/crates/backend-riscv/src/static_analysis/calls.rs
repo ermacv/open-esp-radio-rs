@@ -167,7 +167,11 @@ fn apply_reviewed_external_call(
                     .collect::<Vec<_>>()
                     .join(" | ")
             ));
-            SymbolicValue::Unknown
+            // Preserve identity of the opaque result so later control flow
+            // can still be explored on both outcomes. The blocker above
+            // remains authoritative: this token is an uninterpreted value,
+            // not an executable return model and cannot make the trace exact.
+            SymbolicValue::ExternalResult(state.next_external_call_token)
         }
     };
     let mut private_stack_outputs = Vec::new();

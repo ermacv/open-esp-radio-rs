@@ -2327,6 +2327,7 @@ dependencies = [
  "clap_mangen",
  "crossterm",
  "indicatif",
+ "libc",
  "miette",
  "open-esp-radio-register-model",
  "open-radio-vendor-analysis-model",

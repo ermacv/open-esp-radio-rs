@@ -48,7 +48,9 @@ pub(super) fn parse_function(
         symbol: function.symbol,
         selection: function.selection,
         direct_complete: function.complete,
+        transitive_effects_materialized: summary.transitive_effects_materialized,
         call_graph_closed: summary.call_graph_closed,
+        context_projection_materialized: summary.context_projection_materialized,
         context_projection_complete: summary.context_projection_complete,
         context_projection_blockers: summary.context_projection_blockers,
         decode_blockers: function
@@ -62,7 +64,6 @@ pub(super) fn parse_function(
                 linear_control_flow: blocker.linear_control_flow,
             })
             .collect(),
-        reachable_functions: summary.reachable_functions,
         direct_calls: function.calls.len(),
         calls: function.calls.into_iter().map(call_fact).collect(),
         mmio_addresses: function
@@ -185,7 +186,9 @@ pub(super) fn parse_review_projection(
                 symbol: function.symbol,
                 selection: function.selection,
                 direct_complete: function.complete,
+                transitive_effects_materialized: summary.transitive_effects_materialized,
                 call_graph_closed: summary.call_graph_closed,
+                context_projection_materialized: summary.context_projection_materialized,
                 context_projection_complete: summary.context_projection_complete,
                 context_projection_blockers: summary.context_projection_blockers,
                 decode_blockers: function
@@ -199,7 +202,6 @@ pub(super) fn parse_review_projection(
                         linear_control_flow: blocker.linear_control_flow,
                     })
                     .collect(),
-                reachable_functions: Vec::new(),
                 direct_calls: function.direct_calls,
                 calls: Vec::new(),
                 mmio_addresses: function.mmio_addresses,

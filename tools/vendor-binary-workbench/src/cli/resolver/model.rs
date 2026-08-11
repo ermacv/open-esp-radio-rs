@@ -141,6 +141,7 @@ pub(in crate::cli) enum TargetCommand {
     GenerateDriver(DriverGenerateArgs),
     InspectAnalyze(InspectAnalyzeArgs),
     InspectFunction(InspectFunctionArgs),
+    InspectFlow(InspectFlowArgs),
     InspectObject(InspectObjectArgs),
     InspectScope(InspectScopeArgs),
     VerifyInventory(VerifyInventoryArgs),

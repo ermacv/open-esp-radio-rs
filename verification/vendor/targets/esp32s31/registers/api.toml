@@ -22,6 +22,216 @@ value = 0x19a879e0
 description = "Complete mask published by the qualified cold receive initializer."
 sources = ["BLOB_LIBPP_HAL_INIT_TAIL"]
 
+[[opaque-domains]]
+name = "MacInterruptClearImage"
+description = "Register-specific event image written to the MAC interrupt clear register."
+peripheral = "WIFI_MAC_INTERRUPT"
+register = "CLEAR"
+sources = ["BLOB_LIBPP_HAL_MAC_INTERRUPT_CLR_EVENT"]
+
+[[opaque-domains]]
+name = "MacPowerInterruptClearImage"
+description = "Register-specific event image written to the MAC power-interrupt clear register."
+peripheral = "WIFI_MAC_POWER_INTERRUPT"
+register = "CLEAR"
+sources = ["BLOB_LIBPP_HAL_PWR_INTERRUPT"]
+
+[[opaque-domains]]
+name = "StationTsfLowWord"
+description = "Low word of one station TSF value; sequencing remains owned by the station-TSF capability."
+peripheral = "WIFI_MAC_STA_TSF_LOAD"
+register = "VALUE_LOW"
+sources = ["BLOB_LIBPP_HAL_TSF"]
+
+[[opaque-domains]]
+name = "StationTsfHighWord"
+description = "High word of one station TSF value; sequencing remains owned by the station-TSF capability."
+peripheral = "WIFI_MAC_STA_TSF_LOAD"
+register = "VALUE_HIGH"
+sources = ["BLOB_LIBPP_HAL_TSF"]
+
+[[opaque-domains]]
+name = "MacRxDescriptorBaseAddress"
+description = "RX descriptor-base address already validated against a stable DMA binding by the closed PAC."
+peripheral = "WIFI_MAC_RX_DMA"
+register = "RX_DESCRIPTOR_BASE"
+sources = ["ROM_REV0_WDEV_APPEND_RX_BLOCKS", "BLOB_LIBPP_MAC_RXBUF_INIT_PREFIX"]
+
+[[opaque-domains]]
+name = "PhyMemoryData0"
+description = "Opaque table-memory word for PHY memory data register 0."
+peripheral = "PHY_MEMORY"
+register = "DATA_0"
+sources = ["ROM_REV0_PHY_WRITE_PBUS_MEM", "BLOB_LIBPHY_PHY_SET_TX_CFR_MEM", "ROM_REV0_PHY_WRITE_GAIN_MEM"]
+
+[[opaque-domains]]
+name = "PhyMemoryData1"
+description = "Opaque table-memory word for PHY memory data register 1."
+peripheral = "PHY_MEMORY"
+register = "DATA_1"
+sources = ["ROM_REV0_PHY_WRITE_GAIN_MEM"]
+
+[[opaque-domains]]
+name = "PhyMemoryData2"
+description = "Opaque table-memory word for PHY memory data register 2."
+peripheral = "PHY_MEMORY"
+register = "DATA_2"
+sources = ["ROM_REV0_PHY_WRITE_GAIN_MEM"]
+
+[[opaque-domains]]
+name = "FrequencyParameter0Image"
+description = "Register-specific recovered image for frequency parameter register 0."
+peripheral = "PHY_FREQUENCY_CHANNEL_ORACLE"
+register = "FREQUENCY_PARAMETER_0_OPAQUE"
+sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL"]
+
+[[opaque-domains]]
+name = "AgcSaturationGainLow"
+description = "Register-specific low AGC saturation-gain image."
+peripheral = "PHY_AGC_ORACLE"
+register = "SATURATION_GAIN_LOW"
+sources = ["BLOB_LIBPHY_PHY_REG_UPDATE_NEW"]
+
+[[opaque-domains]]
+name = "AgcSaturationGainHigh"
+description = "Register-specific high AGC saturation-gain image."
+peripheral = "PHY_AGC_ORACLE"
+register = "SATURATION_GAIN_HIGH"
+sources = ["BLOB_LIBPHY_PHY_REG_UPDATE_NEW"]
+
+[[opaque-domains]]
+name = "MacTxCompleteClearImage"
+description = "Register-specific completion-state image acknowledged by the TX capability."
+peripheral = "WIFI_MAC_TX_COMMON"
+register = "COMPLETE_CLEAR"
+sources = ["BLOB_LIBPP_HAL_MAC_TX", "MIGRATION_LMAC_TX"]
+
+[[opaque-domains]]
+name = "MacTxQueueStateClearMask"
+description = "Register-specific queue event mask acknowledged by the TX capability."
+peripheral = "WIFI_MAC_TX_COMMON"
+register = "QUEUE_STATE_CLEAR"
+sources = ["BLOB_LIBPP_HAL_MAC_TX"]
+
+[[opaque-domains]]
+name = "MacTxControlImage"
+description = "Complete queue-specific MAC TX control image assembled by a reviewed TX program."
+peripheral = "WIFI_MAC_TX_QUEUE_CONTROL"
+register = "CONTROL%s"
+sources = ["BLOB_LIBPP_HAL_MAC_TX", "MIGRATION_LMAC_TX"]
+
+[[opaque-domains]]
+name = "MacTxPlcp1Image"
+description = "Complete queue-specific PLCP1 image assembled by a reviewed TX program."
+peripheral = "WIFI_MAC_TX_QUEUE_VECTOR"
+register = "PLCP1%s"
+sources = ["BLOB_LIBPP_HAL_MAC_TX"]
+
+[[opaque-domains]]
+name = "MacTxHtSignalImage"
+description = "Complete queue-specific HT signal image assembled by a reviewed TX program."
+peripheral = "WIFI_MAC_TX_QUEUE_VECTOR"
+register = "HT_SIGNAL%s"
+sources = ["BLOB_LIBPP_HAL_MAC_TX"]
+
+[[opaque-domains]]
+name = "MacTxHeSignalA1Image"
+description = "Complete queue-specific HE-SU SIGNAL A1 image assembled by a reviewed TX program."
+peripheral = "WIFI_MAC_TX_QUEUE_VECTOR"
+register = "HE_SU_SIGNAL_A1%s"
+sources = ["BLOB_LIBPP_HAL_HE_TX"]
+
+[[opaque-domains]]
+name = "MacTxHeSignalA2LengthImage"
+description = "Complete queue-specific HE-SU SIGNAL A2 length image assembled by a reviewed TX program."
+peripheral = "WIFI_MAC_TX_QUEUE_VECTOR"
+register = "HE_SU_SIGNAL_A2_LENGTH%s"
+sources = ["BLOB_LIBPP_HAL_HE_TX"]
+
+[[opaque-domains]]
+name = "MacTxHeControlImage"
+description = "Complete queue-specific HE control image assembled by a reviewed TX program."
+peripheral = "WIFI_MAC_TX_QUEUE_VECTOR"
+register = "HE_CONTROL%s"
+sources = ["BLOB_LIBPP_HAL_HE_TX", "BLOB_LIBNET80211_HE_CONTROL_TX"]
+
+[[opaque-domains]]
+name = "MacTxPowerImage"
+description = "Complete queue-specific TX power image assembled by a reviewed TX program."
+peripheral = "WIFI_MAC_TX_QUEUE_VECTOR"
+register = "POWER%s"
+sources = ["BLOB_LIBPP_HAL_MAC_TX"]
+
+[[opaque-domains]]
+name = "MacTxDataLengthImage"
+description = "Complete queue-specific TX data-length image assembled by a reviewed TX program."
+peripheral = "WIFI_MAC_TX_QUEUE_VECTOR"
+register = "DATA_LENGTH%s"
+sources = ["BLOB_LIBPP_HAL_MAC_TX"]
+
+[[opaque-domains]]
+name = "MacTxLengthControlImage"
+description = "Complete queue-specific TX length-control image assembled by a reviewed TX program."
+peripheral = "WIFI_MAC_TX_QUEUE_VECTOR"
+register = "LENGTH_CONTROL%s"
+sources = ["BLOB_LIBPP_HAL_MAC_TX"]
+
+[[opaque-domains]]
+name = "PowerDetectorTable1Image"
+description = "Register-specific power-detector table image preserved and restored by calibration."
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "POWER_DETECTOR_TABLE_1"
+sources = ["BLOB_LIBPHY_PHY_TXDC_PWDET"]
+
+[[opaque-domains]]
+name = "PowerDetectorControlImage"
+description = "Register-specific power-detector control image preserved and restored by calibration."
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "POWER_DETECTOR_CONTROL"
+sources = ["BLOB_LIBPHY_PHY_TXDC_PWDET"]
+
+[[opaque-domains]]
+name = "TxiqToneControlImage"
+description = "Register-specific TXIQ tone-control snapshot restored by the calibration capability."
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "TONE_PATH_0_CONTROL"
+sources = ["ROM_REV0_PHY_TXIQ_GET_MIS_PWR"]
+
+[[opaque-domains]]
+name = "PbusForceTestInput"
+description = "Register-specific caller-controlled portion of one recovered PBus force-test command."
+peripheral = "PHY_PBUS"
+register = "COMMAND"
+sources = ["ROM_REV0_PHY_PBUS", "ROM_REV0_PHY_RX_DCO"]
+
+[[opaque-domains]]
+name = "TonePath0MaskedInput"
+description = "Register-specific low 28-bit tone-path zero input before preserved high control bits are merged."
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "TONE_PATH_0_CONTROL"
+sources = ["ROM_REV0_PHY_START_STOP_TX_TONE", "BLOB_LIBPHY_PHY_START_TX_TONE_STEP_NEW"]
+
+[[opaque-domains]]
+name = "TonePath1MaskedInput"
+description = "Register-specific low 28-bit second tone-path input before preserved high control bits are merged."
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "TONE_PATH_1_CONTROL"
+sources = ["ROM_REV0_PHY_START_STOP_TX_TONE", "BLOB_LIBPHY_PHY_START_TX_TONE_STEP_NEW"]
+
+[[opaque-domains]]
+name = "TxiqFirstMismatchInput"
+description = "Register-specific low 28-bit input for the first TXIQ mismatch measurement edge."
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "TONE_PATH_0_CONTROL"
+sources = ["ROM_REV0_PHY_TXIQ_GET_MIS_PWR"]
+
+[[opaque-domains]]
+name = "TxiqSecondMismatchInput"
+description = "Register-specific bits 27:24 input for the second TXIQ mismatch measurement edge."
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "TONE_PATH_0_CONTROL"
+sources = ["ROM_REV0_PHY_TXIQ_GET_MIS_PWR"]
+
 [[zero-based-field-writes]]
 name = "coex_timer_configuration"
 peripheral = "COEX_HW_TIMER"
@@ -65,6 +275,7 @@ name = "mac_interrupt_clear"
 peripheral = "WIFI_MAC_INTERRUPT"
 register = "CLEAR"
 field = "EVENTS"
+domain = "MacInterruptClearImage"
 sources = ["BLOB_LIBPP_HAL_MAC_INTERRUPT_CLR_EVENT"]
 
 [[zero-register-writes]]
@@ -84,6 +295,7 @@ name = "mac_power_interrupt_clear"
 peripheral = "WIFI_MAC_POWER_INTERRUPT"
 register = "CLEAR"
 field = "EVENTS"
+domain = "MacPowerInterruptClearImage"
 sources = ["BLOB_LIBPP_HAL_PWR_INTERRUPT"]
 
 [[full-register-writes]]
@@ -91,6 +303,7 @@ name = "station_tsf_value_low"
 peripheral = "WIFI_MAC_STA_TSF_LOAD"
 register = "VALUE_LOW"
 field = "VALUE"
+domain = "StationTsfLowWord"
 sources = ["BLOB_LIBPP_HAL_TSF"]
 
 [[full-register-writes]]
@@ -98,6 +311,7 @@ name = "station_tsf_value_high"
 peripheral = "WIFI_MAC_STA_TSF_LOAD"
 register = "VALUE_HIGH"
 field = "VALUE"
+domain = "StationTsfHighWord"
 sources = ["BLOB_LIBPP_HAL_TSF"]
 
 [[full-register-writes]]
@@ -105,6 +319,7 @@ name = "rx_descriptor_base"
 peripheral = "WIFI_MAC_RX_DMA"
 register = "RX_DESCRIPTOR_BASE"
 field = "ADDRESS"
+domain = "MacRxDescriptorBaseAddress"
 sources = ["ROM_REV0_WDEV_APPEND_RX_BLOCKS", "BLOB_LIBPP_MAC_RXBUF_INIT_PREFIX"]
 
 [[full-register-writes]]
@@ -112,6 +327,7 @@ name = "phy_memory_data_0"
 peripheral = "PHY_MEMORY"
 register = "DATA_0"
 field = "OPAQUE_DATA"
+domain = "PhyMemoryData0"
 sources = ["ROM_REV0_PHY_WRITE_PBUS_MEM", "BLOB_LIBPHY_PHY_SET_TX_CFR_MEM", "ROM_REV0_PHY_WRITE_GAIN_MEM"]
 
 [[full-register-writes]]
@@ -119,6 +335,7 @@ name = "phy_memory_data_1"
 peripheral = "PHY_MEMORY"
 register = "DATA_1"
 field = "OPAQUE_DATA"
+domain = "PhyMemoryData1"
 sources = ["ROM_REV0_PHY_WRITE_GAIN_MEM"]
 
 [[full-register-writes]]
@@ -126,6 +343,7 @@ name = "phy_memory_data_2"
 peripheral = "PHY_MEMORY"
 register = "DATA_2"
 field = "OPAQUE_DATA"
+domain = "PhyMemoryData2"
 sources = ["ROM_REV0_PHY_WRITE_GAIN_MEM"]
 
 [[full-register-writes]]
@@ -133,6 +351,7 @@ name = "frequency_parameter_0"
 peripheral = "PHY_FREQUENCY_CHANNEL_ORACLE"
 register = "FREQUENCY_PARAMETER_0_OPAQUE"
 field = "OPAQUE_VALUE"
+domain = "FrequencyParameter0Image"
 sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL"]
 
 [[full-register-writes]]
@@ -140,6 +359,7 @@ name = "agc_saturation_gain_low"
 peripheral = "PHY_AGC_ORACLE"
 register = "SATURATION_GAIN_LOW"
 field = "OPAQUE_VALUE"
+domain = "AgcSaturationGainLow"
 sources = ["BLOB_LIBPHY_PHY_REG_UPDATE_NEW"]
 
 [[full-register-writes]]
@@ -147,6 +367,7 @@ name = "agc_saturation_gain_high"
 peripheral = "PHY_AGC_ORACLE"
 register = "SATURATION_GAIN_HIGH"
 field = "OPAQUE_VALUE"
+domain = "AgcSaturationGainHigh"
 sources = ["BLOB_LIBPHY_PHY_REG_UPDATE_NEW"]
 
 [[full-register-writes]]
@@ -154,6 +375,7 @@ name = "mac_tx_complete_clear_image"
 peripheral = "WIFI_MAC_TX_COMMON"
 register = "COMPLETE_CLEAR"
 field = "STATE"
+domain = "MacTxCompleteClearImage"
 sources = ["BLOB_LIBPP_HAL_MAC_TX", "MIGRATION_LMAC_TX"]
 
 [[full-register-writes]]
@@ -161,6 +383,7 @@ name = "mac_tx_queue_state_clear"
 peripheral = "WIFI_MAC_TX_COMMON"
 register = "QUEUE_STATE_CLEAR"
 field = "EVENTS"
+domain = "MacTxQueueStateClearMask"
 sources = ["BLOB_LIBPP_HAL_MAC_TX"]
 
 [[fixed-register-writes]]
@@ -319,72 +542,84 @@ sources = ["ROM_REV0_PHY_POWER_DETECTOR"]
 name = "publish_mac_tx_control"
 peripheral = "WIFI_MAC_TX_QUEUE_CONTROL"
 register = "CONTROL%s"
+domain = "MacTxControlImage"
 sources = ["BLOB_LIBPP_HAL_MAC_TX", "MIGRATION_LMAC_TX"]
 
 [[register-image-writes]]
 name = "publish_mac_tx_plcp1"
 peripheral = "WIFI_MAC_TX_QUEUE_VECTOR"
 register = "PLCP1%s"
+domain = "MacTxPlcp1Image"
 sources = ["BLOB_LIBPP_HAL_MAC_TX"]
 
 [[register-image-writes]]
 name = "publish_mac_tx_ht_signal"
 peripheral = "WIFI_MAC_TX_QUEUE_VECTOR"
 register = "HT_SIGNAL%s"
+domain = "MacTxHtSignalImage"
 sources = ["BLOB_LIBPP_HAL_MAC_TX"]
 
 [[register-image-writes]]
 name = "publish_mac_tx_he_signal_a1"
 peripheral = "WIFI_MAC_TX_QUEUE_VECTOR"
 register = "HE_SU_SIGNAL_A1%s"
+domain = "MacTxHeSignalA1Image"
 sources = ["BLOB_LIBPP_HAL_HE_TX"]
 
 [[register-image-writes]]
 name = "publish_mac_tx_he_signal_a2_length"
 peripheral = "WIFI_MAC_TX_QUEUE_VECTOR"
 register = "HE_SU_SIGNAL_A2_LENGTH%s"
+domain = "MacTxHeSignalA2LengthImage"
 sources = ["BLOB_LIBPP_HAL_HE_TX"]
 
 [[register-image-writes]]
 name = "publish_mac_tx_he_control"
 peripheral = "WIFI_MAC_TX_QUEUE_VECTOR"
 register = "HE_CONTROL%s"
+domain = "MacTxHeControlImage"
 sources = ["BLOB_LIBPP_HAL_HE_TX", "BLOB_LIBNET80211_HE_CONTROL_TX"]
 
 [[register-image-writes]]
 name = "publish_mac_tx_power"
 peripheral = "WIFI_MAC_TX_QUEUE_VECTOR"
 register = "POWER%s"
+domain = "MacTxPowerImage"
 sources = ["BLOB_LIBPP_HAL_MAC_TX"]
 
 [[register-image-writes]]
 name = "publish_mac_tx_data_length"
 peripheral = "WIFI_MAC_TX_QUEUE_VECTOR"
 register = "DATA_LENGTH%s"
+domain = "MacTxDataLengthImage"
 sources = ["BLOB_LIBPP_HAL_MAC_TX"]
 
 [[register-image-writes]]
 name = "publish_mac_tx_length_control"
 peripheral = "WIFI_MAC_TX_QUEUE_VECTOR"
 register = "LENGTH_CONTROL%s"
+domain = "MacTxLengthControlImage"
 sources = ["BLOB_LIBPP_HAL_MAC_TX"]
 
 [[register-image-writes]]
 name = "publish_power_detector_table_1_image"
 peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
 register = "POWER_DETECTOR_TABLE_1"
+domain = "PowerDetectorTable1Image"
 sources = ["BLOB_LIBPHY_PHY_TXDC_PWDET"]
 
 [[register-image-writes]]
 name = "publish_power_detector_control_image"
 peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
 register = "POWER_DETECTOR_CONTROL"
+domain = "PowerDetectorControlImage"
 sources = ["BLOB_LIBPHY_PHY_TXDC_PWDET"]
 
 [[register-image-writes]]
 name = "restore_txiq_tone_control"
 peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
 register = "TONE_PATH_0_CONTROL"
+domain = "TxiqToneControlImage"
 sources = ["ROM_REV0_PHY_TXIQ_GET_MIS_PWR"]
 [[zero-based-field-writes]]
 name = "ersu_ack_rate_baseline"
@@ -619,6 +854,7 @@ sources = ["BLOB_LIBPHY_PHY_START_TX_TONE_STEP_NEW"]
 name = "publish_pbus_force_test"
 peripheral = "PHY_PBUS"
 register = "COMMAND"
+domain = "PbusForceTestInput"
 preserve-mask = 0xfffe0001
 input-mask = 0x0001fffc
 set-mask = 0x00000002
@@ -628,6 +864,7 @@ sources = ["ROM_REV0_PHY_PBUS", "ROM_REV0_PHY_RX_DCO"]
 name = "publish_tone_path_0_image"
 peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
 register = "TONE_PATH_0_CONTROL"
+domain = "TonePath0MaskedInput"
 preserve-mask = 0xf0000000
 input-mask = 0x0fffffff
 set-mask = 0x00000000
@@ -637,6 +874,7 @@ sources = ["ROM_REV0_PHY_START_STOP_TX_TONE", "BLOB_LIBPHY_PHY_START_TX_TONE_STE
 name = "publish_tone_path_1_image"
 peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
 register = "TONE_PATH_1_CONTROL"
+domain = "TonePath1MaskedInput"
 preserve-mask = 0xf0000000
 input-mask = 0x0fffffff
 set-mask = 0x00000000
@@ -646,6 +884,7 @@ sources = ["ROM_REV0_PHY_START_STOP_TX_TONE", "BLOB_LIBPHY_PHY_START_TX_TONE_STE
 name = "publish_txiq_first_mismatch_image"
 peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
 register = "TONE_PATH_0_CONTROL"
+domain = "TxiqFirstMismatchInput"
 preserve-mask = 0xf0000000
 input-mask = 0x0fffffff
 set-mask = 0x00000000
@@ -655,6 +894,7 @@ sources = ["ROM_REV0_PHY_TXIQ_GET_MIS_PWR"]
 name = "publish_txiq_second_mismatch_image"
 peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
 register = "TONE_PATH_0_CONTROL"
+domain = "TxiqSecondMismatchInput"
 preserve-mask = 0xf0ffffff
 input-mask = 0x0f000000
 set-mask = 0x00000000

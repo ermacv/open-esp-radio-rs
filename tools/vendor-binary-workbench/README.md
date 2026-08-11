@@ -20,6 +20,29 @@ The backend reads ELF files and static archives directly with the Rust
 not require binutils and does not scan source text for register addresses or
 function names.
 
+Artifact-wide analysis defaults to one worker. On a new or changing project,
+build the optimized binary once and run the first full analysis through the
+hard-limit wrapper:
+
+```console
+CARGO_BUILD_JOBS=2 cargo build --profile workbench \
+  -p open-radio-vendor-binary-workbench --bin vendor-binary-workbench
+
+tools/vendor-binary-workbench/scripts/run-limited project analyze --check \
+  --project /path/to/vendor-project.toml --jobs 1
+```
+
+The wrapper prefers a user systemd scope with a 1-GiB memory limit, no swap and
+a 15-minute runtime limit. Where the user bus is unavailable it uses
+`prlimit` to cap total virtual address space at 1 GiB plus `timeout` for the
+same wall-clock bound. It intentionally refuses to fall back to an
+unrestricted run. Project linked-IR bundles are streamed, capped at 512 MiB
+per profile, and no longer generate concatenated project-wide pseudo-Rust;
+use `inspect function`, the TUI, or a prefix-focused `ir export` instead.
+Set `VENDOR_WORKBENCH_LIMIT_BACKEND=prlimit` for a child-process RSS
+measurement with `/usr/bin/time`, or `systemd` to require that backend rather
+than accepting the safe automatic choice.
+
 Repeated analysis should use a project manifest:
 
 ```console

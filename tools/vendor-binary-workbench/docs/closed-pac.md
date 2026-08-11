@@ -61,16 +61,20 @@ explicitly qualify them. Concurrency is instead controlled by unique
 capabilities, interrupt ownership, critical sections, or a reviewed hardware
 SET/CLEAR alias.
 
-Schema 2 currently generates four closed value-domain forms from
+Schema 2 generates four closed value-domain forms from
 `registers/api.toml`: composable flags, finite enums, inclusive checked ranges
 and register-specific opaque newtypes. A target must still bind each generated
 domain to a reviewed capability method; merely discovering a field never
 creates a writable public operation.
 
-For domain-bound operations the generated module also owns the only typed
-bridge to `pac-raw`. Handwritten ownership and sequencing methods remain in the
-closed PAC, but cannot accidentally pass an arbitrary integer to that reviewed
-register write.
+Every schema-2 full-register write, caller-built complete-image write or masked
+RMW input must name a domain. The generated module owns the only typed bridge
+to `pac-raw`; there is no untyped compatibility path. Handwritten ownership and
+sequencing methods remain in the closed PAC, but cannot accidentally pass a
+naked integer across that transaction boundary.
+Register-specific opaque domains may target ordinary or SVD-declared modified
+write semantics such as W1C: the domain constrains value identity, while the
+bound operation and SVD validate how the register is written.
 
 ## ESP32-S31 reference boundary
 
@@ -82,7 +86,8 @@ depends on it. The MAC interrupt-enable image is represented by
 `MacInterruptMask`; its integer constructor is private, while status is read
 through `MacInterruptEvents` and finite snapshot types.
 
-The current reviewed transaction pack still contains older dynamic `u32`
-operations used inside the closed crate. Migrating those inputs to generated
-flags, enums, bounded values and register-specific opaque domains is tracked
-as remaining PAC work; they must not be re-exported as raw public writers.
+All reviewed ESP32-S31 full-register, caller-built complete-image and masked
+RMW writes now cross generated typed bridges. Remaining PAC closure work
+concerns multi-field transaction parameters plus public capability signatures;
+they must be migrated to finite, bounded or register-specific domain types
+without moving target policy into the generic generator.

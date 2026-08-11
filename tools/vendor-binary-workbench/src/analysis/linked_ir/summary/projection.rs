@@ -6,9 +6,11 @@ use super::event_dispatch::project_event_dispatches;
 
 pub(super) struct ProjectContextProjection {
     pub(super) complete: bool,
+    pub(super) paths_materialized: bool,
     pub(super) blockers: Vec<String>,
     pub(super) fields: Vec<LinkedSummaryContextField>,
     pub(super) trampoline_calls: Vec<LinkedProjectedTrampolineCall>,
+    pub(super) semantic_action_count: usize,
     pub(super) semantic_actions: Vec<LinkedProjectedSemanticAction>,
     pub(super) event_dispatches: Vec<LinkedEventDispatch>,
 }
@@ -43,9 +45,58 @@ struct ContextProjectionState {
     function: usize,
     argument_map: Vec<Option<(u8, i32)>>,
     visited_functions: Vec<usize>,
-    site_path: Vec<Option<u32>>,
-    guard_scopes: Option<Vec<LinkedCallGuardScope>>,
-    path: String,
+    /// `(caller, edge index)` pairs are the compact authoritative path. Human
+    /// strings, site paths and guard scopes are reconstructed only when an
+    /// emitted fact needs them; retaining their complete prefixes in every
+    /// queued state is quadratic on large linked images.
+    edge_path: Vec<(usize, usize)>,
+}
+
+fn render_state_path(
+    state: &ContextProjectionState,
+    functions: &[LinkedIrFunction],
+    call_edges: &[Vec<SummaryCallEdge>],
+) -> String {
+    let mut path = functions[state.visited_functions[0]].identity.clone();
+    for &(caller, edge_index) in &state.edge_path {
+        let edge = &call_edges[caller][edge_index];
+        let site = edge
+            .site
+            .map_or_else(|| "composed".to_owned(), |site| format!("{site:#010x}"));
+        path.push_str(&format!(
+            " --call@{}--> {}",
+            site, functions[edge.target].identity
+        ));
+    }
+    path
+}
+
+fn state_site_path(
+    state: &ContextProjectionState,
+    call_edges: &[Vec<SummaryCallEdge>],
+) -> Vec<Option<u32>> {
+    state
+        .edge_path
+        .iter()
+        .map(|&(caller, edge_index)| call_edges[caller][edge_index].site)
+        .collect()
+}
+
+fn state_guard_scopes(
+    state: &ContextProjectionState,
+    functions: &[LinkedIrFunction],
+    call_edges: &[Vec<SummaryCallEdge>],
+) -> Option<Vec<LinkedCallGuardScope>> {
+    let mut scopes = Some(Vec::new());
+    for &(caller, edge_index) in &state.edge_path {
+        let edge = &call_edges[caller][edge_index];
+        scopes = extend_guard_scopes(
+            scopes.as_deref(),
+            &functions[caller].identity,
+            edge.guard_paths.as_deref(),
+        );
+    }
+    scopes
 }
 pub(super) fn project_memory_fields(
     reachable: &[(usize, usize)],
@@ -187,6 +238,7 @@ pub(super) fn project_context_fields(
     call_edges: &[Vec<SummaryCallEdge>],
     projection_reachable: &[bool],
     call_graph_closed: bool,
+    materialize_semantic_actions: bool,
 ) -> ProjectContextProjection {
     let mut root_arguments = vec![None; usize::from(LINKED_CONTEXT_ARGUMENTS)];
     for argument in 0..LINKED_CONTEXT_ARGUMENTS {
@@ -196,14 +248,13 @@ pub(super) fn project_context_fields(
         function: root,
         argument_map: root_arguments,
         visited_functions: vec![root],
-        site_path: Vec::new(),
-        guard_scopes: Some(Vec::new()),
-        path: functions[root].identity.clone(),
+        edge_path: Vec::new(),
     }]);
     let mut blockers = BTreeSet::new();
     let mut fields = BTreeMap::<(u8, i32, u8), SummaryContextAccumulator>::new();
     let mut trampoline_calls = BTreeSet::new();
     let mut semantic_actions = BTreeSet::new();
+    let mut semantic_action_count = 0_usize;
     let mut explored = 0_usize;
 
     while let Some(state) = queue.pop_front() {
@@ -225,15 +276,26 @@ pub(super) fn project_context_fields(
                 .as_ref()
                 .expect("filtered semantic call")
                 .clone();
+            let mut site_path = state_site_path(&state, call_edges);
+            site_path.push(call.site);
+            let guard_scopes = state_guard_scopes(&state, functions, call_edges);
+            semantic_action_count += 1;
+            let event_dispatch = call
+                .semantic_contract
+                .as_ref()
+                .and_then(|contract| contract.event_dispatch.as_ref())
+                .is_some();
+            if !materialize_semantic_actions && guard_scopes.is_none() && !event_dispatch {
+                continue;
+            }
+            let state_path = render_state_path(&state, functions, call_edges);
             let site = call
                 .site
                 .map_or_else(|| "composed".to_owned(), |site| format!("{site:#010x}"));
             let boundary = format!("{operation} via {}", call.target);
-            let mut site_path = state.site_path.clone();
-            site_path.push(call.site);
             semantic_actions.insert(LinkedProjectedSemanticAction {
                 site_path,
-                path: format!("{} --semantic@{}--> {}", state.path, site, call.target),
+                path: format!("{state_path} --semantic@{site}--> {}", call.target),
                 operation,
                 target: call.target.clone(),
                 contract: call.semantic_contract.clone(),
@@ -246,10 +308,10 @@ pub(super) fn project_context_fields(
                     &state.argument_map,
                     &mut blockers,
                     &boundary,
-                    &state.path,
+                    &state_path,
                 ),
                 guard_scopes: extend_guard_scopes(
-                    state.guard_scopes.as_deref(),
+                    guard_scopes.as_deref(),
                     &function.identity,
                     call.guard_paths.as_deref(),
                 ),
@@ -260,6 +322,7 @@ pub(super) fn project_context_fields(
             .iter()
             .filter(|call| call.trampoline.is_some())
         {
+            let state_path = render_state_path(&state, functions, call_edges);
             let trampoline = call
                 .trampoline
                 .as_ref()
@@ -271,12 +334,12 @@ pub(super) fn project_context_fields(
                 &state.argument_map,
                 &mut blockers,
                 &boundary,
-                &state.path,
+                &state_path,
             );
             trampoline_calls.insert(LinkedProjectedTrampolineCall {
                 path: format!(
                     "{} --trampoline@{}+{:#x}--> {}",
-                    state.path, trampoline.table, trampoline.slot, trampoline.c_name
+                    state_path, trampoline.table, trampoline.slot, trampoline.c_name
                 ),
                 trampoline,
                 origin: function.identity.clone(),
@@ -295,17 +358,35 @@ pub(super) fn project_context_fields(
                 .copied()
                 .flatten()
             else {
-                blockers.insert(format!(
-                    "no affine binding for {} arg{} along {}",
-                    function.identity, access.argument, state.path
-                ));
+                if materialize_semantic_actions {
+                    blockers.insert(format!(
+                        "no affine binding for {} arg{} along {}",
+                        function.identity,
+                        access.argument,
+                        render_state_path(&state, functions, call_edges)
+                    ));
+                } else {
+                    blockers.insert(format!(
+                        "no affine binding for {} arg{}; run a focused query for path evidence",
+                        function.identity, access.argument
+                    ));
+                }
                 continue;
             };
             let Some(offset) = base_offset.checked_add(access.offset) else {
-                blockers.insert(format!(
-                    "context offset overflow for {} arg{} along {}",
-                    function.identity, access.argument, state.path
-                ));
+                if materialize_semantic_actions {
+                    blockers.insert(format!(
+                        "context offset overflow for {} arg{} along {}",
+                        function.identity,
+                        access.argument,
+                        render_state_path(&state, functions, call_edges)
+                    ));
+                } else {
+                    blockers.insert(format!(
+                        "context offset overflow for {} arg{}; run a focused query for path evidence",
+                        function.identity, access.argument
+                    ));
+                }
                 continue;
             };
             let field = fields
@@ -332,12 +413,16 @@ pub(super) fn project_context_fields(
                 _ => unreachable!("context access has a closed access vocabulary"),
             }
             field.origins.insert(function.identity.clone());
-            field
-                .paths
-                .insert(format!("{} / {}", state.path, access.path));
+            if materialize_semantic_actions {
+                field.paths.insert(format!(
+                    "{} / {}",
+                    render_state_path(&state, functions, call_edges),
+                    access.path
+                ));
+            }
         }
 
-        for edge in &call_edges[state.function] {
+        for (edge_index, edge) in call_edges[state.function].iter().enumerate() {
             if !projection_reachable[edge.target] {
                 continue;
             }
@@ -372,26 +457,13 @@ pub(super) fn project_context_fields(
             }
             let mut visited_functions = state.visited_functions.clone();
             visited_functions.push(edge.target);
-            let mut site_path = state.site_path.clone();
-            site_path.push(edge.site);
-            let guard_scopes = extend_guard_scopes(
-                state.guard_scopes.as_deref(),
-                &function.identity,
-                edge.guard_paths.as_deref(),
-            );
-            let site = edge
-                .site
-                .map_or_else(|| "composed".to_owned(), |site| format!("{site:#010x}"));
+            let mut edge_path = state.edge_path.clone();
+            edge_path.push((state.function, edge_index));
             queue.push_back(ContextProjectionState {
                 function: edge.target,
                 argument_map,
                 visited_functions,
-                site_path,
-                guard_scopes,
-                path: format!(
-                    "{} --call@{}--> {}",
-                    state.path, site, functions[edge.target].identity
-                ),
+                edge_path,
             });
         }
     }
@@ -416,9 +488,11 @@ pub(super) fn project_context_fields(
     let event_dispatches = project_event_dispatches(&semantic_actions);
     ProjectContextProjection {
         complete: call_graph_closed && blockers.is_empty(),
+        paths_materialized: materialize_semantic_actions,
         blockers: blockers.into_iter().collect(),
         fields,
         trampoline_calls: trampoline_calls.into_iter().collect(),
+        semantic_action_count,
         semantic_actions,
         event_dispatches,
     }

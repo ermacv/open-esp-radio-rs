@@ -347,11 +347,15 @@ impl RadioRegisters {
             .config(bank)
             .modify(|_, w| w.timeout().set(program.timeout));
 
-        super::svd::register_image_write::publish_mac_tx_control(control_bank, bank, program.plcp0);
-        super::svd::register_image_write::publish_mac_tx_plcp1(
+        super::generated::publish_mac_tx_control(
+            control_bank,
+            bank,
+            super::generated::MacTxControlImage::new(program.plcp0),
+        );
+        super::generated::publish_mac_tx_plcp1(
             &self.peripherals.wifi_mac_tx_queue_vector,
             bank,
-            program.plcp1,
+            super::generated::MacTxPlcp1Image::new(program.plcp1),
         );
         self.peripherals
             .wifi_mac_he_init_suffix
@@ -360,15 +364,15 @@ impl RadioRegisters {
         control_bank
             .protection(bank)
             .modify(|_, w| w.software_cts().clear_bit());
-        super::svd::register_image_write::publish_mac_tx_length_control(
+        super::generated::publish_mac_tx_length_control(
             &self.peripherals.wifi_mac_tx_queue_vector,
             bank,
-            program.length_control,
+            super::generated::MacTxLengthControlImage::new(program.length_control),
         );
-        super::svd::register_image_write::publish_mac_tx_power(
+        super::generated::publish_mac_tx_power(
             &self.peripherals.wifi_mac_tx_queue_vector,
             bank,
-            program.power,
+            super::generated::MacTxPowerImage::new(program.power),
         );
 
         // SOURCE: complete
@@ -429,11 +433,15 @@ impl RadioRegisters {
         control_bank
             .config(bank)
             .modify(|_, w| w.timeout().set(program.timeout));
-        super::svd::register_image_write::publish_mac_tx_control(control_bank, bank, program.plcp0);
-        super::svd::register_image_write::publish_mac_tx_plcp1(
+        super::generated::publish_mac_tx_control(
+            control_bank,
+            bank,
+            super::generated::MacTxControlImage::new(program.plcp0),
+        );
+        super::generated::publish_mac_tx_plcp1(
             &self.peripherals.wifi_mac_tx_queue_vector,
             bank,
-            program.plcp1,
+            super::generated::MacTxPlcp1Image::new(program.plcp1),
         );
         self.peripherals
             .wifi_mac_he_init_suffix
@@ -448,10 +456,10 @@ impl RadioRegisters {
         // 0x2a into count A and its second lane, and byte 0x2e into count B.
         // Keep the three fresh-read hardware edges distinct. In particular,
         // these fields do not belong to the 0x20104d64 protection word above.
-        super::svd::register_image_write::publish_mac_tx_ht_signal(
+        super::generated::publish_mac_tx_ht_signal(
             &self.peripherals.wifi_mac_tx_queue_vector,
             bank,
-            program.ht_signal,
+            super::generated::MacTxHtSignalImage::new(program.ht_signal),
         );
         let descriptor_counts = self
             .peripherals
@@ -484,20 +492,20 @@ impl RadioRegisters {
 
         // SOURCE: complete mac_tx_set_len followed by the HT power branch in
         // hal_mac_tx_set_ppdu.
-        super::svd::register_image_write::publish_mac_tx_length_control(
+        super::generated::publish_mac_tx_length_control(
             &self.peripherals.wifi_mac_tx_queue_vector,
             bank,
-            program.length_control,
+            super::generated::MacTxLengthControlImage::new(program.length_control),
         );
-        super::svd::register_image_write::publish_mac_tx_data_length(
+        super::generated::publish_mac_tx_data_length(
             &self.peripherals.wifi_mac_tx_queue_vector,
             bank,
-            program.data_length,
+            super::generated::MacTxDataLengthImage::new(program.data_length),
         );
-        super::svd::register_image_write::publish_mac_tx_power(
+        super::generated::publish_mac_tx_power(
             &self.peripherals.wifi_mac_tx_queue_vector,
             bank,
-            program.power,
+            super::generated::MacTxPowerImage::new(program.power),
         );
         control_bank
             .config(bank)
@@ -546,11 +554,15 @@ impl RadioRegisters {
         control_bank
             .config(bank)
             .modify(|_, w| w.timeout().set(program.timeout));
-        super::svd::register_image_write::publish_mac_tx_control(control_bank, bank, program.plcp0);
-        super::svd::register_image_write::publish_mac_tx_plcp1(
+        super::generated::publish_mac_tx_control(
+            control_bank,
+            bank,
+            super::generated::MacTxControlImage::new(program.plcp0),
+        );
+        super::generated::publish_mac_tx_plcp1(
             &self.peripherals.wifi_mac_tx_queue_vector,
             bank,
-            program.plcp1,
+            super::generated::MacTxPlcp1Image::new(program.plcp1),
         );
         self.peripherals
             .wifi_mac_he_init_suffix
@@ -577,15 +589,15 @@ impl RadioRegisters {
 
         // SOURCE: complete mac_tx_set_hesig stores A1 then A2/length before
         // publishing the same three descriptor-count edges used by HT.
-        super::svd::register_image_write::publish_mac_tx_he_signal_a1(
+        super::generated::publish_mac_tx_he_signal_a1(
             &self.peripherals.wifi_mac_tx_queue_vector,
             bank,
-            program.he_signal_a1,
+            super::generated::MacTxHeSignalA1Image::new(program.he_signal_a1),
         );
-        super::svd::register_image_write::publish_mac_tx_he_signal_a2_length(
+        super::generated::publish_mac_tx_he_signal_a2_length(
             &self.peripherals.wifi_mac_tx_queue_vector,
             bank,
-            program.he_signal_a2_length,
+            super::generated::MacTxHeSignalA2LengthImage::new(program.he_signal_a2_length),
         );
         let descriptor_counts = self
             .peripherals
@@ -598,10 +610,10 @@ impl RadioRegisters {
 
         // HE reaches mac_tx_set_len for LENGTH_CONTROL, but its flag-bit-31
         // branch intentionally skips the non-HE DATA_LENGTH register.
-        super::svd::register_image_write::publish_mac_tx_length_control(
+        super::generated::publish_mac_tx_length_control(
             &self.peripherals.wifi_mac_tx_queue_vector,
             bank,
-            program.length_control,
+            super::generated::MacTxLengthControlImage::new(program.length_control),
         );
         // SOURCE: complete `libpp.a[hal_mac_tx.o]::
         // hal_mac_tx_set_ppdu` calls complete
@@ -613,10 +625,10 @@ impl RadioRegisters {
         let (he_control, software_he_control_enabled) = program
             .software_he_control
             .map_or((0, false), |image| (image, true));
-        super::svd::register_image_write::publish_mac_tx_he_control(
+        super::generated::publish_mac_tx_he_control(
             &self.peripherals.wifi_mac_tx_queue_vector,
             bank,
-            he_control,
+            super::generated::MacTxHeControlImage::new(he_control),
         );
         self.peripherals
             .wifi_mac_tx_queue_vector
@@ -627,10 +639,10 @@ impl RadioRegisters {
             });
         // The complete parent selects and publishes the data/RTS power pair
         // only after the HE-Control leaf returns.
-        super::svd::register_image_write::publish_mac_tx_power(
+        super::generated::publish_mac_tx_power(
             &self.peripherals.wifi_mac_tx_queue_vector,
             bank,
-            program.power,
+            super::generated::MacTxPowerImage::new(program.power),
         );
 
         control_bank
@@ -717,9 +729,9 @@ impl RadioRegisters {
         let alternate = completion.alternate(bank).read().bits();
         let trigger_flow = mac_tx_queue::trigger_flow_state(common) & (1_u32 << queue) != 0;
         let clear = common.complete_clear().read().bits();
-        super::svd::full_register_write::mac_tx_complete_clear_image(
+        super::generated::mac_tx_complete_clear_image(
             common,
-            clear | completion_mask,
+            super::generated::MacTxCompleteClearImage::new(clear | completion_mask),
         );
         device_fence();
         Some(MacTxCompletionRegisters {
@@ -802,7 +814,10 @@ impl RadioRegisters {
                 // reaches disable before clearing the collision edge.
                 let _ = mac_tx_queue::disable_queue(queue_control, queue_index);
                 device_fence();
-                super::svd::full_register_write::mac_tx_queue_state_clear(common, collision_mask);
+                super::generated::mac_tx_queue_state_clear(
+                    common,
+                    super::generated::MacTxQueueStateClearMask::new(collision_mask),
+                );
             }
             MacTxDetachReason::Timeout => {
                 let timeout_mask = 1_u32 << (16 + queue);
@@ -815,7 +830,10 @@ impl RadioRegisters {
                 if was_valid {
                     let _ = mac_tx_queue::disable_queue(queue_control, queue_index);
                 }
-                super::svd::full_register_write::mac_tx_queue_state_clear(common, timeout_mask);
+                super::generated::mac_tx_queue_state_clear(
+                    common,
+                    super::generated::MacTxQueueStateClearMask::new(timeout_mask),
+                );
             }
             MacTxDetachReason::Completed => {
                 // A completion edge was consumed separately before this

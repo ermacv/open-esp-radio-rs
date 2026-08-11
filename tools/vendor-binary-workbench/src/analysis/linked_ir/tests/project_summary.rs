@@ -44,8 +44,18 @@ fn duplicate_private_names_get_stable_address_qualified_ir_identities() {
         regions: Vec::new(),
     };
 
-    let report =
-        build_linked_ir_for_source(&resolver, "private_", &map, "primary", false, false, 0);
+    let report = build_linked_ir_for_source(
+        &resolver,
+        &map,
+        LinkedIrSourceOptions {
+            symbol_prefix: "private_",
+            source: "primary",
+            namespace_identities: false,
+            include_reachable: false,
+            jobs: 1,
+            compact_projected_actions: false,
+        },
+    );
 
     assert_eq!(report.exported_functions, 0);
     assert_eq!(report.local_functions, 2);
@@ -62,8 +72,30 @@ fn duplicate_private_names_get_stable_address_qualified_ir_identities() {
     );
 
     let project_report = merge_linked_ir(vec![
-        build_linked_ir_for_source(&resolver, "private_", &map, "libphy", true, false, 0),
-        build_linked_ir_for_source(&resolver, "private_", &map, "rom", true, false, 0),
+        build_linked_ir_for_source(
+            &resolver,
+            &map,
+            LinkedIrSourceOptions {
+                symbol_prefix: "private_",
+                source: "libphy",
+                namespace_identities: true,
+                include_reachable: false,
+                jobs: 1,
+                compact_projected_actions: false,
+            },
+        ),
+        build_linked_ir_for_source(
+            &resolver,
+            &map,
+            LinkedIrSourceOptions {
+                symbol_prefix: "private_",
+                source: "rom",
+                namespace_identities: true,
+                include_reachable: false,
+                jobs: 1,
+                compact_projected_actions: false,
+            },
+        ),
     ]);
     assert_eq!(project_report.functions.len(), 4);
     assert_eq!(
@@ -144,7 +176,18 @@ fn decode_blockers_only_include_cfg_reachable_instructions() {
         registers: Vec::new(),
         regions: Vec::new(),
     };
-    let report = build_linked_ir_for_source(&resolver, "", &map, "primary", false, false, 1);
+    let report = build_linked_ir_for_source(
+        &resolver,
+        &map,
+        LinkedIrSourceOptions {
+            symbol_prefix: "",
+            source: "primary",
+            namespace_identities: false,
+            include_reachable: false,
+            jobs: 1,
+            compact_projected_actions: false,
+        },
+    );
 
     assert_eq!(report.functions.len(), 1);
     assert_eq!(report.functions[0].decode_blockers.len(), 1);
@@ -335,10 +378,7 @@ fn reachable_effect_summary_keeps_cross_artifact_provenance() {
         .find(|function| function.identity == "parent::vendor_parent")
         .unwrap();
 
-    assert_eq!(
-        parent.effect_summary.reachable_functions,
-        ["child::vendor_child"]
-    );
+    assert_eq!(parent.effect_summary.reachable_function_count, 1);
     assert_eq!(parent.effect_summary.max_depth, 1);
     assert!(!parent.effect_summary.call_graph_closed);
     assert_eq!(parent.effect_summary.mmio_registers.len(), 1);
@@ -549,5 +589,27 @@ fn affine_call_bindings_project_transitive_context_fields() {
     assert_eq!(guard_scopes[2].function, "rom::leaf");
     assert!(!guard_scopes[2].paths[0].guards[0].taken);
     assert_eq!(report.trampoline_slots.len(), 1);
+
+    let mut direct_functions = report.functions.clone();
+    for function in &mut direct_functions {
+        function.effect_summary = LinkedEffectSummary::default();
+    }
+    let compact_report = summarize_linked_ir_with_options(direct_functions, 1, true);
+    let compact_root = compact_report
+        .functions
+        .iter()
+        .find(|function| function.identity == "rom::root")
+        .unwrap();
+    assert_eq!(compact_root.effect_summary.semantic_action_count, 1);
+    assert!(!compact_root.effect_summary.semantic_actions_materialized);
+    assert_eq!(
+        compact_root.effect_summary.register_semantic_actions.len(),
+        1
+    );
+    let compact_json = serde_json::to_value(compact_root).unwrap();
+    assert_eq!(
+        compact_json["effect_summary"]["semantic_actions"],
+        serde_json::json!([])
+    );
     assert_eq!(report.trampoline_slots[0].call_shapes, 1);
 }

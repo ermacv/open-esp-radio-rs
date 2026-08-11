@@ -62,11 +62,8 @@ fn recursive_effect_summary_reaches_a_fixed_point() {
     assert_eq!(report.recursive_effect_summaries, 2);
     for function in &report.functions {
         assert!(function.effect_summary.call_graph_closed);
-        assert_eq!(
-            function.effect_summary.recursive_functions,
-            ["rom::first", "rom::second"]
-        );
-        assert_eq!(function.effect_summary.reachable_functions.len(), 1);
+        assert!(function.effect_summary.recursive);
+        assert_eq!(function.effect_summary.reachable_function_count, 1);
         assert_eq!(function.effect_summary.max_depth, 1);
         assert!(!function.effect_summary.context_projection_complete);
         assert!(

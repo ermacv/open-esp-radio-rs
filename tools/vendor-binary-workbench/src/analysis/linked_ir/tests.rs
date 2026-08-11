@@ -55,6 +55,7 @@ fn linked_test_function(
             sources: Vec::new(),
         },
         dependencies: Vec::new(),
+        local_value_flow: Vec::new(),
         calls,
         direct_mmio_predicates: Vec::new(),
         mmio_accesses: Vec::new(),

@@ -70,7 +70,6 @@ roots = "symbol-prefix"
 symbol-prefix = "phy_"
 include-reachable = true
 output = "generated/vendor.ir"
-pseudo-rust = "generated/vendor.pseudo.rs"
 
 [registers]
 facts = "generated/mmio.json"
@@ -179,7 +178,6 @@ match-floor = 2
             include_reachable: true,
             entry_contract: "none".to_owned(),
             output: directory.join("generated/vendor.ir"),
-            pseudo_rust: Some(directory.join("generated/vendor.pseudo.rs")),
         }]
     );
     assert_eq!(

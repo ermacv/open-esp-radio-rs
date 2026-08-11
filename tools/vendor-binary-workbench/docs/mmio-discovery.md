@@ -107,8 +107,8 @@ than summing paths and double-counting their common prefix. The JSON records
 this as `"access_count_mode": "maximum-per-path"`.
 
 Independent functions can be processed concurrently with `--jobs N` (`1..=8`).
-Zero is the balanced automatic mode and selects up to four available workers.
-Use `--jobs 1` when minimum peak memory matters more than elapsed time.
+The safe default is one worker. Increase `--jobs` explicitly only after a
+target-specific peak-memory measurement.
 Workers use a bounded result queue, deterministic final sorting and explicit
 stack size, so concurrency does not retain one whole artifact per worker.
 Choose `--jobs 2` first on a new target and compare runtime and peak RSS before

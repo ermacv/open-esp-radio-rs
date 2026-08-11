@@ -57,22 +57,28 @@ fn closed_chip_pac_is_the_only_driver_dependency_on_the_raw_pac() {
         .expect("read generated closed-PAC domains");
     assert!(generated.contains("pub struct MacInterruptMask(u32);"));
     assert!(!generated.contains("from_bits"));
-    assert!(!generated.contains("pub fn new"));
+    assert!(!generated.contains("impl MacInterruptMask {\n    pub const fn new"));
     assert!(!generated.contains("open_esp_radio_esp32s31_pac_raw"));
     let mut closed_files = Vec::new();
     rust_files(&driver.join("chips/esp32s31/pac/src"), &mut closed_files);
     let bypasses = closed_files
         .into_iter()
-        .filter(|path| path.file_name().and_then(|name| name.to_str()) != Some("generated.rs"))
         .filter(|path| {
-            fs::read_to_string(path)
-                .expect("read closed PAC module")
-                .contains("full_register_write::mac_interrupt_enable")
+            !matches!(
+                path.file_name().and_then(|name| name.to_str()),
+                Some("generated.rs" | "validation.rs")
+            )
+        })
+        .filter(|path| {
+            let source = fs::read_to_string(path).expect("read closed PAC module");
+            source.contains("::full_register_write::")
+                || source.contains("::register_image_write::")
+                || source.contains("::masked_register_modify::")
         })
         .collect::<Vec<_>>();
     assert!(
         bypasses.is_empty(),
-        "closed PAC modules bypass the generated typed transaction: {bypasses:#?}"
+        "closed PAC modules bypass generated typed complete-register transactions: {bypasses:#?}"
     );
 
     let project = fs::read_to_string(

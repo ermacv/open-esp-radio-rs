@@ -36,7 +36,7 @@ fn checked_esp32s31_model_preserves_expanded_register_identities() {
         PacApiPack::load(&root.join("verification/vendor/targets/esp32s31/registers/api.toml"))
             .unwrap();
     assert_eq!(api.operation_count(), 92);
-    assert_eq!(api.domain_count(), 1);
+    assert_eq!(api.domain_count(), 31);
     assert_eq!(api.source_ids().len(), 47);
     api.validate_against_svd(&output).unwrap();
     let helpers = api.render_rust(&output).unwrap();

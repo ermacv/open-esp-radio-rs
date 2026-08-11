@@ -36,6 +36,486 @@ impl core::ops::BitOr for MacInterruptMask {
     }
 }
 
+/// Register-specific event image written to the MAC interrupt clear register.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct MacInterruptClearImage(u32);
+
+impl MacInterruptClearImage {
+    /// Wrap one register-specific opaque value.
+    pub const fn new(value: u32) -> Self {
+        Self(value)
+    }
+
+    /// Return the opaque numeric image.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// Register-specific event image written to the MAC power-interrupt clear register.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct MacPowerInterruptClearImage(u32);
+
+impl MacPowerInterruptClearImage {
+    /// Wrap one register-specific opaque value.
+    pub const fn new(value: u32) -> Self {
+        Self(value)
+    }
+
+    /// Return the opaque numeric image.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// Low word of one station TSF value; sequencing remains owned by the station-TSF capability.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct StationTsfLowWord(u32);
+
+impl StationTsfLowWord {
+    /// Wrap one register-specific opaque value.
+    pub const fn new(value: u32) -> Self {
+        Self(value)
+    }
+
+    /// Return the opaque numeric image.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// High word of one station TSF value; sequencing remains owned by the station-TSF capability.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct StationTsfHighWord(u32);
+
+impl StationTsfHighWord {
+    /// Wrap one register-specific opaque value.
+    pub const fn new(value: u32) -> Self {
+        Self(value)
+    }
+
+    /// Return the opaque numeric image.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// RX descriptor-base address already validated against a stable DMA binding by the closed PAC.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct MacRxDescriptorBaseAddress(u32);
+
+impl MacRxDescriptorBaseAddress {
+    /// Wrap one register-specific opaque value.
+    pub const fn new(value: u32) -> Self {
+        Self(value)
+    }
+
+    /// Return the opaque numeric image.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// Opaque table-memory word for PHY memory data register 0.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct PhyMemoryData0(u32);
+
+impl PhyMemoryData0 {
+    /// Wrap one register-specific opaque value.
+    pub const fn new(value: u32) -> Self {
+        Self(value)
+    }
+
+    /// Return the opaque numeric image.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// Opaque table-memory word for PHY memory data register 1.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct PhyMemoryData1(u32);
+
+impl PhyMemoryData1 {
+    /// Wrap one register-specific opaque value.
+    pub const fn new(value: u32) -> Self {
+        Self(value)
+    }
+
+    /// Return the opaque numeric image.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// Opaque table-memory word for PHY memory data register 2.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct PhyMemoryData2(u32);
+
+impl PhyMemoryData2 {
+    /// Wrap one register-specific opaque value.
+    pub const fn new(value: u32) -> Self {
+        Self(value)
+    }
+
+    /// Return the opaque numeric image.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// Register-specific recovered image for frequency parameter register 0.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct FrequencyParameter0Image(u32);
+
+impl FrequencyParameter0Image {
+    /// Wrap one register-specific opaque value.
+    pub const fn new(value: u32) -> Self {
+        Self(value)
+    }
+
+    /// Return the opaque numeric image.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// Register-specific low AGC saturation-gain image.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct AgcSaturationGainLow(u32);
+
+impl AgcSaturationGainLow {
+    /// Wrap one register-specific opaque value.
+    pub const fn new(value: u32) -> Self {
+        Self(value)
+    }
+
+    /// Return the opaque numeric image.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// Register-specific high AGC saturation-gain image.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct AgcSaturationGainHigh(u32);
+
+impl AgcSaturationGainHigh {
+    /// Wrap one register-specific opaque value.
+    pub const fn new(value: u32) -> Self {
+        Self(value)
+    }
+
+    /// Return the opaque numeric image.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// Register-specific completion-state image acknowledged by the TX capability.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct MacTxCompleteClearImage(u32);
+
+impl MacTxCompleteClearImage {
+    /// Wrap one register-specific opaque value.
+    pub const fn new(value: u32) -> Self {
+        Self(value)
+    }
+
+    /// Return the opaque numeric image.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// Register-specific queue event mask acknowledged by the TX capability.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct MacTxQueueStateClearMask(u32);
+
+impl MacTxQueueStateClearMask {
+    /// Wrap one register-specific opaque value.
+    pub const fn new(value: u32) -> Self {
+        Self(value)
+    }
+
+    /// Return the opaque numeric image.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// Complete queue-specific MAC TX control image assembled by a reviewed TX program.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct MacTxControlImage(u32);
+
+impl MacTxControlImage {
+    /// Wrap one register-specific opaque value.
+    pub const fn new(value: u32) -> Self {
+        Self(value)
+    }
+
+    /// Return the opaque numeric image.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// Complete queue-specific PLCP1 image assembled by a reviewed TX program.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct MacTxPlcp1Image(u32);
+
+impl MacTxPlcp1Image {
+    /// Wrap one register-specific opaque value.
+    pub const fn new(value: u32) -> Self {
+        Self(value)
+    }
+
+    /// Return the opaque numeric image.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// Complete queue-specific HT signal image assembled by a reviewed TX program.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct MacTxHtSignalImage(u32);
+
+impl MacTxHtSignalImage {
+    /// Wrap one register-specific opaque value.
+    pub const fn new(value: u32) -> Self {
+        Self(value)
+    }
+
+    /// Return the opaque numeric image.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// Complete queue-specific HE-SU SIGNAL A1 image assembled by a reviewed TX program.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct MacTxHeSignalA1Image(u32);
+
+impl MacTxHeSignalA1Image {
+    /// Wrap one register-specific opaque value.
+    pub const fn new(value: u32) -> Self {
+        Self(value)
+    }
+
+    /// Return the opaque numeric image.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// Complete queue-specific HE-SU SIGNAL A2 length image assembled by a reviewed TX program.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct MacTxHeSignalA2LengthImage(u32);
+
+impl MacTxHeSignalA2LengthImage {
+    /// Wrap one register-specific opaque value.
+    pub const fn new(value: u32) -> Self {
+        Self(value)
+    }
+
+    /// Return the opaque numeric image.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// Complete queue-specific HE control image assembled by a reviewed TX program.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct MacTxHeControlImage(u32);
+
+impl MacTxHeControlImage {
+    /// Wrap one register-specific opaque value.
+    pub const fn new(value: u32) -> Self {
+        Self(value)
+    }
+
+    /// Return the opaque numeric image.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// Complete queue-specific TX power image assembled by a reviewed TX program.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct MacTxPowerImage(u32);
+
+impl MacTxPowerImage {
+    /// Wrap one register-specific opaque value.
+    pub const fn new(value: u32) -> Self {
+        Self(value)
+    }
+
+    /// Return the opaque numeric image.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// Complete queue-specific TX data-length image assembled by a reviewed TX program.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct MacTxDataLengthImage(u32);
+
+impl MacTxDataLengthImage {
+    /// Wrap one register-specific opaque value.
+    pub const fn new(value: u32) -> Self {
+        Self(value)
+    }
+
+    /// Return the opaque numeric image.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// Complete queue-specific TX length-control image assembled by a reviewed TX program.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct MacTxLengthControlImage(u32);
+
+impl MacTxLengthControlImage {
+    /// Wrap one register-specific opaque value.
+    pub const fn new(value: u32) -> Self {
+        Self(value)
+    }
+
+    /// Return the opaque numeric image.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// Register-specific power-detector table image preserved and restored by calibration.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct PowerDetectorTable1Image(u32);
+
+impl PowerDetectorTable1Image {
+    /// Wrap one register-specific opaque value.
+    pub const fn new(value: u32) -> Self {
+        Self(value)
+    }
+
+    /// Return the opaque numeric image.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// Register-specific power-detector control image preserved and restored by calibration.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct PowerDetectorControlImage(u32);
+
+impl PowerDetectorControlImage {
+    /// Wrap one register-specific opaque value.
+    pub const fn new(value: u32) -> Self {
+        Self(value)
+    }
+
+    /// Return the opaque numeric image.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// Register-specific TXIQ tone-control snapshot restored by the calibration capability.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct TxiqToneControlImage(u32);
+
+impl TxiqToneControlImage {
+    /// Wrap one register-specific opaque value.
+    pub const fn new(value: u32) -> Self {
+        Self(value)
+    }
+
+    /// Return the opaque numeric image.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// Register-specific caller-controlled portion of one recovered PBus force-test command.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct PbusForceTestInput(u32);
+
+impl PbusForceTestInput {
+    /// Wrap one register-specific opaque value.
+    pub const fn new(value: u32) -> Self {
+        Self(value)
+    }
+
+    /// Return the opaque numeric image.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// Register-specific low 28-bit tone-path zero input before preserved high control bits are merged.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct TonePath0MaskedInput(u32);
+
+impl TonePath0MaskedInput {
+    /// Wrap one register-specific opaque value.
+    pub const fn new(value: u32) -> Self {
+        Self(value)
+    }
+
+    /// Return the opaque numeric image.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// Register-specific low 28-bit second tone-path input before preserved high control bits are merged.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct TonePath1MaskedInput(u32);
+
+impl TonePath1MaskedInput {
+    /// Wrap one register-specific opaque value.
+    pub const fn new(value: u32) -> Self {
+        Self(value)
+    }
+
+    /// Return the opaque numeric image.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// Register-specific low 28-bit input for the first TXIQ mismatch measurement edge.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct TxiqFirstMismatchInput(u32);
+
+impl TxiqFirstMismatchInput {
+    /// Wrap one register-specific opaque value.
+    pub const fn new(value: u32) -> Self {
+        Self(value)
+    }
+
+    /// Return the opaque numeric image.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// Register-specific bits 27:24 input for the second TXIQ mismatch measurement edge.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct TxiqSecondMismatchInput(u32);
+
+impl TxiqSecondMismatchInput {
+    /// Wrap one register-specific opaque value.
+    pub const fn new(value: u32) -> Self {
+        Self(value)
+    }
+
+    /// Return the opaque numeric image.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
 /// Typed bridge for the reviewed `mac_interrupt_enable` complete-register transaction.
 #[inline]
 pub(crate) fn mac_interrupt_enable(
@@ -43,4 +523,275 @@ pub(crate) fn mac_interrupt_enable(
     value: MacInterruptMask,
 ) {
     crate::svd::full_register_write::mac_interrupt_enable(registers, value.bits());
+}
+
+/// Typed bridge for the reviewed `mac_interrupt_clear` complete-register transaction.
+#[inline]
+pub(crate) fn mac_interrupt_clear(
+    registers: &crate::svd::WifiMacInterrupt,
+    value: MacInterruptClearImage,
+) {
+    crate::svd::full_register_write::mac_interrupt_clear(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `mac_power_interrupt_clear` complete-register transaction.
+#[inline]
+pub(crate) fn mac_power_interrupt_clear(
+    registers: &crate::svd::WifiMacPowerInterrupt,
+    value: MacPowerInterruptClearImage,
+) {
+    crate::svd::full_register_write::mac_power_interrupt_clear(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `station_tsf_value_low` complete-register transaction.
+#[inline]
+pub(crate) fn station_tsf_value_low(
+    registers: &crate::svd::WifiMacStaTsfLoad,
+    value: StationTsfLowWord,
+) {
+    crate::svd::full_register_write::station_tsf_value_low(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `station_tsf_value_high` complete-register transaction.
+#[inline]
+pub(crate) fn station_tsf_value_high(
+    registers: &crate::svd::WifiMacStaTsfLoad,
+    value: StationTsfHighWord,
+) {
+    crate::svd::full_register_write::station_tsf_value_high(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `rx_descriptor_base` complete-register transaction.
+#[inline]
+pub(crate) fn rx_descriptor_base(
+    registers: &crate::svd::WifiMacRxDma,
+    value: MacRxDescriptorBaseAddress,
+) {
+    crate::svd::full_register_write::rx_descriptor_base(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `phy_memory_data_0` complete-register transaction.
+#[inline]
+pub(crate) fn phy_memory_data_0(registers: &crate::svd::PhyMemory, value: PhyMemoryData0) {
+    crate::svd::full_register_write::phy_memory_data_0(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `phy_memory_data_1` complete-register transaction.
+#[inline]
+pub(crate) fn phy_memory_data_1(registers: &crate::svd::PhyMemory, value: PhyMemoryData1) {
+    crate::svd::full_register_write::phy_memory_data_1(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `phy_memory_data_2` complete-register transaction.
+#[inline]
+pub(crate) fn phy_memory_data_2(registers: &crate::svd::PhyMemory, value: PhyMemoryData2) {
+    crate::svd::full_register_write::phy_memory_data_2(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `frequency_parameter_0` complete-register transaction.
+#[inline]
+pub(crate) fn frequency_parameter_0(
+    registers: &crate::svd::PhyFrequencyChannelOracle,
+    value: FrequencyParameter0Image,
+) {
+    crate::svd::full_register_write::frequency_parameter_0(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `agc_saturation_gain_low` complete-register transaction.
+#[inline]
+pub(crate) fn agc_saturation_gain_low(
+    registers: &crate::svd::PhyAgcOracle,
+    value: AgcSaturationGainLow,
+) {
+    crate::svd::full_register_write::agc_saturation_gain_low(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `agc_saturation_gain_high` complete-register transaction.
+#[inline]
+pub(crate) fn agc_saturation_gain_high(
+    registers: &crate::svd::PhyAgcOracle,
+    value: AgcSaturationGainHigh,
+) {
+    crate::svd::full_register_write::agc_saturation_gain_high(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `mac_tx_complete_clear_image` complete-register transaction.
+#[inline]
+pub(crate) fn mac_tx_complete_clear_image(
+    registers: &crate::svd::WifiMacTxCommon,
+    value: MacTxCompleteClearImage,
+) {
+    crate::svd::full_register_write::mac_tx_complete_clear_image(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `mac_tx_queue_state_clear` complete-register transaction.
+#[inline]
+pub(crate) fn mac_tx_queue_state_clear(
+    registers: &crate::svd::WifiMacTxCommon,
+    value: MacTxQueueStateClearMask,
+) {
+    crate::svd::full_register_write::mac_tx_queue_state_clear(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `publish_mac_tx_control` complete-image transaction.
+#[inline]
+pub(crate) fn publish_mac_tx_control(
+    registers: &crate::svd::WifiMacTxQueueControl,
+    index: usize,
+    value: MacTxControlImage,
+) {
+    crate::svd::register_image_write::publish_mac_tx_control(registers, index, value.get());
+}
+
+/// Typed bridge for the reviewed `publish_mac_tx_plcp1` complete-image transaction.
+#[inline]
+pub(crate) fn publish_mac_tx_plcp1(
+    registers: &crate::svd::WifiMacTxQueueVector,
+    index: usize,
+    value: MacTxPlcp1Image,
+) {
+    crate::svd::register_image_write::publish_mac_tx_plcp1(registers, index, value.get());
+}
+
+/// Typed bridge for the reviewed `publish_mac_tx_ht_signal` complete-image transaction.
+#[inline]
+pub(crate) fn publish_mac_tx_ht_signal(
+    registers: &crate::svd::WifiMacTxQueueVector,
+    index: usize,
+    value: MacTxHtSignalImage,
+) {
+    crate::svd::register_image_write::publish_mac_tx_ht_signal(registers, index, value.get());
+}
+
+/// Typed bridge for the reviewed `publish_mac_tx_he_signal_a1` complete-image transaction.
+#[inline]
+pub(crate) fn publish_mac_tx_he_signal_a1(
+    registers: &crate::svd::WifiMacTxQueueVector,
+    index: usize,
+    value: MacTxHeSignalA1Image,
+) {
+    crate::svd::register_image_write::publish_mac_tx_he_signal_a1(registers, index, value.get());
+}
+
+/// Typed bridge for the reviewed `publish_mac_tx_he_signal_a2_length` complete-image transaction.
+#[inline]
+pub(crate) fn publish_mac_tx_he_signal_a2_length(
+    registers: &crate::svd::WifiMacTxQueueVector,
+    index: usize,
+    value: MacTxHeSignalA2LengthImage,
+) {
+    crate::svd::register_image_write::publish_mac_tx_he_signal_a2_length(
+        registers,
+        index,
+        value.get(),
+    );
+}
+
+/// Typed bridge for the reviewed `publish_mac_tx_he_control` complete-image transaction.
+#[inline]
+pub(crate) fn publish_mac_tx_he_control(
+    registers: &crate::svd::WifiMacTxQueueVector,
+    index: usize,
+    value: MacTxHeControlImage,
+) {
+    crate::svd::register_image_write::publish_mac_tx_he_control(registers, index, value.get());
+}
+
+/// Typed bridge for the reviewed `publish_mac_tx_power` complete-image transaction.
+#[inline]
+pub(crate) fn publish_mac_tx_power(
+    registers: &crate::svd::WifiMacTxQueueVector,
+    index: usize,
+    value: MacTxPowerImage,
+) {
+    crate::svd::register_image_write::publish_mac_tx_power(registers, index, value.get());
+}
+
+/// Typed bridge for the reviewed `publish_mac_tx_data_length` complete-image transaction.
+#[inline]
+pub(crate) fn publish_mac_tx_data_length(
+    registers: &crate::svd::WifiMacTxQueueVector,
+    index: usize,
+    value: MacTxDataLengthImage,
+) {
+    crate::svd::register_image_write::publish_mac_tx_data_length(registers, index, value.get());
+}
+
+/// Typed bridge for the reviewed `publish_mac_tx_length_control` complete-image transaction.
+#[inline]
+pub(crate) fn publish_mac_tx_length_control(
+    registers: &crate::svd::WifiMacTxQueueVector,
+    index: usize,
+    value: MacTxLengthControlImage,
+) {
+    crate::svd::register_image_write::publish_mac_tx_length_control(registers, index, value.get());
+}
+
+/// Typed bridge for the reviewed `publish_power_detector_table_1_image` complete-image transaction.
+#[inline]
+pub(crate) fn publish_power_detector_table_1_image(
+    registers: &crate::svd::PhyBasebandConfigOracle,
+    value: PowerDetectorTable1Image,
+) {
+    crate::svd::register_image_write::publish_power_detector_table_1_image(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `publish_power_detector_control_image` complete-image transaction.
+#[inline]
+pub(crate) fn publish_power_detector_control_image(
+    registers: &crate::svd::PhyBasebandConfigOracle,
+    value: PowerDetectorControlImage,
+) {
+    crate::svd::register_image_write::publish_power_detector_control_image(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `restore_txiq_tone_control` complete-image transaction.
+#[inline]
+pub(crate) fn restore_txiq_tone_control(
+    registers: &crate::svd::PhyBasebandConfigOracle,
+    value: TxiqToneControlImage,
+) {
+    crate::svd::register_image_write::restore_txiq_tone_control(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `publish_pbus_force_test` masked transaction.
+#[inline]
+pub(crate) fn publish_pbus_force_test(registers: &crate::svd::PhyPbus, value: PbusForceTestInput) {
+    crate::svd::masked_register_modify::publish_pbus_force_test(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `publish_tone_path_0_image` masked transaction.
+#[inline]
+pub(crate) fn publish_tone_path_0_image(
+    registers: &crate::svd::PhyBasebandConfigOracle,
+    value: TonePath0MaskedInput,
+) {
+    crate::svd::masked_register_modify::publish_tone_path_0_image(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `publish_tone_path_1_image` masked transaction.
+#[inline]
+pub(crate) fn publish_tone_path_1_image(
+    registers: &crate::svd::PhyBasebandConfigOracle,
+    value: TonePath1MaskedInput,
+) {
+    crate::svd::masked_register_modify::publish_tone_path_1_image(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `publish_txiq_first_mismatch_image` masked transaction.
+#[inline]
+pub(crate) fn publish_txiq_first_mismatch_image(
+    registers: &crate::svd::PhyBasebandConfigOracle,
+    value: TxiqFirstMismatchInput,
+) {
+    crate::svd::masked_register_modify::publish_txiq_first_mismatch_image(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `publish_txiq_second_mismatch_image` masked transaction.
+#[inline]
+pub(crate) fn publish_txiq_second_mismatch_image(
+    registers: &crate::svd::PhyBasebandConfigOracle,
+    value: TxiqSecondMismatchInput,
+) {
+    crate::svd::masked_register_modify::publish_txiq_second_mismatch_image(registers, value.get());
 }

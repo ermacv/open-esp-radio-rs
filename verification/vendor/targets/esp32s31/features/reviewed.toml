@@ -42,3 +42,72 @@ symbol = "hal_disable_sta_beacon_filter"
 disposition = "verified"
 requirement = "beacon-filter-disable-transaction"
 rationale = "Connected entry must execute the complete reviewed disable transaction before software beacon monitoring owns delivery."
+
+[[features]]
+id = "coex-hardware-timer-control"
+description = "The open coexistence driver owns enable, disable, force and unforce control for all five hardware-timer banks."
+scopes = ["coex-timer-control"]
+
+[[features.requirements]]
+id = "coex-timer-enable-transaction"
+description = "Timer enable preserves both ordered fresh-read RMW edges for every timer index."
+suite = "coex-timer"
+source = "coex"
+symbol = "coex_hw_timer_enable"
+claim = "whole-function-equivalence"
+
+[[features.requirements]]
+id = "coex-timer-disable-transaction"
+description = "Timer disable preserves both ordered fresh-read RMW edges for every timer index."
+suite = "coex-timer"
+source = "coex"
+symbol = "coex_hw_timer_disable"
+claim = "whole-function-equivalence"
+
+[[features.requirements]]
+id = "coex-timer-force-transaction"
+description = "Timer force preserves the reviewed indexed RMW edge for every timer index."
+suite = "coex-timer"
+source = "coex"
+symbol = "coex_hw_timer_force"
+claim = "whole-function-equivalence"
+
+[[features.requirements]]
+id = "coex-timer-unforce-transaction"
+description = "Timer unforce preserves the reviewed indexed RMW edge for every timer index."
+suite = "coex-timer"
+source = "coex"
+symbol = "coex_hw_timer_unforce"
+claim = "whole-function-equivalence"
+
+[[features.effects]]
+id = "coex-timer-enable"
+source = "coex"
+symbol = "coex_hw_timer_enable"
+disposition = "verified"
+requirement = "coex-timer-enable-transaction"
+rationale = "The closed PAC preserves both vendor enable edges across the full five-entry bank."
+
+[[features.effects]]
+id = "coex-timer-disable"
+source = "coex"
+symbol = "coex_hw_timer_disable"
+disposition = "verified"
+requirement = "coex-timer-disable-transaction"
+rationale = "The closed PAC preserves both vendor disable edges across the full five-entry bank."
+
+[[features.effects]]
+id = "coex-timer-force"
+source = "coex"
+symbol = "coex_hw_timer_force"
+disposition = "verified"
+requirement = "coex-timer-force-transaction"
+rationale = "The closed PAC preserves the indexed force edge across the full five-entry bank."
+
+[[features.effects]]
+id = "coex-timer-unforce"
+source = "coex"
+symbol = "coex_hw_timer_unforce"
+disposition = "verified"
+requirement = "coex-timer-unforce-transaction"
+rationale = "The closed PAC preserves the indexed unforce edge across the full five-entry bank."

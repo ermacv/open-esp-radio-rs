@@ -231,6 +231,11 @@ pub struct CallKnowledgeEvidence {
     pub knowledge: &'static str,
     pub semantic_operation: Option<String>,
     pub execution_model: Option<String>,
+    /// ABI argument expressions recovered at this exact call site. Multiple
+    /// branch shapes are retained as an explicit domain by linked IR.
+    pub arguments: Vec<String>,
+    pub argument_shapes: usize,
+    pub guards: Vec<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -765,9 +770,12 @@ fn semantic_evidence(
                 knowledge: call.knowledge(),
                 semantic_operation: call.semantic_operation.clone(),
                 execution_model: call.execution_model_id().map(str::to_owned),
+                arguments: call.arguments.clone(),
+                argument_shapes: call.argument_shapes(),
+                guards: call.guard_expressions(),
             })
             .collect::<Vec<_>>();
-        let reachable_functions = function.effect_summary.reachable_functions.clone();
+        let reachable_functions = reader.reachable_function_identities(&function.identity);
         let mut call_graph_edges = reader
             .graph_slice(&function.identity, graph_depth, include_callers)
             .into_iter()
@@ -891,7 +899,9 @@ fn event_route_evidence(
                         exact: handler.exact(),
                         direct_instruction_effects: handler.direct_instruction_effect_count(),
                         direct_calls: handler.direct_call_count(),
-                        reachable_functions: handler.effect_summary.reachable_functions.len(),
+                        reachable_functions: reader
+                            .reachable_function_identities(&handler.identity)
+                            .len(),
                         blockers: handler_blockers,
                     })
                 }

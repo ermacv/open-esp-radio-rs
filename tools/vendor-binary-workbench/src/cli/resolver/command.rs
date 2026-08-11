@@ -360,6 +360,12 @@ pub(super) fn resolve_command(
             svd: environment.svd,
             project: environment.project.map(Box::new),
         },
+        Command::InspectFlow(arguments) => ResolvedInvocation::Target {
+            command: TargetCommand::InspectFlow(arguments),
+            target: environment.target,
+            svd: environment.svd,
+            project: environment.project.map(Box::new),
+        },
         Command::InspectObject(arguments) => ResolvedInvocation::Target {
             command: TargetCommand::InspectObject(arguments),
             target: environment.target,

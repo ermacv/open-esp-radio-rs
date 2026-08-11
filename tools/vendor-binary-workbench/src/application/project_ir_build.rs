@@ -2,7 +2,6 @@
 
 use std::{
     collections::BTreeSet,
-    fs,
     path::{Path, PathBuf},
 };
 
@@ -50,8 +49,6 @@ pub(crate) struct ProfileDocument<'a> {
     pub(crate) registers: usize,
     pub(crate) field_candidates: usize,
     pub(crate) bundle: &'a Path,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) pseudo: Option<&'a Path>,
 }
 
 #[derive(Serialize)]
@@ -72,16 +69,24 @@ pub(crate) fn build_project_ir<'a>(
     target: &TargetSpec,
 ) -> Result<BuildDocument<'a>> {
     let selected = select_profiles(&project.ir_profiles, &request.profiles)?;
-    if !request.check {
-        remove_legacy_monolithic_reports(&project.ir_profiles)?;
-    }
+    // Resolve and validate every selected input before loading catalogs or
+    // beginning expensive analysis. A missing generated ELF must name its
+    // profile, role and path instead of surfacing later as an anonymous
+    // `ENOENT` from the object reader.
+    let resolved = selected
+        .iter()
+        .map(|profile| {
+            let inputs = resolve_inputs(profile, run_spec)?;
+            validate_inputs(profile, &inputs)?;
+            Ok(inputs)
+        })
+        .collect::<Result<Vec<_>>>()?;
     let effective_code = crate::analysis::EffectiveCodeCatalog::load(project)?;
     let interfaces = linked_ir_export::load_project_interfaces(project, target)?;
     let interface_origins = linked_ir_export::load_project_interface_origins(project)?;
     let mut built = Vec::with_capacity(selected.len());
     let mut stale = Vec::new();
-    for profile in selected {
-        let inputs = resolve_inputs(profile, run_spec)?;
+    for (profile, inputs) in selected.into_iter().zip(resolved) {
         let documents =
             linked_ir_export::generate_project_profile(linked_ir_export::ProjectProfileRequest {
                 inputs: inputs.artifacts,
@@ -95,22 +100,40 @@ pub(crate) fn build_project_ir<'a>(
                 interface_origins: &interface_origins,
                 jobs: request.jobs,
             })?;
+        let ProjectIrDocuments {
+            bundle,
+            sources,
+            functions,
+            decode_blockers,
+            registers,
+            field_candidates,
+        } = documents;
+        tracing::debug!(
+            profile = profile.id,
+            bundle_bytes = bundle.bytes(),
+            "staged linked-IR bundle"
+        );
         if request.check {
-            check_profile(profile, &documents, &mut stale);
+            stale.extend(bundle.compare(&profile.output)?);
+            drop(bundle);
         } else {
-            write_profile(profile, &documents)?;
+            bundle.publish(&profile.output)?;
         }
         built.push(BuiltProfileSummary {
             profile,
-            sources: documents.sources,
-            functions: documents.functions,
-            decode_blockers: documents.decode_blockers,
-            registers: documents.registers,
-            field_candidates: documents.field_candidates,
-            documents: 8 + usize::from(documents.pseudo.is_some()),
+            sources,
+            functions,
+            decode_blockers,
+            registers,
+            field_candidates,
+            documents: 8,
         });
-        // Artifact-wide JSON and pseudo-Rust strings are intentionally
-        // dropped before the next profile is analyzed.
+        // A profile creates millions of short-lived analysis objects. Drop its
+        // staging state first, then return free allocator pages to the OS before
+        // entering the next profile. This does not change analysis semantics;
+        // it only prevents sequential profiles from accumulating allocator
+        // high-water memory.
+        crate::resource_usage::release_unused_memory("linked-ir profile");
     }
     if !stale.is_empty() {
         return Err(crate::Error::invalid(format!(
@@ -150,43 +173,44 @@ pub(crate) fn build_project_ir<'a>(
                 registers: built.registers,
                 field_candidates: built.field_candidates,
                 bundle: &built.profile.output,
-                pseudo: built.profile.pseudo_rust.as_deref(),
             })
             .collect(),
         documents: document_count,
     })
 }
 
-fn remove_legacy_monolithic_reports(profiles: &[ProjectIrProfile]) -> Result<()> {
-    let parents = profiles
-        .iter()
-        .filter_map(|profile| profile.output.parent().map(Path::to_owned))
-        .collect::<BTreeSet<_>>();
-    for parent in parents {
-        let Ok(entries) = fs::read_dir(&parent) else {
-            continue;
-        };
-        for entry in entries {
-            let path = entry?.path();
-            let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
-                continue;
-            };
-            if !path.is_file() || !name.ends_with(".ir.json") {
-                continue;
-            }
-            let Ok(document) = fs::read_to_string(&path)
-                .ok()
-                .and_then(|input| serde_json::from_str::<serde_json::Value>(&input).ok())
-                .ok_or(())
-            else {
-                continue;
-            };
-            if document.get("command").and_then(serde_json::Value::as_str) == Some("ir export") {
-                fs::remove_file(path)?;
-            }
-        }
+fn validate_inputs(profile: &ProjectIrProfile, inputs: &ResolvedInputs) -> Result<()> {
+    for (source, path) in &inputs.artifacts {
+        validate_input_file(profile, format!("source-artifact:{source}"), path)?;
+    }
+    for (source, path) in &inputs.inventories {
+        validate_input_file(profile, format!("source-inventory:{source}"), path)?;
+    }
+    for path in &inputs.companions {
+        validate_input_file(profile, "companion".to_owned(), path)?;
     }
     Ok(())
+}
+
+fn validate_input_file(profile: &ProjectIrProfile, role: String, path: &Path) -> Result<()> {
+    match std::fs::metadata(path) {
+        Ok(metadata) if metadata.is_file() => Ok(()),
+        Ok(_) => Err(crate::error::WorkbenchError::ProjectIrInput {
+            profile: profile.id.clone(),
+            role,
+            path: path.to_owned(),
+            source: std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "configured path is not a regular file",
+            ),
+        }),
+        Err(source) => Err(crate::error::WorkbenchError::ProjectIrInput {
+            profile: profile.id.clone(),
+            role,
+            path: path.to_owned(),
+            source,
+        }),
+    }
 }
 
 fn select_profiles<'a>(
@@ -310,54 +334,6 @@ fn resolve_inputs(profile: &ProjectIrProfile, run_spec: &RunSpec) -> Result<Reso
     })
 }
 
-fn check_profile(
-    profile: &ProjectIrProfile,
-    documents: &ProjectIrDocuments,
-    stale: &mut Vec<PathBuf>,
-) {
-    check_bundle(&profile.output, &documents.bundle, stale);
-    if let (Some(path), Some(contents)) =
-        (profile.pseudo_rust.as_deref(), documents.pseudo.as_deref())
-    {
-        check_document(path, contents, stale);
-    }
-}
-
-fn check_bundle(
-    path: &Path,
-    expected: &crate::artifacts::LinkedIrBundle,
-    stale: &mut Vec<PathBuf>,
-) {
-    for (name, contents) in [
-        ("manifest.json", &expected.manifest),
-        ("functions.jsonl", &expected.functions),
-        ("function-overview.jsonl", &expected.function_overview),
-        ("function-index.json", &expected.function_index),
-        ("graph.json", &expected.graph),
-        ("register-index.json", &expected.register_index),
-        ("data-objects.jsonl", &expected.data_objects),
-        ("data-object-index.json", &expected.data_object_index),
-    ] {
-        check_document(&path.join(name), contents, stale);
-    }
-}
-
-fn check_document(path: &Path, expected: &str, stale: &mut Vec<PathBuf>) {
-    if !matches!(fs::read_to_string(path), Ok(contents) if contents == expected) {
-        stale.push(path.to_owned());
-    }
-}
-
-fn write_profile(profile: &ProjectIrProfile, documents: &ProjectIrDocuments) -> Result<()> {
-    crate::artifacts::write_linked_ir_bundle(&profile.output, &documents.bundle)?;
-    if let (Some(path), Some(contents)) =
-        (profile.pseudo_rust.as_deref(), documents.pseudo.as_deref())
-    {
-        super::generated_file::write_or_check(path, contents, false, "pseudo-Rust")?;
-    }
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -370,7 +346,6 @@ mod tests {
             include_reachable: true,
             entry_contract: "none".to_owned(),
             output: PathBuf::from(format!("{id}.json")),
-            pseudo_rust: None,
         }
     }
 
@@ -440,23 +415,31 @@ mod tests {
     }
 
     #[test]
-    fn write_mode_cleanup_removes_only_obsolete_monolithic_ir_documents() {
-        let directory = std::env::temp_dir().join(format!(
-            "vendor-workbench-ir-legacy-cleanup-{}",
+    fn input_preflight_names_the_profile_role_and_missing_path() {
+        let missing = std::env::temp_dir().join(format!(
+            "vendor-workbench-missing-ir-input-{}",
             std::process::id()
         ));
-        std::fs::create_dir_all(&directory).unwrap();
-        let legacy = directory.join("removed.ir.json");
-        let unrelated = directory.join("preserved.ir.json");
-        std::fs::write(&legacy, r#"{"command":"ir export"}"#).unwrap();
-        std::fs::write(&unrelated, r#"{"command":"another tool"}"#).unwrap();
-        let mut configured = profile("current");
-        configured.output = directory.join("current.ir");
+        let selected = profile("wifi-lifecycle");
+        let inputs = ResolvedInputs {
+            artifacts: vec![("libpp".to_owned(), missing.clone())],
+            inventories: Default::default(),
+            companions: Vec::new(),
+        };
 
-        remove_legacy_monolithic_reports(&[configured]).unwrap();
+        let error = validate_inputs(&selected, &inputs).unwrap_err();
 
-        assert!(!legacy.exists());
-        assert!(unrelated.exists());
-        std::fs::remove_dir_all(directory).unwrap();
+        assert!(matches!(
+            error,
+            crate::error::WorkbenchError::ProjectIrInput {
+                profile,
+                role,
+                path,
+                source,
+            } if profile == "wifi-lifecycle"
+                && role == "source-artifact:libpp"
+                && path == missing
+                && source.kind() == std::io::ErrorKind::NotFound
+        ));
     }
 }

@@ -125,7 +125,7 @@ fn function_priority(function: &LinkedIrFunction) -> (bool, usize, usize, usize,
         + function.direct_diagnostics.len()
         + function.reference_diagnostics.len();
     (
-        !function.effect_summary.semantic_actions.is_empty(),
+        function.effect_summary.semantic_action_count != 0,
         function.mmio_accesses.len(),
         function.calls.len(),
         function.memory_accesses.len(),

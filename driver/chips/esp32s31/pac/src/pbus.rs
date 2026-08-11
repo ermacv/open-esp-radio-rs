@@ -87,9 +87,11 @@ impl RadioRegisters {
     /// RX-DCO passes signed halfword images, and the complete encoder retains
     /// their low eleven bits while composing the physical command word.
     pub fn publish_pbus_force_test(&mut self, selector: u8, path: u8, test_value: u16) {
-        open_esp_radio_esp32s31_pac_raw::masked_register_modify::publish_pbus_force_test(
+        super::generated::publish_pbus_force_test(
             &self.peripherals.phy_pbus,
-            pbus_force_test_arguments(selector, path, test_value),
+            super::generated::PbusForceTestInput::new(pbus_force_test_arguments(
+                selector, path, test_value,
+            )),
         );
     }
 

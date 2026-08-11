@@ -51,6 +51,7 @@ struct SummarySemanticAccumulator {
 pub(in crate::analysis::linked_ir) fn populate_effect_summaries(
     functions: &mut [LinkedIrFunction],
     jobs: usize,
+    compact_projected_actions: bool,
 ) {
     let identities = functions
         .iter()
@@ -67,14 +68,13 @@ pub(in crate::analysis::linked_ir) fn populate_effect_summaries(
 
     let mut adjacency = vec![Vec::new(); functions.len()];
     let mut call_edges = vec![Vec::new(); functions.len()];
-    let mut local_blockers = vec![BTreeSet::<String>::new(); functions.len()];
+    let mut local_blockers = vec![false; functions.len()];
     for (index, function) in functions.iter().enumerate() {
         if !function.complete {
-            local_blockers[index]
-                .insert(format!("incomplete function body: {}", function.identity));
+            local_blockers[index] = true;
         }
-        for blocker in &function.call_graph_diagnostics {
-            local_blockers[index].insert(format!("{}: {}", function.identity, blocker.rendered));
+        if !function.call_graph_diagnostics.is_empty() {
+            local_blockers[index] = true;
         }
         for call in &function.calls {
             match call.kind {
@@ -93,30 +93,19 @@ pub(in crate::analysis::linked_ir) fn populate_effect_summaries(
                             guard_paths: call.guard_paths.clone(),
                         });
                     } else {
-                        local_blockers[index].insert(format!(
-                            "callee is outside the exported IR: {} -> {}",
-                            function.identity, call.target
-                        ));
+                        local_blockers[index] = true;
                     }
                 }
                 "unresolved" => {
-                    local_blockers[index].insert(format!(
-                        "unresolved call edge: {} -> {}",
-                        function.identity, call.target
-                    ));
+                    local_blockers[index] = true;
                 }
                 "external" | "diagnostic" if call.semantic_operation.is_none() => {
-                    local_blockers[index].insert(format!(
-                        "opaque semantic boundary: {} -> {}",
-                        function.identity, call.target
-                    ));
+                    local_blockers[index] = true;
                 }
                 "external" | "diagnostic" => {}
                 kind => {
-                    local_blockers[index].insert(format!(
-                        "unsupported call edge {kind}: {} -> {}",
-                        function.identity, call.target
-                    ));
+                    let _ = kind;
+                    local_blockers[index] = true;
                 }
             }
         }
@@ -127,6 +116,79 @@ pub(in crate::analysis::linked_ir) fn populate_effect_summaries(
     let projection_reachable = projection_reachability(functions, &adjacency);
     let function_count = functions.len();
     let functions_view: &[LinkedIrFunction] = functions;
+    tracing::debug!(
+        functions = function_count,
+        edges = adjacency.iter().map(Vec::len).sum::<usize>(),
+        rss_kib = crate::resource_usage::resident_set_kib(),
+        "prepared linked-IR effect-summary graph"
+    );
+
+    if compact_projected_actions {
+        let summaries = (0..function_count)
+            .map(|root| {
+                let mut depths = vec![None; function_count];
+                depths[root] = Some(0_usize);
+                let mut queue = VecDeque::from([root]);
+                let mut call_graph_closed = true;
+                while let Some(source) = queue.pop_front() {
+                    call_graph_closed &= !local_blockers[source];
+                    let next_depth = depths[source].expect("queued function has a depth") + 1;
+                    for &target in &adjacency[source] {
+                        if depths[target].is_none() {
+                            depths[target] = Some(next_depth);
+                            queue.push_back(target);
+                        }
+                    }
+                }
+                let reachable_function_count = depths
+                    .iter()
+                    .filter(|depth| depth.is_some())
+                    .count()
+                    .saturating_sub(1);
+                let max_depth = depths.iter().filter_map(|depth| *depth).max().unwrap_or(0);
+                let recursive = depths
+                    .iter()
+                    .enumerate()
+                    .any(|(index, depth)| depth.is_some() && recursive_nodes.contains(&index));
+                let context_projection = project_context_fields(
+                    root,
+                    functions_view,
+                    &call_edges,
+                    &projection_reachable,
+                    call_graph_closed,
+                    false,
+                );
+                let register_semantic_actions = context_projection
+                    .semantic_actions
+                    .iter()
+                    .filter(|action| action.guard_scopes.is_some())
+                    .cloned()
+                    .collect();
+                LinkedEffectSummary {
+                    transitive_effects_materialized: false,
+                    call_graph_closed,
+                    max_depth,
+                    reachable_function_count,
+                    recursive,
+                    context_projection_materialized: false,
+                    context_projection_complete: false,
+                    context_projection_paths_materialized: false,
+                    semantic_action_count: context_projection.semantic_action_count,
+                    semantic_actions_materialized: false,
+                    semantic_actions: ProjectedSemanticActions::omitted(
+                        context_projection.semantic_action_count,
+                    ),
+                    register_semantic_actions,
+                    event_dispatches: context_projection.event_dispatches,
+                    ..LinkedEffectSummary::default()
+                }
+            })
+            .collect::<Vec<_>>();
+        for (function, summary) in functions.iter_mut().zip(summaries) {
+            function.effect_summary = summary;
+        }
+        return;
+    }
 
     let build_summary = |root: usize| {
         let mut depths = vec![None; function_count];
@@ -146,13 +208,21 @@ pub(in crate::analysis::linked_ir) fn populate_effect_summaries(
             .enumerate()
             .filter_map(|(index, depth)| depth.map(|depth| (index, depth)))
             .collect::<Vec<_>>();
-        let mut blockers = BTreeSet::new();
+        if root == 0 {
+            tracing::debug!(
+                identity = functions_view[root].identity,
+                reachable = reachable.len(),
+                rss_kib = crate::resource_usage::resident_set_kib(),
+                "prepared first effect-summary closure"
+            );
+        }
+        let mut call_graph_closed = true;
         let mut mmio = BTreeMap::<(u32, u8), SummaryMmioAccumulator>::new();
         let mut delays = BTreeMap::<(String, Option<u32>), SummaryDelayAccumulator>::new();
         let mut semantics = BTreeMap::<String, SummarySemanticAccumulator>::new();
         for &(index, _) in &reachable {
             let function = &functions_view[index];
-            blockers.extend(local_blockers[index].iter().cloned());
+            call_graph_closed &= !local_blockers[index];
             for access in &function.mmio_accesses {
                 let entry = mmio.entry((access.address, access.width)).or_default();
                 entry.access_shapes += 1;
@@ -180,36 +250,52 @@ pub(in crate::analysis::linked_ir) fn populate_effect_summaries(
                 entry.origins.insert(function.identity.clone());
             }
         }
-        let reachable_functions = reachable
+        let reachable_function_count = reachable.len().saturating_sub(1);
+        let recursive = reachable
             .iter()
-            .filter(|(index, _)| *index != root)
-            .map(|(index, _)| functions_view[*index].identity.clone())
-            .collect();
-        let recursive_functions = reachable
-            .iter()
-            .filter(|(index, _)| recursive_nodes.contains(index))
-            .map(|(index, _)| functions_view[*index].identity.clone())
-            .collect();
-        let call_graph_closed = blockers.is_empty();
+            .any(|(index, _)| recursive_nodes.contains(index));
         let context_projection = project_context_fields(
             root,
             functions_view,
             &call_edges,
             &projection_reachable,
             call_graph_closed,
+            !compact_projected_actions,
         );
+        if root == 0 {
+            tracing::debug!(
+                identity = functions_view[root].identity,
+                fields = context_projection.fields.len(),
+                blockers = context_projection.blockers.len(),
+                semantic_actions = context_projection.semantic_action_count,
+                rss_kib = crate::resource_usage::resident_set_kib(),
+                "projected first effect-summary context"
+            );
+        }
         let memory_fields =
             project_memory_fields(&reachable, functions_view, &context_projection.fields);
+        let register_semantic_actions = context_projection
+            .semantic_actions
+            .iter()
+            .filter(|action| action.guard_scopes.is_some())
+            .cloned()
+            .collect();
+        let mut semantic_actions: ProjectedSemanticActions =
+            context_projection.semantic_actions.into();
+        let semantic_action_count = context_projection.semantic_action_count;
+        if compact_projected_actions {
+            semantic_actions.omit();
+        }
         LinkedEffectSummary {
+            transitive_effects_materialized: true,
             call_graph_closed,
             max_depth: reachable
                 .iter()
                 .map(|(_, depth)| *depth)
                 .max()
                 .unwrap_or_default(),
-            reachable_functions,
-            recursive_functions,
-            blockers: blockers.into_iter().collect(),
+            reachable_function_count,
+            recursive,
             mmio_registers: mmio
                 .into_iter()
                 .map(|((address, width), entry)| LinkedSummaryMmio {
@@ -240,12 +326,17 @@ pub(in crate::analysis::linked_ir) fn populate_effect_summaries(
                     origins: entry.origins.into_iter().collect(),
                 })
                 .collect(),
+            context_projection_materialized: true,
             context_projection_complete: context_projection.complete,
+            context_projection_paths_materialized: context_projection.paths_materialized,
             context_projection_blockers: context_projection.blockers,
             context_fields: context_projection.fields,
             memory_fields,
             trampoline_calls: context_projection.trampoline_calls,
-            semantic_actions: context_projection.semantic_actions,
+            semantic_action_count,
+            semantic_actions_materialized: semantic_actions.is_materialized(),
+            semantic_actions,
+            register_semantic_actions,
             event_dispatches: context_projection.event_dispatches,
         }
     };

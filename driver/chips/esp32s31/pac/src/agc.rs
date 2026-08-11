@@ -206,8 +206,14 @@ impl RadioRegisters {
     /// Publish one saturation-gain word to both recovered destinations.
     pub fn set_agc_saturation_gain(&mut self, value: u32) {
         let agc = &self.peripherals.phy_agc_oracle;
-        super::svd::full_register_write::agc_saturation_gain_low(agc, value);
-        super::svd::full_register_write::agc_saturation_gain_high(agc, value);
+        super::generated::agc_saturation_gain_low(
+            agc,
+            super::generated::AgcSaturationGainLow::new(value),
+        );
+        super::generated::agc_saturation_gain_high(
+            agc,
+            super::generated::AgcSaturationGainHigh::new(value),
+        );
     }
 
     /// Select the complete pinned `phy_set_ftm_en` one-bit image.

@@ -7,9 +7,9 @@ use crate::cli::ProjectAnalyzeArgs;
 pub(crate) mod status;
 
 pub(super) fn run(arguments: ProjectAnalyzeArgs, session: &ProjectSession) -> Result<bool> {
-    if arguments.jobs > 8 {
+    if !(1..=8).contains(&arguments.jobs) {
         return Err(crate::Error::invalid(
-            "project analyze --jobs accepts 0 (safe automatic mode) or 1..=8",
+            "project analyze --jobs accepts 1..=8",
         ));
     }
     let request = ProjectAnalysisRequest {

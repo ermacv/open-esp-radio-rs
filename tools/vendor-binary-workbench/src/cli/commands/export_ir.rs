@@ -15,9 +15,12 @@ pub(super) fn run(
     target: &TargetSpec,
     project: Option<&crate::project::ProjectSpec>,
 ) -> Result<bool> {
-    if arguments.jobs > 8 {
+    if !(1..=8).contains(&arguments.jobs) {
+        return Err(crate::Error::invalid("ir export --jobs accepts 1..=8"));
+    }
+    if arguments.pseudo_rust.is_some() && arguments.symbol_prefix.is_empty() {
         return Err(crate::Error::invalid(
-            "ir export --jobs accepts 0 (safe automatic mode) or 1..=8",
+            "--pseudo-rust requires a non-empty --symbol-prefix; use `inspect function` for artifact-wide projects",
         ));
     }
     let mut artifacts = arguments
@@ -58,6 +61,7 @@ pub(super) fn run(
         interfaces: interfaces.as_ref(),
         interface_origins: &interface_origins,
         jobs: usize::from(arguments.jobs),
+        compact_projected_actions: arguments.pseudo_rust.is_none(),
     })?;
 
     let publications = arguments
@@ -84,8 +88,7 @@ pub(super) fn run(
         )?;
     }
     if let Some(path) = arguments.json_report.as_deref() {
-        let bundle = crate::artifacts::render_linked_ir_bundle(&document)?;
-        crate::artifacts::write_linked_ir_bundle(path, &bundle)?;
+        crate::artifacts::stage_linked_ir_bundle(path, &document)?.publish(path)?;
     }
     if !crate::cli::output::structured(&document) {
         print_report(&artifacts, &report, arguments.include_reachable);

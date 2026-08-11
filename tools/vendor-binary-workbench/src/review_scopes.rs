@@ -6,7 +6,7 @@ use std::{
 };
 
 use crate::{
-    ProjectSpec, Result, artifacts::load_linked_ir_analysis, project::ReviewScopeSpec,
+    ProjectSpec, Result, artifacts::LinkedIrReader, project::ReviewScopeSpec,
     registers::RegisterFacts,
 };
 
@@ -191,13 +191,13 @@ fn load_profile_nodes(
             .ok_or_else(|| {
                 crate::Error::invalid(format!("unknown review profile {profile_id:?}"))
             })?;
-        documents.push(load_linked_ir_analysis(&profile.output)?);
+        documents.push(LinkedIrReader::open(&profile.output)?.read_review_projection()?);
     }
     let project_definitions = project_definitions(&documents);
     let mut nodes = BTreeMap::<String, FunctionNode>::new();
     for document in documents {
         for function in document.functions {
-            let mut dependencies = function.dependencies().to_vec();
+            let mut dependencies = function.dependencies.clone();
             dependencies.extend(function.calls.iter().filter_map(|call| {
                 effective_call_target(call, &project_definitions).map(ToOwned::to_owned)
             }));
@@ -222,16 +222,17 @@ fn load_profile_nodes(
                     )
                 })
                 .count();
-            let context_fields = function.context_field_count();
-            let memory_fields = function.memory_field_count();
+            let context_fields = function.direct_context_fields;
+            let memory_fields = function.direct_memory_fields;
             let call_sites = function
                 .calls
                 .iter()
                 .filter_map(|call| call.site)
                 .collect::<BTreeSet<_>>();
             let diagnostics = function
-                .diagnostics()
-                .filter(|(_, diagnostic)| {
+                .diagnostics
+                .iter()
+                .filter(|diagnostic| {
                     diagnostic.kind != "aggregate"
                         && diagnostic.kind != "unresolved-call"
                         && !(diagnostic.kind == "call-boundary"
@@ -239,11 +240,16 @@ fn load_profile_nodes(
                                 .site
                                 .is_some_and(|site| call_sites.contains(&site)))
                 })
-                .map(|(channel, diagnostic)| DiagnosticIssue {
+                .map(|diagnostic| DiagnosticIssue {
                     root_id: diagnostic.root_id.clone(),
                     kind: diagnostic.kind.clone(),
                     site: diagnostic.site,
-                    channel,
+                    channel: match diagnostic.channel.as_str() {
+                        "direct" => "direct",
+                        "call-graph" => "call-graph",
+                        "reference" => "reference",
+                        _ => "unknown",
+                    },
                     message: diagnostic.rendered.clone(),
                 })
                 .collect::<Vec<_>>();
@@ -276,9 +282,9 @@ fn load_profile_nodes(
                 symbol: function.symbol,
                 dependencies,
                 mmio: function
-                    .mmio_accesses
+                    .mmio
                     .iter()
-                    .map(|access| (access.address, access.width()))
+                    .map(|access| (access.address, access.width))
                     .collect(),
                 table_calls,
                 context_fields,
@@ -564,7 +570,7 @@ fn analyze_scope(
 }
 
 fn project_definitions(
-    documents: &[crate::artifacts::LinkedIrStoredDocument],
+    documents: &[crate::artifacts::LinkedIrReviewProjection],
 ) -> BTreeMap<String, Vec<String>> {
     let mut definitions = BTreeMap::<String, BTreeSet<String>>::new();
     for function in documents
@@ -584,10 +590,15 @@ fn project_definitions(
 }
 
 fn effective_call_target<'a>(
-    call: &'a crate::artifacts::StoredCall,
+    call: &'a crate::artifacts::StoredReviewCall,
     definitions: &'a BTreeMap<String, Vec<String>>,
 ) -> Option<&'a str> {
-    linked_call_target(&call.kind, &call.target, call.project_symbol(), definitions)
+    linked_call_target(
+        &call.kind,
+        &call.target,
+        call.project_symbol.as_deref(),
+        definitions,
+    )
 }
 
 fn linked_call_target<'a>(
@@ -607,7 +618,7 @@ fn linked_call_target<'a>(
 }
 
 fn call_is_unresolved(
-    call: &crate::artifacts::StoredCall,
+    call: &crate::artifacts::StoredReviewCall,
     definitions: &BTreeMap<String, Vec<String>>,
 ) -> bool {
     matches!(call.kind.as_str(), "unresolved" | "ambiguous-project")

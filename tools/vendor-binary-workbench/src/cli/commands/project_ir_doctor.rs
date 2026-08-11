@@ -74,9 +74,6 @@ struct IrProfileReport {
     field_candidates: usize,
     review_linked: bool,
     output: std::path::PathBuf,
-    pseudo_status: &'static str,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pseudo: Option<std::path::PathBuf>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     diagnostics: Vec<IrProfileDiagnostic>,
 }
@@ -180,14 +177,6 @@ pub(super) fn inspect(
                     }
                 }
             };
-        let pseudo_status = match profile.pseudo_rust.as_deref() {
-            None => "not-configured",
-            Some(path) if path.is_file() => "ready",
-            Some(_) => {
-                warnings += 1;
-                "not-generated"
-            }
-        };
         profiles.push(IrProfileReport {
             id: profile.id.clone(),
             input_status,
@@ -208,8 +197,6 @@ pub(super) fn inspect(
             field_candidates: fields,
             review_linked: linked_outputs.contains(&profile.output),
             output: profile.output.clone(),
-            pseudo_status,
-            pseudo: profile.pseudo_rust.clone(),
             diagnostics,
         });
     }

@@ -304,6 +304,25 @@ fn render_human(report: &FunctionInvestigationReport, full: bool) {
                         .map(|model| format!(" model={model}"))
                         .unwrap_or_default(),
                 ));
+                if !call.arguments.is_empty() {
+                    crate::cli::output::line(format_args!(
+                        "      args[{} shape{}]: {}",
+                        call.argument_shapes,
+                        if call.argument_shapes == 1 { "" } else { "s" },
+                        call.arguments
+                            .iter()
+                            .enumerate()
+                            .map(|(position, value)| format!("a{position}={value}"))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ));
+                }
+                if !call.guards.is_empty() {
+                    crate::cli::output::line(format_args!(
+                        "      when: {}",
+                        call.guards.join(" || ")
+                    ));
+                }
             }
         }
         if !semantic.call_graph_edges.is_empty() {

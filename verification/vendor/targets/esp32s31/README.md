@@ -14,7 +14,8 @@ SVD register names.
 Most users need four project operations:
 
 1. `project inputs init` once per machine, to bind private artifacts;
-2. `project analyze --jobs 2`, to refresh all reverse-engineering evidence;
+2. `project analyze`, to refresh all reverse-engineering evidence with the
+   safe one-worker default;
 3. `project verify`, to execute every configured vendor/Rust proof suite;
 4. `project check` as the complete non-mutating CI gate.
 
@@ -60,6 +61,23 @@ not reported as executed merely because its TOML files parse.
 
 Once sibling `local.toml` exists, the complete generated-evidence workflow is:
 
+For the first cold run after analyzer or schema changes, build the optimized
+feature-enabled binary and use the hard-limit wrapper rather than the Cargo
+run alias:
+
+```console
+CARGO_BUILD_JOBS=2 cargo build --profile workbench \
+  -p open-radio-vendor-binary-workbench --features esp32s31-harness \
+  --bin vendor-binary-workbench
+
+tools/vendor-binary-workbench/scripts/run-limited project analyze --check \
+  --project verification/vendor/targets/esp32s31/vendor-project.toml \
+  --jobs 1
+```
+
+Only after that run has a measured acceptable peak RSS should the ordinary
+commands below or explicit parallel workers be used.
+
 ```console
 cargo vendor-binary-workbench-esp32s31 project analyze \
   --project verification/vendor/targets/esp32s31/vendor-project.toml \
@@ -92,8 +110,8 @@ report. `--candidate-evidence-dir /tmp/esp32s31-evidence` writes separate
 review-only baseline candidates and refuses to overwrite accepted baselines.
 The aggregate report includes a deduplicated replacement graph connecting
 `(source, symbol)` to reviewed Rust components, probe symbols and every suite
-proof. `--jobs 2` bounds both independent MMIO function analysis and
-artifact-wide linked-IR workers. Omit it for safe automatic worker selection.
+proof. The default is `--jobs 1`. Increase it only after a target-specific
+peak-RSS measurement; there is no automatic parallel mode.
 It deliberately does not update `svd/esp32s31-radio.svd` or production PAC
 code. The public register release gate needs no private run spec:
 
@@ -362,10 +380,13 @@ initializer bytes remain uninterpreted evidence. `.LANCHOR*` aliases join
 recovered function reads and writes to the named object where ELF proves the
 same member, section and offset.
 
-Use the configured non-release review scopes `coex-core`, `coex-timer`,
-`coex-scheduler` and `ble-advertising` to keep implementation work focused.
-They deliberately do not gate the existing Wi-Fi publication scopes yet. The
-checked COEX link view is built with:
+Use the configured review scopes `coex-core`, `coex-timer`,
+`coex-timer-control`, `coex-scheduler` and `ble-advertising` to keep
+implementation work focused. The four-leaf `coex-timer-control` scope is a
+required driver feature because it is structurally complete and has production
+equivalence for every timer index. The wider scopes deliberately do not gate
+the existing Wi-Fi publication boundary yet. The checked COEX link view is
+built with:
 
 ```console
 OPEN_RADIO_LINKED_ORACLE_SPEC="$PWD/verification/vendor/targets/esp32s31/oracle-firmware/trace-elf/linked-oracle-coex.toml" \
@@ -420,6 +441,7 @@ The current focused queues are:
 | --- | ---: | ---: | ---: | ---: | --- |
 | `coex-core` | 8 / 22 | 9 | 21 | 11 | execution models, six direct unresolved calls |
 | `coex-timer` | 5 / 6 | 4 | 21 | 2 | 64-bit division/link composition and timer models |
+| `coex-timer-control` | 4 / 4 | 4 | 20 | 0 | required feature; four production equivalence matches |
 | `coex-scheduler` | 4 / 6 | 0 | 0 | 2 | timer/semaphore behavior and reviewed state layout |
 | `ble-advertising` | 4 / 27 | 22 | 65 | 0 | one linked PHY dependency and four root replacements |
 

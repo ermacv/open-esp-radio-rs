@@ -58,6 +58,7 @@ pub(super) fn command_span(command: &Command) -> Option<Span> {
         Command::GenerateDriver(_) => "Driver generation",
         Command::InspectAnalyze(_) => "Artifact analysis",
         Command::InspectFunction(_) => "Function investigation",
+        Command::InspectFlow(_) => "Inter-function value-flow investigation",
         Command::InspectObject(_) => "Data-object investigation",
         Command::InspectScope(_) => "Scope investigation",
         Command::VerifyInventory(_) => "Inventory verification",

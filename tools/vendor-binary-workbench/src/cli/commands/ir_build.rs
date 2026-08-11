@@ -17,10 +17,8 @@ pub(super) fn run(
     svd: &MmioMap,
     target: &TargetSpec,
 ) -> Result<bool> {
-    if arguments.jobs > 8 {
-        return Err(crate::Error::invalid(
-            "ir build --jobs accepts 0 (safe automatic mode) or 1..=8",
-        ));
+    if !(1..=8).contains(&arguments.jobs) {
+        return Err(crate::Error::invalid("ir build --jobs accepts 1..=8"));
     }
     let refresh_review_scopes = arguments.profile.is_empty();
     let document = build_project_ir(
@@ -67,8 +65,5 @@ fn print_human(document: &BuildDocument<'_>) {
             profile.field_candidates,
             profile.bundle.display()
         );
-        if let Some(pseudo) = profile.pseudo {
-            outputln!("  {:<20} pseudo={}", "", pseudo.display());
-        }
     }
 }

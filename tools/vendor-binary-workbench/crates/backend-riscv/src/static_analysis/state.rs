@@ -34,6 +34,12 @@ impl StructuralTraceState {
                 | DraftReferenceEvent::Memory { .. }
                 | DraftReferenceEvent::IndexedMmio { .. }
                 | DraftReferenceEvent::PollMmio { .. }
+                | DraftReferenceEvent::PrivateStackLoad { .. }
+                | DraftReferenceEvent::PrivateStackStore { .. }
+                | DraftReferenceEvent::ModeledDirectCall { .. }
+                | DraftReferenceEvent::ReviewedExternalCall { .. }
+                | DraftReferenceEvent::Call { .. }
+                | DraftReferenceEvent::TailCall { .. }
         ) {
             self.located_reference_events.push(LocatedReferenceEvent {
                 site,
@@ -51,6 +57,12 @@ impl StructuralTraceState {
                     | DraftReferenceEvent::Memory { .. }
                     | DraftReferenceEvent::IndexedMmio { .. }
                     | DraftReferenceEvent::PollMmio { .. }
+                    | DraftReferenceEvent::PrivateStackLoad { .. }
+                    | DraftReferenceEvent::PrivateStackStore { .. }
+                    | DraftReferenceEvent::ModeledDirectCall { .. }
+                    | DraftReferenceEvent::ReviewedExternalCall { .. }
+                    | DraftReferenceEvent::Call { .. }
+                    | DraftReferenceEvent::TailCall { .. }
             ) {
                 self.located_reference_events.push(LocatedReferenceEvent {
                     site,

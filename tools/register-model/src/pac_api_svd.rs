@@ -179,12 +179,11 @@ impl PacApiPack {
             require_ordinary(&operation.name, binding.info)?;
         }
         for domain in &self.opaque_domains {
-            ordinary_writable_register(
-                &device,
-                &domain.name,
-                &domain.peripheral,
-                &domain.register,
-            )?;
+            // A register-specific opaque value domain is a type boundary, not
+            // an access semantic. It is valid for ordinary, W1C and other
+            // SVD-declared writable registers; the bound operation below is
+            // still responsible for validating the actual transaction.
+            writable_register(&device, &domain.name, &domain.peripheral, &domain.register)?;
         }
         Ok(())
     }

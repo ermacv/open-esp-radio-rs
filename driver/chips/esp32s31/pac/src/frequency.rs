@@ -106,7 +106,10 @@ impl RadioRegisters {
             w.register_mode_unknown()
                 .set(if parameter_override { 0x20 } else { 0x42 })
         });
-        super::svd::full_register_write::frequency_parameter_0(frequency, 0x1980_0249);
+        super::generated::frequency_parameter_0(
+            frequency,
+            super::generated::FrequencyParameter0Image::new(0x1980_0249),
+        );
         super::svd::zero_based_field_write::frequency_parameter_1_initialization(
             frequency, 0, 0x16, 0x12c127,
         );

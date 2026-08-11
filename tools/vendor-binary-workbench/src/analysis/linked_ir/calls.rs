@@ -15,6 +15,49 @@ pub(super) fn canonical_arguments(arguments: &[SymbolicValue]) -> Vec<String> {
     arguments.iter().map(SymbolicValue::canonical).collect()
 }
 
+fn linked_flow_value(value: &SymbolicValue) -> LinkedFlowValue {
+    LinkedFlowValue {
+        expression: value.canonical(),
+        constant: value.as_constant(),
+        input: value.direct_input_index(),
+    }
+}
+
+pub(super) fn local_value_flow(trace: &FunctionAnalysis) -> Vec<LinkedLocalValueFlow> {
+    let mut facts = trace
+        .located_reference_events
+        .iter()
+        .filter_map(|located| match &located.event {
+            DraftReferenceEvent::PrivateStackStore {
+                offset,
+                width,
+                value,
+            } => Some(LinkedLocalValueFlow::StackStore {
+                site: located.site,
+                offset: *offset,
+                width: *width,
+                value: linked_flow_value(value),
+            }),
+            DraftReferenceEvent::PrivateStackLoad {
+                token,
+                offset,
+                width,
+                signed,
+            } => Some(LinkedLocalValueFlow::StackLoad {
+                site: located.site,
+                token: *token,
+                offset: *offset,
+                width: *width,
+                signed: *signed,
+            }),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    facts.sort();
+    facts.dedup();
+    facts
+}
+
 pub(super) fn affine_argument_bindings(arguments: &[SymbolicValue]) -> Vec<LinkedArgumentBinding> {
     arguments
         .iter()
@@ -188,6 +231,17 @@ pub(super) fn merged_argument_value(
             .all(|call| call.arguments.get(position) == Some(first))
     {
         return first.clone();
+    }
+    let constants = calls
+        .iter()
+        .filter_map(|call| call.arguments.get(position))
+        .filter_map(|value| value.strip_prefix("const:"))
+        .collect::<BTreeSet<_>>();
+    if constants.len() == calls.len() {
+        return format!(
+            "one-of({})",
+            constants.into_iter().collect::<Vec<_>>().join(",")
+        );
     }
     format!("varies-across-{argument_shapes}-shapes")
 }

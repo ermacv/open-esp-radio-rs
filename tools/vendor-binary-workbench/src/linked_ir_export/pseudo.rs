@@ -171,26 +171,18 @@ pub(crate) fn render_pseudo(
             "// REACHABLE-EFFECTS: call-graph-closed={} max-depth={} functions={} mmio={} delays={} semantics={} semantic-actions={} event-dispatches={} trampolines={} context-fields={} context-projection-complete={} blockers={}",
             summary.call_graph_closed,
             summary.max_depth,
-            summary.reachable_functions.len(),
+            summary.reachable_function_count,
             summary.mmio_registers.len(),
             summary.delays.len(),
             summary.semantic_operations.len(),
-            summary.semantic_actions.len(),
+            summary.semantic_action_count,
             summary.event_dispatches.len(),
             summary.trampoline_calls.len(),
             summary.context_fields.len(),
             summary.context_projection_complete,
-            summary.blockers.len(),
+            summary.context_projection_blockers.len(),
         )
         .expect("writing to String cannot fail");
-        if !summary.reachable_functions.is_empty() {
-            writeln!(
-                output,
-                "// REACHABLE-FUNCTIONS: {}",
-                summary.reachable_functions.join(" | ")
-            )
-            .expect("writing to String cannot fail");
-        }
         for semantic in &summary.semantic_operations {
             writeln!(
                 output,

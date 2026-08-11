@@ -132,8 +132,12 @@ pub struct FullRegisterWrite {
     pub peripheral: String,
     pub register: String,
     pub field: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub domain: Option<String>,
+    /// Reviewed value domain accepted by the closed-PAC bridge.
+    ///
+    /// Schema 2 intentionally has no untyped compatibility path: every
+    /// complete-register write crossing from the closed PAC into the raw PAC
+    /// must carry a register-specific or otherwise reviewed value type.
+    pub domain: String,
     pub sources: Vec<String>,
 }
 common_operation!(FixedRegisterWrite {
@@ -145,18 +149,34 @@ common_operation!(FixedRegisterImage {
     register: String,
     value: u32,
 });
-common_operation!(RegisterImageWrite { register: String });
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct RegisterImageWrite {
+    pub name: String,
+    pub peripheral: String,
+    pub register: String,
+    /// Reviewed domain for the complete image crossing into the raw PAC.
+    pub domain: String,
+    pub sources: Vec<String>,
+}
 common_operation!(ZeroBasedFieldWrite {
     register: String,
     fields: Vec<String>,
 });
 common_operation!(ZeroRegisterWrite { register: String });
-common_operation!(MaskedRegisterModify {
-    register: String,
-    preserve_mask: u32,
-    input_mask: u32,
-    set_mask: u32,
-});
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct MaskedRegisterModify {
+    pub name: String,
+    pub peripheral: String,
+    pub register: String,
+    /// Reviewed domain for the caller-controlled portion of the image.
+    pub domain: String,
+    pub preserve_mask: u32,
+    pub input_mask: u32,
+    pub set_mask: u32,
+    pub sources: Vec<String>,
+}
 
 impl PacApiPack {
     pub fn load(path: &Path) -> Result<Self> {
@@ -197,28 +217,34 @@ impl PacApiPack {
         }
         for operation in &self.full_register_writes {
             validate_component("field", &operation.name, &operation.field)?;
-            if let Some(domain) = &operation.domain {
-                if !domain_names.contains(domain.as_str()) {
-                    return Err(Error::message(format!(
-                        "PAC API full-register-write {:?} references unknown domain {domain:?}",
-                        operation.name
-                    )));
-                }
-                if let Some(opaque) = self
-                    .opaque_domains
-                    .iter()
-                    .find(|candidate| candidate.name == *domain)
-                {
-                    if opaque.peripheral != operation.peripheral
-                        || opaque.register != operation.register
-                    {
-                        return Err(Error::message(format!(
-                            "PAC API full-register-write {:?} uses opaque domain {domain:?} outside its register {}.{}",
-                            operation.name, opaque.peripheral, opaque.register
-                        )));
-                    }
-                }
-            }
+            self.validate_operation_domain(
+                "full-register-write",
+                &operation.name,
+                &operation.peripheral,
+                &operation.register,
+                &operation.domain,
+                &domain_names,
+            )?;
+        }
+        for operation in &self.register_image_writes {
+            self.validate_operation_domain(
+                "register-image-write",
+                &operation.name,
+                &operation.peripheral,
+                &operation.register,
+                &operation.domain,
+                &domain_names,
+            )?;
+        }
+        for operation in &self.masked_register_modifies {
+            self.validate_operation_domain(
+                "masked-register-modify",
+                &operation.name,
+                &operation.peripheral,
+                &operation.register,
+                &operation.domain,
+                &domain_names,
+            )?;
         }
         for operation in &self.interrupt_snapshots {
             validate_component(
@@ -263,6 +289,35 @@ impl PacApiPack {
                     operation.name
                 )));
             }
+        }
+        Ok(())
+    }
+
+    fn validate_operation_domain(
+        &self,
+        kind: &str,
+        operation: &str,
+        peripheral: &str,
+        register: &str,
+        domain: &str,
+        domain_names: &BTreeSet<&str>,
+    ) -> Result<()> {
+        validate_component("domain", operation, domain)?;
+        if !domain_names.contains(domain) {
+            return Err(Error::message(format!(
+                "PAC API {kind} {operation:?} references unknown domain {domain:?}"
+            )));
+        }
+        if let Some(opaque) = self
+            .opaque_domains
+            .iter()
+            .find(|candidate| candidate.name == domain)
+            && (opaque.peripheral != peripheral || opaque.register != register)
+        {
+            return Err(Error::message(format!(
+                "PAC API {kind} {operation:?} uses opaque domain {domain:?} outside its register {}.{}",
+                opaque.peripheral, opaque.register
+            )));
         }
         Ok(())
     }
@@ -666,10 +721,18 @@ mod tests {
     #[test]
     fn accepts_a_partitioned_masked_transaction() {
         let mut pack = empty_pack();
+        pack.opaque_domains.push(OpaqueDomain {
+            name: "CommandInput".to_owned(),
+            description: "Reviewed command input image.".to_owned(),
+            peripheral: "RADIO".to_owned(),
+            register: "COMMAND".to_owned(),
+            sources: vec!["REVIEW".to_owned()],
+        });
         pack.masked_register_modifies.push(MaskedRegisterModify {
             name: "publish_command".to_owned(),
             peripheral: "RADIO".to_owned(),
             register: "COMMAND".to_owned(),
+            domain: "CommandInput".to_owned(),
             preserve_mask: 0xffff_0000,
             input_mask: 0x0000_fff0,
             set_mask: 0x0000_000f,
@@ -685,10 +748,18 @@ mod tests {
         pack.options.peripheral_ownership = true;
         assert!(pack.validate().is_err());
         pack.options.peripheral_ownership = false;
+        pack.opaque_domains.push(OpaqueDomain {
+            name: "CommandInput".to_owned(),
+            description: "Reviewed command input image.".to_owned(),
+            peripheral: "RADIO".to_owned(),
+            register: "COMMAND".to_owned(),
+            sources: vec!["REVIEW".to_owned()],
+        });
         pack.masked_register_modifies.push(MaskedRegisterModify {
             name: "publish_command".to_owned(),
             peripheral: "RADIO".to_owned(),
             register: "COMMAND".to_owned(),
+            domain: "CommandInput".to_owned(),
             preserve_mask: 0xffff_0000,
             input_mask: 0x0000_fff0,
             set_mask: 0,
@@ -717,7 +788,7 @@ mod tests {
             peripheral: "RADIO".to_owned(),
             register: "ENABLE".to_owned(),
             field: "EVENTS".to_owned(),
-            domain: Some("InterruptMask".to_owned()),
+            domain: "InterruptMask".to_owned(),
             sources: vec!["VENDOR_IRQ".to_owned()],
         });
         assert!(

@@ -35,7 +35,7 @@ roots = \"all\"\n\
 include-reachable = true\n\
 entry-contract = \"none\"\n\
 output = \"generated/findings/{source}.ir\"\n\
-pseudo-rust = \"generated/reports/{source}.pseudo.rs\"\n"
+"
         ));
     }
     let linked_ir = quoted_list(

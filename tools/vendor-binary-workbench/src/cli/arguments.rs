@@ -85,8 +85,8 @@ pub(crate) struct ProjectAnalyzeArgs {
     /// Treat unreviewed generated material as a pipeline failure.
     #[arg(long)]
     pub(crate) deny_unreviewed: bool,
-    /// Worker threads for independent analysis; zero selects up to four available workers.
-    #[arg(long, default_value_t = 0, value_name = "N")]
+    /// Worker threads for independent analysis.
+    #[arg(long, default_value_t = 1, value_parser = clap::value_parser!(u8).range(1..=8), value_name = "N")]
     pub(crate) jobs: u8,
 }
 
@@ -108,8 +108,8 @@ pub(crate) struct ProjectCheckArgs {
     /// Treat unreviewed generated material as a check failure.
     #[arg(long)]
     pub(crate) deny_unreviewed: bool,
-    /// Worker threads for independent analysis; zero selects up to four available workers.
-    #[arg(long, default_value_t = 0, value_name = "N")]
+    /// Worker threads for independent analysis.
+    #[arg(long, default_value_t = 1, value_parser = clap::value_parser!(u8).range(1..=8), value_name = "N")]
     pub(crate) jobs: u8,
 }
 
@@ -318,8 +318,8 @@ pub(crate) struct MmioDiscoverArgs {
     /// Select which matching function symbols become MMIO analysis roots.
     #[arg(long, value_enum, default_value_t)]
     pub(crate) code_symbols: CodeSymbolSelectionArg,
-    /// Worker threads used for independent function analysis; zero selects up to four available workers.
-    #[arg(long, default_value_t = 0, value_name = "N")]
+    /// Worker threads used for independent function analysis.
+    #[arg(long, default_value_t = 1, value_parser = clap::value_parser!(u8).range(1..=8), value_name = "N")]
     pub(crate) jobs: u8,
     /// Write the machine-readable MMIO discovery report.
     #[arg(long)]
@@ -343,8 +343,8 @@ pub(crate) struct IrExportArgs {
     /// Include functions reachable from the selected roots.
     #[arg(long)]
     pub(crate) include_reachable: bool,
-    /// Worker threads for artifact-wide independent functions; zero selects up to four available workers.
-    #[arg(long, default_value_t = 0, value_name = "N")]
+    /// Worker threads for artifact-wide independent functions.
+    #[arg(long, default_value_t = 1, value_parser = clap::value_parser!(u8).range(1..=8), value_name = "N")]
     pub(crate) jobs: u8,
     /// Registered entry contract used at the binary boundary.
     #[arg(long, default_value = "none")]
@@ -365,8 +365,8 @@ pub(crate) struct IrBuildArgs {
     /// Verify all selected profile outputs without modifying them.
     #[arg(long)]
     pub(crate) check: bool,
-    /// Worker threads for independent function-local analysis; zero selects up to four available workers.
-    #[arg(long, default_value_t = 0, value_name = "N")]
+    /// Worker threads for independent function-local analysis.
+    #[arg(long, default_value_t = 1, value_parser = clap::value_parser!(u8).range(1..=8), value_name = "N")]
     pub(crate) jobs: u8,
 }
 
@@ -453,6 +453,25 @@ pub(crate) struct InspectFunctionArgs {
     /// Show one shortest structural CFG path (`FROM:TO`); use `+OFFSET` for function offsets.
     #[arg(long, value_name = "FROM:TO")]
     pub(crate) path: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, Args)]
+pub(crate) struct InspectFlowArgs {
+    /// Project source and root function (`SOURCE:SYMBOL`).
+    #[arg(value_name = "SOURCE:SYMBOL")]
+    pub(crate) selector: String,
+    /// Stop at a function identity or symbol.
+    #[arg(long, value_name = "[SOURCE::]SYMBOL")]
+    pub(crate) to_function: Option<String>,
+    /// Stop at the first function accessing this reviewed register name.
+    #[arg(long, value_name = "REGISTER")]
+    pub(crate) to_register: Option<String>,
+    /// Stop at the first function accessing this MMIO address.
+    #[arg(long, value_name = "ADDRESS")]
+    pub(crate) to_address: Option<String>,
+    /// Maximum number of inter-function edges to explore.
+    #[arg(long, default_value_t = 12)]
+    pub(crate) max_depth: usize,
 }
 
 #[derive(Clone, Debug, Default, Args)]

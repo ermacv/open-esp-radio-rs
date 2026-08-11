@@ -51,5 +51,8 @@ tracing = "=0.1.44"
 tracing-indicatif = "=0.3.14"
 tracing-subscriber = { version = "=0.3.23", features = ["env-filter"] }
 
+[target.'cfg(all(target_os = "linux", target_env = "gnu"))'.dependencies]
+libc = "=0.2.189"
+
 [lints]
 workspace = true

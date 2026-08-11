@@ -60,10 +60,7 @@ pub(crate) fn load_symbol_inventory(
                 "project analysis.symbols requires non-empty string \"output\"",
             )
         })?;
-    if ir_profiles
-        .iter()
-        .any(|profile| profile.output == output || profile.pseudo_rust.as_ref() == Some(&output))
-    {
+    if ir_profiles.iter().any(|profile| profile.output == output) {
         return Err(source.table_key(
             symbols,
             "output",
@@ -134,10 +131,7 @@ pub(crate) fn load_navigation_index(
             "project navigation index reuses symbol inventory output path",
         ));
     }
-    if ir_profiles
-        .iter()
-        .any(|profile| profile.output == output || profile.pseudo_rust.as_ref() == Some(&output))
-    {
+    if ir_profiles.iter().any(|profile| profile.output == output) {
         return Err(source.table_key(
             navigation,
             "output",
@@ -184,7 +178,6 @@ output = "generated/symbols.json"
             include_reachable: true,
             entry_contract: "none".to_owned(),
             output: spec.output.clone(),
-            pseudo_rust: None,
         };
         assert!(
             load_symbol_inventory(&document, Path::new("project"), &[profile], source)

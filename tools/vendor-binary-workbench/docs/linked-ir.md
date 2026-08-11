@@ -22,7 +22,7 @@ cargo vendor-binary-workbench ir export \
 
 ## Persistent bundle and random access
 
-Schema v45 is a directory, not one monolithic JSON document. The output path
+Schema v47 is a directory, not one monolithic JSON document. The output path
 contains `manifest.json`, `functions.jsonl`, `function-overview.jsonl`,
 `function-index.json`, `graph.json`, `register-index.json`,
 `data-objects.jsonl`, and `data-object-index.json`. Functions and data objects
@@ -30,19 +30,22 @@ are individually encoded records addressed by byte offsets from deterministic
 indexes. The manifest contains identity, modes, provenance and summary only.
 
 `function-overview.jsonl` is the strict compact projection used by status,
-review validation and the TUI index. It contains identities, completeness,
-direct-call/MMIO counts, projected context and memory fields, semantic
-operations, event dispatches and decode blockers, but no instruction stream,
-pseudo-code, paths or scenario bodies. A selected function detail is loaded by
+review validation, review scopes and the TUI index. It contains identities,
+binding, dependencies, compact calls, typed MMIO addresses/widths, direct
+context/memory counts, structured diagnostics, completeness, optional focused
+projection facts and decode blockers, but no instruction stream, pseudo-code,
+paths or scenario bodies. A selected function detail is loaded by
 one indexed seek from `functions.jsonl`; project startup therefore never scans
-the lossless stream, which is about 1.1 GiB for the current ESP32-S31 project.
+the lossless stream. Bundle generation streams records through a bounded
+writer and rejects a profile above 512 MiB before replacing its previous
+output.
 
 Focused consumers must use the relevant index. `inspect function` reads one
 function record plus the graph index; `inspect object` reads one data-object
 record; register review reads only `register-index.json`. Whole-project joins
 may stream all function records, but do not parse the data-object inventory
 unless they consume it. A bundle is valid only when every required member
-exists and has schema v45; the removed single-file representation is rejected.
+exists and has schema v47; the removed single-file representation is rejected.
 
 ```console
 cargo vendor-binary-workbench inspect function libpp:wDev_AppendRxBlocks \
@@ -65,7 +68,7 @@ instructions remain available even when symbolic execution stops.
 By default the prefix selects only report roots. `--include-reachable` also
 exports the transitive internal callees recovered from those roots within the
 same primary artifact. Each function is marked `symbol-prefix-root` or
-`reachable-internal`, and schema v45 records the selection mode plus root and
+`reachable-internal`, and schema v47 records the selection mode plus root and
 included-callee counts. This is an opt-in analysis-size tradeoff: only exactly
 resolved internal edges enqueue a callee, exploration limits remain visible as
 blockers, and companion or independently named primary definitions are not
@@ -116,8 +119,8 @@ register indexing.
 
 The parallel path is used only when every named symbol is already a root.
 Prefix-root `--include-reachable` analysis remains serial because discovered
-callee roots change the pending set. `--jobs 0` uses up to four available
-workers; explicit parallelism is bounded to eight workers. Serial and
+callee roots change the pending set. The safe default is `--jobs 1`;
+explicit parallelism is bounded to eight workers. Serial and
 parallel reports are byte-identical and concrete verification semantics are
 unchanged.
 
@@ -130,14 +133,13 @@ cargo vendor-binary-workbench ir export \
   --artifact rom="$ESP32S31_ROM_ELF" \
   --artifact libphy="$ESP32S31_LIBPHY_ARCHIVE" \
   --artifact libpp="$ESP32S31_LIBPP_ARCHIVE" \
-  --pseudo-rust /tmp/vendor-project.pseudo.rs \
   --json-report /tmp/vendor-project.ir
 ```
 
 Project identities are namespaced, for example `rom::ets_delay_us` and
 `libphy::phy_init`. Semantic boundaries and all summary counts are aggregated
 across sources. Each named primary is analyzed in its own address space;
-schema v45 records `"linkage_mode": "independent-artifacts"` and does not claim
+schema v47 records `"linkage_mode": "independent-artifacts"` and does not claim
 that separate inputs share an address space or were fully linked. Use one
 linked ELF primary plus `--companion` inputs when cross-image addresses and
 relocations belong to one executable address space.
@@ -183,7 +185,7 @@ terminate the current path.
 
 ## Instruction effects
 
-Schema v45 gives every function an `instruction_effects` array. It is the
+Schema v47 gives every function an `instruction_effects` array. It is the
 canonical lossless join between structural semantics and the decoded body:
 each directly observed MMIO or RAM access retains its originating instruction
 `site`, conservative CFG `block`, access width and kind, typed target, path
@@ -225,20 +227,32 @@ unique exact fragment, its number of occurrences and its first ordinal. The
 diagnostic record also carries a classified `kind`, an optional instruction
 `site`, and a stable `root_id` used by review queues. Pseudo-source uses the
 compact `rendered` form with an explicit `[repeated N times]` suffix. The old
-parallel string blocker arrays are not part of schema v45. This is mechanical report compaction, not
+parallel string blocker arrays are not part of schema v47. This is mechanical report compaction, not
 semantic parsing: later duplicate ordering is not retained, counts are not
 runtime occurrence counts, and backend completeness remains fail-closed.
 
-Every function also has an `effect_summary` reachable inventory. It follows
-resolved internal and unique project edges to a fixed point, including through
-recursive components, and groups MMIO access shapes, delay shapes and semantic
-operations by their originating functions. `call_graph_closed` is true only
-when every reached function body and traversed edge is complete; otherwise
-`blockers` names the incomplete bodies, unresolved edges or omitted callees.
-This is deliberately not an effect-equivalence proof: counts describe recovered
-IR shapes and mutually exclusive paths may coexist. Top-level
-`effect_summary_mode: "reachable-inventory-origin-preserving"` makes that
-boundary machine-readable.
+A focused function report has a materialized `effect_summary` reachable
+inventory. It follows resolved internal and unique project edges to a fixed
+point, including recursive components, and groups MMIO, delay, context,
+memory and semantic effects with their origin/path evidence.
+
+Artifact-wide schema-v47 bundles instead persist every direct fact once plus
+the lossless `graph.json`. Precomputing the complete transitive inventory for
+every possible root is quadratic and exhausted memory on the 2997-function
+real linked image. Those summaries therefore use
+`effect_summary_mode: "direct-facts-with-focused-transitive-projection"`,
+`transitive_effects_materialized = false` and
+`context_projection_materialized = false`. Exact closure size, maximum depth,
+recursion and `call_graph_closed` are still calculated; the heavy vectors are
+empty. A prefix-focused `ir export` over the same inputs materializes the
+complete root projection; the current bundle reader provides graph reachability
+but does not silently synthesize a proof-grade transitive summary.
+`semantic_action_count` records the recovered root projection count,
+`semantic_actions_materialized = false` distinguishes omission from absence,
+and `context_projection_paths_materialized = false` makes the same boundary
+explicit for affine path strings. Guard-backed semantic/MMIO links and event
+dispatch summaries are retained as bounded indexes. None of these flags is a
+completeness claim, and review readiness requires materialized focused facts.
 
 Internal call records retain proven affine pointer bindings such as
 `callee arg0 = caller arg2 + 0x20`. The effect summary composes those bindings
@@ -558,7 +572,7 @@ the fixed 40 MHz `rtc_clk_xtal_freq_get` platform input. An annotation with
 `unmodeled` return/effects remains fail-closed.
 
 Reviewed trampoline calls additionally persist the complete executable model
-in linked-IR schema v45: model ID, return model, and each output kind, pointer
+in linked-IR schema v47: model ID, return model, and each output kind, pointer
 argument and width. This keeps navigation and later review honest without
 teaching the generic schema RTOS-specific meanings.
 

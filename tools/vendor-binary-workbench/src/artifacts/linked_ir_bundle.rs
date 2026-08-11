@@ -250,6 +250,36 @@ impl LinkedIrReader {
             .collect()
     }
 
+    /// Resolve transitive internal/project-linked callees from the lossless
+    /// graph member. Reachability is derived only for a focused consumer; it
+    /// is not duplicated into every function record in the bundle.
+    pub(crate) fn reachable_function_identities(&self, root: &str) -> Vec<String> {
+        let known = self
+            .index
+            .iter()
+            .map(|record| record.identity.as_str())
+            .collect::<std::collections::BTreeSet<_>>();
+        let mut frontier = std::collections::BTreeSet::from([root.to_owned()]);
+        let mut visited = frontier.clone();
+        while !frontier.is_empty() {
+            let mut next = std::collections::BTreeSet::new();
+            for edge in &self.graph {
+                if !matches!(edge.kind.as_str(), "internal" | "project-linked")
+                    || !frontier.contains(&edge.caller)
+                    || !known.contains(edge.callee.as_str())
+                {
+                    continue;
+                }
+                if visited.insert(edge.callee.clone()) {
+                    next.insert(edge.callee.clone());
+                }
+            }
+            frontier = next;
+        }
+        visited.remove(root);
+        visited.into_iter().collect()
+    }
+
     pub(crate) fn read_all_functions(&self) -> Result<Vec<StoredFunction>> {
         let file = fs::File::open(self.root.join(FUNCTIONS))?;
         let mut functions: Vec<StoredFunction> = Vec::with_capacity(self.index.len());
@@ -437,10 +467,6 @@ pub(crate) fn load_linked_ir_functions(path: &Path) -> Result<super::LinkedIrSto
     LinkedIrReader::open(path)?.into_document(false)
 }
 
-pub(crate) fn load_linked_ir_analysis(path: &Path) -> Result<super::LinkedIrStoredDocument> {
-    LinkedIrReader::open(path)?.into_document(true)
-}
-
 #[cfg(test)]
 pub(crate) fn write_fixture_bundle(path: &Path, input: &str) -> Result<()> {
     let mut document = super::parse_linked_ir(input)?;
@@ -563,17 +589,63 @@ fn fixture_function_overview(encoded: &str) -> Result<String> {
         .flatten()
         .filter_map(|access| access["address"].as_u64())
         .collect::<std::collections::BTreeSet<_>>();
+    let mmio = full["mmio_accesses"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|access| {
+            serde_json::json!({
+                "address": access["address"],
+                "width": access["width"],
+            })
+        })
+        .collect::<Vec<_>>();
+    let diagnostics = [
+        "call_graph_diagnostics",
+        "direct_diagnostics",
+        "reference_diagnostics",
+    ]
+    .into_iter()
+    .zip(["call-graph", "direct", "reference"])
+    .flat_map(|(field, channel)| {
+        full[field]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .map(move |diagnostic| {
+                serde_json::json!({
+                    "channel": channel,
+                    "root_id": diagnostic["root_id"],
+                    "kind": diagnostic["kind"],
+                    "site": diagnostic["site"],
+                    "rendered": diagnostic["rendered"],
+                })
+            })
+    })
+    .collect::<Vec<_>>();
     let overview = serde_json::json!({
         "source": full["source"],
         "identity": full["identity"],
         "selection": full["selection"],
         "member": full["member"],
         "symbol": full["symbol"],
+        "binding": full["binding"],
         "complete": full["complete"],
+        "dependencies": full["dependencies"],
         "direct_calls": full["calls"].as_array().map_or(0, Vec::len),
+        "calls": full["calls"].as_array().into_iter().flatten().map(|call| serde_json::json!({
+            "kind": call["kind"], "target": call["target"], "site": call["site"],
+            "project_symbol": call["project_symbol"],
+        })).collect::<Vec<_>>(),
+        "mmio": mmio,
         "mmio_addresses": mmio_addresses,
+        "direct_context_fields": full["context_fields"].as_array().map_or(0, Vec::len),
+        "direct_memory_fields": full["memory_fields"].as_array().map_or(0, Vec::len),
+        "diagnostics": diagnostics,
         "effect_summary": {
+            "transitive_effects_materialized": summary["transitive_effects_materialized"],
             "call_graph_closed": summary["call_graph_closed"],
+            "context_projection_materialized": summary["context_projection_materialized"],
             "context_projection_complete": summary["context_projection_complete"],
             "context_projection_blockers": summary["context_projection_blockers"],
             "context_fields": summary["context_fields"].as_array().into_iter().flatten().map(|field| serde_json::json!({

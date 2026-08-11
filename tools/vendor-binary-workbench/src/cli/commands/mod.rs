@@ -12,6 +12,7 @@ mod generate_reference;
 mod generate_reference_batch;
 mod inspect_analyze;
 mod inspect_compare;
+mod inspect_flow;
 mod inspect_function;
 mod inspect_object;
 mod inspect_scope;
@@ -240,6 +241,10 @@ pub(super) fn run_target(
         TargetCommand::InspectFunction(arguments) => inspect_function::run(
             arguments,
             project.ok_or_else(|| crate::Error::invalid("inspect function requires --project"))?,
+        ),
+        TargetCommand::InspectFlow(arguments) => inspect_flow::run(
+            arguments,
+            project.ok_or_else(|| crate::Error::invalid("inspect flow requires --project"))?,
         ),
         TargetCommand::InspectObject(arguments) => inspect_object::run(
             arguments,

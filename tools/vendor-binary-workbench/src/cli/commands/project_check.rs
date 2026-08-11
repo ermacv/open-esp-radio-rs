@@ -42,10 +42,8 @@ struct ProjectCheckIssue {
 }
 
 pub(super) fn run(arguments: ProjectCheckArgs, session: &ProjectSession) -> Result<bool> {
-    if arguments.jobs > 8 {
-        return Err(crate::Error::invalid(
-            "project check --jobs accepts 0 (safe automatic mode) or 1..=8",
-        ));
+    if !(1..=8).contains(&arguments.jobs) {
+        return Err(crate::Error::invalid("project check --jobs accepts 1..=8"));
     }
     let analysis = crate::application::project_analysis::analyze_project(
         session,

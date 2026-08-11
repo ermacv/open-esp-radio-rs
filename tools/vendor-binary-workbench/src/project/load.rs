@@ -395,9 +395,6 @@ pub(super) fn load(path: &Path) -> Result<ProjectSpec> {
         }
         for profile in &ir_profiles {
             generated.push(("linked-IR report", &profile.output));
-            if let Some(path) = &profile.pseudo_rust {
-                generated.push(("pseudo-Rust report", path));
-            }
         }
         if let Some(paths) = &registers {
             generated.push(("register facts", &paths.facts));

@@ -89,22 +89,47 @@ impl PacApiPack {
             .map(|domain| domain.name.as_str())
             .chain(self.enum_domains.iter().map(|domain| domain.name.as_str()))
             .collect::<BTreeSet<_>>();
-        for operation in self
-            .full_register_writes
-            .iter()
-            .filter(|operation| operation.domain.is_some())
-        {
-            let domain = operation
-                .domain
-                .as_deref()
-                .expect("filtered typed register write has a domain");
-            let value = if flag_or_enum_domains.contains(domain) {
-                "value.bits()"
-            } else {
-                "value.get()"
-            };
+        for operation in &self.full_register_writes {
+            let domain = operation.domain.as_str();
+            let value = domain_value_expression(domain, &flag_or_enum_domains);
             output.push_str(&format!(
                 "/// Typed bridge for the reviewed `{}` complete-register transaction.\n#[inline]\npub(crate) fn {}(registers: &crate::svd::{}, value: {}) {{\n    crate::svd::full_register_write::{}(registers, {});\n}}\n\n",
+                operation.name,
+                operation.name,
+                type_binding_name(&operation.peripheral),
+                domain,
+                operation.name,
+                value,
+            ));
+        }
+        for operation in &self.register_image_writes {
+            let domain = operation.domain.as_str();
+            let value = domain_value_expression(domain, &flag_or_enum_domains);
+            let (index_parameter, index_argument) = if operation.register.contains("%s") {
+                ("index: usize, ", "index, ")
+            } else {
+                ("", "")
+            };
+            output.push_str(&format!(
+                "/// Typed bridge for the reviewed `{}` complete-image transaction.\n#[inline]\npub(crate) fn {}(registers: &crate::svd::{}, {index_parameter}value: {}) {{\n    crate::svd::register_image_write::{}(registers, {index_argument}{});\n}}\n\n",
+                operation.name,
+                operation.name,
+                type_binding_name(&operation.peripheral),
+                domain,
+                operation.name,
+                value,
+            ));
+        }
+        for operation in &self.masked_register_modifies {
+            let domain = operation.domain.as_str();
+            let value = domain_value_expression(domain, &flag_or_enum_domains);
+            let (index_parameter, index_argument) = if operation.register.contains("%s") {
+                ("index: usize, ", "index, ")
+            } else {
+                ("", "")
+            };
+            output.push_str(&format!(
+                "/// Typed bridge for the reviewed `{}` masked transaction.\n#[inline]\npub(crate) fn {}(registers: &crate::svd::{}, {index_parameter}value: {}) {{\n    crate::svd::masked_register_modify::{}(registers, {index_argument}{});\n}}\n\n",
                 operation.name,
                 operation.name,
                 type_binding_name(&operation.peripheral),
@@ -610,6 +635,14 @@ impl PacApiPack {
     }
 }
 
+fn domain_value_expression(domain: &str, flag_or_enum_domains: &BTreeSet<&str>) -> &'static str {
+    if flag_or_enum_domains.contains(domain) {
+        "value.bits()"
+    } else {
+        "value.get()"
+    }
+}
+
 fn push_doc(output: &mut String, description: &str, indent: &str) {
     for line in description.lines() {
         output.push_str(indent);
@@ -759,6 +792,13 @@ register = "ENABLE"
 field = "EVENTS"
 domain = "InterruptMask"
 sources = ["VENDOR_IRQ"]
+
+[[register-image-writes]]
+name = "write_calibration"
+peripheral = "RADIO"
+register = "CALIBRATION"
+domain = "CalibrationWord"
+sources = ["VENDOR_CALIBRATION"]
 "#,
         )
         .unwrap();
@@ -770,6 +810,8 @@ sources = ["VENDOR_IRQ"]
         assert!(source.contains("pub struct CalibrationWord(u32);"));
         assert!(source.contains("value: InterruptMask"));
         assert!(source.contains("full_register_write::write_interrupt_mask"));
+        assert!(source.contains("value: CalibrationWord"));
+        assert!(source.contains("register_image_write::write_calibration"));
         assert!(!source.contains("from_bits"));
         assert!(!source.contains("impl InterruptMask {\n    pub fn new"));
     }

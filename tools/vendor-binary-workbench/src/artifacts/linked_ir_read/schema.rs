@@ -1,4 +1,4 @@
-//! Complete owned DTO for linked-IR schema v45.
+//! Complete owned DTO for linked-IR schema v47.
 
 #![allow(
     dead_code,
@@ -184,6 +184,7 @@ pub(crate) struct StoredFunction {
     return_value: String,
     return_provenance: StoredReturnProvenance,
     dependencies: Vec<String>,
+    pub(crate) local_value_flow: Vec<StoredLocalValueFlow>,
     pub(crate) calls: Vec<StoredCall>,
     direct_mmio_predicates: Vec<StoredDirectMmioPredicate>,
     pub(crate) mmio_accesses: Vec<StoredMmioAccess>,
@@ -202,6 +203,32 @@ pub(crate) struct StoredFunction {
     pub(crate) pseudo: String,
 }
 
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
+pub(crate) enum StoredLocalValueFlow {
+    StackStore {
+        site: u32,
+        offset: i32,
+        width: u8,
+        value: StoredFlowValue,
+    },
+    StackLoad {
+        site: u32,
+        token: u32,
+        offset: i32,
+        width: u8,
+        signed: bool,
+    },
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct StoredFlowValue {
+    pub(crate) expression: String,
+    pub(crate) constant: Option<u32>,
+    pub(crate) input: Option<u8>,
+}
+
 /// Allocation-bounded record from the dedicated function overview stream used
 /// by project status and the TUI index.  Unlike the former projection over the
 /// full function JSON, this schema is strict and contains no lossless IR body.
@@ -213,17 +240,58 @@ pub(crate) struct StoredFunctionReviewProjection {
     pub(crate) selection: String,
     pub(crate) member: Option<String>,
     pub(crate) symbol: String,
+    pub(crate) binding: String,
     pub(crate) complete: bool,
+    pub(crate) dependencies: Vec<String>,
     pub(crate) direct_calls: usize,
+    pub(crate) calls: Vec<StoredReviewCall>,
+    pub(crate) mmio: Vec<StoredReviewMmio>,
     pub(crate) mmio_addresses: Vec<u32>,
+    pub(crate) direct_context_fields: usize,
+    pub(crate) direct_memory_fields: usize,
+    pub(crate) diagnostics: Vec<StoredReviewDiagnostic>,
     pub(crate) effect_summary: StoredReviewEffectSummary,
     pub(crate) decode_blockers: Vec<StoredDecodeBlocker>,
+}
+
+impl StoredFunctionReviewProjection {
+    pub(crate) fn is_exported(&self) -> bool {
+        self.binding == "global-or-weak"
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct StoredReviewCall {
+    pub(crate) kind: String,
+    pub(crate) target: String,
+    pub(crate) site: Option<u32>,
+    pub(crate) project_symbol: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct StoredReviewMmio {
+    pub(crate) address: u32,
+    pub(crate) width: u8,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct StoredReviewDiagnostic {
+    pub(crate) channel: String,
+    pub(crate) root_id: String,
+    pub(crate) kind: String,
+    pub(crate) site: Option<u32>,
+    pub(crate) rendered: String,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct StoredReviewEffectSummary {
+    pub(crate) transitive_effects_materialized: bool,
     pub(crate) call_graph_closed: bool,
+    pub(crate) context_projection_materialized: bool,
     pub(crate) context_projection_complete: bool,
     pub(crate) context_projection_blockers: Vec<String>,
     pub(crate) context_fields: Vec<StoredReviewContextField>,
@@ -450,6 +518,38 @@ impl StoredCall {
     pub(crate) fn execution_model_id(&self) -> Option<&str> {
         self.execution_model.as_ref().map(|model| model.id.as_str())
     }
+
+    pub(crate) const fn argument_shapes(&self) -> usize {
+        self.argument_shapes
+    }
+
+    pub(crate) const fn tail(&self) -> bool {
+        self.tail
+    }
+
+    pub(crate) fn guard_expressions(&self) -> Vec<String> {
+        self.guard_paths
+            .as_deref()
+            .unwrap_or_default()
+            .iter()
+            .map(|path| {
+                if path.guards.is_empty() {
+                    return "true".to_owned();
+                }
+                path.guards
+                    .iter()
+                    .map(|guard| {
+                        if guard.taken {
+                            format!("({})", guard.condition)
+                        } else {
+                            format!("!({})", guard.condition)
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .join(" && ")
+            })
+            .collect()
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -613,6 +713,18 @@ impl StoredMmioAccess {
     pub(crate) const fn width(&self) -> u8 {
         self.width
     }
+
+    pub(crate) fn register(&self) -> &str {
+        &self.register
+    }
+
+    pub(crate) fn access(&self) -> &str {
+        &self.access
+    }
+
+    pub(crate) fn value(&self) -> Option<&str> {
+        self.value.as_deref()
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -652,6 +764,20 @@ pub(crate) enum StoredInstructionEffect {
 }
 
 impl StoredInstructionEffect {
+    pub(crate) fn mmio(&self) -> Option<(&str, u8, u32, &str, Option<&str>)> {
+        match self {
+            Self::Mmio {
+                access,
+                width,
+                address,
+                register,
+                value,
+                ..
+            } => Some((access, *width, *address, register, value.as_deref())),
+            Self::Memory { .. } => None,
+        }
+    }
+
     pub(crate) const fn site(&self) -> u32 {
         match self {
             Self::Mmio { site, .. } | Self::Memory { site, .. } => *site,
@@ -839,19 +965,23 @@ impl StoredMemoryObject {
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct StoredEffectSummary {
+    pub(crate) transitive_effects_materialized: bool,
     pub(crate) call_graph_closed: bool,
     max_depth: usize,
-    pub(crate) reachable_functions: Vec<String>,
-    recursive_functions: Vec<String>,
-    blockers: Vec<String>,
+    pub(crate) reachable_function_count: usize,
+    recursive: bool,
     mmio_registers: Vec<StoredSummaryMmio>,
     delays: Vec<StoredSummaryDelay>,
     pub(crate) semantic_operations: Vec<StoredSemanticOperation>,
+    pub(crate) context_projection_materialized: bool,
     pub(crate) context_projection_complete: bool,
+    context_projection_paths_materialized: bool,
     pub(crate) context_projection_blockers: Vec<String>,
     pub(crate) context_fields: Vec<StoredContextField>,
     pub(crate) memory_fields: Vec<StoredMemoryField>,
     pub(crate) trampoline_calls: Vec<StoredProjectedTrampolineCall>,
+    semantic_action_count: usize,
+    semantic_actions_materialized: bool,
     semantic_actions: Vec<StoredProjectedSemanticAction>,
     pub(crate) event_dispatches: Vec<StoredEventDispatch>,
 }

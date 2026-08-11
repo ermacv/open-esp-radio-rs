@@ -325,6 +325,7 @@ leaf_commands!(RegisterCommand {
 
 leaf_commands!(InspectCommand {
     Function(InspectFunctionArgs) => Command::InspectFunction, InspectFunction,
+    Flow(InspectFlowArgs) => Command::InspectFlow, InspectFlow,
     Object(InspectObjectArgs) => Command::InspectObject, InspectObject,
     Scope(InspectScopeArgs) => Command::InspectScope, InspectScope,
     Analyze(InspectAnalyzeArgs) => Command::InspectAnalyze, InspectAnalyze,
@@ -465,6 +466,7 @@ pub(crate) enum Command {
     GenerateDriver(DriverGenerateArgs),
     InspectAnalyze(InspectAnalyzeArgs),
     InspectFunction(InspectFunctionArgs),
+    InspectFlow(InspectFlowArgs),
     InspectObject(InspectObjectArgs),
     InspectScope(InspectScopeArgs),
     VerifyInventory(VerifyInventoryArgs),
@@ -614,7 +616,7 @@ mod tests {
             panic!("unexpected argument type")
         };
         assert!(!arguments.deny_unreviewed);
-        assert_eq!(arguments.jobs, 0);
+        assert_eq!(arguments.jobs, 1);
 
         let error =
             ParsedInvocation::parse(["project".to_owned(), "build".to_owned()]).unwrap_err();

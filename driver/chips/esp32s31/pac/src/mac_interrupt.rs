@@ -91,8 +91,14 @@ impl MacInterruptSetup {
         // the caller exposes either ISR capability.
         super::generated::mac_interrupt_enable(&self.peripheral, event_mask);
         svd::fixed_register_write::mask_mac_power_interrupts(&self.power_peripheral);
-        svd::full_register_write::mac_interrupt_clear(&self.peripheral, u32::MAX);
-        svd::full_register_write::mac_power_interrupt_clear(&self.power_peripheral, u32::MAX);
+        super::generated::mac_interrupt_clear(
+            &self.peripheral,
+            super::generated::MacInterruptClearImage::new(u32::MAX),
+        );
+        super::generated::mac_power_interrupt_clear(
+            &self.power_peripheral,
+            super::generated::MacPowerInterruptClearImage::new(u32::MAX),
+        );
         device_fence();
         (
             MacInterruptRegisters {
@@ -182,8 +188,14 @@ impl MacInterruptRegisters {
     pub fn deactivate(self, power: MacPowerInterruptRegisters) -> MacInterruptSetup {
         super::generated::mac_interrupt_enable(&self.peripheral, MacInterruptMask::NONE);
         svd::fixed_register_write::mask_mac_power_interrupts(&power.peripheral);
-        svd::full_register_write::mac_interrupt_clear(&self.peripheral, u32::MAX);
-        svd::full_register_write::mac_power_interrupt_clear(&power.peripheral, u32::MAX);
+        super::generated::mac_interrupt_clear(
+            &self.peripheral,
+            super::generated::MacInterruptClearImage::new(u32::MAX),
+        );
+        super::generated::mac_power_interrupt_clear(
+            &power.peripheral,
+            super::generated::MacPowerInterruptClearImage::new(u32::MAX),
+        );
         device_fence();
         MacInterruptSetup {
             peripheral: self.peripheral,

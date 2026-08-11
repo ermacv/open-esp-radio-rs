@@ -7,6 +7,37 @@ pub(super) struct DirectCallGraph {
     pub(super) calls: BTreeSet<LinkedCall>,
     pub(super) direct_mmio_predicates: BTreeSet<LinkedDirectMmioPredicate>,
     pub(super) blockers: BTreeSet<String>,
+    pub(super) site_effects: BTreeSet<LinkedInstructionEffect>,
+}
+
+pub(super) const MAX_SITE_EFFECT_VARIANTS: usize = 16;
+
+pub(super) fn record_site_effect(
+    result: &mut DirectCallGraph,
+    site_effect_counts: &mut BTreeMap<u32, usize>,
+    truncated_effect_sites: &mut BTreeSet<u32>,
+    effect: LinkedInstructionEffect,
+) {
+    let site = effect.site();
+    if result.site_effects.contains(&effect) {
+        return;
+    }
+    let variants = site_effect_counts.entry(site).or_default();
+    if *variants < MAX_SITE_EFFECT_VARIANTS {
+        result.site_effects.insert(effect);
+        *variants += 1;
+    } else if truncated_effect_sites.insert(site) {
+        if result.blockers.len() < 64 {
+            result.blockers.insert(format!(
+                "instruction site {site:#010x} exceeds the limit of {MAX_SITE_EFFECT_VARIANTS} distinct effect variants; retained site facts are incomplete"
+            ));
+        } else {
+            result.blockers.insert(
+                "additional call-graph diagnostics omitted by the linked-IR exploration budget"
+                    .to_owned(),
+            );
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -472,6 +503,8 @@ pub(super) fn explore_direct_calls(
     let mut queue = VecDeque::from([BTreeMap::<u32, bool>::new()]);
     let mut queued = BTreeSet::from([BTreeMap::<u32, bool>::new()]);
     let mut explored_states = 0usize;
+    let mut site_effect_counts = BTreeMap::<u32, usize>::new();
+    let mut truncated_effect_sites = BTreeSet::<u32>::new();
 
     while let Some(forced_branches) = queue.pop_front() {
         if explored_states >= MAX_CALL_GRAPH_STATES {
@@ -503,6 +536,14 @@ pub(super) fn explore_direct_calls(
                 continue;
             }
         };
+        for effect in instruction_effects_for_trace(&trace, resolver, &[], &[]) {
+            record_site_effect(
+                &mut result,
+                &mut site_effect_counts,
+                &mut truncated_effect_sites,
+                effect,
+            );
+        }
         let mut evidence = DirectTraceEvidence::default();
         for event in &trace.reference_events {
             collect_guarded_direct_event(event, resolver, identities, svd, &mut evidence);

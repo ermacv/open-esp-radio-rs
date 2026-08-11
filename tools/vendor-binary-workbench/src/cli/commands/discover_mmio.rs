@@ -141,10 +141,8 @@ pub(super) fn run(
     svd: &MmioMap,
     project: Option<&crate::project::ProjectSpec>,
 ) -> Result<bool> {
-    if arguments.jobs > 8 {
-        return Err(crate::Error::invalid(
-            "mmio discover --jobs accepts 0 (safe automatic mode) or 1..=8",
-        ));
+    if !(1..=8).contains(&arguments.jobs) {
+        return Err(crate::Error::invalid("mmio discover --jobs accepts 1..=8"));
     }
     if arguments.check && arguments.json_report.is_none() {
         return Err(crate::Error::invalid(

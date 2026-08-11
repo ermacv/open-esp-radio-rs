@@ -39,7 +39,10 @@ pub(crate) fn read_next_descriptor(registers: &svd::WifiMacRxDma) -> u32 {
 
 #[inline(always)]
 pub(crate) fn write_descriptor_base(registers: &svd::WifiMacRxDma, address: u32) {
-    svd::full_register_write::rx_descriptor_base(registers, address);
+    super::generated::rx_descriptor_base(
+        registers,
+        super::generated::MacRxDescriptorBaseAddress::new(address),
+    );
 }
 
 #[inline(always)]

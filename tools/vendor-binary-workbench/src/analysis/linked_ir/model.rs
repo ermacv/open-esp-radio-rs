@@ -1,6 +1,8 @@
 //! Data model shared by linked-IR analysis and report renderers.
 
-use serde::Serialize;
+use std::ops::{Deref, Index};
+
+use serde::{Serialize, Serializer};
 
 use crate::MemoryObjectRoot;
 
@@ -190,6 +192,31 @@ pub(crate) struct LinkedCall {
     pub(crate) argument_bindings: Vec<LinkedArgumentBinding>,
     pub(crate) typed_arguments: Vec<LinkedCallArgument>,
     pub(crate) guard_paths: Option<Vec<LinkedCallGuardPath>>,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+pub(crate) struct LinkedFlowValue {
+    pub(crate) expression: String,
+    pub(crate) constant: Option<u32>,
+    pub(crate) input: Option<u8>,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub(crate) enum LinkedLocalValueFlow {
+    StackStore {
+        site: u32,
+        offset: i32,
+        width: u8,
+        value: LinkedFlowValue,
+    },
+    StackLoad {
+        site: u32,
+        token: u32,
+        offset: i32,
+        width: u8,
+        signed: bool,
+    },
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
@@ -584,6 +611,121 @@ pub(crate) struct LinkedProjectedSemanticAction {
     pub(crate) guard_scopes: Option<Vec<LinkedCallGuardScope>>,
 }
 
+/// Projected actions are expensive graph-derived values. During analysis they
+/// remain typed; after all semantic indexes have consumed them, artifact-wide
+/// builds compact each vector into one validated raw JSON allocation. Serde
+/// emits the same array shape, so this changes peak RAM rather than evidence.
+#[derive(Clone, Debug)]
+pub(crate) struct ProjectedSemanticActions {
+    storage: ProjectedSemanticActionStorage,
+    len: usize,
+}
+
+#[derive(Clone, Debug)]
+enum ProjectedSemanticActionStorage {
+    Detailed(Vec<LinkedProjectedSemanticAction>),
+    /// The exact projection is derivable from direct calls plus the persisted
+    /// call graph, but is intentionally not materialized in an artifact-wide
+    /// bundle. `len` still records how many actions the analysis recovered.
+    Omitted,
+}
+
+impl Default for ProjectedSemanticActions {
+    fn default() -> Self {
+        Self {
+            storage: ProjectedSemanticActionStorage::Detailed(Vec::new()),
+            len: 0,
+        }
+    }
+}
+
+impl From<Vec<LinkedProjectedSemanticAction>> for ProjectedSemanticActions {
+    fn from(actions: Vec<LinkedProjectedSemanticAction>) -> Self {
+        Self {
+            len: actions.len(),
+            storage: ProjectedSemanticActionStorage::Detailed(actions),
+        }
+    }
+}
+
+impl ProjectedSemanticActions {
+    pub(crate) const fn omitted(len: usize) -> Self {
+        Self {
+            storage: ProjectedSemanticActionStorage::Omitted,
+            len,
+        }
+    }
+
+    pub(crate) fn omit(&mut self) {
+        self.storage = ProjectedSemanticActionStorage::Omitted;
+    }
+
+    pub(crate) const fn is_materialized(&self) -> bool {
+        !matches!(self.storage, ProjectedSemanticActionStorage::Omitted)
+    }
+}
+
+impl Deref for ProjectedSemanticActions {
+    type Target = [LinkedProjectedSemanticAction];
+
+    fn deref(&self) -> &Self::Target {
+        match &self.storage {
+            ProjectedSemanticActionStorage::Detailed(actions) => actions,
+            ProjectedSemanticActionStorage::Omitted => {
+                panic!("omitted projected actions require a focused on-demand analysis")
+            }
+        }
+    }
+}
+
+impl Index<usize> for ProjectedSemanticActions {
+    type Output = LinkedProjectedSemanticAction;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.deref()[index]
+    }
+}
+
+impl<'a> IntoIterator for &'a ProjectedSemanticActions {
+    type Item = &'a LinkedProjectedSemanticAction;
+    type IntoIter = std::slice::Iter<'a, LinkedProjectedSemanticAction>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.deref().iter()
+    }
+}
+
+impl Serialize for ProjectedSemanticActions {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match &self.storage {
+            ProjectedSemanticActionStorage::Detailed(actions) => actions.serialize(serializer),
+            ProjectedSemanticActionStorage::Omitted => {
+                Vec::<LinkedProjectedSemanticAction>::new().serialize(serializer)
+            }
+        }
+    }
+}
+
+impl PartialEq for ProjectedSemanticActions {
+    fn eq(&self, other: &Self) -> bool {
+        match (&self.storage, &other.storage) {
+            (
+                ProjectedSemanticActionStorage::Detailed(left),
+                ProjectedSemanticActionStorage::Detailed(right),
+            ) => left == right,
+            (ProjectedSemanticActionStorage::Omitted, ProjectedSemanticActionStorage::Omitted) => {
+                self.len == other.len
+            }
+            _ => false,
+        }
+    }
+}
+
+impl Eq for ProjectedSemanticActions {}
+
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 pub(crate) struct LinkedEventDispatchBinding {
     pub(crate) role: &'static str,
@@ -611,20 +753,39 @@ pub(crate) struct LinkedTrampolineSlot {
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
 pub(crate) struct LinkedEffectSummary {
+    /// False in artifact-wide inventories, where direct facts plus graph edges
+    /// are persisted and focused analysis can materialize the selected root
+    /// closure without copying every closure into the artifact-wide bundle.
+    pub(crate) transitive_effects_materialized: bool,
     pub(crate) call_graph_closed: bool,
     pub(crate) max_depth: usize,
-    pub(crate) reachable_functions: Vec<String>,
-    pub(crate) recursive_functions: Vec<String>,
-    pub(crate) blockers: Vec<String>,
+    /// Number of transitive callees. Identities are intentionally not copied
+    /// into every function record: the bundle graph is the lossless source of
+    /// reachability without duplicating the identity list in every function.
+    pub(crate) reachable_function_count: usize,
+    /// True when this function can reach a recursive call-graph component.
+    pub(crate) recursive: bool,
     pub(crate) mmio_registers: Vec<LinkedSummaryMmio>,
     pub(crate) delays: Vec<LinkedSummaryDelay>,
     pub(crate) semantic_operations: Vec<LinkedSummarySemantic>,
+    pub(crate) context_projection_materialized: bool,
     pub(crate) context_projection_complete: bool,
+    pub(crate) context_projection_paths_materialized: bool,
     pub(crate) context_projection_blockers: Vec<String>,
     pub(crate) context_fields: Vec<LinkedSummaryContextField>,
     pub(crate) memory_fields: Vec<LinkedSummaryMemoryField>,
     pub(crate) trampoline_calls: Vec<LinkedProjectedTrampolineCall>,
-    pub(crate) semantic_actions: Vec<LinkedProjectedSemanticAction>,
+    /// Number of recovered reachable semantic actions, whether or not their
+    /// full root-projected records are materialized in this artifact.
+    pub(crate) semantic_action_count: usize,
+    /// Artifact-wide reports persist direct calls and the call graph and defer
+    /// this quadratic root projection to a focused analysis.
+    pub(crate) semantic_actions_materialized: bool,
+    pub(crate) semantic_actions: ProjectedSemanticActions,
+    /// Small typed subset needed while building the register semantic index.
+    /// The complete action vector may already be compacted raw JSON.
+    #[serde(skip)]
+    pub(crate) register_semantic_actions: Vec<LinkedProjectedSemanticAction>,
     pub(crate) event_dispatches: Vec<LinkedEventDispatch>,
 }
 
@@ -712,6 +873,7 @@ pub(crate) struct LinkedIrFunction {
     pub(crate) return_value: String,
     pub(crate) return_provenance: LinkedReturnProvenance,
     pub(crate) dependencies: Vec<String>,
+    pub(crate) local_value_flow: Vec<LinkedLocalValueFlow>,
     pub(crate) calls: Vec<LinkedCall>,
     pub(crate) direct_mmio_predicates: Vec<LinkedDirectMmioPredicate>,
     pub(crate) mmio_accesses: Vec<LinkedMmioAccess>,

@@ -26,8 +26,11 @@ pub(super) struct ExploredReferenceFlow {
 fn preserves_partial_reference_flow(blocker: &str) -> bool {
     [
         "unmodeled-memory-load at ",
+        "unmodeled-reviewed-external-call at ",
         "unresolved-indirect-call at ",
+        "unresolved-call-relocation at ",
         "unresolved-memory-write at ",
+        "base ",
     ]
     .iter()
     .any(|prefix| blocker.starts_with(prefix))
@@ -164,7 +167,10 @@ pub(super) fn explore_reference_flow(
         let opaque_call_blockers = trace
             .reference_blockers
             .iter()
-            .filter(|blocker| blocker.starts_with("unresolved-indirect-call at "))
+            .filter(|blocker| {
+                blocker.starts_with("unresolved-indirect-call at ")
+                    || blocker.starts_with("unresolved-call-relocation at ")
+            })
             .count();
         let reference_only_blockers = trace
             .blockers
@@ -189,8 +195,9 @@ pub(super) fn explore_reference_flow(
                 || typed_calls + opaque_call_blockers != call_blockers
             {
                 return Err(format!(
-                    "path to branch {:#010x} has unsupported effects: {}",
+                    "path to branch {:#010x} has unsupported effects (unsupported-reference={unsupported_reference_blockers}, branch-blockers={branch_blockers}, blockers={}, call-blockers={call_blockers}, typed-calls={typed_calls}, opaque-calls={opaque_call_blockers}, reference-only={reference_only_blockers}): {}",
                     branch.site,
+                    trace.blockers.len(),
                     trace
                         .blockers
                         .iter()

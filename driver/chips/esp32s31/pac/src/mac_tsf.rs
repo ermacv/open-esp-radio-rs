@@ -2,7 +2,7 @@
 
 #![forbid(unsafe_code)]
 
-use super::{RadioRegisters, device_fence, svd, svd::full_register_write};
+use super::{RadioRegisters, device_fence, svd};
 
 /// Snapshot either or both station TSF words using the complete ROM leaf's
 /// conditional-output semantics.
@@ -54,8 +54,14 @@ impl RadioRegisters {
     /// 22:19 with one.
     pub fn start_station_tsf(&mut self, value: u64) {
         let load = &self.peripherals.wifi_mac_sta_tsf_load;
-        full_register_write::station_tsf_value_low(load, value as u32);
-        full_register_write::station_tsf_value_high(load, (value >> 32) as u32);
+        super::generated::station_tsf_value_low(
+            load,
+            super::generated::StationTsfLowWord::new(value as u32),
+        );
+        super::generated::station_tsf_value_high(
+            load,
+            super::generated::StationTsfHighWord::new((value >> 32) as u32),
+        );
         load.control().modify(|_, w| w.load_station_tsf().set_bit());
 
         let control = self.peripherals.wifi_mac_rtc_timer_update.sta_tsf_control();

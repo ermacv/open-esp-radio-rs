@@ -31,6 +31,82 @@ struct SemanticFieldLink {
     taken: bool,
 }
 
+struct SemanticActionLink<'a> {
+    root: &'a str,
+    operation: &'a str,
+    target: &'a str,
+    origin: &'a str,
+    site: Option<u32>,
+    site_path: &'a [Option<u32>],
+    path: &'a str,
+    scopes: &'a [LinkedCallGuardScope],
+}
+
+fn collect_semantic_field_links(
+    output: &mut BTreeSet<SemanticFieldLink>,
+    action: SemanticActionLink<'_>,
+) {
+    for (scope_index, scope) in action.scopes.iter().enumerate() {
+        for (path_index, path) in scope.paths.iter().enumerate() {
+            let path_expression = format_guard_path(path);
+            for (guard_index, guard) in path.guards.iter().enumerate() {
+                let residual_path_expression = format_guard_path_without(path, guard_index);
+                let link =
+                    |kind,
+                     address,
+                     register_bits,
+                     producer: Option<String>,
+                     producer_path: Vec<String>| SemanticFieldLink {
+                        kind,
+                        address,
+                        register_bits,
+                        root: action.root.to_owned(),
+                        operation: action.operation.to_owned(),
+                        action_target: action.target.to_owned(),
+                        action_origin: action.origin.to_owned(),
+                        action_site: action.site,
+                        action_site_path: action.site_path.to_vec(),
+                        action_path: action.path.to_owned(),
+                        predicate_function: scope.function.clone(),
+                        producer,
+                        producer_path,
+                        scope_index,
+                        scope_alternatives: scope.paths.len(),
+                        path_index,
+                        path_expression: path_expression.clone(),
+                        path_guards: path.guards.len(),
+                        guard_index,
+                        residual_path_expression: residual_path_expression.clone(),
+                        site: guard.site,
+                        condition: guard.condition.clone(),
+                        guard_operation: guard.operation,
+                        taken: guard.taken,
+                    };
+                for mmio in &guard.direct_mmio_sources {
+                    output.insert(link(
+                        "direct-mmio",
+                        mmio.address,
+                        mmio.register_bits,
+                        Some(scope.function.clone()),
+                        vec![scope.function.clone()],
+                    ));
+                }
+                for source in &guard.result_sources {
+                    for mmio in &source.mmio_sources {
+                        output.insert(link(
+                            "producer-return",
+                            mmio.address,
+                            mmio.register_bits,
+                            source.target.clone(),
+                            mmio.producer_path.clone(),
+                        ));
+                    }
+                }
+            }
+        }
+    }
+}
+
 fn unique_mmio_widths(
     index: &BTreeMap<(u32, u8), MmioRegisterAccumulator>,
 ) -> BTreeMap<u32, Option<u8>> {
@@ -259,70 +335,63 @@ pub(super) fn build_mmio_registers(functions: &[LinkedIrFunction]) -> Vec<Linked
     }
     let mut semantic_evidence = BTreeSet::<SemanticFieldLink>::new();
     for function in functions {
-        for action in &function.effect_summary.semantic_actions {
+        for action in &function.effect_summary.register_semantic_actions {
             let Some(scopes) = action.guard_scopes.as_deref() else {
                 continue;
             };
-            for (scope_index, scope) in scopes.iter().enumerate() {
-                for (path_index, path) in scope.paths.iter().enumerate() {
-                    let path_expression = format_guard_path(path);
-                    for (guard_index, guard) in path.guards.iter().enumerate() {
-                        let residual_path_expression = format_guard_path_without(path, guard_index);
-                        let link = |kind,
-                                    address,
-                                    register_bits,
-                                    producer: Option<String>,
-                                    producer_path: Vec<String>| {
-                            SemanticFieldLink {
-                                kind,
-                                address,
-                                register_bits,
-                                root: function.identity.clone(),
-                                operation: action.operation.clone(),
-                                action_target: action.target.clone(),
-                                action_origin: action.origin.clone(),
-                                action_site: action.site,
-                                action_site_path: action.site_path.clone(),
-                                action_path: action.path.clone(),
-                                predicate_function: scope.function.clone(),
-                                producer,
-                                producer_path,
-                                scope_index,
-                                scope_alternatives: scope.paths.len(),
-                                path_index,
-                                path_expression: path_expression.clone(),
-                                path_guards: path.guards.len(),
-                                guard_index,
-                                residual_path_expression: residual_path_expression.clone(),
-                                site: guard.site,
-                                condition: guard.condition.clone(),
-                                guard_operation: guard.operation,
-                                taken: guard.taken,
-                            }
-                        };
-                        for mmio in &guard.direct_mmio_sources {
-                            semantic_evidence.insert(link(
-                                "direct-mmio",
-                                mmio.address,
-                                mmio.register_bits,
-                                Some(scope.function.clone()),
-                                vec![scope.function.clone()],
-                            ));
-                        }
-                        for source in &guard.result_sources {
-                            for mmio in &source.mmio_sources {
-                                semantic_evidence.insert(link(
-                                    "producer-return",
-                                    mmio.address,
-                                    mmio.register_bits,
-                                    source.target.clone(),
-                                    mmio.producer_path.clone(),
-                                ));
-                            }
-                        }
-                    }
-                }
+            collect_semantic_field_links(
+                &mut semantic_evidence,
+                SemanticActionLink {
+                    root: &function.identity,
+                    operation: &action.operation,
+                    target: &action.target,
+                    origin: &action.origin,
+                    site: action.site,
+                    site_path: &action.site_path,
+                    path: &action.path,
+                    scopes,
+                },
+            );
+        }
+        for call in function
+            .calls
+            .iter()
+            .filter(|call| call.semantic_operation.is_some())
+        {
+            let Some(paths) = call.guard_paths.as_deref() else {
+                continue;
+            };
+            if paths.iter().any(|path| path.guards.is_empty()) {
+                continue;
             }
+            let scopes = [LinkedCallGuardScope {
+                function: function.identity.clone(),
+                paths: paths.to_vec(),
+            }];
+            let site_path = [call.site];
+            let site = call
+                .site
+                .map_or_else(|| "composed".to_owned(), |site| format!("{site:#010x}"));
+            let path = format!(
+                "{} --semantic@{}--> {}",
+                function.identity, site, call.target
+            );
+            collect_semantic_field_links(
+                &mut semantic_evidence,
+                SemanticActionLink {
+                    root: &function.identity,
+                    operation: call
+                        .semantic_operation
+                        .as_deref()
+                        .expect("filtered semantic call"),
+                    target: &call.target,
+                    origin: &function.identity,
+                    site: call.site,
+                    site_path: &site_path,
+                    path: &path,
+                    scopes: &scopes,
+                },
+            );
         }
     }
     for link in semantic_evidence {

@@ -128,11 +128,12 @@ pub(crate) struct FunctionFact {
     pub(crate) symbol: String,
     pub(crate) selection: String,
     pub(crate) direct_complete: bool,
+    pub(crate) transitive_effects_materialized: bool,
     pub(crate) call_graph_closed: bool,
+    pub(crate) context_projection_materialized: bool,
     pub(crate) context_projection_complete: bool,
     pub(crate) context_projection_blockers: Vec<String>,
     pub(crate) decode_blockers: Vec<FunctionDecodeBlockerFact>,
-    pub(crate) reachable_functions: Vec<String>,
     pub(crate) direct_calls: usize,
     pub(crate) calls: Vec<FunctionCallFact>,
     pub(crate) mmio_addresses: Vec<u32>,
@@ -151,7 +152,11 @@ impl FunctionFact {
     }
 
     pub(crate) fn review_complete(&self) -> bool {
-        self.direct_complete && self.call_graph_closed && self.context_projection_complete
+        self.direct_complete
+            && self.transitive_effects_materialized
+            && self.call_graph_closed
+            && self.context_projection_materialized
+            && self.context_projection_complete
     }
 }
 

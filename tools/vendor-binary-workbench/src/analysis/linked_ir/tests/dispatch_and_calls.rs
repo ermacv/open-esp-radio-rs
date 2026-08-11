@@ -346,13 +346,33 @@ fn direct_call_graph_survives_reference_summary_inlining() {
         }
     );
 
-    let roots_only =
-        build_linked_ir_for_source(&resolver, "vendor_parent", &map, "primary", false, false, 0);
+    let roots_only = build_linked_ir_for_source(
+        &resolver,
+        &map,
+        LinkedIrSourceOptions {
+            symbol_prefix: "vendor_parent",
+            source: "primary",
+            namespace_identities: false,
+            include_reachable: false,
+            jobs: 1,
+            compact_projected_actions: false,
+        },
+    );
     assert_eq!(roots_only.functions.len(), 1);
     assert_eq!(roots_only.functions[0].symbol, "vendor_parent");
 
-    let report =
-        build_linked_ir_for_source(&resolver, "vendor_parent", &map, "primary", false, true, 0);
+    let report = build_linked_ir_for_source(
+        &resolver,
+        &map,
+        LinkedIrSourceOptions {
+            symbol_prefix: "vendor_parent",
+            source: "primary",
+            namespace_identities: false,
+            include_reachable: true,
+            jobs: 1,
+            compact_projected_actions: false,
+        },
+    );
     assert_eq!(
         report
             .functions

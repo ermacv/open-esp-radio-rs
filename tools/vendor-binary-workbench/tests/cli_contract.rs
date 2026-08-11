@@ -215,6 +215,29 @@ fn focused_investigation_commands_are_part_of_the_typed_cli() {
 }
 
 #[test]
+fn artifact_wide_jobs_default_to_one_and_zero_is_rejected() {
+    let help = run(&["project", "analyze", "--help"]);
+    assert!(help.status.success());
+    let help = String::from_utf8(help.stdout).unwrap();
+    assert!(help.contains("[default: 1]"), "unexpected help: {help}");
+
+    let output = run(&[
+        "project",
+        "analyze",
+        "--project",
+        GENERIC_PROJECT,
+        "--jobs",
+        "0",
+    ]);
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("invalid value '0'"),
+        "unexpected stderr: {stderr}"
+    );
+}
+
+#[test]
 fn runtime_errors_do_not_emit_usage_or_an_empty_json_result() {
     let output = run(&[
         "project",

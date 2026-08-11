@@ -12,23 +12,22 @@ use std::{
 #[cfg(test)]
 pub(crate) use input::named_artifact;
 pub(crate) use input::{IrArtifactInput, named_artifact_path, validate_artifact_inputs};
-pub(crate) use pseudo::{render_pseudo, write_pseudo};
+pub(crate) use pseudo::write_pseudo;
 pub(crate) use render_common::{
     format_site_path, guard_direct_mmio_links, guard_mmio_links, optional_hex_text,
 };
 
 use crate::{
-    EntryContractRef, LinkedIrReport, MmioMap, ReferenceResolver, Result, ReviewedExternalCall,
-    ReviewedExternalCallEvidence, ReviewedExternalCallExecutionModel, StructuralCallSite,
-    TargetSpec, artifacts::LinkUnitOriginFact, build_linked_ir_for_source, harnesses,
-    interfaces::InterfaceWorkspace, link_project_calls, merge_linked_ir_with_jobs,
+    EntryContractRef, LinkedIrReport, LinkedIrSourceOptions, MmioMap, ReferenceResolver, Result,
+    ReviewedExternalCall, ReviewedExternalCallEvidence, ReviewedExternalCallExecutionModel,
+    StructuralCallSite, TargetSpec, artifacts::LinkUnitOriginFact, build_linked_ir_for_source,
+    harnesses, interfaces::InterfaceWorkspace, link_project_calls, merge_linked_ir_with_options,
     project_ir::ProjectIrProfile,
 };
 
 #[derive(Debug)]
 pub(crate) struct ProjectIrDocuments {
-    pub(crate) bundle: crate::artifacts::LinkedIrBundle,
-    pub(crate) pseudo: Option<String>,
+    pub(crate) bundle: crate::artifacts::StagedLinkedIrBundle,
     pub(crate) sources: usize,
     pub(crate) functions: usize,
     pub(crate) decode_blockers: usize,
@@ -85,6 +84,7 @@ pub(crate) fn generate_project_profile(
         interfaces,
         interface_origins,
         jobs,
+        compact_projected_actions: true,
     })?;
     let (_, field_candidates, _, _) = field_candidate_summary(&report);
     let decode_blockers = report
@@ -102,15 +102,7 @@ pub(crate) fn generate_project_profile(
         &report,
         profile.include_reachable,
     )?;
-    let bundle = crate::artifacts::render_linked_ir_bundle(&document)?;
-    let pseudo = profile.pseudo_rust.as_ref().map(|_| {
-        render_pseudo(
-            &artifacts,
-            &report,
-            profile.roots.symbol_prefix(),
-            profile.include_reachable,
-        )
-    });
+    let bundle = crate::artifacts::stage_linked_ir_bundle(&profile.output, &document)?;
     tracing::debug!(
         profile = profile.id,
         functions = report.functions.len(),
@@ -120,7 +112,6 @@ pub(crate) fn generate_project_profile(
     );
     Ok(ProjectIrDocuments {
         bundle,
-        pseudo,
         sources: artifacts.len(),
         functions: report.functions.len(),
         decode_blockers,
@@ -141,6 +132,9 @@ pub(crate) struct LinkedIrAnalysisRequest<'a> {
     pub(crate) interfaces: Option<&'a InterfaceWorkspace>,
     pub(crate) interface_origins: &'a [LinkUnitOriginFact],
     pub(crate) jobs: usize,
+    /// Replace allocation-heavy projected-action structs with their validated
+    /// raw JSON representation after semantic indexes have consumed them.
+    pub(crate) compact_projected_actions: bool,
 }
 
 #[tracing::instrument(name = "build_linked_ir", skip(request))]
@@ -159,6 +153,7 @@ pub(crate) fn analyze(
         interfaces,
         interface_origins,
         jobs,
+        compact_projected_actions,
     } = request;
     let harness = target.harness.as_deref();
     let riscv_harness = harnesses::riscv_or_neutral(harness)?;
@@ -190,18 +185,21 @@ pub(crate) fn analyze(
         )?;
         reports.push(build_linked_ir_for_source(
             &resolver,
-            symbol_prefix,
             svd,
-            &artifact.source,
-            true,
-            include_reachable,
-            jobs,
+            LinkedIrSourceOptions {
+                symbol_prefix,
+                source: &artifact.source,
+                namespace_identities: true,
+                include_reachable,
+                jobs,
+                compact_projected_actions,
+            },
         ));
     }
     if artifacts.len() > 1 {
         link_project_calls(&mut reports);
     }
-    let report = merge_linked_ir_with_jobs(reports, jobs);
+    let report = merge_linked_ir_with_options(reports, jobs, compact_projected_actions);
     if report.functions.is_empty() {
         return Err(crate::Error::invalid(if symbol_prefix.is_empty() {
             "no named code symbols were found in any IR artifact".to_owned()

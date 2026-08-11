@@ -26,7 +26,6 @@ roots = "all"
 include-reachable = true
 entry-contract = "esp32s31-phy-registered"
 output = "generated/findings/rom-all.ir"
-pseudo-rust = "generated/reports/rom-all.pseudo.rs"
 
 [[analysis.ir]]
 id = "archive-all"
@@ -35,7 +34,6 @@ roots = "all"
 include-reachable = true
 entry-contract = "esp32s31-phy-registered"
 output = "generated/findings/archive-all.ir"
-pseudo-rust = "generated/reports/archive-all.pseudo.rs"
 
 [[analysis.ir]]
 id = "libpp-all"
@@ -44,7 +42,6 @@ roots = "all"
 include-reachable = true
 entry-contract = "none"
 output = "generated/findings/libpp-all.ir"
-pseudo-rust = "generated/reports/libpp-all.pseudo.rs"
 
 [[analysis.ir]]
 id = "libnet80211-all"
@@ -53,7 +50,6 @@ roots = "all"
 include-reachable = true
 entry-contract = "none"
 output = "generated/findings/libnet80211-all.ir"
-pseudo-rust = "generated/reports/libnet80211-all.pseudo.rs"
 
 [[analysis.ir]]
 id = "wifi-sta-lifecycle"
@@ -62,7 +58,6 @@ roots = "all"
 include-reachable = true
 entry-contract = "none"
 output = "generated/findings/wifi-sta-lifecycle.ir"
-pseudo-rust = "generated/reports/wifi-sta-lifecycle.pseudo.rs"
 
 [[analysis.ir]]
 id = "coex-all"
@@ -71,7 +66,6 @@ roots = "all"
 include-reachable = true
 entry-contract = "none"
 output = "generated/findings/coex-all.ir"
-pseudo-rust = "generated/reports/coex-all.pseudo.rs"
 
 [[analysis.ir]]
 id = "btbb-all"
@@ -80,7 +74,6 @@ roots = "all"
 include-reachable = true
 entry-contract = "none"
 output = "generated/findings/btbb-all.ir"
-pseudo-rust = "generated/reports/btbb-all.pseudo.rs"
 
 [registers]
 facts = "generated/findings/mmio.json"
@@ -178,7 +171,6 @@ publication-scopes = [
     "wifi-rx",
     "wifi-tx",
     "wifi-interrupts",
-    "station-state",
 ]
 
 [[review.scopes]]
@@ -272,6 +264,17 @@ roots = [
 include-reachable = true
 
 [[review.scopes]]
+id = "coex-timer-control"
+profiles = ["coex-all"]
+roots = [
+    "coex:coex_hw_timer_enable",
+    "coex:coex_hw_timer_disable",
+    "coex:coex_hw_timer_force",
+    "coex:coex_hw_timer_unforce",
+]
+include-reachable = true
+
+[[review.scopes]]
 id = "coex-scheduler"
 profiles = ["coex-all"]
 roots = [
@@ -295,7 +298,7 @@ include-reachable = true
 
 [qualification]
 pack = "features/reviewed.toml"
-required-features = ["wifi-sta-connected-no-power-save"]
+required-features = ["wifi-sta-connected-no-power-save", "coex-hardware-timer-control"]
 
 [verification]
 report = "generated/reports/verification.json"

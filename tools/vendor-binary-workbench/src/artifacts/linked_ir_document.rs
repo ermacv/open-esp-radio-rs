@@ -2,8 +2,10 @@
 
 use std::{
     collections::{BTreeMap, BTreeSet},
-    path::Path,
-    path::PathBuf,
+    fs::{self, File},
+    io::{BufReader, BufWriter, Read, Write},
+    path::{Path, PathBuf},
+    sync::atomic::{AtomicU64, Ordering},
 };
 
 use serde::Serialize;
@@ -392,16 +394,203 @@ pub(crate) struct LinkedIrDocument<'a> {
     functions: &'a [LinkedIrFunction],
 }
 
+const MAX_LINKED_IR_BUNDLE_BYTES: u64 = 512 * 1024 * 1024;
+static NEXT_STAGE_ID: AtomicU64 = AtomicU64::new(0);
+
+/// A complete linked-IR bundle rendered to a private sibling directory.
+///
+/// Keeping serialized artifacts on disk avoids retaining a second copy of a
+/// potentially very large `LinkedIrReport`. Dropping an unpublished stage
+/// removes it; publishing swaps it into the configured location only after
+/// every required member has been written successfully.
 #[derive(Debug)]
-pub(crate) struct LinkedIrBundle {
-    pub(crate) manifest: String,
-    pub(crate) functions: String,
-    pub(crate) function_overview: String,
-    pub(crate) function_index: String,
-    pub(crate) graph: String,
-    pub(crate) register_index: String,
-    pub(crate) data_objects: String,
-    pub(crate) data_object_index: String,
+pub(crate) struct StagedLinkedIrBundle {
+    root: Option<PathBuf>,
+    bytes: u64,
+}
+
+impl StagedLinkedIrBundle {
+    pub(crate) const fn bytes(&self) -> u64 {
+        self.bytes
+    }
+
+    pub(crate) fn compare(&self, expected: &Path) -> Result<Vec<PathBuf>> {
+        let root = self.root.as_deref().expect("unpublished bundle stage");
+        let mut stale = Vec::new();
+        for name in super::linked_ir_bundle::BUNDLE_FILES {
+            let actual = expected.join(name);
+            if !files_equal(&root.join(name), &actual)? {
+                stale.push(actual);
+            }
+        }
+        Ok(stale)
+    }
+
+    pub(crate) fn publish(mut self, destination: &Path) -> Result<()> {
+        let stage = self.root.take().expect("unpublished bundle stage");
+        let parent = destination.parent().unwrap_or_else(|| Path::new("."));
+        fs::create_dir_all(parent)?;
+        let backup = backup_path(destination);
+        if backup.exists() {
+            if destination.exists() {
+                fs::remove_dir_all(&backup)?;
+            } else {
+                fs::rename(&backup, destination)?;
+            }
+        }
+        if destination.exists() {
+            fs::rename(destination, &backup)?;
+        }
+        if let Err(error) = fs::rename(&stage, destination) {
+            if backup.exists() {
+                let _ = fs::rename(&backup, destination);
+            }
+            return Err(error.into());
+        }
+        if backup.exists() {
+            fs::remove_dir_all(backup)?;
+        }
+        Ok(())
+    }
+}
+
+impl Drop for StagedLinkedIrBundle {
+    fn drop(&mut self) {
+        if let Some(root) = self.root.take() {
+            let _ = fs::remove_dir_all(root);
+        }
+    }
+}
+
+fn sibling_path(destination: &Path, kind: &str) -> PathBuf {
+    let parent = destination.parent().unwrap_or_else(|| Path::new("."));
+    let name = destination
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("linked-ir");
+    let id = NEXT_STAGE_ID.fetch_add(1, Ordering::Relaxed);
+    parent.join(format!(".{name}.{kind}-{}-{id}", std::process::id()))
+}
+
+fn backup_path(destination: &Path) -> PathBuf {
+    let parent = destination.parent().unwrap_or_else(|| Path::new("."));
+    let name = destination
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("linked-ir");
+    parent.join(format!(".{name}.backup"))
+}
+
+fn files_equal(left: &Path, right: &Path) -> Result<bool> {
+    let Ok(right_file) = File::open(right) else {
+        return Ok(false);
+    };
+    let left_file = File::open(left)?;
+    if left_file.metadata()?.len() != right_file.metadata()?.len() {
+        return Ok(false);
+    }
+    let mut left = BufReader::new(left_file);
+    let mut right = BufReader::new(right_file);
+    let mut left_buffer = [0_u8; 64 * 1024];
+    let mut right_buffer = [0_u8; 64 * 1024];
+    loop {
+        let left_read = left.read(&mut left_buffer)?;
+        let right_read = right.read(&mut right_buffer)?;
+        if left_read != right_read || left_buffer[..left_read] != right_buffer[..right_read] {
+            return Ok(false);
+        }
+        if left_read == 0 {
+            return Ok(true);
+        }
+    }
+}
+
+struct BudgetWriter<'a> {
+    inner: BufWriter<File>,
+    total: &'a mut u64,
+    limit: u64,
+}
+
+struct RecordWriter<'a, 'b> {
+    inner: &'a mut BudgetWriter<'b>,
+    written: u64,
+}
+
+impl Write for RecordWriter<'_, '_> {
+    fn write(&mut self, buffer: &[u8]) -> std::io::Result<usize> {
+        let written = self.inner.write(buffer)?;
+        self.written += written as u64;
+        Ok(written)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.inner.flush()
+    }
+}
+
+impl Write for BudgetWriter<'_> {
+    fn write(&mut self, buffer: &[u8]) -> std::io::Result<usize> {
+        let next = self.total.saturating_add(buffer.len() as u64);
+        if next > self.limit {
+            return Err(std::io::Error::other(format!(
+                "linked-IR bundle exceeds the {} MiB safety limit",
+                self.limit / (1024 * 1024)
+            )));
+        }
+        let written = self.inner.write(buffer)?;
+        *self.total += written as u64;
+        Ok(written)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.inner.flush()
+    }
+}
+
+fn budget_writer<'a>(root: &Path, name: &str, total: &'a mut u64) -> Result<BudgetWriter<'a>> {
+    Ok(BudgetWriter {
+        inner: BufWriter::new(File::create(root.join(name))?),
+        total,
+        limit: MAX_LINKED_IR_BUNDLE_BYTES,
+    })
+}
+
+fn manifest_projection<'a>(document: &'a LinkedIrDocument<'a>) -> LinkedIrDocument<'a> {
+    LinkedIrDocument {
+        schema_version: document.schema_version,
+        command: document.command,
+        analysis_mode: document.analysis_mode,
+        linkage_mode: document.linkage_mode,
+        project_call_linkage: document.project_call_linkage,
+        selection_mode: document.selection_mode,
+        include_reachable: document.include_reachable,
+        effect_summary_mode: document.effect_summary_mode,
+        context_projection_mode: document.context_projection_mode,
+        memory_object_mode: document.memory_object_mode,
+        instruction_effect_mode: document.instruction_effect_mode,
+        data_object_mode: document.data_object_mode,
+        semantic_action_mode: document.semantic_action_mode,
+        event_dispatch_mode: document.event_dispatch_mode,
+        event_dispatch_effect_completeness_claim: document.event_dispatch_effect_completeness_claim,
+        event_dispatch_receiver_inference_mode: document.event_dispatch_receiver_inference_mode,
+        mmio_field_candidate_mode: document.mmio_field_candidate_mode,
+        direct_mmio_predicate_completeness_claim: document.direct_mmio_predicate_completeness_claim,
+        scenario_suggestion_mode: document.scenario_suggestion_mode,
+        scenario_suggestion_proof_claim: document.scenario_suggestion_proof_claim,
+        mmio_field_semantics_claim: document.mmio_field_semantics_claim,
+        cfg_guard_completeness_claim: document.cfg_guard_completeness_claim,
+        completeness_claim: document.completeness_claim,
+        artifacts: document.artifacts.clone(),
+        companions: document.companions.clone(),
+        symbol_prefix: document.symbol_prefix,
+        entry_contract: document.entry_contract,
+        summary: document.summary.clone(),
+        data_objects: Vec::new(),
+        mmio_registers: &[],
+        semantic_boundaries: document.semantic_boundaries,
+        trampoline_slots: document.trampoline_slots,
+        functions: &[],
+    }
 }
 
 /// Compact, persistent review projection.  The full function stream is the
@@ -415,16 +604,48 @@ struct FunctionOverviewDocument<'a> {
     selection: &'a str,
     member: &'a Option<String>,
     symbol: &'a str,
+    binding: &'a str,
     complete: bool,
+    dependencies: &'a [String],
     direct_calls: usize,
+    calls: Vec<FunctionOverviewCall<'a>>,
+    mmio: Vec<FunctionOverviewMmio>,
     mmio_addresses: Vec<u32>,
+    direct_context_fields: usize,
+    direct_memory_fields: usize,
+    diagnostics: Vec<FunctionOverviewDiagnostic<'a>>,
     effect_summary: FunctionOverviewEffectSummary<'a>,
     decode_blockers: &'a [crate::LinkedDecodeBlocker],
 }
 
 #[derive(Serialize)]
+struct FunctionOverviewCall<'a> {
+    kind: &'a str,
+    target: &'a str,
+    site: Option<u32>,
+    project_symbol: &'a Option<String>,
+}
+
+#[derive(Serialize)]
+struct FunctionOverviewMmio {
+    address: u32,
+    width: u8,
+}
+
+#[derive(Serialize)]
+struct FunctionOverviewDiagnostic<'a> {
+    channel: &'static str,
+    root_id: &'a str,
+    kind: &'a str,
+    site: Option<u32>,
+    rendered: &'a str,
+}
+
+#[derive(Serialize)]
 struct FunctionOverviewEffectSummary<'a> {
+    transitive_effects_materialized: bool,
     call_graph_closed: bool,
+    context_projection_materialized: bool,
     context_projection_complete: bool,
     context_projection_blockers: &'a [String],
     context_fields: Vec<FunctionOverviewContextField>,
@@ -479,8 +700,28 @@ impl<'a> FunctionOverviewDocument<'a> {
             selection: function.selection,
             member: &function.member,
             symbol: &function.symbol,
+            binding: function.binding,
             complete: function.complete,
+            dependencies: &function.dependencies,
             direct_calls: function.calls.len(),
+            calls: function
+                .calls
+                .iter()
+                .map(|call| FunctionOverviewCall {
+                    kind: call.kind,
+                    target: &call.target,
+                    site: call.site,
+                    project_symbol: &call.project_symbol,
+                })
+                .collect(),
+            mmio: function
+                .mmio_accesses
+                .iter()
+                .map(|access| FunctionOverviewMmio {
+                    address: access.address,
+                    width: access.width,
+                })
+                .collect(),
             mmio_addresses: function
                 .mmio_accesses
                 .iter()
@@ -488,8 +729,36 @@ impl<'a> FunctionOverviewDocument<'a> {
                 .collect::<BTreeSet<_>>()
                 .into_iter()
                 .collect(),
+            direct_context_fields: function.context_fields.len(),
+            direct_memory_fields: function.memory_fields.len(),
+            diagnostics: function
+                .call_graph_diagnostics
+                .iter()
+                .map(|diagnostic| ("call-graph", diagnostic))
+                .chain(
+                    function
+                        .direct_diagnostics
+                        .iter()
+                        .map(|diagnostic| ("direct", diagnostic)),
+                )
+                .chain(
+                    function
+                        .reference_diagnostics
+                        .iter()
+                        .map(|diagnostic| ("reference", diagnostic)),
+                )
+                .map(|(channel, diagnostic)| FunctionOverviewDiagnostic {
+                    channel,
+                    root_id: &diagnostic.root_id,
+                    kind: diagnostic.kind,
+                    site: diagnostic.site,
+                    rendered: &diagnostic.rendered,
+                })
+                .collect(),
             effect_summary: FunctionOverviewEffectSummary {
+                transitive_effects_materialized: summary.transitive_effects_materialized,
                 call_graph_closed: summary.call_graph_closed,
+                context_projection_materialized: summary.context_projection_materialized,
                 context_projection_complete: summary.context_projection_complete,
                 context_projection_blockers: &summary.context_projection_blockers,
                 context_fields: summary
@@ -548,53 +817,53 @@ impl<'a> FunctionOverviewDocument<'a> {
 }
 
 #[derive(Serialize)]
-struct FunctionIndexDocument {
+struct FunctionIndexDocument<'a> {
     schema_version: u32,
     command: &'static str,
-    records: Vec<FunctionIndexRecord>,
+    records: Vec<FunctionIndexRecord<'a>>,
 }
 
 #[derive(Serialize)]
-struct FunctionIndexRecord {
-    identity: String,
-    source: String,
-    member: Option<String>,
-    symbol: String,
+struct FunctionIndexRecord<'a> {
+    identity: &'a str,
+    source: &'a str,
+    member: &'a Option<String>,
+    symbol: &'a str,
     address: Option<u32>,
     offset: u64,
     length: u64,
 }
 
 #[derive(Serialize)]
-struct DataObjectIndexDocument {
+struct DataObjectIndexDocument<'a> {
     schema_version: u32,
     command: &'static str,
-    records: Vec<DataObjectIndexRecord>,
+    records: Vec<DataObjectIndexRecord<'a>>,
 }
 
 #[derive(Serialize)]
-struct DataObjectIndexRecord {
-    source: String,
-    member: Option<String>,
-    symbol: String,
-    address: Option<String>,
+struct DataObjectIndexRecord<'a> {
+    source: &'a str,
+    member: &'a Option<String>,
+    symbol: &'a str,
+    address: &'a Option<String>,
     offset: u64,
     length: u64,
 }
 
 #[derive(Serialize)]
-struct GraphDocument {
+struct GraphDocument<'a> {
     schema_version: u32,
     command: &'static str,
-    edges: Vec<GraphEdgeDocument>,
+    edges: Vec<GraphEdgeDocument<'a>>,
 }
 
 #[derive(Serialize)]
-struct GraphEdgeDocument {
-    caller: String,
-    callee: String,
+struct GraphEdgeDocument<'a> {
+    caller: &'a str,
+    callee: &'a str,
     site: Option<u32>,
-    kind: String,
+    kind: &'a str,
 }
 
 #[derive(Serialize)]
@@ -634,12 +903,28 @@ pub(crate) fn build_linked_ir_document<'a>(
             (false, false) => "symbol-prefix-only",
         },
         include_reachable,
-        effect_summary_mode: "reachable-inventory-origin-preserving",
+        effect_summary_mode: if report
+            .functions
+            .iter()
+            .all(|function| function.effect_summary.semantic_actions_materialized)
+        {
+            "reachable-inventory-origin-preserving"
+        } else {
+            "direct-facts-with-focused-transitive-projection"
+        },
         context_projection_mode: "affine-simple-call-paths",
         memory_object_mode: "affine-argument-and-relocated-symbols",
         instruction_effect_mode: "direct-origin-sites-with-basic-blocks",
         data_object_mode: "named-elf-objects-with-uninterpreted-initializers-and-symbolic-relocations",
-        semantic_action_mode: "lexical-site-paths-factorized-cfg-guards-affine-root-bindings",
+        semantic_action_mode: if report
+            .functions
+            .iter()
+            .all(|function| function.effect_summary.semantic_actions_materialized)
+        {
+            "lexical-site-paths-factorized-cfg-guards-affine-root-bindings"
+        } else {
+            "direct-calls-plus-call-graph-with-focused-root-projection"
+        },
         event_dispatch_mode: "reviewed-contract-declared-role-projection",
         event_dispatch_effect_completeness_claim: false,
         event_dispatch_receiver_inference_mode: "none",
@@ -690,72 +975,69 @@ fn render_linked_ir(document: &LinkedIrDocument<'_>) -> Result<String> {
     Ok(serde_json::to_string(document)? + "\n")
 }
 
-pub(crate) fn render_linked_ir_bundle(document: &LinkedIrDocument<'_>) -> Result<LinkedIrBundle> {
-    let manifest = LinkedIrDocument {
-        schema_version: document.schema_version,
-        command: document.command,
-        analysis_mode: document.analysis_mode,
-        linkage_mode: document.linkage_mode,
-        project_call_linkage: document.project_call_linkage,
-        selection_mode: document.selection_mode,
-        include_reachable: document.include_reachable,
-        effect_summary_mode: document.effect_summary_mode,
-        context_projection_mode: document.context_projection_mode,
-        memory_object_mode: document.memory_object_mode,
-        instruction_effect_mode: document.instruction_effect_mode,
-        data_object_mode: document.data_object_mode,
-        semantic_action_mode: document.semantic_action_mode,
-        event_dispatch_mode: document.event_dispatch_mode,
-        event_dispatch_effect_completeness_claim: document.event_dispatch_effect_completeness_claim,
-        event_dispatch_receiver_inference_mode: document.event_dispatch_receiver_inference_mode,
-        mmio_field_candidate_mode: document.mmio_field_candidate_mode,
-        direct_mmio_predicate_completeness_claim: document.direct_mmio_predicate_completeness_claim,
-        scenario_suggestion_mode: document.scenario_suggestion_mode,
-        scenario_suggestion_proof_claim: document.scenario_suggestion_proof_claim,
-        mmio_field_semantics_claim: document.mmio_field_semantics_claim,
-        cfg_guard_completeness_claim: document.cfg_guard_completeness_claim,
-        completeness_claim: document.completeness_claim,
-        artifacts: document.artifacts.clone(),
-        companions: document.companions.clone(),
-        symbol_prefix: document.symbol_prefix,
-        entry_contract: document.entry_contract,
-        summary: document.summary.clone(),
-        data_objects: Vec::new(),
-        mmio_registers: &[],
-        semantic_boundaries: document.semantic_boundaries,
-        trampoline_slots: document.trampoline_slots,
-        functions: &[],
+pub(crate) fn stage_linked_ir_bundle(
+    destination: &Path,
+    document: &LinkedIrDocument<'_>,
+) -> Result<StagedLinkedIrBundle> {
+    let parent = destination.parent().unwrap_or_else(|| Path::new("."));
+    fs::create_dir_all(parent)?;
+    let root = sibling_path(destination, "stage");
+    fs::create_dir(&root)?;
+    let mut stage = StagedLinkedIrBundle {
+        root: Some(root.clone()),
+        bytes: 0,
     };
-    let mut functions = String::new();
-    let mut function_overview = String::new();
+    let mut total = 0_u64;
+
+    {
+        let mut writer = budget_writer(&root, "manifest.json", &mut total)?;
+        serde_json::to_writer(&mut writer, &manifest_projection(document))?;
+        writer.write_all(b"\n")?;
+        writer.flush()?;
+    }
+
     let mut records = Vec::with_capacity(document.functions.len());
     let mut edges = Vec::new();
-    for function in document.functions {
-        let offset = functions.len() as u64;
-        let encoded = serde_json::to_string(function)?;
-        let length = encoded.len() as u64;
-        functions.push_str(&encoded);
-        functions.push('\n');
-        function_overview.push_str(&serde_json::to_string(&FunctionOverviewDocument::new(
-            function,
-        ))?);
-        function_overview.push('\n');
-        records.push(FunctionIndexRecord {
-            identity: function.identity.clone(),
-            source: function.source.clone(),
-            member: function.member.clone(),
-            symbol: function.symbol.clone(),
-            address: function.address,
-            offset,
-            length,
-        });
-        edges.extend(function.calls.iter().map(|call| GraphEdgeDocument {
-            caller: function.identity.clone(),
-            callee: call.target.clone(),
-            site: call.site,
-            kind: call.kind.to_owned(),
-        }));
+    {
+        let mut functions = budget_writer(&root, "functions.jsonl", &mut total)?;
+        let mut offset = 0_u64;
+        for function in document.functions {
+            let mut record = RecordWriter {
+                inner: &mut functions,
+                written: 0,
+            };
+            serde_json::to_writer(&mut record, function)?;
+            let length = record.written;
+            record.write_all(b"\n")?;
+            records.push(FunctionIndexRecord {
+                identity: &function.identity,
+                source: &function.source,
+                member: &function.member,
+                symbol: &function.symbol,
+                address: function.address,
+                offset,
+                length,
+            });
+            offset += length + 1;
+            edges.extend(function.calls.iter().map(|call| GraphEdgeDocument {
+                caller: &function.identity,
+                callee: &call.target,
+                site: call.site,
+                kind: call.kind,
+            }));
+        }
+        functions.flush()?;
     }
+
+    {
+        let mut overviews = budget_writer(&root, "function-overview.jsonl", &mut total)?;
+        for function in document.functions {
+            serde_json::to_writer(&mut overviews, &FunctionOverviewDocument::new(function))?;
+            overviews.write_all(b"\n")?;
+        }
+        overviews.flush()?;
+    }
+
     records.sort_by(|left, right| {
         (&left.source, &left.identity).cmp(&(&right.source, &right.identity))
     });
@@ -767,22 +1049,30 @@ pub(crate) fn render_linked_ir_bundle(document: &LinkedIrDocument<'_>) -> Result
             &right.callee,
         ))
     });
-    let mut data_objects = String::new();
+
     let mut data_object_records = Vec::with_capacity(document.data_objects.len());
-    for object in &document.data_objects {
-        let offset = data_objects.len() as u64;
-        let encoded = serde_json::to_string(object)?;
-        let length = encoded.len() as u64;
-        data_objects.push_str(&encoded);
-        data_objects.push('\n');
-        data_object_records.push(DataObjectIndexRecord {
-            source: object.source.clone(),
-            member: object.member.clone(),
-            symbol: object.symbol.clone(),
-            address: object.address.clone(),
-            offset,
-            length,
-        });
+    {
+        let mut objects = budget_writer(&root, "data-objects.jsonl", &mut total)?;
+        let mut offset = 0_u64;
+        for object in &document.data_objects {
+            let mut record = RecordWriter {
+                inner: &mut objects,
+                written: 0,
+            };
+            serde_json::to_writer(&mut record, object)?;
+            let length = record.written;
+            record.write_all(b"\n")?;
+            data_object_records.push(DataObjectIndexRecord {
+                source: &object.source,
+                member: &object.member,
+                symbol: &object.symbol,
+                address: &object.address,
+                offset,
+                length,
+            });
+            offset += length + 1;
+        }
+        objects.flush()?;
     }
     data_object_records.sort_by(|left, right| {
         (&left.source, &left.member, &left.symbol, &left.address).cmp(&(
@@ -792,55 +1082,50 @@ pub(crate) fn render_linked_ir_bundle(document: &LinkedIrDocument<'_>) -> Result
             &right.address,
         ))
     });
-    Ok(LinkedIrBundle {
-        manifest: serde_json::to_string(&manifest)? + "\n",
-        functions,
-        function_overview,
-        function_index: serde_json::to_string(&FunctionIndexDocument {
+
+    macro_rules! write_json_file {
+        ($name:literal, $value:expr) => {{
+            let mut writer = budget_writer(&root, $name, &mut total)?;
+            serde_json::to_writer(&mut writer, &$value)?;
+            writer.write_all(b"\n")?;
+            writer.flush()?;
+        }};
+    }
+    write_json_file!(
+        "function-index.json",
+        FunctionIndexDocument {
             schema_version: document.schema_version,
             command: "ir function index",
             records,
-        })? + "\n",
-        graph: serde_json::to_string(&GraphDocument {
+        }
+    );
+    write_json_file!(
+        "graph.json",
+        GraphDocument {
             schema_version: document.schema_version,
             command: "ir graph index",
             edges,
-        })? + "\n",
-        register_index: serde_json::to_string(&RegisterIndexDocument {
+        }
+    );
+    write_json_file!(
+        "register-index.json",
+        RegisterIndexDocument {
             schema_version: document.schema_version,
             command: "ir register index",
             registers: document.mmio_registers,
-        })? + "\n",
-        data_objects,
-        data_object_index: serde_json::to_string(&DataObjectIndexDocument {
+        }
+    );
+    write_json_file!(
+        "data-object-index.json",
+        DataObjectIndexDocument {
             schema_version: document.schema_version,
             command: "ir data object index",
             records: data_object_records,
-        })? + "\n",
-    })
-}
+        }
+    );
 
-pub(crate) fn write_linked_ir_bundle(path: &Path, bundle: &LinkedIrBundle) -> Result<()> {
-    std::fs::create_dir_all(path)?;
-    for (name, contents) in [
-        ("manifest.json", &bundle.manifest),
-        ("functions.jsonl", &bundle.functions),
-        ("function-overview.jsonl", &bundle.function_overview),
-        ("function-index.json", &bundle.function_index),
-        ("graph.json", &bundle.graph),
-        ("register-index.json", &bundle.register_index),
-        ("data-objects.jsonl", &bundle.data_objects),
-        ("data-object-index.json", &bundle.data_object_index),
-    ] {
-        std::fs::write(path.join(name), contents)?;
-    }
-    let mut legacy = path.as_os_str().to_os_string();
-    legacy.push(".json");
-    let legacy = std::path::PathBuf::from(legacy);
-    if legacy.is_file() {
-        std::fs::remove_file(legacy)?;
-    }
-    Ok(())
+    stage.bytes = total;
+    Ok(stage)
 }
 
 #[cfg(test)]
@@ -907,30 +1192,47 @@ mod bundle_write_tests {
     use super::*;
 
     #[test]
-    fn bundle_write_removes_the_obsolete_monolithic_sidecar() {
+    fn staged_bundle_replaces_the_complete_directory() {
         let path = std::env::temp_dir().join(format!(
             "vendor-workbench-linked-ir-write-{}",
             std::process::id()
         ));
-        let mut legacy = path.as_os_str().to_os_string();
-        legacy.push(".json");
-        let legacy = std::path::PathBuf::from(legacy);
-        std::fs::write(&legacy, "stale monolithic IR").unwrap();
-        let bundle = LinkedIrBundle {
-            manifest: "{}\n".to_owned(),
-            functions: String::new(),
-            function_overview: String::new(),
-            function_index: "{}\n".to_owned(),
-            graph: "{}\n".to_owned(),
-            register_index: "{}\n".to_owned(),
-            data_objects: String::new(),
-            data_object_index: "{}\n".to_owned(),
+        let stage_path = sibling_path(&path, "test-stage");
+        std::fs::create_dir_all(&stage_path).unwrap();
+        for name in super::super::linked_ir_bundle::BUNDLE_FILES {
+            std::fs::write(stage_path.join(name), "{}\n").unwrap();
+        }
+        std::fs::create_dir_all(&path).unwrap();
+        std::fs::write(path.join("obsolete"), "old bundle").unwrap();
+        let bundle = StagedLinkedIrBundle {
+            root: Some(stage_path),
+            bytes: 24,
         };
 
-        write_linked_ir_bundle(&path, &bundle).unwrap();
+        bundle.publish(&path).unwrap();
 
         assert!(path.join("manifest.json").is_file());
-        assert!(!legacy.exists());
+        assert!(!path.join("obsolete").exists());
         std::fs::remove_dir_all(path).unwrap();
+    }
+
+    #[test]
+    fn budget_writer_fails_before_exceeding_its_limit() {
+        let path = std::env::temp_dir().join(format!(
+            "vendor-workbench-linked-ir-budget-{}",
+            std::process::id()
+        ));
+        let mut total = 0;
+        let mut writer = BudgetWriter {
+            inner: BufWriter::new(File::create(&path).unwrap()),
+            total: &mut total,
+            limit: 4,
+        };
+        writer.write_all(b"1234").unwrap();
+        let error = writer.write_all(b"5").unwrap_err();
+        assert!(error.to_string().contains("safety limit"));
+        drop(writer);
+        assert_eq!(total, 4);
+        std::fs::remove_file(path).unwrap();
     }
 }

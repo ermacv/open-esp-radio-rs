@@ -497,8 +497,14 @@ impl RadioRegisters {
         let control = bb.power_detector_control().read().bits();
         let (saved_table, saved_control, next_table, next_control) =
             txdc_power_detector_images(table, control);
-        super::svd::register_image_write::publish_power_detector_table_1_image(bb, next_table);
-        super::svd::register_image_write::publish_power_detector_control_image(bb, next_control);
+        super::generated::publish_power_detector_table_1_image(
+            bb,
+            super::generated::PowerDetectorTable1Image::new(next_table),
+        );
+        super::generated::publish_power_detector_control_image(
+            bb,
+            super::generated::PowerDetectorControlImage::new(next_control),
+        );
         (saved_table, saved_control)
     }
 
@@ -597,13 +603,18 @@ impl RadioRegisters {
     fn configure_tone_paths(&mut self, enabled: bool, path_0_selector: u16, path_0_step: u8) {
         debug_assert!(path_0_selector <= 0x03ff);
         let bb = &self.peripherals.phy_baseband_config_oracle;
-        super::svd::masked_register_modify::publish_tone_path_0_image(
+        super::generated::publish_tone_path_0_image(
             bb,
-            tone_path_image(0, enabled, path_0_selector, path_0_step),
+            super::generated::TonePath0MaskedInput::new(tone_path_image(
+                0,
+                enabled,
+                path_0_selector,
+                path_0_step,
+            )),
         );
-        super::svd::masked_register_modify::publish_tone_path_1_image(
+        super::generated::publish_tone_path_1_image(
             bb,
-            tone_path_image(0, false, 0, 0),
+            super::generated::TonePath1MaskedInput::new(tone_path_image(0, false, 0, 0)),
         );
     }
 
@@ -644,9 +655,9 @@ impl RadioRegisters {
 
     /// Restore the complete first-path word after TX-IQ cleanup.
     pub fn restore_txiq_tone_control(&mut self, saved: u32) {
-        super::svd::register_image_write::restore_txiq_tone_control(
+        super::generated::restore_txiq_tone_control(
             &self.peripherals.phy_baseband_config_oracle,
-            saved,
+            super::generated::TxiqToneControlImage::new(saved),
         );
     }
 
@@ -661,16 +672,23 @@ impl RadioRegisters {
         debug_assert!(selector <= 0x03ff);
         let bb = &self.peripherals.phy_baseband_config_oracle;
         if first {
-            super::svd::masked_register_modify::publish_txiq_first_mismatch_image(
+            super::generated::publish_txiq_first_mismatch_image(
                 bb,
-                txiq_first_mismatch_image(0, polarity, attenuation, selector),
+                super::generated::TxiqFirstMismatchInput::new(txiq_first_mismatch_image(
+                    0,
+                    polarity,
+                    attenuation,
+                    selector,
+                )),
             );
             bb.tone_selector_control()
                 .modify(|_, w| w.path_0_selector_low().set((selector & 3) as u8));
         } else {
-            super::svd::masked_register_modify::publish_txiq_second_mismatch_image(
+            super::generated::publish_txiq_second_mismatch_image(
                 bb,
-                txiq_second_mismatch_image(0, polarity),
+                super::generated::TxiqSecondMismatchInput::new(txiq_second_mismatch_image(
+                    0, polarity,
+                )),
             );
         }
     }

@@ -408,6 +408,40 @@ fn instruction_effects_keep_exact_mmio_and_memory_sites() {
 }
 
 #[test]
+fn site_effect_variants_are_bounded_without_selecting_an_arbitrary_value() {
+    let mut graph = DirectCallGraph::default();
+    let mut counts = BTreeMap::new();
+    let mut truncated = BTreeSet::new();
+    for value in 0..20_u32 {
+        record_site_effect(
+            &mut graph,
+            &mut counts,
+            &mut truncated,
+            LinkedInstructionEffect::Mmio {
+                site: 0x1008,
+                block: None,
+                access: "write",
+                width: 32,
+                address: 0x2010_42b4,
+                register: "STA_BEACON_FILTER.CONTROL".to_owned(),
+                mode: "static",
+                paths: Vec::new(),
+                guards: Vec::new(),
+                value: Some(format!("{value:#010x}")),
+                modified_mask: Some(u32::MAX),
+                preserved_mask: Some(0),
+                forced_zero_mask: Some(!value),
+                forced_one_mask: Some(value),
+            },
+        );
+    }
+
+    assert_eq!(graph.site_effects.len(), MAX_SITE_EFFECT_VARIANTS);
+    assert_eq!(graph.blockers.len(), 1);
+    assert!(graph.blockers.iter().next().unwrap().contains("incomplete"));
+}
+
+#[test]
 fn mmio_index_keeps_static_indexed_poll_and_write_bit_evidence() {
     assert_eq!(
         candidate_bit_ranges(0x3000_00f3, 32),

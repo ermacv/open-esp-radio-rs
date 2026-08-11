@@ -17,7 +17,6 @@ pub(crate) struct ProjectIrProfile {
     pub(crate) include_reachable: bool,
     pub(crate) entry_contract: String,
     pub(crate) output: PathBuf,
-    pub(crate) pseudo_rust: Option<PathBuf>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -116,11 +115,13 @@ pub(crate) fn load_ir_profiles(
             let output = resolve_path(base, &required_string(table, "output", &context, source)?);
             reserve_output(&mut outputs, &output, &id)
                 .map_err(|message| source.table_key(table, "output", message))?;
-            let pseudo_rust = optional_string(table, "pseudo-rust", &context, source)?
-                .map(|path| resolve_path(base, &path));
-            if let Some(path) = &pseudo_rust {
-                reserve_output(&mut outputs, path, &id)
-                    .map_err(|message| source.table_key(table, "pseudo-rust", message))?;
+            if let Some(item) = table.get("pseudo-rust") {
+                return Err(source.item(
+                    Some(item),
+                    format!(
+                        "{context}.pseudo-rust was removed; use `inspect function` or focused `ir export --pseudo-rust`"
+                    ),
+                ));
             }
             Ok(ProjectIrProfile {
                 id,
@@ -129,7 +130,6 @@ pub(crate) fn load_ir_profiles(
                 include_reachable,
                 entry_contract,
                 output,
-                pseudo_rust,
             })
         })
         .collect()
@@ -272,7 +272,6 @@ sources = ["rom", "archive"]
 roots = "symbol-prefix"
 symbol-prefix = "phy_"
 output = "generated/phy.ir"
-pseudo-rust = "generated/phy.pseudo.rs"
 
 [[analysis.ir]]
 id = "all-rom"
@@ -296,12 +295,27 @@ output = "generated/rom.ir"
             ProjectIrRoots::SymbolPrefix("phy_".to_owned())
         );
         assert!(profiles[0].include_reachable);
-        assert_eq!(
-            profiles[0].pseudo_rust,
-            Some(PathBuf::from("project/generated/phy.pseudo.rs"))
-        );
         assert_eq!(profiles[1].roots, ProjectIrRoots::All);
         assert!(!profiles[1].include_reachable);
+    }
+
+    #[test]
+    fn rejects_project_wide_pseudo_output() {
+        let input = r#"
+[[analysis.ir]]
+id = "all"
+roots = "all"
+output = "generated/all.ir"
+pseudo-rust = "generated/all.pseudo.rs"
+"#;
+        let document = input.parse::<DocumentMut>().unwrap();
+        let error = load_ir_profiles(
+            &document,
+            Path::new("project"),
+            ProjectSource::new(Path::new("project.toml"), input),
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("pseudo-rust was removed"));
     }
 
     #[test]

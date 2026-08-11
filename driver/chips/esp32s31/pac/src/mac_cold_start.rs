@@ -48,7 +48,10 @@ impl ColdRadioRegisters {
 
         let interrupt = &self.interrupts.wifi_mac_interrupt;
         super::generated::mac_interrupt_enable(interrupt, MacInterruptMask::NONE);
-        super::svd::full_register_write::mac_interrupt_clear(interrupt, u32::MAX);
+        super::generated::mac_interrupt_clear(
+            interrupt,
+            super::generated::MacInterruptClearImage::new(u32::MAX),
+        );
 
         Ok(MacColdHandshakeOutcome { samples, value })
     }

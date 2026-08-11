@@ -24,7 +24,6 @@ const MAX_CALL_GRAPH_EVENTS_PER_TRACE: usize = 1_024;
 const MAX_CONTEXT_PROJECTION_STATES: usize = 4_096;
 const LINKED_CONTEXT_ARGUMENTS: u8 = 16;
 const MAX_LINKED_IR_JOBS: usize = 8;
-const AUTO_LINKED_IR_JOBS: usize = 4;
 const LINKED_IR_WORKER_STACK_BYTES: usize = 16 * 1024 * 1024;
 
 mod model;
@@ -174,15 +173,29 @@ fn reachable_decode_blockers(
         .unwrap_or_default()
 }
 
+#[derive(Clone, Copy)]
+pub(crate) struct LinkedIrSourceOptions<'a> {
+    pub(crate) symbol_prefix: &'a str,
+    pub(crate) source: &'a str,
+    pub(crate) namespace_identities: bool,
+    pub(crate) include_reachable: bool,
+    pub(crate) jobs: usize,
+    pub(crate) compact_projected_actions: bool,
+}
+
 pub(crate) fn build_linked_ir_for_source(
     resolver: &ReferenceResolver,
-    symbol_prefix: &str,
     svd: &MmioMap,
-    source: &str,
-    namespace_identities: bool,
-    include_reachable: bool,
-    jobs: usize,
+    options: LinkedIrSourceOptions<'_>,
 ) -> LinkedIrReport {
+    let LinkedIrSourceOptions {
+        symbol_prefix,
+        source,
+        namespace_identities,
+        include_reachable,
+        jobs,
+        compact_projected_actions,
+    } = options;
     let started = std::time::Instant::now();
     let mut root_keys = BTreeSet::new();
     let roots = resolver
@@ -217,8 +230,15 @@ pub(crate) fn build_linked_ir_for_source(
         )
     };
     let function_analysis_elapsed = started.elapsed();
+    tracing::debug!(
+        source,
+        functions = functions.len(),
+        rss_kib = crate::resource_usage::resident_set_kib(),
+        function_analysis_ms = function_analysis_elapsed.as_millis(),
+        "completed direct linked-IR function analysis"
+    );
     let summary_started = std::time::Instant::now();
-    let report = summarize_linked_ir_with_jobs(functions, jobs);
+    let report = summarize_linked_ir_with_options(functions, jobs, compact_projected_actions);
     tracing::debug!(
         source,
         functions = report.functions.len(),
@@ -282,6 +302,7 @@ fn build_linked_functions_for_roots(
             calls: direct_calls,
             direct_mmio_predicates,
             blockers,
+            site_effects,
         } = explore_direct_calls(symbol, resolver, &identities, svd);
         let direct_mmio_predicates = direct_mmio_predicates.into_iter().collect::<Vec<_>>();
         if include_reachable {
@@ -318,6 +339,9 @@ fn build_linked_functions_for_roots(
                     &mmio_accesses,
                     &memory_accesses,
                 );
+                instruction_effects.extend(site_effects);
+                instruction_effects.sort();
+                instruction_effects.dedup();
                 let effect_sites = instruction_effects
                     .iter()
                     .map(LinkedInstructionEffect::site)
@@ -383,6 +407,7 @@ fn build_linked_functions_for_roots(
                             }
                         })
                         .collect(),
+                    local_value_flow: local_value_flow(&trace),
                     calls,
                     direct_mmio_predicates,
                     mmio_accesses,
@@ -426,6 +451,7 @@ fn build_linked_functions_for_roots(
                         svd,
                     ),
                     dependencies: Vec::new(),
+                    local_value_flow: Vec::new(),
                     calls,
                     direct_mmio_predicates,
                     mmio_accesses: Vec::new(),
@@ -459,11 +485,7 @@ fn build_linked_functions_for_roots(
 
 fn linked_ir_worker_count(requested: usize, functions: usize) -> usize {
     let available = thread::available_parallelism().map_or(1, usize::from);
-    let requested = if requested == 0 {
-        available.min(AUTO_LINKED_IR_JOBS)
-    } else {
-        requested.min(MAX_LINKED_IR_JOBS).min(available)
-    };
+    let requested = requested.clamp(1, MAX_LINKED_IR_JOBS).min(available);
     requested.max(1).min(functions.max(1))
 }
 
@@ -565,18 +587,30 @@ pub(crate) fn merge_linked_ir(reports: Vec<LinkedIrReport>) -> LinkedIrReport {
     merge_linked_ir_with_jobs(reports, 1)
 }
 
+#[cfg(test)]
 pub(crate) fn merge_linked_ir_with_jobs(
+    reports: Vec<LinkedIrReport>,
+    jobs: usize,
+) -> LinkedIrReport {
+    merge_linked_ir_with_options(reports, jobs, false)
+}
+
+pub(crate) fn merge_linked_ir_with_options(
     mut reports: Vec<LinkedIrReport>,
     jobs: usize,
+    compact_projected_actions: bool,
 ) -> LinkedIrReport {
     if reports.len() == 1 {
         return reports.pop().expect("one linked-IR report is present");
     }
-    let functions = reports
+    let mut functions = reports
         .into_iter()
         .flat_map(|report| report.functions)
-        .collect();
-    summarize_linked_ir_with_jobs(functions, jobs)
+        .collect::<Vec<_>>();
+    for function in &mut functions {
+        function.effect_summary = LinkedEffectSummary::default();
+    }
+    summarize_linked_ir_with_options(functions, jobs, compact_projected_actions)
 }
 
 pub(crate) fn link_project_calls(reports: &mut [LinkedIrReport]) {

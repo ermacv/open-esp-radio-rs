@@ -443,7 +443,7 @@ impl ColdRadioRegisters {
     pub fn mask_and_clear_all_mac_interrupts(&mut self) {
         let interrupt = &self.interrupts.wifi_mac_interrupt;
         generated::mac_interrupt_enable(interrupt, MacInterruptMask::NONE);
-        svd::full_register_write::mac_interrupt_clear(interrupt, u32::MAX);
+        generated::mac_interrupt_clear(interrupt, generated::MacInterruptClearImage::new(u32::MAX));
         device_fence();
     }
 }

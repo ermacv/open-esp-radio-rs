@@ -135,14 +135,6 @@ fn linked_ir(context: &ProjectContext<'_>) -> Component {
                 }
             }
         };
-        let pseudo_status = match profile.pseudo_rust.as_deref() {
-            None => "not-configured",
-            Some(path) if path.is_file() => "ready",
-            Some(_) => {
-                incomplete = true;
-                "not-generated"
-            }
-        };
         let contract_status = if contract.is_ok() { "ready" } else { "invalid" };
         profiles.push(LinkedIrProfileDetail {
             id: profile.id.clone(),
@@ -162,11 +154,6 @@ fn linked_ir(context: &ProjectContext<'_>) -> Component {
             field_candidates: summary
                 .as_ref()
                 .map_or(0, |summary| summary.field_candidates),
-            pseudo_rust: profile
-                .pseudo_rust
-                .as_deref()
-                .map(|path| path.display().to_string()),
-            pseudo_status,
         });
     }
     Component::new(

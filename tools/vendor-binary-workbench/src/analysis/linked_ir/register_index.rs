@@ -17,13 +17,22 @@ pub(super) fn summarize_linked_ir(functions: Vec<LinkedIrFunction>) -> LinkedIrR
     summarize_linked_ir_with_jobs(functions, 1)
 }
 
+#[cfg(test)]
 pub(super) fn summarize_linked_ir_with_jobs(
+    functions: Vec<LinkedIrFunction>,
+    jobs: usize,
+) -> LinkedIrReport {
+    summarize_linked_ir_with_options(functions, jobs, false)
+}
+
+pub(super) fn summarize_linked_ir_with_options(
     mut functions: Vec<LinkedIrFunction>,
     jobs: usize,
+    compact_projected_actions: bool,
 ) -> LinkedIrReport {
     functions.sort_by(|left, right| left.identity.cmp(&right.identity));
     link_guard_result_mmio_sources(&mut functions);
-    populate_effect_summaries(&mut functions, jobs);
+    populate_effect_summaries(&mut functions, jobs, compact_projected_actions);
     let mmio_functions = functions
         .iter()
         .filter(|function| !function.mmio_accesses.is_empty())
@@ -114,7 +123,7 @@ pub(super) fn summarize_linked_ir_with_jobs(
         .count();
     let recursive_effect_summaries = functions
         .iter()
-        .filter(|function| !function.effect_summary.recursive_functions.is_empty())
+        .filter(|function| function.effect_summary.recursive)
         .count();
     let complete_context_projections = functions
         .iter()

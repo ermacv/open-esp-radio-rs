@@ -68,7 +68,10 @@ impl RadioRegisters {
             }
         }
 
-        super::svd::full_register_write::phy_memory_data_0(&self.peripherals.phy_memory, data);
+        super::generated::phy_memory_data_0(
+            &self.peripherals.phy_memory,
+            super::generated::PhyMemoryData0::new(data),
+        );
         self.peripherals.phy_memory.command().modify(|_, w| {
             w.memory_index()
                 .set(memory_index)
@@ -111,7 +114,10 @@ impl RadioRegisters {
 
     /// Publish one TX-CFR entry and its complete set/clear commit pulse.
     pub fn program_tx_cfr_entry(&mut self, data: u32, index: u8) {
-        super::svd::full_register_write::phy_memory_data_0(&self.peripherals.phy_memory, data);
+        super::generated::phy_memory_data_0(
+            &self.peripherals.phy_memory,
+            super::generated::PhyMemoryData0::new(data),
+        );
         self.peripherals
             .phy_memory
             .command()
@@ -129,9 +135,18 @@ impl RadioRegisters {
     /// Publish one three-word gain-memory entry in complete ROM order.
     pub fn program_gain_memory_entry(&mut self, words: [u32; 3], index: u8) {
         let memory = &self.peripherals.phy_memory;
-        super::svd::full_register_write::phy_memory_data_0(memory, words[0]);
-        super::svd::full_register_write::phy_memory_data_1(memory, words[1]);
-        super::svd::full_register_write::phy_memory_data_2(memory, words[2]);
+        super::generated::phy_memory_data_0(
+            memory,
+            super::generated::PhyMemoryData0::new(words[0]),
+        );
+        super::generated::phy_memory_data_1(
+            memory,
+            super::generated::PhyMemoryData1::new(words[1]),
+        );
+        super::generated::phy_memory_data_2(
+            memory,
+            super::generated::PhyMemoryData2::new(words[2]),
+        );
 
         self.peripherals.phy_memory.command().modify(|_, w| {
             w.gain_command_low_zero_unknown()

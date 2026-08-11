@@ -326,6 +326,7 @@ pub(crate) fn trace_disassembly(
         symbol: symbol.to_owned(),
         events,
         located_events: Vec::new(),
+        located_reference_events: Vec::new(),
         reference_events,
         reference_dependencies: Vec::new(),
         blockers,

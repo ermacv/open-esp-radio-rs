@@ -8,11 +8,12 @@ use crate::{
     ALLOCATED_EXTERNAL_RESULT_TOKEN_FLAG, BitSource, BranchCondition, BranchOperation,
     DEFERRED_CALLER_MEMORY_REGION, DirectSemanticFunctionSpec, DraftReferenceEvent,
     ExpressionOperation, ExternalOutputModel, ExternalReturnModel, FunctionAnalysis,
-    FunctionTableRef, IndexedMmioDomain, IndexedMmioRegister, LocatedObservableEvent, MemoryAccess,
-    MemoryObjectLocation, MemoryObjectRoot, MmioMap, ObservableEvent, RV32_REGISTER_ARGUMENT_COUNT,
-    RV32_STACK_ARGUMENT_COUNT, Result, ReviewedExternalCall, Rv32CallArguments,
-    SECONDARY_CALL_RESULT_TOKEN_FLAG, SymbolicValue, artifact, collect_evaluable_input_bits,
-    encode_fence_set, evaluate_for_input, indexed_mmio_domain,
+    FunctionTableRef, IndexedMmioDomain, IndexedMmioRegister, LocatedObservableEvent,
+    LocatedReferenceEvent, MemoryAccess, MemoryObjectLocation, MemoryObjectRoot, MmioMap,
+    ObservableEvent, RV32_REGISTER_ARGUMENT_COUNT, RV32_STACK_ARGUMENT_COUNT, Result,
+    ReviewedExternalCall, Rv32CallArguments, SECONDARY_CALL_RESULT_TOKEN_FLAG, SymbolicValue,
+    artifact, collect_evaluable_input_bits, encode_fence_set, evaluate_for_input,
+    indexed_mmio_domain,
 };
 
 mod alu;
@@ -468,6 +469,7 @@ pub fn trace_structural_program_with_branches_bounded(
                             &condition,
                             checkpoint,
                             &state.events,
+                            &state.located_reference_events,
                             &state.reference_events,
                             &state.blockers,
                             &state.reference_blockers,
@@ -485,7 +487,7 @@ pub fn trace_structural_program_with_branches_bounded(
                                 *value = SymbolicValue::Unknown;
                             }
                         }
-                        state.reference_events.push(poll.event);
+                        state.push_reference_event(poll.read_site, poll.event);
                         state.blockers.push(format!(
                             "{REFERENCE_ONLY_POLL_BLOCKER} at {pc:#x}: {instruction}"
                         ));

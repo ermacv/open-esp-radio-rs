@@ -13,6 +13,7 @@ fn call_summary_substitutes_arguments_and_remaps_read_tokens() {
         symbol: "child".to_owned(),
         events: Vec::new(),
         located_events: Vec::new(),
+        located_reference_events: Vec::new(),
         reference_events: vec![
             DraftReferenceEvent::Observable(ObservableEvent::Memory {
                 access: MemoryAccess::Read,
@@ -80,6 +81,7 @@ fn call_summary_substitutes_indexed_mmio_and_preserves_read_identity() {
         symbol: "indexed_child".to_owned(),
         events: Vec::new(),
         located_events: Vec::new(),
+        located_reference_events: Vec::new(),
         reference_events: vec![DraftReferenceEvent::IndexedMmio {
             access: MemoryAccess::Read,
             width: 32,
@@ -145,6 +147,7 @@ fn call_summary_substitutes_caller_owned_memory_addresses() {
         symbol: "memory_child".to_owned(),
         events: Vec::new(),
         located_events: Vec::new(),
+        located_reference_events: Vec::new(),
         reference_events: vec![DraftReferenceEvent::Memory {
             access: MemoryAccess::Read,
             width: 32,

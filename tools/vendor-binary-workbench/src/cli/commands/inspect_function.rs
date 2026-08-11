@@ -214,6 +214,26 @@ fn render_human(report: &FunctionInvestigationReport, full: bool) {
                     .iter()
                     .find(|evidence| evidence.address == instruction.address)
                 {
+                    for effect in &evidence.effects {
+                        crate::cli::output::line(format_args!(
+                            "              = {} {}{} {}{}",
+                            effect.kind,
+                            effect.access,
+                            effect.width,
+                            effect.target,
+                            effect
+                                .value
+                                .as_deref()
+                                .map(|value| format!(" value={value}"))
+                                .unwrap_or_default(),
+                        ));
+                        if !effect.guards.is_empty() {
+                            crate::cli::output::line(format_args!(
+                                "                guards: {}",
+                                effect.guards.join("; ")
+                            ));
+                        }
+                    }
                     if !evidence.call_targets.is_empty() {
                         crate::cli::output::line(format_args!(
                             "              = calls {}",

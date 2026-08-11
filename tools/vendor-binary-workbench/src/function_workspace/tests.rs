@@ -179,6 +179,7 @@ fn write_ir(path: &std::path::Path) {
         calls,
         direct_mmio_predicates: Vec::new(),
         mmio_accesses: Vec::new(),
+        instruction_effects: Vec::new(),
         delays: Vec::new(),
         context_accesses: Vec::new(),
         context_fields: Vec::new(),

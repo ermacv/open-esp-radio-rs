@@ -6,6 +6,7 @@ use super::*;
 pub(super) struct StructuralCheckpoint {
     pub(super) events_len: usize,
     pub(super) located_events_len: usize,
+    pub(super) located_reference_events_len: usize,
     pub(super) reference_events_len: usize,
     pub(super) blockers_len: usize,
     pub(super) reference_blockers_len: usize,
@@ -21,6 +22,7 @@ pub(super) struct StructuralCheckpoint {
 pub(super) struct StructuralPollLoop {
     pub(super) event: DraftReferenceEvent,
     pub(super) checkpoint: StructuralCheckpoint,
+    pub(super) read_site: u32,
     pub(super) read_token: u32,
 }
 
@@ -158,6 +160,7 @@ pub(super) fn recognize_structural_poll_loop(
     condition: &BranchCondition,
     checkpoint: &StructuralCheckpoint,
     events: &[ObservableEvent],
+    located_reference_events: &[LocatedReferenceEvent],
     reference_events: &[DraftReferenceEvent],
     blockers: &[String],
     reference_blockers: &[String],
@@ -176,6 +179,7 @@ pub(super) fn recognize_structural_poll_loop(
         || next_external_call_token != checkpoint.next_external_call_token
         || stack != checkpoint.stack.as_ref()
         || events.len() != checkpoint.events_len + 1
+        || located_reference_events.len() != checkpoint.located_reference_events_len + 1
         || reference_events.len() != checkpoint.reference_events_len + 1
     {
         return None;
@@ -259,6 +263,7 @@ pub(super) fn recognize_structural_poll_loop(
             expected,
         },
         checkpoint: checkpoint.clone(),
+        read_site: located_reference_events[checkpoint.located_reference_events_len].site,
         read_token,
     })
 }

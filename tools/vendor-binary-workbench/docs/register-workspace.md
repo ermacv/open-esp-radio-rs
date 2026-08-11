@@ -157,7 +157,7 @@ destination.
 ### Linked-IR enrichment
 
 The basic report needs only schema-v5 `mmio discover` facts, including exact
-instruction PCs for recovered direct accesses. Optional schema-v43
+instruction PCs for recovered direct accesses. Optional schema-v44
 `ir export` JSON reports add evidence that the artifact-wide MMIO pass does not
 carry: poll masks, direct branch predicates, producer-return chains and links
 from register bits to guarded semantic actions.

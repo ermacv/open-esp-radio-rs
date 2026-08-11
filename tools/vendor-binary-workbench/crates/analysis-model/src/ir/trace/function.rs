@@ -19,6 +19,10 @@ pub struct FunctionAnalysis {
     /// synthesized summaries may leave this empty because they do not claim a
     /// binary instruction site.
     pub located_events: Vec<LocatedObservableEvent>,
+    /// Instruction-local MMIO/RAM reference evidence. Unlike
+    /// `reference_events`, this list is not a code-generation sequence and is
+    /// never rewritten into composed control flow.
+    pub located_reference_events: Vec<LocatedReferenceEvent>,
     pub reference_events: Vec<DraftReferenceEvent>,
     pub reference_dependencies: Vec<String>,
     pub blockers: Vec<String>,

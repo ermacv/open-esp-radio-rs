@@ -28,6 +28,7 @@ fn generates_a_self_contained_ordered_reference() {
             },
         ],
         located_events: Vec::new(),
+        located_reference_events: Vec::new(),
         reference_events: vec![
             DraftReferenceEvent::Observable(ObservableEvent::Memory {
                 access: MemoryAccess::Read,
@@ -110,6 +111,7 @@ fn rejects_incomplete_control_flow_instead_of_emitting_a_partial_function() {
         symbol: "branchy".to_owned(),
         events: Vec::new(),
         located_events: Vec::new(),
+        located_reference_events: Vec::new(),
         reference_events: Vec::new(),
         reference_dependencies: Vec::new(),
         blockers: vec!["control-flow instruction at 0x10".to_owned()],
@@ -130,6 +132,7 @@ fn preserves_ordered_elf_ram_reads_and_writes() {
         symbol: "state_leaf".to_owned(),
         events: Vec::new(),
         located_events: Vec::new(),
+        located_reference_events: Vec::new(),
         reference_events: vec![
             DraftReferenceEvent::Memory {
                 access: MemoryAccess::Read,

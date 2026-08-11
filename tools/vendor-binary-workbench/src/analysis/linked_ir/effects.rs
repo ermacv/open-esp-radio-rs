@@ -664,6 +664,194 @@ pub(super) fn mmio_accesses_for_trace(trace: &FunctionAnalysis) -> Vec<LinkedMmi
     output
 }
 
+fn access_label(access: MemoryAccess) -> &'static str {
+    match access {
+        MemoryAccess::Read => "read",
+        MemoryAccess::Write => "write",
+    }
+}
+
+fn matching_mmio_paths(
+    accesses: &[LinkedMmioAccess],
+    address: u32,
+    width: u8,
+    access: &str,
+) -> (Vec<String>, Vec<String>) {
+    let mut paths = BTreeSet::new();
+    let mut guards = BTreeSet::new();
+    for candidate in accesses.iter().filter(|candidate| {
+        candidate.address == address && candidate.width == width && candidate.access == access
+    }) {
+        paths.insert(candidate.path.clone());
+        if let Some(guard) = &candidate.guard {
+            guards.insert(guard.clone());
+        }
+    }
+    (paths.into_iter().collect(), guards.into_iter().collect())
+}
+
+fn matching_memory_paths(
+    accesses: &[MemoryObjectAccess],
+    effect: &MemoryObjectAccess,
+) -> Vec<String> {
+    accesses
+        .iter()
+        .filter(|candidate| {
+            candidate.object == effect.object
+                && candidate.offset == effect.offset
+                && candidate.access == effect.access
+                && candidate.width == effect.width
+        })
+        .map(|candidate| candidate.path.clone())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
+}
+
+pub(super) fn instruction_effects_for_trace(
+    trace: &FunctionAnalysis,
+    resolver: &ReferenceResolver,
+    mmio_accesses: &[LinkedMmioAccess],
+    memory_accesses: &[MemoryObjectAccess],
+) -> Vec<LinkedInstructionEffect> {
+    let read_sources = memory_read_sources_for_trace(trace);
+    let mut output = Vec::new();
+    for located in &trace.located_reference_events {
+        match &located.event {
+            DraftReferenceEvent::Observable(ObservableEvent::Memory {
+                access,
+                width,
+                address,
+                register,
+                value,
+            }) => {
+                let access_label = access_label(*access);
+                let (paths, guards) =
+                    matching_mmio_paths(mmio_accesses, *address, *width, access_label);
+                let [
+                    modified_mask,
+                    preserved_mask,
+                    _inverted_mask,
+                    forced_zero_mask,
+                    forced_one_mask,
+                    _read_derived_mask,
+                    _dynamic_mask,
+                ] = mmio_write_masks(*access, *address, *width, value.as_ref());
+                output.push(LinkedInstructionEffect::Mmio {
+                    site: located.site,
+                    block: None,
+                    access: access_label,
+                    width: *width,
+                    address: *address,
+                    register: register.clone(),
+                    mode: "static",
+                    paths,
+                    guards,
+                    value: value.as_ref().map(pseudo_value),
+                    modified_mask,
+                    preserved_mask,
+                    forced_zero_mask,
+                    forced_one_mask,
+                });
+            }
+            DraftReferenceEvent::IndexedMmio {
+                access,
+                width,
+                registers,
+                value,
+                ..
+            } => {
+                let access_label = access_label(*access);
+                for register in registers {
+                    let (paths, guards) =
+                        matching_mmio_paths(mmio_accesses, register.address, *width, access_label);
+                    let [
+                        modified_mask,
+                        preserved_mask,
+                        _inverted_mask,
+                        forced_zero_mask,
+                        forced_one_mask,
+                        _read_derived_mask,
+                        _dynamic_mask,
+                    ] = mmio_write_masks(*access, register.address, *width, value.as_ref());
+                    output.push(LinkedInstructionEffect::Mmio {
+                        site: located.site,
+                        block: None,
+                        access: access_label,
+                        width: *width,
+                        address: register.address,
+                        register: register.name.clone(),
+                        mode: "indexed-candidate",
+                        paths,
+                        guards,
+                        value: value.as_ref().map(pseudo_value),
+                        modified_mask,
+                        preserved_mask,
+                        forced_zero_mask,
+                        forced_one_mask,
+                    });
+                }
+            }
+            DraftReferenceEvent::PollMmio {
+                width, registers, ..
+            } => {
+                for register in registers {
+                    let (paths, guards) =
+                        matching_mmio_paths(mmio_accesses, register.address, *width, "poll");
+                    output.push(LinkedInstructionEffect::Mmio {
+                        site: located.site,
+                        block: None,
+                        access: "poll",
+                        width: *width,
+                        address: register.address,
+                        register: register.name.clone(),
+                        mode: "structural-poll",
+                        paths,
+                        guards,
+                        value: None,
+                        modified_mask: None,
+                        preserved_mask: None,
+                        forced_zero_mask: None,
+                        forced_one_mask: None,
+                    });
+                }
+            }
+            event @ DraftReferenceEvent::Memory { .. } => {
+                let mut effects = Vec::new();
+                collect_memory_object_access_from_event(
+                    event,
+                    "instruction",
+                    &read_sources,
+                    &mut effects,
+                );
+                attribute_data_symbols(&mut effects, resolver);
+                for effect in effects {
+                    let paths = matching_memory_paths(memory_accesses, &effect);
+                    output.push(LinkedInstructionEffect::Memory {
+                        site: located.site,
+                        block: None,
+                        access: effect.access,
+                        width: effect.width,
+                        object: effect.object,
+                        offset: effect.offset,
+                        paths,
+                        value: effect.value,
+                        value_pseudo: effect.value_pseudo,
+                        write_mask: effect.write_mask,
+                        preserved_mask: effect.preserved_mask,
+                        forced_zero_mask: effect.forced_zero_mask,
+                        forced_one_mask: effect.forced_one_mask,
+                    });
+                }
+            }
+            _ => {}
+        }
+    }
+    output.sort();
+    output.dedup();
+    output
+}
+
 fn collect_delay_from_event(
     event: &DraftReferenceEvent,
     path: &str,

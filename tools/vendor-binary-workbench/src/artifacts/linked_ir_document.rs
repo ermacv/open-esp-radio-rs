@@ -59,6 +59,7 @@ struct ReportSummary {
     mmio_registers: usize,
     mmio_functions: usize,
     mmio_access_shapes: usize,
+    instruction_effects: usize,
     mmio_field_candidate_registers: usize,
     mmio_field_candidates: usize,
     direct_mmio_predicates: usize,
@@ -148,6 +149,11 @@ impl ReportSummary {
             mmio_registers: report.mmio_registers.len(),
             mmio_functions: report.mmio_functions,
             mmio_access_shapes: report.mmio_access_shapes,
+            instruction_effects: report
+                .functions
+                .iter()
+                .map(|function| function.instruction_effects.len())
+                .sum(),
             mmio_field_candidate_registers,
             mmio_field_candidates,
             direct_mmio_predicates,
@@ -361,6 +367,7 @@ pub(crate) struct LinkedIrDocument<'a> {
     effect_summary_mode: &'static str,
     context_projection_mode: &'static str,
     memory_object_mode: &'static str,
+    instruction_effect_mode: &'static str,
     data_object_mode: &'static str,
     semantic_action_mode: &'static str,
     event_dispatch_mode: &'static str,
@@ -486,6 +493,7 @@ pub(crate) fn build_linked_ir_document<'a>(
         effect_summary_mode: "reachable-inventory-origin-preserving",
         context_projection_mode: "affine-simple-call-paths",
         memory_object_mode: "affine-argument-and-relocated-symbols",
+        instruction_effect_mode: "direct-origin-sites-with-basic-blocks",
         data_object_mode: "named-elf-objects-with-uninterpreted-initializers-and-symbolic-relocations",
         semantic_action_mode: "lexical-site-paths-factorized-cfg-guards-affine-root-bindings",
         event_dispatch_mode: "reviewed-contract-declared-role-projection",
@@ -550,6 +558,7 @@ pub(crate) fn render_linked_ir_bundle(document: &LinkedIrDocument<'_>) -> Result
         effect_summary_mode: document.effect_summary_mode,
         context_projection_mode: document.context_projection_mode,
         memory_object_mode: document.memory_object_mode,
+        instruction_effect_mode: document.instruction_effect_mode,
         data_object_mode: document.data_object_mode,
         semantic_action_mode: document.semantic_action_mode,
         event_dispatch_mode: document.event_dispatch_mode,

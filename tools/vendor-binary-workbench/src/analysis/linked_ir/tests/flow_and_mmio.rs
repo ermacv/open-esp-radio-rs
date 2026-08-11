@@ -1,6 +1,7 @@
 //! Structured pseudo flow, context projection, and MMIO field discovery.
 
 use super::*;
+use crate::LocatedReferenceEvent;
 
 #[test]
 fn pseudo_ir_keeps_a_named_call_and_structured_branch() {
@@ -37,6 +38,7 @@ fn pseudo_ir_keeps_a_named_call_and_structured_branch() {
         symbol: "vendor_parent".to_owned(),
         events: Vec::new(),
         located_events: Vec::new(),
+        located_reference_events: Vec::new(),
         reference_events: Vec::new(),
         reference_dependencies: vec!["vendor_child".to_owned()],
         blockers: Vec::new(),
@@ -73,6 +75,7 @@ fn context_map_recovers_argument_offsets_branch_paths_and_rmw_masks() {
         symbol: "update_context".to_owned(),
         events: Vec::new(),
         located_events: Vec::new(),
+        located_reference_events: Vec::new(),
         reference_events: Vec::new(),
         reference_dependencies: Vec::new(),
         blockers: Vec::new(),
@@ -128,6 +131,7 @@ fn memory_object_map_keeps_relocated_global_symbol_identity() {
         symbol: "update_global".to_owned(),
         events: Vec::new(),
         located_events: Vec::new(),
+        located_reference_events: Vec::new(),
         reference_events: vec![DraftReferenceEvent::Memory {
             access: MemoryAccess::Write,
             width: 16,
@@ -175,6 +179,7 @@ fn memory_object_map_distinguishes_global_pointer_from_its_runtime_pointee() {
         symbol: "update_indirect_state".to_owned(),
         events: Vec::new(),
         located_events: Vec::new(),
+        located_reference_events: Vec::new(),
         reference_events: vec![
             DraftReferenceEvent::Memory {
                 access: MemoryAccess::Read,
@@ -227,6 +232,7 @@ fn memory_object_map_keeps_absolute_address_space() {
         symbol: "update_absolute".to_owned(),
         events: Vec::new(),
         located_events: Vec::new(),
+        located_reference_events: Vec::new(),
         reference_events: vec![DraftReferenceEvent::Memory {
             access: MemoryAccess::Write,
             width: 32,
@@ -302,6 +308,7 @@ fn linked_absolute_table_base_is_not_reported_as_a_giant_context_offset() {
         symbol: "coex_core_pti_get".to_owned(),
         events: Vec::new(),
         located_events: Vec::new(),
+        located_reference_events: Vec::new(),
         reference_events: vec![DraftReferenceEvent::Memory {
             access: MemoryAccess::Read,
             width: 8,
@@ -329,6 +336,78 @@ fn linked_absolute_table_base_is_not_reported_as_a_giant_context_offset() {
 }
 
 #[test]
+fn instruction_effects_keep_exact_mmio_and_memory_sites() {
+    let memory = DraftReferenceEvent::Memory {
+        access: MemoryAccess::Write,
+        width: 32,
+        address: SymbolicValue::input(0).add_constant(4),
+        region: "caller-owned ABI argument RAM".to_owned(),
+        value: Some(SymbolicValue::Constant(7)),
+    };
+    let mmio = DraftReferenceEvent::Observable(ObservableEvent::Memory {
+        access: MemoryAccess::Write,
+        width: 32,
+        address: 0x2010_42b4,
+        register: "STA_BEACON_FILTER.CONTROL".to_owned(),
+        value: Some(SymbolicValue::Constant(0)),
+    });
+    let trace = FunctionAnalysis {
+        symbol: "instruction_sites".to_owned(),
+        events: Vec::new(),
+        located_events: Vec::new(),
+        located_reference_events: vec![
+            LocatedReferenceEvent {
+                site: 0x1004,
+                event: memory.clone(),
+            },
+            LocatedReferenceEvent {
+                site: 0x1008,
+                event: mmio.clone(),
+            },
+        ],
+        reference_events: vec![memory, mmio],
+        reference_dependencies: Vec::new(),
+        blockers: Vec::new(),
+        reference_blockers: Vec::new(),
+        return_value: SymbolicValue::Constant(0),
+        reference_flow: None,
+        unresolved_branch: None,
+    };
+    let resolver = ReferenceResolver {
+        symbols: Vec::new(),
+        symbols_by_address: BTreeMap::new(),
+        symbol_ids: BTreeMap::new(),
+        exported_symbol_keys: BTreeSet::new(),
+        relocated_calls: BTreeMap::new(),
+        pointer_context: direct::StructuralPointerContext::default(),
+        data_symbols: Vec::new(),
+        projected_direct_semantics: BTreeMap::new(),
+    };
+    let memory_accesses = memory_object_accesses_for_trace(&trace);
+    let mmio_accesses = mmio_accesses_for_trace(&trace);
+    let effects =
+        instruction_effects_for_trace(&trace, &resolver, &mmio_accesses, &memory_accesses);
+
+    assert!(effects.iter().any(|effect| matches!(
+        effect,
+        LinkedInstructionEffect::Memory {
+            site: 0x1004,
+            object: LinkedMemoryObject::Argument { index: 0 },
+            offset: 4,
+            ..
+        }
+    )));
+    assert!(effects.iter().any(|effect| matches!(
+        effect,
+        LinkedInstructionEffect::Mmio {
+            site: 0x1008,
+            address: 0x2010_42b4,
+            ..
+        }
+    )));
+}
+
+#[test]
 fn mmio_index_keeps_static_indexed_poll_and_write_bit_evidence() {
     assert_eq!(
         candidate_bit_ranges(0x3000_00f3, 32),
@@ -346,6 +425,7 @@ fn mmio_index_keeps_static_indexed_poll_and_write_bit_evidence() {
         symbol: "touch_registers".to_owned(),
         events: Vec::new(),
         located_events: Vec::new(),
+        located_reference_events: Vec::new(),
         reference_events: Vec::new(),
         reference_dependencies: Vec::new(),
         blockers: Vec::new(),

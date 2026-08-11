@@ -152,6 +152,32 @@ pub fn inspect_function_body(
     build_body(artifact, definition, labels)
 }
 
+/// Map exact instruction addresses to conservative basic-block identifiers
+/// without requiring a second artifact lookup.
+pub fn basic_block_ids_for_sites(
+    definition: &ArtifactSymbolDefinition,
+    sites: &BTreeSet<u32>,
+) -> Result<BTreeMap<u32, usize>> {
+    if sites.is_empty() {
+        return Ok(BTreeMap::new());
+    }
+    let body = build_body(Path::new("<analysis>"), definition.clone(), Vec::new())?;
+    let mut output = BTreeMap::new();
+    for site in sites {
+        let Some(offset) = u64::from(*site).checked_sub(definition.address) else {
+            continue;
+        };
+        if let Some(block) = body
+            .basic_blocks
+            .iter()
+            .find(|block| offset >= block.start_offset && offset < block.end_offset)
+        {
+            output.insert(*site, block.id);
+        }
+    }
+    Ok(output)
+}
+
 fn build_body(
     artifact: &Path,
     definition: ArtifactSymbolDefinition,

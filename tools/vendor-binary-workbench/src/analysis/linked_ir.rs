@@ -312,6 +312,21 @@ fn build_linked_functions_for_roots(
                 let context_accesses = context_accesses_for_memory_objects(&memory_accesses);
                 let context_fields = context_fields_for_accesses(&context_accesses);
                 let mmio_accesses = mmio_accesses_for_trace(&trace);
+                let mut instruction_effects = instruction_effects_for_trace(
+                    &trace,
+                    resolver,
+                    &mmio_accesses,
+                    &memory_accesses,
+                );
+                let effect_sites = instruction_effects
+                    .iter()
+                    .map(LinkedInstructionEffect::site)
+                    .collect::<BTreeSet<_>>();
+                let effect_blocks =
+                    artifact::basic_block_ids_for_sites(symbol, &effect_sites).unwrap_or_default();
+                for effect in &mut instruction_effects {
+                    effect.set_block(effect_blocks.get(&effect.site()).copied());
+                }
                 let delays = delays_for_trace(&trace);
                 let scenario_suggestions =
                     scenario_suggestions(Some(&trace), &direct_mmio_predicates, &mmio_accesses);
@@ -371,6 +386,7 @@ fn build_linked_functions_for_roots(
                     calls,
                     direct_mmio_predicates,
                     mmio_accesses,
+                    instruction_effects,
                     delays,
                     context_accesses,
                     context_fields,
@@ -413,6 +429,7 @@ fn build_linked_functions_for_roots(
                     calls,
                     direct_mmio_predicates,
                     mmio_accesses: Vec::new(),
+                    instruction_effects: Vec::new(),
                     delays: Vec::new(),
                     context_accesses: Vec::new(),
                     context_fields: Vec::new(),

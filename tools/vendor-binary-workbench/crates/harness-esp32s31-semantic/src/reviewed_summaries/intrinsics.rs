@@ -97,6 +97,7 @@ pub(crate) fn standard_memory_intrinsic_trace(
             symbol: symbol.name.clone(),
             events: Vec::new(),
             located_events: Vec::new(),
+            located_reference_events: Vec::new(),
             reference_events,
             reference_dependencies: Vec::new(),
             blockers: Vec::new(),

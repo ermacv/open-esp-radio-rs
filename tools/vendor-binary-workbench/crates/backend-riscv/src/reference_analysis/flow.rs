@@ -19,6 +19,8 @@ struct ReferencePath {
 pub(super) struct ExploredReferenceFlow {
     pub(super) flow: DraftReferenceFlow,
     pub(super) incomplete_effects: Vec<String>,
+    pub(super) located_events: Vec<LocatedObservableEvent>,
+    pub(super) located_reference_events: Vec<LocatedReferenceEvent>,
 }
 
 fn preserves_partial_reference_flow(blocker: &str) -> bool {
@@ -119,6 +121,8 @@ pub(super) fn explore_reference_flow(
     let mut queued = BTreeSet::from([BTreeMap::<u32, bool>::new()]);
     let mut paths = Vec::new();
     let mut incomplete_effects = BTreeSet::new();
+    let mut located_events = Vec::new();
+    let mut located_reference_events = Vec::new();
     let mut explored_states = 0usize;
 
     while let Some(forced_branches) = queue.pop_front() {
@@ -243,6 +247,16 @@ pub(super) fn explore_reference_flow(
                 .filter(|blocker| preserves_partial_reference_flow(blocker))
                 .cloned(),
         );
+        for event in trace.located_events {
+            if !located_events.contains(&event) {
+                located_events.push(event);
+            }
+        }
+        for event in trace.located_reference_events {
+            if !located_reference_events.contains(&event) {
+                located_reference_events.push(event);
+            }
+        }
         paths.push(ReferencePath {
             events: trace.reference_events.into(),
             return_value: trace.return_value,
@@ -257,6 +271,8 @@ pub(super) fn explore_reference_flow(
     Ok(ExploredReferenceFlow {
         flow: build_reference_flow(paths)?,
         incomplete_effects: incomplete_effects.into_iter().collect(),
+        located_events,
+        located_reference_events,
     })
 }
 

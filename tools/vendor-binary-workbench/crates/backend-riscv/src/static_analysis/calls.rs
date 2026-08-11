@@ -287,6 +287,7 @@ pub(super) fn apply_relocated_call(
         return StructuralCallControl::Stop;
     };
 
+    let intrinsic_event_start = state.reference_events.len();
     if target.is_none()
         && let Some(result) = inline_standard_memory_intrinsic(
             name,
@@ -303,6 +304,7 @@ pub(super) fn apply_relocated_call(
             &mut state.next_memory_read_token,
         )
     {
+        state.locate_reference_events_since(pc as u32, intrinsic_event_start);
         if !matches!(dest, Reg::ZERO | Reg::RA) {
             state.reference_blockers.push(format!(
                 "unsupported-memory-intrinsic-link-register at {pc:#x}: {name} uses {dest}"

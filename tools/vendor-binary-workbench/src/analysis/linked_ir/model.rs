@@ -336,6 +336,64 @@ pub(crate) struct LinkedMmioAccess {
     pub(crate) dynamic_mask: Option<u32>,
 }
 
+/// Canonical instruction-local MMIO or RAM effect.
+///
+/// Function-level access shapes remain useful summaries, but this record is
+/// the lossless join key used by investigation and UI consumers. A composed
+/// child effect belongs to the child function and is not assigned to the
+/// parent's call instruction.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub(crate) enum LinkedInstructionEffect {
+    Mmio {
+        site: u32,
+        block: Option<usize>,
+        access: &'static str,
+        width: u8,
+        address: u32,
+        register: String,
+        mode: &'static str,
+        paths: Vec<String>,
+        guards: Vec<String>,
+        value: Option<String>,
+        modified_mask: Option<u32>,
+        preserved_mask: Option<u32>,
+        forced_zero_mask: Option<u32>,
+        forced_one_mask: Option<u32>,
+    },
+    Memory {
+        site: u32,
+        block: Option<usize>,
+        access: &'static str,
+        width: u8,
+        object: LinkedMemoryObject,
+        offset: i64,
+        paths: Vec<String>,
+        value: Option<String>,
+        value_pseudo: Option<String>,
+        write_mask: Option<u32>,
+        preserved_mask: Option<u32>,
+        forced_zero_mask: Option<u32>,
+        forced_one_mask: Option<u32>,
+    },
+}
+
+impl LinkedInstructionEffect {
+    pub(crate) const fn site(&self) -> u32 {
+        match self {
+            Self::Mmio { site, .. } | Self::Memory { site, .. } => *site,
+        }
+    }
+
+    pub(crate) fn set_block(&mut self, block: Option<usize>) {
+        match self {
+            Self::Mmio { block: current, .. } | Self::Memory { block: current, .. } => {
+                *current = block
+            }
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub(crate) struct LinkedMmioBitRange {
     pub(crate) least_significant_bit: u8,
@@ -657,6 +715,7 @@ pub(crate) struct LinkedIrFunction {
     pub(crate) calls: Vec<LinkedCall>,
     pub(crate) direct_mmio_predicates: Vec<LinkedDirectMmioPredicate>,
     pub(crate) mmio_accesses: Vec<LinkedMmioAccess>,
+    pub(crate) instruction_effects: Vec<LinkedInstructionEffect>,
     pub(crate) delays: Vec<LinkedDelay>,
     pub(crate) context_accesses: Vec<ContextAccess>,
     pub(crate) context_fields: Vec<ContextField>,

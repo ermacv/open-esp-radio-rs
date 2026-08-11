@@ -8,6 +8,7 @@ fn indexed_mmio_is_not_an_empty_exact_observable_trace() {
         symbol: "indexed_queue_read".to_owned(),
         events: Vec::new(),
         located_events: Vec::new(),
+        located_reference_events: Vec::new(),
         reference_events: vec![DraftReferenceEvent::IndexedMmio {
             access: MemoryAccess::Read,
             width: 32,

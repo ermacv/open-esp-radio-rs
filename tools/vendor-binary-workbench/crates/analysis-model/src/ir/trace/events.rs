@@ -245,6 +245,19 @@ pub enum DraftReferenceEvent {
     },
 }
 
+/// Instruction-local evidence for a reference event that directly originates
+/// in the decoded function body.
+///
+/// Composed child effects deliberately keep the child function's own sites;
+/// this record is only produced while tracing the instruction that created
+/// the event. It therefore remains useful even when higher-level flow
+/// recovery later restructures or deduplicates the reference events.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LocatedReferenceEvent {
+    pub site: u32,
+    pub event: DraftReferenceEvent,
+}
+
 pub fn reference_event_is_mmio_read(event: &DraftReferenceEvent) -> bool {
     matches!(
         event,

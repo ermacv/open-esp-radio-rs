@@ -223,6 +223,7 @@ fn test_reference_intrinsic(
         symbol: symbol.name.clone(),
         events: Vec::new(),
         located_events: Vec::new(),
+        located_reference_events: Vec::new(),
         reference_events: vec![DraftReferenceEvent::DelayMicros {
             micros: SymbolicValue::input(0),
         }],

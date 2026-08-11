@@ -166,10 +166,22 @@ pub struct BlockerExplanationEvidence {
 pub struct InstructionEvidence {
     pub address: u64,
     pub block: Option<usize>,
+    pub effects: Vec<InstructionEffectEvidence>,
     pub call_targets: Vec<String>,
     pub semantic_operations: Vec<String>,
     pub blocker_ids: Vec<String>,
     pub decode_blocker: Option<String>,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+pub struct InstructionEffectEvidence {
+    pub kind: &'static str,
+    pub access: String,
+    pub width: u8,
+    pub target: String,
+    pub paths: Vec<String>,
+    pub guards: Vec<String>,
+    pub value: Option<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -873,12 +885,29 @@ fn instruction_evidence(
 ) -> Vec<InstructionEvidence> {
     #[derive(Default)]
     struct Evidence {
+        effects: BTreeSet<InstructionEffectEvidence>,
         calls: BTreeSet<String>,
         operations: BTreeSet<String>,
         blockers: BTreeSet<String>,
         decode: Option<String>,
     }
     let mut sites = BTreeMap::<u64, Evidence>::new();
+    for effect in &function.instruction_effects {
+        let (kind, access, width, target, paths, guards, value) = effect.investigation_fields();
+        sites
+            .entry(u64::from(effect.site()))
+            .or_default()
+            .effects
+            .insert(InstructionEffectEvidence {
+                kind,
+                access: access.to_owned(),
+                width,
+                target,
+                paths: paths.to_vec(),
+                guards: guards.to_vec(),
+                value: value.map(str::to_owned),
+            });
+    }
     for call in &function.calls {
         let Some(site) = call.site else { continue };
         let evidence = sites.entry(u64::from(site)).or_default();
@@ -906,6 +935,7 @@ fn instruction_evidence(
                 let offset = address.checked_sub(runtime.address)?;
                 (offset >= block.start_offset && offset < block.end_offset).then_some(block.id)
             }),
+            effects: evidence.effects.into_iter().collect(),
             call_targets: evidence.calls.into_iter().collect(),
             semantic_operations: evidence.operations.into_iter().collect(),
             blocker_ids: evidence.blockers.into_iter().collect(),

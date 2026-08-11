@@ -439,6 +439,45 @@ pub(super) fn render(frame: &mut Frame<'_>, state: &BrowserState, area: Rect) {
                             Style::new().fg(Color::Yellow)
                         },
                     )));
+                    for semantic in &investigation.semantics {
+                        let Some(evidence) = semantic
+                            .instruction_evidence
+                            .iter()
+                            .find(|evidence| evidence.address == instruction.address)
+                        else {
+                            continue;
+                        };
+                        lines.extend(evidence.effects.iter().map(|effect| {
+                            let mut detail = format!(
+                                "      = {} {}{} {}",
+                                effect.kind, effect.access, effect.width, effect.target
+                            );
+                            if let Some(value) = &effect.value {
+                                detail.push_str(" value=");
+                                detail.push_str(value);
+                            }
+                            Line::from(Span::styled(detail, Style::new().fg(Color::Cyan)))
+                        }));
+                        lines.extend(effect_guard_lines(&evidence.effects));
+                        if !evidence.call_targets.is_empty() {
+                            lines.push(Line::from(format!(
+                                "      = calls {}",
+                                evidence.call_targets.join(", ")
+                            )));
+                        }
+                        if !evidence.semantic_operations.is_empty() {
+                            lines.push(Line::from(format!(
+                                "      = semantics {}",
+                                evidence.semantic_operations.join(", ")
+                            )));
+                        }
+                        lines.extend(
+                            evidence
+                                .blocker_ids
+                                .iter()
+                                .map(|blocker| Line::from(format!("      ! {blocker}"))),
+                        );
+                    }
                     lines.extend(instruction.relocations.iter().map(|relocation| {
                         Line::from(format!(
                             "      @ {} {} {:+}",
@@ -470,4 +509,14 @@ pub(super) fn render(frame: &mut Frame<'_>, state: &BrowserState, area: Rect) {
         detail_paragraph(" Function detail ", lines, state.detail_scroll()),
         detail,
     );
+}
+
+fn effect_guard_lines(
+    effects: &[crate::function_investigation::InstructionEffectEvidence],
+) -> Vec<Line<'static>> {
+    effects
+        .iter()
+        .filter(|effect| !effect.guards.is_empty())
+        .map(|effect| Line::from(format!("        guards: {}", effect.guards.join("; "))))
+        .collect()
 }

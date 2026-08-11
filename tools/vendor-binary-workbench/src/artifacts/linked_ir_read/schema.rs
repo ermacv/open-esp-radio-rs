@@ -1,4 +1,4 @@
-//! Complete owned DTO for linked-IR schema v43.
+//! Complete owned DTO for linked-IR schema v44.
 
 #![allow(
     dead_code,
@@ -20,6 +20,7 @@ pub(crate) struct LinkedIrStoredDocument {
     effect_summary_mode: String,
     context_projection_mode: String,
     memory_object_mode: String,
+    instruction_effect_mode: String,
     data_object_mode: String,
     semantic_action_mode: String,
     event_dispatch_mode: String,
@@ -84,6 +85,7 @@ pub(crate) struct StoredReportSummary {
     pub(crate) mmio_registers: usize,
     mmio_functions: usize,
     mmio_access_shapes: usize,
+    instruction_effects: usize,
     mmio_field_candidate_registers: usize,
     pub(crate) mmio_field_candidates: usize,
     direct_mmio_predicates: usize,
@@ -185,6 +187,7 @@ pub(crate) struct StoredFunction {
     pub(crate) calls: Vec<StoredCall>,
     direct_mmio_predicates: Vec<StoredDirectMmioPredicate>,
     pub(crate) mmio_accesses: Vec<StoredMmioAccess>,
+    pub(crate) instruction_effects: Vec<StoredInstructionEffect>,
     delays: Vec<StoredDelay>,
     context_accesses: Vec<StoredContextAccess>,
     context_fields: Vec<StoredFunctionContextField>,
@@ -534,6 +537,107 @@ impl StoredMmioAccess {
 }
 
 #[derive(Debug, Deserialize, Serialize)]
+#[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
+pub(crate) enum StoredInstructionEffect {
+    Mmio {
+        site: u32,
+        block: Option<usize>,
+        access: String,
+        width: u8,
+        address: u32,
+        register: String,
+        mode: String,
+        paths: Vec<String>,
+        guards: Vec<String>,
+        value: Option<String>,
+        modified_mask: Option<u32>,
+        preserved_mask: Option<u32>,
+        forced_zero_mask: Option<u32>,
+        forced_one_mask: Option<u32>,
+    },
+    Memory {
+        site: u32,
+        block: Option<usize>,
+        access: String,
+        width: u8,
+        object: StoredMemoryObject,
+        offset: i64,
+        paths: Vec<String>,
+        value: Option<String>,
+        value_pseudo: Option<String>,
+        write_mask: Option<u32>,
+        preserved_mask: Option<u32>,
+        forced_zero_mask: Option<u32>,
+        forced_one_mask: Option<u32>,
+    },
+}
+
+impl StoredInstructionEffect {
+    pub(crate) const fn site(&self) -> u32 {
+        match self {
+            Self::Mmio { site, .. } | Self::Memory { site, .. } => *site,
+        }
+    }
+
+    pub(crate) const fn block(&self) -> Option<usize> {
+        match self {
+            Self::Mmio { block, .. } | Self::Memory { block, .. } => *block,
+        }
+    }
+
+    pub(crate) fn investigation_fields(
+        &self,
+    ) -> (
+        &'static str,
+        &str,
+        u8,
+        String,
+        &[String],
+        &[String],
+        Option<&str>,
+    ) {
+        match self {
+            Self::Mmio {
+                access,
+                width,
+                address,
+                register,
+                paths,
+                guards,
+                value,
+                ..
+            } => (
+                "mmio",
+                access,
+                *width,
+                format!("{register} ({address:#010x})"),
+                paths,
+                guards,
+                value.as_deref(),
+            ),
+            Self::Memory {
+                access,
+                width,
+                object,
+                offset,
+                paths,
+                value_pseudo,
+                value,
+                ..
+            } => (
+                "memory",
+                access,
+                *width,
+                format!("{} {offset:+#x}", object.display_name()),
+                paths,
+                &[],
+                value_pseudo.as_deref().or(value.as_deref()),
+            ),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct StoredDelay {
     ordinal: usize,
@@ -626,6 +730,31 @@ pub(crate) enum StoredMemoryObject {
     ZeroedAllocation {
         call_token: u32,
     },
+}
+
+impl StoredMemoryObject {
+    fn display_name(&self) -> String {
+        match self {
+            Self::Argument { index } => format!("arg{index}"),
+            Self::Global { member, symbol } => member
+                .as_deref()
+                .map_or_else(|| symbol.clone(), |member| format!("{member}::{symbol}")),
+            Self::Dereferenced {
+                pointer,
+                pointer_offset,
+            } => format!("*({} {pointer_offset:+#x})", pointer.display_name()),
+            Self::Absolute {
+                address_space,
+                address,
+            } => format!("{address_space}:{address:#010x}"),
+            Self::Indexed {
+                object,
+                argument,
+                stride,
+            } => format!("{}[arg{argument} * {stride:#x}]", object.display_name()),
+            Self::ZeroedAllocation { call_token } => format!("calloc#{call_token}"),
+        }
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -944,4 +1073,36 @@ struct StoredDiagnosticFragment {
     first_ordinal: usize,
     occurrences: usize,
     message: String,
+}
+
+#[cfg(test)]
+mod instruction_effect_tests {
+    use super::*;
+
+    #[test]
+    fn instruction_effect_round_trip_preserves_origin_site_and_block() {
+        let effect = StoredInstructionEffect::Mmio {
+            site: 0x4008_1234,
+            block: Some(7),
+            access: "write".to_owned(),
+            width: 32,
+            address: 0x6000_8020,
+            register: "WIFI_CTRL".to_owned(),
+            mode: "direct".to_owned(),
+            paths: vec!["entry -> enabled".to_owned()],
+            guards: vec!["arg0 != 0".to_owned()],
+            value: Some("arg1 | 0x4".to_owned()),
+            modified_mask: Some(0x4),
+            preserved_mask: Some(!0x4),
+            forced_zero_mask: Some(0),
+            forced_one_mask: Some(0x4),
+        };
+
+        let encoded = serde_json::to_value(&effect).unwrap();
+        let decoded: StoredInstructionEffect = serde_json::from_value(encoded.clone()).unwrap();
+
+        assert_eq!(decoded.site(), 0x4008_1234);
+        assert_eq!(decoded.block(), Some(7));
+        assert_eq!(serde_json::to_value(decoded).unwrap(), encoded);
+    }
 }

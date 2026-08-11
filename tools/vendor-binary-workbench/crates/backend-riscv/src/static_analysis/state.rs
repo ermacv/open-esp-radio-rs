@@ -7,6 +7,7 @@ pub(super) struct StructuralTraceState {
     pub(super) floating_values: [SymbolicValue; 32],
     pub(super) events: Vec<ObservableEvent>,
     pub(super) located_events: Vec<LocatedObservableEvent>,
+    pub(super) located_reference_events: Vec<LocatedReferenceEvent>,
     pub(super) reference_events: Vec<DraftReferenceEvent>,
     pub(super) blockers: Vec<String>,
     pub(super) reference_blockers: Vec<String>,
@@ -23,6 +24,42 @@ pub(super) struct StructuralTraceState {
 }
 
 impl StructuralTraceState {
+    /// Preserve the instruction site for directly observed memory effects
+    /// before higher-level reference-flow recovery restructures the event
+    /// sequence.
+    pub(super) fn push_reference_event(&mut self, site: u32, event: DraftReferenceEvent) {
+        if matches!(
+            event,
+            DraftReferenceEvent::Observable(ObservableEvent::Memory { .. })
+                | DraftReferenceEvent::Memory { .. }
+                | DraftReferenceEvent::IndexedMmio { .. }
+                | DraftReferenceEvent::PollMmio { .. }
+        ) {
+            self.located_reference_events.push(LocatedReferenceEvent {
+                site,
+                event: event.clone(),
+            });
+        }
+        self.reference_events.push(event);
+    }
+
+    pub(super) fn locate_reference_events_since(&mut self, site: u32, start: usize) {
+        for event in &self.reference_events[start..] {
+            if matches!(
+                event,
+                DraftReferenceEvent::Observable(ObservableEvent::Memory { .. })
+                    | DraftReferenceEvent::Memory { .. }
+                    | DraftReferenceEvent::IndexedMmio { .. }
+                    | DraftReferenceEvent::PollMmio { .. }
+            ) {
+                self.located_reference_events.push(LocatedReferenceEvent {
+                    site,
+                    event: event.clone(),
+                });
+            }
+        }
+    }
+
     pub(super) fn new(specialized_arguments: Option<&Rv32CallArguments>) -> Self {
         let mut values = core::array::from_fn(|_| SymbolicValue::Unknown);
         values[0] = SymbolicValue::Constant(0);
@@ -56,6 +93,7 @@ impl StructuralTraceState {
             floating_values: core::array::from_fn(|_| SymbolicValue::Unknown),
             events: Vec::new(),
             located_events: Vec::new(),
+            located_reference_events: Vec::new(),
             reference_events: Vec::new(),
             blockers: Vec::new(),
             reference_blockers: Vec::new(),
@@ -82,6 +120,7 @@ impl StructuralTraceState {
         StructuralCheckpoint {
             events_len: self.events.len(),
             located_events_len: self.located_events.len(),
+            located_reference_events_len: self.located_reference_events.len(),
             reference_events_len: self.reference_events.len(),
             blockers_len: self.blockers.len(),
             reference_blockers_len: self.reference_blockers.len(),
@@ -97,6 +136,8 @@ impl StructuralTraceState {
     pub(super) fn restore_checkpoint(&mut self, checkpoint: StructuralCheckpoint) {
         self.events.truncate(checkpoint.events_len);
         self.located_events.truncate(checkpoint.located_events_len);
+        self.located_reference_events
+            .truncate(checkpoint.located_reference_events_len);
         self.reference_events
             .truncate(checkpoint.reference_events_len);
         self.blockers.truncate(checkpoint.blockers_len);
@@ -136,6 +177,7 @@ impl StructuralTraceState {
             symbol: symbol.name.clone(),
             events: self.events,
             located_events: self.located_events,
+            located_reference_events: self.located_reference_events,
             reference_events: self.reference_events,
             reference_dependencies: Vec::new(),
             blockers: self.blockers,

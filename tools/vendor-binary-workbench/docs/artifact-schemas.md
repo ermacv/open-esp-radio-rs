@@ -15,7 +15,7 @@ part of their contract; consumers must parse the typed structure.
 | Symbol inventory | 4 | `symbols inventory` | `artifacts/symbol_inventory.rs`, `artifacts/symbol_inventory/read.rs` |
 | MMIO discovery facts | 5 | `mmio discover` | `artifacts/mmio_facts.rs`, `artifacts/mmio_facts_read.rs` |
 | Interface discovery facts | 5 | `interfaces discover` | `artifacts/interface_facts.rs`, `artifacts/interface_facts_read.rs` |
-| Linked IR | 43 | `ir export` | `artifacts/linked_ir_document.rs`, `artifacts/linked_ir_read.rs` |
+| Linked IR | 44 | `ir export` | `artifacts/linked_ir_document.rs`, `artifacts/linked_ir_read.rs` |
 | Review scopes | 7 | `project analyze` | `review_scopes.rs`, `review_scopes/model.rs` |
 | Verification report | 8 | `verify source` / `verify inventory` | `verification/report.rs` |
 | Project verification report | 8 | `project verify` | `verification/project_report.rs` |
@@ -25,11 +25,11 @@ currency therefore does not depend on the process working directory used by a
 later `project status` or `project check`; generated reports remain local
 project state and are regenerated when the checkout moves.
 
-MMIO schema 5, interface schema 5 and linked-IR schema 43 carry
+MMIO schema 5, interface schema 5 and linked-IR schema 44 carry
 reviewed-code-boundary provenance. MMIO and interface artifacts record the accepted boundary count per
 input. Linked IR retains the complete reviewed physical ranges so downstream
 reviewers can distinguish ordinary ELF symbol roots from promoted gap roots.
-Linked-IR schema 43 also carries static data objects, uninterpreted initializer
+Linked-IR schema 44 also carries static data objects, uninterpreted initializer
 bytes, symbolic data relocations and function xrefs. Relocatable archive
 members retain section-relative offsets; these are evidence identities, never
 invented runtime addresses or nominal source types.

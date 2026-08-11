@@ -1,4 +1,4 @@
-//! Schema-v37 linked-IR projection into function-review facts.
+//! Current linked-IR projection into function-review facts.
 
 use std::collections::BTreeSet;
 

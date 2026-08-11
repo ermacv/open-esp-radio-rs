@@ -133,6 +133,12 @@ fn single_read_backedge_becomes_a_structural_mmio_poll() {
         "poll multiplicity is not a linear direct trace"
     );
     assert_eq!(trace.reference_events.len(), 1);
+    assert_eq!(trace.located_reference_events.len(), 1);
+    assert_eq!(trace.located_reference_events[0].site, 0x2010_0004);
+    assert!(matches!(
+        trace.located_reference_events[0].event,
+        DraftReferenceEvent::PollMmio { .. }
+    ));
     let DraftReferenceEvent::PollMmio {
         width,
         address,

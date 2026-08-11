@@ -9,6 +9,7 @@ fn renders_modeled_direct_platform_call_and_constant_guard() {
         symbol: "fixed_xtal".to_owned(),
         events: Vec::new(),
         located_events: Vec::new(),
+        located_reference_events: Vec::new(),
         reference_events: vec![DraftReferenceEvent::ModeledDirectCall {
             token: 0,
             site: 0x1000,
@@ -53,6 +54,7 @@ fn does_not_compact_a_composed_call_result_that_escapes_the_loop() {
         symbol: "escaping_call_result".to_owned(),
         events: Vec::new(),
         located_events: Vec::new(),
+        located_reference_events: Vec::new(),
         reference_events,
         reference_dependencies: vec!["phy_byte_to_word".to_owned()],
         blockers: Vec::new(),
@@ -139,6 +141,7 @@ fn renders_both_words_of_one_ordered_wide_division() {
         symbol: "wide_divide".to_owned(),
         events: Vec::new(),
         located_events: Vec::new(),
+        located_reference_events: Vec::new(),
         reference_events: vec![DraftReferenceEvent::WideSignedDivide {
             token: 0,
             dividend_low: SymbolicValue::input(0),

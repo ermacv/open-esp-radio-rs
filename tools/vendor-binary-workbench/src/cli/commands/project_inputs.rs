@@ -280,14 +280,26 @@ fn write_atomic(path: &Path, contents: &str) -> Result<()> {
 }
 
 fn print_human(report: &ProjectInputsReport) {
-    outputln!("Project inputs: {} — {}", report.status, report.output);
-    for binding in &report.bindings {
-        outputln!(
-            "  {:<32} {:<8} {}",
-            binding.role,
-            binding.container,
-            binding.path
-        );
-    }
-    outputln!("Next: {}", report.next_command);
+    use crate::cli::{output, table};
+
+    outputln!("{}", output::heading("Project inputs"));
+    outputln!("Run spec: {}", report.output);
+    outputln!(
+        "\n{}",
+        output::success(format!("READY — {}", report.status))
+    );
+    outputln!("\n{}", output::heading("Bindings"));
+    outputln!(
+        "{}",
+        table::render(
+            ["Role", "Container", "Path"],
+            report.bindings.iter().map(|binding| [
+                binding.role.clone(),
+                binding.container.to_owned(),
+                binding.path.clone(),
+            ])
+        )
+    );
+    outputln!("\n{}", output::heading("Next"));
+    outputln!("1. {}", report.next_command);
 }

@@ -363,6 +363,7 @@ fn explicit_cli_arguments_remain_authoritative_after_full_resolution() {
 
     let resolved = resolve_from(
         parse(&[
+            "advanced",
             "image",
             "audit-targets",
             "--project",
@@ -401,6 +402,7 @@ fn project_symbol_inventory_supplies_the_default_report_path() {
 
     let resolved = resolve_from(
         parse(&[
+            "advanced",
             "symbols",
             "inventory",
             "--check",
@@ -415,7 +417,7 @@ fn project_symbol_inventory_supplies_the_default_report_path() {
     };
     assert!(arguments.check);
     assert_eq!(
-        arguments.json_report,
+        arguments.output,
         Some(directory.join("generated/symbols.json"))
     );
 

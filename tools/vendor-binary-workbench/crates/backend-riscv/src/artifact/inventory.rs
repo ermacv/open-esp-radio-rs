@@ -2,7 +2,6 @@
 
 use std::{
     collections::{BTreeMap, BTreeSet},
-    fs,
     path::Path,
 };
 
@@ -394,7 +393,7 @@ fn inspect_object(data: &[u8], member: Option<String>) -> Result<ArtifactObjectI
 /// are not decodable function bodies.
 #[tracing::instrument(name = "inspect_riscv_artifact", skip_all, fields(path = %path.display()))]
 pub fn inspect_artifact(path: &Path) -> Result<ArtifactInventory> {
-    let data = fs::read(path)?;
+    let data = crate::read_artifact(path)?;
     match FileKind::parse(data.as_slice())? {
         FileKind::Archive => {
             let archive = ArchiveFile::parse(data.as_slice())?;

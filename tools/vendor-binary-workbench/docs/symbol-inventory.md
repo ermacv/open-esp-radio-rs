@@ -5,10 +5,10 @@ It answers what ELF and archive symbol tables actually contain before function
 recovery, MMIO analysis, or platform semantics are applied.
 
 ```console
-cargo vendor-binary-workbench symbols inventory \
+cargo vendor-binary-workbench advanced symbols inventory \
   --project verification/vendor/targets/esp32s31/vendor-project.toml \
   --run-spec /path/to/local.toml \
-  --json-report generated/facts/symbols.json
+  --output generated/facts/symbols.json
 ```
 
 Use `--name-prefix PREFIX` for a focused investigation and
@@ -27,7 +27,7 @@ output = "generated/findings/symbols.json"
 output = "generated/findings/navigation.json"
 ```
 
-With that table, `--json-report` is optional. `symbols inventory --check`
+With that table, `--output` is optional. `symbols inventory --check`
 recreates and compares the report without modifying it. `project analyze`
 includes the same operation as its first independent evidence stage. Filters
 remain CLI-only so a project artifact cannot silently omit symbols needed by

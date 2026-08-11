@@ -53,6 +53,33 @@ impl IrDoctorReport {
             }
         }
     }
+
+    pub(super) fn issues(&self) -> Vec<String> {
+        let mut issues = Vec::new();
+        for profile in &self.profiles {
+            if !profile.missing.is_empty() {
+                issues.push(format!(
+                    "linked IR profile {:?} is missing source bindings: {}",
+                    profile.id,
+                    profile.missing.join(", ")
+                ));
+            }
+            if profile.output_status == "not-generated" {
+                issues.push(format!(
+                    "linked IR profile {:?} has not been generated ({})",
+                    profile.id,
+                    profile.output.display()
+                ));
+            }
+            for diagnostic in &profile.diagnostics {
+                issues.push(format!(
+                    "linked IR profile {:?} {}: {}",
+                    profile.id, diagnostic.kind, diagnostic.error
+                ));
+            }
+        }
+        issues
+    }
 }
 
 #[derive(Serialize)]

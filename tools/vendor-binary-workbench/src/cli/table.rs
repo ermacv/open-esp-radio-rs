@@ -1,6 +1,9 @@
 //! Small, presentation-only table helper for human command output.
 
-use tabled::{builder::Builder, settings::Style};
+use tabled::{
+    builder::Builder,
+    settings::{Style, Width, peaker::PriorityRight},
+};
 
 /// Bound a human-only table cell without changing the structured report.
 ///
@@ -26,6 +29,14 @@ pub(super) fn render<const COLUMNS: usize>(
     headers: [&str; COLUMNS],
     rows: impl IntoIterator<Item = [String; COLUMNS]>,
 ) -> String {
+    render_at_width(headers, rows, super::output::human_width())
+}
+
+fn render_at_width<const COLUMNS: usize>(
+    headers: [&str; COLUMNS],
+    rows: impl IntoIterator<Item = [String; COLUMNS]>,
+    width: usize,
+) -> String {
     let mut builder = Builder::default();
     builder.push_record(headers);
     for row in rows {
@@ -33,6 +44,13 @@ pub(super) fn render<const COLUMNS: usize>(
     }
     let mut table = builder.build();
     table.with(Style::rounded());
+    // Preserve short identity/status columns and spend the wrapping budget on
+    // the widest descriptive column (normally a path or explanation).
+    table.with(
+        Width::wrap(width)
+            .keep_words(true)
+            .priority(PriorityRight::new()),
+    );
     table.to_string()
 }
 
@@ -54,5 +72,22 @@ mod tests {
         assert_eq!(compact("register", 5), "regi…");
         assert_eq!(compact("радио", 4), "рад…");
         assert_eq!(compact("radio", 0), "");
+    }
+
+    #[test]
+    fn narrow_tables_preserve_short_identity_columns() {
+        let table = render_at_width(
+            ["Role", "State", "Path"],
+            [[
+                "rust-artifact".into(),
+                "missing".into(),
+                "/a/very/long/path/to/a/generated/verification/artifact".into(),
+            ]],
+            40,
+        );
+        assert!(table.contains("Role"));
+        assert!(table.contains("State"));
+        assert!(table.contains("rust-artifact"));
+        assert!(table.contains("missing"));
     }
 }

@@ -13,6 +13,7 @@ pub(super) fn command_span(command: &Command) -> Option<Span> {
         | Command::ProjectConfigure(_)
         | Command::ProjectInputsInit(_)
         | Command::ProjectDoctor(_)
+        | Command::ProjectFiles(_)
         | Command::ProjectStatus(_)
         | Command::ProjectBrowse(_)
         | Command::FunctionInitPack(_)

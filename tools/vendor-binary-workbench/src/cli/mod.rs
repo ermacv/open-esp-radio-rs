@@ -15,6 +15,7 @@ mod progress;
 pub(crate) mod render;
 mod resolver;
 mod table;
+mod terminal;
 mod ui;
 mod values;
 
@@ -35,7 +36,7 @@ pub(crate) fn output_line(arguments: std::fmt::Arguments<'_>) {
 pub(crate) fn run() -> Result<bool> {
     let invocation = ParsedInvocation::parse(std::env::args().skip(1))?;
     ui::init(&invocation.ui)?;
-    output::init(invocation.ui.format);
+    output::init(&invocation.ui);
     let progress = progress::command_span(&invocation.command);
     let _entered = progress.as_ref().map(tracing::Span::enter);
     dispatch::run(resolver::resolve(invocation)?)

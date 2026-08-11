@@ -16,7 +16,7 @@ JSON report for tools and dashboards:
 cargo vendor-binary-workbench project status \
   --project verification/vendor/targets/esp32s31/vendor-project.toml \
   --run-spec /path/to/local.toml \
-  --json-report generated/reports/project-status.json
+  --output generated/reports/project-status.json
 ```
 
 The report is deterministic for the same project, local bindings and generated
@@ -75,11 +75,11 @@ evidence:
 cargo vendor-binary-workbench project status \
   --project PATH/vendor-project.toml \
   --run-spec PATH/local.toml \
-  --json-report PATH/generated/reports/project-status.json \
+  --output PATH/generated/reports/project-status.json \
   --check --deny-incomplete
 ```
 
-`--check` requires `--json-report` and never creates or updates the file. It
+`--check` requires `--output` and never creates or updates the file. It
 fails when the stored document differs. This detects newly discovered MMIO,
 new interface slots, stale IR, review regressions, or changed publication
 outputs without invoking `project analyze` or `project publish`.

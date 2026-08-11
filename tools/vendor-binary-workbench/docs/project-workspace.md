@@ -76,7 +76,7 @@ crate-name = "device_pac"
 pack = "registers/api.toml"
 output = "generated/pac/src/generated.rs"
 
-[registers.toml]
+[registers.evidence]
 catalogs = ["registers/evidence.toml"]
 
 [interfaces]
@@ -141,7 +141,7 @@ cargo vendor-binary-workbench project inputs init \
   --bind source-artifact:rom=/path/to/rom.elf \
   --bind source-artifact:archive=/path/to/linked-libphy.elf
 
-cargo vendor-binary-workbench mmio discover \
+cargo vendor-binary-workbench advanced mmio discover \
   --project verification/vendor/targets/esp32s31/vendor-project.toml
 ```
 
@@ -360,13 +360,14 @@ From inside a project tree, the short form is sufficient:
 cargo vendor-binary-workbench project doctor
 ```
 
-The default output is a compact human report. `--format json` or
-`--format jsonl` emits the schema-1 `project-doctor` report containing project
+The default output is a task-first human report; use `--details` for the full
+capability and input inventory. `--format json` emits the schema-2
+`project-doctor` report containing project
 and target identity, typed capability details, IR/function readiness, run-spec
 state, inspected inputs, diagnostics, and aggregate error/warning counts.
 
-For lifecycle automation, `project status` expresses the same project as six stable
-readiness phases and can write deterministic schema-1 JSON. It distinguishes a
+For lifecycle automation, `project status` expresses the same project as stable
+readiness phases and can write deterministic schema-3 JSON. It distinguishes a
 valid but incomplete analysis workspace from invalid configuration and from a
 publication-ready register workspace. See
 [project status and lifecycle readiness](project-status.md).
@@ -429,10 +430,10 @@ candidates. CMSIS-SVD contains hardware description only; the project memory
 map is the source of address classification.
 
 ```console
-cargo vendor-binary-workbench mmio discover \
+cargo vendor-binary-workbench advanced mmio discover \
   --project verification/vendor/targets/esp32s31/vendor-project.toml \
   --run-spec /path/to/local.toml \
-  --json-report generated/findings/mmio.json
+  --output generated/findings/mmio.json
 ```
 
 Supplying any explicit `--range` suppresses the project range defaults for

@@ -27,7 +27,7 @@ type DebugSymbolKey = (String, Option<String>, Option<u32>, Option<u32>);
 type DebugSymbolMap = BTreeMap<DebugSymbolKey, ArtifactDebugSymbol>;
 
 pub fn inspect_rust_debug_symbols(path: &Path) -> Result<Vec<ArtifactDebugSymbol>> {
-    let bytes = std::fs::read(path)?;
+    let bytes = crate::read_artifact(path)?;
     let object = object::File::parse(bytes.as_slice())?;
     let loader = addr2line::Loader::new(path).ok();
     let text_symbols = object

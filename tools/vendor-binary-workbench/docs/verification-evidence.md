@@ -6,7 +6,7 @@
 The human view is a renderer over that model; JSON and JSONL serialize the same
 data. Diagnostics and tracing use stderr and cannot corrupt stdout.
 
-`verify inventory --json-report PATH` persists the complete schema-v8 command
+`verify inventory --output PATH` persists the complete schema-v8 command
 report, including:
 
 - target and gate identity;
@@ -50,17 +50,17 @@ The baseline is not rewritten during protected verification. First persist the
 complete report, including a failing result:
 
 ```console
-cargo vendor-binary-workbench-esp32s31 verify inventory \
+cargo vendor-binary-workbench advanced verify inventory \
   --project verification/vendor/targets/esp32s31/vendor-project.toml \
   --run-spec /path/to/authenticated.toml \
   --gate regression --match-floor 104 \
-  --json-report /tmp/esp32s31-verification.json
+  --output /tmp/esp32s31-verification.json
 ```
 
 Then produce a separate deterministic candidate:
 
 ```console
-cargo vendor-binary-workbench verify evidence \
+cargo vendor-binary-workbench advanced verify evidence \
   --project verification/vendor/targets/esp32s31/vendor-project.toml \
   --report /tmp/esp32s31-verification.json \
   --candidate /tmp/esp32s31.candidate.toml

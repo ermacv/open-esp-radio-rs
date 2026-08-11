@@ -33,7 +33,7 @@ impl EffectiveCodeCatalog {
             .output;
         if !inventory.is_file() {
             return Err(crate::Error::invalid(format!(
-                "code-boundary facts are missing at {}; run `vendor-binary-workbench symbols inventory --project PATH` first",
+                "code-boundary facts are missing at {}; run `vendor-binary-workbench advanced symbols inventory --project PATH` first",
                 inventory.display(),
             )));
         }

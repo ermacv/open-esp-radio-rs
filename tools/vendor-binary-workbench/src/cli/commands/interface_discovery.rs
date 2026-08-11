@@ -133,9 +133,9 @@ pub(super) fn run(
     project: Option<&crate::project::ProjectSpec>,
 ) -> Result<bool> {
     let options = resolve_options(arguments);
-    if options.check && options.json_report.is_none() {
+    if options.check && options.output.is_none() {
         return Err(crate::Error::invalid(
-            "interfaces discover --check requires --json-report PATH",
+            "interfaces discover --check requires --output PATH",
         ));
     }
     let inputs = selected_inputs(run_spec, &options)?;
@@ -160,7 +160,7 @@ pub(super) fn run(
     if !crate::cli::output::structured(&document) {
         print_report(&discovery);
     }
-    if let Some(path) = options.json_report.as_deref() {
+    if let Some(path) = options.output.as_deref() {
         let output = crate::artifacts::render_interface_facts(&document)?;
         crate::application::generated_file::write_or_check(
             path,

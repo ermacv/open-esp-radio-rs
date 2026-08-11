@@ -51,21 +51,13 @@ pub(super) fn run(arguments: VerifyEvidenceArgs) -> Result<bool> {
     if !crate::cli::output::structured(&review) {
         crate::cli::render::evidence_comparison(&review.comparison);
         if let Some(candidate) = &review.candidate {
-            outputln!(
-                "EVIDENCE-CANDIDATE\t{}\tentries={}",
-                candidate,
-                evidence.len()
-            );
+            outputln!("\nCandidate: {candidate} ({} entries)", evidence.len());
         }
-        outputln!(
-            "EVIDENCE-REVIEW\t{}\tbaseline={}\treport={}\treport-sha256={}\texpected={}\tactual={}",
-            if passed { "PASS" } else { "FAIL" },
-            review.baseline,
-            review.report,
-            review.report_sha256,
-            review.comparison.expected,
-            review.comparison.actual
-        );
+        outputln!("\nBaseline: {}", review.baseline);
+        outputln!("Report:   {}", review.report);
+        if crate::cli::output::details() {
+            outputln!("SHA-256: {}", review.report_sha256);
+        }
     }
     Ok(passed)
 }

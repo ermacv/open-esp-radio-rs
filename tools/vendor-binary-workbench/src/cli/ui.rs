@@ -1,9 +1,6 @@
 //! Process-wide diagnostic and tracing configuration.
 
-use std::{
-    env,
-    io::{IsTerminal, stderr},
-};
+use std::env;
 
 use indicatif::ProgressStyle;
 use tracing::level_filters::LevelFilter;
@@ -18,18 +15,14 @@ use tracing_subscriber::{
     util::SubscriberInitExt,
 };
 
-use super::args::{ColorMode, UiArgs};
+use super::args::UiArgs;
 use crate::Result;
 
 pub(super) fn init(arguments: &UiArgs) -> Result<()> {
     let filter = diagnostic_filter(arguments);
-    let stderr_is_terminal = stderr().is_terminal();
+    let stderr_is_terminal = super::terminal::stderr_is_terminal();
     let progress_enabled = super::progress::enabled_for(arguments, stderr_is_terminal);
-    let ansi = match arguments.color {
-        ColorMode::Auto => stderr_is_terminal,
-        ColorMode::Always => true,
-        ColorMode::Never => false,
-    };
+    let ansi = super::terminal::color_enabled(arguments.color, stderr_is_terminal);
     miette::set_hook(Box::new(move |_| {
         Box::new(miette::MietteHandlerOpts::new().color(ansi).build())
     }))?;

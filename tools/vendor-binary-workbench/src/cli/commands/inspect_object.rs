@@ -17,7 +17,7 @@ struct ObjectInvestigationReport {
 struct ObjectObservation {
     profile: String,
     report: String,
-    object: serde_json::Value,
+    object: crate::artifacts::StoredDataObject,
 }
 
 pub(super) fn run(arguments: InspectObjectArgs, project: &ProjectSpec) -> Result<bool> {
@@ -42,7 +42,7 @@ pub(super) fn run(arguments: InspectObjectArgs, project: &ProjectSpec) -> Result
             observations.push(ObjectObservation {
                 profile: profile.id.clone(),
                 report: profile.output.display().to_string(),
-                object: serde_json::to_value(object)?,
+                object,
             });
         }
     }
@@ -58,57 +58,38 @@ pub(super) fn run(arguments: InspectObjectArgs, project: &ProjectSpec) -> Result
 }
 
 fn render_human(report: &ObjectInvestigationReport) {
-    crate::cli::output::line(format_args!(
-        "OBJECT {}:{}  observations={}",
-        report.source,
-        report.symbol,
-        report.observations.len()
-    ));
+    outputln!("{}", crate::cli::output::heading("Memory object"));
+    outputln!("Object:       {}:{}", report.source, report.symbol);
+    outputln!("Observations: {}", report.observations.len());
     for observation in &report.observations {
         let object = &observation.object;
-        let member = object
-            .get("member")
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or("<linked-image>");
-        let address = object
-            .get("address")
-            .and_then(serde_json::Value::as_str)
-            .unwrap_or("unresolved");
-        let size = object
-            .get("size")
-            .and_then(serde_json::Value::as_u64)
-            .unwrap_or(0);
-        let xrefs = object
-            .get("xrefs")
-            .and_then(serde_json::Value::as_array)
-            .map_or(0, Vec::len);
-        crate::cli::output::line(format_args!(
-            "  profile={} member={} address={} size={} xrefs={} report={}",
-            observation.profile, member, address, size, xrefs, observation.report
-        ));
-        if let Some(entries) = object.get("xrefs").and_then(serde_json::Value::as_array) {
-            for xref in entries.iter().take(50) {
-                crate::cli::output::line(format_args!(
-                    "    {} reads={} writes={} offsets={}",
-                    xref.get("function")
-                        .and_then(serde_json::Value::as_str)
-                        .unwrap_or("unknown"),
-                    xref.get("reads")
-                        .and_then(serde_json::Value::as_u64)
-                        .unwrap_or(0),
-                    xref.get("writes")
-                        .and_then(serde_json::Value::as_u64)
-                        .unwrap_or(0),
-                    xref.get("offsets")
-                        .and_then(serde_json::Value::as_array)
-                        .map(|values| values
-                            .iter()
-                            .filter_map(serde_json::Value::as_str)
-                            .collect::<Vec<_>>()
-                            .join(", "))
-                        .unwrap_or_default(),
-                ));
-            }
+        outputln!("\n{}", crate::cli::output::heading(&observation.profile));
+        outputln!(
+            "Member:  {}",
+            object.member.as_deref().unwrap_or("<linked-image>")
+        );
+        outputln!(
+            "Address: {}",
+            object.address.as_deref().unwrap_or("unresolved")
+        );
+        outputln!("Size:    {} byte(s)", object.size);
+        outputln!("Uses:    {}", object.xrefs.len());
+        if crate::cli::output::details() {
+            outputln!("Report:  {}", observation.report);
+        }
+        if !object.xrefs.is_empty() {
+            outputln!(
+                "{}",
+                crate::cli::table::render(
+                    ["Function", "Reads", "Writes", "Offsets"],
+                    object.xrefs.iter().take(50).map(|xref| [
+                        xref.function.clone(),
+                        xref.reads.to_string(),
+                        xref.writes.to_string(),
+                        xref.offsets.join(", "),
+                    ]),
+                )
+            );
         }
     }
 }

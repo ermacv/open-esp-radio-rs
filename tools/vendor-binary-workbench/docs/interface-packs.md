@@ -33,7 +33,7 @@ reviewed interface pack may bind a concrete observed slot to an operation.
 Generate facts from local vendor inputs:
 
 ```console
-cargo vendor-binary-workbench interfaces discover \
+cargo vendor-binary-workbench advanced interfaces discover \
   --project verification/vendor/targets/esp32s31/vendor-project.toml \
   --run-spec /path/to/local.toml
 ```
@@ -41,7 +41,7 @@ cargo vendor-binary-workbench interfaces discover \
 Create a pack once:
 
 ```console
-cargo vendor-binary-workbench interfaces init-pack \
+cargo vendor-binary-workbench advanced interfaces init-pack \
   --project verification/vendor/targets/esp32s31/vendor-project.toml
 ```
 
@@ -53,7 +53,7 @@ as computed review backlog. `--output PATH` creates a separate draft.
 After editing, validate the complete workspace:
 
 ```console
-cargo vendor-binary-workbench interfaces validate \
+cargo vendor-binary-workbench advanced interfaces validate \
   --project verification/vendor/targets/esp32s31/vendor-project.toml
 ```
 

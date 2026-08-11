@@ -59,16 +59,14 @@ pub(super) fn run(arguments: InspectCompareArgs, svd: &MmioMap) -> Result<bool> 
     let render = || {
         crate::cli::render::trace(&left_trace);
         crate::cli::render::trace(&right_trace);
-        outputln!(
-            "VERDICT\t{}",
-            if !complete {
-                "INCOMPLETE"
-            } else if equal {
-                "MATCH"
-            } else {
-                "DIFF"
-            }
-        );
+        let verdict = if !complete {
+            crate::cli::output::warning("INCOMPLETE")
+        } else if equal {
+            crate::cli::output::success("MATCH")
+        } else {
+            crate::cli::output::failure("DIFF")
+        };
+        outputln!("\n{}: {verdict}", crate::cli::output::heading("Verdict"));
     };
     crate::cli::output::render_report(&document, render);
     Ok(equal)

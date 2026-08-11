@@ -12,15 +12,20 @@ pub(crate) fn trace(trace: &FunctionAnalysis) {
     let mut output = String::new();
     let _ = writeln!(
         &mut output,
-        "TRACE\t{}\texact={}",
+        "{}\nFunction: {}\nExact: {}",
+        crate::cli::output::heading("Execution trace"),
         trace.symbol,
         trace.is_exact()
     );
+    let _ = writeln!(&mut output, "\nEvents");
     for (index, event) in trace.events.iter().enumerate() {
-        let _ = writeln!(&mut output, "{index}\t{}", event.canonical());
+        let _ = writeln!(&mut output, "  {index:>4}. {}", event.canonical());
     }
-    for blocker in &trace.blockers {
-        let _ = writeln!(&mut output, "BLOCKER\t{blocker}");
+    if !trace.blockers.is_empty() {
+        let _ = writeln!(&mut output, "\nBlockers");
+        for (index, blocker) in trace.blockers.iter().enumerate() {
+            let _ = writeln!(&mut output, "  {}. {blocker}", index + 1);
+        }
     }
     crate::cli::output::text(output);
 }
@@ -83,10 +88,25 @@ pub(crate) fn verification_human(report: &VerificationCommandReport) {
 
 pub(crate) fn evidence_comparison(comparison: &EvidenceComparison) {
     let mut output = String::new();
+    let verdict = if comparison.passed {
+        crate::cli::output::success("PASS")
+    } else {
+        crate::cli::output::failure("FAIL")
+    };
+    let _ = writeln!(
+        &mut output,
+        "{}\n{verdict} — {} expected, {} actual",
+        crate::cli::output::heading("Evidence baseline"),
+        comparison.expected,
+        comparison.actual
+    );
+    if !comparison.regressions.is_empty() {
+        let _ = writeln!(&mut output, "\nRegressions");
+    }
     for regression in &comparison.regressions {
         let _ = writeln!(
             &mut output,
-            "EVIDENCE-REGRESSION\t{}\t{}\texpected={}\tactual={}",
+            "  {}/{}: expected {}, actual {}",
             regression.source,
             regression.symbol,
             regression.expected,
@@ -98,29 +118,23 @@ pub(crate) fn evidence_comparison(comparison: &EvidenceComparison) {
         for component in &regression.changed_components {
             let _ = writeln!(
                 &mut output,
-                "EVIDENCE-COMPONENT\t{}\t{}\t{}\texpected={}\tactual={}",
-                regression.source,
-                regression.symbol,
+                "    {}: expected {}, actual {}",
                 component.name,
                 component.expected.as_deref().unwrap_or("missing"),
-                component.actual.as_deref().unwrap_or("missing")
+                component.actual.as_deref().unwrap_or("missing"),
             );
         }
+    }
+    if !comparison.additions.is_empty() {
+        let _ = writeln!(&mut output, "\nAdditions");
     }
     for addition in &comparison.additions {
         let _ = writeln!(
             &mut output,
-            "EVIDENCE-ADDITION\t{}\t{}\t{}",
+            "  {}/{}: {}",
             addition.source, addition.symbol, addition.identity
         );
     }
-    let _ = writeln!(
-        &mut output,
-        "EVIDENCE-BASELINE\t{}\texpected={}\tactual={}",
-        if comparison.passed { "PASS" } else { "FAIL" },
-        comparison.expected,
-        comparison.actual
-    );
     crate::cli::output::text(output);
 }
 
@@ -132,18 +146,15 @@ pub(crate) fn branch_coverage(
 ) -> usize {
     let mut output = String::new();
     let mut uncovered = 0;
+    let _ = writeln!(&mut output, "{} coverage", side);
     for (site, taken) in required {
         let location = image.location(*site);
         if covered.contains(&(*site, *taken)) {
-            let _ = writeln!(
-                &mut output,
-                "COVERED-BRANCH\t{side}\t{location}\ttaken={taken}"
-            );
+            if crate::cli::output::details() {
+                let _ = writeln!(&mut output, "  Covered branch: {location}, taken={taken}");
+            }
         } else {
-            let _ = writeln!(
-                &mut output,
-                "UNCOVERED-BRANCH\t{side}\t{location}\ttaken={taken}"
-            );
+            let _ = writeln!(&mut output, "  Uncovered branch: {location}, taken={taken}");
             uncovered += 1;
         }
     }
@@ -153,7 +164,7 @@ pub(crate) fn branch_coverage(
         .collect::<std::collections::BTreeSet<_>>();
     let _ = writeln!(
         &mut output,
-        "SUMMARY-BRANCHES\t{side}\tsites={}\toutcomes={}\tcovered={}\tuncovered={uncovered}",
+        "  Summary: {} site(s), {} outcome(s), {} covered, {uncovered} uncovered",
         sites.len(),
         required.len(),
         required.len() - uncovered,

@@ -101,13 +101,13 @@ normal project-local workflow does not repeat `--run-spec`. Perform the first
 discovery and initialize reviewed packs:
 
 ```console
-cargo vendor-binary-workbench symbols inventory --project PATH/vendor-project.toml
-cargo vendor-binary-workbench mmio discover --project PATH/vendor-project.toml
-cargo vendor-binary-workbench interfaces discover --project PATH/vendor-project.toml
-cargo vendor-binary-workbench ir build --project PATH/vendor-project.toml
+cargo vendor-binary-workbench advanced symbols inventory --project PATH/vendor-project.toml
+cargo vendor-binary-workbench advanced mmio discover --project PATH/vendor-project.toml
+cargo vendor-binary-workbench advanced interfaces discover --project PATH/vendor-project.toml
+cargo vendor-binary-workbench advanced ir build --project PATH/vendor-project.toml
 cargo vendor-binary-workbench registers review --project PATH/vendor-project.toml
-cargo vendor-binary-workbench interfaces init-pack --project PATH/vendor-project.toml
-cargo vendor-binary-workbench functions init-pack --project PATH/vendor-project.toml
+cargo vendor-binary-workbench advanced interfaces init-pack --project PATH/vendor-project.toml
+cargo vendor-binary-workbench advanced functions init-pack --project PATH/vendor-project.toml
 ```
 
 After manual review, `project analyze` refreshes generated analysis evidence,

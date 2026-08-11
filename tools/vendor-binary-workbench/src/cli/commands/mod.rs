@@ -24,6 +24,7 @@ mod ir_build;
 mod project_check;
 mod project_configure;
 mod project_doctor;
+mod project_files;
 mod project_function_doctor;
 mod project_init;
 mod project_inputs;
@@ -79,6 +80,10 @@ pub(super) fn run_project_inputs_init(
 
 pub(super) fn run_project_doctor(context: ProjectContext<'_>) -> Result<bool> {
     project_doctor::run(context)
+}
+
+pub(super) fn run_project_files(context: ProjectContext<'_>) -> Result<bool> {
+    project_files::run(context)
 }
 
 pub(super) fn run_project_status(

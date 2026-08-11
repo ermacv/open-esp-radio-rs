@@ -161,12 +161,12 @@ cargo vendor-binary-workbench project inputs init --project vendor-project.toml 
 cargo vendor-binary-workbench project doctor --project vendor-project.toml\n\
 cargo vendor-binary-workbench project configure --project vendor-project.toml --check\n\
 cargo vendor-binary-workbench project status --project vendor-project.toml\n\
-cargo vendor-binary-workbench symbols inventory --project vendor-project.toml\n\
-cargo vendor-binary-workbench code init-pack --project vendor-project.toml\n\
-cargo vendor-binary-workbench interfaces discover --project vendor-project.toml\n\
-cargo vendor-binary-workbench interfaces init-pack --project vendor-project.toml\n\
-cargo vendor-binary-workbench ir build --project vendor-project.toml\n\
-cargo vendor-binary-workbench functions init-pack --project vendor-project.toml\n\
+cargo vendor-binary-workbench advanced symbols inventory --project vendor-project.toml\n\
+cargo vendor-binary-workbench advanced code init-pack --project vendor-project.toml\n\
+cargo vendor-binary-workbench advanced interfaces discover --project vendor-project.toml\n\
+cargo vendor-binary-workbench advanced interfaces init-pack --project vendor-project.toml\n\
+cargo vendor-binary-workbench advanced ir build --project vendor-project.toml\n\
+cargo vendor-binary-workbench advanced functions init-pack --project vendor-project.toml\n\
 cargo vendor-binary-workbench project analyze --project vendor-project.toml\n\
 cargo vendor-binary-workbench registers review --project vendor-project.toml\n\
 ```\n\n\

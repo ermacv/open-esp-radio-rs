@@ -58,7 +58,7 @@ fn initialized_project_reports_incomplete_without_mutating_owned_outputs() {
     assert!(
         run(
             ProjectStatusArgs {
-                json_report: Some(output.clone()),
+                output: Some(output.clone()),
                 ..Default::default()
             },
             context(),
@@ -68,7 +68,7 @@ fn initialized_project_reports_incomplete_without_mutating_owned_outputs() {
     assert!(
         run(
             ProjectStatusArgs {
-                json_report: Some(output.clone()),
+                output: Some(output.clone()),
                 check: true,
                 ..Default::default()
             },

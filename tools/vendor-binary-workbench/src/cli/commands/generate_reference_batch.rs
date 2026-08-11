@@ -163,9 +163,10 @@ fn print_generation_report(
     generated: &[GeneratedCandidate],
     blocked: &[BlockedCandidate],
 ) {
+    outputln!("{}", crate::cli::output::heading("Reference batch"));
     for candidate in generated {
         outputln!(
-            "GENERATED\t{}\t{}\texit-a0={}",
+            "- {} -> {} (return {})",
             candidate.symbol,
             output_dir.join(&candidate.reference_file).display(),
             if candidate.exit_a0_modeled {
@@ -175,9 +176,9 @@ fn print_generation_report(
             }
         );
     }
-    outputln!("MANIFEST\t{}", manifest.display());
+    outputln!("\nManifest: {}", manifest.display());
     outputln!(
-        "SUMMARY\tfunctions={functions}\tgenerated={}\tblocked={}",
+        "Summary: {functions} function(s), {} generated, {} blocked",
         generated.len(),
         blocked.len()
     );

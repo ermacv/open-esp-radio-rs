@@ -116,7 +116,7 @@ generic model but are not embedded into the clean SVD.
 First generate facts from local artifacts and project memory-map ranges:
 
 ```console
-cargo vendor-binary-workbench mmio discover \
+cargo vendor-binary-workbench advanced mmio discover \
   --project verification/vendor/targets/esp32s31/vendor-project.toml \
   --run-spec /path/to/local.toml
 ```
@@ -169,11 +169,11 @@ Generate one project report or several focused reports, then either list them
 under `[registers.review].linked-ir` or pass them explicitly:
 
 ```console
-cargo vendor-binary-workbench ir export \
+cargo vendor-binary-workbench advanced ir export \
   --project verification/vendor/targets/esp32s31/vendor-project.toml \
   --run-spec /path/to/local.toml \
   --symbol-prefix phy_ --include-reachable \
-  --json-report verification/vendor/targets/esp32s31/generated/findings/phy.ir
+  --output verification/vendor/targets/esp32s31/generated/findings/phy.ir
 
 cargo vendor-binary-workbench registers review \
   --project verification/vendor/targets/esp32s31/vendor-project.toml \
@@ -191,7 +191,7 @@ Use `--no-ir-reports` to temporarily generate or check the basic report while
 leaving configured enrichment in the project manifest; it conflicts with an
 explicit `--ir-report`.
 Paths in `linked-ir` are relative to the project manifest; explicit
-`--json-report` and `--ir-report` paths are relative to the process working
+`--output` and `--ir-report` paths are relative to the process working
 directory, as shown above for a command launched at the repository root.
 Equal `(address, width, bit range)` candidates from multiple reports are merged:
 shape counts are added and function, predicate and semantic evidence is
@@ -323,7 +323,7 @@ summaries inside `register-workspace`. A strict coverage failure is reported as
 
 ### Evidence catalogs
 
-`[registers.toml].catalogs` contains reviewed source descriptions and an
+`[registers.evidence].catalogs` contains reviewed source descriptions and an
 optional controlled confidence vocabulary outside both the hardware model and
 safe API policy. Register-model `[[review]]` annotations and API-pack
 `sources = [...]` refer to catalog IDs. Validation rejects undefined IDs and

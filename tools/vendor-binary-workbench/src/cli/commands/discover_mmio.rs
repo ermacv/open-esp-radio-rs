@@ -144,9 +144,9 @@ pub(super) fn run(
     if !(1..=8).contains(&arguments.jobs) {
         return Err(crate::Error::invalid("mmio discover --jobs accepts 1..=8"));
     }
-    if arguments.check && arguments.json_report.is_none() {
+    if arguments.check && arguments.output.is_none() {
         return Err(crate::Error::invalid(
-            "mmio discover --check requires --json-report PATH",
+            "mmio discover --check requires --output PATH",
         ));
     }
     let artifacts = arguments
@@ -209,7 +209,7 @@ pub(super) fn run(
             jobs: usize::from(arguments.jobs),
         },
     )?;
-    let publication = arguments.json_report.as_deref().map(|path| {
+    let publication = arguments.output.as_deref().map(|path| {
         crate::cli::output::Publication::new(
             path,
             if arguments.check {
@@ -220,7 +220,7 @@ pub(super) fn run(
         )
     });
     let artifact = crate::artifacts::build_mmio_facts(&report)?;
-    if let Some(path) = arguments.json_report.as_deref() {
+    if let Some(path) = arguments.output.as_deref() {
         let output = crate::artifacts::render_mmio_facts(&artifact)?;
         crate::application::generated_file::write_or_check(
             path,
@@ -236,11 +236,7 @@ pub(super) fn run(
     if !crate::cli::output::structured(&document) {
         print_report(&report);
         if let Some(publication) = publication {
-            outputln!(
-                "PUBLICATION\tstatus={}\tpath={}",
-                publication.status,
-                publication.path
-            );
+            outputln!("\nReport {}: {}", publication.status, publication.path);
         }
     }
     // Discovery is intentionally best-effort. Diagnostics scope individual

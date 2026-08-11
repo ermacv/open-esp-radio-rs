@@ -296,9 +296,9 @@ fn print_report_human(inventory: &ProjectLinkageInventory, options: &Options) {
 }
 
 pub(super) fn run(options: SymbolInventoryArgs, run_spec: &RunSpec) -> Result<bool> {
-    if options.check && options.json_report.is_none() {
+    if options.check && options.output.is_none() {
         return Err(crate::Error::invalid(
-            "symbols inventory --check requires --json-report or project [analysis.symbols]",
+            "symbols inventory --check requires --output or project [analysis.symbols]",
         ));
     }
     let inputs = run_spec
@@ -308,13 +308,13 @@ pub(super) fn run(options: SymbolInventoryArgs, run_spec: &RunSpec) -> Result<bo
         .collect::<Vec<_>>();
     let inventory = build_project_linkage_inventory(&inputs)?;
     let artifact = build_symbol_inventory_document(&inventory, |symbol| options.includes(symbol))?;
-    let publication = options.json_report.as_deref().map(|path| {
+    let publication = options.output.as_deref().map(|path| {
         crate::cli::output::Publication::new(
             path,
             if options.check { "verified" } else { "written" },
         )
     });
-    if let Some(path) = options.json_report.as_deref() {
+    if let Some(path) = options.output.as_deref() {
         crate::application::generated_file::write_or_check(
             path,
             &render_symbol_inventory(&artifact)?,

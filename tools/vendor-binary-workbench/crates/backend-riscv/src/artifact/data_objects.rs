@@ -2,7 +2,6 @@
 
 use std::{
     collections::{HashMap, HashSet},
-    fs,
     path::Path,
 };
 
@@ -235,7 +234,7 @@ fn collect_objects(
 /// Load named static data objects and compiler anchors from linked images and
 /// relocatable archive members. Archive offsets remain section-relative.
 pub fn load_data_objects(path: &Path) -> Result<Vec<ArtifactDataObjectDefinition>> {
-    let data = fs::read(path)?;
+    let data = crate::read_artifact(path)?;
     let mut objects = Vec::new();
     match FileKind::parse(data.as_slice())? {
         FileKind::Archive => {

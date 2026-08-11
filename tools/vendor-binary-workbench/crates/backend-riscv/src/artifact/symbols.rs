@@ -1,6 +1,6 @@
 //! Extraction of sized code symbols and their relocation context.
 
-use std::{collections::HashMap, fs, path::Path, sync::Arc};
+use std::{collections::HashMap, path::Path, sync::Arc};
 
 use object::{
     FileKind, Object, ObjectKind, ObjectSection, ObjectSymbol, SectionKind, SymbolKind,
@@ -138,7 +138,7 @@ pub fn load_code_symbols(
     prefix: &str,
     selection: CodeSymbolSelection,
 ) -> Result<Vec<ArtifactSymbolDefinition>> {
-    let data = fs::read(path)?;
+    let data = crate::read_artifact(path)?;
     let mut symbols = Vec::new();
     match FileKind::parse(data.as_slice())? {
         FileKind::Archive => {
@@ -178,7 +178,7 @@ pub fn load_code_symbol_exact(
     name: &str,
     address: u64,
 ) -> Result<Option<ArtifactSymbolDefinition>> {
-    let data = fs::read(path)?;
+    let data = crate::read_artifact(path)?;
     let mut symbols = Vec::new();
     match FileKind::parse(data.as_slice())? {
         FileKind::Archive => {
@@ -257,7 +257,7 @@ fn collect_data_symbols(
 /// coverage analysis. Relocatable members are skipped because their section
 /// relative addresses are not runtime identities.
 pub fn load_data_symbols(path: &Path) -> Result<Vec<ArtifactDataSymbolDefinition>> {
-    let data = fs::read(path)?;
+    let data = crate::read_artifact(path)?;
     let mut symbols = Vec::new();
     match FileKind::parse(data.as_slice())? {
         FileKind::Archive => {
@@ -434,7 +434,7 @@ pub fn load_reviewed_code_ranges(
     path: &Path,
     ranges: &[ReviewedCodeRange],
 ) -> Result<Vec<ArtifactSymbolDefinition>> {
-    let data = fs::read(path)?;
+    let data = crate::read_artifact(path)?;
     let mut symbols = Vec::new();
     match FileKind::parse(data.as_slice())? {
         FileKind::Archive => {

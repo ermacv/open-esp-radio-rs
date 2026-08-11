@@ -1,5 +1,7 @@
 //! Configuration and caller-owned input readiness.
 
+use std::{collections::BTreeMap, path::PathBuf};
+
 use super::model::{ArtifactDetail, Component, MmioRegionDetail, Phase, Readiness};
 use crate::application::ProjectContext;
 use crate::{artifact, memory_map::MemoryRegionKind};
@@ -116,6 +118,10 @@ pub(super) fn inputs(context: &ProjectContext<'_>) -> Phase {
     let mut incomplete = false;
     let mut ready = 0usize;
     let mut records = Vec::new();
+    // One binary is commonly bound under several roles (for example a linked
+    // ELF is both a source artifact and a companion). Probe each physical path
+    // once; role readiness still remains explicit in the report.
+    let mut probes = BTreeMap::<PathBuf, std::result::Result<ArtifactProbe, String>>::new();
     for input in run_spec.inputs() {
         let record = if !input.path.is_file() {
             incomplete = true;
@@ -130,26 +136,35 @@ pub(super) fn inputs(context: &ProjectContext<'_>) -> Phase {
                 error: None,
             }
         } else {
-            match artifact::inspect_artifact(&input.path) {
-                Ok(inventory) => {
-                    let symbols = inventory.symbols().count();
-                    if symbols == 0 {
+            let probe = probes.entry(input.path.clone()).or_insert_with(|| {
+                artifact::inspect_artifact(&input.path)
+                    .map(|inventory| ArtifactProbe {
+                        container: inventory.container.label(),
+                        objects: inventory.objects.len(),
+                        skipped_members: inventory.skipped_members,
+                        symbols: inventory.symbols().count(),
+                    })
+                    .map_err(|error| error.to_string())
+            });
+            match probe {
+                Ok(probe) => {
+                    if probe.symbols == 0 {
                         incomplete = true;
                     } else {
                         ready += 1;
                     }
                     ArtifactDetail {
                         role: input.role.to_string(),
-                        status: if symbols == 0 {
+                        status: if probe.symbols == 0 {
                             "readable-no-symbols"
                         } else {
                             "ready"
                         },
                         path: input.path.display().to_string(),
-                        container: Some(inventory.container.label()),
-                        objects: Some(inventory.objects.len()),
-                        skipped_members: Some(inventory.skipped_members),
-                        symbol_facts: Some(symbols),
+                        container: Some(probe.container),
+                        objects: Some(probe.objects),
+                        skipped_members: Some(probe.skipped_members),
+                        symbol_facts: Some(probe.symbols),
                         error: None,
                     }
                 }
@@ -195,4 +210,11 @@ pub(super) fn inputs(context: &ProjectContext<'_>) -> Phase {
         ));
     }
     Phase::collect("inputs", vec![component])
+}
+
+struct ArtifactProbe {
+    container: &'static str,
+    objects: usize,
+    skipped_members: usize,
+    symbols: usize,
 }

@@ -35,7 +35,7 @@ cargo vendor-binary-workbench inspect analyze \
 open-esp-radio-vendor-oracle-esp32s31-trace-elf \
   --companion "$ESP32S31_ROM_ELF" \
   --entry-contract esp32s31-phy-registered \
-  --json-report /tmp/esp32s31-libphy-analysis.json
+  --output /tmp/esp32s31-libphy-analysis.json
 ```
 
 Each row reports `reference-codegen=eligible|blocked`, the number of composed
@@ -47,7 +47,7 @@ load or store still makes generation unsafe.
 Every exact reference-generation failure is also printed as a
 `REFERENCE-BLOCKED` row. When call composition reaches an ineligible callee,
 the row retains the complete nested cause chain instead of stopping at the
-callee name. `--json-report PATH` writes the same information as a versioned
+callee name. `--output PATH` writes the same information as a versioned
 machine-readable blocker graph. It separates local and transitive reference
 blockers per function, ranks ineligible callees by the number of affected root
 functions, groups blocker kinds by both occurrence and affected-function
@@ -66,7 +66,7 @@ and companions are therefore rejected for a relocatable primary artifact.
 Generate a safe, executable Rust reference for a supported symbol:
 
 ```console
-cargo vendor-binary-workbench reference generate \
+cargo vendor-binary-workbench advanced reference generate \
   --project verification/vendor/targets/esp32s31/vendor-project.toml \
   --artifact "$ESP32S31_ROM_ELF" \
   --symbol phy_disable_agc \
@@ -324,7 +324,7 @@ For example, the vendor `hal_random` tail call is now a compilable reference
 over the `_rand` callback at offset `0xbc`:
 
 ```console
-cargo vendor-binary-workbench reference generate \
+cargo vendor-binary-workbench advanced reference generate \
   --project verification/vendor/targets/esp32s31/vendor-project.toml \
   --artifact "$ESP32S31_LIBPP_ARCHIVE" \
   --member hal_mac.o \
@@ -348,7 +348,7 @@ Generate every currently eligible reference in one pass and retain the blocked
 inventory as a machine-readable work queue:
 
 ```console
-cargo vendor-binary-workbench reference generate-batch \
+cargo vendor-binary-workbench advanced reference generate-batch \
   --project verification/vendor/targets/esp32s31/vendor-project.toml \
   --artifact "$ESP32S31_ROM_ELF" \
   --companion verification/vendor/targets/esp32s31/oracle-firmware/target/riscv32imafc-unknown-none-elf/release/open-esp-radio-vendor-oracle-esp32s31-trace-elf \
@@ -373,7 +373,7 @@ generated directly from the archive. Its disabled arm clears the RTC update
 bit; its enabled arm sets that bit and publishes the low 18 calibration bits:
 
 ```console
-cargo vendor-binary-workbench reference generate \
+cargo vendor-binary-workbench advanced reference generate \
   --project verification/vendor/targets/esp32s31/vendor-project.toml \
   --artifact "$ESP32S31_LIBPP_ARCHIVE" \
   --member hal_tsf.o \

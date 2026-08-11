@@ -157,25 +157,59 @@ pub(super) fn run(arguments: ProjectCheckArgs, session: &ProjectSession) -> Resu
 }
 
 fn render_human(report: &ProjectCheckReport) {
-    outputln!(
-        "Project check: {} — {}",
-        if report.passed { "passed" } else { "failed" },
-        report.project
-    );
-    for stage in &report.stages {
-        outputln!("  {:<14} {:<8} {}", stage.name, stage.status, stage.summary);
-        for issue in &stage.issues {
+    use crate::cli::{output, table};
+
+    outputln!("{}", output::heading("Project check"));
+    outputln!("Project: {}", report.project);
+    let outcome = if report.passed {
+        output::success("PASS — analysis, verification and publication reproduce")
+    } else {
+        output::failure("FAIL — one or more project gates did not reproduce")
+    };
+    outputln!("\n{outcome}");
+
+    let issues = report
+        .stages
+        .iter()
+        .flat_map(|stage| &stage.issues)
+        .collect::<Vec<_>>();
+    if !issues.is_empty() {
+        outputln!("\n{}", output::heading("Problems"));
+        for (index, issue) in issues.iter().enumerate() {
             outputln!(
-                "    issue: {} [{}] — {}",
+                "{}. {} [{}]: {}",
+                index + 1,
                 issue.component,
                 issue.status,
                 issue.reason
             );
         }
-        for action in &stage.next_actions {
-            outputln!("    next: {action}");
+    }
+
+    let actions = report
+        .stages
+        .iter()
+        .flat_map(|stage| &stage.next_actions)
+        .collect::<Vec<_>>();
+    if !actions.is_empty() {
+        outputln!("\n{}", output::heading("Next"));
+        for (index, action) in actions.iter().enumerate() {
+            outputln!("{}. {action}", index + 1);
         }
     }
+
+    outputln!("\n{}", output::heading("Gates"));
+    outputln!(
+        "{}",
+        table::render(
+            ["Gate", "Status", "Summary"],
+            report.stages.iter().map(|stage| [
+                stage.name.to_owned(),
+                stage.status.to_owned(),
+                stage.summary.clone(),
+            ])
+        )
+    );
 }
 
 fn pipeline_issues(stages: &[StageReport]) -> Vec<ProjectCheckIssue> {

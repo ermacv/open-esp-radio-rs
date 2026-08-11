@@ -83,7 +83,7 @@ rejected because its ownership would be ambiguous.
 Build every configured profile:
 
 ```console
-cargo vendor-binary-workbench ir build \
+cargo vendor-binary-workbench advanced ir build \
   --project verification/vendor/targets/esp32s31/vendor-project.toml \
   --run-spec /path/to/local.toml
 ```
@@ -91,7 +91,7 @@ cargo vendor-binary-workbench ir build \
 Select one or more profiles by stable ID:
 
 ```console
-cargo vendor-binary-workbench ir build \
+cargo vendor-binary-workbench advanced ir build \
   --project verification/vendor/targets/esp32s31/vendor-project.toml \
   --run-spec /path/to/local.toml \
   --profile phy
@@ -110,7 +110,7 @@ therefore fails with the exact profile, run-spec role and path instead of a
 late anonymous object-reader `ENOENT`.
 
 ```console
-cargo vendor-binary-workbench ir build \
+cargo vendor-binary-workbench advanced ir build \
   --project verification/vendor/targets/esp32s31/vendor-project.toml \
   --run-spec /path/to/local.toml \
   --check
@@ -124,7 +124,7 @@ successful check also binds the generated view to the supplied local inputs.
 
 The default human view summarizes each selected profile, its function,
 register and field-candidate counts, and the generated paths. `--format json`
-and `--format jsonl` emit the typed `ir-build`
+emits the typed `ir-build`
 report directly, with schema, mode, status, ordered profiles and document count. The
 generated linked-IR bundle remains a separate schema-v47 project artifact; the
 command result only describes the build operation.

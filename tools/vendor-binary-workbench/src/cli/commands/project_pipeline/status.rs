@@ -7,23 +7,51 @@ pub(super) fn render(document: &ProjectAnalysisReport) {
 }
 
 fn print_human(document: &ProjectAnalysisReport) {
-    outputln!("Project analysis: {} ({})", document.status, document.mode);
-    for stage in &document.stages {
-        outputln!(
-            "  {:<24} {:<14} {}",
-            stage.name,
-            stage.status,
-            stage.reason.as_deref().unwrap_or("")
-        );
+    use crate::cli::{output, table};
+
+    outputln!("{}", output::heading("Project analysis"));
+    outputln!("Mode: {}", document.mode);
+    let outcome = if document.failed == 0 && document.blocked == 0 {
+        output::success(format!(
+            "READY — {} written, {} verified, {} up to date",
+            document.written, document.verified, document.current
+        ))
+    } else {
+        output::failure(format!(
+            "BLOCKED — {} failed, {} blocked",
+            document.failed, document.blocked
+        ))
+    };
+    outputln!("\n{outcome}");
+
+    let problems = document
+        .stages
+        .iter()
+        .filter(|stage| matches!(stage.status, "failed" | "blocked"))
+        .collect::<Vec<_>>();
+    if !problems.is_empty() {
+        outputln!("\n{}", output::heading("Problems"));
+        for (index, stage) in problems.iter().enumerate() {
+            outputln!(
+                "{}. {}: {}",
+                index + 1,
+                stage.name,
+                stage.reason.as_deref().unwrap_or(stage.status)
+            );
+        }
     }
+
+    outputln!("\n{}", output::heading("Stages"));
     outputln!(
-        "  written={} verified={} up-to-date={} failed={} blocked={} not-configured={}",
-        document.written,
-        document.verified,
-        document.current,
-        document.failed,
-        document.blocked,
-        document.not_configured
+        "{}",
+        table::render(
+            ["Stage", "Status", "Details"],
+            document.stages.iter().map(|stage| [
+                stage.name.clone(),
+                stage.status.to_owned(),
+                stage.reason.clone().unwrap_or_default(),
+            ])
+        )
     );
     let missing_function_pack = document.stages.iter().any(|stage| {
         stage
@@ -38,12 +66,12 @@ fn print_human(document: &ProjectAnalysisReport) {
             .is_some_and(|reason| reason.contains("cannot read interface pack"))
     });
     if missing_function_pack || missing_interface_pack {
-        outputln!("Next review workspace setup:");
+        outputln!("\n{}", output::heading("Next"));
         if missing_function_pack {
-            outputln!("  vendor-binary-workbench functions init-pack");
+            outputln!("- vendor-binary-workbench advanced functions init-pack");
         }
         if missing_interface_pack {
-            outputln!("  vendor-binary-workbench interfaces init-pack");
+            outputln!("- vendor-binary-workbench advanced interfaces init-pack");
         }
         outputln!("Then rerun `vendor-binary-workbench project analyze`.");
     }

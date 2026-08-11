@@ -20,7 +20,6 @@ pub(crate) enum OutputFormat {
     #[default]
     Human,
     Json,
-    Jsonl,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, ValueEnum)]
@@ -34,23 +33,56 @@ pub(crate) enum ProgressMode {
 #[derive(Clone, Debug, Default, Args)]
 pub(crate) struct UiArgs {
     /// Increase diagnostic verbosity; repeat for debug and trace output.
-    #[arg(short = 'v', long, global = true, action = ArgAction::Count)]
+    #[arg(
+        short = 'v',
+        long,
+        global = true,
+        action = ArgAction::Count,
+        help_heading = "Output and diagnostics"
+    )]
     pub(crate) verbose: u8,
 
     /// Suppress workbench warnings and diagnostic tracing.
-    #[arg(long, global = true, conflicts_with = "verbose")]
+    #[arg(
+        long,
+        global = true,
+        conflicts_with = "verbose",
+        help_heading = "Output and diagnostics"
+    )]
     pub(crate) quiet: bool,
 
-    /// Control ANSI colors in diagnostics and tracing.
-    #[arg(long, global = true, value_enum, default_value_t)]
+    /// Control ANSI colors in human output, diagnostics and tracing.
+    #[arg(
+        long,
+        global = true,
+        value_enum,
+        default_value_t,
+        help_heading = "Output and diagnostics"
+    )]
     pub(crate) color: ColorMode,
 
     /// Select the command-result representation written to stdout.
-    #[arg(long, global = true, value_enum, default_value_t)]
+    #[arg(
+        long,
+        global = true,
+        value_enum,
+        default_value_t,
+        help_heading = "Output and diagnostics"
+    )]
     pub(crate) format: OutputFormat,
 
+    /// Include expanded evidence and component details in human output.
+    #[arg(long, global = true, help_heading = "Output and diagnostics")]
+    pub(crate) details: bool,
+
     /// Control progress rendering on stderr.
-    #[arg(long, global = true, value_enum, default_value_t)]
+    #[arg(
+        long,
+        global = true,
+        value_enum,
+        default_value_t,
+        help_heading = "Output and diagnostics"
+    )]
     pub(crate) progress: ProgressMode,
 }
 
@@ -58,8 +90,10 @@ pub(crate) struct UiArgs {
 #[command(
     name = "vendor-binary-workbench",
     version,
+    arg_required_else_help = true,
     about = "Analyze, reconstruct and verify Rust implementations against compiled vendor binaries",
-    long_about = "Project-oriented analysis, reconstruction, publication and Rust conformance verification for compiled vendor binaries.\n\nA project composes a target spec, optional platform pack, local run bindings, a memory map and SVD catalogs. Without an explicit configuration root, the nearest vendor-project.toml is used."
+    long_about = "Project-oriented analysis, reconstruction, publication and Rust conformance verification for compiled vendor binaries.\n\nA project composes a target spec, optional platform pack, local run bindings, a memory map and SVD catalogs. Without an explicit configuration root, the nearest vendor-project.toml is used.",
+    after_help = "START HERE:\n  vendor-binary-workbench project status --project PATH/vendor-project.toml\n\nNEW PROJECT:\n  vendor-binary-workbench project init --help\n\nUse `project` for the normal workflow. Low-level analysis engines are under `advanced`."
 )]
 struct Cli {
     #[command(flatten)]
@@ -70,20 +104,36 @@ struct Cli {
         long,
         global = true,
         value_name = "PATH",
-        conflicts_with = "target_spec"
+        conflicts_with = "target_spec",
+        help_heading = "Project selection"
     )]
     project: Option<PathBuf>,
 
     /// Explicit target specification for backend and target-pack development.
-    #[arg(long, global = true, value_name = "PATH")]
+    #[arg(
+        long,
+        global = true,
+        value_name = "PATH",
+        help_heading = "Project selection"
+    )]
     target_spec: Option<PathBuf>,
 
     /// Local run bindings and command defaults.
-    #[arg(long, global = true, value_name = "PATH")]
+    #[arg(
+        long,
+        global = true,
+        value_name = "PATH",
+        help_heading = "Project selection"
+    )]
     run_spec: Option<PathBuf>,
 
     /// Additional SVD register catalog.
-    #[arg(long, global = true, value_name = "PATH")]
+    #[arg(
+        long,
+        global = true,
+        value_name = "PATH",
+        help_heading = "Project selection"
+    )]
     svd: Vec<PathBuf>,
 
     #[command(subcommand)]
@@ -92,16 +142,38 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Workflow {
+    /// Create, inspect and execute project-owned workflows.
+    #[command(
+        after_long_help = "EXISTING PROJECT:\n  project status  → current readiness and exact next actions\n  project files   → ownership and purpose of every configured file\n  project browse  → read-only TUI over generated evidence\n\nNEW PROJECT:\n  project init → project inputs init → project doctor → project analyze\n  registers review/validate → project publish → project verify/check"
+    )]
+    Project {
+        #[command(subcommand)]
+        command: ProjectCommand,
+    },
+    /// Manage register models, SVDs and generated PACs.
+    Registers {
+        #[command(subcommand)]
+        command: RegisterCommand,
+    },
+    /// Inspect individual artifacts and executions.
+    Inspect {
+        #[command(subcommand)]
+        command: InspectCommand,
+    },
+    /// Run focused low-level analysis, execution and verification engines.
+    Advanced {
+        #[command(subcommand)]
+        command: AdvancedCommand,
+    },
     /// Generate host-shell and manual-page integration assets.
     Tooling {
         #[command(subcommand)]
         command: ToolingCommand,
     },
-    /// Create, inspect and execute project-owned workflows.
-    Project {
-        #[command(subcommand)]
-        command: ProjectCommand,
-    },
+}
+
+#[derive(Debug, Subcommand)]
+enum AdvancedCommand {
     /// Manage function contracts and review packs.
     Functions {
         #[command(subcommand)]
@@ -121,16 +193,6 @@ enum Workflow {
     Interfaces {
         #[command(subcommand)]
         command: InterfaceCommand,
-    },
-    /// Manage register models, SVDs and generated PACs.
-    Registers {
-        #[command(subcommand)]
-        command: RegisterCommand,
-    },
-    /// Inspect individual artifacts and executions.
-    Inspect {
-        #[command(subcommand)]
-        command: InspectCommand,
     },
     /// Discover MMIO behavior.
     Mmio {
@@ -197,10 +259,10 @@ pub(crate) struct ManpageArgs {
 }
 
 macro_rules! leaf_commands {
-    ($name:ident { $($variant:ident($arguments:ty) => $command:path, $data:ident),+ $(,)? }) => {
+    ($name:ident { $($(#[$metadata:meta])* $variant:ident($arguments:ty) => $command:path, $data:ident),+ $(,)? }) => {
         #[derive(Debug, Subcommand)]
         enum $name {
-            $($variant($arguments)),+
+            $($(#[$metadata])* $variant($arguments)),+
         }
 
         impl $name {
@@ -214,7 +276,9 @@ macro_rules! leaf_commands {
 }
 
 leaf_commands!(ToolingCommand {
+    /// Generate a completion script from the current CLI grammar.
     Completions(CompletionArgs) => Command::GenerateCompletions, Completion,
+    /// Generate the complete roff manual from the current CLI grammar.
     Manpage(ManpageArgs) => Command::GenerateManpage, Manpage,
 });
 
@@ -240,6 +304,11 @@ enum ProjectCommand {
         after_long_help = "This checks validity, not workflow readiness. Use `project status` for readiness and `project analyze` to refresh evidence."
     )]
     Doctor(EmptyArgs),
+    /// List every project file with its role, owner, producer and status.
+    #[command(
+        after_long_help = "Use this before editing a project to distinguish local bindings, reviewed knowledge, generated evidence and external artifacts."
+    )]
+    Files(EmptyArgs),
     /// Summarize project workflow readiness without modifying artifacts.
     #[command(
         after_long_help = "Use `project doctor` for detailed configuration diagnostics, or `project analyze` to refresh generated evidence."
@@ -276,6 +345,7 @@ impl ProjectCommand {
             Self::Configure(arguments) => Command::ProjectConfigure(arguments),
             Self::Inputs { command } => command.into_command(),
             Self::Doctor(arguments) => Command::ProjectDoctor(arguments),
+            Self::Files(arguments) => Command::ProjectFiles(arguments),
             Self::Status(arguments) => Command::ProjectStatus(arguments),
             Self::Browse(arguments) => Command::ProjectBrowse(arguments),
             Self::Analyze(arguments) => Command::ProjectAnalyze(arguments),
@@ -287,85 +357,125 @@ impl ProjectCommand {
 }
 
 leaf_commands!(ProjectInputsCommand {
+    /// Create or verify caller-owned local artifact bindings.
     Init(ProjectInputsInitArgs) => Command::ProjectInputsInit, ProjectInputsInit,
 });
 
 leaf_commands!(FunctionCommand {
+    /// Create a reviewable function-contract pack from project evidence.
     InitPack(OutputArgs) => Command::FunctionInitPack, Output,
+    /// Validate the configured reviewed function-contract pack.
     Validate(ValidationArgs) => Command::FunctionValidate, Validation,
+    /// Generate or check a human-review function workspace.
     Review(ReviewArgs) => Command::FunctionReview, Review,
 });
 
 leaf_commands!(CodeCommand {
+    /// Create a reviewable executable-code boundary pack.
     InitPack(OutputArgs) => Command::CodeInitPack, Output,
+    /// Rebase reviewed code boundaries onto current binary facts.
     Rebase(CodeRebaseArgs) => Command::CodeRebase, CodeRebase,
+    /// Validate reviewed executable-code boundaries.
     Validate(ValidationArgs) => Command::CodeValidate, Validation,
+    /// Generate or check a code-boundary review workspace.
     Review(ReviewArgs) => Command::CodeReview, Review,
 });
 
 leaf_commands!(SymbolCommand {
+    /// Inventory definitions, references and cross-input symbol candidates.
     Inventory(SymbolInventoryArgs) => Command::SymbolInventory, SymbolInventory,
 });
 
 leaf_commands!(InterfaceCommand {
+    /// Discover indirect calls and function-pointer table candidates.
     Discover(InterfaceDiscoverArgs) => Command::InterfaceDiscover, InterfaceDiscover,
+    /// Create a reviewed interface-layout pack from discovery facts.
     InitPack(OutputArgs) => Command::InterfaceInitPack, Output,
+    /// Validate reviewed interface layouts and semantic bindings.
     Validate(ValidationArgs) => Command::InterfaceValidate, Validation,
 });
 
 leaf_commands!(RegisterCommand {
+    /// Create an empty reviewed register model for a memory region.
     InitModel(RegisterModelArgs) => Command::RegisterInitModel, RegisterModel,
+    /// Import an existing SVD into the reviewed register model.
     ImportSvd(RegisterImportArgs) => Command::RegisterImportSvd, RegisterImport,
+    /// Validate register names, fields, evidence and publication policy.
     Validate(ValidationArgs) => Command::RegisterValidate, Validation,
+    /// Generate or check the editable register-review workspace.
     Review(RegisterReviewArgs) => Command::RegisterReview, RegisterReview,
+    /// Export a clean publication SVD from reviewed register data.
     ExportSvd(RegisterExportArgs) => Command::RegisterExportSvd, RegisterExport,
+    /// Generate the internal unsafe raw PAC implementation.
     GeneratePacRaw(RegisterPacRawArgs) => Command::RegisterGeneratePacRaw, RegisterPacRaw,
+    /// Generate the restricted public register binding API.
     GenerateBindings(RegisterBindingsArgs) => Command::RegisterGenerateBindings, RegisterBindings,
 });
 
 leaf_commands!(InspectCommand {
+    /// Investigate one function with lossless code, CFG and semantic evidence.
     Function(InspectFunctionArgs) => Command::InspectFunction, InspectFunction,
+    /// Trace argument and constant flow across a focused call-graph slice.
     Flow(InspectFlowArgs) => Command::InspectFlow, InspectFlow,
+    /// Inspect accesses and ownership evidence for one memory object.
     Object(InspectObjectArgs) => Command::InspectObject, InspectObject,
+    /// Summarize a reviewed analysis scope and its blockers.
     Scope(InspectScopeArgs) => Command::InspectScope, InspectScope,
+    /// Analyze one artifact without running the complete project pipeline.
     Analyze(InspectAnalyzeArgs) => Command::InspectAnalyze, InspectAnalyze,
+    /// Extract the observable trace for one function execution.
     Trace(TraceInputArgs) => Command::InspectTrace, TraceInput,
+    /// Compare two focused function traces.
     Compare(InspectCompareArgs) => Command::InspectCompare, InspectCompare,
 });
 
 leaf_commands!(MmioCommand {
+    /// Find MMIO accesses and infer register and field candidates.
     Discover(MmioDiscoverArgs) => Command::DiscoverMmio, MmioDiscover,
 });
 
 leaf_commands!(IrCommand {
+    /// Export linked semantic IR directly from explicit artifacts.
     Export(IrExportArgs) => Command::ExportIr, IrExport,
+    /// Build configured project IR profiles.
     Build(IrBuildArgs) => Command::BuildIr, IrBuild,
 });
 
 leaf_commands!(ReferenceCommand {
+    /// Generate a Rust-side executable reference for one profile.
     Generate(ReferenceArgs) => Command::GenerateReference, Reference,
+    /// Generate executable references for a configured profile set.
     GenerateBatch(ReferenceBatchArgs) => Command::GenerateReferenceBatch, ReferenceBatch,
 });
 
 leaf_commands!(DriverCommand {
+    /// Generate a review candidate for a Rust driver function.
     Generate(DriverGenerateArgs) => Command::GenerateDriver, DriverGenerate,
 });
 
 leaf_commands!(ExecuteCommand {
+    /// Execute a vendor function under a concrete scenario.
     Run(ExecuteRunArgs) => Command::ExecuteRun, ExecuteRun,
+    /// Compare vendor and Rust observable effects under one scenario.
     Compare(ExecuteCompareArgs) => Command::ExecuteCompare, ExecuteCompare,
 });
 
 leaf_commands!(ImageCommand {
+    /// Audit resolved call targets in a linked image.
     AuditTargets(ImageAuditArgs) => Command::AuditImageTargets, ImageAudit,
 });
 
 #[derive(Debug, Subcommand)]
 enum VerifyCommand {
+    /// Validate executable profile definitions and coverage gates.
     Profiles(VerifyProfilesArgs),
+    /// Compare recovered vendor functions with Rust source candidates.
     Source(VerifySourceArgs),
+    /// Build the cross-source verification inventory.
     Inventory(VerifyInventoryArgs),
+    /// Review or update a verification evidence baseline.
     Evidence(VerifyEvidenceArgs),
+    /// Run a focused built-in behavioral contract.
     Contract {
         #[command(subcommand)]
         command: VerifyContractCommand,
@@ -385,25 +495,39 @@ impl VerifyCommand {
 }
 
 leaf_commands!(VerifyContractCommand {
+    /// Verify the Wi-Fi channel-selection contract.
     Channel(VerifyContractArgs) => Command::VerifyContractChannel, VerifyContract,
+    /// Verify the RF initialization contract.
     RfInit(VerifyContractArgs) => Command::VerifyContractRfInit, VerifyContract,
+    /// Verify Bluetooth transmit-power behavior.
     BluetoothTxPower(VerifyContractArgs) => Command::VerifyContractBluetoothTxPower, VerifyContract,
+    /// Verify Bluetooth transmit-gain initialization behavior.
     BluetoothTxGainInit(VerifyContractArgs) => Command::VerifyContractBluetoothTxGainInit, VerifyContract,
+    /// Verify the baseband initialization parent contract.
     BasebandInit(VerifyContractArgs) => Command::VerifyContractBasebandInit, VerifyContract,
+    /// Verify the PHY registration initialization contract.
     RegisterInit(VerifyContractArgs) => Command::VerifyContractRegisterInit, VerifyContract,
 });
 
 impl Workflow {
     fn into_command(self) -> Command {
         match self {
-            Self::Tooling { command } => command.into_command(),
             Self::Project { command } => command.into_command(),
+            Self::Registers { command } => command.into_command(),
+            Self::Inspect { command } => command.into_command(),
+            Self::Advanced { command } => command.into_command(),
+            Self::Tooling { command } => command.into_command(),
+        }
+    }
+}
+
+impl AdvancedCommand {
+    fn into_command(self) -> Command {
+        match self {
             Self::Functions { command } => command.into_command(),
             Self::Code { command } => command.into_command(),
             Self::Symbols { command } => command.into_command(),
             Self::Interfaces { command } => command.into_command(),
-            Self::Registers { command } => command.into_command(),
-            Self::Inspect { command } => command.into_command(),
             Self::Mmio { command } => command.into_command(),
             Self::Ir { command } => command.into_command(),
             Self::Reference { command } => command.into_command(),
@@ -423,6 +547,7 @@ pub(crate) enum Command {
     ProjectConfigure(ProjectConfigureArgs),
     ProjectInputsInit(ProjectInputsInitArgs),
     ProjectDoctor(EmptyArgs),
+    ProjectFiles(EmptyArgs),
     ProjectStatus(ProjectStatusArgs),
     ProjectBrowse(EmptyArgs),
     ProjectAnalyze(ProjectAnalyzeArgs),
@@ -518,6 +643,7 @@ mod tests {
     #[test]
     fn parses_typed_leaf_arguments_and_globals_in_any_position() {
         let invocation = ParsedInvocation::parse([
+            "advanced".to_owned(),
             "ir".to_owned(),
             "export".to_owned(),
             "--artifact".to_owned(),
@@ -593,6 +719,62 @@ mod tests {
     }
 
     #[test]
+    fn root_help_is_project_first_and_low_level_engines_are_nested() {
+        let mut command = command_definition();
+        let help = command.render_long_help().to_string();
+        assert!(help.contains("project"));
+        assert!(help.contains("inspect"));
+        assert!(help.contains("registers"));
+        assert!(help.contains("advanced"));
+        assert!(help.contains("START HERE"));
+        assert!(!help.contains("  mmio "));
+        assert!(!help.contains("  ir "));
+
+        let error = ParsedInvocation::parse([
+            "advanced".to_owned(),
+            "mmio".to_owned(),
+            "discover".to_owned(),
+            "--help".to_owned(),
+        ])
+        .unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("Find MMIO accesses and infer register and field candidates")
+        );
+    }
+
+    #[test]
+    fn machine_output_is_one_json_document_and_details_are_human_metadata() {
+        let invocation = ParsedInvocation::parse([
+            "project".to_owned(),
+            "status".to_owned(),
+            "--format".to_owned(),
+            "json".to_owned(),
+            "--details".to_owned(),
+            "--output".to_owned(),
+            "status.json".to_owned(),
+        ])
+        .unwrap();
+        assert_eq!(invocation.ui.format, OutputFormat::Json);
+        assert!(invocation.ui.details);
+        let Command::ProjectStatus(arguments) = invocation.command else {
+            panic!("unexpected argument type")
+        };
+        assert_eq!(arguments.output, Some(PathBuf::from("status.json")));
+
+        assert!(
+            ParsedInvocation::parse([
+                "project".to_owned(),
+                "status".to_owned(),
+                "--format".to_owned(),
+                "jsonl".to_owned(),
+            ])
+            .is_err()
+        );
+    }
+
+    #[test]
     fn project_analysis_and_ci_check_have_typed_interfaces() {
         let invocation = ParsedInvocation::parse([
             "project".to_owned(),
@@ -626,6 +808,7 @@ mod tests {
     #[test]
     fn linked_ir_commands_accept_explicit_function_workers() {
         let invocation = ParsedInvocation::parse([
+            "advanced".to_owned(),
             "ir".to_owned(),
             "build".to_owned(),
             "--jobs".to_owned(),
@@ -638,6 +821,7 @@ mod tests {
         assert_eq!(arguments.jobs, 3);
 
         let invocation = ParsedInvocation::parse([
+            "advanced".to_owned(),
             "ir".to_owned(),
             "export".to_owned(),
             "--artifact".to_owned(),
@@ -708,6 +892,7 @@ mod tests {
     #[test]
     fn mmio_discovery_defaults_to_all_code_symbols_and_can_be_narrowed() {
         let invocation = ParsedInvocation::parse([
+            "advanced".to_owned(),
             "mmio".to_owned(),
             "discover".to_owned(),
             "--artifact".to_owned(),
@@ -722,6 +907,7 @@ mod tests {
         assert_eq!(arguments.code_symbols, CodeSymbolSelectionArg::All);
 
         let invocation = ParsedInvocation::parse([
+            "advanced".to_owned(),
             "mmio".to_owned(),
             "discover".to_owned(),
             "--code-symbols".to_owned(),

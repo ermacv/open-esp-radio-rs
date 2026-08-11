@@ -1,8 +1,11 @@
-//! Terminal renderer for concrete execution comparisons.
+//! Task-first terminal renderer for concrete execution comparisons.
 
 use std::fmt::Write as _;
 
-use crate::verification::*;
+use crate::{
+    cli::{output as command_output, table},
+    verification::*,
+};
 
 fn trace_item_text(item: Option<&TraceItemReport>) -> String {
     let Some(item) = item else {
@@ -12,8 +15,8 @@ fn trace_item_text(item: Option<&TraceItemReport>) -> String {
         TraceItemReport::Event { event, producer } => {
             let producer = producer.as_ref().map_or_else(String::new, |producer| {
                 format!(
-                    " producer={}+{:#x}@{:#010x}",
-                    producer.symbol.as_deref().unwrap_or("<unknown>"),
+                    " [{}+{:#x} @ {:#010x}]",
+                    producer.symbol.as_deref().unwrap_or("unknown"),
                     producer.symbol_offset.unwrap_or_default(),
                     producer.pc
                 )
@@ -26,8 +29,8 @@ fn trace_item_text(item: Option<&TraceItemReport>) -> String {
                     register,
                     value,
                 } => format!(
-                    "READ/{width} {address:#010x} region={region} register={} -> {value:#010x}",
-                    register.as_deref().unwrap_or("-")
+                    "READ/{width} {address:#010x} {region}/{} -> {value:#010x}",
+                    register.as_deref().unwrap_or("unknown")
                 ),
                 ExecutionEventReport::Write {
                     width,
@@ -36,8 +39,8 @@ fn trace_item_text(item: Option<&TraceItemReport>) -> String {
                     register,
                     value,
                 } => format!(
-                    "WRITE/{width} {address:#010x} region={region} register={} <- {value:#010x}",
-                    register.as_deref().unwrap_or("-")
+                    "WRITE/{width} {address:#010x} {region}/{} <- {value:#010x}",
+                    register.as_deref().unwrap_or("unknown")
                 ),
                 ExecutionEventReport::DelayMicros { micros } => format!("DELAY {micros} us"),
                 ExecutionEventReport::Fence {
@@ -49,7 +52,7 @@ fn trace_item_text(item: Option<&TraceItemReport>) -> String {
             format!("{event}{producer}")
         }
         TraceItemReport::Memory { change } => format!(
-            "RAM {:#010x} {:#04x} -> {:#04x}",
+            "RAM {:#010x}: {:#04x} -> {:#04x}",
             change.address, change.before, change.after
         ),
         TraceItemReport::ReturnValue { value } => format!("RETURN {value:#010x}"),
@@ -57,69 +60,53 @@ fn trace_item_text(item: Option<&TraceItemReport>) -> String {
     }
 }
 
-fn render_difference(mut output: &mut String, case: &str, difference: &TraceDiffReport) {
+fn render_difference(output: &mut String, case: &str, difference: &TraceDiffReport) {
     let _ = writeln!(
-        &mut output,
-        "FIRST-DIFFERENCE\tcase={case}\tkind={}\tindex={}",
+        output,
+        "\nFirst difference — case {case}, {}, event #{}",
         difference.kind.label(),
         difference.first_difference
     );
-    for item in &difference.context_before {
-        let _ = writeln!(
-            &mut output,
-            "DIFF-CONTEXT\tbefore\t{}\tequal={}\tvendor={}\trust={}",
-            item.index,
-            item.equal,
-            trace_item_text(item.vendor.as_ref()),
-            trace_item_text(item.rust.as_ref())
-        );
-    }
+    let rows = difference
+        .context_before
+        .iter()
+        .map(|item| {
+            [
+                item.index.to_string(),
+                trace_item_text(item.vendor.as_ref()),
+                trace_item_text(item.rust.as_ref()),
+            ]
+        })
+        .chain(std::iter::once([
+            format!("{} *", difference.first_difference),
+            trace_item_text(difference.vendor.as_ref()),
+            trace_item_text(difference.rust.as_ref()),
+        ]))
+        .chain(difference.context_after.iter().map(|item| {
+            [
+                item.index.to_string(),
+                trace_item_text(item.vendor.as_ref()),
+                trace_item_text(item.rust.as_ref()),
+            ]
+        }));
     let _ = writeln!(
-        &mut output,
-        "DIFF-ITEM\t{}\tvendor={}\trust={}",
-        difference.first_difference,
-        trace_item_text(difference.vendor.as_ref()),
-        trace_item_text(difference.rust.as_ref())
+        output,
+        "{}",
+        table::render(["Event", "Vendor", "Rust"], rows)
     );
-    for item in &difference.context_after {
-        let _ = writeln!(
-            &mut output,
-            "DIFF-CONTEXT\tafter\t{}\tequal={}\tvendor={}\trust={}",
-            item.index,
-            item.equal,
-            trace_item_text(item.vendor.as_ref()),
-            trace_item_text(item.rust.as_ref())
-        );
-    }
     if let Some(path) = &difference.path {
         let _ = writeln!(
-            &mut output,
-            "DIFF-PATH\tvendor-branches={}\trust-branches={}\tvendor-calls={}\trust-calls={}",
+            output,
+            "Path context: vendor {} branch(es)/{} call(s), Rust {} branch(es)/{} call(s)",
             path.vendor.branches.len(),
-            path.rust.branches.len(),
             path.vendor.calls.len(),
+            path.rust.branches.len(),
             path.rust.calls.len()
         );
     }
 }
 
-fn render_coverage(mut output: &mut String, side: &str, coverage: &CoverageReport) {
-    for call in &coverage.covered_calls {
-        let _ = writeln!(&mut output, "COVERED-CALL\t{side}\t{call}");
-    }
-    for outcome in &coverage.branch_outcomes {
-        let _ = writeln!(
-            &mut output,
-            "{}\t{side}\t{}\ttaken={}",
-            if outcome.covered {
-                "COVERED-BRANCH"
-            } else {
-                "UNCOVERED-BRANCH"
-            },
-            outcome.location,
-            outcome.taken
-        );
-    }
+fn render_coverage(output: &mut String, side: &str, coverage: &CoverageReport) {
     let sites = coverage
         .branch_outcomes
         .iter()
@@ -127,218 +114,205 @@ fn render_coverage(mut output: &mut String, side: &str, coverage: &CoverageRepor
         .collect::<std::collections::BTreeSet<_>>()
         .len();
     let uncovered = coverage.uncovered_branch_outcomes();
+    let unresolved = coverage
+        .unresolved_control_flow
+        .iter()
+        .filter(|edge| !edge.covered)
+        .count();
     let _ = writeln!(
-        &mut output,
-        "SUMMARY-BRANCHES\t{side}\tsites={sites}\toutcomes={}\tcovered={}\tuncovered={uncovered}",
+        output,
+        "{side}: {} branch site(s), {}/{} outcome(s) covered, {} unresolved edge(s), {} unnamed MMIO address(es)",
+        sites,
+        coverage.branch_outcomes.len() - uncovered,
         coverage.branch_outcomes.len(),
-        coverage.branch_outcomes.len() - uncovered
+        unresolved,
+        coverage.unnamed_mmio.len()
     );
-    for edge in &coverage.unresolved_control_flow {
-        if edge.covered {
-            let _ = writeln!(
-                &mut output,
-                "COVERED-CONTROL-FLOW\t{side}\t{}\ttargets={}",
-                edge.location,
-                edge.targets.join(",")
-            );
-        } else {
-            let _ = writeln!(
-                &mut output,
-                "UNCOVERED-CONTROL-FLOW\t{side}\t{}\t{}",
-                edge.location, edge.edge
-            );
-        }
+    for outcome in coverage
+        .branch_outcomes
+        .iter()
+        .filter(|outcome| !outcome.covered)
+    {
+        let _ = writeln!(
+            output,
+            "  Uncovered branch: {} taken={}",
+            outcome.location, outcome.taken
+        );
+    }
+    for edge in coverage
+        .unresolved_control_flow
+        .iter()
+        .filter(|edge| !edge.covered)
+    {
+        let _ = writeln!(
+            output,
+            "  Unresolved control flow: {} ({})",
+            edge.location, edge.edge
+        );
     }
     for address in &coverage.unnamed_mmio {
-        let _ = writeln!(&mut output, "UNNAMED-MMIO\t{side}\t{address:#010x}");
+        let _ = writeln!(output, "  Unnamed MMIO: {address:#010x}");
+    }
+    if command_output::details() {
+        for call in &coverage.covered_calls {
+            let _ = writeln!(output, "  Covered call: {call}");
+        }
+        for outcome in coverage
+            .branch_outcomes
+            .iter()
+            .filter(|outcome| outcome.covered)
+        {
+            let _ = writeln!(
+                output,
+                "  Covered branch: {} taken={}",
+                outcome.location, outcome.taken
+            );
+        }
     }
 }
 
 pub(crate) fn print_execution_comparison(report: &ExecutionComparisonReport) {
     let mut output = String::new();
+    let verdict = match report.verdict.label() {
+        "match" | "pass" => command_output::success(report.verdict.label().to_uppercase()),
+        "incomplete" => command_output::warning("INCOMPLETE"),
+        _ => command_output::failure(report.verdict.label().to_uppercase()),
+    };
     let _ = writeln!(
         &mut output,
-        "ORACLE\t{}\tsha256={}",
-        report.vendor.path, report.vendor.sha256
+        "{}",
+        command_output::heading("Execution comparison")
     );
-    if let Some(companion) = &report.vendor.companion {
-        let _ = writeln!(
-            &mut output,
-            "ORACLE\t{}\tsha256={}",
-            companion.path, companion.sha256
-        );
+    let _ = writeln!(&mut output, "{verdict} — mode {}", report.mode.label());
+    let _ = writeln!(&mut output, "Vendor: {}", report.vendor.path);
+    if command_output::details() {
+        let _ = writeln!(&mut output, "SHA-256: {}", report.vendor.sha256);
+        if let Some(companion) = &report.vendor.companion {
+            let _ = writeln!(
+                &mut output,
+                "Companion: {} ({})",
+                companion.path, companion.sha256
+            );
+        }
     }
+
+    let rows = report.cases.iter().map(|case| match case {
+        CaseReport::Match {
+            name,
+            events,
+            memory_changes,
+            return_compared,
+            ..
+        } => [
+            name.clone(),
+            "match".to_owned(),
+            format!(
+                "{events} events, {memory_changes} RAM changes, return {}",
+                if *return_compared {
+                    "checked"
+                } else {
+                    "ignored"
+                }
+            ),
+        ],
+        CaseReport::Incomplete {
+            name,
+            vendor_error,
+            rust_error,
+            ..
+        } => [
+            name.clone(),
+            "incomplete".to_owned(),
+            format!(
+                "vendor: {}; Rust: {}",
+                vendor_error.as_deref().unwrap_or("complete"),
+                rust_error.as_deref().unwrap_or("complete")
+            ),
+        ],
+        CaseReport::Diff {
+            name, difference, ..
+        } => [
+            name.clone(),
+            "different".to_owned(),
+            format!(
+                "{} at event #{}",
+                difference.kind.label(),
+                difference.first_difference
+            ),
+        ],
+    });
+    let _ = writeln!(&mut output, "\n{}", command_output::heading("Cases"));
+    let _ = writeln!(
+        &mut output,
+        "{}",
+        table::render(["Case", "Result", "Details"], rows)
+    );
+
     for case in &report.cases {
         match case {
-            CaseReport::Match {
-                name,
-                environment,
-                events,
-                memory_changes,
-                return_compared,
-            } => {
-                render_table_environment(&mut output, name, environment);
-                let _ = writeln!(
-                    &mut output,
-                    "CASE\t{name}\tMATCH\tevents={events}\tmemory-changes={memory_changes}\treturn={}",
-                    if *return_compared {
-                        "checked"
-                    } else {
-                        "ignored"
-                    }
-                );
-            }
-            CaseReport::Incomplete {
-                name,
-                environment,
-                vendor_error,
-                rust_error,
-            } => {
-                render_table_environment(&mut output, name, environment);
-                let _ = writeln!(
-                    &mut output,
-                    "CASE\t{name}\tINCOMPLETE\tvendor={}\trust={}",
-                    vendor_error.as_deref().unwrap_or("complete"),
-                    rust_error.as_deref().unwrap_or("complete")
-                );
-            }
             CaseReport::Diff {
-                name,
-                environment,
-                difference,
-            } => {
-                render_table_environment(&mut output, name, environment);
-                let _ = writeln!(
-                    &mut output,
-                    "CASE\t{name}\tDIFF\tkind={}\tfirst-difference={}",
-                    difference.kind.label(),
-                    difference.first_difference,
-                );
-                render_difference(&mut output, name, difference);
+                name, difference, ..
+            } => render_difference(&mut output, name, difference),
+            CaseReport::Match {
+                name, environment, ..
             }
+            | CaseReport::Incomplete {
+                name, environment, ..
+            } if command_output::details() => render_environment(&mut output, name, environment),
+            _ => {}
         }
     }
     if let Some(gap) = &report.coverage_gap {
         render_difference(&mut output, "coverage", gap);
     }
-    render_coverage(&mut output, "vendor", &report.vendor_coverage);
-    render_coverage(&mut output, "rust", &report.rust_coverage);
+
+    let _ = writeln!(&mut output, "\n{}", command_output::heading("Coverage"));
+    render_coverage(&mut output, "Vendor", &report.vendor_coverage);
+    render_coverage(&mut output, "Rust", &report.rust_coverage);
     let summary = &report.summary;
     let _ = writeln!(
         &mut output,
-        "SUMMARY\tcases={}\tmatched={}\tdifferent={}\tincomplete={}\tvendor-uncovered-branch-outcomes={}\trust-uncovered-branch-outcomes={}\tvendor-unresolved-control-flow={}\trust-unresolved-control-flow={}\tvendor-unnamed-mmio={}\trust-unnamed-mmio={}",
-        summary.cases,
-        summary.matched,
-        summary.different,
-        summary.incomplete,
-        summary.vendor_uncovered_branch_outcomes,
-        summary.rust_uncovered_branch_outcomes,
-        summary.vendor_unresolved_control_flow,
-        summary.rust_unresolved_control_flow,
-        summary.vendor_unnamed_mmio,
-        summary.rust_unnamed_mmio
-    );
-    let _ = writeln!(
-        &mut output,
-        "VERDICT\tmode={}\t{}",
-        report.mode.label(),
-        report.verdict.label()
+        "\nSummary: {} case(s), {} matched, {} different, {} incomplete",
+        summary.cases, summary.matched, summary.different, summary.incomplete
     );
     crate::cli::output::text(output);
 }
 
-fn render_table_environment(
-    mut output: &mut String,
-    case: &str,
-    environment: &ScenarioEnvironmentReport,
-) {
-    for (side, instances) in [
-        ("vendor", &environment.vendor_tables),
-        ("rust", &environment.rust_tables),
-    ] {
-        for instance in instances {
-            let _ = writeln!(
-                &mut output,
-                "TABLE-INSTANCE\tcase={case}\tside={side}\tlayout={}\tbase={:#010x}\tsize={:#x}\tpointer-cells={}\tslots={}",
-                instance.layout_id,
-                instance.base_address,
-                instance.layout_size,
-                instance.pointer_cells.len(),
-                instance.slots.len(),
-            );
-        }
-    }
-    for (side, allocations) in [
-        ("vendor", &environment.vendor_allocations),
-        ("rust", &environment.rust_allocations),
-    ] {
-        for allocation in allocations {
-            let _ = writeln!(
-                &mut output,
-                "ALLOCATION\tcase={case}\tside={side}\tsymbol={}\tsite={:#010x}\taddress={:#010x}\trequested={:#x}\tcapacity={:#x}\tzeroed={}",
-                allocation.symbol,
-                allocation.site,
-                allocation.address,
-                allocation.requested,
-                allocation.capacity,
-                allocation.zeroed,
-            );
-        }
-    }
+fn render_environment(output: &mut String, case: &str, environment: &ScenarioEnvironmentReport) {
+    let tables = environment.vendor_tables.len() + environment.rust_tables.len();
+    let allocations = environment.vendor_allocations.len() + environment.rust_allocations.len();
+    let memory =
+        environment.vendor_memory_instances.len() + environment.rust_memory_instances.len();
+    let _ = writeln!(
+        output,
+        "\nEnvironment {case}: {tables} table instance(s), {allocations} allocation(s), {} device model(s), {memory} memory instance(s)",
+        environment.device_models.len()
+    );
     for device in &environment.device_models {
         let _ = writeln!(
-            &mut output,
-            "DEVICE-MODEL\tcase={case}\tid={}\tkind={}\tstart={:#010x}\tlength={:#x}",
-            device.id, device.kind, device.start, device.length,
+            output,
+            "  Device {}: {} at {:#010x}, length {:#x}",
+            device.id, device.kind, device.start, device.length
         );
     }
     for (side, coverage) in [
-        ("vendor", &environment.vendor_device_coverage),
-        ("rust", &environment.rust_device_coverage),
+        ("Vendor", &environment.vendor_device_coverage),
+        ("Rust", &environment.rust_device_coverage),
     ] {
         for model in coverage {
             let _ = writeln!(
-                &mut output,
-                "DEVICE-COVERAGE\tcase={case}\tside={side}\tid={}\tkind={}\tcomplete={}\treason={}",
+                output,
+                "  {side} device {}: {}{}",
                 model.id,
-                model.kind,
-                model.complete,
-                model.reason.as_deref().unwrap_or("-"),
-            );
-        }
-    }
-    for (side, instances) in [
-        ("vendor", &environment.vendor_memory_instances),
-        ("rust", &environment.rust_memory_instances),
-    ] {
-        for instance in instances {
-            let _ = writeln!(
-                &mut output,
-                "MEMORY-INSTANCE\tcase={case}\tside={side}\tid={}\tbase={:#010x}\tlength={:#x}\tbindings={}",
-                instance.id,
-                instance.base_address,
-                instance.length,
-                instance.bindings.len(),
-            );
-        }
-    }
-    for (side, events, complete) in [
-        (
-            "vendor",
-            &environment.vendor_table_lifecycle,
-            environment.vendor_table_lifecycle_complete,
-        ),
-        (
-            "rust",
-            &environment.rust_table_lifecycle,
-            environment.rust_table_lifecycle_complete,
-        ),
-    ] {
-        if let Some(complete) = complete {
-            let _ = writeln!(
-                &mut output,
-                "TABLE-LIFECYCLE\tcase={case}\tside={side}\tcomplete={complete}\tevents={}",
-                events.len()
+                if model.complete {
+                    "complete"
+                } else {
+                    "incomplete"
+                },
+                model
+                    .reason
+                    .as_deref()
+                    .map_or_else(String::new, |reason| format!(" — {reason}"))
             );
         }
     }

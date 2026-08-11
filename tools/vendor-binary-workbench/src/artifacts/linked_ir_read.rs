@@ -3,8 +3,9 @@
 pub(super) mod schema;
 
 pub(crate) use schema::{
-    LinkedIrStoredDocument, StoredCall, StoredFlowValue, StoredFunction, StoredLocalValueFlow,
-    StoredMemoryObject, StoredMmioAccess, StoredMmioRegister, StoredReviewCall,
+    LinkedIrStoredDocument, StoredCall, StoredDataObject, StoredFlowValue, StoredFunction,
+    StoredLocalValueFlow, StoredMemoryObject, StoredMmioAccess, StoredMmioRegister,
+    StoredReviewCall,
 };
 
 use crate::Result;

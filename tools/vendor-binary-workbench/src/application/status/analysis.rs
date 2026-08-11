@@ -32,7 +32,8 @@ fn navigation_index(context: &ProjectContext<'_>) -> Component {
     if !spec.output.is_file() {
         return Component::new("navigation_index", Readiness::Incomplete)
             .detail("path", spec.output.display().to_string())
-            .diagnostic("navigation index has not been generated");
+            .diagnostic("navigation index has not been generated")
+            .next_action(project_command(context, "project analyze"));
     }
     match crate::navigation::inspect_report(&spec.output) {
         Ok(summary) => Component::new("navigation_index", Readiness::Ready)
@@ -48,8 +49,16 @@ fn navigation_index(context: &ProjectContext<'_>) -> Component {
             ),
         Err(error) => Component::new("navigation_index", Readiness::Invalid)
             .detail("path", spec.output.display().to_string())
-            .diagnostic(error),
+            .diagnostic(error)
+            .next_action(project_command(context, "project analyze")),
     }
+}
+
+fn project_command(context: &ProjectContext<'_>, command: &str) -> String {
+    format!(
+        "vendor-binary-workbench {command} --project {}",
+        context.project_path.display()
+    )
 }
 
 fn symbol_inventory(context: &ProjectContext<'_>) -> Component {

@@ -79,12 +79,12 @@ pub(super) fn apply_project_defaults(
         }
     }
     if let Command::SymbolInventory(arguments) = command
-        && arguments.json_report.is_none()
+        && arguments.output.is_none()
         && let Some(path) = project
             .and_then(|project| project.symbol_inventory.as_ref())
             .map(|symbols| &symbols.output)
     {
-        arguments.json_report = Some(path.clone());
+        arguments.output = Some(path.clone());
     }
     if let Command::DiscoverMmio(arguments) = command
         && let Some(memory_map) = memory_map
@@ -95,20 +95,20 @@ pub(super) fn apply_project_defaults(
         }
     }
     if let Command::DiscoverMmio(arguments) = command
-        && arguments.json_report.is_none()
+        && arguments.output.is_none()
         && let Some(path) = project
             .and_then(|project| project.registers.as_ref())
             .map(|registers| &registers.facts)
     {
-        arguments.json_report = Some(path.clone());
+        arguments.output = Some(path.clone());
     }
     if let Command::InterfaceDiscover(arguments) = command
-        && arguments.json_report.is_none()
+        && arguments.output.is_none()
         && let Some(path) = project
             .and_then(|project| project.interfaces.as_ref())
             .map(|interfaces| &interfaces.facts)
     {
-        arguments.json_report = Some(path.clone());
+        arguments.output = Some(path.clone());
     }
     Ok(())
 }

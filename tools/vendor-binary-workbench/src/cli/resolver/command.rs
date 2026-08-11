@@ -85,6 +85,9 @@ pub(super) fn resolve_command(
         Command::ProjectDoctor(_) => {
             ResolvedInvocation::ProjectDoctor(Box::new(environment.into_project_session()?))
         }
+        Command::ProjectFiles(_) => {
+            ResolvedInvocation::ProjectFiles(Box::new(environment.into_project_session()?))
+        }
         Command::ProjectStatus(arguments) => ResolvedInvocation::ProjectStatus {
             arguments,
             session: Box::new(environment.into_project_session()?),

@@ -67,11 +67,11 @@ pub(crate) struct ProjectInputsInitArgs {
 #[derive(Clone, Debug, Default, Args)]
 pub(crate) struct ProjectStatusArgs {
     /// Fail unless the generated JSON report is already current.
-    #[arg(long, requires = "json_report")]
+    #[arg(long, requires = "output")]
     pub(crate) check: bool,
     /// Write the structured project status report.
     #[arg(long)]
-    pub(crate) json_report: Option<PathBuf>,
+    pub(crate) output: Option<PathBuf>,
     /// Return failure when any required project component is incomplete.
     #[arg(long)]
     pub(crate) deny_incomplete: bool,
@@ -164,7 +164,7 @@ pub(crate) struct SymbolInventoryArgs {
     pub(crate) check: bool,
     /// Write the machine-readable symbol inventory.
     #[arg(long)]
-    pub(crate) json_report: Option<PathBuf>,
+    pub(crate) output: Option<PathBuf>,
     /// Restrict symbols to this name prefix.
     #[arg(long)]
     pub(crate) name_prefix: Option<String>,
@@ -180,7 +180,7 @@ pub(crate) struct InterfaceDiscoverArgs {
     pub(crate) check: bool,
     /// Write the machine-readable interface discovery report.
     #[arg(long)]
-    pub(crate) json_report: Option<PathBuf>,
+    pub(crate) output: Option<PathBuf>,
     /// Restrict discovered symbols to this prefix.
     #[arg(long, default_value = "")]
     pub(crate) name_prefix: String,
@@ -323,7 +323,7 @@ pub(crate) struct MmioDiscoverArgs {
     pub(crate) jobs: u8,
     /// Write the machine-readable MMIO discovery report.
     #[arg(long)]
-    pub(crate) json_report: Option<PathBuf>,
+    pub(crate) output: Option<PathBuf>,
     /// Verify the existing report without modifying it.
     #[arg(long)]
     pub(crate) check: bool,
@@ -354,7 +354,7 @@ pub(crate) struct IrExportArgs {
     pub(crate) pseudo_rust: Option<PathBuf>,
     /// Write the machine-readable linked-IR report.
     #[arg(long)]
-    pub(crate) json_report: Option<PathBuf>,
+    pub(crate) output: Option<PathBuf>,
 }
 
 #[derive(Clone, Debug, Default, Args)]
@@ -421,7 +421,7 @@ pub(crate) struct InspectAnalyzeArgs {
     pub(crate) entry_contract: String,
     /// Write the machine-readable analysis report.
     #[arg(long)]
-    pub(crate) json_report: Option<PathBuf>,
+    pub(crate) output: Option<PathBuf>,
 }
 
 #[derive(Clone, Debug, Default, Args)]
@@ -802,7 +802,7 @@ pub(crate) struct VerifyInventoryArgs {
     pub(crate) evidence_baseline: Vec<PathBuf>,
     /// Write the machine-readable verification report.
     #[arg(long)]
-    pub(crate) json_report: Option<PathBuf>,
+    pub(crate) output: Option<PathBuf>,
 }
 
 #[derive(Clone, Debug, Default, Args)]

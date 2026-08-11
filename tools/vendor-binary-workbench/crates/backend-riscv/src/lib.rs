@@ -5,6 +5,7 @@
 //! and never selected by chip identity inside this crate.
 
 use open_radio_vendor_analysis_model::*;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -13,6 +14,13 @@ pub enum Error {
 
     #[error(transparent)]
     Io(#[from] std::io::Error),
+
+    #[error("cannot read binary artifact {}", path.display())]
+    ArtifactRead {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
 
     #[error(transparent)]
     Format(#[from] std::fmt::Error),
@@ -40,6 +48,13 @@ impl From<&str> for Error {
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
+
+pub(crate) fn read_artifact(path: &Path) -> Result<Vec<u8>> {
+    std::fs::read(path).map_err(|source| Error::ArtifactRead {
+        path: path.to_owned(),
+        source,
+    })
+}
 
 pub const RV32_REGISTER_ARGUMENT_COUNT: usize = 8;
 pub const RV32_STACK_ARGUMENT_COUNT: usize = 8;
@@ -72,3 +87,19 @@ pub use static_analysis::{
     RiscvHarnessSpec, RiscvSummaryHooks, StructuralCallSite, StructuralPointerContext,
     SymbolicStack, trace_binary_symbol,
 };
+
+#[cfg(test)]
+mod error_tests {
+    use super::*;
+
+    #[test]
+    fn missing_artifact_error_names_the_binary_path() {
+        let path = std::env::temp_dir().join(format!(
+            "vendor-workbench-missing-artifact-{}.elf",
+            std::process::id()
+        ));
+        let error = read_artifact(&path).unwrap_err();
+        assert!(error.to_string().contains(&path.display().to_string()));
+        assert!(error.to_string().contains("binary artifact"));
+    }
+}

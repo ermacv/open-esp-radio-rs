@@ -397,7 +397,7 @@ pub(super) fn render(frame: &mut Frame<'_>, state: &BrowserState, area: Rect) {
                                 .production_component
                                 .as_deref()
                                 .unwrap_or("none"),
-                            replacement.proofs.as_array().map_or(0, Vec::len),
+                            replacement.proofs.len(),
                         ))
                     }));
                 }

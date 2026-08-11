@@ -6,6 +6,8 @@
 //! raw instructions or basic blocks.
 
 mod correspondence;
+mod origin;
+mod replacement;
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -16,7 +18,9 @@ use petgraph::{algo::astar, graph::DiGraph};
 use serde::Serialize;
 
 use crate::{ProjectSpec, Result, artifact, artifacts};
-use correspondence::{origin_instruction_correspondence, origin_relocation_dependencies};
+use origin::origin_evidence;
+use replacement::replacement_evidence;
+pub use replacement::{ReplacementEvidence, ReplacementProofEvidence};
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct FunctionInvestigationReport {
@@ -48,24 +52,6 @@ pub struct CfgPathEvidence {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-pub struct ReplacementEvidence {
-    pub association: &'static str,
-    pub report: String,
-    pub report_complete_project_run: bool,
-    pub report_passed: bool,
-    pub freshness_claim: bool,
-    pub vendor_source: String,
-    pub vendor_symbol: String,
-    pub status: String,
-    pub reviewed: bool,
-    pub disposition: Option<String>,
-    pub protocol: Option<String>,
-    pub production_component: Option<String>,
-    pub verification_probes: Vec<String>,
-    pub proofs: serde_json::Value,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct ReviewedPreconditionEvidence {
     pub id: String,
     pub expression: String,
@@ -84,6 +70,11 @@ pub struct ReviewedPathEvidence {
 pub struct OriginFunctionEvidence {
     pub association: &'static str,
     pub inventory_report: Option<String>,
+    /// Authoritative address selected by the already generated link unit.
+    /// This remains an association claim, not a reconstruction of linker
+    /// selection, but lets an archive inspection reuse the matching linked IR.
+    pub linked_address: Option<u64>,
+    pub linked_member: Option<String>,
     /// Relocation-backed dependencies retained by the relocatable archive
     /// member. These are never projected onto linked instruction addresses by
     /// offset arithmetic: linker relaxation can change both instruction count
@@ -278,8 +269,12 @@ pub(crate) fn investigate(
         origin.as_ref(),
         project,
     )?;
+    let reviewed_address = origin
+        .as_ref()
+        .and_then(|origin| origin.linked_address)
+        .unwrap_or(runtime.address);
     let (reviewed_preconditions, reviewed_paths) =
-        reviewed_path_knowledge(request.source, &runtime, project)?;
+        reviewed_path_knowledge(request.source, &runtime.symbol, reviewed_address, project)?;
     let replacements = replacement_evidence(request.source, request.symbol, project)?;
     let cfg_path = request
         .cfg_path
@@ -318,7 +313,7 @@ pub(crate) fn investigate(
         }
     };
     Ok(FunctionInvestigationReport {
-        schema_version: 6,
+        schema_version: 7,
         command: "inspect function",
         source: request.source.to_owned(),
         symbol: request.symbol.to_owned(),
@@ -459,123 +454,17 @@ fn cfg_block(runtime: &artifact::FunctionBody, address: u64) -> Result<usize> {
         })
 }
 
-fn replacement_evidence(
-    source: &str,
-    symbol: &str,
-    project: &ProjectSpec,
-) -> Result<Vec<ReplacementEvidence>> {
-    let Some(workspace) = project.verification.as_ref() else {
-        return Ok(Vec::new());
-    };
-    if !workspace.report.is_file() {
-        return Ok(Vec::new());
-    }
-    let input = std::fs::read_to_string(&workspace.report)?;
-    let document: serde_json::Value = serde_json::from_str(&input)?;
-    let complete = document
-        .get("complete_project_run")
-        .and_then(serde_json::Value::as_bool)
-        .unwrap_or(false);
-    let passed = document
-        .get("passed")
-        .and_then(serde_json::Value::as_bool)
-        .unwrap_or(false);
-    let candidates = document
-        .pointer("/replacement_graph/replacements")
-        .and_then(serde_json::Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter(|edge| {
-            edge.pointer("/vendor/symbol")
-                .and_then(serde_json::Value::as_str)
-                == Some(symbol)
-        })
-        .collect::<Vec<_>>();
-    let exact = candidates
-        .iter()
-        .copied()
-        .filter(|edge| {
-            edge.pointer("/vendor/source")
-                .and_then(serde_json::Value::as_str)
-                == Some(source)
-        })
-        .collect::<Vec<_>>();
-    let selected = if !exact.is_empty() {
-        exact
-    } else if candidates.len() == 1 {
-        candidates
-    } else {
-        Vec::new()
-    };
-    selected
-        .into_iter()
-        .map(|edge| {
-            let vendor_source = value_string(edge, "/vendor/source")?;
-            let association = if vendor_source == source {
-                "exact-source-symbol"
-            } else {
-                "unique-symbol-across-replacement-graph"
-            };
-            let rust = edge.get("rust");
-            Ok(ReplacementEvidence {
-                association,
-                report: workspace.report.display().to_string(),
-                report_complete_project_run: complete,
-                report_passed: passed,
-                freshness_claim: false,
-                vendor_source,
-                vendor_symbol: value_string(edge, "/vendor/symbol")?,
-                status: value_string(edge, "/status")?,
-                reviewed: edge
-                    .get("reviewed")
-                    .and_then(serde_json::Value::as_bool)
-                    .unwrap_or(false),
-                disposition: optional_value_string(edge, "/disposition"),
-                protocol: optional_value_string(edge, "/protocol"),
-                production_component: rust
-                    .and_then(|rust| optional_value_string(rust, "/production_component")),
-                verification_probes: rust
-                    .and_then(|rust| rust.get("verification_probes"))
-                    .and_then(serde_json::Value::as_array)
-                    .into_iter()
-                    .flatten()
-                    .filter_map(serde_json::Value::as_str)
-                    .map(ToOwned::to_owned)
-                    .collect(),
-                proofs: edge
-                    .get("proofs")
-                    .cloned()
-                    .unwrap_or_else(|| serde_json::json!([])),
-            })
-        })
-        .collect()
-}
-
-fn value_string(value: &serde_json::Value, pointer: &str) -> Result<String> {
-    value
-        .pointer(pointer)
-        .and_then(serde_json::Value::as_str)
-        .map(ToOwned::to_owned)
-        .ok_or_else(|| crate::Error::invalid(format!("replacement report lacks {pointer}")))
-}
-
-fn optional_value_string(value: &serde_json::Value, pointer: &str) -> Option<String> {
-    value
-        .pointer(pointer)
-        .and_then(serde_json::Value::as_str)
-        .map(ToOwned::to_owned)
-}
-
 fn reviewed_path_knowledge(
     source: &str,
-    runtime: &artifact::FunctionBody,
+    symbol: &str,
+    address: u64,
     project: &ProjectSpec,
 ) -> Result<(Vec<ReviewedPreconditionEvidence>, Vec<ReviewedPathEvidence>)> {
     let Some(workspace) = &project.functions else {
         return Ok((Vec::new(), Vec::new()));
     };
     let pack = crate::function_workspace::FunctionPack::load_reviewed(&workspace.pack)?;
-    let identity = format!("{source}::{}@{:#010x}", runtime.symbol, runtime.address);
+    let identity = format!("{source}::{symbol}@{address:#010x}");
     let Some(function) = pack
         .functions
         .iter()
@@ -606,111 +495,6 @@ fn reviewed_path_knowledge(
     ))
 }
 
-fn origin_evidence(
-    request: &FunctionInvestigationRequest<'_>,
-    runtime: &artifact::FunctionBody,
-    project: &ProjectSpec,
-) -> Result<(Option<OriginFunctionEvidence>, InvestigationLedgerEntry)> {
-    let Some(inventory) = request.inventory else {
-        return Ok((
-            None,
-            InvestigationLedgerEntry {
-                layer: "link-origin",
-                status: "unavailable",
-                detail: "selected source has no source-inventory input".to_owned(),
-            },
-        ));
-    };
-    let inventory_report = project
-        .symbol_inventory
-        .as_ref()
-        .map(|spec| spec.output.as_path())
-        .filter(|path| path.is_file());
-    let association = inventory_report
-        .map(artifacts::load_link_unit_origins)
-        .transpose()?
-        .and_then(|origins| {
-            origins.into_iter().find(|origin| {
-                origin.symbol == request.symbol
-                    && origin
-                        .linked_sources
-                        .iter()
-                        .any(|source| source == request.source)
-            })
-        });
-    let member = request.origin_member.or_else(|| {
-        association
-            .as_ref()
-            .and_then(|origin| origin.origin_member.as_deref())
-    });
-    if member.is_none() && association.is_none() {
-        let candidates = artifact::load_code_symbols(
-            inventory,
-            request.symbol,
-            artifact::CodeSymbolSelection::All,
-        )?
-        .into_iter()
-        .filter(|candidate| candidate.name == request.symbol)
-        .collect::<Vec<_>>();
-        if candidates.len() != 1 {
-            return Ok((
-                None,
-                InvestigationLedgerEntry {
-                    layer: "link-origin",
-                    status: if candidates.is_empty() {
-                        "unavailable"
-                    } else {
-                        "ambiguous"
-                    },
-                    detail: if candidates.is_empty() {
-                        format!(
-                            "raw inventory contains no exact symbol {:?}",
-                            request.symbol
-                        )
-                    } else {
-                        format!(
-                            "raw inventory contains {} candidates; pass --origin-member or generate a unique link-origin association",
-                            candidates.len()
-                        )
-                    },
-                },
-            ));
-        }
-    }
-    let body = artifact::inspect_function_body(inventory, member, request.symbol)?;
-    let relocation_dependencies = origin_relocation_dependencies(&body);
-    let instruction_correspondence = origin_instruction_correspondence(&body, runtime);
-    let status = if association.is_some() {
-        "unique-association"
-    } else {
-        "unreviewed-selection"
-    };
-    Ok((
-        Some(OriginFunctionEvidence {
-            association: status,
-            inventory_report: inventory_report.map(|path| path.display().to_string()),
-            relocation_dependencies,
-            instruction_correspondence,
-            body,
-        }),
-        InvestigationLedgerEntry {
-            layer: "link-origin",
-            status,
-            detail: if let Some(association) = association {
-                format!(
-                    "linked symbol associated by unique name/kind with archive member {}",
-                    association
-                        .origin_member
-                        .as_deref()
-                        .unwrap_or("<linked-image>")
-                )
-            } else {
-                "archive body selected without a generated unique-origin association".to_owned()
-            },
-        },
-    ))
-}
-
 fn semantic_evidence(
     source: &str,
     symbol: &str,
@@ -735,9 +519,14 @@ fn semantic_evidence(
             continue;
         }
         let reader = artifacts::LinkedIrReader::open(&profile.output)?;
-        let Some(function) =
-            reader.get_function(source, symbol, runtime.member.as_deref(), runtime.address)?
-        else {
+        let (member, address) =
+            origin.map_or((runtime.member.as_deref(), runtime.address), |origin| {
+                (
+                    origin.linked_member.as_deref(),
+                    origin.linked_address.unwrap_or(runtime.address),
+                )
+            });
+        let Some(function) = reader.get_function(source, symbol, member, address)? else {
             continue;
         };
         let complete = function.complete;

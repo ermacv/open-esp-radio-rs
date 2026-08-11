@@ -145,24 +145,32 @@ fn validate_project(manifest: &Path) -> Result<(ProjectSpec, TargetSpec)> {
 }
 
 fn print_report(report: &ProjectConfigureReport) {
+    outputln!("{}", crate::cli::output::heading("Project configuration"));
+    outputln!(
+        "{}",
+        crate::cli::output::success(format!("{} — configuration is valid", report.status))
+    );
+    outputln!("\nManifest: {}", report.manifest);
     if let Some(pack) = &report.platform_pack {
+        outputln!("Platform pack:       {pack}");
         outputln!(
-            "PROJECT-CONFIGURE\tstatus={status}\tplatform-pack={}\tharness={}\tsemantic-catalogs={}\tsemantic-operations={}\tmanifest={}",
-            pack,
-            report.harness.as_deref().unwrap_or("-"),
-            report.semantic_catalogs,
-            report.semantic_operations,
-            report.manifest,
-            status = report.status,
+            "Harness:             {}",
+            report.harness.as_deref().unwrap_or("none")
         );
+        outputln!("Semantic catalogs:   {}", report.semantic_catalogs);
+        outputln!("Semantic operations: {}", report.semantic_operations);
     } else {
+        outputln!("Platform pack: none");
         outputln!(
-            "PROJECT-CONFIGURE\tstatus={status}\tplatform-pack=-\tharness={}\tsemantic-catalogs=0\tsemantic-operations=0\tmanifest={}",
-            report.harness.as_deref().unwrap_or("-"),
-            report.manifest,
-            status = report.status,
+            "Harness:       {}",
+            report.harness.as_deref().unwrap_or("none")
         );
     }
+    outputln!("\n{}", crate::cli::output::heading("Next"));
+    outputln!(
+        "1. vendor-binary-workbench project doctor --project {}",
+        report.manifest
+    );
 }
 
 fn resolve_options(arguments: ProjectConfigureArgs) -> Options {

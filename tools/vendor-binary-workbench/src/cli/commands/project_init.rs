@@ -59,17 +59,19 @@ pub(super) fn run(arguments: ProjectInitArgs) -> Result<bool> {
             DEFAULT_PROJECT_MANIFEST
         ),
     };
-    if !crate::cli::output::structured(&report) {
-        outputln!(
-            "PROJECT-INIT\tstatus=created\tid={}\tarchitecture=riscv32\tsources={}\tmmio-regions={}\timported-svd={}\tpath={}",
-            report.id,
-            report.sources,
-            report.mmio_regions,
-            report.imported_svd,
-            report.path
-        );
-        outputln!("PROJECT-NEXT\tcommand={}", report.next_command);
-    }
+    crate::cli::output::render_report(&report, || {
+        outputln!("{}", crate::cli::output::heading("Project created"));
+        outputln!("{}", crate::cli::output::success("READY FOR LOCAL INPUTS"));
+        outputln!("\nProject:      {}", report.id);
+        outputln!("Directory:    {}", report.path);
+        outputln!("Architecture: {}", report.architecture);
+        outputln!("Sources:      {}", report.sources);
+        outputln!("MMIO regions: {}", report.mmio_regions);
+        outputln!("Imported SVD: {}", report.imported_svd);
+        outputln!("\n{}", crate::cli::output::heading("Next"));
+        outputln!("1. {}", report.next_command);
+        outputln!("2. vendor-binary-workbench project inputs init --help");
+    });
     Ok(true)
 }
 

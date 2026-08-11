@@ -167,7 +167,7 @@ fn code(context: &ProjectContext<'_>) -> Component {
         return Component::new("code_boundaries", Readiness::Incomplete)
             .detail("pack", paths.pack.display().to_string())
             .diagnostic("reviewed code-boundary pack has not been initialized")
-            .next_action(project_command(context, "code init-pack"));
+            .next_action(project_command(context, "advanced code init-pack"));
     }
     match context.code_workspace() {
         Ok(Some(workspace)) => {
@@ -194,7 +194,7 @@ fn code(context: &ProjectContext<'_>) -> Component {
         Err(error) => Component::new("code_boundaries", Readiness::Invalid)
             .detail("pack", paths.pack.display().to_string())
             .diagnostic(error)
-            .next_action(project_command(context, "code rebase")),
+            .next_action(project_command(context, "advanced code rebase")),
     }
 }
 
@@ -283,7 +283,7 @@ fn interfaces(context: &ProjectContext<'_>) -> Component {
         return Component::new("interfaces", Readiness::Incomplete)
             .detail("pack", pack.display().to_string())
             .diagnostic("interface pack has not been initialized")
-            .next_action(project_command(context, "interfaces init-pack"));
+            .next_action(project_command(context, "advanced interfaces init-pack"));
     }
     match context.interface_workspace() {
         Ok(Some(workspace)) => {
@@ -343,13 +343,13 @@ fn functions(context: &ProjectContext<'_>) -> Component {
             .detail("profiles", reports.len())
             .detail("missing_reports", missing)
             .diagnostic("linked-IR function facts have not been generated")
-            .next_action(project_command(context, "ir build"));
+            .next_action(project_command(context, "advanced ir build"));
     }
     if !paths.pack.is_file() {
         return Component::new("functions", Readiness::Incomplete)
             .detail("pack", paths.pack.display().to_string())
             .diagnostic("function pack has not been initialized")
-            .next_action(project_command(context, "functions init-pack"));
+            .next_action(project_command(context, "advanced functions init-pack"));
     }
     match context.function_workspace() {
         Ok(Some(workspace)) => {
@@ -391,10 +391,12 @@ fn functions(context: &ProjectContext<'_>) -> Component {
         }
         Ok(None) => Component::new("functions", Readiness::Incomplete)
             .detail("pack", paths.pack.display().to_string())
-            .diagnostic("linked-IR function facts or reviewed pack are unavailable"),
+            .diagnostic("linked-IR function facts or reviewed pack are unavailable")
+            .next_action(project_command(context, "advanced functions validate")),
         Err(error) => Component::new("functions", Readiness::Invalid)
             .detail("pack", paths.pack.display().to_string())
-            .diagnostic(error),
+            .diagnostic(error)
+            .next_action(project_command(context, "advanced functions validate")),
     }
 }
 

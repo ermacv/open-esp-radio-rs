@@ -2,7 +2,7 @@
 //!
 //! The linked IR itself can be several megabytes. Human stdout is a status
 //! surface, not a second serialization of the complete report: detailed
-//! evidence belongs in `--json-report` and generated pseudo code belongs in
+//! evidence belongs in `--output` and generated pseudo code belongs in
 //! `--pseudo-rust`.
 
 use super::*;

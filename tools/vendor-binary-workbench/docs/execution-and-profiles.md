@@ -38,7 +38,7 @@ Execute a linked RV32 ELF with concrete arguments and a deterministic MMIO
 scenario:
 
 ```console
-cargo vendor-binary-workbench execute run \
+cargo vendor-binary-workbench advanced execute run \
   --target-spec verification/vendor/targets/esp32s31/target.toml \
   --artifact "$ESP32S31_ROM_ELF" \
   --symbol phy_freq_band_reg_set --arg 1 \
@@ -94,7 +94,7 @@ observed it.
 Compare linked vendor and Rust implementations under the same scenarios:
 
 ```console
-cargo vendor-binary-workbench execute compare \
+cargo vendor-binary-workbench advanced execute compare \
   --target-spec verification/vendor/targets/esp32s31/target.toml \
   --vendor-artifact "$ESP32S31_ROM_ELF" \
   --vendor-symbol phy_freq_band_reg_set \
@@ -416,35 +416,35 @@ requiring Rust to reproduce the vendor stack, function boundaries or polling
 loop:
 
 ```console
-cargo vendor-binary-workbench verify contract channel \
+cargo vendor-binary-workbench advanced verify contract channel \
   --project verification/vendor/targets/esp32s31/vendor-project.toml \
   --vendor-artifact \
     verification/vendor/targets/esp32s31/oracle-firmware/target/riscv32imafc-unknown-none-elf/release/\
 open-esp-radio-vendor-oracle-esp32s31-trace-elf \
   --vendor-companion "$ESP32S31_ROM_ELF"
 
-cargo vendor-binary-workbench verify contract rf-init \
+cargo vendor-binary-workbench advanced verify contract rf-init \
   --project verification/vendor/targets/esp32s31/vendor-project.toml \
   --vendor-artifact \
     verification/vendor/targets/esp32s31/oracle-firmware/target/riscv32imafc-unknown-none-elf/release/\
 open-esp-radio-vendor-oracle-esp32s31-trace-elf \
   --vendor-companion "$ESP32S31_ROM_ELF"
 
-cargo vendor-binary-workbench-esp32s31 verify contract bluetooth-tx-gain-init \
+cargo vendor-binary-workbench advanced verify contract bluetooth-tx-gain-init \
   --project verification/vendor/targets/esp32s31/vendor-project.toml \
   --vendor-artifact \
     verification/vendor/targets/esp32s31/oracle-firmware/target/riscv32imafc-unknown-none-elf/release/\
 open-esp-radio-vendor-oracle-esp32s31-trace-elf \
   --vendor-companion "$ESP32S31_ROM_ELF"
 
-cargo vendor-binary-workbench-esp32s31 verify contract baseband-init \
+cargo vendor-binary-workbench advanced verify contract baseband-init \
   --project verification/vendor/targets/esp32s31/vendor-project.toml \
   --vendor-artifact \
     verification/vendor/targets/esp32s31/oracle-firmware/target/riscv32imafc-unknown-none-elf/release/\
 open-esp-radio-vendor-oracle-esp32s31-trace-elf \
   --vendor-companion "$ESP32S31_ROM_ELF"
 
-cargo vendor-binary-workbench-esp32s31 verify contract register-init \
+cargo vendor-binary-workbench advanced verify contract register-init \
   --project verification/vendor/targets/esp32s31/vendor-project.toml \
   --vendor-artifact \
     verification/vendor/targets/esp32s31/oracle-firmware/target/riscv32imafc-unknown-none-elf/release/\

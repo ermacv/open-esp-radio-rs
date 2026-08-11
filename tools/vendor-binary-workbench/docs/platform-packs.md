@@ -86,12 +86,11 @@ cargo test --manifest-path tools/vendor-binary-workbench/Cargo.toml \
   --no-default-features --lib
 ```
 
-Enable the compiled ESP32-S31 addon explicitly:
+The normal repository binary includes the compiled ESP32-S31 addon:
 
 ```console
-cargo build -p open-radio-vendor-binary-workbench \
-  --features esp32s31-harness
-cargo vendor-binary-workbench-esp32s31 project doctor \
+cargo build -p open-radio-vendor-binary-workbench
+cargo vendor-binary-workbench project doctor \
   --project verification/vendor/targets/esp32s31/vendor-project.toml
 ```
 

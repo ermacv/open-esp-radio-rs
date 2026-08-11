@@ -420,17 +420,23 @@ that every user must learn.
   modules, legacy paths, duplicate report models, handwritten serialization,
   stale vocabulary and configuration that is not reachable from the project
   workflow.
-- [ ] Keep `vendor-project.toml` as the normal entry point and document every
+- [x] Keep `vendor-project.toml` as the normal entry point and document every
   other TOML file by ownership: composition, private input, reviewed knowledge
-  or generated evidence.
+  or generated evidence. `project files` now reports entrypoint/local/external/
+  reviewed/generated ownership, producer, consumers and presence; the concise
+  getting-started guide uses only project-first commands.
 - [ ] Ensure every failed/blocked project stage prints one concrete next action
   and the exact responsible file.
 - [x] Add typed per-component `next_action` data to project status and collapse
   duplicate actions in the human frontend. The real ESP32-S31 status now links
   register, interface and function review counts to their report and editable
   pack, and explains the common publication blocker once.
-- [ ] Keep human output bounded and task-oriented; JSON/JSONL retain complete
-  machine evidence on stdout, while diagnostics/progress remain on stderr.
+- [x] Keep human output bounded and task-oriented; one typed JSON document is
+  the only machine result on stdout, while diagnostics/progress remain on
+  stderr. TSV and user-facing JSONL were removed without compatibility paths.
+  Status/doctor/files lead with outcome, problems and ordered next actions;
+  focused function inspection separates a concise pseudo-Rust/call/problem
+  view from the lossless `--full` body.
 - [ ] Load the four linked-IR inputs once per project operation and share one
   typed workspace snapshot between validation, review, navigation and TUI.
   On the 2026-08-10 real run, `functions review` alone spent about 100 seconds
@@ -564,6 +570,12 @@ schema without isolation.
   run-spec role and exact path. The schema-v47 real `btbb-all` write/check
   smoke test reproduces 186 functions, 111 registers and 277 field candidates
   in 0.40/0.35 s at 168,588/168,048 KiB through the hard-limit runner.
+- [x] Measure the read-only real-project status path after the UI migration.
+  It completes in 1.53 s at 266,952 KiB RSS through `scripts/run-limited`.
+  Deduplicating repeated physical artifact paths reduced the measured baseline
+  from 1.61 s while preserving one explicit report row per input role. An
+  allocation-light function-pack projection produced no measurable RSS/time
+  improvement and was deliberately not retained.
 - [ ] Reduce the all-profile single-process high-water from 580,824 KiB to the
   isolated-profile target (at most 512 MiB). Every profile is dropped and
   glibc-trimmed to about 53 MiB before the next one; remaining allocator

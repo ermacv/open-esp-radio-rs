@@ -1,6 +1,9 @@
 //! Lossless, project-aware function investigation command.
 
+use std::collections::BTreeMap;
+
 use super::super::*;
+use crate::cli::output;
 use crate::function_investigation::{
     FunctionInvestigationReport, FunctionInvestigationRequest, investigate,
 };
@@ -57,6 +60,10 @@ fn parse_exact_symbol(input: &str) -> Result<(&str, Option<u64>)> {
 }
 
 fn render_human(report: &FunctionInvestigationReport, full: bool) {
+    if !full {
+        render_summary(report);
+        return;
+    }
     crate::cli::output::line(format_args!(
         "FUNCTION {}:{}  runtime={}{}  bytes={}/{}",
         report.source,
@@ -113,7 +120,7 @@ fn render_human(report: &FunctionInvestigationReport, full: bool) {
                     .as_deref()
                     .unwrap_or("none"),
                 replacement.verification_probes.join(", "),
-                replacement.proofs.as_array().map_or(0, Vec::len),
+                replacement.proofs.len(),
                 replacement.report,
                 if replacement.freshness_claim {
                     ""
@@ -533,6 +540,212 @@ fn render_human(report: &FunctionInvestigationReport, full: bool) {
         crate::cli::output::line(format_args!(
             "\nUse --full for the complete CFG and lossless instruction listing."
         ));
+    }
+}
+
+fn render_summary(report: &FunctionInvestigationReport) {
+    outputln!("{}", output::heading("Function investigation"));
+    outputln!("Function: {}:{}", report.source, report.symbol);
+    outputln!("Artifact: {}", report.runtime.artifact);
+    if let Some(member) = &report.runtime.member {
+        outputln!("Member:   {member}");
+    }
+    outputln!(
+        "Body:     {} byte(s), {} instruction(s), {} basic block(s)",
+        report.runtime.size,
+        report.runtime.instructions.len(),
+        report.runtime.basic_blocks.len()
+    );
+
+    let complete_body = report.runtime.accounted_bytes == report.runtime.size;
+    let complete_semantics =
+        !report.semantics.is_empty() && report.semantics.iter().all(|semantic| semantic.complete);
+    let blocker_count = report
+        .semantics
+        .iter()
+        .map(|semantic| semantic.blockers.len())
+        .sum::<usize>();
+    let outcome = if complete_body && complete_semantics && blocker_count == 0 {
+        output::success("COMPLETE — binary body and semantic analysis are complete")
+    } else if complete_body && report.semantics.is_empty() {
+        output::warning("PARTIAL — lossless body retained; semantic analysis is unavailable")
+    } else if complete_body {
+        output::warning(format!(
+            "PARTIAL — lossless body retained; {blocker_count} semantic blocker(s)"
+        ))
+    } else {
+        output::failure(format!(
+            "INCOMPLETE — decoded {}/{} body bytes",
+            report.runtime.accounted_bytes, report.runtime.size
+        ))
+    };
+    outputln!("\n{outcome}");
+
+    outputln!("\n{}", output::heading("Proof ledger"));
+    outputln!(
+        "{}",
+        crate::cli::table::render(
+            ["Layer", "Status", "Meaning"],
+            report.proof_ledger.iter().map(|entry| [
+                entry.layer.to_owned(),
+                entry.status.to_owned(),
+                entry.detail.clone(),
+            ]),
+        )
+    );
+
+    for semantic in &report.semantics {
+        outputln!(
+            "\n{}",
+            output::heading(format!("Recovered pseudo-Rust — {}", semantic.profile))
+        );
+        if semantic.pseudo.is_empty() {
+            outputln!("No structured pseudo-Rust is available for this profile.");
+        } else {
+            // The persistent pseudo document deliberately carries a complete
+            // blocker/call preamble. The focused human view renders those as
+            // structured sections below, so repeating them here only turns
+            // the useful code into an objdump-like wall of text.
+            let all_lines = semantic.pseudo.lines().collect::<Vec<_>>();
+            let start = all_lines
+                .iter()
+                .position(|line| line.starts_with("fn "))
+                .unwrap_or(0);
+            let lines = &all_lines[start..];
+            let limit = if output::details() { lines.len() } else { 80 };
+            for line in lines.iter().take(limit) {
+                outputln!("{line}");
+            }
+            if lines.len() > limit {
+                outputln!(
+                    "… {} more line(s); use --details or --full.",
+                    lines.len() - limit
+                );
+            }
+        }
+
+        if !semantic.calls.is_empty() {
+            outputln!("\n{}", output::heading("Calls and relationships"));
+            outputln!(
+                "{}",
+                crate::cli::table::render(
+                    ["Kind", "Target / meaning"],
+                    semantic.calls.iter().take(30).map(|call| {
+                        let meaning = call
+                            .semantic_operation
+                            .as_deref()
+                            .or(call.execution_model.as_deref())
+                            .unwrap_or(call.knowledge);
+                        [
+                            call.kind.to_owned(),
+                            format!("{}\n→ {meaning}", call.target),
+                        ]
+                    }),
+                )
+            );
+            if semantic.calls.len() > 30 {
+                outputln!(
+                    "{} more call(s); use --details or JSON.",
+                    semantic.calls.len() - 30
+                );
+            }
+        }
+
+        if !semantic.reviewed_event_routes.is_empty() {
+            outputln!("\n{}", output::heading("Reviewed event routes"));
+            for route in &semantic.reviewed_event_routes {
+                outputln!(
+                    "- {}: {} {}={:#x} → {} ({})",
+                    route.id,
+                    route.mechanism,
+                    route.selector_role,
+                    route.selector_value,
+                    route.handler,
+                    route.execution_context
+                );
+            }
+        }
+    }
+
+    if !report.replacements.is_empty() {
+        outputln!("\n{}", output::heading("Vendor ↔ Rust replacement"));
+        outputln!(
+            "{}",
+            crate::cli::table::render(
+                ["Vendor", "Status", "Rust component"],
+                report.replacements.iter().map(|replacement| [
+                    format!(
+                        "{}:{}",
+                        replacement.vendor_source, replacement.vendor_symbol
+                    ),
+                    replacement.status.clone(),
+                    replacement
+                        .production_component
+                        .clone()
+                        .unwrap_or_else(|| "not assigned".to_owned()),
+                ]),
+            )
+        );
+        if output::details() {
+            let proofs = report
+                .replacements
+                .iter()
+                .map(|replacement| replacement.proofs.len())
+                .sum::<usize>();
+            outputln!("Reviewed proof records: {proofs}");
+        }
+    }
+
+    let blockers = report
+        .semantics
+        .iter()
+        .flat_map(|semantic| &semantic.blockers)
+        .collect::<Vec<_>>();
+    if !blockers.is_empty() {
+        outputln!("\n{}", output::heading("Problems"));
+        let mut grouped = BTreeMap::<(&str, &str), Vec<_>>::new();
+        for blocker in &blockers {
+            grouped
+                .entry((&blocker.kind, &blocker.required_model))
+                .or_default()
+                .push(*blocker);
+        }
+        let mut grouped = grouped.into_iter().collect::<Vec<_>>();
+        grouped.sort_by_key(|((kind, _), _)| blocker_priority(kind));
+        for (index, ((kind, required_model), occurrences)) in grouped.iter().enumerate() {
+            outputln!(
+                "{}. {} — {} occurrence(s)",
+                index + 1,
+                kind,
+                occurrences.len()
+            );
+            outputln!("   First: {}", occurrences[0].message);
+            outputln!("   Needs: {required_model}");
+            if output::details() {
+                for blocker in occurrences.iter().skip(1) {
+                    outputln!("   - {}", blocker.message);
+                }
+            }
+        }
+    }
+
+    outputln!("\n{}", output::heading("Next"));
+    outputln!("1. add --full for the lossless instruction/CFG view");
+    if !blockers.is_empty() {
+        outputln!("2. review the named model requirements, then rerun project analyze");
+    } else {
+        outputln!("2. use inspect flow to follow arguments and constants across callees");
+    }
+}
+
+fn blocker_priority(kind: &str) -> u8 {
+    match kind {
+        "memory-load" | "memory-store" => 0,
+        "indirect-control-flow" | "call-shape" | "unresolved-call" => 1,
+        "control-flow" | "poll-model" => 2,
+        "call-boundary" | "call-result-model" => 3,
+        "analysis-budget" | "aggregate" => 4,
+        _ => 5,
     }
 }
 

@@ -33,8 +33,8 @@ pub use register_lints::RegisterLintPack;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("{0}")]
-    Message(String),
+    #[error("invalid register model: {0}")]
+    Invalid(String),
 
     #[error(transparent)]
     Io(#[from] std::io::Error),
@@ -62,7 +62,7 @@ pub enum Error {
 
 impl Error {
     fn message(message: impl Into<String>) -> Self {
-        Self::Message(message.into())
+        Self::Invalid(message.into())
     }
 
     fn manifest(kind: &'static str, path: &Path, error: impl std::fmt::Display) -> Self {

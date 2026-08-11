@@ -11,13 +11,13 @@ reading. It uses the reference resolver to link direct ELF targets, archive
 and harness-known external function-table calls:
 
 ```console
-cargo vendor-binary-workbench ir export \
+cargo vendor-binary-workbench advanced ir export \
   --target-spec verification/vendor/targets/esp32s31/target.toml \
   --artifact libphy="$ESP32S31_LIBPHY_ARCHIVE" \
   --symbol-prefix phy_ \
   --include-reachable \
   --pseudo-rust /tmp/libphy.pseudo.rs \
-  --json-report /tmp/libphy.ir
+  --output /tmp/libphy.ir
 ```
 
 ## Persistent bundle and random access
@@ -128,12 +128,12 @@ A project inventory can aggregate several independently linked or relocatable
 inputs in one report. Multiple inputs must have stable source names:
 
 ```console
-cargo vendor-binary-workbench ir export \
+cargo vendor-binary-workbench advanced ir export \
   --target-spec verification/vendor/targets/esp32s31/target.toml \
   --artifact rom="$ESP32S31_ROM_ELF" \
   --artifact libphy="$ESP32S31_LIBPHY_ARCHIVE" \
   --artifact libpp="$ESP32S31_LIBPP_ARCHIVE" \
-  --json-report /tmp/vendor-project.ir
+  --output /tmp/vendor-project.ir
 ```
 
 Project identities are namespaced, for example `rom::ets_delay_us` and

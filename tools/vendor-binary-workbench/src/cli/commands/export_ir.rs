@@ -65,7 +65,7 @@ pub(super) fn run(
     })?;
 
     let publications = arguments
-        .json_report
+        .output
         .iter()
         .chain(arguments.pseudo_rust.iter())
         .map(|path| crate::cli::output::Publication::new(path, "written"))
@@ -87,17 +87,13 @@ pub(super) fn run(
             arguments.include_reachable,
         )?;
     }
-    if let Some(path) = arguments.json_report.as_deref() {
+    if let Some(path) = arguments.output.as_deref() {
         crate::artifacts::stage_linked_ir_bundle(path, &document)?.publish(path)?;
     }
     if !crate::cli::output::structured(&document) {
         print_report(&artifacts, &report, arguments.include_reachable);
         for publication in publications {
-            outputln!(
-                "PUBLICATION\tstatus={}\tpath={}",
-                publication.status,
-                publication.path
-            );
+            outputln!("\nOutput {}: {}", publication.status, publication.path);
         }
     }
     Ok(true)

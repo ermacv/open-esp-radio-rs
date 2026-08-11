@@ -129,7 +129,7 @@ output = "../../../../driver/chips/esp32s31/pac/src/generated.rs"
 [registers.lints]
 pack = "registers/lints.toml"
 
-[registers.toml]
+[registers.evidence]
 catalogs = [
     "registers/evidence/policy.toml",
     "registers/evidence/platform.toml",

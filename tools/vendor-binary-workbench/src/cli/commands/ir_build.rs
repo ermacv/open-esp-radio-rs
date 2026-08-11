@@ -43,27 +43,38 @@ pub(super) fn run(
 }
 
 fn print_human(document: &BuildDocument<'_>) {
+    use crate::cli::{output, table};
+
+    outputln!("{}", output::heading("Linked IR"));
     outputln!(
-        "IR build: {} ({} profile{}, {} document{})",
-        document.status,
-        document.profiles.len(),
-        if document.profiles.len() == 1 {
-            ""
-        } else {
-            "s"
-        },
-        document.documents,
-        if document.documents == 1 { "" } else { "s" }
+        "{}",
+        output::success(format!(
+            "{} — {} profile(s), {} document(s)",
+            document.status,
+            document.profiles.len(),
+            document.documents
+        ))
     );
-    for profile in &document.profiles {
-        outputln!(
-            "  {:<20} functions={:<6} decode-blockers={:<6} registers={:<5} fields={:<5} {}",
-            profile.id,
-            profile.functions,
-            profile.decode_blockers,
-            profile.registers,
-            profile.field_candidates,
-            profile.bundle.display()
-        );
-    }
+    outputln!("\n{}", output::heading("Profiles"));
+    outputln!(
+        "{}",
+        table::render(
+            [
+                "Profile",
+                "Functions",
+                "Blockers",
+                "Registers",
+                "Fields",
+                "Bundle"
+            ],
+            document.profiles.iter().map(|profile| [
+                profile.id.to_owned(),
+                profile.functions.to_string(),
+                profile.decode_blockers.to_string(),
+                profile.registers.to_string(),
+                profile.field_candidates.to_string(),
+                profile.bundle.display().to_string(),
+            ]),
+        )
+    );
 }

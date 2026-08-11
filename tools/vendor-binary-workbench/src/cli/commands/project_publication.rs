@@ -29,27 +29,58 @@ fn render(document: &ProjectPublicationReport) {
 }
 
 fn print_human(document: &ProjectPublicationReport) {
+    use crate::cli::{output, table};
+
+    outputln!("{}", output::heading("Project publication"));
+    outputln!("Mode: {}", document.mode);
+    let outcome = if document.succeeded() {
+        output::success(format!(
+            "READY — {} written, {} verified",
+            document.written, document.verified
+        ))
+    } else {
+        output::failure(format!(
+            "BLOCKED — {} failed, {} blocked",
+            document.failed, document.blocked
+        ))
+    };
+    outputln!("\n{outcome}");
+
+    let problems = document
+        .stages
+        .iter()
+        .filter(|stage| matches!(stage.status, "failed" | "blocked"))
+        .collect::<Vec<_>>();
+    if !problems.is_empty() {
+        outputln!("\n{}", output::heading("Problems"));
+        for (index, stage) in problems.iter().enumerate() {
+            outputln!(
+                "{}. {}: {}",
+                index + 1,
+                stage.name,
+                stage.reason.as_deref().unwrap_or(stage.status)
+            );
+        }
+    }
+
+    outputln!("\n{}", output::heading("Outputs"));
     outputln!(
-        "Project publication: {} ({})",
-        document.status,
-        document.mode
+        "{}",
+        table::render(
+            ["Stage", "Status", "Details"],
+            document.stages.iter().map(|stage| [
+                stage.name.clone(),
+                stage.status.to_owned(),
+                stage.reason.clone().unwrap_or_default(),
+            ])
+        )
     );
-    for stage in &document.stages {
+    if document.not_configured != 0 {
         outputln!(
-            "  {:<24} {:<14} {}",
-            stage.name,
-            stage.status,
-            stage.reason.as_deref().unwrap_or("")
+            "{} optional output(s) are not configured.",
+            document.not_configured
         );
     }
-    outputln!(
-        "  written={} verified={} failed={} blocked={} not-configured={}",
-        document.written,
-        document.verified,
-        document.failed,
-        document.blocked,
-        document.not_configured
-    );
 }
 
 #[cfg(test)]

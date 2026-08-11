@@ -2,7 +2,6 @@
 
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
-    fs,
     path::Path,
 };
 
@@ -16,7 +15,7 @@ use crate::Result;
 
 impl ExecutableImage {
     pub fn load(path: &Path) -> Result<Self> {
-        let bytes = fs::read(path)?;
+        let bytes = crate::read_artifact(path)?;
         let file = object::File::parse(bytes.as_slice())?;
         if file.architecture() != object::Architecture::Riscv32 || !file.is_little_endian() {
             return Err("execution requires a little-endian RISC-V 32-bit ELF".into());

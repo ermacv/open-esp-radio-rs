@@ -8,7 +8,7 @@ use crate::run_spec::RunSpec;
 #[derive(Default)]
 pub(super) struct Options {
     pub(super) check: bool,
-    pub(super) json_report: Option<PathBuf>,
+    pub(super) output: Option<PathBuf>,
     pub(super) name_prefix: String,
     pub(super) sources: BTreeSet<String>,
     pub(super) tables_only: bool,
@@ -17,7 +17,7 @@ pub(super) struct Options {
 pub(super) fn resolve_options(arguments: InterfaceDiscoverArgs) -> Options {
     Options {
         check: arguments.check,
-        json_report: arguments.json_report,
+        output: arguments.output,
         name_prefix: arguments.name_prefix,
         sources: arguments.source.into_iter().collect(),
         tables_only: arguments.tables_only,

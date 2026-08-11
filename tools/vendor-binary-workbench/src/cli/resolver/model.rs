@@ -31,6 +31,7 @@ pub(in crate::cli) enum ResolvedInvocation {
         project_path: PathBuf,
     },
     ProjectDoctor(Box<ProjectSession>),
+    ProjectFiles(Box<ProjectSession>),
     ProjectStatus {
         arguments: ProjectStatusArgs,
         session: Box<ProjectSession>,

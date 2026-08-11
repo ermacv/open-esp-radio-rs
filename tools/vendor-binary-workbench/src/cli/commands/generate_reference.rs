@@ -90,10 +90,11 @@ pub(super) fn run(arguments: ReferenceArgs, svd: &MmioMap, target: &TargetSpec) 
     };
     if !crate::cli::output::structured(&report) {
         if let Some(output) = &report.output {
+            outputln!("{}", crate::cli::output::heading("Reference generated"));
+            outputln!("Function: {}", report.symbol);
+            outputln!("Output:   {output}");
             outputln!(
-                "GENERATED\t{}\t{}\texit-a0={}",
-                report.symbol,
-                output,
+                "Return:   {}",
                 if report.exit_a0_modeled {
                     "modeled"
                 } else {

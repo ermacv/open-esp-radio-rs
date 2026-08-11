@@ -60,7 +60,7 @@ fails closed instead of being interpreted approximately.
 Generate the configured IR first:
 
 ```console
-cargo vendor-binary-workbench ir build \
+cargo vendor-binary-workbench advanced ir build \
   --project path/to/vendor-project.toml \
   --run-spec /path/to/local.toml
 ```
@@ -68,7 +68,7 @@ cargo vendor-binary-workbench ir build \
 Create the reviewed pack once:
 
 ```console
-cargo vendor-binary-workbench functions init-pack \
+cargo vendor-binary-workbench advanced functions init-pack \
   --project path/to/vendor-project.toml
 ```
 
@@ -81,10 +81,10 @@ fields and logical-type fields remain visible as computed unreviewed backlog.
 Edit the pack and validate it:
 
 ```console
-cargo vendor-binary-workbench functions validate \
+cargo vendor-binary-workbench advanced functions validate \
   --project path/to/vendor-project.toml
 
-cargo vendor-binary-workbench functions validate \
+cargo vendor-binary-workbench advanced functions validate \
   --project path/to/vendor-project.toml \
   --deny-unreviewed
 ```
@@ -104,10 +104,10 @@ policy gate as valid.
 Render the reading view after each edit:
 
 ```console
-cargo vendor-binary-workbench functions review \
+cargo vendor-binary-workbench advanced functions review \
   --project path/to/vendor-project.toml
 
-cargo vendor-binary-workbench functions review \
+cargo vendor-binary-workbench advanced functions review \
   --project path/to/vendor-project.toml \
   --check
 ```

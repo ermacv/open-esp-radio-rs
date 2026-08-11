@@ -34,6 +34,15 @@ fn register_workspace_requires_an_explicit_nonempty_publication_scope() {
 }
 
 #[test]
+fn project_manifest_rejects_misspelled_nested_configuration_tables() {
+    let (_, _, error) = invalid_project_span(
+        "schema = 1\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[registers]\nfacts = \"facts.json\"\nmodel = \"registers.toml\"\nowned-ranges = [\"radio\"]\n[registers.toml]\ncatalogs = [\"evidence.toml\"]\n",
+        "unknown-register-table.toml",
+    );
+    assert!(error.contains("unknown project registers key \"toml\""));
+}
+
+#[test]
 fn resolves_composed_specs_relative_to_the_project() {
     let directory = std::env::temp_dir().join(format!(
         "open-radio-workbench-project-{}",

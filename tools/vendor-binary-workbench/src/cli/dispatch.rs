@@ -22,6 +22,7 @@ pub(super) fn run(invocation: ResolvedInvocation) -> Result<bool> {
         ResolvedInvocation::ProjectDoctor(session) => {
             commands::run_project_doctor(session.context())
         }
+        ResolvedInvocation::ProjectFiles(session) => commands::run_project_files(session.context()),
         ResolvedInvocation::ProjectStatus { arguments, session } => {
             commands::run_project_status(arguments, session.context())
         }

@@ -36,6 +36,28 @@ pub(super) fn load(path: &Path) -> Result<ProjectSpec> {
             "project manifest requires schema = 1",
         ));
     }
+    reject_unknown_keys(
+        &document,
+        &[
+            "schema",
+            "id",
+            "target-spec",
+            "platform-pack",
+            "run-spec",
+            "memory-map",
+            "svd",
+            "analysis",
+            "code",
+            "registers",
+            "interfaces",
+            "functions",
+            "review",
+            "qualification",
+            "verification",
+        ],
+        "project manifest",
+        source,
+    )?;
     let base = path.parent().unwrap_or_else(|| Path::new("."));
     let id = required_string(&document, "id", source)?;
     validate_id(&id).map_err(|message| source.item(document.get("id"), message))?;
@@ -106,6 +128,7 @@ pub(super) fn load(path: &Path) -> Result<ProjectSpec> {
                     ))
                 })
                 .transpose()?;
+            reject_unknown_keys(table, &["pack", "review"], "project code", source)?;
             Ok(CodeWorkspacePaths {
                 pack: resolve_path(base, &table_string(table, "pack", "project code", source)?),
                 review_output,
@@ -127,6 +150,23 @@ pub(super) fn load(path: &Path) -> Result<ProjectSpec> {
                     "unknown project registers key \"pac\"; generated svd2rust output belongs in [registers.pac-raw]",
                 ));
             }
+            reject_unknown_keys(
+                table,
+                &[
+                    "facts",
+                    "model",
+                    "owned-ranges",
+                    "review",
+                    "svd",
+                    "pac-raw",
+                    "bindings",
+                    "api",
+                    "evidence",
+                    "lints",
+                ],
+                "project registers",
+                source,
+            )?;
             let model = table_string(table, "model", "project registers", source)?;
             let owned_ranges = required_table_string_array(
                 table,
@@ -244,6 +284,12 @@ pub(super) fn load(path: &Path) -> Result<ProjectSpec> {
             if let Some(catalogs) = table.get("semantic-catalogs") {
                 return Err(source.item(Some(catalogs), "unknown project interfaces key \"semantic-catalogs\"; semantic catalogs belong to the platform pack"));
             }
+            reject_unknown_keys(
+                table,
+                &["facts", "pack"],
+                "project interfaces",
+                source,
+            )?;
             let semantic_catalogs = platform_pack
                 .as_ref()
                 .map(|pack| pack.semantic_catalogs.clone())
@@ -265,6 +311,12 @@ pub(super) fn load(path: &Path) -> Result<ProjectSpec> {
             let table = item.as_table().ok_or_else(|| {
                 source.item(Some(item), "project manifest functions must be a table")
             })?;
+            reject_unknown_keys(
+                table,
+                &["pack", "profiles", "review"],
+                "project functions",
+                source,
+            )?;
             let profiles = table
                 .get("profiles")
                 .map(|item| {

@@ -58,7 +58,7 @@ descriptor, whose dependency ends at the ESP32-S31 semantic harness boundary.
 Register discovery facts and coverage remain in the workbench facade. The
 shared register-model crate knows neither artifacts nor targets. A project may
 attach reviewed safe PAC transactions through `[registers.api]` and evidence
-catalogs through `[registers.toml]`; their contents remain target-owned.
+catalogs through `[registers.evidence]`; their contents remain target-owned.
 The project-owned register commands are the primitive SVD/raw-PAC publication
 operations; `project publish` is their strict, preflighted project-level entry
 point.
@@ -93,7 +93,8 @@ dispatch path:
 | `cli/resolver/register_catalog.rs` | SVD plus reviewed register-model composition |
 | `cli/resolver/tests.rs` | Resolution precedence, discovery and path-origin contract tests |
 | `cli/dispatch.rs` | Exhaustive routing of fully resolved invocations into domain workflows |
-| `cli/output.rs` | Single stdout boundary and `human`, `json`, and `jsonl` result rendering |
+| `cli/output.rs` | Single stdout boundary and `human`/`json` result rendering |
+| `cli/terminal.rs` | Shared TTY, width, `NO_COLOR`, `TERM=dumb`, and color policy for stdout and stderr |
 | `cli/progress.rs` | TTY/machine-output progress policy and reusable operation/stage spans |
 | `cli/commands/tooling.rs` | Shell completions and roff manual pages generated from the canonical `clap` grammar without loading a project |
 | `cli/render.rs`, `cli/render/*` | Human presentation for typed application and verification reports |

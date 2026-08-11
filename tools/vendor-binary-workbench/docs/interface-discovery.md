@@ -27,10 +27,10 @@ path = "/private/vendor/rom.elf"
 Then run:
 
 ```console
-cargo vendor-binary-workbench interfaces discover \
+cargo vendor-binary-workbench advanced interfaces discover \
   --project verification/vendor/targets/esp32s31/vendor-project.toml \
   --run-spec /path/to/local.toml \
-  --json-report generated/findings/interfaces.json
+  --output generated/findings/interfaces.json
 ```
 
 All artifact/inventory roles are scanned by default. Use repeatable
@@ -47,10 +47,10 @@ pack = "interfaces/reviewed.toml"
 semantic-catalogs = ["interfaces/embedded-semantics.toml"]
 ```
 
-With this table, `--json-report` is optional. The report is generated facts;
+With this table, `--output` is optional. The report is generated facts;
 do not edit it.
 Pass `--check` to reproduce and compare the report without changing it. It
-requires either an explicit `--json-report` or the project `[interfaces].facts`
+requires either an explicit `--output` or the project `[interfaces].facts`
 default. [`project analyze --check`](project-pipeline.md) combines this with
 MMIO, linked IR, register review, and read-only workspace validation.
 See [reviewed interface and semantic packs](interface-packs.md) for the

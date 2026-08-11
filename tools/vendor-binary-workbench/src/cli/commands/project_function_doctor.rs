@@ -50,6 +50,22 @@ impl FunctionDoctorReport {
             outputln!("  pack: {}", pack.display());
         }
     }
+
+    pub(super) fn issues(&self) -> Vec<String> {
+        let mut issues = Vec::new();
+        if self.missing != 0 {
+            issues.push(format!(
+                "function workspace is missing {} linked IR profile output(s)",
+                self.missing
+            ));
+        }
+        if let Some(error) = &self.error {
+            issues.push(format!("function workspace: {error}"));
+        } else if self.status == "pack-not-initialized" {
+            issues.push("function review pack has not been initialized".to_owned());
+        }
+        issues
+    }
 }
 
 #[derive(Serialize)]
@@ -116,7 +132,10 @@ pub(super) fn inspect(project: &ProjectSpec) -> FunctionDoctorReport {
         report.warnings = 1;
         return report;
     }
-    let facts = match FunctionFacts::load(&reports) {
+    // Doctor is a readiness query. The indexed review projection contains
+    // every field needed for pack validation and avoids decoding the complete
+    // provenance-heavy function stream.
+    let facts = match FunctionFacts::load_summary(&reports) {
         Ok(facts) => facts,
         Err(error) => {
             let mut report = FunctionDoctorReport::new("invalid-facts");
@@ -142,7 +161,7 @@ pub(super) fn inspect(project: &ProjectSpec) -> FunctionDoctorReport {
         report.warnings = 1;
         return report;
     }
-    match FunctionWorkspace::load(&reports, &paths.pack) {
+    match FunctionWorkspace::load_summary(&reports, &paths.pack) {
         Ok(workspace) => {
             let summary = workspace.summary();
             let mut report = FunctionDoctorReport::new("available");

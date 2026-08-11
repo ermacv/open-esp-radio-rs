@@ -172,10 +172,43 @@ fn project_doctor_json_is_one_complete_typed_report() {
         "--color",
         "never",
     ]);
-    assert!(jsonl.status.success());
-    assert_eq!(String::from_utf8_lossy(&jsonl.stdout).lines().count(), 1);
-    let report: serde_json::Value = serde_json::from_slice(&jsonl.stdout).unwrap();
-    assert_eq!(report["command"], "project doctor");
+    assert!(!jsonl.status.success());
+    assert!(jsonl.stdout.is_empty());
+    assert!(String::from_utf8_lossy(&jsonl.stderr).contains("invalid value 'jsonl'"));
+}
+
+#[test]
+fn root_help_is_project_first_and_project_files_is_typed() {
+    let help = run(&["--help"]);
+    assert!(help.status.success());
+    let help = String::from_utf8(help.stdout).unwrap();
+    for command in ["project", "inspect", "registers", "advanced", "tooling"] {
+        assert!(
+            help.contains(command),
+            "root help lacks {command:?}: {help}"
+        );
+    }
+    assert!(help.contains("START HERE"));
+
+    let files = run(&[
+        "project",
+        "files",
+        "--project",
+        GENERIC_PROJECT,
+        "--format",
+        "json",
+        "--color",
+        "never",
+    ]);
+    assert!(files.status.success());
+    let report: serde_json::Value = serde_json::from_slice(&files.stdout).unwrap();
+    assert_eq!(report["schema"], 1);
+    assert_eq!(report["project_id"], "generic-rv32-fixture");
+    assert!(
+        report["files"].as_array().unwrap().iter().any(|file| {
+            file["role"] == "project-manifest" && file["ownership"] == "entrypoint"
+        })
+    );
 }
 
 #[test]
@@ -380,6 +413,7 @@ fn semantic_contract_commands_keep_failed_qualifications_off_stdout() {
         "register-init",
     ] {
         let output = run(&[
+            "advanced",
             "verify",
             "contract",
             contract,
@@ -476,6 +510,7 @@ fn verify_source_json_is_one_typed_function_report() {
     let output = workbench()
         .current_dir(repository_root())
         .args([
+            "advanced",
             "verify",
             "source",
             "--project",
@@ -535,6 +570,7 @@ fn verify_inventory_json_combines_results_and_publication_in_one_report() {
     let output = workbench()
         .current_dir(repository_root())
         .args([
+            "advanced",
             "verify",
             "inventory",
             "--project",
@@ -544,7 +580,7 @@ fn verify_inventory_json_combines_results_and_publication_in_one_report() {
         .arg(format!("fixture={}", artifact.display()))
         .args(["--source-prefix", "fixture=fixture_", "--rust-artifact"])
         .arg(&artifact)
-        .args(["--rust-prefix", "fixture_", "--json-report"])
+        .args(["--rust-prefix", "fixture_", "--output"])
         .arg(&report_path)
         .args(["--format", "json", "--color", "never"])
         .output()
@@ -749,6 +785,7 @@ fn direct_target_audit_json_is_one_typed_report() {
     let output = workbench()
         .current_dir(repository_root())
         .args([
+            "advanced",
             "image",
             "audit-targets",
             "--project",
@@ -998,7 +1035,7 @@ fn project_symbol_inventory_writes_and_checks_its_manifest_owned_report() {
     ] {
         let output = workbench()
             .current_dir(repository_root())
-            .args(["code", command, "--project"])
+            .args(["advanced", "code", command, "--project"])
             .arg(&manifest)
             .args(["--format", "json", "--color", "never"])
             .output()
@@ -1037,7 +1074,7 @@ fn project_symbol_inventory_writes_and_checks_its_manifest_owned_report() {
 
     let ir_build = workbench()
         .current_dir(repository_root())
-        .args(["ir", "build", "--check", "--project"])
+        .args(["advanced", "ir", "build", "--check", "--project"])
         .arg(&manifest)
         .args(["--format", "json", "--color", "never"])
         .output()
@@ -1065,6 +1102,7 @@ fn project_symbol_inventory_writes_and_checks_its_manifest_owned_report() {
     for domain in ["interfaces", "functions"] {
         let output = workbench()
             .current_dir(repository_root())
+            .arg("advanced")
             .args([domain, "init-pack", "--project"])
             .arg(&manifest)
             .args(["--format", "json", "--color", "never"])
@@ -1082,6 +1120,7 @@ fn project_symbol_inventory_writes_and_checks_its_manifest_owned_report() {
     for domain in ["interfaces", "functions"] {
         let output = workbench()
             .current_dir(repository_root())
+            .arg("advanced")
             .args([domain, "validate", "--project"])
             .arg(&manifest)
             .args(["--format", "json", "--color", "never"])
@@ -1098,7 +1137,13 @@ fn project_symbol_inventory_writes_and_checks_its_manifest_owned_report() {
 
     let denied = workbench()
         .current_dir(repository_root())
-        .args(["functions", "validate", "--deny-unreviewed", "--project"])
+        .args([
+            "advanced",
+            "functions",
+            "validate",
+            "--deny-unreviewed",
+            "--project",
+        ])
         .arg(&manifest)
         .args(["--format", "json", "--color", "never"])
         .output()

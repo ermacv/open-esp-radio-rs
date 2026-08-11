@@ -180,17 +180,17 @@ The artifact inventory and both discovery commands expose the same
 non-mutating primitive for narrow workflows:
 
 ```console
-cargo vendor-binary-workbench mmio discover \
+cargo vendor-binary-workbench advanced mmio discover \
   --project path/to/vendor-project.toml \
   --run-spec /path/to/local.toml \
   --check
 
-cargo vendor-binary-workbench interfaces discover \
+cargo vendor-binary-workbench advanced interfaces discover \
   --project path/to/vendor-project.toml \
   --run-spec /path/to/local.toml \
   --check
 
-cargo vendor-binary-workbench symbols inventory \
+cargo vendor-binary-workbench advanced symbols inventory \
   --project path/to/vendor-project.toml \
   --run-spec /path/to/local.toml \
   --check

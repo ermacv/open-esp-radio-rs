@@ -7,6 +7,7 @@ mod model;
 mod operations;
 pub(crate) mod pipeline;
 pub(crate) mod project_analysis;
+pub(crate) mod project_files;
 pub(crate) mod project_ir_build;
 pub(crate) mod project_publication;
 mod resolve;

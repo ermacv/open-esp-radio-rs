@@ -270,7 +270,7 @@ fn analysis_document(inputs: AnalysisInputs<'_>) -> Result<AnalysisDocument<'_>>
     })
 }
 
-fn write_analysis_json_report(path: &Path, document: &AnalysisDocument<'_>) -> Result<()> {
+fn write_analysis_output(path: &Path, document: &AnalysisDocument<'_>) -> Result<()> {
     fs::write(path, serde_json::to_string_pretty(&document)? + "\n")?;
     Ok(())
 }
@@ -280,44 +280,6 @@ fn print_analysis_report(
     reasons: &BTreeMap<String, usize>,
     reference_reasons: &BTreeMap<String, usize>,
 ) {
-    for function in functions {
-        let owner = function.owner.as_deref().unwrap_or("-");
-        let reference_status = if function.reference_codegen_eligible {
-            "eligible"
-        } else {
-            "blocked"
-        };
-        if function.direct_trace_exact {
-            outputln!(
-                "FUNCTION\t{}\t{owner}\tDIRECT-TRACE-EXACT\tevents={}\treference-codegen={reference_status}\treference-dependencies={}\tindexed-mmio={}",
-                function.symbol,
-                function.event_count,
-                function.reference_dependencies.len(),
-                function.indexed_mmio,
-            );
-        } else {
-            outputln!(
-                "FUNCTION\t{}\t{owner}\tINCOMPLETE\tevents={}\tuncovered={}\treference-codegen={reference_status}\treference-dependencies={}\tindexed-mmio={}",
-                function.symbol,
-                function.event_count,
-                function.direct_blockers.len() + function.direct_unmapped_mmio.len(),
-                function.reference_dependencies.len(),
-                function.indexed_mmio,
-            );
-            for blocker in &function.direct_blockers {
-                outputln!("UNCOVERED\t{}\t{blocker}", function.symbol);
-            }
-            for address in &function.direct_unmapped_mmio {
-                outputln!(
-                    "UNCOVERED\t{}\tunmapped-register {address:#010x}",
-                    function.symbol
-                );
-            }
-        }
-        for blocker in &function.reference_blockers {
-            outputln!("REFERENCE-BLOCKED\t{}\t{blocker}", function.symbol);
-        }
-    }
     let exact = functions
         .iter()
         .filter(|function| function.direct_trace_exact)
@@ -326,17 +288,62 @@ fn print_analysis_report(
         .iter()
         .filter(|function| function.reference_codegen_eligible)
         .count();
+    outputln!("{}", crate::cli::output::heading("Artifact analysis"));
     outputln!(
-        "SUMMARY\tfunctions={}\tdirect_trace_exact={exact}\tincomplete={}\treference_codegen_eligible={reference_eligible}\treference_codegen_blocked={}",
+        "{} function(s): {exact} exact, {} incomplete; {reference_eligible} reference-ready, {} blocked",
         functions.len(),
         functions.len() - exact,
         functions.len() - reference_eligible,
     );
-    for (reason, count) in reasons {
-        outputln!("SUMMARY-UNCOVERED\t{reason}\t{count}");
+    outputln!("\n{}", crate::cli::output::heading("Functions"));
+    outputln!(
+        "{}",
+        crate::cli::table::render(
+            ["Function", "Owner", "Trace", "Events", "Reference"],
+            functions.iter().map(|function| [
+                function.symbol.clone(),
+                function
+                    .owner
+                    .clone()
+                    .unwrap_or_else(|| "unknown".to_owned()),
+                if function.direct_trace_exact {
+                    "exact"
+                } else {
+                    "incomplete"
+                }
+                .to_owned(),
+                function.event_count.to_string(),
+                if function.reference_codegen_eligible {
+                    "eligible"
+                } else {
+                    "blocked"
+                }
+                .to_owned(),
+            ]),
+        )
+    );
+    if !reasons.is_empty() || !reference_reasons.is_empty() {
+        outputln!("\n{}", crate::cli::output::heading("Blocker summary"));
+        for (reason, count) in reasons {
+            outputln!("- Trace: {reason} ({count})");
+        }
+        for (reason, count) in reference_reasons {
+            outputln!("- Reference: {reason} ({count})");
+        }
     }
-    for (reason, count) in reference_reasons {
-        outputln!("SUMMARY-REFERENCE-BLOCKED\t{reason}\t{count}");
+    if crate::cli::output::details() {
+        outputln!("\n{}", crate::cli::output::heading("Function blockers"));
+        for function in functions {
+            for blocker in &function.direct_blockers {
+                outputln!("- {}: {blocker}", function.symbol);
+            }
+            for address in &function.direct_unmapped_mmio {
+                outputln!("- {}: unmapped register {address:#010x}", function.symbol);
+            }
+            for blocker in &function.reference_blockers {
+                outputln!("- {} reference: {blocker}", function.symbol);
+            }
+        }
     }
 }
 
@@ -462,7 +469,7 @@ pub(super) fn run(
         });
     }
     let publication = arguments
-        .json_report
+        .output
         .as_deref()
         .map(|path| crate::cli::output::Publication::new(path, "written"));
     let document = analysis_document(AnalysisInputs {
@@ -478,17 +485,13 @@ pub(super) fn run(
         reference_eligible: reference_codegen_eligible,
         publication: publication.clone(),
     })?;
-    if let Some(path) = arguments.json_report.as_deref() {
-        write_analysis_json_report(path, &document)?;
+    if let Some(path) = arguments.output.as_deref() {
+        write_analysis_output(path, &document)?;
     }
     let render = || {
         print_analysis_report(&function_reports, &reasons, &reference_reasons);
         if let Some(publication) = &publication {
-            outputln!(
-                "PUBLICATION\tstatus={}\tpath={}",
-                publication.status,
-                publication.path
-            );
+            outputln!("\nReport {}: {}", publication.status, publication.path);
         }
     };
     crate::cli::output::render_report(&document, render);

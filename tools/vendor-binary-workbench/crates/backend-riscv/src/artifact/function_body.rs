@@ -7,7 +7,6 @@
 
 use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
-    fs,
     path::Path,
 };
 
@@ -460,7 +459,7 @@ fn load_labels(
     artifact: &Path,
     definition: &ArtifactSymbolDefinition,
 ) -> Result<Vec<FunctionLabel>> {
-    let data = fs::read(artifact)?;
+    let data = crate::read_artifact(artifact)?;
     match FileKind::parse(data.as_slice())? {
         FileKind::Archive => {
             let archive = ArchiveFile::parse(data.as_slice())?;

@@ -55,8 +55,8 @@ portable multi-directory transaction.
 the configured file. Missing and stale files fail with the same diagnostics as
 the corresponding individual `registers ... --check` command.
 
-The default human view is a compact stage summary. `--format json` and
-`--format jsonl` emit the typed `project-publication` report containing the
+The default human view is a compact stage summary. `--format json` emits the
+typed `project-publication` report containing the
 ordered stages and aggregate counts. Stage statuses are `written`, `verified`,
 `failed`, `blocked`, and `not-configured`; any failed or blocked stage makes
 the process unsuccessful. Output from the

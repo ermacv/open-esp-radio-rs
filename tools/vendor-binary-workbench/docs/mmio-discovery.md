@@ -3,10 +3,10 @@
 With a project memory map, SVD and explicit ranges are optional:
 
 ```console
-cargo vendor-binary-workbench mmio discover \
+cargo vendor-binary-workbench advanced mmio discover \
   --project verification/vendor/targets/esp32s31/vendor-project.toml \
   --run-spec /path/to/local.toml \
-  --json-report /tmp/radio-mmio.json
+  --output /tmp/radio-mmio.json
 ```
 
 The human view is intentionally bounded: it shows artifact/range summaries
@@ -28,13 +28,13 @@ configured or explicit JSON report. A missing or different report fails
 without writing it:
 
 ```console
-cargo vendor-binary-workbench mmio discover \
+cargo vendor-binary-workbench advanced mmio discover \
   --project verification/vendor/targets/esp32s31/vendor-project.toml \
   --run-spec /path/to/local.toml \
   --check
 ```
 
-`--check` therefore requires `--json-report` or a project `[registers].facts`
+`--check` therefore requires `--output` or a project `[registers].facts`
 default. Use [`project analyze --check`](project-pipeline.md) to verify MMIO
 together with the other generated project evidence.
 
@@ -44,12 +44,12 @@ half-open address ranges independently of whether every address already has an
 SVD register name:
 
 ```console
-cargo vendor-binary-workbench mmio discover \
+cargo vendor-binary-workbench advanced mmio discover \
   --target-spec verification/vendor/targets/esp32s31/target.toml \
   --artifact rom="$ESP32S31_ROM_ELF" \
   --artifact libphy="$ESP32S31_LIBPHY_ARCHIVE" \
   --range phy=0x20100000..0x20110000 \
-  --json-report /tmp/esp32s31-phy-mmio.json
+  --output /tmp/esp32s31-phy-mmio.json
 ```
 
 By default every named, non-empty text symbol is an analysis root, including

@@ -42,17 +42,17 @@ output = "generated/reports/code-boundaries.md"
 Generate the inventory, then create the pack exactly once:
 
 ```console
-cargo vendor-binary-workbench symbols inventory --project PATH --run-spec LOCAL_RUN
-cargo vendor-binary-workbench code init-pack --project PATH
+cargo vendor-binary-workbench advanced symbols inventory --project PATH --run-spec LOCAL_RUN
+cargo vendor-binary-workbench advanced code init-pack --project PATH
 ```
 
 `init-pack` refuses to overwrite an existing pack. After regenerating symbol
 facts, inspect and refresh the existing pack with:
 
 ```console
-cargo vendor-binary-workbench code rebase --project PATH --check
-cargo vendor-binary-workbench code rebase --project PATH
-cargo vendor-binary-workbench code rebase --project PATH --apply
+cargo vendor-binary-workbench advanced code rebase --project PATH --check
+cargo vendor-binary-workbench advanced code rebase --project PATH
+cargo vendor-binary-workbench advanced code rebase --project PATH --apply
 ```
 
 The command preserves a reviewed decision only when its source, archive
@@ -105,10 +105,10 @@ reason, and accepted names must be unique identifiers.
 ## Validation and review output
 
 ```console
-cargo vendor-binary-workbench code validate --project PATH
-cargo vendor-binary-workbench code validate --project PATH --deny-unreviewed
-cargo vendor-binary-workbench code review --project PATH
-cargo vendor-binary-workbench code review --project PATH --check
+cargo vendor-binary-workbench advanced code validate --project PATH
+cargo vendor-binary-workbench advanced code validate --project PATH --deny-unreviewed
+cargo vendor-binary-workbench advanced code review --project PATH
+cargo vendor-binary-workbench advanced code review --project PATH --check
 ```
 
 Validation fails closed when:

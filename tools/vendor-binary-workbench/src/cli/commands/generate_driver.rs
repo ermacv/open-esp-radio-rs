@@ -139,12 +139,12 @@ pub(super) fn run(
     if !crate::cli::output::structured(&report) {
         if let Some(output) = &report.output {
             outputln!(
-                "GENERATED-DRIVER\t{}\t{}\tkind={}\tsource={}",
-                report.vendor_symbol,
-                output,
-                report.kind,
-                report.vendor_source
+                "{}",
+                crate::cli::output::heading("Driver candidate generated")
             );
+            outputln!("Vendor: {}/{}", report.vendor_source, report.vendor_symbol);
+            outputln!("Kind:   {}", report.kind);
+            outputln!("Output: {output}");
         } else {
             crate::cli::output::text(&report.source);
         }

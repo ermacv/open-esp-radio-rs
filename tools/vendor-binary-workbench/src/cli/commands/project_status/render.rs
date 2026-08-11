@@ -1,13 +1,13 @@
-//! Stable human summary and schema-3 JSON document.
+//! Task-first human summary and stable schema-3 JSON document.
 
 use std::collections::BTreeMap;
 
 use serde::Serialize;
-use tabled::{builder::Builder, settings::Style};
 
 use crate::{
     Result,
     application::status::model::{DetailValue, ProjectStatusReport, Readiness, TargetIdentity},
+    cli::{output, table},
 };
 
 #[derive(Serialize)]
@@ -47,53 +47,125 @@ pub(super) struct StatusDocument<'a> {
 }
 
 pub(super) fn print_text(report: &ProjectStatusReport) {
+    outputln!("{}", output::heading("Project status"));
+    outputln!("Project:  {}", report.project_id);
+    outputln!("Manifest: {}", report.manifest);
     outputln!(
-        "Project status: {} — {}",
-        report.project_id,
-        report.overall.label()
-    );
-    outputln!("  manifest: {}", report.manifest);
-    outputln!(
-        "  target:   {} ({}, {})",
+        "Target:   {} ({}, {})",
         report.target.id,
         report.target.architecture,
         report.target.calling_convention
     );
-    let mut rows = Builder::default();
-    rows.push_record(["Phase", "Component", "Status", "Diagnostic"]);
-    for phase in &report.phases {
-        for component in &phase.components {
-            rows.push_record([
-                phase.name.to_owned(),
-                component.name.to_owned(),
-                component.status.label().to_owned(),
-                component
-                    .diagnostic
-                    .as_deref()
-                    .map(sanitize)
-                    .unwrap_or_default(),
-            ]);
+    let outcome = match report.overall {
+        Readiness::Ready => output::success("READY — configured workflow can proceed"),
+        Readiness::Inventory => output::success("READY — inventory evidence is available"),
+        Readiness::Incomplete => {
+            output::warning("INCOMPLETE — generated or reviewed evidence is missing")
+        }
+        Readiness::NotConfigured => {
+            output::warning("NOT CONFIGURED — initialize the project workflow")
+        }
+        Readiness::Invalid => output::failure("BLOCKED — project state is invalid"),
+    };
+    outputln!("\n{outcome}");
+
+    let problems = report
+        .phases
+        .iter()
+        .flat_map(|phase| {
+            phase.components.iter().filter_map(move |component| {
+                component.diagnostic.as_deref().map(|diagnostic| {
+                    (
+                        format!("{}/{}", phase.name, component.name),
+                        sanitize(diagnostic),
+                    )
+                })
+            })
+        })
+        .collect::<Vec<_>>();
+    if !problems.is_empty() {
+        outputln!("\n{}", output::heading("Problems"));
+        for (index, (component, diagnostic)) in problems.iter().take(8).enumerate() {
+            outputln!("{}. {component}: {diagnostic}", index + 1);
+        }
+        if problems.len() > 8 {
+            outputln!(
+                "{} more problem(s); rerun with --details for the complete list.",
+                problems.len() - 8
+            );
         }
     }
-    let mut table = rows.build();
-    table.with(Style::rounded());
-    outputln!("{table}");
 
-    let mut actions = BTreeMap::<&str, Vec<String>>::new();
+    // Preserve workflow order. Alphabetical sorting made late verification
+    // commands appear before the input or analysis repair that unblocks them.
+    let mut actions = Vec::<(String, Vec<String>)>::new();
+    let mut action_positions = BTreeMap::<String, usize>::new();
     for phase in &report.phases {
         for component in &phase.components {
             if let Some(action) = component.next_action.as_deref() {
-                actions
-                    .entry(action)
-                    .or_default()
-                    .push(format!("{}/{}", phase.name, component.name));
+                let action = sanitize(action);
+                let component = format!("{}/{}", phase.name, component.name);
+                if let Some(position) = action_positions.get(&action).copied() {
+                    actions[position].1.push(component);
+                } else {
+                    action_positions.insert(action.clone(), actions.len());
+                    actions.push((action, vec![component]));
+                }
             }
         }
     }
     if !actions.is_empty() {
-        outputln!("\nNext actions:");
-        for (action, components) in actions {
-            outputln!("  {}: {}", components.join(", "), sanitize(action));
+        outputln!("\n{}", output::heading("Next"));
+        for (index, (action, components)) in actions.iter().enumerate() {
+            outputln!("{}. {action}", index + 1);
+            if output::details() {
+                outputln!("   Resolves: {}", components.join(", "));
+            }
+        }
+    }
+
+    outputln!("\n{}", output::heading("Workflow"));
+    outputln!(
+        "{}",
+        table::render(
+            ["Phase", "Status", "Problems"],
+            report.phases.iter().map(|phase| [
+                phase.name.clone(),
+                phase.status.label().to_owned(),
+                phase
+                    .components
+                    .iter()
+                    .filter(|component| {
+                        matches!(component.status, Readiness::Invalid | Readiness::Incomplete)
+                    })
+                    .count()
+                    .to_string(),
+            ]),
+        )
+    );
+
+    if output::details() {
+        outputln!("\n{}", output::heading("Components"));
+        outputln!(
+            "{}",
+            table::render(
+                ["Phase", "Component", "Status"],
+                report.phases.iter().flat_map(|phase| {
+                    phase.components.iter().map(|component| {
+                        [
+                            phase.name.clone(),
+                            component.name.clone(),
+                            component.status.label().to_owned(),
+                        ]
+                    })
+                }),
+            )
+        );
+        if problems.len() > 8 {
+            outputln!("\n{}", output::heading("All diagnostics"));
+            for (index, (component, diagnostic)) in problems.iter().enumerate() {
+                outputln!("{}. {component}: {diagnostic}", index + 1);
+            }
         }
     }
 }
@@ -159,9 +231,7 @@ fn sanitize(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::application::status::model::{
-        Component, Phase, ProjectStatusReport, Readiness, TargetIdentity,
-    };
+    use crate::application::status::model::{Component, Phase, TargetIdentity};
 
     #[test]
     fn json_schema_keeps_phase_and_component_states_explicit() {

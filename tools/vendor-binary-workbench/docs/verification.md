@@ -19,29 +19,29 @@ project result. `verify source` and `verify inventory` are focused leaf tools;
 proprietary artifacts.
 
 ```console
-cargo vendor-binary-workbench-esp32s31 verify source \
+cargo vendor-binary-workbench advanced verify source \
   --project verification/vendor/targets/esp32s31/vendor-project.toml \
   --vendor-artifact "$ESP32S31_ROM_ELF" \
   --rust-artifact target/verification/esp32s31-probes/riscv32imafc-unknown-none-elf/release/open-esp-radio-verification-esp32s31-probes-elf
 
-cargo vendor-binary-workbench-esp32s31 verify inventory \
+cargo vendor-binary-workbench advanced verify inventory \
   --project verification/vendor/targets/esp32s31/vendor-project.toml \
   --run-spec /path/to/authenticated.toml \
   --gate regression --match-floor 104 \
-  --json-report /tmp/esp32s31-verification.json
+  --output /tmp/esp32s31-verification.json
 
-cargo vendor-binary-workbench-esp32s31 project verify \
+cargo vendor-binary-workbench project verify \
   --project verification/vendor/targets/esp32s31/vendor-project.toml
 
 mkdir -p /tmp/evidence-candidates
-cargo vendor-binary-workbench-esp32s31 project verify \
+cargo vendor-binary-workbench project verify \
   --project verification/vendor/targets/esp32s31/vendor-project.toml \
   --candidate-evidence-dir /tmp/evidence-candidates
 
-cargo vendor-binary-workbench-esp32s31 project verify --check \
+cargo vendor-binary-workbench project verify --check \
   --project verification/vendor/targets/esp32s31/vendor-project.toml
 
-cargo vendor-binary-workbench-esp32s31 project check \
+cargo vendor-binary-workbench project check \
   --project verification/vendor/targets/esp32s31/vendor-project.toml
 ```
 

@@ -45,8 +45,8 @@ use error::WorkbenchError;
 pub use function_investigation::{
     CallGraphEdgeEvidence, CallKnowledgeEvidence, EventDispatchBindingEvidence,
     EventDispatchEvidence, FunctionInvestigationReport, InvestigationLedgerEntry,
-    OriginFunctionEvidence, ReviewedPathEvidence, ReviewedPreconditionEvidence,
-    SemanticFunctionEvidence,
+    OriginFunctionEvidence, ReplacementEvidence, ReplacementProofEvidence, ReviewedPathEvidence,
+    ReviewedPreconditionEvidence, SemanticFunctionEvidence,
 };
 #[cfg(all(test, feature = "esp32s31-harness"))]
 pub(crate) use harnesses::esp32s31::entry_contract;

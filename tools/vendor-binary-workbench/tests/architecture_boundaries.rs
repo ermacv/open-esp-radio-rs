@@ -251,8 +251,8 @@ fn platform_harness_dependencies_are_optional_addons() {
     let manifest = fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml"))
         .expect("read workbench manifest");
     assert!(
-        manifest.contains("default = []"),
-        "generic workbench must not compile a chip harness by default"
+        manifest.contains("default = [\"esp32s31-harness\"]"),
+        "the normal repository binary must open its checked ESP32-S31 project out of the box"
     );
     for dependency in [
         "open-radio-vendor-harness-esp32s31",
@@ -380,13 +380,11 @@ fn large_analysis_and_human_renderers_keep_functional_boundaries() {
         );
     }
 
-    let human_root = root.join("cli/commands/export_ir/human");
-    let mut renderer_files = vec![
+    let renderer_files = vec![
         root.join("cli/commands/export_ir/human.rs"),
         root.join("cli/render.rs"),
+        root.join("cli/render/execution.rs"),
     ];
-    rust_files(&human_root, &mut renderer_files);
-    rust_files(&root.join("cli/render"), &mut renderer_files);
     let violations = renderer_files
         .into_iter()
         .filter_map(|path| {

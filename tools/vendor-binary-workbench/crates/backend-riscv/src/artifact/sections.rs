@@ -1,6 +1,6 @@
 //! Executable-section loading for final-image coverage audits.
 
-use std::{fs, path::Path};
+use std::path::Path;
 
 use object::{FileKind, Object, ObjectKind, ObjectSection, SectionFlags, SectionKind};
 
@@ -19,7 +19,7 @@ use super::model::ExecutableSection;
     fields(path = %path.display())
 )]
 pub fn load_executable_sections(path: &Path) -> Result<Vec<ExecutableSection>> {
-    let data = fs::read(path)?;
+    let data = crate::read_artifact(path)?;
     if FileKind::parse(data.as_slice())? != FileKind::Elf32 {
         return Err("executable-section audit requires an ELF32 artifact".into());
     }

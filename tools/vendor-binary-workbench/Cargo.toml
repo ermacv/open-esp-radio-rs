@@ -10,7 +10,11 @@ default-run = "vendor-binary-workbench"
 description = "Project-oriented analysis, reconstruction, publication and Rust conformance verification for compiled vendor binaries"
 
 [features]
-default = []
+# Ship the repository's supported platform pack in the normal host binary so
+# checked-in projects work with the documented command. The analysis backend
+# remains platform-neutral, and pack authors can still build a minimal generic
+# binary with `--no-default-features`.
+default = ["esp32s31-harness"]
 esp32s31-harness = [
     "dep:open-radio-vendor-harness-esp32s31",
     "dep:open-radio-vendor-harness-esp32s31-semantic",

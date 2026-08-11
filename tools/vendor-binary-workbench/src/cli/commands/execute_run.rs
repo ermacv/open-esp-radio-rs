@@ -362,7 +362,18 @@ fn render_execution(input: &ExecutionRenderInput<'_>) {
         .iter()
         .filter_map(unnamed_execution_address)
         .collect();
-    for event in &result.events {
+    outputln!("{}", crate::cli::output::heading("Vendor execution"));
+    outputln!("Function: {symbol}");
+    outputln!(
+        "Evidence: {}",
+        if *concrete_only {
+            "concrete scenario"
+        } else {
+            "branch-complete"
+        }
+    );
+    outputln!("\n{}", crate::cli::output::heading("Observable events"));
+    for (index, event) in result.events.iter().enumerate() {
         match event {
             execution::ExecutionEvent::Read {
                 width,
@@ -373,7 +384,7 @@ fn render_execution(input: &ExecutionRenderInput<'_>) {
             } => {
                 let register = register.as_deref().unwrap_or("-");
                 outputln!(
-                    "EVENT\tR\t{width}\t{address:#010x}\tregion={region}\tregister={register}\tvalue={value:#010x}"
+                    "{index:>4}. READ/{width} {address:#010x} {region}/{register} -> {value:#010x}"
                 );
             }
             execution::ExecutionEvent::Write {
@@ -385,30 +396,36 @@ fn render_execution(input: &ExecutionRenderInput<'_>) {
             } => {
                 let register = register.as_deref().unwrap_or("-");
                 outputln!(
-                    "EVENT\tW\t{width}\t{address:#010x}\tregion={region}\tregister={register}\tvalue={value:#010x}"
+                    "{index:>4}. WRITE/{width} {address:#010x} {region}/{register} <- {value:#010x}"
                 );
             }
             execution::ExecutionEvent::DelayMicros(micros) => {
-                outputln!("EVENT\tDELAY\tmicros={micros}");
+                outputln!("{index:>4}. DELAY {micros} us");
             }
             execution::ExecutionEvent::Fence {
                 fm,
                 predecessor,
                 successor,
-            } => outputln!("EVENT\tFENCE\tfm={fm:#x}\tpred={predecessor:#x}\tsucc={successor:#x}"),
+            } => {
+                outputln!("{index:>4}. FENCE fm={fm:#x} pred={predecessor:#x} succ={successor:#x}")
+            }
         }
     }
-    for call in &result.calls {
-        outputln!("COVERED-CALL\t{call}");
+    if crate::cli::output::details() && !result.calls.is_empty() {
+        outputln!("\n{}", crate::cli::output::heading("Covered calls"));
+        for call in &result.calls {
+            outputln!("- {call}");
+        }
     }
     if *print_timeline {
+        outputln!("\n{}", crate::cli::output::heading("Timeline"));
         for (index, event) in result.timeline.iter().enumerate() {
             match event {
                 execution::ExecutionTimelineEvent::Observable(event) => {
-                    outputln!("TIMELINE-EVENT\t{index}\tOBSERVABLE\t{event:?}");
+                    outputln!("{index:>4}. Observable: {event:?}");
                 }
                 execution::ExecutionTimelineEvent::Call(call) => outputln!(
-                    "TIMELINE-EVENT\t{index}\tCALL\t{}\t{}\targs={:08x},{:08x},{:08x},{:08x},{:08x},{:08x},{:08x},{:08x}",
+                    "{index:>4}. Call {} {} args={:08x},{:08x},{:08x},{:08x},{:08x},{:08x},{:08x},{:08x}",
                     image.location(call.site),
                     call.symbol,
                     call.arguments[0],
@@ -420,31 +437,26 @@ fn render_execution(input: &ExecutionRenderInput<'_>) {
                     call.arguments[6],
                     call.arguments[7],
                 ),
-                execution::ExecutionTimelineEvent::Branch { site, taken } => outputln!(
-                    "TIMELINE-EVENT\t{index}\tBRANCH\t{}\ttaken={taken}",
-                    image.location(*site)
-                ),
+                execution::ExecutionTimelineEvent::Branch { site, taken } => {
+                    outputln!("{index:>4}. Branch {} taken={taken}", image.location(*site))
+                }
                 execution::ExecutionTimelineEvent::RamRead {
                     width,
                     address,
                     value,
-                } => outputln!(
-                    "TIMELINE-EVENT\t{index}\tRAM-READ\t{width}\t{address:#010x}\tvalue={value:#010x}"
-                ),
+                } => outputln!("{index:>4}. RAM read/{width} {address:#010x} -> {value:#010x}"),
                 execution::ExecutionTimelineEvent::RamWrite {
                     width,
                     address,
                     value,
-                } => outputln!(
-                    "TIMELINE-EVENT\t{index}\tRAM-WRITE\t{width}\t{address:#010x}\tvalue={value:#010x}"
-                ),
+                } => outputln!("{index:>4}. RAM write/{width} {address:#010x} <- {value:#010x}"),
                 execution::ExecutionTimelineEvent::Atomic {
                     operation,
                     ordering,
                     address,
                     succeeded,
                 } => outputln!(
-                    "TIMELINE-EVENT\t{index}\tATOMIC\t{operation:?}\t{ordering:?}\t{address:#010x}\tsucceeded={succeeded:?}"
+                    "{index:>4}. Atomic {operation:?}/{ordering:?} {address:#010x}, succeeded={succeeded:?}"
                 ),
             }
         }
@@ -457,37 +469,42 @@ fn render_execution(input: &ExecutionRenderInput<'_>) {
     );
     for (address, edge) in &inventory.unresolved_edges {
         outputln!(
-            "UNCOVERED-CONTROL-FLOW\timage\t{}\t{edge}",
+            "Unresolved control flow: {} ({edge})",
             image.location(*address)
         );
     }
     for address in &unnamed {
-        outputln!("UNNAMED-MMIO\timage\t{address:#010x}");
+        outputln!("Unnamed MMIO: {address:#010x}");
     }
-    for change in &result.memory_changes {
-        outputln!(
-            "MEMORY-CHANGE\t{:#010x}\tbefore={:#04x}\tafter={:#04x}",
-            change.address,
-            change.before,
-            change.after
-        );
+    if !result.memory_changes.is_empty() {
+        outputln!("\n{}", crate::cli::output::heading("RAM changes"));
+        for change in &result.memory_changes {
+            outputln!(
+                "{:#010x}: {:#04x} -> {:#04x}",
+                change.address,
+                change.before,
+                change.after
+            );
+        }
     }
     outputln!(
-        "RESULT\tsymbol={symbol}\tevidence={}\tsteps={}\treturn={:#010x}\tbranches={}\tbranch-events={}\tcalls={}\tcall-events={}\ttimeline-events={}\tmemory-changes={}\tuncovered-branch-outcomes={uncovered_branches}\tunresolved-control-flow={}\tunnamed-mmio={}",
-        if *concrete_only {
-            "concrete-only"
-        } else {
-            "branch-complete"
-        },
+        "\nSummary: {} steps, return {:#010x}, {} branch outcome(s), {} call(s), {} RAM change(s)",
         result.steps,
         result.return_value,
         result.branches.len(),
-        result.ordered_branches.len(),
         result.calls.len(),
-        result.ordered_calls.len(),
-        result.timeline.len(),
         result.memory_changes.len(),
-        inventory.unresolved_edges.len(),
-        unnamed.len(),
     );
+    if uncovered_branches != 0 || !inventory.unresolved_edges.is_empty() || !unnamed.is_empty() {
+        outputln!(
+            "{}",
+            crate::cli::output::warning(format!(
+                "INCOMPLETE — {uncovered_branches} uncovered branch outcome(s), {} unresolved edge(s), {} unnamed MMIO address(es)",
+                inventory.unresolved_edges.len(),
+                unnamed.len()
+            ))
+        );
+    } else {
+        outputln!("{}", crate::cli::output::success("COMPLETE"));
+    }
 }

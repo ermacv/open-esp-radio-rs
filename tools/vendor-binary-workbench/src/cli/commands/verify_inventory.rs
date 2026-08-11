@@ -88,7 +88,7 @@ pub(super) fn execute(
     let gate_name = arguments.gate;
     let match_floor = arguments.match_floor;
     let evidence_baselines = arguments.evidence_baseline;
-    let json_report = arguments.json_report;
+    let output = arguments.output;
 
     if source_inputs.is_empty() {
         return Err(crate::Error::invalid(
@@ -289,9 +289,7 @@ pub(super) fn execute(
         artifacts: &artifacts,
         qualification_gaps: &qualification_gaps,
     })?;
-    let publication = json_report
-        .as_deref()
-        .map(PublishedVerificationReport::written);
+    let publication = output.as_deref().map(PublishedVerificationReport::written);
     let inventory = verify_sources
         .iter()
         .zip(&symbol_sets)
@@ -310,7 +308,7 @@ pub(super) fn execute(
         evidence_comparison,
         report: publication,
     };
-    if let Some(path) = json_report.as_deref() {
+    if let Some(path) = output.as_deref() {
         write_verification_json_report(path, &report)?;
     }
     Ok(report)

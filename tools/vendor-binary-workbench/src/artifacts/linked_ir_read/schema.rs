@@ -137,14 +137,14 @@ pub(crate) struct StoredDataObject {
     aliases: Vec<String>,
     pub(crate) address: Option<String>,
     object_offset: String,
-    size: u64,
+    pub(crate) size: u64,
     writable: bool,
     initialized: bool,
     synthetic_from_anchor: bool,
     exported: bool,
     initializer_hex: Option<String>,
     relocations: Vec<StoredDataObjectRelocation>,
-    xrefs: Vec<StoredDataObjectXref>,
+    pub(crate) xrefs: Vec<StoredDataObjectXref>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -158,11 +158,11 @@ struct StoredDataObjectRelocation {
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-struct StoredDataObjectXref {
-    function: String,
-    reads: usize,
-    writes: usize,
-    offsets: Vec<String>,
+pub(crate) struct StoredDataObjectXref {
+    pub(crate) function: String,
+    pub(crate) reads: usize,
+    pub(crate) writes: usize,
+    pub(crate) offsets: Vec<String>,
     indexed_by: Vec<String>,
 }
 

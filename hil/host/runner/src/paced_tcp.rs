@@ -14,6 +14,7 @@ use crate::Result;
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 const WRITE_TIMEOUT: Duration = Duration::from_secs(3);
+const READ_POLL_INTERVAL: Duration = Duration::from_millis(250);
 const FINAL_SPIN: Duration = Duration::from_micros(30);
 const MAX_CATCH_UP_INTERVALS: u32 = 4;
 
@@ -82,16 +83,15 @@ pub(crate) fn send(config: Config) -> Result<HostTransmission> {
 }
 
 pub(crate) fn receive(config: Config) -> Result<HostReception> {
-    receive_stream(connect(config)?, config.chunk_bytes).map_err(Into::into)
+    receive_stream(connect(config)?, config).map_err(Into::into)
 }
 
 pub(crate) fn exchange(config: Config) -> Result<(HostTransmission, HostReception)> {
     let stream = connect(config)?;
     let transmit = stream.try_clone()?;
-    let receive_chunk = config.chunk_bytes;
     let sender =
         thread::spawn(move || send_stream(transmit, config).map_err(|error| error.to_string()));
-    let reception = receive_stream(stream, receive_chunk)?;
+    let reception = receive_stream(stream, config)?;
     let transmission = sender.join().map_err(|_| "TCP sender thread panicked")??;
     Ok((transmission, reception))
 }
@@ -154,10 +154,15 @@ fn send_stream(mut stream: TcpStream, config: Config) -> Result<HostTransmission
     })
 }
 
-fn receive_stream(mut stream: TcpStream, chunk_bytes: usize) -> Result<HostReception> {
-    stream.set_read_timeout(Some(WRITE_TIMEOUT))?;
-    let mut chunk = vec![0; chunk_bytes];
+fn receive_stream(mut stream: TcpStream, config: Config) -> Result<HostReception> {
+    // A quiet interval is not EOF. The target owns a bounded payload+FIN
+    // drain after the offered-load interval, so poll the blocking host socket
+    // until that single absolute deadline instead of treating one arbitrary
+    // three-second gap as terminal delivery.
+    stream.set_read_timeout(Some(READ_POLL_INTERVAL))?;
+    let mut chunk = vec![0; config.chunk_bytes];
     let started = Instant::now();
+    let deadline = started + config.duration + WRITE_TIMEOUT;
     let mut bytes = 0_u64;
     let mut reads = 0_u64;
     let mut pattern_errors = 0_u64;
@@ -177,7 +182,9 @@ fn receive_stream(mut stream: TcpStream, chunk_bytes: usize) -> Result<HostRecep
                     std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
                 ) =>
             {
-                break false;
+                if Instant::now() >= deadline {
+                    break false;
+                }
             }
             Err(error) => return Err(error.into()),
         }

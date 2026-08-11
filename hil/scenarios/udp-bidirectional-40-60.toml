@@ -1,4 +1,4 @@
-schema = 1
+schema = 2
 id = "udp-bidirectional-40-60"
 description = "Simultaneous 40 Mbit/s RX and 60 Mbit/s TX exact delivery"
 image = "qualification"

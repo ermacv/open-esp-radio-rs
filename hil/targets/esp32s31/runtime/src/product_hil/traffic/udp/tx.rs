@@ -121,6 +121,17 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
         let payload_bytes = usize::from(flow.payload_bytes);
         let duration = Duration::from_millis(u64::from(duration_millis));
         let offered_rate_bps = flow.offered_rate_bps;
+        // Group pacing is a physical credit for the active+standby A-MPDU
+        // arenas, not a generic UDP batching knob. AP v1 declares no
+        // BlockAck link requirement and owns one ordinary TX descriptor, so
+        // carrying the STA credit of 64 into an AP session creates artificial
+        // burst/idle periods instead of the requested offered load.
+        let pacing_group_datagrams = if session.config.link_requirements.tx_block_ack_tid.is_some()
+        {
+            config.pacing_group_datagrams
+        } else {
+            1
+        };
         emergency_log(format_args!(
             "OPEN_RADIO_PHY_HIL result=PASS stage=udp-tx-session-start \
              session={} target={server}:{server_port} payload={payload_bytes} \
@@ -162,7 +173,7 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
                 yield_now().await;
             }
             if let Some(rate_bps) = offered_rate_bps
-                && datagrams.is_multiple_of(u64::from(config.pacing_group_datagrams))
+                && datagrams.is_multiple_of(u64::from(pacing_group_datagrams))
             {
                 // Enforce one byte-budget deadline per active+standby A-MPDU
                 // pipeline capacity. Sleeping after every datagram prevented
@@ -170,7 +181,7 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
                 // workload and halved throughput. A missed deadline is reset
                 // after this bounded physical credit, so a scheduler stall
                 // cannot trigger unbounded catch-up bursts.
-                let group_nanos = u64::from(config.pacing_group_datagrams)
+                let group_nanos = u64::from(pacing_group_datagrams)
                     .saturating_mul(u64::try_from(payload_bytes).unwrap_or(u64::MAX))
                     .saturating_mul(8_000_000_000)
                     .saturating_add(rate_bps - 1)
@@ -194,17 +205,23 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
         // outside the measured interval so the structured result cannot race
         // the final network queue and A-MPDU exchange.
         Timer::after(config.drain).await;
-        let tx_vector = config
-            .qualification
-            .tx_vector()
-            .expect("active TX session retains its associated link vector");
+        let tx_vector = config.qualification.tx_vector();
+        // A link vector belongs to the associated-STA A-MPDU datapath. AP v1
+        // intentionally exposes only legacy unicast TX, so a session whose
+        // link requirements are NONE has no such vector. Conversely, a host
+        // that explicitly required BlockAck must never receive a successful
+        // session without the associated-link evidence it requested.
+        assert!(
+            session.config.link_requirements.tx_block_ack_tid.is_none() || tx_vector.is_some(),
+            "BlockAck-qualified TX session retains its associated link vector",
+        );
         emergency_log(format_args!(
             "OTX b={bytes} d={datagrams} u={elapsed_us} k={throughput_kbps} \
              e={send_errors} p={} pg={} w={} r={} code={}",
             offered_rate_bps.unwrap_or(0) / 1_000,
-            config.pacing_group_datagrams,
-            tx_vector.bandwidth_mhz,
-            tx_vector.aggregate_rate_kbps,
+            pacing_group_datagrams,
+            tx_vector.map_or(0, |vector| vector.bandwidth_mhz),
+            tx_vector.map_or(0, |vector| vector.aggregate_rate_kbps),
             config.code_address,
         ));
         let aggregate = aggregate_start
@@ -220,51 +237,53 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
             elapsed_micros: elapsed_us,
             transport_errors: send_errors,
         };
-        let radio = aggregate.map(|aggregate| RadioEvidence {
-            rx: None,
-            tx: Some(TxRadioEvidence {
-                bandwidth_mhz: tx_vector.bandwidth_mhz,
-                aggregate_rate_kbps: u32::try_from(tx_vector.aggregate_rate_kbps)
-                    .unwrap_or(u32::MAX),
-                aggregates_prepared: aggregate.aggregates_prepared,
-                aggregate_publications: aggregate.aggregate_publications,
-                aggregates_completed: aggregate.aggregates_completed,
-                subframes_prepared: aggregate.prepared_subframe_total(),
-                subframes_acknowledged: aggregate.subframes_acknowledged,
-                individual_retries: aggregate.individual_retries,
-                hardware_timeouts: aggregate.hardware_timeouts,
-                collisions: aggregate.collisions,
-                minimum_subframes: aggregate.minimum_prepared_subframes().unwrap_or(0),
-                maximum_subframes: aggregate.maximum_prepared_subframes().unwrap_or(0),
-                prepared_histogram: [
-                    aggregate.prepared_in_range(1, 1),
-                    aggregate.prepared_in_range(2, 3),
-                    aggregate.prepared_in_range(4, 7),
-                    aggregate.prepared_in_range(8, 15),
-                    aggregate.prepared_in_range(16, 23),
-                    aggregate.prepared_in_range(24, 30),
-                    aggregate.prepared_in_range(31, 31),
-                    aggregate.prepared_in_range(32, 32),
-                ],
-                stopped_at_frame_limit: aggregate.stopped_at_frame_limit,
-                stopped_at_capacity_limit: aggregate.stopped_at_capacity_limit,
-                stopped_on_empty_queue: aggregate.stopped_on_empty_queue,
-                preparation_micros: aggregate.preparation_micros,
-                publication_micros: aggregate.publication_program_micros,
-                exchange_micros: aggregate.exchange_micros,
-                block_ack_samples: aggregate.block_ack_samples,
-                block_ack_received: aggregate.block_ack_received,
-                success_without_block_ack: aggregate.success_without_block_ack,
-                nonzero_block_ack_control: aggregate.nonzero_block_ack_control,
-                full_block_ack: aggregate.full_block_ack,
-                partial_block_ack: aggregate.partial_block_ack,
-                empty_block_ack: aggregate.empty_block_ack,
-                tx_irq_epochs: aggregate.tx_irq_epochs,
-                tx_irq_service_samples: aggregate.tx_irq_service_samples,
-                tx_irq_clock_skew_samples: aggregate.tx_irq_clock_skew_samples,
-                tx_publication_to_irq_samples: aggregate.tx_publication_to_irq_samples,
-            }),
-        });
+        let radio = aggregate
+            .zip(tx_vector)
+            .map(|(aggregate, tx_vector)| RadioEvidence {
+                rx: None,
+                tx: Some(TxRadioEvidence {
+                    bandwidth_mhz: tx_vector.bandwidth_mhz,
+                    aggregate_rate_kbps: u32::try_from(tx_vector.aggregate_rate_kbps)
+                        .unwrap_or(u32::MAX),
+                    aggregates_prepared: aggregate.aggregates_prepared,
+                    aggregate_publications: aggregate.aggregate_publications,
+                    aggregates_completed: aggregate.aggregates_completed,
+                    subframes_prepared: aggregate.prepared_subframe_total(),
+                    subframes_acknowledged: aggregate.subframes_acknowledged,
+                    individual_retries: aggregate.individual_retries,
+                    hardware_timeouts: aggregate.hardware_timeouts,
+                    collisions: aggregate.collisions,
+                    minimum_subframes: aggregate.minimum_prepared_subframes().unwrap_or(0),
+                    maximum_subframes: aggregate.maximum_prepared_subframes().unwrap_or(0),
+                    prepared_histogram: [
+                        aggregate.prepared_in_range(1, 1),
+                        aggregate.prepared_in_range(2, 3),
+                        aggregate.prepared_in_range(4, 7),
+                        aggregate.prepared_in_range(8, 15),
+                        aggregate.prepared_in_range(16, 23),
+                        aggregate.prepared_in_range(24, 30),
+                        aggregate.prepared_in_range(31, 31),
+                        aggregate.prepared_in_range(32, 32),
+                    ],
+                    stopped_at_frame_limit: aggregate.stopped_at_frame_limit,
+                    stopped_at_capacity_limit: aggregate.stopped_at_capacity_limit,
+                    stopped_on_empty_queue: aggregate.stopped_on_empty_queue,
+                    preparation_micros: aggregate.preparation_micros,
+                    publication_micros: aggregate.publication_program_micros,
+                    exchange_micros: aggregate.exchange_micros,
+                    block_ack_samples: aggregate.block_ack_samples,
+                    block_ack_received: aggregate.block_ack_received,
+                    success_without_block_ack: aggregate.success_without_block_ack,
+                    nonzero_block_ack_control: aggregate.nonzero_block_ack_control,
+                    full_block_ack: aggregate.full_block_ack,
+                    partial_block_ack: aggregate.partial_block_ack,
+                    empty_block_ack: aggregate.empty_block_ack,
+                    tx_irq_epochs: aggregate.tx_irq_epochs,
+                    tx_irq_service_samples: aggregate.tx_irq_service_samples,
+                    tx_irq_clock_skew_samples: aggregate.tx_irq_clock_skew_samples,
+                    tx_publication_to_irq_samples: aggregate.tx_publication_to_irq_samples,
+                }),
+            });
         complete_open_radio_bidirectional_direction(
             config.session_source.results,
             session.session_id,

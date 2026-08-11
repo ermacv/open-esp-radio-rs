@@ -25,10 +25,10 @@ use open_esp_radio_hil_protocol::{
     PROTOCOL_VERSION, RejectReason, ResultSummary, RxDeliveryEvidence,
     STARTUP_ARTIFACT_CHUNK_MAX_LEN, SessionConfig, SessionState, StartupArtifactChunk,
     StartupArtifactDisposition, StartupArtifactStatus, StateChange, StationEpochEvidence,
-    StationLifecycleEvent, Transport, TransportEvidence, WifiMonitorCaptureRequest,
-    WifiMonitorEvidence, WifiMonitorFrameChunk, WifiMonitorRequest, WifiRole,
-    WifiRoleTransitionEvidence, WifiScanEvidence, WifiScanRequest, evidence_crc32c,
-    startup_artifact_crc32c,
+    StationLifecycleEvent, Transport, TransportEvidence, WifiAccessPointEvidence,
+    WifiAccessPointRequest, WifiMonitorCaptureRequest, WifiMonitorEvidence, WifiMonitorFrameChunk,
+    WifiMonitorRequest, WifiRole, WifiRoleFailureEvidence, WifiRoleTransitionEvidence,
+    WifiScanEvidence, WifiScanRequest, evidence_crc32c, startup_artifact_crc32c,
 };
 
 const MESSAGE_CAPACITY: usize = 384;
@@ -120,6 +120,13 @@ pub enum WifiControlRequest {
     CaptureMonitor {
         request_id: u32,
         request: WifiMonitorCaptureRequest,
+    },
+    StartAccessPoint {
+        request_id: u32,
+        request: WifiAccessPointRequest,
+    },
+    StopAccessPoint {
+        request_id: u32,
     },
 }
 
@@ -435,6 +442,23 @@ pub async fn complete_monitor_start(request_id: u32, evidence: WifiRoleTransitio
 
 pub async fn complete_monitor_stop(request_id: u32, evidence: WifiMonitorEvidence) {
     let sequence = queue_event_reliably(0, request_id, Event::WifiMonitorStopped(evidence)).await;
+    wait_until_serialized(sequence).await;
+}
+
+pub async fn complete_access_point_start(request_id: u32, evidence: WifiRoleTransitionEvidence) {
+    let sequence =
+        queue_event_reliably(0, request_id, Event::WifiAccessPointStarted(evidence)).await;
+    wait_until_serialized(sequence).await;
+}
+
+pub async fn complete_access_point_stop(request_id: u32, evidence: WifiAccessPointEvidence) {
+    let sequence =
+        queue_event_reliably(0, request_id, Event::WifiAccessPointStopped(evidence)).await;
+    wait_until_serialized(sequence).await;
+}
+
+pub async fn complete_wifi_role_failure(request_id: u32, evidence: WifiRoleFailureEvidence) {
+    let sequence = queue_event_reliably(0, request_id, Event::WifiRoleFailed(evidence)).await;
     wait_until_serialized(sequence).await;
 }
 
@@ -899,17 +923,48 @@ pub async fn protocol_task(capabilities: Capabilities) {
                         };
                         publish_event_reliably(session_id, request_id, response).await;
                     }
-                    Command::StartAccessPoint(_) | Command::StopAccessPoint => {
-                        // The wire contract is available before the production
-                        // target advertises AP capability. Do not enqueue a
-                        // role request until AP owns complete DMA/IRQ and
-                        // network-lifecycle implementations.
-                        publish_event_reliably(
-                            session_id,
-                            request_id,
-                            Event::Rejected(RejectReason::Unsupported),
-                        )
-                        .await;
+                    Command::StartAccessPoint(request) => {
+                        let response = if !capabilities.features.wifi_access_point {
+                            Event::Rejected(RejectReason::Unsupported)
+                        } else if request.validate().is_err() {
+                            Event::Rejected(RejectReason::InvalidConfiguration)
+                        } else if !initialized
+                            || state != SessionState::Idle
+                            || session_id != 0
+                            || !wifi_role_is(WifiRole::Idle)
+                        {
+                            Event::Rejected(RejectReason::InvalidState)
+                        } else if WIFI_CONTROL_REQUESTS
+                            .try_send(WifiControlRequest::StartAccessPoint {
+                                request_id,
+                                request,
+                            })
+                            .is_err()
+                        {
+                            Event::Rejected(RejectReason::Busy)
+                        } else {
+                            Event::Accepted
+                        };
+                        publish_event_reliably(session_id, request_id, response).await;
+                    }
+                    Command::StopAccessPoint => {
+                        let response = if !capabilities.features.wifi_access_point {
+                            Event::Rejected(RejectReason::Unsupported)
+                        } else if !initialized
+                            || state != SessionState::Idle
+                            || session_id != 0
+                            || !wifi_role_is(WifiRole::AccessPoint)
+                        {
+                            Event::Rejected(RejectReason::InvalidState)
+                        } else if WIFI_CONTROL_REQUESTS
+                            .try_send(WifiControlRequest::StopAccessPoint { request_id })
+                            .is_err()
+                        {
+                            Event::Rejected(RejectReason::Busy)
+                        } else {
+                            Event::Accepted
+                        };
+                        publish_event_reliably(session_id, request_id, response).await;
                     }
                     Command::CaptureMonitor(request) => {
                         let valid = (1..=13).contains(&request.channel)
@@ -1191,6 +1246,7 @@ async fn write_event_async(
                 | Event::WifiMonitorCaptureCompleted(_)
                 | Event::WifiAccessPointStarted(_)
                 | Event::WifiAccessPointStopped(_)
+                | Event::WifiRoleFailed(_)
         ) {
             SERIALIZED_WIFI_EVENT_NEXT
                 .store(event.message_sequence.wrapping_add(1), Ordering::Release);

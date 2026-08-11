@@ -1,0 +1,24 @@
+schema = 2
+id = "access-point-tcp-bidirectional"
+description = "Two AP ownership epochs with exact simultaneous TCP delivery"
+image = "qualification"
+isolation = "reset"
+tags = ["qualification", "wifi", "access-point", "network", "tcp", "bidirectional"]
+
+[workload]
+kind = "access-point"
+cycles = 2
+boots = 1
+timeout_seconds = 90
+
+[workload.traffic]
+kind = "tcp"
+direction = "bidirectional"
+duration_seconds = 10
+rx_rate_bps = 5000000
+tx_rate_bps = 5000000
+chunk_bytes = 8192
+
+[criteria]
+minimum_rx_bps = 4000000
+minimum_tx_bps = 4000000

@@ -11,7 +11,7 @@ use core::{
 use embassy_executor::{SendSpawner, Spawner};
 use embassy_futures::select::{Either, select};
 use embassy_net::{
-    Config as NetworkConfig, Ipv4Address, Ipv4Cidr, Stack, StackResources, StaticConfigV4,
+    Config as NetworkConfig, ConfigV4, Ipv4Address, Ipv4Cidr, Stack, StackResources, StaticConfigV4,
 };
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::Channel};
 use embassy_time::{Instant, Timer};
@@ -19,10 +19,11 @@ use esp_hal::{
     efuse::{self, InterfaceMacAddress},
     rng::Trng,
 };
+use open_esp_radio::esp32s31::wifi::embassy::await_stack_boundary;
 use open_esp_radio::{
-    MonitorCapturePolicy, MonitorRequest, StationRequest, StationScanChannels, StationScanPolicy,
-    StationSecurity, WifiMacAddress, WifiMonitorConfig, WifiScanRequest as DriverWifiScanRequest,
-    WifiSsid,
+    AccessPointRequest, AccessPointSecurity, MonitorCapturePolicy, MonitorRequest, StationRequest,
+    StationScanChannels, StationScanPolicy, StationSecurity, WifiMacAddress, WifiMonitorConfig,
+    WifiRoleStartFailure, WifiRoleStopFailure, WifiScanRequest as DriverWifiScanRequest, WifiSsid,
     esp32s31::phy::{
         PhyCalibrationIdentity, PhyCalibrationPath, phy_rfpll::phy_get_rf_cal_version,
     },
@@ -35,10 +36,10 @@ use open_esp_radio::{
     },
 };
 use open_esp_radio_esp32s31_embassy_wifi::{
-    ConnectedDisconnectReason, Esp32s31MacIrqObservation, Esp32s31MonitorFrame,
-    Esp32s31MonitorFrames, Esp32s31QualificationHooks, Esp32s31RadioConfig, Esp32s31RadioParts,
-    Esp32s31RadioRunner, Esp32s31StationLifecycleObservation, Esp32s31WifiControl,
-    Esp32s31WifiDevice, Esp32s31WifiParts,
+    ConnectedDisconnectReason, Esp32s31AccessPointObservation, Esp32s31MacIrqObservation,
+    Esp32s31MonitorFrame, Esp32s31MonitorFrames, Esp32s31QualificationHooks, Esp32s31RadioConfig,
+    Esp32s31RadioParts, Esp32s31RadioRunner, Esp32s31StationLifecycleObservation,
+    Esp32s31WifiControl, Esp32s31WifiDevice, Esp32s31WifiParts,
 };
 use open_esp_radio_esp32s31_wifi_esp_hal::EspHalRadioPeripheral;
 use open_esp_radio_hil_esp32s31_telemetry::{
@@ -49,18 +50,20 @@ use open_esp_radio_hil_protocol::{
     Capabilities, Event as HilEvent, FeatureCapabilities, MAX_WIRE_FRAME_BYTES, NetworkCredentials,
     NetworkInfo, NetworkIpv4Configuration, StartupArtifactDisposition, StationAttemptFailureReason,
     StationDisconnectReason, StationEpochEvidence, StationFailureStage, StationLifecycleEvent,
-    WIFI_MONITOR_FRAME_CHUNK_MAX_LEN, WifiMonitorCaptureRequest, WifiMonitorEvidence,
-    WifiMonitorEvidenceSource, WifiMonitorFrameChunk, WifiMonitorObserved, WifiMonitorPhyEvidence,
-    WifiMonitorPhyFormat, WifiRole, WifiRoleTransitionEvidence, WifiScanEvidence,
+    WIFI_MONITOR_FRAME_CHUNK_MAX_LEN, WifiAccessPointEvidence, WifiMonitorCaptureRequest,
+    WifiMonitorEvidence, WifiMonitorEvidenceSource, WifiMonitorFrameChunk, WifiMonitorObserved,
+    WifiMonitorPhyEvidence, WifiMonitorPhyFormat, WifiRole, WifiRoleFailureEvidence,
+    WifiRoleFailureReason, WifiRoleOperation, WifiRoleTransitionEvidence, WifiScanEvidence,
 };
 use static_cell::ConstStaticCell;
 
 use crate::console::{
-    WifiControlRequest, complete_initialization, complete_monitor_capture, complete_monitor_start,
-    complete_monitor_stop, complete_station_epoch_cycle, complete_wifi_role_transition,
-    complete_wifi_scan, emergency_log, publish_event_reliably, publish_monitor_frame,
-    publish_startup_artifact, publish_station_lifecycle, receive_wifi_control_request,
-    set_wifi_role,
+    WifiControlRequest, complete_access_point_start, complete_access_point_stop,
+    complete_initialization, complete_monitor_capture, complete_monitor_start,
+    complete_monitor_stop, complete_station_epoch_cycle, complete_wifi_role_failure,
+    complete_wifi_role_transition, complete_wifi_scan, emergency_log, publish_event_reliably,
+    publish_monitor_frame, publish_startup_artifact, publish_station_lifecycle,
+    receive_wifi_control_request, set_wifi_role,
 };
 
 mod rx_qualification;
@@ -84,6 +87,144 @@ static PHY_CALIBRATION_ARTIFACT: ConstStaticCell<
     [u8; crate::phy_calibration_artifact::MAX_ENCODED_LEN],
 > = ConstStaticCell::new([0; crate::phy_calibration_artifact::MAX_ENCODED_LEN]);
 static STATION_LIFECYCLE: Channel<CriticalSectionRawMutex, StationLinkEdge, 16> = Channel::new();
+static AP_CHANNEL: AtomicU32 = AtomicU32::new(0);
+static AP_BEACONS: AtomicU32 = AtomicU32::new(0);
+static AP_MISSED_BEACON_INTERVALS: AtomicU32 = AtomicU32::new(0);
+static AP_MAXIMUM_BEACON_LATENESS_MICROS: AtomicU32 = AtomicU32::new(0);
+static AP_AUTHENTICATIONS: AtomicU32 = AtomicU32::new(0);
+static AP_ASSOCIATIONS: AtomicU32 = AtomicU32::new(0);
+static AP_AUTHORIZATIONS: AtomicU32 = AtomicU32::new(0);
+static AP_REMOVALS: AtomicU32 = AtomicU32::new(0);
+static AP_COMPLETED_RX_DESCRIPTORS: AtomicU32 = AtomicU32::new(0);
+static AP_IGNORED_RX_FRAMES: AtomicU32 = AtomicU32::new(0);
+static AP_RX_MIC_FAILURES: AtomicU32 = AtomicU32::new(0);
+static AP_RX_QUARANTINED_FRAMES: AtomicU32 = AtomicU32::new(0);
+static AP_RX_VIEW_REJECTED: AtomicU32 = AtomicU32::new(0);
+static AP_CONTROL_FRAMES_STAGED: AtomicU32 = AtomicU32::new(0);
+static AP_CONTROL_FRAMES_DROPPED_WHILE_BUSY: AtomicU32 = AtomicU32::new(0);
+static AP_ETHERNET_FRAMES_STAGED: AtomicU32 = AtomicU32::new(0);
+static AP_ETHERNET_ARP_REQUESTS_STAGED: AtomicU32 = AtomicU32::new(0);
+static AP_ETHERNET_TCP_FRAMES_STAGED: AtomicU32 = AtomicU32::new(0);
+static AP_NETWORK_TX_FRAMES_OBSERVED: AtomicU32 = AtomicU32::new(0);
+static AP_NETWORK_TX_ARP_REQUESTS: AtomicU32 = AtomicU32::new(0);
+static AP_NETWORK_TX_ARP_REPLIES: AtomicU32 = AtomicU32::new(0);
+static AP_NETWORK_TX_REJECTED_NO_PEER: AtomicU32 = AtomicU32::new(0);
+static AP_NETWORK_TX_REJECTED_DESTINATION: AtomicU32 = AtomicU32::new(0);
+static AP_NETWORK_TX_FRAMES_REJECTED: AtomicU32 = AtomicU32::new(0);
+static AP_DATA_FRAMES_TRANSMITTED: AtomicU32 = AtomicU32::new(0);
+static AP_TX_FAILURES: AtomicU32 = AtomicU32::new(0);
+static AP_PROTECTED_DATA_FRAMES: AtomicU32 = AtomicU32::new(0);
+static AP_PROTECTED_DATA_UNAUTHORIZED: AtomicU32 = AtomicU32::new(0);
+static AP_PROTECTED_DATA_FOREIGN: AtomicU32 = AtomicU32::new(0);
+static AP_PROTECTED_DATA_DUPLICATES: AtomicU32 = AtomicU32::new(0);
+static AP_PROTECTED_DATA_RADIO_REJECTED: AtomicU32 = AtomicU32::new(0);
+static AP_PROTECTED_DATA_PROTOCOL_REJECTED: AtomicU32 = AtomicU32::new(0);
+
+fn observe_access_point(observation: Esp32s31AccessPointObservation) {
+    AP_CHANNEL.store(u32::from(observation.channel), Ordering::Release);
+    AP_BEACONS.store(observation.beacons_transmitted, Ordering::Release);
+    AP_MISSED_BEACON_INTERVALS.store(observation.missed_beacon_intervals, Ordering::Release);
+    AP_MAXIMUM_BEACON_LATENESS_MICROS.store(
+        observation.maximum_beacon_lateness_micros,
+        Ordering::Release,
+    );
+    AP_AUTHENTICATIONS.store(observation.authentication_responses, Ordering::Release);
+    AP_ASSOCIATIONS.store(observation.association_responses, Ordering::Release);
+    AP_AUTHORIZATIONS.store(observation.authorized_peers, Ordering::Release);
+    AP_REMOVALS.store(observation.peer_removals, Ordering::Release);
+    AP_COMPLETED_RX_DESCRIPTORS.store(observation.completed_rx_descriptors, Ordering::Release);
+    AP_IGNORED_RX_FRAMES.store(observation.ignored_rx_frames, Ordering::Release);
+    AP_RX_MIC_FAILURES.store(observation.rx_mic_failures, Ordering::Release);
+    AP_RX_QUARANTINED_FRAMES.store(observation.rx_quarantined_frames, Ordering::Release);
+    AP_RX_VIEW_REJECTED.store(observation.rx_view_rejected, Ordering::Release);
+    AP_CONTROL_FRAMES_STAGED.store(observation.control_frames_staged, Ordering::Release);
+    AP_CONTROL_FRAMES_DROPPED_WHILE_BUSY.store(
+        observation.control_frames_dropped_while_busy,
+        Ordering::Release,
+    );
+    AP_ETHERNET_FRAMES_STAGED.store(observation.ethernet_frames_staged, Ordering::Release);
+    AP_ETHERNET_ARP_REQUESTS_STAGED
+        .store(observation.ethernet_arp_requests_staged, Ordering::Release);
+    AP_ETHERNET_TCP_FRAMES_STAGED.store(observation.ethernet_tcp_frames_staged, Ordering::Release);
+    AP_NETWORK_TX_FRAMES_OBSERVED.store(observation.network_tx_frames_observed, Ordering::Release);
+    AP_NETWORK_TX_ARP_REQUESTS.store(observation.network_tx_arp_requests, Ordering::Release);
+    AP_NETWORK_TX_ARP_REPLIES.store(observation.network_tx_arp_replies, Ordering::Release);
+    AP_NETWORK_TX_REJECTED_NO_PEER
+        .store(observation.network_tx_rejected_no_peer, Ordering::Release);
+    AP_NETWORK_TX_REJECTED_DESTINATION.store(
+        observation.network_tx_rejected_destination,
+        Ordering::Release,
+    );
+    AP_NETWORK_TX_FRAMES_REJECTED.store(observation.network_tx_frames_rejected, Ordering::Release);
+    AP_DATA_FRAMES_TRANSMITTED.store(observation.data_frames_transmitted, Ordering::Release);
+    AP_TX_FAILURES.store(
+        u32::from(observation.tx_hardware_failures)
+            | (u32::from(observation.tx_hardware_timeouts) << 8)
+            | (u32::from(observation.tx_collision_limits) << 16)
+            | (u32::from(observation.tx_last_hardware_status) << 24),
+        Ordering::Release,
+    );
+    AP_PROTECTED_DATA_FRAMES.store(observation.protected_data_frames, Ordering::Release);
+    AP_PROTECTED_DATA_UNAUTHORIZED
+        .store(observation.protected_data_unauthorized, Ordering::Release);
+    AP_PROTECTED_DATA_FOREIGN.store(observation.protected_data_foreign, Ordering::Release);
+    AP_PROTECTED_DATA_DUPLICATES.store(observation.protected_data_duplicates, Ordering::Release);
+    AP_PROTECTED_DATA_RADIO_REJECTED
+        .store(observation.protected_data_radio_rejected, Ordering::Release);
+    AP_PROTECTED_DATA_PROTOCOL_REJECTED.store(
+        observation.protected_data_protocol_rejected,
+        Ordering::Release,
+    );
+}
+
+fn access_point_evidence(generation: u32, requested_channel: u8) -> WifiAccessPointEvidence {
+    let observed_channel = AP_CHANNEL.load(Ordering::Acquire) as u8;
+    let tx_failures = AP_TX_FAILURES.load(Ordering::Acquire);
+    WifiAccessPointEvidence {
+        generation,
+        channel: if observed_channel == 0 {
+            requested_channel
+        } else {
+            observed_channel
+        },
+        beacons_transmitted: AP_BEACONS.load(Ordering::Acquire),
+        missed_beacon_intervals: AP_MISSED_BEACON_INTERVALS.load(Ordering::Acquire),
+        maximum_beacon_lateness_micros: AP_MAXIMUM_BEACON_LATENESS_MICROS.load(Ordering::Acquire),
+        authentication_responses: AP_AUTHENTICATIONS.load(Ordering::Acquire),
+        association_responses: AP_ASSOCIATIONS.load(Ordering::Acquire),
+        authorized_peers: AP_AUTHORIZATIONS.load(Ordering::Acquire),
+        peer_removals: AP_REMOVALS.load(Ordering::Acquire),
+        completed_rx_descriptors: AP_COMPLETED_RX_DESCRIPTORS.load(Ordering::Acquire),
+        ignored_rx_frames: AP_IGNORED_RX_FRAMES.load(Ordering::Acquire),
+        rx_mic_failures: AP_RX_MIC_FAILURES.load(Ordering::Acquire),
+        rx_quarantined_frames: AP_RX_QUARANTINED_FRAMES.load(Ordering::Acquire),
+        rx_view_rejected: AP_RX_VIEW_REJECTED.load(Ordering::Acquire),
+        control_frames_staged: AP_CONTROL_FRAMES_STAGED.load(Ordering::Acquire),
+        control_frames_dropped_while_busy: AP_CONTROL_FRAMES_DROPPED_WHILE_BUSY
+            .load(Ordering::Acquire),
+        ethernet_frames_staged: AP_ETHERNET_FRAMES_STAGED.load(Ordering::Acquire),
+        ethernet_arp_requests_staged: AP_ETHERNET_ARP_REQUESTS_STAGED.load(Ordering::Acquire),
+        ethernet_tcp_frames_staged: AP_ETHERNET_TCP_FRAMES_STAGED.load(Ordering::Acquire),
+        network_tx_frames_observed: AP_NETWORK_TX_FRAMES_OBSERVED.load(Ordering::Acquire),
+        network_tx_arp_requests: AP_NETWORK_TX_ARP_REQUESTS.load(Ordering::Acquire),
+        network_tx_arp_replies: AP_NETWORK_TX_ARP_REPLIES.load(Ordering::Acquire),
+        network_tx_rejected_no_peer: AP_NETWORK_TX_REJECTED_NO_PEER.load(Ordering::Acquire),
+        network_tx_rejected_destination: AP_NETWORK_TX_REJECTED_DESTINATION.load(Ordering::Acquire),
+        network_tx_frames_rejected: AP_NETWORK_TX_FRAMES_REJECTED.load(Ordering::Acquire),
+        data_frames_transmitted: AP_DATA_FRAMES_TRANSMITTED.load(Ordering::Acquire),
+        tx_hardware_failures: tx_failures as u8,
+        tx_hardware_timeouts: (tx_failures >> 8) as u8,
+        tx_collision_limits: (tx_failures >> 16) as u8,
+        tx_last_hardware_status: (tx_failures >> 24) as u8,
+        protected_data_frames: AP_PROTECTED_DATA_FRAMES.load(Ordering::Acquire),
+        protected_data_unauthorized: AP_PROTECTED_DATA_UNAUTHORIZED.load(Ordering::Acquire),
+        protected_data_foreign: AP_PROTECTED_DATA_FOREIGN.load(Ordering::Acquire),
+        protected_data_duplicates: AP_PROTECTED_DATA_DUPLICATES.load(Ordering::Acquire),
+        protected_data_radio_rejected: AP_PROTECTED_DATA_RADIO_REJECTED.load(Ordering::Acquire),
+        protected_data_protocol_rejected: AP_PROTECTED_DATA_PROTOCOL_REJECTED
+            .load(Ordering::Acquire),
+    }
+}
 
 #[derive(Clone, Copy, Debug)]
 enum StationLinkEdge {
@@ -388,7 +529,7 @@ pub const fn hil_capabilities() -> Capabilities {
             startup_artifact: true,
             station_epoch_control: true,
             wifi_role_control: true,
-            wifi_access_point: false,
+            wifi_access_point: true,
             wifi_monitor_capture: true,
             station_lifecycle_events: true,
             rx_delivery_evidence: OPEN_RADIO_RX_DELIVERY_TELEMETRY,
@@ -489,13 +630,21 @@ const fn hil_failure_reason(
 }
 
 fn network_config(configuration: NetworkIpv4Configuration) -> NetworkConfig {
+    match network_config_v4(configuration) {
+        ConfigV4::Dhcp(config) => NetworkConfig::dhcpv4(config),
+        ConfigV4::Static(config) => NetworkConfig::ipv4_static(config),
+        ConfigV4::None => NetworkConfig::default(),
+    }
+}
+
+fn network_config_v4(configuration: NetworkIpv4Configuration) -> ConfigV4 {
     match configuration {
-        NetworkIpv4Configuration::Dhcp => NetworkConfig::dhcpv4(Default::default()),
+        NetworkIpv4Configuration::Dhcp => ConfigV4::Dhcp(Default::default()),
         NetworkIpv4Configuration::Static {
             address,
             prefix_length,
             gateway,
-        } => NetworkConfig::ipv4_static(StaticConfigV4 {
+        } => ConfigV4::Static(StaticConfigV4 {
             address: Ipv4Cidr::new(Ipv4Address::from_octets(address), prefix_length),
             gateway: gateway.map(Ipv4Address::from_octets),
             dns_servers: Default::default(),
@@ -517,6 +666,21 @@ fn station_request(ssid: &[u8], passphrase: &[u8]) -> StationRequest {
             StaAssociationPreference::PreferHe20,
         ),
     )
+}
+
+fn access_point_request(
+    request: &open_esp_radio_hil_protocol::WifiAccessPointRequest,
+) -> AccessPointRequest {
+    let ssid = WifiSsid::new(request.credentials.ssid())
+        .expect("validated HIL AP SSID must fit the driver request");
+    let pmk = Pmk::derive(request.credentials.passphrase(), ssid.as_bytes())
+        .expect("validated HIL AP credentials must derive a PMK");
+    AccessPointRequest::new(
+        ssid,
+        AccessPointSecurity::wpa2_personal(pmk),
+        WifiChannel::mhz20(request.channel).expect("console validates the AP channel"),
+    )
+    .expect("validated HIL AP request satisfies the production AP contract")
 }
 
 async fn report_network(stack: Stack<'static>) -> ! {
@@ -597,6 +761,7 @@ pub async fn run(
         },
         mac_irq: observe_mac_irq,
         station_lifecycle: observe_station_lifecycle,
+        access_point: observe_access_point,
     });
     let artifact_was_supplied = startup.phy_calibration_artifact.is_some();
     let calibration_cache = startup
@@ -671,8 +836,14 @@ pub async fn run(
     );
 
     spawner.spawn(
-        wifi_role_task(control, monitor_frames, startup.request_id)
-            .expect("Wi-Fi role owner task must allocate once"),
+        wifi_role_task(
+            control,
+            monitor_frames,
+            stack,
+            startup.ipv4,
+            startup.request_id,
+        )
+        .expect("Wi-Fi role owner task must allocate once"),
     );
 }
 
@@ -680,11 +851,17 @@ pub async fn run(
 async fn wifi_role_task(
     control: Esp32s31WifiControl,
     monitor_frames: Esp32s31MonitorFrames,
+    stack: Stack<'static>,
+    station_ipv4: NetworkIpv4Configuration,
     initialization_request_id: u32,
 ) -> ! {
     enum ProductWifiRole<P> {
         Idle(open_esp_radio::WifiIdle<P>),
         Station(open_esp_radio::WifiStation<P>),
+        AccessPoint {
+            owner: open_esp_radio::WifiAccessPoint<P>,
+            channel: u8,
+        },
         Monitor {
             owner: open_esp_radio::WifiMonitor<P>,
             channel: u8,
@@ -704,9 +881,48 @@ async fn wifi_role_task(
     let mut role = ProductWifiRole::Idle(control);
     loop {
         role = match role {
+            ProductWifiRole::AccessPoint { owner, channel } => {
+                let request_id = match receive_wifi_control_request().await {
+                    WifiControlRequest::StopAccessPoint { request_id } => request_id,
+                    _ => unreachable!(
+                        "console admits only AP stop while the access point owns Wi-Fi"
+                    ),
+                };
+                let generation = owner.generation().value();
+                match await_stack_boundary!(owner.stop()) {
+                    Ok(idle) => {
+                        stack.set_config_v4(network_config_v4(station_ipv4));
+                        set_wifi_role(WifiRole::Idle);
+                        complete_access_point_stop(
+                            request_id,
+                            access_point_evidence(generation, channel),
+                        )
+                        .await;
+                        ProductWifiRole::Idle(idle)
+                    }
+                    Err(error) => {
+                        let reason = match error {
+                            WifiRoleStopFailure::GenerationMismatch => {
+                                WifiRoleFailureReason::GenerationMismatch
+                            }
+                            WifiRoleStopFailure::Faulted(_) => WifiRoleFailureReason::HardwareFault,
+                        };
+                        complete_wifi_role_failure(
+                            request_id,
+                            WifiRoleFailureEvidence {
+                                role: WifiRole::AccessPoint,
+                                operation: WifiRoleOperation::Stop,
+                                reason,
+                            },
+                        )
+                        .await;
+                        core::future::pending().await
+                    }
+                }
+            }
             ProductWifiRole::Station(station) => match receive_wifi_control_request().await {
                 WifiControlRequest::Cycle { request_id } => {
-                    let idle = station.stop().await.unwrap_or_else(|error| {
+                    let idle = await_stack_boundary!(station.stop()).unwrap_or_else(|error| {
                         panic!("production station stop failed: {error:?}")
                     });
                     STATION_LIFECYCLE
@@ -714,8 +930,8 @@ async fn wifi_role_task(
                             StationDisconnectReason::ReconnectRequested,
                         ))
                         .await;
-                    let station = idle
-                        .start_station(station_request(
+                    let station = await_stack_boundary!(
+                        idle.start_station(station_request(
                             credentials
                                 .as_ref()
                                 .expect("station role retains its credentials")
@@ -725,16 +941,14 @@ async fn wifi_role_task(
                                 .expect("station role retains its credentials")
                                 .passphrase(),
                         ))
-                        .await
-                        .unwrap_or_else(|error| {
-                            panic!("production station restart failed: {error:?}")
-                        });
+                    )
+                    .unwrap_or_else(|error| panic!("production station restart failed: {error:?}"));
                     complete_station_epoch_cycle(request_id, StationEpochEvidence::COMPLETE).await;
                     ProductWifiRole::Station(station)
                 }
                 WifiControlRequest::StopStation { request_id } => {
                     let stopped_generation = station.generation().value();
-                    let idle = station.stop().await.unwrap_or_else(|error| {
+                    let idle = await_stack_boundary!(station.stop()).unwrap_or_else(|error| {
                         panic!("production station stop failed: {error:?}")
                     });
                     STATION_LIFECYCLE
@@ -757,19 +971,99 @@ async fn wifi_role_task(
                 _ => unreachable!("console admits only station commands while station owns Wi-Fi"),
             },
             ProductWifiRole::Idle(idle) => match receive_wifi_control_request().await {
+                WifiControlRequest::StartAccessPoint {
+                    request_id,
+                    request,
+                } => {
+                    AP_CHANNEL.store(0, Ordering::Release);
+                    AP_BEACONS.store(0, Ordering::Release);
+                    AP_MISSED_BEACON_INTERVALS.store(0, Ordering::Release);
+                    AP_MAXIMUM_BEACON_LATENESS_MICROS.store(0, Ordering::Release);
+                    AP_AUTHENTICATIONS.store(0, Ordering::Release);
+                    AP_ASSOCIATIONS.store(0, Ordering::Release);
+                    AP_AUTHORIZATIONS.store(0, Ordering::Release);
+                    AP_REMOVALS.store(0, Ordering::Release);
+                    AP_COMPLETED_RX_DESCRIPTORS.store(0, Ordering::Release);
+                    AP_IGNORED_RX_FRAMES.store(0, Ordering::Release);
+                    AP_RX_MIC_FAILURES.store(0, Ordering::Release);
+                    AP_RX_QUARANTINED_FRAMES.store(0, Ordering::Release);
+                    AP_RX_VIEW_REJECTED.store(0, Ordering::Release);
+                    AP_CONTROL_FRAMES_STAGED.store(0, Ordering::Release);
+                    AP_CONTROL_FRAMES_DROPPED_WHILE_BUSY.store(0, Ordering::Release);
+                    AP_ETHERNET_FRAMES_STAGED.store(0, Ordering::Release);
+                    AP_ETHERNET_ARP_REQUESTS_STAGED.store(0, Ordering::Release);
+                    AP_ETHERNET_TCP_FRAMES_STAGED.store(0, Ordering::Release);
+                    AP_NETWORK_TX_FRAMES_OBSERVED.store(0, Ordering::Release);
+                    AP_NETWORK_TX_ARP_REQUESTS.store(0, Ordering::Release);
+                    AP_NETWORK_TX_ARP_REPLIES.store(0, Ordering::Release);
+                    AP_NETWORK_TX_REJECTED_NO_PEER.store(0, Ordering::Release);
+                    AP_NETWORK_TX_REJECTED_DESTINATION.store(0, Ordering::Release);
+                    AP_NETWORK_TX_FRAMES_REJECTED.store(0, Ordering::Release);
+                    AP_DATA_FRAMES_TRANSMITTED.store(0, Ordering::Release);
+                    AP_TX_FAILURES.store(0, Ordering::Release);
+                    AP_PROTECTED_DATA_FRAMES.store(0, Ordering::Release);
+                    AP_PROTECTED_DATA_UNAUTHORIZED.store(0, Ordering::Release);
+                    AP_PROTECTED_DATA_FOREIGN.store(0, Ordering::Release);
+                    AP_PROTECTED_DATA_DUPLICATES.store(0, Ordering::Release);
+                    AP_PROTECTED_DATA_RADIO_REJECTED.store(0, Ordering::Release);
+                    AP_PROTECTED_DATA_PROTOCOL_REJECTED.store(0, Ordering::Release);
+                    let channel = request.channel;
+                    match await_stack_boundary!(
+                        idle.start_access_point(access_point_request(&request))
+                    ) {
+                        Ok(owner) => {
+                            stack.set_config_v4(network_config_v4(request.ipv4));
+                            set_wifi_role(WifiRole::AccessPoint);
+                            complete_access_point_start(
+                                request_id,
+                                WifiRoleTransitionEvidence {
+                                    previous: WifiRole::Idle,
+                                    current: WifiRole::AccessPoint,
+                                    generation: owner.generation().value(),
+                                },
+                            )
+                            .await;
+                            ProductWifiRole::AccessPoint { owner, channel }
+                        }
+                        Err(WifiRoleStartFailure::Rejected {
+                            wifi,
+                            request: _,
+                            error: _,
+                        }) => {
+                            complete_wifi_role_failure(
+                                request_id,
+                                WifiRoleFailureEvidence {
+                                    role: WifiRole::AccessPoint,
+                                    operation: WifiRoleOperation::Start,
+                                    reason: WifiRoleFailureReason::Rejected,
+                                },
+                            )
+                            .await;
+                            ProductWifiRole::Idle(wifi)
+                        }
+                        Err(WifiRoleStartFailure::Faulted { error: _ }) => {
+                            complete_wifi_role_failure(
+                                request_id,
+                                WifiRoleFailureEvidence {
+                                    role: WifiRole::AccessPoint,
+                                    operation: WifiRoleOperation::Start,
+                                    reason: WifiRoleFailureReason::HardwareFault,
+                                },
+                            )
+                            .await;
+                            core::future::pending().await
+                        }
+                    }
+                }
                 WifiControlRequest::StartStation {
                     request_id,
                     credentials: requested_credentials,
                 } => {
-                    let station = idle
-                        .start_station(station_request(
-                            requested_credentials.ssid(),
-                            requested_credentials.passphrase(),
-                        ))
-                        .await
-                        .unwrap_or_else(|error| {
-                            panic!("production station start failed: {error:?}")
-                        });
+                    let station = await_stack_boundary!(idle.start_station(station_request(
+                        requested_credentials.ssid(),
+                        requested_credentials.passphrase(),
+                    )))
+                    .unwrap_or_else(|error| panic!("production station start failed: {error:?}"));
                     credentials = Some(requested_credentials);
                     DIAGNOSTIC_STAGE.store(30, Ordering::Release);
                     set_wifi_role(WifiRole::Station);

@@ -47,16 +47,28 @@ max_bytes = 18432
 reason = "station attempt future retains every recoverable phase owner until disposition"
 
 [[reviewed_frames]]
-function_contains = "::station::new::{closure#0}"
-source_ends_with = "driver/integration/esp32s31/embassy-wifi/src/station.rs"
+function_contains = "::runtime::new::{closure#0}"
+source_ends_with = "driver/integration/esp32s31/embassy-wifi/src/runtime.rs"
 max_bytes = 16384
 reason = "production station constructor transfers its unique resource graph into static task ownership"
 
 [[reviewed_frames]]
 function_contains = "ProductionWifiEpochRunner as"
-source_ends_with = "driver/integration/esp32s31/embassy-wifi/src/station.rs"
+source_ends_with = "driver/integration/esp32s31/embassy-wifi/src/runtime.rs"
 max_bytes = 16384
-reason = "role epoch future retains station or monitor return ownership"
+reason = "role epoch future retains the exact station, AP or monitor return ownership"
+
+[[reviewed_frames]]
+function_contains = "run_access_point_service::{closure#0}"
+source_ends_with = "driver/integration/esp32s31/embassy-wifi/src/runtime/access_point.rs"
+max_bytes = 9216
+reason = "AP epoch future retains the halted DMA owner and exact STA resume frontier until typed teardown; runtime painting still enforces aggregate CPU-stack headroom"
+
+[[reviewed_frames]]
+function_contains = "::__wifi_role_task_task::__wifi_role_task_task_inner_function::{closure#0}"
+source_ends_with = "hil/targets/esp32s31/runtime/src/product_hil.rs"
+max_bytes = 10240
+reason = "HIL role dispatcher poll retains exactly one affine public STA, AP, monitor or idle owner; runtime painting still enforces aggregate CPU-stack headroom"
 
 [[reviewed_frames]]
 function_contains = "::product_hil::run::{closure#0}"
@@ -66,7 +78,7 @@ reason = "HIL root performs the reviewed one-time radio start future (16,256 byt
 
 [[reviewed_frames]]
 function_contains = "ProductionStationEnginePort<"
-source_ends_with = "driver/integration/esp32s31/embassy-wifi/src/station.rs"
+source_ends_with = "driver/integration/esp32s31/embassy-wifi/src/runtime.rs"
 max_bytes = 13312
 reason = "connected transition future preserves the exact join and teardown owners"
 

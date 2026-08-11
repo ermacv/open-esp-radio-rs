@@ -1,0 +1,23 @@
+schema = 2
+id = "access-point-rx"
+description = "Two AP ownership epochs with exact inbound UDP delivery"
+image = "qualification"
+isolation = "reset"
+tags = ["qualification", "wifi", "access-point", "network", "rx"]
+
+[workload]
+kind = "access-point"
+cycles = 2
+boots = 1
+timeout_seconds = 90
+
+[workload.traffic]
+kind = "udp"
+direction = "rx"
+duration_seconds = 10
+rx_rate_bps = 2000000
+payload_bytes = 1200
+
+[criteria]
+exact_delivery = true
+minimum_rx_bps = 1500000

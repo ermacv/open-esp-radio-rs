@@ -1,0 +1,23 @@
+schema = 2
+id = "access-point-icmp"
+description = "Local ICMP latency and loss through two WPA2 access-point epochs"
+image = "qualification"
+isolation = "reset"
+tags = ["qualification", "wifi", "access-point", "network", "icmp"]
+
+[workload]
+kind = "access-point"
+cycles = 2
+boots = 1
+timeout_seconds = 90
+
+[workload.traffic]
+kind = "icmp"
+count = 20
+interval_ms = 100
+timeout_ms = 1000
+payload_bytes = 56
+
+[criteria]
+maximum_lost = 0
+maximum_p95_ms = 50

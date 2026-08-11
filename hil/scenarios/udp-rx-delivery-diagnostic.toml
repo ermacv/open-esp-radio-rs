@@ -1,4 +1,4 @@
-schema = 1
+schema = 2
 id = "udp-rx-delivery-diagnostic"
 description = "RX reorder, network enqueue and UDP consumer frontier evidence"
 image = "diagnostic-rx-delivery"

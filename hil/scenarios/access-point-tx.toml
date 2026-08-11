@@ -1,0 +1,23 @@
+schema = 2
+id = "access-point-tx"
+description = "Two AP ownership epochs with exact outbound UDP delivery"
+image = "qualification"
+isolation = "reset"
+tags = ["qualification", "wifi", "access-point", "network", "tx"]
+
+[workload]
+kind = "access-point"
+cycles = 2
+boots = 1
+timeout_seconds = 90
+
+[workload.traffic]
+kind = "udp"
+direction = "tx"
+duration_seconds = 10
+tx_rate_bps = 2000000
+payload_bytes = 1200
+
+[criteria]
+exact_delivery = true
+minimum_tx_bps = 1500000

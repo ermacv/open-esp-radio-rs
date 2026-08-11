@@ -82,6 +82,11 @@ const PROFILE_DATA_END: u32 = INTERNAL_SRAM_END;
 static EXECUTOR: StaticCell<Executor<0>> = StaticCell::new();
 #[cfg(feature = "open-radio-hil")]
 static APP_EXECUTOR: StaticCell<Executor<1>> = StaticCell::new();
+// The hardware entropy source is a process-lifetime owner. Keeping it in a
+// named static prevents task cancellation or panic cleanup from trying to
+// disable the source while a nested radio future still owns `Trng`.
+#[cfg(feature = "open-radio-hil")]
+static TRNG_SOURCE: StaticCell<esp_hal::rng::TrngSource<'static>> = StaticCell::new();
 #[cfg(feature = "open-radio-hil")]
 static APP_SEND_SPAWNER: StaticCell<SendSpawner> = StaticCell::new();
 #[cfg(feature = "open-radio-hil")]
@@ -348,6 +353,7 @@ extern "C" fn runtime_main() -> ! {
         let trng_source = TrngSource::new(peripherals.RNG);
         let trng = Trng::try_new()
             .unwrap_or_else(|_| fail(c"OPEN_RADIO_HIL runtime=FAIL reason=trng-ownership\r\n"));
+        let _trng_source = TRNG_SOURCE.init(trng_source);
         let boot_id = (u64::from(trng.random()) << 32) | u64::from(trng.random());
         console::init_protocol(boot_id);
         let radio = open_esp_radio_esp32s31_wifi_esp_hal::EspHalRadioPeripheral::new(
@@ -371,8 +377,7 @@ extern "C" fn runtime_main() -> ! {
                 fail(c"OPEN_RADIO_HIL runtime=FAIL reason=protocol-allocation\r\n");
             };
             spawner.spawn(protocol);
-            let Ok(hil) = open_radio_hil_task(spawner, app_spawner, radio, trng, trng_source)
-            else {
+            let Ok(hil) = open_radio_hil_task(spawner, app_spawner, radio, trng) else {
                 fail(c"OPEN_RADIO_HIL runtime=FAIL reason=radio-task-allocation\r\n");
             };
             spawner.spawn(hil);
@@ -398,7 +403,6 @@ async fn open_radio_hil_task(
     protocol_spawner: SendSpawner,
     radio: open_esp_radio_esp32s31_wifi_esp_hal::EspHalRadioPeripheral,
     trng: esp_hal::rng::Trng,
-    _trng_source: esp_hal::rng::TrngSource<'static>,
 ) {
     product_hil::run(spawner, protocol_spawner, radio, trng).await;
 }

@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::Result;
 
-pub const SCENARIO_SCHEMA: u16 = 1;
+pub const SCENARIO_SCHEMA: u16 = 2;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -78,6 +78,32 @@ pub enum Direction {
     Bidirectional,
 }
 
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
+pub enum AccessPointTraffic {
+    None,
+    Icmp {
+        count: u16,
+        interval_ms: u16,
+        timeout_ms: u16,
+        payload_bytes: u16,
+    },
+    Udp {
+        direction: Direction,
+        duration_seconds: u16,
+        rx_rate_bps: Option<u64>,
+        tx_rate_bps: Option<u64>,
+        payload_bytes: u16,
+    },
+    Tcp {
+        direction: Direction,
+        duration_seconds: u16,
+        rx_rate_bps: Option<u64>,
+        tx_rate_bps: Option<u64>,
+        chunk_bytes: u16,
+    },
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum PhyExpectation {
@@ -93,6 +119,7 @@ pub enum WifiOperation {
     Start,
     Scan,
     Monitor,
+    AccessPoint,
     Roundtrip,
 }
 
@@ -103,6 +130,7 @@ impl WifiOperation {
             Self::Start => "start",
             Self::Scan => "scan",
             Self::Monitor => "monitor",
+            Self::AccessPoint => "ap",
             Self::Roundtrip => "roundtrip",
         }
     }
@@ -166,6 +194,12 @@ pub enum Workload {
         duration_seconds: u8,
         channel: Option<u8>,
         snapshot_length: u16,
+    },
+    AccessPoint {
+        cycles: u8,
+        boots: u8,
+        timeout_seconds: u16,
+        traffic: AccessPointTraffic,
     },
 }
 
@@ -324,6 +358,17 @@ impl Scenario {
                 }
                 bounded(*snapshot_length, 0, 2304, self, "snapshot_length")?;
             }
+            Workload::AccessPoint {
+                cycles,
+                boots,
+                timeout_seconds,
+                traffic,
+            } => {
+                bounded(*cycles, 2, 8, self, "cycles")?;
+                bounded(*boots, 1, 20, self, "boots")?;
+                bounded(*timeout_seconds, 20, 180, self, "timeout_seconds")?;
+                validate_access_point_traffic(traffic, self)?;
+            }
         }
         self.validate_criteria()?;
         Ok(())
@@ -343,6 +388,20 @@ impl Scenario {
             } => (*rx_rate_bps, *tx_rate_bps, false, false, true),
             Workload::Icmp { .. } => (None, None, false, true, true),
             Workload::StationReconnect { .. } => (None, None, false, false, true),
+            Workload::AccessPoint { traffic, .. } => match traffic {
+                AccessPointTraffic::Udp {
+                    rx_rate_bps,
+                    tx_rate_bps,
+                    ..
+                } => (*rx_rate_bps, *tx_rate_bps, true, false, false),
+                AccessPointTraffic::Tcp {
+                    rx_rate_bps,
+                    tx_rate_bps,
+                    ..
+                } => (*rx_rate_bps, *tx_rate_bps, false, false, false),
+                AccessPointTraffic::Icmp { .. } => (None, None, false, true, false),
+                AccessPointTraffic::None => (None, None, false, false, false),
+            },
             _ => (None, None, false, false, false),
         };
         if self.criteria.exact_delivery && !udp {
@@ -383,6 +442,68 @@ impl Scenario {
     }
 }
 
+fn validate_access_point_traffic(traffic: &AccessPointTraffic, scenario: &Scenario) -> Result<()> {
+    match traffic {
+        AccessPointTraffic::None => Ok(()),
+        AccessPointTraffic::Icmp {
+            count,
+            interval_ms,
+            timeout_ms,
+            payload_bytes,
+        } => {
+            bounded(*count, 1, u16::MAX, scenario, "traffic.count")?;
+            bounded(*interval_ms, 1, 10_000, scenario, "traffic.interval_ms")?;
+            bounded(*timeout_ms, 1, 60_000, scenario, "traffic.timeout_ms")?;
+            bounded(*payload_bytes, 0, 1400, scenario, "traffic.payload_bytes")
+        }
+        AccessPointTraffic::Udp {
+            direction,
+            duration_seconds,
+            rx_rate_bps,
+            tx_rate_bps,
+            payload_bytes,
+        } => {
+            bounded(
+                *duration_seconds,
+                5,
+                300,
+                scenario,
+                "traffic.duration_seconds",
+            )?;
+            bounded(*payload_bytes, 64, 1472, scenario, "traffic.payload_bytes")?;
+            validate_direction_rates(*direction, *rx_rate_bps, *tx_rate_bps, scenario)?;
+            validate_ap_rates(*rx_rate_bps, *tx_rate_bps, scenario)
+        }
+        AccessPointTraffic::Tcp {
+            direction,
+            duration_seconds,
+            rx_rate_bps,
+            tx_rate_bps,
+            chunk_bytes,
+        } => {
+            bounded(
+                *duration_seconds,
+                5,
+                300,
+                scenario,
+                "traffic.duration_seconds",
+            )?;
+            bounded(*chunk_bytes, 64, 32_768, scenario, "traffic.chunk_bytes")?;
+            validate_direction_rates(*direction, *rx_rate_bps, *tx_rate_bps, scenario)?;
+            validate_ap_rates(*rx_rate_bps, *tx_rate_bps, scenario)
+        }
+    }
+}
+
+fn validate_ap_rates(rx: Option<u64>, tx: Option<u64>, scenario: &Scenario) -> Result<()> {
+    for (name, rate) in [("traffic.rx_rate_bps", rx), ("traffic.tx_rate_bps", tx)] {
+        if let Some(rate) = rate {
+            bounded(rate, 100_000, 20_000_000, scenario, name)?;
+        }
+    }
+    Ok(())
+}
+
 fn bounded<T>(value: T, minimum: T, maximum: T, scenario: &Scenario, field: &str) -> Result<()>
 where
     T: Ord + std::fmt::Display,
@@ -405,8 +526,8 @@ fn validate_direction_rates(
 ) -> Result<()> {
     let valid = match direction {
         Direction::Rx => rx.is_some() && tx.is_none(),
-        Direction::Tx => rx.is_none(),
-        Direction::Bidirectional => rx.is_some(),
+        Direction::Tx => rx.is_none() && tx.is_some(),
+        Direction::Bidirectional => rx.is_some() && tx.is_some(),
     };
     if !valid {
         return Err(format!(
@@ -475,6 +596,9 @@ mod tests {
         let catalog = Catalog::load(&root).unwrap();
         assert!(catalog.all().len() >= 8);
         assert!(catalog.get("udp-rx-he20-ceiling").is_ok());
+        assert!(catalog.get("access-point-rx").is_ok());
+        assert!(catalog.get("access-point-tx").is_ok());
+        assert!(catalog.get("access-point-bidirectional").is_ok());
     }
 
     #[test]
@@ -494,5 +618,22 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn access_point_direction_requires_matching_rates() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios");
+        let catalog = Catalog::load(&root).unwrap();
+        let scenario = catalog.get("access-point-rx").unwrap();
+        assert!(validate_direction_rates(Direction::Rx, Some(1), None, scenario).is_ok());
+        assert!(validate_direction_rates(Direction::Rx, None, None, scenario).is_err());
+        assert!(validate_direction_rates(Direction::Tx, None, Some(1), scenario).is_ok());
+        assert!(validate_direction_rates(Direction::Tx, Some(1), Some(1), scenario).is_err());
+        assert!(
+            validate_direction_rates(Direction::Bidirectional, Some(1), Some(1), scenario).is_ok()
+        );
+        assert!(
+            validate_direction_rates(Direction::Bidirectional, Some(1), None, scenario).is_err()
+        );
     }
 }

@@ -16,6 +16,7 @@ pub(crate) struct LabConfig {
     path: PathBuf,
     pub(crate) device: DeviceConfig,
     pub(crate) station: StationConfig,
+    pub(crate) access_point: AccessPointConfig,
     pub(crate) openwrt: OpenWrtConfig,
 }
 
@@ -24,6 +25,7 @@ pub(crate) struct LabConfig {
 struct RawLabConfig {
     device: RawDeviceConfig,
     station: RawStationConfig,
+    access_point: RawAccessPointConfig,
     openwrt: RawOpenWrtConfig,
 }
 
@@ -64,6 +66,25 @@ pub(crate) struct StationConfig {
     ipv4: NetworkIpv4Configuration,
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawAccessPointConfig {
+    ssid: String,
+    passphrase: String,
+    channel: u8,
+    target_address: String,
+    client_address: String,
+}
+
+pub(crate) struct AccessPointConfig {
+    ssid: Zeroizing<String>,
+    passphrase: Zeroizing<String>,
+    channel: u8,
+    target_address: Ipv4Addr,
+    client_address: Ipv4Addr,
+    prefix_length: u8,
+}
+
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RawOpenWrtConfig {
@@ -101,6 +122,30 @@ impl LabConfig {
         if raw.station.passphrase.len() < 8 || raw.station.passphrase.len() > 63 {
             return Err("HIL station passphrase must contain 8..=63 bytes".into());
         }
+        validate_credentials(
+            "access-point",
+            &raw.access_point.ssid,
+            &raw.access_point.passphrase,
+        )?;
+        if !(1..=13).contains(&raw.access_point.channel) {
+            return Err("HIL access-point channel must be in 1..=13".into());
+        }
+        let (target_address, target_prefix) = parse_cidr(
+            "access_point.target_address",
+            &raw.access_point.target_address,
+        )?;
+        let (client_address, client_prefix) = parse_cidr(
+            "access_point.client_address",
+            &raw.access_point.client_address,
+        )?;
+        if target_prefix != client_prefix
+            || target_address == client_address
+            || subnet(target_address, target_prefix) != subnet(client_address, client_prefix)
+        {
+            return Err(
+                "HIL AP target/client addresses must be distinct hosts in one IPv4 subnet".into(),
+            );
+        }
         let ipv4 = parse_ipv4(raw.station.ipv4.clone())?;
         for (name, value) in [
             ("openwrt.ssh_target", raw.openwrt.ssh_target.as_str()),
@@ -128,6 +173,14 @@ impl LabConfig {
             passphrase: Zeroizing::new(std::mem::take(&mut raw.station.passphrase)),
             ipv4,
         };
+        let access_point = AccessPointConfig {
+            ssid: Zeroizing::new(std::mem::take(&mut raw.access_point.ssid)),
+            passphrase: Zeroizing::new(std::mem::take(&mut raw.access_point.passphrase)),
+            channel: raw.access_point.channel,
+            target_address,
+            client_address,
+            prefix_length: target_prefix,
+        };
         Ok(Self {
             path: path.to_owned(),
             device: DeviceConfig {
@@ -135,6 +188,7 @@ impl LabConfig {
                 startup_artifact,
             },
             station,
+            access_point,
             openwrt: OpenWrtConfig {
                 ssh_target: raw.openwrt.ssh_target,
                 wireless_interface: raw.openwrt.wireless_interface,
@@ -161,6 +215,14 @@ impl LabConfig {
                 passphrase: Zeroizing::new(String::from("test-password")),
                 ipv4: NetworkIpv4Configuration::Dhcp,
             },
+            access_point: AccessPointConfig {
+                ssid: Zeroizing::new(String::from("test-device-ap")),
+                passphrase: Zeroizing::new(String::from("test-password")),
+                channel: 6,
+                target_address: Ipv4Addr::new(10, 43, 0, 1),
+                client_address: Ipv4Addr::new(10, 43, 0, 2),
+                prefix_length: 24,
+            },
             openwrt: OpenWrtConfig {
                 ssh_target: String::from("open-radio-ap"),
                 wireless_interface: String::from("phy0-ap0"),
@@ -184,6 +246,90 @@ impl StationConfig {
     pub(crate) fn credentials(&self) -> (&str, &str) {
         (self.ssid.as_str(), self.passphrase.as_str())
     }
+}
+
+impl AccessPointConfig {
+    pub(crate) fn protocol_request(
+        &self,
+    ) -> Result<open_esp_radio_hil_protocol::WifiAccessPointRequest> {
+        Ok(open_esp_radio_hil_protocol::WifiAccessPointRequest {
+            credentials: NetworkCredentials::try_new(
+                self.ssid.as_bytes(),
+                self.passphrase.as_bytes(),
+            )
+            .map_err(|error| format!("invalid HIL AP credentials: {error}"))?,
+            channel: self.channel,
+            ipv4: NetworkIpv4Configuration::Static {
+                address: self.target_address.octets(),
+                prefix_length: self.prefix_length,
+                gateway: None,
+            },
+        })
+    }
+
+    pub(crate) fn credentials(&self) -> (&str, &str) {
+        (self.ssid.as_str(), self.passphrase.as_str())
+    }
+
+    pub(crate) const fn channel(&self) -> u8 {
+        self.channel
+    }
+
+    pub(crate) const fn target_address(&self) -> Ipv4Addr {
+        self.target_address
+    }
+
+    pub(crate) const fn client_address(&self) -> Ipv4Addr {
+        self.client_address
+    }
+
+    pub(crate) fn client_cidr(&self) -> String {
+        format!("{}/{}", self.client_address, self.prefix_length)
+    }
+}
+
+fn validate_credentials(name: &str, ssid: &str, passphrase: &str) -> Result<()> {
+    if ssid.is_empty() || ssid.len() > 32 || ssid.chars().any(char::is_control) {
+        return Err(format!("HIL {name} SSID must contain 1..=32 non-control bytes").into());
+    }
+    if !(8..=63).contains(&passphrase.len()) || passphrase.chars().any(char::is_control) {
+        return Err(format!("HIL {name} passphrase must contain 8..=63 non-control bytes").into());
+    }
+    Ok(())
+}
+
+fn parse_cidr(name: &str, value: &str) -> Result<(Ipv4Addr, u8)> {
+    let (address, prefix) = value
+        .split_once('/')
+        .ok_or_else(|| format!("{name} must be an IPv4 CIDR"))?;
+    let address = address
+        .parse::<Ipv4Addr>()
+        .map_err(|error| format!("invalid {name} address: {error}"))?;
+    let prefix = prefix
+        .parse::<u8>()
+        .map_err(|error| format!("invalid {name} prefix: {error}"))?;
+    if prefix > 30 || address.is_unspecified() || address.is_broadcast() {
+        return Err(format!("{name} must identify a host in a /0..=/30 subnet").into());
+    }
+    let host_mask = if prefix == 0 {
+        u32::MAX
+    } else {
+        u32::MAX >> prefix
+    };
+    let host = u32::from(address) & host_mask;
+    if host == 0 || host == host_mask {
+        return Err(format!("{name} cannot be the subnet or broadcast address").into());
+    }
+    Ok((address, prefix))
+}
+
+fn subnet(address: Ipv4Addr, prefix: u8) -> u32 {
+    let mask = if prefix == 0 {
+        0
+    } else {
+        u32::MAX << (32 - prefix)
+    };
+    u32::from(address) & mask
 }
 
 fn parse_ipv4(raw: RawIpv4Config) -> Result<NetworkIpv4Configuration> {
@@ -248,6 +394,13 @@ fn require_private_permissions(_path: &Path) -> Result<()> {
 }
 
 impl Drop for RawStationConfig {
+    fn drop(&mut self) {
+        self.ssid.zeroize();
+        self.passphrase.zeroize();
+    }
+}
+
+impl Drop for RawAccessPointConfig {
     fn drop(&mut self) {
         self.ssid.zeroize();
         self.passphrase.zeroize();

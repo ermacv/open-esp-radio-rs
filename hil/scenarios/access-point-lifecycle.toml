@@ -1,0 +1,17 @@
+schema = 2
+id = "access-point-lifecycle"
+description = "Repeated cold-boot and ownership qualification for one WPA2 access point"
+image = "qualification"
+isolation = "reset"
+tags = ["qualification", "wifi", "access-point", "lifecycle"]
+
+[workload]
+kind = "access-point"
+cycles = 4
+boots = 5
+timeout_seconds = 90
+
+[workload.traffic]
+kind = "none"
+
+[criteria]

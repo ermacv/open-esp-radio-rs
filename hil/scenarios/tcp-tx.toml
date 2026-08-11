@@ -1,4 +1,4 @@
-schema = 1
+schema = 2
 id = "tcp-tx"
 description = "Sustained TCP station-to-host transmission"
 image = "qualification"

@@ -1,4 +1,4 @@
-schema = 1
+schema = 2
 id = "station-ap-absence"
 description = "Station exhausts bounded retries while the configured AP is absent"
 image = "qualification"

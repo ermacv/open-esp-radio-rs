@@ -3,7 +3,7 @@ use core::fmt;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-pub const PROTOCOL_VERSION: u16 = 25;
+pub const PROTOCOL_VERSION: u16 = 32;
 // Keep command envelopes small: startup artifacts are transferred as an
 // ordered CRC-protected stream, so a large per-command inline buffer only
 // inflates UART queues and executor futures without improving semantics.
@@ -508,6 +508,28 @@ pub enum WifiRole {
     AccessPoint,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum WifiRoleOperation {
+    Start,
+    Stop,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum WifiRoleFailureReason {
+    Rejected,
+    HardwareFault,
+    GenerationMismatch,
+}
+
+/// Terminal correlated failure for a role command. This prevents the host
+/// from turning a target-side ownership fault into an opaque timeout.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct WifiRoleFailureEvidence {
+    pub role: WifiRole,
+    pub operation: WifiRoleOperation,
+    pub reason: WifiRoleFailureReason,
+}
+
 /// Complete target-neutral configuration for the first AP role.
 ///
 /// Beacon interval (100 TU), DTIM period (2), HT20 width and the one-peer
@@ -516,6 +538,9 @@ pub enum WifiRole {
 pub struct WifiAccessPointRequest {
     pub credentials: NetworkCredentials,
     pub channel: u8,
+    /// IP configuration owned by the HIL application while the AP role is
+    /// active. This is deliberately outside the radio-driver request.
+    pub ipv4: NetworkIpv4Configuration,
 }
 
 impl WifiAccessPointRequest {
@@ -526,6 +551,13 @@ impl WifiAccessPointRequest {
         if !(1..=13).contains(&self.channel) {
             return Err(WifiAccessPointRequestError::Channel);
         }
+        if !matches!(
+            self.ipv4,
+            NetworkIpv4Configuration::Static { gateway: None, .. }
+        ) || !self.ipv4.validate()
+        {
+            return Err(WifiAccessPointRequestError::Ipv4);
+        }
         Ok(())
     }
 }
@@ -534,6 +566,7 @@ impl WifiAccessPointRequest {
 pub enum WifiAccessPointRequestError {
     Credentials(NetworkCredentialsError),
     Channel,
+    Ipv4,
 }
 
 impl fmt::Display for WifiAccessPointRequestError {
@@ -541,6 +574,8 @@ impl fmt::Display for WifiAccessPointRequestError {
         match self {
             Self::Credentials(error) => error.fmt(formatter),
             Self::Channel => formatter.write_str("AP channel must be in 1..=13"),
+            Self::Ipv4 => formatter
+                .write_str("AP mode requires a valid gateway-free static IPv4 configuration"),
         }
     }
 }
@@ -731,10 +766,39 @@ pub struct WifiAccessPointEvidence {
     pub generation: u32,
     pub channel: u8,
     pub beacons_transmitted: u32,
+    pub missed_beacon_intervals: u32,
+    pub maximum_beacon_lateness_micros: u32,
     pub authentication_responses: u32,
     pub association_responses: u32,
     pub authorized_peers: u32,
     pub peer_removals: u32,
+    pub completed_rx_descriptors: u32,
+    pub ignored_rx_frames: u32,
+    pub rx_mic_failures: u32,
+    pub rx_quarantined_frames: u32,
+    pub rx_view_rejected: u32,
+    pub control_frames_staged: u32,
+    pub control_frames_dropped_while_busy: u32,
+    pub ethernet_frames_staged: u32,
+    pub ethernet_arp_requests_staged: u32,
+    pub ethernet_tcp_frames_staged: u32,
+    pub network_tx_frames_observed: u32,
+    pub network_tx_arp_requests: u32,
+    pub network_tx_arp_replies: u32,
+    pub network_tx_rejected_no_peer: u32,
+    pub network_tx_rejected_destination: u32,
+    pub network_tx_frames_rejected: u32,
+    pub data_frames_transmitted: u32,
+    pub tx_hardware_failures: u8,
+    pub tx_hardware_timeouts: u8,
+    pub tx_collision_limits: u8,
+    pub tx_last_hardware_status: u8,
+    pub protected_data_frames: u32,
+    pub protected_data_unauthorized: u32,
+    pub protected_data_foreign: u32,
+    pub protected_data_duplicates: u32,
+    pub protected_data_radio_rejected: u32,
+    pub protected_data_protocol_rejected: u32,
 }
 
 impl StationEpochEvidence {
@@ -1108,6 +1172,8 @@ pub enum Event {
     WifiAccessPointStarted(WifiRoleTransitionEvidence),
     /// Reliable completion of `StopAccessPoint` and its bounded AP summary.
     WifiAccessPointStopped(WifiAccessPointEvidence),
+    /// Terminal failure of a correlated role start/stop command.
+    WifiRoleFailed(WifiRoleFailureEvidence),
     /// One ordered chunk emitted by `CaptureMonitor`.
     WifiMonitorFrame(WifiMonitorFrameChunk),
     /// Terminal completion of one finite `CaptureMonitor` request.

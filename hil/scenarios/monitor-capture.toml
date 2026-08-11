@@ -1,4 +1,4 @@
-schema = 1
+schema = 2
 id = "monitor-capture"
 description = "Finite typed monitor capture exported as PCAPNG"
 image = "qualification"

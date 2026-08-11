@@ -1,4 +1,4 @@
-schema = 1
+schema = 2
 id = "udp-task-poll-diagnostic"
 description = "Embassy poll-residence diagnostic under UDP RX load"
 image = "diagnostic-task-poll"

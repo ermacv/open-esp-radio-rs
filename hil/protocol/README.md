@@ -1,4 +1,4 @@
-# HIL protocol v25
+# HIL protocol v32
 
 Source types are authoritative. A frame is:
 
@@ -19,12 +19,15 @@ Hello -> WaitingForInitialization
       <- optional calibration chunks
       <- Initialize(IPv4 policy)
       -> Initialized + WifiIdle
-      <- StartStation(credentials) | ScanWifi | StartMonitor | CaptureMonitor
+      <- StartStation(credentials) | StartAccessPoint(credentials, static IPv4)
+       | ScanWifi | StartMonitor | CaptureMonitor
 ```
 
-Credentials exist only in `StartStation`, are bounded/redacted/zeroized and
-never enter scenario files or logs. Calibration bytes are opaque, chunked and
-CRC-protected; the host persists them, never target NVS/flash.
+Credentials exist only in role commands, are bounded/redacted/zeroized and
+never enter scenario files or logs. AP IPv4 configuration is applied by the
+HIL application to its persistent network stack, not by the radio driver.
+Calibration bytes are opaque, chunked and CRC-protected; the host persists
+them, never target NVS/flash.
 
 Traffic uses one state machine for UDP/TCP and RX/TX/bidirectional:
 
@@ -50,6 +53,5 @@ of the result contract. `protocol.jsonl` contains decoded target events plus a
 final link-health record; commands are omitted because they can carry secrets.
 
 Wi-Fi commands admit only operations valid for the current `WifiIdle`,
-`WifiStation` or `WifiMonitor` owner. Admission and completion are separate,
-request-correlated events. AP wire types remain unavailable until the target
-advertises a complete AP implementation.
+`WifiStation`, `WifiAccessPoint` or `WifiMonitor` owner. Admission, successful
+completion and terminal role failure are distinct request-correlated events.

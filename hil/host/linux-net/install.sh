@@ -17,14 +17,20 @@ esac
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 repository_root=$(CDPATH= cd -- "$script_dir/../../.." && pwd)
 hostapd_source=/tmp/open-radio-hostap-src/hostapd/hostapd
+hostapd_installed=/usr/local/libexec/open-radio-hostapd
 hil_runner_source="$repository_root/target/debug/open-esp-radio-hil-runner"
-test -x "$hostapd_source"
+if test ! -x "$hostapd_source" && test ! -x "$hostapd_installed"; then
+    echo "missing patched hostapd: build $hostapd_source or install $hostapd_installed" >&2
+    exit 1
+fi
 test -x "$hil_runner_source"
 
 install -d -o root -g root -m 0755 /usr/local/libexec
 install -d -o root -g root -m 0755 /usr/local/sbin
 install -d -o root -g root -m 0755 /etc/open-radio
-install -o root -g root -m 0755 "$hostapd_source" /usr/local/libexec/open-radio-hostapd
+if test -x "$hostapd_source"; then
+    install -o root -g root -m 0755 "$hostapd_source" "$hostapd_installed"
+fi
 install -o root -g root -m 0755 "$hil_runner_source" /usr/local/libexec/open-radio-hil-runner
 /usr/sbin/setcap cap_net_raw+ep /usr/local/libexec/open-radio-hil-runner
 install -o root -g root -m 0755 "$script_dir/open-radio-net" /usr/local/sbin/open-radio-net
@@ -35,6 +41,8 @@ sudoers=/etc/sudoers.d/open-radio-net
 {
     echo "$operator ALL=(root) NOPASSWD: /usr/local/sbin/open-radio-net start-ht40"
     echo "$operator ALL=(root) NOPASSWD: /usr/local/sbin/open-radio-net start-he20"
+    echo "$operator ALL=(root) NOPASSWD: /usr/local/sbin/open-radio-net capabilities"
+    echo "$operator ALL=(root) NOPASSWD: /usr/local/sbin/open-radio-net client"
     echo "$operator ALL=(root) NOPASSWD: /usr/local/sbin/open-radio-net monitor"
     echo "$operator ALL=(root) NOPASSWD: /usr/local/sbin/open-radio-net monitor-1"
     echo "$operator ALL=(root) NOPASSWD: /usr/local/sbin/open-radio-net monitor-6"

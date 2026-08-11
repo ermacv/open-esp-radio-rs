@@ -1,4 +1,4 @@
-schema = 1
+schema = 2
 id = "udp-rx-he20-ceiling"
 description = "Sustained HE20 UDP host-to-station receive ceiling"
 image = "qualification"

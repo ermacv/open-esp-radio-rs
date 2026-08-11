@@ -12,8 +12,10 @@ use clap::{Parser, Subcommand};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
+mod access_point_qualification;
 mod bidirectional;
 mod controlled_ap;
+mod controlled_client;
 mod fixture_lock;
 mod icmp_latency;
 mod lab_config;
@@ -224,6 +226,8 @@ fn doctor(root: &std::path::Path, lab: &lab_config::LabConfig) -> Result<()> {
     println!("serial_device=PASS");
     openwrt_fixture::doctor(&lab.openwrt)?;
     println!("openwrt_fixture=PASS");
+    controlled_client::doctor()?;
+    println!("controlled_client=PASS");
     for program in ["cargo", "llvm-objcopy", "llvm-nm", "espflash"] {
         require_program(program)?;
         println!("tool_{program}=PASS");
@@ -279,20 +283,22 @@ fn device_status(root: &Path, lab: &lab_config::LabConfig) -> Result<()> {
 
 fn device_status_at(output: &Path, lab: &lab_config::LabConfig) -> Result<()> {
     let capture = traffic_capture::SerialCapture::start_with_reset(&lab.device.serial);
-    let capabilities = capture.prepare_protocol(lab)?;
-    let operation = capture.query_operation_status(std::time::Duration::from_secs(10))?;
-    let stack = capture.query_stack_usage(std::time::Duration::from_secs(10))?;
-    capture.finish_to(&output)?;
-    println!(
-        "{}",
-        serde_json::to_string_pretty(&serde_json::json!({
+    let result = (|| -> Result<_> {
+        let capabilities = capture.prepare_protocol(lab)?;
+        let operation = capture.query_operation_status(std::time::Duration::from_secs(10))?;
+        let stack = capture.query_stack_usage(std::time::Duration::from_secs(10))?;
+        Ok(serde_json::json!({
             "protocol_version": open_esp_radio_hil_protocol::PROTOCOL_VERSION,
             "capabilities": capabilities,
             "operation": operation,
             "stack": stack,
             "uart_log": output.join("uart.log"),
-        }))?
-    );
+        }))
+    })();
+    let capture_result = capture.finish_to(output);
+    let report = result?;
+    capture_result?;
+    println!("{}", serde_json::to_string_pretty(&report)?);
     Ok(())
 }
 
@@ -588,6 +594,22 @@ fn execute_workload(
             push_option(&mut arguments, "--snapshot-length", snapshot_length);
             wifi_capture::run(arguments, output, lab)
         }
+        Workload::AccessPoint {
+            cycles,
+            boots,
+            timeout_seconds,
+            traffic,
+        } => access_point_qualification::run(
+            access_point_qualification::Config {
+                cycles: *cycles,
+                boots: *boots,
+                timeout: std::time::Duration::from_secs(u64::from(*timeout_seconds)),
+                traffic: traffic.clone(),
+                criteria: selected.criteria.clone(),
+            },
+            output,
+            lab,
+        ),
     }
 }
 

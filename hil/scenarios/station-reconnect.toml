@@ -1,4 +1,4 @@
-schema = 1
+schema = 2
 id = "station-reconnect"
 description = "Repeated safe station teardown and reassociation"
 image = "qualification"

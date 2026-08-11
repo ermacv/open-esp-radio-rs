@@ -248,12 +248,18 @@ pub(in crate::product_hil) async fn run_open_radio_tcp_benchmark<'a>(
             session.config.direction,
             HilDirection::Tx | HilDirection::Bidirectional
         ) {
+            // `close` appends FIN after every byte already accepted by the
+            // socket.  The following bounded flush is therefore the target's
+            // terminal-delivery frontier: it must observe both the payload
+            // ACKs and the FIN ACK before the session can pass.  In
+            // particular, an inner connection error is not a successful
+            // timeout operation.
             socket.close();
-            if with_timeout(config.idle_timeout, socket.flush())
-                .await
-                .is_err()
-            {
-                tx.errors = tx.errors.saturating_add(1);
+            match with_timeout(config.idle_timeout, socket.flush()).await {
+                Ok(Ok(())) => {}
+                Ok(Err(_)) | Err(_) => {
+                    tx.errors = tx.errors.saturating_add(1);
+                }
             }
         }
         let elapsed_us = started.elapsed().as_micros().max(1);
@@ -339,26 +345,17 @@ impl TcpRead for TcpReader<'_> {
 
 trait TcpWrite {
     async fn write(&mut self, buffer: &[u8]) -> Result<usize, embassy_net::tcp::Error>;
-    async fn flush(&mut self) -> Result<(), embassy_net::tcp::Error>;
 }
 
 impl TcpWrite for TcpSocket<'_> {
     async fn write(&mut self, buffer: &[u8]) -> Result<usize, embassy_net::tcp::Error> {
         TcpSocket::write(self, buffer).await
     }
-
-    async fn flush(&mut self) -> Result<(), embassy_net::tcp::Error> {
-        TcpSocket::flush(self).await
-    }
 }
 
 impl TcpWrite for TcpWriter<'_> {
     async fn write(&mut self, buffer: &[u8]) -> Result<usize, embassy_net::tcp::Error> {
         TcpWriter::write(self, buffer).await
-    }
-
-    async fn flush(&mut self) -> Result<(), embassy_net::tcp::Error> {
-        TcpWriter::flush(self).await
     }
 }
 
@@ -449,9 +446,9 @@ async fn transmit_stream(
             }
         }
     }
-    if writer.flush().await.is_err() {
-        result.errors = result.errors.saturating_add(1);
-    }
+    // The socket owner performs one bounded close+flush after both halves of
+    // a bidirectional session have joined.  A writer cannot establish that
+    // terminal frontier on its own because it does not own the socket state.
     result.units = u64::from(result.bytes != 0 && result.errors == 0);
     result
 }

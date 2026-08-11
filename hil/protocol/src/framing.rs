@@ -541,12 +541,17 @@ mod tests {
     fn access_point_request_round_trips_without_debugging_the_secret() {
         extern crate std;
 
-        use crate::{NetworkCredentials, WifiAccessPointRequest};
+        use crate::{NetworkCredentials, NetworkIpv4Configuration, WifiAccessPointRequest};
 
         let request = WifiAccessPointRequest {
             credentials: NetworkCredentials::try_new(b"open-radio-ap", b"private-password")
                 .unwrap(),
             channel: 6,
+            ipv4: NetworkIpv4Configuration::Static {
+                address: [10, 43, 0, 1],
+                prefix_length: 24,
+                gateway: None,
+            },
         };
         assert_eq!(request.validate(), Ok(()));
         let debug = std::format!("{request:?}");

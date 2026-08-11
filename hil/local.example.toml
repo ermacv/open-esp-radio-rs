@@ -16,6 +16,15 @@ mode = "dhcp"
 # address = "192.168.1.182/24"
 # gateway = "192.168.1.1"
 
+# Target-owned AP fixture. These credentials are sent over the typed UART
+# protocol; the laptop joins with the isolated address below and no gateway.
+[access_point]
+ssid = "open-radio-device"
+passphrase = "replace-me-too"
+channel = 6
+target_address = "10.43.0.1/24"
+client_address = "10.43.0.2/24"
+
 [openwrt]
 # Configure this as an SSH alias with key authentication.
 ssh_target = "open-radio-ap"

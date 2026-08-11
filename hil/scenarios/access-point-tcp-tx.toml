@@ -1,0 +1,22 @@
+schema = 2
+id = "access-point-tcp-tx"
+description = "Two AP ownership epochs with exact outbound TCP delivery"
+image = "qualification"
+isolation = "reset"
+tags = ["qualification", "wifi", "access-point", "network", "tcp", "tx"]
+
+[workload]
+kind = "access-point"
+cycles = 2
+boots = 1
+timeout_seconds = 90
+
+[workload.traffic]
+kind = "tcp"
+direction = "tx"
+duration_seconds = 10
+tx_rate_bps = 5000000
+chunk_bytes = 8192
+
+[criteria]
+minimum_tx_bps = 4000000

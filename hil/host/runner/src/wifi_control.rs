@@ -8,8 +8,7 @@ use std::{
 };
 
 use open_esp_radio_hil_protocol::{
-    NetworkCredentials, WifiAccessPointRequest, WifiMonitorRequest, WifiRole,
-    WifiRoleTransitionEvidence, WifiScanEvidence, WifiScanRequest,
+    WifiMonitorRequest, WifiRole, WifiRoleTransitionEvidence, WifiScanEvidence, WifiScanRequest,
 };
 
 use crate::{
@@ -75,7 +74,7 @@ pub(crate) fn run(
 ) -> Result<()> {
     let operation = Operation::parse(operation)?;
     let options = parse_options(&arguments, lab)?;
-    let _access_point = if options.external_ap {
+    let _access_point = if options.external_ap || operation == Operation::AccessPoint {
         require_station_credentials(&lab.station)?;
         None
     } else {
@@ -120,13 +119,11 @@ fn qualify(
         if !capabilities.features.wifi_access_point {
             return Err("firmware does not advertise the access-point role".into());
         }
-        let channel = options.monitor_channel.unwrap_or(6);
-        let (ssid, passphrase) = lab.station.credentials();
-        let request = WifiAccessPointRequest {
-            credentials: NetworkCredentials::try_new(ssid.as_bytes(), passphrase.as_bytes())
-                .map_err(|error| format!("invalid AP credentials: {error}"))?,
-            channel,
-        };
+        let mut request = lab.access_point.protocol_request()?;
+        if let Some(channel) = options.monitor_channel {
+            request.channel = channel;
+        }
+        let channel = request.channel;
         let started = capture.wait_access_point_start(
             capture.request_access_point_start(request)?,
             options.timeout,
@@ -143,7 +140,7 @@ fn qualify(
             return Err(format!("access point returned inconsistent evidence: {stopped:?}").into());
         }
         println!(
-            "wifi_ap_generation={} channel={} beacons={} auth_responses={} assoc_responses={} authorized_peers={} peer_removals={}",
+            "wifi_ap_generation={} channel={} beacons={} auth_responses={} assoc_responses={} authorized_peers={} peer_removals={} rx_descriptors={} ignored_rx={} control_staged={} control_busy_drops={} ethernet_staged={} network_tx_rejected={} data_tx={} tx_hardware_failures={} tx_hardware_timeouts={} tx_collision_limits={} tx_last_hardware_status={}",
             stopped.generation,
             stopped.channel,
             stopped.beacons_transmitted,
@@ -151,6 +148,17 @@ fn qualify(
             stopped.association_responses,
             stopped.authorized_peers,
             stopped.peer_removals,
+            stopped.completed_rx_descriptors,
+            stopped.ignored_rx_frames,
+            stopped.control_frames_staged,
+            stopped.control_frames_dropped_while_busy,
+            stopped.ethernet_frames_staged,
+            stopped.network_tx_frames_rejected,
+            stopped.data_frames_transmitted,
+            stopped.tx_hardware_failures,
+            stopped.tx_hardware_timeouts,
+            stopped.tx_collision_limits,
+            stopped.tx_last_hardware_status,
         );
         start_station(capture, lab, options.timeout)?;
         report_stack(capture, options.timeout, "station-restarted")?;
@@ -214,7 +222,7 @@ fn qualify(
     Ok(())
 }
 
-fn report_stack(capture: &SerialCapture, timeout: Duration, stage: &str) -> Result<()> {
+pub(crate) fn report_stack(capture: &SerialCapture, timeout: Duration, stage: &str) -> Result<()> {
     let usage = capture.query_stack_usage(timeout)?;
     println!(
         "stack_stage={stage} cpu0_free={}/{} cpu1_free={}/{} required_percent={}",
@@ -261,7 +269,7 @@ pub(crate) fn scan(capture: &SerialCapture, timeout: Duration) -> Result<WifiSca
     Ok(evidence)
 }
 
-fn require_transition(
+pub(crate) fn require_transition(
     evidence: WifiRoleTransitionEvidence,
     previous: WifiRole,
     current: WifiRole,

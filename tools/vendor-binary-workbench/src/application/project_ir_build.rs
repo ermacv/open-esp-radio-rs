@@ -72,6 +72,9 @@ pub(crate) fn build_project_ir<'a>(
     target: &TargetSpec,
 ) -> Result<BuildDocument<'a>> {
     let selected = select_profiles(&project.ir_profiles, &request.profiles)?;
+    if !request.check {
+        remove_legacy_monolithic_reports(&project.ir_profiles)?;
+    }
     let effective_code = crate::analysis::EffectiveCodeCatalog::load(project)?;
     let interfaces = linked_ir_export::load_project_interfaces(project, target)?;
     let interface_origins = linked_ir_export::load_project_interface_origins(project)?;
@@ -152,6 +155,38 @@ pub(crate) fn build_project_ir<'a>(
             .collect(),
         documents: document_count,
     })
+}
+
+fn remove_legacy_monolithic_reports(profiles: &[ProjectIrProfile]) -> Result<()> {
+    let parents = profiles
+        .iter()
+        .filter_map(|profile| profile.output.parent().map(Path::to_owned))
+        .collect::<BTreeSet<_>>();
+    for parent in parents {
+        let Ok(entries) = fs::read_dir(&parent) else {
+            continue;
+        };
+        for entry in entries {
+            let path = entry?.path();
+            let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+                continue;
+            };
+            if !path.is_file() || !name.ends_with(".ir.json") {
+                continue;
+            }
+            let Ok(document) = fs::read_to_string(&path)
+                .ok()
+                .and_then(|input| serde_json::from_str::<serde_json::Value>(&input).ok())
+                .ok_or(())
+            else {
+                continue;
+            };
+            if document.get("command").and_then(serde_json::Value::as_str) == Some("ir export") {
+                fs::remove_file(path)?;
+            }
+        }
+    }
+    Ok(())
 }
 
 fn select_profiles<'a>(
@@ -401,5 +436,26 @@ mod tests {
             ["archive", "rom"]
         );
         assert!(combined_inputs.companions.is_empty());
+    }
+
+    #[test]
+    fn write_mode_cleanup_removes_only_obsolete_monolithic_ir_documents() {
+        let directory = std::env::temp_dir().join(format!(
+            "vendor-workbench-ir-legacy-cleanup-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&directory).unwrap();
+        let legacy = directory.join("removed.ir.json");
+        let unrelated = directory.join("preserved.ir.json");
+        std::fs::write(&legacy, r#"{"command":"ir export"}"#).unwrap();
+        std::fs::write(&unrelated, r#"{"command":"another tool"}"#).unwrap();
+        let mut configured = profile("current");
+        configured.output = directory.join("current.ir");
+
+        remove_legacy_monolithic_reports(&[configured]).unwrap();
+
+        assert!(!legacy.exists());
+        assert!(unrelated.exists());
+        std::fs::remove_dir_all(directory).unwrap();
     }
 }

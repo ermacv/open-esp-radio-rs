@@ -4,10 +4,10 @@ schema = 2
 source = "libnet80211"
 symbol = "ieee80211_sta_new_state"
 kind = "driver-adapter/reviewed-projection/exact-effects-v1"
-digest = "f8c3eac14553ec47301d686d1e11b6bb2f46fb5704131a955415100906f09c1b"
+digest = "ea18683a51c296cc59c97cc5db45992152ab7547c4a9c75535695419eaaf08cf"
 
 [evidence.components]
-adapter-proof = "20f6bf8983241954d51302b8e71fe5076a266b3063e5935b08f5885dd849c526"
+adapter-proof = "e9407b1e66e00640c3859589f387fa0ddf5d26df32cf640b3e4350ee6ebd14dd"
 binding = "fffdcfa3f7ad78f6c54ae1928cc4d4fe0f657b1f9a91bc666e618d06595d731d"
 binding-verifier = "8a49056ff034bb6ccbcba50a8fbb5f592af78036508fc66b91e7d26dd88f5c5b"
 claim = "5d04e61fb747cb329eae5fe9837475e27a879e9852d56d0cb325aa0d214a2d5b"

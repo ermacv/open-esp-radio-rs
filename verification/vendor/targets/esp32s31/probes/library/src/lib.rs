@@ -294,6 +294,25 @@ pub extern "C" fn open_coex_trace_coex_hw_timer_unforce(index: u32) {
     let _ = registers.unforce_coex_timer(index as u8);
 }
 
+/// Compiled production-path probe for the complete `coex_core_pti_get`
+/// contract. The vendor ABI returns `0x102` for a null output pointer and
+/// otherwise copies one entry from its reviewed 48-byte priority table.
+#[unsafe(no_mangle)]
+#[inline(never)]
+pub extern "C" fn open_coex_core_trace_pti_get(event: u32, output: *mut u8) -> u32 {
+    if output.is_null() {
+        return 0x102;
+    }
+    let Ok(event) = open_esp_radio_esp32s31_coex::CoexEventId::new(event as u8) else {
+        return 0x102;
+    };
+    let pti = open_esp_radio_esp32s31_coex::CoexPtiTable::reviewed_vendor().pti(event);
+    // SAFETY: verification profiles provide a writable caller-owned output
+    // byte and compare its final state with the vendor execution.
+    unsafe { output.write(pti.value()) };
+    0
+}
+
 struct CoexProbeClock {
     is_real_chip: bool,
 }
@@ -1818,6 +1837,7 @@ pub fn retain_all_probes() {
     core::hint::black_box(open_coex_trace_coex_hw_timer_force as *const ());
     core::hint::black_box(open_coex_trace_coex_hw_timer_unforce as *const ());
     core::hint::black_box(open_coex_trace_coex_hw_timer_set as *const ());
+    core::hint::black_box(open_coex_core_trace_pti_get as *const ());
     core::hint::black_box(open_libpp_rx_trace_wdev_append_rx_blocks as *const ());
     core::hint::black_box(open_libnet80211_trace_sta_join_state as *const ());
     core::hint::black_box(open_libpp_tx_trace_hal_mac_tx_set_cca as *const ());

@@ -27,6 +27,7 @@ pub(super) fn command_span(command: &Command) -> Option<Span> {
         Command::FunctionValidate(_) => "Function validation",
         Command::FunctionReview(_) => "Function review",
         Command::CodeValidate(_) => "Code-boundary validation",
+        Command::CodeRebase(_) => "Code-boundary rebase",
         Command::CodeReview(_) => "Code-boundary review",
         Command::RegisterImportSvd(_) => "SVD import",
         Command::RegisterValidate(_) => "Register validation",

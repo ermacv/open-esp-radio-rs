@@ -145,6 +145,19 @@ pub(crate) struct ReviewArgs {
 }
 
 #[derive(Clone, Debug, Default, Args)]
+pub(crate) struct CodeRebaseArgs {
+    /// Fail unless the reviewed pack already matches the generated facts.
+    #[arg(long, conflicts_with_all = ["output", "apply"])]
+    pub(crate) check: bool,
+    /// Write a rebased review candidate without replacing the configured pack.
+    #[arg(long, value_name = "PATH", conflicts_with_all = ["check", "apply"])]
+    pub(crate) output: Option<PathBuf>,
+    /// Atomically update the configured pack when every reviewed boundary remains valid.
+    #[arg(long, conflicts_with_all = ["check", "output"])]
+    pub(crate) apply: bool,
+}
+
+#[derive(Clone, Debug, Default, Args)]
 pub(crate) struct SymbolInventoryArgs {
     /// Verify that the configured report is current without changing it.
     #[arg(long)]

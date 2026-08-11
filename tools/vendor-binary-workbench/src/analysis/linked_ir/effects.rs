@@ -180,18 +180,45 @@ pub(super) fn attribute_data_symbols(
     resolver: &ReferenceResolver,
 ) {
     for access in accesses {
-        let LinkedMemoryObject::Absolute { address, .. } = access.object else {
-            continue;
-        };
-        let Some((member, symbol, offset)) = resolver.data_symbol_location(address, access.width)
-        else {
-            continue;
-        };
-        access.object = LinkedMemoryObject::Global {
-            member: member.map(str::to_owned),
-            symbol: symbol.to_owned(),
-        };
-        access.offset = access.offset.wrapping_add(offset);
+        match &access.object {
+            LinkedMemoryObject::Absolute { address, .. } => {
+                let Some((member, symbol, offset)) =
+                    resolver.data_symbol_location(*address, access.width)
+                else {
+                    continue;
+                };
+                access.object = LinkedMemoryObject::Global {
+                    member: member.map(str::to_owned),
+                    symbol: symbol.to_owned(),
+                };
+                access.offset = access.offset.wrapping_add(offset);
+            }
+            // A linked image has already resolved `symbol + argument`, so the
+            // structural value can look like `argument + absolute-address`.
+            // Promote it only when that apparent offset is contained by a
+            // sized ELF data symbol. This removes a false giant context field
+            // without guessing from the numerical address alone.
+            LinkedMemoryObject::Argument { index } => {
+                let Ok(address) = u32::try_from(access.offset) else {
+                    continue;
+                };
+                let Some((member, symbol, offset)) =
+                    resolver.data_symbol_location(address, access.width)
+                else {
+                    continue;
+                };
+                access.object = LinkedMemoryObject::Indexed {
+                    object: Box::new(LinkedMemoryObject::Global {
+                        member: member.map(str::to_owned),
+                        symbol: symbol.to_owned(),
+                    }),
+                    argument: *index,
+                    stride: 1,
+                };
+                access.offset = offset;
+            }
+            _ => {}
+        }
     }
 }
 

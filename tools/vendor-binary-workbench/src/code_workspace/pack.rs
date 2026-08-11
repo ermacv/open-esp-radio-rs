@@ -1,13 +1,13 @@
 use std::{collections::BTreeMap, fs, path::Path};
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     Result,
     artifacts::symbol_inventory::{CodeBoundaryCandidateFact, CodeBoundaryFacts},
 };
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub(crate) enum CodeBoundaryStatus {
     Unreviewed,
@@ -17,13 +17,13 @@ pub(crate) enum CodeBoundaryStatus {
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "kebab-case")]
-struct CodeBoundaryPack {
-    schema: u32,
-    id: String,
+pub(super) struct CodeBoundaryPack {
+    pub(super) schema: u32,
+    pub(super) id: String,
     #[serde(default)]
-    inputs: Vec<ReviewedCodeInput>,
+    pub(super) inputs: Vec<ReviewedCodeInput>,
     #[serde(default)]
-    boundaries: Vec<ReviewedCodeBoundary>,
+    pub(super) boundaries: Vec<ReviewedCodeBoundary>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
@@ -76,13 +76,15 @@ impl CodeWorkspace {
         pack_path: &Path,
         project_id: &str,
     ) -> Result<Self> {
-        let input = fs::read_to_string(pack_path)?;
-        let pack: CodeBoundaryPack = toml_edit::de::from_str(&input).map_err(|error| {
-            crate::Error::invalid(format!(
-                "invalid reviewed code-boundary pack {}: {error}",
-                pack_path.display()
-            ))
-        })?;
+        let pack = load_code_boundary_pack(pack_path)?;
+        Self::from_pack(facts, pack, project_id)
+    }
+
+    pub(super) fn from_pack(
+        facts: &CodeBoundaryFacts,
+        pack: CodeBoundaryPack,
+        project_id: &str,
+    ) -> Result<Self> {
         if pack.schema != 1 {
             return Err(crate::Error::invalid(format!(
                 "reviewed code-boundary pack requires schema = 1, got {}",
@@ -173,6 +175,16 @@ impl CodeWorkspace {
     }
 }
 
+pub(super) fn load_code_boundary_pack(pack_path: &Path) -> Result<CodeBoundaryPack> {
+    let input = fs::read_to_string(pack_path)?;
+    toml_edit::de::from_str(&input).map_err(|error| {
+        crate::Error::invalid(format!(
+            "invalid reviewed code-boundary pack {}: {error}",
+            pack_path.display()
+        ))
+    })
+}
+
 fn validate_inputs(facts: &CodeBoundaryFacts, reviewed: &[ReviewedCodeInput]) -> Result<()> {
     let expected = facts
         .inputs
@@ -197,7 +209,10 @@ fn validate_inputs(facts: &CodeBoundaryFacts, reviewed: &[ReviewedCodeInput]) ->
     Ok(())
 }
 
-fn validate_review(review: &ReviewedCodeBoundary, fact: &CodeBoundaryCandidateFact) -> Result<()> {
+pub(super) fn validate_review(
+    review: &ReviewedCodeBoundary,
+    fact: &CodeBoundaryCandidateFact,
+) -> Result<()> {
     if review.end_exclusive_offset <= review.entry_offset
         || review.end_exclusive_offset > fact.end_limit_offset
     {

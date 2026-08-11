@@ -78,6 +78,7 @@ impl ResolutionNeeds {
             Command::FunctionInitPack(_)
             | Command::FunctionValidate(_)
             | Command::CodeInitPack(_)
+            | Command::CodeRebase(_)
             | Command::CodeValidate(_)
             | Command::CodeReview(_)
             | Command::InterfaceInitPack(_)

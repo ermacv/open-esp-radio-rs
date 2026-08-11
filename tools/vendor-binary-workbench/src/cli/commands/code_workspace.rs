@@ -1,6 +1,6 @@
 //! Lifecycle commands for human-reviewed executable-code boundaries.
 
-use std::path::Path;
+use std::{fs, path::Path};
 
 use serde::Serialize;
 
@@ -9,7 +9,8 @@ use crate::{
     artifacts::symbol_inventory::load_code_boundary_facts,
     cli::resolver::CodeWorkspaceCommand,
     code_workspace::{
-        CodeWorkspace, render_code_boundary_review, write_code_boundary_pack_template,
+        CodeRebaseCandidate, CodeWorkspace, render_code_boundary_review,
+        write_code_boundary_pack_template,
     },
     project::{CodeWorkspacePaths, ProjectSpec},
 };
@@ -26,6 +27,9 @@ pub(super) fn run(command: CodeWorkspaceCommand, project: &ProjectSpec) -> Resul
         CodeWorkspaceCommand::InitPack(arguments) => {
             init_pack(arguments, project, paths, &inventory.output)
         }
+        CodeWorkspaceCommand::Rebase(arguments) => {
+            rebase(arguments, project, paths, &inventory.output)
+        }
         CodeWorkspaceCommand::Validate(arguments) => {
             validate(arguments, project, paths, &inventory.output)
         }
@@ -33,6 +37,119 @@ pub(super) fn run(command: CodeWorkspaceCommand, project: &ProjectSpec) -> Resul
             review(arguments, project, paths, &inventory.output)
         }
     }
+}
+
+fn rebase(
+    arguments: CodeRebaseArgs,
+    project: &ProjectSpec,
+    paths: &CodeWorkspacePaths,
+    inventory: &Path,
+) -> Result<bool> {
+    let facts = load_code_boundary_facts(inventory)?;
+    let candidate = CodeRebaseCandidate::prepare(&facts, &paths.pack, &project.id)?;
+    let summary = candidate.summary();
+    let (status, output) = if arguments.check {
+        (if summary.current { "current" } else { "stale" }, None)
+    } else if let Some(output) = arguments.output.as_deref() {
+        write_candidate(output, candidate.contents())?;
+        ("candidate-written", Some(output))
+    } else if arguments.apply {
+        if !summary.safe_to_apply {
+            return Err(crate::Error::invalid(format!(
+                "refusing to update reviewed code-boundary pack: {} added, {} removed and {} changed boundaries; write a review candidate with `code rebase --output PATH`",
+                summary.added, summary.removed, summary.changed
+            )));
+        }
+        candidate.validate(&facts, &project.id)?;
+        write_atomic(&paths.pack, candidate.contents())?;
+        (
+            if summary.current {
+                "unchanged"
+            } else {
+                "updated"
+            },
+            Some(paths.pack.as_path()),
+        )
+    } else {
+        (if summary.current { "current" } else { "stale" }, None)
+    };
+    let report = CodeRebaseReport {
+        schema: 1,
+        command: "code rebase",
+        status,
+        safe_to_apply: summary.safe_to_apply,
+        inputs_added: summary.inputs_added,
+        inputs_removed: summary.inputs_removed,
+        preserved: summary.preserved,
+        changed: summary.changed,
+        added: summary.added,
+        removed: summary.removed,
+        pack: &paths.pack,
+        output,
+    };
+    crate::cli::output::render_report(&report, || {
+        outputln!("Code-boundary rebase: {status} — {}", paths.pack.display());
+        outputln!(
+            "{}",
+            crate::cli::table::render(
+                ["Preserved", "Changed", "Added", "Removed", "Safe apply"],
+                [[
+                    summary.preserved.to_string(),
+                    summary.changed.to_string(),
+                    summary.added.to_string(),
+                    summary.removed.to_string(),
+                    summary.safe_to_apply.to_string(),
+                ]],
+            )
+        );
+        if !summary.current && summary.safe_to_apply && !arguments.apply {
+            outputln!("Next: rerun with `code rebase --apply` to refresh guards.");
+        } else if !summary.safe_to_apply && arguments.output.is_none() {
+            outputln!("Next: write a reviewed candidate with `code rebase --output PATH`.");
+        }
+    });
+    Ok(!arguments.check || summary.current)
+}
+
+fn write_candidate(path: &Path, contents: &str) -> Result<()> {
+    if path.exists() {
+        return Err(crate::Error::invalid(format!(
+            "refusing to overwrite code-boundary review candidate {}",
+            path.display()
+        )));
+    }
+    if let Some(parent) = path.parent().filter(|path| !path.as_os_str().is_empty()) {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(path, contents)?;
+    Ok(())
+}
+
+fn write_atomic(path: &Path, contents: &str) -> Result<()> {
+    let parent = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| crate::Error::invalid("code-boundary pack must have a UTF-8 file name"))?;
+    let staging = parent.join(format!(
+        ".{name}.vendor-workbench-rebase-{}",
+        std::process::id()
+    ));
+    if staging.exists() {
+        return Err(crate::Error::invalid(format!(
+            "code-boundary staging path exists: {}",
+            staging.display()
+        )));
+    }
+    fs::write(&staging, contents)?;
+    if let Err(error) = fs::rename(&staging, path) {
+        let _ = fs::remove_file(&staging);
+        return Err(error.into());
+    }
+    Ok(())
 }
 
 fn init_pack(
@@ -204,4 +321,20 @@ struct CodeReviewReport<'a> {
     rejected: usize,
     unreviewed: usize,
     output: &'a Path,
+}
+
+#[derive(Serialize)]
+struct CodeRebaseReport<'a> {
+    schema: u32,
+    command: &'static str,
+    status: &'static str,
+    safe_to_apply: bool,
+    inputs_added: usize,
+    inputs_removed: usize,
+    preserved: usize,
+    changed: usize,
+    added: usize,
+    removed: usize,
+    pack: &'a Path,
+    output: Option<&'a Path>,
 }

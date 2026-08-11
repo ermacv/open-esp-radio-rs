@@ -46,9 +46,21 @@ cargo vendor-binary-workbench symbols inventory --project PATH --run-spec LOCAL_
 cargo vendor-binary-workbench code init-pack --project PATH
 ```
 
-`init-pack` refuses to overwrite an existing pack. Regenerate generated facts,
-but merge new candidates into reviewed data deliberately rather than replacing
-human decisions.
+`init-pack` refuses to overwrite an existing pack. After regenerating symbol
+facts, inspect and refresh the existing pack with:
+
+```console
+cargo vendor-binary-workbench code rebase --project PATH --check
+cargo vendor-binary-workbench code rebase --project PATH
+cargo vendor-binary-workbench code rebase --project PATH --apply
+```
+
+The command preserves a reviewed decision only when its source, archive
+member, section and entry offset still identify a current candidate and its
+reviewed range remains valid. `--apply` is allowed only when every decision is
+preserved and only artifact guards changed. If candidates were added, removed,
+or became invalid, write a non-overwriting candidate with `--output PATH`,
+review the resulting TOML, and deliberately replace the configured pack.
 
 If one physical artifact is bound through several source roles, the inputs
 retain every `source + digest` guard but the physical candidate appears only

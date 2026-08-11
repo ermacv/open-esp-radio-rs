@@ -103,6 +103,7 @@ pub(in crate::cli) enum FunctionWorkspaceCommand {
 
 pub(in crate::cli) enum CodeWorkspaceCommand {
     InitPack(OutputArgs),
+    Rebase(CodeRebaseArgs),
     Validate(ValidationArgs),
     Review(ReviewArgs),
 }

@@ -191,7 +191,9 @@ effect vocabulary.
    other generated evidence, or use `symbols inventory` directly.
 3. Add the fully linked ELF when exact symbol selection is needed.
 4. If executable gaps contain recovery candidates, run `code init-pack`,
-   review every candidate, then run `code validate --deny-unreviewed`.
+   review every candidate, then run `code validate --deny-unreviewed`. After
+   an artifact revision, use `code rebase`; direct apply is permitted only
+   when every reviewed boundary remains structurally valid.
 5. Run `interfaces discover` to recover pointer roots, load chains, indirect
    call sites and ABI argument provenance without assigning slot semantics.
 6. Run `mmio discover` to create address and bit-pattern candidates.

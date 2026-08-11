@@ -51,6 +51,10 @@ that every user must learn.
   constant selector/receiver/context matches complete generated dispatch
   evidence and its handler exists. The ESP32-S31 RX-success signal 0x19 now
   has an explicit reviewed edge from `lmacProcessRxSucData` to `ppTask`.
+- [x] Add a safe lifecycle for artifact-bound reviewed code boundaries.
+  `code rebase --apply` refreshes guards only when every decision still maps
+  to a valid current candidate; structural changes require a separate review
+  candidate and cannot overwrite the reviewed pack implicitly.
 - [ ] Add constrained handler-path recovery after an event route. The first
   target is `ppTask(signal=0x19) -> wdevProcessRxSucDataAll`; queue receive and
   OSI globals must be modeled explicitly rather than forced through a branch.
@@ -67,16 +71,16 @@ that every user must learn.
 
 ## P0 — functional analysis workflow
 
-- [ ] Audit a complete real project from inputs through MMIO, linked IR,
+- [x] Audit a complete real project from inputs through MMIO, linked IR,
   pseudo-code, interface/function review, verification and publication;
   record every incomplete or misleading stage. The verification segment now
-  has nine typed project suites and a reproducible aggregate gate. The
-  2026-08-10 ESP32-S31 run matches 141 reviewed proofs with zero mismatch,
-  incomplete result or orphan probe, but 85 accepted evidence identities are
-  stale after the typed external-call/profile migration and require deliberate baseline
-  review. Verification artifact paths are now canonical, so report freshness
-  is independent of the current working directory. Project status still
-  correctly reports the function-analysis backlog, so the audit remains open.
+  has twelve typed project suites and a reproducible aggregate gate. The
+  2026-08-11 ESP32-S31 run matches 149 reviewed proofs with zero mismatch or
+  incomplete result. One STA-state projection remains explicitly
+  `implemented-unqualified`; analysis inventory backlogs remain visible but
+  do not masquerade as failed replacement proofs. Verification artifact paths
+  are canonical, so report freshness is independent of the current working
+  directory.
 - [x] Make real-project verification one project operation rather than a set of
   remembered leaf commands. Suites own source roles, probe roles/prefixes,
   profile/disposition fragments, baseline and gate; `project verify --check`

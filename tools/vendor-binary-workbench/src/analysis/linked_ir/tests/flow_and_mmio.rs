@@ -46,7 +46,7 @@ fn pseudo_ir_keeps_a_named_call_and_structured_branch() {
         unresolved_branch: None,
     };
 
-    let pseudo = render_pseudo("vendor_parent", &trace, &[], &[], &[], &[]);
+    let pseudo = render_pseudo("vendor_parent", &trace, &[], &[], &[], &[], None);
     assert!(
         pseudo.contains("let call0 = vendor_child(arg0);"),
         "{pseudo}"
@@ -102,7 +102,7 @@ fn context_map_recovers_argument_offsets_branch_paths_and_rmw_masks() {
 
     let accesses = context_accesses_for_trace(&trace);
     let fields = context_fields_for_accesses(&accesses);
-    let pseudo = render_pseudo("update_context", &trace, &[], &[], &[], &[]);
+    let pseudo = render_pseudo("update_context", &trace, &[], &[], &[], &[], None);
 
     assert_eq!(accesses.len(), 1);
     assert_eq!(accesses[0].argument, 2);
@@ -253,6 +253,82 @@ fn memory_object_map_keeps_absolute_address_space() {
 }
 
 #[test]
+fn linked_absolute_table_base_is_not_reported_as_a_giant_context_offset() {
+    let mut accesses = vec![MemoryObjectAccess {
+        object: LinkedMemoryObject::Argument { index: 0 },
+        offset: 0x1000_299c,
+        access: "read",
+        width: 8,
+        path: "entry".to_owned(),
+        value: None,
+        value_pseudo: None,
+        write_mask: None,
+        preserved_mask: None,
+        forced_zero_mask: None,
+        forced_one_mask: None,
+    }];
+    let resolver = ReferenceResolver {
+        symbols: Vec::new(),
+        symbols_by_address: BTreeMap::new(),
+        symbol_ids: BTreeMap::new(),
+        exported_symbol_keys: BTreeSet::new(),
+        relocated_calls: BTreeMap::new(),
+        pointer_context: direct::StructuralPointerContext::default(),
+        data_symbols: vec![artifact::ArtifactDataSymbolDefinition {
+            member: None,
+            name: "coex_pti_tab".to_owned(),
+            address: 0x1000_299c,
+            size: 48,
+            exported: true,
+        }],
+        projected_direct_semantics: BTreeMap::new(),
+    };
+
+    attribute_data_symbols(&mut accesses, &resolver);
+
+    assert_eq!(accesses[0].offset, 0);
+    assert!(matches!(
+        &accesses[0].object,
+        LinkedMemoryObject::Indexed {
+            object,
+            argument: 0,
+            stride: 1,
+        } if matches!(object.as_ref(), LinkedMemoryObject::Global { member: None, symbol }
+            if symbol == "coex_pti_tab")
+    ));
+    assert!(context_accesses_for_memory_objects(&accesses).is_empty());
+
+    let trace = FunctionAnalysis {
+        symbol: "coex_core_pti_get".to_owned(),
+        events: Vec::new(),
+        located_events: Vec::new(),
+        reference_events: vec![DraftReferenceEvent::Memory {
+            access: MemoryAccess::Read,
+            width: 8,
+            address: SymbolicValue::input(0).add_constant(0x1000_299c),
+            region: "dram".to_owned(),
+            value: None,
+        }],
+        reference_dependencies: Vec::new(),
+        blockers: Vec::new(),
+        reference_blockers: Vec::new(),
+        return_value: SymbolicValue::Constant(0),
+        reference_flow: None,
+        unresolved_branch: None,
+    };
+    let pseudo = render_pseudo(
+        "coex_core_pti_get",
+        &trace,
+        &[],
+        &[],
+        &[],
+        &[],
+        Some(&resolver),
+    );
+    assert!(pseudo.contains("coex_pti_tab[arg0 + 0x0].read8()"));
+}
+
+#[test]
 fn mmio_index_keeps_static_indexed_poll_and_write_bit_evidence() {
     assert_eq!(
         candidate_bit_ranges(0x3000_00f3, 32),
@@ -353,7 +429,7 @@ fn mmio_index_keeps_static_indexed_poll_and_write_bit_evidence() {
             .filter(|access| access.mode == "indexed-candidate")
             .all(|access| access.guard.as_deref() == Some("arg0 <= 2"))
     );
-    let pseudo = render_pseudo("touch_registers", &trace, &[], &[], &[], &[]);
+    let pseudo = render_pseudo("touch_registers", &trace, &[], &[], &[], &[], None);
     assert!(pseudo.contains("assert!(arg0 <= 2);"), "{pseudo}");
     assert!(!pseudo.contains("assert!(arg0 < 2);"), "{pseudo}");
     let poll = accesses

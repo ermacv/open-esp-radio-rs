@@ -408,6 +408,18 @@ gate = "regression"
 match-floor = 4
 
 [[verification.suites]]
+id = "coex-core"
+sources = ["coex"]
+source-prefixes = ["coex=coex_core_"]
+rust-artifact-role = "rust-artifact"
+rust-prefix = "open_coex_core_trace_"
+profiles = ["profiles/coex-core.toml"]
+dispositions = ["dispositions/coex-core.toml"]
+baselines = ["baselines/coex-core.toml"]
+gate = "regression"
+match-floor = 1
+
+[[verification.suites]]
 id = "libnet80211-sta-join"
 sources = ["libnet80211"]
 source-prefixes = ["libnet80211=ieee80211_sta_new_state"]

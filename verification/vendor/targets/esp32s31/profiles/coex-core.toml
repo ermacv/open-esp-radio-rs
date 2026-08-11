@@ -1,0 +1,646 @@
+schema = 2
+
+# Complete admissible domain of the reviewed 48-byte coexistence priority
+# table. Each case seeds only the aligned vendor word containing the selected
+# byte; Rust reads the production CoexPtiTable constant. Caller-owned output
+# RAM and the return status are compared on both sides.
+
+[[profiles]]
+name = "coex-core-pti-get"
+vendor-source = "coex"
+vendor-symbol = "coex_core_pti_get"
+rust-symbol = "open_coex_core_trace_pti_get"
+contract = "state"
+compare-return = true
+[[profiles.argument-ranges]]
+index = 0
+min = 0
+max = 47
+
+[[profiles.cases]]
+name = "null-output"
+arguments = [0, 0]
+
+[[profiles.cases]]
+name = "event-0"
+arguments = [0, 0x3fff2000]
+[[profiles.cases.vendor-ram]]
+address = 0x1000299c
+value = 0x0707050a
+[[profiles.cases.ram]]
+address = 0x3fff2000
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2000
+length = 1
+
+[[profiles.cases]]
+name = "event-1"
+arguments = [1, 0x3fff2000]
+[[profiles.cases.vendor-ram]]
+address = 0x1000299c
+value = 0x0707050a
+[[profiles.cases.ram]]
+address = 0x3fff2000
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2000
+length = 1
+
+[[profiles.cases]]
+name = "event-2"
+arguments = [2, 0x3fff2000]
+[[profiles.cases.vendor-ram]]
+address = 0x1000299c
+value = 0x0707050a
+[[profiles.cases.ram]]
+address = 0x3fff2000
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2000
+length = 1
+
+[[profiles.cases]]
+name = "event-3"
+arguments = [3, 0x3fff2000]
+[[profiles.cases.vendor-ram]]
+address = 0x1000299c
+value = 0x0707050a
+[[profiles.cases.ram]]
+address = 0x3fff2000
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2000
+length = 1
+
+[[profiles.cases]]
+name = "event-4"
+arguments = [4, 0x3fff2000]
+[[profiles.cases.vendor-ram]]
+address = 0x100029a0
+value = 0x0101010a
+[[profiles.cases.ram]]
+address = 0x3fff2000
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2000
+length = 1
+
+[[profiles.cases]]
+name = "event-5"
+arguments = [5, 0x3fff2000]
+[[profiles.cases.vendor-ram]]
+address = 0x100029a0
+value = 0x0101010a
+[[profiles.cases.ram]]
+address = 0x3fff2000
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2000
+length = 1
+
+[[profiles.cases]]
+name = "event-6"
+arguments = [6, 0x3fff2000]
+[[profiles.cases.vendor-ram]]
+address = 0x100029a0
+value = 0x0101010a
+[[profiles.cases.ram]]
+address = 0x3fff2000
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2000
+length = 1
+
+[[profiles.cases]]
+name = "event-7"
+arguments = [7, 0x3fff2000]
+[[profiles.cases.vendor-ram]]
+address = 0x100029a0
+value = 0x0101010a
+[[profiles.cases.ram]]
+address = 0x3fff2000
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2000
+length = 1
+
+[[profiles.cases]]
+name = "event-8"
+arguments = [8, 0x3fff2000]
+[[profiles.cases.vendor-ram]]
+address = 0x100029a4
+value = 0x02030701
+[[profiles.cases.ram]]
+address = 0x3fff2000
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2000
+length = 1
+
+[[profiles.cases]]
+name = "event-9"
+arguments = [9, 0x3fff2000]
+[[profiles.cases.vendor-ram]]
+address = 0x100029a4
+value = 0x02030701
+[[profiles.cases.ram]]
+address = 0x3fff2000
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2000
+length = 1
+
+[[profiles.cases]]
+name = "event-10"
+arguments = [10, 0x3fff2000]
+[[profiles.cases.vendor-ram]]
+address = 0x100029a4
+value = 0x02030701
+[[profiles.cases.ram]]
+address = 0x3fff2000
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2000
+length = 1
+
+[[profiles.cases]]
+name = "event-11"
+arguments = [11, 0x3fff2000]
+[[profiles.cases.vendor-ram]]
+address = 0x100029a4
+value = 0x02030701
+[[profiles.cases.ram]]
+address = 0x3fff2000
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2000
+length = 1
+
+[[profiles.cases]]
+name = "event-12"
+arguments = [12, 0x3fff2000]
+[[profiles.cases.vendor-ram]]
+address = 0x100029a8
+value = 0x01010101
+[[profiles.cases.ram]]
+address = 0x3fff2000
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2000
+length = 1
+
+[[profiles.cases]]
+name = "event-13"
+arguments = [13, 0x3fff2000]
+[[profiles.cases.vendor-ram]]
+address = 0x100029a8
+value = 0x01010101
+[[profiles.cases.ram]]
+address = 0x3fff2000
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2000
+length = 1
+
+[[profiles.cases]]
+name = "event-14"
+arguments = [14, 0x3fff2000]
+[[profiles.cases.vendor-ram]]
+address = 0x100029a8
+value = 0x01010101
+[[profiles.cases.ram]]
+address = 0x3fff2000
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2000
+length = 1
+
+[[profiles.cases]]
+name = "event-15"
+arguments = [15, 0x3fff2000]
+[[profiles.cases.vendor-ram]]
+address = 0x100029a8
+value = 0x01010101
+[[profiles.cases.ram]]
+address = 0x3fff2000
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2000
+length = 1
+
+[[profiles.cases]]
+name = "event-16"
+arguments = [16, 0x3fff2000]
+[[profiles.cases.vendor-ram]]
+address = 0x100029ac
+value = 0x04040904
+[[profiles.cases.ram]]
+address = 0x3fff2000
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2000
+length = 1
+
+[[profiles.cases]]
+name = "event-17"
+arguments = [17, 0x3fff2000]
+[[profiles.cases.vendor-ram]]
+address = 0x100029ac
+value = 0x04040904
+[[profiles.cases.ram]]
+address = 0x3fff2000
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2000
+length = 1
+
+[[profiles.cases]]
+name = "event-18"
+arguments = [18, 0x3fff2000]
+[[profiles.cases.vendor-ram]]
+address = 0x100029ac
+value = 0x04040904
+[[profiles.cases.ram]]
+address = 0x3fff2000
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2000
+length = 1
+
+[[profiles.cases]]
+name = "event-19"
+arguments = [19, 0x3fff2000]
+[[profiles.cases.vendor-ram]]
+address = 0x100029ac
+value = 0x04040904
+[[profiles.cases.ram]]
+address = 0x3fff2000
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2000
+length = 1
+
+[[profiles.cases]]
+name = "event-20"
+arguments = [20, 0x3fff2000]
+[[profiles.cases.vendor-ram]]
+address = 0x100029b0
+value = 0x04090409
+[[profiles.cases.ram]]
+address = 0x3fff2000
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2000
+length = 1
+
+[[profiles.cases]]
+name = "event-21"
+arguments = [21, 0x3fff2000]
+[[profiles.cases.vendor-ram]]
+address = 0x100029b0
+value = 0x04090409
+[[profiles.cases.ram]]
+address = 0x3fff2000
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2000
+length = 1
+
+[[profiles.cases]]
+name = "event-22"
+arguments = [22, 0x3fff2000]
+[[profiles.cases.vendor-ram]]
+address = 0x100029b0
+value = 0x04090409
+[[profiles.cases.ram]]
+address = 0x3fff2000
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2000
+length = 1
+
+[[profiles.cases]]
+name = "event-23"
+arguments = [23, 0x3fff2000]
+[[profiles.cases.vendor-ram]]
+address = 0x100029b0
+value = 0x04090409
+[[profiles.cases.ram]]
+address = 0x3fff2000
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2000
+length = 1
+
+[[profiles.cases]]
+name = "event-24"
+arguments = [24, 0x3fff2000]
+[[profiles.cases.vendor-ram]]
+address = 0x100029b4
+value = 0x05050504
+[[profiles.cases.ram]]
+address = 0x3fff2000
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2000
+length = 1
+
+[[profiles.cases]]
+name = "event-25"
+arguments = [25, 0x3fff2000]
+[[profiles.cases.vendor-ram]]
+address = 0x100029b4
+value = 0x05050504
+[[profiles.cases.ram]]
+address = 0x3fff2000
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2000
+length = 1
+
+[[profiles.cases]]
+name = "event-26"
+arguments = [26, 0x3fff2000]
+[[profiles.cases.vendor-ram]]
+address = 0x100029b4
+value = 0x05050504
+[[profiles.cases.ram]]
+address = 0x3fff2000
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2000
+length = 1
+
+[[profiles.cases]]
+name = "event-27"
+arguments = [27, 0x3fff2000]
+[[profiles.cases.vendor-ram]]
+address = 0x100029b4
+value = 0x05050504
+[[profiles.cases.ram]]
+address = 0x3fff2000
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2000
+length = 1
+
+[[profiles.cases]]
+name = "event-28"
+arguments = [28, 0x3fff2000]
+[[profiles.cases.vendor-ram]]
+address = 0x100029b8
+value = 0x04040405
+[[profiles.cases.ram]]
+address = 0x3fff2000
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2000
+length = 1
+
+[[profiles.cases]]
+name = "event-29"
+arguments = [29, 0x3fff2000]
+[[profiles.cases.vendor-ram]]
+address = 0x100029b8
+value = 0x04040405
+[[profiles.cases.ram]]
+address = 0x3fff2000
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2000
+length = 1
+
+[[profiles.cases]]
+name = "event-30"
+arguments = [30, 0x3fff2000]
+[[profiles.cases.vendor-ram]]
+address = 0x100029b8
+value = 0x04040405
+[[profiles.cases.ram]]
+address = 0x3fff2000
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2000
+length = 1
+
+[[profiles.cases]]
+name = "event-31"
+arguments = [31, 0x3fff2000]
+[[profiles.cases.vendor-ram]]
+address = 0x100029b8
+value = 0x04040405
+[[profiles.cases.ram]]
+address = 0x3fff2000
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2000
+length = 1
+
+[[profiles.cases]]
+name = "event-32"
+arguments = [32, 0x3fff2000]
+[[profiles.cases.vendor-ram]]
+address = 0x100029bc
+value = 0x02020204
+[[profiles.cases.ram]]
+address = 0x3fff2000
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2000
+length = 1
+
+[[profiles.cases]]
+name = "event-33"
+arguments = [33, 0x3fff2000]
+[[profiles.cases.vendor-ram]]
+address = 0x100029bc
+value = 0x02020204
+[[profiles.cases.ram]]
+address = 0x3fff2000
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2000
+length = 1
+
+[[profiles.cases]]
+name = "event-34"
+arguments = [34, 0x3fff2000]
+[[profiles.cases.vendor-ram]]
+address = 0x100029bc
+value = 0x02020204
+[[profiles.cases.ram]]
+address = 0x3fff2000
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2000
+length = 1
+
+[[profiles.cases]]
+name = "event-35"
+arguments = [35, 0x3fff2000]
+[[profiles.cases.vendor-ram]]
+address = 0x100029bc
+value = 0x02020204
+[[profiles.cases.ram]]
+address = 0x3fff2000
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2000
+length = 1
+
+[[profiles.cases]]
+name = "event-36"
+arguments = [36, 0x3fff2000]
+[[profiles.cases.vendor-ram]]
+address = 0x100029c0
+value = 0x0e040a0f
+[[profiles.cases.ram]]
+address = 0x3fff2000
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2000
+length = 1
+
+[[profiles.cases]]
+name = "event-37"
+arguments = [37, 0x3fff2000]
+[[profiles.cases.vendor-ram]]
+address = 0x100029c0
+value = 0x0e040a0f
+[[profiles.cases.ram]]
+address = 0x3fff2000
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2000
+length = 1
+
+[[profiles.cases]]
+name = "event-38"
+arguments = [38, 0x3fff2000]
+[[profiles.cases.vendor-ram]]
+address = 0x100029c0
+value = 0x0e040a0f
+[[profiles.cases.ram]]
+address = 0x3fff2000
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2000
+length = 1
+
+[[profiles.cases]]
+name = "event-39"
+arguments = [39, 0x3fff2000]
+[[profiles.cases.vendor-ram]]
+address = 0x100029c0
+value = 0x0e040a0f
+[[profiles.cases.ram]]
+address = 0x3fff2000
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2000
+length = 1
+
+[[profiles.cases]]
+name = "event-40"
+arguments = [40, 0x3fff2000]
+[[profiles.cases.vendor-ram]]
+address = 0x100029c4
+value = 0x03080c00
+[[profiles.cases.ram]]
+address = 0x3fff2000
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2000
+length = 1
+
+[[profiles.cases]]
+name = "event-41"
+arguments = [41, 0x3fff2000]
+[[profiles.cases.vendor-ram]]
+address = 0x100029c4
+value = 0x03080c00
+[[profiles.cases.ram]]
+address = 0x3fff2000
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2000
+length = 1
+
+[[profiles.cases]]
+name = "event-42"
+arguments = [42, 0x3fff2000]
+[[profiles.cases.vendor-ram]]
+address = 0x100029c4
+value = 0x03080c00
+[[profiles.cases.ram]]
+address = 0x3fff2000
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2000
+length = 1
+
+[[profiles.cases]]
+name = "event-43"
+arguments = [43, 0x3fff2000]
+[[profiles.cases.vendor-ram]]
+address = 0x100029c4
+value = 0x03080c00
+[[profiles.cases.ram]]
+address = 0x3fff2000
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2000
+length = 1
+
+[[profiles.cases]]
+name = "event-44"
+arguments = [44, 0x3fff2000]
+[[profiles.cases.vendor-ram]]
+address = 0x100029c8
+value = 0x0f0a0a01
+[[profiles.cases.ram]]
+address = 0x3fff2000
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2000
+length = 1
+
+[[profiles.cases]]
+name = "event-45"
+arguments = [45, 0x3fff2000]
+[[profiles.cases.vendor-ram]]
+address = 0x100029c8
+value = 0x0f0a0a01
+[[profiles.cases.ram]]
+address = 0x3fff2000
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2000
+length = 1
+
+[[profiles.cases]]
+name = "event-46"
+arguments = [46, 0x3fff2000]
+[[profiles.cases.vendor-ram]]
+address = 0x100029c8
+value = 0x0f0a0a01
+[[profiles.cases.ram]]
+address = 0x3fff2000
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2000
+length = 1
+
+[[profiles.cases]]
+name = "event-47"
+arguments = [47, 0x3fff2000]
+[[profiles.cases.vendor-ram]]
+address = 0x100029c8
+value = 0x0f0a0a01
+[[profiles.cases.ram]]
+address = 0x3fff2000
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2000
+length = 1

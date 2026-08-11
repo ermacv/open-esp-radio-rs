@@ -1,6 +1,6 @@
 //! Pseudo-Rust value and flow rendering for manual linked-IR analysis.
 
-use std::fmt::Write as _;
+use std::{fmt::Write as _, sync::Arc};
 
 use super::*;
 
@@ -274,6 +274,31 @@ pub(super) fn pseudo_arguments(arguments: &[SymbolicValue]) -> String {
 pub(super) struct RenderState {
     mmio_reads: u32,
     memory_reads: u32,
+    data_symbols: Arc<Vec<artifact::ArtifactDataSymbolDefinition>>,
+}
+
+impl RenderState {
+    fn with_resolver(resolver: &ReferenceResolver) -> Self {
+        Self {
+            data_symbols: Arc::new(resolver.data_symbols.clone()),
+            ..Self::default()
+        }
+    }
+
+    fn indexed_global(
+        &self,
+        address: &SymbolicValue,
+        width: u8,
+    ) -> Option<(u8, &artifact::ArtifactDataSymbolDefinition, u32)> {
+        let (argument, offset) = address.caller_memory_location()?;
+        let address = u32::try_from(offset).ok()?;
+        let bytes = u32::from(width.checked_div(8)?);
+        let end = address.checked_add(bytes)?;
+        let symbol = self.data_symbols.iter().find(|symbol| {
+            address >= symbol.address && end <= symbol.address.saturating_add(symbol.size)
+        })?;
+        Some((argument, symbol, address - symbol.address))
+    }
 }
 
 fn indent(level: usize) -> String {
@@ -481,7 +506,18 @@ pub(super) fn render_event(
             value,
         } => match access {
             MemoryAccess::Read => {
-                if let Some((argument, offset)) = address.caller_memory_location() {
+                if let Some((argument, symbol, offset)) = state.indexed_global(address, *width) {
+                    let symbol = symbol.member.as_deref().map_or_else(
+                        || symbol.name.clone(),
+                        |member| format!("{member}::{}", symbol.name),
+                    );
+                    writeln!(
+                        output,
+                        "{prefix}let ramread{} = {symbol}[arg{argument} + {offset:#x}].read{width}(); // {region}",
+                        state.memory_reads,
+                    )
+                    .unwrap();
+                } else if let Some((argument, offset)) = address.caller_memory_location() {
                     writeln!(
                         output,
                         "{prefix}let ramread{} = ctx{argument}.read{width}({offset:+#x}); // {region}",
@@ -501,7 +537,17 @@ pub(super) fn render_event(
             }
             MemoryAccess::Write => {
                 let value = value.as_ref().map_or_else(|| "unknown".to_owned(), pseudo_value);
-                if let Some((argument, offset)) = address.caller_memory_location() {
+                if let Some((argument, symbol, offset)) = state.indexed_global(address, *width) {
+                    let symbol = symbol.member.as_deref().map_or_else(
+                        || symbol.name.clone(),
+                        |member| format!("{member}::{}", symbol.name),
+                    );
+                    writeln!(
+                        output,
+                        "{prefix}{symbol}[arg{argument} + {offset:#x}].write{width}({value}); // {region}"
+                    )
+                    .unwrap();
+                } else if let Some((argument, offset)) = address.caller_memory_location() {
                     writeln!(
                         output,
                         "{prefix}ctx{argument}.write{width}({offset:+#x}, {value}); // {region}"
@@ -741,6 +787,7 @@ pub(super) fn render_pseudo(
     direct_blockers: &[LinkedDiagnostic],
     reference_blockers: &[LinkedDiagnostic],
     call_graph_blockers: &[LinkedDiagnostic],
+    resolver: Option<&ReferenceResolver>,
 ) -> String {
     let mut output = String::new();
     writeln!(output, "// vendor symbol: {identity}").unwrap();
@@ -803,9 +850,14 @@ pub(super) fn render_pseudo(
     )
     .unwrap();
     if let Some(flow) = trace.reference_flow.as_ref() {
-        render_flow(flow, &mut output, 1, RenderState::default());
+        render_flow(
+            flow,
+            &mut output,
+            1,
+            resolver.map_or_else(RenderState::default, RenderState::with_resolver),
+        );
     } else {
-        let mut state = RenderState::default();
+        let mut state = resolver.map_or_else(RenderState::default, RenderState::with_resolver);
         for event in &trace.reference_events {
             render_event(event, &mut output, 1, &mut state);
         }

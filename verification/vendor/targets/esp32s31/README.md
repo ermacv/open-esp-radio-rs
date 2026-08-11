@@ -84,7 +84,7 @@ navigation index, MMIO/interface facts, all four linked-IR profiles, and the
 register/function reviews, then validates the reviewed register, interface,
 and function files. `project check` additionally reproduces all behavioral
 suites and verifies the publication outputs without changing them.
-`project verify` executes the nine checked proof boundaries with their own
+`project verify` executes the twelve checked proof boundaries with their own
 source selection, probe prefix, profiles, dispositions, baselines and gate,
 then writes one `generated/reports/verification.json`. Use `--suite ID` for a
 focused non-publishing run; partial selection never replaces the aggregate

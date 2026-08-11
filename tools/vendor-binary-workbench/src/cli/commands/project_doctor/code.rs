@@ -59,7 +59,8 @@ pub(super) fn collect(context: &ProjectContext<'_>, report: &mut DoctorReport) {
                 CapabilityReport::new("code-boundaries", "invalid")
                     .field("facts", inventory.output.display().to_string())
                     .field("pack", paths.pack.display().to_string())
-                    .field("error", error.to_string()),
+                    .field("error", error.to_string())
+                    .field("next-action", "code rebase"),
             );
         }
     }

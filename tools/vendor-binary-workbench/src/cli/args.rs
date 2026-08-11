@@ -298,6 +298,7 @@ leaf_commands!(FunctionCommand {
 
 leaf_commands!(CodeCommand {
     InitPack(OutputArgs) => Command::CodeInitPack, Output,
+    Rebase(CodeRebaseArgs) => Command::CodeRebase, CodeRebase,
     Validate(ValidationArgs) => Command::CodeValidate, Validation,
     Review(ReviewArgs) => Command::CodeReview, Review,
 });
@@ -431,6 +432,7 @@ pub(crate) enum Command {
     FunctionValidate(ValidationArgs),
     FunctionReview(ReviewArgs),
     CodeInitPack(OutputArgs),
+    CodeRebase(CodeRebaseArgs),
     CodeValidate(ValidationArgs),
     CodeReview(ReviewArgs),
     SymbolInventory(SymbolInventoryArgs),

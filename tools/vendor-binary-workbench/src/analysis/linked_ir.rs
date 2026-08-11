@@ -340,6 +340,7 @@ fn build_linked_functions_for_roots(
                     &direct_diagnostics,
                     &reference_diagnostics,
                     &call_graph_diagnostics,
+                    Some(resolver),
                 );
                 functions.push(LinkedIrFunction {
                     source: source.to_owned(),

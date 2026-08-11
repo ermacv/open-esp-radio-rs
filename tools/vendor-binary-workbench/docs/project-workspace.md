@@ -218,8 +218,8 @@ pack = "code/boundaries.toml"
 output = "generated/reports/code-boundaries.md"
 ```
 
-The pack is initialized once with `code init-pack` and then edited by the
-reviewer. It is guarded by source IDs and artifact SHA-256 values and cannot
+The pack is initialized once with `code init-pack`, refreshed safely with
+`code rebase`, and edited by the reviewer. It is guarded by source IDs and artifact SHA-256 values and cannot
 expand a candidate past its generated executable-gap limit. Generated symbol
 facts never acquire reviewed state. See [reviewed code boundaries](code-boundaries.md).
 
@@ -450,7 +450,7 @@ Commands now request the knowledge they actually consume:
 | `project status` | optional artifact inspection | reads and reports it | optional enrichment |
 | `image audit-targets` | yes | no | no |
 | `symbols inventory` | yes | no | no |
-| `code init-pack` / `validate` / `review` | no | no | no |
+| `code init-pack` / `rebase` / `validate` / `review` | no | no | no |
 | `interfaces discover` | yes | no | no |
 | `interfaces init-pack` / `validate` | no | no | no |
 | `functions init-pack` / `validate` / `review` | no | no | no |

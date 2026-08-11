@@ -1,0 +1,15 @@
+schema = 2
+
+[[evidence]]
+source = "coex"
+symbol = "coex_core_pti_get"
+kind = "state/profile:coex-core-pti-get"
+digest = "04868334bf2de8c924a40da3f6a607a358ceb50b7ba124d1d868919df7c46d78"
+
+[evidence.components]
+comparison-orchestrator = "27135eb475a56cf828cf5008bbc171061017e5dde83ade44c1bfa6e78d93ba30"
+execution-image = "f46f7043c5bcc1c9ee1a8254cdd8792837871b62c63b77e6e8a4f7e5bde6822f"
+execution-machine = "b712c0de3daf70bfc8d7718a27913f626e1ac1bada2dc55d60842681c6ae8c0c"
+execution-model = "00671ac5331776c929cded74468b90f0b3c36c6fd4d9e5cdc4404ca5ba3aee5b"
+profile = "0fd9f11083640ca45a0149d8224662200c0e2f5284985ca33aaebf9c6d3eacdc"
+profile-parser = "32795bef750005cae0432ba2423849d4988ec5a04c3c59af22dfa248517cf76c"

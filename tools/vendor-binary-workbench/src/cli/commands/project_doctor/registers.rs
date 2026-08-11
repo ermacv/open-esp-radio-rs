@@ -127,7 +127,7 @@ fn collect_review_ir(context: &ProjectContext<'_>, report: &mut DoctorReport) {
     let missing_project_outputs = paths
         .review_ir_reports
         .iter()
-        .filter(|path| !path.is_file())
+        .filter(|path| !path.exists())
         .filter(|path| {
             context
                 .project
@@ -139,7 +139,7 @@ fn collect_review_ir(context: &ProjectContext<'_>, report: &mut DoctorReport) {
     let missing_reports = paths
         .review_ir_reports
         .iter()
-        .filter(|path| !path.is_file())
+        .filter(|path| !path.exists())
         .count();
     let report_paths = paths
         .review_ir_reports

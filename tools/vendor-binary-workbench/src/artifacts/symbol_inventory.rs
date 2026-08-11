@@ -10,6 +10,8 @@ use crate::{
 
 mod read;
 
+#[cfg(test)]
+pub(crate) use read::CodeBoundaryInputFact;
 pub(crate) use read::{
     CodeBoundaryCandidateFact, CodeBoundaryFacts, LinkUnitOriginFact, StoredSymbolInventory,
     inspect_symbol_inventory, load_code_boundary_facts, load_link_unit_origins,

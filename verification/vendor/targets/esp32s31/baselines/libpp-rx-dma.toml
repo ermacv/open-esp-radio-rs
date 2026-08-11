@@ -124,10 +124,10 @@ reference-code-generator = "2a4b7f02cce37dae3ee0dbd3363b97266934f376f4823e4fc764
 source = "libpp"
 symbol = "wDev_AppendRxBlocks"
 kind = "effect-contract/exact-effects-v1"
-digest = "b86ccd116da6df32169b8c11fc176431fe6023f106cf551aba4229c12ee47a82"
+digest = "5854cea47c4e12abb3bc84ed97b13d88d346749b09419a91d4de37866b7abdcf"
 
 [evidence.components]
-adapter-proof = "9925ca12caf465417ffb004c58a6e67f82fa8dfcc055dc42f1116534f84d8ce4"
+adapter-proof = "f8274bbb328078d2f8a06f754c5cc43efccdb1488bf307e0eb31239d06123f91"
 binding = "1d63120dbaa277c2d80aa694a01c7a5fe4dde8c6ece6d58e131780a35f3b4d8d"
 binding-verifier = "8a49056ff034bb6ccbcba50a8fbb5f592af78036508fc66b91e7d26dd88f5c5b"
 driver-adapter = "0cd3c62c4e5b7c141b9520ad692dc1c55cdcea8161dd6dcac05e6b2ae9e44a56"

@@ -674,6 +674,12 @@ pub(crate) fn write_linked_ir_bundle(path: &Path, bundle: &LinkedIrBundle) -> Re
     ] {
         std::fs::write(path.join(name), contents)?;
     }
+    let mut legacy = path.as_os_str().to_os_string();
+    legacy.push(".json");
+    let legacy = std::path::PathBuf::from(legacy);
+    if legacy.is_file() {
+        std::fs::remove_file(legacy)?;
+    }
     Ok(())
 }
 
@@ -734,4 +740,36 @@ pub(crate) fn render_linked_ir_fixture(
     )
     .unwrap();
     render_linked_ir(&document).unwrap()
+}
+
+#[cfg(test)]
+mod bundle_write_tests {
+    use super::*;
+
+    #[test]
+    fn bundle_write_removes_the_obsolete_monolithic_sidecar() {
+        let path = std::env::temp_dir().join(format!(
+            "vendor-workbench-linked-ir-write-{}",
+            std::process::id()
+        ));
+        let mut legacy = path.as_os_str().to_os_string();
+        legacy.push(".json");
+        let legacy = std::path::PathBuf::from(legacy);
+        std::fs::write(&legacy, "stale monolithic IR").unwrap();
+        let bundle = LinkedIrBundle {
+            manifest: "{}\n".to_owned(),
+            functions: String::new(),
+            function_index: "{}\n".to_owned(),
+            graph: "{}\n".to_owned(),
+            register_index: "{}\n".to_owned(),
+            data_objects: String::new(),
+            data_object_index: "{}\n".to_owned(),
+        };
+
+        write_linked_ir_bundle(&path, &bundle).unwrap();
+
+        assert!(path.join("manifest.json").is_file());
+        assert!(!legacy.exists());
+        std::fs::remove_dir_all(path).unwrap();
+    }
 }

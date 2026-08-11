@@ -329,6 +329,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "open-esp-radio-esp32s31-wifi-ap"
+version = "0.1.0"
+dependencies = [
+ "open-esp-radio-esp32s31-phy",
+ "open-esp-radio-esp32s31-registers",
+ "open-esp-radio-esp32s31-wifi",
+ "open-esp-radio-esp32s31-wifi-mac",
+ "open-esp-radio-ieee80211",
+ "open-esp-radio-wifi-ap",
+ "open-esp-radio-wifi-softmac",
+ "open-esp-radio-wpa2",
+]
+
+[[package]]
 name = "open-esp-radio-esp32s31-wifi-dma"
 version = "0.1.0"
 dependencies = [
@@ -350,6 +364,7 @@ dependencies = [
  "open-esp-radio-esp32s31-phy",
  "open-esp-radio-esp32s31-registers",
  "open-esp-radio-esp32s31-wifi",
+ "open-esp-radio-esp32s31-wifi-ap",
  "open-esp-radio-esp32s31-wifi-dma",
  "open-esp-radio-esp32s31-wifi-mac",
  "open-esp-radio-esp32s31-wifi-sta",
@@ -413,6 +428,14 @@ name = "open-esp-radio-verification-esp32s31-probes-elf"
 version = "0.1.0"
 dependencies = [
  "open-esp-radio-verification-esp32s31-probes",
+]
+
+[[package]]
+name = "open-esp-radio-wifi-ap"
+version = "0.1.0"
+dependencies = [
+ "open-esp-radio-ieee80211",
+ "open-esp-radio-wpa2",
 ]
 
 [[package]]

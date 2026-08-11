@@ -129,6 +129,10 @@ pub(super) fn resolve_command(
             command: CodeWorkspaceCommand::InitPack(arguments),
             project: environment.into_project()?,
         },
+        Command::CodeRebase(arguments) => ResolvedInvocation::CodeWorkspace {
+            command: CodeWorkspaceCommand::Rebase(arguments),
+            project: environment.into_project()?,
+        },
         Command::CodeValidate(arguments) => ResolvedInvocation::CodeWorkspace {
             command: CodeWorkspaceCommand::Validate(arguments),
             project: environment.into_project()?,

@@ -199,7 +199,8 @@ fn code(context: &ProjectContext<'_>) -> Component {
         }
         Err(error) => Component::new("code_boundaries", Readiness::Invalid)
             .detail("pack", paths.pack.display().to_string())
-            .diagnostic(error),
+            .diagnostic(error)
+            .next_action(project_command(context, "code rebase")),
     }
 }
 

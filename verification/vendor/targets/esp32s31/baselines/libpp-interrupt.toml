@@ -34,10 +34,10 @@ reference-code-generator = "2a4b7f02cce37dae3ee0dbd3363b97266934f376f4823e4fc764
 source = "libpp"
 symbol = "wDev_ProcessFiq"
 kind = "effect-contract/exact-effects-v1"
-digest = "372e2612a03f7f8ad3fb7ffefde33dd6eaee547be7cb2bdc5d21aed01c2d0bf8"
+digest = "91601f89284cf1bf1e049cf6e33959631fac9b0eb501a984b9a479734f51d19d"
 
 [evidence.components]
-adapter-proof = "3587772cf9bc0dbbc5bc25173ba175b77958ed07d0fc0ced9a5d279df3b4da30"
+adapter-proof = "c69115f2e06ed2e196c349dc11143d3c5eb774ff5f4cc7a0e45770d700c19f87"
 binding = "45f1859cbe4d304ee783081e7ef43b609bc63efd234311a87102ce0263211ce9"
 binding-verifier = "8a49056ff034bb6ccbcba50a8fbb5f592af78036508fc66b91e7d26dd88f5c5b"
 driver-adapter = "bc4f0641fc747565b0bf66115744b7bc2d53ef98af7d9faaa9de9829f88afb68"

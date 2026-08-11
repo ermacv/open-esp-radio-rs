@@ -113,6 +113,8 @@ linked-ir = [
 non-operational-functions = [
     "archive:phy_reg_check",
     "libpp:wdev_record_rx_linked_list",
+    "wifi-sta-lifecycle:dbg_dump_rx_links",
+    "wifi-sta-lifecycle:wdev_record_rx_linked_list",
 ]
 
 [registers.svd]
@@ -399,7 +401,7 @@ sources = ["coex"]
 source-prefixes = []
 rust-artifact-role = "rust-artifact"
 rust-prefix = "open_coex_trace_"
-profiles = ["profiles/coex-timer.toml"]
+profiles = ["profiles/coex-timer.toml", "profiles/coex-timer-set.toml"]
 dispositions = ["dispositions/coex-timer.toml"]
 baselines = ["baselines/coex-timer.toml"]
 gate = "regression"

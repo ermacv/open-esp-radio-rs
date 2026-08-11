@@ -371,6 +371,78 @@ fn render_human(report: &FunctionInvestigationReport, full: bool) {
             origin.body.size,
             origin.association
         ));
+        if !origin.relocation_dependencies.is_empty() {
+            crate::cli::output::line(format_args!("ORIGIN RELOCATION DEPENDENCIES"));
+            for dependency in &origin.relocation_dependencies {
+                crate::cli::output::line(format_args!(
+                    "  - {} refs={} offsets={} kinds={}",
+                    dependency.symbol,
+                    dependency.references,
+                    dependency
+                        .instruction_offsets
+                        .iter()
+                        .map(|offset| format!("+{offset:#06x}"))
+                        .collect::<Vec<_>>()
+                        .join(","),
+                    dependency.kinds.join(","),
+                ));
+            }
+            crate::cli::output::line(format_args!(
+                "  note: raw archive offsets are never projected by arithmetic; see bounded structural correspondence below"
+            ));
+        }
+        if !origin.instruction_correspondence.is_empty() {
+            crate::cli::output::line(format_args!("ORIGIN ↔ LINKED CORRESPONDENCE"));
+            for correspondence in &origin.instruction_correspondence {
+                crate::cli::output::line(format_args!(
+                    "  - origin {} -> linked +{:#06x} ({:#010x}) kind={} symbols={}",
+                    correspondence
+                        .origin_offsets
+                        .iter()
+                        .map(|offset| format!("+{offset:#06x}"))
+                        .collect::<Vec<_>>()
+                        .join(","),
+                    correspondence.runtime_offset,
+                    correspondence.runtime_address,
+                    correspondence.kind,
+                    correspondence.relocation_symbols.join(","),
+                ));
+            }
+            crate::cli::output::line(format_args!(
+                "  note: structural navigation evidence only; semantic equivalence is not claimed"
+            ));
+        }
+        if full {
+            crate::cli::output::line(format_args!("\nORIGIN INSTRUCTIONS"));
+            for instruction in &origin.body.instructions {
+                for label in origin
+                    .body
+                    .labels
+                    .iter()
+                    .filter(|label| label.offset == instruction.offset)
+                {
+                    crate::cli::output::line(format_args!("{}:", label.name));
+                }
+                crate::cli::output::line(format_args!(
+                    "  +{:#06x}  {:<10} {:<28} {}",
+                    instruction.offset,
+                    instruction.raw,
+                    instruction.text,
+                    instruction.control_flow.kind.label()
+                ));
+                if let Some(class) = &instruction.blocker_class {
+                    crate::cli::output::line(format_args!(
+                        "              ! decode blocker: {class}"
+                    ));
+                }
+                for relocation in &instruction.relocations {
+                    crate::cli::output::line(format_args!(
+                        "              @ {} {} {:+}",
+                        relocation.kind, relocation.symbol, relocation.addend
+                    ));
+                }
+            }
+        }
     }
     if !full {
         crate::cli::output::line(format_args!(

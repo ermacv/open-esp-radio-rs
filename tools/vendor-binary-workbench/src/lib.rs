@@ -58,7 +58,7 @@ use open_radio_vendor_analysis_model::{MmioRegion, Register};
 pub(crate) use open_radio_vendor_backend_riscv::Rv32CallArguments;
 pub use open_radio_vendor_backend_riscv::artifact::{
     FunctionBasicBlock, FunctionBody, FunctionControlFlow, FunctionControlFlowKind,
-    FunctionInstruction, FunctionLabel,
+    FunctionInstruction, FunctionInstructionRelocation, FunctionLabel,
 };
 pub use open_radio_vendor_backend_riscv::execution::Scenario as ExecutionScenario;
 pub(crate) use open_radio_vendor_backend_riscv::{

@@ -4,14 +4,14 @@ schema = 2
 source = "libnet80211"
 symbol = "ieee80211_sta_new_state"
 kind = "driver-adapter/reviewed-projection/exact-effects-v1"
-digest = "bc60a447dd251ecccfa673fdf4c302514872babbc665889ed7a5b24d085751af"
+digest = "f8c3eac14553ec47301d686d1e11b6bb2f46fb5704131a955415100906f09c1b"
 
 [evidence.components]
-adapter-proof = "de931868d161ec5514b57532dd0ea322e3d22ba1c346206145bcbf3f658c29a2"
+adapter-proof = "20f6bf8983241954d51302b8e71fe5076a266b3063e5935b08f5885dd849c526"
 binding = "fffdcfa3f7ad78f6c54ae1928cc4d4fe0f657b1f9a91bc666e618d06595d731d"
 binding-verifier = "8a49056ff034bb6ccbcba50a8fbb5f592af78036508fc66b91e7d26dd88f5c5b"
 claim = "5d04e61fb747cb329eae5fe9837475e27a879e9852d56d0cb325aa0d214a2d5b"
-driver-adapter = "5d472874813455c430490966d90db348f8f8574fb40f190bc815fe87f674728e"
+driver-adapter = "095a78e3507d8ece6bca02c48a9012580817ef8ad87b7f91b336a2c2a29f565e"
 effect-comparator = "7e0c0424ae313df2bc7e5d8c282b5c38f04e8e53e472be08a56f4f89aabdb9ab"
 execution-engine = "3e2ea6257d342ac7d80d6d56a8907a505b671ff03095aa68ddeedfc6543e6798"
 policy = "4e83586680473273a395674e4a587ec9f3594fe57abf0453c09bbce8dc1ef1f8"

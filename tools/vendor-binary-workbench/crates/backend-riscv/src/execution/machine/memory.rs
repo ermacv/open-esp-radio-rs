@@ -64,7 +64,44 @@ impl Machine<'_> {
                         .copied()
                         .map(|value| value & MmioValue::mask(width))
                         .ok_or_else(|| {
-                            format!("MMIO read at {address:#010x} has no explicit seed or response")
+                            let recent_start = self.events.len().saturating_sub(4);
+                            let prior_same_address = self
+                                .events
+                                .iter()
+                                .zip(&self.event_producers)
+                                .enumerate()
+                                .filter_map(|(index, (event, producer))| match event {
+                                    ExecutionEvent::Read {
+                                        address: previous,
+                                        value,
+                                        ..
+                                    } if *previous == address => Some(format!(
+                                        "#{index}:read={value:#010x}@pc={:#010x}:{}",
+                                        producer.pc,
+                                        producer.symbol.as_deref().unwrap_or("<unknown>"),
+                                    )),
+                                    ExecutionEvent::Write {
+                                        address: previous,
+                                        value,
+                                        ..
+                                    } if *previous == address => Some(format!(
+                                        "#{index}:write={value:#010x}@pc={:#010x}:{}",
+                                        producer.pc,
+                                        producer.symbol.as_deref().unwrap_or("<unknown>"),
+                                    )),
+                                    _ => None,
+                                })
+                                .collect::<Vec<_>>();
+                            format!(
+                                "MMIO read at {address:#010x} has no explicit seed or response \
+                                 (pc={:#010x}, step={}, observable-event={}, recent-events={:?}, \
+                                 recent-producers={:?}, prior-same-address={prior_same_address:?})",
+                                self.pc,
+                                self.steps,
+                                self.events.len(),
+                                &self.events[recent_start..],
+                                &self.event_producers[recent_start..],
+                            )
                         })?,
                 }
             };

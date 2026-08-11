@@ -625,13 +625,22 @@ pub fn verify_esp32s31_iq_est_enable(
 
     for case in CASES {
         validate_typed_transition(case)?;
-        let vendor_result = execution::execute(
+        let vendor_result = super::execute_case(
             &vendor_image,
             svd,
             "phy_iq_est_enable",
             vendor_scenario(case),
+            case.name,
+            "vendor execution",
         )?;
-        let rust_result = execution::execute(&rust_image, svd, rust_symbol, rust_scenario(case))?;
+        let rust_result = super::execute_case(
+            &rust_image,
+            svd,
+            rust_symbol,
+            rust_scenario(case),
+            case.name,
+            "Rust execution",
+        )?;
         vendor_covered.extend(vendor_result.branches.iter().copied());
 
         validate_vendor_counter_timeline(&vendor_result, case.expected_activity_edges)?;

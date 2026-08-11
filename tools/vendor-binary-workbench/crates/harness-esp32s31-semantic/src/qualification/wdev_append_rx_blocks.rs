@@ -16,8 +16,8 @@ use std::{
 use open_esp_radio_esp32s31_wifi_mac::rx::RX_DESCRIPTOR_RELOAD_ATTEMPT_LIMIT;
 use open_radio_vendor_backend_riscv::ReferenceResolver;
 use open_radio_vendor_semantics::{
-    DriverAdapterVerification, EffectDisposition, EffectPolicy, EffectSelector, OmissionReason,
-    PlatformOperation, Timeout,
+    DriverAdapterCase, DriverAdapterVerification, EffectDisposition, EffectPolicy, EffectSelector,
+    OmissionReason, PlatformOperation, Timeout,
 };
 
 use crate::{MmioMap, Result, artifact, execution};
@@ -328,8 +328,12 @@ fn ownership_fence() -> execution::ExecutionEvent {
 
 fn expected_rust_events(case: Case) -> Vec<execution::ExecutionEvent> {
     let mut events = vec![
-        read(RX_LAST, 0),
+        // The source-owned cold-ring fixture now proves that the walker is
+        // stopped before sampling RX_LAST. This is a lifecycle precondition
+        // around the replacement, not a relaxed wDev_AppendRxBlocks effect.
         read(RX_CONTROL, 0),
+        full_fence(),
+        read(RX_LAST, 0),
         full_fence(),
         read(RX_HIGH, 0),
         write(RX_HIGH, 0x2f00_0000),
@@ -536,10 +540,49 @@ fn event_sequences_match(
             .all(|(actual, expected)| event_matches(actual, expected))
 }
 
-fn rust_case_matches(result: &execution::ExecutionResult, case: Case) -> bool {
-    result.return_value == expected_return(case)
-        && event_sequences_match(&result.events, &expected_rust_events(case))
-        && atomic_ownership_matches(result, case)
+fn case_report(
+    first: &execution::ExecutionResult,
+    second: &execution::ExecutionResult,
+    case: Case,
+) -> DriverAdapterCase {
+    let expected_return = expected_return(case);
+    let expected_events = expected_rust_events(case);
+    let padding_independent =
+        first.events == second.events && first.return_value == second.return_value;
+    let reason = if first.return_value != expected_return {
+        Some(format!(
+            "return differs: expected {expected_return:#010x}, actual {:#010x}",
+            first.return_value
+        ))
+    } else if !event_sequences_match(&first.events, &expected_events) {
+        let index = first
+            .events
+            .iter()
+            .zip(&expected_events)
+            .position(|(actual, expected)| !event_matches(actual, expected))
+            .unwrap_or_else(|| first.events.len().min(expected_events.len()));
+        let window_start = index.saturating_sub(2);
+        let expected_end = (index + 3).min(expected_events.len());
+        let actual_end = (index + 3).min(first.events.len());
+        Some(format!(
+            "observable event #{index} differs: expected-window={:?}, actual-window={:?} (expected-events={}, actual-events={})",
+            &expected_events[window_start.min(expected_end)..expected_end],
+            &first.events[window_start.min(actual_end)..actual_end],
+            expected_events.len(),
+            first.events.len(),
+        ))
+    } else if !atomic_ownership_matches(first, case) {
+        Some("descriptor ownership atomic transition differs".to_owned())
+    } else if !padding_independent {
+        Some("result depends on private stack fill".to_owned())
+    } else {
+        None
+    };
+    DriverAdapterCase {
+        name: case.name.to_owned(),
+        matched: reason.is_none(),
+        reason,
+    }
 }
 
 #[allow(
@@ -583,13 +626,28 @@ pub fn verify_esp32s31_wdev_append_rx_blocks(
     canonical.push_str("omission vendor-diagnostics-and-statistics unused-instrumentation\n");
 
     let mut matched = true;
+    let mut case_reports = Vec::with_capacity(CASES.len());
     for case in CASES {
-        let first = execution::execute(&rust_image, svd, rust_symbol, rust_scenario(*case, 0))?;
-        let second = execution::execute(&rust_image, svd, rust_symbol, rust_scenario(*case, 0xa5))?;
+        let first = super::execute_case(
+            &rust_image,
+            svd,
+            rust_symbol,
+            rust_scenario(*case, 0),
+            case.name,
+            "Rust execution with stack-fill=0x00",
+        )?;
+        let second = super::execute_case(
+            &rust_image,
+            svd,
+            rust_symbol,
+            rust_scenario(*case, 0xa5),
+            case.name,
+            "Rust execution with stack-fill=0xa5",
+        )?;
         let padding_independent =
             first.events == second.events && first.return_value == second.return_value;
-        let case_matched = rust_case_matches(&first, *case) && padding_independent;
-        matched &= case_matched;
+        let report = case_report(&first, &second, *case);
+        matched &= report.matched;
         canonical.push_str(&format!(
             "scenario {} pending-samples={} repair-base={} timeout={} return={:#010x} events={} atomic-pairs={} branches={} padding-independent={}\n",
             case.name,
@@ -602,10 +660,12 @@ pub fn verify_esp32s31_wdev_append_rx_blocks(
             first.ordered_branches.len(),
             padding_independent,
         ));
+        case_reports.push(report);
     }
-    Ok(DriverAdapterVerification::whole_function_equivalence(
-        matched, canonical,
-    ))
+    Ok(
+        DriverAdapterVerification::whole_function_equivalence(matched, canonical)
+            .with_cases(case_reports),
+    )
 }
 
 #[cfg(test)]

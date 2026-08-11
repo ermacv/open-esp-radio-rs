@@ -15,10 +15,10 @@ part of their contract; consumers must parse the typed structure.
 | Symbol inventory | 4 | `symbols inventory` | `artifacts/symbol_inventory.rs`, `artifacts/symbol_inventory/read.rs` |
 | MMIO discovery facts | 5 | `mmio discover` | `artifacts/mmio_facts.rs`, `artifacts/mmio_facts_read.rs` |
 | Interface discovery facts | 5 | `interfaces discover` | `artifacts/interface_facts.rs`, `artifacts/interface_facts_read.rs` |
-| Linked IR | 42 | `ir export` | `artifacts/linked_ir_document.rs`, `artifacts/linked_ir_read.rs` |
+| Linked IR | 43 | `ir export` | `artifacts/linked_ir_document.rs`, `artifacts/linked_ir_read.rs` |
 | Review scopes | 7 | `project analyze` | `review_scopes.rs`, `review_scopes/model.rs` |
-| Verification report | 7 | `verify source` / `verify inventory` | `verification/report.rs` |
-| Project verification report | 6 | `project verify` | `verification/project_report.rs` |
+| Verification report | 8 | `verify source` / `verify inventory` | `verification/report.rs` |
+| Project verification report | 8 | `project verify` | `verification/project_report.rs` |
 
 Verification report artifact paths are canonical absolute paths. Verification
 currency therefore does not depend on the process working directory used by a

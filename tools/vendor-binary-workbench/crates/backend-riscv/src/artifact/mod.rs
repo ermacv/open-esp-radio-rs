@@ -23,7 +23,8 @@ pub use decode::{
 };
 pub use function_body::{
     FunctionBasicBlock, FunctionBlockSuccessor, FunctionBody, FunctionControlFlow,
-    FunctionControlFlowKind, FunctionInstruction, FunctionLabel, inspect_function_body,
+    FunctionControlFlowKind, FunctionInstruction, FunctionInstructionRelocation, FunctionLabel,
+    inspect_function_body,
 };
 pub use inventory::inspect_artifact;
 pub use model::{

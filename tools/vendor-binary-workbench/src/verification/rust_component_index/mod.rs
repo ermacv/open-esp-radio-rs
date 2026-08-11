@@ -36,8 +36,16 @@ impl RustComponentIndex {
             .iter()
             .map(|component| component.component_id.clone())
             .collect::<BTreeSet<_>>();
+        Self::build_component_ids(project_manifest, &component_ids, artifact_inputs)
+    }
+
+    pub(crate) fn build_component_ids(
+        project_manifest: &Path,
+        component_ids: &BTreeSet<String>,
+        artifact_inputs: &[RustArtifactInput],
+    ) -> Result<Self> {
         let (source_definitions, mut diagnostics) =
-            source_definitions(project_manifest, &component_ids)?;
+            source_definitions(project_manifest, component_ids)?;
         let (artifacts, compiled_symbols, artifact_diagnostics) =
             compiled_symbols(artifact_inputs)?;
         diagnostics.extend(artifact_diagnostics);
@@ -46,8 +54,16 @@ impl RustComponentIndex {
             reviewed_components: component_ids.len(),
             ..RustComponentIndexSummary::default()
         };
+        for artifact in &artifacts {
+            match artifact.freshness_status {
+                "fresh" => summary.artifact_freshness_fresh += 1,
+                "stale" => summary.artifact_freshness_stale += 1,
+                _ => summary.artifact_freshness_unknown += 1,
+            }
+        }
         let components = component_ids
-            .into_iter()
+            .iter()
+            .cloned()
             .map(|component_id| {
                 let source_items = source_definitions
                     .iter()
@@ -84,6 +100,18 @@ impl RustComponentIndex {
                     summary.compiled_resolved += 1;
                     "resolved"
                 };
+                let freshness_status = component_freshness(&source_items, &compiled_symbols);
+                match freshness_status {
+                    "fresh" => {
+                        summary.freshness_checked += 1;
+                        summary.freshness_fresh += 1;
+                    }
+                    "stale" => {
+                        summary.freshness_checked += 1;
+                        summary.freshness_stale += 1;
+                    }
+                    _ => summary.freshness_unknown += 1,
+                }
                 summary.dwarf_locations += compiled_symbols
                     .iter()
                     .filter(|symbol| symbol.source_file.is_some())
@@ -92,6 +120,7 @@ impl RustComponentIndex {
                     component_id,
                     source_status,
                     compiled_status,
+                    freshness_status,
                     source_items,
                     compiled_symbols,
                 }
@@ -106,6 +135,48 @@ impl RustComponentIndex {
             components,
             diagnostics,
         })
+    }
+
+    pub(crate) fn stale_components(&self) -> Vec<&str> {
+        self.components
+            .iter()
+            .filter(|component| component.freshness_status == "stale")
+            .map(|component| component.component_id.as_str())
+            .collect()
+    }
+
+    pub(crate) fn stale_artifacts(&self) -> Vec<&RustComponentArtifact> {
+        self.artifacts
+            .iter()
+            .filter(|artifact| artifact.freshness_status == "stale")
+            .collect()
+    }
+}
+
+fn component_freshness(
+    source_items: &[RustSourceItem],
+    compiled_symbols: &[RustCompiledSymbol],
+) -> &'static str {
+    if source_items.is_empty() || compiled_symbols.is_empty() {
+        return "unknown";
+    }
+    let source_times = source_items
+        .iter()
+        .map(|item| std::fs::metadata(&item.path).and_then(|metadata| metadata.modified()))
+        .collect::<std::io::Result<Vec<_>>>();
+    let artifact_times = compiled_symbols
+        .iter()
+        .map(|symbol| std::fs::metadata(&symbol.artifact).and_then(|metadata| metadata.modified()))
+        .collect::<std::io::Result<Vec<_>>>();
+    let (Ok(source_times), Ok(artifact_times)) = (source_times, artifact_times) else {
+        return "unknown";
+    };
+    let newest_source = source_times.into_iter().max();
+    let oldest_artifact = artifact_times.into_iter().min();
+    match (newest_source, oldest_artifact) {
+        (Some(source), Some(artifact)) if source > artifact => "stale",
+        (Some(_), Some(_)) => "fresh",
+        _ => "unknown",
     }
 }
 
@@ -495,5 +566,39 @@ mod tests {
             "crate_a::module::run",
             "crate_a::module::runner"
         ));
+    }
+
+    #[test]
+    fn component_freshness_rejects_a_source_newer_than_its_probe() {
+        let directory =
+            std::env::temp_dir().join(format!("vendor-workbench-freshness-{}", std::process::id()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let source = directory.join("source.rs");
+        let artifact = directory.join("probe.elf");
+        std::fs::write(&source, "fn operation() {}\n").unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        std::fs::write(&artifact, b"probe").unwrap();
+
+        let source_items = [RustSourceItem {
+            path: source.display().to_string(),
+            line: 1,
+            kind: "function",
+        }];
+        let compiled = [RustCompiledSymbol {
+            artifact: artifact.display().to_string(),
+            demangled: "crate::operation".to_owned(),
+            address: "0x1000".to_owned(),
+            size: 4,
+            source_file: Some(source.display().to_string()),
+            source_line: Some(1),
+            source_column: Some(1),
+        }];
+        assert_eq!(component_freshness(&source_items, &compiled), "fresh");
+
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        std::fs::write(&source, "fn operation() { changed(); }\n").unwrap();
+        assert_eq!(component_freshness(&source_items, &compiled), "stale");
+
+        std::fs::remove_dir_all(directory).unwrap();
     }
 }

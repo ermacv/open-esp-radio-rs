@@ -6,7 +6,7 @@
 The human view is a renderer over that model; JSON and JSONL serialize the same
 data. Diagnostics and tracing use stderr and cannot corrupt stdout.
 
-`verify inventory --json-report PATH` persists the complete schema-v6 command
+`verify inventory --json-report PATH` persists the complete schema-v8 command
 report, including:
 
 - target and gate identity;
@@ -70,7 +70,7 @@ diff -u \
   /tmp/esp32s31.candidate.toml
 ```
 
-`verify evidence` needs only the public project, the persisted schema-v6
+`verify evidence` needs only the public project, the persisted schema-v8
 report and its baseline. It does not load vendor artifacts, the run spec or an
 analysis backend. Entries are sorted by source and symbol. The command refuses
 to overwrite either the accepted baseline or its source report, and reports

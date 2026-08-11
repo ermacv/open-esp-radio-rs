@@ -85,11 +85,20 @@ impl DriverAdapterClaim {
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
+pub struct DriverAdapterCase {
+    pub name: String,
+    pub matched: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DriverAdapterVerification {
     pub claim: DriverAdapterClaim,
     pub matched: bool,
     pub canonical: String,
+    pub cases: Vec<DriverAdapterCase>,
 }
 
 impl DriverAdapterVerification {
@@ -98,6 +107,7 @@ impl DriverAdapterVerification {
             claim: DriverAdapterClaim::WholeFunctionEquivalence,
             matched,
             canonical,
+            cases: Vec::new(),
         }
     }
 
@@ -106,6 +116,7 @@ impl DriverAdapterVerification {
             claim: DriverAdapterClaim::ReviewedProjection,
             matched,
             canonical,
+            cases: Vec::new(),
         }
     }
 
@@ -114,7 +125,13 @@ impl DriverAdapterVerification {
             claim: DriverAdapterClaim::RustConformance,
             matched,
             canonical,
+            cases: Vec::new(),
         }
+    }
+
+    pub fn with_cases(mut self, cases: Vec<DriverAdapterCase>) -> Self {
+        self.cases = cases;
+        self
     }
 }
 

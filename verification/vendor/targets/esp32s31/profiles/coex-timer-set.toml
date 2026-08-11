@@ -30,7 +30,6 @@ max = 2_000
 index = 4
 min = 3_000
 max = 3_000
-
 # The reviewed COEX_LP_CLK_CONF source selector is one-hot. Divider images are
 # paired with their selectors in the concrete cases below; the static domain
 # prevents impossible selector values from creating false coverage gaps.
@@ -40,7 +39,7 @@ values = [0x00000008, 0x00000314, 0x00000272, 0x00000001]
 
 [[profiles.cases]]
 name = "wifi-timer-0-selector-8"
-arguments = [0, 1, 5, 2_000, 3_000]
+arguments = [0, 1, 5, 2_000, 3_000, 1]
 
 [[profiles.cases.mmio-initial]]
 address = 0x2010f008
@@ -70,8 +69,39 @@ symbol = "coexist_printf"
 return-words = [1]
 
 [[profiles.cases]]
+name = "wifi-timer-0-selector-8-non-chip"
+arguments = [0, 1, 5, 2_000, 3_000, 0]
+
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+[[profiles.cases.mmio-initial]]
+address = 0x2010f400
+value = 0xc1234567
+[[profiles.cases.mmio-initial]]
+address = 0x2010f404
+value = 0xab654321
+
+[[profiles.cases.vendor-tables]]
+layout-id = "esp32s31-radio-rev0::coex-adapter-v2"
+base-address = 0x3fce1000
+layout-size = 0x50
+pointer-cells = [0x10002ba4]
+slots = [
+    { offset = 0x30, target = { kind = "symbol", value = "coexist_printf" } },
+]
+
+[[profiles.cases.vendor-calls]]
+symbol = "coexist_printf"
+return-words = [0]
+
+[[profiles.cases.vendor-calls]]
+symbol = "coexist_printf"
+return-words = [0]
+
+[[profiles.cases]]
 name = "wifi-timer-0-selector-4"
-arguments = [0, 1, 5, 2_000, 3_000]
+arguments = [0, 1, 5, 2_000, 3_000, 1]
 
 [[profiles.cases.mmio-initial]]
 address = 0x2010f008
@@ -102,7 +132,7 @@ return-words = [40]
 
 [[profiles.cases]]
 name = "wifi-timer-0-selector-2"
-arguments = [0, 1, 5, 2_000, 3_000]
+arguments = [0, 1, 5, 2_000, 3_000, 1]
 
 [[profiles.cases.mmio-initial]]
 address = 0x2010f008
@@ -116,7 +146,7 @@ value = 0xab654321
 
 [[profiles.cases]]
 name = "wifi-timer-0-selector-1"
-arguments = [0, 1, 5, 2_000, 3_000]
+arguments = [0, 1, 5, 2_000, 3_000, 1]
 
 [[profiles.cases.mmio-initial]]
 address = 0x2010f008

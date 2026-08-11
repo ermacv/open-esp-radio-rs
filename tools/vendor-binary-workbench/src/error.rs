@@ -120,6 +120,18 @@ pub(crate) enum WorkbenchError {
     #[error(transparent)]
     #[diagnostic(transparent)]
     Target(#[from] TargetError),
+    #[error("verification suite {suite:?} failed")]
+    #[diagnostic(
+        code(workbench::verification::suite),
+        help(
+            "replay the named suite without --check and inspect the reported case and execution location"
+        )
+    )]
+    VerificationSuite {
+        suite: String,
+        #[source]
+        source: Box<WorkbenchError>,
+    },
     #[error(transparent)]
     Analysis(#[from] open_radio_vendor_analysis_model::Error),
     #[error(transparent)]
@@ -151,6 +163,13 @@ impl WorkbenchError {
     pub(crate) fn invalid(message: impl Into<String>) -> Self {
         Self::InvalidInput {
             message: message.into(),
+        }
+    }
+
+    pub(crate) fn verification_suite(self, suite: impl Into<String>) -> Self {
+        Self::VerificationSuite {
+            suite: suite.into(),
+            source: Box::new(self),
         }
     }
 

@@ -165,14 +165,11 @@ pub extern "C" fn open_libpp_trace_hal_mac_interrupt_ret_clr_event(events: u32) 
 pub extern "C" fn open_wifi_sta_trace_hal_disable_sta_beacon_filter() {
     // SAFETY: these validation-only PAC capabilities are used only by this
     // isolated probe image. The called helper is the production transaction.
-    let control = unsafe {
-        open_esp_radio_esp32s31_registers::svd::WifiMacStaBeaconFilter::steal()
-    };
-    let interrupt =
-        unsafe { open_esp_radio_esp32s31_registers::svd::WifiMacInterrupt::steal() };
+    let control =
+        unsafe { open_esp_radio_esp32s31_registers::svd::WifiMacStaBeaconFilter::steal() };
+    let interrupt = unsafe { open_esp_radio_esp32s31_registers::svd::WifiMacInterrupt::steal() };
     open_esp_radio_esp32s31_registers::validation::hal_disable_sta_beacon_filter(
-        &control,
-        &interrupt,
+        &control, &interrupt,
     );
 }
 
@@ -297,7 +294,9 @@ pub extern "C" fn open_coex_trace_coex_hw_timer_unforce(index: u32) {
     let _ = registers.unforce_coex_timer(index as u8);
 }
 
-struct CoexProbeClock;
+struct CoexProbeClock {
+    is_real_chip: bool,
+}
 
 impl open_esp_radio_esp32s31_coex::CoexClockHardware for CoexProbeClock {
     fn configure(
@@ -320,7 +319,10 @@ impl open_esp_radio_esp32s31_coex::CoexClockHardware for CoexProbeClock {
         // SAFETY: same validated MMIO word, deliberately sampled again.
         let divider = unsafe { core::ptr::read_volatile(COEX_LP_CLK_CONF) };
         open_esp_radio_esp32s31_coex::CoexTimerClock::from_register_images(
-            selector, divider, 40, true,
+            selector,
+            divider,
+            40,
+            self.is_real_chip,
         )
     }
 }
@@ -337,6 +339,7 @@ pub extern "C" fn open_coex_trace_coex_hw_timer_set(
     pti: u32,
     latency: u32,
     duration: u32,
+    is_real_chip: u32,
 ) {
     use open_esp_radio_esp32s31_coex::{CoexClient, CoexPti, CoexTimerIndex, program_timer};
 
@@ -352,7 +355,9 @@ pub extern "C" fn open_coex_trace_coex_hw_timer_set(
         CoexClient::Wifi
     };
     let mut registers = open_esp_radio_esp32s31_registers::validation::radio_registers();
-    let mut clock = CoexProbeClock;
+    let mut clock = CoexProbeClock {
+        is_real_chip: is_real_chip != 0,
+    };
     let _ = program_timer(
         &mut registers,
         &mut clock,

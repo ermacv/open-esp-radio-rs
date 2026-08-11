@@ -115,6 +115,34 @@ fn coex_timer_profiles_close_the_five_entry_index_domain() {
 }
 
 #[test]
+fn coex_timer_set_covers_real_and_non_chip_clock_paths() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .ancestors()
+        .nth(2)
+        .expect("workbench remains under tools");
+    let path = root.join("verification/vendor/targets/esp32s31/profiles/coex-timer-set.toml");
+    let profiles = load(&path).unwrap();
+
+    assert_eq!(profiles.len(), 1);
+    let profile = &profiles[0];
+    assert_eq!(profile.vendor_symbol, "coex_hw_timer_set");
+    assert_eq!(profile.scenarios.len(), 5);
+    let selector_eight = profile
+        .scenarios
+        .iter()
+        .filter(|scenario| scenario.scenario.mmio_initial.get(&0x2010_f008) == Some(&0x0000_0008))
+        .collect::<Vec<_>>();
+    assert_eq!(selector_eight.len(), 2);
+    assert_eq!(
+        selector_eight
+            .iter()
+            .map(|scenario| scenario.scenario.arguments[5])
+            .collect::<std::collections::BTreeSet<_>>(),
+        std::collections::BTreeSet::from([0, 1])
+    );
+}
+
+#[test]
 fn rom_sta_tsf_snapshot_profile_closes_both_pointer_branches() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"))
         .ancestors()

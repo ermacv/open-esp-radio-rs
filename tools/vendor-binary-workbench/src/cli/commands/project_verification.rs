@@ -12,7 +12,7 @@ use crate::{
     run_spec::{InputRole, RunSpec},
     verification::{
         ProjectVerificationReport, ProjectVerificationSuiteReport, RustArtifactInput,
-        write_evidence_candidate,
+        RustComponentIndex, dispositions::Manifest, write_evidence_candidate,
     },
 };
 
@@ -58,11 +58,24 @@ pub(super) fn execute(
         ));
     }
 
+    let rust_artifacts = selected
+        .iter()
+        .map(|suite| {
+            Ok(RustArtifactInput {
+                suite: suite.id.clone(),
+                path: required_input(run_spec, &suite.rust_artifact_role, &suite.id)?,
+            })
+        })
+        .collect::<Result<Vec<_>>>()?;
+    preflight_rust_artifacts(project_manifest, &selected, &rust_artifacts)?;
+
     let mut suites = Vec::with_capacity(selected.len());
     let mut passed = true;
     for suite in &selected {
-        let report =
-            super::verify_inventory::execute(suite_arguments(suite, run_spec)?, svd, target)?;
+        let arguments = suite_arguments(suite, run_spec)
+            .map_err(|error| error.verification_suite(suite.id.clone()))?;
+        let report = super::verify_inventory::execute(arguments, svd, target)
+            .map_err(|error| error.verification_suite(suite.id.clone()))?;
         passed &= report.verification.passed;
         suites.push(ProjectVerificationSuiteReport {
             id: suite.id.clone(),
@@ -96,15 +109,6 @@ pub(super) fn execute(
             write_evidence_candidate(&candidate, &protected, &report.verification.evidence_set())?;
         }
     }
-    let rust_artifacts = selected
-        .iter()
-        .map(|suite| {
-            Ok(RustArtifactInput {
-                suite: suite.id.clone(),
-                path: required_input(run_spec, &suite.rust_artifact_role, &suite.id)?,
-            })
-        })
-        .collect::<Result<Vec<_>>>()?;
     let report = ProjectVerificationReport::new(
         project.id.clone(),
         passed,
@@ -124,6 +128,50 @@ pub(super) fn execute(
         )?;
     }
     Ok(report)
+}
+
+fn preflight_rust_artifacts(
+    project_manifest: &std::path::Path,
+    suites: &[&VerificationSuiteSpec],
+    rust_artifacts: &[RustArtifactInput],
+) -> Result<()> {
+    let mut component_ids = BTreeSet::new();
+    for suite in suites {
+        let Some(manifest) = Manifest::load_all(&suite.dispositions)? else {
+            continue;
+        };
+        component_ids.extend(manifest.entries().filter_map(|entry| {
+            entry
+                .rust_component
+                .as_ref()
+                .map(|component| component.label().to_owned())
+        }));
+    }
+    let index =
+        RustComponentIndex::build_component_ids(project_manifest, &component_ids, rust_artifacts)?;
+    let stale = index.stale_components();
+    let stale_artifacts = index.stale_artifacts();
+    if stale.is_empty() && stale_artifacts.is_empty() {
+        return Ok(());
+    }
+    let stale_artifacts = stale_artifacts
+        .iter()
+        .map(|artifact| artifact.path.as_str())
+        .collect::<Vec<_>>();
+    let stale_components = if stale.is_empty() {
+        "none".to_owned()
+    } else {
+        stale.join(", ")
+    };
+    let stale_artifacts = if stale_artifacts.is_empty() {
+        "none".to_owned()
+    } else {
+        stale_artifacts.join(", ")
+    };
+    Err(crate::Error::invalid(format!(
+        "Rust verification artifact is older than its compiled source evidence (components: {}; artifacts: {}); rebuild the configured probe ELF before verification",
+        stale_components, stale_artifacts,
+    )))
 }
 
 fn select_suites<'a>(
@@ -288,12 +336,18 @@ fn render_human(report: &ProjectVerificationReport, output: &std::path::Path) {
     let components = &report.rust_component_index.summary;
     let _ = writeln!(
         &mut text,
-        "  component index: {}/{} source-resolved, {}/{} compiled, {} DWARF locations",
+        "  component index: {}/{} source-resolved, {}/{} compiled, {} DWARF locations; component freshness {} fresh, {} stale, {} unknown; artifact freshness {} fresh, {} stale, {} unknown",
         components.source_resolved,
         components.reviewed_components,
         components.compiled_resolved,
         components.reviewed_components,
-        components.dwarf_locations
+        components.dwarf_locations,
+        components.freshness_fresh,
+        components.freshness_stale,
+        components.freshness_unknown,
+        components.artifact_freshness_fresh,
+        components.artifact_freshness_stale,
+        components.artifact_freshness_unknown,
     );
     if report.complete_project_run {
         let _ = writeln!(&mut text, "  report: {}", output.display());

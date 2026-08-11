@@ -544,7 +544,7 @@ fn verify_inventory_json_combines_results_and_publication_in_one_report() {
 
     let persistent: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&report_path).unwrap()).unwrap();
-    assert_eq!(persistent["schema_version"], 7);
+    assert_eq!(persistent["schema_version"], 8);
     assert_eq!(persistent["command"], "verify inventory");
     assert_eq!(persistent["sources"][0]["functions"][0]["status"], "match");
     std::fs::remove_file(artifact).unwrap();
@@ -642,7 +642,7 @@ gate = "completion"
     );
     let document: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(document["command"], "project verify");
-    assert_eq!(document["schema_version"], 6);
+    assert_eq!(document["schema_version"], 8);
     assert!(
         document["suites"][0]["artifacts"]
             .as_array()

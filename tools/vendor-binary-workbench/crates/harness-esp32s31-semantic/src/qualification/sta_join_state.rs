@@ -346,8 +346,22 @@ pub fn verify_esp32s31_sta_join_state(
 
     let mut matched = true;
     for case in CASES {
-        let first = execution::execute(&rust_image, svd, rust_symbol, rust_scenario(*case, 0))?;
-        let second = execution::execute(&rust_image, svd, rust_symbol, rust_scenario(*case, 0xa5))?;
+        let first = super::execute_case(
+            &rust_image,
+            svd,
+            rust_symbol,
+            rust_scenario(*case, 0),
+            case.name,
+            "Rust execution with stack-fill=0x00",
+        )?;
+        let second = super::execute_case(
+            &rust_image,
+            svd,
+            rust_symbol,
+            rust_scenario(*case, 0xa5),
+            case.name,
+            "Rust execution with stack-fill=0xa5",
+        )?;
         let padding_independent =
             first.return_value == second.return_value && first.events == second.events;
         let case_matched = case_matches(&first, *case) && padding_independent;

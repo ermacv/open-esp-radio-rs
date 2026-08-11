@@ -207,6 +207,13 @@ struct StoredRustComponentIndexSummary {
     compiled_resolved: usize,
     compiled_missing: usize,
     dwarf_locations: usize,
+    freshness_checked: usize,
+    freshness_fresh: usize,
+    freshness_stale: usize,
+    freshness_unknown: usize,
+    artifact_freshness_fresh: usize,
+    artifact_freshness_stale: usize,
+    artifact_freshness_unknown: usize,
 }
 
 #[derive(Deserialize)]
@@ -370,6 +377,37 @@ fn last_report(
     .detail(
         "component_dwarf_locations",
         report.rust_component_index.summary.dwarf_locations,
+    )
+    .detail(
+        "component_freshness_checked",
+        report.rust_component_index.summary.freshness_checked,
+    )
+    .detail(
+        "component_freshness_fresh",
+        report.rust_component_index.summary.freshness_fresh,
+    )
+    .detail(
+        "component_freshness_stale",
+        report.rust_component_index.summary.freshness_stale,
+    )
+    .detail(
+        "component_freshness_unknown",
+        report.rust_component_index.summary.freshness_unknown,
+    )
+    .detail(
+        "artifact_freshness_fresh",
+        report.rust_component_index.summary.artifact_freshness_fresh,
+    )
+    .detail(
+        "artifact_freshness_stale",
+        report.rust_component_index.summary.artifact_freshness_stale,
+    )
+    .detail(
+        "artifact_freshness_unknown",
+        report
+            .rust_component_index
+            .summary
+            .artifact_freshness_unknown,
     )
     .detail(
         "component_total",

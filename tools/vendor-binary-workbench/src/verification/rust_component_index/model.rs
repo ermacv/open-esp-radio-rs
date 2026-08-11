@@ -27,6 +27,13 @@ pub(crate) struct RustComponentIndexSummary {
     pub(crate) compiled_resolved: usize,
     pub(crate) compiled_missing: usize,
     pub(crate) dwarf_locations: usize,
+    pub(crate) freshness_checked: usize,
+    pub(crate) freshness_fresh: usize,
+    pub(crate) freshness_stale: usize,
+    pub(crate) freshness_unknown: usize,
+    pub(crate) artifact_freshness_fresh: usize,
+    pub(crate) artifact_freshness_stale: usize,
+    pub(crate) artifact_freshness_unknown: usize,
 }
 
 #[derive(Debug, Serialize)]
@@ -36,6 +43,10 @@ pub(crate) struct RustComponentArtifact {
     pub(crate) suites: Vec<String>,
     pub(crate) rust_symbols: usize,
     pub(crate) dwarf_locations: usize,
+    pub(crate) checked_source_files: usize,
+    pub(crate) freshness_status: &'static str,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(crate) stale_source_files: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -43,6 +54,7 @@ pub(crate) struct RustComponentEvidence {
     pub(crate) component_id: String,
     pub(crate) source_status: &'static str,
     pub(crate) compiled_status: &'static str,
+    pub(crate) freshness_status: &'static str,
     pub(crate) source_items: Vec<RustSourceItem>,
     pub(crate) compiled_symbols: Vec<RustCompiledSymbol>,
 }

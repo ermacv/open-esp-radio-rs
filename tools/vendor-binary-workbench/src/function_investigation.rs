@@ -5,6 +5,8 @@
 //! available semantic linked-IR view.  Semantic incompleteness never removes
 //! raw instructions or basic blocks.
 
+mod correspondence;
+
 use std::{
     collections::{BTreeMap, BTreeSet},
     path::Path,
@@ -14,6 +16,7 @@ use petgraph::{algo::astar, graph::DiGraph};
 use serde::Serialize;
 
 use crate::{ProjectSpec, Result, artifact, artifacts};
+use correspondence::{origin_instruction_correspondence, origin_relocation_dependencies};
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct FunctionInvestigationReport {
@@ -81,7 +84,36 @@ pub struct ReviewedPathEvidence {
 pub struct OriginFunctionEvidence {
     pub association: &'static str,
     pub inventory_report: Option<String>,
+    /// Relocation-backed dependencies retained by the relocatable archive
+    /// member. These are never projected onto linked instruction addresses by
+    /// offset arithmetic: linker relaxation can change both instruction count
+    /// and offsets, so an offset-only association would be unsound.
+    pub relocation_dependencies: Vec<OriginRelocationDependency>,
+    /// Monotonic structural correspondence between relocation-bearing origin
+    /// instructions and linked instructions. This is navigation evidence,
+    /// never an execution or semantic-equivalence claim.
+    pub instruction_correspondence: Vec<OriginInstructionCorrespondence>,
     pub body: artifact::FunctionBody,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct OriginRelocationDependency {
+    pub symbol: String,
+    pub references: usize,
+    pub instruction_offsets: Vec<u64>,
+    pub kinds: Vec<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct OriginInstructionCorrespondence {
+    pub origin_offsets: Vec<u64>,
+    pub runtime_address: u64,
+    pub runtime_offset: u64,
+    pub kind: &'static str,
+    pub relocation_symbols: Vec<String>,
+    /// Always false. Structural instruction alignment helps investigation but
+    /// does not prove identical runtime semantics after linker rewriting.
+    pub semantic_equivalence_claim: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -200,13 +232,14 @@ pub(crate) fn investigate(
 ) -> Result<FunctionInvestigationReport> {
     let runtime =
         artifact::inspect_function_body(request.artifact, request.member, request.symbol)?;
-    let (origin, origin_ledger) = origin_evidence(&request, project)?;
+    let (origin, origin_ledger) = origin_evidence(&request, &runtime, project)?;
     let semantics = semantic_evidence(
         request.source,
         request.symbol,
         &runtime,
         request.graph_depth,
         request.include_callers,
+        origin.as_ref(),
         project,
     )?;
     let (reviewed_preconditions, reviewed_paths) =
@@ -249,7 +282,7 @@ pub(crate) fn investigate(
         }
     };
     Ok(FunctionInvestigationReport {
-        schema_version: 4,
+        schema_version: 6,
         command: "inspect function",
         source: request.source.to_owned(),
         symbol: request.symbol.to_owned(),
@@ -539,6 +572,7 @@ fn reviewed_path_knowledge(
 
 fn origin_evidence(
     request: &FunctionInvestigationRequest<'_>,
+    runtime: &artifact::FunctionBody,
     project: &ProjectSpec,
 ) -> Result<(Option<OriginFunctionEvidence>, InvestigationLedgerEntry)> {
     let Some(inventory) = request.inventory else {
@@ -608,6 +642,8 @@ fn origin_evidence(
         }
     }
     let body = artifact::inspect_function_body(inventory, member, request.symbol)?;
+    let relocation_dependencies = origin_relocation_dependencies(&body);
+    let instruction_correspondence = origin_instruction_correspondence(&body, runtime);
     let status = if association.is_some() {
         "unique-association"
     } else {
@@ -617,6 +653,8 @@ fn origin_evidence(
         Some(OriginFunctionEvidence {
             association: status,
             inventory_report: inventory_report.map(|path| path.display().to_string()),
+            relocation_dependencies,
+            instruction_correspondence,
             body,
         }),
         InvestigationLedgerEntry {
@@ -643,6 +681,7 @@ fn semantic_evidence(
     runtime: &artifact::FunctionBody,
     graph_depth: usize,
     include_callers: bool,
+    origin: Option<&OriginFunctionEvidence>,
     project: &ProjectSpec,
 ) -> Result<Vec<SemanticFunctionEvidence>> {
     let mut evidence = Vec::new();
@@ -680,7 +719,7 @@ fn semantic_evidence(
                     .to_owned(),
                 relocation_candidates: diagnostic
                     .site
-                    .map(|site| relocation_candidates_at(runtime, site))
+                    .map(|site| relocation_candidates_at(runtime, origin, site))
                     .unwrap_or_default(),
                 confidence: "review-required",
             })
@@ -802,7 +841,11 @@ fn blocker_requirement(kind: &str, message: &str) -> &'static str {
     }
 }
 
-fn relocation_candidates_at(runtime: &artifact::FunctionBody, site: u32) -> Vec<String> {
+fn relocation_candidates_at(
+    runtime: &artifact::FunctionBody,
+    origin: Option<&OriginFunctionEvidence>,
+    site: u32,
+) -> Vec<String> {
     runtime
         .instructions
         .iter()
@@ -811,6 +854,13 @@ fn relocation_candidates_at(runtime: &artifact::FunctionBody, site: u32) -> Vec<
         })
         .flat_map(|instruction| instruction.relocations.iter())
         .map(|relocation| relocation.symbol.clone())
+        .chain(
+            origin
+                .into_iter()
+                .flat_map(|origin| &origin.instruction_correspondence)
+                .filter(move |correspondence| correspondence.runtime_address == u64::from(site))
+                .flat_map(|correspondence| correspondence.relocation_symbols.iter().cloned()),
+        )
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect()

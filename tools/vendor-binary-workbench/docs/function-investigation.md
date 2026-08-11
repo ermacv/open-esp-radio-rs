@@ -23,6 +23,9 @@ One typed report contains:
 - relocations, local labels, conservative basic blocks and successors;
 - the uniquely associated raw archive member when the symbol inventory proves
   one;
+- a grouped inventory of the archive member's relocation-backed global and
+  call dependencies; `--full` also prints the complete origin instruction
+  body with its relocation sites;
 - each schema-validated linked-IR projection, pseudo-Rust and its exact
   blockers;
 - direct call knowledge (`unknown`, `annotated`, `executable`, or resolved
@@ -56,6 +59,15 @@ are reviewer assertions, not permission to discard control-flow evidence and
 not execution proof. JSON and JSONL serialize the same report shown by the
 human renderer. The Functions tab in `project browse` loads this report lazily
 for the selected function and therefore uses the same evidence path as the CLI.
+
+The report never associates archive instruction offsets with linked PCs by
+simple arithmetic. Linker relaxation can shrink or rewrite instruction
+sequences (for example a relocated call pair). A bounded monotonic structural
+alignment records only same-shape relocation sites and recognized linker
+relaxations. It is navigation evidence with `semantic_equivalence_claim =
+false`; runtime linked IR and relocation-rich archive facts remain separate
+truth domains. The alignment makes otherwise stripped globals actionable in
+blocker explanations without turning a heuristic offset projection into proof.
 
 `inspect object SOURCE:SYMBOL` uses the data-object index rather than scanning
 the function corpus. It reports linked address/size/initializer/relocations and

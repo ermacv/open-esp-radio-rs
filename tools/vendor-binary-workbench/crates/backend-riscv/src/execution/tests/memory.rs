@@ -27,13 +27,11 @@ fn poison_memory_and_unseeded_mmio_fail_closed() {
         }],
     };
     let mut machine = Machine::new(&image, &mmio_svd, 0x1000, Scenario::default());
-    assert!(
-        machine
-            .read(0x2010_0010, 32)
-            .unwrap_err()
-            .to_string()
-            .contains("no explicit seed or response")
-    );
+    let error = machine.read(0x2010_0010, 32).unwrap_err().to_string();
+    assert!(error.contains("no explicit seed or response"));
+    assert!(error.contains("pc=0x00001000"));
+    assert!(error.contains("step=0"));
+    assert!(error.contains("observable-event=0"));
 }
 
 #[test]

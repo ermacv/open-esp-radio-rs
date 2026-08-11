@@ -6,7 +6,7 @@ use std::path::Path;
 
 use super::{ReplacementGraph, RustArtifactInput, RustComponentIndex, VerificationCommandReport};
 
-pub(crate) const PROJECT_VERIFICATION_REPORT_SCHEMA: u32 = 6;
+pub(crate) const PROJECT_VERIFICATION_REPORT_SCHEMA: u32 = 8;
 
 #[derive(Serialize)]
 pub(crate) struct ProjectVerificationSuiteReport {
@@ -42,6 +42,9 @@ impl ProjectVerificationReport {
             &replacement_graph.components,
             rust_artifacts,
         )?;
+        let passed = passed
+            && rust_component_index.stale_components().is_empty()
+            && rust_component_index.stale_artifacts().is_empty();
         Ok(Self {
             schema_version: PROJECT_VERIFICATION_REPORT_SCHEMA,
             command: "project verify",

@@ -190,6 +190,18 @@ pub(crate) fn verify_source(
             function.contract = Some(policy.comparison.label().to_owned());
             function.driver_adapter = Some(adapter.label().to_owned());
             function.claim = Some(proof.claim);
+            function.adapter_cases = proof.cases.clone();
+            if !proof.matched {
+                function.reason = proof
+                    .cases
+                    .iter()
+                    .find(|case| !case.matched)
+                    .and_then(|case| {
+                        case.reason
+                            .as_ref()
+                            .map(|reason| format!("case {:?}: {reason}", case.name))
+                    });
+            }
             if proof.matched && !whole_function {
                 function.reason = Some(format!(
                     "{} evidence does not establish whole-function vendor equivalence",

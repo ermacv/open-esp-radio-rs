@@ -30,6 +30,8 @@ pub(super) fn compiled_symbols(
             .iter()
             .filter(|symbol| symbol.source_file.is_some())
             .count();
+        let (freshness_status, checked_source_files, stale_source_files) =
+            artifact_freshness(&path, &symbols);
         compiled.extend(symbols.iter().map(|symbol| RustCompiledSymbol {
             artifact: artifact_path.clone(),
             demangled: symbol.demangled_name.clone(),
@@ -45,11 +47,49 @@ pub(super) fn compiled_symbols(
             suites: suites.into_iter().collect(),
             rust_symbols: symbols.len(),
             dwarf_locations,
+            checked_source_files,
+            freshness_status,
+            stale_source_files,
         });
     }
     compiled.sort();
     compiled.dedup();
     Ok((artifacts, compiled, diagnostics))
+}
+
+fn artifact_freshness(
+    artifact: &std::path::Path,
+    symbols: &[crate::artifact::ArtifactDebugSymbol],
+) -> (&'static str, usize, Vec<String>) {
+    let Ok(artifact_time) = std::fs::metadata(artifact).and_then(|metadata| metadata.modified())
+    else {
+        return ("unknown", 0, Vec::new());
+    };
+    let source_files = symbols
+        .iter()
+        .filter_map(|symbol| symbol.source_file.as_deref())
+        .map(std::path::PathBuf::from)
+        .collect::<BTreeSet<_>>();
+    let mut checked = 0;
+    let mut stale = Vec::new();
+    for source in source_files {
+        let Ok(source_time) = std::fs::metadata(&source).and_then(|metadata| metadata.modified())
+        else {
+            continue;
+        };
+        checked += 1;
+        if source_time > artifact_time {
+            stale.push(source.display().to_string());
+        }
+    }
+    let status = if !stale.is_empty() {
+        "stale"
+    } else if checked != 0 {
+        "fresh"
+    } else {
+        "unknown"
+    };
+    (status, checked, stale)
 }
 
 pub(super) fn compiled_matches(component: &str, demangled: &str) -> bool {

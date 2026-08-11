@@ -110,16 +110,21 @@ production component.
 makes a green regression gate distinct from complete project mapping: a proof
 can pass while its production Rust owner is still unknown.
 
-Project-report schema v6 also contains `rust_component_index`. No additional
+Project-report schema v8 also contains `rust_component_index`. No additional
 project configuration owns this data: reviewed component paths still come
 from dispositions, Cargo workspace/package roots come from `cargo metadata`,
 and suite ELF paths come from the existing run-spec roles. Rust source is
 parsed as an AST to resolve functions, methods and types. ELF symbols are
 demangled and DWARF inline frames supply compiled file/line evidence, so an
 inlined production operation can still join its probe boundary. Source and
-compiled statuses remain separate. A source match does not make an effect
-proof, and missing compiled evidence remains visible instead of being inferred
-from a probe name.
+compiled statuses remain separate. It also compares mapped source and probe
+artifact modification times before execution. The check covers both reviewed
+component declarations and every existing local source path recovered from the
+probe's symbol/DWARF evidence, including inlined helpers. A definitely newer
+production source rejects the configured probe as stale instead of producing a
+misleading semantic mismatch. Unknown timestamp provenance remains explicit and
+does not become proof. A source match does not make an effect proof, and missing
+compiled evidence remains visible instead of being inferred from a probe name.
 
 ## Gates
 

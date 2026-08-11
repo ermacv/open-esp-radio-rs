@@ -271,7 +271,7 @@ aggregate gates, protocol inventory and probe accounting. `evidence.rs` owns pro
 `evidence/report.rs` owns the persistent core; `execution.rs` owns comparison
 and `execution/scenario.rs` owns scenario normalization and coverage inputs.
 `execution_report.rs` owns concrete comparison DTOs, while `report.rs` owns
-the single schema-v6 command/file report plus its human renderer.
+the single schema-v8 command/file report plus its human renderer.
 `dispositions.rs` owns its strict parser and inventory validation;
 `dispositions/model.rs` owns entry, binding and effect-policy invariants.
 

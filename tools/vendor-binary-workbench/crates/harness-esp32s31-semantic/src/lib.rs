@@ -29,6 +29,14 @@ pub enum Error {
 
     #[error(transparent)]
     RiscvBackend(#[from] open_radio_vendor_backend_riscv::Error),
+
+    #[error("verification case {case:?} failed during {phase}")]
+    VerificationCase {
+        case: String,
+        phase: String,
+        #[source]
+        source: open_radio_vendor_backend_riscv::Error,
+    },
 }
 
 impl From<String> for Error {

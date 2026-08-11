@@ -425,15 +425,24 @@ pub fn verify_esp32s31_wdev_process_fiq_mac_slice(
 
     let mut matched = true;
     for case in CASES {
-        let vendor = execution::execute(
+        let vendor = super::execute_case(
             &vendor_image,
             svd,
             "wDev_ProcessFiq",
             vendor_scenario(case.status),
+            case.name,
+            "vendor execution",
         )?;
         validate_vendor_calls(&vendor, case.status)?;
         validate_vendor_mmio(&vendor, case.status)?;
-        let rust = execution::execute(&rust_image, svd, rust_symbol, rust_scenario(case.status))?;
+        let rust = super::execute_case(
+            &rust_image,
+            svd,
+            rust_symbol,
+            rust_scenario(case.status),
+            case.name,
+            "Rust execution",
+        )?;
         validate_rust_transaction(&rust, case.status)?;
         let expected = expected_semantic_encoding(case.status);
         let case_matched = rust.return_value == expected;

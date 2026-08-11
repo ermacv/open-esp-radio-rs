@@ -428,7 +428,7 @@ pub fn verify_esp32s31_hal_mac_txq_enable_register_slice(
     for queue in 0..4_u32 {
         let initial = 0x0123_4567_u32 ^ queue.wrapping_mul(0x1111_1111);
         let address = CONTROL[3 - queue as usize];
-        let result = execution::execute(
+        let result = super::execute_case(
             &rust_image,
             svd,
             rust_symbol,
@@ -438,6 +438,8 @@ pub fn verify_esp32s31_hal_mac_txq_enable_register_slice(
                 max_steps: 500,
                 ..execution::Scenario::default()
             },
+            format!("queue-{queue}"),
+            "Rust execution",
         )?;
         let case_matched =
             rust_register_slice_matches(&result.events, result.return_value, queue, initial);

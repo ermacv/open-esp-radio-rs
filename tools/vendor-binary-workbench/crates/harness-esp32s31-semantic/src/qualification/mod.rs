@@ -90,6 +90,25 @@ use open_esp_radio_esp32s31_phy::{
 
 use crate::{DriverAdapterVerification, Result, entry_contract, execution, seed_ram_word};
 
+fn execute_case(
+    image: &execution::ExecutableImage,
+    svd: &crate::MmioMap,
+    symbol: &str,
+    scenario: execution::Scenario,
+    case: impl Into<String>,
+    phase: impl Into<String>,
+) -> Result<execution::ExecutionResult> {
+    let case = case.into();
+    let phase = phase.into();
+    execution::execute(image, svd, symbol, scenario).map_err(|source| {
+        crate::Error::VerificationCase {
+            case,
+            phase,
+            source,
+        }
+    })
+}
+
 fn hash_field(hasher: &mut Sha256, bytes: &[u8]) {
     hasher.update((bytes.len() as u64).to_le_bytes());
     hasher.update(bytes);

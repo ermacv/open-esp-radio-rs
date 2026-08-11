@@ -4,71 +4,71 @@ schema = 2
 source = "archive"
 symbol = "ant_dft_cfg"
 kind = "scenario/profile:archive-antenna-diversity"
-digest = "db962a4ebd6c7c58d7f292533cc9083d48e701e94bb66f8fc500e0e7e18455e3"
+digest = "44cb8b7b501822e57ce6e53b5ac40f1e4b5fb78e8fe5426c32e8581f637fc488"
 
 [evidence.components]
-comparison-orchestrator = "f529c9f0178ac3960f29474bf1d58a40e7281b2c05fe0cfd9e24722470132b7b"
+comparison-orchestrator = "27135eb475a56cf828cf5008bbc171061017e5dde83ade44c1bfa6e78d93ba30"
 execution-image = "f46f7043c5bcc1c9ee1a8254cdd8792837871b62c63b77e6e8a4f7e5bde6822f"
 execution-machine = "b712c0de3daf70bfc8d7718a27913f626e1ac1bada2dc55d60842681c6ae8c0c"
 execution-model = "00671ac5331776c929cded74468b90f0b3c36c6fd4d9e5cdc4404ca5ba3aee5b"
-profile = "fe2de75d66b6629630532c283b4e80805f491a3758198b70a9e409f4e31637a8"
-profile-parser = "dd1e4a1201fb62c78422b3dd6c5afd7347d66b9b1f4a90bd136ba9f4b636886f"
+profile = "1885a1cdc8c2f2cf3376325268684a097352369ff02af96967654ccf4f7d8773"
+profile-parser = "32795bef750005cae0432ba2423849d4988ec5a04c3c59af22dfa248517cf76c"
 
 [[evidence]]
 source = "archive"
 symbol = "bb_wdt_get_status"
 kind = "scenario/profile:archive-watchdog-status"
-digest = "bebde11ea2be3071f7311eb7feb8ac178975540f5fe9e9bdf3f3573ae72f9ec0"
+digest = "be6a8b5d80a8b0b623098722672c4839bf48a41932b78b7d8941546365a1d66e"
 
 [evidence.components]
-comparison-orchestrator = "f529c9f0178ac3960f29474bf1d58a40e7281b2c05fe0cfd9e24722470132b7b"
+comparison-orchestrator = "27135eb475a56cf828cf5008bbc171061017e5dde83ade44c1bfa6e78d93ba30"
 execution-image = "f46f7043c5bcc1c9ee1a8254cdd8792837871b62c63b77e6e8a4f7e5bde6822f"
 execution-machine = "b712c0de3daf70bfc8d7718a27913f626e1ac1bada2dc55d60842681c6ae8c0c"
 execution-model = "00671ac5331776c929cded74468b90f0b3c36c6fd4d9e5cdc4404ca5ba3aee5b"
-profile = "45c9cc375acb6fd99c4e506a94b61b009ca6970236ce4292cfb1026a3dad4407"
-profile-parser = "dd1e4a1201fb62c78422b3dd6c5afd7347d66b9b1f4a90bd136ba9f4b636886f"
+profile = "a867656934ce3c0af9af0a7fb569119997c64af4fedcd57e77df25732ee945b9"
+profile-parser = "32795bef750005cae0432ba2423849d4988ec5a04c3c59af22dfa248517cf76c"
 
 [[evidence]]
 source = "archive"
 symbol = "bb_wdt_int_enable"
 kind = "scenario/profile:archive-watchdog-interrupt-enable"
-digest = "397bd93b9ee9fc95864dac2250abf5f0aad865b59db108b49eceb06859ca2702"
+digest = "d29049567d4bfab9ddbd09089ab6ae5bab0b47c771516cb00c03f7b4f87c019c"
 
 [evidence.components]
-comparison-orchestrator = "f529c9f0178ac3960f29474bf1d58a40e7281b2c05fe0cfd9e24722470132b7b"
+comparison-orchestrator = "27135eb475a56cf828cf5008bbc171061017e5dde83ade44c1bfa6e78d93ba30"
 execution-image = "f46f7043c5bcc1c9ee1a8254cdd8792837871b62c63b77e6e8a4f7e5bde6822f"
 execution-machine = "b712c0de3daf70bfc8d7718a27913f626e1ac1bada2dc55d60842681c6ae8c0c"
 execution-model = "00671ac5331776c929cded74468b90f0b3c36c6fd4d9e5cdc4404ca5ba3aee5b"
-profile = "4653df6aecbfd21cdf60fad179fa1f250a300f3d892c929e9b5102ec649dd8c5"
-profile-parser = "dd1e4a1201fb62c78422b3dd6c5afd7347d66b9b1f4a90bd136ba9f4b636886f"
+profile = "1cf95aa5ab66e532b9c851b3803b87d2272ebd94e792f3eb3d1f4ecae078ce93"
+profile-parser = "32795bef750005cae0432ba2423849d4988ec5a04c3c59af22dfa248517cf76c"
 
 [[evidence]]
 source = "archive"
 symbol = "bb_wdt_rst_enable"
 kind = "scenario/profile:archive-watchdog-reset-enable"
-digest = "d57122d6edd0d97e225e5a3257ab00c350e585aff28ba62a244cb431e75a559c"
+digest = "e200852b72bb5eef81bc6f207be2353b4a85be814196440ff057ac32b0a77380"
 
 [evidence.components]
-comparison-orchestrator = "f529c9f0178ac3960f29474bf1d58a40e7281b2c05fe0cfd9e24722470132b7b"
+comparison-orchestrator = "27135eb475a56cf828cf5008bbc171061017e5dde83ade44c1bfa6e78d93ba30"
 execution-image = "f46f7043c5bcc1c9ee1a8254cdd8792837871b62c63b77e6e8a4f7e5bde6822f"
 execution-machine = "b712c0de3daf70bfc8d7718a27913f626e1ac1bada2dc55d60842681c6ae8c0c"
 execution-model = "00671ac5331776c929cded74468b90f0b3c36c6fd4d9e5cdc4404ca5ba3aee5b"
-profile = "1a38857e8cdd748400c3aea414189c0a81ef40dd9b8e5f92ec144bedf3c7b084"
-profile-parser = "dd1e4a1201fb62c78422b3dd6c5afd7347d66b9b1f4a90bd136ba9f4b636886f"
+profile = "5b907fc07f0897e4e152f0b2545d9c3fb1afc482263e6daeb7048f831f7e39eb"
+profile-parser = "32795bef750005cae0432ba2423849d4988ec5a04c3c59af22dfa248517cf76c"
 
 [[evidence]]
 source = "archive"
 symbol = "bb_wdt_timeout_clear"
 kind = "scenario/profile:archive-watchdog-timeout-clear"
-digest = "1a38acc746a456476a7daae446694c772dfc7e9e9baf5907e9536430d9646459"
+digest = "d5fe85dd741d28bbaecb01e0cd7f6e8b89c7dde00d0717e059b71a9c4c70c3d9"
 
 [evidence.components]
-comparison-orchestrator = "f529c9f0178ac3960f29474bf1d58a40e7281b2c05fe0cfd9e24722470132b7b"
+comparison-orchestrator = "27135eb475a56cf828cf5008bbc171061017e5dde83ade44c1bfa6e78d93ba30"
 execution-image = "f46f7043c5bcc1c9ee1a8254cdd8792837871b62c63b77e6e8a4f7e5bde6822f"
 execution-machine = "b712c0de3daf70bfc8d7718a27913f626e1ac1bada2dc55d60842681c6ae8c0c"
 execution-model = "00671ac5331776c929cded74468b90f0b3c36c6fd4d9e5cdc4404ca5ba3aee5b"
-profile = "ac140022fcb550e95689d02a0c8e10ff42ad451e4cb654ca2fea4cc47960ab78"
-profile-parser = "dd1e4a1201fb62c78422b3dd6c5afd7347d66b9b1f4a90bd136ba9f4b636886f"
+profile = "b1ca846179f505dc9940f9c822bacf5db421b4d76baacc8e702e3198468556b5"
+profile-parser = "32795bef750005cae0432ba2423849d4988ec5a04c3c59af22dfa248517cf76c"
 
 [[evidence]]
 source = "archive"
@@ -79,15 +79,15 @@ kind = "symbolic"
 source = "archive"
 symbol = "get_dc_value"
 kind = "scenario/profile:archive-dc-value-split"
-digest = "f46500a456dd10c894d37495990caa7d8a0f9e7eab0d57e8e54c8ef8a23f3a46"
+digest = "c054671bfc078e3bbf9197daafad6765e87857fbd861846a9c9f739c24a2a698"
 
 [evidence.components]
-comparison-orchestrator = "f529c9f0178ac3960f29474bf1d58a40e7281b2c05fe0cfd9e24722470132b7b"
+comparison-orchestrator = "27135eb475a56cf828cf5008bbc171061017e5dde83ade44c1bfa6e78d93ba30"
 execution-image = "f46f7043c5bcc1c9ee1a8254cdd8792837871b62c63b77e6e8a4f7e5bde6822f"
 execution-machine = "b712c0de3daf70bfc8d7718a27913f626e1ac1bada2dc55d60842681c6ae8c0c"
 execution-model = "00671ac5331776c929cded74468b90f0b3c36c6fd4d9e5cdc4404ca5ba3aee5b"
-profile = "5c77bb88b1de7a73ec4084ba78d0d1b59e5cccca6191fe895b882022712ae024"
-profile-parser = "dd1e4a1201fb62c78422b3dd6c5afd7347d66b9b1f4a90bd136ba9f4b636886f"
+profile = "1aa8196e42fc60cec36efabeecd5254642026e843a482f4c4f5eb079017187b2"
+profile-parser = "32795bef750005cae0432ba2423849d4988ec5a04c3c59af22dfa248517cf76c"
 
 [[evidence]]
 source = "archive"
@@ -98,21 +98,21 @@ kind = "symbolic"
 source = "archive"
 symbol = "phy_11p_set"
 kind = "state/profile:archive-dot11p-state"
-digest = "e94004f2ba27dd1aeafc434a4876977a436a60923b2e60a6e1d6e227d6962a61"
+digest = "b9e15236ccd39ab59fd4dbcf553894c105a6dee2d3809f04a1d4ae0bcf77b8bb"
 
 [evidence.components]
-comparison-orchestrator = "f529c9f0178ac3960f29474bf1d58a40e7281b2c05fe0cfd9e24722470132b7b"
+comparison-orchestrator = "27135eb475a56cf828cf5008bbc171061017e5dde83ade44c1bfa6e78d93ba30"
 execution-image = "f46f7043c5bcc1c9ee1a8254cdd8792837871b62c63b77e6e8a4f7e5bde6822f"
 execution-machine = "b712c0de3daf70bfc8d7718a27913f626e1ac1bada2dc55d60842681c6ae8c0c"
 execution-model = "00671ac5331776c929cded74468b90f0b3c36c6fd4d9e5cdc4404ca5ba3aee5b"
-profile = "647800caf0fe44dace380b2f53e798157dc58948409f3f3b37b45fabf7682568"
-profile-parser = "dd1e4a1201fb62c78422b3dd6c5afd7347d66b9b1f4a90bd136ba9f4b636886f"
+profile = "a7a967c071015db1f8876770d7ffb5d5106fe796435c76046318798921904b95"
+profile-parser = "32795bef750005cae0432ba2423849d4988ec5a04c3c59af22dfa248517cf76c"
 
 [[evidence]]
 source = "archive"
 symbol = "phy_bb_init"
 kind = "composition-state-scenario/esp32s31-baseband-init"
-digest = "9308c5322fa931fdfaa2fe111916e8df183b26867e1be4063d4789f3db6558cc"
+digest = "3c2138292ca2bda57bfba95ae574e5b11853eae536456c6941e4de20ad377a59"
 
 [evidence.components]
 "execution/image.rs" = "f46f7043c5bcc1c9ee1a8254cdd8792837871b62c63b77e6e8a4f7e5bde6822f"
@@ -126,12 +126,12 @@ digest = "9308c5322fa931fdfaa2fe111916e8df183b26867e1be4063d4789f3db6558cc"
 "qualification/completion/rx_gain.rs" = "97e54b12c7963cb84b2967289e9babb02e6bd57955804149b48a60433f48f670"
 "qualification/completion/rx_iq.rs" = "f85d1c4f0cedc755da49fe63df2b105e21266cca1b4a6eb4992d9d0fb21deba9"
 "qualification/completion/tx.rs" = "a67dab5353c51e15092eb62e1754f4f4c8b59d286f875e56c045b35288e02b10"
-"qualification/mod.rs" = "4af3ad93dd5f03ddbc7fa543922b90f35aba192e807af12352a6c7418bf0db76"
+"qualification/mod.rs" = "760d77164c085069dfca9d1dce22316fbde2d512853e02a5003b803feb369d77"
 "qualification/runner.rs" = "f4981cc7a2b7298e8352e24d68e49f8af9914d1a6db3621d304cdd3fb8629ffb"
 "qualification/runner/parents.rs" = "40adbf2438e393cfb9778fad0c56ff1745d3453c62cde945acbe4be340e3e37b"
 "qualification/state.rs" = "8d206cd5af397189b4e0daa68a51a4baed312e82fde29a35b5eaa466d7ac6869"
-"verification/execution.rs" = "b5244eb602f1fc3ee3f4981d95252b040022f371191f1319dcc41d7e213a96de"
-"verification/execution/scenario.rs" = "64801a80a0407f1e31f41f96df344673e924676516f4599b6c6b6918ceeb835a"
+"verification/execution.rs" = "ae0c2e61b04bfd888e816b9a3d1e6ba7aea59aea4308ace44159b3064cd7bc51"
+"verification/execution/scenario.rs" = "d7a6b96af1471260c323332c1f491f64790950e5a1deb9214df75b9e92051c3d"
 
 [[evidence]]
 source = "archive"
@@ -147,35 +147,35 @@ kind = "symbolic"
 source = "archive"
 symbol = "phy_ble_set_chan_base"
 kind = "state/profile:archive-ble-channel-base-state"
-digest = "8606ae0fb410168c18edd79f4a2cfba674c04f3b6427092de803499a8f2a86c6"
+digest = "5fa5640ebf3c0063280c9d3d0d05572c6b3c250eca5cdbdae315e213c1db5924"
 
 [evidence.components]
-comparison-orchestrator = "f529c9f0178ac3960f29474bf1d58a40e7281b2c05fe0cfd9e24722470132b7b"
+comparison-orchestrator = "27135eb475a56cf828cf5008bbc171061017e5dde83ade44c1bfa6e78d93ba30"
 execution-image = "f46f7043c5bcc1c9ee1a8254cdd8792837871b62c63b77e6e8a4f7e5bde6822f"
 execution-machine = "b712c0de3daf70bfc8d7718a27913f626e1ac1bada2dc55d60842681c6ae8c0c"
 execution-model = "00671ac5331776c929cded74468b90f0b3c36c6fd4d9e5cdc4404ca5ba3aee5b"
-profile = "c94d967f4c0ae15a3db3c472bf0518ea346d3bcd478d14e39110f1d82d525b86"
-profile-parser = "dd1e4a1201fb62c78422b3dd6c5afd7347d66b9b1f4a90bd136ba9f4b636886f"
+profile = "a93923db04f28f5bd2eadc98dadfd768b54566a9f6717cf702be79b0efe22c2b"
+profile-parser = "32795bef750005cae0432ba2423849d4988ec5a04c3c59af22dfa248517cf76c"
 
 [[evidence]]
 source = "archive"
 symbol = "phy_bt_power_track"
 kind = "state/profile:archive-bt-power-tracking-state"
-digest = "9ef43c6a40686b0844982e422b130c45c8ea4b367305293276d7ad507319ca22"
+digest = "65539492c736bfaead25bb568896c2de59047d79b38ef8c662cb6fca8802513e"
 
 [evidence.components]
-comparison-orchestrator = "f529c9f0178ac3960f29474bf1d58a40e7281b2c05fe0cfd9e24722470132b7b"
+comparison-orchestrator = "27135eb475a56cf828cf5008bbc171061017e5dde83ade44c1bfa6e78d93ba30"
 execution-image = "f46f7043c5bcc1c9ee1a8254cdd8792837871b62c63b77e6e8a4f7e5bde6822f"
 execution-machine = "b712c0de3daf70bfc8d7718a27913f626e1ac1bada2dc55d60842681c6ae8c0c"
 execution-model = "00671ac5331776c929cded74468b90f0b3c36c6fd4d9e5cdc4404ca5ba3aee5b"
-profile = "c9be75c87cc51a8f0c8ea84883762a2d2a17c39447d84f65dcdbe7c2bfcaa598"
-profile-parser = "dd1e4a1201fb62c78422b3dd6c5afd7347d66b9b1f4a90bd136ba9f4b636886f"
+profile = "02079c8c66613f28f820680c20f070f22b8c8735500b504f85ce2012ee7dd441"
+profile-parser = "32795bef750005cae0432ba2423849d4988ec5a04c3c59af22dfa248517cf76c"
 
 [[evidence]]
 source = "archive"
 symbol = "phy_bt_tx_gain_init"
 kind = "composition-state-scenario/esp32s31-bluetooth-tx-gain-init"
-digest = "7d0c568bde703963f00c226f66efca04bdd84a1ab49e735ca44e0b446bc74e48"
+digest = "2faf20c404063090c28e21ef5d002cc19e1951c8510719b122c33029fa178f01"
 
 [evidence.components]
 "execution/image.rs" = "f46f7043c5bcc1c9ee1a8254cdd8792837871b62c63b77e6e8a4f7e5bde6822f"
@@ -189,18 +189,18 @@ digest = "7d0c568bde703963f00c226f66efca04bdd84a1ab49e735ca44e0b446bc74e48"
 "qualification/completion/rx_gain.rs" = "97e54b12c7963cb84b2967289e9babb02e6bd57955804149b48a60433f48f670"
 "qualification/completion/rx_iq.rs" = "f85d1c4f0cedc755da49fe63df2b105e21266cca1b4a6eb4992d9d0fb21deba9"
 "qualification/completion/tx.rs" = "a67dab5353c51e15092eb62e1754f4f4c8b59d286f875e56c045b35288e02b10"
-"qualification/mod.rs" = "4af3ad93dd5f03ddbc7fa543922b90f35aba192e807af12352a6c7418bf0db76"
+"qualification/mod.rs" = "760d77164c085069dfca9d1dce22316fbde2d512853e02a5003b803feb369d77"
 "qualification/runner.rs" = "f4981cc7a2b7298e8352e24d68e49f8af9914d1a6db3621d304cdd3fb8629ffb"
 "qualification/runner/parents.rs" = "40adbf2438e393cfb9778fad0c56ff1745d3453c62cde945acbe4be340e3e37b"
 "qualification/state.rs" = "8d206cd5af397189b4e0daa68a51a4baed312e82fde29a35b5eaa466d7ac6869"
-"verification/execution.rs" = "b5244eb602f1fc3ee3f4981d95252b040022f371191f1319dcc41d7e213a96de"
-"verification/execution/scenario.rs" = "64801a80a0407f1e31f41f96df344673e924676516f4599b6c6b6918ceeb835a"
+"verification/execution.rs" = "ae0c2e61b04bfd888e816b9a3d1e6ba7aea59aea4308ace44159b3064cd7bc51"
+"verification/execution/scenario.rs" = "d7a6b96af1471260c323332c1f491f64790950e5a1deb9214df75b9e92051c3d"
 
 [[evidence]]
 source = "archive"
 symbol = "phy_bt_tx_pwctrl_init"
 kind = "composition-state-scenario/esp32s31-bluetooth-tx-power"
-digest = "4120e344bad10e9e85a866303b22d49f27e71311ab4f25833257ec4079d8a598"
+digest = "32426afa293b9024cdbed3714ddce29f04f42f779fcb4e44124dffef3532eea7"
 
 [evidence.components]
 "execution/image.rs" = "f46f7043c5bcc1c9ee1a8254cdd8792837871b62c63b77e6e8a4f7e5bde6822f"
@@ -214,18 +214,18 @@ digest = "4120e344bad10e9e85a866303b22d49f27e71311ab4f25833257ec4079d8a598"
 "qualification/completion/rx_gain.rs" = "97e54b12c7963cb84b2967289e9babb02e6bd57955804149b48a60433f48f670"
 "qualification/completion/rx_iq.rs" = "f85d1c4f0cedc755da49fe63df2b105e21266cca1b4a6eb4992d9d0fb21deba9"
 "qualification/completion/tx.rs" = "a67dab5353c51e15092eb62e1754f4f4c8b59d286f875e56c045b35288e02b10"
-"qualification/mod.rs" = "4af3ad93dd5f03ddbc7fa543922b90f35aba192e807af12352a6c7418bf0db76"
+"qualification/mod.rs" = "760d77164c085069dfca9d1dce22316fbde2d512853e02a5003b803feb369d77"
 "qualification/runner.rs" = "f4981cc7a2b7298e8352e24d68e49f8af9914d1a6db3621d304cdd3fb8629ffb"
 "qualification/runner/parents.rs" = "40adbf2438e393cfb9778fad0c56ff1745d3453c62cde945acbe4be340e3e37b"
 "qualification/state.rs" = "8d206cd5af397189b4e0daa68a51a4baed312e82fde29a35b5eaa466d7ac6869"
-"verification/execution.rs" = "b5244eb602f1fc3ee3f4981d95252b040022f371191f1319dcc41d7e213a96de"
-"verification/execution/scenario.rs" = "64801a80a0407f1e31f41f96df344673e924676516f4599b6c6b6918ceeb835a"
+"verification/execution.rs" = "ae0c2e61b04bfd888e816b9a3d1e6ba7aea59aea4308ace44159b3064cd7bc51"
+"verification/execution/scenario.rs" = "d7a6b96af1471260c323332c1f491f64790950e5a1deb9214df75b9e92051c3d"
 
 [[evidence]]
 source = "archive"
 symbol = "phy_bt_txdc_cal_new"
 kind = "composition-state-scenario/esp32s31-bluetooth-txdc"
-digest = "aa461c08d78c143545d104dc62e38ee2c9ba20ae2b950016a5a6f5ac9e2402db"
+digest = "148b94f6f064c950dc6a981c33e81ffb2387b0439358dfa68e9c2c4492bea07c"
 
 [evidence.components]
 "execution/image.rs" = "f46f7043c5bcc1c9ee1a8254cdd8792837871b62c63b77e6e8a4f7e5bde6822f"
@@ -239,18 +239,18 @@ digest = "aa461c08d78c143545d104dc62e38ee2c9ba20ae2b950016a5a6f5ac9e2402db"
 "qualification/completion/rx_gain.rs" = "97e54b12c7963cb84b2967289e9babb02e6bd57955804149b48a60433f48f670"
 "qualification/completion/rx_iq.rs" = "f85d1c4f0cedc755da49fe63df2b105e21266cca1b4a6eb4992d9d0fb21deba9"
 "qualification/completion/tx.rs" = "a67dab5353c51e15092eb62e1754f4f4c8b59d286f875e56c045b35288e02b10"
-"qualification/mod.rs" = "4af3ad93dd5f03ddbc7fa543922b90f35aba192e807af12352a6c7418bf0db76"
+"qualification/mod.rs" = "760d77164c085069dfca9d1dce22316fbde2d512853e02a5003b803feb369d77"
 "qualification/runner.rs" = "f4981cc7a2b7298e8352e24d68e49f8af9914d1a6db3621d304cdd3fb8629ffb"
 "qualification/runner/parents.rs" = "40adbf2438e393cfb9778fad0c56ff1745d3453c62cde945acbe4be340e3e37b"
 "qualification/state.rs" = "8d206cd5af397189b4e0daa68a51a4baed312e82fde29a35b5eaa466d7ac6869"
-"verification/execution.rs" = "b5244eb602f1fc3ee3f4981d95252b040022f371191f1319dcc41d7e213a96de"
-"verification/execution/scenario.rs" = "64801a80a0407f1e31f41f96df344673e924676516f4599b6c6b6918ceeb835a"
+"verification/execution.rs" = "ae0c2e61b04bfd888e816b9a3d1e6ba7aea59aea4308ace44159b3064cd7bc51"
+"verification/execution/scenario.rs" = "d7a6b96af1471260c323332c1f491f64790950e5a1deb9214df75b9e92051c3d"
 
 [[evidence]]
 source = "archive"
 symbol = "phy_chip_set_chan"
 kind = "composition-state-scenario/esp32s31-channel"
-digest = "7e50205cd4b078828733bb5c98b9fe69d5c76417a32247cff324c17d316eb3ff"
+digest = "a10fb708f87b3bfbcf190a2ac086d44474622359c8562946ac2539882190fd2f"
 
 [evidence.components]
 "execution/image.rs" = "f46f7043c5bcc1c9ee1a8254cdd8792837871b62c63b77e6e8a4f7e5bde6822f"
@@ -264,12 +264,12 @@ digest = "7e50205cd4b078828733bb5c98b9fe69d5c76417a32247cff324c17d316eb3ff"
 "qualification/completion/rx_gain.rs" = "97e54b12c7963cb84b2967289e9babb02e6bd57955804149b48a60433f48f670"
 "qualification/completion/rx_iq.rs" = "f85d1c4f0cedc755da49fe63df2b105e21266cca1b4a6eb4992d9d0fb21deba9"
 "qualification/completion/tx.rs" = "a67dab5353c51e15092eb62e1754f4f4c8b59d286f875e56c045b35288e02b10"
-"qualification/mod.rs" = "4af3ad93dd5f03ddbc7fa543922b90f35aba192e807af12352a6c7418bf0db76"
+"qualification/mod.rs" = "760d77164c085069dfca9d1dce22316fbde2d512853e02a5003b803feb369d77"
 "qualification/runner.rs" = "f4981cc7a2b7298e8352e24d68e49f8af9914d1a6db3621d304cdd3fb8629ffb"
 "qualification/runner/parents.rs" = "40adbf2438e393cfb9778fad0c56ff1745d3453c62cde945acbe4be340e3e37b"
 "qualification/state.rs" = "8d206cd5af397189b4e0daa68a51a4baed312e82fde29a35b5eaa466d7ac6869"
-"verification/execution.rs" = "b5244eb602f1fc3ee3f4981d95252b040022f371191f1319dcc41d7e213a96de"
-"verification/execution/scenario.rs" = "64801a80a0407f1e31f41f96df344673e924676516f4599b6c6b6918ceeb835a"
+"verification/execution.rs" = "ae0c2e61b04bfd888e816b9a3d1e6ba7aea59aea4308ace44159b3064cd7bc51"
+"verification/execution/scenario.rs" = "d7a6b96af1471260c323332c1f491f64790950e5a1deb9214df75b9e92051c3d"
 
 [[evidence]]
 source = "archive"
@@ -285,15 +285,15 @@ kind = "symbolic"
 source = "archive"
 symbol = "phy_current_level_set"
 kind = "state/profile:archive-current-level-state"
-digest = "14ee30c3147f5340d819a2a5ac59829786ffda04f7d7e8c7a46a86a8f1f73de0"
+digest = "e437a76f68c6e5dd56e5c061474bbbedbfccc117a130e4bcfa965a4218c4293f"
 
 [evidence.components]
-comparison-orchestrator = "f529c9f0178ac3960f29474bf1d58a40e7281b2c05fe0cfd9e24722470132b7b"
+comparison-orchestrator = "27135eb475a56cf828cf5008bbc171061017e5dde83ade44c1bfa6e78d93ba30"
 execution-image = "f46f7043c5bcc1c9ee1a8254cdd8792837871b62c63b77e6e8a4f7e5bde6822f"
 execution-machine = "b712c0de3daf70bfc8d7718a27913f626e1ac1bada2dc55d60842681c6ae8c0c"
 execution-model = "00671ac5331776c929cded74468b90f0b3c36c6fd4d9e5cdc4404ca5ba3aee5b"
-profile = "806ab39949bf5865ee5e06cc448766800e2c36bdbe17128eb6eac4ca6bac5e42"
-profile-parser = "dd1e4a1201fb62c78422b3dd6c5afd7347d66b9b1f4a90bd136ba9f4b636886f"
+profile = "7402dc57935b2cd4020a35d3e510537e3dcf0307daf6962c55b24a7929d85f75"
+profile-parser = "32795bef750005cae0432ba2423849d4988ec5a04c3c59af22dfa248517cf76c"
 
 [[evidence]]
 source = "archive"
@@ -309,15 +309,15 @@ kind = "symbolic"
 source = "archive"
 symbol = "phy_force_iccfr"
 kind = "scenario/profile:archive-force-iccfr"
-digest = "f92773b04e2fe644b0df90204a4133b990d0b23a71cd29b18077dcd9812114c1"
+digest = "c7aa5648158661aa1958f837265721f82feafd06fd7bd2b686c61eb90e924b38"
 
 [evidence.components]
-comparison-orchestrator = "f529c9f0178ac3960f29474bf1d58a40e7281b2c05fe0cfd9e24722470132b7b"
+comparison-orchestrator = "27135eb475a56cf828cf5008bbc171061017e5dde83ade44c1bfa6e78d93ba30"
 execution-image = "f46f7043c5bcc1c9ee1a8254cdd8792837871b62c63b77e6e8a4f7e5bde6822f"
 execution-machine = "b712c0de3daf70bfc8d7718a27913f626e1ac1bada2dc55d60842681c6ae8c0c"
 execution-model = "00671ac5331776c929cded74468b90f0b3c36c6fd4d9e5cdc4404ca5ba3aee5b"
-profile = "052e862b89d80cf27c411de0940563b41d2b88bb640adf375ea6606e2d017a33"
-profile-parser = "dd1e4a1201fb62c78422b3dd6c5afd7347d66b9b1f4a90bd136ba9f4b636886f"
+profile = "71fa51046fcf70235a55d3743944f13795fdd3281518d16f95883e914333f751"
+profile-parser = "32795bef750005cae0432ba2423849d4988ec5a04c3c59af22dfa248517cf76c"
 
 [[evidence]]
 source = "archive"
@@ -358,57 +358,57 @@ kind = "symbolic"
 source = "archive"
 symbol = "phy_i2c_master_command_mem_cfg"
 kind = "scenario/profile:archive-i2c-command-memory-configuration"
-digest = "b629e93702599c43342ee92e7732cc3333bdb6e4603d8f4e9f793046bd9b7514"
+digest = "b083b9898840e4243fe78c7bdb2f2db2bedd4b4cd532e6f5db4422a09820895e"
 
 [evidence.components]
-comparison-orchestrator = "f529c9f0178ac3960f29474bf1d58a40e7281b2c05fe0cfd9e24722470132b7b"
+comparison-orchestrator = "27135eb475a56cf828cf5008bbc171061017e5dde83ade44c1bfa6e78d93ba30"
 execution-image = "f46f7043c5bcc1c9ee1a8254cdd8792837871b62c63b77e6e8a4f7e5bde6822f"
 execution-machine = "b712c0de3daf70bfc8d7718a27913f626e1ac1bada2dc55d60842681c6ae8c0c"
 execution-model = "00671ac5331776c929cded74468b90f0b3c36c6fd4d9e5cdc4404ca5ba3aee5b"
-profile = "174ef533148ad53457418eb79aaa29b13427a98c5efa4ab09111de08b1088196"
-profile-parser = "dd1e4a1201fb62c78422b3dd6c5afd7347d66b9b1f4a90bd136ba9f4b636886f"
+profile = "0cdfe0b06c578c1c1e09add9ff10a20015bc84c6c6e68f99a10e7bfb39b4ba80"
+profile-parser = "32795bef750005cae0432ba2423849d4988ec5a04c3c59af22dfa248517cf76c"
 
 [[evidence]]
 source = "archive"
 symbol = "phy_i2c_master_mem_cfg"
 kind = "scenario/profile:archive-i2c-master-memory-configuration"
-digest = "166a0f893b372ca94e5b8731014f6c119ec255be1db55baa40ef959aa31f1319"
+digest = "4ff36433f04632c31f20fca6de9360c3f583ac6573bb7e788724b9172f2f1ae6"
 
 [evidence.components]
-comparison-orchestrator = "f529c9f0178ac3960f29474bf1d58a40e7281b2c05fe0cfd9e24722470132b7b"
+comparison-orchestrator = "27135eb475a56cf828cf5008bbc171061017e5dde83ade44c1bfa6e78d93ba30"
 execution-image = "f46f7043c5bcc1c9ee1a8254cdd8792837871b62c63b77e6e8a4f7e5bde6822f"
 execution-machine = "b712c0de3daf70bfc8d7718a27913f626e1ac1bada2dc55d60842681c6ae8c0c"
 execution-model = "00671ac5331776c929cded74468b90f0b3c36c6fd4d9e5cdc4404ca5ba3aee5b"
-profile = "b0d70d0a93a28bf9311ef29c394b9589d6613518accc51bbad5e76cd0e601c70"
-profile-parser = "dd1e4a1201fb62c78422b3dd6c5afd7347d66b9b1f4a90bd136ba9f4b636886f"
+profile = "54c51c2ce6d15d749c2a0e1b742eb4510ecf4fbb2cd088ca391c0fb88ce470da"
+profile-parser = "32795bef750005cae0432ba2423849d4988ec5a04c3c59af22dfa248517cf76c"
 
 [[evidence]]
 source = "archive"
 symbol = "phy_iccfr_en"
 kind = "scenario/profile:archive-iccfr-enable"
-digest = "6e078ec3c2bd71db1ff099ee96f1dc955e3466b46781f6af8e44ead3310fc23f"
+digest = "95635d6ca6e4db83d074518aa855dc3a7a9504003094948ef0a119a72ace51ce"
 
 [evidence.components]
-comparison-orchestrator = "f529c9f0178ac3960f29474bf1d58a40e7281b2c05fe0cfd9e24722470132b7b"
+comparison-orchestrator = "27135eb475a56cf828cf5008bbc171061017e5dde83ade44c1bfa6e78d93ba30"
 execution-image = "f46f7043c5bcc1c9ee1a8254cdd8792837871b62c63b77e6e8a4f7e5bde6822f"
 execution-machine = "b712c0de3daf70bfc8d7718a27913f626e1ac1bada2dc55d60842681c6ae8c0c"
 execution-model = "00671ac5331776c929cded74468b90f0b3c36c6fd4d9e5cdc4404ca5ba3aee5b"
-profile = "44ed6931b03510f65df0adccf362860354165e83f8afc7859af0a1c9213b66f1"
-profile-parser = "dd1e4a1201fb62c78422b3dd6c5afd7347d66b9b1f4a90bd136ba9f4b636886f"
+profile = "aeedc20791fa3bbb431e7d786aca2102a824d712716674c75a5dfb1fec30a7c9"
+profile-parser = "32795bef750005cae0432ba2423849d4988ec5a04c3c59af22dfa248517cf76c"
 
 [[evidence]]
 source = "archive"
 symbol = "phy_init_param_set"
 kind = "state/profile:archive-initialization-parameter-state"
-digest = "518b3d7a03b9a843d9079214b7295e85de8d68a82ad8a2daf30a6dd82067deb2"
+digest = "a5fb2ae82ef9f094c5363c20fb78d9c0385219cbb0ef2503d39cb7254f2b000e"
 
 [evidence.components]
-comparison-orchestrator = "f529c9f0178ac3960f29474bf1d58a40e7281b2c05fe0cfd9e24722470132b7b"
+comparison-orchestrator = "27135eb475a56cf828cf5008bbc171061017e5dde83ade44c1bfa6e78d93ba30"
 execution-image = "f46f7043c5bcc1c9ee1a8254cdd8792837871b62c63b77e6e8a4f7e5bde6822f"
 execution-machine = "b712c0de3daf70bfc8d7718a27913f626e1ac1bada2dc55d60842681c6ae8c0c"
 execution-model = "00671ac5331776c929cded74468b90f0b3c36c6fd4d9e5cdc4404ca5ba3aee5b"
-profile = "70e82d7fccb994733da6798e6a091feaa0177daed0b7b0792eec0a3db52f7789"
-profile-parser = "dd1e4a1201fb62c78422b3dd6c5afd7347d66b9b1f4a90bd136ba9f4b636886f"
+profile = "c6babf7f18986b8ba47c1a1cf51c139a08c51697135f99b90b032dca7de5e19c"
+profile-parser = "32795bef750005cae0432ba2423849d4988ec5a04c3c59af22dfa248517cf76c"
 
 [[evidence]]
 source = "archive"
@@ -429,21 +429,21 @@ kind = "symbolic"
 source = "archive"
 symbol = "phy_reg_update_new"
 kind = "scenario/profile:archive-post-initialization-register-update"
-digest = "0575e1abd80d1a24672fc680548ec1e3e5f02738a2bd7e9c48e5050519b65c1f"
+digest = "7c9afec3d4107eab60ad41d6c0acb8dd830aaf4e5a1bb3c91c9f1d44193d778f"
 
 [evidence.components]
-comparison-orchestrator = "f529c9f0178ac3960f29474bf1d58a40e7281b2c05fe0cfd9e24722470132b7b"
+comparison-orchestrator = "27135eb475a56cf828cf5008bbc171061017e5dde83ade44c1bfa6e78d93ba30"
 execution-image = "f46f7043c5bcc1c9ee1a8254cdd8792837871b62c63b77e6e8a4f7e5bde6822f"
 execution-machine = "b712c0de3daf70bfc8d7718a27913f626e1ac1bada2dc55d60842681c6ae8c0c"
 execution-model = "00671ac5331776c929cded74468b90f0b3c36c6fd4d9e5cdc4404ca5ba3aee5b"
-profile = "1fc8479cef1ba64f829f23039e0e08d1f736978e58eaf92d95332e1eb1edf112"
-profile-parser = "dd1e4a1201fb62c78422b3dd6c5afd7347d66b9b1f4a90bd136ba9f4b636886f"
+profile = "b102ac775b80abb9fd7fc7ce39ccc2d1f651f69d168cf74f5fab91194969afcd"
+profile-parser = "32795bef750005cae0432ba2423849d4988ec5a04c3c59af22dfa248517cf76c"
 
 [[evidence]]
 source = "archive"
 symbol = "phy_rf_init"
 kind = "composition-state-scenario/esp32s31-rf-init"
-digest = "bfb815996bf0922690d8215323aee85e606a2354374c9232d1051b4fe7547f19"
+digest = "04047cafd56eb2c51caf56d1bfbe6e4a5b801d3b54c9cc97fdb30897a9da4185"
 
 [evidence.components]
 "execution/image.rs" = "f46f7043c5bcc1c9ee1a8254cdd8792837871b62c63b77e6e8a4f7e5bde6822f"
@@ -456,13 +456,13 @@ digest = "bfb815996bf0922690d8215323aee85e606a2354374c9232d1051b4fe7547f19"
 "qualification/completion/rx_gain.rs" = "97e54b12c7963cb84b2967289e9babb02e6bd57955804149b48a60433f48f670"
 "qualification/completion/rx_iq.rs" = "f85d1c4f0cedc755da49fe63df2b105e21266cca1b4a6eb4992d9d0fb21deba9"
 "qualification/completion/tx.rs" = "a67dab5353c51e15092eb62e1754f4f4c8b59d286f875e56c045b35288e02b10"
-"qualification/mod.rs" = "4af3ad93dd5f03ddbc7fa543922b90f35aba192e807af12352a6c7418bf0db76"
+"qualification/mod.rs" = "760d77164c085069dfca9d1dce22316fbde2d512853e02a5003b803feb369d77"
 "qualification/rf_init.rs" = "06cc74b2985f56ecd08aa80272b6b6dca3cb960e06db25c4de5abbabe691ce43"
 "qualification/runner.rs" = "f4981cc7a2b7298e8352e24d68e49f8af9914d1a6db3621d304cdd3fb8629ffb"
 "qualification/runner/parents.rs" = "40adbf2438e393cfb9778fad0c56ff1745d3453c62cde945acbe4be340e3e37b"
 "qualification/state.rs" = "8d206cd5af397189b4e0daa68a51a4baed312e82fde29a35b5eaa466d7ac6869"
-"verification/execution.rs" = "b5244eb602f1fc3ee3f4981d95252b040022f371191f1319dcc41d7e213a96de"
-"verification/execution/scenario.rs" = "64801a80a0407f1e31f41f96df344673e924676516f4599b6c6b6918ceeb835a"
+"verification/execution.rs" = "ae0c2e61b04bfd888e816b9a3d1e6ba7aea59aea4308ace44159b3064cd7bc51"
+"verification/execution/scenario.rs" = "d7a6b96af1471260c323332c1f491f64790950e5a1deb9214df75b9e92051c3d"
 
 [[evidence]]
 source = "archive"
@@ -483,35 +483,35 @@ kind = "symbolic"
 source = "archive"
 symbol = "phy_track_temp_debug"
 kind = "state/profile:archive-temperature-tracking-debug-state"
-digest = "ea728ddc3bae1ca860651bf48bf370acc39796b16e6e87cf249a5eb9fe440c0a"
+digest = "237d17c80cb96fd7a480b171762a5e09db092ef93c4ad3e6e09c831dabbb859a"
 
 [evidence.components]
-comparison-orchestrator = "f529c9f0178ac3960f29474bf1d58a40e7281b2c05fe0cfd9e24722470132b7b"
+comparison-orchestrator = "27135eb475a56cf828cf5008bbc171061017e5dde83ade44c1bfa6e78d93ba30"
 execution-image = "f46f7043c5bcc1c9ee1a8254cdd8792837871b62c63b77e6e8a4f7e5bde6822f"
 execution-machine = "b712c0de3daf70bfc8d7718a27913f626e1ac1bada2dc55d60842681c6ae8c0c"
 execution-model = "00671ac5331776c929cded74468b90f0b3c36c6fd4d9e5cdc4404ca5ba3aee5b"
-profile = "fa3bad0a69c7cbc114349ceffb353300c770c561a555a624850e76bd30faa1d4"
-profile-parser = "dd1e4a1201fb62c78422b3dd6c5afd7347d66b9b1f4a90bd136ba9f4b636886f"
+profile = "655aa49d1fc42357b4751b51ff9e592a2365799b934aa3965291cf41b771fceb"
+profile-parser = "32795bef750005cae0432ba2423849d4988ec5a04c3c59af22dfa248517cf76c"
 
 [[evidence]]
 source = "archive"
 symbol = "phy_tx_atten_comp"
 kind = "scenario/profile:archive-tx-attenuation-compensation"
-digest = "70d4b15ef60761d4d52992f84de862e23c303a39b57b98392021b0d6dfb2c2dd"
+digest = "dc1e0ef690d027fcd8d0fe9395099bf56c2eb7675994321721d4c8e232c423ce"
 
 [evidence.components]
-comparison-orchestrator = "f529c9f0178ac3960f29474bf1d58a40e7281b2c05fe0cfd9e24722470132b7b"
+comparison-orchestrator = "27135eb475a56cf828cf5008bbc171061017e5dde83ade44c1bfa6e78d93ba30"
 execution-image = "f46f7043c5bcc1c9ee1a8254cdd8792837871b62c63b77e6e8a4f7e5bde6822f"
 execution-machine = "b712c0de3daf70bfc8d7718a27913f626e1ac1bada2dc55d60842681c6ae8c0c"
 execution-model = "00671ac5331776c929cded74468b90f0b3c36c6fd4d9e5cdc4404ca5ba3aee5b"
-profile = "04a3050ca11986b775d1aaa8d8cfc44069d85797809c3ae55b0d693ffb22d9a6"
-profile-parser = "dd1e4a1201fb62c78422b3dd6c5afd7347d66b9b1f4a90bd136ba9f4b636886f"
+profile = "cfe206d5dc96d8a4e6fa65da21af22f5ad980b1d5105490b8dd5a0d7be3ed7a2"
+profile-parser = "32795bef750005cae0432ba2423849d4988ec5a04c3c59af22dfa248517cf76c"
 
 [[evidence]]
 source = "archive"
 symbol = "phy_txdc_cal_pwdet_init"
 kind = "composition-state-scenario/esp32s31-bluetooth-txdc-pwdet"
-digest = "f2ed81342fcc158280e18efb0e303fa05622f69b9250b974a70f38f550495c16"
+digest = "d70f671bef9cf2403d363ad719822d99085bed07aa49957ea61ae82479a9578e"
 
 [evidence.components]
 "execution/image.rs" = "f46f7043c5bcc1c9ee1a8254cdd8792837871b62c63b77e6e8a4f7e5bde6822f"
@@ -525,32 +525,32 @@ digest = "f2ed81342fcc158280e18efb0e303fa05622f69b9250b974a70f38f550495c16"
 "qualification/completion/rx_gain.rs" = "97e54b12c7963cb84b2967289e9babb02e6bd57955804149b48a60433f48f670"
 "qualification/completion/rx_iq.rs" = "f85d1c4f0cedc755da49fe63df2b105e21266cca1b4a6eb4992d9d0fb21deba9"
 "qualification/completion/tx.rs" = "a67dab5353c51e15092eb62e1754f4f4c8b59d286f875e56c045b35288e02b10"
-"qualification/mod.rs" = "4af3ad93dd5f03ddbc7fa543922b90f35aba192e807af12352a6c7418bf0db76"
+"qualification/mod.rs" = "760d77164c085069dfca9d1dce22316fbde2d512853e02a5003b803feb369d77"
 "qualification/runner.rs" = "f4981cc7a2b7298e8352e24d68e49f8af9914d1a6db3621d304cdd3fb8629ffb"
 "qualification/runner/parents.rs" = "40adbf2438e393cfb9778fad0c56ff1745d3453c62cde945acbe4be340e3e37b"
 "qualification/state.rs" = "8d206cd5af397189b4e0daa68a51a4baed312e82fde29a35b5eaa466d7ac6869"
-"verification/execution.rs" = "b5244eb602f1fc3ee3f4981d95252b040022f371191f1319dcc41d7e213a96de"
-"verification/execution/scenario.rs" = "64801a80a0407f1e31f41f96df344673e924676516f4599b6c6b6918ceeb835a"
+"verification/execution.rs" = "ae0c2e61b04bfd888e816b9a3d1e6ba7aea59aea4308ace44159b3064cd7bc51"
+"verification/execution/scenario.rs" = "d7a6b96af1471260c323332c1f491f64790950e5a1deb9214df75b9e92051c3d"
 
 [[evidence]]
 source = "archive"
 symbol = "read_hw_noisefloor"
 kind = "scenario/profile:archive-read-hardware-noise-floor"
-digest = "246d51f8535bed77b0dd237753344577b3f9d8c3cb1976a46f7dcb58f8d41803"
+digest = "3c66c56ad63c5e105ea302b3a748f67e84c8a800ca44626b406d5ddf3b500b5b"
 
 [evidence.components]
-comparison-orchestrator = "f529c9f0178ac3960f29474bf1d58a40e7281b2c05fe0cfd9e24722470132b7b"
+comparison-orchestrator = "27135eb475a56cf828cf5008bbc171061017e5dde83ade44c1bfa6e78d93ba30"
 execution-image = "f46f7043c5bcc1c9ee1a8254cdd8792837871b62c63b77e6e8a4f7e5bde6822f"
 execution-machine = "b712c0de3daf70bfc8d7718a27913f626e1ac1bada2dc55d60842681c6ae8c0c"
 execution-model = "00671ac5331776c929cded74468b90f0b3c36c6fd4d9e5cdc4404ca5ba3aee5b"
-profile = "714919cee4a81e83420d9fdeca8a78defa208ac903ed0394faa5926002d53f8d"
-profile-parser = "dd1e4a1201fb62c78422b3dd6c5afd7347d66b9b1f4a90bd136ba9f4b636886f"
+profile = "c6edc91783468b60388dc25e3d9696d54dd1d7e4569962e35368dbc873bae212"
+profile-parser = "32795bef750005cae0432ba2423849d4988ec5a04c3c59af22dfa248517cf76c"
 
 [[evidence]]
 source = "archive"
 symbol = "register_chipv7_phy"
 kind = "composition-state-scenario/esp32s31-register-init"
-digest = "83cdfe812461e46ce133be8db8b55fbe5cd2e43da7f9f10f670aa3df451c2dad"
+digest = "638f6c481dea44ae19ff4ee5e812324241dfe89635f3b17a1ab4ea17385ae42c"
 
 [evidence.components]
 "execution/image.rs" = "f46f7043c5bcc1c9ee1a8254cdd8792837871b62c63b77e6e8a4f7e5bde6822f"
@@ -563,13 +563,13 @@ digest = "83cdfe812461e46ce133be8db8b55fbe5cd2e43da7f9f10f670aa3df451c2dad"
 "qualification/completion/rx_gain.rs" = "97e54b12c7963cb84b2967289e9babb02e6bd57955804149b48a60433f48f670"
 "qualification/completion/rx_iq.rs" = "f85d1c4f0cedc755da49fe63df2b105e21266cca1b4a6eb4992d9d0fb21deba9"
 "qualification/completion/tx.rs" = "a67dab5353c51e15092eb62e1754f4f4c8b59d286f875e56c045b35288e02b10"
-"qualification/mod.rs" = "4af3ad93dd5f03ddbc7fa543922b90f35aba192e807af12352a6c7418bf0db76"
+"qualification/mod.rs" = "760d77164c085069dfca9d1dce22316fbde2d512853e02a5003b803feb369d77"
 "qualification/register_init.rs" = "d0d1ebbf77f9f27fa01e233cf9600f0ab5521cb3176fb923870b55d6d3426bfc"
 "qualification/runner.rs" = "f4981cc7a2b7298e8352e24d68e49f8af9914d1a6db3621d304cdd3fb8629ffb"
 "qualification/runner/parents.rs" = "40adbf2438e393cfb9778fad0c56ff1745d3453c62cde945acbe4be340e3e37b"
 "qualification/state.rs" = "8d206cd5af397189b4e0daa68a51a4baed312e82fde29a35b5eaa466d7ac6869"
-"verification/execution.rs" = "b5244eb602f1fc3ee3f4981d95252b040022f371191f1319dcc41d7e213a96de"
-"verification/execution/scenario.rs" = "64801a80a0407f1e31f41f96df344673e924676516f4599b6c6b6918ceeb835a"
+"verification/execution.rs" = "ae0c2e61b04bfd888e816b9a3d1e6ba7aea59aea4308ace44159b3064cd7bc51"
+"verification/execution/scenario.rs" = "d7a6b96af1471260c323332c1f491f64790950e5a1deb9214df75b9e92051c3d"
 
 [[evidence]]
 source = "archive"
@@ -580,29 +580,29 @@ kind = "symbolic"
 source = "rom"
 symbol = "phy_abs_temp"
 kind = "scenario/profile:rom-absolute-temperature"
-digest = "3817ad09c00a05d5815080b4873dc35c0061dc4c8fdcc1ce623b7b4778f8c617"
+digest = "c1f20497080d9dc5f6d90eacd3a53912309529ae4fef19d2c5d93a021a61e9e4"
 
 [evidence.components]
-comparison-orchestrator = "f529c9f0178ac3960f29474bf1d58a40e7281b2c05fe0cfd9e24722470132b7b"
+comparison-orchestrator = "27135eb475a56cf828cf5008bbc171061017e5dde83ade44c1bfa6e78d93ba30"
 execution-image = "f46f7043c5bcc1c9ee1a8254cdd8792837871b62c63b77e6e8a4f7e5bde6822f"
 execution-machine = "b712c0de3daf70bfc8d7718a27913f626e1ac1bada2dc55d60842681c6ae8c0c"
 execution-model = "00671ac5331776c929cded74468b90f0b3c36c6fd4d9e5cdc4404ca5ba3aee5b"
-profile = "bd8c9b523def50070ced453439547166a2867a7e3d840ef94c12a61aa31caa65"
-profile-parser = "dd1e4a1201fb62c78422b3dd6c5afd7347d66b9b1f4a90bd136ba9f4b636886f"
+profile = "9e791846eb0895458c919672e4742ea40059ead3a9e89582889d1b38488d1b45"
+profile-parser = "32795bef750005cae0432ba2423849d4988ec5a04c3c59af22dfa248517cf76c"
 
 [[evidence]]
 source = "rom"
 symbol = "phy_agc_reg_init"
 kind = "scenario/profile:rom-agc-register-init"
-digest = "961f9361c8345e2299e22544ffe68c55ff8c5b9222e0ce58982f63ff9d5a046e"
+digest = "f80e9e69a91f1f09392c1aa352d894efbb7f3215cda472a9587ccd5f7566e198"
 
 [evidence.components]
-comparison-orchestrator = "f529c9f0178ac3960f29474bf1d58a40e7281b2c05fe0cfd9e24722470132b7b"
+comparison-orchestrator = "27135eb475a56cf828cf5008bbc171061017e5dde83ade44c1bfa6e78d93ba30"
 execution-image = "f46f7043c5bcc1c9ee1a8254cdd8792837871b62c63b77e6e8a4f7e5bde6822f"
 execution-machine = "b712c0de3daf70bfc8d7718a27913f626e1ac1bada2dc55d60842681c6ae8c0c"
 execution-model = "00671ac5331776c929cded74468b90f0b3c36c6fd4d9e5cdc4404ca5ba3aee5b"
-profile = "a083e3c69e0380180825ec08c521da700fad7d5cb62bd2cc76e07a6f84ab8b45"
-profile-parser = "dd1e4a1201fb62c78422b3dd6c5afd7347d66b9b1f4a90bd136ba9f4b636886f"
+profile = "9ec7166712e8d01a89c634544f93ff20101aa9bb10a9e9d5067f37ea322764ef"
+profile-parser = "32795bef750005cae0432ba2423849d4988ec5a04c3c59af22dfa248517cf76c"
 
 [[evidence]]
 source = "rom"
@@ -618,15 +618,15 @@ kind = "symbolic"
 source = "rom"
 symbol = "phy_bb_cbw_chan_cfg"
 kind = "scenario/profile:rom-channel-cbw"
-digest = "7f2705e4f5ecdc8442630946bc57af55f4ee484acc839974190a7291db2cbf00"
+digest = "07d8b3f192b08379c542c9facc65547f816de0066c66755616546c3bc2f0ff29"
 
 [evidence.components]
-comparison-orchestrator = "f529c9f0178ac3960f29474bf1d58a40e7281b2c05fe0cfd9e24722470132b7b"
+comparison-orchestrator = "27135eb475a56cf828cf5008bbc171061017e5dde83ade44c1bfa6e78d93ba30"
 execution-image = "f46f7043c5bcc1c9ee1a8254cdd8792837871b62c63b77e6e8a4f7e5bde6822f"
 execution-machine = "b712c0de3daf70bfc8d7718a27913f626e1ac1bada2dc55d60842681c6ae8c0c"
 execution-model = "00671ac5331776c929cded74468b90f0b3c36c6fd4d9e5cdc4404ca5ba3aee5b"
-profile = "61331839a1fec4359737ac87bbe232ea47e0226dd6d71f41b1b7ee6064d71749"
-profile-parser = "dd1e4a1201fb62c78422b3dd6c5afd7347d66b9b1f4a90bd136ba9f4b636886f"
+profile = "992f776834de292b76ca10d5881c52267a4dac3b16f101b3b3956e292a287e59"
+profile-parser = "32795bef750005cae0432ba2423849d4988ec5a04c3c59af22dfa248517cf76c"
 
 [[evidence]]
 source = "rom"
@@ -667,15 +667,15 @@ kind = "symbolic"
 source = "rom"
 symbol = "phy_bt_bb_to_index"
 kind = "scenario/profile:rom-bluetooth-baseband-to-index"
-digest = "985441bbfa269467514923001aa28c7cf2f4bb50af39f13fb4581749e5e1bf91"
+digest = "db54732f0ec389617cf8f0487578214a26d6f07db7183da117175f9ff50ae709"
 
 [evidence.components]
-comparison-orchestrator = "f529c9f0178ac3960f29474bf1d58a40e7281b2c05fe0cfd9e24722470132b7b"
+comparison-orchestrator = "27135eb475a56cf828cf5008bbc171061017e5dde83ade44c1bfa6e78d93ba30"
 execution-image = "f46f7043c5bcc1c9ee1a8254cdd8792837871b62c63b77e6e8a4f7e5bde6822f"
 execution-machine = "b712c0de3daf70bfc8d7718a27913f626e1ac1bada2dc55d60842681c6ae8c0c"
 execution-model = "00671ac5331776c929cded74468b90f0b3c36c6fd4d9e5cdc4404ca5ba3aee5b"
-profile = "837a9927c507b610605c60fce5ebf6f44d94760a8246f5057edc82fdad4178d8"
-profile-parser = "dd1e4a1201fb62c78422b3dd6c5afd7347d66b9b1f4a90bd136ba9f4b636886f"
+profile = "2e6414e70defdfbe28cd33e816dcb6e3d89ba76b29efbd1942378e42c49a147e"
+profile-parser = "32795bef750005cae0432ba2423849d4988ec5a04c3c59af22dfa248517cf76c"
 
 [[evidence]]
 source = "rom"
@@ -686,15 +686,15 @@ kind = "symbolic"
 source = "rom"
 symbol = "phy_bt_index_to_bb"
 kind = "scenario/profile:rom-bluetooth-index-to-baseband"
-digest = "d1645ccbcf96d623d2c593c6ba714f0b9239eb9656bab3172565cf303eb65e1b"
+digest = "9a3596a8dc5ffc6f48700982b4a531aee3fc70c9e8a9099341160f3ce69819cd"
 
 [evidence.components]
-comparison-orchestrator = "f529c9f0178ac3960f29474bf1d58a40e7281b2c05fe0cfd9e24722470132b7b"
+comparison-orchestrator = "27135eb475a56cf828cf5008bbc171061017e5dde83ade44c1bfa6e78d93ba30"
 execution-image = "f46f7043c5bcc1c9ee1a8254cdd8792837871b62c63b77e6e8a4f7e5bde6822f"
 execution-machine = "b712c0de3daf70bfc8d7718a27913f626e1ac1bada2dc55d60842681c6ae8c0c"
 execution-model = "00671ac5331776c929cded74468b90f0b3c36c6fd4d9e5cdc4404ca5ba3aee5b"
-profile = "39c38a69c87b43b813beca46b1a6b3eae74a9c8cf2a0363dc66060750993cad9"
-profile-parser = "dd1e4a1201fb62c78422b3dd6c5afd7347d66b9b1f4a90bd136ba9f4b636886f"
+profile = "a3c1b43fd6bb68839a33ef28c69201b93fefdfaa36f1788b9500d19d34354e07"
+profile-parser = "32795bef750005cae0432ba2423849d4988ec5a04c3c59af22dfa248517cf76c"
 
 [[evidence]]
 source = "rom"
@@ -705,15 +705,15 @@ kind = "symbolic"
 source = "rom"
 symbol = "phy_byte_to_word"
 kind = "scenario/profile:rom-byte-to-word"
-digest = "851694b0622f57c1650caa920dfc5e4be6e4cc95023aedef16e4f2b1dd16ddde"
+digest = "34e89cff3f7e30295f5907683af6d9c701d05710f8032d11ec7d51986534ad3b"
 
 [evidence.components]
-comparison-orchestrator = "f529c9f0178ac3960f29474bf1d58a40e7281b2c05fe0cfd9e24722470132b7b"
+comparison-orchestrator = "27135eb475a56cf828cf5008bbc171061017e5dde83ade44c1bfa6e78d93ba30"
 execution-image = "f46f7043c5bcc1c9ee1a8254cdd8792837871b62c63b77e6e8a4f7e5bde6822f"
 execution-machine = "b712c0de3daf70bfc8d7718a27913f626e1ac1bada2dc55d60842681c6ae8c0c"
 execution-model = "00671ac5331776c929cded74468b90f0b3c36c6fd4d9e5cdc4404ca5ba3aee5b"
-profile = "dfa439504e835c2871a5d7e2e8315eeda756cb5e74396e4fe2d98fa986877950"
-profile-parser = "dd1e4a1201fb62c78422b3dd6c5afd7347d66b9b1f4a90bd136ba9f4b636886f"
+profile = "dd0da258502b59597062b0294989232d2dfa1fda08f27c41c64016396be414a0"
+profile-parser = "32795bef750005cae0432ba2423849d4988ec5a04c3c59af22dfa248517cf76c"
 
 [[evidence]]
 source = "rom"
@@ -734,15 +734,15 @@ kind = "symbolic"
 source = "rom"
 symbol = "phy_dis_hw_set_freq"
 kind = "scenario/profile:rom-disable-hardware-frequency"
-digest = "794baa3c20dc8bedcb1042d72b05728d1ee0877d385aa98400f49237baf1a6d2"
+digest = "9e2e502f506d0147bf95be715a51be40bc110d2299f235a255650d39f1eaa255"
 
 [evidence.components]
-comparison-orchestrator = "f529c9f0178ac3960f29474bf1d58a40e7281b2c05fe0cfd9e24722470132b7b"
+comparison-orchestrator = "27135eb475a56cf828cf5008bbc171061017e5dde83ade44c1bfa6e78d93ba30"
 execution-image = "f46f7043c5bcc1c9ee1a8254cdd8792837871b62c63b77e6e8a4f7e5bde6822f"
 execution-machine = "b712c0de3daf70bfc8d7718a27913f626e1ac1bada2dc55d60842681c6ae8c0c"
 execution-model = "00671ac5331776c929cded74468b90f0b3c36c6fd4d9e5cdc4404ca5ba3aee5b"
-profile = "b456c59c0d700cd68653e168d025e3bd44f050ff82146fa71d4de9a2714c3a8e"
-profile-parser = "dd1e4a1201fb62c78422b3dd6c5afd7347d66b9b1f4a90bd136ba9f4b636886f"
+profile = "cd01dd352f60ced4f2de898de351f6c34a3a1eca9516fbf1475e0737ea345a43"
+profile-parser = "32795bef750005cae0432ba2423849d4988ec5a04c3c59af22dfa248517cf76c"
 
 [[evidence]]
 source = "rom"
@@ -793,15 +793,15 @@ kind = "symbolic"
 source = "rom"
 symbol = "phy_encode_i2c_master"
 kind = "scenario/profile:rom-encode-i2c-master"
-digest = "c02623141ca541a6512088bee2eb4d6c8fec465b0e8fc3e5d89af6d8ba770308"
+digest = "34ad20ce01ea1266f130f8a4509f4ffb44516433f47dbf5a3a7b34246892c7ce"
 
 [evidence.components]
-comparison-orchestrator = "f529c9f0178ac3960f29474bf1d58a40e7281b2c05fe0cfd9e24722470132b7b"
+comparison-orchestrator = "27135eb475a56cf828cf5008bbc171061017e5dde83ade44c1bfa6e78d93ba30"
 execution-image = "f46f7043c5bcc1c9ee1a8254cdd8792837871b62c63b77e6e8a4f7e5bde6822f"
 execution-machine = "b712c0de3daf70bfc8d7718a27913f626e1ac1bada2dc55d60842681c6ae8c0c"
 execution-model = "00671ac5331776c929cded74468b90f0b3c36c6fd4d9e5cdc4404ca5ba3aee5b"
-profile = "56418f5b3c56f5e64be75f057f3c07ed77b2cdd3bfe5099184401377aa5093ee"
-profile-parser = "dd1e4a1201fb62c78422b3dd6c5afd7347d66b9b1f4a90bd136ba9f4b636886f"
+profile = "307a33cfe652971f2c3a16244633108f04ab599c7440361e934ee5bdb507129c"
+profile-parser = "32795bef750005cae0432ba2423849d4988ec5a04c3c59af22dfa248517cf76c"
 
 [[evidence]]
 source = "rom"
@@ -822,29 +822,29 @@ kind = "symbolic"
 source = "rom"
 symbol = "phy_freq_band_reg_set"
 kind = "scenario/profile:frequency-band-registers"
-digest = "f8111ed3883cb3a0540f896d51aafbc05ad2a88062111325bce24de9e62f604d"
+digest = "7a731b5cb7d6c379043028cdf9eeb0c865eeb4aef408b090d2e120863e746c73"
 
 [evidence.components]
-comparison-orchestrator = "f529c9f0178ac3960f29474bf1d58a40e7281b2c05fe0cfd9e24722470132b7b"
+comparison-orchestrator = "27135eb475a56cf828cf5008bbc171061017e5dde83ade44c1bfa6e78d93ba30"
 execution-image = "f46f7043c5bcc1c9ee1a8254cdd8792837871b62c63b77e6e8a4f7e5bde6822f"
 execution-machine = "b712c0de3daf70bfc8d7718a27913f626e1ac1bada2dc55d60842681c6ae8c0c"
 execution-model = "00671ac5331776c929cded74468b90f0b3c36c6fd4d9e5cdc4404ca5ba3aee5b"
-profile = "d9e20a0de303af94a7de732c0d46131366c7257184ac861dc558ac720cf6d022"
-profile-parser = "dd1e4a1201fb62c78422b3dd6c5afd7347d66b9b1f4a90bd136ba9f4b636886f"
+profile = "026af6b6539cde4b946782ff523e10de3ed078eb8e605c112b3936ad4a979759"
+profile-parser = "32795bef750005cae0432ba2423849d4988ec5a04c3c59af22dfa248517cf76c"
 
 [[evidence]]
 source = "rom"
 symbol = "phy_freq_i2c_mem_write"
 kind = "scenario/profile:rom-frequency-i2c-memory-write"
-digest = "2f1448ae69ea82326bd784de7616363ed27db6c2f42e6593b738baa5c3426fbb"
+digest = "dc9e14fe530bbf9ccf933c880817c121db56d864836e15261087725f20cb48cf"
 
 [evidence.components]
-comparison-orchestrator = "f529c9f0178ac3960f29474bf1d58a40e7281b2c05fe0cfd9e24722470132b7b"
+comparison-orchestrator = "27135eb475a56cf828cf5008bbc171061017e5dde83ade44c1bfa6e78d93ba30"
 execution-image = "f46f7043c5bcc1c9ee1a8254cdd8792837871b62c63b77e6e8a4f7e5bde6822f"
 execution-machine = "b712c0de3daf70bfc8d7718a27913f626e1ac1bada2dc55d60842681c6ae8c0c"
 execution-model = "00671ac5331776c929cded74468b90f0b3c36c6fd4d9e5cdc4404ca5ba3aee5b"
-profile = "7e6140d23bc177e3f18f58ae516c1a1f615eba9e9bf643da10233cd6ed5ee3ba"
-profile-parser = "dd1e4a1201fb62c78422b3dd6c5afd7347d66b9b1f4a90bd136ba9f4b636886f"
+profile = "20ada5c4d213859086a2754c999b900be29e0882db7a42e3519e7c9ca18bb4e5"
+profile-parser = "32795bef750005cae0432ba2423849d4988ec5a04c3c59af22dfa248517cf76c"
 
 [[evidence]]
 source = "rom"
@@ -855,29 +855,29 @@ kind = "symbolic"
 source = "rom"
 symbol = "phy_freq_reg_init"
 kind = "scenario/profile:rom-frequency-register-init"
-digest = "cd3ed0fc058365b782f537d7919e4e1a733e6357978a568bf8f9275940a4fe57"
+digest = "7b907cc4aa07995b42708fffbe86302f01c3c5f567f4b77a9ae6746471128ce1"
 
 [evidence.components]
-comparison-orchestrator = "f529c9f0178ac3960f29474bf1d58a40e7281b2c05fe0cfd9e24722470132b7b"
+comparison-orchestrator = "27135eb475a56cf828cf5008bbc171061017e5dde83ade44c1bfa6e78d93ba30"
 execution-image = "f46f7043c5bcc1c9ee1a8254cdd8792837871b62c63b77e6e8a4f7e5bde6822f"
 execution-machine = "b712c0de3daf70bfc8d7718a27913f626e1ac1bada2dc55d60842681c6ae8c0c"
 execution-model = "00671ac5331776c929cded74468b90f0b3c36c6fd4d9e5cdc4404ca5ba3aee5b"
-profile = "a4007f62f3ca856fbccbfaf52c5645848d4e810d8fb771ee72591dff2d1f6e51"
-profile-parser = "dd1e4a1201fb62c78422b3dd6c5afd7347d66b9b1f4a90bd136ba9f4b636886f"
+profile = "36d3921c616d9ca52c9182369ec278cff89bc5c847dbdc97dd0e54885364d49f"
+profile-parser = "32795bef750005cae0432ba2423849d4988ec5a04c3c59af22dfa248517cf76c"
 
 [[evidence]]
 source = "rom"
 symbol = "phy_get_freq_mem_addr"
 kind = "scenario/profile:rom-frequency-memory-address"
-digest = "12887f531786111eaf730c2e784a1480c933f91c1846c0b63e77ae5ca88612e2"
+digest = "b876a1cb5f509583cbeeb64a47a2c3b46ca42292dc9120e175d02efb014a2fc2"
 
 [evidence.components]
-comparison-orchestrator = "f529c9f0178ac3960f29474bf1d58a40e7281b2c05fe0cfd9e24722470132b7b"
+comparison-orchestrator = "27135eb475a56cf828cf5008bbc171061017e5dde83ade44c1bfa6e78d93ba30"
 execution-image = "f46f7043c5bcc1c9ee1a8254cdd8792837871b62c63b77e6e8a4f7e5bde6822f"
 execution-machine = "b712c0de3daf70bfc8d7718a27913f626e1ac1bada2dc55d60842681c6ae8c0c"
 execution-model = "00671ac5331776c929cded74468b90f0b3c36c6fd4d9e5cdc4404ca5ba3aee5b"
-profile = "d2a05a8b2a0bb8281d7507f7820030abab2dc9c3a1b97d76cedd8361ab3c4f4b"
-profile-parser = "dd1e4a1201fb62c78422b3dd6c5afd7347d66b9b1f4a90bd136ba9f4b636886f"
+profile = "b87cfd9bf0678ed11a6bb79b3f67968a6568653d638280cd33e70a778a033815"
+profile-parser = "32795bef750005cae0432ba2423849d4988ec5a04c3c59af22dfa248517cf76c"
 
 [[evidence]]
 source = "rom"
@@ -888,15 +888,15 @@ kind = "symbolic"
 source = "rom"
 symbol = "phy_i2c_txrate_init"
 kind = "scenario/profile:rom-i2c-tx-rate-init"
-digest = "02099b9481a8b114344afca59e22c1cfd6c9a64bd790ab01f579498e689cc4ab"
+digest = "9f1671764a310f5d9302d2c1c39c4c5aac067702c98802881141e07cbe18444b"
 
 [evidence.components]
-comparison-orchestrator = "f529c9f0178ac3960f29474bf1d58a40e7281b2c05fe0cfd9e24722470132b7b"
+comparison-orchestrator = "27135eb475a56cf828cf5008bbc171061017e5dde83ade44c1bfa6e78d93ba30"
 execution-image = "f46f7043c5bcc1c9ee1a8254cdd8792837871b62c63b77e6e8a4f7e5bde6822f"
 execution-machine = "b712c0de3daf70bfc8d7718a27913f626e1ac1bada2dc55d60842681c6ae8c0c"
 execution-model = "00671ac5331776c929cded74468b90f0b3c36c6fd4d9e5cdc4404ca5ba3aee5b"
-profile = "4a247de188bba6604c7c47de6d70d0d39eee1deea16f8dcee1649dd6ea5fe5db"
-profile-parser = "dd1e4a1201fb62c78422b3dd6c5afd7347d66b9b1f4a90bd136ba9f4b636886f"
+profile = "cd6b21f697005fa1e170a81f0f68b73e5553cbf49b63a814a10b3ec4e441b4ff"
+profile-parser = "32795bef750005cae0432ba2423849d4988ec5a04c3c59af22dfa248517cf76c"
 
 [[evidence]]
 source = "rom"
@@ -907,13 +907,13 @@ kind = "symbolic"
 source = "rom"
 symbol = "phy_iq_est_enable"
 kind = "effect-contract/exact-effects-v1"
-digest = "3036c5f665e1d92cc31dd0f82fe6f6e21e67382fea4f7a8d686a15429689c317"
+digest = "03d5c475dec67b82b0b40edb33bcada630b014951793bbf79f643f6e08b5a67c"
 
 [evidence.components]
 adapter-proof = "9d1a3ec1d642de99a79374ae2e6fa55f377c6a1bbe1a6b137c4037a8e7f484c0"
 binding = "c609a3237e83b2fb15521f90c97695c33c15e6a1866f6ffe1e7729bce606da33"
 binding-verifier = "8a49056ff034bb6ccbcba50a8fbb5f592af78036508fc66b91e7d26dd88f5c5b"
-driver-adapter = "053faf28a8bc4bd012e28067fafdc3b07b64ea051d68c28b388d5963afedcc90"
+driver-adapter = "553e416c7d99fdfe13665a8a2c1b7be353b873c7bcbb87b880589db725f3810e"
 effect-comparator = "7e0c0424ae313df2bc7e5d8c282b5c38f04e8e53e472be08a56f4f89aabdb9ab"
 execution-engine = "3e2ea6257d342ac7d80d6d56a8907a505b671ff03095aa68ddeedfc6543e6798"
 policy = "27b20a43eba0dd7ed60ab572a9a88733422bc12b58829e1f9d8f51d8d7c31f5b"
@@ -939,57 +939,57 @@ kind = "symbolic"
 source = "rom"
 symbol = "phy_nrx_freq_set"
 kind = "scenario/profile:rom-nrx-frequency"
-digest = "6daddb758b3e1426388e9656af4f7532b78b1debf3bba4fe736c037b982dda0c"
+digest = "2cac7237e34b41c18c83911435a9e065d92a5b650303d588f0fb520bd3241e90"
 
 [evidence.components]
-comparison-orchestrator = "f529c9f0178ac3960f29474bf1d58a40e7281b2c05fe0cfd9e24722470132b7b"
+comparison-orchestrator = "27135eb475a56cf828cf5008bbc171061017e5dde83ade44c1bfa6e78d93ba30"
 execution-image = "f46f7043c5bcc1c9ee1a8254cdd8792837871b62c63b77e6e8a4f7e5bde6822f"
 execution-machine = "b712c0de3daf70bfc8d7718a27913f626e1ac1bada2dc55d60842681c6ae8c0c"
 execution-model = "00671ac5331776c929cded74468b90f0b3c36c6fd4d9e5cdc4404ca5ba3aee5b"
-profile = "0c510fd1943cee97c08ba678f9b9c039005599ab646f4b91e8ba0652d95913f8"
-profile-parser = "dd1e4a1201fb62c78422b3dd6c5afd7347d66b9b1f4a90bd136ba9f4b636886f"
+profile = "b10268554fd0d5b7b4d965b9e38168030961fe228ea830341e0e1dca513690de"
+profile-parser = "32795bef750005cae0432ba2423849d4988ec5a04c3c59af22dfa248517cf76c"
 
 [[evidence]]
 source = "rom"
 symbol = "phy_pbus_debugmode"
 kind = "scenario/profile:rom-pbus-debug-mode"
-digest = "6c77b0604b29a5bc54dfb66e1c0c03a64bdb68f119b12a73a090bc66001a67a5"
+digest = "da139528f75c941e03b4833a818120e2ab1bca58a51333c711395e0d6040f018"
 
 [evidence.components]
-comparison-orchestrator = "f529c9f0178ac3960f29474bf1d58a40e7281b2c05fe0cfd9e24722470132b7b"
+comparison-orchestrator = "27135eb475a56cf828cf5008bbc171061017e5dde83ade44c1bfa6e78d93ba30"
 execution-image = "f46f7043c5bcc1c9ee1a8254cdd8792837871b62c63b77e6e8a4f7e5bde6822f"
 execution-machine = "b712c0de3daf70bfc8d7718a27913f626e1ac1bada2dc55d60842681c6ae8c0c"
 execution-model = "00671ac5331776c929cded74468b90f0b3c36c6fd4d9e5cdc4404ca5ba3aee5b"
-profile = "390f58a88af836ac86c5c7af871814b7e0e3898b38ec22a5b5ace357cb30eee6"
-profile-parser = "dd1e4a1201fb62c78422b3dd6c5afd7347d66b9b1f4a90bd136ba9f4b636886f"
+profile = "f51a9d479c8e8b243520b4a9b3f6f496c0e2b6469e11a09a5fa527ee0255765f"
+profile-parser = "32795bef750005cae0432ba2423849d4988ec5a04c3c59af22dfa248517cf76c"
 
 [[evidence]]
 source = "rom"
 symbol = "phy_read_hw_noisefloor"
 kind = "scenario/profile:rom-read-hardware-noise-floor"
-digest = "e740426ea1ffe368d2a9fae37c976362be42ad23324e321f229dfbe12958abfc"
+digest = "87cae6bb1aab06d5acc8a9c59d578a3cf2679355f7764b7a9bbd83b9ab0d7948"
 
 [evidence.components]
-comparison-orchestrator = "f529c9f0178ac3960f29474bf1d58a40e7281b2c05fe0cfd9e24722470132b7b"
+comparison-orchestrator = "27135eb475a56cf828cf5008bbc171061017e5dde83ade44c1bfa6e78d93ba30"
 execution-image = "f46f7043c5bcc1c9ee1a8254cdd8792837871b62c63b77e6e8a4f7e5bde6822f"
 execution-machine = "b712c0de3daf70bfc8d7718a27913f626e1ac1bada2dc55d60842681c6ae8c0c"
 execution-model = "00671ac5331776c929cded74468b90f0b3c36c6fd4d9e5cdc4404ca5ba3aee5b"
-profile = "b2d56b2407709190e642ca104485e180443e49a504484657654840a9f8cc6882"
-profile-parser = "dd1e4a1201fb62c78422b3dd6c5afd7347d66b9b1f4a90bd136ba9f4b636886f"
+profile = "ce6c7310a8b732e66dafb1281bbc5ece3b0224818d43df9c046647d5fd1ee2df"
+profile-parser = "32795bef750005cae0432ba2423849d4988ec5a04c3c59af22dfa248517cf76c"
 
 [[evidence]]
 source = "rom"
 symbol = "phy_rfrx_sat_rst"
 kind = "scenario/profile:rom-rf-rx-saturation-reset"
-digest = "aadd39cf93fa740e0960de434f1e27332b9c318476533bbeecefdb8647b49725"
+digest = "66badfe00010f505aa9a7aa8d3f8e7bc0402f5cad6e50a40b3b7a944823d0fd7"
 
 [evidence.components]
-comparison-orchestrator = "f529c9f0178ac3960f29474bf1d58a40e7281b2c05fe0cfd9e24722470132b7b"
+comparison-orchestrator = "27135eb475a56cf828cf5008bbc171061017e5dde83ade44c1bfa6e78d93ba30"
 execution-image = "f46f7043c5bcc1c9ee1a8254cdd8792837871b62c63b77e6e8a4f7e5bde6822f"
 execution-machine = "b712c0de3daf70bfc8d7718a27913f626e1ac1bada2dc55d60842681c6ae8c0c"
 execution-model = "00671ac5331776c929cded74468b90f0b3c36c6fd4d9e5cdc4404ca5ba3aee5b"
-profile = "6a6c68435577aa475b5b5d9aecaf90be5ac1aff356a75a4c2e528500af8ac6aa"
-profile-parser = "dd1e4a1201fb62c78422b3dd6c5afd7347d66b9b1f4a90bd136ba9f4b636886f"
+profile = "106fb537e83f8eba976217a664802f478e5bcf84f8cbf05f9aa193bc68979b91"
+profile-parser = "32795bef750005cae0432ba2423849d4988ec5a04c3c59af22dfa248517cf76c"
 
 [[evidence]]
 source = "rom"
@@ -1000,57 +1000,57 @@ kind = "symbolic"
 source = "rom"
 symbol = "phy_rx_11b_opt"
 kind = "scenario/profile:rom-rx-11b-optimization"
-digest = "02c83027f6d7941e34792feabea62c0c9b01a980db06bcae3988f47579fb0cd4"
+digest = "f18631716607e3250eb10d3b4b9b3b5e100e912b4b306227a1d79d3d73c0558a"
 
 [evidence.components]
-comparison-orchestrator = "f529c9f0178ac3960f29474bf1d58a40e7281b2c05fe0cfd9e24722470132b7b"
+comparison-orchestrator = "27135eb475a56cf828cf5008bbc171061017e5dde83ade44c1bfa6e78d93ba30"
 execution-image = "f46f7043c5bcc1c9ee1a8254cdd8792837871b62c63b77e6e8a4f7e5bde6822f"
 execution-machine = "b712c0de3daf70bfc8d7718a27913f626e1ac1bada2dc55d60842681c6ae8c0c"
 execution-model = "00671ac5331776c929cded74468b90f0b3c36c6fd4d9e5cdc4404ca5ba3aee5b"
-profile = "aa512d0e96c7dae810b7c0e2d6393a8d7bf71435d56befa619529cb9b77e6fac"
-profile-parser = "dd1e4a1201fb62c78422b3dd6c5afd7347d66b9b1f4a90bd136ba9f4b636886f"
+profile = "cb5e5284fed08c1a480b020a8ff16fca6a1cb768f9b5f049dca14ebdff7f4784"
+profile-parser = "32795bef750005cae0432ba2423849d4988ec5a04c3c59af22dfa248517cf76c"
 
 [[evidence]]
 source = "rom"
 symbol = "phy_save_pbus_reg"
 kind = "scenario/profile:rom-save-pbus-registers"
-digest = "5eef5b24644bf148f0877c6bb43f6f51d23025a66785e21f4af9140de3787562"
+digest = "e72c031990c1e9fc1589e2ea8d164ab77987397a9b0085557fa21ab80c25c842"
 
 [evidence.components]
-comparison-orchestrator = "f529c9f0178ac3960f29474bf1d58a40e7281b2c05fe0cfd9e24722470132b7b"
+comparison-orchestrator = "27135eb475a56cf828cf5008bbc171061017e5dde83ade44c1bfa6e78d93ba30"
 execution-image = "f46f7043c5bcc1c9ee1a8254cdd8792837871b62c63b77e6e8a4f7e5bde6822f"
 execution-machine = "b712c0de3daf70bfc8d7718a27913f626e1ac1bada2dc55d60842681c6ae8c0c"
 execution-model = "00671ac5331776c929cded74468b90f0b3c36c6fd4d9e5cdc4404ca5ba3aee5b"
-profile = "fba9d7ec25f09f6d1fffaaad27e45fb7509bbe206b9691ce39085da82ed17eb8"
-profile-parser = "dd1e4a1201fb62c78422b3dd6c5afd7347d66b9b1f4a90bd136ba9f4b636886f"
+profile = "89e8d46eec6d79099927a9481d2abd90f8f082ce78dd2d1cc40862ac49091a19"
+profile-parser = "32795bef750005cae0432ba2423849d4988ec5a04c3c59af22dfa248517cf76c"
 
 [[evidence]]
 source = "rom"
 symbol = "phy_set_rxclk_en"
 kind = "scenario/profile:rom-rx-clock-enable"
-digest = "4f242fa72ae04a5723b724d0138977dff83afadeac1fdabfc1b3a7658f1bd2f6"
+digest = "c746ff0ca646f4870bb4b8fd938ebf75aec43d1cd8f977f42e9913193fad9a55"
 
 [evidence.components]
-comparison-orchestrator = "f529c9f0178ac3960f29474bf1d58a40e7281b2c05fe0cfd9e24722470132b7b"
+comparison-orchestrator = "27135eb475a56cf828cf5008bbc171061017e5dde83ade44c1bfa6e78d93ba30"
 execution-image = "f46f7043c5bcc1c9ee1a8254cdd8792837871b62c63b77e6e8a4f7e5bde6822f"
 execution-machine = "b712c0de3daf70bfc8d7718a27913f626e1ac1bada2dc55d60842681c6ae8c0c"
 execution-model = "00671ac5331776c929cded74468b90f0b3c36c6fd4d9e5cdc4404ca5ba3aee5b"
-profile = "39ac0bc9b10a419feb55f607abcd74cc41a5e001cdce0ac0fa1d55e2495d8c9d"
-profile-parser = "dd1e4a1201fb62c78422b3dd6c5afd7347d66b9b1f4a90bd136ba9f4b636886f"
+profile = "a6054d234524751bd69023dace4da0728865547e195bb3628cdcba3c8f11be76"
+profile-parser = "32795bef750005cae0432ba2423849d4988ec5a04c3c59af22dfa248517cf76c"
 
 [[evidence]]
 source = "rom"
 symbol = "phy_set_txclk_en"
 kind = "scenario/profile:rom-tx-clock-enable"
-digest = "13443d5a0bbd0fad3dd080a5d0a3d39dc0ce377cc305989d90d60a4ebdf7a107"
+digest = "51f5ab0faa3a22dcecb89858906eba1795c3c656a81ce88f3bbfd62afbe0f2df"
 
 [evidence.components]
-comparison-orchestrator = "f529c9f0178ac3960f29474bf1d58a40e7281b2c05fe0cfd9e24722470132b7b"
+comparison-orchestrator = "27135eb475a56cf828cf5008bbc171061017e5dde83ade44c1bfa6e78d93ba30"
 execution-image = "f46f7043c5bcc1c9ee1a8254cdd8792837871b62c63b77e6e8a4f7e5bde6822f"
 execution-machine = "b712c0de3daf70bfc8d7718a27913f626e1ac1bada2dc55d60842681c6ae8c0c"
 execution-model = "00671ac5331776c929cded74468b90f0b3c36c6fd4d9e5cdc4404ca5ba3aee5b"
-profile = "3564726d98645c3210d7d6264a073e20a27917f8fe310b7cbca6ee20102983a8"
-profile-parser = "dd1e4a1201fb62c78422b3dd6c5afd7347d66b9b1f4a90bd136ba9f4b636886f"
+profile = "67d4206bf63458cd315b179ce76e611e009c4802dffaf780cb922483920bd298"
+profile-parser = "32795bef750005cae0432ba2423849d4988ec5a04c3c59af22dfa248517cf76c"
 
 [[evidence]]
 source = "rom"
@@ -1066,15 +1066,15 @@ kind = "symbolic"
 source = "rom"
 symbol = "phy_txpwr_track_slow"
 kind = "state/profile:rom-tx-power-tracking-slow-state"
-digest = "a7ee63e96bb4a251ebbce507d287dbc999bf51165ba08d85ea1e745f6ad1f075"
+digest = "127d99260319243ef0ecb1597f4e1009bd0c3dce442789849cef48b9b7ca4e3c"
 
 [evidence.components]
-comparison-orchestrator = "f529c9f0178ac3960f29474bf1d58a40e7281b2c05fe0cfd9e24722470132b7b"
+comparison-orchestrator = "27135eb475a56cf828cf5008bbc171061017e5dde83ade44c1bfa6e78d93ba30"
 execution-image = "f46f7043c5bcc1c9ee1a8254cdd8792837871b62c63b77e6e8a4f7e5bde6822f"
 execution-machine = "b712c0de3daf70bfc8d7718a27913f626e1ac1bada2dc55d60842681c6ae8c0c"
 execution-model = "00671ac5331776c929cded74468b90f0b3c36c6fd4d9e5cdc4404ca5ba3aee5b"
-profile = "9070dba777c9697b2891ff1660c4b51adb681f349d7399cb58c2766806944c27"
-profile-parser = "dd1e4a1201fb62c78422b3dd6c5afd7347d66b9b1f4a90bd136ba9f4b636886f"
+profile = "d583496697805a7ad32b9277ab23124b8d32cd45aa239187c87f93fcd6163a97"
+profile-parser = "32795bef750005cae0432ba2423849d4988ec5a04c3c59af22dfa248517cf76c"
 
 [[evidence]]
 source = "rom"

@@ -1,12 +1,9 @@
 //! Interface-workspace projection for the read-only workspace snapshot.
 
 use super::{ProjectSession, push_error};
-use crate::{
-    application::model::{
-        DiagnosticRecord, InterfaceContractSummary, InterfaceReviewState, InterfaceSlotSummary,
-        InterfaceWorkspaceReport,
-    },
-    interfaces::InterfaceWorkspace,
+use crate::application::model::{
+    DiagnosticRecord, InterfaceContractSummary, InterfaceReviewState, InterfaceSlotSummary,
+    InterfaceWorkspaceReport,
 };
 
 pub(super) fn collect(
@@ -22,19 +19,9 @@ pub(super) fn collect(
     if !paths.facts.is_file() {
         return empty(true, Some(paths.facts.clone()), Some(pack.clone()));
     }
-    let harness = resolved
-        .target
-        .harness
-        .as_deref()
-        .and_then(|harness| crate::harnesses::contracts(harness).ok());
-    let workspace = match InterfaceWorkspace::load(
-        &paths.facts,
-        pack,
-        &paths.semantic_catalogs,
-        resolved.target.calling_convention.label(),
-        harness,
-    ) {
-        Ok(workspace) => workspace,
+    let workspace = match resolved.interface_workspace() {
+        Ok(Some(workspace)) => workspace,
+        Ok(None) => return empty(true, Some(paths.facts.clone()), Some(pack.clone())),
         Err(error) => {
             push_error(diagnostics, "interfaces", error, Some(pack.clone()));
             return empty(true, Some(paths.facts.clone()), Some(pack.clone()));

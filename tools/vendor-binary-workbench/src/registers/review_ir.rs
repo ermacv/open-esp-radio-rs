@@ -1,4 +1,4 @@
-//! Selected schema-v44 linked-IR evidence used by the manual register report.
+//! Selected schema-v45 linked-IR evidence used by the manual register report.
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -213,7 +213,7 @@ mod tests {
     }
 
     #[test]
-    fn loads_and_merges_schema_v44_field_evidence() {
+    fn loads_and_merges_schema_v45_field_evidence() {
         let base = std::env::temp_dir().join(format!(
             "vendor-workbench-register-review-ir-{}",
             std::process::id()
@@ -242,13 +242,13 @@ mod tests {
         write_report(&path, &report(1, "rtos.event.send"));
         let manifest = path.join("manifest.json");
         let input = std::fs::read_to_string(&manifest).unwrap().replacen(
-            "\"schema_version\": 44",
+            "\"schema_version\": 45",
             "\"schema_version\": 32",
             1,
         );
         std::fs::write(&manifest, input).unwrap();
         let error = RegisterReviewIr::load_all(std::slice::from_ref(&path)).unwrap_err();
-        assert!(error.to_string().contains("expected schema_version 44"));
+        assert!(error.to_string().contains("expected schema_version 45"));
 
         std::fs::remove_dir_all(&path).unwrap();
         write_report(

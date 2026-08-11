@@ -343,16 +343,42 @@ pub(super) fn render(frame: &mut Frame<'_>, state: &BrowserState, area: Rect) {
                     }
                     if !semantic.reviewed_event_routes.is_empty() {
                         lines.push(Line::from("Reviewed event routes:"));
-                        lines.extend(semantic.reviewed_event_routes.iter().map(|route| {
-                            Line::from(format!(
-                                "  {}: {} {}={:#010x} -> {}",
+                        for route in &semantic.reviewed_event_routes {
+                            lines.push(Line::from(format!(
+                                "  {}: {} {}={:#010x} -> {} [{}]",
                                 route.id,
                                 route.mechanism,
                                 route.selector_role,
                                 route.selector_value,
-                                route.handler
-                            ))
-                        }));
+                                route.handler,
+                                if route.dispatch_constraint_matched {
+                                    "matched"
+                                } else {
+                                    "blocked"
+                                }
+                            )));
+                            if let Some(handler) = &route.handler_analysis {
+                                lines.push(Line::from(format!(
+                                    "    handler complete={} effects={} calls={} reachable={}",
+                                    handler.complete,
+                                    handler.direct_instruction_effects,
+                                    handler.direct_calls,
+                                    handler.reachable_functions
+                                )));
+                                lines.extend(
+                                    handler
+                                        .blockers
+                                        .iter()
+                                        .map(|blocker| Line::from(format!("      ! {blocker}"))),
+                                );
+                            }
+                            lines.extend(
+                                route
+                                    .blockers
+                                    .iter()
+                                    .map(|blocker| Line::from(format!("    ! {blocker}"))),
+                            );
+                        }
                     }
                 }
                 if !investigation.replacements.is_empty() {

@@ -8,12 +8,15 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
-use super::linked_ir_read::schema::{StoredDataObject, StoredFunction, StoredMmioRegister};
+use super::linked_ir_read::schema::{
+    StoredDataObject, StoredFunction, StoredFunctionReviewProjection, StoredMmioRegister,
+};
 use crate::Result;
 
-pub(crate) const BUNDLE_FILES: [&str; 7] = [
+pub(crate) const BUNDLE_FILES: [&str; 8] = [
     "manifest.json",
     "functions.jsonl",
+    "function-overview.jsonl",
     "function-index.json",
     "graph.json",
     "register-index.json",
@@ -22,11 +25,12 @@ pub(crate) const BUNDLE_FILES: [&str; 7] = [
 ];
 const MANIFEST: &str = BUNDLE_FILES[0];
 const FUNCTIONS: &str = BUNDLE_FILES[1];
-const FUNCTION_INDEX: &str = BUNDLE_FILES[2];
-const GRAPH: &str = BUNDLE_FILES[3];
-const REGISTER_INDEX: &str = BUNDLE_FILES[4];
-const DATA_OBJECTS: &str = BUNDLE_FILES[5];
-const DATA_OBJECT_INDEX: &str = BUNDLE_FILES[6];
+const FUNCTION_OVERVIEW: &str = BUNDLE_FILES[2];
+const FUNCTION_INDEX: &str = BUNDLE_FILES[3];
+const GRAPH: &str = BUNDLE_FILES[4];
+const REGISTER_INDEX: &str = BUNDLE_FILES[5];
+const DATA_OBJECTS: &str = BUNDLE_FILES[6];
+const DATA_OBJECT_INDEX: &str = BUNDLE_FILES[7];
 
 pub(crate) fn bundle_files(path: &Path) -> impl Iterator<Item = PathBuf> + '_ {
     BUNDLE_FILES.into_iter().map(|name| path.join(name))
@@ -104,6 +108,11 @@ pub(crate) struct LinkedIrReader {
     graph: Vec<StoredGraphEdge>,
 }
 
+pub(crate) struct LinkedIrReviewProjection {
+    pub(crate) inputs: Vec<(String, String)>,
+    pub(crate) functions: Vec<StoredFunctionReviewProjection>,
+}
+
 impl LinkedIrReader {
     pub(crate) fn open(path: &Path) -> Result<Self> {
         if !path.is_dir() {
@@ -112,6 +121,15 @@ impl LinkedIrReader {
                 path.display(),
                 super::LINKED_IR.version
             )));
+        }
+        for member in BUNDLE_FILES {
+            if !path.join(member).is_file() {
+                return Err(crate::Error::invalid(format!(
+                    "linked-IR schema-v{} bundle {} is missing required member {member:?}",
+                    super::LINKED_IR.version,
+                    path.display()
+                )));
+            }
         }
         let manifest_input = fs::read_to_string(path.join(MANIFEST))?;
         let manifest = super::parse_linked_ir(&manifest_input)?;
@@ -176,6 +194,17 @@ impl LinkedIrReader {
         }
         matches
             .first()
+            .map(|record| self.read_function(record))
+            .transpose()
+    }
+
+    pub(crate) fn get_function_by_identity(
+        &self,
+        identity: &str,
+    ) -> Result<Option<StoredFunction>> {
+        self.index
+            .iter()
+            .find(|record| record.identity == identity)
             .map(|record| self.read_function(record))
             .transpose()
     }
@@ -266,6 +295,60 @@ impl LinkedIrReader {
             ));
         }
         Ok(functions)
+    }
+
+    pub(crate) fn read_review_projection(&self) -> Result<LinkedIrReviewProjection> {
+        let file = fs::File::open(self.root.join(FUNCTION_OVERVIEW))?;
+        let mut functions: Vec<StoredFunctionReviewProjection> =
+            Vec::with_capacity(self.index.len());
+        for line in std::io::BufReader::new(file).lines() {
+            let line = line?;
+            if !line.is_empty() {
+                functions.push(serde_json::from_str(&line)?);
+            }
+        }
+        if functions.len() != self.index.len() {
+            return Err(crate::Error::invalid(format!(
+                "linked-IR review projection has {} records but its index has {}",
+                functions.len(),
+                self.index.len()
+            )));
+        }
+        let indexed = self
+            .index
+            .iter()
+            .map(|record| {
+                (
+                    &record.identity,
+                    &record.source,
+                    &record.symbol,
+                    &record.member,
+                )
+            })
+            .collect::<std::collections::BTreeSet<_>>();
+        let overview = functions
+            .iter()
+            .map(|function| {
+                (
+                    &function.identity,
+                    &function.source,
+                    &function.symbol,
+                    &function.member,
+                )
+            })
+            .collect::<std::collections::BTreeSet<_>>();
+        if overview != indexed {
+            return Err(crate::Error::invalid(
+                "linked-IR function overview identities do not match its index",
+            ));
+        }
+        let inputs = self
+            .manifest
+            .artifacts
+            .iter()
+            .map(|artifact| (artifact.source.clone(), artifact.artifact.sha256.clone()))
+            .collect();
+        Ok(LinkedIrReviewProjection { inputs, functions })
     }
 
     fn into_document(mut self, include_registers: bool) -> Result<super::LinkedIrStoredDocument> {
@@ -366,12 +449,15 @@ pub(crate) fn write_fixture_bundle(path: &Path, input: &str) -> Result<()> {
     let data_objects = std::mem::take(&mut document.data_objects);
     let mut records = Vec::with_capacity(functions.len());
     let mut function_lines = String::new();
+    let mut function_overview_lines = String::new();
     for function in &functions {
         let encoded = serde_json::to_string(function)?;
         let offset = u64::try_from(function_lines.len())
             .map_err(|_| crate::Error::invalid("fixture linked-IR bundle exceeds u64"))?;
         function_lines.push_str(&encoded);
         function_lines.push('\n');
+        function_overview_lines.push_str(&fixture_function_overview(&encoded)?);
+        function_overview_lines.push('\n');
         records.push(FunctionIndexRecord {
             identity: function.identity.clone(),
             source: function.source.clone(),
@@ -392,6 +478,7 @@ pub(crate) fn write_fixture_bundle(path: &Path, input: &str) -> Result<()> {
         serde_json::to_string_pretty(&document)? + "\n",
     )?;
     fs::write(path.join(FUNCTIONS), function_lines)?;
+    fs::write(path.join(FUNCTION_OVERVIEW), function_overview_lines)?;
     fs::write(
         path.join(FUNCTION_INDEX),
         serde_json::to_string_pretty(&FunctionIndexDocument {
@@ -401,7 +488,7 @@ pub(crate) fn write_fixture_bundle(path: &Path, input: &str) -> Result<()> {
         })? + "\n",
     )?;
     fs::write(
-        path.join(BUNDLE_FILES[3]),
+        path.join(GRAPH),
         format!(
             "{{\n  \"schema_version\": {},\n  \"command\": \"ir graph index\",\n  \"edges\": []\n}}\n",
             super::LINKED_IR.version
@@ -442,4 +529,68 @@ pub(crate) fn write_fixture_bundle(path: &Path, input: &str) -> Result<()> {
         })? + "\n",
     )?;
     Ok(())
+}
+
+#[cfg(test)]
+fn fixture_function_overview(encoded: &str) -> Result<String> {
+    let full: serde_json::Value = serde_json::from_str(encoded)?;
+    let summary = &full["effect_summary"];
+    let event_dispatches = summary["event_dispatches"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|dispatch| {
+            serde_json::json!({
+                "mechanism": dispatch["mechanism"],
+                "execution_context": dispatch["execution_context"],
+                "receiver": dispatch["receiver"],
+                "interface_complete": dispatch["interface_complete"],
+                "bindings": dispatch["bindings"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .map(|binding| serde_json::json!({
+                        "role": binding["role"],
+                        "value": binding["argument"]["value"],
+                    }))
+                    .collect::<Vec<_>>(),
+            })
+        })
+        .collect::<Vec<_>>();
+    let mmio_addresses = full["mmio_accesses"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|access| access["address"].as_u64())
+        .collect::<std::collections::BTreeSet<_>>();
+    let overview = serde_json::json!({
+        "source": full["source"],
+        "identity": full["identity"],
+        "selection": full["selection"],
+        "member": full["member"],
+        "symbol": full["symbol"],
+        "complete": full["complete"],
+        "direct_calls": full["calls"].as_array().map_or(0, Vec::len),
+        "mmio_addresses": mmio_addresses,
+        "effect_summary": {
+            "call_graph_closed": summary["call_graph_closed"],
+            "context_projection_complete": summary["context_projection_complete"],
+            "context_projection_blockers": summary["context_projection_blockers"],
+            "context_fields": summary["context_fields"].as_array().into_iter().flatten().map(|field| serde_json::json!({
+                "argument": field["argument"], "offset": field["offset"], "width": field["width"],
+                "reads": field["reads"], "writes": field["writes"], "write_mask": field["write_mask"],
+            })).collect::<Vec<_>>(),
+            "memory_fields": summary["memory_fields"].as_array().into_iter().flatten().map(|field| serde_json::json!({
+                "object": field["object"], "offset": field["offset"], "width": field["width"],
+                "reads": field["reads"], "writes": field["writes"], "write_mask": field["write_mask"],
+                "origins": field["origins"],
+            })).collect::<Vec<_>>(),
+            "semantic_operations": summary["semantic_operations"].as_array().into_iter().flatten().map(|operation| operation["operation"].clone()).collect::<Vec<_>>(),
+            "trampoline_calls": summary["trampoline_calls"].as_array().map_or(0, Vec::len),
+            "event_dispatches": event_dispatches,
+        },
+        "decode_blockers": full["decode_blockers"],
+    });
+    let strict: StoredFunctionReviewProjection = serde_json::from_value(overview)?;
+    Ok(serde_json::to_string(&strict)?)
 }

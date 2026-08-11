@@ -8,7 +8,7 @@ use crate::{
         DiagnosticRecord, FunctionMmioSiteSummary, FunctionReviewState, FunctionSelection,
         FunctionSummary, LogicalTypeBindingSummary, LogicalTypeFieldSummary, LogicalTypeSummary,
     },
-    function_workspace::{FunctionReviewStatus, FunctionWorkspace, ReviewedMemoryObject},
+    function_workspace::{FunctionReviewStatus, ReviewedMemoryObject},
     registers::RegisterFacts,
 };
 
@@ -19,18 +19,9 @@ pub(super) fn collect(
     let Some(paths) = resolved.project.functions.as_ref() else {
         return (Vec::new(), Vec::new());
     };
-    let reports = match resolved.project.function_ir_reports() {
-        Ok(reports) => reports,
-        Err(error) => {
-            push_error(diagnostics, "functions", error, Some(paths.pack.clone()));
-            return (Vec::new(), Vec::new());
-        }
-    };
-    if reports.iter().any(|(_, path)| !path.is_file()) || !paths.pack.is_file() {
-        return (Vec::new(), Vec::new());
-    }
-    let workspace = match FunctionWorkspace::load(&reports, &paths.pack) {
-        Ok(workspace) => workspace,
+    let workspace = match resolved.function_workspace() {
+        Ok(Some(workspace)) => workspace,
+        Ok(None) => return (Vec::new(), Vec::new()),
         Err(error) => {
             push_error(diagnostics, "functions", error, Some(paths.pack.clone()));
             return (Vec::new(), Vec::new());
@@ -122,7 +113,7 @@ pub(super) fn collect(
                 semantic_operations: fact.semantic_operations.clone(),
                 registers,
                 mmio_sites: static_sites,
-                calls: fact.calls.len(),
+                calls: fact.direct_calls,
             }
         })
         .collect::<Vec<_>>();

@@ -13,8 +13,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use super::{ProjectSession, model::*};
 use crate::function_workspace::{
-    FunctionFact, FunctionMemoryObjectFact, FunctionReviewStatus, FunctionWorkspace,
-    ReviewedFunction, ReviewedLogicalType, ReviewedMemoryObject,
+    FunctionFact, FunctionMemoryObjectFact, FunctionReviewStatus, ReviewedFunction,
+    ReviewedLogicalType, ReviewedMemoryObject,
 };
 
 pub(super) fn collect(resolved: &ProjectSession, generation: u64) -> WorkspaceSnapshot {
@@ -74,15 +74,13 @@ pub(super) fn function_detail(
     resolved: &ProjectSession,
     identity: &str,
 ) -> crate::Result<Option<FunctionDetailSummary>> {
-    let Some(paths) = resolved.project.functions.as_ref() else {
+    let Some(_) = resolved.project.functions.as_ref() else {
         return Ok(None);
     };
-    let reports = resolved.project.function_ir_reports()?;
-    if reports.iter().any(|(_, path)| !path.is_file()) || !paths.pack.is_file() {
+    let Some(workspace) = resolved.function_workspace()? else {
         return Ok(None);
-    }
-    let workspace = FunctionWorkspace::load(&reports, &paths.pack)?;
-    let Some(fact) = workspace
+    };
+    let Some(summary_fact) = workspace
         .facts
         .functions
         .iter()
@@ -90,14 +88,35 @@ pub(super) fn function_detail(
     else {
         return Ok(None);
     };
+    let reports = resolved.project.function_ir_reports()?;
+    let report = reports
+        .iter()
+        .find_map(|(profile, path)| (profile == &summary_fact.profile).then_some(path))
+        .ok_or_else(|| {
+            crate::Error::invalid(format!(
+                "function profile {:?} has no linked-IR report",
+                summary_fact.profile
+            ))
+        })?;
+    let fact = crate::function_workspace::FunctionFacts::load_function(
+        &summary_fact.profile,
+        report,
+        &summary_fact.identity,
+    )?
+    .ok_or_else(|| {
+        crate::Error::invalid(format!(
+            "linked-IR report no longer contains function {:?}",
+            summary_fact.identity
+        ))
+    })?;
     let reviewed = workspace.pack.functions.iter().find(|function| {
         function.profile == fact.profile
             && function.source == fact.source
             && function.identity == fact.identity
     });
-    let investigation = function_investigation(resolved, fact)?;
+    let investigation = function_investigation(resolved, &fact)?;
     Ok(Some(function_detail_summary(
-        fact,
+        &fact,
         reviewed,
         &workspace.pack.types,
         investigation,
@@ -295,6 +314,10 @@ fn function_investigation(
         crate::function_investigation::FunctionInvestigationRequest {
             source: &fact.source,
             symbol: &fact.symbol,
+            runtime_address: fact
+                .identity
+                .rsplit_once("@0x")
+                .and_then(|(_, address)| u64::from_str_radix(address, 16).ok()),
             artifact,
             inventory,
             member: fact.member.as_deref(),
@@ -542,6 +565,7 @@ mod tests {
             context_projection_blockers: Vec::new(),
             decode_blockers: Vec::new(),
             reachable_functions: Vec::new(),
+            direct_calls: 0,
             calls: Vec::new(),
             mmio_addresses: vec![0x4000],
             context_fields: Vec::new(),

@@ -15,6 +15,9 @@ The run spec normally supplies both `source-artifact:libpp`, the authoritative
 linked image, and `source-inventory:libpp`, the raw archive used as origin
 evidence. `--artifact`, `--inventory`, `--member`, and `--origin-member` are
 available for focused experiments.
+When a linked image contains duplicate symbol names, use the persistent exact
+identity form `SOURCE:SYMBOL@0xADDRESS`; this selects the matching linked
+definition without relying on archive-member names.
 
 One typed report contains:
 
@@ -28,13 +31,24 @@ One typed report contains:
   body with its relocation sites;
 - each schema-validated linked-IR projection, pseudo-Rust and its exact
   blockers;
+- every recovered direct MMIO/RAM effect joined to its exact instruction PC
+  and conservative basic block;
 - direct call knowledge (`unknown`, `annotated`, `executable`, or resolved
   code), recovered reachable call-graph edges, and reviewed asynchronous event
   dispatch receiver/selector evidence;
 - reviewed preconditions and operational/diagnostic/timeout/error/recovery
   paths from the function pack;
 - a proof ledger that keeps container, decode, CFG, link-origin and semantic
-  completeness separate.
+completeness separate.
+
+A reviewed event route is joined only when the generated dispatcher proves the
+same mechanism, execution context, optional receiver and constant selector.
+The report then loads the exact handler identity from its named IR profile and
+shows its direct effects, calls, reachable inventory and semantic blockers in
+the same result. This closes the asynchronous navigation edge; it does not
+claim that the handler's selector-specific internal branch is feasible. A
+missing queue output model or scenario therefore remains visible at the
+handler boundary instead of being hidden by the reviewed route.
 
 The default human output is a bounded semantic summary. Add `--full` for the
 complete CFG and lossless instruction listing; instruction rows then carry

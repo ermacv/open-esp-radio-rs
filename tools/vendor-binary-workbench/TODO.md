@@ -32,10 +32,13 @@ that every user must learn.
 
 ## Focused investigation migration (2026-08-11)
 
-- [x] Replace the removed monolithic linked-IR JSON file with schema-v44
+- [x] Replace the removed monolithic linked-IR JSON file with schema-v45
   random-access bundles. Functions, call graph, registers and data objects
   have deterministic indexes; status/doctor/cache/navigation/review consumers
   use only the required member.
+- [x] Add the dedicated compact `function-overview.jsonl` member. Project
+  status and the TUI no longer scan the 1.1 GiB lossless function stream;
+  selected detail uses the exact function index and retains pseudo/scenarios.
 - [x] Make `inspect function` lossless at semantic blockers while keeping the
   default human view bounded. `--full` joins raw instructions to exact-PC
   calls, semantic operations, decode blockers and stable blocker IDs;
@@ -177,7 +180,7 @@ that every user must learn.
   uncovered TX roots `hal_mac_tx_config_edca` and
   `hal_mac_tx_get_blockack`.
 - [x] Turn publication scopes into an actionable root-cause queue. Linked-IR
-  schema 44 carries typed diagnostic kind/site/root IDs, review-scope schema 7
+  schema 45 carries typed diagnostic kind/site/root IDs, review-scope schema 7
   groups repeated causes and joins replacement coverage, and the read-only TUI
   exposes a Blockers view with function navigation. Parallel legacy string
   blocker arrays were removed from the persistent IR schema.
@@ -339,14 +342,14 @@ that every user must learn.
   catalog operations; only explicit compiled call models authorize execution.
 - [x] Complete executable external-call behavior beyond scalar results. The
   generic contract, structural analysis, generated reference ABI, concrete
-  executor, profile schema 2 and linked-IR schema 44 now preserve independent
+  executor, profile schema 2 and linked-IR schema 45 now preserve independent
   RV32 `a0`/`a1` returns and reviewed private-stack byte outputs. This covers
   `queue_send_from_isr`, coexistence PTI output and `esp_timer_get_time`
   without weakening them to one `SymbolicU32`. Reviewed zeroing allocators now
   produce affine allocation objects in static IR and fresh zeroed CPU-owned
   arenas in concrete execution; allocation site, requested size and capacity
   are retained as environment evidence.
-  The schema-v44 real-project run persists 148 modeled libpp call sites (75
+  The schema-v45 real-project run persists 148 modeled libpp call sites (75
   `symbolic-u32`, 17 `symbolic-u64`, 55 `void`, one constant) and 18 independent
   private-stack outputs. It removes two Wi-Fi RX call-graph blockers and one
   Wi-Fi interrupt blocker; remaining release blockers are predominantly memory

@@ -6,8 +6,7 @@ use crate::{
         CodeBoundaryControlFlowSummary, CodeBoundaryReviewState, CodeBoundarySummary,
         CodeWorkspaceReport, DiagnosticRecord,
     },
-    artifacts::symbol_inventory::load_code_boundary_facts,
-    code_workspace::{CodeBoundaryStatus, CodeWorkspace},
+    code_workspace::CodeBoundaryStatus,
 };
 
 pub(super) fn collect(
@@ -38,10 +37,16 @@ pub(super) fn collect(
             paths.review_output.clone(),
         );
     }
-    let workspace = match load_code_boundary_facts(&facts_path)
-        .and_then(|facts| CodeWorkspace::load(&facts, &paths.pack, &resolved.project.id))
-    {
-        Ok(workspace) => workspace,
+    let workspace = match resolved.code_workspace() {
+        Ok(Some(workspace)) => workspace,
+        Ok(None) => {
+            return empty(
+                true,
+                Some(facts_path),
+                Some(paths.pack.clone()),
+                paths.review_output.clone(),
+            );
+        }
         Err(error) => {
             push_error(
                 diagnostics,

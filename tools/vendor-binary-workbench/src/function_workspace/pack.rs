@@ -198,6 +198,28 @@ impl FunctionWorkspace {
         })
     }
 
+    pub(crate) fn load_summary(
+        reports: &[(String, std::path::PathBuf)],
+        pack_path: &Path,
+    ) -> Result<Self> {
+        let facts = FunctionFacts::load_summary(reports)?;
+        let pack = FunctionPack::load(pack_path)?;
+        let summary = super::pack_validate::validate(&pack.value, &facts).map_err(|error| {
+            crate::error::WorkbenchError::manifest_source(
+                "function pack",
+                pack_path,
+                &pack.input,
+                &error,
+                error.span(&pack.document),
+            )
+        })?;
+        Ok(Self {
+            facts,
+            pack: pack.value,
+            summary,
+        })
+    }
+
     pub(crate) const fn summary(&self) -> FunctionWorkspaceSummary {
         self.summary
     }

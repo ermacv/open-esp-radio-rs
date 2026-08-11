@@ -2,15 +2,9 @@
 
 use super::model::{Component, Phase, Readiness, ReviewScopeDetail};
 use crate::application::ProjectContext;
-use crate::{
-    artifacts::symbol_inventory::load_code_boundary_facts,
-    code_workspace::CodeWorkspace,
-    function_workspace::FunctionWorkspace,
-    interfaces::InterfaceWorkspace,
-    registers::{
-        ProjectRegisterWorkspace, validate_pac_api, validate_register_evidence,
-        validate_register_lints, validate_register_memory_map,
-    },
+use crate::registers::{
+    validate_pac_api, validate_register_evidence, validate_register_lints,
+    validate_register_memory_map,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -175,10 +169,8 @@ fn code(context: &ProjectContext<'_>) -> Component {
             .diagnostic("reviewed code-boundary pack has not been initialized")
             .next_action(project_command(context, "code init-pack"));
     }
-    let workspace = load_code_boundary_facts(&inventory.output)
-        .and_then(|facts| CodeWorkspace::load(&facts, &paths.pack, &context.project.id));
-    match workspace {
-        Ok(workspace) => {
+    match context.code_workspace() {
+        Ok(Some(workspace)) => {
             let summary = workspace.summary();
             Component::new(
                 "code_boundaries",
@@ -197,6 +189,8 @@ fn code(context: &ProjectContext<'_>) -> Component {
             .detail("inventory_backlog", summary.unreviewed)
             .detail("gating", false)
         }
+        Ok(None) => Component::new("code_boundaries", Readiness::Incomplete)
+            .detail("pack", paths.pack.display().to_string()),
         Err(error) => Component::new("code_boundaries", Readiness::Invalid)
             .detail("pack", paths.pack.display().to_string())
             .diagnostic(error)
@@ -214,8 +208,9 @@ fn registers(context: &ProjectContext<'_>) -> Component {
             .diagnostic("register model has not been initialized")
             .next_action(project_command(context, "registers init-model"));
     }
-    let workspace = match ProjectRegisterWorkspace::load(paths) {
-        Ok(workspace) => workspace,
+    let workspace = match context.register_workspace() {
+        Ok(Some(workspace)) => workspace,
+        Ok(None) => return Component::new("registers", Readiness::Incomplete),
         Err(error) => {
             return Component::new("registers", Readiness::Invalid)
                 .detail("model", paths.model.display().to_string())
@@ -290,18 +285,8 @@ fn interfaces(context: &ProjectContext<'_>) -> Component {
             .diagnostic("interface pack has not been initialized")
             .next_action(project_command(context, "interfaces init-pack"));
     }
-    match InterfaceWorkspace::load(
-        &paths.facts,
-        pack,
-        &paths.semantic_catalogs,
-        context.target.calling_convention.label(),
-        context
-            .target
-            .harness
-            .as_deref()
-            .and_then(|harness| crate::harnesses::contracts(harness).ok()),
-    ) {
-        Ok(workspace) => {
+    match context.interface_workspace() {
+        Ok(Some(workspace)) => {
             let summary = workspace.summary();
             Component::new(
                 "interfaces",
@@ -329,6 +314,9 @@ fn interfaces(context: &ProjectContext<'_>) -> Component {
             .detail("execution_models", summary.execution_models)
             .detail("resolved_calls", summary.resolved_calls)
         }
+        Ok(None) => Component::new("interfaces", Readiness::Incomplete)
+            .detail("facts", paths.facts.display().to_string())
+            .detail("pack", pack.display().to_string()),
         Err(error) => Component::new("interfaces", Readiness::Invalid)
             .detail("facts", paths.facts.display().to_string())
             .detail("pack", pack.display().to_string())
@@ -363,8 +351,8 @@ fn functions(context: &ProjectContext<'_>) -> Component {
             .diagnostic("function pack has not been initialized")
             .next_action(project_command(context, "functions init-pack"));
     }
-    match FunctionWorkspace::load(&reports, &paths.pack) {
-        Ok(workspace) => {
+    match context.function_workspace() {
+        Ok(Some(workspace)) => {
             let summary = workspace.summary();
             Component::new(
                 "functions",
@@ -401,6 +389,9 @@ fn functions(context: &ProjectContext<'_>) -> Component {
             )
             .detail("gating", false)
         }
+        Ok(None) => Component::new("functions", Readiness::Incomplete)
+            .detail("pack", paths.pack.display().to_string())
+            .diagnostic("linked-IR function facts or reviewed pack are unavailable"),
         Err(error) => Component::new("functions", Readiness::Invalid)
             .detail("pack", paths.pack.display().to_string())
             .diagnostic(error),

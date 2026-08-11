@@ -148,6 +148,20 @@ pub struct ReviewedEventRouteEvidence {
     pub handler_source: String,
     pub handler: String,
     pub rationale: String,
+    pub dispatch_constraint_matched: bool,
+    pub handler_analysis: Option<EventHandlerAnalysisEvidence>,
+    pub blockers: Vec<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct EventHandlerAnalysisEvidence {
+    pub identity: String,
+    pub complete: bool,
+    pub exact: bool,
+    pub direct_instruction_effects: usize,
+    pub direct_calls: usize,
+    pub reachable_functions: usize,
+    pub blockers: Vec<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -229,6 +243,7 @@ pub struct InvestigationLedgerEntry {
 pub(crate) struct FunctionInvestigationRequest<'a> {
     pub(crate) source: &'a str,
     pub(crate) symbol: &'a str,
+    pub(crate) runtime_address: Option<u64>,
     pub(crate) artifact: &'a Path,
     pub(crate) inventory: Option<&'a Path>,
     pub(crate) member: Option<&'a str>,
@@ -242,8 +257,12 @@ pub(crate) fn investigate(
     request: FunctionInvestigationRequest<'_>,
     project: &ProjectSpec,
 ) -> Result<FunctionInvestigationReport> {
-    let runtime =
-        artifact::inspect_function_body(request.artifact, request.member, request.symbol)?;
+    let runtime = artifact::inspect_function_body_at(
+        request.artifact,
+        request.member,
+        request.symbol,
+        request.runtime_address,
+    )?;
     let (origin, origin_ledger) = origin_evidence(&request, &runtime, project)?;
     let semantics = semantic_evidence(
         request.source,
@@ -747,7 +766,7 @@ fn semantic_evidence(
                 semantic_operation: call.semantic_operation.clone(),
                 execution_model: call.execution_model_id().map(str::to_owned),
             })
-            .collect();
+            .collect::<Vec<_>>();
         let reachable_functions = function.effect_summary.reachable_functions.clone();
         let mut call_graph_edges = reader
             .graph_slice(&function.identity, graph_depth, include_callers)
@@ -782,8 +801,9 @@ fn semantic_evidence(
                     .collect(),
                 blockers: dispatch.blockers.clone(),
             })
-            .collect();
-        let reviewed_event_routes = function_pack
+            .collect::<Vec<_>>();
+        let mut reviewed_event_routes = Vec::new();
+        for route in function_pack
             .as_ref()
             .into_iter()
             .flat_map(|pack| &pack.event_routes)
@@ -792,19 +812,9 @@ fn semantic_evidence(
                     && route.source == source
                     && route.dispatcher == function.identity
             })
-            .map(|route| ReviewedEventRouteEvidence {
-                id: route.id.clone(),
-                mechanism: route.mechanism.clone(),
-                selector_role: route.selector_role.clone(),
-                selector_value: route.selector_value,
-                receiver: route.receiver.clone(),
-                execution_context: route.execution_context.clone(),
-                handler_profile: route.handler_profile.clone(),
-                handler_source: route.handler_source.clone(),
-                handler: route.handler.clone(),
-                rationale: route.rationale.clone(),
-            })
-            .collect();
+        {
+            reviewed_event_routes.push(event_route_evidence(route, &event_dispatches, project)?);
+        }
         let linked_ir = serde_json::to_value(&function)?;
         let instruction_evidence = instruction_evidence(runtime, &function, &blockers);
         evidence.push(SemanticFunctionEvidence {
@@ -824,6 +834,115 @@ fn semantic_evidence(
         });
     }
     Ok(evidence)
+}
+
+fn event_route_evidence(
+    route: &crate::function_workspace::ReviewedEventRoute,
+    dispatches: &[EventDispatchEvidence],
+    project: &ProjectSpec,
+) -> Result<ReviewedEventRouteEvidence> {
+    let selector = format!("const:{:#010x}", route.selector_value);
+    let dispatch_constraint_matched = dispatches.iter().any(|dispatch| {
+        dispatch.mechanism == route.mechanism
+            && dispatch.execution_context == route.execution_context
+            && route
+                .receiver
+                .as_ref()
+                .is_none_or(|receiver| dispatch.receiver.as_ref() == Some(receiver))
+            && dispatch.interface_complete
+            && dispatch
+                .bindings
+                .iter()
+                .any(|binding| binding.role == route.selector_role && binding.value == selector)
+    });
+    let mut blockers = Vec::new();
+    if !dispatch_constraint_matched {
+        blockers.push(format!(
+            "generated dispatch does not prove {} {}={selector}",
+            route.mechanism, route.selector_role
+        ));
+    }
+    let handler_analysis = if dispatch_constraint_matched {
+        let Some(profile) = project
+            .ir_profiles
+            .iter()
+            .find(|profile| profile.id == route.handler_profile)
+        else {
+            blockers.push(format!(
+                "handler profile {:?} is not configured",
+                route.handler_profile
+            ));
+            return Ok(reviewed_event_route(route, false, None, blockers));
+        };
+        if !profile.output.is_dir() {
+            blockers.push(format!(
+                "handler profile {:?} has not been generated",
+                route.handler_profile
+            ));
+            None
+        } else {
+            let reader = artifacts::LinkedIrReader::open(&profile.output)?;
+            match reader.get_function_by_identity(&route.handler)? {
+                Some(handler) if handler.source == route.handler_source => {
+                    let handler_blockers = handler.blockers().map(str::to_owned).collect();
+                    Some(EventHandlerAnalysisEvidence {
+                        identity: handler.identity.clone(),
+                        complete: handler.complete,
+                        exact: handler.exact(),
+                        direct_instruction_effects: handler.direct_instruction_effect_count(),
+                        direct_calls: handler.direct_call_count(),
+                        reachable_functions: handler.effect_summary.reachable_functions.len(),
+                        blockers: handler_blockers,
+                    })
+                }
+                Some(_) => {
+                    blockers.push(format!(
+                        "handler {:?} does not belong to source {:?}",
+                        route.handler, route.handler_source
+                    ));
+                    None
+                }
+                None => {
+                    blockers.push(format!(
+                        "handler {:?} is absent from profile {:?}",
+                        route.handler, route.handler_profile
+                    ));
+                    None
+                }
+            }
+        }
+    } else {
+        None
+    };
+    Ok(reviewed_event_route(
+        route,
+        dispatch_constraint_matched,
+        handler_analysis,
+        blockers,
+    ))
+}
+
+fn reviewed_event_route(
+    route: &crate::function_workspace::ReviewedEventRoute,
+    dispatch_constraint_matched: bool,
+    handler_analysis: Option<EventHandlerAnalysisEvidence>,
+    blockers: Vec<String>,
+) -> ReviewedEventRouteEvidence {
+    ReviewedEventRouteEvidence {
+        id: route.id.clone(),
+        mechanism: route.mechanism.clone(),
+        selector_role: route.selector_role.clone(),
+        selector_value: route.selector_value,
+        receiver: route.receiver.clone(),
+        execution_context: route.execution_context.clone(),
+        handler_profile: route.handler_profile.clone(),
+        handler_source: route.handler_source.clone(),
+        handler: route.handler.clone(),
+        rationale: route.rationale.clone(),
+        dispatch_constraint_matched,
+        handler_analysis,
+        blockers,
+    }
 }
 
 fn blocker_requirement(kind: &str, message: &str) -> &'static str {

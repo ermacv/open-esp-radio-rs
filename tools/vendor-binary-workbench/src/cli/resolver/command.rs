@@ -1,6 +1,6 @@
 //! Conversion of a loaded environment into the exact command payload.
 
-use std::path::PathBuf;
+use std::{path::PathBuf, sync::OnceLock};
 
 use crate::{
     MemoryMap, MmioMap, ProjectSpec, Result, TargetSpec, application::ProjectSession,
@@ -40,6 +40,10 @@ impl ResolvedEnvironment {
             memory_map: self.memory_map,
             svd_paths: self.svd_paths,
             mmio: self.svd,
+            function_workspace: OnceLock::new(),
+            code_workspace: OnceLock::new(),
+            register_workspace: OnceLock::new(),
+            interface_workspace: OnceLock::new(),
         })
     }
 

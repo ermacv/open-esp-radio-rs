@@ -280,6 +280,7 @@ mod tests {
             context_projection_blockers: Vec::new(),
             decode_blockers: Vec::new(),
             reachable_functions: Vec::new(),
+            direct_calls: 0,
             calls: Vec::new(),
             mmio_addresses: Vec::new(),
             context_fields: Vec::new(),

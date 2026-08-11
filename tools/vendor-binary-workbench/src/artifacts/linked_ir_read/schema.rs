@@ -1,4 +1,4 @@
-//! Complete owned DTO for linked-IR schema v44.
+//! Complete owned DTO for linked-IR schema v45.
 
 #![allow(
     dead_code,
@@ -202,6 +202,77 @@ pub(crate) struct StoredFunction {
     pub(crate) pseudo: String,
 }
 
+/// Allocation-bounded record from the dedicated function overview stream used
+/// by project status and the TUI index.  Unlike the former projection over the
+/// full function JSON, this schema is strict and contains no lossless IR body.
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct StoredFunctionReviewProjection {
+    pub(crate) source: String,
+    pub(crate) identity: String,
+    pub(crate) selection: String,
+    pub(crate) member: Option<String>,
+    pub(crate) symbol: String,
+    pub(crate) complete: bool,
+    pub(crate) direct_calls: usize,
+    pub(crate) mmio_addresses: Vec<u32>,
+    pub(crate) effect_summary: StoredReviewEffectSummary,
+    pub(crate) decode_blockers: Vec<StoredDecodeBlocker>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct StoredReviewEffectSummary {
+    pub(crate) call_graph_closed: bool,
+    pub(crate) context_projection_complete: bool,
+    pub(crate) context_projection_blockers: Vec<String>,
+    pub(crate) context_fields: Vec<StoredReviewContextField>,
+    pub(crate) memory_fields: Vec<StoredReviewMemoryField>,
+    pub(crate) semantic_operations: Vec<String>,
+    pub(crate) trampoline_calls: usize,
+    pub(crate) event_dispatches: Vec<StoredReviewEventDispatch>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct StoredReviewContextField {
+    pub(crate) argument: u8,
+    pub(crate) offset: i32,
+    pub(crate) width: u8,
+    pub(crate) reads: usize,
+    pub(crate) writes: usize,
+    pub(crate) write_mask: u32,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct StoredReviewMemoryField {
+    pub(crate) object: StoredMemoryObject,
+    pub(crate) offset: i64,
+    pub(crate) width: u8,
+    pub(crate) reads: usize,
+    pub(crate) writes: usize,
+    pub(crate) write_mask: u32,
+    pub(crate) origins: Vec<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct StoredReviewEventDispatch {
+    pub(crate) mechanism: String,
+    pub(crate) execution_context: String,
+    pub(crate) receiver: Option<String>,
+    pub(crate) interface_complete: bool,
+    pub(crate) bindings: Vec<StoredReviewEventBinding>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct StoredReviewEventBinding {
+    pub(crate) role: String,
+    pub(crate) value: String,
+}
+
 impl StoredFunction {
     pub(crate) const fn exact(&self) -> bool {
         self.exact
@@ -221,6 +292,14 @@ impl StoredFunction {
 
     pub(crate) fn memory_field_count(&self) -> usize {
         self.memory_fields.len()
+    }
+
+    pub(crate) fn direct_instruction_effect_count(&self) -> usize {
+        self.instruction_effects.len()
+    }
+
+    pub(crate) fn direct_call_count(&self) -> usize {
+        self.calls.len()
     }
 
     pub(crate) fn blockers(&self) -> impl Iterator<Item = &str> {

@@ -107,7 +107,7 @@ pub(crate) fn build_project_ir<'a>(
             decode_blockers: documents.decode_blockers,
             registers: documents.registers,
             field_candidates: documents.field_candidates,
-            documents: 7 + usize::from(documents.pseudo.is_some()),
+            documents: 8 + usize::from(documents.pseudo.is_some()),
         });
         // Artifact-wide JSON and pseudo-Rust strings are intentionally
         // dropped before the next profile is analyzed.
@@ -331,6 +331,7 @@ fn check_bundle(
     for (name, contents) in [
         ("manifest.json", &expected.manifest),
         ("functions.jsonl", &expected.functions),
+        ("function-overview.jsonl", &expected.function_overview),
         ("function-index.json", &expected.function_index),
         ("graph.json", &expected.graph),
         ("register-index.json", &expected.register_index),

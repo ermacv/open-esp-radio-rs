@@ -16,6 +16,7 @@ pub(super) fn run(arguments: InspectFunctionArgs, project: &ProjectSpec) -> Resu
             "function selector must contain one non-empty SOURCE and SYMBOL",
         ));
     }
+    let (symbol, runtime_address) = parse_exact_symbol(symbol)?;
     let artifact = arguments.artifact.as_deref().ok_or_else(|| {
         crate::Error::invalid(format!(
             "run spec does not define source-artifact:{source}; pass --artifact"
@@ -25,6 +26,7 @@ pub(super) fn run(arguments: InspectFunctionArgs, project: &ProjectSpec) -> Resu
         FunctionInvestigationRequest {
             source,
             symbol,
+            runtime_address,
             artifact,
             inventory: arguments.inventory.as_deref(),
             member: arguments.member.as_deref(),
@@ -37,6 +39,21 @@ pub(super) fn run(arguments: InspectFunctionArgs, project: &ProjectSpec) -> Resu
     )?;
     crate::cli::output::render_report(&report, || render_human(&report, full));
     Ok(report.runtime.accounted_bytes == report.runtime.size)
+}
+
+fn parse_exact_symbol(input: &str) -> Result<(&str, Option<u64>)> {
+    let Some((symbol, address)) = input.rsplit_once("@0x") else {
+        return Ok((input, None));
+    };
+    if symbol.is_empty() || address.is_empty() {
+        return Err(crate::Error::invalid(
+            "exact function identity must be SYMBOL@0xADDRESS",
+        ));
+    }
+    let address = u64::from_str_radix(address, 16).map_err(|_| {
+        crate::Error::invalid(format!("invalid linked function address in {input:?}"))
+    })?;
+    Ok((symbol, Some(address)))
 }
 
 fn render_human(report: &FunctionInvestigationReport, full: bool) {
@@ -352,6 +369,35 @@ fn render_human(report: &FunctionInvestigationReport, full: bool) {
                     route.execution_context,
                 ));
                 crate::cli::output::line(format_args!("      {}", route.rationale));
+                crate::cli::output::line(format_args!(
+                    "      constraint={} handler-analysis={}",
+                    if route.dispatch_constraint_matched {
+                        "matched"
+                    } else {
+                        "blocked"
+                    },
+                    if route.handler_analysis.is_some() {
+                        "available"
+                    } else {
+                        "unavailable"
+                    }
+                ));
+                if let Some(handler) = &route.handler_analysis {
+                    crate::cli::output::line(format_args!(
+                        "      handler complete={} exact={} direct-effects={} calls={} reachable={}",
+                        handler.complete,
+                        handler.exact,
+                        handler.direct_instruction_effects,
+                        handler.direct_calls,
+                        handler.reachable_functions,
+                    ));
+                    for blocker in &handler.blockers {
+                        crate::cli::output::line(format_args!("        ! {blocker}"));
+                    }
+                }
+                for blocker in &route.blockers {
+                    crate::cli::output::line(format_args!("      ! {blocker}"));
+                }
             }
         }
         if !semantic.blockers.is_empty() {
@@ -468,5 +514,20 @@ fn render_human(report: &FunctionInvestigationReport, full: bool) {
         crate::cli::output::line(format_args!(
             "\nUse --full for the complete CFG and lossless instruction listing."
         ));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_exact_symbol;
+
+    #[test]
+    fn exact_identity_keeps_the_symbol_and_selects_the_linked_address() {
+        assert_eq!(
+            parse_exact_symbol("ppTask@0x10067fa0").unwrap(),
+            ("ppTask", Some(0x1006_7fa0))
+        );
+        assert_eq!(parse_exact_symbol("ppTask").unwrap(), ("ppTask", None));
+        assert!(parse_exact_symbol("ppTask@0xnot-hex").is_err());
     }
 }

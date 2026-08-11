@@ -120,11 +120,23 @@ pub fn inspect_function_body(
     member: Option<&str>,
     symbol: &str,
 ) -> Result<FunctionBody> {
+    inspect_function_body_at(artifact, member, symbol, None)
+}
+
+/// Inspect one symbol at an exact linked address when duplicate symbol names
+/// exist in the same image.
+pub fn inspect_function_body_at(
+    artifact: &Path,
+    member: Option<&str>,
+    symbol: &str,
+    address: Option<u64>,
+) -> Result<FunctionBody> {
     let mut candidates = load_code_symbols(artifact, symbol, CodeSymbolSelection::All)?
         .into_iter()
         .filter(|candidate| {
             candidate.name == symbol
                 && member.is_none_or(|m| candidate.member.as_deref() == Some(m))
+                && address.is_none_or(|address| candidate.address == address)
         })
         .collect::<Vec<_>>();
     if candidates.is_empty() {
@@ -139,11 +151,17 @@ pub fn inspect_function_body(
     if candidates.len() != 1 {
         let choices = candidates
             .iter()
-            .map(|candidate| candidate.member.as_deref().unwrap_or("<linked-image>"))
+            .map(|candidate| {
+                format!(
+                    "{}@{:#x}",
+                    candidate.member.as_deref().unwrap_or("<linked-image>"),
+                    candidate.address
+                )
+            })
             .collect::<Vec<_>>()
             .join(", ");
         return Err(Error::Message(format!(
-            "function {symbol:?} is ambiguous in {} ({choices}); select --member",
+            "function {symbol:?} is ambiguous in {} ({choices}); select --member or SYMBOL@0xADDRESS",
             artifact.display()
         )));
     }

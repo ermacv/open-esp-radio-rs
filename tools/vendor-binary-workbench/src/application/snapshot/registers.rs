@@ -9,7 +9,7 @@ use crate::{
         RegisterNameSource, RegisterPredicateSummary, RegisterReviewState, RegisterSummary,
         RegisterWorkspaceReport, RegisterWritePatternSummary,
     },
-    registers::{ProjectRegisterWorkspace, RegisterFacts, RegisterModel, RegisterReviewIr},
+    registers::{RegisterFacts, RegisterModel, RegisterReviewIr},
 };
 
 pub(super) fn collect(
@@ -26,8 +26,10 @@ pub(super) fn collect(
         if !paths.model.is_file() {
             return None;
         }
-        match ProjectRegisterWorkspace::load(paths).and_then(|workspace| workspace.summary()) {
-            Ok(summary) => Some(summary),
+        match resolved.register_workspace().and_then(|workspace| {
+            workspace.map_or_else(|| Ok(None), |workspace| workspace.summary().map(Some))
+        }) {
+            Ok(summary) => summary,
             Err(error) => {
                 push_error(diagnostics, "registers", error, Some(paths.model.clone()));
                 None

@@ -133,6 +133,7 @@ pub(crate) struct FunctionFact {
     pub(crate) context_projection_blockers: Vec<String>,
     pub(crate) decode_blockers: Vec<FunctionDecodeBlockerFact>,
     pub(crate) reachable_functions: Vec<String>,
+    pub(crate) direct_calls: usize,
     pub(crate) calls: Vec<FunctionCallFact>,
     pub(crate) mmio_addresses: Vec<u32>,
     pub(crate) context_fields: Vec<FunctionContextFieldFact>,
@@ -161,6 +162,16 @@ pub(crate) struct FunctionFacts {
 }
 
 impl FunctionFacts {
+    pub(crate) fn load_function(
+        profile: &str,
+        report: &std::path::Path,
+        identity: &str,
+    ) -> Result<Option<FunctionFact>> {
+        crate::artifacts::LinkedIrReader::open(report)?
+            .get_function_by_identity(identity)
+            .map(|function| function.map(|function| parse::parse_function(profile, function)))
+    }
+
     #[tracing::instrument(name = "load_function_facts", skip_all, fields(reports = reports.len()))]
     pub(crate) fn load(reports: &[(String, PathBuf)]) -> Result<Self> {
         let mut inputs = Vec::new();
@@ -168,6 +179,30 @@ impl FunctionFacts {
         for (profile, path) in reports {
             let document = crate::artifacts::load_linked_ir_functions(path)?;
             let (report_inputs, report_functions) = parse::parse_document(profile, document)?;
+            inputs.extend(report_inputs);
+            functions.extend(report_functions);
+        }
+        inputs.sort();
+        functions.sort_by(|left, right| {
+            (&left.profile, &left.identity).cmp(&(&right.profile, &right.identity))
+        });
+        validate::validate(&inputs, &functions)?;
+        Ok(Self { inputs, functions })
+    }
+
+    #[tracing::instrument(
+        name = "load_function_fact_summaries",
+        skip_all,
+        fields(reports = reports.len())
+    )]
+    pub(crate) fn load_summary(reports: &[(String, PathBuf)]) -> Result<Self> {
+        let mut inputs = Vec::new();
+        let mut functions = Vec::new();
+        for (profile, path) in reports {
+            let projection =
+                crate::artifacts::LinkedIrReader::open(path)?.read_review_projection()?;
+            let (report_inputs, report_functions) =
+                parse::parse_review_projection(profile, projection)?;
             inputs.extend(report_inputs);
             functions.extend(report_functions);
         }

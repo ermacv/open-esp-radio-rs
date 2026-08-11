@@ -396,11 +396,155 @@ pub(crate) struct LinkedIrDocument<'a> {
 pub(crate) struct LinkedIrBundle {
     pub(crate) manifest: String,
     pub(crate) functions: String,
+    pub(crate) function_overview: String,
     pub(crate) function_index: String,
     pub(crate) graph: String,
     pub(crate) register_index: String,
     pub(crate) data_objects: String,
     pub(crate) data_object_index: String,
+}
+
+/// Compact, persistent review projection.  The full function stream is the
+/// lossless analysis artifact and may contain megabytes for a single
+/// function; project status and the TUI must not deserialize it merely to
+/// build an index.
+#[derive(Serialize)]
+struct FunctionOverviewDocument<'a> {
+    source: &'a str,
+    identity: &'a str,
+    selection: &'a str,
+    member: &'a Option<String>,
+    symbol: &'a str,
+    complete: bool,
+    direct_calls: usize,
+    mmio_addresses: Vec<u32>,
+    effect_summary: FunctionOverviewEffectSummary<'a>,
+    decode_blockers: &'a [crate::LinkedDecodeBlocker],
+}
+
+#[derive(Serialize)]
+struct FunctionOverviewEffectSummary<'a> {
+    call_graph_closed: bool,
+    context_projection_complete: bool,
+    context_projection_blockers: &'a [String],
+    context_fields: Vec<FunctionOverviewContextField>,
+    memory_fields: Vec<FunctionOverviewMemoryField<'a>>,
+    semantic_operations: Vec<&'a str>,
+    trampoline_calls: usize,
+    event_dispatches: Vec<FunctionOverviewEventDispatch<'a>>,
+}
+
+#[derive(Serialize)]
+struct FunctionOverviewContextField {
+    argument: u8,
+    offset: i32,
+    width: u8,
+    reads: usize,
+    writes: usize,
+    write_mask: u32,
+}
+
+#[derive(Serialize)]
+struct FunctionOverviewMemoryField<'a> {
+    object: &'a crate::LinkedMemoryObject,
+    offset: i64,
+    width: u8,
+    reads: usize,
+    writes: usize,
+    write_mask: u32,
+    origins: &'a [String],
+}
+
+#[derive(Serialize)]
+struct FunctionOverviewEventDispatch<'a> {
+    mechanism: &'a str,
+    execution_context: &'a str,
+    receiver: &'a Option<String>,
+    interface_complete: bool,
+    bindings: Vec<FunctionOverviewEventBinding<'a>>,
+}
+
+#[derive(Serialize)]
+struct FunctionOverviewEventBinding<'a> {
+    role: &'a str,
+    value: &'a str,
+}
+
+impl<'a> FunctionOverviewDocument<'a> {
+    fn new(function: &'a LinkedIrFunction) -> Self {
+        let summary = &function.effect_summary;
+        Self {
+            source: &function.source,
+            identity: &function.identity,
+            selection: function.selection,
+            member: &function.member,
+            symbol: &function.symbol,
+            complete: function.complete,
+            direct_calls: function.calls.len(),
+            mmio_addresses: function
+                .mmio_accesses
+                .iter()
+                .map(|access| access.address)
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .collect(),
+            effect_summary: FunctionOverviewEffectSummary {
+                call_graph_closed: summary.call_graph_closed,
+                context_projection_complete: summary.context_projection_complete,
+                context_projection_blockers: &summary.context_projection_blockers,
+                context_fields: summary
+                    .context_fields
+                    .iter()
+                    .map(|field| FunctionOverviewContextField {
+                        argument: field.argument,
+                        offset: field.offset,
+                        width: field.width,
+                        reads: field.reads,
+                        writes: field.writes,
+                        write_mask: field.write_mask,
+                    })
+                    .collect(),
+                memory_fields: summary
+                    .memory_fields
+                    .iter()
+                    .map(|field| FunctionOverviewMemoryField {
+                        object: &field.object,
+                        offset: field.offset,
+                        width: field.width,
+                        reads: field.reads,
+                        writes: field.writes,
+                        write_mask: field.write_mask,
+                        origins: &field.origins,
+                    })
+                    .collect(),
+                semantic_operations: summary
+                    .semantic_operations
+                    .iter()
+                    .map(|operation| operation.operation.as_str())
+                    .collect(),
+                trampoline_calls: summary.trampoline_calls.len(),
+                event_dispatches: summary
+                    .event_dispatches
+                    .iter()
+                    .map(|dispatch| FunctionOverviewEventDispatch {
+                        mechanism: dispatch.mechanism,
+                        execution_context: dispatch.execution_context,
+                        receiver: &dispatch.receiver,
+                        interface_complete: dispatch.interface_complete,
+                        bindings: dispatch
+                            .bindings
+                            .iter()
+                            .map(|binding| FunctionOverviewEventBinding {
+                                role: binding.role,
+                                value: &binding.argument.value,
+                            })
+                            .collect(),
+                    })
+                    .collect(),
+            },
+            decode_blockers: &function.decode_blockers,
+        }
+    }
 }
 
 #[derive(Serialize)]
@@ -583,6 +727,7 @@ pub(crate) fn render_linked_ir_bundle(document: &LinkedIrDocument<'_>) -> Result
         functions: &[],
     };
     let mut functions = String::new();
+    let mut function_overview = String::new();
     let mut records = Vec::with_capacity(document.functions.len());
     let mut edges = Vec::new();
     for function in document.functions {
@@ -591,6 +736,10 @@ pub(crate) fn render_linked_ir_bundle(document: &LinkedIrDocument<'_>) -> Result
         let length = encoded.len() as u64;
         functions.push_str(&encoded);
         functions.push('\n');
+        function_overview.push_str(&serde_json::to_string(&FunctionOverviewDocument::new(
+            function,
+        ))?);
+        function_overview.push('\n');
         records.push(FunctionIndexRecord {
             identity: function.identity.clone(),
             source: function.source.clone(),
@@ -646,6 +795,7 @@ pub(crate) fn render_linked_ir_bundle(document: &LinkedIrDocument<'_>) -> Result
     Ok(LinkedIrBundle {
         manifest: serde_json::to_string(&manifest)? + "\n",
         functions,
+        function_overview,
         function_index: serde_json::to_string(&FunctionIndexDocument {
             schema_version: document.schema_version,
             command: "ir function index",
@@ -675,6 +825,7 @@ pub(crate) fn write_linked_ir_bundle(path: &Path, bundle: &LinkedIrBundle) -> Re
     for (name, contents) in [
         ("manifest.json", &bundle.manifest),
         ("functions.jsonl", &bundle.functions),
+        ("function-overview.jsonl", &bundle.function_overview),
         ("function-index.json", &bundle.function_index),
         ("graph.json", &bundle.graph),
         ("register-index.json", &bundle.register_index),
@@ -768,6 +919,7 @@ mod bundle_write_tests {
         let bundle = LinkedIrBundle {
             manifest: "{}\n".to_owned(),
             functions: String::new(),
+            function_overview: String::new(),
             function_index: "{}\n".to_owned(),
             graph: "{}\n".to_owned(),
             register_index: "{}\n".to_owned(),

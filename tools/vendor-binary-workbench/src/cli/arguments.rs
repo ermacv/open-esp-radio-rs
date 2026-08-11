@@ -412,6 +412,51 @@ pub(crate) struct InspectAnalyzeArgs {
 }
 
 #[derive(Clone, Debug, Default, Args)]
+pub(crate) struct InspectFunctionArgs {
+    /// Project source and exact function symbol (`SOURCE:SYMBOL`).
+    #[arg(value_name = "SOURCE:SYMBOL")]
+    pub(crate) selector: String,
+    /// Authoritative linked image for the selected source.
+    #[arg(long)]
+    pub(crate) artifact: Option<PathBuf>,
+    /// Raw archive used as source inventory and origin evidence.
+    #[arg(long)]
+    pub(crate) inventory: Option<PathBuf>,
+    /// Member containing the runtime function when the primary artifact is an archive.
+    #[arg(long)]
+    pub(crate) member: Option<String>,
+    /// Explicit origin archive member; normally recovered from symbol inventory.
+    #[arg(long)]
+    pub(crate) origin_member: Option<String>,
+    /// Include the complete CFG and lossless instruction listing in human output.
+    #[arg(long)]
+    pub(crate) full: bool,
+    /// Number of inter-function graph hops included in the focused report.
+    #[arg(long, default_value_t = 2)]
+    pub(crate) depth: usize,
+    /// Include incoming callers as well as outgoing callees in the graph slice.
+    #[arg(long)]
+    pub(crate) callers: bool,
+    /// Show one shortest structural CFG path (`FROM:TO`); use `+OFFSET` for function offsets.
+    #[arg(long, value_name = "FROM:TO")]
+    pub(crate) path: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, Args)]
+pub(crate) struct InspectObjectArgs {
+    /// Project source and exact data-object symbol (`SOURCE:SYMBOL`).
+    #[arg(value_name = "SOURCE:SYMBOL")]
+    pub(crate) selector: String,
+}
+
+#[derive(Clone, Debug, Default, Args)]
+pub(crate) struct InspectScopeArgs {
+    /// Exact project review-scope ID.
+    #[arg(value_name = "SCOPE")]
+    pub(crate) scope: String,
+}
+
+#[derive(Clone, Debug, Default, Args)]
 pub(crate) struct ReferenceArgs {
     /// Artifact containing the reference function.
     #[arg(long)]

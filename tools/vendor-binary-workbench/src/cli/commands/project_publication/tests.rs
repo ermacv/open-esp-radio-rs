@@ -174,9 +174,10 @@ bitWidth = 1
         functions: None,
         review: Some(ReviewWorkspaceSpec {
             output: review_output,
-            release_scopes: Vec::new(),
+            publication_scopes: Vec::new(),
             scopes: Vec::new(),
         }),
+        qualification: None,
         verification: None,
     };
     (directory, project)

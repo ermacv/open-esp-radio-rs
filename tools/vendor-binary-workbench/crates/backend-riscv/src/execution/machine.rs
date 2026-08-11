@@ -9,10 +9,10 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use rv_asm::Reg;
 
 use super::{
-    DeviceModelDescriptor, DeviceModelInstance, DeviceModelOutcome, ExecutableImage,
-    ExecutionEvent, ExecutionProducer, ExecutionResult, ExecutionTimelineEvent, IndirectCall,
-    MemoryAlias, MemoryOwnership, MemoryRange, ModeledCallResponse, OrderedCall, RETURN_SENTINEL,
-    STACK_POINTER, Scenario, TableLifecycleEvent,
+    AllocationLifecycleEvent, DeviceModelDescriptor, DeviceModelInstance, DeviceModelOutcome,
+    ExecutableImage, ExecutionEvent, ExecutionProducer, ExecutionResult, ExecutionTimelineEvent,
+    IndirectCall, MemoryAlias, MemoryOwnership, MemoryRange, ModeledCallResponse, OrderedCall,
+    RETURN_SENTINEL, STACK_POINTER, Scenario, TableLifecycleEvent,
 };
 use crate::{MmioMap, Result};
 
@@ -45,6 +45,7 @@ pub(super) struct Machine<'a> {
     pub(super) calls: BTreeSet<String>,
     pub(super) ordered_calls: Vec<OrderedCall>,
     pub(super) indirect_calls: BTreeSet<IndirectCall>,
+    pub(super) allocations: Vec<AllocationLifecycleEvent>,
     pub(super) table_layouts: Vec<TableRuntimeLayout>,
     pub(super) table_lifecycle: Vec<TableLifecycleEvent>,
     pub(super) table_lifecycle_complete: bool,
@@ -140,6 +141,7 @@ impl<'a> Machine<'a> {
             calls: BTreeSet::new(),
             ordered_calls: Vec::new(),
             indirect_calls: BTreeSet::new(),
+            allocations: Vec::new(),
             table_layouts,
             table_lifecycle,
             table_lifecycle_complete: true,
@@ -240,6 +242,7 @@ pub fn execute(
         calls: machine.calls,
         ordered_calls: machine.ordered_calls,
         indirect_calls: machine.indirect_calls,
+        allocations: machine.allocations,
         table_lifecycle: machine.table_lifecycle,
         table_lifecycle_complete: machine.table_lifecycle_complete,
         device_model_coverage,

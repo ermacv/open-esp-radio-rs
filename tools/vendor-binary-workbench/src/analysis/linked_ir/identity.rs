@@ -177,21 +177,6 @@ pub(super) fn compact_diagnostics(messages: &[String]) -> Vec<LinkedDiagnostic> 
 
 pub(super) type SymbolKey = (Option<String>, String, u64);
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn classifies_symbolic_cfg_wrapper_as_aggregate() {
-        let diagnostic = compact_diagnostic(
-            "symbolic-cfg: path to branch 0x1001b5a2 has unsupported effects: \
-             unresolved-call-relocation at 0x1001b576: wifi_assert",
-        );
-
-        assert_eq!(diagnostic.kind, "aggregate");
-    }
-}
-
 pub(super) fn symbol_key(symbol: &artifact::ArtifactSymbolDefinition) -> SymbolKey {
     (symbol.member.clone(), symbol.name.clone(), symbol.address)
 }
@@ -285,5 +270,20 @@ impl IrIdentityCatalog {
         identity: &str,
     ) -> Option<&artifact::ArtifactSymbolDefinition> {
         self.selectable_symbols.get(identity)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn classifies_symbolic_cfg_wrapper_as_aggregate() {
+        let diagnostic = compact_diagnostic(
+            "symbolic-cfg: path to branch 0x1001b5a2 has unsupported effects: \
+             unresolved-call-relocation at 0x1001b576: wifi_assert",
+        );
+
+        assert_eq!(diagnostic.kind, "aggregate");
     }
 }

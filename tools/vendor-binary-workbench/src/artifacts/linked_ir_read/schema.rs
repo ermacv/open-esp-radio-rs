@@ -1,13 +1,13 @@
-//! Complete owned DTO for linked-IR schema v40.
+//! Complete owned DTO for linked-IR schema v43.
 
 #![allow(
     dead_code,
     reason = "complete stored DTOs enforce every persistent schema field"
 )]
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct LinkedIrStoredDocument {
     schema_version: u32,
@@ -20,6 +20,7 @@ pub(crate) struct LinkedIrStoredDocument {
     effect_summary_mode: String,
     context_projection_mode: String,
     memory_object_mode: String,
+    data_object_mode: String,
     semantic_action_mode: String,
     event_dispatch_mode: String,
     event_dispatch_effect_completeness_claim: bool,
@@ -36,13 +37,14 @@ pub(crate) struct LinkedIrStoredDocument {
     symbol_prefix: String,
     entry_contract: String,
     pub(crate) summary: StoredReportSummary,
+    pub(crate) data_objects: Vec<StoredDataObject>,
     pub(crate) mmio_registers: Vec<StoredMmioRegister>,
     semantic_boundaries: Vec<StoredSemanticBoundary>,
     trampoline_slots: Vec<StoredTrampolineSlot>,
     pub(crate) functions: Vec<StoredFunction>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct StoredSourceArtifact {
     pub(crate) source: String,
@@ -50,7 +52,7 @@ pub(crate) struct StoredSourceArtifact {
     reviewed_code_boundaries: Vec<StoredReviewedCodeBoundary>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct StoredReviewedCodeBoundary {
     member: Option<String>,
@@ -60,14 +62,14 @@ struct StoredReviewedCodeBoundary {
     end_offset: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct StoredArtifactIdentity {
     pub(crate) path: String,
     pub(crate) sha256: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct StoredReportSummary {
     artifacts: usize,
@@ -117,9 +119,52 @@ pub(crate) struct StoredReportSummary {
     guard_mmio_links: usize,
     transitive_guard_mmio_links: usize,
     scenario_suggestions: usize,
+    data_objects: usize,
+    initialized_data_objects: usize,
+    data_object_relocations: usize,
+    data_object_xrefs: usize,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct StoredDataObject {
+    pub(crate) source: String,
+    pub(crate) member: Option<String>,
+    section: String,
+    pub(crate) symbol: String,
+    aliases: Vec<String>,
+    pub(crate) address: Option<String>,
+    object_offset: String,
+    size: u64,
+    writable: bool,
+    initialized: bool,
+    synthetic_from_anchor: bool,
+    exported: bool,
+    initializer_hex: Option<String>,
+    relocations: Vec<StoredDataObjectRelocation>,
+    xrefs: Vec<StoredDataObjectXref>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct StoredDataObjectRelocation {
+    offset: String,
+    elf_type: Option<u32>,
+    target: String,
+    addend: i64,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct StoredDataObjectXref {
+    function: String,
+    reads: usize,
+    writes: usize,
+    offsets: Vec<String>,
+    indexed_by: Vec<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct StoredFunction {
     pub(crate) source: String,
@@ -128,7 +173,7 @@ pub(crate) struct StoredFunction {
     pub(crate) member: Option<String>,
     pub(crate) symbol: String,
     binding: String,
-    address: Option<u32>,
+    pub(crate) address: Option<u32>,
     pub(crate) object_offset: u32,
     size: usize,
     flow_kind: String,
@@ -155,6 +200,10 @@ pub(crate) struct StoredFunction {
 }
 
 impl StoredFunction {
+    pub(crate) const fn exact(&self) -> bool {
+        self.exact
+    }
+
     pub(crate) fn is_exported(&self) -> bool {
         self.binding == "global-or-weak"
     }
@@ -208,7 +257,20 @@ impl StoredFunction {
     }
 }
 
-#[derive(Debug, Deserialize)]
+impl LinkedIrStoredDocument {
+    pub(crate) fn replace_bundle_payload(
+        &mut self,
+        functions: Vec<StoredFunction>,
+        mmio_registers: Vec<StoredMmioRegister>,
+        data_objects: Vec<StoredDataObject>,
+    ) {
+        self.functions = functions;
+        self.mmio_registers = mmio_registers;
+        self.data_objects = data_objects;
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct StoredDecodeBlocker {
     pub(crate) address: u64,
@@ -218,7 +280,7 @@ pub(crate) struct StoredDecodeBlocker {
     pub(crate) linear_control_flow: bool,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct StoredReturnProvenance {
     exact: bool,
@@ -228,7 +290,7 @@ struct StoredReturnProvenance {
     sources: Vec<StoredReturnBitSource>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct StoredReturnBitSource {
     kind: String,
@@ -245,7 +307,7 @@ struct StoredReturnBitSource {
     register: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct StoredCall {
     pub(crate) kind: String,
@@ -268,7 +330,7 @@ pub(crate) struct StoredCall {
     pub(crate) guard_paths: Option<Vec<StoredGuardPath>>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct StoredExternalExecutionModel {
     id: String,
@@ -276,7 +338,7 @@ struct StoredExternalExecutionModel {
     outputs: Vec<StoredExternalOutputModel>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct StoredExternalOutputModel {
     kind: String,
@@ -288,9 +350,27 @@ impl StoredCall {
     pub(crate) fn project_symbol(&self) -> Option<&str> {
         self.project_symbol.as_deref()
     }
+
+    pub(crate) fn knowledge(&self) -> &'static str {
+        if self.execution_model.is_some() {
+            "executable"
+        } else if self.semantic_operation.is_some() {
+            "annotated"
+        } else if self.kind == "internal" {
+            "internal-code"
+        } else if self.kind == "project-linked" {
+            "linked-code"
+        } else {
+            "unknown"
+        }
+    }
+
+    pub(crate) fn execution_model_id(&self) -> Option<&str> {
+        self.execution_model.as_ref().map(|model| model.id.as_str())
+    }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct StoredCallArgument {
     position: usize,
@@ -300,7 +380,7 @@ struct StoredCallArgument {
     value: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct StoredArgumentBinding {
     position: usize,
@@ -309,7 +389,7 @@ struct StoredArgumentBinding {
     expression: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct StoredTrampoline {
     table: String,
@@ -329,7 +409,7 @@ struct StoredTrampoline {
     replacement_hint: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct StoredSemanticContract {
     source: String,
@@ -338,7 +418,7 @@ struct StoredSemanticContract {
     event_dispatch: Option<StoredEventDispatchContract>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct StoredEventDispatchContract {
     mechanism: String,
@@ -347,20 +427,20 @@ struct StoredEventDispatchContract {
     argument_roles: Vec<StoredEventDispatchArgumentRole>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct StoredEventDispatchArgumentRole {
     role: String,
     argument: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct StoredGuardPath {
     pub(crate) guards: Vec<StoredGuard>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct StoredGuard {
     site: u32,
@@ -371,7 +451,7 @@ pub(crate) struct StoredGuard {
     direct_mmio_sources: Vec<StoredDirectMmioPredicateSource>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct StoredGuardResultSource {
     kind: String,
@@ -387,7 +467,7 @@ struct StoredGuardResultSource {
     mmio_sources: Vec<StoredGuardMmioSource>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct StoredGuardMmioSource {
     address: u32,
@@ -400,7 +480,7 @@ struct StoredGuardMmioSource {
     register_comparison_value: Option<u32>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct StoredDirectMmioPredicateSource {
     operand: String,
@@ -414,7 +494,7 @@ struct StoredDirectMmioPredicateSource {
     register_comparison_value: Option<u32>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct StoredDirectMmioPredicate {
     site: u32,
@@ -423,7 +503,7 @@ struct StoredDirectMmioPredicate {
     sources: Vec<StoredDirectMmioPredicateSource>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct StoredMmioAccess {
     ordinal: usize,
@@ -453,7 +533,7 @@ impl StoredMmioAccess {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct StoredDelay {
     ordinal: usize,
@@ -462,7 +542,7 @@ struct StoredDelay {
     constant_micros: Option<u32>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct StoredContextAccess {
     argument: u8,
@@ -478,7 +558,7 @@ struct StoredContextAccess {
     forced_one_mask: Option<u32>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct StoredFunctionContextField {
     argument: u8,
@@ -491,7 +571,7 @@ struct StoredFunctionContextField {
     write_values: Vec<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct StoredMemoryAccess {
     object: StoredMemoryObject,
@@ -507,7 +587,7 @@ struct StoredMemoryAccess {
     forced_one_mask: Option<u32>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct StoredFunctionMemoryField {
     object: StoredMemoryObject,
@@ -520,7 +600,7 @@ struct StoredFunctionMemoryField {
     write_values: Vec<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub(crate) enum StoredMemoryObject {
     Argument {
@@ -543,9 +623,12 @@ pub(crate) enum StoredMemoryObject {
         argument: u8,
         stride: i64,
     },
+    ZeroedAllocation {
+        call_token: u32,
+    },
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct StoredEffectSummary {
     pub(crate) call_graph_closed: bool,
@@ -565,7 +648,7 @@ pub(crate) struct StoredEffectSummary {
     pub(crate) event_dispatches: Vec<StoredEventDispatch>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct StoredSummaryMmio {
     address: u32,
@@ -576,7 +659,7 @@ struct StoredSummaryMmio {
     origins: Vec<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct StoredSummaryDelay {
     micros: String,
@@ -585,7 +668,7 @@ struct StoredSummaryDelay {
     origins: Vec<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct StoredSemanticOperation {
     pub(crate) operation: String,
@@ -595,7 +678,7 @@ pub(crate) struct StoredSemanticOperation {
     origins: Vec<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct StoredContextField {
     pub(crate) argument: u8,
@@ -609,7 +692,7 @@ pub(crate) struct StoredContextField {
     write_values: Vec<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct StoredMemoryField {
     pub(crate) object: StoredMemoryObject,
@@ -623,9 +706,9 @@ pub(crate) struct StoredMemoryField {
     write_values: Vec<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-struct StoredProjectedCallArgument {
+pub(crate) struct StoredProjectedCallArgument {
     position: usize,
     name: String,
     c_type: String,
@@ -636,7 +719,7 @@ struct StoredProjectedCallArgument {
     root_offset: Option<i32>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct StoredProjectedTrampolineCall {
     trampoline: StoredTrampoline,
@@ -646,7 +729,7 @@ pub(crate) struct StoredProjectedTrampolineCall {
     arguments: Vec<StoredProjectedCallArgument>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct StoredProjectedSemanticAction {
     site_path: Vec<Option<u32>>,
@@ -662,33 +745,39 @@ struct StoredProjectedSemanticAction {
     guard_scopes: Option<Vec<StoredGuardScope>>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct StoredGuardScope {
     function: String,
     paths: Vec<StoredGuardPath>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct StoredEventDispatch {
-    semantic_action_index: usize,
-    mechanism: String,
-    execution_context: String,
-    receiver: Option<String>,
-    interface_complete: bool,
-    blockers: Vec<String>,
-    bindings: Vec<StoredEventDispatchBinding>,
+    pub(crate) semantic_action_index: usize,
+    pub(crate) mechanism: String,
+    pub(crate) execution_context: String,
+    pub(crate) receiver: Option<String>,
+    pub(crate) interface_complete: bool,
+    pub(crate) blockers: Vec<String>,
+    pub(crate) bindings: Vec<StoredEventDispatchBinding>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-struct StoredEventDispatchBinding {
-    role: String,
-    argument: StoredProjectedCallArgument,
+pub(crate) struct StoredEventDispatchBinding {
+    pub(crate) role: String,
+    pub(crate) argument: StoredProjectedCallArgument,
 }
 
-#[derive(Debug, Deserialize)]
+impl StoredProjectedCallArgument {
+    pub(crate) fn value(&self) -> &str {
+        &self.value
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct StoredScenarioSuggestion {
     pub(crate) kind: String,
@@ -697,7 +786,7 @@ pub(crate) struct StoredScenarioSuggestion {
     pub(crate) variants: Vec<StoredScenarioVariant>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct StoredScenarioVariant {
     pub(crate) name: String,
@@ -705,14 +794,14 @@ pub(crate) struct StoredScenarioVariant {
     pub(crate) mmio_reads: Vec<StoredScenarioMmioRead>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct StoredScenarioArgument {
     pub(crate) index: u8,
     pub(crate) value: u32,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct StoredScenarioMmioRead {
     pub(crate) address: u32,
@@ -721,7 +810,7 @@ pub(crate) struct StoredScenarioMmioRead {
     pub(crate) values: Vec<u32>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct StoredMmioRegister {
     pub(crate) address: u32,
@@ -745,7 +834,7 @@ pub(crate) struct StoredMmioRegister {
     pub(crate) functions: Vec<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct StoredMmioBitRange {
     least_significant_bit: u8,
@@ -755,7 +844,7 @@ struct StoredMmioBitRange {
     functions: Vec<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct StoredFieldCandidate {
     pub(crate) least_significant_bit: u8,
@@ -773,7 +862,7 @@ pub(crate) struct StoredFieldCandidate {
     pub(crate) semantic_evidence: Vec<StoredSemanticEvidence>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct StoredPredicateEvidence {
     pub(crate) kind: String,
@@ -792,7 +881,7 @@ pub(crate) struct StoredPredicateEvidence {
     inverted: bool,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct StoredSemanticEvidence {
     pub(crate) kind: String,
@@ -819,7 +908,7 @@ pub(crate) struct StoredSemanticEvidence {
     pub(crate) effective_operation: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct StoredSemanticBoundary {
     operation: String,
@@ -829,7 +918,7 @@ struct StoredSemanticBoundary {
     replacement_hints: Vec<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct StoredTrampolineSlot {
     trampoline: StoredTrampoline,
@@ -838,7 +927,7 @@ struct StoredTrampolineSlot {
     functions: Vec<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct StoredDiagnostic {
     pub(crate) root_id: String,
@@ -849,7 +938,7 @@ pub(crate) struct StoredDiagnostic {
     fragments: Vec<StoredDiagnosticFragment>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct StoredDiagnosticFragment {
     first_ordinal: usize,

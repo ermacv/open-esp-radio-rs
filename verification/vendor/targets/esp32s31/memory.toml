@@ -35,6 +35,22 @@ name = "modem-lpcon-platform"
 address-space = "cpu"
 kind = "mmio"
 start = 0x2010F000
+end-exclusive = 0x2010F400
+permissions = "rw"
+
+[[regions]]
+name = "coex-hw-timer"
+address-space = "cpu"
+kind = "mmio"
+start = 0x2010F400
+end-exclusive = 0x2010F450
+permissions = "rw"
+
+[[regions]]
+name = "modem-lpcon-platform-high"
+address-space = "cpu"
+kind = "mmio"
+start = 0x2010F450
 end-exclusive = 0x2010F800
 permissions = "rw"
 

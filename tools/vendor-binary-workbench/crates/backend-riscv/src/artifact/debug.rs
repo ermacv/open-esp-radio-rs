@@ -23,6 +23,9 @@ pub struct ArtifactDebugSymbol {
     pub source_column: Option<u32>,
 }
 
+type DebugSymbolKey = (String, Option<String>, Option<u32>, Option<u32>);
+type DebugSymbolMap = BTreeMap<DebugSymbolKey, ArtifactDebugSymbol>;
+
 pub fn inspect_rust_debug_symbols(path: &Path) -> Result<Vec<ArtifactDebugSymbol>> {
     let bytes = std::fs::read(path)?;
     let object = object::File::parse(bytes.as_slice())?;
@@ -43,8 +46,7 @@ pub fn inspect_rust_debug_symbols(path: &Path) -> Result<Vec<ArtifactDebugSymbol
             ))
         })
         .collect::<Vec<_>>();
-    let mut symbols =
-        BTreeMap::<(String, Option<String>, Option<u32>, Option<u32>), ArtifactDebugSymbol>::new();
+    let mut symbols = DebugSymbolMap::new();
     for (raw_name, address, size) in &text_symbols {
         let Some(demangled_name) = demangle_rust_symbol(raw_name) else {
             continue;
@@ -123,10 +125,7 @@ fn demangle_rust_symbol(raw_name: &str) -> Option<String> {
     Some(format!("{demangled:#}"))
 }
 
-fn insert_symbol(
-    symbols: &mut BTreeMap<(String, Option<String>, Option<u32>, Option<u32>), ArtifactDebugSymbol>,
-    symbol: ArtifactDebugSymbol,
-) {
+fn insert_symbol(symbols: &mut DebugSymbolMap, symbol: ArtifactDebugSymbol) {
     let key = (
         symbol.demangled_name.clone(),
         symbol.source_file.clone(),

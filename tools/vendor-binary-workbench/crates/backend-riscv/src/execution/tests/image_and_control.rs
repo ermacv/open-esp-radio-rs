@@ -132,6 +132,72 @@ fn argument_constraints_prune_a_resolved_auipc_jalr_child_and_its_fallthrough() 
 }
 
 #[test]
+fn coverage_widens_a_changing_loop_constant_instead_of_enumerating_values() {
+    let image = tiny_image(
+        vec![
+            0x13, 0x05, 0x15, 0x00, // addi a0, a0, 1
+            0xe3, 0x1e, 0x05, 0xfe, // bne a0, zero, -4
+            0x67, 0x80, 0x00, 0x00, // ret
+        ],
+        12,
+    );
+    let mut arguments = [None; 8];
+    arguments[0] = Some(0);
+
+    let inventory = image
+        .coverage_inventory_with_argument_constraints("test", &arguments)
+        .unwrap();
+
+    assert_eq!(inventory.branch_sites, BTreeSet::from([0x1004]));
+    assert_eq!(
+        inventory.branch_outcomes,
+        BTreeSet::from([(0x1004, false), (0x1004, true)])
+    );
+}
+
+#[test]
+fn coverage_preserves_riscv_callee_saved_constants_across_calls() {
+    let image = tiny_image(
+        vec![
+            0x13, 0x04, 0x05, 0x00, // mv s0, a0
+            0xef, 0x00, 0x00, 0x01, // jal ra, +16
+            0x63, 0x04, 0x04, 0x00, // beq s0, zero, +8
+            0x67, 0x80, 0x00, 0x00, // false return
+            0x67, 0x80, 0x00, 0x00, // true return
+            0x67, 0x80, 0x00, 0x00, // callee return
+        ],
+        24,
+    );
+    let mut arguments = [None; 8];
+    arguments[0] = Some(0);
+
+    let inventory = image
+        .coverage_inventory_with_argument_constraints("test", &arguments)
+        .unwrap();
+
+    assert_eq!(inventory.branch_sites, BTreeSet::from([0x1008]));
+    assert_eq!(inventory.branch_outcomes, BTreeSet::from([(0x1008, true)]));
+}
+
+#[test]
+fn coverage_treats_compiler_arithmetic_runtime_as_an_atomic_operation() {
+    let mut image = direct_call_closure_image(
+        [0x67, 0x80, 0x00, 0x00, 0x67, 0x80, 0x00, 0x00],
+        [0x63, 0x00, 0x00, 0x00], // implementation loop branch
+    );
+    image.symbols_by_name.remove("callee");
+    image.symbols_by_name.insert("__udivdi3".to_owned(), 0x1010);
+    image
+        .symbols_by_address
+        .insert(0x1010, "__udivdi3".to_owned());
+
+    let inventory = image.coverage_inventory("test").unwrap();
+
+    assert!(inventory.branch_sites.is_empty());
+    assert!(inventory.unresolved_edges.is_empty());
+}
+
+#[test]
 fn call_trampoline_does_not_duplicate_the_ordered_target_call() {
     let image = ExecutableImage {
         segments: vec![

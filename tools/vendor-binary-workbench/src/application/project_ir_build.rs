@@ -36,6 +36,7 @@ struct BuiltProfileSummary<'a> {
 
 struct ResolvedInputs {
     artifacts: Vec<(String, PathBuf)>,
+    inventories: std::collections::BTreeMap<String, PathBuf>,
     companions: Vec<PathBuf>,
 }
 
@@ -48,7 +49,7 @@ pub(crate) struct ProfileDocument<'a> {
     pub(crate) decode_blockers: usize,
     pub(crate) registers: usize,
     pub(crate) field_candidates: usize,
-    pub(crate) json: &'a Path,
+    pub(crate) bundle: &'a Path,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) pseudo: Option<&'a Path>,
 }
@@ -78,17 +79,19 @@ pub(crate) fn build_project_ir<'a>(
     let mut stale = Vec::new();
     for profile in selected {
         let inputs = resolve_inputs(profile, run_spec)?;
-        let documents = linked_ir_export::generate_project_profile(
-            inputs.artifacts,
-            inputs.companions,
-            profile,
-            svd,
-            target,
-            &effective_code,
-            interfaces.as_ref(),
-            &interface_origins,
-            request.jobs,
-        )?;
+        let documents =
+            linked_ir_export::generate_project_profile(linked_ir_export::ProjectProfileRequest {
+                inputs: inputs.artifacts,
+                inventories: inputs.inventories,
+                companions: inputs.companions,
+                profile,
+                svd,
+                target,
+                effective_code: &effective_code,
+                interfaces: interfaces.as_ref(),
+                interface_origins: &interface_origins,
+                jobs: request.jobs,
+            })?;
         if request.check {
             check_profile(profile, &documents, &mut stale);
         } else {
@@ -101,7 +104,7 @@ pub(crate) fn build_project_ir<'a>(
             decode_blockers: documents.decode_blockers,
             registers: documents.registers,
             field_candidates: documents.field_candidates,
-            documents: 1 + usize::from(documents.pseudo.is_some()),
+            documents: 7 + usize::from(documents.pseudo.is_some()),
         });
         // Artifact-wide JSON and pseudo-Rust strings are intentionally
         // dropped before the next profile is analyzed.
@@ -118,11 +121,7 @@ pub(crate) fn build_project_ir<'a>(
     }
     let status = if request.check { "verified" } else { "written" };
     let mut document_count = built.iter().map(|built| built.documents).sum::<usize>();
-    if request.refresh_review_scopes && project.review.is_some() {
-        let workspace = project
-            .review
-            .as_ref()
-            .expect("review workspace is configured");
+    if let (true, Some(workspace)) = (request.refresh_review_scopes, project.review.as_ref()) {
         let document = crate::review_scopes::build_document(project)?;
         super::generated_file::write_or_check(
             &workspace.output,
@@ -147,7 +146,7 @@ pub(crate) fn build_project_ir<'a>(
                 decode_blockers: built.decode_blockers,
                 registers: built.registers,
                 field_candidates: built.field_candidates,
-                json: &built.profile.output,
+                bundle: &built.profile.output,
                 pseudo: built.profile.pseudo_rust.as_deref(),
             })
             .collect(),
@@ -256,6 +255,22 @@ fn resolve_inputs(profile: &ProjectIrProfile, run_spec: &RunSpec) -> Result<Reso
     }
     Ok(ResolvedInputs {
         artifacts,
+        inventories: run_spec
+            .inputs()
+            .iter()
+            .filter_map(|input| match &input.role {
+                InputRole::SourceInventory(source)
+                    if profile.sources.is_empty()
+                        || profile
+                            .sources
+                            .iter()
+                            .any(|candidate| candidate == source.as_str()) =>
+                {
+                    Some((source.to_string(), input.path.clone()))
+                }
+                _ => None,
+            })
+            .collect(),
         companions: companions.into_iter().collect(),
     })
 }
@@ -265,11 +280,29 @@ fn check_profile(
     documents: &ProjectIrDocuments,
     stale: &mut Vec<PathBuf>,
 ) {
-    check_document(&profile.output, &documents.json, stale);
+    check_bundle(&profile.output, &documents.bundle, stale);
     if let (Some(path), Some(contents)) =
         (profile.pseudo_rust.as_deref(), documents.pseudo.as_deref())
     {
         check_document(path, contents, stale);
+    }
+}
+
+fn check_bundle(
+    path: &Path,
+    expected: &crate::artifacts::LinkedIrBundle,
+    stale: &mut Vec<PathBuf>,
+) {
+    for (name, contents) in [
+        ("manifest.json", &expected.manifest),
+        ("functions.jsonl", &expected.functions),
+        ("function-index.json", &expected.function_index),
+        ("graph.json", &expected.graph),
+        ("register-index.json", &expected.register_index),
+        ("data-objects.jsonl", &expected.data_objects),
+        ("data-object-index.json", &expected.data_object_index),
+    ] {
+        check_document(&path.join(name), contents, stale);
     }
 }
 
@@ -280,7 +313,7 @@ fn check_document(path: &Path, expected: &str, stale: &mut Vec<PathBuf>) {
 }
 
 fn write_profile(profile: &ProjectIrProfile, documents: &ProjectIrDocuments) -> Result<()> {
-    super::generated_file::write_or_check(&profile.output, &documents.json, false, "linked IR")?;
+    crate::artifacts::write_linked_ir_bundle(&profile.output, &documents.bundle)?;
     if let (Some(path), Some(contents)) =
         (profile.pseudo_rust.as_deref(), documents.pseudo.as_deref())
     {

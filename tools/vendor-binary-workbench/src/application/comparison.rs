@@ -86,7 +86,7 @@ pub(super) fn compare_profile(
         })
         .collect::<Vec<_>>();
     operations::validate_table_instances(resolved, &table_scenarios)?;
-    let argument_domain = profile.coverage_argument_constraints();
+    let coverage_domain = profile.coverage_constraints();
     Ok(crate::compare_execution_scenarios(
         &resolved.mmio,
         crate::ExecutionInput {
@@ -100,7 +100,7 @@ pub(super) fn compare_profile(
             symbol: &profile.rust_symbol,
         },
         profile.compare_return,
-        &argument_domain,
+        &coverage_domain,
         &profile.scenarios,
     )?)
 }

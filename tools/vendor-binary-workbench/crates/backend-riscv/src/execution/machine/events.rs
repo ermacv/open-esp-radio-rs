@@ -3,8 +3,9 @@
 use rv_asm::Reg;
 
 use super::super::{
-    ExecutionEvent, ExecutionProducer, ExecutionTimelineEvent, ModeledCallOutput,
-    ModeledCallResponse, OrderedCall, TableLifecycleEvent, execution_stack_contains,
+    AllocationLifecycleEvent, ExecutionEvent, ExecutionProducer, ExecutionTimelineEvent,
+    MemoryOwner, MemoryOwnership, MemoryRange, ModeledCallOutput, ModeledCallResponse, OrderedCall,
+    TableLifecycleEvent, execution_stack_contains,
 };
 use super::Machine;
 use crate::Result;
@@ -99,6 +100,81 @@ impl Machine<'_> {
         site: u32,
         response: ModeledCallResponse,
     ) -> Result<()> {
+        if let Some(allocation) = response.allocation {
+            const MAX_MODELED_ALLOCATION_BYTES: u32 = 1024 * 1024;
+            if allocation.size_argument >= 8 {
+                return Err(format!(
+                    "modeled call {symbol} at {site:#010x} allocation size argument a{} exceeds RV32 a0..a7",
+                    allocation.size_argument
+                )
+                .into());
+            }
+            if allocation.capacity == 0
+                || allocation.capacity > MAX_MODELED_ALLOCATION_BYTES
+                || allocation.address & 3 != 0
+            {
+                return Err(format!(
+                    "modeled call {symbol} at {site:#010x} has invalid allocation arena {:#010x}+{:#x}",
+                    allocation.address, allocation.capacity
+                )
+                .into());
+            }
+            let requested =
+                self.registers[usize::from(Reg::A0.0) + usize::from(allocation.size_argument)];
+            if requested == 0 || requested > allocation.capacity {
+                return Err(format!(
+                    "modeled call {symbol} at {site:#010x} requested {requested:#x} allocation bytes from capacity {:#x}",
+                    allocation.capacity
+                )
+                .into());
+            }
+            let end = allocation
+                .address
+                .checked_add(allocation.capacity)
+                .ok_or_else(|| {
+                    format!(
+                        "modeled call {symbol} at {site:#010x} allocation arena overflows address space"
+                    )
+                })?;
+            for address in allocation.address..end {
+                if execution_stack_contains(address)
+                    || self.image.contains_memory(address)
+                    || self.svd.intersects_mmio(address, 8)
+                    || self.initial_overlay.contains_key(&address)
+                {
+                    return Err(format!(
+                        "modeled call {symbol} at {site:#010x} allocation arena overlaps existing memory at {address:#010x}"
+                    )
+                    .into());
+                }
+            }
+            for address in allocation.address..allocation.address + requested {
+                self.initial_overlay.insert(address, 0);
+                self.overlay.insert(address, 0);
+            }
+            self.memory_ownership.push(MemoryOwnership {
+                range: MemoryRange {
+                    start: allocation.address,
+                    length: requested,
+                },
+                owner: MemoryOwner::Cpu,
+            });
+            self.allocations.push(AllocationLifecycleEvent {
+                site,
+                symbol: symbol.to_owned(),
+                address: allocation.address,
+                requested,
+                capacity: allocation.capacity,
+                zeroed: true,
+            });
+            if response.return_words[0].is_some() {
+                return Err(format!(
+                    "modeled call {symbol} at {site:#010x} allocation conflicts with explicit a0 return"
+                )
+                .into());
+            }
+            self.registers[usize::from(Reg::A0.0)] = allocation.address;
+        }
         let mut output_arguments = std::collections::BTreeSet::new();
         for output in response.outputs {
             match output {

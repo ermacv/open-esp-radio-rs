@@ -96,7 +96,6 @@ mod tests {
                 report: Some(report.clone()),
                 evidence_baseline: Some(baseline.clone()),
                 candidate: Some(candidate.clone()),
-                ..Default::default()
             })
             .unwrap()
         );
@@ -106,7 +105,6 @@ mod tests {
             report: Some(report.clone()),
             evidence_baseline: Some(baseline.clone()),
             candidate: Some(report.clone()),
-            ..Default::default()
         })
         .unwrap_err();
         assert!(error.to_string().contains("verification report"));

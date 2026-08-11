@@ -11,18 +11,18 @@ pub(crate) struct LinkedIrSummary {
 }
 
 pub(crate) fn inspect_linked_ir(path: &Path) -> crate::Result<LinkedIrSummary> {
-    let input = std::fs::read_to_string(path)?;
-    let document = super::parse_linked_ir(&input).map_err(|error| {
+    let reader = super::LinkedIrReader::open(path).map_err(|error| {
         crate::Error::invalid(format!(
             "unsupported linked-IR artifact in {}: {error}",
             path.display()
         ))
     })?;
+    let summary = reader.summary();
     Ok(LinkedIrSummary {
-        functions: document.summary.functions,
-        decode_blockers: document.summary.decode_blockers,
-        registers: document.summary.mmio_registers,
-        field_candidates: document.summary.mmio_field_candidates,
+        functions: summary.functions,
+        decode_blockers: summary.decode_blockers,
+        registers: summary.mmio_registers,
+        field_candidates: summary.mmio_field_candidates,
     })
 }
 
@@ -45,10 +45,14 @@ mod tests {
     #[test]
     fn validates_identity_claims_and_reads_summary() {
         let path = std::env::temp_dir().join(format!(
-            "vendor-workbench-linked-ir-artifact-{}.json",
+            "vendor-workbench-linked-ir-artifact-{}",
             std::process::id()
         ));
-        std::fs::write(&path, serde_json::to_string_pretty(&document()).unwrap()).unwrap();
+        super::super::write_fixture_bundle(
+            &path,
+            &serde_json::to_string_pretty(&document()).unwrap(),
+        )
+        .unwrap();
         let summary = inspect_linked_ir(&path).unwrap();
         assert_eq!(summary.functions, 3);
         assert_eq!(summary.decode_blockers, 5);
@@ -57,14 +61,14 @@ mod tests {
 
         let mut stale = document();
         stale["schema_version"] = serde_json::json!(34);
-        std::fs::write(&path, stale.to_string()).unwrap();
+        std::fs::write(path.join("manifest.json"), stale.to_string()).unwrap();
         assert!(
             inspect_linked_ir(&path)
                 .unwrap_err()
                 .to_string()
-                .contains("expected schema_version 40")
+                .contains("expected schema_version 43")
         );
-        std::fs::remove_file(path).unwrap();
+        std::fs::remove_dir_all(path).unwrap();
     }
 
     #[test]

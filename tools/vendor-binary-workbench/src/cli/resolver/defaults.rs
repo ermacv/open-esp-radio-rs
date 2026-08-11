@@ -142,6 +142,22 @@ pub(super) fn apply_run_spec_defaults(command: &mut Command, run_spec: &RunSpec)
                 }
             }
             Command::InspectTrace(args) => apply_trace_input(args, role, path),
+            Command::InspectFunction(args) => {
+                let source = args.selector.split_once(':').map(|(source, _)| source);
+                match role {
+                    InputRole::SourceArtifact(candidate)
+                        if source == Some(candidate.as_str()) && args.artifact.is_none() =>
+                    {
+                        args.artifact = Some(path.clone());
+                    }
+                    InputRole::SourceInventory(candidate)
+                        if source == Some(candidate.as_str()) && args.inventory.is_none() =>
+                    {
+                        args.inventory = Some(path.clone());
+                    }
+                    _ => {}
+                }
+            }
             Command::InspectCompare(args) => {
                 if role == &InputRole::Artifact && args.artifact.is_none() {
                     args.artifact = Some(path.clone());

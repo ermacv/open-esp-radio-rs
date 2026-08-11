@@ -240,7 +240,8 @@ impl ResolvedProjectAnalysisOperations<'_> {
             .ir_profiles
             .iter()
             .flat_map(|profile| {
-                std::iter::once(profile.output.clone()).chain(profile.pseudo_rust.iter().cloned())
+                crate::artifacts::bundle_files(&profile.output)
+                    .chain(profile.pseudo_rust.iter().cloned())
             })
             .collect()
     }

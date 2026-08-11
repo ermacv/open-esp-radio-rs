@@ -323,6 +323,9 @@ leaf_commands!(RegisterCommand {
 });
 
 leaf_commands!(InspectCommand {
+    Function(InspectFunctionArgs) => Command::InspectFunction, InspectFunction,
+    Object(InspectObjectArgs) => Command::InspectObject, InspectObject,
+    Scope(InspectScopeArgs) => Command::InspectScope, InspectScope,
     Analyze(InspectAnalyzeArgs) => Command::InspectAnalyze, InspectAnalyze,
     Trace(TraceInputArgs) => Command::InspectTrace, TraceInput,
     Compare(InspectCompareArgs) => Command::InspectCompare, InspectCompare,
@@ -459,6 +462,9 @@ pub(crate) enum Command {
     GenerateReferenceBatch(ReferenceBatchArgs),
     GenerateDriver(DriverGenerateArgs),
     InspectAnalyze(InspectAnalyzeArgs),
+    InspectFunction(InspectFunctionArgs),
+    InspectObject(InspectObjectArgs),
+    InspectScope(InspectScopeArgs),
     VerifyInventory(VerifyInventoryArgs),
     VerifySource(VerifySourceArgs),
     InspectTrace(TraceInputArgs),

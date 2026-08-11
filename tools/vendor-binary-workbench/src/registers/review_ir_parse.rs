@@ -1,35 +1,27 @@
-//! Typed projection of schema-v40 linked-IR into register-review evidence.
+//! Typed projection of schema-v43 linked-IR into register-review evidence.
 
 use std::{
     collections::{BTreeMap, BTreeSet},
-    fs,
     path::Path,
 };
 
 use super::review_ir::{
     ReviewFieldEvidence, ReviewIrRegister, ReviewPredicateEvidence, ReviewSemanticEvidence,
 };
-use crate::{Result, error::WorkbenchError};
+use crate::Result;
 
 #[tracing::instrument(name = "load_register_review_ir", fields(path = %path.display()))]
 pub(super) fn parse_report(path: &Path) -> Result<Vec<ReviewIrRegister>> {
-    let input = fs::read_to_string(path)?;
-    parse_report_text(path, &input).map_err(|error| {
-        WorkbenchError::manifest_document("linked-IR review report", path, &input, error)
-    })
+    let registers = crate::artifacts::LinkedIrReader::open(path)?.read_registers()?;
+    parse_registers(path, registers)
 }
 
-fn parse_report_text(path: &Path, input: &str) -> Result<Vec<ReviewIrRegister>> {
-    let document = crate::artifacts::parse_linked_ir(input).map_err(|error| {
-        crate::Error::invalid(format!(
-            "register review requires linked-IR schema {} in {}: {error}",
-            crate::artifacts::LINKED_IR.version,
-            path.display()
-        ))
-    })?;
+fn parse_registers(
+    path: &Path,
+    registers: Vec<crate::artifacts::StoredMmioRegister>,
+) -> Result<Vec<ReviewIrRegister>> {
     let mut seen = BTreeSet::new();
-    document
-        .mmio_registers
+    registers
         .into_iter()
         .map(|register| {
             if !matches!(register.width, 8 | 16 | 32) {

@@ -55,7 +55,11 @@ pub(super) fn collect_guard_result_source_bits(
             } => ("call-result", call_token, bit),
             BitSource::ExternalResult {
                 call_token, bit, ..
-            } => ("external-result", call_token, bit),
+            } => (
+                "external-result",
+                external_result_call_token(call_token),
+                bit,
+            ),
             _ => continue,
         };
         *sources.entry((kind, token)).or_default() |= 1_u32 << bit;
@@ -112,7 +116,12 @@ pub(super) fn exact_guard_result_operand_sources(
                 call_token,
                 bit,
                 inverted,
-            } => ("external-result", call_token, bit, inverted),
+            } => (
+                "external-result",
+                external_result_call_token(call_token),
+                bit,
+                inverted,
+            ),
             _ => continue,
         };
         let entry = sources.entry((kind, token, inverted)).or_default();

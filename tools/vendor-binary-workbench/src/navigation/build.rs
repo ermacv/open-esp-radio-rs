@@ -139,11 +139,8 @@ fn add_linked_ir(
     symbols: &mut BTreeMap<SymbolKey, SymbolDocument>,
 ) -> Result<()> {
     for profile in &project.ir_profiles {
-        let report: LinkedIrStoredDocument = read_artifact(
-            &profile.output,
-            "linked-IR report",
-            crate::artifacts::parse_linked_ir,
-        )?;
+        let report: LinkedIrStoredDocument =
+            crate::artifacts::load_linked_ir_functions(&profile.output)?;
         inputs.push(input(
             "linked-ir",
             profile.id.clone(),
@@ -328,6 +325,23 @@ impl InterfaceRootIndex {
     }
 }
 
+fn interface_root_kind(root: &StoredInterfaceRoot) -> &'static str {
+    match root {
+        StoredInterfaceRoot::RelocatedSymbol { .. } => "relocated-symbol",
+        StoredInterfaceRoot::FunctionArgument { .. } => "function-argument",
+        StoredInterfaceRoot::AbsoluteAddress { .. } => "absolute-address",
+    }
+}
+
+fn read_artifact<T>(
+    path: &Path,
+    kind: &'static str,
+    parse: impl FnOnce(&str) -> Result<T>,
+) -> Result<T> {
+    let input = std::fs::read_to_string(path)?;
+    parse(&input).map_err(|error| WorkbenchError::manifest_document(kind, path, &input, error))
+}
+
 #[cfg(test)]
 mod index_tests {
     use super::*;
@@ -354,21 +368,4 @@ mod index_tests {
                 .is_empty()
         );
     }
-}
-
-fn interface_root_kind(root: &StoredInterfaceRoot) -> &'static str {
-    match root {
-        StoredInterfaceRoot::RelocatedSymbol { .. } => "relocated-symbol",
-        StoredInterfaceRoot::FunctionArgument { .. } => "function-argument",
-        StoredInterfaceRoot::AbsoluteAddress { .. } => "absolute-address",
-    }
-}
-
-fn read_artifact<T>(
-    path: &Path,
-    kind: &'static str,
-    parse: impl FnOnce(&str) -> Result<T>,
-) -> Result<T> {
-    let input = std::fs::read_to_string(path)?;
-    parse(&input).map_err(|error| WorkbenchError::manifest_document(kind, path, &input, error))
 }

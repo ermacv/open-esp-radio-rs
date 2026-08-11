@@ -204,12 +204,39 @@ pub enum ModeledCallOutput {
     PrivateStackU8 { pointer_argument: u8, value: u8 },
 }
 
+/// One deterministic arena consumed by a reviewed allocator call.
+///
+/// `capacity` describes the fresh address range reserved by the scenario;
+/// the call's `size_argument` selects how many leading bytes become valid,
+/// zero-initialized CPU-owned memory for this execution.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ModeledAllocation {
+    pub address: u32,
+    pub size_argument: u8,
+    pub capacity: u32,
+}
+
+/// One concrete fresh allocation created by a reviewed external call model.
+///
+/// This is proof evidence about the modeled environment, not an observable
+/// effect compared between vendor and Rust addresses.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AllocationLifecycleEvent {
+    pub site: u32,
+    pub symbol: String,
+    pub address: u32,
+    pub requested: u32,
+    pub capacity: u32,
+    pub zeroed: bool,
+}
+
 /// Independently modeled ABI effects for one concrete external call.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct ModeledCallResponse {
     /// Optional values for RV32 return registers a0 (low) and a1 (high).
     pub return_words: [Option<u32>; 2],
     pub outputs: Vec<ModeledCallOutput>,
+    pub allocation: Option<ModeledAllocation>,
 }
 
 impl ModeledCallResponse {
@@ -217,6 +244,7 @@ impl ModeledCallResponse {
         Self {
             return_words: [Some(value), None],
             outputs: Vec::new(),
+            allocation: None,
         }
     }
 }
@@ -268,6 +296,7 @@ pub struct ExecutionResult {
     pub calls: BTreeSet<String>,
     pub ordered_calls: Vec<OrderedCall>,
     pub indirect_calls: BTreeSet<IndirectCall>,
+    pub allocations: Vec<AllocationLifecycleEvent>,
     pub table_lifecycle: Vec<TableLifecycleEvent>,
     pub table_lifecycle_complete: bool,
     pub device_model_coverage: Vec<super::DeviceModelOutcome>,

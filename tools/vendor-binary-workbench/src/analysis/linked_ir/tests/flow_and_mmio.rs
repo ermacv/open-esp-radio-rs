@@ -347,6 +347,15 @@ fn mmio_index_keeps_static_indexed_poll_and_write_bit_evidence() {
             .count(),
         2
     );
+    assert!(
+        accesses
+            .iter()
+            .filter(|access| access.mode == "indexed-candidate")
+            .all(|access| access.guard.as_deref() == Some("arg0 <= 2"))
+    );
+    let pseudo = render_pseudo("touch_registers", &trace, &[], &[], &[], &[]);
+    assert!(pseudo.contains("assert!(arg0 <= 2);"), "{pseudo}");
+    assert!(!pseudo.contains("assert!(arg0 < 2);"), "{pseudo}");
     let poll = accesses
         .iter()
         .find(|access| access.access == "poll")

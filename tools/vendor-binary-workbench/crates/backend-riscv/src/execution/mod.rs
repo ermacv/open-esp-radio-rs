@@ -7,9 +7,10 @@ mod model;
 pub use image::{CoverageInventory, ExecutableImage};
 pub use machine::execute;
 pub use model::{
-    AtomicOperation, AtomicOrdering, ExecutionEvent, ExecutionProducer, ExecutionResult,
-    ExecutionSession, ExecutionTimelineEvent, IndirectCall, MemoryAlias, MemoryChange, MemoryOwner,
-    MemoryOwnership, ModeledCallOutput, ModeledCallResponse, OrderedCall, ResetPolicy, Scenario,
+    AllocationLifecycleEvent, AtomicOperation, AtomicOrdering, ExecutionEvent, ExecutionProducer,
+    ExecutionResult, ExecutionSession, ExecutionTimelineEvent, IndirectCall, MemoryAlias,
+    MemoryChange, MemoryOwner, MemoryOwnership, ModeledAllocation, ModeledCallOutput,
+    ModeledCallResponse, OrderedCall, ResetPolicy, Scenario,
 };
 
 use open_radio_vendor_execution_model::{

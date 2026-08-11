@@ -45,18 +45,20 @@ pub(super) fn run(
             artifact.reviewed_code = catalog.reviewed_ranges(&artifact.source, &artifact.path)?;
         }
     }
-    let (entry_contract, report) = analyze(
-        &artifacts,
-        &arguments.companion,
-        &arguments.symbol_prefix,
-        arguments.include_reachable,
-        &arguments.entry_contract,
+    let inventories = std::collections::BTreeMap::new();
+    let (entry_contract, report) = analyze(crate::linked_ir_export::LinkedIrAnalysisRequest {
+        artifacts: &artifacts,
+        inventories: &inventories,
+        companions: &arguments.companion,
+        symbol_prefix: &arguments.symbol_prefix,
+        include_reachable: arguments.include_reachable,
+        entry_contract_id: &arguments.entry_contract,
         svd,
         target,
-        interfaces.as_ref(),
-        &interface_origins,
-        usize::from(arguments.jobs),
-    )?;
+        interfaces: interfaces.as_ref(),
+        interface_origins: &interface_origins,
+        jobs: usize::from(arguments.jobs),
+    })?;
 
     let publications = arguments
         .json_report
@@ -82,7 +84,8 @@ pub(super) fn run(
         )?;
     }
     if let Some(path) = arguments.json_report.as_deref() {
-        crate::artifacts::write_linked_ir(path, &document)?;
+        let bundle = crate::artifacts::render_linked_ir_bundle(&document)?;
+        crate::artifacts::write_linked_ir_bundle(path, &bundle)?;
     }
     if !crate::cli::output::structured(&document) {
         print_report(&artifacts, &report, arguments.include_reachable);

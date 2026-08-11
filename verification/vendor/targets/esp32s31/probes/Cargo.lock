@@ -280,6 +280,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "open-esp-radio-esp32s31-coex"
+version = "0.1.0"
+dependencies = [
+ "open-esp-radio-esp32s31-registers",
+]
+
+[[package]]
 name = "open-esp-radio-esp32s31-hal"
 version = "0.1.0"
 dependencies = [
@@ -390,6 +397,7 @@ name = "open-esp-radio-verification-esp32s31-probes"
 version = "0.1.0"
 dependencies = [
  "embassy-futures",
+ "open-esp-radio-esp32s31-coex",
  "open-esp-radio-esp32s31-hal",
  "open-esp-radio-esp32s31-phy",
  "open-esp-radio-esp32s31-registers",

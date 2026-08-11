@@ -84,7 +84,7 @@ pub(super) fn detail(
     let ir_paths = paths
         .review_ir_reports
         .iter()
-        .filter(|path| path.is_file())
+        .filter(|path| path.is_dir())
         .cloned()
         .collect::<Vec<_>>();
     let ir = RegisterReviewIr::load_all(&ir_paths)?;

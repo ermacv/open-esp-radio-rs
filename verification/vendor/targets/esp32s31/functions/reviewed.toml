@@ -1,5 +1,5 @@
 # Human-reviewed function and context names. Generated linked IR stays separate.
-schema = 3
+schema = 5
 id = "esp32s31-radio-rev0"
 
 [[inputs]]
@@ -22,8 +22,42 @@ profile = "libnet80211-all"
 source = "libnet80211"
 artifact-sha256 = "f850d4044a89888856a8d2ee50835e37c61f4dd92045ba4ea4dfa1b2cd7d77e8"
 
+[[inputs]]
+profile = "wifi-sta-lifecycle"
+source = "wifi-sta-lifecycle"
+artifact-sha256 = "513f8d08ef1611e4937d17ee0938aebf68b7c9ec16c843ecf2612a48ef2096c1"
+
+[[inputs]]
+profile = "coex-all"
+source = "coex"
+artifact-sha256 = "851cac6122d2e047fb22f1059b7875a55b526a07a19d94022fc0e30f4bf2fd6c"
+
+[[inputs]]
+profile = "btbb-all"
+source = "btbb"
+artifact-sha256 = "ebd67c6a32081d0fcd143bbb0ed53f962fc587058e20eceb59012beae47528df"
+
 # Sparse review overlay: add only reviewed or ignored functions, contexts, fields, and logical types.
 # All omitted generated observations remain part of the computed unreviewed backlog.
+
+# Reviewed scheduler route. The generic IR proves the constant signal post and
+# the reviewed OSI catalog identifies the pp-task receiver. This route names
+# the task entry only; the signal-specific branch inside ppTask remains a
+# separate path-analysis obligation.
+[[event-routes]]
+id = "rx-success-to-pp-task"
+profile = "wifi-sta-lifecycle"
+source = "wifi-sta-lifecycle"
+dispatcher = "wifi-sta-lifecycle::lmacProcessRxSucData@0x10069416"
+mechanism = "internal-signal"
+selector-role = "selector"
+selector-value = 0x19
+receiver = "esp32s31::pp-task"
+execution-context = "unspecified"
+handler-profile = "wifi-sta-lifecycle"
+handler-source = "wifi-sta-lifecycle"
+handler = "wifi-sta-lifecycle::ppTask@0x10067fa0"
+rationale = "Signal 0x19 is posted by lmacProcessRxSucData to the reviewed pp-task receiver; ppTask is the corresponding task entry and its internal branch remains to be constrained."
 
 [[functions]]
 profile = "libpp-all"
@@ -34,6 +68,33 @@ name = "record_rx_linked_list_snapshot"
 role = "diagnostic.rx-descriptor-snapshot"
 summary = "Snapshots RX descriptor and MMIO state into the diagnostic ring consumed by wdev_dump_rx_linked_list."
 accept-incomplete = true
+
+[[functions]]
+profile = "libpp-all"
+source = "libpp"
+identity = "libpp::wDev_AppendRxBlocks@0x1001b54a"
+status = "reviewed"
+name = "append_rx_descriptor_chain"
+role = "wifi.rx-descriptor-queue"
+summary = "Appends a non-empty RX descriptor chain to the vendor receive queue inside the Wi-Fi critical section."
+accept-incomplete = true
+
+[[functions.preconditions]]
+id = "non-null-head"
+expression = "arg0 != null"
+rationale = "The caller supplies the head of an already constructed RX descriptor chain; the null branch is a diagnostic contract violation."
+
+[[functions.paths]]
+id = "append"
+class = "operational"
+summary = "Links the supplied chain at the current tail or installs it as the first queue element."
+evidence = "Reviewed full CFG plus critical-section and memory-effect evidence in inspect function."
+
+[[functions.paths]]
+id = "null-head-assert"
+class = "diagnostic"
+summary = "Reports a violated caller precondition through wifi_assert."
+evidence = "Relocated wifi_assert call at runtime PC 0x1001b576."
 
 # The linked vendor image exports one 508-byte `phy_param` object. This type
 # names only exact machine-level observations that are also classified by the
@@ -218,3 +279,55 @@ status = "reviewed"
 name = "front_end_control"
 display-type = "u8"
 description = "Front-end control byte consumed during RF initialization."
+
+[[types]]
+id = "coex-event-durations"
+name = "CoexEventDurations"
+description = "Five reviewed duration values returned for events 4, 7, 9, 45 and 46."
+
+[[types.bindings]]
+profile = "coex-all"
+source = "coex"
+name = "coex_parameter_anchor"
+kind = "global"
+symbol = "g_coex_param"
+
+[[types.fields]]
+offset = 0
+width = 32
+status = "reviewed"
+name = "event_4_duration"
+display-type = "u32"
+description = "Duration returned for event four."
+
+[[types.fields]]
+offset = 4
+width = 32
+status = "reviewed"
+name = "event_7_duration"
+display-type = "u32"
+description = "Duration returned for event seven."
+
+[[types.fields]]
+offset = 8
+width = 32
+status = "reviewed"
+name = "event_9_duration"
+display-type = "u32"
+description = "Duration returned for event nine."
+
+[[types.fields]]
+offset = 12
+width = 32
+status = "reviewed"
+name = "event_45_duration"
+display-type = "u32"
+description = "Duration returned for event forty-five."
+
+[[types.fields]]
+offset = 16
+width = 32
+status = "reviewed"
+name = "event_46_duration"
+display-type = "u32"
+description = "Duration returned for event forty-six."

@@ -3,9 +3,9 @@
 use toml_edit::{ArrayOfTables, DocumentMut, Item, Table};
 
 use super::{
-    FunctionPack, FunctionReviewStatus, ReviewedContext, ReviewedContextField, ReviewedFunction,
-    ReviewedFunctionInput, ReviewedLogicalType, ReviewedMemoryObject, ReviewedTypeBinding,
-    ReviewedTypeField,
+    FunctionPack, FunctionReviewStatus, ReviewedContext, ReviewedContextField, ReviewedEventRoute,
+    ReviewedFunction, ReviewedFunctionInput, ReviewedLogicalType, ReviewedMemoryObject,
+    ReviewedPath, ReviewedPrecondition, ReviewedTypeBinding, ReviewedTypeField,
 };
 use crate::Result;
 
@@ -30,7 +30,41 @@ pub(super) fn parse(document: &DocumentMut) -> Result<FunctionPack> {
             .map(parse_types)
             .transpose()?
             .unwrap_or_default(),
+        event_routes: document
+            .get("event-routes")
+            .and_then(Item::as_array_of_tables)
+            .map(parse_event_routes)
+            .transpose()?
+            .unwrap_or_default(),
     })
+}
+
+fn parse_event_routes(tables: &ArrayOfTables) -> Result<Vec<ReviewedEventRoute>> {
+    tables
+        .iter()
+        .enumerate()
+        .map(|(index, table)| {
+            let context = format!("event-routes[{index}]");
+            Ok(ReviewedEventRoute {
+                id: required_table_string(table, "id", &context)?,
+                profile: required_table_string(table, "profile", &context)?,
+                source: required_table_string(table, "source", &context)?,
+                dispatcher: required_table_string(table, "dispatcher", &context)?,
+                mechanism: required_table_string(table, "mechanism", &context)?,
+                selector_role: required_table_string(table, "selector-role", &context)?,
+                selector_value: required_integer(table, "selector-value", &context)?
+                    .try_into()
+                    .map_err(|_| format!("{context}.selector-value must fit u32"))
+                    .map_err(crate::Error::invalid)?,
+                receiver: optional_string(table, "receiver"),
+                execution_context: required_table_string(table, "execution-context", &context)?,
+                handler_profile: required_table_string(table, "handler-profile", &context)?,
+                handler_source: required_table_string(table, "handler-source", &context)?,
+                handler: required_table_string(table, "handler", &context)?,
+                rationale: required_table_string(table, "rationale", &context)?,
+            })
+        })
+        .collect()
 }
 
 fn parse_types(tables: &ArrayOfTables) -> Result<Vec<ReviewedLogicalType>> {
@@ -186,12 +220,58 @@ fn parse_functions(tables: &ArrayOfTables) -> Result<Vec<ReviewedFunction>> {
                 summary: optional_string(table, "summary"),
                 accept_incomplete: optional_bool(table, "accept-incomplete", &context)?
                     .unwrap_or(false),
+                preconditions: table
+                    .get("preconditions")
+                    .and_then(Item::as_array_of_tables)
+                    .map(|values| parse_preconditions(values, &context))
+                    .transpose()?
+                    .unwrap_or_default(),
+                paths: table
+                    .get("paths")
+                    .and_then(Item::as_array_of_tables)
+                    .map(|values| parse_paths(values, &context))
+                    .transpose()?
+                    .unwrap_or_default(),
                 contexts: table
                     .get("contexts")
                     .and_then(Item::as_array_of_tables)
                     .map(|contexts| parse_contexts(contexts, &context))
                     .transpose()?
                     .unwrap_or_default(),
+            })
+        })
+        .collect()
+}
+
+fn parse_preconditions(
+    tables: &ArrayOfTables,
+    function: &str,
+) -> Result<Vec<ReviewedPrecondition>> {
+    tables
+        .iter()
+        .enumerate()
+        .map(|(index, table)| {
+            let context = format!("{function}.preconditions[{index}]");
+            Ok(ReviewedPrecondition {
+                id: required_table_string(table, "id", &context)?,
+                expression: required_table_string(table, "expression", &context)?,
+                rationale: required_table_string(table, "rationale", &context)?,
+            })
+        })
+        .collect()
+}
+
+fn parse_paths(tables: &ArrayOfTables, function: &str) -> Result<Vec<ReviewedPath>> {
+    tables
+        .iter()
+        .enumerate()
+        .map(|(index, table)| {
+            let context = format!("{function}.paths[{index}]");
+            Ok(ReviewedPath {
+                id: required_table_string(table, "id", &context)?,
+                class: required_table_string(table, "class", &context)?,
+                summary: required_table_string(table, "summary", &context)?,
+                evidence: required_table_string(table, "evidence", &context)?,
             })
         })
         .collect()

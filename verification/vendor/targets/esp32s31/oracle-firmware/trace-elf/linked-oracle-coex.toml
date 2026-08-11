@@ -1,0 +1,24 @@
+# Authoritative linked execution view for the focused COEX verification
+# suites. The archive remains the inventory and initializer authority.
+schema = 1
+source = "coex"
+linker-scripts = [
+    "../../../../../../hil/targets/esp32s31/linker/rom/esp32s31-eco0.x",
+    "link.x",
+]
+archives = ["../../../../../../_oracles/libcoexist.a"]
+stub-symbols = [
+    "coexist_printf",
+    "esp_coex_rom_version_get",
+    "puts",
+    "strlen",
+    "strncmp",
+]
+exact-builtins = ["__udivdi3"]
+fixture-data-symbols = [
+    { name = "g_coa_funcs_p", size = 4, alignment = 4 },
+]
+whole-archive = true
+emit-relocations = true
+gc-sections = false
+unresolved-symbols = "ignore-all"

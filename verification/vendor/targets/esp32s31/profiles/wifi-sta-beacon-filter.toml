@@ -1,0 +1,44 @@
+schema = 2
+
+[[profiles]]
+name = "wifi-sta-disable-beacon-filter"
+vendor-source = "wifi-sta-lifecycle"
+vendor-symbol = "hal_disable_sta_beacon_filter"
+rust-symbol = "open_wifi_sta_trace_hal_disable_sta_beacon_filter"
+compare-return = false
+
+[[profiles.cases]]
+name = "already-disabled"
+[[profiles.cases.mmio-initial]]
+address = 0x201042b4
+value = 0x00000000
+[[profiles.cases.mmio-initial]]
+address = 0x20104c40
+value = 0x00000000
+
+[[profiles.cases]]
+name = "observed-control-six-interrupt-clear"
+[[profiles.cases.mmio-initial]]
+address = 0x201042b4
+value = 0x00000006
+[[profiles.cases.mmio-initial]]
+address = 0x20104c40
+value = 0x19a879e0
+
+[[profiles.cases]]
+name = "fully-enabled"
+[[profiles.cases.mmio-initial]]
+address = 0x201042b4
+value = 0x00000007
+[[profiles.cases.mmio-initial]]
+address = 0x20104c40
+value = 0xffffffff
+
+[[profiles.cases]]
+name = "preserve-unrelated-bits"
+[[profiles.cases.mmio-initial]]
+address = 0x201042b4
+value = 0xa5a55a5f
+[[profiles.cases.mmio-initial]]
+address = 0x20104c40
+value = 0x5a5affff

@@ -155,6 +155,9 @@ fn apply_reviewed_external_call(
             ));
             SymbolicValue::ExternalResult(state.next_external_call_token)
         }
+        Some(ExternalReturnModel::AllocatedZeroed { .. }) => SymbolicValue::ExternalResult(
+            state.next_external_call_token | ALLOCATED_EXTERNAL_RESULT_TOKEN_FLAG,
+        ),
         Some(ExternalReturnModel::Unmodeled) | None => {
             state.reference_blockers.push(format!(
                 "unmodeled-reviewed-external-call at {pc:#x}: {}",
@@ -377,6 +380,9 @@ pub(super) fn apply_relocated_call(
                 ));
                 return StructuralCallControl::Stop;
             }
+            ExternalReturnModel::AllocatedZeroed { .. } => SymbolicValue::ExternalResult(
+                state.next_external_call_token | ALLOCATED_EXTERNAL_RESULT_TOKEN_FLAG,
+            ),
             ExternalReturnModel::Unmodeled => unreachable!(),
         };
         let arguments = (0..usize::from(function.argument_count))

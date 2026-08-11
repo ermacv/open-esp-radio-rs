@@ -57,6 +57,16 @@ pub(super) fn compare(
     } else {
         request.argument_domain.as_slice()
     };
+    let coverage_domain = argument_domain
+        .iter()
+        .copied()
+        .map(
+            |arguments| crate::verification::profiles::ProfileCoverageConstraint {
+                arguments,
+                stable_words: std::collections::BTreeMap::new(),
+            },
+        )
+        .collect::<Vec<_>>();
     compare_execution_scenarios(
         &resolved.mmio,
         ExecutionInput {
@@ -70,7 +80,7 @@ pub(super) fn compare(
             symbol: &request.rust_symbol,
         },
         request.compare_return,
-        argument_domain,
+        &coverage_domain,
         &scenarios,
     )
 }

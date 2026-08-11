@@ -81,6 +81,7 @@ fn modeled_call_response_applies_two_word_return_and_private_stack_output() {
                     pointer_argument: 2,
                     value: 0x5a,
                 }],
+                allocation: None,
             },
         )
         .unwrap();
@@ -116,11 +117,53 @@ fn modeled_call_response_rejects_non_stack_output_pointer() {
                     pointer_argument: 2,
                     value: 1,
                 }],
+                allocation: None,
             },
         )
         .unwrap_err();
 
     assert!(error.to_string().contains("points outside private stack"));
+}
+
+#[test]
+fn modeled_zeroed_allocation_owns_only_the_requested_prefix() {
+    let image = tiny_image(vec![0x67, 0x80, 0x00, 0x00], 4);
+    let svd = empty_svd();
+    let mut machine = Machine::new(&image, &svd, 0x1000, Scenario::default());
+    machine.set_register(rv_asm::Reg::A0, 8);
+
+    machine
+        .apply_modeled_call_response(
+            "wifi_zalloc",
+            0x1000,
+            ModeledCallResponse {
+                return_words: [None, None],
+                outputs: Vec::new(),
+                allocation: Some(ModeledAllocation {
+                    address: 0x3000,
+                    size_argument: 0,
+                    capacity: 16,
+                }),
+            },
+        )
+        .unwrap();
+
+    assert_eq!(machine.register(rv_asm::Reg::A0), 0x3000);
+    assert_eq!(machine.allocations.len(), 1);
+    assert_eq!(machine.allocations[0].symbol, "wifi_zalloc");
+    assert_eq!(machine.allocations[0].requested, 8);
+    assert!(machine.allocations[0].zeroed);
+    assert_eq!(machine.read(0x3000, 32).unwrap(), 0);
+    assert_eq!(machine.read(0x3004, 32).unwrap(), 0);
+    machine.write(0x3004, 32, 0x1234_5678).unwrap();
+    assert_eq!(machine.read(0x3004, 32).unwrap(), 0x1234_5678);
+    assert!(
+        machine
+            .read(0x3008, 8)
+            .unwrap_err()
+            .to_string()
+            .contains("poison/unmapped memory")
+    );
 }
 
 #[test]

@@ -1,5 +1,42 @@
 use super::*;
 
+#[test]
+fn schema_v5_parses_reviewed_event_routes_as_project_owned_edges() {
+    let directory = std::env::temp_dir().join(format!(
+        "vendor-workbench-function-event-route-{}",
+        std::process::id()
+    ));
+    std::fs::create_dir_all(&directory).unwrap();
+    let pack_path = directory.join("functions.toml");
+    std::fs::write(
+        &pack_path,
+        r#"schema = 5
+id = "fixture"
+
+[[event-routes]]
+id = "rx-ready"
+profile = "linked"
+source = "vendor"
+dispatcher = "vendor::post_rx"
+mechanism = "internal-signal"
+selector-role = "selector"
+selector-value = 25
+receiver = "fixture::worker"
+execution-context = "task"
+handler-profile = "linked"
+handler-source = "vendor"
+handler = "vendor::worker"
+rationale = "Reviewed scheduler table maps signal 25 to the worker entry."
+"#,
+    )
+    .unwrap();
+    let pack = FunctionPack::load_reviewed(&pack_path).unwrap();
+    assert_eq!(pack.event_routes.len(), 1);
+    assert_eq!(pack.event_routes[0].selector_value, 25);
+    assert_eq!(pack.event_routes[0].handler, "vendor::worker");
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
 fn write_ir(path: &std::path::Path) {
     let digest = "a".repeat(64);
     let call = |kind: &'static str,
@@ -214,7 +251,8 @@ fn write_ir(path: &std::path::Path) {
         "artifact": {"path": "rom.elf", "sha256": digest},
         "reviewed_code_boundaries": []
     }]);
-    std::fs::write(path, serde_json::to_string_pretty(&document).unwrap()).unwrap();
+    crate::artifacts::write_fixture_bundle(path, &serde_json::to_string_pretty(&document).unwrap())
+        .unwrap();
 }
 
 #[test]
@@ -224,7 +262,7 @@ fn generated_template_is_valid_unreviewed_workspace() {
         std::process::id()
     ));
     std::fs::create_dir_all(&directory).unwrap();
-    let report = directory.join("profile.json");
+    let report = directory.join("profile.ir");
     let pack = directory.join("functions.toml");
     write_ir(&report);
     let reports = vec![("rom-phy".to_owned(), report)];
@@ -255,11 +293,11 @@ fn reviewed_names_require_matching_digest_and_complete_explicit_claims() {
         std::process::id()
     ));
     std::fs::create_dir_all(&directory).unwrap();
-    let report = directory.join("profile.json");
+    let report = directory.join("profile.ir");
     let pack = directory.join("functions.toml");
     write_ir(&report);
     let reports = vec![("rom-phy".to_owned(), report)];
-    let reviewed = r#"schema = 3
+    let reviewed = r#"schema = 5
 id = "fixture"
 
 [[inputs]]
@@ -459,11 +497,11 @@ fn ignored_context_covers_its_observed_fields_without_claiming_names() {
         std::process::id()
     ));
     std::fs::create_dir_all(&directory).unwrap();
-    let report = directory.join("profile.json");
+    let report = directory.join("profile.ir");
     let pack = directory.join("functions.toml");
     write_ir(&report);
     let reports = vec![("rom-phy".to_owned(), report)];
-    let ignored = r#"schema = 3
+    let ignored = r#"schema = 5
 id = "fixture"
 
 [[inputs]]

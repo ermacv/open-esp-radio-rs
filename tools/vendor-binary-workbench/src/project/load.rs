@@ -323,6 +323,7 @@ pub(super) fn load(path: &Path) -> Result<ProjectSpec> {
         })
         .transpose()?;
     let review = load_review_workspace(&document, base, &ir_profiles, source)?;
+    let qualification = load_qualification_workspace(&document, base, source)?;
     let verification = load_verification_workspace(&document, base, source)?;
     if let Some(symbols) = &symbol_inventory {
         let conflicting_fact = registers
@@ -435,7 +436,7 @@ pub(super) fn load(path: &Path) -> Result<ProjectSpec> {
             }
         }
     }
-    Ok(ProjectSpec {
+    let project = ProjectSpec {
         id,
         target_spec,
         platform_pack,
@@ -451,8 +452,52 @@ pub(super) fn load(path: &Path) -> Result<ProjectSpec> {
         interfaces,
         functions,
         review,
+        qualification,
         verification,
-    })
+    };
+    crate::qualification::validate_project(&project)?;
+    Ok(project)
+}
+
+fn load_qualification_workspace(
+    document: &Table,
+    base: &Path,
+    source: ProjectSource<'_>,
+) -> Result<Option<QualificationWorkspaceSpec>> {
+    let Some(item) = document.get("qualification") else {
+        return Ok(None);
+    };
+    let table = item
+        .as_table()
+        .ok_or_else(|| source.item(Some(item), "project manifest qualification must be a table"))?;
+    reject_unknown_keys(
+        table,
+        &["pack", "required-features"],
+        "project qualification",
+        source,
+    )?;
+    let pack = resolve_path(
+        base,
+        &table_string(table, "pack", "project qualification", source)?,
+    );
+    let required_features = table_string_array(
+        table,
+        "required-features",
+        "project qualification",
+        source,
+        false,
+    )?;
+    if required_features.is_empty() {
+        return Err(source.table_key(
+            table,
+            "required-features",
+            "project qualification requires at least one feature",
+        ));
+    }
+    Ok(Some(QualificationWorkspaceSpec {
+        pack,
+        required_features,
+    }))
 }
 
 fn load_review_workspace(
@@ -469,7 +514,7 @@ fn load_review_workspace(
         .ok_or_else(|| source.item(Some(item), "project manifest review must be a table"))?;
     reject_unknown_keys(
         table,
-        &["output", "release-scopes", "scopes"],
+        &["output", "publication-scopes", "scopes"],
         "project review",
         source,
     )?;
@@ -477,8 +522,8 @@ fn load_review_workspace(
         base,
         &table_string(table, "output", "project review", source)?,
     );
-    let release_scopes =
-        table_string_array(table, "release-scopes", "project review", source, false)?;
+    let publication_scopes =
+        table_string_array(table, "publication-scopes", "project review", source, false)?;
     let scopes_item = table.get("scopes").ok_or_else(|| {
         source.table_key(table, "scopes", "project review requires [[review.scopes]]")
     })?;
@@ -551,18 +596,18 @@ fn load_review_workspace(
             })
         })
         .collect::<Result<Vec<_>>>()?;
-    for release_scope in &release_scopes {
-        if !scopes.iter().any(|scope| scope.id == *release_scope) {
+    for publication_scope in &publication_scopes {
+        if !scopes.iter().any(|scope| scope.id == *publication_scope) {
             return Err(source.table_key(
                 table,
-                "release-scopes",
-                format!("project review refers to unknown release scope {release_scope:?}"),
+                "publication-scopes",
+                format!("project review refers to unknown publication scope {publication_scope:?}"),
             ));
         }
     }
     Ok(Some(ReviewWorkspaceSpec {
         output,
-        release_scopes,
+        publication_scopes,
         scopes,
     }))
 }

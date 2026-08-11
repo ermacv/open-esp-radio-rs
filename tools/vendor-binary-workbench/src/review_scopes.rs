@@ -6,22 +6,24 @@ use std::{
 };
 
 use crate::{
-    ProjectSpec, Result, artifacts::parse_linked_ir, project::ReviewScopeSpec,
+    ProjectSpec, Result, artifacts::load_linked_ir_analysis, project::ReviewScopeSpec,
     registers::RegisterFacts,
 };
 
-pub(crate) const REVIEW_SCOPES_SCHEMA: u32 = 4;
+pub(crate) const REVIEW_SCOPES_SCHEMA: u32 = 7;
 
 mod model;
-pub(crate) use model::{ReviewScopeMmio, ReviewScopeReport, ReviewScopesDocument};
+pub(crate) use model::{
+    ReplacementQualification, ReviewScopeMmio, ReviewScopeReport, ReviewScopesDocument,
+};
 use model::{StoredReplacement, VerificationDocument};
 mod queue;
 
 impl ReviewScopesDocument {
-    pub(crate) fn release_mmio(&self) -> BTreeSet<(u32, u8)> {
+    pub(crate) fn publication_mmio(&self) -> BTreeSet<(u32, u8)> {
         self.scopes
             .iter()
-            .filter(|scope| scope.release)
+            .filter(|scope| scope.publication)
             .flat_map(|scope| scope.mmio.iter().map(|mmio| (mmio.address, mmio.width)))
             .collect()
     }
@@ -78,19 +80,24 @@ pub(crate) fn analyze(project: &ProjectSpec) -> Result<Vec<ReviewScopeReport>> {
         .filter(|paths| paths.facts.is_file())
         .map(|paths| RegisterFacts::load(&paths.facts))
         .transpose()?;
-    workspace
-        .scopes
-        .iter()
-        .map(|scope| {
-            analyze_scope(
-                project,
-                scope,
-                workspace.release_scopes.contains(&scope.id),
-                &replacements,
-                register_facts.as_ref(),
-            )
-        })
-        .collect()
+    let mut nodes_by_profiles = BTreeMap::new();
+    let mut reports = Vec::with_capacity(workspace.scopes.len());
+    for scope in &workspace.scopes {
+        if !nodes_by_profiles.contains_key(&scope.profiles) {
+            nodes_by_profiles.insert(
+                scope.profiles.clone(),
+                load_profile_nodes(project, &scope.profiles)?,
+            );
+        }
+        reports.push(analyze_scope(
+            scope,
+            workspace.publication_scopes.contains(&scope.id),
+            &replacements,
+            register_facts.as_ref(),
+            &nodes_by_profiles[&scope.profiles],
+        )?);
+    }
+    Ok(reports)
 }
 
 pub(crate) fn build_document(project: &ProjectSpec) -> Result<ReviewScopesDocument> {
@@ -143,7 +150,13 @@ pub(crate) fn load_for_project(project: &ProjectSpec) -> Result<ReviewScopesDocu
     let actual = document
         .scopes
         .iter()
-        .map(|scope| (scope.id.as_str(), scope.profiles.as_slice(), scope.release))
+        .map(|scope| {
+            (
+                scope.id.as_str(),
+                scope.profiles.as_slice(),
+                scope.publication,
+            )
+        })
         .collect::<Vec<_>>();
     let expected = workspace
         .scopes
@@ -152,7 +165,7 @@ pub(crate) fn load_for_project(project: &ProjectSpec) -> Result<ReviewScopesDocu
             (
                 scope.id.as_str(),
                 scope.profiles.as_slice(),
-                workspace.release_scopes.contains(&scope.id),
+                workspace.publication_scopes.contains(&scope.id),
             )
         })
         .collect::<Vec<_>>();
@@ -165,15 +178,12 @@ pub(crate) fn load_for_project(project: &ProjectSpec) -> Result<ReviewScopesDocu
     Ok(document)
 }
 
-fn analyze_scope(
+fn load_profile_nodes(
     project: &ProjectSpec,
-    scope: &ReviewScopeSpec,
-    release: bool,
-    replacements: &[StoredReplacement],
-    register_facts: Option<&RegisterFacts>,
-) -> Result<ReviewScopeReport> {
-    let mut documents = Vec::with_capacity(scope.profiles.len());
-    for profile_id in &scope.profiles {
+    profiles: &[String],
+) -> Result<BTreeMap<String, FunctionNode>> {
+    let mut documents = Vec::with_capacity(profiles.len());
+    for profile_id in profiles {
         let profile = project
             .ir_profiles
             .iter()
@@ -181,13 +191,7 @@ fn analyze_scope(
             .ok_or_else(|| {
                 crate::Error::invalid(format!("unknown review profile {profile_id:?}"))
             })?;
-        let input = fs::read_to_string(&profile.output).map_err(|error| {
-            crate::Error::invalid(format!(
-                "cannot read review scope IR {}: {error}",
-                profile.output.display()
-            ))
-        })?;
-        documents.push(parse_linked_ir(&input)?);
+        documents.push(load_linked_ir_analysis(&profile.output)?);
     }
     let project_definitions = project_definitions(&documents);
     let mut nodes = BTreeMap::<String, FunctionNode>::new();
@@ -294,18 +298,27 @@ fn analyze_scope(
             };
             if nodes.insert(function.identity.clone(), node).is_some() {
                 return Err(crate::Error::invalid(format!(
-                    "review scope {:?} loads duplicate function identity {:?}",
-                    scope.id, function.identity
+                    "review profiles {:?} load duplicate function identity {:?}",
+                    profiles, function.identity
                 )));
             }
         }
     }
+    Ok(nodes)
+}
 
+fn analyze_scope(
+    scope: &ReviewScopeSpec,
+    publication: bool,
+    replacements: &[StoredReplacement],
+    register_facts: Option<&RegisterFacts>,
+    nodes: &BTreeMap<String, FunctionNode>,
+) -> Result<ReviewScopeReport> {
     let mut selected = BTreeSet::new();
     let mut root_identities = BTreeSet::new();
     let mut queue = VecDeque::new();
     for root in &scope.roots {
-        let identity = resolve_root(root, &nodes)?;
+        let identity = resolve_root(root, nodes)?;
         root_identities.insert(identity.clone());
         if selected.insert(identity.clone()) {
             queue.push_back(identity);
@@ -315,7 +328,7 @@ fn analyze_scope(
         while let Some(identity) = queue.pop_front() {
             let node = &nodes[&identity];
             for dependency in &node.dependencies {
-                if let Some(target) = resolve_dependency(dependency, &nodes)
+                if let Some(target) = resolve_dependency(dependency, nodes)
                     && selected.insert(target.clone())
                 {
                     queue.push_back(target);
@@ -328,7 +341,7 @@ fn analyze_scope(
     // Reachable functions are analysis inventory. Only explicit roots are
     // replacement boundaries: private vendor helpers may be folded into one
     // reviewed Rust composition without invented 1:1 component identities.
-    let replacement_vendors = replacement_vendors(&root_identities, &nodes);
+    let replacement_vendors = replacement_vendors(&root_identities, nodes);
     let function_identities = selected.iter().cloned().collect::<Vec<_>>();
     let function_keys = selected
         .iter()
@@ -341,11 +354,17 @@ fn analyze_scope(
         .collect::<Vec<_>>();
     let mut report = ReviewScopeReport {
         id: scope.id.clone(),
-        release,
+        publication,
+        replacement_qualification: ReplacementQualification::NotPublished,
+        analysis_inventory_complete: false,
         profiles: scope.profiles.clone(),
         roots: scope.roots.len(),
         functions: selected.len(),
         replacement_functions: replacement_vendors.len(),
+        replacement_function_keys: replacement_vendors
+            .iter()
+            .map(|(source, symbol)| format!("{source}:{symbol}"))
+            .collect(),
         function_identities,
         function_keys: function_keys.clone(),
         complete_functions: 0,
@@ -530,6 +549,16 @@ fn analyze_scope(
             }
         }
     }
+    report.analysis_inventory_complete = !report.has_analysis_inventory_blockers();
+    report.replacement_qualification = if !publication {
+        ReplacementQualification::NotPublished
+    } else if report.has_replacement_qualification_blockers()
+        || report.replacement_production_matches != report.replacement_functions
+    {
+        ReplacementQualification::Blocked
+    } else {
+        ReplacementQualification::Qualified
+    };
     report.review_queue = queue::finish(review_queue);
     Ok(report)
 }

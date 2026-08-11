@@ -14,6 +14,7 @@ use crate::{DiagnosticSeverity, Readiness};
 mod blockers;
 mod code;
 mod comparisons;
+mod features;
 mod functions;
 mod interfaces;
 mod registers;
@@ -47,6 +48,7 @@ pub(super) fn render(frame: &mut Frame<'_>, state: &BrowserState) {
     render_tabs(frame, state, tabs);
     match state.section {
         Section::Overview => render_overview(frame, state, content),
+        Section::Features => features::render(frame, state, content),
         Section::Scopes => scopes::render(frame, state, content),
         Section::Code => code::render(frame, state, content),
         Section::Functions => functions::render(frame, state, content),
@@ -371,15 +373,16 @@ fn section_title(section: Section, compact: bool) -> &'static str {
     }
     match section {
         Section::Overview => "Home",
+        Section::Features => "Feat",
         Section::Scopes => "Scope",
         Section::Code => "Code",
-        Section::Functions => "Funcs",
-        Section::Blockers => "Blocks",
+        Section::Functions => "Func",
+        Section::Blockers => "Block",
         Section::Registers => "Regs",
-        Section::Interfaces => "APIs",
-        Section::Comparisons => "Compare",
+        Section::Interfaces => "API",
+        Section::Comparisons => "Diff",
         Section::Diagnostics => "Diag",
-        Section::Types => "Types",
+        Section::Types => "Type",
     }
 }
 
@@ -510,6 +513,7 @@ mod tests {
                 slots: Vec::new(),
             },
             review_scopes: Vec::new(),
+            features: Vec::new(),
             review_queue: Vec::new(),
             comparisons: vec![ComparisonProfileSummary {
                 name: "trace-init".to_owned(),
@@ -549,8 +553,8 @@ mod tests {
             .collect::<String>();
         assert!(compact.contains("Workbench"));
         assert!(compact.contains("incomplete"));
-        assert!(compact.contains("Compare"));
-        assert!(compact.contains("Types"));
+        assert!(compact.contains("Diff"));
+        assert!(compact.contains("Type"));
         assert!(compact.contains("d/u detail"));
         assert!(compact.contains("q quit"));
 
@@ -607,6 +611,9 @@ mod tests {
                 }],
                 profile_draft: Some("profile draft-phy-init".to_owned()),
                 pseudo_rust: String::new(),
+                reviewed_preconditions: Vec::new(),
+                reviewed_paths: Vec::new(),
+                investigation: None,
             }),
         );
         state.snapshot.functions.push(function);

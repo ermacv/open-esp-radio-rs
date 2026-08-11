@@ -43,7 +43,10 @@ pub(super) fn run(arguments: ExecuteCompareArgs, svd: &MmioMap) -> Result<bool> 
         .rust_symbol
         .ok_or("missing --rust-symbol")
         .map_err(crate::Error::invalid)?;
-    let unconstrained_arguments = [[None; 8]];
+    let unconstrained_coverage = [crate::verification::profiles::ProfileCoverageConstraint {
+        arguments: [None; 8],
+        stable_words: std::collections::BTreeMap::new(),
+    }];
     let report = compare_execution_scenarios(
         svd,
         ExecutionInput {
@@ -57,7 +60,7 @@ pub(super) fn run(arguments: ExecuteCompareArgs, svd: &MmioMap) -> Result<bool> 
             symbol: &rust_symbol,
         },
         arguments.compare_return,
-        &unconstrained_arguments,
+        &unconstrained_coverage,
         &scenarios,
     )?;
     let matched = report.verdict == EquivalenceVerdict::Match;

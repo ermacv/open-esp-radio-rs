@@ -4,7 +4,10 @@ mod input;
 mod pseudo;
 mod render_common;
 
-use std::path::PathBuf;
+use std::{
+    collections::BTreeMap,
+    path::{Path, PathBuf},
+};
 
 #[cfg(test)]
 pub(crate) use input::named_artifact;
@@ -24,7 +27,7 @@ use crate::{
 
 #[derive(Debug)]
 pub(crate) struct ProjectIrDocuments {
-    pub(crate) json: String,
+    pub(crate) bundle: crate::artifacts::LinkedIrBundle,
     pub(crate) pseudo: Option<String>,
     pub(crate) sources: usize,
     pub(crate) functions: usize,
@@ -33,17 +36,34 @@ pub(crate) struct ProjectIrDocuments {
     pub(crate) field_candidates: usize,
 }
 
+pub(crate) struct ProjectProfileRequest<'a> {
+    pub(crate) inputs: Vec<(String, PathBuf)>,
+    pub(crate) inventories: BTreeMap<String, PathBuf>,
+    pub(crate) companions: Vec<PathBuf>,
+    pub(crate) profile: &'a ProjectIrProfile,
+    pub(crate) svd: &'a MmioMap,
+    pub(crate) target: &'a TargetSpec,
+    pub(crate) effective_code: &'a crate::analysis::EffectiveCodeCatalog,
+    pub(crate) interfaces: Option<&'a InterfaceWorkspace>,
+    pub(crate) interface_origins: &'a [LinkUnitOriginFact],
+    pub(crate) jobs: usize,
+}
+
 pub(crate) fn generate_project_profile(
-    inputs: Vec<(String, PathBuf)>,
-    companions: Vec<PathBuf>,
-    profile: &ProjectIrProfile,
-    svd: &MmioMap,
-    target: &TargetSpec,
-    effective_code: &crate::analysis::EffectiveCodeCatalog,
-    interfaces: Option<&InterfaceWorkspace>,
-    interface_origins: &[LinkUnitOriginFact],
-    jobs: usize,
+    request: ProjectProfileRequest<'_>,
 ) -> Result<ProjectIrDocuments> {
+    let ProjectProfileRequest {
+        inputs,
+        inventories,
+        companions,
+        profile,
+        svd,
+        target,
+        effective_code,
+        interfaces,
+        interface_origins,
+        jobs,
+    } = request;
     let started = std::time::Instant::now();
     let mut artifacts = inputs
         .into_iter()
@@ -53,18 +73,19 @@ pub(crate) fn generate_project_profile(
         artifact.reviewed_code =
             effective_code.reviewed_ranges(&artifact.source, &artifact.path)?;
     }
-    let (entry_contract, report) = analyze(
-        &artifacts,
-        &companions,
-        profile.roots.symbol_prefix(),
-        profile.include_reachable,
-        &profile.entry_contract,
+    let (entry_contract, report) = analyze(LinkedIrAnalysisRequest {
+        artifacts: &artifacts,
+        inventories: &inventories,
+        companions: &companions,
+        symbol_prefix: profile.roots.symbol_prefix(),
+        include_reachable: profile.include_reachable,
+        entry_contract_id: &profile.entry_contract,
         svd,
         target,
         interfaces,
         interface_origins,
         jobs,
-    )?;
+    })?;
     let (_, field_candidates, _, _) = field_candidate_summary(&report);
     let decode_blockers = report
         .functions
@@ -81,7 +102,7 @@ pub(crate) fn generate_project_profile(
         &report,
         profile.include_reachable,
     )?;
-    let json = crate::artifacts::render_linked_ir(&document)?;
+    let bundle = crate::artifacts::render_linked_ir_bundle(&document)?;
     let pseudo = profile.pseudo_rust.as_ref().map(|_| {
         render_pseudo(
             &artifacts,
@@ -98,7 +119,7 @@ pub(crate) fn generate_project_profile(
         "rendered project linked-IR profile"
     );
     Ok(ProjectIrDocuments {
-        json,
+        bundle,
         pseudo,
         sources: artifacts.len(),
         functions: report.functions.len(),
@@ -108,30 +129,37 @@ pub(crate) fn generate_project_profile(
     })
 }
 
-#[tracing::instrument(
-    name = "build_linked_ir",
-    skip(
+pub(crate) struct LinkedIrAnalysisRequest<'a> {
+    pub(crate) artifacts: &'a [IrArtifactInput],
+    pub(crate) inventories: &'a BTreeMap<String, PathBuf>,
+    pub(crate) companions: &'a [PathBuf],
+    pub(crate) symbol_prefix: &'a str,
+    pub(crate) include_reachable: bool,
+    pub(crate) entry_contract_id: &'a str,
+    pub(crate) svd: &'a MmioMap,
+    pub(crate) target: &'a TargetSpec,
+    pub(crate) interfaces: Option<&'a InterfaceWorkspace>,
+    pub(crate) interface_origins: &'a [LinkUnitOriginFact],
+    pub(crate) jobs: usize,
+}
+
+#[tracing::instrument(name = "build_linked_ir", skip(request))]
+pub(crate) fn analyze(
+    request: LinkedIrAnalysisRequest<'_>,
+) -> Result<(EntryContractRef, LinkedIrReport)> {
+    let LinkedIrAnalysisRequest {
         artifacts,
+        inventories,
         companions,
+        symbol_prefix,
+        include_reachable,
+        entry_contract_id,
         svd,
         target,
         interfaces,
-        interface_origins
-    ),
-    fields(artifacts = artifacts.len(), companions = companions.len(), symbol_prefix, include_reachable)
-)]
-pub(crate) fn analyze(
-    artifacts: &[IrArtifactInput],
-    companions: &[PathBuf],
-    symbol_prefix: &str,
-    include_reachable: bool,
-    entry_contract_id: &str,
-    svd: &MmioMap,
-    target: &TargetSpec,
-    interfaces: Option<&InterfaceWorkspace>,
-    interface_origins: &[LinkUnitOriginFact],
-    jobs: usize,
-) -> Result<(EntryContractRef, LinkedIrReport)> {
+        interface_origins,
+        jobs,
+    } = request;
     let harness = target.harness.as_deref();
     let riscv_harness = harnesses::riscv_or_neutral(harness)?;
     let entry_contract = harnesses::entry_contract_or_neutral(harness, entry_contract_id)?;
@@ -153,6 +181,13 @@ pub(crate) fn analyze(
                 interface_origins,
             );
         }
+        register_projected_direct_semantics(
+            &mut resolver,
+            &artifact.source,
+            &artifact.path,
+            inventories.get(&artifact.source).map(PathBuf::as_path),
+            interface_origins,
+        )?;
         reports.push(build_linked_ir_for_source(
             &resolver,
             symbol_prefix,
@@ -175,6 +210,70 @@ pub(crate) fn analyze(
         }));
     }
     Ok((entry_contract, report))
+}
+
+fn register_projected_direct_semantics(
+    resolver: &mut ReferenceResolver,
+    source: &str,
+    linked_artifact: &Path,
+    inventory: Option<&Path>,
+    origins: &[LinkUnitOriginFact],
+) -> Result<()> {
+    let Some(inventory) = inventory else {
+        return Ok(());
+    };
+    let Some(hooks) = resolver.pointer_context.summary_hooks else {
+        return Ok(());
+    };
+    let linked_digest = crate::artifact_sha256(linked_artifact)?;
+    let inventory_digest = crate::artifact_sha256(inventory)?;
+    for origin in origins.iter().filter(|origin| {
+        origin.kind == "text"
+            && origin.linked_artifact_sha256 == linked_digest
+            && origin.origin_artifact_sha256 == inventory_digest
+            && origin
+                .linked_sources
+                .iter()
+                .any(|candidate| candidate == source)
+            && origin
+                .origin_sources
+                .iter()
+                .any(|candidate| candidate == source)
+    }) {
+        let Some(linked) = resolver
+            .symbols
+            .iter()
+            .find(|symbol| {
+                symbol.name == origin.symbol
+                    && symbol.member == origin.linked_member
+                    && symbol.address == origin.linked_address
+            })
+            .cloned()
+        else {
+            continue;
+        };
+        let Some(archive) = crate::artifact::load_code_symbol_exact(
+            inventory,
+            origin.origin_member.as_deref(),
+            &origin.symbol,
+            origin.origin_address,
+        )?
+        else {
+            continue;
+        };
+        let Some(semantic) = (hooks.direct_semantic)(&archive) else {
+            continue;
+        };
+        resolver.register_projected_direct_semantic(&linked, semantic);
+        tracing::debug!(
+            source,
+            symbol = origin.symbol,
+            member = ?origin.origin_member,
+            semantic = semantic.id,
+            "projected exact reviewed semantic from unique archive origin"
+        );
+    }
+    Ok(())
 }
 
 pub(crate) fn load_project_interface_origins(
@@ -255,7 +354,7 @@ pub(crate) fn register_reviewed_external_calls(
                         resolver
                             .pointer_context
                             .reviewed_external_pointer_cells
-                            .insert(definition.address as u32, contract.id.clone());
+                            .insert(definition.address, contract.id.clone());
                     }
                 }
             }

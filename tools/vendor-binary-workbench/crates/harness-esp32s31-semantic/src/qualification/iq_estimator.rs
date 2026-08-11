@@ -717,7 +717,9 @@ pub fn verify_esp32s31_iq_est_enable(
         vendor_covered.len(),
         open_esp_radio_esp32s31_phy::HARDWARE_EDGE_LIMIT,
     ));
-    Ok(DriverAdapterVerification { matched, canonical })
+    Ok(DriverAdapterVerification::whole_function_equivalence(
+        matched, canonical,
+    ))
 }
 
 #[cfg(test)]

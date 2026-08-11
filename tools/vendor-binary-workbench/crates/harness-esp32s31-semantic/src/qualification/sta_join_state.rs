@@ -360,7 +360,9 @@ pub fn verify_esp32s31_sta_join_state(
             padding_independent,
         ));
     }
-    Ok(DriverAdapterVerification { matched, canonical })
+    Ok(DriverAdapterVerification::reviewed_projection(
+        matched, canonical,
+    ))
 }
 
 #[cfg(test)]
@@ -389,6 +391,7 @@ mod tests {
             calls: Default::default(),
             ordered_calls: Vec::new(),
             indirect_calls: Default::default(),
+            allocations: Vec::new(),
             table_lifecycle: Vec::new(),
             table_lifecycle_complete: true,
             device_model_coverage: Vec::new(),

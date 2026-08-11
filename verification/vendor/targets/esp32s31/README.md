@@ -318,13 +318,108 @@ recognize these explicit variables:
 - `OPEN_ESP_RADIO_ESP32S31_LIBPP_ARCHIVE`
 
 Executable call models and lifecycle entry contracts remain compiled in the
-ESP32-S31 semantic harness. Callback-table discovery and reviewed identity use
-the project interface pack; until the structural registry migration described
-above, the harness temporarily duplicates the Wi-Fi OSI table identity needed
-to execute those models. Typed executable contracts live in the generic
-semantic crate and ESP32-S31 verification adapters live in the target semantic
-harness. See
+ESP32-S31 semantic harness. The reviewed interface pack is the only owner of
+callback-table anchors, layout guards and slot ABI; compiled harnesses expose
+behavior-only models joined by explicit model IDs. Typed executable contracts
+live in the generic semantic crate and ESP32-S31 verification adapters live in
+the target semantic harness. See
 [`docs/VENDOR_BINARY_WORKBENCH_ARCHITECTURE.md`](../../../../docs/VENDOR_BINARY_WORKBENCH_ARCHITECTURE.md).
+
+## COEX and BLE bring-up slice
+
+The project has artifact-wide `coex-all` and `btbb-all` profiles for the
+private `libcoexist.a` and `libbtbb.a` inputs. They are normal analysis inputs,
+not platform semantics compiled into the generic backend. Refresh only this
+slice while implementing coexistence with:
+
+```console
+cargo vendor-binary-workbench-esp32s31 ir build \
+  --project verification/vendor/targets/esp32s31/vendor-project.toml \
+  --profile coex-all --profile btbb-all --jobs 4
+```
+
+The 2026-08-10 real artifacts produce 134 COEX functions with 29 register
+identities and 186 BT baseband functions with 111 register identities, with no
+remaining instruction-decode blockers in either archive. The reviewed
+`COEX_HW_TIMER` bank covers five timer instances at `0x2010_f400`, stride
+`0x10`. The linked IR retains `arg0 <= 4` on configuration, secondary-target,
+enable and disable accesses instead of converting the selector to one guessed
+register.
+
+Schema-v42 linked IR also exposes COEX static data directly. The current
+archive contains 119 named data objects plus 42 initialized or zeroed section
+objects retained under their only available compiler anchor. Important starting points include the
+48-byte `coex_pti_tab`, the 20-byte `g_coex_param`, the 64-byte
+`coex_schm_env`, and the family of 6/10/14/22-byte scheduler schemes. Exact
+initializer bytes remain uninterpreted evidence. `.LANCHOR*` aliases join
+recovered function reads and writes to the named object where ELF proves the
+same member, section and offset.
+
+Use the configured non-release review scopes `coex-core`, `coex-timer`,
+`coex-scheduler` and `ble-advertising` to keep implementation work focused.
+They deliberately do not gate the existing Wi-Fi publication scopes yet. The
+checked COEX link view is built with:
+
+```console
+OPEN_RADIO_LINKED_ORACLE_SPEC="$PWD/verification/vendor/targets/esp32s31/oracle-firmware/trace-elf/linked-oracle-coex.toml" \
+CARGO_TARGET_DIR="$PWD/target/verification/vendor-linked-coex" \
+cargo build --manifest-path verification/vendor/targets/esp32s31/oracle-firmware/Cargo.toml \
+  -p open-esp-radio-vendor-oracle-esp32s31-trace-elf \
+  --target riscv32imafc-unknown-none-elf --release
+```
+
+The linked ELF owns final addresses and calls; the archive remains the
+authority for inventory, initializers and origin. `g_coa_funcs_p` has concrete
+storage in the ELF, while runtime profiles remain the only owner of the table
+instance contents. The standard `__udivdi3` dependency uses an exact long
+division implementation instead of a dummy return-value stub.
+
+The first production COEX gate covers all five hardware-timer entries for the
+four instruction-exact leaves. It executes 20 cases and checks the ordered
+fresh-read RMW traces for enable, disable, force and unforce:
+
+```console
+CARGO_TARGET_DIR="$PWD/target/verification/esp32s31-probes" \
+cargo build --manifest-path verification/vendor/targets/esp32s31/probes/Cargo.toml \
+  -p open-esp-radio-verification-esp32s31-probes-elf \
+  --target riscv32imafc-unknown-none-elf --release
+
+cargo vendor-binary-workbench-esp32s31 project verify \
+  --project verification/vendor/targets/esp32s31/vendor-project.toml \
+  --run-spec verification/vendor/targets/esp32s31/local.toml \
+  --suite coex-timer
+```
+
+`open-esp-radio-esp32s31-coex` owns the reviewed priority/timer maps and the
+executor-neutral request/release state machine. The separate
+`open-esp-radio-esp32s31-coex-embassy` crate serializes commands through one
+hardware owner. Scheduler policy, Bluetooth lifecycle and the remaining RTOS
+callback behavior are not claimed by this first gate.
+
+The reviewed `coex-adapter-v2` interface is taken from the matching open
+ESP-IDF adapter header and guarded by the exact archive hash plus runtime
+version and magic fields. The current archive resolves 39 call sites to 15
+reusable operations: semaphore lifecycle/use, ISR detection, allocation,
+monotonic time, timer lifecycle, chip detection, diagnostics and crystal
+frequency. Recognition is intentionally not execution authority. Calls such
+as `esp_timer_get_time`, semaphore creation and allocation remain completeness
+blockers until the COEX profiles supply explicit behavior models and concrete
+table-instance state. Diagnostics and version checks remain visibly isolated
+behind non-executable link stubs and are not valid execution paths.
+
+The current focused queues are:
+
+| Scope | Roots / closure | Complete | MMIO | Adapter calls | Immediate gap |
+| --- | ---: | ---: | ---: | ---: | --- |
+| `coex-core` | 8 / 22 | 9 | 21 | 11 | execution models, six direct unresolved calls |
+| `coex-timer` | 5 / 6 | 4 | 21 | 2 | 64-bit division/link composition and timer models |
+| `coex-scheduler` | 4 / 6 | 0 | 0 | 2 | timer/semaphore behavior and reviewed state layout |
+| `ble-advertising` | 4 / 27 | 22 | 65 | 0 | one linked PHY dependency and four root replacements |
+
+These are analysis/implementation queues, not pass percentages. A private
+helper may remain incomplete while a reviewed root is eventually qualified as
+one Rust composition; closure blockers and root replacement coverage therefore
+remain separate dimensions.
 
 ## libpp interrupt pilot
 

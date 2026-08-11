@@ -253,6 +253,16 @@ pub struct RuntimeMemoryInstanceReport {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct AllocationLifecycleReport {
+    pub site: u32,
+    pub symbol: String,
+    pub address: u32,
+    pub requested: u32,
+    pub capacity: u32,
+    pub zeroed: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(tag = "action", rename_all = "kebab-case")]
 pub enum TableLifecycleReport {
     SlotInitialized {
@@ -307,6 +317,8 @@ pub struct ScenarioEnvironmentReport {
     pub device_models: Vec<DeviceModelReport>,
     pub vendor_device_coverage: Vec<DeviceModelCoverageReport>,
     pub rust_device_coverage: Vec<DeviceModelCoverageReport>,
+    pub vendor_allocations: Vec<AllocationLifecycleReport>,
+    pub rust_allocations: Vec<AllocationLifecycleReport>,
     pub vendor_table_lifecycle: Vec<TableLifecycleReport>,
     pub rust_table_lifecycle: Vec<TableLifecycleReport>,
     pub vendor_table_lifecycle_complete: Option<bool>,

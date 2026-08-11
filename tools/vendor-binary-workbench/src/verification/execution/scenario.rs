@@ -205,16 +205,20 @@ pub(crate) fn extend_dynamic_inventory(
 pub(crate) fn static_inventory_for_argument_domain(
     image: &execution::ExecutableImage,
     symbol: &str,
-    argument_domain: &[[Option<u32>; 8]],
+    coverage_domain: &[profiles::ProfileCoverageConstraint],
 ) -> Result<execution::CoverageInventory> {
-    if argument_domain.is_empty() {
+    if coverage_domain.is_empty() {
         return Err(crate::Error::invalid(
-            "static argument domain must not be empty",
+            "static coverage domain must not be empty",
         ));
     }
     let mut aggregate = execution::CoverageInventory::default();
-    for constraints in argument_domain {
-        let inventory = image.coverage_inventory_with_argument_constraints(symbol, constraints)?;
+    for constraints in coverage_domain {
+        let inventory = image.coverage_inventory_with_constraints(
+            symbol,
+            &constraints.arguments,
+            &constraints.stable_words,
+        )?;
         aggregate.branch_sites.extend(inventory.branch_sites);
         aggregate.branch_outcomes.extend(inventory.branch_outcomes);
         aggregate

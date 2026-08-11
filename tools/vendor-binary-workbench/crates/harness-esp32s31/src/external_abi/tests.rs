@@ -4,13 +4,21 @@ use super::*;
 fn execution_models_contain_behavior_only() {
     let models = WIFI_OSI_MODELS_V9.spec();
     assert_eq!(models.id, "esp32s31-wifi-osi-v9");
-    assert_eq!(models.models.len(), 28);
+    assert_eq!(models.models.len(), 29);
     assert_eq!(
         WIFI_OSI_MODELS_V9.model("env-is-chip"),
         Some(ENV_IS_CHIP_MODEL)
     );
     assert_eq!(WIFI_OSI_MODELS_V9.model("rand"), Some(RAND_MODEL));
     assert_eq!(WIFI_OSI_MODELS_V9.model("random"), Some(RANDOM_MODEL));
+    assert_eq!(
+        WIFI_OSI_MODELS_V9
+            .model("wifi-zalloc")
+            .unwrap()
+            .spec()
+            .return_model,
+        ExternalReturnModel::AllocatedZeroed { size_argument: 0 }
+    );
     assert_eq!(
         WIFI_OSI_MODELS_V9
             .model("wifi-int-restore")
@@ -84,4 +92,28 @@ fn modeled_results_remain_explicit_and_fail_closed() {
             .return_model,
         ExternalReturnModel::SymbolicU64
     );
+}
+
+#[test]
+fn coex_adapter_models_are_separate_and_target_exact() {
+    let models = COEX_ADAPTER_MODELS_V2.spec();
+    assert_eq!(models.id, "esp32s31-coex-adapter-v2");
+    assert_eq!(models.models.len(), 2);
+    assert_eq!(
+        COEX_ADAPTER_MODELS_V2
+            .model("coex-env-is-chip")
+            .unwrap()
+            .spec()
+            .return_model,
+        ExternalReturnModel::Constant(1)
+    );
+    assert_eq!(
+        COEX_ADAPTER_MODELS_V2
+            .model("coex-xtal-frequency-get")
+            .unwrap()
+            .spec()
+            .return_model,
+        ExternalReturnModel::Constant(40)
+    );
+    assert!(COEX_ADAPTER_MODELS_V2.model("env-is-chip").is_none());
 }

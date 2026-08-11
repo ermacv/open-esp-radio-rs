@@ -1,0 +1,44 @@
+schema = 2
+
+[[features]]
+id = "wifi-sta-connected-no-power-save"
+description = "Connected infrastructure STA keeps hardware beacon filtering disabled because the open software monitor owns every beacon and power-save is not implemented."
+scopes = ["wifi-sta-beacon-filter-policy"]
+
+[[features.requirements]]
+id = "sta-join-protocol-projection"
+description = "Authentication and association state uses the reviewed Rust protocol projection."
+suite = "libnet80211-sta-join"
+source = "libnet80211"
+symbol = "ieee80211_sta_new_state"
+claim = "reviewed-projection"
+
+[[features.requirements]]
+id = "beacon-filter-disable-transaction"
+description = "Connected entry performs the complete vendor CONTROL then INTERRUPT.ENABLE disable transaction."
+suite = "wifi-sta-beacon-filter"
+source = "wifi-sta-lifecycle"
+symbol = "hal_disable_sta_beacon_filter"
+claim = "whole-function-equivalence"
+
+[[features.effects]]
+id = "sta-aid-programming"
+source = "wifi-sta-lifecycle"
+symbol = "hal_set_sta_beacon_filter"
+disposition = "excluded-by-feature-policy"
+rationale = "The open connected-STA mode keeps the vendor hardware beacon filter disabled, so its AID/filter setup transaction is intentionally not entered."
+
+[[features.effects]]
+id = "hardware-filter-enable"
+source = "wifi-sta-lifecycle"
+symbol = "hal_enable_sta_beacon_filter"
+disposition = "excluded-by-feature-policy"
+rationale = "Power-save is not implemented and the software beacon monitor requires every beacon, therefore enabling the hardware filter is forbidden."
+
+[[features.effects]]
+id = "hardware-filter-disable"
+source = "wifi-sta-lifecycle"
+symbol = "hal_disable_sta_beacon_filter"
+disposition = "verified"
+requirement = "beacon-filter-disable-transaction"
+rationale = "Connected entry must execute the complete reviewed disable transaction before software beacon monitoring owns delivery."

@@ -31,7 +31,7 @@ pub(crate) fn write_function_pack_template(
     output.push_str(
         "# Human-reviewed function and context names. Generated linked IR stays separate.\n",
     );
-    output.push_str("schema = 3\n");
+    output.push_str("schema = 5\n");
     writeln!(output, "id = \"{}\"", toml_string(project_id))
         .expect("writing to String cannot fail");
     for input in &facts.inputs {

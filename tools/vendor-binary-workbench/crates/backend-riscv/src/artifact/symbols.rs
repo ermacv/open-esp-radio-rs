@@ -92,11 +92,13 @@ fn collect_object_symbols(
         let symbol_end = symbol_start
             .checked_add(symbol.size())
             .ok_or_else(|| format!("symbol {name} address range overflows"))?;
-        if !section_relocations.contains_key(&section_index) {
-            section_relocations.insert(
+        if let std::collections::hash_map::Entry::Vacant(entry) =
+            section_relocations.entry(section_index)
+        {
+            entry.insert(relocations::collect_section_relocations(
+                &file,
                 section_index,
-                relocations::collect_section_relocations(&file, section_index)?,
-            );
+            )?);
         }
         let mut relocations = Vec::new();
         for relocation in &section_relocations[&section_index] {
@@ -163,6 +165,54 @@ pub fn load_code_symbols(
         (&left.member, &left.name, left.address).cmp(&(&right.member, &right.name, right.address))
     });
     Ok(symbols)
+}
+
+/// Load one exact symbol from one known object/member.
+///
+/// Origin projection already has a reviewed member identity. Avoiding a full
+/// archive symbol catalog here keeps semantic projection proportional to the
+/// number of projected functions rather than total archive size.
+pub fn load_code_symbol_exact(
+    path: &Path,
+    member: Option<&str>,
+    name: &str,
+    address: u64,
+) -> Result<Option<ArtifactSymbolDefinition>> {
+    let data = fs::read(path)?;
+    let mut symbols = Vec::new();
+    match FileKind::parse(data.as_slice())? {
+        FileKind::Archive => {
+            let Some(expected_member) = member else {
+                return Ok(None);
+            };
+            let archive = ArchiveFile::parse(data.as_slice())?;
+            for entry in archive.members() {
+                let entry = entry?;
+                if entry.name() != expected_member.as_bytes() {
+                    continue;
+                }
+                let member_data = entry.data(data.as_slice())?;
+                if matches!(FileKind::parse(member_data), Ok(FileKind::Elf32)) {
+                    collect_object_symbols(
+                        member_data,
+                        Some(expected_member),
+                        name,
+                        CodeSymbolSelection::All,
+                        &mut symbols,
+                    )?;
+                }
+                break;
+            }
+        }
+        FileKind::Elf32 if member.is_none() => {
+            collect_object_symbols(&data, None, name, CodeSymbolSelection::All, &mut symbols)?
+        }
+        FileKind::Elf32 => return Ok(None),
+        kind => return Err(format!("unsupported artifact kind: {kind:?}").into()),
+    }
+    Ok(symbols
+        .into_iter()
+        .find(|symbol| symbol.name == name && symbol.address == address))
 }
 
 fn collect_data_symbols(
@@ -342,15 +392,16 @@ fn collect_reviewed_ranges(
             .address()
             .checked_add(range.end_offset)
             .ok_or_else(|| format!("reviewed code range {} end address overflows", range.name))?;
-        if !section_relocations.contains_key(&section.index()) {
-            section_relocations.insert(
+        if let std::collections::hash_map::Entry::Vacant(entry) =
+            section_relocations.entry(section.index())
+        {
+            entry.insert(relocations::collect_section_relocations(
+                &file,
                 section.index(),
-                relocations::collect_section_relocations(&file, section.index())?,
-            );
+            )?);
         }
         let mut relocations = section_relocations[&section.index()]
             .iter()
-            .into_iter()
             .filter(|relocation| relocation.address >= address && relocation.address < end_address)
             .map(|relocation| {
                 let addend = relocation.addend();

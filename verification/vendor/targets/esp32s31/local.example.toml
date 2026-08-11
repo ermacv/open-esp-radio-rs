@@ -49,3 +49,48 @@ path = "/path/to/libnet80211.a"
 [[inputs]]
 role = "source-companion:libnet80211"
 path = "/path/to/esp32s31_rev0_rom.elf"
+
+[[inputs]]
+role = "source-artifact:wifi-sta-lifecycle"
+path = "/path/to/linked-wifi-sta-lifecycle.elf"
+
+[[inputs]]
+role = "source-inventory:wifi-sta-lifecycle"
+path = "/path/to/libpp.a"
+
+[[inputs]]
+role = "source-companion:wifi-sta-lifecycle"
+path = "/path/to/esp32s31_rev0_rom.elf"
+
+# COEX uses the focused linked oracle as execution/link truth while the raw
+# archive remains the authoritative inventory and initializer source.
+[[inputs]]
+role = "source-artifact:coex"
+path = "/path/to/linked-libcoexist.elf"
+
+[[inputs]]
+role = "source-inventory:coex"
+path = "/path/to/libcoexist.a"
+
+[[inputs]]
+role = "source-companion:coex"
+path = "/path/to/esp32s31_rev0_rom.elf"
+
+[[inputs]]
+role = "source-artifact:btbb"
+path = "/path/to/libbtbb.a"
+
+[[inputs]]
+role = "source-inventory:btbb"
+path = "/path/to/libbtbb.a"
+
+# Controller archives are inventory-only until the minimal advertising link
+# unit is defined. They remain visible to symbol navigation without making the
+# artifact-wide IR profiles prohibitively broad.
+[[inputs]]
+role = "source-inventory:ble"
+path = "/path/to/libble_app.a"
+
+[[inputs]]
+role = "source-inventory:btdm"
+path = "/path/to/libbtdm_common.a"

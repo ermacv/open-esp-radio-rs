@@ -322,7 +322,7 @@ fn validate_vendor_register_slice(vendor_inventory: &Path, svd: &MmioMap) -> Res
     ) {
         return Err(format!(
             "{SYMBOL} vendor queue/scheduler-context suffix differs from the reviewed replacement boundary: {:?}",
-            &suffix_trace.reference_events
+            suffix_trace.reference_events
         )
         .into());
     }
@@ -479,7 +479,9 @@ pub fn verify_esp32s31_hal_mac_txq_enable_register_slice(
         "rust-branch-outcomes {} covered\n",
         required.branch_outcomes.len()
     ));
-    Ok(DriverAdapterVerification { matched, canonical })
+    Ok(DriverAdapterVerification::whole_function_equivalence(
+        matched, canonical,
+    ))
 }
 
 #[cfg(test)]

@@ -198,6 +198,19 @@ fn device_coverage_report(
     }
 }
 
+fn allocation_lifecycle_report(
+    event: &crate::execution::AllocationLifecycleEvent,
+) -> AllocationLifecycleReport {
+    AllocationLifecycleReport {
+        site: event.site,
+        symbol: event.symbol.clone(),
+        address: event.address,
+        requested: event.requested,
+        capacity: event.capacity,
+        zeroed: event.zeroed,
+    }
+}
+
 fn scenario_environment(named: &NamedScenario) -> ScenarioEnvironmentReport {
     let common = &named.scenario.table_instances;
     ScenarioEnvironmentReport {
@@ -238,6 +251,8 @@ fn scenario_environment(named: &NamedScenario) -> ScenarioEnvironmentReport {
             .collect(),
         vendor_device_coverage: Vec::new(),
         rust_device_coverage: Vec::new(),
+        vendor_allocations: Vec::new(),
+        rust_allocations: Vec::new(),
         vendor_table_lifecycle: Vec::new(),
         rust_table_lifecycle: Vec::new(),
         vendor_table_lifecycle_complete: None,
@@ -261,7 +276,7 @@ pub(crate) fn compare_execution_scenarios(
     vendor: ExecutionInput<'_>,
     rust: ExecutionInput<'_>,
     compare_return: bool,
-    argument_domain: &[[Option<u32>; 8]],
+    coverage_domain: &[profiles::ProfileCoverageConstraint],
     scenarios: &[NamedScenario],
 ) -> Result<ExecutionComparisonReport> {
     let vendor_report = artifact_report(vendor)?;
@@ -275,9 +290,9 @@ pub(crate) fn compare_execution_scenarios(
         rust_image.add_companion(companion)?;
     }
     let mut vendor_inventory =
-        static_inventory_for_argument_domain(&vendor_image, vendor.symbol, argument_domain)?;
+        static_inventory_for_argument_domain(&vendor_image, vendor.symbol, coverage_domain)?;
     let mut rust_inventory =
-        static_inventory_for_argument_domain(&rust_image, rust.symbol, argument_domain)?;
+        static_inventory_for_argument_domain(&rust_image, rust.symbol, coverage_domain)?;
     let mut vendor_covered = BTreeSet::new();
     let mut rust_covered = BTreeSet::new();
     let mut vendor_calls = BTreeSet::new();
@@ -338,6 +353,16 @@ pub(crate) fn compare_execution_scenarios(
             .table_lifecycle
             .iter()
             .map(table_lifecycle_report)
+            .collect();
+        environment.vendor_allocations = vendor_result
+            .allocations
+            .iter()
+            .map(allocation_lifecycle_report)
+            .collect();
+        environment.rust_allocations = rust_result
+            .allocations
+            .iter()
+            .map(allocation_lifecycle_report)
             .collect();
         environment.rust_table_lifecycle = rust_result
             .table_lifecycle

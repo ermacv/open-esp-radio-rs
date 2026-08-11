@@ -443,7 +443,9 @@ pub fn verify_esp32s31_wdev_process_fiq_mac_slice(
             case.name, case.status, vendor.steps, rust.steps
         ));
     }
-    Ok(DriverAdapterVerification { matched, canonical })
+    Ok(DriverAdapterVerification::whole_function_equivalence(
+        matched, canonical,
+    ))
 }
 
 #[cfg(test)]

@@ -5,13 +5,9 @@ use super::*;
 
 pub(super) fn flatten_reference_trace(
     mut trace: FunctionAnalysis,
-    symbols_by_address: &BTreeMap<u32, artifact::ArtifactSymbolDefinition>,
-    relocated_calls: &StructuralRelocatedCalls,
-    pointer_context: &StructuralPointerContext,
+    context: &ReferenceCalleeContext<'_>,
     specialized_arguments: Option<&Rv32CallArguments>,
-    svd: &MmioMap,
     visiting: &mut BTreeSet<u32>,
-    budget: StructuralTraceBudget,
 ) -> Result<FunctionAnalysis> {
     let source_events = std::mem::take(&mut trace.reference_events);
     let mut output = Vec::new();
@@ -442,8 +438,8 @@ pub(super) fn flatten_reference_trace(
                             .collect::<std::result::Result<Vec<_>, _>>()?
                             .try_into()
                             .map_err(|_| "internal call argument count changed".to_owned())?;
-                        if let Some(callee) = symbols_by_address.get(target)
-                            && pointer_context.summary_hooks.is_some_and(|hooks| {
+                        if let Some(callee) = context.symbols_by_address.get(target)
+                            && context.pointer_context.summary_hooks.is_some_and(|hooks| {
                                 (hooks.wide_signed_divide)(callee, &arguments).is_some()
                             })
                         {
@@ -486,17 +482,7 @@ pub(super) fn flatten_reference_trace(
                             return Ok(());
                         }
                         let (callee_name, callee_trace) = resolve_reference_callee(
-                            *target,
-                            *site,
-                            &arguments,
-                            &ReferenceCalleeContext {
-                                symbols_by_address,
-                                relocated_calls,
-                                pointer_context,
-                                svd,
-                                budget,
-                            },
-                            visiting,
+                            *target, *site, &arguments, context, visiting,
                         )?;
                         let requires_scoped_call = callee_trace.reference_flow.is_some()
                             || callee_trace.reference_events.iter().any(|event| {

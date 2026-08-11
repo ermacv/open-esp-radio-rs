@@ -30,7 +30,11 @@ struct LinkedOracleSpec {
     #[serde(default)]
     objects: Vec<PathBuf>,
     #[serde(default)]
+    entry_symbols: Vec<String>,
+    #[serde(default)]
     stub_symbols: Vec<String>,
+    #[serde(default)]
+    exact_builtins: Vec<String>,
     #[serde(default)]
     fixture_data_symbols: Vec<FixtureDataSymbol>,
     #[serde(default)]
@@ -91,10 +95,33 @@ impl LinkedOracleSpec {
             .map(|path| resolve(base, path))
             .collect();
         let mut stub_symbols = BTreeSet::new();
+        let mut entry_symbols = BTreeSet::new();
+        for symbol in &spec.entry_symbols {
+            validate_symbol(symbol, "entry")?;
+            if !entry_symbols.insert(symbol) {
+                return Err(format!("duplicate entry symbol {symbol:?}").into());
+            }
+        }
         for symbol in &spec.stub_symbols {
             validate_symbol(symbol, "stub")?;
             if !stub_symbols.insert(symbol) {
                 return Err(format!("duplicate stub symbol {symbol:?}").into());
+            }
+        }
+        let mut exact_builtins = BTreeSet::new();
+        for symbol in &spec.exact_builtins {
+            validate_symbol(symbol, "exact builtin")?;
+            if !matches!(symbol.as_str(), "__udivdi3") {
+                return Err(format!("unsupported exact builtin {symbol:?}").into());
+            }
+            if !exact_builtins.insert(symbol) {
+                return Err(format!("duplicate exact builtin {symbol:?}").into());
+            }
+            if stub_symbols.contains(symbol) {
+                return Err(format!(
+                    "symbol {symbol:?} cannot be both a stub and an exact builtin"
+                )
+                .into());
             }
         }
         let mut fixture_symbols = BTreeSet::new();
@@ -135,6 +162,12 @@ impl LinkedOracleSpec {
         if self.emit_relocations == Some(true) {
             println!("cargo:rustc-link-arg=--emit-relocs");
         }
+        for symbol in &self.entry_symbols {
+            // Force only reviewed lifecycle roots into the link. Normal archive
+            // extraction then resolves their true cross-library dependency
+            // closure in the declared archive order.
+            println!("cargo:rustc-link-arg=-u{symbol}");
+        }
         if self.whole_archive == Some(true) {
             println!("cargo:rustc-link-arg=--whole-archive");
         }
@@ -154,6 +187,14 @@ impl LinkedOracleSpec {
             stubs.push_str(&format!(
                 "#[unsafe(export_name = {symbol:?})]\n#[inline(never)]\npub extern \"C\" fn linked_oracle_stub_{index}() -> u32 {{\n    // A stub exists only to make the aggregate ELF linkable. Reaching it is\n    // deliberately non-executable so the verifier cannot learn invented\n    // return behavior from this fixture.\n    unsafe {{ core::arch::asm!(\"ebreak\", options(noreturn, nomem, nostack)) }}\n}}\n"
             ));
+        }
+        for symbol in &self.exact_builtins {
+            match symbol.as_str() {
+                "__udivdi3" => stubs.push_str(
+                    "#[unsafe(export_name = \"__udivdi3\")]\n#[inline(never)]\npub extern \"C\" fn linked_oracle_udivdi3(dividend: u64, divisor: u64) -> u64 {\n    if divisor == 0 {\n        unsafe { core::arch::asm!(\"ebreak\", options(noreturn, nomem, nostack)) }\n    }\n    let mut quotient = 0_u64;\n    let mut remainder = 0_u64;\n    let mut bit = 64_u32;\n    while bit != 0 {\n        bit -= 1;\n        remainder = (remainder << 1) | ((dividend >> bit) & 1);\n        if remainder >= divisor {\n            remainder -= divisor;\n            quotient |= 1_u64 << bit;\n        }\n    }\n    quotient\n}\n",
+                ),
+                _ => unreachable!("validated exact builtin"),
+            }
         }
         for (index, symbol) in self.fixture_data_symbols.iter().enumerate() {
             let name = &symbol.name;

@@ -30,6 +30,41 @@ The normal user path must remain project-oriented:
 Leaf commands are focused inspection and repair tools, not a second workflow
 that every user must learn.
 
+## Focused investigation migration (2026-08-11)
+
+- [x] Replace the removed monolithic linked-IR JSON file with schema-v43
+  random-access bundles. Functions, call graph, registers and data objects
+  have deterministic indexes; status/doctor/cache/navigation/review consumers
+  use only the required member.
+- [x] Make `inspect function` lossless at semantic blockers while keeping the
+  default human view bounded. `--full` joins raw instructions to exact-PC
+  calls, semantic operations, decode blockers and stable blocker IDs;
+  structured blockers name the reviewed model required to continue.
+- [x] Add bounded inter-function slices (`--depth`, optional root callers)
+  without reverse-expanding through common callees, and add indexed
+  `inspect object SOURCE:SYMBOL` for global/object xrefs.
+- [x] Add `inspect function --path FROM:TO` as a shortest directed CFG slice.
+  Absolute PCs and explicit `+OFFSET` locations are accepted, and the report
+  states `feasibility_claim = false` so graph navigation cannot be mistaken
+  for a satisfiable symbolic path or concrete execution proof.
+- [x] Add schema-v5 reviewed event routes. A route is admitted only when its
+  constant selector/receiver/context matches complete generated dispatch
+  evidence and its handler exists. The ESP32-S31 RX-success signal 0x19 now
+  has an explicit reviewed edge from `lmacProcessRxSucData` to `ppTask`.
+- [ ] Add constrained handler-path recovery after an event route. The first
+  target is `ppTask(signal=0x19) -> wdevProcessRxSucDataAll`; queue receive and
+  OSI globals must be modeled explicitly rather than forced through a branch.
+- [ ] Generalize instruction-site evidence from calls/diagnostics to every
+  MMIO and memory-object read/write, preserving the originating basic block
+  and value provenance in persistent IR.
+- [x] Join the stored project Replacement Graph into `inspect function` and
+  the TUI instead of adding a parallel inspection engine. The report keeps
+  exact/unique-symbol association, production component, probes, proofs and an
+  explicit `freshness_claim = false` boundary.
+- [ ] Extend that joined replacement view with ordered effect/RAM-transition
+  diffs and accepted differences from the concrete comparison report. Do not
+  build a separate comparison engine for the TUI.
+
 ## P0 — functional analysis workflow
 
 - [ ] Audit a complete real project from inputs through MMIO, linked IR,
@@ -131,18 +166,22 @@ that every user must learn.
   the compact artifact instead of repeating scope reconstruction, while
   `ir build` refreshes it after a focused profile rebuild.
 - [x] Separate the recursive analysis closure from the Rust replacement
-  boundary. Review-scope schema 4 requires reviewed production coverage only
+  boundary. Review-scope schema 7 requires reviewed production coverage only
   for explicit roots; reachable private helpers remain full blocker/MMIO/call
   inventory and can be absorbed by a root-level composition. On the real
   project this removed 85 false 1:1 uncovered replacements and left only the actual
   uncovered TX roots `hal_mac_tx_config_edca` and
   `hal_mac_tx_get_blockack`.
-- [x] Turn release scopes into an actionable root-cause queue. Linked-IR
-  schema 40 carries typed diagnostic kind/site/root IDs, review-scope schema 4
+- [x] Turn publication scopes into an actionable root-cause queue. Linked-IR
+  schema 43 carries typed diagnostic kind/site/root IDs, review-scope schema 7
   groups repeated causes and joins replacement coverage, and the read-only TUI
   exposes a Blockers view with function navigation. Parallel legacy string
   blocker arrays were removed from the persistent IR schema.
-- [x] Gate SVD/PAC publication by explicit `release-scopes`, not every
+- [x] Separate replacement qualification from artifact-wide analysis inventory.
+  Schema-v7 scopes qualify only explicit production replacement roots; every
+  reachable vendor-helper blocker remains visible in the inventory and review
+  queue without making an otherwise proven Rust composition incomplete.
+- [x] Gate SVD/PAC publication by explicit `publication-scopes`, not every
   artifact-wide observation. The 2026-08-09 ESP32-S31 run reduced 17 global
   unreviewed observations to two release-relevant RX registers,
   `0x20104090` and `0x20104094`; all other findings remain visible in review.
@@ -164,6 +203,20 @@ that every user must learn.
   incomplete. The Functions snapshot unions those sites with linked-IR MMIO,
   so partial pseudo-code no longer produces a false zero-register view.
   Navigation and filtering across the full set still need a real-project pass.
+- [x] Add lossless project-aware `inspect function SOURCE:SYMBOL`. One typed
+  report keeps every symbol byte, instruction, relocation, label and CFG block,
+  then overlays linked-IR pseudo-code, explicit blockers, archive-origin
+  evidence, reviewed preconditions/path classes and external-call knowledge.
+  Semantic incompleteness never truncates the raw body. The real
+  `wDev_AppendRxBlocks` report accounts for 334/334 linked bytes and 378/378
+  origin bytes in 2.4 seconds; the TUI consumes the same lazy report.
+- [x] Make driver-feature qualification cover the complete explicit vendor
+  effect boundary. Review-scope schema 7 stores exact replacement function
+  keys and feature-pack schema 2 requires every key to be either proven by a
+  matching requirement or excluded with reviewed policy rationale. Missing and
+  stale dispositions fail closed. The STA beacon-filter scope now exposes all
+  three set/enable/disable transactions with 3/3 dispositions while remaining
+  blocked until its concrete verification reports exist.
 - [x] Preserve the distinction between a recognized external operation and an
   executable external-call model. A semantic label alone does not make
   execution complete.
@@ -197,6 +250,24 @@ that every user must learn.
 
 ## P1 — generic model gaps
 
+- [x] Inventory named static data objects from linked ELF and relocatable
+  archive members. Schema-v42 retains uninterpreted initializer bytes,
+  symbolic relocations, `.LANCHOR*` aliases and per-function read/write xrefs
+  without pretending that archive offsets are runtime addresses. The real
+  COEX archive exposes 119 named objects plus 42 anchor-only section objects,
+  including `coex_pti_tab`, `g_coex_param`, `coex_schm_env` and the scheduler
+  scheme family.
+- [x] Preserve byte-indexed relocated data accesses such as
+  `coex_pti_tab[arg0]` as an indexed memory object with stride one. This is
+  provenance only; a finite selector domain still requires reviewed evidence
+  or a recovered guard.
+- [ ] Build authoritative linked COEX and BLE oracle ELFs. Keep the archives
+  as inventory/origin authority, then bind adapter table instances and only
+  the external-call execution models required by `coex-core`, `coex-timer`,
+  `coex-scheduler` and `ble-advertising` scenarios.
+- [ ] Turn reviewed static objects into editable logical type/table bindings.
+  Initializer bytes and xrefs are evidence; field names, element counts and
+  nominal type unification must remain explicit review claims.
 - [x] Generalize context recovery into reviewed memory objects covering
   arguments, globals, absolute objects, indexed objects and pointers loaded
   from any exact known memory object. Dynamic pointer-dependent addresses stay
@@ -262,19 +333,25 @@ that every user must learn.
 - [x] Complete semantic annotation of the reviewed ESP32-S31 Wi-Fi OS adapter
   surface. All 54 named slots and all resolved call sites link to reusable
   catalog operations; only explicit compiled call models authorize execution.
-- [ ] Complete executable external-call behavior beyond scalar results. The
+- [x] Complete executable external-call behavior beyond scalar results. The
   generic contract, structural analysis, generated reference ABI, concrete
-  executor, profile schema 2 and linked-IR schema 40 now preserve independent
+  executor, profile schema 2 and linked-IR schema 43 now preserve independent
   RV32 `a0`/`a1` returns and reviewed private-stack byte outputs. This covers
   `queue_send_from_isr`, coexistence PTI output and `esp_timer_get_time`
-  without weakening them to one `SymbolicU32`. The remaining distinct problem
-  is allocator-owned memory and lifetime for `wifi_zalloc`.
-  The schema-v40 real-project run persists 148 modeled libpp call sites (75
+  without weakening them to one `SymbolicU32`. Reviewed zeroing allocators now
+  produce affine allocation objects in static IR and fresh zeroed CPU-owned
+  arenas in concrete execution; allocation site, requested size and capacity
+  are retained as environment evidence.
+  The schema-v43 real-project run persists 148 modeled libpp call sites (75
   `symbolic-u32`, 17 `symbolic-u64`, 55 `void`, one constant) and 18 independent
   private-stack outputs. It removes two Wi-Fi RX call-graph blockers and one
   Wi-Fi interrupt blocker; remaining release blockers are predominantly memory
   ownership, branch-aware stack composition and unresolved indirect control
   flow rather than scalar ABI loss.
+- [ ] Complete allocator lifetime after allocation. Add reviewed deallocation
+  behavior for `free`, close object lifetime at the exact call site, and reject
+  use-after-free/double-free in concrete scenarios. Static IR must continue to
+  preserve allocation provenance without guessing heap addresses or aliases.
 - [x] Qualify the first recovered parent composition rather than only its
   leaves. `phy_bt_tx_gain_init` now locks its linked direct-call topology and
   arguments, drives `PhyBluetoothTxGainInitTransition` through the same

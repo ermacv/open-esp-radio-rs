@@ -192,6 +192,205 @@ address = 0x20104d40
 value = 0x87654321
 
 [[profiles]]
+name = "libpp-configure-tx-edca"
+vendor-source = "libpp"
+vendor-symbol = "hal_mac_tx_config_edca"
+rust-symbol = "open_libpp_tx_trace_hal_mac_tx_config_edca"
+compare-return = true
+[[profiles.argument-ranges]]
+index = 1
+min = 0
+max = 3
+
+[[profiles.cases]]
+name = "queue-0"
+arguments = [0x3fff1000, 0, 2, 0x15, 0]
+[[profiles.cases.ram]]
+address = 0x3fff1000
+value = 0x3fff1100
+[[profiles.cases.ram]]
+address = 0x3fff1004
+value = 0x00150200
+[[profiles.cases.ram]]
+address = 0x3fff1134
+value = 0x3fff1200
+[[profiles.cases.ram]]
+address = 0x3fff1210
+value = 0x00001000
+[[profiles.cases.mmio-initial]]
+address = 0x20104d6c
+value = 0xdeadbeef
+
+[[profiles.cases]]
+name = "queue-1"
+arguments = [0x3fff1000, 1, 3, 0x155, 1]
+[[profiles.cases.ram]]
+address = 0x3fff1000
+value = 0x3fff1100
+[[profiles.cases.ram]]
+address = 0x3fff1004
+value = 0x01550301
+[[profiles.cases.ram]]
+address = 0x3fff1134
+value = 0x3fff1200
+[[profiles.cases.ram]]
+address = 0x3fff1210
+value = 0x00041000
+[[profiles.cases.mmio-initial]]
+address = 0x20104d5c
+value = 0x01234567
+
+[[profiles.cases]]
+name = "queue-2"
+arguments = [0x3fff1000, 2, 7, 0x2aa, 2]
+[[profiles.cases.ram]]
+address = 0x3fff1000
+value = 0x3fff1100
+[[profiles.cases.ram]]
+address = 0x3fff1004
+value = 0x02aa0702
+[[profiles.cases.ram]]
+address = 0x3fff1134
+value = 0x3fff1200
+[[profiles.cases.ram]]
+address = 0x3fff1210
+value = 0x00081000
+[[profiles.cases.mmio-initial]]
+address = 0x20104d4c
+value = 0xffffffff
+
+[[profiles.cases]]
+name = "queue-3"
+arguments = [0x3fff1000, 3, 15, 0x3ff, 3]
+[[profiles.cases.ram]]
+address = 0x3fff1000
+value = 0x3fff1100
+[[profiles.cases.ram]]
+address = 0x3fff1004
+value = 0x03ff0f03
+[[profiles.cases.ram]]
+address = 0x3fff1134
+value = 0x3fff1200
+[[profiles.cases.ram]]
+address = 0x3fff1210
+value = 0x000c1000
+[[profiles.cases.mmio-initial]]
+address = 0x20104d3c
+value = 0x00000000
+
+[[profiles]]
+name = "libpp-read-tx-blockack"
+vendor-source = "libpp"
+vendor-symbol = "hal_mac_tx_get_blockack"
+rust-symbol = "open_libpp_tx_trace_hal_mac_tx_get_blockack"
+contract = "state"
+compare-return = true
+[[profiles.argument-ranges]]
+index = 0
+min = 0
+max = 3
+
+[[profiles.cases]]
+name = "queue-0"
+arguments = [0, 0x3fff2000]
+[[profiles.cases.mmio-initial]]
+address = 0x20105530
+value = 0xa5a31235
+[[profiles.cases.mmio-initial]]
+address = 0x2010552c
+value = 0x01234567
+[[profiles.cases.mmio-initial]]
+address = 0x20105528
+value = 0x89abcdef
+[[profiles.cases.ram]]
+address = 0x3fff2000
+value = 0xa5a5a5a5
+[[profiles.cases.ram]]
+address = 0x3fff2004
+value = 0xa5a5a5a5
+[[profiles.cases.ram]]
+address = 0x3fff2008
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2000
+length = 12
+
+[[profiles.cases]]
+name = "queue-1"
+arguments = [1, 0x3fff2000]
+[[profiles.cases.mmio-initial]]
+address = 0x201054b4
+value = 0x5a57abcd
+[[profiles.cases.mmio-initial]]
+address = 0x201054b0
+value = 0x76543210
+[[profiles.cases.mmio-initial]]
+address = 0x201054ac
+value = 0xfedcba98
+[[profiles.cases.ram]]
+address = 0x3fff2000
+value = 0x5a5a5a5a
+[[profiles.cases.ram]]
+address = 0x3fff2004
+value = 0x5a5a5a5a
+[[profiles.cases.ram]]
+address = 0x3fff2008
+value = 0x5a5a5a5a
+[[profiles.cases.observe]]
+address = 0x3fff2000
+length = 12
+
+[[profiles.cases]]
+name = "queue-2"
+arguments = [2, 0x3fff2000]
+[[profiles.cases.mmio-initial]]
+address = 0x20105438
+value = 0x123ffff0
+[[profiles.cases.mmio-initial]]
+address = 0x20105434
+value = 0xffffffff
+[[profiles.cases.mmio-initial]]
+address = 0x20105430
+value = 0x00000001
+[[profiles.cases.ram]]
+address = 0x3fff2000
+value = 0x3c3c3c3c
+[[profiles.cases.ram]]
+address = 0x3fff2004
+value = 0x3c3c3c3c
+[[profiles.cases.ram]]
+address = 0x3fff2008
+value = 0x3c3c3c3c
+[[profiles.cases.observe]]
+address = 0x3fff2000
+length = 12
+
+[[profiles.cases]]
+name = "queue-3"
+arguments = [3, 0x3fff2000]
+[[profiles.cases.mmio-initial]]
+address = 0x201053bc
+value = 0x00000000
+[[profiles.cases.mmio-initial]]
+address = 0x201053b8
+value = 0x13579bdf
+[[profiles.cases.mmio-initial]]
+address = 0x201053b4
+value = 0x2468ace0
+[[profiles.cases.ram]]
+address = 0x3fff2000
+value = 0xc3c3c3c3
+[[profiles.cases.ram]]
+address = 0x3fff2004
+value = 0xc3c3c3c3
+[[profiles.cases.ram]]
+address = 0x3fff2008
+value = 0xc3c3c3c3
+[[profiles.cases.observe]]
+address = 0x3fff2000
+length = 12
+
+[[profiles]]
 name = "libpp-disable-txq"
 vendor-source = "libpp"
 vendor-symbol = "hal_mac_txq_disable"

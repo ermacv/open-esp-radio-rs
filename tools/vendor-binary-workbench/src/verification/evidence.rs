@@ -148,6 +148,77 @@ pub(crate) fn driver_adapter_effect_evidence(
     .expect("static driver-adapter evidence components are valid")
 }
 
+pub(crate) fn driver_adapter_limited_claim_evidence(
+    harness: &str,
+    policy: &super::effect_contract::EffectPolicy,
+    binding: &super::bindings::Binding,
+    claim: open_radio_vendor_semantics::DriverAdapterClaim,
+    adapter_proof: &str,
+) -> EvidenceIdentity {
+    debug_assert_ne!(
+        claim,
+        open_radio_vendor_semantics::DriverAdapterClaim::WholeFunctionEquivalence
+    );
+    let adapter = binding
+        .driver_adapter
+        .as_ref()
+        .expect("driver adapter evidence requires a registered adapter");
+    let sources = crate::harnesses::driver_adapter_evidence_sources(harness, adapter.label())
+        .expect("binding adapter must be registered by the selected harness");
+    EvidenceIdentity::composed(
+        format!(
+            "driver-adapter/{}/{}",
+            claim.label(),
+            policy.comparison.label()
+        ),
+        "open-esp-radio-driver-adapter-limited-claim-v1",
+        [
+            component("claim", claim.label()),
+            component("policy", policy.canonical()),
+            component("binding", binding.canonical()),
+            component("adapter-proof", adapter_proof),
+            component(
+                "effect-comparator",
+                include_str!("../../crates/semantics/src/effect_contract.rs"),
+            ),
+            component("binding-verifier", include_str!("bindings.rs")),
+            combined_component(
+                "driver-adapter",
+                sources
+                    .adapter
+                    .iter()
+                    .map(|source| (source.name, source.contents)),
+            ),
+            combined_component(
+                "execution-engine",
+                [
+                    (
+                        "execution/image.rs",
+                        include_str!("../../crates/backend-riscv/src/execution/image.rs"),
+                    ),
+                    (
+                        "execution/machine.rs",
+                        include_str!("../../crates/backend-riscv/src/execution/machine.rs"),
+                    ),
+                    (
+                        "execution/model.rs",
+                        include_str!("../../crates/backend-riscv/src/execution/model.rs"),
+                    ),
+                ],
+            ),
+            component(
+                "reviewed-summary",
+                format!(
+                    "{}\0{}",
+                    sources.reviewed_summary.name, sources.reviewed_summary.contents
+                ),
+            ),
+            reference_codegen_component(),
+        ],
+    )
+    .expect("static limited driver-adapter evidence components are valid")
+}
+
 pub(crate) fn profile_evidence(profile: &profiles::Profile) -> EvidenceIdentity {
     let canonical = format!("{profile:#?}");
     EvidenceIdentity::composed(

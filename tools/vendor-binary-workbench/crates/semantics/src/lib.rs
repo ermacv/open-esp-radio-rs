@@ -63,10 +63,59 @@ pub struct DriverAdapterRequest<'a> {
     pub policy: &'a EffectPolicy,
 }
 
+/// Strength of the claim established by a compiled driver adapter.
+///
+/// A successful projection or Rust-only conformance check is useful evidence,
+/// but it must never be promoted to whole-function vendor equivalence.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum DriverAdapterClaim {
+    WholeFunctionEquivalence,
+    ReviewedProjection,
+    RustConformance,
+}
+
+impl DriverAdapterClaim {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::WholeFunctionEquivalence => "whole-function-equivalence",
+            Self::ReviewedProjection => "reviewed-projection",
+            Self::RustConformance => "rust-conformance",
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DriverAdapterVerification {
+    pub claim: DriverAdapterClaim,
     pub matched: bool,
     pub canonical: String,
+}
+
+impl DriverAdapterVerification {
+    pub fn whole_function_equivalence(matched: bool, canonical: String) -> Self {
+        Self {
+            claim: DriverAdapterClaim::WholeFunctionEquivalence,
+            matched,
+            canonical,
+        }
+    }
+
+    pub fn reviewed_projection(matched: bool, canonical: String) -> Self {
+        Self {
+            claim: DriverAdapterClaim::ReviewedProjection,
+            matched,
+            canonical,
+        }
+    }
+
+    pub fn rust_conformance(matched: bool, canonical: String) -> Self {
+        Self {
+            claim: DriverAdapterClaim::RustConformance,
+            matched,
+            canonical,
+        }
+    }
 }
 
 pub struct SemanticContractRequest<'a> {

@@ -287,17 +287,8 @@ pub(super) fn resolve_reference_callee(
     if !visiting.insert(target) {
         return Err(format!("recursive-call at {site:#010x} to {}", callee.name));
     }
-    let result = resolve_reference_trace_with_budget(
-        callee,
-        context.symbols_by_address,
-        context.relocated_calls,
-        context.pointer_context,
-        Some(arguments),
-        context.svd,
-        visiting,
-        context.budget,
-    )
-    .map_err(|error| format!("callee-decode at {site:#010x}: {}: {error}", callee.name));
+    let result = resolve_reference_trace_with_budget(callee, context, Some(arguments), visiting)
+        .map_err(|error| format!("callee-decode at {site:#010x}: {}: {error}", callee.name));
     visiting.remove(&target);
     let trace = result?;
     if !trace.is_reference_eligible() {

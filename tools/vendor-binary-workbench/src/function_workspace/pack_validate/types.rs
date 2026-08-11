@@ -165,52 +165,6 @@ fn observed_fields<'a>(
             _ => true,
         }
     }
-    fn matches_object(
-        reviewed: &ReviewedMemoryObject,
-        observed: &FunctionMemoryObjectFact,
-        function: &FunctionFact,
-    ) -> bool {
-        match (reviewed, observed) {
-            (
-                ReviewedMemoryObject::Argument {
-                    function: expected,
-                    index: left,
-                },
-                FunctionMemoryObjectFact::Argument { index: right },
-            ) => (function.identity == *expected || function.symbol == *expected) && left == right,
-            (
-                ReviewedMemoryObject::Global {
-                    member: left_member,
-                    symbol: left_symbol,
-                },
-                FunctionMemoryObjectFact::Global {
-                    member: right_member,
-                    symbol: right_symbol,
-                },
-            ) => left_member == right_member && left_symbol == right_symbol,
-            (
-                ReviewedMemoryObject::Absolute {
-                    address_space: left_space,
-                    address: left_address,
-                },
-                FunctionMemoryObjectFact::Absolute {
-                    address_space: right_space,
-                    address: right_address,
-                },
-            ) => left_space == right_space && left_address == right_address,
-            (
-                ReviewedMemoryObject::Dereferenced {
-                    pointer: left,
-                    pointer_offset: left_offset,
-                },
-                FunctionMemoryObjectFact::Dereferenced {
-                    pointer: right,
-                    pointer_offset: right_offset,
-                },
-            ) => left_offset == right_offset && matches_object(left, right, function),
-            _ => false,
-        }
-    }
     if !valid_argument(&binding.object) {
         return Err(ValidationError::pack(
             "types",
@@ -238,4 +192,105 @@ fn observed_fields<'a>(
         ));
     }
     Ok(observed)
+}
+
+fn matches_object(
+    reviewed: &ReviewedMemoryObject,
+    observed: &FunctionMemoryObjectFact,
+    function: &FunctionFact,
+) -> bool {
+    // Indexing describes how an element of the reviewed memory object was
+    // selected; it does not create a different nominal object.  Keeping the
+    // selector in generated facts preserves provenance while allowing one
+    // reviewed global/argument binding to cover direct and indexed accesses.
+    if let FunctionMemoryObjectFact::Indexed { object, .. } = observed {
+        return matches_object(reviewed, object, function);
+    }
+
+    match (reviewed, observed) {
+        (
+            ReviewedMemoryObject::Argument {
+                function: expected,
+                index: left,
+            },
+            FunctionMemoryObjectFact::Argument { index: right },
+        ) => (function.identity == *expected || function.symbol == *expected) && left == right,
+        (
+            ReviewedMemoryObject::Global {
+                member: left_member,
+                symbol: left_symbol,
+            },
+            FunctionMemoryObjectFact::Global {
+                member: right_member,
+                symbol: right_symbol,
+            },
+        ) => left_member == right_member && left_symbol == right_symbol,
+        (
+            ReviewedMemoryObject::Absolute {
+                address_space: left_space,
+                address: left_address,
+            },
+            FunctionMemoryObjectFact::Absolute {
+                address_space: right_space,
+                address: right_address,
+            },
+        ) => left_space == right_space && left_address == right_address,
+        (
+            ReviewedMemoryObject::Dereferenced {
+                pointer: left,
+                pointer_offset: left_offset,
+            },
+            FunctionMemoryObjectFact::Dereferenced {
+                pointer: right,
+                pointer_offset: right_offset,
+            },
+        ) => left_offset == right_offset && matches_object(left, right, function),
+        _ => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reviewed_global_matches_an_indexed_observation_of_the_same_object() {
+        let reviewed = ReviewedMemoryObject::Global {
+            member: Some("coexist_core.o".to_owned()),
+            symbol: ".LANCHOR1".to_owned(),
+        };
+        let observed = FunctionMemoryObjectFact::Indexed {
+            object: Box::new(FunctionMemoryObjectFact::Global {
+                member: Some("coexist_core.o".to_owned()),
+                symbol: ".LANCHOR1".to_owned(),
+            }),
+            argument: 0,
+            stride: 1,
+        };
+        let function = FunctionFact {
+            profile: "coex".to_owned(),
+            source: "libcoexist".to_owned(),
+            identity: "libcoexist::coex_core_pti_get".to_owned(),
+            member: Some("coexist_core.o".to_owned()),
+            symbol: "coex_core_pti_get".to_owned(),
+            selection: "symbol-prefix-root".to_owned(),
+            direct_complete: true,
+            call_graph_closed: true,
+            context_projection_complete: true,
+            context_projection_blockers: Vec::new(),
+            decode_blockers: Vec::new(),
+            reachable_functions: Vec::new(),
+            calls: Vec::new(),
+            mmio_addresses: Vec::new(),
+            context_fields: Vec::new(),
+            memory_fields: Vec::new(),
+            semantic_operations: Vec::new(),
+            trampoline_calls: 0,
+            event_dispatches: Vec::new(),
+            scenario_suggestions: Vec::new(),
+            pseudo: String::new(),
+        };
+
+        assert!(matches_object(&reviewed, &observed, &function));
+    }
 }

@@ -9,8 +9,10 @@ use open_radio_vendor_contracts::{DiagnosticCallSpec, HarnessContractSpec};
 pub mod entry_contract;
 pub mod external_abi;
 
-const EXTERNAL_CALL_MODEL_SETS: &[open_radio_vendor_contracts::ExternalCallModelSetRef] =
-    &[external_abi::WIFI_OSI_MODELS_V9];
+const EXTERNAL_CALL_MODEL_SETS: &[open_radio_vendor_contracts::ExternalCallModelSetRef] = &[
+    external_abi::WIFI_OSI_MODELS_V9,
+    external_abi::COEX_ADAPTER_MODELS_V2,
+];
 const DIAGNOSTIC_CALLS: &[DiagnosticCallSpec] = &[
     DiagnosticCallSpec {
         symbol: "wifi_log",

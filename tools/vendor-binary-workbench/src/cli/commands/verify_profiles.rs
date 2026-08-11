@@ -152,7 +152,7 @@ pub(super) fn run(arguments: VerifyProfilesArgs, svd: &MmioMap) -> Result<bool> 
     let mut different = 0_usize;
     let mut reports = Vec::with_capacity(loaded_profiles.len());
     for profile in &loaded_profiles {
-        let argument_domain = profile.coverage_argument_constraints();
+        let coverage_domain = profile.coverage_constraints();
         let comparison = compare_execution_scenarios(
             svd,
             ExecutionInput {
@@ -166,7 +166,7 @@ pub(super) fn run(arguments: VerifyProfilesArgs, svd: &MmioMap) -> Result<bool> 
                 symbol: &profile.rust_symbol,
             },
             profile.compare_return,
-            &argument_domain,
+            &coverage_domain,
             &profile.scenarios,
         )?;
         match comparison.verdict {

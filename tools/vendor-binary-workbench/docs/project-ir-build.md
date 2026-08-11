@@ -20,18 +20,18 @@ roots = "symbol-prefix"
 symbol-prefix = "phy_"
 include-reachable = true
 entry-contract = "none"
-output = "generated/findings/phy.ir.json"
+output = "generated/findings/phy.ir"
 pseudo-rust = "generated/reports/phy.pseudo.rs"
 
 [[analysis.ir]]
 id = "all-rom"
 sources = ["rom"]
 roots = "all"
-output = "generated/findings/rom.ir.json"
+output = "generated/findings/rom.ir"
 ```
 
 `id` and `output` are required. Relative outputs are resolved from the project
-manifest. Output paths must be unique across every JSON and pseudo-Rust
+manifest. Output paths must be unique across every linked-IR bundle and pseudo-Rust
 document.
 
 `sources` selects IDs from `source-artifact:ID` run-spec roles. Omitting it
@@ -45,7 +45,7 @@ is retained.
 analysis explicit instead of encoding it as an empty prefix. `include-reachable`
 defaults to `true`. `entry-contract` defaults to
 `none` and is validated against the selected generic or platform harness.
-`pseudo-rust` is optional; schema-v40 JSON is always generated.
+`pseudo-rust` is optional; the schema-v43 random-access bundle is always generated.
 
 ## Local artifact bindings
 
@@ -109,7 +109,7 @@ cargo vendor-binary-workbench ir build \
 ```
 
 Missing or different documents make `--check` fail and name every stale path.
-Artifact identities and digests remain embedded in the schema-v40 report, so a
+Artifact identities and digests remain embedded in the schema-v43 report, so a
 successful check also binds the generated view to the supplied local inputs.
 
 ## Command result formats
@@ -118,23 +118,23 @@ The default human view summarizes each selected profile, its function,
 register and field-candidate counts, and the generated paths. `--format json`
 and `--format jsonl` emit the typed `ir-build`
 report directly, with schema, mode, status, ordered profiles and document count. The
-generated linked-IR JSON remains a separate schema-v40 project artifact; the
+generated linked-IR bundle remains a separate schema-v43 project artifact; the
 command result only describes the build operation.
 
 ## Register-review integration
 
 An IR profile does not automatically become hardware truth or a register-model
-input. Link selected generated JSON documents explicitly from the consumer:
+input. Link selected generated bundle directories explicitly from the consumer:
 
 ```toml
 [registers.review]
 output = "generated/reports/register-review.md"
-linked-ir = ["generated/findings/phy.ir.json"]
+linked-ir = ["generated/findings/phy.ir"]
 ```
 
 `project doctor` reports whether each profile has usable source bindings, a
-valid entry contract, generated schema-v40 output and an optional pseudo-Rust
-document. It also reports whether the JSON output is linked into register
+valid entry contract, generated schema-v43 output and an optional pseudo-Rust
+document. It also reports whether the bundle output is linked into register
 review. The register report still treats functions, predicates and semantic
 operations as navigation evidence; clean SVD and PAC generation reads only the
 reviewed register model.

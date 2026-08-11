@@ -190,6 +190,14 @@ pub(crate) fn verification_core_report<S: AsRef<str>>(
     })
 }
 
+pub(crate) fn write_verification_json_report(
+    path: &Path,
+    report: &VerificationCommandReport,
+) -> Result<()> {
+    fs::write(path, serde_json::to_string_pretty(report)? + "\n")?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -228,12 +236,4 @@ mod tests {
             fs::canonicalize(manifest).unwrap()
         );
     }
-}
-
-pub(crate) fn write_verification_json_report(
-    path: &Path,
-    report: &VerificationCommandReport,
-) -> Result<()> {
-    fs::write(path, serde_json::to_string_pretty(report)? + "\n")?;
-    Ok(())
 }

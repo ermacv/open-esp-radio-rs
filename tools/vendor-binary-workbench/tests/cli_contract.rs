@@ -199,6 +199,22 @@ fn project_leaf_help_explains_validity_readiness_and_next_steps() {
 }
 
 #[test]
+fn focused_investigation_commands_are_part_of_the_typed_cli() {
+    let function = run(&["inspect", "function", "--help"]);
+    assert!(function.status.success());
+    let function = String::from_utf8(function.stdout).unwrap();
+    assert!(function.contains("<SOURCE:SYMBOL>"));
+    assert!(function.contains("Authoritative linked image"));
+    assert!(function.contains("Raw archive used as source inventory"));
+
+    let scope = run(&["inspect", "scope", "--help"]);
+    assert!(scope.status.success());
+    let scope = String::from_utf8(scope.stdout).unwrap();
+    assert!(scope.contains("<SCOPE>"));
+    assert!(scope.contains("Exact project review-scope ID"));
+}
+
+#[test]
 fn runtime_errors_do_not_emit_usage_or_an_empty_json_result() {
     let output = run(&[
         "project",
@@ -807,7 +823,7 @@ fn project_inputs_validate_elf_and_archive_roles_before_writing() {
     std::fs::write(
         &manifest,
         format!(
-            "schema = 1\nid = \"input-contract\"\ntarget-spec = {:?}\n\n[[analysis.ir]]\nid = \"fixture\"\nsources = [\"fixture\"]\nroots = \"all\"\noutput = \"generated/fixture.ir.json\"\n",
+            "schema = 1\nid = \"input-contract\"\ntarget-spec = {:?}\n\n[[analysis.ir]]\nid = \"fixture\"\nsources = [\"fixture\"]\nroots = \"all\"\noutput = \"generated/fixture.ir\"\n",
             target.display().to_string()
         ),
     )
@@ -868,7 +884,7 @@ fn project_symbol_inventory_writes_and_checks_its_manifest_owned_report() {
     std::fs::write(
         &manifest,
         format!(
-            "schema = 1\nid = \"symbol-contract\"\ntarget-spec = {:?}\n\n[analysis.symbols]\noutput = \"generated/symbols.json\"\n\n[analysis.navigation]\noutput = \"generated/navigation.json\"\n\n[[analysis.ir]]\nid = \"fixture\"\nsources = [\"fixture\"]\nroots = \"all\"\ninclude-reachable = true\nentry-contract = \"none\"\noutput = \"generated/fixture.ir.json\"\n\n[interfaces]\nfacts = \"generated/interfaces.json\"\n",
+            "schema = 1\nid = \"symbol-contract\"\ntarget-spec = {:?}\n\n[analysis.symbols]\noutput = \"generated/symbols.json\"\n\n[analysis.navigation]\noutput = \"generated/navigation.json\"\n\n[[analysis.ir]]\nid = \"fixture\"\nsources = [\"fixture\"]\nroots = \"all\"\ninclude-reachable = true\nentry-contract = \"none\"\noutput = \"generated/fixture.ir\"\n\n[interfaces]\nfacts = \"generated/interfaces.json\"\n",
             target.display().to_string()
         ),
     )
@@ -1131,7 +1147,7 @@ fn project_symbol_inventory_writes_and_checks_its_manifest_owned_report() {
 
     std::fs::OpenOptions::new()
         .append(true)
-        .open(directory.join("generated/fixture.ir.json"))
+        .open(directory.join("generated/fixture.ir/manifest.json"))
         .unwrap()
         .write_all(b" ")
         .unwrap();
@@ -1168,7 +1184,7 @@ fn project_publication_json_is_one_typed_report() {
         .open(&manifest)
         .unwrap()
         .write_all(
-            b"\n[review]\noutput = \"generated/findings/review-scopes.json\"\nrelease-scopes = [\"publication\"]\n\n[[review.scopes]]\nid = \"publication\"\nprofiles = [\"vendor\"]\nroots = [\"vendor:fixture_entry\"]\ninclude-reachable = true\n",
+            b"\n[review]\noutput = \"generated/findings/review-scopes.json\"\npublication-scopes = [\"publication\"]\n\n[[review.scopes]]\nid = \"publication\"\nprofiles = [\"vendor\"]\nroots = [\"vendor:fixture_entry\"]\ninclude-reachable = true\n",
         )
         .unwrap();
     let review_output = directory.join("generated/findings/review-scopes.json");
@@ -1176,16 +1192,19 @@ fn project_publication_json_is_one_typed_report() {
     std::fs::write(
         review_output,
         serde_json::to_vec_pretty(&serde_json::json!({
-            "schema_version": 4,
+            "schema_version": 7,
             "command": "project review scopes",
             "project": "publication-report",
             "scopes": [{
                 "id": "publication",
-                "release": true,
+                "publication": true,
+                "replacement_qualification": "qualified",
+                "analysis_inventory_complete": true,
                 "profiles": ["vendor"],
                 "roots": 1,
                 "functions": 0,
                 "replacement_functions": 0,
+                "replacement_function_keys": [],
                 "function_identities": [],
                 "function_keys": [],
                 "complete_functions": 0,

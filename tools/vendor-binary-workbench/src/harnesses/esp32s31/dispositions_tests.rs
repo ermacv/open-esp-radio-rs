@@ -238,7 +238,7 @@ fn libpp_tx_dma_manifest_covers_every_ordinary_queue_register() {
     )
     .unwrap();
 
-    assert_eq!(manifest.entries().count(), 7);
+    assert_eq!(manifest.entries().count(), 9);
     for symbol in [
         "hal_mac_is_txq_enabled",
         "hal_mac_is_txq_valid",

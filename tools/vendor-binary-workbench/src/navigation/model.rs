@@ -8,7 +8,7 @@ use std::{
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::{Result, artifact_sha256, parse_u32};
+use crate::{Result, artifact_path_sha256, parse_u32};
 
 pub(super) const SCHEMA_VERSION: u32 = 2;
 pub(super) const IDENTITY_SCHEME: &str = "artifact-sha256-member-symbol-object-address-v1";
@@ -151,7 +151,7 @@ pub(super) fn input(
         kind: kind.to_owned(),
         id,
         path: relative_path(base, path)?.display().to_string(),
-        sha256: artifact_sha256(path)?,
+        sha256: artifact_path_sha256(path)?,
     })
 }
 

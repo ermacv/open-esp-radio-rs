@@ -77,6 +77,29 @@ pub(super) fn resolve(
                     ));
                 }
                 let arguments = slot.arguments.as_deref().unwrap_or_default();
+                if let ExternalReturnModel::AllocatedZeroed { size_argument } = model.return_model
+                {
+                    let Some(argument_type) = arguments.get(usize::from(size_argument)) else {
+                        return Err(super::validation::ValidationError::slot(
+                            anchor,
+                            slot,
+                            "execution-model",
+                            format!(
+                                "call model {model_id:?} allocation size refers to missing argument a{size_argument}"
+                            ),
+                        ));
+                    };
+                    if argument_type != "usize" {
+                        return Err(super::validation::ValidationError::slot(
+                            anchor,
+                            slot,
+                            "execution-model",
+                            format!(
+                                "call model {model_id:?} allocation size argument a{size_argument} has non-size ABI type {argument_type:?}"
+                            ),
+                        ));
+                    }
+                }
                 let mut output_arguments = std::collections::BTreeSet::new();
                 for output in model.outputs {
                     let ExternalOutputModel::PrivateStackU8 { pointer_argument } = output;

@@ -5,7 +5,7 @@ use std::{collections::BTreeSet, fs, path::Path};
 use super::model::{
     IDENTITY_SCHEME, NavigationDocument, SCHEMA_VERSION, SymbolDocument, SymbolKey, address,
 };
-use crate::{Result, artifact_sha256};
+use crate::{Result, artifact_path_sha256};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct StoredNavigationSummary {
@@ -73,7 +73,7 @@ fn validate_inputs(document: &NavigationDocument, base: &Path) -> Result<()> {
             )));
         }
         let resolved = base.join(input_path);
-        let actual = artifact_sha256(&resolved)
+        let actual = artifact_path_sha256(&resolved)
             .map_err(|error| {
                 format!(
                     "cannot authenticate navigation input {}: {error}",

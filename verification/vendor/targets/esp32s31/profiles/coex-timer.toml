@@ -1,0 +1,219 @@
+schema = 2
+
+# The first and last reviewed timer entries exercise the complete indexed
+# address domain. Distinct initial images make preservation of unrelated bits
+# observable instead of accepting write-only constants by accident.
+
+[[profiles]]
+name = "coex-hw-timer-enable"
+vendor-source = "coex"
+vendor-symbol = "coex_hw_timer_enable"
+rust-symbol = "open_coex_trace_coex_hw_timer_enable"
+compare-return = false
+[[profiles.argument-ranges]]
+index = 0
+min = 0
+max = 4
+
+[[profiles.cases]]
+name = "first-timer"
+arguments = [0]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f40c
+value = 0xffffffff
+[[profiles.cases.mmio-initial]]
+address = 0x2010f408
+value = 0x12345678
+
+[[profiles.cases]]
+name = "timer-1"
+arguments = [1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f41c
+value = 0x24681357
+[[profiles.cases.mmio-initial]]
+address = 0x2010f418
+value = 0x13572468
+
+[[profiles.cases]]
+name = "timer-2"
+arguments = [2]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f42c
+value = 0xa5a5a5a5
+[[profiles.cases.mmio-initial]]
+address = 0x2010f428
+value = 0x5a5a5a5a
+
+[[profiles.cases]]
+name = "timer-3"
+arguments = [3]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f43c
+value = 0x01020305
+[[profiles.cases.mmio-initial]]
+address = 0x2010f438
+value = 0x10203040
+
+[[profiles.cases]]
+name = "last-timer"
+arguments = [4]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f44c
+value = 0x76543211
+[[profiles.cases.mmio-initial]]
+address = 0x2010f448
+value = 0xabcdef00
+
+[[profiles]]
+name = "coex-hw-timer-disable"
+vendor-source = "coex"
+vendor-symbol = "coex_hw_timer_disable"
+rust-symbol = "open_coex_trace_coex_hw_timer_disable"
+compare-return = false
+[[profiles.argument-ranges]]
+index = 0
+min = 0
+max = 4
+
+[[profiles.cases]]
+name = "first-timer"
+arguments = [0]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f408
+value = 0xffffffff
+[[profiles.cases.mmio-initial]]
+address = 0x2010f40c
+value = 0x12345678
+
+[[profiles.cases]]
+name = "timer-1"
+arguments = [1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f418
+value = 0x24681357
+[[profiles.cases.mmio-initial]]
+address = 0x2010f41c
+value = 0x13572468
+
+[[profiles.cases]]
+name = "timer-2"
+arguments = [2]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f428
+value = 0xa5a5a5a5
+[[profiles.cases.mmio-initial]]
+address = 0x2010f42c
+value = 0x5a5a5a5a
+
+[[profiles.cases]]
+name = "timer-3"
+arguments = [3]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f438
+value = 0x01020305
+[[profiles.cases.mmio-initial]]
+address = 0x2010f43c
+value = 0x10203040
+
+[[profiles.cases]]
+name = "last-timer"
+arguments = [4]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f448
+value = 0x76543211
+[[profiles.cases.mmio-initial]]
+address = 0x2010f44c
+value = 0xabcdef00
+
+[[profiles]]
+name = "coex-hw-timer-force"
+vendor-source = "coex"
+vendor-symbol = "coex_hw_timer_force"
+rust-symbol = "open_coex_trace_coex_hw_timer_force"
+compare-return = false
+[[profiles.argument-ranges]]
+index = 0
+min = 0
+max = 4
+
+[[profiles.cases]]
+name = "first-timer"
+arguments = [0]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f400
+value = 0xab123456
+
+[[profiles.cases]]
+name = "timer-1"
+arguments = [1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f410
+value = 0xbc234567
+
+[[profiles.cases]]
+name = "timer-2"
+arguments = [2]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f420
+value = 0xcd345678
+
+[[profiles.cases]]
+name = "timer-3"
+arguments = [3]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f430
+value = 0xde456789
+
+[[profiles.cases]]
+name = "last-timer"
+arguments = [4]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f440
+value = 0xcd654321
+
+[[profiles]]
+name = "coex-hw-timer-unforce"
+vendor-source = "coex"
+vendor-symbol = "coex_hw_timer_unforce"
+rust-symbol = "open_coex_trace_coex_hw_timer_unforce"
+compare-return = false
+[[profiles.argument-ranges]]
+index = 0
+min = 0
+max = 4
+
+[[profiles.cases]]
+name = "first-timer"
+arguments = [0]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f400
+value = 0xab123456
+
+[[profiles.cases]]
+name = "timer-1"
+arguments = [1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f410
+value = 0xbc234567
+
+[[profiles.cases]]
+name = "timer-2"
+arguments = [2]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f420
+value = 0xcd345678
+
+[[profiles.cases]]
+name = "timer-3"
+arguments = [3]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f430
+value = 0xde456789
+
+[[profiles.cases]]
+name = "last-timer"
+arguments = [4]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f440
+value = 0xcd654321

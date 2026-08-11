@@ -46,6 +46,14 @@ impl SymbolicValue {
             });
         }
         match self {
+            Self::ExternalResult(token) if token & ALLOCATED_EXTERNAL_RESULT_TOKEN_FLAG != 0 => {
+                Some(MemoryObjectLocation {
+                    root: MemoryObjectRoot::ZeroedAllocation {
+                        call_token: external_result_call_token(*token),
+                    },
+                    offset: 0,
+                })
+            }
             Self::Constant(address) => Some(MemoryObjectLocation {
                 root: MemoryObjectRoot::Absolute { address: *address },
                 offset: 0,
@@ -76,11 +84,8 @@ impl SymbolicValue {
         &self,
         read_sources: &BTreeMap<u32, MemoryObjectLocation>,
     ) -> Option<MemoryObjectLocation> {
-        if let Some(index) = self.direct_input_index() {
-            return Some(MemoryObjectLocation {
-                root: MemoryObjectRoot::Argument { index },
-                offset: 0,
-            });
+        if let Some(location) = self.memory_object_location() {
+            return Some(location);
         }
         match self {
             Self::Constant(address) => Some(MemoryObjectLocation {
@@ -128,6 +133,22 @@ impl SymbolicValue {
                     return right
                         .memory_object_location_with_reads(read_sources)
                         .map(|location| location.with_index(argument, stride));
+                }
+                if let Some((argument, offset)) = right.caller_memory_location() {
+                    return left.memory_object_location_with_reads(read_sources).map(
+                        |mut location| {
+                            location.offset = location.offset.wrapping_add(i64::from(offset));
+                            location.with_index(argument, 1)
+                        },
+                    );
+                }
+                if let Some((argument, offset)) = left.caller_memory_location() {
+                    return right.memory_object_location_with_reads(read_sources).map(
+                        |mut location| {
+                            location.offset = location.offset.wrapping_add(i64::from(offset));
+                            location.with_index(argument, 1)
+                        },
+                    );
                 }
                 if let Some(offset) = right.as_constant() {
                     let mut location = left.memory_object_location_with_reads(read_sources)?;
@@ -183,6 +204,9 @@ impl SymbolicValue {
     }
 
     fn scaled_input(&self) -> Option<(u8, i64)> {
+        if let Some(argument) = self.direct_input_index() {
+            return Some((argument, 1));
+        }
         match self {
             Self::Expression {
                 operation: ExpressionOperation::Multiply,
@@ -481,6 +505,14 @@ impl SymbolicValue {
             Self::FunctionPointer { table, target } => {
                 format!("function-pointer:{}::{target:#010x}", table.id())
             }
+            Self::ExternalResult(call_token)
+                if call_token & ALLOCATED_EXTERNAL_RESULT_TOKEN_FLAG != 0 =>
+            {
+                format!(
+                    "zeroed-allocation:{}",
+                    external_result_call_token(*call_token)
+                )
+            }
             Self::ExternalResult(call_token) => format!("external-result:{call_token}"),
             Self::ExternalResultHigh(call_token) => {
                 format!("external-result-high:{call_token}")
@@ -594,6 +626,7 @@ impl SymbolicValue {
                             inverted,
                         } => {
                             let inverse = if *inverted { "!" } else { "" };
+                            let call_token = external_result_call_token(*call_token);
                             Some(format!("{bit}={inverse}external{call_token}.{source}"))
                         }
                         BitSource::ExternalResultHigh {
@@ -690,6 +723,62 @@ mod tests {
             })
         );
         assert_eq!(address.caller_memory_location(), None);
+    }
+
+    #[test]
+    fn memory_object_location_preserves_byte_index_into_relocated_global() {
+        let base = SymbolicValue::SymbolAddress {
+            member: Some("table.o".to_owned()),
+            symbol: ".LANCHOR1".to_owned(),
+            hi_addend: 0,
+            lo_addend: Some(0),
+            post_offset: 0,
+        };
+        let address =
+            SymbolicValue::expression(ExpressionOperation::Add, base, SymbolicValue::input(0));
+
+        assert_eq!(
+            address.memory_object_location_with_reads(&BTreeMap::new()),
+            Some(MemoryObjectLocation {
+                root: MemoryObjectRoot::Indexed {
+                    root: std::sync::Arc::new(MemoryObjectRoot::RelocatedSymbol {
+                        member: Some("table.o".to_owned()),
+                        symbol: ".LANCHOR1".to_owned(),
+                    }),
+                    argument: 0,
+                    stride: 1,
+                },
+                offset: 0,
+            })
+        );
+    }
+
+    #[test]
+    fn memory_object_location_preserves_biased_byte_index_into_relocated_global() {
+        let base = SymbolicValue::SymbolAddress {
+            member: Some("table.o".to_owned()),
+            symbol: ".LANCHOR2".to_owned(),
+            hi_addend: 0,
+            lo_addend: Some(0),
+            post_offset: 0,
+        };
+        let biased_index = SymbolicValue::input(0).add_constant(u32::MAX);
+        let address = SymbolicValue::expression(ExpressionOperation::Add, base, biased_index);
+
+        assert_eq!(
+            address.memory_object_location_with_reads(&BTreeMap::new()),
+            Some(MemoryObjectLocation {
+                root: MemoryObjectRoot::Indexed {
+                    root: std::sync::Arc::new(MemoryObjectRoot::RelocatedSymbol {
+                        member: Some("table.o".to_owned()),
+                        symbol: ".LANCHOR2".to_owned(),
+                    }),
+                    argument: 0,
+                    stride: 1,
+                },
+                offset: -1,
+            })
+        );
     }
 
     #[test]
@@ -805,5 +894,27 @@ mod tests {
             unreachable!("fixture uses dereferenced roots")
         };
         assert!(std::sync::Arc::ptr_eq(pointer, cloned_pointer));
+    }
+
+    #[test]
+    fn zeroed_allocation_keeps_affine_identity_without_exposing_token_flag() {
+        let value = SymbolicValue::ExternalResult(ALLOCATED_EXTERNAL_RESULT_TOKEN_FLAG | 3)
+            .add_constant(0x14);
+
+        assert_eq!(
+            value.memory_object_location_with_reads(&BTreeMap::new()),
+            Some(MemoryObjectLocation {
+                root: MemoryObjectRoot::ZeroedAllocation { call_token: 3 },
+                offset: 0x14,
+            })
+        );
+        assert!(!value.canonical().contains("107374"));
+
+        let bits = SymbolicValue::from_bits(
+            SymbolicValue::ExternalResult(ALLOCATED_EXTERNAL_RESULT_TOKEN_FLAG | 3).bits(),
+        );
+        let rendered = bits.canonical();
+        assert!(rendered.contains("external3."), "{rendered}");
+        assert!(!rendered.contains("107374"), "{rendered}");
     }
 }

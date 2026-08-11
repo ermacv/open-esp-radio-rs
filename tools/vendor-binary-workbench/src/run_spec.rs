@@ -222,7 +222,7 @@ fn invalid(path: &Path, input: &str, message: impl Into<String>) -> RunSpecError
     RunSpecError::Invalid {
         message: message.into(),
         src: NamedSource::new(path.display().to_string(), input.to_owned()),
-        span: (0, input.len().min(1).max(1)).into(),
+        span: (0, 1).into(),
     }
 }
 

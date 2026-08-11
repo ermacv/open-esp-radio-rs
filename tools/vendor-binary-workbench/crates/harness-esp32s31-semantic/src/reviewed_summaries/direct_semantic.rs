@@ -79,7 +79,7 @@ static PP_POST_SEMANTIC: DirectSemanticFunctionSpec = DirectSemanticFunctionSpec
         event_dispatch: Some(EventDispatchSemanticSpec {
             mechanism: "internal-signal",
             execution_context: "unspecified",
-            receiver: None,
+            receiver: Some("esp32s31::pp-task"),
             argument_roles: PP_POST_EVENT_ROLES,
         }),
     },

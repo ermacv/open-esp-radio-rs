@@ -48,6 +48,7 @@ fn execution_result_with_timeline(
         calls: std::collections::BTreeSet::new(),
         ordered_calls: Vec::new(),
         indirect_calls: std::collections::BTreeSet::new(),
+        allocations: Vec::new(),
         table_lifecycle: Vec::new(),
         table_lifecycle_complete: true,
         device_model_coverage: Vec::new(),

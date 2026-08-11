@@ -271,7 +271,7 @@ id = "phy"
 sources = ["rom", "archive"]
 roots = "symbol-prefix"
 symbol-prefix = "phy_"
-output = "generated/phy.ir.json"
+output = "generated/phy.ir"
 pseudo-rust = "generated/phy.pseudo.rs"
 
 [[analysis.ir]]
@@ -280,7 +280,7 @@ sources = ["rom"]
 roots = "all"
 include-reachable = false
 entry-contract = "none"
-output = "generated/rom.ir.json"
+output = "generated/rom.ir"
 "#;
         let document = input.parse::<DocumentMut>().unwrap();
         let profiles = load_ir_profiles(

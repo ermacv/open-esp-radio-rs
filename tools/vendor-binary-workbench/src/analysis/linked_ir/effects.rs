@@ -492,7 +492,7 @@ fn collect_mmio_access_from_event(
             let address_expression = Some(pseudo_value(address));
             let guard = guard
                 .as_ref()
-                .map(|guard| format!("{} < {}", pseudo_value(&guard.selector), guard.maximum));
+                .map(|guard| format!("{} <= {}", pseudo_value(&guard.selector), guard.maximum));
             for register in registers {
                 push_mmio_access(
                     output,
@@ -523,7 +523,7 @@ fn collect_mmio_access_from_event(
                 || format!("value & {mask:#010x} == {expected:#010x}"),
                 |guard| {
                     format!(
-                        "{} < {}; value & {mask:#010x} == {expected:#010x}",
+                        "{} <= {}; value & {mask:#010x} == {expected:#010x}",
                         pseudo_value(&guard.selector),
                         guard.maximum
                     )

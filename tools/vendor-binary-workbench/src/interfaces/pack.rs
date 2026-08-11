@@ -12,6 +12,13 @@ use super::{
 };
 use crate::{ExternalCallModelSetRef, HarnessContractSpec};
 
+type ValidatedInterfacePack = (
+    InterfaceWorkspaceSummary,
+    Vec<ResolvedInterfaceContract>,
+    Vec<ResolvedInterfaceSlot>,
+    Vec<UnreviewedInterfaceObservation>,
+);
+
 impl InterfacePack {
     pub(super) fn validate(
         &self,
@@ -19,12 +26,7 @@ impl InterfacePack {
         catalogs: &SemanticCatalogs,
         calling_convention: &str,
         execution_contracts: Option<&HarnessContractSpec>,
-    ) -> ValidationResult<(
-        InterfaceWorkspaceSummary,
-        Vec<ResolvedInterfaceContract>,
-        Vec<ResolvedInterfaceSlot>,
-        Vec<UnreviewedInterfaceObservation>,
-    )> {
+    ) -> ValidationResult<ValidatedInterfacePack> {
         validate_dotted_id(&self.id, "interface pack id")
             .map_err(|error| ValidationError::pack("id", error.to_string()))?;
         if self.calling_convention != calling_convention {

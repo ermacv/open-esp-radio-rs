@@ -10,6 +10,7 @@ mod cli;
 mod code_workspace;
 mod digest;
 mod error;
+mod function_investigation;
 mod function_workspace;
 mod harnesses;
 mod interfaces;
@@ -22,6 +23,7 @@ mod platform_pack;
 mod project;
 mod project_analysis;
 mod project_ir;
+mod qualification;
 mod register_catalog;
 mod registers;
 mod review_scopes;
@@ -36,8 +38,14 @@ mod verification;
 use analysis::*;
 pub use application::*;
 use cli::run;
-pub(crate) use digest::artifact_sha256;
+pub(crate) use digest::{artifact_path_sha256, artifact_sha256};
 use error::WorkbenchError;
+pub use function_investigation::{
+    CallGraphEdgeEvidence, CallKnowledgeEvidence, EventDispatchBindingEvidence,
+    EventDispatchEvidence, FunctionInvestigationReport, InvestigationLedgerEntry,
+    OriginFunctionEvidence, ReviewedPathEvidence, ReviewedPreconditionEvidence,
+    SemanticFunctionEvidence,
+};
 #[cfg(all(test, feature = "esp32s31-harness"))]
 pub(crate) use harnesses::esp32s31::entry_contract;
 use memory_map::MemoryMap;
@@ -48,6 +56,10 @@ use open_radio_vendor_analysis_model::*;
 use open_radio_vendor_analysis_model::{MmioRegion, Register};
 #[cfg(test)]
 pub(crate) use open_radio_vendor_backend_riscv::Rv32CallArguments;
+pub use open_radio_vendor_backend_riscv::artifact::{
+    FunctionBasicBlock, FunctionBody, FunctionControlFlow, FunctionControlFlowKind,
+    FunctionInstruction, FunctionLabel,
+};
 pub use open_radio_vendor_backend_riscv::execution::Scenario as ExecutionScenario;
 pub(crate) use open_radio_vendor_backend_riscv::{
     artifact, codegen, direct_target_audit, execution, interface_discovery,
@@ -75,13 +87,14 @@ use test_support::private_input;
 use test_support::trace_disassembly;
 use verification::*;
 pub use verification::{
-    AlignedTraceItemReport, ArtifactIdentity, ArtifactReport, BranchDecisionReport,
-    BranchOutcomeReport, CaseReport, ComparisonSummary, ControlFlowReport, CoverageReport,
-    DeviceModelCoverageReport, DeviceModelReport, DifferenceKind, EventProducerReport,
-    ExecutionComparisonReport, ExecutionEventReport, ExecutionPathReport, ExecutionPathSideReport,
-    MemoryChangeReport, OrderedCallReport, RuntimeMemoryBindingReport, RuntimeMemoryInstanceReport,
-    ScenarioEnvironmentReport, TableInstanceReport, TableInstanceSlotReport, TableLifecycleReport,
-    TableSlotTargetReport, TraceDiffReport, TraceItemReport,
+    AlignedTraceItemReport, AllocationLifecycleReport, ArtifactIdentity, ArtifactReport,
+    BranchDecisionReport, BranchOutcomeReport, CaseReport, ComparisonSummary, ControlFlowReport,
+    CoverageReport, DeviceModelCoverageReport, DeviceModelReport, DifferenceKind,
+    EventProducerReport, ExecutionComparisonReport, ExecutionEventReport, ExecutionPathReport,
+    ExecutionPathSideReport, MemoryChangeReport, OrderedCallReport, RuntimeMemoryBindingReport,
+    RuntimeMemoryInstanceReport, ScenarioEnvironmentReport, TableInstanceReport,
+    TableInstanceSlotReport, TableLifecycleReport, TableSlotTargetReport, TraceDiffReport,
+    TraceItemReport,
 };
 
 use std::process::ExitCode;

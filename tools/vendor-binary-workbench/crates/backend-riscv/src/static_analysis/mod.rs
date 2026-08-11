@@ -5,11 +5,11 @@ use std::collections::{BTreeMap, BTreeSet};
 use rv_asm::{Inst, Reg};
 
 use crate::{
-    BitSource, BranchCondition, BranchOperation, DEFERRED_CALLER_MEMORY_REGION,
-    DirectSemanticFunctionSpec, DraftReferenceEvent, ExpressionOperation, ExternalOutputModel,
-    ExternalReturnModel, FunctionAnalysis, FunctionTableRef, IndexedMmioDomain,
-    IndexedMmioRegister, LocatedObservableEvent, MemoryAccess, MemoryObjectLocation,
-    MemoryObjectRoot, MmioMap, ObservableEvent, RV32_REGISTER_ARGUMENT_COUNT,
+    ALLOCATED_EXTERNAL_RESULT_TOKEN_FLAG, BitSource, BranchCondition, BranchOperation,
+    DEFERRED_CALLER_MEMORY_REGION, DirectSemanticFunctionSpec, DraftReferenceEvent,
+    ExpressionOperation, ExternalOutputModel, ExternalReturnModel, FunctionAnalysis,
+    FunctionTableRef, IndexedMmioDomain, IndexedMmioRegister, LocatedObservableEvent, MemoryAccess,
+    MemoryObjectLocation, MemoryObjectRoot, MmioMap, ObservableEvent, RV32_REGISTER_ARGUMENT_COUNT,
     RV32_STACK_ARGUMENT_COUNT, Result, ReviewedExternalCall, Rv32CallArguments,
     SECONDARY_CALL_RESULT_TOKEN_FLAG, SymbolicValue, artifact, collect_evaluable_input_bits,
     encode_fence_set, evaluate_for_input, indexed_mmio_domain,
@@ -462,7 +462,7 @@ pub fn trace_structural_program_with_branches_bounded(
                             instruction_indices.get(&branch_target).copied()
                         && let Some(checkpoint) = checkpoints.get(&branch_target)
                         && let Some(poll) = recognize_structural_poll_loop(
-                            &instructions,
+                            instructions,
                             loop_start_index,
                             instruction_index,
                             &condition,

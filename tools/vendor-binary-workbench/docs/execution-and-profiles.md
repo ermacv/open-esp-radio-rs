@@ -187,7 +187,9 @@ ledger.
 Schema 2 models reviewed external-call responses independently for the vendor
 and Rust images. Each response is consumed in call order for its exact symbol,
 may provide at most the RV32 `a0`/`a1` return words, and may write reviewed
-outputs through private-stack pointer arguments:
+outputs through private-stack pointer arguments. A reviewed zeroing allocator
+instead consumes one explicit fresh arena and derives the live prefix from its
+size argument:
 
 ```toml
 [[profiles.cases.vendor-calls]]
@@ -198,13 +200,23 @@ outputs = [{ kind = "private-stack-u8", pointer-argument = 2, value = 1 }]
 [[profiles.cases.rust-calls]]
 symbol = "wake_receiver"
 return-words = [0]
+
+[[profiles.cases.vendor-calls]]
+symbol = "wifi_zalloc"
+allocation = { address = 0x3fce0000, size-argument = 0, capacity = 0x100 }
 ```
 
 The two sides need not use the same external symbol or ABI adapter. Unknown
 fields, more than two return words, duplicate output arguments, non-`a0..a7`
 arguments, an invalid private-stack pointer, or an unused response make the
 profile invalid or the execution incomplete. There is no schema-1 compatibility
-path.
+path. An allocation cannot also declare `return-words`; its arena must be
+non-empty, 32-bit aligned, bounded to 1 MiB, large enough for the runtime
+request, and disjoint from ELF memory, MMIO, the private stack and initial RAM.
+Only the requested prefix is addressable and zero-initialized. Allocation
+lifecycle evidence is emitted independently for vendor and Rust runs; arena
+addresses describe their modeled environments and are not themselves compared
+as observable driver effects.
 
 ### Runtime table instances
 

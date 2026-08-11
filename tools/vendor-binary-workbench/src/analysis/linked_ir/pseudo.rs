@@ -44,7 +44,9 @@ impl PseudoBitBase {
             Self::Memory(token) => format!("ramread{token}"),
             Self::PrivateStack(token) => format!("private_stack_read{token}"),
             Self::CallResult(token) => format!("call{token}"),
-            Self::ExternalResult(token) => format!("external{token}"),
+            Self::ExternalResult(token) => {
+                format!("external{}", external_result_call_token(*token))
+            }
             Self::ExternalResultHigh(token) => format!("external{token}_high"),
             Self::ExternalOutput {
                 call_token,
@@ -178,7 +180,9 @@ pub(super) fn pseudo_value(value: &SymbolicValue) -> String {
             lo_addend.map_or_else(|| "?".to_owned(), |value| format!("{value:+#x}"))
         ),
         SymbolicValue::CallResult(token) => format!("call{token}"),
-        SymbolicValue::ExternalResult(token) => format!("external{token}"),
+        SymbolicValue::ExternalResult(token) => {
+            format!("external{}", external_result_call_token(*token))
+        }
         SymbolicValue::ExternalResultHigh(token) => format!("external{token}_high"),
         SymbolicValue::ExternalOutput {
             call_token,
@@ -364,7 +368,7 @@ pub(super) fn render_event(
             if let Some(guard) = guard {
                 writeln!(
                     output,
-                    "{prefix}assert!({} < {});",
+                    "{prefix}assert!({} <= {});",
                     pseudo_value(&guard.selector),
                     guard.maximum
                 )

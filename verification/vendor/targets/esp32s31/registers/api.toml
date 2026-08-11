@@ -6,6 +6,20 @@ peripheral-ownership = true
 device-access = true
 allow-clippy-empty-docs = true
 
+[[zero-based-field-writes]]
+name = "coex_timer_configuration"
+peripheral = "COEX_HW_TIMER"
+register = "CONFIGURATION%s"
+fields = ["PRIMARY_TICK_IMAGE", "PARAMETER_2", "PARAMETER_1"]
+sources = ["BLOB_LIBCOEX_HW_TIMER"]
+
+[[zero-based-field-writes]]
+name = "coex_timer_secondary_target"
+peripheral = "COEX_HW_TIMER"
+register = "SECONDARY_TARGET%s"
+fields = ["SECONDARY_TICK_IMAGE"]
+sources = ["BLOB_LIBCOEX_HW_TIMER"]
+
 [[interrupt-snapshots]]
 name = "mac_interrupt"
 peripheral = "WIFI_MAC_INTERRUPT"

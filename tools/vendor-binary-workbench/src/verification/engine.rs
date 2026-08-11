@@ -143,7 +143,9 @@ pub(crate) fn verify_source(
             )?
             .ok_or_else(|| format!("no harness registered driver adapter {}", adapter.label()))
             .map_err(crate::Error::invalid)?;
-            if proof.matched {
+            let whole_function = proof.claim
+                == open_radio_vendor_semantics::DriverAdapterClaim::WholeFunctionEquivalence;
+            if proof.matched && whole_function {
                 summary.matched += 1;
                 summary.effect_contract_matches += 1;
                 record_evidence(
@@ -152,22 +154,55 @@ pub(crate) fn verify_source(
                     &vendor.name,
                     driver_adapter_effect_evidence(harness, policy, binding, &proof.canonical),
                 )?;
+            } else if proof.matched {
+                summary.implemented_unqualified += 1;
+                record_evidence(
+                    evidence,
+                    source.name,
+                    &vendor.name,
+                    driver_adapter_limited_claim_evidence(
+                        harness,
+                        policy,
+                        binding,
+                        proof.claim,
+                        &proof.canonical,
+                    ),
+                )?;
             } else {
                 summary.mismatched += 1;
             }
-            let mut function = FunctionVerificationReport::new(
-                source.name,
-                &vendor.name,
-                if proof.matched {
-                    FunctionVerificationStatus::Match
-                } else {
-                    FunctionVerificationStatus::Mismatch
-                },
-            );
+            let status = if !proof.matched {
+                FunctionVerificationStatus::Mismatch
+            } else if whole_function {
+                FunctionVerificationStatus::Match
+            } else {
+                FunctionVerificationStatus::ImplementedUnqualified
+            };
+            let mut function = FunctionVerificationReport::new(source.name, &vendor.name, status);
             function.rust_symbol = Some(binding.rust_probe.clone());
-            function.evidence = proof.matched.then(|| "effect-contract".to_owned());
+            function.evidence = proof.matched.then(|| {
+                if whole_function {
+                    "effect-contract".to_owned()
+                } else {
+                    proof.claim.label().to_owned()
+                }
+            });
             function.contract = Some(policy.comparison.label().to_owned());
             function.driver_adapter = Some(adapter.label().to_owned());
+            function.claim = Some(proof.claim);
+            if proof.matched && !whole_function {
+                function.reason = Some(format!(
+                    "{} evidence does not establish whole-function vendor equivalence",
+                    match proof.claim {
+                        open_radio_vendor_semantics::DriverAdapterClaim::ReviewedProjection =>
+                            "reviewed projection",
+                        open_radio_vendor_semantics::DriverAdapterClaim::RustConformance =>
+                            "Rust conformance",
+                        open_radio_vendor_semantics::DriverAdapterClaim::WholeFunctionEquivalence =>
+                            unreachable!(),
+                    }
+                ));
+            }
             functions.push(function);
             continue;
         }
@@ -316,7 +351,7 @@ pub(crate) fn verify_source(
             .iter()
             .find(|profile| profile.vendor_symbol == vendor.name)
         {
-            let argument_domain = profile.coverage_argument_constraints();
+            let coverage_domain = profile.coverage_constraints();
             let comparison = compare_execution_scenarios(
                 svd,
                 ExecutionInput {
@@ -330,7 +365,7 @@ pub(crate) fn verify_source(
                     symbol: &profile.rust_symbol,
                 },
                 profile.compare_return,
-                &argument_domain,
+                &coverage_domain,
                 &profile.scenarios,
             )?;
             let verdict = comparison.verdict;
@@ -360,6 +395,9 @@ pub(crate) fn verify_source(
             function.rust_symbol = Some(rust.name.clone());
             function.evidence = (verdict == EquivalenceVerdict::Match)
                 .then(|| profile.contract.evidence().to_owned());
+            function.claim = (verdict == EquivalenceVerdict::Match).then_some(
+                open_radio_vendor_semantics::DriverAdapterClaim::WholeFunctionEquivalence,
+            );
             function.profile = Some(profile.name.clone());
             function.execution = Some(comparison);
             functions.push(function);

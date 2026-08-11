@@ -14,6 +14,7 @@ use crate::{
     DraftReferenceTerminator, ExpressionOperation, ExternalOutputModel, ExternalReturnModel,
     FunctionAnalysis, MemoryAccess, MmioMap, ObservableEvent, ReferenceResolver,
     ReviewedExternalCall, ReviewedExternalCallExecutionModel, SymbolicValue, artifact, direct,
+    external_result_call_token,
 };
 
 const MAX_CALL_GRAPH_STATES: usize = 127;
@@ -105,10 +106,17 @@ fn annotate_direct_semantic_calls(
     {
         let (function, contract_source) =
             if let Some(symbol) = identities.selectable_symbol(&call.target) {
-                let Some(function) = (hooks.direct_semantic)(symbol) else {
+                let Some(function) = (hooks.direct_semantic)(symbol)
+                    .or_else(|| resolver.projected_direct_semantic(symbol))
+                else {
                     continue;
                 };
-                (function, "reviewed-internal-function")
+                let source = if (hooks.direct_semantic)(symbol).is_some() {
+                    "reviewed-internal-function"
+                } else {
+                    "unique-reviewed-archive-origin"
+                };
+                (function, source)
             } else {
                 let Some(site) = call.site else {
                     continue;
@@ -196,14 +204,16 @@ pub(crate) fn build_linked_ir_for_source(
         )
     } else {
         build_linked_functions_for_roots(
-            resolver,
+            LinkedFunctionBuild {
+                resolver,
+                symbol_prefix,
+                svd,
+                source,
+                progress_label: source,
+                namespace_identities,
+                include_reachable,
+            },
             roots,
-            symbol_prefix,
-            svd,
-            source,
-            source,
-            namespace_identities,
-            include_reachable,
         )
     };
     let function_analysis_elapsed = started.elapsed();
@@ -219,22 +229,36 @@ pub(crate) fn build_linked_ir_for_source(
     report
 }
 
-fn build_linked_functions_for_roots(
-    resolver: &ReferenceResolver,
-    roots: Vec<&artifact::ArtifactSymbolDefinition>,
-    symbol_prefix: &str,
-    svd: &MmioMap,
-    source: &str,
-    progress_label: &str,
+#[derive(Clone, Copy)]
+struct LinkedFunctionBuild<'a> {
+    resolver: &'a ReferenceResolver,
+    symbol_prefix: &'a str,
+    svd: &'a MmioMap,
+    source: &'a str,
+    progress_label: &'a str,
     namespace_identities: bool,
     include_reachable: bool,
+}
+
+fn build_linked_functions_for_roots(
+    build: LinkedFunctionBuild<'_>,
+    roots: Vec<&artifact::ArtifactSymbolDefinition>,
 ) -> Vec<LinkedIrFunction> {
+    let LinkedFunctionBuild {
+        resolver,
+        symbol_prefix,
+        svd,
+        source,
+        progress_label,
+        namespace_identities,
+        include_reachable,
+    } = build;
     let mut functions = Vec::new();
     let identities = IrIdentityCatalog::new(resolver, namespace_identities.then_some(source));
     let mut scheduled = BTreeSet::<SymbolKey>::new();
     let mut pending = VecDeque::new();
     for symbol in roots {
-        if scheduled.insert(symbol_key(&symbol)) {
+        if scheduled.insert(symbol_key(symbol)) {
             pending.push_back(symbol);
         }
     }
@@ -247,8 +271,8 @@ fn build_linked_functions_for_roots(
         } else {
             "reachable-internal"
         };
-        let function_identity = identities.symbol(&symbol);
-        let binding = if resolver.symbol_is_exported(&symbol) {
+        let function_identity = identities.symbol(symbol);
+        let binding = if resolver.symbol_is_exported(symbol) {
             "global-or-weak"
         } else {
             "local"
@@ -465,14 +489,16 @@ fn build_all_linked_functions_parallel(
                 .stack_size(LINKED_IR_WORKER_STACK_BYTES)
                 .spawn_scoped(scope, move || {
                     let functions = build_linked_functions_for_roots(
-                        resolver,
+                        LinkedFunctionBuild {
+                            resolver,
+                            symbol_prefix: "",
+                            svd,
+                            source,
+                            progress_label: &progress_label,
+                            namespace_identities,
+                            include_reachable: false,
+                        },
                         roots,
-                        "",
-                        svd,
-                        source,
-                        &progress_label,
-                        namespace_identities,
-                        false,
                     );
                     sender
                         .send((worker, functions))

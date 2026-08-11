@@ -209,6 +209,13 @@ fn real_libpp_pp_post_matches_the_reviewed_direct_semantic_contract() {
     assert_eq!(contract.semantic.operation, "wifi.internal-signal.post");
     assert_eq!(contract.semantic.arguments.len(), 1);
     assert_eq!(contract.semantic.arguments[0].name, "signal");
+
+    let exact = artifact::load_code_symbol_exact(&artifact, Some("pp.o"), "pp_post", 0)
+        .unwrap()
+        .expect("focused origin loader must retain the exact body and relocations");
+    let focused_contract = (RISCV_HARNESS.summaries.direct_semantic)(&exact)
+        .expect("focused origin body must receive the same reviewed semantic");
+    assert_eq!(focused_contract.id, contract.id);
 }
 
 #[test]

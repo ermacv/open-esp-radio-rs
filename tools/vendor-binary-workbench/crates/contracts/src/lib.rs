@@ -15,6 +15,12 @@ pub enum ExternalReturnModel {
     SymbolicU32,
     /// Two-word RV32 ABI result in `a0` (low) and `a1` (high).
     SymbolicU64,
+    /// A fresh, non-null allocation whose first `aN` bytes are initialized to
+    /// zero. The size argument is part of the reviewed ABI model; allocation
+    /// identity and lifetime remain explicit in analysis and scenarios.
+    AllocatedZeroed {
+        size_argument: u8,
+    },
     /// The ABI identity and human semantics are known, but observable effects
     /// and return propagation are not modeled for validation.
     Unmodeled,

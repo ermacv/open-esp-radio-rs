@@ -29,7 +29,14 @@ pub(super) fn collect(
         .into_iter()
         .map(|scope| ReviewScopeSummary {
             id: scope.id,
-            release: scope.release,
+            publication: scope.publication,
+            replacement_qualification: match scope.replacement_qualification {
+                crate::review_scopes::ReplacementQualification::NotPublished => "not-published",
+                crate::review_scopes::ReplacementQualification::Qualified => "qualified",
+                crate::review_scopes::ReplacementQualification::Blocked => "blocked",
+            }
+            .to_owned(),
+            analysis_inventory_complete: scope.analysis_inventory_complete,
             profiles: scope.profiles,
             roots: scope.roots,
             functions: scope.functions,

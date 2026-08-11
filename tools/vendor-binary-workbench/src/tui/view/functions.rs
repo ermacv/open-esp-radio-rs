@@ -231,6 +231,238 @@ pub(super) fn render(frame: &mut Frame<'_>, state: &BrowserState, area: Rect) {
                         .map(|line| Line::from(line.to_owned())),
                 );
             }
+            if let Some(detail) = function_detail.filter(|detail| {
+                !detail.reviewed_preconditions.is_empty() || !detail.reviewed_paths.is_empty()
+            }) {
+                lines.push(Line::from(""));
+                lines.push(Line::from(Span::styled(
+                    "Reviewed path knowledge (assumptions, not execution proof)",
+                    Style::new().fg(Color::Magenta).add_modifier(Modifier::BOLD),
+                )));
+                lines.extend(detail.reviewed_preconditions.iter().map(|precondition| {
+                    Line::from(format!(
+                        "- precondition {}: {} — {}",
+                        precondition.id, precondition.expression, precondition.rationale
+                    ))
+                }));
+                lines.extend(detail.reviewed_paths.iter().map(|path| {
+                    Line::from(format!(
+                        "- path {} [{}]: {} ({})",
+                        path.id, path.class, path.summary, path.evidence
+                    ))
+                }));
+            }
+            if let Some(investigation) =
+                function_detail.and_then(|detail| detail.investigation.as_ref())
+            {
+                lines.push(Line::from(""));
+                lines.push(Line::from(Span::styled(
+                    "Lossless investigation",
+                    Style::new().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+                )));
+                lines.extend(investigation.proof_ledger.iter().map(|entry| {
+                    Line::from(format!(
+                        "- {:<12} {:<20} {}",
+                        entry.layer, entry.status, entry.detail
+                    ))
+                }));
+                for semantic in &investigation.semantics {
+                    if !semantic.calls.is_empty() {
+                        lines.push(Line::from(""));
+                        lines.push(Line::from(Span::styled(
+                            format!("Call boundaries ({})", semantic.profile),
+                            Style::new().add_modifier(Modifier::BOLD),
+                        )));
+                        lines.extend(semantic.calls.iter().map(|call| {
+                            Line::from(format!(
+                                "- {} {}{} [{}]{}{}",
+                                call.kind,
+                                call.target,
+                                call.site
+                                    .map(|site| format!(" @ {site:#010x}"))
+                                    .unwrap_or_default(),
+                                call.knowledge,
+                                call.semantic_operation
+                                    .as_deref()
+                                    .map(|operation| format!(" operation={operation}"))
+                                    .unwrap_or_default(),
+                                call.execution_model
+                                    .as_deref()
+                                    .map(|model| format!(" model={model}"))
+                                    .unwrap_or_default(),
+                            ))
+                        }));
+                    }
+                    if !semantic.call_graph_edges.is_empty() {
+                        lines.push(Line::from(format!(
+                            "Reachable call graph: {} functions, {} edges",
+                            semantic.reachable_functions.len(),
+                            semantic.call_graph_edges.len()
+                        )));
+                        lines.extend(semantic.call_graph_edges.iter().take(100).map(|edge| {
+                            Line::from(format!(
+                                "  {} --{}{}--> {}",
+                                edge.caller,
+                                edge.kind,
+                                edge.site
+                                    .map(|site| format!("@{site:#010x}"))
+                                    .unwrap_or_default(),
+                                edge.callee
+                            ))
+                        }));
+                        if semantic.call_graph_edges.len() > 100 {
+                            lines.push(Line::from(format!(
+                                "  ... {} additional edges",
+                                semantic.call_graph_edges.len() - 100
+                            )));
+                        }
+                    }
+                    if !semantic.event_dispatches.is_empty() {
+                        lines.push(Line::from("Event dispatches:"));
+                        for dispatch in &semantic.event_dispatches {
+                            let bindings = dispatch
+                                .bindings
+                                .iter()
+                                .map(|binding| format!("{}={}", binding.role, binding.value))
+                                .collect::<Vec<_>>()
+                                .join(", ");
+                            lines.push(Line::from(format!(
+                                "  {} -> {} ({}, [{}])",
+                                dispatch.mechanism,
+                                dispatch.receiver.as_deref().unwrap_or("unknown receiver"),
+                                dispatch.execution_context,
+                                bindings
+                            )));
+                            lines.extend(
+                                dispatch
+                                    .blockers
+                                    .iter()
+                                    .map(|blocker| Line::from(format!("    ! {blocker}"))),
+                            );
+                        }
+                    }
+                    if !semantic.reviewed_event_routes.is_empty() {
+                        lines.push(Line::from("Reviewed event routes:"));
+                        lines.extend(semantic.reviewed_event_routes.iter().map(|route| {
+                            Line::from(format!(
+                                "  {}: {} {}={:#010x} -> {}",
+                                route.id,
+                                route.mechanism,
+                                route.selector_role,
+                                route.selector_value,
+                                route.handler
+                            ))
+                        }));
+                    }
+                }
+                if !investigation.replacements.is_empty() {
+                    lines.push(Line::from(""));
+                    lines.push(Line::from(Span::styled(
+                        "Vendor ↔ Rust replacement",
+                        Style::new().add_modifier(Modifier::BOLD),
+                    )));
+                    lines.extend(investigation.replacements.iter().map(|replacement| {
+                        Line::from(format!(
+                            "{}:{} status={} production={} proofs={} (freshness not claimed)",
+                            replacement.vendor_source,
+                            replacement.vendor_symbol,
+                            replacement.status,
+                            replacement
+                                .production_component
+                                .as_deref()
+                                .unwrap_or("none"),
+                            replacement.proofs.as_array().map_or(0, Vec::len),
+                        ))
+                    }));
+                }
+                lines.push(Line::from(""));
+                lines.push(Line::from(Span::styled(
+                    format!("CFG ({} blocks)", investigation.runtime.basic_blocks.len()),
+                    Style::new().add_modifier(Modifier::BOLD),
+                )));
+                lines.extend(investigation.runtime.basic_blocks.iter().map(|block| {
+                    let successors = block
+                        .successors
+                        .iter()
+                        .map(|successor| {
+                            successor.block.map_or_else(
+                                || format!("{} -> ?", successor.kind),
+                                |target| format!("{} -> bb{target}", successor.kind),
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    Line::from(format!(
+                        "- bb{} +{:#06x}..+{:#06x} {} [{}]",
+                        block.id,
+                        block.start_offset,
+                        block.end_offset,
+                        if block.reachable {
+                            "reachable"
+                        } else {
+                            "unreachable"
+                        },
+                        successors
+                    ))
+                }));
+                lines.push(Line::from(""));
+                lines.push(Line::from(Span::styled(
+                    format!(
+                        "Full body ({}/{} bytes)",
+                        investigation.runtime.accounted_bytes, investigation.runtime.size
+                    ),
+                    Style::new().add_modifier(Modifier::BOLD),
+                )));
+                for instruction in &investigation.runtime.instructions {
+                    for label in investigation
+                        .runtime
+                        .labels
+                        .iter()
+                        .filter(|label| label.offset == instruction.offset)
+                    {
+                        lines.push(Line::from(Span::styled(
+                            format!("{}:", label.name),
+                            Style::new().add_modifier(Modifier::BOLD),
+                        )));
+                    }
+                    lines.push(Line::from(Span::styled(
+                        format!(
+                            "  +{:#06x} {:<10} {:<28} {}",
+                            instruction.offset,
+                            instruction.raw,
+                            instruction.text,
+                            instruction.control_flow.kind.label()
+                        ),
+                        if instruction.supported {
+                            Style::new()
+                        } else {
+                            Style::new().fg(Color::Yellow)
+                        },
+                    )));
+                    lines.extend(instruction.relocations.iter().map(|relocation| {
+                        Line::from(format!(
+                            "      @ {} {} {:+}",
+                            relocation.kind, relocation.symbol, relocation.addend
+                        ))
+                    }));
+                }
+                if let Some(origin) = &investigation.origin {
+                    lines.push(Line::from(""));
+                    lines.push(Line::from(format!(
+                        "Origin: {}{} ({}/{} bytes, {})",
+                        origin.body.artifact,
+                        origin
+                            .body
+                            .member
+                            .as_deref()
+                            .map(|member| format!("({member})"))
+                            .unwrap_or_default(),
+                        origin.body.accounted_bytes,
+                        origin.body.size,
+                        origin.association
+                    )));
+                }
+            }
             lines
         })
         .unwrap_or_else(|| vec![Line::from("Function IR/review facts are not available")]);

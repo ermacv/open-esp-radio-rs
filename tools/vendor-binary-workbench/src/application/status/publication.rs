@@ -18,13 +18,13 @@ pub(super) fn collect(context: &ProjectContext<'_>) -> Phase {
             "publication",
             vec![
                 Component::new("register_outputs", Readiness::Incomplete)
-                    .diagnostic("release review scopes are not configured")
-                    .next_action("configure [review] and its release-scopes"),
+                    .diagnostic("publication review scopes are not configured")
+                    .next_action("configure [review] and its publication-scopes"),
             ],
         );
     }
-    let release_mmio = match crate::review_scopes::load_for_project(context.project) {
-        Ok(document) => document.release_mmio(),
+    let publication_mmio = match crate::review_scopes::load_for_project(context.project) {
+        Ok(document) => document.publication_mmio(),
         Err(error) => {
             return Phase::collect(
                 "publication",
@@ -38,7 +38,7 @@ pub(super) fn collect(context: &ProjectContext<'_>) -> Phase {
         }
     };
     let unreviewed = match ProjectRegisterWorkspace::load(paths)
-        .and_then(|workspace| workspace.unreviewed_mmio_in_scope(&release_mmio))
+        .and_then(|workspace| workspace.unreviewed_mmio_in_scope(&publication_mmio))
     {
         Ok(unreviewed) => unreviewed,
         Err(error) => {
@@ -65,7 +65,7 @@ pub(super) fn collect(context: &ProjectContext<'_>) -> Phase {
                 .detail("unreviewed", unreviewed.len().to_string())
                 .detail("addresses", identities.clone())
                 .diagnostic(format!(
-                    "release scopes contain {} unreviewed MMIO register(s): {identities}",
+                    "publication scopes contain {} unreviewed MMIO register(s): {identities}",
                     unreviewed.len()
                 ))
                 .next_action(format!(
@@ -79,13 +79,13 @@ pub(super) fn collect(context: &ProjectContext<'_>) -> Phase {
         "publication",
         vec![
             output(context, "svd", paths.svd_output.is_some(), || {
-                registers::prepare_project_svd(paths, &release_mmio)
+                registers::prepare_project_svd(paths, &publication_mmio)
             }),
             output(context, "pac", paths.pac.is_some(), || {
-                registers::prepare_project_pac(paths, &release_mmio)
+                registers::prepare_project_pac(paths, &publication_mmio)
             }),
             output(context, "bindings", paths.bindings.is_some(), || {
-                registers::prepare_project_bindings(paths, &release_mmio)
+                registers::prepare_project_bindings(paths, &publication_mmio)
             }),
         ],
     )

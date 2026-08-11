@@ -371,6 +371,7 @@ fn reviewed_wifi_osi_context() -> StructuralPointerContext {
             &harnesses::esp32s31::RISCV_HARNESS,
         ),
         data_symbols: Vec::new(),
+        projected_direct_semantics: BTreeMap::new(),
     };
     linked_ir_export::register_reviewed_external_calls(&mut resolver, &interfaces, "archive", &[]);
     let contract = interfaces

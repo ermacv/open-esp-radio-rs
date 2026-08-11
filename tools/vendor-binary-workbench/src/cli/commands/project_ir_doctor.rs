@@ -158,7 +158,7 @@ pub(super) fn inspect(
             }
         };
         let (output_status, functions, decode_blockers, registers, fields) =
-            if !profile.output.is_file() {
+            if !profile.output.is_dir() {
                 warnings += 1;
                 ("not-generated", 0, 0, 0, 0)
             } else {

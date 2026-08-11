@@ -39,6 +39,31 @@ fn cfg_guard_result_sources_link_masks_to_producer_targets() {
 }
 
 #[test]
+fn allocation_guard_sources_use_the_real_external_call_identity() {
+    let token = open_radio_vendor_analysis_model::ALLOCATED_EXTERNAL_RESULT_TOKEN_FLAG | 3;
+    let condition = BranchCondition {
+        site: 0x24,
+        operation: BranchOperation::NotEqual,
+        left: SymbolicValue::ExternalResult(token),
+        right: SymbolicValue::Constant(0),
+    };
+    let call_results = BTreeMap::from([(3, "wifi_zalloc".to_owned())]);
+
+    let sources = guard_result_sources(&condition, &call_results);
+    assert_eq!(sources.len(), 1);
+    assert_eq!(sources[0].token, 3);
+    assert_eq!(sources[0].target.as_deref(), Some("wifi_zalloc"));
+
+    let svd = MmioMap {
+        registers: Vec::new(),
+        regions: Vec::new(),
+    };
+    let provenance = return_provenance(&condition.left, &call_results, &svd);
+    assert_eq!(provenance.sources[0].token, Some(3));
+    assert_eq!(provenance.sources[0].target.as_deref(), Some("wifi_zalloc"));
+}
+
+#[test]
 fn direct_mmio_predicate_maps_shifted_comparison_back_to_register_bits() {
     let address = 0x2010_4c48;
     let condition = BranchCondition {

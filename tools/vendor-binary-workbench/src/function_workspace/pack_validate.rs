@@ -66,5 +66,79 @@ pub(super) fn validate(
         }
     }
     validate_types(&pack.types, facts, &mut summary)?;
+    validate_event_routes(pack, facts, &mut summary)?;
     Ok(summary)
+}
+
+fn validate_event_routes(
+    pack: &FunctionPack,
+    facts: &FunctionFacts,
+    summary: &mut FunctionWorkspaceSummary,
+) -> ValidationResult<()> {
+    let mut ids = BTreeSet::new();
+    for route in &pack.event_routes {
+        validate_id(&route.id, "event route id")
+            .map_err(|message| ValidationError::pack("event-routes", message))?;
+        if !ids.insert(route.id.as_str()) {
+            return Err(ValidationError::pack(
+                "event-routes",
+                format!("duplicate event route id {:?}", route.id),
+            ));
+        }
+        let dispatcher = facts
+            .function(&route.profile, &route.source, &route.dispatcher)
+            .ok_or_else(|| {
+                ValidationError::pack(
+                    "event-routes",
+                    format!("event route {:?} refers to an unknown dispatcher", route.id),
+                )
+            })?;
+        let selector = format!("const:{:#010x}", route.selector_value);
+        let matching = dispatcher.event_dispatches.iter().any(|dispatch| {
+            dispatch.mechanism == route.mechanism
+                && dispatch.execution_context == route.execution_context
+                && route
+                    .receiver
+                    .as_ref()
+                    .is_none_or(|receiver| dispatch.receiver.as_ref() == Some(receiver))
+                && dispatch.interface_complete
+                && dispatch
+                    .bindings
+                    .iter()
+                    .any(|(role, value)| role == &route.selector_role && value == &selector)
+        });
+        if !matching {
+            return Err(ValidationError::pack(
+                "event-routes",
+                format!(
+                    "event route {:?} is not backed by a complete {} dispatch with {}={}",
+                    route.id, route.mechanism, route.selector_role, selector
+                ),
+            ));
+        }
+        if facts
+            .function(
+                &route.handler_profile,
+                &route.handler_source,
+                &route.handler,
+            )
+            .is_none()
+        {
+            return Err(ValidationError::pack(
+                "event-routes",
+                format!("event route {:?} refers to an unknown handler", route.id),
+            ));
+        }
+        if route.rationale.trim().is_empty() || route.rationale.contains(['\r', '\n']) {
+            return Err(ValidationError::pack(
+                "event-routes",
+                format!(
+                    "event route {:?} rationale must be one non-empty line",
+                    route.id
+                ),
+            ));
+        }
+        summary.event_routes += 1;
+    }
+    Ok(())
 }

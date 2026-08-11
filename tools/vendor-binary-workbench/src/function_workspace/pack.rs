@@ -49,7 +49,41 @@ pub(crate) struct ReviewedFunction {
     pub(crate) role: Option<String>,
     pub(crate) summary: Option<String>,
     pub(crate) accept_incomplete: bool,
+    pub(crate) preconditions: Vec<ReviewedPrecondition>,
+    pub(crate) paths: Vec<ReviewedPath>,
     pub(crate) contexts: Vec<ReviewedContext>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ReviewedPrecondition {
+    pub(crate) id: String,
+    pub(crate) expression: String,
+    pub(crate) rationale: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ReviewedPath {
+    pub(crate) id: String,
+    pub(crate) class: String,
+    pub(crate) summary: String,
+    pub(crate) evidence: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ReviewedEventRoute {
+    pub(crate) id: String,
+    pub(crate) profile: String,
+    pub(crate) source: String,
+    pub(crate) dispatcher: String,
+    pub(crate) mechanism: String,
+    pub(crate) selector_role: String,
+    pub(crate) selector_value: u32,
+    pub(crate) receiver: Option<String>,
+    pub(crate) execution_context: String,
+    pub(crate) handler_profile: String,
+    pub(crate) handler_source: String,
+    pub(crate) handler: String,
+    pub(crate) rationale: String,
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -105,6 +139,7 @@ pub(crate) struct FunctionPack {
     pub(crate) inputs: Vec<ReviewedFunctionInput>,
     pub(crate) functions: Vec<ReviewedFunction>,
     pub(crate) types: Vec<ReviewedLogicalType>,
+    pub(crate) event_routes: Vec<ReviewedEventRoute>,
 }
 
 struct LoadedFunctionPack {
@@ -133,6 +168,7 @@ pub(crate) struct FunctionWorkspaceSummary {
     pub(crate) reviewed_type_fields: usize,
     pub(crate) ignored_type_fields: usize,
     pub(crate) unreviewed_type_fields: usize,
+    pub(crate) event_routes: usize,
 }
 
 #[derive(Debug)]
@@ -168,6 +204,10 @@ impl FunctionWorkspace {
 }
 
 impl FunctionPack {
+    pub(crate) fn load_reviewed(path: &Path) -> Result<Self> {
+        Ok(Self::load(path)?.value)
+    }
+
     #[tracing::instrument(name = "load_function_pack", fields(path = %path.display()))]
     fn load(path: &Path) -> Result<LoadedFunctionPack> {
         let input = fs::read_to_string(path)
@@ -182,12 +222,12 @@ impl FunctionPack {
             )
         })?;
         let document: DocumentMut = source_document.clone().into_mut();
-        if document.get("schema").and_then(Item::as_integer) != Some(3) {
+        if document.get("schema").and_then(Item::as_integer) != Some(5) {
             return Err(crate::error::WorkbenchError::manifest_source(
                 "function pack",
                 path,
                 &input,
-                "requires schema = 3",
+                "requires schema = 5",
                 source_document.get("schema").and_then(Item::span),
             ));
         }

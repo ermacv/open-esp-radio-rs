@@ -58,14 +58,14 @@ impl PreparedPublication {
 #[tracing::instrument(name = "prepare_project_svd", skip_all)]
 pub(crate) fn prepare_project_svd(
     paths: &crate::project::RegisterWorkspacePaths,
-    release_mmio: &BTreeSet<(u32, u8)>,
+    publication_mmio: &BTreeSet<(u32, u8)>,
 ) -> crate::Result<PreparedPublication> {
     let output = paths
         .svd_output
         .clone()
         .ok_or("project SVD publication is not configured")
         .map_err(crate::Error::invalid)?;
-    let workspace = load_release_workspace(paths, release_mmio, "release SVD")?;
+    let workspace = load_publication_workspace(paths, publication_mmio, "publication SVD")?;
     let (contents, _) = workspace.render_svd()?;
     Ok(PreparedPublication {
         output,
@@ -77,7 +77,7 @@ pub(crate) fn prepare_project_svd(
 #[tracing::instrument(name = "prepare_project_pac", skip_all)]
 pub(crate) fn prepare_project_pac(
     paths: &crate::project::RegisterWorkspacePaths,
-    release_mmio: &BTreeSet<(u32, u8)>,
+    publication_mmio: &BTreeSet<(u32, u8)>,
 ) -> crate::Result<PreparedPublication> {
     let configured = paths
         .pac
@@ -91,7 +91,7 @@ pub(crate) fn prepare_project_pac(
         .as_deref()
         .map(PacApiPack::load)
         .transpose()?;
-    let workspace = load_release_workspace(paths, release_mmio, "PAC generation")?;
+    let workspace = load_publication_workspace(paths, publication_mmio, "PAC generation")?;
     let (svd, _) = workspace.render_svd()?;
     let contents = generate_pac_with_api(&svd, target, edition, api_pack.as_ref())?;
     Ok(PreparedPublication {
@@ -103,14 +103,14 @@ pub(crate) fn prepare_project_pac(
 
 pub(crate) fn prepare_project_bindings(
     paths: &crate::project::RegisterWorkspacePaths,
-    release_mmio: &BTreeSet<(u32, u8)>,
+    publication_mmio: &BTreeSet<(u32, u8)>,
 ) -> crate::Result<PreparedPublication> {
     let configured = paths
         .bindings
         .as_ref()
         .ok_or("project PAC binding publication is not configured")
         .map_err(crate::Error::invalid)?;
-    let workspace = load_release_workspace(paths, release_mmio, "PAC binding generation")?;
+    let workspace = load_publication_workspace(paths, publication_mmio, "PAC binding generation")?;
     let (svd, _) = workspace.render_svd()?;
     let contents =
         open_esp_radio_register_model::generate_pac_binding_index(&svd, &configured.crate_name)?;
@@ -121,13 +121,13 @@ pub(crate) fn prepare_project_bindings(
     })
 }
 
-fn load_release_workspace(
+fn load_publication_workspace(
     paths: &crate::project::RegisterWorkspacePaths,
-    release_mmio: &BTreeSet<(u32, u8)>,
+    publication_mmio: &BTreeSet<(u32, u8)>,
     operation: &str,
 ) -> crate::Result<ProjectRegisterWorkspace> {
     let workspace = ProjectRegisterWorkspace::load(paths)?;
-    let unreviewed = workspace.unreviewed_in_mmio_scope(release_mmio)?;
+    let unreviewed = workspace.unreviewed_in_mmio_scope(publication_mmio)?;
     if unreviewed != 0 {
         return Err(crate::Error::invalid(format!(
             "{operation} denied {} unreviewed MMIO observations",

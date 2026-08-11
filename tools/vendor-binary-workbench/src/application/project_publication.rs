@@ -71,11 +71,11 @@ pub(crate) fn execute(
         .registers
         .as_ref()
         .ok_or_else(|| crate::Error::invalid("project publish requires [registers]"))?;
-    let release_mmio = crate::review_scopes::load_for_project(project)?.release_mmio();
+    let publication_mmio = crate::review_scopes::load_for_project(project)?.publication_mmio();
     let mut operations = RegisterPublicationOperations {
         paths,
         memory_map,
-        release_mmio,
+        publication_mmio,
     };
     run_with_operations(paths, request, &mut operations)
 }
@@ -145,7 +145,7 @@ fn run_with_operations<O: ProjectPublicationOperations>(
 struct RegisterPublicationOperations<'a> {
     paths: &'a RegisterWorkspacePaths,
     memory_map: Option<&'a MemoryMap>,
-    release_mmio: std::collections::BTreeSet<(u32, u8)>,
+    publication_mmio: std::collections::BTreeSet<(u32, u8)>,
 }
 
 impl ProjectPublicationOperations for RegisterPublicationOperations<'_> {
@@ -153,14 +153,14 @@ impl ProjectPublicationOperations for RegisterPublicationOperations<'_> {
 
     fn validate_registers(&mut self) -> Result<bool> {
         let workspace = ProjectRegisterWorkspace::load(self.paths)?;
-        let unreviewed = workspace.unreviewed_mmio_in_scope(&self.release_mmio)?;
+        let unreviewed = workspace.unreviewed_mmio_in_scope(&self.publication_mmio)?;
         validate_pac_api(self.paths)?;
         validate_register_lints(self.paths)?;
         validate_register_memory_map(self.paths, self.memory_map)?;
         validate_register_evidence(self.paths, self.memory_map)?;
         if !unreviewed.is_empty() {
             return Err(crate::Error::invalid(format!(
-                "release scopes contain {} unreviewed MMIO register(s): {}; edit {} and rerun project analyze",
+                "publication scopes contain {} unreviewed MMIO register(s): {}; edit {} and rerun project analyze",
                 unreviewed.len(),
                 unreviewed
                     .iter()
@@ -174,15 +174,15 @@ impl ProjectPublicationOperations for RegisterPublicationOperations<'_> {
     }
 
     fn prepare_svd(&mut self) -> Result<Self::Prepared> {
-        prepare_project_svd(self.paths, &self.release_mmio)
+        prepare_project_svd(self.paths, &self.publication_mmio)
     }
 
     fn prepare_pac(&mut self) -> Result<Self::Prepared> {
-        prepare_project_pac(self.paths, &self.release_mmio)
+        prepare_project_pac(self.paths, &self.publication_mmio)
     }
 
     fn prepare_bindings(&mut self) -> Result<Self::Prepared> {
-        prepare_project_bindings(self.paths, &self.release_mmio)
+        prepare_project_bindings(self.paths, &self.publication_mmio)
     }
 
     fn publish(&mut self, publication: &Self::Prepared, check: bool) -> Result<bool> {

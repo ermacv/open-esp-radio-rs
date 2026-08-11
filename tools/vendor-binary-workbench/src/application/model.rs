@@ -180,6 +180,26 @@ pub struct FunctionDetailSummary {
     pub scenario_suggestions: Vec<ScenarioSuggestionSummary>,
     pub profile_draft: Option<String>,
     pub pseudo_rust: String,
+    pub reviewed_preconditions: Vec<ReviewedPreconditionSummary>,
+    pub reviewed_paths: Vec<ReviewedPathSummary>,
+    /// Lossless on-demand body/CFG report. This is absent only when the
+    /// caller-owned run spec does not bind the function's source artifact.
+    pub investigation: Option<crate::FunctionInvestigationReport>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct ReviewedPreconditionSummary {
+    pub id: String,
+    pub expression: String,
+    pub rationale: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct ReviewedPathSummary {
+    pub id: String,
+    pub class: String,
+    pub summary: String,
+    pub evidence: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -452,7 +472,7 @@ pub struct ComparisonProfileSummary {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct ReviewQueueSummary {
     pub scope: String,
-    pub release: bool,
+    pub publication: bool,
     pub id: String,
     pub kind: String,
     pub priority: u8,
@@ -467,7 +487,9 @@ pub struct ReviewQueueSummary {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct ReviewScopeSummary {
     pub id: String,
-    pub release: bool,
+    pub publication: bool,
+    pub replacement_qualification: String,
+    pub analysis_inventory_complete: bool,
     pub profiles: Vec<String>,
     pub roots: usize,
     pub functions: usize,
@@ -486,6 +508,19 @@ pub struct ReviewScopeSummary {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct FeatureQualificationSummary {
+    pub id: String,
+    pub description: String,
+    pub required: bool,
+    pub status: String,
+    pub scopes: Vec<String>,
+    pub requirements: usize,
+    pub scope_effects: usize,
+    pub covered_effects: usize,
+    pub blockers: Vec<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct WorkspaceSnapshot {
     pub generation: u64,
     pub project_status: crate::ProjectStatusReport,
@@ -495,6 +530,7 @@ pub struct WorkspaceSnapshot {
     pub registers: RegisterWorkspaceReport,
     pub interfaces: InterfaceWorkspaceReport,
     pub review_scopes: Vec<ReviewScopeSummary>,
+    pub features: Vec<FeatureQualificationSummary>,
     pub review_queue: Vec<ReviewQueueSummary>,
     pub comparisons: Vec<ComparisonProfileSummary>,
     pub diagnostics: Vec<DiagnosticRecord>,

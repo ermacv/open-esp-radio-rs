@@ -3,9 +3,9 @@
 mod parse;
 mod validate;
 
-use std::{fs, path::PathBuf};
+use std::path::PathBuf;
 
-use crate::{Result, error::WorkbenchError};
+use crate::Result;
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(crate) struct FunctionInputFact {
@@ -46,6 +46,9 @@ pub(crate) enum FunctionMemoryObjectFact {
         argument: u8,
         stride: i64,
     },
+    ZeroedAllocation {
+        call_token: u32,
+    },
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -67,6 +70,15 @@ pub(crate) struct FunctionCallFact {
     pub(crate) site: Option<u32>,
     pub(crate) arguments: Vec<String>,
     pub(crate) guard_paths: Option<Vec<String>>,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(crate) struct FunctionEventDispatchFact {
+    pub(crate) mechanism: String,
+    pub(crate) execution_context: String,
+    pub(crate) receiver: Option<String>,
+    pub(crate) interface_complete: bool,
+    pub(crate) bindings: Vec<(String, String)>,
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -127,7 +139,7 @@ pub(crate) struct FunctionFact {
     pub(crate) memory_fields: Vec<FunctionMemoryFieldFact>,
     pub(crate) semantic_operations: Vec<String>,
     pub(crate) trampoline_calls: usize,
-    pub(crate) event_dispatches: usize,
+    pub(crate) event_dispatches: Vec<FunctionEventDispatchFact>,
     pub(crate) scenario_suggestions: Vec<ScenarioSuggestionFact>,
     pub(crate) pseudo: String,
 }
@@ -154,16 +166,8 @@ impl FunctionFacts {
         let mut inputs = Vec::new();
         let mut functions = Vec::new();
         for (profile, path) in reports {
-            let input = fs::read_to_string(path)?;
-            let (report_inputs, report_functions) =
-                parse::parse_report(profile, &input).map_err(|error| {
-                    WorkbenchError::manifest_document(
-                        "linked-IR function facts",
-                        path,
-                        &input,
-                        error,
-                    )
-                })?;
+            let document = crate::artifacts::load_linked_ir_functions(path)?;
+            let (report_inputs, report_functions) = parse::parse_document(profile, document)?;
             inputs.extend(report_inputs);
             functions.extend(report_functions);
         }

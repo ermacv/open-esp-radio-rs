@@ -378,6 +378,7 @@ mod tests {
             interfaces: None,
             functions: None,
             review: None,
+            qualification: None,
             verification: None,
         }
     }

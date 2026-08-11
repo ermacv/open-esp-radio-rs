@@ -237,6 +237,60 @@ effects = ["scheduler.semaphore-release"]
 replacement = "async.signal-or-semaphore-release"
 
 [[operations]]
+id = "rtos.semaphore.create"
+domain = "rtos"
+summary = "Create a counting semaphore with reviewed maximum and initial counts"
+argument-roles = ["maximum-count", "initial-count"]
+return-role = "semaphore"
+effects = ["scheduler.semaphore-create", "memory.allocate"]
+replacement = "async.semaphore-new"
+
+[[operations]]
+id = "rtos.semaphore.delete"
+domain = "rtos"
+summary = "Delete a semaphore and release its runtime resources"
+argument-roles = ["semaphore"]
+return-role = "none"
+effects = ["scheduler.semaphore-delete", "memory.deallocate"]
+replacement = "rust.drop-semaphore"
+
+[[operations]]
+id = "rtos.semaphore.take-from-isr"
+domain = "rtos"
+summary = "Attempt to acquire a semaphore from interrupt context"
+argument-roles = ["semaphore", "task-woken-out"]
+return-role = "success"
+effects = ["scheduler.semaphore-acquire", "scheduler.may-wake-task", "memory.output-write"]
+replacement = "interrupt.try-acquire-semaphore"
+
+[[operations]]
+id = "rtos.semaphore.give-from-isr"
+domain = "rtos"
+summary = "Release a semaphore from interrupt context"
+argument-roles = ["semaphore", "task-woken-out"]
+return-role = "success"
+effects = ["scheduler.semaphore-release", "scheduler.may-wake-task", "memory.output-write"]
+replacement = "interrupt.release-semaphore"
+
+[[operations]]
+id = "rtos.semaphore.take"
+domain = "rtos"
+summary = "Acquire a semaphore with a bounded scheduler wait"
+argument-roles = ["semaphore", "wait-duration"]
+return-role = "success"
+effects = ["scheduler.semaphore-acquire", "scheduler.may-block"]
+replacement = "async.semaphore-acquire"
+
+[[operations]]
+id = "rtos.context.is-in-isr"
+domain = "rtos"
+summary = "Report whether the current execution context is an interrupt handler"
+argument-roles = []
+return-role = "is-in-isr"
+effects = ["scheduler.context-query"]
+replacement = "interrupt.context-capability"
+
+[[operations]]
 id = "rtos.mutex.lock"
 domain = "rtos"
 summary = "Acquire an RTOS mutex"
@@ -397,6 +451,33 @@ argument-roles = ["timer"]
 return-role = "none"
 effects = ["time.timer-complete"]
 replacement = "async.timer-completion"
+
+[[operations]]
+id = "timer.callback.configure"
+domain = "timer"
+summary = "Associate a timer object with a callback function and callback argument"
+argument-roles = ["timer", "callback", "callback-argument"]
+return-role = "none"
+effects = ["time.timer-callback-configure"]
+replacement = "async.timer-callback-registration"
+
+[[operations]]
+id = "diagnostic.matrix.configure"
+domain = "diagnostic"
+summary = "Route a reviewed diagnostic event to a hardware debug signal"
+argument-roles = ["event", "signal", "invert"]
+return-role = "status"
+effects = ["diagnostic.hardware-route"]
+replacement = "diagnostic.optional-hardware-route"
+
+[[operations]]
+id = "clock.xtal-frequency.get"
+domain = "clock"
+summary = "Read the platform crystal oscillator frequency"
+argument-roles = []
+return-role = "frequency"
+effects = ["clock.frequency-query"]
+replacement = "clock.compile-time-frequency"
 
 [[operations]]
 id = "clock.wifi.enable"

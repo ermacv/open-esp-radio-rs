@@ -2,6 +2,7 @@
 
 mod code;
 mod comparisons;
+mod features;
 mod functions;
 mod interfaces;
 mod registers;
@@ -46,6 +47,7 @@ pub(super) fn collect(resolved: &ProjectSession, generation: u64) -> WorkspaceSn
     let registers = self::registers::collect(resolved, &mut diagnostics);
     let interfaces = self::interfaces::collect(resolved, &mut diagnostics);
     let review_scopes = self::scopes::collect(resolved, &mut diagnostics);
+    let features = self::features::collect(resolved, &mut diagnostics);
     let review_queue = self::review_queue::collect(resolved, &mut diagnostics);
     let comparisons = self::comparisons::collect(resolved, &mut diagnostics);
     diagnostics.sort_by(|left, right| {
@@ -61,6 +63,7 @@ pub(super) fn collect(resolved: &ProjectSession, generation: u64) -> WorkspaceSn
         registers,
         interfaces,
         review_scopes,
+        features,
         review_queue,
         comparisons,
         diagnostics,
@@ -92,10 +95,12 @@ pub(super) fn function_detail(
             && function.source == fact.source
             && function.identity == fact.identity
     });
+    let investigation = function_investigation(resolved, fact)?;
     Ok(Some(function_detail_summary(
         fact,
         reviewed,
         &workspace.pack.types,
+        investigation,
     )))
 }
 
@@ -110,6 +115,7 @@ fn function_detail_summary(
     fact: &FunctionFact,
     reviewed: Option<&ReviewedFunction>,
     logical_types: &[ReviewedLogicalType],
+    investigation: Option<crate::FunctionInvestigationReport>,
 ) -> FunctionDetailSummary {
     let arguments = fact
         .context_fields
@@ -230,7 +236,76 @@ fn function_detail_summary(
         profile_draft: profile_draft(fact, &scenario_suggestions),
         scenario_suggestions,
         pseudo_rust: reviewed_pseudo(fact, reviewed, logical_types),
+        reviewed_preconditions: reviewed
+            .into_iter()
+            .flat_map(|function| &function.preconditions)
+            .map(|precondition| ReviewedPreconditionSummary {
+                id: precondition.id.clone(),
+                expression: precondition.expression.clone(),
+                rationale: precondition.rationale.clone(),
+            })
+            .collect(),
+        reviewed_paths: reviewed
+            .into_iter()
+            .flat_map(|function| &function.paths)
+            .map(|path| ReviewedPathSummary {
+                id: path.id.clone(),
+                class: path.class.clone(),
+                summary: path.summary.clone(),
+                evidence: path.evidence.clone(),
+            })
+            .collect(),
+        investigation,
     }
+}
+
+fn function_investigation(
+    resolved: &ProjectSession,
+    fact: &FunctionFact,
+) -> crate::Result<Option<crate::FunctionInvestigationReport>> {
+    let Some(run_spec) = resolved.run_spec.as_ref() else {
+        return Ok(None);
+    };
+    let artifact = run_spec
+        .inputs()
+        .iter()
+        .find_map(|input| match &input.role {
+            crate::run_spec::InputRole::SourceArtifact(source)
+                if source.as_str() == fact.source =>
+            {
+                Some(input.path.as_path())
+            }
+            _ => None,
+        });
+    let Some(artifact) = artifact else {
+        return Ok(None);
+    };
+    let inventory = run_spec
+        .inputs()
+        .iter()
+        .find_map(|input| match &input.role {
+            crate::run_spec::InputRole::SourceInventory(source)
+                if source.as_str() == fact.source =>
+            {
+                Some(input.path.as_path())
+            }
+            _ => None,
+        });
+    crate::function_investigation::investigate(
+        crate::function_investigation::FunctionInvestigationRequest {
+            source: &fact.source,
+            symbol: &fact.symbol,
+            artifact,
+            inventory,
+            member: fact.member.as_deref(),
+            origin_member: None,
+            graph_depth: 1,
+            include_callers: false,
+            cfg_path: None,
+        },
+        &resolved.project,
+    )
+    .map(Some)
 }
 
 fn profile_draft(fact: &FunctionFact, suggestions: &[ScenarioSuggestionSummary]) -> Option<String> {
@@ -425,6 +500,9 @@ fn memory_fact_label(object: &FunctionMemoryObjectFact) -> String {
             argument,
             stride,
         } => format!("{}[arg{argument} * {stride:#x}]", memory_fact_label(object)),
+        FunctionMemoryObjectFact::ZeroedAllocation { call_token } => {
+            format!("zeroed-allocation:{call_token}")
+        }
     }
 }
 
@@ -470,7 +548,7 @@ mod tests {
             memory_fields: Vec::new(),
             semantic_operations: Vec::new(),
             trampoline_calls: 0,
-            event_dispatches: 0,
+            event_dispatches: Vec::new(),
             scenario_suggestions: Vec::new(),
             pseudo: "// vendor symbol: rom::init\nlet ramread0 = ctx0.read32(+0x4);\nctx0.write32(+0x4, 1);\n".to_owned(),
         }

@@ -37,20 +37,18 @@ fn libpp_tx_dma_profiles_cover_all_four_queue_selectors() {
     let path = root.join("verification/vendor/targets/esp32s31/profiles/libpp-tx-dma.toml");
     let profiles = load(&path).unwrap();
 
-    assert_eq!(profiles.len(), 4);
+    assert_eq!(profiles.len(), 6);
     assert!(profiles.iter().all(|profile| {
+        let range = profile.argument_ranges[0];
         profile.vendor_source == "libpp"
-            && profile.argument_ranges
-                == [ArgumentRange {
-                    index: 0,
-                    min: 0,
-                    max: 3,
-                }]
+            && profile.argument_ranges.len() == 1
+            && range.min == 0
+            && range.max == 3
             && profile.coverage_argument_constraints()
                 == (0..=3)
                     .map(|queue| {
                         let mut arguments = [None; 8];
-                        arguments[0] = Some(queue);
+                        arguments[range.index] = Some(queue);
                         arguments
                     })
                     .collect::<Vec<_>>()
@@ -59,7 +57,7 @@ fn libpp_tx_dma_profiles_cover_all_four_queue_selectors() {
                 .scenarios
                 .iter()
                 .enumerate()
-                .all(|(queue, scenario)| scenario.scenario.arguments == [queue as u32])
+                .all(|(queue, scenario)| scenario.scenario.arguments[range.index] == queue as u32)
     }));
 }
 
@@ -87,6 +85,33 @@ fn libpp_sta_tsf_wakeup_profile_closes_the_bool_domain() {
     assert_eq!(profile.scenarios.len(), 2);
     assert_eq!(profile.scenarios[0].scenario.arguments, [0]);
     assert_eq!(profile.scenarios[1].scenario.arguments, [1]);
+}
+
+#[test]
+fn coex_timer_profiles_close_the_five_entry_index_domain() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .ancestors()
+        .nth(2)
+        .expect("workbench remains under tools");
+    let path = root.join("verification/vendor/targets/esp32s31/profiles/coex-timer.toml");
+    let profiles = load(&path).unwrap();
+
+    assert_eq!(profiles.len(), 4);
+    assert!(profiles.iter().all(|profile| {
+        profile.vendor_source == "coex"
+            && profile.argument_ranges
+                == [ArgumentRange {
+                    index: 0,
+                    min: 0,
+                    max: 4,
+                }]
+            && profile.scenarios.len() == 5
+            && profile
+                .scenarios
+                .iter()
+                .enumerate()
+                .all(|(index, scenario)| scenario.scenario.arguments == [index as u32])
+    }));
 }
 
 #[test]
@@ -212,6 +237,35 @@ fn profile_models_vendor_and_rust_call_responses_independently() {
     assert_eq!(
         scenario.rust_call_responses[0].1.return_words,
         [Some(7), None]
+    );
+}
+
+#[test]
+fn profile_models_zeroed_allocator_response_without_scalar_return() {
+    let profiles = parse(
+        "schema = 2\n\n[[profiles]]\nname = \"allocator\"\nvendor-source = \"libpp\"\nvendor-symbol = \"vendor_entry\"\nrust-symbol = \"rust_entry\"\n\n[[profiles.cases]]\nname = \"allocated\"\n\n[[profiles.cases.vendor-calls]]\nsymbol = \"wifi_zalloc\"\nallocation = { address = 0x3ffe0000, size-argument = 0, capacity = 0x98 }\n",
+    )
+    .unwrap();
+
+    let response = &profiles[0].scenarios[0].vendor_call_responses[0].1;
+    assert_eq!(response.return_words, [None, None]);
+    assert_eq!(
+        response.allocation,
+        Some(crate::execution::ModeledAllocation {
+            address: 0x3ffe_0000,
+            size_argument: 0,
+            capacity: 0x98,
+        })
+    );
+
+    let error = parse(
+        "schema = 2\n\n[[profiles]]\nname = \"allocator\"\nvendor-source = \"libpp\"\nvendor-symbol = \"vendor_entry\"\nrust-symbol = \"rust_entry\"\n\n[[profiles.cases]]\nname = \"invalid\"\n\n[[profiles.cases.vendor-calls]]\nsymbol = \"wifi_zalloc\"\nreturn-words = [0x3ffe0000]\nallocation = { address = 0x3ffe0000, size-argument = 0, capacity = 0x98 }\n",
+    )
+    .unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("cannot also declare return words")
     );
 }
 

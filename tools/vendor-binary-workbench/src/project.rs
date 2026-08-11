@@ -192,8 +192,14 @@ pub(crate) struct ReviewScopeSpec {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct ReviewWorkspaceSpec {
     pub(crate) output: PathBuf,
-    pub(crate) release_scopes: Vec<String>,
+    pub(crate) publication_scopes: Vec<String>,
     pub(crate) scopes: Vec<ReviewScopeSpec>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct QualificationWorkspaceSpec {
+    pub(crate) pack: PathBuf,
+    pub(crate) required_features: Vec<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -213,6 +219,7 @@ pub(crate) struct ProjectSpec {
     pub(crate) interfaces: Option<InterfaceWorkspacePaths>,
     pub(crate) functions: Option<FunctionWorkspacePaths>,
     pub(crate) review: Option<ReviewWorkspaceSpec>,
+    pub(crate) qualification: Option<QualificationWorkspaceSpec>,
     pub(crate) verification: Option<VerificationWorkspacePaths>,
 }
 

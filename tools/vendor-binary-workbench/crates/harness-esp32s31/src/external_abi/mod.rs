@@ -159,6 +159,11 @@ const ESP32S31_WIFI_OSI_MODELS: &[ExternalCallModelSpec] = &[
         return_model: ExternalReturnModel::SymbolicU64,
         outputs: &[],
     },
+    ExternalCallModelSpec {
+        id: "wifi-zalloc",
+        return_model: ExternalReturnModel::AllocatedZeroed { size_argument: 0 },
+        outputs: &[],
+    },
 ];
 
 const ESP32S31_WIFI_OSI_MODEL_SET: ExternalCallModelSetSpec = ExternalCallModelSetSpec {
@@ -166,8 +171,30 @@ const ESP32S31_WIFI_OSI_MODEL_SET: ExternalCallModelSetSpec = ExternalCallModelS
     models: ESP32S31_WIFI_OSI_MODELS,
 };
 
+const ESP32S31_COEX_ADAPTER_MODELS: &[ExternalCallModelSpec] = &[
+    ExternalCallModelSpec {
+        id: "coex-env-is-chip",
+        return_model: ExternalReturnModel::Constant(1),
+        outputs: &[],
+    },
+    ExternalCallModelSpec {
+        id: "coex-xtal-frequency-get",
+        // ESP-IDF exposes the crystal frequency in MHz through this ABI.
+        // ESP32-S31 uses a 40 MHz crystal in the reviewed target pack.
+        return_model: ExternalReturnModel::Constant(40),
+        outputs: &[],
+    },
+];
+
+const ESP32S31_COEX_ADAPTER_MODEL_SET: ExternalCallModelSetSpec = ExternalCallModelSetSpec {
+    id: "esp32s31-coex-adapter-v2",
+    models: ESP32S31_COEX_ADAPTER_MODELS,
+};
+
 pub const WIFI_OSI_MODELS_V9: ExternalCallModelSetRef =
     ExternalCallModelSetRef::new(&ESP32S31_WIFI_OSI_MODEL_SET);
+pub const COEX_ADAPTER_MODELS_V2: ExternalCallModelSetRef =
+    ExternalCallModelSetRef::new(&ESP32S31_COEX_ADAPTER_MODEL_SET);
 pub const ENV_IS_CHIP_MODEL: ExternalCallModelRef =
     ExternalCallModelRef::new(&ESP32S31_WIFI_OSI_MODELS[0]);
 pub const RAND_MODEL: ExternalCallModelRef =

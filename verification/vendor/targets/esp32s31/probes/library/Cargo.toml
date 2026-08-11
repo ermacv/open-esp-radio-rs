@@ -9,6 +9,7 @@ description = "Retained ESP32-S31 Rust entry points for compiled vendor verifica
 
 [dependencies]
 embassy-futures.workspace = true
+open-esp-radio-esp32s31-coex.workspace = true
 open-esp-radio-esp32s31-hal.workspace = true
 open-esp-radio-esp32s31-registers.workspace = true
 open-esp-radio-esp32s31-phy.workspace = true

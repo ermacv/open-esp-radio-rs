@@ -61,6 +61,7 @@ fragments = [
     "peripherals/wifi-mac-core-enable.toml",
     "peripherals/wifi-mac-interrupt.toml",
     "peripherals/wifi-mac-tsf-timer.toml",
+    "peripherals/coex-hw-timer.toml",
     "peripherals/wifi-mac-coex-runtime.toml",
     "peripherals/wifi-mac-power-interrupt.toml",
     "peripherals/wifi-mac-cold-handshake.toml",

@@ -7,6 +7,7 @@ mod analysis;
 mod configuration_inputs;
 pub(crate) mod model;
 mod publication;
+mod qualification;
 mod review;
 mod verification;
 
@@ -26,6 +27,7 @@ pub(crate) fn collect(context: &ProjectContext<'_>) -> ProjectStatusReport {
             analysis::collect(context),
             review::collect(context),
             verification::collect(context),
+            qualification::collect(context),
             publication::collect(context),
         ],
     )

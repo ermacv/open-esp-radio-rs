@@ -69,6 +69,16 @@ pub(super) fn execute(
             verification: report,
         });
     }
+    for suite in &suites {
+        let path = crate::qualification::suite_report_path(&workspace.report, &suite.id);
+        let contents = serde_json::to_string_pretty(suite)? + "\n";
+        generated_file::write_or_check(
+            &path,
+            &contents,
+            arguments.check,
+            "verification suite report",
+        )?;
+    }
     if let Some(directory) = arguments.candidate_evidence_dir.as_deref() {
         if !directory.is_dir() {
             return Err(crate::Error::invalid(format!(

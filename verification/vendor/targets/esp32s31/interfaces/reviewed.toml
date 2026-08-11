@@ -472,6 +472,7 @@ name = "wifi_zalloc"
 arguments = ["usize"]
 return = "mut-ptr"
 semantic = "memory.allocate-zeroed"
+execution-model = "wifi-zalloc"
 
 [[anchors.slots]]
 offset = 0x17c
@@ -606,3 +607,225 @@ name = "coex_schm_get_phase_by_idx"
 arguments = ["i32"]
 return = "mut-ptr"
 semantic = "coexistence.schedule.phase.get"
+
+# Layout and ABI are pinned by esp-rs/esp-wifi-sys commit
+# ff57fc7a50ef56a631e81ceed36b66ff8e2a21c4,
+# c/headers/esp32s31/esp_coexist_adapter.h. The pointer cell is defined by
+# the final platform integration; this archive provides observed consumers.
+[[anchors]]
+id = "coex-adapter-v2"
+status = "reviewed"
+origin = "observed"
+source = "coex"
+root-kind = "relocated-symbol"
+symbol = "g_coa_funcs_p"
+addend = 0
+addressing = "absolute"
+container-path = [{ offset = 0, width = 32 }]
+layout-version = "esp-idf-coex-adapter-v2"
+pointer-width = 32
+layout-size = 0x50
+slot-stride = 4
+execution-contract = "esp32s31-coex-adapter-v2"
+
+[[anchors.guards]]
+kind = "artifact-sha256"
+sha256 = "9b8f55b1a1670ac8da1323595c817eca7340f073e783c162d3a2dfde7bbd19c8"
+
+[[anchors.guards]]
+kind = "runtime-value"
+purpose = "version"
+offset = 0
+width = 32
+mask = 0xffffffff
+value = 2
+
+[[anchors.guards]]
+kind = "runtime-value"
+purpose = "magic"
+offset = 0x4c
+width = 32
+mask = 0xffffffff
+value = 0xdeadbeaf
+
+[[anchors.slots]]
+offset = 0x04
+width = 32
+status = "reviewed"
+origin = "observed"
+name = "task_yield_from_isr"
+arguments = []
+return = "void"
+semantic = "rtos.task.yield-from-isr"
+
+[[anchors.slots]]
+offset = 0x08
+width = 32
+status = "reviewed"
+origin = "observed"
+name = "semphr_create"
+arguments = ["u32", "u32"]
+return = "mut-ptr"
+semantic = "rtos.semaphore.create"
+
+[[anchors.slots]]
+offset = 0x0c
+width = 32
+status = "reviewed"
+origin = "observed"
+name = "semphr_delete"
+arguments = ["opaque-handle"]
+return = "void"
+semantic = "rtos.semaphore.delete"
+
+[[anchors.slots]]
+offset = 0x10
+width = 32
+status = "reviewed"
+origin = "observed"
+name = "semphr_take_from_isr"
+arguments = ["opaque-handle", "out-ptr"]
+return = "i32"
+semantic = "rtos.semaphore.take-from-isr"
+
+[[anchors.slots]]
+offset = 0x14
+width = 32
+status = "reviewed"
+origin = "observed"
+name = "semphr_give_from_isr"
+arguments = ["opaque-handle", "out-ptr"]
+return = "i32"
+semantic = "rtos.semaphore.give-from-isr"
+
+[[anchors.slots]]
+offset = 0x18
+width = 32
+status = "reviewed"
+origin = "observed"
+name = "semphr_take"
+arguments = ["opaque-handle", "u32"]
+return = "i32"
+semantic = "rtos.semaphore.take"
+
+[[anchors.slots]]
+offset = 0x1c
+width = 32
+status = "reviewed"
+origin = "observed"
+name = "semphr_give"
+arguments = ["opaque-handle"]
+return = "i32"
+semantic = "rtos.semaphore.give"
+
+[[anchors.slots]]
+offset = 0x20
+width = 32
+status = "reviewed"
+origin = "observed"
+name = "is_in_isr"
+arguments = []
+return = "i32"
+semantic = "rtos.context.is-in-isr"
+
+[[anchors.slots]]
+offset = 0x24
+width = 32
+status = "reviewed"
+origin = "observed"
+name = "malloc_internal"
+arguments = ["usize"]
+return = "mut-ptr"
+semantic = "memory.internal.allocate"
+
+[[anchors.slots]]
+offset = 0x28
+width = 32
+status = "reviewed"
+origin = "observed"
+name = "free"
+arguments = ["mut-ptr"]
+return = "void"
+semantic = "memory.deallocate"
+
+[[anchors.slots]]
+offset = 0x2c
+width = 32
+status = "reviewed"
+origin = "observed"
+name = "esp_timer_get_time"
+arguments = []
+return = "i64"
+semantic = "time.monotonic-micros.get"
+
+[[anchors.slots]]
+offset = 0x30
+width = 32
+status = "reviewed"
+origin = "observed"
+name = "env_is_chip"
+arguments = []
+return = "bool"
+semantic = "target.is-real-chip"
+execution-model = "coex-env-is-chip"
+
+[[anchors.slots]]
+offset = 0x34
+width = 32
+status = "reviewed"
+origin = "observed"
+name = "timer_disarm"
+arguments = ["mut-ptr"]
+return = "void"
+semantic = "timer.disarm"
+
+[[anchors.slots]]
+offset = 0x38
+width = 32
+status = "reviewed"
+origin = "observed"
+name = "timer_done"
+arguments = ["mut-ptr"]
+return = "void"
+semantic = "timer.complete"
+
+[[anchors.slots]]
+offset = 0x3c
+width = 32
+status = "reviewed"
+origin = "observed"
+name = "timer_setfn"
+arguments = ["mut-ptr", "ptr", "ptr"]
+return = "void"
+semantic = "timer.callback.configure"
+
+[[anchors.slots]]
+offset = 0x40
+width = 32
+status = "reviewed"
+origin = "observed"
+name = "timer_arm_us"
+arguments = ["mut-ptr", "u32", "bool"]
+return = "void"
+semantic = "timer.arm-micros"
+
+[[anchors.slots]]
+offset = 0x44
+width = 32
+status = "reviewed"
+origin = "manual"
+name = "debug_matrix_init"
+arguments = ["i32", "i32", "bool"]
+return = "i32"
+semantic = "diagnostic.matrix.configure"
+
+[[anchors.slots]]
+offset = 0x48
+width = 32
+status = "reviewed"
+origin = "observed"
+name = "xtal_freq_get"
+arguments = []
+return = "i32"
+semantic = "clock.xtal-frequency.get"
+execution-model = "coex-xtal-frequency-get"

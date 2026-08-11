@@ -65,7 +65,7 @@ fn print_human(document: &BuildDocument<'_>) {
             profile.decode_blockers,
             profile.registers,
             profile.field_candidates,
-            profile.json.display()
+            profile.bundle.display()
         );
         if let Some(pseudo) = profile.pseudo {
             outputln!("  {:<20} pseudo={}", "", pseudo.display());

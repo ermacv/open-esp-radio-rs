@@ -12,6 +12,9 @@ mod generate_reference;
 mod generate_reference_batch;
 mod inspect_analyze;
 mod inspect_compare;
+mod inspect_function;
+mod inspect_object;
+mod inspect_scope;
 mod inspect_trace;
 mod interface_discovery;
 mod interface_discovery_options;
@@ -234,6 +237,18 @@ pub(super) fn run_target(
         }
         TargetCommand::GenerateDriver(arguments) => generate_driver::run(arguments, svd, target),
         TargetCommand::InspectAnalyze(arguments) => inspect_analyze::run(arguments, svd, target),
+        TargetCommand::InspectFunction(arguments) => inspect_function::run(
+            arguments,
+            project.ok_or_else(|| crate::Error::invalid("inspect function requires --project"))?,
+        ),
+        TargetCommand::InspectObject(arguments) => inspect_object::run(
+            arguments,
+            project.ok_or_else(|| crate::Error::invalid("inspect object requires --project"))?,
+        ),
+        TargetCommand::InspectScope(arguments) => inspect_scope::run(
+            arguments,
+            project.ok_or_else(|| crate::Error::invalid("inspect scope requires --project"))?,
+        ),
         TargetCommand::VerifyInventory(arguments) => verify_inventory::run(arguments, svd, target),
         TargetCommand::VerifySource(arguments) => verify_source::run(arguments, svd, target),
         TargetCommand::InspectTrace(arguments) => inspect_trace::run(arguments, svd),

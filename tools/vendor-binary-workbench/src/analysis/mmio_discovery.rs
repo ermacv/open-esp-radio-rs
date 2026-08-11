@@ -39,16 +39,10 @@ const MAX_DISCOVERY_EVENTS_PER_FUNCTION: usize = 2_048;
 // make an artifact fail when the same analysis succeeds on the main thread.
 const DISCOVERY_WORKER_STACK_BYTES: usize = 16 * 1024 * 1024;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(crate) struct MmioDiscoveryOptions {
     /// Zero selects up to four available workers.
     pub(crate) jobs: usize,
-}
-
-impl Default for MmioDiscoveryOptions {
-    fn default() -> Self {
-        Self { jobs: 0 }
-    }
 }
 
 impl MmioDiscoveryOptions {

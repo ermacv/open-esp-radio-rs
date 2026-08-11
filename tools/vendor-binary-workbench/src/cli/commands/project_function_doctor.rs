@@ -105,7 +105,7 @@ pub(super) fn inspect(project: &ProjectSpec) -> FunctionDoctorReport {
     };
     let missing = reports
         .iter()
-        .filter(|(_, report)| !report.is_file())
+        .filter(|(_, report)| !report.is_dir())
         .count();
     if missing != 0 {
         let mut report = FunctionDoctorReport::new("not-generated");

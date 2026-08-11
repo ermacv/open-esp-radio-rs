@@ -48,5 +48,41 @@ source = "libnet80211"
 artifact-sha256 = "f850d4044a89888856a8d2ee50835e37c61f4dd92045ba4ea4dfa1b2cd7d77e8"
 
 [[inputs]]
+source = "wifi-sta-lifecycle"
+artifact-sha256 = "513f8d08ef1611e4937d17ee0938aebf68b7c9ec16c843ecf2612a48ef2096c1"
+
+[[inputs]]
+source = "wifi-sta-lifecycle"
+artifact-sha256 = "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542"
+
+[[inputs]]
+source = "wifi-sta-lifecycle"
+artifact-sha256 = "f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e"
+
+[[inputs]]
 source = "rust"
-artifact-sha256 = "ed6e88f770f3f4bba50176ceed3d43b0e16b1095371e5867460aee852e4cd380"
+artifact-sha256 = "5a6dc65a7e10ad4135c067c265625ca1258694a6e0aa0c38185ee6e6afa0d60e"
+
+[[inputs]]
+source = "ble"
+artifact-sha256 = "62dbe7216619d1f1e3dcd51233d91b211add15c7c746851af0be6a632cdae195"
+
+[[inputs]]
+source = "btbb"
+artifact-sha256 = "ebd67c6a32081d0fcd143bbb0ed53f962fc587058e20eceb59012beae47528df"
+
+[[inputs]]
+source = "btdm"
+artifact-sha256 = "fa22a8a2aca48b807addda2bbad78868d6774c82bcdeb8090f9140f6cbccd099"
+
+[[inputs]]
+source = "coex"
+artifact-sha256 = "9b8f55b1a1670ac8da1323595c817eca7340f073e783c162d3a2dfde7bbd19c8"
+
+[[inputs]]
+source = "coex"
+artifact-sha256 = "851cac6122d2e047fb22f1059b7875a55b526a07a19d94022fc0e30f4bf2fd6c"
+
+[[inputs]]
+source = "coex"
+artifact-sha256 = "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542"

@@ -247,6 +247,9 @@ fn execution_model_label(model: crate::ExternalReturnModel) -> String {
         crate::ExternalReturnModel::Constant(value) => format!("constant:{value:#010x}"),
         crate::ExternalReturnModel::SymbolicU32 => "symbolic-u32".to_owned(),
         crate::ExternalReturnModel::SymbolicU64 => "symbolic-u64".to_owned(),
+        crate::ExternalReturnModel::AllocatedZeroed { size_argument } => {
+            format!("allocated-zeroed:size=a{size_argument}")
+        }
         crate::ExternalReturnModel::Unmodeled => "unmodeled".to_owned(),
     }
 }

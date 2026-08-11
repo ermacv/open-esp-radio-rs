@@ -165,7 +165,9 @@ pub(super) fn render(frame: &mut Frame<'_>, state: &BrowserState, area: Rect) {
                             )));
                         }
                         lines.push(Line::from(format!(
-                            "evidence: table lifecycle vendor={} rust={}; device coverage vendor={} rust={}",
+                            "evidence: allocations vendor={} rust={}; table lifecycle vendor={} rust={}; device coverage vendor={} rust={}",
+                            environment.vendor_allocations.len(),
+                            environment.rust_allocations.len(),
                             environment.vendor_table_lifecycle.len(),
                             environment.rust_table_lifecycle.len(),
                             environment.vendor_device_coverage.len(),

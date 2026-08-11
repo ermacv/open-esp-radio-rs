@@ -189,6 +189,7 @@ fn interface_caller_and_relocated_root_join_inventory_locations() {
         }),
         functions: None,
         review: None,
+        qualification: None,
         verification: None,
     };
     let document = build(&project).unwrap();

@@ -107,7 +107,11 @@ description = "_oracles/libphy.a sha256 51497819736295c9b33d6775495dade4c6fb39db
 
 [[sources]]
 id = "BLOB_LIBCOEX_PTI_TABLE"
-description = "_oracles/libcoexist.a sha256 4b00fc4258ac3a7bef3ecd6c0f402d38afde9aafe50ceaf07951406cff576276; complete coexist_api.o coex_pti_get tail-calls complete coexist_core.o coex_core_pti_get size 0x1e, which bounds-checks only the output pointer and copies coex_pti_tab[event]. The complete 48-byte coex_pti_tab object in coexist_core.o .dram1.2 gives cold defaults event 1 = 5, event 3 = 7, event 10 = 3 and event 15 = 1. These are the only events queried by complete hal_init and hal_set_ofdma_sequence_pti. Runtime coexistence may mutate the table, so the PAC fields do not hardcode these policy values."
+description = "_oracles/libcoexist.a sha256 9b8f55b1a1670ac8da1323595c817eca7340f073e783c162d3a2dfde7bbd19c8; complete coexist_api.o coex_pti_get tail-calls complete coexist_core.o coex_core_pti_get size 0x1e, which bounds-checks only the output pointer and copies coex_pti_tab[event]. The complete 48-byte coex_pti_tab object in coexist_core.o .dram1.2 gives cold defaults event 1 = 5, event 3 = 7, event 10 = 3 and event 15 = 1. These are the only events queried by complete hal_init and hal_set_ofdma_sequence_pti. Runtime coexistence may mutate the table, so the PAC fields do not hardcode these policy values."
+
+[[sources]]
+id = "BLOB_LIBCOEX_HW_TIMER"
+description = "_oracles/libcoexist.a sha256 9b8f55b1a1670ac8da1323595c817eca7340f073e783c162d3a2dfde7bbd19c8; complete coexist_hw.o coex_hw_timer_set/enable/disable/force/unforce leaves prove the 0x2010f400 + index*0x10 bank, word offsets and ordered RMW masks. Complete coexist_core.o coex_core_timer_idx_get guards event numbers 1 through 46 and its complete 46-byte switch table contains only timer indices 0,1,2,3,4 or 0xff, proving the reviewed five-entry domain used by core request/release."
 
 [[ranges]]
 name = "FECOEX"

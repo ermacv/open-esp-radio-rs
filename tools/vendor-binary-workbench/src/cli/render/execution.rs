@@ -268,6 +268,23 @@ fn render_table_environment(
             );
         }
     }
+    for (side, allocations) in [
+        ("vendor", &environment.vendor_allocations),
+        ("rust", &environment.rust_allocations),
+    ] {
+        for allocation in allocations {
+            let _ = writeln!(
+                &mut output,
+                "ALLOCATION\tcase={case}\tside={side}\tsymbol={}\tsite={:#010x}\taddress={:#010x}\trequested={:#x}\tcapacity={:#x}\tzeroed={}",
+                allocation.symbol,
+                allocation.site,
+                allocation.address,
+                allocation.requested,
+                allocation.capacity,
+                allocation.zeroed,
+            );
+        }
+    }
     for device in &environment.device_models {
         let _ = writeln!(
             &mut output,

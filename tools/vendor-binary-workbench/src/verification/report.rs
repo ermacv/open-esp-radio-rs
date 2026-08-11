@@ -2,14 +2,15 @@
 
 use std::path::Path;
 
-use serde::Serialize;
+use open_radio_vendor_semantics::DriverAdapterClaim;
+use serde::{Deserialize, Serialize};
 
 use super::EvidenceSet;
 use super::{EvidenceComparison, ExecutionComparisonReport, VerificationCoreReport, VerifySummary};
 
 pub(crate) const VERIFICATION_REPORT_SCHEMA: u32 = 7;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub(crate) enum FunctionVerificationStatus {
     Match,
@@ -41,6 +42,8 @@ pub(crate) struct FunctionVerificationReport {
     pub(crate) protocol: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) driver_adapter: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) claim: Option<DriverAdapterClaim>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) hil_evidence: Option<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -80,6 +83,7 @@ impl FunctionVerificationReport {
             disposition_reviewed: false,
             protocol: None,
             driver_adapter: None,
+            claim: None,
             hil_evidence: None,
             qualification_blockers: Vec::new(),
             reason: None,

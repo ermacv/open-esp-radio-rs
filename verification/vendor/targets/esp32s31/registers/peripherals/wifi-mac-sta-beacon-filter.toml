@@ -19,6 +19,10 @@ name = "ENABLES_UNKNOWN"
 bitOffset = 0
 bitWidth = 3
 
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0
+maximum = 7
+
 [[review]]
 entity = "WIFI_MAC_STA_BEACON_FILTER"
 sources = ["BLOB_LIBPP_HAL_RUNTIME_MMIO_LEAVES"]

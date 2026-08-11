@@ -2,6 +2,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use open_radio_vendor_semantics::DriverAdapterClaim;
 use serde::Serialize;
 
 use super::{
@@ -39,6 +40,8 @@ pub(crate) struct RustReplacementTarget {
 pub(crate) struct ReplacementProof {
     pub(crate) suite: String,
     pub(crate) status: FunctionVerificationStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) claim: Option<DriverAdapterClaim>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) probe_symbol: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -317,6 +320,7 @@ fn proof(suite: &str, function: &FunctionVerificationReport) -> ReplacementProof
     ReplacementProof {
         suite: suite.to_owned(),
         status: function.status,
+        claim: function.claim,
         probe_symbol: function.rust_symbol.clone(),
         evidence: function.evidence.clone(),
         contract: function.contract.clone(),
@@ -335,6 +339,7 @@ mod tests {
         let proof = |status| ReplacementProof {
             suite: "suite".to_owned(),
             status,
+            claim: None,
             probe_symbol: None,
             evidence: None,
             contract: None,

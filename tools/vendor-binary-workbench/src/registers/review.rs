@@ -55,28 +55,44 @@ pub(crate) fn render_register_review(
     model_path: &Path,
 ) -> Result<(String, RegisterReviewSummary)> {
     let ir = RegisterReviewIr::load_all(ir_paths)?;
+    let identities = model.register_identities()?;
     render_report(
         facts,
-        &model.register_identities()?,
-        model.review(),
-        &ir,
-        owned_ranges,
-        non_operational_functions,
-        facts_path,
-        model_path,
+        RegisterReviewContext {
+            identities: &identities,
+            annotations: model.review(),
+            ir: &ir,
+            owned_ranges,
+            non_operational_functions,
+            facts_path,
+            model_path,
+        },
     )
+}
+
+struct RegisterReviewContext<'a> {
+    identities: &'a BTreeMap<(u64, u32), String>,
+    annotations: &'a [ReviewAnnotation],
+    ir: &'a RegisterReviewIr,
+    owned_ranges: &'a [String],
+    non_operational_functions: &'a [String],
+    facts_path: &'a Path,
+    model_path: &'a Path,
 }
 
 fn render_report(
     facts: &RegisterFacts,
-    identities: &BTreeMap<(u64, u32), String>,
-    annotations: &[ReviewAnnotation],
-    ir: &RegisterReviewIr,
-    owned_ranges: &[String],
-    non_operational_functions: &[String],
-    facts_path: &Path,
-    model_path: &Path,
+    context: RegisterReviewContext<'_>,
 ) -> Result<(String, RegisterReviewSummary)> {
+    let RegisterReviewContext {
+        identities,
+        annotations,
+        ir,
+        owned_ranges,
+        non_operational_functions,
+        facts_path,
+        model_path,
+    } = context;
     let fact_keys = facts
         .registers
         .iter()
@@ -502,13 +518,15 @@ mod tests {
         };
         let (report, summary) = render_report(
             &facts,
-            &BTreeMap::new(),
-            &[],
-            &RegisterReviewIr::default(),
-            &["radio".to_owned()],
-            &[],
-            Path::new("mmio.json"),
-            Path::new("device.toml"),
+            RegisterReviewContext {
+                identities: &BTreeMap::new(),
+                annotations: &[],
+                ir: &RegisterReviewIr::default(),
+                owned_ranges: &["radio".to_owned()],
+                non_operational_functions: &[],
+                facts_path: Path::new("mmio.json"),
+                model_path: Path::new("device.toml"),
+            },
         )
         .unwrap();
         assert_eq!(summary.unreviewed, 1);

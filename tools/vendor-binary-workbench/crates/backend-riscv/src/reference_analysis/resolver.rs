@@ -1,7 +1,7 @@
 //! Artifact-level symbol catalog and reference resolver.
 
 use super::*;
-use crate::{EntryContractRef, FunctionTarget, RiscvHarnessSpec};
+use crate::{DirectSemanticFunctionSpec, EntryContractRef, FunctionTarget, RiscvHarnessSpec};
 
 pub type ReferenceSymbolKey = (Option<String>, String, u64);
 
@@ -17,6 +17,11 @@ pub struct ReferenceResolver {
     /// Public for construction of synthetic resolver fixtures. Production
     /// callers should use one of the `load*` constructors.
     pub data_symbols: Vec<artifact::ArtifactDataSymbolDefinition>,
+    /// Reviewed exact-body semantics projected from a unique archive origin
+    /// onto the authoritative linked definition. The facade owns origin and
+    /// digest validation; the backend only stores the resulting typed fact.
+    pub projected_direct_semantics:
+        BTreeMap<ReferenceSymbolKey, &'static DirectSemanticFunctionSpec>,
 }
 
 fn symbol_key(symbol: &artifact::ArtifactSymbolDefinition) -> ReferenceSymbolKey {
@@ -43,6 +48,23 @@ fn insert_preferred_symbol(
 }
 
 impl ReferenceResolver {
+    pub fn register_projected_direct_semantic(
+        &mut self,
+        symbol: &artifact::ArtifactSymbolDefinition,
+        semantic: &'static DirectSemanticFunctionSpec,
+    ) {
+        self.projected_direct_semantics
+            .insert(symbol_key(symbol), semantic);
+    }
+
+    pub fn projected_direct_semantic(
+        &self,
+        symbol: &artifact::ArtifactSymbolDefinition,
+    ) -> Option<&'static DirectSemanticFunctionSpec> {
+        self.projected_direct_semantics
+            .get(&symbol_key(symbol))
+            .copied()
+    }
     pub fn load(
         artifact: &Path,
         companions: &[PathBuf],
@@ -392,6 +414,7 @@ impl ReferenceResolver {
             relocated_calls,
             pointer_context,
             data_symbols,
+            projected_direct_semantics: BTreeMap::new(),
         })
     }
 
@@ -446,16 +469,14 @@ impl ReferenceResolver {
             .get(&identity)
             .expect("catalog lookup returned a symbol without an identity");
         let mut visiting = BTreeSet::from([symbol.address as u32, symbol_id]);
-        resolve_reference_trace_with_budget(
-            symbol,
-            &self.symbols_by_address,
-            &self.relocated_calls,
-            &self.pointer_context,
-            None,
+        let context = ReferenceCalleeContext {
+            symbols_by_address: &self.symbols_by_address,
+            relocated_calls: &self.relocated_calls,
+            pointer_context: &self.pointer_context,
             svd,
-            &mut visiting,
             budget,
-        )
+        };
+        resolve_reference_trace_with_budget(symbol, &context, None, &mut visiting)
     }
 
     pub fn symbol_is_exported(&self, symbol: &artifact::ArtifactSymbolDefinition) -> bool {
@@ -521,6 +542,7 @@ mod tests {
             relocated_calls: BTreeMap::new(),
             pointer_context: StructuralPointerContext::default(),
             data_symbols,
+            projected_direct_semantics: BTreeMap::new(),
         }
     }
 

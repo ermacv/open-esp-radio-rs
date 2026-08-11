@@ -603,7 +603,9 @@ pub fn verify_esp32s31_wdev_append_rx_blocks(
             padding_independent,
         ));
     }
-    Ok(DriverAdapterVerification { matched, canonical })
+    Ok(DriverAdapterVerification::whole_function_equivalence(
+        matched, canonical,
+    ))
 }
 
 #[cfg(test)]
@@ -661,6 +663,7 @@ mod tests {
             calls: Default::default(),
             ordered_calls: Vec::new(),
             indirect_calls: Default::default(),
+            allocations: Vec::new(),
             table_lifecycle: Vec::new(),
             table_lifecycle_complete: true,
             device_model_coverage: Vec::new(),

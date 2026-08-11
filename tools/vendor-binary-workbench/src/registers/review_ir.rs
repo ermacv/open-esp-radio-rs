@@ -1,4 +1,4 @@
-//! Selected schema-v40 linked-IR evidence used by the manual register report.
+//! Selected schema-v43 linked-IR evidence used by the manual register report.
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -208,19 +208,23 @@ mod tests {
         )
     }
 
+    fn write_report(path: &std::path::Path, input: &str) {
+        crate::artifacts::write_fixture_bundle(path, input).unwrap();
+    }
+
     #[test]
-    fn loads_and_merges_schema_v40_field_evidence() {
+    fn loads_and_merges_schema_v43_field_evidence() {
         let base = std::env::temp_dir().join(format!(
             "vendor-workbench-register-review-ir-{}",
             std::process::id()
         ));
-        let first = base.with_extension("first.json");
-        let second = base.with_extension("second.json");
-        std::fs::write(&first, report(1, "rtos.event.send")).unwrap();
-        std::fs::write(&second, report(2, "delay.blocking")).unwrap();
+        let first = base.with_extension("first.ir");
+        let second = base.with_extension("second.ir");
+        write_report(&first, &report(1, "rtos.event.send"));
+        write_report(&second, &report(2, "delay.blocking"));
         let evidence = RegisterReviewIr::load_all(&[first.clone(), second.clone()]).unwrap();
-        std::fs::remove_file(first).unwrap();
-        std::fs::remove_file(second).unwrap();
+        std::fs::remove_dir_all(first).unwrap();
+        std::fs::remove_dir_all(second).unwrap();
         let register = evidence.register(0x1010, 32).unwrap();
         let field = register.fields.values().next().unwrap();
         assert_eq!(field.write_shapes, 3);
@@ -232,28 +236,27 @@ mod tests {
     #[test]
     fn rejects_schema_drift_and_invalid_field_masks() {
         let path = std::env::temp_dir().join(format!(
-            "vendor-workbench-register-review-ir-invalid-{}.json",
+            "vendor-workbench-register-review-ir-invalid-{}",
             std::process::id()
         ));
-        std::fs::write(
-            &path,
-            report(1, "rtos.event.send").replacen(
-                "\"schema_version\":40",
-                "\"schema_version\":32",
-                1,
-            ),
-        )
-        .unwrap();
+        write_report(&path, &report(1, "rtos.event.send"));
+        let manifest = path.join("manifest.json");
+        let input = std::fs::read_to_string(&manifest).unwrap().replacen(
+            "\"schema_version\": 43",
+            "\"schema_version\": 32",
+            1,
+        );
+        std::fs::write(&manifest, input).unwrap();
         let error = RegisterReviewIr::load_all(std::slice::from_ref(&path)).unwrap_err();
-        assert!(error.to_string().contains("requires linked-IR schema 40"));
+        assert!(error.to_string().contains("expected schema_version 43"));
 
-        std::fs::write(
+        std::fs::remove_dir_all(&path).unwrap();
+        write_report(
             &path,
-            report(1, "rtos.event.send").replacen("\"mask\":240", "\"mask\":224", 1),
-        )
-        .unwrap();
+            &report(1, "rtos.event.send").replacen("\"mask\":240", "\"mask\":224", 1),
+        );
         let error = RegisterReviewIr::load_all(std::slice::from_ref(&path)).unwrap_err();
-        std::fs::remove_file(path).unwrap();
+        std::fs::remove_dir_all(path).unwrap();
         assert!(
             error
                 .to_string()
@@ -264,12 +267,12 @@ mod tests {
     #[test]
     fn rejects_the_same_report_twice() {
         let path = std::env::temp_dir().join(format!(
-            "vendor-workbench-register-review-ir-duplicate-{}.json",
+            "vendor-workbench-register-review-ir-duplicate-{}",
             std::process::id()
         ));
-        std::fs::write(&path, report(1, "rtos.event.send")).unwrap();
+        write_report(&path, &report(1, "rtos.event.send"));
         let error = RegisterReviewIr::load_all(&[path.clone(), path.clone()]).unwrap_err();
-        std::fs::remove_file(path).unwrap();
+        std::fs::remove_dir_all(path).unwrap();
         assert!(
             error
                 .to_string()

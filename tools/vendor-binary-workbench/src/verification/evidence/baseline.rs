@@ -309,7 +309,7 @@ mod tests {
             })
             .collect::<Vec<_>>();
         paths.sort();
-        assert_eq!(paths.len(), 9);
+        assert_eq!(paths.len(), 11);
         for path in paths {
             assert!(!load_evidence_baseline(&path).unwrap().is_empty());
         }

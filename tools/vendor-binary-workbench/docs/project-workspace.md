@@ -48,7 +48,7 @@ sources = ["rom", "archive"]
 roots = "symbol-prefix"
 symbol-prefix = "phy_"
 include-reachable = true
-output = "generated/findings/vendor.ir.json"
+output = "generated/findings/vendor.ir"
 pseudo-rust = "generated/reports/vendor.pseudo.rs"
 
 [registers]
@@ -59,7 +59,7 @@ owned-ranges = ["radio"]
 [registers.review]
 output = "generated/reports/register-review.md"
 non-operational-functions = ["archive:register_dump"]
-linked-ir = ["generated/findings/vendor.ir.json"]
+linked-ir = ["generated/findings/vendor.ir"]
 
 [registers.svd]
 output = "generated/svd/device.svd"
@@ -92,7 +92,7 @@ output = "generated/reports/function-review.md"
 
 [review]
 output = "generated/findings/review-scopes.json"
-release-scopes = ["radio-init"]
+publication-scopes = ["radio-init"]
 
 [[review.scopes]]
 id = "radio-init"
@@ -171,8 +171,12 @@ another root when it is itself a public replacement boundary. `project status`
 reads this compact artifact instead of reconstructing the scopes from all large
 IR documents.
 
-Review-scope schema 4 also emits an ordered `review_queue` and the distinct
-`replacement_functions` denominator. Repeated typed IR diagnostics are grouped
+Review-scope schema 7 also emits an ordered `review_queue`, the distinct
+`replacement_functions` denominator, `analysis_inventory_complete`, and a
+separate `replacement_qualification`. The latter is qualified only when every
+explicit replacement root has a passing production binding; blockers in the
+reachable vendor-helper closure remain visible inventory and do not invent a
+false release failure. Repeated typed IR diagnostics are grouped
 by stable root cause and retain affected functions, instruction sites and
 diagnostic channels. Resolved call boundaries and aggregate wrapper messages
 are omitted from this queue so it remains an actionable work list rather than
@@ -181,7 +185,11 @@ replacement gaps are joined from the verification report. The CLI/TUI may
 reorder presentation only by the stored priority; they do not infer a proof
 verdict from queue text.
 
-`release-scopes` is the explicit publication boundary. SVD, PAC and binding
+Schema 7 additionally stores the exact `replacement_function_keys` used by
+feature qualification. Every explicit scope root must be verified or excluded
+by reviewed feature policy; see [feature qualification](feature-qualification.md).
+
+`publication-scopes` is the explicit publication boundary. SVD, PAC and binding
 generation require reviewed register-model entries only for MMIO in those
 scopes and owned memory-map ranges. Other artifact-wide findings remain in the
 review reports but do not block a deliberately smaller release.
@@ -331,7 +339,7 @@ not been generated, a model that has not been initialized, an invalid model,
 and a ready schema-2 workspace. Coverage reports
 reviewed, ignored, manual and unreviewed registers plus reviewed fields and
 configured review/SVD/PAC outputs. Configured linked-IR review inputs are parsed
-as schema-v40 reports and their register/field-candidate counts are reported;
+as schema-v43 reports and their register/field-candidate counts are reported;
 missing outputs owned by `[[analysis.ir]]` are reported as not generated,
 while missing external inputs or incompatible existing reports are errors
 rather than silently disabling enrichment.
@@ -342,7 +350,7 @@ workspace. Coverage includes reviewed/ignored/unreviewed anchors and slots,
 semantic links, and loaded semantic operations.
 
 If `[functions]` is configured, the doctor checks selected IR outputs, strict
-schema-v40 facts, artifact provenance guards, the pack lifecycle, review
+schema-v43 facts, artifact provenance guards, the pack lifecycle, review
 coverage for root functions/contexts/fields, explicitly accepted incomplete
 evidence, and the configured generated report destination.
 

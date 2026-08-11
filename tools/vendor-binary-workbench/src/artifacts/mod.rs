@@ -7,6 +7,7 @@
 mod interface_facts;
 mod interface_facts_read;
 mod linked_ir;
+mod linked_ir_bundle;
 mod linked_ir_document;
 mod linked_ir_read;
 mod mmio_facts;
@@ -20,10 +21,18 @@ pub(crate) use interface_facts_read::{
 };
 pub(crate) use linked_ir::inspect_linked_ir;
 #[cfg(test)]
+pub(crate) use linked_ir_bundle::write_fixture_bundle;
+pub(crate) use linked_ir_bundle::{
+    LinkedIrReader, bundle_files, load_linked_ir_analysis, load_linked_ir_functions,
+};
+#[cfg(test)]
 pub(crate) use linked_ir_document::render_linked_ir_fixture;
-pub(crate) use linked_ir_document::{build_linked_ir_document, render_linked_ir, write_linked_ir};
+pub(crate) use linked_ir_document::{
+    LinkedIrBundle, build_linked_ir_document, render_linked_ir_bundle, write_linked_ir_bundle,
+};
 pub(crate) use linked_ir_read::{
-    LinkedIrStoredDocument, StoredCall, StoredMemoryObject, parse_linked_ir,
+    LinkedIrStoredDocument, StoredCall, StoredFunction, StoredMemoryObject, StoredMmioRegister,
+    parse_linked_ir,
 };
 pub(crate) use mmio_facts::{MmioFactsDocument, build_mmio_facts, render_mmio_facts};
 pub(crate) use mmio_facts_read::parse_mmio_facts;
@@ -57,7 +66,7 @@ pub(crate) const INTERFACE_FACTS: ArtifactSchema = ArtifactSchema {
 };
 
 pub(crate) const LINKED_IR: ArtifactSchema = ArtifactSchema {
-    version: 40,
+    version: 43,
     command: "ir export",
 };
 
@@ -108,7 +117,7 @@ mod tests {
         assert_eq!(
             LINKED_IR,
             ArtifactSchema {
-                version: 40,
+                version: 43,
                 command: "ir export",
             }
         );

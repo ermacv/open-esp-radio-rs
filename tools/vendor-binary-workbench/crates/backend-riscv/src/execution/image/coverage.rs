@@ -1,6 +1,6 @@
 //! Conservative branch and direct-control-flow inventory.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use rv_asm::{Inst, Reg};
 
@@ -41,10 +41,22 @@ impl ExecutableImage {
         symbol: &str,
         arguments: &[Option<u32>; 8],
     ) -> Result<CoverageInventory> {
+        self.coverage_inventory_with_constraints(symbol, arguments, &BTreeMap::new())
+    }
+
+    /// Inventories control flow under ABI facts and reviewed stable memory
+    /// words. The latter is primarily used for finite MMIO selector domains;
+    /// ordered or stateful reads deliberately remain unknown.
+    pub fn coverage_inventory_with_constraints(
+        &self,
+        symbol: &str,
+        arguments: &[Option<u32>; 8],
+        stable_words: &BTreeMap<u32, u32>,
+    ) -> Result<CoverageInventory> {
         let start = self
             .symbol_address(symbol)
             .ok_or_else(|| format!("execution symbol {symbol} was not found"))?;
-        const MAX_ABSTRACT_STATES: usize = 200_000;
+        const MAX_ABSTRACT_UPDATES: usize = 200_000;
 
         let mut initial = [None; 32];
         initial[usize::from(Reg::ZERO.0)] = Some(0);
@@ -56,32 +68,94 @@ impl ExecutableImage {
             registers[usize::from(Reg::ZERO.0)] = Some(0);
             registers
         };
-        let mut pending = vec![(start, initial)];
-        let mut visited = BTreeSet::new();
+        let after_call = |before: [Option<u32>; 32]| {
+            let mut registers = unknown_after_call();
+            for register in [
+                Reg::SP,
+                Reg::GP,
+                Reg::TP,
+                Reg::S0,
+                Reg::S1,
+                Reg::S2,
+                Reg::S3,
+                Reg::S4,
+                Reg::S5,
+                Reg::S6,
+                Reg::S7,
+                Reg::S8,
+                Reg::S9,
+                Reg::S10,
+                Reg::S11,
+            ] {
+                registers[usize::from(register.0)] = before[usize::from(register.0)];
+            }
+            registers
+        };
+        let mut pending = Vec::new();
+        let mut queued = BTreeSet::new();
+        let mut states = BTreeMap::<u32, [Option<u32>; 32]>::new();
+        let mut updates = 0_usize;
         let mut inventory = CoverageInventory::default();
 
-        while let Some((address, mut registers)) = pending.pop() {
-            if !visited.insert((address, registers)) {
-                continue;
-            }
-            if visited.len() > MAX_ABSTRACT_STATES {
+        // Constant propagation is a finite lattice at each instruction: an
+        // unseen register fact becomes one concrete value and may widen once
+        // to unknown. Joining at the CFG address avoids enumerating an
+        // exponential cross-product of register tuples around loops while
+        // remaining conservative for branch coverage.
+        macro_rules! enqueue {
+            ($address:expr, $incoming:expr $(,)?) => {{
+                let address = $address;
+                let incoming = $incoming;
+                let changed = if let Some(existing) = states.get_mut(&address) {
+                    let mut changed = false;
+                    for (existing, incoming) in existing.iter_mut().zip(incoming) {
+                        let joined = if *existing == incoming {
+                            *existing
+                        } else {
+                            None
+                        };
+                        if *existing != joined {
+                            *existing = joined;
+                            changed = true;
+                        }
+                    }
+                    changed
+                } else {
+                    states.insert(address, incoming);
+                    true
+                };
+                if changed && queued.insert(address) {
+                    pending.push(address);
+                }
+            }};
+        }
+
+        enqueue!(start, initial);
+
+        while let Some(address) = pending.pop() {
+            queued.remove(&address);
+            updates += 1;
+            if updates > MAX_ABSTRACT_UPDATES {
                 return Err(format!(
-                    "abstract branch analysis exceeded {MAX_ABSTRACT_STATES} states"
+                    "abstract branch analysis exceeded {MAX_ABSTRACT_UPDATES} state updates"
                 )
                 .into());
             }
-            if self.symbol_at(address) == Some("ets_delay_us") {
+            let mut registers = states[&address];
+            if let Some(symbol) = self.symbol_at(address)
+                && is_opaque_runtime_support(symbol)
+            {
                 continue;
             }
             if let Some(call) = self.relocated_call_at(address) {
                 let link = self.relocated_call_link_register(address)?;
                 if link != Reg::ZERO {
-                    pending.push((address.wrapping_add(8), unknown_after_call()));
+                    enqueue!(address.wrapping_add(8), after_call(registers));
                 }
                 if let Some(target) = call.target
                     && self.symbol_at(target) != Some("ets_delay_us")
                 {
-                    pending.push((target, registers));
+                    enqueue!(target, registers);
                 } else if call.target.is_none() {
                     inventory
                         .unresolved_edges
@@ -101,7 +175,7 @@ impl ExecutableImage {
             match instruction {
                 Inst::Lui { uimm, dest } => {
                     set(&mut registers, dest, Some(uimm.as_u32()));
-                    pending.push((next, registers));
+                    enqueue!(next, registers);
                 }
                 Inst::Auipc { uimm, dest } => {
                     set(
@@ -109,55 +183,55 @@ impl ExecutableImage {
                         dest,
                         Some(address.wrapping_add(uimm.as_u32())),
                     );
-                    pending.push((next, registers));
+                    enqueue!(next, registers);
                 }
                 Inst::Addi { imm, dest, src1 } => {
                     let value = get(&registers, src1).map(|value| value.wrapping_add(imm.as_u32()));
                     set(&mut registers, dest, value);
-                    pending.push((next, registers));
+                    enqueue!(next, registers);
                 }
                 Inst::Andi { imm, dest, src1 } => {
                     let immediate = andi_immediate(imm, width as u8);
                     let value = get(&registers, src1).map(|value| value & immediate);
                     set(&mut registers, dest, value);
-                    pending.push((next, registers));
+                    enqueue!(next, registers);
                 }
                 Inst::Ori { imm, dest, src1 } => {
                     let value = get(&registers, src1).map(|value| value | imm.as_u32());
                     set(&mut registers, dest, value);
-                    pending.push((next, registers));
+                    enqueue!(next, registers);
                 }
                 Inst::Xori { imm, dest, src1 } => {
                     let value = get(&registers, src1).map(|value| value ^ imm.as_u32());
                     set(&mut registers, dest, value);
-                    pending.push((next, registers));
+                    enqueue!(next, registers);
                 }
                 Inst::Slli { imm, dest, src1 } => {
                     let value = get(&registers, src1).map(|value| value << (imm.as_u32() & 31));
                     set(&mut registers, dest, value);
-                    pending.push((next, registers));
+                    enqueue!(next, registers);
                 }
                 Inst::Srli { imm, dest, src1 } => {
                     let value = get(&registers, src1).map(|value| value >> (imm.as_u32() & 31));
                     set(&mut registers, dest, value);
-                    pending.push((next, registers));
+                    enqueue!(next, registers);
                 }
                 Inst::Srai { imm, dest, src1 } => {
                     let value = get(&registers, src1)
                         .map(|value| ((value as i32) >> (imm.as_u32() & 31)) as u32);
                     set(&mut registers, dest, value);
-                    pending.push((next, registers));
+                    enqueue!(next, registers);
                 }
                 Inst::Slti { imm, dest, src1 } => {
                     let value =
                         get(&registers, src1).map(|value| u32::from((value as i32) < imm.as_i32()));
                     set(&mut registers, dest, value);
-                    pending.push((next, registers));
+                    enqueue!(next, registers);
                 }
                 Inst::Sltiu { imm, dest, src1 } => {
                     let value = get(&registers, src1).map(|value| u32::from(value < imm.as_u32()));
                     set(&mut registers, dest, value);
-                    pending.push((next, registers));
+                    enqueue!(next, registers);
                 }
                 Inst::Add { dest, src1, src2 }
                 | Inst::Sub { dest, src1, src2 }
@@ -219,7 +293,7 @@ impl ExecutableImage {
                         _ => unreachable!(),
                     });
                     set(&mut registers, dest, value);
-                    pending.push((next, registers));
+                    enqueue!(next, registers);
                 }
                 Inst::Mulh { dest, .. }
                 | Inst::Mulhsu { dest, .. }
@@ -227,13 +301,19 @@ impl ExecutableImage {
                 | Inst::Lb { dest, .. }
                 | Inst::Lbu { dest, .. }
                 | Inst::Lh { dest, .. }
-                | Inst::Lhu { dest, .. }
-                | Inst::Lw { dest, .. } => {
+                | Inst::Lhu { dest, .. } => {
                     set(&mut registers, dest, None);
-                    pending.push((next, registers));
+                    enqueue!(next, registers);
+                }
+                Inst::Lw { offset, dest, base } => {
+                    let value = get(&registers, base)
+                        .map(|base| base.wrapping_add(offset.as_u32()))
+                        .and_then(|address| stable_words.get(&address).copied());
+                    set(&mut registers, dest, value);
+                    enqueue!(next, registers);
                 }
                 Inst::Sb { .. } | Inst::Sh { .. } | Inst::Sw { .. } | Inst::Fence { .. } => {
-                    pending.push((next, registers));
+                    enqueue!(next, registers);
                 }
                 Inst::Beq { offset, src1, src2 }
                 | Inst::Bne { offset, src1, src2 }
@@ -259,24 +339,24 @@ impl ExecutableImage {
                             continue;
                         };
                         inventory.branch_outcomes.insert((address, outcome));
-                        pending.push((
+                        enqueue!(
                             if outcome {
                                 address.wrapping_add(offset.as_u32())
                             } else {
                                 next
                             },
                             registers,
-                        ));
+                        );
                     }
                 }
                 Inst::Jal { offset, dest } => {
                     let target = address.wrapping_add(offset.as_u32());
                     if dest == Reg::ZERO {
-                        pending.push((target, registers));
+                        enqueue!(target, registers);
                     } else {
                         set(&mut registers, dest, Some(next));
-                        pending.push((target, registers));
-                        pending.push((next, unknown_after_call()));
+                        enqueue!(target, registers);
+                        enqueue!(next, after_call(registers));
                     }
                 }
                 Inst::Jalr { offset, base, dest }
@@ -285,15 +365,15 @@ impl ExecutableImage {
                     if let Some(base) = get(&registers, base) {
                         let target = base.wrapping_add(offset.as_u32()) & !1;
                         if dest == Reg::ZERO {
-                            pending.push((target, registers));
+                            enqueue!(target, registers);
                         } else {
                             set(&mut registers, dest, Some(next));
-                            pending.push((target, registers));
-                            pending.push((next, unknown_after_call()));
+                            enqueue!(target, registers);
+                            enqueue!(next, after_call(registers));
                         }
                     } else {
                         if dest != Reg::ZERO {
-                            pending.push((next, unknown_after_call()));
+                            enqueue!(next, after_call(registers));
                         }
                         inventory
                             .unresolved_edges
@@ -305,10 +385,26 @@ impl ExecutableImage {
                     // An unsupported instruction may define any register.
                     // Forget all constants so later branches remain
                     // conservative, then continue through the fallthrough.
-                    pending.push((next, unknown_after_call()));
+                    enqueue!(next, unknown_after_call());
                 }
             }
         }
         Ok(inventory)
     }
+}
+
+/// Runtime support is executed concretely, but its implementation branches
+/// are not source-level decisions of the function under verification.
+/// Arithmetic results remain observable through the caller's later effects.
+fn is_opaque_runtime_support(symbol: &str) -> bool {
+    matches!(
+        symbol,
+        "ets_delay_us"
+            | "__divdi3"
+            | "__moddi3"
+            | "__udivdi3"
+            | "__umoddi3"
+            | "__divmoddi4"
+            | "__udivmoddi4"
+    ) || symbol.contains("compiler_builtins")
 }

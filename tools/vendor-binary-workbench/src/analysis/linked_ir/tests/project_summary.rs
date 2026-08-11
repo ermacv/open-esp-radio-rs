@@ -37,6 +37,7 @@ fn duplicate_private_names_get_stable_address_qualified_ir_identities() {
         relocated_calls: BTreeMap::new(),
         pointer_context: direct::StructuralPointerContext::default(),
         data_symbols: Vec::new(),
+        projected_direct_semantics: BTreeMap::new(),
     };
     let map = MmioMap {
         registers: Vec::new(),
@@ -81,14 +82,16 @@ fn duplicate_private_names_get_stable_address_qualified_ir_identities() {
 
     let serial = summarize_linked_ir_with_jobs(
         build_linked_functions_for_roots(
-            &resolver,
+            LinkedFunctionBuild {
+                resolver: &resolver,
+                symbol_prefix: "",
+                svd: &map,
+                source: "primary",
+                progress_label: "primary",
+                namespace_identities: false,
+                include_reachable: false,
+            },
             resolver.symbols.iter().collect(),
-            "",
-            &map,
-            "primary",
-            "primary",
-            false,
-            false,
         ),
         1,
     );
@@ -134,6 +137,7 @@ fn decode_blockers_only_include_cfg_reachable_instructions() {
         relocated_calls: BTreeMap::new(),
         pointer_context: direct::StructuralPointerContext::default(),
         data_symbols: Vec::new(),
+        projected_direct_semantics: BTreeMap::new(),
     };
 
     let map = MmioMap {

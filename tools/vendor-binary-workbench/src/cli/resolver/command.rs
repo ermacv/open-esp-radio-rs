@@ -346,6 +346,24 @@ pub(super) fn resolve_command(
             svd: environment.svd,
             project: environment.project.map(Box::new),
         },
+        Command::InspectFunction(arguments) => ResolvedInvocation::Target {
+            command: TargetCommand::InspectFunction(arguments),
+            target: environment.target,
+            svd: environment.svd,
+            project: environment.project.map(Box::new),
+        },
+        Command::InspectObject(arguments) => ResolvedInvocation::Target {
+            command: TargetCommand::InspectObject(arguments),
+            target: environment.target,
+            svd: environment.svd,
+            project: environment.project.map(Box::new),
+        },
+        Command::InspectScope(arguments) => ResolvedInvocation::Target {
+            command: TargetCommand::InspectScope(arguments),
+            target: environment.target,
+            svd: environment.svd,
+            project: environment.project.map(Box::new),
+        },
         Command::VerifyInventory(arguments) => ResolvedInvocation::Target {
             command: TargetCommand::VerifyInventory(arguments),
             target: environment.target,

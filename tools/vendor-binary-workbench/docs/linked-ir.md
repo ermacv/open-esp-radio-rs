@@ -17,15 +17,47 @@ cargo vendor-binary-workbench ir export \
   --symbol-prefix phy_ \
   --include-reachable \
   --pseudo-rust /tmp/libphy.pseudo.rs \
-  --json-report /tmp/libphy.ir.json
+  --json-report /tmp/libphy.ir
 ```
+
+## Persistent bundle and random access
+
+Schema v43 is a directory, not one monolithic JSON document. The output path
+contains `manifest.json`, `functions.jsonl`, `function-index.json`,
+`graph.json`, `register-index.json`, `data-objects.jsonl`, and
+`data-object-index.json`. Functions and data objects are individually encoded
+records addressed by byte offsets from deterministic indexes. The manifest
+contains identity, modes, provenance and summary only.
+
+Focused consumers must use the relevant index. `inspect function` reads one
+function record plus the graph index; `inspect object` reads one data-object
+record; register review reads only `register-index.json`. Whole-project joins
+may stream all function records, but do not parse the data-object inventory
+unless they consume it. A bundle is valid only when every required member
+exists and has schema v43; the removed single-file representation is rejected.
+
+```console
+cargo vendor-binary-workbench inspect function libpp:wDev_AppendRxBlocks \
+  --project path/to/vendor-project.toml \
+  --run-spec /path/to/local.toml \
+  --depth 2 --callers
+
+cargo vendor-binary-workbench inspect object linked:g_wdev_control \
+  --project path/to/vendor-project.toml
+```
+
+The default function view is semantic and bounded. `--full` additionally
+prints the lossless CFG and every instruction, annotated at exact PCs with
+call targets, semantic operations, decode blockers and stable blocker IDs.
+Each semantic blocker names the reviewed model required to continue. Raw
+instructions remain available even when symbolic execution stops.
 
 ## Selection and project linking
 
 By default the prefix selects only report roots. `--include-reachable` also
 exports the transitive internal callees recovered from those roots within the
 same primary artifact. Each function is marked `symbol-prefix-root` or
-`reachable-internal`, and schema v40 records the selection mode plus root and
+`reachable-internal`, and schema v43 records the selection mode plus root and
 included-callee counts. This is an opt-in analysis-size tradeoff: only exactly
 resolved internal edges enqueue a callee, exploration limits remain visible as
 blockers, and companion or independently named primary definitions are not
@@ -91,13 +123,13 @@ cargo vendor-binary-workbench ir export \
   --artifact libphy="$ESP32S31_LIBPHY_ARCHIVE" \
   --artifact libpp="$ESP32S31_LIBPP_ARCHIVE" \
   --pseudo-rust /tmp/vendor-project.pseudo.rs \
-  --json-report /tmp/vendor-project.ir.json
+  --json-report /tmp/vendor-project.ir
 ```
 
 Project identities are namespaced, for example `rom::ets_delay_us` and
 `libphy::phy_init`. Semantic boundaries and all summary counts are aggregated
 across sources. Each named primary is analyzed in its own address space;
-schema v40 records `"linkage_mode": "independent-artifacts"` and does not claim
+schema v43 records `"linkage_mode": "independent-artifacts"` and does not claim
 that separate inputs share an address space or were fully linked. Use one
 linked ELF primary plus `--companion` inputs when cross-image addresses and
 relocations belong to one executable address space.
@@ -165,7 +197,7 @@ unique exact fragment, its number of occurrences and its first ordinal. The
 diagnostic record also carries a classified `kind`, an optional instruction
 `site`, and a stable `root_id` used by review queues. Pseudo-source uses the
 compact `rendered` form with an explicit `[repeated N times]` suffix. The old
-parallel string blocker arrays are not part of schema v40. This is mechanical report compaction, not
+parallel string blocker arrays are not part of schema v43. This is mechanical report compaction, not
 semantic parsing: later duplicate ordering is not retained, counts are not
 runtime occurrence counts, and backend completeness remains fail-closed.
 
@@ -208,6 +240,22 @@ Schema v39 generalizes caller-context observations into `memory_accesses` and
 - `absolute`, retaining the address space and address of a known RAM root;
 - `indexed`, retaining a base object, selector argument and proven stride.
 
+Schema v42 also inventories named static `data_objects` from every analyzed
+ELF and relocatable archive member. A data object retains its source, member,
+section, symbol, section-relative offset, optional linked address, size,
+writability and uninterpreted initializer bytes. Relocations in the initializer
+remain symbolic target/addend records: an archive initializer is not rebased as
+if the workbench had reproduced the final link. Compiler-local symbols at the
+same exact section offset (for example `.LANCHOR3`) are recorded as aliases, so
+function memory accesses can be joined back to the human-facing ELF object.
+If a referenced initialized section has only a zero-sized anchor and no named
+object, the remaining section bytes are retained as
+`synthetic_from_anchor = true`; this is how compiler switch tables remain
+visible without inventing a source-level variable name.
+Per-object xrefs summarize readers, writers, fixed offsets and recovered
+argument/stride selectors. This is binary evidence and does not infer a C/Rust
+type, array bound, ownership model or runtime initialization order.
+
 Each access retains signed byte offset, width, read/write kind, path and value
 evidence. A field aggregates equal `(object, offset, width)` accesses while
 keeping counts and write masks. A resolved address whose value depends on a
@@ -219,7 +267,7 @@ unknown roots remain blockers.
 used for affine interprocedural composition. Reachable `effect_summary`
 `memory_fields` contains those projected root arguments plus relocation-rooted
 fields observed in the reachable closure. It is an origin-preserving
-inventory, not a nominal-type or aliasing proof. Function-pack schema 3 is the
+inventory, not a nominal-type or aliasing proof. Function-pack schema 4 is the
 separate, reviewed layer that may bind several exact objects to one logical
 type.
 
@@ -482,9 +530,21 @@ the fixed 40 MHz `rtc_clk_xtal_freq_get` platform input. An annotation with
 `unmodeled` return/effects remains fail-closed.
 
 Reviewed trampoline calls additionally persist the complete executable model
-in linked-IR schema v40: model ID, return model, and each output kind, pointer
+in linked-IR schema v43: model ID, return model, and each output kind, pointer
 argument and width. This keeps navigation and later review honest without
 teaching the generic schema RTOS-specific meanings.
+
+An executable `allocated-zeroed` return model is stronger than an opaque
+pointer result. Structural analysis assigns each call a stable
+`zeroed-allocation:<call-token>` memory-object root and retains affine field
+offsets through subsequent loads, stores and calls. Concrete execution takes a
+scenario-owned arena, reads the requested size from the reviewed ABI argument,
+checks alignment, capacity and overlap, initializes exactly that prefix to
+zero, and records the allocation as CPU-owned environment evidence. The model
+never guesses a host heap address. Static analysis currently uses the zeroed
+marker as provenance and ownership evidence; it remains conservative about a
+byte's value until concrete execution or an explicit write establishes it.
+Deallocation and use-after-free validation are a separate lifetime layer.
 
 Known function-table calls additionally carry a structured `trampoline`
 record. It includes the table pointer and backing symbols, version, magic and

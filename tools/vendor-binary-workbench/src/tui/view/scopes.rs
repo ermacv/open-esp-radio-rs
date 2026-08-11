@@ -20,9 +20,13 @@ pub(super) fn render(frame: &mut Frame<'_>, state: &BrowserState, area: Rect) {
         .map(|index| {
             let scope = &state.snapshot.review_scopes[index];
             Row::new([
-                Cell::from(if scope.release { "yes" } else { "no" }),
                 Cell::from(scope.id.clone()),
-                Cell::from(format!("{}/{}", scope.complete_functions, scope.functions)),
+                Cell::from(scope.replacement_qualification.clone()),
+                Cell::from(if scope.analysis_inventory_complete {
+                    "complete"
+                } else {
+                    "inventory"
+                }),
                 Cell::from(scope.blockers.to_string()),
             ])
             .style(selected_style(index, selected))
@@ -31,13 +35,13 @@ pub(super) fn render(frame: &mut Frame<'_>, state: &BrowserState, area: Rect) {
         Table::new(
             rows,
             [
-                Constraint::Length(7),
-                Constraint::Percentage(54),
+                Constraint::Percentage(46),
                 Constraint::Length(11),
+                Constraint::Length(10),
                 Constraint::Length(8),
             ],
         )
-        .header(Row::new(["Release", "Scope", "Complete", "Queue"]))
+        .header(Row::new(["Scope", "Replacement", "Analysis", "Queue"]))
         .block(
             Block::default()
                 .title(format!(
@@ -57,7 +61,19 @@ pub(super) fn render(frame: &mut Frame<'_>, state: &BrowserState, area: Rect) {
         .map(|scope| {
             vec![
                 field("ID", &scope.id),
-                field("Release gate", scope.release),
+                field("Publication", scope.publication),
+                field(
+                    "Replacement qualification",
+                    &scope.replacement_qualification,
+                ),
+                field(
+                    "Analysis inventory",
+                    if scope.analysis_inventory_complete {
+                        "complete"
+                    } else {
+                        "blocked"
+                    },
+                ),
                 field("Profiles", scope.profiles.join(", ")),
                 field("Roots", scope.roots),
                 field("Replacement roots", scope.replacement_functions),

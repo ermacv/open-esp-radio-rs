@@ -13,6 +13,7 @@ mod navigation;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum Section {
     Overview,
+    Features,
     Scopes,
     Code,
     Functions,
@@ -25,8 +26,9 @@ pub(super) enum Section {
 }
 
 impl Section {
-    pub(super) const ALL: [Self; 10] = [
+    pub(super) const ALL: [Self; 11] = [
         Self::Overview,
+        Self::Features,
         Self::Scopes,
         Self::Code,
         Self::Functions,
@@ -41,6 +43,7 @@ impl Section {
     pub(super) const fn title(self) -> &'static str {
         match self {
             Self::Overview => "Overview",
+            Self::Features => "Features",
             Self::Scopes => "Scopes",
             Self::Code => "Code",
             Self::Functions => "Functions",
@@ -352,6 +355,7 @@ mod tests {
                 slots: Vec::new(),
             },
             review_scopes: Vec::new(),
+            features: Vec::new(),
             review_queue: Vec::new(),
             comparisons: Vec::new(),
             diagnostics: (0..diagnostics)
@@ -553,7 +557,9 @@ mod tests {
         });
         workspace.review_scopes.push(ReviewScopeSummary {
             id: "radio-init".to_owned(),
-            release: true,
+            publication: true,
+            replacement_qualification: "qualified".to_owned(),
+            analysis_inventory_complete: true,
             profiles: vec!["radio".to_owned()],
             roots: 1,
             functions: 1,

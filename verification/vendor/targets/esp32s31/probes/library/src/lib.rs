@@ -162,6 +162,22 @@ pub extern "C" fn open_libpp_trace_hal_mac_interrupt_ret_clr_event(events: u32) 
 
 #[unsafe(no_mangle)]
 #[inline(never)]
+pub extern "C" fn open_wifi_sta_trace_hal_disable_sta_beacon_filter() {
+    // SAFETY: these validation-only PAC capabilities are used only by this
+    // isolated probe image. The called helper is the production transaction.
+    let control = unsafe {
+        open_esp_radio_esp32s31_registers::svd::WifiMacStaBeaconFilter::steal()
+    };
+    let interrupt =
+        unsafe { open_esp_radio_esp32s31_registers::svd::WifiMacInterrupt::steal() };
+    open_esp_radio_esp32s31_registers::validation::hal_disable_sta_beacon_filter(
+        &control,
+        &interrupt,
+    );
+}
+
+#[unsafe(no_mangle)]
+#[inline(never)]
 pub extern "C" fn open_libpp_power_irq_trace_hal_pwr_interrupt_get_event() -> u32 {
     // SAFETY: this validation-only function is the sole user of the stolen
     // peripheral in its isolated probe image.
@@ -251,6 +267,101 @@ pub extern "C" fn open_libpp_rx_trace_hal_mac_rx_set_dscr_reload() {
     let registers = unsafe { open_esp_radio_esp32s31_registers::svd::WifiMacRxDma::steal() };
     let _ =
         open_esp_radio_esp32s31_registers::validation::hal_mac_rx_set_dscr_reload(&registers, 0);
+}
+
+#[unsafe(no_mangle)]
+#[inline(never)]
+pub extern "C" fn open_coex_trace_coex_hw_timer_enable(index: u32) {
+    let mut registers = open_esp_radio_esp32s31_registers::validation::radio_registers();
+    let _ = registers.enable_coex_timer(index as u8);
+}
+
+#[unsafe(no_mangle)]
+#[inline(never)]
+pub extern "C" fn open_coex_trace_coex_hw_timer_disable(index: u32) {
+    let mut registers = open_esp_radio_esp32s31_registers::validation::radio_registers();
+    let _ = registers.disable_coex_timer(index as u8);
+}
+
+#[unsafe(no_mangle)]
+#[inline(never)]
+pub extern "C" fn open_coex_trace_coex_hw_timer_force(index: u32) {
+    let mut registers = open_esp_radio_esp32s31_registers::validation::radio_registers();
+    let _ = registers.force_coex_timer(index as u8);
+}
+
+#[unsafe(no_mangle)]
+#[inline(never)]
+pub extern "C" fn open_coex_trace_coex_hw_timer_unforce(index: u32) {
+    let mut registers = open_esp_radio_esp32s31_registers::validation::radio_registers();
+    let _ = registers.unforce_coex_timer(index as u8);
+}
+
+struct CoexProbeClock;
+
+impl open_esp_radio_esp32s31_coex::CoexClockHardware for CoexProbeClock {
+    fn configure(
+        &mut self,
+        _selector: open_esp_radio_esp32s31_coex::CoexClockSelector,
+        _divisor: u16,
+    ) -> Result<(), open_esp_radio_esp32s31_coex::CoexError> {
+        Err(open_esp_radio_esp32s31_coex::CoexError::UnsupportedClock)
+    }
+
+    fn sample(
+        &mut self,
+    ) -> Result<open_esp_radio_esp32s31_coex::CoexTimerClock, open_esp_radio_esp32s31_coex::CoexError>
+    {
+        const COEX_LP_CLK_CONF: *const u32 = 0x2010_f008 as *const u32;
+        // SAFETY: this validation-only implementation runs under the
+        // workbench MMIO executor. Each volatile read intentionally mirrors
+        // one independent read in `coex_hw_timer_tick_get`.
+        let selector = unsafe { core::ptr::read_volatile(COEX_LP_CLK_CONF) };
+        // SAFETY: same validated MMIO word, deliberately sampled again.
+        let divider = unsafe { core::ptr::read_volatile(COEX_LP_CLK_CONF) };
+        open_esp_radio_esp32s31_coex::CoexTimerClock::from_register_images(
+            selector, divider, 40, true,
+        )
+    }
+}
+
+/// Compiled production-path probe for the complete `coex_hw_timer_set`
+/// transaction. The public vendor ABI is `(index, client, pti, latency,
+/// duration)`; notably, duration is written to the primary word before
+/// latency is written to the secondary word.
+#[unsafe(no_mangle)]
+#[inline(never)]
+pub extern "C" fn open_coex_trace_coex_hw_timer_set(
+    index: u32,
+    client: u32,
+    pti: u32,
+    latency: u32,
+    duration: u32,
+) {
+    use open_esp_radio_esp32s31_coex::{CoexClient, CoexPti, CoexTimerIndex, program_timer};
+
+    let Ok(index) = CoexTimerIndex::new(index as u8) else {
+        return;
+    };
+    let Ok(pti) = CoexPti::new(pti as u8) else {
+        return;
+    };
+    let client = if client == 0 {
+        CoexClient::Bluetooth
+    } else {
+        CoexClient::Wifi
+    };
+    let mut registers = open_esp_radio_esp32s31_registers::validation::radio_registers();
+    let mut clock = CoexProbeClock;
+    let _ = program_timer(
+        &mut registers,
+        &mut clock,
+        index,
+        client,
+        pti,
+        latency,
+        duration,
+    );
 }
 
 /// Compiled composition probe for the source-owned RX append transaction.
@@ -684,6 +795,62 @@ pub extern "C" fn open_libpp_tx_trace_hal_mac_txq_enable_register_slice(queue: u
     open_esp_radio_esp32s31_registers::validation::hal_mac_txq_enable_register_slice(
         &registers, queue,
     )
+}
+
+#[unsafe(no_mangle)]
+#[inline(never)]
+pub extern "C" fn open_libpp_tx_trace_hal_mac_tx_config_edca(
+    _vendor_config_address: u32,
+    queue: u32,
+    aifsn: u32,
+    contention_window: u32,
+    interface: u32,
+) -> u32 {
+    // The vendor side decodes these semantic arguments from its pointer-rich
+    // ABI object. The Rust probe receives the reviewed projection directly;
+    // every case keeps both representations and exact MMIO comparison proves
+    // that the projection agrees with the vendor object.
+    // SAFETY: this validation-only function is the sole user of the stolen
+    // peripheral in its isolated probe image.
+    let registers =
+        unsafe { open_esp_radio_esp32s31_registers::svd::WifiMacTxQueueControl::steal() };
+    open_esp_radio_esp32s31_registers::validation::hal_mac_tx_config_edca(
+        &registers,
+        queue,
+        aifsn as u8,
+        contention_window as u16,
+        interface as u8,
+    )
+}
+
+#[repr(C)]
+pub struct CanonicalTxBlockAck {
+    pub control: u8,
+    pub reserved: u8,
+    pub starting_sequence: u16,
+    pub bitmap_low: u32,
+    pub bitmap_high: u32,
+}
+
+#[unsafe(no_mangle)]
+#[inline(never)]
+pub extern "C" fn open_libpp_tx_trace_hal_mac_tx_get_blockack(
+    queue: u32,
+    output_address: u32,
+) -> u32 {
+    let payload =
+        open_esp_radio_esp32s31_registers::validation::hal_mac_tx_get_blockack(queue as u8)
+            .expect("profile constrains ordinary TX queue 0..=3");
+    let output = output_address as *mut CanonicalTxBlockAck;
+    // SAFETY: the verification profile supplies one initialized, writable
+    // twelve-byte output object for the duration of this call.
+    unsafe {
+        (*output).control = ((payload.control_and_sequence >> 16) & 0x0f) as u8;
+        (*output).starting_sequence = ((payload.control_and_sequence >> 4) & 0x0fff) as u16;
+        (*output).bitmap_low = payload.bitmap_low;
+        (*output).bitmap_high = payload.bitmap_high;
+    }
+    0
 }
 
 #[unsafe(no_mangle)]
@@ -1629,6 +1796,7 @@ pub fn retain_all_probes() {
     core::hint::black_box(open_phy_trace_iq_est_enable as *const ());
     core::hint::black_box(open_libpp_trace_hal_mac_interrupt_ret_get_event as *const ());
     core::hint::black_box(open_libpp_trace_hal_mac_interrupt_ret_clr_event as *const ());
+    core::hint::black_box(open_wifi_sta_trace_hal_disable_sta_beacon_filter as *const ());
     core::hint::black_box(open_libpp_power_irq_trace_hal_pwr_interrupt_get_event as *const ());
     core::hint::black_box(open_libpp_power_irq_trace_hal_pwr_interrupt_clr_event as *const ());
     core::hint::black_box(open_libpp_trace_wdev_process_fiq_mac_slice as *const ());
@@ -1640,6 +1808,11 @@ pub fn retain_all_probes() {
     core::hint::black_box(open_libpp_rx_trace_hal_mac_rx_get_last_dscr as *const ());
     core::hint::black_box(open_libpp_rx_trace_hal_mac_rx_is_dscr_reload as *const ());
     core::hint::black_box(open_libpp_rx_trace_hal_mac_rx_set_dscr_reload as *const ());
+    core::hint::black_box(open_coex_trace_coex_hw_timer_enable as *const ());
+    core::hint::black_box(open_coex_trace_coex_hw_timer_disable as *const ());
+    core::hint::black_box(open_coex_trace_coex_hw_timer_force as *const ());
+    core::hint::black_box(open_coex_trace_coex_hw_timer_unforce as *const ());
+    core::hint::black_box(open_coex_trace_coex_hw_timer_set as *const ());
     core::hint::black_box(open_libpp_rx_trace_wdev_append_rx_blocks as *const ());
     core::hint::black_box(open_libnet80211_trace_sta_join_state as *const ());
     core::hint::black_box(open_libpp_tx_trace_hal_mac_tx_set_cca as *const ());
@@ -1649,6 +1822,8 @@ pub fn retain_all_probes() {
     core::hint::black_box(open_libpp_tx_trace_hal_mac_set_txq_invalid as *const ());
     core::hint::black_box(open_libpp_tx_trace_hal_mac_txq_disable as *const ());
     core::hint::black_box(open_libpp_tx_trace_hal_mac_txq_enable_register_slice as *const ());
+    core::hint::black_box(open_libpp_tx_trace_hal_mac_tx_config_edca as *const ());
+    core::hint::black_box(open_libpp_tx_trace_hal_mac_tx_get_blockack as *const ());
     core::hint::black_box(
         open_libpp_power_trace_pwr_hal_set_mac_modem_beacon_miss_timeout as *const (),
     );

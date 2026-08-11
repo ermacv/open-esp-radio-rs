@@ -80,7 +80,7 @@ fn pp_post_semantics_require_the_exact_body_and_relocation_schema() {
         .expect("reviewed pp_post must declare its dispatch projection");
     assert_eq!(dispatch.mechanism, "internal-signal");
     assert_eq!(dispatch.execution_context, "unspecified");
-    assert_eq!(dispatch.receiver, None);
+    assert_eq!(dispatch.receiver, Some("esp32s31::pp-task"));
     assert_eq!(dispatch.argument_roles, PP_POST_EVENT_ROLES);
 
     let mut changed_body = pp_post_symbol();

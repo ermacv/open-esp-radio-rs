@@ -23,8 +23,8 @@ owned-ranges = ["radio"]
 output = "generated/reports/register-review.md"
 non-operational-functions = ["archive:register_dump"]
 linked-ir = [
-    "generated/findings/rom.ir.json",
-    "generated/findings/libraries.ir.json",
+    "generated/findings/rom.ir",
+    "generated/findings/libraries.ir",
 ]
 
 [registers.svd]
@@ -157,7 +157,7 @@ destination.
 ### Linked-IR enrichment
 
 The basic report needs only schema-v5 `mmio discover` facts, including exact
-instruction PCs for recovered direct accesses. Optional schema-v40
+instruction PCs for recovered direct accesses. Optional schema-v43
 `ir export` JSON reports add evidence that the artifact-wide MMIO pass does not
 carry: poll masks, direct branch predicates, producer-return chains and links
 from register bits to guarded semantic actions.
@@ -170,11 +170,11 @@ cargo vendor-binary-workbench ir export \
   --project verification/vendor/targets/esp32s31/vendor-project.toml \
   --run-spec /path/to/local.toml \
   --symbol-prefix phy_ --include-reachable \
-  --json-report verification/vendor/targets/esp32s31/generated/findings/phy.ir.json
+  --json-report verification/vendor/targets/esp32s31/generated/findings/phy.ir
 
 cargo vendor-binary-workbench registers review \
   --project verification/vendor/targets/esp32s31/vendor-project.toml \
-  --ir-report verification/vendor/targets/esp32s31/generated/findings/phy.ir.json
+  --ir-report verification/vendor/targets/esp32s31/generated/findings/phy.ir
 ```
 
 For a repeated workspace, prefer a configured `[[analysis.ir]]` profile and

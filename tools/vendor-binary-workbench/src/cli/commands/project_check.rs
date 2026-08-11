@@ -251,7 +251,7 @@ mod tests {
             StageReport {
                 name: "linked-ir".to_owned(),
                 status: "failed",
-                reason: Some("stale output /tmp/linked.ir.json".to_owned()),
+                reason: Some("stale output /tmp/linked.ir".to_owned()),
             },
             StageReport {
                 name: "function-review".to_owned(),
@@ -266,7 +266,7 @@ mod tests {
         ]);
         assert_eq!(issues.len(), 2);
         assert_eq!(issues[0].component, "linked-ir");
-        assert!(issues[0].reason.contains("/tmp/linked.ir.json"));
+        assert!(issues[0].reason.contains("/tmp/linked.ir"));
         assert_eq!(issues[1].status, "blocked");
     }
 

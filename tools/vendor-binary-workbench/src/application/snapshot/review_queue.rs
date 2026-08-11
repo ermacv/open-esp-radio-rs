@@ -24,20 +24,20 @@ pub(super) fn collect(
             return Vec::new();
         }
     };
-    let has_release_scopes = document.scopes.iter().any(|scope| scope.release);
+    let has_publication_scopes = document.scopes.iter().any(|scope| scope.publication);
     let mut queue = document
         .scopes
         .into_iter()
-        .filter(|scope| !has_release_scopes || scope.release)
+        .filter(|scope| !has_publication_scopes || scope.publication)
         .flat_map(|scope| {
             let scope_id = scope.id;
-            let release = scope.release;
+            let publication = scope.publication;
             scope
                 .review_queue
                 .into_iter()
                 .map(move |item| ReviewQueueSummary {
                     scope: scope_id.clone(),
-                    release,
+                    publication,
                     id: item.id,
                     kind: item.kind,
                     priority: item.priority,

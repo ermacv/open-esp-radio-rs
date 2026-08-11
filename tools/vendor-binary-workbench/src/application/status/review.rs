@@ -15,25 +15,27 @@ use crate::{
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct ScopeGate {
-    release_count: usize,
-    release_blocked: usize,
-    inventory_blocked: usize,
+    publication_count: usize,
+    replacement_qualified: usize,
+    replacement_blocked: usize,
+    analysis_inventory_blocked: usize,
 }
 
-fn scope_gate(states: impl IntoIterator<Item = (bool, bool)>) -> ScopeGate {
+fn scope_gate(states: impl IntoIterator<Item = (bool, bool, bool)>) -> ScopeGate {
     states.into_iter().fold(
         ScopeGate {
-            release_count: 0,
-            release_blocked: 0,
-            inventory_blocked: 0,
+            publication_count: 0,
+            replacement_qualified: 0,
+            replacement_blocked: 0,
+            analysis_inventory_blocked: 0,
         },
-        |mut gate, (release, blocked)| {
-            if release {
-                gate.release_count += 1;
-                gate.release_blocked += usize::from(blocked);
-            } else {
-                gate.inventory_blocked += usize::from(blocked);
+        |mut gate, (publication, qualified, inventory_complete)| {
+            if publication {
+                gate.publication_count += 1;
+                gate.replacement_qualified += usize::from(qualified);
+                gate.replacement_blocked += usize::from(!qualified);
             }
+            gate.analysis_inventory_blocked += usize::from(!inventory_complete);
             gate
         },
     )
@@ -65,18 +67,21 @@ fn scopes(context: &ProjectContext<'_>) -> Component {
     match crate::review_scopes::load_for_project(context.project) {
         Ok(document) => {
             let reports = document.scopes;
-            let gate = scope_gate(
-                reports
-                    .iter()
-                    .map(|report| (report.release, report.has_blockers())),
-            );
-            if gate.release_count == 0 {
+            let gate = scope_gate(reports.iter().map(|report| {
+                (
+                    report.publication,
+                    report.replacement_qualification
+                        == crate::review_scopes::ReplacementQualification::Qualified,
+                    report.analysis_inventory_complete,
+                )
+            }));
+            if gate.publication_count == 0 {
                 return Component::new("scopes", Readiness::Incomplete)
                     .detail("report", workspace.output.display().to_string())
                     .detail("count", reports.len())
-                    .diagnostic("no release review scopes are configured")
+                    .diagnostic("no publication review scopes are configured")
                     .next_action(format!(
-                        "configure [review].release-scopes in {}",
+                        "configure [review].publication-scopes in {}",
                         context.project_path.display()
                     ));
             }
@@ -84,7 +89,16 @@ fn scopes(context: &ProjectContext<'_>) -> Component {
                 .iter()
                 .map(|report| ReviewScopeDetail {
                     id: report.id.clone(),
-                    release: report.release,
+                    publication: report.publication,
+                    replacement_qualification: match report.replacement_qualification {
+                        crate::review_scopes::ReplacementQualification::NotPublished => {
+                            "not-published"
+                        }
+                        crate::review_scopes::ReplacementQualification::Qualified => "qualified",
+                        crate::review_scopes::ReplacementQualification::Blocked => "blocked",
+                    }
+                    .to_owned(),
+                    analysis_inventory_complete: report.analysis_inventory_complete,
                     profiles: report.profiles.clone(),
                     roots: report.roots,
                     functions: report.functions,
@@ -114,7 +128,7 @@ fn scopes(context: &ProjectContext<'_>) -> Component {
                 .collect::<Vec<_>>();
             let mut component = Component::new(
                 "scopes",
-                if gate.release_blocked != 0 {
+                if gate.replacement_blocked != 0 {
                     Readiness::Incomplete
                 } else {
                     Readiness::Ready
@@ -122,13 +136,18 @@ fn scopes(context: &ProjectContext<'_>) -> Component {
             )
             .detail("report", workspace.output.display().to_string())
             .detail("count", reports.len())
-            .detail("release_count", gate.release_count)
-            .detail("release_blocked", gate.release_blocked)
-            .detail("inventory_blocked", gate.inventory_blocked)
+            .detail("publication_count", gate.publication_count)
+            .detail("replacement_qualified", gate.replacement_qualified)
+            .detail("replacement_blocked", gate.replacement_blocked)
+            .detail(
+                "analysis_inventory_blocked",
+                gate.analysis_inventory_blocked,
+            )
             .detail("scopes", details);
-            if gate.release_blocked != 0 {
-                component = component
-                    .next_action("resolve blockers in the configured release review scopes");
+            if gate.replacement_blocked != 0 {
+                component = component.next_action(
+                    "qualify production replacements for the explicit roots of the blocked publication scopes",
+                );
             }
             component
         }
@@ -328,7 +347,7 @@ fn functions(context: &ProjectContext<'_>) -> Component {
     };
     let missing = reports
         .iter()
-        .filter(|(_, report)| !report.is_file())
+        .filter(|(_, report)| !report.is_dir())
         .count();
     if missing != 0 {
         return Component::new("functions", Readiness::Incomplete)
@@ -400,17 +419,27 @@ mod tests {
 
     #[test]
     fn artifact_inventory_blockers_do_not_gate_release_readiness() {
-        let gate = scope_gate([(false, true), (true, false), (false, true)]);
-        assert_eq!(gate.release_count, 1);
-        assert_eq!(gate.release_blocked, 0);
-        assert_eq!(gate.inventory_blocked, 2);
+        let gate = scope_gate([
+            (false, false, false),
+            (true, true, false),
+            (false, false, false),
+        ]);
+        assert_eq!(gate.publication_count, 1);
+        assert_eq!(gate.replacement_qualified, 1);
+        assert_eq!(gate.replacement_blocked, 0);
+        assert_eq!(gate.analysis_inventory_blocked, 3);
     }
 
     #[test]
     fn release_blockers_remain_gating() {
-        let gate = scope_gate([(true, false), (true, true), (false, true)]);
-        assert_eq!(gate.release_count, 2);
-        assert_eq!(gate.release_blocked, 1);
-        assert_eq!(gate.inventory_blocked, 1);
+        let gate = scope_gate([
+            (true, true, true),
+            (true, false, false),
+            (false, false, false),
+        ]);
+        assert_eq!(gate.publication_count, 2);
+        assert_eq!(gate.replacement_qualified, 1);
+        assert_eq!(gate.replacement_blocked, 1);
+        assert_eq!(gate.analysis_inventory_blocked, 2);
     }
 }

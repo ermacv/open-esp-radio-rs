@@ -34,7 +34,7 @@ sources = [\"{source}\"]\n\
 roots = \"all\"\n\
 include-reachable = true\n\
 entry-contract = \"none\"\n\
-output = \"generated/findings/{source}.ir.json\"\n\
+output = \"generated/findings/{source}.ir\"\n\
 pseudo-rust = \"generated/reports/{source}.pseudo.rs\"\n"
         ));
     }
@@ -42,7 +42,7 @@ pseudo-rust = \"generated/reports/{source}.pseudo.rs\"\n"
         options
             .sources
             .iter()
-            .map(|source| format!("generated/findings/{source}.ir.json")),
+            .map(|source| format!("generated/findings/{source}.ir")),
     );
     let profiles = quoted_list(options.sources.iter().cloned());
     output.push_str(&format!(

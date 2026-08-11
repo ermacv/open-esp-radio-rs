@@ -117,7 +117,7 @@ impl ProjectRegisterWorkspace {
                 .find(|range| range.contains(address) && end <= u64::from(range.end))
             else {
                 return Err(crate::Error::invalid(format!(
-                    "release scope MMIO {address:#010x}/{width} lies outside discovery ranges"
+                    "publication scope MMIO {address:#010x}/{width} lies outside discovery ranges"
                 )));
             };
             if !self.owned_ranges.contains(&range.name) {

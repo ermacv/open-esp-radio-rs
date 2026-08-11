@@ -3,7 +3,8 @@
 use std::collections::BTreeMap;
 
 use crate::{
-    BitSource, RV32_MODELED_ARGUMENT_COUNT, SECONDARY_CALL_RESULT_TOKEN_FLAG, SymbolicValue,
+    ALLOCATED_EXTERNAL_RESULT_TOKEN_FLAG, BitSource, RV32_MODELED_ARGUMENT_COUNT,
+    SECONDARY_CALL_RESULT_TOKEN_FLAG, SymbolicValue,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -73,7 +74,10 @@ fn source_word(group: BitGroup, arguments: &[String; RV32_MODELED_ARGUMENT_COUNT
         SourceWord::Read(token) => format!("read{token}"),
         SourceWord::MemoryRead(token) => format!("memory_read{token}"),
         SourceWord::CallResult(token) => call_result_name(token),
-        SourceWord::ExternalResult(token) => format!("external_result{token}"),
+        SourceWord::ExternalResult(token) => format!(
+            "external_result{}",
+            token & !ALLOCATED_EXTERNAL_RESULT_TOKEN_FLAG
+        ),
         SourceWord::ExternalResultHigh(token) => format!("external_result{token}_high"),
         SourceWord::ExternalOutput {
             call_token,
@@ -206,7 +210,8 @@ pub(super) fn render_value_scoped(
             table.id()
         )),
         SymbolicValue::ExternalResult(token) => {
-            if usize::try_from(*token).is_ok_and(|token| token < external_results) {
+            let token = *token & !ALLOCATED_EXTERNAL_RESULT_TOKEN_FLAG;
+            if usize::try_from(token).is_ok_and(|token| token < external_results) {
                 Ok(format!("external_result{token}"))
             } else {
                 Err(format!(
@@ -479,6 +484,7 @@ pub(super) fn render_value_scoped(
                         bit,
                         inverted,
                     } => {
+                        let call_token = call_token & !ALLOCATED_EXTERNAL_RESULT_TOKEN_FLAG;
                         if usize::try_from(call_token)
                             .ok()
                             .is_none_or(|token| token >= external_results)

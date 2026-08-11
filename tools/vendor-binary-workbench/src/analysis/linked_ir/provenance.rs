@@ -122,16 +122,19 @@ fn return_bit_descriptor(
             call_token,
             bit,
             inverted,
-        } => ReturnBitDescriptor {
-            kind: "external-result",
-            source_bit: bit,
-            inverted,
-            argument: None,
-            token: Some(call_token),
-            target: call_results.get(&call_token).cloned(),
-            address: None,
-            register: None,
-        },
+        } => {
+            let call_token = external_result_call_token(call_token);
+            ReturnBitDescriptor {
+                kind: "external-result",
+                source_bit: bit,
+                inverted,
+                argument: None,
+                token: Some(call_token),
+                target: call_results.get(&call_token).cloned(),
+                address: None,
+                register: None,
+            }
+        }
         BitSource::ExternalResultHigh {
             call_token,
             bit,

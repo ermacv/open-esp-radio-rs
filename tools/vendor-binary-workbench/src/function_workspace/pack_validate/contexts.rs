@@ -79,6 +79,8 @@ pub(super) fn validate_function(
             if reviewed.name.is_some()
                 || reviewed.role.is_some()
                 || reviewed.summary.is_some()
+                || !reviewed.preconditions.is_empty()
+                || !reviewed.paths.is_empty()
                 || !reviewed.contexts.is_empty()
             {
                 return Err(ValidationError::function(
@@ -139,9 +141,79 @@ pub(super) fn validate_function(
             }
             summary.reviewed_functions += usize::from(fact.is_root());
             summary.accepted_incomplete += usize::from(!fact.review_complete());
+            validate_reviewed_paths(reviewed)?;
         }
     }
     validate_contexts(reviewed, fact, summary)
+}
+
+fn validate_reviewed_paths(reviewed: &ReviewedFunction) -> ValidationResult<()> {
+    let mut preconditions = BTreeSet::new();
+    for precondition in &reviewed.preconditions {
+        if !preconditions.insert(precondition.id.as_str()) {
+            return Err(ValidationError::function(
+                reviewed,
+                "preconditions",
+                format!("duplicate reviewed precondition id {:?}", precondition.id),
+            ));
+        }
+        validate_id(&precondition.id, "precondition id")
+            .map_err(|message| ValidationError::function(reviewed, "preconditions", message))?;
+        for (field, value) in [
+            ("expression", precondition.expression.as_str()),
+            ("rationale", precondition.rationale.as_str()),
+        ] {
+            if value.trim().is_empty() || value.contains(['\r', '\n']) {
+                return Err(ValidationError::function(
+                    reviewed,
+                    "preconditions",
+                    format!(
+                        "precondition {} {field} must be one non-empty line",
+                        precondition.id
+                    ),
+                ));
+            }
+        }
+    }
+    let mut paths = BTreeSet::new();
+    for path in &reviewed.paths {
+        if !paths.insert(path.id.as_str()) {
+            return Err(ValidationError::function(
+                reviewed,
+                "paths",
+                format!("duplicate reviewed path id {:?}", path.id),
+            ));
+        }
+        validate_id(&path.id, "path id")
+            .map_err(|message| ValidationError::function(reviewed, "paths", message))?;
+        if !matches!(
+            path.class.as_str(),
+            "operational" | "diagnostic" | "timeout" | "error" | "recovery"
+        ) {
+            return Err(ValidationError::function(
+                reviewed,
+                "paths",
+                format!(
+                    "reviewed path {} has unsupported class {:?}",
+                    path.id, path.class
+                ),
+            ));
+        }
+        if [path.summary.as_str(), path.evidence.as_str()]
+            .iter()
+            .any(|value| value.trim().is_empty() || value.contains(['\r', '\n']))
+        {
+            return Err(ValidationError::function(
+                reviewed,
+                "paths",
+                format!(
+                    "reviewed path {} summary/evidence must be one non-empty line",
+                    path.id
+                ),
+            ));
+        }
+    }
+    Ok(())
 }
 fn validate_contexts(
     reviewed: &ReviewedFunction,

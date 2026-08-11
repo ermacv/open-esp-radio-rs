@@ -499,7 +499,7 @@ claims, validation, and presentation separate:
 | Module | Responsibility |
 | --- | --- |
 | `facts.rs` | Stable generated-fact model, multi-report loading and queries |
-| `facts/parse.rs` | Strict schema-v40 linked-IR projection, including indexed/dereferenced memory objects, site-bearing calls, typed diagnostics and guard expressions |
+| `facts/parse.rs` | Strict schema-v43 linked-IR projection, including indexed/dereferenced/allocation memory objects, site-bearing calls, typed diagnostics and guard expressions |
 | `facts/json.rs` | Low-level JSON shape, integer, address and digest readers |
 | `facts/validate.rs` | Cross-report identities, source ownership and field invariants |
 | `interface_links.rs` | Exact caller/site join from validated interface bindings to optional linked-IR CFG evidence |
@@ -548,7 +548,7 @@ project-profile generation and reusable artifact rendering are outside CLI:
 | `linked_ir_export.rs` | CLI-independent analysis and project-profile generation |
 | `linked_ir_export/pseudo.rs` | Pseudo-Rust artifact rendering |
 | `linked_ir_export/render_common.rs` | Shared guard/MMIO formatting and traversal |
-| `artifacts/linked_ir_document.rs` | Persistent schema-v40 Serde document |
+| `artifacts/linked_ir_document.rs` | Persistent schema-v43 Serde document |
 | `cli/commands/export_ir/human.rs` | Terminal presentation orchestration and one output-boundary write |
 | `cli/commands/export_ir/human/header.rs` | Project and artifact section |
 | `cli/commands/export_ir/human/functions/` | Local function facts and transitive effect sections |
@@ -557,7 +557,7 @@ project-profile generation and reusable artifact rendering are outside CLI:
 | `cli/commands/export_ir/human/summary.rs` | Aggregate report section |
 | `cli/commands/export_ir/tests.rs` | CLI artifact-value adaptation tests |
 
-Schema v40 serializes the typed `LinkedIrReport` model directly; the removed
+Schema v42 serializes the typed `LinkedIrReport` model directly; the removed
 schema-v31 handwritten renderer has no compatibility path. Renderers are
 consumers of `LinkedIrReport`; they must not independently
 recover calls, guards, MMIO fields, or semantic actions. This keeps JSON,

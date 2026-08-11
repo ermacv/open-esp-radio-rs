@@ -40,43 +40,32 @@ pub fn resolve_reference_trace(
     svd: &MmioMap,
     visiting: &mut BTreeSet<u32>,
 ) -> Result<FunctionAnalysis> {
-    resolve_reference_trace_with_budget(
-        symbol,
+    let context = ReferenceCalleeContext {
         symbols_by_address,
         relocated_calls,
         pointer_context,
-        specialized_arguments,
         svd,
-        visiting,
-        StructuralTraceBudget::UNBOUNDED,
-    )
+        budget: StructuralTraceBudget::UNBOUNDED,
+    };
+    resolve_reference_trace_with_budget(symbol, &context, specialized_arguments, visiting)
 }
 
 fn resolve_reference_trace_with_budget(
     symbol: &artifact::ArtifactSymbolDefinition,
-    symbols_by_address: &BTreeMap<u32, artifact::ArtifactSymbolDefinition>,
-    relocated_calls: &StructuralRelocatedCalls,
-    pointer_context: &StructuralPointerContext,
+    context: &ReferenceCalleeContext<'_>,
     specialized_arguments: Option<&Rv32CallArguments>,
-    svd: &MmioMap,
     visiting: &mut BTreeSet<u32>,
-    budget: StructuralTraceBudget,
 ) -> Result<FunctionAnalysis> {
-    if let Some(mut trace) = pointer_context
+    if let Some(mut trace) = context
+        .pointer_context
         .summary_hooks
-        .and_then(|hooks| (hooks.reference_intrinsic)(symbol, svd, pointer_context))
+        .and_then(|hooks| (hooks.reference_intrinsic)(symbol, context.svd, context.pointer_context))
     {
         if let Some(flow) = trace.reference_flow.take() {
             let original_flow = flow.clone();
             match compose_calls_in_reference_flow(
                 flow,
-                &ReferenceCalleeContext {
-                    symbols_by_address,
-                    relocated_calls,
-                    pointer_context,
-                    svd,
-                    budget,
-                },
+                context,
                 visiting,
                 &mut trace.reference_dependencies,
             ) {
@@ -102,11 +91,11 @@ fn resolve_reference_trace_with_budget(
     }
     let mut trace = trace_binary_symbol_bounded(
         symbol,
-        svd,
-        relocated_calls,
-        pointer_context,
+        context.svd,
+        context.relocated_calls,
+        context.pointer_context,
         specialized_arguments,
-        budget,
+        context.budget,
     )?;
     trace
         .blockers
@@ -134,22 +123,16 @@ fn resolve_reference_trace_with_budget(
     if trace.unresolved_branch.is_some() {
         match explore_reference_flow(
             symbol,
-            svd,
-            relocated_calls,
-            pointer_context,
+            context.svd,
+            context.relocated_calls,
+            context.pointer_context,
             specialized_arguments,
-            budget,
+            context.budget,
         )
         .and_then(|explored| {
             compose_calls_in_reference_flow(
                 explored.flow,
-                &ReferenceCalleeContext {
-                    symbols_by_address,
-                    relocated_calls,
-                    pointer_context,
-                    svd,
-                    budget,
-                },
+                context,
                 visiting,
                 &mut trace.reference_dependencies,
             )
@@ -197,14 +180,5 @@ fn resolve_reference_trace_with_budget(
         return Ok(trace);
     }
 
-    flatten_reference_trace(
-        trace,
-        symbols_by_address,
-        relocated_calls,
-        pointer_context,
-        specialized_arguments,
-        svd,
-        visiting,
-        budget,
-    )
+    flatten_reference_trace(trace, context, specialized_arguments, visiting)
 }

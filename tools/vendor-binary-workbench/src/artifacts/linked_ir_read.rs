@@ -1,8 +1,10 @@
 //! Strict typed consumer for the persistent linked-IR schema.
 
-mod schema;
+pub(super) mod schema;
 
-pub(crate) use schema::{LinkedIrStoredDocument, StoredCall, StoredMemoryObject};
+pub(crate) use schema::{
+    LinkedIrStoredDocument, StoredCall, StoredFunction, StoredMemoryObject, StoredMmioRegister,
+};
 
 use crate::Result;
 

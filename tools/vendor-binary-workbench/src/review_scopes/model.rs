@@ -33,16 +33,33 @@ pub(crate) struct ReviewQueueItem {
     pub(crate) message: String,
 }
 
+/// Qualification of the explicit Rust replacement boundary for this scope.
+///
+/// Reachable vendor helpers and their blockers remain analysis inventory;
+/// they do not require invented one-to-one Rust component identities.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum ReplacementQualification {
+    NotPublished,
+    Qualified,
+    Blocked,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ReviewScopeReport {
     pub(crate) id: String,
-    pub(crate) release: bool,
+    pub(crate) publication: bool,
+    pub(crate) replacement_qualification: ReplacementQualification,
+    pub(crate) analysis_inventory_complete: bool,
     pub(crate) profiles: Vec<String>,
     pub(crate) roots: usize,
     pub(crate) functions: usize,
     /// Distinct explicit roots that require reviewed Rust coverage.
     pub(crate) replacement_functions: usize,
+    /// Exact explicit scope roots requiring either verification evidence or a
+    /// reviewed feature-policy disposition.
+    pub(crate) replacement_function_keys: Vec<String>,
     pub(crate) function_identities: Vec<String>,
     pub(crate) function_keys: Vec<String>,
     pub(crate) complete_functions: usize,
@@ -72,13 +89,16 @@ pub(crate) struct ReviewScopeReport {
 }
 
 impl ReviewScopeReport {
-    pub(crate) fn has_blockers(&self) -> bool {
+    pub(crate) fn has_analysis_inventory_blockers(&self) -> bool {
         self.decode_blockers != 0
             || self.direct_blockers != 0
             || self.call_graph_blockers != 0
             || self.reference_blockers != 0
             || self.unresolved_calls != 0
-            || self.replacement_mismatches != 0
+    }
+
+    pub(crate) fn has_replacement_qualification_blockers(&self) -> bool {
+        self.replacement_mismatches != 0
             || self.replacement_incomplete != 0
             || self.replacement_unqualified != 0
             || self.replacement_uncovered != 0

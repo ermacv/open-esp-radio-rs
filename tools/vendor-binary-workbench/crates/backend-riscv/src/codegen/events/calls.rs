@@ -52,7 +52,9 @@ pub(super) fn render_event(
             .unwrap();
             match model.return_model {
                 ExternalReturnModel::Void | ExternalReturnModel::Unmodeled => {}
-                ExternalReturnModel::Constant(_) | ExternalReturnModel::SymbolicU32 => {
+                ExternalReturnModel::Constant(_)
+                | ExternalReturnModel::SymbolicU32
+                | ExternalReturnModel::AllocatedZeroed { .. } => {
                     writeln!(
                         output,
                         "{indent}let external_result{token} = external_outcome{token}.return_words[0];"

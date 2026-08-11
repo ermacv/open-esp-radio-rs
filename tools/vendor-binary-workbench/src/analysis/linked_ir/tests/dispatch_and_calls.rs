@@ -98,6 +98,59 @@ fn authoritative_link_unit_symbol_names_and_types_a_direct_external_call() {
 }
 
 #[test]
+fn unique_archive_origin_can_name_a_relaxed_internal_definition() {
+    let owner = symbol("vendor_init", 0x1000, vec![0x67, 0x80, 0x00, 0x00]);
+    let linked = symbol("pp_post", 0x2000, vec![0x67, 0x80, 0x00, 0x00]);
+    let hooks = Box::leak(Box::new(crate::RiscvSummaryHooks {
+        secondary_return_target: |_| false,
+        direct_semantic: |_| None,
+        direct_external_semantic: |_| None,
+        reference_intrinsic: |_, _, _| None,
+        standard_memory_intrinsic: |_, _| None,
+        wide_signed_divide: |_, _| None,
+    }));
+    let mut resolver = empty_resolver();
+    resolver.symbols = vec![owner.clone(), linked.clone()];
+    resolver.pointer_context.summary_hooks = Some(hooks);
+    resolver.register_projected_direct_semantic(&linked, &LINK_UNIT_DELAY_SEMANTIC);
+    let identities = IrIdentityCatalog::new(&resolver, None);
+    let mut calls = vec![LinkedCall {
+        kind: "internal",
+        target: identities.symbol(&linked),
+        site: Some(0x1004),
+        tail: false,
+        result_modeled: false,
+        execution_model: None,
+        semantics: None,
+        semantic_operation: None,
+        semantic_contract: None,
+        replacement_hint: None,
+        project_symbol: None,
+        project_candidates: Vec::new(),
+        trampoline: None,
+        argument_shapes: 1,
+        arguments: vec!["arg0".to_owned()],
+        argument_bindings: Vec::new(),
+        typed_arguments: Vec::new(),
+        guard_paths: None,
+    }];
+
+    annotate_direct_semantic_calls(&mut calls, &owner, &resolver, &identities);
+
+    assert_eq!(
+        calls[0].semantic_operation.as_deref(),
+        Some("time.blocking-delay")
+    );
+    assert_eq!(
+        calls[0]
+            .semantic_contract
+            .as_ref()
+            .map(|contract| contract.source),
+        Some("unique-reviewed-archive-origin")
+    );
+}
+
+#[test]
 fn event_dispatch_projection_assigns_reviewed_argument_roles() {
     let actions = vec![
         projected_semantic_action("wifi.internal-signal.post", Vec::new(), None),
@@ -266,6 +319,7 @@ fn direct_call_graph_survives_reference_summary_inlining() {
         )]),
         pointer_context: direct::StructuralPointerContext::default(),
         data_symbols: Vec::new(),
+        projected_direct_semantics: BTreeMap::new(),
     };
     let map = MmioMap {
         registers: Vec::new(),
@@ -635,6 +689,18 @@ fn pseudo_value_renders_register_images_as_read_modify_write_expressions() {
     };
 
     assert_eq!(pseudo_value(&value), "((read3 & 0xdfffffff) | 0x20000000)");
+}
+
+#[test]
+fn pseudo_value_hides_allocator_identity_flag() {
+    let value = SymbolicValue::ExternalResult(
+        open_radio_vendor_analysis_model::ALLOCATED_EXTERNAL_RESULT_TOKEN_FLAG | 7,
+    );
+    assert_eq!(pseudo_value(&value), "external7");
+
+    let bits = SymbolicValue::from_bits(value.bits());
+    assert!(pseudo_value(&bits).contains("external7"));
+    assert!(!pseudo_value(&bits).contains("107374"));
 }
 
 #[test]

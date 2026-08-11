@@ -78,7 +78,7 @@ callers authenticate inputs and bind them through an untracked project-local
 | `reference generate` / `generate-batch` | Generate fail-closed Rust reference programs | [Reference generation](docs/reference-generation.md) |
 | `verify source` / `verify inventory` / `verify evidence` | Apply behavioral gates, then review protected-run evidence without rewriting an accepted baseline | [Verification](docs/verification.md) |
 | `image audit-targets` | Reject calls into forbidden executable address ranges | This page |
-| `inspect` | Inspect artifacts and decoded functions | Run without subcommand options for syntax |
+| `inspect function` / `object` / `scope` | Read an indexed function, global object, or generated project scope without losing evidence at semantic blockers | [Focused investigation](docs/function-investigation.md) |
 | `tooling completions` / `manpage` | Generate shell integration and roff documentation from the canonical clap grammar | Run `tooling --help` |
 
 Internal ownership and dependency boundaries are described in
@@ -94,6 +94,8 @@ The policy for graph, debug, build, testing, solver, and multi-ISA dependencies
 is documented in [dependency and analysis-engine strategy](docs/dependency-strategy.md).
 Persistent evidence versions and ownership are listed in the
 [artifact schema index](docs/artifact-schemas.md).
+Required driver features close every explicit vendor transaction through the
+[feature qualification contract](docs/feature-qualification.md).
 Product priorities, acceptance criteria and unfinished functional work are
 tracked in the [product TODO](TODO.md).
 
@@ -155,7 +157,7 @@ cargo vendor-binary-workbench ir export \
   --symbol-prefix phy_ \
   --include-reachable \
   --pseudo-rust /tmp/libphy.pseudo.rs \
-  --json-report /tmp/libphy.ir.json
+  --json-report /tmp/libphy.ir
 ```
 
 Both outputs are intentionally best-effort and explicitly set

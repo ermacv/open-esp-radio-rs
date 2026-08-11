@@ -113,6 +113,9 @@ impl ResolutionNeeds {
             | Command::VerifyProfiles(_)
             | Command::InspectTrace(_)
             | Command::InspectCompare(_) => Self::new(false, true, false, true, true, true, true),
+            Command::InspectFunction(_) => Self::new(true, true, false, false, false, false, true),
+            Command::InspectObject(_) => Self::new(true, false, false, false, false, false, false),
+            Command::InspectScope(_) => Self::new(true, false, false, false, false, false, false),
             Command::VerifyContractChannel(_)
             | Command::VerifyContractRfInit(_)
             | Command::VerifyContractBluetoothTxPower(_)

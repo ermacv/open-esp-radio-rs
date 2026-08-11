@@ -5,21 +5,16 @@ use std::collections::BTreeSet;
 use crate::{Result, artifacts::StoredMemoryObject};
 
 use super::{
-    FunctionCallFact, FunctionContextFieldFact, FunctionDecodeBlockerFact, FunctionFact,
-    FunctionInputFact, FunctionMemoryFieldFact, FunctionMemoryObjectFact, ScenarioArgumentFact,
-    ScenarioMmioReadFact, ScenarioSuggestionFact, ScenarioSuggestionVariantFact,
+    FunctionCallFact, FunctionContextFieldFact, FunctionDecodeBlockerFact,
+    FunctionEventDispatchFact, FunctionFact, FunctionInputFact, FunctionMemoryFieldFact,
+    FunctionMemoryObjectFact, ScenarioArgumentFact, ScenarioMmioReadFact, ScenarioSuggestionFact,
+    ScenarioSuggestionVariantFact,
 };
 
-pub(super) fn parse_report(
+pub(super) fn parse_document(
     profile: &str,
-    input: &str,
+    document: crate::artifacts::LinkedIrStoredDocument,
 ) -> Result<(Vec<FunctionInputFact>, Vec<FunctionFact>)> {
-    let document = crate::artifacts::parse_linked_ir(input).map_err(|error| {
-        crate::Error::invalid(format!(
-            "function workspace requires a schema-v{} ir export report for profile {profile:?}: {error}",
-            crate::artifacts::LINKED_IR.version
-        ))
-    })?;
     let inputs = document
         .artifacts
         .into_iter()
@@ -99,7 +94,21 @@ pub(super) fn parse_report(
                     .map(|operation| operation.operation)
                     .collect(),
                 trampoline_calls: summary.trampoline_calls.len(),
-                event_dispatches: summary.event_dispatches.len(),
+                event_dispatches: summary
+                    .event_dispatches
+                    .into_iter()
+                    .map(|dispatch| FunctionEventDispatchFact {
+                        mechanism: dispatch.mechanism,
+                        execution_context: dispatch.execution_context,
+                        receiver: dispatch.receiver,
+                        interface_complete: dispatch.interface_complete,
+                        bindings: dispatch
+                            .bindings
+                            .into_iter()
+                            .map(|binding| (binding.role, binding.argument.value().to_owned()))
+                            .collect(),
+                    })
+                    .collect(),
                 scenario_suggestions: function
                     .scenario_suggestions
                     .into_iter()
@@ -203,6 +212,9 @@ fn memory_object_fact(object: StoredMemoryObject) -> FunctionMemoryObjectFact {
             argument,
             stride,
         },
+        StoredMemoryObject::ZeroedAllocation { call_token } => {
+            FunctionMemoryObjectFact::ZeroedAllocation { call_token }
+        }
     }
 }
 

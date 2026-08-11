@@ -1,6 +1,11 @@
 //! Machine-readable concrete equivalence profiles.
 
-use std::{collections::BTreeSet, fs, path::Path, sync::Arc};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fs,
+    path::Path,
+    sync::Arc,
+};
 
 use serde::Deserialize;
 
@@ -20,6 +25,7 @@ pub struct Profile {
     pub contract: ProfileContract,
     pub compare_return: bool,
     pub argument_ranges: Vec<ArgumentRange>,
+    pub mmio_domains: Vec<MmioDomain>,
     pub scenarios: Vec<NamedScenario>,
 }
 
@@ -28,6 +34,18 @@ pub struct ArgumentRange {
     pub index: usize,
     pub min: u32,
     pub max: u32,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct MmioDomain {
+    pub address: u32,
+    pub values: Vec<u32>,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct ProfileCoverageConstraint {
+    pub arguments: [Option<u32>; 8],
+    pub stable_words: BTreeMap<u32, u32>,
 }
 
 impl Profile {
@@ -41,6 +59,32 @@ impl Profile {
                 for value in range.min..=range.max {
                     let mut constraint = constraint;
                     constraint[range.index] = Some(value);
+                    expanded.push(constraint);
+                }
+            }
+            constraints = expanded;
+        }
+        constraints
+    }
+
+    /// Enumerate the reviewed finite input domain used by static coverage.
+    /// MMIO words listed here must also be present in concrete cases, so a
+    /// hardware selector invariant cannot silently hide an untested path.
+    pub fn coverage_constraints(&self) -> Vec<ProfileCoverageConstraint> {
+        let mut constraints = self
+            .coverage_argument_constraints()
+            .into_iter()
+            .map(|arguments| ProfileCoverageConstraint {
+                arguments,
+                stable_words: BTreeMap::new(),
+            })
+            .collect::<Vec<_>>();
+        for domain in &self.mmio_domains {
+            let mut expanded = Vec::new();
+            for constraint in constraints {
+                for value in &domain.values {
+                    let mut constraint = constraint.clone();
+                    constraint.stable_words.insert(domain.address, *value);
                     expanded.push(constraint);
                 }
             }
@@ -87,6 +131,8 @@ struct ProfileInput {
     compare_return: bool,
     #[serde(default)]
     argument_ranges: Vec<ArgumentRangeInput>,
+    #[serde(default)]
+    mmio_domains: Vec<MmioDomainInput>,
     #[serde(rename = "cases")]
     scenarios: Vec<ScenarioInput>,
 }
@@ -97,6 +143,13 @@ struct ArgumentRangeInput {
     index: usize,
     min: u32,
     max: u32,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct MmioDomainInput {
+    address: u32,
+    values: Vec<u32>,
 }
 
 #[derive(Clone, Copy, Deserialize)]
@@ -121,6 +174,15 @@ struct CallResponseInput {
     return_words: Vec<u32>,
     #[serde(default)]
     outputs: Vec<CallOutputInput>,
+    allocation: Option<CallAllocationInput>,
+}
+
+#[derive(Clone, Copy, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "kebab-case")]
+struct CallAllocationInput {
+    address: u32,
+    size_argument: u8,
+    capacity: u32,
 }
 
 #[derive(Clone, Copy, Deserialize)]
@@ -147,6 +209,12 @@ impl CallResponseInput {
         if self.return_words.len() > 2 {
             return Err(crate::Error::invalid(format!(
                 "scenario {scenario} {side} call {} declares more than RV32 a0/a1 return words",
+                self.symbol
+            )));
+        }
+        if self.allocation.is_some() && !self.return_words.is_empty() {
+            return Err(crate::Error::invalid(format!(
+                "scenario {scenario} {side} call {} allocation cannot also declare return words",
                 self.symbol
             )));
         }
@@ -183,6 +251,13 @@ impl CallResponseInput {
             crate::execution::ModeledCallResponse {
                 return_words,
                 outputs,
+                allocation: self
+                    .allocation
+                    .map(|allocation| crate::execution::ModeledAllocation {
+                        address: allocation.address,
+                        size_argument: allocation.size_argument,
+                        capacity: allocation.capacity,
+                    }),
             },
         ))
     }
@@ -257,6 +332,16 @@ impl ProfileInput {
             .map(ScenarioInput::finish)
             .collect::<Result<Vec<_>>>()?;
         validate_argument_domain(&self.name, &argument_ranges, &scenarios)?;
+        let mut mmio_domains = self
+            .mmio_domains
+            .into_iter()
+            .map(|domain| MmioDomain {
+                address: domain.address,
+                values: domain.values,
+            })
+            .collect::<Vec<_>>();
+        mmio_domains.sort_by_key(|domain| domain.address);
+        validate_coverage_domain(&self.name, &argument_ranges, &mmio_domains, &scenarios)?;
         Ok(Profile {
             name: self.name,
             vendor_source: self.vendor_source,
@@ -265,9 +350,91 @@ impl ProfileInput {
             contract: self.contract,
             compare_return: self.compare_return,
             argument_ranges,
+            mmio_domains,
             scenarios,
         })
     }
+}
+
+fn validate_coverage_domain(
+    profile: &str,
+    argument_ranges: &[ArgumentRange],
+    mmio_domains: &[MmioDomain],
+    scenarios: &[NamedScenario],
+) -> Result<()> {
+    const MAX_DOMAIN_CASES: usize = 4_096;
+
+    for pair in mmio_domains.windows(2) {
+        if pair[0].address == pair[1].address {
+            return Err(crate::Error::invalid(format!(
+                "profile {profile} repeats MMIO domain {:#010x}",
+                pair[0].address
+            )));
+        }
+    }
+    for domain in mmio_domains {
+        if domain.values.is_empty() {
+            return Err(crate::Error::invalid(format!(
+                "profile {profile} MMIO domain {:#010x} has no values",
+                domain.address
+            )));
+        }
+        let unique = domain.values.iter().copied().collect::<BTreeSet<_>>();
+        if unique.len() != domain.values.len() {
+            return Err(crate::Error::invalid(format!(
+                "profile {profile} MMIO domain {:#010x} repeats a value",
+                domain.address
+            )));
+        }
+    }
+
+    let stub = Profile {
+        name: String::new(),
+        vendor_source: String::new(),
+        vendor_symbol: String::new(),
+        rust_symbol: String::new(),
+        contract: ProfileContract::Scenario,
+        compare_return: false,
+        argument_ranges: argument_ranges.to_vec(),
+        mmio_domains: mmio_domains.to_vec(),
+        scenarios: Vec::new(),
+    };
+    let expected = stub.coverage_constraints();
+    if expected.len() > MAX_DOMAIN_CASES {
+        return Err(crate::Error::invalid(format!(
+            "profile {profile} combined argument/MMIO domain has {} cases; maximum is {MAX_DOMAIN_CASES}",
+            expected.len()
+        )));
+    }
+    for constraint in expected {
+        let covered = scenarios.iter().any(|scenario| {
+            argument_ranges.iter().all(|range| {
+                scenario.scenario.arguments.get(range.index).copied()
+                    == constraint.arguments[range.index]
+            }) && constraint
+                .stable_words
+                .iter()
+                .all(|(address, value)| scenario.scenario.mmio_initial.get(address) == Some(value))
+        });
+        if !covered {
+            let arguments = argument_ranges.iter().map(|range| {
+                format!(
+                    "a{}={:#x}",
+                    range.index,
+                    constraint.arguments[range.index].unwrap()
+                )
+            });
+            let words = constraint
+                .stable_words
+                .iter()
+                .map(|(address, value)| format!("mmio[{address:#010x}]={value:#010x}"));
+            return Err(crate::Error::invalid(format!(
+                "profile {profile} has no case for admissible coverage combination {}",
+                arguments.chain(words).collect::<Vec<_>>().join(", ")
+            )));
+        }
+    }
+    Ok(())
 }
 
 impl ScenarioInput {
@@ -448,6 +615,7 @@ fn validate_argument_domain(
         contract: ProfileContract::Scenario,
         compare_return: false,
         argument_ranges: ranges.to_vec(),
+        mmio_domains: Vec::new(),
         scenarios: Vec::new(),
     };
     for expected in profile_stub.coverage_argument_constraints() {

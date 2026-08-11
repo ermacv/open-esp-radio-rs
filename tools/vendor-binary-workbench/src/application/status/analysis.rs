@@ -123,7 +123,7 @@ fn linked_ir(context: &ProjectContext<'_>) -> Component {
         if contract.is_err() {
             invalid = true;
         }
-        let (output_status, summary, output_error) = if !profile.output.is_file() {
+        let (output_status, summary, output_error) = if !profile.output.is_dir() {
             incomplete = true;
             ("not-generated", None, None)
         } else {

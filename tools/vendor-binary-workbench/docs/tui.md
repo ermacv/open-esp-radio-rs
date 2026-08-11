@@ -22,7 +22,7 @@ and key hints without hiding a readiness state or exit key.
 | Overview | Lifecycle phases, readiness, component diagnostics |
 | Scopes | Release and review scopes, completeness, replacement gaps and exact function/MMIO membership |
 | Code | Generated executable-gap candidates, reviewed boundaries, artifact guards and control-flow evidence |
-| Functions | Recovered functions, review status, typed per-PC decode blockers, replay-required scenario candidates and pseudo-Rust |
+| Functions | Recovered functions, lossless body/CFG, reviewed path assumptions, typed per-PC blockers, replay-required scenarios and pseudo-Rust |
 | Registers | Resolved catalog plus lazy review/access/field/predicate/poll/semantic evidence |
 | Interfaces | Reviewed table slots plus unreviewed discovered slot evidence, ABI, semantics, execution models and sites |
 | Comparisons | Project profiles, concrete MATCH/DIFF/INCOMPLETE, first trace difference, artifact provenance, model evidence and blockers |
@@ -65,6 +65,10 @@ instruction is therefore not collapsed into the generic `analysis incomplete`
 state. Function search also matches blocker operations such as `flw` and
 classes such as `floating-point` or
 `zero-fill-or-illegal-trap` without loading the heavy detail.
+Selecting a function also loads the same project-aware report as
+`inspect function`: the complete relocation-aware instruction body remains
+visible after pseudo-Rust becomes incomplete, together with the proof ledger,
+raw archive origin, and reviewed preconditions/path classes.
 Register rows and heavyweight detail use the same arrangement. Selecting a
 register asks the worker for `register_detail(address)` once per snapshot
 generation. The detail pane shows name provenance, width, review state,
@@ -85,15 +89,16 @@ reviewed cross-links. Code, function, register, interface and comparison views a
 separate renderers; none performs project I/O or analysis.
 The terminal redraws only after input, resize or a worker result; the periodic
 worker poll does not repaint an unchanged frame.
-The Blockers view reads the generated review-scope report. Release scopes are
+The Blockers view reads the generated review-scope report. Publication scopes are
 selected by default, repeated diagnostics share one stable root ID, and Enter
 follows the first affected function when it exists. Priorities are review
 ordering, not proof results; the underlying typed diagnostic and its exact
 sites remain authoritative.
-The Scopes view is the entry point for release-oriented review. It shows the
-complete/total function count, review queue size, decode and call gaps,
-replacement coverage, register membership and the exact stable function
-identities stored in the generated scope artifact. Enter follows the first
+The Scopes view is the entry point for release-oriented review. It shows
+replacement qualification separately from analysis-inventory completeness, plus
+the review queue size, decode and call gaps, replacement coverage, register
+membership and the exact stable function identities stored in the generated
+scope artifact. Enter follows the first
 available member into Functions. The view does not rebuild reachability or
 infer scope membership independently from the CLI pipeline.
 Reviewed logical-type and field names are applied to the pseudo-Rust detail

@@ -230,6 +230,9 @@ pub(crate) enum LinkedMemoryObject {
         argument: u8,
         stride: i64,
     },
+    ZeroedAllocation {
+        call_token: u32,
+    },
 }
 
 impl LinkedMemoryObject {
@@ -263,6 +266,9 @@ impl LinkedMemoryObject {
                 object: Box::new(Self::from_root_ref(root, address_space)),
                 argument: *argument,
                 stride: *stride,
+            },
+            MemoryObjectRoot::ZeroedAllocation { call_token } => Self::ZeroedAllocation {
+                call_token: *call_token,
             },
         }
     }

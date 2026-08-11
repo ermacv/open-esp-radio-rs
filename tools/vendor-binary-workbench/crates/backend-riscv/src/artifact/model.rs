@@ -30,6 +30,42 @@ pub struct ArtifactDataSymbolDefinition {
     pub exported: bool,
 }
 
+/// Named static data object from an ELF image or relocatable archive member.
+///
+/// Archive members do not have a runtime address, so their stable identity is
+/// the member/section/symbol tuple plus the section-relative object offset.
+/// Initializer bytes are the uninterpreted object representation; relocations
+/// retain symbolic targets instead of pretending that archive layout is link
+/// truth.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ArtifactDataObjectDefinition {
+    pub member: Option<String>,
+    pub section: String,
+    pub name: String,
+    /// Other symbols at the exact same section offset, commonly compiler
+    /// generated `.LANCHOR*` relocation targets.
+    pub aliases: Vec<String>,
+    pub address: Option<u32>,
+    pub object_offset: u64,
+    pub size: u64,
+    pub writable: bool,
+    pub initialized: bool,
+    /// True when a zero-sized ELF anchor is the only identity for the
+    /// remaining section bytes.
+    pub synthetic_from_anchor: bool,
+    pub exported: bool,
+    pub initializer: Vec<u8>,
+    pub relocations: Vec<ArtifactDataObjectRelocation>,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct ArtifactDataObjectRelocation {
+    pub offset: u64,
+    pub elf_type: Option<u32>,
+    pub target: String,
+    pub addend: i64,
+}
+
 /// A human-reviewed function range inside an executable section.
 ///
 /// Offsets are section-relative so the identity remains stable for

@@ -48,7 +48,7 @@ Components and phases use five states:
 
 - `ready`: all configured evidence for that component is valid and current;
 - `inventory`: valid artifact-wide evidence has a non-gating manual-review
-  backlog; configured release scopes decide project readiness;
+  backlog; configured required features decide project readiness;
 - `incomplete`: a required input/output is missing, stale, or still unreviewed;
 - `not-configured`: the optional component does not belong to this project;
 - `invalid`: configured data exists but fails parsing, compatibility, or

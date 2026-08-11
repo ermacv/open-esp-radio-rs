@@ -69,7 +69,7 @@ sources = ["rom", "archive"]
 roots = "symbol-prefix"
 symbol-prefix = "phy_"
 include-reachable = true
-output = "generated/vendor.ir.json"
+output = "generated/vendor.ir"
 pseudo-rust = "generated/vendor.pseudo.rs"
 
 [registers]
@@ -79,7 +79,7 @@ owned-ranges = ["radio"]
 
 [registers.review]
 output = "generated/register-review.md"
-linked-ir = ["generated/vendor.ir.json"]
+linked-ir = ["generated/vendor.ir"]
 non-operational-functions = ["archive:register_dump"]
 
 [registers.svd]
@@ -116,7 +116,7 @@ output = "generated/function-review.md"
 
 [review]
 output = "generated/review-scopes.json"
-release-scopes = ["radio-init"]
+publication-scopes = ["radio-init"]
 
 [[review.scopes]]
 id = "radio-init"
@@ -178,7 +178,7 @@ match-floor = 2
             roots: crate::project_ir::ProjectIrRoots::SymbolPrefix("phy_".to_owned()),
             include_reachable: true,
             entry_contract: "none".to_owned(),
-            output: directory.join("generated/vendor.ir.json"),
+            output: directory.join("generated/vendor.ir"),
             pseudo_rust: Some(directory.join("generated/vendor.pseudo.rs")),
         }]
     );
@@ -190,7 +190,7 @@ match-floor = 2
             owned_ranges: vec!["radio".to_owned()],
             non_operational_functions: vec!["archive:register_dump".to_owned()],
             review_output: Some(directory.join("generated/register-review.md")),
-            review_ir_reports: vec![directory.join("generated/vendor.ir.json")],
+            review_ir_reports: vec![directory.join("generated/vendor.ir")],
             svd_output: Some(directory.join("generated/device.svd")),
             pac: Some(PacOutputSpec {
                 output: directory.join("generated/pac/src/lib.rs"),
@@ -224,16 +224,13 @@ match-floor = 2
     );
     assert_eq!(
         project.function_ir_reports().unwrap(),
-        [(
-            "vendor".to_owned(),
-            directory.join("generated/vendor.ir.json")
-        )]
+        [("vendor".to_owned(), directory.join("generated/vendor.ir"))]
     );
     assert_eq!(
         project.review,
         Some(ReviewWorkspaceSpec {
             output: directory.join("generated/review-scopes.json"),
-            release_scopes: vec!["radio-init".to_owned()],
+            publication_scopes: vec!["radio-init".to_owned()],
             scopes: vec![ReviewScopeSpec {
                 id: "radio-init".to_owned(),
                 profiles: vec!["vendor".to_owned()],

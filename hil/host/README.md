@@ -1,16 +1,34 @@
-# HIL host fixtures
+# HIL host
 
-`runner/` owns unprivileged scenario orchestration and typed UART capture.
-`linux-net/` owns the minimal privileged host networking operations required
-by those scenarios. Neither directory contains reusable driver behaviour.
+`runner/` owns the typed CLI, scenario catalog, build/flash orchestration and
+UART evidence. `linux-net/` contains only privileged fixture operations.
 
-`../local.toml` owns all machine-local values. The runner learns the target
-address from typed `NetworkReady` evidence and the reverse-flow host address
-from the kernel route to that target. RX qualification captures the same UDP
-session at the OpenWrt DSA ingress and Wi-Fi egress and rejects SSH loss or
-capture drops. DSA ingress is diagnostic because switch offload can bypass the
-host packet socket; Wi-Fi egress is the exact AP admission edge.
+Public commands:
 
-The installer derives the repository root from its own location and installs
-the already-built HIL runner with only `cap_net_raw`. No checkout path is
-embedded in the privileged helper.
+```console
+cargo hil doctor
+cargo hil scenario list
+cargo hil scenario validate [id]
+cargo hil image build|flash <boot-smoke|qualification|diagnostic-task-poll|diagnostic-rx-delivery>
+cargo hil device status
+cargo hil run <scenario-id>
+cargo hil run-all [--tag qualification]
+```
+
+Scenarios are versioned TOML files in `hil/scenarios`; they contain workload,
+isolation and acceptance criteria, never serial paths or secrets. Machine-local
+device, station and OpenWrt values live only in mode-0600 `hil/local.toml`.
+
+`run-all` groups scenarios by image class, so changing UDP/TCP direction or
+rates does not rebuild or reflash firmware. Independent scenarios reset the
+target. A future multi-cell workload may opt into one-boot `matrix-session`;
+ordinary scenario files must use `reset`.
+
+Each run owns one directory under `target/hil/esp32s31/runs/<id>/` containing
+`resolved-scenario.json`, `result.json`, `uart.log`, `protocol.jsonl` and its
+workload report. Reconnect stores UART/protocol pairs per boot. Runner output
+is JSON on stdout; diagnostics and progress belong on stderr.
+
+`boot-smoke` intentionally precedes the radio protocol and proves only runtime
+relocation plus one Embassy timer wake. It uses its single fixed PASS record;
+all radio, lifecycle and traffic qualification is typed protocol evidence.

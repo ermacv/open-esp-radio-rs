@@ -1,9 +1,13 @@
 #![forbid(unsafe_code)]
 
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::Channel};
-use open_esp_radio_hil_protocol::{Direction, RxDeliveryEvidence, TransportEvidence};
+use open_esp_radio_hil_protocol::{
+    Direction, RadioEvidence, RxDeliveryEvidence, TransportEvidence,
+};
 
-use crate::console::{ActiveSession, complete_session, receive_session_start};
+use crate::console::{ActiveSession, complete_session};
+
+use super::SessionChannel;
 
 pub(in crate::product_hil) type BidirectionalSessionChannel =
     Channel<CriticalSectionRawMutex, ActiveSession, 1>;
@@ -21,17 +25,19 @@ pub(in crate::product_hil) struct OpenRadioBidirectionalResult {
     session_id: u64,
     direction: OpenRadioBidirectionalDirection,
     evidence: TransportEvidence,
+    radio: Option<RadioEvidence>,
     rx_delivery: Option<RxDeliveryEvidence>,
     passed: bool,
 }
 
 pub(in crate::product_hil) async fn run_open_radio_bidirectional_session_coordinator(
+    input: &'static SessionChannel,
     rx_sessions: &'static BidirectionalSessionChannel,
     tx_sessions: &'static BidirectionalSessionChannel,
     results: &'static BidirectionalResultChannel,
 ) -> ! {
     loop {
-        let session = receive_session_start().await;
+        let session = input.receive().await;
         match session.config.direction {
             Direction::Rx => {
                 rx_sessions.send(session).await;
@@ -89,6 +95,7 @@ pub(in crate::product_hil) async fn run_open_radio_bidirectional_session_coordin
                 complete_session(
                     session.session_id,
                     evidence,
+                    merge_radio(first.radio, second.radio),
                     if first.direction == OpenRadioBidirectionalDirection::Rx {
                         first.rx_delivery
                     } else {
@@ -113,6 +120,7 @@ async fn complete_single_direction(
     complete_session(
         session_id,
         evidence,
+        result.radio,
         result.rx_delivery,
         valid && result.passed,
     )
@@ -124,6 +132,7 @@ pub(in crate::product_hil) async fn complete_open_radio_bidirectional_direction(
     session_id: u64,
     direction: OpenRadioBidirectionalDirection,
     evidence: TransportEvidence,
+    radio: Option<RadioEvidence>,
     rx_delivery: Option<RxDeliveryEvidence>,
     passed: bool,
 ) {
@@ -132,8 +141,26 @@ pub(in crate::product_hil) async fn complete_open_radio_bidirectional_direction(
             session_id,
             direction,
             evidence,
+            radio,
             rx_delivery,
             passed,
         })
         .await;
+}
+
+fn merge_radio(
+    first: Option<RadioEvidence>,
+    second: Option<RadioEvidence>,
+) -> Option<RadioEvidence> {
+    match (first, second) {
+        (None, None) => None,
+        (first, second) => Some(RadioEvidence {
+            rx: first
+                .and_then(|value| value.rx)
+                .or_else(|| second.and_then(|value| value.rx)),
+            tx: first
+                .and_then(|value| value.tx)
+                .or_else(|| second.and_then(|value| value.tx)),
+        }),
+    }
 }

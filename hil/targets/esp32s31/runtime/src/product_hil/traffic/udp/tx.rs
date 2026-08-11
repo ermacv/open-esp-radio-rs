@@ -6,13 +6,13 @@ use embassy_time::{Duration, Instant, Timer};
 use open_esp_radio_esp32s31_embassy_wifi::Esp32s31QualificationSnapshot;
 use open_esp_radio_hil_esp32s31_telemetry::aggregate_tx::AggregateTxCounters;
 use open_esp_radio_hil_protocol::{
-    Completion as HilCompletion, Direction as HilDirection, Event as HilEvent, ServiceInfo,
-    SessionReady, Transport as HilTransport, TransportEvidence,
+    Completion as HilCompletion, Direction as HilDirection, Event as HilEvent, RadioEvidence,
+    ServiceInfo, SessionReady, Transport as HilTransport, TransportEvidence, TxRadioEvidence,
 };
 
 use super::UdpSocketBuffers;
 use crate::{
-    console::{complete_session, emergency_log, publish_event_reliably, receive_session_start},
+    console::{emergency_log, publish_event_reliably},
     product_hil::traffic::{
         BidirectionalResultChannel, BidirectionalSessionChannel, OpenRadioBidirectionalDirection,
         complete_open_radio_bidirectional_direction, log_open_radio_ampdu_interval,
@@ -21,12 +21,9 @@ use crate::{
 };
 
 #[derive(Clone, Copy)]
-pub(in crate::product_hil) enum UdpTxSessionSource {
-    Console,
-    Bidirectional {
-        sessions: &'static BidirectionalSessionChannel,
-        results: &'static BidirectionalResultChannel,
-    },
+pub(in crate::product_hil) struct UdpTxSessionSource {
+    pub sessions: &'static BidirectionalSessionChannel,
+    pub results: &'static BidirectionalResultChannel,
 }
 
 #[derive(Clone, Copy)]
@@ -90,14 +87,11 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
     .await;
     emergency_log(format_args!(
         "OPEN_RADIO_PHY_HIL result=PASS stage=udp-tx-ready \
-         source_port={} queue={} payload_capacity={} tx_mode=ampdu runtime_session=1",
+         source_port={} queue={} payload_capacity={} tx_mode=ampdu session_protocol=required",
         config.source_port, config.queue_depth, config.payload_capacity,
     ));
     loop {
-        let session = match config.session_source {
-            UdpTxSessionSource::Console => receive_session_start().await,
-            UdpTxSessionSource::Bidirectional { sessions, .. } => sessions.receive().await,
-        };
+        let session = config.session_source.sessions.receive().await;
         wait_session_link_requirements(session.config.link_requirements, aggregate_counters).await;
         publish_event_reliably(
             session.session_id,
@@ -140,12 +134,8 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
         // The RX sibling can finish on the host terminal datagram while a
         // target aggregate is still in flight, so sampling there can tear one
         // logical publication across independent diagnostic atomics.
-        let aggregate_start = match config.session_source {
-            UdpTxSessionSource::Bidirectional { .. }
-                if session.config.direction == HilDirection::Rx =>
-            {
-                None
-            }
+        let aggregate_start = match session.config.direction {
+            HilDirection::Rx => None,
             _ => Some(aggregate_counters.snapshot()),
         };
         let mut next_send = started;
@@ -217,6 +207,8 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
             tx_vector.aggregate_rate_kbps,
             config.code_address,
         ));
+        let aggregate = aggregate_start
+            .map(|earlier| aggregate_counters.snapshot().wrapping_delta_since(earlier));
         if let Some(aggregate_start) = aggregate_start {
             log_open_radio_ampdu_interval(aggregate_start, aggregate_counters);
         }
@@ -228,21 +220,60 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
             elapsed_micros: elapsed_us,
             transport_errors: send_errors,
         };
-        match config.session_source {
-            UdpTxSessionSource::Bidirectional { results, .. } => {
-                complete_open_radio_bidirectional_direction(
-                    results,
-                    session.session_id,
-                    OpenRadioBidirectionalDirection::Tx,
-                    evidence,
-                    None,
-                    send_errors == 0,
-                )
-                .await;
-            }
-            UdpTxSessionSource::Console => {
-                complete_session(session.session_id, evidence, None, send_errors == 0).await;
-            }
-        }
+        let radio = aggregate.map(|aggregate| RadioEvidence {
+            rx: None,
+            tx: Some(TxRadioEvidence {
+                bandwidth_mhz: tx_vector.bandwidth_mhz,
+                aggregate_rate_kbps: u32::try_from(tx_vector.aggregate_rate_kbps)
+                    .unwrap_or(u32::MAX),
+                aggregates_prepared: aggregate.aggregates_prepared,
+                aggregate_publications: aggregate.aggregate_publications,
+                aggregates_completed: aggregate.aggregates_completed,
+                subframes_prepared: aggregate.prepared_subframe_total(),
+                subframes_acknowledged: aggregate.subframes_acknowledged,
+                individual_retries: aggregate.individual_retries,
+                hardware_timeouts: aggregate.hardware_timeouts,
+                collisions: aggregate.collisions,
+                minimum_subframes: aggregate.minimum_prepared_subframes().unwrap_or(0),
+                maximum_subframes: aggregate.maximum_prepared_subframes().unwrap_or(0),
+                prepared_histogram: [
+                    aggregate.prepared_in_range(1, 1),
+                    aggregate.prepared_in_range(2, 3),
+                    aggregate.prepared_in_range(4, 7),
+                    aggregate.prepared_in_range(8, 15),
+                    aggregate.prepared_in_range(16, 23),
+                    aggregate.prepared_in_range(24, 30),
+                    aggregate.prepared_in_range(31, 31),
+                    aggregate.prepared_in_range(32, 32),
+                ],
+                stopped_at_frame_limit: aggregate.stopped_at_frame_limit,
+                stopped_at_capacity_limit: aggregate.stopped_at_capacity_limit,
+                stopped_on_empty_queue: aggregate.stopped_on_empty_queue,
+                preparation_micros: aggregate.preparation_micros,
+                publication_micros: aggregate.publication_program_micros,
+                exchange_micros: aggregate.exchange_micros,
+                block_ack_samples: aggregate.block_ack_samples,
+                block_ack_received: aggregate.block_ack_received,
+                success_without_block_ack: aggregate.success_without_block_ack,
+                nonzero_block_ack_control: aggregate.nonzero_block_ack_control,
+                full_block_ack: aggregate.full_block_ack,
+                partial_block_ack: aggregate.partial_block_ack,
+                empty_block_ack: aggregate.empty_block_ack,
+                tx_irq_epochs: aggregate.tx_irq_epochs,
+                tx_irq_service_samples: aggregate.tx_irq_service_samples,
+                tx_irq_clock_skew_samples: aggregate.tx_irq_clock_skew_samples,
+                tx_publication_to_irq_samples: aggregate.tx_publication_to_irq_samples,
+            }),
+        });
+        complete_open_radio_bidirectional_direction(
+            config.session_source.results,
+            session.session_id,
+            OpenRadioBidirectionalDirection::Tx,
+            evidence,
+            radio,
+            None,
+            send_errors == 0,
+        )
+        .await;
     }
 }

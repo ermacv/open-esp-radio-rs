@@ -3,17 +3,6 @@ use std::{env, path::PathBuf};
 const BIN: &str = "open-esp-radio-hil-esp32s31-runtime";
 
 fn main() {
-    // The product HIL uses compile-time switches only where a workload changes
-    // static socket-buffer geometry. Credentials and network policy are sent
-    // at runtime and must not affect image identity.
-    for variable in [
-        "OPEN_RADIO_BIDIRECTIONAL_BENCH",
-        "OPEN_RADIO_TCP_BENCH",
-        "OPEN_RADIO_TX_BENCH",
-    ] {
-        println!("cargo:rerun-if-env-changed={variable}");
-    }
-
     let manifest_dir = PathBuf::from(
         env::var_os("CARGO_MANIFEST_DIR").expect("Cargo provides CARGO_MANIFEST_DIR"),
     );

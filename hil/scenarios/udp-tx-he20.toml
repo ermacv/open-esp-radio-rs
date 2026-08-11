@@ -1,0 +1,19 @@
+schema = 1
+id = "udp-tx-he20"
+description = "Sustained HE20 UDP station-to-host transmission"
+image = "qualification"
+isolation = "reset"
+tags = ["qualification", "udp", "station"]
+
+[workload]
+kind = "udp"
+direction = "tx"
+duration_seconds = 16
+tx_rate_bps = 80000000
+payload_bytes = 1472
+phy = "he20"
+
+[criteria]
+exact_delivery = true
+minimum_tx_bps = 70000000
+require_no_beacon_loss = true

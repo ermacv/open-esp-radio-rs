@@ -61,8 +61,8 @@ reason = "role epoch future retains station or monitor return ownership"
 [[reviewed_frames]]
 function_contains = "::product_hil::run::{closure#0}"
 source_ends_with = "hil/targets/esp32s31/runtime/src/product_hil.rs"
-max_bytes = 14336
-reason = "HIL root future assembles product-owned static resources once"
+max_bytes = 16384
+reason = "HIL root performs the reviewed one-time radio start future (16,256 bytes) before transferring every owner into static tasks"
 
 [[reviewed_frames]]
 function_contains = "ProductionStationEnginePort<"
@@ -97,5 +97,11 @@ reason = "station task future retains lifecycle command and returned owner state
 [[reviewed_frames]]
 function_contains = "EmbassyWifiSupervisorTask<"
 source_ends_with = "driver/radio/src/embassy_supervisor.rs"
+max_bytes = 11264
+reason = "radio supervisor task retains the current affine Wi-Fi role owner including the AP-capable role union"
+
+[[reviewed_frames]]
+function_contains = "TaskStorage<open_esp_radio_hil_esp32s31_runtime"
+source_ends_with = "embassy-executor-0.10.0/src/raw/mod.rs"
 max_bytes = 10240
-reason = "radio supervisor task retains the current affine Wi-Fi role owner"
+reason = "static Embassy storage owns the Wi-Fi role dispatcher future; it is not allocated on either CPU stack"

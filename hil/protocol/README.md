@@ -1,70 +1,55 @@
-# HIL control protocol
+# HIL protocol v25
 
-`open-esp-radio-hil-protocol` is the shared host/target wire model. Source
-types and `PROTOCOL_VERSION` are authoritative; this file records invariants.
-
-```text
-00 00 | COBS(postcard(Envelope) || CRC32C) | 00
-```
-
-Every envelope carries protocol version, boot ID, message sequence, session
-ID and request ID. CRC is checked before decoding. Text output is diagnostic
-only and is never accepted as lifecycle or performance evidence.
-
-Boot:
+Source types are authoritative. A frame is:
 
 ```text
-reset -> Hello/Capabilities -> WaitingForNetwork
-      <- optional startup-artifact chunks
-      <- ProvisionNetwork(credentials, IPv4 policy)
-      -> Idle -> NetworkReady(address) -> ServiceReady
+00 00 | COBS(fixed-header | postcard(body) | CRC32C) | 00
 ```
 
-Credentials and IPv4 policy are runtime inputs. Credentials are bounded,
-redacted, never echoed and cleared after PMK derivation. Startup artifacts are
-opaque chunked byte strings with transport CRC; the ESP32-S31 adapter uses one
-for retained PHY calibration. The target never persists it to NVS/flash.
+The 34-byte little-endian header contains magic `ORHL`, framing version,
+command/event kind, protocol version, boot ID, message sequence, session ID,
+request ID and payload length. CRC covers header and body. A wrong kind or
+version is rejected before postcard decoding. Host and target treat decode
+errors, sequence gaps and bounded-queue loss as protocol failure.
 
-Traffic sessions use one correlated state machine:
+Boot is role-neutral:
 
 ```text
-Configure -> Configured -> Arm -> Armed -> Start
-          -> SessionReady(direction) -> Running -> Draining
-          -> typed Evidence -> Finished(CRC) -> AcknowledgeResult -> Idle
+Hello -> WaitingForInitialization
+      <- optional calibration chunks
+      <- Initialize(IPv4 policy)
+      -> Initialized + WifiIdle
+      <- StartStation(credentials) | ScanWifi | StartMonitor | CaptureMonitor
 ```
 
-UDP evidence accounts for bytes, datagrams, loss, duplication and ordering in
-each direction. TCP evidence accounts for bytes and EOF-completed streams.
-ICMP records response latency. Full duplex requires both directional readiness
-events before host traffic starts.
+Credentials exist only in `StartStation`, are bounded/redacted/zeroized and
+never enter scenario files or logs. Calibration bytes are opaque, chunked and
+CRC-protected; the host persists them, never target NVS/flash.
 
-The explicit RX-delivery profile additionally reconciles post-BlockAck
-reorder, network enqueue and UDP consumption, and correlates late UDP units
-with MAC sequence order. Any missing, duplicated or reordered unit remains a
-failed exact-delivery result even when later stages match.
+Traffic uses one state machine for UDP/TCP and RX/TX/bidirectional:
 
-Wi-Fi lifecycle commands acknowledge admission first and publish a separate
-correlated completion only after the production typestate transition returns:
+```text
+Configure -> Arm -> Start -> SessionReady -> Evidence -> Finished(CRC)
+          -> AcknowledgeResult -> Idle
+```
 
-- `CycleStationEpoch`: stopped connected epoch, finite rescan/rejoin and new
-  connected generation;
-- `StopStation` / `StartStation`: `Station <-> Idle`;
-- `ScanWifi`: finite `Idle -> Scan -> Idle` plus a compact scan summary;
-- `StartMonitor` / `StopMonitor`: `Idle <-> Monitor` plus capture counts;
-- `StartAccessPoint` / `StopAccessPoint`: bounded WPA2-Personal
-  `Idle <-> AccessPoint`; availability is a separate advertised capability;
-- unsolicited lifecycle: connected, peer loss, attempt failure and retry
-  exhaustion.
+Evidence is typed. Every session includes transport, UART link health and CPU
+stack watermarks. UDP adds the radio facts needed for qualification; the RX
+diagnostic image also adds delivery-frontier evidence. Detailed histograms and
+timings remain text diagnostics and cannot establish readiness or completion.
 
-`QueryStackUsage` returns correlated boot-lifetime CPU0/CPU1 high-water marks
-only while the session state is idle. The host rejects either core below the
-target policy; diagnostic text is never stack evidence.
+An uncertain host response is resolved without guessing:
 
-The HIL reports only facts visible at the public boundary. Returning
-`WifiIdle` proves the driver's quiescence contract; the protocol does not
-invent separate PAC, IRQ or DMA flags which the application cannot observe.
+```text
+GetStatus -> OperationStatus
+ReplayResult | Cancel (before Start) | Recover (terminal state)
+```
 
-One target task owns USB RX/TX. Radio/network paths never wait for UART; typed
-events use bounded queues or retained snapshots. One host worker owns reset,
-framing and request correlation. Firmware publishes capabilities, never
-expected hashes, ELF paths, vendor ABI versions or register layouts.
+Target event sequence continuity and both endpoint decoder counters are part
+of the result contract. `protocol.jsonl` contains decoded target events plus a
+final link-health record; commands are omitted because they can carry secrets.
+
+Wi-Fi commands admit only operations valid for the current `WifiIdle`,
+`WifiStation` or `WifiMonitor` owner. Admission and completion are separate,
+request-correlated events. AP wire types remain unavailable until the target
+advertises a complete AP implementation.

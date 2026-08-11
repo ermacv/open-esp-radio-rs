@@ -7,6 +7,7 @@ the radio driver.
 ```text
 hil/
 ├── protocol/          host/target command and telemetry wire protocol
+├── scenarios/         versioned, non-secret host workloads and criteria
 ├── host/
 │   ├── runner/        build, flash and scenario orchestration
 │   └── linux-net/     privileged Linux AP/monitor fixture
@@ -18,9 +19,8 @@ Target firmware lives under `hil/targets/<chip>`. Dated results live under
 `qualification/targets/esp32s31/records`; their contents retain the paths and
 commands of the revision they measured.
 
-The isolated vendor-linked oracle firmware is a verification input under
-`verification/vendor/targets/esp32s31/oracle-firmware`; HIL only provides its
-explicit build/flash orchestration.
+Vendor-linked oracles remain isolated under `verification/vendor`; they are
+not HIL scenarios or runner commands.
 
 Run the host interface through the workspace alias:
 

@@ -8,6 +8,10 @@ use std::{
     process::{Command, Stdio},
 };
 
+use clap::{Parser, Subcommand};
+use serde::Serialize;
+use sha2::{Digest, Sha256};
+
 mod bidirectional;
 mod controlled_ap;
 mod fixture_lock;
@@ -16,9 +20,9 @@ mod lab_config;
 mod openwrt_fixture;
 mod paced_tcp;
 mod paced_udp;
-mod packet_socket;
 mod rx_delivery;
 mod rx_traffic;
+mod scenario;
 mod stack_audit;
 mod startup_artifact;
 mod station_ap_absence;
@@ -26,7 +30,6 @@ mod station_ap_loss;
 mod station_lifecycle;
 mod tcp_traffic;
 mod traffic_capture;
-mod trigger;
 mod tx_traffic;
 mod udp_socket;
 mod wifi_capture;
@@ -50,7 +53,6 @@ const QUALIFIED_PROFILE: &str = "psram-code-psram-data";
 const TARGET: &str = "riscv32imafc-unknown-none-elf";
 const RUNTIME_BIN: &str = "open-esp-radio-hil-esp32s31-runtime";
 const BOOTSTRAP_BIN: &str = "open-esp-radio-hil-esp32s31-bootstrap";
-const ORACLE_BIN: &str = "open-esp-radio-vendor-oracle-hil-esp32s31";
 const RUNTIME_MAGIC: u32 = 0x3247_5453;
 const RUNTIME_CRC_OFFSET: usize = 40;
 const RUNTIME_HEADER_BYTES: usize = 44;
@@ -59,12 +61,6 @@ const OTA_SELECTOR_OFFSET: u32 = 0xd000;
 const OTA_0_OFFSET: u32 = 0x1_0000;
 const OTA_DATA_SIZE: usize = 0x2000;
 
-const SCENARIO_ENVIRONMENT: &[&str] = &[
-    "OPEN_RADIO_BIDIRECTIONAL_BENCH",
-    "OPEN_RADIO_TX_BENCH",
-    "OPEN_RADIO_TCP_BENCH",
-];
-
 fn main() {
     if let Err(error) = run() {
         eprintln!("error: {error}");
@@ -72,132 +68,131 @@ fn main() {
     }
 }
 
-fn run() -> Result<()> {
-    let root = repository_root()?;
-    let (lab_path, raw_arguments) = extract_lab_config_argument(env::args().skip(1).collect())?;
-    let mut arguments = raw_arguments.into_iter();
-    match arguments.next().as_deref() {
-        Some("profiles") if arguments.next().is_none() => {
-            println!("{QUALIFIED_PROFILE}");
-            Ok(())
-        }
-        Some("scenarios") if arguments.next().is_none() => {
-            print_scenarios();
-            Ok(())
-        }
-        Some("doctor") if arguments.next().is_none() => {
-            doctor(&root, &lab_config::LabConfig::load(&lab_path)?)
-        }
-        Some("build") => {
-            let scenario = arguments
-                .next()
-                .map(|value| Scenario::parse(&value))
-                .transpose()?
-                .unwrap_or(Scenario::BootSmoke);
-            if arguments.next().is_some() {
-                return Err("usage: cargo hil build [scenario]".into());
-            }
-            let artifacts = build(&root, scenario)?;
-            println!("profile={QUALIFIED_PROFILE}");
-            println!("scenario={}", scenario.name());
-            println!("runtime_elf={}", artifacts.runtime_elf.display());
-            println!("runtime_bin={}", artifacts.runtime_bin.display());
-            println!("bootstrap_elf={}", artifacts.bootstrap_elf.display());
-            println!(
-                "application_image={}",
-                artifacts.application_image.display()
-            );
-            Ok(())
-        }
-        Some("flash") => {
-            let scenario = parse_flash_arguments(arguments)?;
-            let lab = lab_config::LabConfig::load(&lab_path)?;
-            let artifacts = build(&root, scenario)?;
-            let _fixture = fixture_lock::FixtureLock::acquire(&root)?;
-            flash(&root, &artifacts, &lab.device.serial)?;
-            println!("profile={QUALIFIED_PROFILE}");
-            println!("scenario={}", scenario.name());
-            println!("port={}", lab.device.serial.display());
-            println!("flash=PASS");
-            Ok(())
-        }
-        Some("traffic") => {
-            let lab = lab_config::LabConfig::load(&lab_path)?;
-            let _fixture = fixture_lock::FixtureLock::acquire(&root)?;
-            match arguments.next().as_deref() {
-            Some("bidirectional") => bidirectional::run(arguments.collect(), &root, &lab),
-            Some("icmp") => icmp_latency::run(arguments.collect(), &root, &lab),
-            Some("rx") => rx_traffic::run(arguments.collect(), &root, &lab),
-            Some("tcp-rx") => tcp_traffic::run_rx(arguments.collect(), &root, &lab),
-            Some("tcp-tx") => tcp_traffic::run_tx(arguments.collect(), &root, &lab),
-            Some("tcp-bidirectional") => {
-                tcp_traffic::run_bidirectional(arguments.collect(), &root, &lab)
-            }
-            Some("tx") => tx_traffic::run(arguments.collect(), &root, &lab),
-            Some("trigger") => trigger::run(&arguments.collect::<Vec<_>>()),
-            Some("trigger-hil") => trigger::run_hil(&arguments.collect::<Vec<_>>(), &root, &lab),
-            _ => Err(
-                "usage: cargo hil traffic <rx|tx|bidirectional|tcp-rx|tcp-tx|tcp-bidirectional|icmp|trigger|trigger-hil> ..."
-                    .into(),
-            ),
-        }
-        }
-        Some("station") => {
-            let lab = lab_config::LabConfig::load(&lab_path)?;
-            let _fixture = fixture_lock::FixtureLock::acquire(&root)?;
-            match arguments.next().as_deref() {
-                Some("ap-absence") => station_ap_absence::run(arguments.collect(), &root, &lab),
-                Some("ap-loss") => station_ap_loss::run(arguments.collect(), &root, &lab),
-                Some("reconnect") => station_lifecycle::run(arguments.collect(), &root, &lab),
-                _ => Err("usage: cargo hil station \
-                 <reconnect|ap-loss|ap-absence> [options]"
-                    .into()),
-            }
-        }
-        Some("wifi") => {
-            let lab = lab_config::LabConfig::load(&lab_path)?;
-            let _fixture = fixture_lock::FixtureLock::acquire(&root)?;
-            match arguments.next() {
-                Some(operation) if operation == "capture" => {
-                    wifi_capture::run(arguments.collect(), &root, &lab)
-                }
-                Some(operation) => wifi_control::run(&operation, arguments.collect(), &root, &lab),
-                None => Err(
-                    "usage: cargo hil wifi <stop|start|scan|monitor|ap|roundtrip|capture> [options]"
-                        .into(),
-                ),
-            }
-        }
-        Some("oracle") => {
-            let lab = lab_config::LabConfig::load(&lab_path)?;
-            let _fixture = fixture_lock::FixtureLock::acquire(&root)?;
-            oracle_command(&root, arguments.collect(), &lab)
-        }
-        Some("help" | "--help" | "-h") | None => {
-            print_help();
-            Ok(())
-        }
-        Some(command) => Err(format!("unknown HIL command `{command}`").into()),
-    }
+#[derive(Debug, Parser)]
+#[command(
+    name = "cargo hil",
+    about = "Open ESP radio hardware-in-the-loop runner"
+)]
+struct Cli {
+    /// Complete local fixture configuration. Secrets never belong to scenarios.
+    #[arg(long, global = true)]
+    lab_config: Option<PathBuf>,
+    #[command(subcommand)]
+    command: CliCommand,
 }
 
-fn extract_lab_config_argument(arguments: Vec<String>) -> Result<(PathBuf, Vec<String>)> {
-    let mut path = lab_config::LabConfig::default_path()?;
-    let mut retained = Vec::with_capacity(arguments.len());
-    let mut iterator = arguments.into_iter();
-    let mut seen = false;
-    while let Some(argument) = iterator.next() {
-        if argument == "--lab-config" {
-            if seen {
-                return Err("--lab-config may be specified only once".into());
+#[derive(Debug, Subcommand)]
+enum CliCommand {
+    /// Validate host tools, target device and the configured fixture.
+    Doctor,
+    /// Inspect and validate the host-owned scenario catalog.
+    Scenario {
+        #[command(subcommand)]
+        command: ScenarioCommand,
+    },
+    /// Build or flash one reproducible firmware class.
+    Image {
+        #[command(subcommand)]
+        command: ImageCommand,
+    },
+    /// Inspect the currently flashed target without starting a workload.
+    Device {
+        #[command(subcommand)]
+        command: DeviceCommand,
+    },
+    /// Execute one catalog scenario against the matching flashed image.
+    Run { scenario: String },
+    /// Execute catalog scenarios, flashing once per selected image class.
+    RunAll {
+        /// Select only scenarios carrying this tag. May be repeated.
+        #[arg(long)]
+        tag: Vec<String>,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum ScenarioCommand {
+    List,
+    Validate { scenario: Option<String> },
+}
+
+#[derive(Debug, Subcommand)]
+enum ImageCommand {
+    Build { class: scenario::ImageClass },
+    Flash { class: scenario::ImageClass },
+}
+
+#[derive(Debug, Subcommand)]
+enum DeviceCommand {
+    Status,
+}
+
+fn run() -> Result<()> {
+    let root = repository_root()?;
+    let cli = Cli::parse();
+    let lab_path = cli
+        .lab_config
+        .unwrap_or(lab_config::LabConfig::default_path()?);
+    let catalog_path = root.join("hil/scenarios");
+    match cli.command {
+        CliCommand::Doctor => doctor(&root, &lab_config::LabConfig::load(&lab_path)?),
+        CliCommand::Scenario { command } => {
+            let catalog = scenario::Catalog::load(&catalog_path)?;
+            match command {
+                ScenarioCommand::List => {
+                    println!("{}", serde_json::to_string_pretty(catalog.all())?);
+                    Ok(())
+                }
+                ScenarioCommand::Validate { scenario } => {
+                    if let Some(id) = scenario {
+                        let _ = catalog.get(&id)?;
+                    }
+                    println!(
+                        "{}",
+                        serde_json::json!({
+                            "schema": scenario::SCENARIO_SCHEMA,
+                            "scenarios": catalog.all().len(),
+                            "status": "valid"
+                        })
+                    );
+                    Ok(())
+                }
             }
-            path = PathBuf::from(iterator.next().ok_or("--lab-config requires a path")?);
-            seen = true;
-        } else {
-            retained.push(argument);
+        }
+        CliCommand::Image { command } => {
+            let (class, flash_requested) = match command {
+                ImageCommand::Build { class } => (class, false),
+                ImageCommand::Flash { class } => (class, true),
+            };
+            let artifacts = build(&root, class)?;
+            if flash_requested {
+                let lab = lab_config::LabConfig::load(&lab_path)?;
+                let _fixture = fixture_lock::FixtureLock::acquire(&root)?;
+                flash(&root, &artifacts, &lab.device.serial)?;
+            }
+            print_artifacts(class, &artifacts, flash_requested)
+        }
+        CliCommand::Device {
+            command: DeviceCommand::Status,
+        } => {
+            let lab = lab_config::LabConfig::load(&lab_path)?;
+            let _fixture = fixture_lock::FixtureLock::acquire(&root)?;
+            device_status(&root, &lab)
+        }
+        CliCommand::Run { scenario: id } => {
+            let catalog = scenario::Catalog::load(&catalog_path)?;
+            let selected = catalog.get(&id)?.clone();
+            let lab = lab_config::LabConfig::load(&lab_path)?;
+            let _fixture = fixture_lock::FixtureLock::acquire(&root)?;
+            run_scenario(&root, &lab, &selected)
+        }
+        CliCommand::RunAll { tag } => {
+            let catalog = scenario::Catalog::load(&catalog_path)?;
+            let lab = lab_config::LabConfig::load(&lab_path)?;
+            let _fixture = fixture_lock::FixtureLock::acquire(&root)?;
+            run_all(&root, &lab, &catalog, &tag)
         }
     }
-    Ok((path, retained))
 }
 
 fn repository_root() -> Result<PathBuf> {
@@ -241,202 +236,364 @@ fn doctor(root: &std::path::Path, lab: &lab_config::LabConfig) -> Result<()> {
     Ok(())
 }
 
-fn print_help() {
-    println!(
-        "Open ESP radio HIL\n\n\
-         cargo hil profiles\n\
-         cargo hil scenarios\n\
-         cargo hil [--lab-config <path>] doctor\n\
-         cargo hil build [scenario]\n\n\
-         cargo hil flash [scenario]\n\
-         cargo hil traffic rx [options]\n\
-         cargo hil traffic tx [options]\n\
-         cargo hil traffic bidirectional [options]\n\
-         cargo hil traffic tcp-rx [options]\n\
-         cargo hil traffic tcp-tx [options]\n\
-         cargo hil traffic tcp-bidirectional [options]\n\
-         cargo hil traffic icmp [options]\n\
-         cargo hil traffic trigger <monitor-interface> [options]\n\
-         cargo hil traffic trigger-hil <monitor-interface> [options]\n\
-         cargo hil station ap-absence [options]\n\
-         cargo hil station ap-loss [options]\n\
-         cargo hil station reconnect [options]\n\
-         cargo hil wifi stop [options]\n\
-         cargo hil wifi start [options]\n\
-         cargo hil wifi scan [options]\n\
-         cargo hil wifi monitor [options]\n\
-         cargo hil wifi ap [options]\n\
-         cargo hil wifi roundtrip [options]\n\
-         cargo hil wifi capture --output <capture.pcapng> [options]\n\
-         cargo hil oracle build\n\
-         cargo hil oracle flash\n\n\
-         The build command compiles and packs both HIL stages, audits the \
-         PSRAM/SRAM placement and stack-frame budgets, and emits an ESP \
-         application image.\n\
-         Device, network and OpenWrt fixture settings come only from \
-         hil/local.toml (mode 0600). Copy hil/local.example.toml once; \
-         --lab-config selects another complete lab description.\n\
-         Run `cargo hil scenarios` for the firmware scenario list."
-    );
+#[derive(Serialize)]
+struct ArtifactReport<'a> {
+    image_class: &'a str,
+    profile: &'a str,
+    runtime_elf: String,
+    runtime_bin: String,
+    bootstrap_elf: String,
+    application_image: String,
+    application_sha256: String,
+    flashed: bool,
 }
 
-fn print_scenarios() {
-    for scenario in Scenario::ALL {
-        println!("{:<22} {}", scenario.argument(), scenario.description());
-    }
-}
-
-fn scenario_manifest(scenario: Scenario) -> String {
-    let mut manifest = format!(
-        "profile={QUALIFIED_PROFILE}\nscenario={}\nartifact={}\nruntime_feature={}\n",
-        scenario.argument(),
-        scenario.name(),
-        scenario.runtime_feature(),
-    );
-    for (variable, value) in scenario.environment() {
-        manifest.push_str(variable);
-        manifest.push('=');
-        manifest.push_str(value);
-        manifest.push('\n');
-    }
-    manifest
-}
-
-struct OracleArtifacts {
-    output: PathBuf,
-    elf: PathBuf,
-    application_image: PathBuf,
-}
-
-fn oracle_command(root: &Path, arguments: Vec<String>, lab: &lab_config::LabConfig) -> Result<()> {
-    let mut arguments = arguments.into_iter();
-    match arguments.next().as_deref() {
-        Some("build") if arguments.next().is_none() => {
-            let artifacts = build_oracle(root)?;
-            println!("oracle_elf={}", artifacts.elf.display());
-            println!(
-                "application_image={}",
-                artifacts.application_image.display()
-            );
-            println!("oracle_build=PASS");
-            Ok(())
-        }
-        Some("flash") => {
-            if arguments.next().is_some() {
-                return Err("usage: cargo hil oracle flash".into());
-            }
-            let artifacts = build_oracle(root)?;
-            flash_oracle(root, &artifacts, &lab.device.serial)?;
-            println!("oracle_elf={}", artifacts.elf.display());
-            println!(
-                "application_image={}",
-                artifacts.application_image.display()
-            );
-            println!("port={}", lab.device.serial.display());
-            println!("oracle_flash=PASS");
-            Ok(())
-        }
-        _ => Err("usage: cargo hil oracle <build|flash>".into()),
-    }
-}
-
-fn build_oracle(root: &Path) -> Result<OracleArtifacts> {
-    eprintln!("oracle_input_authentication=CALLER_OWNED");
-    let manifest = root.join("verification/vendor/targets/esp32s31/oracle-firmware/Cargo.toml");
-    let output = root.join("target/hil/vendor-oracle/esp32s31");
-    let cargo_target = output.join("cargo");
-    let elf = cargo_target.join(TARGET).join("release").join(ORACLE_BIN);
-    let application_image = output.join("application.bin");
-    fs::create_dir_all(&output)?;
-
-    let libgcc = find_libgcc()?;
-    let libgcc_dir = libgcc
-        .parent()
-        .ok_or_else(|| format!("libgcc path has no parent: {}", libgcc.display()))?;
-    let mut cargo = cargo_command();
-    cargo
-        .args(["build", "--manifest-path"])
-        .arg(&manifest)
-        .args(["--release", "--target", TARGET, "--locked"])
-        .env("CARGO_TARGET_DIR", &cargo_target)
-        .env("ESP32S31_LIBGCC_DIR", libgcc_dir);
-    run_command(&mut cargo, "build isolated vendor PHY oracle")?;
-    require_file(&elf, "vendor-oracle ELF")?;
-
-    let partition_table = root.join("hil/targets/esp32s31/partitions/hil.csv");
-    let mut save_image = Command::new(program_from_env("ESPFLASH", "espflash"));
-    save_image
-        .args([
-            "save-image",
-            "--chip",
-            "esp32s31",
-            "--flash-mode",
-            "qio",
-            "--flash-freq",
-            "80mhz",
-            "--flash-size",
-            "16mb",
-            "--mmu-page-size",
-            "65536",
-            "--partition-table",
-        ])
-        .arg(&partition_table)
-        .args(["--target-app-partition", "ota_0"])
-        .arg(&elf)
-        .arg(&application_image);
-    run_command(&mut save_image, "encode vendor-oracle application image")?;
-    audit_application_image(&application_image)?;
-
-    Ok(OracleArtifacts {
-        output,
-        elf,
-        application_image,
-    })
-}
-
-fn find_libgcc() -> Result<PathBuf> {
-    if let Some(directory) = env::var_os("ESP32S31_LIBGCC_DIR") {
-        let path = PathBuf::from(directory).join("libgcc.a");
-        require_file(&path, "Espressif libgcc")?;
-        return Ok(path);
-    }
-
-    let home = env::var_os("HOME").ok_or("HOME is not set; cannot locate Espressif GCC")?;
-    let root = PathBuf::from(home).join(".espressif/tools/riscv32-esp-elf");
-    let mut candidates = Vec::new();
-    collect_named_files(&root, "riscv32-esp-elf-gcc", &mut candidates)?;
-    candidates.sort();
-    let gcc = candidates
-        .pop()
-        .ok_or_else(|| format!("riscv32-esp-elf-gcc was not found below {}", root.display()))?;
-    let output = Command::new(gcc)
-        .args([
-            "-march=rv32imafc",
-            "-mabi=ilp32f",
-            "-print-libgcc-file-name",
-        ])
-        .output()?;
-    if !output.status.success() {
-        return Err("Espressif GCC failed to locate libgcc".into());
-    }
-    let path = PathBuf::from(String::from_utf8(output.stdout)?.trim());
-    require_file(&path, "Espressif libgcc")?;
-    Ok(path)
-}
-
-fn collect_named_files(root: &Path, name: &str, output: &mut Vec<PathBuf>) -> Result<()> {
-    if !root.is_dir() {
-        return Ok(());
-    }
-    for entry in fs::read_dir(root)? {
-        let path = entry?.path();
-        if path.is_dir() {
-            collect_named_files(&path, name, output)?;
-        } else if path.file_name().and_then(|value| value.to_str()) == Some(name) {
-            output.push(path);
-        }
-    }
+fn print_artifacts(
+    class: scenario::ImageClass,
+    artifacts: &Artifacts,
+    flashed: bool,
+) -> Result<()> {
+    let report = ArtifactReport {
+        image_class: class.id(),
+        profile: QUALIFIED_PROFILE,
+        runtime_elf: artifacts.runtime_elf.display().to_string(),
+        runtime_bin: artifacts.runtime_bin.display().to_string(),
+        bootstrap_elf: artifacts.bootstrap_elf.display().to_string(),
+        application_image: artifacts.application_image.display().to_string(),
+        application_sha256: sha256_file(&artifacts.application_image)?,
+        flashed,
+    };
+    println!("{}", serde_json::to_string_pretty(&report)?);
     Ok(())
+}
+
+fn sha256_file(path: &Path) -> Result<String> {
+    let mut digest = Sha256::new();
+    digest.update(fs::read(path)?);
+    Ok(format!("{:x}", digest.finalize()))
+}
+
+fn device_status(root: &Path, lab: &lab_config::LabConfig) -> Result<()> {
+    device_status_at(&root.join("target/hil/esp32s31/device-status"), lab)
+}
+
+fn device_status_at(output: &Path, lab: &lab_config::LabConfig) -> Result<()> {
+    let capture = traffic_capture::SerialCapture::start_with_reset(&lab.device.serial);
+    let capabilities = capture.prepare_protocol(lab)?;
+    let operation = capture.query_operation_status(std::time::Duration::from_secs(10))?;
+    let stack = capture.query_stack_usage(std::time::Duration::from_secs(10))?;
+    capture.finish_to(&output)?;
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&serde_json::json!({
+            "protocol_version": open_esp_radio_hil_protocol::PROTOCOL_VERSION,
+            "capabilities": capabilities,
+            "operation": operation,
+            "stack": stack,
+            "uart_log": output.join("uart.log"),
+        }))?
+    );
+    Ok(())
+}
+
+fn boot_smoke(output: &Path, lab: &lab_config::LabConfig) -> Result<()> {
+    let capture = traffic_capture::SerialCapture::start_with_reset(&lab.device.serial);
+    let result = capture.wait_for_boot_smoke(std::time::Duration::from_secs(10));
+    capture.finish_to(output)?;
+    result
+}
+
+fn run_all(
+    root: &Path,
+    lab: &lab_config::LabConfig,
+    catalog: &scenario::Catalog,
+    tags: &[String],
+) -> Result<()> {
+    let selected = catalog
+        .all()
+        .iter()
+        .filter(|entry| tags.iter().all(|tag| entry.tags.contains(tag)))
+        .collect::<Vec<_>>();
+    if selected.is_empty() {
+        return Err("no HIL scenarios match the requested tags".into());
+    }
+    for class in scenario::ImageClass::ALL {
+        let class_scenarios = selected
+            .iter()
+            .copied()
+            .filter(|entry| entry.image == class)
+            .collect::<Vec<_>>();
+        if class_scenarios.is_empty() {
+            continue;
+        }
+        let artifacts = build(root, class)?;
+        flash(root, &artifacts, &lab.device.serial)?;
+        for entry in class_scenarios {
+            run_scenario(root, lab, entry)?;
+        }
+    }
+    println!(
+        "{}",
+        serde_json::json!({"status": "passed", "scenarios": selected.len()})
+    );
+    Ok(())
+}
+
+fn run_scenario(
+    root: &Path,
+    lab: &lab_config::LabConfig,
+    selected: &scenario::Scenario,
+) -> Result<()> {
+    let output = root.join("target/hil/esp32s31/runs").join(&selected.id);
+    fs::create_dir_all(&output)?;
+    fs::write(
+        output.join("resolved-scenario.json"),
+        serde_json::to_vec_pretty(selected)?,
+    )?;
+    let result = execute_workload(root, lab, selected, &output);
+    let result_document = match &result {
+        Ok(()) => serde_json::json!({
+            "schema": 1,
+            "scenario": selected.id,
+            "image": selected.image,
+            "status": "passed"
+        }),
+        Err(error) => serde_json::json!({
+            "schema": 1,
+            "scenario": selected.id,
+            "image": selected.image,
+            "status": "failed",
+            "error": error.to_string()
+        }),
+    };
+    fs::write(
+        output.join("result.json"),
+        serde_json::to_vec_pretty(&result_document)?,
+    )?;
+    result?;
+    println!("{}", serde_json::to_string(&result_document)?);
+    Ok(())
+}
+
+fn execute_workload(
+    root: &Path,
+    lab: &lab_config::LabConfig,
+    selected: &scenario::Scenario,
+    output: &Path,
+) -> Result<()> {
+    use scenario::{Direction, Workload};
+
+    match &selected.workload {
+        Workload::BootSmoke => boot_smoke(output, lab),
+        Workload::Udp {
+            direction,
+            duration_seconds,
+            rx_rate_bps,
+            tx_rate_bps,
+            payload_bytes,
+            phy,
+        } => {
+            let mut arguments = Vec::new();
+            push_option(&mut arguments, "--seconds", duration_seconds);
+            push_option(&mut arguments, "--payload", payload_bytes);
+            push_option(&mut arguments, "--phy", phy.id());
+            match direction {
+                Direction::Rx => {
+                    push_option(
+                        &mut arguments,
+                        "--rate",
+                        rx_rate_bps.expect("validated RX rate"),
+                    );
+                    if let Some(floor) = selected.criteria.minimum_rx_bps {
+                        push_option(&mut arguments, "--floor", floor);
+                    }
+                    rx_traffic::run(
+                        arguments,
+                        output,
+                        lab,
+                        selected.criteria.require_no_beacon_loss,
+                    )
+                }
+                Direction::Tx => {
+                    if let Some(rate) = tx_rate_bps {
+                        push_option(&mut arguments, "--rate", rate);
+                    }
+                    if let Some(floor) = selected.criteria.minimum_tx_bps {
+                        push_option(&mut arguments, "--floor", floor);
+                    }
+                    tx_traffic::run(
+                        arguments,
+                        output,
+                        lab,
+                        selected.criteria.require_no_beacon_loss,
+                    )
+                }
+                Direction::Bidirectional => {
+                    push_option(
+                        &mut arguments,
+                        "--rate",
+                        rx_rate_bps.expect("validated RX rate"),
+                    );
+                    if let Some(rate) = tx_rate_bps {
+                        push_option(&mut arguments, "--tx-rate", rate);
+                    }
+                    if let Some(floor) = selected.criteria.minimum_tx_bps {
+                        push_option(&mut arguments, "--tx-floor", floor);
+                    }
+                    if let Some(floor) = selected.criteria.minimum_rx_bps {
+                        push_option(&mut arguments, "--rx-floor", floor);
+                    }
+                    bidirectional::run(
+                        arguments,
+                        output,
+                        lab,
+                        selected.criteria.require_no_beacon_loss,
+                    )
+                }
+            }
+        }
+        Workload::Tcp {
+            direction,
+            duration_seconds,
+            rx_rate_bps,
+            tx_rate_bps,
+            chunk_bytes,
+        } => {
+            let mut arguments = Vec::new();
+            push_option(&mut arguments, "--seconds", duration_seconds);
+            push_option(&mut arguments, "--chunk", chunk_bytes);
+            if let Some(rate) = rx_rate_bps {
+                push_option(&mut arguments, "--rx-rate", rate);
+            }
+            if let Some(rate) = tx_rate_bps {
+                push_option(&mut arguments, "--tx-rate", rate);
+            }
+            if let Some(floor) = selected.criteria.minimum_tx_bps {
+                push_option(&mut arguments, "--tx-floor", floor);
+            }
+            if let Some(floor) = selected.criteria.minimum_rx_bps {
+                push_option(&mut arguments, "--rx-floor", floor);
+            }
+            match direction {
+                Direction::Rx => tcp_traffic::run_rx(
+                    arguments,
+                    output,
+                    lab,
+                    selected.criteria.require_no_beacon_loss,
+                ),
+                Direction::Tx => tcp_traffic::run_tx(
+                    arguments,
+                    output,
+                    lab,
+                    selected.criteria.require_no_beacon_loss,
+                ),
+                Direction::Bidirectional => tcp_traffic::run_bidirectional(
+                    arguments,
+                    output,
+                    lab,
+                    selected.criteria.require_no_beacon_loss,
+                ),
+            }
+        }
+        Workload::Icmp {
+            count,
+            interval_ms,
+            timeout_ms,
+            payload_bytes,
+        } => {
+            let mut arguments = Vec::new();
+            push_option(&mut arguments, "--count", count);
+            push_option(&mut arguments, "--interval-ms", interval_ms);
+            push_option(&mut arguments, "--timeout-ms", timeout_ms);
+            push_option(&mut arguments, "--payload", payload_bytes);
+            if let Some(maximum) = selected.criteria.maximum_lost {
+                push_option(&mut arguments, "--max-lost", maximum);
+            }
+            if let Some(maximum) = selected.criteria.maximum_p95_ms {
+                push_option(&mut arguments, "--max-p95-ms", maximum);
+            }
+            icmp_latency::run(
+                arguments,
+                output,
+                lab,
+                selected.criteria.require_no_beacon_loss,
+            )
+        }
+        Workload::StationReconnect {
+            cycles,
+            boots,
+            timeout_seconds,
+        } => {
+            let mut arguments = Vec::new();
+            push_option(&mut arguments, "--cycles", cycles);
+            push_option(&mut arguments, "--boots", boots);
+            push_option(&mut arguments, "--timeout-seconds", timeout_seconds);
+            station_lifecycle::run(
+                arguments,
+                output,
+                lab,
+                selected.criteria.require_no_beacon_loss,
+            )
+        }
+        Workload::StationApLoss { timeout_seconds } => {
+            let mut arguments = Vec::new();
+            push_option(&mut arguments, "--timeout-seconds", timeout_seconds);
+            station_ap_loss::run(arguments, output, lab)
+        }
+        Workload::StationApAbsence { timeout_seconds } => {
+            let mut arguments = Vec::new();
+            push_option(&mut arguments, "--timeout-seconds", timeout_seconds);
+            station_ap_absence::run(arguments, output, lab)
+        }
+        Workload::WifiRole {
+            operation,
+            timeout_seconds,
+            channel,
+            dwell_seconds,
+            snapshot_length,
+        } => {
+            let mut arguments = Vec::new();
+            push_option(&mut arguments, "--timeout-seconds", timeout_seconds);
+            if let Some(channel) = channel {
+                push_option(&mut arguments, "--channel", channel);
+            }
+            if let Some(seconds) = dwell_seconds {
+                push_option(&mut arguments, "--monitor-seconds", seconds);
+            }
+            if let Some(length) = snapshot_length {
+                push_option(&mut arguments, "--snapshot-length", length);
+            }
+            wifi_control::run(operation.id(), arguments, output, lab)
+        }
+        Workload::MonitorCapture {
+            timeout_seconds,
+            duration_seconds,
+            channel,
+            snapshot_length,
+        } => {
+            let mut arguments = Vec::new();
+            push_option(
+                &mut arguments,
+                "--output",
+                root.join("target/hil/esp32s31/runs")
+                    .join(&selected.id)
+                    .join("capture.pcapng")
+                    .display(),
+            );
+            push_option(&mut arguments, "--timeout-seconds", timeout_seconds);
+            push_option(&mut arguments, "--seconds", duration_seconds);
+            if let Some(channel) = channel {
+                push_option(&mut arguments, "--channel", channel);
+            }
+            push_option(&mut arguments, "--snapshot-length", snapshot_length);
+            wifi_capture::run(arguments, output, lab)
+        }
+    }
+}
+
+fn push_option(arguments: &mut Vec<String>, name: &str, value: impl ToString) {
+    arguments.push(name.to_owned());
+    arguments.push(value.to_string());
 }
 
 struct Artifacts {
@@ -447,133 +604,15 @@ struct Artifacts {
     application_image: PathBuf,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Scenario {
-    BootSmoke,
-    Radio,
-    RadioPollProfile,
-    RadioRxDeliveryProfile,
-    UdpTx,
-    Bidirectional,
-    BidirectionalRxDeliveryProfile,
-    Tcp,
-}
-
-impl Scenario {
-    const ALL: [Self; 8] = [
-        Self::BootSmoke,
-        Self::Radio,
-        Self::RadioPollProfile,
-        Self::RadioRxDeliveryProfile,
-        Self::UdpTx,
-        Self::Bidirectional,
-        Self::BidirectionalRxDeliveryProfile,
-        Self::Tcp,
-    ];
-
-    fn parse(value: &str) -> Result<Self> {
-        match value {
-            "boot-smoke" => Ok(Self::BootSmoke),
-            "radio" | "open-radio-hil" => Ok(Self::Radio),
-            "radio-poll-profile" | "open-radio-poll-profile" => Ok(Self::RadioPollProfile),
-            "radio-rx-delivery-profile" | "open-radio-rx-delivery-profile" => {
-                Ok(Self::RadioRxDeliveryProfile)
-            }
-            "udp-tx" | "open-radio-udp-tx" => Ok(Self::UdpTx),
-            "bidirectional" | "open-radio-bidirectional" => Ok(Self::Bidirectional),
-            "bidirectional-rx-delivery-profile"
-            | "open-radio-bidirectional-rx-delivery-profile" => {
-                Ok(Self::BidirectionalRxDeliveryProfile)
-            }
-            "tcp" | "tcp-rx" | "open-radio-tcp" | "open-radio-tcp-rx" => Ok(Self::Tcp),
-            _ => Err(format!(
-                "unsupported production-runner HIL scenario `{value}`; run `cargo hil scenarios` for the list"
-            )
-            .into()),
-        }
-    }
-
-    const fn argument(self) -> &'static str {
-        match self {
-            Self::BootSmoke => "boot-smoke",
-            Self::Radio => "radio",
-            Self::RadioPollProfile => "radio-poll-profile",
-            Self::RadioRxDeliveryProfile => "radio-rx-delivery-profile",
-            Self::UdpTx => "udp-tx",
-            Self::Bidirectional => "bidirectional",
-            Self::BidirectionalRxDeliveryProfile => "bidirectional-rx-delivery-profile",
-            Self::Tcp => "tcp",
-        }
-    }
-
-    const fn name(self) -> &'static str {
-        match self {
-            Self::BootSmoke => "boot-smoke",
-            Self::Radio => "open-radio-hil",
-            Self::RadioPollProfile => "open-radio-poll-profile",
-            Self::RadioRxDeliveryProfile => "open-radio-rx-delivery-profile",
-            Self::UdpTx => "open-radio-udp-tx",
-            Self::Bidirectional => "open-radio-bidirectional",
-            Self::BidirectionalRxDeliveryProfile => "open-radio-bidirectional-rx-delivery-profile",
-            Self::Tcp => "open-radio-tcp",
-        }
-    }
-
-    const fn runtime_feature(self) -> &'static str {
-        match self {
-            Self::BootSmoke => "boot-smoke",
-            Self::Radio => "open-radio-hil",
-            Self::RadioPollProfile => "open-radio-hil,task-poll-telemetry",
-            Self::RadioRxDeliveryProfile => "open-radio-hil,rx-delivery-telemetry",
-            Self::BidirectionalRxDeliveryProfile => "open-radio-hil,rx-delivery-telemetry",
-            Self::UdpTx | Self::Bidirectional | Self::Tcp => "open-radio-hil",
-        }
-    }
-
-    const fn environment(self) -> &'static [(&'static str, &'static str)] {
-        match self {
-            Self::BootSmoke
-            | Self::Radio
-            | Self::RadioPollProfile
-            | Self::RadioRxDeliveryProfile => &[],
-            Self::UdpTx => &[("OPEN_RADIO_TX_BENCH", "1")],
-            Self::Bidirectional | Self::BidirectionalRxDeliveryProfile => &[
-                ("OPEN_RADIO_TX_BENCH", "1"),
-                ("OPEN_RADIO_BIDIRECTIONAL_BENCH", "1"),
-            ],
-            Self::Tcp => &[("OPEN_RADIO_TCP_BENCH", "1")],
-        }
-    }
-
-    const fn description(self) -> &'static str {
-        match self {
-            Self::BootSmoke => "bootstrap, Flash/PSRAM and runtime smoke test",
-            Self::Radio => "production ConnectedRunner PHY/MAC/STA/WPA2 HIL",
-            Self::RadioPollProfile => {
-                "radio HIL with diagnostic Embassy Future::poll residence telemetry"
-            }
-            Self::RadioRxDeliveryProfile => {
-                "radio HIL proving UDP delivery across reorder, network enqueue and socket consumption"
-            }
-            Self::UdpTx => "production ConnectedRunner embassy-net UDP throughput",
-            Self::Bidirectional => "production ConnectedRunner simultaneous RX/TX throughput",
-            Self::BidirectionalRxDeliveryProfile => {
-                "simultaneous RX/TX with typed UDP receive-frontier evidence"
-            }
-            Self::Tcp => "production ConnectedRunner embassy-net TCP RX/TX/full-duplex throughput",
-        }
-    }
-}
-
-fn build(root: &Path, scenario: Scenario) -> Result<Artifacts> {
+fn build(root: &Path, class: scenario::ImageClass) -> Result<Artifacts> {
     let local_esp_hal = local_esp_hal_override()?;
     if local_esp_hal.is_none() {
-        return build_resolved(root, scenario, None);
+        return build_resolved(root, class, None);
     }
 
     let lockfile = root.join("hil/targets/esp32s31/Cargo.lock");
     let mut snapshot = TrackedFileSnapshot::capture(lockfile)?;
-    let result = build_resolved(root, scenario, local_esp_hal.as_deref());
+    let result = build_resolved(root, class, local_esp_hal.as_deref());
     let restore = snapshot.restore();
     match (result, restore) {
         (Ok(artifacts), Ok(())) => Ok(artifacts),
@@ -588,18 +627,18 @@ fn build(root: &Path, scenario: Scenario) -> Result<Artifacts> {
 
 fn build_resolved(
     root: &Path,
-    scenario: Scenario,
+    class: scenario::ImageClass,
     local_esp_hal: Option<&Path>,
 ) -> Result<Artifacts> {
     ensure_no_old_application_dependency(root)?;
     let manifest = root.join("hil/targets/esp32s31/Cargo.toml");
     let output =
         root.join("target/hil/esp32s31")
-            .join(format!("{}-{}", QUALIFIED_PROFILE, scenario.name()));
+            .join(format!("{}-{}", QUALIFIED_PROFILE, class.id()));
     let runtime_target = output.join("cargo/runtime");
     let bootstrap_target = output.join("cargo/bootstrap");
     fs::create_dir_all(&output)?;
-    fs::write(output.join("scenario.txt"), scenario_manifest(scenario))?;
+    fs::write(output.join("image-class.txt"), format!("{}\n", class.id()))?;
 
     let runtime_elf = runtime_target
         .join(TARGET)
@@ -612,10 +651,7 @@ fn build_resolved(
         .join(BOOTSTRAP_BIN);
     let application_image = output.join("application.bin");
 
-    let runtime_features = format!(
-        "{},code-psram,profile-psram-data",
-        scenario.runtime_feature()
-    );
+    let runtime_features = class.runtime_features();
     let stack_policy_path = root.join("hil/targets/esp32s31/stack.toml");
     let stack_budget = open_esp_radio_memory_report::StackBudget::load(&stack_policy_path)?;
     let mut runtime = cargo_command();
@@ -624,16 +660,10 @@ fn build_resolved(
         .arg("--manifest-path")
         .arg(&manifest)
         .args(["-p", RUNTIME_BIN, "--release", "--target", TARGET])
-        .args(["--no-default-features", "--features", &runtime_features])
+        .args(["--no-default-features", "--features", runtime_features])
         .env("CARGO_TARGET_DIR", &runtime_target);
     if local_esp_hal.is_none() {
         runtime.arg("--locked");
-    }
-    for variable in SCENARIO_ENVIRONMENT {
-        runtime.env_remove(variable);
-    }
-    for (variable, value) in scenario.environment() {
-        runtime.env(variable, value);
     }
     add_local_esp_hal_patches(&mut runtime, local_esp_hal);
     stack_audit::enable_stack_checks(&mut runtime, &stack_budget);
@@ -779,17 +809,6 @@ impl Drop for TrackedFileSnapshot {
     }
 }
 
-fn parse_flash_arguments(mut arguments: impl Iterator<Item = String>) -> Result<Scenario> {
-    let mut scenario = Scenario::BootSmoke;
-    if let Some(argument) = arguments.next() {
-        scenario = Scenario::parse(&argument)?;
-    }
-    if let Some(argument) = arguments.next() {
-        return Err(format!("unknown flash argument `{argument}`").into());
-    }
-    Ok(scenario)
-}
-
 fn flash(root: &Path, artifacts: &Artifacts, port: &Path) -> Result<()> {
     let partition_csv = root.join("hil/targets/esp32s31/partitions/hil.csv");
     let partition_bin = artifacts.output.join("partitions.bin");
@@ -823,40 +842,6 @@ fn flash(root: &Path, artifacts: &Artifacts, port: &Path) -> Result<()> {
         &selector_bin,
         "hard-reset",
         "select HIL ota_0 image",
-    )
-}
-
-fn flash_oracle(root: &Path, artifacts: &OracleArtifacts, port: &Path) -> Result<()> {
-    let partition_csv = root.join("hil/targets/esp32s31/partitions/hil.csv");
-    let partition_bin = artifacts.output.join("partitions.bin");
-    let selector_bin = artifacts.output.join("otadata-ota0-valid.bin");
-    let mut partition = Command::new(program_from_env("ESPFLASH", "espflash"));
-    partition
-        .args(["partition-table", "--to-binary", "--output"])
-        .arg(&partition_bin)
-        .arg(&partition_csv);
-    run_command(&mut partition, "encode vendor-oracle partition table")?;
-    fs::write(&selector_bin, ota0_selector_image())?;
-    write_flash_binary(
-        port,
-        PARTITION_TABLE_OFFSET,
-        &partition_bin,
-        "no-reset",
-        "write vendor-oracle partition table",
-    )?;
-    write_flash_binary(
-        port,
-        OTA_0_OFFSET,
-        &artifacts.application_image,
-        "no-reset",
-        "write vendor-oracle application",
-    )?;
-    write_flash_binary(
-        port,
-        OTA_SELECTOR_OFFSET,
-        &selector_bin,
-        "hard-reset",
-        "select vendor-oracle ota_0 image",
     )
 }
 
@@ -1190,82 +1175,13 @@ mod tests {
     }
 
     #[test]
-    fn scenario_names_are_stable() {
-        assert_eq!(Scenario::parse("boot-smoke").unwrap(), Scenario::BootSmoke);
-        assert_eq!(Scenario::parse("radio").unwrap(), Scenario::Radio);
-        assert_eq!(Scenario::Radio.name(), "open-radio-hil");
+    fn image_classes_are_stable_and_do_not_use_workload_environment() {
+        assert_eq!(scenario::ImageClass::ALL.len(), 4);
+        assert_eq!(scenario::ImageClass::Qualification.id(), "qualification");
         assert_eq!(
-            Scenario::parse("radio-poll-profile").unwrap(),
-            Scenario::RadioPollProfile
+            scenario::ImageClass::DiagnosticRxDelivery.runtime_features(),
+            "open-radio-hil,rx-delivery-telemetry,code-psram,profile-psram-data"
         );
-        assert_eq!(
-            Scenario::RadioPollProfile.runtime_feature(),
-            "open-radio-hil,task-poll-telemetry"
-        );
-        assert_eq!(
-            Scenario::parse("radio-rx-delivery-profile").unwrap(),
-            Scenario::RadioRxDeliveryProfile
-        );
-        assert_eq!(
-            Scenario::RadioRxDeliveryProfile.runtime_feature(),
-            "open-radio-hil,rx-delivery-telemetry"
-        );
-        assert_eq!(Scenario::parse("udp-tx").unwrap(), Scenario::UdpTx);
-        assert_eq!(
-            Scenario::parse("bidirectional").unwrap(),
-            Scenario::Bidirectional
-        );
-        assert_eq!(Scenario::parse("tcp-rx").unwrap(), Scenario::Tcp);
-        assert_eq!(Scenario::parse("tcp").unwrap(), Scenario::Tcp);
-        assert!(Scenario::parse("he-dcm-matrix").is_err());
-    }
-
-    #[test]
-    fn scenario_arguments_and_artifact_names_are_unique() {
-        for (index, scenario) in Scenario::ALL.iter().enumerate() {
-            for other in &Scenario::ALL[index + 1..] {
-                assert_ne!(scenario.argument(), other.argument());
-                assert_ne!(scenario.name(), other.name());
-            }
-        }
-    }
-
-    #[test]
-    fn scenario_environment_selects_one_reproducible_mode() {
-        assert!(Scenario::Radio.environment().is_empty());
-        assert!(Scenario::RadioPollProfile.environment().is_empty());
-        assert!(Scenario::RadioRxDeliveryProfile.environment().is_empty());
-        assert_eq!(
-            Scenario::UdpTx.environment(),
-            &[("OPEN_RADIO_TX_BENCH", "1")]
-        );
-        assert_eq!(
-            Scenario::Bidirectional.environment(),
-            &[
-                ("OPEN_RADIO_TX_BENCH", "1"),
-                ("OPEN_RADIO_BIDIRECTIONAL_BENCH", "1"),
-            ]
-        );
-        assert_eq!(
-            Scenario::Tcp.environment(),
-            &[("OPEN_RADIO_TCP_BENCH", "1")]
-        );
-        for scenario in Scenario::ALL {
-            for (variable, _) in scenario.environment() {
-                if variable.starts_with("OPEN_RADIO_") {
-                    assert!(SCENARIO_ENVIRONMENT.contains(variable));
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn scenario_manifest_records_identity_without_external_configuration() {
-        let manifest = scenario_manifest(Scenario::UdpTx);
-        assert!(manifest.contains("scenario=udp-tx\n"));
-        assert!(manifest.contains("artifact=open-radio-udp-tx\n"));
-        assert!(manifest.contains("OPEN_RADIO_TX_BENCH=1\n"));
-        assert!(!manifest.contains("OPEN_RADIO_STA_PASSWORD"));
     }
 
     #[test]

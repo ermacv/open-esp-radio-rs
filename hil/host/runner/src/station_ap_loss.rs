@@ -19,24 +19,15 @@ struct Options {
     timeout: Duration,
 }
 
-pub(crate) fn run(arguments: Vec<String>, root: &Path, lab: &LabConfig) -> Result<()> {
-    if arguments
-        .first()
-        .is_some_and(|value| matches!(value.as_str(), "help" | "--help" | "-h"))
-    {
-        print_help();
-        return Ok(());
-    }
+pub(crate) fn run(arguments: Vec<String>, output: &Path, lab: &LabConfig) -> Result<()> {
     let options = parse_options(&arguments, lab)?;
-    let output = root.join("target/hil/esp32s31/qualification/station-ap-loss");
     fs::create_dir_all(&output)?;
 
     let mut ap = ControlledAp::start(&lab.station, &lab.openwrt)?;
     let capture = SerialCapture::start_with_reset(&options.serial);
     let mut cursor = capture.station_lifecycle_cursor();
     let result = qualify(&capture, lab, &mut cursor, &mut ap, options.timeout);
-    let log = capture.finish();
-    fs::write(output.join("uart.log"), &log)?;
+    capture.finish_to(output)?;
     drop(ap);
 
     result?;
@@ -52,7 +43,7 @@ fn qualify(
     ap: &mut ControlledAp,
     timeout: Duration,
 ) -> Result<()> {
-    let capabilities = capture.prepare_protocol(lab)?;
+    let capabilities = capture.prepare_station(lab, timeout)?;
     if !capabilities.features.station_lifecycle_events {
         return Err("firmware does not advertise reliable station lifecycle events".into());
     }
@@ -153,17 +144,6 @@ fn parse_options(arguments: &[String], lab: &LabConfig) -> Result<Options> {
         index += 1;
     }
     Ok(options)
-}
-
-fn print_help() {
-    println!(
-        "cargo hil station ap-loss [options]\n\n\
-         --timeout-seconds <n>    deadline for each lifecycle edge, 30..=300 (default 120)\n\n\
-         Starts the repository-controlled HE20 AP, waits for generation zero,\n\
-         removes the AP, requires a typed BeaconLoss edge, restores the AP and\n\
-         requires generation one. The helper restores managed host networking\n\
-         on every normal or error return."
-    );
 }
 
 #[cfg(test)]

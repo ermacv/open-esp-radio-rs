@@ -1,0 +1,18 @@
+schema = 1
+id = "icmp-latency"
+description = "Connected-station ICMP latency and loss"
+image = "qualification"
+isolation = "reset"
+tags = ["qualification", "icmp", "station"]
+
+[workload]
+kind = "icmp"
+count = 100
+interval_ms = 20
+timeout_ms = 1000
+payload_bytes = 56
+
+[criteria]
+maximum_lost = 0
+maximum_p95_ms = 20
+require_no_beacon_loss = true

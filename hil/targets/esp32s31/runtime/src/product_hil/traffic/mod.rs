@@ -7,9 +7,25 @@ mod runtime;
 mod tcp;
 mod udp;
 
+use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::Channel};
 use embassy_time::Timer;
 use open_esp_radio_hil_esp32s31_telemetry::aggregate_tx::AggregateTxCounters;
 use open_esp_radio_hil_protocol::SessionLinkRequirements;
+use open_esp_radio_hil_protocol::Transport;
+
+use crate::console::{ActiveSession, receive_session_start};
+
+pub(super) type SessionChannel = Channel<CriticalSectionRawMutex, ActiveSession, 1>;
+
+async fn run_session_dispatcher(udp: &'static SessionChannel, tcp: &'static SessionChannel) -> ! {
+    loop {
+        let session = receive_session_start().await;
+        match session.config.transport {
+            Transport::Udp => udp.send(session).await,
+            Transport::Tcp => tcp.send(session).await,
+        }
+    }
+}
 
 /// Wait until the production control/TX owners have proved every link
 /// property requested by a measured session. There is deliberately no

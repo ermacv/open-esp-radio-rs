@@ -4,11 +4,14 @@ use crc::{CRC_32_ISCSI, Crc};
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-use crate::EvidenceRecord;
+use crate::{Envelope, EvidenceRecord, PROTOCOL_VERSION, WireBody};
 
 pub const MAX_POSTCARD_BYTES: usize = 480;
+pub const WIRE_MAGIC: [u8; 4] = *b"ORHL";
+pub const FRAMING_VERSION: u8 = 1;
+pub const WIRE_HEADER_BYTES: usize = 34;
 const CHECKSUM_BYTES: usize = size_of::<u32>();
-const MAX_RAW_FRAME_BYTES: usize = MAX_POSTCARD_BYTES + CHECKSUM_BYTES;
+const MAX_RAW_FRAME_BYTES: usize = WIRE_HEADER_BYTES + MAX_POSTCARD_BYTES + CHECKSUM_BYTES;
 const MAX_COBS_FRAME_BYTES: usize = cobs::max_encoding_length(MAX_RAW_FRAME_BYTES);
 pub const MAX_WIRE_FRAME_BYTES: usize = 2 + MAX_COBS_FRAME_BYTES + 1;
 
@@ -55,6 +58,11 @@ impl fmt::Display for EncodeError {
 pub enum DecodeError {
     Cobs,
     TooShort,
+    Magic,
+    FramingVersion,
+    MessageKind,
+    ProtocolVersion,
+    PayloadLength,
     Checksum,
     Deserialize,
 }
@@ -63,18 +71,32 @@ impl fmt::Display for DecodeError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Cobs => formatter.write_str("invalid COBS frame"),
-            Self::TooShort => formatter.write_str("HIL frame does not contain a checksum"),
+            Self::TooShort => {
+                formatter.write_str("HIL frame does not contain a complete header and checksum")
+            }
+            Self::Magic => formatter.write_str("invalid HIL wire magic"),
+            Self::FramingVersion => formatter.write_str("unsupported HIL framing version"),
+            Self::MessageKind => formatter.write_str("HIL frame has the wrong message direction"),
+            Self::ProtocolVersion => formatter.write_str("unsupported HIL protocol version"),
+            Self::PayloadLength => {
+                formatter.write_str("HIL frame payload length does not match its header")
+            }
             Self::Checksum => formatter.write_str("HIL frame checksum mismatch"),
             Self::Deserialize => formatter.write_str("invalid HIL postcard payload"),
         }
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct DecodeCounters {
     pub frames: u32,
     pub cobs_errors: u32,
     pub too_short: u32,
+    pub header_errors: u32,
+    pub framing_version_errors: u32,
+    pub message_kind_errors: u32,
+    pub protocol_version_errors: u32,
+    pub payload_length_errors: u32,
     pub checksum_errors: u32,
     pub deserialize_errors: u32,
     pub overflows: u32,
@@ -103,15 +125,32 @@ impl FrameEncoder {
     ///
     /// A leading delimiter discards any preceding ROM or text output. The
     /// trailing delimiter terminates this frame for an incremental decoder.
-    pub fn encode<T>(&mut self, message: &T) -> Result<&[u8], EncodeError>
+    pub fn encode<T>(&mut self, message: &Envelope<T>) -> Result<&[u8], EncodeError>
     where
-        T: Serialize + ?Sized,
+        T: Serialize + WireBody,
     {
-        let payload_length = postcard::to_slice(message, &mut self.raw[..MAX_POSTCARD_BYTES])
-            .map_err(|_| EncodeError::Serialize)?
-            .len();
-        let checksum = CRC32C.checksum(&self.raw[..payload_length]);
-        self.raw[payload_length..payload_length + CHECKSUM_BYTES]
+        let payload_length = postcard::to_slice(
+            &message.body,
+            &mut self.raw[WIRE_HEADER_BYTES..WIRE_HEADER_BYTES + MAX_POSTCARD_BYTES],
+        )
+        .map_err(|_| EncodeError::Serialize)?
+        .len();
+        self.raw[..4].copy_from_slice(&WIRE_MAGIC);
+        self.raw[4] = FRAMING_VERSION;
+        self.raw[5] = T::WIRE_KIND as u8;
+        self.raw[6..8].copy_from_slice(&message.protocol_version.to_le_bytes());
+        self.raw[8..16].copy_from_slice(&message.boot_id.to_le_bytes());
+        self.raw[16..20].copy_from_slice(&message.message_sequence.to_le_bytes());
+        self.raw[20..28].copy_from_slice(&message.session_id.to_le_bytes());
+        self.raw[28..32].copy_from_slice(&message.request_id.to_le_bytes());
+        self.raw[32..34].copy_from_slice(
+            &u16::try_from(payload_length)
+                .map_err(|_| EncodeError::Serialize)?
+                .to_le_bytes(),
+        );
+        let protected_length = WIRE_HEADER_BYTES + payload_length;
+        let checksum = CRC32C.checksum(&self.raw[..protected_length]);
+        self.raw[protected_length..protected_length + CHECKSUM_BYTES]
             .copy_from_slice(&checksum.to_le_bytes());
 
         // Two leading delimiters recover even when arbitrary pre-protocol
@@ -120,7 +159,7 @@ impl FrameEncoder {
         self.wire[0] = 0;
         self.wire[1] = 0;
         let encoded_length = cobs::encode(
-            &self.raw[..payload_length + CHECKSUM_BYTES],
+            &self.raw[..protected_length + CHECKSUM_BYTES],
             &mut self.wire[2..2 + MAX_COBS_FRAME_BYTES],
         );
         self.wire[2 + encoded_length] = 0;
@@ -160,6 +199,11 @@ impl FrameDecoder {
                 frames: 0,
                 cobs_errors: 0,
                 too_short: 0,
+                header_errors: 0,
+                framing_version_errors: 0,
+                message_kind_errors: 0,
+                protocol_version_errors: 0,
+                payload_length_errors: 0,
                 checksum_errors: 0,
                 deserialize_errors: 0,
                 overflows: 0,
@@ -174,9 +218,12 @@ impl FrameDecoder {
     /// Feeds arbitrary serial chunks and calls `receive` for every complete
     /// frame. Empty delimiters are ignored, so senders may prefix every frame
     /// with a delimiter to recover from unframed boot output.
-    pub fn feed<T>(&mut self, bytes: &[u8], mut receive: impl FnMut(Result<T, DecodeError>))
-    where
-        T: for<'de> Deserialize<'de>,
+    pub fn feed<T>(
+        &mut self,
+        bytes: &[u8],
+        mut receive: impl FnMut(Result<Envelope<T>, DecodeError>),
+    ) where
+        T: for<'de> Deserialize<'de> + WireBody,
     {
         for &byte in bytes {
             if byte == 0 {
@@ -219,35 +266,85 @@ impl FrameDecoder {
         }
     }
 
-    fn decode<T>(&mut self) -> Result<T, DecodeError>
+    fn decode<T>(&mut self) -> Result<Envelope<T>, DecodeError>
     where
-        T: for<'de> Deserialize<'de>,
+        T: for<'de> Deserialize<'de> + WireBody,
     {
         let decoded_length =
             cobs::decode_in_place(&mut self.encoded[..self.length]).map_err(|_| {
                 self.counters.cobs_errors = self.counters.cobs_errors.saturating_add(1);
                 DecodeError::Cobs
             })?;
-        if decoded_length < CHECKSUM_BYTES {
+        if decoded_length < WIRE_HEADER_BYTES + CHECKSUM_BYTES {
             self.counters.too_short = self.counters.too_short.saturating_add(1);
             return Err(DecodeError::TooShort);
         }
-        let payload_length = decoded_length - CHECKSUM_BYTES;
+        if self.encoded[..4] != WIRE_MAGIC {
+            self.counters.header_errors = self.counters.header_errors.saturating_add(1);
+            return Err(DecodeError::Magic);
+        }
+        if self.encoded[4] != FRAMING_VERSION {
+            self.counters.framing_version_errors =
+                self.counters.framing_version_errors.saturating_add(1);
+            return Err(DecodeError::FramingVersion);
+        }
+        if self.encoded[5] != T::WIRE_KIND as u8 {
+            self.counters.message_kind_errors = self.counters.message_kind_errors.saturating_add(1);
+            return Err(DecodeError::MessageKind);
+        }
+        let protocol_version = u16::from_le_bytes([self.encoded[6], self.encoded[7]]);
+        if protocol_version != PROTOCOL_VERSION {
+            self.counters.protocol_version_errors =
+                self.counters.protocol_version_errors.saturating_add(1);
+            return Err(DecodeError::ProtocolVersion);
+        }
+        let payload_length = usize::from(u16::from_le_bytes([self.encoded[32], self.encoded[33]]));
+        let protected_length = WIRE_HEADER_BYTES + payload_length;
+        if protected_length + CHECKSUM_BYTES != decoded_length {
+            self.counters.payload_length_errors =
+                self.counters.payload_length_errors.saturating_add(1);
+            return Err(DecodeError::PayloadLength);
+        }
         let expected = u32::from_le_bytes(
-            self.encoded[payload_length..decoded_length]
+            self.encoded[protected_length..decoded_length]
                 .try_into()
                 .expect("checksum length is fixed"),
         );
-        if CRC32C.checksum(&self.encoded[..payload_length]) != expected {
+        if CRC32C.checksum(&self.encoded[..protected_length]) != expected {
             self.counters.checksum_errors = self.counters.checksum_errors.saturating_add(1);
             return Err(DecodeError::Checksum);
         }
-        let message = postcard::from_bytes(&self.encoded[..payload_length]).map_err(|_| {
-            self.counters.deserialize_errors = self.counters.deserialize_errors.saturating_add(1);
-            DecodeError::Deserialize
-        })?;
+        let body = postcard::from_bytes(&self.encoded[WIRE_HEADER_BYTES..protected_length])
+            .map_err(|_| {
+                self.counters.deserialize_errors =
+                    self.counters.deserialize_errors.saturating_add(1);
+                DecodeError::Deserialize
+            })?;
         self.counters.frames = self.counters.frames.saturating_add(1);
-        Ok(message)
+        Ok(Envelope {
+            protocol_version,
+            boot_id: u64::from_le_bytes(
+                self.encoded[8..16]
+                    .try_into()
+                    .expect("header range is fixed"),
+            ),
+            message_sequence: u32::from_le_bytes(
+                self.encoded[16..20]
+                    .try_into()
+                    .expect("header range is fixed"),
+            ),
+            session_id: u64::from_le_bytes(
+                self.encoded[20..28]
+                    .try_into()
+                    .expect("header range is fixed"),
+            ),
+            request_id: u32::from_le_bytes(
+                self.encoded[28..32]
+                    .try_into()
+                    .expect("header range is fixed"),
+            ),
+            body,
+        })
     }
 }
 
@@ -264,7 +361,7 @@ mod tests {
         Command, Completion, Direction, Envelope, Event, FlowConfig, Ipv4Endpoint, SessionConfig,
         SessionLinkRequirements, StackUsage, StackWatermark, StartupArtifactChunk,
         StationAttemptFailureReason, StationDisconnectReason, StationFailureStage,
-        StationLifecycleEvent, Transport, WifiRole, WifiRoleTransitionEvidence,
+        StationLifecycleEvent, Transport, WifiRole, WifiRoleTransitionEvidence, WireKind,
     };
 
     fn command(sequence: u32) -> Envelope<Command> {
@@ -275,6 +372,11 @@ mod tests {
             sequence,
             Command::Start,
         )
+    }
+
+    #[test]
+    fn command_envelope_remains_small_enough_for_embedded_queues() {
+        assert!(core::mem::size_of::<Envelope<Command>>() <= 256);
     }
 
     #[test]
@@ -291,6 +393,64 @@ mod tests {
         }
         assert_eq!(observed, Some(expected));
         assert_eq!(decoder.counters().frames, 1);
+    }
+
+    #[test]
+    fn wire_header_is_fixed_and_precedes_the_postcard_body() {
+        let expected = command(7);
+        let mut encoder = FrameEncoder::new();
+        let frame = encoder.encode(&expected).unwrap();
+        let mut raw = [0_u8; MAX_RAW_FRAME_BYTES];
+        let decoded = cobs::decode(&frame[2..frame.len() - 1], &mut raw).unwrap();
+
+        assert_eq!(&raw[..4], &WIRE_MAGIC);
+        assert_eq!(raw[4], FRAMING_VERSION);
+        assert_eq!(raw[5], WireKind::Command as u8);
+        assert_eq!(u16::from_le_bytes([raw[6], raw[7]]), PROTOCOL_VERSION);
+        assert_eq!(
+            u64::from_le_bytes(raw[8..16].try_into().unwrap()),
+            expected.boot_id
+        );
+        assert_eq!(
+            u32::from_le_bytes(raw[16..20].try_into().unwrap()),
+            expected.message_sequence
+        );
+        let payload_length = usize::from(u16::from_le_bytes([raw[32], raw[33]]));
+        assert_eq!(decoded, WIRE_HEADER_BYTES + payload_length + CHECKSUM_BYTES);
+        assert_eq!(
+            postcard::from_bytes::<Command>(
+                &raw[WIRE_HEADER_BYTES..WIRE_HEADER_BYTES + payload_length]
+            )
+            .unwrap(),
+            expected.body
+        );
+    }
+
+    #[test]
+    fn rejects_protocol_version_before_deserializing_the_body() {
+        let mut expected = command(7);
+        expected.protocol_version = PROTOCOL_VERSION - 1;
+        let mut encoder = FrameEncoder::new();
+        let frame = encoder.encode(&expected).unwrap();
+        let mut decoder = FrameDecoder::new();
+        let mut observed = None;
+        decoder.feed::<Command>(frame, |result| observed = Some(result));
+        assert_eq!(observed, Some(Err(DecodeError::ProtocolVersion)));
+        assert_eq!(decoder.counters().protocol_version_errors, 1);
+        assert_eq!(decoder.counters().deserialize_errors, 0);
+    }
+
+    #[test]
+    fn rejects_an_event_on_the_command_endpoint() {
+        let expected = Envelope::new(7, 1, 0, 1, Event::Accepted);
+        let mut encoder = FrameEncoder::new();
+        let frame = encoder.encode(&expected).unwrap();
+        let mut decoder = FrameDecoder::new();
+        let mut observed = None;
+        decoder.feed::<Command>(frame, |result| observed = Some(result));
+        assert_eq!(observed, Some(Err(DecodeError::MessageKind)));
+        assert_eq!(decoder.counters().message_kind_errors, 1);
+        assert_eq!(decoder.counters().deserialize_errors, 0);
     }
 
     #[test]
@@ -343,9 +503,9 @@ mod tests {
     fn discards_overfull_noise_until_a_delimiter() {
         let expected = command(3);
         let mut decoder = FrameDecoder::new();
-        decoder.feed::<Envelope<Command>>(&[0], |_| {});
-        decoder.feed::<Envelope<Command>>(&[0x55; MAX_COBS_FRAME_BYTES + 4], |_| {});
-        decoder.feed::<Envelope<Command>>(&[0], |_| {});
+        decoder.feed::<Command>(&[0], |_| {});
+        decoder.feed::<Command>(&[0x55; MAX_COBS_FRAME_BYTES + 4], |_| {});
+        decoder.feed::<Command>(&[0], |_| {});
 
         let mut encoder = FrameEncoder::new();
         let frame = encoder.encode(&expected).unwrap();
@@ -359,7 +519,7 @@ mod tests {
     fn credentials_round_trip_without_debugging_the_secret() {
         extern crate std;
 
-        use crate::{NetworkConfiguration, NetworkCredentials, NetworkIpv4Configuration};
+        use crate::NetworkCredentials;
 
         let credentials =
             NetworkCredentials::try_new(b"test-network", b"private-password").unwrap();
@@ -368,20 +528,7 @@ mod tests {
         let debug = std::format!("{credentials:?}");
         assert!(!debug.contains("private-password"));
 
-        let expected = Envelope::new(
-            7,
-            1,
-            0,
-            1,
-            Command::ProvisionNetwork(NetworkConfiguration {
-                credentials,
-                ipv4: NetworkIpv4Configuration::Static {
-                    address: [10, 42, 0, 138],
-                    prefix_length: 24,
-                    gateway: Some([10, 42, 0, 1]),
-                },
-            }),
-        );
+        let expected = Envelope::new(7, 1, 0, 1, Command::StartStation(credentials));
         let mut encoder = FrameEncoder::new();
         let frame = encoder.encode(&expected).unwrap();
         let mut decoder = FrameDecoder::new();
@@ -677,6 +824,75 @@ mod tests {
     }
 
     #[test]
+    fn maximum_radio_evidence_fits_and_round_trips() {
+        use crate::{EvidenceRecord, RadioEvidence, RxRadioEvidence, TxRadioEvidence};
+
+        let expected = Envelope::new(
+            7,
+            3,
+            9,
+            2,
+            Event::Evidence(EvidenceRecord::Radio(RadioEvidence {
+                rx: Some(RxRadioEvidence {
+                    phy_format: u8::MAX,
+                    dma_buffer_full: u32::MAX,
+                    dma_fifo_overflow: u32::MAX,
+                    network_dropped: u32::MAX,
+                    irq_drain_saturated: u32::MAX,
+                    unknown_irq_status: u32::MAX,
+                    sequence_first: Some(u32::MAX),
+                    sequence_highest: Some(u32::MAX),
+                    sequence_gap_events: u32::MAX,
+                    sequence_forward_missing: u32::MAX,
+                    sequence_backward: u32::MAX,
+                    sequence_duplicates: u32::MAX,
+                    sequence_unsequenced: u32::MAX,
+                    s_mpdu_datagrams: u32::MAX,
+                    not_s_mpdu_datagrams: u32::MAX,
+                    s_mpdu_unavailable_datagrams: u32::MAX,
+                    s_mpdu_beacons: u32::MAX,
+                    not_s_mpdu_beacons: u32::MAX,
+                    s_mpdu_unavailable_beacons: u32::MAX,
+                    ampdu_datagrams: u32::MAX,
+                    not_ampdu_datagrams: u32::MAX,
+                    hardware_ampdu_datagrams: u32::MAX,
+                    hardware_not_ampdu_datagrams: u32::MAX,
+                    protocol_ampdu_datagrams: u32::MAX,
+                    protocol_not_ampdu_datagrams: u32::MAX,
+                    ampdu_unavailable_datagrams: u32::MAX,
+                    reorder_tid: u8::MAX,
+                    reorder_window: u16::MAX,
+                    reorder_first_samples: u32::MAX,
+                    reorder_first_tid: u8::MAX,
+                    reorder_first_start: u16::MAX,
+                    reorder_first_sequence: u16::MAX,
+                    reorder_first_distance: u16::MAX,
+                    reorder_current_occupied: u32::MAX,
+                    reorder_maximum_occupied: u32::MAX,
+                    rx_service_calls: u32::MAX,
+                    rx_frontier_histogram_samples: u32::MAX,
+                    mac_irq_entries: u32::MAX,
+                    mac_irq_classified_entries: u32::MAX,
+                }),
+                tx: Some(TxRadioEvidence {
+                    bandwidth_mhz: u16::MAX,
+                    aggregate_rate_kbps: u32::MAX,
+                    aggregates_prepared: u32::MAX,
+                    prepared_histogram: [u32::MAX; 8],
+                    ..TxRadioEvidence::default()
+                }),
+            })),
+        );
+        let mut encoder = FrameEncoder::new();
+        let frame = encoder.encode(&expected).unwrap();
+        assert!(frame.len() <= MAX_WIRE_FRAME_BYTES);
+        let mut decoder = FrameDecoder::new();
+        let mut observed = None;
+        decoder.feed(frame, |result| observed = Some(result.unwrap()));
+        assert_eq!(observed, Some(expected));
+    }
+
+    #[test]
     fn startup_artifact_chunk_rejects_empty_and_out_of_range_payloads() {
         assert!(StartupArtifactChunk::try_new(0, 0, 0, &[1]).is_err());
         assert!(StartupArtifactChunk::try_new(1, 0, 0, &[]).is_err());
@@ -699,7 +915,8 @@ mod tests {
             rx_bytes: 2_400,
             ..match first {
                 EvidenceRecord::Transport(evidence) => evidence,
-                EvidenceRecord::RxDelivery(_)
+                EvidenceRecord::Radio(_)
+                | EvidenceRecord::RxDelivery(_)
                 | EvidenceRecord::Link(_)
                 | EvidenceRecord::Stack(_) => unreachable!(),
             }

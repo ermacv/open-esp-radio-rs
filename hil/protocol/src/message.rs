@@ -3,8 +3,11 @@ use core::fmt;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-pub const PROTOCOL_VERSION: u16 = 24;
-pub const STARTUP_ARTIFACT_CHUNK_MAX_LEN: usize = 384;
+pub const PROTOCOL_VERSION: u16 = 25;
+// Keep command envelopes small: startup artifacts are transferred as an
+// ordered CRC-protected stream, so a large per-command inline buffer only
+// inflates UART queues and executor futures without improving semantics.
+pub const STARTUP_ARTIFACT_CHUNK_MAX_LEN: usize = 160;
 // Keep the largest protocol enum comfortably below one RX frame. This value
 // bounds executor poll-stack pressure as well as wire latency; complete MPDUs
 // are reconstructed from ordered chunks on the host.
@@ -21,6 +24,21 @@ pub struct Envelope<T> {
     pub session_id: u64,
     pub request_id: u32,
     pub body: T,
+}
+
+/// Message direction encoded in the fixed wire header.
+///
+/// Keeping this outside the postcard body lets a decoder reject a frame sent
+/// to the wrong endpoint before interpreting the command or event enum.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(u8)]
+pub enum WireKind {
+    Command = 1,
+    Event = 2,
+}
+
+pub trait WireBody {
+    const WIRE_KIND: WireKind;
 }
 
 impl<T> Envelope<T> {
@@ -125,7 +143,7 @@ pub struct FeatureCapabilities {
     pub rx: bool,
     pub tx: bool,
     pub bidirectional: bool,
-    pub network_provisioning: bool,
+    pub runtime_initialization: bool,
     pub runtime_configuration: bool,
     pub structured_evidence: bool,
     /// This image accepts one opaque, host-owned startup artifact and can
@@ -381,39 +399,6 @@ impl NetworkIpv4Configuration {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct NetworkConfiguration {
-    pub credentials: NetworkCredentials,
-    pub ipv4: NetworkIpv4Configuration,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum NetworkConfigurationError {
-    Credentials(NetworkCredentialsError),
-    Ipv4Configuration,
-}
-
-impl fmt::Display for NetworkConfigurationError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Credentials(error) => error.fmt(formatter),
-            Self::Ipv4Configuration => formatter.write_str("invalid IPv4 configuration"),
-        }
-    }
-}
-
-impl NetworkConfiguration {
-    pub fn validate(&self) -> Result<(), NetworkConfigurationError> {
-        self.credentials
-            .validate()
-            .map_err(NetworkConfigurationError::Credentials)?;
-        if !self.ipv4.validate() {
-            return Err(NetworkConfigurationError::Ipv4Configuration);
-        }
-        Ok(())
-    }
-}
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Capabilities {
     pub features: FeatureCapabilities,
@@ -428,7 +413,9 @@ pub enum Command {
     /// query is valid only outside an active traffic session.
     QueryStackUsage,
     UploadStartupArtifact(StartupArtifactChunk),
-    ProvisionNetwork(NetworkConfiguration),
+    /// Initialize calibration and the network stack without materializing a
+    /// Wi-Fi role. This command is accepted exactly once per boot.
+    Initialize(NetworkIpv4Configuration),
     Configure(SessionConfig),
     Arm,
     Start,
@@ -439,7 +426,7 @@ pub enum Command {
     /// Stop the active station and return to role-neutral Wi-Fi ownership.
     StopStation,
     /// Materialize a station from the role-neutral Wi-Fi owner.
-    StartStation,
+    StartStation(NetworkCredentials),
     /// Run one finite standalone scan and return to role-neutral ownership.
     ScanWifi(WifiScanRequest),
     /// Materialize a standalone monitor from the role-neutral Wi-Fi owner.
@@ -455,16 +442,25 @@ pub enum Command {
     /// Run one finite monitor epoch, export its captured frames, return to
     /// idle and publish a terminal capture summary.
     CaptureMonitor(WifiMonitorCaptureRequest),
-    Stop,
-    Abort,
-    GetLastResult,
+    /// Return the current operation state and retained session identities.
+    GetStatus,
+    /// Cancel a configured or armed session before any workload starts.
+    Cancel,
+    /// Replay the retained evidence for a completed session.
+    ReplayResult,
+    /// Explicitly discard a terminal result and return to idle ownership.
+    Recover,
     AcknowledgeResult,
+}
+
+impl WireBody for Command {
+    const WIRE_KIND: WireKind = WireKind::Command;
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum SessionState {
     Booting,
-    WaitingForNetwork,
+    WaitingForInitialization,
     Idle,
     Configured,
     Armed,
@@ -478,6 +474,15 @@ pub enum SessionState {
 pub struct StateChange {
     pub previous: SessionState,
     pub current: SessionState,
+}
+
+/// Query result used to recover after an uncertain UART response without
+/// guessing whether a session was configured, started or completed.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct OperationStatus {
+    pub state: SessionState,
+    pub configured_session_id: Option<u64>,
+    pub completed_session_id: Option<u64>,
 }
 
 /// Target-observed ownership edges for one requested station epoch cycle.
@@ -869,6 +874,92 @@ pub struct TransportEvidence {
     pub transport_errors: u32,
 }
 
+/// Minimum typed radio evidence needed by ordinary UDP qualification. Richer
+/// timing histograms remain diagnostic telemetry and never decide PASS/FAIL.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct RadioEvidence {
+    pub rx: Option<RxRadioEvidence>,
+    pub tx: Option<TxRadioEvidence>,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct RxRadioEvidence {
+    /// ESP hardware RX format code observed for the measured interval.
+    pub phy_format: u8,
+    pub dma_buffer_full: u32,
+    pub dma_fifo_overflow: u32,
+    pub network_dropped: u32,
+    pub irq_drain_saturated: u32,
+    pub unknown_irq_status: u32,
+    pub sequence_first: Option<u32>,
+    pub sequence_highest: Option<u32>,
+    pub sequence_gap_events: u32,
+    pub sequence_forward_missing: u32,
+    pub sequence_backward: u32,
+    pub sequence_duplicates: u32,
+    pub sequence_unsequenced: u32,
+    pub s_mpdu_datagrams: u32,
+    pub not_s_mpdu_datagrams: u32,
+    pub s_mpdu_unavailable_datagrams: u32,
+    pub s_mpdu_beacons: u32,
+    pub not_s_mpdu_beacons: u32,
+    pub s_mpdu_unavailable_beacons: u32,
+    pub ampdu_datagrams: u32,
+    pub not_ampdu_datagrams: u32,
+    pub hardware_ampdu_datagrams: u32,
+    pub hardware_not_ampdu_datagrams: u32,
+    pub protocol_ampdu_datagrams: u32,
+    pub protocol_not_ampdu_datagrams: u32,
+    pub ampdu_unavailable_datagrams: u32,
+    pub reorder_tid: u8,
+    pub reorder_window: u16,
+    pub reorder_first_samples: u32,
+    pub reorder_first_tid: u8,
+    pub reorder_first_start: u16,
+    pub reorder_first_sequence: u16,
+    pub reorder_first_distance: u16,
+    pub reorder_current_occupied: u32,
+    pub reorder_maximum_occupied: u32,
+    pub rx_service_calls: u32,
+    pub rx_frontier_histogram_samples: u32,
+    pub mac_irq_entries: u32,
+    pub mac_irq_classified_entries: u32,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct TxRadioEvidence {
+    pub bandwidth_mhz: u16,
+    pub aggregate_rate_kbps: u32,
+    pub aggregates_prepared: u32,
+    pub aggregate_publications: u32,
+    pub aggregates_completed: u32,
+    pub subframes_prepared: u32,
+    pub subframes_acknowledged: u32,
+    pub individual_retries: u32,
+    pub hardware_timeouts: u32,
+    pub collisions: u32,
+    pub minimum_subframes: u8,
+    pub maximum_subframes: u8,
+    pub prepared_histogram: [u32; 8],
+    pub stopped_at_frame_limit: u32,
+    pub stopped_at_capacity_limit: u32,
+    pub stopped_on_empty_queue: u32,
+    pub preparation_micros: u32,
+    pub publication_micros: u32,
+    pub exchange_micros: u32,
+    pub block_ack_samples: u32,
+    pub block_ack_received: u32,
+    pub success_without_block_ack: u32,
+    pub nonzero_block_ack_control: u32,
+    pub full_block_ack: u32,
+    pub partial_block_ack: u32,
+    pub empty_block_ack: u32,
+    pub tx_irq_epochs: u32,
+    pub tx_irq_service_samples: u32,
+    pub tx_irq_clock_skew_samples: u32,
+    pub tx_publication_to_irq_samples: u32,
+}
+
 /// Sequence evidence collected at one finite UDP RX delivery stage.
 ///
 /// Qualification traffic uses non-negative, non-wrapping `i32` sequence
@@ -971,6 +1062,7 @@ pub struct StackUsage {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum EvidenceRecord {
     Transport(TransportEvidence),
+    Radio(RadioEvidence),
     RxDelivery(RxDeliveryEvidence),
     Link(LinkHealth),
     Stack(StackUsage),
@@ -991,11 +1083,16 @@ pub struct Finished {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum Event {
     Hello(Capabilities),
+    /// The radio and shared Wi-Fi owner are ready in the role-neutral idle
+    /// state. The request ID correlates this edge with [`Command::Initialize`].
+    Initialized,
     /// Correlated response to [`Command::QueryStackUsage`].
     StackUsage(StackUsage),
     Accepted,
     Rejected(RejectReason),
     State(StateChange),
+    /// Correlated response to [`Command::GetStatus`].
+    OperationStatus(OperationStatus),
     /// Reliable completion acknowledgement for `CycleStationEpoch`.
     /// The envelope request ID identifies the command being completed.
     StationEpochCompleted(StationEpochEvidence),
@@ -1027,4 +1124,8 @@ pub enum Event {
     Failed(FailureCode),
     StartupArtifactReady(StartupArtifactStatus),
     StartupArtifact(StartupArtifactChunk),
+}
+
+impl WireBody for Event {
+    const WIRE_KIND: WireKind = WireKind::Event;
 }

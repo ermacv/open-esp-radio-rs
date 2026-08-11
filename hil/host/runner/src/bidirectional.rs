@@ -15,8 +15,8 @@ use std::{
 };
 
 use open_esp_radio_hil_protocol::{
-    Completion, Direction, FlowConfig, Ipv4Endpoint, SessionConfig, SessionLinkRequirements,
-    Transport,
+    Completion, Direction, FlowConfig, Ipv4Endpoint, RxRadioEvidence, SessionConfig,
+    SessionLinkRequirements, Transport, TransportEvidence, TxRadioEvidence,
 };
 
 use crate::{
@@ -26,7 +26,7 @@ use crate::{
     paced_udp::{Config as PacedUdpConfig, HostTransmission, send as send_paced_udp},
     rx_delivery,
     traffic_capture::{SerialCapture, SessionEvidence, await_udp_rx_ready},
-    tx_traffic::{Burst, BurstFraming, describe_bursts, receive_bursts},
+    tx_traffic::{Burst, describe_bursts, receive_bursts},
     udp_socket::{configure_qualification_receive_buffer, open_reverse_flow},
 };
 
@@ -39,7 +39,7 @@ const DEFAULT_TX_PAYLOAD: usize = 1_472;
 const DEVICE_TX_SOURCE_PORT: u16 = 4_324;
 const MIN_HOST_TX_DATAGRAMS: u64 = 1_000;
 const MIN_QUALIFIED_SAMPLE: Duration = Duration::from_secs(4);
-const MIN_QUALIFIED_AGGREGATES: u64 = 100;
+pub(crate) const MIN_QUALIFIED_AGGREGATES: u64 = 100;
 const DEVICE_READY_TIMEOUT: Duration = Duration::from_secs(45);
 const PSRAM_CODE_START: u64 = 0x5000_0000;
 const PSRAM_CODE_END: u64 = 0x5100_0000;
@@ -80,6 +80,7 @@ struct Options {
     address: Ipv4Addr,
     port: u16,
     rate_bps: u64,
+    rx_floor_bps: Option<u64>,
     duration: Duration,
     payload: usize,
     tx_port: u16,
@@ -96,7 +97,7 @@ struct BidirectionalEvidence {
     target_rx: RxQualification,
     target_tx_floor_kbps: u64,
     host_sink: Burst,
-    session: Option<SessionEvidence>,
+    session: SessionEvidence,
     ampdu: AmpduEvidence,
     host_receive_buffer_bytes: usize,
     openwrt_rx: Option<OpenWrtRxEvidence>,
@@ -245,6 +246,48 @@ pub(crate) struct AmpduEvidence {
 }
 
 impl AmpduEvidence {
+    pub(crate) fn from_typed(typed: TxRadioEvidence) -> Self {
+        Self {
+            aggregates: u64::from(typed.aggregates_prepared),
+            publications: u64::from(typed.aggregate_publications),
+            completed: u64::from(typed.aggregates_completed),
+            subframes: u64::from(typed.subframes_prepared),
+            acknowledged: u64::from(typed.subframes_acknowledged),
+            individual_retry: u64::from(typed.individual_retries),
+            timeout: u64::from(typed.hardware_timeouts),
+            collision: u64::from(typed.collisions),
+            minimum: typed.minimum_subframes,
+            maximum: typed.maximum_subframes,
+            one: u64::from(typed.prepared_histogram[0]),
+            two_three: u64::from(typed.prepared_histogram[1]),
+            four_seven: u64::from(typed.prepared_histogram[2]),
+            eight_fifteen: u64::from(typed.prepared_histogram[3]),
+            sixteen_twentythree: u64::from(typed.prepared_histogram[4]),
+            twentyfour_thirty: u64::from(typed.prepared_histogram[5]),
+            thirtyone: u64::from(typed.prepared_histogram[6]),
+            full32: u64::from(typed.prepared_histogram[7]),
+            stop_frame: u64::from(typed.stopped_at_frame_limit),
+            stop_capacity: u64::from(typed.stopped_at_capacity_limit),
+            stop_empty: u64::from(typed.stopped_on_empty_queue),
+            preparation_us: u64::from(typed.preparation_micros),
+            publication_us: u64::from(typed.publication_micros),
+            exchange_us: u64::from(typed.exchange_micros),
+            block_ack_samples: u64::from(typed.block_ack_samples),
+            block_ack_received: u64::from(typed.block_ack_received),
+            block_ack_success_without: u64::from(typed.success_without_block_ack),
+            block_ack_nonzero_control: u64::from(typed.nonzero_block_ack_control),
+            full_block_ack: u64::from(typed.full_block_ack),
+            partial_block_ack: u64::from(typed.partial_block_ack),
+            empty_block_ack: u64::from(typed.empty_block_ack),
+            tx_irq_epochs: u64::from(typed.tx_irq_epochs),
+            tx_irq_samples: u64::from(typed.tx_irq_service_samples),
+            tx_irq_skew: u64::from(typed.tx_irq_clock_skew_samples),
+            tx_flight_samples: u64::from(typed.tx_publication_to_irq_samples),
+            ..Self::default()
+        }
+    }
+
+    #[cfg(test)]
     fn from_report(report: &DeviceReport) -> Self {
         let mut evidence = Self::default();
         for sample in &report.ampdu {
@@ -360,6 +403,7 @@ impl AmpduEvidence {
         evidence
     }
 
+    #[cfg(test)]
     fn histogram_total(self) -> u64 {
         self.one
             .saturating_add(self.two_three)
@@ -379,7 +423,7 @@ pub(crate) struct TxQualification {
     pub(crate) ampdu: AmpduEvidence,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(crate) struct RxQualification {
     pub(crate) throughput_median_kbps: u64,
     pub(crate) sample_count: usize,
@@ -398,6 +442,69 @@ pub(crate) struct RxQualification {
     pub(crate) reorder: RxReorderEvidence,
     pub(crate) buffer_full: u64,
     pub(crate) fifo_overflow: u64,
+}
+
+impl RxQualification {
+    pub(crate) fn from_typed(transport: TransportEvidence, radio: RxRadioEvidence) -> Self {
+        let throughput_median_kbps = transport
+            .rx_bytes
+            .saturating_mul(8)
+            .saturating_mul(1_000)
+            .checked_div(transport.elapsed_micros.max(1))
+            .unwrap_or(0);
+        Self {
+            throughput_median_kbps,
+            sample_count: 1,
+            received_datagrams: transport.rx_units,
+            enqueued: transport.rx_units,
+            dropped: u64::from(radio.network_dropped),
+            s_mpdu: RxSmpduEvidence {
+                s_mpdu_datagrams: u64::from(radio.s_mpdu_datagrams),
+                not_s_mpdu_datagrams: u64::from(radio.not_s_mpdu_datagrams),
+                unavailable_datagrams: u64::from(radio.s_mpdu_unavailable_datagrams),
+                s_mpdu_beacons: u64::from(radio.s_mpdu_beacons),
+                not_s_mpdu_beacons: u64::from(radio.not_s_mpdu_beacons),
+                unavailable_beacons: u64::from(radio.s_mpdu_unavailable_beacons),
+            },
+            ampdu: RxAmpduEvidence {
+                ampdu_datagrams: u64::from(radio.ampdu_datagrams),
+                not_ampdu_datagrams: u64::from(radio.not_ampdu_datagrams),
+                hardware_ampdu_datagrams: u64::from(radio.hardware_ampdu_datagrams),
+                hardware_not_ampdu_datagrams: u64::from(radio.hardware_not_ampdu_datagrams),
+                protocol_ampdu_datagrams: u64::from(radio.protocol_ampdu_datagrams),
+                protocol_not_ampdu_datagrams: u64::from(radio.protocol_not_ampdu_datagrams),
+                unavailable_datagrams: u64::from(radio.ampdu_unavailable_datagrams),
+            },
+            sequence: UdpSequenceEvidence {
+                intervals: 1,
+                first: radio.sequence_first.map(u64::from),
+                highest: radio.sequence_highest.map(u64::from),
+                next: radio.sequence_highest.map(|value| u64::from(value) + 1),
+                gap_events: u64::from(radio.sequence_gap_events),
+                forward_missing: u64::from(radio.sequence_forward_missing),
+                backward: u64::from(radio.sequence_backward),
+                adjacent_duplicates: u64::from(radio.sequence_duplicates),
+                unsequenced: u64::from(radio.sequence_unsequenced),
+                ..UdpSequenceEvidence::default()
+            },
+            reorder: RxReorderEvidence {
+                intervals: 1,
+                last_start_tid: u64::from(radio.reorder_tid),
+                window: u64::from(radio.reorder_window),
+                first_samples: u64::from(radio.reorder_first_samples),
+                first_tid: u64::from(radio.reorder_first_tid),
+                first_start_sequence: u64::from(radio.reorder_first_start),
+                first_frame_sequence: u64::from(radio.reorder_first_sequence),
+                first_distance: u64::from(radio.reorder_first_distance),
+                occupied: u64::from(radio.reorder_current_occupied),
+                maximum_occupied: u64::from(radio.reorder_maximum_occupied),
+                ..RxReorderEvidence::default()
+            },
+            buffer_full: u64::from(radio.dma_buffer_full),
+            fifo_overflow: u64::from(radio.dma_fifo_overflow),
+            ..Self::default()
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -970,16 +1077,13 @@ struct DeviceReport {
     failures: Vec<String>,
 }
 
-pub(crate) fn run(arguments: Vec<String>, root: &Path, lab: &LabConfig) -> Result<()> {
-    if arguments
-        .first()
-        .is_some_and(|value| matches!(value.as_str(), "help" | "--help" | "-h"))
-    {
-        print_help();
-        return Ok(());
-    }
+pub(crate) fn run(
+    arguments: Vec<String>,
+    output: &Path,
+    lab: &LabConfig,
+    require_no_beacon_loss: bool,
+) -> Result<()> {
     let mut options = parse_options(&arguments, lab)?;
-    let output = root.join("target/hil/esp32s31/qualification/open-radio-bidirectional");
     fs::create_dir_all(&output)?;
     invalidate_previous_report(&output)?;
     let tx_sink = UdpSocket::bind(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, options.tx_port))?;
@@ -995,8 +1099,7 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path, lab: &LabConfig) -> Resul
     ) {
         Ok(address) => address,
         Err(error) => {
-            let log = capture.finish();
-            fs::write(output.join("uart.log"), &log)?;
+            capture.finish_to(output)?;
             return Err(error);
         }
     };
@@ -1008,8 +1111,7 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path, lab: &LabConfig) -> Resul
     };
     // Admit the reverse flow through stateful host firewalls before `Start`.
     if let Err(error) = open_reverse_flow(&tx_sink) {
-        let log = capture.finish();
-        fs::write(output.join("uart.log"), &log)?;
+        capture.finish_to(output)?;
         return Err(error.into());
     }
     let openwrt_capture = lab
@@ -1024,38 +1126,28 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path, lab: &LabConfig) -> Resul
             )
         })
         .transpose()?;
-    let session = if discovered_address.runtime_session {
-        Some(capture.start_session(SessionConfig {
-            transport: Transport::Udp,
-            direction: Direction::Bidirectional,
-            completion: Completion::DurationMillis(u32::try_from(options.duration.as_millis())?),
-            peer: Some(Ipv4Endpoint {
-                address: host_address.octets(),
-                port: options.tx_port,
-            }),
-            target_rx: Some(FlowConfig {
-                payload_bytes: u16::try_from(options.payload)?,
-                offered_rate_bps: Some(options.rate_bps),
-            }),
-            target_tx: Some(FlowConfig {
-                payload_bytes: u16::try_from(options.tx_payload)?,
-                offered_rate_bps: options.tx_rate_bps,
-            }),
-            link_requirements: SessionLinkRequirements::tx_block_ack(0),
-        })?)
-    } else {
-        None
-    };
+    let session = capture.start_session(SessionConfig {
+        transport: Transport::Udp,
+        direction: Direction::Bidirectional,
+        completion: Completion::DurationMillis(u32::try_from(options.duration.as_millis())?),
+        peer: Some(Ipv4Endpoint {
+            address: host_address.octets(),
+            port: options.tx_port,
+        }),
+        target_rx: Some(FlowConfig {
+            payload_bytes: u16::try_from(options.payload)?,
+            offered_rate_bps: Some(options.rate_bps),
+        }),
+        target_tx: Some(FlowConfig {
+            payload_bytes: u16::try_from(options.tx_payload)?,
+            offered_rate_bps: options.tx_rate_bps,
+        }),
+        link_requirements: SessionLinkRequirements::tx_block_ack(0),
+    })?;
     let receiver_duration = options.duration.saturating_add(Duration::from_secs(2));
     let expected_device = options.address;
-    let framing = if session.is_some() {
-        BurstFraming::ProtocolSession
-    } else {
-        BurstFraming::IdleDelimited
-    };
-    let receiver = thread::spawn(move || {
-        receive_bursts(&tx_sink, expected_device, receiver_duration, framing)
-    });
+    let receiver =
+        thread::spawn(move || receive_bursts(&tx_sink, expected_device, receiver_duration));
     let host_result = send_paced_udp(PacedUdpConfig {
         address: options.address,
         port: options.port,
@@ -1067,39 +1159,56 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path, lab: &LabConfig) -> Resul
         .join()
         .map_err(|_| "bidirectional host TX receiver panicked")??;
     let host = host_result?;
-    let structured = if let Some(session) = session {
-        let evidence = match capture.wait_for_session(session, Duration::from_secs(5)) {
-            Ok(evidence) => evidence,
-            Err(error) => {
-                let log = capture.finish();
-                fs::write(output.join("uart.log"), &log)?;
-                return Err(error);
-            }
-        };
-        if let Err(error) = capture.acknowledge_session(session) {
-            let log = capture.finish();
-            fs::write(output.join("uart.log"), &log)?;
+    let structured = match capture.wait_for_session(session, Duration::from_secs(5)) {
+        Ok(evidence) => evidence,
+        Err(error) => {
+            capture.finish_to(output)?;
             return Err(error);
         }
-        Some(evidence)
-    } else {
-        thread::sleep(Duration::from_secs(5));
-        None
     };
+    if let Err(error) = capture.acknowledge_session(session) {
+        capture.finish_to(output)?;
+        return Err(error);
+    }
     let openwrt_rx = openwrt_capture.map(OpenWrtRxCapture::finish).transpose()?;
-    let log = capture.finish();
+    let beacon_loss = require_no_beacon_loss.then(|| capture.require_no_beacon_loss());
+    let log = capture.finish_to(output)?;
+    if let Some(result) = beacon_loss {
+        result?;
+    }
     let report = parse_device_report(&log);
-    fs::write(output.join("uart.log"), &log)?;
-    let rx_assessment = assess_rx_report(&report, options.phy.expected_rx_format())?;
-    let rx = rx_assessment.rx;
-    let mut qualification_failure = rx_assessment.failure;
-    let rx_median = rx.throughput_median_kbps;
-    let tx_floor = report
-        .tx
-        .iter()
-        .map(|sample| sample.throughput_kbps)
-        .min()
-        .ok_or("missing concurrent TX sample")?;
+    let raw_rx_radio = structured
+        .radio
+        .and_then(|evidence| evidence.rx)
+        .ok_or("session did not publish typed RX radio evidence")?;
+    let mut qualification_failure = structured
+        .require_rx_radio(options.phy.expected_rx_format(), host.datagrams)
+        .err()
+        .map(|error| error.to_string());
+    let text_assessment = assess_rx_report(&report, options.phy.expected_rx_format()).ok();
+    if let Some(failure) = text_assessment
+        .as_ref()
+        .and_then(|assessment| assessment.failure.as_deref())
+    {
+        eprintln!("diagnostic_text_warning={failure}");
+    }
+    let rx = text_assessment
+        .map(|assessment| assessment.rx)
+        .unwrap_or_else(|| RxQualification::from_typed(structured.transport, raw_rx_radio));
+    let rx_median = structured
+        .transport
+        .rx_bytes
+        .saturating_mul(8)
+        .saturating_mul(1_000)
+        .checked_div(structured.transport.elapsed_micros.max(1))
+        .unwrap_or(0);
+    let tx_floor = structured
+        .transport
+        .tx_bytes
+        .saturating_mul(8)
+        .saturating_mul(1_000)
+        .checked_div(structured.transport.elapsed_micros.max(1))
+        .unwrap_or(0);
     let qualified_tx_bursts: Vec<_> = tx_bursts
         .iter()
         .copied()
@@ -1124,7 +1233,9 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path, lab: &LabConfig) -> Resul
             ));
         }
     }
-    let minimum_bps = options.rate_bps.saturating_mul(9) / 10;
+    let minimum_bps = options
+        .rx_floor_bps
+        .unwrap_or_else(|| options.rate_bps.saturating_mul(9) / 10);
     if host.throughput_bps() < minimum_bps {
         qualification_failure.get_or_insert_with(|| {
             String::from("host failed to offer at least 90% of the requested rate")
@@ -1148,16 +1259,20 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path, lab: &LabConfig) -> Resul
             });
         }
     }
-    let legacy_delivery_failure =
-        validate_exact_rx_delivery(host.datagrams, rx.received_datagrams, rx.sequence, rx.order)
-            .err()
-            .map(|error| error.to_string());
     let (required_width, minimum_rate) = options.phy.required_tx();
-    let tx_vector_failure = qualify_tx_samples(&report, required_width, minimum_rate)
-        .err()
-        .map(|error| error.to_string());
-    let tx_ampdu_failure = qualify_ampdu(&report).err().map(|error| error.to_string());
-    if let Some(evidence) = structured {
+    let typed_tx = match structured.require_tx_radio(
+        required_width,
+        minimum_rate,
+        u32::try_from(MIN_QUALIFIED_AGGREGATES).unwrap_or(u32::MAX),
+    ) {
+        Ok(evidence) => Some(evidence),
+        Err(error) => {
+            qualification_failure.get_or_insert_with(|| error.to_string());
+            structured.radio.and_then(|radio| radio.tx)
+        }
+    };
+    {
+        let evidence = structured;
         let expected_rx_bytes = evidence
             .transport
             .rx_units
@@ -1181,17 +1296,8 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path, lab: &LabConfig) -> Resul
                 });
             }
         }
-        if evidence.transport.rx_units != rx.received_datagrams
-            || evidence.transport.rx_bytes != expected_rx_bytes
-        {
-            qualification_failure.get_or_insert_with(|| {
-                format!(
-                    "typed/text bidirectional RX mismatch: typed={}/{} text_units={}",
-                    evidence.transport.rx_bytes, evidence.transport.rx_units, rx.received_datagrams
-                )
-            });
-        }
-        if evidence.transport.rx_units != host.datagrams
+        if evidence.transport.rx_bytes != expected_rx_bytes
+            || evidence.transport.rx_units != host.datagrams
             || evidence.transport.rx_bytes != host.bytes
         {
             qualification_failure.get_or_insert_with(|| {
@@ -1205,9 +1311,9 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path, lab: &LabConfig) -> Resul
             });
         }
     }
-    let ampdu = AmpduEvidence::from_report(&report);
+    let ampdu = typed_tx.map(AmpduEvidence::from_typed).unwrap_or_default();
     if host_tx.missing != 0 || host_tx.reordered != 0 || host_tx.duplicates != 0 {
-        let target_tx_units = structured.map(|evidence| evidence.transport.tx_units);
+        let target_tx_units = Some(structured.transport.tx_units);
         let post_block_ack_loss = target_tx_units
             .and_then(|units| post_block_ack_delivery_loss_lower_bound(ampdu, host_tx, units));
         qualification_failure.get_or_insert_with(|| format!(
@@ -1226,24 +1332,18 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path, lab: &LabConfig) -> Resul
             ampdu.acknowledged,
         ));
     }
-    if let Some(evidence) = structured
-        && (evidence.transport.tx_units != host_tx.datagrams
-            || evidence.transport.tx_bytes != host_tx.bytes)
+    if structured.transport.tx_units != host_tx.datagrams
+        || structured.transport.tx_bytes != host_tx.bytes
     {
         qualification_failure.get_or_insert_with(|| {
             format!(
                 "typed/host bidirectional TX mismatch: target={}/{} host={}/{}",
-                evidence.transport.tx_bytes,
-                evidence.transport.tx_units,
+                structured.transport.tx_bytes,
+                structured.transport.tx_units,
                 host_tx.bytes,
                 host_tx.datagrams
             )
         });
-    }
-    if qualification_failure.is_none() {
-        qualification_failure = legacy_delivery_failure
-            .or(tx_vector_failure)
-            .or(tx_ampdu_failure);
     }
     write_report(
         &output,
@@ -1303,28 +1403,12 @@ pub(crate) fn post_block_ack_delivery_loss_lower_bound(
     Some(ampdu.acknowledged.saturating_sub(unique_host_datagrams))
 }
 
-fn print_help() {
-    println!(
-        "cargo hil traffic bidirectional [options]\n\
-         \n\
-         --rate <bps>       paced host-to-device rate (default 10M)\n\
-         --seconds <5..300> traffic duration (default 12)\n\
-         --payload <64..1472> UDP payload bytes (default 1200)\n\
-         --port <port>      device UDP sink (default 4323)\n\
-         --tx-payload <64..1472> target-to-host payload (default 1472)\n\
-         --tx-port <port>   host UDP sink (default 9002)\n\
-         --tx-rate <bps>    optional target-to-host offered-load bound\n\
-         --tx-floor <bps>   required device and host TX rate; default 90% of --tx-rate\n\
-         --phy <ht40|he20> expected negotiated PHY (default he20)\n\n\
-         Flash `cargo hil flash bidirectional` and wait for DHCP first."
-    );
-}
-
 fn parse_options(arguments: &[String], lab: &LabConfig) -> Result<Options> {
     let mut options = Options {
         address: Ipv4Addr::UNSPECIFIED,
         port: DEFAULT_PORT,
         rate_bps: DEFAULT_RATE_BPS,
+        rx_floor_bps: None,
         duration: DEFAULT_DURATION,
         payload: DEFAULT_PAYLOAD,
         tx_port: DEFAULT_TX_PORT,
@@ -1341,6 +1425,7 @@ fn parse_options(arguments: &[String], lab: &LabConfig) -> Result<Options> {
             .ok_or("bidirectional option requires a value")?;
         match arguments[index].as_str() {
             "--rate" => options.rate_bps = parse_rate(value)?,
+            "--rx-floor" => options.rx_floor_bps = Some(parse_rate(value)?),
             "--seconds" => {
                 let seconds = value.parse::<u64>()?;
                 if !(5..=300).contains(&seconds) {
@@ -1377,6 +1462,12 @@ fn parse_options(arguments: &[String], lab: &LabConfig) -> Result<Options> {
     }
     if options.port == 0 || options.tx_port == 0 {
         return Err("--port and --tx-port must be nonzero".into());
+    }
+    if options
+        .rx_floor_bps
+        .is_some_and(|floor| floor > options.rate_bps)
+    {
+        return Err("--rx-floor cannot exceed --rate".into());
     }
     if options.tx_floor_bps.is_none() {
         options.tx_floor_bps = options.tx_rate_bps.map(|rate| rate.saturating_mul(9) / 10);
@@ -2043,6 +2134,7 @@ fn qualify_runtime_marker(report: &DeviceReport) -> Result<()> {
     Ok(())
 }
 
+#[cfg(test)]
 fn qualify_tx_samples(
     report: &DeviceReport,
     required_width: u16,
@@ -2067,6 +2159,7 @@ fn qualify_tx_samples(
         .expect("nonempty TX samples"))
 }
 
+#[cfg(test)]
 fn qualify_ampdu(report: &DeviceReport) -> Result<AmpduEvidence> {
     let ampdu = AmpduEvidence::from_report(report);
     if ampdu.aggregates < MIN_QUALIFIED_AGGREGATES || ampdu.completed == 0 {
@@ -2468,25 +2561,6 @@ pub(crate) fn assess_rx_log(log: &str, expected_format: u8) -> Result<RxAssessme
     assess_rx_report(&parse_device_report(log), expected_format)
 }
 
-pub(crate) fn qualify_tx_log(
-    log: &str,
-    required_width: u16,
-    minimum_rate: u64,
-) -> Result<TxQualification> {
-    let report = parse_device_report(log);
-    qualify_runtime_marker(&report)?;
-    let throughput_floor_kbps = qualify_tx_samples(&report, required_width, minimum_rate)?;
-    let ampdu = qualify_ampdu(&report)?;
-    if let Some(failure) = report.failures.first() {
-        return Err(format!("device reported a data-path failure: {failure}").into());
-    }
-    Ok(TxQualification {
-        throughput_floor_kbps,
-        sample_count: report.tx.len(),
-        ampdu,
-    })
-}
-
 #[cfg(test)]
 fn qualify(
     options: &Options,
@@ -2512,6 +2586,7 @@ fn qualify(
     Ok(rx)
 }
 
+#[cfg(test)]
 pub(crate) fn validate_exact_rx_delivery(
     host_datagrams: u64,
     received_datagrams: u64,
@@ -2552,6 +2627,7 @@ pub(crate) fn validate_exact_rx_delivery(
     Ok(())
 }
 
+#[cfg(test)]
 fn rx_order_localization(sequence: UdpSequenceEvidence, order: RxOrderEvidence) -> &'static str {
     if sequence.backward == 0 {
         return "no recovered late datagram is available for MAC-order correlation";
@@ -2773,7 +2849,7 @@ fn write_report(
     let rx_order_report = rx_order_markdown(rx.order);
     let rx_reorder_report = rx_reorder_markdown(rx.reorder);
     let typed_delivery_report = structured
-        .and_then(|evidence| evidence.rx_delivery)
+        .rx_delivery
         .map(|delivery| rx_delivery::markdown(host.datagrams, delivery))
         .unwrap_or_else(|| {
             String::from(
@@ -2796,24 +2872,20 @@ fn write_report(
     let host_tx_duplicates = host_tx.duplicates;
     let host_tx_maximum_interarrival_us = host_tx.maximum_interarrival_us;
     let host_tx_sequence_after_maximum_interarrival = host_tx.sequence_after_maximum_interarrival;
-    let structured_report = structured
-        .map(|evidence| {
-            format!(
-                "- Typed session RX/TX: `{}` / `{}` bytes; `{}` / `{}` datagrams; CRC32C `0x{:08x}`\n\
+    let structured_report = format!(
+        "- Typed session RX/TX: `{}` / `{}` bytes; `{}` / `{}` datagrams; CRC32C `0x{:08x}`\n\
                  - Stack minimum free: CPU0 `{}/{}` bytes; CPU1 `{}/{}` bytes; required `{}%`\n",
-                evidence.transport.rx_bytes,
-                evidence.transport.tx_bytes,
-                evidence.transport.rx_units,
-                evidence.transport.tx_units,
-                evidence.finished.evidence_crc32c,
-                evidence.stack.cpu0.free_bytes,
-                evidence.stack.cpu0.capacity_bytes,
-                evidence.stack.cpu1.free_bytes,
-                evidence.stack.cpu1.capacity_bytes,
-                evidence.stack.minimum_free_percent,
-            )
-        })
-        .unwrap_or_else(|| String::from("- Typed session evidence: compatibility mode\n"));
+        structured.transport.rx_bytes,
+        structured.transport.tx_bytes,
+        structured.transport.rx_units,
+        structured.transport.tx_units,
+        structured.finished.evidence_crc32c,
+        structured.stack.cpu0.free_bytes,
+        structured.stack.cpu0.capacity_bytes,
+        structured.stack.cpu1.free_bytes,
+        structured.stack.cpu1.capacity_bytes,
+        structured.stack.minimum_free_percent,
+    );
     let openwrt_report = openwrt_rx.map_or_else(
         || String::from("- AP-side evidence: `external AP; not observed`\n"),
         |openwrt_rx| format!(

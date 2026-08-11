@@ -1993,13 +1993,16 @@ dependencies = [
 name = "open-esp-radio-hil-runner"
 version = "0.1.0"
 dependencies = [
+ "clap",
  "fs2",
  "libc",
  "open-esp-radio-hil-protocol",
  "open-esp-radio-ieee80211",
  "open-esp-radio-memory-report",
  "serde",
+ "serde_json",
  "serialport",
+ "sha2",
  "toml",
  "zeroize",
 ]

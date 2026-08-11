@@ -15,13 +15,13 @@ use open_esp_radio_hil_esp32s31_telemetry::{
 #[cfg(feature = "rx-delivery-telemetry")]
 use open_esp_radio_hil_protocol::RxReorderDeliveryEvidence;
 use open_esp_radio_hil_protocol::{
-    Direction as HilDirection, Event as HilEvent, ServiceInfo, SessionReady,
-    Transport as HilTransport, TransportEvidence,
+    Direction as HilDirection, Event as HilEvent, RadioEvidence, RxRadioEvidence, ServiceInfo,
+    SessionReady, Transport as HilTransport, TransportEvidence,
 };
 
 use super::UdpSocketBuffers;
 use crate::{
-    console::{complete_session, emergency_log, publish_event_reliably, receive_session_start},
+    console::{emergency_log, publish_event_reliably},
     product_hil::{
         rx_qualification,
         traffic::{
@@ -34,12 +34,9 @@ use crate::{
 };
 
 #[derive(Clone, Copy)]
-pub(in crate::product_hil) enum UdpRxSessionSource {
-    Console,
-    Bidirectional {
-        sessions: &'static BidirectionalSessionChannel,
-        results: &'static BidirectionalResultChannel,
-    },
+pub(in crate::product_hil) struct UdpRxSessionSource {
+    pub sessions: &'static BidirectionalSessionChannel,
+    pub results: &'static BidirectionalResultChannel,
 }
 
 #[derive(Clone, Copy)]
@@ -265,9 +262,10 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
         let irq_auxiliary_status_or = crate::product_hil::MAC_IRQ.take_auxiliary_status_or();
         let irq_unknown_status_or = crate::product_hil::MAC_IRQ.take_unknown_status_or();
         let pipeline_end = telemetry.pipeline.snapshot();
+        let pipeline_interval = pipeline_end.wrapping_delta_since(pipeline_start);
         #[cfg(feature = "rx-delivery-telemetry")]
         let rx_delivery = {
-            let reorder = pipeline_end.wrapping_delta_since(pipeline_start);
+            let reorder = pipeline_interval;
             rx_qualification::HilConnectedRxObserver::finish_delivery_session(
                 session.session_id,
                 RxReorderDeliveryEvidence {
@@ -415,28 +413,83 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
             transport_errors: receive_errors,
         };
         let passed = terminal_seen && receive_errors == 0;
-        match config.session_source {
-            UdpRxSessionSource::Bidirectional { results, .. } => {
-                complete_open_radio_bidirectional_direction(
-                    results,
-                    session.session_id,
-                    OpenRadioBidirectionalDirection::Rx,
-                    evidence,
-                    rx_delivery,
-                    passed,
+        let radio = RadioEvidence {
+            rx: Some(RxRadioEvidence {
+                phy_format: u8::try_from(rx_qualification::LAST_FORMAT.load(Ordering::Relaxed))
+                    .unwrap_or(u8::MAX),
+                dma_buffer_full: u32::from(hardware.buffer_full),
+                dma_fifo_overflow: u32::from(hardware.fifo_overflow),
+                network_dropped: queue_dropped,
+                irq_drain_saturated: irq_classification.saturated_entries,
+                unknown_irq_status: irq_unknown_status_or,
+                sequence_first: sequence.first,
+                sequence_highest: sequence.first.map(|_| sequence.highest),
+                sequence_gap_events: sequence.gap_events,
+                sequence_forward_missing: sequence.forward_missing,
+                sequence_backward: sequence.backward,
+                sequence_duplicates: sequence.adjacent_duplicates,
+                sequence_unsequenced: sequence.unsequenced,
+                s_mpdu_datagrams: rx_s_mpdu.s_mpdu_frames,
+                not_s_mpdu_datagrams: rx_s_mpdu.not_s_mpdu_frames,
+                s_mpdu_unavailable_datagrams: rx_s_mpdu.unavailable_frames,
+                s_mpdu_beacons: beacon_s_mpdu.s_mpdu_frames,
+                not_s_mpdu_beacons: beacon_s_mpdu.not_s_mpdu_frames,
+                s_mpdu_unavailable_beacons: beacon_s_mpdu.unavailable_frames,
+                ampdu_datagrams: rx_ampdu.ampdu_frames,
+                not_ampdu_datagrams: rx_ampdu.not_ampdu_frames,
+                hardware_ampdu_datagrams: rx_ampdu.hardware_ampdu_frames,
+                hardware_not_ampdu_datagrams: rx_ampdu.hardware_not_ampdu_frames,
+                protocol_ampdu_datagrams: rx_ampdu.protocol_ampdu_frames,
+                protocol_not_ampdu_datagrams: rx_ampdu.protocol_not_ampdu_frames,
+                ampdu_unavailable_datagrams: rx_ampdu.unavailable_frames,
+                reorder_tid: u8::try_from(pipeline_interval.reorder_last_start >> 26 & 0x07)
+                    .unwrap_or(u8::MAX),
+                reorder_window: u16::try_from(pipeline_interval.reorder_last_start >> 16 & 0x03ff)
+                    .unwrap_or(u16::MAX),
+                reorder_first_samples: pipeline_interval.reorder_first_samples,
+                reorder_first_tid: u8::try_from(pipeline_interval.reorder_last_first >> 24 & 0x0f)
+                    .unwrap_or(u8::MAX),
+                reorder_first_start: u16::try_from(
+                    pipeline_interval.reorder_last_first >> 12 & 0x0fff,
                 )
-                .await;
-            }
-            UdpRxSessionSource::Console => {
-                complete_session(session.session_id, evidence, rx_delivery, passed).await;
-            }
-        }
+                .unwrap_or(u16::MAX),
+                reorder_first_sequence: u16::try_from(
+                    pipeline_interval.reorder_last_first & 0x0fff,
+                )
+                .unwrap_or(u16::MAX),
+                reorder_first_distance: u16::try_from(
+                    pipeline_interval.reorder_last_first_distance,
+                )
+                .unwrap_or(u16::MAX),
+                reorder_current_occupied: pipeline_interval.reorder_current_occupied,
+                reorder_maximum_occupied: pipeline_interval.reorder_maximum_occupied,
+                rx_service_calls: pipeline_interval.service_calls,
+                rx_frontier_histogram_samples: pipeline_interval
+                    .frontier_zero_services
+                    .saturating_add(pipeline_interval.frontier_one_services)
+                    .saturating_add(pipeline_interval.frontier_two_three_services)
+                    .saturating_add(pipeline_interval.frontier_four_seven_services)
+                    .saturating_add(pipeline_interval.frontier_eight_fifteen_services)
+                    .saturating_add(pipeline_interval.frontier_sixteen_thirty_one_services)
+                    .saturating_add(pipeline_interval.frontier_thirty_two_plus_services),
+                mac_irq_entries,
+                mac_irq_classified_entries: mac_irq_entries,
+            }),
+            tx: None,
+        };
+        complete_open_radio_bidirectional_direction(
+            config.session_source.results,
+            session.session_id,
+            OpenRadioBidirectionalDirection::Rx,
+            evidence,
+            Some(radio),
+            rx_delivery,
+            passed,
+        )
+        .await;
     }
 }
 
 async fn receive_rx_session(source: UdpRxSessionSource) -> crate::console::ActiveSession {
-    match source {
-        UdpRxSessionSource::Console => receive_session_start().await,
-        UdpRxSessionSource::Bidirectional { sessions, .. } => sessions.receive().await,
-    }
+    source.sessions.receive().await
 }

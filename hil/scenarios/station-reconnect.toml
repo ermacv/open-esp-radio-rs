@@ -1,0 +1,15 @@
+schema = 1
+id = "station-reconnect"
+description = "Repeated safe station teardown and reassociation"
+image = "qualification"
+isolation = "reset"
+tags = ["qualification", "station", "lifecycle"]
+
+[workload]
+kind = "station-reconnect"
+cycles = 3
+boots = 1
+timeout_seconds = 90
+
+[criteria]
+require_no_beacon_loss = true

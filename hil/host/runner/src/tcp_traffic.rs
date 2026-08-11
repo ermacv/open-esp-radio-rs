@@ -41,56 +41,66 @@ struct Options {
     duration: Duration,
     chunk_bytes: usize,
     rx_rate_bps: Option<u64>,
+    rx_floor_bps: Option<u64>,
     tx_rate_bps: Option<u64>,
     tx_floor_bps: Option<u64>,
     serial: PathBuf,
 }
 
-#[derive(Clone, Copy, Debug, Default)]
-struct TargetSample {
-    rx_bytes: u64,
-    tx_bytes: u64,
-    rx_units: u64,
-    tx_units: u64,
-    elapsed_us: u64,
-    errors: u64,
-    buffer_full: u64,
-    fifo_overflow: u64,
-    enqueued: u64,
-    dropped: u64,
-    eof: bool,
-    pattern_ok: bool,
+pub(crate) fn run_rx(
+    arguments: Vec<String>,
+    output: &Path,
+    lab: &LabConfig,
+    require_no_beacon_loss: bool,
+) -> Result<()> {
+    run(
+        arguments,
+        output,
+        lab,
+        Direction::Rx,
+        require_no_beacon_loss,
+    )
 }
 
-pub(crate) fn run_rx(arguments: Vec<String>, root: &Path, lab: &LabConfig) -> Result<()> {
-    run(arguments, root, lab, Direction::Rx)
-}
-
-pub(crate) fn run_tx(arguments: Vec<String>, root: &Path, lab: &LabConfig) -> Result<()> {
-    run(arguments, root, lab, Direction::Tx)
+pub(crate) fn run_tx(
+    arguments: Vec<String>,
+    output: &Path,
+    lab: &LabConfig,
+    require_no_beacon_loss: bool,
+) -> Result<()> {
+    run(
+        arguments,
+        output,
+        lab,
+        Direction::Tx,
+        require_no_beacon_loss,
+    )
 }
 
 pub(crate) fn run_bidirectional(
     arguments: Vec<String>,
-    root: &Path,
+    output: &Path,
     lab: &LabConfig,
+    require_no_beacon_loss: bool,
 ) -> Result<()> {
-    run(arguments, root, lab, Direction::Bidirectional)
+    run(
+        arguments,
+        output,
+        lab,
+        Direction::Bidirectional,
+        require_no_beacon_loss,
+    )
 }
 
-fn run(arguments: Vec<String>, root: &Path, lab: &LabConfig, direction: Direction) -> Result<()> {
-    if arguments
-        .first()
-        .is_some_and(|value| matches!(value.as_str(), "help" | "--help" | "-h"))
-    {
-        print_help(direction);
-        return Ok(());
-    }
+fn run(
+    arguments: Vec<String>,
+    output: &Path,
+    lab: &LabConfig,
+    direction: Direction,
+    require_no_beacon_loss: bool,
+) -> Result<()> {
     let mut options = parse_options(&arguments, lab, direction)?;
     let mode = direction_name(direction);
-    let output = root.join(format!(
-        "target/hil/esp32s31/qualification/open-radio-tcp-{mode}"
-    ));
     fs::create_dir_all(&output)?;
     invalidate_previous_report(&output)?;
     let capture = SerialCapture::start_with_reset(&options.serial);
@@ -104,14 +114,10 @@ fn run(arguments: Vec<String>, root: &Path, lab: &LabConfig, direction: Directio
     ) {
         Ok(ready) => ready,
         Err(error) => {
-            let log = capture.finish();
-            fs::write(output.join("uart.log"), &log)?;
+            capture.finish_to(output)?;
             return Err(error);
         }
     };
-    if !ready.runtime_session {
-        return Err("TCP firmware did not advertise a runtime session".into());
-    }
     options.device = ready.address;
     reject_overlapping_ipv4_links(options.device)?;
     let session = capture.start_session(SessionConfig {
@@ -159,8 +165,11 @@ fn run(arguments: Vec<String>, root: &Path, lab: &LabConfig, direction: Directio
         .as_ref()
         .map(|_| capture.acknowledge_session(session))
         .unwrap_or(Ok(()));
-    let log = capture.finish();
-    fs::write(output.join("uart.log"), &log)?;
+    let beacon_loss = require_no_beacon_loss.then(|| capture.require_no_beacon_loss());
+    capture.finish_to(output)?;
+    if let Some(result) = beacon_loss {
+        result?;
+    }
     let data_plane = data_plane.map_err(|error| format!("TCP data plane failed: {error}"));
     let structured = structured.map_err(|error| format!("TCP target evidence failed: {error}"));
     let acknowledgement =
@@ -168,13 +177,7 @@ fn run(arguments: Vec<String>, root: &Path, lab: &LabConfig, direction: Directio
     let (host_tx, host_rx) = data_plane?;
     let structured = structured?;
     acknowledgement?;
-    let target = parse_target_sample(&log, direction).ok_or_else(|| {
-        format!(
-            "missing compact TCP evidence; UART transcript saved to {}",
-            output.join("uart.log").display()
-        )
-    })?;
-    let failure = validate(&options, host_tx, host_rx, structured, target)
+    let failure = validate(&options, host_tx, host_rx, structured)
         .err()
         .map(|error| error.to_string());
     write_report(
@@ -183,7 +186,6 @@ fn run(arguments: Vec<String>, root: &Path, lab: &LabConfig, direction: Directio
         host_tx,
         host_rx,
         structured,
-        target,
         failure.as_deref(),
     )?;
     if let Some(failure) = failure {
@@ -193,8 +195,8 @@ fn run(arguments: Vec<String>, root: &Path, lab: &LabConfig, direction: Directio
         "OPENRADIOHOST result=PASS mode=tcp-{mode} rx_kbps={} tx_kbps={} rx_bytes={} tx_bytes={} pattern_errors=0 report={}",
         host_tx.map_or(0, |sample| sample.throughput_bps() / 1_000),
         host_rx.map_or(0, |sample| sample.throughput_bps() / 1_000),
-        target.rx_bytes,
-        target.tx_bytes,
+        structured.transport.rx_bytes,
+        structured.transport.tx_bytes,
         output.join("report.md").display(),
     );
     Ok(())
@@ -205,58 +207,44 @@ fn validate(
     host_tx: Option<HostTransmission>,
     host_rx: Option<HostReception>,
     structured: SessionEvidence,
-    target: TargetSample,
 ) -> Result<()> {
-    if !structured.finished.summary.passed
-        || structured.transport.transport_errors != 0
-        || target.errors != 0
-    {
+    if !structured.finished.summary.passed || structured.transport.transport_errors != 0 {
         return Err(format!(
-            "target TCP session failed: passed={} typed_errors={} text_errors={}",
-            structured.finished.summary.passed,
-            structured.transport.transport_errors,
-            target.errors,
+            "target TCP session failed: passed={} transport_errors={}",
+            structured.finished.summary.passed, structured.transport.transport_errors,
         )
         .into());
     }
-    if structured.transport.rx_bytes != target.rx_bytes
-        || structured.transport.tx_bytes != target.tx_bytes
-        || structured.transport.rx_units != target.rx_units
-        || structured.transport.tx_units != target.tx_units
-    {
-        return Err("typed/text TCP evidence mismatch".into());
-    }
-    if target.buffer_full != 0 || target.fifo_overflow != 0 || target.dropped != 0 {
-        return Err("TCP session reported RX pipeline loss".into());
-    }
     if let Some(host) = host_tx {
-        if host.bytes != target.rx_bytes
-            || target.rx_units != 1
-            || !target.eof
-            || !target.pattern_ok
-        {
+        if host.bytes != structured.transport.rx_bytes || structured.transport.rx_units != 1 {
             return Err(format!(
-                "host-to-target TCP mismatch: host={} target={} units={} eof={} pattern={}",
-                host.bytes, target.rx_bytes, target.rx_units, target.eof, target.pattern_ok,
+                "host-to-target TCP mismatch: host={} target={} units={}",
+                host.bytes, structured.transport.rx_bytes, structured.transport.rx_units,
             )
             .into());
         }
-        let floor = options.rx_rate_bps.expect("RX direction has a rate") * 9 / 10;
+        let floor = options
+            .rx_floor_bps
+            .expect("RX direction has an acceptance floor");
         if host.throughput_bps() < floor {
             return Err("host TCP offer is below 90% of the requested RX rate".into());
         }
-    } else if target.rx_bytes != 0 || target.rx_units != 0 {
+    } else if structured.transport.rx_bytes != 0 || structured.transport.rx_units != 0 {
         return Err("TCP TX-only session reported target receive traffic".into());
     }
     if let Some(host) = host_rx {
-        if host.bytes != target.tx_bytes
-            || target.tx_units != 1
+        if host.bytes != structured.transport.tx_bytes
+            || structured.transport.tx_units != 1
             || !host.eof
             || host.pattern_errors != 0
         {
             return Err(format!(
                 "target-to-host TCP mismatch: host={} target={} units={} eof={} pattern_errors={}",
-                host.bytes, target.tx_bytes, target.tx_units, host.eof, host.pattern_errors,
+                host.bytes,
+                structured.transport.tx_bytes,
+                structured.transport.tx_units,
+                host.eof,
+                host.pattern_errors,
             )
             .into());
         }
@@ -270,46 +258,10 @@ fn validate(
             )
             .into());
         }
-    } else if target.tx_bytes != 0 || target.tx_units != 0 {
+    } else if structured.transport.tx_bytes != 0 || structured.transport.tx_units != 0 {
         return Err("TCP RX-only session reported target transmit traffic".into());
     }
     Ok(())
-}
-
-fn parse_target_sample(log: &str, direction: Direction) -> Option<TargetSample> {
-    let expected = match direction {
-        Direction::Rx => "Rx",
-        Direction::Tx => "Tx",
-        Direction::Bidirectional => "Bidirectional",
-    };
-    log.lines().rev().find_map(|line| {
-        if !line.contains("OTCP dir=") || text_field(line, "dir")? != expected {
-            return None;
-        }
-        Some(TargetSample {
-            rx_bytes: field(line, "rb")?,
-            tx_bytes: field(line, "tb")?,
-            rx_units: field(line, "ru")?,
-            tx_units: field(line, "tu")?,
-            elapsed_us: field(line, "u")?,
-            errors: field(line, "e")?,
-            buffer_full: field(line, "bf")?,
-            fifo_overflow: field(line, "fo")?,
-            enqueued: field(line, "enq")?,
-            dropped: field(line, "drop")?,
-            eof: field::<u8>(line, "eof")? != 0,
-            pattern_ok: field::<u8>(line, "pat")? != 0,
-        })
-    })
-}
-
-fn field<T: core::str::FromStr>(line: &str, name: &str) -> Option<T> {
-    text_field(line, name)?.parse().ok()
-}
-
-fn text_field<'a>(line: &'a str, name: &str) -> Option<&'a str> {
-    line.split_whitespace()
-        .find_map(|token| token.strip_prefix(&format!("{name}=")))
 }
 
 /// Reject a dual-homed host on the target's L2 subnet.
@@ -375,7 +327,6 @@ fn write_report(
     host_tx: Option<HostTransmission>,
     host_rx: Option<HostReception>,
     structured: SessionEvidence,
-    target: TargetSample,
     failure: Option<&str>,
 ) -> Result<()> {
     let result = if failure.is_some() { "FAIL" } else { "PASS" };
@@ -397,11 +348,8 @@ fn write_report(
              - Host RX reads: `{}`\n\
              - Typed RX/TX bytes: `{}` / `{}`\n\
              - Typed RX/TX streams: `{}` / `{}`\n\
-             - Target elapsed: `{}` us\n\
-             - Target EOF/pattern: `{}` / `{}`\n\
              - Host RX EOF/pattern errors: `{}` / `{}`\n\
-             - RX enqueued/software-dropped: `{}` / `{}`\n\
-             - Hardware BUFFER_FULL/FIFO_OVERFLOW: `{}` / `{}`\n\
+             - Target elapsed: `{}` us\n\
              - Stack minimum free: CPU0 `{}/{}` bytes; CPU1 `{}/{}` bytes; required `{}%`\n\
              - Typed evidence CRC32C: `0x{:08x}`\n\n\
              Byte equality and the deterministic absolute-offset pattern are required independently.\n\n\
@@ -420,19 +368,13 @@ fn write_report(
             options.tx_rate_bps.unwrap_or(0),
             options.tx_floor_bps.unwrap_or(0),
             host_rx.map_or(0, |value| value.reads),
-            target.rx_bytes,
-            target.tx_bytes,
-            target.rx_units,
-            target.tx_units,
-            target.elapsed_us,
-            target.eof,
-            target.pattern_ok,
+            structured.transport.rx_bytes,
+            structured.transport.tx_bytes,
+            structured.transport.rx_units,
+            structured.transport.tx_units,
             host_rx.is_some_and(|value| value.eof),
             host_rx.map_or(0, |value| value.pattern_errors),
-            target.enqueued,
-            target.dropped,
-            target.buffer_full,
-            target.fifo_overflow,
+            structured.transport.elapsed_micros,
             structured.stack.cpu0.free_bytes,
             structured.stack.cpu0.capacity_bytes,
             structured.stack.cpu1.free_bytes,
@@ -456,6 +398,11 @@ fn parse_options(arguments: &[String], lab: &LabConfig, direction: Direction) ->
             Direction::Tx => None,
             Direction::Bidirectional => Some(DEFAULT_BIDIRECTIONAL_RX_RATE_BPS),
         },
+        rx_floor_bps: match direction {
+            Direction::Rx => Some(DEFAULT_RX_RATE_BPS * 9 / 10),
+            Direction::Tx => None,
+            Direction::Bidirectional => Some(DEFAULT_BIDIRECTIONAL_RX_RATE_BPS * 9 / 10),
+        },
         tx_rate_bps: match direction {
             Direction::Rx => None,
             Direction::Tx => Some(DEFAULT_TX_RATE_BPS),
@@ -475,6 +422,7 @@ fn parse_options(arguments: &[String], lab: &LabConfig, direction: Direction) ->
             .ok_or("TCP option requires a value")?;
         match arguments[index].as_str() {
             "--rx-rate" => options.rx_rate_bps = Some(parse_rate(value)?),
+            "--rx-floor" => options.rx_floor_bps = Some(parse_rate(value)?),
             "--tx-rate" => options.tx_rate_bps = Some(parse_rate(value)?),
             "--tx-floor" => options.tx_floor_bps = Some(parse_rate(value)?),
             "--seconds" => {
@@ -498,22 +446,32 @@ fn parse_options(arguments: &[String], lab: &LabConfig, direction: Direction) ->
     let shape_valid = match direction {
         Direction::Rx => {
             options.rx_rate_bps.is_some()
+                && options.rx_floor_bps.is_some()
                 && options.tx_rate_bps.is_none()
                 && options.tx_floor_bps.is_none()
         }
         Direction::Tx => {
             options.rx_rate_bps.is_none()
+                && options.rx_floor_bps.is_none()
                 && options.tx_rate_bps.is_some()
                 && options.tx_floor_bps.is_some()
         }
         Direction::Bidirectional => {
             options.rx_rate_bps.is_some()
+                && options.rx_floor_bps.is_some()
                 && options.tx_rate_bps.is_some()
                 && options.tx_floor_bps.is_some()
         }
     };
     if !shape_valid {
         return Err("TCP rate options do not match the selected direction".into());
+    }
+    if options
+        .rx_rate_bps
+        .zip(options.rx_floor_bps)
+        .is_some_and(|(rate, floor)| floor > rate)
+    {
+        return Err("TCP RX floor cannot exceed the offered rate".into());
     }
     Ok(options)
 }
@@ -532,20 +490,6 @@ const fn direction_name(direction: Direction) -> &'static str {
         Direction::Tx => "tx",
         Direction::Bidirectional => "bidirectional",
     }
-}
-
-fn print_help(direction: Direction) {
-    println!(
-        "cargo hil traffic tcp-{} [options]\n\
-         --rx-rate <bps>   host-to-target offered rate\n\
-         --tx-rate <bps>   target-to-host offered rate\n\
-         --tx-floor <bps>  required target-to-host measured rate\n\
-         --seconds <5..300> session duration (default 12)\n\
-         --chunk <64..32768> application chunk (default 32768)\n\
-         --port <port>      TCP service/host listener port (default 4325)\n\
-         Flash `cargo hil flash tcp` first.",
-        direction_name(direction),
-    );
 }
 
 #[cfg(test)]

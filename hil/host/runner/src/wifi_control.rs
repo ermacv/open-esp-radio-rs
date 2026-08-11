@@ -70,17 +70,10 @@ struct Options {
 pub(crate) fn run(
     operation: &str,
     arguments: Vec<String>,
-    root: &Path,
+    output: &Path,
     lab: &LabConfig,
 ) -> Result<()> {
     let operation = Operation::parse(operation)?;
-    if arguments
-        .first()
-        .is_some_and(|value| matches!(value.as_str(), "help" | "--help" | "-h"))
-    {
-        print_help(operation);
-        return Ok(());
-    }
     let options = parse_options(&arguments, lab)?;
     let _access_point = if options.external_ap {
         require_station_credentials(&lab.station)?;
@@ -88,15 +81,10 @@ pub(crate) fn run(
     } else {
         Some(ControlledAp::start(&lab.station, &lab.openwrt)?)
     };
-    let output = root.join(format!(
-        "target/hil/esp32s31/qualification/wifi-{}",
-        operation.name()
-    ));
     fs::create_dir_all(&output)?;
     let capture = SerialCapture::start_with_reset(&options.serial);
     let result = qualify(&capture, lab, operation, &options);
-    let log = capture.finish();
-    fs::write(output.join("uart.log"), &log)?;
+    capture.finish_to(output)?;
     result?;
     println!("wifi_{}=PASS", operation.name());
     println!("uart_log={}", output.join("uart.log").display());
@@ -109,7 +97,7 @@ fn qualify(
     operation: Operation,
     options: &Options,
 ) -> Result<()> {
-    let capabilities = capture.prepare_protocol(lab)?;
+    let capabilities = capture.prepare_station(lab, options.timeout)?;
     if !capabilities.features.wifi_role_control {
         return Err("firmware does not advertise explicit Wi-Fi role control".into());
     }
@@ -123,7 +111,7 @@ fn qualify(
         return Ok(());
     }
     if operation == Operation::Start {
-        start_station(capture, options.timeout)?;
+        start_station(capture, lab, options.timeout)?;
         report_stack(capture, options.timeout, "station-started")?;
         return Ok(());
     }
@@ -164,7 +152,7 @@ fn qualify(
             stopped.authorized_peers,
             stopped.peer_removals,
         );
-        start_station(capture, options.timeout)?;
+        start_station(capture, lab, options.timeout)?;
         report_stack(capture, options.timeout, "station-restarted")?;
         return Ok(());
     }
@@ -180,7 +168,7 @@ fn qualify(
         scan.configured_ssid_rssi_dbm,
     );
     if operation == Operation::Scan {
-        start_station(capture, options.timeout)?;
+        start_station(capture, lab, options.timeout)?;
         report_stack(capture, options.timeout, "station-restarted")?;
         return Ok(());
     }
@@ -221,7 +209,7 @@ fn qualify(
         stopped.channel_unavailable,
         stopped.last_observed_channel,
     );
-    start_station(capture, options.timeout)?;
+    start_station(capture, lab, options.timeout)?;
     report_stack(capture, options.timeout, "station-restarted")?;
     Ok(())
 }
@@ -248,8 +236,13 @@ pub(crate) fn stop_station(
     Ok(evidence)
 }
 
-pub(crate) fn start_station(capture: &SerialCapture, timeout: Duration) -> Result<()> {
-    let evidence = capture.wait_wifi_role_transition(capture.request_station_start()?, timeout)?;
+pub(crate) fn start_station(
+    capture: &SerialCapture,
+    lab: &LabConfig,
+    timeout: Duration,
+) -> Result<()> {
+    let evidence =
+        capture.wait_wifi_role_transition(capture.request_station_start(lab)?, timeout)?;
     require_transition(evidence, WifiRole::Idle, WifiRole::Station)?;
     Ok(())
 }
@@ -344,18 +337,6 @@ fn parse_options(arguments: &[String], lab: &LabConfig) -> Result<Options> {
         index += 1;
     }
     Ok(options)
-}
-
-fn print_help(operation: Operation) {
-    println!(
-        "cargo hil wifi {} [options]\n\n\
-         --timeout-seconds <n>    role-transition deadline, 10..=180 (default 90)\n\
-         --external-ap            use a caller-owned access point\n\
-         --monitor-seconds <n>    monitor dwell, 1..=30 (default 3)\n\
-         --channel <1..=13>       monitor channel, or AP channel (default 6)\n\
-         --snapshot-length <n>    0 for complete frames, otherwise 1..=2304",
-        operation.name()
-    );
 }
 
 #[cfg(test)]

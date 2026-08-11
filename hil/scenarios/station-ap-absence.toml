@@ -1,0 +1,12 @@
+schema = 1
+id = "station-ap-absence"
+description = "Station exhausts bounded retries while the configured AP is absent"
+image = "qualification"
+isolation = "reset"
+tags = ["qualification", "station", "lifecycle"]
+
+[workload]
+kind = "station-ap-absence"
+timeout_seconds = 120
+
+[criteria]

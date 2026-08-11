@@ -1,0 +1,11 @@
+schema = 1
+id = "boot-smoke"
+description = "Bootstrap, PSRAM mapping and runtime startup"
+image = "boot-smoke"
+isolation = "reset"
+tags = ["smoke"]
+
+[workload]
+kind = "boot-smoke"
+
+[criteria]

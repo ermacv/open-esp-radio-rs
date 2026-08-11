@@ -16,12 +16,10 @@ use open_esp_radio_hil_protocol::{
     stream_pattern_matches,
 };
 
-use crate::console::{
-    complete_session, emergency_log, publish_event_reliably, receive_session_start,
-};
+use crate::console::{complete_session, emergency_log, publish_event_reliably};
 use crate::product_hil::OPEN_RADIO_TCP_CHUNK_CAPACITY;
 
-use super::{log_open_radio_ampdu_interval, wait_session_link_requirements};
+use super::{SessionChannel, log_open_radio_ampdu_interval, wait_session_link_requirements};
 
 #[derive(Clone, Copy)]
 pub(in crate::product_hil) struct TcpBenchmarkConfig {
@@ -97,6 +95,7 @@ pub(in crate::product_hil) async fn run_open_radio_tcp_benchmark<'a>(
     config: TcpBenchmarkConfig,
     pipeline_counters: &RxPipelineCounters,
     aggregate_counters: &AggregateTxCounters,
+    sessions: &'static SessionChannel,
 ) -> ! {
     stack.wait_config_up().await;
     while stack.config_v4().is_none() {
@@ -123,7 +122,7 @@ pub(in crate::product_hil) async fn run_open_radio_tcp_benchmark<'a>(
     }
     emergency_log(format_args!(
         "OPEN_RADIO_PHY_HIL result=PASS stage=tcp-ready port={} rx_buffer={} \
-         tx_buffer={} io_buffer={} runtime_session=1 directions=rx,tx,bidirectional",
+         tx_buffer={} io_buffer={} session_protocol=required directions=rx,tx,bidirectional",
         config.local_port,
         config.receive_buffer_capacity,
         config.transmit_buffer_capacity,
@@ -131,7 +130,7 @@ pub(in crate::product_hil) async fn run_open_radio_tcp_benchmark<'a>(
     ));
 
     loop {
-        let session = receive_session_start().await;
+        let session = sessions.receive().await;
         wait_session_link_requirements(session.config.link_requirements, aggregate_counters).await;
         publish_event_reliably(
             session.session_id,
@@ -314,6 +313,7 @@ pub(in crate::product_hil) async fn run_open_radio_tcp_benchmark<'a>(
                 elapsed_micros: elapsed_us,
                 transport_errors,
             },
+            None,
             None,
             passed,
         )

@@ -6,9 +6,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use open_esp_radio_hil_protocol::{
-    NetworkConfiguration, NetworkCredentials, NetworkIpv4Configuration,
-};
+use open_esp_radio_hil_protocol::{NetworkCredentials, NetworkIpv4Configuration};
 use serde::Deserialize;
 use zeroize::{Zeroize, Zeroizing};
 
@@ -174,14 +172,13 @@ impl LabConfig {
 }
 
 impl StationConfig {
-    pub(crate) fn network_configuration(&self) -> Result<NetworkConfiguration> {
-        let credentials =
-            NetworkCredentials::try_new(self.ssid.as_bytes(), self.passphrase.as_bytes())
-                .map_err(|error| format!("invalid HIL network credentials: {error}"))?;
-        Ok(NetworkConfiguration {
-            credentials,
-            ipv4: self.ipv4,
-        })
+    pub(crate) const fn ipv4(&self) -> NetworkIpv4Configuration {
+        self.ipv4
+    }
+
+    pub(crate) fn protocol_credentials(&self) -> Result<NetworkCredentials> {
+        NetworkCredentials::try_new(self.ssid.as_bytes(), self.passphrase.as_bytes())
+            .map_err(|error| format!("invalid HIL network credentials: {error}").into())
     }
 
     pub(crate) fn credentials(&self) -> (&str, &str) {

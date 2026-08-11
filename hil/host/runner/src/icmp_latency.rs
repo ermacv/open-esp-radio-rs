@@ -52,19 +52,28 @@ impl LatencySummary {
     }
 }
 
-pub(crate) fn run(arguments: Vec<String>, root: &Path, lab: &LabConfig) -> Result<()> {
-    if arguments
-        .first()
-        .is_some_and(|value| matches!(value.as_str(), "help" | "--help" | "-h"))
-    {
-        print_help();
-        return Ok(());
-    }
+pub(crate) fn run(
+    arguments: Vec<String>,
+    output: &Path,
+    lab: &LabConfig,
+    require_no_beacon_loss: bool,
+) -> Result<()> {
     let mut options = parse_options(&arguments)?;
     let capture = SerialCapture::start_with_reset(&lab.device.serial);
     options.device = await_network_ready(&capture, lab, NETWORK_READY_TIMEOUT)?;
     let socket = IcmpSocket::connect(options.device)?;
-    let summary = measure(&socket, options)?;
+    let summary = match measure(&socket, options) {
+        Ok(summary) => summary,
+        Err(error) => {
+            capture.finish_to(output)?;
+            return Err(error);
+        }
+    };
+    let beacon_loss = require_no_beacon_loss.then(|| capture.require_no_beacon_loss());
+    capture.finish_to(output)?;
+    if let Some(result) = beacon_loss {
+        result?;
+    }
     let acceptance_failure = if options.count - summary.received > options.maximum_lost {
         Some(format!(
             "ICMP lost {} replies at sequences {:?}, above the configured maximum {}",
@@ -83,7 +92,6 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path, lab: &LabConfig) -> Resul
     } else {
         None
     };
-    let output = root.join("target/hil/esp32s31/qualification/open-radio-icmp");
     fs::create_dir_all(&output)?;
     let report_path = output.join("report.md");
     fs::write(
@@ -250,18 +258,6 @@ fn parse_options(arguments: &[String]) -> Result<Options> {
         return Err(format!("ICMP payload must be 0..={MAX_PAYLOAD_BYTES} bytes").into());
     }
     Ok(options)
-}
-
-fn print_help() {
-    println!(
-        "cargo hil traffic icmp [options]\n\n\
-         --count <1..65535>       echo requests (default 100)\n\
-         --interval-ms <ms>       interval between requests (default 20)\n\
-         --timeout-ms <ms>        per-request reply timeout (default 1000)\n\
-         --payload <0..1400>      ICMP payload bytes (default 56)\n\
-         --max-lost <count>       accepted lost replies (default 0)\n\
-         --max-p95-ms <ms>        optional p95 latency ceiling"
-    );
 }
 
 struct IcmpSocket {

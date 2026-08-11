@@ -32,14 +32,7 @@ struct Options {
     external_ap: bool,
 }
 
-pub(crate) fn run(arguments: Vec<String>, root: &Path, lab: &LabConfig) -> Result<()> {
-    if arguments
-        .first()
-        .is_some_and(|value| matches!(value.as_str(), "help" | "--help" | "-h"))
-    {
-        print_help();
-        return Ok(());
-    }
+pub(crate) fn run(arguments: Vec<String>, artifact_dir: &Path, lab: &LabConfig) -> Result<()> {
     let options = parse_options(&arguments, lab)?;
     let _access_point = if options.external_ap {
         require_station_credentials(&lab.station)?;
@@ -47,7 +40,6 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path, lab: &LabConfig) -> Resul
     } else {
         Some(ControlledAp::start(&lab.station, &lab.openwrt)?)
     };
-    let artifact_dir = root.join("target/hil/esp32s31/qualification/wifi-capture");
     fs::create_dir_all(&artifact_dir)?;
     if let Some(parent) = options.output.parent()
         && !parent.as_os_str().is_empty()
@@ -57,8 +49,7 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path, lab: &LabConfig) -> Resul
 
     let serial = SerialCapture::start_with_reset(&options.serial);
     let result = qualify(&serial, lab, &options);
-    let log = serial.finish();
-    fs::write(artifact_dir.join("uart.log"), log)?;
+    serial.finish_to(artifact_dir)?;
     let result = result?;
     pcapng::write_capture(
         &options.output,
@@ -98,7 +89,7 @@ struct CaptureResult {
 }
 
 fn qualify(serial: &SerialCapture, lab: &LabConfig, options: &Options) -> Result<CaptureResult> {
-    let capabilities = serial.prepare_protocol(lab)?;
+    let capabilities = serial.prepare_station(lab, options.timeout)?;
     if !capabilities.features.wifi_monitor_capture {
         return Err("firmware does not advertise typed monitor capture".into());
     }
@@ -109,7 +100,7 @@ fn qualify(serial: &SerialCapture, lab: &LabConfig, options: &Options) -> Result
         None => {
             let evidence = scan(serial, options.timeout)?;
             if !(1..=13).contains(&evidence.configured_ssid_channel) {
-                start_station(serial, options.timeout)?;
+                start_station(serial, lab, options.timeout)?;
                 return Err("scan did not provide a capture channel".into());
             }
             evidence.configured_ssid_channel
@@ -128,7 +119,7 @@ fn qualify(serial: &SerialCapture, lab: &LabConfig, options: &Options) -> Result
         duration_millis,
     })?;
     let capture = serial.wait_monitor_capture(handle, options.timeout + options.duration);
-    let restart = start_station(serial, options.timeout);
+    let restart = start_station(serial, lab, options.timeout);
     let capture = match (capture, restart) {
         (Ok(capture), Ok(())) => capture,
         (Err(capture), Ok(())) => return Err(capture),
@@ -266,18 +257,6 @@ fn parse_options(arguments: &[String], lab: &LabConfig) -> Result<Options> {
         snapshot_length,
         external_ap,
     })
-}
-
-fn print_help() {
-    println!(
-        "cargo hil wifi capture --output <capture.pcapng> [options]\n\n\
-         --output <path>          required PCAPNG destination\n\
-         --seconds <1..=30>       finite capture duration (default 3)\n\
-         --channel <1..=13>       default: channel discovered by standalone scan\n\
-         --snapshot-length <n>    0 for complete frames, otherwise 1..=2304\n\
-         --timeout-seconds <n>    role-transition deadline, 10..=180 (default 90)\n\
-         --external-ap            use a caller-owned access point"
-    );
 }
 
 #[cfg(test)]

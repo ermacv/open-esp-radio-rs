@@ -1,0 +1,18 @@
+schema = 1
+id = "udp-rx-delivery-diagnostic"
+description = "RX reorder, network enqueue and UDP consumer frontier evidence"
+image = "diagnostic-rx-delivery"
+isolation = "reset"
+tags = ["diagnostic", "udp", "station"]
+
+[workload]
+kind = "udp"
+direction = "rx"
+duration_seconds = 16
+rx_rate_bps = 80000000
+payload_bytes = 1200
+phy = "he20"
+
+[criteria]
+exact_delivery = true
+minimum_rx_bps = 70000000

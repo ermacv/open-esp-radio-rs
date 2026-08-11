@@ -15,20 +15,20 @@ pub use framing::{
 };
 pub use message::{
     Capabilities, Command, Completion, Direction, Envelope, Event, EvidenceRecord, FailureCode,
-    FeatureCapabilities, Finished, FlowConfig, Ipv4Endpoint, LinkHealth, NetworkConfiguration,
-    NetworkConfigurationError, NetworkCredentials, NetworkCredentialsError, NetworkInfo,
-    NetworkIpv4Configuration, PROTOCOL_VERSION, RejectReason, ResultSummary,
-    RxConsumerLedgerEvidence, RxDeliveryEvidence, RxMacOrderEvidence, RxReorderDeliveryEvidence,
+    FeatureCapabilities, Finished, FlowConfig, Ipv4Endpoint, LinkHealth, NetworkCredentials,
+    NetworkCredentialsError, NetworkInfo, NetworkIpv4Configuration, OperationStatus,
+    PROTOCOL_VERSION, RadioEvidence, RejectReason, ResultSummary, RxConsumerLedgerEvidence,
+    RxDeliveryEvidence, RxMacOrderEvidence, RxRadioEvidence, RxReorderDeliveryEvidence,
     RxSequenceStageEvidence, STARTUP_ARTIFACT_CHUNK_MAX_LEN, ServiceInfo, SessionConfig,
     SessionLinkRequirements, SessionReady, SessionState, StackUsage, StackWatermark,
     StartupArtifactChunk, StartupArtifactChunkError, StartupArtifactDisposition,
     StartupArtifactStatus, StateChange, StationAttemptFailureReason, StationDisconnectReason,
     StationEpochEvidence, StationFailureStage, StationLifecycleEvent, Transport, TransportEvidence,
-    WIFI_MONITOR_FRAME_CHUNK_MAX_LEN, WPA2_PASSPHRASE_MAX_LEN, WPA2_PASSPHRASE_MIN_LEN,
-    WPA2_SSID_MAX_LEN, WifiAccessPointEvidence, WifiAccessPointRequest,
+    TxRadioEvidence, WIFI_MONITOR_FRAME_CHUNK_MAX_LEN, WPA2_PASSPHRASE_MAX_LEN,
+    WPA2_PASSPHRASE_MIN_LEN, WPA2_SSID_MAX_LEN, WifiAccessPointEvidence, WifiAccessPointRequest,
     WifiAccessPointRequestError, WifiMonitorCaptureRequest, WifiMonitorEvidence,
     WifiMonitorEvidenceSource, WifiMonitorFrameChunk, WifiMonitorFrameChunkError,
     WifiMonitorObserved, WifiMonitorPhyEvidence, WifiMonitorPhyFormat, WifiMonitorRequest,
-    WifiRole, WifiRoleTransitionEvidence, WifiScanEvidence, WifiScanRequest,
+    WifiRole, WifiRoleTransitionEvidence, WifiScanEvidence, WifiScanRequest, WireBody, WireKind,
 };
 pub use stream_pattern::{fill_stream_pattern, stream_pattern_byte, stream_pattern_matches};

@@ -1,0 +1,17 @@
+schema = 1
+id = "tcp-rx"
+description = "Sustained TCP host-to-station receive"
+image = "qualification"
+isolation = "reset"
+tags = ["qualification", "tcp", "station"]
+
+[workload]
+kind = "tcp"
+direction = "rx"
+duration_seconds = 16
+rx_rate_bps = 80000000
+chunk_bytes = 32768
+
+[criteria]
+minimum_rx_bps = 60000000
+require_no_beacon_loss = true

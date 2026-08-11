@@ -1,0 +1,16 @@
+schema = 1
+id = "wifi-role-roundtrip"
+description = "Station, idle, scan and monitor ownership roundtrip"
+image = "qualification"
+isolation = "reset"
+tags = ["qualification", "wifi", "lifecycle"]
+
+[workload]
+kind = "wifi-role"
+operation = "roundtrip"
+timeout_seconds = 90
+channel = 6
+dwell_seconds = 3
+snapshot_length = 0
+
+[criteria]

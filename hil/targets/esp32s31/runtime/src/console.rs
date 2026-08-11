@@ -21,12 +21,13 @@ use esp_hal::{
 };
 use open_esp_radio_hil_protocol::{
     Capabilities, Command, Completion, Direction, Envelope, Event, EvidenceRecord, Finished,
-    FrameDecoder, FrameEncoder, NetworkConfiguration, PROTOCOL_VERSION, RejectReason,
-    ResultSummary, RxDeliveryEvidence, STARTUP_ARTIFACT_CHUNK_MAX_LEN, SessionConfig, SessionState,
-    StartupArtifactChunk, StartupArtifactDisposition, StartupArtifactStatus, StateChange,
-    StationEpochEvidence, StationLifecycleEvent, Transport, TransportEvidence,
-    WifiMonitorCaptureRequest, WifiMonitorEvidence, WifiMonitorFrameChunk, WifiMonitorRequest,
-    WifiRole, WifiRoleTransitionEvidence, WifiScanEvidence, WifiScanRequest, evidence_crc32c,
+    FrameDecoder, FrameEncoder, LinkHealth, NetworkCredentials, NetworkIpv4Configuration,
+    PROTOCOL_VERSION, RejectReason, ResultSummary, RxDeliveryEvidence,
+    STARTUP_ARTIFACT_CHUNK_MAX_LEN, SessionConfig, SessionState, StartupArtifactChunk,
+    StartupArtifactDisposition, StartupArtifactStatus, StateChange, StationEpochEvidence,
+    StationLifecycleEvent, Transport, TransportEvidence, WifiMonitorCaptureRequest,
+    WifiMonitorEvidence, WifiMonitorFrameChunk, WifiMonitorRequest, WifiRole,
+    WifiRoleTransitionEvidence, WifiScanEvidence, WifiScanRequest, evidence_crc32c,
     startup_artifact_crc32c,
 };
 
@@ -57,6 +58,16 @@ static EVENT_SEQUENCE: AtomicU32 = AtomicU32::new(0);
 static PROTOCOL_DROPPED: AtomicU32 = AtomicU32::new(0);
 #[unsafe(link_section = ".critical.data.logging")]
 static PROTOCOL_TX_FRAMES: AtomicU32 = AtomicU32::new(0);
+#[unsafe(link_section = ".critical.data.logging")]
+static PROTOCOL_RX_FRAMES: AtomicU32 = AtomicU32::new(0);
+#[unsafe(link_section = ".critical.data.logging")]
+static PROTOCOL_RX_COBS_ERRORS: AtomicU32 = AtomicU32::new(0);
+#[unsafe(link_section = ".critical.data.logging")]
+static PROTOCOL_RX_CHECKSUM_ERRORS: AtomicU32 = AtomicU32::new(0);
+#[unsafe(link_section = ".critical.data.logging")]
+static PROTOCOL_RX_DECODE_ERRORS: AtomicU32 = AtomicU32::new(0);
+#[unsafe(link_section = ".critical.data.logging")]
+static PROTOCOL_RX_OVERFLOWS: AtomicU32 = AtomicU32::new(0);
 /// One plus the last event sequence fully written to the USB endpoint.
 /// Zero means that no event from the current boot has crossed that boundary.
 #[unsafe(link_section = ".critical.data.logging")]
@@ -83,7 +94,7 @@ static SESSION_RESULTS: Channel<CriticalSectionRawMutex, SessionResult, 1> = Cha
 static WIFI_CONTROL_REQUESTS: Channel<CriticalSectionRawMutex, WifiControlRequest, 1> =
     Channel::new();
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum WifiControlRequest {
     Cycle {
         request_id: u32,
@@ -93,6 +104,7 @@ pub enum WifiControlRequest {
     },
     StartStation {
         request_id: u32,
+        credentials: NetworkCredentials,
     },
     Scan {
         request_id: u32,
@@ -118,7 +130,8 @@ pub struct ActiveSession {
 }
 
 pub struct StartupConfiguration {
-    pub network: NetworkConfiguration,
+    pub request_id: u32,
+    pub ipv4: NetworkIpv4Configuration,
     pub phy_calibration_artifact: Option<StartupArtifact>,
 }
 
@@ -203,6 +216,7 @@ impl StartupArtifactAssembler {
 struct SessionResult {
     session_id: u64,
     evidence: TransportEvidence,
+    radio: Option<open_esp_radio_hil_protocol::RadioEvidence>,
     rx_delivery: Option<RxDeliveryEvidence>,
     passed: bool,
 }
@@ -339,6 +353,11 @@ pub async fn receive_startup_configuration() -> StartupConfiguration {
     STARTUP_CONFIGURATIONS.receive().await
 }
 
+/// Publish the role-neutral completion edge for one initialization command.
+pub async fn complete_initialization(request_id: u32) {
+    publish_event_reliably(0, request_id, Event::Initialized).await;
+}
+
 /// Returns the current target-defined startup artifact to the host in bounded
 /// wire frames. This runs before traffic measurement and never writes flash or
 /// NVS on the target.
@@ -458,6 +477,7 @@ pub async fn publish_station_lifecycle(event: StationLifecycleEvent) {
 pub async fn complete_session(
     session_id: u64,
     evidence: TransportEvidence,
+    radio: Option<open_esp_radio_hil_protocol::RadioEvidence>,
     rx_delivery: Option<RxDeliveryEvidence>,
     passed: bool,
 ) {
@@ -465,6 +485,7 @@ pub async fn complete_session(
         .send(SessionResult {
             session_id,
             evidence,
+            radio,
             rx_delivery,
             passed,
         })
@@ -506,12 +527,12 @@ pub async fn protocol_task(capabilities: Capabilities) {
         0,
         Event::State(StateChange {
             previous: SessionState::Booting,
-            current: SessionState::WaitingForNetwork,
+            current: SessionState::WaitingForInitialization,
         }),
     )
     .await;
-    let mut network_provisioned = false;
-    let mut state = SessionState::WaitingForNetwork;
+    let mut initialized = false;
+    let mut state = SessionState::WaitingForInitialization;
     let mut configured = None::<ActiveSession>;
     let mut last_result = None::<SessionResult>;
     let mut startup_artifact = StartupArtifactAssembler::new();
@@ -526,20 +547,18 @@ pub async fn protocol_task(capabilities: Capabilities) {
                             .await;
                     }
                     Command::QueryStackUsage => {
-                        let response = if network_provisioned
-                            && state == SessionState::Idle
-                            && session_id == 0
-                        {
-                            Event::StackUsage(crate::stack_usage_snapshot())
-                        } else {
-                            Event::Rejected(RejectReason::InvalidState)
-                        };
+                        let response =
+                            if initialized && state == SessionState::Idle && session_id == 0 {
+                                Event::StackUsage(crate::stack_usage_snapshot())
+                            } else {
+                                Event::Rejected(RejectReason::InvalidState)
+                            };
                         publish_event_reliably(session_id, request_id, response).await;
                     }
                     Command::UploadStartupArtifact(chunk) => {
                         let response = if !capabilities.features.startup_artifact {
                             Event::Rejected(RejectReason::Unsupported)
-                        } else if network_provisioned || state != SessionState::WaitingForNetwork {
+                        } else if initialized || state != SessionState::WaitingForInitialization {
                             Event::Rejected(RejectReason::InvalidState)
                         } else if startup_artifact.push(&chunk).is_err() {
                             Event::Rejected(RejectReason::InvalidConfiguration)
@@ -548,23 +567,24 @@ pub async fn protocol_task(capabilities: Capabilities) {
                         };
                         publish_event_reliably(session_id, request_id, response).await;
                     }
-                    Command::ProvisionNetwork(network) => {
-                        let (response, accepted) = if network_provisioned {
+                    Command::Initialize(ipv4) => {
+                        let (response, accepted) = if initialized {
                             (Event::Rejected(RejectReason::InvalidState), false)
-                        } else if network.validate().is_err() {
+                        } else if !ipv4.validate() {
                             (Event::Rejected(RejectReason::InvalidConfiguration), false)
                         } else if startup_artifact.started_but_incomplete() {
                             (Event::Rejected(RejectReason::InvalidConfiguration), false)
                         } else if STARTUP_CONFIGURATIONS
                             .try_send(StartupConfiguration {
-                                network,
+                                request_id,
+                                ipv4,
                                 phy_calibration_artifact: startup_artifact.completed_artifact(),
                             })
                             .is_err()
                         {
                             (Event::Rejected(RejectReason::Busy), false)
                         } else {
-                            network_provisioned = true;
+                            initialized = true;
                             (Event::Accepted, true)
                         };
                         publish_event_reliably(session_id, request_id, response).await;
@@ -575,7 +595,7 @@ pub async fn protocol_task(capabilities: Capabilities) {
                     Command::Configure(config) => {
                         let rejection = if !capabilities.features.runtime_configuration {
                             Some(RejectReason::Unsupported)
-                        } else if !network_provisioned || state != SessionState::Idle {
+                        } else if !initialized || state != SessionState::Idle {
                             Some(RejectReason::InvalidState)
                         } else if session_id == 0 {
                             Some(RejectReason::SessionId)
@@ -653,7 +673,19 @@ pub async fn protocol_task(capabilities: Capabilities) {
                             .await;
                         }
                     }
-                    Command::Abort => {
+                    Command::GetStatus => {
+                        publish_event_reliably(
+                            session_id,
+                            request_id,
+                            Event::OperationStatus(open_esp_radio_hil_protocol::OperationStatus {
+                                state,
+                                configured_session_id: configured.map(|value| value.session_id),
+                                completed_session_id: last_result.map(|value| value.session_id),
+                            }),
+                        )
+                        .await;
+                    }
+                    Command::Cancel => {
                         if matches!(state, SessionState::Configured | SessionState::Armed)
                             && configured.is_some_and(|session| session.session_id == session_id)
                         {
@@ -675,7 +707,7 @@ pub async fn protocol_task(capabilities: Capabilities) {
                             .await;
                         }
                     }
-                    Command::GetLastResult => {
+                    Command::ReplayResult => {
                         if let Some(result) =
                             last_result.filter(|result| result.session_id == session_id)
                         {
@@ -712,10 +744,31 @@ pub async fn protocol_task(capabilities: Capabilities) {
                             .await;
                         }
                     }
+                    Command::Recover => {
+                        if matches!(state, SessionState::Finished | SessionState::Failed) {
+                            configured = None;
+                            last_result = None;
+                            publish_event_reliably(session_id, request_id, Event::Accepted).await;
+                            transition_state(
+                                &mut state,
+                                SessionState::Idle,
+                                session_id,
+                                request_id,
+                            )
+                            .await;
+                        } else {
+                            publish_event_reliably(
+                                session_id,
+                                request_id,
+                                Event::Rejected(RejectReason::InvalidState),
+                            )
+                            .await;
+                        }
+                    }
                     Command::CycleStationEpoch => {
                         let response = if !capabilities.features.station_epoch_control {
                             Event::Rejected(RejectReason::Unsupported)
-                        } else if !network_provisioned
+                        } else if !initialized
                             || state != SessionState::Idle
                             || session_id != 0
                             || !wifi_role_is(WifiRole::Station)
@@ -734,7 +787,7 @@ pub async fn protocol_task(capabilities: Capabilities) {
                     Command::StopStation => {
                         let response = if !capabilities.features.wifi_role_control {
                             Event::Rejected(RejectReason::Unsupported)
-                        } else if !network_provisioned
+                        } else if !initialized
                             || state != SessionState::Idle
                             || session_id != 0
                             || !wifi_role_is(WifiRole::Station)
@@ -750,17 +803,22 @@ pub async fn protocol_task(capabilities: Capabilities) {
                         };
                         publish_event_reliably(session_id, request_id, response).await;
                     }
-                    Command::StartStation => {
+                    Command::StartStation(credentials) => {
                         let response = if !capabilities.features.wifi_role_control {
                             Event::Rejected(RejectReason::Unsupported)
-                        } else if !network_provisioned
+                        } else if credentials.validate().is_err() {
+                            Event::Rejected(RejectReason::InvalidConfiguration)
+                        } else if !initialized
                             || state != SessionState::Idle
                             || session_id != 0
                             || !wifi_role_is(WifiRole::Idle)
                         {
                             Event::Rejected(RejectReason::InvalidState)
                         } else if WIFI_CONTROL_REQUESTS
-                            .try_send(WifiControlRequest::StartStation { request_id })
+                            .try_send(WifiControlRequest::StartStation {
+                                request_id,
+                                credentials,
+                            })
                             .is_err()
                         {
                             Event::Rejected(RejectReason::Busy)
@@ -777,7 +835,7 @@ pub async fn protocol_task(capabilities: Capabilities) {
                             Event::Rejected(RejectReason::Unsupported)
                         } else if !valid {
                             Event::Rejected(RejectReason::InvalidConfiguration)
-                        } else if !network_provisioned
+                        } else if !initialized
                             || state != SessionState::Idle
                             || session_id != 0
                             || !wifi_role_is(WifiRole::Idle)
@@ -803,7 +861,7 @@ pub async fn protocol_task(capabilities: Capabilities) {
                             Event::Rejected(RejectReason::Unsupported)
                         } else if !valid {
                             Event::Rejected(RejectReason::InvalidConfiguration)
-                        } else if !network_provisioned
+                        } else if !initialized
                             || state != SessionState::Idle
                             || session_id != 0
                             || !wifi_role_is(WifiRole::Idle)
@@ -825,7 +883,7 @@ pub async fn protocol_task(capabilities: Capabilities) {
                     Command::StopMonitor => {
                         let response = if !capabilities.features.wifi_role_control {
                             Event::Rejected(RejectReason::Unsupported)
-                        } else if !network_provisioned
+                        } else if !initialized
                             || state != SessionState::Idle
                             || session_id != 0
                             || !wifi_role_is(WifiRole::Monitor)
@@ -861,7 +919,7 @@ pub async fn protocol_task(capabilities: Capabilities) {
                             Event::Rejected(RejectReason::Unsupported)
                         } else if !valid {
                             Event::Rejected(RejectReason::InvalidConfiguration)
-                        } else if !network_provisioned
+                        } else if !initialized
                             || state != SessionState::Idle
                             || session_id != 0
                             || !wifi_role_is(WifiRole::Idle)
@@ -879,14 +937,6 @@ pub async fn protocol_task(capabilities: Capabilities) {
                             Event::Accepted
                         };
                         publish_event_reliably(session_id, request_id, response).await;
-                    }
-                    Command::Stop => {
-                        publish_event_reliably(
-                            session_id,
-                            request_id,
-                            Event::Rejected(RejectReason::Unsupported),
-                        )
-                        .await;
                     }
                 }
             }
@@ -982,15 +1032,24 @@ async fn transition_state(
 }
 
 async fn publish_result(result: SessionResult, request_id: u32) {
-    let mut evidence = heapless::Vec::<EvidenceRecord, 3>::new();
+    let mut evidence = heapless::Vec::<EvidenceRecord, 5>::new();
     evidence
         .push(EvidenceRecord::Transport(result.evidence))
         .expect("session evidence has fixed capacity");
+    if let Some(radio) = result.radio {
+        evidence
+            .push(EvidenceRecord::Radio(radio))
+            .expect("session evidence has fixed capacity");
+    }
     if let Some(rx_delivery) = result.rx_delivery {
         evidence
             .push(EvidenceRecord::RxDelivery(rx_delivery))
             .expect("session evidence has fixed capacity");
     }
+    let link = link_health_snapshot();
+    evidence
+        .push(EvidenceRecord::Link(link))
+        .expect("session evidence has fixed capacity");
     evidence
         .push(EvidenceRecord::Stack(crate::stack_usage_snapshot()))
         .expect("session evidence has fixed capacity");
@@ -1005,13 +1064,32 @@ async fn publish_result(result: SessionResult, request_id: u32) {
         request_id,
         Event::Finished(Finished {
             summary: ResultSummary {
-                passed: result.passed,
+                passed: result.passed
+                    && link.rx_cobs_errors == 0
+                    && link.rx_checksum_errors == 0
+                    && link.rx_decode_errors == 0
+                    && link.rx_overflows == 0
+                    && link.tx_dropped == 0,
                 evidence_records,
             },
             evidence_crc32c: checksum,
         }),
     )
     .await;
+}
+
+fn link_health_snapshot() -> LinkHealth {
+    LinkHealth {
+        rx_frames: PROTOCOL_RX_FRAMES.load(Ordering::Acquire),
+        rx_cobs_errors: PROTOCOL_RX_COBS_ERRORS.load(Ordering::Acquire),
+        rx_checksum_errors: PROTOCOL_RX_CHECKSUM_ERRORS.load(Ordering::Acquire),
+        rx_decode_errors: PROTOCOL_RX_DECODE_ERRORS.load(Ordering::Acquire),
+        rx_overflows: PROTOCOL_RX_OVERFLOWS.load(Ordering::Acquire),
+        tx_frames: PROTOCOL_TX_FRAMES.load(Ordering::Acquire),
+        tx_dropped: PROTOCOL_DROPPED.load(Ordering::Acquire),
+        text_dropped: DROPPED_RECORDS.load(Ordering::Acquire),
+        text_truncated: TRUNCATED_RECORDS.load(Ordering::Acquire),
+    }
 }
 
 /// Runs the runtime transport worker.
@@ -1034,11 +1112,27 @@ pub async fn logger_task(usb_device: USB_DEVICE<'static>) {
         match select3(EVENTS.receive(), rx.read(&mut rx_buffer), RECORDS.receive()).await {
             Either3::First(event) => write_event_async(&mut tx, &mut encoder, &event).await,
             Either3::Second(Ok(length)) => {
-                decoder.feed::<Envelope<Command>>(&rx_buffer[..length], |message| {
+                decoder.feed::<Command>(&rx_buffer[..length], |message| {
                     if let Ok(command) = message {
                         receive_command(command);
                     }
                 });
+                let counters = decoder.counters();
+                PROTOCOL_RX_FRAMES.store(counters.frames, Ordering::Release);
+                PROTOCOL_RX_COBS_ERRORS.store(counters.cobs_errors, Ordering::Release);
+                PROTOCOL_RX_CHECKSUM_ERRORS.store(counters.checksum_errors, Ordering::Release);
+                PROTOCOL_RX_DECODE_ERRORS.store(
+                    counters
+                        .too_short
+                        .saturating_add(counters.header_errors)
+                        .saturating_add(counters.framing_version_errors)
+                        .saturating_add(counters.message_kind_errors)
+                        .saturating_add(counters.protocol_version_errors)
+                        .saturating_add(counters.payload_length_errors)
+                        .saturating_add(counters.deserialize_errors),
+                    Ordering::Release,
+                );
+                PROTOCOL_RX_OVERFLOWS.store(counters.overflows, Ordering::Release);
             }
             Either3::Second(Err(_)) => {}
             Either3::Third(record) => write_record_async(&mut tx, &record).await,

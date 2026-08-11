@@ -4,7 +4,6 @@ use std::{
     fs,
     net::Ipv4Addr,
     path::{Path, PathBuf},
-    thread,
     time::Duration,
 };
 
@@ -15,8 +14,8 @@ use open_esp_radio_hil_protocol::{
 use crate::{
     Result,
     bidirectional::{
-        assess_rx_log, rx_order_markdown, rx_reorder_markdown, task_poll_markdown,
-        udp_sequence_markdown, validate_exact_rx_delivery,
+        RxQualification, assess_rx_log, rx_order_markdown, rx_reorder_markdown, task_poll_markdown,
+        udp_sequence_markdown,
     },
     invalidate_previous_report,
     lab_config::LabConfig,
@@ -37,6 +36,7 @@ struct Options {
     address: Ipv4Addr,
     port: u16,
     rate_bps: u64,
+    minimum_rate_bps: Option<u64>,
     duration: Duration,
     payload: usize,
     serial: PathBuf,
@@ -44,16 +44,13 @@ struct Options {
     phy: &'static str,
 }
 
-pub(crate) fn run(arguments: Vec<String>, root: &Path, lab: &LabConfig) -> Result<()> {
-    if arguments
-        .first()
-        .is_some_and(|value| matches!(value.as_str(), "help" | "--help" | "-h"))
-    {
-        print_help();
-        return Ok(());
-    }
+pub(crate) fn run(
+    arguments: Vec<String>,
+    output: &Path,
+    lab: &LabConfig,
+    require_no_beacon_loss: bool,
+) -> Result<()> {
     let mut options = parse_options(&arguments, lab)?;
-    let output = root.join("target/hil/esp32s31/qualification/open-radio-rx");
     fs::create_dir_all(&output)?;
     invalidate_previous_report(&output)?;
     let capture = SerialCapture::start_with_reset(&options.serial);
@@ -66,8 +63,7 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path, lab: &LabConfig) -> Resul
     ) {
         Ok(address) => address,
         Err(error) => {
-            let log = capture.finish();
-            fs::write(output.join("uart.log"), &log)?;
+            capture.finish_to(output)?;
             return Err(error);
         }
     };
@@ -84,23 +80,19 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path, lab: &LabConfig) -> Resul
             )
         })
         .transpose()?;
-    let session = if discovered_address.runtime_session {
-        let duration_millis = u32::try_from(options.duration.as_millis())?;
-        Some(capture.start_session(SessionConfig {
-            transport: Transport::Udp,
-            direction: Direction::Rx,
-            completion: Completion::DurationMillis(duration_millis),
-            peer: None,
-            target_rx: Some(FlowConfig {
-                payload_bytes: u16::try_from(options.payload)?,
-                offered_rate_bps: Some(options.rate_bps),
-            }),
-            target_tx: None,
-            link_requirements: SessionLinkRequirements::NONE,
-        })?)
-    } else {
-        None
-    };
+    let duration_millis = u32::try_from(options.duration.as_millis())?;
+    let session = capture.start_session(SessionConfig {
+        transport: Transport::Udp,
+        direction: Direction::Rx,
+        completion: Completion::DurationMillis(duration_millis),
+        peer: None,
+        target_rx: Some(FlowConfig {
+            payload_bytes: u16::try_from(options.payload)?,
+            offered_rate_bps: Some(options.rate_bps),
+        }),
+        target_tx: None,
+        link_requirements: SessionLinkRequirements::NONE,
+    })?;
     let host = send_paced_udp(PacedUdpConfig {
         address: options.address,
         port: options.port,
@@ -108,42 +100,59 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path, lab: &LabConfig) -> Resul
         duration: options.duration,
         payload: options.payload,
     })?;
-    let structured = if let Some(session) = session {
-        let evidence = match capture.wait_for_session(
-            session,
-            options.duration.saturating_add(Duration::from_secs(10)),
-        ) {
-            Ok(evidence) => evidence,
-            Err(error) => {
-                let log = capture.finish();
-                fs::write(output.join("uart.log"), &log)?;
-                return Err(error);
-            }
-        };
-        if let Err(error) = capture.acknowledge_session(session) {
-            let log = capture.finish();
-            fs::write(output.join("uart.log"), &log)?;
+    let structured = match capture.wait_for_session(
+        session,
+        options.duration.saturating_add(Duration::from_secs(10)),
+    ) {
+        Ok(evidence) => evidence,
+        Err(error) => {
+            capture.finish_to(output)?;
             return Err(error);
         }
-        Some(evidence)
-    } else {
-        thread::sleep(Duration::from_secs(5));
-        None
     };
+    if let Err(error) = capture.acknowledge_session(session) {
+        capture.finish_to(output)?;
+        return Err(error);
+    }
     let openwrt = openwrt_capture.map(OpenWrtRxCapture::finish).transpose()?;
-    let log = capture.finish();
-    fs::write(output.join("uart.log"), &log)?;
-    let assessment = assess_rx_log(&log, options.expected_rx_format)?;
-    let rx = assessment.rx;
-    let minimum_bps = options.rate_bps.saturating_mul(9) / 10;
-    let structured_failure = structured.and_then(|evidence| {
-        let structured_throughput_kbps = evidence
-            .transport
-            .rx_bytes
-            .saturating_mul(8)
-            .saturating_mul(1_000)
-            .checked_div(evidence.transport.elapsed_micros.max(1))
-            .unwrap_or(0);
+    let beacon_loss = require_no_beacon_loss.then(|| capture.require_no_beacon_loss());
+    let log = capture.finish_to(output)?;
+    if let Some(result) = beacon_loss {
+        result?;
+    }
+    let raw_rx_radio = structured
+        .radio
+        .and_then(|evidence| evidence.rx)
+        .ok_or("session did not publish typed RX radio evidence")?;
+    let typed_radio_failure = structured
+        .require_rx_radio(options.expected_rx_format, host.datagrams)
+        .err()
+        .map(|error| error.to_string());
+    // Text telemetry enriches the report when present. Typed transport/radio
+    // evidence alone decides qualification and therefore remains authoritative
+    // even if the bounded diagnostic stream is truncated.
+    let text_assessment = assess_rx_log(&log, options.expected_rx_format).ok();
+    if let Some(failure) = text_assessment
+        .as_ref()
+        .and_then(|assessment| assessment.failure.as_deref())
+    {
+        eprintln!("diagnostic_text_warning={failure}");
+    }
+    let rx = text_assessment
+        .map(|assessment| assessment.rx)
+        .unwrap_or_else(|| RxQualification::from_typed(structured.transport, raw_rx_radio));
+    let minimum_bps = options
+        .minimum_rate_bps
+        .unwrap_or_else(|| options.rate_bps.saturating_mul(9) / 10);
+    let typed_rx_kbps = structured
+        .transport
+        .rx_bytes
+        .saturating_mul(8)
+        .saturating_mul(1_000)
+        .checked_div(structured.transport.elapsed_micros.max(1))
+        .unwrap_or(0);
+    let structured_failure = {
+        let evidence = structured;
         let expected_bytes = evidence
             .transport
             .rx_units
@@ -161,11 +170,6 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path, lab: &LabConfig) -> Resul
                 "typed RX session reported {} transport errors",
                 evidence.transport.transport_errors
             ))
-        } else if evidence.transport.rx_units != rx.received_datagrams {
-            Some(format!(
-                "typed/text RX datagram mismatch: {}/{}",
-                evidence.transport.rx_units, rx.received_datagrams
-            ))
         } else if evidence.transport.rx_bytes != expected_bytes {
             Some(format!(
                 "typed RX byte count {} does not match {} full payload datagrams",
@@ -181,37 +185,26 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path, lab: &LabConfig) -> Resul
                 evidence.transport.rx_bytes,
                 evidence.transport.rx_units
             ))
-        } else if structured_throughput_kbps != rx.throughput_median_kbps {
-            Some(format!(
-                "typed/text RX throughput mismatch: {structured_throughput_kbps}/{} kbit/s",
-                rx.throughput_median_kbps
-            ))
         } else {
             None
         }
+    };
+    let typed_delivery_failure = structured.rx_delivery.and_then(|delivery| {
+        let assessment = rx_delivery::assess(host.datagrams, delivery);
+        (!assessment.exact())
+            .then(|| format!("typed RX delivery frontier is {}", assessment.frontier()))
     });
-    let delivery_failure =
-        validate_exact_rx_delivery(host.datagrams, rx.received_datagrams, rx.sequence, rx.order)
-            .err()
-            .map(|error| error.to_string());
-    let typed_delivery_failure = structured
-        .and_then(|evidence| evidence.rx_delivery)
-        .and_then(|delivery| {
-            let assessment = rx_delivery::assess(host.datagrams, delivery);
-            (!assessment.exact())
-                .then(|| format!("typed RX delivery frontier is {}", assessment.frontier()))
-        });
     let acceptance_failure = if host.throughput_bps() < minimum_bps {
         Some(String::from(
             "host failed to offer at least 90% of the requested RX rate",
         ))
-    } else if rx.throughput_median_kbps < minimum_bps / 1_000 {
+    } else if typed_rx_kbps < minimum_bps / 1_000 {
         Some(format!(
             "device RX {} kbit/s is below the acceptance floor",
-            rx.throughput_median_kbps,
+            typed_rx_kbps,
         ))
     } else {
-        delivery_failure
+        None
     };
     let fixture_failure = openwrt.and_then(|openwrt| {
         let expected = host.datagrams.saturating_add(1);
@@ -222,10 +215,9 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path, lab: &LabConfig) -> Resul
             )
         })
     });
-    let failure = assessment
-        .failure
-        .or(fixture_failure)
+    let failure = fixture_failure
         .or(typed_delivery_failure)
+        .or(typed_radio_failure)
         .or(structured_failure)
         .or(acceptance_failure);
     let result = if failure.is_some() { "FAIL" } else { "PASS" };
@@ -233,23 +225,19 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path, lab: &LabConfig) -> Resul
         .as_ref()
         .map(|failure| format!("- Acceptance failure: `{failure}`\n"))
         .unwrap_or_default();
-    let structured_report = structured
-        .map(|evidence| {
-            format!(
-                "- Typed session evidence: `{}` bytes / `{}` datagrams / `{}` us; CRC32C `0x{:08x}`\n\
+    let structured_report = format!(
+        "- Typed session evidence: `{}` bytes / `{}` datagrams / `{}` us; CRC32C `0x{:08x}`\n\
                  - Stack minimum free: CPU0 `{}/{}` bytes; CPU1 `{}/{}` bytes; required `{}%`\n",
-                evidence.transport.rx_bytes,
-                evidence.transport.rx_units,
-                evidence.transport.elapsed_micros,
-                evidence.finished.evidence_crc32c,
-                evidence.stack.cpu0.free_bytes,
-                evidence.stack.cpu0.capacity_bytes,
-                evidence.stack.cpu1.free_bytes,
-                evidence.stack.cpu1.capacity_bytes,
-                evidence.stack.minimum_free_percent,
-            )
-        })
-        .unwrap_or_else(|| String::from("- Typed session evidence: compatibility mode\n"));
+        structured.transport.rx_bytes,
+        structured.transport.rx_units,
+        structured.transport.elapsed_micros,
+        structured.finished.evidence_crc32c,
+        structured.stack.cpu0.free_bytes,
+        structured.stack.cpu0.capacity_bytes,
+        structured.stack.cpu1.free_bytes,
+        structured.stack.cpu1.capacity_bytes,
+        structured.stack.minimum_free_percent,
+    );
     let openwrt_report = openwrt.map_or_else(
         || String::from("- AP-side evidence: `external AP; not observed`\n"),
         |openwrt| format!(
@@ -282,7 +270,7 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path, lab: &LabConfig) -> Resul
     let rx_order_report = rx_order_markdown(rx.order);
     let rx_reorder_report = rx_reorder_markdown(rx.reorder);
     let typed_delivery_report = structured
-        .and_then(|evidence| evidence.rx_delivery)
+        .rx_delivery
         .map(|evidence| rx_delivery::markdown(host.datagrams, evidence))
         .unwrap_or_else(|| {
             String::from(
@@ -437,24 +425,11 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path, lab: &LabConfig) -> Resul
         options.phy,
         options.rate_bps / 1_000,
         host.throughput_bps() / 1_000,
-        rx.throughput_median_kbps,
+        typed_rx_kbps,
         rx.enqueued,
         output.join("report.md").display(),
     );
     Ok(())
-}
-
-fn print_help() {
-    println!(
-        "cargo hil traffic rx [options]\n\
-         \n\
-         --rate <bps>       paced host-to-device rate (default 20M)\n\
-         --seconds <5..300> traffic duration (default 12)\n\
-         --payload <64..1472> UDP payload bytes (default 1200)\n\
-         --port <port>      device UDP sink (default 4323)\n\
-         --phy <he20|ht20|ht40> expected RX vector (default he20)\n\n\
-         Flash `cargo hil flash radio` and wait for DHCP first."
-    );
 }
 
 fn parse_options(arguments: &[String], lab: &LabConfig) -> Result<Options> {
@@ -462,6 +437,7 @@ fn parse_options(arguments: &[String], lab: &LabConfig) -> Result<Options> {
         address: Ipv4Addr::UNSPECIFIED,
         port: DEFAULT_PORT,
         rate_bps: DEFAULT_RATE_BPS,
+        minimum_rate_bps: None,
         duration: DEFAULT_DURATION,
         payload: DEFAULT_PAYLOAD,
         serial: lab.device.serial.clone(),
@@ -475,6 +451,7 @@ fn parse_options(arguments: &[String], lab: &LabConfig) -> Result<Options> {
             .ok_or("RX option requires a value")?;
         match arguments[index].as_str() {
             "--rate" => options.rate_bps = parse_rate(value)?,
+            "--floor" => options.minimum_rate_bps = Some(parse_rate(value)?),
             "--seconds" => {
                 let seconds = value.parse::<u64>()?;
                 if !(5..=300).contains(&seconds) {
@@ -510,6 +487,12 @@ fn parse_options(arguments: &[String], lab: &LabConfig) -> Result<Options> {
     }
     if options.port == 0 {
         return Err("--port must be nonzero".into());
+    }
+    if options
+        .minimum_rate_bps
+        .is_some_and(|floor| floor > options.rate_bps)
+    {
+        return Err("--floor cannot exceed --rate".into());
     }
     Ok(options)
 }

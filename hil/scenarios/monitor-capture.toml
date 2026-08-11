@@ -1,0 +1,14 @@
+schema = 1
+id = "monitor-capture"
+description = "Finite typed monitor capture exported as PCAPNG"
+image = "qualification"
+isolation = "reset"
+tags = ["qualification", "wifi", "monitor"]
+
+[workload]
+kind = "monitor-capture"
+timeout_seconds = 90
+duration_seconds = 3
+snapshot_length = 0
+
+[criteria]

@@ -46,8 +46,8 @@ use open_esp_radio_hil_esp32s31_telemetry::{
     rx_pipeline::RxPipelineCounters, task_poll::TaskPollSet,
 };
 use open_esp_radio_hil_protocol::{
-    Capabilities, Event as HilEvent, FeatureCapabilities, MAX_WIRE_FRAME_BYTES, NetworkInfo,
-    NetworkIpv4Configuration, StartupArtifactDisposition, StationAttemptFailureReason,
+    Capabilities, Event as HilEvent, FeatureCapabilities, MAX_WIRE_FRAME_BYTES, NetworkCredentials,
+    NetworkInfo, NetworkIpv4Configuration, StartupArtifactDisposition, StationAttemptFailureReason,
     StationDisconnectReason, StationEpochEvidence, StationFailureStage, StationLifecycleEvent,
     WIFI_MONITOR_FRAME_CHUNK_MAX_LEN, WifiMonitorCaptureRequest, WifiMonitorEvidence,
     WifiMonitorEvidenceSource, WifiMonitorFrameChunk, WifiMonitorObserved, WifiMonitorPhyEvidence,
@@ -56,10 +56,11 @@ use open_esp_radio_hil_protocol::{
 use static_cell::ConstStaticCell;
 
 use crate::console::{
-    WifiControlRequest, complete_monitor_capture, complete_monitor_start, complete_monitor_stop,
-    complete_station_epoch_cycle, complete_wifi_role_transition, complete_wifi_scan, emergency_log,
-    publish_event_reliably, publish_monitor_frame, publish_startup_artifact,
-    publish_station_lifecycle, receive_wifi_control_request, set_wifi_role,
+    WifiControlRequest, complete_initialization, complete_monitor_capture, complete_monitor_start,
+    complete_monitor_stop, complete_station_epoch_cycle, complete_wifi_role_transition,
+    complete_wifi_scan, emergency_log, publish_event_reliably, publish_monitor_frame,
+    publish_startup_artifact, publish_station_lifecycle, receive_wifi_control_request,
+    set_wifi_role,
 };
 
 mod rx_qualification;
@@ -70,10 +71,6 @@ use traffic::{connected_traffic_task, tcp_rx_pattern_worker_task, tcp_tx_pattern
 const NETWORK_SOCKET_COUNT: usize = 5;
 const SCAN_DWELL_MS: u16 = 200;
 const MAXIMUM_TX_POWER_QUARTER_DBM: i8 = 80;
-pub(crate) const OPEN_RADIO_TCP_BENCH: bool = option_env!("OPEN_RADIO_TCP_BENCH").is_some();
-pub(crate) const OPEN_RADIO_TX_BENCH: bool = option_env!("OPEN_RADIO_TX_BENCH").is_some();
-pub(crate) const OPEN_RADIO_BIDIRECTIONAL_BENCH: bool =
-    option_env!("OPEN_RADIO_BIDIRECTIONAL_BENCH").is_some();
 pub(crate) const OPEN_RADIO_TASK_POLL_TELEMETRY: bool = cfg!(feature = "task-poll-telemetry");
 pub(crate) const OPEN_RADIO_RX_DELIVERY_TELEMETRY: bool = cfg!(feature = "rx-delivery-telemetry");
 pub(crate) const OPEN_RADIO_TCP_CHUNK_CAPACITY: usize = 32_768;
@@ -380,12 +377,12 @@ pub fn diagnostic_snapshot() -> (u32, u32) {
 pub const fn hil_capabilities() -> Capabilities {
     Capabilities {
         features: FeatureCapabilities {
-            udp: !OPEN_RADIO_TCP_BENCH,
-            tcp: OPEN_RADIO_TCP_BENCH,
-            rx: OPEN_RADIO_TCP_BENCH || !OPEN_RADIO_TX_BENCH || OPEN_RADIO_BIDIRECTIONAL_BENCH,
-            tx: OPEN_RADIO_TCP_BENCH || OPEN_RADIO_TX_BENCH,
-            bidirectional: OPEN_RADIO_TCP_BENCH || OPEN_RADIO_BIDIRECTIONAL_BENCH,
-            network_provisioning: true,
+            udp: true,
+            tcp: true,
+            rx: true,
+            tx: true,
+            bidirectional: true,
+            runtime_initialization: true,
             runtime_configuration: true,
             structured_evidence: true,
             startup_artifact: true,
@@ -396,11 +393,7 @@ pub const fn hil_capabilities() -> Capabilities {
             station_lifecycle_events: true,
             rx_delivery_evidence: OPEN_RADIO_RX_DELIVERY_TELEMETRY,
         },
-        maximum_payload_bytes: if OPEN_RADIO_TCP_BENCH {
-            OPEN_RADIO_TCP_CHUNK_CAPACITY as u16
-        } else {
-            1_472
-        },
+        maximum_payload_bytes: OPEN_RADIO_TCP_CHUNK_CAPACITY as u16,
         maximum_wire_frame_bytes: MAX_WIRE_FRAME_BYTES as u16,
     }
 }
@@ -561,13 +554,10 @@ pub async fn run(
     DIAGNOSTIC_STAGE.store(10, Ordering::Release);
     spawner.spawn(station_lifecycle_task().expect("station lifecycle task must allocate once"));
     let startup = crate::console::receive_startup_configuration().await;
-    if OPEN_RADIO_TCP_BENCH {
-        protocol_spawner
-            .spawn(tcp_rx_pattern_worker_task().expect("TCP RX pattern task must allocate once"));
-        protocol_spawner
-            .spawn(tcp_tx_pattern_worker_task().expect("TCP TX pattern task must allocate once"));
-    }
-    let credentials = startup.network.credentials;
+    protocol_spawner
+        .spawn(tcp_rx_pattern_worker_task().expect("TCP RX pattern task must allocate once"));
+    protocol_spawner
+        .spawn(tcp_tx_pattern_worker_task().expect("TCP TX pattern task must allocate once"));
     let efuse_registers = esp_hal::peripherals::EFUSE::regs();
     let mut station_address = [0; 6];
     station_address
@@ -666,7 +656,7 @@ pub async fn run(
     ]);
     let (stack, network_runner) = embassy_net::new(
         device,
-        network_config(startup.network.ipv4),
+        network_config(startup.ipv4),
         NETWORK_RESOURCES.take(),
         seed,
     );
@@ -674,26 +664,24 @@ pub async fn run(
         network_runner_task(network_runner).expect("network runner task must allocate once"),
     );
 
-    DIAGNOSTIC_STAGE.store(20, Ordering::Release);
-    let station = control
-        .start_station(station_request(
-            credentials.ssid(),
-            credentials.passphrase(),
-        ))
-        .await
-        .unwrap_or_else(|error| panic!("production station start failed: {error:?}"));
-    DIAGNOSTIC_STAGE.store(30, Ordering::Release);
-    set_wifi_role(WifiRole::Station);
-    emergency_log(format_args!(
-        "OPEN_RADIO_HIL result=PASS stage=station-connected generation={}",
-        station.generation().value(),
-    ));
     spawner.spawn(network_report_task(stack).expect("network report task must allocate once"));
     spawner.spawn(
         connected_traffic_task(stack, qualification)
             .expect("connected traffic task must allocate once"),
     );
 
+    spawner.spawn(
+        wifi_role_task(control, monitor_frames, startup.request_id)
+            .expect("Wi-Fi role owner task must allocate once"),
+    );
+}
+
+#[embassy_executor::task]
+async fn wifi_role_task(
+    control: Esp32s31WifiControl,
+    monitor_frames: Esp32s31MonitorFrames,
+    initialization_request_id: u32,
+) -> ! {
     enum ProductWifiRole<P> {
         Idle(open_esp_radio::WifiIdle<P>),
         Station(open_esp_radio::WifiStation<P>),
@@ -709,7 +697,11 @@ pub async fn run(
         },
     }
 
-    let mut role = ProductWifiRole::Station(station);
+    DIAGNOSTIC_STAGE.store(20, Ordering::Release);
+    set_wifi_role(WifiRole::Idle);
+    complete_initialization(initialization_request_id).await;
+    let mut credentials = None::<NetworkCredentials>;
+    let mut role = ProductWifiRole::Idle(control);
     loop {
         role = match role {
             ProductWifiRole::Station(station) => match receive_wifi_control_request().await {
@@ -724,8 +716,14 @@ pub async fn run(
                         .await;
                     let station = idle
                         .start_station(station_request(
-                            credentials.ssid(),
-                            credentials.passphrase(),
+                            credentials
+                                .as_ref()
+                                .expect("station role retains its credentials")
+                                .ssid(),
+                            credentials
+                                .as_ref()
+                                .expect("station role retains its credentials")
+                                .passphrase(),
                         ))
                         .await
                         .unwrap_or_else(|error| {
@@ -759,16 +757,21 @@ pub async fn run(
                 _ => unreachable!("console admits only station commands while station owns Wi-Fi"),
             },
             ProductWifiRole::Idle(idle) => match receive_wifi_control_request().await {
-                WifiControlRequest::StartStation { request_id } => {
+                WifiControlRequest::StartStation {
+                    request_id,
+                    credentials: requested_credentials,
+                } => {
                     let station = idle
                         .start_station(station_request(
-                            credentials.ssid(),
-                            credentials.passphrase(),
+                            requested_credentials.ssid(),
+                            requested_credentials.passphrase(),
                         ))
                         .await
                         .unwrap_or_else(|error| {
                             panic!("production station start failed: {error:?}")
                         });
+                    credentials = Some(requested_credentials);
+                    DIAGNOSTIC_STAGE.store(30, Ordering::Release);
                     set_wifi_role(WifiRole::Station);
                     complete_wifi_role_transition(
                         request_id,
@@ -807,10 +810,12 @@ pub async fn run(
                             panic!("production standalone scan failed: {error:?}")
                         });
                     let (idle, report) = completed.into_parts();
-                    let configured = report
-                        .results()
-                        .iter()
-                        .find(|result| result.ssid() == credentials.ssid());
+                    let configured = credentials.as_ref().and_then(|credentials| {
+                        report
+                            .results()
+                            .iter()
+                            .find(|result| result.ssid() == credentials.ssid())
+                    });
                     let evidence = WifiScanEvidence {
                         generation: report.generation().value(),
                         observed_frames: report.observed_frames,

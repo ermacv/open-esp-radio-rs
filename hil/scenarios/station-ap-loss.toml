@@ -1,0 +1,12 @@
+schema = 1
+id = "station-ap-loss"
+description = "Station detects controlled AP loss and reconnects"
+image = "qualification"
+isolation = "reset"
+tags = ["qualification", "station", "lifecycle"]
+
+[workload]
+kind = "station-ap-loss"
+timeout_seconds = 120
+
+[criteria]

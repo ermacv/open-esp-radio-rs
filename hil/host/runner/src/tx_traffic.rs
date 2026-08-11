@@ -15,10 +15,13 @@ use open_esp_radio_hil_protocol::{
 
 use crate::{
     Result,
-    bidirectional::{AmpduEvidence, post_block_ack_delivery_loss_lower_bound, qualify_tx_log},
+    bidirectional::{
+        AmpduEvidence, MIN_QUALIFIED_AGGREGATES, TxQualification,
+        post_block_ack_delivery_loss_lower_bound,
+    },
     invalidate_previous_report,
     lab_config::LabConfig,
-    traffic_capture::{SerialCapture, await_device_marker},
+    traffic_capture::{SerialCapture, await_udp_tx_ready},
     udp_socket::{configure_qualification_receive_buffer, open_reverse_flow},
 };
 
@@ -26,30 +29,8 @@ const DEFAULT_PORT: u16 = 9_002;
 const DEVICE_SOURCE_PORT: u16 = 4_324;
 const DEFAULT_DURATION: Duration = Duration::from_secs(16);
 const DEFAULT_PAYLOAD: usize = 1_472;
-const BURST_IDLE: Duration = Duration::from_millis(500);
 const MIN_BURST_DATAGRAMS: u64 = 1_000;
 const DEVICE_READY_TIMEOUT: Duration = Duration::from_secs(45);
-const DEVICE_TX_READY_MARKER: &str = "result=PASS stage=udp-tx-ready ";
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum BurstFraming {
-    /// Compatibility firmware has no explicit session boundary, so an idle
-    /// interval or a restarted sequence number delimits independent bursts.
-    IdleDelimited,
-    /// The typed protocol supplies the boundary. Temporary radio stalls are
-    /// part of the same measured stream and must not discard its continuation.
-    ProtocolSession,
-}
-
-impl BurstFraming {
-    const fn splits_on_idle(self) -> bool {
-        matches!(self, Self::IdleDelimited)
-    }
-
-    const fn splits_on_sequence_restart(self) -> bool {
-        matches!(self, Self::IdleDelimited)
-    }
-}
 
 #[derive(Debug, Eq, PartialEq)]
 struct Options {
@@ -58,6 +39,7 @@ struct Options {
     duration: Duration,
     payload: usize,
     offered_rate_bps: Option<u64>,
+    throughput_floor_bps: Option<u64>,
     serial: PathBuf,
     bandwidth_mhz: u16,
     minimum_rate_kbps: u64,
@@ -181,36 +163,27 @@ impl ActiveBurst {
     }
 }
 
-pub(crate) fn run(arguments: Vec<String>, root: &Path, lab: &LabConfig) -> Result<()> {
-    if arguments
-        .first()
-        .is_some_and(|value| matches!(value.as_str(), "help" | "--help" | "-h"))
-    {
-        print_help();
-        return Ok(());
-    }
+pub(crate) fn run(
+    arguments: Vec<String>,
+    output: &Path,
+    lab: &LabConfig,
+    require_no_beacon_loss: bool,
+) -> Result<()> {
     let mut options = parse_options(&arguments, lab)?;
-    let output = root.join("target/hil/esp32s31/qualification/open-radio-tx");
     fs::create_dir_all(&output)?;
     invalidate_previous_report(&output)?;
     let socket = UdpSocket::bind(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, options.port))?;
     let host_receive_buffer_bytes = configure_qualification_receive_buffer(&socket)?;
     socket.set_read_timeout(Some(Duration::from_millis(100)))?;
     let capture = SerialCapture::start_with_reset(&options.serial);
-    let discovered_address = match await_device_marker(
-        &capture,
-        lab,
-        DEVICE_TX_READY_MARKER,
-        options.device,
-        DEVICE_READY_TIMEOUT,
-    ) {
-        Ok(address) => address,
-        Err(error) => {
-            let log = capture.finish();
-            fs::write(output.join("uart.log"), &log)?;
-            return Err(error);
-        }
-    };
+    let discovered_address =
+        match await_udp_tx_ready(&capture, lab, options.device, DEVICE_READY_TIMEOUT) {
+            Ok(address) => address,
+            Err(error) => {
+                capture.finish_to(output)?;
+                return Err(error);
+            }
+        };
     options.device = discovered_address.address;
     socket.connect(SocketAddrV4::new(options.device, DEVICE_SOURCE_PORT))?;
     let host_address = match socket.local_addr()? {
@@ -222,76 +195,56 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path, lab: &LabConfig) -> Resul
     // one-packet RX queue on this port, so the probe cannot grow unbounded or
     // enter the measured radio TX accounting.
     if let Err(error) = open_reverse_flow(&socket) {
-        let log = capture.finish();
-        fs::write(output.join("uart.log"), &log)?;
+        capture.finish_to(output)?;
         return Err(error.into());
     }
 
-    let session = if discovered_address.runtime_session {
-        let session = capture.start_session(SessionConfig {
-            transport: Transport::Udp,
-            direction: Direction::Tx,
-            completion: Completion::DurationMillis(u32::try_from(options.duration.as_millis())?),
-            peer: Some(Ipv4Endpoint {
-                address: host_address.octets(),
-                port: options.port,
-            }),
-            target_rx: None,
-            target_tx: Some(FlowConfig {
-                payload_bytes: u16::try_from(options.payload)?,
-                offered_rate_bps: options.offered_rate_bps,
-            }),
-            link_requirements: SessionLinkRequirements::tx_block_ack(0),
-        });
-        match session {
-            Ok(session) => Some(session),
-            Err(error) => {
-                let log = capture.finish();
-                fs::write(output.join("uart.log"), &log)?;
-                return Err(error);
-            }
-        }
-    } else {
-        None
-    };
-    let receive_duration = if session.is_some() {
-        options.duration.saturating_add(Duration::from_secs(2))
-    } else {
-        options.duration
-    };
-    let framing = if session.is_some() {
-        BurstFraming::ProtocolSession
-    } else {
-        BurstFraming::IdleDelimited
-    };
-    let bursts = receive_bursts(&socket, options.device, receive_duration, framing)?;
-    let structured = if let Some(session) = session {
-        let evidence = match capture.wait_for_session(session, Duration::from_secs(5)) {
-            Ok(evidence) => evidence,
-            Err(error) => {
-                let log = capture.finish();
-                fs::write(output.join("uart.log"), &log)?;
-                return Err(error);
-            }
-        };
-        if let Err(error) = capture.acknowledge_session(session) {
-            let log = capture.finish();
-            fs::write(output.join("uart.log"), &log)?;
+    let session = match capture.start_session(SessionConfig {
+        transport: Transport::Udp,
+        direction: Direction::Tx,
+        completion: Completion::DurationMillis(u32::try_from(options.duration.as_millis())?),
+        peer: Some(Ipv4Endpoint {
+            address: host_address.octets(),
+            port: options.port,
+        }),
+        target_rx: None,
+        target_tx: Some(FlowConfig {
+            payload_bytes: u16::try_from(options.payload)?,
+            offered_rate_bps: options.offered_rate_bps,
+        }),
+        link_requirements: SessionLinkRequirements::tx_block_ack(0),
+    }) {
+        Ok(session) => session,
+        Err(error) => {
+            capture.finish_to(output)?;
             return Err(error);
         }
-        Some(evidence)
-    } else {
-        None
     };
-    let log = capture.finish();
-    fs::write(output.join("uart.log"), &log)?;
+    let receive_duration = options.duration.saturating_add(Duration::from_secs(2));
+    let bursts = receive_bursts(&socket, options.device, receive_duration)?;
+    let structured = match capture.wait_for_session(session, Duration::from_secs(5)) {
+        Ok(evidence) => evidence,
+        Err(error) => {
+            capture.finish_to(output)?;
+            return Err(error);
+        }
+    };
+    if let Err(error) = capture.acknowledge_session(session) {
+        capture.finish_to(output)?;
+        return Err(error);
+    }
+    let beacon_loss = require_no_beacon_loss.then(|| capture.require_no_beacon_loss());
+    capture.finish_to(output)?;
+    if let Some(result) = beacon_loss {
+        result?;
+    }
 
     let qualified: Vec<_> = bursts
         .iter()
         .copied()
         .filter(|burst| burst.started_at_zero && burst.datagrams >= MIN_BURST_DATAGRAMS)
         .collect();
-    let minimum_bursts = if structured.is_some() { 1 } else { 2 };
+    let minimum_bursts = 1;
     if qualified.len() < minimum_bursts {
         return Err(format!(
             "received only {} complete TX bursts; required {minimum_bursts}; {}",
@@ -303,7 +256,22 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path, lab: &LabConfig) -> Resul
     let missing: u64 = qualified.iter().map(|burst| burst.missing).sum();
     let reordered: u64 = qualified.iter().map(|burst| burst.reordered).sum();
     let duplicates: u64 = qualified.iter().map(|burst| burst.duplicates).sum();
-    let tx = qualify_tx_log(&log, options.bandwidth_mhz, options.minimum_rate_kbps)?;
+    let typed_tx = structured.require_tx_radio(
+        options.bandwidth_mhz,
+        options.minimum_rate_kbps,
+        u32::try_from(MIN_QUALIFIED_AGGREGATES).unwrap_or(u32::MAX),
+    )?;
+    let tx = TxQualification {
+        throughput_floor_kbps: structured
+            .transport
+            .tx_bytes
+            .saturating_mul(8)
+            .saturating_mul(1_000)
+            .checked_div(structured.transport.elapsed_micros.max(1))
+            .unwrap_or(0),
+        sample_count: 1,
+        ampdu: AmpduEvidence::from_typed(typed_tx),
+    };
     if missing != 0 || reordered != 0 || duplicates != 0 {
         let received_datagrams = qualified.iter().map(|burst| burst.datagrams).sum::<u64>();
         let lowest_sequence = qualified
@@ -321,7 +289,7 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path, lab: &LabConfig) -> Resul
             .max_by_key(|burst| burst.maximum_interarrival_us)
             .copied()
             .unwrap_or_default();
-        let target_tx_units = structured.map(|evidence| evidence.transport.tx_units);
+        let target_tx_units = Some(structured.transport.tx_units);
         let host_delivery = Burst {
             datagrams: received_datagrams,
             duplicates,
@@ -367,16 +335,20 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path, lab: &LabConfig) -> Resul
         .map(|burst| burst.throughput_kbps())
         .min()
         .expect("at least one qualified burst");
-    if let Some(evidence) = structured {
+    if let Some(required) = options.throughput_floor_bps {
+        let measured_host = host_floor.saturating_mul(1_000);
+        let measured_target = tx.throughput_floor_kbps.saturating_mul(1_000);
+        if measured_host < required || measured_target < required {
+            return Err(format!(
+                "TX throughput is below the configured floor: required={required} host={measured_host} target={measured_target} bit/s"
+            )
+            .into());
+        }
+    }
+    {
+        let evidence = structured;
         let received_bytes = qualified.iter().map(|burst| burst.bytes).sum::<u64>();
         let received_datagrams = qualified.iter().map(|burst| burst.datagrams).sum::<u64>();
-        let typed_throughput_kbps = evidence
-            .transport
-            .tx_bytes
-            .saturating_mul(8)
-            .saturating_mul(1_000)
-            .checked_div(evidence.transport.elapsed_micros.max(1))
-            .unwrap_or(0);
         if !evidence.finished.summary.passed {
             return Err("target did not complete the typed TX session normally".into());
         }
@@ -402,13 +374,6 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path, lab: &LabConfig) -> Resul
                 qualified[0].highest_sequence,
                 qualified[0].maximum_interarrival_us,
                 qualified[0].sequence_after_maximum_interarrival,
-            )
-            .into());
-        }
-        if typed_throughput_kbps != tx.throughput_floor_kbps {
-            return Err(format!(
-                "typed/text TX throughput mismatch: {typed_throughput_kbps}/{} kbit/s",
-                tx.throughput_floor_kbps
             )
             .into());
         }
@@ -442,20 +407,6 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path, lab: &LabConfig) -> Resul
     Ok(())
 }
 
-fn print_help() {
-    println!(
-        "cargo hil traffic tx [options]\n\
-         \n\
-         --seconds <8..300> capture duration (default 16)\n\
-         --payload <64..1472> UDP payload bytes (default 1472)\n\
-         --rate <bps>       optional target offered-load bound\n\
-         --port <port>      host UDP sink (default 9002)\n\
-         --phy <he20|ht40> required TX bandwidth/rate floor (default he20)\n\n\
-         Flash `cargo hil flash udp-tx`; host address and traffic parameters \
-         are provisioned at runtime."
-    );
-}
-
 fn parse_options(arguments: &[String], lab: &LabConfig) -> Result<Options> {
     let mut options = Options {
         device: Ipv4Addr::UNSPECIFIED,
@@ -463,6 +414,7 @@ fn parse_options(arguments: &[String], lab: &LabConfig) -> Result<Options> {
         duration: DEFAULT_DURATION,
         payload: DEFAULT_PAYLOAD,
         offered_rate_bps: None,
+        throughput_floor_bps: None,
         serial: lab.device.serial.clone(),
         bandwidth_mhz: 20,
         minimum_rate_kbps: 114_700,
@@ -488,6 +440,7 @@ fn parse_options(arguments: &[String], lab: &LabConfig) -> Result<Options> {
                 }
             }
             "--rate" => options.offered_rate_bps = Some(parse_rate(value)?),
+            "--floor" => options.throughput_floor_bps = Some(parse_rate(value)?),
             "--phy" => match value.as_str() {
                 "he20" => {
                     options.bandwidth_mhz = 20;
@@ -530,7 +483,6 @@ pub(crate) fn receive_bursts(
     socket: &UdpSocket,
     expected_device: Ipv4Addr,
     duration: Duration,
-    framing: BurstFraming,
 ) -> std::io::Result<Vec<Burst>> {
     let deadline = Instant::now() + duration;
     let mut packet = [0_u8; 2_048];
@@ -548,9 +500,6 @@ pub(crate) fn receive_bursts(
                 };
                 let sequence = u32::from_be_bytes(encoded);
                 let now = Instant::now();
-                if framing.splits_on_sequence_restart() && sequence == 0 && active.is_some() {
-                    bursts.push(active.take().expect("checked active burst").finish());
-                }
                 match &mut active {
                     Some(active) => active.push(sequence, length, now),
                     None => active = Some(ActiveBurst::new(sequence, length, now)),
@@ -560,16 +509,7 @@ pub(crate) fn receive_bursts(
                 if matches!(
                     error.kind(),
                     std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
-                ) =>
-            {
-                if framing.splits_on_idle()
-                    && active
-                        .as_ref()
-                        .is_some_and(|active| active.last.elapsed() >= BURST_IDLE)
-                {
-                    bursts.push(active.take().expect("checked active burst").finish());
-                }
-            }
+                ) => {}
             // The only host-to-target datagram on this connected socket is a
             // one-byte conntrack probe. A reset-separated run can associate
             // its delayed ICMP Port Unreachable with the reused four-tuple.
@@ -609,7 +549,7 @@ struct TxReport<'a> {
     device_floor_kbps: u64,
     device_samples: usize,
     ampdu: AmpduEvidence,
-    structured: Option<crate::traffic_capture::SessionEvidence>,
+    structured: crate::traffic_capture::SessionEvidence,
     host_receive_buffer_bytes: usize,
 }
 
@@ -621,24 +561,20 @@ fn write_report(output: &Path, report: TxReport<'_>) -> Result<()> {
         .completed
         .saturating_add(report.ampdu.timeout)
         .saturating_add(report.ampdu.collision);
-    let structured_report = report
-        .structured
-        .map(|evidence| {
-            format!(
-                "- Typed session evidence: `{}` bytes / `{}` datagrams / `{}` us; CRC32C `0x{:08x}`\n\
+    let evidence = report.structured;
+    let structured_report = format!(
+        "- Typed session evidence: `{}` bytes / `{}` datagrams / `{}` us; CRC32C `0x{:08x}`\n\
                  - Stack minimum free: CPU0 `{}/{}` bytes; CPU1 `{}/{}` bytes; required `{}%`\n",
-                evidence.transport.tx_bytes,
-                evidence.transport.tx_units,
-                evidence.transport.elapsed_micros,
-                evidence.finished.evidence_crc32c,
-                evidence.stack.cpu0.free_bytes,
-                evidence.stack.cpu0.capacity_bytes,
-                evidence.stack.cpu1.free_bytes,
-                evidence.stack.cpu1.capacity_bytes,
-                evidence.stack.minimum_free_percent,
-            )
-        })
-        .unwrap_or_else(|| String::from("- Typed session evidence: compatibility mode\n"));
+        evidence.transport.tx_bytes,
+        evidence.transport.tx_units,
+        evidence.transport.elapsed_micros,
+        evidence.finished.evidence_crc32c,
+        evidence.stack.cpu0.free_bytes,
+        evidence.stack.cpu0.capacity_bytes,
+        evidence.stack.cpu1.free_bytes,
+        evidence.stack.cpu1.capacity_bytes,
+        evidence.stack.minimum_free_percent,
+    );
     let offered_rate = report
         .options
         .offered_rate_bps
@@ -825,14 +761,6 @@ mod tests {
         assert_eq!(evidence.highest_sequence, 12);
         assert_eq!(evidence.maximum_interarrival_us, 100);
         assert_eq!(evidence.sequence_after_maximum_interarrival, Some(12));
-    }
-
-    #[test]
-    fn typed_session_does_not_use_packet_timing_as_a_boundary() {
-        assert!(!BurstFraming::ProtocolSession.splits_on_idle());
-        assert!(!BurstFraming::ProtocolSession.splits_on_sequence_restart());
-        assert!(BurstFraming::IdleDelimited.splits_on_idle());
-        assert!(BurstFraming::IdleDelimited.splits_on_sequence_restart());
     }
 
     #[test]

@@ -1,6 +1,7 @@
 //! Shared UART capture and end-to-end readiness probes for traffic HIL cells.
 
 use std::{
+    fs,
     io::{Read, Write},
     net::{Ipv4Addr, SocketAddrV4, UdpSocket},
     path::Path,
@@ -14,10 +15,11 @@ use std::{
 };
 
 use open_esp_radio_hil_protocol::{
-    Capabilities, Command, Direction, Envelope, Event, EvidenceRecord, Finished, FrameDecoder,
-    FrameEncoder, RxDeliveryEvidence, SessionConfig, SessionLinkRequirements, SessionReady,
-    SessionState, StackUsage, StartupArtifactChunk, StartupArtifactStatus, StateChange,
-    StationEpochEvidence, StationLifecycleEvent, Transport, TransportEvidence,
+    Capabilities, Command, DecodeCounters, Direction, Envelope, Event, EvidenceRecord, Finished,
+    FrameDecoder, FrameEncoder, OperationStatus, RadioEvidence, RxDeliveryEvidence,
+    RxRadioEvidence, SessionConfig, SessionLinkRequirements, SessionReady, SessionState,
+    StackUsage, StartupArtifactChunk, StartupArtifactStatus, StateChange, StationEpochEvidence,
+    StationLifecycleEvent, Transport, TransportEvidence, TxRadioEvidence,
     WifiMonitorCaptureRequest, WifiMonitorEvidence, WifiMonitorFrameChunk, WifiMonitorRequest,
     WifiRoleTransitionEvidence, WifiScanEvidence, WifiScanRequest, evidence_crc32c,
 };
@@ -26,8 +28,6 @@ use zeroize::Zeroizing;
 use crate::startup_artifact;
 use crate::{Result, lab_config::LabConfig};
 
-const RX_BENCH_INTERVAL_COMPLETE_MARKER: &str = "stage=udp-rx-interval-complete";
-const RADIO_RUNNER_FAILURE_MARKER: &str = "result=FAIL stage=production-runner";
 const RX_PROBE_PAYLOAD: usize = 64;
 const RX_PROBE_RESPONSE_TIMEOUT: Duration = Duration::from_secs(2);
 const DHCP_DISCOVERY_GRACE: Duration = Duration::from_millis(500);
@@ -35,10 +35,72 @@ const PROTOCOL_READY_TIMEOUT: Duration = Duration::from_secs(10);
 const STARTUP_ARTIFACT_TIMEOUT: Duration = Duration::from_secs(30);
 const SERIAL_OPEN_BUSY_TIMEOUT: Duration = Duration::from_secs(2);
 const SERIAL_OPEN_BUSY_RETRY: Duration = Duration::from_millis(50);
+const PROTOCOL_EVENT_CAPACITY: usize = 16_384;
 
 struct ProtocolEvents {
     messages: Mutex<Vec<Envelope<Event>>>,
+    health: Mutex<ProtocolHealth>,
     changed: Condvar,
+}
+
+#[derive(Clone, Debug, Default, serde::Serialize)]
+struct ProtocolHealth {
+    active: bool,
+    boot_id: Option<u64>,
+    next_sequence: u32,
+    counters: DecodeCounters,
+    failure: Option<String>,
+}
+
+impl ProtocolHealth {
+    fn observe(&mut self, message: &Envelope<Event>) {
+        match self.boot_id {
+            None => {
+                self.active = true;
+                self.boot_id = Some(message.boot_id);
+                self.next_sequence = message.message_sequence.wrapping_add(1);
+                if message.message_sequence != 0 {
+                    self.fail(format!(
+                        "boot {} began at target message sequence {}, expected 0",
+                        message.boot_id, message.message_sequence
+                    ));
+                }
+            }
+            Some(boot_id) if boot_id != message.boot_id => {
+                self.boot_id = Some(message.boot_id);
+                self.next_sequence = message.message_sequence.wrapping_add(1);
+                if message.message_sequence != 0 {
+                    self.fail(format!(
+                        "new boot {} began at target message sequence {}, expected 0",
+                        message.boot_id, message.message_sequence
+                    ));
+                }
+            }
+            Some(_) if message.message_sequence != self.next_sequence => {
+                let expected = self.next_sequence;
+                self.next_sequence = message.message_sequence.wrapping_add(1);
+                self.fail(format!(
+                    "target message sequence discontinuity: expected {expected}, observed {}",
+                    message.message_sequence
+                ));
+            }
+            Some(_) => self.next_sequence = self.next_sequence.wrapping_add(1),
+        }
+    }
+
+    fn decode_error(&mut self, error: impl std::fmt::Display) {
+        if self.active {
+            self.fail(format!(
+                "HIL wire decode failure after protocol activation: {error}"
+            ));
+        }
+    }
+
+    fn fail(&mut self, failure: String) {
+        if self.failure.is_none() {
+            self.failure = Some(failure);
+        }
+    }
 }
 
 /// Concurrent UART transcript retained across traffic setup and measurement.
@@ -55,19 +117,16 @@ pub(crate) struct SerialCapture {
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct UdpRxReady {
     pub(crate) address: Ipv4Addr,
-    pub(crate) runtime_session: bool,
 }
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct UdpTxReady {
     pub(crate) address: Ipv4Addr,
-    pub(crate) runtime_session: bool,
 }
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct TcpReady {
     pub(crate) address: Ipv4Addr,
-    pub(crate) runtime_session: bool,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -91,9 +150,190 @@ pub(crate) struct WifiCommandHandle {
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct SessionEvidence {
     pub(crate) transport: TransportEvidence,
+    pub(crate) radio: Option<RadioEvidence>,
     pub(crate) rx_delivery: Option<RxDeliveryEvidence>,
     pub(crate) stack: StackUsage,
     pub(crate) finished: Finished,
+}
+
+impl SessionEvidence {
+    pub(crate) fn require_rx_radio(
+        self,
+        expected_format: u8,
+        expected_datagrams: u64,
+    ) -> Result<RxRadioEvidence> {
+        let rx = self
+            .radio
+            .and_then(|evidence| evidence.rx)
+            .ok_or("session did not publish typed RX radio evidence")?;
+        if rx.phy_format != expected_format {
+            return Err(format!(
+                "RX did not remain in baseband format {expected_format}: observed {}",
+                rx.phy_format
+            )
+            .into());
+        }
+        if rx.dma_buffer_full != 0
+            || rx.dma_fifo_overflow != 0
+            || rx.network_dropped != 0
+            || rx.irq_drain_saturated != 0
+            || rx.unknown_irq_status != 0
+        {
+            return Err(format!("typed RX radio health failed: {rx:?}").into());
+        }
+        let expected_datagrams = u32::try_from(expected_datagrams).map_err(
+            |_| "RX qualification sent more datagrams than typed evidence can represent",
+        )?;
+        if rx.sequence_first != Some(0)
+            || rx.sequence_highest != expected_datagrams.checked_sub(1)
+            || rx.sequence_gap_events != 0
+            || rx.sequence_forward_missing != 0
+            || rx.sequence_backward != 0
+            || rx.sequence_duplicates != 0
+            || rx.sequence_unsequenced != 0
+        {
+            return Err(format!("typed RX sequence evidence is not exact: {rx:?}").into());
+        }
+        let s_mpdu_datagrams = rx
+            .s_mpdu_datagrams
+            .saturating_add(rx.not_s_mpdu_datagrams)
+            .saturating_add(rx.s_mpdu_unavailable_datagrams);
+        let s_mpdu_beacons = rx
+            .s_mpdu_beacons
+            .saturating_add(rx.not_s_mpdu_beacons)
+            .saturating_add(rx.s_mpdu_unavailable_beacons);
+        if s_mpdu_datagrams == 0
+            || rx.s_mpdu_unavailable_datagrams != 0
+            || s_mpdu_beacons == 0
+            || rx.s_mpdu_unavailable_beacons != 0
+        {
+            return Err(format!("incomplete typed RX S-MPDU provenance: {rx:?}").into());
+        }
+        if rx.ampdu_datagrams
+            != rx
+                .hardware_ampdu_datagrams
+                .saturating_add(rx.protocol_ampdu_datagrams)
+            || rx.not_ampdu_datagrams
+                != rx
+                    .hardware_not_ampdu_datagrams
+                    .saturating_add(rx.protocol_not_ampdu_datagrams)
+        {
+            return Err(format!("inconsistent typed RX A-MPDU provenance: {rx:?}").into());
+        }
+        if expected_format == 2 {
+            if rx.hardware_ampdu_datagrams == 0
+                || rx.ampdu_datagrams == 0
+                || rx.protocol_ampdu_datagrams != 0
+                || rx.protocol_not_ampdu_datagrams != 0
+                || rx.ampdu_unavailable_datagrams != 0
+            {
+                return Err(format!("invalid typed HT A-MPDU provenance: {rx:?}").into());
+            }
+        } else if matches!(expected_format, 4..=7)
+            && (rx.protocol_ampdu_datagrams == 0
+                || rx.protocol_not_ampdu_datagrams != 0
+                || rx.hardware_ampdu_datagrams != 0
+                || rx.hardware_not_ampdu_datagrams != 0
+                || rx.ampdu_unavailable_datagrams != 0)
+        {
+            return Err(format!("invalid typed HE A-MPDU provenance: {rx:?}").into());
+        }
+        if rx.reorder_window == 0
+            || rx.reorder_window > 64
+            || rx.reorder_tid > 7
+            || rx.reorder_current_occupied > rx.reorder_maximum_occupied
+            || rx.reorder_maximum_occupied >= u32::from(rx.reorder_window)
+        {
+            return Err(format!("invalid typed RX reorder agreement: {rx:?}").into());
+        }
+        if rx.reorder_first_samples != 0 {
+            let distance = rx
+                .reorder_first_sequence
+                .wrapping_sub(rx.reorder_first_start)
+                & 0x0fff;
+            if rx.reorder_first_tid > 7
+                || rx.reorder_first_distance != distance
+                || rx.reorder_first_distance >= 0x0800
+            {
+                return Err(format!("invalid typed first RX reorder frame: {rx:?}").into());
+            }
+        }
+        if rx.rx_frontier_histogram_samples != rx.rx_service_calls
+            || (rx.mac_irq_entries != 0 && rx.mac_irq_classified_entries != rx.mac_irq_entries)
+        {
+            return Err(format!("incomplete typed RX accounting: {rx:?}").into());
+        }
+        Ok(rx)
+    }
+
+    pub(crate) fn require_tx_radio(
+        self,
+        required_width: u16,
+        minimum_rate_kbps: u64,
+        minimum_aggregates: u32,
+    ) -> Result<TxRadioEvidence> {
+        let tx = self
+            .radio
+            .and_then(|evidence| evidence.tx)
+            .ok_or("session did not publish typed TX radio evidence")?;
+        if tx.bandwidth_mhz != required_width
+            || u64::from(tx.aggregate_rate_kbps) < minimum_rate_kbps
+        {
+            return Err(format!(
+                "TX did not remain at {required_width} MHz / at least {minimum_rate_kbps} kbit/s: {tx:?}"
+            )
+            .into());
+        }
+        if tx.aggregates_prepared < minimum_aggregates || tx.aggregates_completed == 0 {
+            return Err(format!("insufficient typed A-MPDU evidence: {tx:?}").into());
+        }
+        if tx.minimum_subframes == 0
+            || tx.maximum_subframes > 32
+            || tx.subframes_prepared <= tx.aggregates_prepared
+        {
+            return Err(format!("invalid typed A-MPDU size evidence: {tx:?}").into());
+        }
+        let histogram_total = tx
+            .prepared_histogram
+            .iter()
+            .copied()
+            .fold(0_u32, u32::saturating_add);
+        let stop_total = tx
+            .stopped_at_frame_limit
+            .saturating_add(tx.stopped_at_capacity_limit)
+            .saturating_add(tx.stopped_on_empty_queue);
+        if histogram_total != tx.aggregates_prepared || stop_total != tx.aggregates_prepared {
+            return Err(format!("incomplete typed A-MPDU accounting: {tx:?}").into());
+        }
+        let classified = tx
+            .full_block_ack
+            .saturating_add(tx.partial_block_ack)
+            .saturating_add(tx.empty_block_ack);
+        if tx.block_ack_samples != tx.aggregate_publications
+            || classified != tx.block_ack_samples
+            || tx.block_ack_received != tx.full_block_ack.saturating_add(tx.partial_block_ack)
+            || tx.empty_block_ack != tx.block_ack_samples.saturating_sub(tx.block_ack_received)
+            || tx.success_without_block_ack != 0
+            || tx.nonzero_block_ack_control != 0
+        {
+            return Err(format!("inconsistent typed BlockAck evidence: {tx:?}").into());
+        }
+        if tx.tx_irq_epochs != 0
+            && tx
+                .tx_irq_service_samples
+                .saturating_add(tx.tx_irq_clock_skew_samples)
+                == 0
+        {
+            return Err("typed TX IRQ evidence contains no service edge".into());
+        }
+        if tx.tx_publication_to_irq_samples == 0 {
+            return Err("typed TX evidence contains no publication-to-IRQ flight".into());
+        }
+        if tx.hardware_timeouts != 0 || tx.collisions != 0 {
+            return Err(format!("terminal typed A-MPDU failure: {tx:?}").into());
+        }
+        Ok(tx)
+    }
 }
 
 fn validate_stack_usage(usage: StackUsage) -> Result<()> {
@@ -131,10 +371,6 @@ pub(crate) struct MonitorCaptureEvidence {
 }
 
 impl SerialCapture {
-    pub(crate) fn start(port: &Path) -> Self {
-        Self::start_inner(port, false)
-    }
-
     /// Open the diagnostics owner before resetting the USB-Serial/JTAG target.
     ///
     /// Traffic qualification needs the DHCP and UDP-ready records from the
@@ -144,11 +380,38 @@ impl SerialCapture {
         Self::start_inner(port, true)
     }
 
+    /// Boot-smoke deliberately runs before the full radio/protocol runtime.
+    /// Its only contract is that the relocated Embassy timer executes once.
+    pub(crate) fn wait_for_boot_smoke(&self, timeout: Duration) -> Result<()> {
+        const PASS: &[u8] = b"OPEN_RADIO_HIL boot-smoke=PASS timer=PASS";
+        const PANIC: &[u8] = b"OPEN_RADIO_HIL runtime=PANIC";
+        let deadline = Instant::now() + timeout;
+        while Instant::now() < deadline {
+            let bytes = self
+                .bytes
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if bytes
+                .windows(PANIC.len())
+                .any(|candidate| candidate == PANIC)
+            {
+                return Err("boot-smoke runtime panicked".into());
+            }
+            if bytes.windows(PASS.len()).any(|candidate| candidate == PASS) {
+                return Ok(());
+            }
+            drop(bytes);
+            thread::sleep(Duration::from_millis(10));
+        }
+        Err("boot-smoke timer completion was not observed".into())
+    }
+
     fn start_inner(port: &Path, reset_target: bool) -> Self {
         let stop = Arc::new(AtomicBool::new(false));
         let bytes = Arc::new(Mutex::new(Vec::new()));
         let protocol = Arc::new(ProtocolEvents {
             messages: Mutex::new(Vec::new()),
+            health: Mutex::new(ProtocolHealth::default()),
             changed: Condvar::new(),
         });
         let (outbound, outbound_rx) = mpsc::channel::<Zeroizing<Vec<u8>>>();
@@ -197,16 +460,44 @@ impl SerialCapture {
                 match serial.read(&mut buffer) {
                     Ok(length) => {
                         append(&worker_bytes, &buffer[..length]);
-                        decoder.feed::<Envelope<Event>>(&buffer[..length], |message| {
-                            if let Ok(message) = message {
+                        decoder.feed::<Event>(&buffer[..length], |message| match message {
+                            Ok(message) => {
+                                worker_protocol
+                                    .health
+                                    .lock()
+                                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                                    .observe(&message);
                                 let mut messages = worker_protocol
                                     .messages
                                     .lock()
                                     .unwrap_or_else(std::sync::PoisonError::into_inner);
-                                messages.push(message);
+                                let capacity_exhausted = messages.len() == PROTOCOL_EVENT_CAPACITY;
+                                if !capacity_exhausted {
+                                    messages.push(message);
+                                }
+                                drop(messages);
+                                if capacity_exhausted {
+                                    worker_protocol
+                                        .health
+                                        .lock()
+                                        .unwrap_or_else(std::sync::PoisonError::into_inner)
+                                        .fail(format!(
+                                            "host protocol event capacity {PROTOCOL_EVENT_CAPACITY} exhausted"
+                                        ));
+                                }
                                 worker_protocol.changed.notify_all();
                             }
+                            Err(error) => worker_protocol
+                                .health
+                                .lock()
+                                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                                .decode_error(error),
                         });
+                        worker_protocol
+                            .health
+                            .lock()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner)
+                            .counters = decoder.counters();
                     }
                     Err(error) if error.kind() == std::io::ErrorKind::TimedOut => {}
                     Err(error) => {
@@ -231,14 +522,15 @@ impl SerialCapture {
     }
 
     /// Performs one typed host-to-target round trip and returns the current
-    /// image capabilities. The old text readiness path remains active only as
-    /// a compatibility oracle while benchmark evidence is migrated.
+    /// image capabilities.
     pub(crate) fn request_capabilities(&self, timeout: Duration) -> Result<Capabilities> {
         let _hello = self
             .wait_for_protocol_after(0, timeout, |message| {
                 matches!(message.body, Event::Hello(_))
             })
-            .ok_or("device did not publish a HIL protocol hello")?;
+            .ok_or_else(|| {
+                self.protocol_failure_or("device did not publish a HIL protocol hello")
+            })?;
         let response = self.send_command(0, Command::GetCapabilities, timeout)?;
         match response.body {
             Event::Hello(capabilities) => Ok(capabilities),
@@ -265,8 +557,8 @@ impl SerialCapture {
         {
             self.upload_startup_artifact(&bytes, PROTOCOL_READY_TIMEOUT)?;
         }
-        if capabilities.features.network_provisioning {
-            self.provision_network(lab, PROTOCOL_READY_TIMEOUT)?;
+        if capabilities.features.runtime_initialization {
+            self.initialize(lab, PROTOCOL_READY_TIMEOUT)?;
         }
         if capabilities.features.startup_artifact
             && let Some(path) = artifact_path
@@ -384,19 +676,48 @@ impl SerialCapture {
         }
     }
 
-    fn provision_network(&self, lab: &LabConfig, timeout: Duration) -> Result<()> {
-        let configuration = lab.station.network_configuration()?;
-        let response = self.send_command(0, Command::ProvisionNetwork(configuration), timeout)?;
+    fn initialize(&self, lab: &LabConfig, timeout: Duration) -> Result<()> {
+        let first_event = self.protocol_event_count();
+        let response = self.send_command(0, Command::Initialize(lab.station.ipv4()), timeout)?;
+        let request_id = response.request_id;
         match response.body {
+            Event::Initialized => return Ok(()),
             Event::Accepted
             | Event::State(StateChange {
                 current: SessionState::Idle,
                 ..
-            }) => Ok(()),
+            }) => {}
             Event::Rejected(reason) => {
-                Err(format!("device rejected HIL network provisioning: {reason:?}").into())
+                return Err(format!("device rejected HIL initialization: {reason:?}").into());
             }
-            _ => Err("device returned an invalid network provisioning response".into()),
+            _ => return Err("device returned an invalid initialization response".into()),
+        }
+        self.wait_for_protocol_after(first_event, timeout, |message| {
+            message.request_id == request_id && matches!(message.body, Event::Initialized)
+        })
+        .ok_or_else(|| "device did not complete role-neutral initialization".into())
+        .map(|_| ())
+    }
+
+    pub(crate) fn prepare_station(
+        &self,
+        lab: &LabConfig,
+        timeout: Duration,
+    ) -> Result<Capabilities> {
+        let capabilities = self.prepare_protocol(lab)?;
+        let handle = self.request_station_start(lab)?;
+        self.wait_wifi_role_transition(handle, timeout)?;
+        self.wait_for_connected_station(timeout)?;
+        Ok(capabilities)
+    }
+
+    pub(crate) fn query_operation_status(&self, timeout: Duration) -> Result<OperationStatus> {
+        match self.send_command(0, Command::GetStatus, timeout)?.body {
+            Event::OperationStatus(status) => Ok(status),
+            Event::Rejected(reason) => {
+                Err(format!("device rejected operation-status query: {reason:?}").into())
+            }
+            _ => Err("device returned an invalid operation-status response".into()),
         }
     }
 
@@ -423,7 +744,7 @@ impl SerialCapture {
         self.wait_for_protocol_after(event_count, timeout, |message| {
             message.boot_id == boot_id && message.request_id == request_id
         })
-        .ok_or_else(|| "device did not answer HIL command".into())
+        .ok_or_else(|| self.protocol_failure_or("device did not answer HIL command"))
     }
 
     fn expect_accepted(
@@ -508,6 +829,24 @@ impl SerialCapture {
             Event::Evidence(EvidenceRecord::Transport(transport)) => transport,
             _ => unreachable!("session evidence predicate accepted only transport evidence"),
         };
+        let link_evidence = self
+            .wait_for_protocol_after(session.first_event, timeout, |message| {
+                message.session_id == session.session_id
+                    && matches!(message.body, Event::Evidence(EvidenceRecord::Link(_)))
+            })
+            .ok_or("device did not publish structured protocol-link evidence")?;
+        let link = match link_evidence.body {
+            Event::Evidence(EvidenceRecord::Link(link)) => link,
+            _ => unreachable!("link evidence predicate accepted only link evidence"),
+        };
+        if link.rx_cobs_errors != 0
+            || link.rx_checksum_errors != 0
+            || link.rx_decode_errors != 0
+            || link.rx_overflows != 0
+            || link.tx_dropped != 0
+        {
+            return Err(format!("device protocol link is unhealthy: {link:?}").into());
+        }
         let stack_evidence = self
             .wait_for_protocol_after(session.first_event, timeout, |message| {
                 message.session_id == session.session_id
@@ -530,35 +869,41 @@ impl SerialCapture {
             Event::Finished(finished) => finished,
             _ => unreachable!("session completion predicate accepted only Finished"),
         };
-        let rx_delivery = match finished.summary.evidence_records {
-            2 => None,
-            3 => {
-                let delivery = self
-                    .wait_for_protocol_after(session.first_event, Duration::ZERO, |message| {
-                        message.session_id == session.session_id
-                            && matches!(
-                                message.body,
-                                Event::Evidence(EvidenceRecord::RxDelivery(_))
-                            )
-                    })
-                    .ok_or("device counted RX delivery evidence but did not publish it")?;
-                match delivery.body {
-                    Event::Evidence(EvidenceRecord::RxDelivery(delivery)) => Some(delivery),
-                    _ => unreachable!("RX delivery predicate accepted only delivery evidence"),
-                }
-            }
-            count => {
-                return Err(format!(
-                    "device reported unsupported session evidence record count {count}"
-                )
-                .into());
-            }
-        };
+        let radio = self
+            .wait_for_protocol_after(session.first_event, Duration::ZERO, |message| {
+                message.session_id == session.session_id
+                    && matches!(message.body, Event::Evidence(EvidenceRecord::Radio(_)))
+            })
+            .map(|event| match event.body {
+                Event::Evidence(EvidenceRecord::Radio(radio)) => radio,
+                _ => unreachable!("radio predicate accepted only radio evidence"),
+            });
+        let rx_delivery = self
+            .wait_for_protocol_after(session.first_event, Duration::ZERO, |message| {
+                message.session_id == session.session_id
+                    && matches!(message.body, Event::Evidence(EvidenceRecord::RxDelivery(_)))
+            })
+            .map(|event| match event.body {
+                Event::Evidence(EvidenceRecord::RxDelivery(delivery)) => delivery,
+                _ => unreachable!("RX delivery predicate accepted only delivery evidence"),
+            });
+        let expected_records = 3 + u16::from(radio.is_some()) + u16::from(rx_delivery.is_some());
+        if finished.summary.evidence_records != expected_records {
+            return Err(format!(
+                "device reported {} evidence records but published {expected_records} typed records",
+                finished.summary.evidence_records
+            )
+            .into());
+        }
         let mut records = Vec::with_capacity(usize::from(finished.summary.evidence_records));
         records.push(EvidenceRecord::Transport(transport));
+        if let Some(radio) = radio {
+            records.push(EvidenceRecord::Radio(radio));
+        }
         if let Some(delivery) = rx_delivery {
             records.push(EvidenceRecord::RxDelivery(delivery));
         }
+        records.push(EvidenceRecord::Link(link));
         records.push(EvidenceRecord::Stack(stack));
         let checksum = evidence_crc32c(&records)
             .map_err(|error| format!("cannot checksum structured HIL evidence: {error}"))?;
@@ -571,6 +916,7 @@ impl SerialCapture {
         }
         Ok(SessionEvidence {
             transport,
+            radio,
             rx_delivery,
             stack,
             finished,
@@ -658,8 +1004,11 @@ impl SerialCapture {
         }
     }
 
-    pub(crate) fn request_station_start(&self) -> Result<WifiCommandHandle> {
-        self.request_wifi_command(Command::StartStation, "station start")
+    pub(crate) fn request_station_start(&self, lab: &LabConfig) -> Result<WifiCommandHandle> {
+        self.request_wifi_command(
+            Command::StartStation(lab.station.protocol_credentials()?),
+            "station start",
+        )
     }
 
     pub(crate) fn request_wifi_scan(&self, request: WifiScanRequest) -> Result<WifiCommandHandle> {
@@ -942,6 +1291,33 @@ impl SerialCapture {
             })
     }
 
+    pub(crate) fn beacon_loss_count(&self) -> usize {
+        self.protocol
+            .messages
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .iter()
+            .filter(|message| {
+                matches!(
+                    message.body,
+                    Event::StationLifecycle(StationLifecycleEvent::Disconnected {
+                        reason: open_esp_radio_hil_protocol::StationDisconnectReason::BeaconLoss,
+                        ..
+                    })
+                )
+            })
+            .count()
+    }
+
+    pub(crate) fn require_no_beacon_loss(&self) -> Result<()> {
+        let count = self.beacon_loss_count();
+        if count == 0 {
+            Ok(())
+        } else {
+            Err(format!("observed {count} typed station beacon-loss event(s)").into())
+        }
+    }
+
     fn observed_udp_service(&self, direction: Direction, port: u16) -> bool {
         self.observed_service(Transport::Udp, direction, port)
     }
@@ -968,6 +1344,17 @@ impl SerialCapture {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .len()
+    }
+
+    fn protocol_failure_or(&self, fallback: &str) -> Box<dyn std::error::Error> {
+        self.protocol
+            .health
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .failure
+            .clone()
+            .unwrap_or_else(|| fallback.to_owned())
+            .into()
     }
 
     fn wait_for_protocol_after(
@@ -1007,61 +1394,45 @@ impl SerialCapture {
         }
     }
 
-    pub(crate) fn contains(&self, marker: &str) -> bool {
-        let bytes = self
-            .bytes
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        bytes
-            .windows(marker.len())
-            .any(|candidate| candidate == marker.as_bytes())
-    }
-
-    pub(crate) fn marker_count(&self, marker: &str) -> usize {
-        let bytes = self
-            .bytes
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        bytes
-            .windows(marker.len())
-            .filter(|candidate| *candidate == marker.as_bytes())
-            .count()
-    }
-
-    fn wait_for_marker_after(
-        &self,
-        marker: &str,
-        previous_count: usize,
-        timeout: Duration,
-    ) -> bool {
-        let deadline = Instant::now() + timeout;
-        loop {
-            if self.marker_count(marker) > previous_count {
-                return true;
-            }
-            let now = Instant::now();
-            if now >= deadline {
-                return false;
-            }
-            thread::sleep((deadline - now).min(Duration::from_millis(20)));
-        }
-    }
-
-    fn transcript(&self) -> String {
-        let bytes = self
-            .bytes
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        String::from_utf8_lossy(&bytes).into_owned()
-    }
-
-    pub(crate) fn finish(mut self) -> String {
+    /// Stops capture and persists both the byte-exact diagnostic transcript
+    /// and the decoded target event stream. Host commands are deliberately not
+    /// logged because station/AP commands can contain credentials.
+    pub(crate) fn finish_to(mut self, output: &Path) -> Result<String> {
         self.stop_and_join();
         let bytes = self
             .bytes
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        String::from_utf8_lossy(&bytes).into_owned()
+        let uart = String::from_utf8_lossy(&bytes).into_owned();
+        let messages = self
+            .protocol
+            .messages
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let health = self
+            .protocol
+            .health
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
+
+        fs::create_dir_all(output)?;
+        fs::write(output.join("uart.log"), &uart)?;
+        let mut protocol_log = Vec::new();
+        for message in messages.iter() {
+            serde_json::to_writer(
+                &mut protocol_log,
+                &serde_json::json!({"record": "target-event", "envelope": message}),
+            )?;
+            protocol_log.push(b'\n');
+        }
+        serde_json::to_writer(
+            &mut protocol_log,
+            &serde_json::json!({"record": "link-health", "health": health}),
+        )?;
+        protocol_log.push(b'\n');
+        fs::write(output.join("protocol.jsonl"), protocol_log)?;
+        Ok(uart)
     }
 
     fn stop_and_join(&mut self) {
@@ -1120,7 +1491,7 @@ pub(crate) fn await_tcp_ready(
     direction: Direction,
     timeout: Duration,
 ) -> Result<TcpReady> {
-    let capabilities = capture.prepare_protocol(lab)?;
+    let capabilities = capture.prepare_station(lab, timeout)?;
     let direction_supported = match direction {
         Direction::Rx => capabilities.features.rx,
         Direction::Tx => capabilities.features.tx,
@@ -1134,19 +1505,11 @@ pub(crate) fn await_tcp_ready(
     }
     let deadline = Instant::now() + timeout;
     while Instant::now() < deadline {
-        if capture.contains(RADIO_RUNNER_FAILURE_MARKER) {
-            return Err("radio runner failed before TCP RX became ready".into());
-        }
-        let address = capture
-            .observed_protocol_ipv4()
-            .or_else(|| observed_network_ipv4(&capture.transcript()));
+        let address = capture.observed_protocol_ipv4();
         if capture.observed_service(Transport::Tcp, direction, port)
             && let Some(address) = address
         {
-            return Ok(TcpReady {
-                address,
-                runtime_session: true,
-            });
+            return Ok(TcpReady { address });
         }
         thread::sleep(Duration::from_millis(20));
     }
@@ -1163,12 +1526,9 @@ pub(crate) fn await_network_ready(
     lab: &LabConfig,
     timeout: Duration,
 ) -> Result<Ipv4Addr> {
-    capture.prepare_protocol(lab)?;
+    capture.prepare_station(lab, timeout)?;
     let deadline = Instant::now() + timeout;
     while Instant::now() < deadline {
-        if capture.contains(RADIO_RUNNER_FAILURE_MARKER) {
-            return Err("radio runner failed before the network became ready".into());
-        }
         if let Some(address) = capture.observed_protocol_ipv4() {
             return Ok(address);
         }
@@ -1211,11 +1571,9 @@ fn append(bytes: &Mutex<Vec<u8>>, chunk: &[u8]) {
 
 /// Wait until the target owns its IPv4 address and UDP RX service.
 ///
-/// Runtime-session images require a typed service-ready edge emitted only
+/// The qualification image requires a typed service-ready edge emitted only
 /// after the target consumes a negative warm-up datagram. `Arm`/`Start` then
-/// provide measured synchronization. Compatibility images still use one
-/// positive datagram and the target idle timeout to prove the complete UDP RX
-/// path before a measured stream begins.
+/// provide measured synchronization.
 pub(crate) fn await_udp_rx_ready(
     capture: &SerialCapture,
     lab: &LabConfig,
@@ -1223,15 +1581,15 @@ pub(crate) fn await_udp_rx_ready(
     port: u16,
     timeout: Duration,
 ) -> Result<UdpRxReady> {
-    let capabilities = capture.prepare_protocol(lab)?;
+    let capabilities = capture.prepare_station(lab, timeout)?;
     if !capabilities.features.udp || !capabilities.features.rx {
         return Err("firmware does not advertise UDP RX capability".into());
     }
-    if capabilities.features.runtime_configuration && !capabilities.features.structured_evidence {
-        return Err("firmware advertises runtime sessions without structured evidence".into());
+    if !capabilities.features.runtime_configuration || !capabilities.features.structured_evidence {
+        return Err(
+            "qualification firmware requires runtime sessions and structured evidence".into(),
+        );
     }
-    let runtime_session =
-        capabilities.features.runtime_configuration && capabilities.features.structured_evidence;
     let socket = UdpSocket::bind(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0))?;
     let mut address = address_hint;
     if !address.is_unspecified() {
@@ -1242,80 +1600,39 @@ pub(crate) fn await_udp_rx_ready(
     let deadline = Instant::now() + timeout;
 
     while Instant::now() < deadline {
-        if capture.contains(RADIO_RUNNER_FAILURE_MARKER) {
-            return Err("radio runner failed before UDP RX became ready".into());
-        }
-        if let Some(discovered) = capture
-            .observed_protocol_ipv4()
-            .or_else(|| observed_network_ipv4(&capture.transcript()))
+        if let Some(discovered) = capture.observed_protocol_ipv4()
             && discovered != address
         {
             address = discovered;
             socket.connect(SocketAddrV4::new(address, port))?;
         }
-        let rx_service_ready = capture.observed_udp_service(Direction::Rx, port)
-            || capture.contains("stage=udp-rx-ready");
-        let tx_service_ready = !capabilities.features.bidirectional
-            || capture.observed_udp_service(Direction::Tx, 4_324)
-            || capture.contains("stage=udp-tx-ready");
-        if !rx_service_ready
-            || !tx_service_ready
-            || capture
-                .observed_protocol_ipv4()
-                .or_else(|| observed_network_ipv4(&capture.transcript()))
-                .is_none()
-        {
+        let rx_service_ready = capture.observed_udp_service(Direction::Rx, port);
+        let tx_service_ready = capture.observed_udp_service(Direction::Tx, 4_324);
+        if !rx_service_ready || !tx_service_ready || capture.observed_protocol_ipv4().is_none() {
             thread::sleep(Duration::from_millis(20));
             continue;
         }
 
-        if runtime_session {
-            // A send completion proves only local enqueueing. Require a fresh
-            // target event after the packet so unresolved ARP or a socket that
-            // has not yet been polled cannot truncate the measured prefix.
-            let boot_id = capture
-                .latest_boot_id()
-                .ok_or("device did not publish a current HIL boot identity")?;
-            let event_start = capture.protocol_event_count();
-            packet[..4].copy_from_slice(&(-1_i32).to_be_bytes());
-            socket.send(&packet)?;
-            if capture
-                .wait_for_protocol_after(event_start, RX_PROBE_RESPONSE_TIMEOUT, |message| {
-                    message.boot_id == boot_id
-                        && matches!(
-                            message.body,
-                            Event::ServiceReady(service)
-                                if service.transport == Transport::Udp
-                                    && service.direction == Direction::Rx
-                                    && service.local_port == port
-                        )
-                })
-                .is_some()
-            {
-                return Ok(UdpRxReady {
-                    address,
-                    runtime_session: true,
-                });
-            }
-            continue;
-        }
-
-        let completed_intervals = capture.marker_count(RX_BENCH_INTERVAL_COMPLETE_MARKER);
-        packet[..4].copy_from_slice(&0_i32.to_be_bytes());
-        let _ = socket.send(&packet);
-        if capture.wait_for_marker_after(
-            RX_BENCH_INTERVAL_COMPLETE_MARKER,
-            completed_intervals,
-            RX_PROBE_RESPONSE_TIMEOUT,
-        ) {
-            // The marker follows the last compact telemetry record. Leave
-            // one small scheduling interval for the benchmark task to yield
-            // and close any network-ready wait that overlapped the probe.
-            thread::sleep(Duration::from_millis(10));
-            return Ok(UdpRxReady {
-                address,
-                runtime_session: false,
-            });
+        let boot_id = capture
+            .latest_boot_id()
+            .ok_or("device did not publish a current HIL boot identity")?;
+        let event_start = capture.protocol_event_count();
+        packet[..4].copy_from_slice(&(-1_i32).to_be_bytes());
+        socket.send(&packet)?;
+        if capture
+            .wait_for_protocol_after(event_start, RX_PROBE_RESPONSE_TIMEOUT, |message| {
+                message.boot_id == boot_id
+                    && matches!(
+                        message.body,
+                        Event::ServiceReady(service)
+                            if service.transport == Transport::Udp
+                                && service.direction == Direction::Rx
+                                && service.local_port == port
+                    )
+            })
+            .is_some()
+        {
+            return Ok(UdpRxReady { address });
         }
     }
 
@@ -1326,76 +1643,137 @@ pub(crate) fn await_udp_rx_ready(
     .into())
 }
 
-pub(crate) fn await_device_marker(
+pub(crate) fn await_udp_tx_ready(
     capture: &SerialCapture,
     lab: &LabConfig,
-    marker: &str,
     address_hint: Ipv4Addr,
     timeout: Duration,
 ) -> Result<UdpTxReady> {
-    let capabilities = capture.prepare_protocol(lab)?;
+    let capabilities = capture.prepare_station(lab, timeout)?;
     if !capabilities.features.udp || !capabilities.features.tx {
         return Err("firmware does not advertise UDP TX capability".into());
     }
-    if capabilities.features.runtime_configuration && !capabilities.features.structured_evidence {
-        return Err("firmware advertises runtime sessions without structured evidence".into());
+    if !capabilities.features.runtime_configuration || !capabilities.features.structured_evidence {
+        return Err(
+            "qualification firmware requires runtime sessions and structured evidence".into(),
+        );
     }
-    let runtime_session =
-        capabilities.features.runtime_configuration && capabilities.features.structured_evidence;
     let deadline = Instant::now() + timeout;
     while Instant::now() < deadline {
-        if capture.contains(RADIO_RUNNER_FAILURE_MARKER) {
-            return Err(format!("radio runner failed before `{marker}`").into());
-        }
-        if capture.observed_udp_service(Direction::Tx, 4_324) || capture.contains(marker) {
+        if capture.observed_udp_service(Direction::Tx, 4_324) {
             let discovery_deadline = Instant::now() + DHCP_DISCOVERY_GRACE;
             while Instant::now() < discovery_deadline {
-                if let Some(address) = capture
-                    .observed_protocol_ipv4()
-                    .or_else(|| observed_network_ipv4(&capture.transcript()))
-                {
-                    return Ok(UdpTxReady {
-                        address,
-                        runtime_session,
-                    });
+                if let Some(address) = capture.observed_protocol_ipv4() {
+                    return Ok(UdpTxReady { address });
                 }
                 thread::sleep(Duration::from_millis(10));
             }
             return Ok(UdpTxReady {
                 address: address_hint,
-                runtime_session,
             });
         }
         thread::sleep(Duration::from_millis(20));
     }
     Err(format!(
-        "device did not publish `{marker}` within {} seconds",
+        "device did not publish typed UDP TX readiness within {} seconds",
         timeout.as_secs(),
     )
     .into())
 }
 
-fn observed_network_ipv4(transcript: &str) -> Option<Ipv4Addr> {
-    transcript.lines().rev().find_map(|line| {
-        if !line.contains("stage=embassy-net-ready") {
-            return None;
-        }
-        let address = line
-            .split_whitespace()
-            .find_map(|token| token.strip_prefix("address="))?
-            .split('/')
-            .next()?;
-        address.parse().ok()
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use open_esp_radio_hil_protocol::{
-        Direction, SessionLinkRequirements, SessionReady, StackUsage, StackWatermark,
+        Direction, Envelope, Event, Finished, RadioEvidence, ResultSummary, RxRadioEvidence,
+        SessionLinkRequirements, SessionReady, StackUsage, StackWatermark, TransportEvidence,
     };
 
-    use super::{observed_network_ipv4, session_ready_covers, validate_stack_usage};
+    use super::{ProtocolHealth, SessionEvidence, session_ready_covers, validate_stack_usage};
+
+    fn session_with_rx(rx: RxRadioEvidence) -> SessionEvidence {
+        SessionEvidence {
+            transport: TransportEvidence {
+                rx_bytes: 0,
+                tx_bytes: 0,
+                rx_units: 0,
+                tx_units: 0,
+                elapsed_micros: 1,
+                transport_errors: 0,
+            },
+            radio: Some(RadioEvidence {
+                rx: Some(rx),
+                tx: None,
+            }),
+            rx_delivery: None,
+            stack: StackUsage {
+                minimum_free_percent: 25,
+                cpu0: StackWatermark {
+                    capacity_bytes: 1,
+                    free_bytes: 1,
+                    used_bytes: 0,
+                },
+                cpu1: StackWatermark {
+                    capacity_bytes: 1,
+                    free_bytes: 1,
+                    used_bytes: 0,
+                },
+            },
+            finished: Finished {
+                summary: ResultSummary {
+                    passed: true,
+                    evidence_records: 4,
+                },
+                evidence_crc32c: 0,
+            },
+        }
+    }
+
+    fn healthy_he_rx() -> RxRadioEvidence {
+        RxRadioEvidence {
+            phy_format: 4,
+            sequence_first: Some(0),
+            sequence_highest: Some(99),
+            not_s_mpdu_datagrams: 100,
+            not_s_mpdu_beacons: 1,
+            ampdu_datagrams: 100,
+            protocol_ampdu_datagrams: 100,
+            reorder_tid: 0,
+            reorder_window: 64,
+            reorder_first_samples: 1,
+            reorder_first_tid: 0,
+            reorder_first_start: 7,
+            reorder_first_sequence: 9,
+            reorder_first_distance: 2,
+            reorder_maximum_occupied: 8,
+            rx_service_calls: 10,
+            rx_frontier_histogram_samples: 10,
+            mac_irq_entries: 10,
+            mac_irq_classified_entries: 10,
+            ..RxRadioEvidence::default()
+        }
+    }
+
+    #[test]
+    fn typed_rx_radio_enforces_order_and_provenance_without_text() {
+        assert!(
+            session_with_rx(healthy_he_rx())
+                .require_rx_radio(4, 100)
+                .is_ok()
+        );
+
+        let mut reordered = healthy_he_rx();
+        reordered.sequence_backward = 1;
+        assert!(session_with_rx(reordered).require_rx_radio(4, 100).is_err());
+
+        let mut wrong_provenance = healthy_he_rx();
+        wrong_provenance.protocol_ampdu_datagrams = 0;
+        wrong_provenance.hardware_ampdu_datagrams = 100;
+        assert!(
+            session_with_rx(wrong_provenance)
+                .require_rx_radio(4, 100)
+                .is_err()
+        );
+    }
 
     #[test]
     fn runtime_stack_policy_rejects_low_headroom_on_either_core() {
@@ -1472,13 +1850,28 @@ mod tests {
     }
 
     #[test]
-    fn extracts_latest_network_address_from_uart_transcript() {
-        let transcript = "OPEN_RADIO_PHY_HIL result=PASS stage=embassy-net-ready address=192.168.178.120/24 gateway=None\n\
-                          OPEN_RADIO_PHY_HIL result=PASS stage=embassy-net-ready address=192.168.178.121/24 gateway=None\n";
+    fn target_sequence_discontinuity_is_a_fatal_protocol_error() {
+        let mut health = ProtocolHealth::default();
+        health.observe(&Envelope::new(7, 0, 0, 0, Event::Accepted));
+        health.observe(&Envelope::new(7, 2, 0, 0, Event::Accepted));
+        assert!(
+            health
+                .failure
+                .as_deref()
+                .is_some_and(|failure| { failure.contains("expected 1, observed 2") })
+        );
+    }
 
-        assert_eq!(
-            observed_network_ipv4(transcript),
-            Some("192.168.178.121".parse().unwrap())
+    #[test]
+    fn a_new_boot_must_restart_its_target_sequence() {
+        let mut health = ProtocolHealth::default();
+        health.observe(&Envelope::new(7, 0, 0, 0, Event::Accepted));
+        health.observe(&Envelope::new(8, 3, 0, 0, Event::Accepted));
+        assert!(
+            health
+                .failure
+                .as_deref()
+                .is_some_and(|failure| { failure.contains("new boot 8") })
         );
     }
 }

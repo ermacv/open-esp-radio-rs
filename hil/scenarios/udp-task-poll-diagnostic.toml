@@ -1,9 +1,12 @@
-schema = 2
+schema = 3
 id = "udp-task-poll-diagnostic"
 description = "Embassy poll-residence diagnostic under UDP RX load"
 image = "diagnostic-task-poll"
 isolation = "reset"
 tags = ["diagnostic", "udp", "station"]
+
+[link]
+phy = "he20"
 
 [workload]
 kind = "udp"
@@ -11,7 +14,6 @@ direction = "rx"
 duration_seconds = 16
 rx_rate_bps = 80000000
 payload_bytes = 1200
-phy = "he20"
 
 [criteria]
 exact_delivery = true

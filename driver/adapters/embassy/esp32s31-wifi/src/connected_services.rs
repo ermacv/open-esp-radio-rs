@@ -109,6 +109,14 @@ pub trait Esp32s31NetworkTxService<
         false
     }
 
+    fn preferred_batch_size(&self) -> usize {
+        1
+    }
+
+    fn prepared_frame_count(&self) -> usize {
+        0
+    }
+
     fn start_prepared<'a>(
         &'a mut self,
         _hardware: &'a mut H,
@@ -327,6 +335,14 @@ where
 
     fn has_prepared_tx(&self) -> bool {
         self.tx.has_prepared()
+    }
+
+    fn preferred_tx_batch_size(&self) -> usize {
+        self.tx.preferred_batch_size()
+    }
+
+    fn prepared_tx_frame_count(&self) -> usize {
+        self.tx.prepared_frame_count()
     }
 
     fn start_prepared_tx<'a>(

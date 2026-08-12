@@ -1336,13 +1336,7 @@ impl SerialCapture {
             .messages
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        messages.iter().rev().find_map(|message| {
-            if matches!(message.body, Event::Hello(_)) {
-                Some(message.boot_id)
-            } else {
-                None
-            }
-        })
+        latest_boot_id_in(&messages)
     }
 
     pub(crate) fn observed_protocol_ipv4(&self) -> Option<Ipv4Addr> {
@@ -1351,31 +1345,25 @@ impl SerialCapture {
             .messages
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let boot_id = latest_boot_id_in(&messages)?;
         messages
             .iter()
             .rev()
             .find_map(|message| match message.body {
-                Event::NetworkReady(network) => Some(Ipv4Addr::from(network.address)),
+                Event::NetworkReady(network) if message.boot_id == boot_id => {
+                    Some(Ipv4Addr::from(network.address))
+                }
                 _ => None,
             })
     }
 
     pub(crate) fn beacon_loss_count(&self) -> usize {
-        self.protocol
+        let messages = self
+            .protocol
             .messages
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .iter()
-            .filter(|message| {
-                matches!(
-                    message.body,
-                    Event::StationLifecycle(StationLifecycleEvent::Disconnected {
-                        reason: open_esp_radio_hil_protocol::StationDisconnectReason::BeaconLoss,
-                        ..
-                    })
-                )
-            })
-            .count()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        beacon_loss_count_in(&messages)
     }
 
     pub(crate) fn require_no_beacon_loss(&self) -> Result<()> {
@@ -1397,9 +1385,13 @@ impl SerialCapture {
             .messages
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let Some(boot_id) = latest_boot_id_in(&messages) else {
+            return false;
+        };
         messages.iter().any(|message| match message.body {
             Event::ServiceReady(service) => {
-                service.transport == transport
+                message.boot_id == boot_id
+                    && service.transport == transport
                     && service.direction == direction
                     && service.local_port == port
             }
@@ -1549,6 +1541,32 @@ impl SerialCapture {
             let _ = worker.join();
         }
     }
+}
+
+fn latest_boot_id_in(messages: &[Envelope<Event>]) -> Option<u64> {
+    messages
+        .iter()
+        .rev()
+        .find_map(|message| matches!(message.body, Event::Hello(_)).then_some(message.boot_id))
+}
+
+fn beacon_loss_count_in(messages: &[Envelope<Event>]) -> usize {
+    let Some(boot_id) = latest_boot_id_in(messages) else {
+        return 0;
+    };
+    messages
+        .iter()
+        .filter(|message| {
+            message.boot_id == boot_id
+                && matches!(
+                    message.body,
+                    Event::StationLifecycle(StationLifecycleEvent::Disconnected {
+                        reason: open_esp_radio_hil_protocol::StationDisconnectReason::BeaconLoss,
+                        ..
+                    })
+                )
+        })
+        .count()
 }
 
 fn next_station_lifecycle_event(
@@ -1848,8 +1866,8 @@ mod tests {
     };
 
     use super::{
-        ProtocolHealth, SessionEvidence, next_station_lifecycle_event, session_ready_covers,
-        validate_stack_usage,
+        ProtocolHealth, SessionEvidence, beacon_loss_count_in, next_station_lifecycle_event,
+        session_ready_covers, validate_stack_usage,
     };
 
     fn hello(boot_id: u64, message_sequence: u32) -> Envelope<Event> {
@@ -2117,5 +2135,43 @@ mod tests {
             Some(StationLifecycleEvent::Connected { generation: 0 })
         );
         assert_eq!(cursor, 2);
+    }
+
+    #[test]
+    fn beacon_loss_qualification_ignores_previous_boots() {
+        let mut messages = vec![
+            hello(7, 0),
+            Envelope::new(
+                7,
+                1,
+                0,
+                0,
+                Event::StationLifecycle(StationLifecycleEvent::Disconnected {
+                    generation: 0,
+                    reason: open_esp_radio_hil_protocol::StationDisconnectReason::BeaconLoss,
+                }),
+            ),
+            hello(8, 0),
+            Envelope::new(
+                8,
+                1,
+                0,
+                0,
+                Event::StationLifecycle(StationLifecycleEvent::Connected { generation: 0 }),
+            ),
+        ];
+        assert_eq!(beacon_loss_count_in(&messages), 0);
+
+        messages.push(Envelope::new(
+            8,
+            2,
+            0,
+            0,
+            Event::StationLifecycle(StationLifecycleEvent::Disconnected {
+                generation: 0,
+                reason: open_esp_radio_hil_protocol::StationDisconnectReason::BeaconLoss,
+            }),
+        ));
+        assert_eq!(beacon_loss_count_in(&messages), 1);
     }
 }

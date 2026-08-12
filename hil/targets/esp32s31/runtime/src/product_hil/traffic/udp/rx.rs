@@ -8,7 +8,6 @@ use embassy_futures::{
 };
 use embassy_net::{Stack, udp::UdpSocket};
 use embassy_time::{Duration, Instant, Timer, with_timeout};
-use open_esp_radio_esp32s31_embassy_wifi::Esp32s31QualificationSnapshot;
 use open_esp_radio_hil_esp32s31_telemetry::{
     rx_evidence::RX_HE_MCS_BUCKETS, rx_pipeline::RxPipelineCounters, task_poll::TaskPollSet,
 };
@@ -23,7 +22,7 @@ use super::UdpSocketBuffers;
 use crate::{
     console::{publish_event_reliably, runtime_log},
     product_hil::{
-        rx_qualification,
+        QualificationRequester, qualification_sample, rx_qualification,
         traffic::{
             BidirectionalResultChannel, BidirectionalSessionChannel,
             OpenRadioBidirectionalDirection, UdpSequenceEvidence,
@@ -52,7 +51,6 @@ pub(in crate::product_hil) struct UdpRxBenchmarkConfig {
 
 #[derive(Clone, Copy)]
 pub(in crate::product_hil) struct UdpRxTelemetry {
-    pub qualification: Esp32s31QualificationSnapshot,
     pub pipeline: &'static RxPipelineCounters,
     pub task_polls: &'static TaskPollSet,
 }
@@ -136,11 +134,9 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
         .await;
         yield_now().await;
 
-        let hardware_start = telemetry
-            .qualification
-            .rx_statistics()
-            .map(|value| value.primary);
-        let irq_start = telemetry.qualification.rx_interrupt_posts();
+        let qualification_start = qualification_sample(QualificationRequester::UdpRx).await;
+        let hardware_start = qualification_start.rx_primary;
+        let irq_start = qualification_start.rx_interrupt_posts;
         let irq_classification_start = crate::product_hil::MAC_IRQ.snapshot();
         let _ = crate::product_hil::MAC_IRQ.take_auxiliary_status_or();
         let _ = crate::product_hil::MAC_IRQ.take_unknown_status_or();
@@ -238,17 +234,13 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
         }
 
         let elapsed_us = last_packet.duration_since(started).as_micros().max(1);
-        let hardware = telemetry
-            .qualification
-            .rx_statistics()
-            .map(|value| value.primary)
+        let qualification_end = qualification_sample(QualificationRequester::UdpRx).await;
+        let hardware = qualification_end
+            .rx_primary
             .zip(hardware_start)
             .map(|(current, earlier)| current.wrapping_delta_since(earlier))
             .unwrap_or_default();
-        let rx_irq_posts = telemetry
-            .qualification
-            .rx_interrupt_posts()
-            .wrapping_sub(irq_start);
+        let rx_irq_posts = qualification_end.rx_interrupt_posts.wrapping_sub(irq_start);
         let irq_classification = crate::product_hil::MAC_IRQ
             .snapshot()
             .wrapping_delta_since(irq_classification_start);

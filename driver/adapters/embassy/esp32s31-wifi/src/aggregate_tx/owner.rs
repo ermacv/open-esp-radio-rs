@@ -93,7 +93,7 @@ where
             standby_cookie: None,
             standby_prepared: None,
             standby_error: None,
-            block_ack_operational: [false; 8],
+            block_ack_windows: [0; 8],
             config,
             active: ConnectedTxActive::Idle,
             last_aggregate_status: None,
@@ -119,23 +119,62 @@ where
         &mut self.ordinary
     }
 
-    pub fn set_block_ack_operational(&mut self, tid: u8, operational: bool) {
-        if let Some(entry) = self.block_ack_operational.get_mut(usize::from(tid)) {
-            if *entry == operational {
+    pub fn set_block_ack_window(&mut self, tid: u8, window: Option<u16>) {
+        self.set_block_ack_agreement(tid, window.map(|window| (window, false)));
+    }
+
+    pub fn set_block_ack_agreement(&mut self, tid: u8, agreement: Option<(u16, bool)>) {
+        // The S31 capability bounds negotiated TX windows to 32. Keep the
+        // hot owner at the former boolean table size by storing the A-MSDU
+        // capability in bit 7; an impossible wider value disables
+        // aggregation instead of truncating the agreement.
+        let window = agreement
+            .map(|(window, _)| window)
+            .and_then(|window| u8::try_from(window).ok())
+            .filter(|window| *window <= 32)
+            .unwrap_or(0);
+        let amsdu = agreement.is_some_and(|(_, amsdu)| amsdu);
+        if let Some(entry) = self.block_ack_windows.get_mut(usize::from(tid)) {
+            let encoded = window | if amsdu && window != 0 { 0x80 } else { 0 };
+            if *entry == encoded {
                 return;
             }
-            *entry = operational;
+            let was_operational = *entry & 0x7f != 0;
+            *entry = encoded;
+            let operational = window != 0;
             if let Some(observer) = self.observer {
-                observer.observe(AggregateTxObservation::BlockAckOperational { tid, operational });
+                if was_operational != operational {
+                    observer
+                        .observe(AggregateTxObservation::BlockAckOperational { tid, operational });
+                }
             }
         }
     }
 
+    pub fn block_ack_amsdu(&self, tid: u8) -> bool {
+        self.block_ack_windows
+            .get(usize::from(tid))
+            .is_some_and(|agreement| agreement & 0x80 != 0)
+    }
+
     pub fn block_ack_operational(&self, tid: u8) -> bool {
-        self.block_ack_operational
+        self.block_ack_window(tid).is_some()
+    }
+
+    pub fn block_ack_window(&self, tid: u8) -> Option<u16> {
+        let window = self
+            .block_ack_windows
             .get(usize::from(tid))
             .copied()
-            .unwrap_or(false)
+            .unwrap_or(0)
+            & 0x7f;
+        (window != 0).then_some(u16::from(window))
+    }
+
+    pub(super) fn aggregate_frame_limit(&self, tid: u8) -> usize {
+        self.block_ack_window(tid).map_or(0, |window| {
+            usize::from(window).min(usize::from(self.config.frame_limit))
+        })
     }
 
     /// Take one terminal HMAC-visible aggregate exchange status.
@@ -158,6 +197,16 @@ where
 
     pub fn has_prepared_network_tx(&self) -> bool {
         self.standby_prepared.is_some() || self.standby_error.is_some()
+    }
+
+    pub fn preferred_network_batch_size(&self) -> usize {
+        self.aggregate_frame_limit(DATA_TID).max(1)
+    }
+
+    pub fn prepared_network_frame_count(&self) -> usize {
+        self.standby_prepared
+            .as_ref()
+            .map_or(0, |prepared| usize::from(prepared.original_subframes))
     }
 
     /// Portable queue state across the aggregate and ordinary descriptor

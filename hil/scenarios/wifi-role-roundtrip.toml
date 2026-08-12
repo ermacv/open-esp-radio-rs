@@ -1,9 +1,12 @@
-schema = 2
+schema = 3
 id = "wifi-role-roundtrip"
 description = "Station, idle, scan and monitor ownership roundtrip"
 image = "qualification"
 isolation = "reset"
 tags = ["qualification", "wifi", "lifecycle"]
+
+[link]
+phy = "ht40"
 
 [workload]
 kind = "wifi-role"

@@ -38,6 +38,24 @@ where
         while self.irq.try_take_tx().is_some() {}
     }
 
+    /// Extend the software-owned standby batch before completing the active
+    /// hardware transaction when both edges are ready together.
+    ///
+    /// `select4` deliberately gives the TX interrupt priority over the
+    /// network future. Without this bounded non-blocking probe, completion
+    /// immediately publishes a standby batch which may contain only its first
+    /// frame, even though the rest of the producer burst is already queued.
+    async fn prepare_ready_tx_before_completion(&mut self) -> Result<(), B::Error> {
+        if !self.services.can_prepare_tx() {
+            return Ok(());
+        }
+        let Some(frame) = self.network.try_receive_tx() else {
+            return Ok(());
+        };
+        let network = self.network.tx_consumer();
+        self.services.prepare_tx(frame, &network).await
+    }
+
     pub(super) async fn drive_active_tx(&mut self) -> Result<(), B::Error> {
         let mut progress = WifiTxProgress::Pending;
         while progress == WifiTxProgress::Pending {
@@ -68,6 +86,7 @@ where
             match wake {
                 Either4::First(()) => self.service_rx().await?,
                 Either4::Second(events) => {
+                    self.prepare_ready_tx_before_completion().await?;
                     progress = self
                         .services
                         .service_tx(WifiTxWake::Interrupt { events })

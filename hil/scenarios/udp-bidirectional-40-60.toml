@@ -1,9 +1,12 @@
-schema = 2
+schema = 3
 id = "udp-bidirectional-40-60"
 description = "Simultaneous 40 Mbit/s RX and 60 Mbit/s TX exact delivery"
 image = "qualification"
 isolation = "reset"
 tags = ["qualification", "udp", "station", "full-duplex"]
+
+[link]
+phy = "he20"
 
 [workload]
 kind = "udp"
@@ -12,7 +15,6 @@ duration_seconds = 16
 rx_rate_bps = 40000000
 tx_rate_bps = 60000000
 payload_bytes = 1200
-phy = "he20"
 
 [criteria]
 exact_delivery = true

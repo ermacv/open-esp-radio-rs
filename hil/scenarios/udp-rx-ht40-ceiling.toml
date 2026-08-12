@@ -1,0 +1,21 @@
+schema = 3
+id = "udp-rx-ht40-ceiling"
+description = "Sustained HT40 UDP host-to-station receive ceiling"
+image = "qualification"
+isolation = "reset"
+tags = ["qualification", "udp", "station", "ht40"]
+
+[link]
+phy = "ht40"
+
+[workload]
+kind = "udp"
+direction = "rx"
+duration_seconds = 16
+rx_rate_bps = 110000000
+payload_bytes = 1200
+
+[criteria]
+exact_delivery = true
+minimum_rx_bps = 100000000
+require_no_beacon_loss = true

@@ -578,6 +578,17 @@ mod tests {
     }
 
     #[test]
+    fn advanced_block_ack_ssn_completes_preceding_mpdu_without_retry() {
+        let mut state = AmpduRetryState::<4>::new(100, 2, HT_POLICY).unwrap();
+        assert_eq!(
+            state.observe(completion(0, 102, 0), 2),
+            Ok(AmpduRetryDecision::Finish { retry_mask: 0 })
+        );
+        assert_eq!(state.acknowledged(), 2);
+        assert_eq!(state.aggregate_attempts(), 1);
+    }
+
+    #[test]
     fn nonzero_status_ignores_a_stale_block_ack_bitmap() {
         let mut state = AmpduRetryState::<4>::new(20, 2, HT_POLICY).unwrap();
         assert_eq!(

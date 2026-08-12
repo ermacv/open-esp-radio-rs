@@ -34,7 +34,10 @@ use open_esp_radio_esp32s31_wifi_sta::single_mpdu_tx::{
 };
 use open_esp_radio_ieee80211::{
     data::DataHeControl,
-    station::{STA_PROTECTED_QOS_ETHERNET_OVERHEAD, StaTxSequenceCounters, StationFrameError},
+    station::{
+        STA_PROTECTED_QOS_ETHERNET_OVERHEAD, StaTxSequenceCounters, StationFrameError,
+        sta_protected_amsdu_pair_frame_length,
+    },
     station_power_save::StaPowerManagement,
 };
 use open_esp_radio_wifi_softmac::{
@@ -306,7 +309,8 @@ pub struct Esp32s31ConnectedTx<
     standby_cookie: Option<TxCookie>,
     standby_prepared: Option<AggregatePrepared<SLOTS>>,
     standby_error: Option<AggregateTxError>,
-    block_ack_operational: [bool; 8],
+    /// Peer-negotiated BlockAck window per QoS TID; zero means inactive.
+    block_ack_windows: [u8; 8],
     config: AggregateTxConfig,
     active: ConnectedTxActive<SLOTS>,
     last_aggregate_status: Option<MacAmpduTxStatus<TxPhyRate>>,

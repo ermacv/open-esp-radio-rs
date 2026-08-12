@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::Result;
 
-pub const SCENARIO_SCHEMA: u16 = 2;
+pub const SCENARIO_SCHEMA: u16 = 3;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -161,7 +161,6 @@ pub enum Workload {
         rx_rate_bps: Option<u64>,
         tx_rate_bps: Option<u64>,
         payload_bytes: u16,
-        phy: PhyExpectation,
     },
     Tcp {
         direction: Direction,
@@ -229,11 +228,18 @@ pub struct Scenario {
     pub isolation: Isolation,
     #[serde(default)]
     pub tags: Vec<String>,
+    pub link: Option<LinkExpectation>,
     pub workload: Workload,
     #[serde(default)]
     pub criteria: Criteria,
     #[serde(skip)]
     pub source: PathBuf,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct LinkExpectation {
+    pub phy: PhyExpectation,
 }
 
 impl Scenario {
@@ -279,6 +285,24 @@ impl Scenario {
         if self.isolation == Isolation::MatrixSession {
             return Err(format!(
                 "{}: matrix-session requires a multi-cell workload, which schema {SCENARIO_SCHEMA} does not define",
+                self.source.display()
+            )
+            .into());
+        }
+        let station_link_required = matches!(
+            self.workload,
+            Workload::Udp { .. }
+                | Workload::Tcp { .. }
+                | Workload::Icmp { .. }
+                | Workload::StationReconnect { .. }
+                | Workload::StationApLoss { .. }
+                | Workload::StationApAbsence { .. }
+                | Workload::WifiRole { .. }
+                | Workload::MonitorCapture { .. }
+        );
+        if station_link_required != self.link.is_some() {
+            return Err(format!(
+                "{}: station workloads require exactly one `[link]` expectation",
                 self.source.display()
             )
             .into());
@@ -610,9 +634,46 @@ mod tests {
         let catalog = Catalog::load(&root).unwrap();
         assert!(catalog.all().len() >= 8);
         assert!(catalog.get("udp-rx-he20-ceiling").is_ok());
+        assert!(catalog.get("udp-rx-ht40-ceiling").is_ok());
+        assert!(catalog.get("udp-tx-ht40").is_ok());
+        assert!(catalog.get("udp-bidirectional-ht40-40-60").is_ok());
+        assert!(catalog.get("udp-bidirectional-ht40-rx-delivery").is_ok());
         assert!(catalog.get("access-point-rx").is_ok());
         assert!(catalog.get("access-point-tx").is_ok());
         assert!(catalog.get("access-point-bidirectional").is_ok());
+    }
+
+    #[test]
+    fn ht40_matrix_covers_seven_balanced_ninety_megabit_points() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios");
+        let catalog = Catalog::load(&root).unwrap();
+        let mut rates = catalog
+            .all()
+            .iter()
+            .filter(|scenario| scenario.tags.iter().any(|tag| tag == "ht40-matrix-90"))
+            .map(|scenario| match scenario.workload {
+                Workload::Udp {
+                    direction: Direction::Bidirectional,
+                    rx_rate_bps: Some(rx),
+                    tx_rate_bps: Some(tx),
+                    ..
+                } => (rx, tx),
+                _ => panic!("matrix tag belongs to a non-bidirectional UDP scenario"),
+            })
+            .collect::<Vec<_>>();
+        rates.sort_unstable();
+        assert_eq!(
+            rates,
+            vec![
+                (15_000_000, 75_000_000),
+                (25_000_000, 65_000_000),
+                (35_000_000, 55_000_000),
+                (45_000_000, 45_000_000),
+                (55_000_000, 35_000_000),
+                (65_000_000, 25_000_000),
+                (75_000_000, 15_000_000),
+            ]
+        );
     }
 
     #[test]

@@ -1334,6 +1334,20 @@ fn block_ack_bitmap_handles_sequence_wrap() {
 }
 
 #[test]
+fn block_ack_bitmap_accepts_only_bounded_sequences_left_of_an_advanced_ssn() {
+    let ack = TxBlockAckBitmap::new(105, 0b1);
+    assert!(ack.acknowledges(105));
+    assert!(ack.acknowledges(104));
+    assert!(ack.acknowledges(100));
+    assert!(!ack.acknowledges(106));
+    assert!(!ack.acknowledges(40));
+
+    let wrapped = TxBlockAckBitmap::new(0, 0b1);
+    assert!(wrapped.acknowledges(0x0fff));
+    assert!(!wrapped.acknowledges(65));
+}
+
+#[test]
 fn batch_returns_one_block_ack_result_per_step() {
     let mut batch = TxAmpduBatch::new();
     batch.begin(0x0ffe, 4).unwrap();

@@ -56,7 +56,7 @@ scope = "adapter"
 reason = "hardware-dma"
 placement = "required-sram"
 region = "internal-sram"
-count = 32
+count = 64
 element_capacity = 1648
 
 [[rules]]
@@ -92,6 +92,30 @@ placement = "required-psram"
 region = "external-psram"
 
 [[rules]]
+symbol = "*::connected::TX_AMPDU_STANDBY_STORAGE"
+owner = "wifi.tx.ampdu-standby-state"
+scope = "adapter"
+reason = "cpu-only"
+placement = "required-psram"
+region = "external-psram"
+
+[[rules]]
+symbol = "*::connected::TX_AMPDU_STANDBY_DMA_STORAGE"
+owner = "wifi.tx.ampdu-standby-descriptors"
+scope = "adapter"
+reason = "hardware-dma"
+placement = "required-sram"
+region = "internal-sram"
+
+[[rules]]
+symbol = "*::connected::TX_AMPDU_STANDBY_RETENTION"
+owner = "wifi.tx.ampdu-standby-retention"
+scope = "adapter"
+reason = "cpu-only"
+placement = "required-psram"
+region = "external-psram"
+
+[[rules]]
 symbol = "*::monitor::CAPTURE_POOL"
 owner = "wifi.monitor.capture"
 scope = "adapter"
@@ -109,7 +133,8 @@ reason = "stack"
 placement = "required-sram"
 region = "internal-sram"
 count = 1
-element_capacity = 16384
+element_capacity = 10240
+optimization = "Core 1 owns embassy-net and application traffic; its measured TX peak is 6,312 bytes, so 10 KiB retains 38% headroom."
 
 [[rules]]
 symbol = "*::product_hil::NETWORK_RESOURCES"

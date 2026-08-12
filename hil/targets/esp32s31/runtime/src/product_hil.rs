@@ -13,7 +13,9 @@ use embassy_futures::select::{Either, select};
 use embassy_net::{
     Config as NetworkConfig, ConfigV4, Ipv4Address, Ipv4Cidr, Stack, StackResources, StaticConfigV4,
 };
-use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::Channel};
+use embassy_sync::{
+    blocking_mutex::raw::CriticalSectionRawMutex, channel::Channel, signal::Signal,
+};
 use embassy_time::{Instant, Timer};
 use esp_hal::{
     efuse::{self, InterfaceMacAddress},
@@ -37,9 +39,10 @@ use open_esp_radio::{
 };
 use open_esp_radio_esp32s31_embassy_wifi::{
     ConnectedDisconnectReason, Esp32s31AccessPointObservation, Esp32s31MacIrqObservation,
-    Esp32s31MonitorFrame, Esp32s31MonitorFrames, Esp32s31QualificationHooks, Esp32s31RadioConfig,
-    Esp32s31RadioParts, Esp32s31RadioRunner, Esp32s31StationLifecycleObservation,
-    Esp32s31WifiControl, Esp32s31WifiDevice, Esp32s31WifiParts,
+    Esp32s31MonitorFrame, Esp32s31MonitorFrames, Esp32s31QualificationHooks,
+    Esp32s31QualificationSnapshot, Esp32s31RadioConfig, Esp32s31RadioParts, Esp32s31RadioRunner,
+    Esp32s31StationLifecycleObservation, Esp32s31WifiControl, Esp32s31WifiDevice,
+    Esp32s31WifiParts,
 };
 use open_esp_radio_esp32s31_wifi_esp_hal::EspHalRadioPeripheral;
 use open_esp_radio_hil_esp32s31_telemetry::{
@@ -69,7 +72,10 @@ use crate::console::{
 mod rx_qualification;
 mod traffic;
 
-use traffic::{connected_traffic_task, tcp_rx_pattern_worker_task, tcp_tx_pattern_worker_task};
+use traffic::{
+    observe_open_radio_task_polls, start_connected_traffic, tcp_rx_pattern_worker_task,
+    tcp_tx_pattern_worker_task,
+};
 
 const NETWORK_SOCKET_COUNT: usize = 5;
 const SCAN_DWELL_MS: u16 = 200;
@@ -78,9 +84,41 @@ pub(crate) const OPEN_RADIO_TASK_POLL_TELEMETRY: bool = cfg!(feature = "task-pol
 pub(crate) const OPEN_RADIO_RX_DELIVERY_TELEMETRY: bool = cfg!(feature = "rx-delivery-telemetry");
 pub(crate) const OPEN_RADIO_TCP_CHUNK_CAPACITY: usize = 32_768;
 
+struct AppNetworkStart {
+    device: Esp32s31WifiDevice,
+    ipv4: NetworkIpv4Configuration,
+    seed: u64,
+}
+
+#[derive(Clone, Copy)]
+pub(in crate::product_hil) enum QualificationRequester {
+    UdpRx,
+    UdpTx,
+    Tcp,
+}
+
+#[derive(Clone, Copy)]
+pub(in crate::product_hil) struct QualificationSample {
+    pub rx_primary: Option<open_esp_radio::esp32s31::registers::MacRxPrimaryStatistics>,
+    pub rx_interrupt_posts: u32,
+    pub tx_vector: Option<open_esp_radio_esp32s31_embassy_wifi::Esp32s31QualificationTxVector>,
+}
+
 static DIAGNOSTIC_STAGE: AtomicU32 = AtomicU32::new(0);
 static NETWORK_RESOURCES: ConstStaticCell<StackResources<NETWORK_SOCKET_COUNT>> =
     ConstStaticCell::new(StackResources::new());
+static APP_NETWORK_START: Channel<CriticalSectionRawMutex, AppNetworkStart, 1> = Channel::new();
+static APP_NETWORK_READY: Signal<CriticalSectionRawMutex, ()> = Signal::new();
+static NETWORK_CONFIG_REQUESTS: Channel<CriticalSectionRawMutex, NetworkIpv4Configuration, 1> =
+    Channel::new();
+static NETWORK_CONFIG_APPLIED: Channel<CriticalSectionRawMutex, (), 1> = Channel::new();
+static QUALIFICATION_REQUESTS: Channel<CriticalSectionRawMutex, QualificationRequester, 3> =
+    Channel::new();
+static UDP_RX_QUALIFICATION: Channel<CriticalSectionRawMutex, QualificationSample, 1> =
+    Channel::new();
+static UDP_TX_QUALIFICATION: Channel<CriticalSectionRawMutex, QualificationSample, 1> =
+    Channel::new();
+static TCP_QUALIFICATION: Channel<CriticalSectionRawMutex, QualificationSample, 1> = Channel::new();
 static CONNECTED_RX_OBSERVER: ConstStaticCell<rx_qualification::HilConnectedRxObserver> =
     ConstStaticCell::new(rx_qualification::HilConnectedRxObserver::new(4_323));
 static PHY_CALIBRATION_ARTIFACT: ConstStaticCell<
@@ -564,14 +602,88 @@ pub const fn hil_capabilities() -> Capabilities {
 
 #[embassy_executor::task]
 async fn radio_runner_task(runner: Esp32s31RadioRunner) {
-    runner.run().await
+    observe_open_radio_task_polls(
+        runner.run(),
+        TASK_POLLS.radio(),
+        OPEN_RADIO_TASK_POLL_TELEMETRY,
+    )
+    .await
+}
+
+#[embassy_executor::task]
+async fn qualification_snapshot_task(snapshot: Esp32s31QualificationSnapshot) {
+    loop {
+        let requester = QUALIFICATION_REQUESTS.receive().await;
+        let sample = QualificationSample {
+            rx_primary: snapshot
+                .rx_statistics()
+                .map(|statistics| statistics.primary),
+            rx_interrupt_posts: snapshot.rx_interrupt_posts(),
+            tx_vector: snapshot.tx_vector(),
+        };
+        match requester {
+            QualificationRequester::UdpRx => UDP_RX_QUALIFICATION.send(sample).await,
+            QualificationRequester::UdpTx => UDP_TX_QUALIFICATION.send(sample).await,
+            QualificationRequester::Tcp => TCP_QUALIFICATION.send(sample).await,
+        }
+    }
+}
+
+pub(in crate::product_hil) async fn qualification_sample(
+    requester: QualificationRequester,
+) -> QualificationSample {
+    QUALIFICATION_REQUESTS.send(requester).await;
+    match requester {
+        QualificationRequester::UdpRx => UDP_RX_QUALIFICATION.receive().await,
+        QualificationRequester::UdpTx => UDP_TX_QUALIFICATION.receive().await,
+        QualificationRequester::Tcp => TCP_QUALIFICATION.receive().await,
+    }
 }
 
 type ProductNetworkRunner = embassy_net::Runner<'static, Esp32s31WifiDevice>;
 
 #[embassy_executor::task]
 async fn network_runner_task(mut runner: ProductNetworkRunner) {
-    runner.run().await
+    observe_open_radio_task_polls(
+        runner.run(),
+        TASK_POLLS.network(),
+        OPEN_RADIO_TASK_POLL_TELEMETRY,
+    )
+    .await
+}
+
+#[embassy_executor::task]
+async fn network_config_task(stack: Stack<'static>) {
+    loop {
+        let configuration = NETWORK_CONFIG_REQUESTS.receive().await;
+        stack.set_config_v4(network_config_v4(configuration));
+        NETWORK_CONFIG_APPLIED.send(()).await;
+    }
+}
+
+/// Core-1-local composition root for `embassy-net` and its application
+/// workloads. The startup value crosses cores while it is still made only of
+/// Send driver capabilities; the `!Send` Embassy stack is constructed and
+/// remains on this executor.
+#[embassy_executor::task]
+pub(crate) async fn app_network_task(spawner: Spawner) {
+    let AppNetworkStart { device, ipv4, seed } = APP_NETWORK_START.receive().await;
+    let (stack, network_runner) =
+        embassy_net::new(device, network_config(ipv4), NETWORK_RESOURCES.take(), seed);
+    spawner.spawn(
+        network_runner_task(network_runner).expect("network runner task must allocate once"),
+    );
+    spawner
+        .spawn(network_config_task(stack).expect("network configuration task must allocate once"));
+    spawner.spawn(network_report_task(stack).expect("network report task must allocate once"));
+    start_connected_traffic(spawner, stack);
+    APP_NETWORK_READY.signal(());
+    core::future::pending().await
+}
+
+async fn apply_network_config(configuration: NetworkIpv4Configuration) {
+    NETWORK_CONFIG_REQUESTS.send(configuration).await;
+    NETWORK_CONFIG_APPLIED.receive().await;
 }
 
 #[embassy_executor::task]
@@ -740,7 +852,11 @@ pub async fn run(
 ) {
     DIAGNOSTIC_STAGE.store(10, Ordering::Release);
     spawner.spawn(station_lifecycle_task().expect("station lifecycle task must allocate once"));
-    let startup = crate::console::receive_startup_configuration().await;
+    let crate::console::StartupConfiguration {
+        request_id: initialization_request_id,
+        ipv4: startup_ipv4,
+        phy_calibration_artifact,
+    } = crate::console::receive_startup_configuration().await;
     protocol_spawner
         .spawn(tcp_rx_pattern_worker_task().expect("TCP RX pattern task must allocate once"));
     protocol_spawner
@@ -786,9 +902,8 @@ pub async fn run(
         station_lifecycle: observe_station_lifecycle,
         access_point: observe_access_point,
     });
-    let artifact_was_supplied = startup.phy_calibration_artifact.is_some();
-    let calibration_cache = startup
-        .phy_calibration_artifact
+    let artifact_was_supplied = phy_calibration_artifact.is_some();
+    let calibration_cache = phy_calibration_artifact
         .as_ref()
         .and_then(|artifact| crate::phy_calibration_artifact::decode(artifact.bytes()));
     let config = match calibration_cache {
@@ -805,6 +920,11 @@ pub async fn run(
         wifi,
         initialization,
     } = radio.into_parts();
+    // The runner is an idle supervisor until a role command arrives. Spawn it
+    // before the asynchronous artifact publication so its large unique owner
+    // graph is moved into the task arena instead of retained in this future.
+    spawner
+        .spawn(radio_runner_task(runner).expect("production radio runner task must allocate once"));
     if let Some(cache) = initialization.calibration_cache {
         let disposition = match initialization.start.wifi.registration.calibration_path {
             PhyCalibrationPath::FullAfterRejectedCache => StartupArtifactDisposition::Replaced,
@@ -829,9 +949,10 @@ pub async fn run(
         monitor_frames,
         qualification,
     } = wifi.into_parts();
-    spawner
-        .spawn(radio_runner_task(runner).expect("production radio runner task must allocate once"));
-
+    spawner.spawn(
+        qualification_snapshot_task(qualification)
+            .expect("qualification snapshot task must allocate once"),
+    );
     let seed = u64::from_le_bytes([
         station_address[0],
         station_address[1],
@@ -842,29 +963,21 @@ pub async fn run(
         0xa5,
         0x31,
     ]);
-    let (stack, network_runner) = embassy_net::new(
-        device,
-        network_config(startup.ipv4),
-        NETWORK_RESOURCES.take(),
-        seed,
-    );
-    spawner.spawn(
-        network_runner_task(network_runner).expect("network runner task must allocate once"),
-    );
-
-    spawner.spawn(network_report_task(stack).expect("network report task must allocate once"));
-    spawner.spawn(
-        connected_traffic_task(stack, qualification)
-            .expect("connected traffic task must allocate once"),
-    );
+    APP_NETWORK_START
+        .send(AppNetworkStart {
+            device,
+            ipv4: startup_ipv4,
+            seed,
+        })
+        .await;
+    APP_NETWORK_READY.wait().await;
 
     spawner.spawn(
         wifi_role_task(
             control,
             monitor_frames,
-            stack,
-            startup.ipv4,
-            startup.request_id,
+            startup_ipv4,
+            initialization_request_id,
         )
         .expect("Wi-Fi role owner task must allocate once"),
     );
@@ -874,7 +987,6 @@ pub async fn run(
 async fn wifi_role_task(
     control: Esp32s31WifiControl,
     monitor_frames: Esp32s31MonitorFrames,
-    stack: Stack<'static>,
     station_ipv4: NetworkIpv4Configuration,
     initialization_request_id: u32,
 ) -> ! {
@@ -915,7 +1027,7 @@ async fn wifi_role_task(
                 let generation = owner.generation().value();
                 match await_stack_boundary!(owner.stop()) {
                     Ok(idle) => {
-                        stack.set_config_v4(network_config_v4(station_ipv4));
+                        apply_network_config(station_ipv4).await;
                         set_wifi_role(WifiRole::Idle);
                         complete_access_point_stop(
                             request_id,
@@ -1039,7 +1151,7 @@ async fn wifi_role_task(
                         idle.start_access_point(access_point_request(&request))
                     ) {
                         Ok(owner) => {
-                            stack.set_config_v4(network_config_v4(request.ipv4));
+                            apply_network_config(request.ipv4).await;
                             set_wifi_role(WifiRole::AccessPoint);
                             complete_access_point_start(
                                 request_id,

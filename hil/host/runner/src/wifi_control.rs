@@ -15,6 +15,7 @@ use crate::{
     Result,
     controlled_ap::{ControlledAp, require_station_credentials},
     lab_config::LabConfig,
+    scenario::PhyExpectation,
     traffic_capture::SerialCapture,
 };
 
@@ -63,7 +64,6 @@ struct Options {
     monitor_duration: Duration,
     monitor_channel: Option<u8>,
     snapshot_length: u16,
-    external_ap: bool,
 }
 
 pub(crate) fn run(
@@ -71,14 +71,19 @@ pub(crate) fn run(
     arguments: Vec<String>,
     output: &Path,
     lab: &LabConfig,
+    phy: PhyExpectation,
 ) -> Result<()> {
     let operation = Operation::parse(operation)?;
     let options = parse_options(&arguments, lab)?;
-    let _access_point = if options.external_ap || operation == Operation::AccessPoint {
+    let _access_point = if operation == Operation::AccessPoint {
         require_station_credentials(&lab.station)?;
         None
     } else {
-        Some(ControlledAp::start(&lab.station, &lab.openwrt)?)
+        Some(ControlledAp::start(
+            &lab.station,
+            &lab.station_fixture,
+            phy,
+        )?)
     };
     fs::create_dir_all(&output)?;
     let capture = SerialCapture::start_with_reset(&options.serial);
@@ -318,7 +323,6 @@ fn parse_options(arguments: &[String], lab: &LabConfig) -> Result<Options> {
         monitor_duration: DEFAULT_MONITOR_DURATION,
         monitor_channel: None,
         snapshot_length: 256,
-        external_ap: false,
     };
     let mut index = 0;
     while index < arguments.len() {
@@ -367,7 +371,6 @@ fn parse_options(arguments: &[String], lab: &LabConfig) -> Result<Options> {
                 }
                 options.snapshot_length = length;
             }
-            "--external-ap" => options.external_ap = true,
             argument => return Err(format!("unknown Wi-Fi lifecycle option `{argument}`").into()),
         }
         index += 1;
@@ -389,7 +392,6 @@ mod tests {
                 "5".into(),
                 "--snapshot-length".into(),
                 "512".into(),
-                "--external-ap".into(),
             ],
             &LabConfig::for_test(),
         )
@@ -397,7 +399,6 @@ mod tests {
         assert_eq!(options.monitor_channel, Some(11));
         assert_eq!(options.monitor_duration, Duration::from_secs(5));
         assert_eq!(options.snapshot_length, 512);
-        assert!(options.external_ap);
     }
 
     #[test]

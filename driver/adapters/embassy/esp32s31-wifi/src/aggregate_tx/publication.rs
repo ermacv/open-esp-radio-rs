@@ -185,10 +185,11 @@ where
         first_sequence: u16,
         cookie: TxCookie,
     ) -> Result<AggregatePrepared<SLOTS>, AggregateTxError> {
-        self.push_frame(first, AggregateFrameAdmission::FreshExact)?;
+        self.push_candidate(first, network, AggregateFrameAdmission::FreshExact)?;
+        let frame_limit = self.aggregate_frame_limit(DATA_TID);
 
         let build_stop = loop {
-            if self.ampdu.held_backing_count() >= usize::from(self.config.frame_limit) {
+            if self.ampdu.held_backing_count() >= frame_limit {
                 break AggregateBuildStop::FrameLimit;
             }
             if !self.can_push(FRAME_CAPACITY)? {
@@ -202,7 +203,7 @@ where
                 TxPhyRate::He(_) => AggregateFrameAdmission::NeedsExactCheck,
                 TxPhyRate::Legacy(_) => return Err(AggregateTxError::UnsupportedRate),
             };
-            self.push_frame(frame, admission)?;
+            self.push_candidate(frame, network, admission)?;
         };
 
         let aggregate = self.ampdu.prepared_aggregate(cookie)?;
@@ -211,7 +212,12 @@ where
             aggregate.subframes,
             AmpduRetryPolicy {
                 attempt_limit: self.config.attempt_limit,
-                retain_single_mpdu: matches!(self.config.rate, TxPhyRate::He(_)),
+                // An A-MSDU can exceed the ordinary descriptor's copy
+                // buffer. Retain even one missing A-MSDU in the aggregate
+                // owner so retry preserves its pinned backing, sequence and
+                // PN instead of attempting an impossible ordinary detach.
+                retain_single_mpdu: matches!(self.config.rate, TxPhyRate::He(_))
+                    || self.block_ack_amsdu(DATA_TID),
             },
         )?;
         let prepared = AggregatePrepared {
@@ -236,9 +242,10 @@ where
             TxPhyRate::He(_) => AggregateFrameAdmission::NeedsExactCheck,
             TxPhyRate::Legacy(_) => return Err(AggregateTxError::UnsupportedRate),
         };
-        self.push_frame(first, admission)?;
+        self.push_candidate(first, network, admission)?;
+        let frame_limit = self.aggregate_frame_limit(DATA_TID);
         let build_stop = loop {
-            if self.ampdu.held_backing_count() >= usize::from(self.config.frame_limit) {
+            if self.ampdu.held_backing_count() >= frame_limit {
                 break AggregateBuildStop::FrameLimit;
             }
             if !self.can_push(FRAME_CAPACITY)? {
@@ -247,7 +254,7 @@ where
             let Some(frame) = network.try_receive() else {
                 break AggregateBuildStop::QueueEmpty;
             };
-            self.push_frame(frame, admission)?;
+            self.push_candidate(frame, network, admission)?;
         };
         let cookie = self.cookie.ok_or(AggregateTxError::MissingCookie)?;
         let aggregate = self.ampdu.prepared_aggregate(cookie)?;
@@ -259,7 +266,8 @@ where
             aggregate.subframes,
             AmpduRetryPolicy {
                 attempt_limit: self.config.attempt_limit,
-                retain_single_mpdu: matches!(self.config.rate, TxPhyRate::He(_)),
+                retain_single_mpdu: matches!(self.config.rate, TxPhyRate::He(_))
+                    || self.block_ack_amsdu(DATA_TID),
             },
         )?;
         Ok(prepared)
@@ -345,9 +353,9 @@ where
                 Ok(true)
             ),
             Some(_) => {
+                let frame_limit = self.aggregate_frame_limit(DATA_TID);
                 self.standby_ampdu.as_ref().is_some_and(|owner| {
-                    owner.held_backing_count() < usize::from(self.config.frame_limit)
-                        && owner.held_backing_count() < SLOTS
+                    owner.held_backing_count() < frame_limit && owner.held_backing_count() < SLOTS
                 }) && matches!(self.can_push_standby(FRAME_CAPACITY), Ok(true))
             }
         }
@@ -498,6 +506,118 @@ where
             )?),
             TxPhyRate::Legacy(_) => Err(AggregateTxError::UnsupportedRate),
         }
+    }
+
+    fn can_push_amsdu_pair(
+        &self,
+        first_ethernet_length: usize,
+        second_ethernet_length: usize,
+    ) -> Result<bool, AggregateTxError> {
+        let cookie = self.cookie.ok_or(AggregateTxError::MissingCookie)?;
+        let frame_length =
+            sta_protected_amsdu_pair_frame_length(first_ethernet_length, second_ethernet_length)
+                .map_err(AggregateTxError::Encode)?;
+        let dma_capacity = HEADROOM + FRAME_CAPACITY + TRAILER;
+        let hardware_mic_length = open_esp_radio_esp32s31_wifi::ordinary_tx::TX_CCMP_MIC_SIZE as u8;
+        let frame_size = AmpduFrameSize::new(frame_length, hardware_mic_length);
+        match self.config.rate {
+            TxPhyRate::Ht(rate) => Ok(self.ampdu.can_commit_referenced_ht_frame(
+                cookie,
+                frame_length,
+                hardware_mic_length,
+                0,
+                rate,
+                dma_capacity,
+            )?),
+            TxPhyRate::He(rate) => Ok(self.ampdu.can_commit_referenced_he_frame(
+                cookie,
+                frame_size,
+                HeAmpduPolicy::new(
+                    rate,
+                    self.ordinary.policy().ht_ampdu().density(),
+                    self.config.he_txop_limit,
+                ),
+                dma_capacity,
+            )?),
+            TxPhyRate::Legacy(_) => Err(AggregateTxError::UnsupportedRate),
+        }
+    }
+
+    fn push_candidate(
+        &mut self,
+        first: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+        network: &PinnedTxConsumer<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+        admission: AggregateFrameAdmission,
+    ) -> Result<(), AggregateTxError> {
+        if self.block_ack_amsdu(DATA_TID)
+            && self.can_push_amsdu_pair(first.ethernet_length(), FRAME_CAPACITY)?
+            && let Some(second) = network.try_receive()
+        {
+            return self.push_amsdu_pair(first, second);
+        }
+        self.push_frame(first, admission)
+    }
+
+    fn push_amsdu_pair(
+        &mut self,
+        mut first: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+        second: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+    ) -> Result<(), AggregateTxError> {
+        if self.ampdu.held_backing_count() >= SLOTS {
+            return Err(HtAmpduTxError::AggregateFull.into());
+        }
+        let metadata = self
+            .ordinary
+            .take_protected_metadata(DATA_TID)
+            .ok_or(AggregateTxError::MissingQosSequence(DATA_TID))?;
+        let ethernet_offset = first.ethernet_offset();
+        let ethernet_length = first.ethernet_length();
+        let encoded = metadata
+            .encode_amsdu_pair_in_place(
+                first.storage_mut(),
+                ethernet_offset,
+                ethernet_length,
+                second.ethernet(),
+            )
+            .map_err(AggregateTxError::Encode)?;
+        let metadata_size = open_esp_radio_esp32s31_wifi_mac::tx_ampdu::TX_AMPDU_METADATA_SIZE;
+        let dma_offset = encoded.offset.checked_sub(metadata_size).ok_or(
+            AggregateTxError::DmaPrefixGeometry {
+                encoded_offset: encoded.offset,
+                metadata_size,
+            },
+        )?;
+        let cookie = self.cookie.ok_or(AggregateTxError::MissingCookie)?;
+        let hardware_mic_length = open_esp_radio_esp32s31_wifi::ordinary_tx::TX_CCMP_MIC_SIZE as u8;
+        let layout = AmpduFrameLayout::new(
+            dma_offset,
+            AmpduFrameSize::new(encoded.length, hardware_mic_length),
+        )
+        .ok_or(AggregateTxError::DmaPrefixGeometry {
+            encoded_offset: encoded.offset,
+            metadata_size,
+        })?;
+        match self.config.rate {
+            TxPhyRate::Ht(rate) => {
+                self.ampdu
+                    .commit_ht(cookie, first, HtAmpduFrameRequest::new(layout, 0, rate))?
+            }
+            TxPhyRate::He(rate) => self.ampdu.commit_he(
+                cookie,
+                first,
+                HeAmpduFrameRequest::new(
+                    layout,
+                    HeAmpduPolicy::new(
+                        rate,
+                        self.ordinary.policy().ht_ampdu().density(),
+                        self.config.he_txop_limit,
+                    ),
+                ),
+            )?,
+            TxPhyRate::Legacy(_) => return Err(AggregateTxError::UnsupportedRate),
+        }
+        drop(second);
+        Ok(())
     }
 
     fn push_frame(

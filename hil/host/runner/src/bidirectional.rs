@@ -21,10 +21,11 @@ use open_esp_radio_hil_protocol::{
 
 use crate::{
     Result, invalidate_previous_report,
-    lab_config::LabConfig,
-    openwrt_fixture::{OpenWrtRxCapture, OpenWrtRxEvidence},
+    lab_config::{LabConfig, StationFixtureConfig},
+    local_linux_fixture::{LocalLinuxTxCapture, LocalLinuxTxEvidence},
     paced_udp::{Config as PacedUdpConfig, HostTransmission, send as send_paced_udp},
     rx_delivery,
+    station_fixture::{RxCapture, RxEvidence},
     traffic_capture::{SerialCapture, SessionEvidence, await_udp_rx_ready},
     tx_traffic::{Burst, describe_bursts, receive_bursts},
     udp_socket::{configure_qualification_receive_buffer, open_reverse_flow},
@@ -91,7 +92,7 @@ struct Options {
     phy: Phy,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Debug)]
 struct BidirectionalEvidence {
     host_offer: HostTransmission,
     target_rx: RxQualification,
@@ -100,7 +101,8 @@ struct BidirectionalEvidence {
     session: SessionEvidence,
     ampdu: AmpduEvidence,
     host_receive_buffer_bytes: usize,
-    openwrt_rx: Option<OpenWrtRxEvidence>,
+    fixture_rx: Option<RxEvidence>,
+    fixture_tx: Option<LocalLinuxTxEvidence>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1114,18 +1116,30 @@ pub(crate) fn run(
         capture.finish_to(output)?;
         return Err(error.into());
     }
-    let openwrt_capture = lab
-        .openwrt
-        .observe_ap
-        .then(|| {
-            OpenWrtRxCapture::start(
-                &lab.openwrt,
-                options.address,
-                options.port,
-                options.duration,
-            )
-        })
-        .transpose()?;
+    let fixture_capture = RxCapture::start(
+        &lab.station_fixture,
+        options.address,
+        options.port,
+        options.duration,
+        match options.phy {
+            Phy::Ht40 => crate::scenario::PhyExpectation::Ht40,
+            Phy::He20 => crate::scenario::PhyExpectation::He20,
+        },
+    )?;
+    let fixture_tx_capture = match &lab.station_fixture {
+        StationFixtureConfig::LocalLinux(config) => Some(LocalLinuxTxCapture::start(
+            config,
+            options.address,
+            DEVICE_TX_SOURCE_PORT,
+            options.tx_port,
+            options.duration,
+            match options.phy {
+                Phy::Ht40 => crate::scenario::PhyExpectation::Ht40,
+                Phy::He20 => crate::scenario::PhyExpectation::He20,
+            },
+        )?),
+        StationFixtureConfig::OpenWrt(_) | StationFixtureConfig::External => None,
+    };
     let session = capture.start_session(SessionConfig {
         transport: Transport::Udp,
         direction: Direction::Bidirectional,
@@ -1170,7 +1184,22 @@ pub(crate) fn run(
         capture.finish_to(output)?;
         return Err(error);
     }
-    let openwrt_rx = openwrt_capture.map(OpenWrtRxCapture::finish).transpose()?;
+    let fixture_rx = fixture_capture.map(RxCapture::finish).transpose()?;
+    let fixture_tx = fixture_tx_capture
+        .map(LocalLinuxTxCapture::finish)
+        .transpose()?;
+    if let Some(evidence) = fixture_tx.as_ref() {
+        fs::write(
+            output.join("local-wireless-ingress.txt"),
+            format!(
+                "udp_packets={}\nchannel_width_mhz={}\ntx_bitrate={}\nrx_bitrate={}\n",
+                evidence.udp_packets,
+                evidence.channel_width_mhz,
+                evidence.tx_bitrate,
+                evidence.rx_bitrate,
+            ),
+        )?;
+    }
     let beacon_loss = require_no_beacon_loss.then(|| capture.require_no_beacon_loss());
     let log = capture.finish_to(output)?;
     if let Some(result) = beacon_loss {
@@ -1248,13 +1277,14 @@ pub(crate) fn run(
             )
         });
     }
-    if let Some(openwrt_rx) = openwrt_rx {
+    if let Some(fixture_rx) = fixture_rx.as_ref() {
         let expected_fixture_packets = host.datagrams.saturating_add(1);
-        if openwrt_rx.wireless_packets != expected_fixture_packets {
+        if fixture_rx.wireless_packets() != expected_fixture_packets {
             qualification_failure.get_or_insert_with(|| {
                 format!(
-                    "host/OpenWrt Wi-Fi egress mismatch: expected={} observed={} packets",
-                    expected_fixture_packets, openwrt_rx.wireless_packets
+                    "host/AP Wi-Fi egress mismatch: expected={} observed={} packets",
+                    expected_fixture_packets,
+                    fixture_rx.wireless_packets()
                 )
             });
         }
@@ -1345,6 +1375,16 @@ pub(crate) fn run(
             )
         });
     }
+    if let Some(fixture_tx) = fixture_tx.as_ref()
+        && fixture_tx.udp_packets != structured.transport.tx_units
+    {
+        qualification_failure.get_or_insert_with(|| {
+            format!(
+                "target/local wireless bidirectional TX mismatch: target={} local_ingress={}",
+                structured.transport.tx_units, fixture_tx.udp_packets
+            )
+        });
+    }
     write_report(
         &output,
         &options,
@@ -1356,7 +1396,8 @@ pub(crate) fn run(
             session: structured,
             ampdu,
             host_receive_buffer_bytes,
-            openwrt_rx,
+            fixture_rx,
+            fixture_tx,
         },
         qualification_failure.as_deref(),
     )?;
@@ -2814,7 +2855,8 @@ fn write_report(
         session: structured,
         ampdu,
         host_receive_buffer_bytes,
-        openwrt_rx,
+        fixture_rx,
+        fixture_tx,
     } = evidence;
     let rx_median = rx.throughput_median_kbps;
     let pipeline = rx.pipeline;
@@ -2885,22 +2927,21 @@ fn write_report(
         structured.stack.cpu1.capacity_bytes,
         structured.stack.minimum_free_percent,
     );
-    let openwrt_report = openwrt_rx.map_or_else(
+    let fixture_report = fixture_rx.as_ref().map_or_else(
         || String::from("- AP-side evidence: `external AP; not observed`\n"),
-        |openwrt_rx| format!(
-            "- OpenWrt filtered DSA ingress (diagnostic) / Wi-Fi egress (exact): `{}` / `{}`; interface RX/TX: `{}` / `{}`; station TX/retries/failed: `{}` / `{}` / `{}`; ath10k MSDU queued/dropped, MPDU requeued, SW-retry dropped: `{}` / `{}` / `{}` / `{}`\n",
-            openwrt_rx.ingress_packets,
-            openwrt_rx.wireless_packets,
-            openwrt_rx.ingress_interface_rx_packets,
-            openwrt_rx.wireless_interface_tx_packets,
-            openwrt_rx.station_tx_packets,
-            openwrt_rx.station_tx_retries,
-            openwrt_rx.station_tx_failed,
-            openwrt_rx.firmware_msdu_queued,
-            openwrt_rx.firmware_msdu_dropped,
-            openwrt_rx.firmware_mpdu_requeued,
-            openwrt_rx.firmware_sw_retry_dropped,
-        ),
+        |fixture| fixture.markdown(),
+    );
+    let fixture_tx_report = fixture_tx.as_ref().map_or_else(
+        || String::from("- AP wireless ingress evidence: `not observed`\n"),
+        |fixture| {
+            format!(
+                "- Local Linux AP filtered target TX ingress: `{}` packets; channel width: `{}` MHz; TX/RX bitrate: `{}` / `{}`\n",
+                fixture.udp_packets,
+                fixture.channel_width_mhz,
+                fixture.tx_bitrate,
+                fixture.rx_bitrate,
+            )
+        },
     );
     let result = if failure.is_some() { "FAIL" } else { "PASS" };
     let failure_report = failure
@@ -2923,7 +2964,8 @@ fn write_report(
              - Host UDP `SO_RCVBUF` read-back: `{host_receive_buffer_bytes}` bytes\n\
              {failure_report}\
              {structured_report}\
-             {openwrt_report}\
+             {fixture_report}\
+             {fixture_tx_report}\
              - Host pacing maximum lateness/catch-up/deadline resets: `{} us` / `{}` datagrams / `{}`\n\
             - Direct RX median: `{:.3} Mbit/s`\n\
              - Received host UDP datagrams: `{}` / `{}`\n\

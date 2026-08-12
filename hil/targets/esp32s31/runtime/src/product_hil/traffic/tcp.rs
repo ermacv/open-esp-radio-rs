@@ -7,7 +7,6 @@ use embassy_net::{
 };
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, mutex::Mutex, signal::Signal};
 use embassy_time::{Duration, Instant, Timer, with_timeout};
-use open_esp_radio_esp32s31_embassy_wifi::Esp32s31QualificationSnapshot;
 use open_esp_radio_hil_esp32s31_telemetry::aggregate_tx::AggregateTxCounters;
 use open_esp_radio_hil_esp32s31_telemetry::rx_pipeline::RxPipelineCounters;
 use open_esp_radio_hil_protocol::{
@@ -17,7 +16,9 @@ use open_esp_radio_hil_protocol::{
 };
 
 use crate::console::{complete_session, publish_event_reliably, runtime_log};
-use crate::product_hil::OPEN_RADIO_TCP_CHUNK_CAPACITY;
+use crate::product_hil::{
+    OPEN_RADIO_TCP_CHUNK_CAPACITY, QualificationRequester, qualification_sample,
+};
 
 use super::{SessionChannel, log_open_radio_ampdu_interval, wait_session_link_requirements};
 
@@ -89,7 +90,6 @@ pub(in crate::product_hil) async fn tcp_tx_pattern_worker_task() {
 
 pub(in crate::product_hil) async fn run_open_radio_tcp_benchmark<'a>(
     stack: Stack<'a>,
-    qualification: Esp32s31QualificationSnapshot,
     rx_buffer: &'a mut [u8],
     tx_buffer: &'a mut [u8],
     config: TcpBenchmarkConfig,
@@ -154,7 +154,9 @@ pub(in crate::product_hil) async fn run_open_radio_tcp_benchmark<'a>(
             session.session_id, session.config.direction, duration_millis,
         ));
 
-        let hardware_start = qualification.rx_statistics().map(|value| value.primary);
+        let hardware_start = qualification_sample(QualificationRequester::Tcp)
+            .await
+            .rx_primary;
         let pipeline_start = pipeline_counters.snapshot();
         let aggregate_start = aggregate_counters.snapshot();
         let connection_timeout = duration + Duration::from_secs(5);
@@ -265,9 +267,9 @@ pub(in crate::product_hil) async fn run_open_radio_tcp_benchmark<'a>(
         let elapsed_us = started.elapsed().as_micros().max(1);
         socket.abort();
 
-        let hardware_delta = qualification
-            .rx_statistics()
-            .map(|value| value.primary)
+        let hardware_delta = qualification_sample(QualificationRequester::Tcp)
+            .await
+            .rx_primary
             .zip(hardware_start)
             .map(|(current, earlier)| current.wrapping_delta_since(earlier))
             .unwrap_or_default();

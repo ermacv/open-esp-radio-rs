@@ -12,6 +12,7 @@ use embassy_sync::{
     blocking_mutex::Mutex,
     blocking_mutex::raw::RawMutex,
     channel::{Channel, Receiver, Sender, TryReceiveError, TrySendError},
+    signal::Signal,
 };
 use open_esp_radio_dma::{
     DmaIndexReturn, PinnedDmaTxNetworkLease, PinnedDmaTxPool, PinnedDmaTxRadioLease,
@@ -73,6 +74,7 @@ pub struct SplitPinnedResources<
     rx_pool: RxHandoffPool<FRAME_CAPACITY, RX_QUEUE_DEPTH>,
     free_tx: Channel<M, u8, TX_QUEUE_DEPTH>,
     ready_tx: Channel<M, u8, TX_QUEUE_DEPTH>,
+    tx_published: Signal<M, ()>,
     link: SharedLinkState<M>,
     hardware_address: SharedHardwareAddress<M>,
     split: AtomicBool,
@@ -115,6 +117,7 @@ impl<
             rx_pool: RxHandoffPool::new(),
             free_tx: Channel::new(),
             ready_tx: Channel::new(),
+            tx_published: Signal::new(),
             link: SharedLinkState::new(),
             hardware_address: SharedHardwareAddress::new([0; 6]),
             split: AtomicBool::new(false),
@@ -183,6 +186,7 @@ impl<
                 free_tx: resources.free_tx.receiver(),
                 free_tx_return: resources.free_tx.sender(),
                 ready_tx: resources.ready_tx.sender(),
+                tx_published: &resources.tx_published,
                 tx_pool: pool,
                 link: &resources.link,
                 hardware_address: &resources.hardware_address,
@@ -197,6 +201,7 @@ impl<
                 rx_pool: &resources.rx_pool,
                 free_tx: resources.free_tx.sender(),
                 ready_tx: resources.ready_tx.receiver(),
+                tx_published: &resources.tx_published,
                 tx_pool: pool,
                 link: &resources.link,
                 hardware_address: &resources.hardware_address,
@@ -235,6 +240,7 @@ pub struct SplitPinnedDevice<
     free_tx: Receiver<'resources, M, u8, TX_QUEUE_DEPTH>,
     free_tx_return: Sender<'resources, M, u8, TX_QUEUE_DEPTH>,
     ready_tx: Sender<'resources, M, u8, TX_QUEUE_DEPTH>,
+    tx_published: &'resources Signal<M, ()>,
     tx_pool: &'resources PinnedTxPool<FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
     link: &'resources SharedLinkState<M>,
     hardware_address: &'resources SharedHardwareAddress<M>,
@@ -300,6 +306,7 @@ impl<
         PinnedTransmitToken {
             free_tx: self.free_tx_return,
             ready_tx: self.ready_tx,
+            tx_published: self.tx_published,
             lease: Some(lease),
             _reservation: &mut self.tx_reservation,
         }
@@ -378,6 +385,7 @@ pub struct PinnedTransmitToken<
 > {
     free_tx: Sender<'resources, M, u8, QUEUE_DEPTH>,
     ready_tx: Sender<'resources, M, u8, QUEUE_DEPTH>,
+    tx_published: &'resources Signal<M, ()>,
     lease: Option<PinnedDmaTxNetworkLease<'resources, FRAME_CAPACITY, HEADROOM, TRAILER>>,
     _reservation: &'device mut (),
 }
@@ -404,6 +412,7 @@ impl<
         if let Err(TrySendError::Full(_)) = self.ready_tx.try_send(index) {
             unreachable!("one ready entry exists per non-free pinned TX slot");
         }
+        self.tx_published.signal(());
         result
     }
 }
@@ -685,6 +694,7 @@ pub struct SplitPinnedRadioRunner<
     rx_pool: &'resources RxHandoffPool<FRAME_CAPACITY, RX_QUEUE_DEPTH>,
     free_tx: Sender<'resources, M, u8, TX_QUEUE_DEPTH>,
     ready_tx: Receiver<'resources, M, u8, TX_QUEUE_DEPTH>,
+    tx_published: &'resources Signal<M, ()>,
     tx_pool: &'resources PinnedTxPool<FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
     link: &'resources SharedLinkState<M>,
     hardware_address: &'resources SharedHardwareAddress<M>,
@@ -783,6 +793,18 @@ impl<
         &self,
     ) -> PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH> {
         self.tx_consumer().receive().await
+    }
+
+    /// Wait for a network TX publication without claiming its pinned lease.
+    /// This edge is cancellation-safe and lets a scheduler coalesce up to its
+    /// negotiated aggregate target while RX/control remain selectable.
+    pub async fn wait_tx_publication(&self) {
+        self.tx_published.wait().await;
+    }
+
+    /// Wait until at least one ready TX lease exists without consuming it.
+    pub async fn wait_tx_ready(&self) {
+        self.ready_tx.ready_to_receive().await;
     }
 
     pub fn rx_queue_len(&self) -> usize {

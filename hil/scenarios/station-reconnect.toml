@@ -1,9 +1,12 @@
-schema = 2
+schema = 3
 id = "station-reconnect"
 description = "Repeated safe station teardown and reassociation"
 image = "qualification"
 isolation = "reset"
 tags = ["qualification", "station", "lifecycle"]
+
+[link]
+phy = "he20"
 
 [workload]
 kind = "station-reconnect"

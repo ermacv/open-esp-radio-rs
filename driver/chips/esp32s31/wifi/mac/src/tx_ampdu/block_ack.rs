@@ -16,6 +16,7 @@ pub use open_esp_radio_ieee80211::block_ack::{
 pub const TX_BLOCK_ACK_MAX_WINDOW: u16 = 32;
 pub const TX_AMPDU_SLOT_CAPACITY: usize = TX_BLOCK_ACK_MAX_WINDOW as usize;
 const SEQUENCE_NUMBER_MASK: u16 = 0x0fff;
+const BLOCK_ACK_BITMAP_BITS: u16 = 64;
 
 /// Shared vendor Dialog Token owner for all S31 STA TX agreements.
 ///
@@ -330,9 +331,24 @@ impl TxBlockAckBitmap {
         }
     }
 
+    /// Return whether the transmitter must consider `sequence` complete.
+    ///
+    /// Peers use both standard-compliant SSN conventions: some retain the
+    /// oldest possible sequence and describe it with the bitmap, while others
+    /// advance SSN to the first not-yet-acknowledged sequence. In the latter
+    /// form an MPDU immediately left of the new window is already complete
+    /// even though it no longer has a bitmap bit. Only a bounded predecessor
+    /// is admitted; a sequence beyond either side of the 64-entry BA window
+    /// remains unacknowledged so a stale result cannot release new traffic.
     pub const fn acknowledges(self, sequence: u16) -> bool {
         let distance = sequence.wrapping_sub(self.starting_sequence) & SEQUENCE_NUMBER_MASK;
-        distance < 64 && self.bitmap & (1_u64 << distance) != 0
+        if distance < BLOCK_ACK_BITMAP_BITS {
+            self.bitmap & (1_u64 << distance) != 0
+        } else {
+            let predecessor_distance =
+                self.starting_sequence.wrapping_sub(sequence) & SEQUENCE_NUMBER_MASK;
+            predecessor_distance <= BLOCK_ACK_BITMAP_BITS
+        }
     }
 }
 

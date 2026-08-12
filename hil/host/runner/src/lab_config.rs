@@ -17,7 +17,7 @@ pub(crate) struct LabConfig {
     pub(crate) device: DeviceConfig,
     pub(crate) station: StationConfig,
     pub(crate) access_point: AccessPointConfig,
-    pub(crate) openwrt: OpenWrtConfig,
+    pub(crate) station_fixture: StationFixtureConfig,
 }
 
 #[derive(Deserialize)]
@@ -26,7 +26,7 @@ struct RawLabConfig {
     device: RawDeviceConfig,
     station: RawStationConfig,
     access_point: RawAccessPointConfig,
-    openwrt: RawOpenWrtConfig,
+    station_fixture: RawStationFixtureConfig,
 }
 
 #[derive(Deserialize)]
@@ -86,12 +86,29 @@ pub(crate) struct AccessPointConfig {
 }
 
 #[derive(Clone, Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct RawOpenWrtConfig {
-    ssh_target: String,
-    wireless_interface: String,
-    ingress_interface: String,
-    observe_ap: bool,
+#[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
+enum RawStationFixtureConfig {
+    LocalLinux {
+        interface: String,
+    },
+    OpenWrt {
+        ssh_target: String,
+        wireless_interface: String,
+        ingress_interface: String,
+    },
+    External,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) enum StationFixtureConfig {
+    LocalLinux(LocalLinuxConfig),
+    OpenWrt(OpenWrtConfig),
+    External,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct LocalLinuxConfig {
+    pub(crate) interface: String,
 }
 
 #[derive(Clone, Debug)]
@@ -99,7 +116,6 @@ pub(crate) struct OpenWrtConfig {
     pub(crate) ssh_target: String,
     pub(crate) wireless_interface: String,
     pub(crate) ingress_interface: String,
-    pub(crate) observe_ap: bool,
 }
 
 impl LabConfig {
@@ -147,18 +163,33 @@ impl LabConfig {
             );
         }
         let ipv4 = parse_ipv4(raw.station.ipv4.clone())?;
-        for (name, value) in [
-            ("openwrt.ssh_target", raw.openwrt.ssh_target.as_str()),
-            (
-                "openwrt.wireless_interface",
-                raw.openwrt.wireless_interface.as_str(),
-            ),
-            (
-                "openwrt.ingress_interface",
-                raw.openwrt.ingress_interface.as_str(),
-            ),
-        ] {
-            validate_shell_token(name, value)?;
+        match &raw.station_fixture {
+            RawStationFixtureConfig::LocalLinux { interface } => {
+                validate_shell_token("station_fixture.interface", interface)?;
+                if interface != "wlan0" {
+                    return Err("the installed local HIL helper currently owns only `wlan0`".into());
+                }
+            }
+            RawStationFixtureConfig::OpenWrt {
+                ssh_target,
+                wireless_interface,
+                ingress_interface,
+            } => {
+                for (name, value) in [
+                    ("station_fixture.ssh_target", ssh_target.as_str()),
+                    (
+                        "station_fixture.wireless_interface",
+                        wireless_interface.as_str(),
+                    ),
+                    (
+                        "station_fixture.ingress_interface",
+                        ingress_interface.as_str(),
+                    ),
+                ] {
+                    validate_shell_token(name, value)?;
+                }
+            }
+            RawStationFixtureConfig::External => {}
         }
         let root = repository_root()?;
         let startup_artifact = raw.device.startup_artifact.map(|path| {
@@ -189,11 +220,20 @@ impl LabConfig {
             },
             station,
             access_point,
-            openwrt: OpenWrtConfig {
-                ssh_target: raw.openwrt.ssh_target,
-                wireless_interface: raw.openwrt.wireless_interface,
-                ingress_interface: raw.openwrt.ingress_interface,
-                observe_ap: raw.openwrt.observe_ap,
+            station_fixture: match raw.station_fixture {
+                RawStationFixtureConfig::LocalLinux { interface } => {
+                    StationFixtureConfig::LocalLinux(LocalLinuxConfig { interface })
+                }
+                RawStationFixtureConfig::OpenWrt {
+                    ssh_target,
+                    wireless_interface,
+                    ingress_interface,
+                } => StationFixtureConfig::OpenWrt(OpenWrtConfig {
+                    ssh_target,
+                    wireless_interface,
+                    ingress_interface,
+                }),
+                RawStationFixtureConfig::External => StationFixtureConfig::External,
             },
         })
     }
@@ -223,12 +263,11 @@ impl LabConfig {
                 client_address: Ipv4Addr::new(10, 43, 0, 2),
                 prefix_length: 24,
             },
-            openwrt: OpenWrtConfig {
+            station_fixture: StationFixtureConfig::OpenWrt(OpenWrtConfig {
                 ssh_target: String::from("open-radio-ap"),
                 wireless_interface: String::from("phy0-ap0"),
                 ingress_interface: String::from("br-lan"),
-                observe_ap: true,
-            },
+            }),
         }
     }
 }

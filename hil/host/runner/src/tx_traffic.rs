@@ -20,7 +20,9 @@ use crate::{
         post_block_ack_delivery_loss_lower_bound,
     },
     invalidate_previous_report,
-    lab_config::LabConfig,
+    lab_config::{LabConfig, StationFixtureConfig},
+    local_linux_fixture::{LocalLinuxTxCapture, LocalLinuxTxEvidence},
+    scenario::PhyExpectation,
     traffic_capture::{SerialCapture, await_udp_tx_ready},
     udp_socket::{configure_qualification_receive_buffer, open_reverse_flow},
 };
@@ -198,6 +200,21 @@ pub(crate) fn run(
         capture.finish_to(output)?;
         return Err(error.into());
     }
+    let local_ingress_capture = match &lab.station_fixture {
+        StationFixtureConfig::LocalLinux(config) => Some(LocalLinuxTxCapture::start(
+            config,
+            options.device,
+            DEVICE_SOURCE_PORT,
+            options.port,
+            options.duration,
+            if options.bandwidth_mhz == 40 {
+                PhyExpectation::Ht40
+            } else {
+                PhyExpectation::He20
+            },
+        )?),
+        StationFixtureConfig::OpenWrt(_) | StationFixtureConfig::External => None,
+    };
 
     let session = match capture.start_session(SessionConfig {
         transport: Transport::Udp,
@@ -232,6 +249,12 @@ pub(crate) fn run(
     if let Err(error) = capture.acknowledge_session(session) {
         capture.finish_to(output)?;
         return Err(error);
+    }
+    let local_ingress = local_ingress_capture
+        .map(LocalLinuxTxCapture::finish)
+        .transpose()?;
+    if let Some(evidence) = local_ingress.as_ref() {
+        write_local_ingress_evidence(output, evidence)?;
     }
     let beacon_loss = require_no_beacon_loss.then(|| capture.require_no_beacon_loss());
     capture.finish_to(output)?;
@@ -305,7 +328,8 @@ pub(crate) fn run(
              sequence_after_max_interarrival={:?} missing_runs={} \
              maximum_missing_run={} maximum_missing_range={:?}..={:?} \
              target_tx_units={target_tx_units:?} ampdu_subframes={} block_acknowledged={} \
-             post_block_ack_delivery_loss_lower_bound={post_block_ack_loss:?}",
+             post_block_ack_delivery_loss_lower_bound={post_block_ack_loss:?} \
+             local_wireless_ingress={:?}",
             maximum_interarrival.maximum_interarrival_us,
             maximum_interarrival.sequence_after_maximum_interarrival,
             qualified
@@ -327,6 +351,7 @@ pub(crate) fn run(
                 .and_then(|burst| burst.maximum_missing_run_end),
             tx.ampdu.subframes,
             tx.ampdu.acknowledged,
+            local_ingress.as_ref().map(|evidence| evidence.udp_packets),
         )
         .into());
     }
@@ -359,6 +384,15 @@ pub(crate) fn run(
             return Err(format!(
                 "typed TX session reported {} transport errors",
                 evidence.transport.transport_errors
+            )
+            .into());
+        }
+        if let Some(local) = local_ingress.as_ref()
+            && local.udp_packets != evidence.transport.tx_units
+        {
+            return Err(format!(
+                "target/local wireless TX delivery mismatch: target={} local_ingress={}",
+                evidence.transport.tx_units, local.udp_packets
             )
             .into());
         }
@@ -404,6 +438,20 @@ pub(crate) fn run(
         tx.ampdu.full32,
         output.join("report.md").display(),
     );
+    Ok(())
+}
+
+fn write_local_ingress_evidence(output: &Path, evidence: &LocalLinuxTxEvidence) -> Result<()> {
+    fs::write(
+        output.join("local-wireless-ingress.txt"),
+        format!(
+            "udp_packets={}\nchannel_width_mhz={}\ntx_bitrate={}\nrx_bitrate={}\n",
+            evidence.udp_packets,
+            evidence.channel_width_mhz,
+            evidence.tx_bitrate,
+            evidence.rx_bitrate,
+        ),
+    )?;
     Ok(())
 }
 

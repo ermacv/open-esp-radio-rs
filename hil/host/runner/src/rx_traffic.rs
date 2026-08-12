@@ -19,9 +19,10 @@ use crate::{
     },
     invalidate_previous_report,
     lab_config::LabConfig,
-    openwrt_fixture::OpenWrtRxCapture,
     paced_udp::{Config as PacedUdpConfig, send as send_paced_udp},
     rx_delivery,
+    scenario::PhyExpectation,
+    station_fixture::RxCapture,
     traffic_capture::{SerialCapture, await_udp_rx_ready},
 };
 
@@ -41,7 +42,7 @@ struct Options {
     payload: usize,
     serial: PathBuf,
     expected_rx_format: u8,
-    phy: &'static str,
+    phy: PhyExpectation,
 }
 
 pub(crate) fn run(
@@ -68,18 +69,13 @@ pub(crate) fn run(
         }
     };
     options.address = discovered_address.address;
-    let openwrt_capture = lab
-        .openwrt
-        .observe_ap
-        .then(|| {
-            OpenWrtRxCapture::start(
-                &lab.openwrt,
-                options.address,
-                options.port,
-                options.duration,
-            )
-        })
-        .transpose()?;
+    let fixture_capture = RxCapture::start(
+        &lab.station_fixture,
+        options.address,
+        options.port,
+        options.duration,
+        options.phy,
+    )?;
     let duration_millis = u32::try_from(options.duration.as_millis())?;
     let session = capture.start_session(SessionConfig {
         transport: Transport::Udp,
@@ -114,7 +110,7 @@ pub(crate) fn run(
         capture.finish_to(output)?;
         return Err(error);
     }
-    let openwrt = openwrt_capture.map(OpenWrtRxCapture::finish).transpose()?;
+    let fixture = fixture_capture.map(RxCapture::finish).transpose()?;
     let beacon_loss = require_no_beacon_loss.then(|| capture.require_no_beacon_loss());
     let log = capture.finish_to(output)?;
     if let Some(result) = beacon_loss {
@@ -206,12 +202,13 @@ pub(crate) fn run(
     } else {
         None
     };
-    let fixture_failure = openwrt.and_then(|openwrt| {
+    let fixture_failure = fixture.as_ref().and_then(|fixture| {
         let expected = host.datagrams.saturating_add(1);
-        (openwrt.wireless_packets != expected).then(|| {
+        (fixture.wireless_packets() != expected).then(|| {
             format!(
-                "host/OpenWrt Wi-Fi egress mismatch: expected={} observed={} packets",
-                expected, openwrt.wireless_packets
+                "host/AP Wi-Fi egress mismatch: expected={} observed={} packets",
+                expected,
+                fixture.wireless_packets()
             )
         })
     });
@@ -238,22 +235,9 @@ pub(crate) fn run(
         structured.stack.cpu1.capacity_bytes,
         structured.stack.minimum_free_percent,
     );
-    let openwrt_report = openwrt.map_or_else(
+    let fixture_report = fixture.as_ref().map_or_else(
         || String::from("- AP-side evidence: `external AP; not observed`\n"),
-        |openwrt| format!(
-            "- OpenWrt filtered DSA ingress (diagnostic) / Wi-Fi egress (exact): `{}` / `{}`; interface RX/TX: `{}` / `{}`; station TX/retries/failed: `{}` / `{}` / `{}`; ath10k MSDU queued/dropped, MPDU requeued, SW-retry dropped: `{}` / `{}` / `{}` / `{}`\n",
-            openwrt.ingress_packets,
-            openwrt.wireless_packets,
-            openwrt.ingress_interface_rx_packets,
-            openwrt.wireless_interface_tx_packets,
-            openwrt.station_tx_packets,
-            openwrt.station_tx_retries,
-            openwrt.station_tx_failed,
-            openwrt.firmware_msdu_queued,
-            openwrt.firmware_msdu_dropped,
-            openwrt.firmware_mpdu_requeued,
-            openwrt.firmware_sw_retry_dropped,
-        ),
+        |fixture| fixture.markdown(),
     );
     let pipeline = rx.pipeline;
     let irq = rx.irq;
@@ -287,7 +271,7 @@ pub(crate) fn run(
              - Requested/actual host offer: `{:.3}` / `{:.3} Mbit/s`\n\
              - Host payload: `{}` bytes in `{}` datagrams\n\
              {structured_report}\
-             {openwrt_report}\
+             {fixture_report}\
              - Host pacing maximum lateness/catch-up/deadline resets: `{} us` / `{}` datagrams / `{}`\n\
              - Device RX median: `{:.3} Mbit/s` across `{}` samples; received UDP datagrams: `{}`\n\
              - Enqueued/software-dropped frames: `{}` / `{}`\n\
@@ -315,7 +299,7 @@ pub(crate) fn run(
              - Network-ready waits: `{}`; `{:.2} us` average, `{}` us boot maximum\n\n\
              {task_poll_report}\
              UART evidence is in [`uart.log`](uart.log).\n",
-            options.phy.to_uppercase(),
+            options.phy.id().to_uppercase(),
             options.address,
             options.rate_bps as f64 / 1_000_000.0,
             host.throughput_bps() as f64 / 1_000_000.0,
@@ -422,7 +406,7 @@ pub(crate) fn run(
     println!(
         "OPENRADIOHOST result=PASS mode={}-rx offered_kbps={} host_kbps={} \
          rx_median_kbps={} enqueued={} dropped=0 report={}",
-        options.phy,
+        options.phy.id(),
         options.rate_bps / 1_000,
         host.throughput_bps() / 1_000,
         typed_rx_kbps,
@@ -442,7 +426,7 @@ fn parse_options(arguments: &[String], lab: &LabConfig) -> Result<Options> {
         payload: DEFAULT_PAYLOAD,
         serial: lab.device.serial.clone(),
         expected_rx_format: 4,
-        phy: "he20",
+        phy: PhyExpectation::He20,
     };
     let mut index = 0;
     while index < arguments.len() {
@@ -469,15 +453,15 @@ fn parse_options(arguments: &[String], lab: &LabConfig) -> Result<Options> {
             "--phy" => match value.as_str() {
                 "he20" => {
                     options.expected_rx_format = 4;
-                    options.phy = "he20";
+                    options.phy = PhyExpectation::He20;
                 }
                 "ht20" => {
                     options.expected_rx_format = 2;
-                    options.phy = "ht20";
+                    options.phy = PhyExpectation::Ht20;
                 }
                 "ht40" => {
                     options.expected_rx_format = 2;
-                    options.phy = "ht40";
+                    options.phy = PhyExpectation::Ht40;
                 }
                 _ => return Err("--phy must be he20, ht20 or ht40".into()),
             },
@@ -531,7 +515,7 @@ mod tests {
         assert_eq!(options.expected_rx_format, 2);
         let ht20 = parse_options(&["--phy".into(), "ht20".into()], &lab).unwrap();
         assert_eq!(ht20.expected_rx_format, 2);
-        assert_eq!(ht20.phy, "ht20");
+        assert_eq!(ht20.phy, PhyExpectation::Ht20);
     }
 
     fn test_lab_config() -> LabConfig {

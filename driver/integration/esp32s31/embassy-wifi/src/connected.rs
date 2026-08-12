@@ -467,6 +467,20 @@ static TX_AMPDU_DMA_STORAGE: ConstStaticCell<AmpduDmaStorage<TX_AMPDU_FRAME_COUN
 // movable TX handle instead of being copied through nested async stack frames.
 static TX_AMPDU_RETENTION: ConstStaticCell<ConnectedAmpduRetention> =
     ConstStaticCell::new(RetainedAmpduDmaStorage::new());
+// The standby arena remains software-owned while the primary descriptor chain
+// is in flight. Both arenas reference the same pinned network pool.
+static TX_AMPDU_STANDBY_STORAGE: ConstStaticCell<
+    HtAmpduTxStorage<TX_AMPDU_FRAME_COUNT, TX_AMPDU_BUFFER_SIZE>,
+> = ConstStaticCell::new(HtAmpduTxStorage::new());
+#[allow(
+    unsafe_code,
+    reason = "the linker must retain standby A-MPDU descriptors in DMA-visible SRAM"
+)]
+#[unsafe(link_section = ".dma.bss.open_radio_tx_ampdu_standby_descriptors")]
+static TX_AMPDU_STANDBY_DMA_STORAGE: ConstStaticCell<AmpduDmaStorage<TX_AMPDU_FRAME_COUNT, 0>> =
+    ConstStaticCell::new(AmpduDmaStorage::new());
+static TX_AMPDU_STANDBY_RETENTION: ConstStaticCell<ConnectedAmpduRetention> =
+    ConstStaticCell::new(RetainedAmpduDmaStorage::new());
 #[cfg(feature = "qualification")]
 static MAC_IRQ_OBSERVER: Mutex<
     CriticalSectionRawMutex,
@@ -880,9 +894,14 @@ pub(super) fn initialize_connected_rx_protocol_runtime() -> &'static mut Connect
 /// enter an active station epoch.
 pub(super) fn initialize_connected_static_resources()
 -> Result<InitialConnectedInitialization, HtAmpduTxError> {
-    let aggregate = AggregateTxResources::single(
+    let aggregate = AggregateTxResources::pipelined(
         HtAmpduTxResources::pin_static(TX_AMPDU_STORAGE.take(), TX_AMPDU_DMA_STORAGE.take())?,
         TX_AMPDU_RETENTION.take(),
+        HtAmpduTxResources::pin_static(
+            TX_AMPDU_STANDBY_STORAGE.take(),
+            TX_AMPDU_STANDBY_DMA_STORAGE.take(),
+        )?,
+        TX_AMPDU_STANDBY_RETENTION.take(),
     );
     let registers: &'static Esp32s31RadioRegistersArena = REGISTER_ARENA.take();
     Ok(InitialConnectedInitialization {
@@ -956,7 +975,11 @@ pub(super) const fn connected_config() -> Esp32s31ConnectedStaConfig {
                 fallback_ht_mcs: HtMcs::Mcs7,
                 fallback_ht_guard_interval: HtGuardInterval::Short400Ns,
                 ht_mcs_override: None,
-                ht_guard_interval_override: None,
+                // Prefer the qualified 150-Mbit/s HT40 vector when the AP's
+                // retained HT Capability IE advertises short GI. The common
+                // rate policy downgrades this request to long GI for peers
+                // that do not advertise the selected-width capability.
+                ht_guard_interval_override: Some(HtGuardInterval::Short400Ns),
                 he_mcs_override: None,
                 he_guard_interval_and_ltf_override: None,
                 he_dcm_override: None,
@@ -967,9 +990,15 @@ pub(super) const fn connected_config() -> Esp32s31ConnectedStaConfig {
             aggregate_he_txop_limit: HeEdcaTxopLimit::DEFAULT,
         },
         block_ack: Esp32s31ConnectedStaBlockAckPolicy {
-            tx_block_ack_window: 8,
+            // Request exactly the number of MPDUs the retained TX arena can
+            // publish. The peer may negotiate this downward; the aggregate
+            // owner then enforces that returned window for every publication.
+            tx_block_ack_window: TX_AMPDU_FRAME_COUNT as u16,
             tx_block_ack_negotiation_timeout_us: 500_000,
             tx_block_ack_negotiation_attempt_limit: 3,
+            // Each pinned network lease is one MPDU. A-MSDU requires a jumbo
+            // backing allocation and is not advertised by this 1,648-byte
+            // DMA-slot profile.
             tid0_amsdu: false,
             rx_block_ack_maximum_window: RX_REORDER_WINDOW as u16,
             request_initial_tx_block_ack: true,

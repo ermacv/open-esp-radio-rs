@@ -3,7 +3,6 @@
 use embassy_futures::yield_now;
 use embassy_net::{Ipv4Address, Stack, udp::UdpSocket};
 use embassy_time::{Duration, Instant, Timer};
-use open_esp_radio_esp32s31_embassy_wifi::Esp32s31QualificationSnapshot;
 use open_esp_radio_hil_esp32s31_telemetry::aggregate_tx::AggregateTxCounters;
 use open_esp_radio_hil_protocol::{
     Completion as HilCompletion, Direction as HilDirection, Event as HilEvent, RadioEvidence,
@@ -16,7 +15,10 @@ use crate::{
     product_hil::traffic::{
         BidirectionalResultChannel, BidirectionalSessionChannel, OpenRadioBidirectionalDirection,
         complete_open_radio_bidirectional_direction, log_open_radio_ampdu_interval,
-        wait_session_link_requirements,
+        log_open_radio_task_poll_interval, wait_session_link_requirements,
+    },
+    product_hil::{
+        OPEN_RADIO_TASK_POLL_TELEMETRY, QualificationRequester, TASK_POLLS, qualification_sample,
     },
 };
 
@@ -38,7 +40,6 @@ pub(in crate::product_hil) struct UdpTxBenchmarkConfig {
     pub pacing_group_datagrams: u8,
     pub drain: Duration,
     pub code_address: usize,
-    pub qualification: Esp32s31QualificationSnapshot,
     pub session_source: UdpTxSessionSource,
 }
 
@@ -46,7 +47,6 @@ pub(in crate::product_hil) struct UdpTxBenchmarkConfig {
 pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
     stack: Stack<'a>,
     buffers: UdpSocketBuffers<'a>,
-    packet: &mut [u8],
     config: UdpTxBenchmarkConfig,
     aggregate_counters: &AggregateTxCounters,
 ) -> ! {
@@ -121,11 +121,10 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
         let payload_bytes = usize::from(flow.payload_bytes);
         let duration = Duration::from_millis(u64::from(duration_millis));
         let offered_rate_bps = flow.offered_rate_bps;
-        // Group pacing is a physical credit for the active+standby A-MPDU
-        // arenas, not a generic UDP batching knob. AP v1 declares no
-        // BlockAck link requirement and owns one ordinary TX descriptor, so
-        // carrying the STA credit of 64 into an AP session creates artificial
-        // burst/idle periods instead of the requested offered load.
+        // Group pacing controls how much of the CPU-side UDP socket queue the
+        // load generator may fill between rate deadlines. AP v1 declares no
+        // BlockAck link requirement and owns one ordinary TX descriptor, so a
+        // station-sized group would create artificial burst/idle periods.
         let pacing_group_datagrams = if session.config.link_requirements.tx_block_ack_tid.is_some()
         {
             config.pacing_group_datagrams
@@ -140,6 +139,7 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
             duration.as_millis(),
         ));
         let started = Instant::now();
+        let task_poll_start = TASK_POLLS.snapshot();
         // TX owns A-MPDU evidence because its post-measurement drain proves
         // that the last publication reached a terminal BlockAck outcome.
         // The RX sibling can finish on the host terminal datagram while a
@@ -155,9 +155,17 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
         let mut send_errors = 0_u32;
         let cooperative_bidirectional = session.config.direction == HilDirection::Bidirectional;
         while started.elapsed() < duration {
-            packet[..4].copy_from_slice(&(datagrams as u32).to_be_bytes());
+            let sequence = (datagrams as u32).to_be_bytes();
             match socket
-                .send_to(&packet[..payload_bytes], (server, server_port))
+                .send_to_with(payload_bytes, (server, server_port), |packet| {
+                    // Build directly in the UDP socket's owned storage. The
+                    // former intermediate packet forced a complete second
+                    // 1,472-byte copy on the saturated benchmark path. Every
+                    // reusable slot was initialized to the payload pattern,
+                    // so only its sequence changes between publications.
+                    packet[..sequence.len()].copy_from_slice(&sequence);
+                    (payload_bytes, ())
+                })
                 .await
             {
                 Ok(()) => {
@@ -167,20 +175,21 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
                 Err(_) => send_errors = send_errors.saturating_add(1),
             }
             if cooperative_bidirectional {
-                // TX and RX are sibling futures in the same HIL task. Once
-                // the socket owns this datagram, yield one poll edge so a
-                // continuously writable TX socket cannot starve RX dequeue.
+                // A successful `send_to` may complete synchronously while the
+                // finite socket queue has capacity. Yield after each accepted
+                // datagram so the network and RX tasks always get a progress
+                // edge; an IRQ counter alone cannot prove that they already
+                // consumed the queued work.
                 yield_now().await;
             }
             if let Some(rate_bps) = offered_rate_bps
                 && datagrams.is_multiple_of(u64::from(pacing_group_datagrams))
             {
-                // Enforce one byte-budget deadline per active+standby A-MPDU
-                // pipeline capacity. Sleeping after every datagram prevented
-                // the network queue from ever presenting an aggregate-sized
-                // workload and halved throughput. A missed deadline is reset
-                // after this bounded physical credit, so a scheduler stall
-                // cannot trigger unbounded catch-up bursts.
+                // Enforce one byte-budget deadline per bounded socket-queue
+                // group. Sleeping after every datagram prevented the network
+                // queue from presenting an aggregate-sized workload and
+                // halved throughput. Reset a missed deadline after the group
+                // so a scheduler stall cannot trigger unbounded catch-up.
                 let group_nanos = u64::from(pacing_group_datagrams)
                     .saturating_mul(u64::try_from(payload_bytes).unwrap_or(u64::MAX))
                     .saturating_mul(8_000_000_000)
@@ -205,7 +214,9 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
         // outside the measured interval so the structured result cannot race
         // the final network queue and A-MPDU exchange.
         Timer::after(config.drain).await;
-        let tx_vector = config.qualification.tx_vector();
+        let tx_vector = qualification_sample(QualificationRequester::UdpTx)
+            .await
+            .tx_vector;
         // A link vector belongs to the associated-STA A-MPDU datapath. AP v1
         // intentionally exposes only legacy unicast TX, so a session whose
         // link requirements are NONE has no such vector. Conversely, a host
@@ -229,6 +240,12 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
         if let Some(aggregate_start) = aggregate_start {
             log_open_radio_ampdu_interval(aggregate_start, aggregate_counters).await;
         }
+        log_open_radio_task_poll_interval(
+            task_poll_start,
+            OPEN_RADIO_TASK_POLL_TELEMETRY,
+            &TASK_POLLS,
+        )
+        .await;
         let evidence = TransportEvidence {
             rx_bytes: 0,
             tx_bytes: bytes,

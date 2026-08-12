@@ -1,4 +1,4 @@
-schema = 2
+schema = 3
 id = "timebase"
 description = "Alarm and monotonic-clock agreement before radio initialization"
 image = "qualification"

@@ -31,6 +31,9 @@ use open_esp_radio::{
 esp_bootloader_esp_idf::esp_app_desc!();
 
 static EXECUTOR: StaticCell<Executor<0>> = StaticCell::new();
+// The entropy source owns RNG hardware for the entire process. It must not be
+// dropped while the radio keeps the nested `Trng` owner across await points.
+static TRNG_SOURCE: StaticCell<TrngSource<'static>> = StaticCell::new();
 // Socket/IP state belongs to the application, not to the radio driver. Static
 // placement avoids moving the stack arena through the executor task frame.
 static NETWORK_RESOURCES: static_cell::ConstStaticCell<StackResources<4>> =
@@ -54,7 +57,7 @@ fn main() -> ! {
     let timer_group = TimerGroup::new(peripherals.TIMG0);
     open_esp_radio_esp32s31_embassy_runtime::init(OneShotTimer::new(timer_group.timer0));
 
-    let trng_source = TrngSource::new(peripherals.RNG);
+    TRNG_SOURCE.init(TrngSource::new(peripherals.RNG));
     let trng = Trng::try_new().expect("ESP32-S31 TRNG must have a unique owner");
     let radio = EspHalRadioPeripheral::new(
         peripherals.WIFI,
@@ -70,7 +73,7 @@ fn main() -> ! {
 
     let executor = EXECUTOR.init(Executor::<0>::new(software_interrupts.software_interrupt0));
     executor.run(|spawner| {
-        let task = station_task(spawner, radio, trng, trng_source)
+        let task = station_task(spawner, radio, trng)
             .expect("station task storage must be available once");
         spawner.spawn(task);
     })
@@ -81,7 +84,6 @@ async fn station_task(
     spawner: Spawner,
     radio: EspHalRadioPeripheral,
     trng: Trng,
-    _trng_source: TrngSource<'static>,
 ) {
     let efuse_registers = esp_hal::peripherals::EFUSE::regs();
     let mut station_address = [0; 6];

@@ -1,9 +1,12 @@
-schema = 2
+schema = 3
 id = "station-ap-loss"
 description = "Station detects controlled AP loss and reconnects"
 image = "qualification"
 isolation = "reset"
 tags = ["qualification", "station", "lifecycle"]
+
+[link]
+phy = "ht40"
 
 [workload]
 kind = "station-ap-loss"

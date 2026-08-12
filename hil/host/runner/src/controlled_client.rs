@@ -7,31 +7,10 @@ use std::{
 
 use zeroize::Zeroizing;
 
-use crate::{Result, lab_config::AccessPointConfig};
-
-const NETWORK_HELPER: &str = "/usr/local/sbin/open-radio-net";
-const REQUIRED_CAPABILITIES: &[u8] = b"schema=1 client=1 managed=1\n";
+use crate::{Result, lab_config::AccessPointConfig, network_helper};
 
 pub(crate) fn doctor() -> Result<()> {
-    let output = Command::new("sudo")
-        .args(["-n", NETWORK_HELPER, "capabilities"])
-        .output()?;
-    if !output.status.success() {
-        return Err(format!(
-            "controlled-client helper is unavailable through non-interactive sudo: {}",
-            output.status
-        )
-        .into());
-    }
-    if output.stdout != REQUIRED_CAPABILITIES {
-        return Err(format!(
-            "controlled-client helper has incompatible capabilities: expected `{}`, got `{}`",
-            String::from_utf8_lossy(REQUIRED_CAPABILITIES).trim(),
-            String::from_utf8_lossy(&output.stdout).trim(),
-        )
-        .into());
-    }
-    Ok(())
+    network_helper::doctor()
 }
 
 pub(crate) struct ControlledClient {
@@ -52,7 +31,7 @@ impl ControlledClient {
         input.push(b'\n');
 
         let mut child = Command::new("sudo")
-            .args(["-n", NETWORK_HELPER, "client"])
+            .args(["-n", network_helper::PATH, "client"])
             .stdin(Stdio::piped())
             .spawn()?;
         child
@@ -85,7 +64,7 @@ impl Drop for ControlledClient {
 
 fn restore_managed() -> Result<()> {
     let status = Command::new("sudo")
-        .args(["-n", NETWORK_HELPER, "managed"])
+        .args(["-n", network_helper::PATH, "managed"])
         .status()?;
     if !status.success() {
         return Err(format!("controlled-client restore failed with {status}").into());

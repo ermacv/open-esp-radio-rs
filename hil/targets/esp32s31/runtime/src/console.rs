@@ -309,6 +309,20 @@ pub fn runtime_log(args: Arguments<'_>) {
     submit_line(args);
 }
 
+/// Queues one diagnostic line without allowing the bounded text queue to
+/// erase it.
+///
+/// This is intentionally restricted to reporting outside measured hot paths:
+/// awaiting text capacity inside radio, network or traffic service would make
+/// USB progress part of their runtime contract.
+pub async fn runtime_log_reliably(args: Arguments<'_>) {
+    if RUNTIME_ACTIVE.load(Ordering::Acquire) {
+        RECORDS.send(format_record(args)).await;
+    } else {
+        write_record_immediate(&format_record(args));
+    }
+}
+
 /// Returns the number of records discarded because the queue was full or
 /// another core/interrupt was already using the immediate writer.
 pub fn dropped_records() -> u32 {

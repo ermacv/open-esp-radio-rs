@@ -51,12 +51,14 @@ pub const ESP32S31_DEFAULT_NETWORK_FRAME_CAPACITY: usize = 1_600;
 pub const ESP32S31_DEFAULT_NETWORK_RX_QUEUE_DEPTH: usize = 8;
 #[cfg(feature = "high-throughput")]
 pub const ESP32S31_DEFAULT_NETWORK_RX_QUEUE_DEPTH: usize = 40;
-// The high-throughput profile represents a complete 32-member TX A-MPDU.
-// Compact builds retain eight members. TX frame backing is DMA-visible SRAM.
+// The high-throughput profile owns enough leases for two overlapped 32-MPDU
+// software arenas. The negotiated aggregate-byte ceiling may stop a jumbo
+// A-MSDU publication before its BlockAck window is exhausted. Compact builds
+// retain eight frames. TX frame backing is DMA-visible SRAM.
 #[cfg(not(feature = "high-throughput"))]
 pub const ESP32S31_DEFAULT_NETWORK_TX_QUEUE_DEPTH: usize = 8;
 #[cfg(feature = "high-throughput")]
-pub const ESP32S31_DEFAULT_NETWORK_TX_QUEUE_DEPTH: usize = 32;
+pub const ESP32S31_DEFAULT_NETWORK_TX_QUEUE_DEPTH: usize = 64;
 pub const ESP32S31_DEFAULT_NETWORK_TX_TRAILER: usize = 12;
 #[cfg(not(feature = "high-throughput"))]
 pub const ESP32S31_DEFAULT_TX_AMPDU_FRAME_COUNT: usize = 8;

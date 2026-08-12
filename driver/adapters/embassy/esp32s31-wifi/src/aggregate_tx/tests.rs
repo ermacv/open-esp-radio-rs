@@ -390,8 +390,8 @@ fn first_frame_outside_fresh_aggregate_txop_falls_back_to_ordinary_tx() {
     )
     .unwrap()
     .with_observer(&observer);
-    tx.set_block_ack_operational(0, true);
-    tx.set_block_ack_operational(0, true);
+    tx.set_block_ack_window(0, Some(TEST_SLOTS as u16));
+    tx.set_block_ack_window(0, Some(TEST_SLOTS as u16));
 
     assert_eq!(
         observer.count(AggregateTxObservation::BlockAckOperational {
@@ -473,7 +473,7 @@ fn production_sized_he_frame_fits_a_fresh_default_txop_aggregate() {
     )
     .unwrap()
     .with_observer(&observer);
-    tx.set_block_ack_operational(0, true);
+    tx.set_block_ack_window(0, Some(TEST_SLOTS as u16));
 
     assert_eq!(
         tx.start_network(&mut hardware, first, &network.tx_consumer()),
@@ -494,6 +494,136 @@ fn production_sized_he_frame_fits_a_fresh_default_txop_aggregate() {
             },
         )),
         Ok(WifiTxProgress::Complete)
+    );
+}
+
+#[test]
+fn negotiated_amsdu_pairs_network_frames_inside_the_block_ack_window() {
+    const FRAME_CAPACITY: usize = 1_600;
+    const HEADROOM: usize = TEST_HEADROOM;
+    const TRAILER: usize = 1_632;
+    const QUEUE_DEPTH: usize = 4;
+    type LargeResources =
+        PinnedResources<NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>;
+    type LargePool = PinnedTxPool<FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>;
+
+    let resources = std::boxed::Box::leak(std::boxed::Box::new(LargeResources::new()));
+    let pool = LargePool::pin_static(std::boxed::Box::leak(
+        std::boxed::Box::new(LargePool::new()),
+    ));
+    let (mut device, network) = resources.split(pool, STATION);
+    for marker in 1..=4 {
+        device
+            .transmit(&mut context())
+            .expect("free production-sized pinned network slot")
+            .consume(1_514, |frame| {
+                frame[..6].copy_from_slice(&[0x30, 0x31, 0x32, 0x33, 0x34, marker]);
+                frame[6..12].copy_from_slice(&STATION);
+                frame[12..14].copy_from_slice(&0x0800_u16.to_be_bytes());
+                frame[14..].fill(marker);
+            });
+    }
+    let first = network.try_receive_tx().unwrap();
+    let mut hardware = Hardware::default();
+    let mut slot = core::pin::pin!(TxSlot::<4_096>::new_model());
+    let ordinary = make_ordinary(slot.as_mut(), &mut hardware);
+    let mut ampdu = core::pin::pin!(HtAmpduTxStorage::<TEST_SLOTS, 0>::new());
+    let observer = RecordingAggregateTxObserver::default();
+    let mut tx = Esp32s31ConnectedTx::new(
+        ordinary,
+        AggregateTxResources::single(
+            HtAmpduTxResources::new_model(ampdu.as_mut()).unwrap(),
+            std::boxed::Box::leak(std::boxed::Box::new(RetainedAmpduDmaStorage::new())),
+        ),
+        AggregateTxConfig {
+            rate: TxPhyRate::Ht(HtRate::new(
+                HtMcs::Mcs7,
+                HtGuardInterval::Short400Ns,
+                HtChannelWidth::Mhz40,
+            )),
+            frame_limit: TEST_SLOTS as u8,
+            attempt_limit: 2,
+            completion_timeout_us: 250_000,
+            he_txop_limit: HeEdcaTxopLimit::DEFAULT,
+        },
+    )
+    .unwrap()
+    .with_observer(&observer);
+    tx.set_block_ack_agreement(0, Some((TEST_SLOTS as u16, true)));
+
+    assert_eq!(
+        tx.start_network(&mut hardware, first, &network.tx_consumer()),
+        Ok(WifiTxProgress::Pending),
+    );
+    assert_eq!(hardware.ht_publications, 1);
+    assert_eq!(hardware.legacy_publications, 0);
+    assert!(observer.observed(AggregateTxObservation::Prepared {
+        subframes: 2,
+        stop: AggregateBuildStop::QueueEmpty,
+    }));
+    hardware.aggregate_completion = Some(aggregate_completion(7, 0b11));
+    assert_eq!(
+        embassy_futures::block_on(tx.service(
+            &mut hardware,
+            WifiTxWake::Interrupt {
+                events: MAC_INT_TX_COMPLETE,
+            },
+        )),
+        Ok(WifiTxProgress::Complete)
+    );
+}
+
+#[test]
+fn aggregate_never_exceeds_the_peer_negotiated_block_ack_window() {
+    let (mut device, network) = make_network();
+    send_frame(&mut device, 1);
+    send_frame(&mut device, 2);
+    send_frame(&mut device, 3);
+    let first = network.try_receive_tx().unwrap();
+    let mut hardware = Hardware::default();
+    let mut slot = core::pin::pin!(TxSlot::<TEST_BUFFER_SIZE>::new_model());
+    let ordinary = make_ordinary(slot.as_mut(), &mut hardware);
+    let mut ampdu = core::pin::pin!(HtAmpduTxStorage::<TEST_SLOTS, 0>::new());
+    let observer = RecordingAggregateTxObserver::default();
+    let mut tx = Esp32s31ConnectedTx::new(
+        ordinary,
+        AggregateTxResources::single(
+            HtAmpduTxResources::new_model(ampdu.as_mut()).unwrap(),
+            std::boxed::Box::leak(std::boxed::Box::new(RetainedAmpduDmaStorage::new())),
+        ),
+        AggregateTxConfig {
+            rate: TxPhyRate::Ht(TEST_RATE),
+            frame_limit: TEST_SLOTS as u8,
+            attempt_limit: 2,
+            completion_timeout_us: 250_000,
+            he_txop_limit: HeEdcaTxopLimit::DEFAULT,
+        },
+    )
+    .unwrap()
+    .with_observer(&observer);
+
+    // The local arena can hold three frames, but the peer accepted only two.
+    tx.set_block_ack_window(0, Some(2));
+    assert_eq!(tx.block_ack_window(0), Some(2));
+    assert_eq!(
+        tx.start_network(&mut hardware, first, &network.tx_consumer()),
+        Ok(WifiTxProgress::Pending),
+    );
+    assert!(observer.observed(AggregateTxObservation::Prepared {
+        subframes: 2,
+        stop: AggregateBuildStop::FrameLimit,
+    }));
+    assert_eq!(network.tx_queue_len(), 1);
+
+    hardware.aggregate_completion = Some(aggregate_completion(7, 0b11));
+    assert_eq!(
+        embassy_futures::block_on(tx.service(
+            &mut hardware,
+            WifiTxWake::Interrupt {
+                events: MAC_INT_TX_COMPLETE,
+            },
+        )),
+        Ok(WifiTxProgress::Complete),
     );
 }
 
@@ -551,7 +681,7 @@ fn pipelined_arena_survives_current_retry_and_publishes_at_next_boundary() {
     )
     .unwrap()
     .with_observer(&observer);
-    tx.set_block_ack_operational(0, true);
+    tx.set_block_ack_window(0, Some(TEST_SLOTS as u16));
 
     assert_eq!(
         tx.start_network(&mut hardware, first, &network.tx_consumer()),
@@ -629,7 +759,6 @@ fn pipelined_arena_survives_current_retry_and_publishes_at_next_boundary() {
     );
     assert!(tx.has_prepared_network_tx());
     assert_eq!(hardware.ht_publications, 2);
-
     assert_eq!(
         tx.start_prepared_network(&mut hardware, &network.tx_consumer()),
         Ok(WifiTxProgress::Pending)
@@ -695,7 +824,7 @@ fn ordinary_control_tx_cannot_admit_a_standby_aggregate() {
         },
     )
     .unwrap();
-    tx.set_block_ack_operational(0, true);
+    tx.set_block_ack_window(0, Some(TEST_SLOTS as u16));
 
     assert_eq!(
         ConnectedControlTx::start_action(
@@ -744,7 +873,7 @@ fn rejected_standby_preparation_preserves_the_hardware_owned_primary() {
         },
     )
     .unwrap();
-    tx.set_block_ack_operational(0, true);
+    tx.set_block_ack_window(0, Some(TEST_SLOTS as u16));
 
     let first = network.try_receive_tx().unwrap();
     assert_eq!(
@@ -790,7 +919,7 @@ fn block_ack_completion_releases_all_referenced_network_leases() {
         },
     )
     .unwrap();
-    tx.set_block_ack_operational(0, true);
+    tx.set_block_ack_window(0, Some(TEST_SLOTS as u16));
 
     assert_eq!(
         tx.start_network(&mut hardware, first, &network.tx_consumer()),
@@ -858,7 +987,7 @@ fn partial_block_ack_retains_missing_frames_across_one_republication() {
         },
     )
     .unwrap();
-    tx.set_block_ack_operational(0, true);
+    tx.set_block_ack_window(0, Some(TEST_SLOTS as u16));
     assert_eq!(
         tx.start_network(&mut hardware, first, &network.tx_consumer()),
         Ok(WifiTxProgress::Pending)
@@ -933,7 +1062,7 @@ fn one_missing_ht_mpdu_moves_to_ordinary_retry_without_new_sequence_or_pn() {
         },
     )
     .unwrap();
-    tx.set_block_ack_operational(0, true);
+    tx.set_block_ack_window(0, Some(TEST_SLOTS as u16));
     assert_eq!(
         tx.start_network(&mut hardware, first, &network.tx_consumer()),
         Ok(WifiTxProgress::Pending)

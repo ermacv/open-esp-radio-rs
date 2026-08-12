@@ -1,9 +1,12 @@
-schema = 2
+schema = 3
 id = "udp-rx-he20-ceiling"
 description = "Sustained HE20 UDP host-to-station receive ceiling"
 image = "qualification"
 isolation = "reset"
 tags = ["qualification", "udp", "station"]
+
+[link]
+phy = "he20"
 
 [workload]
 kind = "udp"
@@ -11,7 +14,6 @@ direction = "rx"
 duration_seconds = 16
 rx_rate_bps = 100000000
 payload_bytes = 1200
-phy = "he20"
 
 [criteria]
 exact_delivery = true

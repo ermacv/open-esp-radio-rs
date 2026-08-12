@@ -48,6 +48,7 @@ where
         S: Future<Output = ()>,
     {
         let mut stop = core::pin::pin!(stop);
+        let mut tx_batch_deadline = None;
         loop {
             // Poll the caller edge before servicing control. `ready(())`
             // makes this a non-blocking ordered probe, with stop winning an
@@ -80,17 +81,59 @@ where
                 WifiControlProgress::Idle => {}
             }
 
-            // A prepared network batch owns only software-reserved
-            // descriptors and pinned leases. Give control the transaction
-            // boundary above, then admit the batch before claiming newer
-            // frames from the network queue.
-            if self.services.has_prepared_tx() {
-                let network_tx = self.network.tx_consumer();
-                let progress = self.services.start_prepared_tx(&network_tx).await?;
-                if progress == WifiTxProgress::Pending {
-                    self.drive_active_tx().await?;
+            let network_tx_pending =
+                self.services.has_prepared_tx() || self.network.tx_queue_len() != 0;
+            let mut wait_for_batch_until = None;
+            if network_tx_pending {
+                let preferred = self.services.preferred_tx_batch_size();
+                let available = self
+                    .services
+                    .prepared_tx_frame_count()
+                    .saturating_add(self.network.tx_queue_len());
+                // A lone frame is not an aggregate and must retain the
+                // immediate low-latency path. Once a real multi-frame burst
+                // exists, collect only up to the negotiated target/deadline.
+                if preferred > 1 && available >= TX_BATCH_MIN_FRAMES && available < preferred {
+                    let deadline = *tx_batch_deadline
+                        .get_or_insert_with(|| Instant::now() + TX_BATCH_MAX_WAIT);
+                    if Instant::now() < deadline {
+                        wait_for_batch_until = Some(deadline);
+                    }
                 }
-                continue;
+
+                if wait_for_batch_until.is_none() {
+                    tx_batch_deadline = None;
+                    // A partial standby arena and newly queued frames form
+                    // one batch. Extend it once; the aggregate owner drains
+                    // every immediately ready lease up to the negotiated
+                    // target.
+                    if self.services.has_prepared_tx() {
+                        if self.services.can_prepare_tx()
+                            && let Some(frame) = self.network.try_receive_tx()
+                        {
+                            let network_tx = self.network.tx_consumer();
+                            self.services.prepare_tx(frame, &network_tx).await?;
+                        }
+                        let network_tx = self.network.tx_consumer();
+                        let progress = self.services.start_prepared_tx(&network_tx).await?;
+                        if progress == WifiTxProgress::Pending {
+                            self.drive_active_tx().await?;
+                        }
+                        continue;
+                    }
+
+                    let Some(frame) = self.network.try_receive_tx() else {
+                        continue;
+                    };
+                    let network_tx = self.network.tx_consumer();
+                    let progress = self.services.start_tx(frame, &network_tx).await?;
+                    if progress == WifiTxProgress::Pending {
+                        self.drive_active_tx().await?;
+                    }
+                    continue;
+                }
+            } else {
+                tx_batch_deadline = None;
             }
 
             let irq = self.irq;
@@ -104,11 +147,14 @@ where
             };
             match select(
                 stop.as_mut(),
-                select3(
-                    wait_rx,
-                    self.services.wait_control_ready(),
-                    self.network.receive_tx(),
-                ),
+                select3(wait_rx, self.services.wait_control_ready(), async {
+                    if let Some(deadline) = wait_for_batch_until {
+                        let _ =
+                            select(self.network.wait_tx_publication(), Timer::at(deadline)).await;
+                    } else {
+                        self.network.wait_tx_ready().await;
+                    }
+                }),
             )
             .await
             {
@@ -120,47 +166,7 @@ where
                 }
                 Either::Second(Either3::First(())) => self.service_rx().await?,
                 Either::Second(Either3::Second(())) => {}
-                Either::Second(Either3::Third(frame)) => {
-                    // `receive_tx` may have consumed the first lease after
-                    // the context at the top of the loop was sampled. Hold
-                    // that lease while control restores PM=0 (if needed),
-                    // then publish the data frame only after the AP-visible
-                    // state is coherent again.
-                    loop {
-                        if matches!(select(stop.as_mut(), ready(())).await, Either::First(())) {
-                            drop(frame);
-                            self.services.cancel_prepared_tx()?;
-                            self.network
-                                .set_link_state(open_esp_radio_embassy_net::LinkState::Down);
-                            return Ok(ConnectedRunnerExit::Stopped);
-                        }
-                        match self
-                            .services
-                            .service_control(WifiControlContext {
-                                network_tx_pending: true,
-                            })
-                            .await?
-                        {
-                            WifiControlProgress::More => continue,
-                            WifiControlProgress::TxPending => {
-                                self.drive_active_tx().await?;
-                            }
-                            WifiControlProgress::Disconnected(reason) => {
-                                drop(frame);
-                                self.services.cancel_prepared_tx()?;
-                                self.network
-                                    .set_link_state(open_esp_radio_embassy_net::LinkState::Down);
-                                return Ok(ConnectedRunnerExit::Disconnected(reason));
-                            }
-                            WifiControlProgress::Idle => break,
-                        }
-                    }
-                    let network_tx = self.network.tx_consumer();
-                    let progress = self.services.start_tx(frame, &network_tx).await?;
-                    if progress == WifiTxProgress::Pending {
-                        self.drive_active_tx().await?;
-                    }
-                }
+                Either::Second(Either3::Third(())) => {}
             }
         }
     }

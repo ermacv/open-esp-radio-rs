@@ -59,7 +59,11 @@ const STACK_PAINT_MARGIN_BYTES: u32 = 256;
 #[cfg(feature = "open-radio-hil")]
 const STACK_PAINT_BOTTOM_RESERVE_BYTES: u32 = 256;
 #[cfg(feature = "open-radio-hil")]
-const APP_CORE_STACK_BYTES: u32 = 16_384;
+// Core 1 runs embassy-net, application traffic, the owner-free RX protocol
+// and TCP pattern workers. The first cross-core TX qualification measured a
+// 6,312-byte peak; 10 KiB retains 38% headroom while avoiding the former
+// unmeasured 16-KiB reservation.
+const APP_CORE_STACK_BYTES: usize = 10 * 1024;
 
 #[cfg(feature = "code-flash")]
 const PROFILE_CODE_START: u32 = 0x4000_0140;
@@ -95,7 +99,7 @@ static APP_SEND_SPAWNER_PTR: AtomicPtr<SendSpawner> = AtomicPtr::new(ptr::null_m
 static APP_STACK_PAINT_END: AtomicU32 = AtomicU32::new(0);
 #[cfg(feature = "open-radio-hil")]
 #[unsafe(link_section = ".critical.bss.open_radio_app_core_stack")]
-static mut APP_CORE_STACK: Stack<16384> = Stack::new();
+static mut APP_CORE_STACK: Stack<APP_CORE_STACK_BYTES> = Stack::new();
 static mut INITIALIZED_DATA: u32 = DATA_SENTINEL;
 static mut BSS_PROBE: u32 = 0;
 
@@ -313,6 +317,10 @@ extern "C" fn runtime_main() -> ! {
                     APP_EXECUTOR
                         .init(Executor::<1>::new(app_interrupt))
                         .run(|spawner| {
+                            let Ok(network) = product_hil::app_network_task(spawner) else {
+                                fail(c"OPEN_RADIO_HIL runtime=FAIL reason=app-network-allocation\r\n");
+                            };
+                            spawner.spawn(network);
                             let send_spawner = APP_SEND_SPAWNER.init(spawner.make_send());
                             APP_SEND_SPAWNER_PTR.store(send_spawner, Ordering::Release);
                         })
@@ -479,7 +487,7 @@ fn paint_app_core_stack() {
     let bottom = ptr::addr_of_mut!(APP_CORE_STACK) as *mut u8 as usize as u32;
     let paint_start = bottom + STACK_PAINT_BOTTOM_RESERVE_BYTES;
     let paint_end = current_stack_pointer().saturating_sub(STACK_PAINT_MARGIN_BYTES);
-    let maximum_end = bottom + APP_CORE_STACK_BYTES;
+    let maximum_end = bottom + APP_CORE_STACK_BYTES as u32;
     if paint_end <= paint_start || paint_end > maximum_end {
         fail(c"OPEN_RADIO_HIL runtime=FAIL reason=app-stack-layout\r\n");
     }
@@ -499,7 +507,7 @@ pub(crate) fn stack_usage_snapshot() -> open_esp_radio_hil_protocol::StackUsage 
     let cpu0_paint_end = cpu0_top.saturating_sub(STACK_PAINT_MARGIN_BYTES);
 
     let cpu1_bottom = ptr::addr_of!(APP_CORE_STACK) as *const u8 as usize as u32;
-    let cpu1_top = cpu1_bottom + APP_CORE_STACK_BYTES;
+    let cpu1_top = cpu1_bottom + APP_CORE_STACK_BYTES as u32;
     let cpu1_paint_end = APP_STACK_PAINT_END.load(Ordering::Acquire);
 
     open_esp_radio_hil_protocol::StackUsage {

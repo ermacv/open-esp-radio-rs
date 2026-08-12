@@ -9,7 +9,8 @@ use std::{
 use open_esp_radio_hil_protocol::{StationDisconnectReason, StationLifecycleEvent};
 
 use crate::{
-    Result, controlled_ap::ControlledAp, lab_config::LabConfig, traffic_capture::SerialCapture,
+    Result, controlled_ap::ControlledAp, lab_config::LabConfig, scenario::PhyExpectation,
+    traffic_capture::SerialCapture,
 };
 
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(120);
@@ -19,11 +20,16 @@ struct Options {
     timeout: Duration,
 }
 
-pub(crate) fn run(arguments: Vec<String>, output: &Path, lab: &LabConfig) -> Result<()> {
+pub(crate) fn run(
+    arguments: Vec<String>,
+    output: &Path,
+    lab: &LabConfig,
+    phy: PhyExpectation,
+) -> Result<()> {
     let options = parse_options(&arguments, lab)?;
     fs::create_dir_all(&output)?;
 
-    let mut ap = ControlledAp::start(&lab.station, &lab.openwrt)?;
+    let mut ap = ControlledAp::start(&lab.station, &lab.station_fixture, phy)?;
     let capture = SerialCapture::start_with_reset(&options.serial);
     let mut cursor = capture.station_lifecycle_cursor();
     let result = qualify(&capture, lab, &mut cursor, &mut ap, options.timeout);

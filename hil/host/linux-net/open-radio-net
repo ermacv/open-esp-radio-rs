@@ -84,6 +84,7 @@ restore_managed_interface() {
 start_ap() {
     config=$1
     expected_width=$2
+    expected_channel=$3
     take_network_manager_ownership
     remember_wifi_identity
     stop_radio_services
@@ -100,7 +101,10 @@ start_ap() {
     attempts=0
     maximum_attempts=200
     while test "$attempts" -lt "$maximum_attempts"; do
-        if /usr/bin/iw dev wlan0 info 2>/dev/null \
+        info=$(/usr/bin/iw dev wlan0 info 2>/dev/null || true)
+        if /usr/bin/printf '%s\n' "$info" \
+            | /usr/bin/grep -Fq "channel $expected_channel " \
+            && /usr/bin/printf '%s\n' "$info" \
             | /usr/bin/grep -Fq "width: $expected_width MHz"
         then
             break
@@ -213,13 +217,13 @@ restore_managed() {
 
 case "$1" in
     capabilities)
-        /usr/bin/printf 'schema=1 client=1 managed=1\n'
+        /usr/bin/printf 'schema=2 station_ap=he20,ht40 client=1 managed=1\n'
         ;;
     start-ht40)
-        start_ap /etc/open-radio/hostapd-ht40.conf 40
+        start_ap /etc/open-radio/hostapd-ht40.conf 40 1
         ;;
     start-he20)
-        start_ap /etc/open-radio/hostapd-he20.conf 20
+        start_ap /etc/open-radio/hostapd-he20.conf 20 11
         ;;
     client)
         start_client

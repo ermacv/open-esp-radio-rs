@@ -1,9 +1,12 @@
-schema = 2
+schema = 3
 id = "tcp-rx"
 description = "Sustained TCP host-to-station receive"
 image = "qualification"
 isolation = "reset"
 tags = ["qualification", "tcp", "station"]
+
+[link]
+phy = "he20"
 
 [workload]
 kind = "tcp"

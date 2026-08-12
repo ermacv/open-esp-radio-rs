@@ -1,9 +1,12 @@
-schema = 2
+schema = 3
 id = "wifi-scan"
 description = "Standalone full-band scan with target-side dwell timing"
 image = "qualification"
 isolation = "reset"
 tags = ["qualification", "wifi", "scanner"]
+
+[link]
+phy = "ht40"
 
 [workload]
 kind = "wifi-role"

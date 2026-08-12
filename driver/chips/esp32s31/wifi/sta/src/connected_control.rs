@@ -160,7 +160,12 @@ pub trait ConnectedControlTx {
         payload: &[u8],
     ) -> Result<ConnectedControlProgress, SingleMpduTxError>;
 
-    fn set_tx_block_ack_operational(&mut self, tid: u8, operational: bool);
+    /// Publish the negotiated TX BlockAck agreement for one TID.
+    ///
+    /// `None` stops aggregation. Keeping the exact negotiated window here is
+    /// essential: an operational boolean cannot prevent the data path from
+    /// publishing more MPDUs than the peer's reorder window can retain.
+    fn set_tx_block_ack_agreement(&mut self, tid: u8, agreement: Option<(u16, bool)>);
 }
 
 impl<P, E, T, const BUFFER_SIZE: usize> ConnectedControlTx
@@ -210,7 +215,7 @@ where
             .map(|_| ConnectedControlProgress::TxPending)
     }
 
-    fn set_tx_block_ack_operational(&mut self, _tid: u8, _operational: bool) {}
+    fn set_tx_block_ack_agreement(&mut self, _tid: u8, _agreement: Option<(u16, bool)>) {}
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -450,7 +455,7 @@ impl Esp32s31ConnectedControlCore {
                 }
                 ControlInFlight::TxAddba { tid } => {
                     self.tx_block_ack.stop(tid);
-                    tx.set_tx_block_ack_operational(tid, false);
+                    tx.set_tx_block_ack_agreement(tid, None);
                 }
                 ControlInFlight::PowerManagement(_) => {}
             }
@@ -475,7 +480,7 @@ impl Esp32s31ConnectedControlCore {
                 tx_block_ack_sessions = tx_block_ack_sessions.saturating_add(1);
             }
             self.tx_block_ack.stop(tid);
-            tx.set_tx_block_ack_operational(tid, false);
+            tx.set_tx_block_ack_agreement(tid, None);
             if self.he_enabled {
                 hardware.set_he_tid_enabled(tid, false)?;
             }
@@ -537,7 +542,7 @@ impl Esp32s31ConnectedControlCore {
                 ControlInFlight::TxAddba { .. } if success => {}
                 ControlInFlight::TxAddba { tid } => {
                     self.tx_block_ack.stop(tid);
-                    tx.set_tx_block_ack_operational(tid, false);
+                    tx.set_tx_block_ack_agreement(tid, None);
                     if let Some(index) = STA_TX_BLOCK_ACK_TIDS
                         .into_iter()
                         .position(|candidate| candidate == tid)
@@ -593,7 +598,7 @@ impl Esp32s31ConnectedControlCore {
 
         let now_micros = tx.now_micros();
         if let Some(tid) = self.tx_block_ack.expire_next(now_micros) {
-            tx.set_tx_block_ack_operational(tid, false);
+            tx.set_tx_block_ack_agreement(tid, None);
             self.observations.last_expired_tid = Some(tid);
             if let Some(index) = STA_TX_BLOCK_ACK_TIDS
                 .into_iter()
@@ -616,7 +621,7 @@ impl Esp32s31ConnectedControlCore {
             reorder.publish(RxReorderCommand::StopAll)?;
             for tid in STA_TX_BLOCK_ACK_TIDS {
                 self.tx_block_ack.stop(tid);
-                tx.set_tx_block_ack_operational(tid, false);
+                tx.set_tx_block_ack_agreement(tid, None);
                 if self.he_enabled {
                     hardware.set_he_tid_enabled(tid, false)?;
                 }
@@ -750,8 +755,13 @@ impl Esp32s31ConnectedControlCore {
                     self.tx_block_ack_attempts_remaining[index] = 0;
                     self.initial_tx_block_ack[index] = false;
                 }
-                let operational = matches!(response, TxBlockAckResponse::Operational(_));
-                tx.set_tx_block_ack_operational(tid, operational);
+                let negotiated_agreement = match response {
+                    TxBlockAckResponse::Operational(agreement) => {
+                        Some((agreement.window, agreement.amsdu))
+                    }
+                    TxBlockAckResponse::Rejected(_) => None,
+                };
+                tx.set_tx_block_ack_agreement(tid, negotiated_agreement);
                 if let TxBlockAckResponse::Operational(agreement) = response {
                     if self.he_enabled {
                         hardware.set_he_tid_enabled(agreement.tid, true)?;
@@ -769,7 +779,7 @@ impl Esp32s31ConnectedControlCore {
                     }
                 } else {
                     self.tx_block_ack.stop(tid);
-                    tx.set_tx_block_ack_operational(tid, false);
+                    tx.set_tx_block_ack_agreement(tid, None);
                     if self.he_enabled {
                         hardware.set_he_tid_enabled(tid, false)?;
                     }

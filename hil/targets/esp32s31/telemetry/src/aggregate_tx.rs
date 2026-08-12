@@ -506,12 +506,19 @@ impl AggregateTxObserver for AggregateTxCounters {
                 }
                 if block_ack_received {
                     let lag = first_sequence.wrapping_sub(starting_sequence) & 0x0fff;
-                    if lag >= 64 {
-                        self.block_ack_start_outside_window
-                            .fetch_add(1, Ordering::Relaxed);
-                    } else {
+                    let advance = starting_sequence.wrapping_sub(first_sequence) & 0x0fff;
+                    if lag < 64 {
                         self.block_ack_start_lag_max
                             .fetch_max(u32::from(lag), Ordering::Relaxed);
+                    } else if advance <= 64 {
+                        // Some peers publish the first not-yet-acknowledged
+                        // sequence as SSN. That advances the bitmap beyond
+                        // already completed MPDUs and is not an invalid BA.
+                        self.block_ack_start_lag_max
+                            .fetch_max(u32::from(advance), Ordering::Relaxed);
+                    } else {
+                        self.block_ack_start_outside_window
+                            .fetch_add(1, Ordering::Relaxed);
                     }
                 }
                 if missing == 0 {

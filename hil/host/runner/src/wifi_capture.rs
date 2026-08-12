@@ -13,8 +13,9 @@ use open_esp_radio_hil_protocol::WifiMonitorCaptureRequest;
 
 use crate::{
     Result,
-    controlled_ap::{ControlledAp, require_station_credentials},
+    controlled_ap::ControlledAp,
     lab_config::LabConfig,
+    scenario::PhyExpectation,
     traffic_capture::{MonitorCaptureEvidence, SerialCapture},
     wifi_control::{scan, start_station, stop_station},
 };
@@ -29,17 +30,20 @@ struct Options {
     duration: Duration,
     channel: Option<u8>,
     snapshot_length: u16,
-    external_ap: bool,
 }
 
-pub(crate) fn run(arguments: Vec<String>, artifact_dir: &Path, lab: &LabConfig) -> Result<()> {
+pub(crate) fn run(
+    arguments: Vec<String>,
+    artifact_dir: &Path,
+    lab: &LabConfig,
+    phy: PhyExpectation,
+) -> Result<()> {
     let options = parse_options(&arguments, lab)?;
-    let _access_point = if options.external_ap {
-        require_station_credentials(&lab.station)?;
-        None
-    } else {
-        Some(ControlledAp::start(&lab.station, &lab.openwrt)?)
-    };
+    let _access_point = Some(ControlledAp::start(
+        &lab.station,
+        &lab.station_fixture,
+        phy,
+    )?);
     fs::create_dir_all(&artifact_dir)?;
     if let Some(parent) = options.output.parent()
         && !parent.as_os_str().is_empty()
@@ -204,7 +208,6 @@ fn parse_options(arguments: &[String], lab: &LabConfig) -> Result<Options> {
     let mut duration = DEFAULT_CAPTURE_DURATION;
     let mut channel = None;
     let mut snapshot_length = 256_u16;
-    let mut external_ap = false;
     let mut index = 0;
     while index < arguments.len() {
         match arguments[index].as_str() {
@@ -257,7 +260,6 @@ fn parse_options(arguments: &[String], lab: &LabConfig) -> Result<Options> {
                     return Err("--snapshot-length must be in 0..=2304".into());
                 }
             }
-            "--external-ap" => external_ap = true,
             argument => return Err(format!("unknown Wi-Fi capture option `{argument}`").into()),
         }
         index += 1;
@@ -269,7 +271,6 @@ fn parse_options(arguments: &[String], lab: &LabConfig) -> Result<Options> {
         duration,
         channel,
         snapshot_length,
-        external_ap,
     })
 }
 

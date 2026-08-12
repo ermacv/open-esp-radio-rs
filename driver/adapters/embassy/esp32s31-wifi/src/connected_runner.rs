@@ -11,6 +11,7 @@ use embassy_futures::{
     select::{Either, Either3, Either4, select, select3, select4},
     yield_now,
 };
+use embassy_time::{Duration, Instant, Timer};
 use open_esp_radio_embassy_net::{
     PinnedTxConsumer, PinnedTxFrame, RawMutex, SplitPinnedRadioRunner,
 };
@@ -21,6 +22,16 @@ pub use open_esp_radio_esp32s31_wifi_sta::connected_control::{
 };
 
 use crate::embassy_irq::EmbassyMacIrqRuntime;
+
+/// Maximum latency added while collecting an aggregate-sized network burst.
+/// The target itself comes from the negotiated BlockAck window; this deadline
+/// prevents sparse/control traffic from waiting indefinitely for that target.
+// At the qualified 100+ Mbit/s offer rate, filling a negotiated 32-MPDU BA
+// window from an empty network queue takes roughly 2 ms. Keep that latency
+// explicit and bounded: a full window starts immediately, while sparse
+// traffic cannot be held beyond this deadline.
+const TX_BATCH_MAX_WAIT: Duration = Duration::from_millis(2);
+const TX_BATCH_MIN_FRAMES: usize = 2;
 
 /// Result of one bounded RX bottom-half pass.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -137,6 +148,17 @@ pub trait ConnectedRunnerServices<
 
     fn has_prepared_tx(&self) -> bool {
         false
+    }
+
+    /// Preferred number of MPDUs visible before starting a network batch.
+    /// Non-aggregate services keep the default immediate single-frame path.
+    fn preferred_tx_batch_size(&self) -> usize {
+        1
+    }
+
+    /// MPDUs already retained in the software-owned standby arena.
+    fn prepared_tx_frame_count(&self) -> usize {
+        0
     }
 
     fn start_prepared_tx<'a>(

@@ -1,4 +1,4 @@
-schema = 2
+schema = 3
 id = "access-point-tcp-rx"
 description = "Two AP ownership epochs with exact inbound TCP delivery"
 image = "qualification"

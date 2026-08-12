@@ -1,0 +1,23 @@
+schema = 3
+id = "udp-bidirectional-ht40-65-25"
+description = "Simultaneous HT40 65 Mbit/s RX and 25 Mbit/s TX exact delivery"
+image = "qualification"
+isolation = "reset"
+tags = ["qualification", "udp", "station", "full-duplex", "ht40", "ht40-matrix-90"]
+
+[link]
+phy = "ht40"
+
+[workload]
+kind = "udp"
+direction = "bidirectional"
+duration_seconds = 16
+rx_rate_bps = 65000000
+tx_rate_bps = 25000000
+payload_bytes = 1200
+
+[criteria]
+exact_delivery = true
+minimum_rx_bps = 58500000
+minimum_tx_bps = 22500000
+require_no_beacon_loss = true

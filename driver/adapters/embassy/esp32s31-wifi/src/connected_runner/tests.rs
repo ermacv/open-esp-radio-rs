@@ -158,6 +158,88 @@ struct PreparedBackend {
     cancelled: bool,
 }
 
+struct CompletionFillBackend {
+    order: [u8; 2],
+    count: usize,
+}
+
+impl ConnectedRunnerServices<'static, NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>
+    for CompletionFillBackend
+{
+    type Error = TestError;
+
+    fn service_rx(&mut self) -> impl Future<Output = Result<WifiRxProgress, Self::Error>> + '_ {
+        pending()
+    }
+
+    fn start_tx<'a>(
+        &'a mut self,
+        _frame: PinnedTxFrame<
+            'static,
+            NoopRawMutex,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            QUEUE_DEPTH,
+        >,
+        _network: &'a PinnedTxConsumer<
+            'static,
+            NoopRawMutex,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            QUEUE_DEPTH,
+        >,
+    ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a {
+        async { Ok(WifiTxProgress::Pending) }
+    }
+
+    fn wait_tx_deadline(&mut self) -> impl Future<Output = ()> + '_ {
+        pending()
+    }
+
+    fn service_tx<'a>(
+        &'a mut self,
+        _wake: WifiTxWake,
+    ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a {
+        async move {
+            self.order[self.count] = 2;
+            self.count += 1;
+            Err(TestError::Finished)
+        }
+    }
+
+    fn can_prepare_tx(&self) -> bool {
+        true
+    }
+
+    fn prepare_tx<'a>(
+        &'a mut self,
+        _frame: PinnedTxFrame<
+            'static,
+            NoopRawMutex,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            QUEUE_DEPTH,
+        >,
+        _network: &'a PinnedTxConsumer<
+            'static,
+            NoopRawMutex,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            QUEUE_DEPTH,
+        >,
+    ) -> impl Future<Output = Result<(), Self::Error>> + 'a {
+        async move {
+            self.order[self.count] = 1;
+            self.count += 1;
+            Ok(())
+        }
+    }
+}
+
 impl ConnectedRunnerServices<'static, NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>
     for PreparedBackend
 {
@@ -343,6 +425,36 @@ fn frame_arriving_inside_select_rechecks_control_as_network_pending() {
     );
     drop(run);
     assert!(runner.services().network_pending_seen);
+}
+
+#[test]
+fn ready_network_frame_extends_standby_before_active_tx_completion() {
+    let resources = std::boxed::Box::leak(std::boxed::Box::new(Resources::new()));
+    let pool = Pool::pin_static(std::boxed::Box::leak(std::boxed::Box::new(Pool::new())));
+    let (mut device, network) = resources.split(pool, [2, 3, 4, 5, 6, 7]);
+    enqueue_frame(&mut device);
+    let irq = std::boxed::Box::leak(std::boxed::Box::new(
+        EmbassyMacIrqRuntime::<NoopRawMutex>::new(),
+    ));
+    let services = CompletionFillBackend {
+        order: [0; 2],
+        count: 0,
+    };
+    let mut runner = ConnectedRunner::new(irq, network, services);
+    let mut run = std::boxed::Box::pin(runner.run());
+    let mut context = Context::from_waker(core::task::Waker::noop());
+
+    // Start the first hardware transaction, then make a standby frame and
+    // its completion interrupt ready in the same scheduler epoch.
+    assert_eq!(run.as_mut().poll(&mut context), Poll::Pending);
+    enqueue_frame(&mut device);
+    irq.publish(MAC_INT_TX_COMPLETE);
+    assert_eq!(
+        embassy_futures::block_on(run.as_mut()),
+        Err(TestError::Finished)
+    );
+    drop(run);
+    assert_eq!(runner.services().order, [1, 2]);
 }
 
 #[test]

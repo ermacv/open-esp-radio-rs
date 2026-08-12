@@ -1,4 +1,4 @@
-schema = 2
+schema = 3
 id = "access-point-bidirectional"
 description = "Two AP ownership epochs with exact simultaneous UDP delivery"
 image = "qualification"

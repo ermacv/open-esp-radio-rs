@@ -1,4 +1,4 @@
-schema = 2
+schema = 3
 id = "access-point-lifecycle"
 description = "Repeated cold-boot and ownership qualification for one WPA2 access point"
 image = "qualification"

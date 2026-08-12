@@ -1,9 +1,12 @@
-schema = 2
+schema = 3
 id = "wifi-monitor-lifecycle"
 description = "Station to monitor ownership transition and station restoration"
 image = "qualification"
 isolation = "reset"
 tags = ["qualification", "wifi", "monitor", "lifecycle"]
+
+[link]
+phy = "ht40"
 
 [workload]
 kind = "wifi-role"

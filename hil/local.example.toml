@@ -25,10 +25,12 @@ channel = 6
 target_address = "10.43.0.1/24"
 client_address = "10.43.0.2/24"
 
-[openwrt]
-# Configure this as an SSH alias with key authentication.
+[station_fixture]
+# Select exactly one explicit owner. Other valid forms are:
+# kind = "local-linux"
+# interface = "wlan0"
+# or simply `kind = "external"` for an unmanaged peer such as FRITZ.
+kind = "open-wrt"
 ssh_target = "open-radio-ap"
 wireless_interface = "phy0-ap0"
 ingress_interface = "br-lan"
-# Set false when this router is only the Ethernet transit path to an external AP.
-observe_ap = true

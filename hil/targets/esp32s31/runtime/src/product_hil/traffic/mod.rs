@@ -53,7 +53,7 @@ pub(super) use reporting::{
     log_open_radio_ampdu_interval, log_open_radio_rx_pipeline_interval,
     log_open_radio_task_poll_interval, observe_open_radio_task_polls,
 };
-pub(in crate::product_hil) use runtime::connected_traffic_task;
+pub(in crate::product_hil) use runtime::start_connected_traffic;
 pub(super) use tcp::{TcpBenchmarkConfig, run_open_radio_tcp_benchmark};
 pub(in crate::product_hil) use tcp::{tcp_rx_pattern_worker_task, tcp_tx_pattern_worker_task};
 pub(super) use udp::{

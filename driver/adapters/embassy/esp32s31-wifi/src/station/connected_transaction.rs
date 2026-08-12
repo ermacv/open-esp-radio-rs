@@ -13,7 +13,7 @@ use open_esp_radio_esp32s31_wifi_mac::{
     crypto::{CcmpKeyHardware, StaGroupCcmpSlot},
     irq::MacInterruptRoute,
 };
-use open_esp_radio_wifi_embassy::connected_tasks::ConnectedTaskGroup;
+use open_esp_radio_wifi_embassy::{await_stack_boundary, connected_tasks::ConnectedTaskGroup};
 
 use crate::{connected_runner::ConnectedRunner, embassy_irq::Esp32s31MacInterruptEpoch};
 use crate::{
@@ -322,7 +322,11 @@ where
     G: ConnectedTaskGroup,
     O: Esp32s31ConnectedRunObserver,
 {
-    let raw_exit = observer.observe(runner.run_station_epoch(control)).await;
+    // The runner's batching/select future is retained inside this transaction
+    // for ownership, but its poll frame is isolated from the quiesce frame.
+    // Without this boundary fat LTO combines both unrelated call chains into
+    // one 10-KiB CPU stack frame.
+    let raw_exit = await_stack_boundary!(observer.observe(runner.run_station_epoch(control)));
     let exit = classify(raw_exit, &runner);
     match quiesce_esp32s31_connected_epoch(interrupt, platform, runner, tasks).await {
         Ok(quiesced) => Ok(Esp32s31ConnectedEpochStopped { exit, quiesced }),

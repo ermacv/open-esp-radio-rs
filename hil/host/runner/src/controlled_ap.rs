@@ -6,65 +6,98 @@ use zeroize::Zeroizing;
 
 use crate::{
     Result,
-    lab_config::{OpenWrtConfig, StationConfig},
+    lab_config::{OpenWrtConfig, StationConfig, StationFixtureConfig},
+    network_helper,
+    scenario::PhyExpectation,
 };
 
-const NETWORK_HELPER: &str = "/usr/local/sbin/open-radio-net";
 const INSTALLED_HE20_CONFIG: &str = "/etc/open-radio/hostapd-he20.conf";
 
 /// Restores the selected AP frontier on every normal or error return.
 pub(crate) enum ControlledAp {
-    Local,
+    Local(PhyExpectation),
     OpenWrt(OpenWrtControlledAp),
+    External,
 }
 
 pub(crate) struct OpenWrtControlledAp {
     config: OpenWrtConfig,
     radio: String,
+    phy: PhyExpectation,
     stopped: bool,
 }
 
 impl ControlledAp {
-    pub(crate) fn start(station: &StationConfig, openwrt: &OpenWrtConfig) -> Result<Self> {
-        if openwrt.observe_ap {
-            let radio = require_openwrt_ap_credentials(station, openwrt)?;
-            openwrt_action(openwrt, &radio, "up")?;
-            wait_for_openwrt_interface(openwrt)?;
-            return Ok(Self::OpenWrt(OpenWrtControlledAp {
-                config: openwrt.clone(),
-                radio,
-                stopped: false,
-            }));
+    pub(crate) fn start(
+        station: &StationConfig,
+        fixture: &StationFixtureConfig,
+        phy: PhyExpectation,
+    ) -> Result<Self> {
+        match fixture {
+            StationFixtureConfig::LocalLinux(config) => {
+                if config.interface != "wlan0" {
+                    return Err("the local fixture helper owns only `wlan0`".into());
+                }
+                require_local_ap_credentials(station, phy)?;
+                let action = match phy {
+                    PhyExpectation::He20 => "start-he20",
+                    PhyExpectation::Ht40 => "start-ht40",
+                    PhyExpectation::Ht20 => {
+                        return Err("the local fixture has no qualified HT20 profile".into());
+                    }
+                };
+                if let Err(error) = helper_action(action) {
+                    let _ = helper_action("managed");
+                    return Err(error);
+                }
+                Ok(Self::Local(phy))
+            }
+            StationFixtureConfig::OpenWrt(openwrt) => {
+                let radio = require_openwrt_ap_credentials(station, openwrt)?;
+                openwrt_action(openwrt, &radio, "up")?;
+                wait_for_openwrt_interface(openwrt, phy)?;
+                Ok(Self::OpenWrt(OpenWrtControlledAp {
+                    config: openwrt.clone(),
+                    radio,
+                    phy,
+                    stopped: false,
+                }))
+            }
+            StationFixtureConfig::External => {
+                require_station_credentials(station)?;
+                Ok(Self::External)
+            }
         }
-
-        require_local_ap_credentials(station)?;
-        if let Err(error) = helper_action("start-he20") {
-            let _ = helper_action("managed");
-            return Err(error);
-        }
-        Ok(Self::Local)
     }
 
     pub(crate) fn stop(&mut self) -> Result<()> {
         match self {
-            Self::Local => helper_action("stop"),
+            Self::Local(_) => helper_action("stop"),
             Self::OpenWrt(ap) => {
                 openwrt_action(&ap.config, &ap.radio, "down")?;
                 ap.stopped = true;
                 Ok(())
             }
+            Self::External => Err("an external station fixture cannot be stopped by HIL".into()),
         }
     }
 
     pub(crate) fn restart(&mut self) -> Result<()> {
         match self {
-            Self::Local => helper_action("start-he20"),
+            Self::Local(phy) => helper_action(match phy {
+                PhyExpectation::He20 => "start-he20",
+                PhyExpectation::Ht40 => "start-ht40",
+                PhyExpectation::Ht20 => {
+                    return Err("the local fixture has no qualified HT20 profile".into());
+                }
+            }),
             Self::OpenWrt(ap) => {
                 openwrt_action(&ap.config, &ap.radio, "up")?;
-                wait_for_openwrt_interface(&ap.config)?;
+                wait_for_openwrt_interface(&ap.config, ap.phy)?;
                 ap.stopped = false;
                 Ok(())
             }
+            Self::External => Err("an external station fixture cannot be restarted by HIL".into()),
         }
     }
 }
@@ -72,14 +105,14 @@ impl ControlledAp {
 impl Drop for ControlledAp {
     fn drop(&mut self) {
         match self {
-            Self::Local => {
+            Self::Local(_) => {
                 let _ = helper_action("managed");
             }
             Self::OpenWrt(ap) if ap.stopped => {
                 let _ = openwrt_action(&ap.config, &ap.radio, "up");
-                let _ = wait_for_openwrt_interface(&ap.config);
+                let _ = wait_for_openwrt_interface(&ap.config, ap.phy);
             }
-            Self::OpenWrt(_) => {}
+            Self::OpenWrt(_) | Self::External => {}
         }
     }
 }
@@ -89,11 +122,20 @@ pub(crate) fn require_station_credentials(station: &StationConfig) -> Result<()>
     Ok(())
 }
 
-fn require_local_ap_credentials(station: &StationConfig) -> Result<()> {
+pub(crate) fn doctor_local() -> Result<()> {
+    network_helper::doctor()
+}
+
+fn require_local_ap_credentials(station: &StationConfig, phy: PhyExpectation) -> Result<()> {
     let (ssid, passphrase) = station.credentials();
-    let installed = fs::read_to_string(INSTALLED_HE20_CONFIG).map_err(|error| {
+    let profile = match phy {
+        PhyExpectation::He20 => INSTALLED_HE20_CONFIG,
+        PhyExpectation::Ht40 => "/etc/open-radio/hostapd-ht40.conf",
+        PhyExpectation::Ht20 => return Err("the local fixture has no HT20 profile".into()),
+    };
+    let installed = fs::read_to_string(profile).map_err(|error| {
         format!(
-            "cannot read installed controlled-AP profile `{INSTALLED_HE20_CONFIG}`: {error}; \
+            "cannot read installed controlled-AP profile `{profile}`: {error}; \
              reinstall the HIL host fixture"
         )
     })?;
@@ -117,7 +159,7 @@ fn require_openwrt_ap_credentials(
     // the transient netdev. The netdev intentionally disappears while the AP
     // is down, but this stored owner must still be able to restore it.
     let script = r#"set -eu; for section in $(uci -q show wireless | sed -n 's/^wireless\.\([^.=]*\)=wifi-iface$/\1/p'); do radio=$(uci -q get wireless.$section.device || true); ssid=$(uci -q get wireless.$section.ssid || true); key=$(uci -q get wireless.$section.key || true); printf '%s\t%s\t%s\n' "$radio" "$ssid" "$key"; done"#;
-    let mut output = openwrt_command(openwrt, &script)?;
+    let mut output = openwrt_command(openwrt, script)?;
     if !output.status.success() {
         return Err(format!(
             "cannot read the controlled OpenWrt AP profile: {}",
@@ -169,18 +211,28 @@ fn openwrt_action(config: &OpenWrtConfig, radio: &str, action: &str) -> Result<(
     Ok(())
 }
 
-fn wait_for_openwrt_interface(config: &OpenWrtConfig) -> Result<()> {
+fn wait_for_openwrt_interface(config: &OpenWrtConfig, phy: PhyExpectation) -> Result<()> {
+    let expected_width = match phy {
+        PhyExpectation::He20 | PhyExpectation::Ht20 => 20,
+        PhyExpectation::Ht40 => 40,
+    };
     for _ in 0..50 {
         let output = openwrt_command(
             config,
-            &format!("iw dev {} info >/dev/null 2>&1", config.wireless_interface),
+            &format!(
+                "iw dev {} info 2>/dev/null | grep -Fq 'width: {expected_width} MHz'",
+                config.wireless_interface
+            ),
         )?;
         if output.status.success() {
             return Ok(());
         }
         thread::sleep(Duration::from_millis(100));
     }
-    Err("controlled OpenWrt AP did not restore its wireless interface".into())
+    Err(format!(
+        "controlled OpenWrt AP did not restore the required {expected_width} MHz interface"
+    )
+    .into())
 }
 
 fn openwrt_command(config: &OpenWrtConfig, script: &str) -> Result<std::process::Output> {
@@ -215,7 +267,7 @@ fn required_profile_value<'a>(profile: &'a str, key: &str) -> Result<&'a str> {
 
 fn helper_action(action: &str) -> Result<()> {
     let status = Command::new("sudo")
-        .args(["-n", NETWORK_HELPER, action])
+        .args(["-n", network_helper::PATH, action])
         .status()?;
     if !status.success() {
         return Err(format!("controlled AP helper `{action}` failed with {status}").into());

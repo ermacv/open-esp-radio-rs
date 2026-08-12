@@ -1,9 +1,12 @@
-schema = 2
+schema = 3
 id = "station-ap-absence"
 description = "Station exhausts bounded retries while the configured AP is absent"
 image = "qualification"
 isolation = "reset"
 tags = ["qualification", "station", "lifecycle"]
+
+[link]
+phy = "ht40"
 
 [workload]
 kind = "station-ap-absence"

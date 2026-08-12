@@ -1,4 +1,4 @@
-schema = 2
+schema = 3
 id = "access-point-icmp"
 description = "Local ICMP latency and loss through two WPA2 access-point epochs"
 image = "qualification"

@@ -11,7 +11,7 @@ use open_esp_radio_hil_esp32s31_telemetry::{
     task_poll::{TaskPollCounters, TaskPollSet, TaskPollSetSnapshot, TaskPollSnapshot},
 };
 
-use crate::console::runtime_log;
+use crate::console::{runtime_log, runtime_log_reliably};
 
 pub(in crate::product_hil) async fn log_open_radio_ampdu_interval(
     earlier: AggregateTxCounterSnapshot,
@@ -287,7 +287,7 @@ pub(in crate::product_hil) async fn log_open_radio_task_poll_interval(
 }
 
 async fn log_open_radio_task_poll(task: &str, poll: TaskPollSnapshot) {
-    runtime_log(format_args!(
+    runtime_log_reliably(format_args!(
         "ORTP task={task} polls={} poll_us={} poll_boot_max_us={} \
          over_100us={} over_500us={} over_1000us={} over_5000us={}",
         poll.polls,
@@ -297,7 +297,8 @@ async fn log_open_radio_task_poll(task: &str, poll: TaskPollSnapshot) {
         poll.over_500_micros,
         poll.over_1_000_micros,
         poll.over_5_000_micros,
-    ));
+    ))
+    .await;
     yield_now().await;
 }
 

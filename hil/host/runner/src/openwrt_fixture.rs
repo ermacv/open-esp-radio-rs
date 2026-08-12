@@ -7,7 +7,7 @@ use std::{
     time::Duration,
 };
 
-use crate::{Result, lab_config::OpenWrtConfig};
+use crate::{Result, lab_config::OpenWrtConfig, scenario::PhyExpectation};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct OpenWrtRxEvidence {
@@ -22,6 +22,7 @@ pub(crate) struct OpenWrtRxEvidence {
     pub(crate) firmware_msdu_dropped: u64,
     pub(crate) firmware_mpdu_requeued: u64,
     pub(crate) firmware_sw_retry_dropped: u64,
+    pub(crate) channel_width_mhz: u8,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -35,6 +36,7 @@ struct Snapshot {
     firmware_msdu_dropped: u64,
     firmware_mpdu_requeued: u64,
     firmware_sw_retry_dropped: u64,
+    channel_width_mhz: u8,
 }
 
 struct Capture {
@@ -45,6 +47,7 @@ struct Capture {
 pub(crate) struct OpenWrtRxCapture {
     config: OpenWrtConfig,
     target: Ipv4Addr,
+    expected_phy: PhyExpectation,
     before: Snapshot,
     ingress: Option<Capture>,
     wireless: Option<Capture>,
@@ -56,8 +59,10 @@ impl OpenWrtRxCapture {
         target: Ipv4Addr,
         port: u16,
         traffic_duration: Duration,
+        expected_phy: PhyExpectation,
     ) -> Result<Self> {
         let before = snapshot(config, target)?;
+        require_width(expected_phy, before.channel_width_mhz)?;
         let timeout = traffic_duration.saturating_add(Duration::from_secs(3));
         let mut ingress = spawn_capture(
             config,
@@ -93,6 +98,7 @@ impl OpenWrtRxCapture {
         Ok(Self {
             config: config.clone(),
             target,
+            expected_phy,
             before,
             ingress: Some(ingress),
             wireless: Some(wireless),
@@ -103,6 +109,7 @@ impl OpenWrtRxCapture {
         let ingress = finish_capture(self.ingress.take().expect("capture owns ingress"))?;
         let wireless = finish_capture(self.wireless.take().expect("capture owns wireless"))?;
         let after = snapshot(&self.config, self.target)?;
+        require_width(self.expected_phy, after.channel_width_mhz)?;
         Ok(OpenWrtRxEvidence {
             ingress_packets: ingress,
             wireless_packets: wireless,
@@ -151,6 +158,7 @@ impl OpenWrtRxCapture {
                 self.before.firmware_sw_retry_dropped,
                 after.firmware_sw_retry_dropped,
             )?,
+            channel_width_mhz: after.channel_width_mhz,
         })
     }
 }
@@ -166,6 +174,7 @@ fn snapshot(config: &OpenWrtConfig, target: Ipv4Addr) -> Result<Snapshot> {
          printf 'station_tx=%s\\n' \"$(printf '%s\\n' \"$stats\" | awk '/tx packets:/ {{print $3}}')\"; \
          printf 'station_retries=%s\\n' \"$(printf '%s\\n' \"$stats\" | awk '/tx retries:/ {{print $3}}')\"; \
          printf 'station_failed=%s\\n' \"$(printf '%s\\n' \"$stats\" | awk '/tx failed:/ {{print $3}}')\"; \
+         printf 'channel_width=%s\\n' \"$(iw dev {wireless} info | sed -n 's/.*width: \\([0-9][0-9]*\\) MHz.*/\\1/p')\"; \
          wiphy=$(iw dev {wireless} info | awk '/wiphy/ {{print \"phy\" $2; exit}}'); \
          test -n \"$wiphy\"; \
          fw=/sys/kernel/debug/ieee80211/$wiphy/ath10k/fw_stats; \
@@ -199,7 +208,22 @@ fn snapshot(config: &OpenWrtConfig, target: Ipv4Addr) -> Result<Snapshot> {
         firmware_msdu_dropped: tagged(&stdout, "fw_msdu_dropped")?,
         firmware_mpdu_requeued: tagged(&stdout, "fw_mpdu_requeued")?,
         firmware_sw_retry_dropped: tagged(&stdout, "fw_sw_retry_dropped")?,
+        channel_width_mhz: u8::try_from(tagged(&stdout, "channel_width")?)?,
     })
+}
+
+fn require_width(phy: PhyExpectation, observed: u8) -> Result<()> {
+    let expected = match phy {
+        PhyExpectation::He20 | PhyExpectation::Ht20 => 20,
+        PhyExpectation::Ht40 => 40,
+    };
+    if observed != expected {
+        return Err(format!(
+            "OpenWrt AP link width changed during the HIL session: expected={expected} observed={observed} MHz"
+        )
+        .into());
+    }
+    Ok(())
 }
 
 fn tagged(output: &str, key: &str) -> Result<u64> {

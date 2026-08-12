@@ -1,9 +1,12 @@
-schema = 2
+schema = 3
 id = "monitor-capture"
 description = "Finite typed monitor capture exported as PCAPNG"
 image = "qualification"
 isolation = "reset"
 tags = ["qualification", "wifi", "monitor"]
+
+[link]
+phy = "ht40"
 
 [workload]
 kind = "monitor-capture"

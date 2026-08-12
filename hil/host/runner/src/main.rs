@@ -19,6 +19,8 @@ mod controlled_client;
 mod fixture_lock;
 mod icmp_latency;
 mod lab_config;
+mod local_linux_fixture;
+mod network_helper;
 mod openwrt_fixture;
 mod paced_tcp;
 mod paced_udp;
@@ -29,6 +31,7 @@ mod stack_audit;
 mod startup_artifact;
 mod station_ap_absence;
 mod station_ap_loss;
+mod station_fixture;
 mod station_lifecycle;
 mod tcp_traffic;
 mod timebase;
@@ -225,8 +228,19 @@ fn doctor(root: &std::path::Path, lab: &lab_config::LabConfig) -> Result<()> {
         .into());
     }
     println!("serial_device=PASS");
-    openwrt_fixture::doctor(&lab.openwrt)?;
-    println!("openwrt_fixture=PASS");
+    match &lab.station_fixture {
+        lab_config::StationFixtureConfig::LocalLinux(_) => {
+            controlled_ap::doctor_local()?;
+            println!("station_fixture=local-linux status=PASS");
+        }
+        lab_config::StationFixtureConfig::OpenWrt(config) => {
+            openwrt_fixture::doctor(config)?;
+            println!("station_fixture=openwrt status=PASS");
+        }
+        lab_config::StationFixtureConfig::External => {
+            println!("station_fixture=external status=UNMANAGED");
+        }
+    }
     controlled_client::doctor()?;
     println!("controlled_client=PASS");
     for program in ["cargo", "llvm-objcopy", "llvm-nm", "espflash"] {
@@ -400,7 +414,16 @@ fn execute_workload(
             | Workload::Icmp { .. }
             | Workload::StationReconnect { .. }
     )
-    .then(|| controlled_ap::ControlledAp::start(&lab.station, &lab.openwrt))
+    .then(|| {
+        controlled_ap::ControlledAp::start(
+            &lab.station,
+            &lab.station_fixture,
+            selected
+                .link
+                .expect("validated station workload has a link expectation")
+                .phy,
+        )
+    })
     .transpose()?;
 
     match &selected.workload {
@@ -424,12 +447,19 @@ fn execute_workload(
             rx_rate_bps,
             tx_rate_bps,
             payload_bytes,
-            phy,
         } => {
             let mut arguments = Vec::new();
             push_option(&mut arguments, "--seconds", duration_seconds);
             push_option(&mut arguments, "--payload", payload_bytes);
-            push_option(&mut arguments, "--phy", phy.id());
+            push_option(
+                &mut arguments,
+                "--phy",
+                selected
+                    .link
+                    .expect("validated station workload has a link expectation")
+                    .phy
+                    .id(),
+            );
             match direction {
                 Direction::Rx => {
                     push_option(
@@ -571,12 +601,28 @@ fn execute_workload(
         Workload::StationApLoss { timeout_seconds } => {
             let mut arguments = Vec::new();
             push_option(&mut arguments, "--timeout-seconds", timeout_seconds);
-            station_ap_loss::run(arguments, output, lab)
+            station_ap_loss::run(
+                arguments,
+                output,
+                lab,
+                selected
+                    .link
+                    .expect("validated AP-loss workload has a link expectation")
+                    .phy,
+            )
         }
         Workload::StationApAbsence { timeout_seconds } => {
             let mut arguments = Vec::new();
             push_option(&mut arguments, "--timeout-seconds", timeout_seconds);
-            station_ap_absence::run(arguments, output, lab)
+            station_ap_absence::run(
+                arguments,
+                output,
+                lab,
+                selected
+                    .link
+                    .expect("validated AP-absence workload has a link expectation")
+                    .phy,
+            )
         }
         Workload::WifiRole {
             operation,
@@ -596,7 +642,16 @@ fn execute_workload(
             if let Some(length) = snapshot_length {
                 push_option(&mut arguments, "--snapshot-length", length);
             }
-            wifi_control::run(operation.id(), arguments, output, lab)
+            wifi_control::run(
+                operation.id(),
+                arguments,
+                output,
+                lab,
+                selected
+                    .link
+                    .expect("validated Wi-Fi role has a link expectation")
+                    .phy,
+            )
         }
         Workload::MonitorCapture {
             timeout_seconds,
@@ -619,7 +674,15 @@ fn execute_workload(
                 push_option(&mut arguments, "--channel", channel);
             }
             push_option(&mut arguments, "--snapshot-length", snapshot_length);
-            wifi_capture::run(arguments, output, lab)
+            wifi_capture::run(
+                arguments,
+                output,
+                lab,
+                selected
+                    .link
+                    .expect("validated monitor capture has a link expectation")
+                    .phy,
+            )
         }
         Workload::AccessPoint {
             cycles,

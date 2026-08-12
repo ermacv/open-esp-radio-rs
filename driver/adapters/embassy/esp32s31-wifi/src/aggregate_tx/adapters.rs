@@ -83,8 +83,8 @@ impl<
         Ok(WifiControlProgress::TxPending)
     }
 
-    fn set_tx_block_ack_operational(&mut self, tid: u8, operational: bool) {
-        self.set_block_ack_operational(tid, operational);
+    fn set_tx_block_ack_agreement(&mut self, tid: u8, agreement: Option<(u16, bool)>) {
+        self.set_block_ack_agreement(tid, agreement);
     }
 }
 
@@ -195,6 +195,14 @@ where
 
     fn has_prepared(&self) -> bool {
         self.has_prepared_network_tx()
+    }
+
+    fn preferred_batch_size(&self) -> usize {
+        self.preferred_network_batch_size()
+    }
+
+    fn prepared_frame_count(&self) -> usize {
+        self.prepared_network_frame_count()
     }
 
     fn start_prepared<'a>(

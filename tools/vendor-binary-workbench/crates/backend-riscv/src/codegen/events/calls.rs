@@ -84,10 +84,15 @@ pub(super) fn render_event(
             }
             for (output_index, output_model) in model.outputs.iter().enumerate() {
                 match output_model {
-                    ExternalOutputModel::PrivateStackU8 { .. } => {
+                    ExternalOutputModel::PrivateStack { width, .. } => {
+                        let mask = match width {
+                            8 => 0xff,
+                            16 => 0xffff,
+                            _ => u32::MAX,
+                        };
                         writeln!(
                             output,
-                            "{indent}let external_output{token}_{output_index} = external_outcome{token}.outputs[{output_index}] & 0xff_u32;"
+                            "{indent}let external_output{token}_{output_index} = external_outcome{token}.outputs[{output_index}] & {mask:#010x}_u32;"
                         )
                         .unwrap();
                         writeln!(

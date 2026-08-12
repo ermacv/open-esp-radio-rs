@@ -73,8 +73,9 @@ Read the output in this order:
 4. phase summary;
 5. optional `--details` component inventory.
 
-Use `project browse` for interactive navigation or `inspect function` for a
-lossless focused code/CFG/semantic report.
+Use `project browse` for interactive navigation, `inspect function` for a
+lossless focused code/CFG/semantic report, and `inspect flow` for a compact
+bounded path, effect inventory, or reviewed asynchronous route.
 
 ## 5. MMIO to reviewed Rust API
 

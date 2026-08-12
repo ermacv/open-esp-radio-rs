@@ -22,7 +22,7 @@ cargo vendor-binary-workbench advanced ir export \
 
 ## Persistent bundle and random access
 
-Schema v47 is a directory, not one monolithic JSON document. The output path
+Schema v48 is a directory, not one monolithic JSON document. The output path
 contains `manifest.json`, `functions.jsonl`, `function-overview.jsonl`,
 `function-index.json`, `graph.json`, `register-index.json`,
 `data-objects.jsonl`, and `data-object-index.json`. Functions and data objects
@@ -45,7 +45,7 @@ function record plus the graph index; `inspect object` reads one data-object
 record; register review reads only `register-index.json`. Whole-project joins
 may stream all function records, but do not parse the data-object inventory
 unless they consume it. A bundle is valid only when every required member
-exists and has schema v47; the removed single-file representation is rejected.
+exists and has schema v48; the removed single-file representation is rejected.
 
 ```console
 cargo vendor-binary-workbench inspect function libpp:wDev_AppendRxBlocks \
@@ -68,7 +68,7 @@ instructions remain available even when symbolic execution stops.
 By default the prefix selects only report roots. `--include-reachable` also
 exports the transitive internal callees recovered from those roots within the
 same primary artifact. Each function is marked `symbol-prefix-root` or
-`reachable-internal`, and schema v47 records the selection mode plus root and
+`reachable-internal`, and schema v48 records the selection mode plus root and
 included-callee counts. This is an opt-in analysis-size tradeoff: only exactly
 resolved internal edges enqueue a callee, exploration limits remain visible as
 blockers, and companion or independently named primary definitions are not
@@ -139,7 +139,7 @@ cargo vendor-binary-workbench advanced ir export \
 Project identities are namespaced, for example `rom::ets_delay_us` and
 `libphy::phy_init`. Semantic boundaries and all summary counts are aggregated
 across sources. Each named primary is analyzed in its own address space;
-schema v47 records `"linkage_mode": "independent-artifacts"` and does not claim
+schema v48 records `"linkage_mode": "independent-artifacts"` and does not claim
 that separate inputs share an address space or were fully linked. Use one
 linked ELF primary plus `--companion` inputs when cross-image addresses and
 relocations belong to one executable address space.
@@ -185,7 +185,7 @@ terminate the current path.
 
 ## Instruction effects
 
-Schema v47 gives every function an `instruction_effects` array. It is the
+Schema v48 gives every function an `instruction_effects` array. It is the
 canonical lossless join between structural semantics and the decoded body:
 each directly observed MMIO or RAM access retains its originating instruction
 `site`, conservative CFG `block`, access width and kind, typed target, path
@@ -227,7 +227,7 @@ unique exact fragment, its number of occurrences and its first ordinal. The
 diagnostic record also carries a classified `kind`, an optional instruction
 `site`, and a stable `root_id` used by review queues. Pseudo-source uses the
 compact `rendered` form with an explicit `[repeated N times]` suffix. The old
-parallel string blocker arrays are not part of schema v47. This is mechanical report compaction, not
+parallel string blocker arrays are not part of schema v48. This is mechanical report compaction, not
 semantic parsing: later duplicate ordering is not retained, counts are not
 runtime occurrence counts, and backend completeness remains fail-closed.
 
@@ -236,7 +236,7 @@ inventory. It follows resolved internal and unique project edges to a fixed
 point, including recursive components, and groups MMIO, delay, context,
 memory and semantic effects with their origin/path evidence.
 
-Artifact-wide schema-v47 bundles instead persist every direct fact once plus
+Artifact-wide schema-v48 bundles instead persist every direct fact once plus
 the lossless `graph.json`. Precomputing the complete transitive inventory for
 every possible root is quadratic and exhausted memory on the 2997-function
 real linked image. Those summaries therefore use
@@ -564,15 +564,16 @@ reviewed `void`, `constant`, `symbolic-u32` or `symbolic-u64` return model lets
 structural execution cross an otherwise unresolved direct-call boundary. `void` means the
 ordered call is the modeled observable effect and no ABI result exists; it must
 not be represented by a dummy constant. `symbolic-u64` preserves independent
-RV32 `a0` and `a1` words. Reviewed private-stack byte outputs remain independent
-from the return value and carry their call token and output ordinal through
-data-flow and generated reference code. A `modeled-direct-external` call
+RV32 `a0` and `a1` words. Reviewed 8/16/32-bit private-stack outputs remain
+independent from the return value and carry their width, call token, and output
+ordinal through data-flow and generated reference code. A
+`modeled-direct-external` call
 retains its operation, evidence ID and replacement hint. ESP32-S31 uses a constant model for
 the fixed 40 MHz `rtc_clk_xtal_freq_get` platform input. An annotation with
 `unmodeled` return/effects remains fail-closed.
 
 Reviewed trampoline calls additionally persist the complete executable model
-in linked-IR schema v47: model ID, return model, and each output kind, pointer
+in linked-IR schema v48: model ID, return model, and each output kind, pointer
 argument and width. This keeps navigation and later review honest without
 teaching the generic schema RTOS-specific meanings.
 

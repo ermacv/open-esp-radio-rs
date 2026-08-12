@@ -80,10 +80,28 @@ pub(crate) struct ReviewedEventRoute {
     pub(crate) selector_value: u32,
     pub(crate) receiver: Option<String>,
     pub(crate) execution_context: String,
-    pub(crate) handler_profile: String,
-    pub(crate) handler_source: String,
-    pub(crate) handler: String,
+    pub(crate) consumer_profile: String,
+    pub(crate) consumer_source: String,
+    pub(crate) consumer_entry: String,
+    pub(crate) delivery: ReviewedEventDelivery,
+    pub(crate) case_handler: Option<ReviewedEventCaseHandler>,
     pub(crate) rationale: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ReviewedEventDelivery {
+    pub(crate) operation: String,
+    pub(crate) output_role: String,
+    pub(crate) selector_offset: u32,
+    pub(crate) selector_width: u8,
+    pub(crate) encoding: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ReviewedEventCaseHandler {
+    pub(crate) profile: String,
+    pub(crate) source: String,
+    pub(crate) function: String,
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -244,12 +262,12 @@ impl FunctionPack {
             )
         })?;
         let document: DocumentMut = source_document.clone().into_mut();
-        if document.get("schema").and_then(Item::as_integer) != Some(5) {
+        if document.get("schema").and_then(Item::as_integer) != Some(6) {
             return Err(crate::error::WorkbenchError::manifest_source(
                 "function pack",
                 path,
                 &input,
-                "requires schema = 5",
+                "requires schema = 6",
                 source_document.get("schema").and_then(Item::span),
             ));
         }

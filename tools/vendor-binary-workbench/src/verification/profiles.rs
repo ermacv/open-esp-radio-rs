@@ -192,7 +192,11 @@ struct CallAllocationInput {
     rename_all_fields = "kebab-case"
 )]
 enum CallOutputInput {
-    PrivateStackU8 { pointer_argument: u8, value: u8 },
+    PrivateStack {
+        pointer_argument: u8,
+        width: u8,
+        value: u32,
+    },
 }
 
 impl CallResponseInput {
@@ -225,8 +229,9 @@ impl CallResponseInput {
         let mut output_arguments = BTreeSet::new();
         let mut outputs = Vec::with_capacity(self.outputs.len());
         for output in self.outputs {
-            let CallOutputInput::PrivateStackU8 {
+            let CallOutputInput::PrivateStack {
                 pointer_argument,
+                width,
                 value,
             } = output;
             if pointer_argument >= 8 {
@@ -241,8 +246,23 @@ impl CallResponseInput {
                     self.symbol
                 )));
             }
-            outputs.push(crate::execution::ModeledCallOutput::PrivateStackU8 {
+            if !matches!(width, 8 | 16 | 32)
+                || value
+                    & !match width {
+                        8 => 0xff,
+                        16 => 0xffff,
+                        _ => u32::MAX,
+                    }
+                    != 0
+            {
+                return Err(crate::Error::invalid(format!(
+                    "scenario {scenario} {side} call {} has invalid {width}-bit output value {value:#010x}",
+                    self.symbol
+                )));
+            }
+            outputs.push(crate::execution::ModeledCallOutput::PrivateStack {
                 pointer_argument,
+                width,
                 value,
             });
         }

@@ -74,7 +74,7 @@ struct StoredRustReplacementProjection {
     verification_probes: Vec<String>,
 }
 
-pub(super) fn replacement_evidence(
+pub(crate) fn replacement_evidence(
     source: &str,
     symbol: &str,
     project: &ProjectSpec,

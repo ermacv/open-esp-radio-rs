@@ -19,8 +19,11 @@ use serde::Serialize;
 
 use crate::{ProjectSpec, Result, artifact, artifacts};
 use origin::origin_evidence;
-use replacement::replacement_evidence;
+pub(crate) use replacement::replacement_evidence;
 pub use replacement::{ReplacementEvidence, ReplacementProofEvidence};
+
+const MAX_GRAPH_NODES: usize = 4_096;
+const MAX_GRAPH_EDGES: usize = 32_768;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct FunctionInvestigationReport {
@@ -119,12 +122,23 @@ pub struct SemanticFunctionEvidence {
     pub calls: Vec<CallKnowledgeEvidence>,
     pub reachable_functions: Vec<String>,
     pub call_graph_edges: Vec<CallGraphEdgeEvidence>,
+    pub graph_limits: InvestigationGraphLimits,
     pub event_dispatches: Vec<EventDispatchEvidence>,
     pub reviewed_event_routes: Vec<ReviewedEventRouteEvidence>,
     /// Schema-validated persistent function record. Keeping the complete
     /// record prevents this focused view from silently dropping new semantic
     /// evidence when the linked-IR schema grows.
     pub linked_ir: serde_json::Value,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct InvestigationGraphLimits {
+    pub max_depth: usize,
+    pub max_visited_nodes: usize,
+    pub max_examined_edges: usize,
+    pub visited_nodes: usize,
+    pub examined_edges: usize,
+    pub reached: Option<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -135,12 +149,21 @@ pub struct ReviewedEventRouteEvidence {
     pub selector_value: u32,
     pub receiver: Option<String>,
     pub execution_context: String,
-    pub handler_profile: String,
-    pub handler_source: String,
-    pub handler: String,
+    pub consumer_profile: String,
+    pub consumer_source: String,
+    pub consumer_entry: String,
+    pub delivery_operation: String,
+    pub delivery_output_role: String,
+    pub delivery_selector_offset: u32,
+    pub delivery_selector_width: u8,
+    pub delivery_encoding: String,
+    pub case_handler_profile: Option<String>,
+    pub case_handler_source: Option<String>,
+    pub case_handler: Option<String>,
     pub rationale: String,
     pub dispatch_constraint_matched: bool,
-    pub handler_analysis: Option<EventHandlerAnalysisEvidence>,
+    pub consumer_analysis: Option<EventHandlerAnalysisEvidence>,
+    pub case_handler_analysis: Option<EventHandlerAnalysisEvidence>,
     pub blockers: Vec<String>,
 }
 
@@ -152,6 +175,8 @@ pub struct EventHandlerAnalysisEvidence {
     pub direct_instruction_effects: usize,
     pub direct_calls: usize,
     pub reachable_functions: usize,
+    pub reachability_depth: usize,
+    pub reachability_limit: Option<String>,
     pub blockers: Vec<String>,
 }
 
@@ -313,7 +338,7 @@ pub(crate) fn investigate(
         }
     };
     Ok(FunctionInvestigationReport {
-        schema_version: 7,
+        schema_version: 8,
         command: "inspect function",
         source: request.source.to_owned(),
         symbol: request.symbol.to_owned(),
@@ -532,7 +557,7 @@ fn semantic_evidence(
         let complete = function.complete;
         let exact = function.exact();
         let pseudo = function.pseudo.clone();
-        let blockers = function
+        let mut blockers = function
             .diagnostics()
             .map(|(layer, diagnostic)| BlockerExplanationEvidence {
                 root_id: diagnostic.root_id.clone(),
@@ -564,9 +589,40 @@ fn semantic_evidence(
                 guards: call.guard_expressions(),
             })
             .collect::<Vec<_>>();
-        let reachable_functions = reader.reachable_function_identities(&function.identity);
-        let mut call_graph_edges = reader
-            .graph_slice(&function.identity, graph_depth, include_callers)
+        let search_limits = artifacts::GraphSearchLimits {
+            max_depth: graph_depth,
+            max_visited_nodes: MAX_GRAPH_NODES,
+            max_examined_edges: MAX_GRAPH_EDGES,
+        };
+        let reachability = reader.reachable_from(&function.identity, search_limits);
+        let reachable_functions = reachability
+            .identities
+            .iter()
+            .filter(|identity| *identity != &function.identity)
+            .cloned()
+            .collect::<Vec<_>>();
+        let graph_slice = reader.graph_slice(
+            &function.identity,
+            graph_depth,
+            include_callers,
+            search_limits,
+        );
+        let graph_limit = graph_slice.limit.or(reachability.limit);
+        if let Some(limit) = graph_limit.filter(|limit| *limit != "max-depth") {
+            blockers.push(BlockerExplanationEvidence {
+                root_id: format!("inspect-graph-limit:{}", function.identity),
+                layer: "navigation".to_owned(),
+                kind: limit.to_owned(),
+                site: None,
+                message: format!("focused graph traversal reached {limit}"),
+                required_model: "narrow the root/depth or raise the explicit investigation budget"
+                    .to_owned(),
+                relocation_candidates: Vec::new(),
+                confidence: "bounded-navigation",
+            });
+        }
+        let mut call_graph_edges = graph_slice
+            .edges
             .into_iter()
             .map(|edge| CallGraphEdgeEvidence {
                 caller: edge.caller,
@@ -625,6 +681,14 @@ fn semantic_evidence(
             calls,
             reachable_functions,
             call_graph_edges,
+            graph_limits: InvestigationGraphLimits {
+                max_depth: graph_depth,
+                max_visited_nodes: MAX_GRAPH_NODES,
+                max_examined_edges: MAX_GRAPH_EDGES,
+                visited_nodes: graph_slice.visited_nodes.max(reachability.visited_nodes),
+                examined_edges: graph_slice.examined_edges.max(reachability.examined_edges),
+                reached: graph_limit.map(str::to_owned),
+            },
             event_dispatches,
             reviewed_event_routes,
             linked_ir,
@@ -659,72 +723,114 @@ fn event_route_evidence(
             route.mechanism, route.selector_role
         ));
     }
-    let handler_analysis = if dispatch_constraint_matched {
-        let Some(profile) = project
-            .ir_profiles
-            .iter()
-            .find(|profile| profile.id == route.handler_profile)
-        else {
-            blockers.push(format!(
-                "handler profile {:?} is not configured",
-                route.handler_profile
-            ));
-            return Ok(reviewed_event_route(route, false, None, blockers));
-        };
-        if !profile.output.is_dir() {
-            blockers.push(format!(
-                "handler profile {:?} has not been generated",
-                route.handler_profile
-            ));
-            None
-        } else {
-            let reader = artifacts::LinkedIrReader::open(&profile.output)?;
-            match reader.get_function_by_identity(&route.handler)? {
-                Some(handler) if handler.source == route.handler_source => {
-                    let handler_blockers = handler.blockers().map(str::to_owned).collect();
-                    Some(EventHandlerAnalysisEvidence {
-                        identity: handler.identity.clone(),
-                        complete: handler.complete,
-                        exact: handler.exact(),
-                        direct_instruction_effects: handler.direct_instruction_effect_count(),
-                        direct_calls: handler.direct_call_count(),
-                        reachable_functions: reader
-                            .reachable_function_identities(&handler.identity)
-                            .len(),
-                        blockers: handler_blockers,
-                    })
-                }
-                Some(_) => {
-                    blockers.push(format!(
-                        "handler {:?} does not belong to source {:?}",
-                        route.handler, route.handler_source
-                    ));
-                    None
-                }
-                None => {
-                    blockers.push(format!(
-                        "handler {:?} is absent from profile {:?}",
-                        route.handler, route.handler_profile
-                    ));
-                    None
-                }
-            }
-        }
+    let consumer_analysis = dispatch_constraint_matched
+        .then(|| {
+            event_function_analysis(
+                project,
+                &route.consumer_profile,
+                &route.consumer_source,
+                &route.consumer_entry,
+                "consumer entry",
+                &mut blockers,
+            )
+        })
+        .transpose()?
+        .flatten();
+    let case_handler_analysis = if dispatch_constraint_matched {
+        route
+            .case_handler
+            .as_ref()
+            .map(|handler| {
+                event_function_analysis(
+                    project,
+                    &handler.profile,
+                    &handler.source,
+                    &handler.function,
+                    "case handler",
+                    &mut blockers,
+                )
+            })
+            .transpose()?
+            .flatten()
     } else {
         None
     };
     Ok(reviewed_event_route(
         route,
         dispatch_constraint_matched,
-        handler_analysis,
+        consumer_analysis,
+        case_handler_analysis,
         blockers,
     ))
+}
+
+fn event_function_analysis(
+    project: &ProjectSpec,
+    profile_id: &str,
+    source: &str,
+    identity: &str,
+    role: &str,
+    blockers: &mut Vec<String>,
+) -> Result<Option<EventHandlerAnalysisEvidence>> {
+    let Some(profile) = project
+        .ir_profiles
+        .iter()
+        .find(|profile| profile.id == profile_id)
+    else {
+        blockers.push(format!("{role} profile {profile_id:?} is not configured"));
+        return Ok(None);
+    };
+    if !profile.output.is_dir() {
+        blockers.push(format!(
+            "{role} profile {profile_id:?} has not been generated"
+        ));
+        return Ok(None);
+    }
+    let reader = artifacts::LinkedIrReader::open(&profile.output)?;
+    match reader.get_function_by_identity(identity)? {
+        Some(function) if function.source == source => {
+            let function_blockers = function.blockers().map(str::to_owned).collect();
+            let reachability_depth = 12;
+            let reachability = reader.reachable_from(
+                &function.identity,
+                artifacts::GraphSearchLimits {
+                    max_depth: reachability_depth,
+                    max_visited_nodes: MAX_GRAPH_NODES,
+                    max_examined_edges: MAX_GRAPH_EDGES,
+                },
+            );
+            Ok(Some(EventHandlerAnalysisEvidence {
+                identity: function.identity.clone(),
+                complete: function.complete,
+                exact: function.exact(),
+                direct_instruction_effects: function.direct_instruction_effect_count(),
+                direct_calls: function.direct_call_count(),
+                reachable_functions: reachability.identities.len().saturating_sub(1),
+                reachability_depth,
+                reachability_limit: reachability.limit.map(str::to_owned),
+                blockers: function_blockers,
+            }))
+        }
+        Some(_) => {
+            blockers.push(format!(
+                "{role} {identity:?} does not belong to source {source:?}"
+            ));
+            Ok(None)
+        }
+        None => {
+            blockers.push(format!(
+                "{role} {identity:?} is absent from profile {profile_id:?}"
+            ));
+            Ok(None)
+        }
+    }
 }
 
 fn reviewed_event_route(
     route: &crate::function_workspace::ReviewedEventRoute,
     dispatch_constraint_matched: bool,
-    handler_analysis: Option<EventHandlerAnalysisEvidence>,
+    consumer_analysis: Option<EventHandlerAnalysisEvidence>,
+    case_handler_analysis: Option<EventHandlerAnalysisEvidence>,
     blockers: Vec<String>,
 ) -> ReviewedEventRouteEvidence {
     ReviewedEventRouteEvidence {
@@ -734,12 +840,30 @@ fn reviewed_event_route(
         selector_value: route.selector_value,
         receiver: route.receiver.clone(),
         execution_context: route.execution_context.clone(),
-        handler_profile: route.handler_profile.clone(),
-        handler_source: route.handler_source.clone(),
-        handler: route.handler.clone(),
+        consumer_profile: route.consumer_profile.clone(),
+        consumer_source: route.consumer_source.clone(),
+        consumer_entry: route.consumer_entry.clone(),
+        delivery_operation: route.delivery.operation.clone(),
+        delivery_output_role: route.delivery.output_role.clone(),
+        delivery_selector_offset: route.delivery.selector_offset,
+        delivery_selector_width: route.delivery.selector_width,
+        delivery_encoding: route.delivery.encoding.clone(),
+        case_handler_profile: route
+            .case_handler
+            .as_ref()
+            .map(|handler| handler.profile.clone()),
+        case_handler_source: route
+            .case_handler
+            .as_ref()
+            .map(|handler| handler.source.clone()),
+        case_handler: route
+            .case_handler
+            .as_ref()
+            .map(|handler| handler.function.clone()),
         rationale: route.rationale.clone(),
         dispatch_constraint_matched,
-        handler_analysis,
+        consumer_analysis,
+        case_handler_analysis,
         blockers,
     }
 }

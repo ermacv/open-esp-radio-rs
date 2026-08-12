@@ -4,8 +4,8 @@ use rv_asm::Reg;
 
 use super::super::{
     AllocationLifecycleEvent, ExecutionEvent, ExecutionProducer, ExecutionTimelineEvent,
-    MemoryOwner, MemoryOwnership, MemoryRange, ModeledCallOutput, ModeledCallResponse, OrderedCall,
-    TableLifecycleEvent, execution_stack_contains,
+    MemoryOwner, MemoryOwnership, MemoryRange, MmioValue, ModeledCallOutput, ModeledCallResponse,
+    OrderedCall, TableLifecycleEvent, execution_stack_contains,
 };
 use super::Machine;
 use crate::Result;
@@ -178,8 +178,9 @@ impl Machine<'_> {
         let mut output_arguments = std::collections::BTreeSet::new();
         for output in response.outputs {
             match output {
-                ModeledCallOutput::PrivateStackU8 {
+                ModeledCallOutput::PrivateStack {
                     pointer_argument,
+                    width,
                     value,
                 } => {
                     if pointer_argument >= 8 {
@@ -194,6 +195,12 @@ impl Machine<'_> {
                         )
                         .into());
                     }
+                    if !matches!(width, 8 | 16 | 32) || value & !MmioValue::mask(width) != 0 {
+                        return Err(format!(
+                            "modeled call {symbol} at {site:#010x} has invalid {width}-bit output value {value:#010x}"
+                        )
+                        .into());
+                    }
                     let address =
                         self.registers[usize::from(Reg::A0.0) + usize::from(pointer_argument)];
                     if !execution_stack_contains(address) {
@@ -202,7 +209,7 @@ impl Machine<'_> {
                         )
                         .into());
                     }
-                    self.write(address, 8, u32::from(value))?;
+                    self.write(address, width, value)?;
                 }
             }
         }

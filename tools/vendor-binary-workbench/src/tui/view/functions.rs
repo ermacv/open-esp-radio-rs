@@ -295,9 +295,17 @@ pub(super) fn render(frame: &mut Frame<'_>, state: &BrowserState, area: Rect) {
                     }
                     if !semantic.call_graph_edges.is_empty() {
                         lines.push(Line::from(format!(
-                            "Reachable call graph: {} functions, {} edges",
+                            "Reachable call graph: depth={} {} functions, {} edges, {} visited{}",
+                            semantic.graph_limits.max_depth,
                             semantic.reachable_functions.len(),
-                            semantic.call_graph_edges.len()
+                            semantic.call_graph_edges.len(),
+                            semantic.graph_limits.visited_nodes,
+                            semantic
+                                .graph_limits
+                                .reached
+                                .as_deref()
+                                .map(|limit| format!(" ({limit})"))
+                                .unwrap_or_default(),
                         )));
                         lines.extend(semantic.call_graph_edges.iter().take(100).map(|edge| {
                             Line::from(format!(
@@ -345,25 +353,56 @@ pub(super) fn render(frame: &mut Frame<'_>, state: &BrowserState, area: Rect) {
                         lines.push(Line::from("Reviewed event routes:"));
                         for route in &semantic.reviewed_event_routes {
                             lines.push(Line::from(format!(
-                                "  {}: {} {}={:#010x} -> {} [{}]",
+                                "  {}: {} {}={:#010x} -> {} via {} [{}]",
                                 route.id,
                                 route.mechanism,
                                 route.selector_role,
                                 route.selector_value,
-                                route.handler,
+                                route
+                                    .case_handler
+                                    .as_deref()
+                                    .unwrap_or("unmapped case handler"),
+                                route.consumer_entry,
                                 if route.dispatch_constraint_matched {
                                     "matched"
                                 } else {
                                     "blocked"
                                 }
                             )));
-                            if let Some(handler) = &route.handler_analysis {
+                            if let Some(handler) = &route.consumer_analysis {
                                 lines.push(Line::from(format!(
-                                    "    handler complete={} effects={} calls={} reachable={}",
+                                    "    consumer complete={} effects={} calls={} reachable={} depth={}{}",
                                     handler.complete,
                                     handler.direct_instruction_effects,
                                     handler.direct_calls,
-                                    handler.reachable_functions
+                                    handler.reachable_functions,
+                                    handler.reachability_depth,
+                                    handler
+                                        .reachability_limit
+                                        .as_deref()
+                                        .map(|limit| format!(" ({limit})"))
+                                        .unwrap_or_default(),
+                                )));
+                                lines.extend(
+                                    handler
+                                        .blockers
+                                        .iter()
+                                        .map(|blocker| Line::from(format!("      ! {blocker}"))),
+                                );
+                            }
+                            if let Some(handler) = &route.case_handler_analysis {
+                                lines.push(Line::from(format!(
+                                    "    case-handler complete={} effects={} calls={} reachable={} depth={}{}",
+                                    handler.complete,
+                                    handler.direct_instruction_effects,
+                                    handler.direct_calls,
+                                    handler.reachable_functions,
+                                    handler.reachability_depth,
+                                    handler
+                                        .reachability_limit
+                                        .as_deref()
+                                        .map(|limit| format!(" ({limit})"))
+                                        .unwrap_or_default(),
                                 )));
                                 lines.extend(
                                     handler

@@ -177,7 +177,10 @@ fn apply_reviewed_external_call(
     let mut private_stack_outputs = Vec::new();
     if let Some(model) = execution_model {
         for (output_index, output) in model.outputs.iter().enumerate() {
-            let ExternalOutputModel::PrivateStackU8 { pointer_argument } = output;
+            let ExternalOutputModel::PrivateStack {
+                pointer_argument,
+                width,
+            } = output;
             let Ok(output_index) = u8::try_from(output_index) else {
                 state.reference_blockers.push(format!(
                     "unsupported-reviewed-external-output-count at {pc:#x}: {} ({}) has more than 256 outputs",
@@ -216,9 +219,13 @@ fn apply_reviewed_external_call(
                 call_token: state.next_external_call_token,
                 output_index,
             }
-            .and(0xff);
-            std::sync::Arc::make_mut(&mut state.stack).store(*offset, 8, &output);
-            private_stack_outputs.push((*offset, output));
+            .and(match width {
+                8 => 0xff,
+                16 => 0xffff,
+                _ => u32::MAX,
+            });
+            std::sync::Arc::make_mut(&mut state.stack).store(*offset, *width, &output);
+            private_stack_outputs.push((*offset, *width, output));
             arguments[usize::from(*pointer_argument)] = SymbolicValue::Constant(0);
         }
     }
@@ -230,12 +237,12 @@ fn apply_reviewed_external_call(
             candidates,
             arguments,
         });
-    for (offset, value) in private_stack_outputs {
+    for (offset, width, value) in private_stack_outputs {
         state
             .reference_events
             .push(DraftReferenceEvent::PrivateStackStore {
                 offset,
-                width: 8,
+                width,
                 value,
             });
     }

@@ -1,4 +1,4 @@
-//! Complete owned DTO for linked-IR schema v47.
+//! Complete owned DTO for linked-IR schema v48.
 
 #![allow(
     dead_code,
@@ -189,7 +189,7 @@ pub(crate) struct StoredFunction {
     direct_mmio_predicates: Vec<StoredDirectMmioPredicate>,
     pub(crate) mmio_accesses: Vec<StoredMmioAccess>,
     pub(crate) instruction_effects: Vec<StoredInstructionEffect>,
-    delays: Vec<StoredDelay>,
+    pub(crate) delays: Vec<StoredDelay>,
     context_accesses: Vec<StoredContextAccess>,
     context_fields: Vec<StoredFunctionContextField>,
     memory_accesses: Vec<StoredMemoryAccess>,
@@ -468,7 +468,7 @@ pub(crate) struct StoredCall {
     execution_model: Option<StoredExternalExecutionModel>,
     semantics: Option<String>,
     pub(crate) semantic_operation: Option<String>,
-    semantic_contract: Option<StoredSemanticContract>,
+    pub(crate) semantic_contract: Option<StoredSemanticContract>,
     replacement_hint: Option<String>,
     project_symbol: Option<String>,
     project_candidates: Vec<String>,
@@ -517,6 +517,14 @@ impl StoredCall {
 
     pub(crate) fn execution_model_id(&self) -> Option<&str> {
         self.execution_model.as_ref().map(|model| model.id.as_str())
+    }
+
+    pub(crate) fn models_output(&self, pointer_argument: usize, width: u8) -> bool {
+        self.execution_model.as_ref().is_some_and(|model| {
+            model.outputs.iter().any(|output| {
+                usize::from(output.pointer_argument) == pointer_argument && output.width == width
+            })
+        })
     }
 
     pub(crate) const fn argument_shapes(&self) -> usize {
@@ -593,27 +601,27 @@ struct StoredTrampoline {
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-struct StoredSemanticContract {
+pub(crate) struct StoredSemanticContract {
     source: String,
     id: String,
     evidence: String,
-    event_dispatch: Option<StoredEventDispatchContract>,
+    pub(crate) event_dispatch: Option<StoredEventDispatchContract>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-struct StoredEventDispatchContract {
-    mechanism: String,
-    execution_context: String,
-    receiver: Option<String>,
-    argument_roles: Vec<StoredEventDispatchArgumentRole>,
+pub(crate) struct StoredEventDispatchContract {
+    pub(crate) mechanism: String,
+    pub(crate) execution_context: String,
+    pub(crate) receiver: Option<String>,
+    pub(crate) argument_roles: Vec<StoredEventDispatchArgumentRole>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-struct StoredEventDispatchArgumentRole {
-    role: String,
-    argument: String,
+pub(crate) struct StoredEventDispatchArgumentRole {
+    pub(crate) role: String,
+    pub(crate) argument: String,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -844,11 +852,11 @@ impl StoredInstructionEffect {
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-struct StoredDelay {
-    ordinal: usize,
-    path: String,
-    micros: String,
-    constant_micros: Option<u32>,
+pub(crate) struct StoredDelay {
+    pub(crate) ordinal: usize,
+    pub(crate) path: String,
+    pub(crate) micros: String,
+    pub(crate) constant_micros: Option<u32>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -970,8 +978,8 @@ pub(crate) struct StoredEffectSummary {
     max_depth: usize,
     pub(crate) reachable_function_count: usize,
     recursive: bool,
-    mmio_registers: Vec<StoredSummaryMmio>,
-    delays: Vec<StoredSummaryDelay>,
+    pub(crate) mmio_registers: Vec<StoredSummaryMmio>,
+    pub(crate) delays: Vec<StoredSummaryDelay>,
     pub(crate) semantic_operations: Vec<StoredSemanticOperation>,
     pub(crate) context_projection_materialized: bool,
     pub(crate) context_projection_complete: bool,
@@ -981,39 +989,39 @@ pub(crate) struct StoredEffectSummary {
     pub(crate) memory_fields: Vec<StoredMemoryField>,
     pub(crate) trampoline_calls: Vec<StoredProjectedTrampolineCall>,
     semantic_action_count: usize,
-    semantic_actions_materialized: bool,
-    semantic_actions: Vec<StoredProjectedSemanticAction>,
+    pub(crate) semantic_actions_materialized: bool,
+    pub(crate) semantic_actions: Vec<StoredProjectedSemanticAction>,
     pub(crate) event_dispatches: Vec<StoredEventDispatch>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-struct StoredSummaryMmio {
-    address: u32,
-    width: u8,
-    access_shapes: usize,
-    accesses: Vec<String>,
-    modes: Vec<String>,
-    origins: Vec<String>,
+pub(crate) struct StoredSummaryMmio {
+    pub(crate) address: u32,
+    pub(crate) width: u8,
+    pub(crate) access_shapes: usize,
+    pub(crate) accesses: Vec<String>,
+    pub(crate) modes: Vec<String>,
+    pub(crate) origins: Vec<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-struct StoredSummaryDelay {
-    micros: String,
-    constant_micros: Option<u32>,
-    delay_shapes: usize,
-    origins: Vec<String>,
+pub(crate) struct StoredSummaryDelay {
+    pub(crate) micros: String,
+    pub(crate) constant_micros: Option<u32>,
+    pub(crate) delay_shapes: usize,
+    pub(crate) origins: Vec<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct StoredSemanticOperation {
     pub(crate) operation: String,
-    call_shapes: usize,
-    targets: Vec<String>,
-    replacement_hints: Vec<String>,
-    origins: Vec<String>,
+    pub(crate) call_shapes: usize,
+    pub(crate) targets: Vec<String>,
+    pub(crate) replacement_hints: Vec<String>,
+    pub(crate) origins: Vec<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -1069,17 +1077,17 @@ pub(crate) struct StoredProjectedTrampolineCall {
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-struct StoredProjectedSemanticAction {
-    site_path: Vec<Option<u32>>,
-    operation: String,
-    target: String,
+pub(crate) struct StoredProjectedSemanticAction {
+    pub(crate) site_path: Vec<Option<u32>>,
+    pub(crate) operation: String,
+    pub(crate) target: String,
     contract: Option<StoredSemanticContract>,
-    replacement_hint: Option<String>,
-    origin: String,
-    path: String,
-    site: Option<u32>,
-    argument_shapes: usize,
-    arguments: Vec<StoredProjectedCallArgument>,
+    pub(crate) replacement_hint: Option<String>,
+    pub(crate) origin: String,
+    pub(crate) path: String,
+    pub(crate) site: Option<u32>,
+    pub(crate) argument_shapes: usize,
+    pub(crate) arguments: Vec<StoredProjectedCallArgument>,
     guard_scopes: Option<Vec<StoredGuardScope>>,
 }
 

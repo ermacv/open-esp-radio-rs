@@ -28,8 +28,9 @@ const EXECUTION_CONTRACTS: HarnessContractSpec = HarnessContractSpec {
     entry_contracts: &[],
     diagnostic_calls: &[],
 };
-const INVALID_OUTPUTS: &[ExternalOutputModel] = &[ExternalOutputModel::PrivateStackU8 {
+const INVALID_OUTPUTS: &[ExternalOutputModel] = &[ExternalOutputModel::PrivateStack {
     pointer_argument: 1,
+    width: 8,
 }];
 const INVALID_EXECUTION_MODELS: &[ExternalCallModelSpec] = &[ExternalCallModelSpec {
     id: "queue-send-from-isr",

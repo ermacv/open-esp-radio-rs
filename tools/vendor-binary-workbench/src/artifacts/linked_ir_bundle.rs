@@ -1,6 +1,7 @@
 //! Random-access reader for persistent linked-IR bundles.
 
 use std::{
+    collections::{BTreeMap, BTreeSet, VecDeque},
     fs,
     io::{BufRead, Read, Seek, SeekFrom},
     path::{Path, PathBuf},
@@ -44,7 +45,7 @@ struct FunctionIndexDocument {
     records: Vec<FunctionIndexRecord>,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 struct FunctionIndexRecord {
     identity: String,
@@ -56,7 +57,7 @@ struct FunctionIndexRecord {
     length: u64,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct StoredGraphEdge {
     pub(crate) caller: String,
@@ -106,6 +107,39 @@ pub(crate) struct LinkedIrReader {
     index: Vec<FunctionIndexRecord>,
     data_object_index: Vec<DataObjectIndexRecord>,
     graph: Vec<StoredGraphEdge>,
+    outgoing: BTreeMap<String, Vec<usize>>,
+    incoming: BTreeMap<String, Vec<usize>>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct GraphSearchLimits {
+    pub(crate) max_depth: usize,
+    pub(crate) max_visited_nodes: usize,
+    pub(crate) max_examined_edges: usize,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct GraphPathSearch {
+    pub(crate) path: Option<Vec<StoredGraphEdge>>,
+    pub(crate) visited_nodes: usize,
+    pub(crate) examined_edges: usize,
+    pub(crate) limit: Option<&'static str>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct GraphReachability {
+    pub(crate) identities: BTreeSet<String>,
+    pub(crate) visited_nodes: usize,
+    pub(crate) examined_edges: usize,
+    pub(crate) limit: Option<&'static str>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct GraphSlice {
+    pub(crate) edges: Vec<StoredGraphEdge>,
+    pub(crate) visited_nodes: usize,
+    pub(crate) examined_edges: usize,
+    pub(crate) limit: Option<&'static str>,
 }
 
 pub(crate) struct LinkedIrReviewProjection {
@@ -159,12 +193,21 @@ impl LinkedIrReader {
                 path.display()
             )));
         }
+        let graph = graph.edges;
+        let mut outgoing = BTreeMap::<String, Vec<usize>>::new();
+        let mut incoming = BTreeMap::<String, Vec<usize>>::new();
+        for (index, edge) in graph.iter().enumerate() {
+            outgoing.entry(edge.caller.clone()).or_default().push(index);
+            incoming.entry(edge.callee.clone()).or_default().push(index);
+        }
         Ok(Self {
             root: path.to_owned(),
             manifest,
             index: index.records,
             data_object_index: data_object_index.records,
-            graph: graph.edges,
+            graph,
+            outgoing,
+            incoming,
         })
     }
 
@@ -209,31 +252,212 @@ impl LinkedIrReader {
             .transpose()
     }
 
+    pub(crate) fn function_identities(&self, source: &str, selector: &str) -> Vec<String> {
+        self.index
+            .iter()
+            .filter(|record| record.source == source)
+            .filter(|record| record.identity == selector || record.symbol == selector)
+            .map(|record| record.identity.clone())
+            .collect()
+    }
+
+    pub(crate) fn matching_function_identities(&self, selector: &str) -> BTreeSet<String> {
+        self.index
+            .iter()
+            .filter(|record| record.identity == selector || record.symbol == selector)
+            .map(|record| record.identity.clone())
+            .collect()
+    }
+
+    pub(crate) fn mmio_function_identities(
+        &self,
+        register: Option<&str>,
+        address: Option<u32>,
+    ) -> Result<BTreeSet<String>> {
+        let registers = self.read_registers()?;
+        Ok(registers
+            .into_iter()
+            .filter(|candidate| {
+                register.is_none_or(|name| candidate.names.iter().any(|item| item == name))
+                    && address.is_none_or(|value| candidate.address == value)
+            })
+            .flat_map(|candidate| candidate.functions)
+            .collect())
+    }
+
+    pub(crate) fn shortest_path_to_any(
+        &self,
+        root: &str,
+        targets: &BTreeSet<String>,
+        limits: GraphSearchLimits,
+    ) -> GraphPathSearch {
+        if targets.contains(root) {
+            return GraphPathSearch {
+                path: Some(Vec::new()),
+                visited_nodes: 1,
+                examined_edges: 0,
+                limit: None,
+            };
+        }
+
+        let mut queue = VecDeque::from([(root.to_owned(), 0usize)]);
+        let mut visited = BTreeSet::from([root.to_owned()]);
+        let mut predecessor = BTreeMap::<String, usize>::new();
+        let mut examined_edges = 0usize;
+        let mut depth_exhausted = false;
+        let mut limit = None;
+        let mut reached = None;
+
+        'search: while let Some((node, depth)) = queue.pop_front() {
+            if depth >= limits.max_depth {
+                depth_exhausted |= self.has_traversable_outgoing(&node);
+                continue;
+            }
+            for &edge_index in self.outgoing.get(&node).into_iter().flatten() {
+                if examined_edges >= limits.max_examined_edges {
+                    limit = Some("max-examined-edges");
+                    break 'search;
+                }
+                examined_edges += 1;
+                let edge = &self.graph[edge_index];
+                if !traversable_call_edge(edge) {
+                    continue;
+                }
+                if visited.contains(&edge.callee) {
+                    continue;
+                }
+                if visited.len() >= limits.max_visited_nodes {
+                    limit = Some("max-visited-nodes");
+                    break 'search;
+                }
+                visited.insert(edge.callee.clone());
+                predecessor.insert(edge.callee.clone(), edge_index);
+                if targets.contains(&edge.callee) {
+                    reached = Some(edge.callee.clone());
+                    break 'search;
+                }
+                queue.push_back((edge.callee.clone(), depth + 1));
+            }
+        }
+
+        let path = reached.map(|mut node| {
+            let mut reversed = Vec::new();
+            while node != root {
+                let edge_index = predecessor[&node];
+                let edge = self.graph[edge_index].clone();
+                node = edge.caller.clone();
+                reversed.push(edge);
+            }
+            reversed.reverse();
+            reversed
+        });
+        if path.is_none() && limit.is_none() && depth_exhausted {
+            limit = Some("max-depth");
+        }
+        GraphPathSearch {
+            path,
+            visited_nodes: visited.len(),
+            examined_edges,
+            limit,
+        }
+    }
+
+    pub(crate) fn reachable_from(
+        &self,
+        root: &str,
+        limits: GraphSearchLimits,
+    ) -> GraphReachability {
+        let mut queue = VecDeque::from([(root.to_owned(), 0usize)]);
+        let mut visited = BTreeSet::from([root.to_owned()]);
+        let mut examined_edges = 0usize;
+        let mut depth_exhausted = false;
+        let mut limit = None;
+
+        'search: while let Some((node, depth)) = queue.pop_front() {
+            if depth >= limits.max_depth {
+                depth_exhausted |= self.has_traversable_outgoing(&node);
+                continue;
+            }
+            for &edge_index in self.outgoing.get(&node).into_iter().flatten() {
+                if examined_edges >= limits.max_examined_edges {
+                    limit = Some("max-examined-edges");
+                    break 'search;
+                }
+                examined_edges += 1;
+                let edge = &self.graph[edge_index];
+                if !traversable_call_edge(edge) {
+                    continue;
+                }
+                if visited.contains(&edge.callee) {
+                    continue;
+                }
+                if visited.len() >= limits.max_visited_nodes {
+                    limit = Some("max-visited-nodes");
+                    break 'search;
+                }
+                visited.insert(edge.callee.clone());
+                queue.push_back((edge.callee.clone(), depth + 1));
+            }
+        }
+        if limit.is_none() && depth_exhausted {
+            limit = Some("max-depth");
+        }
+        GraphReachability {
+            identities: visited.clone(),
+            visited_nodes: visited.len(),
+            examined_edges,
+            limit,
+        }
+    }
+
     pub(crate) fn graph_slice(
         &self,
         root: &str,
         depth: usize,
         include_callers: bool,
-    ) -> Vec<StoredGraphEdge> {
-        let mut frontier = std::collections::BTreeSet::from([root.to_owned()]);
+        limits: GraphSearchLimits,
+    ) -> GraphSlice {
+        let mut frontier = BTreeSet::from([root.to_owned()]);
         let mut visited = frontier.clone();
-        let mut selected = std::collections::BTreeSet::new();
+        let mut selected = BTreeSet::new();
+        let mut examined_edges = 0usize;
+        let mut limit = None;
         if include_callers {
-            for (index, edge) in self.graph.iter().enumerate() {
-                if edge.callee == root {
-                    selected.insert(index);
-                    if visited.insert(edge.caller.clone()) {
-                        frontier.insert(edge.caller.clone());
-                    }
+            for &index in self.incoming.get(root).into_iter().flatten() {
+                if examined_edges >= limits.max_examined_edges {
+                    limit = Some("max-examined-edges");
+                    break;
+                }
+                examined_edges += 1;
+                let edge = &self.graph[index];
+                selected.insert(index);
+                if !visited.contains(&edge.caller) && visited.len() >= limits.max_visited_nodes {
+                    limit = Some("max-visited-nodes");
+                    break;
+                }
+                if visited.insert(edge.caller.clone()) {
+                    frontier.insert(edge.caller.clone());
                 }
             }
         }
-        for _ in 0..depth {
-            let mut next = std::collections::BTreeSet::new();
-            for (index, edge) in self.graph.iter().enumerate() {
-                let outgoing = frontier.contains(&edge.caller);
-                if outgoing {
+        'search: for _ in 0..depth {
+            let mut next = BTreeSet::new();
+            for node in &frontier {
+                for &index in self.outgoing.get(node).into_iter().flatten() {
+                    if examined_edges >= limits.max_examined_edges {
+                        limit = Some("max-examined-edges");
+                        break 'search;
+                    }
+                    examined_edges += 1;
+                    let edge = &self.graph[index];
                     selected.insert(index);
+                    if !traversable_call_edge(edge) || visited.contains(&edge.callee) {
+                        continue;
+                    }
+                    if visited.len() >= limits.max_visited_nodes {
+                        limit = Some("max-visited-nodes");
+                        break 'search;
+                    }
                     if visited.insert(edge.callee.clone()) {
                         next.insert(edge.callee.clone());
                     }
@@ -244,40 +468,22 @@ impl LinkedIrReader {
                 break;
             }
         }
-        selected
-            .into_iter()
-            .map(|index| self.graph[index].clone())
-            .collect()
-    }
-
-    /// Resolve transitive internal/project-linked callees from the lossless
-    /// graph member. Reachability is derived only for a focused consumer; it
-    /// is not duplicated into every function record in the bundle.
-    pub(crate) fn reachable_function_identities(&self, root: &str) -> Vec<String> {
-        let known = self
-            .index
-            .iter()
-            .map(|record| record.identity.as_str())
-            .collect::<std::collections::BTreeSet<_>>();
-        let mut frontier = std::collections::BTreeSet::from([root.to_owned()]);
-        let mut visited = frontier.clone();
-        while !frontier.is_empty() {
-            let mut next = std::collections::BTreeSet::new();
-            for edge in &self.graph {
-                if !matches!(edge.kind.as_str(), "internal" | "project-linked")
-                    || !frontier.contains(&edge.caller)
-                    || !known.contains(edge.callee.as_str())
-                {
-                    continue;
-                }
-                if visited.insert(edge.callee.clone()) {
-                    next.insert(edge.callee.clone());
-                }
-            }
-            frontier = next;
+        if limit.is_none()
+            && frontier
+                .iter()
+                .any(|node| self.has_traversable_outgoing(node))
+        {
+            limit = Some("max-depth");
         }
-        visited.remove(root);
-        visited.into_iter().collect()
+        GraphSlice {
+            edges: selected
+                .into_iter()
+                .map(|index| self.graph[index].clone())
+                .collect(),
+            visited_nodes: visited.len(),
+            examined_edges,
+            limit,
+        }
     }
 
     pub(crate) fn read_all_functions(&self) -> Result<Vec<StoredFunction>> {
@@ -461,6 +667,18 @@ impl LinkedIrReader {
         }
         Ok(object)
     }
+
+    fn has_traversable_outgoing(&self, identity: &str) -> bool {
+        self.outgoing
+            .get(identity)
+            .into_iter()
+            .flatten()
+            .any(|index| traversable_call_edge(&self.graph[*index]))
+    }
+}
+
+fn traversable_call_edge(edge: &StoredGraphEdge) -> bool {
+    matches!(edge.kind.as_str(), "internal" | "project-linked")
 }
 
 pub(crate) fn load_linked_ir_functions(path: &Path) -> Result<super::LinkedIrStoredDocument> {

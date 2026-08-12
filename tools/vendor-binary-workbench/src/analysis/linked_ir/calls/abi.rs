@@ -92,13 +92,14 @@ pub(super) fn linked_external_execution_model(
             .outputs
             .iter()
             .map(|output| match output {
-                ExternalOutputModel::PrivateStackU8 { pointer_argument } => {
-                    LinkedExternalOutputModel {
-                        kind: "private-stack-u8",
-                        pointer_argument: *pointer_argument,
-                        width: 8,
-                    }
-                }
+                ExternalOutputModel::PrivateStack {
+                    pointer_argument,
+                    width,
+                } => LinkedExternalOutputModel {
+                    kind: "private-stack",
+                    pointer_argument: *pointer_argument,
+                    width: *width,
+                },
             })
             .collect(),
     }

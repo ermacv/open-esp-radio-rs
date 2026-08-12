@@ -102,7 +102,20 @@ pub(super) fn resolve(
                 }
                 let mut output_arguments = std::collections::BTreeSet::new();
                 for output in model.outputs {
-                    let ExternalOutputModel::PrivateStackU8 { pointer_argument } = output;
+                    let ExternalOutputModel::PrivateStack {
+                        pointer_argument,
+                        width,
+                    } = output;
+                    if !matches!(width, 8 | 16 | 32) {
+                        return Err(super::validation::ValidationError::slot(
+                            anchor,
+                            slot,
+                            "execution-model",
+                            format!(
+                                "call model {model_id:?} output width must be 8, 16, or 32 bits"
+                            ),
+                        ));
+                    }
                     let Some(argument_type) = arguments.get(usize::from(*pointer_argument)) else {
                         return Err(super::validation::ValidationError::slot(
                             anchor,

@@ -4,7 +4,7 @@ use super::*;
 fn execution_models_contain_behavior_only() {
     let models = WIFI_OSI_MODELS_V9.spec();
     assert_eq!(models.id, "esp32s31-wifi-osi-v9");
-    assert_eq!(models.models.len(), 29);
+    assert_eq!(models.models.len(), 30);
     assert_eq!(
         WIFI_OSI_MODELS_V9.model("env-is-chip"),
         Some(ENV_IS_CHIP_MODEL)
@@ -62,8 +62,9 @@ fn modeled_results_remain_explicit_and_fail_closed() {
             .unwrap()
             .spec()
             .outputs,
-        &[ExternalOutputModel::PrivateStackU8 {
-            pointer_argument: 1
+        &[ExternalOutputModel::PrivateStack {
+            pointer_argument: 1,
+            width: 8,
         }]
     );
     assert_eq!(
@@ -80,8 +81,20 @@ fn modeled_results_remain_explicit_and_fail_closed() {
             .unwrap()
             .spec()
             .outputs,
-        &[ExternalOutputModel::PrivateStackU8 {
-            pointer_argument: 2
+        &[ExternalOutputModel::PrivateStack {
+            pointer_argument: 2,
+            width: 8,
+        }]
+    );
+    assert_eq!(
+        WIFI_OSI_MODELS_V9
+            .model("queue-receive")
+            .unwrap()
+            .spec()
+            .outputs,
+        &[ExternalOutputModel::PrivateStack {
+            pointer_argument: 1,
+            width: 32,
         }]
     );
     assert_eq!(

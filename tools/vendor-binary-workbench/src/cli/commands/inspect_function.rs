@@ -334,9 +334,18 @@ fn render_human(report: &FunctionInvestigationReport, full: bool) {
         }
         if !semantic.call_graph_edges.is_empty() {
             crate::cli::output::line(format_args!(
-                "CALL GRAPH reachable={} edges={}",
+                "CALL GRAPH depth={} reachable={} edges={} visited={} examined={}{}",
+                semantic.graph_limits.max_depth,
                 semantic.reachable_functions.len(),
                 semantic.call_graph_edges.len(),
+                semantic.graph_limits.visited_nodes,
+                semantic.graph_limits.examined_edges,
+                semantic
+                    .graph_limits
+                    .reached
+                    .as_deref()
+                    .map(|limit| format!(" boundary={limit}"))
+                    .unwrap_or_default(),
             ));
             for edge in semantic.call_graph_edges.iter().take(100) {
                 crate::cli::output::line(format_args!(
@@ -386,36 +395,70 @@ fn render_human(report: &FunctionInvestigationReport, full: bool) {
             crate::cli::output::line(format_args!("REVIEWED EVENT ROUTES"));
             for route in &semantic.reviewed_event_routes {
                 crate::cli::output::line(format_args!(
-                    "  - {}: {} {}={:#010x} -> {} [{}]",
+                    "  - {}: {} {}={:#010x} -> {} via {} [{}]",
                     route.id,
                     route.mechanism,
                     route.selector_role,
                     route.selector_value,
-                    route.handler,
+                    route
+                        .case_handler
+                        .as_deref()
+                        .unwrap_or("unmapped case handler"),
+                    route.consumer_entry,
                     route.execution_context,
                 ));
                 crate::cli::output::line(format_args!("      {}", route.rationale));
                 crate::cli::output::line(format_args!(
-                    "      constraint={} handler-analysis={}",
+                    "      constraint={} consumer-analysis={} case-analysis={}",
                     if route.dispatch_constraint_matched {
                         "matched"
                     } else {
                         "blocked"
                     },
-                    if route.handler_analysis.is_some() {
+                    if route.consumer_analysis.is_some() {
+                        "available"
+                    } else {
+                        "unavailable"
+                    },
+                    if route.case_handler_analysis.is_some() {
                         "available"
                     } else {
                         "unavailable"
                     }
                 ));
-                if let Some(handler) = &route.handler_analysis {
+                if let Some(handler) = &route.consumer_analysis {
                     crate::cli::output::line(format_args!(
-                        "      handler complete={} exact={} direct-effects={} calls={} reachable={}",
+                        "      consumer complete={} exact={} direct-effects={} calls={} reachable={} depth={}{}",
                         handler.complete,
                         handler.exact,
                         handler.direct_instruction_effects,
                         handler.direct_calls,
                         handler.reachable_functions,
+                        handler.reachability_depth,
+                        handler
+                            .reachability_limit
+                            .as_deref()
+                            .map(|limit| format!(" boundary={limit}"))
+                            .unwrap_or_default(),
+                    ));
+                    for blocker in &handler.blockers {
+                        crate::cli::output::line(format_args!("        ! {blocker}"));
+                    }
+                }
+                if let Some(handler) = &route.case_handler_analysis {
+                    crate::cli::output::line(format_args!(
+                        "      case-handler complete={} exact={} direct-effects={} calls={} reachable={} depth={}{}",
+                        handler.complete,
+                        handler.exact,
+                        handler.direct_instruction_effects,
+                        handler.direct_calls,
+                        handler.reachable_functions,
+                        handler.reachability_depth,
+                        handler
+                            .reachability_limit
+                            .as_deref()
+                            .map(|limit| format!(" boundary={limit}"))
+                            .unwrap_or_default(),
                     ));
                     for blocker in &handler.blockers {
                         crate::cli::output::line(format_args!("        ! {blocker}"));
@@ -655,12 +698,16 @@ fn render_summary(report: &FunctionInvestigationReport) {
             outputln!("\n{}", output::heading("Reviewed event routes"));
             for route in &semantic.reviewed_event_routes {
                 outputln!(
-                    "- {}: {} {}={:#x} → {} ({})",
+                    "- {}: {} {}={:#x} → {} via {} ({})",
                     route.id,
                     route.mechanism,
                     route.selector_role,
                     route.selector_value,
-                    route.handler,
+                    route
+                        .case_handler
+                        .as_deref()
+                        .unwrap_or("unmapped case handler"),
+                    route.consumer_entry,
                     route.execution_context
                 );
             }

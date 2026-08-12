@@ -32,7 +32,7 @@ pub enum ExternalReturnModel {
 /// allocator and arbitrary caller-memory ownership require separate models.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum ExternalOutputModel {
-    PrivateStackU8 { pointer_argument: u8 },
+    PrivateStack { pointer_argument: u8, width: u8 },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

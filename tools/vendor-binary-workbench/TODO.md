@@ -68,7 +68,7 @@ that every user must learn.
 
 ## Focused investigation migration (2026-08-11)
 
-- [x] Replace the removed monolithic linked-IR JSON file with schema-v47
+- [x] Replace the removed monolithic linked-IR JSON file with schema-v48
   random-access bundles. Functions, call graph, registers and data objects
   have deterministic indexes; status/doctor/cache/navigation/review consumers
   use only the required member.
@@ -86,17 +86,26 @@ that every user must learn.
   Absolute PCs and explicit `+OFFSET` locations are accepted, and the report
   states `feasibility_claim = false` so graph navigation cannot be mistaken
   for a satisfiable symbolic path or concrete execution proof.
-- [x] Add schema-v5 reviewed event routes. A route is admitted only when its
-  constant selector/receiver/context matches complete generated dispatch
-  evidence and its handler exists. The ESP32-S31 RX-success signal 0x19 now
-  has an explicit reviewed edge from `lmacProcessRxSucData` to `ppTask`.
+- [x] Upgrade reviewed event routes to schema 6. Dispatcher, consumer/delivery
+  boundary, output field and selector-specific case handler are distinct. The
+  ESP32-S31 RX-success route records `lmacProcessRxSucData ->
+  ppTask(queue_recv item-out) -> wdevProcessRxSucDataAll` without treating
+  reviewed edges as execution proof.
 - [x] Add a safe lifecycle for artifact-bound reviewed code boundaries.
   `code rebase --apply` refreshes guards only when every decision still maps
   to a valid current candidate; structural changes require a separate review
   candidate and cannot overwrite the reviewed pack implicitly.
-- [ ] Add constrained handler-path recovery after an event route. The first
-  target is `ppTask(signal=0x19) -> wdevProcessRxSucDataAll`; queue receive and
-  OSI globals must be modeled explicitly rather than forced through a branch.
+- [x] Add bounded indexed `inspect flow` target/effect/event-route modes. The
+  real selector `0x19` report loads three function records in 0.07 seconds at
+  7.8 MiB RSS, preserves the observed post and queue call, and names the two
+  missing executable models instead of recursively serializing the graph.
+- [ ] Make the `0x19` route executable.
+  - [x] Generalize external caller-stack outputs to reviewed 8/16/32-bit
+    little-endian writes and bind `queue_recv(item-out)` to a 32-bit ABI model.
+    This is call knowledge only and deliberately leaves `event-delivery=false`.
+  - [ ] Add a scenario-owned stateful queue instance and reviewed indexed
+    ppTask jump-table instance. Concrete replay must prove the selector path
+    before `path-feasibility` or `event-delivery` becomes true.
 - [ ] Generalize instruction-site evidence from calls/diagnostics to every
   MMIO and memory-object read/write, preserving the originating basic block
   and value provenance in persistent IR.
@@ -104,6 +113,9 @@ that every user must learn.
   the TUI instead of adding a parallel inspection engine. The report keeps
   exact/unique-symbol association, production component, probes, proofs and an
   explicit `freshness_claim = false` boundary.
+- [x] Join the same Replacement Graph boundary into reviewed event-flow
+  reports. An absent production mapping is a typed blocker rather than a
+  guessed Rust function based on a vendor symbol name.
 - [ ] Extend that joined replacement view with ordered effect/RAM-transition
   diffs and accepted differences from the concrete comparison report. Do not
   build a separate comparison engine for the TUI.
@@ -216,7 +228,7 @@ that every user must learn.
   uncovered TX roots `hal_mac_tx_config_edca` and
   `hal_mac_tx_get_blockack`.
 - [x] Turn publication scopes into an actionable root-cause queue. Linked-IR
-  schema 47 carries typed diagnostic kind/site/root IDs, review-scope schema 7
+  schema 48 carries typed diagnostic kind/site/root IDs, review-scope schema 7
   groups repeated causes and joins replacement coverage, and the read-only TUI
   exposes a Blockers view with function navigation. Parallel legacy string
   blocker arrays were removed from the persistent IR schema.
@@ -382,7 +394,7 @@ that every user must learn.
   catalog operations; only explicit compiled call models authorize execution.
 - [x] Complete executable external-call behavior beyond scalar results. The
   generic contract, structural analysis, generated reference ABI, concrete
-  executor, profile schema 2 and linked-IR schema 47 now preserve independent
+  executor, profile schema 2 and linked-IR schema 48 now preserve independent
   RV32 `a0`/`a1` returns and reviewed private-stack byte outputs. This covers
   `queue_send_from_isr`, coexistence PTI output and `esp_timer_get_time`
   without weakening them to one `SymbolicU32`. Reviewed zeroing allocators now
@@ -555,7 +567,7 @@ schema without isolation.
   alone account for about 91 MiB. Spool root projections or derive them for a
   selected review/inspection root while preserving direct call arguments and
   guard evidence.
-  - [x] Schema v47 persists direct facts and the call graph once, computes
+  - [x] Schema v48 persists direct facts and the call graph once, computes
     exact closure scalars, and marks heavyweight root projections as
     deferred. Prefix-focused exports retain complete paths/actions; artifact-wide
     register indexes retain the bounded guard-backed semantic subset.
@@ -567,7 +579,7 @@ schema without isolation.
   analysis.
 - [x] Preflight every selected IR artifact, inventory and companion before
   loading catalogs. Missing generated images now identify the profile, typed
-  run-spec role and exact path. The schema-v47 real `btbb-all` write/check
+  run-spec role and exact path. The schema-v48 real `btbb-all` write/check
   smoke test reproduces 186 functions, 111 registers and 277 field candidates
   in 0.40/0.35 s at 168,588/168,048 KiB through the hard-limit runner.
 - [x] Measure the read-only real-project status path after the UI migration.

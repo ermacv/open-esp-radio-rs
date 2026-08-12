@@ -77,8 +77,9 @@ fn modeled_call_response_applies_two_word_return_and_private_stack_output() {
             0x1000,
             ModeledCallResponse {
                 return_words: [Some(0x1234_5678), Some(0x9abc_def0)],
-                outputs: vec![ModeledCallOutput::PrivateStackU8 {
+                outputs: vec![ModeledCallOutput::PrivateStack {
                     pointer_argument: 2,
+                    width: 8,
                     value: 0x5a,
                 }],
                 allocation: None,
@@ -113,8 +114,9 @@ fn modeled_call_response_rejects_non_stack_output_pointer() {
             0x1000,
             ModeledCallResponse {
                 return_words: [Some(1), None],
-                outputs: vec![ModeledCallOutput::PrivateStackU8 {
+                outputs: vec![ModeledCallOutput::PrivateStack {
                     pointer_argument: 2,
+                    width: 8,
                     value: 1,
                 }],
                 allocation: None,
@@ -123,6 +125,41 @@ fn modeled_call_response_rejects_non_stack_output_pointer() {
         .unwrap_err();
 
     assert!(error.to_string().contains("points outside private stack"));
+}
+
+#[test]
+fn modeled_call_response_writes_a_little_endian_stack_word() {
+    let image = tiny_image(vec![0x67, 0x80, 0x00, 0x00], 4);
+    let svd = empty_svd();
+    let mut machine = Machine::new(&image, &svd, 0x1000, Scenario::default());
+    let output_address = STACK_POINTER - 4;
+    machine.set_register(rv_asm::Reg::A1, output_address);
+
+    machine
+        .apply_modeled_call_response(
+            "queue_recv",
+            0x1000,
+            ModeledCallResponse {
+                return_words: [Some(1), None],
+                outputs: vec![ModeledCallOutput::PrivateStack {
+                    pointer_argument: 1,
+                    width: 32,
+                    value: 0x0000_0019,
+                }],
+                allocation: None,
+            },
+        )
+        .unwrap();
+
+    assert_eq!(machine.read(output_address, 32).unwrap(), 0x19);
+    assert!(matches!(
+        &machine.timeline[0],
+        ExecutionTimelineEvent::RamWrite {
+            width: 32,
+            address,
+            value: 0x19,
+        } if *address == output_address
+    ));
 }
 
 #[test]

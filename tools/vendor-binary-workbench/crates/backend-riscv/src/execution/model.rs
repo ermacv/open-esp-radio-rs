@@ -199,9 +199,13 @@ pub struct OrderedCall {
 /// One concrete write performed by a reviewed external call response.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ModeledCallOutput {
-    /// Write one byte through an RV32 argument whose address must belong to
-    /// the executor-private stack.
-    PrivateStackU8 { pointer_argument: u8, value: u8 },
+    /// Write one 8/16/32-bit little-endian value through an RV32 argument
+    /// whose address must belong to the executor-private stack.
+    PrivateStack {
+        pointer_argument: u8,
+        width: u8,
+        value: u32,
+    },
 }
 
 /// One deterministic arena consumed by a reviewed allocator call.

@@ -43,19 +43,44 @@ completeness separate.
 
 A reviewed event route is joined only when the generated dispatcher proves the
 same mechanism, execution context, optional receiver and constant selector.
-The report then loads the exact handler identity from its named IR profile and
-shows its direct effects, calls, reachable inventory and semantic blockers in
-the same result. This closes the asynchronous navigation edge; it does not
-claim that the handler's selector-specific internal branch is feasible. A
-missing queue output model or scenario therefore remains visible at the
-handler boundary instead of being hidden by the reviewed route.
+Schema 6 names the consumer entry, delivery operation/output field, and an
+optional selector-specific case handler separately. This avoids the former
+false implication that a task entry is itself the signal handler.
+
+`inspect flow` is the compact, bounded inter-function view over the same
+indexed bundle:
+
+```console
+# shortest structural call path to a function, register, or address
+cargo vendor-binary-workbench inspect flow --project vendor-project.toml \
+  libpp:root --to-function child --max-depth 8
+
+# exact semantic effect classes in a bounded reachable subgraph
+cargo vendor-binary-workbench inspect flow --project vendor-project.toml \
+  libpp:root --effects delay
+
+# asynchronous reviewed route
+cargo vendor-binary-workbench inspect flow --project vendor-project.toml \
+  --event-route rx-success-to-pp-task
+```
+
+The event view separates observed dispatcher and delivery call facts from
+reviewed asynchronous/case edges. It reports `navigation`, `path-feasibility`,
+`event-delivery`, and `executable-equivalence` claims independently. Missing
+queue ABI output model, scenario-owned queue state/replay, jump-table instance,
+or Rust replacement is a typed blocker; reviewed metadata cannot turn one into
+a proof. An ABI model marked `modeled` establishes only how a call may write
+caller memory; it does not by itself make `event-delivery` true.
 
 The default human output is a bounded semantic summary. Add `--full` for the
 complete CFG and lossless instruction listing; instruction rows then carry
 exact-PC call, semantic and blocker annotations. `--depth N` selects the
 outgoing call-graph slice and `--callers` adds incoming edges to the root
 without recursively expanding reverse edges through common utilities such as
-logging. Machine-readable output always keeps the complete selected report.
+logging. Both node fan-out and examined edges have explicit budgets; the
+report records depth, visited nodes, examined edges, and the reached boundary
+instead of constructing an unbounded recursive JSON graph. Machine-readable
+output always keeps the complete selected bounded report.
 
 `--path FROM:TO` isolates one shortest directed CFG path. Locations are
 absolute PCs or explicit function offsets such as `+0x0:+0x14`. This is a
@@ -70,8 +95,8 @@ sequence, or a specific callee whose summary must be closed.
 
 A semantic blocker never truncates the raw body. Preconditions and path labels
 are reviewer assertions, not permission to discard control-flow evidence and
-not execution proof. JSON and JSONL serialize the same report shown by the
-human renderer. The Functions tab in `project browse` loads this report lazily
+not execution proof. JSON serializes the same report shown by the human
+renderer. The Functions tab in `project browse` loads this report lazily
 for the selected function and therefore uses the same evidence path as the CLI.
 
 The report never associates archive instruction offsets with linked PCs by

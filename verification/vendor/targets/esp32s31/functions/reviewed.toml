@@ -1,5 +1,5 @@
 # Human-reviewed function and context names. Generated linked IR stays separate.
-schema = 5
+schema = 6
 id = "esp32s31-radio-rev0"
 
 [[inputs]]
@@ -54,10 +54,18 @@ selector-role = "selector"
 selector-value = 0x19
 receiver = "esp32s31::pp-task"
 execution-context = "unspecified"
-handler-profile = "wifi-sta-lifecycle"
-handler-source = "wifi-sta-lifecycle"
-handler = "wifi-sta-lifecycle::ppTask@0x10067fa0"
-rationale = "Signal 0x19 is posted by lmacProcessRxSucData to the reviewed pp-task receiver; ppTask is the corresponding task entry and its internal branch remains to be constrained."
+consumer-profile = "wifi-sta-lifecycle"
+consumer-source = "wifi-sta-lifecycle"
+consumer-entry = "wifi-sta-lifecycle::ppTask@0x10067fa0"
+delivery-operation = "rtos.queue.receive"
+delivery-output-role = "item-out"
+delivery-selector-offset = 0
+delivery-selector-width = 32
+delivery-encoding = "little-endian"
+case-handler-profile = "wifi-sta-lifecycle"
+case-handler-source = "wifi-sta-lifecycle"
+case-handler-function = "wifi-sta-lifecycle::wdevProcessRxSucDataAll@0x10062e74"
+rationale = "Signal 0x19 is posted by lmacProcessRxSucData, received by ppTask into its stack event word, and the reviewed ppTask dispatch table maps selector 0x19 to wdevProcessRxSucDataAll."
 
 # RX completion first crosses the interrupt-to-task boundary through signal
 # 0x11. The later 0x19 route above is a distinct stage after lmac processing;
@@ -73,9 +81,14 @@ selector-role = "selector"
 selector-value = 0x11
 receiver = "esp32s31::pp-task"
 execution-context = "unspecified"
-handler-profile = "wifi-sta-lifecycle"
-handler-source = "wifi-sta-lifecycle"
-handler = "wifi-sta-lifecycle::ppTask@0x10067fa0"
+consumer-profile = "wifi-sta-lifecycle"
+consumer-source = "wifi-sta-lifecycle"
+consumer-entry = "wifi-sta-lifecycle::ppTask@0x10067fa0"
+delivery-operation = "rtos.queue.receive"
+delivery-output-role = "item-out"
+delivery-selector-offset = 0
+delivery-selector-width = 32
+delivery-encoding = "little-endian"
 rationale = "lmacRxDone posts signal 0x11 to the reviewed pp-task receiver; the signal-specific task branch remains a separate constrained-path obligation."
 
 [[functions]]

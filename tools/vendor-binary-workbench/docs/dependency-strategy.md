@@ -55,7 +55,7 @@ result is always a `ScenarioSuggestion`; concrete replay by the existing
 executor is required before it contributes coverage. Unsupported operations,
 timeouts, and model gaps produce no candidate rather than weakening proof.
 
-The schema-v47 bounded suggestion rules therefore precede Z3: they cover
+The schema-v48 bounded suggestion rules therefore precede Z3: they cover
 simple equalities and polls without a native solver dependency and establish
 the candidate/replay boundary first.
 

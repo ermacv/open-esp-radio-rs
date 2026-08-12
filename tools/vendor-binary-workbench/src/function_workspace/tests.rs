@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn schema_v5_parses_reviewed_event_routes_as_project_owned_edges() {
+fn schema_v6_parses_reviewed_event_delivery_and_case_handler() {
     let directory = std::env::temp_dir().join(format!(
         "vendor-workbench-function-event-route-{}",
         std::process::id()
@@ -10,7 +10,7 @@ fn schema_v5_parses_reviewed_event_routes_as_project_owned_edges() {
     let pack_path = directory.join("functions.toml");
     std::fs::write(
         &pack_path,
-        r#"schema = 5
+        r#"schema = 6
 id = "fixture"
 
 [[event-routes]]
@@ -23,9 +23,17 @@ selector-role = "selector"
 selector-value = 25
 receiver = "fixture::worker"
 execution-context = "task"
-handler-profile = "linked"
-handler-source = "vendor"
-handler = "vendor::worker"
+consumer-profile = "linked"
+consumer-source = "vendor"
+consumer-entry = "vendor::worker"
+delivery-operation = "rtos.queue.receive"
+delivery-output-role = "item-out"
+delivery-selector-offset = 0
+delivery-selector-width = 32
+delivery-encoding = "little-endian"
+case-handler-profile = "linked"
+case-handler-source = "vendor"
+case-handler-function = "vendor::handle_rx"
 rationale = "Reviewed scheduler table maps signal 25 to the worker entry."
 "#,
     )
@@ -33,7 +41,11 @@ rationale = "Reviewed scheduler table maps signal 25 to the worker entry."
     let pack = FunctionPack::load_reviewed(&pack_path).unwrap();
     assert_eq!(pack.event_routes.len(), 1);
     assert_eq!(pack.event_routes[0].selector_value, 25);
-    assert_eq!(pack.event_routes[0].handler, "vendor::worker");
+    assert_eq!(pack.event_routes[0].consumer_entry, "vendor::worker");
+    assert_eq!(
+        pack.event_routes[0].case_handler.as_ref().unwrap().function,
+        "vendor::handle_rx"
+    );
     std::fs::remove_dir_all(directory).unwrap();
 }
 
@@ -303,7 +315,7 @@ fn reviewed_names_require_matching_digest_and_complete_explicit_claims() {
     let pack = directory.join("functions.toml");
     write_ir(&report);
     let reports = vec![("rom-phy".to_owned(), report)];
-    let reviewed = r#"schema = 5
+    let reviewed = r#"schema = 6
 id = "fixture"
 
 [[inputs]]
@@ -507,7 +519,7 @@ fn ignored_context_covers_its_observed_fields_without_claiming_names() {
     let pack = directory.join("functions.toml");
     write_ir(&report);
     let reports = vec![("rom-phy".to_owned(), report)];
-    let ignored = r#"schema = 5
+    let ignored = r#"schema = 6
 id = "fixture"
 
 [[inputs]]

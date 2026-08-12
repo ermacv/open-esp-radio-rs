@@ -918,8 +918,9 @@ fn reviewed_external_call_keeps_return_and_private_stack_output_independent() {
             execution_model: Some(ReviewedExternalCallExecutionModel {
                 id: "queue-send-from-isr".to_owned(),
                 return_model: ExternalReturnModel::SymbolicU32,
-                outputs: vec![ExternalOutputModel::PrivateStackU8 {
+                outputs: vec![ExternalOutputModel::PrivateStack {
                     pointer_argument: 2,
+                    width: 8,
                 }],
             }),
             tail: false,
@@ -981,7 +982,7 @@ fn reviewed_external_call_keeps_return_and_private_stack_output_independent() {
     assert!(
         generated
             .source
-            .contains("let external_output0_0 = external_outcome0.outputs[0] & 0xff_u32;")
+            .contains("let external_output0_0 = external_outcome0.outputs[0] & 0x000000ff_u32;")
     );
 }
 

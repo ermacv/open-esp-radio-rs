@@ -116,17 +116,93 @@ fn validate_event_routes(
                 ),
             ));
         }
-        if facts
+        let consumer = facts
             .function(
-                &route.handler_profile,
-                &route.handler_source,
-                &route.handler,
+                &route.consumer_profile,
+                &route.consumer_source,
+                &route.consumer_entry,
             )
-            .is_none()
+            .ok_or_else(|| {
+                ValidationError::pack(
+                    "event-routes",
+                    format!(
+                        "event route {:?} refers to an unknown consumer entry",
+                        route.id
+                    ),
+                )
+            })?;
+        if !consumer.calls.iter().any(|call| {
+            call.semantic_operation.as_deref() == Some(route.delivery.operation.as_str())
+        }) && !consumer
+            .semantic_operations
+            .iter()
+            .any(|operation| operation == &route.delivery.operation)
         {
             return Err(ValidationError::pack(
                 "event-routes",
-                format!("event route {:?} refers to an unknown handler", route.id),
+                format!(
+                    "event route {:?} consumer does not call delivery operation {:?}",
+                    route.id, route.delivery.operation
+                ),
+            ));
+        }
+        if route.delivery.output_role.trim().is_empty() {
+            return Err(ValidationError::pack(
+                "event-routes",
+                format!(
+                    "event route {:?} has an empty delivery output role",
+                    route.id
+                ),
+            ));
+        }
+        if !matches!(route.delivery.selector_width, 8 | 16 | 32) {
+            return Err(ValidationError::pack(
+                "event-routes",
+                format!(
+                    "event route {:?} selector width must be 8, 16, or 32 bits",
+                    route.id
+                ),
+            ));
+        }
+        let maximum = match route.delivery.selector_width {
+            8 => u8::MAX.into(),
+            16 => u16::MAX.into(),
+            32 => u32::MAX,
+            _ => unreachable!("validated selector width"),
+        };
+        if route.selector_value > maximum {
+            return Err(ValidationError::pack(
+                "event-routes",
+                format!(
+                    "event route {:?} selector does not fit its delivery width",
+                    route.id
+                ),
+            ));
+        }
+        if route.delivery.encoding != "little-endian" {
+            return Err(ValidationError::pack(
+                "event-routes",
+                format!(
+                    "event route {:?} delivery encoding must be little-endian",
+                    route.id
+                ),
+            ));
+        }
+        if let Some(case_handler) = &route.case_handler
+            && facts
+                .function(
+                    &case_handler.profile,
+                    &case_handler.source,
+                    &case_handler.function,
+                )
+                .is_none()
+        {
+            return Err(ValidationError::pack(
+                "event-routes",
+                format!(
+                    "event route {:?} refers to an unknown case handler",
+                    route.id
+                ),
             ));
         }
         if route.rationale.trim().is_empty() || route.rationale.contains(['\r', '\n']) {

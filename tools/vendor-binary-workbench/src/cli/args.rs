@@ -415,7 +415,7 @@ leaf_commands!(RegisterCommand {
 leaf_commands!(InspectCommand {
     /// Investigate one function with lossless code, CFG and semantic evidence.
     Function(InspectFunctionArgs) => Command::InspectFunction, InspectFunction,
-    /// Trace argument and constant flow across a focused call-graph slice.
+    /// Inspect a bounded target path, effect inventory, or reviewed event route.
     Flow(InspectFlowArgs) => Command::InspectFlow, InspectFlow,
     /// Inspect accesses and ownership evidence for one memory object.
     Object(InspectObjectArgs) => Command::InspectObject, InspectObject,

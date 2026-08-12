@@ -10,13 +10,18 @@ use open_radio_vendor_contracts::{
     ExternalOutputModel, ExternalReturnModel,
 };
 
-const COEX_PTI_OUTPUTS: &[ExternalOutputModel] = &[ExternalOutputModel::PrivateStackU8 {
+const COEX_PTI_OUTPUTS: &[ExternalOutputModel] = &[ExternalOutputModel::PrivateStack {
     pointer_argument: 1,
+    width: 8,
 }];
-const QUEUE_SEND_FROM_ISR_OUTPUTS: &[ExternalOutputModel] =
-    &[ExternalOutputModel::PrivateStackU8 {
-        pointer_argument: 2,
-    }];
+const QUEUE_SEND_FROM_ISR_OUTPUTS: &[ExternalOutputModel] = &[ExternalOutputModel::PrivateStack {
+    pointer_argument: 2,
+    width: 8,
+}];
+const QUEUE_RECEIVE_OUTPUTS: &[ExternalOutputModel] = &[ExternalOutputModel::PrivateStack {
+    pointer_argument: 1,
+    width: 32,
+}];
 
 const ESP32S31_WIFI_OSI_MODELS: &[ExternalCallModelSpec] = &[
     ExternalCallModelSpec {
@@ -53,6 +58,11 @@ const ESP32S31_WIFI_OSI_MODELS: &[ExternalCallModelSpec] = &[
         id: "queue-send",
         return_model: ExternalReturnModel::SymbolicU32,
         outputs: &[],
+    },
+    ExternalCallModelSpec {
+        id: "queue-receive",
+        return_model: ExternalReturnModel::SymbolicU32,
+        outputs: QUEUE_RECEIVE_OUTPUTS,
     },
     ExternalCallModelSpec {
         id: "task-ms-to-tick",

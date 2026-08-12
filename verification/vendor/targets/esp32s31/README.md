@@ -87,9 +87,21 @@ cargo vendor-binary-workbench project browse \
   --project verification/vendor/targets/esp32s31/vendor-project.toml
 ```
 
-Use `inspect function SOURCE:SYMBOL` and `inspect flow SOURCE:SYMBOL` for
-focused investigation. Low-level engines live under `advanced` and are not a
-second required workflow.
+Use `inspect function SOURCE:SYMBOL` for one lossless body and `inspect flow`
+for a bounded target/effect query. The first reviewed asynchronous route is:
+
+```console
+tools/vendor-binary-workbench/scripts/run-limited \
+  --project verification/vendor/targets/esp32s31/vendor-project.toml \
+  --run-spec verification/vendor/targets/esp32s31/local.toml \
+  inspect flow --event-route rx-success-to-pp-task
+```
+
+The route currently proves structural navigation only. `queue_recv` has a
+width-aware ABI output model, but the report still blocks executable delivery
+until a scenario-owned queue supplies the selector and the ppTask selector
+jump table has a runtime instance that is replayed concretely. Low-level
+engines live under `advanced` and are not a second required workflow.
 
 ## Registers and the closed PAC
 

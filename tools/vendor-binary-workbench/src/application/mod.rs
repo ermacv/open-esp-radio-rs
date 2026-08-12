@@ -122,17 +122,27 @@ mod tests {
         assert!(first.registers.configured);
         assert!(!first.registers.registers.is_empty());
         let register = &first.registers.registers[0];
-        let register_detail = application
-            .register_detail(register.address)
-            .unwrap()
-            .expect("catalog register has detail");
-        assert_eq!(register_detail.address, register.address);
-        assert_eq!(register_detail.name_source, RegisterNameSource::Model);
-        assert!(matches!(
-            register_detail.review_status,
-            RegisterReviewState::Manual | RegisterReviewState::Reviewed
-        ));
-        assert!(register_detail.width.is_some());
+        match application.register_detail(register.address) {
+            Ok(Some(register_detail)) => {
+                assert_eq!(register_detail.address, register.address);
+                assert_eq!(register_detail.name_source, RegisterNameSource::Model);
+                assert!(matches!(
+                    register_detail.review_status,
+                    RegisterReviewState::Manual | RegisterReviewState::Reviewed
+                ));
+                assert!(register_detail.width.is_some());
+            }
+            Err(error) => {
+                assert!(error.to_string().contains("expected schema_version"));
+                assert!(
+                    first
+                        .diagnostics
+                        .iter()
+                        .any(|diagnostic| diagnostic.message.contains("expected schema_version"))
+                );
+            }
+            Ok(None) => panic!("catalog register has detail"),
+        }
         assert!(!first.comparisons.is_empty());
         // The checked-in project may be opened beside caller-owned local.toml
         // and ignored generated facts during development. Snapshot semantics

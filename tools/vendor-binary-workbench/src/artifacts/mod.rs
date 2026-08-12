@@ -23,7 +23,7 @@ pub(crate) use linked_ir::inspect_linked_ir;
 #[cfg(test)]
 pub(crate) use linked_ir_bundle::write_fixture_bundle;
 pub(crate) use linked_ir_bundle::{
-    LinkedIrReader, LinkedIrReviewProjection, StoredGraphEdge, bundle_files,
+    GraphSearchLimits, LinkedIrReader, LinkedIrReviewProjection, StoredGraphEdge, bundle_files,
     load_linked_ir_functions,
 };
 #[cfg(test)]
@@ -68,7 +68,7 @@ pub(crate) const INTERFACE_FACTS: ArtifactSchema = ArtifactSchema {
 };
 
 pub(crate) const LINKED_IR: ArtifactSchema = ArtifactSchema {
-    version: 47,
+    version: 48,
     command: "ir export",
 };
 
@@ -119,7 +119,7 @@ mod tests {
         assert_eq!(
             LINKED_IR,
             ArtifactSchema {
-                version: 47,
+                version: 48,
                 command: "ir export",
             }
         );

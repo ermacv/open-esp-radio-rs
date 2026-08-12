@@ -276,11 +276,11 @@ Its return model distinguishes `void` from `unmodeled`: `void` authorizes the
 ordered external call as the complete modeled effect without manufacturing a
 return value, while `unmodeled` remains a validation blocker. RV32 models may
 instead produce one `u32`, an `a0`/`a1` `u64`, or reviewed caller-visible
-outputs. The first output vocabulary is deliberately narrow:
-`private-stack-u8` writes one byte through an ABI argument proven to point into
-the executor's private stack. Invalid pointers, duplicate outputs, incompatible
-slot argument types, or more outputs than the fixed no-std outcome capacity
-fail closed.
+outputs. The output vocabulary is deliberately narrow: `private-stack` writes
+one reviewed 8/16/32-bit little-endian value through an ABI argument proven to
+point into the executor's private stack. Invalid widths or pointers, duplicate
+outputs, incompatible slot argument types, or more outputs than the fixed
+no-std outcome capacity fail closed.
 Execution-profile TOML creates source-specific instances with
 `[[profiles.cases.vendor-tables]]` and
 `[[profiles.cases.rust-tables]]`; each table owns its structured `slots`

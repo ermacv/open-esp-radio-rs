@@ -141,6 +141,7 @@ name = "queue_recv"
 arguments = ["opaque-handle", "mut-ptr", "u32"]
 return = "i32"
 semantic = "rtos.queue.receive"
+execution-model = "queue-receive"
 
 [[anchors.slots]]
 offset = 0x078

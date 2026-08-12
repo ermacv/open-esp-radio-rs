@@ -455,11 +455,23 @@ pub(crate) struct InspectFunctionArgs {
     pub(crate) path: Option<String>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+pub(crate) enum InspectFlowEffectKind {
+    Delay,
+    Timer,
+    Event,
+    Call,
+    Queue,
+    Mmio,
+    Memory,
+    All,
+}
+
 #[derive(Clone, Debug, Default, Args)]
 pub(crate) struct InspectFlowArgs {
     /// Project source and root function (`SOURCE:SYMBOL`).
     #[arg(value_name = "SOURCE:SYMBOL")]
-    pub(crate) selector: String,
+    pub(crate) selector: Option<String>,
     /// Stop at a function identity or symbol.
     #[arg(long, value_name = "[SOURCE::]SYMBOL")]
     pub(crate) to_function: Option<String>,
@@ -469,6 +481,12 @@ pub(crate) struct InspectFlowArgs {
     /// Stop at the first function accessing this MMIO address.
     #[arg(long, value_name = "ADDRESS")]
     pub(crate) to_address: Option<String>,
+    /// List one exact effect class in the bounded reachable subgraph.
+    #[arg(long, value_enum, value_name = "KIND")]
+    pub(crate) effects: Option<InspectFlowEffectKind>,
+    /// Follow one reviewed asynchronous event route by stable ID.
+    #[arg(long, value_name = "ROUTE")]
+    pub(crate) event_route: Option<String>,
     /// Maximum number of inter-function edges to explore.
     #[arg(long, default_value_t = 12)]
     pub(crate) max_depth: usize,

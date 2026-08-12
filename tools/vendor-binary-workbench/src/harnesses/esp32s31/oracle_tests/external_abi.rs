@@ -139,13 +139,48 @@ fn modeled_rtos_slot_still_rejects_an_unproven_output_pointer() {
                     == Some("rtos.queue.send-from-isr")
                 && candidates[0].execution_model.as_ref().is_some_and(|model|
                     model.return_model == ExternalReturnModel::SymbolicU32
-                        && model.outputs == vec![ExternalOutputModel::PrivateStackU8 {
-                            pointer_argument: 2
+                        && model.outputs == vec![ExternalOutputModel::PrivateStack {
+                            pointer_argument: 2,
+                            width: 8,
                         }])
     ));
     assert!(trace.reference_blockers.iter().any(|blocker| {
         blocker.contains("unsupported-reviewed-external-output-pointer")
             && blocker.contains("queue_send_from_isr")
+    }));
+}
+
+#[test]
+fn queue_receive_slot_exposes_a_word_output_without_inventing_queue_state() {
+    let symbol = wifi_osi_tail_symbol(0x074);
+    let trace = trace_binary_symbol(
+        &symbol,
+        &map(),
+        &BTreeMap::new(),
+        &reviewed_wifi_osi_context(),
+        None,
+    )
+    .unwrap();
+
+    assert!(!trace.is_reference_eligible());
+    assert!(matches!(
+        trace.reference_events.as_slice(),
+        [DraftReferenceEvent::ReviewedExternalCall { candidates, .. }]
+            if candidates.len() == 1
+                && candidates[0].name == "queue_recv"
+                && candidates[0].semantic_operation.as_deref()
+                    == Some("rtos.queue.receive")
+                && candidates[0].execution_model.as_ref().is_some_and(|model|
+                    model.return_model == ExternalReturnModel::SymbolicU32
+                        && model.outputs == vec![ExternalOutputModel::PrivateStack {
+                            pointer_argument: 1,
+                            width: 32,
+                        }])
+    ));
+    assert!(trace.reference_blockers.iter().any(|blocker| {
+        blocker.contains("unsupported-reviewed-external-output-pointer")
+            && blocker.contains("queue_recv")
+            && blocker.contains("a1")
     }));
 }
 

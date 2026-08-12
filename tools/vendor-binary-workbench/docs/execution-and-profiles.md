@@ -195,7 +195,7 @@ size argument:
 [[profiles.cases.vendor-calls]]
 symbol = "queue_send_from_isr"
 return-words = [1]
-outputs = [{ kind = "private-stack-u8", pointer-argument = 2, value = 1 }]
+outputs = [{ kind = "private-stack", pointer-argument = 2, width = 8, value = 1 }]
 
 [[profiles.cases.rust-calls]]
 symbol = "wake_receiver"

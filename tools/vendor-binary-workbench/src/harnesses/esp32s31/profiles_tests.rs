@@ -243,7 +243,7 @@ fn profile_models_runtime_tables_as_layout_instances() {
 #[test]
 fn profile_models_vendor_and_rust_call_responses_independently() {
     let profiles = parse(
-        "schema = 2\n\n[[profiles]]\nname = \"external-call\"\nvendor-source = \"rom\"\nvendor-symbol = \"vendor_entry\"\nrust-symbol = \"rust_entry\"\n\n[[profiles.cases]]\nname = \"ready\"\n\n[[profiles.cases.vendor-calls]]\nsymbol = \"queue_send_from_isr\"\nreturn-words = [1, 2]\noutputs = [{ kind = \"private-stack-u8\", pointer-argument = 2, value = 90 }]\n\n[[profiles.cases.rust-calls]]\nsymbol = \"wake_task\"\nreturn-words = [7]\n",
+        "schema = 2\n\n[[profiles]]\nname = \"external-call\"\nvendor-source = \"rom\"\nvendor-symbol = \"vendor_entry\"\nrust-symbol = \"rust_entry\"\n\n[[profiles.cases]]\nname = \"ready\"\n\n[[profiles.cases.vendor-calls]]\nsymbol = \"queue_send_from_isr\"\nreturn-words = [1, 2]\noutputs = [{ kind = \"private-stack\", pointer-argument = 2, width = 8, value = 90 }]\n\n[[profiles.cases.rust-calls]]\nsymbol = \"wake_task\"\nreturn-words = [7]\n",
     )
     .unwrap();
 
@@ -256,8 +256,9 @@ fn profile_models_vendor_and_rust_call_responses_independently() {
     );
     assert_eq!(
         scenario.vendor_call_responses[0].1.outputs,
-        [crate::execution::ModeledCallOutput::PrivateStackU8 {
+        [crate::execution::ModeledCallOutput::PrivateStack {
             pointer_argument: 2,
+            width: 8,
             value: 90,
         }]
     );

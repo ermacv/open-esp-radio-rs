@@ -66,7 +66,7 @@ mod tests {
             inspect_linked_ir(&path)
                 .unwrap_err()
                 .to_string()
-                .contains("expected schema_version 47")
+                .contains("expected schema_version 48")
         );
         std::fs::remove_dir_all(path).unwrap();
     }
@@ -89,5 +89,94 @@ mod tests {
                 .to_string()
                 .contains("missing field `scenario_suggestion_mode`")
         );
+    }
+
+    #[test]
+    fn bounded_graph_search_skips_external_calls_and_reports_limits() {
+        let path = std::env::temp_dir().join(format!(
+            "vendor-workbench-linked-ir-graph-{}",
+            std::process::id()
+        ));
+        super::super::write_fixture_bundle(
+            &path,
+            &serde_json::to_string_pretty(&document()).unwrap(),
+        )
+        .unwrap();
+        std::fs::write(
+            path.join("graph.json"),
+            serde_json::json!({
+                "schema_version": super::super::LINKED_IR.version,
+                "command": "ir graph index",
+                "edges": [
+                    {"caller": "root", "callee": "external-api", "site": 1, "kind": "external"},
+                    {"caller": "root", "callee": "child", "site": 2, "kind": "internal"},
+                    {"caller": "child", "callee": "external-callback", "site": 3, "kind": "external"},
+                    {"caller": "child", "callee": "sink", "site": 4, "kind": "project-linked"},
+                    {"caller": "sink", "callee": "leaf", "site": 5, "kind": "internal"}
+                ]
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+        let reader = super::super::LinkedIrReader::open(&path).unwrap();
+        let path_result = reader.shortest_path_to_any(
+            "root",
+            &std::collections::BTreeSet::from(["sink".to_owned()]),
+            super::super::GraphSearchLimits {
+                max_depth: 2,
+                max_visited_nodes: 8,
+                max_examined_edges: 16,
+            },
+        );
+        assert_eq!(
+            path_result
+                .path
+                .unwrap()
+                .iter()
+                .map(|edge| edge.callee.as_str())
+                .collect::<Vec<_>>(),
+            ["child", "sink"]
+        );
+
+        let depth_limited = reader.reachable_from(
+            "root",
+            super::super::GraphSearchLimits {
+                max_depth: 1,
+                max_visited_nodes: 8,
+                max_examined_edges: 16,
+            },
+        );
+        assert_eq!(
+            depth_limited.identities,
+            std::collections::BTreeSet::from(["root".to_owned(), "child".to_owned()])
+        );
+        assert_eq!(depth_limited.limit, Some("max-depth"));
+
+        let node_limited = reader.reachable_from(
+            "root",
+            super::super::GraphSearchLimits {
+                max_depth: 8,
+                max_visited_nodes: 2,
+                max_examined_edges: 16,
+            },
+        );
+        assert_eq!(node_limited.limit, Some("max-visited-nodes"));
+        assert!(!node_limited.identities.contains("external-api"));
+
+        let slice = reader.graph_slice(
+            "root",
+            1,
+            false,
+            super::super::GraphSearchLimits {
+                max_depth: 1,
+                max_visited_nodes: 8,
+                max_examined_edges: 16,
+            },
+        );
+        assert_eq!(slice.visited_nodes, 2);
+        assert_eq!(slice.limit, Some("max-depth"));
+        assert!(slice.edges.iter().any(|edge| edge.callee == "external-api"));
+        std::fs::remove_dir_all(path).unwrap();
     }
 }

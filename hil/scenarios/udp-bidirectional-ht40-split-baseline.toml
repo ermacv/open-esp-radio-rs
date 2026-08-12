@@ -1,0 +1,25 @@
+schema = 3
+id = "udp-bidirectional-ht40-split-baseline"
+description = "CPU0 radio and CPU1 network HT40 full-duplex performance baseline"
+image = "qualification"
+isolation = "reset"
+data_plane = "split-radio-network"
+tags = ["qualification", "udp", "station", "full-duplex", "ht40", "split-core", "baseline"]
+
+[link]
+phy = "ht40"
+
+[workload]
+kind = "udp"
+direction = "bidirectional"
+duration_seconds = 16
+rx_rate_bps = 55000000
+tx_rate_bps = 55000000
+payload_bytes = 1472
+
+[criteria]
+exact_delivery = false
+minimum_rx_bps = 50000000
+minimum_tx_bps = 40000000
+minimum_combined_bps = 90000000
+require_no_beacon_loss = true

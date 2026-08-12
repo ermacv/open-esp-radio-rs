@@ -17,7 +17,9 @@ publish = false
 [workspace.dependencies]
 embassy-executor = { version = "0.10.0", default-features = false }
 embassy-futures = "0.1.2"
-embassy-net = { git = "https://github.com/ermacv/embassy", rev = "20d9809835ef9cf22c2b647da77df9c57021033f", features = ["_perf-hotpath", "auto-icmp-echo-reply", "dhcpv4", "dns", "icmp", "medium-ethernet", "slaac", "tcp", "udp"] }
+# The fork adds only bounded, directionally fair Runner polling. A/B testing
+# found no throughput benefit from the former smoltcp fork or hot sections.
+embassy-net = { git = "https://github.com/ermacv/embassy", rev = "6f57581bd", features = ["auto-icmp-echo-reply", "dhcpv4", "dns", "icmp", "medium-ethernet", "slaac", "tcp", "udp"] }
 embassy-net-driver = "0.2"
 embassy-sync = "0.8.0"
 embassy-time = "0.5.1"

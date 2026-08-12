@@ -667,6 +667,8 @@ type ProductNetworkRunner = embassy_net::Runner<'static, Esp32s31WifiDevice>;
 
 #[embassy_executor::task]
 async fn network_runner_task(mut runner: ProductNetworkRunner) {
+    // This is a cooperative-residence bound, not a throughput optimization:
+    // 4/4 interleaving and 32/32 work limits keep both directions runnable.
     let policy = embassy_net::CooperativeConfig::new(Duration::from_micros(750));
     #[cfg(feature = "network-scheduler-telemetry")]
     let policy = policy.with_observer(observe_network_scheduler);

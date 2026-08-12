@@ -22,6 +22,7 @@ mod lab_config;
 mod local_linux_fixture;
 mod network_helper;
 mod openwrt_fixture;
+mod openwrt_tx_monitor;
 mod paced_tcp;
 mod paced_udp;
 mod rx_delivery;
@@ -235,6 +236,7 @@ fn doctor(root: &std::path::Path, lab: &lab_config::LabConfig) -> Result<()> {
         }
         lab_config::StationFixtureConfig::OpenWrt(config) => {
             openwrt_fixture::doctor(config)?;
+            openwrt_tx_monitor::doctor(config)?;
             println!("station_fixture=openwrt status=PASS");
         }
         lab_config::StationFixtureConfig::External => {
@@ -554,7 +556,9 @@ fn execute_workload(
                         arguments,
                         output,
                         lab,
+                        selected.criteria.exact_delivery,
                         selected.criteria.require_no_beacon_loss,
+                        selected.evidence.openwrt_tx_monitor_rx,
                     )
                 }
             }

@@ -194,11 +194,7 @@ pub(crate) struct SessionEvidence {
 }
 
 impl SessionEvidence {
-    pub(crate) fn require_rx_radio(
-        self,
-        expected_format: u8,
-        expected_datagrams: u64,
-    ) -> Result<RxRadioEvidence> {
+    pub(crate) fn require_rx_radio_health(self, expected_format: u8) -> Result<RxRadioEvidence> {
         let rx = self
             .radio
             .and_then(|evidence| evidence.rx)
@@ -217,19 +213,6 @@ impl SessionEvidence {
             || rx.unknown_irq_status != 0
         {
             return Err(format!("typed RX radio health failed: {rx:?}").into());
-        }
-        let expected_datagrams = u32::try_from(expected_datagrams).map_err(
-            |_| "RX qualification sent more datagrams than typed evidence can represent",
-        )?;
-        if rx.sequence_first != Some(0)
-            || rx.sequence_highest != expected_datagrams.checked_sub(1)
-            || rx.sequence_gap_events != 0
-            || rx.sequence_forward_missing != 0
-            || rx.sequence_backward != 0
-            || rx.sequence_duplicates != 0
-            || rx.sequence_unsequenced != 0
-        {
-            return Err(format!("typed RX sequence evidence is not exact: {rx:?}").into());
         }
         let s_mpdu_datagrams = rx
             .s_mpdu_datagrams
@@ -299,6 +282,28 @@ impl SessionEvidence {
             || (rx.mac_irq_entries != 0 && rx.mac_irq_classified_entries != rx.mac_irq_entries)
         {
             return Err(format!("incomplete typed RX accounting: {rx:?}").into());
+        }
+        Ok(rx)
+    }
+
+    pub(crate) fn require_rx_radio(
+        self,
+        expected_format: u8,
+        expected_datagrams: u64,
+    ) -> Result<RxRadioEvidence> {
+        let rx = self.require_rx_radio_health(expected_format)?;
+        let expected_datagrams = u32::try_from(expected_datagrams).map_err(
+            |_| "RX qualification sent more datagrams than typed evidence can represent",
+        )?;
+        if rx.sequence_first != Some(0)
+            || rx.sequence_highest != expected_datagrams.checked_sub(1)
+            || rx.sequence_gap_events != 0
+            || rx.sequence_forward_missing != 0
+            || rx.sequence_backward != 0
+            || rx.sequence_duplicates != 0
+            || rx.sequence_unsequenced != 0
+        {
+            return Err(format!("typed RX sequence evidence is not exact: {rx:?}").into());
         }
         Ok(rx)
     }
@@ -2106,6 +2111,12 @@ mod tests {
 
         let mut reordered = healthy_he_rx();
         reordered.sequence_backward = 1;
+        assert!(
+            session_with_rx(reordered)
+                .require_rx_radio_health(4)
+                .is_ok(),
+            "performance evidence keeps radio-health guarantees without claiming exact delivery",
+        );
         assert!(session_with_rx(reordered).require_rx_radio(4, 100).is_err());
 
         let mut wrong_provenance = healthy_he_rx();
@@ -2113,7 +2124,7 @@ mod tests {
         wrong_provenance.hardware_ampdu_datagrams = 100;
         assert!(
             session_with_rx(wrong_provenance)
-                .require_rx_radio(4, 100)
+                .require_rx_radio_health(4)
                 .is_err()
         );
     }

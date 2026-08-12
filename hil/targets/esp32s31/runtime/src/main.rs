@@ -87,6 +87,13 @@ const PROFILE_DATA_START: u32 = INTERNAL_SRAM_START;
 #[cfg(feature = "profile-sram-data")]
 const PROFILE_DATA_END: u32 = INTERNAL_SRAM_END;
 
+#[cfg(all(feature = "code-flash", feature = "profile-psram-data"))]
+const PROFILE_NAME: &core::ffi::CStr = c"flash-code-psram-data";
+#[cfg(all(feature = "code-psram", feature = "profile-psram-data"))]
+const PROFILE_NAME: &core::ffi::CStr = c"psram-code-psram-data";
+#[cfg(all(feature = "code-psram", feature = "profile-sram-data"))]
+const PROFILE_NAME: &core::ffi::CStr = c"psram-code-sram-data";
+
 static EXECUTOR: StaticCell<Executor<0>> = StaticCell::new();
 #[cfg(feature = "open-radio-hil")]
 static APP_EXECUTOR: StaticCell<Executor<1>> = StaticCell::new();
@@ -292,7 +299,9 @@ fn panic(info: &core::panic::PanicInfo<'_>) -> ! {
 #[unsafe(no_mangle)]
 extern "C" fn runtime_main() -> ! {
     unsafe { ets_install_usb_printf() };
-    print(c"OPEN_RADIO_HIL runtime=START profile=psram-code-psram-data\r\n");
+    print(c"OPEN_RADIO_HIL runtime=START profile=");
+    print(PROFILE_NAME);
+    print(c"\r\n");
 
     validate_runtime_layout();
 

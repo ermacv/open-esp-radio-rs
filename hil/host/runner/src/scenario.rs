@@ -220,6 +220,13 @@ pub struct Criteria {
     pub require_no_beacon_loss: bool,
 }
 
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct EvidenceConfig {
+    /// Capture the OpenWrt AP's own TX monitor tap. Diagnostic only.
+    pub openwrt_tx_monitor_rx: bool,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Scenario {
@@ -236,6 +243,8 @@ pub struct Scenario {
     pub workload: Workload,
     #[serde(default)]
     pub criteria: Criteria,
+    #[serde(default)]
+    pub evidence: EvidenceConfig,
     #[serde(skip)]
     pub source: PathBuf,
 }
@@ -291,6 +300,22 @@ impl Scenario {
         {
             return Err(format!(
                 "{}: diagnostic-task-poll image admits only single-core data-plane placement",
+                self.source.display()
+            )
+            .into());
+        }
+        if self.evidence.openwrt_tx_monitor_rx
+            && (self.image != ImageClass::DiagnosticRxDelivery
+                || !matches!(
+                    self.workload,
+                    Workload::Udp {
+                        direction: Direction::Bidirectional,
+                        ..
+                    }
+                ))
+        {
+            return Err(format!(
+                "{}: OpenWrt TX-monitor RX evidence requires the bidirectional UDP RX-delivery diagnostic",
                 self.source.display()
             )
             .into());
@@ -685,6 +710,13 @@ mod tests {
         assert_eq!(
             catalog
                 .get("udp-bidirectional-ht40-55-55-split")
+                .unwrap()
+                .data_plane,
+            WifiDataPlanePlacement::SplitRadioNetwork
+        );
+        assert_eq!(
+            catalog
+                .get("udp-bidirectional-ht40-split-baseline")
                 .unwrap()
                 .data_plane,
             WifiDataPlanePlacement::SplitRadioNetwork

@@ -24,6 +24,7 @@ use crate::{
     Result, invalidate_previous_report,
     lab_config::{LabConfig, StationFixtureConfig},
     local_linux_fixture::{LocalLinuxTxCapture, LocalLinuxTxEvidence},
+    openwrt_tx_monitor::{OpenWrtTxMonitorCapture, OpenWrtTxMonitorEvidence},
     paced_udp::{Config as PacedUdpConfig, HostTransmission, send as send_paced_udp},
     rx_delivery,
     station_fixture::{RxCapture, RxEvidence},
@@ -105,6 +106,7 @@ struct BidirectionalEvidence {
     host_receive_buffer_bytes: usize,
     fixture_rx: Option<RxEvidence>,
     fixture_tx: Option<LocalLinuxTxEvidence>,
+    tx_monitor_rx: Option<OpenWrtTxMonitorEvidence>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1109,7 +1111,9 @@ pub(crate) fn run(
     arguments: Vec<String>,
     output: &Path,
     lab: &LabConfig,
+    require_exact_delivery: bool,
     require_no_beacon_loss: bool,
+    capture_openwrt_tx_monitor_rx: bool,
 ) -> Result<()> {
     let mut options = parse_options(&arguments, lab)?;
     fs::create_dir_all(&output)?;
@@ -1166,6 +1170,20 @@ pub(crate) fn run(
         )?),
         StationFixtureConfig::OpenWrt(_) | StationFixtureConfig::External => None,
     };
+    let tx_monitor_capture = if capture_openwrt_tx_monitor_rx {
+        let StationFixtureConfig::OpenWrt(config) = &lab.station_fixture else {
+            return Err("OpenWrt TX-monitor evidence requires an OpenWrt station fixture".into());
+        };
+        Some(OpenWrtTxMonitorCapture::start(
+            config,
+            options.address,
+            options.port,
+            options.duration,
+            output,
+        )?)
+    } else {
+        None
+    };
     let session = capture.start_session(SessionConfig {
         transport: Transport::Udp,
         direction: Direction::Bidirectional,
@@ -1214,6 +1232,9 @@ pub(crate) fn run(
     let fixture_tx = fixture_tx_capture
         .map(LocalLinuxTxCapture::finish)
         .transpose()?;
+    let tx_monitor_rx = tx_monitor_capture
+        .map(|capture| capture.finish(host.datagrams))
+        .transpose()?;
     if let Some(evidence) = fixture_tx.as_ref() {
         fs::write(
             output.join("local-wireless-ingress.txt"),
@@ -1236,10 +1257,13 @@ pub(crate) fn run(
         .radio
         .and_then(|evidence| evidence.rx)
         .ok_or("session did not publish typed RX radio evidence")?;
-    let mut qualification_failure = structured
-        .require_rx_radio(options.phy.expected_rx_format(), host.datagrams)
-        .err()
-        .map(|error| error.to_string());
+    let mut qualification_failure = if require_exact_delivery {
+        structured.require_rx_radio(options.phy.expected_rx_format(), host.datagrams)
+    } else {
+        structured.require_rx_radio_health(options.phy.expected_rx_format())
+    }
+    .err()
+    .map(|error| error.to_string());
     let text_assessment = assess_rx_report(&report, options.phy.expected_rx_format()).ok();
     if let Some(failure) = text_assessment
         .as_ref()
@@ -1320,7 +1344,7 @@ pub(crate) fn run(
             )
         });
     }
-    if let Some(fixture_rx) = fixture_rx.as_ref() {
+    if require_exact_delivery && let Some(fixture_rx) = fixture_rx.as_ref() {
         let expected_fixture_packets = host.datagrams.saturating_add(1);
         if fixture_rx.wireless_packets() != expected_fixture_packets {
             qualification_failure.get_or_insert_with(|| {
@@ -1361,7 +1385,7 @@ pub(crate) fn run(
                 )
             });
         }
-        if let Some(delivery) = evidence.rx_delivery {
+        if require_exact_delivery && let Some(delivery) = evidence.rx_delivery {
             let assessment = rx_delivery::assess(host.datagrams, delivery);
             if !assessment.exact() {
                 qualification_failure.get_or_insert_with(|| {
@@ -1372,9 +1396,10 @@ pub(crate) fn run(
                 });
             }
         }
-        if evidence.transport.rx_bytes != expected_rx_bytes
-            || evidence.transport.rx_units != host.datagrams
-            || evidence.transport.rx_bytes != host.bytes
+        if require_exact_delivery
+            && (evidence.transport.rx_bytes != expected_rx_bytes
+                || evidence.transport.rx_units != host.datagrams
+                || evidence.transport.rx_bytes != host.bytes)
         {
             qualification_failure.get_or_insert_with(|| {
                 format!(
@@ -1390,7 +1415,9 @@ pub(crate) fn run(
     let ampdu = typed_tx
         .map(|(tx, timing)| AmpduEvidence::from_typed(tx, timing))
         .unwrap_or_default();
-    if host_tx.missing != 0 || host_tx.reordered != 0 || host_tx.duplicates != 0 {
+    if require_exact_delivery
+        && (host_tx.missing != 0 || host_tx.reordered != 0 || host_tx.duplicates != 0)
+    {
         let target_tx_units = Some(structured.transport.tx_units);
         let post_block_ack_loss = target_tx_units
             .and_then(|units| post_block_ack_delivery_loss_lower_bound(ampdu, host_tx, units));
@@ -1410,8 +1437,9 @@ pub(crate) fn run(
             ampdu.acknowledged,
         ));
     }
-    if structured.transport.tx_units != host_tx.datagrams
-        || structured.transport.tx_bytes != host_tx.bytes
+    if require_exact_delivery
+        && (structured.transport.tx_units != host_tx.datagrams
+            || structured.transport.tx_bytes != host_tx.bytes)
     {
         qualification_failure.get_or_insert_with(|| {
             format!(
@@ -1423,7 +1451,8 @@ pub(crate) fn run(
             )
         });
     }
-    if let Some(fixture_tx) = fixture_tx.as_ref()
+    if require_exact_delivery
+        && let Some(fixture_tx) = fixture_tx.as_ref()
         && fixture_tx.udp_packets != structured.transport.tx_units
     {
         qualification_failure.get_or_insert_with(|| {
@@ -1446,6 +1475,7 @@ pub(crate) fn run(
             host_receive_buffer_bytes,
             fixture_rx,
             fixture_tx,
+            tx_monitor_rx,
         },
         qualification_failure.as_deref(),
     )?;
@@ -2953,6 +2983,7 @@ fn write_report(
         host_receive_buffer_bytes,
         fixture_rx,
         fixture_tx,
+        tx_monitor_rx,
     } = evidence;
     let rx_median = rx.throughput_median_kbps;
     let pipeline = rx.pipeline;
@@ -3041,6 +3072,48 @@ fn write_report(
             )
         },
     );
+    let tx_monitor_report = tx_monitor_rx.map_or_else(
+        || String::from("## OpenWrt AP TX-monitor frontier\n\nNot collected.\n\n"),
+        |air| {
+            let target = structured.rx_delivery.map(|delivery| delivery.post_reorder);
+            let frontier = target.map_or("target delivery evidence unavailable", |target| {
+                if air.unique_units == target.data_units
+                    && air.unrecovered
+                        == u32::try_from(host.datagrams)
+                            .unwrap_or(u32::MAX)
+                            .saturating_sub(target.data_units)
+                {
+                    "at or before the OpenWrt AP TX-monitor tap (tap and target have equal sequence cardinality)"
+                } else {
+                    "between the OpenWrt AP TX-monitor tap and target post-reorder"
+                }
+            });
+            format!(
+                "## OpenWrt AP TX-monitor frontier\n\n\
+                 - Classification: `{frontier}`\n\
+                 - Capture frames/kernel drops: `{}` / `{}`\n\
+                 - UDP publications/unique/duplicates: `{}` / `{}` / `{}`\n\
+                 - Gap/missing/late/unrecovered: `{}` / `{}` / `{}` / `{}`\n\
+                 - Out-of-range/terminal/retry publications: `{}` / `{}` / `{}`\n\
+                 - First anomaly: `{:?}`\n\
+                 - Target post-reorder data units: `{}`\n\n",
+                air.captured_frames,
+                air.kernel_dropped,
+                air.data_units,
+                air.unique_units,
+                air.duplicates,
+                air.gap_events,
+                air.forward_missing,
+                air.late_recovered,
+                air.unrecovered,
+                air.out_of_range,
+                air.terminal_markers,
+                air.mac_retry_publications,
+                air.first_anomaly,
+                target.map_or(0, |target| target.data_units),
+            )
+        },
+    );
     let result = if failure.is_some() { "FAIL" } else { "PASS" };
     let failure_report = failure
         .map(|failure| format!("- Acceptance failure: `{failure}`\n"))
@@ -3073,6 +3146,7 @@ fn write_report(
              {rx_order_report}\
              {rx_reorder_report}\
              {typed_delivery_report}\
+             {tx_monitor_report}\
              ## RX evidence\n\n\
              - Enqueued/software-dropped frames: `{}` / `{}`\n\
              - Sampled HE-SU MCS0..11 frame histogram: `{:?}`; other sampled PHY frames: `{}`\n\

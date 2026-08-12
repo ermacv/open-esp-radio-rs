@@ -99,6 +99,7 @@ enum RawStationFixtureConfig {
         ssh_target: String,
         wireless_interface: String,
         ingress_interface: String,
+        monitor_interface: Option<String>,
     },
     External,
 }
@@ -120,6 +121,7 @@ pub(crate) struct OpenWrtConfig {
     pub(crate) ssh_target: String,
     pub(crate) wireless_interface: String,
     pub(crate) ingress_interface: String,
+    pub(crate) monitor_interface: Option<String>,
 }
 
 impl LabConfig {
@@ -178,6 +180,7 @@ impl LabConfig {
                 ssh_target,
                 wireless_interface,
                 ingress_interface,
+                monitor_interface,
             } => {
                 for (name, value) in [
                     ("station_fixture.ssh_target", ssh_target.as_str()),
@@ -191,6 +194,9 @@ impl LabConfig {
                     ),
                 ] {
                     validate_shell_token(name, value)?;
+                }
+                if let Some(interface) = monitor_interface {
+                    validate_shell_token("station_fixture.monitor_interface", interface)?;
                 }
             }
             RawStationFixtureConfig::External => {}
@@ -232,10 +238,12 @@ impl LabConfig {
                     ssh_target,
                     wireless_interface,
                     ingress_interface,
+                    monitor_interface,
                 } => StationFixtureConfig::OpenWrt(OpenWrtConfig {
                     ssh_target,
                     wireless_interface,
                     ingress_interface,
+                    monitor_interface,
                 }),
                 RawStationFixtureConfig::External => StationFixtureConfig::External,
             },
@@ -272,6 +280,7 @@ impl LabConfig {
                 ssh_target: String::from("open-radio-ap"),
                 wireless_interface: String::from("phy0-ap0"),
                 ingress_interface: String::from("br-lan"),
+                monitor_interface: Some(String::from("open-radio-mon")),
             }),
             data_plane: Cell::new(WifiDataPlanePlacement::SingleCore),
         }

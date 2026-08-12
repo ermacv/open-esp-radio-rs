@@ -14,64 +14,12 @@ use embassy_sync::{
     channel::{Channel, Receiver, Sender, TryReceiveError, TrySendError},
     signal::Signal,
 };
-use embassy_time::{Duration, Instant};
 use open_esp_radio_dma::{
     DmaIndexReturn, PinnedDmaTxNetworkLease, PinnedDmaTxPool, PinnedDmaTxRadioLease,
     ReturningStableDmaBacking, RxHandoffPool, RxNetworkLease, RxRadioLease,
 };
 
 use crate::{ETHERNET_HEADER_LEN, FrameLengthError, RxEnqueueError, SharedLinkState};
-
-/// Maximum continuous ingress or egress residence inside one
-/// `smoltcp::Interface::poll` direction. The limit is temporal rather than a
-/// frame-count ceiling, so fast paths may drain as many frames as fit while a
-/// slow path cannot monopolize a cooperative executor.
-pub const DEFAULT_NETWORK_SERVICE_BUDGET: Duration = Duration::from_micros(250);
-
-struct ServicePollBudget {
-    /// `u64::MAX` disables the policy, zero is an enabled idle epoch and any
-    /// other value is `Instant::as_ticks() + 1` for an active epoch.
-    encoded_started: u64,
-}
-
-impl ServicePollBudget {
-    const fn disabled() -> Self {
-        Self {
-            encoded_started: u64::MAX,
-        }
-    }
-
-    fn enable(&mut self) {
-        self.encoded_started = 0;
-    }
-
-    /// Return `(admitted, new_epoch)` and self-wake at a forced boundary.
-    fn admit(&mut self, cx: &mut Context<'_>) -> (bool, bool) {
-        if self.encoded_started == u64::MAX {
-            return (true, false);
-        }
-        if self.encoded_started == 0 {
-            self.encoded_started = Instant::now().as_ticks().wrapping_add(1);
-            return (true, true);
-        }
-        let started_ticks = self.encoded_started.wrapping_sub(1);
-        if Instant::now().as_ticks().wrapping_sub(started_ticks)
-            >= DEFAULT_NETWORK_SERVICE_BUDGET.as_ticks()
-        {
-            self.encoded_started = 0;
-            cx.waker().wake_by_ref();
-            (false, false)
-        } else {
-            (true, false)
-        }
-    }
-
-    fn reset(&mut self) {
-        if self.encoded_started != u64::MAX {
-            self.encoded_started = 0;
-        }
-    }
-}
 
 /// Role-selected Ethernet identity shared by the persistent network device
 /// and the currently active radio epoch.
@@ -98,6 +46,107 @@ impl<M: RawMutex> SharedHardwareAddress<M> {
     fn get(&self) -> [u8; 6] {
         self.address.lock(Cell::get)
     }
+}
+
+/// Ready-index channel for an RX pool owned by a lower staging layer.
+///
+/// The bytes remain in that external [`RxHandoffPool`]. This resource stores
+/// only the ownership publication edge consumed by the network device.
+pub struct SharedPinnedRxQueue<M: RawMutex, const SLOT_COUNT: usize> {
+    ready: Channel<M, u8, SLOT_COUNT>,
+    split: AtomicBool,
+}
+
+impl<M: RawMutex, const SLOT_COUNT: usize> SharedPinnedRxQueue<M, SLOT_COUNT> {
+    pub const fn new() -> Self {
+        Self {
+            ready: Channel::new(),
+            split: AtomicBool::new(false),
+        }
+    }
+
+    pub fn split<'resources, const FRAME_CAPACITY: usize>(
+        &'resources self,
+        pool: &'resources RxHandoffPool<FRAME_CAPACITY, SLOT_COUNT>,
+        on_release: fn(),
+    ) -> (
+        SharedPinnedRxPublisher<'resources, M, SLOT_COUNT>,
+        SharedPinnedRxConsumer<'resources, M, FRAME_CAPACITY, SLOT_COUNT>,
+    ) {
+        assert!(SLOT_COUNT > 0, "shared pinned RX pool must not be empty");
+        assert!(
+            SLOT_COUNT <= usize::from(u8::MAX) + 1,
+            "shared pinned RX index must fit in u8"
+        );
+        assert!(
+            !self.split.swap(true, Ordering::AcqRel),
+            "shared pinned RX queue may only be split once"
+        );
+        (
+            SharedPinnedRxPublisher {
+                ready: self.ready.sender(),
+            },
+            SharedPinnedRxConsumer {
+                ready: self.ready.receiver(),
+                pool,
+                on_release,
+            },
+        )
+    }
+
+    /// Recreate the cheap producer endpoint after the unique consumer has
+    /// been installed. Sequential radio epochs may each own one such handle.
+    pub fn publisher(&self) -> SharedPinnedRxPublisher<'_, M, SLOT_COUNT> {
+        assert!(
+            self.split.load(Ordering::Acquire),
+            "shared pinned RX queue must be split before publication"
+        );
+        SharedPinnedRxPublisher {
+            ready: self.ready.sender(),
+        }
+    }
+}
+
+impl<M: RawMutex, const SLOT_COUNT: usize> Default for SharedPinnedRxQueue<M, SLOT_COUNT> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Protocol-side capability to publish one already formatted external slot.
+pub struct SharedPinnedRxPublisher<'resources, M: RawMutex, const SLOT_COUNT: usize> {
+    ready: Sender<'resources, M, u8, SLOT_COUNT>,
+}
+
+impl<M: RawMutex, const SLOT_COUNT: usize> Clone for SharedPinnedRxPublisher<'_, M, SLOT_COUNT> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<M: RawMutex, const SLOT_COUNT: usize> Copy for SharedPinnedRxPublisher<'_, M, SLOT_COUNT> {}
+
+impl<M: RawMutex, const SLOT_COUNT: usize> SharedPinnedRxPublisher<'_, M, SLOT_COUNT> {
+    pub fn publish(&self, index: u8) {
+        if let Err(TrySendError::Full(_)) = self.ready.try_send(index) {
+            unreachable!("one ready entry exists per retained shared RX slot");
+        }
+    }
+
+    pub fn queue_len(&self) -> usize {
+        self.ready.len()
+    }
+}
+
+pub struct SharedPinnedRxConsumer<
+    'resources,
+    M: RawMutex,
+    const FRAME_CAPACITY: usize,
+    const SLOT_COUNT: usize,
+> {
+    ready: Receiver<'resources, M, u8, SLOT_COUNT>,
+    pool: &'resources RxHandoffPool<FRAME_CAPACITY, SLOT_COUNT>,
+    on_release: fn(),
 }
 
 /// Static resources for copy-minimal RX and copy-free TX ownership boundaries.
@@ -244,7 +293,6 @@ impl<
                 application_tx: None,
                 reserve_ingress_tx: false,
                 tx_reservation: (),
-                service_budget: ServicePollBudget::disabled(),
             },
             SplitPinnedRadioRunner {
                 free_rx: resources.free_rx.receiver(),
@@ -302,7 +350,6 @@ pub struct SplitPinnedDevice<
     application_tx: Option<u8>,
     reserve_ingress_tx: bool,
     tx_reservation: (),
-    service_budget: ServicePollBudget,
 }
 
 /// Compatibility form with equal receive and transmit queue depths.
@@ -344,17 +391,6 @@ impl<
             "ingress TX reserve needs an application credit"
         );
         self.reserve_ingress_tx = true;
-        self
-    }
-
-    /// Bound continuous ingress and egress service by elapsed time rather
-    /// than a frame count. A forced boundary self-wakes the stack task.
-    pub fn with_network_service_budget(mut self, duration: Duration) -> Self {
-        assert_eq!(
-            duration, DEFAULT_NETWORK_SERVICE_BUDGET,
-            "ESP32-S31 uses the qualified network service budget"
-        );
-        self.service_budget.enable();
         self
     }
 
@@ -403,6 +439,30 @@ impl<
             _reservation: &mut self.tx_reservation,
         }
     }
+
+    /// Add a second RX source whose storage remains owned by a lower staging
+    /// pool. Ordinary frames can then cross into `embassy-net` by index while
+    /// this device's original RX pool remains available for copying slow
+    /// paths such as A-MSDU expansion.
+    pub fn with_shared_rx<const SHARED_CAPACITY: usize, const SHARED_SLOTS: usize>(
+        self,
+        shared: SharedPinnedRxConsumer<'resources, M, SHARED_CAPACITY, SHARED_SLOTS>,
+    ) -> SharedRxSplitPinnedDevice<
+        'resources,
+        M,
+        FRAME_CAPACITY,
+        HEADROOM,
+        TRAILER,
+        RX_QUEUE_DEPTH,
+        TX_QUEUE_DEPTH,
+        SHARED_CAPACITY,
+        SHARED_SLOTS,
+    > {
+        SharedRxSplitPinnedDevice {
+            inner: self,
+            shared,
+        }
+    }
 }
 
 /// Unique `embassy-net` lease for one permanently located received frame.
@@ -445,6 +505,93 @@ impl<M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize> Drop
             }
         }
     }
+}
+
+/// Network token backed by a lower staging pool rather than the adapter's
+/// copying slow-path pool.
+pub struct SharedPoolReceiveToken<'resources, const FRAME_CAPACITY: usize> {
+    lease: Option<RxNetworkLease<'resources, FRAME_CAPACITY>>,
+    on_release: fn(),
+}
+
+impl<const FRAME_CAPACITY: usize> embassy_net_driver::RxToken
+    for SharedPoolReceiveToken<'_, FRAME_CAPACITY>
+{
+    fn consume<R, F>(mut self, f: F) -> R
+    where
+        F: FnOnce(&mut [u8]) -> R,
+    {
+        self.lease
+            .as_mut()
+            .expect("live shared RX token")
+            .with_frame(f)
+    }
+}
+
+impl<const FRAME_CAPACITY: usize> Drop for SharedPoolReceiveToken<'_, FRAME_CAPACITY> {
+    fn drop(&mut self) {
+        if let Some(lease) = self.lease.take() {
+            drop(lease);
+            (self.on_release)();
+        }
+    }
+}
+
+/// RX token for a device that accepts both copied slow-path frames and
+/// in-place frames retained in the lower staging pool.
+pub enum SharedPinnedReceiveToken<
+    'resources,
+    M: RawMutex,
+    const OWNED_CAPACITY: usize,
+    const OWNED_DEPTH: usize,
+    const SHARED_CAPACITY: usize,
+> {
+    Owned(PinnedReceiveToken<'resources, M, OWNED_CAPACITY, OWNED_DEPTH>),
+    Shared(SharedPoolReceiveToken<'resources, SHARED_CAPACITY>),
+}
+
+impl<
+    M: RawMutex,
+    const OWNED_CAPACITY: usize,
+    const OWNED_DEPTH: usize,
+    const SHARED_CAPACITY: usize,
+> embassy_net_driver::RxToken
+    for SharedPinnedReceiveToken<'_, M, OWNED_CAPACITY, OWNED_DEPTH, SHARED_CAPACITY>
+{
+    fn consume<R, F>(self, f: F) -> R
+    where
+        F: FnOnce(&mut [u8]) -> R,
+    {
+        match self {
+            Self::Owned(token) => embassy_net_driver::RxToken::consume(token, f),
+            Self::Shared(token) => embassy_net_driver::RxToken::consume(token, f),
+        }
+    }
+}
+
+/// `embassy-net` device that multiplexes an in-place staging pool and the
+/// adapter-owned copying pool while retaining one common TX/link owner.
+pub struct SharedRxSplitPinnedDevice<
+    'resources,
+    M: RawMutex,
+    const FRAME_CAPACITY: usize,
+    const HEADROOM: usize,
+    const TRAILER: usize,
+    const RX_QUEUE_DEPTH: usize,
+    const TX_QUEUE_DEPTH: usize,
+    const SHARED_CAPACITY: usize,
+    const SHARED_SLOTS: usize,
+> {
+    inner: SplitPinnedDevice<
+        'resources,
+        M,
+        FRAME_CAPACITY,
+        HEADROOM,
+        TRAILER,
+        RX_QUEUE_DEPTH,
+        TX_QUEUE_DEPTH,
+    >,
+    shared: SharedPinnedRxConsumer<'resources, M, SHARED_CAPACITY, SHARED_SLOTS>,
 }
 
 impl<
@@ -567,20 +714,12 @@ impl<
         Self: 'device;
 
     fn receive(&mut self, cx: &mut Context<'_>) -> Option<(Self::RxToken<'_>, Self::TxToken<'_>)> {
-        let (admitted, _) = self.service_budget.admit(cx);
-        if !admitted {
-            return None;
-        }
         if !self.poll_reserve_ingress_tx(cx) {
-            self.service_budget.reset();
             return None;
         }
         let index = match self.ready_rx.poll_receive(cx) {
             Poll::Ready(index) => index,
-            Poll::Pending => {
-                self.service_budget.reset();
-                return None;
-            }
+            Poll::Pending => return None,
         };
         let lease = self.rx_pool.claim_network(index);
         let tx_index = self
@@ -597,12 +736,7 @@ impl<
     }
 
     fn transmit(&mut self, cx: &mut Context<'_>) -> Option<Self::TxToken<'_>> {
-        let (admitted, _) = self.service_budget.admit(cx);
-        if !admitted {
-            return None;
-        }
         if !self.poll_reserve_application_tx(cx) {
-            self.service_budget.reset();
             return None;
         }
         let index = self
@@ -625,6 +759,94 @@ impl<
 
     fn hardware_address(&self) -> HardwareAddress {
         HardwareAddress::Ethernet(self.hardware_address.get())
+    }
+}
+
+impl<
+    'resources,
+    M: RawMutex,
+    const FRAME_CAPACITY: usize,
+    const HEADROOM: usize,
+    const TRAILER: usize,
+    const RX_QUEUE_DEPTH: usize,
+    const TX_QUEUE_DEPTH: usize,
+    const SHARED_CAPACITY: usize,
+    const SHARED_SLOTS: usize,
+> Driver
+    for SharedRxSplitPinnedDevice<
+        'resources,
+        M,
+        FRAME_CAPACITY,
+        HEADROOM,
+        TRAILER,
+        RX_QUEUE_DEPTH,
+        TX_QUEUE_DEPTH,
+        SHARED_CAPACITY,
+        SHARED_SLOTS,
+    >
+{
+    type RxToken<'device>
+        = SharedPinnedReceiveToken<'resources, M, FRAME_CAPACITY, RX_QUEUE_DEPTH, SHARED_CAPACITY>
+    where
+        Self: 'device;
+    type TxToken<'device>
+        = PinnedTransmitToken<
+        'device,
+        'resources,
+        M,
+        FRAME_CAPACITY,
+        HEADROOM,
+        TRAILER,
+        TX_QUEUE_DEPTH,
+    >
+    where
+        Self: 'device;
+
+    fn receive(&mut self, cx: &mut Context<'_>) -> Option<(Self::RxToken<'_>, Self::TxToken<'_>)> {
+        if !self.inner.poll_reserve_ingress_tx(cx) {
+            return None;
+        }
+        if let Poll::Ready(index) = self.shared.ready.poll_receive(cx) {
+            let lease = self.shared.pool.claim_network(index);
+            let tx_index = self
+                .inner
+                .ingress_tx
+                .take()
+                .expect("shared ingress admission reserves one TX credit");
+            let tx = self.inner.take_tx_token(tx_index);
+            return Some((
+                SharedPinnedReceiveToken::Shared(SharedPoolReceiveToken {
+                    lease: Some(lease),
+                    on_release: self.shared.on_release,
+                }),
+                tx,
+            ));
+        }
+        self.inner
+            .receive(cx)
+            .map(|(rx, tx)| (SharedPinnedReceiveToken::Owned(rx), tx))
+    }
+
+    fn transmit(&mut self, cx: &mut Context<'_>) -> Option<Self::TxToken<'_>> {
+        self.inner.transmit(cx)
+    }
+
+    fn link_state(&mut self, cx: &mut Context<'_>) -> LinkState {
+        self.inner.link_state(cx)
+    }
+
+    fn capabilities(&self) -> Capabilities {
+        let mut capabilities = self.inner.capabilities();
+        capabilities.max_burst_size = Some(
+            RX_QUEUE_DEPTH
+                .saturating_add(SHARED_SLOTS)
+                .min(TX_QUEUE_DEPTH),
+        );
+        capabilities
+    }
+
+    fn hardware_address(&self) -> HardwareAddress {
+        self.inner.hardware_address()
     }
 }
 
@@ -1013,47 +1235,3 @@ pub type PinnedTxFrame<
     PinnedDmaTxRadioLease<'resources, FRAME_CAPACITY, HEADROOM, TRAILER>,
     PinnedTxReturn<'resources, M, QUEUE_DEPTH>,
 >;
-
-#[cfg(test)]
-mod tests {
-    use core::{
-        pin::pin,
-        task::{Context, Waker},
-    };
-
-    use embassy_net_driver::Driver as _;
-    use embassy_sync::blocking_mutex::raw::NoopRawMutex;
-
-    use super::*;
-
-    #[test]
-    fn elapsed_service_budget_forces_a_self_woken_boundary() {
-        let mut budget = ServicePollBudget::disabled();
-        budget.enable();
-        let mut context = Context::from_waker(Waker::noop());
-        assert_eq!(budget.admit(&mut context), (true, true));
-        budget.encoded_started = Instant::now()
-            .as_ticks()
-            .wrapping_sub(DEFAULT_NETWORK_SERVICE_BUDGET.as_ticks())
-            .wrapping_add(1);
-        assert_eq!(budget.admit(&mut context), (false, false));
-    }
-
-    #[test]
-    fn elapsed_service_budget_stops_egress_and_resumes_next_poll() {
-        type TestResources = SplitPinnedResources<NoopRawMutex, 64, 28, 8, 1, 2>;
-        type TestPool = PinnedTxPool<64, 28, 8, 2>;
-        let mut resources = TestResources::new();
-        let mut pool = pin!(TestPool::new());
-        let (device, _radio) = resources.split(pool.as_mut(), [0; 6]);
-        let mut device = device.with_network_service_budget(DEFAULT_NETWORK_SERVICE_BUDGET);
-        let mut context = Context::from_waker(Waker::noop());
-
-        device.service_budget.encoded_started = Instant::now()
-            .as_ticks()
-            .wrapping_sub(DEFAULT_NETWORK_SERVICE_BUDGET.as_ticks())
-            .wrapping_add(1);
-        assert!(device.transmit(&mut context).is_none());
-        assert!(device.transmit(&mut context).is_some());
-    }
-}

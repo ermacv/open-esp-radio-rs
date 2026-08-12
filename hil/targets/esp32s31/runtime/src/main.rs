@@ -59,10 +59,15 @@ const STACK_PAINT_MARGIN_BYTES: u32 = 256;
 #[cfg(feature = "open-radio-hil")]
 const STACK_PAINT_BOTTOM_RESERVE_BYTES: u32 = 256;
 #[cfg(feature = "open-radio-hil")]
-// CPU1 runs the Embassy network executor. Its nested async call graph needs more
-// than 10 KiB under sustained A-MPDU traffic; runtime stack painting enforces a
-// 4-KiB reserve. Packet storage itself stays in static/PSRAM buffers.
+// CPU1 runs the Embassy network executor in split images. Its nested async call
+// graph needs more than 10 KiB under sustained A-MPDU traffic. The single-core
+// task-poll image keeps only the idle control executor on CPU1, reclaiming SRAM
+// without moving any radio/network work away from CPU0. Both variants retain
+// the same independently checked 4-KiB runtime reserve.
+#[cfg(not(feature = "single-core-diagnostic"))]
 const APP_CORE_STACK_BYTES: usize = 16 * 1024;
+#[cfg(feature = "single-core-diagnostic")]
+const APP_CORE_STACK_BYTES: usize = 8 * 1024;
 
 #[cfg(feature = "code-flash")]
 const PROFILE_CODE_START: u32 = 0x4000_0140;

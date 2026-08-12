@@ -44,7 +44,7 @@ impl ImageClass {
             Self::BootSmoke => "boot-smoke,code-psram,profile-psram-data",
             Self::Qualification => "open-radio-hil,code-psram,profile-psram-data",
             Self::DiagnosticTaskPoll => {
-                "open-radio-hil,task-poll-telemetry,code-psram,profile-psram-data"
+                "open-radio-hil,task-poll-telemetry,single-core-diagnostic,code-psram,profile-psram-data"
             }
             Self::DiagnosticRxDelivery => {
                 "open-radio-hil,rx-delivery-telemetry,code-psram,profile-psram-data"
@@ -281,6 +281,15 @@ impl Scenario {
         if self.image != ImageClass::BootSmoke && matches!(self.workload, Workload::BootSmoke) {
             return Err(format!(
                 "{}: boot-smoke workload requires boot-smoke image",
+                self.source.display()
+            )
+            .into());
+        }
+        if self.image == ImageClass::DiagnosticTaskPoll
+            && self.data_plane != WifiDataPlanePlacement::SingleCore
+        {
+            return Err(format!(
+                "{}: diagnostic-task-poll image admits only single-core data-plane placement",
                 self.source.display()
             )
             .into());

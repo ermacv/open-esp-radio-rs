@@ -95,8 +95,72 @@ pub type Esp32s31ConnectedRxProtocolStopped<
 /// The synchronous [`ConnectedRxSink`] callback remains useful for finite
 /// parsing and control observers. This companion edge lets a network adapter
 /// retain the staged frame until its bounded output queue has ownership.
-pub trait ConnectedRxProtocolSink: ConnectedRxSink {
+pub trait ConnectedRxProtocolSink<
+    const CAPACITY: usize = VENDOR_LARGE_RX_PAYLOAD_CAPACITY,
+    const SLOTS: usize = VENDOR_LARGE_RX_SLOT_COUNT,
+>: ConnectedRxSink
+{
+    /// Capacity edge for a frame that must be copied into adapter-owned
+    /// storage, including A-MSDU subframes and reorder slow paths.
     fn wait_ready(&mut self) -> impl Future<Output = ()> + '_;
+
+    /// Capacity edge for an ordinary frame still owning its staging slot.
+    /// In-place sinks need no second slot and therefore return immediately.
+    fn wait_staged_ready(&mut self) -> impl Future<Output = ()> + '_ {
+        self.wait_ready()
+    }
+
+    /// Publish an ordinary Ethernet frame from its unique staging owner.
+    /// The default preserves the copying behavior for test/control sinks.
+    fn publish_staged(
+        &mut self,
+        frame: Esp32s31StagedRxFrame<'_, CAPACITY, SLOTS>,
+        ethernet: StagedEthernetPublication,
+    ) -> StagedRxDisposition {
+        {
+            let raw = frame.segment().buffer;
+            let payload_end = ethernet
+                .payload_offset
+                .checked_add(ethernet.payload_length)
+                .expect("captured Ethernet payload range cannot overflow");
+            let payload = raw
+                .get(ethernet.payload_offset..payload_end)
+                .expect("captured Ethernet payload belongs to its staged frame");
+            self.publish(ConnectedRxEvent::Ethernet {
+                frame: EthernetFrameParts {
+                    destination: ethernet.destination,
+                    source: ethernet.source,
+                    ether_type: ethernet.ether_type,
+                    payload,
+                },
+                raw,
+                amsdu: false,
+                metadata: ethernet.metadata,
+            });
+        }
+        drop(frame);
+        StagedRxDisposition::Released
+    }
+}
+
+/// Borrow-free description captured while the dispatcher validates one
+/// ordinary Ethernet frame inside its staging slot.
+#[derive(Clone, Copy, Debug)]
+pub struct StagedEthernetPublication {
+    pub destination: [u8; 6],
+    pub source: [u8; 6],
+    pub ether_type: u16,
+    pub payload_offset: usize,
+    pub payload_length: usize,
+    pub metadata: MacRxMetadata<RxPhyInfo>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StagedRxDisposition {
+    /// The sink dropped or copied the staging owner synchronously.
+    Released,
+    /// The network device retains the slot until its RX token is consumed.
+    RetainedByNetwork,
 }
 
 /// Adapter for sinks whose `publish` operation cannot experience ownership
@@ -112,7 +176,9 @@ impl<S: ConnectedRxSink> ConnectedRxSink for AlwaysReadyConnectedRxSink<S> {
     }
 }
 
-impl<S: ConnectedRxSink> ConnectedRxProtocolSink for AlwaysReadyConnectedRxSink<S> {
+impl<S: ConnectedRxSink, const CAPACITY: usize, const SLOTS: usize>
+    ConnectedRxProtocolSink<CAPACITY, SLOTS> for AlwaysReadyConnectedRxSink<S>
+{
     fn wait_ready(&mut self) -> impl Future<Output = ()> + '_ {
         ready(())
     }

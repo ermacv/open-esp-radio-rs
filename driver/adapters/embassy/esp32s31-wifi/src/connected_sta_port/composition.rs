@@ -43,7 +43,7 @@ impl Esp32s31ConnectedStaPort {
     >
     where
         M: RawMutex,
-        S: ConnectedRxProtocolSink,
+        S: ConnectedRxProtocolSink<CAPACITY, SLOTS>,
     {
         let mut protocol = Esp32s31ConnectedRxProtocol::new_with_reorder_slots(
             resources.frames,
@@ -341,7 +341,7 @@ impl Esp32s31ConnectedStaPort {
     >
     where
         M: RawMutex,
-        S: ConnectedRxProtocolSink,
+        S: ConnectedRxProtocolSink<RX_CAPACITY, RX_SLOTS>,
         P: WifiTxPowerProfile,
         E: WifiTxEntropy,
         T: WifiTxTimer,

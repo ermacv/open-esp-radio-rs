@@ -25,7 +25,7 @@ impl<
         REORDER_SLOTS,
     >
 where
-    S: ConnectedRxProtocolSink,
+    S: ConnectedRxProtocolSink<CAPACITY, SLOTS>,
 {
     pub(super) async fn dispatch_retained_frame(
         &mut self,
@@ -77,9 +77,57 @@ where
         &mut self,
         frame: Esp32s31StagedRxFrame<'pool, CAPACITY, SLOTS>,
     ) -> ConnectedRxDispatch {
-        let result = self.dispatch_segment(frame.segment()).await;
-        drop(frame);
-        self.irq.notify_rx_capacity();
+        if self.dispatcher.may_publish_amsdu(frame.segment())
+            || !self.dispatcher.may_publish_ethernet(frame.segment())
+        {
+            let result = self.dispatch_segment(frame.segment()).await;
+            drop(frame);
+            self.irq.notify_rx_capacity();
+            return result;
+        }
+
+        let wait_started = self.pipeline_observer.map(|observer| observer.now_micros());
+        self.sink.wait_staged_ready().await;
+        if let (Some(observer), Some(started)) = (self.pipeline_observer, wait_started) {
+            observer.observe(RxPipelineObservation::NetworkReadyWait {
+                micros: observer.elapsed_micros_since(started),
+            });
+        }
+
+        let dispatch_started = self.pipeline_observer.map(|observer| observer.now_micros());
+        let segment = frame.segment();
+        let mut capture = StagedEthernetCapture::new(&mut self.sink, segment.buffer);
+        let result = self
+            .dispatcher
+            .dispatch(segment, self.mpdu, &mut [], &mut capture);
+        let ethernet = capture.captured;
+        drop(capture);
+        if let (Some(observer), Some(started)) = (self.pipeline_observer, dispatch_started) {
+            let (data, amsdu, amsdu_subframes) = match result {
+                ConnectedRxDispatch::Data {
+                    ethernet_frames,
+                    amsdu,
+                } => (true, amsdu, ethernet_frames),
+                _ => (false, false, 0),
+            };
+            observer.observe(RxPipelineObservation::ProtocolDispatched {
+                data,
+                amsdu,
+                amsdu_subframes,
+                unit_bytes: segment.buffer.len(),
+                micros: observer.elapsed_micros_since(started),
+            });
+        }
+
+        let disposition = if let Some(ethernet) = ethernet {
+            self.sink.publish_staged(frame, ethernet)
+        } else {
+            drop(frame);
+            StagedRxDisposition::Released
+        };
+        if disposition == StagedRxDisposition::Released {
+            self.irq.notify_rx_capacity();
+        }
         result
     }
 
@@ -167,7 +215,65 @@ where
     }
 }
 
-async fn dispatch_non_amsdu_segment<S: ConnectedRxProtocolSink>(
+struct StagedEthernetCapture<'sink, S> {
+    sink: &'sink mut S,
+    raw_start: usize,
+    raw_length: usize,
+    captured: Option<StagedEthernetPublication>,
+}
+
+impl<'sink, S> StagedEthernetCapture<'sink, S> {
+    fn new(sink: &'sink mut S, raw: &[u8]) -> Self {
+        Self {
+            sink,
+            raw_start: raw.as_ptr() as usize,
+            raw_length: raw.len(),
+            captured: None,
+        }
+    }
+}
+
+impl<S: ConnectedRxSink> ConnectedRxSink for StagedEthernetCapture<'_, S> {
+    fn publish(&mut self, event: ConnectedRxEvent<'_>) {
+        let ConnectedRxEvent::Ethernet {
+            frame,
+            amsdu: false,
+            metadata,
+            ..
+        } = event
+        else {
+            self.sink.publish(event);
+            return;
+        };
+        let payload_start = frame.payload.as_ptr() as usize;
+        let payload_offset = payload_start
+            .checked_sub(self.raw_start)
+            .filter(|offset| {
+                offset
+                    .checked_add(frame.payload.len())
+                    .is_some_and(|end| end <= self.raw_length)
+            })
+            .expect("ordinary staged Ethernet payload belongs to its raw frame");
+        assert!(
+            self.captured.is_none(),
+            "one ordinary MPDU publishes exactly one Ethernet frame"
+        );
+        self.captured = Some(StagedEthernetPublication {
+            destination: frame.destination,
+            source: frame.source,
+            ether_type: frame.ether_type,
+            payload_offset,
+            payload_length: frame.payload.len(),
+            metadata,
+        });
+    }
+}
+
+async fn dispatch_non_amsdu_segment<
+    const CAPACITY: usize,
+    const SLOTS: usize,
+    S: ConnectedRxProtocolSink<CAPACITY, SLOTS>,
+>(
     dispatcher: &mut ConnectedRxDispatcher,
     sink: &mut S,
     mpdu: &mut [u8],

@@ -1,12 +1,17 @@
 //! Bounded connected-RX publication into the Embassy network adapter.
 
-use core::future::Future;
+use core::future::{Future, ready};
 
-use open_esp_radio_embassy_net::{PinnedRxPublisher, RawMutex, RxEnqueueError};
+use open_esp_radio_embassy_net::{
+    PinnedRxPublisher, RawMutex, RxEnqueueError, SharedPinnedRxPublisher,
+};
 use open_esp_radio_esp32s31_wifi_mac::connected_rx::{ConnectedRxEvent, ConnectedRxSink};
 
 use crate::{
-    connected_rx_protocol::ConnectedRxProtocolSink,
+    connected_rx_protocol::{
+        ConnectedRxProtocolSink, Esp32s31StagedRxFrame, StagedEthernetPublication,
+        StagedRxDisposition,
+    },
     rx_pipeline_observer::{
         RxNetworkPublicationOutcome, RxPipelineObservation, RxPipelineObserver,
     },
@@ -32,8 +37,11 @@ pub struct EmbassyNetConnectedRxSink<
     O,
     const FRAME_CAPACITY: usize,
     const QUEUE_DEPTH: usize,
+    const STAGE_CAPACITY: usize = FRAME_CAPACITY,
+    const STAGE_SLOTS: usize = QUEUE_DEPTH,
 > {
     network: PinnedRxPublisher<'resources, M, FRAME_CAPACITY, QUEUE_DEPTH>,
+    shared: Option<SharedPinnedRxPublisher<'resources, M, STAGE_SLOTS>>,
     observer: O,
     enqueued: u32,
     dropped: u32,
@@ -44,7 +52,15 @@ pub struct EmbassyNetConnectedRxSink<
 }
 
 impl<'resources, M: RawMutex, O, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize>
-    EmbassyNetConnectedRxSink<'resources, M, O, FRAME_CAPACITY, QUEUE_DEPTH>
+    EmbassyNetConnectedRxSink<
+        'resources,
+        M,
+        O,
+        FRAME_CAPACITY,
+        QUEUE_DEPTH,
+        FRAME_CAPACITY,
+        QUEUE_DEPTH,
+    >
 {
     pub const fn new(
         network: PinnedRxPublisher<'resources, M, FRAME_CAPACITY, QUEUE_DEPTH>,
@@ -52,6 +68,45 @@ impl<'resources, M: RawMutex, O, const FRAME_CAPACITY: usize, const QUEUE_DEPTH:
     ) -> Self {
         Self {
             network,
+            shared: None,
+            observer,
+            enqueued: 0,
+            dropped: 0,
+            last_enqueue_error: None,
+            pipeline_observer: None,
+            #[cfg(feature = "rx-delivery-observation")]
+            delivery_observer: None,
+        }
+    }
+}
+
+impl<
+    'resources,
+    M: RawMutex,
+    O,
+    const FRAME_CAPACITY: usize,
+    const QUEUE_DEPTH: usize,
+    const STAGE_CAPACITY: usize,
+    const STAGE_SLOTS: usize,
+>
+    EmbassyNetConnectedRxSink<
+        'resources,
+        M,
+        O,
+        FRAME_CAPACITY,
+        QUEUE_DEPTH,
+        STAGE_CAPACITY,
+        STAGE_SLOTS,
+    >
+{
+    pub const fn new_with_shared_rx(
+        network: PinnedRxPublisher<'resources, M, FRAME_CAPACITY, QUEUE_DEPTH>,
+        shared: SharedPinnedRxPublisher<'resources, M, STAGE_SLOTS>,
+        observer: O,
+    ) -> Self {
+        Self {
+            network,
+            shared: Some(shared),
             observer,
             enqueued: 0,
             dropped: 0,
@@ -97,8 +152,23 @@ impl<'resources, M: RawMutex, O, const FRAME_CAPACITY: usize, const QUEUE_DEPTH:
     }
 }
 
-impl<M: RawMutex, O: ConnectedRxSink, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize>
-    ConnectedRxSink for EmbassyNetConnectedRxSink<'_, M, O, FRAME_CAPACITY, QUEUE_DEPTH>
+impl<
+    M: RawMutex,
+    O: ConnectedRxSink,
+    const FRAME_CAPACITY: usize,
+    const QUEUE_DEPTH: usize,
+    const STAGE_CAPACITY: usize,
+    const STAGE_SLOTS: usize,
+> ConnectedRxSink
+    for EmbassyNetConnectedRxSink<
+        '_,
+        M,
+        O,
+        FRAME_CAPACITY,
+        QUEUE_DEPTH,
+        STAGE_CAPACITY,
+        STAGE_SLOTS,
+    >
 {
     fn publish(&mut self, event: ConnectedRxEvent<'_>) {
         if let ConnectedRxEvent::Ethernet { frame, .. } = event {
@@ -159,11 +229,115 @@ impl<M: RawMutex, O: ConnectedRxSink, const FRAME_CAPACITY: usize, const QUEUE_D
     }
 }
 
-impl<M: RawMutex, O: ConnectedRxSink, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize>
-    ConnectedRxProtocolSink for EmbassyNetConnectedRxSink<'_, M, O, FRAME_CAPACITY, QUEUE_DEPTH>
+impl<
+    M: RawMutex,
+    O: ConnectedRxSink,
+    const FRAME_CAPACITY: usize,
+    const QUEUE_DEPTH: usize,
+    const STAGE_CAPACITY: usize,
+    const STAGE_SLOTS: usize,
+> ConnectedRxProtocolSink<STAGE_CAPACITY, STAGE_SLOTS>
+    for EmbassyNetConnectedRxSink<
+        '_,
+        M,
+        O,
+        FRAME_CAPACITY,
+        QUEUE_DEPTH,
+        STAGE_CAPACITY,
+        STAGE_SLOTS,
+    >
 {
     fn wait_ready(&mut self) -> impl Future<Output = ()> + '_ {
         self.network.wait_ready()
+    }
+
+    fn wait_staged_ready(&mut self) -> impl Future<Output = ()> + '_ {
+        async move {
+            if self.shared.is_none() {
+                self.network.wait_ready().await;
+            } else {
+                ready(()).await;
+            }
+        }
+    }
+
+    fn publish_staged(
+        &mut self,
+        frame: Esp32s31StagedRxFrame<'_, STAGE_CAPACITY, STAGE_SLOTS>,
+        ethernet: StagedEthernetPublication,
+    ) -> StagedRxDisposition {
+        let Some(shared) = self.shared else {
+            {
+                let raw = frame.segment().buffer;
+                let payload = &raw
+                    [ethernet.payload_offset..ethernet.payload_offset + ethernet.payload_length];
+                self.publish(ConnectedRxEvent::Ethernet {
+                    frame: open_esp_radio_ieee80211::data::EthernetFrameParts {
+                        destination: ethernet.destination,
+                        source: ethernet.source,
+                        ether_type: ethernet.ether_type,
+                        payload,
+                    },
+                    raw,
+                    amsdu: false,
+                    metadata: ethernet.metadata,
+                });
+            }
+            drop(frame);
+            return StagedRxDisposition::Released;
+        };
+
+        let publish_started = self.pipeline_observer.map(|observer| observer.now_micros());
+        {
+            let raw = frame.segment().buffer;
+            let payload =
+                &raw[ethernet.payload_offset..ethernet.payload_offset + ethernet.payload_length];
+            let event = ConnectedRxEvent::Ethernet {
+                frame: open_esp_radio_ieee80211::data::EthernetFrameParts {
+                    destination: ethernet.destination,
+                    source: ethernet.source,
+                    ether_type: ethernet.ether_type,
+                    payload,
+                },
+                raw,
+                amsdu: false,
+                metadata: ethernet.metadata,
+            };
+            if ethernet.ether_type == 0x888e {
+                self.observer.publish(event);
+                drop(frame);
+                return StagedRxDisposition::Released;
+            }
+            #[cfg(feature = "rx-delivery-observation")]
+            if let Some(observer) = self.delivery_observer {
+                observer.admitted(&event);
+            }
+            self.observer.publish(event);
+        }
+
+        let ethernet_length = ethernet.payload_length.saturating_add(14);
+        let index = match frame.publish_ethernet_in_place(
+            ethernet.destination,
+            ethernet.source,
+            ethernet.ether_type,
+            ethernet.payload_offset,
+            ethernet.payload_length,
+        ) {
+            Ok(index) => index,
+            Err((_frame, error)) => {
+                unreachable!("validated staged Ethernet publication failed: {error:?}")
+            }
+        };
+        shared.publish(index);
+        self.enqueued = self.enqueued.saturating_add(1);
+        if let (Some(observer), Some(started)) = (self.pipeline_observer, publish_started) {
+            observer.observe(RxPipelineObservation::NetworkPublication {
+                bytes: ethernet_length,
+                micros: observer.elapsed_micros_since(started),
+                outcome: RxNetworkPublicationOutcome::Enqueued,
+            });
+        }
+        StagedRxDisposition::RetainedByNetwork
     }
 }
 

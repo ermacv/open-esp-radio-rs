@@ -46,7 +46,8 @@ use open_esp_radio::esp32s31::{
 };
 use open_esp_radio::wifi::{ieee80211::station::StaTxSequenceCounters, wpa2::Pmk};
 use open_esp_radio_embassy_net::{
-    PinnedTxFrame, PinnedTxPool, SplitPinnedDevice, SplitPinnedRadioRunner, SplitPinnedResources,
+    PinnedTxFrame, PinnedTxPool, SharedPinnedRxQueue, SharedRxSplitPinnedDevice,
+    SplitPinnedRadioRunner, SplitPinnedResources,
 };
 #[cfg(feature = "qualification")]
 use open_esp_radio_esp32s31_wifi_embassy::connected_rx_protocol::ConnectedRxProtocolSink;
@@ -148,7 +149,7 @@ type ConnectedTxBacking = PinnedTxFrame<
     NETWORK_TX_QUEUE_DEPTH,
 >;
 type ConnectedAmpduRetention = RetainedAmpduDmaStorage<ConnectedTxBacking, TX_AMPDU_FRAME_COUNT>;
-pub type Esp32s31WifiDevice = SplitPinnedDevice<
+pub type Esp32s31WifiDevice = SharedRxSplitPinnedDevice<
     'static,
     CriticalSectionRawMutex,
     NETWORK_FRAME_CAPACITY,
@@ -156,6 +157,8 @@ pub type Esp32s31WifiDevice = SplitPinnedDevice<
     NETWORK_TX_TRAILER,
     NETWORK_RX_QUEUE_DEPTH,
     NETWORK_TX_QUEUE_DEPTH,
+    RX_STAGE_CAPACITY,
+    RX_STAGE_SLOT_COUNT,
 >;
 pub(super) type NetworkRunner = SplitPinnedRadioRunner<
     'static,
@@ -176,6 +179,8 @@ type EmbassyConnectedRxSink = EmbassyNetConnectedRxSink<
     ControlPublisher,
     NETWORK_FRAME_CAPACITY,
     NETWORK_RX_QUEUE_DEPTH,
+    RX_STAGE_CAPACITY,
+    RX_STAGE_SLOT_COUNT,
 >;
 #[cfg(feature = "qualification")]
 type ConnectedRxSink = ObservedConnectedRxSink<EmbassyConnectedRxSink>;
@@ -424,6 +429,13 @@ static STAGED_RX_QUEUE: Esp32s31StagedRxQueue<
     RX_STAGE_CAPACITY,
     RX_STAGE_SLOT_COUNT,
 > = Esp32s31StagedRxQueue::new();
+static SHARED_NETWORK_RX_QUEUE: SharedPinnedRxQueue<CriticalSectionRawMutex, RX_STAGE_SLOT_COUNT> =
+    SharedPinnedRxQueue::new();
+
+#[inline(never)]
+fn notify_shared_network_rx_release() {
+    IRQ_RUNTIME.notify_rx_capacity();
+}
 static RX_REORDER_COMMANDS: RxReorderCommandResources<CriticalSectionRawMutex> =
     RxReorderCommandResources::new();
 static RX_REORDER_STORAGE: RxReorderFrameStorage<RX_STAGE_CAPACITY, RX_REORDER_BACKING_SLOT_COUNT> =
@@ -650,9 +662,45 @@ impl<S: MacConnectedRxSink> MacConnectedRxSink for ObservedConnectedRxSink<S> {
 }
 
 #[cfg(feature = "qualification")]
-impl<S: ConnectedRxProtocolSink> ConnectedRxProtocolSink for ObservedConnectedRxSink<S> {
+impl<S, const CAPACITY: usize, const SLOTS: usize> ConnectedRxProtocolSink<CAPACITY, SLOTS>
+    for ObservedConnectedRxSink<S>
+where
+    S: ConnectedRxProtocolSink<CAPACITY, SLOTS>,
+{
     fn wait_ready(&mut self) -> impl core::future::Future<Output = ()> + '_ {
         self.inner.wait_ready()
+    }
+
+    fn wait_staged_ready(&mut self) -> impl core::future::Future<Output = ()> + '_ {
+        self.inner.wait_staged_ready()
+    }
+
+    fn publish_staged(
+        &mut self,
+        frame: open_esp_radio_esp32s31_wifi_embassy::connected_rx_protocol::Esp32s31StagedRxFrame<
+            '_,
+            CAPACITY,
+            SLOTS,
+        >,
+        ethernet: open_esp_radio_esp32s31_wifi_embassy::connected_rx_protocol::StagedEthernetPublication,
+    ) -> open_esp_radio_esp32s31_wifi_embassy::connected_rx_protocol::StagedRxDisposition {
+        {
+            let raw = frame.segment().buffer;
+            let payload =
+                &raw[ethernet.payload_offset..ethernet.payload_offset + ethernet.payload_length];
+            self.observer.observe(&ConnectedRxEvent::Ethernet {
+                frame: open_esp_radio::wifi::ieee80211::data::EthernetFrameParts {
+                    destination: ethernet.destination,
+                    source: ethernet.source,
+                    ether_type: ethernet.ether_type,
+                    payload,
+                },
+                raw,
+                amsdu: false,
+                metadata: ethernet.metadata,
+            });
+        }
+        self.inner.publish_staged(frame, ethernet)
     }
 }
 
@@ -1279,7 +1327,11 @@ pub async fn run_connected<'state, 'security>(
 
     let network_rx = network_runner.rx_publisher();
     let (control_publisher, control_receiver) = control_resources.split();
-    let rx_sink = EmbassyNetConnectedRxSink::new(network_rx, control_publisher);
+    let rx_sink = EmbassyNetConnectedRxSink::new_with_shared_rx(
+        network_rx,
+        SHARED_NETWORK_RX_QUEUE.publisher(),
+        control_publisher,
+    );
     #[cfg(feature = "qualification")]
     let rx_sink = {
         let hooks = qualification
@@ -1687,12 +1739,14 @@ pub fn initialize_station_network(
     let network_resources = NETWORK_RESOURCES.take();
     let tx_pool = NetworkTxPool::pin_static(NETWORK_TX_POOL.take());
     let (device, runner) = network_resources.split(tx_pool, station_address);
+    let (_shared_publisher, shared_consumer) = SHARED_NETWORK_RX_QUEUE.split(
+        RX_STAGE_POOL.handoff_pool(),
+        notify_shared_network_rx_release,
+    );
     (
         device
             .with_ingress_tx_reserve()
-            .with_network_service_budget(
-                open_esp_radio_embassy_net::DEFAULT_NETWORK_SERVICE_BUDGET,
-            ),
+            .with_shared_rx(shared_consumer),
         StationNetwork::Unstarted { device: (), runner },
     )
 }

@@ -34,6 +34,10 @@ open-radio-hil = [
 # residence. Keep it out of ordinary throughput qualification because the
 # per-poll timer reads and atomics are intentionally observable overhead.
 task-poll-telemetry = []
+# The task-poll image qualifies only CPU0 data-plane scenarios. CPU1 retains
+# its idle control executor, but does not need the 16-KiB network call-chain
+# stack reserved by images that admit split-radio-network placement.
+single-core-diagnostic = []
 # Diagnostic overlay proving each UDP RX delivery frontier from software
 # reorder output through network admission and application consumption.
 rx-delivery-telemetry = []

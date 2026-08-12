@@ -203,7 +203,7 @@ pub fn assemble_esp32s31_connected_driver<
 >
 where
     M: RawMutex,
-    S: ConnectedRxProtocolSink,
+    S: ConnectedRxProtocolSink<RX_CAPACITY, RX_SLOTS>,
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
     T: WifiTxTimer,

@@ -25,7 +25,7 @@ impl<
         REORDER_SLOTS,
     >
 where
-    S: ConnectedRxProtocolSink,
+    S: ConnectedRxProtocolSink<CAPACITY, SLOTS>,
 {
     pub fn new_with_reorder_slots(
         frames: Receiver<'queue, M, Esp32s31StagedRxFrame<'pool, CAPACITY, SLOTS>, DEPTH>,
@@ -199,7 +199,7 @@ impl<
         RX_REORDER_BACKING_SLOT_COUNT,
     >
 where
-    S: ConnectedRxProtocolSink,
+    S: ConnectedRxProtocolSink<CAPACITY, SLOTS>,
 {
     /// Construct the vendor-maximum 64-slot reorder profile.
     pub fn new(

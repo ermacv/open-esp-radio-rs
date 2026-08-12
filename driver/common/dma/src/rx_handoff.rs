@@ -13,6 +13,7 @@ const SLOT_RADIO: u8 = 3;
 #[repr(C, align(16))]
 struct RxHandoffSlot<const FRAME_CAPACITY: usize> {
     bytes: UnsafeCell<[u8; FRAME_CAPACITY]>,
+    offset: AtomicUsize,
     length: AtomicUsize,
     state: AtomicU8,
 }
@@ -21,6 +22,7 @@ impl<const FRAME_CAPACITY: usize> RxHandoffSlot<FRAME_CAPACITY> {
     const fn new() -> Self {
         Self {
             bytes: UnsafeCell::new([0; FRAME_CAPACITY]),
+            offset: AtomicUsize::new(0),
             length: AtomicUsize::new(0),
             state: AtomicU8::new(SLOT_FREE),
         }
@@ -41,23 +43,25 @@ impl<const FRAME_CAPACITY: usize> RxHandoffSlot<FRAME_CAPACITY> {
             .is_ok()
     }
 
-    fn publish_ready(&self, length: usize) {
+    fn publish_ready(&self, owner: u8, offset: usize, length: usize, message: &str) {
+        self.offset.store(offset, Ordering::Relaxed);
         self.length.store(length, Ordering::Relaxed);
         assert_eq!(
-            self.state.compare_exchange(
-                SLOT_RADIO,
-                SLOT_READY,
-                Ordering::Release,
-                Ordering::Acquire
-            ),
-            Ok(SLOT_RADIO),
-            "only the radio lease may publish an RX handoff slot"
+            self.state
+                .compare_exchange(owner, SLOT_READY, Ordering::Release, Ordering::Acquire),
+            Ok(owner),
+            "{message}"
         );
     }
 
     fn release(&self, owner: u8, message: &str) {
+        self.offset.store(0, Ordering::Relaxed);
         self.length.store(0, Ordering::Relaxed);
         self.claim(owner, SLOT_FREE, message);
+    }
+
+    fn offset(&self) -> usize {
+        self.offset.load(Ordering::Acquire)
     }
 
     fn length(&self) -> usize {
@@ -193,7 +197,12 @@ impl<'pool, const FRAME_CAPACITY: usize> RxRadioLease<'pool, FRAME_CAPACITY> {
     pub fn publish<R>(mut self, length: usize, write: impl FnOnce(&mut [u8]) -> R) -> (u8, R) {
         assert!(length <= FRAME_CAPACITY, "RX frame exceeds slot capacity");
         let result = write(self.frame_prefix_mut(length));
-        self.slot.publish_ready(length);
+        self.slot.publish_ready(
+            SLOT_RADIO,
+            0,
+            length,
+            "only the radio lease may publish an RX handoff slot",
+        );
         self.live = false;
         (self.index, result)
     }
@@ -201,7 +210,12 @@ impl<'pool, const FRAME_CAPACITY: usize> RxRadioLease<'pool, FRAME_CAPACITY> {
     /// Publish already initialized bytes directly to a network lease.
     pub fn into_network(mut self, length: usize) -> RxNetworkLease<'pool, FRAME_CAPACITY> {
         assert!(length <= FRAME_CAPACITY, "RX frame exceeds slot capacity");
-        self.slot.publish_ready(length);
+        self.slot.publish_ready(
+            SLOT_RADIO,
+            0,
+            length,
+            "only the radio lease may publish an RX handoff slot",
+        );
         self.slot.claim(
             SLOT_READY,
             SLOT_NETWORK,
@@ -249,21 +263,52 @@ impl<const FRAME_CAPACITY: usize> RxNetworkLease<'_, FRAME_CAPACITY> {
     }
 
     pub fn frame(&self) -> &[u8] {
+        let offset = self.slot.offset();
         let length = self.slot.length();
         // SAFETY: this non-Clone token uniquely retains SLOT_NETWORK; safe
         // pool operations cannot mutate or reclaim the matching storage.
         #[allow(unsafe_code, reason = "network lease uniquely retains its RX slot")]
         unsafe {
-            core::slice::from_raw_parts(self.slot.storage_mut_ptr(), length)
+            core::slice::from_raw_parts(self.slot.storage_mut_ptr().add(offset), length)
         }
     }
 
     pub fn with_frame<R>(&mut self, read: impl FnOnce(&mut [u8]) -> R) -> R {
+        let offset = self.slot.offset();
         let length = self.slot.length();
         // SAFETY: `&mut self` borrows the unique non-Clone SLOT_NETWORK lease.
         #[allow(unsafe_code, reason = "network lease uniquely owns its RX slot")]
-        let frame = unsafe { core::slice::from_raw_parts_mut(self.slot.storage_mut_ptr(), length) };
+        let frame = unsafe {
+            core::slice::from_raw_parts_mut(self.slot.storage_mut_ptr().add(offset), length)
+        };
         read(frame)
+    }
+
+    /// Re-publish an initialized subrange for a second consumer stage.
+    ///
+    /// This supports a protocol owner that formats its staged 802.11 storage
+    /// as an Ethernet frame in place. The returned index is the only value
+    /// that crosses the ready queue; this lease no longer owns the slot.
+    pub fn republish(mut self, offset: usize, length: usize) -> u8 {
+        let current_offset = self.slot.offset();
+        let current_end = current_offset
+            .checked_add(self.slot.length())
+            .expect("live RX range fits its slot");
+        let end = offset
+            .checked_add(length)
+            .expect("republished RX range length cannot overflow");
+        assert!(
+            offset >= current_offset && end <= current_end && end <= FRAME_CAPACITY,
+            "republished RX range must stay inside initialized storage"
+        );
+        self.slot.publish_ready(
+            SLOT_NETWORK,
+            offset,
+            length,
+            "only the protocol/network lease may republish an RX handoff slot",
+        );
+        self.live = false;
+        self.index
     }
 
     pub fn release(mut self) -> u8 {
@@ -332,5 +377,22 @@ mod tests {
         drop(owner);
         assert_eq!(pool.claimed_slots(), 0);
         assert!(pool.try_claim_radio().is_some());
+    }
+
+    #[test]
+    fn protocol_owner_can_republish_an_initialized_subrange() {
+        let pool = RxHandoffPool::<32, 1>::new();
+        let (index, ()) = pool.claim_radio(0).publish(20, |frame| {
+            for (index, byte) in frame.iter_mut().enumerate() {
+                *byte = index as u8;
+            }
+        });
+        let protocol = pool.claim_network(index);
+        let index = protocol.republish(6, 8);
+
+        let network = pool.claim_network(index);
+        assert_eq!(network.frame(), &[6, 7, 8, 9, 10, 11, 12, 13]);
+        drop(network);
+        assert_eq!(pool.claimed_slots(), 0);
     }
 }

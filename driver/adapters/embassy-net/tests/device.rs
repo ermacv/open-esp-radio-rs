@@ -1,20 +1,27 @@
 use core::{
     future::Future,
     pin::pin,
+    sync::atomic::{AtomicUsize, Ordering},
     task::{Context, Waker},
 };
 
 use embassy_net_driver::{Driver, HardwareAddress, LinkState, RxToken as _, TxToken as _};
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
+use open_esp_radio_dma::RxHandoffPool;
 use open_esp_radio_embassy_net::{
     ETHERNET_HEADER_LEN, FrameLengthError, PinnedResources, PinnedTxPool, Resources,
-    RxEnqueueError, SplitPinnedResources,
+    RxEnqueueError, SharedPinnedRxQueue, SplitPinnedResources,
 };
 
 const FRAME_CAPACITY: usize = 64;
 const TX_HEADROOM: usize = 28;
 const TX_TRAILER: usize = 8;
 const TEST_ETHERNET_LENGTH: usize = ETHERNET_HEADER_LEN + 8;
+static SHARED_RX_RELEASES: AtomicUsize = AtomicUsize::new(0);
+
+fn observe_shared_rx_release() {
+    SHARED_RX_RELEASES.fetch_add(1, Ordering::Relaxed);
+}
 
 fn context() -> Context<'static> {
     Context::from_waker(Waker::noop())
@@ -177,6 +184,42 @@ fn pinned_rx_slot_keeps_one_address_across_network_ownership() {
     drop(reply);
 
     assert_eq!(first_address, second_address);
+}
+
+#[test]
+fn shared_staging_slot_reaches_device_without_a_second_pool_copy() {
+    type TestResources = PinnedResources<NoopRawMutex, FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 2>;
+    type TestPool = PinnedTxPool<FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 2>;
+    let resources = Box::leak(Box::new(TestResources::new()));
+    let tx_pool = TestPool::pin_static(Box::leak(Box::new(TestPool::new())));
+    let shared_pool = Box::leak(Box::new(RxHandoffPool::<FRAME_CAPACITY, 1>::new()));
+    let shared_queue = Box::leak(Box::new(SharedPinnedRxQueue::<NoopRawMutex, 1>::new()));
+    let (publisher, consumer) = shared_queue.split(shared_pool, observe_shared_rx_release);
+    let (device, _radio) = resources.split(tx_pool, [0; 6]);
+    let mut device = device.with_ingress_tx_reserve().with_shared_rx(consumer);
+    SHARED_RX_RELEASES.store(0, Ordering::Relaxed);
+
+    let (index, producer_address) =
+        shared_pool
+            .claim_radio(0)
+            .publish(TEST_ETHERNET_LENGTH, |frame| {
+                frame.fill(0x5a);
+                frame.as_ptr() as usize
+            });
+    let index = shared_pool
+        .claim_network(index)
+        .republish(0, TEST_ETHERNET_LENGTH);
+    publisher.publish(index);
+
+    let (rx, reply) = device.receive(&mut context()).unwrap();
+    let consumer_address = rx.consume(|frame| {
+        assert_eq!(frame, &[0x5a; TEST_ETHERNET_LENGTH]);
+        frame.as_ptr() as usize
+    });
+    drop(reply);
+    assert_eq!(producer_address, consumer_address);
+    assert_eq!(SHARED_RX_RELEASES.load(Ordering::Relaxed), 1);
+    assert_eq!(shared_pool.claimed_slots(), 0);
 }
 
 #[cfg(feature = "rx-delivery-observation")]

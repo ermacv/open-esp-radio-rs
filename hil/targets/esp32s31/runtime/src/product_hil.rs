@@ -16,7 +16,7 @@ use embassy_net::{
 use embassy_sync::{
     blocking_mutex::raw::CriticalSectionRawMutex, channel::Channel, signal::Signal,
 };
-use embassy_time::{Instant, Timer};
+use embassy_time::{Duration, Instant, Timer};
 use esp_hal::{
     efuse::{self, InterfaceMacAddress},
     rng::Trng,
@@ -655,7 +655,9 @@ type ProductNetworkRunner = embassy_net::Runner<'static, Esp32s31WifiDevice>;
 #[embassy_executor::task]
 async fn network_runner_task(mut runner: ProductNetworkRunner) {
     observe_open_radio_task_polls(
-        runner.run(),
+        runner.run_cooperative(embassy_net::CooperativeConfig::new(Duration::from_micros(
+            750,
+        ))),
         TASK_POLLS.network(),
         OPEN_RADIO_TASK_POLL_TELEMETRY,
     )

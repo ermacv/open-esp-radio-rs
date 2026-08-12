@@ -419,8 +419,7 @@ dependencies = [
 [[package]]
 name = "embassy-net"
 version = "0.9.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "347bc855bdbdf50ed9c5a1d80e8204badb0ba149b8732dde38e1e9708ed9d313"
+source = "git+https://github.com/ermacv/embassy?rev=e8084ca38dbb75170265b0896f6d039b548f6a6b#e8084ca38dbb75170265b0896f6d039b548f6a6b"
 dependencies = [
  "document-features",
  "embassy-net-driver",
@@ -1280,7 +1279,6 @@ version = "0.1.0"
 dependencies = [
  "embassy-net-driver",
  "embassy-sync 0.8.0",
- "embassy-time",
  "open-esp-radio-dma",
 ]
 
@@ -1877,8 +1875,7 @@ checksum = "8ed6a63f02c8539c91a8685a86f4099661ba3da017932f6ebbea6de3f0fa7c90"
 [[package]]
 name = "smoltcp"
 version = "0.13.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5f73d40463bba65efc9adc6370b56df76d563cc46e2482bba58351b4afb7535e"
+source = "git+https://github.com/ermacv/smoltcp?rev=3269d275366670ae283d0eb9d2a1bc0cf2524f0c#3269d275366670ae283d0eb9d2a1bc0cf2524f0c"
 dependencies = [
  "bitflags",
  "byteorder",

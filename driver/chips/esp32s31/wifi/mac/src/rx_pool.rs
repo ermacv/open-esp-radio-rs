@@ -49,6 +49,12 @@ pub enum RxStageTransactionError {
     Ownership,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RxInPlaceEthernetError {
+    PayloadOutsideFrame,
+    InsufficientHeadroom,
+}
+
 /// Result after a completed DMA unit has been returned to the live walker.
 pub enum RxDmaStageUnitOutcome<'pool, const SLOTS: usize, const CAPACITY: usize> {
     Staged(RxStageReloadPending<'pool, SLOTS, CAPACITY>),
@@ -370,6 +376,14 @@ impl<const SLOTS: usize, const CAPACITY: usize> RxStagePool<SLOTS, CAPACITY> {
     pub fn network_slots(&self) -> u32 {
         self.storage.network_slots() as u32
     }
+
+    /// Shared handoff storage used by an upper network-device consumer.
+    ///
+    /// The pool still exposes no raw bytes: external users can only perform
+    /// the same state-checked lease transitions as this staging wrapper.
+    pub fn handoff_pool(&self) -> &RxHandoffPool<CAPACITY, SLOTS> {
+        &self.storage
+    }
 }
 
 /// Unique staged-frame owner while the RX append doorbell is pending.
@@ -494,6 +508,43 @@ impl<const SLOTS: usize, const CAPACITY: usize> NetworkRxFrame<'_, SLOTS, CAPACI
     pub const fn length(&self) -> usize {
         self.metadata.length
     }
+
+    /// Replace the dead 802.11/CCMP/LLC prefix with an Ethernet header and
+    /// republish the same slot to the network-device consumer.
+    ///
+    /// `payload_offset` is relative to [`Self::segment`]'s buffer. It must
+    /// identify an already initialized payload range and leave fourteen bytes
+    /// before it. No payload byte is copied.
+    pub fn publish_ethernet_in_place(
+        self,
+        destination: [u8; 6],
+        source: [u8; 6],
+        ether_type: u16,
+        payload_offset: usize,
+        payload_length: usize,
+    ) -> Result<u8, (Self, RxInPlaceEthernetError)> {
+        let Some(payload_end) = payload_offset.checked_add(payload_length) else {
+            return Err((self, RxInPlaceEthernetError::PayloadOutsideFrame));
+        };
+        if payload_end > self.metadata.length {
+            return Err((self, RxInPlaceEthernetError::PayloadOutsideFrame));
+        }
+        let Some(frame_offset) = payload_offset.checked_sub(14) else {
+            return Err((self, RxInPlaceEthernetError::InsufficientHeadroom));
+        };
+        let ethernet_length = 14 + payload_length;
+        let NetworkRxFrame {
+            mut lease,
+            _slots: _,
+            metadata: _,
+        } = self;
+        lease.with_frame(|raw| {
+            raw[frame_offset..frame_offset + 6].copy_from_slice(&destination);
+            raw[frame_offset + 6..frame_offset + 12].copy_from_slice(&source);
+            raw[frame_offset + 12..frame_offset + 14].copy_from_slice(&ether_type.to_be_bytes());
+        });
+        Ok(lease.republish(frame_offset, ethernet_length))
+    }
 }
 
 /// Bounded FIFO of independently owned RX frames.
@@ -610,6 +661,26 @@ mod tests {
         assert_eq!(metadata.s_mpdu, MacRxEvidence::HardwareObserved(true));
         assert_eq!(metadata.ampdu, MacRxEvidence::ProtocolValidated(true));
         assert_eq!(metadata.amsdu, MacRxEvidence::Unavailable);
+    }
+
+    #[test]
+    fn ordinary_ethernet_frame_reuses_the_staging_slot() {
+        let mut bytes = [0_u8; 64];
+        bytes[24..28].copy_from_slice(&[1, 2, 3, 4]);
+        let pool = RxStagePool::<1, 64>::new();
+        let staged = pool.try_stage(completed(64), &bytes).unwrap().publish();
+        let index = staged
+            .publish_ethernet_in_place([0, 1, 2, 3, 4, 5], [6, 7, 8, 9, 10, 11], 0x0800, 24, 4)
+            .ok()
+            .unwrap();
+
+        let network = pool.handoff_pool().claim_network(index);
+        assert_eq!(
+            network.frame(),
+            &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 0x08, 0x00, 1, 2, 3, 4]
+        );
+        drop(network);
+        assert_eq!(pool.claimed_slots(), 0);
     }
 
     #[test]

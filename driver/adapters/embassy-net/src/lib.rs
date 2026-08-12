@@ -39,9 +39,10 @@ use embassy_sync::{
 mod pinned;
 
 pub use pinned::{
-    DEFAULT_NETWORK_SERVICE_BUDGET, PinnedDevice, PinnedRadioRunner, PinnedReceiveToken,
-    PinnedResources, PinnedRxPublisher, PinnedTransmitToken, PinnedTxConsumer, PinnedTxFrame,
-    PinnedTxPool, SplitPinnedDevice, SplitPinnedRadioRunner, SplitPinnedResources,
+    PinnedDevice, PinnedRadioRunner, PinnedReceiveToken, PinnedResources, PinnedRxPublisher,
+    PinnedTransmitToken, PinnedTxConsumer, PinnedTxFrame, PinnedTxPool, SharedPinnedReceiveToken,
+    SharedPinnedRxConsumer, SharedPinnedRxPublisher, SharedPinnedRxQueue, SharedPoolReceiveToken,
+    SharedRxSplitPinnedDevice, SplitPinnedDevice, SplitPinnedRadioRunner, SplitPinnedResources,
 };
 
 /// Ethernet header length, excluding an FCS.

@@ -13,7 +13,7 @@ impl ConnectedRxSink for Sink {
     fn publish(&mut self, _event: ConnectedRxEvent<'_>) {}
 }
 
-impl ConnectedRxProtocolSink for Sink {
+impl<const CAPACITY: usize, const SLOTS: usize> ConnectedRxProtocolSink<CAPACITY, SLOTS> for Sink {
     fn wait_ready(&mut self) -> impl Future<Output = ()> + '_ {
         ready(())
     }

@@ -25,7 +25,7 @@ impl<
         REORDER_SLOTS,
     >
 where
-    S: ConnectedRxProtocolSink,
+    S: ConnectedRxProtocolSink<CAPACITY, SLOTS>,
 {
     pub(super) async fn accept_frame(
         &mut self,

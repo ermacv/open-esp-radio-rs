@@ -1396,6 +1396,10 @@ mod tests {
         assert_eq!(scenario::ImageClass::ALL.len(), 4);
         assert_eq!(scenario::ImageClass::Qualification.id(), "qualification");
         assert_eq!(
+            scenario::ImageClass::DiagnosticTaskPoll.runtime_features(),
+            "open-radio-hil,task-poll-telemetry,single-core-diagnostic,code-psram,profile-psram-data"
+        );
+        assert_eq!(
             scenario::ImageClass::DiagnosticRxDelivery.runtime_features(),
             "open-radio-hil,rx-delivery-telemetry,code-psram,profile-psram-data"
         );

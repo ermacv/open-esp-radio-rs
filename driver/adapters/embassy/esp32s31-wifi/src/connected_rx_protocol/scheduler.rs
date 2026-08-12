@@ -25,7 +25,7 @@ impl<
         REORDER_SLOTS,
     >
 where
-    S: ConnectedRxProtocolSink,
+    S: ConnectedRxProtocolSink<CAPACITY, SLOTS>,
 {
     /// Wait for and dispatch one independently owned staged frame.
     pub async fn dispatch_next(&mut self) -> ConnectedRxDispatch {

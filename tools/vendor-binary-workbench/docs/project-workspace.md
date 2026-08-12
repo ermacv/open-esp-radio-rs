@@ -171,9 +171,11 @@ another root when it is itself a public replacement boundary. `project status`
 reads this compact artifact instead of reconstructing the scopes from all large
 IR documents.
 
-Review-scope schema 8 also emits an ordered `review_queue`, the distinct
+Review-scope schema 9 also emits an ordered `review_queue`, the distinct
 `replacement_functions` denominator, `analysis_inventory_complete`, and a
-separate `replacement_qualification`. The latter is qualified only when every
+separate `replacement_qualification`. It additionally stores fingerprinted
+observable transactions and root-to-transaction paths for feature assurance.
+Replacement qualification is qualified only when every
 explicit replacement root has a passing production binding; blockers in the
 reachable vendor-helper closure remain visible inventory and do not invent a
 false release failure. Repeated typed IR diagnostics are grouped
@@ -339,7 +341,7 @@ not been generated, a model that has not been initialized, an invalid model,
 and a ready schema-2 workspace. Coverage reports
 reviewed, ignored, manual and unreviewed registers plus reviewed fields and
 configured review/SVD/PAC outputs. Configured linked-IR review inputs are parsed
-as schema-v52 reports and their register/field-candidate counts are reported;
+as schema-v53 reports and their register/field-candidate counts are reported;
 missing outputs owned by `[[analysis.ir]]` are reported as not generated,
 while missing external inputs or incompatible existing reports are errors
 rather than silently disabling enrichment.
@@ -350,7 +352,7 @@ workspace. Coverage includes reviewed/ignored/unreviewed anchors and slots,
 semantic links, and loaded semantic operations.
 
 If `[functions]` is configured, the doctor checks selected IR outputs, strict
-schema-v52 facts, artifact provenance guards, the pack lifecycle, review
+schema-v53 facts, artifact provenance guards, the pack lifecycle, review
 coverage for root functions/contexts/fields, explicitly accepted incomplete
 evidence, and the configured generated report destination.
 

@@ -15,7 +15,7 @@ part of their contract; consumers must parse the typed structure.
 | Symbol inventory | 4 | `symbols inventory` | `artifacts/symbol_inventory.rs`, `artifacts/symbol_inventory/read.rs` |
 | MMIO discovery facts | 5 | `mmio discover` | `artifacts/mmio_facts.rs`, `artifacts/mmio_facts_read.rs` |
 | Interface discovery facts | 5 | `interfaces discover` | `artifacts/interface_facts.rs`, `artifacts/interface_facts_read.rs` |
-| Linked IR | 52 | `ir export` | `artifacts/linked_ir_document.rs`, `artifacts/linked_ir_read.rs` |
+| Linked IR | 53 | `ir export` | `artifacts/linked_ir_document.rs`, `artifacts/linked_ir_read.rs` |
 | Concrete replay evidence | 2 | `execute replay` | `artifacts/replay_evidence.rs`, `artifacts/replay_evidence_read.rs` |
 | Review scopes | 8 | `project analyze` | `review_scopes.rs`, `review_scopes/model.rs` |
 | Verification report | 10 | `verify source` / `verify inventory` | `verification/report.rs` |
@@ -26,11 +26,11 @@ currency therefore does not depend on the process working directory used by a
 later `project status` or `project check`; generated reports remain local
 project state and are regenerated when the checkout moves.
 
-MMIO schema 5, interface schema 5 and linked-IR schema 52 carry
+MMIO schema 5, interface schema 5 and linked-IR schema 53 carry
 reviewed-code-boundary provenance. MMIO and interface artifacts record the accepted boundary count per
 input. Linked IR retains the complete reviewed physical ranges so downstream
 reviewers can distinguish ordinary ELF symbol roots from promoted gap roots.
-Linked-IR schema 52 also carries symbol-bounded static data objects,
+Linked-IR schema 53 also carries symbol-bounded static data objects,
 uninterpreted initializer bytes, symbolic data relocations, function xrefs and
 bounded indexed-dispatch edges. Zero-sized compiler anchors stop at the next
 symbol rather than duplicating the rest of their section. Relocatable archive
@@ -53,10 +53,11 @@ all-zero illegal encoding distinct as `zero-fill-or-illegal-trap`: it may be a
 deliberate trap or unreachable fill, but is not evidence that the decoder lost
 an otherwise valid instruction.
 
-Review-scope schema 8 records the exact explicit `source:symbol` replacement
-roots. Feature-pack schema 3 uses that list as a fail-closed effect-coverage
+Review-scope schema 9 records explicit replacement roots plus every
+effect-bearing transaction in their reachable closure. Feature-pack schema 4
+uses the fingerprinted transaction set as a fail-closed effect-coverage
 denominator; it never derives the release boundary from presentation text or
-from the transitive helper closure.
+silently drops effects in transitive helpers.
 It also records bounded feature matches separately from complete production
 replacements, so a narrow proof cannot make a publication scope whole.
 

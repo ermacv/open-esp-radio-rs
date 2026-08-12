@@ -542,7 +542,7 @@ fn load_qualification_workspace(
         .ok_or_else(|| source.item(Some(item), "project manifest qualification must be a table"))?;
     reject_unknown_keys(
         table,
-        &["pack", "required-features"],
+        &["pack", "required-features", "hardware-evidence"],
         "project qualification",
         source,
     )?;
@@ -567,6 +567,13 @@ fn load_qualification_workspace(
     Ok(Some(QualificationWorkspaceSpec {
         pack,
         required_features,
+        hardware_evidence: table
+            .get("hardware-evidence")
+            .map(|_| {
+                table_string(table, "hardware-evidence", "project qualification", source)
+                    .map(|path| resolve_path(base, &path))
+            })
+            .transpose()?,
     }))
 }
 

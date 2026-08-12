@@ -5,16 +5,19 @@ use std::{
     fs,
 };
 
+use sha2::{Digest, Sha256};
+
 use crate::{
     ProjectSpec, Result, artifacts::LinkedIrReader, project::ReviewScopeSpec,
     registers::RegisterFacts,
 };
 
-pub(crate) const REVIEW_SCOPES_SCHEMA: u32 = 8;
+pub(crate) const REVIEW_SCOPES_SCHEMA: u32 = 9;
 
 mod model;
 pub(crate) use model::{
-    ReplacementQualification, ReviewScopeMmio, ReviewScopeReport, ReviewScopesDocument,
+    ReplacementQualification, ReviewScopeEffect, ReviewScopeMmio, ReviewScopeReport,
+    ReviewScopeTransaction, ReviewScopesDocument,
 };
 use model::{StoredReplacement, VerificationDocument};
 mod queue;
@@ -38,6 +41,7 @@ struct FunctionNode {
     table_calls: usize,
     context_fields: usize,
     memory_fields: usize,
+    direct_effects: Vec<crate::artifacts::StoredReviewDirectEffect>,
     decode_blockers: Vec<DecodeIssue>,
     diagnostics: Vec<DiagnosticIssue>,
     unresolved_call_sites: Vec<CallIssue>,
@@ -285,6 +289,7 @@ fn load_profile_nodes(
                 table_calls,
                 context_fields,
                 memory_fields,
+                direct_effects: function.direct_effects,
                 decode_blockers,
                 diagnostics,
                 unresolved_call_sites,
@@ -318,10 +323,12 @@ fn analyze_scope(
 ) -> Result<ReviewScopeReport> {
     let mut selected = BTreeSet::new();
     let mut root_identities = BTreeSet::new();
+    let mut root_paths = BTreeMap::<String, Vec<String>>::new();
     let mut queue = VecDeque::new();
     for root in &scope.roots {
         let identity = resolve_root(root, nodes)?;
         root_identities.insert(identity.clone());
+        root_paths.insert(identity.clone(), vec![identity.clone()]);
         if selected.insert(identity.clone()) {
             queue.push_back(identity);
         }
@@ -333,6 +340,12 @@ fn analyze_scope(
                 if let Some(target) = resolve_dependency(dependency, nodes)
                     && selected.insert(target.clone())
                 {
+                    let mut path = root_paths
+                        .get(&identity)
+                        .cloned()
+                        .unwrap_or_else(|| vec![identity.clone()]);
+                    path.push(target.clone());
+                    root_paths.insert(target.clone(), path);
                     queue.push_back(target);
                 }
             }
@@ -367,6 +380,9 @@ fn analyze_scope(
             .iter()
             .map(|(source, symbol)| format!("{source}:{symbol}"))
             .collect(),
+        transaction_functions: 0,
+        transaction_keys: Vec::new(),
+        transactions: Vec::new(),
         function_identities,
         function_keys: function_keys.clone(),
         complete_functions: 0,
@@ -397,6 +413,40 @@ fn analyze_scope(
     let mut review_queue = queue::new();
     for identity in selected {
         let node = &nodes[&identity];
+        if !node.direct_effects.is_empty() {
+            let fingerprint = transaction_fingerprint(&node.direct_effects)?;
+            let id = format!("{}:{}", node.source, node.symbol);
+            report.transactions.push(ReviewScopeTransaction {
+                id: id.clone(),
+                identity: identity.clone(),
+                source: node.source.clone(),
+                symbol: node.symbol.clone(),
+                fingerprint,
+                paths: vec![
+                    root_paths
+                        .get(&identity)
+                        .cloned()
+                        .unwrap_or_else(|| vec![identity.clone()]),
+                ],
+                effects: node
+                    .direct_effects
+                    .iter()
+                    .map(|effect| ReviewScopeEffect {
+                        kind: effect.kind.clone(),
+                        site: effect.site,
+                        operation: effect.operation.clone(),
+                        target: effect.target.clone(),
+                        width: effect.width,
+                        value: effect.value.clone(),
+                        modified_mask: effect.modified_mask,
+                        preserved_mask: effect.preserved_mask,
+                        forced_zero_mask: effect.forced_zero_mask,
+                        forced_one_mask: effect.forced_one_mask,
+                        arguments: effect.arguments.clone(),
+                    })
+                    .collect(),
+            });
+        }
         for key in &node.mmio {
             mmio.entry(*key).or_default().0 = true;
         }
@@ -460,6 +510,19 @@ fn analyze_scope(
         }
     }
     report.linked_mmio_registers = mmio.values().filter(|(linked, _)| *linked).count();
+    report.transactions.sort_by(|left, right| {
+        (&left.source, &left.symbol, &left.identity).cmp(&(
+            &right.source,
+            &right.symbol,
+            &right.identity,
+        ))
+    });
+    report.transaction_functions = report.transactions.len();
+    report.transaction_keys = report
+        .transactions
+        .iter()
+        .map(|transaction| transaction.id.clone())
+        .collect();
     report.static_mmio_registers = mmio
         .values()
         .filter(|(_, static_fact)| *static_fact)
@@ -575,6 +638,42 @@ fn analyze_scope(
     };
     report.review_queue = queue::finish(review_queue);
     Ok(report)
+}
+
+fn transaction_fingerprint(
+    effects: &[crate::artifacts::StoredReviewDirectEffect],
+) -> Result<String> {
+    #[derive(serde::Serialize)]
+    struct CanonicalEffect<'a> {
+        kind: &'a str,
+        operation: &'a str,
+        target: &'a str,
+        width: Option<u8>,
+        value: Option<&'a str>,
+        modified_mask: Option<u32>,
+        preserved_mask: Option<u32>,
+        forced_zero_mask: Option<u32>,
+        forced_one_mask: Option<u32>,
+        arguments: &'a [String],
+    }
+
+    let canonical = effects
+        .iter()
+        .map(|effect| CanonicalEffect {
+            kind: &effect.kind,
+            operation: &effect.operation,
+            target: &effect.target,
+            width: effect.width,
+            value: effect.value.as_deref(),
+            modified_mask: effect.modified_mask,
+            preserved_mask: effect.preserved_mask,
+            forced_zero_mask: effect.forced_zero_mask,
+            forced_one_mask: effect.forced_one_mask,
+            arguments: &effect.arguments,
+        })
+        .collect::<Vec<_>>();
+    let encoded = serde_json::to_vec(&canonical)?;
+    Ok(format!("sha256:{:x}", Sha256::digest(encoded)))
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -753,6 +852,7 @@ mod tests {
             table_calls: 0,
             context_fields: 0,
             memory_fields: 0,
+            direct_effects: Vec::new(),
             decode_blockers: Vec::new(),
             diagnostics: Vec::new(),
             unresolved_call_sites: Vec::new(),
@@ -761,6 +861,22 @@ mod tests {
             reference_blockers: 0,
             unresolved_calls: 0,
             complete: true,
+        }
+    }
+
+    fn effect(site: u32) -> crate::artifacts::StoredReviewDirectEffect {
+        crate::artifacts::StoredReviewDirectEffect {
+            kind: "mmio".to_owned(),
+            site: Some(site),
+            operation: "write:direct".to_owned(),
+            target: "0x60000010".to_owned(),
+            width: Some(32),
+            value: Some("0x00000001".to_owned()),
+            modified_mask: Some(1),
+            preserved_mask: Some(!1),
+            forced_zero_mask: Some(0),
+            forced_one_mask: Some(1),
+            arguments: Vec::new(),
         }
     }
 
@@ -779,6 +895,47 @@ mod tests {
             replacement_vendors(&roots, &nodes),
             BTreeSet::from([("vendor".to_owned(), "root".to_owned())])
         );
+    }
+
+    #[test]
+    fn reachable_effect_helper_enters_the_feature_surface_but_pure_helpers_do_not() {
+        let mut root = node("vendor", "root");
+        root.dependencies = vec!["vendor::pure".to_owned()];
+        let mut pure = node("vendor", "pure");
+        pure.dependencies = vec!["vendor::transaction".to_owned()];
+        let mut transaction = node("vendor", "transaction");
+        transaction.direct_effects = vec![effect(0x1000)];
+        let nodes = BTreeMap::from([
+            ("vendor::root".to_owned(), root),
+            ("vendor::pure".to_owned(), pure),
+            ("vendor::transaction".to_owned(), transaction),
+        ]);
+        let scope = ReviewScopeSpec {
+            id: "feature".to_owned(),
+            profiles: vec!["fixture".to_owned()],
+            roots: vec!["vendor:root".to_owned()],
+            include_reachable: true,
+        };
+
+        let report = analyze_scope(&scope, false, &[], None, &nodes).unwrap();
+
+        assert_eq!(report.replacement_function_keys, ["vendor:root"]);
+        assert_eq!(report.transaction_keys, ["vendor:transaction"]);
+        assert_eq!(
+            report.transactions[0].paths,
+            [vec![
+                "vendor::root".to_owned(),
+                "vendor::pure".to_owned(),
+                "vendor::transaction".to_owned(),
+            ]]
+        );
+    }
+
+    #[test]
+    fn transaction_fingerprint_ignores_instruction_addresses() {
+        let first = transaction_fingerprint(&[effect(0x1000)]).unwrap();
+        let second = transaction_fingerprint(&[effect(0x2000)]).unwrap();
+        assert_eq!(first, second);
     }
 
     #[test]

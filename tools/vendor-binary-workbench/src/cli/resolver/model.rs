@@ -36,6 +36,10 @@ pub(in crate::cli) enum ResolvedInvocation {
         arguments: ProjectStatusArgs,
         session: Box<ProjectSession>,
     },
+    ProjectFeature {
+        arguments: ProjectFeatureArgs,
+        session: Box<ProjectSession>,
+    },
     ProjectAnalyze {
         arguments: ProjectAnalyzeArgs,
         session: Box<ProjectSession>,

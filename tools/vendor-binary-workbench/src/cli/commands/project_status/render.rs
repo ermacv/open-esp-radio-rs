@@ -57,7 +57,9 @@ pub(super) fn print_text(report: &ProjectStatusReport) {
         report.target.calling_convention
     );
     let outcome = match report.overall {
-        Readiness::Ready => output::success("READY — configured workflow can proceed"),
+        Readiness::Ready => {
+            output::success("READY — all configured required feature gates can proceed")
+        }
         Readiness::Inventory => output::success("READY — inventory evidence is available"),
         Readiness::Incomplete => {
             output::warning("INCOMPLETE — generated or reviewed evidence is missing")
@@ -68,6 +70,35 @@ pub(super) fn print_text(report: &ProjectStatusReport) {
         Readiness::Invalid => output::failure("BLOCKED — project state is invalid"),
     };
     outputln!("\n{outcome}");
+
+    if let Some(backlog) = report
+        .phases
+        .iter()
+        .find(|phase| phase.name == "qualification")
+        .and_then(|phase| {
+            phase
+                .components
+                .iter()
+                .find(|component| component.name == "feature_backlog")
+        })
+    {
+        let features = match backlog.details.get("features") {
+            Some(DetailValue::Strings(features)) => features.as_slice(),
+            _ => &[],
+        };
+        let remaining = match backlog.details.get("remaining_transactions") {
+            Some(DetailValue::Unsigned(remaining)) => *remaining,
+            _ => 0,
+        };
+        if !features.is_empty() {
+            outputln!(
+                "Coverage backlog: {} optional feature(s), {remaining} transaction(s): {}",
+                features.len(),
+                features.join(", ")
+            );
+            outputln!("Inspect with `project feature {}`.", features[0]);
+        }
+    }
 
     let problems = report
         .phases

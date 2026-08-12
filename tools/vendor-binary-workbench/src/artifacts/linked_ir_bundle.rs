@@ -924,6 +924,7 @@ fn fixture_function_overview(encoded: &str) -> Result<String> {
         "mmio_addresses": mmio_addresses,
         "direct_context_fields": full["context_fields"].as_array().map_or(0, Vec::len),
         "direct_memory_fields": full["memory_fields"].as_array().map_or(0, Vec::len),
+        "direct_effects": [],
         "diagnostics": diagnostics,
         "effect_summary": {
             "transitive_effects_materialized": summary["transitive_effects_materialized"],

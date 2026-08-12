@@ -1,6 +1,7 @@
 //! Frontend-neutral stage outcomes shared by project workflows.
 
 use serde::Serialize;
+use tracing_indicatif::span_ext::IndicatifSpanExt;
 
 use crate::Result;
 
@@ -140,7 +141,12 @@ pub(crate) fn execute<T: StageActionResult>(
     success: StageSuccess,
     action: impl FnOnce() -> Result<T>,
 ) -> StageOutcome {
-    let span = tracing::info_span!("project_stage", stage = name);
+    let span = tracing::info_span!(
+        "project_stage",
+        indicatif.pb_show = tracing::field::Empty,
+        stage = name
+    );
+    span.pb_set_message(name);
     let _entered = span.enter();
     tracing::info!("started");
     let outcome = match action() {

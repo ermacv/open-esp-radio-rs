@@ -619,9 +619,25 @@ struct FunctionOverviewDocument<'a> {
     mmio_addresses: Vec<u32>,
     direct_context_fields: usize,
     direct_memory_fields: usize,
+    direct_effects: Vec<FunctionOverviewDirectEffect>,
     diagnostics: Vec<FunctionOverviewDiagnostic<'a>>,
     effect_summary: FunctionOverviewEffectSummary<'a>,
     decode_blockers: &'a [crate::LinkedDecodeBlocker],
+}
+
+#[derive(Serialize)]
+struct FunctionOverviewDirectEffect {
+    kind: &'static str,
+    site: Option<u32>,
+    operation: String,
+    target: String,
+    width: Option<u8>,
+    value: Option<String>,
+    modified_mask: Option<u32>,
+    preserved_mask: Option<u32>,
+    forced_zero_mask: Option<u32>,
+    forced_one_mask: Option<u32>,
+    arguments: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -701,6 +717,129 @@ struct FunctionOverviewEventBinding<'a> {
 impl<'a> FunctionOverviewDocument<'a> {
     fn new(function: &'a LinkedIrFunction) -> Self {
         let summary = &function.effect_summary;
+        let mut direct_effects = function
+            .instruction_effects
+            .iter()
+            .filter_map(|effect| match effect {
+                crate::LinkedInstructionEffect::Mmio {
+                    site,
+                    access,
+                    width,
+                    address,
+                    mode,
+                    value,
+                    modified_mask,
+                    preserved_mask,
+                    forced_zero_mask,
+                    forced_one_mask,
+                    ..
+                } => Some(FunctionOverviewDirectEffect {
+                    kind: "mmio",
+                    site: Some(*site),
+                    operation: format!("{access}:{mode}"),
+                    target: format!("{address:#010x}"),
+                    width: Some(*width),
+                    value: value.clone(),
+                    modified_mask: *modified_mask,
+                    preserved_mask: *preserved_mask,
+                    forced_zero_mask: *forced_zero_mask,
+                    forced_one_mask: *forced_one_mask,
+                    arguments: Vec::new(),
+                }),
+                crate::LinkedInstructionEffect::Memory {
+                    site,
+                    access,
+                    width,
+                    object,
+                    offset,
+                    value,
+                    value_pseudo,
+                    write_mask,
+                    preserved_mask,
+                    forced_zero_mask,
+                    forced_one_mask,
+                    ..
+                } if access.contains("write") => Some(FunctionOverviewDirectEffect {
+                    kind: "memory",
+                    site: Some(*site),
+                    operation: (*access).to_owned(),
+                    target: format!("{} {offset:+#x}", object.display_name()),
+                    width: Some(*width),
+                    value: value_pseudo.clone().or_else(|| value.clone()),
+                    modified_mask: *write_mask,
+                    preserved_mask: *preserved_mask,
+                    forced_zero_mask: *forced_zero_mask,
+                    forced_one_mask: *forced_one_mask,
+                    arguments: Vec::new(),
+                }),
+                crate::LinkedInstructionEffect::Memory { .. } => None,
+            })
+            .collect::<Vec<_>>();
+        direct_effects.extend(function.calls.iter().filter_map(|call| {
+            call.semantic_operation
+                .as_ref()
+                .map(|operation| FunctionOverviewDirectEffect {
+                    kind: "semantic-call",
+                    site: call.site,
+                    operation: operation.clone(),
+                    target: call.target.clone(),
+                    width: None,
+                    value: None,
+                    modified_mask: None,
+                    preserved_mask: None,
+                    forced_zero_mask: None,
+                    forced_one_mask: None,
+                    arguments: call.arguments.clone(),
+                })
+        }));
+        direct_effects.sort_by(|left, right| {
+            (left.site, left.kind, &left.target, &left.operation).cmp(&(
+                right.site,
+                right.kind,
+                &right.target,
+                &right.operation,
+            ))
+        });
+        direct_effects.extend(
+            function
+                .delays
+                .iter()
+                .map(|delay| FunctionOverviewDirectEffect {
+                    kind: "delay",
+                    site: None,
+                    operation: "delay-micros".to_owned(),
+                    target: delay.path.clone(),
+                    width: None,
+                    value: Some(delay.micros.clone()),
+                    modified_mask: None,
+                    preserved_mask: None,
+                    forced_zero_mask: None,
+                    forced_one_mask: None,
+                    arguments: Vec::new(),
+                }),
+        );
+        direct_effects.extend(summary.event_dispatches.iter().map(|dispatch| {
+            FunctionOverviewDirectEffect {
+                kind: "event-dispatch",
+                site: None,
+                operation: dispatch.mechanism.to_owned(),
+                target: dispatch
+                    .receiver
+                    .clone()
+                    .unwrap_or_else(|| "<unknown>".to_owned()),
+                width: None,
+                value: Some(dispatch.execution_context.to_owned()),
+                modified_mask: None,
+                preserved_mask: None,
+                forced_zero_mask: None,
+                forced_one_mask: None,
+                arguments: dispatch
+                    .bindings
+                    .iter()
+                    .map(|binding| format!("{}={}", binding.role, binding.argument.value))
+                    .collect(),
+            }
+        }));
         Self {
             source: &function.source,
             identity: &function.identity,
@@ -739,6 +878,7 @@ impl<'a> FunctionOverviewDocument<'a> {
                 .collect(),
             direct_context_fields: function.context_fields.len(),
             direct_memory_fields: function.memory_fields.len(),
+            direct_effects,
             diagnostics: function
                 .call_graph_diagnostics
                 .iter()

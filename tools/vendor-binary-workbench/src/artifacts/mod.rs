@@ -37,7 +37,7 @@ pub(crate) use linked_ir_document::{
 pub(crate) use linked_ir_read::{
     LinkedIrStoredDocument, StoredCall, StoredDataObject, StoredFlowValue, StoredFunction,
     StoredLocalValueFlow, StoredMemoryObject, StoredMmioAccess, StoredMmioRegister,
-    StoredReviewCall, parse_linked_ir,
+    StoredReviewCall, StoredReviewDirectEffect, parse_linked_ir,
 };
 pub(crate) use mmio_facts::{MmioFactsDocument, build_mmio_facts};
 pub(crate) use mmio_facts_read::parse_mmio_facts;
@@ -78,7 +78,7 @@ pub(crate) const INTERFACE_FACTS: ArtifactSchema = ArtifactSchema {
 };
 
 pub(crate) const LINKED_IR: ArtifactSchema = ArtifactSchema {
-    version: 52,
+    version: 53,
     command: "ir export",
 };
 
@@ -134,7 +134,7 @@ mod tests {
         assert_eq!(
             LINKED_IR,
             ArtifactSchema {
-                version: 52,
+                version: 53,
                 command: "ir export",
             }
         );

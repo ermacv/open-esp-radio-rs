@@ -22,7 +22,11 @@ use crate::{
     },
 };
 
-pub(crate) const FEATURE_PACK_SCHEMA: u32 = 3;
+mod hardware;
+
+use hardware::evaluate_hardware;
+
+pub(crate) const FEATURE_PACK_SCHEMA: u32 = 4;
 
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -39,10 +43,30 @@ pub(crate) struct FeatureSpec {
     coverage: FeatureCoverage,
     #[serde(default)]
     scopes: Vec<String>,
+    phases: Vec<FeaturePhase>,
     #[serde(default)]
     requirements: Vec<FeatureRequirement>,
     #[serde(default)]
     effects: Vec<FeatureEffectDisposition>,
+    #[serde(default)]
+    hardware: Option<FeatureHardwareSpec>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "kebab-case")]
+struct FeatureHardwareSpec {
+    minimum_successful_runs: usize,
+    required_observations: Vec<String>,
+    required_artifacts: Vec<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FeaturePhase {
+    id: String,
+    description: String,
+    #[serde(default)]
+    scopes: Vec<String>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Deserialize, Serialize)]
@@ -65,11 +89,20 @@ impl FeatureCoverage {
 #[serde(deny_unknown_fields)]
 struct FeatureEffectDisposition {
     id: String,
-    source: String,
-    symbol: String,
+    phase: String,
+    vendor: FeatureVendorTransaction,
     disposition: FeatureEffectDispositionKind,
     requirement: Option<String>,
     rationale: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FeatureVendorTransaction {
+    source: String,
+    symbol: String,
+    identity: Option<String>,
+    fingerprint: String,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Deserialize)]
@@ -79,10 +112,20 @@ enum FeatureEffectDispositionKind {
     ExcludedByFeaturePolicy,
 }
 
+impl FeatureEffectDispositionKind {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::Verified => "verified",
+            Self::ExcludedByFeaturePolicy => "excluded-by-feature-policy",
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct FeatureRequirement {
     id: String,
+    phase: String,
     description: String,
     suite: String,
     source: String,
@@ -94,6 +137,7 @@ struct FeatureRequirement {
 #[serde(rename_all = "kebab-case")]
 pub(crate) enum FeatureQualificationStatus {
     Qualified,
+    HardwareQualified,
     Blocked,
 }
 
@@ -101,6 +145,7 @@ impl FeatureQualificationStatus {
     pub(crate) const fn as_str(self) -> &'static str {
         match self {
             Self::Qualified => "qualified",
+            Self::HardwareQualified => "hardware-qualified",
             Self::Blocked => "blocked",
         }
     }
@@ -117,7 +162,48 @@ pub(crate) struct FeatureQualificationReport {
     pub(crate) requirements: usize,
     pub(crate) surface_effects: usize,
     pub(crate) covered_effects: usize,
+    pub(crate) phases: Vec<FeaturePhaseReport>,
+    pub(crate) transactions: Vec<FeatureTransactionReport>,
+    pub(crate) hardware: Option<FeatureHardwareReport>,
     pub(crate) blockers: Vec<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub(crate) struct FeatureHardwareReport {
+    pub(crate) status: String,
+    pub(crate) successful_runs: usize,
+    pub(crate) minimum_successful_runs: usize,
+    pub(crate) observations: Vec<String>,
+    pub(crate) required_observations: Vec<String>,
+    pub(crate) artifacts: Vec<String>,
+    pub(crate) required_artifacts: Vec<String>,
+    pub(crate) blockers: Vec<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub(crate) struct FeaturePhaseReport {
+    pub(crate) id: String,
+    pub(crate) description: String,
+    pub(crate) requirements: usize,
+    pub(crate) transactions: usize,
+    pub(crate) covered_transactions: usize,
+    pub(crate) blockers: Vec<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub(crate) struct FeatureTransactionReport {
+    pub(crate) id: String,
+    pub(crate) phase: String,
+    pub(crate) source: String,
+    pub(crate) symbol: String,
+    pub(crate) identity: Option<String>,
+    pub(crate) fingerprint: String,
+    pub(crate) disposition: String,
+    pub(crate) requirement: Option<String>,
+    pub(crate) rationale: String,
+    pub(crate) effects: Vec<crate::review_scopes::ReviewScopeEffect>,
+    pub(crate) paths: Vec<Vec<String>>,
+    pub(crate) current: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -205,6 +291,45 @@ impl FeaturePack {
                     feature.id
                 )));
             }
+            if feature.phases.is_empty() {
+                return Err(crate::Error::invalid(format!(
+                    "qualification feature {:?} requires at least one lifecycle phase",
+                    feature.id
+                )));
+            }
+            let mut phase_ids = BTreeSet::new();
+            let mut phase_scopes = BTreeSet::new();
+            for phase in &feature.phases {
+                validate_id(&phase.id, "feature phase")?;
+                if phase.description.trim().is_empty() || !phase_ids.insert(phase.id.as_str()) {
+                    return Err(crate::Error::invalid(format!(
+                        "qualification feature {:?} has an empty or duplicate phase {:?}",
+                        feature.id, phase.id
+                    )));
+                }
+                if feature.coverage == FeatureCoverage::BoundedEvidence && !phase.scopes.is_empty()
+                {
+                    return Err(crate::Error::invalid(format!(
+                        "bounded-evidence feature {:?} phase {:?} cannot select review scopes",
+                        feature.id, phase.id
+                    )));
+                }
+                for scope in &phase.scopes {
+                    validate_id(scope, "feature phase scope")?;
+                    if !feature.scopes.contains(scope) {
+                        return Err(crate::Error::invalid(format!(
+                            "qualification feature {:?} phase {:?} refers to scope {scope:?} outside the feature boundary",
+                            feature.id, phase.id
+                        )));
+                    }
+                    if !phase_scopes.insert(scope.as_str()) {
+                        return Err(crate::Error::invalid(format!(
+                            "qualification feature {:?} assigns scope {scope:?} to multiple phases",
+                            feature.id
+                        )));
+                    }
+                }
+            }
             let mut scopes = BTreeSet::new();
             for scope in &feature.scopes {
                 validate_id(scope, "feature scope")?;
@@ -230,10 +355,22 @@ impl FeaturePack {
                 }
                 _ => {}
             }
+            if feature.coverage == FeatureCoverage::ReviewScopes
+                && feature
+                    .scopes
+                    .iter()
+                    .any(|scope| !phase_scopes.contains(scope.as_str()))
+            {
+                return Err(crate::Error::invalid(format!(
+                    "qualification feature {:?} must assign every selected review scope to one phase",
+                    feature.id
+                )));
+            }
             let mut requirement_ids = BTreeSet::new();
             let mut requirement_selectors = BTreeSet::new();
             for requirement in &feature.requirements {
                 validate_id(&requirement.id, "feature requirement")?;
+                validate_phase(&feature.id, &requirement.phase, &phase_ids, "requirement")?;
                 if requirement.description.trim().is_empty()
                     || requirement.suite.trim().is_empty()
                     || requirement.source.trim().is_empty()
@@ -265,12 +402,20 @@ impl FeaturePack {
             let mut effect_selectors = BTreeSet::new();
             for effect in &feature.effects {
                 validate_id(&effect.id, "feature effect")?;
-                if effect.source.trim().is_empty()
-                    || effect.symbol.trim().is_empty()
+                validate_phase(&feature.id, &effect.phase, &phase_ids, "effect")?;
+                if effect.vendor.source.trim().is_empty()
+                    || effect.vendor.symbol.trim().is_empty()
                     || effect.rationale.trim().is_empty()
                 {
                     return Err(crate::Error::invalid(format!(
                         "qualification feature {:?} has an incomplete effect disposition {:?}",
+                        feature.id, effect.id
+                    )));
+                }
+                validate_transaction_fingerprint(&effect.vendor.fingerprint)?;
+                if effect.vendor.identity.as_deref().is_some_and(str::is_empty) {
+                    return Err(crate::Error::invalid(format!(
+                        "qualification feature {:?} effect {:?} has an empty vendor identity",
                         feature.id, effect.id
                     )));
                 }
@@ -280,10 +425,14 @@ impl FeaturePack {
                         feature.id, effect.id
                     )));
                 }
-                if !effect_selectors.insert((&effect.source, &effect.symbol)) {
+                if !effect_selectors.insert((
+                    &effect.vendor.source,
+                    &effect.vendor.symbol,
+                    &effect.vendor.identity,
+                )) {
                     return Err(crate::Error::invalid(format!(
-                        "qualification feature {:?} repeats effect {}:{}",
-                        feature.id, effect.source, effect.symbol
+                        "qualification feature {:?} repeats transaction {}:{}",
+                        feature.id, effect.vendor.source, effect.vendor.symbol
                     )));
                 }
                 match effect.disposition {
@@ -298,17 +447,6 @@ impl FeaturePack {
                             return Err(crate::Error::invalid(format!(
                                 "feature effect {:?} refers to unknown requirement {requirement:?}",
                                 effect.id
-                            )));
-                        }
-                        let proof = feature
-                            .requirements
-                            .iter()
-                            .find(|candidate| candidate.id == requirement)
-                            .expect("validated requirement id exists");
-                        if proof.source != effect.source || proof.symbol != effect.symbol {
-                            return Err(crate::Error::invalid(format!(
-                                "feature effect {:?} is {}:{} but requirement {requirement:?} proves {}:{}",
-                                effect.id, effect.source, effect.symbol, proof.source, proof.symbol
                             )));
                         }
                     }
@@ -347,6 +485,24 @@ impl FeaturePack {
                     "bounded-evidence feature {:?} cannot claim whole-function equivalence",
                     feature.id
                 )));
+            }
+            if let Some(hardware) = &feature.hardware {
+                if hardware.minimum_successful_runs == 0 {
+                    return Err(crate::Error::invalid(format!(
+                        "qualification feature {:?} hardware minimum-successful-runs must be nonzero",
+                        feature.id
+                    )));
+                }
+                validate_unique_nonempty(
+                    &feature.id,
+                    "hardware required observation",
+                    &hardware.required_observations,
+                )?;
+                validate_unique_nonempty(
+                    &feature.id,
+                    "hardware required artifact",
+                    &hardware.required_artifacts,
+                )?;
             }
         }
         Ok(())
@@ -395,26 +551,31 @@ pub(crate) fn validate_project(project: &ProjectSpec) -> Result<()> {
         let feature = pack
             .feature(id)
             .ok_or_else(|| crate::Error::invalid(format!("unknown required feature {id:?}")))?;
-        for scope in &feature.scopes {
-            if !scope_ids.contains(scope.as_str()) {
-                return Err(crate::Error::invalid(format!(
-                    "qualification feature {id:?} refers to unknown review scope {scope:?}"
-                )));
-            }
-        }
         for requirement in &feature.requirements {
-            if !suite_ids.contains(requirement.suite.as_str()) {
-                return Err(crate::Error::invalid(format!(
-                    "qualification feature {id:?} refers to unknown verification suite {:?}",
-                    requirement.suite
-                )));
-            }
             if requirement.claim != DriverAdapterClaim::WholeFunctionEquivalence {
                 bounded_requirements.insert((
                     requirement.suite.as_str(),
                     requirement.source.as_str(),
                     requirement.symbol.as_str(),
                 ));
+            }
+        }
+    }
+    for feature in &pack.features {
+        for scope in &feature.scopes {
+            if !scope_ids.contains(scope.as_str()) {
+                return Err(crate::Error::invalid(format!(
+                    "qualification feature {:?} refers to unknown review scope {scope:?}",
+                    feature.id
+                )));
+            }
+        }
+        for requirement in &feature.requirements {
+            if !suite_ids.contains(requirement.suite.as_str()) {
+                return Err(crate::Error::invalid(format!(
+                    "qualification feature {:?} refers to unknown verification suite {:?}",
+                    feature.id, requirement.suite
+                )));
             }
         }
     }
@@ -458,8 +619,22 @@ pub(crate) fn evaluate(project: &ProjectSpec) -> Result<Vec<FeatureQualification
         .iter()
         .map(|feature| {
             let mut blockers = Vec::new();
-            let mut scope_effects = BTreeSet::new();
+            let mut phase_blockers = feature
+                .phases
+                .iter()
+                .map(|phase| (phase.id.clone(), Vec::<String>::new()))
+                .collect::<std::collections::BTreeMap<_, _>>();
+            let mut scope_transactions = std::collections::BTreeMap::<
+                String,
+                (crate::review_scopes::ReviewScopeTransaction, String),
+            >::new();
             for scope_id in &feature.scopes {
+                let scope_phase = feature
+                    .phases
+                    .iter()
+                    .find(|phase| phase.scopes.contains(scope_id))
+                    .map(|phase| phase.id.clone())
+                    .unwrap_or_else(|| "<unassigned>".to_owned());
                 let scope = review
                     .scopes
                     .iter()
@@ -471,27 +646,48 @@ pub(crate) fn evaluate(project: &ProjectSpec) -> Result<Vec<FeatureQualification
                         ))
                     })?;
                 if !scope.analysis_inventory_complete {
-                    blockers.push(format!(
+                    let blocker = format!(
                         "analysis scope {scope_id} is incomplete (decode={}, direct={}, call-graph={}, reference={}, unresolved-calls={})",
                         scope.decode_blockers,
                         scope.direct_blockers,
                         scope.call_graph_blockers,
                         scope.reference_blockers,
                         scope.unresolved_calls,
-                    ));
+                    );
+                    blockers.push(blocker.clone());
+                    phase_blockers
+                        .get_mut(&scope_phase)
+                        .expect("validated phase owns every selected scope")
+                        .push(blocker);
                 }
-                scope_effects.extend(scope.replacement_function_keys.iter().cloned());
+                for transaction in &scope.transactions {
+                    let key = transaction.identity.clone();
+                    if let Some((previous, _)) = scope_transactions.get(&key)
+                        && previous.fingerprint != transaction.fingerprint
+                    {
+                        blockers.push(format!(
+                            "transaction {key} has conflicting fingerprints across selected scopes"
+                        ));
+                    }
+                    scope_transactions
+                        .entry(key)
+                        .or_insert_with(|| (transaction.clone(), scope_phase.clone()));
+                }
             }
-            let (surface_effects, covered_effects, effect_blockers) = match feature.coverage {
+            let effect_coverage = match feature.coverage {
                 FeatureCoverage::ReviewScopes => {
-                    let (covered, blockers) = effect_coverage(feature, &scope_effects);
-                    (scope_effects.len(), covered, blockers)
+                    effect_coverage(feature, &scope_transactions)
                 }
                 FeatureCoverage::BoundedEvidence => {
-                    (feature.effects.len(), feature.effects.len(), Vec::new())
+                    bounded_effect_coverage(feature)
                 }
             };
-            blockers.extend(effect_blockers);
+            for (phase, blocker) in &effect_coverage.blockers {
+                blockers.push(blocker.clone());
+                if let Some(entries) = phase_blockers.get_mut(phase) {
+                    entries.push(blocker.clone());
+                }
+            }
             for requirement in &feature.requirements {
                 let path = suite_report_path(&verification.report, &requirement.suite);
                 let report = load_suite_report(&path, &requirement.suite);
@@ -507,23 +703,20 @@ pub(crate) fn evaluate(project: &ProjectSpec) -> Result<Vec<FeatureQualification
                                 .find(|function| function.vendor_symbol == requirement.symbol)
                         })
                 });
-                match proof {
-                    _ if report.is_err() => blockers.push(format!(
-                        "requirement {} cannot load suite {} report {}: {}",
-                        requirement.id,
-                        requirement.suite,
-                        path.display(),
-                        report.unwrap_err(),
+                let blocker = match (&report, proof) {
+                    (Err(error), _) => Some(format!(
+                        "requirement {} cannot load suite {} report {}: {error}",
+                        requirement.id, requirement.suite, path.display(),
                     )),
-                    None => blockers.push(format!(
+                    (_, None) => Some(format!(
                         "requirement {} has no result in suite {} for {}:{}",
                         requirement.id,
                         requirement.suite,
                         requirement.source,
                         requirement.symbol
                     )),
-                    Some(proof) if !status_satisfies_claim(proof.status, requirement.claim) => {
-                        blockers.push(format!(
+                    (_, Some(proof)) if !status_satisfies_claim(proof.status, requirement.claim) => {
+                        Some(format!(
                             "requirement {} ({}) is {:?} in suite {} for {}:{}",
                             requirement.id,
                             requirement.description,
@@ -531,40 +724,95 @@ pub(crate) fn evaluate(project: &ProjectSpec) -> Result<Vec<FeatureQualification
                             requirement.suite,
                             requirement.source,
                             requirement.symbol
-                        ));
+                        ))
                     }
-                    Some(proof) if proof.claim != Some(requirement.claim) => {
-                        blockers.push(format!(
+                    (_, Some(proof)) if proof.claim != Some(requirement.claim) => {
+                        Some(format!(
                             "requirement {} lacks a {:?} claim in suite {} for {}:{}",
                             requirement.id, requirement.claim, requirement.suite, requirement.source, requirement.symbol
-                        ));
+                        ))
                     }
-                    Some(proof)
+                    (_, Some(proof))
                         if !proof.disposition_reviewed || proof.rust_component.is_none() =>
                     {
-                        blockers.push(format!(
+                        Some(format!(
                             "requirement {} is not bound to a reviewed production component in suite {} for {}:{}",
                             requirement.id, requirement.suite, requirement.source, requirement.symbol
-                        ));
+                        ))
                     }
-                    Some(_) => {}
+                    (_, Some(_)) => None,
+                };
+                if let Some(blocker) = blocker {
+                    blockers.push(blocker.clone());
+                    phase_blockers
+                        .get_mut(&requirement.phase)
+                        .expect("validated phase exists")
+                        .push(blocker);
                 }
             }
             blockers.sort();
+            blockers.dedup();
+            let phases = feature
+                .phases
+                .iter()
+                .map(|phase| {
+                    let transactions = effect_coverage
+                        .transactions
+                        .iter()
+                        .filter(|transaction| transaction.phase == phase.id)
+                        .count();
+                    let covered_transactions = effect_coverage
+                        .transactions
+                        .iter()
+                        .filter(|transaction| transaction.phase == phase.id && transaction.current)
+                        .count();
+                    let mut blockers = phase_blockers.remove(&phase.id).unwrap_or_default();
+                    blockers.sort();
+                    blockers.dedup();
+                    FeaturePhaseReport {
+                        id: phase.id.clone(),
+                        description: phase.description.clone(),
+                        requirements: feature
+                            .requirements
+                            .iter()
+                            .filter(|requirement| requirement.phase == phase.id)
+                            .count(),
+                        transactions,
+                        covered_transactions,
+                        blockers,
+                    }
+                })
+                .collect();
+            let hardware = feature.hardware.as_ref().map(|spec| {
+                evaluate_hardware(
+                    &feature.id,
+                    spec,
+                    workspace.hardware_evidence.as_deref(),
+                )
+            });
+            let status = if !blockers.is_empty() {
+                FeatureQualificationStatus::Blocked
+            } else if hardware
+                .as_ref()
+                .is_some_and(|hardware| hardware.blockers.is_empty())
+            {
+                FeatureQualificationStatus::HardwareQualified
+            } else {
+                FeatureQualificationStatus::Qualified
+            };
             Ok(FeatureQualificationReport {
                 id: feature.id.clone(),
                 description: feature.description.clone(),
                 required: required.contains(&feature.id),
-                status: if blockers.is_empty() {
-                    FeatureQualificationStatus::Qualified
-                } else {
-                    FeatureQualificationStatus::Blocked
-                },
+                status,
                 coverage: feature.coverage,
                 scopes: feature.scopes.clone(),
                 requirements: feature.requirements.len(),
-                surface_effects,
-                covered_effects,
+                surface_effects: effect_coverage.surface,
+                covered_effects: effect_coverage.covered,
+                phases,
+                transactions: effect_coverage.transactions,
+                hardware,
                 blockers,
             })
         })
@@ -618,35 +866,147 @@ pub(crate) fn evidence_for_function(
     Ok(evidence)
 }
 
+struct EffectCoverage {
+    surface: usize,
+    covered: usize,
+    blockers: Vec<(String, String)>,
+    transactions: Vec<FeatureTransactionReport>,
+}
+
 fn effect_coverage(
     feature: &FeatureSpec,
-    scope_effects: &BTreeSet<String>,
-) -> (usize, Vec<String>) {
-    let dispositions = feature
-        .effects
-        .iter()
-        .map(|effect| (format!("{}:{}", effect.source, effect.symbol), effect))
-        .collect::<std::collections::BTreeMap<_, _>>();
+    scope_transactions: &std::collections::BTreeMap<
+        String,
+        (crate::review_scopes::ReviewScopeTransaction, String),
+    >,
+) -> EffectCoverage {
     let mut blockers = Vec::new();
-    for effect in scope_effects {
-        if !dispositions.contains_key(effect) {
-            blockers.push(format!(
-                "scope effect {effect} has no verified or policy-excluded disposition"
+    let mut reports = Vec::new();
+    let mut matched = BTreeSet::new();
+    let mut covered = 0;
+    for (transaction, discovered_phase) in scope_transactions.values() {
+        let candidates = feature
+            .effects
+            .iter()
+            .filter(|effect| {
+                effect.vendor.source == transaction.source
+                    && effect.vendor.symbol == transaction.symbol
+                    && effect
+                        .vendor
+                        .identity
+                        .as_deref()
+                        .is_none_or(|identity| identity == transaction.identity)
+            })
+            .collect::<Vec<_>>();
+        let Some(effect) = (candidates.len() == 1).then(|| candidates[0]) else {
+            let message = if candidates.is_empty() {
+                format!(
+                    "new transaction {} ({}) has no reviewed disposition; fingerprint={}",
+                    transaction.id, transaction.identity, transaction.fingerprint
+                )
+            } else {
+                format!(
+                    "transaction {} ({}) matches multiple reviewed dispositions",
+                    transaction.id, transaction.identity
+                )
+            };
+            blockers.push((discovered_phase.clone(), message));
+            reports.push(FeatureTransactionReport {
+                id: transaction.id.clone(),
+                phase: discovered_phase.clone(),
+                source: transaction.source.clone(),
+                symbol: transaction.symbol.clone(),
+                identity: Some(transaction.identity.clone()),
+                fingerprint: transaction.fingerprint.clone(),
+                disposition: "missing".to_owned(),
+                requirement: None,
+                rationale: String::new(),
+                effects: transaction.effects.clone(),
+                paths: transaction.paths.clone(),
+                current: false,
+            });
+            continue;
+        };
+        matched.insert(effect.id.as_str());
+        let current = effect.vendor.fingerprint == transaction.fingerprint;
+        if current {
+            covered += 1;
+        } else {
+            blockers.push((
+                effect.phase.clone(),
+                format!(
+                    "transaction {} changed: reviewed {}, current {}",
+                    effect.id, effect.vendor.fingerprint, transaction.fingerprint
+                ),
+            ));
+        }
+        reports.push(transaction_report(effect, transaction, current));
+    }
+    for effect in &feature.effects {
+        if !matched.contains(effect.id.as_str()) {
+            blockers.push((
+                effect.phase.clone(),
+                format!(
+                    "feature transaction {} ({}:{}) is stale for the selected scopes",
+                    effect.id, effect.vendor.source, effect.vendor.symbol
+                ),
             ));
         }
     }
-    for effect in dispositions.keys() {
-        if !scope_effects.contains(effect) {
-            blockers.push(format!(
-                "feature effect disposition {effect} is stale for the selected scopes"
-            ));
-        }
+    reports.sort_by(|left, right| (&left.phase, &left.id).cmp(&(&right.phase, &right.id)));
+    EffectCoverage {
+        surface: scope_transactions.len(),
+        covered,
+        blockers,
+        transactions: reports,
     }
-    let covered = scope_effects
-        .iter()
-        .filter(|effect| dispositions.contains_key(*effect))
-        .count();
-    (covered, blockers)
+}
+
+fn bounded_effect_coverage(feature: &FeatureSpec) -> EffectCoverage {
+    EffectCoverage {
+        surface: feature.effects.len(),
+        covered: feature.effects.len(),
+        blockers: Vec::new(),
+        transactions: feature
+            .effects
+            .iter()
+            .map(|effect| FeatureTransactionReport {
+                id: effect.id.clone(),
+                phase: effect.phase.clone(),
+                source: effect.vendor.source.clone(),
+                symbol: effect.vendor.symbol.clone(),
+                identity: effect.vendor.identity.clone(),
+                fingerprint: effect.vendor.fingerprint.clone(),
+                disposition: effect.disposition.as_str().to_owned(),
+                requirement: effect.requirement.clone(),
+                rationale: effect.rationale.clone(),
+                effects: Vec::new(),
+                paths: Vec::new(),
+                current: true,
+            })
+            .collect(),
+    }
+}
+
+fn transaction_report(
+    effect: &FeatureEffectDisposition,
+    transaction: &crate::review_scopes::ReviewScopeTransaction,
+    current: bool,
+) -> FeatureTransactionReport {
+    FeatureTransactionReport {
+        id: effect.id.clone(),
+        phase: effect.phase.clone(),
+        source: transaction.source.clone(),
+        symbol: transaction.symbol.clone(),
+        identity: Some(transaction.identity.clone()),
+        fingerprint: transaction.fingerprint.clone(),
+        disposition: effect.disposition.as_str().to_owned(),
+        requirement: effect.requirement.clone(),
+        rationale: effect.rationale.clone(),
+        effects: transaction.effects.clone(),
+        paths: transaction.paths.clone(),
+        current,
+    }
 }
 
 pub(crate) fn suite_report_path(aggregate_report: &Path, suite: &str) -> PathBuf {
@@ -681,6 +1041,46 @@ fn validate_id(value: &str, kind: &str) -> Result<()> {
         return Err(crate::Error::invalid(format!(
             "invalid {kind} id {value:?}"
         )));
+    }
+    Ok(())
+}
+
+fn validate_phase(feature: &str, phase: &str, phases: &BTreeSet<&str>, kind: &str) -> Result<()> {
+    if !phases.contains(phase) {
+        return Err(crate::Error::invalid(format!(
+            "qualification feature {feature:?} {kind} refers to unknown phase {phase:?}"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_transaction_fingerprint(value: &str) -> Result<()> {
+    let Some(hex) = value.strip_prefix("sha256:") else {
+        return Err(crate::Error::invalid(format!(
+            "transaction fingerprint {value:?} must use sha256:<hex>"
+        )));
+    };
+    if hex.len() != 64 || !hex.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err(crate::Error::invalid(format!(
+            "invalid transaction fingerprint {value:?}"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_unique_nonempty(feature: &str, kind: &str, values: &[String]) -> Result<()> {
+    if values.is_empty() {
+        return Err(crate::Error::invalid(format!(
+            "qualification feature {feature:?} requires at least one {kind}"
+        )));
+    }
+    let mut unique = BTreeSet::new();
+    for value in values {
+        if value.trim().is_empty() || !unique.insert(value) {
+            return Err(crate::Error::invalid(format!(
+                "qualification feature {feature:?} has an empty or duplicate {kind} {value:?}"
+            )));
+        }
     }
     Ok(())
 }
@@ -724,16 +1124,27 @@ mod tests {
             description: "fixture".to_owned(),
             coverage: FeatureCoverage::ReviewScopes,
             scopes: vec!["connected".to_owned()],
+            phases: vec![FeaturePhase {
+                id: "policy".to_owned(),
+                description: "fixture policy".to_owned(),
+                scopes: vec!["connected".to_owned()],
+            }],
             requirements: Vec::new(),
             effects,
+            hardware: None,
         }
     }
 
     fn excluded(source: &str, symbol: &str) -> FeatureEffectDisposition {
         FeatureEffectDisposition {
             id: symbol.replace('_', "-"),
-            source: source.to_owned(),
-            symbol: symbol.to_owned(),
+            phase: "policy".to_owned(),
+            vendor: FeatureVendorTransaction {
+                source: source.to_owned(),
+                symbol: symbol.to_owned(),
+                identity: None,
+                fingerprint: format!("sha256:{}", "0".repeat(64)),
+            },
             disposition: FeatureEffectDispositionKind::ExcludedByFeaturePolicy,
             requirement: None,
             rationale: "explicit feature policy".to_owned(),
@@ -746,8 +1157,14 @@ mod tests {
             description: "bounded property fixture".to_owned(),
             coverage: FeatureCoverage::BoundedEvidence,
             scopes: Vec::new(),
+            phases: vec![FeaturePhase {
+                id: "install".to_owned(),
+                description: "fixture install".to_owned(),
+                scopes: Vec::new(),
+            }],
             requirements: vec![FeatureRequirement {
                 id: "role-proof".to_owned(),
+                phase: "install".to_owned(),
                 description: "executed role proof".to_owned(),
                 suite: "keys".to_owned(),
                 source: "wifi".to_owned(),
@@ -756,12 +1173,18 @@ mod tests {
             }],
             effects: vec![FeatureEffectDisposition {
                 id: "connection-context".to_owned(),
-                source: "wifi".to_owned(),
-                symbol: "insert_key".to_owned(),
+                phase: "install".to_owned(),
+                vendor: FeatureVendorTransaction {
+                    source: "wifi".to_owned(),
+                    symbol: "insert_key".to_owned(),
+                    identity: None,
+                    fingerprint: format!("sha256:{}", "1".repeat(64)),
+                },
                 disposition: FeatureEffectDispositionKind::Verified,
                 requirement: Some("role-proof".to_owned()),
                 rationale: "the exact property is replayed".to_owned(),
             }],
+            hardware: None,
         }
     }
 
@@ -802,37 +1225,123 @@ mod tests {
 
     #[test]
     fn missing_vendor_transaction_is_a_qualification_blocker() {
-        let scope_effects = [
-            "wifi:hal_set_sta_beacon_filter".to_owned(),
-            "wifi:hal_disable_sta_beacon_filter".to_owned(),
-        ]
-        .into_iter()
-        .collect();
+        let scope_effects =
+            transaction_map(&["hal_set_sta_beacon_filter", "hal_disable_sta_beacon_filter"]);
         let feature = feature_with_effects(vec![excluded("wifi", "hal_disable_sta_beacon_filter")]);
 
-        let (covered, blockers) = effect_coverage(&feature, &scope_effects);
+        let coverage = effect_coverage(&feature, &scope_effects);
 
-        assert_eq!(covered, 1);
-        assert_eq!(blockers.len(), 1);
-        assert!(blockers[0].contains("wifi:hal_set_sta_beacon_filter"));
-        assert!(blockers[0].contains("no verified or policy-excluded disposition"));
+        assert_eq!(coverage.covered, 1);
+        assert_eq!(coverage.blockers.len(), 1);
+        assert!(
+            coverage.blockers[0]
+                .1
+                .contains("wifi:hal_set_sta_beacon_filter")
+        );
+        assert!(coverage.blockers[0].1.contains("no reviewed disposition"));
     }
 
     #[test]
     fn stale_vendor_transaction_disposition_is_a_qualification_blocker() {
-        let scope_effects = ["wifi:hal_disable_sta_beacon_filter".to_owned()]
-            .into_iter()
-            .collect();
+        let scope_effects = transaction_map(&["hal_disable_sta_beacon_filter"]);
         let feature = feature_with_effects(vec![
             excluded("wifi", "hal_disable_sta_beacon_filter"),
             excluded("wifi", "removed_transaction"),
         ]);
 
-        let (covered, blockers) = effect_coverage(&feature, &scope_effects);
+        let coverage = effect_coverage(&feature, &scope_effects);
 
-        assert_eq!(covered, 1);
-        assert_eq!(blockers.len(), 1);
-        assert!(blockers[0].contains("wifi:removed_transaction"));
-        assert!(blockers[0].contains("stale"));
+        assert_eq!(coverage.covered, 1);
+        assert_eq!(coverage.blockers.len(), 1);
+        assert!(coverage.blockers[0].1.contains("wifi:removed_transaction"));
+        assert!(coverage.blockers[0].1.contains("stale"));
+    }
+
+    #[test]
+    fn changed_transaction_fingerprint_requires_new_review() {
+        let scope_effects = transaction_map(&["hal_disable_sta_beacon_filter"]);
+        let mut disposition = excluded("wifi", "hal_disable_sta_beacon_filter");
+        disposition.vendor.fingerprint = format!("sha256:{}", "1".repeat(64));
+
+        let coverage = effect_coverage(&feature_with_effects(vec![disposition]), &scope_effects);
+
+        assert_eq!(coverage.covered, 0);
+        assert_eq!(coverage.blockers.len(), 1);
+        assert!(coverage.blockers[0].1.contains("changed"));
+    }
+
+    #[test]
+    fn hardware_evidence_requires_current_artifacts_and_all_observations() {
+        let directory = std::env::temp_dir().join(format!(
+            "vendor-workbench-hardware-evidence-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&directory).unwrap();
+        let artifact = directory.join("firmware.bin");
+        std::fs::write(&artifact, b"firmware-v1").unwrap();
+        let digest = crate::artifact_path_sha256(&artifact).unwrap();
+        let evidence = directory.join("evidence.json");
+        std::fs::write(
+            &evidence,
+            serde_json::json!({
+                "schema": 1,
+                "command": "project hardware evidence",
+                "features": [{
+                    "id": "wifi-ap",
+                    "passed": true,
+                    "successful_runs": 20,
+                    "observations": ["beacon", "association"],
+                    "artifacts": [{
+                        "id": "firmware",
+                        "path": "firmware.bin",
+                        "sha256": digest,
+                    }],
+                }],
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let spec = FeatureHardwareSpec {
+            minimum_successful_runs: 20,
+            required_observations: vec!["beacon".to_owned(), "association".to_owned()],
+            required_artifacts: vec!["firmware".to_owned()],
+        };
+
+        let current = evaluate_hardware("wifi-ap", &spec, Some(&evidence));
+        assert_eq!(current.status, "passed");
+        assert!(current.blockers.is_empty());
+
+        std::fs::write(&artifact, b"firmware-v2").unwrap();
+        let stale = evaluate_hardware("wifi-ap", &spec, Some(&evidence));
+        assert_eq!(stale.status, "stale");
+        assert!(stale.blockers[0].contains("firmware"));
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    fn transaction_map(
+        symbols: &[&str],
+    ) -> std::collections::BTreeMap<String, (crate::review_scopes::ReviewScopeTransaction, String)>
+    {
+        symbols
+            .iter()
+            .map(|symbol| {
+                let identity = format!("wifi::{symbol}");
+                (
+                    identity.clone(),
+                    (
+                        crate::review_scopes::ReviewScopeTransaction {
+                            id: format!("wifi:{symbol}"),
+                            identity,
+                            source: "wifi".to_owned(),
+                            symbol: (*symbol).to_owned(),
+                            fingerprint: format!("sha256:{}", "0".repeat(64)),
+                            paths: Vec::new(),
+                            effects: Vec::new(),
+                        },
+                        "policy".to_owned(),
+                    ),
+                )
+            })
+            .collect()
     }
 }

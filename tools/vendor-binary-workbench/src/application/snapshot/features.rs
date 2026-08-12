@@ -15,6 +15,9 @@ pub(super) fn collect(
                 required: feature.required,
                 status: match feature.status {
                     crate::qualification::FeatureQualificationStatus::Qualified => "qualified",
+                    crate::qualification::FeatureQualificationStatus::HardwareQualified => {
+                        "hardware-qualified"
+                    }
                     crate::qualification::FeatureQualificationStatus::Blocked => "blocked",
                 }
                 .to_owned(),
@@ -23,6 +26,23 @@ pub(super) fn collect(
                 requirements: feature.requirements,
                 surface_effects: feature.surface_effects,
                 covered_effects: feature.covered_effects,
+                phases: feature
+                    .phases
+                    .into_iter()
+                    .map(|phase| FeaturePhaseSummary {
+                        id: phase.id,
+                        transactions: phase.transactions,
+                        covered_transactions: phase.covered_transactions,
+                        requirements: phase.requirements,
+                        blockers: phase.blockers.len(),
+                    })
+                    .collect(),
+                hardware: feature.hardware.map(|hardware| FeatureHardwareSummary {
+                    status: hardware.status,
+                    successful_runs: hardware.successful_runs,
+                    minimum_successful_runs: hardware.minimum_successful_runs,
+                    blockers: hardware.blockers,
+                }),
                 blockers: feature.blockers,
             })
             .collect(),

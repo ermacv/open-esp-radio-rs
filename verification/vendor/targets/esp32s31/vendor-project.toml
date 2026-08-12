@@ -260,6 +260,39 @@ roots = [
 include-reachable = true
 
 [[review.scopes]]
+id = "wifi-ap-start"
+profiles = ["libnet80211-all", "libpp-all"]
+roots = ["libnet80211:wifi_softap_start"]
+include-reachable = true
+
+[[review.scopes]]
+id = "wifi-ap-stop"
+profiles = ["libnet80211-all", "libpp-all"]
+roots = ["libnet80211:wifi_softap_stop"]
+include-reachable = true
+
+[[review.scopes]]
+id = "wifi-ap-link-identity"
+profiles = ["libpp-all"]
+roots = [
+    "libpp:hal_mac_set_bssid",
+    "libpp:hal_mac_clr_bssid",
+    "libpp:hal_rx_enable_bssid_check",
+    "libpp:hal_rx_disable_bssid_check",
+]
+include-reachable = true
+
+[[review.scopes]]
+id = "wifi-ap-beacon-timing"
+profiles = ["libnet80211-all", "libpp-all"]
+roots = [
+    "libnet80211:ieee80211_hostap_send_beacon_process",
+    "libpp:hal_mac_tsf_reset",
+    "libpp:hal_disable_softap_tsf",
+]
+include-reachable = true
+
+[[review.scopes]]
 id = "coex-core"
 profiles = ["coex-all"]
 roots = [
@@ -322,6 +355,7 @@ include-reachable = true
 [qualification]
 pack = "features/reviewed.toml"
 required-features = ["wifi-sta-connected-no-power-save", "wifi-ap-sta-key-role", "coex-hardware-timer-control"]
+hardware-evidence = "generated/evidence/feature-hardware.json"
 
 [verification]
 report = "generated/reports/verification.json"

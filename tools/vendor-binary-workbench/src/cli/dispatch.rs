@@ -26,6 +26,9 @@ pub(super) fn run(invocation: ResolvedInvocation) -> Result<bool> {
         ResolvedInvocation::ProjectStatus { arguments, session } => {
             commands::run_project_status(arguments, session.context())
         }
+        ResolvedInvocation::ProjectFeature { arguments, session } => {
+            commands::run_project_feature(arguments, &session.project)
+        }
         ResolvedInvocation::ProjectAnalyze { arguments, session } => {
             commands::run_project_analysis(arguments, &session)
         }

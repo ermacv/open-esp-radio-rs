@@ -19,6 +19,7 @@ fn command_message(command: &Command) -> Option<&'static str> {
         | Command::ProjectDoctor(_)
         | Command::ProjectFiles(_)
         | Command::ProjectStatus(_)
+        | Command::ProjectFeature(_)
         | Command::ProjectBrowse(_)
         | Command::FunctionInitPack(_)
         | Command::CodeInitPack(_)

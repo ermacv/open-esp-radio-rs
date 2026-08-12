@@ -526,6 +526,25 @@ pub struct FeatureQualificationSummary {
     pub requirements: usize,
     pub surface_effects: usize,
     pub covered_effects: usize,
+    pub phases: Vec<FeaturePhaseSummary>,
+    pub hardware: Option<FeatureHardwareSummary>,
+    pub blockers: Vec<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct FeaturePhaseSummary {
+    pub id: String,
+    pub transactions: usize,
+    pub covered_transactions: usize,
+    pub requirements: usize,
+    pub blockers: usize,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct FeatureHardwareSummary {
+    pub status: String,
+    pub successful_runs: usize,
+    pub minimum_successful_runs: usize,
     pub blockers: Vec<String>,
 }
 

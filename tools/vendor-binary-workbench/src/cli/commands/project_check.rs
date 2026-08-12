@@ -18,6 +18,7 @@ struct ProjectCheckReport {
     schema: u32,
     command: &'static str,
     project: String,
+    hardware: bool,
     passed: bool,
     stages: Vec<ProjectCheckStage>,
 }
@@ -72,6 +73,7 @@ pub(super) fn run(arguments: ProjectCheckArgs, session: &ProjectSession) -> Resu
     let qualification = qualification_stage(
         session,
         verification.replacement_graph.summary.bounded_matches,
+        arguments.hardware,
     );
 
     let passed = analysis.succeeded()
@@ -88,9 +90,10 @@ pub(super) fn run(arguments: ProjectCheckArgs, session: &ProjectSession) -> Resu
         .report;
     let graph = &verification.replacement_graph.summary;
     let report = ProjectCheckReport {
-        schema: 3,
+        schema: 4,
         command: "project check",
         project: session.project.id.clone(),
+        hardware: arguments.hardware,
         passed,
         stages: vec![
             ProjectCheckStage {
@@ -170,6 +173,14 @@ fn render_human(report: &ProjectCheckReport) {
 
     outputln!("{}", output::heading("Project check"));
     outputln!("Project: {}", report.project);
+    outputln!(
+        "Assurance: {}",
+        if report.hardware {
+            "static + hardware"
+        } else {
+            "static"
+        }
+    );
     let outcome = if report.passed {
         output::success(
             "PASS — analysis, verification, feature qualification and publication reproduce",
@@ -223,7 +234,11 @@ fn render_human(report: &ProjectCheckReport) {
     );
 }
 
-fn qualification_stage(session: &ProjectSession, bounded_matches: usize) -> ProjectCheckStage {
+fn qualification_stage(
+    session: &ProjectSession,
+    bounded_matches: usize,
+    require_hardware: bool,
+) -> ProjectCheckStage {
     let manifest = session.manifest.display();
     let Some(workspace) = session.project.qualification.as_ref() else {
         let passed = bounded_matches == 0;
@@ -261,18 +276,25 @@ fn qualification_stage(session: &ProjectSession, bounded_matches: usize) -> Proj
                 .collect::<Vec<_>>();
             let blocked = required
                 .iter()
-                .filter(|feature| {
-                    feature.status == crate::qualification::FeatureQualificationStatus::Blocked
-                })
+                .filter(|feature| !qualification_status_passes(feature.status, require_hardware))
                 .collect::<Vec<_>>();
             let passed = !required.is_empty() && blocked.is_empty();
             let issues = blocked
                 .iter()
                 .flat_map(|feature| {
-                    feature.blockers.iter().map(|blocker| ProjectCheckIssue {
+                    let blockers = if feature.status
+                        == crate::qualification::FeatureQualificationStatus::Blocked
+                    {
+                        feature.blockers.clone()
+                    } else if let Some(hardware) = &feature.hardware {
+                        hardware.blockers.clone()
+                    } else {
+                        vec!["feature has no hardware assurance contract".to_owned()]
+                    };
+                    blockers.into_iter().map(|blocker| ProjectCheckIssue {
                         component: format!("feature:{}", feature.id),
                         status: "failed".to_owned(),
-                        reason: blocker.clone(),
+                        reason: blocker,
                     })
                 })
                 .collect();
@@ -281,9 +303,14 @@ fn qualification_stage(session: &ProjectSession, bounded_matches: usize) -> Proj
                 status: if passed { "passed" } else { "failed" },
                 passed,
                 summary: format!(
-                    "{} required feature(s), {} qualified, {} blocked, {} bounded match(es)",
+                    "{} required feature(s), {} {}, {} blocked, {} bounded match(es)",
                     required.len(),
                     required.len().saturating_sub(blocked.len()),
+                    if require_hardware {
+                        "hardware-qualified"
+                    } else {
+                        "qualified"
+                    },
                     blocked.len(),
                     bounded_matches,
                 ),
@@ -291,7 +318,8 @@ fn qualification_stage(session: &ProjectSession, bounded_matches: usize) -> Proj
                 next_actions: (!passed)
                     .then(|| {
                         format!(
-                            "close the reported feature boundary and rerun `vendor-binary-workbench project check --project {manifest}`"
+                            "close the reported feature boundary and rerun `vendor-binary-workbench project check{} --project {manifest}`",
+                            if require_hardware { " --hardware" } else { "" }
                         )
                     })
                     .into_iter()
@@ -315,6 +343,17 @@ fn qualification_stage(session: &ProjectSession, bounded_matches: usize) -> Proj
                 "regenerate analysis and verification reports, then rerun `vendor-binary-workbench project check --project {manifest}`"
             )],
         },
+    }
+}
+
+fn qualification_status_passes(
+    status: crate::qualification::FeatureQualificationStatus,
+    require_hardware: bool,
+) -> bool {
+    match status {
+        crate::qualification::FeatureQualificationStatus::Blocked => false,
+        crate::qualification::FeatureQualificationStatus::Qualified => !require_hardware,
+        crate::qualification::FeatureQualificationStatus::HardwareQualified => true,
     }
 }
 
@@ -411,9 +450,10 @@ mod tests {
     #[test]
     fn aggregate_schema_keeps_issues_and_next_actions_separate() {
         let report = ProjectCheckReport {
-            schema: 3,
+            schema: 4,
             command: "project check",
             project: "fixture".to_owned(),
+            hardware: false,
             passed: false,
             stages: vec![ProjectCheckStage {
                 name: "verification",
@@ -429,7 +469,8 @@ mod tests {
             }],
         };
         let value = serde_json::to_value(report).unwrap();
-        assert_eq!(value["schema"], 3);
+        assert_eq!(value["schema"], 4);
+        assert_eq!(value["hardware"], false);
         assert_eq!(value["stages"][0]["status"], "failed");
         assert_eq!(
             value["stages"][0]["issues"][0]["component"],
@@ -439,5 +480,19 @@ mod tests {
             value["stages"][0]["next_actions"][0],
             "inspect verification.json"
         );
+    }
+
+    #[test]
+    fn hardware_gate_never_promotes_static_qualification() {
+        use crate::qualification::FeatureQualificationStatus::{
+            Blocked, HardwareQualified, Qualified,
+        };
+
+        assert!(qualification_status_passes(Qualified, false));
+        assert!(!qualification_status_passes(Qualified, true));
+        assert!(qualification_status_passes(HardwareQualified, false));
+        assert!(qualification_status_passes(HardwareQualified, true));
+        assert!(!qualification_status_passes(Blocked, false));
+        assert!(!qualification_status_passes(Blocked, true));
     }
 }

@@ -314,6 +314,11 @@ enum ProjectCommand {
         after_long_help = "Use `project doctor` for detailed configuration diagnostics, or `project analyze` to refresh generated evidence."
     )]
     Status(ProjectStatusArgs),
+    /// Inspect one complete vendor-to-Rust feature assurance boundary.
+    #[command(
+        after_long_help = "Reads current generated evidence without rebuilding it. Use `project analyze` when the report is stale."
+    )]
+    Feature(ProjectFeatureArgs),
     /// Browse the resolved project in a read-only terminal interface.
     Browse(EmptyArgs),
     /// Generate or verify reproducible binary-analysis evidence.
@@ -347,6 +352,7 @@ impl ProjectCommand {
             Self::Doctor(arguments) => Command::ProjectDoctor(arguments),
             Self::Files(arguments) => Command::ProjectFiles(arguments),
             Self::Status(arguments) => Command::ProjectStatus(arguments),
+            Self::Feature(arguments) => Command::ProjectFeature(arguments),
             Self::Browse(arguments) => Command::ProjectBrowse(arguments),
             Self::Analyze(arguments) => Command::ProjectAnalyze(arguments),
             Self::Verify(arguments) => Command::ProjectVerify(arguments),
@@ -553,6 +559,7 @@ pub(crate) enum Command {
     ProjectDoctor(EmptyArgs),
     ProjectFiles(EmptyArgs),
     ProjectStatus(ProjectStatusArgs),
+    ProjectFeature(ProjectFeatureArgs),
     ProjectBrowse(EmptyArgs),
     ProjectAnalyze(ProjectAnalyzeArgs),
     ProjectVerify(ProjectVerifyArgs),
@@ -818,13 +825,35 @@ mod tests {
         assert!(arguments.deny_unreviewed);
         assert_eq!(arguments.jobs, 2);
 
-        let invocation =
-            ParsedInvocation::parse(["project".to_owned(), "check".to_owned()]).unwrap();
+        let invocation = ParsedInvocation::parse([
+            "project".to_owned(),
+            "check".to_owned(),
+            "--hardware".to_owned(),
+        ])
+        .unwrap();
         let Command::ProjectCheck(arguments) = invocation.command else {
             panic!("unexpected argument type")
         };
         assert!(!arguments.deny_unreviewed);
         assert_eq!(arguments.jobs, 1);
+        assert!(arguments.hardware);
+
+        let invocation = ParsedInvocation::parse([
+            "project".to_owned(),
+            "feature".to_owned(),
+            "wifi-ap-bringup".to_owned(),
+            "--write-review-draft".to_owned(),
+            "candidate.toml".to_owned(),
+        ])
+        .unwrap();
+        let Command::ProjectFeature(arguments) = invocation.command else {
+            panic!("unexpected argument type")
+        };
+        assert_eq!(arguments.feature, "wifi-ap-bringup");
+        assert_eq!(
+            arguments.write_review_draft.as_deref(),
+            Some(std::path::Path::new("candidate.toml"))
+        );
 
         let error =
             ParsedInvocation::parse(["project".to_owned(), "build".to_owned()]).unwrap_err();

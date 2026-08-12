@@ -201,6 +201,7 @@ pub(crate) struct ReviewWorkspaceSpec {
 pub(crate) struct QualificationWorkspaceSpec {
     pub(crate) pack: PathBuf,
     pub(crate) required_features: Vec<String>,
+    pub(crate) hardware_evidence: Option<PathBuf>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

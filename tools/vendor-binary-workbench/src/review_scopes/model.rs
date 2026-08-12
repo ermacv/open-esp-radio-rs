@@ -18,6 +18,34 @@ pub(crate) struct ReviewScopeMmio {
     pub(crate) static_discovery: bool,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ReviewScopeEffect {
+    pub(crate) kind: String,
+    pub(crate) site: Option<u32>,
+    pub(crate) operation: String,
+    pub(crate) target: String,
+    pub(crate) width: Option<u8>,
+    pub(crate) value: Option<String>,
+    pub(crate) modified_mask: Option<u32>,
+    pub(crate) preserved_mask: Option<u32>,
+    pub(crate) forced_zero_mask: Option<u32>,
+    pub(crate) forced_one_mask: Option<u32>,
+    pub(crate) arguments: Vec<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ReviewScopeTransaction {
+    pub(crate) id: String,
+    pub(crate) identity: String,
+    pub(crate) source: String,
+    pub(crate) symbol: String,
+    pub(crate) fingerprint: String,
+    pub(crate) paths: Vec<Vec<String>>,
+    pub(crate) effects: Vec<ReviewScopeEffect>,
+}
+
 /// A root-cause-grouped item in the scope-driven human review queue.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -60,6 +88,12 @@ pub(crate) struct ReviewScopeReport {
     /// Exact explicit scope roots requiring either verification evidence or a
     /// reviewed feature-policy disposition.
     pub(crate) replacement_function_keys: Vec<String>,
+    /// Every reachable function with a direct observable effect. This is the
+    /// fail-closed feature denominator and is intentionally independent from
+    /// the explicit Rust replacement roots above.
+    pub(crate) transaction_functions: usize,
+    pub(crate) transaction_keys: Vec<String>,
+    pub(crate) transactions: Vec<ReviewScopeTransaction>,
     pub(crate) function_identities: Vec<String>,
     pub(crate) function_keys: Vec<String>,
     pub(crate) complete_functions: usize,

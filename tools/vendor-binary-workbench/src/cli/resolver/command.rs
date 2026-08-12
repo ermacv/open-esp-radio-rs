@@ -93,6 +93,10 @@ pub(super) fn resolve_command(
             arguments,
             session: Box::new(environment.into_project_session()?),
         },
+        Command::ProjectFeature(arguments) => ResolvedInvocation::ProjectFeature {
+            arguments,
+            session: Box::new(environment.into_project_session()?),
+        },
         Command::ProjectAnalyze(arguments) => ResolvedInvocation::ProjectAnalyze {
             arguments,
             session: Box::new(environment.into_project_session()?),

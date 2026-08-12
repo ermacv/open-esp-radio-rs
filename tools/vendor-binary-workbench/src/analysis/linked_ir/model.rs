@@ -266,6 +266,30 @@ pub(crate) enum LinkedMemoryObject {
 }
 
 impl LinkedMemoryObject {
+    pub(crate) fn display_name(&self) -> String {
+        match self {
+            Self::Argument { index } => format!("arg{index}"),
+            Self::Global { member, symbol } => member
+                .as_deref()
+                .map_or_else(|| symbol.clone(), |member| format!("{member}::{symbol}")),
+            Self::Dereferenced {
+                pointer,
+                pointer_offset,
+            } => format!("*({} {pointer_offset:+#x})", pointer.display_name()),
+            Self::Absolute {
+                address_space,
+                address,
+            } => format!("{address_space}:{address:#010x}"),
+            Self::Indexed {
+                object,
+                argument,
+                stride,
+            } => format!("{}[arg{argument} * {stride:#x}]", object.display_name()),
+            Self::ZeroedAllocation { call_token } => format!("calloc#{call_token}"),
+            Self::OpaqueExternalObject { call_token } => format!("opaque-external#{call_token}"),
+        }
+    }
+
     /// Convert a machine-level pointer provenance into a nominal review
     /// object. Bounded loop unrolling can produce one dereference node per
     /// linked-list iteration; such a chain remains valid execution evidence

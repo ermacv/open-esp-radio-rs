@@ -77,6 +77,15 @@ pub(crate) struct ProjectStatusArgs {
     pub(crate) deny_incomplete: bool,
 }
 
+#[derive(Clone, Debug, Args)]
+pub(crate) struct ProjectFeatureArgs {
+    /// Stable feature identifier from the reviewed qualification pack.
+    pub(crate) feature: String,
+    /// Write a review-only TOML candidate for the currently discovered surface.
+    #[arg(long, value_name = "PATH")]
+    pub(crate) write_review_draft: Option<PathBuf>,
+}
+
 #[derive(Clone, Debug, Default, Args)]
 pub(crate) struct ProjectAnalyzeArgs {
     /// Reproduce and compare every configured output without changing files.
@@ -111,6 +120,9 @@ pub(crate) struct ProjectCheckArgs {
     /// Worker threads for independent analysis.
     #[arg(long, default_value_t = 1, value_parser = clap::value_parser!(u8).range(1..=8), value_name = "N")]
     pub(crate) jobs: u8,
+    /// Require configured features to carry current passing hardware evidence.
+    #[arg(long)]
+    pub(crate) hardware: bool,
 }
 
 #[derive(Clone, Debug, Default, Args)]

@@ -1,4 +1,4 @@
-//! Complete owned DTO for linked-IR schema v52.
+//! Complete owned DTO for linked-IR schema v53.
 
 #![allow(
     dead_code,
@@ -269,9 +269,30 @@ pub(crate) struct StoredFunctionReviewProjection {
     pub(crate) mmio_addresses: Vec<u32>,
     pub(crate) direct_context_fields: usize,
     pub(crate) direct_memory_fields: usize,
+    pub(crate) direct_effects: Vec<StoredReviewDirectEffect>,
     pub(crate) diagnostics: Vec<StoredReviewDiagnostic>,
     pub(crate) effect_summary: StoredReviewEffectSummary,
     pub(crate) decode_blockers: Vec<StoredDecodeBlocker>,
+}
+
+/// Canonical direct observable effect used to close a feature review surface.
+///
+/// `site` is evidence for navigation, but feature fingerprints intentionally
+/// omit it: relinking may move an otherwise identical transaction.
+#[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct StoredReviewDirectEffect {
+    pub(crate) kind: String,
+    pub(crate) site: Option<u32>,
+    pub(crate) operation: String,
+    pub(crate) target: String,
+    pub(crate) width: Option<u8>,
+    pub(crate) value: Option<String>,
+    pub(crate) modified_mask: Option<u32>,
+    pub(crate) preserved_mask: Option<u32>,
+    pub(crate) forced_zero_mask: Option<u32>,
+    pub(crate) forced_one_mask: Option<u32>,
+    pub(crate) arguments: Vec<String>,
 }
 
 impl StoredFunctionReviewProjection {

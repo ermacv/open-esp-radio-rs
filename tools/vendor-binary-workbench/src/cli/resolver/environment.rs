@@ -284,7 +284,7 @@ fn trace_resolved_target(
 ) {
     if matches!(
         command,
-        Command::ProjectDoctor(_) | Command::ProjectStatus(_)
+        Command::ProjectDoctor(_) | Command::ProjectStatus(_) | Command::ProjectFeature(_)
     ) {
         return;
     }

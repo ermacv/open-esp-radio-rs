@@ -507,7 +507,7 @@ claims, validation, and presentation separate:
 | Module | Responsibility |
 | --- | --- |
 | `facts.rs` | Stable generated-fact model, compact multi-report overview loading, indexed full-function detail loading and queries |
-| `facts/parse.rs` | Strict schema-v52 overview/full-function projections, including indexed/dereferenced/allocation memory objects, site-bearing semantic calls, typed diagnostics and guard expressions |
+| `facts/parse.rs` | Strict schema-v53 overview/full-function projections, including indexed/dereferenced/allocation memory objects, site-bearing semantic calls, typed diagnostics and guard expressions |
 | `facts/json.rs` | Low-level JSON shape, integer, address and digest readers |
 | `facts/validate.rs` | Cross-report identities, source ownership and field invariants |
 | `interface_links.rs` | Exact caller/site join from validated interface bindings to optional linked-IR CFG evidence |
@@ -556,7 +556,7 @@ project-profile generation and reusable artifact rendering are outside CLI:
 | `linked_ir_export.rs` | CLI-independent analysis and project-profile generation |
 | `linked_ir_export/pseudo.rs` | Pseudo-Rust artifact rendering |
 | `linked_ir_export/render_common.rs` | Shared guard/MMIO formatting and traversal |
-| `artifacts/linked_ir_document.rs` | Persistent schema-v52 Serde document and compact review projection; artifact-wide transitive closures are explicitly on demand |
+| `artifacts/linked_ir_document.rs` | Persistent schema-v53 Serde document and compact review projection; artifact-wide transitive closures are explicitly on demand |
 
 `application::ProjectArtifactStore` is the command-scoped owner of immutable
 generated readers. It retains one most-recently-used linked-IR reader, loads
@@ -573,7 +573,7 @@ instead of opening bundles independently.
 | `cli/commands/export_ir/human/summary.rs` | Aggregate report section |
 | `cli/commands/export_ir/tests.rs` | CLI artifact-value adaptation tests |
 
-Since schema v42 the current schema-v52 artifact serializes the typed
+Since schema v42 the current schema-v53 artifact serializes the typed
 `LinkedIrReport` model directly; the removed
 schema-v31 handwritten renderer has no compatibility path. Renderers are
 consumers of `LinkedIrReport`; they must not independently

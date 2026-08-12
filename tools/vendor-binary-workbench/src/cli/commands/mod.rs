@@ -26,6 +26,7 @@ mod ir_build;
 mod project_check;
 mod project_configure;
 mod project_doctor;
+mod project_feature;
 mod project_files;
 mod project_function_doctor;
 mod project_init;
@@ -93,6 +94,13 @@ pub(super) fn run_project_status(
     context: ProjectContext<'_>,
 ) -> Result<bool> {
     project_status::run(arguments, context)
+}
+
+pub(super) fn run_project_feature(
+    arguments: super::ProjectFeatureArgs,
+    project: &crate::ProjectSpec,
+) -> Result<bool> {
+    project_feature::run(arguments, project)
 }
 
 pub(super) fn run_project_browser(manifest: &std::path::Path) -> Result<bool> {

@@ -86,6 +86,35 @@ pub(super) fn render(frame: &mut Frame<'_>, state: &BrowserState, area: Rect) {
                         }),
                     );
                 }
+                lines.push(Line::from(""));
+                lines.push(Line::from("Lifecycle"));
+                lines.extend(feature.phases.iter().map(|phase| {
+                    Line::from(format!(
+                        "{}: {}/{} transactions, {} proof(s), {} blocker(s)",
+                        phase.id,
+                        phase.covered_transactions,
+                        phase.transactions,
+                        phase.requirements,
+                        phase.blockers,
+                    ))
+                }));
+                if let Some(hardware) = &feature.hardware {
+                    lines.push(Line::from(""));
+                    lines.push(field("Hardware", &hardware.status));
+                    lines.push(field(
+                        "Successful runs",
+                        format!(
+                            "{}/{}",
+                            hardware.successful_runs, hardware.minimum_successful_runs
+                        ),
+                    ));
+                    lines.extend(
+                        hardware
+                            .blockers
+                            .iter()
+                            .map(|blocker| Line::from(format!("hardware: {blocker}"))),
+                    );
+                }
                 lines
             })
             .unwrap_or_else(|| vec![Line::from("No configured feature qualifications")]);

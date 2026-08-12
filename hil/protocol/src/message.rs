@@ -3,7 +3,7 @@ use core::fmt;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-pub const PROTOCOL_VERSION: u16 = 37;
+pub const PROTOCOL_VERSION: u16 = 38;
 // Keep command envelopes small: startup artifacts are transferred as an
 // ordered CRC-protected stream, so a large per-command inline buffer only
 // inflates UART queues and executor futures without improving semantics.
@@ -169,6 +169,8 @@ pub struct FeatureCapabilities {
     /// This image instruments bounded Embassy task poll residence. Ordinary
     /// qualification images deliberately omit this timing perturbation.
     pub task_poll_evidence: bool,
+    /// This image publishes aggregate cooperative network scheduler evidence.
+    pub network_scheduler_evidence: bool,
     /// Startup provisioning can select the data-plane executor topology
     /// without requiring another firmware image.
     pub data_plane_placement: bool,
@@ -1236,12 +1238,41 @@ pub struct StackUsage {
     pub cpu1: StackWatermark,
 }
 
+/// Aggregate cooperative network scheduler evidence collected since boot.
+///
+/// Diagnostic images are cold-booted for each qualification cell, so this is
+/// also the complete scheduler interval for that cell. No per-packet trace is
+/// transported over the control link.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct NetworkSchedulerEvidence {
+    pub polls: u32,
+    pub ingress_calls: u32,
+    pub ingress_packets: u32,
+    pub egress_passes: u32,
+    pub egress_tx_tokens: u32,
+    pub egress_blocked: u32,
+    pub ingress_budget_exhausted: u32,
+    pub egress_budget_exhausted: u32,
+    pub started_with_ingress: u32,
+    pub started_with_egress: u32,
+    pub exit_drained: u32,
+    pub exit_work_budget: u32,
+    pub exit_time_budget: u32,
+    pub exit_egress_credit: u32,
+    pub poll_micros: u32,
+    pub poll_max_micros: u32,
+    /// Residence buckets: `<=50`, `<=100`, `<=250`, `<=500`, `<=1000`,
+    /// `<=2000`, and `>2000` microseconds.
+    pub residence_histogram: [u32; 7],
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum EvidenceRecord {
     Transport(TransportEvidence),
     Radio(RadioEvidence),
     TxAggregateTiming(TxAggregateTimingEvidence),
     RxDelivery(RxDeliveryEvidence),
+    NetworkScheduler(NetworkSchedulerEvidence),
     Link(LinkHealth),
     Stack(StackUsage),
 }

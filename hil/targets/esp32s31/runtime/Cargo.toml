@@ -34,6 +34,12 @@ open-radio-hil = [
 # residence. Keep it out of ordinary throughput qualification because the
 # per-poll timer reads and atomics are intentionally observable overhead.
 task-poll-telemetry = []
+# Diagnostic-only aggregate evidence for the bounded embassy-net scheduler.
+# Both the callback and its atomics are absent from qualification images.
+network-scheduler-telemetry = [
+    "embassy-net/cooperative-scheduler-telemetry",
+    "open-esp-radio-hil-esp32s31-telemetry/network-scheduler",
+]
 # The task-poll image qualifies only CPU0 data-plane scenarios. CPU1 retains
 # its idle control executor, but does not need the 16-KiB network call-chain
 # stack reserved by images that admit split-radio-network placement.

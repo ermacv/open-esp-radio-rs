@@ -16,13 +16,13 @@ use std::{
 
 use open_esp_radio_hil_protocol::{
     Capabilities, Command, DecodeCounters, Direction, Envelope, Event, EvidenceRecord, Finished,
-    FrameDecoder, FrameEncoder, LinkHealth, OperationStatus, RadioEvidence, RxDeliveryEvidence,
-    RxRadioEvidence, SessionConfig, SessionLinkRequirements, SessionReady, SessionState,
-    StackUsage, StartupArtifactChunk, StartupArtifactStatus, StateChange, StationEpochEvidence,
-    StationLifecycleEvent, TimebaseProbeEvidence, TimebaseProbeRequest, Transport,
-    TransportEvidence, TxAggregateTimingEvidence, TxRadioEvidence, WifiMonitorCaptureRequest,
-    WifiMonitorEvidence, WifiMonitorFrameChunk, WifiMonitorRequest, WifiRoleTransitionEvidence,
-    WifiScanEvidence, WifiScanRequest, evidence_crc32c,
+    FrameDecoder, FrameEncoder, LinkHealth, NetworkSchedulerEvidence, OperationStatus,
+    RadioEvidence, RxDeliveryEvidence, RxRadioEvidence, SessionConfig, SessionLinkRequirements,
+    SessionReady, SessionState, StackUsage, StartupArtifactChunk, StartupArtifactStatus,
+    StateChange, StationEpochEvidence, StationLifecycleEvent, TimebaseProbeEvidence,
+    TimebaseProbeRequest, Transport, TransportEvidence, TxAggregateTimingEvidence, TxRadioEvidence,
+    WifiMonitorCaptureRequest, WifiMonitorEvidence, WifiMonitorFrameChunk, WifiMonitorRequest,
+    WifiRoleTransitionEvidence, WifiScanEvidence, WifiScanRequest, evidence_crc32c,
 };
 use zeroize::Zeroizing;
 
@@ -188,6 +188,7 @@ pub(crate) struct SessionEvidence {
     pub(crate) radio: Option<RadioEvidence>,
     pub(crate) tx_timing: Option<TxAggregateTimingEvidence>,
     pub(crate) rx_delivery: Option<RxDeliveryEvidence>,
+    pub(crate) network_scheduler: Option<NetworkSchedulerEvidence>,
     pub(crate) stack: StackUsage,
     pub(crate) finished: Finished,
 }
@@ -1026,10 +1027,23 @@ impl SerialCapture {
                 Event::Evidence(EvidenceRecord::RxDelivery(delivery)) => delivery,
                 _ => unreachable!("RX delivery predicate accepted only delivery evidence"),
             });
+        let network_scheduler = self
+            .wait_for_protocol_after(session.first_event, Duration::ZERO, |message| {
+                message.session_id == session.session_id
+                    && matches!(
+                        message.body,
+                        Event::Evidence(EvidenceRecord::NetworkScheduler(_))
+                    )
+            })
+            .map(|event| match event.body {
+                Event::Evidence(EvidenceRecord::NetworkScheduler(evidence)) => evidence,
+                _ => unreachable!("scheduler predicate accepted only scheduler evidence"),
+            });
         let expected_records = 3
             + u16::from(radio.is_some())
             + u16::from(tx_timing.is_some())
-            + u16::from(rx_delivery.is_some());
+            + u16::from(rx_delivery.is_some())
+            + u16::from(network_scheduler.is_some());
         if finished.summary.evidence_records != expected_records {
             return Err(format!(
                 "device reported {} evidence records but published {expected_records} typed records",
@@ -1048,6 +1062,9 @@ impl SerialCapture {
         if let Some(delivery) = rx_delivery {
             records.push(EvidenceRecord::RxDelivery(delivery));
         }
+        if let Some(scheduler) = network_scheduler {
+            records.push(EvidenceRecord::NetworkScheduler(scheduler));
+        }
         records.push(EvidenceRecord::Link(link));
         records.push(EvidenceRecord::Stack(stack));
         let checksum = evidence_crc32c(&records)
@@ -1064,6 +1081,7 @@ impl SerialCapture {
             radio,
             tx_timing,
             rx_delivery,
+            network_scheduler,
             stack,
             finished,
         })
@@ -2002,6 +2020,7 @@ mod tests {
                     station_lifecycle_events: true,
                     rx_delivery_evidence: true,
                     task_poll_evidence: false,
+                    network_scheduler_evidence: false,
                     data_plane_placement: true,
                     timebase_probe: true,
                 },
@@ -2027,6 +2046,7 @@ mod tests {
             }),
             tx_timing: None,
             rx_delivery: None,
+            network_scheduler: None,
             stack: StackUsage {
                 cpu0: StackWatermark {
                     capacity_bytes: 1,

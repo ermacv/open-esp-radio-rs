@@ -842,6 +842,7 @@ mod tests {
             radio: None,
             tx_timing: None,
             rx_delivery: None,
+            network_scheduler: None,
             stack: StackUsage {
                 cpu0: StackWatermark {
                     capacity_bytes: 1,

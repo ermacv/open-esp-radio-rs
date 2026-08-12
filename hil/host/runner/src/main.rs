@@ -547,6 +547,9 @@ fn execute_workload(
                     if let Some(floor) = selected.criteria.minimum_rx_bps {
                         push_option(&mut arguments, "--rx-floor", floor);
                     }
+                    if let Some(floor) = selected.criteria.minimum_combined_bps {
+                        push_option(&mut arguments, "--combined-floor", floor);
+                    }
                     bidirectional::run(
                         arguments,
                         output,
@@ -1397,7 +1400,7 @@ mod tests {
         assert_eq!(scenario::ImageClass::Qualification.id(), "qualification");
         assert_eq!(
             scenario::ImageClass::DiagnosticTaskPoll.runtime_features(),
-            "open-radio-hil,task-poll-telemetry,single-core-diagnostic,code-psram,profile-psram-data"
+            "open-radio-hil,task-poll-telemetry,network-scheduler-telemetry,single-core-diagnostic,code-psram,profile-psram-data"
         );
         assert_eq!(
             scenario::ImageClass::DiagnosticRxDelivery.runtime_features(),

@@ -44,7 +44,7 @@ impl ImageClass {
             Self::BootSmoke => "boot-smoke,code-psram,profile-psram-data",
             Self::Qualification => "open-radio-hil,code-psram,profile-psram-data",
             Self::DiagnosticTaskPoll => {
-                "open-radio-hil,task-poll-telemetry,single-core-diagnostic,code-psram,profile-psram-data"
+                "open-radio-hil,task-poll-telemetry,network-scheduler-telemetry,single-core-diagnostic,code-psram,profile-psram-data"
             }
             Self::DiagnosticRxDelivery => {
                 "open-radio-hil,rx-delivery-telemetry,code-psram,profile-psram-data"
@@ -214,6 +214,7 @@ pub struct Criteria {
     pub exact_delivery: bool,
     pub minimum_rx_bps: Option<u64>,
     pub minimum_tx_bps: Option<u64>,
+    pub minimum_combined_bps: Option<u64>,
     pub maximum_lost: Option<u32>,
     pub maximum_p95_ms: Option<u16>,
     pub require_no_beacon_loss: bool,
@@ -474,6 +475,30 @@ impl Scenario {
             }
             if tx_offer.is_some_and(|offer| floor > offer) {
                 return self.criteria_error("minimum_tx_bps cannot exceed tx_rate_bps");
+            }
+        }
+        if let Some(floor) = self.criteria.minimum_combined_bps {
+            if !matches!(
+                self.workload,
+                Workload::Udp {
+                    direction: Direction::Bidirectional,
+                    ..
+                }
+            ) {
+                return self
+                    .criteria_error("minimum_combined_bps requires a bidirectional UDP workload");
+            }
+            let offered_sum = rx_offer
+                .and_then(|rx| tx_offer.and_then(|tx| rx.checked_add(tx)))
+                .ok_or_else(|| {
+                    format!(
+                        "{}: minimum_combined_bps requires bounded RX and TX offers",
+                        self.source.display()
+                    )
+                })?;
+            if floor > offered_sum {
+                return self
+                    .criteria_error("minimum_combined_bps cannot exceed the RX+TX offered rate");
             }
         }
         if (self.criteria.maximum_lost.is_some() || self.criteria.maximum_p95_ms.is_some()) && !icmp

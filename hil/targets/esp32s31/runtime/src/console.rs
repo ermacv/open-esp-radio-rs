@@ -1140,7 +1140,7 @@ async fn transition_state(
 }
 
 async fn publish_result(result: SessionResult, request_id: u32) {
-    let mut evidence = heapless::Vec::<EvidenceRecord, 6>::new();
+    let mut evidence = heapless::Vec::<EvidenceRecord, 7>::new();
     evidence
         .push(EvidenceRecord::Transport(result.evidence))
         .expect("session evidence has fixed capacity");
@@ -1159,6 +1159,12 @@ async fn publish_result(result: SessionResult, request_id: u32) {
             .push(EvidenceRecord::RxDelivery(rx_delivery))
             .expect("session evidence has fixed capacity");
     }
+    #[cfg(feature = "network-scheduler-telemetry")]
+    evidence
+        .push(EvidenceRecord::NetworkScheduler(
+            crate::product_hil::NETWORK_SCHEDULER.snapshot(),
+        ))
+        .expect("session evidence has fixed capacity");
     let link = link_health_snapshot();
     evidence
         .push(EvidenceRecord::Link(link))

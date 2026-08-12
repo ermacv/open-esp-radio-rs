@@ -419,7 +419,7 @@ dependencies = [
 [[package]]
 name = "embassy-net"
 version = "0.9.1"
-source = "git+https://github.com/ermacv/embassy?rev=e8084ca38dbb75170265b0896f6d039b548f6a6b#e8084ca38dbb75170265b0896f6d039b548f6a6b"
+source = "git+https://github.com/ermacv/embassy?rev=20d9809835ef9cf22c2b647da77df9c57021033f#20d9809835ef9cf22c2b647da77df9c57021033f"
 dependencies = [
  "document-features",
  "embassy-net-driver",
@@ -1489,6 +1489,7 @@ dependencies = [
 name = "open-esp-radio-hil-esp32s31-telemetry"
 version = "0.1.0"
 dependencies = [
+ "embassy-net",
  "open-esp-radio-esp32s31-wifi-embassy",
  "open-esp-radio-esp32s31-wifi-mac",
  "open-esp-radio-hil-protocol",
@@ -1875,7 +1876,7 @@ checksum = "8ed6a63f02c8539c91a8685a86f4099661ba3da017932f6ebbea6de3f0fa7c90"
 [[package]]
 name = "smoltcp"
 version = "0.13.1"
-source = "git+https://github.com/ermacv/smoltcp?rev=3269d275366670ae283d0eb9d2a1bc0cf2524f0c#3269d275366670ae283d0eb9d2a1bc0cf2524f0c"
+source = "git+https://github.com/ermacv/smoltcp?rev=537b05449fcd896cc66a80c0a16e4699b4a2c57e#537b05449fcd896cc66a80c0a16e4699b4a2c57e"
 dependencies = [
  "bitflags",
  "byteorder",

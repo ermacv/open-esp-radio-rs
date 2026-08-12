@@ -45,6 +45,8 @@ use open_esp_radio_esp32s31_embassy_wifi::{
     Esp32s31WifiParts,
 };
 use open_esp_radio_esp32s31_wifi_esp_hal::EspHalRadioPeripheral;
+#[cfg(feature = "network-scheduler-telemetry")]
+use open_esp_radio_hil_esp32s31_telemetry::network_scheduler::NetworkSchedulerCounters;
 use open_esp_radio_hil_esp32s31_telemetry::{
     aggregate_tx::AggregateTxCounters, mac_irq::MacIrqClassificationCounters,
     rx_pipeline::RxPipelineCounters, task_poll::TaskPollSet,
@@ -82,6 +84,8 @@ const NETWORK_SOCKET_COUNT: usize = 5;
 const SCAN_DWELL_MS: u16 = 200;
 const MAXIMUM_TX_POWER_QUARTER_DBM: i8 = 80;
 pub(crate) const OPEN_RADIO_TASK_POLL_TELEMETRY: bool = cfg!(feature = "task-poll-telemetry");
+pub(crate) const OPEN_RADIO_NETWORK_SCHEDULER_TELEMETRY: bool =
+    cfg!(feature = "network-scheduler-telemetry");
 pub(crate) const OPEN_RADIO_RX_DELIVERY_TELEMETRY: bool = cfg!(feature = "rx-delivery-telemetry");
 pub(crate) const OPEN_RADIO_TCP_CHUNK_CAPACITY: usize = 32_768;
 
@@ -364,6 +368,9 @@ pub(crate) static AGGREGATE_TX: AggregateTxCounters = AggregateTxCounters::new()
 pub(crate) static MAC_IRQ: MacIrqClassificationCounters = MacIrqClassificationCounters::new();
 #[unsafe(link_section = ".critical.bss.open_radio_task_poll_telemetry")]
 pub(crate) static TASK_POLLS: TaskPollSet = TaskPollSet::new();
+#[cfg(feature = "network-scheduler-telemetry")]
+#[unsafe(link_section = ".critical.bss.open_radio_network_scheduler_telemetry")]
+pub(crate) static NETWORK_SCHEDULER: NetworkSchedulerCounters = NetworkSchedulerCounters::new();
 
 fn now_micros() -> u64 {
     Instant::now().as_micros()
@@ -579,6 +586,11 @@ fn observe_protocol_task_poll(elapsed_micros: u64) {
     }
 }
 
+#[cfg(feature = "network-scheduler-telemetry")]
+fn observe_network_scheduler(report: embassy_net::CooperativePollReport) {
+    NETWORK_SCHEDULER.record(report);
+}
+
 pub fn diagnostic_snapshot() -> (u32, u32) {
     (DIAGNOSTIC_STAGE.load(Ordering::Acquire), 0)
 }
@@ -602,6 +614,7 @@ pub const fn hil_capabilities() -> Capabilities {
             station_lifecycle_events: true,
             rx_delivery_evidence: OPEN_RADIO_RX_DELIVERY_TELEMETRY,
             task_poll_evidence: OPEN_RADIO_TASK_POLL_TELEMETRY,
+            network_scheduler_evidence: OPEN_RADIO_NETWORK_SCHEDULER_TELEMETRY,
             data_plane_placement: true,
             timebase_probe: true,
         },
@@ -654,10 +667,11 @@ type ProductNetworkRunner = embassy_net::Runner<'static, Esp32s31WifiDevice>;
 
 #[embassy_executor::task]
 async fn network_runner_task(mut runner: ProductNetworkRunner) {
+    let policy = embassy_net::CooperativeConfig::new(Duration::from_micros(750));
+    #[cfg(feature = "network-scheduler-telemetry")]
+    let policy = policy.with_observer(observe_network_scheduler);
     observe_open_radio_task_polls(
-        runner.run_cooperative(embassy_net::CooperativeConfig::new(Duration::from_micros(
-            750,
-        ))),
+        runner.run_cooperative(policy),
         TASK_POLLS.network(),
         OPEN_RADIO_TASK_POLL_TELEMETRY,
     )

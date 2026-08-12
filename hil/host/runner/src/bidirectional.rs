@@ -89,6 +89,7 @@ struct Options {
     tx_payload: usize,
     tx_rate_bps: Option<u64>,
     tx_floor_bps: Option<u64>,
+    combined_floor_bps: Option<u64>,
     serial: PathBuf,
     phy: Phy,
 }
@@ -1293,6 +1294,17 @@ pub(crate) fn run(
             ));
         }
     }
+    if let Some(required_floor) = options.combined_floor_bps {
+        let measured = rx_median.saturating_add(tx_floor).saturating_mul(1_000);
+        if measured < required_floor {
+            qualification_failure.get_or_insert_with(|| {
+                format!(
+                    "combined device throughput is below the configured floor: required={} measured={} bit/s",
+                    required_floor, measured
+                )
+            });
+        }
+    }
     let minimum_bps = options
         .rx_floor_bps
         .unwrap_or_else(|| options.rate_bps.saturating_mul(9) / 10);
@@ -1492,6 +1504,7 @@ fn parse_options(arguments: &[String], lab: &LabConfig) -> Result<Options> {
         tx_payload: DEFAULT_TX_PAYLOAD,
         tx_rate_bps: None,
         tx_floor_bps: None,
+        combined_floor_bps: None,
         serial: lab.device.serial.clone(),
         phy: Phy::He20,
     };
@@ -1526,6 +1539,7 @@ fn parse_options(arguments: &[String], lab: &LabConfig) -> Result<Options> {
             "--tx-port" => options.tx_port = value.parse::<u16>()?,
             "--tx-rate" => options.tx_rate_bps = Some(parse_rate(value)?),
             "--tx-floor" => options.tx_floor_bps = Some(parse_rate(value)?),
+            "--combined-floor" => options.combined_floor_bps = Some(parse_rate(value)?),
             "--phy" => {
                 options.phy = match value.as_str() {
                     "ht40" => Phy::Ht40,
@@ -1555,6 +1569,14 @@ fn parse_options(arguments: &[String], lab: &LabConfig) -> Result<Options> {
         .is_some_and(|(rate, floor)| floor > rate)
     {
         return Err("--tx-floor cannot exceed --tx-rate".into());
+    }
+    if options.combined_floor_bps.is_some_and(|floor| {
+        options
+            .tx_rate_bps
+            .and_then(|tx| options.rate_bps.checked_add(tx))
+            .is_none_or(|offered| floor > offered)
+    }) {
+        return Err("--combined-floor requires --tx-rate and cannot exceed the offered sum".into());
     }
     Ok(options)
 }
@@ -2782,6 +2804,40 @@ pub(crate) fn task_poll_markdown(task_polls: TaskPollSet) -> String {
     output
 }
 
+fn network_scheduler_markdown(
+    evidence: Option<open_esp_radio_hil_protocol::NetworkSchedulerEvidence>,
+) -> String {
+    let Some(evidence) = evidence else {
+        return String::from(
+            "## Cooperative network scheduler\n\nNot collected in this image.\n\n",
+        );
+    };
+    let average_us = evidence.poll_micros as f64 / evidence.polls.max(1) as f64;
+    format!(
+        "## Cooperative network scheduler\n\n\
+         - Polls: `{}`; residence average/max: `{average_us:.2}` / `{}` us; buckets <=50/100/250/500/1000/2000/>2000 us: `{:?}`\n\
+         - Ingress calls/packets: `{}` / `{}`; egress passes/TX tokens: `{}` / `{}`\n\
+         - Egress credit blocks: `{}`; ingress/egress budget exhaustion: `{}` / `{}`\n\
+         - Start ingress/egress: `{}` / `{}`; exit drained/work/time/credit: `{}` / `{}` / `{}` / `{}`\n\n",
+        evidence.polls,
+        evidence.poll_max_micros,
+        evidence.residence_histogram,
+        evidence.ingress_calls,
+        evidence.ingress_packets,
+        evidence.egress_passes,
+        evidence.egress_tx_tokens,
+        evidence.egress_blocked,
+        evidence.ingress_budget_exhausted,
+        evidence.egress_budget_exhausted,
+        evidence.started_with_ingress,
+        evidence.started_with_egress,
+        evidence.exit_drained,
+        evidence.exit_work_budget,
+        evidence.exit_time_budget,
+        evidence.exit_egress_credit,
+    )
+}
+
 pub(crate) fn udp_sequence_markdown(sequence: UdpSequenceEvidence, host_datagrams: u64) -> String {
     let value = |value: Option<u64>| {
         value
@@ -2926,6 +2982,7 @@ fn write_report(
         ampdu.tx_irq_service_us as f64 / ampdu.tx_irq_samples.max(1) as f64;
     let average_tx_flight_us = ampdu.tx_flight_us as f64 / ampdu.tx_flight_samples.max(1) as f64;
     let task_poll_report = task_poll_markdown(rx.task_polls);
+    let network_scheduler_report = network_scheduler_markdown(structured.network_scheduler);
     let udp_sequence_report = udp_sequence_markdown(rx.sequence, host.datagrams);
     let rx_order_report = rx_order_markdown(rx.order);
     let rx_reorder_report = rx_reorder_markdown(rx.reorder);
@@ -3036,6 +3093,7 @@ fn write_report(
              - Network publications/bytes: `{}` / `{}`; copy+publish: `{:.2} us/frame` average, `{}` us boot maximum\n\
              - Network-ready waits: `{}`; `{:.2} us` average, `{}` us boot maximum\n\n\
              {task_poll_report}\
+             {network_scheduler_report}\
              ## A-MPDU evidence\n\n\
              - Prepared/completed/publications: `{}` / `{}` / `{}`\n\
              - Subframes: `{}` total, `{:.2}` average, min `{}`, max `{}`\n\
@@ -3233,6 +3291,8 @@ mod tests {
         assert_eq!(parse_rate("2500K").unwrap(), 2_500_000);
         let options = parse_options(
             &[
+                "--rate".into(),
+                "55M".into(),
                 "--phy".into(),
                 "he20".into(),
                 "--seconds".into(),
@@ -3241,6 +3301,8 @@ mod tests {
                 "1300".into(),
                 "--tx-rate".into(),
                 "50M".into(),
+                "--combined-floor".into(),
+                "90M".into(),
                 "--tx-port".into(),
                 "9100".into(),
             ],
@@ -3252,6 +3314,7 @@ mod tests {
         assert_eq!(options.tx_payload, 1_300);
         assert_eq!(options.tx_rate_bps, Some(50_000_000));
         assert_eq!(options.tx_floor_bps, Some(45_000_000));
+        assert_eq!(options.combined_floor_bps, Some(90_000_000));
         assert_eq!(options.tx_port, 9_100);
 
         let explicit_floor = parse_options(

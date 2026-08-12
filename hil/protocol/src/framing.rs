@@ -830,6 +830,44 @@ mod tests {
     }
 
     #[test]
+    fn maximum_network_scheduler_evidence_fits_and_round_trips() {
+        use crate::{EvidenceRecord, NetworkSchedulerEvidence};
+
+        let expected = Envelope::new(
+            7,
+            3,
+            9,
+            2,
+            Event::Evidence(EvidenceRecord::NetworkScheduler(NetworkSchedulerEvidence {
+                polls: u32::MAX,
+                ingress_calls: u32::MAX,
+                ingress_packets: u32::MAX,
+                egress_passes: u32::MAX,
+                egress_tx_tokens: u32::MAX,
+                egress_blocked: u32::MAX,
+                ingress_budget_exhausted: u32::MAX,
+                egress_budget_exhausted: u32::MAX,
+                started_with_ingress: u32::MAX,
+                started_with_egress: u32::MAX,
+                exit_drained: u32::MAX,
+                exit_work_budget: u32::MAX,
+                exit_time_budget: u32::MAX,
+                exit_egress_credit: u32::MAX,
+                poll_micros: u32::MAX,
+                poll_max_micros: u32::MAX,
+                residence_histogram: [u32::MAX; 7],
+            })),
+        );
+        let mut encoder = FrameEncoder::new();
+        let frame = encoder.encode(&expected).unwrap();
+        assert!(frame.len() <= MAX_WIRE_FRAME_BYTES);
+        let mut decoder = FrameDecoder::new();
+        let mut observed = None;
+        decoder.feed(frame, |result| observed = Some(result.unwrap()));
+        assert_eq!(observed, Some(expected));
+    }
+
+    #[test]
     fn maximum_radio_evidence_fits_and_round_trips() {
         use crate::{EvidenceRecord, RadioEvidence, RxRadioEvidence, TxRadioEvidence};
 
@@ -971,6 +1009,7 @@ mod tests {
                 EvidenceRecord::Radio(_)
                 | EvidenceRecord::TxAggregateTiming(_)
                 | EvidenceRecord::RxDelivery(_)
+                | EvidenceRecord::NetworkScheduler(_)
                 | EvidenceRecord::Link(_)
                 | EvidenceRecord::Stack(_) => unreachable!(),
             }

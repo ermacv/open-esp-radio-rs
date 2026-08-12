@@ -34,6 +34,7 @@ fn priority(kind: &str) -> (u8, &'static str) {
         "analysis-budget" => (60, "warning"),
         "replacement-uncovered" | "replacement-unmapped" => (70, "warning"),
         "replacement-probe-only" => (80, "info"),
+        "replacement-bounded" => (85, "info"),
         _ => (65, "warning"),
     }
 }

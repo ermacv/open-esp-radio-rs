@@ -140,26 +140,38 @@ that every user must learn.
   the TUI instead of adding a parallel inspection engine. The report keeps
   exact/unique-symbol association, production component, probes, proofs and an
   explicit `freshness_claim = false` boundary.
+- [x] Add the compact `inspect function SOURCE:SYMBOL --replacement` view.
+  It skips function-body analysis and joins binding scope, exact production
+  source item, compiled/DWARF status, proof claim strength and every consuming
+  required feature. `bounded-match` is rendered as a property proof, never as
+  whole-function equivalence.
 - [x] Join the same Replacement Graph boundary into reviewed event-flow
   reports. An absent production mapping is a typed blocker rather than a
   guessed Rust function based on a vendor symbol name.
 - [ ] Extend that joined replacement view with ordered effect/RAM-transition
   diffs and accepted differences from the concrete comparison report. Do not
-  build a separate comparison engine for the TUI.
+  build a separate comparison engine for the TUI. The focused view now joins
+  adapter/scenario cases from the existing suite report plus current reviewed
+  effect selectors and dispositions as an explicitly unordered policy table.
+  Matching scenarios expose event/RAM-change counts and failed scenarios keep
+  the comparator's first-difference index; complete ordered matching traces
+  still need a compact sidecar or bounded on-demand projection rather than
+  duplicating large traces into every aggregate report.
 
 ## P0 — functional analysis workflow
 
 - [x] Audit a complete real project from inputs through MMIO, linked IR,
   pseudo-code, interface/function review, verification and publication;
   record every incomplete or misleading stage. The verification segment now
-  has twelve typed project suites and a reproducible aggregate gate. The
-  The 2026-08-12 ESP32-S31 run matches 148 reviewed proofs with zero incomplete
-  executions. It now exposes one real `wDev_AppendRxBlocks` mismatch (an extra
-  Rust fence in three successful cases) and two deliberately fail-closed
-  `implemented-unqualified` replacements. Analysis inventory backlogs remain
-  visible but do not masquerade as failed replacement proofs. Verification
-  artifact paths are canonical, so report freshness is independent of the
-  current working directory.
+  has thirteen typed project suites and a reproducible aggregate gate. The
+  2026-08-12 ESP32-S31 run matches 149 whole-function replacements plus
+  two explicit bounded feature properties with zero mismatch, incomplete or
+  implemented-unqualified results. `wDev_AppendRxBlocks` now reproduces the
+  complete fence sequence in all nine cases. The aggregate `project check`
+  also requires 3/3 feature qualifications before publication may pass.
+  Analysis inventory backlogs remain visible but do not masquerade as failed
+  replacement proofs. Verification artifact paths are canonical, so report
+  freshness is independent of the current working directory.
 - [x] Make real-project verification one project operation rather than a set of
   remembered leaf commands. Suites own source roles, probe roles/prefixes,
   profile/disposition fragments, baseline and gate; `project verify --check`
@@ -168,20 +180,27 @@ that every user must learn.
 - [x] Add a project-wide Replacement Graph. It deduplicates `(source, symbol)`
   across suites, rejects conflicting reviewed mappings, and links disposition,
   Rust component, probe, proof and qualification blockers. The 2026-08-09 real
-  run has 3,203 unique vendor nodes, 138 qualified matches and 42 reviewed Rust
-  components.
+  current run has 1,839 unique vendor nodes, 149 whole-function matches, two
+  bounded properties and 53 reviewed Rust components.
 - [x] Separate production ownership from verification-only probes in the
   replacement graph. Probe symbols never imply a production item; reports now
   distinguish `production_matches`, `probe_only_matches` and
   `unmapped_matches`.
+- [x] Separate whole-function production replacements from bounded production
+  properties. Verification schema 10 emits `bounded-match`, replacement-graph
+  schema 3 emits `production-feature`, review-scope schema 8 cannot promote it
+  to a whole replacement, and `project check` schema 3 evaluates required
+  features as its own gate.
 - [ ] Assign reviewed production component identities where the 97 passing
   probe-only matches correspond to actual production replacements. Keep true
   reference/probe-only functions classified as such instead of inventing a
   production module from their symbol names.
 - [x] Join reviewed Rust component identities to the Cargo workspace source
   AST and exact suite ELF/DWARF evidence without adding another project
-  manifest. The real project resolves all 42 component source items and 34
-  compiled identities with 200 DWARF locations. Eight PHY transition types
+  manifest. The current project resolves 49/53 component source items and 38
+  compiled identities with 175 DWARF locations. Compile-time types and host
+  semantic owners without a target symbol remain explicit rather than being
+  inferred from their probes. PHY transition types
   still have no target-ELF occurrence because their executable authority is a
   host semantic harness; keep that gap explicit until host harness artifacts
   or target composition probes are indexed.
@@ -249,19 +268,19 @@ that every user must learn.
   the compact artifact instead of repeating scope reconstruction, while
   `ir build` refreshes it after a focused profile rebuild.
 - [x] Separate the recursive analysis closure from the Rust replacement
-  boundary. Review-scope schema 7 requires reviewed production coverage only
+  boundary. Review-scope schema 8 requires reviewed production coverage only
   for explicit roots; reachable private helpers remain full blocker/MMIO/call
   inventory and can be absorbed by a root-level composition. On the real
   project this removed 85 false 1:1 uncovered replacements and left only the actual
   uncovered TX roots `hal_mac_tx_config_edca` and
   `hal_mac_tx_get_blockack`.
 - [x] Turn publication scopes into an actionable root-cause queue. Linked-IR
-  schema 48 carries typed diagnostic kind/site/root IDs, review-scope schema 7
+  schema 48 carries typed diagnostic kind/site/root IDs, review-scope schema 8
   groups repeated causes and joins replacement coverage, and the read-only TUI
   exposes a Blockers view with function navigation. Parallel legacy string
   blocker arrays were removed from the persistent IR schema.
 - [x] Separate replacement qualification from artifact-wide analysis inventory.
-  Schema-v7 scopes qualify only explicit production replacement roots; every
+  Schema-v8 scopes qualify only explicit production replacement roots; every
   reachable vendor-helper blocker remains visible in the inventory and review
   queue without making an otherwise proven Rust composition incomplete.
 - [x] Gate SVD/PAC publication by explicit `publication-scopes`, not every
@@ -287,7 +306,10 @@ that every user must learn.
   published and active RX states. Promote `0x20104090/0x20104094` to reviewed
   read-only descriptor addresses only if their values repeatedly match the
   logged software node/next topology; otherwise retain them as diagnostic-only
-  unknown observations.
+  unknown observations. The isolated runtime currently passes a target
+  `cargo check`, but the normal host runner intentionally has no legacy
+  `cargo hil oracle` subcommand; add an explicit authenticated build/flash/run
+  entry point before calling this a reproducible product workflow.
 - [x] Separate project-owned register ranges from external MMIO observations;
   external system-register evidence remains visible but cannot block the
   radio-only SVD/PAC publication gate.
@@ -307,7 +329,7 @@ that every user must learn.
   `wDev_AppendRxBlocks` report accounts for 334/334 linked bytes and 378/378
   origin bytes in 2.4 seconds; the TUI consumes the same lazy report.
 - [x] Make driver-feature qualification cover the complete explicit vendor
-  effect boundary. Review-scope schema 7 stores exact replacement function
+  effect boundary. Review-scope schema 8 stores exact replacement function
   keys and feature-pack schema 3 distinguishes complete `review-scopes` from
   narrow `bounded-evidence`. Scope features require every discovered key to be
   proven or policy-excluded; bounded properties require explicit replayed
@@ -364,14 +386,19 @@ that every user must learn.
   `coex_pti_tab[arg0]` as an indexed memory object with stride one. This is
   provenance only; a finite selector domain still requires reviewed evidence
   or a recovered guard.
-- [ ] Build authoritative linked COEX and BLE oracle ELFs. Keep the archives
-  as inventory/origin authority, then bind adapter table instances and only
-  the external-call execution models required by `coex-core`, `coex-timer`,
-  `coex-scheduler` and `ble-advertising` scenarios.
+- [x] Build and bind an authoritative linked COEX oracle ELF while retaining
+  `libcoexist.a` as inventory/origin authority. `coex_hw_timer_set` and the
+  four timer-control leaves have exact production matches; the latter form
+  the required `coex-hardware-timer-control` feature across all five banks.
+- [ ] Build an authoritative linked BLE oracle ELF. Keep the BLE archives as
+  inventory/origin authority, then bind only the table instances and external
+  execution models required by reviewed `ble-advertising` scenarios.
 - [x] Promote the structurally complete four-leaf COEX timer-control scope to
   a required feature with production equivalence over all five timer banks.
-  Keep `coex_hw_timer_set` in the wider non-gating scope until its direct and
-  reference blockers are closed.
+  `coex_hw_timer_set` itself has an exact concrete production comparison, but
+  remains in the wider non-gating scope because focused structural inspection
+  still exposes three conservative `coex_hw_timer_tick_get`/division blockers.
+  Do not promote that wider scope merely from the successful bounded scenarios.
 - [ ] Turn reviewed static objects into editable logical type/table bindings.
   Initializer bytes and xrefs are evidence; field names, element counts and
   nominal type unification must remain explicit review claims.

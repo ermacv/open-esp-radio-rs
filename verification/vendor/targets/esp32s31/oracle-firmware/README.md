@@ -11,12 +11,28 @@ It is a separate Cargo workspace on purpose:
   packages;
 - the vendor and fully open drivers are never linked into the same firmware
   as competing MAC owners;
-- execution is opt-in through `cargo hil oracle ...`.
+- normal `cargo hil` images never include this vendor workspace.
 
 The checked-in source records each wrapped blob/ROM boundary. Binary evidence
 stays in the ignored repository-local `_oracles/` directory. The caller owns
-artifact acquisition, revision selection and authentication before invoking
-`cargo hil oracle build`; the HIL runner does not contain a digest allow-list.
+artifact acquisition, revision selection and authentication before building
+this isolated workspace; the HIL runner does not contain a digest allow-list.
+
+The current host runner deliberately has no `cargo hil oracle` compatibility
+command. Historical qualification records mentioning it predate the isolated
+project workflow and are not current instructions. The runtime can be checked
+without touching hardware with:
+
+```console
+cargo check \
+  --manifest-path verification/vendor/targets/esp32s31/oracle-firmware/Cargo.toml \
+  -p open-esp-radio-vendor-oracle-hil-esp32s31 \
+  --target riscv32imafc-unknown-none-elf --release
+```
+
+Building and flashing the vendor runtime is an explicit hardware-oracle
+operation and is not part of `project analyze`, `project verify`, or the normal
+source-only HIL image classes.
 
 ## Build the Workbench analysis inputs
 

@@ -227,6 +227,7 @@ struct StoredReplacementSummary {
     production_components: usize,
     behavioral_matches: usize,
     production_matches: usize,
+    bounded_matches: usize,
     probe_only_matches: usize,
     unmapped_matches: usize,
     implemented_unqualified: usize,
@@ -341,6 +342,10 @@ fn last_report(
     .detail(
         "production_matches",
         report.replacement_graph.summary.production_matches,
+    )
+    .detail(
+        "bounded_matches",
+        report.replacement_graph.summary.bounded_matches,
     )
     .detail(
         "probe_only_matches",

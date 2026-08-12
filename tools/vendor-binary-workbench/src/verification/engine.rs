@@ -145,6 +145,13 @@ pub(crate) fn verify_source(
             .map_err(crate::Error::invalid)?;
             let whole_function = proof.claim
                 == open_radio_vendor_semantics::DriverAdapterClaim::WholeFunctionEquivalence;
+            let bounded_feature = entry.disposition.is_bounded_feature();
+            if bounded_feature && whole_function {
+                return Err(crate::Error::invalid(format!(
+                    "bounded-feature {} {} cannot use a whole-function-equivalence adapter claim",
+                    source.name, vendor.name
+                )));
+            }
             if proof.matched && whole_function {
                 summary.matched += 1;
                 summary.effect_contract_matches += 1;
@@ -153,6 +160,20 @@ pub(crate) fn verify_source(
                     source.name,
                     &vendor.name,
                     driver_adapter_effect_evidence(harness, policy, binding, &proof.canonical),
+                )?;
+            } else if proof.matched && bounded_feature {
+                summary.bounded_matches += 1;
+                record_evidence(
+                    evidence,
+                    source.name,
+                    &vendor.name,
+                    driver_adapter_limited_claim_evidence(
+                        harness,
+                        policy,
+                        binding,
+                        proof.claim,
+                        &proof.canonical,
+                    ),
                 )?;
             } else if proof.matched {
                 summary.implemented_unqualified += 1;
@@ -175,6 +196,8 @@ pub(crate) fn verify_source(
                 FunctionVerificationStatus::Mismatch
             } else if whole_function {
                 FunctionVerificationStatus::Match
+            } else if bounded_feature {
+                FunctionVerificationStatus::BoundedMatch
             } else {
                 FunctionVerificationStatus::ImplementedUnqualified
             };
@@ -204,7 +227,7 @@ pub(crate) fn verify_source(
             }
             if proof.matched && !whole_function {
                 function.reason = Some(format!(
-                    "{} evidence does not establish whole-function vendor equivalence",
+                    "{} evidence establishes only the reviewed bounded feature, not whole-function vendor equivalence",
                     match proof.claim {
                         open_radio_vendor_semantics::DriverAdapterClaim::ReviewedProjection =>
                             "reviewed projection",

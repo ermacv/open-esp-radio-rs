@@ -525,7 +525,7 @@ fn rom_sta_tsf_snapshot_manifest_names_the_complete_coherent_transaction() {
 }
 
 #[test]
-fn libnet80211_sta_join_manifest_is_an_explicit_architectural_replacement() {
+fn libnet80211_sta_join_manifest_is_an_explicit_bounded_feature() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"))
         .ancestors()
         .nth(2)
@@ -537,7 +537,7 @@ fn libnet80211_sta_join_manifest_is_an_explicit_architectural_replacement() {
 
     assert_eq!(manifest.entries().count(), 1);
     let state = manifest.resolve("libnet80211", "ieee80211_sta_new_state");
-    assert_eq!(state.disposition, Disposition::ReplacedByComposition);
+    assert_eq!(state.disposition, Disposition::BoundedFeature);
     let state = state.entry.unwrap();
     assert_eq!(state.protocol, Some(Protocol::Wifi));
     assert_eq!(state.effect_contract.as_ref().unwrap().rules().count(), 13);

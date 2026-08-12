@@ -97,10 +97,12 @@ tools/vendor-binary-workbench/scripts/run-limited \
   inspect flow --event-route rx-success-to-pp-task
 ```
 
-The route currently proves structural navigation only. `queue_recv` has a
-width-aware ABI output model, but the report still blocks executable delivery
-until a scenario-owned queue supplies the selector and the ppTask selector
-jump table has a runtime instance that is replayed concretely. Low-level
+The checked replay now proves the concrete route from `pp_post(0x19)` through
+the reviewed FIFO, counted latch, `ppTask` dequeue/indexed dispatch and the
+`wdevProcessRxSucDataAll` boundary in one persistent execution session. The
+report deliberately keeps `path-feasibility=false` for the complete IRQ route:
+the executable replay starts at `pp_post`, so the higher IRQ-to-post prefix is
+structural evidence rather than a concrete end-to-end replay. Low-level
 engines live under `advanced` and are not a second required workflow.
 
 ## Registers and the closed PAC

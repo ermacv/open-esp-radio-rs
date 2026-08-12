@@ -8,12 +8,13 @@ use serde::{Deserialize, Serialize};
 use super::EvidenceSet;
 use super::{EvidenceComparison, ExecutionComparisonReport, VerificationCoreReport, VerifySummary};
 
-pub(crate) const VERIFICATION_REPORT_SCHEMA: u32 = 9;
+pub(crate) const VERIFICATION_REPORT_SCHEMA: u32 = 10;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub(crate) enum FunctionVerificationStatus {
     Match,
+    BoundedMatch,
     Mismatch,
     Incomplete,
     ImplementedUnqualified,
@@ -177,6 +178,7 @@ impl FunctionVerificationStatus {
     pub(crate) const fn label(self) -> &'static str {
         match self {
             Self::Match => "match",
+            Self::BoundedMatch => "bounded-match",
             Self::Mismatch => "mismatch",
             Self::Incomplete => "incomplete",
             Self::ImplementedUnqualified => "implemented-unqualified",

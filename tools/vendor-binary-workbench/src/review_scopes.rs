@@ -10,7 +10,7 @@ use crate::{
     registers::RegisterFacts,
 };
 
-pub(crate) const REVIEW_SCOPES_SCHEMA: u32 = 7;
+pub(crate) const REVIEW_SCOPES_SCHEMA: u32 = 8;
 
 mod model;
 pub(crate) use model::{
@@ -389,6 +389,7 @@ fn analyze_scope(
         unresolved_calls: 0,
         replacement_behavioral_matches: 0,
         replacement_production_matches: 0,
+        replacement_bounded_matches: 0,
         replacement_probe_only_matches: 0,
         replacement_unmapped_matches: 0,
         replacement_mismatches: 0,
@@ -496,8 +497,8 @@ fn analyze_scope(
             );
             continue;
         };
-        match replacement.status.as_str() {
-            "match" => {
+        match StoredReplacementStatus::parse(&replacement.status)? {
+            StoredReplacementStatus::Match => {
                 report.replacement_behavioral_matches += 1;
                 match replacement.rust.as_ref() {
                     Some(rust) if rust.production_component.is_some() => {
@@ -529,13 +530,29 @@ fn analyze_scope(
                     }
                 }
             }
-            "mismatch" | "incomplete" | "implemented-unqualified" | "uncovered" => {
-                match replacement.status.as_str() {
-                    "mismatch" => report.replacement_mismatches += 1,
-                    "incomplete" => report.replacement_incomplete += 1,
-                    "implemented-unqualified" => report.replacement_unqualified += 1,
-                    "uncovered" => report.replacement_uncovered += 1,
-                    _ => unreachable!(),
+            StoredReplacementStatus::BoundedMatch => {
+                report.replacement_bounded_matches += 1;
+                queue::insert(
+                    &mut review_queue,
+                    queue::id("replacement-bounded", &function),
+                    "replacement-bounded",
+                    &function,
+                    None,
+                    "replacement",
+                    "a reviewed production property is proven, but the vendor function is not replaced as a whole".to_owned(),
+                );
+            }
+            status => {
+                match status {
+                    StoredReplacementStatus::Mismatch => report.replacement_mismatches += 1,
+                    StoredReplacementStatus::Incomplete => report.replacement_incomplete += 1,
+                    StoredReplacementStatus::ImplementedUnqualified => {
+                        report.replacement_unqualified += 1;
+                    }
+                    StoredReplacementStatus::Uncovered => report.replacement_uncovered += 1,
+                    StoredReplacementStatus::Match | StoredReplacementStatus::BoundedMatch => {
+                        unreachable!()
+                    }
                 }
                 let kind = format!("replacement-{}", replacement.status);
                 queue::insert(
@@ -547,11 +564,6 @@ fn analyze_scope(
                     "replacement",
                     format!("replacement status is {}", replacement.status),
                 );
-            }
-            status => {
-                return Err(crate::Error::invalid(format!(
-                    "unknown replacement status {status:?}"
-                )));
             }
         }
     }
@@ -567,6 +579,32 @@ fn analyze_scope(
     };
     report.review_queue = queue::finish(review_queue);
     Ok(report)
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum StoredReplacementStatus {
+    Match,
+    BoundedMatch,
+    Mismatch,
+    Incomplete,
+    ImplementedUnqualified,
+    Uncovered,
+}
+
+impl StoredReplacementStatus {
+    fn parse(status: &str) -> Result<Self> {
+        match status {
+            "match" => Ok(Self::Match),
+            "bounded-match" => Ok(Self::BoundedMatch),
+            "mismatch" => Ok(Self::Mismatch),
+            "incomplete" => Ok(Self::Incomplete),
+            "implemented-unqualified" => Ok(Self::ImplementedUnqualified),
+            "uncovered" => Ok(Self::Uncovered),
+            _ => Err(crate::Error::invalid(format!(
+                "unknown replacement status {status:?}"
+            ))),
+        }
+    }
 }
 
 fn project_definitions(
@@ -792,5 +830,14 @@ mod tests {
             linked_call_target("internal", "consumer::child", None, &BTreeMap::new(),),
             Some("consumer::child")
         );
+    }
+
+    #[test]
+    fn bounded_feature_status_is_a_known_non_whole_replacement_result() {
+        assert_eq!(
+            StoredReplacementStatus::parse("bounded-match").unwrap(),
+            StoredReplacementStatus::BoundedMatch
+        );
+        assert!(StoredReplacementStatus::parse("match-ish").is_err());
     }
 }

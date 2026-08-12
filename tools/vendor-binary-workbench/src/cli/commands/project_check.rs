@@ -69,8 +69,15 @@ pub(super) fn run(arguments: ProjectCheckArgs, session: &ProjectSession) -> Resu
         session.memory_map.as_ref(),
         ProjectPublicationRequest { check: true },
     )?;
+    let qualification = qualification_stage(
+        session,
+        verification.replacement_graph.summary.bounded_matches,
+    );
 
-    let passed = analysis.succeeded() && verification.passed && publication.succeeded();
+    let passed = analysis.succeeded()
+        && verification.passed
+        && qualification.passed
+        && publication.succeeded();
     let analysis_passed = analysis.succeeded();
     let publication_passed = publication.succeeded();
     let report_path = &session
@@ -81,7 +88,7 @@ pub(super) fn run(arguments: ProjectCheckArgs, session: &ProjectSession) -> Resu
         .report;
     let graph = &verification.replacement_graph.summary;
     let report = ProjectCheckReport {
-        schema: 2,
+        schema: 3,
         command: "project check",
         project: session.project.id.clone(),
         passed,
@@ -112,9 +119,10 @@ pub(super) fn run(arguments: ProjectCheckArgs, session: &ProjectSession) -> Resu
                 status: if verification.passed { "passed" } else { "failed" },
                 passed: verification.passed,
                 summary: format!(
-                    "{} suites, {} matches, {} mismatches, {} incomplete, {} implemented-unqualified",
+                    "{} suites, {} whole-function matches, {} bounded feature matches, {} mismatches, {} incomplete, {} implemented-unqualified",
                     verification.suites.len(),
                     graph.behavioral_matches,
+                    graph.bounded_matches,
                     graph.mismatches,
                     graph.incomplete,
                     graph.implemented_unqualified,
@@ -131,6 +139,7 @@ pub(super) fn run(arguments: ProjectCheckArgs, session: &ProjectSession) -> Resu
                     .into_iter()
                     .collect(),
             },
+            qualification,
             ProjectCheckStage {
                 name: "publication",
                 status: if publication_passed { "passed" } else { "failed" },
@@ -162,7 +171,9 @@ fn render_human(report: &ProjectCheckReport) {
     outputln!("{}", output::heading("Project check"));
     outputln!("Project: {}", report.project);
     let outcome = if report.passed {
-        output::success("PASS — analysis, verification and publication reproduce")
+        output::success(
+            "PASS — analysis, verification, feature qualification and publication reproduce",
+        )
     } else {
         output::failure("FAIL — one or more project gates did not reproduce")
     };
@@ -210,6 +221,101 @@ fn render_human(report: &ProjectCheckReport) {
             ])
         )
     );
+}
+
+fn qualification_stage(session: &ProjectSession, bounded_matches: usize) -> ProjectCheckStage {
+    let manifest = session.manifest.display();
+    let Some(workspace) = session.project.qualification.as_ref() else {
+        let passed = bounded_matches == 0;
+        return ProjectCheckStage {
+            name: "qualification",
+            status: if passed { "not-configured" } else { "failed" },
+            passed,
+            summary: if passed {
+                "not configured; no bounded feature evidence is present".to_owned()
+            } else {
+                format!(
+                    "{bounded_matches} bounded feature match(es) have no project qualification gate"
+                )
+            },
+            issues: (!passed)
+                .then(|| ProjectCheckIssue {
+                    component: "bounded-feature-qualification".to_owned(),
+                    status: "failed".to_owned(),
+                    reason: "bounded evidence must be selected by an explicit required feature"
+                        .to_owned(),
+                })
+                .into_iter()
+                .collect(),
+            next_actions: (!passed)
+                .then(|| format!("configure [qualification] in {manifest}"))
+                .into_iter()
+                .collect(),
+        };
+    };
+    match crate::qualification::evaluate(&session.project) {
+        Ok(features) => {
+            let required = features
+                .iter()
+                .filter(|feature| feature.required)
+                .collect::<Vec<_>>();
+            let blocked = required
+                .iter()
+                .filter(|feature| {
+                    feature.status == crate::qualification::FeatureQualificationStatus::Blocked
+                })
+                .collect::<Vec<_>>();
+            let passed = !required.is_empty() && blocked.is_empty();
+            let issues = blocked
+                .iter()
+                .flat_map(|feature| {
+                    feature.blockers.iter().map(|blocker| ProjectCheckIssue {
+                        component: format!("feature:{}", feature.id),
+                        status: "failed".to_owned(),
+                        reason: blocker.clone(),
+                    })
+                })
+                .collect();
+            ProjectCheckStage {
+                name: "qualification",
+                status: if passed { "passed" } else { "failed" },
+                passed,
+                summary: format!(
+                    "{} required feature(s), {} qualified, {} blocked, {} bounded match(es)",
+                    required.len(),
+                    required.len().saturating_sub(blocked.len()),
+                    blocked.len(),
+                    bounded_matches,
+                ),
+                issues,
+                next_actions: (!passed)
+                    .then(|| {
+                        format!(
+                            "close the reported feature boundary and rerun `vendor-binary-workbench project check --project {manifest}`"
+                        )
+                    })
+                    .into_iter()
+                    .collect(),
+            }
+        }
+        Err(error) => ProjectCheckStage {
+            name: "qualification",
+            status: "failed",
+            passed: false,
+            summary: format!(
+                "cannot evaluate required features from {}",
+                workspace.pack.display()
+            ),
+            issues: vec![ProjectCheckIssue {
+                component: "required-features".to_owned(),
+                status: "failed".to_owned(),
+                reason: error.to_string(),
+            }],
+            next_actions: vec![format!(
+                "regenerate analysis and verification reports, then rerun `vendor-binary-workbench project check --project {manifest}`"
+            )],
+        },
+    }
 }
 
 fn pipeline_issues(stages: &[StageReport]) -> Vec<ProjectCheckIssue> {
@@ -305,7 +411,7 @@ mod tests {
     #[test]
     fn aggregate_schema_keeps_issues_and_next_actions_separate() {
         let report = ProjectCheckReport {
-            schema: 2,
+            schema: 3,
             command: "project check",
             project: "fixture".to_owned(),
             passed: false,
@@ -323,7 +429,7 @@ mod tests {
             }],
         };
         let value = serde_json::to_value(report).unwrap();
-        assert_eq!(value["schema"], 2);
+        assert_eq!(value["schema"], 3);
         assert_eq!(value["stages"][0]["status"], "failed");
         assert_eq!(
             value["stages"][0]["issues"][0]["component"],

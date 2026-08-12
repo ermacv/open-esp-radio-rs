@@ -305,12 +305,12 @@ fn render_human(report: &ProjectVerificationReport, output: &std::path::Path) {
             .verification
             .sources
             .iter()
-            .map(|source| source.summary.implemented_unqualified)
+            .map(|source| source.summary.bounded_matches)
             .sum::<usize>();
         let limited = if limited_claims == 0 {
             String::new()
         } else {
-            format!(", {limited_claims} limited claim(s)")
+            format!(", {limited_claims} bounded feature match(es)")
         };
         let _ = writeln!(
             &mut text,
@@ -330,13 +330,21 @@ fn render_human(report: &ProjectVerificationReport, output: &std::path::Path) {
     );
     let _ = writeln!(
         &mut text,
-        "  bindings: {} production-mapped, {} verification-probe-bound; matches: {} production, {} probe-only, {} unmapped",
+        "  bindings: {} whole-function, {} bounded-feature, {} verification-probe; matches: {} production, {} probe-only, {} unmapped",
         graph.production_replacements,
+        graph.production_feature_bindings,
         graph.verification_probe_bindings,
         graph.production_matches,
         graph.probe_only_matches,
         graph.unmapped_matches
     );
+    if graph.bounded_matches != 0 {
+        let _ = writeln!(
+            &mut text,
+            "  bounded features: {} production property match(es), not whole-function replacements",
+            graph.bounded_matches,
+        );
+    }
     if graph.mismatches != 0 || graph.incomplete != 0 || graph.implemented_unqualified != 0 {
         let _ = writeln!(
             &mut text,

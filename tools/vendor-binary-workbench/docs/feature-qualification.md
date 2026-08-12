@@ -75,11 +75,17 @@ semantic coverage. Policy exclusions therefore belong only to
 `review-scopes`; they are rejected for bounded evidence because that mode has
 no discovered surface denominator from which an omission could be justified.
 
-The generated review-scope schema 7 stores
+The generated review-scope schema 8 stores
 `replacement_function_keys`; these are the exact denominator for effect
 coverage. Reachable private helpers remain analysis inventory and do not force
 a fictitious one-to-one Rust function. Promote a helper to an explicit scope
 root when its transaction is independently part of the feature boundary.
+
+The matching disposition for a deliberately narrow proof is
+`bounded-feature`. The verifier emits `bounded-match` only for a successful
+non-whole-function adapter claim. Project loading rejects a bounded
+disposition that is not selected by a required feature, and `project check`
+evaluates those required features as a separate fail-closed gate.
 
 `project status`, the Features TUI view and the application snapshot expose the
 coverage mode and covered/total surface effects separately from verification

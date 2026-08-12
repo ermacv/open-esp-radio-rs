@@ -9,7 +9,7 @@ concerns separate:
 | Source inventory, pairing, verdicts and gates | this document |
 | Profiles, concrete scenarios and branch coverage | [Execution and profiles](execution-and-profiles.md) |
 | Dispositions, bindings and effect contracts | [Verification contracts](verification-contracts.md) |
-| Schema-v6 reports, schema-v2 baselines and evidence review | [Verification evidence](verification-evidence.md) |
+| Schema-v10 reports, schema-v2 baselines and evidence review | [Verification evidence](verification-evidence.md) |
 
 ## Commands
 
@@ -46,8 +46,9 @@ cargo vendor-binary-workbench project check \
 ```
 
 `project check` is the single CI gate when analysis evidence, accepted
-behavioral baselines and publication outputs must all reproduce. It delegates
-to the same three typed workflows in check mode and never updates evidence.
+behavioral baselines, required feature qualifications and publication outputs
+must all reproduce. It delegates to the same typed workflows in check mode and
+never updates evidence.
 
 Candidate generation never promotes or overwrites accepted baselines. It
 writes one deterministic `<suite-id>.toml` into an existing review directory;
@@ -93,6 +94,8 @@ verification-only executable boundary:
 
 - `behavioral_matches`: unique vendor functions with at least one passing proof;
 - `production_replacements`: functions with a reviewed production Rust owner;
+- `production_feature_bindings`: vendor functions whose reviewed Rust owner
+  implements only a named bounded property;
 - `verification_probe_bindings`: functions connected to compiled verification
   probes;
 - `production_matches`: passing proofs with a reviewed production owner;
@@ -102,15 +105,19 @@ verification-only executable boundary:
 - `implemented_unqualified`: reviewed implementations whose blockers still
   prevent a proof.
 
-Each replacement target also carries `binding_scope = "production"` or
-`"verification-probe-only"`. Probe symbol spelling is never used to infer a
-production component.
+`bounded_matches` is deliberately separate from `behavioral_matches`. It
+records a successful reviewed property without promoting that result to a
+whole-function replacement.
+
+Each replacement target carries `binding_scope = "production"`,
+`"production-feature"` or `"verification-probe-only"`. Probe symbol spelling
+is never used to infer a production component.
 
 `project status` reads the same summary from the last complete report. This
 makes a green regression gate distinct from complete project mapping: a proof
 can pass while its production Rust owner is still unknown.
 
-Project-report schema v8 also contains `rust_component_index`. No additional
+Project-report schema v10 also contains `rust_component_index`. No additional
 project configuration owns this data: reviewed component paths still come
 from dispositions, Cargo workspace/package roots come from `cargo metadata`,
 and suite ELF paths come from the existing run-spec roles. Rust source is
@@ -136,8 +143,9 @@ The two gates answer different questions:
 - `--gate completion` additionally requires a proven replacement for every
   selected vendor function.
 
-The aggregate result contains `MATCH`, `MISMATCH`, `INCOMPLETE`, `UNCOVERED`
-and `IMPLEMENTED-UNQUALIFIED` per-function verdicts. A match identifies its
+The aggregate result contains `MATCH`, `BOUNDED-MATCH`, `MISMATCH`,
+`INCOMPLETE`, `UNCOVERED` and `IMPLEMENTED-UNQUALIFIED` per-function verdicts.
+A match identifies its
 proof class: `symbolic`, `effect-contract`, `scenario`, `state`, or
 `composition-state-scenario`. None of the concrete proof classes claims
 equality outside its declared input domain.

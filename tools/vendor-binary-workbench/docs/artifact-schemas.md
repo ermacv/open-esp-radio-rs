@@ -17,9 +17,9 @@ part of their contract; consumers must parse the typed structure.
 | Interface discovery facts | 5 | `interfaces discover` | `artifacts/interface_facts.rs`, `artifacts/interface_facts_read.rs` |
 | Linked IR | 50 | `ir export` | `artifacts/linked_ir_document.rs`, `artifacts/linked_ir_read.rs` |
 | Concrete replay evidence | 2 | `execute replay` | `artifacts/replay_evidence.rs`, `artifacts/replay_evidence_read.rs` |
-| Review scopes | 7 | `project analyze` | `review_scopes.rs`, `review_scopes/model.rs` |
-| Verification report | 9 | `verify source` / `verify inventory` | `verification/report.rs` |
-| Project verification report | 9 | `project verify` | `verification/project_report.rs` |
+| Review scopes | 8 | `project analyze` | `review_scopes.rs`, `review_scopes/model.rs` |
+| Verification report | 10 | `verify source` / `verify inventory` | `verification/report.rs` |
+| Project verification report | 10 | `project verify` | `verification/project_report.rs` |
 
 Verification report artifact paths are canonical absolute paths. Verification
 currency therefore does not depend on the process working directory used by a
@@ -53,10 +53,12 @@ all-zero illegal encoding distinct as `zero-fill-or-illegal-trap`: it may be a
 deliberate trap or unreachable fill, but is not evidence that the decoder lost
 an otherwise valid instruction.
 
-Review-scope schema 7 records the exact explicit `source:symbol` replacement
-roots. Feature-pack schema 2 uses that list as a fail-closed effect-coverage
+Review-scope schema 8 records the exact explicit `source:symbol` replacement
+roots. Feature-pack schema 3 uses that list as a fail-closed effect-coverage
 denominator; it never derives the release boundary from presentation text or
 from the transitive helper closure.
+It also records bounded feature matches separately from complete production
+replacements, so a narrow proof cannot make a publication scope whole.
 
 `artifacts/mod.rs` is the only owner of these version/command constants.
 Domain workspaces and navigation use the corresponding typed Serde consumer
@@ -98,8 +100,9 @@ gate.
 `project analyze` emits command-result schema 2, which distinguishes a
 content-verified write-mode `up-to-date` stage from a stage executed as
 `written` or `verified`.
-`project check` emits command-result schema 2 and combines the non-mutating
-analysis, verification and publication verdicts without embedding or
+`project check` emits command-result schema 3 and combines the non-mutating
+analysis, verification, required-feature qualification and publication
+verdicts without embedding or
 duplicating their persistent evidence documents. Every failed aggregate stage
 contains typed component issues and one concrete next action; verification
 summary counts distinguish mismatches, incomplete comparisons and implemented

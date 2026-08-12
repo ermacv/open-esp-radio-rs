@@ -171,7 +171,7 @@ another root when it is itself a public replacement boundary. `project status`
 reads this compact artifact instead of reconstructing the scopes from all large
 IR documents.
 
-Review-scope schema 7 also emits an ordered `review_queue`, the distinct
+Review-scope schema 8 also emits an ordered `review_queue`, the distinct
 `replacement_functions` denominator, `analysis_inventory_complete`, and a
 separate `replacement_qualification`. The latter is qualified only when every
 explicit replacement root has a passing production binding; blockers in the

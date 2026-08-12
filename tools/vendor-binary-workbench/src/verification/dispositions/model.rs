@@ -41,6 +41,7 @@ pub enum Disposition {
     Direct,
     StateTransition,
     ReplacedByComposition,
+    BoundedFeature,
     GenerationCandidate,
     NotYetPorted,
 }
@@ -92,6 +93,7 @@ impl Disposition {
             Self::Direct => "direct",
             Self::StateTransition => "state-transition",
             Self::ReplacedByComposition => "replaced-by-composition",
+            Self::BoundedFeature => "bounded-feature",
             Self::GenerationCandidate => "generation-candidate",
             Self::NotYetPorted => "not-yet-ported",
         }
@@ -102,6 +104,14 @@ impl Disposition {
             self,
             Self::Direct | Self::StateTransition | Self::ReplacedByComposition
         )
+    }
+
+    pub const fn is_bounded_feature(self) -> bool {
+        matches!(self, Self::BoundedFeature)
+    }
+
+    pub const fn has_production_owner(self) -> bool {
+        self.is_implemented() || self.is_bounded_feature()
     }
 }
 
@@ -182,20 +192,20 @@ impl EntryBuilder {
                     )
                 })
                 .map_err(crate::Error::invalid)?;
-            if disposition.is_implemented() && self.rust_component.is_none() {
+            if disposition.has_production_owner() && self.rust_component.is_none() {
                 return Err(crate::Error::invalid(format!(
-                    "implemented function {} {} has no rust-component",
+                    "production-owned function or feature {} {} has no rust-component",
                     self.source, self.symbol
                 )));
             }
-            if self.semantic_contract.is_some() && !disposition.is_implemented() {
+            if self.semantic_contract.is_some() && !disposition.has_production_owner() {
                 return Err(crate::Error::invalid(format!(
                     "unimplemented function {} {} cannot have a semantic-contract",
                     self.source, self.symbol
                 )));
             }
             if self.effect_comparison.is_some()
-                && !disposition.is_implemented()
+                && !disposition.has_production_owner()
                 && disposition != Disposition::GenerationCandidate
             {
                 return Err(crate::Error::invalid(format!(

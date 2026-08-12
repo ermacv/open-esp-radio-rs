@@ -19,8 +19,8 @@ use serde::Serialize;
 
 use crate::{ProjectSpec, Result, artifact, artifacts};
 use origin::origin_evidence;
-pub(crate) use replacement::replacement_evidence;
-pub use replacement::{ReplacementEvidence, ReplacementProofEvidence};
+pub use replacement::{ReplacementEvidence, ReplacementProofEvidence, ReviewedEffectRuleEvidence};
+pub(crate) use replacement::{replacement_evidence, reviewed_effect_rules};
 
 const MAX_GRAPH_NODES: usize = 4_096;
 const MAX_GRAPH_EDGES: usize = 32_768;

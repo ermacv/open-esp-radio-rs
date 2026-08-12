@@ -10,7 +10,7 @@ use super::{
 };
 use crate::Result;
 
-pub(crate) const REPLACEMENT_GRAPH_SCHEMA: u32 = 2;
+pub(crate) const REPLACEMENT_GRAPH_SCHEMA: u32 = 3;
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 pub(crate) struct VendorFunctionId {
@@ -22,6 +22,7 @@ pub(crate) struct VendorFunctionId {
 #[serde(rename_all = "kebab-case")]
 pub(crate) enum RustBindingScope {
     Production,
+    ProductionFeature,
     VerificationProbeOnly,
 }
 
@@ -80,6 +81,7 @@ pub(crate) struct RustComponentCoverage {
     pub(crate) mismatched: usize,
     pub(crate) incomplete: usize,
     pub(crate) unqualified: usize,
+    pub(crate) bounded: usize,
 }
 
 #[derive(Debug, Default, Serialize)]
@@ -88,9 +90,11 @@ pub(crate) struct ReplacementGraphSummary {
     pub(crate) reviewed_dispositions: usize,
     pub(crate) production_components: usize,
     pub(crate) production_replacements: usize,
+    pub(crate) production_feature_bindings: usize,
     pub(crate) verification_probe_bindings: usize,
     pub(crate) behavioral_matches: usize,
     pub(crate) production_matches: usize,
+    pub(crate) bounded_matches: usize,
     pub(crate) probe_only_matches: usize,
     pub(crate) unmapped_matches: usize,
     pub(crate) mismatches: usize,
@@ -125,6 +129,7 @@ struct ComponentBuilder {
     mismatched: usize,
     incomplete: usize,
     unqualified: usize,
+    bounded: usize,
 }
 
 impl ReplacementGraph {
@@ -155,7 +160,11 @@ impl ReplacementGraph {
             .map(|(vendor, builder)| {
                 summary.vendor_functions += 1;
                 summary.reviewed_dispositions += usize::from(builder.reviewed);
-                summary.production_replacements += usize::from(builder.component.is_some());
+                let bounded_feature = builder.disposition.as_deref() == Some("bounded-feature");
+                summary.production_replacements +=
+                    usize::from(builder.component.is_some() && !bounded_feature);
+                summary.production_feature_bindings +=
+                    usize::from(builder.component.is_some() && bounded_feature);
                 summary.verification_probe_bindings += usize::from(!builder.probes.is_empty());
                 let status = aggregate_status(&builder.proofs);
                 update_status_summary(&mut summary, status);
@@ -169,6 +178,7 @@ impl ReplacementGraph {
                     entry.probes.extend(builder.probes.iter().cloned());
                     match status {
                         FunctionVerificationStatus::Match => entry.matched += 1,
+                        FunctionVerificationStatus::BoundedMatch => entry.bounded += 1,
                         FunctionVerificationStatus::Mismatch => entry.mismatched += 1,
                         FunctionVerificationStatus::Incomplete => entry.incomplete += 1,
                         FunctionVerificationStatus::ImplementedUnqualified => {
@@ -179,7 +189,9 @@ impl ReplacementGraph {
                 }
                 let rust = (builder.component.is_some() || !builder.probes.is_empty()).then(|| {
                     RustReplacementTarget {
-                        binding_scope: if builder.component.is_some() {
+                        binding_scope: if builder.component.is_some() && bounded_feature {
+                            RustBindingScope::ProductionFeature
+                        } else if builder.component.is_some() {
                             RustBindingScope::Production
                         } else {
                             RustBindingScope::VerificationProbeOnly
@@ -212,6 +224,7 @@ impl ReplacementGraph {
                 mismatched: builder.mismatched,
                 incomplete: builder.incomplete,
                 unqualified: builder.unqualified,
+                bounded: builder.bounded,
             })
             .collect();
 
@@ -278,10 +291,11 @@ fn merge_reviewed_value(
 }
 
 fn aggregate_status(proofs: &[ReplacementProof]) -> FunctionVerificationStatus {
-    const PRIORITY: [FunctionVerificationStatus; 5] = [
+    const PRIORITY: [FunctionVerificationStatus; 6] = [
         FunctionVerificationStatus::Mismatch,
         FunctionVerificationStatus::Incomplete,
         FunctionVerificationStatus::Match,
+        FunctionVerificationStatus::BoundedMatch,
         FunctionVerificationStatus::ImplementedUnqualified,
         FunctionVerificationStatus::Uncovered,
     ];
@@ -297,6 +311,7 @@ fn update_status_summary(
 ) {
     match status {
         FunctionVerificationStatus::Match => summary.behavioral_matches += 1,
+        FunctionVerificationStatus::BoundedMatch => summary.bounded_matches += 1,
         FunctionVerificationStatus::Mismatch => summary.mismatches += 1,
         FunctionVerificationStatus::Incomplete => summary.incomplete += 1,
         FunctionVerificationStatus::ImplementedUnqualified => {

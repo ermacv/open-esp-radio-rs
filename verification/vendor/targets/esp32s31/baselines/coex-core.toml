@@ -4,12 +4,12 @@ schema = 2
 source = "coex"
 symbol = "coex_core_pti_get"
 kind = "state/profile:coex-core-pti-get"
-digest = "04868334bf2de8c924a40da3f6a607a358ceb50b7ba124d1d868919df7c46d78"
+digest = "278b182ad7f7a5e03d6c1c34cda3e5a5e574472acea268b107a110fd82723dec"
 
 [evidence.components]
-comparison-orchestrator = "27135eb475a56cf828cf5008bbc171061017e5dde83ade44c1bfa6e78d93ba30"
+comparison-orchestrator = "78f3316221c5be17b39047bc588be3269db93581b7fd322ac4b092f37c8178ea"
 execution-image = "f46f7043c5bcc1c9ee1a8254cdd8792837871b62c63b77e6e8a4f7e5bde6822f"
-execution-machine = "b712c0de3daf70bfc8d7718a27913f626e1ac1bada2dc55d60842681c6ae8c0c"
-execution-model = "00671ac5331776c929cded74468b90f0b3c36c6fd4d9e5cdc4404ca5ba3aee5b"
-profile = "0fd9f11083640ca45a0149d8224662200c0e2f5284985ca33aaebf9c6d3eacdc"
-profile-parser = "32795bef750005cae0432ba2423849d4988ec5a04c3c59af22dfa248517cf76c"
+execution-machine = "a500e4f4ef3df420065df08effcd04b4c4816e6d4d7957d40abd6963ba37f5b7"
+execution-model = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"
+profile = "6ca4d51106e0b5c2744c635a3b1d437e41c830a115c25b0f2b9dacc83f7ce880"
+profile-parser = "256e0b0b410d53b7f4023a7f21b4b511bfbd65812aa9d5b3cc439f6c226661a2"

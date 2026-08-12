@@ -24,6 +24,7 @@ pub(crate) struct VerifySummary {
     pub(crate) scenario_matches: usize,
     pub(crate) state_matches: usize,
     pub(crate) composition_matches: usize,
+    pub(crate) bounded_matches: usize,
     pub(crate) mismatched: usize,
     pub(crate) incomplete: usize,
     pub(crate) missing: usize,
@@ -80,6 +81,7 @@ impl VerifySummary {
         self.scenario_matches += other.scenario_matches;
         self.state_matches += other.state_matches;
         self.composition_matches += other.composition_matches;
+        self.bounded_matches += other.bounded_matches;
         self.mismatched += other.mismatched;
         self.incomplete += other.incomplete;
         self.missing += other.missing;

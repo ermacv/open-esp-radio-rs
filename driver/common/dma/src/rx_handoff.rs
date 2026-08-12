@@ -65,7 +65,11 @@ impl<const FRAME_CAPACITY: usize> RxHandoffSlot<FRAME_CAPACITY> {
     }
 
     fn length(&self) -> usize {
-        self.length.load(Ordering::Acquire)
+        // A network lease exists only after `claim` acquires the slot's
+        // Release publication. The offset load retains the explicit range
+        // observation boundary; a second Acquire for the adjacent length
+        // would add no synchronization and emits a duplicate fence on RV32.
+        self.length.load(Ordering::Relaxed)
     }
 
     fn state(&self) -> u8 {

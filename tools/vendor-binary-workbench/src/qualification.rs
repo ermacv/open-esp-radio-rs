@@ -13,7 +13,14 @@ use std::{
 use open_radio_vendor_semantics::DriverAdapterClaim;
 use serde::{Deserialize, Serialize};
 
-use crate::{Result, project::ProjectSpec, verification::FunctionVerificationStatus};
+use crate::{
+    Result,
+    project::ProjectSpec,
+    verification::{
+        FunctionVerificationStatus,
+        dispositions::{Disposition, Manifest},
+    },
+};
 
 pub(crate) const FEATURE_PACK_SCHEMA: u32 = 3;
 
@@ -90,6 +97,15 @@ pub(crate) enum FeatureQualificationStatus {
     Blocked,
 }
 
+impl FeatureQualificationStatus {
+    pub(crate) const fn as_str(self) -> &'static str {
+        match self {
+            Self::Qualified => "qualified",
+            Self::Blocked => "blocked",
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub(crate) struct FeatureQualificationReport {
     pub(crate) id: String,
@@ -102,6 +118,24 @@ pub(crate) struct FeatureQualificationReport {
     pub(crate) surface_effects: usize,
     pub(crate) covered_effects: usize,
     pub(crate) blockers: Vec<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub(crate) struct FunctionQualificationEvidence {
+    pub(crate) feature: String,
+    pub(crate) description: String,
+    pub(crate) required: bool,
+    pub(crate) status: FeatureQualificationStatus,
+    pub(crate) coverage: FeatureCoverage,
+    pub(crate) requirements: Vec<FunctionQualificationRequirement>,
+    pub(crate) blockers: Vec<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub(crate) struct FunctionQualificationRequirement {
+    pub(crate) id: String,
+    pub(crate) suite: String,
+    pub(crate) claim: DriverAdapterClaim,
 }
 
 #[derive(Debug, Deserialize)]
@@ -304,6 +338,16 @@ impl FeaturePack {
                     feature.id
                 )));
             }
+            if feature.coverage == FeatureCoverage::BoundedEvidence
+                && feature.requirements.iter().any(|requirement| {
+                    requirement.claim == DriverAdapterClaim::WholeFunctionEquivalence
+                })
+            {
+                return Err(crate::Error::invalid(format!(
+                    "bounded-evidence feature {:?} cannot claim whole-function equivalence",
+                    feature.id
+                )));
+            }
         }
         Ok(())
     }
@@ -341,6 +385,7 @@ pub(crate) fn validate_project(project: &ProjectSpec) -> Result<()> {
         })
         .unwrap_or_default();
     let mut releases = BTreeSet::new();
+    let mut bounded_requirements = BTreeSet::new();
     for id in &workspace.required_features {
         if !releases.insert(id) {
             return Err(crate::Error::invalid(format!(
@@ -363,6 +408,35 @@ pub(crate) fn validate_project(project: &ProjectSpec) -> Result<()> {
                     "qualification feature {id:?} refers to unknown verification suite {:?}",
                     requirement.suite
                 )));
+            }
+            if requirement.claim != DriverAdapterClaim::WholeFunctionEquivalence {
+                bounded_requirements.insert((
+                    requirement.suite.as_str(),
+                    requirement.source.as_str(),
+                    requirement.symbol.as_str(),
+                ));
+            }
+        }
+    }
+    if let Some(verification) = &project.verification {
+        for suite in &verification.suites {
+            let Some(manifest) = Manifest::load_all(&suite.dispositions)? else {
+                continue;
+            };
+            for entry in manifest
+                .entries()
+                .filter(|entry| entry.disposition == Disposition::BoundedFeature)
+            {
+                if !bounded_requirements.contains(&(
+                    suite.id.as_str(),
+                    entry.source.as_str(),
+                    entry.symbol.as_str(),
+                )) {
+                    return Err(crate::Error::invalid(format!(
+                        "bounded-feature {}:{} in verification suite {:?} is not selected by a required bounded-evidence feature",
+                        entry.source, entry.symbol, suite.id
+                    )));
+                }
             }
         }
     }
@@ -497,6 +571,53 @@ pub(crate) fn evaluate(project: &ProjectSpec) -> Result<Vec<FeatureQualification
         .collect()
 }
 
+pub(crate) fn evidence_for_function(
+    project: &ProjectSpec,
+    source: &str,
+    symbol: &str,
+) -> Result<Vec<FunctionQualificationEvidence>> {
+    let Some(workspace) = &project.qualification else {
+        return Ok(Vec::new());
+    };
+    let pack = FeaturePack::load(&workspace.pack)?;
+    let reports = evaluate(project)?
+        .into_iter()
+        .map(|report| (report.id.clone(), report))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    let mut evidence = Vec::new();
+    for feature in pack.features {
+        let requirements = feature
+            .requirements
+            .iter()
+            .filter(|requirement| requirement.source == source && requirement.symbol == symbol)
+            .map(|requirement| FunctionQualificationRequirement {
+                id: requirement.id.clone(),
+                suite: requirement.suite.clone(),
+                claim: requirement.claim,
+            })
+            .collect::<Vec<_>>();
+        if requirements.is_empty() {
+            continue;
+        }
+        let report = reports.get(&feature.id).ok_or_else(|| {
+            crate::Error::invalid(format!(
+                "qualification report is missing feature {:?}",
+                feature.id
+            ))
+        })?;
+        evidence.push(FunctionQualificationEvidence {
+            feature: feature.id,
+            description: feature.description,
+            required: report.required,
+            status: report.status,
+            coverage: feature.coverage,
+            requirements,
+            blockers: report.blockers.clone(),
+        });
+    }
+    Ok(evidence)
+}
+
 fn effect_coverage(
     feature: &FeatureSpec,
     scope_effects: &BTreeSet<String>,
@@ -567,10 +688,9 @@ fn validate_id(value: &str, kind: &str) -> Result<()> {
 fn status_satisfies_claim(status: FunctionVerificationStatus, claim: DriverAdapterClaim) -> bool {
     match claim {
         DriverAdapterClaim::WholeFunctionEquivalence => status == FunctionVerificationStatus::Match,
-        DriverAdapterClaim::ReviewedProjection | DriverAdapterClaim::RustConformance => matches!(
-            status,
-            FunctionVerificationStatus::Match | FunctionVerificationStatus::ImplementedUnqualified
-        ),
+        DriverAdapterClaim::ReviewedProjection | DriverAdapterClaim::RustConformance => {
+            matches!(status, FunctionVerificationStatus::BoundedMatch)
+        }
     }
 }
 
@@ -589,7 +709,7 @@ mod tests {
     #[test]
     fn reviewed_projection_accepts_only_completed_evidence() {
         assert!(status_satisfies_claim(
-            FunctionVerificationStatus::ImplementedUnqualified,
+            FunctionVerificationStatus::BoundedMatch,
             DriverAdapterClaim::ReviewedProjection,
         ));
         assert!(!status_satisfies_claim(

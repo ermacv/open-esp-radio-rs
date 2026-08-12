@@ -456,6 +456,12 @@ pub(crate) struct InspectFunctionArgs {
     /// Restrict focused callsites by target, semantic operation or slot name.
     #[arg(long, value_name = "TARGET|OPERATION|SLOT", conflicts_with = "full")]
     pub(crate) call: Option<String>,
+    /// Show only reviewed vendor-to-Rust ownership, proof strength and feature qualification.
+    #[arg(
+        long,
+        conflicts_with_all = ["full", "calls", "call", "path"]
+    )]
+    pub(crate) replacement: bool,
     /// Show one shortest structural CFG path (`FROM:TO`); use `+OFFSET` for function offsets.
     #[arg(long, value_name = "FROM:TO")]
     pub(crate) path: Option<String>,

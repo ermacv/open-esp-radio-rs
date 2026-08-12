@@ -83,7 +83,8 @@ cargo vendor-binary-workbench project check \
 ```
 
 It runs the equivalent of `project analyze --check`, `project verify --check`
-and `project publish --check`, then emits one typed aggregate result. Use
+and `project publish --check`, then evaluates every configured required feature
+against those reproduced reports and emits one typed aggregate result. Use
 `--deny-unreviewed` when the project intends its analysis-review backlog to be
 empty. This command never accepts candidate evidence, rewrites baselines or
 updates generated files.

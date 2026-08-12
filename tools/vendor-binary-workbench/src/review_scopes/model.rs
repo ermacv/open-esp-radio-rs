@@ -78,6 +78,7 @@ pub(crate) struct ReviewScopeReport {
     pub(crate) unresolved_calls: usize,
     pub(crate) replacement_behavioral_matches: usize,
     pub(crate) replacement_production_matches: usize,
+    pub(crate) replacement_bounded_matches: usize,
     pub(crate) replacement_probe_only_matches: usize,
     pub(crate) replacement_unmapped_matches: usize,
     pub(crate) replacement_mismatches: usize,

@@ -108,6 +108,29 @@ With `--format json`, these focused options emit a small versioned callsite
 report rather than serializing the complete function body, CFG and instruction
 evidence.
 
+For the opposite direction—starting from a vendor function and checking what
+the open driver actually owns—use the focused replacement view:
+
+```console
+cargo vendor-binary-workbench inspect function --project vendor-project.toml \
+  wifi-key-role:wDev_Insert_KeyEntry --replacement
+```
+
+This view reads the current project verification and qualification reports. It
+shows the reviewed disposition, `production` versus `production-feature`
+binding scope, exact Rust item and source location, compiled/DWARF status,
+every proof claim, adapter/scenario cases and every required feature consuming
+that proof. Matching execution cases retain compact event/RAM-change counts;
+diff cases retain the typed first-difference location already produced by the
+comparison engine. A
+`bounded-match` is described explicitly as a property proof and never rendered
+as whole-function equivalence. The separate reviewed-effect table lists the
+accepted MMIO/state/service boundary and policies such as `replaced-by-async`
+or `allowed-omission`; it is labelled as policy and is not an observed ordered
+trace. `project check` owns currency between this editable policy and the
+stored proof. Use `--format json` for the same compact typed document without
+loading or serializing the function body.
+
 `--path FROM:TO` isolates one shortest directed CFG path. Locations are
 absolute PCs or explicit function offsets such as `+0x0:+0x14`. This is a
 navigation view, not symbolic execution: the result always carries

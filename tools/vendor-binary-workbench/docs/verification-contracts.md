@@ -13,6 +13,7 @@ uses fail-closed defaults for everything else. Supported dispositions are:
 - `direct`;
 - `state-transition`;
 - `replaced-by-composition`;
+- `bounded-feature`;
 - `generation-candidate`;
 - `not-yet-ported`.
 
@@ -22,6 +23,13 @@ an executable semantic or effect contract remains
 Each `[[functions.blocked-by]]` table expresses an exact qualification
 dependency through `source` and `symbol`. The loader rejects missing blocker
 targets and duplicate entries.
+
+`bounded-feature` also names a concrete production owner, but it is not an
+implemented-function disposition. Its executable adapter must establish
+`reviewed-projection` or `rust-conformance`, never
+`whole-function-equivalence`. A successful comparison is reported as
+`BOUNDED-MATCH`; it becomes release evidence only when a required feature in
+the qualification pack selects that exact suite/source/symbol and claim.
 
 The component id is checked against the current Cargo workspace source AST and
 the exact suite ELF/DWARF facts in the aggregate project report. This catches

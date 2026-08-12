@@ -70,6 +70,7 @@ pub struct ReviewScopeDetail {
     pub unresolved_calls: usize,
     pub replacement_behavioral_matches: usize,
     pub replacement_production_matches: usize,
+    pub replacement_bounded_matches: usize,
     pub replacement_probe_only_matches: usize,
     pub replacement_unmapped_matches: usize,
     pub replacement_mismatches: usize,

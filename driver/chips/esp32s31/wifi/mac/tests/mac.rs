@@ -1854,9 +1854,23 @@ fn staged_rx_frame_remains_private_until_reload_settles() {
     descriptors[0].write_word0(BUFFER_SIZE | (4 << LENGTH_SHIFT) | BIT_30 | BIT_31);
     let completed = live.take_completed(0).unwrap();
     let pool = RxStagePool::<1, 16>::new();
+    mmio.operations.clear();
     let mut pending = pool
         .stage_recycle(completed, &[1, 2, 3, 4], &mut mmio, &mut live, |_| Ok(()))
         .unwrap();
+
+    assert_eq!(
+        mmio.operations(),
+        &[
+            Operation::Read(RX_CONTROL),
+            Operation::Read(RX_CONTROL),
+            Operation::Fence,
+            Operation::Read(RX_CONTROL),
+            Operation::Write(RX_CONTROL, RX_ENABLE | RX_RELOAD),
+            Operation::Fence,
+        ],
+        "descriptor publication and the reload doorbell retain their two exact device-ordering boundaries",
+    );
 
     assert_eq!(pool.claimed_slots(), 1);
     assert_eq!(pool.network_slots(), 0);

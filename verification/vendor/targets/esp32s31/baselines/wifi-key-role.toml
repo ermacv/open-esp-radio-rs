@@ -4,10 +4,10 @@ schema = 2
 source = "wifi-key-role"
 symbol = "wDev_Insert_KeyEntry"
 kind = "driver-adapter/rust-conformance/exact-effects-v1"
-digest = "9d984329efd2b71878eddca553f0a93f1f25514b387c0de3291afcf5ae24e78a"
+digest = "38118373566d7e8e1ee73e702cfdf19460c3cff5d54e65a90bff9538c5ca7d23"
 
 [evidence.components]
-adapter-proof = "a6cd22e7c6bfccba1b649e21e6654eeafdc5ed434bf456171d04b8447e58d5ef"
+adapter-proof = "20de802a8d8118e8ea37cb305cd5cf22bedb0e86dca61a26a7411d3e8fcb674d"
 binding = "3f9bf66769701950d6d028673b18f8c2b7e0022e02f025c7b8271e18444b2bf9"
 binding-verifier = "8a49056ff034bb6ccbcba50a8fbb5f592af78036508fc66b91e7d26dd88f5c5b"
 claim = "7d715299d4ce03d4a4a120036c14adae28e138306fc3e268fc70fd9ddb954616"

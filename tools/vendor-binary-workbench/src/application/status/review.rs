@@ -112,6 +112,7 @@ fn scopes(context: &ProjectContext<'_>) -> Component {
                     unresolved_calls: report.unresolved_calls,
                     replacement_behavioral_matches: report.replacement_behavioral_matches,
                     replacement_production_matches: report.replacement_production_matches,
+                    replacement_bounded_matches: report.replacement_bounded_matches,
                     replacement_probe_only_matches: report.replacement_probe_only_matches,
                     replacement_unmapped_matches: report.replacement_unmapped_matches,
                     replacement_mismatches: report.replacement_mismatches,

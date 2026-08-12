@@ -1,8 +1,30 @@
-schema = 2
+schema = 3
+
+[[features]]
+id = "wifi-ap-sta-key-role"
+description = "Production CCMP builders encode vendor connection context zero for STA and one for AP in the hardware key control word."
+coverage = "bounded-evidence"
+
+[[features.requirements]]
+id = "ap-sta-key-connection-context"
+description = "Pinned vendor propagation and executed production Rust builders agree on STA context zero and AP context one."
+suite = "wifi-key-role"
+source = "wifi-key-role"
+symbol = "wDev_Insert_KeyEntry"
+claim = "rust-conformance"
+
+[[features.effects]]
+id = "key-connection-context"
+source = "wifi-key-role"
+symbol = "wDev_Insert_KeyEntry"
+disposition = "verified"
+requirement = "ap-sta-key-connection-context"
+rationale = "The role is traced from vendor AP/STA constants through wDev metadata into control-halfword bits 8..=9 (key-word bits 24..=25) and independently executed through the production Rust builders."
 
 [[features]]
 id = "wifi-sta-connected-no-power-save"
 description = "Connected infrastructure STA keeps hardware beacon filtering disabled because the open software monitor owns every beacon and power-save is not implemented."
+coverage = "review-scopes"
 scopes = ["wifi-sta-beacon-filter-policy"]
 
 [[features.requirements]]
@@ -46,6 +68,7 @@ rationale = "Connected entry must execute the complete reviewed disable transact
 [[features]]
 id = "coex-hardware-timer-control"
 description = "The open coexistence driver owns enable, disable, force and unforce control for all five hardware-timer banks."
+coverage = "review-scopes"
 scopes = ["coex-timer-control"]
 
 [[features.requirements]]

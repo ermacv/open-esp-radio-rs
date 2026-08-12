@@ -186,7 +186,7 @@ pub(super) fn load_code_boundary_pack(pack_path: &Path) -> Result<CodeBoundaryPa
 }
 
 fn validate_inputs(facts: &CodeBoundaryFacts, reviewed: &[ReviewedCodeInput]) -> Result<()> {
-    let expected = facts
+    let mut expected = facts
         .inputs
         .iter()
         .map(|input| (input.source.clone(), input.artifact_sha256.clone()))
@@ -195,6 +195,7 @@ fn validate_inputs(facts: &CodeBoundaryFacts, reviewed: &[ReviewedCodeInput]) ->
         .iter()
         .map(|input| (input.source.clone(), input.artifact_sha256.clone()))
         .collect::<Vec<_>>();
+    expected.sort();
     actual.sort();
     if actual.windows(2).any(|pair| pair[0] == pair[1]) {
         return Err(crate::Error::invalid(

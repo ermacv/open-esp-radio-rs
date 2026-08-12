@@ -125,8 +125,12 @@ impl CodeRebaseCandidate {
             && changed == 0
             && added == 0
             && removed == 0;
-        let safe_to_apply =
-            inputs_added == 0 && inputs_removed == 0 && changed == 0 && added == 0 && removed == 0;
+        // Input guards protect the reviewed boundaries, not the mere presence
+        // of an artifact in the project. Adding or removing an input which
+        // contributes no boundary candidate cannot invalidate a human
+        // decision. Any affected candidate is still counted as added,
+        // removed, or changed below and keeps the rebase fail-closed.
+        let safe_to_apply = changed == 0 && added == 0 && removed == 0;
         let contents = render_code_boundary_pack(&pack, facts);
         Ok(Self {
             pack,

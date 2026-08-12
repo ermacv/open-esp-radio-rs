@@ -646,6 +646,60 @@ fn hi20_lo12_relocations_preserve_symbolic_data_reads_and_writes() {
 }
 
 #[test]
+fn projected_origin_relocation_accepts_final_linked_low_immediate() {
+    let symbol = artifact::ArtifactSymbolDefinition {
+        member: None,
+        name: "linked_read".to_owned(),
+        address: 0x1000_0000,
+        bytes: vec![
+            0xb7, 0x37, 0x00, 0x10, // lui a5, 0x10003
+            0x03, 0xa5, 0x07, 0x84, // lw a0, -1984(a5)
+            0x67, 0x80, 0x00, 0x00, // ret
+        ],
+        addresses_resolved: true,
+        memory_regions: vec![artifact::MemoryRegion {
+            start: 0x1000_2840,
+            length: 4,
+            writable: true,
+            name: "dram".to_owned(),
+        }]
+        .into(),
+        relocations: Vec::new(),
+    };
+    let mut context = StructuralPointerContext::default();
+    context.projected_relocations.insert(
+        StructuralCallSite::new(&symbol, 0x1000_0004),
+        vec![StructuralProjectedRelocation {
+            origin_member: Some("origin.o".to_owned()),
+            origin_symbol: "linked_read".to_owned(),
+            origin_offsets: vec![4],
+            kind: artifact::RelocationKind::Lo12I,
+            symbol: ".LANCHOR0".to_owned(),
+            addend: 0,
+            correspondence: "same-shape",
+        }],
+    );
+
+    let trace = trace_binary_symbol(&symbol, &map(), &BTreeMap::new(), &context, None).unwrap();
+
+    assert!(
+        !trace
+            .reference_blockers
+            .iter()
+            .any(|blocker| blocker.contains("malformed-projected-data-relocation")),
+        "{trace:#?}"
+    );
+    assert!(matches!(
+        trace.reference_events.first(),
+        Some(DraftReferenceEvent::Memory {
+            access: MemoryAccess::Read,
+            address: SymbolicValue::Constant(0x1000_2840),
+            ..
+        })
+    ));
+}
+
+#[test]
 fn relocated_global_pointer_load_preserves_pointee_memory_provenance() {
     let symbol = artifact::ArtifactSymbolDefinition {
         member: Some("global_pointer.o".to_owned()),

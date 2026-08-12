@@ -26,6 +26,7 @@ mod sta_join_state;
 mod state;
 mod wdev_append_rx_blocks;
 mod wdev_process_fiq;
+mod wifi_key_role;
 
 pub use bb_init::*;
 pub use bluetooth_tx_gain::*;
@@ -55,6 +56,7 @@ use state::{
 };
 pub use wdev_append_rx_blocks::*;
 pub use wdev_process_fiq::*;
+pub use wifi_key_role::*;
 
 use open_esp_radio_esp32s31_phy::{
     phy_bluetooth::{

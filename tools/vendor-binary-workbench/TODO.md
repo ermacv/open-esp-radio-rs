@@ -99,6 +99,10 @@ that every user must learn.
   real selector `0x19` report loads three function records in 0.07 seconds at
   7.8 MiB RSS, preserves the observed post and queue call, and names the two
   missing executable models instead of recursively serializing the graph.
+- [x] Surface exact direct and pointee constant domains in the compact flow
+  table. The real Wi-Fi key paths now show AP `a0=1 -> a1=1 ->
+  a3+0:u8=1` and STA `a0=0 -> a1=0 -> a3+0:u8=0` through
+  `ic_set_key`, `wDev_Insert_KeyEntry` and `hal_crypto_set_key_entry`.
 - [x] Make the `0x19` route executable.
   - [x] Generalize external caller-stack outputs to reviewed 8/16/32-bit
     little-endian writes and bind `queue_recv(item-out)` to a 32-bit ABI model.
@@ -290,11 +294,18 @@ that every user must learn.
   origin bytes in 2.4 seconds; the TUI consumes the same lazy report.
 - [x] Make driver-feature qualification cover the complete explicit vendor
   effect boundary. Review-scope schema 7 stores exact replacement function
-  keys and feature-pack schema 2 requires every key to be either proven by a
-  matching requirement or excluded with reviewed policy rationale. Missing and
-  stale dispositions fail closed. The STA beacon-filter scope now exposes all
-  three set/enable/disable transactions with 3/3 dispositions while remaining
-  blocked until its concrete verification reports exist.
+  keys and feature-pack schema 3 distinguishes complete `review-scopes` from
+  narrow `bounded-evidence`. Scope features require every discovered key to be
+  proven or policy-excluded; bounded properties require explicit replayed
+  proofs and forbid exclusions. Missing and stale dispositions fail closed.
+  The STA beacon-filter scope exposes all three set/enable/disable transactions
+  with 3/3 dispositions, while the AP/STA key-role feature qualifies only its
+  pinned two-bit property without claiming whole-function completeness.
+- [x] Add a real AP/STA hardware-key role oracle and Rust-conformance gate.
+  Immutable raw-archive instruction/relocation shapes pin vendor role
+  propagation and AP=1/STA=0 constants; the adapter executes the production
+  Rust CCMP builders, checks the resulting control field and proves that the
+  two role images differ only in the reviewed context bit.
 - [x] Preserve the distinction between a recognized external operation and an
   executable external-call model. A semantic label alone does not make
   execution complete.
@@ -419,8 +430,8 @@ that every user must learn.
   project instances.
 - [x] Validate the first real linked-image logical type. Absolute RAM evidence
   is now rebased onto the narrowest sized ELF data symbol, the reviewed
-  `VendorPhyParameterImage` binds 196 exact `(offset, width)` observations for
-  `phy_param`, and 21 high-confidence fields are named from executable
+  `VendorPhyParameterImage` binds 194 exact `(offset, width)` observations for
+  `phy_param`, and 19 high-confidence fields are named from executable
   semantic contracts. Overlapping byte/halfword/word observations remain
   distinct evidence instead of being rejected as false width conflicts.
 - [x] Complete semantic annotation of the reviewed ESP32-S31 Wi-Fi OS adapter
@@ -593,6 +604,11 @@ schema without isolation.
 - [x] Stream every linked-IR bundle member into a private staging directory,
   compare check-mode output in 64-KiB buffers, enforce a 512-MiB bundle limit,
   and publish only a complete directory.
+- [x] Make recursive IR records stack-safe and bounded on read, and cap only
+  nominal pointer/type projection at 16 dereferences. Linked-list execution
+  evidence, instructions and blockers remain lossless; the real
+  `libnet80211-all` overview shrank from 11.38 to 6.54 MiB and its largest
+  record from 1,087,615 to 77,694 bytes without changing symbolic execution.
 - [x] Remove quadratic copies of reachable-function identities and transitive
   blocker messages from every function summary. The graph and direct typed
   diagnostics remain the lossless sources; focused analysis materializes the

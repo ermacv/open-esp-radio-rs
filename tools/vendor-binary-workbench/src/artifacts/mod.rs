@@ -6,6 +6,7 @@
 
 mod interface_facts;
 mod interface_facts_read;
+mod json;
 mod linked_ir;
 mod linked_ir_bundle;
 mod linked_ir_document;

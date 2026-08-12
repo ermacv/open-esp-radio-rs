@@ -3,6 +3,51 @@
 use super::*;
 
 #[test]
+fn compact_summary_retains_direct_context_and_global_fields() {
+    let mut function = linked_test_function("vendor", "root", "global-or-weak", Vec::new());
+    function.context_accesses.push(ContextAccess {
+        argument: 0,
+        offset: 4,
+        access: "read",
+        width: 32,
+        path: "entry".to_owned(),
+        value: None,
+        value_pseudo: None,
+        write_mask: None,
+        preserved_mask: None,
+        forced_zero_mask: None,
+        forced_one_mask: None,
+    });
+    function.context_fields = context_fields_for_accesses(&function.context_accesses);
+    function.memory_fields.push(MemoryObjectField {
+        object: LinkedMemoryObject::Global {
+            member: None,
+            symbol: "state".to_owned(),
+        },
+        offset: 8,
+        width: 32,
+        reads: 0,
+        writes: 1,
+        write_mask: u32::MAX,
+        paths: vec!["entry".to_owned()],
+        write_values: vec!["const:0x00000001".to_owned()],
+    });
+
+    let mut functions = vec![function];
+    populate_effect_summaries(&mut functions, 1, true);
+    let summary = &functions[0].effect_summary;
+    assert!(!summary.transitive_effects_materialized);
+    assert_eq!(summary.context_fields.len(), 1);
+    assert_eq!(summary.memory_fields.len(), 2);
+    assert!(summary.memory_fields.iter().any(|field| {
+        matches!(
+            &field.object,
+            LinkedMemoryObject::Global { member: None, symbol } if symbol == "state"
+        ) && field.offset == 8
+    }));
+}
+
+#[test]
 fn context_projection_bounds_scheduled_simple_paths() {
     const LAYERS: usize = 14;
     let mut functions = vec![linked_test_function("dense", "root", "local", Vec::new())];

@@ -195,6 +195,21 @@ pub(super) fn apply_memory_instruction(
                 });
             let address = if relocated_pointer.is_some() {
                 None
+            } else if symbol.addresses_resolved
+                && let Some(address) = structural_effective_address(
+                    &state.values,
+                    &state.memory_read_sources,
+                    base,
+                    offset.as_i32(),
+                )
+            {
+                // A projected archive relocation describes provenance, not
+                // the immediate encoding after final linking. When the linked
+                // instruction and its base recover an exact address, that
+                // address is linker truth; comparing its low immediate with
+                // the relocatable addend rejects ordinary absolute HI/LO
+                // materialization (for example LUI + a negative LO12).
+                Some(address)
             } else if let Some(relocation) = projected_relocation.as_ref() {
                 let expected_offset = ((relocation.addend as u32) << 20) as i32 >> 20;
                 if offset.as_i32() != expected_offset {

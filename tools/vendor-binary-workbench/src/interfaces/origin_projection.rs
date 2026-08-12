@@ -184,16 +184,23 @@ fn archive_call_matches_binding(
     let Some(pointer_cell) = address.checked_add_signed(first_contract_step.offset) else {
         return false;
     };
-    call.root_linkage.candidates.len() == 1
-        && call.root_linkage.resolutions.len() == 1
-        && call.root_linkage.resolutions[0] == "project-associated"
-        && call.root_linkage.candidates.iter().all(|candidate| {
+    // Project inventory may contain unrelated linked test/oracle definitions
+    // of the same pointer symbol. They make the global association ambiguous,
+    // but they do not make this reviewed contract ambiguous: guards and source
+    // ownership identify the one candidate that can satisfy this anchor.
+    // This is semantic-contract selection, not a claim about linker choice.
+    call.root_linkage
+        .candidates
+        .iter()
+        .filter(|candidate| {
             candidate.kind == "data"
                 && candidate.address == pointer_cell
                 && facts
                     .artifact(candidate.artifact)
                     .is_some_and(|artifact| artifact.sources.contains(&contract.source))
         })
+        .count()
+        == 1
 }
 
 fn same_indirect_target_shape(left: &InterfaceCallFact, right: &InterfaceCallFact) -> bool {
@@ -338,6 +345,33 @@ mod tests {
             &binding(),
             &contract(),
             &facts(),
+        ));
+    }
+
+    #[test]
+    fn unrelated_project_definition_does_not_erase_unique_reviewed_anchor() {
+        let mut call = call(1, Some("event.o"), 0, 0x40);
+        call.root_linkage.resolutions = vec!["ambiguous-project".to_owned()];
+        call.root_linkage
+            .candidates
+            .push(InterfaceSymbolLocationFact {
+                artifact: 1,
+                member: None,
+                address: 0x3000,
+                kind: "data".to_owned(),
+            });
+        let mut facts = facts();
+        facts.artifacts.push(InterfaceFactArtifact {
+            index: 1,
+            sources: BTreeSet::from(["test-harness".to_owned()]),
+            sha256: Some("11".repeat(32)),
+        });
+
+        assert!(archive_call_matches_binding(
+            &call,
+            &binding(),
+            &contract(),
+            &facts,
         ));
     }
 

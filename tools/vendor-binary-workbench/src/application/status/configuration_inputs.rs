@@ -192,6 +192,8 @@ pub(super) fn inputs(context: &ProjectContext<'_>) -> Phase {
     } else {
         Readiness::Ready
     };
+    let next_action = (status != Readiness::Ready)
+        .then(|| input_repair_action(context.run_spec_path, &records, context.project_path));
     let mut component = Component::new("artifacts", status)
         .detail(
             "run_spec",
@@ -203,11 +205,8 @@ pub(super) fn inputs(context: &ProjectContext<'_>) -> Phase {
         .detail("configured", records.len())
         .detail("ready", ready)
         .detail("items", records);
-    if status != Readiness::Ready {
-        component = component.next_action(format!(
-            "repair local artifact bindings with `vendor-binary-workbench project inputs init --check --project {}`",
-            context.project_path.display()
-        ));
+    if let Some(next_action) = next_action {
+        component = component.next_action(next_action);
     }
     Phase::collect("inputs", vec![component])
 }
@@ -217,4 +216,66 @@ struct ArtifactProbe {
     objects: usize,
     skipped_members: usize,
     symbols: usize,
+}
+
+fn input_repair_action(
+    run_spec_path: Option<&std::path::Path>,
+    records: &[ArtifactDetail],
+    project_path: &std::path::Path,
+) -> String {
+    let binding = run_spec_path
+        .map(|path| path.display().to_string())
+        .unwrap_or_else(|| "the local run spec".to_owned());
+    if let Some(first) = records.iter().find(|record| record.status == "missing") {
+        let missing = records
+            .iter()
+            .filter(|record| record.status == "missing")
+            .count();
+        return format!(
+            "rebuild or restore {missing} artifact(s) already bound in {binding}; first: {} -> {}",
+            first.role, first.path
+        );
+    }
+    if let Some(first) = records.iter().find(|record| record.status == "invalid") {
+        return format!(
+            "replace the invalid artifact already bound in {binding}: {} -> {}",
+            first.role, first.path
+        );
+    }
+    if records.is_empty() {
+        return format!(
+            "bind the project inputs with `vendor-binary-workbench project inputs init --project {}`",
+            project_path.display()
+        );
+    }
+    format!("restore usable symbols in the artifacts bound by {binding}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    #[test]
+    fn missing_bound_artifact_requests_rebuild_instead_of_binding_check() {
+        let records = vec![ArtifactDetail {
+            role: "source-artifact:libpp".to_owned(),
+            status: "missing",
+            path: "/tmp/vendor-linked-libpp".to_owned(),
+            container: None,
+            objects: None,
+            skipped_members: None,
+            symbol_facts: None,
+            error: None,
+        }];
+        let action = input_repair_action(
+            Some(Path::new("targets/chip/local.toml")),
+            &records,
+            Path::new("targets/chip/vendor-project.toml"),
+        );
+        assert!(action.contains("rebuild or restore"));
+        assert!(action.contains("source-artifact:libpp -> /tmp/vendor-linked-libpp"));
+        assert!(action.contains("targets/chip/local.toml"));
+        assert!(!action.contains("inputs init --check"));
+    }
 }

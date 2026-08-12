@@ -734,22 +734,22 @@ mod tests {
             initial_memory: Default::default(),
             persistent_memory: Default::default(),
         };
-        assert!(rust_case_matches(&result, case));
+        assert!(case_report(&result, &result, case).matched);
 
         let mut wrong_address = result.clone();
         wrong_address.events[5] = write(RX_BASE + 4, DESCRIPTOR_BASE);
-        assert!(!rust_case_matches(&wrong_address, case));
+        assert!(!case_report(&wrong_address, &wrong_address, case).matched);
         let mut wrong_value = result.clone();
         wrong_value.events[17] = write(RX_CONTROL, WALKER_ENABLE);
-        assert!(!rust_case_matches(&wrong_value, case));
+        assert!(!case_report(&wrong_value, &wrong_value, case).matched);
         let mut wrong_order = result.clone();
         wrong_order.events.swap(17, 18);
-        assert!(!rust_case_matches(&wrong_order, case));
+        assert!(!case_report(&wrong_order, &wrong_order, case).matched);
         let mut extra = result.clone();
         extra.events.push(read(RX_CONTROL, 0));
-        assert!(!rust_case_matches(&extra, case));
+        assert!(!case_report(&extra, &extra, case).matched);
         let mut wrong_return = result;
         wrong_return.return_value ^= 1;
-        assert!(!rust_case_matches(&wrong_return, case));
+        assert!(!case_report(&wrong_return, &wrong_return, case).matched);
     }
 }

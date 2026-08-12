@@ -178,6 +178,8 @@ pub(in crate::analysis::linked_ir) fn populate_effect_summaries(
                     .filter(|action| action.guard_scopes.is_some())
                     .cloned()
                     .collect();
+                let memory_fields =
+                    project_memory_fields(&[(root, 0)], functions_view, &direct_projection.fields);
                 LinkedEffectSummary {
                     transitive_effects_materialized: false,
                     call_graph_closed,
@@ -191,6 +193,11 @@ pub(in crate::analysis::linked_ir) fn populate_effect_summaries(
                     semantic_actions_materialized: false,
                     semantic_actions: ProjectedSemanticActions::omitted(semantic_action_count),
                     register_semantic_actions,
+                    // Artifact-wide mode defers transitive projection, but
+                    // direct context/global facts remain reviewable and are
+                    // the source for focused type bindings.
+                    context_fields: direct_projection.fields,
+                    memory_fields,
                     event_dispatches: direct_projection.event_dispatches,
                     ..LinkedEffectSummary::default()
                 }

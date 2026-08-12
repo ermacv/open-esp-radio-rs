@@ -266,12 +266,25 @@ pub(crate) enum LinkedMemoryObject {
 }
 
 impl LinkedMemoryObject {
-    pub(crate) fn from_root(value: MemoryObjectRoot, address_space: &str) -> Self {
-        Self::from_root_ref(&value, address_space)
+    /// Convert a machine-level pointer provenance into a nominal review
+    /// object. Bounded loop unrolling can produce one dereference node per
+    /// linked-list iteration; such a chain remains valid execution evidence
+    /// but is not a meaningful nominal type. Withhold only that derived field
+    /// claim while retaining the complete trace, instructions and blockers.
+    pub(crate) fn from_root(value: MemoryObjectRoot, address_space: &str) -> Option<Self> {
+        Self::from_root_ref(&value, address_space, 0)
     }
 
-    fn from_root_ref(value: &MemoryObjectRoot, address_space: &str) -> Self {
-        match value {
+    fn from_root_ref(
+        value: &MemoryObjectRoot,
+        address_space: &str,
+        nesting: usize,
+    ) -> Option<Self> {
+        const MAX_NOMINAL_POINTER_NESTING: usize = 16;
+        if nesting >= MAX_NOMINAL_POINTER_NESTING {
+            return None;
+        }
+        Some(match value {
             MemoryObjectRoot::Argument { index } => Self::Argument { index: *index },
             MemoryObjectRoot::RelocatedSymbol { member, symbol } => Self::Global {
                 member: member.clone(),
@@ -281,7 +294,7 @@ impl LinkedMemoryObject {
                 pointer,
                 pointer_offset,
             } => Self::Dereferenced {
-                pointer: Box::new(Self::from_root_ref(pointer, address_space)),
+                pointer: Box::new(Self::from_root_ref(pointer, address_space, nesting + 1)?),
                 pointer_offset: *pointer_offset,
             },
             MemoryObjectRoot::Absolute { address } => Self::Absolute {
@@ -293,7 +306,7 @@ impl LinkedMemoryObject {
                 argument,
                 stride,
             } => Self::Indexed {
-                object: Box::new(Self::from_root_ref(root, address_space)),
+                object: Box::new(Self::from_root_ref(root, address_space, nesting + 1)?),
                 argument: *argument,
                 stride: *stride,
             },
@@ -303,7 +316,7 @@ impl LinkedMemoryObject {
             MemoryObjectRoot::OpaqueExternalObject { call_token } => Self::OpaqueExternalObject {
                 call_token: *call_token,
             },
-        }
+        })
     }
 }
 

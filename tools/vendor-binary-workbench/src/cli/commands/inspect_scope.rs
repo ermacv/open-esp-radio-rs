@@ -75,7 +75,7 @@ pub(super) fn run(arguments: InspectScopeArgs, project: &ProjectSpec) -> Result<
                     feature.id,
                     feature.status,
                     feature.covered_effects,
-                    feature.scope_effects,
+                    feature.surface_effects,
                     feature.requirements,
                     feature.blockers.len(),
                 );

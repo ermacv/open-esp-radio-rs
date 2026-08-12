@@ -64,6 +64,10 @@ source = "libpp"
 artifact-sha256 = "fe37745f692a55bc930cdd7597b5f0c66c470ba208af9d109badc3801aa0a1b9"
 
 [[inputs]]
+source = "libpp-replay"
+artifact-sha256 = "f09fa8ac4ba05c3fb5e3cc161882af9ca5992a3d48058486264e5df9723e1a1d"
+
+[[inputs]]
 source = "rom"
 artifact-sha256 = "2aa7a828f9a0ff6fe92026545e9ef4cae8867bf1b12367c0dabe9bc4f95d6547"
 
@@ -73,7 +77,19 @@ artifact-sha256 = "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227
 
 [[inputs]]
 source = "rust"
-artifact-sha256 = "4d9c5d468fd390564cf57577876a785bf55f89373446e45d9936bdf955cbb306"
+artifact-sha256 = "a3aba641abf0063a489775591eebf4acbd3f872575cbc5cf54aa3e9d765b3b17"
+
+[[inputs]]
+source = "wifi-key-role"
+artifact-sha256 = "81955b2bb883d80c4a9181cea6741f11e63960c2c84e56f992d1ab2390f5abf5"
+
+[[inputs]]
+source = "wifi-key-role"
+artifact-sha256 = "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542"
+
+[[inputs]]
+source = "wifi-key-role"
+artifact-sha256 = "f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e"
 
 [[inputs]]
 source = "wifi-sta-lifecycle"

@@ -144,3 +144,23 @@ fn rebase_requires_review_when_candidates_change() {
     assert_eq!(candidate.summary().added, 1);
     fs::remove_file(pack).unwrap();
 }
+
+#[test]
+fn rebase_accepts_input_without_boundary_candidates() {
+    let facts = fixture();
+    let pack = path("rebase-input-only");
+    let _ = fs::remove_file(&pack);
+    write_code_boundary_pack_template(&pack, &facts, "fixture").unwrap();
+    let mut revised = facts.clone();
+    revised.inputs.push(CodeBoundaryInputFact {
+        source: "replay".to_owned(),
+        artifact_sha256: "fedcba9876543210".repeat(4),
+    });
+
+    let candidate = CodeRebaseCandidate::prepare(&revised, &pack, "fixture").unwrap();
+    assert!(candidate.summary().safe_to_apply);
+    assert_eq!(candidate.summary().inputs_added, 1);
+    assert_eq!(candidate.summary().preserved, 1);
+    assert_eq!(candidate.summary().added, 0);
+    fs::remove_file(pack).unwrap();
+}

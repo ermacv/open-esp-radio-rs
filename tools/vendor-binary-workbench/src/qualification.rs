@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{Result, project::ProjectSpec, verification::FunctionVerificationStatus};
 
-pub(crate) const FEATURE_PACK_SCHEMA: u32 = 2;
+pub(crate) const FEATURE_PACK_SCHEMA: u32 = 3;
 
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -29,12 +29,29 @@ pub(crate) struct FeaturePack {
 pub(crate) struct FeatureSpec {
     id: String,
     description: String,
+    coverage: FeatureCoverage,
     #[serde(default)]
     scopes: Vec<String>,
     #[serde(default)]
     requirements: Vec<FeatureRequirement>,
     #[serde(default)]
     effects: Vec<FeatureEffectDisposition>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum FeatureCoverage {
+    ReviewScopes,
+    BoundedEvidence,
+}
+
+impl FeatureCoverage {
+    pub(crate) const fn as_str(self) -> &'static str {
+        match self {
+            Self::ReviewScopes => "review-scopes",
+            Self::BoundedEvidence => "bounded-evidence",
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize)]
@@ -79,9 +96,10 @@ pub(crate) struct FeatureQualificationReport {
     pub(crate) description: String,
     pub(crate) required: bool,
     pub(crate) status: FeatureQualificationStatus,
+    pub(crate) coverage: FeatureCoverage,
     pub(crate) scopes: Vec<String>,
     pub(crate) requirements: usize,
-    pub(crate) scope_effects: usize,
+    pub(crate) surface_effects: usize,
     pub(crate) covered_effects: usize,
     pub(crate) blockers: Vec<String>,
 }
@@ -162,6 +180,21 @@ impl FeaturePack {
                         feature.id
                     )));
                 }
+            }
+            match feature.coverage {
+                FeatureCoverage::ReviewScopes if feature.scopes.is_empty() => {
+                    return Err(crate::Error::invalid(format!(
+                        "qualification feature {:?} with review-scopes coverage requires at least one scope",
+                        feature.id
+                    )));
+                }
+                FeatureCoverage::BoundedEvidence if !feature.scopes.is_empty() => {
+                    return Err(crate::Error::invalid(format!(
+                        "qualification feature {:?} with bounded-evidence coverage must not select review scopes",
+                        feature.id
+                    )));
+                }
+                _ => {}
             }
             let mut requirement_ids = BTreeSet::new();
             let mut requirement_selectors = BTreeSet::new();
@@ -253,8 +286,23 @@ impl FeaturePack {
                             effect.id
                         )));
                     }
-                    FeatureEffectDispositionKind::ExcludedByFeaturePolicy => {}
+                    FeatureEffectDispositionKind::ExcludedByFeaturePolicy => {
+                        if feature.coverage == FeatureCoverage::BoundedEvidence {
+                            return Err(crate::Error::invalid(format!(
+                                "bounded-evidence feature {:?} cannot exclude effect {:?}; it must provide verified evidence",
+                                feature.id, effect.id
+                            )));
+                        }
+                    }
                 }
+            }
+            if feature.coverage == FeatureCoverage::BoundedEvidence
+                && (feature.requirements.is_empty() || feature.effects.is_empty())
+            {
+                return Err(crate::Error::invalid(format!(
+                    "bounded-evidence feature {:?} requires explicit proofs and verified effects",
+                    feature.id
+                )));
             }
         }
         Ok(())
@@ -360,7 +408,15 @@ pub(crate) fn evaluate(project: &ProjectSpec) -> Result<Vec<FeatureQualification
                 }
                 scope_effects.extend(scope.replacement_function_keys.iter().cloned());
             }
-            let (covered_effects, effect_blockers) = effect_coverage(feature, &scope_effects);
+            let (surface_effects, covered_effects, effect_blockers) = match feature.coverage {
+                FeatureCoverage::ReviewScopes => {
+                    let (covered, blockers) = effect_coverage(feature, &scope_effects);
+                    (scope_effects.len(), covered, blockers)
+                }
+                FeatureCoverage::BoundedEvidence => {
+                    (feature.effects.len(), feature.effects.len(), Vec::new())
+                }
+            };
             blockers.extend(effect_blockers);
             for requirement in &feature.requirements {
                 let path = suite_report_path(&verification.report, &requirement.suite);
@@ -430,9 +486,10 @@ pub(crate) fn evaluate(project: &ProjectSpec) -> Result<Vec<FeatureQualification
                 } else {
                     FeatureQualificationStatus::Blocked
                 },
+                coverage: feature.coverage,
                 scopes: feature.scopes.clone(),
                 requirements: feature.requirements.len(),
-                scope_effects: scope_effects.len(),
+                surface_effects,
                 covered_effects,
                 blockers,
             })
@@ -545,6 +602,7 @@ mod tests {
         FeatureSpec {
             id: "sta".to_owned(),
             description: "fixture".to_owned(),
+            coverage: FeatureCoverage::ReviewScopes,
             scopes: vec!["connected".to_owned()],
             requirements: Vec::new(),
             effects,
@@ -560,6 +618,66 @@ mod tests {
             requirement: None,
             rationale: "explicit feature policy".to_owned(),
         }
+    }
+
+    fn bounded_feature() -> FeatureSpec {
+        FeatureSpec {
+            id: "key-role".to_owned(),
+            description: "bounded property fixture".to_owned(),
+            coverage: FeatureCoverage::BoundedEvidence,
+            scopes: Vec::new(),
+            requirements: vec![FeatureRequirement {
+                id: "role-proof".to_owned(),
+                description: "executed role proof".to_owned(),
+                suite: "keys".to_owned(),
+                source: "wifi".to_owned(),
+                symbol: "insert_key".to_owned(),
+                claim: DriverAdapterClaim::RustConformance,
+            }],
+            effects: vec![FeatureEffectDisposition {
+                id: "connection-context".to_owned(),
+                source: "wifi".to_owned(),
+                symbol: "insert_key".to_owned(),
+                disposition: FeatureEffectDispositionKind::Verified,
+                requirement: Some("role-proof".to_owned()),
+                rationale: "the exact property is replayed".to_owned(),
+            }],
+        }
+    }
+
+    #[test]
+    fn bounded_evidence_is_an_explicit_property_not_an_incomplete_review_scope() {
+        let pack = FeaturePack {
+            schema: FEATURE_PACK_SCHEMA,
+            features: vec![bounded_feature()],
+        };
+
+        pack.validate(Path::new("features.toml")).unwrap();
+    }
+
+    #[test]
+    fn bounded_evidence_rejects_a_review_scope_or_policy_exclusion() {
+        let mut with_scope = bounded_feature();
+        with_scope.scopes.push("whole-driver".to_owned());
+        let error = FeaturePack {
+            schema: FEATURE_PACK_SCHEMA,
+            features: vec![with_scope],
+        }
+        .validate(Path::new("features.toml"))
+        .unwrap_err();
+        assert!(error.to_string().contains("must not select review scopes"));
+
+        let mut excluded_effect = bounded_feature();
+        excluded_effect.effects[0].disposition =
+            FeatureEffectDispositionKind::ExcludedByFeaturePolicy;
+        excluded_effect.effects[0].requirement = None;
+        let error = FeaturePack {
+            schema: FEATURE_PACK_SCHEMA,
+            features: vec![excluded_effect],
+        }
+        .validate(Path::new("features.toml"))
+        .unwrap_err();
+        assert!(error.to_string().contains("cannot exclude effect"));
     }
 
     #[test]

@@ -17,3 +17,18 @@ The checked-in source records each wrapped blob/ROM boundary. Binary evidence
 stays in the ignored repository-local `_oracles/` directory. The caller owns
 artifact acquisition, revision selection and authentication before invoking
 `cargo hil oracle build`; the HIL runner does not contain a digest allow-list.
+
+## Build the Workbench analysis inputs
+
+From the repository root, build every linked analysis ELF and the Rust
+comparison probe with the target-owned, sequential helper:
+
+```console
+verification/vendor/targets/esp32s31/build-analysis-inputs
+```
+
+The helper does not acquire vendor binaries and does not modify `local.toml`.
+It requires the authenticated archives and ROM in `_oracles/`, then writes
+only Cargo outputs below `target/verification/` at the paths used by the local
+run spec. Set `OPEN_RADIO_ANALYSIS_BUILD_JOBS` explicitly to opt into more
+than one Cargo build job.

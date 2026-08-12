@@ -66,6 +66,19 @@ path = "/path/to/libpp.a"
 role = "source-companion:wifi-sta-lifecycle"
 path = "/path/to/esp32s31_rev0_rom.elf"
 
+# Cross-archive link truth for AP/STA key-role propagation.
+[[inputs]]
+role = "source-artifact:wifi-key-role"
+path = "/path/to/linked-wifi-key-role.elf"
+
+[[inputs]]
+role = "source-inventory:wifi-key-role"
+path = "/path/to/libpp.a"
+
+[[inputs]]
+role = "source-companion:wifi-key-role"
+path = "/path/to/esp32s31_rev0_rom.elf"
+
 # COEX uses the focused linked oracle as execution/link truth while the raw
 # archive remains the authoritative inventory and initializer source.
 [[inputs]]

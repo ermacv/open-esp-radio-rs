@@ -159,6 +159,11 @@ pub(crate) fn collect(context: ProjectContext<'_>) -> Result<ProjectFilesReport>
     );
     if run_spec_path.is_file() {
         for input in RunSpec::load(&run_spec_path)?.inputs() {
+            let next_action = format!(
+                "rebuild or restore {}, or update its binding in {}",
+                input.path.display(),
+                run_spec_path.display()
+            );
             push(
                 &mut files,
                 format!("input:{}", input.role),
@@ -167,7 +172,7 @@ pub(crate) fn collect(context: ProjectContext<'_>) -> Result<ProjectFilesReport>
                 None,
                 &["analysis pipeline"],
                 true,
-                Some("vendor-binary-workbench project inputs init"),
+                Some(&next_action),
             );
         }
     }

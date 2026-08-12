@@ -526,7 +526,7 @@ impl LinkedIrReader {
         for line in std::io::BufReader::new(file).lines() {
             let line = line?;
             if !line.is_empty() {
-                functions.push(serde_json::from_str(&line)?);
+                functions.push(super::json::from_str(&line)?);
             }
         }
         if functions.len() != self.index.len() {
@@ -574,7 +574,7 @@ impl LinkedIrReader {
         for line in std::io::BufReader::new(file).lines() {
             let line = line?;
             if !line.is_empty() {
-                functions.push(serde_json::from_str(&line)?);
+                functions.push(super::json::from_str(&line)?);
             }
         }
         if functions.len() != self.index.len() {
@@ -666,7 +666,7 @@ impl LinkedIrReader {
             .map_err(|_| crate::Error::invalid("linked-IR function record exceeds host size"))?;
         let mut bytes = vec![0; size];
         file.read_exact(&mut bytes)?;
-        let function: StoredFunction = serde_json::from_slice(&bytes)?;
+        let function: StoredFunction = super::json::from_slice(&bytes)?;
         if function.identity != record.identity
             || function.source != record.source
             || function.member != record.member
@@ -688,7 +688,7 @@ impl LinkedIrReader {
             .map_err(|_| crate::Error::invalid("linked-IR data object record exceeds host size"))?;
         let mut bytes = vec![0; size];
         file.read_exact(&mut bytes)?;
-        let object: StoredDataObject = serde_json::from_slice(&bytes)?;
+        let object: StoredDataObject = super::json::from_slice(&bytes)?;
         if object.source != record.source
             || object.member != record.member
             || object.symbol != record.symbol

@@ -120,11 +120,10 @@ fn render_human(report: &FlowInvestigationReport) {
         outputln!(
             "{}",
             crate::cli::table::render(
-                ["#", "Level", "Context", "Site", "Transition"],
+                ["#", "Level", "Site", "Transition", "Exact values"],
                 report.steps.iter().map(|step| [
                     (step.ordinal + 1).to_string(),
                     format!("{:?}", step.evidence).to_lowercase(),
-                    step.context.clone(),
                     step.site
                         .map(|site| format!("{site:#010x}"))
                         .unwrap_or_else(|| "—".to_owned()),
@@ -133,6 +132,7 @@ fn render_human(report: &FlowInvestigationReport) {
                         compact_identity(&step.caller),
                         compact_identity(&step.callee)
                     ),
+                    exact_values(step),
                 ])
             )
         );
@@ -154,6 +154,17 @@ fn render_human(report: &FlowInvestigationReport) {
                         argument.resolved,
                         argument.provenance
                     );
+                    for pointee in &argument.pointee {
+                        outputln!(
+                            "       {}{:+#x}:u{} {} => {} [{}]",
+                            argument_location(argument.position),
+                            pointee.offset,
+                            pointee.width,
+                            pointee.local,
+                            pointee.resolved,
+                            pointee.provenance
+                        );
+                    }
                 }
             }
         }
@@ -274,9 +285,50 @@ fn argument_location(position: usize) -> String {
     }
 }
 
+fn exact_values(step: &crate::flow_investigation::FlowStepEvidence) -> String {
+    let mut values = Vec::new();
+    for argument in &step.arguments {
+        let location = argument_location(argument.position);
+        if !argument.constants.is_empty() {
+            values.push(format!(
+                "{location}={}",
+                render_constants(&argument.constants)
+            ));
+        }
+        for pointee in &argument.pointee {
+            if pointee.constants.is_empty() {
+                continue;
+            }
+            values.push(format!(
+                "{location}{:+#x}:u{}={}",
+                pointee.offset,
+                pointee.width,
+                render_constants(&pointee.constants)
+            ));
+        }
+    }
+    if values.is_empty() {
+        "—".to_owned()
+    } else {
+        values.join(", ")
+    }
+}
+
+fn render_constants(values: &[u32]) -> String {
+    values
+        .iter()
+        .map(|value| format!("{value:#x}"))
+        .collect::<Vec<_>>()
+        .join("|")
+}
+
 #[cfg(test)]
 mod tests {
-    use super::argument_location;
+    use crate::flow_investigation::{
+        EvidenceLevel, FlowArgumentEvidence, FlowPointeeEvidence, FlowStepEvidence,
+    };
+
+    use super::{argument_location, exact_values};
 
     #[test]
     fn rv32_argument_locations_distinguish_registers_from_stack_arguments() {
@@ -284,5 +336,39 @@ mod tests {
         assert_eq!(argument_location(7), "a7");
         assert_eq!(argument_location(8), "stack[0]");
         assert_eq!(argument_location(15), "stack[7]");
+    }
+
+    #[test]
+    fn exact_values_summarize_direct_and_pointee_constants() {
+        let step = FlowStepEvidence {
+            ordinal: 0,
+            evidence: EvidenceLevel::Observed,
+            context: "synchronous".to_owned(),
+            caller: "source::caller".to_owned(),
+            callee: "source::callee".to_owned(),
+            site: Some(0x1000),
+            kind: "direct".to_owned(),
+            tail: false,
+            argument_shapes: 1,
+            arguments: vec![FlowArgumentEvidence {
+                position: 3,
+                local: "private-stack:+0x20".to_owned(),
+                resolved: "private-stack:+0x20".to_owned(),
+                constants: Vec::new(),
+                provenance: "uncomposed-symbolic-expression",
+                pointee: vec![FlowPointeeEvidence {
+                    offset: 0,
+                    width: 8,
+                    local: "arg1".to_owned(),
+                    resolved: "0x00000001".to_owned(),
+                    constants: vec![1],
+                    provenance: "exact-constant-domain",
+                }],
+            }],
+            guards: Vec::new(),
+            origin: "fixture".to_owned(),
+        };
+
+        assert_eq!(exact_values(&step), "a3+0x0:u8=0x1");
     }
 }

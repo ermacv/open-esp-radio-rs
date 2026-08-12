@@ -87,10 +87,20 @@ fn human(report: &DoctorReport) {
             outputln!("1. vendor-binary-workbench project inputs init --project {project} --help");
             outputln!("2. vendor-binary-workbench project files --project {project} --details");
         } else if report.inputs.iter().any(|input| input.status == "missing") {
-            outputln!(
-                "1. build or bind the missing external artifacts listed by `vendor-binary-workbench project files --project {project}`"
-            );
-            outputln!("2. vendor-binary-workbench project inputs init --check --project {project}");
+            outputln!("1. rebuild or restore these already-bound artifacts:");
+            for input in report
+                .inputs
+                .iter()
+                .filter(|input| input.status == "missing")
+            {
+                outputln!("   {} -> {}", input.role, input.path.display());
+            }
+            if let Some(path) = report.run_spec.path.as_deref() {
+                outputln!(
+                    "2. only if a path changed, recreate its binding in {} with `vendor-binary-workbench project inputs init --help`",
+                    path.display()
+                );
+            }
             outputln!("3. vendor-binary-workbench project status --project {project}");
         } else {
             outputln!("1. vendor-binary-workbench project files --project {project} --details");

@@ -1,0 +1,49 @@
+# Focused link truth for the AP/STA key-install path. This unit deliberately
+# joins libnet80211 and libpp so argument constants survive across the archive
+# boundary down to the MAC crypto MMIO leaf.
+schema = 1
+source = "wifi-key-role"
+linker-scripts = [
+    "../../../../../../hil/targets/esp32s31/linker/rom/esp32s31-eco0.x",
+    "link.x",
+]
+archives = [
+    "../../../../../../_oracles/libnet80211.a",
+    "../../../../../../_oracles/libpp.a",
+]
+entry-symbols = [
+    "esp_wifi_set_ap_key_internal",
+    "ppInstallKey",
+    "ic_set_key",
+    "wDev_Insert_KeyEntry",
+    "hal_crypto_set_key_entry",
+]
+stub-symbols = [
+    "__adddf3",
+    "__clzsi2",
+    "__ctzsi2",
+    "__extendsfdf2",
+    "__ffssi2",
+    "__fixdfsi",
+    "__floatsidf",
+    "__floatundisf",
+    "__floatunsidf",
+    "__muldf3",
+    "__popcountsi2",
+    "__popcountdi2",
+    "__bswapsi2",
+    "__subdf3",
+    "__truncdfsf2",
+    "__udivdi3",
+    "__umoddi3",
+]
+fixture-data-symbols = [
+    # A null OSI table is the reviewed logging-disabled execution state used
+    # by the key-role parity scenarios. It preserves the real branch rather
+    # than replacing `wifi_log` with a synthetic call.
+    { name = "g_osi_funcs_p", size = 4, alignment = 4 },
+    { name = "g_log_level", size = 4, alignment = 4 },
+]
+emit-relocations = true
+gc-sections = false
+unresolved-symbols = "ignore-all"

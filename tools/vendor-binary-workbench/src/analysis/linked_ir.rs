@@ -577,7 +577,7 @@ fn build_linked_functions_for_roots(
             Ok(trace) => {
                 let mut memory_accesses = memory_object_accesses_for_trace(&trace);
                 attribute_data_symbols(&mut memory_accesses, resolver);
-                let memory_fields = memory_object_fields_for_accesses(&memory_accesses);
+                let mut memory_fields = memory_object_fields_for_accesses(&memory_accesses);
                 let context_accesses = context_accesses_for_memory_objects(&memory_accesses);
                 let context_fields = context_fields_for_accesses(&context_accesses);
                 let mmio_accesses = mmio_accesses_for_trace(&trace);
@@ -590,6 +590,7 @@ fn build_linked_functions_for_roots(
                 instruction_effects.extend(site_effects);
                 instruction_effects.sort();
                 instruction_effects.dedup();
+                merge_instruction_memory_fields(&mut memory_fields, &instruction_effects);
                 let effect_sites = instruction_effects
                     .iter()
                     .map(LinkedInstructionEffect::site)

@@ -173,6 +173,24 @@ pub fn verify_driver_adapter(
             )
             .map(Some)
         }
+        "esp32s31-wifi-key-role-v1" => {
+            if source != "wifi-key-role" || vendor_symbol != "wDev_Insert_KeyEntry" {
+                return Err(
+                    format!("driver adapter {id} cannot verify {source} {vendor_symbol}").into(),
+                );
+            }
+            verification::verify_esp32s31_wifi_key_role(
+                request.svd,
+                request.vendor_inventory,
+                request.vendor_artifact,
+                request.vendor_companion,
+                request.rust_artifact,
+                request.rust_companion,
+                request.rust_symbol,
+                request.policy,
+            )
+            .map(Some)
+        }
         _ => Ok(None),
     }
 }
@@ -317,6 +335,17 @@ const STA_JOIN_STATE_DRIVER_ADAPTER_SOURCES: &[EvidenceSource] = &[
     },
 ];
 
+const WIFI_KEY_ROLE_DRIVER_ADAPTER_SOURCES: &[EvidenceSource] = &[
+    EvidenceSource {
+        name: "qualification/wifi_key_role.rs",
+        contents: include_str!("qualification/wifi_key_role.rs"),
+    },
+    EvidenceSource {
+        name: "qualification/mod.rs",
+        contents: include_str!("qualification/mod.rs"),
+    },
+];
+
 const SEMANTIC_COMMON_SOURCES: &[EvidenceSource] = &[
     EvidenceSource {
         name: "qualification/mod.rs",
@@ -373,6 +402,7 @@ pub fn driver_adapter_evidence_sources(id: &str) -> Option<DriverAdapterEvidence
         }
         "esp32s31-wdev-append-rx-blocks-v1" => WDEV_APPEND_RX_BLOCKS_DRIVER_ADAPTER_SOURCES,
         "esp32s31-sta-join-state-v1" => STA_JOIN_STATE_DRIVER_ADAPTER_SOURCES,
+        "esp32s31-wifi-key-role-v1" => WIFI_KEY_ROLE_DRIVER_ADAPTER_SOURCES,
         _ => return None,
     };
     Some(DriverAdapterEvidenceSources {

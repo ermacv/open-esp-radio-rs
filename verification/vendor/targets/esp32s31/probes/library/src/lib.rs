@@ -17,6 +17,7 @@ use open_esp_radio_esp32s31_wifi_dma::descriptor::{
     BIT_30, BIT_31, DESCRIPTOR_BYTES, Descriptor, LENGTH_SHIFT,
 };
 use open_esp_radio_esp32s31_wifi_mac::{
+    crypto::{install_ap_pairwise_ccmp, install_sta_pairwise_ccmp},
     irq::{
         HANDLED_MAC_MASK, IrqDisposition, IrqSink, IrqWork, MAC_INT_RX_ASSOCIATED_AUXILIARY_MASK,
         handle_mac_irq, next_irq_work,
@@ -166,6 +167,39 @@ pub extern "C" fn open_wifi_sta_trace_hal_disable_sta_beacon_filter() {
     open_esp_radio_esp32s31_pac::validation::hal_disable_sta_beacon_filter();
 }
 
+/// Compiled production-driver projection for the vendor
+/// `wDev_Insert_KeyEntry` interface-role boundary.
+///
+/// The host adapter checks only the reviewed connection-context field. It
+/// deliberately does not claim whole-transaction equivalence because the
+/// closed PAC adds fail-closed occupancy checks and zeroization.
+#[unsafe(no_mangle)]
+#[inline(never)]
+pub extern "C" fn open_wifi_key_role_trace_wdev_insert_key_entry(
+    _cipher: u32,
+    interface: u32,
+    _peer: u32,
+    _key_id: u32,
+    _index: u32,
+    _key_words: u32,
+    _key_length: u32,
+    _flags: u32,
+) -> u32 {
+    let mut registers = open_esp_radio_esp32s31_pac::validation::radio_registers();
+    let peer = [0_u8; 6];
+    let temporal_key = [0_u8; 16];
+    let outcome = match interface {
+        0 => install_sta_pairwise_ccmp(&mut registers, peer, &temporal_key).map(|_| ()),
+        1 => install_ap_pairwise_ccmp(&mut registers, peer, &temporal_key).map(|_| ()),
+        _ => return 0,
+    };
+    match outcome {
+        Ok(()) => 1,
+        Err(open_esp_radio_esp32s31_wifi_mac::crypto::CryptoKeyError::Occupied) => 2,
+        Err(_) => 3,
+    }
+}
+
 #[unsafe(no_mangle)]
 #[inline(never)]
 pub extern "C" fn open_libpp_power_irq_trace_hal_pwr_interrupt_get_event() -> u32 {
@@ -243,8 +277,7 @@ pub extern "C" fn open_libpp_rx_trace_hal_mac_rx_is_dscr_reload() -> u32 {
 pub extern "C" fn open_libpp_rx_trace_hal_mac_rx_set_dscr_reload() {
     // SAFETY: this validation-only function is the sole user of the stolen
     // peripheral in its isolated probe image.
-    let _ =
-        open_esp_radio_esp32s31_pac::validation::hal_mac_rx_set_dscr_reload(0);
+    let _ = open_esp_radio_esp32s31_pac::validation::hal_mac_rx_set_dscr_reload(0);
 }
 
 #[unsafe(no_mangle)]
@@ -785,8 +818,7 @@ pub extern "C" fn open_libpp_tx_trace_hal_mac_txq_disable(queue: u32) -> u32 {
 pub extern "C" fn open_libpp_tx_trace_hal_mac_txq_enable_register_slice(queue: u32) -> u32 {
     // SAFETY: this validation-only function is the sole user of the stolen
     // peripheral in its isolated probe image.
-    open_esp_radio_esp32s31_pac::validation::hal_mac_txq_enable_register_slice(queue,
-    )
+    open_esp_radio_esp32s31_pac::validation::hal_mac_txq_enable_register_slice(queue)
 }
 
 #[unsafe(no_mangle)]
@@ -804,7 +836,8 @@ pub extern "C" fn open_libpp_tx_trace_hal_mac_tx_config_edca(
     // that the projection agrees with the vendor object.
     // SAFETY: this validation-only function is the sole user of the stolen
     // peripheral in its isolated probe image.
-    open_esp_radio_esp32s31_pac::validation::hal_mac_tx_config_edca(queue,
+    open_esp_radio_esp32s31_pac::validation::hal_mac_tx_config_edca(
+        queue,
         aifsn as u8,
         contention_window as u16,
         interface as u8,
@@ -826,9 +859,8 @@ pub extern "C" fn open_libpp_tx_trace_hal_mac_tx_get_blockack(
     queue: u32,
     output_address: u32,
 ) -> u32 {
-    let payload =
-        open_esp_radio_esp32s31_pac::validation::hal_mac_tx_get_blockack(queue as u8)
-            .expect("profile constrains ordinary TX queue 0..=3");
+    let payload = open_esp_radio_esp32s31_pac::validation::hal_mac_tx_get_blockack(queue as u8)
+        .expect("profile constrains ordinary TX queue 0..=3");
     let output = output_address as *mut CanonicalTxBlockAck;
     // SAFETY: the verification profile supplies one initialized, writable
     // twelve-byte output object for the duration of this call.
@@ -848,8 +880,7 @@ pub extern "C" fn open_libpp_power_trace_pwr_hal_set_mac_modem_beacon_miss_timeo
 ) -> u32 {
     // SAFETY: this validation-only function is the sole user of the stolen
     // peripheral in its isolated probe image.
-    open_esp_radio_esp32s31_pac::validation::pwr_hal_set_mac_modem_beacon_miss_timeout(value,
-    )
+    open_esp_radio_esp32s31_pac::validation::pwr_hal_set_mac_modem_beacon_miss_timeout(value)
 }
 
 #[unsafe(no_mangle)]
@@ -859,8 +890,7 @@ pub extern "C" fn open_libpp_power_trace_pwr_hal_set_mac_modem_beacon_miss_limit
 ) -> u32 {
     // SAFETY: this validation-only function is the sole user of the stolen
     // peripheral in its isolated probe image.
-    open_esp_radio_esp32s31_pac::validation::pwr_hal_set_mac_modem_beacon_miss_limit(value,
-    )
+    open_esp_radio_esp32s31_pac::validation::pwr_hal_set_mac_modem_beacon_miss_limit(value)
 }
 
 #[unsafe(no_mangle)]
@@ -880,8 +910,7 @@ pub extern "C" fn open_libpp_power_trace_pwr_hal_set_mac_modem_state_sleep_limit
 ) -> u32 {
     // SAFETY: this validation-only function is the sole user of the stolen
     // peripheral in its isolated probe image.
-    open_esp_radio_esp32s31_pac::validation::pwr_hal_set_mac_modem_state_sleep_limit(value,
-    )
+    open_esp_radio_esp32s31_pac::validation::pwr_hal_set_mac_modem_state_sleep_limit(value)
 }
 
 #[unsafe(no_mangle)]
@@ -900,7 +929,8 @@ pub extern "C" fn open_libpp_power_trace_pwr_hal_set_mac_modem_state_wakeup_prot
     // SAFETY: this validation-only function is the sole user of the stolen
     // peripheral in its isolated probe image.
     let _ =
-        open_esp_radio_esp32s31_pac::validation::pwr_hal_set_mac_modem_state_wakeup_protect_enable(0,
+        open_esp_radio_esp32s31_pac::validation::pwr_hal_set_mac_modem_state_wakeup_protect_enable(
+            0,
         );
 }
 
@@ -911,7 +941,8 @@ pub extern "C" fn open_libpp_power_trace_pwr_hal_set_mac_modem_state_wakeup_prot
 ) -> u32 {
     // SAFETY: this validation-only function is the sole user of the stolen
     // peripheral in its isolated probe image.
-    open_esp_radio_esp32s31_pac::validation::pwr_hal_set_mac_modem_state_wakeup_protect_early_time(value,
+    open_esp_radio_esp32s31_pac::validation::pwr_hal_set_mac_modem_state_wakeup_protect_early_time(
+        value,
     )
 }
 
@@ -920,8 +951,8 @@ pub extern "C" fn open_libpp_power_trace_pwr_hal_set_mac_modem_state_wakeup_prot
 pub extern "C" fn open_libpp_power_trace_pwr_hal_set_mac_modem_tbtt_auto_period_enable() {
     // SAFETY: this validation-only function is the sole user of the stolen
     // peripheral in its isolated probe image.
-    let _ = open_esp_radio_esp32s31_pac::validation::pwr_hal_set_mac_modem_tbtt_auto_period_enable(0,
-    );
+    let _ =
+        open_esp_radio_esp32s31_pac::validation::pwr_hal_set_mac_modem_tbtt_auto_period_enable(0);
 }
 
 #[unsafe(no_mangle)]
@@ -929,8 +960,8 @@ pub extern "C" fn open_libpp_power_trace_pwr_hal_set_mac_modem_tbtt_auto_period_
 pub extern "C" fn open_libpp_power_trace_pwr_hal_set_mac_modem_tbtt_auto_period_disable() {
     // SAFETY: this validation-only function is the sole user of the stolen
     // peripheral in its isolated probe image.
-    let _ = open_esp_radio_esp32s31_pac::validation::pwr_hal_set_mac_modem_tbtt_auto_period_disable(0,
-    );
+    let _ =
+        open_esp_radio_esp32s31_pac::validation::pwr_hal_set_mac_modem_tbtt_auto_period_disable(0);
 }
 
 #[unsafe(no_mangle)]
@@ -940,8 +971,7 @@ pub extern "C" fn open_libpp_power_trace_pwr_hal_set_mac_modem_tbtt_auto_period_
 ) -> u32 {
     // SAFETY: this validation-only function is the sole user of the stolen
     // peripheral in its isolated probe image.
-    open_esp_radio_esp32s31_pac::validation::pwr_hal_set_mac_modem_tbtt_auto_period_interval(value,
-    )
+    open_esp_radio_esp32s31_pac::validation::pwr_hal_set_mac_modem_tbtt_auto_period_interval(value)
 }
 
 #[unsafe(no_mangle)]
@@ -1754,6 +1784,7 @@ pub fn retain_all_probes() {
     core::hint::black_box(open_libpp_trace_hal_mac_interrupt_ret_get_event as *const ());
     core::hint::black_box(open_libpp_trace_hal_mac_interrupt_ret_clr_event as *const ());
     core::hint::black_box(open_wifi_sta_trace_hal_disable_sta_beacon_filter as *const ());
+    core::hint::black_box(open_wifi_key_role_trace_wdev_insert_key_entry as *const ());
     core::hint::black_box(open_libpp_power_irq_trace_hal_pwr_interrupt_get_event as *const ());
     core::hint::black_box(open_libpp_power_irq_trace_hal_pwr_interrupt_clr_event as *const ());
     core::hint::black_box(open_libpp_trace_wdev_process_fiq_mac_slice as *const ());

@@ -2,6 +2,31 @@
 
 use super::*;
 use crate::LocatedReferenceEvent;
+use open_radio_vendor_analysis_model::MemoryObjectRoot;
+
+#[test]
+fn nominal_memory_object_projection_bounds_linked_list_nesting() {
+    let mut root = MemoryObjectRoot::Argument { index: 0 };
+    for _ in 0..16 {
+        root = MemoryObjectRoot::Dereferenced {
+            pointer: std::sync::Arc::new(root),
+            pointer_offset: 0,
+        };
+    }
+    assert!(LinkedMemoryObject::from_root(root, "ram").is_none());
+
+    let shallow = MemoryObjectRoot::Dereferenced {
+        pointer: std::sync::Arc::new(MemoryObjectRoot::Argument { index: 0 }),
+        pointer_offset: 4,
+    };
+    assert!(matches!(
+        LinkedMemoryObject::from_root(shallow, "ram"),
+        Some(LinkedMemoryObject::Dereferenced {
+            pointer_offset: 4,
+            ..
+        })
+    ));
+}
 
 #[test]
 fn pseudo_ir_keeps_a_named_call_and_structured_branch() {
@@ -409,6 +434,58 @@ fn instruction_effects_keep_exact_mmio_and_memory_sites() {
             ..
         }
     )));
+}
+
+#[test]
+fn instruction_memory_fields_survive_incomplete_path_reconstruction() {
+    let object = LinkedMemoryObject::Global {
+        member: None,
+        symbol: "g_parameters".to_owned(),
+    };
+    let effects = vec![
+        LinkedInstructionEffect::Memory {
+            site: 0x1000,
+            block: Some(1),
+            access: "read",
+            width: 32,
+            object: object.clone(),
+            offset: 4,
+            paths: Vec::new(),
+            value: None,
+            value_pseudo: None,
+            write_mask: None,
+            preserved_mask: None,
+            forced_zero_mask: None,
+            forced_one_mask: None,
+        },
+        LinkedInstructionEffect::Memory {
+            site: 0x1004,
+            block: Some(1),
+            access: "write",
+            width: 32,
+            object: object.clone(),
+            offset: 4,
+            paths: vec!["entry".to_owned()],
+            value: Some("const:0x00000001".to_owned()),
+            value_pseudo: Some("0x00000001".to_owned()),
+            write_mask: Some(u32::MAX),
+            preserved_mask: None,
+            forced_zero_mask: None,
+            forced_one_mask: None,
+        },
+    ];
+
+    let mut fields = Vec::new();
+    merge_instruction_memory_fields(&mut fields, &effects);
+
+    assert_eq!(fields.len(), 1);
+    assert_eq!(fields[0].object, object);
+    assert_eq!(fields[0].offset, 4);
+    assert_eq!(fields[0].reads, 1);
+    assert_eq!(fields[0].writes, 1);
+    assert_eq!(fields[0].write_mask, u32::MAX);
+    assert_eq!(fields[0].paths, ["entry"]);
+    assert_eq!(fields[0].write_values, ["0x00000001"]);
 }
 
 #[test]

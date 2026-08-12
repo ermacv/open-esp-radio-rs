@@ -46,8 +46,11 @@ fn collect_memory_object_access_from_event(
             if let Some(location) = address.memory_object_location_with_reads(read_sources) {
                 let (write_mask, preserved_mask, forced_zero_mask, forced_one_mask) =
                     context_write_masks(*access, *width, value.as_ref());
+                let Some(object) = LinkedMemoryObject::from_root(location.root, region) else {
+                    return;
+                };
                 output.push(MemoryObjectAccess {
-                    object: LinkedMemoryObject::from_root(location.root, region),
+                    object,
                     offset: location.offset,
                     access: match access {
                         MemoryAccess::Read => "read",
@@ -336,6 +339,99 @@ pub(super) fn memory_object_fields_for_accesses(
         }
     }
     fields.into_values().collect()
+}
+
+/// Retain instruction-local memory evidence even when path reconstruction
+/// stops before it can emit canonical `MemoryObjectAccess` records.
+///
+/// A field already recovered from a path is merged instead of counted twice:
+/// instruction effects are the lossless site inventory, while path accesses
+/// carry the richer path/value presentation.
+pub(super) fn merge_instruction_memory_fields(
+    fields: &mut Vec<MemoryObjectField>,
+    effects: &[LinkedInstructionEffect],
+) {
+    #[derive(Default)]
+    struct InstructionField {
+        read_sites: BTreeSet<u32>,
+        write_sites: BTreeSet<u32>,
+        write_mask: u32,
+        paths: BTreeSet<String>,
+        write_values: BTreeSet<String>,
+    }
+
+    let mut instruction_fields = BTreeMap::<(LinkedMemoryObject, i64, u8), InstructionField>::new();
+    for effect in effects {
+        let LinkedInstructionEffect::Memory {
+            site,
+            access,
+            width,
+            object,
+            offset,
+            paths,
+            value_pseudo,
+            write_mask,
+            ..
+        } = effect
+        else {
+            continue;
+        };
+        let field = instruction_fields
+            .entry((object.clone(), *offset, *width))
+            .or_default();
+        match *access {
+            "read" => {
+                field.read_sites.insert(*site);
+            }
+            "write" => {
+                field.write_sites.insert(*site);
+                field.write_mask |= write_mask.unwrap_or_default();
+                if let Some(value) = value_pseudo {
+                    field.write_values.insert(value.clone());
+                }
+            }
+            _ => unreachable!("instruction memory effect has a closed access vocabulary"),
+        }
+        field.paths.extend(paths.iter().cloned());
+    }
+
+    for ((object, offset, width), instruction) in instruction_fields {
+        let field = if let Some(index) = fields.iter().position(|field| {
+            field.object == object && field.offset == offset && field.width == width
+        }) {
+            &mut fields[index]
+        } else {
+            fields.push(MemoryObjectField {
+                object,
+                offset,
+                width,
+                reads: 0,
+                writes: 0,
+                write_mask: 0,
+                paths: Vec::new(),
+                write_values: Vec::new(),
+            });
+            fields
+                .last_mut()
+                .expect("the missing instruction field was just appended")
+        };
+        field.reads = field.reads.max(instruction.read_sites.len());
+        field.writes = field.writes.max(instruction.write_sites.len());
+        field.write_mask |= instruction.write_mask;
+        for path in instruction.paths {
+            if !field.paths.contains(&path) {
+                field.paths.push(path);
+            }
+        }
+        for value in instruction.write_values {
+            if !field.write_values.contains(&value) {
+                field.write_values.push(value);
+            }
+        }
+    }
+    fields.sort_by(|left, right| {
+        (&left.object, left.offset, left.width).cmp(&(&right.object, right.offset, right.width))
+    });
 }
 
 pub(super) fn context_accesses_for_memory_objects(

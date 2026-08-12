@@ -38,10 +38,10 @@ pub(super) fn collect(context: &ProjectContext<'_>) -> Phase {
                         .map(move |blocker| format!("{}: {blocker}", feature.id))
                 })
                 .collect::<Vec<_>>();
-            let scope_effects = features
+            let surface_effects = features
                 .iter()
                 .filter(|feature| feature.required)
-                .map(|feature| feature.scope_effects)
+                .map(|feature| feature.surface_effects)
                 .sum::<usize>();
             let covered_effects = features
                 .iter()
@@ -59,7 +59,7 @@ pub(super) fn collect(context: &ProjectContext<'_>) -> Phase {
             .detail("pack", workspace.pack.display().to_string())
             .detail("required_count", required)
             .detail("blocked", blocked)
-            .detail("scope_effects", scope_effects)
+            .detail("surface_effects", surface_effects)
             .detail("covered_effects", covered_effects)
             .detail("features", workspace.required_features.clone())
             .detail("blockers", blockers.clone());

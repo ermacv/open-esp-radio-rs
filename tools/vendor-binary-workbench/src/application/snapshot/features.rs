@@ -18,9 +18,10 @@ pub(super) fn collect(
                     crate::qualification::FeatureQualificationStatus::Blocked => "blocked",
                 }
                 .to_owned(),
+                coverage: feature.coverage.as_str().to_owned(),
                 scopes: feature.scopes,
                 requirements: feature.requirements,
-                scope_effects: feature.scope_effects,
+                surface_effects: feature.surface_effects,
                 covered_effects: feature.covered_effects,
                 blockers: feature.blockers,
             })

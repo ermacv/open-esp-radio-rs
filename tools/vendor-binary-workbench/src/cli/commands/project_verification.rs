@@ -301,9 +301,20 @@ fn render_human(report: &ProjectVerificationReport, output: &std::path::Path) {
             .iter()
             .map(|source| source.summary.mismatched)
             .sum::<usize>();
+        let limited_claims = suite
+            .verification
+            .sources
+            .iter()
+            .map(|source| source.summary.implemented_unqualified)
+            .sum::<usize>();
+        let limited = if limited_claims == 0 {
+            String::new()
+        } else {
+            format!(", {limited_claims} limited claim(s)")
+        };
         let _ = writeln!(
             &mut text,
-            "  {}: {} ({} matched, {} mismatched, {} incomplete)",
+            "  {}: {} ({} whole-function matched{limited}, {} mismatched, {} incomplete)",
             suite.id,
             if core.passed { "passed" } else { "failed" },
             matched,
@@ -329,7 +340,7 @@ fn render_human(report: &ProjectVerificationReport, output: &std::path::Path) {
     if graph.mismatches != 0 || graph.incomplete != 0 || graph.implemented_unqualified != 0 {
         let _ = writeln!(
             &mut text,
-            "  qualification: {} mismatched, {} incomplete, {} implemented but unqualified",
+            "  qualification: {} mismatched, {} incomplete, {} limited claim(s) awaiting or using feature qualification",
             graph.mismatches, graph.incomplete, graph.implemented_unqualified
         );
     }

@@ -513,9 +513,10 @@ pub struct FeatureQualificationSummary {
     pub description: String,
     pub required: bool,
     pub status: String,
+    pub coverage: String,
     pub scopes: Vec<String>,
     pub requirements: usize,
-    pub scope_effects: usize,
+    pub surface_effects: usize,
     pub covered_effects: usize,
     pub blockers: Vec<String>,
 }

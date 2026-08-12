@@ -1,18 +1,21 @@
 # Feature qualification and vendor-effect coverage
 
 A passing comparison of one convenient function does not qualify a driver
-feature. The feature pack closes the boundary between an explicit vendor review
-scope and the intended Rust policy.
+feature. The feature pack closes either a complete vendor review surface or a
+narrow, explicitly replayed property against the intended Rust policy. These
+are different claims and must not be inferred from one another.
 
-Feature-pack schema 2 requires every explicit root of every selected review
-scope to have exactly one `[[features.effects]]` disposition:
+Feature-pack schema 3 makes that boundary explicit with `coverage`.
+`review-scopes` requires every explicit root of every selected review scope to
+have exactly one `[[features.effects]]` disposition:
 
 ```toml
-schema = 2
+schema = 3
 
 [[features]]
 id = "wifi-sta-connected-no-power-save"
 description = "Connected STA keeps the hardware beacon filter disabled."
+coverage = "review-scopes"
 scopes = ["wifi-sta-beacon-filter-policy"]
 
 [[features.effects]]
@@ -38,14 +41,50 @@ scope change both block qualification. Consequently, adding
 `hal_set_sta_beacon_filter` to the scope cannot silently leave a previously
 green feature green.
 
+Use `bounded-evidence` only when the release assertion is deliberately narrower
+than whole-function or whole-scope equivalence. It must not select review
+scopes, every declared effect must be `verified`, and at least one explicit
+requirement and effect are mandatory:
+
+```toml
+[[features]]
+id = "wifi-ap-sta-key-role"
+description = "The production key builders encode STA context 0 and AP context 1."
+coverage = "bounded-evidence"
+
+[[features.requirements]]
+id = "key-role-proof"
+description = "Pinned vendor propagation agrees with executed production Rust builders."
+suite = "wifi-key-role"
+source = "wifi-key-role"
+symbol = "wDev_Insert_KeyEntry"
+claim = "rust-conformance"
+
+[[features.effects]]
+id = "connection-context"
+source = "wifi-key-role"
+symbol = "wDev_Insert_KeyEntry"
+disposition = "verified"
+requirement = "key-role-proof"
+rationale = "The two-bit context property is independently pinned and replayed."
+```
+
+This qualifies only the named property. It does not claim that
+`wDev_Insert_KeyEntry`, its callees, or a related review scope has complete
+semantic coverage. Policy exclusions therefore belong only to
+`review-scopes`; they are rejected for bounded evidence because that mode has
+no discovered surface denominator from which an omission could be justified.
+
 The generated review-scope schema 7 stores
 `replacement_function_keys`; these are the exact denominator for effect
 coverage. Reachable private helpers remain analysis inventory and do not force
 a fictitious one-to-one Rust function. Promote a helper to an explicit scope
 root when its transaction is independently part of the feature boundary.
 
-`project status`, the Features TUI view and the application snapshot expose
-covered/total scope effects separately from verification requirements. A
-feature is qualified only when scope analysis is complete, every effect has a
-current disposition, and every referenced proof satisfies its requested claim
-and reviewed production binding.
+`project status`, the Features TUI view and the application snapshot expose the
+coverage mode and covered/total surface effects separately from verification
+requirements. A `review-scopes` feature is qualified only when scope analysis
+is complete and every discovered effect has a current disposition. A
+`bounded-evidence` feature is qualified only for its explicit effects. In both
+modes every referenced proof must satisfy its requested claim and reviewed
+production binding.

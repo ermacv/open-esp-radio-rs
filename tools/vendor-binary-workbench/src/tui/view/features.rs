@@ -65,13 +65,14 @@ pub(super) fn render(frame: &mut Frame<'_>, state: &BrowserState, area: Rect) {
                     field("Description", &feature.description),
                     field("Required gate", feature.required),
                     field("Status", &feature.status),
+                    field("Coverage", &feature.coverage),
                     field("Scopes", feature.scopes.join(", ")),
                     field("Required proofs", feature.requirements),
                     field(
-                        "Scope effects",
+                        "Surface effects",
                         format!(
                             "{}/{} covered",
-                            feature.covered_effects, feature.scope_effects
+                            feature.covered_effects, feature.surface_effects
                         ),
                     ),
                     Line::from(""),

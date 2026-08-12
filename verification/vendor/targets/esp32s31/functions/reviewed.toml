@@ -28,6 +28,11 @@ source = "wifi-sta-lifecycle"
 artifact-sha256 = "513f8d08ef1611e4937d17ee0938aebf68b7c9ec16c843ecf2612a48ef2096c1"
 
 [[inputs]]
+profile = "wifi-key-role"
+source = "wifi-key-role"
+artifact-sha256 = "81955b2bb883d80c4a9181cea6741f11e63960c2c84e56f992d1ab2390f5abf5"
+
+[[inputs]]
 profile = "coex-all"
 source = "coex"
 artifact-sha256 = "851cac6122d2e047fb22f1059b7875a55b526a07a19d94022fc0e30f4bf2fd6c"
@@ -153,14 +158,6 @@ source = "archive"
 name = "linked_phy_param"
 kind = "global"
 symbol = "phy_param"
-
-[[types.fields]]
-offset = 0x000
-width = 16
-status = "reviewed"
-name = "temperature_result"
-display-type = "i16"
-description = "Temperature result observed by channel and calibration flows."
 
 [[types.fields]]
 offset = 0x002
@@ -313,14 +310,6 @@ status = "reviewed"
 name = "rf_init_calibration_scratch"
 display-type = "u32"
 description = "Machine-word observation of RF initialization calibration scratch state."
-
-[[types.fields]]
-offset = 0x1af
-width = 8
-status = "reviewed"
-name = "front_end_control"
-display-type = "u8"
-description = "Front-end control byte consumed during RF initialization."
 
 [[types]]
 id = "coex-event-durations"

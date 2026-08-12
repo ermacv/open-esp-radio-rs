@@ -60,6 +60,14 @@ entry-contract = "none"
 output = "generated/findings/wifi-sta-lifecycle.ir"
 
 [[analysis.ir]]
+id = "wifi-key-role"
+sources = ["wifi-key-role"]
+roots = "all"
+include-reachable = true
+entry-contract = "none"
+output = "generated/findings/wifi-key-role.ir"
+
+[[analysis.ir]]
 id = "coex-all"
 sources = ["coex"]
 roots = "all"
@@ -93,6 +101,7 @@ linked-ir = [
     "generated/findings/libpp-all.ir",
     "generated/findings/libnet80211-all.ir",
     "generated/findings/wifi-sta-lifecycle.ir",
+    "generated/findings/wifi-key-role.ir",
     "generated/findings/coex-all.ir",
     "generated/findings/btbb-all.ir",
 ]
@@ -154,6 +163,7 @@ profiles = [
     "libpp-all",
     "libnet80211-all",
     "wifi-sta-lifecycle",
+    "wifi-key-role",
     "coex-all",
     "btbb-all",
 ]
@@ -237,6 +247,16 @@ roots = [
 include-reachable = true
 
 [[review.scopes]]
+id = "wifi-key-role"
+profiles = ["wifi-key-role"]
+roots = [
+    "wifi-key-role:esp_wifi_set_ap_key_internal",
+    "wifi-key-role:ppInstallKey",
+    "wifi-key-role:hal_crypto_set_key_entry",
+]
+include-reachable = true
+
+[[review.scopes]]
 id = "coex-core"
 profiles = ["coex-all"]
 roots = [
@@ -298,7 +318,7 @@ include-reachable = true
 
 [qualification]
 pack = "features/reviewed.toml"
-required-features = ["wifi-sta-connected-no-power-save", "coex-hardware-timer-control"]
+required-features = ["wifi-sta-connected-no-power-save", "wifi-ap-sta-key-role", "coex-hardware-timer-control"]
 
 [verification]
 report = "generated/reports/verification.json"
@@ -445,3 +465,14 @@ dispositions = ["dispositions/wifi-sta-beacon-filter.toml"]
 baselines = ["baselines/wifi-sta-beacon-filter.toml"]
 gate = "regression"
 match-floor = 1
+
+[[verification.suites]]
+id = "wifi-key-role"
+sources = ["wifi-key-role"]
+source-prefixes = ["wifi-key-role=wDev_Insert_KeyEntry"]
+rust-artifact-role = "rust-artifact"
+rust-prefix = "open_wifi_key_role_trace_"
+profiles = []
+dispositions = ["dispositions/wifi-key-role.toml"]
+baselines = ["baselines/wifi-key-role.toml"]
+gate = "completion"

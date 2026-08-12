@@ -11,7 +11,7 @@ use crate::{ProjectSpec, Result, artifacts, execution_model, interfaces::Semanti
 use super::{
     EventRouteFlowRequest, EvidenceLevel, FlowArgumentEvidence, FlowBlocker, FlowClaims,
     FlowEffectEvidence, FlowEffectKind, FlowInvestigationReport, FlowLimits, FlowPointeeEvidence,
-    FlowRustBoundaryEvidence, FlowStatus, FlowStepEvidence,
+    FlowRustBoundaryEvidence, FlowStatus, FlowStepEvidence, FlowTargetRequest, TargetFlowRequest,
     effects::collect_function_effects,
     value::{compose_call_arguments, root_domains},
 };
@@ -24,6 +24,21 @@ struct ReplayRouteProof {
     enqueue_site: u32,
     dequeue_site: u32,
     handler_site: Option<u32>,
+    state: ReplayStateProof,
+}
+
+#[derive(Debug)]
+struct ReplayStateProof {
+    id: String,
+    symbol: String,
+    address: u32,
+    width: u8,
+    producer_before: u32,
+    producer_after: u32,
+    producer_write_site: u32,
+    consumer_before: u32,
+    consumer_after: u32,
+    consumer_write_site: u32,
 }
 
 pub(super) fn investigate(
@@ -229,6 +244,44 @@ pub(super) fn investigate(
                 .as_ref()
                 .map(|replay| replay.evidence.display().to_string()),
         });
+        for (function, site, before, after, operation) in [
+            (
+                proof.producer_symbol.as_str(),
+                proof.state.producer_write_site,
+                proof.state.producer_before,
+                proof.state.producer_after,
+                "counted-latch-increment",
+            ),
+            (
+                proof.consumer_symbol.as_str(),
+                proof.state.consumer_write_site,
+                proof.state.consumer_before,
+                proof.state.consumer_after,
+                "counted-latch-decrement",
+            ),
+        ] {
+            effects.push(FlowEffectEvidence {
+                kind: "state".to_owned(),
+                evidence: EvidenceLevel::Executed,
+                function: function.to_owned(),
+                site: Some(site),
+                operation: Some(operation.to_owned()),
+                detail: format!(
+                    "{} {}-bit state {before:#x} -> {after:#x}",
+                    proof.state.id, proof.state.width
+                ),
+                constant: Some(u64::from(after)),
+                access: Some("write".to_owned()),
+                width: Some(proof.state.width),
+                address: Some(proof.state.address),
+                register: Some(proof.state.symbol.clone()),
+                value: Some(format!("const:{after:#010x}")),
+                origin_path: route
+                    .replay
+                    .as_ref()
+                    .map(|replay| replay.evidence.display().to_string()),
+            });
+        }
     }
     let mut depth_limited = false;
     if request.max_depth >= 1 && dispatch_observed {
@@ -416,35 +469,18 @@ pub(super) fn investigate(
                 origin: workspace.pack.display().to_string(),
             });
             collect_function_effects(&handler_function, FlowEffectKind::All, &mut effects);
-            rust_boundaries = crate::function_investigation::replacement_evidence(
-                &handler_function.source,
-                &handler_function.symbol,
-                project,
-            )?
-            .into_iter()
-            .map(|replacement| FlowRustBoundaryEvidence {
-                vendor_source: replacement.vendor_source,
-                vendor_symbol: replacement.vendor_symbol,
-                association: replacement.association.to_owned(),
-                reviewed: replacement.reviewed,
-                status: replacement.status,
-                production_component: replacement.production_component,
-                verification_probes: replacement.verification_probes,
-                report: replacement.report,
-                report_complete_project_run: replacement.report_complete_project_run,
-                report_passed: replacement.report_passed,
-                freshness_claim: replacement.freshness_claim,
-            })
-            .collect();
-            if rust_boundaries.is_empty() {
-                blockers.push(FlowBlocker::new(
-                    "rust-boundary-unmapped",
-                    format!(
-                        "case handler {:?} has no vendor-to-Rust replacement edge",
-                        handler_function.symbol
-                    ),
-                    "add a reviewed disposition and production Rust component, then run project verification",
-                ));
+            if route.terminal.is_none() {
+                rust_boundaries = rust_boundary_evidence(&handler_function, project)?;
+                if rust_boundaries.is_empty() {
+                    blockers.push(FlowBlocker::new(
+                        "rust-boundary-unmapped",
+                        format!(
+                            "case handler {:?} has no vendor-to-Rust replacement edge",
+                            handler_function.symbol
+                        ),
+                        "add a reviewed disposition and production Rust component, then run project verification",
+                    ));
+                }
             }
 
             let targets = BTreeSet::from([handler.function.clone()]);
@@ -483,6 +519,70 @@ pub(super) fn investigate(
     } else if route.case_handler.is_some() {
         depth_limited = true;
     }
+
+    if let Some(terminal) = &route.terminal {
+        if let Some(handler) = route.case_handler.as_ref() {
+            if request.max_depth >= 4 {
+                let remaining_depth = request.max_depth.saturating_sub(3).max(1);
+                let mut segment = super::target::investigate(
+                    TargetFlowRequest {
+                        source: &handler.source,
+                        root_symbol: identity_symbol(&handler.function),
+                        target: FlowTargetRequest::Function(&terminal.function),
+                        max_depth: remaining_depth,
+                    },
+                    project,
+                )?;
+                let ordinal_base = steps.len();
+                for (index, step) in segment.steps.iter_mut().enumerate() {
+                    step.ordinal = ordinal_base + index;
+                }
+                steps.extend(segment.steps);
+                effects.extend(segment.effects);
+                blockers.extend(segment.blockers);
+                loaded_functions += segment.limits.loaded_functions;
+
+                let terminal_profile = profile(project, &terminal.profile)?;
+                let terminal_reader = artifacts::LinkedIrReader::open(&terminal_profile.output)?;
+                let terminal_function = terminal_reader
+                    .get_function_by_identity(&terminal.function)?
+                    .ok_or_else(|| {
+                        crate::Error::invalid(format!(
+                            "event route {:?} terminal {:?} is absent from profile {:?}",
+                            route.id, terminal.function, terminal.profile
+                        ))
+                    })?;
+                if terminal_function.source != terminal.source {
+                    return Err(crate::Error::invalid(format!(
+                        "event route {:?} terminal belongs to source {:?}, expected {:?}",
+                        route.id, terminal_function.source, terminal.source
+                    )));
+                }
+                rust_boundaries = rust_boundary_evidence(&terminal_function, project)?;
+                if rust_boundaries.is_empty() {
+                    blockers.push(FlowBlocker::new(
+                        "rust-boundary-unmapped",
+                        format!(
+                            "terminal {:?} has no vendor-to-Rust replacement edge",
+                            terminal_function.symbol
+                        ),
+                        "add a reviewed disposition and production Rust component, then run project verification",
+                    ));
+                }
+            } else {
+                depth_limited = true;
+            }
+        } else {
+            blockers.push(FlowBlocker::new(
+                "terminal-without-handler",
+                format!(
+                    "event route {:?} has a terminal but no case handler",
+                    route.id
+                ),
+                "review the selector-specific case handler before its synchronous terminal",
+            ));
+        }
+    }
     if depth_limited {
         blockers.push(FlowBlocker::new(
             "max-depth",
@@ -515,9 +615,15 @@ pub(super) fn investigate(
         root: route.dispatcher.clone(),
         target_kind: Some("event-route".to_owned()),
         target: route
-            .case_handler
+            .terminal
             .as_ref()
-            .map(|handler| handler.function.clone()),
+            .map(|terminal| terminal.function.clone())
+            .or_else(|| {
+                route
+                    .case_handler
+                    .as_ref()
+                    .map(|handler| handler.function.clone())
+            }),
         route: Some(route.id.clone()),
         claims: FlowClaims {
             structural_navigation,
@@ -549,6 +655,23 @@ fn load_replay_proof(
     let input = std::fs::read_to_string(&binding.evidence)
         .map_err(|error| crate::Error::read("event replay evidence", &binding.evidence, error))?;
     let evidence = artifacts::parse_replay_evidence(&input)?;
+    let reviewed_manifest = std::fs::canonicalize(&binding.manifest).map_err(|error| {
+        crate::Error::read("reviewed replay manifest", &binding.manifest, error)
+    })?;
+    let executed_manifest = std::fs::canonicalize(&evidence.manifest.path).map_err(|error| {
+        crate::Error::read(
+            "executed replay manifest",
+            std::path::Path::new(&evidence.manifest.path),
+            error,
+        )
+    })?;
+    if reviewed_manifest != executed_manifest {
+        return Err(crate::Error::invalid(format!(
+            "replay evidence was executed from {}, but the reviewed route binds {}",
+            executed_manifest.display(),
+            reviewed_manifest.display()
+        )));
+    }
     let producer_index = evidence
         .phases
         .iter()
@@ -662,6 +785,8 @@ fn load_replay_proof(
         None
     };
 
+    let state = load_replay_state(binding, producer, consumer)?;
+
     Ok(Some(ReplayRouteProof {
         service_id,
         producer_symbol: producer.symbol.clone(),
@@ -669,7 +794,116 @@ fn load_replay_proof(
         enqueue_site,
         dequeue_site,
         handler_site,
+        state,
     }))
+}
+
+fn load_replay_state(
+    binding: &crate::function_workspace::ReviewedEventReplay,
+    producer: &artifacts::StoredReplayPhase,
+    consumer: &artifacts::StoredReplayPhase,
+) -> Result<ReplayStateProof> {
+    let producer_matches = producer
+        .memory_observations
+        .iter()
+        .filter(|observation| observation.id == binding.state_observation)
+        .collect::<Vec<_>>();
+    let consumer_matches = consumer
+        .memory_observations
+        .iter()
+        .filter(|observation| observation.id == binding.state_observation)
+        .collect::<Vec<_>>();
+    let [producer_state] = producer_matches.as_slice() else {
+        return Err(crate::Error::invalid(format!(
+            "replay producer phase {:?} has {} observations named {:?}, expected one",
+            binding.producer_phase,
+            producer_matches.len(),
+            binding.state_observation
+        )));
+    };
+    let [consumer_state] = consumer_matches.as_slice() else {
+        return Err(crate::Error::invalid(format!(
+            "replay consumer phase {:?} has {} observations named {:?}, expected one",
+            binding.consumer_phase,
+            consumer_matches.len(),
+            binding.state_observation
+        )));
+    };
+    if (
+        &producer_state.symbol,
+        producer_state.address,
+        producer_state.width,
+    ) != (
+        &consumer_state.symbol,
+        consumer_state.address,
+        consumer_state.width,
+    ) {
+        return Err(crate::Error::invalid(format!(
+            "replay state observation {:?} changes identity between producer and consumer",
+            binding.state_observation
+        )));
+    }
+    let mask = match producer_state.width {
+        8 => 0xff,
+        16 => 0xffff,
+        32 => u32::MAX,
+        width => {
+            return Err(crate::Error::invalid(format!(
+                "replay state observation {:?} has unsupported width {width}",
+                binding.state_observation
+            )));
+        }
+    };
+    match binding.state_model {
+        crate::function_workspace::ReviewedEventStateModel::CountedLatch => {
+            let incremented = producer_state.before.wrapping_add(1) & mask;
+            let decremented = consumer_state.before.wrapping_sub(1) & mask;
+            if producer_state.after != incremented
+                || consumer_state.before != producer_state.after
+                || consumer_state.after != decremented
+            {
+                return Err(crate::Error::invalid(format!(
+                    "counted latch {:?} must increment in producer and decrement from the same state in consumer; observed {:#x}->{:#x}, then {:#x}->{:#x}",
+                    binding.state_observation,
+                    producer_state.before,
+                    producer_state.after,
+                    consumer_state.before,
+                    consumer_state.after
+                )));
+            }
+        }
+    }
+    let producer_write = producer_state.writes.last().ok_or_else(|| {
+        crate::Error::invalid(format!(
+            "replay producer phase has no exact write for state observation {:?}",
+            binding.state_observation
+        ))
+    })?;
+    let consumer_write = consumer_state.writes.last().ok_or_else(|| {
+        crate::Error::invalid(format!(
+            "replay consumer phase has no exact write for state observation {:?}",
+            binding.state_observation
+        ))
+    })?;
+    if producer_write.value != producer_state.after || consumer_write.value != consumer_state.after
+    {
+        return Err(crate::Error::invalid(format!(
+            "replay state observation {:?} final write does not match its recorded after value",
+            binding.state_observation
+        )));
+    }
+    Ok(ReplayStateProof {
+        id: binding.state_observation.clone(),
+        symbol: producer_state.symbol.clone(),
+        address: producer_state.address,
+        width: producer_state.width,
+        producer_before: producer_state.before,
+        producer_after: producer_state.after,
+        producer_write_site: producer_write.site,
+        consumer_before: consumer_state.before,
+        consumer_after: consumer_state.after,
+        consumer_write_site: consumer_write.site,
+    })
 }
 
 fn identity_symbol(identity: &str) -> &str {
@@ -680,6 +914,32 @@ fn identity_symbol(identity: &str) -> &str {
         .split('@')
         .next()
         .unwrap_or(identity)
+}
+
+fn rust_boundary_evidence(
+    function: &artifacts::StoredFunction,
+    project: &ProjectSpec,
+) -> Result<Vec<FlowRustBoundaryEvidence>> {
+    Ok(crate::function_investigation::replacement_evidence(
+        &function.source,
+        &function.symbol,
+        project,
+    )?
+    .into_iter()
+    .map(|replacement| FlowRustBoundaryEvidence {
+        vendor_source: replacement.vendor_source,
+        vendor_symbol: replacement.vendor_symbol,
+        association: replacement.association.to_owned(),
+        reviewed: replacement.reviewed,
+        status: replacement.status,
+        production_component: replacement.production_component,
+        verification_probes: replacement.verification_probes,
+        report: replacement.report,
+        report_complete_project_run: replacement.report_complete_project_run,
+        report_passed: replacement.report_passed,
+        freshness_claim: replacement.freshness_claim,
+    })
+    .collect())
 }
 
 fn profile<'a>(
@@ -786,6 +1046,7 @@ mod tests {
     use super::*;
     use crate::function_workspace::{
         ReviewedEventCaseHandler, ReviewedEventDelivery, ReviewedEventReplay, ReviewedEventRoute,
+        ReviewedEventStateModel,
     };
 
     #[test]
@@ -798,10 +1059,10 @@ mod tests {
         let manifest = directory.join("route.toml");
         let artifact = directory.join("vendor.elf");
         let evidence = directory.join("route.json");
-        std::fs::write(&manifest, "schema = 1\n").unwrap();
+        std::fs::write(&manifest, "schema = 2\n# changed\n").unwrap();
         std::fs::write(&artifact, b"linked-image").unwrap();
         let document = serde_json::json!({
-            "schema_version": 1,
+            "schema_version": 2,
             "command": "execute replay",
             "manifest": {
                 "path": std::fs::canonicalize(&manifest).unwrap(),
@@ -827,6 +1088,15 @@ mod tests {
                         "depth_after": 1,
                         "woke_receiver": true,
                     }],
+                    "memory_observations": [{
+                        "id": "pending-count",
+                        "symbol": "pending_count",
+                        "address": 12288,
+                        "width": 8,
+                        "before": 0,
+                        "after": 1,
+                        "writes": [{ "site": 4100, "value": 1 }],
+                    }],
                 },
                 {
                     "name": "dispatch",
@@ -849,12 +1119,21 @@ mod tests {
                         "depth_before": 1,
                         "depth_after": 0,
                     }],
+                    "memory_observations": [{
+                        "id": "pending-count",
+                        "symbol": "pending_count",
+                        "address": 12288,
+                        "width": 8,
+                        "before": 1,
+                        "after": 0,
+                        "writes": [{ "site": 6150, "value": 0 }],
+                    }],
                 },
             ],
             "complete": true,
         });
         std::fs::write(&evidence, serde_json::to_vec(&document).unwrap()).unwrap();
-        let route = ReviewedEventRoute {
+        let mut route = ReviewedEventRoute {
             id: "route".to_owned(),
             profile: "linked".to_owned(),
             source: "vendor".to_owned(),
@@ -879,10 +1158,15 @@ mod tests {
                 source: "vendor".to_owned(),
                 function: "vendor::handler@0x2000".to_owned(),
             }),
+            terminal: None,
             replay: Some(ReviewedEventReplay {
+                manifest: manifest.clone(),
+                source: "fixture-replay".to_owned(),
                 evidence,
                 producer_phase: "post".to_owned(),
                 consumer_phase: "dispatch".to_owned(),
+                state_observation: "pending-count".to_owned(),
+                state_model: ReviewedEventStateModel::CountedLatch,
             }),
             rationale: "fixture".to_owned(),
         };
@@ -891,6 +1175,17 @@ mod tests {
         assert_eq!(proof.enqueue_site, 4096);
         assert_eq!(proof.dequeue_site, 6144);
         assert_eq!(proof.handler_site, Some(8192));
+
+        let other_manifest = directory.join("other-route.toml");
+        std::fs::write(&other_manifest, "schema = 2\n# changed\n").unwrap();
+        route.replay.as_mut().unwrap().manifest = other_manifest;
+        assert!(
+            load_replay_proof(&route)
+                .unwrap_err()
+                .to_string()
+                .contains("reviewed route binds")
+        );
+        route.replay.as_mut().unwrap().manifest = manifest.clone();
 
         std::fs::write(&manifest, "schema = 2\n").unwrap();
         assert!(

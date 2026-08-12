@@ -367,6 +367,7 @@ fn direct_call_graph_survives_reference_summary_inlining() {
         data_symbols: Vec::new(),
         data_objects: Vec::new(),
         projected_direct_semantics: BTreeMap::new(),
+        projected_origins: BTreeMap::new(),
     };
     let map = MmioMap {
         registers: Vec::new(),
@@ -431,6 +432,86 @@ fn direct_call_graph_survives_reference_summary_inlining() {
             ("vendor_parent", "symbol-prefix-root"),
         ]
     );
+}
+
+#[test]
+fn lossless_relocation_call_survives_an_earlier_semantic_stop() {
+    let parent = symbol("vendor_parent", 0x1000, vec![0x73, 0, 0, 0]);
+    let child = symbol("vendor_child", 0x2000, vec![0x67, 0x80, 0, 0]);
+    let child_id = 0x8000_0000;
+    let mut resolver = empty_resolver();
+    resolver.symbols = vec![parent.clone(), child.clone()];
+    resolver.symbols_by_address.insert(child_id, child);
+    resolver.relocated_calls.insert(
+        direct::StructuralCallSite::new(&parent, 0x1008),
+        ("vendor_child".to_owned(), Some(child_id)),
+    );
+    let identities = IrIdentityCatalog::new(&resolver, None);
+    let mut calls = BTreeSet::new();
+
+    add_lossless_relocation_calls(&mut calls, &parent, &resolver, &identities);
+
+    assert_eq!(calls.len(), 1);
+    let call = calls.first().unwrap();
+    assert_eq!(call.kind, "structural-relocation");
+    assert_eq!(call.target, "member.o:vendor_child");
+    assert_eq!(call.site, Some(0x1008));
+    assert_eq!(call.argument_shapes, 0);
+    assert!(call.guard_paths.is_none());
+}
+
+#[test]
+fn archive_call_projects_through_relaxed_instruction_correspondence() {
+    let runtime = artifact::ArtifactSymbolDefinition {
+        member: None,
+        name: "vendor_parent".to_owned(),
+        address: 0x1000,
+        bytes: vec![0xef, 0x00, 0x00, 0x00], // jal ra, 0
+        addresses_resolved: true,
+        memory_regions: Default::default(),
+        relocations: Vec::new(),
+    };
+    let origin = artifact::ArtifactSymbolDefinition {
+        member: Some("parent.o".to_owned()),
+        name: "vendor_parent".to_owned(),
+        address: 0,
+        bytes: vec![
+            0x97, 0x00, 0x00, 0x00, // auipc ra, 0
+            0xe7, 0x80, 0x00, 0x00, // jalr ra, 0(ra)
+        ],
+        addresses_resolved: false,
+        memory_regions: Default::default(),
+        relocations: vec![artifact::SymbolRelocation {
+            address: 0,
+            kind: artifact::RelocationKind::Call,
+            symbol: "vendor_child".to_owned(),
+            addend: 0,
+        }],
+    };
+    let child = artifact::ArtifactSymbolDefinition {
+        member: None,
+        name: "vendor_child".to_owned(),
+        address: 0x2000,
+        bytes: vec![0x67, 0x80, 0x00, 0x00],
+        addresses_resolved: true,
+        memory_regions: Default::default(),
+        relocations: Vec::new(),
+    };
+    let mut resolver = empty_resolver();
+    resolver.symbols = vec![runtime.clone(), child.clone()];
+    resolver.symbols_by_address.insert(0x1000, runtime.clone());
+    resolver.symbols_by_address.insert(0x2000, child);
+    resolver.register_projected_origin(&runtime, origin);
+    let identities = IrIdentityCatalog::new(&resolver, None);
+    let mut calls = BTreeSet::new();
+
+    add_projected_origin_calls(&mut calls, &runtime, &resolver, &identities).unwrap();
+
+    let call = calls.first().unwrap();
+    assert_eq!(call.kind, "structural-relocation");
+    assert_eq!(call.target, "vendor_child");
+    assert_eq!(call.site, Some(0x1000));
+    assert_eq!(call.argument_shapes, 0);
 }
 
 #[test]

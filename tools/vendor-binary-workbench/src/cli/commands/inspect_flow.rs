@@ -147,9 +147,9 @@ fn render_human(report: &FlowInvestigationReport) {
                 }
                 for argument in &step.arguments {
                     outputln!(
-                        "  #{} a{} {} => {} [{}]",
+                        "  #{} {} {} => {} [{}]",
                         step.ordinal + 1,
-                        argument.position,
+                        argument_location(argument.position),
                         argument.local,
                         argument.resolved,
                         argument.provenance
@@ -187,28 +187,44 @@ fn render_human(report: &FlowInvestigationReport) {
             "\n{}",
             crate::cli::output::heading("Vendor → Rust boundary")
         );
-        outputln!(
-            "{}",
-            crate::cli::table::render(
-                ["Vendor", "Status", "Production component", "Current proof"],
-                report.rust_boundaries.iter().map(|boundary| [
-                    format!("{}:{}", boundary.vendor_source, boundary.vendor_symbol),
-                    boundary.status.clone(),
-                    boundary
-                        .production_component
-                        .clone()
-                        .unwrap_or_else(|| "unassigned".to_owned()),
-                    if boundary.report_complete_project_run
-                        && boundary.report_passed
-                        && boundary.freshness_claim
-                    {
-                        "fresh".to_owned()
-                    } else {
-                        "not established".to_owned()
-                    },
-                ])
-            )
-        );
+        for (index, boundary) in report.rust_boundaries.iter().enumerate() {
+            if index != 0 {
+                outputln!("");
+            }
+            outputln!(
+                "{}. {}:{}",
+                index + 1,
+                boundary.vendor_source,
+                boundary.vendor_symbol
+            );
+            outputln!(
+                "   Mapping:    {} / {}",
+                if boundary.reviewed {
+                    "reviewed"
+                } else {
+                    "generated"
+                },
+                boundary.association
+            );
+            outputln!(
+                "   Production: {}",
+                boundary
+                    .production_component
+                    .as_deref()
+                    .unwrap_or("unassigned")
+            );
+            outputln!(
+                "   Verification: {}",
+                if boundary.report_complete_project_run
+                    && boundary.report_passed
+                    && boundary.freshness_claim
+                {
+                    "verified and fresh"
+                } else {
+                    "not established by this route"
+                }
+            );
+        }
     }
 
     if !report.blockers.is_empty() {
@@ -248,4 +264,25 @@ fn compact_identity(identity: &str) -> &str {
 
 const fn yes_no(value: bool) -> &'static str {
     if value { "yes" } else { "no" }
+}
+
+fn argument_location(position: usize) -> String {
+    if position < 8 {
+        format!("a{position}")
+    } else {
+        format!("stack[{}]", position - 8)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::argument_location;
+
+    #[test]
+    fn rv32_argument_locations_distinguish_registers_from_stack_arguments() {
+        assert_eq!(argument_location(0), "a0");
+        assert_eq!(argument_location(7), "a7");
+        assert_eq!(argument_location(8), "stack[0]");
+        assert_eq!(argument_location(15), "stack[7]");
+    }
 }

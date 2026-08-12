@@ -31,6 +31,29 @@ pub(crate) struct ReplayPhaseDocument {
     pub(crate) steps: u64,
     pub(crate) calls: Vec<ReplayCallDocument>,
     pub(crate) fifo_lifecycle: Vec<execution_model::FifoLifecycleEvent>,
+    pub(crate) memory_observations: Vec<ReplayMemoryObservationDocument>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub(crate) struct ReplayMemoryObservationDocument {
+    pub(crate) id: String,
+    pub(crate) symbol: String,
+    pub(crate) address: u32,
+    pub(crate) width: u8,
+    pub(crate) before: u32,
+    pub(crate) after: u32,
+    pub(crate) writes: Vec<ReplayMemoryWriteDocument>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub(crate) struct ReplayMemoryWriteDocument {
+    pub(crate) site: u32,
+    pub(crate) value: u32,
+}
+
+pub(crate) struct ReplayPhaseEvidence {
+    pub(crate) execution: execution::ExecutionPhaseResult,
+    pub(crate) memory_observations: Vec<ReplayMemoryObservationDocument>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -52,7 +75,7 @@ pub(crate) struct ReplayCallDocument {
 pub(crate) fn build_replay_evidence(
     manifest: &Path,
     artifact: &Path,
-    phases: Vec<execution::ExecutionPhaseResult>,
+    phases: Vec<ReplayPhaseEvidence>,
 ) -> Result<ReplayEvidenceDocument> {
     Ok(ReplayEvidenceDocument {
         schema_version: REPLAY_EVIDENCE.version,
@@ -62,16 +85,17 @@ pub(crate) fn build_replay_evidence(
         phases: phases
             .into_iter()
             .map(|phase| ReplayPhaseDocument {
-                name: phase.name,
-                symbol: phase.symbol,
-                completion: match phase.result.completion {
+                name: phase.execution.name,
+                symbol: phase.execution.symbol,
+                completion: match phase.execution.result.completion {
                     execution::ExecutionCompletion::Returned => ReplayCompletionDocument::Returned,
                     execution::ExecutionCompletion::GoalReached(goal) => {
                         ReplayCompletionDocument::GoalReached { goal }
                     }
                 },
-                steps: phase.result.steps,
+                steps: phase.execution.result.steps,
                 calls: phase
+                    .execution
                     .result
                     .ordered_calls
                     .into_iter()
@@ -81,7 +105,8 @@ pub(crate) fn build_replay_evidence(
                         arguments: call.arguments,
                     })
                     .collect(),
-                fifo_lifecycle: phase.result.fifo_lifecycle,
+                fifo_lifecycle: phase.execution.result.fifo_lifecycle,
+                memory_observations: phase.memory_observations,
             })
             .collect(),
         complete: true,

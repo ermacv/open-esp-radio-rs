@@ -169,6 +169,17 @@ pub fn inspect_function_body_at(
     build_body(artifact, definition, labels)
 }
 
+/// Decode a definition already owned by an analysis catalog without reopening
+/// its container. Local labels are intentionally absent; instruction,
+/// relocation, byte-accounting and CFG facts remain complete.
+pub fn inspect_function_definition(definition: &ArtifactSymbolDefinition) -> Result<FunctionBody> {
+    build_body(
+        Path::new("<analysis-catalog>"),
+        definition.clone(),
+        Vec::new(),
+    )
+}
+
 /// Map exact instruction addresses to conservative basic-block identifiers
 /// without requiring a second artifact lookup.
 pub fn basic_block_ids_for_sites(

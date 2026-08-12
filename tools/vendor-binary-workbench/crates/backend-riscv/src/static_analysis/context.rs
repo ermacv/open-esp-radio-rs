@@ -25,6 +25,14 @@ impl StructuralCallSite {
             address,
         }
     }
+
+    pub fn belongs_to(&self, owner: &artifact::ArtifactSymbolDefinition) -> bool {
+        self.member == owner.member && self.symbol == owner.name
+    }
+
+    pub const fn address(&self) -> u32 {
+        self.address
+    }
 }
 
 pub type StructuralRelocatedCalls = BTreeMap<StructuralCallSite, (String, Option<u32>)>;

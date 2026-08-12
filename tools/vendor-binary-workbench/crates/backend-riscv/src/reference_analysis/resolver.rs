@@ -26,6 +26,10 @@ pub struct ReferenceResolver {
     /// digest validation; the backend only stores the resulting typed fact.
     pub projected_direct_semantics:
         BTreeMap<ReferenceSymbolKey, &'static DirectSemanticFunctionSpec>,
+    /// Exact relocatable definitions associated with authoritative linked
+    /// functions by the project layer. Kept separate from linker-selected
+    /// symbols: these provide lossless structural relocation evidence only.
+    pub projected_origins: BTreeMap<ReferenceSymbolKey, artifact::ArtifactSymbolDefinition>,
 }
 
 fn symbol_key(symbol: &artifact::ArtifactSymbolDefinition) -> ReferenceSymbolKey {
@@ -68,6 +72,21 @@ impl ReferenceResolver {
         self.projected_direct_semantics
             .get(&symbol_key(symbol))
             .copied()
+    }
+
+    pub fn register_projected_origin(
+        &mut self,
+        linked: &artifact::ArtifactSymbolDefinition,
+        origin: artifact::ArtifactSymbolDefinition,
+    ) {
+        self.projected_origins.insert(symbol_key(linked), origin);
+    }
+
+    pub fn projected_origin(
+        &self,
+        linked: &artifact::ArtifactSymbolDefinition,
+    ) -> Option<&artifact::ArtifactSymbolDefinition> {
+        self.projected_origins.get(&symbol_key(linked))
     }
     pub fn load(
         artifact: &Path,
@@ -421,6 +440,7 @@ impl ReferenceResolver {
             data_symbols,
             data_objects,
             projected_direct_semantics: BTreeMap::new(),
+            projected_origins: BTreeMap::new(),
         })
     }
 
@@ -550,6 +570,7 @@ mod tests {
             data_symbols,
             data_objects: Vec::new(),
             projected_direct_semantics: BTreeMap::new(),
+            projected_origins: BTreeMap::new(),
         }
     }
 

@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn schema_v7_parses_reviewed_event_delivery_and_case_handler() {
+fn schema_v8_parses_reviewed_event_delivery_and_case_handler() {
     let directory = std::env::temp_dir().join(format!(
         "vendor-workbench-function-event-route-{}",
         std::process::id()
@@ -10,7 +10,7 @@ fn schema_v7_parses_reviewed_event_delivery_and_case_handler() {
     let pack_path = directory.join("functions.toml");
     std::fs::write(
         &pack_path,
-        r#"schema = 7
+        r#"schema = 8
 id = "fixture"
 
 [[event-routes]]
@@ -34,6 +34,9 @@ delivery-encoding = "little-endian"
 case-handler-profile = "linked"
 case-handler-source = "vendor"
 case-handler-function = "vendor::handle_rx"
+terminal-profile = "linked"
+terminal-source = "vendor"
+terminal-function = "vendor::recycle_rx"
 rationale = "Reviewed scheduler table maps signal 25 to the worker entry."
 "#,
     )
@@ -45,6 +48,10 @@ rationale = "Reviewed scheduler table maps signal 25 to the worker entry."
     assert_eq!(
         pack.event_routes[0].case_handler.as_ref().unwrap().function,
         "vendor::handle_rx"
+    );
+    assert_eq!(
+        pack.event_routes[0].terminal.as_ref().unwrap().function,
+        "vendor::recycle_rx"
     );
     assert!(pack.event_routes[0].replay.is_none());
     std::fs::remove_dir_all(directory).unwrap();
@@ -316,7 +323,7 @@ fn reviewed_names_require_matching_digest_and_complete_explicit_claims() {
     let pack = directory.join("functions.toml");
     write_ir(&report);
     let reports = vec![("rom-phy".to_owned(), report)];
-    let reviewed = r#"schema = 7
+    let reviewed = r#"schema = 8
 id = "fixture"
 
 [[inputs]]
@@ -520,7 +527,7 @@ fn ignored_context_covers_its_observed_fields_without_claiming_names() {
     let pack = directory.join("functions.toml");
     write_ir(&report);
     let reports = vec![("rom-phy".to_owned(), report)];
-    let ignored = r#"schema = 7
+    let ignored = r#"schema = 8
 id = "fixture"
 
 [[inputs]]

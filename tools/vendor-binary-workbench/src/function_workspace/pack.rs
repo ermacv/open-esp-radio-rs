@@ -88,15 +88,25 @@ pub(crate) struct ReviewedEventRoute {
     pub(crate) consumer_entry: String,
     pub(crate) delivery: ReviewedEventDelivery,
     pub(crate) case_handler: Option<ReviewedEventCaseHandler>,
+    pub(crate) terminal: Option<ReviewedEventTerminal>,
     pub(crate) replay: Option<ReviewedEventReplay>,
     pub(crate) rationale: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct ReviewedEventReplay {
+    pub(crate) manifest: PathBuf,
+    pub(crate) source: String,
     pub(crate) evidence: PathBuf,
     pub(crate) producer_phase: String,
     pub(crate) consumer_phase: String,
+    pub(crate) state_observation: String,
+    pub(crate) state_model: ReviewedEventStateModel,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ReviewedEventStateModel {
+    CountedLatch,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -110,6 +120,13 @@ pub(crate) struct ReviewedEventDelivery {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct ReviewedEventCaseHandler {
+    pub(crate) profile: String,
+    pub(crate) source: String,
+    pub(crate) function: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ReviewedEventTerminal {
     pub(crate) profile: String,
     pub(crate) source: String,
     pub(crate) function: String,
@@ -273,12 +290,12 @@ impl FunctionPack {
             )
         })?;
         let document: DocumentMut = source_document.clone().into_mut();
-        if document.get("schema").and_then(Item::as_integer) != Some(7) {
+        if document.get("schema").and_then(Item::as_integer) != Some(8) {
             return Err(crate::error::WorkbenchError::manifest_source(
                 "function pack",
                 path,
                 &input,
-                "requires schema = 7",
+                "requires schema = 8",
                 source_document.get("schema").and_then(Item::span),
             ));
         }
@@ -288,6 +305,9 @@ impl FunctionPack {
         let base = path.parent().unwrap_or_else(|| Path::new("."));
         for route in &mut value.event_routes {
             if let Some(replay) = &mut route.replay {
+                if replay.manifest.is_relative() {
+                    replay.manifest = base.join(&replay.manifest);
+                }
                 if replay.evidence.is_relative() {
                     replay.evidence = base.join(&replay.evidence);
                 }

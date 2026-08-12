@@ -121,6 +121,7 @@ impl Machine<'_> {
                 u32::from(self.normal_byte(address.wrapping_add(offset as u32))?) << (offset * 8);
         }
         self.timeline.push(ExecutionTimelineEvent::RamRead {
+            site: self.pc,
             width,
             address,
             value,
@@ -209,6 +210,7 @@ impl Machine<'_> {
                 .insert(byte_address, (value >> (offset * 8)) as u8);
         }
         self.timeline.push(ExecutionTimelineEvent::RamWrite {
+            site: self.pc,
             width,
             address,
             value: value & MmioValue::mask(width),

@@ -15,8 +15,8 @@ part of their contract; consumers must parse the typed structure.
 | Symbol inventory | 4 | `symbols inventory` | `artifacts/symbol_inventory.rs`, `artifacts/symbol_inventory/read.rs` |
 | MMIO discovery facts | 5 | `mmio discover` | `artifacts/mmio_facts.rs`, `artifacts/mmio_facts_read.rs` |
 | Interface discovery facts | 5 | `interfaces discover` | `artifacts/interface_facts.rs`, `artifacts/interface_facts_read.rs` |
-| Linked IR | 49 | `ir export` | `artifacts/linked_ir_document.rs`, `artifacts/linked_ir_read.rs` |
-| Concrete replay evidence | 1 | `execute replay` | `artifacts/replay_evidence.rs`, `artifacts/replay_evidence_read.rs` |
+| Linked IR | 50 | `ir export` | `artifacts/linked_ir_document.rs`, `artifacts/linked_ir_read.rs` |
+| Concrete replay evidence | 2 | `execute replay` | `artifacts/replay_evidence.rs`, `artifacts/replay_evidence_read.rs` |
 | Review scopes | 7 | `project analyze` | `review_scopes.rs`, `review_scopes/model.rs` |
 | Verification report | 9 | `verify source` / `verify inventory` | `verification/report.rs` |
 | Project verification report | 9 | `project verify` | `verification/project_report.rs` |
@@ -26,16 +26,20 @@ currency therefore does not depend on the process working directory used by a
 later `project status` or `project check`; generated reports remain local
 project state and are regenerated when the checkout moves.
 
-MMIO schema 5, interface schema 5 and linked-IR schema 49 carry
+MMIO schema 5, interface schema 5 and linked-IR schema 50 carry
 reviewed-code-boundary provenance. MMIO and interface artifacts record the accepted boundary count per
 input. Linked IR retains the complete reviewed physical ranges so downstream
 reviewers can distinguish ordinary ELF symbol roots from promoted gap roots.
-Linked-IR schema 49 also carries symbol-bounded static data objects,
+Linked-IR schema 50 also carries symbol-bounded static data objects,
 uninterpreted initializer bytes, symbolic data relocations, function xrefs and
 bounded indexed-dispatch edges. Zero-sized compiler anchors stop at the next
 symbol rather than duplicating the rest of their section. Relocatable archive
 members retain section-relative offsets; these are evidence identities, never
 invented runtime addresses or nominal source types.
+Schema 50 adds `structural-relocation` call edges for direct-call relocations
+that occur after a semantic blocker. They keep the complete body navigable and
+may participate in bounded structural graph searches, but carry no recovered
+arguments/guards and never establish path feasibility or execution.
 MMIO schema 5 adds exact instruction PCs for every direct read/write finding;
 the locations remain best-effort evidence and do not strengthen the artifact's
 explicit `completeness_claim = false` contract.
@@ -66,12 +70,15 @@ and unversioned additions fail closed instead of being silently ignored.
 Contract tests build canonical fixtures with the producer wherever practical,
 then exercise the same strict reader used by downstream workspaces.
 
-Concrete replay schema 1 records canonical manifest and linked-ELF paths with
-their SHA-256 identities, ordered phase completion, calls and FIFO lifecycle.
+Concrete replay schema 2 records canonical manifest and linked-ELF paths with
+their SHA-256 identities, ordered phase completion, calls, FIFO lifecycle and
+named RAM state transitions with exact write PCs. Replay-manifest expectations
+are fail-closed execution gates; only successful evidence is published.
 The strict reader rejects stale inputs, incomplete execution and unknown
-fields. A reviewed event route may name producer and consumer phases in this
-artifact; only an exact enqueue/dequeue of its selector through the same FIFO,
-followed by the reviewed handler goal, grants the `event_delivery` claim.
+fields. A reviewed event route names producer and consumer phases plus a state
+observation/model. Only an exact enqueue/dequeue of its selector through the
+same FIFO, a valid counted-latch increment/decrement and the reviewed handler
+goal grant the `event_delivery` claim.
 The navigation join consumes these projections directly; it has no shortened
 copies of the symbol, interface or linked-IR envelopes.
 

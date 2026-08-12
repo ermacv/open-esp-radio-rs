@@ -90,6 +90,126 @@ fn calls_for_trace(
     compact_calls(calls)
 }
 
+fn add_lossless_relocation_calls(
+    calls: &mut BTreeSet<LinkedCall>,
+    owner: &artifact::ArtifactSymbolDefinition,
+    resolver: &ReferenceResolver,
+    identities: &IrIdentityCatalog,
+) {
+    let existing_sites = calls
+        .iter()
+        .filter_map(|call| call.site)
+        .collect::<BTreeSet<_>>();
+    for (site, (symbol, target)) in resolver
+        .relocated_calls
+        .iter()
+        .filter(|(site, _)| site.belongs_to(owner) && !existing_sites.contains(&site.address()))
+    {
+        calls.insert(LinkedCall {
+            kind: "structural-relocation",
+            target: target.map_or_else(|| symbol.clone(), |target| identities.target(target)),
+            site: Some(site.address()),
+            tail: false,
+            result_modeled: false,
+            execution_model: None,
+            semantics: Some(
+                "lossless direct-call relocation; structural reachability only".to_owned(),
+            ),
+            semantic_operation: None,
+            semantic_contract: None,
+            replacement_hint: None,
+            project_symbol: target.is_none().then(|| symbol.clone()),
+            project_candidates: Vec::new(),
+            trampoline: None,
+            argument_shapes: 0,
+            arguments: Vec::new(),
+            argument_bindings: Vec::new(),
+            typed_arguments: Vec::new(),
+            guard_paths: None,
+        });
+    }
+}
+
+fn add_projected_origin_calls(
+    calls: &mut BTreeSet<LinkedCall>,
+    owner: &artifact::ArtifactSymbolDefinition,
+    resolver: &ReferenceResolver,
+    identities: &IrIdentityCatalog,
+) -> crate::Result<()> {
+    let Some(origin) = resolver.projected_origin(owner) else {
+        return Ok(());
+    };
+    let origin_body = artifact::inspect_function_definition(origin)?;
+    let runtime_body = artifact::inspect_function_definition(owner)?;
+    let correspondence =
+        crate::function_investigation::correspondence::origin_instruction_correspondence(
+            &origin_body,
+            &runtime_body,
+        );
+    let mut existing_sites = calls
+        .iter()
+        .filter_map(|call| call.site)
+        .collect::<BTreeSet<_>>();
+    for instruction in &origin_body.instructions {
+        for relocation in instruction
+            .relocations
+            .iter()
+            .filter(|relocation| matches!(relocation.kind.as_str(), "call" | "call-plt"))
+        {
+            let sites = correspondence
+                .iter()
+                .filter(|item| {
+                    item.origin_offsets.contains(&instruction.offset)
+                        && item.relocation_symbols.contains(&relocation.symbol)
+                })
+                .filter_map(|item| u32::try_from(item.runtime_address).ok())
+                .collect::<BTreeSet<_>>();
+            if sites.len() != 1 {
+                continue;
+            }
+            let site = *sites.first().expect("one correspondence site");
+            if !existing_sites.insert(site) {
+                continue;
+            }
+            let targets = resolver
+                .symbols
+                .iter()
+                .filter(|candidate| {
+                    candidate.addresses_resolved && candidate.name == relocation.symbol
+                })
+                .collect::<Vec<_>>();
+            let target = match targets.as_slice() {
+                [target] => identities.symbol(target),
+                _ => relocation.symbol.clone(),
+            };
+            calls.insert(LinkedCall {
+                kind: "structural-relocation",
+                target,
+                site: Some(site),
+                tail: false,
+                result_modeled: false,
+                execution_model: None,
+                semantics: Some(
+                    "archive direct-call relocation projected through conservative instruction correspondence; structural reachability only"
+                        .to_owned(),
+                ),
+                semantic_operation: None,
+                semantic_contract: None,
+                replacement_hint: None,
+                project_symbol: (targets.len() != 1).then(|| relocation.symbol.clone()),
+                project_candidates: Vec::new(),
+                trampoline: None,
+                argument_shapes: 0,
+                arguments: Vec::new(),
+                argument_bindings: Vec::new(),
+                typed_arguments: Vec::new(),
+                guard_paths: None,
+            });
+        }
+    }
+    Ok(())
+}
+
 fn indexed_dispatch_calls(
     owner: &artifact::ArtifactSymbolDefinition,
     resolver: &ReferenceResolver,
@@ -374,12 +494,23 @@ fn build_linked_functions_for_roots(
                 ));
             }
         }
+        add_lossless_relocation_calls(&mut direct_calls, symbol, resolver, &identities);
+        if !blockers.is_empty()
+            && let Err(error) =
+                add_projected_origin_calls(&mut direct_calls, symbol, resolver, &identities)
+        {
+            blockers.insert(format!(
+                "archive-origin call projection failed for {function_identity}: {error}"
+            ));
+        }
         let direct_mmio_predicates = direct_mmio_predicates.into_iter().collect::<Vec<_>>();
         if include_reachable {
-            for call in direct_calls
-                .iter()
-                .filter(|call| matches!(call.kind, "internal" | "indexed-dispatch"))
-            {
+            for call in direct_calls.iter().filter(|call| {
+                matches!(
+                    call.kind,
+                    "internal" | "indexed-dispatch" | "structural-relocation"
+                )
+            }) {
                 let Some(callee) = identities.selectable_symbol(&call.target) else {
                     continue;
                 };

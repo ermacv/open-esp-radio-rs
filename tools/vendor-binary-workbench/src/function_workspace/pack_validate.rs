@@ -205,16 +205,41 @@ fn validate_event_routes(
                 ),
             ));
         }
+        if route.terminal.is_some() && route.case_handler.is_none() {
+            return Err(ValidationError::pack(
+                "event-routes",
+                format!(
+                    "event route {:?} terminal requires a case handler",
+                    route.id
+                ),
+            ));
+        }
+        if let Some(terminal) = &route.terminal
+            && facts
+                .function(&terminal.profile, &terminal.source, &terminal.function)
+                .is_none()
+        {
+            return Err(ValidationError::pack(
+                "event-routes",
+                format!(
+                    "event route {:?} refers to an unknown terminal function",
+                    route.id
+                ),
+            ));
+        }
         if let Some(replay) = &route.replay
-            && (replay.evidence.as_os_str().is_empty()
+            && (replay.manifest.as_os_str().is_empty()
+                || replay.source.trim().is_empty()
+                || replay.evidence.as_os_str().is_empty()
                 || replay.producer_phase.trim().is_empty()
                 || replay.consumer_phase.trim().is_empty()
+                || replay.state_observation.trim().is_empty()
                 || replay.producer_phase == replay.consumer_phase)
         {
             return Err(ValidationError::pack(
                 "event-routes",
                 format!(
-                    "event route {:?} replay requires a path and two distinct non-empty phase names",
+                    "event route {:?} replay requires manifest/evidence paths, a source, two distinct phase names, and a state observation",
                     route.id
                 ),
             ));

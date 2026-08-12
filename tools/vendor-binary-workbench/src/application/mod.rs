@@ -2,6 +2,7 @@
 
 mod comparison;
 mod error;
+pub(crate) mod event_replay;
 pub(crate) mod generated_file;
 mod model;
 mod operations;

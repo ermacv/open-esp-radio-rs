@@ -1,6 +1,6 @@
 # Concrete lifecycle evidence for the reviewed rx-success-to-pp-task route.
 # The replay link unit defines storage, while this scenario owns all values.
-schema = 1
+schema = 2
 
 [[fifo-services]]
 id = "pp-events"
@@ -29,6 +29,35 @@ value = 0x3fff2000
 symbol = "g_intr_lock_mux"
 width = 32
 value = 0x3fff3000
+
+[[phases.observe-memory]]
+id = "signal-25-count"
+symbol = "pp_sig_cnt"
+offset = 0x19
+width = 8
+
+[[phases.expectations]]
+kind = "memory"
+observation = "signal-25-count"
+before = 0
+after = 1
+
+[[phases.expectations]]
+kind = "fifo-enqueue"
+service-id = "pp-events"
+value = 0x19
+depth-before = 0
+depth-after = 1
+woke-receiver = true
+
+[[phases.expectations]]
+kind = "call"
+symbol = "task_yield_from_isr"
+count = 1
+argument0 = 1
+
+[[phases.expectations]]
+kind = "no-delay"
 
 [[phases.tables]]
 layout-id = "esp32s31-radio-rev0::wifi-osi-v9"
@@ -66,6 +95,34 @@ name = "dispatch-signal-25"
 symbol = "ppTask"
 goal = { kind = "reach-symbol", symbol = "wdevProcessRxSucDataAll" }
 max-steps = 256
+
+[[phases.observe-memory]]
+id = "signal-25-count"
+symbol = "pp_sig_cnt"
+offset = 0x19
+width = 8
+
+[[phases.expectations]]
+kind = "memory"
+observation = "signal-25-count"
+before = 1
+after = 0
+
+[[phases.expectations]]
+kind = "fifo-dequeue"
+service-id = "pp-events"
+value = 0x19
+depth-before = 1
+depth-after = 0
+
+[[phases.expectations]]
+kind = "call"
+symbol = "wdevProcessRxSucDataAll"
+count = 1
+argument0 = 0x19
+
+[[phases.expectations]]
+kind = "no-delay"
 
 [[phases.tables]]
 layout-id = "esp32s31-radio-rev0::wifi-osi-v9"

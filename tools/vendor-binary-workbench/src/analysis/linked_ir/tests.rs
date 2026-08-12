@@ -25,6 +25,7 @@ fn empty_resolver() -> ReferenceResolver {
         data_symbols: Vec::new(),
         data_objects: Vec::new(),
         projected_direct_semantics: BTreeMap::new(),
+        projected_origins: BTreeMap::new(),
     }
 }
 

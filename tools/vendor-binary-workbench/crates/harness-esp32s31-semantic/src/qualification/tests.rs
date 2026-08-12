@@ -122,6 +122,7 @@ fn state_footprints_reject_unknown_offsets_and_access_directions() {
     let state_base = 0x1000;
     let unknown =
         execution_result_with_timeline(vec![execution::ExecutionTimelineEvent::RamRead {
+            site: 0x800,
             width: 8,
             address: state_base + 0x123,
             value: 0,
@@ -131,6 +132,7 @@ fn state_footprints_reject_unknown_offsets_and_access_directions() {
 
     let wrong_direction =
         execution_result_with_timeline(vec![execution::ExecutionTimelineEvent::RamWrite {
+            site: 0x804,
             width: 8,
             address: state_base + 0x007,
             value: 0,

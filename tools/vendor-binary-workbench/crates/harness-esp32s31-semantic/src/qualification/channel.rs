@@ -132,6 +132,7 @@ fn vendor_tx_gain_image(
             width,
             address,
             value,
+            ..
         } = event
         {
             for offset in 0..usize::from(*width / 8) {

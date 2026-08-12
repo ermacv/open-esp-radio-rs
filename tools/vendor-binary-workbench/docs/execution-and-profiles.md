@@ -122,6 +122,12 @@ dequeue and `pp_sig_cnt[0x19]` increment/decrement lifecycle. A goal bounds a
 long-lived task; it is not a function return and therefore cannot be used with
 return-value comparison.
 
+Replay manifests use schema 2. Each phase may declare `observe-memory` ranges
+by linked symbol and fail-closed `expectations` for memory transitions, FIFO
+events, call counts/argument zero, and the absence of delay effects. Published
+evidence retains the resolved address and exact write PC; a reviewed event
+route may then bind the same observation to the generic `counted-latch` model.
+
 `--output` persists strict evidence rather than a presentation dump. It binds
 the replay to the exact manifest and linked ELF digests. The reviewed event
 route names its producer and consumer phases, so a later `inspect flow

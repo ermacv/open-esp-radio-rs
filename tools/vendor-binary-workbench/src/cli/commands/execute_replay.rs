@@ -1,55 +1,7 @@
 //! Ordered concrete replay with persistent RAM and stateful external services.
 
 use super::super::*;
-use crate::interfaces::InterfaceWorkspace;
-use serde::{Deserialize, Serialize};
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields, rename_all = "kebab-case")]
-struct ReplayManifest {
-    schema: u32,
-    #[serde(default)]
-    fifo_services: Vec<execution_model::FifoServiceInstance>,
-    phases: Vec<ReplayPhase>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields, rename_all = "kebab-case")]
-struct ReplayPhase {
-    name: String,
-    symbol: String,
-    #[serde(default)]
-    arguments: Vec<u32>,
-    #[serde(default)]
-    memory: Vec<ReplayMemorySeed>,
-    #[serde(default)]
-    tables: Vec<execution_model::TableInstance>,
-    #[serde(default)]
-    fifo_bindings: Vec<execution_model::FifoServiceBinding>,
-    #[serde(default)]
-    calls: Vec<ReplayCall>,
-    #[serde(default)]
-    goal: execution_model::ExecutionGoal,
-    #[serde(default)]
-    max_steps: u64,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields, rename_all = "kebab-case")]
-struct ReplayMemorySeed {
-    symbol: String,
-    #[serde(default)]
-    offset: i32,
-    width: u8,
-    value: u32,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields, rename_all = "kebab-case")]
-struct ReplayCall {
-    symbol: String,
-    returns: Vec<u32>,
-}
+use serde::Serialize;
 
 #[derive(Serialize)]
 struct CommandDocument<'a> {
@@ -67,81 +19,26 @@ pub(super) fn run(
         .manifest
         .ok_or("execute replay requires --manifest")
         .map_err(crate::Error::invalid)?;
-    let input = std::fs::read_to_string(&manifest_path)
-        .map_err(|error| crate::Error::read("replay manifest", &manifest_path, error))?;
-    let manifest: ReplayManifest = toml_edit::de::from_str(&input).map_err(|error| {
-        crate::Error::invalid(format!(
-            "invalid replay manifest {}: {error}",
-            manifest_path.display()
-        ))
-    })?;
-    if manifest.schema != 1 {
-        return Err(crate::Error::invalid(format!(
-            "replay manifest {} requires schema = 1",
-            manifest_path.display()
-        )));
-    }
     let artifact = arguments
         .artifact
         .ok_or("execute replay requires --artifact or a matching --source run-spec input")
         .map_err(crate::Error::invalid)?;
-    let mut image = execution::ExecutableImage::load(&artifact)?;
-    if let Some(companion) = arguments.companion.as_deref() {
-        image.add_companion(companion)?;
-    }
-    validate_tables(project, target, &manifest)?;
-
-    let mut services = Some(manifest.fifo_services);
-    let mut phases = Vec::with_capacity(manifest.phases.len());
-    for phase in manifest.phases {
-        let mut scenario = execution::Scenario {
-            arguments: phase.arguments,
-            table_instances: phase.tables,
-            fifo_services: services.take().unwrap_or_default(),
-            fifo_bindings: phase.fifo_bindings,
-            goal: phase.goal,
-            max_steps: phase.max_steps,
-            ..execution::Scenario::default()
-        };
-        for seed in phase.memory {
-            seed_memory(&image, &mut scenario, &seed)?;
-        }
-        for call in phase.calls {
-            if call.symbol.trim().is_empty() || call.returns.is_empty() {
-                return Err(crate::Error::invalid(format!(
-                    "replay phase {:?} calls require a symbol and at least one return value",
-                    phase.name
-                )));
-            }
-            scenario.call_responses.insert(
-                call.symbol,
-                call.returns
-                    .into_iter()
-                    .map(execution::ModeledCallResponse::scalar)
-                    .collect(),
-            );
-        }
-        phases.push(execution::ExecutionPhase {
-            name: phase.name,
-            symbol: phase.symbol,
-            scenario,
-        });
-    }
-
-    let mut session = execution::ExecutionSession::default();
-    let results = session.execute_phases(&image, svd, phases)?;
-    let evidence = crate::artifacts::build_replay_evidence(&manifest_path, &artifact, results)?;
+    let evidence = crate::application::event_replay::execute(
+        &crate::application::event_replay::EventReplayRequest {
+            manifest: manifest_path,
+            artifact,
+            companion: arguments.companion,
+        },
+        svd,
+        target,
+        project,
+    )?;
     let publication = arguments
         .output
         .as_deref()
         .map(|path| crate::cli::output::Publication::new(path, "written"));
     if let Some(path) = arguments.output.as_deref() {
-        crate::application::generated_file::write_or_check(
-            path,
-            &crate::artifacts::render_replay_evidence(&evidence)?,
-            false,
-            "execution replay evidence",
-        )?;
+        crate::application::event_replay::publish(&evidence, path, false)?;
     }
     let document = CommandDocument {
         artifact: &evidence,
@@ -149,74 +46,6 @@ pub(super) fn run(
     };
     crate::cli::output::render_report(&document, || render_human(&evidence, publication.as_ref()));
     Ok(true)
-}
-
-fn seed_memory(
-    image: &execution::ExecutableImage,
-    scenario: &mut execution::Scenario,
-    seed: &ReplayMemorySeed,
-) -> Result<()> {
-    if !matches!(seed.width, 8 | 16 | 32) {
-        return Err(crate::Error::invalid(format!(
-            "memory seed {} width must be 8, 16, or 32",
-            seed.symbol
-        )));
-    }
-    let base = image.symbol_address(&seed.symbol).ok_or_else(|| {
-        crate::Error::invalid(format!(
-            "memory seed refers to missing linked symbol {}",
-            seed.symbol
-        ))
-    })?;
-    let address = base.wrapping_add(seed.offset as u32);
-    let bytes = usize::from(seed.width / 8);
-    for (offset, byte) in seed.value.to_le_bytes().into_iter().take(bytes).enumerate() {
-        scenario
-            .memory_initial
-            .insert(address + offset as u32, byte);
-    }
-    Ok(())
-}
-
-fn validate_tables(
-    project: Option<&ProjectSpec>,
-    target: &TargetSpec,
-    manifest: &ReplayManifest,
-) -> Result<()> {
-    let tables = manifest
-        .phases
-        .iter()
-        .flat_map(|phase| phase.tables.iter())
-        .collect::<Vec<_>>();
-    if tables.is_empty() {
-        return Ok(());
-    }
-    let project = project.ok_or_else(|| {
-        crate::Error::invalid(
-            "runtime table replay requires --project and a reviewed interface pack",
-        )
-    })?;
-    let paths = project.interfaces.as_ref().ok_or_else(|| {
-        crate::Error::invalid("runtime table replay requires configured [interfaces]")
-    })?;
-    let pack = paths.pack.as_ref().ok_or_else(|| {
-        crate::Error::invalid("runtime table replay requires a reviewed interface pack")
-    })?;
-    let harness = target
-        .harness
-        .as_deref()
-        .and_then(|harness| crate::harnesses::contracts(harness).ok());
-    let workspace = InterfaceWorkspace::load(
-        &paths.facts,
-        pack,
-        &paths.semantic_catalogs,
-        target.calling_convention.label(),
-        harness,
-    )?;
-    for table in tables {
-        workspace.validate_table_instance(table)?;
-    }
-    Ok(())
 }
 
 fn render_human(
@@ -233,7 +62,15 @@ fn render_human(
     outputln!(
         "\n{}",
         crate::cli::table::render(
-            ["Phase", "Symbol", "Completion", "Steps", "Calls", "FIFO"],
+            [
+                "Phase",
+                "Symbol",
+                "Completion",
+                "Steps",
+                "Calls",
+                "FIFO",
+                "State"
+            ],
             document.phases.iter().map(|phase| [
                 phase.name.clone(),
                 phase.symbol.clone(),
@@ -241,6 +78,7 @@ fn render_human(
                 phase.steps.to_string(),
                 phase.calls.len().to_string(),
                 phase.fifo_lifecycle.len().to_string(),
+                phase.memory_observations.len().to_string(),
             ])
         )
     );
@@ -252,6 +90,29 @@ fn render_human(
             );
             for event in &phase.fifo_lifecycle {
                 outputln!("  {}", fifo_event_label(event));
+            }
+        }
+        if !phase.memory_observations.is_empty() {
+            outputln!(
+                "\n{}",
+                crate::cli::output::heading(format!("{} · state", phase.name))
+            );
+            for observation in &phase.memory_observations {
+                let sites = observation
+                    .writes
+                    .iter()
+                    .map(|write| format!("{:#010x}", write.site))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                outputln!(
+                    "  {} {} @ {:#010x}: {:#x} → {:#x}  writes=[{}]",
+                    observation.id,
+                    observation.symbol,
+                    observation.address,
+                    observation.before,
+                    observation.after,
+                    sites
+                );
             }
         }
         if crate::cli::output::details() && !phase.calls.is_empty() {

@@ -1,4 +1,4 @@
-//! Complete owned DTO for linked-IR schema v49.
+//! Complete owned DTO for linked-IR schema v50.
 
 #![allow(
     dead_code,

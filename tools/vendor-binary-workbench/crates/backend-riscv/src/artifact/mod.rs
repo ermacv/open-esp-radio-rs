@@ -26,6 +26,7 @@ pub use function_body::{
     FunctionBasicBlock, FunctionBlockSuccessor, FunctionBody, FunctionControlFlow,
     FunctionControlFlowKind, FunctionInstruction, FunctionInstructionRelocation, FunctionLabel,
     basic_block_ids_for_sites, inspect_function_body, inspect_function_body_at,
+    inspect_function_definition,
 };
 pub use indexed_dispatch::recover_indexed_dispatches;
 pub use inventory::inspect_artifact;

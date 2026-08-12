@@ -374,6 +374,7 @@ fn reviewed_wifi_osi_context() -> StructuralPointerContext {
         data_symbols: Vec::new(),
         data_objects: Vec::new(),
         projected_direct_semantics: BTreeMap::new(),
+        projected_origins: BTreeMap::new(),
     };
     linked_ir_export::register_reviewed_external_calls(&mut resolver, &interfaces, "archive", &[]);
     let contract = interfaces

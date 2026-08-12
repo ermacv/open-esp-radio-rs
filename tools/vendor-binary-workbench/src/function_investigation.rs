@@ -5,7 +5,7 @@
 //! available semantic linked-IR view.  Semantic incompleteness never removes
 //! raw instructions or basic blocks.
 
-mod correspondence;
+pub(crate) mod correspondence;
 mod origin;
 mod replacement;
 

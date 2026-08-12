@@ -144,8 +144,8 @@ fn modeled_call_response_applies_two_word_return_and_private_stack_output() {
         machine.timeline.as_slice(),
         [
             ExecutionTimelineEvent::Call(_),
-            ExecutionTimelineEvent::RamWrite { width: 8, address, value: 0x5a },
-            ExecutionTimelineEvent::RamRead { width: 8, address: read_address, value: 0x5a },
+            ExecutionTimelineEvent::RamWrite { width: 8, address, value: 0x5a, .. },
+            ExecutionTimelineEvent::RamRead { width: 8, address: read_address, value: 0x5a, .. },
         ] if *address == output_address && *read_address == output_address
     ));
 }
@@ -207,6 +207,7 @@ fn modeled_call_response_writes_a_little_endian_stack_word() {
             width: 32,
             address,
             value: 0x19,
+            ..
         } if *address == output_address
     ));
 }

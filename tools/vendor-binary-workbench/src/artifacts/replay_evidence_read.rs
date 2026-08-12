@@ -1,4 +1,4 @@
-//! Strict consumer for schema-v1 concrete replay evidence.
+//! Strict consumer for schema-v2 concrete replay evidence.
 
 #![allow(
     dead_code,
@@ -38,6 +38,26 @@ pub(crate) struct StoredReplayPhase {
     pub(crate) steps: u64,
     pub(crate) calls: Vec<StoredReplayCall>,
     pub(crate) fifo_lifecycle: Vec<StoredFifoLifecycleEvent>,
+    pub(crate) memory_observations: Vec<StoredReplayMemoryObservation>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct StoredReplayMemoryObservation {
+    pub(crate) id: String,
+    pub(crate) symbol: String,
+    pub(crate) address: u32,
+    pub(crate) width: u8,
+    pub(crate) before: u32,
+    pub(crate) after: u32,
+    pub(crate) writes: Vec<StoredReplayMemoryWrite>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct StoredReplayMemoryWrite {
+    pub(crate) site: u32,
+    pub(crate) value: u32,
 }
 
 #[derive(Clone, Debug, Deserialize)]

@@ -25,6 +25,7 @@ pub(crate) struct ProjectAnalysisRequest {
 pub(crate) struct ProjectAnalysisInputs {
     pub(crate) run_spec: bool,
     pub(crate) memory_map: bool,
+    pub(crate) event_replays: bool,
 }
 
 /// Operations required by the project analysis coordinator.
@@ -36,6 +37,7 @@ pub(crate) trait ProjectAnalysisOperations {
     fn discover_mmio(&mut self, check: bool, jobs: usize) -> Result<StageRun>;
     fn discover_interfaces(&mut self, check: bool) -> Result<StageRun>;
     fn build_linked_ir(&mut self, check: bool, jobs: usize) -> Result<StageRun>;
+    fn build_event_replays(&mut self, check: bool) -> Result<StageRun>;
     fn build_review_scopes(&mut self, check: bool) -> Result<StageRun>;
     fn build_navigation(&mut self, check: bool) -> Result<StageRun>;
     fn validate_code(&mut self, deny_unreviewed: bool) -> Result<StageRun>;
@@ -126,6 +128,21 @@ pub(crate) fn run(
         })
     };
     summary.record("linked-ir", &ir);
+
+    let event_replays = if !inputs.event_replays {
+        StageOutcome::NotConfigured("no reviewed event replay is configured".to_owned())
+    } else if !inputs.run_spec {
+        StageOutcome::Blocked("run-spec is not configured".to_owned())
+    } else if project.interfaces.is_some() && interfaces.blocks_dependants() {
+        StageOutcome::Blocked("interface-discovery did not complete".to_owned())
+    } else if !project.ir_profiles.is_empty() && ir.blocks_dependants() {
+        StageOutcome::Blocked("linked-ir did not complete".to_owned())
+    } else {
+        execute("event-replays", generated, || {
+            operations.build_event_replays(mode.is_check())
+        })
+    };
+    summary.record("event-replays", &event_replays);
 
     let review_scopes = match project.review.as_ref() {
         None => StageOutcome::NotConfigured("[review] is absent".to_owned()),
@@ -324,6 +341,10 @@ mod tests {
             self.called("ir")
         }
 
+        fn build_event_replays(&mut self, _: bool) -> Result<StageRun> {
+            self.called("event-replays")
+        }
+
         fn build_review_scopes(&mut self, _: bool) -> Result<StageRun> {
             self.called("review-scopes")
         }
@@ -394,7 +415,7 @@ mod tests {
         );
         assert!(operations.calls.is_empty());
         assert!(report.succeeded());
-        assert_eq!(report.not_configured, 13);
+        assert_eq!(report.not_configured, 14);
     }
 
     #[test]
@@ -432,6 +453,7 @@ mod tests {
             ProjectAnalysisInputs {
                 run_spec: true,
                 memory_map: false,
+                event_replays: false,
             },
             &mut operations,
         );

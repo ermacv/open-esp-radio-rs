@@ -680,7 +680,7 @@ impl LinkedIrReader {
 fn traversable_call_edge(edge: &StoredGraphEdge) -> bool {
     matches!(
         edge.kind.as_str(),
-        "internal" | "project-linked" | "indexed-dispatch"
+        "internal" | "project-linked" | "indexed-dispatch" | "structural-relocation"
     )
 }
 

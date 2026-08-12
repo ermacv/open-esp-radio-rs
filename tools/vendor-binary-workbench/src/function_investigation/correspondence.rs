@@ -10,7 +10,7 @@ use crate::artifact;
 
 use super::{OriginInstructionCorrespondence, OriginRelocationDependency};
 
-pub(super) fn origin_instruction_correspondence(
+pub(crate) fn origin_instruction_correspondence(
     origin: &artifact::FunctionBody,
     runtime: &artifact::FunctionBody,
 ) -> Vec<OriginInstructionCorrespondence> {

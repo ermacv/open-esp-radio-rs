@@ -36,6 +36,12 @@ pub(crate) fn analyze_project(
     let inputs = ProjectAnalysisInputs {
         run_spec: session.run_spec.is_some(),
         memory_map: session.memory_map.is_some(),
+        event_replays: session.project.functions.as_ref().is_some_and(|paths| {
+            crate::function_workspace::FunctionPack::load_reviewed(&paths.pack)
+                .map_or(true, |pack| {
+                    pack.event_routes.iter().any(|route| route.replay.is_some())
+                })
+        }),
     };
     let mut operations = ResolvedProjectAnalysisOperations {
         session,
@@ -336,6 +342,105 @@ impl ProjectAnalysisOperations for ResolvedProjectAnalysisOperations<'_> {
             &self.session.target,
         )?;
         self.cache_record("linked-ir", check, &inputs, &outputs)?;
+        Ok(StageRun::Executed)
+    }
+
+    fn build_event_replays(&mut self, check: bool) -> Result<StageRun> {
+        let functions = self
+            .session
+            .project
+            .functions
+            .as_ref()
+            .ok_or_else(|| crate::Error::invalid("[functions] is absent"))?;
+        let pack = crate::function_workspace::FunctionPack::load_reviewed(&functions.pack)?;
+        let run_spec = self.run_spec()?;
+        let mut configured = std::collections::BTreeMap::new();
+        for replay in pack
+            .event_routes
+            .iter()
+            .filter_map(|route| route.replay.as_ref())
+        {
+            configured
+                .entry((
+                    replay.manifest.clone(),
+                    replay.source.clone(),
+                    replay.evidence.clone(),
+                ))
+                .or_insert_with(|| replay.clone());
+        }
+        if configured.is_empty() {
+            return Err(crate::Error::invalid(
+                "event-replays stage has no configured reviewed replay",
+            ));
+        }
+
+        let mut requests = Vec::with_capacity(configured.len());
+        for replay in configured.into_values() {
+            let artifact = run_spec
+                .inputs()
+                .iter()
+                .find_map(|input| match &input.role {
+                    InputRole::SourceArtifact(source) if source.as_str() == replay.source => {
+                        Some(input.path.clone())
+                    }
+                    _ => None,
+                })
+                .ok_or_else(|| {
+                    crate::Error::invalid(format!(
+                        "event replay source {:?} has no source-artifact binding in the run spec",
+                        replay.source
+                    ))
+                })?;
+            let companion = run_spec
+                .inputs()
+                .iter()
+                .find_map(|input| match &input.role {
+                    InputRole::SourceCompanion(source) if source.as_str() == replay.source => {
+                        Some(input.path.clone())
+                    }
+                    _ => None,
+                });
+            requests.push((
+                crate::application::event_replay::EventReplayRequest {
+                    manifest: replay.manifest,
+                    artifact,
+                    companion,
+                },
+                replay.evidence,
+            ));
+        }
+
+        let mut inputs = self.target_inputs();
+        inputs.push(functions.pack.clone());
+        inputs.extend(self.session.project.memory_map.iter().cloned());
+        inputs.extend(self.session.svd_paths.iter().cloned());
+        for (request, _) in &requests {
+            inputs.push(request.manifest.clone());
+            inputs.push(request.artifact.clone());
+            inputs.extend(request.companion.iter().cloned());
+        }
+        if let Some(interfaces) = self.session.project.interfaces.as_ref() {
+            inputs.push(interfaces.facts.clone());
+            inputs.extend(interfaces.pack.iter().cloned());
+            inputs.extend(interfaces.semantic_catalogs.iter().cloned());
+        }
+        let outputs = requests
+            .iter()
+            .map(|(_, output)| output.clone())
+            .collect::<Vec<_>>();
+        if self.cache_hit("event-replays", check, &inputs, &outputs)? {
+            return Ok(StageRun::Current);
+        }
+        for (request, output) in requests {
+            let document = crate::application::event_replay::execute(
+                &request,
+                &self.session.mmio,
+                &self.session.target,
+                Some(&self.session.project),
+            )?;
+            crate::application::event_replay::publish(&document, &output, check)?;
+        }
+        self.cache_record("event-replays", check, &inputs, &outputs)?;
         Ok(StageRun::Executed)
     }
 

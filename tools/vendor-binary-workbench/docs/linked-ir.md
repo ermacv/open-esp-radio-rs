@@ -45,7 +45,7 @@ function record plus the graph index; `inspect object` reads one data-object
 record; register review reads only `register-index.json`. Whole-project joins
 may stream all function records, but do not parse the data-object inventory
 unless they consume it. A bundle is valid only when every required member
-exists and has schema v49; the removed single-file representation is rejected.
+exists and has schema v50; the removed single-file representation is rejected.
 
 ```console
 cargo vendor-binary-workbench inspect function libpp:wDev_AppendRxBlocks \
@@ -68,7 +68,7 @@ instructions remain available even when symbolic execution stops.
 By default the prefix selects only report roots. `--include-reachable` also
 exports the transitive internal callees recovered from those roots within the
 same primary artifact. Each function is marked `symbol-prefix-root` or
-`reachable-internal`, and schema v49 records the selection mode plus root and
+`reachable-internal`, and schema v50 records the selection mode plus root and
 included-callee counts. This is an opt-in analysis-size tradeoff: only exactly
 resolved internal, project-linked or bounded indexed-dispatch edges enqueue a
 callee, exploration limits remain visible as blockers, and companion or
@@ -148,7 +148,7 @@ cargo vendor-binary-workbench advanced ir export \
 Project identities are namespaced, for example `rom::ets_delay_us` and
 `libphy::phy_init`. Semantic boundaries and all summary counts are aggregated
 across sources. Each named primary is analyzed in its own address space;
-schema v49 records `"linkage_mode": "independent-artifacts"` and does not claim
+schema v50 records `"linkage_mode": "independent-artifacts"` and does not claim
 that separate inputs share an address space or were fully linked. Use one
 linked ELF primary plus `--companion` inputs when cross-image addresses and
 relocations belong to one executable address space.
@@ -236,7 +236,7 @@ unique exact fragment, its number of occurrences and its first ordinal. The
 diagnostic record also carries a classified `kind`, an optional instruction
 `site`, and a stable `root_id` used by review queues. Pseudo-source uses the
 compact `rendered` form with an explicit `[repeated N times]` suffix. The old
-parallel string blocker arrays are not part of schema v49. This is mechanical report compaction, not
+parallel string blocker arrays are not part of schema v50. This is mechanical report compaction, not
 semantic parsing: later duplicate ordering is not retained, counts are not
 runtime occurrence counts, and backend completeness remains fail-closed.
 
@@ -245,7 +245,7 @@ inventory. It follows resolved internal and unique project edges to a fixed
 point, including recursive components, and groups MMIO, delay, context,
 memory and semantic effects with their origin/path evidence.
 
-Artifact-wide schema-v49 bundles instead persist every direct fact once plus
+Artifact-wide schema-v50 bundles instead persist every direct fact once plus
 the lossless `graph.json`. Precomputing the complete transitive inventory for
 every possible root is quadratic and exhausted memory on the 2997-function
 real linked image. Those summaries therefore use
@@ -595,7 +595,7 @@ the fixed 40 MHz `rtc_clk_xtal_freq_get` platform input. An annotation with
 `unmodeled` return/effects remains fail-closed.
 
 Reviewed trampoline calls additionally persist the complete executable model
-in linked-IR schema v49: model ID, return model, and each output kind, pointer
+in linked-IR schema v50: model ID, return model, and each output kind, pointer
 argument and width. This keeps navigation and later review honest without
 teaching the generic schema RTOS-specific meanings.
 

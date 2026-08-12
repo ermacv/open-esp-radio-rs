@@ -45,11 +45,13 @@ pub enum ExecutionTimelineEvent {
         taken: bool,
     },
     RamRead {
+        site: u32,
         width: u8,
         address: u32,
         value: u32,
     },
     RamWrite {
+        site: u32,
         width: u8,
         address: u32,
         value: u32,

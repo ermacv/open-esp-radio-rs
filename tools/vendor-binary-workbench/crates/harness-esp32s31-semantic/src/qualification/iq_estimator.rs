@@ -259,6 +259,7 @@ fn validate_vendor_counter_timeline(
                 width: 16,
                 address: VENDOR_ACTIVITY_COUNTER,
                 value,
+                ..
             } => Some(*value as u16),
             _ => None,
         })

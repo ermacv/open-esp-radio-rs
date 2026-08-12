@@ -279,6 +279,7 @@ fn timeline_first_ram_byte(result: &execution::ExecutionResult, wanted: u32) -> 
             width,
             address,
             value,
+            ..
         } = event
         else {
             return None;

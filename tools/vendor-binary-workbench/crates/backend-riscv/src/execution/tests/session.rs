@@ -22,21 +22,25 @@ fn ordered_timeline_retains_intermediate_ram_values() {
         machine.timeline,
         vec![
             ExecutionTimelineEvent::RamWrite {
+                site: 0x1000,
                 width: 32,
                 address,
                 value: 0x1122_3344,
             },
             ExecutionTimelineEvent::RamRead {
+                site: 0x1000,
                 width: 32,
                 address,
                 value: 0x1122_3344,
             },
             ExecutionTimelineEvent::RamWrite {
+                site: 0x1000,
                 width: 32,
                 address,
                 value: 0x5566_7788,
             },
             ExecutionTimelineEvent::RamRead {
+                site: 0x1000,
                 width: 32,
                 address,
                 value: 0x5566_7788,

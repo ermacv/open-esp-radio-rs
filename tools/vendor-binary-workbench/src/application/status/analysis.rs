@@ -18,11 +18,89 @@ pub(super) fn collect(context: &ProjectContext<'_>) -> Phase {
         vec![
             symbol_inventory(context),
             linked_ir(context),
+            event_replays(context),
             mmio_facts(context),
             interface_facts(context),
             navigation_index(context),
         ],
     )
+}
+
+fn event_replays(context: &ProjectContext<'_>) -> Component {
+    let Some(functions) = context.project.functions.as_ref() else {
+        return Component::new("event_replays", Readiness::NotConfigured);
+    };
+    if !functions.pack.is_file() {
+        return Component::new("event_replays", Readiness::NotConfigured)
+            .detail("pack", functions.pack.display().to_string());
+    }
+    let pack = match crate::function_workspace::FunctionPack::load_reviewed(&functions.pack) {
+        Ok(pack) => pack,
+        Err(error) => {
+            return Component::new("event_replays", Readiness::Invalid)
+                .detail("pack", functions.pack.display().to_string())
+                .diagnostic(error);
+        }
+    };
+    let replays = pack
+        .event_routes
+        .iter()
+        .filter_map(|route| {
+            route
+                .replay
+                .as_ref()
+                .map(|replay| (route.id.as_str(), replay))
+        })
+        .collect::<Vec<_>>();
+    if replays.is_empty() {
+        return Component::new("event_replays", Readiness::NotConfigured)
+            .detail("pack", functions.pack.display().to_string());
+    }
+    let mut outputs = Vec::with_capacity(replays.len());
+    let mut problems = Vec::new();
+    for (route, replay) in &replays {
+        if !replay.evidence.is_file() {
+            problems.push(format!(
+                "event route {route:?} replay evidence has not been generated: {}",
+                replay.evidence.display()
+            ));
+            outputs.push(format!("{route}: missing"));
+            continue;
+        }
+        let result = std::fs::read_to_string(&replay.evidence)
+            .map_err(|error| error.to_string())
+            .and_then(|input| {
+                crate::artifacts::parse_replay_evidence(&input)
+                    .map(|_| ())
+                    .map_err(|error| error.to_string())
+            });
+        match result {
+            Ok(()) => outputs.push(format!("{route}: ready")),
+            Err(error) => {
+                outputs.push(format!("{route}: invalid"));
+                problems.push(format!("event route {route:?}: {error}"));
+            }
+        }
+    }
+    let incomplete = !problems.is_empty();
+    let mut component = Component::new(
+        "event_replays",
+        if incomplete {
+            Readiness::Incomplete
+        } else {
+            Readiness::Ready
+        },
+    )
+    .detail("pack", functions.pack.display().to_string())
+    .detail("count", replays.len())
+    .detail("routes", outputs);
+    for problem in problems {
+        component = component.diagnostic(problem);
+    }
+    if incomplete {
+        component = component.next_action(project_command(context, "project analyze"));
+    }
+    component
 }
 
 fn navigation_index(context: &ProjectContext<'_>) -> Component {

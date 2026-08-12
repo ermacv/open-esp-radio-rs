@@ -27,11 +27,15 @@ enum TimelineEventDocument {
         taken: bool,
     },
     RamRead {
+        site: u32,
+        location: String,
         width: u8,
         address: u32,
         value: u32,
     },
     RamWrite {
+        site: u32,
+        location: String,
         width: u8,
         address: u32,
         value: u32,
@@ -175,19 +179,25 @@ fn timeline_document(
             }
         }
         execution::ExecutionTimelineEvent::RamRead {
+            site,
             width,
             address,
             value,
         } => TimelineEventDocument::RamRead {
+            site: *site,
+            location: image.location(*site),
             width: *width,
             address: *address,
             value: *value,
         },
         execution::ExecutionTimelineEvent::RamWrite {
+            site,
             width,
             address,
             value,
         } => TimelineEventDocument::RamWrite {
+            site: *site,
+            location: image.location(*site),
             width: *width,
             address: *address,
             value: *value,
@@ -444,11 +454,13 @@ fn render_execution(input: &ExecutionRenderInput<'_>) {
                     width,
                     address,
                     value,
+                    ..
                 } => outputln!("{index:>4}. RAM read/{width} {address:#010x} -> {value:#010x}"),
                 execution::ExecutionTimelineEvent::RamWrite {
                     width,
                     address,
                     value,
+                    ..
                 } => outputln!("{index:>4}. RAM write/{width} {address:#010x} <- {value:#010x}"),
                 execution::ExecutionTimelineEvent::Atomic {
                     operation,

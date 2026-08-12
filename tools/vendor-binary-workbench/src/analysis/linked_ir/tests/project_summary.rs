@@ -98,6 +98,7 @@ fn duplicate_private_names_get_stable_address_qualified_ir_identities() {
         data_symbols: Vec::new(),
         data_objects: Vec::new(),
         projected_direct_semantics: BTreeMap::new(),
+        projected_origins: BTreeMap::new(),
     };
     let map = MmioMap {
         registers: Vec::new(),
@@ -231,6 +232,7 @@ fn decode_blockers_only_include_cfg_reachable_instructions() {
         data_symbols: Vec::new(),
         data_objects: Vec::new(),
         projected_direct_semantics: BTreeMap::new(),
+        projected_origins: BTreeMap::new(),
     };
 
     let map = MmioMap {

@@ -193,6 +193,13 @@ pub(crate) fn analyze(
             inventories.get(&artifact.source).map(PathBuf::as_path),
             interface_origins,
         )?;
+        register_projected_origins(
+            &mut resolver,
+            &artifact.source,
+            &artifact.path,
+            inventories.get(&artifact.source).map(PathBuf::as_path),
+            interface_origins,
+        )?;
         tracing::debug!(
             source = artifact.source,
             rss_kib = ?crate::resource_usage::resident_set_kib(),
@@ -223,6 +230,68 @@ pub(crate) fn analyze(
         }));
     }
     Ok((entry_contract, report))
+}
+
+fn register_projected_origins(
+    resolver: &mut ReferenceResolver,
+    source: &str,
+    linked_artifact: &Path,
+    inventory: Option<&Path>,
+    origins: &[LinkUnitOriginFact],
+) -> Result<()> {
+    let Some(inventory) = inventory else {
+        return Ok(());
+    };
+    let linked_digest = crate::artifact_sha256(linked_artifact)?;
+    let inventory_digest = crate::artifact_sha256(inventory)?;
+    let candidates = crate::artifact::load_code_symbols(
+        inventory,
+        "",
+        crate::artifact::CodeSymbolSelection::All,
+    )?
+    .into_iter()
+    .map(|symbol| {
+        (
+            (symbol.member.clone(), symbol.name.clone(), symbol.address),
+            symbol,
+        )
+    })
+    .collect::<BTreeMap<_, _>>();
+    let mut registered = 0usize;
+    for origin in origins.iter().filter(|origin| {
+        origin.kind == "text"
+            && origin.linked_artifact_sha256 == linked_digest
+            && origin.origin_artifact_sha256 == inventory_digest
+            && origin
+                .linked_sources
+                .iter()
+                .any(|candidate| candidate == source)
+            && origin
+                .origin_sources
+                .iter()
+                .any(|candidate| candidate == source)
+    }) {
+        let Some(linked) = resolver.symbols.iter().find(|symbol| {
+            symbol.name == origin.symbol
+                && symbol.member == origin.linked_member
+                && symbol.address == origin.linked_address
+        }) else {
+            continue;
+        };
+        let key = (
+            origin.origin_member.clone(),
+            origin.symbol.clone(),
+            origin.origin_address,
+        );
+        let Some(archive) = candidates.get(&key) else {
+            continue;
+        };
+        let linked = linked.clone();
+        resolver.register_projected_origin(&linked, archive.clone());
+        registered += 1;
+    }
+    tracing::debug!(source, registered, "registered exact archive origins");
+    Ok(())
 }
 
 fn register_projected_direct_semantics(

@@ -5,8 +5,9 @@ use toml_edit::{ArrayOfTables, DocumentMut, Item, Table};
 use super::{
     FunctionPack, FunctionReviewStatus, ReviewedContext, ReviewedContextField,
     ReviewedEventCaseHandler, ReviewedEventDelivery, ReviewedEventReplay, ReviewedEventRoute,
-    ReviewedFunction, ReviewedFunctionInput, ReviewedLogicalType, ReviewedMemoryObject,
-    ReviewedPath, ReviewedPrecondition, ReviewedTypeBinding, ReviewedTypeField,
+    ReviewedEventStateModel, ReviewedEventTerminal, ReviewedFunction, ReviewedFunctionInput,
+    ReviewedLogicalType, ReviewedMemoryObject, ReviewedPath, ReviewedPrecondition,
+    ReviewedTypeBinding, ReviewedTypeField,
 };
 use crate::Result;
 
@@ -64,23 +65,65 @@ fn parse_event_routes(tables: &ArrayOfTables) -> Result<Vec<ReviewedEventRoute>>
                     )));
                 }
             };
+            let terminal_fields = [
+                optional_string(table, "terminal-profile"),
+                optional_string(table, "terminal-source"),
+                optional_string(table, "terminal-function"),
+            ];
+            let terminal = match terminal_fields {
+                [None, None, None] => None,
+                [Some(profile), Some(source), Some(function)] => Some(ReviewedEventTerminal {
+                    profile,
+                    source,
+                    function,
+                }),
+                _ => {
+                    return Err(crate::Error::invalid(format!(
+                        "{context} terminal requires profile, source, and function together"
+                    )));
+                }
+            };
             let replay_fields = [
+                optional_string(table, "replay-manifest"),
+                optional_string(table, "replay-source"),
                 optional_string(table, "replay-evidence"),
                 optional_string(table, "replay-producer-phase"),
                 optional_string(table, "replay-consumer-phase"),
+                optional_string(table, "replay-state-observation"),
+                optional_string(table, "replay-state-model"),
             ];
             let replay = match replay_fields {
-                [None, None, None] => None,
-                [Some(evidence), Some(producer_phase), Some(consumer_phase)] => {
+                [None, None, None, None, None, None, None] => None,
+                [
+                    Some(manifest),
+                    Some(source),
+                    Some(evidence),
+                    Some(producer_phase),
+                    Some(consumer_phase),
+                    Some(state_observation),
+                    Some(state_model),
+                ] => {
+                    let state_model = match state_model.as_str() {
+                        "counted-latch" => ReviewedEventStateModel::CountedLatch,
+                        _ => {
+                            return Err(crate::Error::invalid(format!(
+                                "{context}.replay-state-model must be counted-latch"
+                            )));
+                        }
+                    };
                     Some(ReviewedEventReplay {
+                        manifest: manifest.into(),
+                        source,
                         evidence: evidence.into(),
                         producer_phase,
                         consumer_phase,
+                        state_observation,
+                        state_model,
                     })
                 }
                 _ => {
                     return Err(crate::Error::invalid(format!(
-                        "{context} replay requires evidence, producer phase, and consumer phase together"
+                        "{context} replay requires manifest, source, evidence, producer/consumer phases, and state observation/model together"
                     )));
                 }
             };
@@ -114,6 +157,7 @@ fn parse_event_routes(tables: &ArrayOfTables) -> Result<Vec<ReviewedEventRoute>>
                     encoding: required_table_string(table, "delivery-encoding", &context)?,
                 },
                 case_handler,
+                terminal,
                 replay,
                 rationale: required_table_string(table, "rationale", &context)?,
             })

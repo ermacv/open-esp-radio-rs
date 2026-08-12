@@ -105,7 +105,7 @@ that every user must learn.
     This is call knowledge only and deliberately leaves `event-delivery=false`.
   - [x] Add scenario-owned stateful FIFO instances with reviewed, mechanism-
     neutral enqueue/dequeue/length ABI bindings and ordered lifecycle evidence.
-  - [x] Recover the real ELF `.L1019` selector table as bounded schema-v49
+  - [x] Recover the real ELF `.L1019` selector table as bounded schema-v50
     `indexed-dispatch` edges. Selector `0x19` reaches `.L1026` and
     `wdevProcessRxSucDataAll` in the local linked `libpp` oracle.
   - [x] Add the concrete multi-phase replay that posts selector `0x19`,
@@ -117,6 +117,14 @@ that every user must learn.
   - [x] Join the successful replay document into `inspect flow --event-route`.
     Exact FIFO delivery now sets `event-delivery`; `path-feasibility` remains
     false because the replay starts at `pp_post`, below the structural root.
+  - [x] Retain and validate the counted-latch state transition around the FIFO:
+    the producer must increment the reviewed byte, the consumer must observe
+    that result and decrement it, and both writes retain exact instruction PCs.
+  - [x] Continue from the executed selector handler to a reviewed synchronous
+    terminal and join its production Rust replacement. Relocation-backed calls
+    from archive origins survive earlier semantic blockers as explicitly
+    structural edges; missing ABI values still keep the complete route
+    fail-closed.
 - [x] Generalize instruction-site evidence from calls/diagnostics to every
   MMIO and memory-object read/write, preserving the originating basic block
   and value provenance in persistent IR.
@@ -592,7 +600,7 @@ schema without isolation.
 - [x] Bound the complete set of scheduled affine-projection states, not only
   the number already popped from the queue. The old check allowed a branching
   call graph to enqueue millions of paths before reaching its 4096-state
-  processing limit. The schema-v49 real `wifi-sta-lifecycle` profile now
+  processing limit. The schema-v50 real `wifi-sta-lifecycle` profile now
   completes all 2997 functions in 61 seconds with a measured 474,448-KiB peak;
   compact summary construction takes 0.37 seconds and exact direct facts plus
   `graph.json` remain the transitive source of truth.

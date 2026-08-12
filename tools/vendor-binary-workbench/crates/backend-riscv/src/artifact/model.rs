@@ -63,7 +63,38 @@ pub struct ArtifactDataObjectRelocation {
     pub offset: u64,
     pub elf_type: Option<u32>,
     pub target: String,
+    /// Linked address or relocatable section offset of the target symbol.
+    /// This is retained for control-flow table recovery; `target` remains the
+    /// stable human identity shown in reports.
+    pub target_address: Option<u64>,
     pub addend: i64,
+}
+
+/// One recovered bounded selector table whose entries branch into a function.
+/// The fact remains architecture-level: it identifies selector values and
+/// code/call targets without assigning event or RTOS semantics.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ArtifactIndexedDispatch {
+    pub table: String,
+    pub table_address: Option<u32>,
+    pub site: u32,
+    pub stride: u8,
+    pub entries: Vec<ArtifactIndexedDispatchEntry>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ArtifactIndexedDispatchEntry {
+    pub selector: u32,
+    pub case_target: String,
+    pub case_address: u32,
+    pub callees: Vec<ArtifactIndexedDispatchCallee>,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct ArtifactIndexedDispatchCallee {
+    pub site: u32,
+    pub symbol: String,
+    pub address: Option<u32>,
 }
 
 /// A human-reviewed function range inside an executable section.

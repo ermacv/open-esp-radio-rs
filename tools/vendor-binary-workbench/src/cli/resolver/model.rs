@@ -135,6 +135,7 @@ pub(in crate::cli) enum TargetCommand {
     VerifyContractBasebandInit(VerifyContractArgs),
     VerifyContractRegisterInit(VerifyContractArgs),
     ExecuteRun(ExecuteRunArgs),
+    ExecuteReplay(ExecuteReplayArgs),
     ExecuteCompare(ExecuteCompareArgs),
     VerifyProfiles(VerifyProfilesArgs),
     GenerateReference(ReferenceArgs),

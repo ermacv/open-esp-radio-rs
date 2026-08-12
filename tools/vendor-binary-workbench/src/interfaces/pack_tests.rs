@@ -288,6 +288,7 @@ fn explicit_execution_model_resolves_without_promoting_semantic_annotation() {
         base_address: 0x3fff_1000,
         layout_size: 32,
         pointer_cells: vec![0x3fff_0030],
+        pointer_cell_symbols: Vec::new(),
         slots: vec![crate::execution_model::TableInstanceSlot {
             offset: 16,
             target: crate::execution_model::TableSlotTarget::Null,

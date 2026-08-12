@@ -4,6 +4,7 @@ mod audit_image_targets;
 mod code_workspace;
 mod discover_mmio;
 mod execute_compare;
+mod execute_replay;
 mod execute_run;
 mod export_ir;
 mod function_pack;
@@ -233,6 +234,9 @@ pub(super) fn run_target(
             "register-init",
         ),
         TargetCommand::ExecuteRun(arguments) => execute_run::run(arguments, svd),
+        TargetCommand::ExecuteReplay(arguments) => {
+            execute_replay::run(arguments, svd, target, project.as_deref())
+        }
         TargetCommand::ExecuteCompare(arguments) => execute_compare::run(arguments, svd),
         TargetCommand::VerifyProfiles(arguments) => verify_profiles::run(arguments, svd),
         TargetCommand::GenerateReference(arguments) => {

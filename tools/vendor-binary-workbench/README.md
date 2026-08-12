@@ -132,10 +132,12 @@ tools/vendor-binary-workbench/scripts/run-limited \
   project analyze --check --project /path/to/vendor-project.toml --jobs 1
 ```
 
-The wrapper enforces a 1-GiB memory limit and a 15-minute timeout. User-systemd
-mode also disables swap; the fallback applies a stricter 1-GiB address-space
-limit with `prlimit`. Linked-IR bundles remain internally sharded as JSONL for
-bounded streaming; the public console format is human or JSON.
+The wrapper enforces a 1-GiB resident-memory limit and a 15-minute timeout.
+User-systemd mode also disables swap. When a usable user-systemd scope is not
+available, a Linux `/proc` watchdog enforces the same RSS and time limits
+without imposing a misleading virtual-address-space cap. Linked-IR bundles
+remain internally sharded as JSONL for bounded streaming; the public console
+format is human or JSON.
 
 ## Documentation
 

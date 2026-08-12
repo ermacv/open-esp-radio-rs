@@ -697,6 +697,25 @@ pub(crate) struct ExecuteRunArgs {
 }
 
 #[derive(Clone, Debug, Default, Args)]
+pub(crate) struct ExecuteReplayArgs {
+    /// Multi-phase concrete replay manifest.
+    #[arg(long, value_name = "FILE")]
+    pub(crate) manifest: Option<PathBuf>,
+    /// Project source whose artifact/companion are selected from the run spec.
+    #[arg(long, value_name = "SOURCE")]
+    pub(crate) source: Option<String>,
+    /// Executable artifact; overrides `artifact` in the manifest.
+    #[arg(long)]
+    pub(crate) artifact: Option<PathBuf>,
+    /// Companion image; overrides `companion` in the manifest.
+    #[arg(long)]
+    pub(crate) companion: Option<PathBuf>,
+    /// Persist strict replay evidence for reviewed event-flow investigation.
+    #[arg(long, value_name = "FILE")]
+    pub(crate) output: Option<PathBuf>,
+}
+
+#[derive(Clone, Debug, Default, Args)]
 pub(crate) struct ExecuteCompareArgs {
     /// Vendor executable containing the reference function.
     #[arg(long)]

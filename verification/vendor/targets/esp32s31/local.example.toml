@@ -31,6 +31,10 @@ role = "source-artifact:libpp"
 path = "/path/to/linked-libpp.elf"
 
 [[inputs]]
+role = "source-artifact:libpp-replay"
+path = "/path/to/linked-libpp-replay.elf"
+
+[[inputs]]
 role = "source-inventory:libpp"
 path = "/path/to/libpp.a"
 

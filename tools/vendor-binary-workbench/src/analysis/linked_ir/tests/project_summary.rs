@@ -3,6 +3,65 @@
 use super::*;
 
 #[test]
+fn context_projection_bounds_scheduled_simple_paths() {
+    const LAYERS: usize = 14;
+    let mut functions = vec![linked_test_function("dense", "root", "local", Vec::new())];
+    for layer in 0..LAYERS {
+        for branch in 0..2 {
+            functions.push(linked_test_function(
+                "dense",
+                &format!("layer_{layer}_{branch}"),
+                "local",
+                Vec::new(),
+            ));
+        }
+    }
+    let mut edges = (0..functions.len()).map(|_| Vec::new()).collect::<Vec<_>>();
+    edges[0] = vec![
+        SummaryCallEdge {
+            target: 1,
+            site: Some(0x10),
+            bindings: Vec::new(),
+            guard_paths: None,
+        },
+        SummaryCallEdge {
+            target: 2,
+            site: Some(0x14),
+            bindings: Vec::new(),
+            guard_paths: None,
+        },
+    ];
+    for layer in 0..LAYERS - 1 {
+        let current = 1 + layer * 2;
+        let next = current + 2;
+        for source in current..current + 2 {
+            edges[source] = vec![
+                SummaryCallEdge {
+                    target: next,
+                    site: Some(0x20),
+                    bindings: Vec::new(),
+                    guard_paths: None,
+                },
+                SummaryCallEdge {
+                    target: next + 1,
+                    site: Some(0x24),
+                    bindings: Vec::new(),
+                    guard_paths: None,
+                },
+            ];
+        }
+    }
+
+    let (complete, blockers) =
+        bounded_projection_test(0, &functions, &edges, &vec![true; functions.len()]);
+
+    assert!(!complete);
+    assert!(blockers.iter().any(|blocker| {
+        blocker == "context projection exceeds 4096 scheduled simple-path states"
+    }));
+}
+
+#[test]
 fn duplicate_private_names_get_stable_address_qualified_ir_identities() {
     let first = artifact::ArtifactSymbolDefinition {
         member: None,
@@ -37,6 +96,7 @@ fn duplicate_private_names_get_stable_address_qualified_ir_identities() {
         relocated_calls: BTreeMap::new(),
         pointer_context: direct::StructuralPointerContext::default(),
         data_symbols: Vec::new(),
+        data_objects: Vec::new(),
         projected_direct_semantics: BTreeMap::new(),
     };
     let map = MmioMap {
@@ -169,6 +229,7 @@ fn decode_blockers_only_include_cfg_reachable_instructions() {
         relocated_calls: BTreeMap::new(),
         pointer_context: direct::StructuralPointerContext::default(),
         data_symbols: Vec::new(),
+        data_objects: Vec::new(),
         projected_direct_semantics: BTreeMap::new(),
     };
 
@@ -602,8 +663,19 @@ fn affine_call_bindings_project_transitive_context_fields() {
         .unwrap();
     assert_eq!(compact_root.effect_summary.semantic_action_count, 1);
     assert!(!compact_root.effect_summary.semantic_actions_materialized);
+    assert!(
+        compact_root
+            .effect_summary
+            .register_semantic_actions
+            .is_empty()
+    );
+    let compact_leaf = compact_report
+        .functions
+        .iter()
+        .find(|function| function.identity == "rom::leaf")
+        .unwrap();
     assert_eq!(
-        compact_root.effect_summary.register_semantic_actions.len(),
+        compact_leaf.effect_summary.register_semantic_actions.len(),
         1
     );
     let compact_json = serde_json::to_value(compact_root).unwrap();

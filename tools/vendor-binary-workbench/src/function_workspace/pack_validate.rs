@@ -205,6 +205,20 @@ fn validate_event_routes(
                 ),
             ));
         }
+        if let Some(replay) = &route.replay
+            && (replay.evidence.as_os_str().is_empty()
+                || replay.producer_phase.trim().is_empty()
+                || replay.consumer_phase.trim().is_empty()
+                || replay.producer_phase == replay.consumer_phase)
+        {
+            return Err(ValidationError::pack(
+                "event-routes",
+                format!(
+                    "event route {:?} replay requires a path and two distinct non-empty phase names",
+                    route.id
+                ),
+            ));
+        }
         if route.rationale.trim().is_empty() || route.rationale.contains(['\r', '\n']) {
             return Err(ValidationError::pack(
                 "event-routes",

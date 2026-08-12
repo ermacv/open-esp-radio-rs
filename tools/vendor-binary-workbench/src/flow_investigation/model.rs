@@ -81,6 +81,7 @@ pub(crate) enum EvidenceLevel {
     Observed,
     Reviewed,
     Modeled,
+    Executed,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]

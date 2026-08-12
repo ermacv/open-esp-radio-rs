@@ -8,6 +8,11 @@ pub enum TableSlotTarget {
     Null,
     Address(u32),
     Symbol(String),
+    /// Scenario-owned external function which is deliberately absent from
+    /// the linked vendor image. The executor assigns it a stable synthetic
+    /// function-pointer value and requires an executable service/call model
+    /// before the slot can be invoked.
+    ModeledSymbol(String),
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
@@ -24,6 +29,9 @@ pub struct TableInstance {
     pub base_address: u32,
     pub layout_size: u32,
     pub pointer_cells: Vec<u32>,
+    /// Linked data symbols whose 32-bit cells receive `base_address`.
+    #[serde(default)]
+    pub pointer_cell_symbols: Vec<String>,
     pub slots: Vec<TableInstanceSlot>,
 }
 

@@ -287,6 +287,7 @@ fn linked_absolute_table_base_is_not_reported_as_a_giant_context_offset() {
             size: 48,
             exported: true,
         }],
+        data_objects: Vec::new(),
         projected_direct_semantics: BTreeMap::new(),
     };
 
@@ -381,6 +382,7 @@ fn instruction_effects_keep_exact_mmio_and_memory_sites() {
         relocated_calls: BTreeMap::new(),
         pointer_context: direct::StructuralPointerContext::default(),
         data_symbols: Vec::new(),
+        data_objects: Vec::new(),
         projected_direct_semantics: BTreeMap::new(),
     };
     let memory_accesses = memory_object_accesses_for_trace(&trace);

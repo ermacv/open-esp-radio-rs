@@ -1,6 +1,9 @@
 //! Editable function/context pack and its resolved workspace view.
 
-use std::{fs, path::Path};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 use toml_edit::{Document, DocumentMut, Item};
 
@@ -85,7 +88,15 @@ pub(crate) struct ReviewedEventRoute {
     pub(crate) consumer_entry: String,
     pub(crate) delivery: ReviewedEventDelivery,
     pub(crate) case_handler: Option<ReviewedEventCaseHandler>,
+    pub(crate) replay: Option<ReviewedEventReplay>,
     pub(crate) rationale: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ReviewedEventReplay {
+    pub(crate) evidence: PathBuf,
+    pub(crate) producer_phase: String,
+    pub(crate) consumer_phase: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -262,18 +273,26 @@ impl FunctionPack {
             )
         })?;
         let document: DocumentMut = source_document.clone().into_mut();
-        if document.get("schema").and_then(Item::as_integer) != Some(6) {
+        if document.get("schema").and_then(Item::as_integer) != Some(7) {
             return Err(crate::error::WorkbenchError::manifest_source(
                 "function pack",
                 path,
                 &input,
-                "requires schema = 6",
+                "requires schema = 7",
                 source_document.get("schema").and_then(Item::span),
             ));
         }
-        let value = super::pack_parse::parse(&document).map_err(|error| {
+        let mut value = super::pack_parse::parse(&document).map_err(|error| {
             crate::error::WorkbenchError::manifest("function pack", path, error)
         })?;
+        let base = path.parent().unwrap_or_else(|| Path::new("."));
+        for route in &mut value.event_routes {
+            if let Some(replay) = &mut route.replay {
+                if replay.evidence.is_relative() {
+                    replay.evidence = base.join(&replay.evidence);
+                }
+            }
+        }
         Ok(LoadedFunctionPack {
             value,
             input,

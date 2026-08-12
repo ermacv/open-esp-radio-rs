@@ -1,11 +1,15 @@
 //! Architecture-neutral execution environment contracts.
 
 mod device;
+mod goal;
+mod service;
 mod table;
 #[cfg(test)]
 mod tests;
 
 pub use device::*;
+pub use goal::*;
+pub use service::*;
 pub use table::*;
 
 #[derive(Debug, thiserror::Error)]

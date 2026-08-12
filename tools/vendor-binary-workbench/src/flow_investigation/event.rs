@@ -6,7 +6,7 @@
 
 use std::collections::BTreeSet;
 
-use crate::{ProjectSpec, Result, artifacts, interfaces::SemanticCatalogs};
+use crate::{ProjectSpec, Result, artifacts, execution_model, interfaces::SemanticCatalogs};
 
 use super::{
     EventRouteFlowRequest, EvidenceLevel, FlowArgumentEvidence, FlowBlocker, FlowClaims,
@@ -15,6 +15,16 @@ use super::{
     effects::collect_function_effects,
     value::{compose_call_arguments, root_domains},
 };
+
+#[derive(Debug)]
+struct ReplayRouteProof {
+    service_id: String,
+    producer_symbol: String,
+    consumer_symbol: String,
+    enqueue_site: u32,
+    dequeue_site: u32,
+    handler_site: Option<u32>,
+}
 
 pub(super) fn investigate(
     request: EventRouteFlowRequest<'_>,
@@ -46,6 +56,18 @@ pub(super) fn investigate(
                 request.route,
                 workspace.pack.display()
             )));
+        }
+    };
+    let mut blockers = Vec::new();
+    let replay = match load_replay_proof(route) {
+        Ok(proof) => proof,
+        Err(error) => {
+            blockers.push(FlowBlocker::new(
+                "event-replay-invalid",
+                error.to_string(),
+                "rerun the configured replay against current inputs and retain its evidence artifact",
+            ));
+            None
         }
     };
 
@@ -91,7 +113,6 @@ pub(super) fn investigate(
         .filter(|call| direct_dispatch_matches(call, route, &selector, &catalogs))
         .collect::<Vec<_>>();
     let dispatch_observed = matching_dispatches.len() == 1 || direct_dispatches.len() == 1;
-    let mut blockers = Vec::new();
     if !dispatch_observed {
         blockers.push(FlowBlocker::new(
             "dispatch-evidence-mismatch",
@@ -186,6 +207,29 @@ pub(super) fn investigate(
         value: Some(selector.clone()),
         origin_path: None,
     }];
+    if let Some(proof) = &replay {
+        effects.push(FlowEffectEvidence {
+            kind: "queue".to_owned(),
+            evidence: EvidenceLevel::Executed,
+            function: proof.producer_symbol.clone(),
+            site: Some(proof.enqueue_site),
+            operation: Some("enqueue".to_owned()),
+            detail: format!(
+                "{} receives selector {:#x}",
+                proof.service_id, route.selector_value
+            ),
+            constant: Some(u64::from(route.selector_value)),
+            access: None,
+            width: Some(route.delivery.selector_width),
+            address: None,
+            register: None,
+            value: Some(selector.clone()),
+            origin_path: route
+                .replay
+                .as_ref()
+                .map(|replay| replay.evidence.display().to_string()),
+        });
+    }
     let mut depth_limited = false;
     if request.max_depth >= 1 && dispatch_observed {
         steps.push(FlowStepEvidence {
@@ -240,7 +284,9 @@ pub(super) fn investigate(
                 }
                 delivery_modeled = delivery.models_output(position, route.delivery.selector_width);
             }
-            let evidence = if delivery_modeled {
+            let evidence = if replay.is_some() {
+                EvidenceLevel::Executed
+            } else if delivery_modeled {
                 EvidenceLevel::Modeled
             } else {
                 EvidenceLevel::Observed
@@ -251,7 +297,9 @@ pub(super) fn investigate(
                 context: route.execution_context.clone(),
                 caller: route.consumer_entry.clone(),
                 callee: delivery.target.clone(),
-                site: delivery.site,
+                site: replay
+                    .as_ref()
+                    .map_or(delivery.site, |proof| Some(proof.dequeue_site)),
                 kind: "event-delivery".to_owned(),
                 tail: delivery.tail(),
                 argument_shapes: delivery.argument_shapes(),
@@ -262,19 +310,39 @@ pub(super) fn investigate(
             effects.push(FlowEffectEvidence {
                 kind: "queue".to_owned(),
                 evidence,
-                function: route.consumer_entry.clone(),
-                site: delivery.site,
+                function: replay.as_ref().map_or_else(
+                    || route.consumer_entry.clone(),
+                    |proof| proof.consumer_symbol.clone(),
+                ),
+                site: replay
+                    .as_ref()
+                    .map_or(delivery.site, |proof| Some(proof.dequeue_site)),
                 operation: delivery.semantic_operation.clone(),
-                detail: delivery.target.clone(),
+                detail: replay.as_ref().map_or_else(
+                    || delivery.target.clone(),
+                    |proof| {
+                        format!(
+                            "{} delivers selector {:#x}",
+                            proof.service_id, route.selector_value
+                        )
+                    },
+                ),
                 constant: Some(u64::from(route.selector_value)),
                 access: None,
                 width: Some(route.delivery.selector_width),
                 address: None,
                 register: None,
                 value: Some(selector.clone()),
-                origin_path: None,
+                origin_path: route
+                    .replay
+                    .as_ref()
+                    .map(|replay| replay.evidence.display().to_string()),
             });
-            if delivery_modeled {
+            if replay.is_some() {
+                // Concrete FIFO lifecycle evidence closes the delivery
+                // obligation; the structural output model remains its ABI
+                // explanation.
+            } else if delivery_modeled {
                 blockers.push(FlowBlocker::new(
                     "event-delivery-not-replayed",
                     format!(
@@ -325,11 +393,15 @@ pub(super) fn investigate(
             loaded_functions += 1;
             steps.push(FlowStepEvidence {
                 ordinal: steps.len(),
-                evidence: EvidenceLevel::Reviewed,
+                evidence: if replay.is_some() {
+                    EvidenceLevel::Executed
+                } else {
+                    EvidenceLevel::Reviewed
+                },
                 context: route.execution_context.clone(),
                 caller: route.consumer_entry.clone(),
                 callee: handler.function.clone(),
-                site: None,
+                site: replay.as_ref().and_then(|proof| proof.handler_site),
                 kind: "selector-case".to_owned(),
                 tail: false,
                 argument_shapes: 1,
@@ -430,7 +502,7 @@ pub(super) fn investigate(
     effects.dedup();
     let structural_navigation = dispatch_observed && delivery.is_some();
     Ok(FlowInvestigationReport {
-        schema_version: 2,
+        schema_version: 3,
         command: "inspect flow",
         mode: "event-route",
         status: if blockers.is_empty() {
@@ -450,7 +522,7 @@ pub(super) fn investigate(
         claims: FlowClaims {
             structural_navigation,
             path_feasibility: false,
-            event_delivery: false,
+            event_delivery: replay.is_some(),
             executable_equivalence: false,
         },
         limits: FlowLimits {
@@ -466,6 +538,148 @@ pub(super) fn investigate(
         rust_boundaries,
         blockers,
     })
+}
+
+fn load_replay_proof(
+    route: &crate::function_workspace::ReviewedEventRoute,
+) -> Result<Option<ReplayRouteProof>> {
+    let Some(binding) = &route.replay else {
+        return Ok(None);
+    };
+    let input = std::fs::read_to_string(&binding.evidence)
+        .map_err(|error| crate::Error::read("event replay evidence", &binding.evidence, error))?;
+    let evidence = artifacts::parse_replay_evidence(&input)?;
+    let producer_index = evidence
+        .phases
+        .iter()
+        .position(|phase| phase.name == binding.producer_phase)
+        .ok_or_else(|| {
+            crate::Error::invalid(format!(
+                "replay evidence has no producer phase {:?}",
+                binding.producer_phase
+            ))
+        })?;
+    let consumer_index = evidence
+        .phases
+        .iter()
+        .position(|phase| phase.name == binding.consumer_phase)
+        .ok_or_else(|| {
+            crate::Error::invalid(format!(
+                "replay evidence has no consumer phase {:?}",
+                binding.consumer_phase
+            ))
+        })?;
+    if producer_index >= consumer_index {
+        return Err(crate::Error::invalid(format!(
+            "replay producer phase {:?} must precede consumer phase {:?}",
+            binding.producer_phase, binding.consumer_phase
+        )));
+    }
+    let producer = evidence.phase(&binding.producer_phase)?;
+    let consumer = evidence.phase(&binding.consumer_phase)?;
+    let enqueues = producer
+        .fifo_lifecycle
+        .iter()
+        .filter_map(|event| match event {
+            artifacts::StoredFifoLifecycleEvent::Enqueued {
+                service_id,
+                site,
+                value,
+                ..
+            } if *value == route.selector_value => Some((service_id, *site)),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let dequeues = consumer
+        .fifo_lifecycle
+        .iter()
+        .filter_map(|event| match event {
+            artifacts::StoredFifoLifecycleEvent::Dequeued {
+                service_id,
+                site,
+                value,
+                ..
+            } if *value == route.selector_value => Some((service_id, *site)),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let (service_id, enqueue_site) = match enqueues.as_slice() {
+        [(service_id, site)] => ((*service_id).clone(), *site),
+        _ => {
+            return Err(crate::Error::invalid(format!(
+                "producer phase {:?} has {} enqueue events for selector {:#x}, expected one",
+                binding.producer_phase,
+                enqueues.len(),
+                route.selector_value
+            )));
+        }
+    };
+    let dequeue_site = match dequeues.as_slice() {
+        [(dequeue_service, site)] if *dequeue_service == &service_id => *site,
+        [(dequeue_service, _)] => {
+            return Err(crate::Error::invalid(format!(
+                "selector {:#x} was enqueued through {:?} but dequeued through {:?}",
+                route.selector_value, service_id, dequeue_service
+            )));
+        }
+        _ => {
+            return Err(crate::Error::invalid(format!(
+                "consumer phase {:?} has {} dequeue events for selector {:#x}, expected one",
+                binding.consumer_phase,
+                dequeues.len(),
+                route.selector_value
+            )));
+        }
+    };
+
+    let handler_site = if let Some(handler) = &route.case_handler {
+        let expected = identity_symbol(&handler.function);
+        match &consumer.completion {
+            artifacts::StoredReplayCompletion::GoalReached {
+                goal: execution_model::ExecutionGoal::ReachSymbol { symbol },
+            } if symbol == expected => {}
+            _ => {
+                return Err(crate::Error::invalid(format!(
+                    "consumer phase {:?} did not complete by reaching handler {:?}",
+                    binding.consumer_phase, expected
+                )));
+            }
+        }
+        Some(
+            consumer
+                .calls
+                .iter()
+                .find(|call| call.symbol == expected)
+                .map(|call| call.site)
+                .ok_or_else(|| {
+                    crate::Error::invalid(format!(
+                        "consumer phase {:?} has no ordered call to reached handler {:?}",
+                        binding.consumer_phase, expected
+                    ))
+                })?,
+        )
+    } else {
+        None
+    };
+
+    Ok(Some(ReplayRouteProof {
+        service_id,
+        producer_symbol: producer.symbol.clone(),
+        consumer_symbol: consumer.symbol.clone(),
+        enqueue_site,
+        dequeue_site,
+        handler_site,
+    }))
+}
+
+fn identity_symbol(identity: &str) -> &str {
+    identity
+        .rsplit("::")
+        .next()
+        .unwrap_or(identity)
+        .split('@')
+        .next()
+        .unwrap_or(identity)
 }
 
 fn profile<'a>(
@@ -564,5 +778,127 @@ fn selector_argument(value: u32, role: &str) -> FlowArgumentEvidence {
         constants: vec![value],
         provenance: "reviewed-route",
         pointee: Vec::new(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::function_workspace::{
+        ReviewedEventCaseHandler, ReviewedEventDelivery, ReviewedEventReplay, ReviewedEventRoute,
+    };
+
+    #[test]
+    fn replay_proof_requires_fresh_ordered_fifo_delivery_and_handler_goal() {
+        let directory = std::env::temp_dir().join(format!(
+            "vendor-workbench-event-replay-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&directory).unwrap();
+        let manifest = directory.join("route.toml");
+        let artifact = directory.join("vendor.elf");
+        let evidence = directory.join("route.json");
+        std::fs::write(&manifest, "schema = 1\n").unwrap();
+        std::fs::write(&artifact, b"linked-image").unwrap();
+        let document = serde_json::json!({
+            "schema_version": 1,
+            "command": "execute replay",
+            "manifest": {
+                "path": std::fs::canonicalize(&manifest).unwrap(),
+                "sha256": crate::artifact_sha256(&manifest).unwrap(),
+            },
+            "artifact": {
+                "path": std::fs::canonicalize(&artifact).unwrap(),
+                "sha256": crate::artifact_sha256(&artifact).unwrap(),
+            },
+            "phases": [
+                {
+                    "name": "post",
+                    "symbol": "post_event",
+                    "completion": { "kind": "returned" },
+                    "steps": 10,
+                    "calls": [],
+                    "fifo_lifecycle": [{
+                        "kind": "enqueued",
+                        "service_id": "events",
+                        "site": 4096,
+                        "value": 25,
+                        "depth_before": 0,
+                        "depth_after": 1,
+                        "woke_receiver": true,
+                    }],
+                },
+                {
+                    "name": "dispatch",
+                    "symbol": "worker",
+                    "completion": {
+                        "kind": "goal-reached",
+                        "goal": { "kind": "reach-symbol", "symbol": "handler" },
+                    },
+                    "steps": 20,
+                    "calls": [{
+                        "site": 8192,
+                        "symbol": "handler",
+                        "arguments": [25, 0, 0, 0, 0, 0, 0, 0],
+                    }],
+                    "fifo_lifecycle": [{
+                        "kind": "dequeued",
+                        "service_id": "events",
+                        "site": 6144,
+                        "value": 25,
+                        "depth_before": 1,
+                        "depth_after": 0,
+                    }],
+                },
+            ],
+            "complete": true,
+        });
+        std::fs::write(&evidence, serde_json::to_vec(&document).unwrap()).unwrap();
+        let route = ReviewedEventRoute {
+            id: "route".to_owned(),
+            profile: "linked".to_owned(),
+            source: "vendor".to_owned(),
+            dispatcher: "vendor::post".to_owned(),
+            mechanism: "event".to_owned(),
+            selector_role: "selector".to_owned(),
+            selector_value: 25,
+            receiver: None,
+            execution_context: "task".to_owned(),
+            consumer_profile: "linked".to_owned(),
+            consumer_source: "vendor".to_owned(),
+            consumer_entry: "vendor::worker".to_owned(),
+            delivery: ReviewedEventDelivery {
+                operation: "queue.receive".to_owned(),
+                output_role: "item".to_owned(),
+                selector_offset: 0,
+                selector_width: 32,
+                encoding: "little-endian".to_owned(),
+            },
+            case_handler: Some(ReviewedEventCaseHandler {
+                profile: "linked".to_owned(),
+                source: "vendor".to_owned(),
+                function: "vendor::handler@0x2000".to_owned(),
+            }),
+            replay: Some(ReviewedEventReplay {
+                evidence,
+                producer_phase: "post".to_owned(),
+                consumer_phase: "dispatch".to_owned(),
+            }),
+            rationale: "fixture".to_owned(),
+        };
+        let proof = load_replay_proof(&route).unwrap().unwrap();
+        assert_eq!(proof.service_id, "events");
+        assert_eq!(proof.enqueue_site, 4096);
+        assert_eq!(proof.dequeue_site, 6144);
+        assert_eq!(proof.handler_site, Some(8192));
+
+        std::fs::write(&manifest, "schema = 2\n").unwrap();
+        assert!(
+            load_replay_proof(&route)
+                .unwrap_err()
+                .to_string()
+                .contains("changed since execution")
+        );
+        std::fs::remove_dir_all(directory).unwrap();
     }
 }

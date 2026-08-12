@@ -43,7 +43,7 @@ is retained.
 analysis explicit instead of encoding it as an empty prefix. `include-reachable`
 defaults to `true`. `entry-contract` defaults to
 `none` and is validated against the selected generic or platform harness.
-The schema-v48 random-access bundle stores pseudo-Rust with each function.
+The schema-v49 random-access bundle stores pseudo-Rust with each function.
 Project-wide concatenated pseudo files were removed: use `inspect function`,
 the TUI, or a focused `ir export --symbol-prefix ... --pseudo-rust ...`.
 
@@ -117,7 +117,7 @@ cargo vendor-binary-workbench advanced ir build \
 ```
 
 Missing or different documents make `--check` fail and name every stale path.
-Artifact identities and digests remain embedded in the schema-v48 report, so a
+Artifact identities and digests remain embedded in the schema-v49 report, so a
 successful check also binds the generated view to the supplied local inputs.
 
 ## Command result formats
@@ -126,7 +126,7 @@ The default human view summarizes each selected profile, its function,
 register and field-candidate counts, and the generated paths. `--format json`
 emits the typed `ir-build`
 report directly, with schema, mode, status, ordered profiles and document count. The
-generated linked-IR bundle remains a separate schema-v48 project artifact; the
+generated linked-IR bundle remains a separate schema-v49 project artifact; the
 command result only describes the build operation.
 
 ## Register-review integration
@@ -141,7 +141,7 @@ linked-ir = ["generated/findings/phy.ir"]
 ```
 
 `project doctor` reports whether each profile has usable source bindings and a
-valid schema-v48 output. It also reports whether the bundle is linked into
+valid schema-v49 output. It also reports whether the bundle is linked into
 register review. The register report still treats functions, predicates and semantic
 operations as navigation evidence; clean SVD and PAC generation reads only the
 reviewed register model.

@@ -1,4 +1,4 @@
-//! Complete owned DTO for linked-IR schema v48.
+//! Complete owned DTO for linked-IR schema v49.
 
 #![allow(
     dead_code,
@@ -22,6 +22,8 @@ pub(crate) struct LinkedIrStoredDocument {
     memory_object_mode: String,
     instruction_effect_mode: String,
     data_object_mode: String,
+    indexed_dispatch_mode: String,
+    indexed_dispatch_completeness_claim: bool,
     semantic_action_mode: String,
     event_dispatch_mode: String,
     event_dispatch_effect_completeness_claim: bool,
@@ -105,6 +107,7 @@ pub(crate) struct StoredReportSummary {
     complete: usize,
     structured: usize,
     internal_calls: usize,
+    indexed_dispatch_calls: usize,
     external_calls: usize,
     call_argument_shapes: usize,
     project_linked_calls: usize,
@@ -506,7 +509,7 @@ impl StoredCall {
             "executable"
         } else if self.semantic_operation.is_some() {
             "annotated"
-        } else if self.kind == "internal" {
+        } else if matches!(self.kind.as_str(), "internal" | "indexed-dispatch") {
             "internal-code"
         } else if self.kind == "project-linked" {
             "linked-code"

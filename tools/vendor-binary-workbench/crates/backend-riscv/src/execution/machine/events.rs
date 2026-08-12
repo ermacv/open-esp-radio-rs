@@ -4,13 +4,189 @@ use rv_asm::Reg;
 
 use super::super::{
     AllocationLifecycleEvent, ExecutionEvent, ExecutionProducer, ExecutionTimelineEvent,
-    MemoryOwner, MemoryOwnership, MemoryRange, MmioValue, ModeledCallOutput, ModeledCallResponse,
-    OrderedCall, TableLifecycleEvent, execution_stack_contains,
+    FifoLifecycleEvent, FifoServiceOperation, MemoryOwner, MemoryOwnership, MemoryRange, MmioValue,
+    ModeledCallOutput, ModeledCallResponse, OrderedCall, ServiceOutput, ServiceValueSource,
+    TableLifecycleEvent, execution_stack_contains,
 };
 use super::Machine;
 use crate::Result;
 
 impl Machine<'_> {
+    pub(in crate::execution) fn apply_fifo_service_call(
+        &mut self,
+        symbol: &str,
+        site: u32,
+    ) -> Result<bool> {
+        let Some(binding) = self.fifo_bindings.get(symbol).cloned() else {
+            return Ok(false);
+        };
+        if binding.handle_argument >= 8 {
+            return Err(format!(
+                "FIFO binding {symbol} handle argument a{} exceeds RV32 a0..a7",
+                binding.handle_argument
+            )
+            .into());
+        }
+        let handle = self.registers[usize::from(Reg::A0.0) + usize::from(binding.handle_argument)];
+        let service_index = self
+            .fifo_services
+            .iter()
+            .position(|service| service.id == binding.service_id)
+            .ok_or_else(|| {
+                format!(
+                    "FIFO binding {symbol} refers to missing service {}",
+                    binding.service_id
+                )
+            })?;
+        if self.fifo_services[service_index].handle != handle {
+            return Err(format!(
+                "FIFO binding {symbol} expected handle {:#010x} for service {}, received {handle:#010x}",
+                self.fifo_services[service_index].handle, binding.service_id
+            )
+            .into());
+        }
+
+        match binding.operation {
+            FifoServiceOperation::Enqueue {
+                item,
+                success_return,
+                full_return,
+                wake_output,
+            } => {
+                let value = self.read_service_value(symbol, site, item)?;
+                let service = &mut self.fifo_services[service_index];
+                validate_fifo_service(service)?;
+                validate_service_value(service.item_width, value, symbol, site)?;
+                let depth_before = service.items.len();
+                if depth_before == service.capacity {
+                    self.registers[usize::from(Reg::A0.0)] = full_return;
+                    self.fifo_lifecycle.push(FifoLifecycleEvent::Full {
+                        service_id: service.id.clone(),
+                        site,
+                        value,
+                        depth: depth_before,
+                    });
+                    if let Some(output) = wake_output {
+                        self.write_service_output(symbol, site, output, 0)?;
+                    }
+                } else {
+                    let woke_receiver = depth_before == 0;
+                    service.items.push(value);
+                    let service_id = service.id.clone();
+                    let depth_after = service.items.len();
+                    self.registers[usize::from(Reg::A0.0)] = success_return;
+                    self.fifo_lifecycle.push(FifoLifecycleEvent::Enqueued {
+                        service_id,
+                        site,
+                        value,
+                        depth_before,
+                        depth_after,
+                        woke_receiver,
+                    });
+                    if let Some(output) = wake_output {
+                        self.write_service_output(symbol, site, output, u32::from(woke_receiver))?;
+                    }
+                }
+            }
+            FifoServiceOperation::Dequeue {
+                output,
+                success_return,
+                empty_return,
+            } => {
+                let service = &mut self.fifo_services[service_index];
+                validate_fifo_service(service)?;
+                let depth_before = service.items.len();
+                if service.items.is_empty() {
+                    self.registers[usize::from(Reg::A0.0)] = empty_return;
+                    self.fifo_lifecycle.push(FifoLifecycleEvent::Empty {
+                        service_id: service.id.clone(),
+                        site,
+                    });
+                } else {
+                    let value = service.items.remove(0);
+                    let service_id = service.id.clone();
+                    let depth_after = service.items.len();
+                    self.write_service_output(symbol, site, output, value)?;
+                    self.registers[usize::from(Reg::A0.0)] = success_return;
+                    self.fifo_lifecycle.push(FifoLifecycleEvent::Dequeued {
+                        service_id,
+                        site,
+                        value,
+                        depth_before,
+                        depth_after,
+                    });
+                }
+            }
+            FifoServiceOperation::Len => {
+                let service = &self.fifo_services[service_index];
+                validate_fifo_service(service)?;
+                let depth = service.items.len();
+                self.registers[usize::from(Reg::A0.0)] =
+                    u32::try_from(depth).map_err(|_| "FIFO depth exceeds RV32 return value")?;
+                self.fifo_lifecycle.push(FifoLifecycleEvent::Length {
+                    service_id: service.id.clone(),
+                    site,
+                    depth,
+                });
+            }
+        }
+        Ok(true)
+    }
+
+    fn read_service_value(
+        &mut self,
+        symbol: &str,
+        site: u32,
+        source: ServiceValueSource,
+    ) -> Result<u32> {
+        match source {
+            ServiceValueSource::Argument { argument, width } => {
+                validate_service_argument(argument, width, symbol, site)?;
+                let value = self.registers[usize::from(Reg::A0.0) + usize::from(argument)];
+                validate_service_value(width, value, symbol, site)?;
+                Ok(value)
+            }
+            ServiceValueSource::PrivateStackPointer {
+                pointer_argument,
+                width,
+            } => {
+                validate_service_argument(pointer_argument, width, symbol, site)?;
+                let address =
+                    self.registers[usize::from(Reg::A0.0) + usize::from(pointer_argument)];
+                if !execution_stack_contains(address) {
+                    return Err(format!(
+                        "FIFO binding {symbol} at {site:#010x} input a{pointer_argument} points outside private stack: {address:#010x}"
+                    )
+                    .into());
+                }
+                self.read(address, width)
+            }
+        }
+    }
+
+    fn write_service_output(
+        &mut self,
+        symbol: &str,
+        site: u32,
+        output: ServiceOutput,
+        value: u32,
+    ) -> Result<()> {
+        let ServiceOutput::PrivateStackPointer {
+            pointer_argument,
+            width,
+        } = output;
+        validate_service_argument(pointer_argument, width, symbol, site)?;
+        validate_service_value(width, value, symbol, site)?;
+        let address = self.registers[usize::from(Reg::A0.0) + usize::from(pointer_argument)];
+        if !execution_stack_contains(address) {
+            return Err(format!(
+                "FIFO binding {symbol} at {site:#010x} output a{pointer_argument} points outside private stack: {address:#010x}"
+            )
+            .into());
+        }
+        self.write(address, width, value)
+    }
+
     pub(in crate::execution) fn branch(&mut self, taken: bool, offset: i32, width: u32) {
         self.branches.insert((self.pc, taken));
         self.ordered_branches.push((self.pc, taken));
@@ -232,4 +408,39 @@ impl Machine<'_> {
         self.timeline
             .push(ExecutionTimelineEvent::Observable(event));
     }
+}
+
+fn validate_fifo_service(service: &super::super::FifoServiceInstance) -> Result<()> {
+    if service.id.trim().is_empty()
+        || service.handle == 0
+        || service.capacity == 0
+        || service.items.len() > service.capacity
+        || !matches!(service.item_width, 8 | 16 | 32)
+    {
+        return Err(format!("invalid FIFO service instance {:?}", service.id).into());
+    }
+    for value in &service.items {
+        validate_service_value(service.item_width, *value, &service.id, 0)?;
+    }
+    Ok(())
+}
+
+fn validate_service_argument(argument: u8, width: u8, symbol: &str, site: u32) -> Result<()> {
+    if argument >= 8 || !matches!(width, 8 | 16 | 32) {
+        return Err(format!(
+            "FIFO binding {symbol} at {site:#010x} has invalid a{argument}/{width}-bit ABI value"
+        )
+        .into());
+    }
+    Ok(())
+}
+
+fn validate_service_value(width: u8, value: u32, symbol: &str, site: u32) -> Result<()> {
+    if !matches!(width, 8 | 16 | 32) || value & !MmioValue::mask(width) != 0 {
+        return Err(format!(
+            "FIFO binding {symbol} at {site:#010x} has invalid {width}-bit value {value:#010x}"
+        )
+        .into());
+    }
+    Ok(())
 }

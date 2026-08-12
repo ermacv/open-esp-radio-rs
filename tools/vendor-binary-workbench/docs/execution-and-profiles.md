@@ -89,6 +89,60 @@ the next scenario must seed them again before a read. This prevents an old
 `phy_param` byte from being treated as stable merely because the previous call
 observed it.
 
+Profiles may also declare mechanism-neutral stateful FIFO services separately
+for vendor and Rust executions. A reviewed binding maps a concrete function
+symbol and RV32 ABI to `enqueue`, `dequeue` or `len`; the generic executor does
+not know RTOS names. Queue contents persist through `ExecutionSession`, and
+the report retains initial/final items plus ordered enqueue, dequeue, full,
+empty and length lifecycle evidence. Invalid widths/capacities, duplicate
+IDs/handles, missing services, wrong handles and a symbol shared with a
+scripted call response fail before execution. Semantic annotation alone still
+does not authorize this executable model.
+
+## Replay an asynchronous lifecycle
+
+`execute run` is intentionally one call. Long-lived task routes use a replay
+manifest so writable ELF state and scenario-owned services survive across
+ordered calls while each private stack remains fresh:
+
+```console
+cargo vendor-binary-workbench \
+  --project verification/vendor/targets/esp32s31/vendor-project.toml \
+  --run-spec verification/vendor/targets/esp32s31/local.toml \
+  --details advanced execute replay \
+  --source libpp-replay \
+  --manifest verification/vendor/targets/esp32s31/replays/pp-signal-25.toml \
+  --output verification/vendor/targets/esp32s31/generated/findings/replays/pp-signal-25.json
+```
+
+The checked-in example executes the real `pp_post(0x19)`, records the FIFO
+enqueue and transition-only wake, then executes `ppTask` until its reviewed
+goal reaches `wdevProcessRxSucDataAll`. The same session proves the matching
+dequeue and `pp_sig_cnt[0x19]` increment/decrement lifecycle. A goal bounds a
+long-lived task; it is not a function return and therefore cannot be used with
+return-value comparison.
+
+`--output` persists strict evidence rather than a presentation dump. It binds
+the replay to the exact manifest and linked ELF digests. The reviewed event
+route names its producer and consumer phases, so a later `inspect flow
+--event-route rx-success-to-pp-task` can promote queue delivery from “modeled”
+to “executed”. Any changed or missing input makes that claim incomplete.
+
+The ordinary `libpp` linked ELF remains the lossless inventory/navigation
+view. The separate `libpp-replay` link unit defines storage for runtime-owned
+external globals such as `g_osi_funcs_p` and `xphyQueue`; scenarios still own
+their values. This distinction is required because allowing an unresolved
+data symbol through the linker can relax its access into `lw ..., 0(zero)`,
+which is not repairable by execution-time seeding.
+
+Runtime table slots may target a linked function with `kind = "symbol"` or an
+external scenario function with `kind = "modeled-symbol"`. A modeled symbol
+is assigned a synthetic function-pointer value and must have an executable
+FIFO binding or explicit call-response model in that phase. Merely naming an
+RTOS semantic is insufficient. `pointer-cell-symbols = ["g_osi_funcs_p"]`
+resolves a table pointer cell from the exact linked ELF and avoids unstable
+numeric addresses.
+
 ## Compare vendor and Rust executions
 
 Compare linked vendor and Rust implementations under the same scenarios:
@@ -130,7 +184,7 @@ observables differ. `INCOMPLETE` means the workbench cannot make that claim
 because execution, branch/control-flow coverage, MMIO classification or a
 required model is missing.
 
-Schema 8 reports a typed `TraceDiffReport` instead of dumping both complete
+Schema 9 reports a typed `TraceDiffReport` instead of dumping both complete
 outcomes for every difference. It identifies the first differing event, RAM
 change or return value, keeps up to three aligned items before and after it,
 and records the ordered branch/call paths for both sides. Coverage gaps use the
@@ -243,11 +297,14 @@ slots = [{ offset = 0x10, target = { kind = "symbol", value = "open_queue_send" 
 ```
 
 Slot targets use `{ kind = "symbol", value = "..." }`,
+`{ kind = "modeled-symbol", value = "..." }`,
 `{ kind = "address", value = 0x... }`, or `{ kind = "null" }`. The executor
-resolves every symbol against the exact side's ELF and then
+resolves linked symbols against the exact side's ELF, allocates collision-
+checked synthetic addresses for modeled external functions, and then
 materializes 32-bit little-endian pointer cells and slots. It rejects duplicate
 instances/slots, unaligned locations, out-of-layout offsets, missing target
-symbols and conflicts with explicit RAM seeds. Thus a profile no longer needs
+symbols, modeled targets without executable behavior and conflicts with
+explicit RAM seeds. Thus a profile no longer needs
 to encode unstable linked callback addresses as raw words.
 
 At the backend boundary `LAYOUT-ID` is retained provenance, not proof that the

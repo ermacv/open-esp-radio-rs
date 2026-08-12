@@ -256,6 +256,8 @@ pub(super) fn project_context_fields(
     let mut semantic_actions = BTreeSet::new();
     let mut semantic_action_count = 0_usize;
     let mut explored = 0_usize;
+    let mut scheduled = 1_usize;
+    let mut projection_budget_exhausted = false;
 
     while let Some(state) = queue.pop_front() {
         if explored >= MAX_CONTEXT_PROJECTION_STATES {
@@ -279,13 +281,23 @@ pub(super) fn project_context_fields(
             let mut site_path = state_site_path(&state, call_edges);
             site_path.push(call.site);
             let guard_scopes = state_guard_scopes(&state, functions, call_edges);
+            let action_guard_scopes = extend_guard_scopes(
+                guard_scopes.as_deref(),
+                &function.identity,
+                call.guard_paths.as_deref(),
+            );
             semantic_action_count += 1;
             let event_dispatch = call
                 .semantic_contract
                 .as_ref()
                 .and_then(|contract| contract.event_dispatch.as_ref())
                 .is_some();
-            if !materialize_semantic_actions && guard_scopes.is_none() && !event_dispatch {
+            if !materialize_semantic_actions
+                && !action_guard_scopes
+                    .as_ref()
+                    .is_some_and(|scopes| !scopes.is_empty())
+                && !event_dispatch
+            {
                 continue;
             }
             let state_path = render_state_path(&state, functions, call_edges);
@@ -310,11 +322,7 @@ pub(super) fn project_context_fields(
                     &boundary,
                     &state_path,
                 ),
-                guard_scopes: extend_guard_scopes(
-                    guard_scopes.as_deref(),
-                    &function.identity,
-                    call.guard_paths.as_deref(),
-                ),
+                guard_scopes: action_guard_scopes,
             });
         }
         for call in function
@@ -422,6 +430,9 @@ pub(super) fn project_context_fields(
             }
         }
 
+        if projection_budget_exhausted {
+            continue;
+        }
         for (edge_index, edge) in call_edges[state.function].iter().enumerate() {
             if !projection_reachable[edge.target] {
                 continue;
@@ -432,6 +443,13 @@ pub(super) fn project_context_fields(
                     function.identity, functions[edge.target].identity
                 ));
                 continue;
+            }
+            if scheduled >= MAX_CONTEXT_PROJECTION_STATES {
+                blockers.insert(format!(
+                    "context projection exceeds {MAX_CONTEXT_PROJECTION_STATES} scheduled simple-path states"
+                ));
+                projection_budget_exhausted = true;
+                break;
             }
             let mut argument_map = vec![None; usize::from(LINKED_CONTEXT_ARGUMENTS)];
             for binding in &edge.bindings {
@@ -465,6 +483,7 @@ pub(super) fn project_context_fields(
                 visited_functions,
                 edge_path,
             });
+            scheduled += 1;
         }
     }
 

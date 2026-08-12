@@ -107,6 +107,21 @@ impl Machine<'_> {
             let link = self.image.relocated_call_link_register(self.pc)?;
             let continuation = self.pc.wrapping_add(8);
             let name = call.name.clone();
+            if self.fifo_bindings.contains_key(&name) {
+                self.record_call(self.pc, name.clone());
+                self.apply_fifo_service_call(&name, self.pc)?;
+                if link == Reg::ZERO {
+                    let return_address = self.register(Reg::RA);
+                    if return_address == RETURN_SENTINEL {
+                        return Ok(false);
+                    }
+                    self.pc = return_address;
+                } else {
+                    self.set_register(link, continuation);
+                    self.pc = continuation;
+                }
+                return Ok(true);
+            }
             if let Some(response) = self.modeled_call_response(&name, self.pc)? {
                 self.record_call(self.pc, name.clone());
                 self.apply_modeled_call_response(&name, self.pc, response)?;
@@ -418,6 +433,23 @@ impl Machine<'_> {
             }
             Inst::Jal { offset, dest } => {
                 let target = self.pc.wrapping_add(offset.as_u32());
+                if let Some(symbol) = self.call_symbol_at(target).map(str::to_owned)
+                    && self.fifo_bindings.contains_key(&symbol)
+                {
+                    self.record_call(self.pc, symbol.clone());
+                    self.apply_fifo_service_call(&symbol, self.pc)?;
+                    if dest == Reg::ZERO {
+                        let return_address = self.register(Reg::RA);
+                        if return_address == RETURN_SENTINEL {
+                            return Ok(false);
+                        }
+                        self.pc = return_address;
+                    } else {
+                        self.set_register(dest, next);
+                        self.pc = next;
+                    }
+                    return Ok(true);
+                }
                 if let Some(symbol) = self.image.symbol_at(target)
                     && let Some(response) = self.modeled_call_response(symbol, self.pc)?
                 {
@@ -446,19 +478,44 @@ impl Machine<'_> {
             }
             Inst::Jalr { offset, base, dest } => {
                 let target = self.register(base).wrapping_add(offset.as_u32()) & !1;
-                if let Some(symbol) = self.image.symbol_at(target)
-                    && let Some(response) = self.modeled_call_response(symbol, self.pc)?
+                if let Some(symbol) = self.call_symbol_at(target).map(str::to_owned)
+                    && self.fifo_bindings.contains_key(&symbol)
                 {
-                    self.record_call(self.pc, symbol.to_owned());
+                    self.record_call(self.pc, symbol.clone());
                     self.indirect_calls.insert(IndirectCall {
                         site: self.pc,
-                        symbol: symbol.to_owned(),
+                        symbol: symbol.clone(),
                         arguments: core::array::from_fn(|index| {
                             self.registers[usize::from(Reg::A0.0) + index]
                         }),
                     });
-                    self.record_indirect_table_call(self.pc, target, symbol);
-                    self.apply_modeled_call_response(symbol, self.pc, response)?;
+                    self.record_indirect_table_call(self.pc, target, &symbol);
+                    self.apply_fifo_service_call(&symbol, self.pc)?;
+                    if dest == Reg::ZERO {
+                        let return_address = self.register(Reg::RA);
+                        if return_address == RETURN_SENTINEL {
+                            return Ok(false);
+                        }
+                        self.pc = return_address;
+                    } else {
+                        self.set_register(dest, next);
+                        self.pc = next;
+                    }
+                    return Ok(true);
+                }
+                if let Some(symbol) = self.call_symbol_at(target).map(str::to_owned)
+                    && let Some(response) = self.modeled_call_response(&symbol, self.pc)?
+                {
+                    self.record_call(self.pc, symbol.clone());
+                    self.indirect_calls.insert(IndirectCall {
+                        site: self.pc,
+                        symbol: symbol.clone(),
+                        arguments: core::array::from_fn(|index| {
+                            self.registers[usize::from(Reg::A0.0) + index]
+                        }),
+                    });
+                    self.record_indirect_table_call(self.pc, target, &symbol);
+                    self.apply_modeled_call_response(&symbol, self.pc, response)?;
                     if dest == Reg::ZERO {
                         let return_address = self.register(Reg::RA);
                         if return_address == RETURN_SENTINEL {
@@ -475,19 +532,30 @@ impl Machine<'_> {
                 if target == RETURN_SENTINEL {
                     return Ok(false);
                 }
-                if let Some(symbol) = self.image.symbol_at(target) {
+                if let Some(symbol) = self.call_symbol_at(target).map(str::to_owned) {
                     let is_return = dest == Reg::ZERO && base == Reg::RA && offset.as_u32() == 0;
                     if !is_return {
-                        self.record_call(self.pc, symbol.to_owned());
+                        self.record_call(self.pc, symbol.clone());
                         self.indirect_calls.insert(IndirectCall {
                             site: self.pc,
-                            symbol: symbol.to_owned(),
+                            symbol: symbol.clone(),
                             arguments: core::array::from_fn(|index| {
                                 self.registers[usize::from(Reg::A0.0) + index]
                             }),
                         });
-                        self.record_indirect_table_call(self.pc, target, symbol);
+                        self.record_indirect_table_call(self.pc, target, &symbol);
                     }
+                }
+                if self.is_modeled_call_target(target) {
+                    let symbol = self
+                        .call_symbol_at(target)
+                        .unwrap_or("<unknown-modeled-target>");
+                    return Err(format!(
+                        "modeled external call target {symbol} at {target:#010x} was reached without an executable model; FIFO bindings={:?}, call responses={:?}",
+                        self.fifo_bindings.keys().collect::<Vec<_>>(),
+                        self.call_responses.keys().collect::<Vec<_>>()
+                    )
+                    .into());
                 }
                 self.pc = target;
                 return Ok(true);

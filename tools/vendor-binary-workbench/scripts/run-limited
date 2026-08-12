@@ -12,15 +12,20 @@ if [[ ! -x "$binary" ]]; then
 fi
 
 limit_backend="${VENDOR_WORKBENCH_LIMIT_BACKEND:-auto}"
-if [[ "$limit_backend" != "auto" && "$limit_backend" != "systemd" && "$limit_backend" != "prlimit" ]]; then
-    echo "error: VENDOR_WORKBENCH_LIMIT_BACKEND must be auto, systemd, or prlimit" >&2
+if [[ "$limit_backend" != "auto" && "$limit_backend" != "systemd" && "$limit_backend" != "watchdog" ]]; then
+    echo "error: VENDOR_WORKBENCH_LIMIT_BACKEND must be auto, systemd, or watchdog" >&2
     exit 2
 fi
 
-if [[ "$limit_backend" != "prlimit" ]] \
+if [[ "$limit_backend" != "watchdog" ]] \
     && command -v systemd-run >/dev/null 2>&1 \
     && command -v systemctl >/dev/null 2>&1 \
-    && systemctl --user show-environment >/dev/null 2>&1; then
+    && systemctl --user show-environment >/dev/null 2>&1 \
+    && systemd-run --user --pipe --wait --collect --quiet \
+        --property=MemoryMax=1G \
+        --property=MemorySwapMax=0 \
+        --property=RuntimeMaxSec=10s \
+        -- /usr/bin/true >/dev/null 2>&1; then
     exec systemd-run --user --pipe --wait --collect --quiet \
         --working-directory="$PWD" \
         --property=MemoryMax=1G \
@@ -34,14 +39,67 @@ if [[ "$limit_backend" == "systemd" ]]; then
     exit 2
 fi
 
-if command -v prlimit >/dev/null 2>&1 && command -v timeout >/dev/null 2>&1; then
-    # RLIMIT_AS bounds RAM plus swap-backed address space and is therefore
-    # stricter than an RSS-only limit. timeout supplies the wall-clock bound.
-    exec prlimit --as=1073741824 -- \
-        timeout --signal=TERM --kill-after=10s 15m \
-        "$binary" "$@"
+if [[ ! -r /proc/self/status ]]; then
+    echo "error: the RSS watchdog requires Linux /proc" >&2
+    exit 2
 fi
 
-echo "error: a user systemd scope or both prlimit and timeout are required" >&2
-echo "refusing to run artifact-wide analysis without hard resource limits" >&2
-exit 2
+memory_limit_kib=1048576
+deadline_seconds=900
+grace_seconds=10
+reason=""
+peak_rss_kib=0
+
+"$binary" "$@" &
+child=$!
+started=$SECONDS
+
+terminate_child() {
+    local signal="$1"
+    if kill -0 "$child" 2>/dev/null; then
+        kill -s "$signal" "$child" 2>/dev/null || true
+    fi
+}
+
+trap 'terminate_child TERM' INT TERM
+
+while kill -0 "$child" 2>/dev/null; do
+    rss_kib="$(awk '/^VmRSS:/ { print $2 }' "/proc/$child/status" 2>/dev/null || true)"
+    rss_kib="${rss_kib:-0}"
+    if (( rss_kib > peak_rss_kib )); then
+        peak_rss_kib="$rss_kib"
+    fi
+    if (( rss_kib > memory_limit_kib )); then
+        reason="RSS exceeded 1 GiB (observed ${rss_kib} KiB)"
+        terminate_child TERM
+        break
+    fi
+    if (( SECONDS - started >= deadline_seconds )); then
+        reason="runtime exceeded 15 minutes"
+        terminate_child TERM
+        break
+    fi
+    sleep 0.1
+done
+
+if [[ -n "$reason" ]]; then
+    grace_started=$SECONDS
+    while kill -0 "$child" 2>/dev/null && (( SECONDS - grace_started < grace_seconds )); do
+        sleep 0.1
+    done
+    terminate_child KILL
+fi
+
+set +e
+wait "$child"
+status=$?
+set -e
+trap - INT TERM
+
+if [[ -n "$reason" ]]; then
+    echo "error: workbench resource watchdog stopped the command: $reason" >&2
+    echo "peak RSS: ${peak_rss_kib} KiB" >&2
+    exit 137
+fi
+
+exit "$status"

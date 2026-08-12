@@ -1,0 +1,41 @@
+# Execution-oriented libpp link unit. Unlike the lossless inventory-oriented
+# `linked-oracle-libpp.toml`, this view defines storage for platform-owned
+# globals reached by pp_post/ppTask. Scenarios still own every runtime value;
+# the fixtures exist so the linker retains valid relocations and instructions.
+schema = 1
+source = "libpp-replay"
+linker-scripts = [
+    "../../../../../../hil/targets/esp32s31/linker/rom/esp32s31-eco0.x",
+    "link.x",
+]
+archives = ["../../../../../../_oracles/libpp.a"]
+stub-symbols = [
+    "__adddf3",
+    "__clzsi2",
+    "__ctzsi2",
+    "__extendsfdf2",
+    "__ffssi2",
+    "__fixdfsi",
+    "__floatsidf",
+    "__floatundisf",
+    "__floatunsidf",
+    "__muldf3",
+    "__popcountsi2",
+    "__subdf3",
+    "__truncdfsf2",
+    "__udivdi3",
+    "__umoddi3",
+]
+fixture-data-symbols = [
+    { name = "esp_test_rx_statistics", size = 8, alignment = 4 },
+    { name = "g_dbg_interp_tsf", size = 4, alignment = 4 },
+    { name = "g_dbg_interp_tsf_end", size = 4, alignment = 4 },
+    { name = "g_osi_funcs_p", size = 4, alignment = 4 },
+    { name = "g_intr_lock_mux", size = 4, alignment = 4 },
+    { name = "s_pp_task_create_sem", size = 4, alignment = 4 },
+    { name = "xphyQueue", size = 4, alignment = 4 },
+]
+whole-archive = true
+emit-relocations = true
+gc-sections = false
+unresolved-symbols = "ignore-all"

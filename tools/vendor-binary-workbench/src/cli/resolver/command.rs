@@ -321,6 +321,12 @@ pub(super) fn resolve_command(
             svd: environment.svd,
             project: environment.project.map(Box::new),
         },
+        Command::ExecuteReplay(arguments) => ResolvedInvocation::Target {
+            command: TargetCommand::ExecuteReplay(arguments),
+            target: environment.target,
+            svd: environment.svd,
+            project: environment.project.map(Box::new),
+        },
         Command::ExecuteCompare(arguments) => ResolvedInvocation::Target {
             command: TargetCommand::ExecuteCompare(arguments),
             target: environment.target,

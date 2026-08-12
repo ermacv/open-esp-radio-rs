@@ -146,6 +146,12 @@ pub(crate) struct NamedScenario {
     pub(crate) rust_ram_words: Vec<(u32, u32)>,
     pub(crate) vendor_table_instances: Vec<crate::execution_model::TableInstance>,
     pub(crate) rust_table_instances: Vec<crate::execution_model::TableInstance>,
+    pub(crate) vendor_fifo_services: Vec<crate::execution_model::FifoServiceInstance>,
+    pub(crate) rust_fifo_services: Vec<crate::execution_model::FifoServiceInstance>,
+    pub(crate) vendor_fifo_bindings: Vec<crate::execution_model::FifoServiceBinding>,
+    pub(crate) rust_fifo_bindings: Vec<crate::execution_model::FifoServiceBinding>,
+    pub(crate) vendor_goal: crate::execution_model::ExecutionGoal,
+    pub(crate) rust_goal: crate::execution_model::ExecutionGoal,
     pub(crate) vendor_call_responses: Vec<(String, execution::ModeledCallResponse)>,
     pub(crate) rust_call_responses: Vec<(String, execution::ModeledCallResponse)>,
     pub(crate) vendor_memory_instances: Vec<RuntimeMemoryInstance>,
@@ -165,6 +171,12 @@ impl NamedScenario {
             rust_ram_words: Vec::new(),
             vendor_table_instances: Vec::new(),
             rust_table_instances: Vec::new(),
+            vendor_fifo_services: Vec::new(),
+            rust_fifo_services: Vec::new(),
+            vendor_fifo_bindings: Vec::new(),
+            rust_fifo_bindings: Vec::new(),
+            vendor_goal: crate::execution_model::ExecutionGoal::Return,
+            rust_goal: crate::execution_model::ExecutionGoal::Return,
             vendor_call_responses: Vec::new(),
             rust_call_responses: Vec::new(),
             vendor_memory_instances: Vec::new(),
@@ -259,6 +271,21 @@ pub(crate) fn resolved_scenario(
     } else {
         named.rust_table_instances.clone()
     });
+    scenario.fifo_services.extend(if vendor {
+        named.vendor_fifo_services.clone()
+    } else {
+        named.rust_fifo_services.clone()
+    });
+    scenario.fifo_bindings.extend(if vendor {
+        named.vendor_fifo_bindings.clone()
+    } else {
+        named.rust_fifo_bindings.clone()
+    });
+    scenario.goal = if vendor {
+        named.vendor_goal.clone()
+    } else {
+        named.rust_goal.clone()
+    };
     for (symbol, response) in if vendor {
         &named.vendor_call_responses
     } else {

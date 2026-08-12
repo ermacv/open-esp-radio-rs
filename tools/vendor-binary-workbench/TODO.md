@@ -99,16 +99,31 @@ that every user must learn.
   real selector `0x19` report loads three function records in 0.07 seconds at
   7.8 MiB RSS, preserves the observed post and queue call, and names the two
   missing executable models instead of recursively serializing the graph.
-- [ ] Make the `0x19` route executable.
+- [x] Make the `0x19` route executable.
   - [x] Generalize external caller-stack outputs to reviewed 8/16/32-bit
     little-endian writes and bind `queue_recv(item-out)` to a 32-bit ABI model.
     This is call knowledge only and deliberately leaves `event-delivery=false`.
-  - [ ] Add a scenario-owned stateful queue instance and reviewed indexed
-    ppTask jump-table instance. Concrete replay must prove the selector path
-    before `path-feasibility` or `event-delivery` becomes true.
-- [ ] Generalize instruction-site evidence from calls/diagnostics to every
+  - [x] Add scenario-owned stateful FIFO instances with reviewed, mechanism-
+    neutral enqueue/dequeue/length ABI bindings and ordered lifecycle evidence.
+  - [x] Recover the real ELF `.L1019` selector table as bounded schema-v49
+    `indexed-dispatch` edges. Selector `0x19` reaches `.L1026` and
+    `wdevProcessRxSucDataAll` in the local linked `libpp` oracle.
+  - [x] Add the concrete multi-phase replay that posts selector `0x19`,
+    preserves it in the FIFO, executes `ppTask` until the handler boundary and
+    proves delivery. `advanced execute replay` now runs the checked-in
+    `replays/pp-signal-25.toml` against an execution-oriented link unit: the
+    real `pp_post` enqueue, latch transition, `ppTask` dequeue, indexed jump
+    and `wdevProcessRxSucDataAll` boundary execute in one persistent session.
+  - [x] Join the successful replay document into `inspect flow --event-route`.
+    Exact FIFO delivery now sets `event-delivery`; `path-feasibility` remains
+    false because the replay starts at `pp_post`, below the structural root.
+- [x] Generalize instruction-site evidence from calls/diagnostics to every
   MMIO and memory-object read/write, preserving the originating basic block
   and value provenance in persistent IR.
+- [x] Bound zero-sized `.L*`/`.LANCHOR*` data objects by the next symbol and
+  deduplicate aliases at one location. This removes duplicated section tails
+  from memory and turns compiler anchors into usable constant/jump-table
+  objects without dropping initializer or relocation evidence.
 - [x] Join the stored project Replacement Graph into `inspect function` and
   the TUI instead of adding a parallel inspection engine. The report keeps
   exact/unique-symbol association, production component, probes, proofs and an
@@ -550,8 +565,10 @@ schema without isolation.
 - [x] Make one worker the CLI default and reject `--jobs 0`; parallelism is an
   explicit measured opt-in in the range `1..=8`.
 - [x] Add `scripts/run-limited`: prefer a 1-GiB/no-swap user systemd scope and
-  fall back to a stricter 1-GiB address-space `prlimit`; both paths have a
-  15-minute wall limit and there is no unrestricted fallback.
+  fall back to a Linux RSS watchdog; both paths have a 15-minute wall limit
+  and there is no unrestricted fallback. `RLIMIT_AS` was removed after it
+  rejected a 474-MiB real run solely because glibc retained released virtual
+  address ranges.
 - [x] Remove project-wide concatenated pseudo-Rust outputs and their generated
   ESP32-S31 files. Pseudo remains per function and as a focused prefix export.
 - [x] Stream every linked-IR bundle member into a private staging directory,
@@ -569,8 +586,16 @@ schema without isolation.
   guard evidence.
   - [x] Schema v48 persists direct facts and the call graph once, computes
     exact closure scalars, and marks heavyweight root projections as
-    deferred. Prefix-focused exports retain complete paths/actions; artifact-wide
-    register indexes retain the bounded guard-backed semantic subset.
+    deferred. Prefix-focused exports retain complete paths/actions;
+    artifact-wide indexes retain direct guard-backed semantic/event evidence
+    and reconstruct transitive paths only for focused investigation.
+- [x] Bound the complete set of scheduled affine-projection states, not only
+  the number already popped from the queue. The old check allowed a branching
+  call graph to enqueue millions of paths before reaching its 4096-state
+  processing limit. The schema-v49 real `wifi-sta-lifecycle` profile now
+  completes all 2997 functions in 61 seconds with a measured 474,448-KiB peak;
+  compact summary construction takes 0.37 seconds and exact direct facts plus
+  `graph.json` remain the transitive source of truth.
 - [x] Record a cold, non-cached ESP32-S31 `--jobs 1` baseline through
   `scripts/run-limited`. The worst isolated profile (`wifi-sta-lifecycle`,
   2997 functions) completed in 9.72 s at 498,096 KiB and emitted a 151.5-MiB

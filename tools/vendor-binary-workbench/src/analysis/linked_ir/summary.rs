@@ -9,6 +9,23 @@ mod projection;
 pub(super) use effect::populate_effect_summaries;
 #[cfg(test)]
 pub(super) use event_dispatch::project_event_dispatches;
+#[cfg(test)]
+pub(super) fn bounded_projection_test(
+    root: usize,
+    functions: &[LinkedIrFunction],
+    call_edges: &[Vec<SummaryCallEdge>],
+    projection_reachable: &[bool],
+) -> (bool, Vec<String>) {
+    let projection = projection::project_context_fields(
+        root,
+        functions,
+        call_edges,
+        projection_reachable,
+        true,
+        false,
+    );
+    (projection.complete, projection.blockers)
+}
 
 #[derive(Clone)]
 pub(super) struct SummaryCallEdge {

@@ -7,6 +7,7 @@ mod data_objects;
 mod debug;
 mod decode;
 mod function_body;
+mod indexed_dispatch;
 mod inventory;
 mod model;
 mod relocations;
@@ -26,12 +27,14 @@ pub use function_body::{
     FunctionControlFlowKind, FunctionInstruction, FunctionInstructionRelocation, FunctionLabel,
     basic_block_ids_for_sites, inspect_function_body, inspect_function_body_at,
 };
+pub use indexed_dispatch::recover_indexed_dispatches;
 pub use inventory::inspect_artifact;
 pub use model::{
     AnalysisInstruction, ArtifactCodeRange, ArtifactCodeRecoveryBlocker,
     ArtifactCodeSectionCoverage, ArtifactContainerKind, ArtifactDataObjectDefinition,
     ArtifactDataObjectRelocation, ArtifactDataSymbolDefinition, ArtifactDirectControlFlowEvidence,
-    ArtifactDirectControlFlowKind, ArtifactFunctionBoundaryCandidate, ArtifactInventory,
+    ArtifactDirectControlFlowKind, ArtifactFunctionBoundaryCandidate, ArtifactIndexedDispatch,
+    ArtifactIndexedDispatchCallee, ArtifactIndexedDispatchEntry, ArtifactInventory,
     ArtifactObjectInventory, ArtifactObjectKind, ArtifactSymbolBinding, ArtifactSymbolDefinition,
     ArtifactSymbolDefinitionState, ArtifactSymbolFact, ArtifactSymbolKind, ArtifactSymbolScope,
     ArtifactSymbolTable, ArtifactSymbolVisibility, CodeSymbolSelection, DecodedInstruction,

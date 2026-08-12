@@ -218,6 +218,7 @@ pub enum TableSlotTargetReport {
     Null,
     Address { address: u32 },
     Symbol { symbol: String },
+    ModeledSymbol { symbol: String },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -232,7 +233,72 @@ pub struct TableInstanceReport {
     pub base_address: u32,
     pub layout_size: u32,
     pub pointer_cells: Vec<u32>,
+    pub pointer_cell_symbols: Vec<String>,
     pub slots: Vec<TableInstanceSlotReport>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct FifoServiceReport {
+    pub id: String,
+    pub handle: u32,
+    pub item_width: u8,
+    pub capacity: usize,
+    pub items: Vec<u32>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum ExecutionCompletionReport {
+    Returned,
+    GoalReached {
+        goal: crate::execution_model::ExecutionGoal,
+    },
+}
+
+impl From<&execution::ExecutionCompletion> for ExecutionCompletionReport {
+    fn from(completion: &execution::ExecutionCompletion) -> Self {
+        match completion {
+            execution::ExecutionCompletion::Returned => Self::Returned,
+            execution::ExecutionCompletion::GoalReached(goal) => {
+                Self::GoalReached { goal: goal.clone() }
+            }
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(tag = "action", rename_all = "kebab-case")]
+pub enum FifoLifecycleReport {
+    Enqueued {
+        service_id: String,
+        site: u32,
+        value: u32,
+        depth_before: usize,
+        depth_after: usize,
+        woke_receiver: bool,
+    },
+    Dequeued {
+        service_id: String,
+        site: u32,
+        value: u32,
+        depth_before: usize,
+        depth_after: usize,
+    },
+    Full {
+        service_id: String,
+        site: u32,
+        value: u32,
+        depth: usize,
+    },
+    Empty {
+        service_id: String,
+        site: u32,
+    },
+    Length {
+        service_id: String,
+        site: u32,
+        depth: usize,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -323,6 +389,12 @@ pub struct ScenarioEnvironmentReport {
     pub rust_table_lifecycle: Vec<TableLifecycleReport>,
     pub vendor_table_lifecycle_complete: Option<bool>,
     pub rust_table_lifecycle_complete: Option<bool>,
+    pub vendor_fifo_services: Vec<FifoServiceReport>,
+    pub rust_fifo_services: Vec<FifoServiceReport>,
+    pub vendor_fifo_lifecycle: Vec<FifoLifecycleReport>,
+    pub rust_fifo_lifecycle: Vec<FifoLifecycleReport>,
+    pub vendor_completion: Option<ExecutionCompletionReport>,
+    pub rust_completion: Option<ExecutionCompletionReport>,
 }
 
 #[derive(Debug, Serialize)]

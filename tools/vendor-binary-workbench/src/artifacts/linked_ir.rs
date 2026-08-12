@@ -66,7 +66,7 @@ mod tests {
             inspect_linked_ir(&path)
                 .unwrap_err()
                 .to_string()
-                .contains("expected schema_version 48")
+                .contains("expected schema_version 49")
         );
         std::fs::remove_dir_all(path).unwrap();
     }
@@ -112,7 +112,7 @@ mod tests {
                     {"caller": "root", "callee": "child", "site": 2, "kind": "internal"},
                     {"caller": "child", "callee": "external-callback", "site": 3, "kind": "external"},
                     {"caller": "child", "callee": "sink", "site": 4, "kind": "project-linked"},
-                    {"caller": "sink", "callee": "leaf", "site": 5, "kind": "internal"}
+                    {"caller": "sink", "callee": "leaf", "site": 5, "kind": "indexed-dispatch"}
                 ]
             })
             .to_string(),
@@ -137,6 +137,19 @@ mod tests {
                 .map(|edge| edge.callee.as_str())
                 .collect::<Vec<_>>(),
             ["child", "sink"]
+        );
+        let indexed_path = reader.shortest_path_to_any(
+            "root",
+            &std::collections::BTreeSet::from(["leaf".to_owned()]),
+            super::super::GraphSearchLimits {
+                max_depth: 3,
+                max_visited_nodes: 8,
+                max_examined_edges: 16,
+            },
+        );
+        assert_eq!(
+            indexed_path.path.unwrap().last().unwrap().kind,
+            "indexed-dispatch"
         );
 
         let depth_limited = reader.reachable_from(

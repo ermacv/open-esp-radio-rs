@@ -915,6 +915,7 @@ pub(crate) struct LinkedIrReport {
     pub(crate) complete_functions: usize,
     pub(crate) structured_functions: usize,
     pub(crate) internal_calls: usize,
+    pub(crate) indexed_dispatch_calls: usize,
     pub(crate) external_calls: usize,
     pub(crate) call_argument_shapes: usize,
     pub(crate) project_linked_calls: usize,

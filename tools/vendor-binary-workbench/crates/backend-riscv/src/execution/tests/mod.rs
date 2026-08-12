@@ -80,4 +80,5 @@ mod calls;
 mod devices;
 mod image_and_control;
 mod memory;
+mod services;
 mod session;

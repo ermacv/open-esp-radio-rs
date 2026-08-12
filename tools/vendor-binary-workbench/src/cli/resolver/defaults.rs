@@ -206,6 +206,21 @@ pub(super) fn apply_run_spec_defaults(command: &mut Command, run_spec: &RunSpec)
                     args.companion = Some(path.clone());
                 }
             }
+            Command::ExecuteReplay(args) => {
+                let source_matches = args.source.as_deref().is_some_and(|source| {
+                    matches!(role, InputRole::SourceArtifact(candidate) if candidate.as_str() == source)
+                });
+                let companion_matches = args.source.as_deref().is_some_and(|source| {
+                    matches!(role, InputRole::SourceCompanion(candidate) if candidate.as_str() == source)
+                });
+                if (role == &InputRole::Artifact || source_matches) && args.artifact.is_none() {
+                    args.artifact = Some(path.clone());
+                } else if (role == &InputRole::Companion || companion_matches)
+                    && args.companion.is_none()
+                {
+                    args.companion = Some(path.clone());
+                }
+            }
             Command::ExecuteCompare(args) => match role {
                 InputRole::VendorArtifact if args.vendor_artifact.is_none() => {
                     args.vendor_artifact = Some(path.clone())

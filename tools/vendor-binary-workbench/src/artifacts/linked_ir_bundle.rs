@@ -678,7 +678,10 @@ impl LinkedIrReader {
 }
 
 fn traversable_call_edge(edge: &StoredGraphEdge) -> bool {
-    matches!(edge.kind.as_str(), "internal" | "project-linked")
+    matches!(
+        edge.kind.as_str(),
+        "internal" | "project-linked" | "indexed-dispatch"
+    )
 }
 
 pub(crate) fn load_linked_ir_functions(path: &Path) -> Result<super::LinkedIrStoredDocument> {

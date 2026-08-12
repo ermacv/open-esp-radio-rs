@@ -111,6 +111,7 @@ impl ResolutionNeeds {
             }
 
             Command::ExecuteRun(_)
+            | Command::ExecuteReplay(_)
             | Command::ExecuteCompare(_)
             | Command::VerifyProfiles(_)
             | Command::InspectTrace(_)

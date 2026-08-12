@@ -8,7 +8,8 @@ use std::{
 use super::{ExecutableImage, execute};
 use crate::{MmioMap, Result};
 use open_radio_vendor_execution_model::{
-    DeviceModel, MemoryRange, TableInstance, TableLifecycleEvent,
+    DeviceModel, ExecutionGoal, FifoLifecycleEvent, FifoServiceBinding, FifoServiceInstance,
+    MemoryRange, TableInstance, TableLifecycleEvent,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -281,11 +282,25 @@ pub struct Scenario {
     /// Concrete callback/service tables installed by the scenario. They are
     /// materialized as 32-bit little-endian RAM words before the call starts.
     pub table_instances: Vec<TableInstance>,
+    /// Stateful mechanism-neutral services available at reviewed external
+    /// call boundaries. Bindings select their ABI without teaching the
+    /// executor vendor or RTOS names.
+    pub fifo_services: Vec<FifoServiceInstance>,
+    pub fifo_bindings: Vec<FifoServiceBinding>,
     /// Fresh execution-time peripheral state. Every factory is instantiated
     /// independently for each vendor or Rust run.
     pub device_models: Vec<Arc<dyn DeviceModel>>,
     pub reset_policy: ResetPolicy,
+    /// Explicit completion condition. Ordinary equivalence keeps `Return`;
+    /// long-lived tasks require a reviewed bounded observation goal.
+    pub goal: ExecutionGoal,
     pub max_steps: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ExecutionCompletion {
+    Returned,
+    GoalReached(ExecutionGoal),
 }
 
 #[derive(Clone, Debug)]
@@ -294,6 +309,7 @@ pub struct ExecutionResult {
     pub event_producers: Vec<ExecutionProducer>,
     pub timeline: Vec<ExecutionTimelineEvent>,
     pub return_value: u32,
+    pub completion: ExecutionCompletion,
     pub steps: u64,
     pub branches: BTreeSet<(u32, bool)>,
     pub ordered_branches: Vec<(u32, bool)>,
@@ -303,6 +319,8 @@ pub struct ExecutionResult {
     pub allocations: Vec<AllocationLifecycleEvent>,
     pub table_lifecycle: Vec<TableLifecycleEvent>,
     pub table_lifecycle_complete: bool,
+    pub fifo_lifecycle: Vec<FifoLifecycleEvent>,
+    pub fifo_services: Vec<FifoServiceInstance>,
     pub device_model_coverage: Vec<super::DeviceModelOutcome>,
     pub memory_changes: Vec<MemoryChange>,
     /// Explicit RAM overlay at function entry. Semantic normalizers combine
@@ -326,9 +344,60 @@ pub struct ExecutionSession {
     memory: BTreeMap<u32, u8>,
     persistent_ranges: Vec<MemoryRange>,
     memory_ownership: Vec<MemoryOwnership>,
+    fifo_services: BTreeMap<String, FifoServiceInstance>,
+}
+
+#[derive(Clone, Debug)]
+pub struct ExecutionPhase {
+    pub name: String,
+    pub symbol: String,
+    pub scenario: Scenario,
+}
+
+#[derive(Clone, Debug)]
+pub struct ExecutionPhaseResult {
+    pub name: String,
+    pub symbol: String,
+    pub result: ExecutionResult,
 }
 
 impl ExecutionSession {
+    pub fn execute_phases(
+        &mut self,
+        image: &ExecutableImage,
+        svd: &MmioMap,
+        phases: Vec<ExecutionPhase>,
+    ) -> Result<Vec<ExecutionPhaseResult>> {
+        if phases.is_empty() {
+            return Err("execution replay has no phases".into());
+        }
+        let mut names = BTreeSet::new();
+        let mut output = Vec::with_capacity(phases.len());
+        for phase in phases {
+            if phase.name.trim().is_empty() || !names.insert(phase.name.clone()) {
+                return Err(format!(
+                    "execution replay phase names must be non-empty and unique: {:?}",
+                    phase.name
+                )
+                .into());
+            }
+            let result = self
+                .execute(image, svd, &phase.symbol, phase.scenario)
+                .map_err(|error| {
+                    format!(
+                        "execution replay phase {} ({}) failed: {error}",
+                        phase.name, phase.symbol
+                    )
+                })?;
+            output.push(ExecutionPhaseResult {
+                name: phase.name,
+                symbol: phase.symbol,
+                result,
+            });
+        }
+        Ok(output)
+    }
+
     pub fn execute(
         &mut self,
         image: &ExecutableImage,
@@ -336,6 +405,26 @@ impl ExecutionSession {
         symbol: &str,
         mut scenario: Scenario,
     ) -> Result<ExecutionResult> {
+        for service in scenario.fifo_services.drain(..) {
+            match self.fifo_services.get(&service.id) {
+                Some(previous)
+                    if previous.handle != service.handle
+                        || previous.item_width != service.item_width
+                        || previous.capacity != service.capacity =>
+                {
+                    return Err(format!(
+                        "FIFO service {} changes its handle, item width, or capacity inside one execution session",
+                        service.id
+                    )
+                    .into());
+                }
+                Some(_) => {}
+                None => {
+                    self.fifo_services.insert(service.id.clone(), service);
+                }
+            }
+        }
+        scenario.fifo_services = self.fifo_services.values().cloned().collect();
         for ownership in scenario.memory_ownership.drain(..) {
             if let Some(previous) = self
                 .memory_ownership
@@ -381,6 +470,12 @@ impl ExecutionSession {
 
         let result = execute(image, svd, symbol, scenario)?;
         self.memory.clone_from(&result.persistent_memory);
+        self.fifo_services = result
+            .fifo_services
+            .iter()
+            .cloned()
+            .map(|service| (service.id.clone(), service))
+            .collect();
         Ok(result)
     }
 

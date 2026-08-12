@@ -7,19 +7,20 @@ mod model;
 pub use image::{CoverageInventory, ExecutableImage};
 pub use machine::execute;
 pub use model::{
-    AllocationLifecycleEvent, AtomicOperation, AtomicOrdering, ExecutionEvent, ExecutionProducer,
-    ExecutionResult, ExecutionSession, ExecutionTimelineEvent, IndirectCall, MemoryAlias,
-    MemoryChange, MemoryOwner, MemoryOwnership, ModeledAllocation, ModeledCallOutput,
-    ModeledCallResponse, OrderedCall, ResetPolicy, Scenario,
+    AllocationLifecycleEvent, AtomicOperation, AtomicOrdering, ExecutionCompletion, ExecutionEvent,
+    ExecutionPhase, ExecutionPhaseResult, ExecutionProducer, ExecutionResult, ExecutionSession,
+    ExecutionTimelineEvent, IndirectCall, MemoryAlias, MemoryChange, MemoryOwner, MemoryOwnership,
+    ModeledAllocation, ModeledCallOutput, ModeledCallResponse, OrderedCall, ResetPolicy, Scenario,
 };
 
 use open_radio_vendor_execution_model::{
-    DeviceModelDescriptor, DeviceModelInstance, DeviceModelOutcome, MemoryRange,
-    TableLifecycleEvent, TableSlotTarget,
+    DeviceModelDescriptor, DeviceModelInstance, DeviceModelOutcome, FifoLifecycleEvent,
+    FifoServiceBinding, FifoServiceInstance, FifoServiceOperation, MemoryRange, ServiceOutput,
+    ServiceValueSource, TableLifecycleEvent, TableSlotTarget,
 };
 #[cfg(test)]
 use open_radio_vendor_execution_model::{
-    DeviceModelRegistry, DeviceModelSpec, TableInstance, TableInstanceSlot,
+    DeviceModelRegistry, DeviceModelSpec, ExecutionGoal, TableInstance, TableInstanceSlot,
 };
 
 use image::{RETURN_SENTINEL, STACK_POINTER, execution_stack_contains};

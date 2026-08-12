@@ -6,7 +6,7 @@ use std::path::Path;
 
 use super::{ReplacementGraph, RustArtifactInput, RustComponentIndex, VerificationCommandReport};
 
-pub(crate) const PROJECT_VERIFICATION_REPORT_SCHEMA: u32 = 8;
+pub(crate) const PROJECT_VERIFICATION_REPORT_SCHEMA: u32 = 9;
 
 #[derive(Serialize)]
 pub(crate) struct ProjectVerificationSuiteReport {

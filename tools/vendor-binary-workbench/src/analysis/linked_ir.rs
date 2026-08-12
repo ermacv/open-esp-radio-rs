@@ -90,6 +90,68 @@ fn calls_for_trace(
     compact_calls(calls)
 }
 
+fn indexed_dispatch_calls(
+    owner: &artifact::ArtifactSymbolDefinition,
+    resolver: &ReferenceResolver,
+    identities: &IrIdentityCatalog,
+) -> crate::Result<Vec<LinkedCall>> {
+    let dispatches =
+        artifact::recover_indexed_dispatches(owner, &resolver.data_objects, &resolver.symbols)?;
+    let mut calls = Vec::new();
+    for dispatch in dispatches {
+        for entry in dispatch.entries {
+            for callee in entry.callees {
+                let definition = callee
+                    .address
+                    .and_then(|address| resolver.symbols_by_address.get(&address))
+                    .or_else(|| {
+                        let mut matches = resolver.symbols.iter().filter(|candidate| {
+                            candidate.name == callee.symbol
+                                && (candidate.member == owner.member
+                                    || candidate.member.is_none()
+                                    || owner.member.is_none())
+                        });
+                        let selected = matches.next()?;
+                        matches.next().is_none().then_some(selected)
+                    });
+                let (kind, target) = definition.map_or_else(
+                    || ("indexed-dispatch-unresolved", callee.symbol.clone()),
+                    |definition| ("indexed-dispatch", identities.symbol(definition)),
+                );
+                calls.push(LinkedCall {
+                    kind,
+                    target,
+                    site: Some(dispatch.site),
+                    tail: true,
+                    result_modeled: false,
+                    execution_model: None,
+                    semantics: Some(format!(
+                        "bounded indexed dispatch; table={}; selector={}; stride={}; case={}@{:#010x}; handler-call={:#010x}",
+                        dispatch.table,
+                        entry.selector,
+                        dispatch.stride,
+                        entry.case_target,
+                        entry.case_address,
+                        callee.site,
+                    )),
+                    semantic_operation: None,
+                    semantic_contract: None,
+                    replacement_hint: None,
+                    project_symbol: None,
+                    project_candidates: Vec::new(),
+                    trampoline: None,
+                    argument_shapes: 1,
+                    arguments: vec![format!("selector={}", entry.selector)],
+                    argument_bindings: Vec::new(),
+                    typed_arguments: Vec::new(),
+                    guard_paths: None,
+                });
+            }
+        }
+    }
+    Ok(calls)
+}
+
 fn annotate_direct_semantic_calls(
     calls: &mut [LinkedCall],
     owner: &artifact::ArtifactSymbolDefinition,
@@ -299,14 +361,25 @@ fn build_linked_functions_for_roots(
         };
         let decode_blockers = reachable_decode_blockers(symbol);
         let DirectCallGraph {
-            calls: direct_calls,
+            calls: mut direct_calls,
             direct_mmio_predicates,
-            blockers,
+            mut blockers,
             site_effects,
         } = explore_direct_calls(symbol, resolver, &identities, svd);
+        match indexed_dispatch_calls(symbol, resolver, &identities) {
+            Ok(calls) => direct_calls.extend(calls),
+            Err(error) => {
+                blockers.insert(format!(
+                    "indexed-dispatch recovery failed for {function_identity}: {error}"
+                ));
+            }
+        }
         let direct_mmio_predicates = direct_mmio_predicates.into_iter().collect::<Vec<_>>();
         if include_reachable {
-            for call in direct_calls.iter().filter(|call| call.kind == "internal") {
+            for call in direct_calls
+                .iter()
+                .filter(|call| matches!(call.kind, "internal" | "indexed-dispatch"))
+            {
                 let Some(callee) = identities.selectable_symbol(&call.target) else {
                     continue;
                 };
@@ -476,6 +549,26 @@ fn build_linked_functions_for_roots(
         }
         progress.pb_inc(1);
         progress.pb_set_message(&format!("{source}: completed {function_identity}"));
+        if functions.len().is_multiple_of(64)
+            && crate::resource_usage::resident_set_kib().is_some_and(|rss| rss >= 256 * 1024)
+        {
+            // Some branch-heavy functions temporarily materialize hundreds
+            // of MiB of trace state. The state is dropped before this point,
+            // but glibc may retain those pages in its arenas. Returning fully
+            // free pages here keeps the next function's peak independent of
+            // the previous function without changing any analysis budget or
+            // result.
+            crate::resource_usage::release_unused_memory("linked-IR function batch");
+        }
+        if functions.len().is_multiple_of(128) {
+            tracing::debug!(
+                source,
+                functions = functions.len(),
+                function = function_identity,
+                rss_kib = ?crate::resource_usage::resident_set_kib(),
+                "linked-IR function analysis checkpoint"
+            );
+        }
     }
 
     progress.pb_set_finish_message(&format!("{source}: analyzed {} functions", functions.len()));

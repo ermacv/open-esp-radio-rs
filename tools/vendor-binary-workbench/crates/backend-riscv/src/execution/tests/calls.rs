@@ -61,6 +61,55 @@ fn reviewed_call_model_intercepts_linked_code_and_is_fully_consumed() {
 }
 
 #[test]
+fn reach_symbol_goal_stops_before_executing_a_long_lived_handler() {
+    let mut image = tiny_image(
+        vec![
+            0xef, 0x00, 0x00, 0x01, // jal ra, 16
+            0x67, 0x80, 0x00, 0x00, // ret (not reached before goal)
+            0, 0, 0, 0, 0, 0, 0, 0, // padding
+            0x6f, 0x00, 0x00, 0x00, // handler: loop forever
+        ],
+        20,
+    );
+    image.symbols_by_name.insert("handler".to_owned(), 0x1010);
+    image
+        .symbols_by_address
+        .insert(0x1010, "handler".to_owned());
+    let scenario = Scenario {
+        goal: ExecutionGoal::ReachSymbol {
+            symbol: "handler".to_owned(),
+        },
+        ..Scenario::default()
+    };
+
+    let result = execute(&image, &empty_svd(), "test", scenario).unwrap();
+    assert_eq!(result.steps, 1);
+    assert!(matches!(
+        result.completion,
+        ExecutionCompletion::GoalReached(ExecutionGoal::ReachSymbol { ref symbol })
+            if symbol == "handler"
+    ));
+}
+
+#[test]
+fn unmet_observation_goal_fails_when_function_returns() {
+    let image = tiny_image(vec![0x67, 0x80, 0x00, 0x00], 4);
+    let scenario = Scenario {
+        goal: ExecutionGoal::ObserveCall {
+            symbol: "never_called".to_owned(),
+        },
+        ..Scenario::default()
+    };
+
+    let error = execute(&image, &empty_svd(), "test", scenario).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("returned before reaching goal observe call never_called")
+    );
+}
+
+#[test]
 fn modeled_call_response_applies_two_word_return_and_private_stack_output() {
     let image = tiny_image(vec![0x67, 0x80, 0x00, 0x00], 4);
     let svd = empty_svd();
@@ -277,6 +326,7 @@ fn runtime_table_instance_resolves_symbolic_slots_and_pointer_cells() {
             base_address: 0x4000,
             layout_size: 0x20,
             pointer_cells: vec![0x3000],
+            pointer_cell_symbols: Vec::new(),
             slots: vec![TableInstanceSlot {
                 offset: 4,
                 target: TableSlotTarget::Symbol("callback".to_owned()),
@@ -328,6 +378,79 @@ fn runtime_table_instance_resolves_symbolic_slots_and_pointer_cells() {
 }
 
 #[test]
+fn runtime_table_instance_executes_modeled_external_slot_absent_from_elf() {
+    let image = tiny_image(
+        vec![
+            0x13, 0x84, 0x00, 0x00, // addi s0, ra, 0
+            0xb7, 0x32, 0x00, 0x00, // lui t0, 0x3
+            0x83, 0xa2, 0x02, 0x00, // lw t0, 0(t0)
+            0x83, 0xa2, 0x42, 0x00, // lw t0, 4(t0)
+            0xe7, 0x80, 0x02, 0x00, // jalr ra, 0(t0)
+            0x93, 0x00, 0x04, 0x00, // addi ra, s0, 0
+            0x67, 0x80, 0x00, 0x00, // ret
+        ],
+        28,
+    );
+    let scenario = Scenario {
+        table_instances: vec![TableInstance {
+            layout_id: "platform-services-v1".to_owned(),
+            base_address: 0x4000,
+            layout_size: 0x20,
+            pointer_cells: vec![0x3000],
+            pointer_cell_symbols: Vec::new(),
+            slots: vec![TableInstanceSlot {
+                offset: 4,
+                target: TableSlotTarget::ModeledSymbol("queue_receive".to_owned()),
+            }],
+        }],
+        call_responses: BTreeMap::from([(
+            "queue_receive".to_owned(),
+            VecDeque::from([ModeledCallResponse::scalar(1)]),
+        )]),
+        ..Scenario::default()
+    };
+
+    let result = execute(&image, &empty_svd(), "test", scenario).unwrap();
+    assert_eq!(result.return_value, 1);
+    assert_eq!(result.ordered_calls[0].symbol, "queue_receive");
+    assert!(matches!(
+        result.table_lifecycle.last(),
+        Some(TableLifecycleEvent::IndirectCall {
+            layout_id: Some(layout_id),
+            slot_offset: Some(4),
+            symbol,
+            ..
+        }) if layout_id == "platform-services-v1" && symbol == "queue_receive"
+    ));
+}
+
+#[test]
+fn modeled_external_table_slot_requires_execution_model() {
+    let image = tiny_image(vec![0x67, 0x80, 0x00, 0x00], 4);
+    let scenario = Scenario {
+        table_instances: vec![TableInstance {
+            layout_id: "platform-services-v1".to_owned(),
+            base_address: 0x4000,
+            layout_size: 4,
+            pointer_cells: Vec::new(),
+            pointer_cell_symbols: Vec::new(),
+            slots: vec![TableInstanceSlot {
+                offset: 0,
+                target: TableSlotTarget::ModeledSymbol("queue_receive".to_owned()),
+            }],
+        }],
+        ..Scenario::default()
+    };
+
+    assert!(
+        execute(&image, &empty_svd(), "test", scenario)
+            .unwrap_err()
+            .to_string()
+            .contains("has no FIFO binding or call response model")
+    );
+}
+
+#[test]
 fn runtime_table_lifecycle_records_slot_install_before_indirect_call() {
     let mut image = tiny_image(
         vec![
@@ -352,6 +475,7 @@ fn runtime_table_lifecycle_records_slot_install_before_indirect_call() {
             base_address: 0x4000,
             layout_size: 0x20,
             pointer_cells: Vec::new(),
+            pointer_cell_symbols: Vec::new(),
             slots: vec![TableInstanceSlot {
                 offset: 4,
                 target: TableSlotTarget::Symbol("callback".to_owned()),
@@ -404,6 +528,7 @@ fn runtime_table_instance_rejects_stale_layouts_and_ram_conflicts() {
             base_address: 0x4000,
             layout_size: 4,
             pointer_cells: Vec::new(),
+            pointer_cell_symbols: Vec::new(),
             slots: vec![TableInstanceSlot {
                 offset: 4,
                 target: TableSlotTarget::Address(0x1000),
@@ -425,6 +550,7 @@ fn runtime_table_instance_rejects_stale_layouts_and_ram_conflicts() {
             base_address: 0x4000,
             layout_size: 4,
             pointer_cells: vec![0x3000],
+            pointer_cell_symbols: Vec::new(),
             slots: Vec::new(),
         }],
         ..Scenario::default()

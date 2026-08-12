@@ -4,9 +4,9 @@ use toml_edit::{ArrayOfTables, DocumentMut, Item, Table};
 
 use super::{
     FunctionPack, FunctionReviewStatus, ReviewedContext, ReviewedContextField,
-    ReviewedEventCaseHandler, ReviewedEventDelivery, ReviewedEventRoute, ReviewedFunction,
-    ReviewedFunctionInput, ReviewedLogicalType, ReviewedMemoryObject, ReviewedPath,
-    ReviewedPrecondition, ReviewedTypeBinding, ReviewedTypeField,
+    ReviewedEventCaseHandler, ReviewedEventDelivery, ReviewedEventReplay, ReviewedEventRoute,
+    ReviewedFunction, ReviewedFunctionInput, ReviewedLogicalType, ReviewedMemoryObject,
+    ReviewedPath, ReviewedPrecondition, ReviewedTypeBinding, ReviewedTypeField,
 };
 use crate::Result;
 
@@ -64,6 +64,26 @@ fn parse_event_routes(tables: &ArrayOfTables) -> Result<Vec<ReviewedEventRoute>>
                     )));
                 }
             };
+            let replay_fields = [
+                optional_string(table, "replay-evidence"),
+                optional_string(table, "replay-producer-phase"),
+                optional_string(table, "replay-consumer-phase"),
+            ];
+            let replay = match replay_fields {
+                [None, None, None] => None,
+                [Some(evidence), Some(producer_phase), Some(consumer_phase)] => {
+                    Some(ReviewedEventReplay {
+                        evidence: evidence.into(),
+                        producer_phase,
+                        consumer_phase,
+                    })
+                }
+                _ => {
+                    return Err(crate::Error::invalid(format!(
+                        "{context} replay requires evidence, producer phase, and consumer phase together"
+                    )));
+                }
+            };
             Ok(ReviewedEventRoute {
                 id: required_table_string(table, "id", &context)?,
                 profile: required_table_string(table, "profile", &context)?,
@@ -94,6 +114,7 @@ fn parse_event_routes(tables: &ArrayOfTables) -> Result<Vec<ReviewedEventRoute>>
                     encoding: required_table_string(table, "delivery-encoding", &context)?,
                 },
                 case_handler,
+                replay,
                 rationale: required_table_string(table, "rationale", &context)?,
             })
         })

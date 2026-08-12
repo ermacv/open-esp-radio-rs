@@ -298,7 +298,7 @@ fn compose_path(
         FlowStatus::Incomplete
     };
     Ok(FlowInvestigationReport {
-        schema_version: 2,
+        schema_version: 3,
         command: "inspect flow",
         mode: "target",
         status,
@@ -335,7 +335,7 @@ fn not_reached(
     message: &str,
 ) -> FlowInvestigationReport {
     FlowInvestigationReport {
-        schema_version: 2,
+        schema_version: 3,
         command: "inspect flow",
         mode: "target",
         status: FlowStatus::NotReached,

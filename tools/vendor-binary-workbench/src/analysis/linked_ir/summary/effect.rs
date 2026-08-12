@@ -78,7 +78,7 @@ pub(in crate::analysis::linked_ir) fn populate_effect_summaries(
         }
         for call in &function.calls {
             match call.kind {
-                "internal" | "project-linked" => {
+                "internal" | "project-linked" | "indexed-dispatch" => {
                     let target = identities.get(&call.target).copied().or_else(|| {
                         let candidates =
                             source_symbols.get(&(function.source.clone(), call.target.clone()))?;
@@ -124,6 +124,13 @@ pub(in crate::analysis::linked_ir) fn populate_effect_summaries(
     );
 
     if compact_projected_actions {
+        // Artifact-wide bundles persist lossless direct calls/guards plus the
+        // call graph. Do not copy every transitive simple path into every
+        // function summary: that representation is quadratic on ordinary
+        // graphs and exponential on diamonds. A root-only projection retains
+        // direct guarded/event facts needed by the register and event indexes;
+        // full transitive paths are reconstructed by focused investigation.
+        let direct_only = vec![false; function_count];
         let summaries = (0..function_count)
             .map(|root| {
                 let mut depths = vec![None; function_count];
@@ -150,15 +157,22 @@ pub(in crate::analysis::linked_ir) fn populate_effect_summaries(
                     .iter()
                     .enumerate()
                     .any(|(index, depth)| depth.is_some() && recursive_nodes.contains(&index));
-                let context_projection = project_context_fields(
+                let semantic_action_count = depths
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, depth)| depth.is_some())
+                    .flat_map(|(index, _)| &functions_view[index].calls)
+                    .filter(|call| call.semantic_operation.is_some())
+                    .count();
+                let direct_projection = project_context_fields(
                     root,
                     functions_view,
                     &call_edges,
-                    &projection_reachable,
+                    &direct_only,
                     call_graph_closed,
                     false,
                 );
-                let register_semantic_actions = context_projection
+                let register_semantic_actions = direct_projection
                     .semantic_actions
                     .iter()
                     .filter(|action| action.guard_scopes.is_some())
@@ -173,13 +187,11 @@ pub(in crate::analysis::linked_ir) fn populate_effect_summaries(
                     context_projection_materialized: false,
                     context_projection_complete: false,
                     context_projection_paths_materialized: false,
-                    semantic_action_count: context_projection.semantic_action_count,
+                    semantic_action_count,
                     semantic_actions_materialized: false,
-                    semantic_actions: ProjectedSemanticActions::omitted(
-                        context_projection.semantic_action_count,
-                    ),
+                    semantic_actions: ProjectedSemanticActions::omitted(semantic_action_count),
                     register_semantic_actions,
-                    event_dispatches: context_projection.event_dispatches,
+                    event_dispatches: direct_projection.event_dispatches,
                     ..LinkedEffectSummary::default()
                 }
             })

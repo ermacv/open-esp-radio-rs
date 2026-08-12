@@ -47,6 +47,12 @@ pub(super) fn compare(
                 named.scenario = scenario.scenario;
                 named.vendor_table_instances = scenario.vendor_table_instances;
                 named.rust_table_instances = scenario.rust_table_instances;
+                named.vendor_fifo_services = scenario.vendor_fifo_services;
+                named.rust_fifo_services = scenario.rust_fifo_services;
+                named.vendor_fifo_bindings = scenario.vendor_fifo_bindings;
+                named.rust_fifo_bindings = scenario.rust_fifo_bindings;
+                named.vendor_goal = scenario.vendor_goal;
+                named.rust_goal = scenario.rust_goal;
                 named
             })
             .collect()

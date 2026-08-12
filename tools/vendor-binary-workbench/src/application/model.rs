@@ -561,6 +561,12 @@ pub struct ComparisonScenario {
     pub scenario: crate::ExecutionScenario,
     pub vendor_table_instances: Vec<crate::ExecutionTableInstance>,
     pub rust_table_instances: Vec<crate::ExecutionTableInstance>,
+    pub vendor_fifo_services: Vec<crate::ExecutionFifoServiceInstance>,
+    pub rust_fifo_services: Vec<crate::ExecutionFifoServiceInstance>,
+    pub vendor_fifo_bindings: Vec<crate::ExecutionFifoServiceBinding>,
+    pub rust_fifo_bindings: Vec<crate::ExecutionFifoServiceBinding>,
+    pub vendor_goal: crate::ExecutionGoal,
+    pub rust_goal: crate::ExecutionGoal,
 }
 
 #[derive(Clone, Debug)]

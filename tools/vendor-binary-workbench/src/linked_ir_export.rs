@@ -168,12 +168,22 @@ pub(crate) fn analyze(
             entry_contract,
             &artifact.reviewed_code,
         )?;
+        tracing::debug!(
+            source = artifact.source,
+            rss_kib = ?crate::resource_usage::resident_set_kib(),
+            "loaded linked-IR resolver"
+        );
         if let Some(interfaces) = interfaces {
             register_reviewed_external_calls(
                 &mut resolver,
                 interfaces,
                 &artifact.source,
                 interface_origins,
+            );
+            tracing::debug!(
+                source = artifact.source,
+                rss_kib = ?crate::resource_usage::resident_set_kib(),
+                "registered reviewed interface calls"
             );
         }
         register_projected_direct_semantics(
@@ -183,6 +193,11 @@ pub(crate) fn analyze(
             inventories.get(&artifact.source).map(PathBuf::as_path),
             interface_origins,
         )?;
+        tracing::debug!(
+            source = artifact.source,
+            rss_kib = ?crate::resource_usage::resident_set_kib(),
+            "registered projected direct semantics"
+        );
         reports.push(build_linked_ir_for_source(
             &resolver,
             svd,
@@ -425,7 +440,13 @@ pub(crate) fn register_reviewed_external_calls(
             }
         }
     }
-    for projected in interfaces.project_link_unit_calls(source, origins) {
+    let projected_calls = interfaces.project_link_unit_calls(source, origins);
+    tracing::debug!(
+        source,
+        projected_calls = projected_calls.len(),
+        "projected reviewed archive calls onto linked artifact"
+    );
+    for projected in projected_calls {
         let slot = projected.binding;
         let reviewed = ReviewedExternalCall {
             id: slot.id.clone(),

@@ -5,7 +5,7 @@
     reason = "complete stored DTOs enforce every persistent schema field"
 )]
 
-use std::path::Path;
+use std::{fs::File, io::BufReader, path::Path};
 
 use serde::Deserialize;
 
@@ -174,6 +174,49 @@ struct StoredSymbolCandidate {
     member: Option<String>,
     address: String,
     kind: String,
+}
+
+/// Allocation-light projection used by linked-IR generation. The complete
+/// strict DTO above remains the validation/review reader; this projection
+/// deliberately ignores code coverage and non-origin symbol fields.
+#[derive(Deserialize)]
+struct OriginInventoryProjection {
+    schema_version: u32,
+    command: String,
+    linkage_mode: String,
+    linker_resolution_claim: bool,
+    artifacts: Vec<OriginArtifactProjection>,
+    symbols: Vec<OriginSymbolProjection>,
+}
+
+#[derive(Deserialize)]
+struct OriginArtifactProjection {
+    index: usize,
+    artifact: OriginArtifactIdentityProjection,
+    sources: Vec<String>,
+}
+
+#[derive(Deserialize)]
+struct OriginArtifactIdentityProjection {
+    sha256: String,
+}
+
+#[derive(Deserialize)]
+struct OriginSymbolProjection {
+    artifact: usize,
+    member: Option<String>,
+    name: String,
+    address: String,
+    kind: String,
+    origin_association: String,
+    origin_candidates: Vec<OriginCandidateProjection>,
+}
+
+#[derive(Deserialize)]
+struct OriginCandidateProjection {
+    artifact: usize,
+    member: Option<String>,
+    address: String,
 }
 
 /// Exact, association-only provenance from one authoritative link-unit
@@ -377,20 +420,32 @@ pub(crate) fn inspect_symbol_inventory(path: &Path) -> crate::Result<SymbolInven
 }
 
 pub(crate) fn load_link_unit_origins(path: &Path) -> crate::Result<Vec<LinkUnitOriginFact>> {
-    let input = std::fs::read_to_string(path)?;
-    let document = parse_symbol_inventory(&input).map_err(|error| {
-        crate::Error::invalid(format!(
-            "unsupported symbol inventory in {}: {error}",
+    let document: OriginInventoryProjection =
+        serde_json::from_reader(BufReader::new(File::open(path)?)).map_err(|error| {
+            crate::Error::invalid(format!(
+                "unsupported symbol inventory in {}: {error}",
+                path.display()
+            ))
+        })?;
+    if document.schema_version != SYMBOL_INVENTORY.version
+        || document.command != SYMBOL_INVENTORY.command
+        || document.linkage_mode != "association-only"
+        || document.linker_resolution_claim
+    {
+        return Err(crate::Error::invalid(format!(
+            "expected association-only schema_version {} and command {:?} in {}",
+            SYMBOL_INVENTORY.version,
+            SYMBOL_INVENTORY.command,
             path.display()
-        ))
-    })?;
+        )));
+    }
     let artifacts = document
         .artifacts
         .iter()
         .map(|artifact| (artifact.index, artifact))
         .collect::<std::collections::BTreeMap<_, _>>();
     let mut origins = Vec::new();
-    for symbol in &document.symbols {
+    for symbol in document.symbols {
         if symbol.origin_association != "unique-name-and-kind" {
             continue;
         }
@@ -413,10 +468,10 @@ pub(crate) fn load_link_unit_origins(path: &Path) -> crate::Result<Vec<LinkUnitO
         origins.push(LinkUnitOriginFact {
             linked_sources: linked.sources.clone(),
             linked_artifact_sha256: linked.artifact.sha256.clone(),
-            linked_member: symbol.member.clone(),
-            symbol: symbol.name.clone(),
+            linked_member: symbol.member,
+            symbol: symbol.name,
             linked_address: hex_u64(&symbol.address)?,
-            kind: symbol.kind.clone(),
+            kind: symbol.kind,
             origin_sources: origin_artifact.sources.clone(),
             origin_artifact_sha256: origin_artifact.artifact.sha256.clone(),
             origin_member: origin.member.clone(),

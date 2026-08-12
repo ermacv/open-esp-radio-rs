@@ -17,6 +17,10 @@ pub struct ReferenceResolver {
     /// Public for construction of synthetic resolver fixtures. Production
     /// callers should use one of the `load*` constructors.
     pub data_symbols: Vec<artifact::ArtifactDataSymbolDefinition>,
+    /// Bounded static objects retained for relocation-aware indexed dispatch
+    /// recovery. Synthetic labels are clipped to the next symbol by the
+    /// artifact loader, so this does not duplicate section tails.
+    pub data_objects: Vec<artifact::ArtifactDataObjectDefinition>,
     /// Reviewed exact-body semantics projected from a unique archive origin
     /// onto the authoritative linked definition. The facade owns origin and
     /// digest validation; the backend only stores the resulting typed fact.
@@ -201,6 +205,7 @@ impl ReferenceResolver {
             None
         };
         let mut data_symbols = artifact::load_data_symbols(artifact)?;
+        let data_objects = artifact::load_data_objects(artifact)?;
         for companion in companions {
             let Some(image) = image.as_mut() else {
                 return Err(format!(
@@ -414,6 +419,7 @@ impl ReferenceResolver {
             relocated_calls,
             pointer_context,
             data_symbols,
+            data_objects,
             projected_direct_semantics: BTreeMap::new(),
         })
     }
@@ -542,6 +548,7 @@ mod tests {
             relocated_calls: BTreeMap::new(),
             pointer_context: StructuralPointerContext::default(),
             data_symbols,
+            data_objects: Vec::new(),
             projected_direct_semantics: BTreeMap::new(),
         }
     }

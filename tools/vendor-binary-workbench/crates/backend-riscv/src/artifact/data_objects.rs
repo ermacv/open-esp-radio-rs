@@ -1,7 +1,8 @@
 //! Static data-object inventory for linked ELF images and archive members.
 
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeSet, HashMap, HashSet},
+    ops::Bound::{Excluded, Unbounded},
     path::Path,
 };
 
@@ -44,19 +45,23 @@ fn collect_relocations(
         if !(start..end).contains(&address) {
             continue;
         }
-        let target = match relocation.target() {
-            RelocationTarget::Symbol(index) => file
-                .symbol_by_index(index)?
-                .name()
-                .unwrap_or("<unnamed-symbol>")
-                .to_owned(),
-            RelocationTarget::Section(index) => file
-                .section_by_index(index)?
-                .name()
-                .unwrap_or("<unnamed-section>")
-                .to_owned(),
-            RelocationTarget::Absolute => "<absolute>".to_owned(),
-            _ => "<unknown>".to_owned(),
+        let (target, target_address) = match relocation.target() {
+            RelocationTarget::Symbol(index) => {
+                let symbol = file.symbol_by_index(index)?;
+                (
+                    symbol.name().unwrap_or("<unnamed-symbol>").to_owned(),
+                    symbol.is_definition().then_some(symbol.address()),
+                )
+            }
+            RelocationTarget::Section(index) => {
+                let section = file.section_by_index(index)?;
+                (
+                    section.name().unwrap_or("<unnamed-section>").to_owned(),
+                    Some(section.address()),
+                )
+            }
+            RelocationTarget::Absolute => ("<absolute>".to_owned(), None),
+            _ => ("<unknown>".to_owned(), None),
         };
         output.push(ArtifactDataObjectRelocation {
             offset: address - start,
@@ -65,6 +70,7 @@ fn collect_relocations(
                 _ => None,
             },
             target,
+            target_address,
             addend: relocation.addend(),
         });
     }
@@ -85,11 +91,16 @@ fn collect_objects(
     }
     let addresses_resolved = file.kind() != ObjectKind::Relocatable;
     let mut aliases_by_location = HashMap::<_, Vec<String>>::new();
+    let mut symbol_locations_by_section = HashMap::<SectionIndex, BTreeSet<u64>>::new();
     for symbol in file.symbols().filter(|symbol| symbol.is_definition()) {
         let (Some(section_index), Ok(name)) = (symbol.section_index(), symbol.name()) else {
             continue;
         };
         if !name.is_empty() {
+            symbol_locations_by_section
+                .entry(section_index)
+                .or_default()
+                .insert(symbol.address());
             aliases_by_location
                 .entry((section_index, symbol.address()))
                 .or_default()
@@ -165,6 +176,7 @@ fn collect_objects(
         named_locations.insert((section_index, symbol.address()));
     }
 
+    let mut synthetic_locations = HashSet::new();
     for anchor in file.symbols() {
         if anchor.kind() != SymbolKind::Unknown || !anchor.is_definition() || anchor.size() != 0 {
             continue;
@@ -173,6 +185,9 @@ fn collect_objects(
             continue;
         };
         if named_locations.contains(&(section_index, anchor.address())) {
+            continue;
+        }
+        if !synthetic_locations.insert((section_index, anchor.address())) {
             continue;
         }
         let name = anchor.name()?;
@@ -187,16 +202,36 @@ fn collect_objects(
             .address()
             .checked_sub(section.address())
             .ok_or_else(|| format!("data anchor {name} precedes its section"))?;
-        let size = section.size().saturating_sub(object_offset);
+        // A zero-sized compiler label names one local object, not every byte
+        // until the end of the section.  Bounding it by the next symbol is
+        // both more faithful and avoids retaining quadratically duplicated
+        // `.rodata` tails for dense jump-table/constant-pool sections.
+        let section_end = section.address().saturating_add(section.size());
+        let object_end = symbol_locations_by_section
+            .get(&section_index)
+            .and_then(|locations| {
+                locations
+                    .range((Excluded(anchor.address()), Unbounded))
+                    .next()
+                    .copied()
+            })
+            .unwrap_or(section_end)
+            .min(section_end);
+        let size = object_end.saturating_sub(anchor.address());
         if size == 0 {
             continue;
         }
         let initializer = if initialized {
             let start = usize::try_from(object_offset)
                 .map_err(|_| format!("data anchor {name} offset exceeds host address space"))?;
+            let size = usize::try_from(size)
+                .map_err(|_| format!("data anchor {name} size exceeds host address space"))?;
+            let end = start
+                .checked_add(size)
+                .ok_or_else(|| format!("data anchor {name} size overflows"))?;
             section
                 .data()?
-                .get(start..)
+                .get(start..end)
                 .ok_or_else(|| format!("data anchor {name} exceeds its section"))?
                 .to_vec()
         } else {

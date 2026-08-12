@@ -94,7 +94,7 @@ pub(super) fn investigate(
         });
         effects.dedup();
         reports.push(FlowInvestigationReport {
-            schema_version: 2,
+            schema_version: 3,
             command: "inspect flow",
             mode: "effects",
             status: if blockers.is_empty() {

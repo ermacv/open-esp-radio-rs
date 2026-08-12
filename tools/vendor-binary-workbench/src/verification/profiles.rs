@@ -310,6 +310,18 @@ struct ScenarioInput {
     #[serde(default)]
     rust_tables: Vec<crate::execution_model::TableInstance>,
     #[serde(default)]
+    vendor_fifo_services: Vec<crate::execution_model::FifoServiceInstance>,
+    #[serde(default)]
+    rust_fifo_services: Vec<crate::execution_model::FifoServiceInstance>,
+    #[serde(default)]
+    vendor_fifo_bindings: Vec<crate::execution_model::FifoServiceBinding>,
+    #[serde(default)]
+    rust_fifo_bindings: Vec<crate::execution_model::FifoServiceBinding>,
+    #[serde(default)]
+    vendor_goal: crate::execution_model::ExecutionGoal,
+    #[serde(default)]
+    rust_goal: crate::execution_model::ExecutionGoal,
+    #[serde(default)]
     vendor_calls: Vec<CallResponseInput>,
     #[serde(default)]
     rust_calls: Vec<CallResponseInput>,
@@ -351,6 +363,22 @@ impl ProfileInput {
             .into_iter()
             .map(ScenarioInput::finish)
             .collect::<Result<Vec<_>>>()?;
+        if self.compare_return
+            && scenarios.iter().any(|scenario| {
+                !matches!(
+                    scenario.vendor_goal,
+                    crate::execution_model::ExecutionGoal::Return
+                ) || !matches!(
+                    scenario.rust_goal,
+                    crate::execution_model::ExecutionGoal::Return
+                )
+            })
+        {
+            return Err(crate::Error::invalid(format!(
+                "profile {} cannot compare return values when a scenario stops at a non-return execution goal",
+                self.name
+            )));
+        }
         validate_argument_domain(&self.name, &argument_ranges, &scenarios)?;
         let mut mmio_domains = self
             .mmio_domains
@@ -497,6 +525,12 @@ impl ScenarioInput {
         output.rust_symbol_words = self.rust_ram_symbols;
         output.vendor_table_instances = self.vendor_tables;
         output.rust_table_instances = self.rust_tables;
+        output.vendor_fifo_services = self.vendor_fifo_services;
+        output.rust_fifo_services = self.rust_fifo_services;
+        output.vendor_fifo_bindings = self.vendor_fifo_bindings;
+        output.rust_fifo_bindings = self.rust_fifo_bindings;
+        output.vendor_goal = self.vendor_goal;
+        output.rust_goal = self.rust_goal;
         output.vendor_call_responses = self
             .vendor_calls
             .into_iter()
@@ -527,6 +561,23 @@ impl ScenarioInput {
 }
 
 fn validate_scenario(scenario: &NamedScenario) -> Result<()> {
+    for (side, goal, services) in [
+        (
+            "vendor",
+            &scenario.vendor_goal,
+            &scenario.vendor_fifo_services,
+        ),
+        ("Rust", &scenario.rust_goal, &scenario.rust_fifo_services),
+    ] {
+        if let crate::execution_model::ExecutionGoal::ObserveFifoDequeue { service_id, .. } = goal
+            && !services.iter().any(|service| &service.id == service_id)
+        {
+            return Err(crate::Error::invalid(format!(
+                "scenario {} {side} goal refers to missing FIFO service {service_id}",
+                scenario.name
+            )));
+        }
+    }
     for instance in scenario
         .vendor_memory_instances
         .iter()

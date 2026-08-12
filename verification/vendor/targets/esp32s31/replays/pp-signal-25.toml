@@ -1,0 +1,99 @@
+# Concrete lifecycle evidence for the reviewed rx-success-to-pp-task route.
+# The replay link unit defines storage, while this scenario owns all values.
+schema = 1
+
+[[fifo-services]]
+id = "pp-events"
+handle = 0x3fff1000
+item-width = 32
+capacity = 8
+items = []
+
+[[phases]]
+name = "post-signal-25"
+symbol = "pp_post"
+arguments = [0x19, 0]
+max-steps = 256
+
+[[phases.memory]]
+symbol = "xphyQueue"
+width = 32
+value = 0x3fff1000
+
+[[phases.memory]]
+symbol = "s_pp_task_create_sem"
+width = 32
+value = 0x3fff2000
+
+[[phases.memory]]
+symbol = "g_intr_lock_mux"
+width = 32
+value = 0x3fff3000
+
+[[phases.tables]]
+layout-id = "esp32s31-radio-rev0::wifi-osi-v9"
+base-address = 0x3fff0000
+layout-size = 0x200
+pointer-cells = []
+pointer-cell-symbols = ["g_osi_funcs_p"]
+slots = [
+    { offset = 0x028, target = { kind = "modeled-symbol", value = "wifi_int_disable" } },
+    { offset = 0x02c, target = { kind = "modeled-symbol", value = "wifi_int_restore" } },
+    { offset = 0x030, target = { kind = "modeled-symbol", value = "task_yield_from_isr" } },
+    { offset = 0x068, target = { kind = "modeled-symbol", value = "queue_send_from_isr" } },
+]
+
+[[phases.fifo-bindings]]
+symbol = "queue_send_from_isr"
+service-id = "pp-events"
+handle-argument = 0
+operation = { kind = "enqueue", item = { kind = "private-stack-pointer", pointer-argument = 1, width = 32 }, success-return = 1, full-return = 0, wake-output = { kind = "private-stack-pointer", pointer-argument = 2, width = 8 } }
+
+[[phases.calls]]
+symbol = "wifi_int_disable"
+returns = [0]
+
+[[phases.calls]]
+symbol = "wifi_int_restore"
+returns = [0]
+
+[[phases.calls]]
+symbol = "task_yield_from_isr"
+returns = [0]
+
+[[phases]]
+name = "dispatch-signal-25"
+symbol = "ppTask"
+goal = { kind = "reach-symbol", symbol = "wdevProcessRxSucDataAll" }
+max-steps = 256
+
+[[phases.tables]]
+layout-id = "esp32s31-radio-rev0::wifi-osi-v9"
+base-address = 0x3fff0000
+layout-size = 0x200
+pointer-cells = []
+pointer-cell-symbols = ["g_osi_funcs_p"]
+slots = [
+    { offset = 0x028, target = { kind = "modeled-symbol", value = "wifi_int_disable" } },
+    { offset = 0x02c, target = { kind = "modeled-symbol", value = "wifi_int_restore" } },
+    { offset = 0x040, target = { kind = "modeled-symbol", value = "semphr_give" } },
+    { offset = 0x074, target = { kind = "modeled-symbol", value = "queue_recv" } },
+]
+
+[[phases.fifo-bindings]]
+symbol = "queue_recv"
+service-id = "pp-events"
+handle-argument = 0
+operation = { kind = "dequeue", output = { kind = "private-stack-pointer", pointer-argument = 1, width = 32 }, success-return = 1, empty-return = 0 }
+
+[[phases.calls]]
+symbol = "wifi_int_disable"
+returns = [0]
+
+[[phases.calls]]
+symbol = "wifi_int_restore"
+returns = [0]
+
+[[phases.calls]]
+symbol = "semphr_give"
+returns = [1]

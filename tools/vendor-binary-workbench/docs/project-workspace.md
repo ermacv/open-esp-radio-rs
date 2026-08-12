@@ -339,7 +339,7 @@ not been generated, a model that has not been initialized, an invalid model,
 and a ready schema-2 workspace. Coverage reports
 reviewed, ignored, manual and unreviewed registers plus reviewed fields and
 configured review/SVD/PAC outputs. Configured linked-IR review inputs are parsed
-as schema-v48 reports and their register/field-candidate counts are reported;
+as schema-v49 reports and their register/field-candidate counts are reported;
 missing outputs owned by `[[analysis.ir]]` are reported as not generated,
 while missing external inputs or incompatible existing reports are errors
 rather than silently disabling enrichment.
@@ -350,7 +350,7 @@ workspace. Coverage includes reviewed/ignored/unreviewed anchors and slots,
 semantic links, and loaded semantic operations.
 
 If `[functions]` is configured, the doctor checks selected IR outputs, strict
-schema-v48 facts, artifact provenance guards, the pack lifecycle, review
+schema-v49 facts, artifact provenance guards, the pack lifecycle, review
 coverage for root functions/contexts/fields, explicitly accepted incomplete
 evidence, and the configured generated report destination.
 

@@ -1,6 +1,52 @@
 //! Event dispatch, call linking, compaction, and basic rendering.
 
 use super::*;
+
+#[cfg(feature = "esp32s31-harness")]
+#[test]
+fn local_libpp_linked_ir_exposes_pp_task_indexed_dispatch_edge() {
+    let artifact = std::path::Path::new(
+        "target/verification/vendor-linked-libpp/riscv32imafc-unknown-none-elf/release/open-esp-radio-vendor-oracle-esp32s31-trace-elf",
+    );
+    if !artifact.is_file() {
+        return;
+    }
+    let resolver =
+        ReferenceResolver::load(artifact, &[], &crate::harnesses::esp32s31::RISCV_HARNESS).unwrap();
+    let report = build_linked_ir_for_source(
+        &resolver,
+        &MmioMap {
+            registers: Vec::new(),
+            regions: Vec::new(),
+        },
+        LinkedIrSourceOptions {
+            symbol_prefix: "ppTask",
+            source: "libpp",
+            namespace_identities: true,
+            include_reachable: false,
+            jobs: 1,
+            compact_projected_actions: false,
+        },
+    );
+    let function = report
+        .functions
+        .iter()
+        .find(|function| function.symbol == "ppTask")
+        .unwrap();
+    let edge = function
+        .calls
+        .iter()
+        .find(|call| {
+            call.kind == "indexed-dispatch" && call.target.ends_with("::wdevProcessRxSucDataAll")
+        })
+        .unwrap();
+    assert!(
+        edge.semantics
+            .as_deref()
+            .is_some_and(|semantics| semantics.contains("selector=25")),
+        "indexed dispatch edge was {edge:?}"
+    );
+}
 use open_radio_vendor_analysis_model::{
     ReviewedExternalCallEvidence, ReviewedExternalCallExecutionModel,
 };
@@ -319,6 +365,7 @@ fn direct_call_graph_survives_reference_summary_inlining() {
         )]),
         pointer_context: direct::StructuralPointerContext::default(),
         data_symbols: Vec::new(),
+        data_objects: Vec::new(),
         projected_direct_semantics: BTreeMap::new(),
     };
     let map = MmioMap {

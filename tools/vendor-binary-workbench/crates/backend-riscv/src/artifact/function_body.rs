@@ -195,7 +195,7 @@ pub fn basic_block_ids_for_sites(
     Ok(output)
 }
 
-fn build_body(
+pub(super) fn build_body(
     artifact: &Path,
     definition: ArtifactSymbolDefinition,
     labels: Vec<FunctionLabel>,
@@ -285,7 +285,7 @@ fn build_body(
     })
 }
 
-fn classify_control_flow(address: u64, instruction: Inst) -> FunctionControlFlow {
+pub(super) fn classify_control_flow(address: u64, instruction: Inst) -> FunctionControlFlow {
     match instruction {
         Inst::Jal { offset, dest } => FunctionControlFlow {
             kind: if dest == Reg::ZERO {

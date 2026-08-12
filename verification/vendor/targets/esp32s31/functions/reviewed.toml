@@ -1,5 +1,5 @@
 # Human-reviewed function and context names. Generated linked IR stays separate.
-schema = 6
+schema = 7
 id = "esp32s31-radio-rev0"
 
 [[inputs]]
@@ -65,6 +65,9 @@ delivery-encoding = "little-endian"
 case-handler-profile = "wifi-sta-lifecycle"
 case-handler-source = "wifi-sta-lifecycle"
 case-handler-function = "wifi-sta-lifecycle::wdevProcessRxSucDataAll@0x10062e74"
+replay-evidence = "../generated/findings/replays/pp-signal-25.json"
+replay-producer-phase = "post-signal-25"
+replay-consumer-phase = "dispatch-signal-25"
 rationale = "Signal 0x19 is posted by lmacProcessRxSucData, received by ppTask into its stack event word, and the reviewed ppTask dispatch table maps selector 0x19 to wdevProcessRxSucDataAll."
 
 # RX completion first crosses the interrupt-to-task boundary through signal

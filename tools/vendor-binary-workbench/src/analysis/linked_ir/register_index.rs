@@ -90,7 +90,12 @@ pub(super) fn summarize_linked_ir_with_options(
     let internal_calls = functions
         .iter()
         .flat_map(|function| &function.calls)
-        .filter(|call| call.kind == "internal")
+        .filter(|call| matches!(call.kind, "internal" | "indexed-dispatch"))
+        .count();
+    let indexed_dispatch_calls = functions
+        .iter()
+        .flat_map(|function| &function.calls)
+        .filter(|call| call.kind == "indexed-dispatch")
         .count();
     let external_calls = functions
         .iter()
@@ -233,6 +238,7 @@ pub(super) fn summarize_linked_ir_with_options(
         complete_functions,
         structured_functions,
         internal_calls,
+        indexed_dispatch_calls,
         external_calls,
         call_argument_shapes,
         project_linked_calls,

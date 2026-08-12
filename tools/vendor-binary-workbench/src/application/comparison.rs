@@ -83,6 +83,12 @@ pub(super) fn compare_profile(
             scenario: scenario.scenario.clone(),
             vendor_table_instances: scenario.vendor_table_instances.clone(),
             rust_table_instances: scenario.rust_table_instances.clone(),
+            vendor_fifo_services: scenario.vendor_fifo_services.clone(),
+            rust_fifo_services: scenario.rust_fifo_services.clone(),
+            vendor_fifo_bindings: scenario.vendor_fifo_bindings.clone(),
+            rust_fifo_bindings: scenario.rust_fifo_bindings.clone(),
+            vendor_goal: scenario.vendor_goal.clone(),
+            rust_goal: scenario.rust_goal.clone(),
         })
         .collect::<Vec<_>>();
     operations::validate_table_instances(resolved, &table_scenarios)?;

@@ -12,6 +12,8 @@ mod linked_ir_document;
 mod linked_ir_read;
 mod mmio_facts;
 mod mmio_facts_read;
+mod replay_evidence;
+mod replay_evidence_read;
 pub(crate) mod symbol_inventory;
 
 pub(crate) use interface_facts::{build_interface_facts, render_interface_facts};
@@ -38,6 +40,12 @@ pub(crate) use linked_ir_read::{
 };
 pub(crate) use mmio_facts::{MmioFactsDocument, build_mmio_facts, render_mmio_facts};
 pub(crate) use mmio_facts_read::parse_mmio_facts;
+pub(crate) use replay_evidence::{
+    ReplayCompletionDocument, ReplayEvidenceDocument, build_replay_evidence, render_replay_evidence,
+};
+pub(crate) use replay_evidence_read::{
+    StoredFifoLifecycleEvent, StoredReplayCompletion, parse_replay_evidence,
+};
 pub(crate) use symbol_inventory::{
     LinkUnitOriginFact, StoredSymbolInventory, SymbolInventoryDocument,
     build_symbol_inventory_document, inspect_symbol_inventory, load_link_unit_origins,
@@ -68,8 +76,13 @@ pub(crate) const INTERFACE_FACTS: ArtifactSchema = ArtifactSchema {
 };
 
 pub(crate) const LINKED_IR: ArtifactSchema = ArtifactSchema {
-    version: 48,
+    version: 49,
     command: "ir export",
+};
+
+pub(crate) const REPLAY_EVIDENCE: ArtifactSchema = ArtifactSchema {
+    version: 1,
+    command: "execute replay",
 };
 
 #[derive(Deserialize)]
@@ -119,8 +132,15 @@ mod tests {
         assert_eq!(
             LINKED_IR,
             ArtifactSchema {
-                version: 48,
+                version: 49,
                 command: "ir export",
+            }
+        );
+        assert_eq!(
+            REPLAY_EVIDENCE,
+            ArtifactSchema {
+                version: 1,
+                command: "execute replay",
             }
         );
     }

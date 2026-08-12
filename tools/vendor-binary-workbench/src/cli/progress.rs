@@ -52,6 +52,7 @@ pub(super) fn command_span(command: &Command) -> Option<Span> {
         Command::VerifyContractBasebandInit(_) => "Baseband-init parent contract verification",
         Command::VerifyContractRegisterInit(_) => "PHY registration contract verification",
         Command::ExecuteRun(_) => "Vendor function execution",
+        Command::ExecuteReplay(_) => "Multi-phase vendor execution replay",
         Command::ExecuteCompare(_) => "Function comparison",
         Command::VerifyProfiles(_) => "Profile verification",
         Command::GenerateReference(_) => "Reference generation",

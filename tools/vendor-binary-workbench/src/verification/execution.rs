@@ -79,6 +79,7 @@ fn table_instance_report(instance: &crate::execution_model::TableInstance) -> Ta
         base_address: instance.base_address,
         layout_size: instance.layout_size,
         pointer_cells: instance.pointer_cells.clone(),
+        pointer_cell_symbols: instance.pointer_cell_symbols.clone(),
         slots: instance
             .slots
             .iter()
@@ -94,9 +95,84 @@ fn table_instance_report(instance: &crate::execution_model::TableInstance) -> Ta
                             symbol: symbol.clone(),
                         }
                     }
+                    crate::execution_model::TableSlotTarget::ModeledSymbol(symbol) => {
+                        TableSlotTargetReport::ModeledSymbol {
+                            symbol: symbol.clone(),
+                        }
+                    }
                 },
             })
             .collect(),
+    }
+}
+
+fn fifo_service_report(service: &crate::execution_model::FifoServiceInstance) -> FifoServiceReport {
+    FifoServiceReport {
+        id: service.id.clone(),
+        handle: service.handle,
+        item_width: service.item_width,
+        capacity: service.capacity,
+        items: service.items.clone(),
+    }
+}
+
+fn fifo_lifecycle_report(
+    event: &crate::execution_model::FifoLifecycleEvent,
+) -> FifoLifecycleReport {
+    use crate::execution_model::FifoLifecycleEvent;
+    match event {
+        FifoLifecycleEvent::Enqueued {
+            service_id,
+            site,
+            value,
+            depth_before,
+            depth_after,
+            woke_receiver,
+        } => FifoLifecycleReport::Enqueued {
+            service_id: service_id.clone(),
+            site: *site,
+            value: *value,
+            depth_before: *depth_before,
+            depth_after: *depth_after,
+            woke_receiver: *woke_receiver,
+        },
+        FifoLifecycleEvent::Dequeued {
+            service_id,
+            site,
+            value,
+            depth_before,
+            depth_after,
+        } => FifoLifecycleReport::Dequeued {
+            service_id: service_id.clone(),
+            site: *site,
+            value: *value,
+            depth_before: *depth_before,
+            depth_after: *depth_after,
+        },
+        FifoLifecycleEvent::Full {
+            service_id,
+            site,
+            value,
+            depth,
+        } => FifoLifecycleReport::Full {
+            service_id: service_id.clone(),
+            site: *site,
+            value: *value,
+            depth: *depth,
+        },
+        FifoLifecycleEvent::Empty { service_id, site } => FifoLifecycleReport::Empty {
+            service_id: service_id.clone(),
+            site: *site,
+        },
+        FifoLifecycleEvent::Length {
+            service_id,
+            site,
+            depth,
+        } => FifoLifecycleReport::Length {
+            service_id: service_id.clone(),
+            site: *site,
+            depth: *depth,
+        },
     }
 }
 
@@ -257,6 +333,20 @@ fn scenario_environment(named: &NamedScenario) -> ScenarioEnvironmentReport {
         rust_table_lifecycle: Vec::new(),
         vendor_table_lifecycle_complete: None,
         rust_table_lifecycle_complete: None,
+        vendor_fifo_services: named
+            .vendor_fifo_services
+            .iter()
+            .map(fifo_service_report)
+            .collect(),
+        rust_fifo_services: named
+            .rust_fifo_services
+            .iter()
+            .map(fifo_service_report)
+            .collect(),
+        vendor_fifo_lifecycle: Vec::new(),
+        rust_fifo_lifecycle: Vec::new(),
+        vendor_completion: None,
+        rust_completion: None,
     }
 }
 
@@ -279,6 +369,21 @@ pub(crate) fn compare_execution_scenarios(
     coverage_domain: &[profiles::ProfileCoverageConstraint],
     scenarios: &[NamedScenario],
 ) -> Result<ExecutionComparisonReport> {
+    if compare_return
+        && scenarios.iter().any(|scenario| {
+            !matches!(
+                scenario.vendor_goal,
+                crate::execution_model::ExecutionGoal::Return
+            ) || !matches!(
+                scenario.rust_goal,
+                crate::execution_model::ExecutionGoal::Return
+            )
+        })
+    {
+        return Err(crate::Error::invalid(
+            "return comparison requires return-complete vendor and Rust execution goals",
+        ));
+    }
     let vendor_report = artifact_report(vendor)?;
     let rust_report = artifact_report(rust)?;
     let mut vendor_image = execution::ExecutableImage::load(vendor.artifact)?;
@@ -354,6 +459,28 @@ pub(crate) fn compare_execution_scenarios(
             .iter()
             .map(table_lifecycle_report)
             .collect();
+        environment.vendor_fifo_services = vendor_result
+            .fifo_services
+            .iter()
+            .map(fifo_service_report)
+            .collect();
+        environment.rust_fifo_services = rust_result
+            .fifo_services
+            .iter()
+            .map(fifo_service_report)
+            .collect();
+        environment.vendor_fifo_lifecycle = vendor_result
+            .fifo_lifecycle
+            .iter()
+            .map(fifo_lifecycle_report)
+            .collect();
+        environment.rust_fifo_lifecycle = rust_result
+            .fifo_lifecycle
+            .iter()
+            .map(fifo_lifecycle_report)
+            .collect();
+        environment.vendor_completion = Some((&vendor_result.completion).into());
+        environment.rust_completion = Some((&rust_result.completion).into());
         environment.vendor_allocations = vendor_result
             .allocations
             .iter()
@@ -503,7 +630,7 @@ pub(crate) fn compare_execution_scenarios(
         EquivalenceVerdict::Match
     };
     Ok(ExecutionComparisonReport {
-        schema_version: 8,
+        schema_version: 9,
         command: "execute compare",
         mode: EquivalenceMode::Physical,
         vendor: vendor_report,

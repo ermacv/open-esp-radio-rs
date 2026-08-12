@@ -456,6 +456,8 @@ leaf_commands!(DriverCommand {
 leaf_commands!(ExecuteCommand {
     /// Execute a vendor function under a concrete scenario.
     Run(ExecuteRunArgs) => Command::ExecuteRun, ExecuteRun,
+    /// Replay ordered functions with persistent RAM and service state.
+    Replay(ExecuteReplayArgs) => Command::ExecuteReplay, ExecuteReplay,
     /// Compare vendor and Rust observable effects under one scenario.
     Compare(ExecuteCompareArgs) => Command::ExecuteCompare, ExecuteCompare,
 });
@@ -583,6 +585,7 @@ pub(crate) enum Command {
     VerifyContractBasebandInit(VerifyContractArgs),
     VerifyContractRegisterInit(VerifyContractArgs),
     ExecuteRun(ExecuteRunArgs),
+    ExecuteReplay(ExecuteReplayArgs),
     ExecuteCompare(ExecuteCompareArgs),
     VerifyProfiles(VerifyProfilesArgs),
     VerifyEvidence(VerifyEvidenceArgs),

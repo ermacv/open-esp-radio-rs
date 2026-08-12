@@ -270,6 +270,77 @@ fn profile_models_vendor_and_rust_call_responses_independently() {
 }
 
 #[test]
+fn profile_models_stateful_fifo_services_without_rtos_vocabulary() {
+    let profiles = parse(
+        r#"schema = 2
+
+[[profiles]]
+name = "event-delivery"
+vendor-source = "libpp"
+vendor-symbol = "ppTask"
+rust-symbol = "rust_event_task"
+
+[[profiles.cases]]
+name = "selector-25"
+vendor-goal = { kind = "reach-symbol", symbol = "wdevProcessRxSucDataAll" }
+rust-goal = { kind = "observe-fifo-dequeue", service-id = "pp-events", value = 25 }
+
+[[profiles.cases.vendor-fifo-services]]
+id = "pp-events"
+handle = 8192
+item-width = 32
+capacity = 8
+items = [25]
+
+[[profiles.cases.vendor-fifo-bindings]]
+symbol = "queue_recv"
+service-id = "pp-events"
+handle-argument = 0
+operation = { kind = "dequeue", output = { kind = "private-stack-pointer", pointer-argument = 1, width = 32 }, success-return = 1, empty-return = 0 }
+
+[[profiles.cases.rust-fifo-services]]
+id = "pp-events"
+handle = 12288
+item-width = 32
+capacity = 8
+items = [25]
+
+[[profiles.cases.rust-fifo-bindings]]
+symbol = "receive_event"
+service-id = "pp-events"
+handle-argument = 0
+operation = { kind = "dequeue", output = { kind = "private-stack-pointer", pointer-argument = 1, width = 32 }, success-return = 1, empty-return = 0 }
+"#,
+    )
+    .unwrap();
+
+    let scenario = &profiles[0].scenarios[0];
+    assert_eq!(scenario.vendor_fifo_services[0].items, [25]);
+    assert_eq!(scenario.rust_fifo_services[0].handle, 12288);
+    assert_eq!(scenario.vendor_fifo_bindings[0].service_id, "pp-events");
+    assert!(matches!(
+        &scenario.vendor_goal,
+        crate::execution_model::ExecutionGoal::ReachSymbol { symbol }
+            if symbol == "wdevProcessRxSucDataAll"
+    ));
+    assert!(matches!(
+        &scenario.rust_goal,
+        crate::execution_model::ExecutionGoal::ObserveFifoDequeue {
+            service_id,
+            value: Some(25),
+        } if service_id == "pp-events"
+    ));
+    assert!(matches!(
+        scenario.vendor_fifo_bindings[0].operation,
+        crate::execution_model::FifoServiceOperation::Dequeue {
+            success_return: 1,
+            empty_return: 0,
+            ..
+        }
+    ));
+}
+
+#[test]
 fn profile_models_zeroed_allocator_response_without_scalar_return() {
     let profiles = parse(
         "schema = 2\n\n[[profiles]]\nname = \"allocator\"\nvendor-source = \"libpp\"\nvendor-symbol = \"vendor_entry\"\nrust-symbol = \"rust_entry\"\n\n[[profiles.cases]]\nname = \"allocated\"\n\n[[profiles.cases.vendor-calls]]\nsymbol = \"wifi_zalloc\"\nallocation = { address = 0x3ffe0000, size-argument = 0, capacity = 0x98 }\n",

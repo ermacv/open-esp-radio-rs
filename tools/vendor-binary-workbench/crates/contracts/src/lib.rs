@@ -21,6 +21,9 @@ pub enum ExternalReturnModel {
     AllocatedZeroed {
         size_argument: u8,
     },
+    /// A fresh non-null pointer to an opaque runtime-owned object. This
+    /// preserves identity and non-nullness without claiming initialized bytes.
+    OpaquePointer,
     /// The ABI identity and human semantics are known, but observable effects
     /// and return propagation are not modeled for validation.
     Unmodeled,

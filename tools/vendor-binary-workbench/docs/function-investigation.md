@@ -82,6 +82,32 @@ report records depth, visited nodes, examined edges, and the reached boundary
 instead of constructing an unbounded recursive JSON graph. Machine-readable
 output always keeps the complete selected bounded report.
 
+For ABI investigation, request the focused callsite view instead of reading
+the complete pseudo-code or JSON document:
+
+```console
+# compact site, target-proof and argument-coverage inventory
+cargo vendor-binary-workbench inspect function --project vendor-project.toml \
+  libpp:pp_create_task --calls
+
+# one indirect boundary with a0...aN, guarded paths and origin evidence
+cargo vendor-binary-workbench inspect function --project vendor-project.toml \
+  libpp:pp_create_task --call task_create_pinned_to_core --details
+```
+
+Target resolution and argument recovery are independent claims. An exact
+reviewed table slot may still have partial arguments, while recovered argument
+registers cannot make an unresolved target exact. Call-result provenance is
+normalized by target and callsite across CFG paths so trace-local token
+numbers do not create false argument alternatives. Constant function/data
+pointers and RAM reads are enriched with their containing linked-ELF symbol
+when the symbol has a sized range; otherwise the report deliberately retains
+the exact address. On narrow terminals the call inventory becomes a vertical
+list rather than squeezing proof and argument status into unreadable columns.
+With `--format json`, these focused options emit a small versioned callsite
+report rather than serializing the complete function body, CFG and instruction
+evidence.
+
 `--path FROM:TO` isolates one shortest directed CFG path. Locations are
 absolute PCs or explicit function offsets such as `+0x0:+0x14`. This is a
 navigation view, not symbolic execution: the result always carries

@@ -54,7 +54,8 @@ pub(super) fn render_event(
                 ExternalReturnModel::Void | ExternalReturnModel::Unmodeled => {}
                 ExternalReturnModel::Constant(_)
                 | ExternalReturnModel::SymbolicU32
-                | ExternalReturnModel::AllocatedZeroed { .. } => {
+                | ExternalReturnModel::AllocatedZeroed { .. }
+                | ExternalReturnModel::OpaquePointer => {
                     writeln!(
                         output,
                         "{indent}let external_result{token} = external_outcome{token}.return_words[0];"

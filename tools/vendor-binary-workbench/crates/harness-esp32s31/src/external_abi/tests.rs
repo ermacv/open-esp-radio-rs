@@ -4,7 +4,7 @@ use super::*;
 fn execution_models_contain_behavior_only() {
     let models = WIFI_OSI_MODELS_V9.spec();
     assert_eq!(models.id, "esp32s31-wifi-osi-v9");
-    assert_eq!(models.models.len(), 30);
+    assert_eq!(models.models.len(), 38);
     assert_eq!(
         WIFI_OSI_MODELS_V9.model("env-is-chip"),
         Some(ENV_IS_CHIP_MODEL)
@@ -26,6 +26,14 @@ fn execution_models_contain_behavior_only() {
             .spec()
             .return_model,
         ExternalReturnModel::Void
+    );
+    assert_eq!(
+        WIFI_OSI_MODELS_V9
+            .model("wifi-create-queue")
+            .unwrap()
+            .spec()
+            .return_model,
+        ExternalReturnModel::OpaquePointer
     );
     assert_eq!(
         WIFI_OSI_MODELS_V9

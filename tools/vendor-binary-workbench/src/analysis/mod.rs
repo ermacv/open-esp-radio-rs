@@ -9,7 +9,8 @@ mod mmio_discovery;
 mod service;
 
 pub(crate) use direct::{
-    RiscvHarnessSpec, StructuralCallSite, StructuralPointerContext, trace_binary_symbol,
+    RiscvHarnessSpec, StructuralCallSite, StructuralPointerContext, StructuralProjectedRelocation,
+    trace_binary_symbol,
 };
 #[cfg(test)]
 pub(crate) use direct::{RiscvSummaryHooks, SymbolicStack};

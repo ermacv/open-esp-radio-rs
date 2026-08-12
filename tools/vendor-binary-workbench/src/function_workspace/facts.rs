@@ -49,6 +49,9 @@ pub(crate) enum FunctionMemoryObjectFact {
     ZeroedAllocation {
         call_token: u32,
     },
+    OpaqueExternalObject {
+        call_token: u32,
+    },
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]

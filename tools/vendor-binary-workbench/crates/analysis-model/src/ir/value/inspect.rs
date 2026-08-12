@@ -54,6 +54,16 @@ impl SymbolicValue {
                     offset: 0,
                 })
             }
+            Self::ExternalResult(token)
+                if token & OPAQUE_POINTER_EXTERNAL_RESULT_TOKEN_FLAG != 0 =>
+            {
+                Some(MemoryObjectLocation {
+                    root: MemoryObjectRoot::OpaqueExternalObject {
+                        call_token: external_result_call_token(*token),
+                    },
+                    offset: 0,
+                })
+            }
             Self::Constant(address) => Some(MemoryObjectLocation {
                 root: MemoryObjectRoot::Absolute { address: *address },
                 offset: 0,
@@ -513,6 +523,14 @@ impl SymbolicValue {
                     external_result_call_token(*call_token)
                 )
             }
+            Self::ExternalResult(call_token)
+                if call_token & OPAQUE_POINTER_EXTERNAL_RESULT_TOKEN_FLAG != 0 =>
+            {
+                format!(
+                    "opaque-external-object:{}",
+                    external_result_call_token(*call_token)
+                )
+            }
             Self::ExternalResult(call_token) => format!("external-result:{call_token}"),
             Self::ExternalResultHigh(call_token) => {
                 format!("external-result-high:{call_token}")
@@ -916,5 +934,23 @@ mod tests {
         let rendered = bits.canonical();
         assert!(rendered.contains("external3."), "{rendered}");
         assert!(!rendered.contains("107374"), "{rendered}");
+    }
+
+    #[test]
+    fn opaque_external_pointer_keeps_object_identity_without_claiming_zeroed_memory() {
+        let value = SymbolicValue::ExternalResult(OPAQUE_POINTER_EXTERNAL_RESULT_TOKEN_FLAG | 7)
+            .add_constant(4);
+
+        assert_eq!(
+            value.memory_object_location_with_reads(&BTreeMap::new()),
+            Some(MemoryObjectLocation {
+                root: MemoryObjectRoot::OpaqueExternalObject { call_token: 7 },
+                offset: 4,
+            })
+        );
+        assert_eq!(
+            value.canonical(),
+            "expr:Add(opaque-external-object:7,const:0x00000004)"
+        );
     }
 }

@@ -526,6 +526,9 @@ fn memory_fact_label(object: &FunctionMemoryObjectFact) -> String {
         FunctionMemoryObjectFact::ZeroedAllocation { call_token } => {
             format!("zeroed-allocation:{call_token}")
         }
+        FunctionMemoryObjectFact::OpaqueExternalObject { call_token } => {
+            format!("opaque-external-object:{call_token}")
+        }
     }
 }
 

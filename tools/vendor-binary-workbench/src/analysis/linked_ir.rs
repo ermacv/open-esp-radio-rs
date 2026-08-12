@@ -90,6 +90,50 @@ fn calls_for_trace(
     compact_calls(calls)
 }
 
+fn relocation_kind(kind: artifact::RelocationKind) -> &'static str {
+    match kind {
+        artifact::RelocationKind::GotHi20 => "got-hi20",
+        artifact::RelocationKind::Hi20 => "hi20",
+        artifact::RelocationKind::Lo12I => "lo12-i",
+        artifact::RelocationKind::Lo12S => "lo12-s",
+        artifact::RelocationKind::PcRelHi20 => "pc-relative-hi20",
+        artifact::RelocationKind::PcRelLo12I => "pc-relative-lo12-i",
+        artifact::RelocationKind::PcRelLo12S => "pc-relative-lo12-s",
+        artifact::RelocationKind::GotPcRelLo12I => "got-pc-relative-lo12-i",
+        artifact::RelocationKind::Call => "call",
+        artifact::RelocationKind::CallPlt => "call-plt",
+    }
+}
+
+fn projected_relocations(
+    owner: &artifact::ArtifactSymbolDefinition,
+    resolver: &ReferenceResolver,
+) -> Vec<LinkedProjectedRelocation> {
+    let mut facts = resolver
+        .pointer_context
+        .projected_relocations
+        .iter()
+        .filter(|(site, _)| site.belongs_to(owner))
+        .flat_map(|(site, relocations)| {
+            relocations
+                .iter()
+                .map(move |relocation| LinkedProjectedRelocation {
+                    site: site.address(),
+                    origin_member: relocation.origin_member.clone(),
+                    origin_symbol: relocation.origin_symbol.clone(),
+                    origin_offsets: relocation.origin_offsets.clone(),
+                    kind: relocation_kind(relocation.kind),
+                    symbol: relocation.symbol.clone(),
+                    addend: relocation.addend,
+                    correspondence: relocation.correspondence,
+                })
+        })
+        .collect::<Vec<_>>();
+    facts.sort();
+    facts.dedup();
+    facts
+}
+
 fn add_lossless_relocation_calls(
     calls: &mut BTreeSet<LinkedCall>,
     owner: &artifact::ArtifactSymbolDefinition,
@@ -611,6 +655,7 @@ fn build_linked_functions_for_roots(
                             }
                         })
                         .collect(),
+                    projected_relocations: projected_relocations(symbol, resolver),
                     local_value_flow: local_value_flow(&trace),
                     calls,
                     direct_mmio_predicates,
@@ -655,6 +700,7 @@ fn build_linked_functions_for_roots(
                         svd,
                     ),
                     dependencies: Vec::new(),
+                    projected_relocations: projected_relocations(symbol, resolver),
                     local_value_flow: Vec::new(),
                     calls,
                     direct_mmio_predicates,

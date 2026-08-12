@@ -450,6 +450,12 @@ pub(crate) struct InspectFunctionArgs {
     /// Include incoming callers as well as outgoing callees in the graph slice.
     #[arg(long)]
     pub(crate) callers: bool,
+    /// Show only resolved/unresolved callsites, ABI arguments and provenance.
+    #[arg(long, conflicts_with = "full")]
+    pub(crate) calls: bool,
+    /// Restrict focused callsites by target, semantic operation or slot name.
+    #[arg(long, value_name = "TARGET|OPERATION|SLOT", conflicts_with = "full")]
+    pub(crate) call: Option<String>,
     /// Show one shortest structural CFG path (`FROM:TO`); use `+OFFSET` for function offsets.
     #[arg(long, value_name = "FROM:TO")]
     pub(crate) path: Option<String>,

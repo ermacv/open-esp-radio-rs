@@ -831,6 +831,78 @@ fn reviewed_indirect_call_keeps_abi_identity_without_claiming_execution_semantic
 }
 
 #[test]
+fn projected_relaxed_pointer_load_recovers_reviewed_table_call_and_arguments() {
+    let parent = artifact::ArtifactSymbolDefinition {
+        member: None,
+        name: "linked_parent".to_owned(),
+        address: 0x1000,
+        bytes: vec![
+            0x83, 0x27, 0x00, 0x00, // lw a5, 0(zero), relaxed g_osi_funcs_p
+            0x03, 0xa3, 0x07, 0x09, // lw t1, 0x90(a5)
+            0x13, 0x05, 0x70, 0x00, // li a0, 7
+            0xe7, 0x00, 0x03, 0x00, // jalr ra, 0(t1)
+            0x67, 0x80, 0x00, 0x00, // ret
+        ],
+        addresses_resolved: true,
+        memory_regions: Default::default(),
+        relocations: Vec::new(),
+    };
+    let contract = "pack::wifi-osi".to_owned();
+    let mut context = StructuralPointerContext::default();
+    context.relocated_pointer_symbols.insert(
+        "g_osi_funcs_p".to_owned(),
+        SymbolicValue::ReviewedExternalTable(contract.clone()),
+    );
+    context.projected_relocations.insert(
+        StructuralCallSite::new(&parent, 0x1000),
+        vec![StructuralProjectedRelocation {
+            origin_member: Some("pp.o".to_owned()),
+            origin_symbol: "linked_parent".to_owned(),
+            origin_offsets: vec![0, 4],
+            kind: artifact::RelocationKind::Lo12I,
+            symbol: "g_osi_funcs_p".to_owned(),
+            addend: 0,
+            correspondence: "linker-relaxation",
+        }],
+    );
+    context.reviewed_external_slots.insert(
+        (contract.clone(), 0x90),
+        vec![ReviewedExternalCall {
+            id: "pack::wifi-osi@+0x90".to_owned(),
+            contract,
+            name: "task_create_pinned_to_core".to_owned(),
+            argument_types: vec!["u32".to_owned()],
+            return_type: "i32".to_owned(),
+            variadic: false,
+            semantic_operation: Some("rtos.task.create-pinned".to_owned()),
+            replacement_hint: None,
+            execution_model: None,
+            tail: false,
+            evidence: ReviewedExternalCallEvidence::ArchiveOriginProjection,
+            slot_load_site: Some(0x1004),
+        }],
+    );
+
+    let trace = trace_binary_symbol(&parent, &map(), &BTreeMap::new(), &context, None).unwrap();
+
+    assert!(!trace.reference_blockers.iter().any(|blocker| {
+        blocker.contains("unresolved-indirect-call")
+            || blocker.contains("unmodeled-memory-load")
+            || blocker.contains("unregistered-external-abi-slot")
+    }));
+    assert!(matches!(
+        trace.reference_events.as_slice(),
+        [DraftReferenceEvent::ReviewedExternalCall {
+            site: 0x100c,
+            candidates,
+            arguments,
+            ..
+        }] if candidates[0].name == "task_create_pinned_to_core"
+            && arguments == &Box::from([SymbolicValue::Constant(7)])
+    ));
+}
+
+#[test]
 fn reviewed_void_external_call_is_an_executable_boundary_without_a_fake_result() {
     let parent = artifact::ArtifactSymbolDefinition {
         member: None,

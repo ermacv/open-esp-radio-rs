@@ -35,6 +35,51 @@ fn remember_absolute_pointer_read_source(
     }
 }
 
+fn projected_relocation(
+    symbol: &artifact::ArtifactSymbolDefinition,
+    pointer_context: &StructuralPointerContext,
+    pc: u32,
+    kind: artifact::RelocationKind,
+) -> std::result::Result<Option<StructuralProjectedRelocation>, String> {
+    let site = StructuralCallSite::new(symbol, pc);
+    let candidates = pointer_context
+        .projected_relocations
+        .get(&site)
+        .into_iter()
+        .flatten()
+        .filter(|candidate| candidate.kind == kind)
+        .cloned()
+        .collect::<Vec<_>>();
+    match candidates.as_slice() {
+        [] => Ok(None),
+        [candidate] => Ok(Some(candidate.clone())),
+        _ => Err(format!(
+            "ambiguous projected {kind:?} relocation at {pc:#x}: {}",
+            candidates
+                .iter()
+                .map(|candidate| format!(
+                    "{:?}::{} -> {}{:+#x}",
+                    candidate.origin_member,
+                    candidate.origin_symbol,
+                    candidate.symbol,
+                    candidate.addend
+                ))
+                .collect::<Vec<_>>()
+                .join(" | ")
+        )),
+    }
+}
+
+fn projected_symbol_address(relocation: &StructuralProjectedRelocation) -> SymbolicValue {
+    SymbolicValue::SymbolAddress {
+        member: relocation.origin_member.clone(),
+        symbol: relocation.symbol.clone(),
+        hi_addend: relocation.addend,
+        lo_addend: Some(relocation.addend),
+        post_offset: 0,
+    }
+}
+
 pub(super) fn apply_floating_memory_instruction(
     blocker: artifact::UnsupportedInstruction,
     symbol: &artifact::ArtifactSymbolDefinition,
@@ -107,8 +152,23 @@ pub(super) fn apply_memory_instruction(
                 _ => 32,
             };
             let signed = matches!(instruction, Inst::Lb { .. } | Inst::Lh { .. });
-            let relocated_pointer = symbol
-                .relocation(pc as u32, artifact::RelocationKind::Lo12I)
+            let projected_relocation = match projected_relocation(
+                symbol,
+                pointer_context,
+                pc as u32,
+                artifact::RelocationKind::Lo12I,
+            ) {
+                Ok(relocation) => relocation,
+                Err(error) => {
+                    state
+                        .reference_blockers
+                        .push(format!("projected-data-relocation at {pc:#x}: {error}"));
+                    structural_set(&mut state.values, dest, SymbolicValue::Unknown);
+                    return true;
+                }
+            };
+            let relocated_pointer = projected_relocation
+                .as_ref()
                 .and_then(|relocation| {
                     (relocation.addend == 0 && offset.as_i32() == 0)
                         .then(|| {
@@ -118,9 +178,36 @@ pub(super) fn apply_memory_instruction(
                                 .cloned()
                         })
                         .flatten()
+                })
+                .or_else(|| {
+                    symbol
+                        .relocation(pc as u32, artifact::RelocationKind::Lo12I)
+                        .and_then(|relocation| {
+                            (relocation.addend == 0 && offset.as_i32() == 0)
+                                .then(|| {
+                                    pointer_context
+                                        .relocated_pointer_symbols
+                                        .get(&relocation.symbol)
+                                        .cloned()
+                                })
+                                .flatten()
+                        })
                 });
             let address = if relocated_pointer.is_some() {
                 None
+            } else if let Some(relocation) = projected_relocation.as_ref() {
+                let expected_offset = ((relocation.addend as u32) << 20) as i32 >> 20;
+                if offset.as_i32() != expected_offset {
+                    state.reference_blockers.push(format!(
+                        "malformed-projected-data-relocation at {pc:#x}: Lo12I encodes {:+#x}, expected {expected_offset:+#x}",
+                        offset.as_i32()
+                    ));
+                    structural_set(&mut state.values, dest, SymbolicValue::Unknown);
+                    return true;
+                }
+                Some(StructuralAddress::SymbolMemory(projected_symbol_address(
+                    relocation,
+                )))
             } else {
                 match complete_low_relocation(
                     symbol,

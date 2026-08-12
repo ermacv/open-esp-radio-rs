@@ -244,14 +244,27 @@ pub struct CallKnowledgeEvidence {
     pub kind: String,
     pub target: String,
     pub site: Option<u32>,
+    pub target_status: &'static str,
+    pub target_candidates: Vec<String>,
+    pub target_blocker: Option<String>,
     pub knowledge: &'static str,
     pub semantic_operation: Option<String>,
     pub execution_model: Option<String>,
     /// ABI argument expressions recovered at this exact call site. Multiple
     /// branch shapes are retained as an explicit domain by linked IR.
     pub arguments: Vec<String>,
+    pub argument_evidence: Vec<CallArgumentEvidence>,
     pub argument_shapes: usize,
     pub guards: Vec<String>,
+    pub provenance: Vec<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct CallArgumentEvidence {
+    pub position: usize,
+    pub status: &'static str,
+    pub value: String,
+    pub provenance: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -338,7 +351,7 @@ pub(crate) fn investigate(
         }
     };
     Ok(FunctionInvestigationReport {
-        schema_version: 8,
+        schema_version: 9,
         command: "inspect function",
         source: request.source.to_owned(),
         symbol: request.symbol.to_owned(),
@@ -577,17 +590,7 @@ fn semantic_evidence(
         let calls = function
             .calls
             .iter()
-            .map(|call| CallKnowledgeEvidence {
-                kind: call.kind.clone(),
-                target: call.target.clone(),
-                site: call.site,
-                knowledge: call.knowledge(),
-                semantic_operation: call.semantic_operation.clone(),
-                execution_model: call.execution_model_id().map(str::to_owned),
-                arguments: call.arguments.clone(),
-                argument_shapes: call.argument_shapes(),
-                guards: call.guard_expressions(),
-            })
+            .map(|call| call_knowledge(call, &function, &reader))
             .collect::<Vec<_>>();
         let search_limits = artifacts::GraphSearchLimits {
             max_depth: graph_depth,
@@ -695,6 +698,166 @@ fn semantic_evidence(
         });
     }
     Ok(evidence)
+}
+
+fn call_knowledge(
+    call: &artifacts::StoredCall,
+    function: &artifacts::StoredFunction,
+    reader: &artifacts::LinkedIrReader,
+) -> CallKnowledgeEvidence {
+    let unresolved_target = call.kind.contains("unresolved")
+        || (call.kind == "structural-relocation" && call.project_symbol().is_some());
+    let mut target_candidates = call.project_candidates().to_vec();
+    if target_candidates.is_empty() && call.target.contains(" | ") {
+        target_candidates = call.target.split(" | ").map(str::to_owned).collect();
+    }
+    let target_status = if unresolved_target {
+        "unresolved"
+    } else if target_candidates.len() > 1 || call.kind.contains("ambiguous") {
+        "candidates"
+    } else {
+        "exact"
+    };
+    let target_blocker = match target_status {
+        "unresolved" => {
+            Some("the call instruction is known, but no unique target is proven".to_owned())
+        }
+        "candidates" => Some(
+            "multiple structurally valid targets remain; linker/runtime selection is not proven"
+                .to_owned(),
+        ),
+        _ => None,
+    };
+    let argument_evidence = call
+        .arguments
+        .iter()
+        .enumerate()
+        .map(|(position, value)| {
+            let status = if value == "unknown"
+                || value.contains("varies-across")
+                || value.contains("bits:0=?")
+            {
+                "unresolved"
+            } else if value.starts_with("one-of(") || value.contains("unknown") {
+                "partial"
+            } else {
+                "exact"
+            };
+            CallArgumentEvidence {
+                position,
+                status,
+                value: argument_value_with_labels(value, reader),
+                provenance: if call.argument_shapes() > 1 {
+                    format!(
+                        "forward symbolic execution at this callsite across {} guarded shapes",
+                        call.argument_shapes()
+                    )
+                } else {
+                    "forward symbolic execution of the ABI register/stack state at this callsite"
+                        .to_owned()
+                },
+            }
+        })
+        .collect::<Vec<_>>();
+    let mut provenance = Vec::new();
+    if let Some(value) = call.semantic_contract_provenance() {
+        provenance.push(value);
+    }
+    if let Some(value) = call.trampoline_provenance() {
+        provenance.push(value);
+    }
+    if let Some(site) = call.site {
+        provenance.extend(
+            function
+                .projected_relocations
+                .iter()
+                .filter(|relocation| {
+                    relocation.site <= site && site.saturating_sub(relocation.site) <= 64
+                })
+                .map(|relocation| {
+                    format!(
+                        "linked {:#010x} <- {:?}::{} +{} [{} {} -> {}{:+#x}]",
+                        relocation.site,
+                        relocation.origin_member,
+                        relocation.origin_symbol,
+                        relocation
+                            .origin_offsets
+                            .iter()
+                            .map(|offset| format!("{offset:#x}"))
+                            .collect::<Vec<_>>()
+                            .join(","),
+                        relocation.correspondence,
+                        relocation.kind,
+                        relocation.symbol,
+                        relocation.addend,
+                    )
+                }),
+        );
+    }
+    provenance.sort();
+    provenance.dedup();
+    CallKnowledgeEvidence {
+        kind: call.kind.clone(),
+        target: call.target.clone(),
+        site: call.site,
+        target_status,
+        target_candidates,
+        target_blocker,
+        knowledge: call.knowledge(),
+        semantic_operation: call.semantic_operation.clone(),
+        execution_model: call.execution_model_id().map(str::to_owned),
+        arguments: call.arguments.clone(),
+        argument_evidence,
+        argument_shapes: call.argument_shapes(),
+        guards: call.guard_expressions(),
+        provenance,
+    }
+}
+
+fn argument_value_with_labels(value: &str, reader: &artifacts::LinkedIrReader) -> String {
+    let value = compact_argument_value(value);
+    let Some(address) = value
+        .strip_prefix("const:0x")
+        .and_then(|value| u32::from_str_radix(value, 16).ok())
+    else {
+        return value;
+    };
+    let labels = reader.labels_at_address(address);
+    if labels.is_empty() {
+        value
+    } else {
+        format!("{value} ({})", labels.join(" | "))
+    }
+}
+
+fn compact_argument_value(value: &str) -> String {
+    if let Some(value) = value
+        .strip_suffix("&0xffffffff|0x00000000")
+        .filter(|value| !value.is_empty())
+    {
+        return value.to_owned();
+    }
+    let Some(bits) = value.strip_prefix("bits:") else {
+        return value.to_owned();
+    };
+    let fields = bits.split(',').collect::<Vec<_>>();
+    if fields.len() != 32 {
+        return value.to_owned();
+    }
+    let Some(base) = fields[0]
+        .strip_prefix("0=")
+        .and_then(|field| field.strip_suffix(".0"))
+    else {
+        return value.to_owned();
+    };
+    let aligned = fields.iter().enumerate().all(|(bit, field)| {
+        field
+            .strip_prefix(&format!("{bit}="))
+            .is_some_and(|source| source == format!("{base}.{bit}"))
+    });
+    aligned
+        .then(|| base.to_owned())
+        .unwrap_or_else(|| value.to_owned())
 }
 
 fn event_route_evidence(
@@ -1039,5 +1202,21 @@ mod tests {
         assert_eq!(path.blocks, [0, 1, 2]);
         assert!(path.structurally_reachable);
         assert!(!path.feasibility_claim);
+    }
+
+    #[test]
+    fn argument_display_compacts_full_width_symbolic_sources() {
+        let bits = (0..32)
+            .map(|bit| format!("{bit}=result_of_stack_size.return.{bit}"))
+            .collect::<Vec<_>>()
+            .join(",");
+        assert_eq!(
+            compact_argument_value(&format!("bits:{bits}")),
+            "result_of_stack_size.return"
+        );
+        assert_eq!(
+            compact_argument_value("ram:read0&0xffffffff|0x00000000"),
+            "ram:read0"
+        );
     }
 }

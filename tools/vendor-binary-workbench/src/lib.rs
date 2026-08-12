@@ -43,10 +43,11 @@ use cli::run;
 pub(crate) use digest::{artifact_path_sha256, artifact_sha256};
 use error::WorkbenchError;
 pub use function_investigation::{
-    CallGraphEdgeEvidence, CallKnowledgeEvidence, EventDispatchBindingEvidence,
-    EventDispatchEvidence, FunctionInvestigationReport, InvestigationLedgerEntry,
-    OriginFunctionEvidence, ReplacementEvidence, ReplacementProofEvidence, ReviewedPathEvidence,
-    ReviewedPreconditionEvidence, SemanticFunctionEvidence,
+    CallArgumentEvidence, CallGraphEdgeEvidence, CallKnowledgeEvidence,
+    EventDispatchBindingEvidence, EventDispatchEvidence, FunctionInvestigationReport,
+    InvestigationLedgerEntry, OriginFunctionEvidence, ReplacementEvidence,
+    ReplacementProofEvidence, ReviewedPathEvidence, ReviewedPreconditionEvidence,
+    SemanticFunctionEvidence,
 };
 #[cfg(all(test, feature = "esp32s31-harness"))]
 pub(crate) use harnesses::esp32s31::entry_contract;

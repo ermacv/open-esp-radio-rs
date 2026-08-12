@@ -80,6 +80,34 @@ return = "void"
 semantic = "rtos.task.yield-from-isr"
 execution-model = "task-yield-from-isr"
 
+# Layout and ABI names below are reviewed against ESP-IDF's public
+# esp_private/wifi_os_adapter.h (wifi_osi_funcs_t version 9). `manual` means
+# the local discovery facts did not independently observe the slot; runtime
+# use still requires this pack's artifact/version/magic guards.
+# Source snapshot: espressif/esp-idf@08e0d30a74ad0bfd5a34933142b80f45619ee410,
+# components/esp_wifi/include/esp_private/wifi_os_adapter.h.
+[[anchors.slots]]
+offset = 0x034
+width = 32
+status = "reviewed"
+origin = "manual"
+name = "semphr_create"
+arguments = ["u32", "u32"]
+return = "opaque-handle"
+semantic = "rtos.semaphore.create"
+execution-model = "semphr-create"
+
+[[anchors.slots]]
+offset = 0x038
+width = 32
+status = "reviewed"
+origin = "manual"
+name = "semphr_delete"
+arguments = ["opaque-handle"]
+return = "void"
+semantic = "rtos.semaphore.delete"
+execution-model = "semphr-delete"
+
 [[anchors.slots]]
 offset = 0x040
 width = 32
@@ -155,6 +183,28 @@ semantic = "rtos.queue.pending-count"
 execution-model = "queue-msg-waiting"
 
 [[anchors.slots]]
+offset = 0x090
+width = 32
+status = "reviewed"
+origin = "manual"
+name = "task_create_pinned_to_core"
+arguments = ["fn-ptr", "const-ptr", "u32", "mut-ptr", "u32", "out-ptr", "u32"]
+return = "i32"
+semantic = "rtos.task.create-pinned"
+execution-model = "task-create-pinned"
+
+[[anchors.slots]]
+offset = 0x094
+width = 32
+status = "reviewed"
+origin = "manual"
+name = "task_create"
+arguments = ["fn-ptr", "const-ptr", "u32", "mut-ptr", "u32", "out-ptr"]
+return = "i32"
+semantic = "rtos.task.create"
+execution-model = "task-create"
+
+[[anchors.slots]]
 offset = 0x098
 width = 32
 status = "reviewed"
@@ -163,6 +213,7 @@ name = "task_delete"
 arguments = ["opaque-handle"]
 return = "void"
 semantic = "rtos.task.delete"
+execution-model = "task-delete"
 
 [[anchors.slots]]
 offset = 0x09c
@@ -185,6 +236,28 @@ arguments = ["u32"]
 return = "i32"
 semantic = "time.milliseconds.to-ticks"
 execution-model = "task-ms-to-tick"
+
+[[anchors.slots]]
+offset = 0x0a4
+width = 32
+status = "reviewed"
+origin = "manual"
+name = "task_get_current_task"
+arguments = []
+return = "opaque-handle"
+semantic = "rtos.task.current"
+execution-model = "task-get-current"
+
+[[anchors.slots]]
+offset = 0x0a8
+width = 32
+status = "reviewed"
+origin = "manual"
+name = "task_get_max_priority"
+arguments = []
+return = "i32"
+semantic = "rtos.task.max-priority"
+execution-model = "task-get-max-priority"
 
 [[anchors.slots]]
 offset = 0x0b0
@@ -474,6 +547,17 @@ arguments = ["usize"]
 return = "mut-ptr"
 semantic = "memory.allocate-zeroed"
 execution-model = "wifi-zalloc"
+
+[[anchors.slots]]
+offset = 0x178
+width = 32
+status = "reviewed"
+origin = "manual"
+name = "wifi_create_queue"
+arguments = ["u32", "u32"]
+return = "opaque-handle"
+semantic = "rtos.queue.create"
+execution-model = "wifi-create-queue"
 
 [[anchors.slots]]
 offset = 0x17c

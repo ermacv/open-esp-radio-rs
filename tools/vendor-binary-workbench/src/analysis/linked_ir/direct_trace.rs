@@ -358,24 +358,46 @@ pub(super) fn call_result_identity(
     identities: &IrIdentityCatalog,
 ) -> Option<(u32, String)> {
     match event {
-        DraftReferenceEvent::Call { token, target, .. }
-        | DraftReferenceEvent::ScratchCall { token, target, .. }
-        | DraftReferenceEvent::TailCall { token, target, .. } => {
-            Some((*token, identities.target(*target)))
+        DraftReferenceEvent::Call {
+            token,
+            site,
+            target,
+            ..
         }
+        | DraftReferenceEvent::ScratchCall {
+            token,
+            site,
+            target,
+            ..
+        }
+        | DraftReferenceEvent::TailCall {
+            token,
+            site,
+            target,
+            ..
+        } => Some((
+            *token,
+            format!("{}@{site:#010x}", identities.target(*target)),
+        )),
         DraftReferenceEvent::ComposedCall { token, symbol, .. }
         | DraftReferenceEvent::ComposedCallWithScratch { token, symbol, .. } => {
             Some((*token, symbol.clone()))
         }
         DraftReferenceEvent::ReviewedExternalCall {
-            token, candidates, ..
+            token,
+            site,
+            candidates,
+            ..
         } => Some((
             *token,
-            candidates
-                .iter()
-                .map(|candidate| format!("{}::{}", candidate.contract, candidate.name))
-                .collect::<Vec<_>>()
-                .join(" | "),
+            format!(
+                "{}@{site:#010x}",
+                candidates
+                    .iter()
+                    .map(|candidate| format!("{}::{}", candidate.contract, candidate.name))
+                    .collect::<Vec<_>>()
+                    .join(" | ")
+            ),
         )),
         _ => None,
     }
@@ -386,7 +408,11 @@ pub(super) fn name_call_results(expression: &str, call_results: &BTreeMap<u32, S
     let mut output = String::with_capacity(expression.len());
     let mut index = 0;
     while index < bytes.len() {
-        let prefix_len = if bytes[index..].starts_with(b"external") {
+        let prefix_len = if bytes[index..].starts_with(b"external-result:") {
+            Some(16)
+        } else if bytes[index..].starts_with(b"call-result:") {
+            Some(12)
+        } else if bytes[index..].starts_with(b"external") {
             Some(8)
         } else if bytes[index..].starts_with(b"call") {
             Some(4)
@@ -405,8 +431,6 @@ pub(super) fn name_call_results(expression: &str, call_results: &BTreeMap<u32, S
             {
                 output.push_str("result_of_");
                 output.push_str(&pseudo_identifier(target));
-                output.push('_');
-                output.push_str(&token.to_string());
                 index = digits_end;
                 continue;
             }
@@ -421,11 +445,88 @@ pub(super) fn name_call_results(expression: &str, call_results: &BTreeMap<u32, S
     output
 }
 
+fn memory_root_name(root: &open_radio_vendor_analysis_model::MemoryObjectRoot) -> String {
+    use open_radio_vendor_analysis_model::MemoryObjectRoot;
+    match root {
+        MemoryObjectRoot::Argument { index } => format!("arg{index}"),
+        MemoryObjectRoot::RelocatedSymbol { member, symbol } => {
+            format!("{}::{symbol}", member.as_deref().unwrap_or("linked"))
+        }
+        MemoryObjectRoot::Dereferenced {
+            pointer,
+            pointer_offset,
+        } => format!("*({}{pointer_offset:+#x})", memory_root_name(pointer)),
+        MemoryObjectRoot::Absolute { address } => format!("absolute:{address:#010x}"),
+        MemoryObjectRoot::Indexed {
+            root,
+            argument,
+            stride,
+        } => format!("{}[arg{argument}*{stride:#x}]", memory_root_name(root)),
+        MemoryObjectRoot::ZeroedAllocation { call_token } => {
+            format!("zeroed-allocation:{call_token}")
+        }
+        MemoryObjectRoot::OpaqueExternalObject { call_token } => {
+            format!("opaque-external-object:{call_token}")
+        }
+    }
+}
+
+fn name_memory_reads(
+    expression: &str,
+    read_sources: &BTreeMap<u32, open_radio_vendor_analysis_model::MemoryObjectLocation>,
+    resolver: &ReferenceResolver,
+) -> String {
+    const PREFIX: &str = "ram:read";
+    let mut output = String::with_capacity(expression.len());
+    let mut remainder = expression;
+    while let Some(start) = remainder.find(PREFIX) {
+        output.push_str(&remainder[..start]);
+        let token_start = start + PREFIX.len();
+        let token_len = remainder[token_start..]
+            .bytes()
+            .take_while(u8::is_ascii_digit)
+            .count();
+        if token_len == 0 {
+            output.push_str(PREFIX);
+            remainder = &remainder[token_start..];
+            continue;
+        }
+        let token_end = token_start + token_len;
+        let token = remainder[token_start..token_end].parse::<u32>().ok();
+        if let Some(location) = token.and_then(|token| read_sources.get(&token)) {
+            output.push_str("memory:");
+            let mut offset = location.offset;
+            if let open_radio_vendor_analysis_model::MemoryObjectRoot::Absolute { address } =
+                &location.root
+                && let Ok(resolved_address) = u32::try_from(i64::from(*address) + location.offset)
+                && let Some((member, symbol, symbol_offset)) =
+                    resolver.data_symbol_location(resolved_address, 32)
+            {
+                output.push_str(member.unwrap_or("linked"));
+                output.push_str("::");
+                output.push_str(symbol);
+                offset = symbol_offset;
+            } else {
+                output.push_str(&memory_root_name(&location.root));
+            }
+            if offset != 0 {
+                output.push_str(&format!("{offset:+#x}"));
+            }
+        } else {
+            output.push_str(&remainder[start..token_end]);
+        }
+        remainder = &remainder[token_end..];
+    }
+    output.push_str(remainder);
+    output
+}
+
 pub(super) fn collect_guarded_direct_event(
     event: &DraftReferenceEvent,
     resolver: &ReferenceResolver,
     identities: &IrIdentityCatalog,
     svd: &MmioMap,
+    read_sources: &BTreeMap<u32, open_radio_vendor_analysis_model::MemoryObjectLocation>,
     evidence: &mut DirectTraceEvidence,
 ) {
     if let DraftReferenceEvent::BranchDecision { condition, taken } = event {
@@ -457,6 +558,14 @@ pub(super) fn collect_guarded_direct_event(
     let mut event_calls = BTreeSet::new();
     collect_call_event(event, resolver, identities, &mut event_calls);
     for mut call in event_calls {
+        for argument in &mut call.arguments {
+            *argument = name_call_results(argument, &evidence.call_results);
+            *argument = name_memory_reads(argument, read_sources, resolver);
+        }
+        for argument in &mut call.typed_arguments {
+            argument.value = name_call_results(&argument.value, &evidence.call_results);
+            argument.value = name_memory_reads(&argument.value, read_sources, resolver);
+        }
         call.guard_paths = Some(vec![current_guard_path(&evidence.guards)]);
         evidence.calls.insert(call);
     }
@@ -545,8 +654,16 @@ pub(super) fn explore_direct_calls(
             );
         }
         let mut evidence = DirectTraceEvidence::default();
+        let read_sources = memory_read_sources_for_trace(&trace);
         for event in &trace.reference_events {
-            collect_guarded_direct_event(event, resolver, identities, svd, &mut evidence);
+            collect_guarded_direct_event(
+                event,
+                resolver,
+                identities,
+                svd,
+                &read_sources,
+                &mut evidence,
+            );
         }
         result.calls.append(&mut evidence.calls);
         result
@@ -681,5 +798,47 @@ pub(super) fn collect_calls_from_flow(
     {
         collect_calls_from_flow(taken, resolver, identities, calls);
         collect_calls_from_flow(not_taken, resolver, identities, calls);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use open_radio_vendor_analysis_model::{MemoryObjectLocation, MemoryObjectRoot};
+
+    #[test]
+    fn ram_read_argument_uses_the_containing_linked_data_symbol() {
+        let resolver = ReferenceResolver {
+            symbols: Vec::new(),
+            symbols_by_address: BTreeMap::new(),
+            symbol_ids: BTreeMap::new(),
+            exported_symbol_keys: BTreeSet::new(),
+            relocated_calls: BTreeMap::new(),
+            pointer_context: direct::StructuralPointerContext::default(),
+            data_symbols: vec![artifact::ArtifactDataSymbolDefinition {
+                member: None,
+                name: "g_wifi_menuconfig".to_owned(),
+                address: 0x1008_9a20,
+                size: 0x80,
+                exported: true,
+            }],
+            data_objects: Vec::new(),
+            projected_direct_semantics: BTreeMap::new(),
+            projected_origins: BTreeMap::new(),
+        };
+        let sources = BTreeMap::from([(
+            7,
+            MemoryObjectLocation {
+                root: MemoryObjectRoot::Absolute {
+                    address: 0x1008_9a54,
+                },
+                offset: 0,
+            },
+        )]);
+
+        assert_eq!(
+            name_memory_reads("ram:read7", &sources, &resolver),
+            "memory:linked::g_wifi_menuconfig+0x34"
+        );
     }
 }

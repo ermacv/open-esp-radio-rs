@@ -68,6 +68,7 @@ pub(in crate::analysis::linked_ir) fn external_return_model(model: ExternalRetur
         ExternalReturnModel::AllocatedZeroed { size_argument } => {
             format!("allocated-zeroed:size=a{size_argument}")
         }
+        ExternalReturnModel::OpaquePointer => "opaque-pointer".to_owned(),
         ExternalReturnModel::Unmodeled => "unmodeled".to_owned(),
     }
 }
@@ -79,6 +80,7 @@ pub(super) fn external_return_is_modeled(model: ExternalReturnModel) -> bool {
             | ExternalReturnModel::SymbolicU32
             | ExternalReturnModel::SymbolicU64
             | ExternalReturnModel::AllocatedZeroed { .. }
+            | ExternalReturnModel::OpaquePointer
     )
 }
 

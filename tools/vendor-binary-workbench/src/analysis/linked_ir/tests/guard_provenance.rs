@@ -121,7 +121,14 @@ fn direct_mmio_branch_is_inventoried_without_a_guarded_call() {
     };
     let mut evidence = DirectTraceEvidence::default();
 
-    collect_guarded_direct_event(&event, &resolver, &identities, &svd, &mut evidence);
+    collect_guarded_direct_event(
+        &event,
+        &resolver,
+        &identities,
+        &svd,
+        &BTreeMap::new(),
+        &mut evidence,
+    );
 
     assert!(evidence.calls.is_empty());
     assert_eq!(evidence.direct_mmio_predicates.len(), 1);

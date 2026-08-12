@@ -158,6 +158,9 @@ fn apply_reviewed_external_call(
         Some(ExternalReturnModel::AllocatedZeroed { .. }) => SymbolicValue::ExternalResult(
             state.next_external_call_token | ALLOCATED_EXTERNAL_RESULT_TOKEN_FLAG,
         ),
+        Some(ExternalReturnModel::OpaquePointer) => SymbolicValue::ExternalResult(
+            state.next_external_call_token | OPAQUE_POINTER_EXTERNAL_RESULT_TOKEN_FLAG,
+        ),
         Some(ExternalReturnModel::Unmodeled) | None => {
             state.reference_blockers.push(format!(
                 "unmodeled-reviewed-external-call at {pc:#x}: {}",
@@ -395,6 +398,9 @@ pub(super) fn apply_relocated_call(
             }
             ExternalReturnModel::AllocatedZeroed { .. } => SymbolicValue::ExternalResult(
                 state.next_external_call_token | ALLOCATED_EXTERNAL_RESULT_TOKEN_FLAG,
+            ),
+            ExternalReturnModel::OpaquePointer => SymbolicValue::ExternalResult(
+                state.next_external_call_token | OPAQUE_POINTER_EXTERNAL_RESULT_TOKEN_FLAG,
             ),
             ExternalReturnModel::Unmodeled => unreachable!(),
         };

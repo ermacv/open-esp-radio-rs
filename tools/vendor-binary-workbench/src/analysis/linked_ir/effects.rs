@@ -222,7 +222,9 @@ pub(super) fn attribute_data_symbols(
     }
 }
 
-fn memory_read_sources_for_trace(trace: &FunctionAnalysis) -> BTreeMap<u32, MemoryObjectLocation> {
+pub(super) fn memory_read_sources_for_trace(
+    trace: &FunctionAnalysis,
+) -> BTreeMap<u32, MemoryObjectLocation> {
     fn collect_event(
         event: &DraftReferenceEvent,
         next_token: &mut u32,

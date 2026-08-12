@@ -336,6 +336,15 @@ effects = ["scheduler.queue-observe"]
 replacement = "async.channel-len"
 
 [[operations]]
+id = "rtos.queue.create"
+domain = "rtos"
+summary = "Create a queue with a fixed capacity and item size"
+argument-roles = ["capacity", "item-size"]
+return-role = "queue"
+effects = ["scheduler.queue-create", "memory.allocate"]
+replacement = "rust.construct-channel"
+
+[[operations]]
 id = "rtos.queue.delete"
 domain = "rtos"
 summary = "Delete an RTOS queue and release its runtime resources"
@@ -345,6 +354,24 @@ effects = ["scheduler.queue-delete", "memory.deallocate"]
 replacement = "rust.drop-channel"
 
 [[operations]]
+id = "rtos.task.create-pinned"
+domain = "rtos"
+summary = "Create an RTOS task pinned to a selected processor core"
+argument-roles = ["entry-point", "name", "stack-depth", "parameter", "priority", "handle-output", "core-id"]
+return-role = "status"
+effects = ["scheduler.task-create", "memory.output-write"]
+replacement = "async.spawn-pinned"
+
+[[operations]]
+id = "rtos.task.create"
+domain = "rtos"
+summary = "Create an RTOS task"
+argument-roles = ["entry-point", "name", "stack-depth", "parameter", "priority", "handle-output"]
+return-role = "status"
+effects = ["scheduler.task-create", "memory.output-write"]
+replacement = "async.spawn"
+
+[[operations]]
 id = "rtos.task.delete"
 domain = "rtos"
 summary = "Delete an RTOS task identified by its handle"
@@ -352,6 +379,24 @@ argument-roles = ["task"]
 return-role = "none"
 effects = ["scheduler.task-delete"]
 replacement = "async.task-cancel"
+
+[[operations]]
+id = "rtos.task.current"
+domain = "rtos"
+summary = "Return the current RTOS task handle"
+argument-roles = []
+return-role = "task"
+effects = ["scheduler.task-observe"]
+replacement = "async.current-task"
+
+[[operations]]
+id = "rtos.task.max-priority"
+domain = "rtos"
+summary = "Return the maximum scheduler priority domain value"
+argument-roles = []
+return-role = "priority"
+effects = ["scheduler.configuration-read"]
+replacement = "async.priority-policy"
 
 [[operations]]
 id = "time.milliseconds.to-ticks"

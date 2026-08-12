@@ -250,6 +250,7 @@ fn execution_model_label(model: crate::ExternalReturnModel) -> String {
         crate::ExternalReturnModel::AllocatedZeroed { size_argument } => {
             format!("allocated-zeroed:size=a{size_argument}")
         }
+        crate::ExternalReturnModel::OpaquePointer => "opaque-pointer".to_owned(),
         crate::ExternalReturnModel::Unmodeled => "unmodeled".to_owned(),
     }
 }

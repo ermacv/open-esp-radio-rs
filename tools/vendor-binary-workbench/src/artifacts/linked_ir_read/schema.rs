@@ -1,4 +1,4 @@
-//! Complete owned DTO for linked-IR schema v50.
+//! Complete owned DTO for linked-IR schema v51.
 
 #![allow(
     dead_code,
@@ -187,6 +187,7 @@ pub(crate) struct StoredFunction {
     return_value: String,
     return_provenance: StoredReturnProvenance,
     dependencies: Vec<String>,
+    pub(crate) projected_relocations: Vec<StoredProjectedRelocation>,
     pub(crate) local_value_flow: Vec<StoredLocalValueFlow>,
     pub(crate) calls: Vec<StoredCall>,
     direct_mmio_predicates: Vec<StoredDirectMmioPredicate>,
@@ -204,6 +205,19 @@ pub(crate) struct StoredFunction {
     reference_diagnostics: Vec<StoredDiagnostic>,
     pub(crate) decode_blockers: Vec<StoredDecodeBlocker>,
     pub(crate) pseudo: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct StoredProjectedRelocation {
+    pub(crate) site: u32,
+    pub(crate) origin_member: Option<String>,
+    pub(crate) origin_symbol: String,
+    pub(crate) origin_offsets: Vec<u32>,
+    pub(crate) kind: String,
+    pub(crate) symbol: String,
+    pub(crate) addend: i64,
+    pub(crate) correspondence: String,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -502,6 +516,32 @@ struct StoredExternalOutputModel {
 impl StoredCall {
     pub(crate) fn project_symbol(&self) -> Option<&str> {
         self.project_symbol.as_deref()
+    }
+
+    pub(crate) fn project_candidates(&self) -> &[String] {
+        &self.project_candidates
+    }
+
+    pub(crate) fn semantic_contract_provenance(&self) -> Option<String> {
+        self.semantic_contract.as_ref().map(|contract| {
+            format!(
+                "{}:{} ({})",
+                contract.source, contract.id, contract.evidence
+            )
+        })
+    }
+
+    pub(crate) fn trampoline_provenance(&self) -> Option<String> {
+        self.trampoline.as_ref().map(|trampoline| {
+            format!(
+                "table={} pointer={} backing={} slot={:#x} function={}",
+                trampoline.table,
+                trampoline.pointer_symbol,
+                trampoline.backing_symbol,
+                trampoline.slot,
+                trampoline.c_name
+            )
+        })
     }
 
     pub(crate) fn knowledge(&self) -> &'static str {
@@ -946,6 +986,9 @@ pub(crate) enum StoredMemoryObject {
     ZeroedAllocation {
         call_token: u32,
     },
+    OpaqueExternalObject {
+        call_token: u32,
+    },
 }
 
 impl StoredMemoryObject {
@@ -969,6 +1012,7 @@ impl StoredMemoryObject {
                 stride,
             } => format!("{}[arg{argument} * {stride:#x}]", object.display_name()),
             Self::ZeroedAllocation { call_token } => format!("calloc#{call_token}"),
+            Self::OpaqueExternalObject { call_token } => format!("opaque-external#{call_token}"),
         }
     }
 }

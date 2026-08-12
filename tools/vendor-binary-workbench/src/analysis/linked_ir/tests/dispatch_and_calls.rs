@@ -747,8 +747,11 @@ fn cfg_guard_names_call_results_without_token_prefix_collisions() {
     ]);
 
     assert_eq!(
-        name_call_results("call1 | call10 | external10 | callback", &call_results),
-        "result_of_vendor__one_1 | result_of_vendor__ten_10 | result_of_vendor__ten_10 | callback"
+        name_call_results(
+            "call1 | call10 | external10 | external-result:10 | call-result:1 | callback",
+            &call_results
+        ),
+        "result_of_vendor__one | result_of_vendor__ten | result_of_vendor__ten | result_of_vendor__ten | result_of_vendor__one | callback"
     );
 }
 

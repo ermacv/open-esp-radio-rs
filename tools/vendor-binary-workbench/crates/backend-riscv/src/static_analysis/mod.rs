@@ -10,10 +10,10 @@ use crate::{
     ExpressionOperation, ExternalOutputModel, ExternalReturnModel, FunctionAnalysis,
     FunctionTableRef, IndexedMmioDomain, IndexedMmioRegister, LocatedObservableEvent,
     LocatedReferenceEvent, MemoryAccess, MemoryObjectLocation, MemoryObjectRoot, MmioMap,
-    ObservableEvent, RV32_REGISTER_ARGUMENT_COUNT, RV32_STACK_ARGUMENT_COUNT, Result,
-    ReviewedExternalCall, Rv32CallArguments, SECONDARY_CALL_RESULT_TOKEN_FLAG, SymbolicValue,
-    artifact, collect_evaluable_input_bits, encode_fence_set, evaluate_for_input,
-    indexed_mmio_domain,
+    OPAQUE_POINTER_EXTERNAL_RESULT_TOKEN_FLAG, ObservableEvent, RV32_REGISTER_ARGUMENT_COUNT,
+    RV32_STACK_ARGUMENT_COUNT, Result, ReviewedExternalCall, Rv32CallArguments,
+    SECONDARY_CALL_RESULT_TOKEN_FLAG, SymbolicValue, artifact, collect_evaluable_input_bits,
+    encode_fence_set, evaluate_for_input, indexed_mmio_domain,
 };
 
 mod alu;
@@ -27,7 +27,10 @@ mod state;
 
 use alu::apply_alu_instruction;
 use calls::{StructuralCallControl, apply_call_instruction, apply_relocated_call};
-pub use context::{StructuralCallSite, StructuralPointerContext, StructuralRelocatedCalls};
+pub use context::{
+    StructuralCallSite, StructuralPointerContext, StructuralProjectedRelocation,
+    StructuralRelocatedCalls,
+};
 use memory::*;
 use memory_access::{apply_floating_memory_instruction, apply_memory_instruction};
 use poll::*;

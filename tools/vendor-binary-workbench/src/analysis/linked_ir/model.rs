@@ -260,6 +260,9 @@ pub(crate) enum LinkedMemoryObject {
     ZeroedAllocation {
         call_token: u32,
     },
+    OpaqueExternalObject {
+        call_token: u32,
+    },
 }
 
 impl LinkedMemoryObject {
@@ -295,6 +298,9 @@ impl LinkedMemoryObject {
                 stride: *stride,
             },
             MemoryObjectRoot::ZeroedAllocation { call_token } => Self::ZeroedAllocation {
+                call_token: *call_token,
+            },
+            MemoryObjectRoot::OpaqueExternalObject { call_token } => Self::OpaqueExternalObject {
                 call_token: *call_token,
             },
         }
@@ -856,6 +862,18 @@ pub(crate) struct LinkedDecodeBlocker {
     pub(crate) linear_control_flow: bool,
 }
 
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+pub(crate) struct LinkedProjectedRelocation {
+    pub(crate) site: u32,
+    pub(crate) origin_member: Option<String>,
+    pub(crate) origin_symbol: String,
+    pub(crate) origin_offsets: Vec<u32>,
+    pub(crate) kind: &'static str,
+    pub(crate) symbol: String,
+    pub(crate) addend: i64,
+    pub(crate) correspondence: &'static str,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub(crate) struct LinkedIrFunction {
     pub(crate) source: String,
@@ -873,6 +891,7 @@ pub(crate) struct LinkedIrFunction {
     pub(crate) return_value: String,
     pub(crate) return_provenance: LinkedReturnProvenance,
     pub(crate) dependencies: Vec<String>,
+    pub(crate) projected_relocations: Vec<LinkedProjectedRelocation>,
     pub(crate) local_value_flow: Vec<LinkedLocalValueFlow>,
     pub(crate) calls: Vec<LinkedCall>,
     pub(crate) direct_mmio_predicates: Vec<LinkedDirectMmioPredicate>,

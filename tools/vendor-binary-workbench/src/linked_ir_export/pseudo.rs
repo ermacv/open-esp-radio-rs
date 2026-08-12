@@ -512,6 +512,9 @@ fn memory_object_label(object: &LinkedMemoryObject) -> String {
         LinkedMemoryObject::ZeroedAllocation { call_token } => {
             format!("zeroed-allocation(call={call_token})")
         }
+        LinkedMemoryObject::OpaqueExternalObject { call_token } => {
+            format!("opaque-external-object(call={call_token})")
+        }
     }
 }
 

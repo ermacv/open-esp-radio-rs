@@ -320,6 +320,9 @@ fn memory_object_fact(object: StoredMemoryObject) -> FunctionMemoryObjectFact {
         StoredMemoryObject::ZeroedAllocation { call_token } => {
             FunctionMemoryObjectFact::ZeroedAllocation { call_token }
         }
+        StoredMemoryObject::OpaqueExternalObject { call_token } => {
+            FunctionMemoryObjectFact::OpaqueExternalObject { call_token }
+        }
     }
 }
 

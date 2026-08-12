@@ -105,7 +105,7 @@ that every user must learn.
     This is call knowledge only and deliberately leaves `event-delivery=false`.
   - [x] Add scenario-owned stateful FIFO instances with reviewed, mechanism-
     neutral enqueue/dequeue/length ABI bindings and ordered lifecycle evidence.
-  - [x] Recover the real ELF `.L1019` selector table as bounded schema-v50
+  - [x] Recover the real ELF `.L1019` selector table as bounded schema-v51
     `indexed-dispatch` edges. Selector `0x19` reaches `.L1026` and
     `wdevProcessRxSucDataAll` in the local linked `libpp` oracle.
   - [x] Add the concrete multi-phase replay that posts selector `0x19`,
@@ -392,6 +392,17 @@ that every user must learn.
   coexistence operations, with explicit
   `archive-origin-interface-association` provenance. Semantic annotation still
   does not authorize execution.
+- [x] Preserve relocation provenance for linker-relaxed archive data loads in
+  linked structural analysis. The real `pp_create_task` load of
+  `g_osi_funcs_p` now resolves reviewed slot `+0x90` as
+  `task_create_pinned_to_core`; target proof and argument recovery remain
+  independent claims.
+- [x] Add focused `inspect function --calls` and `--call TARGET` reports. The
+  real callsite recovers all seven ABI arguments, including `ppTask`, the
+  stack-size result, `max-priority - 2`, a null handle output and
+  `g_wifi_menuconfig + 0x34`. Narrow human output is a vertical inventory and
+  machine output is a compact versioned callsite document rather than the
+  complete function/CFG payload.
 - [x] Add pluggable peripheral execution models for W1C, read-to-clear,
   self-clearing bits, FIFO and indexed banks while retaining simple scripted
   MMIO as the generic baseline.
@@ -600,7 +611,7 @@ schema without isolation.
 - [x] Bound the complete set of scheduled affine-projection states, not only
   the number already popped from the queue. The old check allowed a branching
   call graph to enqueue millions of paths before reaching its 4096-state
-  processing limit. The schema-v50 real `wifi-sta-lifecycle` profile now
+  processing limit. The schema-v51 real `wifi-sta-lifecycle` profile now
   completes all 2997 functions in 61 seconds with a measured 474,448-KiB peak;
   compact summary construction takes 0.37 seconds and exact direct facts plus
   `graph.json` remain the transitive source of truth.

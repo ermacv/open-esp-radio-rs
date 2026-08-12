@@ -37,12 +37,33 @@ impl StructuralCallSite {
 
 pub type StructuralRelocatedCalls = BTreeMap<StructuralCallSite, (String, Option<u32>)>;
 
+/// One data relocation conservatively projected from an exact relocatable
+/// origin onto an instruction in the authoritative linked image.
+///
+/// Linkers may relax two origin instructions into one linked instruction, so
+/// the original offsets are retained as evidence instead of pretending that
+/// function-relative offsets are stable across linking.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StructuralProjectedRelocation {
+    pub origin_member: Option<String>,
+    pub origin_symbol: String,
+    pub origin_offsets: Vec<u32>,
+    pub kind: artifact::RelocationKind,
+    pub symbol: String,
+    pub addend: i64,
+    pub correspondence: &'static str,
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct StructuralPointerContext {
     pub reviewed_external_pointer_cells: BTreeMap<u32, String>,
     pub function_pointer_cells: BTreeMap<u32, FunctionTableRef>,
     pub data_pointer_cells: BTreeMap<u32, SymbolicValue>,
     pub relocated_pointer_symbols: BTreeMap<String, SymbolicValue>,
+    /// Exact linked instruction sites carrying archive relocation evidence.
+    /// Entries are registered only after project-level digest, origin and
+    /// instruction-correspondence validation.
+    pub projected_relocations: BTreeMap<StructuralCallSite, Vec<StructuralProjectedRelocation>>,
     pub function_table_slots: BTreeMap<(FunctionTableRef, u32), u32>,
     pub diagnostic_calls: BTreeMap<String, u8>,
     pub reviewed_external_calls: BTreeMap<StructuralCallSite, Vec<ReviewedExternalCall>>,

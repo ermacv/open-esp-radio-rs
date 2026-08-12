@@ -174,6 +174,46 @@ const ESP32S31_WIFI_OSI_MODELS: &[ExternalCallModelSpec] = &[
         return_model: ExternalReturnModel::AllocatedZeroed { size_argument: 0 },
         outputs: &[],
     },
+    ExternalCallModelSpec {
+        id: "wifi-create-queue",
+        return_model: ExternalReturnModel::OpaquePointer,
+        outputs: &[],
+    },
+    ExternalCallModelSpec {
+        id: "semphr-create",
+        return_model: ExternalReturnModel::OpaquePointer,
+        outputs: &[],
+    },
+    ExternalCallModelSpec {
+        id: "semphr-delete",
+        return_model: ExternalReturnModel::Void,
+        outputs: &[],
+    },
+    ExternalCallModelSpec {
+        id: "task-create-pinned",
+        return_model: ExternalReturnModel::SymbolicU32,
+        outputs: &[],
+    },
+    ExternalCallModelSpec {
+        id: "task-create",
+        return_model: ExternalReturnModel::SymbolicU32,
+        outputs: &[],
+    },
+    ExternalCallModelSpec {
+        id: "task-delete",
+        return_model: ExternalReturnModel::Void,
+        outputs: &[],
+    },
+    ExternalCallModelSpec {
+        id: "task-get-current",
+        return_model: ExternalReturnModel::OpaquePointer,
+        outputs: &[],
+    },
+    ExternalCallModelSpec {
+        id: "task-get-max-priority",
+        return_model: ExternalReturnModel::SymbolicU32,
+        outputs: &[],
+    },
 ];
 
 const ESP32S31_WIFI_OSI_MODEL_SET: ExternalCallModelSetSpec = ExternalCallModelSetSpec {

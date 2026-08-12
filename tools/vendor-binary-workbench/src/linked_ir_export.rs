@@ -20,9 +20,9 @@ pub(crate) use render_common::{
 use crate::{
     EntryContractRef, LinkedIrReport, LinkedIrSourceOptions, MmioMap, ReferenceResolver, Result,
     ReviewedExternalCall, ReviewedExternalCallEvidence, ReviewedExternalCallExecutionModel,
-    StructuralCallSite, TargetSpec, artifacts::LinkUnitOriginFact, build_linked_ir_for_source,
-    harnesses, interfaces::InterfaceWorkspace, link_project_calls, merge_linked_ir_with_options,
-    project_ir::ProjectIrProfile,
+    StructuralCallSite, StructuralProjectedRelocation, TargetSpec, artifacts::LinkUnitOriginFact,
+    build_linked_ir_for_source, harnesses, interfaces::InterfaceWorkspace, link_project_calls,
+    merge_linked_ir_with_options, project_ir::ProjectIrProfile,
 };
 
 #[derive(Debug)]
@@ -287,10 +287,74 @@ fn register_projected_origins(
             continue;
         };
         let linked = linked.clone();
+        register_projected_relocations(resolver, &linked, archive)?;
         resolver.register_projected_origin(&linked, archive.clone());
         registered += 1;
     }
     tracing::debug!(source, registered, "registered exact archive origins");
+    Ok(())
+}
+
+fn register_projected_relocations(
+    resolver: &mut ReferenceResolver,
+    linked: &crate::artifact::ArtifactSymbolDefinition,
+    origin: &crate::artifact::ArtifactSymbolDefinition,
+) -> Result<()> {
+    let origin_body = crate::artifact::inspect_function_definition(origin)?;
+    let runtime_body = crate::artifact::inspect_function_definition(linked)?;
+    let correspondence =
+        crate::function_investigation::correspondence::origin_instruction_correspondence(
+            &origin_body,
+            &runtime_body,
+        );
+
+    for item in correspondence {
+        let Ok(runtime_address) = u32::try_from(item.runtime_address) else {
+            continue;
+        };
+        let origin_offsets = item
+            .origin_offsets
+            .iter()
+            .filter_map(|offset| u32::try_from(*offset).ok())
+            .collect::<Vec<_>>();
+        if origin_offsets.len() != item.origin_offsets.len() {
+            continue;
+        }
+        for instruction in origin_body
+            .instructions
+            .iter()
+            .filter(|instruction| item.origin_offsets.contains(&instruction.offset))
+        {
+            for relocation in origin.relocations.iter().filter(|relocation| {
+                u64::from(relocation.address) >= instruction.address
+                    && u64::from(relocation.address)
+                        < instruction.address + u64::from(instruction.width)
+                    && !matches!(
+                        relocation.kind,
+                        crate::artifact::RelocationKind::Call
+                            | crate::artifact::RelocationKind::CallPlt
+                    )
+            }) {
+                let projected = StructuralProjectedRelocation {
+                    origin_member: origin.member.clone(),
+                    origin_symbol: origin.name.clone(),
+                    origin_offsets: origin_offsets.clone(),
+                    kind: relocation.kind.clone(),
+                    symbol: relocation.symbol.clone(),
+                    addend: relocation.addend,
+                    correspondence: item.kind,
+                };
+                let candidates = resolver
+                    .pointer_context
+                    .projected_relocations
+                    .entry(StructuralCallSite::new(linked, runtime_address))
+                    .or_default();
+                if !candidates.contains(&projected) {
+                    candidates.push(projected);
+                }
+            }
+        }
+    }
     Ok(())
 }
 

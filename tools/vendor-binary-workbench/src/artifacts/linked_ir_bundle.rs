@@ -147,6 +147,13 @@ pub(crate) struct LinkedIrReviewProjection {
     pub(crate) functions: Vec<StoredFunctionReviewProjection>,
 }
 
+fn parse_persisted_address(value: &str) -> Option<u32> {
+    value
+        .strip_prefix("0x")
+        .and_then(|value| u32::from_str_radix(value, 16).ok())
+        .or_else(|| value.parse().ok())
+}
+
 impl LinkedIrReader {
     pub(crate) fn open(path: &Path) -> Result<Self> {
         if !path.is_dir() {
@@ -259,6 +266,33 @@ impl LinkedIrReader {
             .filter(|record| record.identity == selector || record.symbol == selector)
             .map(|record| record.identity.clone())
             .collect()
+    }
+
+    /// Return exact linked labels at one constant address for human
+    /// provenance. Aliases are all retained and never silently selected.
+    pub(crate) fn labels_at_address(&self, address: u32) -> Vec<String> {
+        let mut labels = self
+            .index
+            .iter()
+            .filter(|record| record.address == Some(address))
+            .map(|record| record.identity.clone())
+            .collect::<BTreeSet<_>>();
+        labels.extend(
+            self.data_object_index
+                .iter()
+                .filter(|record| {
+                    record.address.as_deref().and_then(parse_persisted_address) == Some(address)
+                })
+                .map(|record| {
+                    format!(
+                        "{}::{}::{}",
+                        record.source,
+                        record.member.as_deref().unwrap_or("<linked>"),
+                        record.symbol
+                    )
+                }),
+        );
+        labels.into_iter().collect()
     }
 
     pub(crate) fn matching_function_identities(&self, selector: &str) -> BTreeSet<String> {

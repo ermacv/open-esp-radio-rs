@@ -200,6 +200,7 @@ fn write_ir(path: &std::path::Path) {
         return_value: "?".to_owned(),
         return_provenance: provenance(),
         dependencies: Vec::new(),
+        projected_relocations: Vec::new(),
         local_value_flow: Vec::new(),
         calls,
         direct_mmio_predicates: Vec::new(),

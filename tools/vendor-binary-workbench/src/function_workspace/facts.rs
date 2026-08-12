@@ -169,17 +169,14 @@ pub(crate) struct FunctionFacts {
     pub(crate) functions: Vec<FunctionFact>,
 }
 
-impl FunctionFacts {
-    pub(crate) fn load_function(
-        profile: &str,
-        report: &std::path::Path,
-        identity: &str,
-    ) -> Result<Option<FunctionFact>> {
-        crate::artifacts::LinkedIrReader::open(report)?
-            .get_function_by_identity(identity)
-            .map(|function| function.map(|function| parse::parse_function(profile, function)))
-    }
+pub(crate) fn function_fact_from_stored(
+    profile: &str,
+    function: crate::artifacts::StoredFunction,
+) -> FunctionFact {
+    parse::parse_function(profile, function)
+}
 
+impl FunctionFacts {
     #[tracing::instrument(name = "load_function_facts", skip_all, fields(reports = reports.len()))]
     pub(crate) fn load(reports: &[(String, PathBuf)]) -> Result<Self> {
         let mut inputs = Vec::new();

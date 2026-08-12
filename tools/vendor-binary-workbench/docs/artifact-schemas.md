@@ -15,7 +15,7 @@ part of their contract; consumers must parse the typed structure.
 | Symbol inventory | 4 | `symbols inventory` | `artifacts/symbol_inventory.rs`, `artifacts/symbol_inventory/read.rs` |
 | MMIO discovery facts | 5 | `mmio discover` | `artifacts/mmio_facts.rs`, `artifacts/mmio_facts_read.rs` |
 | Interface discovery facts | 5 | `interfaces discover` | `artifacts/interface_facts.rs`, `artifacts/interface_facts_read.rs` |
-| Linked IR | 50 | `ir export` | `artifacts/linked_ir_document.rs`, `artifacts/linked_ir_read.rs` |
+| Linked IR | 52 | `ir export` | `artifacts/linked_ir_document.rs`, `artifacts/linked_ir_read.rs` |
 | Concrete replay evidence | 2 | `execute replay` | `artifacts/replay_evidence.rs`, `artifacts/replay_evidence_read.rs` |
 | Review scopes | 8 | `project analyze` | `review_scopes.rs`, `review_scopes/model.rs` |
 | Verification report | 10 | `verify source` / `verify inventory` | `verification/report.rs` |
@@ -36,7 +36,7 @@ bounded indexed-dispatch edges. Zero-sized compiler anchors stop at the next
 symbol rather than duplicating the rest of their section. Relocatable archive
 members retain section-relative offsets; these are evidence identities, never
 invented runtime addresses or nominal source types.
-Schema 50 adds `structural-relocation` call edges for direct-call relocations
+Schema 50 introduced `structural-relocation` call edges for direct-call relocations
 that occur after a semantic blocker. They keep the complete body navigable and
 may participate in bounded structural graph searches, but carry no recovered
 arguments/guards and never establish path feasibility or execution.

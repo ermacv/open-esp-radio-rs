@@ -39,7 +39,7 @@ One typed report contains:
 - reviewed preconditions and operational/diagnostic/timeout/error/recovery
   paths from the function pack;
 - a proof ledger that keeps container, decode, CFG, link-origin and semantic
-completeness separate.
+  completeness separate.
 
 A reviewed event route is joined only when the generated dispatcher proves the
 same mechanism, execution context, optional receiver and constant selector.
@@ -80,7 +80,13 @@ without recursively expanding reverse edges through common utilities such as
 logging. Both node fan-out and examined edges have explicit budgets; the
 report records depth, visited nodes, examined edges, and the reached boundary
 instead of constructing an unbounded recursive JSON graph. Machine-readable
-output always keeps the complete selected bounded report.
+output uses command schema 10. The normal report represents runtime and origin
+bodies as accounting summaries (address, bytes, instruction/block/relocation
+counts) and keeps complete bounded semantic evidence without duplicating either
+instruction arrays or the persistent linked-IR function record. Add `--full`
+when a machine consumer explicitly needs the schema-validated record together
+with both lossless bodies and CFGs; `report` remains the indexed source path in
+both modes.
 
 For ABI investigation, request the focused callsite view instead of reading
 the complete pseudo-code or JSON document:
@@ -144,8 +150,8 @@ sequence, or a specific callee whose summary must be closed.
 
 A semantic blocker never truncates the raw body. Preconditions and path labels
 are reviewer assertions, not permission to discard control-flow evidence and
-not execution proof. JSON serializes the same report shown by the human
-renderer. The Functions tab in `project browse` loads this report lazily
+not execution proof. JSON serializes the same selected evidence mode as the
+human renderer. The Functions tab in `project browse` loads the compact report lazily
 for the selected function and therefore uses the same evidence path as the CLI.
 
 The report never associates archive instruction offsets with linked PCs by

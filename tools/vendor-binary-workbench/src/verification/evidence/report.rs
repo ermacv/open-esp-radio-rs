@@ -1,6 +1,10 @@
 //! Typed verification report core and persistence.
 
-use std::{fs, path::Path};
+use std::{
+    fs,
+    io::{BufWriter, Write},
+    path::Path,
+};
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -196,7 +200,10 @@ pub(crate) fn write_verification_json_report(
     path: &Path,
     report: &VerificationCommandReport,
 ) -> Result<()> {
-    fs::write(path, serde_json::to_string_pretty(report)? + "\n")?;
+    let mut writer = BufWriter::new(fs::File::create(path)?);
+    serde_json::to_writer_pretty(&mut writer, report)?;
+    writer.write_all(b"\n")?;
+    writer.flush()?;
     Ok(())
 }
 

@@ -44,6 +44,7 @@ impl ResolvedEnvironment {
             code_workspace: OnceLock::new(),
             register_workspace: OnceLock::new(),
             interface_workspace: OnceLock::new(),
+            artifacts: Default::default(),
         })
     }
 

@@ -518,6 +518,13 @@ that every user must learn.
   modules, legacy paths, duplicate report models, handwritten serialization,
   stale vocabulary and configuration that is not reachable from the project
   workflow.
+  - [x] Separate focused function command routing, callsite rendering,
+    replacement rendering and body rendering. Move function evidence DTOs,
+    event replay validation, project TOML helpers and linked-IR MMIO DTOs out
+    of their former orchestration modules without adding facade crates.
+  - [ ] Continue with linked-IR document construction and project-analysis
+    operations; split only where ownership changes, not to satisfy a line-count
+    target.
 - [x] Keep `vendor-project.toml` as the normal entry point and document every
   other TOML file by ownership: composition, private input, reviewed knowledge
   or generated evidence. `project files` now reports entrypoint/local/external/
@@ -548,12 +555,25 @@ that every user must learn.
   function/interface join no longer performs a nested all-functions scan:
   indexing concrete callers reduced real `functions review` time from
   102.57 s to 3.62 s with byte-identical output. Remaining repeated loads are
-  now the dominant cost.
-- [ ] Stream large persistent JSON documents to files and hash them while
+  now the dominant cost. `ProjectSession` now owns a command-scoped, bounded
+  `ProjectArtifactStore`: one most-recently-used linked-IR reader is reused by
+  the snapshot and lazy function detail, while graphs and function records stay
+  lazy and multiple profile indexes cannot accumulate. Status/navigation
+  collectors still need to converge on that store.
+- [x] Stream large persistent JSON documents to files and hash them while
   writing instead of materializing a complete `String` and reparsing it for a
   downstream stage. The schema-38 four-profile run peaked at 1,252,836 KiB;
   correctness is stable, but the current ownership unnecessarily retains
-  duplicate document trees/strings.
+  duplicate document trees/strings. Linked-IR bundles already use bounded
+  member writers; the shared generated-file boundary now stages Serde JSON,
+  hashes it while writing and compares check-mode files in 64-KiB buffers.
+  Project verification, suite, navigation and review-scope reports use it.
+  The 2026-08-12 real schema-52 `project check --jobs 1` reproduced all
+  analysis, 13 verification suites, three feature qualifications and five
+  publication outputs in 63.48 s / 644,204 KiB under the 1-GiB watchdog after
+  the remaining project-owned JSON reports moved to the streaming boundary.
+  Focused `wDev_AppendRxBlocks` inspection took 0.31 s / about 54 MiB; default
+  schema-10 JSON was 128,580 bytes versus 475,054 bytes for explicit `--full`.
 - [x] Bound `ir export` human function rows after the real all-ROM run emitted
   1,935 rows; show the 64 most active functions and an explicit omitted count.
 - [x] Apply a matching `source-companion:ID` to leaf IR export when its resolved

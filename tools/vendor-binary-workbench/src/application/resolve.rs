@@ -7,6 +7,8 @@ use std::{
 
 use crate::{MemoryMap, MmioMap, ProjectSpec, Result, TargetSpec, run_spec::RunSpec};
 
+use super::artifact_store::ProjectArtifactStore;
+
 pub(crate) struct ProjectContext<'a> {
     pub(crate) project_path: &'a Path,
     pub(crate) project: &'a ProjectSpec,
@@ -69,6 +71,7 @@ pub(crate) struct ProjectSession {
         OnceLock<std::result::Result<Option<crate::registers::ProjectRegisterWorkspace>, String>>,
     pub(crate) interface_workspace:
         OnceLock<std::result::Result<Option<crate::interfaces::InterfaceWorkspace>, String>>,
+    pub(crate) artifacts: ProjectArtifactStore,
 }
 
 impl ProjectSession {
@@ -144,6 +147,7 @@ impl ProjectSession {
             code_workspace: OnceLock::new(),
             register_workspace: OnceLock::new(),
             interface_workspace: OnceLock::new(),
+            artifacts: ProjectArtifactStore::default(),
         })
     }
 
@@ -185,6 +189,13 @@ impl ProjectSession {
         &self,
     ) -> Result<Option<&crate::interfaces::InterfaceWorkspace>> {
         cached_interface_workspace(&self.project, &self.target, &self.interface_workspace)
+    }
+
+    pub(crate) fn linked_ir(
+        &self,
+        path: &std::path::Path,
+    ) -> Result<std::sync::Arc<crate::artifacts::LinkedIrReader>> {
+        self.artifacts.linked_ir(path)
     }
 }
 

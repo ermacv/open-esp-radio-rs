@@ -35,7 +35,7 @@ pub(super) fn investigate(
                 max_visited_nodes: MAX_VISITED_NODES,
                 max_examined_edges: MAX_EXAMINED_EDGES,
             },
-        );
+        )?;
         let mut blockers = Vec::new();
         if let Some(limit) = reachability.limit {
             blockers.push(limit_blocker(limit));

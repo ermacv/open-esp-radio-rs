@@ -50,7 +50,7 @@ pub(super) fn investigate(
                 max_visited_nodes: MAX_VISITED_NODES,
                 max_examined_edges: MAX_EXAMINED_EDGES,
             },
-        );
+        )?;
         let Some(path) = search.path.as_ref() else {
             let mut report = not_reached(
                 profile,

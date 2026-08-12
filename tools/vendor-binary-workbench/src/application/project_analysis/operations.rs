@@ -9,7 +9,6 @@ use crate::{
     artifact,
     artifacts::{
         build_interface_facts, build_mmio_facts as mmio_document, build_symbol_inventory_document,
-        render_interface_facts, render_mmio_facts, render_symbol_inventory,
     },
     code_workspace::{CodeWorkspace, render_code_boundary_review},
     function_workspace::{FunctionWorkspace, link_reviewed_interfaces, render_function_review},
@@ -712,11 +711,12 @@ pub(crate) fn build_symbol_inventory(
         .collect::<Vec<_>>();
     let inventory = build_project_linkage_inventory(&inputs)?;
     let document = build_symbol_inventory_document(&inventory, |_| true)?;
-    super::super::generated_file::write_or_check(
+    super::super::generated_file::write_or_check_json(
         output,
-        &render_symbol_inventory(&document)?,
+        &document,
         check,
         "symbol inventory",
+        false,
     )?;
     Ok(true)
 }
@@ -757,11 +757,12 @@ pub(crate) fn discover_project_mmio(
         crate::analysis::MmioDiscoveryOptions { jobs },
     )?;
     let document = mmio_document(&report)?;
-    super::super::generated_file::write_or_check(
+    super::super::generated_file::write_or_check_json(
         output,
-        &render_mmio_facts(&document)?,
+        &document,
         check,
         "MMIO discovery report",
+        false,
     )?;
     Ok(true)
 }
@@ -793,11 +794,12 @@ pub(crate) fn discover_project_interfaces_operation(
         Some(&EffectiveCodeCatalog::load(project)?),
     )?;
     let document = build_interface_facts(&discovery)?;
-    super::super::generated_file::write_or_check(
+    super::super::generated_file::write_or_check_json(
         output,
-        &render_interface_facts(&document)?,
+        &document,
         check,
         "interface discovery report",
+        false,
     )?;
     if !discovery.decode_blockers.is_empty() || !discovery.failures.is_empty() {
         tracing::warn!(
@@ -816,8 +818,13 @@ pub(crate) fn build_navigation(project: &ProjectSpec, check: bool) -> Result<boo
         .ok_or_else(|| crate::Error::invalid("[analysis.navigation] is absent"))?
         .output;
     let document = crate::navigation::build(project)?;
-    let rendered = serde_json::to_string(&document)? + "\n";
-    super::super::generated_file::write_or_check(output, &rendered, check, "navigation index")?;
+    super::super::generated_file::write_or_check_json(
+        output,
+        &document,
+        check,
+        "navigation index",
+        false,
+    )?;
     Ok(true)
 }
 
@@ -828,11 +835,12 @@ pub(crate) fn build_review_scopes(project: &ProjectSpec, check: bool) -> Result<
         .ok_or_else(|| crate::Error::invalid("[review] is absent"))?
         .output;
     let document = crate::review_scopes::build_document(project)?;
-    super::super::generated_file::write_or_check(
+    super::super::generated_file::write_or_check_json(
         output,
-        &crate::review_scopes::render_document(&document)?,
+        &document,
         check,
         "review scope report",
+        true,
     )?;
     Ok(true)
 }

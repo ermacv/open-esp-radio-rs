@@ -17,7 +17,7 @@ mod replay_evidence;
 mod replay_evidence_read;
 pub(crate) mod symbol_inventory;
 
-pub(crate) use interface_facts::{build_interface_facts, render_interface_facts};
+pub(crate) use interface_facts::build_interface_facts;
 pub(crate) use interface_facts_read::{
     StoredInterfaceArgument, StoredInterfaceFacts, StoredInterfaceRoot, StoredInterfaceSelector,
     StoredInterfaceStep, parse_interface_facts,
@@ -39,7 +39,7 @@ pub(crate) use linked_ir_read::{
     StoredLocalValueFlow, StoredMemoryObject, StoredMmioAccess, StoredMmioRegister,
     StoredReviewCall, parse_linked_ir,
 };
-pub(crate) use mmio_facts::{MmioFactsDocument, build_mmio_facts, render_mmio_facts};
+pub(crate) use mmio_facts::{MmioFactsDocument, build_mmio_facts};
 pub(crate) use mmio_facts_read::parse_mmio_facts;
 pub(crate) use replay_evidence::{
     ReplayCompletionDocument, ReplayEvidenceDocument, ReplayMemoryObservationDocument,
@@ -51,7 +51,7 @@ pub(crate) use replay_evidence_read::{
 pub(crate) use symbol_inventory::{
     LinkUnitOriginFact, StoredSymbolInventory, SymbolInventoryDocument,
     build_symbol_inventory_document, inspect_symbol_inventory, load_link_unit_origins,
-    parse_symbol_inventory, render_symbol_inventory,
+    parse_symbol_inventory,
 };
 
 use serde::Deserialize;

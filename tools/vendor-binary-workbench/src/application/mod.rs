@@ -1,5 +1,6 @@
 //! Stateful, CLI-independent application facade for interactive frontends.
 
+pub(crate) mod artifact_store;
 mod comparison;
 mod error;
 pub(crate) mod event_replay;
@@ -184,5 +185,17 @@ mod tests {
             assert_eq!(detail.non_operational_functions.len(), 6);
             assert_eq!(detail.related_functions.len(), 3);
         }
+    }
+
+    #[test]
+    fn project_session_reuses_one_linked_ir_reader_per_profile() {
+        let session = ProjectSession::open(&fixture_manifest()).unwrap();
+        let reports = session.project.function_ir_reports().unwrap();
+        let Some((_, path)) = reports.into_iter().find(|(_, path)| path.is_dir()) else {
+            return;
+        };
+        let first = session.linked_ir(&path).unwrap();
+        let second = session.linked_ir(&path).unwrap();
+        assert!(std::sync::Arc::ptr_eq(&first, &second));
     }
 }

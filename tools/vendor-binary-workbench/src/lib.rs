@@ -47,7 +47,7 @@ pub use function_investigation::{
     EventDispatchBindingEvidence, EventDispatchEvidence, FunctionInvestigationReport,
     InvestigationLedgerEntry, OriginFunctionEvidence, ReplacementEvidence,
     ReplacementProofEvidence, ReviewedPathEvidence, ReviewedPreconditionEvidence,
-    SemanticFunctionEvidence,
+    SemanticFunctionEvidence, StoredLinkedIrRecord,
 };
 #[cfg(all(test, feature = "esp32s31-harness"))]
 pub(crate) use harnesses::esp32s31::entry_contract;

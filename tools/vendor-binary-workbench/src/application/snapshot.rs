@@ -98,17 +98,18 @@ pub(super) fn function_detail(
                 summary_fact.profile
             ))
         })?;
-    let fact = crate::function_workspace::FunctionFacts::load_function(
-        &summary_fact.profile,
-        report,
-        &summary_fact.identity,
-    )?
-    .ok_or_else(|| {
-        crate::Error::invalid(format!(
-            "linked-IR report no longer contains function {:?}",
-            summary_fact.identity
-        ))
-    })?;
+    let fact = resolved
+        .linked_ir(report)?
+        .get_function_by_identity(&summary_fact.identity)?
+        .map(|function| {
+            crate::function_workspace::function_fact_from_stored(&summary_fact.profile, function)
+        })
+        .ok_or_else(|| {
+            crate::Error::invalid(format!(
+                "linked-IR report no longer contains function {:?}",
+                summary_fact.identity
+            ))
+        })?;
     let reviewed = workspace.pack.functions.iter().find(|function| {
         function.profile == fact.profile
             && function.source == fact.source
@@ -325,6 +326,7 @@ fn function_investigation(
             graph_depth: 1,
             include_callers: false,
             cfg_path: None,
+            include_linked_ir_record: false,
         },
         &resolved.project,
     )

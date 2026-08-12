@@ -557,6 +557,14 @@ project-profile generation and reusable artifact rendering are outside CLI:
 | `linked_ir_export/pseudo.rs` | Pseudo-Rust artifact rendering |
 | `linked_ir_export/render_common.rs` | Shared guard/MMIO formatting and traversal |
 | `artifacts/linked_ir_document.rs` | Persistent schema-v52 Serde document and compact review projection; artifact-wide transitive closures are explicitly on demand |
+
+`application::ProjectArtifactStore` is the command-scoped owner of immutable
+generated readers. It retains one most-recently-used linked-IR reader, loads
+the call graph only for graph queries, never eagerly caches complete function
+records and never survives an application reload. The bounded working set
+prevents project-wide status from retaining every profile index. Status,
+snapshots and selected-detail views obtain readers through `ProjectSession`
+instead of opening bundles independently.
 | `cli/commands/export_ir/human.rs` | Terminal presentation orchestration and one output-boundary write |
 | `cli/commands/export_ir/human/header.rs` | Project and artifact section |
 | `cli/commands/export_ir/human/functions/` | Local function facts and transitive effect sections |

@@ -179,7 +179,8 @@ pub(crate) fn build_mmio_facts(report: &MmioDiscoveryReport) -> crate::Result<Mm
     })
 }
 
-pub(crate) fn render_mmio_facts(document: &MmioFactsDocument) -> crate::Result<String> {
+#[cfg(test)]
+fn render_mmio_facts(document: &MmioFactsDocument) -> crate::Result<String> {
     let mut output = serde_json::to_string(document)?;
     output.push('\n');
     Ok(output)

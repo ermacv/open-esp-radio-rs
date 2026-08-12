@@ -161,12 +161,12 @@ pub(super) fn run(
         print_report(&discovery);
     }
     if let Some(path) = options.output.as_deref() {
-        let output = crate::artifacts::render_interface_facts(&document)?;
-        crate::application::generated_file::write_or_check(
+        crate::application::generated_file::write_or_check_json(
             path,
-            &output,
+            &document,
             options.check,
             "interface discovery report",
+            false,
         )?;
         tracing::info!(
             status = if options.check { "verified" } else { "written" },

@@ -221,12 +221,12 @@ pub(super) fn run(
     });
     let artifact = crate::artifacts::build_mmio_facts(&report)?;
     if let Some(path) = arguments.output.as_deref() {
-        let output = crate::artifacts::render_mmio_facts(&artifact)?;
-        crate::application::generated_file::write_or_check(
+        crate::application::generated_file::write_or_check_json(
             path,
-            &output,
+            &artifact,
             arguments.check,
             "MMIO discovery report",
+            false,
         )?;
     }
     let document = CommandDocument {

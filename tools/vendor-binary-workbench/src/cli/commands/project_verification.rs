@@ -84,12 +84,12 @@ pub(super) fn execute(
     }
     for suite in &suites {
         let path = crate::qualification::suite_report_path(&workspace.report, &suite.id);
-        let contents = serde_json::to_string_pretty(suite)? + "\n";
-        generated_file::write_or_check(
+        generated_file::write_or_check_json(
             &path,
-            &contents,
+            suite,
             arguments.check,
             "verification suite report",
+            true,
         )?;
     }
     if let Some(directory) = arguments.candidate_evidence_dir.as_deref() {
@@ -119,12 +119,12 @@ pub(super) fn execute(
     )?;
 
     if complete_project_run {
-        let contents = serde_json::to_string_pretty(&report)? + "\n";
-        generated_file::write_or_check(
+        generated_file::write_or_check_json(
             &workspace.report,
-            &contents,
+            &report,
             arguments.check,
             "project verification report",
+            true,
         )?;
     }
     Ok(report)

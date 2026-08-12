@@ -5,6 +5,7 @@ use std::{
     fs,
     io::{BufRead, Read, Seek, SeekFrom},
     path::{Path, PathBuf},
+    sync::OnceLock,
 };
 
 use serde::{Deserialize, Serialize};
@@ -106,7 +107,11 @@ pub(crate) struct LinkedIrReader {
     manifest: super::LinkedIrStoredDocument,
     index: Vec<FunctionIndexRecord>,
     data_object_index: Vec<DataObjectIndexRecord>,
-    graph: Vec<StoredGraphEdge>,
+    graph: OnceLock<GraphIndex>,
+}
+
+struct GraphIndex {
+    edges: Vec<StoredGraphEdge>,
     outgoing: BTreeMap<String, Vec<usize>>,
     incoming: BTreeMap<String, Vec<usize>>,
 }
@@ -193,28 +198,12 @@ impl LinkedIrReader {
                 path.display()
             )));
         }
-        let graph: GraphDocument = serde_json::from_str(&fs::read_to_string(path.join(GRAPH))?)?;
-        if graph.schema_version != super::LINKED_IR.version || graph.command != "ir graph index" {
-            return Err(crate::Error::invalid(format!(
-                "invalid linked-IR graph index in {}",
-                path.display()
-            )));
-        }
-        let graph = graph.edges;
-        let mut outgoing = BTreeMap::<String, Vec<usize>>::new();
-        let mut incoming = BTreeMap::<String, Vec<usize>>::new();
-        for (index, edge) in graph.iter().enumerate() {
-            outgoing.entry(edge.caller.clone()).or_default().push(index);
-            incoming.entry(edge.callee.clone()).or_default().push(index);
-        }
         Ok(Self {
             root: path.to_owned(),
             manifest,
             index: index.records,
             data_object_index: data_object_index.records,
-            graph,
-            outgoing,
-            incoming,
+            graph: OnceLock::new(),
         })
     }
 
@@ -324,15 +313,16 @@ impl LinkedIrReader {
         root: &str,
         targets: &BTreeSet<String>,
         limits: GraphSearchLimits,
-    ) -> GraphPathSearch {
+    ) -> Result<GraphPathSearch> {
         if targets.contains(root) {
-            return GraphPathSearch {
+            return Ok(GraphPathSearch {
                 path: Some(Vec::new()),
                 visited_nodes: 1,
                 examined_edges: 0,
                 limit: None,
-            };
+            });
         }
+        let graph = self.graph()?;
 
         let mut queue = VecDeque::from([(root.to_owned(), 0usize)]);
         let mut visited = BTreeSet::from([root.to_owned()]);
@@ -344,16 +334,16 @@ impl LinkedIrReader {
 
         'search: while let Some((node, depth)) = queue.pop_front() {
             if depth >= limits.max_depth {
-                depth_exhausted |= self.has_traversable_outgoing(&node);
+                depth_exhausted |= graph.has_traversable_outgoing(&node);
                 continue;
             }
-            for &edge_index in self.outgoing.get(&node).into_iter().flatten() {
+            for &edge_index in graph.outgoing.get(&node).into_iter().flatten() {
                 if examined_edges >= limits.max_examined_edges {
                     limit = Some("max-examined-edges");
                     break 'search;
                 }
                 examined_edges += 1;
-                let edge = &self.graph[edge_index];
+                let edge = &graph.edges[edge_index];
                 if !traversable_call_edge(edge) {
                     continue;
                 }
@@ -378,7 +368,7 @@ impl LinkedIrReader {
             let mut reversed = Vec::new();
             while node != root {
                 let edge_index = predecessor[&node];
-                let edge = self.graph[edge_index].clone();
+                let edge = graph.edges[edge_index].clone();
                 node = edge.caller.clone();
                 reversed.push(edge);
             }
@@ -388,19 +378,20 @@ impl LinkedIrReader {
         if path.is_none() && limit.is_none() && depth_exhausted {
             limit = Some("max-depth");
         }
-        GraphPathSearch {
+        Ok(GraphPathSearch {
             path,
             visited_nodes: visited.len(),
             examined_edges,
             limit,
-        }
+        })
     }
 
     pub(crate) fn reachable_from(
         &self,
         root: &str,
         limits: GraphSearchLimits,
-    ) -> GraphReachability {
+    ) -> Result<GraphReachability> {
+        let graph = self.graph()?;
         let mut queue = VecDeque::from([(root.to_owned(), 0usize)]);
         let mut visited = BTreeSet::from([root.to_owned()]);
         let mut examined_edges = 0usize;
@@ -409,16 +400,16 @@ impl LinkedIrReader {
 
         'search: while let Some((node, depth)) = queue.pop_front() {
             if depth >= limits.max_depth {
-                depth_exhausted |= self.has_traversable_outgoing(&node);
+                depth_exhausted |= graph.has_traversable_outgoing(&node);
                 continue;
             }
-            for &edge_index in self.outgoing.get(&node).into_iter().flatten() {
+            for &edge_index in graph.outgoing.get(&node).into_iter().flatten() {
                 if examined_edges >= limits.max_examined_edges {
                     limit = Some("max-examined-edges");
                     break 'search;
                 }
                 examined_edges += 1;
-                let edge = &self.graph[edge_index];
+                let edge = &graph.edges[edge_index];
                 if !traversable_call_edge(edge) {
                     continue;
                 }
@@ -436,12 +427,12 @@ impl LinkedIrReader {
         if limit.is_none() && depth_exhausted {
             limit = Some("max-depth");
         }
-        GraphReachability {
+        Ok(GraphReachability {
             identities: visited.clone(),
             visited_nodes: visited.len(),
             examined_edges,
             limit,
-        }
+        })
     }
 
     pub(crate) fn graph_slice(
@@ -450,20 +441,21 @@ impl LinkedIrReader {
         depth: usize,
         include_callers: bool,
         limits: GraphSearchLimits,
-    ) -> GraphSlice {
+    ) -> Result<GraphSlice> {
+        let graph = self.graph()?;
         let mut frontier = BTreeSet::from([root.to_owned()]);
         let mut visited = frontier.clone();
         let mut selected = BTreeSet::new();
         let mut examined_edges = 0usize;
         let mut limit = None;
         if include_callers {
-            for &index in self.incoming.get(root).into_iter().flatten() {
+            for &index in graph.incoming.get(root).into_iter().flatten() {
                 if examined_edges >= limits.max_examined_edges {
                     limit = Some("max-examined-edges");
                     break;
                 }
                 examined_edges += 1;
-                let edge = &self.graph[index];
+                let edge = &graph.edges[index];
                 selected.insert(index);
                 if !visited.contains(&edge.caller) && visited.len() >= limits.max_visited_nodes {
                     limit = Some("max-visited-nodes");
@@ -477,13 +469,13 @@ impl LinkedIrReader {
         'search: for _ in 0..depth {
             let mut next = BTreeSet::new();
             for node in &frontier {
-                for &index in self.outgoing.get(node).into_iter().flatten() {
+                for &index in graph.outgoing.get(node).into_iter().flatten() {
                     if examined_edges >= limits.max_examined_edges {
                         limit = Some("max-examined-edges");
                         break 'search;
                     }
                     examined_edges += 1;
-                    let edge = &self.graph[index];
+                    let edge = &graph.edges[index];
                     selected.insert(index);
                     if !traversable_call_edge(edge) || visited.contains(&edge.callee) {
                         continue;
@@ -505,19 +497,19 @@ impl LinkedIrReader {
         if limit.is_none()
             && frontier
                 .iter()
-                .any(|node| self.has_traversable_outgoing(node))
+                .any(|node| graph.has_traversable_outgoing(node))
         {
             limit = Some("max-depth");
         }
-        GraphSlice {
+        Ok(GraphSlice {
             edges: selected
                 .into_iter()
-                .map(|index| self.graph[index].clone())
+                .map(|index| graph.edges[index].clone())
                 .collect(),
             visited_nodes: visited.len(),
             examined_edges,
             limit,
-        }
+        })
     }
 
     pub(crate) fn read_all_functions(&self) -> Result<Vec<StoredFunction>> {
@@ -702,12 +694,48 @@ impl LinkedIrReader {
         Ok(object)
     }
 
+    fn graph(&self) -> Result<&GraphIndex> {
+        if let Some(graph) = self.graph.get() {
+            return Ok(graph);
+        }
+        let document: GraphDocument =
+            serde_json::from_str(&fs::read_to_string(self.root.join(GRAPH))?)?;
+        if document.schema_version != super::LINKED_IR.version
+            || document.command != "ir graph index"
+        {
+            return Err(crate::Error::invalid(format!(
+                "invalid linked-IR graph index in {}",
+                self.root.display()
+            )));
+        }
+        let mut outgoing = BTreeMap::<String, Vec<usize>>::new();
+        let mut incoming = BTreeMap::<String, Vec<usize>>::new();
+        for (index, edge) in document.edges.iter().enumerate() {
+            outgoing.entry(edge.caller.clone()).or_default().push(index);
+            incoming.entry(edge.callee.clone()).or_default().push(index);
+        }
+        let loaded = GraphIndex {
+            edges: document.edges,
+            outgoing,
+            incoming,
+        };
+        // Concurrent readers may both finish parsing. The first complete graph
+        // wins; every caller then observes the same immutable index.
+        let _ = self.graph.set(loaded);
+        Ok(self
+            .graph
+            .get()
+            .expect("a complete linked-IR graph was installed"))
+    }
+}
+
+impl GraphIndex {
     fn has_traversable_outgoing(&self, identity: &str) -> bool {
         self.outgoing
             .get(identity)
             .into_iter()
             .flatten()
-            .any(|index| traversable_call_edge(&self.graph[*index]))
+            .any(|index| traversable_call_edge(&self.edges[*index]))
     }
 }
 

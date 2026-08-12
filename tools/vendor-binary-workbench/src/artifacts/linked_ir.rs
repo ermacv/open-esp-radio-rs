@@ -120,15 +120,17 @@ mod tests {
         .unwrap();
 
         let reader = super::super::LinkedIrReader::open(&path).unwrap();
-        let path_result = reader.shortest_path_to_any(
-            "root",
-            &std::collections::BTreeSet::from(["sink".to_owned()]),
-            super::super::GraphSearchLimits {
-                max_depth: 2,
-                max_visited_nodes: 8,
-                max_examined_edges: 16,
-            },
-        );
+        let path_result = reader
+            .shortest_path_to_any(
+                "root",
+                &std::collections::BTreeSet::from(["sink".to_owned()]),
+                super::super::GraphSearchLimits {
+                    max_depth: 2,
+                    max_visited_nodes: 8,
+                    max_examined_edges: 16,
+                },
+            )
+            .unwrap();
         assert_eq!(
             path_result
                 .path
@@ -138,58 +140,93 @@ mod tests {
                 .collect::<Vec<_>>(),
             ["child", "sink"]
         );
-        let indexed_path = reader.shortest_path_to_any(
-            "root",
-            &std::collections::BTreeSet::from(["leaf".to_owned()]),
-            super::super::GraphSearchLimits {
-                max_depth: 3,
-                max_visited_nodes: 8,
-                max_examined_edges: 16,
-            },
-        );
+        let indexed_path = reader
+            .shortest_path_to_any(
+                "root",
+                &std::collections::BTreeSet::from(["leaf".to_owned()]),
+                super::super::GraphSearchLimits {
+                    max_depth: 3,
+                    max_visited_nodes: 8,
+                    max_examined_edges: 16,
+                },
+            )
+            .unwrap();
         assert_eq!(
             indexed_path.path.unwrap().last().unwrap().kind,
             "indexed-dispatch"
         );
 
-        let depth_limited = reader.reachable_from(
-            "root",
-            super::super::GraphSearchLimits {
-                max_depth: 1,
-                max_visited_nodes: 8,
-                max_examined_edges: 16,
-            },
-        );
+        let depth_limited = reader
+            .reachable_from(
+                "root",
+                super::super::GraphSearchLimits {
+                    max_depth: 1,
+                    max_visited_nodes: 8,
+                    max_examined_edges: 16,
+                },
+            )
+            .unwrap();
         assert_eq!(
             depth_limited.identities,
             std::collections::BTreeSet::from(["root".to_owned(), "child".to_owned()])
         );
         assert_eq!(depth_limited.limit, Some("max-depth"));
 
-        let node_limited = reader.reachable_from(
-            "root",
-            super::super::GraphSearchLimits {
-                max_depth: 8,
-                max_visited_nodes: 2,
-                max_examined_edges: 16,
-            },
-        );
+        let node_limited = reader
+            .reachable_from(
+                "root",
+                super::super::GraphSearchLimits {
+                    max_depth: 8,
+                    max_visited_nodes: 2,
+                    max_examined_edges: 16,
+                },
+            )
+            .unwrap();
         assert_eq!(node_limited.limit, Some("max-visited-nodes"));
         assert!(!node_limited.identities.contains("external-api"));
 
-        let slice = reader.graph_slice(
-            "root",
-            1,
-            false,
-            super::super::GraphSearchLimits {
-                max_depth: 1,
-                max_visited_nodes: 8,
-                max_examined_edges: 16,
-            },
-        );
+        let slice = reader
+            .graph_slice(
+                "root",
+                1,
+                false,
+                super::super::GraphSearchLimits {
+                    max_depth: 1,
+                    max_visited_nodes: 8,
+                    max_examined_edges: 16,
+                },
+            )
+            .unwrap();
         assert_eq!(slice.visited_nodes, 2);
         assert_eq!(slice.limit, Some("max-depth"));
         assert!(slice.edges.iter().any(|edge| edge.callee == "external-api"));
+
+        std::fs::write(
+            path.join("graph.json"),
+            serde_json::json!({
+                "schema_version": super::super::LINKED_IR.version,
+                "command": "wrong",
+                "edges": [],
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let lazy_reader = super::super::LinkedIrReader::open(&path).unwrap();
+        let graph_error = lazy_reader
+            .reachable_from(
+                "root",
+                super::super::GraphSearchLimits {
+                    max_depth: 1,
+                    max_visited_nodes: 8,
+                    max_examined_edges: 16,
+                },
+            )
+            .unwrap_err();
+        assert!(
+            graph_error
+                .to_string()
+                .contains("invalid linked-IR graph index")
+        );
         std::fs::remove_dir_all(path).unwrap();
     }
 }

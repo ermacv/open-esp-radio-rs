@@ -109,10 +109,6 @@ pub(crate) fn build_document(project: &ProjectSpec) -> Result<ReviewScopesDocume
     })
 }
 
-pub(crate) fn render_document(document: &ReviewScopesDocument) -> Result<String> {
-    Ok(serde_json::to_string_pretty(document)? + "\n")
-}
-
 pub(crate) fn parse_document(input: &str) -> Result<ReviewScopesDocument> {
     let document: ReviewScopesDocument = serde_json::from_str(input)?;
     if document.schema_version != REVIEW_SCOPES_SCHEMA

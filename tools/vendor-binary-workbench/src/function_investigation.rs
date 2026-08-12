@@ -6,286 +6,21 @@
 //! raw instructions or basic blocks.
 
 pub(crate) mod correspondence;
+mod model;
 mod origin;
 mod replacement;
 
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    path::Path,
-};
-
-use petgraph::{algo::astar, graph::DiGraph};
-use serde::Serialize;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{ProjectSpec, Result, artifact, artifacts};
+pub use model::*;
 use origin::origin_evidence;
+use petgraph::{algo::astar, graph::DiGraph};
 pub use replacement::{ReplacementEvidence, ReplacementProofEvidence, ReviewedEffectRuleEvidence};
 pub(crate) use replacement::{replacement_evidence, reviewed_effect_rules};
 
 const MAX_GRAPH_NODES: usize = 4_096;
 const MAX_GRAPH_EDGES: usize = 32_768;
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-pub struct FunctionInvestigationReport {
-    pub schema_version: u32,
-    pub command: &'static str,
-    pub source: String,
-    pub symbol: String,
-    pub runtime: artifact::FunctionBody,
-    pub origin: Option<OriginFunctionEvidence>,
-    pub semantics: Vec<SemanticFunctionEvidence>,
-    pub reviewed_preconditions: Vec<ReviewedPreconditionEvidence>,
-    pub reviewed_paths: Vec<ReviewedPathEvidence>,
-    pub cfg_path: Option<CfgPathEvidence>,
-    pub proof_ledger: Vec<InvestigationLedgerEntry>,
-    pub replacements: Vec<ReplacementEvidence>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-pub struct CfgPathEvidence {
-    pub from_address: u64,
-    pub to_address: u64,
-    pub from_block: usize,
-    pub to_block: usize,
-    pub structurally_reachable: bool,
-    /// Always false: graph reachability alone does not prove satisfiable
-    /// branch predicates or a realizable runtime state.
-    pub feasibility_claim: bool,
-    pub blocks: Vec<usize>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-pub struct ReviewedPreconditionEvidence {
-    pub id: String,
-    pub expression: String,
-    pub rationale: String,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-pub struct ReviewedPathEvidence {
-    pub id: String,
-    pub class: String,
-    pub summary: String,
-    pub evidence: String,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-pub struct OriginFunctionEvidence {
-    pub association: &'static str,
-    pub inventory_report: Option<String>,
-    /// Authoritative address selected by the already generated link unit.
-    /// This remains an association claim, not a reconstruction of linker
-    /// selection, but lets an archive inspection reuse the matching linked IR.
-    pub linked_address: Option<u64>,
-    pub linked_member: Option<String>,
-    /// Relocation-backed dependencies retained by the relocatable archive
-    /// member. These are never projected onto linked instruction addresses by
-    /// offset arithmetic: linker relaxation can change both instruction count
-    /// and offsets, so an offset-only association would be unsound.
-    pub relocation_dependencies: Vec<OriginRelocationDependency>,
-    /// Monotonic structural correspondence between relocation-bearing origin
-    /// instructions and linked instructions. This is navigation evidence,
-    /// never an execution or semantic-equivalence claim.
-    pub instruction_correspondence: Vec<OriginInstructionCorrespondence>,
-    pub body: artifact::FunctionBody,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-pub struct OriginRelocationDependency {
-    pub symbol: String,
-    pub references: usize,
-    pub instruction_offsets: Vec<u64>,
-    pub kinds: Vec<String>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-pub struct OriginInstructionCorrespondence {
-    pub origin_offsets: Vec<u64>,
-    pub runtime_address: u64,
-    pub runtime_offset: u64,
-    pub kind: &'static str,
-    pub relocation_symbols: Vec<String>,
-    /// Always false. Structural instruction alignment helps investigation but
-    /// does not prove identical runtime semantics after linker rewriting.
-    pub semantic_equivalence_claim: bool,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-pub struct SemanticFunctionEvidence {
-    pub profile: String,
-    pub report: String,
-    pub complete: bool,
-    pub exact: bool,
-    pub pseudo: String,
-    pub blockers: Vec<BlockerExplanationEvidence>,
-    pub instruction_evidence: Vec<InstructionEvidence>,
-    pub calls: Vec<CallKnowledgeEvidence>,
-    pub reachable_functions: Vec<String>,
-    pub call_graph_edges: Vec<CallGraphEdgeEvidence>,
-    pub graph_limits: InvestigationGraphLimits,
-    pub event_dispatches: Vec<EventDispatchEvidence>,
-    pub reviewed_event_routes: Vec<ReviewedEventRouteEvidence>,
-    /// Schema-validated persistent function record. Keeping the complete
-    /// record prevents this focused view from silently dropping new semantic
-    /// evidence when the linked-IR schema grows.
-    pub linked_ir: serde_json::Value,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-pub struct InvestigationGraphLimits {
-    pub max_depth: usize,
-    pub max_visited_nodes: usize,
-    pub max_examined_edges: usize,
-    pub visited_nodes: usize,
-    pub examined_edges: usize,
-    pub reached: Option<String>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-pub struct ReviewedEventRouteEvidence {
-    pub id: String,
-    pub mechanism: String,
-    pub selector_role: String,
-    pub selector_value: u32,
-    pub receiver: Option<String>,
-    pub execution_context: String,
-    pub consumer_profile: String,
-    pub consumer_source: String,
-    pub consumer_entry: String,
-    pub delivery_operation: String,
-    pub delivery_output_role: String,
-    pub delivery_selector_offset: u32,
-    pub delivery_selector_width: u8,
-    pub delivery_encoding: String,
-    pub case_handler_profile: Option<String>,
-    pub case_handler_source: Option<String>,
-    pub case_handler: Option<String>,
-    pub rationale: String,
-    pub dispatch_constraint_matched: bool,
-    pub consumer_analysis: Option<EventHandlerAnalysisEvidence>,
-    pub case_handler_analysis: Option<EventHandlerAnalysisEvidence>,
-    pub blockers: Vec<String>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-pub struct EventHandlerAnalysisEvidence {
-    pub identity: String,
-    pub complete: bool,
-    pub exact: bool,
-    pub direct_instruction_effects: usize,
-    pub direct_calls: usize,
-    pub reachable_functions: usize,
-    pub reachability_depth: usize,
-    pub reachability_limit: Option<String>,
-    pub blockers: Vec<String>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-pub struct BlockerExplanationEvidence {
-    pub root_id: String,
-    pub layer: String,
-    pub kind: String,
-    pub site: Option<u32>,
-    pub message: String,
-    pub required_model: String,
-    pub relocation_candidates: Vec<String>,
-    pub confidence: &'static str,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-pub struct InstructionEvidence {
-    pub address: u64,
-    pub block: Option<usize>,
-    pub effects: Vec<InstructionEffectEvidence>,
-    pub call_targets: Vec<String>,
-    pub semantic_operations: Vec<String>,
-    pub blocker_ids: Vec<String>,
-    pub decode_blocker: Option<String>,
-}
-
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
-pub struct InstructionEffectEvidence {
-    pub kind: &'static str,
-    pub access: String,
-    pub width: u8,
-    pub target: String,
-    pub paths: Vec<String>,
-    pub guards: Vec<String>,
-    pub value: Option<String>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-pub struct EventDispatchEvidence {
-    pub semantic_action_index: usize,
-    pub mechanism: String,
-    pub execution_context: String,
-    pub receiver: Option<String>,
-    pub interface_complete: bool,
-    pub bindings: Vec<EventDispatchBindingEvidence>,
-    pub blockers: Vec<String>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-pub struct EventDispatchBindingEvidence {
-    pub role: String,
-    pub value: String,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-pub struct CallGraphEdgeEvidence {
-    pub caller: String,
-    pub callee: String,
-    pub site: Option<u32>,
-    pub kind: String,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-pub struct CallKnowledgeEvidence {
-    pub kind: String,
-    pub target: String,
-    pub site: Option<u32>,
-    pub target_status: &'static str,
-    pub target_candidates: Vec<String>,
-    pub target_blocker: Option<String>,
-    pub knowledge: &'static str,
-    pub semantic_operation: Option<String>,
-    pub execution_model: Option<String>,
-    /// ABI argument expressions recovered at this exact call site. Multiple
-    /// branch shapes are retained as an explicit domain by linked IR.
-    pub arguments: Vec<String>,
-    pub argument_evidence: Vec<CallArgumentEvidence>,
-    pub argument_shapes: usize,
-    pub guards: Vec<String>,
-    pub provenance: Vec<String>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-pub struct CallArgumentEvidence {
-    pub position: usize,
-    pub status: &'static str,
-    pub value: String,
-    pub provenance: String,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-pub struct InvestigationLedgerEntry {
-    pub layer: &'static str,
-    pub status: &'static str,
-    pub detail: String,
-}
-
-pub(crate) struct FunctionInvestigationRequest<'a> {
-    pub(crate) source: &'a str,
-    pub(crate) symbol: &'a str,
-    pub(crate) runtime_address: Option<u64>,
-    pub(crate) artifact: &'a Path,
-    pub(crate) inventory: Option<&'a Path>,
-    pub(crate) member: Option<&'a str>,
-    pub(crate) origin_member: Option<&'a str>,
-    pub(crate) graph_depth: usize,
-    pub(crate) include_callers: bool,
-    pub(crate) cfg_path: Option<&'a str>,
-}
 
 pub(crate) fn investigate(
     request: FunctionInvestigationRequest<'_>,
@@ -304,6 +39,7 @@ pub(crate) fn investigate(
         &runtime,
         request.graph_depth,
         request.include_callers,
+        request.include_linked_ir_record,
         origin.as_ref(),
         project,
     )?;
@@ -351,7 +87,7 @@ pub(crate) fn investigate(
         }
     };
     Ok(FunctionInvestigationReport {
-        schema_version: 9,
+        schema_version: 10,
         command: "inspect function",
         source: request.source.to_owned(),
         symbol: request.symbol.to_owned(),
@@ -539,6 +275,7 @@ fn semantic_evidence(
     runtime: &artifact::FunctionBody,
     graph_depth: usize,
     include_callers: bool,
+    include_linked_ir_record: bool,
     origin: Option<&OriginFunctionEvidence>,
     project: &ProjectSpec,
 ) -> Result<Vec<SemanticFunctionEvidence>> {
@@ -597,7 +334,7 @@ fn semantic_evidence(
             max_visited_nodes: MAX_GRAPH_NODES,
             max_examined_edges: MAX_GRAPH_EDGES,
         };
-        let reachability = reader.reachable_from(&function.identity, search_limits);
+        let reachability = reader.reachable_from(&function.identity, search_limits)?;
         let reachable_functions = reachability
             .identities
             .iter()
@@ -609,7 +346,7 @@ fn semantic_evidence(
             graph_depth,
             include_callers,
             search_limits,
-        );
+        )?;
         let graph_limit = graph_slice.limit.or(reachability.limit);
         if let Some(limit) = graph_limit.filter(|limit| *limit != "max-depth") {
             blockers.push(BlockerExplanationEvidence {
@@ -671,7 +408,9 @@ fn semantic_evidence(
         {
             reviewed_event_routes.push(event_route_evidence(route, &event_dispatches, project)?);
         }
-        let linked_ir = serde_json::to_value(&function)?;
+        let linked_ir = include_linked_ir_record
+            .then(|| StoredLinkedIrRecord::from_function(&function))
+            .transpose()?;
         let instruction_evidence = instruction_evidence(runtime, &function, &blockers);
         evidence.push(SemanticFunctionEvidence {
             profile: profile.id.clone(),
@@ -961,7 +700,7 @@ fn event_function_analysis(
                     max_visited_nodes: MAX_GRAPH_NODES,
                     max_examined_edges: MAX_GRAPH_EDGES,
                 },
-            );
+            )?;
             Ok(Some(EventHandlerAnalysisEvidence {
                 identity: function.identity.clone(),
                 complete: function.complete,

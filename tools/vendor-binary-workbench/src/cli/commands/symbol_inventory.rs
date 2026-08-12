@@ -4,9 +4,7 @@ use serde::Serialize;
 
 use super::super::*;
 use crate::{
-    artifacts::{
-        SymbolInventoryDocument, build_symbol_inventory_document, render_symbol_inventory,
-    },
+    artifacts::{SymbolInventoryDocument, build_symbol_inventory_document},
     run_spec::RunSpec,
 };
 
@@ -315,11 +313,12 @@ pub(super) fn run(options: SymbolInventoryArgs, run_spec: &RunSpec) -> Result<bo
         )
     });
     if let Some(path) = options.output.as_deref() {
-        crate::application::generated_file::write_or_check(
+        crate::application::generated_file::write_or_check_json(
             path,
-            &render_symbol_inventory(&artifact)?,
+            &artifact,
             options.check,
             "symbol inventory",
+            false,
         )?;
     }
     let document = CommandDocument {

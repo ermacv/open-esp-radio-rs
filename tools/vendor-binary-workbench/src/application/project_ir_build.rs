@@ -149,11 +149,12 @@ pub(crate) fn build_project_ir<'a>(
     let mut document_count = built.iter().map(|built| built.documents).sum::<usize>();
     if let (true, Some(workspace)) = (request.refresh_review_scopes, project.review.as_ref()) {
         let document = crate::review_scopes::build_document(project)?;
-        super::generated_file::write_or_check(
+        super::generated_file::write_or_check_json(
             &workspace.output,
-            &crate::review_scopes::render_document(&document)?,
+            &document,
             request.check,
             "review scope report",
+            true,
         )?;
         document_count += 1;
     }

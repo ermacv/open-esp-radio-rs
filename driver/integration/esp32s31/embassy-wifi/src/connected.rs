@@ -17,7 +17,7 @@ use embassy_sync::{
     blocking_mutex::raw::CriticalSectionRawMutex,
     channel::{Channel, Receiver},
 };
-use embassy_time::Timer;
+use embassy_time::{Instant, Timer};
 use open_esp_radio::esp32s31::wifi::device::register_arena::Esp32s31RadioRegistersArena;
 #[cfg(feature = "qualification")]
 use open_esp_radio::esp32s31::wifi::dma::descriptor::{rx_done, rx_rearm_word};
@@ -948,18 +948,47 @@ fn power_interrupt() {
 }
 
 #[embassy_executor::task]
+#[allow(
+    large_assignments,
+    reason = "qualification wraps the existing owner-rich protocol future in-place; the post-LTO stack-frame audit rejects an oversized realized frame"
+)]
 async fn rx_protocol_worker(
     starts: Receiver<'static, CriticalSectionRawMutex, ConnectedProtocolStart, 1>,
+    poll_observer: Option<fn(u64)>,
 ) {
     loop {
         let ConnectedProtocolStart { protocol, endpoint } = starts.receive().await;
-        protocol.run_controlled_task(endpoint, |_| {}).await;
+        observe_protocol_task_polls(
+            protocol.run_controlled_task(endpoint, |_| {}),
+            poll_observer,
+        )
+        .await;
     }
 }
 
+async fn observe_protocol_task_polls<F: core::future::Future>(
+    future: F,
+    observer: Option<fn(u64)>,
+) -> F::Output {
+    let Some(observer) = observer else {
+        return future.await;
+    };
+    let mut future = core::pin::pin!(future);
+    core::future::poll_fn(|context| {
+        let started = Instant::now();
+        let result = future.as_mut().poll(context);
+        observer(started.elapsed().as_micros());
+        result
+    })
+    .await
+}
+
 /// Start the owner-free RX protocol worker before the physical supervisor.
-pub(super) fn spawn_connected_workers(spawner: SendSpawner) -> Result<(), SpawnError> {
-    let protocol = rx_protocol_worker(RX_PROTOCOL_START.receiver())?;
+pub(super) fn spawn_connected_workers(
+    spawner: SendSpawner,
+    poll_observer: Option<fn(u64)>,
+) -> Result<(), SpawnError> {
+    let protocol = rx_protocol_worker(RX_PROTOCOL_START.receiver(), poll_observer)?;
     spawner.spawn(protocol);
     Ok(())
 }
@@ -1658,7 +1687,14 @@ pub fn initialize_station_network(
     let network_resources = NETWORK_RESOURCES.take();
     let tx_pool = NetworkTxPool::pin_static(NETWORK_TX_POOL.take());
     let (device, runner) = network_resources.split(tx_pool, station_address);
-    (device, StationNetwork::Unstarted { device: (), runner })
+    (
+        device
+            .with_ingress_tx_reserve()
+            .with_network_service_budget(
+                open_esp_radio_embassy_net::DEFAULT_NETWORK_SERVICE_BUDGET,
+            ),
+        StationNetwork::Unstarted { device: (), runner },
+    )
 }
 
 /// Construct the reusable interrupt epoch retained by the station backend.

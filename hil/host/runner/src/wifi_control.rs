@@ -238,12 +238,13 @@ fn qualify(
 pub(crate) fn report_stack(capture: &SerialCapture, timeout: Duration, stage: &str) -> Result<()> {
     let usage = capture.query_stack_usage(timeout)?;
     println!(
-        "stack_stage={stage} cpu0_free={}/{} cpu1_free={}/{} required_percent={}",
+        "stack_stage={stage} cpu0_free={}/{} cpu0_required={} cpu1_free={}/{} cpu1_required={}",
         usage.cpu0.free_bytes,
         usage.cpu0.capacity_bytes,
+        usage.cpu0.minimum_free_bytes,
         usage.cpu1.free_bytes,
         usage.cpu1.capacity_bytes,
-        usage.minimum_free_percent,
+        usage.cpu1.minimum_free_bytes,
     );
     Ok(())
 }

@@ -224,16 +224,17 @@ pub(crate) fn run(
         .unwrap_or_default();
     let structured_report = format!(
         "- Typed session evidence: `{}` bytes / `{}` datagrams / `{}` us; CRC32C `0x{:08x}`\n\
-                 - Stack minimum free: CPU0 `{}/{}` bytes; CPU1 `{}/{}` bytes; required `{}%`\n",
+                 - Stack minimum free: CPU0 `{}/{}` bytes (required `{}`); CPU1 `{}/{}` bytes (required `{}`)\n",
         structured.transport.rx_bytes,
         structured.transport.rx_units,
         structured.transport.elapsed_micros,
         structured.finished.evidence_crc32c,
         structured.stack.cpu0.free_bytes,
         structured.stack.cpu0.capacity_bytes,
+        structured.stack.cpu0.minimum_free_bytes,
         structured.stack.cpu1.free_bytes,
         structured.stack.cpu1.capacity_bytes,
-        structured.stack.minimum_free_percent,
+        structured.stack.cpu1.minimum_free_bytes,
     );
     let fixture_report = fixture.as_ref().map_or_else(
         || String::from("- AP-side evidence: `external AP; not observed`\n"),

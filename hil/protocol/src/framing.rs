@@ -616,16 +616,17 @@ mod tests {
             0,
             9,
             Event::StackUsage(StackUsage {
-                minimum_free_percent: 25,
                 cpu0: StackWatermark {
                     capacity_bytes: 100,
                     free_bytes: 50,
                     used_bytes: 50,
+                    minimum_free_bytes: 25,
                 },
                 cpu1: StackWatermark {
                     capacity_bytes: 80,
                     free_bytes: 40,
                     used_bytes: 40,
+                    minimum_free_bytes: 20,
                 },
             }),
         );
@@ -898,6 +899,53 @@ mod tests {
     }
 
     #[test]
+    fn maximum_tx_aggregate_timing_evidence_fits_and_round_trips() {
+        use crate::{EvidenceRecord, TxAggregateTimingEvidence};
+
+        let expected = Envelope::new(
+            7,
+            3,
+            9,
+            2,
+            Event::Evidence(EvidenceRecord::TxAggregateTiming(
+                TxAggregateTimingEvidence {
+                    preparation_micros: u32::MAX,
+                    preparation_max_micros: u32::MAX,
+                    publication_micros: u32::MAX,
+                    publication_max_micros: u32::MAX,
+                    exchange_micros: u32::MAX,
+                    exchange_max_micros: u32::MAX,
+                    first_exchanges: u32::MAX,
+                    first_exchange_micros: u32::MAX,
+                    first_exchange_max_micros: u32::MAX,
+                    retried_exchanges: u32::MAX,
+                    retry_publications: u32::MAX,
+                    retry_exchange_micros: u32::MAX,
+                    retry_exchange_max_micros: u32::MAX,
+                    tx_irq_epochs: u32::MAX,
+                    tx_irq_service_samples: u32::MAX,
+                    tx_irq_clock_skew_samples: u32::MAX,
+                    tx_irq_service_micros: u32::MAX,
+                    tx_irq_service_max_micros: u32::MAX,
+                    tx_publication_to_irq_samples: u32::MAX,
+                    tx_publication_to_irq_micros: u32::MAX,
+                    tx_publication_to_irq_max_micros: u32::MAX,
+                    standby_prepared: u32::MAX,
+                    standby_published: u32::MAX,
+                    standby_cancelled: u32::MAX,
+                },
+            )),
+        );
+        let mut encoder = FrameEncoder::new();
+        let frame = encoder.encode(&expected).unwrap();
+        assert!(frame.len() <= MAX_WIRE_FRAME_BYTES);
+        let mut decoder = FrameDecoder::new();
+        let mut observed = None;
+        decoder.feed(frame, |result| observed = Some(result.unwrap()));
+        assert_eq!(observed, Some(expected));
+    }
+
+    #[test]
     fn startup_artifact_chunk_rejects_empty_and_out_of_range_payloads() {
         assert!(StartupArtifactChunk::try_new(0, 0, 0, &[1]).is_err());
         assert!(StartupArtifactChunk::try_new(1, 0, 0, &[]).is_err());
@@ -921,6 +969,7 @@ mod tests {
             ..match first {
                 EvidenceRecord::Transport(evidence) => evidence,
                 EvidenceRecord::Radio(_)
+                | EvidenceRecord::TxAggregateTiming(_)
                 | EvidenceRecord::RxDelivery(_)
                 | EvidenceRecord::Link(_)
                 | EvidenceRecord::Stack(_) => unreachable!(),

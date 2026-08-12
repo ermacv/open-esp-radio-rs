@@ -20,9 +20,9 @@ use open_esp_radio_hil_protocol::{
     RxRadioEvidence, SessionConfig, SessionLinkRequirements, SessionReady, SessionState,
     StackUsage, StartupArtifactChunk, StartupArtifactStatus, StateChange, StationEpochEvidence,
     StationLifecycleEvent, TimebaseProbeEvidence, TimebaseProbeRequest, Transport,
-    TransportEvidence, TxRadioEvidence, WifiMonitorCaptureRequest, WifiMonitorEvidence,
-    WifiMonitorFrameChunk, WifiMonitorRequest, WifiRoleTransitionEvidence, WifiScanEvidence,
-    WifiScanRequest, evidence_crc32c,
+    TransportEvidence, TxAggregateTimingEvidence, TxRadioEvidence, WifiMonitorCaptureRequest,
+    WifiMonitorEvidence, WifiMonitorFrameChunk, WifiMonitorRequest, WifiRoleTransitionEvidence,
+    WifiScanEvidence, WifiScanRequest, evidence_crc32c,
 };
 use zeroize::Zeroizing;
 
@@ -186,6 +186,7 @@ pub(crate) struct WifiCommandHandle {
 pub(crate) struct SessionEvidence {
     pub(crate) transport: TransportEvidence,
     pub(crate) radio: Option<RadioEvidence>,
+    pub(crate) tx_timing: Option<TxAggregateTimingEvidence>,
     pub(crate) rx_delivery: Option<RxDeliveryEvidence>,
     pub(crate) stack: StackUsage,
     pub(crate) finished: Finished,
@@ -306,7 +307,7 @@ impl SessionEvidence {
         required_width: u16,
         minimum_rate_kbps: u64,
         minimum_aggregates: u32,
-    ) -> Result<TxRadioEvidence> {
+    ) -> Result<(TxRadioEvidence, TxAggregateTimingEvidence)> {
         let tx = self
             .radio
             .and_then(|evidence| evidence.tx)
@@ -369,32 +370,108 @@ impl SessionEvidence {
         if tx.hardware_timeouts != 0 || tx.collisions != 0 {
             return Err(format!("terminal typed A-MPDU failure: {tx:?}").into());
         }
-        Ok(tx)
+        let timing = self
+            .tx_timing
+            .ok_or("session did not publish typed aggregate-TX timing evidence")?;
+        validate_tx_timing(tx, timing)?;
+        Ok((tx, timing))
     }
 }
 
-fn validate_stack_usage(usage: StackUsage) -> Result<()> {
-    if usage.minimum_free_percent == 0 || usage.minimum_free_percent > 100 {
+fn validate_tx_timing(tx: TxRadioEvidence, timing: TxAggregateTimingEvidence) -> Result<()> {
+    for (name, samples, total, maximum) in [
+        (
+            "preparation",
+            tx.aggregates_prepared,
+            timing.preparation_micros,
+            timing.preparation_max_micros,
+        ),
+        (
+            "publication",
+            tx.aggregate_publications,
+            timing.publication_micros,
+            timing.publication_max_micros,
+        ),
+        (
+            "exchange",
+            tx.aggregates_completed,
+            timing.exchange_micros,
+            timing.exchange_max_micros,
+        ),
+        (
+            "first exchange",
+            timing.first_exchanges,
+            timing.first_exchange_micros,
+            timing.first_exchange_max_micros,
+        ),
+        (
+            "retried exchange",
+            timing.retried_exchanges,
+            timing.retry_exchange_micros,
+            timing.retry_exchange_max_micros,
+        ),
+        (
+            "IRQ-to-service",
+            timing.tx_irq_service_samples,
+            timing.tx_irq_service_micros,
+            timing.tx_irq_service_max_micros,
+        ),
+        (
+            "publication-to-IRQ",
+            timing.tx_publication_to_irq_samples,
+            timing.tx_publication_to_irq_micros,
+            timing.tx_publication_to_irq_max_micros,
+        ),
+    ] {
+        if samples != 0 && (total == 0 || maximum == 0 || maximum > total) {
+            return Err(format!(
+                "inconsistent typed {name} timing: samples={samples} total={total} max={maximum}"
+            )
+            .into());
+        }
+        if samples == 0 && (total != 0 || maximum != 0) {
+            return Err(format!(
+                "typed {name} timing has values without samples: total={total} max={maximum}"
+            )
+            .into());
+        }
+    }
+    if timing
+        .first_exchanges
+        .saturating_add(timing.retried_exchanges)
+        != tx.aggregates_completed
+        || timing.tx_irq_epochs != tx.tx_irq_epochs
+        || timing.tx_irq_service_samples != tx.tx_irq_service_samples
+        || timing.tx_irq_clock_skew_samples != tx.tx_irq_clock_skew_samples
+        || timing.tx_publication_to_irq_samples != tx.tx_publication_to_irq_samples
+        || timing.standby_prepared
+            != timing
+                .standby_published
+                .saturating_add(timing.standby_cancelled)
+    {
         return Err(format!(
-            "device reported invalid stack headroom policy: {}%",
-            usage.minimum_free_percent
+            "typed aggregate-TX timing does not match radio ownership: radio={tx:?} timing={timing:?}"
         )
         .into());
     }
+    Ok(())
+}
+
+fn validate_stack_usage(usage: StackUsage) -> Result<()> {
     for (name, watermark) in [("cpu0", usage.cpu0), ("cpu1", usage.cpu1)] {
         if watermark.capacity_bytes == 0
             || watermark.free_bytes > watermark.capacity_bytes
             || watermark.used_bytes > watermark.capacity_bytes
             || watermark.free_bytes + watermark.used_bytes != watermark.capacity_bytes
+            || watermark.minimum_free_bytes == 0
+            || watermark.minimum_free_bytes > watermark.capacity_bytes
         {
             return Err(format!("device reported inconsistent {name} stack watermark").into());
         }
-        if u64::from(watermark.free_bytes) * 100
-            < u64::from(watermark.capacity_bytes) * u64::from(usage.minimum_free_percent)
-        {
+        if watermark.free_bytes < watermark.minimum_free_bytes {
             return Err(format!(
-                "{name} stack headroom is below policy: free={} capacity={} required={}%",
-                watermark.free_bytes, watermark.capacity_bytes, usage.minimum_free_percent
+                "{name} stack headroom is below policy: free={} capacity={} required={} bytes",
+                watermark.free_bytes, watermark.capacity_bytes, watermark.minimum_free_bytes
             )
             .into());
         }
@@ -588,6 +665,9 @@ impl SerialCapture {
         if artifact_path.is_some() && !capabilities.features.startup_artifact {
             return Err("firmware does not support a host-owned startup artifact".into());
         }
+        if !capabilities.features.data_plane_placement {
+            return Err("firmware does not support explicit data-plane placement".into());
+        }
         let artifact_event_start = self.protocol_event_count();
         if capabilities.features.startup_artifact
             && let Some(path) = artifact_path
@@ -716,7 +796,16 @@ impl SerialCapture {
 
     fn initialize(&self, lab: &LabConfig, timeout: Duration) -> Result<()> {
         let first_event = self.protocol_event_count();
-        let response = self.send_command(0, Command::Initialize(lab.station.ipv4()), timeout)?;
+        let response = self.send_command(
+            0,
+            Command::Initialize(
+                open_esp_radio_hil_protocol::InitializationConfiguration::new(
+                    lab.station.ipv4(),
+                    lab.data_plane(),
+                ),
+            ),
+            timeout,
+        )?;
         let request_id = response.request_id;
         match response.body {
             Event::Initialized => return Ok(()),
@@ -916,6 +1005,18 @@ impl SerialCapture {
                 Event::Evidence(EvidenceRecord::Radio(radio)) => radio,
                 _ => unreachable!("radio predicate accepted only radio evidence"),
             });
+        let tx_timing = self
+            .wait_for_protocol_after(session.first_event, Duration::ZERO, |message| {
+                message.session_id == session.session_id
+                    && matches!(
+                        message.body,
+                        Event::Evidence(EvidenceRecord::TxAggregateTiming(_))
+                    )
+            })
+            .map(|event| match event.body {
+                Event::Evidence(EvidenceRecord::TxAggregateTiming(timing)) => timing,
+                _ => unreachable!("TX timing predicate accepted only aggregate timing evidence"),
+            });
         let rx_delivery = self
             .wait_for_protocol_after(session.first_event, Duration::ZERO, |message| {
                 message.session_id == session.session_id
@@ -925,7 +1026,10 @@ impl SerialCapture {
                 Event::Evidence(EvidenceRecord::RxDelivery(delivery)) => delivery,
                 _ => unreachable!("RX delivery predicate accepted only delivery evidence"),
             });
-        let expected_records = 3 + u16::from(radio.is_some()) + u16::from(rx_delivery.is_some());
+        let expected_records = 3
+            + u16::from(radio.is_some())
+            + u16::from(tx_timing.is_some())
+            + u16::from(rx_delivery.is_some());
         if finished.summary.evidence_records != expected_records {
             return Err(format!(
                 "device reported {} evidence records but published {expected_records} typed records",
@@ -937,6 +1041,9 @@ impl SerialCapture {
         records.push(EvidenceRecord::Transport(transport));
         if let Some(radio) = radio {
             records.push(EvidenceRecord::Radio(radio));
+        }
+        if let Some(timing) = tx_timing {
+            records.push(EvidenceRecord::TxAggregateTiming(timing));
         }
         if let Some(delivery) = rx_delivery {
             records.push(EvidenceRecord::RxDelivery(delivery));
@@ -955,6 +1062,7 @@ impl SerialCapture {
         Ok(SessionEvidence {
             transport,
             radio,
+            tx_timing,
             rx_delivery,
             stack,
             finished,
@@ -1893,6 +2001,8 @@ mod tests {
                     wifi_monitor_capture: true,
                     station_lifecycle_events: true,
                     rx_delivery_evidence: true,
+                    task_poll_evidence: false,
+                    data_plane_placement: true,
                     timebase_probe: true,
                 },
                 maximum_payload_bytes: 1,
@@ -1915,18 +2025,20 @@ mod tests {
                 rx: Some(rx),
                 tx: None,
             }),
+            tx_timing: None,
             rx_delivery: None,
             stack: StackUsage {
-                minimum_free_percent: 25,
                 cpu0: StackWatermark {
                     capacity_bytes: 1,
                     free_bytes: 1,
                     used_bytes: 0,
+                    minimum_free_bytes: 1,
                 },
                 cpu1: StackWatermark {
                     capacity_bytes: 1,
                     free_bytes: 1,
                     used_bytes: 0,
+                    minimum_free_bytes: 1,
                 },
             },
             finished: Finished {
@@ -1992,20 +2104,23 @@ mod tests {
             capacity_bytes: 16_000,
             free_bytes: 4_000,
             used_bytes: 12_000,
+            minimum_free_bytes: 4_000,
         };
         assert!(
             validate_stack_usage(StackUsage {
-                minimum_free_percent: 25,
                 cpu0: watermark,
                 cpu1: watermark,
             })
             .is_ok()
         );
+        let insufficient = StackWatermark {
+            minimum_free_bytes: 4_001,
+            ..watermark
+        };
         assert!(
             validate_stack_usage(StackUsage {
-                minimum_free_percent: 26,
                 cpu0: watermark,
-                cpu1: watermark,
+                cpu1: insufficient,
             })
             .is_err()
         );

@@ -6,6 +6,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use open_esp_radio_hil_protocol::WifiDataPlanePlacement;
 use serde::{Deserialize, Serialize};
 
 use crate::Result;
@@ -226,6 +227,8 @@ pub struct Scenario {
     pub description: String,
     pub image: ImageClass,
     pub isolation: Isolation,
+    #[serde(default)]
+    pub data_plane: WifiDataPlanePlacement,
     #[serde(default)]
     pub tags: Vec<String>,
     pub link: Option<LinkExpectation>,
@@ -638,6 +641,20 @@ mod tests {
         assert!(catalog.get("udp-tx-ht40").is_ok());
         assert!(catalog.get("udp-bidirectional-ht40-40-60").is_ok());
         assert!(catalog.get("udp-bidirectional-ht40-rx-delivery").is_ok());
+        assert_eq!(
+            catalog
+                .get("udp-bidirectional-ht40-55-55")
+                .unwrap()
+                .data_plane,
+            WifiDataPlanePlacement::SingleCore
+        );
+        assert_eq!(
+            catalog
+                .get("udp-bidirectional-ht40-55-55-split")
+                .unwrap()
+                .data_plane,
+            WifiDataPlanePlacement::SplitRadioNetwork
+        );
         assert!(catalog.get("access-point-rx").is_ok());
         assert!(catalog.get("access-point-tx").is_ok());
         assert!(catalog.get("access-point-bidirectional").is_ok());

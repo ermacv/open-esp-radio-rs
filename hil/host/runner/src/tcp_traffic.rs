@@ -350,7 +350,7 @@ fn write_report(
              - Typed RX/TX streams: `{}` / `{}`\n\
              - Host RX EOF/pattern errors: `{}` / `{}`\n\
              - Target elapsed: `{}` us\n\
-             - Stack minimum free: CPU0 `{}/{}` bytes; CPU1 `{}/{}` bytes; required `{}%`\n\
+             - Stack minimum free: CPU0 `{}/{}` bytes (required `{}`); CPU1 `{}/{}` bytes (required `{}`)\n\
              - Typed evidence CRC32C: `0x{:08x}`\n\n\
              Byte equality and the deterministic absolute-offset pattern are required independently.\n\n\
              UART evidence is in [`uart.log`](uart.log).\n",
@@ -377,9 +377,10 @@ fn write_report(
             structured.transport.elapsed_micros,
             structured.stack.cpu0.free_bytes,
             structured.stack.cpu0.capacity_bytes,
+            structured.stack.cpu0.minimum_free_bytes,
             structured.stack.cpu1.free_bytes,
             structured.stack.cpu1.capacity_bytes,
-            structured.stack.minimum_free_percent,
+            structured.stack.cpu1.minimum_free_bytes,
             structured.finished.evidence_crc32c,
         ),
     )?;

@@ -28,7 +28,8 @@ pub struct StackBudget {
     pub warn_frame_bytes: u64,
     pub max_frame_bytes: u64,
     pub max_move_bytes: u64,
-    pub runtime_minimum_free_percent: u8,
+    pub runtime_cpu0_minimum_free_bytes: u32,
+    pub runtime_cpu1_minimum_free_bytes: u32,
     #[serde(default = "default_reported_frame_count")]
     pub reported_frame_count: usize,
     #[serde(default)]
@@ -63,9 +64,9 @@ impl StackBudget {
     }
 
     pub fn validate(&self) -> Result<()> {
-        if self.schema != 1 {
+        if self.schema != 2 {
             return Err(Error::InvalidPolicy(format!(
-                "unsupported stack policy schema {}; expected 1",
+                "unsupported stack policy schema {}; expected 2",
                 self.schema
             )));
         }
@@ -84,9 +85,9 @@ impl StackBudget {
                 "stack warning threshold must not exceed the hard frame budget".into(),
             ));
         }
-        if !(1..=100).contains(&self.runtime_minimum_free_percent) {
+        if self.runtime_cpu0_minimum_free_bytes == 0 || self.runtime_cpu1_minimum_free_bytes == 0 {
             return Err(Error::InvalidPolicy(
-                "runtime minimum free stack percentage must be in 1..=100".into(),
+                "runtime minimum free stack budgets must be greater than zero".into(),
             ));
         }
         if self.reported_frame_count == 0 {
@@ -507,13 +508,14 @@ mod tests {
 
     fn budget() -> StackBudget {
         StackBudget {
-            schema: 1,
+            schema: 2,
             stack_start_symbol: "_stack_start".into(),
             stack_end_symbol: "_stack_end".into(),
             warn_frame_bytes: 8 * 1024,
             max_frame_bytes: 32 * 1024,
             max_move_bytes: 4 * 1024,
-            runtime_minimum_free_percent: 25,
+            runtime_cpu0_minimum_free_bytes: 32 * 1024,
+            runtime_cpu1_minimum_free_bytes: 4 * 1024,
             reported_frame_count: 30,
             reviewed_frames: vec![ReviewedStackFrame {
                 function_contains: "<unknown function at".into(),

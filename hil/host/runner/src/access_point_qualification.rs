@@ -840,18 +840,20 @@ mod tests {
                 transport_errors: 0,
             },
             radio: None,
+            tx_timing: None,
             rx_delivery: None,
             stack: StackUsage {
-                minimum_free_percent: 25,
                 cpu0: StackWatermark {
                     capacity_bytes: 1,
                     free_bytes: 1,
                     used_bytes: 0,
+                    minimum_free_bytes: 1,
                 },
                 cpu1: StackWatermark {
                     capacity_bytes: 1,
                     free_bytes: 1,
                     used_bytes: 0,
+                    minimum_free_bytes: 1,
                 },
             },
         }

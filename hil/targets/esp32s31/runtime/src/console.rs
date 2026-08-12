@@ -141,6 +141,7 @@ pub struct ActiveSession {
 pub struct StartupConfiguration {
     pub request_id: u32,
     pub ipv4: NetworkIpv4Configuration,
+    pub data_plane: open_esp_radio_hil_protocol::WifiDataPlanePlacement,
     pub phy_calibration_artifact: Option<StartupArtifact>,
 }
 
@@ -226,6 +227,7 @@ struct SessionResult {
     session_id: u64,
     evidence: TransportEvidence,
     radio: Option<open_esp_radio_hil_protocol::RadioEvidence>,
+    tx_timing: Option<open_esp_radio_hil_protocol::TxAggregateTimingEvidence>,
     rx_delivery: Option<RxDeliveryEvidence>,
     passed: bool,
 }
@@ -527,6 +529,7 @@ pub async fn complete_session(
     session_id: u64,
     evidence: TransportEvidence,
     radio: Option<open_esp_radio_hil_protocol::RadioEvidence>,
+    tx_timing: Option<open_esp_radio_hil_protocol::TxAggregateTimingEvidence>,
     rx_delivery: Option<RxDeliveryEvidence>,
     passed: bool,
 ) {
@@ -535,6 +538,7 @@ pub async fn complete_session(
             session_id,
             evidence,
             radio,
+            tx_timing,
             rx_delivery,
             passed,
         })
@@ -639,17 +643,18 @@ pub async fn protocol_task(capabilities: Capabilities) {
                         };
                         publish_event_reliably(session_id, request_id, response).await;
                     }
-                    Command::Initialize(ipv4) => {
+                    Command::Initialize(configuration) => {
                         let (response, accepted) = if initialized {
                             (Event::Rejected(RejectReason::InvalidState), false)
-                        } else if !ipv4.validate() {
+                        } else if !configuration.validate() {
                             (Event::Rejected(RejectReason::InvalidConfiguration), false)
                         } else if startup_artifact.started_but_incomplete() {
                             (Event::Rejected(RejectReason::InvalidConfiguration), false)
                         } else if STARTUP_CONFIGURATIONS
                             .try_send(StartupConfiguration {
                                 request_id,
-                                ipv4,
+                                ipv4: configuration.ipv4,
+                                data_plane: configuration.data_plane,
                                 phy_calibration_artifact: startup_artifact.completed_artifact(),
                             })
                             .is_err()
@@ -1135,13 +1140,18 @@ async fn transition_state(
 }
 
 async fn publish_result(result: SessionResult, request_id: u32) {
-    let mut evidence = heapless::Vec::<EvidenceRecord, 5>::new();
+    let mut evidence = heapless::Vec::<EvidenceRecord, 6>::new();
     evidence
         .push(EvidenceRecord::Transport(result.evidence))
         .expect("session evidence has fixed capacity");
     if let Some(radio) = result.radio {
         evidence
             .push(EvidenceRecord::Radio(radio))
+            .expect("session evidence has fixed capacity");
+    }
+    if let Some(timing) = result.tx_timing {
+        evidence
+            .push(EvidenceRecord::TxAggregateTiming(timing))
             .expect("session evidence has fixed capacity");
     }
     if let Some(rx_delivery) = result.rx_delivery {

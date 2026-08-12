@@ -96,8 +96,10 @@ where
 
     /// Run protocol processing independently from the PAC/DMA owner.
     pub async fn run(&mut self) -> ! {
+        let mut epoch_started = None;
         loop {
             self.dispatch_next().await;
+            checkpoint_protocol_epoch(&mut epoch_started).await;
         }
     }
 
@@ -112,10 +114,11 @@ where
         stop: F,
     ) -> ConnectedRxProtocolShutdown {
         let mut stop = core::pin::pin!(stop);
+        let mut epoch_started = None;
         loop {
             match select(stop.as_mut(), self.dispatch_next()).await {
                 Either::First(()) => return self.shutdown_discard(),
-                Either::Second(_) => {}
+                Either::Second(_) => checkpoint_protocol_epoch(&mut epoch_started).await,
             }
         }
     }
@@ -155,5 +158,13 @@ where
         let stopped = self.run_until_stopped(endpoint.wait_for_stop()).await;
         observe_shutdown(stopped.shutdown());
         endpoint.complete(stopped);
+    }
+}
+
+async fn checkpoint_protocol_epoch(epoch_started: &mut Option<Instant>) {
+    let started = epoch_started.get_or_insert_with(Instant::now);
+    if started.elapsed() >= RX_PROTOCOL_SERVICE_BUDGET {
+        embassy_futures::yield_now().await;
+        *epoch_started = None;
     }
 }

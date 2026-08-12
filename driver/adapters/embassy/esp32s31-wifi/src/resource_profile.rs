@@ -51,14 +51,14 @@ pub const ESP32S31_DEFAULT_NETWORK_FRAME_CAPACITY: usize = 1_600;
 pub const ESP32S31_DEFAULT_NETWORK_RX_QUEUE_DEPTH: usize = 8;
 #[cfg(feature = "high-throughput")]
 pub const ESP32S31_DEFAULT_NETWORK_RX_QUEUE_DEPTH: usize = 40;
-// The high-throughput profile owns enough leases for two overlapped 32-MPDU
-// software arenas. The negotiated aggregate-byte ceiling may stop a jumbo
-// A-MSDU publication before its BlockAck window is exhausted. Compact builds
-// retain eight frames. TX frame backing is DMA-visible SRAM.
+// One additional credit is reserved by the network adapter for the TX token
+// paired with ingress. Application egress therefore retains eight compact or
+// two complete 32-MPDU high-throughput arenas even while saturated. TX frame
+// backing is DMA-visible SRAM.
 #[cfg(not(feature = "high-throughput"))]
-pub const ESP32S31_DEFAULT_NETWORK_TX_QUEUE_DEPTH: usize = 8;
+pub const ESP32S31_DEFAULT_NETWORK_TX_QUEUE_DEPTH: usize = 9;
 #[cfg(feature = "high-throughput")]
-pub const ESP32S31_DEFAULT_NETWORK_TX_QUEUE_DEPTH: usize = 64;
+pub const ESP32S31_DEFAULT_NETWORK_TX_QUEUE_DEPTH: usize = 65;
 pub const ESP32S31_DEFAULT_NETWORK_TX_TRAILER: usize = 12;
 #[cfg(not(feature = "high-throughput"))]
 pub const ESP32S31_DEFAULT_TX_AMPDU_FRAME_COUNT: usize = 8;
@@ -169,7 +169,7 @@ const _: () =
     assert!(ESP32S31_DEFAULT_NETWORK_FRAME_CAPACITY <= ESP32S31_DEFAULT_RX_STAGE_CAPACITY);
 const _: () = assert!(ESP32S31_DEFAULT_RX_REORDER_WINDOW <= ESP32S31_DEFAULT_RX_STAGE_SLOT_COUNT);
 const _: () =
-    assert!(ESP32S31_DEFAULT_TX_AMPDU_FRAME_COUNT <= ESP32S31_DEFAULT_NETWORK_TX_QUEUE_DEPTH);
+    assert!(ESP32S31_DEFAULT_TX_AMPDU_FRAME_COUNT < ESP32S31_DEFAULT_NETWORK_TX_QUEUE_DEPTH);
 
 #[cfg(test)]
 mod tests {

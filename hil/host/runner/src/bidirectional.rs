@@ -16,7 +16,8 @@ use std::{
 
 use open_esp_radio_hil_protocol::{
     Completion, Direction, FlowConfig, Ipv4Endpoint, RxRadioEvidence, SessionConfig,
-    SessionLinkRequirements, Transport, TransportEvidence, TxRadioEvidence,
+    SessionLinkRequirements, Transport, TransportEvidence, TxAggregateTimingEvidence,
+    TxRadioEvidence,
 };
 
 use crate::{
@@ -236,6 +237,9 @@ pub(crate) struct AmpduEvidence {
     pub(crate) tx_flight_samples: u64,
     pub(crate) tx_flight_us: u64,
     pub(crate) tx_flight_max_us: u64,
+    pub(crate) standby_prepared: u64,
+    pub(crate) standby_published: u64,
+    pub(crate) standby_cancelled: u64,
     pub(crate) block_ack_samples: u64,
     pub(crate) block_ack_received: u64,
     pub(crate) block_ack_success_without: u64,
@@ -248,7 +252,7 @@ pub(crate) struct AmpduEvidence {
 }
 
 impl AmpduEvidence {
-    pub(crate) fn from_typed(typed: TxRadioEvidence) -> Self {
+    pub(crate) fn from_typed(typed: TxRadioEvidence, timing: TxAggregateTimingEvidence) -> Self {
         Self {
             aggregates: u64::from(typed.aggregates_prepared),
             publications: u64::from(typed.aggregate_publications),
@@ -271,9 +275,19 @@ impl AmpduEvidence {
             stop_frame: u64::from(typed.stopped_at_frame_limit),
             stop_capacity: u64::from(typed.stopped_at_capacity_limit),
             stop_empty: u64::from(typed.stopped_on_empty_queue),
-            preparation_us: u64::from(typed.preparation_micros),
-            publication_us: u64::from(typed.publication_micros),
-            exchange_us: u64::from(typed.exchange_micros),
+            preparation_us: u64::from(timing.preparation_micros),
+            preparation_max_us: u64::from(timing.preparation_max_micros),
+            publication_us: u64::from(timing.publication_micros),
+            publication_max_us: u64::from(timing.publication_max_micros),
+            exchange_us: u64::from(timing.exchange_micros),
+            exchange_max_us: u64::from(timing.exchange_max_micros),
+            first_exchanges: u64::from(timing.first_exchanges),
+            first_exchange_us: u64::from(timing.first_exchange_micros),
+            first_exchange_max_us: u64::from(timing.first_exchange_max_micros),
+            retried_exchanges: u64::from(timing.retried_exchanges),
+            retry_publications: u64::from(timing.retry_publications),
+            retry_exchange_us: u64::from(timing.retry_exchange_micros),
+            retry_exchange_max_us: u64::from(timing.retry_exchange_max_micros),
             block_ack_samples: u64::from(typed.block_ack_samples),
             block_ack_received: u64::from(typed.block_ack_received),
             block_ack_success_without: u64::from(typed.success_without_block_ack),
@@ -284,7 +298,14 @@ impl AmpduEvidence {
             tx_irq_epochs: u64::from(typed.tx_irq_epochs),
             tx_irq_samples: u64::from(typed.tx_irq_service_samples),
             tx_irq_skew: u64::from(typed.tx_irq_clock_skew_samples),
+            tx_irq_service_us: u64::from(timing.tx_irq_service_micros),
+            tx_irq_service_max_us: u64::from(timing.tx_irq_service_max_micros),
             tx_flight_samples: u64::from(typed.tx_publication_to_irq_samples),
+            tx_flight_us: u64::from(timing.tx_publication_to_irq_micros),
+            tx_flight_max_us: u64::from(timing.tx_publication_to_irq_max_micros),
+            standby_prepared: u64::from(timing.standby_prepared),
+            standby_published: u64::from(timing.standby_published),
+            standby_cancelled: u64::from(timing.standby_cancelled),
             ..Self::default()
         }
     }
@@ -772,7 +793,9 @@ pub(crate) struct TaskPollSet {
     pub(crate) network: TaskPollEvidence,
     pub(crate) protocol: TaskPollEvidence,
     pub(crate) radio: TaskPollEvidence,
-    pub(crate) benchmark: TaskPollEvidence,
+    pub(crate) udp_rx: TaskPollEvidence,
+    pub(crate) udp_tx: TaskPollEvidence,
+    pub(crate) tcp: TaskPollEvidence,
 }
 
 impl TaskPollSet {
@@ -780,7 +803,9 @@ impl TaskPollSet {
         self.network.intervals != 0
             && self.protocol.intervals != 0
             && self.radio.intervals != 0
-            && self.benchmark.intervals != 0
+            && self.udp_rx.intervals != 0
+            && self.udp_tx.intervals != 0
+            && self.tcp.intervals != 0
     }
 }
 
@@ -1223,7 +1248,13 @@ pub(crate) fn run(
     }
     let rx = text_assessment
         .map(|assessment| assessment.rx)
-        .unwrap_or_else(|| RxQualification::from_typed(structured.transport, raw_rx_radio));
+        .unwrap_or_else(|| {
+            let mut rx = RxQualification::from_typed(structured.transport, raw_rx_radio);
+            // A failed typed acceptance result must not hide independent
+            // diagnostic poll evidence from the same completed interval.
+            rx.task_polls = report.task_polls;
+            rx
+        });
     let rx_median = structured
         .transport
         .rx_bytes
@@ -1298,7 +1329,10 @@ pub(crate) fn run(
         Ok(evidence) => Some(evidence),
         Err(error) => {
             qualification_failure.get_or_insert_with(|| error.to_string());
-            structured.radio.and_then(|radio| radio.tx)
+            structured
+                .radio
+                .and_then(|radio| radio.tx)
+                .zip(structured.tx_timing)
         }
     };
     {
@@ -1341,7 +1375,9 @@ pub(crate) fn run(
             });
         }
     }
-    let ampdu = typed_tx.map(AmpduEvidence::from_typed).unwrap_or_default();
+    let ampdu = typed_tx
+        .map(|(tx, timing)| AmpduEvidence::from_typed(tx, timing))
+        .unwrap_or_default();
     if host_tx.missing != 0 || host_tx.reordered != 0 || host_tx.duplicates != 0 {
         let target_tx_units = Some(structured.transport.tx_units);
         let post_block_ack_loss = target_tx_units
@@ -1808,7 +1844,9 @@ fn parse_device_report(log: &str) -> DeviceReport {
                     Some("network") => report.task_polls.network.merge(sample),
                     Some("protocol") => report.task_polls.protocol.merge(sample),
                     Some("radio") => report.task_polls.radio.merge(sample),
-                    Some("benchmark") => report.task_polls.benchmark.merge(sample),
+                    Some("udp_rx") => report.task_polls.udp_rx.merge(sample),
+                    Some("udp_tx") => report.task_polls.udp_tx.merge(sample),
+                    Some("tcp") => report.task_polls.tcp.merge(sample),
                     Some(_) | None => {}
                 }
             }
@@ -2720,7 +2758,9 @@ pub(crate) fn task_poll_markdown(task_polls: TaskPollSet) -> String {
         ("network", task_polls.network),
         ("protocol", task_polls.protocol),
         ("radio", task_polls.radio),
-        ("benchmark", task_polls.benchmark),
+        ("udp_rx", task_polls.udp_rx),
+        ("udp_tx", task_polls.udp_tx),
+        ("tcp", task_polls.tcp),
     ] {
         let average_us = evidence.poll_us as f64 / evidence.polls.max(1) as f64;
         writeln!(
@@ -2915,7 +2955,7 @@ fn write_report(
     let host_tx_sequence_after_maximum_interarrival = host_tx.sequence_after_maximum_interarrival;
     let structured_report = format!(
         "- Typed session RX/TX: `{}` / `{}` bytes; `{}` / `{}` datagrams; CRC32C `0x{:08x}`\n\
-                 - Stack minimum free: CPU0 `{}/{}` bytes; CPU1 `{}/{}` bytes; required `{}%`\n",
+                 - Stack minimum free: CPU0 `{}/{}` bytes (required `{}`); CPU1 `{}/{}` bytes (required `{}`)\n",
         structured.transport.rx_bytes,
         structured.transport.tx_bytes,
         structured.transport.rx_units,
@@ -2923,9 +2963,10 @@ fn write_report(
         structured.finished.evidence_crc32c,
         structured.stack.cpu0.free_bytes,
         structured.stack.cpu0.capacity_bytes,
+        structured.stack.cpu0.minimum_free_bytes,
         structured.stack.cpu1.free_bytes,
         structured.stack.cpu1.capacity_bytes,
-        structured.stack.minimum_free_percent,
+        structured.stack.cpu1.minimum_free_bytes,
     );
     let fixture_report = fixture_rx.as_ref().map_or_else(
         || String::from("- AP-side evidence: `external AP; not observed`\n"),
@@ -3015,6 +3056,7 @@ fn write_report(
              - Retried exchange: `{:.2} us` average, `{}` us boot maximum across `{}` exchanges and `{}` publications\n\
              - TX IRQ wake epochs/samples/clock-skew rejects: `{}` / `{}` / `{}`; IRQ-to-service: `{:.2} us` average, `{}` us boot maximum\n\
              - Sampled publication-to-IRQ flight: `{:.2} us` average, `{}` us boot maximum across `{}` samples\n\n\
+             - Standby prepared/published/cancelled: `{}` / `{}` / `{}`\n\n\
              UART evidence is in [`uart.log`](uart.log).\n",
             options.phy.name().to_uppercase(),
             options.address,
@@ -3172,6 +3214,9 @@ fn write_report(
             average_tx_flight_us,
             ampdu.tx_flight_max_us,
             ampdu.tx_flight_samples,
+            ampdu.standby_prepared,
+            ampdu.standby_published,
+            ampdu.standby_cancelled,
         ),
     )?;
     Ok(())
@@ -3415,7 +3460,9 @@ mod tests {
              ORTP task=network polls=5100 poll_us=210000 poll_boot_max_us=140 over_100us=2 over_500us=0 over_1000us=0 over_5000us=0\n\
              ORTP task=protocol polls=5000 poll_us=180000 poll_boot_max_us=120 over_100us=1 over_500us=0 over_1000us=0 over_5000us=0\n\
              ORTP task=radio polls=5000 poll_us=390000 poll_boot_max_us=310 over_100us=20 over_500us=0 over_1000us=0 over_5000us=0\n\
-             ORTP task=benchmark polls=5000 poll_us=125000 poll_boot_max_us=90 over_100us=0 over_500us=0 over_1000us=0 over_5000us=0\n\
+             ORTP task=udp_rx polls=5000 poll_us=125000 poll_boot_max_us=90 over_100us=0 over_500us=0 over_1000us=0 over_5000us=0\n\
+             ORTP task=udp_tx polls=0 poll_us=0 poll_boot_max_us=0 over_100us=0 over_500us=0 over_1000us=0 over_5000us=0\n\
+             ORTP task=tcp polls=0 poll_us=0 poll_boot_max_us=0 over_100us=0 over_500us=0 over_1000us=0 over_5000us=0\n\
              OPEN_RADIO_PHY_HIL result=BENCH stage=udp-rx-path buffer_full=0 fifo_overflow=0 enqueued=5000 queue_dropped=0 rx_format=4\n",
         );
         let options = parse_options(&[], &LabConfig::for_test()).unwrap();
@@ -3465,7 +3512,9 @@ mod tests {
              ORTP task=network polls=5100 poll_us=210000 poll_boot_max_us=140 over_100us=2 over_500us=0 over_1000us=0 over_5000us=0\n\
              ORTP task=protocol polls=5000 poll_us=180000 poll_boot_max_us=120 over_100us=1 over_500us=0 over_1000us=0 over_5000us=0\n\
              ORTP task=radio polls=5000 poll_us=390000 poll_boot_max_us=310 over_100us=20 over_500us=0 over_1000us=0 over_5000us=0\n\
-             ORTP task=benchmark polls=5000 poll_us=125000 poll_boot_max_us=90 over_100us=0 over_500us=0 over_1000us=0 over_5000us=0\n\
+             ORTP task=udp_rx polls=5000 poll_us=125000 poll_boot_max_us=90 over_100us=0 over_500us=0 over_1000us=0 over_5000us=0\n\
+             ORTP task=udp_tx polls=0 poll_us=0 poll_boot_max_us=0 over_100us=0 over_500us=0 over_1000us=0 over_5000us=0\n\
+             ORTP task=tcp polls=0 poll_us=0 poll_boot_max_us=0 over_100us=0 over_500us=0 over_1000us=0 over_5000us=0\n\
              OTX b=50000000 d=1 u=5000000 k=80000 e=0 w=20 r=114700 g=1 x=0 l=1 a=1342257664\n\
              OAMP aggregates=120 publications=120 completed=120 subframes=3840 acknowledged=3840 single=0 individual_retry=0 timeout=0 collision=0 min=32 max=32 stop_frame=120 stop_capacity=0 stop_empty=0\n\
              OAMPH one=0 two_three=0 four_seven=0 eight_fifteen=0 sixteen_twentythree=0 twentyfour_thirty=0 thirtyone=0 full32=120\n\

@@ -2,7 +2,7 @@
 
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::Channel};
 use open_esp_radio_hil_protocol::{
-    Direction, RadioEvidence, RxDeliveryEvidence, TransportEvidence,
+    Direction, RadioEvidence, RxDeliveryEvidence, TransportEvidence, TxAggregateTimingEvidence,
 };
 
 use crate::console::{ActiveSession, complete_session};
@@ -26,6 +26,7 @@ pub(in crate::product_hil) struct OpenRadioBidirectionalResult {
     direction: OpenRadioBidirectionalDirection,
     evidence: TransportEvidence,
     radio: Option<RadioEvidence>,
+    tx_timing: Option<TxAggregateTimingEvidence>,
     rx_delivery: Option<RxDeliveryEvidence>,
     passed: bool,
 }
@@ -96,6 +97,7 @@ pub(in crate::product_hil) async fn run_open_radio_bidirectional_session_coordin
                     session.session_id,
                     evidence,
                     merge_radio(first.radio, second.radio),
+                    first.tx_timing.or(second.tx_timing),
                     if first.direction == OpenRadioBidirectionalDirection::Rx {
                         first.rx_delivery
                     } else {
@@ -121,6 +123,7 @@ async fn complete_single_direction(
         session_id,
         evidence,
         result.radio,
+        result.tx_timing,
         result.rx_delivery,
         valid && result.passed,
     )
@@ -133,6 +136,7 @@ pub(in crate::product_hil) async fn complete_open_radio_bidirectional_direction(
     direction: OpenRadioBidirectionalDirection,
     evidence: TransportEvidence,
     radio: Option<RadioEvidence>,
+    tx_timing: Option<TxAggregateTimingEvidence>,
     rx_delivery: Option<RxDeliveryEvidence>,
     passed: bool,
 ) {
@@ -142,6 +146,7 @@ pub(in crate::product_hil) async fn complete_open_radio_bidirectional_direction(
             direction,
             evidence,
             radio,
+            tx_timing,
             rx_delivery,
             passed,
         })

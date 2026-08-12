@@ -59,11 +59,10 @@ const STACK_PAINT_MARGIN_BYTES: u32 = 256;
 #[cfg(feature = "open-radio-hil")]
 const STACK_PAINT_BOTTOM_RESERVE_BYTES: u32 = 256;
 #[cfg(feature = "open-radio-hil")]
-// Core 1 runs embassy-net, application traffic, the owner-free RX protocol
-// and TCP pattern workers. The first cross-core TX qualification measured a
-// 6,312-byte peak; 10 KiB retains 38% headroom while avoiding the former
-// unmeasured 16-KiB reservation.
-const APP_CORE_STACK_BYTES: usize = 10 * 1024;
+// CPU1 runs the Embassy network executor. Its nested async call graph needs more
+// than 10 KiB under sustained A-MPDU traffic; runtime stack painting enforces a
+// 4-KiB reserve. Packet storage itself stays in static/PSRAM buffers.
+const APP_CORE_STACK_BYTES: usize = 16 * 1024;
 
 #[cfg(feature = "code-flash")]
 const PROFILE_CODE_START: u32 = 0x4000_0140;
@@ -317,7 +316,7 @@ extern "C" fn runtime_main() -> ! {
                     APP_EXECUTOR
                         .init(Executor::<1>::new(app_interrupt))
                         .run(|spawner| {
-                            let Ok(network) = product_hil::app_network_task(spawner) else {
+                            let Ok(network) = product_hil::secondary_network_task(spawner) else {
                                 fail(c"OPEN_RADIO_HIL runtime=FAIL reason=app-network-allocation\r\n");
                             };
                             spawner.spawn(network);
@@ -511,13 +510,19 @@ pub(crate) fn stack_usage_snapshot() -> open_esp_radio_hil_protocol::StackUsage 
     let cpu1_paint_end = APP_STACK_PAINT_END.load(Ordering::Acquire);
 
     open_esp_radio_hil_protocol::StackUsage {
-        minimum_free_percent: stack_minimum_free_percent(),
-        cpu0: measure_stack(cpu0_bottom, cpu0_paint_start, cpu0_paint_end, cpu0_top),
+        cpu0: measure_stack(
+            cpu0_bottom,
+            cpu0_paint_start,
+            cpu0_paint_end,
+            cpu0_top,
+            stack_minimum_free_bytes(0),
+        ),
         cpu1: measure_stack(
             cpu1_bottom,
             cpu1_bottom + STACK_PAINT_BOTTOM_RESERVE_BYTES,
             cpu1_paint_end,
             cpu1_top,
+            stack_minimum_free_bytes(1),
         ),
     }
 }
@@ -528,6 +533,7 @@ fn measure_stack(
     paint_start: u32,
     paint_end: u32,
     top: u32,
+    minimum_free_bytes: u32,
 ) -> open_esp_radio_hil_protocol::StackWatermark {
     if bottom >= paint_start || paint_start >= paint_end || paint_end > top {
         fail(c"OPEN_RADIO_HIL runtime=FAIL reason=stack-paint-layout\r\n");
@@ -546,16 +552,21 @@ fn measure_stack(
         capacity_bytes: top - bottom,
         free_bytes: lowest_used - paint_start,
         used_bytes: (top - bottom) - (lowest_used - paint_start),
+        minimum_free_bytes,
     }
 }
 
 #[cfg(feature = "open-radio-hil")]
-fn stack_minimum_free_percent() -> u8 {
-    let value = option_env!("OPEN_RADIO_STACK_MINIMUM_FREE_PERCENT")
-        .expect("HIL runner must provide the target stack headroom policy");
+fn stack_minimum_free_bytes(cpu: u8) -> u32 {
+    let value = match cpu {
+        0 => option_env!("OPEN_RADIO_CPU0_STACK_MINIMUM_FREE_BYTES"),
+        1 => option_env!("OPEN_RADIO_CPU1_STACK_MINIMUM_FREE_BYTES"),
+        _ => None,
+    }
+    .expect("HIL runner must provide each target stack headroom policy");
     value
-        .parse::<u8>()
-        .expect("stack headroom policy must be an unsigned percentage")
+        .parse::<u32>()
+        .expect("stack headroom policy must be an unsigned byte count")
 }
 
 fn print(message: &'static CStr) {

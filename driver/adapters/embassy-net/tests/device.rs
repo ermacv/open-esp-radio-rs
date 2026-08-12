@@ -125,7 +125,7 @@ fn pinned_rx_publisher_exposes_a_real_capacity_edge() {
 }
 
 #[test]
-fn pinned_device_ends_a_refilled_ingress_epoch_at_its_physical_depth() {
+fn pinned_device_has_no_artificial_frame_count_ingress_ceiling() {
     type TestResources = PinnedResources<NoopRawMutex, FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 2>;
     type TestPool = PinnedTxPool<FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 2>;
     let resources = Box::leak(Box::new(TestResources::new()));
@@ -141,7 +141,6 @@ fn pinned_device_ends_a_refilled_ingress_epoch_at_its_physical_depth() {
     let second = device.receive(&mut context()).unwrap();
     drop(second);
 
-    assert!(device.receive(&mut context()).is_none());
     let (third, reply) = device.receive(&mut context()).unwrap();
     third.consume(|frame| assert_eq!(frame[0], 0x33));
     drop(reply);
@@ -170,7 +169,6 @@ fn pinned_rx_slot_keeps_one_address_across_network_ownership() {
     drop(reply);
 
     publisher.try_send(&[0xa5; ETHERNET_HEADER_LEN]).unwrap();
-    assert!(device.receive(&mut context()).is_none());
     let (second, reply) = device.receive(&mut context()).unwrap();
     let second_address = second.consume(|frame| {
         assert_eq!(frame, &[0xa5; ETHERNET_HEADER_LEN]);
@@ -289,6 +287,30 @@ fn dropped_pinned_tx_token_returns_its_reserved_slot() {
 }
 
 #[test]
+fn pinned_ingress_credit_survives_saturated_application_egress() {
+    type TestResources = PinnedResources<NoopRawMutex, FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 2>;
+    type TestPool = PinnedTxPool<FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 2>;
+    let resources = Box::leak(Box::new(TestResources::new()));
+    let pool = TestPool::pin_static(Box::leak(Box::new(TestPool::new())));
+    let (device, radio) = resources.split(pool, [0; 6]);
+    let mut device = device.with_ingress_tx_reserve();
+    let mut publisher = radio.rx_publisher();
+
+    device
+        .transmit(&mut context())
+        .expect("one application credit")
+        .consume(ETHERNET_HEADER_LEN, |frame| frame.fill(0x5a));
+    assert!(device.transmit(&mut context()).is_none());
+
+    publisher.try_send(&[0xa5; ETHERNET_HEADER_LEN]).unwrap();
+    let (received, response) = device
+        .receive(&mut context())
+        .expect("reserved ingress response credit");
+    received.consume(|frame| assert_eq!(frame[0], 0xa5));
+    drop(response);
+}
+
+#[test]
 fn pinned_rx_and_tx_depths_are_independent() {
     type TestResources =
         SplitPinnedResources<NoopRawMutex, FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 3, 1>;
@@ -317,9 +339,6 @@ fn pinned_rx_and_tx_depths_are_independent() {
     assert_eq!(consumer.try_receive().unwrap().ethernet()[0], 0xa5);
 
     for marker in 0..3 {
-        if marker != 0 {
-            assert!(device.receive(&mut context()).is_none());
-        }
         let (received, reply) = device.receive(&mut context()).unwrap();
         received.consume(|frame| assert_eq!(frame[0], marker));
         drop(reply);

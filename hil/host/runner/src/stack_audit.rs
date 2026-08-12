@@ -22,8 +22,12 @@ pub(crate) fn enable_stack_checks(command: &mut Command, budget: &StackBudget) {
     command
         .env("RUSTC_BOOTSTRAP", "1")
         .env(
-            "OPEN_RADIO_STACK_MINIMUM_FREE_PERCENT",
-            budget.runtime_minimum_free_percent.to_string(),
+            "OPEN_RADIO_CPU0_STACK_MINIMUM_FREE_BYTES",
+            budget.runtime_cpu0_minimum_free_bytes.to_string(),
+        )
+        .env(
+            "OPEN_RADIO_CPU1_STACK_MINIMUM_FREE_BYTES",
+            budget.runtime_cpu1_minimum_free_bytes.to_string(),
         )
         .env("RUSTFLAGS", rustflags);
 }

@@ -104,7 +104,7 @@ async fn udp_rx_task(stack: Stack<'static>) {
                 task_polls: &TASK_POLLS,
             },
         ),
-        TASK_POLLS.benchmark(),
+        TASK_POLLS.udp_rx(),
         OPEN_RADIO_TASK_POLL_TELEMETRY,
     )
     .await;
@@ -154,7 +154,7 @@ async fn udp_tx_task(stack: Stack<'static>) {
             },
             &AGGREGATE_TX,
         ),
-        TASK_POLLS.benchmark(),
+        TASK_POLLS.udp_tx(),
         OPEN_RADIO_TASK_POLL_TELEMETRY,
     )
     .await;
@@ -163,21 +163,25 @@ async fn udp_tx_task(stack: Stack<'static>) {
 #[embassy_executor::task]
 async fn tcp_task(stack: Stack<'static>) {
     log::info!("OPEN_RADIO_HIL stage=traffic-workload-start mode=runtime-dispatch");
-    run_open_radio_tcp_benchmark(
-        stack,
-        TCP_RX_BUFFER.take(),
-        TCP_TX_BUFFER.take(),
-        TcpBenchmarkConfig {
-            local_port: 4_325,
-            maximum_payload_bytes: crate::product_hil::OPEN_RADIO_TCP_CHUNK_CAPACITY as u16,
-            receive_buffer_capacity: TCP_RX_BUFFER_CAPACITY,
-            transmit_buffer_capacity: TCP_TX_BUFFER_CAPACITY,
-            io_buffer_capacity: 65_536,
-            idle_timeout: Duration::from_secs(3),
-        },
-        &RX_PIPELINE,
-        &AGGREGATE_TX,
-        &TCP_SESSIONS,
+    observe_open_radio_task_polls(
+        run_open_radio_tcp_benchmark(
+            stack,
+            TCP_RX_BUFFER.take(),
+            TCP_TX_BUFFER.take(),
+            TcpBenchmarkConfig {
+                local_port: 4_325,
+                maximum_payload_bytes: crate::product_hil::OPEN_RADIO_TCP_CHUNK_CAPACITY as u16,
+                receive_buffer_capacity: TCP_RX_BUFFER_CAPACITY,
+                transmit_buffer_capacity: TCP_TX_BUFFER_CAPACITY,
+                io_buffer_capacity: 65_536,
+                idle_timeout: Duration::from_secs(3),
+            },
+            &RX_PIPELINE,
+            &AGGREGATE_TX,
+            &TCP_SESSIONS,
+        ),
+        TASK_POLLS.tcp(),
+        OPEN_RADIO_TASK_POLL_TELEMETRY,
     )
     .await;
 }

@@ -139,12 +139,13 @@ fn qualify(serial: &SerialCapture, lab: &LabConfig, options: &Options) -> Result
     };
     let stack = serial.query_stack_usage(options.timeout)?;
     println!(
-        "stack_stage=monitor-capture cpu0_free={}/{} cpu1_free={}/{} required_percent={}",
+        "stack_stage=monitor-capture cpu0_free={}/{} cpu0_required={} cpu1_free={}/{} cpu1_required={}",
         stack.cpu0.free_bytes,
         stack.cpu0.capacity_bytes,
+        stack.cpu0.minimum_free_bytes,
         stack.cpu1.free_bytes,
         stack.cpu1.capacity_bytes,
-        stack.minimum_free_percent,
+        stack.cpu1.minimum_free_bytes,
     );
     validate_summary(&capture, channel, options.duration)?;
     let assembly = assembly::assemble(capture.chunks.clone())?;

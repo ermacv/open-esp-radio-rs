@@ -279,7 +279,7 @@ pub(crate) fn run(
     let missing: u64 = qualified.iter().map(|burst| burst.missing).sum();
     let reordered: u64 = qualified.iter().map(|burst| burst.reordered).sum();
     let duplicates: u64 = qualified.iter().map(|burst| burst.duplicates).sum();
-    let typed_tx = structured.require_tx_radio(
+    let (typed_tx, typed_timing) = structured.require_tx_radio(
         options.bandwidth_mhz,
         options.minimum_rate_kbps,
         u32::try_from(MIN_QUALIFIED_AGGREGATES).unwrap_or(u32::MAX),
@@ -293,7 +293,7 @@ pub(crate) fn run(
             .checked_div(structured.transport.elapsed_micros.max(1))
             .unwrap_or(0),
         sample_count: 1,
-        ampdu: AmpduEvidence::from_typed(typed_tx),
+        ampdu: AmpduEvidence::from_typed(typed_tx, typed_timing),
     };
     if missing != 0 || reordered != 0 || duplicates != 0 {
         let received_datagrams = qualified.iter().map(|burst| burst.datagrams).sum::<u64>();
@@ -612,16 +612,17 @@ fn write_report(output: &Path, report: TxReport<'_>) -> Result<()> {
     let evidence = report.structured;
     let structured_report = format!(
         "- Typed session evidence: `{}` bytes / `{}` datagrams / `{}` us; CRC32C `0x{:08x}`\n\
-                 - Stack minimum free: CPU0 `{}/{}` bytes; CPU1 `{}/{}` bytes; required `{}%`\n",
+                 - Stack minimum free: CPU0 `{}/{}` bytes (required `{}`); CPU1 `{}/{}` bytes (required `{}`)\n",
         evidence.transport.tx_bytes,
         evidence.transport.tx_units,
         evidence.transport.elapsed_micros,
         evidence.finished.evidence_crc32c,
         evidence.stack.cpu0.free_bytes,
         evidence.stack.cpu0.capacity_bytes,
+        evidence.stack.cpu0.minimum_free_bytes,
         evidence.stack.cpu1.free_bytes,
         evidence.stack.cpu1.capacity_bytes,
-        evidence.stack.minimum_free_percent,
+        evidence.stack.cpu1.minimum_free_bytes,
     );
     let offered_rate = report
         .options
@@ -667,6 +668,7 @@ fn write_report(output: &Path, report: TxReport<'_>) -> Result<()> {
              - Retried exchange average/max: `{:.2}` / `{}` us across `{}` exchanges and `{}` publications\n\
              - TX IRQ wake epochs/samples/clock-skew rejects: `{}` / `{}` / `{}`; IRQ-to-service average/max: `{:.2}` / `{}` us\n\
              - Sampled publication-to-IRQ flight average/max: `{:.2}` / `{}` us across `{}` samples\n\n\
+             - Standby prepared/published/cancelled: `{}` / `{}` / `{}`\n\n\
              UART evidence is in [`uart.log`](uart.log).\n",
             report.options.device,
             report.host_address,
@@ -722,6 +724,9 @@ fn write_report(output: &Path, report: TxReport<'_>) -> Result<()> {
             report.ampdu.tx_flight_us as f64 / report.ampdu.tx_flight_samples.max(1) as f64,
             report.ampdu.tx_flight_max_us,
             report.ampdu.tx_flight_samples,
+            report.ampdu.standby_prepared,
+            report.ampdu.standby_published,
+            report.ampdu.standby_cancelled,
         ),
     )?;
     Ok(())

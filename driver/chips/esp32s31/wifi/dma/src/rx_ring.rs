@@ -432,8 +432,18 @@ impl<'a, const COUNT: usize> RxRingStopped<'a, COUNT> {
         // that hardware advances concurrently.
         mmio.fence();
         let retained_last_low = mmio.last_descriptor_low();
-        let initial_start = descriptor_index(retained_last_low, descriptor_base, COUNT)
-            .map_or(0, |index| if index + 1 == COUNT { 0 } else { index + 1 });
+        let initial_start =
+            descriptor_index(retained_last_low, descriptor_base, COUNT).map_or(0, |index| {
+                let candidate = wrap_add::<COUNT>(index, 1);
+                // ESP32-S31 rev0 can consume a cold list's final physical
+                // descriptor without following its immediate wrap link to
+                // descriptor zero. HIL observed this exact start=31 state:
+                // descriptor 31 completed, 0..30 remained armed and RX went
+                // silent until beacon loss. Starting the fully rebuilt list
+                // at zero is safe because the walker is confirmed stopped and
+                // every descriptor has just been rearmed.
+                if candidate + 1 == COUNT { 0 } else { candidate }
+            });
 
         for index in 0..COUNT {
             prepare_buffer(index)?;

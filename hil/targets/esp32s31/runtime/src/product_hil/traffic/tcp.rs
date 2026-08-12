@@ -17,10 +17,14 @@ use open_esp_radio_hil_protocol::{
 
 use crate::console::{complete_session, publish_event_reliably, runtime_log};
 use crate::product_hil::{
-    OPEN_RADIO_TCP_CHUNK_CAPACITY, QualificationRequester, qualification_sample,
+    OPEN_RADIO_TASK_POLL_TELEMETRY, OPEN_RADIO_TCP_CHUNK_CAPACITY, QualificationRequester,
+    TASK_POLLS, qualification_sample,
 };
 
-use super::{SessionChannel, log_open_radio_ampdu_interval, wait_session_link_requirements};
+use super::{
+    CooperativePollBudget, SessionChannel, aggregate_tx_evidence, log_open_radio_ampdu_interval,
+    log_open_radio_task_poll_interval, wait_session_link_requirements,
+};
 
 #[derive(Clone, Copy)]
 pub(in crate::product_hil) struct TcpBenchmarkConfig {
@@ -157,6 +161,7 @@ pub(in crate::product_hil) async fn run_open_radio_tcp_benchmark<'a>(
         let hardware_start = qualification_sample(QualificationRequester::Tcp)
             .await
             .rx_primary;
+        let task_poll_start = TASK_POLLS.snapshot();
         let pipeline_start = pipeline_counters.snapshot();
         let aggregate_start = aggregate_counters.snapshot();
         let connection_timeout = duration + Duration::from_secs(5);
@@ -267,8 +272,8 @@ pub(in crate::product_hil) async fn run_open_radio_tcp_benchmark<'a>(
         let elapsed_us = started.elapsed().as_micros().max(1);
         socket.abort();
 
-        let hardware_delta = qualification_sample(QualificationRequester::Tcp)
-            .await
+        let qualification = qualification_sample(QualificationRequester::Tcp).await;
+        let hardware_delta = qualification
             .rx_primary
             .zip(hardware_start)
             .map(|(current, earlier)| current.wrapping_delta_since(earlier))
@@ -310,7 +315,29 @@ pub(in crate::product_hil) async fn run_open_radio_tcp_benchmark<'a>(
             u8::from(rx.eof),
             u8::from(rx.pattern_ok),
         ));
+        let aggregate = aggregate_counters
+            .snapshot()
+            .wrapping_delta_since(aggregate_start);
+        let aggregate_evidence = matches!(
+            session.config.direction,
+            HilDirection::Tx | HilDirection::Bidirectional
+        )
+        .then_some(qualification.tx_vector)
+        .flatten()
+        .map(|tx_vector| {
+            aggregate_tx_evidence(
+                aggregate,
+                tx_vector.bandwidth_mhz,
+                u32::try_from(tx_vector.aggregate_rate_kbps).unwrap_or(u32::MAX),
+            )
+        });
         log_open_radio_ampdu_interval(aggregate_start, aggregate_counters).await;
+        log_open_radio_task_poll_interval(
+            task_poll_start,
+            OPEN_RADIO_TASK_POLL_TELEMETRY,
+            &TASK_POLLS,
+        )
+        .await;
         complete_session(
             session.session_id,
             TransportEvidence {
@@ -321,7 +348,8 @@ pub(in crate::product_hil) async fn run_open_radio_tcp_benchmark<'a>(
                 elapsed_micros: elapsed_us,
                 transport_errors,
             },
-            None,
+            aggregate_evidence.map(|(radio, _)| radio),
+            aggregate_evidence.map(|(_, timing)| timing),
             None,
             passed,
         )
@@ -370,6 +398,7 @@ async fn receive_stream(
         pattern_ok: true,
         ..StreamResult::default()
     };
+    let mut cooperative = CooperativePollBudget::new();
     loop {
         let read = {
             let mut buffer = TCP_RX_PATTERN_BUFFER.lock().await;
@@ -388,6 +417,7 @@ async fn receive_stream(
                 });
                 result.pattern_ok &= TCP_RX_PATTERN_RESULT.wait().await;
                 result.bytes = result.bytes.saturating_add(length as u64);
+                cooperative.checkpoint().await;
             }
             Ok(Err(_)) | Err(_) => {
                 result.errors = result.errors.saturating_add(1);
@@ -407,6 +437,7 @@ async fn transmit_stream(
 ) -> StreamResult {
     let mut result = StreamResult::default();
     let mut pending_offset = chunk_bytes;
+    let mut cooperative = CooperativePollBudget::new();
     while started.elapsed() < duration {
         if pending_offset == chunk_bytes {
             TCP_TX_PATTERN_JOB.signal(TxPatternJob {
@@ -438,6 +469,7 @@ async fn transmit_stream(
             Ok(Ok(length)) => {
                 pending_offset += length;
                 result.bytes = result.bytes.saturating_add(length as u64);
+                cooperative.checkpoint().await;
             }
         }
         if let Some(rate_bps) = offered_rate_bps {

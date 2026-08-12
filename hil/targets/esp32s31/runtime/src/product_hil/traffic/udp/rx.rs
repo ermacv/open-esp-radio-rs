@@ -24,7 +24,7 @@ use crate::{
     product_hil::{
         QualificationRequester, qualification_sample, rx_qualification,
         traffic::{
-            BidirectionalResultChannel, BidirectionalSessionChannel,
+            BidirectionalResultChannel, BidirectionalSessionChannel, CooperativePollBudget,
             OpenRadioBidirectionalDirection, UdpSequenceEvidence,
             complete_open_radio_bidirectional_direction, iperf2_udp_sequence,
             log_open_radio_rx_pipeline_interval, log_open_radio_task_poll_interval,
@@ -179,6 +179,7 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
         let mut receive_errors = u32::from(first_length != expected_payload_bytes);
         let mut terminal_seen = false;
         let mut sequence = UdpSequenceEvidence::default();
+        let mut cooperative = CooperativePollBudget::new();
         sequence.observe(first_sequence);
 
         loop {
@@ -228,6 +229,7 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
                     bytes = bytes.saturating_add(length as u64);
                     datagrams = datagrams.saturating_add(1);
                     last_packet = received_at;
+                    cooperative.checkpoint().await;
                 }
                 Err(_) => break,
             }
@@ -483,6 +485,7 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
             OpenRadioBidirectionalDirection::Rx,
             evidence,
             Some(radio),
+            None,
             rx_delivery,
             passed,
         )

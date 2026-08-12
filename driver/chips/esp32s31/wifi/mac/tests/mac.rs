@@ -1524,7 +1524,7 @@ fn live_rx_ring_owns_rotated_handoff_reload_and_rom_base_repair() {
 }
 
 #[test]
-fn stopped_rx_ring_validates_every_retained_last_rotation() {
+fn stopped_rx_ring_validates_every_safe_retained_last_rotation() {
     const COUNT: usize = 32;
     const BASE: u32 = 0x2f00_1000;
     const BUFFER_SIZE: u32 = 256;
@@ -1543,17 +1543,51 @@ fn stopped_rx_ring_validates_every_retained_last_rotation() {
                 Ok(())
             })
             .unwrap();
-        let expected_start = (retained_index + 1) % COUNT;
+        let candidate = (retained_index + 1) % COUNT;
+        let expected_start = if candidate + 1 == COUNT { 0 } else { candidate };
+        let expected_tail = if expected_start == 0 {
+            COUNT - 1
+        } else {
+            retained_index
+        };
         let topology = stopped.topology_snapshot();
         assert_eq!(stopped.initial_start(), expected_start);
-        assert_eq!(stopped.accepted_tail(), retained_index);
+        assert_eq!(stopped.accepted_tail(), expected_tail);
         assert!(topology.valid, "retained descriptor {retained_index}");
         assert_eq!(topology.start_index, expected_start);
-        assert_eq!(topology.tail_index, retained_index);
+        assert_eq!(topology.tail_index, expected_tail);
         assert_eq!(topology.visited_descriptors, COUNT);
         assert_eq!(topology.terminal_descriptors, 1);
-        assert_eq!(descriptors[retained_index].next_address(), 0);
+        assert_eq!(descriptors[expected_tail].next_address(), 0);
     }
+}
+
+#[test]
+fn stopped_rx_ring_avoids_a_cold_head_on_the_final_descriptor() {
+    const COUNT: usize = 32;
+    const BASE: u32 = 0x2f00_1000;
+    const BUFFER_SIZE: u32 = 256;
+
+    let descriptors = [const { Descriptor::new() }; COUNT];
+    let buffers = core::array::from_fn(|index| 0x2f01_0000 + index as u32 * 0x400);
+    let mut mmio = MockMmio::default();
+    mmio.set(
+        RX_LAST_DESCRIPTOR,
+        BASE + (COUNT as u32 - 2) * DESCRIPTOR_BYTES,
+    );
+
+    let stopped =
+        RxRingStopped::prepare(&mut mmio, &descriptors, BASE, &buffers, BUFFER_SIZE, |_| {
+            Ok(())
+        })
+        .unwrap();
+
+    assert_eq!(stopped.initial_start(), 0);
+    assert_eq!(stopped.accepted_tail(), COUNT - 1);
+    assert_eq!(descriptors[0].next_address(), BASE + DESCRIPTOR_BYTES);
+    assert_eq!(descriptors[COUNT - 1].next_address(), 0);
+    assert_eq!(mmio.words[&RX_DESCRIPTOR_BASE], BASE);
+    assert!(stopped.topology_snapshot().valid);
 }
 
 #[test]

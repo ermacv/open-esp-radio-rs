@@ -3,7 +3,7 @@ use core::fmt;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-pub const PROTOCOL_VERSION: u16 = 35;
+pub const PROTOCOL_VERSION: u16 = 37;
 // Keep command envelopes small: startup artifacts are transferred as an
 // ordered CRC-protected stream, so a large per-command inline buffer only
 // inflates UART queues and executor futures without improving semantics.
@@ -166,6 +166,12 @@ pub struct FeatureCapabilities {
     /// UDP RX sessions can return typed evidence for every delivery frontier
     /// from post-reorder publication through the application socket.
     pub rx_delivery_evidence: bool,
+    /// This image instruments bounded Embassy task poll residence. Ordinary
+    /// qualification images deliberately omit this timing perturbation.
+    pub task_poll_evidence: bool,
+    /// Startup provisioning can select the data-plane executor topology
+    /// without requiring another firmware image.
+    pub data_plane_placement: bool,
     /// This image can compare Embassy alarm deadlines with the target's
     /// monotonic clock before radio initialization.
     pub timebase_probe: bool,
@@ -430,6 +436,34 @@ impl NetworkIpv4Configuration {
     }
 }
 
+/// Executor placement selected once, before any Wi-Fi worker or IP stack is
+/// materialized. Radio and RX protocol ownership remain on CPU0 in both modes.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum WifiDataPlanePlacement {
+    /// Radio, RX protocol, IP stack and socket workloads share CPU0.
+    #[default]
+    SingleCore,
+    /// Only the IP stack and socket workloads move to CPU1.
+    SplitRadioNetwork,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct InitializationConfiguration {
+    pub ipv4: NetworkIpv4Configuration,
+    pub data_plane: WifiDataPlanePlacement,
+}
+
+impl InitializationConfiguration {
+    pub const fn new(ipv4: NetworkIpv4Configuration, data_plane: WifiDataPlanePlacement) -> Self {
+        Self { ipv4, data_plane }
+    }
+
+    pub fn validate(self) -> bool {
+        self.ipv4.validate()
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Capabilities {
     pub features: FeatureCapabilities,
@@ -451,7 +485,7 @@ pub enum Command {
     UploadStartupArtifact(StartupArtifactChunk),
     /// Initialize calibration and the network stack without materializing a
     /// Wi-Fi role. This command is accepted exactly once per boot.
-    Initialize(NetworkIpv4Configuration),
+    Initialize(InitializationConfiguration),
     Configure(SessionConfig),
     Arm,
     Start,
@@ -1051,9 +1085,6 @@ pub struct TxRadioEvidence {
     pub stopped_at_frame_limit: u32,
     pub stopped_at_capacity_limit: u32,
     pub stopped_on_empty_queue: u32,
-    pub preparation_micros: u32,
-    pub publication_micros: u32,
-    pub exchange_micros: u32,
     pub block_ack_samples: u32,
     /// Publications for which hardware reported a physically received
     /// BlockAck frame. This is independent of bitmap coverage: a received
@@ -1071,6 +1102,39 @@ pub struct TxRadioEvidence {
     pub tx_irq_service_samples: u32,
     pub tx_irq_clock_skew_samples: u32,
     pub tx_publication_to_irq_samples: u32,
+}
+
+/// Timing and software-pipeline evidence for one bounded aggregate-TX interval.
+///
+/// This is separate from [`TxRadioEvidence`]: radio correctness and timing are
+/// independently complete protocol records, and neither is reconstructed from
+/// best-effort UART text.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct TxAggregateTimingEvidence {
+    pub preparation_micros: u32,
+    pub preparation_max_micros: u32,
+    pub publication_micros: u32,
+    pub publication_max_micros: u32,
+    pub exchange_micros: u32,
+    pub exchange_max_micros: u32,
+    pub first_exchanges: u32,
+    pub first_exchange_micros: u32,
+    pub first_exchange_max_micros: u32,
+    pub retried_exchanges: u32,
+    pub retry_publications: u32,
+    pub retry_exchange_micros: u32,
+    pub retry_exchange_max_micros: u32,
+    pub tx_irq_epochs: u32,
+    pub tx_irq_service_samples: u32,
+    pub tx_irq_clock_skew_samples: u32,
+    pub tx_irq_service_micros: u32,
+    pub tx_irq_service_max_micros: u32,
+    pub tx_publication_to_irq_samples: u32,
+    pub tx_publication_to_irq_micros: u32,
+    pub tx_publication_to_irq_max_micros: u32,
+    pub standby_prepared: u32,
+    pub standby_published: u32,
+    pub standby_cancelled: u32,
 }
 
 /// Sequence evidence collected at one finite UDP RX delivery stage.
@@ -1163,11 +1227,11 @@ pub struct StackWatermark {
     pub capacity_bytes: u32,
     pub free_bytes: u32,
     pub used_bytes: u32,
+    pub minimum_free_bytes: u32,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct StackUsage {
-    pub minimum_free_percent: u8,
     pub cpu0: StackWatermark,
     pub cpu1: StackWatermark,
 }
@@ -1176,6 +1240,7 @@ pub struct StackUsage {
 pub enum EvidenceRecord {
     Transport(TransportEvidence),
     Radio(RadioEvidence),
+    TxAggregateTiming(TxAggregateTimingEvidence),
     RxDelivery(RxDeliveryEvidence),
     Link(LinkHealth),
     Stack(StackUsage),

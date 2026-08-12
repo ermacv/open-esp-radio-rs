@@ -98,14 +98,18 @@ pub struct TaskPollSetSnapshot {
     pub network: TaskPollSnapshot,
     pub protocol: TaskPollSnapshot,
     pub radio: TaskPollSnapshot,
-    pub benchmark: TaskPollSnapshot,
+    pub udp_rx: TaskPollSnapshot,
+    pub udp_tx: TaskPollSnapshot,
+    pub tcp: TaskPollSnapshot,
 }
 
 pub struct TaskPollSet {
     network: TaskPollCounters,
     protocol: TaskPollCounters,
     radio: TaskPollCounters,
-    benchmark: TaskPollCounters,
+    udp_rx: TaskPollCounters,
+    udp_tx: TaskPollCounters,
+    tcp: TaskPollCounters,
 }
 
 impl TaskPollSet {
@@ -114,7 +118,9 @@ impl TaskPollSet {
             network: TaskPollCounters::new(),
             protocol: TaskPollCounters::new(),
             radio: TaskPollCounters::new(),
-            benchmark: TaskPollCounters::new(),
+            udp_rx: TaskPollCounters::new(),
+            udp_tx: TaskPollCounters::new(),
+            tcp: TaskPollCounters::new(),
         }
     }
 
@@ -130,8 +136,16 @@ impl TaskPollSet {
         &self.radio
     }
 
-    pub const fn benchmark(&self) -> &TaskPollCounters {
-        &self.benchmark
+    pub const fn udp_rx(&self) -> &TaskPollCounters {
+        &self.udp_rx
+    }
+
+    pub const fn udp_tx(&self) -> &TaskPollCounters {
+        &self.udp_tx
+    }
+
+    pub const fn tcp(&self) -> &TaskPollCounters {
+        &self.tcp
     }
 
     pub fn snapshot(&self) -> TaskPollSetSnapshot {
@@ -139,7 +153,9 @@ impl TaskPollSet {
             network: self.network.snapshot(),
             protocol: self.protocol.snapshot(),
             radio: self.radio.snapshot(),
-            benchmark: self.benchmark.snapshot(),
+            udp_rx: self.udp_rx.snapshot(),
+            udp_tx: self.udp_tx.snapshot(),
+            tcp: self.tcp.snapshot(),
         }
     }
 }

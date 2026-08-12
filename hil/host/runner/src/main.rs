@@ -371,7 +371,8 @@ fn run_scenario(
         output.join("resolved-scenario.json"),
         serde_json::to_vec_pretty(selected)?,
     )?;
-    let result = execute_workload(root, lab, selected, &output);
+    let result = validate_flashed_image(lab, selected.image, &output)
+        .and_then(|()| execute_workload(root, lab, selected, &output));
     let result_document = match &result {
         Ok(()) => serde_json::json!({
             "schema": 1,
@@ -396,6 +397,44 @@ fn run_scenario(
     Ok(())
 }
 
+fn validate_flashed_image(
+    lab: &lab_config::LabConfig,
+    expected: scenario::ImageClass,
+    output: &Path,
+) -> Result<()> {
+    if expected == scenario::ImageClass::BootSmoke {
+        return Ok(());
+    }
+    let capture = traffic_capture::SerialCapture::start_with_reset(&lab.device.serial);
+    let capabilities = capture.request_capabilities(std::time::Duration::from_secs(10));
+    let capture_result = capture.finish_to(&output.join("image-preflight"));
+    let capabilities = capabilities?;
+    capture_result?;
+
+    let observed = match (
+        capabilities.features.task_poll_evidence,
+        capabilities.features.rx_delivery_evidence,
+    ) {
+        (false, false) => scenario::ImageClass::Qualification,
+        (true, false) => scenario::ImageClass::DiagnosticTaskPoll,
+        (false, true) => scenario::ImageClass::DiagnosticRxDelivery,
+        (true, true) => {
+            return Err(
+                "flashed image advertises mutually exclusive diagnostic capabilities".into(),
+            );
+        }
+    };
+    if observed != expected {
+        return Err(format!(
+            "scenario requires `{}` image but flashed target advertises `{}` capabilities",
+            expected.id(),
+            observed.id()
+        )
+        .into());
+    }
+    Ok(())
+}
+
 fn execute_workload(
     root: &Path,
     lab: &lab_config::LabConfig,
@@ -403,6 +442,8 @@ fn execute_workload(
     output: &Path,
 ) -> Result<()> {
     use scenario::{Direction, Workload};
+
+    lab.set_data_plane(selected.data_plane);
 
     // Ordinary station workloads own their AP fixture for the complete run.
     // Loss/absence and Wi-Fi-role workloads manage that lifetime internally;

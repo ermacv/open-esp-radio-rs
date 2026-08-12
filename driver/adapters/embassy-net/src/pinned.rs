@@ -14,14 +14,64 @@ use embassy_sync::{
     channel::{Channel, Receiver, Sender, TryReceiveError, TrySendError},
     signal::Signal,
 };
+use embassy_time::{Duration, Instant};
 use open_esp_radio_dma::{
     DmaIndexReturn, PinnedDmaTxNetworkLease, PinnedDmaTxPool, PinnedDmaTxRadioLease,
     ReturningStableDmaBacking, RxHandoffPool, RxNetworkLease, RxRadioLease,
 };
 
-use crate::{
-    ETHERNET_HEADER_LEN, FrameLengthError, IngressPollFairness, RxEnqueueError, SharedLinkState,
-};
+use crate::{ETHERNET_HEADER_LEN, FrameLengthError, RxEnqueueError, SharedLinkState};
+
+/// Maximum continuous ingress or egress residence inside one
+/// `smoltcp::Interface::poll` direction. The limit is temporal rather than a
+/// frame-count ceiling, so fast paths may drain as many frames as fit while a
+/// slow path cannot monopolize a cooperative executor.
+pub const DEFAULT_NETWORK_SERVICE_BUDGET: Duration = Duration::from_micros(250);
+
+struct ServicePollBudget {
+    /// `u64::MAX` disables the policy, zero is an enabled idle epoch and any
+    /// other value is `Instant::as_ticks() + 1` for an active epoch.
+    encoded_started: u64,
+}
+
+impl ServicePollBudget {
+    const fn disabled() -> Self {
+        Self {
+            encoded_started: u64::MAX,
+        }
+    }
+
+    fn enable(&mut self) {
+        self.encoded_started = 0;
+    }
+
+    /// Return `(admitted, new_epoch)` and self-wake at a forced boundary.
+    fn admit(&mut self, cx: &mut Context<'_>) -> (bool, bool) {
+        if self.encoded_started == u64::MAX {
+            return (true, false);
+        }
+        if self.encoded_started == 0 {
+            self.encoded_started = Instant::now().as_ticks().wrapping_add(1);
+            return (true, true);
+        }
+        let started_ticks = self.encoded_started.wrapping_sub(1);
+        if Instant::now().as_ticks().wrapping_sub(started_ticks)
+            >= DEFAULT_NETWORK_SERVICE_BUDGET.as_ticks()
+        {
+            self.encoded_started = 0;
+            cx.waker().wake_by_ref();
+            (false, false)
+        } else {
+            (true, false)
+        }
+    }
+
+    fn reset(&mut self) {
+        if self.encoded_started != u64::MAX {
+            self.encoded_started = 0;
+        }
+    }
+}
 
 /// Role-selected Ethernet identity shared by the persistent network device
 /// and the currently active radio epoch.
@@ -190,9 +240,11 @@ impl<
                 tx_pool: pool,
                 link: &resources.link,
                 hardware_address: &resources.hardware_address,
-                reserved_tx: None,
+                ingress_tx: None,
+                application_tx: None,
+                reserve_ingress_tx: false,
                 tx_reservation: (),
-                ingress_fairness: IngressPollFairness::new(RX_QUEUE_DEPTH.min(TX_QUEUE_DEPTH)),
+                service_budget: ServicePollBudget::disabled(),
             },
             SplitPinnedRadioRunner {
                 free_rx: resources.free_rx.receiver(),
@@ -244,9 +296,13 @@ pub struct SplitPinnedDevice<
     tx_pool: &'resources PinnedTxPool<FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
     link: &'resources SharedLinkState<M>,
     hardware_address: &'resources SharedHardwareAddress<M>,
-    reserved_tx: Option<u8>,
+    /// One credit unavailable to ordinary egress and therefore available to
+    /// satisfy the `Driver::receive` RX+TX-token contract under saturated TX.
+    ingress_tx: Option<u8>,
+    application_tx: Option<u8>,
+    reserve_ingress_tx: bool,
     tx_reservation: (),
-    ingress_fairness: IngressPollFairness,
+    service_budget: ServicePollBudget,
 }
 
 /// Compatibility form with equal receive and transmit queue depths.
@@ -278,17 +334,57 @@ impl<
         TX_QUEUE_DEPTH,
     >
 {
-    fn poll_reserve_tx(&mut self, cx: &mut Context<'_>) -> bool {
-        if self.reserved_tx.is_none()
+    /// Keep one TX credit unavailable to ordinary application egress so an
+    /// incoming frame can always receive the paired `TxToken` required by the
+    /// embassy-net driver contract. Resource profiles enabling this must add
+    /// one credit beyond their advertised application capacity.
+    pub fn with_ingress_tx_reserve(mut self) -> Self {
+        assert!(
+            TX_QUEUE_DEPTH > 1,
+            "ingress TX reserve needs an application credit"
+        );
+        self.reserve_ingress_tx = true;
+        self
+    }
+
+    /// Bound continuous ingress and egress service by elapsed time rather
+    /// than a frame count. A forced boundary self-wakes the stack task.
+    pub fn with_network_service_budget(mut self, duration: Duration) -> Self {
+        assert_eq!(
+            duration, DEFAULT_NETWORK_SERVICE_BUDGET,
+            "ESP32-S31 uses the qualified network service budget"
+        );
+        self.service_budget.enable();
+        self
+    }
+
+    fn poll_reserve_ingress_tx(&mut self, cx: &mut Context<'_>) -> bool {
+        if self.ingress_tx.is_none()
             && let Poll::Ready(index) = self.free_tx.poll_receive(cx)
         {
-            self.reserved_tx = Some(index);
+            self.ingress_tx = Some(index);
         }
-        self.reserved_tx.is_some()
+        self.ingress_tx.is_some()
+    }
+
+    fn poll_reserve_application_tx(&mut self, cx: &mut Context<'_>) -> bool {
+        if self.application_tx.is_some() {
+            return true;
+        }
+        // Move the last free credit out of the application-visible queue. A
+        // later RX poll can consume it even if application egress stays full.
+        if self.reserve_ingress_tx && self.ingress_tx.is_none() && self.free_tx.len() <= 1 {
+            let _ = self.poll_reserve_ingress_tx(cx);
+        }
+        if let Poll::Ready(index) = self.free_tx.poll_receive(cx) {
+            self.application_tx = Some(index);
+        }
+        self.application_tx.is_some()
     }
 
     fn take_tx_token<'device>(
         &'device mut self,
+        index: u8,
     ) -> PinnedTransmitToken<
         'device,
         'resources,
@@ -298,10 +394,6 @@ impl<
         TRAILER,
         TX_QUEUE_DEPTH,
     > {
-        let index = self
-            .reserved_tx
-            .take()
-            .expect("TX token requires a reserved pool index");
         let lease = self.tx_pool.claim_network(index);
         PinnedTransmitToken {
             free_tx: self.free_tx_return,
@@ -366,10 +458,13 @@ impl<
     for SplitPinnedDevice<'_, M, FRAME_CAPACITY, HEADROOM, TRAILER, RX_QUEUE_DEPTH, TX_QUEUE_DEPTH>
 {
     fn drop(&mut self) {
-        if let Some(index) = self.reserved_tx.take()
-            && let Err(TrySendError::Full(_)) = self.free_tx_return.try_send(index)
+        for index in [self.ingress_tx.take(), self.application_tx.take()]
+            .into_iter()
+            .flatten()
         {
-            unreachable!("reserved pinned TX index was lost");
+            if let Err(TrySendError::Full(_)) = self.free_tx_return.try_send(index) {
+                unreachable!("reserved pinned TX index was lost");
+            }
         }
     }
 }
@@ -472,36 +567,49 @@ impl<
         Self: 'device;
 
     fn receive(&mut self, cx: &mut Context<'_>) -> Option<(Self::RxToken<'_>, Self::TxToken<'_>)> {
-        let ingress_epoch_capacity = RX_QUEUE_DEPTH.min(TX_QUEUE_DEPTH);
-        if !self.ingress_fairness.admit(cx, ingress_epoch_capacity) {
+        let (admitted, _) = self.service_budget.admit(cx);
+        if !admitted {
             return None;
         }
-        if !self.poll_reserve_tx(cx) {
-            self.ingress_fairness
-                .record_natural_stop(ingress_epoch_capacity);
+        if !self.poll_reserve_ingress_tx(cx) {
+            self.service_budget.reset();
             return None;
         }
         let index = match self.ready_rx.poll_receive(cx) {
             Poll::Ready(index) => index,
             Poll::Pending => {
-                self.ingress_fairness
-                    .record_natural_stop(ingress_epoch_capacity);
+                self.service_budget.reset();
                 return None;
             }
         };
-        self.ingress_fairness.record_received();
         let lease = self.rx_pool.claim_network(index);
+        let tx_index = self
+            .ingress_tx
+            .take()
+            .expect("ingress admission reserves one TX credit");
         Some((
             PinnedReceiveToken {
                 free_rx: self.free_rx,
                 lease: Some(lease),
             },
-            self.take_tx_token(),
+            self.take_tx_token(tx_index),
         ))
     }
 
     fn transmit(&mut self, cx: &mut Context<'_>) -> Option<Self::TxToken<'_>> {
-        self.poll_reserve_tx(cx).then(|| self.take_tx_token())
+        let (admitted, _) = self.service_budget.admit(cx);
+        if !admitted {
+            return None;
+        }
+        if !self.poll_reserve_application_tx(cx) {
+            self.service_budget.reset();
+            return None;
+        }
+        let index = self
+            .application_tx
+            .take()
+            .expect("application admission reserves one TX credit");
+        Some(self.take_tx_token(index))
     }
 
     fn link_state(&mut self, cx: &mut Context<'_>) -> LinkState {
@@ -905,3 +1013,47 @@ pub type PinnedTxFrame<
     PinnedDmaTxRadioLease<'resources, FRAME_CAPACITY, HEADROOM, TRAILER>,
     PinnedTxReturn<'resources, M, QUEUE_DEPTH>,
 >;
+
+#[cfg(test)]
+mod tests {
+    use core::{
+        pin::pin,
+        task::{Context, Waker},
+    };
+
+    use embassy_net_driver::Driver as _;
+    use embassy_sync::blocking_mutex::raw::NoopRawMutex;
+
+    use super::*;
+
+    #[test]
+    fn elapsed_service_budget_forces_a_self_woken_boundary() {
+        let mut budget = ServicePollBudget::disabled();
+        budget.enable();
+        let mut context = Context::from_waker(Waker::noop());
+        assert_eq!(budget.admit(&mut context), (true, true));
+        budget.encoded_started = Instant::now()
+            .as_ticks()
+            .wrapping_sub(DEFAULT_NETWORK_SERVICE_BUDGET.as_ticks())
+            .wrapping_add(1);
+        assert_eq!(budget.admit(&mut context), (false, false));
+    }
+
+    #[test]
+    fn elapsed_service_budget_stops_egress_and_resumes_next_poll() {
+        type TestResources = SplitPinnedResources<NoopRawMutex, 64, 28, 8, 1, 2>;
+        type TestPool = PinnedTxPool<64, 28, 8, 2>;
+        let mut resources = TestResources::new();
+        let mut pool = pin!(TestPool::new());
+        let (device, _radio) = resources.split(pool.as_mut(), [0; 6]);
+        let mut device = device.with_network_service_budget(DEFAULT_NETWORK_SERVICE_BUDGET);
+        let mut context = Context::from_waker(Waker::noop());
+
+        device.service_budget.encoded_started = Instant::now()
+            .as_ticks()
+            .wrapping_sub(DEFAULT_NETWORK_SERVICE_BUDGET.as_ticks())
+            .wrapping_add(1);
+        assert!(device.transmit(&mut context).is_none());
+        assert!(device.transmit(&mut context).is_some());
+    }
+}

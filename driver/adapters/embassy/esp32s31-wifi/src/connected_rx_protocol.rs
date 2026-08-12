@@ -33,6 +33,11 @@ use crate::{
 
 const RX_BLOCK_ACK_TID_COUNT: usize = 8;
 
+/// Maximum continuous protocol residence before returning to the cooperative
+/// executor. The boundary is temporal: there is no frame-count ceiling, and a
+/// single owned dispatch always completes before the yield.
+const RX_PROTOCOL_SERVICE_BUDGET: Duration = Duration::from_micros(250);
+
 /// Ownership released when a connected staged-RX epoch is stopped.
 ///
 /// The counts are diagnostic evidence for an outer station lifecycle. A

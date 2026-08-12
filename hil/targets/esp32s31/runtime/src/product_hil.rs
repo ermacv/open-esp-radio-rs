@@ -53,10 +53,11 @@ use open_esp_radio_hil_protocol::{
     Capabilities, Event as HilEvent, FeatureCapabilities, MAX_WIRE_FRAME_BYTES, NetworkCredentials,
     NetworkInfo, NetworkIpv4Configuration, StartupArtifactDisposition, StationAttemptFailureReason,
     StationDisconnectReason, StationEpochEvidence, StationFailureStage, StationLifecycleEvent,
-    WIFI_MONITOR_FRAME_CHUNK_MAX_LEN, WifiAccessPointEvidence, WifiMonitorCaptureRequest,
-    WifiMonitorEvidence, WifiMonitorEvidenceSource, WifiMonitorFrameChunk, WifiMonitorObserved,
-    WifiMonitorPhyEvidence, WifiMonitorPhyFormat, WifiRole, WifiRoleFailureEvidence,
-    WifiRoleFailureReason, WifiRoleOperation, WifiRoleTransitionEvidence, WifiScanEvidence,
+    WIFI_MONITOR_FRAME_CHUNK_MAX_LEN, WifiAccessPointEvidence, WifiDataPlanePlacement,
+    WifiMonitorCaptureRequest, WifiMonitorEvidence, WifiMonitorEvidenceSource,
+    WifiMonitorFrameChunk, WifiMonitorObserved, WifiMonitorPhyEvidence, WifiMonitorPhyFormat,
+    WifiRole, WifiRoleFailureEvidence, WifiRoleFailureReason, WifiRoleOperation,
+    WifiRoleTransitionEvidence, WifiScanEvidence,
 };
 use static_cell::ConstStaticCell;
 
@@ -108,6 +109,7 @@ static DIAGNOSTIC_STAGE: AtomicU32 = AtomicU32::new(0);
 static NETWORK_RESOURCES: ConstStaticCell<StackResources<NETWORK_SOCKET_COUNT>> =
     ConstStaticCell::new(StackResources::new());
 static APP_NETWORK_START: Channel<CriticalSectionRawMutex, AppNetworkStart, 1> = Channel::new();
+static PRIMARY_NETWORK_START: Channel<CriticalSectionRawMutex, AppNetworkStart, 1> = Channel::new();
 static APP_NETWORK_READY: Signal<CriticalSectionRawMutex, ()> = Signal::new();
 static NETWORK_CONFIG_REQUESTS: Channel<CriticalSectionRawMutex, NetworkIpv4Configuration, 1> =
     Channel::new();
@@ -571,6 +573,12 @@ fn observe_mac_irq(observation: Esp32s31MacIrqObservation) {
     }
 }
 
+fn observe_protocol_task_poll(elapsed_micros: u64) {
+    if OPEN_RADIO_TASK_POLL_TELEMETRY {
+        TASK_POLLS.protocol().record(elapsed_micros);
+    }
+}
+
 pub fn diagnostic_snapshot() -> (u32, u32) {
     (DIAGNOSTIC_STAGE.load(Ordering::Acquire), 0)
 }
@@ -593,6 +601,8 @@ pub const fn hil_capabilities() -> Capabilities {
             wifi_monitor_capture: true,
             station_lifecycle_events: true,
             rx_delivery_evidence: OPEN_RADIO_RX_DELIVERY_TELEMETRY,
+            task_poll_evidence: OPEN_RADIO_TASK_POLL_TELEMETRY,
+            data_plane_placement: true,
             timebase_probe: true,
         },
         maximum_payload_bytes: OPEN_RADIO_TCP_CHUNK_CAPACITY as u16,
@@ -661,13 +671,26 @@ async fn network_config_task(stack: Stack<'static>) {
     }
 }
 
-/// Core-1-local composition root for `embassy-net` and its application
-/// workloads. The startup value crosses cores while it is still made only of
-/// Send driver capabilities; the `!Send` Embassy stack is constructed and
-/// remains on this executor.
+/// CPU1-local network composition used only by the explicit split topology.
 #[embassy_executor::task]
-pub(crate) async fn app_network_task(spawner: Spawner) {
+pub(crate) async fn secondary_network_task(spawner: Spawner) {
     let AppNetworkStart { device, ipv4, seed } = APP_NETWORK_START.receive().await;
+    run_network_composition(spawner, device, ipv4, seed).await
+}
+
+/// CPU0-local network composition used by the default single-core topology.
+#[embassy_executor::task]
+async fn primary_network_task(spawner: Spawner) {
+    let AppNetworkStart { device, ipv4, seed } = PRIMARY_NETWORK_START.receive().await;
+    run_network_composition(spawner, device, ipv4, seed).await
+}
+
+async fn run_network_composition(
+    spawner: Spawner,
+    device: Esp32s31WifiDevice,
+    ipv4: NetworkIpv4Configuration,
+    seed: u64,
+) -> ! {
     let (stack, network_runner) =
         embassy_net::new(device, network_config(ipv4), NETWORK_RESOURCES.take(), seed);
     spawner.spawn(
@@ -846,7 +869,7 @@ async fn report_network(stack: Stack<'static>) -> ! {
 
 pub async fn run(
     spawner: Spawner,
-    protocol_spawner: SendSpawner,
+    secondary_core_spawner: SendSpawner,
     platform: EspHalRadioPeripheral,
     trng: Trng,
 ) {
@@ -855,11 +878,17 @@ pub async fn run(
     let crate::console::StartupConfiguration {
         request_id: initialization_request_id,
         ipv4: startup_ipv4,
+        data_plane,
         phy_calibration_artifact,
     } = crate::console::receive_startup_configuration().await;
-    protocol_spawner
+    let primary_core_spawner = spawner.make_send();
+    let network_worker_spawner = match data_plane {
+        WifiDataPlanePlacement::SingleCore => primary_core_spawner,
+        WifiDataPlanePlacement::SplitRadioNetwork => secondary_core_spawner,
+    };
+    network_worker_spawner
         .spawn(tcp_rx_pattern_worker_task().expect("TCP RX pattern task must allocate once"));
-    protocol_spawner
+    network_worker_spawner
         .spawn(tcp_tx_pattern_worker_task().expect("TCP TX pattern task must allocate once"));
     let efuse_registers = esp_hal::peripherals::EFUSE::regs();
     let mut station_address = [0; 6];
@@ -899,6 +928,7 @@ pub async fn run(
             }
         },
         mac_irq: observe_mac_irq,
+        protocol_task_poll: observe_protocol_task_poll,
         station_lifecycle: observe_station_lifecycle,
         access_point: observe_access_point,
     });
@@ -913,7 +943,7 @@ pub async fn run(
 
     let started_at = Instant::now();
     let (radio, runner) =
-        open_esp_radio_esp32s31_embassy_wifi::new(protocol_spawner, platform, trng, config)
+        open_esp_radio_esp32s31_embassy_wifi::new(primary_core_spawner, platform, trng, config)
             .await
             .unwrap_or_else(|error| panic!("production radio initialization failed: {error:?}"));
     let Esp32s31RadioParts {
@@ -963,14 +993,31 @@ pub async fn run(
         0xa5,
         0x31,
     ]);
-    APP_NETWORK_START
-        .send(AppNetworkStart {
-            device,
-            ipv4: startup_ipv4,
-            seed,
-        })
-        .await;
+    let network_start = AppNetworkStart {
+        device,
+        ipv4: startup_ipv4,
+        seed,
+    };
+    match data_plane {
+        WifiDataPlanePlacement::SingleCore => {
+            spawner.spawn(
+                primary_network_task(spawner)
+                    .expect("primary-core network task must allocate once"),
+            );
+            PRIMARY_NETWORK_START.send(network_start).await;
+        }
+        WifiDataPlanePlacement::SplitRadioNetwork => {
+            APP_NETWORK_START.send(network_start).await;
+        }
+    }
     APP_NETWORK_READY.wait().await;
+    runtime_log(format_args!(
+        "OPEN_RADIO_HIL data_plane={data_plane:?} radio_core=0 protocol_core=0 network_core={}",
+        match data_plane {
+            WifiDataPlanePlacement::SingleCore => 0,
+            WifiDataPlanePlacement::SplitRadioNetwork => 1,
+        }
+    ));
 
     spawner.spawn(
         wifi_role_task(

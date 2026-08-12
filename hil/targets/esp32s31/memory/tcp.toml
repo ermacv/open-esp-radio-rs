@@ -133,8 +133,8 @@ reason = "stack"
 placement = "required-sram"
 region = "internal-sram"
 count = 1
-element_capacity = 10240
-optimization = "Core 1 owns embassy-net and application traffic; its measured TX peak is 6,312 bytes, so 10 KiB retains 38% headroom."
+element_capacity = 16384
+optimization = "Core 1 owns the Embassy network executor. Sustained A-MPDU traffic exhausted 10 KiB; 16 KiB is qualified at runtime with at least 25% painted-stack headroom."
 
 [[rules]]
 symbol = "*::product_hil::NETWORK_RESOURCES"

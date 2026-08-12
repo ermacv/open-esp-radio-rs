@@ -1,12 +1,15 @@
 //! Typed, host-local description of the physical HIL cell.
 
 use std::{
+    cell::Cell,
     fs,
     net::Ipv4Addr,
     path::{Path, PathBuf},
 };
 
-use open_esp_radio_hil_protocol::{NetworkCredentials, NetworkIpv4Configuration};
+use open_esp_radio_hil_protocol::{
+    NetworkCredentials, NetworkIpv4Configuration, WifiDataPlanePlacement,
+};
 use serde::Deserialize;
 use zeroize::{Zeroize, Zeroizing};
 
@@ -18,6 +21,7 @@ pub(crate) struct LabConfig {
     pub(crate) station: StationConfig,
     pub(crate) access_point: AccessPointConfig,
     pub(crate) station_fixture: StationFixtureConfig,
+    data_plane: Cell<WifiDataPlanePlacement>,
 }
 
 #[derive(Deserialize)]
@@ -235,6 +239,7 @@ impl LabConfig {
                 }),
                 RawStationFixtureConfig::External => StationFixtureConfig::External,
             },
+            data_plane: Cell::new(WifiDataPlanePlacement::SingleCore),
         })
     }
 
@@ -268,7 +273,16 @@ impl LabConfig {
                 wireless_interface: String::from("phy0-ap0"),
                 ingress_interface: String::from("br-lan"),
             }),
+            data_plane: Cell::new(WifiDataPlanePlacement::SingleCore),
         }
+    }
+
+    pub(crate) fn set_data_plane(&self, placement: WifiDataPlanePlacement) {
+        self.data_plane.set(placement);
+    }
+
+    pub(crate) fn data_plane(&self) -> WifiDataPlanePlacement {
+        self.data_plane.get()
     }
 }
 

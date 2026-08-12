@@ -121,6 +121,8 @@ pub struct Esp32s31QualificationHooks {
         &'static dyn open_esp_radio_esp32s31_wifi_embassy::network_rx::RxNetworkDeliveryObserver,
     >,
     pub mac_irq: fn(Esp32s31MacIrqObservation),
+    /// Continuous residence of each RX protocol future poll, in microseconds.
+    pub protocol_task_poll: fn(u64),
     pub station_lifecycle: fn(Esp32s31StationLifecycleObservation),
     pub access_point: fn(Esp32s31AccessPointObservation),
 }

@@ -1,0 +1,24 @@
+schema = 3
+id = "udp-bidirectional-ht40-55-55-split"
+description = "Last-resort split-core comparison for the 55+55 Mbit/s HT40 workload"
+image = "qualification"
+isolation = "reset"
+data_plane = "split-radio-network"
+tags = ["experimental", "udp", "station", "full-duplex", "ht40", "split-core", "sum-100"]
+
+[link]
+phy = "ht40"
+
+[workload]
+kind = "udp"
+direction = "bidirectional"
+duration_seconds = 16
+rx_rate_bps = 55000000
+tx_rate_bps = 55000000
+payload_bytes = 1472
+
+[criteria]
+exact_delivery = true
+minimum_rx_bps = 49500000
+minimum_tx_bps = 49500000
+require_no_beacon_loss = true

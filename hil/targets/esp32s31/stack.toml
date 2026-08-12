@@ -1,4 +1,4 @@
-schema = 1
+schema = 2
 
 # CPU0 thread mode and its hardware ISRs share this downward-growing stack.
 stack_start_symbol = "_stack_start"
@@ -19,9 +19,11 @@ max_frame_bytes = 32768
 # qualification image.
 max_move_bytes = 4096
 
-# Runtime stack painting must retain this headroom on both CPU stacks in every
-# required HIL workload.
-runtime_minimum_free_percent = 25
+# Runtime stack painting must retain these absolute headrooms in every required
+# HIL workload. Absolute call-depth reserves remain meaningful when static SRAM
+# allocations change the CPU0 capacity or CPU1 is deliberately resized.
+runtime_cpu0_minimum_free_bytes = 32768
+runtime_cpu1_minimum_free_bytes = 4096
 
 reported_frame_count = 30
 
@@ -109,8 +111,8 @@ reason = "station task future retains lifecycle command and returned owner state
 [[reviewed_frames]]
 function_contains = "EmbassyWifiSupervisorTask<"
 source_ends_with = "driver/radio/src/embassy_supervisor.rs"
-max_bytes = 11264
-reason = "radio supervisor task retains the current affine Wi-Fi role owner including the AP-capable role union"
+max_bytes = 11280
+reason = "radio supervisor retains the affine Wi-Fi role owner plus the bounded network ingress-credit and service-epoch state"
 
 [[reviewed_frames]]
 function_contains = "TaskStorage<open_esp_radio_hil_esp32s31_runtime"

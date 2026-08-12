@@ -2034,11 +2034,6 @@ pub async fn new(
 ) -> Result<(Esp32s31Radio, Esp32s31RadioRunner), Esp32s31NewError> {
     qualification_event!("open-radio: cold PHY start");
 
-    let workers = match spawn_connected_workers(worker_spawner) {
-        Ok(workers) => workers,
-        Err(_error) => return Err(Esp32s31NewError::WorkerUnavailable),
-    };
-
     let crate::Esp32s31RadioConfig {
         station_mac,
         access_point_mac,
@@ -2049,6 +2044,16 @@ pub async fn new(
         #[cfg(feature = "qualification")]
         qualification,
     } = config;
+    let workers = match spawn_connected_workers(
+        worker_spawner,
+        #[cfg(feature = "qualification")]
+        qualification.map(|hooks| hooks.protocol_task_poll),
+        #[cfg(not(feature = "qualification"))]
+        None,
+    ) {
+        Ok(workers) => workers,
+        Err(_error) => return Err(Esp32s31NewError::WorkerUnavailable),
+    };
     #[cfg(feature = "qualification")]
     if let Some(hooks) = qualification {
         configure_mac_irq_observer(hooks.mac_irq);

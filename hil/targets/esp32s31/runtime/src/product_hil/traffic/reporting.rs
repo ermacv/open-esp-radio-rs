@@ -10,8 +10,84 @@ use open_esp_radio_hil_esp32s31_telemetry::{
     rx_pipeline::{RxPipelineCounterSnapshot, RxPipelineCounters},
     task_poll::{TaskPollCounters, TaskPollSet, TaskPollSetSnapshot, TaskPollSnapshot},
 };
+use open_esp_radio_hil_protocol::{RadioEvidence, TxAggregateTimingEvidence, TxRadioEvidence};
 
 use crate::console::{runtime_log, runtime_log_reliably};
+
+pub(in crate::product_hil) fn aggregate_tx_evidence(
+    aggregate: AggregateTxCounterSnapshot,
+    bandwidth_mhz: u16,
+    aggregate_rate_kbps: u32,
+) -> (RadioEvidence, TxAggregateTimingEvidence) {
+    let radio = RadioEvidence {
+        rx: None,
+        tx: Some(TxRadioEvidence {
+            bandwidth_mhz,
+            aggregate_rate_kbps,
+            aggregates_prepared: aggregate.aggregates_prepared,
+            aggregate_publications: aggregate.aggregate_publications,
+            aggregates_completed: aggregate.aggregates_completed,
+            subframes_prepared: aggregate.prepared_subframe_total(),
+            subframes_acknowledged: aggregate.subframes_acknowledged,
+            individual_retries: aggregate.individual_retries,
+            hardware_timeouts: aggregate.hardware_timeouts,
+            collisions: aggregate.collisions,
+            minimum_subframes: aggregate.minimum_prepared_subframes().unwrap_or(0),
+            maximum_subframes: aggregate.maximum_prepared_subframes().unwrap_or(0),
+            prepared_histogram: [
+                aggregate.prepared_in_range(1, 1),
+                aggregate.prepared_in_range(2, 3),
+                aggregate.prepared_in_range(4, 7),
+                aggregate.prepared_in_range(8, 15),
+                aggregate.prepared_in_range(16, 23),
+                aggregate.prepared_in_range(24, 30),
+                aggregate.prepared_in_range(31, 31),
+                aggregate.prepared_in_range(32, 32),
+            ],
+            stopped_at_frame_limit: aggregate.stopped_at_frame_limit,
+            stopped_at_capacity_limit: aggregate.stopped_at_capacity_limit,
+            stopped_on_empty_queue: aggregate.stopped_on_empty_queue,
+            block_ack_samples: aggregate.block_ack_samples,
+            block_ack_received: aggregate.block_ack_received,
+            success_without_block_ack: aggregate.success_without_block_ack,
+            nonzero_block_ack_control: aggregate.nonzero_block_ack_control,
+            full_block_ack: aggregate.full_block_ack,
+            partial_block_ack: aggregate.partial_block_ack,
+            empty_block_ack: aggregate.empty_block_ack,
+            tx_irq_epochs: aggregate.tx_irq_epochs,
+            tx_irq_service_samples: aggregate.tx_irq_service_samples,
+            tx_irq_clock_skew_samples: aggregate.tx_irq_clock_skew_samples,
+            tx_publication_to_irq_samples: aggregate.tx_publication_to_irq_samples,
+        }),
+    };
+    let timing = TxAggregateTimingEvidence {
+        preparation_micros: aggregate.preparation_micros,
+        preparation_max_micros: aggregate.preparation_lifetime_max_micros,
+        publication_micros: aggregate.publication_program_micros,
+        publication_max_micros: aggregate.publication_program_lifetime_max_micros,
+        exchange_micros: aggregate.exchange_micros,
+        exchange_max_micros: aggregate.exchange_lifetime_max_micros,
+        first_exchanges: aggregate.single_publication_exchanges,
+        first_exchange_micros: aggregate.single_publication_exchange_micros,
+        first_exchange_max_micros: aggregate.single_publication_exchange_lifetime_max_micros,
+        retried_exchanges: aggregate.retried_exchanges,
+        retry_publications: aggregate.retried_exchange_publications,
+        retry_exchange_micros: aggregate.retried_exchange_micros,
+        retry_exchange_max_micros: aggregate.retried_exchange_lifetime_max_micros,
+        tx_irq_epochs: aggregate.tx_irq_epochs,
+        tx_irq_service_samples: aggregate.tx_irq_service_samples,
+        tx_irq_clock_skew_samples: aggregate.tx_irq_clock_skew_samples,
+        tx_irq_service_micros: aggregate.tx_irq_to_service_micros,
+        tx_irq_service_max_micros: aggregate.tx_irq_to_service_lifetime_max_micros,
+        tx_publication_to_irq_samples: aggregate.tx_publication_to_irq_samples,
+        tx_publication_to_irq_micros: aggregate.tx_publication_to_irq_micros,
+        tx_publication_to_irq_max_micros: aggregate.tx_publication_to_irq_lifetime_max_micros,
+        standby_prepared: aggregate.standby_prepared,
+        standby_published: aggregate.standby_published,
+        standby_cancelled: aggregate.standby_cancelled,
+    };
+    (radio, timing)
+}
 
 pub(in crate::product_hil) async fn log_open_radio_ampdu_interval(
     earlier: AggregateTxCounterSnapshot,
@@ -280,10 +356,16 @@ pub(in crate::product_hil) async fn log_open_radio_task_poll_interval(
     .await;
     log_open_radio_task_poll("radio", current.radio.wrapping_delta_since(earlier.radio)).await;
     log_open_radio_task_poll(
-        "benchmark",
-        current.benchmark.wrapping_delta_since(earlier.benchmark),
+        "udp_rx",
+        current.udp_rx.wrapping_delta_since(earlier.udp_rx),
     )
     .await;
+    log_open_radio_task_poll(
+        "udp_tx",
+        current.udp_tx.wrapping_delta_since(earlier.udp_tx),
+    )
+    .await;
+    log_open_radio_task_poll("tcp", current.tcp.wrapping_delta_since(earlier.tcp)).await;
 }
 
 async fn log_open_radio_task_poll(task: &str, poll: TaskPollSnapshot) {

@@ -1280,6 +1280,7 @@ version = "0.1.0"
 dependencies = [
  "embassy-net-driver",
  "embassy-sync 0.8.0",
+ "embassy-time",
  "open-esp-radio-dma",
 ]
 

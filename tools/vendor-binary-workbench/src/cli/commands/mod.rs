@@ -16,6 +16,7 @@ mod inspect_compare;
 mod inspect_flow;
 mod inspect_function;
 mod inspect_object;
+mod inspect_register;
 mod inspect_scope;
 mod inspect_trace;
 mod interface_discovery;
@@ -258,6 +259,11 @@ pub(super) fn run_target(
         TargetCommand::InspectObject(arguments) => inspect_object::run(
             arguments,
             project.ok_or_else(|| crate::Error::invalid("inspect object requires --project"))?,
+        ),
+        TargetCommand::InspectRegister(arguments) => inspect_register::run(
+            arguments,
+            project.ok_or_else(|| crate::Error::invalid("inspect register requires --project"))?,
+            svd,
         ),
         TargetCommand::InspectScope(arguments) => inspect_scope::run(
             arguments,

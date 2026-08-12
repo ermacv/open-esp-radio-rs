@@ -1388,6 +1388,7 @@ dependencies = [
  "esp-phy",
  "esp-rtos",
  "open-esp-radio",
+ "open-esp-radio-esp32s31-pac",
  "open-esp-radio-esp32s31-wifi-esp-hal",
  "static_cell",
 ]

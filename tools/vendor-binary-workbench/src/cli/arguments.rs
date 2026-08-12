@@ -506,6 +506,13 @@ pub(crate) struct InspectObjectArgs {
 }
 
 #[derive(Clone, Debug, Default, Args)]
+pub(crate) struct InspectRegisterArgs {
+    /// Physical MMIO address in hexadecimal (`0x...`) or decimal form.
+    #[arg(value_name = "ADDRESS")]
+    pub(crate) address: String,
+}
+
+#[derive(Clone, Debug, Default, Args)]
 pub(crate) struct InspectScopeArgs {
     /// Exact project review-scope ID.
     #[arg(value_name = "SCOPE")]

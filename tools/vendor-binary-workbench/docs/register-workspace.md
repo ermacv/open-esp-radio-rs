@@ -157,10 +157,27 @@ model. CI may check that a committed or separately archived report is current
 with `registers review --check`; `--output PATH` overrides the configured
 destination.
 
+For one concrete address, use the bounded project-aware view instead of
+searching the complete Markdown report:
+
+```console
+cargo vendor-binary-workbench inspect register 0x20104090 \
+  --project verification/vendor/targets/esp32s31/vendor-project.toml
+```
+
+The human and JSON reports use the same typed register detail as the TUI. They
+show the owning MMIO range, reviewed/catalog/discovery name provenance,
+publication-scope membership, exact access PCs, operational and explicitly
+non-operational users, write patterns, field evidence and the nearby register
+layout. An observed address is not named from its neighbors: when no reviewed
+identity exists, the report says that its hardware meaning remains unknown.
+Linked-IR aliases are shown separately for navigation and never reclassify an
+observed access site as operational.
+
 ### Linked-IR enrichment
 
 The basic report needs only schema-v5 `mmio discover` facts, including exact
-instruction PCs for recovered direct accesses. Optional schema-v51
+instruction PCs for recovered direct accesses. Optional schema-v52
 `ir export` JSON reports add evidence that the artifact-wide MMIO pass does not
 carry: poll masks, direct branch predicates, producer-return chains and links
 from register bits to guarded semantic actions.

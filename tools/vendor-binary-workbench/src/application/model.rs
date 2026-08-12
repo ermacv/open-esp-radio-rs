@@ -365,9 +365,12 @@ pub struct RegisterAccessSiteSummary {
 pub struct RegisterDetailSummary {
     pub address: u32,
     pub width: Option<u8>,
+    pub range: Option<String>,
     pub name: String,
     pub name_source: RegisterNameSource,
     pub review_status: RegisterReviewState,
+    pub publication_scopes: Vec<String>,
+    pub publication_debt: bool,
     pub review_confidence: Option<String>,
     pub review_sources: Vec<String>,
     pub reads: usize,
@@ -375,6 +378,11 @@ pub struct RegisterDetailSummary {
     pub read_modify_writes: usize,
     pub read_functions: Vec<String>,
     pub write_functions: Vec<String>,
+    pub operational_functions: Vec<String>,
+    pub non_operational_functions: Vec<String>,
+    /// Navigation-only identities projected by linked IR. They can alias an
+    /// observed access site and therefore do not participate in policy.
+    pub related_functions: Vec<String>,
     pub read_sites: Vec<RegisterAccessSiteSummary>,
     pub write_sites: Vec<RegisterAccessSiteSummary>,
     pub functions: Vec<String>,

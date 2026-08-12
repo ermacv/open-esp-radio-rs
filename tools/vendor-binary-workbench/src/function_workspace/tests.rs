@@ -302,6 +302,17 @@ fn generated_template_is_valid_unreviewed_workspace() {
     assert_eq!(irq.decode_blockers.len(), 1);
     assert_eq!(irq.decode_blockers[0].class, "zero-fill-or-illegal-trap");
     assert_eq!(irq.decode_blockers[0].address, 0x118);
+    let helper = facts
+        .functions
+        .iter()
+        .find(|function| function.identity == "rom::vendor_helper")
+        .unwrap();
+    assert!(
+        helper
+            .calls
+            .iter()
+            .any(|call| { call.semantic_operation.as_deref() == Some("rtos.queue.send-from-isr") })
+    );
     write_function_pack_template(&pack, &facts, "fixture").unwrap();
     let workspace = FunctionWorkspace::load(&reports, &pack).unwrap();
     let summary = workspace.summary();

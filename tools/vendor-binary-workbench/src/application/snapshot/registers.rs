@@ -59,12 +59,13 @@ pub(super) fn collect(
     }
 }
 
-pub(super) fn detail(
-    resolved: &ProjectSession,
+pub(crate) fn detail(
+    project: &crate::ProjectSpec,
+    catalog_map: &crate::MmioMap,
     address: u32,
 ) -> crate::Result<Option<RegisterDetailSummary>> {
-    let catalog = resolved.mmio.register(address);
-    let Some(paths) = resolved.project.registers.as_ref() else {
+    let catalog = catalog_map.register(address);
+    let Some(paths) = project.registers.as_ref() else {
         return Ok(catalog.map(|register| catalog_only_detail(address, register.name.clone())));
     };
 
@@ -164,6 +165,28 @@ pub(super) fn detail(
             .collect::<BTreeSet<_>>();
         crate::registers::fact_is_non_operational(fact, &configured)
     });
+    let range = facts.as_ref().and_then(|facts| {
+        facts
+            .ranges
+            .iter()
+            .find(|range| range.contains(address))
+            .map(|range| range.name.clone())
+    });
+    let publication_scopes = if project.review.is_some() {
+        crate::review_scopes::load_for_project(project)?
+            .scopes
+            .into_iter()
+            .filter(|scope| {
+                scope.publication
+                    && scope.mmio.iter().any(|mmio| {
+                        mmio.address == address && width.is_none_or(|width| mmio.width == width)
+                    })
+            })
+            .map(|scope| scope.id)
+            .collect()
+    } else {
+        Vec::new()
+    };
     let review_status = match (
         outside_publication_scope,
         identity.is_some(),
@@ -177,14 +200,33 @@ pub(super) fn detail(
         (false, false, _, _) => RegisterReviewState::Unreviewed,
     };
 
-    let mut functions = BTreeSet::new();
+    let mut access_functions = BTreeSet::new();
     if let Some(fact) = fact {
-        functions.extend(fact.read_functions.iter().cloned());
-        functions.extend(fact.write_functions.iter().cloned());
+        access_functions.extend(fact.read_functions.iter().cloned());
+        access_functions.extend(fact.write_functions.iter().cloned());
     }
+    let mut related_functions = BTreeSet::new();
     if let Some(register) = ir_register {
-        functions.extend(register.functions.iter().cloned());
+        related_functions.extend(register.functions.iter().cloned());
     }
+    related_functions.retain(|function| !access_functions.contains(function));
+    let functions = access_functions
+        .union(&related_functions)
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    let configured_non_operational = paths
+        .non_operational_functions
+        .iter()
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    let non_operational_functions = access_functions
+        .intersection(&configured_non_operational)
+        .cloned()
+        .collect::<Vec<_>>();
+    let operational_functions = access_functions
+        .difference(&configured_non_operational)
+        .cloned()
+        .collect::<Vec<_>>();
     let mut fields = ir_register
         .into_iter()
         .flat_map(|register| register.fields.values())
@@ -266,9 +308,15 @@ pub(super) fn detail(
     Ok(Some(RegisterDetailSummary {
         address,
         width,
+        range,
         name,
         name_source,
         review_status,
+        publication_debt: !publication_scopes.is_empty()
+            && identity.is_none()
+            && !non_operational_only
+            && !outside_publication_scope,
+        publication_scopes,
         review_confidence: annotation.and_then(|item| item.confidence.clone()),
         review_sources: annotation.map_or_else(Vec::new, |item| item.sources.clone()),
         reads: fact.map_or(0, |fact| fact.reads),
@@ -280,6 +328,9 @@ pub(super) fn detail(
         write_functions: fact.map_or_else(Vec::new, |fact| {
             fact.write_functions.iter().cloned().collect()
         }),
+        operational_functions,
+        non_operational_functions,
+        related_functions: related_functions.into_iter().collect(),
         read_sites: fact.map_or_else(Vec::new, |fact| {
             fact.read_sites
                 .iter()
@@ -309,9 +360,12 @@ fn catalog_only_detail(address: u32, name: String) -> RegisterDetailSummary {
     RegisterDetailSummary {
         address,
         width: None,
+        range: None,
         name,
         name_source: RegisterNameSource::Catalog,
         review_status: RegisterReviewState::Unreviewed,
+        publication_scopes: Vec::new(),
+        publication_debt: false,
         review_confidence: None,
         review_sources: Vec::new(),
         reads: 0,
@@ -319,6 +373,9 @@ fn catalog_only_detail(address: u32, name: String) -> RegisterDetailSummary {
         read_modify_writes: 0,
         read_functions: Vec::new(),
         write_functions: Vec::new(),
+        operational_functions: Vec::new(),
+        non_operational_functions: Vec::new(),
+        related_functions: Vec::new(),
         read_sites: Vec::new(),
         write_sites: Vec::new(),
         functions: Vec::new(),

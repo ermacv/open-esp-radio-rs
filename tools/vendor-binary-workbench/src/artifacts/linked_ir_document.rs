@@ -630,6 +630,7 @@ struct FunctionOverviewCall<'a> {
     target: &'a str,
     site: Option<u32>,
     project_symbol: &'a Option<String>,
+    semantic_operation: &'a Option<String>,
 }
 
 #[derive(Serialize)]
@@ -718,6 +719,7 @@ impl<'a> FunctionOverviewDocument<'a> {
                     target: &call.target,
                     site: call.site,
                     project_symbol: &call.project_symbol,
+                    semantic_operation: &call.semantic_operation,
                 })
                 .collect(),
             mmio: function

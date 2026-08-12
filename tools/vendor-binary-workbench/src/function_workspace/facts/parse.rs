@@ -203,7 +203,18 @@ pub(super) fn parse_review_projection(
                     })
                     .collect(),
                 direct_calls: function.direct_calls,
-                calls: Vec::new(),
+                calls: function
+                    .calls
+                    .into_iter()
+                    .map(|call| FunctionCallFact {
+                        kind: call.kind,
+                        target: call.target,
+                        semantic_operation: call.semantic_operation,
+                        site: call.site,
+                        arguments: Vec::new(),
+                        guard_paths: None,
+                    })
+                    .collect(),
                 mmio_addresses: function.mmio_addresses,
                 context_fields: summary
                     .context_fields

@@ -6,6 +6,10 @@ use tracing_indicatif::span_ext::IndicatifSpanExt;
 use super::args::{Command, OutputFormat, ProgressMode, UiArgs};
 
 pub(super) fn command_span(command: &Command) -> Option<Span> {
+    command_message(command).map(operation_span)
+}
+
+fn command_message(command: &Command) -> Option<&'static str> {
     let message = match command {
         Command::GenerateCompletions(_)
         | Command::GenerateManpage(_)
@@ -62,13 +66,14 @@ pub(super) fn command_span(command: &Command) -> Option<Span> {
         Command::InspectFunction(_) => "Function investigation",
         Command::InspectFlow(_) => "Inter-function value-flow investigation",
         Command::InspectObject(_) => "Data-object investigation",
+        Command::InspectRegister(_) => "Loading register evidence",
         Command::InspectScope(_) => "Scope investigation",
         Command::VerifyInventory(_) => "Inventory verification",
         Command::VerifySource(_) => "Source verification",
         Command::InspectTrace(_) => "Trace extraction",
         Command::InspectCompare(_) => "Trace comparison",
     };
-    Some(operation_span(message))
+    Some(message)
 }
 
 fn operation_span(message: &str) -> Span {
@@ -137,10 +142,15 @@ mod tests {
     }
 
     #[test]
-    fn long_commands_get_root_spans_but_inspection_commands_do_not() {
+    fn commands_with_nontrivial_loading_or_work_get_root_spans() {
         assert!(command_span(&Command::DiscoverMmio(Default::default())).is_some());
         assert!(command_span(&Command::ProjectAnalyze(Default::default())).is_some());
         assert!(command_span(&Command::ProjectVerify(Default::default())).is_some());
+        assert!(command_span(&Command::InspectRegister(Default::default())).is_some());
+        assert_eq!(
+            command_message(&Command::InspectRegister(Default::default())),
+            Some("Loading register evidence")
+        );
         assert!(command_span(&Command::ProjectStatus(Default::default())).is_none());
         assert!(
             command_span(&Command::GenerateCompletions(CompletionArgs {

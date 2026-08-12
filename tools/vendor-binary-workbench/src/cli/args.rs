@@ -419,6 +419,8 @@ leaf_commands!(InspectCommand {
     Flow(InspectFlowArgs) => Command::InspectFlow, InspectFlow,
     /// Inspect accesses and ownership evidence for one memory object.
     Object(InspectObjectArgs) => Command::InspectObject, InspectObject,
+    /// Inspect one MMIO register, its users, review state and publication scope.
+    Register(InspectRegisterArgs) => Command::InspectRegister, InspectRegister,
     /// Summarize a reviewed analysis scope and its blockers.
     Scope(InspectScopeArgs) => Command::InspectScope, InspectScope,
     /// Analyze one artifact without running the complete project pipeline.
@@ -596,6 +598,7 @@ pub(crate) enum Command {
     InspectFunction(InspectFunctionArgs),
     InspectFlow(InspectFlowArgs),
     InspectObject(InspectObjectArgs),
+    InspectRegister(InspectRegisterArgs),
     InspectScope(InspectScopeArgs),
     VerifyInventory(VerifyInventoryArgs),
     VerifySource(VerifySourceArgs),
@@ -744,6 +747,26 @@ mod tests {
             error
                 .to_string()
                 .contains("Find MMIO accesses and infer register and field candidates")
+        );
+    }
+
+    #[test]
+    fn inspect_register_has_a_typed_project_first_interface() {
+        let invocation = ParsedInvocation::parse([
+            "inspect".to_owned(),
+            "register".to_owned(),
+            "0x20104090".to_owned(),
+            "--project".to_owned(),
+            "vendor-project.toml".to_owned(),
+        ])
+        .unwrap();
+        let Command::InspectRegister(arguments) = invocation.command else {
+            panic!("unexpected argument type")
+        };
+        assert_eq!(arguments.address, "0x20104090");
+        assert_eq!(
+            invocation.project,
+            Some(PathBuf::from("vendor-project.toml"))
         );
     }
 

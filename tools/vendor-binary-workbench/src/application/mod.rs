@@ -103,6 +103,14 @@ impl WorkbenchApplication {
     }
 }
 
+pub(crate) fn register_detail_for_project(
+    project: &crate::ProjectSpec,
+    catalog: &crate::MmioMap,
+    address: u32,
+) -> crate::Result<Option<RegisterDetailSummary>> {
+    snapshot::registers::detail(project, catalog, address)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -163,5 +171,18 @@ mod tests {
             second.project_status.project_id,
             first.project_status.project_id
         );
+    }
+
+    #[test]
+    fn diagnostic_rx_descriptor_observations_do_not_become_publication_debt() {
+        let application = WorkbenchApplication::open(&fixture_manifest()).unwrap();
+        for address in [0x2010_4090, 0x2010_4094] {
+            let detail = application.register_detail(address).unwrap().unwrap();
+            assert_eq!(detail.review_status, RegisterReviewState::NonOperational);
+            assert!(!detail.publication_debt);
+            assert!(detail.operational_functions.is_empty());
+            assert_eq!(detail.non_operational_functions.len(), 6);
+            assert_eq!(detail.related_functions.len(), 3);
+        }
     }
 }

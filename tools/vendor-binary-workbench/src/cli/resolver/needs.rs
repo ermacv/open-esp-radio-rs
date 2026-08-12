@@ -119,6 +119,7 @@ impl ResolutionNeeds {
             Command::InspectFunction(_) => Self::new(true, true, false, false, false, false, true),
             Command::InspectFlow(_) => Self::new(true, false, false, false, false, false, false),
             Command::InspectObject(_) => Self::new(true, false, false, false, false, false, false),
+            Command::InspectRegister(_) => Self::new(true, false, false, false, true, false, false),
             Command::InspectScope(_) => Self::new(true, false, false, false, false, false, false),
             Command::VerifyContractChannel(_)
             | Command::VerifyContractRfInit(_)

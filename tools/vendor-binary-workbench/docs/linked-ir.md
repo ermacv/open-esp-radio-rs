@@ -245,7 +245,7 @@ inventory. It follows resolved internal and unique project edges to a fixed
 point, including recursive components, and groups MMIO, delay, context,
 memory and semantic effects with their origin/path evidence.
 
-Artifact-wide schema-v51 bundles instead persist every direct fact once plus
+Artifact-wide schema-v52 bundles instead persist every direct fact once plus
 the lossless `graph.json`. Precomputing the complete transitive inventory for
 every possible root is quadratic and exhausted memory on the 2997-function
 real linked image. Those summaries therefore use

@@ -381,6 +381,12 @@ pub(super) fn resolve_command(
             svd: environment.svd,
             project: environment.project.map(Box::new),
         },
+        Command::InspectRegister(arguments) => ResolvedInvocation::Target {
+            command: TargetCommand::InspectRegister(arguments),
+            target: environment.target,
+            svd: environment.svd,
+            project: environment.project.map(Box::new),
+        },
         Command::InspectScope(arguments) => ResolvedInvocation::Target {
             command: TargetCommand::InspectScope(arguments),
             target: environment.target,

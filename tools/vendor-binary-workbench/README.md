@@ -37,6 +37,13 @@ Use `--details` only when you need the complete component or file inventory.
 Use `--format json` for automation. Human results go to stdout; diagnostics,
 tracing, and progress go to stderr.
 
+The `cargo vendor-binary-workbench` alias intentionally keeps Cargo output
+visible. A cold invocation may first compile the optimized host binary or wait
+for another Cargo process to release its build lock; those messages describe
+preparation before the Workbench process and its own progress UI can start.
+For repeated inspection with an already built binary, the resource-limited
+launcher below skips Cargo entirely.
+
 ## New project workflow
 
 1. Create a project and declare the physical MMIO ranges:

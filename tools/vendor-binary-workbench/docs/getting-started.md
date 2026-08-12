@@ -4,6 +4,13 @@ This is the canonical first-use path for the checked-in real project. It keeps
 private vendor binaries outside Git and uses the project pipeline instead of a
 sequence of low-level engine commands.
 
+`cargo vendor-binary-workbench` prints Cargo's preparation messages to stderr.
+On a cold invocation, `Compiling` or `Blocking waiting for file lock` means the
+optimized Workbench executable is being prepared; project analysis has not
+started yet. Once built, the same command reuses that executable. For repeated
+queries, `tools/vendor-binary-workbench/scripts/run-limited` runs the existing
+executable directly with resource limits and avoids Cargo startup entirely.
+
 ## 1. Bind local artifacts
 
 Create `verification/vendor/targets/esp32s31/local.toml` from authenticated
@@ -93,6 +100,18 @@ cargo vendor-binary-workbench registers review \
 cargo vendor-binary-workbench registers validate \
   --project verification/vendor/targets/esp32s31/vendor-project.toml
 ```
+
+Investigate an individual publication blocker without reading the complete
+workspace report:
+
+```console
+cargo vendor-binary-workbench inspect register 0x20104090 \
+  --project verification/vendor/targets/esp32s31/vendor-project.toml
+```
+
+This is an indexed evidence query, not a new binary-analysis run. Refresh stale
+facts explicitly with `project analyze`; inspection never performs that costly
+mutation implicitly.
 
 Edit the reviewed TOML register model and API pack. Publication then derives a
 clean SVD, an internal raw PAC, and the restricted public bindings:

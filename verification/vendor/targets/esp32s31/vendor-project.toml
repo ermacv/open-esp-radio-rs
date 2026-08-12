@@ -115,6 +115,9 @@ linked-ir = [
 non-operational-functions = [
     "archive:phy_reg_check",
     "libpp:wdev_record_rx_linked_list",
+    "libpp-replay:wdev_record_rx_linked_list",
+    "wifi-key-role:dbg_dump_rx_links",
+    "wifi-key-role:wdev_record_rx_linked_list",
     "wifi-sta-lifecycle:dbg_dump_rx_links",
     "wifi-sta-lifecycle:wdev_record_rx_linked_list",
 ]

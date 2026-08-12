@@ -71,8 +71,9 @@ visible after pseudo-Rust becomes incomplete, together with the proof ledger,
 raw archive origin, and reviewed preconditions/path classes.
 Register rows and heavyweight detail use the same arrangement. Selecting a
 register asks the worker for `register_detail(address)` once per snapshot
-generation. The detail pane shows name provenance, width, review state,
-read/write/RMW counts, function users, write masks, field candidates,
+generation. The detail pane shows name provenance, owning range, publication
+scope/debt, operational and non-operational users, width, review state,
+read/write/RMW counts, write masks, field candidates,
 direct/transitive predicates, polls and linked semantic operations.
 The Interfaces view includes every discovered slot that remains unreviewed,
 not only semantic bindings already accepted by the interface pack. Such rows

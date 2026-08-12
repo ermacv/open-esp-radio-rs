@@ -5,7 +5,7 @@ mod comparisons;
 mod features;
 mod functions;
 mod interfaces;
-mod registers;
+pub(super) mod registers;
 mod review_queue;
 mod scopes;
 
@@ -127,7 +127,7 @@ pub(super) fn register_detail(
     resolved: &ProjectSession,
     address: u32,
 ) -> crate::Result<Option<RegisterDetailSummary>> {
-    self::registers::detail(resolved, address)
+    self::registers::detail(&resolved.project, &resolved.mmio, address)
 }
 
 fn function_detail_summary(

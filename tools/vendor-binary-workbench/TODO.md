@@ -153,12 +153,13 @@ that every user must learn.
   pseudo-code, interface/function review, verification and publication;
   record every incomplete or misleading stage. The verification segment now
   has twelve typed project suites and a reproducible aggregate gate. The
-  2026-08-11 ESP32-S31 run matches 149 reviewed proofs with zero mismatch or
-  incomplete result. One STA-state projection remains explicitly
-  `implemented-unqualified`; analysis inventory backlogs remain visible but
-  do not masquerade as failed replacement proofs. Verification artifact paths
-  are canonical, so report freshness is independent of the current working
-  directory.
+  The 2026-08-12 ESP32-S31 run matches 148 reviewed proofs with zero incomplete
+  executions. It now exposes one real `wDev_AppendRxBlocks` mismatch (an extra
+  Rust fence in three successful cases) and two deliberately fail-closed
+  `implemented-unqualified` replacements. Analysis inventory backlogs remain
+  visible but do not masquerade as failed replacement proofs. Verification
+  artifact paths are canonical, so report freshness is independent of the
+  current working directory.
 - [x] Make real-project verification one project operation rather than a set of
   remembered leaf commands. Suites own source roles, probe roles/prefixes,
   profile/disposition fragments, baseline and gate; `project verify --check`
@@ -274,6 +275,19 @@ that every user must learn.
   reviewed non-operational function policy now classifies an address only when
   every observed reader/writer is non-operational; mixed-use addresses remain
   operational and stale function identities fail validation.
+- [x] Add focused `inspect register ADDRESS` over the same typed detail used by
+  the TUI. It separates operational/non-operational users, exact PCs,
+  publication debt and neighboring reviewed identities without inventing a
+  hardware name from address adjacency.
+- [x] Preserve semantic operation IDs on compact linked-IR call records. The
+  schema-v52 function projection can validate reviewed event consumers without
+  loading the lossless function stream or falsely reporting a missing OSI
+  delivery call.
+- [ ] Run the checked-in `rx-descriptor-pipeline` HIL probe through cold,
+  published and active RX states. Promote `0x20104090/0x20104094` to reviewed
+  read-only descriptor addresses only if their values repeatedly match the
+  logged software node/next topology; otherwise retain them as diagnostic-only
+  unknown observations.
 - [x] Separate project-owned register ranges from external MMIO observations;
   external system-register evidence remains visible but cannot block the
   radio-only SVD/PAC publication gate.

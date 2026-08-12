@@ -1,4 +1,4 @@
-//! Complete owned DTO for linked-IR schema v51.
+//! Complete owned DTO for linked-IR schema v52.
 
 #![allow(
     dead_code,
@@ -284,6 +284,7 @@ pub(crate) struct StoredReviewCall {
     pub(crate) target: String,
     pub(crate) site: Option<u32>,
     pub(crate) project_symbol: Option<String>,
+    pub(crate) semantic_operation: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]

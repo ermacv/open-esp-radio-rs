@@ -26,11 +26,11 @@ currency therefore does not depend on the process working directory used by a
 later `project status` or `project check`; generated reports remain local
 project state and are regenerated when the checkout moves.
 
-MMIO schema 5, interface schema 5 and linked-IR schema 51 carry
+MMIO schema 5, interface schema 5 and linked-IR schema 52 carry
 reviewed-code-boundary provenance. MMIO and interface artifacts record the accepted boundary count per
 input. Linked IR retains the complete reviewed physical ranges so downstream
 reviewers can distinguish ordinary ELF symbol roots from promoted gap roots.
-Linked-IR schema 51 also carries symbol-bounded static data objects,
+Linked-IR schema 52 also carries symbol-bounded static data objects,
 uninterpreted initializer bytes, symbolic data relocations, function xrefs and
 bounded indexed-dispatch edges. Zero-sized compiler anchors stop at the next
 symbol rather than duplicating the rest of their section. Relocatable archive

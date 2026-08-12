@@ -145,6 +145,7 @@ pub(in crate::cli) enum TargetCommand {
     InspectFunction(InspectFunctionArgs),
     InspectFlow(InspectFlowArgs),
     InspectObject(InspectObjectArgs),
+    InspectRegister(InspectRegisterArgs),
     InspectScope(InspectScopeArgs),
     VerifyInventory(VerifyInventoryArgs),
     VerifySource(VerifySourceArgs),

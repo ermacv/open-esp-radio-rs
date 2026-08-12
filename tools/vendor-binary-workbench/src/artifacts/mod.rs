@@ -78,7 +78,7 @@ pub(crate) const INTERFACE_FACTS: ArtifactSchema = ArtifactSchema {
 };
 
 pub(crate) const LINKED_IR: ArtifactSchema = ArtifactSchema {
-    version: 51,
+    version: 52,
     command: "ir export",
 };
 
@@ -134,7 +134,7 @@ mod tests {
         assert_eq!(
             LINKED_IR,
             ArtifactSchema {
-                version: 51,
+                version: 52,
                 command: "ir export",
             }
         );

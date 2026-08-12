@@ -79,6 +79,23 @@ fn render_detail(lines: &mut Vec<Line<'_>>, detail: &crate::RegisterDetailSummar
     lines.push(field("Name", &detail.name));
     lines.push(field("Name source", detail.name_source.label()));
     lines.push(field("Review", detail.review_status.label()));
+    if let Some(range) = &detail.range {
+        lines.push(field("Range", range));
+    }
+    lines.push(field(
+        "Publication",
+        if detail.publication_debt {
+            "blocking"
+        } else {
+            "not blocking"
+        },
+    ));
+    if !detail.publication_scopes.is_empty() {
+        lines.push(field(
+            "Publication scopes",
+            detail.publication_scopes.join(", "),
+        ));
+    }
     lines.push(field(
         "Width",
         detail
@@ -97,6 +114,18 @@ fn render_detail(lines: &mut Vec<Line<'_>>, detail: &crate::RegisterDetailSummar
     }
     if !detail.functions.is_empty() {
         lines.push(field("Functions", detail.functions.join(", ")));
+    }
+    if !detail.non_operational_functions.is_empty() {
+        lines.push(field(
+            "Non-operational users",
+            detail.non_operational_functions.join(", "),
+        ));
+    }
+    if !detail.related_functions.is_empty() {
+        lines.push(field(
+            "Related IR aliases",
+            detail.related_functions.join(", "),
+        ));
     }
     if !detail.read_sites.is_empty() || !detail.write_sites.is_empty() {
         lines.push(Line::from(""));

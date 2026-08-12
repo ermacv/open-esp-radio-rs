@@ -65,6 +65,21 @@ fn production_modules_cannot_bypass_the_command_output_boundary() {
 }
 
 #[test]
+fn cargo_alias_keeps_workbench_preparation_visible() {
+    let manifest_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let config = fs::read_to_string(manifest_root.join("../../.cargo/config.toml")).unwrap();
+    let alias = config
+        .lines()
+        .find(|line| line.trim_start().starts_with("vendor-binary-workbench ="))
+        .expect("workspace must provide the documented Workbench Cargo alias");
+    assert!(alias.contains("run --profile workbench"));
+    assert!(
+        !alias.contains("run --quiet"),
+        "Cargo preparation and build-lock messages must remain visible"
+    );
+}
+
+#[test]
 fn facade_and_register_model_errors_cannot_implicitly_absorb_strings() {
     let manifest_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let sources = [

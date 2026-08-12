@@ -507,6 +507,29 @@ fn read_diagnostic_register(register: Register32) -> u32 {
     read_diagnostic_mmio(register.address())
 }
 
+fn log_rx_descriptor_pipeline(stage: &str, descriptors: &[Descriptor], descriptor_base: u32) {
+    emergency_log(format_args!(
+        "OPEN_RADIO_ORACLE_HIL probe=rx-descriptor-pipeline stage={stage} \
+         base={descriptor_base:#010x} control={:#010x} base_reg={:#010x} \
+         next={:#010x} last={:#010x} unknown_90={:#010x} unknown_94={:#010x}",
+        read_diagnostic_register(RX_CONTROL),
+        read_diagnostic_register(RX_DESCRIPTOR_BASE),
+        read_diagnostic_register(RX_NEXT_DESCRIPTOR),
+        read_diagnostic_register(RX_LAST_DESCRIPTOR),
+        read_diagnostic_mmio(0x2010_4090),
+        read_diagnostic_mmio(0x2010_4094),
+    ));
+    for (index, descriptor) in descriptors.iter().take(4).enumerate() {
+        let address = descriptor_base + index as u32 * core::mem::size_of::<Descriptor>() as u32;
+        emergency_log(format_args!(
+            "OPEN_RADIO_ORACLE_HIL probe=rx-descriptor-node stage={stage} \
+             index={index} address={address:#010x} word0={:#010x} next={:#010x}",
+            descriptor.word0(),
+            descriptor.next_address(),
+        ));
+    }
+}
+
 fn log_rf_boundary_mmio(source: &str) {
     emergency_log(format_args!(
         "OPEN_RADIO_RF_BOUNDARY source={source} \
@@ -1017,6 +1040,7 @@ async fn run_open_mac_rx(
         }
     };
     activate_promiscuous_receive(mmio);
+    log_rx_descriptor_pipeline("before-publish", &storage.descriptors, descriptor_base);
     // SAFETY: `RX_STORAGE` is a `StaticCell`; its descriptors and buffers
     // remain allocated for the complete oracle image and this function owns
     // the only RX walker until shutdown/reboot.
@@ -1026,6 +1050,7 @@ async fn run_open_mac_rx(
         ));
         return false;
     }
+    log_rx_descriptor_pipeline("after-publish", &storage.descriptors, descriptor_base);
     emergency_log(format_args!("OPEN_RADIO_ORACLE_HIL stage=open-tx-power"));
     log_phy_mmio_page_hashes("vendor-phy-open-mac");
     let tx_dma = TxDmaStorage::pin_static(TX_DMA_STORAGE.init_with(TxDmaStorage::new))
@@ -1105,13 +1130,17 @@ async fn run_open_mac_rx(
 
     emergency_log(format_args!(
         "OPEN_RADIO_ORACLE_HIL stage=rx-active descriptor_base={descriptor_base:#010x} \
-         handshake_samples={} control={:#010x} base={:#010x} next={:#010x} high={:#010x}",
+         handshake_samples={} control={:#010x} base={:#010x} next={:#010x} high={:#010x} \
+         unknown_90={:#010x} unknown_94={:#010x}",
         cold.handshake_samples,
         read_diagnostic_register(RX_CONTROL),
         read_diagnostic_register(RX_DESCRIPTOR_BASE),
         read_diagnostic_register(RX_NEXT_DESCRIPTOR),
         read_diagnostic_register(RX_LAST_DESCRIPTOR_HIGH),
+        read_diagnostic_mmio(0x2010_4090),
+        read_diagnostic_mmio(0x2010_4094),
     ));
+    log_rx_descriptor_pipeline("active", &storage.descriptors, descriptor_base);
     emergency_log(format_args!(
         "OPEN_RADIO_ORACLE_HIL probe=phy-rx-diff \
          frequency={:#010x}/{:#010x}/{:#010x} \
@@ -1200,7 +1229,8 @@ async fn run_open_mac_rx(
         "OPEN_RADIO_ORACLE_HIL result=FAIL stage=vendor-phy-open-mac-auth-timeout \
          frames={received_frames} \
          words={:#010x}/{:#010x}/{:#010x}/{:#010x} control={:#010x} \
-         base={:#010x} next={:#010x} last={:#010x} int_raw={:#010x}",
+         base={:#010x} next={:#010x} last={:#010x} unknown_90={:#010x} \
+         unknown_94={:#010x} int_raw={:#010x}",
         storage.descriptors[0].word0(),
         storage.descriptors[1].word0(),
         storage.descriptors[2].word0(),
@@ -1209,8 +1239,11 @@ async fn run_open_mac_rx(
         read_diagnostic_register(RX_DESCRIPTOR_BASE),
         read_diagnostic_register(RX_NEXT_DESCRIPTOR),
         read_diagnostic_register(RX_LAST_DESCRIPTOR),
+        read_diagnostic_mmio(0x2010_4090),
+        read_diagnostic_mmio(0x2010_4094),
         read_diagnostic_register(INT_RAW),
     ));
+    log_rx_descriptor_pipeline("timeout", &storage.descriptors, descriptor_base);
     false
 }
 

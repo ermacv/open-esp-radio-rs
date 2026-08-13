@@ -43,6 +43,12 @@ if [[ ! -r /proc/self/status ]]; then
     echo "error: the RSS watchdog requires Linux /proc" >&2
     exit 2
 fi
+for command in ps awk setsid; do
+    if ! command -v "$command" >/dev/null 2>&1; then
+        echo "error: the RSS watchdog requires $command" >&2
+        exit 2
+    fi
+done
 
 memory_limit_kib=1048576
 deadline_seconds=900
@@ -50,33 +56,48 @@ grace_seconds=10
 reason=""
 peak_rss_kib=0
 
-"$binary" "$@" &
+process_session_rss_kib() {
+    local session_id="$1"
+    ps -e -o sid=,rss= | awk -v session="$session_id" \
+        '$1 == session { total += $2 } END { print total + 0 }'
+}
+
+# A private session keeps descendant accounting and termination correct even
+# after an intermediate worker exits and its children are reparented.
+setsid -- "$binary" "$@" &
 child=$!
 started=$SECONDS
 
-terminate_child() {
-    local signal="$1"
-    if kill -0 "$child" 2>/dev/null; then
-        kill -s "$signal" "$child" 2>/dev/null || true
-    fi
+session_alive() {
+    local session_id="$1"
+    ps -e -o sid= | awk -v session="$session_id" \
+        '$1 == session { found = 1; exit } END { exit !found }'
 }
 
-trap 'terminate_child TERM' INT TERM
+terminate_session() {
+    local signal="$1"
+    local session_id="$2"
+    while read -r pid; do
+        [[ -n "$pid" ]] && kill -s "$signal" "$pid" 2>/dev/null || true
+    done < <(ps -e -o pid=,sid= | awk -v session="$session_id" '$2 == session { print $1 }')
+}
 
-while kill -0 "$child" 2>/dev/null; do
-    rss_kib="$(awk '/^VmRSS:/ { print $2 }' "/proc/$child/status" 2>/dev/null || true)"
+trap 'terminate_session TERM "$child"' INT TERM
+
+while session_alive "$child"; do
+    rss_kib="$(process_session_rss_kib "$child" 2>/dev/null || true)"
     rss_kib="${rss_kib:-0}"
     if (( rss_kib > peak_rss_kib )); then
         peak_rss_kib="$rss_kib"
     fi
     if (( rss_kib > memory_limit_kib )); then
-        reason="RSS exceeded 1 GiB (observed ${rss_kib} KiB)"
-        terminate_child TERM
+        reason="process-tree RSS exceeded 1 GiB (observed ${rss_kib} KiB)"
+        terminate_session TERM "$child"
         break
     fi
     if (( SECONDS - started >= deadline_seconds )); then
         reason="runtime exceeded 15 minutes"
-        terminate_child TERM
+        terminate_session TERM "$child"
         break
     fi
     sleep 0.1
@@ -84,10 +105,10 @@ done
 
 if [[ -n "$reason" ]]; then
     grace_started=$SECONDS
-    while kill -0 "$child" 2>/dev/null && (( SECONDS - grace_started < grace_seconds )); do
+    while session_alive "$child" && (( SECONDS - grace_started < grace_seconds )); do
         sleep 0.1
     done
-    terminate_child KILL
+    terminate_session KILL "$child"
 fi
 
 set +e

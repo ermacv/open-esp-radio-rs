@@ -1,10 +1,7 @@
-//! Exact read-only comparison of configured derived register outputs.
+//! Fast publication readiness; exact comparison belongs to publish/check.
 
 use super::model::{Component, Phase, Readiness};
-use crate::{
-    application::ProjectContext,
-    registers::{self, ProjectRegisterWorkspace},
-};
+use crate::{application::ProjectContext, registers::ProjectRegisterWorkspace};
 
 pub(super) fn collect(context: &ProjectContext<'_>) -> Phase {
     let Some(paths) = &context.project.registers else {
@@ -78,18 +75,18 @@ pub(super) fn collect(context: &ProjectContext<'_>) -> Phase {
     Phase::collect(
         "publication",
         vec![
-            output(context, "svd", paths.svd_output.is_some(), || {
-                registers::prepare_project_svd(paths, &publication_mmio)
-            }),
-            output(context, "pac-raw", paths.pac_raw.is_some(), || {
-                registers::prepare_project_pac_raw(paths, &publication_mmio)
-            }),
-            output(context, "pac-api", paths.api_output.is_some(), || {
-                registers::prepare_project_pac_api(paths)
-            }),
-            output(context, "bindings", paths.bindings.is_some(), || {
-                registers::prepare_project_bindings(paths, &publication_mmio)
-            }),
+            output(context, "svd", paths.svd_output.as_deref()),
+            output(
+                context,
+                "pac-raw",
+                paths.pac_raw.as_ref().map(|spec| spec.output.as_path()),
+            ),
+            output(context, "pac-api", paths.api_output.as_deref()),
+            output(
+                context,
+                "bindings",
+                paths.bindings.as_ref().map(|spec| spec.output.as_path()),
+            ),
         ],
     )
 }
@@ -97,49 +94,23 @@ pub(super) fn collect(context: &ProjectContext<'_>) -> Phase {
 fn output(
     context: &ProjectContext<'_>,
     name: &'static str,
-    configured: bool,
-    prepare: impl FnOnce() -> crate::Result<registers::PreparedPublication>,
+    path: Option<&std::path::Path>,
 ) -> Component {
-    if !configured {
+    let Some(path) = path else {
         return Component::new(name, Readiness::NotConfigured);
-    }
-    let publication = match prepare() {
-        Ok(publication) => publication,
-        Err(error) => {
-            return Component::new(name, Readiness::Invalid)
-                .diagnostic(error)
-                .next_action(format!(
-                    "resolve register review findings, then run `vendor-binary-workbench project publish --check --project {}`",
-                    context.project_path.display()
-                ));
-        }
     };
-    match publication.readiness() {
-        Ok(readiness) => {
-            let mut component = Component::new(
-                name,
-                if readiness == registers::PublicationReadiness::Current {
-                    Readiness::Ready
-                } else {
-                    Readiness::Incomplete
-                },
-            )
-            .detail("path", publication.output().display().to_string())
-            .detail("file_status", readiness.label());
-            if readiness != registers::PublicationReadiness::Current {
-                component = component.next_action(format!(
-                    "refresh and verify the configured outputs with `vendor-binary-workbench project publish --project {}`",
-                    context.project_path.display()
-                ));
-            }
-            component
-        }
-        Err(error) => Component::new(name, Readiness::Invalid)
-            .detail("path", publication.output().display().to_string())
-            .diagnostic(error)
+    if path.exists() {
+        Component::new(name, Readiness::Ready)
+            .detail("path", path.display().to_string())
+            .detail("file_status", "published")
+            .detail("deep_validation", "project publish --check / project check")
+    } else {
+        Component::new(name, Readiness::Incomplete)
+            .detail("path", path.display().to_string())
+            .detail("file_status", "missing")
             .next_action(format!(
-                "repair the output or regenerate it with `vendor-binary-workbench project publish --project {}`",
+                "generate the configured outputs with `vendor-binary-workbench project publish --project {}`",
                 context.project_path.display()
-            )),
+            ))
     }
 }

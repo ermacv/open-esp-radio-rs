@@ -4,24 +4,28 @@ use std::collections::BTreeSet;
 
 use super::model::{Component, LinkedIrProfileDetail, Phase, Readiness};
 use crate::application::ProjectContext;
-use crate::{
-    artifacts::{inspect_linked_ir, inspect_symbol_inventory},
-    harnesses,
-    interfaces::InterfaceFacts,
-    registers::RegisterFacts,
-    run_spec::InputRole,
-};
+use crate::{artifacts::inspect_linked_ir, harnesses, run_spec::InputRole};
 
 pub(super) fn collect(context: &ProjectContext<'_>) -> Phase {
+    fn component(name: &'static str, collect: impl FnOnce() -> Component) -> Component {
+        let started = std::time::Instant::now();
+        let component = collect();
+        tracing::debug!(
+            component = name,
+            elapsed_ms = started.elapsed().as_millis(),
+            "analysis status component collected"
+        );
+        component
+    }
     Phase::collect(
         "analysis",
         vec![
-            symbol_inventory(context),
-            linked_ir(context),
-            event_replays(context),
-            mmio_facts(context),
-            interface_facts(context),
-            navigation_index(context),
+            component("symbol_inventory", || symbol_inventory(context)),
+            component("linked_ir", || linked_ir(context)),
+            component("event_replays", || event_replays(context)),
+            component("mmio_facts", || mmio_facts(context)),
+            component("interface_facts", || interface_facts(context)),
+            component("navigation_index", || navigation_index(context)),
         ],
     )
 }
@@ -113,23 +117,7 @@ fn navigation_index(context: &ProjectContext<'_>) -> Component {
             .diagnostic("navigation index has not been generated")
             .next_action(project_command(context, "project analyze"));
     }
-    match crate::navigation::inspect_report(&spec.output) {
-        Ok(summary) => Component::new("navigation_index", Readiness::Ready)
-            .detail("path", spec.output.display().to_string())
-            .detail("artifacts", summary.artifacts)
-            .detail("symbols", summary.symbols)
-            .detail("linked_ir_functions", summary.linked_ir_functions)
-            .detail("interface_callers", summary.interface_callers)
-            .detail("interface_roots", summary.interface_roots)
-            .detail(
-                "unmatched_interface_roots",
-                summary.unmatched_interface_roots,
-            ),
-        Err(error) => Component::new("navigation_index", Readiness::Invalid)
-            .detail("path", spec.output.display().to_string())
-            .diagnostic(error)
-            .next_action(project_command(context, "project analyze")),
-    }
+    generated_output("navigation_index", &spec.output)
 }
 
 fn project_command(context: &ProjectContext<'_>, command: &str) -> String {
@@ -148,33 +136,7 @@ fn symbol_inventory(context: &ProjectContext<'_>) -> Component {
             .detail("path", spec.output.display().to_string())
             .diagnostic("symbol inventory has not been generated");
     }
-    match inspect_symbol_inventory(&spec.output) {
-        Ok(summary) => Component::new("symbol_inventory", Readiness::Ready)
-            .detail("path", spec.output.display().to_string())
-            .detail("artifacts", summary.artifacts)
-            .detail("symbol_facts", summary.symbol_facts)
-            .detail("exported_definitions", summary.exported_definitions)
-            .detail("undefined", summary.undefined)
-            .detail("unresolved_or_associated", summary.unresolved_or_associated)
-            .detail("executable_bytes", summary.executable_bytes)
-            .detail("symbol_covered_bytes", summary.symbol_covered_bytes)
-            .detail(
-                "uncovered_executable_bytes",
-                summary.uncovered_executable_bytes,
-            )
-            .detail(
-                "named_zero_sized_code_symbols",
-                summary.named_zero_sized_code_symbols,
-            )
-            .detail(
-                "function_boundary_candidates",
-                summary.function_boundary_candidates,
-            )
-            .detail("code_recovery_blockers", summary.code_recovery_blockers),
-        Err(error) => Component::new("symbol_inventory", Readiness::Invalid)
-            .detail("path", spec.output.display().to_string())
-            .diagnostic(error),
-    }
+    generated_output("symbol_inventory", &spec.output)
 }
 
 fn linked_ir(context: &ProjectContext<'_>) -> Component {
@@ -265,15 +227,7 @@ fn mmio_facts(context: &ProjectContext<'_>) -> Component {
             .detail("path", paths.facts.display().to_string())
             .diagnostic("MMIO facts have not been generated");
     }
-    match RegisterFacts::load(&paths.facts) {
-        Ok(facts) => Component::new("mmio_facts", Readiness::Ready)
-            .detail("path", paths.facts.display().to_string())
-            .detail("ranges", facts.ranges.len())
-            .detail("registers", facts.registers.len()),
-        Err(error) => Component::new("mmio_facts", Readiness::Invalid)
-            .detail("path", paths.facts.display().to_string())
-            .diagnostic(error),
-    }
+    generated_output("mmio_facts", &paths.facts)
 }
 
 fn interface_facts(context: &ProjectContext<'_>) -> Component {
@@ -285,14 +239,22 @@ fn interface_facts(context: &ProjectContext<'_>) -> Component {
             .detail("path", paths.facts.display().to_string())
             .diagnostic("interface facts have not been generated");
     }
-    match InterfaceFacts::load(&paths.facts) {
-        Ok(facts) => Component::new("interface_facts", Readiness::Ready)
-            .detail("path", paths.facts.display().to_string())
-            .detail("tables", facts.tables.len())
-            .detail("observed_slots", facts.observed_slots())
-            .detail("observed_calls", facts.observed_calls()),
-        Err(error) => Component::new("interface_facts", Readiness::Invalid)
-            .detail("path", paths.facts.display().to_string())
+    generated_output("interface_facts", &paths.facts)
+}
+
+fn generated_output(name: &'static str, path: &std::path::Path) -> Component {
+    match std::fs::metadata(path) {
+        Ok(metadata) if metadata.is_file() && metadata.len() != 0 => {
+            Component::new(name, Readiness::Ready)
+                .detail("path", path.display().to_string())
+                .detail("bytes", metadata.len())
+                .detail("deep_validation", "project doctor / project check")
+        }
+        Ok(_) => Component::new(name, Readiness::Invalid)
+            .detail("path", path.display().to_string())
+            .diagnostic("generated output is not a non-empty regular file"),
+        Err(error) => Component::new(name, Readiness::Invalid)
+            .detail("path", path.display().to_string())
             .diagnostic(error),
     }
 }

@@ -36,6 +36,7 @@ pub(super) struct ReplacementInvestigationReport {
     command: &'static str,
     source: String,
     symbol: String,
+    requested_case: Option<String>,
     replacements: Vec<ReplacementEvidence>,
     vendor_effects: Vec<VendorEffectEvidence>,
     reviewed_effects: Vec<ReviewedEffectRuleEvidence>,
@@ -70,6 +71,28 @@ pub(super) fn run(arguments: InspectFunctionArgs, project: &ProjectSpec) -> Resu
     }
     let (symbol, runtime_address) = parse_exact_symbol(symbol)?;
     if arguments.replacement {
+        let mut replacements = replacement_evidence(source, &symbol, project)?;
+        if let Some(requested) = arguments.case.as_deref() {
+            let found = replacements.iter().any(|replacement| {
+                replacement.proofs.iter().any(|proof| {
+                    proof
+                        .execution_cases
+                        .iter()
+                        .any(|case| case.name == requested)
+                })
+            });
+            if !found {
+                return Err(crate::Error::invalid(format!(
+                    "replacement evidence for {source}:{symbol} has no execution case {requested:?}"
+                )));
+            }
+            for replacement in &mut replacements {
+                for proof in &mut replacement.proofs {
+                    proof.execution_cases.retain(|case| case.name == requested);
+                    proof.adapter_cases.retain(|case| case.name == requested);
+                }
+            }
+        }
         let vendor_effects = match arguments.artifact.as_deref() {
             Some(artifact) => {
                 let investigation = investigate(
@@ -93,11 +116,12 @@ pub(super) fn run(arguments: InspectFunctionArgs, project: &ProjectSpec) -> Resu
             None => Vec::new(),
         };
         let report = ReplacementInvestigationReport {
-            schema_version: 3,
+            schema_version: 4,
             command: "inspect function replacement",
             source: source.to_owned(),
             symbol: symbol.to_owned(),
-            replacements: replacement_evidence(source, &symbol, project)?,
+            requested_case: arguments.case,
+            replacements,
             vendor_effects,
             reviewed_effects: reviewed_effect_rules(source, &symbol, project)?,
             feature_qualifications: crate::qualification::evidence_for_function(

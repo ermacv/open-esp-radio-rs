@@ -762,6 +762,15 @@ fn artifact_inventory_preserves_definition_binding_and_section_facts() {
 }
 
 #[test]
+fn artifact_container_probe_reads_an_elf_without_inventory_projection() {
+    let path = write_visibility_fixture();
+    let container = inspect_artifact_container(&path).unwrap();
+    std::fs::remove_file(path).unwrap();
+
+    assert_eq!(container, ArtifactContainerKind::Elf32);
+}
+
+#[test]
 fn artifact_inventory_reports_executable_bytes_without_sized_symbol_coverage() {
     let path = write_visibility_fixture();
     let inventory = inspect_artifact(&path).unwrap();

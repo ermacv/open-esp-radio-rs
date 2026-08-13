@@ -19,16 +19,6 @@ pub(crate) struct ProjectContext<'a> {
     pub(crate) memory_map: Option<&'a MemoryMap>,
     pub(crate) svd_paths: &'a [PathBuf],
     pub(crate) svd: &'a MmioMap,
-    pub(crate) function_workspace: &'a OnceLock<
-        std::result::Result<Option<crate::function_workspace::FunctionWorkspace>, String>,
-    >,
-    pub(crate) code_workspace:
-        &'a OnceLock<std::result::Result<Option<crate::code_workspace::CodeWorkspace>, String>>,
-    pub(crate) register_workspace: &'a OnceLock<
-        std::result::Result<Option<crate::registers::ProjectRegisterWorkspace>, String>,
-    >,
-    pub(crate) interface_workspace:
-        &'a OnceLock<std::result::Result<Option<crate::interfaces::InterfaceWorkspace>, String>>,
 }
 
 pub(crate) struct ProjectSessionOptions {
@@ -162,10 +152,6 @@ impl ProjectSession {
             memory_map: self.memory_map.as_ref(),
             svd_paths: &self.svd_paths,
             svd: &self.mmio,
-            function_workspace: &self.function_workspace,
-            code_workspace: &self.code_workspace,
-            register_workspace: &self.register_workspace,
-            interface_workspace: &self.interface_workspace,
         }
     }
 
@@ -196,30 +182,6 @@ impl ProjectSession {
         path: &std::path::Path,
     ) -> Result<std::sync::Arc<crate::artifacts::LinkedIrReader>> {
         self.artifacts.linked_ir(path)
-    }
-}
-
-impl ProjectContext<'_> {
-    pub(crate) fn function_workspace(
-        &self,
-    ) -> Result<Option<&crate::function_workspace::FunctionWorkspace>> {
-        cached_function_workspace(self.project, self.function_workspace)
-    }
-
-    pub(crate) fn code_workspace(&self) -> Result<Option<&crate::code_workspace::CodeWorkspace>> {
-        cached_code_workspace(self.project, self.code_workspace)
-    }
-
-    pub(crate) fn register_workspace(
-        &self,
-    ) -> Result<Option<&crate::registers::ProjectRegisterWorkspace>> {
-        cached_register_workspace(self.project, self.register_workspace)
-    }
-
-    pub(crate) fn interface_workspace(
-        &self,
-    ) -> Result<Option<&crate::interfaces::InterfaceWorkspace>> {
-        cached_interface_workspace(self.project, self.target, self.interface_workspace)
     }
 }
 

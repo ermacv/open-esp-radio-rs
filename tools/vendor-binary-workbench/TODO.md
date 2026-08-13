@@ -149,7 +149,7 @@ that every user must learn.
 - [x] Join the same Replacement Graph boundary into reviewed event-flow
   reports. An absent production mapping is a typed blocker rather than a
   guessed Rust function based on a vendor symbol name.
-- [ ] Extend that joined replacement view with ordered effect/RAM-transition
+- [x] Extend that joined replacement view with ordered effect/RAM-transition
   diffs and accepted differences from the concrete comparison report. Do not
   build a separate comparison engine for the TUI. The focused view now joins
   adapter/scenario cases from the existing suite report plus current reviewed
@@ -158,9 +158,10 @@ that every user must learn.
   MMIO/RAM effects in instruction order, collapsing indexed register domains
   instead of printing every candidate. Matching scenarios expose event/RAM-
   change counts and failed scenarios keep the comparator's first-difference
-  index; complete ordered Rust-side matching traces still need a compact
-  sidecar or bounded on-demand projection rather than duplication in every
-  aggregate report.
+  index. Verification schema 11 stores one canonical event/RAM trace for each
+  matching case with separate vendor/Rust producer provenance; focused
+  inspection renders the selected `--case`, the first case by default, or all
+  cases under `--details` without adding another comparison engine.
 
 ## P0 — functional analysis workflow
 
@@ -292,6 +293,10 @@ that every user must learn.
   MMIO, all blocker classes and replacement coverage. `project status` reads
   the compact artifact instead of repeating scope reconstruction, while
   `ir build` refreshes it after a focused profile rebuild.
+- [x] Make persisted review scopes structural rather than a stale snapshot of
+  replacement assurance. Schema 10 stores membership, MMIO and blockers;
+  current verification/Replacement Graph results are joined when the scope is
+  read, so a verification-only run cannot leave qualification counters stale.
 - [x] Separate the recursive analysis closure from the Rust replacement
   boundary. Review-scope schema 8 requires reviewed production coverage only
   for explicit roots; reachable private helpers remain full blocker/MMIO/call
@@ -572,7 +577,10 @@ that every user must learn.
   stderr. TSV and user-facing JSONL were removed without compatibility paths.
   Status/doctor/files lead with outcome, problems and ordered next actions;
   focused function inspection separates a concise pseudo-Rust/call/problem
-  view from the lossless `--full` body.
+  view from the lossless `--full` body. Replacement inspection similarly
+  keeps the first/last static effects in the default view and reserves the
+  complete ordered list for `--details`; the real 78-effect RX recycle leaf no
+  longer turns a focused query into an unbounded assembly-like stream.
 - [ ] Load the four linked-IR inputs once per project operation and share one
   typed workspace snapshot between validation, review, navigation and TUI.
   On the 2026-08-10 real run, `functions review` alone spent about 100 seconds
@@ -687,8 +695,10 @@ schema without isolation.
 - [x] Make one worker the CLI default and reject `--jobs 0`; parallelism is an
   explicit measured opt-in in the range `1..=8`.
 - [x] Add `scripts/run-limited`: prefer a 1-GiB/no-swap user systemd scope and
-  fall back to a Linux RSS watchdog; both paths have a 15-minute wall limit
-  and there is no unrestricted fallback. `RLIMIT_AS` was removed after it
+  fall back to a Linux process-tree RSS watchdog; both paths have a 15-minute
+  wall limit and there is no unrestricted fallback. The fallback sums every
+  descendant rather than watching only the launcher while workers escape its
+  accounting. `RLIMIT_AS` was removed after it
   rejected a 474-MiB real run solely because glibc retained released virtual
   address ranges.
 - [x] Remove project-wide concatenated pseudo-Rust outputs and their generated
@@ -734,12 +744,12 @@ schema without isolation.
   run-spec role and exact path. The schema-v48 real `btbb-all` write/check
   smoke test reproduces 186 functions, 111 registers and 277 field candidates
   in 0.40/0.35 s at 168,588/168,048 KiB through the hard-limit runner.
-- [x] Measure the read-only real-project status path after the UI migration.
-  It completes in 1.53 s at 266,952 KiB RSS through `scripts/run-limited`.
-  Deduplicating repeated physical artifact paths reduced the measured baseline
-  from 1.61 s while preserving one explicit report row per input role. An
-  allocation-light function-pack projection produced no measurable RSS/time
-  improvement and was deliberately not retained.
+- [x] Measure and bound the read-only real-project status path after the UI
+  migration. The 2026-08-13 optimized path completes in 1.13 s at 168,000 KiB
+  RSS. It reads container headers, output metadata and compact typed gate
+  reports instead of deserializing artifact-wide inventories. `project doctor`
+  owns deep evidence validation and `project check` owns byte-for-byte
+  reproduction; `-vv` exposes per-phase and per-component timings.
 - [ ] Reduce the all-profile single-process high-water from 580,824 KiB to the
   isolated-profile target (at most 512 MiB). Every profile is dropped and
   glibc-trimmed to about 53 MiB before the next one; remaining allocator

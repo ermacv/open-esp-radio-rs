@@ -24,9 +24,14 @@ cargo vendor-binary-workbench project status \
   --project verification/vendor/targets/esp32s31/vendor-project.toml
 ```
 
-- `doctor` validates configuration and local inputs;
+- `doctor` deeply validates configuration, local inputs, and reviewed workspaces;
 - `files` explains ownership and identifies missing external artifacts;
-- `status` reports analysis, review, verification, and publication readiness.
+- `status` quickly reports usable outputs, current review/verification gates,
+  and publication readiness without reparsing every artifact-wide report.
+
+Use `status` while investigating and `project doctor` after changing inputs or
+reviewed packs. Before publishing or merging a replacement, run `project
+check` to reproduce every generated output and enforce strict freshness.
 
 Use `--details` only for the expanded evidence inventory.
 
@@ -201,6 +206,20 @@ report deliberately keeps `path-feasibility=false` for the complete IRQ route:
 the executable replay starts at `pp_post`, so the higher IRQ-to-post prefix is
 structural evidence rather than a concrete end-to-end replay. Low-level
 engines live under `advanced` and are not a second required workflow.
+
+To compare one mapped vendor function with its production Rust replacement,
+request the joined evidence directly:
+
+```console
+cargo vendor-binary-workbench inspect function libpp:hal_mac_set_bssid \
+  --project verification/vendor/targets/esp32s31/vendor-project.toml \
+  --replacement
+```
+
+Every successful concrete case includes one ordered MMIO/delay/fence trace,
+with vendor and Rust producer PCs when the execution images provide them.
+Use `--case CASE_ID` for one scenario or `--details` for every matching case;
+the command rejects `--case` without `--replacement`.
 
 ## Registers and the closed PAC
 

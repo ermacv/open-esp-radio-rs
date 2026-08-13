@@ -2,10 +2,6 @@
 
 use super::model::{Component, Phase, Readiness, ReviewScopeDetail};
 use crate::application::ProjectContext;
-use crate::registers::{
-    validate_pac_api, validate_register_evidence, validate_register_lints,
-    validate_register_memory_map,
-};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct ScopeGate {
@@ -36,14 +32,24 @@ fn scope_gate(states: impl IntoIterator<Item = (bool, bool, bool)>) -> ScopeGate
 }
 
 pub(super) fn collect(context: &ProjectContext<'_>) -> Phase {
+    fn component(name: &'static str, collect: impl FnOnce() -> Component) -> Component {
+        let started = std::time::Instant::now();
+        let component = collect();
+        tracing::debug!(
+            component = name,
+            elapsed_ms = started.elapsed().as_millis(),
+            "review status component collected"
+        );
+        component
+    }
     Phase::collect(
         "review",
         vec![
-            code(context),
-            registers(context),
-            interfaces(context),
-            functions(context),
-            scopes(context),
+            component("code", || code(context)),
+            component("registers", || registers(context)),
+            component("interfaces", || interfaces(context)),
+            component("functions", || functions(context)),
+            component("scopes", || scopes(context)),
         ],
     )
 }
@@ -170,33 +176,13 @@ fn code(context: &ProjectContext<'_>) -> Component {
             .diagnostic("reviewed code-boundary pack has not been initialized")
             .next_action(project_command(context, "advanced code init-pack"));
     }
-    match context.code_workspace() {
-        Ok(Some(workspace)) => {
-            let summary = workspace.summary();
-            Component::new(
-                "code_boundaries",
-                if summary.unreviewed == 0 {
-                    Readiness::Ready
-                } else {
-                    Readiness::Inventory
-                },
-            )
-            .detail("facts", inventory.output.display().to_string())
-            .detail("pack", paths.pack.display().to_string())
-            .detail("candidates", summary.observed_candidates)
-            .detail("accepted", summary.accepted)
-            .detail("rejected", summary.rejected)
-            .detail("unreviewed", summary.unreviewed)
-            .detail("inventory_backlog", summary.unreviewed)
-            .detail("gating", false)
-        }
-        Ok(None) => Component::new("code_boundaries", Readiness::Incomplete)
-            .detail("pack", paths.pack.display().to_string()),
-        Err(error) => Component::new("code_boundaries", Readiness::Invalid)
-            .detail("pack", paths.pack.display().to_string())
-            .diagnostic(error)
-            .next_action(project_command(context, "advanced code rebase")),
-    }
+    inventory_ready(
+        "code_boundaries",
+        [
+            ("facts", inventory.output.as_path()),
+            ("pack", paths.pack.as_path()),
+        ],
+    )
 }
 
 fn registers(context: &ProjectContext<'_>) -> Component {
@@ -209,53 +195,14 @@ fn registers(context: &ProjectContext<'_>) -> Component {
             .diagnostic("register model has not been initialized")
             .next_action(project_command(context, "registers init-model"));
     }
-    let workspace = match context.register_workspace() {
-        Ok(Some(workspace)) => workspace,
-        Ok(None) => return Component::new("registers", Readiness::Incomplete),
-        Err(error) => {
-            return Component::new("registers", Readiness::Invalid)
-                .detail("model", paths.model.display().to_string())
-                .diagnostic(error);
-        }
-    };
-    let summary = match workspace.summary() {
-        Ok(summary) => summary,
-        Err(error) => {
-            return Component::new("registers", Readiness::Invalid)
-                .detail("model", paths.model.display().to_string())
-                .diagnostic(error);
-        }
-    };
-    let validation = validate_register_memory_map(paths, context.memory_map)
-        .and_then(|_| validate_pac_api(paths).map(|_| ()))
-        .and_then(|_| validate_register_lints(paths).map(|_| ()))
-        .and_then(|_| validate_register_evidence(paths, context.memory_map).map(|_| ()));
-    if let Err(error) = validation {
-        return Component::new("registers", Readiness::Invalid)
-            .detail("model", paths.model.display().to_string())
-            .diagnostic(error);
-    }
-    Component::new(
+    inventory_ready(
         "registers",
-        if summary.unreviewed == 0 {
-            Readiness::Ready
-        } else {
-            Readiness::Inventory
-        },
+        [
+            ("facts", paths.facts.as_path()),
+            ("model", paths.model.as_path()),
+        ],
     )
     .detail("owned_ranges", paths.owned_ranges.join(","))
-    .detail("format", workspace.format_label())
-    .detail("facts", paths.facts.display().to_string())
-    .detail("model", paths.model.display().to_string())
-    .detail("observed", summary.observed)
-    .detail("reviewed", summary.reviewed)
-    .detail("ignored", summary.ignored)
-    .detail("non_operational", summary.non_operational)
-    .detail("manual", summary.manual)
-    .detail("unreviewed", summary.unreviewed)
-    .detail("inventory_backlog", summary.unreviewed)
-    .detail("gating", false)
-    .detail("fields", summary.fields)
     .detail("review_ir_reports", paths.review_ir_reports.len())
     .detail("api_pack_configured", paths.api_pack.is_some())
     .detail("lint_pack_configured", paths.lint_pack.is_some())
@@ -286,43 +233,10 @@ fn interfaces(context: &ProjectContext<'_>) -> Component {
             .diagnostic("interface pack has not been initialized")
             .next_action(project_command(context, "advanced interfaces init-pack"));
     }
-    match context.interface_workspace() {
-        Ok(Some(workspace)) => {
-            let summary = workspace.summary();
-            Component::new(
-                "interfaces",
-                if summary.unreviewed_anchors == 0 && summary.unreviewed_slots == 0 {
-                    Readiness::Ready
-                } else {
-                    Readiness::Inventory
-                },
-            )
-            .detail("facts", paths.facts.display().to_string())
-            .detail("pack", pack.display().to_string())
-            .detail("reviewed_anchors", summary.reviewed_anchors)
-            .detail("ignored_anchors", summary.ignored_anchors)
-            .detail("unreviewed_anchors", summary.unreviewed_anchors)
-            .detail("reviewed_slots", summary.reviewed_slots)
-            .detail("ignored_slots", summary.ignored_slots)
-            .detail("unreviewed_slots", summary.unreviewed_slots)
-            .detail(
-                "inventory_backlog",
-                summary.unreviewed_anchors + summary.unreviewed_slots,
-            )
-            .detail("gating", false)
-            .detail("semantic_links", summary.semantic_links)
-            .detail("execution_contracts", summary.execution_contracts)
-            .detail("execution_models", summary.execution_models)
-            .detail("resolved_calls", summary.resolved_calls)
-        }
-        Ok(None) => Component::new("interfaces", Readiness::Incomplete)
-            .detail("facts", paths.facts.display().to_string())
-            .detail("pack", pack.display().to_string()),
-        Err(error) => Component::new("interfaces", Readiness::Invalid)
-            .detail("facts", paths.facts.display().to_string())
-            .detail("pack", pack.display().to_string())
-            .diagnostic(error),
-    }
+    inventory_ready(
+        "interfaces",
+        [("facts", paths.facts.as_path()), ("pack", pack)],
+    )
 }
 
 fn functions(context: &ProjectContext<'_>) -> Component {
@@ -352,53 +266,20 @@ fn functions(context: &ProjectContext<'_>) -> Component {
             .diagnostic("function pack has not been initialized")
             .next_action(project_command(context, "advanced functions init-pack"));
     }
-    match context.function_workspace() {
-        Ok(Some(workspace)) => {
-            let summary = workspace.summary();
-            Component::new(
-                "functions",
-                if summary.unreviewed_functions == 0
-                    && summary.unreviewed_contexts == 0
-                    && summary.unreviewed_fields == 0
-                    && summary.unreviewed_type_fields == 0
-                {
-                    Readiness::Ready
-                } else {
-                    Readiness::Inventory
-                },
-            )
-            .detail("pack", paths.pack.display().to_string())
-            .detail("profiles", reports.len())
-            .detail("root_functions", summary.observed_functions)
-            .detail("reviewed_functions", summary.reviewed_functions)
-            .detail("ignored_functions", summary.ignored_functions)
-            .detail("unreviewed_functions", summary.unreviewed_functions)
-            .detail("reviewed_contexts", summary.reviewed_contexts)
-            .detail("unreviewed_contexts", summary.unreviewed_contexts)
-            .detail("reviewed_fields", summary.reviewed_fields)
-            .detail("unreviewed_fields", summary.unreviewed_fields)
-            .detail("logical_types", summary.logical_types)
-            .detail("type_bindings", summary.type_bindings)
-            .detail("unreviewed_type_fields", summary.unreviewed_type_fields)
-            .detail("accepted_incomplete", summary.accepted_incomplete)
-            .detail(
-                "inventory_backlog",
-                summary.unreviewed_functions
-                    + summary.unreviewed_contexts
-                    + summary.unreviewed_fields
-                    + summary.unreviewed_type_fields,
-            )
-            .detail("gating", false)
-        }
-        Ok(None) => Component::new("functions", Readiness::Incomplete)
-            .detail("pack", paths.pack.display().to_string())
-            .diagnostic("linked-IR function facts or reviewed pack are unavailable")
-            .next_action(project_command(context, "advanced functions validate")),
-        Err(error) => Component::new("functions", Readiness::Invalid)
-            .detail("pack", paths.pack.display().to_string())
-            .diagnostic(error)
-            .next_action(project_command(context, "advanced functions validate")),
+    inventory_ready("functions", [("pack", paths.pack.as_path())]).detail("profiles", reports.len())
+}
+
+fn inventory_ready<'a>(
+    name: &'static str,
+    paths: impl IntoIterator<Item = (&'static str, &'a std::path::Path)>,
+) -> Component {
+    let mut component = Component::new(name, Readiness::Inventory)
+        .detail("gating", false)
+        .detail("deep_validation", "project doctor / project check");
+    for (key, path) in paths {
+        component = component.detail(key, path.display().to_string());
     }
+    component
 }
 
 fn project_command(context: &ProjectContext<'_>, command: &str) -> String {

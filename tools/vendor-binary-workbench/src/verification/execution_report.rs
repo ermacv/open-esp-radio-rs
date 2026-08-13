@@ -1,6 +1,6 @@
 //! Typed result model and human renderer for concrete execution comparison.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 use crate::execution;
@@ -20,7 +20,7 @@ pub struct ArtifactIdentity {
     pub sha256: String,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum ExecutionEventReport {
     Read {
@@ -49,7 +49,7 @@ pub enum ExecutionEventReport {
     },
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 pub struct EventProducerReport {
     pub pc: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -111,7 +111,7 @@ impl From<&execution::ExecutionEvent> for ExecutionEventReport {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 pub struct MemoryChangeReport {
     pub address: u32,
     pub before: u8,
@@ -397,6 +397,28 @@ pub struct ScenarioEnvironmentReport {
     pub rust_completion: Option<ExecutionCompletionReport>,
 }
 
+/// One effect shared by both sides of a successful comparison, with separate
+/// producer provenance.  Storing the event once keeps aggregate reports small
+/// while retaining the exact vendor-to-Rust correspondence needed by focused
+/// investigation.
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
+pub struct MatchedEventReport {
+    pub index: usize,
+    pub event: ExecutionEventReport,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vendor_producer: Option<EventProducerReport>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rust_producer: Option<EventProducerReport>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
+pub struct MatchedTraceReport {
+    pub events: Vec<MatchedEventReport>,
+    pub memory_changes: Vec<MemoryChangeReport>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub return_value: Option<u32>,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(tag = "verdict", rename_all = "kebab-case")]
 pub enum CaseReport {
@@ -406,6 +428,7 @@ pub enum CaseReport {
         events: usize,
         memory_changes: usize,
         return_compared: bool,
+        trace: MatchedTraceReport,
     },
     Diff {
         name: String,

@@ -96,6 +96,7 @@ pub struct ReplacementExecutionCaseEvidence {
     pub return_compared: Option<bool>,
     pub first_difference: Option<usize>,
     pub difference_kind: Option<String>,
+    pub trace: Option<crate::verification::MatchedTraceReport>,
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
@@ -152,6 +153,7 @@ enum StoredExecutionCaseProjection {
         events: usize,
         memory_changes: usize,
         return_compared: bool,
+        trace: crate::verification::MatchedTraceReport,
     },
     Diff {
         name: String,
@@ -419,6 +421,7 @@ impl From<&StoredExecutionCaseProjection> for ReplacementExecutionCaseEvidence {
                 events,
                 memory_changes,
                 return_compared,
+                trace,
             } => Self {
                 name: name.clone(),
                 verdict: "match".to_owned(),
@@ -427,6 +430,7 @@ impl From<&StoredExecutionCaseProjection> for ReplacementExecutionCaseEvidence {
                 return_compared: Some(*return_compared),
                 first_difference: None,
                 difference_kind: None,
+                trace: Some(trace.clone()),
             },
             StoredExecutionCaseProjection::Diff { name, difference } => Self {
                 name: name.clone(),
@@ -436,6 +440,7 @@ impl From<&StoredExecutionCaseProjection> for ReplacementExecutionCaseEvidence {
                 return_compared: None,
                 first_difference: Some(difference.first_difference),
                 difference_kind: Some(difference.kind.clone()),
+                trace: None,
             },
             StoredExecutionCaseProjection::Incomplete { name } => Self {
                 name: name.clone(),
@@ -445,6 +450,7 @@ impl From<&StoredExecutionCaseProjection> for ReplacementExecutionCaseEvidence {
                 return_compared: None,
                 first_difference: None,
                 difference_kind: None,
+                trace: None,
             },
         }
     }
@@ -529,5 +535,51 @@ mod tests {
         );
         assert_eq!(evidence[0].proofs[0].adapter_cases[0].name, "ap");
         assert_eq!(evidence[0].proofs[0].effects, Some(1));
+    }
+
+    #[test]
+    fn matching_execution_projection_keeps_one_canonical_trace_with_both_producers() {
+        let case: StoredExecutionCaseProjection = serde_json::from_value(serde_json::json!({
+            "verdict": "match",
+            "name": "ap-role",
+            "events": 1,
+            "memory_changes": 0,
+            "return_compared": false,
+            "trace": {
+                "events": [{
+                    "index": 0,
+                    "event": {
+                        "kind": "write",
+                        "width": 32,
+                        "address": 0x60000010_u32,
+                        "region": "wifi",
+                        "register": "KEY_CTRL",
+                        "value": 0x100_u32
+                    },
+                    "vendor_producer": {"pc": 0x1000_u32, "symbol": "set_key", "symbol_offset": 4},
+                    "rust_producer": {"pc": 0x2000_u32, "symbol": "set_key_entry", "symbol_offset": 8}
+                }],
+                "memory_changes": []
+            }
+        }))
+        .unwrap();
+
+        let evidence = ReplacementExecutionCaseEvidence::from(&case);
+        let trace = evidence.trace.unwrap();
+        assert_eq!(trace.events.len(), 1);
+        assert_eq!(
+            trace.events[0]
+                .vendor_producer
+                .as_ref()
+                .and_then(|producer| producer.symbol.as_deref()),
+            Some("set_key")
+        );
+        assert_eq!(
+            trace.events[0]
+                .rust_producer
+                .as_ref()
+                .and_then(|producer| producer.symbol.as_deref()),
+            Some("set_key_entry")
+        );
     }
 }

@@ -12,7 +12,7 @@ use crate::{
     registers::RegisterFacts,
 };
 
-pub(crate) const REVIEW_SCOPES_SCHEMA: u32 = 9;
+pub(crate) const REVIEW_SCOPES_SCHEMA: u32 = 10;
 
 mod model;
 pub(crate) use model::{
@@ -77,7 +77,6 @@ pub(crate) fn analyze(project: &ProjectSpec) -> Result<Vec<ReviewScopeReport>> {
     let Some(workspace) = &project.review else {
         return Ok(Vec::new());
     };
-    let replacements = load_replacements(project)?;
     let register_facts = project
         .registers
         .as_ref()
@@ -96,7 +95,6 @@ pub(crate) fn analyze(project: &ProjectSpec) -> Result<Vec<ReviewScopeReport>> {
         reports.push(analyze_scope(
             scope,
             workspace.publication_scopes.contains(&scope.id),
-            &replacements,
             register_facts.as_ref(),
             &nodes_by_profiles[&scope.profiles],
         )?);
@@ -140,7 +138,7 @@ pub(crate) fn load_for_project(project: &ProjectSpec) -> Result<ReviewScopesDocu
         .review
         .as_ref()
         .ok_or_else(|| crate::Error::invalid("[review] is required for project publication"))?;
-    let document = load(&workspace.output)?;
+    let mut document = load(&workspace.output)?;
     if document.project != project.id {
         return Err(crate::Error::invalid(format!(
             "review scope report belongs to project {:?}, expected {:?}",
@@ -174,6 +172,10 @@ pub(crate) fn load_for_project(project: &ProjectSpec) -> Result<ReviewScopesDocu
             "review scope report {} is stale for the configured [review] scopes; run project analyze",
             workspace.output.display()
         )));
+    }
+    let replacements = load_replacements(project)?;
+    for scope in &mut document.scopes {
+        apply_replacement_assurance(scope, &replacements)?;
     }
     Ok(document)
 }
@@ -317,7 +319,6 @@ fn load_profile_nodes(
 fn analyze_scope(
     scope: &ReviewScopeSpec,
     publication: bool,
-    replacements: &[StoredReplacement],
     register_facts: Option<&RegisterFacts>,
     nodes: &BTreeMap<String, FunctionNode>,
 ) -> Result<ReviewScopeReport> {
@@ -539,10 +540,35 @@ fn analyze_scope(
             },
         )
         .collect();
-    for (source, symbol) in &replacement_vendors {
+    report.analysis_inventory_complete = !report.has_analysis_inventory_blockers();
+    report.review_queue = queue::finish(review_queue);
+    Ok(report)
+}
+
+/// Join the current project verification result onto one structural scope.
+///
+/// This projection intentionally runs at read time.  `project analyze` owns
+/// the structural denominator while `project verify` owns replacement proof;
+/// persisting the latter in the former made status and the TUI stale until an
+/// unrelated analysis rebuild.
+fn apply_replacement_assurance(
+    report: &mut ReviewScopeReport,
+    replacements: &[StoredReplacement],
+) -> Result<()> {
+    let mut review_queue = queue::new();
+    for item in std::mem::take(&mut report.review_queue) {
+        queue::insert_existing(&mut review_queue, item);
+    }
+    for key in &report.replacement_function_keys {
+        let (source, symbol) = key.split_once(':').ok_or_else(|| {
+            crate::Error::invalid(format!(
+                "review scope {:?} contains invalid replacement key {key:?}",
+                report.id
+            ))
+        })?;
         let function = format!("{source}::{symbol}");
         let Some(replacement) = replacements.iter().find(|replacement| {
-            replacement.vendor.source == *source && replacement.vendor.symbol == *symbol
+            replacement.vendor.source == source && replacement.vendor.symbol == symbol
         }) else {
             report.replacement_uncovered += 1;
             queue::insert(
@@ -626,8 +652,7 @@ fn analyze_scope(
             }
         }
     }
-    report.analysis_inventory_complete = !report.has_analysis_inventory_blockers();
-    report.replacement_qualification = if !publication {
+    report.replacement_qualification = if !report.publication {
         ReplacementQualification::NotPublished
     } else if report.has_replacement_qualification_blockers()
         || report.replacement_production_matches != report.replacement_functions
@@ -637,7 +662,7 @@ fn analyze_scope(
         ReplacementQualification::Qualified
     };
     report.review_queue = queue::finish(review_queue);
-    Ok(report)
+    Ok(())
 }
 
 fn transaction_fingerprint(
@@ -917,7 +942,7 @@ mod tests {
             include_reachable: true,
         };
 
-        let report = analyze_scope(&scope, false, &[], None, &nodes).unwrap();
+        let report = analyze_scope(&scope, false, None, &nodes).unwrap();
 
         assert_eq!(report.replacement_function_keys, ["vendor:root"]);
         assert_eq!(report.transaction_keys, ["vendor:transaction"]);
@@ -992,5 +1017,41 @@ mod tests {
             StoredReplacementStatus::BoundedMatch
         );
         assert!(StoredReplacementStatus::parse("match-ish").is_err());
+    }
+
+    #[test]
+    fn current_replacement_assurance_is_not_persisted_with_structural_scope() {
+        let nodes = BTreeMap::from([("vendor::root".to_owned(), node("vendor", "root"))]);
+        let scope = ReviewScopeSpec {
+            id: "feature".to_owned(),
+            profiles: vec!["fixture".to_owned()],
+            roots: vec!["vendor:root".to_owned()],
+            include_reachable: false,
+        };
+        let mut report = analyze_scope(&scope, true, None, &nodes).unwrap();
+        apply_replacement_assurance(
+            &mut report,
+            &[StoredReplacement {
+                vendor: model::StoredVendorFunction {
+                    source: "vendor".to_owned(),
+                    symbol: "root".to_owned(),
+                },
+                status: "match".to_owned(),
+                rust: Some(model::StoredRustReplacement {
+                    production_component: Some("driver::root".to_owned()),
+                    verification_probes: Vec::new(),
+                }),
+            }],
+        )
+        .unwrap();
+
+        assert_eq!(
+            report.replacement_qualification,
+            ReplacementQualification::Qualified
+        );
+        let json = serde_json::to_value(&report).unwrap();
+        assert!(json.get("replacement_qualification").is_none());
+        assert!(json.get("replacement_production_matches").is_none());
+        assert!(json["review_queue"].as_array().unwrap().is_empty());
     }
 }

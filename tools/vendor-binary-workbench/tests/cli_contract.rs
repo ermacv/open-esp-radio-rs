@@ -705,7 +705,7 @@ prefix = "fixture_"
     );
     let document: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(document["command"], "project verify");
-    assert_eq!(document["schema_version"], 10);
+    assert_eq!(document["schema_version"], 11);
     assert!(
         document["suites"][0]["artifacts"]
             .as_array()
@@ -1206,8 +1206,11 @@ fn project_symbol_inventory_writes_and_checks_its_manifest_owned_report() {
         .find(|component| component["name"] == "symbol_inventory")
         .expect("symbol_inventory component");
     assert_eq!(symbol_component["status"], "ready");
-    assert_eq!(symbol_component["exported_definitions"], 1);
-    assert_eq!(symbol_component["undefined"], 1);
+    assert!(symbol_component["bytes"].as_u64().unwrap() > 0);
+    assert_eq!(
+        symbol_component["deep_validation"],
+        "project doctor / project check"
+    );
     let navigation_component = status["phases"]["analysis"]["components"]
         .as_array()
         .unwrap()
@@ -1215,7 +1218,11 @@ fn project_symbol_inventory_writes_and_checks_its_manifest_owned_report() {
         .find(|component| component["name"] == "navigation_index")
         .expect("navigation_index component");
     assert_eq!(navigation_component["status"], "ready");
-    assert_eq!(navigation_component["linked_ir_functions"], 1);
+    assert!(navigation_component["bytes"].as_u64().unwrap() > 0);
+    assert_eq!(
+        navigation_component["deep_validation"],
+        "project doctor / project check"
+    );
 
     std::fs::OpenOptions::new()
         .append(true)
@@ -1230,7 +1237,7 @@ fn project_symbol_inventory_writes_and_checks_its_manifest_owned_report() {
         .args(["--format", "json", "--color", "never"])
         .output()
         .expect("run project status with stale navigation");
-    assert!(!stale.status.success());
+    assert!(stale.status.success());
     let stale: serde_json::Value = serde_json::from_slice(&stale.stdout).unwrap();
     let navigation_component = stale["phases"]["analysis"]["components"]
         .as_array()
@@ -1238,13 +1245,20 @@ fn project_symbol_inventory_writes_and_checks_its_manifest_owned_report() {
         .iter()
         .find(|component| component["name"] == "navigation_index")
         .expect("stale navigation_index component");
-    assert_eq!(navigation_component["status"], "invalid");
-    assert!(
-        navigation_component["diagnostic"]
-            .as_str()
-            .unwrap()
-            .contains("changed since indexing")
+    assert_eq!(navigation_component["status"], "ready");
+    assert_eq!(
+        navigation_component["deep_validation"],
+        "project doctor / project check"
     );
+
+    let strict = workbench()
+        .current_dir(repository_root())
+        .args(["project", "analyze", "--check", "--project"])
+        .arg(&manifest)
+        .args(["--format", "json", "--color", "never"])
+        .output()
+        .expect("strictly reproduce project analysis");
+    assert!(!strict.status.success());
     std::fs::remove_dir_all(directory).unwrap();
 }
 
@@ -1264,13 +1278,12 @@ fn project_publication_json_is_one_typed_report() {
     std::fs::write(
         review_output,
         serde_json::to_vec_pretty(&serde_json::json!({
-            "schema_version": 9,
+            "schema_version": 10,
             "command": "project review scopes",
             "project": "publication-report",
             "scopes": [{
                 "id": "publication",
                 "publication": true,
-                "replacement_qualification": "qualified",
                 "analysis_inventory_complete": true,
                 "profiles": ["vendor"],
                 "roots": 1,
@@ -1296,15 +1309,6 @@ fn project_publication_json_is_one_typed_report() {
                 "call_graph_blockers": 0,
                 "reference_blockers": 0,
                 "unresolved_calls": 0,
-                "replacement_behavioral_matches": 0,
-                "replacement_bounded_matches": 0,
-                "replacement_production_matches": 0,
-                "replacement_probe_only_matches": 0,
-                "replacement_unmapped_matches": 0,
-                "replacement_mismatches": 0,
-                "replacement_incomplete": 0,
-                "replacement_unqualified": 0,
-                "replacement_uncovered": 0,
                 "review_queue": []
             }]
         }))

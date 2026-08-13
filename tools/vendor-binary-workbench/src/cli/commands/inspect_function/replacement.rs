@@ -1,6 +1,6 @@
 //! Vendor-to-Rust replacement report rendering.
 
-use super::ReplacementInvestigationReport;
+use super::{ReplacementInvestigationReport, VendorEffectEvidence};
 use crate::cli::output;
 use crate::function_investigation::ReviewedEffectRuleEvidence;
 
@@ -132,6 +132,19 @@ pub(super) fn render(report: &ReplacementInvestigationReport) {
                     };
                     outputln!("  case {}: {}{detail}", case.name, case.verdict);
                 }
+                let traces = proof
+                    .execution_cases
+                    .iter()
+                    .filter_map(|case| case.trace.as_ref().map(|trace| (&case.name, trace)))
+                    .collect::<Vec<_>>();
+                let visible_traces = if report.requested_case.is_some() || output::details() {
+                    traces.len()
+                } else {
+                    usize::from(!traces.is_empty())
+                };
+                for (name, trace) in traces.into_iter().take(visible_traces) {
+                    render_matched_trace(&proof.suite, name, trace);
+                }
                 if output::details()
                     && let Some(reason) = &proof.reason
                 {
@@ -158,30 +171,26 @@ pub(super) fn render(report: &ReplacementInvestigationReport) {
         }
         for (profile, effects) in profiles {
             outputln!("\nProfile: {profile}");
-            for (index, evidence) in effects.iter().enumerate() {
-                outputln!(
-                    "{}. {:#010x}{} {}{} {} {}{}",
-                    index + 1,
-                    evidence.address,
-                    evidence
-                        .block
-                        .map(|block| format!(" bb{block}"))
-                        .unwrap_or_default(),
-                    evidence.access,
-                    evidence.width,
-                    evidence.kind,
-                    compact_targets(&evidence.targets),
-                    evidence
-                        .value
-                        .as_deref()
-                        .map(|value| format!(" ← {}", compact_value(value, output::details())))
-                        .unwrap_or_default(),
-                );
-                if output::details() && evidence.targets.len() > 2 {
-                    outputln!("   targets: {}", evidence.targets.join(", "));
+            const HEAD_EFFECTS: usize = 8;
+            const TAIL_EFFECTS: usize = 8;
+            if output::details() || effects.len() <= HEAD_EFFECTS + TAIL_EFFECTS {
+                for (index, evidence) in effects.iter().enumerate() {
+                    render_vendor_effect(index, evidence);
                 }
-                if !evidence.guards.is_empty() {
-                    outputln!("   when: {}", evidence.guards.join(" || "));
+            } else {
+                for (index, evidence) in effects.iter().take(HEAD_EFFECTS).enumerate() {
+                    render_vendor_effect(index, evidence);
+                }
+                let omitted = effects.len() - HEAD_EFFECTS - TAIL_EFFECTS;
+                outputln!(
+                    "… {omitted} middle effect(s) omitted; use --details for the complete ordered list."
+                );
+                for (index, evidence) in effects
+                    .iter()
+                    .enumerate()
+                    .skip(effects.len() - TAIL_EFFECTS)
+                {
+                    render_vendor_effect(index, evidence);
                 }
             }
         }
@@ -226,6 +235,109 @@ pub(super) fn render(report: &ReplacementInvestigationReport) {
                 outputln!("  blocker: {blocker}");
             }
         }
+    }
+}
+
+fn render_vendor_effect(index: usize, evidence: &VendorEffectEvidence) {
+    outputln!(
+        "{}. {:#010x}{} {}{} {} {}{}",
+        index + 1,
+        evidence.address,
+        evidence
+            .block
+            .map(|block| format!(" bb{block}"))
+            .unwrap_or_default(),
+        evidence.access,
+        evidence.width,
+        evidence.kind,
+        compact_targets(&evidence.targets),
+        evidence
+            .value
+            .as_deref()
+            .map(|value| format!(" ← {}", compact_value(value, output::details())))
+            .unwrap_or_default(),
+    );
+    if output::details() && evidence.targets.len() > 2 {
+        outputln!("   targets: {}", evidence.targets.join(", "));
+    }
+    if !evidence.guards.is_empty() {
+        outputln!("   when: {}", evidence.guards.join(" || "));
+    }
+}
+
+fn render_matched_trace(suite: &str, case: &str, trace: &crate::verification::MatchedTraceReport) {
+    outputln!(
+        "\n{}",
+        output::heading(format!("Matched trace — {suite}/{case}"))
+    );
+    if trace.events.is_empty() {
+        outputln!("No observable MMIO, delay or fence events.");
+    } else {
+        for item in &trace.events {
+            outputln!("{}. {}", item.index, event_text(&item.event));
+            outputln!(
+                "   vendor: {}",
+                producer_text(item.vendor_producer.as_ref())
+            );
+            outputln!("   Rust:   {}", producer_text(item.rust_producer.as_ref()));
+        }
+    }
+    if !trace.memory_changes.is_empty() {
+        outputln!("RAM transitions:");
+        for change in &trace.memory_changes {
+            outputln!(
+                "  {:#010x}: {:#04x} → {:#04x}",
+                change.address,
+                change.before,
+                change.after
+            );
+        }
+    }
+    if let Some(value) = trace.return_value {
+        outputln!("Compared return: {value:#010x}");
+    }
+}
+
+fn event_text(event: &crate::verification::ExecutionEventReport) -> String {
+    use crate::verification::ExecutionEventReport;
+    match event {
+        ExecutionEventReport::Read {
+            width,
+            address,
+            region,
+            register,
+            value,
+        } => format!(
+            "READ/{width} {region}/{} ({address:#010x}) → {value:#010x}",
+            register.as_deref().unwrap_or("unknown")
+        ),
+        ExecutionEventReport::Write {
+            width,
+            address,
+            region,
+            register,
+            value,
+        } => format!(
+            "WRITE/{width} {region}/{} ({address:#010x}) ← {value:#010x}",
+            register.as_deref().unwrap_or("unknown")
+        ),
+        ExecutionEventReport::DelayMicros { micros } => format!("DELAY {micros} us"),
+        ExecutionEventReport::Fence {
+            fm,
+            predecessor,
+            successor,
+        } => format!("FENCE fm={fm:#x} pred={predecessor:#x} succ={successor:#x}"),
+    }
+}
+
+fn producer_text(producer: Option<&crate::verification::EventProducerReport>) -> String {
+    let Some(producer) = producer else {
+        return "producer metadata unavailable".to_owned();
+    };
+    match (&producer.symbol, producer.symbol_offset) {
+        (Some(symbol), Some(offset)) => format!("{symbol}+{offset:#x} @ {:#010x}", producer.pc),
+        (Some(symbol), None) => format!("{symbol} @ {:#010x}", producer.pc),
+        (None, _) => format!("{:#010x}", producer.pc),
     }
 }
 

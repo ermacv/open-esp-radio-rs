@@ -583,6 +583,28 @@ pub(crate) fn compare_execution_scenarios(
                 events: vendor_result.events.len(),
                 memory_changes: vendor_result.memory_changes.len(),
                 return_compared: compare_return,
+                trace: MatchedTraceReport {
+                    events: vendor_result
+                        .events
+                        .iter()
+                        .enumerate()
+                        .map(|(index, event)| MatchedEventReport {
+                            index,
+                            event: event.into(),
+                            vendor_producer: vendor_result
+                                .event_producers
+                                .get(index)
+                                .map(Into::into),
+                            rust_producer: rust_result.event_producers.get(index).map(Into::into),
+                        })
+                        .collect(),
+                    memory_changes: vendor_result
+                        .memory_changes
+                        .iter()
+                        .map(Into::into)
+                        .collect(),
+                    return_value: compare_return.then_some(vendor_result.return_value),
+                },
             });
         } else {
             different_cases += 1;

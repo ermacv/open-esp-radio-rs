@@ -474,6 +474,9 @@ pub(crate) struct InspectFunctionArgs {
         conflicts_with_all = ["full", "calls", "call", "path"]
     )]
     pub(crate) replacement: bool,
+    /// Show one named execution case in the focused replacement report.
+    #[arg(long, value_name = "NAME", requires = "replacement")]
+    pub(crate) case: Option<String>,
     /// Show one shortest structural CFG path (`FROM:TO`); use `+OFFSET` for function offsets.
     #[arg(long, value_name = "FROM:TO")]
     pub(crate) path: Option<String>,

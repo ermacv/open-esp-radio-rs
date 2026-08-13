@@ -183,6 +183,8 @@ struct StoredAggregateReport {
 #[derive(Deserialize)]
 struct StoredSuiteReport {
     id: String,
+    passed: bool,
+    evidence_baseline_passed: bool,
     artifacts: Vec<StoredArtifact>,
 }
 
@@ -316,7 +318,19 @@ fn last_report(
                 project_path.display()
             ));
     }
-    Component::new(
+    let failed_suites = report
+        .suites
+        .iter()
+        .filter(|suite| !suite.passed)
+        .map(|suite| suite.id.clone())
+        .collect::<Vec<_>>();
+    let stale_baselines = report
+        .suites
+        .iter()
+        .filter(|suite| !suite.evidence_baseline_passed)
+        .map(|suite| suite.id.clone())
+        .collect::<Vec<_>>();
+    let mut component = Component::new(
         "last-verification",
         if report.passed {
             Readiness::Ready
@@ -423,7 +437,76 @@ fn last_report(
     .detail(
         "currency_check",
         "project verify --check replays suites and verifies artifact/evidence currency",
-    )
+    );
+    if !report.passed {
+        let next_action = stale_baselines.first().map_or_else(
+            || {
+                failed_suites.first().map_or_else(
+                    || {
+                        format!(
+                            "replay verification with `vendor-binary-workbench project verify --project {}`",
+                            project_path.display()
+                        )
+                    },
+                    |first| {
+                        format!(
+                            "replay the first failing suite with `vendor-binary-workbench project verify --suite {first} --project {}`",
+                            project_path.display()
+                        )
+                    },
+                )
+            },
+            |first| {
+                format!(
+                    "generate and review candidate evidence for {first} with `vendor-binary-workbench project verify --suite {first} --candidate-evidence-dir DIR --project {}`",
+                    project_path.display()
+                )
+            },
+        );
+        let failed = if failed_suites.is_empty() {
+            "the aggregate gate failed without a failing suite identity".to_owned()
+        } else {
+            compact_ids(&failed_suites)
+        };
+        let diagnostic = if !stale_baselines.is_empty() && stale_baselines == failed_suites {
+            format!(
+                "the last complete verification run needs accepted evidence review for {}",
+                compact_ids(&stale_baselines)
+            )
+        } else {
+            format!(
+                "the last complete verification run did not pass: {failed}{}",
+                if stale_baselines.is_empty() {
+                    String::new()
+                } else {
+                    format!(
+                        "; accepted evidence needs review for {}",
+                        compact_ids(&stale_baselines)
+                    )
+                }
+            )
+        };
+        component = component
+            .detail("failed_suites", failed_suites.clone())
+            .detail("evidence_review_required", stale_baselines.clone())
+            .diagnostic(diagnostic)
+            .next_action(next_action);
+    }
+    component
+}
+
+fn compact_ids(ids: &[String]) -> String {
+    const VISIBLE: usize = 4;
+    let mut rendered = ids
+        .iter()
+        .take(VISIBLE)
+        .map(String::as_str)
+        .collect::<Vec<_>>()
+        .join(", ");
+    if ids.len() > VISIBLE {
+        rendered.push_str(&format!(" (+{} more)", ids.len() - VISIBLE));
+    }
+    rendered
 }
 
 #[derive(Debug, Default, Eq, PartialEq)]
@@ -501,6 +584,8 @@ mod tests {
         let digest = crate::artifact_sha256(&input).unwrap();
         let suites = vec![StoredSuiteReport {
             id: "one".to_owned(),
+            passed: true,
+            evidence_baseline_passed: true,
             artifacts: vec![
                 StoredArtifact {
                     role: "profile".to_owned(),
@@ -527,5 +612,16 @@ mod tests {
         assert_eq!(currency.checked, 1);
         assert_eq!(currency.stale.len(), 1);
         fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn failed_suite_lists_are_bounded_for_human_diagnostics() {
+        let ids = (0..7)
+            .map(|index| format!("suite-{index}"))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            compact_ids(&ids),
+            "suite-0, suite-1, suite-2, suite-3 (+3 more)"
+        );
     }
 }

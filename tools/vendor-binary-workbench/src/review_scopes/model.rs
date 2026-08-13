@@ -65,9 +65,10 @@ pub(crate) struct ReviewQueueItem {
 ///
 /// Reachable vendor helpers and their blockers remain analysis inventory;
 /// they do not require invented one-to-one Rust component identities.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub(crate) enum ReplacementQualification {
+    #[default]
     NotPublished,
     Qualified,
     Blocked,
@@ -78,6 +79,11 @@ pub(crate) enum ReplacementQualification {
 pub(crate) struct ReviewScopeReport {
     pub(crate) id: String,
     pub(crate) publication: bool,
+    /// Current verification assurance joined when the structural document is
+    /// loaded.  It is deliberately absent from `review-scopes.json`: project
+    /// analysis runs before verification and must not persist a stale proof
+    /// snapshot.
+    #[serde(skip)]
     pub(crate) replacement_qualification: ReplacementQualification,
     pub(crate) analysis_inventory_complete: bool,
     pub(crate) profiles: Vec<String>,
@@ -110,14 +116,23 @@ pub(crate) struct ReviewScopeReport {
     pub(crate) call_graph_blockers: usize,
     pub(crate) reference_blockers: usize,
     pub(crate) unresolved_calls: usize,
+    #[serde(skip)]
     pub(crate) replacement_behavioral_matches: usize,
+    #[serde(skip)]
     pub(crate) replacement_production_matches: usize,
+    #[serde(skip)]
     pub(crate) replacement_bounded_matches: usize,
+    #[serde(skip)]
     pub(crate) replacement_probe_only_matches: usize,
+    #[serde(skip)]
     pub(crate) replacement_unmapped_matches: usize,
+    #[serde(skip)]
     pub(crate) replacement_mismatches: usize,
+    #[serde(skip)]
     pub(crate) replacement_incomplete: usize,
+    #[serde(skip)]
     pub(crate) replacement_unqualified: usize,
+    #[serde(skip)]
     pub(crate) replacement_uncovered: usize,
     /// Ordered by actionable priority and then stable root-cause identity.
     pub(crate) review_queue: Vec<ReviewQueueItem>,

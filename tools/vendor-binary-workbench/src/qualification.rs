@@ -5,7 +5,7 @@
 //! every named proof must establish the requested claim strength.
 
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
     fs,
     path::{Path, PathBuf},
 };
@@ -614,6 +614,23 @@ pub(crate) fn evaluate(project: &ProjectSpec) -> Result<Vec<FeatureQualification
         .verification
         .as_ref()
         .ok_or_else(|| crate::Error::invalid("[qualification] requires [verification]"))?;
+    // A suite can prove requirements for many features.  Reading and parsing
+    // its complete report once per requirement made read-only status scale as
+    // O(requirements × suite-size), even though every lookup addresses the
+    // same immutable document.
+    let suite_reports = pack
+        .features
+        .iter()
+        .flat_map(|feature| feature.requirements.iter())
+        .map(|requirement| requirement.suite.as_str())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .map(|suite| {
+            let path = suite_report_path(&verification.report, suite);
+            let report = load_suite_report(&path, suite).map_err(|error| error.to_string());
+            (suite.to_owned(), (path, report))
+        })
+        .collect::<BTreeMap<_, _>>();
     let required = workspace.required_features.iter().collect::<BTreeSet<_>>();
     pack.features
         .iter()
@@ -689,8 +706,9 @@ pub(crate) fn evaluate(project: &ProjectSpec) -> Result<Vec<FeatureQualification
                 }
             }
             for requirement in &feature.requirements {
-                let path = suite_report_path(&verification.report, &requirement.suite);
-                let report = load_suite_report(&path, &requirement.suite);
+                let (path, report) = suite_reports
+                    .get(&requirement.suite)
+                    .expect("every requirement suite was cached");
                 let proof = report.as_ref().ok().and_then(|report| {
                     report
                         .sources

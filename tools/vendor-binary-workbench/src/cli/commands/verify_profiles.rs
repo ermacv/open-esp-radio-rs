@@ -43,6 +43,7 @@ fn case_row(profile: &str, case: &CaseReport) -> [String; 4] {
             events,
             memory_changes,
             return_compared,
+            ..
         } => [
             profile.to_owned(),
             name.clone(),

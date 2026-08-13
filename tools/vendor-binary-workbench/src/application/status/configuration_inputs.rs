@@ -121,7 +121,7 @@ pub(super) fn inputs(context: &ProjectContext<'_>) -> Phase {
     // One binary is commonly bound under several roles (for example a linked
     // ELF is both a source artifact and a companion). Probe each physical path
     // once; role readiness still remains explicit in the report.
-    let mut probes = BTreeMap::<PathBuf, std::result::Result<ArtifactProbe, String>>::new();
+    let mut probes = BTreeMap::<PathBuf, std::result::Result<&'static str, String>>::new();
     for input in run_spec.inputs() {
         let record = if !input.path.is_file() {
             incomplete = true;
@@ -137,34 +137,21 @@ pub(super) fn inputs(context: &ProjectContext<'_>) -> Phase {
             }
         } else {
             let probe = probes.entry(input.path.clone()).or_insert_with(|| {
-                artifact::inspect_artifact(&input.path)
-                    .map(|inventory| ArtifactProbe {
-                        container: inventory.container.label(),
-                        objects: inventory.objects.len(),
-                        skipped_members: inventory.skipped_members,
-                        symbols: inventory.symbols().count(),
-                    })
+                artifact::inspect_artifact_container(&input.path)
+                    .map(|container| container.label())
                     .map_err(|error| error.to_string())
             });
             match probe {
-                Ok(probe) => {
-                    if probe.symbols == 0 {
-                        incomplete = true;
-                    } else {
-                        ready += 1;
-                    }
+                Ok(container) => {
+                    ready += 1;
                     ArtifactDetail {
                         role: input.role.to_string(),
-                        status: if probe.symbols == 0 {
-                            "readable-no-symbols"
-                        } else {
-                            "ready"
-                        },
+                        status: "ready",
                         path: input.path.display().to_string(),
-                        container: Some(probe.container),
-                        objects: Some(probe.objects),
-                        skipped_members: Some(probe.skipped_members),
-                        symbol_facts: Some(probe.symbols),
+                        container: Some(*container),
+                        objects: None,
+                        skipped_members: None,
+                        symbol_facts: None,
                         error: None,
                     }
                 }
@@ -209,13 +196,6 @@ pub(super) fn inputs(context: &ProjectContext<'_>) -> Phase {
         component = component.next_action(next_action);
     }
     Phase::collect("inputs", vec![component])
-}
-
-struct ArtifactProbe {
-    container: &'static str,
-    objects: usize,
-    skipped_members: usize,
-    symbols: usize,
 }
 
 fn input_repair_action(

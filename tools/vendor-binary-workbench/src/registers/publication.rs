@@ -13,35 +13,7 @@ pub(crate) struct PreparedPublication {
     kind: &'static str,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum PublicationReadiness {
-    Current,
-    Missing,
-    Stale,
-}
-
-impl PublicationReadiness {
-    pub(crate) const fn label(self) -> &'static str {
-        match self {
-            Self::Current => "ready",
-            Self::Missing => "missing",
-            Self::Stale => "stale",
-        }
-    }
-}
-
 impl PreparedPublication {
-    pub(crate) fn readiness(&self) -> crate::Result<PublicationReadiness> {
-        match std::fs::read_to_string(&self.output) {
-            Ok(existing) if existing == self.contents => Ok(PublicationReadiness::Current),
-            Ok(_) => Ok(PublicationReadiness::Stale),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                Ok(PublicationReadiness::Missing)
-            }
-            Err(error) => Err(error.into()),
-        }
-    }
-
     pub(crate) fn output(&self) -> &Path {
         &self.output
     }

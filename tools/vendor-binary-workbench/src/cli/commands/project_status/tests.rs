@@ -36,10 +36,6 @@ fn initialized_project_reports_incomplete_without_mutating_owned_outputs() {
     let svd_paths = Vec::new();
     let svd = MmioMap::load_all(&[]).unwrap();
     let output = root.join("status.json");
-    let function_workspace = std::sync::OnceLock::new();
-    let code_workspace = std::sync::OnceLock::new();
-    let register_workspace = std::sync::OnceLock::new();
-    let interface_workspace = std::sync::OnceLock::new();
     let context = || ProjectContext {
         project_path: &manifest,
         project: &project,
@@ -50,10 +46,6 @@ fn initialized_project_reports_incomplete_without_mutating_owned_outputs() {
         memory_map: Some(&memory),
         svd_paths: &svd_paths,
         svd: &svd,
-        function_workspace: &function_workspace,
-        code_workspace: &code_workspace,
-        register_workspace: &register_workspace,
-        interface_workspace: &interface_workspace,
     };
     assert!(
         run(

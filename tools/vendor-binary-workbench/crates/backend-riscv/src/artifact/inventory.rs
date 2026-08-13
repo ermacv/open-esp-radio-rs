@@ -429,3 +429,18 @@ pub fn inspect_artifact(path: &Path) -> Result<ArtifactInventory> {
         kind => Err(format!("unsupported artifact kind: {kind:?}").into()),
     }
 }
+
+/// Read only the container header for interactive readiness checks.
+/// Complete object/member/symbol validation remains in [`inspect_artifact`].
+pub fn inspect_artifact_container(path: &Path) -> Result<ArtifactContainerKind> {
+    use std::io::Read as _;
+
+    let mut file = std::fs::File::open(path)?;
+    let mut header = [0_u8; 64];
+    let length = file.read(&mut header)?;
+    match FileKind::parse(&header[..length])? {
+        FileKind::Archive => Ok(ArtifactContainerKind::Archive),
+        FileKind::Elf32 => Ok(ArtifactContainerKind::Elf32),
+        kind => Err(format!("unsupported artifact kind: {kind:?}").into()),
+    }
+}

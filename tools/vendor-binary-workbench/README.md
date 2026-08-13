@@ -29,9 +29,17 @@ cargo vendor-binary-workbench project status \
 
 These three commands answer different questions:
 
-- `doctor`: is the configuration valid and are local inputs usable?
+- `doctor`: is the configuration valid, are local inputs usable, and are the
+  reviewed workspaces internally consistent?
 - `files`: which files are local, external, reviewed, generated, or missing?
-- `status`: which analysis, review, verification, and publication phases are ready?
+- `status`: which analysis, review, verification, and publication phases have
+  usable outputs and current qualification results?
+
+`status` is the fast everyday overview. It checks typed gates and compact
+summaries, but deliberately does not deserialize every artifact-wide report or
+regenerate publication output. Use `project doctor` for deep input/evidence
+and reviewed-workspace validation and `project check` to reproduce every
+generated result byte for byte before publishing or merging a replacement.
 
 Use `--details` only when you need the complete component or file inventory.
 Use `--format json` for automation. Human results go to stdout; diagnostics,
@@ -110,11 +118,18 @@ blocker:
 cargo vendor-binary-workbench inspect function libpp:wDev_AppendRxBlocks \
   --project verification/vendor/targets/esp32s31/vendor-project.toml
 
+cargo vendor-binary-workbench inspect function libpp:hal_mac_set_bssid \
+  --project verification/vendor/targets/esp32s31/vendor-project.toml \
+  --replacement --case station-bank-preserves-policy
+
 cargo vendor-binary-workbench project browse \
   --project verification/vendor/targets/esp32s31/vendor-project.toml
 ```
 
-`inspect` is the detailed console view. `project browse` is the supplementary
+`inspect` is the detailed console view. With `--replacement`, a matching
+concrete case shows one canonical ordered effect trace with separate vendor
+and Rust instruction provenance; use `--case ID` to select a case and
+`--details` to show all matching cases. `project browse` is the supplementary
 read-only TUI. Both consume the same typed application reports.
 
 Low-level engines are grouped under `advanced` and are intended for focused
@@ -141,8 +156,9 @@ tools/vendor-binary-workbench/scripts/run-limited \
 
 The wrapper enforces a 1-GiB resident-memory limit and a 15-minute timeout.
 User-systemd mode also disables swap. When a usable user-systemd scope is not
-available, a Linux `/proc` watchdog enforces the same RSS and time limits
-without imposing a misleading virtual-address-space cap. Linked-IR bundles
+available, a Linux watchdog measures the complete spawned process tree and
+enforces the same aggregate RSS and time limits without imposing a misleading
+virtual-address-space cap. Linked-IR bundles
 remain internally sharded as JSONL for bounded streaming; the public console
 format is human or JSON.
 

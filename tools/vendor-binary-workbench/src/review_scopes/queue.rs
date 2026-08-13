@@ -65,6 +65,31 @@ pub(super) fn insert(
     item.channels.insert(channel.to_owned());
 }
 
+/// Restore one already-grouped structural item before dynamic assurance
+/// entries are joined.  Replaying the public fields through `insert` would
+/// manufacture a functions × sites cross-product and change occurrence
+/// counts.
+pub(super) fn insert_existing(queue: &mut Queue, item: ReviewQueueItem) {
+    queue.insert(
+        item.id,
+        Accumulator {
+            kind: item.kind,
+            priority: item.priority,
+            severity: match item.severity.as_str() {
+                "error" => "error",
+                "warning" => "warning",
+                "info" => "info",
+                _ => "warning",
+            },
+            occurrences: item.occurrences,
+            functions: item.functions.into_iter().collect(),
+            sites: item.sites.into_iter().collect(),
+            channels: item.channels.into_iter().collect(),
+            message: item.message,
+        },
+    );
+}
+
 pub(super) fn id(kind: &str, identity: &str) -> String {
     let mut hash = 0xcbf29ce484222325_u64;
     for byte in kind

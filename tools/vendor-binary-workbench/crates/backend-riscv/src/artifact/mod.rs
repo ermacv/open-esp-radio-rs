@@ -29,7 +29,7 @@ pub use function_body::{
     inspect_function_definition,
 };
 pub use indexed_dispatch::recover_indexed_dispatches;
-pub use inventory::inspect_artifact;
+pub use inventory::{inspect_artifact, inspect_artifact_container};
 pub use model::{
     AnalysisInstruction, ArtifactCodeRange, ArtifactCodeRecoveryBlocker,
     ArtifactCodeSectionCoverage, ArtifactContainerKind, ArtifactDataObjectDefinition,

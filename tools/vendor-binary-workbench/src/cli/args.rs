@@ -712,6 +712,27 @@ mod tests {
             ])
             .is_err()
         );
+        assert!(
+            ParsedInvocation::parse([
+                "inspect".to_owned(),
+                "function".to_owned(),
+                "vendor:root".to_owned(),
+                "--case".to_owned(),
+                "normal".to_owned(),
+            ])
+            .is_err()
+        );
+        assert!(
+            ParsedInvocation::parse([
+                "inspect".to_owned(),
+                "function".to_owned(),
+                "vendor:root".to_owned(),
+                "--replacement".to_owned(),
+                "--case".to_owned(),
+                "normal".to_owned(),
+            ])
+            .is_ok()
+        );
     }
 
     #[test]

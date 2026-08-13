@@ -1,8 +1,8 @@
 //! Content-addressed cache for expensive project-analysis stages.
 //!
 //! This is derived local state, never project configuration. A cache hit is
-//! accepted only when the tool, every declared input and every generated
-//! output still have exactly the recorded content digest.
+//! accepted only when the owning stage revision, every declared input and
+//! every generated output still have exactly the recorded content digest.
 
 use std::{
     collections::BTreeMap,
@@ -15,7 +15,7 @@ use sha2::{Digest, Sha256};
 
 use crate::Result;
 
-const CACHE_SCHEMA: u32 = 1;
+const CACHE_SCHEMA: u32 = 2;
 
 #[derive(Debug, Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -33,7 +33,6 @@ struct CacheStage {
 
 pub(super) struct ProjectAnalysisCache {
     path: PathBuf,
-    tool_digest: String,
     document: CacheDocument,
     digests: BTreeMap<PathBuf, DigestMemo>,
 }
@@ -56,13 +55,8 @@ impl ProjectAnalysisCache {
                 schema: CACHE_SCHEMA,
                 stages: BTreeMap::new(),
             });
-        let tool_digest = std::env::current_exe()
-            .ok()
-            .and_then(|path| crate::artifact_sha256(&path).ok())
-            .unwrap_or_else(|| format!("package:{}", env!("CARGO_PKG_VERSION")));
         Self {
             path,
-            tool_digest,
             document,
             digests: BTreeMap::new(),
         }
@@ -131,10 +125,12 @@ impl ProjectAnalysisCache {
         inputs.sort();
         inputs.dedup();
         let mut digest = Sha256::new();
-        digest.update(b"vendor-binary-workbench-project-stage-v1\0");
+        digest.update(b"vendor-binary-workbench-project-stage-v2\0");
         digest.update(stage.as_bytes());
         digest.update([0]);
-        digest.update(self.tool_digest.as_bytes());
+        digest.update(env!("CARGO_PKG_VERSION").as_bytes());
+        digest.update([0]);
+        digest.update(stage_revision(stage)?.to_le_bytes());
         for path in inputs {
             digest.update([0]);
             digest.update(path_key(&path).as_bytes());
@@ -168,6 +164,30 @@ impl ProjectAnalysisCache {
             },
         );
         Ok(value)
+    }
+}
+
+/// Explicit semantic revision of each cached generator.
+///
+/// A digest of the whole executable made presentation-only changes invalidate
+/// every expensive artifact-wide stage.  Bump only the owner below when its
+/// generated document or analysis semantics change.  Input/output content
+/// hashes continue to protect project and caller-owned state.
+fn stage_revision(stage: &str) -> Result<u32> {
+    match stage {
+        "symbol-inventory" => Ok(1),
+        "mmio-discovery" => Ok(1),
+        "interface-discovery" => Ok(1),
+        "linked-ir" => Ok(1),
+        "event-replays" => Ok(1),
+        "review-scopes" => Ok(2),
+        "navigation-index" => Ok(1),
+        "code-boundary-review" => Ok(1),
+        "register-review" => Ok(1),
+        "function-review" => Ok(1),
+        _ => Err(crate::Error::invalid(format!(
+            "analysis cache has no semantic revision for stage {stage:?}"
+        ))),
     }
 }
 
@@ -244,5 +264,24 @@ mod tests {
         );
 
         fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn every_cached_generator_has_an_explicit_semantic_revision() {
+        for stage in [
+            "symbol-inventory",
+            "mmio-discovery",
+            "interface-discovery",
+            "linked-ir",
+            "event-replays",
+            "review-scopes",
+            "navigation-index",
+            "code-boundary-review",
+            "register-review",
+            "function-review",
+        ] {
+            assert!(stage_revision(stage).unwrap() > 0);
+        }
+        assert!(stage_revision("new-unversioned-stage").is_err());
     }
 }

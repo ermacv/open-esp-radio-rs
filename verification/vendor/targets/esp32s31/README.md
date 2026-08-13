@@ -166,6 +166,14 @@ time conversion and value programming remain isolated in `coex-timer-set` as
 one explicit incomplete boundary rather than making the qualified timer-control
 surface appear incomplete.
 
+This internal Wi-Fi/BLE arbitration boundary is distinct from the optional
+external wired-COEX HAL (`hal_*_extern_coex`). Those leaves access the high
+MODEM_LPCON block around `0x2010f49c..0x2010f4d8`, which the current official
+ESP32-S31 PAC does not expose. Their vendor transactions remain reviewed
+evidence only: they are not required by the current AP+STA/internal-COEX gate,
+must not be added to the radio-owned PAC, and require a separate platform-owned
+register model before an external-wired-COEX feature can be qualified.
+
 After analysis:
 
 ```console
@@ -223,6 +231,13 @@ cargo vendor-binary-workbench project publish \
 
 The HAL consumes named restricted bindings. Physical addresses and arbitrary
 integer writes remain inside the generated private raw-PAC boundary.
+
+`inspect function SOURCE:SYMBOL --replacement` joins the reviewed Rust owner,
+proof strength, concrete cases and the selected vendor function's direct
+MMIO/RAM effects in instruction order. Indexed register banks are collapsed in
+the normal human view; use `--details` for every concrete target. These ordered
+vendor effects are static evidence, while the scenario rows remain the
+execution-equivalence authority.
 
 The current AP/STA and COEX register frontier is intentionally split into
 independent claims instead of one oversized "AP+STA ready" flag:

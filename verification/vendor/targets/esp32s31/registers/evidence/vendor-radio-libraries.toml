@@ -3,7 +3,7 @@ schema = 1
 
 [[sources]]
 id = "BLOB_LIBCOEX_EXTERNAL_HAL"
-description = "_oracles/libcoexist.a sha256 9b8f55b1a1670ac8da1323595c817eca7340f073e783c162d3a2dfde7bbd19c8; no-call hal_enable_extern_coex and hal_disable_extern_coex leaves each perform four ordered fresh-read RMW edges over 0x2010f4d0, 0x2010f4d8, 0x2010f4a4 and 0x2010f4a0. These addresses remain outside the radio-owned register model and are delegated to the official platform PAC; the evidence records the vendor transaction without claiming local ownership."
+description = "_oracles/libcoexist.a sha256 9b8f55b1a1670ac8da1323595c817eca7340f073e783c162d3a2dfde7bbd19c8; no-call hal_enable_extern_coex and hal_disable_extern_coex leaves each perform four ordered fresh-read RMW edges over 0x2010f4d0, 0x2010f4d8, 0x2010f4a4 and 0x2010f4a0. These addresses are in the high MODEM_LPCON block, remain outside the radio-owned register model, and are not exposed by the current official ESP32-S31 PAC. The evidence records the vendor transaction without claiming local ownership; a future external-wired-COEX implementation needs an explicit platform-owned register model and proof boundary."
 
 [[sources]]
 id = "BLOB_LIBPHY_PHY_START_TX_TONE_STEP_NEW"

@@ -37,8 +37,22 @@ pub(super) struct ReplacementInvestigationReport {
     source: String,
     symbol: String,
     replacements: Vec<ReplacementEvidence>,
+    vendor_effects: Vec<VendorEffectEvidence>,
     reviewed_effects: Vec<ReviewedEffectRuleEvidence>,
     feature_qualifications: Vec<crate::qualification::FunctionQualificationEvidence>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub(super) struct VendorEffectEvidence {
+    profile: String,
+    address: u64,
+    block: Option<usize>,
+    kind: &'static str,
+    access: String,
+    width: u8,
+    targets: Vec<String>,
+    guards: Vec<String>,
+    value: Option<String>,
 }
 
 pub(super) fn run(arguments: InspectFunctionArgs, project: &ProjectSpec) -> Result<bool> {
@@ -56,12 +70,35 @@ pub(super) fn run(arguments: InspectFunctionArgs, project: &ProjectSpec) -> Resu
     }
     let (symbol, runtime_address) = parse_exact_symbol(symbol)?;
     if arguments.replacement {
+        let vendor_effects = match arguments.artifact.as_deref() {
+            Some(artifact) => {
+                let investigation = investigate(
+                    FunctionInvestigationRequest {
+                        source,
+                        symbol: &symbol,
+                        runtime_address,
+                        artifact,
+                        inventory: arguments.inventory.as_deref(),
+                        member: arguments.member.as_deref(),
+                        origin_member: arguments.origin_member.as_deref(),
+                        graph_depth: 0,
+                        include_callers: false,
+                        cfg_path: None,
+                        include_linked_ir_record: false,
+                    },
+                    project,
+                )?;
+                direct_vendor_effects(&investigation)
+            }
+            None => Vec::new(),
+        };
         let report = ReplacementInvestigationReport {
-            schema_version: 2,
+            schema_version: 3,
             command: "inspect function replacement",
             source: source.to_owned(),
             symbol: symbol.to_owned(),
             replacements: replacement_evidence(source, &symbol, project)?,
+            vendor_effects,
             reviewed_effects: reviewed_effect_rules(source, &symbol, project)?,
             feature_qualifications: crate::qualification::evidence_for_function(
                 project, source, &symbol,
@@ -106,6 +143,63 @@ pub(super) fn run(arguments: InspectFunctionArgs, project: &ProjectSpec) -> Resu
         }
     }
     Ok(report.runtime.accounted_bytes == report.runtime.size)
+}
+
+fn direct_vendor_effects(
+    report: &crate::function_investigation::FunctionInvestigationReport,
+) -> Vec<VendorEffectEvidence> {
+    type Key = (
+        String,
+        u64,
+        Option<usize>,
+        &'static str,
+        String,
+        u8,
+        Option<String>,
+    );
+    let mut grouped = std::collections::BTreeMap::<
+        Key,
+        (
+            std::collections::BTreeSet<String>,
+            std::collections::BTreeSet<String>,
+        ),
+    >::new();
+    for semantic in &report.semantics {
+        for instruction in &semantic.instruction_evidence {
+            for effect in &instruction.effects {
+                let key = (
+                    semantic.profile.clone(),
+                    instruction.address,
+                    instruction.block,
+                    effect.kind,
+                    effect.access.clone(),
+                    effect.width,
+                    effect.value.clone(),
+                );
+                let (targets, guards) = grouped.entry(key).or_default();
+                targets.insert(effect.target.clone());
+                guards.extend(effect.guards.iter().cloned());
+            }
+        }
+    }
+    grouped
+        .into_iter()
+        .map(
+            |((profile, address, block, kind, access, width, value), (targets, guards))| {
+                VendorEffectEvidence {
+                    profile,
+                    address,
+                    block,
+                    kind,
+                    access,
+                    width,
+                    targets: targets.into_iter().collect(),
+                    guards: guards.into_iter().collect(),
+                    value,
+                }
+            },
+        )
+        .collect()
 }
 
 fn parse_exact_symbol(input: &str) -> Result<(&str, Option<u64>)> {

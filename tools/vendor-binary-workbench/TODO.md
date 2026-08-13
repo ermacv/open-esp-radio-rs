@@ -141,9 +141,10 @@ that every user must learn.
   exact/unique-symbol association, production component, probes, proofs and an
   explicit `freshness_claim = false` boundary.
 - [x] Add the compact `inspect function SOURCE:SYMBOL --replacement` view.
-  It skips function-body analysis and joins binding scope, exact production
-  source item, compiled/DWARF status, proof claim strength and every consuming
-  required feature. `bounded-match` is rendered as a property proof, never as
+  It skips the lossless raw-body document, loads only the selected indexed IR
+  function, and joins binding scope, exact production source item,
+  compiled/DWARF status, proof claim strength and every consuming required
+  feature. `bounded-match` is rendered as a property proof, never as
   whole-function equivalence.
 - [x] Join the same Replacement Graph boundary into reviewed event-flow
   reports. An absent production mapping is a typed blocker rather than a
@@ -153,10 +154,13 @@ that every user must learn.
   build a separate comparison engine for the TUI. The focused view now joins
   adapter/scenario cases from the existing suite report plus current reviewed
   effect selectors and dispositions as an explicitly unordered policy table.
-  Matching scenarios expose event/RAM-change counts and failed scenarios keep
-  the comparator's first-difference index; complete ordered matching traces
-  still need a compact sidecar or bounded on-demand projection rather than
-  duplicating large traces into every aggregate report.
+  It also loads only the selected indexed IR function and renders its direct
+  MMIO/RAM effects in instruction order, collapsing indexed register domains
+  instead of printing every candidate. Matching scenarios expose event/RAM-
+  change counts and failed scenarios keep the comparator's first-difference
+  index; complete ordered Rust-side matching traces still need a compact
+  sidecar or bounded on-demand projection rather than duplication in every
+  aggregate report.
 
 ## P0 — functional analysis workflow
 
@@ -210,7 +214,12 @@ that every user must learn.
 - [ ] Assign reviewed production component identities where the 97 passing
   probe-only matches correspond to actual production replacements. Keep true
   reference/probe-only functions classified as such instead of inventing a
-  production module from their symbol names.
+  production module from their symbol names. The current AP/STA interface,
+  connected-STA beacon-filter, Wi-Fi COEX leaf and internal COEX core/timer
+  priority set has no remaining probe-only edge: all 19 matching or bounded
+  vendor functions are bound to reviewed production components. Its next gaps
+  are uncovered behavior (notably scheduler and non-selected beacon policy),
+  not missing Rust identities.
 - [x] Join reviewed Rust component identities to the Cargo workspace source
   AST and exact suite ELF/DWARF evidence without adding another project
   manifest. The current project resolves 49/53 component source items and 38
@@ -415,6 +424,12 @@ that every user must learn.
   remains in the wider non-gating scope because focused structural inspection
   still exposes three conservative `coex_hw_timer_tick_get`/division blockers.
   Do not promote that wider scope merely from the successful bounded scenarios.
+- [ ] Model optional external wired COEX as a separate platform-owned
+  capability. The reviewed vendor leaves access the high MODEM_LPCON block at
+  `0x2010f49c..0x2010f4d8`, which is outside the radio register model and absent
+  from the current official ESP32-S31 PAC. Preserve those transactions as
+  evidence, but do not publish the addresses through the radio PAC or count
+  them toward the internal Wi-Fi/BLE coexistence gate.
 - [ ] Turn reviewed static objects into editable logical type/table bindings.
   Initializer bytes and xrefs are evidence; field names, element counts and
   nominal type unification must remain explicit review claims.

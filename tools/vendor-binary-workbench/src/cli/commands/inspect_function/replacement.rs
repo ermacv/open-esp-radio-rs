@@ -147,6 +147,46 @@ pub(super) fn render(report: &ReplacementInvestigationReport) {
         }
     }
 
+    if !report.vendor_effects.is_empty() {
+        outputln!("\n{}", output::heading("Ordered vendor effects"));
+        outputln!(
+            "Direct static effects ordered by instruction PC; proof cases above decide execution equivalence."
+        );
+        let mut profiles = std::collections::BTreeMap::<&str, Vec<_>>::new();
+        for effect in &report.vendor_effects {
+            profiles.entry(&effect.profile).or_default().push(effect);
+        }
+        for (profile, effects) in profiles {
+            outputln!("\nProfile: {profile}");
+            for (index, evidence) in effects.iter().enumerate() {
+                outputln!(
+                    "{}. {:#010x}{} {}{} {} {}{}",
+                    index + 1,
+                    evidence.address,
+                    evidence
+                        .block
+                        .map(|block| format!(" bb{block}"))
+                        .unwrap_or_default(),
+                    evidence.access,
+                    evidence.width,
+                    evidence.kind,
+                    compact_targets(&evidence.targets),
+                    evidence
+                        .value
+                        .as_deref()
+                        .map(|value| format!(" ← {}", compact_value(value, output::details())))
+                        .unwrap_or_default(),
+                );
+                if output::details() && evidence.targets.len() > 2 {
+                    outputln!("   targets: {}", evidence.targets.join(", "));
+                }
+                if !evidence.guards.is_empty() {
+                    outputln!("   when: {}", evidence.guards.join(" || "));
+                }
+            }
+        }
+    }
+
     if !report.reviewed_effects.is_empty() {
         outputln!("\n{}", output::heading("Reviewed effect boundary"));
         outputln!("Policy rows below are not an observed execution trace.");
@@ -186,5 +226,60 @@ pub(super) fn render(report: &ReplacementInvestigationReport) {
                 outputln!("  blocker: {blocker}");
             }
         }
+    }
+}
+
+fn compact_targets(targets: &[String]) -> String {
+    match targets {
+        [] => "unknown target".to_owned(),
+        [target] => target.clone(),
+        [first, second] => format!("{first}, {second}"),
+        [first, .., last] => format!("{first} … {last} ({} targets)", targets.len()),
+    }
+}
+
+fn compact_value(value: &str, details: bool) -> String {
+    const MAX_INLINE_CHARS: usize = 96;
+    if details || value.chars().count() <= MAX_INLINE_CHARS {
+        return value.to_owned();
+    }
+    if value.starts_with("symbolic(\"bits:") {
+        return format!(
+            "symbolic bit projection ({} assignments; use --details)",
+            value.matches('=').count()
+        );
+    }
+    let prefix = value.chars().take(MAX_INLINE_CHARS).collect::<String>();
+    format!("{prefix}… (use --details)")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{compact_targets, compact_value};
+
+    #[test]
+    fn indexed_target_domains_are_bounded_in_human_output() {
+        let targets = (0..5)
+            .map(|index| format!("TIMER{index}"))
+            .collect::<Vec<_>>();
+
+        assert_eq!(compact_targets(&targets), "TIMER0 … TIMER4 (5 targets)");
+    }
+
+    #[test]
+    fn long_symbolic_values_are_summarized_without_losing_machine_evidence() {
+        let value = format!(
+            "symbolic(\"bits:{}\")",
+            (0..32)
+                .map(|bit| format!("{bit}=ramread0.{bit}"))
+                .collect::<Vec<_>>()
+                .join(",")
+        );
+
+        assert_eq!(
+            compact_value(&value, false),
+            "symbolic bit projection (32 assignments; use --details)"
+        );
+        assert_eq!(compact_value(&value, true), value);
     }
 }

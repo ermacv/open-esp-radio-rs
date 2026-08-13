@@ -1,7 +1,7 @@
 //! Opt-in packet evidence from the OpenWrt AP's own TX monitor tap.
 
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
     fs::{self, File},
     net::Ipv4Addr,
     path::{Path, PathBuf},
@@ -15,7 +15,14 @@ use crate::{Result, lab_config::OpenWrtConfig};
 const REMOTE_CAPTURE: &str = "/tmp/open-radio-ap-tx-monitor.pcap";
 const MAX_CAPTURE_BYTES: u64 = 64 * 1024 * 1024;
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(crate) struct MacFrameKey {
+    pub(crate) tid: u8,
+    pub(crate) sequence: u16,
+    pub(crate) fragment: u8,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) struct OpenWrtTxMonitorEvidence {
     pub(crate) captured_frames: u64,
     pub(crate) kernel_dropped: u64,
@@ -29,7 +36,9 @@ pub(crate) struct OpenWrtTxMonitorEvidence {
     pub(crate) out_of_range: u32,
     pub(crate) terminal_markers: u32,
     pub(crate) mac_retry_publications: u32,
+    pub(crate) missing_mac_metadata: u32,
     pub(crate) first_anomaly: Option<u32>,
+    pub(crate) mac_units: BTreeMap<MacFrameKey, u32>,
 }
 
 pub(crate) struct OpenWrtTxMonitorCapture {
@@ -199,6 +208,12 @@ fn parse_capture(
             "-e",
             "wlan.seq",
             "-e",
+            "wlan.frag",
+            "-e",
+            "wlan.qos.tid",
+            "-e",
+            "wlan.fc.retry",
+            "-e",
             "radiotap.data_retries",
             "-e",
             "data.data",
@@ -214,8 +229,14 @@ fn parse_capture(
     let expected_units = u32::try_from(expected_units)?;
     let mut tracker = SequenceTracker::default();
     for line in String::from_utf8(output.stdout)?.lines() {
-        let mut fields = line.splitn(3, '\t');
+        let mut fields = line.splitn(6, '\t');
         let mac_sequence = fields.next().and_then(|value| value.parse::<u16>().ok());
+        let mac_fragment = fields.next().and_then(|value| value.parse::<u8>().ok());
+        let mac_tid = fields
+            .next()
+            .and_then(|value| value.parse::<u8>().ok())
+            .or(Some(u8::MAX));
+        let _retry = fields.next();
         let retries = fields
             .next()
             .and_then(|value| value.parse::<u32>().ok())
@@ -226,7 +247,15 @@ fn parse_capture(
         let Some(sequence) = udp_sequence(&raw, target, port) else {
             continue;
         };
-        tracker.observe(sequence, mac_sequence, retries, expected_units);
+        let mac = mac_sequence
+            .zip(mac_fragment)
+            .zip(mac_tid)
+            .map(|((sequence, fragment), tid)| MacFrameKey {
+                tid,
+                sequence,
+                fragment,
+            });
+        tracker.observe(sequence, mac, retries, expected_units);
     }
     Ok(tracker.finish(expected_units))
 }
@@ -239,7 +268,7 @@ struct SequenceTracker {
 }
 
 impl SequenceTracker {
-    fn observe(&mut self, sequence: i32, _mac_sequence: Option<u16>, retries: u32, limit: u32) {
+    fn observe(&mut self, sequence: i32, mac: Option<MacFrameKey>, retries: u32, limit: u32) {
         self.evidence.mac_retry_publications =
             self.evidence.mac_retry_publications.saturating_add(retries);
         if sequence < 0 {
@@ -248,6 +277,13 @@ impl SequenceTracker {
         }
         let sequence = sequence as u32;
         self.evidence.data_units = self.evidence.data_units.saturating_add(1);
+        if let Some(mac) = mac {
+            let count = self.evidence.mac_units.entry(mac).or_default();
+            *count = count.saturating_add(1);
+        } else {
+            self.evidence.missing_mac_metadata =
+                self.evidence.missing_mac_metadata.saturating_add(1);
+        }
         if sequence >= limit {
             self.evidence.out_of_range = self.evidence.out_of_range.saturating_add(1);
             self.evidence.first_anomaly.get_or_insert(sequence);

@@ -60,7 +60,13 @@ pub(crate) fn run(
 ) -> Result<()> {
     let mut options = parse_options(&arguments)?;
     let capture = SerialCapture::start_with_reset(&lab.device.serial);
-    options.device = await_network_ready(&capture, lab, NETWORK_READY_TIMEOUT)?;
+    options.device = match await_network_ready(&capture, lab, NETWORK_READY_TIMEOUT) {
+        Ok(address) => address,
+        Err(error) => {
+            capture.finish_to(output)?;
+            return Err(error);
+        }
+    };
     let socket = IcmpSocket::connect(options.device)?;
     let summary = match measure(&socket, options) {
         Ok(summary) => summary,

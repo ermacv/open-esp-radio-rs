@@ -47,6 +47,10 @@ where
         if self.active() || self.has_prepared_network_tx() {
             return Err(AggregateTxError::ActiveTransaction);
         }
+        // Rate-control observations affect only the next fresh exchange.
+        // An already published or retained retry keeps its original typed
+        // rate and descriptor program until terminal completion.
+        self.config.rate = self.rate_control.ampdu_tx_rate(self.aggregate_rate_policy);
         self.last_aggregate_status = None;
         self.pending_ordinary_retry = None;
         let aggregate_rate = !matches!(self.config.rate, TxPhyRate::Legacy(_));

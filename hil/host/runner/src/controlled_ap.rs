@@ -63,7 +63,7 @@ impl ControlledAp {
                     stopped: false,
                 }))
             }
-            StationFixtureConfig::External => {
+            StationFixtureConfig::External(_) => {
                 require_station_credentials(station)?;
                 Ok(Self::External)
             }

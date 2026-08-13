@@ -1,10 +1,10 @@
 //! Named static-memory sizing for the ESP32-S31 Wi-Fi composition.
 //!
-//! These values are integration policy, not hardware capabilities. The
-//! default compact profile fits a direct-to-flash application in internal
-//! SRAM. `high-throughput` selects the larger envelope used by qualification;
-//! that profile requires a product linker which places CPU-only state in
-//! initialized PSRAM while retaining DMA and latency-critical state in SRAM.
+//! These values are integration policy, not hardware capabilities. There is
+//! one production profile: qualification may observe it, but must never
+//! select a different queue, aggregation, or reorder topology. CPU-only state
+//! belongs in initialized PSRAM while DMA-visible and latency-critical state
+//! remains in SRAM.
 
 use core::sync::atomic::{AtomicBool, Ordering};
 
@@ -25,47 +25,27 @@ pub const ESP32S31_DEFAULT_SCAN_RECORD_CAPACITY: usize = 32;
 
 pub const ESP32S31_DEFAULT_RX_STAGE_CAPACITY: usize = 1_700;
 // These slots form the latency-critical copy-before-DMA-reload working set and
-// stay in SRAM. The high-throughput profile can retain one 32-descriptor burst
-// while earlier frames remain behind a BlockAck gap; the compact profile
-// deliberately accepts less burst elasticity.
-#[cfg(not(feature = "high-throughput"))]
-pub const ESP32S31_DEFAULT_RX_STAGE_SLOT_COUNT: usize = 16;
-#[cfg(feature = "high-throughput")]
+// stay in SRAM. They retain one 32-descriptor burst while earlier frames
+// remain behind a BlockAck gap.
 pub const ESP32S31_DEFAULT_RX_STAGE_SLOT_COUNT: usize = 64;
-// Keep the compact agreement bounded by its small hot working set. The
-// high-throughput composition already owns 64 independent reorder slots and
-// previously qualified a 32-frame receive agreement; reducing that agreement
-// to eight during lifecycle consolidation made the peer recycle failed
-// downlink traffic behind newer packets.
-#[cfg(not(feature = "high-throughput"))]
-pub const ESP32S31_DEFAULT_RX_REORDER_WINDOW: usize = 8;
-#[cfg(feature = "high-throughput")]
+// A complete HT BlockAck window is retained independently of whether
+// qualification observers are compiled into the image.
 pub const ESP32S31_DEFAULT_RX_REORDER_WINDOW: usize = 32;
 pub const ESP32S31_DEFAULT_CONTROL_QUEUE_DEPTH: usize = 16;
 
 pub const ESP32S31_DEFAULT_NETWORK_FRAME_CAPACITY: usize = 1_600;
-// The high-throughput queue retains a complete 32-frame RX burst plus overlap
-// with the network consumer. Its CPU-only bytes belong in PSRAM. The compact
-// queue trades burst elasticity for a direct-to-flash SRAM footprint.
-#[cfg(not(feature = "high-throughput"))]
-pub const ESP32S31_DEFAULT_NETWORK_RX_QUEUE_DEPTH: usize = 8;
-#[cfg(feature = "high-throughput")]
-pub const ESP32S31_DEFAULT_NETWORK_RX_QUEUE_DEPTH: usize = 40;
+// The CPU-only queue retains two complete 32-frame bursts and belongs in
+// PSRAM. This prevents the network consumer from extending ownership of the
+// latency-critical SRAM staging pool.
+pub const ESP32S31_DEFAULT_NETWORK_RX_QUEUE_DEPTH: usize = 64;
 // One additional credit is reserved by the network adapter for the TX token
-// paired with ingress. Application egress therefore retains eight compact or
-// two complete 32-MPDU high-throughput arenas even while saturated. TX frame
-// backing is DMA-visible SRAM.
-#[cfg(not(feature = "high-throughput"))]
-pub const ESP32S31_DEFAULT_NETWORK_TX_QUEUE_DEPTH: usize = 9;
-#[cfg(feature = "high-throughput")]
+// paired with ingress. Application egress therefore retains two complete
+// 32-MPDU arenas even while saturated. TX frame backing is DMA-visible SRAM.
 pub const ESP32S31_DEFAULT_NETWORK_TX_QUEUE_DEPTH: usize = 65;
 pub const ESP32S31_DEFAULT_NETWORK_TX_TRAILER: usize = 12;
-#[cfg(not(feature = "high-throughput"))]
-pub const ESP32S31_DEFAULT_TX_AMPDU_FRAME_COUNT: usize = 8;
-#[cfg(feature = "high-throughput")]
 pub const ESP32S31_DEFAULT_TX_AMPDU_FRAME_COUNT: usize = 32;
 
-/// Compact marker exposed to board composition and memory reporting.
+/// Production marker exposed to board composition and memory reporting.
 pub struct Esp32s31DefaultWifiResourceProfile;
 
 impl Esp32s31DefaultWifiResourceProfile {
@@ -187,9 +167,6 @@ mod tests {
             Esp32s31DefaultWifiResourceProfile::TX_AMPDU_FRAME_COUNT,
             ESP32S31_DEFAULT_TX_AMPDU_FRAME_COUNT
         );
-        #[cfg(not(feature = "high-throughput"))]
-        assert_eq!(Esp32s31DefaultWifiResourceProfile::RX_REORDER_WINDOW, 8);
-        #[cfg(feature = "high-throughput")]
         assert_eq!(Esp32s31DefaultWifiResourceProfile::RX_REORDER_WINDOW, 32);
     }
 

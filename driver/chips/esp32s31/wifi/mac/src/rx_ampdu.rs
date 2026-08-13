@@ -6,7 +6,10 @@
 //! integration layer binds the latter to its exact staging-pool capacity, and
 //! raw packet pointers stay outside both state machines.
 
-use crate::rx_ampdu_hw::{S31_RX_BLOCK_ACK_MAX_TID, S31RxBlockAckAgreement};
+use crate::{
+    MacInterface,
+    rx_ampdu_hw::{S31_RX_BLOCK_ACK_MAX_TID, S31RxBlockAckAgreement},
+};
 
 // SOURCE: complete `libnet80211.a[ieee80211_ht.o]::
 // ampdu_rx_start.constprop.0`. The vendor agreement owner selects the smaller
@@ -262,7 +265,7 @@ impl StaRxBlockAckSessions {
             generation: self.generation,
             hardware: S31RxBlockAckAgreement {
                 hardware_index: hardware_index as u8,
-                interface: 0,
+                interface: MacInterface::Station,
                 peer,
                 tid: request.tid,
                 starting_sequence: request.starting_sequence,
@@ -800,7 +803,7 @@ mod tests {
             activation.hardware(),
             S31RxBlockAckAgreement {
                 hardware_index: 0,
-                interface: 0,
+                interface: MacInterface::Station,
                 peer,
                 tid: 7,
                 starting_sequence: 0x0abc,

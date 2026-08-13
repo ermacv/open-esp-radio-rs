@@ -57,7 +57,12 @@ where
                 let progress = self.ordinary.service(hardware, wake).await?;
                 if progress == WifiTxProgress::Pending {
                     self.active = ConnectedTxActive::Ordinary;
-                } else if let Some(mut aggregate) = self.pending_ordinary_retry.take() {
+                } else {
+                    self.observe_ordinary_rate_control();
+                }
+                if progress != WifiTxProgress::Pending
+                    && let Some(mut aggregate) = self.pending_ordinary_retry.take()
+                {
                     let ordinary = self
                         .ordinary
                         .last_outcome()
@@ -103,6 +108,21 @@ where
             let current_subframes = self.ampdu.frame_count();
             let current_first_sequence = active.retry.current_first_sequence();
             let decision = active.retry.observe(completion, current_subframes)?;
+            self.rate_control.observe_tx_completion(completion.tx);
+            // The retry owner has already validated both counts. An absent
+            // A-MPDU rate arena disables adaptation but cannot alter DMA or
+            // retry ownership; malformed counts are therefore impossible at
+            // this typed boundary and remain diagnostic-only.
+            let acknowledged = current_subframes.saturating_sub(decision.missing());
+            let observation = self.rate_control.observe_ampdu_block_ack(
+                self.ordinary.now_micros() as u32,
+                u16::from(current_subframes),
+                u16::from(acknowledged),
+            );
+            debug_assert!(matches!(
+                observation,
+                Ok(_) | Err(AmpduRateObservationError::Unavailable)
+            ));
             if let Some(observer) = self.observer {
                 observer.observe(AggregateTxObservation::BlockAckProcessed {
                     tx_status: completion.tx.status,
@@ -260,6 +280,18 @@ where
 
         self.active = ConnectedTxActive::Aggregate(active);
         Ok(WifiTxProgress::Pending)
+    }
+
+    fn observe_ordinary_rate_control(&mut self) {
+        let Some(outcome) = self.ordinary.last_outcome() else {
+            return;
+        };
+        let report = outcome.report();
+        if let Some(completion) = report.completion {
+            self.rate_control.observe_tx_completion(completion);
+        }
+        self.rate_control
+            .update_tx_per(u32::from(report.status.attempts.saturating_sub(1)));
     }
 
     fn record_exchange_time(

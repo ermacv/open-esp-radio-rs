@@ -1,0 +1,23 @@
+schema = 3
+id = "icmp-latency-ht40-split"
+description = "Split-core HT40 connected-station ICMP latency and loss"
+repetitions = 3
+image = "qualification"
+isolation = "reset"
+data_plane = "split-radio-network"
+tags = ["qualification", "icmp", "station", "ht40", "split-core"]
+
+[link]
+phy = "ht40"
+
+[workload]
+kind = "icmp"
+count = 100
+interval_ms = 20
+timeout_ms = 1000
+payload_bytes = 56
+
+[criteria]
+maximum_lost = 0
+maximum_p95_ms = 20
+require_no_beacon_loss = true

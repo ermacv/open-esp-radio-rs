@@ -83,12 +83,12 @@ fn qualify(
     // Network provisioning is acknowledged before the radio task finishes
     // scan/join/WPA2.  A lifecycle command is valid only after the unsolicited
     // connected edge has published the Station owner at the public boundary.
-    let generation = capture.wait_for_connected_station(timeout)?;
+    let mut generation = capture.wait_for_connected_station(timeout)?;
     wait_for_connected_generation(capture, &mut lifecycle_cursor, generation, timeout)?;
     qualify_initial_hold(capture, &mut lifecycle_cursor, generation, initial_hold)?;
     report_stack(capture, timeout, "initial-connected")?;
     for cycle in 1..=cycles {
-        qualify_cycle(capture, timeout, cycle)?;
+        generation = qualify_cycle(capture, timeout, cycle, generation)?;
         report_stack(capture, timeout, "reconnect-complete")?;
         println!("station_reconnect_cycle={cycle}/{cycles} status=PASS");
     }
@@ -158,9 +158,61 @@ fn report_stack(capture: &SerialCapture, timeout: Duration, stage: &str) -> Resu
     Ok(())
 }
 
-fn qualify_cycle(capture: &SerialCapture, timeout: Duration, cycle: u8) -> Result<()> {
+#[derive(Default)]
+struct CycleProgress {
+    disconnected: bool,
+    connected: bool,
+    owners_complete: bool,
+}
+
+impl CycleProgress {
+    fn observe_lifecycle(
+        &mut self,
+        event: StationLifecycleEvent,
+        cycle: u8,
+        generation: u32,
+    ) -> Result<()> {
+        match event {
+            StationLifecycleEvent::Disconnected {
+                generation: observed,
+                reason: open_esp_radio_hil_protocol::StationDisconnectReason::ReconnectRequested,
+            } if observed == generation && !self.disconnected => {
+                self.disconnected = true;
+                Ok(())
+            }
+            StationLifecycleEvent::Connected {
+                generation: observed,
+            } if self.disconnected && observed == generation.wrapping_add(1) => {
+                self.connected = true;
+                Ok(())
+            }
+            event @ (StationLifecycleEvent::AttemptFailed { .. }
+            | StationLifecycleEvent::RetryExhausted { .. }) => {
+                validate_cycle_event(event, cycle)
+            }
+            event => Err(format!(
+                    "station reconnect cycle {cycle} published an unexpected lifecycle edge: \
+                     expected generation {generation} disconnect then generation {} connect, got {event:?}",
+                    generation.wrapping_add(1),
+                )
+                .into()),
+        }
+    }
+
+    const fn complete(&self) -> bool {
+        self.disconnected && self.connected && self.owners_complete
+    }
+}
+
+fn qualify_cycle(
+    capture: &SerialCapture,
+    timeout: Duration,
+    cycle: u8,
+    generation: u32,
+) -> Result<u32> {
     let mut lifecycle_cursor = capture.station_lifecycle_cursor();
     let handle = capture.request_station_epoch_cycle()?;
+    let mut progress = CycleProgress::default();
     let deadline = Instant::now() + timeout;
     while Instant::now() < deadline {
         let wait = deadline
@@ -169,16 +221,25 @@ fn qualify_cycle(capture: &SerialCapture, timeout: Duration, cycle: u8) -> Resul
         if let Some(event) =
             capture.wait_station_lifecycle_event_optional(&mut lifecycle_cursor, wait)?
         {
-            validate_cycle_event(event, cycle)?;
+            progress.observe_lifecycle(event, cycle, generation)?;
         }
-        let completion = capture.observed_station_epoch_completion(handle);
-        if validate_cycle_completion(completion, cycle)? {
-            return Ok(());
+        if !progress.owners_complete {
+            progress.owners_complete = validate_cycle_completion(
+                capture.observed_station_epoch_completion(handle),
+                cycle,
+            )?;
+        }
+        if progress.complete() {
+            return Ok(generation.wrapping_add(1));
         }
     }
     Err(format!(
-        "target did not complete station reconnect cycle {cycle} within {} seconds",
-        timeout.as_secs()
+        "target did not complete station reconnect cycle {cycle} within {} seconds \
+         (disconnected={}, connected={}, owners_complete={})",
+        timeout.as_secs(),
+        progress.disconnected,
+        progress.connected,
+        progress.owners_complete,
     )
     .into())
 }
@@ -381,5 +442,33 @@ mod tests {
             reason: StationAttemptFailureReason::NoCandidate,
         };
         assert!(validate_cycle_event(exhausted, 2).is_err());
+    }
+
+    #[test]
+    fn cycle_requires_ordered_disconnect_and_next_generation_connect() {
+        let mut progress = CycleProgress::default();
+        assert!(
+            progress
+                .observe_lifecycle(StationLifecycleEvent::Connected { generation: 2 }, 1, 1,)
+                .is_err()
+        );
+
+        progress
+            .observe_lifecycle(
+                StationLifecycleEvent::Disconnected {
+                    generation: 1,
+                    reason:
+                        open_esp_radio_hil_protocol::StationDisconnectReason::ReconnectRequested,
+                },
+                1,
+                1,
+            )
+            .unwrap();
+        progress
+            .observe_lifecycle(StationLifecycleEvent::Connected { generation: 2 }, 1, 1)
+            .unwrap();
+        assert!(!progress.complete());
+        progress.owners_complete = true;
+        assert!(progress.complete());
     }
 }

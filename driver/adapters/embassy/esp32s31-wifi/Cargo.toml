@@ -33,9 +33,6 @@ embassy-time = { version = "0.5.1", features = ["generic-queue-64", "std"] }
 
 [features]
 default = []
-# Selects the qualified 32-descriptor/32-member aggregate resource envelope.
-# The final product linker must place CPU-only storage in initialized PSRAM.
-high-throughput = []
 # Keeps exact RX delivery observation out of the ordinary driver surface.
 rx-delivery-observation = ["open-esp-radio-embassy-net/rx-delivery-observation"]
 

@@ -25,7 +25,12 @@ const UDP_RX_QUEUE_DEPTH: usize = 64;
 const UDP_TX_QUEUE_DEPTH: usize = 64;
 const UDP_AUXILIARY_QUEUE_DEPTH: usize = 1;
 const TCP_RX_BUFFER_CAPACITY: usize = 262_144;
-const TCP_TX_BUFFER_CAPACITY: usize = 65_536;
+// This is larger than the link BDP for a separate reason: TCP must be able to
+// retain enough unsent payload to feed both 32-frame A-MPDU arenas. A 64-KiB
+// socket held only about 44 full-size segments, so the HIL application could
+// impose a partial-aggregate boundary on an otherwise idle radio pipeline.
+// The buffer is CPU-only storage placed in PSRAM by the qualification profile.
+const TCP_TX_BUFFER_CAPACITY: usize = 131_072;
 
 static UDP_SINK_RX_METADATA: StaticCell<[PacketMetadata; UDP_RX_QUEUE_DEPTH]> = StaticCell::new();
 static UDP_SINK_RX_BUFFER: ConstStaticCell<[u8; UDP_RX_QUEUE_DEPTH * UDP_PAYLOAD_CAPACITY]> =

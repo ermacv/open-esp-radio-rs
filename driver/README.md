@@ -69,8 +69,11 @@ authentication, association, WPA2, connected and reconnect policy. Monitor is
 an exclusive capture role. The production STA API is deliberately always
 awake. AP v1 owns one 20 MHz ERP BSS, one WPA2-PSK/CCMP client and pairwise
 unicast Ethernet; it does not claim HT, AP+STA, group-data TX or power save.
-BLE, Bluetooth, IEEE 802.15.4 and coexistence are not implemented and have no
-placeholder public owner types.
+BLE, Bluetooth, IEEE 802.15.4 and coexistence are not public runtime features
+and have no placeholder public owner types. Internal typed PAC/HAL/LMAC
+transactions exist for the reviewed Wi-Fi-side PTI/request leaves and COEX
+hardware timers; they deliberately remain below the public capability boundary
+until scheduler/lifecycle ownership and joint-radio hardware evidence exist.
 
 ISR handlers are private backend details: they record pending work and wake the
 runner. Examples contain no ISR, PAC, DMA or register assembly.

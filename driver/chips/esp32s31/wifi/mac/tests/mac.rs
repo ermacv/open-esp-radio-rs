@@ -2,8 +2,9 @@ use std::collections::BTreeMap;
 
 use open_esp_radio_dma::{HardwareOwnedTxDma, PreparedTxDma};
 use open_esp_radio_esp32s31_pac::{
-    MacHtTxProgram, MacKeyInstallOutcome, MacLegacyTxProgram, MacTxCompletionRegisters,
-    MacTxDetachOutcome, MacTxDetachReason, MacTxQueueDetached, Register32,
+    MacHtTxProgram, MacInterface, MacKeyInstallOutcome, MacLegacyTxProgram,
+    MacTxCompletionRegisters, MacTxDetachOutcome, MacTxDetachReason, MacTxQueueDetached,
+    Register32,
     mac::{self, init as mac_init},
 };
 use open_esp_radio_esp32s31_wifi_dma::descriptor::{
@@ -296,25 +297,17 @@ impl StaLinkRxPolicyHardware for MockMmio {
 }
 
 impl MacInterfaceAddressHardware for MockMmio {
-    fn program_sta_ap_addresses(
-        &mut self,
-        station_address: [u8; 6],
-        access_point_address: [u8; 6],
-    ) {
-        for (interface, address) in [station_address, access_point_address]
-            .into_iter()
-            .enumerate()
-        {
-            let low = mac_init::INTERFACE_ADDRESS_LOW[interface];
-            let high = mac_init::INTERFACE_ADDRESS_HIGH[interface];
-            self.write32(
-                low,
-                u32::from_le_bytes([address[0], address[1], address[2], address[3]]),
-            );
-            self.write32(high, u32::from(address[4]) | (u32::from(address[5]) << 8));
-            let value = self.read32(high);
-            self.write32(high, value | (1 << 16));
-        }
+    fn program_interface_address(&mut self, interface: MacInterface, address: [u8; 6]) {
+        let interface = interface.bits() as usize;
+        let low = mac_init::INTERFACE_ADDRESS_LOW[interface];
+        let high = mac_init::INTERFACE_ADDRESS_HIGH[interface];
+        self.write32(
+            low,
+            u32::from_le_bytes([address[0], address[1], address[2], address[3]]),
+        );
+        self.write32(high, u32::from(address[4]) | (u32::from(address[5]) << 8));
+        let value = self.read32(high);
+        self.write32(high, value | (1 << 16));
     }
 }
 
@@ -644,7 +637,7 @@ impl TxHardware for MockMmio {
         config = self.read32(mac::TX_Q_CONFIG[index]);
         self.write32(
             mac::TX_Q_CONFIG[index],
-            (config & 0xff3f_ffff) | (u32::from(program.interface) << 22),
+            (config & 0xff3f_ffff) | (program.interface.bits() << 22),
         );
         true
     }
@@ -737,7 +730,7 @@ impl TxHardware for MockMmio {
         config = self.read32(mac::TX_Q_CONFIG[index]);
         self.write32(
             mac::TX_Q_CONFIG[index],
-            (config & 0xff3f_ffff) | (u32::from(program.interface) << 22),
+            (config & 0xff3f_ffff) | (program.interface.bits() << 22),
         );
         true
     }
@@ -3703,7 +3696,7 @@ fn protected_legacy_profile_publishes_sta_pairwise_slot_in_plcp1() {
 #[test]
 fn protected_legacy_profile_composes_ap_interface_and_pairwise_slot_in_plcp1() {
     let mut config = LegacyTxConfig::management_1m(0x99);
-    config.interface = 1;
+    config.interface = MacInterface::AccessPoint;
     config.hardware_key_selector = 8;
     let image = legacy_q0_image(0x2f00_0100, config).unwrap();
     // Descriptor control byte 0x48 occupies PLCP1 bits 24:17.

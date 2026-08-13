@@ -1,0 +1,25 @@
+schema = 3
+id = "udp-bidirectional-ht40-split-soak"
+description = "Five-minute split-core HT40 full-duplex stability gate"
+image = "qualification"
+isolation = "reset"
+data_plane = "split-radio-network"
+tags = ["qualification", "udp", "station", "full-duplex", "ht40", "split-core", "soak"]
+
+[link]
+phy = "ht40"
+
+[workload]
+kind = "udp"
+direction = "bidirectional"
+duration_seconds = 300
+rx_rate_bps = 5000000
+tx_rate_bps = 5000000
+payload_bytes = 1472
+
+[criteria]
+exact_delivery = false
+minimum_rx_bps = 4500000
+minimum_tx_bps = 4500000
+minimum_combined_bps = 9000000
+require_no_beacon_loss = true

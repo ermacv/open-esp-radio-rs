@@ -13,7 +13,7 @@ use open_esp_radio_hil_protocol::{
 use serde::Deserialize;
 use zeroize::{Zeroize, Zeroizing};
 
-use crate::{Result, repository_root};
+use crate::{Result, repository_root, scenario::PhyExpectation};
 
 pub(crate) struct LabConfig {
     path: PathBuf,
@@ -94,26 +94,33 @@ pub(crate) struct AccessPointConfig {
 enum RawStationFixtureConfig {
     LocalLinux {
         interface: String,
+        phys: Vec<PhyExpectation>,
     },
     OpenWrt {
         ssh_target: String,
         wireless_interface: String,
         ingress_interface: String,
         monitor_interface: Option<String>,
+        phys: Vec<PhyExpectation>,
+        #[serde(default)]
+        independent_laptop_monitor: bool,
     },
-    External,
+    External {
+        phys: Vec<PhyExpectation>,
+    },
 }
 
 #[derive(Clone, Debug)]
 pub(crate) enum StationFixtureConfig {
     LocalLinux(LocalLinuxConfig),
     OpenWrt(OpenWrtConfig),
-    External,
+    External(ExternalConfig),
 }
 
 #[derive(Clone, Debug)]
 pub(crate) struct LocalLinuxConfig {
     pub(crate) interface: String,
+    pub(crate) phys: Vec<PhyExpectation>,
 }
 
 #[derive(Clone, Debug)]
@@ -122,6 +129,13 @@ pub(crate) struct OpenWrtConfig {
     pub(crate) wireless_interface: String,
     pub(crate) ingress_interface: String,
     pub(crate) monitor_interface: Option<String>,
+    pub(crate) phys: Vec<PhyExpectation>,
+    pub(crate) independent_laptop_monitor: bool,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct ExternalConfig {
+    pub(crate) phys: Vec<PhyExpectation>,
 }
 
 impl LabConfig {
@@ -170,17 +184,20 @@ impl LabConfig {
         }
         let ipv4 = parse_ipv4(raw.station.ipv4.clone())?;
         match &raw.station_fixture {
-            RawStationFixtureConfig::LocalLinux { interface } => {
+            RawStationFixtureConfig::LocalLinux { interface, phys } => {
                 validate_shell_token("station_fixture.interface", interface)?;
                 if interface != "wlan0" {
                     return Err("the installed local HIL helper currently owns only `wlan0`".into());
                 }
+                validate_phys("local-linux", phys)?;
             }
             RawStationFixtureConfig::OpenWrt {
                 ssh_target,
                 wireless_interface,
                 ingress_interface,
                 monitor_interface,
+                phys,
+                independent_laptop_monitor: _,
             } => {
                 for (name, value) in [
                     ("station_fixture.ssh_target", ssh_target.as_str()),
@@ -198,8 +215,15 @@ impl LabConfig {
                 if let Some(interface) = monitor_interface {
                     validate_shell_token("station_fixture.monitor_interface", interface)?;
                 }
+                validate_phys("open-wrt", phys)?;
+                if phys.as_slice() != [PhyExpectation::Ht40] {
+                    return Err(
+                        "the laboratory OpenWrt fixture is qualified only for `phys = [\"ht40\"]`; 20 MHz width alone does not prove HE"
+                            .into(),
+                    );
+                }
             }
-            RawStationFixtureConfig::External => {}
+            RawStationFixtureConfig::External { phys } => validate_phys("external", phys)?,
         }
         let root = repository_root()?;
         let startup_artifact = raw.device.startup_artifact.map(|path| {
@@ -231,21 +255,27 @@ impl LabConfig {
             station,
             access_point,
             station_fixture: match raw.station_fixture {
-                RawStationFixtureConfig::LocalLinux { interface } => {
-                    StationFixtureConfig::LocalLinux(LocalLinuxConfig { interface })
+                RawStationFixtureConfig::LocalLinux { interface, phys } => {
+                    StationFixtureConfig::LocalLinux(LocalLinuxConfig { interface, phys })
                 }
                 RawStationFixtureConfig::OpenWrt {
                     ssh_target,
                     wireless_interface,
                     ingress_interface,
                     monitor_interface,
+                    phys,
+                    independent_laptop_monitor,
                 } => StationFixtureConfig::OpenWrt(OpenWrtConfig {
                     ssh_target,
                     wireless_interface,
                     ingress_interface,
                     monitor_interface,
+                    phys,
+                    independent_laptop_monitor,
                 }),
-                RawStationFixtureConfig::External => StationFixtureConfig::External,
+                RawStationFixtureConfig::External { phys } => {
+                    StationFixtureConfig::External(ExternalConfig { phys })
+                }
             },
             data_plane: Cell::new(WifiDataPlanePlacement::SingleCore),
         })
@@ -281,6 +311,8 @@ impl LabConfig {
                 wireless_interface: String::from("phy0-ap0"),
                 ingress_interface: String::from("br-lan"),
                 monitor_interface: Some(String::from("open-radio-mon")),
+                phys: vec![PhyExpectation::Ht40],
+                independent_laptop_monitor: true,
             }),
             data_plane: Cell::new(WifiDataPlanePlacement::SingleCore),
         }
@@ -293,6 +325,36 @@ impl LabConfig {
     pub(crate) fn data_plane(&self) -> WifiDataPlanePlacement {
         self.data_plane.get()
     }
+}
+
+impl StationFixtureConfig {
+    pub(crate) fn require_phy(&self, phy: PhyExpectation) -> Result<()> {
+        let phys = match self {
+            Self::LocalLinux(config) => &config.phys,
+            Self::OpenWrt(config) => &config.phys,
+            Self::External(config) => &config.phys,
+        };
+        if !phys.contains(&phy) {
+            return Err(format!(
+                "station fixture does not advertise the required `{}` PHY; configured capabilities: {:?}",
+                phy.id(), phys
+            )
+            .into());
+        }
+        Ok(())
+    }
+}
+
+fn validate_phys(owner: &str, phys: &[PhyExpectation]) -> Result<()> {
+    if phys.is_empty() {
+        return Err(format!("{owner} station fixture must advertise at least one PHY").into());
+    }
+    for (index, phy) in phys.iter().enumerate() {
+        if phys[..index].contains(phy) {
+            return Err(format!("{owner} station fixture advertises `{}` twice", phy.id()).into());
+        }
+    }
+    Ok(())
 }
 
 impl StationConfig {

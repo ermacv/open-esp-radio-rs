@@ -17,7 +17,6 @@ pub enum Esp32s31RadioError {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Esp32s31NewError {
-    WorkerUnavailable,
     RadioAlreadyClaimed,
     RadioStart,
     StationRole,

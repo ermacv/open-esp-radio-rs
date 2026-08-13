@@ -29,8 +29,8 @@ pub struct Esp32s31PreparedConnectedService<'security, R, E, N> {
 }
 
 impl<'security, R, E, N> Esp32s31PreparedConnectedService<'security, R, E, N> {
-    pub const fn plan(&self) -> Esp32s31ConnectedStaPlan {
-        self.plan
+    pub const fn plan(&self) -> &Esp32s31ConnectedStaPlan {
+        &self.plan
     }
 
     pub const fn epoch(&self) -> &E {
@@ -118,10 +118,10 @@ where
     /// static stack arena) but cannot consume or replace the runtime owner.
     pub fn start_network<T>(
         mut self,
-        start: impl FnOnce(&mut R, D, Esp32s31ConnectedStaPlan) -> (S, T),
+        start: impl FnOnce(&mut R, D, &Esp32s31ConnectedStaPlan) -> (S, T),
     ) -> Esp32s31ConnectedNetworkStarted<'security, R, E, S, N, T> {
         let network = start_station_network(self.network, |device| {
-            start(&mut self.runtime, device, self.plan)
+            start(&mut self.runtime, device, &self.plan)
         });
         let (stack, network, initial_network_task) = network.into_parts();
         Esp32s31ConnectedNetworkStarted {

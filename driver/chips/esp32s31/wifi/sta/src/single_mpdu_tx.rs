@@ -597,6 +597,7 @@ mod tests {
         MacTxDetachReason, MacTxQueueDetached,
     };
     use open_esp_radio_esp32s31_wifi_mac::{
+        MacInterface,
         crypto::{CcmpKeyHardware, install_sta_pairwise_ccmp},
         tx::{HardwareOwnedTxDma, LegacyRate, PreparedTxDma, TxCompletion, TxSlot, TxSlotState},
     };
@@ -876,7 +877,7 @@ mod tests {
         );
         let (queue, program) = hardware.legacy.expect("legacy queue image");
         assert_eq!(queue, 0);
-        assert_eq!(program.interface, 0);
+        assert_eq!(program.interface, MacInterface::Station);
         assert_eq!(program.scheduler_priority, 0);
         assert_eq!(program.packet_priority, 0);
         assert_eq!(program.plcp1 & 0xfff, 34);

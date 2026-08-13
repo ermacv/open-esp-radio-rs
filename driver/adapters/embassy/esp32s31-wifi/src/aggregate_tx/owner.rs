@@ -47,6 +47,8 @@ where
             AMPDU_BUFFER_SIZE,
         >,
         config: AggregateTxConfig,
+        rate_control: StaRateControlAssociation,
+        aggregate_rate_policy: StaTxRatePolicy,
     ) -> Result<Self, AggregateTxError> {
         if SLOTS == 0
             || SLOTS > 32
@@ -95,11 +97,99 @@ where
             standby_error: None,
             block_ack_windows: [0; 8],
             config,
+            rate_control,
+            aggregate_rate_policy,
             active: ConnectedTxActive::Idle,
             last_aggregate_status: None,
             pending_ordinary_retry: None,
             observer: None,
         })
+    }
+
+    #[cfg(test)]
+    pub(super) fn new_for_test(
+        ordinary: Esp32s31SingleMpduTx<'slot, P, E, T, ORDINARY_BUFFER_SIZE>,
+        ampdu: AggregateTxResources<
+            'ampdu,
+            PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+            SLOTS,
+            AMPDU_BUFFER_SIZE,
+        >,
+        config: AggregateTxConfig,
+    ) -> Result<Self, AggregateTxError> {
+        use open_esp_radio_esp32s31_wifi_mac::rate_control::{
+            HeLowMetricReportFeatures, StaLinkMetric, StaRateControlAssociationInput,
+            StaRateControlPhy,
+        };
+        use open_esp_radio_ieee80211::{he::HeDcmConstellation, station::StaAssociationPhy};
+
+        let (
+            association_phy,
+            phy,
+            ht_mcs_override,
+            ht_guard_interval_override,
+            he_mcs_override,
+            he_guard_interval_and_ltf_override,
+        ) = match config.rate {
+            TxPhyRate::Ht(rate) => (
+                match rate.channel_width {
+                    open_esp_radio_esp32s31_wifi_mac::tx::HtChannelWidth::Mhz20 => {
+                        StaAssociationPhy::Ht20
+                    }
+                    open_esp_radio_esp32s31_wifi_mac::tx::HtChannelWidth::Mhz40 => {
+                        StaAssociationPhy::Ht40
+                    }
+                },
+                StaRateControlPhy::Ht,
+                Some(rate.mcs),
+                Some(rate.guard_interval),
+                None,
+                None,
+            ),
+            TxPhyRate::He(rate) => (
+                StaAssociationPhy::He20,
+                StaRateControlPhy::He,
+                None,
+                None,
+                Some(rate.mcs()),
+                Some(rate.guard_interval_and_ltf()),
+            ),
+            TxPhyRate::Legacy(_) => (
+                StaAssociationPhy::Legacy,
+                StaRateControlPhy::Dot11G,
+                None,
+                None,
+                None,
+                None,
+            ),
+        };
+        let rate_control = StaRateControlAssociation::new(StaRateControlAssociationInput {
+            phy,
+            link_metric: StaLinkMetric::from_estimator(50),
+            p2p: false,
+            peer_highest_rate: None,
+            long_range_rates_present: false,
+            he_low_metric_report: HeLowMetricReportFeatures::default(),
+        });
+        let rate_policy = StaTxRatePolicy {
+            association_phy,
+            high_throughput_enabled: !matches!(config.rate, TxPhyRate::Legacy(_)),
+            fallback_legacy_rate: open_esp_radio_esp32s31_wifi_mac::tx::LegacyRate::Ofdm54M,
+            fallback_ht_mcs: open_esp_radio_esp32s31_wifi_mac::tx::HtMcs::Mcs7,
+            fallback_ht_guard_interval:
+                open_esp_radio_esp32s31_wifi_mac::tx::HtGuardInterval::Long800Ns,
+            ht_mcs_override,
+            ht_guard_interval_override,
+            he_mcs_override,
+            he_guard_interval_and_ltf_override,
+            he_dcm_override: None,
+            he_800ns_gi_ltf:
+                open_esp_radio_esp32s31_wifi_mac::rx::HeGuardIntervalAndLtf::TwoLtf800Ns,
+            peer_supports_ht_short_guard_interval: true,
+            peer_supports_ldpc: false,
+            peer_dcm_receive: HeDcmConstellation::NotSupported,
+        };
+        Self::new(ordinary, ampdu, config, rate_control, rate_policy)
     }
 
     /// Attach optional observations without changing TX

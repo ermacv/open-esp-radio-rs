@@ -36,7 +36,7 @@ impl RxCapture {
             StationFixtureConfig::OpenWrt(config) => Ok(Some(Self::OpenWrt(
                 OpenWrtRxCapture::start(config, target, port, duration, phy)?,
             ))),
-            StationFixtureConfig::External => Ok(None),
+            StationFixtureConfig::External(_) => Ok(None),
         }
     }
 
@@ -71,7 +71,7 @@ impl RxEvidence {
                 evidence.rx_bitrate,
             ),
             Self::OpenWrt(evidence) => format!(
-                "- OpenWrt filtered DSA ingress (diagnostic) / Wi-Fi egress (exact): `{}` / `{}`; interface RX/TX: `{}` / `{}`; station TX/retries/failed: `{}` / `{}` / `{}`; channel width: `{}` MHz; ath10k MSDU queued/dropped, MPDU requeued, SW-retry dropped: `{}` / `{}` / `{}` / `{}`\n",
+                "- OpenWrt filtered Ethernet ingress (diagnostic) / Wi-Fi egress (exact): `{}` / `{}`; interface RX/TX: `{}` / `{}`; station TX/retries/failed: `{}` / `{}` / `{}`; channel width: `{}` MHz\n",
                 evidence.ingress_packets,
                 evidence.wireless_packets,
                 evidence.ingress_interface_rx_packets,
@@ -80,10 +80,6 @@ impl RxEvidence {
                 evidence.station_tx_retries,
                 evidence.station_tx_failed,
                 evidence.channel_width_mhz,
-                evidence.firmware_msdu_queued,
-                evidence.firmware_msdu_dropped,
-                evidence.firmware_mpdu_requeued,
-                evidence.firmware_sw_retry_dropped,
             ),
         }
     }

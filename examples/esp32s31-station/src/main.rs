@@ -80,11 +80,7 @@ fn main() -> ! {
 }
 
 #[embassy_executor::task]
-async fn station_task(
-    spawner: Spawner,
-    radio: EspHalRadioPeripheral,
-    trng: Trng,
-) {
+async fn station_task(_spawner: Spawner, radio: EspHalRadioPeripheral, trng: Trng) {
     let efuse_registers = esp_hal::peripherals::EFUSE::regs();
     let mut station_address = [0; 6];
     station_address
@@ -120,10 +116,14 @@ async fn station_task(
         },
         WifiChannel::mhz20(1).expect("initial channel is valid"),
     );
-    let (radio, radio_runner) =
-        open_esp_radio_esp32s31_embassy_wifi::new(spawner.make_send(), radio, trng, config)
+    let open_esp_radio_esp32s31_embassy_wifi::Esp32s31RadioSystem { radio, runners } =
+        open_esp_radio_esp32s31_embassy_wifi::new(radio, trng, config)
             .await
             .expect("radio initialization must succeed once");
+    let open_esp_radio_esp32s31_embassy_wifi::Esp32s31RadioRunners {
+        hardware: radio_runner,
+        wifi_protocol,
+    } = runners;
     let open_esp_radio_esp32s31_embassy_wifi::Esp32s31RadioParts {
         wifi,
         initialization: _,
@@ -134,7 +134,7 @@ async fn station_task(
         monitor_frames: _,
     } = wifi.into_parts();
     let network = async move {
-        let (stack, mut runner) = embassy_net::new(
+        let (stack, runner) = open_esp_radio_esp32s31_embassy_wifi::new_station_network(
             device,
             Config::dhcpv4(Default::default()),
             NETWORK_RESOURCES.take(),
@@ -165,7 +165,12 @@ async fn station_task(
         }
         core::future::pending::<()>().await;
     };
-    let (_application, never, _network) =
-        embassy_futures::join::join3(application, radio_runner.run(), network).await;
-    match never {}
+    let (_application, hardware_never, _protocol_never, _network) = embassy_futures::join::join4(
+        application,
+        radio_runner.run(),
+        wifi_protocol.run(),
+        network,
+    )
+    .await;
+    match hardware_never {}
 }

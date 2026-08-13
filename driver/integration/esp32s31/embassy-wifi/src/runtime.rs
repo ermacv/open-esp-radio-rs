@@ -11,7 +11,6 @@ use core::{
     pin::Pin,
 };
 
-use embassy_executor::SendSpawner;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use esp_hal::rng::{Rng, Trng};
 use open_esp_radio::esp32s31::supervisor::{
@@ -26,6 +25,8 @@ use open_esp_radio::esp32s31::wifi::sta::attempt::{
 };
 use open_esp_radio::esp32s31::wifi::sta::channel::Esp32s31ScanPhy;
 use open_esp_radio::esp32s31::wifi::sta::tx_epoch::Esp32s31StaTxEpoch;
+#[cfg(feature = "qualification")]
+use open_esp_radio::wifi::sta::station::StaBackoffReason;
 use open_esp_radio::wifi::wpa2::frames::Wpa2Gtk;
 use open_esp_radio::{
     AccessPointRequest, StationDiscovery, StationRequest, StationScanPolicy, StationSecurity,
@@ -66,8 +67,8 @@ use open_esp_radio::{
         },
         softmac::interface::BoundVirtualInterface,
         sta::station::{
-            StaAttemptContext, StaAttemptFailure, StaAttemptOutcome, StaBackoffReason,
-            StaFailureDisposition, StaNextCandidate, StaReconnectPolicy,
+            StaAttemptContext, StaAttemptFailure, StaAttemptOutcome, StaFailureDisposition,
+            StaNextCandidate, StaReconnectPolicy,
         },
         wpa2::Pmk,
     },
@@ -79,6 +80,8 @@ pub(super) use open_esp_radio_esp32s31_wifi_embassy::resource_profile::{
     ESP32S31_DEFAULT_RX_BUFFER_SIZE as RX_BUFFER_SIZE,
     ESP32S31_DEFAULT_RX_DESCRIPTOR_COUNT as RX_DESCRIPTOR_COUNT,
 };
+#[cfg(feature = "qualification")]
+use open_esp_radio_esp32s31_wifi_embassy::station::Esp32s31StationEngineObserver;
 use open_esp_radio_esp32s31_wifi_embassy::{
     access_point::{
         Esp32s31AccessPointControl, Esp32s31AccessPointStopped as EmbassyAccessPointStopped,
@@ -96,12 +99,11 @@ use open_esp_radio_esp32s31_wifi_embassy::{
     station::{
         Esp32s31RadioRegistersRepublish, Esp32s31StationCommandReceiver, Esp32s31StationConfig,
         Esp32s31StationConnectedPhase, Esp32s31StationControlResources, Esp32s31StationController,
-        Esp32s31StationDmaResources, Esp32s31StationEngine, Esp32s31StationEngineObserver,
-        Esp32s31StationEnginePort, Esp32s31StationExit, Esp32s31StationInitialJoinPhase,
-        Esp32s31StationInitialScanExit, Esp32s31StationInitialScanFailures,
-        Esp32s31StationInitialScanPhase, Esp32s31StationInitialScanReturned,
-        Esp32s31StationJoinExit, Esp32s31StationJoinOutcome, Esp32s31StationJoinResources,
-        Esp32s31StationPrepareFailure, Esp32s31StationRadioResources,
+        Esp32s31StationDmaResources, Esp32s31StationEngine, Esp32s31StationEnginePort,
+        Esp32s31StationExit, Esp32s31StationInitialJoinPhase, Esp32s31StationInitialScanExit,
+        Esp32s31StationInitialScanFailures, Esp32s31StationInitialScanPhase,
+        Esp32s31StationInitialScanReturned, Esp32s31StationJoinExit, Esp32s31StationJoinOutcome,
+        Esp32s31StationJoinResources, Esp32s31StationPrepareFailure, Esp32s31StationRadioResources,
         Esp32s31StationReconnectedPhase, Esp32s31StationRunningScanCompletion,
         Esp32s31StationRunningScanExit, Esp32s31StationRunningScanPhase,
         Esp32s31StationRuntimeReclaimFailure, Esp32s31StationRuntimeResources,
@@ -129,12 +131,11 @@ use crate::connected::{
     ConnectedAmpduStorage, ConnectedDisconnectedEpoch, ConnectedReconnectedEpoch,
     ConnectedRunningNetwork, ConnectedRxEpochResources, ConnectedRxProtocolStorage,
     ConnectedStationEpoch, ConnectedStationFault, ConnectedStationOutcome,
-    ConnectedStationResources, ConnectedStationRunExit, ConnectedStoppedRx,
-    ConnectedWorkerPublishers, ControlResources, InitialConnectedStaticResources,
-    MacInterruptEpoch, NetworkRunner, StationNetwork, connected_config,
-    initialize_connected_rx_protocol_runtime, initialize_connected_static_resources,
-    initialize_ethernet_frame, initialize_station_network, mac_interrupt_epoch, run_connected,
-    spawn_connected_workers,
+    ConnectedStationResources, ConnectedStationRunExit, ConnectedStoppedRx, ControlResources,
+    Esp32s31WifiProtocolRunner, InitialConnectedStaticResources, MacInterruptEpoch, NetworkRunner,
+    StationNetwork, connected_config, initialize_connected_rx_protocol_runtime,
+    initialize_connected_static_resources, initialize_ethernet_frame, initialize_station_network,
+    mac_interrupt_epoch, run_connected,
 };
 use crate::monitor::{
     CaptureResources, MonitorMemory, MonitorResourcesError, ProductionMonitorBuildFailure,
@@ -351,6 +352,22 @@ pub struct Esp32s31RadioRunner {
         Esp32s31RadioSupervisorTask<'static, CriticalSectionRawMutex, ProductionWifiEpochRunner>,
 }
 
+/// Explicitly placed eternal runners returned by [`new`].
+///
+/// The hardware runner owns PAC/DMA/ISR state. The protocol runner owns only
+/// the connected 802.11 processing task endpoint. Keeping them separate lets
+/// an application select a core topology without changing driver behavior.
+pub struct Esp32s31RadioRunners {
+    pub hardware: Esp32s31RadioRunner,
+    pub wifi_protocol: Esp32s31WifiProtocolRunner,
+}
+
+/// Complete initialized radio root and all eternal execution obligations.
+pub struct Esp32s31RadioSystem {
+    pub radio: Esp32s31Radio,
+    pub runners: Esp32s31RadioRunners,
+}
+
 impl Esp32s31RadioRunner {
     pub async fn run(self) -> ! {
         await_stack_boundary!(self.supervisor.run())
@@ -512,7 +529,6 @@ pub(super) struct ProductionStationBoardResources {
     pub(super) interface: BoundVirtualInterface,
     pub(super) rx_protocol_runtime: &'static mut ConnectedRxProtocolStorage,
     pub(super) initial_connected: Option<InitialConnectedStaticResources>,
-    pub(super) workers: ConnectedWorkerPublishers,
     #[cfg(feature = "qualification")]
     pub(super) qualification: Option<crate::Esp32s31QualificationHooks>,
 }
@@ -2027,11 +2043,10 @@ impl EmbassyWifiRoleEpochRunner<CriticalSectionRawMutex> for ProductionWifiEpoch
     reason = "radio start returns one unique typed owner graph; the post-LTO stack-frame audit rejects any actual oversized live frame"
 )]
 pub async fn new(
-    worker_spawner: SendSpawner,
     platform: EspHalRadioPeripheral,
     trng: Trng,
     config: crate::Esp32s31RadioConfig,
-) -> Result<(Esp32s31Radio, Esp32s31RadioRunner), Esp32s31NewError> {
+) -> Result<Esp32s31RadioSystem, Esp32s31NewError> {
     qualification_event!("open-radio: cold PHY start");
 
     let crate::Esp32s31RadioConfig {
@@ -2044,16 +2059,16 @@ pub async fn new(
         #[cfg(feature = "qualification")]
         qualification,
     } = config;
-    let workers = match spawn_connected_workers(
-        worker_spawner,
+    let wifi_protocol = Esp32s31WifiProtocolRunner::new({
         #[cfg(feature = "qualification")]
-        qualification.map(|hooks| hooks.protocol_task_poll),
+        {
+            qualification.map(|hooks| hooks.protocol_task_poll)
+        }
         #[cfg(not(feature = "qualification"))]
-        None,
-    ) {
-        Ok(workers) => workers,
-        Err(_error) => return Err(Esp32s31NewError::WorkerUnavailable),
-    };
+        {
+            None
+        }
+    });
     #[cfg(feature = "qualification")]
     if let Some(hooks) = qualification {
         configure_mac_irq_observer(hooks.mac_irq);
@@ -2151,7 +2166,6 @@ pub async fn new(
                 interface: station_interface,
                 rx_protocol_runtime: initialize_connected_rx_protocol_runtime(),
                 initial_connected: Some(initial_connected),
-                workers,
                 #[cfg(feature = "qualification")]
                 qualification,
             },
@@ -2188,8 +2202,8 @@ pub async fn new(
         Ok(prepared) => prepared,
         Err(_failure) => return Err(Esp32s31NewError::SupervisorInUse),
     };
-    Ok((
-        Esp32s31Radio::new(
+    Ok(Esp32s31RadioSystem {
+        radio: Esp32s31Radio::new(
             Esp32s31Wifi::new(
                 controller.into_wifi(),
                 network_device,
@@ -2199,6 +2213,9 @@ pub async fn new(
             ),
             initialization,
         ),
-        Esp32s31RadioRunner { supervisor },
-    ))
+        runners: Esp32s31RadioRunners {
+            hardware: Esp32s31RadioRunner { supervisor },
+            wifi_protocol,
+        },
+    })
 }

@@ -334,7 +334,7 @@ fn idle_aggregate_returns_ordinary_and_storage_for_station_teardown() {
         TEST_SLOTS,
         0,
         TEST_BUFFER_SIZE,
-    >::new(
+    >::new_for_test(
         ordinary,
         AggregateTxResources::single(
             HtAmpduTxResources::new_model(ampdu.as_mut()).unwrap(),
@@ -374,7 +374,7 @@ fn first_frame_outside_fresh_aggregate_txop_falls_back_to_ordinary_tx() {
     let ordinary = make_ordinary(slot.as_mut(), &mut hardware);
     let mut ampdu = core::pin::pin!(HtAmpduTxStorage::<TEST_SLOTS, 0>::new());
     let observer = RecordingAggregateTxObserver::default();
-    let mut tx = Esp32s31ConnectedTx::new(
+    let mut tx = Esp32s31ConnectedTx::new_for_test(
         ordinary,
         AggregateTxResources::single(
             HtAmpduTxResources::new_model(ampdu.as_mut()).unwrap(),
@@ -457,7 +457,7 @@ fn production_sized_he_frame_fits_a_fresh_default_txop_aggregate() {
     let ordinary = make_ordinary(slot.as_mut(), &mut hardware);
     let mut ampdu = core::pin::pin!(HtAmpduTxStorage::<TEST_SLOTS, 0>::new());
     let observer = RecordingAggregateTxObserver::default();
-    let mut tx = Esp32s31ConnectedTx::new(
+    let mut tx = Esp32s31ConnectedTx::new_for_test(
         ordinary,
         AggregateTxResources::single(
             HtAmpduTxResources::new_model(ampdu.as_mut()).unwrap(),
@@ -529,7 +529,7 @@ fn negotiated_amsdu_pairs_network_frames_inside_the_block_ack_window() {
     let ordinary = make_ordinary(slot.as_mut(), &mut hardware);
     let mut ampdu = core::pin::pin!(HtAmpduTxStorage::<TEST_SLOTS, 0>::new());
     let observer = RecordingAggregateTxObserver::default();
-    let mut tx = Esp32s31ConnectedTx::new(
+    let mut tx = Esp32s31ConnectedTx::new_for_test(
         ordinary,
         AggregateTxResources::single(
             HtAmpduTxResources::new_model(ampdu.as_mut()).unwrap(),
@@ -585,7 +585,7 @@ fn aggregate_never_exceeds_the_peer_negotiated_block_ack_window() {
     let ordinary = make_ordinary(slot.as_mut(), &mut hardware);
     let mut ampdu = core::pin::pin!(HtAmpduTxStorage::<TEST_SLOTS, 0>::new());
     let observer = RecordingAggregateTxObserver::default();
-    let mut tx = Esp32s31ConnectedTx::new(
+    let mut tx = Esp32s31ConnectedTx::new_for_test(
         ordinary,
         AggregateTxResources::single(
             HtAmpduTxResources::new_model(ampdu.as_mut()).unwrap(),
@@ -663,7 +663,7 @@ fn pipelined_arena_survives_current_retry_and_publishes_at_next_boundary() {
     let mut primary = core::pin::pin!(HtAmpduTxStorage::<TEST_SLOTS, 0>::new());
     let mut standby = core::pin::pin!(HtAmpduTxStorage::<TEST_SLOTS, 0>::new());
     let observer = RecordingAggregateTxObserver::default();
-    let mut tx = Esp32s31ConnectedTx::new(
+    let mut tx = Esp32s31ConnectedTx::new_for_test(
         ordinary,
         AggregateTxResources::pipelined(
             HtAmpduTxResources::new_model(primary.as_mut()).unwrap(),
@@ -807,7 +807,7 @@ fn ordinary_control_tx_cannot_admit_a_standby_aggregate() {
     let ordinary = make_ordinary(slot.as_mut(), &mut hardware);
     let mut primary = core::pin::pin!(HtAmpduTxStorage::<TEST_SLOTS, 0>::new());
     let mut standby = core::pin::pin!(HtAmpduTxStorage::<TEST_SLOTS, 0>::new());
-    let mut tx = Esp32s31ConnectedTx::new(
+    let mut tx = Esp32s31ConnectedTx::new_for_test(
         ordinary,
         AggregateTxResources::pipelined(
             HtAmpduTxResources::new_model(primary.as_mut()).unwrap(),
@@ -856,7 +856,7 @@ fn rejected_standby_preparation_preserves_the_hardware_owned_primary() {
     let ordinary = make_ordinary(slot.as_mut(), &mut hardware);
     let mut primary = core::pin::pin!(HtAmpduTxStorage::<TEST_SLOTS, 0>::new());
     let mut standby = core::pin::pin!(HtAmpduTxStorage::<TEST_SLOTS, 0>::new());
-    let mut tx = Esp32s31ConnectedTx::new(
+    let mut tx = Esp32s31ConnectedTx::new_for_test(
         ordinary,
         AggregateTxResources::pipelined(
             HtAmpduTxResources::new_model(primary.as_mut()).unwrap(),
@@ -904,7 +904,7 @@ fn block_ack_completion_releases_all_referenced_network_leases() {
     let mut slot = core::pin::pin!(TxSlot::<TEST_BUFFER_SIZE>::new_model());
     let ordinary = make_ordinary(slot.as_mut(), &mut hardware);
     let mut ampdu = core::pin::pin!(HtAmpduTxStorage::<TEST_SLOTS, 0>::new());
-    let mut tx = Esp32s31ConnectedTx::new(
+    let mut tx = Esp32s31ConnectedTx::new_for_test(
         ordinary,
         AggregateTxResources::single(
             HtAmpduTxResources::new_model(ampdu.as_mut()).unwrap(),
@@ -972,7 +972,7 @@ fn partial_block_ack_retains_missing_frames_across_one_republication() {
     let mut slot = core::pin::pin!(TxSlot::<TEST_BUFFER_SIZE>::new_model());
     let ordinary = make_ordinary(slot.as_mut(), &mut hardware);
     let mut ampdu = core::pin::pin!(HtAmpduTxStorage::<TEST_SLOTS, 0>::new());
-    let mut tx = Esp32s31ConnectedTx::new(
+    let mut tx = Esp32s31ConnectedTx::new_for_test(
         ordinary,
         AggregateTxResources::single(
             HtAmpduTxResources::new_model(ampdu.as_mut()).unwrap(),
@@ -1047,7 +1047,7 @@ fn one_missing_ht_mpdu_moves_to_ordinary_retry_without_new_sequence_or_pn() {
     let mut slot = core::pin::pin!(TxSlot::<TEST_BUFFER_SIZE>::new_model());
     let ordinary = make_ordinary(slot.as_mut(), &mut hardware);
     let mut ampdu = core::pin::pin!(HtAmpduTxStorage::<TEST_SLOTS, 0>::new());
-    let mut tx = Esp32s31ConnectedTx::new(
+    let mut tx = Esp32s31ConnectedTx::new_for_test(
         ordinary,
         AggregateTxResources::single(
             HtAmpduTxResources::new_model(ampdu.as_mut()).unwrap(),

@@ -169,6 +169,7 @@ pub(crate) fn run(
     arguments: Vec<String>,
     output: &Path,
     lab: &LabConfig,
+    require_exact_delivery: bool,
     require_no_beacon_loss: bool,
 ) -> Result<()> {
     let mut options = parse_options(&arguments, lab)?;
@@ -213,7 +214,7 @@ pub(crate) fn run(
                 PhyExpectation::He20
             },
         )?),
-        StationFixtureConfig::OpenWrt(_) | StationFixtureConfig::External => None,
+        StationFixtureConfig::OpenWrt(_) | StationFixtureConfig::External(_) => None,
     };
 
     let session = match capture.start_session(SessionConfig {
@@ -295,7 +296,7 @@ pub(crate) fn run(
         sample_count: 1,
         ampdu: AmpduEvidence::from_typed(typed_tx, typed_timing),
     };
-    if missing != 0 || reordered != 0 || duplicates != 0 {
+    if require_exact_delivery && (missing != 0 || reordered != 0 || duplicates != 0) {
         let received_datagrams = qualified.iter().map(|burst| burst.datagrams).sum::<u64>();
         let lowest_sequence = qualified
             .iter()
@@ -387,7 +388,8 @@ pub(crate) fn run(
             )
             .into());
         }
-        if let Some(local) = local_ingress.as_ref()
+        if require_exact_delivery
+            && let Some(local) = local_ingress.as_ref()
             && local.udp_packets != evidence.transport.tx_units
         {
             return Err(format!(
@@ -396,8 +398,9 @@ pub(crate) fn run(
             )
             .into());
         }
-        if evidence.transport.tx_bytes != received_bytes
-            || evidence.transport.tx_units != received_datagrams
+        if require_exact_delivery
+            && (evidence.transport.tx_bytes != received_bytes
+                || evidence.transport.tx_units != received_datagrams)
         {
             return Err(format!(
                 "typed/host TX delivery mismatch: target={}/{} host={received_bytes}/{received_datagrams} \
@@ -424,11 +427,12 @@ pub(crate) fn run(
             ampdu: tx.ampdu,
             structured,
             host_receive_buffer_bytes,
+            require_exact_delivery,
         },
     )?;
     println!(
         "OPENRADIOHOST result=PASS mode=tx host_floor_kbps={host_floor} \
-         device_floor_kbps={} bursts={} missing=0 reordered=0 duplicates=0 \
+         device_floor_kbps={} bursts={} missing={missing} reordered={reordered} duplicates={duplicates} \
          host_receive_buffer_bytes={} ampdu_avg_subframes={:.2} ampdu_31={} ampdu_32={} report={}",
         tx.throughput_floor_kbps,
         qualified.len(),
@@ -599,11 +603,15 @@ struct TxReport<'a> {
     ampdu: AmpduEvidence,
     structured: crate::traffic_capture::SessionEvidence,
     host_receive_buffer_bytes: usize,
+    require_exact_delivery: bool,
 }
 
 fn write_report(output: &Path, report: TxReport<'_>) -> Result<()> {
     let datagrams: u64 = report.bursts.iter().map(|burst| burst.datagrams).sum();
     let bytes: u64 = report.bursts.iter().map(|burst| burst.bytes).sum();
+    let missing: u64 = report.bursts.iter().map(|burst| burst.missing).sum();
+    let reordered: u64 = report.bursts.iter().map(|burst| burst.reordered).sum();
+    let duplicates: u64 = report.bursts.iter().map(|burst| burst.duplicates).sum();
     let terminal_exchanges = report
         .ampdu
         .completed
@@ -643,6 +651,7 @@ fn write_report(output: &Path, report: TxReport<'_>) -> Result<()> {
         format!(
             "# Open-radio TX-only HIL\n\n\
              - Result: `PASS`\n\
+             - Delivery contract: `{}`\n\
              - Device/host: `{}` / `{}`\n\
              - Complete host bursts: `{}`; datagrams: `{datagrams}`; bytes: `{bytes}`\n\
              - Payload / target offered-rate bound: `{}` bytes / `{offered_rate}`\n\
@@ -651,7 +660,7 @@ fn write_report(output: &Path, report: TxReport<'_>) -> Result<()> {
              - Host UDP `SO_RCVBUF` read-back: `{}` bytes\n\
              - Host maximum packet interarrival: `{maximum_interarrival_us}` us before sequence `{sequence_after_maximum_interarrival:?}`\n\
              - Device socket floor: `{:.3} Mbit/s` across `{}` samples\n\
-             - Host missing/reordered/duplicate datagrams: `0` / `0` / `0`\n\n\
+             - Host missing/reordered/duplicate datagrams: `{missing}` / `{reordered}` / `{duplicates}`\n\n\
              ## A-MPDU evidence\n\n\
              - Prepared/completed/publications: `{}` / `{}` / `{}`\n\
              - Subframes: `{}` total, `{:.2}` average, min `{}`, max `{}`\n\
@@ -670,6 +679,11 @@ fn write_report(output: &Path, report: TxReport<'_>) -> Result<()> {
              - Sampled publication-to-IRQ flight average/max: `{:.2}` / `{}` us across `{}` samples\n\n\
              - Standby prepared/published/cancelled: `{}` / `{}` / `{}`\n\n\
              UART evidence is in [`uart.log`](uart.log).\n",
+            if report.require_exact_delivery {
+                "exact"
+            } else {
+                "performance-health"
+            },
             report.options.device,
             report.host_address,
             report.bursts.len(),

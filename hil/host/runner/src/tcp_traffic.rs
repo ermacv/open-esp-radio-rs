@@ -227,7 +227,10 @@ fn validate(
             .rx_floor_bps
             .expect("RX direction has an acceptance floor");
         if host.throughput_bps() < floor {
-            return Err("host TCP offer is below 90% of the requested RX rate".into());
+            return Err(format!(
+                "host-to-target TCP rate is below the configured {floor} bit/s RX floor"
+            )
+            .into());
         }
     } else if structured.transport.rx_bytes != 0 || structured.transport.rx_units != 0 {
         return Err("TCP TX-only session reported target receive traffic".into());

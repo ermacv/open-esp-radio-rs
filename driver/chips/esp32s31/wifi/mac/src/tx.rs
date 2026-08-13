@@ -12,8 +12,9 @@ use alloc::boxed::Box;
 pub use open_esp_radio_dma::{HardwareOwnedTxDma, PreparedTxDma};
 use open_esp_radio_esp32s31_pac::{
     ColdRadioRegisters, MacHeTbTidLimit, MacHeTid, MacHeTxProgram, MacHeTxVectorSnapshot,
-    MacHtTxProgram, MacLegacyTxProgram, MacPartialRuPowerSelector, MacTxCompletionRegisters,
-    MacTxDetachOutcome, MacTxDetachReason, MacTxQueueDetached, RadioRegisters,
+    MacHtTxProgram, MacInterface, MacLegacyTxProgram, MacPartialRuPowerSelector,
+    MacTxCompletionRegisters, MacTxDetachOutcome, MacTxDetachReason, MacTxQueueDetached,
+    RadioRegisters,
 };
 use open_esp_radio_esp32s31_wifi_dma::descriptor::descriptor_address_valid;
 pub use open_esp_radio_esp32s31_wifi_dma::tx_storage::TxDmaState as TxSlotState;
@@ -1897,7 +1898,7 @@ pub struct LegacyTxConfig {
     pub aifsn: u8,
     pub contention_window: u16,
     pub timeout: u16,
-    pub interface: u8,
+    pub interface: MacInterface,
     /// Priority written to the ordinary queue scheduler field.
     ///
     /// This can differ from [`Self::pti`]: the pinned vendor
@@ -1929,8 +1930,8 @@ pub struct LegacyTxConfig {
 /// The vendor AP peer-one path therefore publishes `0x48`: AP interface one
 /// (`0x40`) plus pairwise key slot eight (`0x08`). The independent EDCA
 /// interface field is still required and is programmed separately.
-const fn plcp1_descriptor_control(hardware_key_selector: u8, interface: u8) -> u8 {
-    hardware_key_selector | (interface << 6)
+const fn plcp1_descriptor_control(hardware_key_selector: u8, interface: MacInterface) -> u8 {
+    hardware_key_selector | ((interface.bits() as u8) << 6)
 }
 
 /// Inputs for one finite, non-aggregate HT MPDU attempt.
@@ -1950,7 +1951,7 @@ pub struct HtTxConfig {
     pub aifsn: u8,
     pub contention_window: u16,
     pub timeout: u16,
-    pub interface: u8,
+    pub interface: MacInterface,
     pub scheduler_priority: u8,
     pub pti: u8,
     pub pti_count: u16,
@@ -1984,7 +1985,7 @@ impl HtTxConfig {
             aifsn: 2,
             contention_window: 0,
             timeout: TxLifetimeClass::DirectMpdu.fresh_queue_timeout(),
-            interface: 0,
+            interface: MacInterface::Station,
             scheduler_priority: 1,
             pti: 1,
             pti_count: 1,
@@ -1997,7 +1998,6 @@ impl HtTxConfig {
             && self.aifsn <= 0x0f
             && self.contention_window <= 0x03ff
             && self.timeout <= 0x0fff
-            && self.interface <= 3
             && self.hardware_key_selector <= 0x3f
             && self.scheduler_priority <= 0x0f
             && self.pti <= 0x0f
@@ -2025,7 +2025,7 @@ pub struct HeSmpduTxConfig {
     pub aifsn: u8,
     pub contention_window: u16,
     pub timeout: u16,
-    pub interface: u8,
+    pub interface: MacInterface,
     pub scheduler_priority: u8,
     pub pti: u8,
     pub pti_count: u16,
@@ -2064,7 +2064,7 @@ impl HeSmpduTxConfig {
             aifsn: 2,
             contention_window: 0,
             timeout: TxLifetimeClass::AmpduContainer.fresh_queue_timeout(),
-            interface: 0,
+            interface: MacInterface::Station,
             scheduler_priority: 1,
             pti: 1,
             pti_count: 1,
@@ -2086,7 +2086,6 @@ impl HeSmpduTxConfig {
             && self.aifsn <= 0x0f
             && self.contention_window <= 0x03ff
             && self.timeout <= 0x0fff
-            && self.interface <= 3
             && self.hardware_key_selector <= 0x3f
             && self.scheduler_priority <= 0x0f
             && self.pti <= 0x0f
@@ -2114,7 +2113,7 @@ pub struct HtAmpduTxConfig {
     pub aifsn: u8,
     pub contention_window: u16,
     pub timeout: u16,
-    pub interface: u8,
+    pub interface: MacInterface,
     pub scheduler_priority: u8,
     pub pti: u8,
     pub pti_count: u16,
@@ -2143,7 +2142,7 @@ impl HtAmpduTxConfig {
             aifsn: 2,
             contention_window: 0,
             timeout: TxLifetimeClass::AmpduContainer.fresh_queue_timeout(),
-            interface: 0,
+            interface: MacInterface::Station,
             scheduler_priority: 1,
             pti: 1,
             pti_count: 1,
@@ -2158,7 +2157,6 @@ impl HtAmpduTxConfig {
             && self.aifsn <= 0x0f
             && self.contention_window <= 0x03ff
             && self.timeout <= 0x0fff
-            && self.interface <= 3
             && self.hardware_key_selector <= 0x3f
             && self.scheduler_priority <= 0x0f
             && self.pti <= 0x0f
@@ -2229,7 +2227,7 @@ pub struct HeAmpduTxConfig {
     pub aifsn: u8,
     pub contention_window: u16,
     pub timeout: u16,
-    pub interface: u8,
+    pub interface: MacInterface,
     pub scheduler_priority: u8,
     pub pti: u8,
     pub pti_count: u16,
@@ -2307,7 +2305,7 @@ impl HeAmpduTxConfig {
             aifsn: 2,
             contention_window: 0,
             timeout: TxLifetimeClass::AmpduContainer.fresh_queue_timeout(),
-            interface: 0,
+            interface: MacInterface::Station,
             scheduler_priority: 1,
             pti: 1,
             pti_count: 1,
@@ -2351,7 +2349,6 @@ impl HeAmpduTxConfig {
             && self.aifsn <= 0x0f
             && self.contention_window <= 0x03ff
             && self.timeout <= 0x0fff
-            && self.interface <= 3
             && self.hardware_key_selector <= 0x3f
             && self.scheduler_priority <= 0x0f
             && self.pti <= 0x0f
@@ -2431,7 +2428,7 @@ impl LegacyTxConfig {
             aifsn: 2,
             contention_window: 0,
             timeout: TxLifetimeClass::DirectMpdu.fresh_queue_timeout(),
-            interface: 0,
+            interface: MacInterface::Station,
             // Complete libpp.a[hal_mac.o,hal_coex.o] selects the unsigned
             // minimum of packet PTI 1 and coexistence event-one PTI 5.
             scheduler_priority: 1,
@@ -2463,7 +2460,6 @@ impl LegacyTxConfig {
             && self.aifsn <= 0x0f
             && self.contention_window <= 0x03ff
             && self.timeout <= 0x0fff
-            && self.interface <= 3
             && self.hardware_key_selector <= 0x3f
             && self.scheduler_priority <= 0x0f
             && self.pti <= 0x0f

@@ -1,6 +1,7 @@
 schema = 3
 id = "udp-bidirectional-ht40-rx-delivery-split"
 description = "Split-core HT40 full-duplex RX delivery-frontier diagnostic"
+repetitions = 3
 image = "diagnostic-rx-delivery"
 isolation = "reset"
 data_plane = "split-radio-network"
@@ -26,3 +27,4 @@ require_no_beacon_loss = true
 
 [evidence]
 openwrt_tx_monitor_rx = true
+independent_laptop_monitor_rx = true

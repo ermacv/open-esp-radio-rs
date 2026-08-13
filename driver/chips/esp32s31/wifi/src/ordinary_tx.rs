@@ -11,6 +11,7 @@ pub use crate::tx::{
     WifiTxEntropy, WifiTxPowerPair, WifiTxPowerProfile, WifiTxResources, WifiTxTimer,
 };
 use open_esp_radio_esp32s31_wifi_mac::{
+    MacInterface,
     edca::EdcaContentionParameters,
     tx::{
         HtTxConfig, LegacyTxConfig, LegacyTxQueue, TxCompletion, TxCookie, TxError, TxHardware,
@@ -71,8 +72,12 @@ impl ActiveTxRoute {
         }
     }
 
-    const fn interface_index(self) -> u8 {
-        (self.0 >> 2) & 0x03
+    const fn mac_interface(self) -> MacInterface {
+        match (self.0 >> 2) & 0x03 {
+            0 => MacInterface::Station,
+            1 => MacInterface::AccessPoint,
+            _ => panic!("corrupt active TX interface route"),
+        }
     }
 }
 
@@ -669,7 +674,7 @@ where
                 config.pti_count = 1;
                 config.group_receiver = active.group_receiver;
                 config.hardware_key_selector = active.hardware_key_selector;
-                config.interface = active.route.interface_index();
+                config.interface = active.route.mac_interface();
                 self.slot
                     .as_mut()
                     .submit_legacy(hardware, cookie, queue, config)?;
@@ -695,7 +700,7 @@ where
                 config.pti = active.packet_priority;
                 config.pti_count = 1;
                 config.hardware_key_selector = active.hardware_key_selector;
-                config.interface = active.route.interface_index();
+                config.interface = active.route.mac_interface();
                 self.slot
                     .as_mut()
                     .submit_ht(hardware, cookie, queue, config)?;

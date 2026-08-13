@@ -81,13 +81,15 @@ pub struct Esp32s31ConnectedStaPrepareFailure {
 }
 
 /// Validated driver plan derived from the exact associated peer.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct Esp32s31ConnectedStaPlan {
     pub(super) interface: BoundVirtualInterface,
     pub(super) link: Esp32s31StaConnectedLink,
     pub(super) config: Esp32s31ConnectedStaConfig,
     pub(super) data_tx_rate: TxPhyRate,
     pub(super) aggregate_tx_rate: TxPhyRate,
+    pub(super) aggregate_rate_policy: StaTxRatePolicy,
+    pub(super) rate_control: Option<StaRateControlAssociation>,
     pub(super) beacon_loss: StaBeaconLossConfig,
 }
 
@@ -274,14 +276,18 @@ impl Esp32s31ConnectedStaPort {
             }
         };
 
-        let data_policy = sta_tx_rate_policy(peer.link, config.tx.rate, false);
-        let aggregate_policy = sta_tx_rate_policy(peer.link, config.tx.rate, true);
+        let Esp32s31ConnectedStaPeer { link, rate_control } = peer;
+        let data_policy = sta_tx_rate_policy(link, config.tx.rate, false);
+        let aggregate_policy = sta_tx_rate_policy(link, config.tx.rate, true);
+        let aggregate_tx_rate = rate_control.ampdu_tx_rate(aggregate_policy);
         Ok(Esp32s31ConnectedStaPlan {
             interface,
-            link: peer.link,
+            link,
             config,
             data_tx_rate: data_policy.fallback_rate(),
-            aggregate_tx_rate: peer.rate_control.ampdu_tx_rate(aggregate_policy),
+            aggregate_tx_rate,
+            aggregate_rate_policy: aggregate_policy,
+            rate_control: Some(rate_control),
             beacon_loss,
         })
     }

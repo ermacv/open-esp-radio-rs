@@ -10,7 +10,6 @@ use core::{
     sync::atomic::{AtomicU32, Ordering},
 };
 
-use embassy_executor::{SendSpawner, SpawnError};
 #[cfg(feature = "qualification")]
 use embassy_sync::blocking_mutex::Mutex;
 use embassy_sync::{
@@ -750,6 +749,32 @@ impl Esp32s31QualificationSnapshot {
     }
 }
 
+#[cfg(feature = "qualification")]
+fn log_sta_receive_policy(
+    edge: &str,
+    policy: open_esp_radio::esp32s31::registers::MacStaReceivePolicySnapshot,
+) {
+    let bssid = policy.bssid;
+    qualification_event!(
+        "open-radio: sta-rx-policy edge={} q0={:08x} q3={:08x} bssid={:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x} aid={} spacing={} check={} ap={} rx={} beacon={:02x}",
+        edge,
+        policy.queue_zero_policy,
+        policy.queue_three_policy,
+        bssid[0],
+        bssid[1],
+        bssid[2],
+        bssid[3],
+        bssid[4],
+        bssid[5],
+        policy.association_id,
+        policy.minimum_mpdu_start_spacing,
+        policy.bssid_address_check_enabled,
+        policy.interface_is_soft_ap,
+        policy.interface_rx_policy_enabled,
+        policy.beacon_filter_control,
+    );
+}
+
 pub(super) struct InitialConnectedInitialization {
     pub(super) resources: InitialConnectedStaticResources,
     #[cfg(feature = "qualification")]
@@ -995,22 +1020,38 @@ fn power_interrupt() {
     let _ = service_power_interrupt(&POWER_IRQ_RUNTIME);
 }
 
-#[embassy_executor::task]
-#[allow(
-    large_assignments,
-    reason = "qualification wraps the existing owner-rich protocol future in-place; the post-LTO stack-frame audit rejects an oversized realized frame"
-)]
-async fn rx_protocol_worker(
+/// Owner-free protocol runner returned by radio initialization.
+///
+/// The application chooses the executor and core explicitly. The runner owns
+/// no PAC, DMA descriptor, or interrupt capability; active epochs are lent to
+/// it through the private start channel and returned through the typed task
+/// endpoint during teardown.
+pub struct Esp32s31WifiProtocolRunner {
     starts: Receiver<'static, CriticalSectionRawMutex, ConnectedProtocolStart, 1>,
     poll_observer: Option<fn(u64)>,
-) {
-    loop {
-        let ConnectedProtocolStart { protocol, endpoint } = starts.receive().await;
-        observe_protocol_task_polls(
-            protocol.run_controlled_task(endpoint, |_| {}),
+}
+
+impl Esp32s31WifiProtocolRunner {
+    pub(super) fn new(poll_observer: Option<fn(u64)>) -> Self {
+        Self {
+            starts: RX_PROTOCOL_START.receiver(),
             poll_observer,
-        )
-        .await;
+        }
+    }
+
+    #[allow(
+        large_assignments,
+        reason = "the owner-rich protocol future is constructed in its final executor task; the post-LTO stack-frame audit rejects an oversized realized frame"
+    )]
+    pub async fn run(self) -> ! {
+        loop {
+            let ConnectedProtocolStart { protocol, endpoint } = self.starts.receive().await;
+            observe_protocol_task_polls(
+                protocol.run_controlled_task(endpoint, |_| {}),
+                self.poll_observer,
+            )
+            .await;
+        }
     }
 }
 
@@ -1030,18 +1071,6 @@ async fn observe_protocol_task_polls<F: core::future::Future>(
     })
     .await
 }
-
-/// Start the owner-free RX protocol worker before the physical supervisor.
-pub(super) fn spawn_connected_workers(
-    spawner: SendSpawner,
-    poll_observer: Option<fn(u64)>,
-) -> Result<(), SpawnError> {
-    let protocol = rx_protocol_worker(RX_PROTOCOL_START.receiver(), poll_observer)?;
-    spawner.spawn(protocol);
-    Ok(())
-}
-
-pub(super) type ConnectedWorkerPublishers = ();
 
 pub(super) const fn connected_config() -> Esp32s31ConnectedStaConfig {
     Esp32s31ConnectedStaConfig {
@@ -1297,7 +1326,6 @@ pub async fn run_connected<'state, 'security>(
         interface,
         rx_protocol_runtime,
         initial_connected,
-        workers,
         #[cfg(feature = "qualification")]
         qualification,
     } = board;
@@ -1461,8 +1489,12 @@ pub async fn run_connected<'state, 'security>(
         report.aggregate_tx_rate.nominal_kbps(),
     );
     #[cfg(feature = "qualification")]
-    qualification_debug!(
-        "open-radio: connected RX policy: {:?}",
+    // This finite register snapshot is emitted at Info in qualification
+    // images because rare cold-start beacon loss occurs before a traffic
+    // session can request the ordinary qualification snapshot. Production
+    // images compile the event out entirely.
+    log_sta_receive_policy(
+        "start",
         radio_runner
             .services()
             .hardware()
@@ -1511,8 +1543,8 @@ pub async fn run_connected<'state, 'security>(
             {
                 let control = runner.services().control();
                 let beacon = control.beacon_monitor();
-                qualification_debug!(
-                    "open-radio: connected exit RX policy: {:?}",
+                log_sta_receive_policy(
+                    "exit",
                     runner.services().hardware().sta_receive_policy_snapshot(),
                 );
                 qualification_debug!(
@@ -1634,7 +1666,6 @@ pub async fn run_connected<'state, 'security>(
                         interface,
                         rx_protocol_runtime,
                         initial_connected,
-                        workers,
                         #[cfg(feature = "qualification")]
                         qualification,
                     },
@@ -1673,7 +1704,6 @@ pub async fn run_connected<'state, 'security>(
                     interface,
                     rx_protocol_runtime,
                     initial_connected,
-                    workers,
                     #[cfg(feature = "qualification")]
                     qualification,
                 },
@@ -1716,7 +1746,6 @@ pub async fn run_connected<'state, 'security>(
                 interface,
                 rx_protocol_runtime,
                 initial_connected,
-                workers,
                 #[cfg(feature = "qualification")]
                 qualification,
             },

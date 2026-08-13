@@ -1,6 +1,7 @@
 //! Session-bounded, read-only evidence from the laboratory OpenWrt AP.
 
 use std::{
+    io::Read as _,
     net::Ipv4Addr,
     process::{Child, Command, Stdio},
     thread,
@@ -18,10 +19,6 @@ pub(crate) struct OpenWrtRxEvidence {
     pub(crate) station_tx_packets: u64,
     pub(crate) station_tx_retries: u64,
     pub(crate) station_tx_failed: u64,
-    pub(crate) firmware_msdu_queued: u64,
-    pub(crate) firmware_msdu_dropped: u64,
-    pub(crate) firmware_mpdu_requeued: u64,
-    pub(crate) firmware_sw_retry_dropped: u64,
     pub(crate) channel_width_mhz: u8,
 }
 
@@ -32,10 +29,6 @@ struct Snapshot {
     station_tx_packets: u64,
     station_tx_retries: u64,
     station_tx_failed: u64,
-    firmware_msdu_queued: u64,
-    firmware_msdu_dropped: u64,
-    firmware_mpdu_requeued: u64,
-    firmware_sw_retry_dropped: u64,
     channel_width_mhz: u8,
 }
 
@@ -92,8 +85,13 @@ impl OpenWrtRxCapture {
         // This guard is outside the measured session and avoids admitting a
         // prefix before both independently owned sockets exist.
         thread::sleep(Duration::from_secs(1));
-        if ingress.child.try_wait()?.is_some() || wireless.child.try_wait()?.is_some() {
-            return Err("OpenWrt tcpdump exited before the HIL session started".into());
+        let early_exit = capture_early_exit(&mut ingress)?.or(capture_early_exit(&mut wireless)?);
+        if let Some(error) = early_exit {
+            let _ = ingress.child.kill();
+            let _ = ingress.child.wait();
+            let _ = wireless.child.kill();
+            let _ = wireless.child.wait();
+            return Err(error.into());
         }
         Ok(Self {
             config: config.clone(),
@@ -138,26 +136,6 @@ impl OpenWrtRxCapture {
                 self.before.station_tx_failed,
                 after.station_tx_failed,
             )?,
-            firmware_msdu_queued: delta(
-                "firmware MSDU queued",
-                self.before.firmware_msdu_queued,
-                after.firmware_msdu_queued,
-            )?,
-            firmware_msdu_dropped: delta(
-                "firmware MSDU dropped",
-                self.before.firmware_msdu_dropped,
-                after.firmware_msdu_dropped,
-            )?,
-            firmware_mpdu_requeued: delta(
-                "firmware MPDU requeued",
-                self.before.firmware_mpdu_requeued,
-                after.firmware_mpdu_requeued,
-            )?,
-            firmware_sw_retry_dropped: delta(
-                "firmware SW-retry dropped",
-                self.before.firmware_sw_retry_dropped,
-                after.firmware_sw_retry_dropped,
-            )?,
             channel_width_mhz: after.channel_width_mhz,
         })
     }
@@ -174,14 +152,7 @@ fn snapshot(config: &OpenWrtConfig, target: Ipv4Addr) -> Result<Snapshot> {
          printf 'station_tx=%s\\n' \"$(printf '%s\\n' \"$stats\" | awk '/tx packets:/ {{print $3}}')\"; \
          printf 'station_retries=%s\\n' \"$(printf '%s\\n' \"$stats\" | awk '/tx retries:/ {{print $3}}')\"; \
          printf 'station_failed=%s\\n' \"$(printf '%s\\n' \"$stats\" | awk '/tx failed:/ {{print $3}}')\"; \
-         printf 'channel_width=%s\\n' \"$(iw dev {wireless} info | sed -n 's/.*width: \\([0-9][0-9]*\\) MHz.*/\\1/p')\"; \
-         wiphy=$(iw dev {wireless} info | awk '/wiphy/ {{print \"phy\" $2; exit}}'); \
-         test -n \"$wiphy\"; \
-         fw=/sys/kernel/debug/ieee80211/$wiphy/ath10k/fw_stats; \
-         printf 'fw_msdu_queued=%s\\n' \"$(awk '/^[[:space:]]*MSDU queued/ {{print $3; exit}}' \"$fw\")\"; \
-         printf 'fw_msdu_dropped=%s\\n' \"$(awk '/^[[:space:]]*MSDUs dropped/ {{print $3; exit}}' \"$fw\")\"; \
-         printf 'fw_mpdu_requeued=%s\\n' \"$(awk '/^[[:space:]]*MPDUs requeued/ {{print $3; exit}}' \"$fw\")\"; \
-         printf 'fw_sw_retry_dropped=%s\\n' \"$(awk '/Dropped due to SW retries/ {{print $6; exit}}' \"$fw\")\"",
+         printf 'channel_width=%s\\n' \"$(iw dev {wireless} info | sed -n 's/.*width: \\([0-9][0-9]*\\) MHz.*/\\1/p')\"",
         ingress = config.ingress_interface,
         wireless = config.wireless_interface,
     );
@@ -204,10 +175,6 @@ fn snapshot(config: &OpenWrtConfig, target: Ipv4Addr) -> Result<Snapshot> {
         station_tx_packets: tagged(&stdout, "station_tx")?,
         station_tx_retries: tagged(&stdout, "station_retries")?,
         station_tx_failed: tagged(&stdout, "station_failed")?,
-        firmware_msdu_queued: tagged(&stdout, "fw_msdu_queued")?,
-        firmware_msdu_dropped: tagged(&stdout, "fw_msdu_dropped")?,
-        firmware_mpdu_requeued: tagged(&stdout, "fw_mpdu_requeued")?,
-        firmware_sw_retry_dropped: tagged(&stdout, "fw_sw_retry_dropped")?,
         channel_width_mhz: u8::try_from(tagged(&stdout, "channel_width")?)?,
     })
 }
@@ -254,12 +221,11 @@ impl Drop for OpenWrtRxCapture {
 
 pub(crate) fn doctor(config: &OpenWrtConfig) -> Result<()> {
     let script = format!(
-        "set -eu; command -v tcpdump >/dev/null; \
+        "set -eu; command -v tcpdump >/dev/null; command -v timeout >/dev/null; \
          test -d /sys/class/net/{ingress}; \
          test -d /sys/class/net/{wireless}; \
-         wiphy=$(iw dev {wireless} info | awk '/wiphy/ {{print \"phy\" $2; exit}}'); \
-         test -n \"$wiphy\"; \
-         test -r /sys/kernel/debug/ieee80211/$wiphy/ath10k/fw_stats",
+         iw dev {wireless} info | grep -q 'type AP'; \
+         iw dev {wireless} info | grep -q 'width: [24]0 MHz'",
         ingress = config.ingress_interface,
         wireless = config.wireless_interface,
     );
@@ -276,6 +242,21 @@ pub(crate) fn doctor(config: &OpenWrtConfig) -> Result<()> {
         .into());
     }
     Ok(())
+}
+
+fn capture_early_exit(capture: &mut Capture) -> Result<Option<String>> {
+    let Some(status) = capture.child.try_wait()? else {
+        return Ok(None);
+    };
+    let mut stderr = String::new();
+    if let Some(mut pipe) = capture.child.stderr.take() {
+        pipe.read_to_string(&mut stderr)?;
+    }
+    Ok(Some(format!(
+        "{} exited before the HIL session started with {status}: {}",
+        capture.name,
+        stderr.trim()
+    )))
 }
 
 fn spawn_capture(

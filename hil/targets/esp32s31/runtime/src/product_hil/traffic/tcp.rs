@@ -5,7 +5,7 @@ use embassy_net::{
     Stack,
     tcp::{TcpReader, TcpSocket, TcpWriter},
 };
-use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, mutex::Mutex, signal::Signal};
+use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, mutex::Mutex};
 use embassy_time::{Duration, Instant, Timer, with_timeout};
 use open_esp_radio_hil_esp32s31_telemetry::aggregate_tx::AggregateTxCounters;
 use open_esp_radio_hil_esp32s31_telemetry::rx_pipeline::RxPipelineCounters;
@@ -22,7 +22,7 @@ use crate::product_hil::{
 };
 
 use super::{
-    CooperativePollBudget, SessionChannel, aggregate_tx_evidence, log_open_radio_ampdu_interval,
+    SessionChannel, aggregate_tx_evidence, log_open_radio_ampdu_interval,
     log_open_radio_task_poll_interval, wait_session_link_requirements,
 };
 
@@ -45,52 +45,10 @@ struct StreamResult {
     pattern_ok: bool,
 }
 
-#[derive(Clone, Copy)]
-struct RxPatternJob {
-    length: usize,
-    offset: u64,
-}
-
-#[derive(Clone, Copy)]
-struct TxPatternJob {
-    length: usize,
-    offset: u64,
-}
-
 static TCP_RX_PATTERN_BUFFER: Mutex<CriticalSectionRawMutex, [u8; OPEN_RADIO_TCP_CHUNK_CAPACITY]> =
     Mutex::new([0; OPEN_RADIO_TCP_CHUNK_CAPACITY]);
 static TCP_TX_PATTERN_BUFFER: Mutex<CriticalSectionRawMutex, [u8; OPEN_RADIO_TCP_CHUNK_CAPACITY]> =
     Mutex::new([0; OPEN_RADIO_TCP_CHUNK_CAPACITY]);
-static TCP_RX_PATTERN_JOB: Signal<CriticalSectionRawMutex, RxPatternJob> = Signal::new();
-static TCP_RX_PATTERN_RESULT: Signal<CriticalSectionRawMutex, bool> = Signal::new();
-static TCP_TX_PATTERN_JOB: Signal<CriticalSectionRawMutex, TxPatternJob> = Signal::new();
-static TCP_TX_PATTERN_RESULT: Signal<CriticalSectionRawMutex, ()> = Signal::new();
-
-/// Validate received stream bytes on Core 1 while Core 0 keeps servicing the
-/// radio, embassy-net and the TCP socket owner.
-#[embassy_executor::task]
-pub(in crate::product_hil) async fn tcp_rx_pattern_worker_task() {
-    loop {
-        let job = TCP_RX_PATTERN_JOB.wait().await;
-        let buffer = TCP_RX_PATTERN_BUFFER.lock().await;
-        let matches = stream_pattern_matches(&buffer[..job.length], job.offset);
-        drop(buffer);
-        TCP_RX_PATTERN_RESULT.signal(matches);
-    }
-}
-
-/// Prepare transmitted stream bytes on Core 1 while Core 0 keeps servicing
-/// the radio, embassy-net and the TCP socket owner.
-#[embassy_executor::task]
-pub(in crate::product_hil) async fn tcp_tx_pattern_worker_task() {
-    loop {
-        let job = TCP_TX_PATTERN_JOB.wait().await;
-        let mut buffer = TCP_TX_PATTERN_BUFFER.lock().await;
-        fill_stream_pattern(&mut buffer[..job.length], job.offset);
-        drop(buffer);
-        TCP_TX_PATTERN_RESULT.signal(());
-    }
-}
 
 pub(in crate::product_hil) async fn run_open_radio_tcp_benchmark<'a>(
     stack: Stack<'a>,
@@ -398,11 +356,15 @@ async fn receive_stream(
         pattern_ok: true,
         ..StreamResult::default()
     };
-    let mut cooperative = CooperativePollBudget::new();
     loop {
-        let read = {
+        let (read, pattern_matches) = {
             let mut buffer = TCP_RX_PATTERN_BUFFER.lock().await;
-            with_timeout(idle_timeout, reader.read(&mut buffer[..chunk_bytes])).await
+            let read = with_timeout(idle_timeout, reader.read(&mut buffer[..chunk_bytes])).await;
+            let pattern_matches = match read {
+                Ok(Ok(length)) => stream_pattern_matches(&buffer[..length], result.bytes),
+                Ok(Err(_)) | Err(_) => true,
+            };
+            (read, pattern_matches)
         };
         match read {
             Ok(Ok(0)) => {
@@ -411,13 +373,8 @@ async fn receive_stream(
                 break;
             }
             Ok(Ok(length)) => {
-                TCP_RX_PATTERN_JOB.signal(RxPatternJob {
-                    length,
-                    offset: result.bytes,
-                });
-                result.pattern_ok &= TCP_RX_PATTERN_RESULT.wait().await;
+                result.pattern_ok &= pattern_matches;
                 result.bytes = result.bytes.saturating_add(length as u64);
-                cooperative.checkpoint().await;
             }
             Ok(Err(_)) | Err(_) => {
                 result.errors = result.errors.saturating_add(1);
@@ -437,23 +394,18 @@ async fn transmit_stream(
 ) -> StreamResult {
     let mut result = StreamResult::default();
     let mut pending_offset = chunk_bytes;
-    let mut cooperative = CooperativePollBudget::new();
     while started.elapsed() < duration {
-        if pending_offset == chunk_bytes {
-            TCP_TX_PATTERN_JOB.signal(TxPatternJob {
-                length: chunk_bytes,
-                offset: result.bytes,
-            });
-            let _ = TCP_TX_PATTERN_RESULT.wait().await;
-            pending_offset = 0;
-        }
         let elapsed = started.elapsed();
         if elapsed >= duration {
             break;
         }
         let remaining = duration - elapsed;
         let write = {
-            let buffer = TCP_TX_PATTERN_BUFFER.lock().await;
+            let mut buffer = TCP_TX_PATTERN_BUFFER.lock().await;
+            if pending_offset == chunk_bytes {
+                fill_stream_pattern(&mut buffer[..chunk_bytes], result.bytes);
+                pending_offset = 0;
+            }
             with_timeout(
                 remaining,
                 writer.write(&buffer[pending_offset..chunk_bytes]),
@@ -469,7 +421,6 @@ async fn transmit_stream(
             Ok(Ok(length)) => {
                 pending_offset += length;
                 result.bytes = result.bytes.saturating_add(length as u64);
-                cooperative.checkpoint().await;
             }
         }
         if let Some(rate_bps) = offered_rate_bps {

@@ -8,6 +8,7 @@ use crate::{
     },
     tx::{HeEdcaTxopLimit, HeMcs, HtPeerAmpduParameters},
 };
+use open_esp_radio_esp32s31_hal::wifi_mac::WifiMacHal;
 use open_esp_radio_esp32s31_pac::RadioRegisters;
 use open_esp_radio_ieee80211::{
     he::{
@@ -28,9 +29,9 @@ pub trait StaNoiseFloorHardware {
     fn read_noise_floor_dbm(&self) -> i8;
 }
 
-impl StaLinkRxPolicyHardware for RadioRegisters {
+impl StaLinkRxPolicyHardware for WifiMacHal<'_> {
     fn apply_sta_link_policy(&mut self, bssid: [u8; 6]) {
-        self.apply_sta_link_receive_policy(bssid);
+        self.configure_station_receive_policy(bssid);
     }
 }
 

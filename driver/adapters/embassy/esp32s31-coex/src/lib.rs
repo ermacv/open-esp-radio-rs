@@ -15,8 +15,8 @@ use embassy_sync::{
     channel::{Channel, Receiver, Sender},
 };
 use open_esp_radio_esp32s31_coex::{
-    CoexClockHardware, CoexCore, CoexError, CoexEventId, CoexReleaseOutcome, CoexRequest,
-    CoexRequestOutcome, CoexStatus, CoexTimerHardware,
+    CoexClockHardware, CoexCore, CoexError, CoexEventId, CoexRequest, CoexStatus,
+    CoexTimerHardware, CoexTimerIndex,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -32,8 +32,8 @@ pub enum CoexCommand {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CoexOutcome {
     Status(CoexStatus),
-    Request(CoexRequestOutcome),
-    Release(CoexReleaseOutcome),
+    Request(CoexTimerIndex),
+    Release(CoexTimerIndex),
     Stopped,
 }
 
@@ -201,19 +201,6 @@ mod tests {
     struct Clock(CoexTimerClock);
 
     impl CoexClockHardware for Clock {
-        fn configure(
-            &mut self,
-            selector: CoexClockSelector,
-            divisor: u16,
-        ) -> Result<(), CoexError> {
-            if !selector.accepts_divisor(divisor) {
-                return Err(CoexError::UnsupportedClock);
-            }
-            self.0.selector = selector;
-            self.0.divider_field = divisor - 1;
-            Ok(())
-        }
-
         fn sample(&mut self) -> Result<CoexTimerClock, CoexError> {
             Ok(self.0)
         }
@@ -249,15 +236,11 @@ mod tests {
                 );
                 assert_eq!(
                     control.execute(CoexCommand::Request(request)).await,
-                    Ok(CoexOutcome::Request(CoexRequestOutcome::Armed(
-                        CoexTimerIndex::new(0).unwrap()
-                    )))
+                    Ok(CoexOutcome::Request(CoexTimerIndex::new(0).unwrap()))
                 );
                 assert_eq!(
                     control.execute(CoexCommand::Release(request.event)).await,
-                    Ok(CoexOutcome::Release(CoexReleaseOutcome::Released(
-                        CoexTimerIndex::new(0).unwrap()
-                    )))
+                    Ok(CoexOutcome::Release(CoexTimerIndex::new(0).unwrap()))
                 );
                 assert_eq!(
                     control.execute(CoexCommand::Shutdown).await,

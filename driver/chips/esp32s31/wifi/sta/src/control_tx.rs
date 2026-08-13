@@ -490,6 +490,7 @@ mod tests {
         MacTxDetachReason, MacTxQueueDetached,
     };
     use open_esp_radio_esp32s31_wifi_mac::{
+        MacInterface,
         crypto::{CcmpKeyHardware, install_sta_pairwise_ccmp},
         tx::{HardwareOwnedTxDma, PreparedTxDma, TxSlot, TxSlotState},
     };
@@ -662,7 +663,7 @@ mod tests {
         assert!(matches!(result, Ok(TxCompletion { status: 0, .. })));
         assert_eq!(hardware.publications, 1);
         let (_, program) = hardware.legacy.expect("management publication");
-        assert_eq!(program.interface, 0);
+        assert_eq!(program.interface, MacInterface::Station);
         assert_eq!(program.scheduler_priority, 1);
         assert_eq!(program.packet_priority, 1);
         assert_eq!(tx.ordinary.slot.state(), TxSlotState::Free);

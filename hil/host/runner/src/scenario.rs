@@ -225,6 +225,8 @@ pub struct Criteria {
 pub struct EvidenceConfig {
     /// Capture the OpenWrt AP's own TX monitor tap. Diagnostic only.
     pub openwrt_tx_monitor_rx: bool,
+    /// Capture the same radio channel through the laptop's independent adapter.
+    pub independent_laptop_monitor_rx: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -233,6 +235,8 @@ pub struct Scenario {
     pub schema: u16,
     pub id: String,
     pub description: String,
+    #[serde(default = "one_repetition")]
+    pub repetitions: u8,
     pub image: ImageClass,
     pub isolation: Isolation,
     #[serde(default)]
@@ -281,6 +285,7 @@ impl Scenario {
         if self.description.trim().is_empty() {
             return Err(format!("{}: scenario description is empty", self.source.display()).into());
         }
+        bounded(self.repetitions, 1, 20, self, "repetitions")?;
         if self.image == ImageClass::BootSmoke && !matches!(self.workload, Workload::BootSmoke) {
             return Err(format!(
                 "{}: boot-smoke image accepts only boot-smoke workload",
@@ -316,6 +321,13 @@ impl Scenario {
         {
             return Err(format!(
                 "{}: OpenWrt TX-monitor RX evidence requires the bidirectional UDP RX-delivery diagnostic",
+                self.source.display()
+            )
+            .into());
+        }
+        if self.evidence.independent_laptop_monitor_rx && !self.evidence.openwrt_tx_monitor_rx {
+            return Err(format!(
+                "{}: independent laptop RX evidence requires OpenWrt TX-monitor evidence for correlation",
                 self.source.display()
             )
             .into());
@@ -542,6 +554,10 @@ impl Scenario {
     }
 }
 
+const fn one_repetition() -> u8 {
+    1
+}
+
 fn validate_access_point_traffic(traffic: &AccessPointTraffic, scenario: &Scenario) -> Result<()> {
     match traffic {
         AccessPointTraffic::None => Ok(()),
@@ -696,20 +712,19 @@ mod tests {
         let catalog = Catalog::load(&root).unwrap();
         assert!(catalog.all().len() >= 8);
         assert!(catalog.get("udp-rx-he20-ceiling").is_ok());
-        assert!(catalog.get("udp-rx-ht40-ceiling").is_ok());
-        assert!(catalog.get("udp-tx-ht40").is_ok());
-        assert!(catalog.get("udp-bidirectional-ht40-40-60").is_ok());
-        assert!(catalog.get("udp-bidirectional-ht40-rx-delivery").is_ok());
+        assert!(catalog.get("tcp-rx-ht40-split").is_ok());
+        assert!(catalog.get("icmp-latency-ht40-split").is_ok());
+        assert!(catalog.get("station-reconnect-ht40").is_ok());
         assert_eq!(
             catalog
-                .get("udp-bidirectional-ht40-55-55")
+                .get("udp-bidirectional-ht40-single-core-baseline")
                 .unwrap()
                 .data_plane,
             WifiDataPlanePlacement::SingleCore
         );
         assert_eq!(
             catalog
-                .get("udp-bidirectional-ht40-55-55-split")
+                .get("udp-bidirectional-ht40-split-baseline")
                 .unwrap()
                 .data_plane,
             WifiDataPlanePlacement::SplitRadioNetwork
@@ -718,8 +733,8 @@ mod tests {
             catalog
                 .get("udp-bidirectional-ht40-split-baseline")
                 .unwrap()
-                .data_plane,
-            WifiDataPlanePlacement::SplitRadioNetwork
+                .repetitions,
+            5
         );
         assert!(catalog.get("access-point-rx").is_ok());
         assert!(catalog.get("access-point-tx").is_ok());
@@ -745,6 +760,17 @@ mod tests {
             })
             .collect::<Vec<_>>();
         rates.sort_unstable();
+        assert!(
+            catalog
+                .all()
+                .iter()
+                .filter(|scenario| scenario.tags.iter().any(|tag| tag == "ht40-matrix-90"))
+                .all(|scenario| {
+                    !scenario.criteria.exact_delivery
+                        && scenario.data_plane == WifiDataPlanePlacement::SplitRadioNetwork
+                        && scenario.repetitions == 3
+                })
+        );
         assert_eq!(
             rates,
             vec![

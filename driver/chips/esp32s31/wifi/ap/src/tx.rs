@@ -216,6 +216,7 @@ mod tests {
     };
     use open_esp_radio_esp32s31_wifi::ordinary_tx::WifiTxPowerPair;
     use open_esp_radio_esp32s31_wifi_mac::{
+        MacInterface,
         tx::{HardwareOwnedTxDma, PreparedTxDma, TxSlot},
         tx_runtime::WifiTxRuntimePolicy,
     };
@@ -364,7 +365,10 @@ mod tests {
         );
         assert_eq!(tx.queue_state(), MacTxQueueState::Backpressured);
         assert_eq!(hardware.publications, 1);
-        assert_eq!(hardware.legacy_program.unwrap().interface, 1);
+        assert_eq!(
+            hardware.legacy_program.unwrap().interface,
+            MacInterface::AccessPoint
+        );
 
         let progress = block_on(tx.service(
             &mut hardware,

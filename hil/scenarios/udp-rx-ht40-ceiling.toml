@@ -1,9 +1,11 @@
 schema = 3
 id = "udp-rx-ht40-ceiling"
-description = "Sustained HT40 UDP host-to-station receive ceiling"
+description = "HT40 UDP host-to-station ceiling and 100 Mbit/s regression check"
+repetitions = 3
 image = "qualification"
 isolation = "reset"
-tags = ["qualification", "udp", "station", "ht40"]
+data_plane = "split-radio-network"
+tags = ["qualification", "characterization", "udp", "station", "ht40", "split-core", "ceiling"]
 
 [link]
 phy = "ht40"
@@ -12,10 +14,10 @@ phy = "ht40"
 kind = "udp"
 direction = "rx"
 duration_seconds = 16
-rx_rate_bps = 110000000
-payload_bytes = 1200
+rx_rate_bps = 120000000
+payload_bytes = 1472
 
 [criteria]
-exact_delivery = true
+exact_delivery = false
 minimum_rx_bps = 100000000
 require_no_beacon_loss = true

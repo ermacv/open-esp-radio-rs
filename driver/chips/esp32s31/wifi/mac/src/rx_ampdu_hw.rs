@@ -6,7 +6,7 @@
 
 #![forbid(unsafe_code)]
 
-use open_esp_radio_esp32s31_pac::RadioRegisters;
+use open_esp_radio_esp32s31_pac::{MacInterface, RadioRegisters};
 
 const RX_BLOCK_ACK_CAPACITY: u8 = 8;
 /// Highest receive BlockAck TID accepted by the vendor net80211 state machine.
@@ -21,7 +21,7 @@ pub const S31_RX_BLOCK_ACK_MAX_TID: u8 = 7;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct S31RxBlockAckAgreement {
     pub hardware_index: u8,
-    pub interface: u8,
+    pub interface: MacInterface,
     pub peer: [u8; 6],
     pub tid: u8,
     pub starting_sequence: u16,
@@ -31,7 +31,6 @@ pub struct S31RxBlockAckAgreement {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum S31RxBlockAckAgreementError {
     HardwareIndex(u8),
-    Interface(u8),
     MulticastPeer,
     Tid(u8),
     StartingSequence(u16),
@@ -44,9 +43,6 @@ impl S31RxBlockAckAgreement {
             return Err(S31RxBlockAckAgreementError::HardwareIndex(
                 self.hardware_index,
             ));
-        }
-        if self.interface > 3 {
-            return Err(S31RxBlockAckAgreementError::Interface(self.interface));
         }
         if self.peer[0] & 1 != 0 {
             return Err(S31RxBlockAckAgreementError::MulticastPeer);
@@ -108,7 +104,7 @@ mod tests {
 
     const AGREEMENT: S31RxBlockAckAgreement = S31RxBlockAckAgreement {
         hardware_index: 3,
-        interface: 1,
+        interface: MacInterface::AccessPoint,
         peer: [0x70, 0x15, 0xfb, 0xa8, 0x48, 0xf0],
         tid: 6,
         starting_sequence: 0x0abc,

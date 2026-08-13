@@ -3,7 +3,7 @@ use core::fmt;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-pub const PROTOCOL_VERSION: u16 = 38;
+pub const PROTOCOL_VERSION: u16 = 39;
 // Keep command envelopes small: startup artifacts are transferred as an
 // ordered CRC-protected stream, so a large per-command inline buffer only
 // inflates UART queues and executor futures without improving semantics.
@@ -1257,13 +1257,7 @@ pub struct NetworkSchedulerEvidence {
     pub started_with_egress: u32,
     pub exit_drained: u32,
     pub exit_work_budget: u32,
-    pub exit_time_budget: u32,
     pub exit_egress_credit: u32,
-    pub poll_micros: u32,
-    pub poll_max_micros: u32,
-    /// Residence buckets: `<=50`, `<=100`, `<=250`, `<=500`, `<=1000`,
-    /// `<=2000`, and `>2000` microseconds.
-    pub residence_histogram: [u32; 7],
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]

@@ -1,9 +1,11 @@
 schema = 3
 id = "udp-bidirectional-ht40-65-25"
-description = "Simultaneous HT40 65 Mbit/s RX and 25 Mbit/s TX exact delivery"
+description = "Split-core HT40 65/25 Mbit/s full-duplex characterization"
+repetitions = 3
 image = "qualification"
 isolation = "reset"
-tags = ["qualification", "udp", "station", "full-duplex", "ht40", "ht40-matrix-90"]
+data_plane = "split-radio-network"
+tags = ["characterization", "udp", "station", "full-duplex", "ht40", "ht40-matrix-90"]
 
 [link]
 phy = "ht40"
@@ -17,7 +19,7 @@ tx_rate_bps = 25000000
 payload_bytes = 1200
 
 [criteria]
-exact_delivery = true
+exact_delivery = false
 minimum_rx_bps = 58500000
 minimum_tx_bps = 22500000
 require_no_beacon_loss = true

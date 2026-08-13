@@ -419,7 +419,7 @@ dependencies = [
 [[package]]
 name = "embassy-net"
 version = "0.9.1"
-source = "git+https://github.com/ermacv/embassy?rev=6f57581bd#6f57581bda27279e5a88419a4200b51cdf4bdb02"
+source = "git+https://github.com/ermacv/embassy?rev=97da28a77e15a55c412da8b51710fecf5b7a8979#97da28a77e15a55c412da8b51710fecf5b7a8979"
 dependencies = [
  "document-features",
  "embassy-net-driver",
@@ -1301,6 +1301,7 @@ version = "0.1.0"
 dependencies = [
  "embassy-executor",
  "embassy-futures",
+ "embassy-net",
  "embassy-sync 0.8.0",
  "embassy-time",
  "esp-hal",

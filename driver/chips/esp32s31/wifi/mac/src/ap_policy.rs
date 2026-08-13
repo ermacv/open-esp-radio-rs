@@ -1,14 +1,25 @@
 //! Ownership boundary for role-neutral to active-AP receive policy.
 
+use open_esp_radio_esp32s31_hal::wifi_mac::WifiMacHal;
 use open_esp_radio_esp32s31_pac::RadioRegisters;
 
 pub trait ApRxPolicyHardware {
     fn apply_ap_link_policy(&mut self, access_point: [u8; 6]);
 }
 
+impl ApRxPolicyHardware for WifiMacHal<'_> {
+    fn apply_ap_link_policy(&mut self, access_point: [u8; 6]) {
+        self.configure_access_point_receive_policy(access_point);
+    }
+}
+
+// The existing AP engine still combines receive policy, crypto and TSF
+// authority in one `RadioRegisters` capability. Keep this implementation until
+// that complete owner is migrated; new AP+STA composition uses `WifiMacHal`.
 impl ApRxPolicyHardware for RadioRegisters {
     fn apply_ap_link_policy(&mut self, access_point: [u8; 6]) {
-        self.apply_ap_receive_policy(access_point);
+        let mut hal = WifiMacHal::new(self);
+        hal.configure_access_point_receive_policy(access_point);
     }
 }
 

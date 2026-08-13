@@ -1,0 +1,19 @@
+schema = 3
+id = "station-reconnect-ht40"
+description = "HT40 repeated safe station teardown and reassociation"
+image = "qualification"
+isolation = "reset"
+data_plane = "split-radio-network"
+tags = ["qualification", "station", "lifecycle", "ht40"]
+
+[link]
+phy = "ht40"
+
+[workload]
+kind = "station-reconnect"
+cycles = 3
+boots = 10
+timeout_seconds = 90
+
+[criteria]
+require_no_beacon_loss = true

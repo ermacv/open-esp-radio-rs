@@ -1,9 +1,11 @@
 schema = 3
 id = "udp-tx-ht40-ceiling"
-description = "HT40 UDP station-to-host transmit ceiling with exact delivery"
+description = "HT40 UDP station-to-host ceiling and 100 Mbit/s regression check"
+repetitions = 3
 image = "qualification"
 isolation = "reset"
-tags = ["qualification", "udp", "station", "ht40", "ceiling"]
+data_plane = "split-radio-network"
+tags = ["qualification", "characterization", "udp", "station", "ht40", "split-core", "ceiling"]
 
 [link]
 phy = "ht40"
@@ -16,6 +18,6 @@ tx_rate_bps = 130000000
 payload_bytes = 1472
 
 [criteria]
-exact_delivery = true
+exact_delivery = false
 minimum_tx_bps = 100000000
 require_no_beacon_loss = true

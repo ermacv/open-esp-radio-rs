@@ -18,11 +18,7 @@ pub struct NetworkSchedulerCounters {
     started_with_egress: AtomicU32,
     exit_drained: AtomicU32,
     exit_work_budget: AtomicU32,
-    exit_time_budget: AtomicU32,
     exit_egress_credit: AtomicU32,
-    poll_micros: AtomicU32,
-    poll_max_micros: AtomicU32,
-    residence_histogram: [AtomicU32; 7],
 }
 
 impl NetworkSchedulerCounters {
@@ -40,17 +36,12 @@ impl NetworkSchedulerCounters {
             started_with_egress: AtomicU32::new(0),
             exit_drained: AtomicU32::new(0),
             exit_work_budget: AtomicU32::new(0),
-            exit_time_budget: AtomicU32::new(0),
             exit_egress_credit: AtomicU32::new(0),
-            poll_micros: AtomicU32::new(0),
-            poll_max_micros: AtomicU32::new(0),
-            residence_histogram: [const { AtomicU32::new(0) }; 7],
         }
     }
 
     #[inline]
     pub fn record(&self, report: CooperativePollReport) {
-        let elapsed = u32::try_from(report.elapsed_micros).unwrap_or(u32::MAX);
         self.polls.fetch_add(1, Ordering::Relaxed);
         self.ingress_calls
             .fetch_add(u32::from(report.ingress_calls), Ordering::Relaxed);
@@ -76,22 +67,9 @@ impl NetworkSchedulerCounters {
         match report.exit {
             CooperativePollExit::Drained => &self.exit_drained,
             CooperativePollExit::WorkBudget => &self.exit_work_budget,
-            CooperativePollExit::TimeBudget => &self.exit_time_budget,
             CooperativePollExit::EgressCredit => &self.exit_egress_credit,
         }
         .fetch_add(1, Ordering::Relaxed);
-        self.poll_micros.fetch_add(elapsed, Ordering::Relaxed);
-        self.poll_max_micros.fetch_max(elapsed, Ordering::Relaxed);
-        let bucket = match elapsed {
-            0..=50 => 0,
-            51..=100 => 1,
-            101..=250 => 2,
-            251..=500 => 3,
-            501..=1_000 => 4,
-            1_001..=2_000 => 5,
-            _ => 6,
-        };
-        self.residence_histogram[bucket].fetch_add(1, Ordering::Relaxed);
     }
 
     pub fn snapshot(&self) -> NetworkSchedulerEvidence {
@@ -108,13 +86,7 @@ impl NetworkSchedulerCounters {
             started_with_egress: self.started_with_egress.load(Ordering::Relaxed),
             exit_drained: self.exit_drained.load(Ordering::Relaxed),
             exit_work_budget: self.exit_work_budget.load(Ordering::Relaxed),
-            exit_time_budget: self.exit_time_budget.load(Ordering::Relaxed),
             exit_egress_credit: self.exit_egress_credit.load(Ordering::Relaxed),
-            poll_micros: self.poll_micros.load(Ordering::Relaxed),
-            poll_max_micros: self.poll_max_micros.load(Ordering::Relaxed),
-            residence_histogram: core::array::from_fn(|index| {
-                self.residence_histogram[index].load(Ordering::Relaxed)
-            }),
         }
     }
 }
@@ -130,7 +102,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn records_direction_exit_and_residence_bucket() {
+    fn records_direction_and_exit() {
         let counters = NetworkSchedulerCounters::new();
         counters.record(CooperativePollReport {
             ingress_calls: 5,
@@ -141,7 +113,6 @@ mod tests {
             ingress_budget_exhausted: false,
             egress_budget_exhausted: false,
             started_with_ingress: true,
-            elapsed_micros: 240,
             exit: CooperativePollExit::EgressCredit,
         });
         let evidence = counters.snapshot();
@@ -151,6 +122,5 @@ mod tests {
         assert_eq!(evidence.egress_blocked, 1);
         assert_eq!(evidence.started_with_ingress, 1);
         assert_eq!(evidence.exit_egress_credit, 1);
-        assert_eq!(evidence.residence_histogram[2], 1);
     }
 }

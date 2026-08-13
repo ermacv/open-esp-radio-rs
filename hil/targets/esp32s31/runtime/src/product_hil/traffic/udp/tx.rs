@@ -12,10 +12,10 @@ use super::UdpSocketBuffers;
 use crate::{
     console::{publish_event_reliably, runtime_log},
     product_hil::traffic::{
-        BidirectionalResultChannel, BidirectionalSessionChannel, CooperativePollBudget,
-        OpenRadioBidirectionalDirection, aggregate_tx_evidence,
-        complete_open_radio_bidirectional_direction, log_open_radio_ampdu_interval,
-        log_open_radio_task_poll_interval, wait_session_link_requirements,
+        BidirectionalResultChannel, BidirectionalSessionChannel, OpenRadioBidirectionalDirection,
+        aggregate_tx_evidence, complete_open_radio_bidirectional_direction,
+        log_open_radio_ampdu_interval, log_open_radio_task_poll_interval,
+        wait_session_link_requirements,
     },
     product_hil::{
         OPEN_RADIO_TASK_POLL_TELEMETRY, QualificationRequester, TASK_POLLS, qualification_sample,
@@ -153,7 +153,6 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
         let mut bytes = 0_u64;
         let mut datagrams = 0_u64;
         let mut send_errors = 0_u32;
-        let mut cooperative = CooperativePollBudget::new();
         while started.elapsed() < duration {
             let sequence = (datagrams as u32).to_be_bytes();
             match socket
@@ -174,7 +173,6 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
                 }
                 Err(_) => send_errors = send_errors.saturating_add(1),
             }
-            cooperative.checkpoint().await;
             if let Some(rate_bps) = offered_rate_bps
                 && datagrams.is_multiple_of(u64::from(pacing_group_datagrams))
             {

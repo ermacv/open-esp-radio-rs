@@ -83,7 +83,7 @@ impl Esp32s31ConnectedStaPort {
         const AGGREGATE_BUFFER_SIZE: usize,
         const ORDINARY_BUFFER_SIZE: usize,
     >(
-        plan: &Esp32s31ConnectedStaPlan,
+        plan: &mut Esp32s31ConnectedStaPlan,
         resources: Esp32s31ConnectedStaTxResources<
             'slot,
             'resources,
@@ -162,11 +162,18 @@ impl Esp32s31ConnectedStaPort {
                 });
             }
         };
-        let mut tx =
-            Esp32s31ConnectedTx::new(ordinary, resources.aggregate, plan.aggregate_tx_config())
-                .expect(
-                    "connected STA config and idle aggregate storage were validated before handoff",
-                );
+        let rate_control = plan
+            .rate_control
+            .take()
+            .expect("a connected STA plan transfers rate control exactly once");
+        let mut tx = Esp32s31ConnectedTx::new(
+            ordinary,
+            resources.aggregate,
+            plan.aggregate_tx_config(),
+            rate_control,
+            plan.aggregate_rate_policy,
+        )
+        .expect("connected STA config and idle aggregate storage were validated before handoff");
         if let Some(observer) = resources.aggregate_tx_observer {
             tx = tx.with_observer(observer);
         }
@@ -245,7 +252,7 @@ impl Esp32s31ConnectedStaPort {
         const ORDINARY_BUFFER_SIZE: usize,
         const CONTROL_CAPACITY: usize,
     >(
-        plan: Esp32s31ConnectedStaPlan,
+        mut plan: Esp32s31ConnectedStaPlan,
         hardware: H,
         rx: R,
         protocol: Esp32s31ConnectedStaRxProtocolResources<
@@ -346,7 +353,7 @@ impl Esp32s31ConnectedStaPort {
         E: WifiTxEntropy,
         T: WifiTxTimer,
     {
-        let tx = match Self::build_tx(&plan, tx) {
+        let tx = match Self::build_tx(&mut plan, tx) {
             Ok(tx) => tx,
             Err(tx) => {
                 return Err(Esp32s31ConnectedStaCompositionFailure {

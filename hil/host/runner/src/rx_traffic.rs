@@ -49,6 +49,7 @@ pub(crate) fn run(
     arguments: Vec<String>,
     output: &Path,
     lab: &LabConfig,
+    require_exact_delivery: bool,
     require_no_beacon_loss: bool,
 ) -> Result<()> {
     let mut options = parse_options(&arguments, lab)?;
@@ -120,10 +121,13 @@ pub(crate) fn run(
         .radio
         .and_then(|evidence| evidence.rx)
         .ok_or("session did not publish typed RX radio evidence")?;
-    let typed_radio_failure = structured
-        .require_rx_radio(options.expected_rx_format, host.datagrams)
-        .err()
-        .map(|error| error.to_string());
+    let typed_radio_failure = if require_exact_delivery {
+        structured.require_rx_radio(options.expected_rx_format, host.datagrams)
+    } else {
+        structured.require_rx_radio_health(options.expected_rx_format)
+    }
+    .err()
+    .map(|error| error.to_string());
     // Text telemetry enriches the report when present. Typed transport/radio
     // evidence alone decides qualification and therefore remains authoritative
     // even if the bounded diagnostic stream is truncated.
@@ -171,8 +175,9 @@ pub(crate) fn run(
                 "typed RX byte count {} does not match {} full payload datagrams",
                 evidence.transport.rx_bytes, evidence.transport.rx_units
             ))
-        } else if evidence.transport.rx_units != host.datagrams
-            || evidence.transport.rx_bytes != host.bytes
+        } else if require_exact_delivery
+            && (evidence.transport.rx_units != host.datagrams
+                || evidence.transport.rx_bytes != host.bytes)
         {
             Some(format!(
                 "host/target RX delivery mismatch: host={}/{} target={}/{}",
@@ -185,11 +190,14 @@ pub(crate) fn run(
             None
         }
     };
-    let typed_delivery_failure = structured.rx_delivery.and_then(|delivery| {
-        let assessment = rx_delivery::assess(host.datagrams, delivery);
-        (!assessment.exact())
-            .then(|| format!("typed RX delivery frontier is {}", assessment.frontier()))
-    });
+    let typed_delivery_failure = require_exact_delivery
+        .then_some(())
+        .and_then(|()| structured.rx_delivery)
+        .and_then(|delivery| {
+            let assessment = rx_delivery::assess(host.datagrams, delivery);
+            (!assessment.exact())
+                .then(|| format!("typed RX delivery frontier is {}", assessment.frontier()))
+        });
     let acceptance_failure = if host.throughput_bps() < minimum_bps {
         Some(String::from(
             "host failed to offer at least 90% of the requested RX rate",
@@ -202,16 +210,19 @@ pub(crate) fn run(
     } else {
         None
     };
-    let fixture_failure = fixture.as_ref().and_then(|fixture| {
-        let expected = host.datagrams.saturating_add(1);
-        (fixture.wireless_packets() != expected).then(|| {
-            format!(
-                "host/AP Wi-Fi egress mismatch: expected={} observed={} packets",
-                expected,
-                fixture.wireless_packets()
-            )
-        })
-    });
+    let fixture_failure = require_exact_delivery
+        .then_some(())
+        .and_then(|()| fixture.as_ref())
+        .and_then(|fixture| {
+            let expected = host.datagrams.saturating_add(1);
+            (fixture.wireless_packets() != expected).then(|| {
+                format!(
+                    "host/AP Wi-Fi egress mismatch: expected={} observed={} packets",
+                    expected,
+                    fixture.wireless_packets()
+                )
+            })
+        });
     let failure = fixture_failure
         .or(typed_delivery_failure)
         .or(typed_radio_failure)
@@ -268,6 +279,7 @@ pub(crate) fn run(
             "# Open-radio {} RX-only HIL\n\n\
              - Result: `{result}`\n\
              {failure_report}\
+             - Delivery contract: `{}`\n\
              - Device: `{}`\n\
              - Requested/actual host offer: `{:.3}` / `{:.3} Mbit/s`\n\
              - Host payload: `{}` bytes in `{}` datagrams\n\
@@ -301,6 +313,11 @@ pub(crate) fn run(
              {task_poll_report}\
              UART evidence is in [`uart.log`](uart.log).\n",
             options.phy.id().to_uppercase(),
+            if require_exact_delivery {
+                "exact"
+            } else {
+                "performance-health"
+            },
             options.address,
             options.rate_bps as f64 / 1_000_000.0,
             host.throughput_bps() as f64 / 1_000_000.0,

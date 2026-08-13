@@ -33,10 +33,12 @@ use crate::{
 
 const RX_BLOCK_ACK_TID_COUNT: usize = 8;
 
-/// Maximum continuous protocol residence before returning to the cooperative
-/// executor. The boundary is temporal: there is no frame-count ceiling, and a
-/// single owned dispatch always completes before the yield.
-const RX_PROTOCOL_SERVICE_BUDGET: Duration = Duration::from_micros(250);
+/// Maximum completed protocol dispatches in one cooperative service turn.
+///
+/// A count is deterministic and free of timer reads in the production
+/// datapath. One dispatch always completes before yielding, so no staging or
+/// reorder owner is split across executor turns.
+const RX_PROTOCOL_DISPATCH_BUDGET: usize = 32;
 
 /// Ownership released when a connected staged-RX epoch is stopped.
 ///

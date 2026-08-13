@@ -47,6 +47,7 @@ sudoers=/etc/sudoers.d/open-radio-net
     echo "$operator ALL=(root) NOPASSWD: /usr/local/sbin/open-radio-net monitor-1"
     echo "$operator ALL=(root) NOPASSWD: /usr/local/sbin/open-radio-net monitor-6"
     echo "$operator ALL=(root) NOPASSWD: /usr/local/sbin/open-radio-net monitor-11"
+    echo "$operator ALL=(root) NOPASSWD: /usr/local/sbin/open-radio-net observer-ht40-1"
     echo "$operator ALL=(root) NOPASSWD: /usr/local/sbin/open-radio-net managed"
     echo "$operator ALL=(root) NOPASSWD: /usr/local/sbin/open-radio-net stop"
     echo "$operator ALL=(root) NOPASSWD: /usr/local/sbin/open-radio-net status"

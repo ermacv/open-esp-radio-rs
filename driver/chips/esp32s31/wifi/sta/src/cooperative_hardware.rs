@@ -5,7 +5,7 @@
 //! TX-complete, so a single-task Rust runtime needs to let its RX bottom half
 //! borrow the same register owner between finite TX hardware transactions.
 
-use open_esp_radio_esp32s31_hal::RadioRegisters;
+use open_esp_radio_esp32s31_hal::{RadioRegisters, wifi_mac::WifiMacHal};
 use open_esp_radio_esp32s31_pac::{
     MacHe20PeerConfig, MacHe20PeerError, MacHeBeamformingReportProfile, MacHeErSuAckRateProfile,
     MacHeTbLinkReservation, MacHeTbProgramError, MacHeTbTidLimit, MacHeTid,
@@ -163,7 +163,9 @@ impl BeamformingReportHardware for CooperativeRadioHardware<'_> {
 
 impl StaLinkRxPolicyHardware for CooperativeRadioHardware<'_> {
     fn apply_sta_link_policy(&mut self, bssid: [u8; 6]) {
-        StaLinkRxPolicyHardware::apply_sta_link_policy(&mut *self.registers.borrow_mut(), bssid);
+        let mut registers = self.registers.borrow_mut();
+        let mut hal = WifiMacHal::new(&mut registers);
+        StaLinkRxPolicyHardware::apply_sta_link_policy(&mut hal, bssid);
     }
 }
 

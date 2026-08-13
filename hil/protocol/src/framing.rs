@@ -851,11 +851,7 @@ mod tests {
                 started_with_egress: u32::MAX,
                 exit_drained: u32::MAX,
                 exit_work_budget: u32::MAX,
-                exit_time_budget: u32::MAX,
                 exit_egress_credit: u32::MAX,
-                poll_micros: u32::MAX,
-                poll_max_micros: u32::MAX,
-                residence_histogram: [u32::MAX; 7],
             })),
         );
         let mut encoder = FrameEncoder::new();

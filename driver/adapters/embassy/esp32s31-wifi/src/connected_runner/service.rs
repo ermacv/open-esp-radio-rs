@@ -96,11 +96,6 @@ where
                     progress = self.services.service_tx(WifiTxWake::Deadline).await?;
                 }
                 Either4::Fourth(frame) => {
-                    // The first ready lease wakes this task. Give the network
-                    // producer one cooperative poll before snapshotting the
-                    // bounded queue, so one socket wake can contribute its
-                    // complete ready burst without an artificial timer.
-                    yield_now().await;
                     let network = self.network.tx_consumer();
                     self.services.prepare_tx(frame, &network).await?;
                 }

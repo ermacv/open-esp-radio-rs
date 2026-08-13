@@ -99,6 +99,7 @@ impl<
         STAGE_SLOTS,
     >
 {
+    /// Create a zero-copy sink whose network and staging capacities may differ.
     pub const fn new_with_shared_rx(
         network: PinnedRxPublisher<'resources, M, FRAME_CAPACITY, QUEUE_DEPTH>,
         shared: SharedPinnedRxPublisher<'resources, M, STAGE_SLOTS>,
@@ -393,8 +394,15 @@ mod tests {
         let pool = Pool::pin_static(std::boxed::Box::leak(std::boxed::Box::new(Pool::new())));
         let (mut device, runner) = resources.split(pool, [2, 3, 4, 5, 6, 7]);
         let pipeline_observer = PipelineObserver::default();
-        let mut sink = EmbassyNetConnectedRxSink::new(runner.rx_publisher(), Observer::default())
-            .with_pipeline_observer(&pipeline_observer);
+        let mut sink = EmbassyNetConnectedRxSink::<
+            _,
+            _,
+            FRAME_CAPACITY,
+            QUEUE_DEPTH,
+            FRAME_CAPACITY,
+            QUEUE_DEPTH,
+        >::new(runner.rx_publisher(), Observer::default())
+        .with_pipeline_observer(&pipeline_observer);
         let ethernet = [0_u8; 14];
         let event = ConnectedRxEvent::Ethernet {
             frame: EthernetFrameParts {

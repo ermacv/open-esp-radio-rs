@@ -19,6 +19,7 @@ mod controlled_client;
 mod fixture_lock;
 mod icmp_latency;
 mod lab_config;
+mod local_air_monitor;
 mod local_linux_fixture;
 mod network_helper;
 mod openwrt_fixture;
@@ -237,9 +238,10 @@ fn doctor(root: &std::path::Path, lab: &lab_config::LabConfig) -> Result<()> {
         lab_config::StationFixtureConfig::OpenWrt(config) => {
             openwrt_fixture::doctor(config)?;
             openwrt_tx_monitor::doctor(config)?;
+            local_air_monitor::doctor(config)?;
             println!("station_fixture=openwrt status=PASS");
         }
-        lab_config::StationFixtureConfig::External => {
+        lab_config::StationFixtureConfig::External(_) => {
             println!("station_fixture=external status=UNMANAGED");
         }
     }
@@ -340,6 +342,11 @@ fn run_all(
     if selected.is_empty() {
         return Err("no HIL scenarios match the requested tags".into());
     }
+    for entry in &selected {
+        if let Some(link) = entry.link {
+            lab.station_fixture.require_phy(link.phy)?;
+        }
+    }
     for class in scenario::ImageClass::ALL {
         let class_scenarios = selected
             .iter()
@@ -367,14 +374,81 @@ fn run_scenario(
     lab: &lab_config::LabConfig,
     selected: &scenario::Scenario,
 ) -> Result<()> {
+    if let Some(link) = selected.link {
+        lab.station_fixture.require_phy(link.phy)?;
+    }
     let output = root.join("target/hil/esp32s31/runs").join(&selected.id);
     fs::create_dir_all(&output)?;
     fs::write(
         output.join("resolved-scenario.json"),
         serde_json::to_vec_pretty(selected)?,
     )?;
-    let result = validate_flashed_image(lab, selected.image, &output)
-        .and_then(|()| execute_workload(root, lab, selected, &output));
+    if selected.repetitions == 1 {
+        return run_scenario_attempt(root, lab, selected, &output);
+    }
+    let mut attempts = Vec::with_capacity(usize::from(selected.repetitions));
+    let mut failures = Vec::new();
+    for number in 1..=selected.repetitions {
+        let attempt_output = output.join(format!("attempt-{number:02}"));
+        fs::create_dir_all(&attempt_output)?;
+        fs::write(
+            attempt_output.join("resolved-scenario.json"),
+            serde_json::to_vec_pretty(selected)?,
+        )?;
+        let result = run_scenario_attempt(root, lab, selected, &attempt_output);
+        match result {
+            Ok(()) => attempts.push(serde_json::json!({
+                "attempt": number,
+                "status": "passed",
+                "output": attempt_output,
+            })),
+            Err(error) => {
+                let error = error.to_string();
+                attempts.push(serde_json::json!({
+                    "attempt": number,
+                    "status": "failed",
+                    "error": error,
+                    "output": attempt_output,
+                }));
+                failures.push(format!("attempt {number}: {error}"));
+            }
+        }
+    }
+    let passed = failures.is_empty();
+    let result_document = serde_json::json!({
+        "schema": 2,
+        "scenario": selected.id,
+        "image": selected.image,
+        "status": if passed { "passed" } else { "failed" },
+        "required_repetitions": selected.repetitions,
+        "attempts": attempts,
+    });
+    fs::write(
+        output.join("result.json"),
+        serde_json::to_vec_pretty(&result_document)?,
+    )?;
+    if !passed {
+        return Err(format!(
+            "scenario `{}` failed {}/{} repetitions: {}",
+            selected.id,
+            failures.len(),
+            selected.repetitions,
+            failures.join("; ")
+        )
+        .into());
+    }
+    println!("{}", serde_json::to_string(&result_document)?);
+    Ok(())
+}
+
+fn run_scenario_attempt(
+    root: &Path,
+    lab: &lab_config::LabConfig,
+    selected: &scenario::Scenario,
+    output: &Path,
+) -> Result<()> {
+    let result = validate_flashed_image(lab, selected.image, output)
+        .and_then(|()| execute_workload(root, lab, selected, output));
     let result_document = match &result {
         Ok(()) => serde_json::json!({
             "schema": 1,
@@ -395,7 +469,9 @@ fn run_scenario(
         serde_json::to_vec_pretty(&result_document)?,
     )?;
     result?;
-    println!("{}", serde_json::to_string(&result_document)?);
+    if selected.repetitions == 1 {
+        println!("{}", serde_json::to_string(&result_document)?);
+    }
     Ok(())
 }
 
@@ -517,6 +593,7 @@ fn execute_workload(
                         arguments,
                         output,
                         lab,
+                        selected.criteria.exact_delivery,
                         selected.criteria.require_no_beacon_loss,
                     )
                 }
@@ -531,6 +608,7 @@ fn execute_workload(
                         arguments,
                         output,
                         lab,
+                        selected.criteria.exact_delivery,
                         selected.criteria.require_no_beacon_loss,
                     )
                 }
@@ -559,6 +637,7 @@ fn execute_workload(
                         selected.criteria.exact_delivery,
                         selected.criteria.require_no_beacon_loss,
                         selected.evidence.openwrt_tx_monitor_rx,
+                        selected.evidence.independent_laptop_monitor_rx,
                     )
                 }
             }

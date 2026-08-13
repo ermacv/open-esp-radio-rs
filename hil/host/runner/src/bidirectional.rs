@@ -6,6 +6,7 @@
 //! successful host `send` alone is not evidence that the radio received it.
 
 use std::{
+    collections::BTreeMap,
     fmt::Write as _,
     fs,
     net::{Ipv4Addr, SocketAddr, SocketAddrV4, UdpSocket},
@@ -23,8 +24,9 @@ use open_esp_radio_hil_protocol::{
 use crate::{
     Result, invalidate_previous_report,
     lab_config::{LabConfig, StationFixtureConfig},
+    local_air_monitor::{LocalAirMonitorCapture, LocalAirMonitorEvidence},
     local_linux_fixture::{LocalLinuxTxCapture, LocalLinuxTxEvidence},
-    openwrt_tx_monitor::{OpenWrtTxMonitorCapture, OpenWrtTxMonitorEvidence},
+    openwrt_tx_monitor::{MacFrameKey, OpenWrtTxMonitorCapture, OpenWrtTxMonitorEvidence},
     paced_udp::{Config as PacedUdpConfig, HostTransmission, send as send_paced_udp},
     rx_delivery,
     station_fixture::{RxCapture, RxEvidence},
@@ -46,6 +48,21 @@ pub(crate) const MIN_QUALIFIED_AGGREGATES: u64 = 100;
 const DEVICE_READY_TIMEOUT: Duration = Duration::from_secs(45);
 const PSRAM_CODE_START: u64 = 0x5000_0000;
 const PSRAM_CODE_END: u64 = 0x5100_0000;
+
+/// Project captures onto the fields which both monitor drivers expose
+/// consistently. ath10k's AP monitor tap omits QoS TID for these frames, while
+/// the independent Intel monitor reports it. Sequence and fragment therefore
+/// form the strongest honest cross-device correlation key available here.
+fn project_mac_units(units: &BTreeMap<MacFrameKey, u32>) -> BTreeMap<(u16, u8), u32> {
+    let mut projected = BTreeMap::new();
+    for (key, count) in units {
+        let total = projected
+            .entry((key.sequence, key.fragment))
+            .or_insert(0_u32);
+        *total = total.saturating_add(*count);
+    }
+    projected
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Phy {
@@ -107,6 +124,7 @@ struct BidirectionalEvidence {
     fixture_rx: Option<RxEvidence>,
     fixture_tx: Option<LocalLinuxTxEvidence>,
     tx_monitor_rx: Option<OpenWrtTxMonitorEvidence>,
+    independent_air_rx: Option<LocalAirMonitorEvidence>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1114,6 +1132,7 @@ pub(crate) fn run(
     require_exact_delivery: bool,
     require_no_beacon_loss: bool,
     capture_openwrt_tx_monitor_rx: bool,
+    capture_independent_laptop_monitor_rx: bool,
 ) -> Result<()> {
     let mut options = parse_options(&arguments, lab)?;
     fs::create_dir_all(&output)?;
@@ -1168,7 +1187,7 @@ pub(crate) fn run(
                 Phy::He20 => crate::scenario::PhyExpectation::He20,
             },
         )?),
-        StationFixtureConfig::OpenWrt(_) | StationFixtureConfig::External => None,
+        StationFixtureConfig::OpenWrt(_) | StationFixtureConfig::External(_) => None,
     };
     let tx_monitor_capture = if capture_openwrt_tx_monitor_rx {
         let StationFixtureConfig::OpenWrt(config) = &lab.station_fixture else {
@@ -1178,6 +1197,19 @@ pub(crate) fn run(
             config,
             options.address,
             options.port,
+            options.duration,
+            output,
+        )?)
+    } else {
+        None
+    };
+    let independent_air_capture = if capture_independent_laptop_monitor_rx {
+        let StationFixtureConfig::OpenWrt(config) = &lab.station_fixture else {
+            return Err("independent laptop evidence requires an OpenWrt station fixture".into());
+        };
+        Some(LocalAirMonitorCapture::start(
+            config,
+            options.address,
             options.duration,
             output,
         )?)
@@ -1234,6 +1266,9 @@ pub(crate) fn run(
         .transpose()?;
     let tx_monitor_rx = tx_monitor_capture
         .map(|capture| capture.finish(host.datagrams))
+        .transpose()?;
+    let independent_air_rx = independent_air_capture
+        .map(LocalAirMonitorCapture::finish)
         .transpose()?;
     if let Some(evidence) = fixture_tx.as_ref() {
         fs::write(
@@ -1476,7 +1511,9 @@ pub(crate) fn run(
             fixture_rx,
             fixture_tx,
             tx_monitor_rx,
+            independent_air_rx,
         },
+        require_exact_delivery,
         qualification_failure.as_deref(),
     )?;
     if let Some(failure) = qualification_failure {
@@ -2842,16 +2879,13 @@ fn network_scheduler_markdown(
             "## Cooperative network scheduler\n\nNot collected in this image.\n\n",
         );
     };
-    let average_us = evidence.poll_micros as f64 / evidence.polls.max(1) as f64;
     format!(
         "## Cooperative network scheduler\n\n\
-         - Polls: `{}`; residence average/max: `{average_us:.2}` / `{}` us; buckets <=50/100/250/500/1000/2000/>2000 us: `{:?}`\n\
+         - Polls: `{}`\n\
          - Ingress calls/packets: `{}` / `{}`; egress passes/TX tokens: `{}` / `{}`\n\
          - Egress credit blocks: `{}`; ingress/egress budget exhaustion: `{}` / `{}`\n\
-         - Start ingress/egress: `{}` / `{}`; exit drained/work/time/credit: `{}` / `{}` / `{}` / `{}`\n\n",
+         - Start ingress/egress: `{}` / `{}`; exit drained/work/credit: `{}` / `{}` / `{}`\n\n",
         evidence.polls,
-        evidence.poll_max_micros,
-        evidence.residence_histogram,
         evidence.ingress_calls,
         evidence.ingress_packets,
         evidence.egress_passes,
@@ -2863,7 +2897,6 @@ fn network_scheduler_markdown(
         evidence.started_with_egress,
         evidence.exit_drained,
         evidence.exit_work_budget,
-        evidence.exit_time_budget,
         evidence.exit_egress_credit,
     )
 }
@@ -2971,6 +3004,7 @@ fn write_report(
     output: &Path,
     options: &Options,
     evidence: BidirectionalEvidence,
+    require_exact_delivery: bool,
     failure: Option<&str>,
 ) -> Result<()> {
     let BidirectionalEvidence {
@@ -2984,6 +3018,7 @@ fn write_report(
         fixture_rx,
         fixture_tx,
         tx_monitor_rx,
+        independent_air_rx,
     } = evidence;
     let rx_median = rx.throughput_median_kbps;
     let pipeline = rx.pipeline;
@@ -3072,7 +3107,7 @@ fn write_report(
             )
         },
     );
-    let tx_monitor_report = tx_monitor_rx.map_or_else(
+    let tx_monitor_report = tx_monitor_rx.as_ref().map_or_else(
         || String::from("## OpenWrt AP TX-monitor frontier\n\nNot collected.\n\n"),
         |air| {
             let target = structured.rx_delivery.map(|delivery| delivery.post_reorder);
@@ -3095,6 +3130,7 @@ fn write_report(
                  - UDP publications/unique/duplicates: `{}` / `{}` / `{}`\n\
                  - Gap/missing/late/unrecovered: `{}` / `{}` / `{}` / `{}`\n\
                  - Out-of-range/terminal/retry publications: `{}` / `{}` / `{}`\n\
+                 - UDP publications missing MAC metadata: `{}`\n\
                  - First anomaly: `{:?}`\n\
                  - Target post-reorder data units: `{}`\n\n",
                 air.captured_frames,
@@ -3109,11 +3145,68 @@ fn write_report(
                 air.out_of_range,
                 air.terminal_markers,
                 air.mac_retry_publications,
+                air.missing_mac_metadata,
                 air.first_anomaly,
                 target.map_or(0, |target| target.data_units),
             )
         },
     );
+    let independent_air_report = match (tx_monitor_rx.as_ref(), independent_air_rx.as_ref()) {
+        (Some(ap), Some(observer)) => {
+            let ap_with_metadata = ap.mac_units.values().copied().sum::<u32>();
+            let observer_with_metadata = observer.mac_units.values().copied().sum::<u32>();
+            let ap_known_tid = ap
+                .mac_units
+                .iter()
+                .filter(|(key, _)| key.tid != u8::MAX)
+                .map(|(_, count)| count)
+                .copied()
+                .sum::<u32>();
+            let observer_known_tid = observer
+                .mac_units
+                .iter()
+                .filter(|(key, _)| key.tid != u8::MAX)
+                .map(|(_, count)| count)
+                .copied()
+                .sum::<u32>();
+            let ap_projected = project_mac_units(&ap.mac_units);
+            let observer_projected = project_mac_units(&observer.mac_units);
+            let matched = ap_projected
+                .iter()
+                .map(|(key, count)| count.min(observer_projected.get(key).unwrap_or(&0)))
+                .copied()
+                .sum::<u32>();
+            let not_observed = ap_with_metadata.saturating_sub(matched);
+            let observer_extra = observer_with_metadata.saturating_sub(matched);
+            format!(
+                "## Independent laptop air observer\n\n\
+                 - Capture frames/kernel drops: `{}` / `{}`\n\
+                 - Logical data MPDUs/retry attempts/missing metadata: `{}` / `{}` / `{}`\n\
+                 - AP/observer logical MPDUs with MAC metadata: `{}` / `{}`\n\
+                 - AP/observer MPDUs with known QoS TID: `{}` / `{}`\n\
+                 - Matched by `(sequence, fragment)`: `{}`\n\
+                 - AP MPDUs not observed / observer extras: `{}` / `{}`\n\
+                 - Correlation limitation: `ath10k's AP monitor tap omits QoS TID; cross-device matching intentionally projects away TID`\n\
+                 - Interpretation: `matched MPDUs prove transmission on air; unmatched MPDUs remain ambiguous because a passive observer may miss frames`\n\n",
+                observer.captured_frames,
+                observer.kernel_dropped,
+                observer.logical_data_units,
+                observer.retry_attempts,
+                observer.missing_mac_metadata,
+                ap_with_metadata,
+                observer_with_metadata,
+                ap_known_tid,
+                observer_known_tid,
+                matched,
+                not_observed,
+                observer_extra,
+            )
+        }
+        (None, Some(_)) => String::from(
+            "## Independent laptop air observer\n\nInvalid evidence: AP TX-monitor correlation is absent.\n\n",
+        ),
+        (_, None) => String::from("## Independent laptop air observer\n\nNot collected.\n\n"),
+    };
     let result = if failure.is_some() { "FAIL" } else { "PASS" };
     let failure_report = failure
         .map(|failure| format!("- Acceptance failure: `{failure}`\n"))
@@ -3123,6 +3216,7 @@ fn write_report(
         format!(
             "# Open-radio {} bidirectional HIL\n\n\
              - Result: `{result}`\n\
+             - Delivery contract: `{}`\n\
              - Device: `{}`\n\
              - Requested downlink: `{:.3} Mbit/s`\n\
              - Actual host offer: `{:.3} Mbit/s`\n\
@@ -3147,6 +3241,7 @@ fn write_report(
              {rx_reorder_report}\
              {typed_delivery_report}\
              {tx_monitor_report}\
+             {independent_air_report}\
              ## RX evidence\n\n\
              - Enqueued/software-dropped frames: `{}` / `{}`\n\
              - Sampled HE-SU MCS0..11 frame histogram: `{:?}`; other sampled PHY frames: `{}`\n\
@@ -3191,6 +3286,11 @@ fn write_report(
              - Standby prepared/published/cancelled: `{}` / `{}` / `{}`\n\n\
              UART evidence is in [`uart.log`](uart.log).\n",
             options.phy.name().to_uppercase(),
+            if require_exact_delivery {
+                "exact"
+            } else {
+                "performance-health"
+            },
             options.address,
             options.rate_bps as f64 / 1_000_000.0,
             host.throughput_bps() as f64 / 1_000_000.0,
@@ -3357,6 +3457,38 @@ fn write_report(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cross_device_mac_projection_ignores_missing_tid() {
+        let mut units = BTreeMap::new();
+        units.insert(
+            MacFrameKey {
+                tid: u8::MAX,
+                sequence: 42,
+                fragment: 0,
+            },
+            2,
+        );
+        units.insert(
+            MacFrameKey {
+                tid: 3,
+                sequence: 42,
+                fragment: 0,
+            },
+            1,
+        );
+        units.insert(
+            MacFrameKey {
+                tid: 0,
+                sequence: 43,
+                fragment: 1,
+            },
+            4,
+        );
+
+        assert_eq!(project_mac_units(&units).get(&(42, 0)), Some(&3));
+        assert_eq!(project_mac_units(&units).get(&(43, 1)), Some(&4));
+    }
 
     #[test]
     fn parses_rates_and_options() {

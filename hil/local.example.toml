@@ -29,8 +29,14 @@ client_address = "10.43.0.2/24"
 # Select exactly one explicit owner. Other valid forms are:
 # kind = "local-linux"
 # interface = "wlan0"
-# or simply `kind = "external"` for an unmanaged peer such as FRITZ.
+# phys = ["he20", "ht40"]
+# or `kind = "external"` with `phys = ["he20"]` for a FRITZ fixture.
 kind = "open-wrt"
 ssh_target = "open-radio-ap"
 wireless_interface = "phy0-ap0"
 ingress_interface = "br-lan"
+monitor_interface = "open-radio-mon"
+phys = ["ht40"]
+# Uses the laptop's Intel adapter as an independent passive observer while
+# OpenWrt remains the AP. Requires the schema-3 open-radio-net helper.
+independent_laptop_monitor = true

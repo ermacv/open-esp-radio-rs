@@ -32,13 +32,14 @@ mod connected;
 mod facade;
 mod monitor;
 mod runtime;
+mod station_network;
 
-pub use connected::Esp32s31WifiDevice;
 #[cfg(feature = "qualification")]
 pub use connected::{
     Esp32s31ConnectedRxObserver, Esp32s31MacIrqObservation, Esp32s31QualificationSnapshot,
     Esp32s31QualificationTxVector,
 };
+pub use connected::{Esp32s31WifiDevice, Esp32s31WifiProtocolRunner};
 pub use facade::{
     Esp32s31NewError, Esp32s31Radio, Esp32s31RadioError, Esp32s31RadioInitialization,
     Esp32s31RadioParts, Esp32s31Wifi, Esp32s31WifiControl, Esp32s31WifiParts,
@@ -51,7 +52,8 @@ pub use monitor::{
 pub use open_esp_radio_esp32s31_wifi_embassy::connected_runner::ConnectedDisconnectReason;
 #[cfg(feature = "qualification")]
 pub use open_esp_radio_esp32s31_wifi_embassy::network_rx::RxNetworkDeliveryObserver;
-pub use runtime::{Esp32s31RadioRunner, new};
+pub use runtime::{Esp32s31RadioRunner, Esp32s31RadioRunners, Esp32s31RadioSystem, new};
+pub use station_network::{Esp32s31StationNetworkRunner, new_station_network};
 
 /// Board-derived radio identity. Reading eFuse remains an application
 /// responsibility; credentials are supplied separately to `start_station`.

@@ -350,16 +350,18 @@ impl<'a, const COUNT: usize> RxRingStopped<'a, COUNT> {
         }
     }
 
-    /// Stops the walker, prepares all buffers and publishes a rotated cold
-    /// list beginning after the descriptor retained by the previous owner.
+    /// Stops the walker, prepares all buffers and publishes one physical-order
+    /// cold list beginning at descriptor zero.
     ///
     /// `prepare_buffer` must restore any buffer-side DMA contract for `index`;
     /// for the S31 ROM layout this means the two `0xdead_beef` sentinels. It is
     /// invoked only while the walker is confirmed stopped.
     ///
     /// SOURCE\[ROM_REV0_WDEV_APPEND_RX_BLOCKS,ROM_REV0_HAL_MAC_RX_GATE,
-    /// ROM_REV0_HAL_MAC_RX_LAST_DESCRIPTOR]; the rotated handoff is qualified
-    /// by HIL_OPEN_RX_LIVE_APPEND_2026_07_27.
+    /// ROM_REV0_HAL_MAC_RX_LAST_DESCRIPTOR]. Live append/base repair is
+    /// qualified by HIL_OPEN_RX_LIVE_APPEND_2026_07_27. Cold publication is
+    /// deliberately not rotated: rev0 can stop at physical descriptor 31
+    /// instead of following a software 31->0 link.
     #[cfg(not(target_pointer_width = "32"))]
     pub fn prepare<M, F>(
         mmio: &mut M,
@@ -444,18 +446,13 @@ impl<'a, const COUNT: usize> RxRingStopped<'a, COUNT> {
         // that hardware advances concurrently.
         mmio.fence();
         let retained_last_low = mmio.last_descriptor_low();
-        let initial_start =
-            descriptor_index(retained_last_low, descriptor_base, COUNT).map_or(0, |index| {
-                let candidate = wrap_add::<COUNT>(index, 1);
-                // ESP32-S31 rev0 can consume a cold list's final physical
-                // descriptor without following its immediate wrap link to
-                // descriptor zero. HIL observed this exact start=31 state:
-                // descriptor 31 completed, 0..30 remained armed and RX went
-                // silent until beacon loss. Starting the fully rebuilt list
-                // at zero is safe because the walker is confirmed stopped and
-                // every descriptor has just been rearmed.
-                if candidate + 1 == COUNT { 0 } else { candidate }
-            });
+        // ESP32-S31 rev0 can consume a cold list's final physical descriptor
+        // without following its immediate wrap link to descriptor zero. This
+        // applies to every nonzero rotation, not only to a list whose head is
+        // descriptor 31: each rotated list eventually reaches the same 31->0
+        // boundary. The walker is confirmed stopped and every descriptor is
+        // rearmed below, so no previous frontier needs to be preserved.
+        let initial_start = 0;
 
         for index in 0..COUNT {
             prepare_buffer(index)?;

@@ -1913,6 +1913,21 @@ pub(crate) fn await_udp_rx_ready(
             "qualification firmware requires runtime sessions and structured evidence".into(),
         );
     }
+    probe_udp_rx_ready(capture, address_hint, port, timeout)
+}
+
+/// Prove the already-running UDP RX service from its current network peer.
+///
+/// Unlike [`await_udp_rx_ready`], this does not prepare or assume the station
+/// role. AP qualification calls it only after the controlled client has joined,
+/// so the unmeasured datagram also establishes the AP-side neighbor/data path
+/// before sequence zero is admitted to a measured session.
+pub(crate) fn probe_udp_rx_ready(
+    capture: &SerialCapture,
+    address_hint: Ipv4Addr,
+    port: u16,
+    timeout: Duration,
+) -> Result<UdpRxReady> {
     let socket = UdpSocket::bind(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0))?;
     let mut address = address_hint;
     if !address.is_unspecified() {

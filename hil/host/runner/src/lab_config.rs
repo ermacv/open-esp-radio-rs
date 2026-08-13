@@ -432,6 +432,11 @@ impl AccessPointConfig {
         self.channel
     }
 
+    /// Exact 2.4-GHz center frequency owned by the validated AP channel.
+    pub(crate) const fn frequency_mhz(&self) -> u16 {
+        2_407 + self.channel as u16 * 5
+    }
+
     pub(crate) const fn client_limit(&self) -> u8 {
         self.client_limit
     }

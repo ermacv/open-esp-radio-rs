@@ -19,8 +19,6 @@ use open_esp_radio_wifi_softmac::{MacTxPlan, MacTxQueueState};
 /// Runtime-independent publication policy for the initial AP implementation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Esp32s31ApTxConfig {
-    /// Maximum publications for unicast management and EAPOL MPDUs.
-    pub unicast_publication_limit: u8,
     /// Watchdog applied independently to each hardware publication.
     pub publication_timeout_micros: u64,
 }
@@ -39,10 +37,12 @@ pub enum Esp32s31ApTxClass {
 }
 
 impl Esp32s31ApTxClass {
-    const fn publication_limit(self, config: Esp32s31ApTxConfig) -> u8 {
+    fn publication_limit(self, rate: LegacyRate) -> u8 {
         match self {
             Self::Beacon => 1,
-            Self::Management | Self::Eapol | Self::Data => config.unicast_publication_limit,
+            Self::Management | Self::Eapol | Self::Data => rate
+                .vendor_retry_publication_limit()
+                .expect("every AP legacy rate has a recovered Dot11G schedule"),
         }
     }
 
@@ -116,7 +116,7 @@ where
         class: Esp32s31ApTxClass,
         frame: &[u8],
     ) -> Result<WifiTxProgress, Esp32s31ApTxError> {
-        self.start_encoded_with_key(hardware, class, frame, 0, 0)
+        self.start_encoded_with_key(hardware, class, frame, 0, 0, None)
     }
 
     /// Publish one plaintext protected MPDU through hardware CCMP.
@@ -125,6 +125,7 @@ where
         hardware: &mut H,
         frame: &[u8],
         hardware_key_selector: u8,
+        rate: LegacyRate,
     ) -> Result<WifiTxProgress, Esp32s31ApTxError> {
         self.start_encoded_with_key(
             hardware,
@@ -132,6 +133,7 @@ where
             frame,
             TX_CCMP_MIC_SIZE,
             hardware_key_selector,
+            Some(rate),
         )
     }
 
@@ -142,6 +144,7 @@ where
         frame: &[u8],
         hardware_mic_length: usize,
         hardware_key_selector: u8,
+        rate: Option<LegacyRate>,
     ) -> Result<WifiTxProgress, Esp32s31ApTxError> {
         let end = TX_METADATA_SIZE
             .checked_add(frame.len())
@@ -153,6 +156,7 @@ where
         destination.copy_from_slice(frame);
 
         let queue = class.queue();
+        let initial_rate = rate.unwrap_or_else(|| class.initial_rate());
         Ok(self.ordinary.start(
             hardware,
             OrdinaryTxPlan {
@@ -160,8 +164,8 @@ where
                 descriptor_capacity: None,
                 exchange: MacTxPlan {
                     access_category: queue.access_category(),
-                    initial_rate: TxPhyRate::Legacy(class.initial_rate()),
-                    publication_limit: class.publication_limit(self.config),
+                    initial_rate: TxPhyRate::Legacy(initial_rate),
+                    publication_limit: class.publication_limit(initial_rate),
                     publication_timeout_micros: self.config.publication_timeout_micros,
                 },
                 hardware_mic_length,
@@ -199,6 +203,26 @@ where
             Ok(resources) => Ok(resources),
             Err(ordinary) => Err(Self { ordinary, config }),
         }
+    }
+}
+
+/// Translate the portable 500-kbit/s association rate into the exact legacy
+/// hardware rate enum. The parser supplies only members of the AP's advertised
+/// B/G rate set; the 1-Mbit/s fallback preserves safety for stale peer state.
+pub const fn peer_legacy_rate(maximum_rate_500kbps: u8) -> LegacyRate {
+    match maximum_rate_500kbps {
+        108 => LegacyRate::Ofdm54M,
+        96 => LegacyRate::Ofdm48M,
+        72 => LegacyRate::Ofdm36M,
+        48 => LegacyRate::Ofdm24M,
+        36 => LegacyRate::Ofdm18M,
+        24 => LegacyRate::Ofdm12M,
+        18 => LegacyRate::Ofdm9M,
+        12 => LegacyRate::Ofdm6M,
+        22 => LegacyRate::Cck11MLong,
+        11 => LegacyRate::Cck5M5Long,
+        4 => LegacyRate::Dsss2MLong,
+        _ => LegacyRate::Dsss1MLong,
     }
 }
 
@@ -317,8 +341,14 @@ mod tests {
     }
 
     #[test]
-    fn data_uses_mandatory_erp_rate_without_changing_control_rates() {
+    fn peer_rate_mapping_preserves_every_advertised_bg_rate() {
         assert_eq!(Esp32s31ApTxClass::Data.initial_rate(), LegacyRate::Ofdm24M);
+        assert_eq!(peer_legacy_rate(108), LegacyRate::Ofdm54M);
+        assert_eq!(peer_legacy_rate(96), LegacyRate::Ofdm48M);
+        assert_eq!(peer_legacy_rate(72), LegacyRate::Ofdm36M);
+        assert_eq!(peer_legacy_rate(48), LegacyRate::Ofdm24M);
+        assert_eq!(peer_legacy_rate(22), LegacyRate::Cck11MLong);
+        assert_eq!(peer_legacy_rate(0), LegacyRate::Dsss1MLong);
         for class in [
             Esp32s31ApTxClass::Beacon,
             Esp32s31ApTxClass::Management,
@@ -326,6 +356,18 @@ mod tests {
         ] {
             assert_eq!(class.initial_rate(), LegacyRate::Dsss1MLong);
         }
+        assert_eq!(
+            Esp32s31ApTxClass::Beacon.publication_limit(LegacyRate::Dsss1MLong),
+            1
+        );
+        assert_eq!(
+            Esp32s31ApTxClass::Management.publication_limit(LegacyRate::Dsss1MLong),
+            32
+        );
+        assert_eq!(
+            Esp32s31ApTxClass::Data.publication_limit(LegacyRate::Ofdm54M),
+            32
+        );
     }
 
     #[test]
@@ -341,7 +383,6 @@ mod tests {
         let mut tx = Esp32s31ApTx::new(
             resources,
             Esp32s31ApTxConfig {
-                unicast_publication_limit: 4,
                 publication_timeout_micros: 1_000,
             },
         );

@@ -27,7 +27,7 @@ use crate::{
     },
     paced_udp::{Config as UdpConfig, HostTransmission as UdpTransmission, send as send_udp},
     scenario::{AccessPointTraffic, Criteria, Direction},
-    traffic_capture::{SerialCapture, SessionEvidence},
+    traffic_capture::{SerialCapture, SessionEvidence, probe_udp_rx_ready},
     tx_traffic::{Burst, receive_bursts},
     udp_socket::{configure_qualification_receive_buffer, open_reverse_flow},
     wifi_control::{report_stack, require_transition, start_station, stop_station},
@@ -460,6 +460,9 @@ fn qualify_udp(
     let protocol_direction = protocol_direction(direction);
     let target = lab.access_point.target_address();
     let host = lab.access_point.client_address();
+    if rx_rate_bps.is_some() {
+        probe_udp_rx_ready(capture, target, UDP_RX_PORT, config.timeout)?;
+    }
     let socket = if tx_rate_bps.is_some() {
         let socket = UdpSocket::bind(SocketAddrV4::new(host, UDP_HOST_PORT))?;
         configure_qualification_receive_buffer(&socket)?;

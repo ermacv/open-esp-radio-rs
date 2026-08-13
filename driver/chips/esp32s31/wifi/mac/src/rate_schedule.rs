@@ -223,6 +223,17 @@ pub fn schedule_state(schedule: RateScheduleRef) -> RateScheduleRecordState {
     }
 }
 
+/// Return the complete ordinary-MPDU publication budget carried by one
+/// vendor rate record.
+///
+/// SOURCE: complete `libpp.a[trc.o]::rcReachRetryLimit`. Outside the mesh
+/// special case it compares the MPDU retry counter with record byte `0x08`;
+/// this is independent of byte `0x01`, which `rcTxUpdatePer` consumes as its
+/// PER/rate-control threshold.
+pub fn schedule_publication_limit(schedule: RateScheduleRef) -> u8 {
+    schedule_bytes(schedule)[0x08]
+}
+
 /// Select the rate byte for a non-aggregate retry counter.
 ///
 /// Each vendor record starts with four `(rate, attempt_count)` pairs.
@@ -256,6 +267,7 @@ mod tests {
     #[test]
     fn dot11g_54m_record_has_the_vendor_retry_ladder() {
         let schedule = RateScheduleRef::new(RateScheduleKind::Dot11G, 0).unwrap();
+        assert_eq!(schedule_publication_limit(schedule), 32);
         assert_eq!(schedule_rate_after_failures(schedule, 0), Some(0x0c));
         assert_eq!(schedule_rate_after_failures(schedule, 1), Some(0x0c));
         assert_eq!(schedule_rate_after_failures(schedule, 2), Some(0x08));

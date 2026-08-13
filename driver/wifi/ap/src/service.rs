@@ -23,6 +23,7 @@ use open_esp_radio_wpa2::{
 pub const AP_MAX_CLIENTS: usize = 15;
 pub const AP_STATUS_SUCCESS: u16 = 0;
 pub const AP_STATUS_TOO_MANY_STATIONS: u16 = 17;
+pub const AP_STATUS_UNSUPPORTED_RATES: u16 = 18;
 pub const AP_STATUS_INVALID_RSN: u16 = 40;
 
 /// Validated runtime admission limit for one AP epoch.
@@ -154,6 +155,7 @@ struct ApPeer {
     phase: ApPeerPhase,
     wpa2: Option<Wpa2ApState>,
     pending_ptk: Option<Ptk>,
+    maximum_legacy_rate_500kbps: u8,
 }
 
 /// Caller-owned storage for all per-client AP protocol and key state.
@@ -188,6 +190,9 @@ impl ApPeer {
             phase: ApPeerPhase::Authenticated,
             wpa2: None,
             pending_ptk: None,
+            // Authentication precedes rate negotiation. Keep the universally
+            // compatible 1-Mbit/s value until Association succeeds.
+            maximum_legacy_rate_500kbps: 2,
         }
     }
 }
@@ -197,6 +202,7 @@ pub struct ApPeerStatus {
     pub address: [u8; 6],
     pub association_id: u16,
     pub phase: ApPeerPhase,
+    pub maximum_legacy_rate_500kbps: u8,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -262,6 +268,7 @@ impl<'peers> AccessPointService<'peers> {
                 address: peer.address,
                 association_id: peer.association_id,
                 phase: peer.phase,
+                maximum_legacy_rate_500kbps: peer.maximum_legacy_rate_500kbps,
             })
     }
 
@@ -274,6 +281,7 @@ impl<'peers> AccessPointService<'peers> {
                 address: peer.address,
                 association_id: peer.association_id,
                 phase: peer.phase,
+                maximum_legacy_rate_500kbps: peer.maximum_legacy_rate_500kbps,
             })
     }
 
@@ -301,6 +309,7 @@ impl<'peers> AccessPointService<'peers> {
                 address: peer.address,
                 association_id: peer.association_id,
                 phase: peer.phase,
+                maximum_legacy_rate_500kbps: peer.maximum_legacy_rate_500kbps,
             });
         }
         AccessPointServiceStatus {
@@ -361,6 +370,7 @@ impl<'peers> AccessPointService<'peers> {
         &mut self,
         peer: [u8; 6],
         rsn_ie: &[u8],
+        maximum_legacy_rate_500kbps: u8,
         authenticator_nonce: [u8; 32],
         initial_replay_counter: u64,
     ) -> Result<ApMlmeAction, ApServiceError> {
@@ -376,6 +386,13 @@ impl<'peers> AccessPointService<'peers> {
                 association_id: None,
             });
         }
+        if maximum_legacy_rate_500kbps == 0 {
+            return Ok(ApMlmeAction::AssociationResponse {
+                peer,
+                status: AP_STATUS_UNSUPPORTED_RATES,
+                association_id: None,
+            });
+        }
         let wpa2 = Wpa2ApState::new(
             access_point,
             peer,
@@ -384,6 +401,7 @@ impl<'peers> AccessPointService<'peers> {
         )?;
         existing.phase = ApPeerPhase::Securing;
         existing.wpa2 = Some(wpa2);
+        existing.maximum_legacy_rate_500kbps = maximum_legacy_rate_500kbps;
         let association_id = existing.association_id;
         self.status_revision = self.status_revision.wrapping_add(1);
         Ok(ApMlmeAction::AssociationResponse {
@@ -731,7 +749,9 @@ mod tests {
         let mut service = service(&mut storage);
         service.authenticate_open(PEER);
         assert_eq!(
-            service.associate_wpa2(PEER, &WPA2_RSN, [7; 32], 9).unwrap(),
+            service
+                .associate_wpa2(PEER, &WPA2_RSN, 108, [7; 32], 9)
+                .unwrap(),
             ApMlmeAction::AssociationResponse {
                 peer: PEER,
                 status: AP_STATUS_SUCCESS,
@@ -741,6 +761,13 @@ mod tests {
         assert_eq!(
             service.peer_status(PEER).unwrap().phase,
             ApPeerPhase::Securing
+        );
+        assert_eq!(
+            service
+                .peer_status(PEER)
+                .unwrap()
+                .maximum_legacy_rate_500kbps,
+            108
         );
         assert_eq!(service.associated_count(), 1);
         assert_eq!(
@@ -755,6 +782,27 @@ mod tests {
     }
 
     #[test]
+    fn association_rejects_a_peer_without_a_common_legacy_rate() {
+        let mut storage = AccessPointPeerStorage::new();
+        let mut service = service(&mut storage);
+        service.authenticate_open(PEER);
+        assert_eq!(
+            service
+                .associate_wpa2(PEER, &WPA2_RSN, 0, [7; 32], 9)
+                .unwrap(),
+            ApMlmeAction::AssociationResponse {
+                peer: PEER,
+                status: AP_STATUS_UNSUPPORTED_RATES,
+                association_id: None,
+            }
+        );
+        assert_eq!(
+            service.peer_status(PEER).unwrap().phase,
+            ApPeerPhase::Authenticated
+        );
+    }
+
+    #[test]
     fn complete_four_way_handshake_retains_ptk_until_hardware_authorization() {
         const ANONCE: [u8; 32] = [7; 32];
         const SNONCE: [u8; 32] = [8; 32];
@@ -765,7 +813,7 @@ mod tests {
         // Supplicants may add their own RSN capabilities. Message 3 must not
         // reflect those bytes back: it authenticates the AP's beacon RSN IE.
         service
-            .associate_wpa2(PEER, &SUPPLICANT_RSN, ANONCE, 9)
+            .associate_wpa2(PEER, &SUPPLICANT_RSN, 108, ANONCE, 9)
             .unwrap();
         let message1 = service.begin_wpa2_frame::<512>(PEER).unwrap();
         assert_eq!(
@@ -834,7 +882,7 @@ mod tests {
         let mut service = service(&mut storage);
         service.authenticate_open(PEER);
         assert_eq!(
-            service.associate_wpa2(PEER, &[0x30, 0], [7; 32], 9),
+            service.associate_wpa2(PEER, &[0x30, 0], 108, [7; 32], 9),
             Ok(ApMlmeAction::AssociationResponse {
                 peer: PEER,
                 status: AP_STATUS_INVALID_RSN,
@@ -882,7 +930,7 @@ mod tests {
             );
             assert!(matches!(
                 service
-                    .associate_wpa2(peer, &WPA2_RSN, [suffix; 32], u64::from(suffix))
+                    .associate_wpa2(peer, &WPA2_RSN, 108, [suffix; 32], u64::from(suffix))
                     .unwrap(),
                 ApMlmeAction::AssociationResponse {
                     status: AP_STATUS_SUCCESS,

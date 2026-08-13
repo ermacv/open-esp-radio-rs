@@ -20,14 +20,17 @@ pub(crate) struct ControlledClient {
 impl ControlledClient {
     pub(crate) fn connect(config: &AccessPointConfig) -> Result<Self> {
         let (ssid, passphrase) = config.credentials();
+        let frequency_mhz = config.frequency_mhz();
         let mut input = Zeroizing::new(Vec::with_capacity(
-            ssid.len() + passphrase.len() + config.client_cidr().len() + 3,
+            ssid.len() + passphrase.len() + config.client_cidr().len() + 9,
         ));
         input.extend_from_slice(ssid.as_bytes());
         input.push(b'\n');
         input.extend_from_slice(passphrase.as_bytes());
         input.push(b'\n');
         input.extend_from_slice(config.client_cidr().as_bytes());
+        input.push(b'\n');
+        input.extend_from_slice(frequency_mhz.to_string().as_bytes());
         input.push(b'\n');
 
         let mut child = Command::new("sudo")

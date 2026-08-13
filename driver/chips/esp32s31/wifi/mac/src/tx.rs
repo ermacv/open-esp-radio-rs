@@ -31,7 +31,9 @@ use open_esp_radio_ieee80211::wmm::WmmAccessCategory;
 
 use crate::{
     rate_control::dot11g_schedule_for_legacy_rate,
-    rate_schedule::{RateScheduleKind, RateScheduleRef, schedule_rate_after_failures},
+    rate_schedule::{
+        RateScheduleKind, RateScheduleRef, schedule_publication_limit, schedule_rate_after_failures,
+    },
     tx_plcp::{
         apply_basic_txop_control_word, basic_data_length_word, basic_htsig_word,
         basic_length_control_word, basic_non_he_plcp1_word, basic_plcp0_word, he_ampdu_plcp0_word,
@@ -579,6 +581,17 @@ impl LegacyRate {
     pub fn vendor_retry_rate(self, failed_attempts: u8) -> Option<Self> {
         let schedule = dot11g_schedule_for_legacy_rate(self.code())?;
         Self::from_code(schedule_rate_after_failures(schedule, failed_attempts)?)
+    }
+
+    /// Complete number of hardware publications admitted by this rate's
+    /// vendor retry record, including the initial publication.
+    ///
+    /// This must not be inferred from the first retry-pair count. The vendor
+    /// `rcReachRetryLimit` body reads byte `0x08`, while `rcGetRate` consumes
+    /// the four `(rate, count)` pairs independently.
+    pub fn vendor_retry_publication_limit(self) -> Option<u8> {
+        let schedule = dot11g_schedule_for_legacy_rate(self.code())?;
+        Some(schedule_publication_limit(schedule))
     }
 
     /// Return the basic protection rate selected by the vendor MAC.

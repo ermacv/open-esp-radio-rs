@@ -176,6 +176,9 @@ pub enum ApManagementRequest<'a> {
     Association {
         peer: [u8; 6],
         rsn_ie: Option<&'a [u8]>,
+        /// Highest legacy rate shared with the B/G ERP rate set advertised
+        /// by this AP, in 500-kbit/s units. Zero means no common rate.
+        maximum_legacy_rate_500kbps: u8,
     },
     Disassociation {
         peer: [u8; 6],
@@ -222,6 +225,7 @@ pub fn parse_ap_management_request<'a>(
             Some(ApManagementRequest::Association {
                 peer,
                 rsn_ie: find_information_element(information_elements, 48),
+                maximum_legacy_rate_500kbps: maximum_ap_legacy_rate(information_elements),
             })
         }
         10 | 12 => {
@@ -235,6 +239,32 @@ pub fn parse_ap_management_request<'a>(
         }
         _ => None,
     }
+}
+
+const AP_BG_LEGACY_RATES_500KBPS: [u8; 12] = [2, 4, 11, 22, 12, 18, 24, 36, 48, 72, 96, 108];
+
+fn maximum_ap_legacy_rate(bytes: &[u8]) -> u8 {
+    let mut maximum = 0;
+    let mut remaining = bytes;
+    while let Some((&id, tail)) = remaining.split_first() {
+        let Some((&length, payload)) = tail.split_first() else {
+            break;
+        };
+        let length = usize::from(length);
+        let Some(value) = payload.get(..length) else {
+            break;
+        };
+        if id == 1 || id == 50 {
+            for encoded in value {
+                let rate = encoded & 0x7f;
+                if AP_BG_LEGACY_RATES_500KBPS.contains(&rate) {
+                    maximum = maximum.max(rate);
+                }
+            }
+        }
+        remaining = &payload[length..];
+    }
+    maximum
 }
 
 fn find_information_element(bytes: &[u8], wanted: u8) -> Option<&[u8]> {
@@ -556,6 +586,27 @@ mod tests {
         assert_eq!(
             parse_ap_management_request(&authentication, access_point),
             None
+        );
+    }
+
+    #[test]
+    fn association_retains_the_highest_common_advertised_legacy_rate() {
+        let access_point = [2, 0, 0, 0, 0, 1];
+        let peer = [2, 0, 0, 0, 0, 2];
+        let mut association = [0_u8; 42];
+        association[4..10].copy_from_slice(&access_point);
+        association[10..16].copy_from_slice(&peer);
+        association[16..22].copy_from_slice(&access_point);
+        association[28..34].copy_from_slice(&[1, 4, 0x82, 0x84, 0x0c, 0x30]);
+        association[34..39].copy_from_slice(&[50, 3, 0x48, 0x6c, 0x7f]);
+        association[39..42].copy_from_slice(&[48, 1, 0]);
+        assert_eq!(
+            parse_ap_management_request(&association, access_point),
+            Some(ApManagementRequest::Association {
+                peer,
+                rsn_ie: Some(&association[39..42]),
+                maximum_legacy_rate_500kbps: 108,
+            })
         );
     }
 

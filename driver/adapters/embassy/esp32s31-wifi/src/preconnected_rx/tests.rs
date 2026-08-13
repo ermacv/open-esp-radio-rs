@@ -80,12 +80,7 @@ fn completed_descriptors_are_delivered_in_ring_order_across_wrap() {
     const WRAP_STORAGE_SIZE: usize = WRAP_COUNT * BUFFER_SIZE;
     let storage = Esp32s31RxDmaStorage::<WRAP_COUNT, BUFFER_SIZE, WRAP_STORAGE_SIZE>::new();
     let addresses = [0x2f00_2000, 0x2f00_2100, 0x2f00_2200, 0x2f00_2300];
-    let mut hardware = Hardware {
-        // A retained last descriptor at index one rotates the next cold ring
-        // to index two, so the completed interval 2,3,0 crosses physical zero.
-        last_descriptor_low: (BASE + DESCRIPTOR_BYTES) & 0x000f_ffff,
-        ..Hardware::default()
-    };
+    let mut hardware = Hardware::default();
     let halted = RxRingStopped::prepare(
         &mut hardware,
         storage.descriptors(),
@@ -98,6 +93,20 @@ fn completed_descriptors_are_delivered_in_ring_order_across_wrap() {
     .into_halted();
     let mut rx = Esp32s31PreconnectedRx::<ReadyDelay, WRAP_COUNT, BUFFER_SIZE>::from_halted(halted);
     embassy_futures::block_on(rx.start_with_storage(&mut hardware, &storage)).unwrap();
+    // First reclaim 0,1 so the next logical receive frontier begins at two.
+    for index in [0, 1] {
+        storage.descriptors()[index].write_word0(storage.descriptors()[index].word0() | BIT_30);
+    }
+    rx.service_completed(&mut hardware, &storage, |_| {
+        Esp32s31PreconnectedRxDirective::Continue
+    })
+    .unwrap();
+    rx.service_completed(&mut hardware, &storage, |_| {
+        panic!("settling the first append must not observe another descriptor")
+    })
+    .unwrap();
+
+    // The subsequent finite interval 2,3,0 crosses physical zero.
     for index in [2, 3, 0] {
         storage.descriptors()[index].write_word0(storage.descriptors()[index].word0() | BIT_30);
     }
@@ -143,7 +152,9 @@ fn owner_services_a_terminal_descriptor_and_round_trips_between_phases() {
     embassy_futures::block_on(rx.start_with_storage(&mut hardware, &storage)).unwrap();
     assert_eq!(rx.phase(), Esp32s31PreconnectedRxPhase::Live);
 
-    storage.descriptors()[0].write_word0(storage.descriptors()[0].word0() | BIT_30);
+    for descriptor in storage.descriptors() {
+        descriptor.write_word0(descriptor.word0() | BIT_30);
+    }
     let progress = rx
         .service_completed(&mut hardware, &storage, |segment| {
             assert_eq!(segment.descriptor_address, BASE);
@@ -197,6 +208,33 @@ fn pause_bounds_one_service_pass_without_retaining_a_terminal_descriptor() {
     assert_eq!(second.completed, 1);
     assert!(!second.stopped);
     assert_eq!(storage.descriptors()[1].word0() & BIT_30, 0);
+}
+
+#[test]
+fn an_append_remains_explicit_until_a_later_service_settles_it() {
+    let storage = Esp32s31RxDmaStorage::<COUNT, BUFFER_SIZE, STORAGE_SIZE>::new();
+    let mut hardware = Hardware::default();
+    let mut rx = Esp32s31PreconnectedRx::<ReadyDelay, COUNT, BUFFER_SIZE>::from_halted(
+        halted_ring(&mut hardware, &storage),
+    );
+    embassy_futures::block_on(rx.start_with_storage(&mut hardware, &storage)).unwrap();
+    storage.descriptors()[0].write_word0(storage.descriptors()[0].word0() | BIT_30);
+
+    let completed = rx
+        .service_completed(&mut hardware, &storage, |_| {
+            Esp32s31PreconnectedRxDirective::Continue
+        })
+        .unwrap();
+    assert_eq!(completed.completed, 1);
+    assert!(rx.reload_pending());
+
+    let settled = rx
+        .service_completed(&mut hardware, &storage, |_| {
+            panic!("settling an append must not manufacture a completion")
+        })
+        .unwrap();
+    assert_eq!(settled.completed, 0);
+    assert!(!rx.reload_pending());
 }
 
 #[test]

@@ -162,6 +162,18 @@ where
         }
     }
 
+    /// Whether a published append still needs its finite reload suffix.
+    ///
+    /// An exhausted walker cannot raise another RX interrupt while this edge
+    /// is pending. Role runners must therefore poll the owner again instead
+    /// of treating the absence of a new interrupt as an empty receive ring.
+    pub const fn reload_pending(&self) -> bool {
+        match &self.state {
+            Esp32s31PreconnectedRxState::Live(ring) => ring.reload_pending(),
+            _ => false,
+        }
+    }
+
     /// Observe every currently completed descriptor, then recycle the
     /// completed half unless the observer reports a terminal frame.
     ///
@@ -198,6 +210,10 @@ where
             }
         }
 
+        // Batch the append transaction over one physical half-ring. Cold
+        // epochs always begin at descriptor zero, so the two halves remain
+        // aligned with rev0's physical walker boundary. The AP runner drives
+        // the explicit pending-reload suffix even if no later RX IRQ arrives.
         storage.recycle_completed_half(ring, hardware)?;
         if ring.all_observed() {
             return Err(Esp32s31PreconnectedRxError::Ring(RxRingError::Corrupt));

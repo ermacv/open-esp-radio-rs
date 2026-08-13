@@ -28,7 +28,18 @@ stop_pidfile() {
     pid=$(/bin/cat "$pidfile")
     case "$pid" in
         ''|*[!0-9]*) ;;
-        *) /bin/kill "$pid" 2>/dev/null || true ;;
+        *)
+            /bin/kill "$pid" 2>/dev/null || true
+            # A new wpa_supplicant must not race the previous daemon while it
+            # is still releasing the same nl80211 interface. This previously
+            # produced an intermittent twenty-second scan with zero frames
+            # transmitted by the client, while the target AP kept beaconing.
+            attempts=0
+            while /bin/kill -0 "$pid" 2>/dev/null && test "$attempts" -lt 100; do
+                attempts=$((attempts + 1))
+                /bin/sleep 0.02
+            done
+            ;;
     esac
     /bin/rm -f "$pidfile"
 }
@@ -156,9 +167,11 @@ start_client() {
     IFS= read -r ssid
     IFS= read -r passphrase
     IFS= read -r address
+    IFS= read -r frequency
     test -n "$ssid"
     test -n "$passphrase"
     /usr/bin/printf '%s\n' "$address" | /usr/bin/grep -Eq '^[0-9.]+/[0-9]+$'
+    /usr/bin/printf '%s\n' "$frequency" | /usr/bin/grep -Eq '^24[0-9][0-9]$'
 
     take_network_manager_ownership
     remember_wifi_identity
@@ -183,10 +196,19 @@ start_client() {
         /usr/bin/printf '    key_mgmt=WPA-PSK\n'
         /usr/bin/printf '    proto=RSN\n'
         /usr/bin/printf '    pairwise=CCMP\n'
+        # The target channel is part of the typed AP request. Restricting the
+        # controlled client to that exact frequency removes supplicant scan
+        # backoff from the fixture without weakening AP discovery: the client
+        # must still receive a valid beacon or probe response before joining.
+        /usr/bin/printf '    scan_freq=%s\n' "$frequency"
         /usr/bin/printf '}\n'
     } >"$WPA_CONFIG"
     /bin/chmod 0600 "$WPA_CONFIG"
     /usr/bin/wpa_supplicant -B -P "$WPA_PID" -i wlan0 -c "$WPA_CONFIG"
+    # Do not depend on the supplicant's background-scan backoff after a rapid
+    # reset-separated AP epoch. One explicit scan is still ordinary client
+    # behavior and cannot make an AP pass without emitting discoverable frames.
+    /usr/bin/wpa_cli -i wlan0 scan >/dev/null
 
     attempts=0
     maximum_attempts=200
@@ -201,6 +223,8 @@ start_client() {
     done
     if test "$attempts" -eq "$maximum_attempts"; then
         echo "open-radio-net: client did not associate within 20 seconds" >&2
+        /usr/bin/wpa_cli -i wlan0 status >&2 2>/dev/null || true
+        /usr/bin/iw dev wlan0 link >&2 2>/dev/null || true
         stop_radio_services
         exit 1
     fi
@@ -218,7 +242,7 @@ restore_managed() {
 
 case "$1" in
     capabilities)
-        /usr/bin/printf 'schema=3 station_ap=he20,ht40 client=1 observer=ht40 managed=1\n'
+        /usr/bin/printf 'schema=5 station_ap=he20,ht40 client=1 observer=ht40 managed=1\n'
         ;;
     start-ht40)
         start_ap /etc/open-radio/hostapd-ht40.conf 40 1

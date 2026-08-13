@@ -1399,7 +1399,7 @@ fn recycled_rx_buffer_restores_both_migration_sentinels() {
 }
 
 #[test]
-fn live_rx_ring_owns_rotated_handoff_reload_and_rom_base_repair() {
+fn live_rx_ring_owns_physical_cold_order_reload_and_rom_base_repair() {
     const COUNT: usize = 4;
     const BASE: u32 = 0x2f00_1000;
     const BUFFER_SIZE: u32 = 256;
@@ -1407,8 +1407,9 @@ fn live_rx_ring_owns_rotated_handoff_reload_and_rom_base_repair() {
     let buffers = [0x2f00_2000, 0x2f00_2200, 0x2f00_2400, 0x2f00_2600];
     let mut prepared = Vec::new();
     let mut mmio = MockMmio::default();
-    // The previous walker retained descriptor one, so the Rust owner must
-    // rotate the cold list to begin at descriptor two.
+    // A previous last pointer remains diagnostic only. A stopped/rebuilt rev0
+    // list must begin at physical zero so it never depends on a cold 31->0
+    // wrap link.
     mmio.set(RX_LAST_DESCRIPTOR, BASE + DESCRIPTOR_BYTES);
     mmio.set(RX_CONTROL, RX_ENABLE);
 
@@ -1425,16 +1426,13 @@ fn live_rx_ring_owns_rotated_handoff_reload_and_rom_base_repair() {
     )
     .unwrap();
     assert_eq!(prepared, [0, 1, 2, 3]);
-    assert_eq!(stopped.initial_start(), 2);
-    assert_eq!(stopped.accepted_tail(), 1);
+    assert_eq!(stopped.initial_start(), 0);
+    assert_eq!(stopped.accepted_tail(), 3);
     assert_eq!(descriptors[2].next_address(), BASE + 3 * DESCRIPTOR_BYTES);
-    assert_eq!(descriptors[3].next_address(), BASE);
+    assert_eq!(descriptors[3].next_address(), 0);
     assert_eq!(descriptors[0].next_address(), BASE + DESCRIPTOR_BYTES);
-    assert_eq!(descriptors[1].next_address(), 0);
-    assert_eq!(
-        mmio.words.get(&RX_DESCRIPTOR_BASE),
-        Some(&(BASE + 2 * DESCRIPTOR_BYTES))
-    );
+    assert_eq!(descriptors[1].next_address(), BASE + 2 * DESCRIPTOR_BYTES);
+    assert_eq!(mmio.words.get(&RX_DESCRIPTOR_BASE), Some(&BASE));
     let disable = mmio
         .operations()
         .iter()
@@ -1449,18 +1447,18 @@ fn live_rx_ring_owns_rotated_handoff_reload_and_rom_base_repair() {
     assert!(mmio.operations()[disable + 1..retained_last].contains(&Operation::Fence));
     let topology = stopped.topology_snapshot();
     assert!(topology.valid);
-    assert_eq!(topology.start_index, 2);
-    assert_eq!(topology.tail_index, 1);
+    assert_eq!(topology.start_index, 0);
+    assert_eq!(topology.tail_index, 3);
     assert_eq!(topology.visited_descriptors, COUNT);
     assert_eq!(topology.terminal_descriptors, 1);
 
     let mut live = stopped.start(&mut mmio).unwrap();
     let completed = BUFFER_SIZE | (80 << LENGTH_SHIFT) | BIT_30 | BIT_31;
-    descriptors[2].write_word0(completed);
-    descriptors[3].write_word0(completed);
-    assert_eq!(live.take_completed(2).unwrap().index(), 2);
-    assert_eq!(live.take_completed(2), None);
-    assert_eq!(live.take_completed(3).unwrap().index(), 3);
+    descriptors[0].write_word0(completed);
+    descriptors[1].write_word0(completed);
+    assert_eq!(live.take_completed(0).unwrap().index(), 0);
+    assert_eq!(live.take_completed(0), None);
+    assert_eq!(live.take_completed(1).unwrap().index(), 1);
 
     let mut recycled = Vec::new();
     let first = live
@@ -1470,30 +1468,30 @@ fn live_rx_ring_owns_rotated_handoff_reload_and_rom_base_repair() {
         })
         .unwrap()
         .unwrap();
-    assert_eq!(recycled, [2, 3]);
-    assert_eq!(first.head_index, 2);
-    assert_eq!(first.tail_index, 3);
-    assert_eq!(descriptors[1].next_address(), BASE + 2 * DESCRIPTOR_BYTES);
+    assert_eq!(recycled, [0, 1]);
+    assert_eq!(first.head_index, 0);
+    assert_eq!(first.tail_index, 1);
+    assert_eq!(descriptors[3].next_address(), BASE);
     assert_ne!(mmio.words[&RX_CONTROL] & RX_RELOAD, 0);
     assert!(live.reload_pending());
-    assert_eq!(live.accepted_tail(), 1);
+    assert_eq!(live.accepted_tail(), 3);
 
-    descriptors[0].write_word0(completed);
-    descriptors[1].write_word0(completed);
-    assert!(live.take_completed(0).is_some());
-    assert!(live.take_completed(1).is_some());
+    descriptors[2].write_word0(completed);
+    descriptors[3].write_word0(completed);
+    assert!(live.take_completed(2).is_some());
+    assert!(live.take_completed(3).is_some());
 
     // Model bit-0 self-clear at a terminal frontier. ROM repairs BASE from the
     // last accepted descriptor's now-published next link before accepting the
     // pending tail and appending the following group.
     mmio.set(RX_CONTROL, RX_ENABLE);
     mmio.set(RX_NEXT_DESCRIPTOR, 0);
-    mmio.set(RX_LAST_DESCRIPTOR, BASE + DESCRIPTOR_BYTES);
+    mmio.set(RX_LAST_DESCRIPTOR, BASE + 3 * DESCRIPTOR_BYTES);
     assert_eq!(
         live.poll_pending_reload(&mut mmio).unwrap(),
         RxReloadObservation::Settled
     );
-    assert_eq!(live.accepted_tail(), 3);
+    assert_eq!(live.accepted_tail(), 1);
     assert!(!live.reload_pending());
     recycled.clear();
     let second = live
@@ -1503,21 +1501,21 @@ fn live_rx_ring_owns_rotated_handoff_reload_and_rom_base_repair() {
         })
         .unwrap()
         .unwrap();
-    assert_eq!(recycled, [0, 1]);
-    assert_eq!(second.head_index, 0);
-    assert_eq!(second.tail_index, 1);
-    assert_eq!(descriptors[3].next_address(), BASE);
-    assert!(mmio.operations().contains(&Operation::Write(
-        RX_DESCRIPTOR_BASE,
-        BASE + 2 * DESCRIPTOR_BYTES,
-    )));
-    assert_eq!(live.accepted_tail(), 3);
+    assert_eq!(recycled, [2, 3]);
+    assert_eq!(second.head_index, 2);
+    assert_eq!(second.tail_index, 3);
+    assert_eq!(descriptors[1].next_address(), BASE + 2 * DESCRIPTOR_BYTES);
+    assert!(
+        mmio.operations()
+            .contains(&Operation::Write(RX_DESCRIPTOR_BASE, BASE,))
+    );
+    assert_eq!(live.accepted_tail(), 1);
     assert!(live.reload_pending());
     assert!(live.try_stop(&mut mmio).is_ok());
 }
 
 #[test]
-fn stopped_rx_ring_validates_every_safe_retained_last_rotation() {
+fn stopped_rx_ring_ignores_every_retained_last_for_cold_publication() {
     const COUNT: usize = 32;
     const BASE: u32 = 0x2f00_1000;
     const BUFFER_SIZE: u32 = 256;
@@ -1536,22 +1534,15 @@ fn stopped_rx_ring_validates_every_safe_retained_last_rotation() {
                 Ok(())
             })
             .unwrap();
-        let candidate = (retained_index + 1) % COUNT;
-        let expected_start = if candidate + 1 == COUNT { 0 } else { candidate };
-        let expected_tail = if expected_start == 0 {
-            COUNT - 1
-        } else {
-            retained_index
-        };
         let topology = stopped.topology_snapshot();
-        assert_eq!(stopped.initial_start(), expected_start);
-        assert_eq!(stopped.accepted_tail(), expected_tail);
+        assert_eq!(stopped.initial_start(), 0);
+        assert_eq!(stopped.accepted_tail(), COUNT - 1);
         assert!(topology.valid, "retained descriptor {retained_index}");
-        assert_eq!(topology.start_index, expected_start);
-        assert_eq!(topology.tail_index, expected_tail);
+        assert_eq!(topology.start_index, 0);
+        assert_eq!(topology.tail_index, COUNT - 1);
         assert_eq!(topology.visited_descriptors, COUNT);
         assert_eq!(topology.terminal_descriptors, 1);
-        assert_eq!(descriptors[expected_tail].next_address(), 0);
+        assert_eq!(descriptors[COUNT - 1].next_address(), 0);
     }
 }
 

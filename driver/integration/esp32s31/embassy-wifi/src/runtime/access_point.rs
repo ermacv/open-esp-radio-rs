@@ -804,12 +804,6 @@ impl ProductionWifiEpochRunner {
             engine,
             transmit,
             Esp32s31ApTxConfig {
-                // The recovered 24 Mbit/s vendor ladder is 24M x2, 18M x2,
-                // 6M x3, then 5.5M. Four publications stopped before the
-                // first robust OFDM rung and exposed ordinary RF loss directly
-                // to UDP. Eight is the shortest complete prefix which reaches
-                // every pre-CCK rung plus one final basic-rate publication.
-                unicast_publication_limit: 8,
                 publication_timeout_micros: TX_COMPLETION_TIMEOUT_US,
             },
         );
@@ -1118,7 +1112,8 @@ impl ProductionWifiEpochRunner {
                 protected_data_protocol_rejected: report.control.protected_data_protocol_rejected,
             });
         }
-        if let Err(_error) = result {
+        if let Err(error) = result {
+            log::error!("open-radio: access-point runtime fault: {error:?}");
             let faulted = ProductionWifiFault::AccessPointRuntime { _task: task };
             endpoint
                 .respond(EmbassyWifiSupervisorResponse::Stop(Err(

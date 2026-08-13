@@ -83,6 +83,8 @@ impl ControlledOpenWrtClient {
             "the AP scenario requires a second client but secondary_client_address is absent",
         )?;
         let (ssid, passphrase) = access_point.credentials();
+        let target = access_point.target_address();
+        let frequency_mhz = access_point.frequency_mhz();
         let ssid_hex = encode_hex(ssid.as_bytes());
         let mut psk = derive_psk(ssid, passphrase)?;
         let phy = format!(
@@ -92,21 +94,25 @@ impl ControlledOpenWrtClient {
         let script = Zeroizing::new(format!(
             "set -eu; \
              phy=$(cat {phy}); \
-             if test -f {PID_FILE}; then kill $(cat {PID_FILE}) 2>/dev/null || true; fi; \
+             if test -f {PID_FILE}; then old_pid=$(cat {PID_FILE}); kill \"$old_pid\" 2>/dev/null || true; for attempt in $(seq 1 50); do kill -0 \"$old_pid\" 2>/dev/null || break; sleep 0.02; done; fi; \
              iw dev {INTERFACE} del 2>/dev/null || true; \
              rm -f {PID_FILE} {CONFIG_FILE}; \
              iw phy \"$phy\" interface add {INTERFACE} type managed addr {CLIENT_MAC}; \
              ip link set {INTERFACE} up; \
+             ip addr add {address} dev {INTERFACE}; \
              umask 077; \
              printf 'ctrl_interface=/var/run/wpa_supplicant\\nnetwork={{\\n  ssid={ssid_hex}\\n  psk={psk}\\n  key_mgmt=WPA-PSK\\n  proto=RSN\\n  pairwise=CCMP\\n  group=CCMP\\n}}\\n' > {CONFIG_FILE}; \
+             sed -i '/^}}$/i\\  scan_freq={frequency_mhz}' {CONFIG_FILE}; \
              wpa_supplicant -B -P {PID_FILE} -i {INTERFACE} -c {CONFIG_FILE}; \
+             if command -v wpa_cli >/dev/null; then wpa_cli -i {INTERFACE} scan >/dev/null; fi; \
              for attempt in $(seq 1 20); do \
-                 if iw dev {INTERFACE} link | grep -q '^Connected to '; then \
-                     ip addr add {address} dev {INTERFACE}; \
+                 if ping -4 -q -I {INTERFACE} -c 1 -W 1 {target} >/dev/null 2>&1; then \
                      exit 0; \
                  fi; \
                  sleep 1; \
              done; \
+             iw dev {INTERFACE} link >&2 || true; \
+             if command -v wpa_cli >/dev/null; then wpa_cli -i {INTERFACE} status >&2 || true; fi; \
              exit 1",
             psk = psk.as_str(),
         ));
@@ -115,7 +121,9 @@ impl ControlledOpenWrtClient {
         if !output.status.success() {
             let _ = restore(fixture);
             return Err(format!(
-                "OpenWrt secondary AP client did not associate: {}",
+                "OpenWrt secondary AP client did not associate: status={} stdout={} stderr={}",
+                output.status,
+                String::from_utf8_lossy(&output.stdout).trim(),
                 String::from_utf8_lossy(&output.stderr).trim(),
             )
             .into());

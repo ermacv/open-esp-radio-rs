@@ -766,10 +766,23 @@ where
                 }
                 continue;
             }
+            let rx_reload_pending = self.receive.reload_pending();
+            let rx_work = async {
+                if rx_reload_pending {
+                    // `wDev_AppendRxBlocks` repairs an exhausted descriptor
+                    // base only after the reload doorbell self-clears. With
+                    // no descriptor left, hardware cannot produce another RX
+                    // interrupt to drive that suffix, so retain cooperative
+                    // scheduling and poll the owned edge explicitly.
+                    Timer::after_micros(1).await;
+                } else {
+                    interrupts.mac_runtime().wait_rx().await;
+                }
+            };
             match wait_for_ap_work(
                 stop.as_mut(),
                 Timer::after_millis(u64::from(beacon_delay_ms)),
-                interrupts.mac_runtime().wait_rx(),
+                rx_work,
                 network.receive_tx(),
             )
             .await
@@ -822,6 +835,14 @@ where
                                     return Err(Esp32s31AccessPointRunError::Network(error));
                                 }
                             }
+                        }
+                        // A descriptor can both carry the frame published
+                        // above and complete the half-ring append. Preserve
+                        // that frame's handoff before scheduling the reload
+                        // suffix; checking earlier silently discarded every
+                        // boundary descriptor.
+                        if self.receive.reload_pending() {
+                            break;
                         }
                         if self.report.completed_rx_descriptors == completed_before {
                             break;

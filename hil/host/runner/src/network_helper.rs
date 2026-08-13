@@ -6,7 +6,7 @@ use crate::Result;
 
 pub(crate) const PATH: &str = "/usr/local/sbin/open-radio-net";
 const REQUIRED_CAPABILITIES: &str =
-    "schema=3 station_ap=he20,ht40 client=1 observer=ht40 managed=1";
+    "schema=5 station_ap=he20,ht40 client=1 observer=ht40 managed=1";
 
 pub(crate) fn doctor() -> Result<()> {
     let output = Command::new("sudo")

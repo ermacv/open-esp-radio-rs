@@ -47,6 +47,13 @@ static UDP_SOURCE_RX_BUFFER: ConstStaticCell<
 static UDP_SOURCE_TX_METADATA: StaticCell<[PacketMetadata; UDP_TX_QUEUE_DEPTH]> = StaticCell::new();
 static UDP_SOURCE_TX_BUFFER: ConstStaticCell<[u8; UDP_TX_QUEUE_DEPTH * UDP_PAYLOAD_CAPACITY]> =
     ConstStaticCell::new([0; UDP_TX_QUEUE_DEPTH * UDP_PAYLOAD_CAPACITY]);
+// Non-divisor payload sizes can require an internal smoltcp ring-padding
+// record. embassy-net's zero-copy `send_to_with` cannot safely retry if that
+// padding consumes the final metadata entry after its FnOnce callback ran.
+// Keep the repeatable fallback payload in static PSRAM rather than adding a
+// 1,472-byte object to the Embassy task future/CPU stack.
+static UDP_SOURCE_PACKET: ConstStaticCell<[u8; UDP_PAYLOAD_CAPACITY]> =
+    ConstStaticCell::new([0; UDP_PAYLOAD_CAPACITY]);
 static TCP_RX_BUFFER: ConstStaticCell<[u8; TCP_RX_BUFFER_CAPACITY]> =
     ConstStaticCell::new([0; TCP_RX_BUFFER_CAPACITY]);
 static TCP_TX_BUFFER: ConstStaticCell<[u8; TCP_TX_BUFFER_CAPACITY]> =
@@ -122,11 +129,13 @@ async fn udp_tx_task(stack: Stack<'static>) {
     let tx_metadata =
         UDP_SOURCE_TX_METADATA.init_with(|| [PacketMetadata::EMPTY; UDP_TX_QUEUE_DEPTH]);
     let tx_buffer = UDP_SOURCE_TX_BUFFER.take();
+    let packet = UDP_SOURCE_PACKET.take();
     // The TX benchmark payload is a fixed 0x5a pattern apart from its leading
     // sequence. Paint every reusable PSRAM socket slot once before readiness;
     // the measured hot path then writes only the four-byte sequence, without
     // retaining the 94-KiB pattern in the flash image.
     tx_buffer.fill(0x5a);
+    packet.fill(0x5a);
     observe_open_radio_task_polls(
         run_open_radio_udp_tx_benchmark(
             stack,
@@ -136,6 +145,7 @@ async fn udp_tx_task(stack: Stack<'static>) {
                 tx_metadata,
                 tx_buffer,
             ),
+            packet,
             UdpTxBenchmarkConfig {
                 source_port: 4_324,
                 queue_depth: UDP_TX_QUEUE_DEPTH,

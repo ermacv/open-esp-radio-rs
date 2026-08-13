@@ -11,7 +11,8 @@ use open_esp_radio_esp32s31_wifi::{
     },
     tx::{WifiTxProgress, WifiTxWake},
 };
-use open_esp_radio_esp32s31_wifi_mac::tx::TxHardware;
+use open_esp_radio_esp32s31_wifi_mac::tx::{LegacyRate, TxHardware};
+use open_esp_radio_wifi_ap::ApServiceError;
 use open_esp_radio_wpa2::frames::Wpa2TxFrame;
 
 use crate::{
@@ -19,7 +20,9 @@ use crate::{
         Esp32s31ApEngine, Esp32s31ApEngineError, Esp32s31ApManagementOutcome,
         Esp32s31ApRuntimeHardware,
     },
-    tx::{Esp32s31ApTx, Esp32s31ApTxClass, Esp32s31ApTxConfig, Esp32s31ApTxError},
+    tx::{
+        Esp32s31ApTx, Esp32s31ApTxClass, Esp32s31ApTxConfig, Esp32s31ApTxError, peer_legacy_rate,
+    },
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -230,10 +233,24 @@ where
         let encoded = self
             .engine
             .encode_protected_ethernet(peer, ethernet, scratch)?;
+        let rate = if peer[0] & 1 != 0 {
+            // Group traffic must be decodable by every associated peer. The
+            // initial B/G ERP AP advertises 1 Mbit/s as a basic rate; unlike
+            // unicast there is no single peer rate negotiation or ACK.
+            LegacyRate::Dsss1MLong
+        } else {
+            self.engine
+                .peer_status(peer)
+                .map(|status| peer_legacy_rate(status.maximum_legacy_rate_500kbps))
+                .ok_or(Esp32s31ApMacError::Engine(Esp32s31ApEngineError::Service(
+                    ApServiceError::UnknownPeer,
+                )))?
+        };
         self.transmit.start_protected_encoded(
             hardware,
             &scratch[..encoded.length],
             encoded.hardware_key_selector,
+            rate,
         )?;
         self.pending = Some(PendingPublication::Data);
         Ok(())
@@ -523,7 +540,6 @@ mod tests {
                 timer: Timer,
             },
             Esp32s31ApTxConfig {
-                unicast_publication_limit: 4,
                 publication_timeout_micros: 1_000,
             },
         );

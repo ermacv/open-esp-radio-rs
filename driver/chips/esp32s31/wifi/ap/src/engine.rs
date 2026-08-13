@@ -271,10 +271,15 @@ impl<'storage> Esp32s31ApEngine<'storage> {
                     begin_wpa2: false,
                 })
             }
-            ApManagementRequest::Association { peer, rsn_ie } => {
+            ApManagementRequest::Association {
+                peer,
+                rsn_ie,
+                maximum_legacy_rate_500kbps,
+            } => {
                 let action = self.service.associate_wpa2(
                     peer,
                     rsn_ie.unwrap_or(&[]),
+                    maximum_legacy_rate_500kbps,
                     authenticator_nonce,
                     initial_replay_counter,
                 )?;
@@ -641,11 +646,12 @@ mod tests {
             .handle_management(&mut hardware, &authentication, ANONCE, 9, &mut response)
             .unwrap();
 
-        let mut association = [0; 50];
+        let mut association = [0; 56];
         association[4..10].copy_from_slice(&ap);
         association[10..16].copy_from_slice(&peer);
         association[16..22].copy_from_slice(&ap);
-        association[28..].copy_from_slice(&RSN);
+        association[28..34].copy_from_slice(&[1, 4, 12, 24, 48, 108]);
+        association[34..].copy_from_slice(&RSN);
         assert!(matches!(
             engine
                 .handle_management(&mut hardware, &association, ANONCE, 9, &mut response)

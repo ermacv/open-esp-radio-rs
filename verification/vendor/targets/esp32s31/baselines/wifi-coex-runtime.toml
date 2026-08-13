@@ -4,10 +4,10 @@ schema = 2
 source = "libpp"
 symbol = "hal_clear_rx_beacon_pti"
 kind = "whole-function-equivalence/profile:scenario/wifi-clear-rx-beacon-pti"
-digest = "704b034a2f2e4eae89c6734776eaa5d8ca4a5db0052275ce9f17841bc041c0c4"
+digest = "53b4137b7bca8d48588fb75716194d5d9909f0a880d1fda5dccdd28dc3be9635"
 
 [evidence.components]
-comparison-orchestrator = "78f3316221c5be17b39047bc588be3269db93581b7fd322ac4b092f37c8178ea"
+comparison-orchestrator = "ce586fb7d4199ca0c509cb6580fa2b0a348d9b99a8895ce1db7f81a7f06b4ade"
 execution-image = "3885065e6ff308001a383d5164cd1f17dba4f452a35ef3c07baa3ce5916530da"
 execution-machine = "ecce5dd7068bb1bc30a5573d8b2c8f89fa158e96289a8653c8fea6fe58d80398"
 execution-model = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"
@@ -18,10 +18,10 @@ profile-parser = "a24af6577263196b2823b6c48ca095597bccf652748e92b256153a5be313f4
 source = "libpp"
 symbol = "hal_clr_itwt_pti"
 kind = "whole-function-equivalence/profile:scenario/wifi-clear-itwt-pti"
-digest = "fbcdc1445c9c93be17da95ac57f1773eea15bec169bd6342b9944dd7ab326d6d"
+digest = "bbe0e8a5284e96d4281575871a9cc8022dd0a282a486d3c40100f9bf266cf05b"
 
 [evidence.components]
-comparison-orchestrator = "78f3316221c5be17b39047bc588be3269db93581b7fd322ac4b092f37c8178ea"
+comparison-orchestrator = "ce586fb7d4199ca0c509cb6580fa2b0a348d9b99a8895ce1db7f81a7f06b4ade"
 execution-image = "3885065e6ff308001a383d5164cd1f17dba4f452a35ef3c07baa3ce5916530da"
 execution-machine = "ecce5dd7068bb1bc30a5573d8b2c8f89fa158e96289a8653c8fea6fe58d80398"
 execution-model = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"
@@ -32,10 +32,10 @@ profile-parser = "a24af6577263196b2823b6c48ca095597bccf652748e92b256153a5be313f4
 source = "libpp"
 symbol = "hal_set_itwt_pti"
 kind = "whole-function-equivalence/profile:scenario/wifi-set-itwt-pti"
-digest = "76d2df8bb6c42bf6675be95af4a4527b5e4adad1769ea2593273b9f425d0e6e3"
+digest = "2a827f5423d490cf06d494adb0cefcb95111c2f5e1789f5592d2262c8ef40f18"
 
 [evidence.components]
-comparison-orchestrator = "78f3316221c5be17b39047bc588be3269db93581b7fd322ac4b092f37c8178ea"
+comparison-orchestrator = "ce586fb7d4199ca0c509cb6580fa2b0a348d9b99a8895ce1db7f81a7f06b4ade"
 execution-image = "3885065e6ff308001a383d5164cd1f17dba4f452a35ef3c07baa3ce5916530da"
 execution-machine = "ecce5dd7068bb1bc30a5573d8b2c8f89fa158e96289a8653c8fea6fe58d80398"
 execution-model = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"
@@ -46,10 +46,10 @@ profile-parser = "a24af6577263196b2823b6c48ca095597bccf652748e92b256153a5be313f4
 source = "libpp"
 symbol = "hal_set_rx_beacon_pti"
 kind = "whole-function-equivalence/profile:scenario/wifi-rx-beacon-pti"
-digest = "27b5f8966008e23c930d9441e398e4d8de330ecb2ee90b3c5db04341a9b928c8"
+digest = "1371e20aa2b13eda79595b18b69d5e53772eab673df2843a22881b7994e99fc5"
 
 [evidence.components]
-comparison-orchestrator = "78f3316221c5be17b39047bc588be3269db93581b7fd322ac4b092f37c8178ea"
+comparison-orchestrator = "ce586fb7d4199ca0c509cb6580fa2b0a348d9b99a8895ce1db7f81a7f06b4ade"
 execution-image = "3885065e6ff308001a383d5164cd1f17dba4f452a35ef3c07baa3ce5916530da"
 execution-machine = "ecce5dd7068bb1bc30a5573d8b2c8f89fa158e96289a8653c8fea6fe58d80398"
 execution-model = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"
@@ -60,10 +60,10 @@ profile-parser = "a24af6577263196b2823b6c48ca095597bccf652748e92b256153a5be313f4
 source = "libpp"
 symbol = "hal_set_tx_pti"
 kind = "whole-function-equivalence/profile:scenario/wifi-set-tx-pti"
-digest = "ff318b780f8a7ec2bc81386e4720ea792b9e3f572d529c7f51f1c71b17eda4b5"
+digest = "8ba5a061d14f5bd5d4fcd91e549f1ef7ed8af86901b093299a23f665faf48180"
 
 [evidence.components]
-comparison-orchestrator = "78f3316221c5be17b39047bc588be3269db93581b7fd322ac4b092f37c8178ea"
+comparison-orchestrator = "ce586fb7d4199ca0c509cb6580fa2b0a348d9b99a8895ce1db7f81a7f06b4ade"
 execution-image = "3885065e6ff308001a383d5164cd1f17dba4f452a35ef3c07baa3ce5916530da"
 execution-machine = "ecce5dd7068bb1bc30a5573d8b2c8f89fa158e96289a8653c8fea6fe58d80398"
 execution-model = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"

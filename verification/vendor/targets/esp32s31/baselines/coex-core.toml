@@ -4,10 +4,10 @@ schema = 2
 source = "coex"
 symbol = "coex_core_event_duration_get"
 kind = "whole-function-equivalence/profile:state/coex-core-event-duration-get"
-digest = "1b1f7bab0d677618fcb0fdca2ed2611ccd9eea0ad4cee38f2253ed783264a5ec"
+digest = "447adfbab562cfeab782650980cb2063498e3752eb72a6993e6d5baec26f7949"
 
 [evidence.components]
-comparison-orchestrator = "78f3316221c5be17b39047bc588be3269db93581b7fd322ac4b092f37c8178ea"
+comparison-orchestrator = "ce586fb7d4199ca0c509cb6580fa2b0a348d9b99a8895ce1db7f81a7f06b4ade"
 execution-image = "3885065e6ff308001a383d5164cd1f17dba4f452a35ef3c07baa3ce5916530da"
 execution-machine = "ecce5dd7068bb1bc30a5573d8b2c8f89fa158e96289a8653c8fea6fe58d80398"
 execution-model = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"
@@ -18,10 +18,10 @@ profile-parser = "a24af6577263196b2823b6c48ca095597bccf652748e92b256153a5be313f4
 source = "coex"
 symbol = "coex_core_pti_get"
 kind = "whole-function-equivalence/profile:state/coex-core-pti-get"
-digest = "9f181c137679ffdd2ef256f177534b2df9ff2187b4514a0fada1019ee6339840"
+digest = "fdb1c11f3ccd90a83ec28ae2cdf916af0ddf5711c1c46cdd1d1749f6ec192eeb"
 
 [evidence.components]
-comparison-orchestrator = "78f3316221c5be17b39047bc588be3269db93581b7fd322ac4b092f37c8178ea"
+comparison-orchestrator = "ce586fb7d4199ca0c509cb6580fa2b0a348d9b99a8895ce1db7f81a7f06b4ade"
 execution-image = "3885065e6ff308001a383d5164cd1f17dba4f452a35ef3c07baa3ce5916530da"
 execution-machine = "ecce5dd7068bb1bc30a5573d8b2c8f89fa158e96289a8653c8fea6fe58d80398"
 execution-model = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"
@@ -32,10 +32,10 @@ profile-parser = "a24af6577263196b2823b6c48ca095597bccf652748e92b256153a5be313f4
 source = "coex"
 symbol = "coex_core_release"
 kind = "whole-function-equivalence/profile:scenario/coex-core-release"
-digest = "f7cd6b7c11a64df05eadaf063eb4813b3951cc4e6a49cc7072e060d867fb1249"
+digest = "e262f453ba34f1fe8e5667641a7a0dbc3c1f5e2db1a9207591cf87d2773e20b1"
 
 [evidence.components]
-comparison-orchestrator = "78f3316221c5be17b39047bc588be3269db93581b7fd322ac4b092f37c8178ea"
+comparison-orchestrator = "ce586fb7d4199ca0c509cb6580fa2b0a348d9b99a8895ce1db7f81a7f06b4ade"
 execution-image = "3885065e6ff308001a383d5164cd1f17dba4f452a35ef3c07baa3ce5916530da"
 execution-machine = "ecce5dd7068bb1bc30a5573d8b2c8f89fa158e96289a8653c8fea6fe58d80398"
 execution-model = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"
@@ -46,10 +46,10 @@ profile-parser = "a24af6577263196b2823b6c48ca095597bccf652748e92b256153a5be313f4
 source = "coex"
 symbol = "coex_core_request"
 kind = "reviewed-domain-equivalence/profile:scenario/coex-core-request"
-digest = "2e46c797794b32e1549abbdafb6797742a64f03b7970806de0fdaff3db5f5795"
+digest = "62d34779905163bde689054871b2793062c2276afea409e63a7276df6ccd62e8"
 
 [evidence.components]
-comparison-orchestrator = "78f3316221c5be17b39047bc588be3269db93581b7fd322ac4b092f37c8178ea"
+comparison-orchestrator = "ce586fb7d4199ca0c509cb6580fa2b0a348d9b99a8895ce1db7f81a7f06b4ade"
 execution-image = "3885065e6ff308001a383d5164cd1f17dba4f452a35ef3c07baa3ce5916530da"
 execution-machine = "ecce5dd7068bb1bc30a5573d8b2c8f89fa158e96289a8653c8fea6fe58d80398"
 execution-model = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"
@@ -60,10 +60,10 @@ profile-parser = "a24af6577263196b2823b6c48ca095597bccf652748e92b256153a5be313f4
 source = "coex"
 symbol = "coex_core_timer_idx_get"
 kind = "whole-function-equivalence/profile:scenario/coex-core-timer-index"
-digest = "b6c4ac29387d1d2a8ced4b1738b5475af19352e4bec4968aeef72dba5840a09e"
+digest = "ced04baf0752d015180a67bb637a6124e242a980f9bc6234ab92a8493880f87a"
 
 [evidence.components]
-comparison-orchestrator = "78f3316221c5be17b39047bc588be3269db93581b7fd322ac4b092f37c8178ea"
+comparison-orchestrator = "ce586fb7d4199ca0c509cb6580fa2b0a348d9b99a8895ce1db7f81a7f06b4ade"
 execution-image = "3885065e6ff308001a383d5164cd1f17dba4f452a35ef3c07baa3ce5916530da"
 execution-machine = "ecce5dd7068bb1bc30a5573d8b2c8f89fa158e96289a8653c8fea6fe58d80398"
 execution-model = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"

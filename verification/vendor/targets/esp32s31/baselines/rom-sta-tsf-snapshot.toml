@@ -4,10 +4,10 @@ schema = 2
 source = "rom"
 symbol = "hal_get_sta_tsf"
 kind = "whole-function-equivalence/profile:scenario/rom-sta-tsf-snapshot"
-digest = "b23a94866134909ebcd6b61b0da86aa7138eebd61825e03421a08bacd39cade4"
+digest = "8aead6455bf97230aaa04bf1488162c01780e3a24a36f5eabef1909f1a4c8733"
 
 [evidence.components]
-comparison-orchestrator = "78f3316221c5be17b39047bc588be3269db93581b7fd322ac4b092f37c8178ea"
+comparison-orchestrator = "ce586fb7d4199ca0c509cb6580fa2b0a348d9b99a8895ce1db7f81a7f06b4ade"
 execution-image = "3885065e6ff308001a383d5164cd1f17dba4f452a35ef3c07baa3ce5916530da"
 execution-machine = "ecce5dd7068bb1bc30a5573d8b2c8f89fa158e96289a8653c8fea6fe58d80398"
 execution-model = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"

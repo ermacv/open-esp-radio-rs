@@ -4,10 +4,10 @@ schema = 2
 source = "libpp"
 symbol = "hal_set_sta_tsf_wakeup"
 kind = "whole-function-equivalence/profile:scenario/libpp-sta-tsf-wakeup"
-digest = "3a8bf66da40fa97a88f9cb2d693bf0d37e6376bcf77330fcfd3b20d341afb744"
+digest = "ce051a184bfa031301efd5b13eeee8456e0905e20be2b71bf83f462957d75669"
 
 [evidence.components]
-comparison-orchestrator = "78f3316221c5be17b39047bc588be3269db93581b7fd322ac4b092f37c8178ea"
+comparison-orchestrator = "ce586fb7d4199ca0c509cb6580fa2b0a348d9b99a8895ce1db7f81a7f06b4ade"
 execution-image = "3885065e6ff308001a383d5164cd1f17dba4f452a35ef3c07baa3ce5916530da"
 execution-machine = "ecce5dd7068bb1bc30a5573d8b2c8f89fa158e96289a8653c8fea6fe58d80398"
 execution-model = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"

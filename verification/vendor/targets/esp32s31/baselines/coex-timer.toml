@@ -4,10 +4,10 @@ schema = 2
 source = "coex"
 symbol = "coex_hw_timer_disable"
 kind = "whole-function-equivalence/profile:scenario/coex-hw-timer-disable"
-digest = "a1fb3dc4d1d8d19a4948e9d36e45c307fdf3edf1490955692a3179bf05b9051c"
+digest = "d9c0a9717453110c0690f30e6158a6ba7c73f9f7ff022e6d966ba22329086a99"
 
 [evidence.components]
-comparison-orchestrator = "78f3316221c5be17b39047bc588be3269db93581b7fd322ac4b092f37c8178ea"
+comparison-orchestrator = "ce586fb7d4199ca0c509cb6580fa2b0a348d9b99a8895ce1db7f81a7f06b4ade"
 execution-image = "3885065e6ff308001a383d5164cd1f17dba4f452a35ef3c07baa3ce5916530da"
 execution-machine = "ecce5dd7068bb1bc30a5573d8b2c8f89fa158e96289a8653c8fea6fe58d80398"
 execution-model = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"
@@ -18,10 +18,10 @@ profile-parser = "a24af6577263196b2823b6c48ca095597bccf652748e92b256153a5be313f4
 source = "coex"
 symbol = "coex_hw_timer_enable"
 kind = "whole-function-equivalence/profile:scenario/coex-hw-timer-enable"
-digest = "ca54bc7507875cd8e44d313d35ddf4344b4b9f7edf950486d8b60ef3f72b69e0"
+digest = "779bcd677c84ef9c6454d76e020f7a6cb3605ce4d0b3f5ce1d0c7c79c623a9c1"
 
 [evidence.components]
-comparison-orchestrator = "78f3316221c5be17b39047bc588be3269db93581b7fd322ac4b092f37c8178ea"
+comparison-orchestrator = "ce586fb7d4199ca0c509cb6580fa2b0a348d9b99a8895ce1db7f81a7f06b4ade"
 execution-image = "3885065e6ff308001a383d5164cd1f17dba4f452a35ef3c07baa3ce5916530da"
 execution-machine = "ecce5dd7068bb1bc30a5573d8b2c8f89fa158e96289a8653c8fea6fe58d80398"
 execution-model = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"
@@ -32,10 +32,10 @@ profile-parser = "a24af6577263196b2823b6c48ca095597bccf652748e92b256153a5be313f4
 source = "coex"
 symbol = "coex_hw_timer_force"
 kind = "whole-function-equivalence/profile:scenario/coex-hw-timer-force"
-digest = "133b655388d7b332a2f15b70bb6602d02fd2cafcef9103c6b11707e4d6d1f487"
+digest = "3f7c9306c81baea1defbe44440ae06d263326f3535561ced72f67c94a78a6584"
 
 [evidence.components]
-comparison-orchestrator = "78f3316221c5be17b39047bc588be3269db93581b7fd322ac4b092f37c8178ea"
+comparison-orchestrator = "ce586fb7d4199ca0c509cb6580fa2b0a348d9b99a8895ce1db7f81a7f06b4ade"
 execution-image = "3885065e6ff308001a383d5164cd1f17dba4f452a35ef3c07baa3ce5916530da"
 execution-machine = "ecce5dd7068bb1bc30a5573d8b2c8f89fa158e96289a8653c8fea6fe58d80398"
 execution-model = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"
@@ -46,10 +46,10 @@ profile-parser = "a24af6577263196b2823b6c48ca095597bccf652748e92b256153a5be313f4
 source = "coex"
 symbol = "coex_hw_timer_unforce"
 kind = "whole-function-equivalence/profile:scenario/coex-hw-timer-unforce"
-digest = "b286834f882293afdc31bdfcdfac6b5688a3e4e6d690b379ce004f8f369ac4b9"
+digest = "91f34428ed0b4fa1cbf421fd9503a69acbe6059e2ae307ebb4449d49286a189c"
 
 [evidence.components]
-comparison-orchestrator = "78f3316221c5be17b39047bc588be3269db93581b7fd322ac4b092f37c8178ea"
+comparison-orchestrator = "ce586fb7d4199ca0c509cb6580fa2b0a348d9b99a8895ce1db7f81a7f06b4ade"
 execution-image = "3885065e6ff308001a383d5164cd1f17dba4f452a35ef3c07baa3ce5916530da"
 execution-machine = "ecce5dd7068bb1bc30a5573d8b2c8f89fa158e96289a8653c8fea6fe58d80398"
 execution-model = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"

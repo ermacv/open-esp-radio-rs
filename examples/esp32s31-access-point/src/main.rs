@@ -1,0 +1,185 @@
+#![no_main]
+#![no_std]
+
+use embassy_executor::Spawner;
+use embassy_net::{Config, Ipv4Address, Ipv4Cidr, StackResources, StaticConfigV4};
+use esp_backtrace as _;
+use esp_hal::{
+    clock::CpuClock,
+    efuse::{self, InterfaceMacAddress},
+    interrupt::software::SoftwareInterruptControl,
+    rng::{Trng, TrngSource},
+    timer::{OneShotTimer, timg::TimerGroup},
+};
+use open_esp_radio::{
+    AccessPointClientLimit, AccessPointRequest, AccessPointSecurity, WifiMacAddress, WifiSsid,
+    esp32s31::phy::{PhyCalibrationIdentity, phy_rfpll::phy_get_rf_cal_version},
+    wifi::{ieee80211::channel::WifiChannel, wpa2::Pmk},
+};
+use open_esp_radio_esp32s31_access_point::{dhcp, services};
+use open_esp_radio_esp32s31_embassy_runtime::Executor;
+use open_esp_radio_esp32s31_wifi_esp_hal::EspHalRadioPeripheral;
+use static_cell::StaticCell;
+
+esp_bootloader_esp_idf::esp_app_desc!();
+
+static EXECUTOR: StaticCell<Executor<0>> = StaticCell::new();
+static TRNG_SOURCE: StaticCell<TrngSource<'static>> = StaticCell::new();
+// Network socket state is application-owned and static so it never inflates
+// the executor task frame.
+static NETWORK_RESOURCES: static_cell::ConstStaticCell<StackResources<8>> =
+    static_cell::ConstStaticCell::new(StackResources::new());
+
+const AP_SSID: &str = match option_env!("ESP32S31_AP_SSID") {
+    Some(value) => value,
+    None => "open-esp-radio",
+};
+const AP_PASSPHRASE: &str = match option_env!("ESP32S31_AP_PASSPHRASE") {
+    Some(value) => value,
+    None => "open-radio-password",
+};
+const AP_CHANNEL: u8 = 6;
+const AP_CLIENT_LIMIT: u8 = 4;
+
+#[esp_hal::main]
+fn main() -> ! {
+    esp_println::logger::init_logger_from_env();
+    let peripherals = esp_hal::init(esp_hal::Config::default().with_cpu_clock(CpuClock::max()));
+    let software_interrupts = SoftwareInterruptControl::new(peripherals.SW_INTERRUPT);
+    let timer_group = TimerGroup::new(peripherals.TIMG0);
+    open_esp_radio_esp32s31_embassy_runtime::init(OneShotTimer::new(timer_group.timer0));
+    TRNG_SOURCE.init(TrngSource::new(peripherals.RNG));
+    let trng = Trng::try_new().expect("ESP32-S31 TRNG must have a unique owner");
+    let radio = EspHalRadioPeripheral::new(
+        peripherals.WIFI,
+        peripherals.MODEM_SYSCON,
+        peripherals.MODEM_LPCON,
+        peripherals.HP_SYS_CLKRST,
+        peripherals.PMU,
+        peripherals.LP_AON_CLK_RST,
+        peripherals.LP_PERI,
+        peripherals.LP_TSENS,
+        peripherals.I2C_ANA_MST,
+    );
+    let executor = EXECUTOR.init(Executor::<0>::new(software_interrupts.software_interrupt0));
+    executor.run(|spawner| {
+        spawner.spawn(
+            access_point_task(spawner, radio, trng)
+                .expect("access-point task storage must be available once"),
+        );
+    })
+}
+
+#[embassy_executor::task]
+async fn access_point_task(_spawner: Spawner, radio: EspHalRadioPeripheral, trng: Trng) {
+    let efuse_registers = esp_hal::peripherals::EFUSE::regs();
+    let mut station_address = [0; 6];
+    station_address
+        .copy_from_slice(efuse::interface_mac_address(InterfaceMacAddress::Station).as_bytes());
+    let mut access_point_address = [0; 6];
+    access_point_address
+        .copy_from_slice(efuse::interface_mac_address(InterfaceMacAddress::AccessPoint).as_bytes());
+    let station_mac = WifiMacAddress::new(station_address).expect("valid station MAC in eFuse");
+    let access_point_mac =
+        WifiMacAddress::new(access_point_address).expect("valid AP MAC in eFuse");
+    let ssid = WifiSsid::new(AP_SSID.as_bytes()).expect("AP SSID must be valid");
+    let pmk = Pmk::derive(AP_PASSPHRASE.as_bytes(), ssid.as_bytes())
+        .expect("AP passphrase must be valid WPA2-Personal input");
+    let request = AccessPointRequest::new(
+        ssid,
+        AccessPointSecurity::wpa2_personal(pmk),
+        WifiChannel::mhz20(AP_CHANNEL).expect("AP channel must be valid"),
+        AccessPointClientLimit::new(AP_CLIENT_LIMIT).expect("AP client limit must be valid"),
+    )
+    .expect("AP request must be supported");
+    let config = open_esp_radio_esp32s31_embassy_wifi::Esp32s31RadioConfig::new(
+        station_mac,
+        access_point_mac,
+        PhyCalibrationIdentity {
+            rf_cal_version: phy_get_rf_cal_version(),
+            mac_sys0: efuse_registers.rd_mac_sys0().read().bits(),
+            mac_sys1: efuse_registers.rd_mac_sys1().read().bits(),
+        },
+        WifiChannel::mhz20(AP_CHANNEL).expect("initial channel must be valid"),
+    );
+    let open_esp_radio_esp32s31_embassy_wifi::Esp32s31RadioSystem { radio, runners } =
+        open_esp_radio_esp32s31_embassy_wifi::new(radio, trng, config)
+            .await
+            .expect("radio initialization must succeed once");
+    let open_esp_radio_esp32s31_embassy_wifi::Esp32s31RadioRunners {
+        hardware: radio_runner,
+        wifi_protocol,
+    } = runners;
+    let open_esp_radio_esp32s31_embassy_wifi::Esp32s31RadioParts {
+        wifi,
+        initialization: _,
+    } = radio.into_parts();
+    let open_esp_radio_esp32s31_embassy_wifi::Esp32s31WifiParts {
+        control: wifi,
+        device,
+        monitor_frames: _,
+        mut access_point_status,
+    } = wifi.into_parts();
+    let network_config = Config::ipv4_static(StaticConfigV4 {
+        address: Ipv4Cidr::new(Ipv4Address::new(192, 168, 4, 1), 24),
+        gateway: None,
+        dns_servers: Default::default(),
+    });
+    let (stack, network_runner) = open_esp_radio_esp32s31_embassy_wifi::new_wifi_network(
+        device,
+        network_config,
+        NETWORK_RESOURCES.take(),
+        u64::from_le_bytes([
+            access_point_address[0],
+            access_point_address[1],
+            access_point_address[2],
+            access_point_address[3],
+            access_point_address[4],
+            access_point_address[5],
+            0xa5,
+            0x31,
+        ]),
+    );
+    let application = async move {
+        let access_point = async move {
+            let active = wifi
+                .start_access_point(request)
+                .await
+                .expect("AP must start");
+            esp_println::println!(
+                "open-radio: AP active generation={}",
+                active.generation().value()
+            );
+            let _active = active;
+            core::future::pending::<()>().await;
+        };
+        let status = async move {
+            loop {
+                let snapshot = access_point_status.changed().await;
+                esp_println::println!(
+                    "open-radio: AP generation={:?} associated={} authorized={}/{}",
+                    snapshot.generation,
+                    snapshot.associated,
+                    snapshot.authorized,
+                    snapshot.client_limit,
+                );
+            }
+        };
+        let echoes = async move {
+            let (_udp, _tcp) =
+                embassy_futures::join::join(services::udp_echo(stack), services::tcp_echo(stack))
+                    .await;
+        };
+        let (_ap, _status, _dhcp, _echoes) =
+            embassy_futures::join::join4(access_point, status, dhcp::run(stack), echoes).await;
+    };
+    let (_application, hardware_never, _protocol_never, _network_never) =
+        embassy_futures::join::join4(
+            application,
+            radio_runner.run(),
+            wifi_protocol.run(),
+            network_runner.run(),
+        )
+        .await;
+    match hardware_never {}
+}

@@ -264,9 +264,9 @@ pub(crate) fn reviewed_effect_rules(
     let mut rules = std::collections::BTreeSet::new();
     for suite in &workspace.suites {
         if !suite
-            .sources
+            .vendor
             .iter()
-            .any(|candidate| candidate.as_str() == source)
+            .any(|vendor| vendor.source.as_str() == source && vendor.selection.includes(symbol))
         {
             continue;
         }

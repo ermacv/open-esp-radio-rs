@@ -77,6 +77,93 @@ tools/vendor-binary-workbench/scripts/run-limited \
 The wrapper applies a 1-GiB/no-swap limit and a 15-minute timeout. One worker
 is the safe default; higher values are an explicit measured opt-in.
 
+For one changed analysis profile, do not run the project-wide pipeline. Build
+only that profile from its declared project inputs:
+
+```console
+tools/vendor-binary-workbench/scripts/run-limited \
+  advanced ir build --profile libpp-all --jobs 1 \
+  --project verification/vendor/targets/esp32s31/vendor-project.toml
+```
+
+A partial profile build updates only its linked-IR bundle and deliberately
+does not rebuild aggregate review scopes from unrelated stale profiles.
+Focused compiled evidence is similarly run with `project verify --suite ID`;
+it updates that suite report while leaving the aggregate verification report
+for a complete project run.
+
+Current same-channel AP+STA register evidence can be inspected directly:
+
+```console
+cargo vendor-binary-workbench project verify --suite wifi-interface-context \
+  --project verification/vendor/targets/esp32s31/vendor-project.toml
+
+cargo vendor-binary-workbench project feature wifi-ap-sta-interface-identity \
+  --project verification/vendor/targets/esp32s31/vendor-project.toml
+
+cargo vendor-binary-workbench project verify --suite wifi-sta-ap-receive \
+  --project verification/vendor/targets/esp32s31/vendor-project.toml \
+  --run-spec verification/vendor/targets/esp32s31/local.toml
+```
+
+The first suite proves the complete address/BSSID leaves for STA=0 and AP=1.
+The second uses one cross-archive linked oracle to execute exactly the sparse
+`wifi_set_rx_policy` cases 6 and 8 against the production HAL/PAC probe. It
+also preserves both observed case-six submodes. The still-untyped
+`g_ic + 0x74` word is deliberately named only as `Mode1`/`Mode2`; this evidence
+does not identify either value as an AP+STA lifecycle state.
+
+The reviewed logical object and its lifecycle consumers can be inspected
+without scanning the full IR document:
+
+```console
+cargo vendor-binary-workbench inspect object \
+  --project verification/vendor/targets/esp32s31/vendor-project.toml \
+  wifi-sta-lifecycle:g_ic --offset 0x74 \
+  --flows-to wifi_set_rx_policy
+```
+
+The report currently proves reads and selector-bearing call routes, but no
+direct writer of this projection. Writers hidden behind argument aliases are a
+remaining blocker, so `Mode1`/`Mode2` must not be renamed from function names.
+
+The low-level policy probe is intentionally isolated from the full STA/AP and
+Embassy probe image. Rebuild it without pulling unfinished runtime adapters:
+
+```console
+cargo build \
+  --manifest-path verification/vendor/targets/esp32s31/probes/register-elf/Cargo.toml \
+  --target riscv32imafc-unknown-none-elf --release \
+  --target-dir target/verification/esp32s31-register-probes
+```
+
+The current internal COEX core boundary is checked independently of the
+unmodeled scheduler/runtime environment:
+
+```console
+cargo vendor-binary-workbench project verify --suite coex-core \
+  --project verification/vendor/targets/esp32s31/vendor-project.toml \
+  --run-spec verification/vendor/targets/esp32s31/local.toml
+
+cargo vendor-binary-workbench project verify --suite coex-timer-control \
+  --project verification/vendor/targets/esp32s31/vendor-project.toml \
+  --run-spec verification/vendor/targets/esp32s31/local.toml
+
+cargo vendor-binary-workbench project verify --suite coex-timer-set \
+  --project verification/vendor/targets/esp32s31/vendor-project.toml \
+  --run-spec verification/vendor/targets/esp32s31/local.toml
+```
+
+This proves PTI lookup, event-duration lookup and the complete release leaf.
+All 100 valid-clock concrete request cases also match, but the request profile
+remains incomplete because five Rust-only fail-closed clock error branches
+are intentionally unreachable under the vendor valid-clock precondition. It
+does not qualify the semaphore-backed scheduler or joint Wi-Fi/BLE hardware
+behavior. Timer enable/disable/force/unforce are a separate 4/4 passing suite;
+time conversion and value programming remain isolated in `coex-timer-set` as
+one explicit incomplete boundary rather than making the qualified timer-control
+surface appear incomplete.
+
 After analysis:
 
 ```console

@@ -1260,9 +1260,14 @@ name = "open-esp-radio-dma"
 version = "0.1.0"
 
 [[package]]
+name = "open-esp-radio-esp32s31-coex"
+version = "0.1.0"
+
+[[package]]
 name = "open-esp-radio-esp32s31-hal"
 version = "0.1.0"
 dependencies = [
+ "open-esp-radio-esp32s31-coex",
  "open-esp-radio-esp32s31-pac",
 ]
 
@@ -1331,6 +1336,7 @@ version = "0.1.0"
 dependencies = [
  "critical-section",
  "esp-hal",
+ "open-esp-radio-esp32s31-coex",
  "open-esp-radio-esp32s31-hal",
  "open-esp-radio-esp32s31-pac",
  "open-esp-radio-esp32s31-phy",
@@ -1343,6 +1349,7 @@ name = "open-esp-radio-esp32s31-wifi-mac"
 version = "0.1.0"
 dependencies = [
  "open-esp-radio-dma",
+ "open-esp-radio-esp32s31-hal",
  "open-esp-radio-esp32s31-pac",
  "open-esp-radio-esp32s31-wifi-dma",
  "open-esp-radio-ieee80211",

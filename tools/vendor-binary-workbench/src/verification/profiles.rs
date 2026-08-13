@@ -16,6 +16,11 @@ use crate::{
 
 use super::dispositions::validate_source_id;
 
+mod validation;
+
+#[cfg(test)]
+use validation::validate_argument_domain;
+
 #[derive(Clone, Debug)]
 pub struct Profile {
     pub name: String,
@@ -25,6 +30,7 @@ pub struct Profile {
     pub contract: ProfileContract,
     pub compare_return: bool,
     pub argument_ranges: Vec<ArgumentRange>,
+    pub argument_values: Vec<ArgumentValues>,
     pub mmio_domains: Vec<MmioDomain>,
     pub scenarios: Vec<NamedScenario>,
 }
@@ -34,6 +40,17 @@ pub struct ArgumentRange {
     pub index: usize,
     pub min: u32,
     pub max: u32,
+}
+
+/// A reviewed, finite and potentially sparse ABI argument domain.
+///
+/// This is distinct from [`ArgumentRange`]: selectors such as jump-table
+/// cases 6 and 8 must not silently admit case 7 merely to describe one
+/// verification profile.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct ArgumentValues {
+    pub index: usize,
+    pub values: Vec<u32>,
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -50,7 +67,8 @@ pub struct ProfileCoverageConstraint {
 
 impl Profile {
     /// Enumerates the explicitly admissible ABI argument domain for static
-    /// reachability. Arguments without an `arg-range` remain unknown.
+    /// reachability. Arguments without an `argument-range` or
+    /// `argument-values` entry remain unknown.
     pub fn coverage_argument_constraints(&self) -> Vec<[Option<u32>; 8]> {
         let mut constraints = vec![[None; 8]];
         for range in &self.argument_ranges {
@@ -59,6 +77,17 @@ impl Profile {
                 for value in range.min..=range.max {
                     let mut constraint = constraint;
                     constraint[range.index] = Some(value);
+                    expanded.push(constraint);
+                }
+            }
+            constraints = expanded;
+        }
+        for domain in &self.argument_values {
+            let mut expanded = Vec::new();
+            for constraint in constraints {
+                for value in &domain.values {
+                    let mut constraint = constraint;
+                    constraint[domain.index] = Some(*value);
                     expanded.push(constraint);
                 }
             }
@@ -132,6 +161,8 @@ struct ProfileInput {
     #[serde(default)]
     argument_ranges: Vec<ArgumentRangeInput>,
     #[serde(default)]
+    argument_values: Vec<ArgumentValuesInput>,
+    #[serde(default)]
     mmio_domains: Vec<MmioDomainInput>,
     #[serde(rename = "cases")]
     scenarios: Vec<ScenarioInput>,
@@ -143,6 +174,13 @@ struct ArgumentRangeInput {
     index: usize,
     min: u32,
     max: u32,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ArgumentValuesInput {
+    index: usize,
+    values: Vec<u32>,
 }
 
 #[derive(Deserialize)]
@@ -358,6 +396,15 @@ impl ProfileInput {
             })
             .collect::<Vec<_>>();
         argument_ranges.sort_by_key(|range| range.index);
+        let mut argument_values = self
+            .argument_values
+            .into_iter()
+            .map(|domain| ArgumentValues {
+                index: domain.index,
+                values: domain.values,
+            })
+            .collect::<Vec<_>>();
+        argument_values.sort_by_key(|domain| domain.index);
         let scenarios = self
             .scenarios
             .into_iter()
@@ -379,7 +426,12 @@ impl ProfileInput {
                 self.name
             )));
         }
-        validate_argument_domain(&self.name, &argument_ranges, &scenarios)?;
+        validation::validate_argument_domain(
+            &self.name,
+            &argument_ranges,
+            &argument_values,
+            &scenarios,
+        )?;
         let mut mmio_domains = self
             .mmio_domains
             .into_iter()
@@ -389,7 +441,13 @@ impl ProfileInput {
             })
             .collect::<Vec<_>>();
         mmio_domains.sort_by_key(|domain| domain.address);
-        validate_coverage_domain(&self.name, &argument_ranges, &mmio_domains, &scenarios)?;
+        validation::validate_coverage_domain(
+            &self.name,
+            &argument_ranges,
+            &argument_values,
+            &mmio_domains,
+            &scenarios,
+        )?;
         Ok(Profile {
             name: self.name,
             vendor_source: self.vendor_source,
@@ -398,91 +456,11 @@ impl ProfileInput {
             contract: self.contract,
             compare_return: self.compare_return,
             argument_ranges,
+            argument_values,
             mmio_domains,
             scenarios,
         })
     }
-}
-
-fn validate_coverage_domain(
-    profile: &str,
-    argument_ranges: &[ArgumentRange],
-    mmio_domains: &[MmioDomain],
-    scenarios: &[NamedScenario],
-) -> Result<()> {
-    const MAX_DOMAIN_CASES: usize = 4_096;
-
-    for pair in mmio_domains.windows(2) {
-        if pair[0].address == pair[1].address {
-            return Err(crate::Error::invalid(format!(
-                "profile {profile} repeats MMIO domain {:#010x}",
-                pair[0].address
-            )));
-        }
-    }
-    for domain in mmio_domains {
-        if domain.values.is_empty() {
-            return Err(crate::Error::invalid(format!(
-                "profile {profile} MMIO domain {:#010x} has no values",
-                domain.address
-            )));
-        }
-        let unique = domain.values.iter().copied().collect::<BTreeSet<_>>();
-        if unique.len() != domain.values.len() {
-            return Err(crate::Error::invalid(format!(
-                "profile {profile} MMIO domain {:#010x} repeats a value",
-                domain.address
-            )));
-        }
-    }
-
-    let stub = Profile {
-        name: String::new(),
-        vendor_source: String::new(),
-        vendor_symbol: String::new(),
-        rust_symbol: String::new(),
-        contract: ProfileContract::Scenario,
-        compare_return: false,
-        argument_ranges: argument_ranges.to_vec(),
-        mmio_domains: mmio_domains.to_vec(),
-        scenarios: Vec::new(),
-    };
-    let expected = stub.coverage_constraints();
-    if expected.len() > MAX_DOMAIN_CASES {
-        return Err(crate::Error::invalid(format!(
-            "profile {profile} combined argument/MMIO domain has {} cases; maximum is {MAX_DOMAIN_CASES}",
-            expected.len()
-        )));
-    }
-    for constraint in expected {
-        let covered = scenarios.iter().any(|scenario| {
-            argument_ranges.iter().all(|range| {
-                scenario.scenario.arguments.get(range.index).copied()
-                    == constraint.arguments[range.index]
-            }) && constraint
-                .stable_words
-                .iter()
-                .all(|(address, value)| scenario.scenario.mmio_initial.get(address) == Some(value))
-        });
-        if !covered {
-            let arguments = argument_ranges.iter().map(|range| {
-                format!(
-                    "a{}={:#x}",
-                    range.index,
-                    constraint.arguments[range.index].unwrap()
-                )
-            });
-            let words = constraint
-                .stable_words
-                .iter()
-                .map(|(address, value)| format!("mmio[{address:#010x}]={value:#010x}"));
-            return Err(crate::Error::invalid(format!(
-                "profile {profile} has no case for admissible coverage combination {}",
-                arguments.chain(words).collect::<Vec<_>>().join(", ")
-            )));
-        }
-    }
-    Ok(())
 }
 
 impl ScenarioInput {
@@ -555,153 +533,9 @@ impl ScenarioInput {
         if let Some(max_steps) = self.max_steps {
             output.scenario.max_steps = max_steps;
         }
-        validate_scenario(&output)?;
+        validation::validate_scenario(&output)?;
         Ok(output)
     }
-}
-
-fn validate_scenario(scenario: &NamedScenario) -> Result<()> {
-    for (side, goal, services) in [
-        (
-            "vendor",
-            &scenario.vendor_goal,
-            &scenario.vendor_fifo_services,
-        ),
-        ("Rust", &scenario.rust_goal, &scenario.rust_fifo_services),
-    ] {
-        if let crate::execution_model::ExecutionGoal::ObserveFifoDequeue { service_id, .. } = goal
-            && !services.iter().any(|service| &service.id == service_id)
-        {
-            return Err(crate::Error::invalid(format!(
-                "scenario {} {side} goal refers to missing FIFO service {service_id}",
-                scenario.name
-            )));
-        }
-    }
-    for instance in scenario
-        .vendor_memory_instances
-        .iter()
-        .chain(&scenario.rust_memory_instances)
-    {
-        if instance.id.is_empty() || instance.length == 0 {
-            return Err(crate::Error::invalid(
-                "memory instances require a non-empty id and non-zero length",
-            ));
-        }
-        instance
-            .base_address
-            .checked_add(instance.length)
-            .ok_or("memory instance range overflows the 32-bit address space")
-            .map_err(crate::Error::invalid)?;
-    }
-    for observation in scenario
-        .vendor_observations
-        .iter()
-        .chain(&scenario.rust_observations)
-    {
-        if observation.length() == 0 {
-            return Err(crate::Error::invalid(
-                "memory observation length must be non-zero",
-            ));
-        }
-    }
-    Ok(())
-}
-
-fn validate_argument_domain(
-    profile: &str,
-    ranges: &[ArgumentRange],
-    scenarios: &[NamedScenario],
-) -> Result<()> {
-    const MAX_DOMAIN_CASES: u64 = 4_096;
-
-    for pair in ranges.windows(2) {
-        if pair[0].index == pair[1].index {
-            return Err(crate::Error::invalid(format!(
-                "profile {profile} repeats arg-range {}",
-                pair[0].index
-            )));
-        }
-    }
-    let mut domain_size = 1_u64;
-    for range in ranges {
-        if range.index >= 8 {
-            return Err(crate::Error::invalid(format!(
-                "profile {profile} arg-range index exceeds RV32 ABI a0..a7"
-            )));
-        }
-        if range.min > range.max {
-            return Err(crate::Error::invalid(format!(
-                "profile {profile} arg-range {} has minimum above maximum",
-                range.index
-            )));
-        }
-        domain_size = domain_size
-            .checked_mul(u64::from(range.max) - u64::from(range.min) + 1)
-            .ok_or_else(|| format!("profile {profile} argument domain overflows"))
-            .map_err(crate::Error::invalid)?;
-        if domain_size > MAX_DOMAIN_CASES {
-            return Err(crate::Error::invalid(format!(
-                "profile {profile} argument domain has {domain_size} cases; maximum is {MAX_DOMAIN_CASES}"
-            )));
-        }
-    }
-
-    if ranges.is_empty() {
-        return Ok(());
-    }
-
-    let mut covered = BTreeSet::new();
-    for scenario in scenarios {
-        let mut projection = [None; 8];
-        for range in ranges {
-            let value = scenario
-                .scenario
-                .arguments
-                .get(range.index)
-                .copied()
-                .ok_or_else(|| {
-                    format!(
-                        "profile {profile} case {} does not provide constrained argument {}",
-                        scenario.name, range.index
-                    )
-                })
-                .map_err(crate::Error::invalid)?;
-            if !(range.min..=range.max).contains(&value) {
-                return Err(crate::Error::invalid(format!(
-                    "profile {profile} case {} argument {} value {value:#x} is outside {:#x}..={:#x}",
-                    scenario.name, range.index, range.min, range.max
-                )));
-            }
-            projection[range.index] = Some(value);
-        }
-        covered.insert(projection);
-    }
-
-    let profile_stub = Profile {
-        name: String::new(),
-        vendor_source: String::new(),
-        vendor_symbol: String::new(),
-        rust_symbol: String::new(),
-        contract: ProfileContract::Scenario,
-        compare_return: false,
-        argument_ranges: ranges.to_vec(),
-        mmio_domains: Vec::new(),
-        scenarios: Vec::new(),
-    };
-    for expected in profile_stub.coverage_argument_constraints() {
-        if !covered.contains(&expected) {
-            let values = ranges
-                .iter()
-                .map(|range| format!("a{}={:#x}", range.index, expected[range.index].unwrap()))
-                .collect::<Vec<_>>()
-                .join(", ");
-            return Err(crate::Error::invalid(format!(
-                "profile {profile} has no case for admissible argument combination {values}"
-            )));
-        }
-    }
-    Ok(())
 }
 
 #[tracing::instrument(name = "load_verification_profiles", fields(path = %path.display()))]

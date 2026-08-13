@@ -178,6 +178,19 @@ impl PacApiPack {
             require_size_access(&operation.name, binding, Access::ReadWrite, "read-write")?;
             require_ordinary(&operation.name, binding.info)?;
         }
+        for operation in &self.indexed_bit_set_modifies {
+            let binding = writable_register(
+                &device,
+                &operation.name,
+                &operation.peripheral,
+                &operation.register,
+            )?;
+            require_size_access(&operation.name, binding, Access::ReadWrite, "read-write")?;
+            require_ordinary(&operation.name, binding.info)?;
+            let field = field(&operation.name, binding.info, &operation.field)?;
+            require_full_field(&operation.name, field)?;
+            require_full_range(&operation.name, field, 32)?;
+        }
         for domain in &self.opaque_domains {
             // A register-specific opaque value domain is a type boundary, not
             // an access semantic. It is valid for ordinary, W1C and other

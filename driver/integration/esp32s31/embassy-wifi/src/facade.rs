@@ -39,6 +39,7 @@ pub struct Esp32s31Wifi {
     control: Esp32s31WifiControl,
     device: Esp32s31WifiDevice,
     monitor_frames: Esp32s31MonitorFrames,
+    access_point_status: crate::Esp32s31AccessPointStatus,
     #[cfg(feature = "qualification")]
     qualification: crate::Esp32s31QualificationSnapshot,
 }
@@ -49,6 +50,7 @@ pub struct Esp32s31WifiParts {
     pub control: Esp32s31WifiControl,
     pub device: Esp32s31WifiDevice,
     pub monitor_frames: Esp32s31MonitorFrames,
+    pub access_point_status: crate::Esp32s31AccessPointStatus,
     #[cfg(feature = "qualification")]
     pub qualification: crate::Esp32s31QualificationSnapshot,
 }
@@ -64,6 +66,7 @@ impl Esp32s31Wifi {
             control,
             device,
             monitor_frames,
+            access_point_status: crate::Esp32s31AccessPointStatus::new(),
             #[cfg(feature = "qualification")]
             qualification,
         }
@@ -74,6 +77,7 @@ impl Esp32s31Wifi {
             control: self.control,
             device: self.device,
             monitor_frames: self.monitor_frames,
+            access_point_status: self.access_point_status,
             #[cfg(feature = "qualification")]
             qualification: self.qualification,
         }

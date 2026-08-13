@@ -30,6 +30,21 @@ The repository cargo aliases use the optimized incremental `workbench`
 profile. Artifact-wide analysis at dev `opt-level=0` is intentionally not the
 normal product path: it is useful for debugging but is several times slower.
 
+When only one configured IR profile changed, use the focused project-aware
+engine instead of `project analyze`:
+
+```console
+cargo vendor-binary-workbench advanced ir build --profile PROFILE --jobs 1 \
+  --project /path/to/vendor-project.toml
+```
+
+This publishes only the selected bundle. It does not refresh aggregate review
+scopes because those scopes can depend on other profiles which were not
+reproduced. Run the complete pipeline only when the aggregate must be made
+current. The equivalent verification repair loop is `project verify --suite
+SUITE`; a focused run writes the selected per-suite report but not the complete
+aggregate verification report.
+
 Use `project doctor` first when diagnosing configuration, backend, catalog, or
 private-artifact readiness. Use write mode after changing inputs or the
 analyzer, and `project analyze --check` in CI when generated evidence is

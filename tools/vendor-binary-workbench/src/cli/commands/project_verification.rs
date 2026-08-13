@@ -8,7 +8,9 @@ use super::super::{
 use crate::{
     TargetSpec,
     application::generated_file,
-    project::{ProjectSpec, ProjectVerificationGate, VerificationSuiteSpec},
+    project::{
+        ProjectSpec, ProjectVerificationGate, VerificationSuiteSpec, VerificationVendorSelection,
+    },
     run_spec::{InputRole, RunSpec},
     verification::{
         ProjectVerificationReport, ProjectVerificationSuiteReport, RustArtifactInput,
@@ -227,7 +229,8 @@ fn suite_arguments(
         },
         ..VerifyInventoryArgs::default()
     };
-    for source in &suite.sources {
+    for vendor in &suite.vendor {
+        let source = &vendor.source;
         arguments.source_artifact.push(SourcePath {
             source: source.clone(),
             path: required_input(
@@ -248,11 +251,22 @@ fn suite_arguments(
                 path,
             });
         }
-        if let Some(prefix) = suite.source_prefixes.get(source) {
-            arguments.source_prefix.push(SourceValue {
-                source: source.clone(),
-                value: prefix.clone(),
-            });
+        match &vendor.selection {
+            VerificationVendorSelection::All => {}
+            VerificationVendorSelection::Prefix(prefix) => {
+                arguments.source_prefix.push(SourceValue {
+                    source: source.clone(),
+                    value: prefix.clone(),
+                });
+            }
+            VerificationVendorSelection::Symbols(symbols) => {
+                arguments
+                    .source_symbol
+                    .extend(symbols.iter().map(|symbol| SourceValue {
+                        source: source.clone(),
+                        value: symbol.clone(),
+                    }));
+            }
         }
     }
     Ok(arguments)

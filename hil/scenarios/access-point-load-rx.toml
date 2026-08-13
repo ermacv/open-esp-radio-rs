@@ -1,0 +1,25 @@
+schema = 3
+id = "access-point-load-rx"
+description = "Sustained legacy AP inbound ceiling and exact-delivery qualification"
+repetitions = 5
+image = "qualification"
+isolation = "reset"
+tags = ["qualification", "wifi", "access-point", "network", "load", "rx"]
+
+[workload]
+kind = "access-point"
+cycles = 2
+boots = 1
+timeout_seconds = 180
+
+[workload.traffic]
+kind = "udp"
+direction = "rx"
+duration_seconds = 60
+rx_rate_bps = 16000000
+payload_bytes = 1400
+
+[criteria]
+exact_delivery = true
+minimum_rx_bps = 15200000
+minimum_concurrent_ap_clients = 2

@@ -181,9 +181,11 @@ where
     {
         let ring = self.live_mut()?;
         let mut progress = Esp32s31PreconnectedRxProgress::default();
-        for index in 0..COUNT {
+        let frontier = ring.completed_descriptor_frontier();
+        for step in 0..frontier.descriptor_count {
+            let index = (frontier.start_index + step) % COUNT;
             let Some(completed) = storage.take_completed(ring, index)? else {
-                continue;
+                return Err(Esp32s31PreconnectedRxError::Ring(RxRingError::Corrupt));
             };
             progress.completed = progress.completed.saturating_add(1);
             match observe(completed.segment()) {

@@ -97,7 +97,6 @@ fn qualify(serial: &SerialCapture, lab: &LabConfig, options: &Options) -> Result
     if !capabilities.features.wifi_monitor_capture {
         return Err("firmware does not advertise typed monitor capture".into());
     }
-    serial.wait_for_connected_station(options.timeout)?;
     stop_station(serial, options.timeout)?;
     let channel = match options.channel {
         Some(channel) => channel,

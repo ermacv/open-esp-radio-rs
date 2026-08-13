@@ -178,9 +178,11 @@ impl<'storage, const COUNT: usize, const DMA_BUFFER_SIZE: usize, const DMA_STORA
             reload_pending: ring.poll_pending_reload(hardware)? == RxReloadObservation::Pending,
             ..Esp32s31RxRingServiceProgress::default()
         };
-        for index in 0..COUNT {
+        let frontier = ring.completed_descriptor_frontier();
+        for step in 0..frontier.descriptor_count {
+            let index = (frontier.start_index + step) % COUNT;
             let Some(completed) = self.storage.take_completed(ring, index)? else {
-                continue;
+                return Err(RxRingError::Corrupt.into());
             };
             progress.completed_descriptors = progress.completed_descriptors.saturating_add(1);
             observe(completed.segment());

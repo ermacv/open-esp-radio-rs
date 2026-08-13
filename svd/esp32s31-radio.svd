@@ -10706,6 +10706,12 @@
               <name>REQUESTS_UNKNOWN</name>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>4294967295</maximum>
+                </range>
+              </writeConstraint>
             </field>
           </fields>
         </register>
@@ -10739,7 +10745,7 @@
         </register>
         <register>
           <name>SHARED_RX_PTI</name>
-          <description>Shared low-nibble PTI word updated from the second argument by complete hal_set_rx_beacon_pti and hal_set_itwt_pti.</description>
+          <description>Shared receive PTI word updated from the second argument by complete hal_set_rx_beacon_pti and hal_set_itwt_pti. Both leaves preserve bits 31:4 and replace only bits 3:0.</description>
           <addressOffset>0xC</addressOffset>
           <size>0x20</size>
           <access>read-write</access>

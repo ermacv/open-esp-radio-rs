@@ -190,7 +190,10 @@ pub extern "C" fn open_wifi_key_role_trace_wdev_insert_key_entry(
     let temporal_key = [0_u8; 16];
     let outcome = match interface {
         0 => install_sta_pairwise_ccmp(&mut registers, peer, &temporal_key).map(|_| ()),
-        1 => install_ap_pairwise_ccmp(&mut registers, peer, &temporal_key).map(|_| ()),
+        // AID one is the smallest valid AP pairwise slot. The adapter reviews
+        // only the connection-context field, so the concrete slot must remain
+        // explicit rather than being inferred from the interface selector.
+        1 => install_ap_pairwise_ccmp(&mut registers, peer, 1, &temporal_key).map(|_| ()),
         _ => return 0,
     };
     match outcome {
@@ -283,29 +286,41 @@ pub extern "C" fn open_libpp_rx_trace_hal_mac_rx_set_dscr_reload() {
 #[unsafe(no_mangle)]
 #[inline(never)]
 pub extern "C" fn open_coex_trace_coex_hw_timer_enable(index: u32) {
+    let Some(timer) = open_esp_radio_esp32s31_pac::CoexTimerRegister::new(index as u8) else {
+        return;
+    };
     let mut registers = open_esp_radio_esp32s31_pac::validation::radio_registers();
-    let _ = registers.enable_coex_timer(index as u8);
+    registers.enable_coex_timer(timer);
 }
 
 #[unsafe(no_mangle)]
 #[inline(never)]
 pub extern "C" fn open_coex_trace_coex_hw_timer_disable(index: u32) {
+    let Some(timer) = open_esp_radio_esp32s31_pac::CoexTimerRegister::new(index as u8) else {
+        return;
+    };
     let mut registers = open_esp_radio_esp32s31_pac::validation::radio_registers();
-    let _ = registers.disable_coex_timer(index as u8);
+    registers.disable_coex_timer(timer);
 }
 
 #[unsafe(no_mangle)]
 #[inline(never)]
 pub extern "C" fn open_coex_trace_coex_hw_timer_force(index: u32) {
+    let Some(timer) = open_esp_radio_esp32s31_pac::CoexTimerRegister::new(index as u8) else {
+        return;
+    };
     let mut registers = open_esp_radio_esp32s31_pac::validation::radio_registers();
-    let _ = registers.force_coex_timer(index as u8);
+    registers.force_coex_timer(timer);
 }
 
 #[unsafe(no_mangle)]
 #[inline(never)]
 pub extern "C" fn open_coex_trace_coex_hw_timer_unforce(index: u32) {
+    let Some(timer) = open_esp_radio_esp32s31_pac::CoexTimerRegister::new(index as u8) else {
+        return;
+    };
     let mut registers = open_esp_radio_esp32s31_pac::validation::radio_registers();
-    let _ = registers.unforce_coex_timer(index as u8);
+    registers.unforce_coex_timer(timer);
 }
 
 /// Compiled production-path probe for the complete `coex_core_pti_get`
@@ -327,19 +342,45 @@ pub extern "C" fn open_coex_core_trace_pti_get(event: u32, output: *mut u8) -> u
     0
 }
 
+/// Compiled production-path probe for `coex_core_event_duration_get`.
+/// The vendor leaf accepts only the five events backed by `g_coex_param`,
+/// clears a non-null output for every other event, and uses `u32::MAX` as its
+/// invalid-argument status.
+#[unsafe(no_mangle)]
+#[inline(never)]
+pub extern "C" fn open_coex_core_trace_event_duration_get(event: u32, output: *mut u32) -> u32 {
+    if output.is_null() {
+        return u32::MAX;
+    }
+    let duration = open_esp_radio_esp32s31_coex::CoexEventId::new(event as u8)
+        .ok()
+        .and_then(|event| {
+            open_esp_radio_esp32s31_coex::CoexEventDurations::reviewed_vendor().duration(event)
+        });
+    // SAFETY: verification profiles provide a writable caller-owned output
+    // word and compare its final state with the vendor execution.
+    unsafe { output.write(duration.unwrap_or(0)) };
+    if duration.is_some() { 0 } else { u32::MAX }
+}
+
+/// Compiled production-path projection of the complete vendor event-to-timer
+/// switch. `0xff` is the exact unmapped sentinel returned by the vendor leaf.
+#[unsafe(no_mangle)]
+#[inline(never)]
+pub extern "C" fn open_coex_core_trace_timer_idx_get(event: u32) -> u32 {
+    let Ok(event) = open_esp_radio_esp32s31_coex::CoexEventId::new(event as u8) else {
+        return 0xff;
+    };
+    event
+        .timer_index()
+        .map_or(0xff, |index| u32::from(index.value()))
+}
+
 struct CoexProbeClock {
     is_real_chip: bool,
 }
 
 impl open_esp_radio_esp32s31_coex::CoexClockHardware for CoexProbeClock {
-    fn configure(
-        &mut self,
-        _selector: open_esp_radio_esp32s31_coex::CoexClockSelector,
-        _divisor: u16,
-    ) -> Result<(), open_esp_radio_esp32s31_coex::CoexError> {
-        Err(open_esp_radio_esp32s31_coex::CoexError::UnsupportedClock)
-    }
-
     fn sample(
         &mut self,
     ) -> Result<open_esp_radio_esp32s31_coex::CoexTimerClock, open_esp_radio_esp32s31_coex::CoexError>
@@ -366,7 +407,7 @@ impl open_esp_radio_esp32s31_coex::CoexClockHardware for CoexProbeClock {
 /// latency is written to the secondary word.
 #[unsafe(no_mangle)]
 #[inline(never)]
-pub extern "C" fn open_coex_trace_coex_hw_timer_set(
+pub extern "C" fn open_coex_set_trace_coex_hw_timer_set(
     index: u32,
     client: u32,
     pti: u32,
@@ -388,18 +429,79 @@ pub extern "C" fn open_coex_trace_coex_hw_timer_set(
         CoexClient::Wifi
     };
     let mut registers = open_esp_radio_esp32s31_pac::validation::radio_registers();
+    let mut timer = open_esp_radio_esp32s31_hal::coex::CoexTimerHal::new(&mut registers);
     let mut clock = CoexProbeClock {
         is_real_chip: is_real_chip != 0,
     };
     let _ = program_timer(
-        &mut registers,
-        &mut clock,
-        index,
-        client,
-        pti,
-        latency,
-        duration,
+        &mut timer, &mut clock, index, client, pti, latency, duration,
     );
+}
+
+/// Complete register projection of `coex_core_request` under the reviewed
+/// Rust lifecycle precondition that the COEX owner is enabled.
+#[unsafe(no_mangle)]
+#[inline(never)]
+pub extern "C" fn open_coex_core_trace_request(
+    client: u32,
+    event: u32,
+    latency: u32,
+    duration: u32,
+    is_real_chip: u32,
+) -> u32 {
+    use open_esp_radio_esp32s31_coex::{
+        CoexClient, CoexCore, CoexError, CoexEventId, CoexPtiTable, CoexRequest,
+    };
+
+    let Ok(event) = CoexEventId::new(event as u8) else {
+        return 0x102;
+    };
+    let client = if client == 0 {
+        CoexClient::Bluetooth
+    } else {
+        CoexClient::Wifi
+    };
+    let mut core = CoexCore::new(CoexPtiTable::reviewed_vendor());
+    core.enable();
+    let mut registers = open_esp_radio_esp32s31_pac::validation::radio_registers();
+    let mut timer = open_esp_radio_esp32s31_hal::coex::CoexTimerHal::new(&mut registers);
+    let mut clock = CoexProbeClock {
+        is_real_chip: is_real_chip != 0,
+    };
+    match core.request(
+        &mut timer,
+        &mut clock,
+        CoexRequest {
+            client,
+            event,
+            latency,
+            duration,
+        },
+    ) {
+        Ok(_) => 0,
+        Err(CoexError::InvalidEvent) => 0x102,
+        Err(_) => u32::MAX,
+    }
+}
+
+/// Complete register projection of `coex_core_release`. The vendor ABI keeps
+/// the client in `a0` but selects the timer exclusively from event `a1`.
+#[unsafe(no_mangle)]
+#[inline(never)]
+pub extern "C" fn open_coex_core_trace_release(_client: u32, event: u32) -> u32 {
+    use open_esp_radio_esp32s31_coex::{CoexCore, CoexError, CoexEventId, CoexPtiTable};
+
+    let Ok(event) = CoexEventId::new(event as u8) else {
+        return 0x102;
+    };
+    let mut core = CoexCore::new(CoexPtiTable::reviewed_vendor());
+    let mut registers = open_esp_radio_esp32s31_pac::validation::radio_registers();
+    let mut timer = open_esp_radio_esp32s31_hal::coex::CoexTimerHal::new(&mut registers);
+    match core.release(&mut timer, event) {
+        Ok(_) => 0,
+        Err(CoexError::InvalidEvent) => 0x102,
+        Err(_) => u32::MAX,
+    }
 }
 
 /// Compiled composition probe for the source-owned RX append transaction.
@@ -828,7 +930,7 @@ pub extern "C" fn open_libpp_tx_trace_hal_mac_tx_config_edca(
     queue: u32,
     aifsn: u32,
     contention_window: u32,
-    interface: u32,
+    interface: open_esp_radio_esp32s31_pac::MacInterface,
 ) -> u32 {
     // The vendor side decodes these semantic arguments from its pointer-rich
     // ABI object. The Rust probe receives the reviewed projection directly;
@@ -840,7 +942,7 @@ pub extern "C" fn open_libpp_tx_trace_hal_mac_tx_config_edca(
         queue,
         aifsn as u8,
         contention_window as u16,
-        interface as u8,
+        interface,
     )
 }
 
@@ -871,6 +973,64 @@ pub extern "C" fn open_libpp_tx_trace_hal_mac_tx_get_blockack(
         (*output).bitmap_high = payload.bitmap_high;
     }
     0
+}
+
+#[unsafe(no_mangle)]
+#[inline(never)]
+pub extern "C" fn open_libpp_interface_trace_hal_mac_set_addr(interface: u32, address: &[u8; 6]) {
+    open_esp_radio_esp32s31_pac::validation::hal_mac_set_addr(interface, address);
+}
+
+#[unsafe(no_mangle)]
+#[inline(never)]
+pub extern "C" fn open_libpp_interface_trace_hal_mac_set_bssid(interface: u32, address: &[u8; 6]) {
+    open_esp_radio_esp32s31_pac::validation::hal_mac_set_bssid(interface, address);
+}
+
+#[unsafe(no_mangle)]
+#[inline(never)]
+pub extern "C" fn open_libpp_coex_trace_hal_set_rx_beacon_pti(beacon: u32, shared: u32) {
+    open_esp_radio_esp32s31_pac::validation::hal_set_rx_beacon_pti(beacon, shared);
+}
+
+#[unsafe(no_mangle)]
+#[inline(never)]
+pub extern "C" fn open_libpp_coex_trace_hal_clear_rx_beacon_pti() {
+    open_esp_radio_esp32s31_pac::validation::hal_clear_rx_beacon_pti();
+}
+
+#[unsafe(no_mangle)]
+#[inline(never)]
+pub extern "C" fn open_libpp_coex_trace_hal_set_itwt_pti(control: u32, shared: u32) {
+    open_esp_radio_esp32s31_pac::validation::hal_set_itwt_pti(control, shared);
+}
+
+#[unsafe(no_mangle)]
+#[inline(never)]
+pub extern "C" fn open_libpp_coex_trace_hal_clr_itwt_pti(index: u32) {
+    open_esp_radio_esp32s31_pac::validation::hal_clr_itwt_pti(index);
+}
+
+#[unsafe(no_mangle)]
+#[inline(never)]
+pub extern "C" fn open_libpp_coex_trace_hal_set_tx_pti(
+    queue: u32,
+    scheduler_priority: u32,
+    pti_2: u32,
+    pti_1: u32,
+    pti_0: u32,
+    pti_3: u32,
+    count: u32,
+) {
+    open_esp_radio_esp32s31_pac::validation::hal_set_tx_pti(
+        queue,
+        scheduler_priority,
+        pti_2,
+        pti_1,
+        pti_0,
+        pti_3,
+        count,
+    );
 }
 
 #[unsafe(no_mangle)]
@@ -1800,8 +1960,12 @@ pub fn retain_all_probes() {
     core::hint::black_box(open_coex_trace_coex_hw_timer_disable as *const ());
     core::hint::black_box(open_coex_trace_coex_hw_timer_force as *const ());
     core::hint::black_box(open_coex_trace_coex_hw_timer_unforce as *const ());
-    core::hint::black_box(open_coex_trace_coex_hw_timer_set as *const ());
+    core::hint::black_box(open_coex_set_trace_coex_hw_timer_set as *const ());
     core::hint::black_box(open_coex_core_trace_pti_get as *const ());
+    core::hint::black_box(open_coex_core_trace_event_duration_get as *const ());
+    core::hint::black_box(open_coex_core_trace_timer_idx_get as *const ());
+    core::hint::black_box(open_coex_core_trace_request as *const ());
+    core::hint::black_box(open_coex_core_trace_release as *const ());
     core::hint::black_box(open_libpp_rx_trace_wdev_append_rx_blocks as *const ());
     core::hint::black_box(open_libnet80211_trace_sta_join_state as *const ());
     core::hint::black_box(open_libpp_tx_trace_hal_mac_tx_set_cca as *const ());
@@ -1813,6 +1977,13 @@ pub fn retain_all_probes() {
     core::hint::black_box(open_libpp_tx_trace_hal_mac_txq_enable_register_slice as *const ());
     core::hint::black_box(open_libpp_tx_trace_hal_mac_tx_config_edca as *const ());
     core::hint::black_box(open_libpp_tx_trace_hal_mac_tx_get_blockack as *const ());
+    core::hint::black_box(open_libpp_interface_trace_hal_mac_set_addr as *const ());
+    core::hint::black_box(open_libpp_interface_trace_hal_mac_set_bssid as *const ());
+    core::hint::black_box(open_libpp_coex_trace_hal_set_rx_beacon_pti as *const ());
+    core::hint::black_box(open_libpp_coex_trace_hal_clear_rx_beacon_pti as *const ());
+    core::hint::black_box(open_libpp_coex_trace_hal_set_itwt_pti as *const ());
+    core::hint::black_box(open_libpp_coex_trace_hal_clr_itwt_pti as *const ());
+    core::hint::black_box(open_libpp_coex_trace_hal_set_tx_pti as *const ());
     core::hint::black_box(
         open_libpp_power_trace_pwr_hal_set_mac_modem_beacon_miss_timeout as *const (),
     );

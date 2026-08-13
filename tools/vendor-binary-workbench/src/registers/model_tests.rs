@@ -35,9 +35,9 @@ fn checked_esp32s31_model_preserves_expanded_register_identities() {
     let api =
         PacApiPack::load(&root.join("verification/vendor/targets/esp32s31/registers/api.toml"))
             .unwrap();
-    assert_eq!(api.operation_count(), 92);
-    assert_eq!(api.domain_count(), 31);
-    assert_eq!(api.source_ids().len(), 47);
+    assert_eq!(api.operation_count(), 97);
+    assert_eq!(api.domain_count(), 40);
+    assert_eq!(api.source_ids().len(), 49);
     api.validate_against_svd(&output).unwrap();
     let helpers = api.render_rust(&output).unwrap();
     for module in [
@@ -73,7 +73,7 @@ fn checked_esp32s31_model_preserves_expanded_register_identities() {
         .map(|name| evidence_root.join(name)),
     )
     .unwrap();
-    assert_eq!(evidence.sources.len(), 216);
+    assert_eq!(evidence.sources.len(), 217);
     assert_eq!(evidence.ranges.len(), 14);
     assert_eq!(evidence.confidence_levels.len(), 6);
     evidence

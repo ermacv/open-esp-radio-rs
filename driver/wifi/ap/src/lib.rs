@@ -3,7 +3,7 @@
 
 //! Executor- and chip-independent access-point protocol owner.
 //!
-//! This crate deliberately implements one bounded WPA2-Personal peer. Frame
+//! This crate implements a bounded WPA2-Personal peer table. Frame
 //! codecs remain in `open-esp-radio-ieee80211`; MMIO, DMA, IRQ, hardware key
 //! slots and Embassy deadlines remain in chip/runtime crates.
 
@@ -13,6 +13,8 @@ extern crate std;
 pub mod service;
 
 pub use service::{
-    AP_ASSOCIATION_ID, AP_STATUS_INVALID_RSN, AP_STATUS_SUCCESS, AP_STATUS_TOO_MANY_STATIONS,
-    AccessPointService, ApMlmeAction, ApPeerPhase, ApServiceError, ApWpa2Error, ApWpa2Progress,
+    AP_MAX_CLIENTS, AP_STATUS_INVALID_RSN, AP_STATUS_SUCCESS, AP_STATUS_TOO_MANY_STATIONS,
+    AccessPointClientLimit, AccessPointClientLimitError, AccessPointPeerStorage,
+    AccessPointService, AccessPointServiceStatus, ApMlmeAction, ApPeerPhase, ApPeerStatus,
+    ApServiceError, ApWpa2Error, ApWpa2Progress,
 };

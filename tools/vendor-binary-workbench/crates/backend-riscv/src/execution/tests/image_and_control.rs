@@ -180,6 +180,53 @@ fn coverage_preserves_riscv_callee_saved_constants_across_calls() {
 }
 
 #[test]
+fn coverage_resolves_a_concrete_jump_target_loaded_from_immutable_elf_data() {
+    let mut image = tiny_image(
+        vec![
+            0xb7, 0x22, 0x00, 0x00, // lui t0, 0x2 (0x2000)
+            0x83, 0xa2, 0x02, 0x00, // lw t0, 0(t0)
+            0x67, 0x80, 0x02, 0x00, // jalr zero, 0(t0)
+            0x67, 0x80, 0x00, 0x00, // selected case: ret
+        ],
+        16,
+    );
+    image.segments.push(Segment {
+        address: 0x2000,
+        bytes: 0x100c_u32.to_le_bytes().to_vec(),
+        memory_size: 4,
+        writable: false,
+    });
+
+    let inventory = image.coverage_inventory("test").unwrap();
+    assert!(inventory.unresolved_edges.is_empty());
+
+    let result = execute(&image, &empty_svd(), "test", Scenario::default()).unwrap();
+    assert_eq!(result.return_value, 0);
+}
+
+#[test]
+fn coverage_does_not_treat_mutable_elf_data_as_a_jump_table_constant() {
+    let mut image = tiny_image(
+        vec![
+            0xb7, 0x22, 0x00, 0x00, // lui t0, 0x2 (0x2000)
+            0x83, 0xa2, 0x02, 0x00, // lw t0, 0(t0)
+            0x67, 0x80, 0x02, 0x00, // jalr zero, 0(t0)
+            0x67, 0x80, 0x00, 0x00, // possible case: ret
+        ],
+        16,
+    );
+    image.segments.push(Segment {
+        address: 0x2000,
+        bytes: 0x100c_u32.to_le_bytes().to_vec(),
+        memory_size: 4,
+        writable: true,
+    });
+
+    let inventory = image.coverage_inventory("test").unwrap();
+    assert_eq!(inventory.unresolved_edges.len(), 1);
+}
+
+#[test]
 fn coverage_treats_compiler_arithmetic_runtime_as_an_atomic_operation() {
     let mut image = direct_call_closure_image(
         [0x67, 0x80, 0x00, 0x00, 0x67, 0x80, 0x00, 0x00],

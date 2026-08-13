@@ -3,7 +3,7 @@ use core::fmt;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-pub const PROTOCOL_VERSION: u16 = 39;
+pub const PROTOCOL_VERSION: u16 = 40;
 // Keep command envelopes small: startup artifacts are transferred as an
 // ordered CRC-protected stream, so a large per-command inline buffer only
 // inflates UART queues and executor futures without improving semantics.
@@ -604,12 +604,13 @@ pub struct WifiRoleFailureEvidence {
 
 /// Complete target-neutral configuration for the first AP role.
 ///
-/// Beacon interval (100 TU), DTIM period (2), HT20 width and the one-peer
-/// limit are driver guarantees rather than HIL tuning parameters.
+/// Beacon interval (100 TU), DTIM period (2) and 20 MHz width are driver
+/// guarantees. Client admission remains explicit test input.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct WifiAccessPointRequest {
     pub credentials: NetworkCredentials,
     pub channel: u8,
+    pub client_limit: u8,
     /// IP configuration owned by the HIL application while the AP role is
     /// active. This is deliberately outside the radio-driver request.
     pub ipv4: NetworkIpv4Configuration,
@@ -622,6 +623,9 @@ impl WifiAccessPointRequest {
             .map_err(WifiAccessPointRequestError::Credentials)?;
         if !(1..=13).contains(&self.channel) {
             return Err(WifiAccessPointRequestError::Channel);
+        }
+        if !(1..=15).contains(&self.client_limit) {
+            return Err(WifiAccessPointRequestError::ClientLimit);
         }
         if !matches!(
             self.ipv4,
@@ -638,6 +642,7 @@ impl WifiAccessPointRequest {
 pub enum WifiAccessPointRequestError {
     Credentials(NetworkCredentialsError),
     Channel,
+    ClientLimit,
     Ipv4,
 }
 
@@ -646,6 +651,7 @@ impl fmt::Display for WifiAccessPointRequestError {
         match self {
             Self::Credentials(error) => error.fmt(formatter),
             Self::Channel => formatter.write_str("AP channel must be in 1..=13"),
+            Self::ClientLimit => formatter.write_str("AP client limit must be in 1..=15"),
             Self::Ipv4 => formatter
                 .write_str("AP mode requires a valid gateway-free static IPv4 configuration"),
         }
@@ -849,7 +855,12 @@ pub struct WifiAccessPointEvidence {
     pub maximum_network_backpressure_micros: u32,
     pub authentication_responses: u32,
     pub association_responses: u32,
+    /// Successful controlled-port openings, including re-authorizations.
     pub authorized_peers: u32,
+    /// Maximum number of peers admitted at the same time.
+    pub maximum_associated_peers: u8,
+    /// Maximum number of controlled ports open at the same time.
+    pub maximum_authorized_peers: u8,
     pub peer_removals: u32,
     pub completed_rx_descriptors: u32,
     pub ignored_rx_frames: u32,

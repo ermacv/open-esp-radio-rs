@@ -11,6 +11,7 @@ use open_esp_radio_ieee80211::{
     channel::{WifiChannel, WifiChannelWidth},
     ssid::WifiSsid,
 };
+pub use open_esp_radio_wifi_ap::{AccessPointClientLimit, AccessPointClientLimitError};
 use open_esp_radio_wifi_softmac::{
     MacServiceCapabilities, WifiAccessPointConfig, WifiConfig, WifiConfigError, WifiStationConfig,
 };
@@ -121,26 +122,29 @@ impl fmt::Debug for AccessPointSecurity {
     }
 }
 
-/// Complete owned policy for the first supported AP service epoch.
+/// Complete owned policy for one AP service epoch.
 ///
 /// Beacon cadence, DTIM and peer capacity are implementation guarantees, not
-/// tuning switches: 100 TU, DTIM period 2 and one associated client. Wider
-/// channels are rejected before any hardware owner moves.
+/// tuning switches: 100 TU, DTIM period 2 and a validated admission limit of
+/// 1..=15 clients. Wider channels are rejected before any hardware owner
+/// moves.
 pub struct AccessPointRequest {
     ssid: WifiSsid,
     security: AccessPointSecurity,
     channel: WifiChannel,
+    client_limit: AccessPointClientLimit,
 }
 
 impl AccessPointRequest {
     pub const BEACON_INTERVAL_TU: u16 = 100;
     pub const DTIM_PERIOD: u8 = 2;
-    pub const PEER_CAPACITY: usize = 1;
+    pub const PEER_CAPACITY: usize = AccessPointClientLimit::MAX as usize;
 
     pub fn new(
         ssid: WifiSsid,
         security: AccessPointSecurity,
         channel: WifiChannel,
+        client_limit: AccessPointClientLimit,
     ) -> Result<Self, AccessPointRequestError> {
         if channel.width() != WifiChannelWidth::Mhz20 {
             return Err(AccessPointRequestError::UnsupportedChannelWidth);
@@ -152,6 +156,7 @@ impl AccessPointRequest {
             ssid,
             security,
             channel,
+            client_limit,
         })
     }
 
@@ -167,8 +172,19 @@ impl AccessPointRequest {
         self.channel
     }
 
-    pub fn into_parts(self) -> (WifiSsid, AccessPointSecurity, WifiChannel) {
-        (self.ssid, self.security, self.channel)
+    pub const fn client_limit(&self) -> AccessPointClientLimit {
+        self.client_limit
+    }
+
+    pub fn into_parts(
+        self,
+    ) -> (
+        WifiSsid,
+        AccessPointSecurity,
+        WifiChannel,
+        AccessPointClientLimit,
+    ) {
+        (self.ssid, self.security, self.channel, self.client_limit)
     }
 }
 
@@ -179,6 +195,7 @@ impl fmt::Debug for AccessPointRequest {
             .field("ssid", &self.ssid)
             .field("security", &self.security)
             .field("channel", &self.channel)
+            .field("client_limit", &self.client_limit)
             .finish()
     }
 }
@@ -193,11 +210,11 @@ impl fmt::Display for AccessPointRequestError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::UnsupportedChannelWidth => {
-                formatter.write_str("the first access-point service supports only 20 MHz")
+                formatter.write_str("the current access-point service supports only 20 MHz")
             }
             Self::UnsupportedPrimaryChannel(channel) => write!(
                 formatter,
-                "the first access-point service does not support primary channel {channel}"
+                "the current access-point service does not support primary channel {channel}"
             ),
         }
     }
@@ -797,6 +814,8 @@ mod tests {
             station_group_ccmp_slots: 1,
             access_point_pairwise_ccmp_slots: 0,
             access_point_group_ccmp_slots: 0,
+            access_point_association_entries: 0,
+            access_point_encrypted_clients: 0,
         },
     };
 
@@ -812,8 +831,10 @@ mod tests {
             protocol_validated_monitor_tap: false,
         },
         resources: MacResourceLimits {
-            access_point_pairwise_ccmp_slots: 1,
+            access_point_pairwise_ccmp_slots: 15,
             access_point_group_ccmp_slots: 1,
+            access_point_association_entries: 15,
+            access_point_encrypted_clients: 15,
             ..TEST_CAPABILITIES.resources
         },
         ..TEST_CAPABILITIES
@@ -839,6 +860,7 @@ mod tests {
                 Pmk::derive(b"password", b"test-access-point").unwrap(),
             ),
             WifiChannel::mhz20(6).unwrap(),
+            AccessPointClientLimit::new(4).unwrap(),
         )
         .unwrap()
     }
@@ -857,7 +879,8 @@ mod tests {
         assert_eq!(request.channel().primary(), 6);
         assert_eq!(AccessPointRequest::BEACON_INTERVAL_TU, 100);
         assert_eq!(AccessPointRequest::DTIM_PERIOD, 2);
-        assert_eq!(AccessPointRequest::PEER_CAPACITY, 1);
+        assert_eq!(AccessPointRequest::PEER_CAPACITY, 15);
+        assert_eq!(request.client_limit().get(), 4);
         let debug = std::format!("{request:?}");
         assert!(debug.contains("<redacted>"));
         assert!(!debug.contains("password"));
@@ -866,6 +889,7 @@ mod tests {
             WifiSsid::new(b"wide").unwrap(),
             AccessPointSecurity::wpa2_personal(Pmk::derive(b"password", b"wide").unwrap()),
             WifiChannel::new_2_4_ghz(6, WifiChannelWidth::Mhz40Above).unwrap(),
+            AccessPointClientLimit::new(4).unwrap(),
         )
         .unwrap_err();
         assert_eq!(wide, AccessPointRequestError::UnsupportedChannelWidth);

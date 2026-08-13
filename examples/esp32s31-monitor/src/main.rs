@@ -57,7 +57,7 @@ fn main() -> ! {
 
 #[embassy_executor::task]
 async fn monitor_task(
-    spawner: embassy_executor::Spawner,
+    _spawner: embassy_executor::Spawner,
     platform: EspHalRadioPeripheral,
     trng: Trng,
 ) {
@@ -77,9 +77,14 @@ async fn monitor_task(
         },
         WifiChannel::mhz20(1).expect("initial channel is valid"),
     );
-    let (radio, runner) = new(spawner.make_send(), platform, trng, config)
-        .await
-        .expect("radio initialization must succeed once");
+    let open_esp_radio_esp32s31_embassy_wifi::Esp32s31RadioSystem { radio, runners } =
+        new(platform, trng, config)
+            .await
+            .expect("radio initialization must succeed once");
+    let open_esp_radio_esp32s31_embassy_wifi::Esp32s31RadioRunners {
+        hardware: radio_runner,
+        wifi_protocol,
+    } = runners;
     let open_esp_radio_esp32s31_embassy_wifi::Esp32s31RadioParts {
         wifi,
         initialization: _,
@@ -88,6 +93,7 @@ async fn monitor_task(
         control: wifi,
         device: _,
         monitor_frames: frames,
+        access_point_status: _,
     } = wifi.into_parts();
     let application = async move {
         let _monitor = wifi
@@ -115,6 +121,7 @@ async fn monitor_task(
             }
         }
     };
-    let (_application, never) = embassy_futures::join::join(application, runner.run()).await;
-    match never {}
+    let (_application, hardware_never, _protocol_never) =
+        embassy_futures::join::join3(application, radio_runner.run(), wifi_protocol.run()).await;
+    match hardware_never {}
 }

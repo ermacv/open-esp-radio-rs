@@ -76,16 +76,25 @@ struct RawAccessPointConfig {
     ssid: String,
     passphrase: String,
     channel: u8,
+    #[serde(default = "default_ap_client_limit")]
+    client_limit: u8,
     target_address: String,
     client_address: String,
+    secondary_client_address: Option<String>,
+}
+
+const fn default_ap_client_limit() -> u8 {
+    4
 }
 
 pub(crate) struct AccessPointConfig {
     ssid: Zeroizing<String>,
     passphrase: Zeroizing<String>,
     channel: u8,
+    client_limit: u8,
     target_address: Ipv4Addr,
     client_address: Ipv4Addr,
+    secondary_client_address: Option<Ipv4Addr>,
     prefix_length: u8,
 }
 
@@ -166,6 +175,9 @@ impl LabConfig {
         if !(1..=13).contains(&raw.access_point.channel) {
             return Err("HIL access-point channel must be in 1..=13".into());
         }
+        if !(1..=15).contains(&raw.access_point.client_limit) {
+            return Err("HIL access-point client_limit must be in 1..=15".into());
+        }
         let (target_address, target_prefix) = parse_cidr(
             "access_point.target_address",
             &raw.access_point.target_address,
@@ -180,6 +192,22 @@ impl LabConfig {
         {
             return Err(
                 "HIL AP target/client addresses must be distinct hosts in one IPv4 subnet".into(),
+            );
+        }
+        let secondary_client_address = raw
+            .access_point
+            .secondary_client_address
+            .as_deref()
+            .map(|address| parse_cidr("access_point.secondary_client_address", address))
+            .transpose()?;
+        if let Some((secondary, prefix)) = secondary_client_address
+            && (prefix != target_prefix
+                || secondary == target_address
+                || secondary == client_address
+                || subnet(secondary, prefix) != subnet(target_address, target_prefix))
+        {
+            return Err(
+                "HIL secondary AP client must be a distinct host in the target AP subnet".into(),
             );
         }
         let ipv4 = parse_ipv4(raw.station.ipv4.clone())?;
@@ -242,8 +270,10 @@ impl LabConfig {
             ssid: Zeroizing::new(std::mem::take(&mut raw.access_point.ssid)),
             passphrase: Zeroizing::new(std::mem::take(&mut raw.access_point.passphrase)),
             channel: raw.access_point.channel,
+            client_limit: raw.access_point.client_limit,
             target_address,
             client_address,
+            secondary_client_address: secondary_client_address.map(|(address, _)| address),
             prefix_length: target_prefix,
         };
         Ok(Self {
@@ -302,8 +332,10 @@ impl LabConfig {
                 ssid: Zeroizing::new(String::from("test-device-ap")),
                 passphrase: Zeroizing::new(String::from("test-password")),
                 channel: 6,
+                client_limit: 4,
                 target_address: Ipv4Addr::new(10, 43, 0, 1),
                 client_address: Ipv4Addr::new(10, 43, 0, 2),
+                secondary_client_address: Some(Ipv4Addr::new(10, 43, 0, 3)),
                 prefix_length: 24,
             },
             station_fixture: StationFixtureConfig::OpenWrt(OpenWrtConfig {
@@ -383,6 +415,7 @@ impl AccessPointConfig {
             )
             .map_err(|error| format!("invalid HIL AP credentials: {error}"))?,
             channel: self.channel,
+            client_limit: self.client_limit,
             ipv4: NetworkIpv4Configuration::Static {
                 address: self.target_address.octets(),
                 prefix_length: self.prefix_length,
@@ -399,6 +432,10 @@ impl AccessPointConfig {
         self.channel
     }
 
+    pub(crate) const fn client_limit(&self) -> u8 {
+        self.client_limit
+    }
+
     pub(crate) const fn target_address(&self) -> Ipv4Addr {
         self.target_address
     }
@@ -409,6 +446,11 @@ impl AccessPointConfig {
 
     pub(crate) fn client_cidr(&self) -> String {
         format!("{}/{}", self.client_address, self.prefix_length)
+    }
+
+    pub(crate) fn secondary_client_cidr(&self) -> Option<String> {
+        self.secondary_client_address
+            .map(|address| format!("{address}/{}", self.prefix_length))
     }
 }
 

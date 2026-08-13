@@ -123,7 +123,7 @@ use open_esp_radio_esp32s31_wifi_esp_hal::{
     EspHalRadioPeripheral, mac_interrupt_epoch::EspHalMacInterruptRoute,
 };
 use open_esp_radio_wifi_embassy::await_stack_boundary;
-use static_cell::StaticCell;
+use static_cell::{ConstStaticCell, StaticCell};
 
 #[cfg(feature = "qualification")]
 use crate::connected::configure_mac_irq_observer;
@@ -193,6 +193,24 @@ static WIFI_MEMORY: Esp32s31DefaultWifiMemory<CriticalSectionRawMutex> =
 // intermediate during construction.
 static TX_SLOT_STORAGE: StaticCell<TxSlot<TX_BUFFER_SIZE>> = StaticCell::new();
 static TX_STATE: StaticCell<TxStorage> = StaticCell::new();
+// Fifteen WPA2 peer state machines exceed the permitted cooperative task
+// frame. They are CPU-only state (not DMA descriptors), so a separate normal
+// static keeps them out of both task stacks and the DMA-only WIFI_MEMORY arena.
+static AP_PEER_STORAGE: ConstStaticCell<open_esp_radio::wifi::ap::AccessPointPeerStorage> =
+    ConstStaticCell::new(open_esp_radio::wifi::ap::AccessPointPeerStorage::new());
+// Per-peer retry/sequence history is another AP-epoch table. Its address must
+// stay stable while RX processing awaits IRQ and network work.
+static AP_RX_DISPATCHER: StaticCell<
+    open_esp_radio::esp32s31::wifi::ap::rx::Esp32s31ApRxDispatcher,
+> = StaticCell::new();
+// Hardware pairwise-key capabilities are stable epoch state. Keeping their
+// bounded table static avoids duplicating all 15 tokens in async rollback
+// variants while `stop` still clears every hardware slot before returning it.
+static AP_PAIRWISE_KEYS: ConstStaticCell<
+    open_esp_radio::esp32s31::wifi::ap::security::Esp32s31ApPairwiseKeyStorage,
+> = ConstStaticCell::new(
+    open_esp_radio::esp32s31::wifi::ap::security::Esp32s31ApPairwiseKeyStorage::new(),
+);
 
 #[derive(Clone, Copy, Debug, Default)]
 struct ProductionScanObserver;
@@ -2174,6 +2192,20 @@ pub async fn new(
         ProductionAccessPointResources {
             address: access_point_mac.bytes(),
             beacon: memory.ap_beacon,
+            peer_storage: AP_PEER_STORAGE.take(),
+            pairwise_storage: AP_PAIRWISE_KEYS.take(),
+            rx_dispatcher: AP_RX_DISPATCHER.init_with(|| {
+                open_esp_radio::esp32s31::wifi::ap::rx::Esp32s31ApRxDispatcher::new(
+                    open_esp_radio::esp32s31::wifi::ap::rx::Esp32s31ApRxConfig {
+                        access_point: access_point_mac.bytes(),
+                        ingress: open_esp_radio::esp32s31::wifi::mac::rx::RxIngressConfig {
+                            ring_entry_limit: 1,
+                            csi_config: 0,
+                            flags: 0,
+                        },
+                    },
+                )
+            }),
         },
         monitor.role,
     );

@@ -71,6 +71,14 @@ struct ClockModel {
     operations: OperationTrace,
 }
 
+struct FailingClock;
+
+impl CoexClockHardware for FailingClock {
+    fn sample(&mut self) -> Result<CoexTimerClock, CoexError> {
+        Err(CoexError::UnsupportedClock)
+    }
+}
+
 impl CoexClockHardware for ClockModel {
     fn sample(&mut self) -> Result<CoexTimerClock, CoexError> {
         self.samples += 1;
@@ -252,6 +260,29 @@ fn unmapped_events_return_vendor_invalid_event_without_hardware_effects() {
     );
     assert!(hardware.operations.borrow().is_empty());
     assert_eq!(clock.samples, 0);
+}
+
+#[test]
+fn unsupported_clock_never_publishes_an_active_timer() {
+    let mut core = CoexCore::new(CoexPtiTable::reviewed_vendor());
+    let mut hardware = TimerModel::default();
+    core.enable();
+
+    assert_eq!(
+        core.request(
+            &mut hardware,
+            &mut FailingClock,
+            CoexRequest {
+                client: CoexClient::Wifi,
+                event: CoexEventId::new(1).unwrap(),
+                latency: 2,
+                duration: 3,
+            },
+        ),
+        Err(CoexError::UnsupportedClock)
+    );
+    assert_eq!(hardware.enabled, 0);
+    assert_eq!(core.status().active_timers, 0);
 }
 
 #[test]

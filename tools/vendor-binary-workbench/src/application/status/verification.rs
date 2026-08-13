@@ -65,8 +65,8 @@ fn suite_inputs(
         if let Some(role) = &suite.rust_companion_role {
             required.insert(role.clone());
         }
-        for source in &suite.sources {
-            required.insert(InputRole::SourceArtifact(source.clone()));
+        for vendor in &suite.vendor {
+            required.insert(InputRole::SourceArtifact(vendor.source.clone()));
         }
     }
     let missing = required
@@ -266,27 +266,29 @@ fn last_report(
     if report.schema_version != PROJECT_VERIFICATION_REPORT_SCHEMA
         || report.command != "project verify"
         || report.project != project_id
-        || !report.complete_project_run
-        || report.suites.len() != workspace.suites.len()
     {
         return Component::new("last-verification", Readiness::Invalid)
             .detail("path", workspace.report.display().to_string())
-            .diagnostic("project verification report does not describe this complete project");
+            .diagnostic("project verification report has an incompatible identity or schema");
     }
     let expected_suite_ids = workspace
         .suites
         .iter()
         .map(|suite| suite.id.as_str())
         .collect::<BTreeSet<_>>();
-    let stored_suite_ids = report
+    let reported_suite_ids = report
         .suites
         .iter()
         .map(|suite| suite.id.as_str())
         .collect::<BTreeSet<_>>();
-    if stored_suite_ids != expected_suite_ids {
+    if !report.complete_project_run || reported_suite_ids != expected_suite_ids {
         return Component::new("last-verification", Readiness::Incomplete)
             .detail("path", workspace.report.display().to_string())
-            .diagnostic("project verification report has a stale suite selection")
+            .detail("expected_suites", expected_suite_ids.len())
+            .detail("reported_suites", reported_suite_ids.len())
+            .diagnostic(
+                "aggregate verification report is partial or stale for the current suite set",
+            )
             .next_action(format!(
                 "run `vendor-binary-workbench project verify --project {}`",
                 project_path.display()

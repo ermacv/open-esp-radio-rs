@@ -415,6 +415,8 @@ mod tests {
                 station_group_ccmp_slots: 1,
                 access_point_pairwise_ccmp_slots: 1,
                 access_point_group_ccmp_slots: 1,
+                access_point_association_entries: 1,
+                access_point_encrypted_clients: 1,
             },
         }
     }

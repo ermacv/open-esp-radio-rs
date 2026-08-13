@@ -362,3 +362,30 @@ status = "reviewed"
 name = "event_46_duration"
 display-type = "u32"
 description = "Duration returned for event forty-six."
+
+[[types]]
+id = "wifi-interface-control"
+name = "WifiInterfaceControl"
+description = "Reviewed projections of the linked g_ic control object; field names describe observed use and do not assert the original vendor C layout."
+
+[[types.bindings]]
+profile = "wifi-sta-lifecycle"
+source = "wifi-sta-lifecycle"
+name = "station_lifecycle_g_ic"
+kind = "global"
+symbol = "g_ic"
+
+[[types.bindings]]
+profile = "wifi-key-role"
+source = "wifi-key-role"
+name = "key_role_g_ic"
+kind = "global"
+symbol = "g_ic"
+
+[[types.fields]]
+offset = 0x74
+width = 32
+status = "reviewed"
+name = "station_policy_variant"
+display-type = "u32"
+description = "Observed word used on paths that select receive-policy transactions; values zero and one remain Mode1/Mode2 and are not identified as an AP+STA lifecycle state."

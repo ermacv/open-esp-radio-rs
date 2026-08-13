@@ -10,10 +10,12 @@ description = "Product-level ESP32-S31 Wi-Fi composition for Embassy and esp-hal
 [dependencies]
 embassy-executor = { version = "0.10.0", default-features = false }
 embassy-futures = "0.1.2"
-embassy-net = { git = "https://github.com/ermacv/embassy", rev = "97da28a77e15a55c412da8b51710fecf5b7a8979", default-features = false, features = ["medium-ethernet", "proto-ipv4"] }
+# Keep this composition independently buildable. smoltcp requires one socket
+# backend whenever its socket set is enabled; applications may add UDP/TCP.
+embassy-net = { git = "https://github.com/ermacv/embassy", rev = "97da28a77e15a55c412da8b51710fecf5b7a8979", default-features = false, features = ["medium-ethernet", "proto-ipv4", "raw"] }
 embassy-sync = "0.8.0"
 embassy-time = "0.5.1"
-esp-hal = { git = "https://github.com/ermacv/esp-hal", branch = "esp32s31-async-platform", default-features = false, features = ["esp32s31", "rt", "unstable"] }
+esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "7f914782f5c689a74f37df83b89a0827d3800323", default-features = false, features = ["esp32s31", "rt", "unstable"] }
 log = { version = "0.4.29", optional = true }
 open-esp-radio = { path = "../../../radio", default-features = false, features = ["esp32s31-wifi-embassy"] }
 open-esp-radio-embassy-net = { path = "../../../adapters/embassy-net" }

@@ -137,8 +137,6 @@ report = "generated/verification.json"
 
 [[verification.suites]]
 id = "radio"
-sources = ["rom", "archive"]
-source-prefixes = ["rom=phy_"]
 rust-artifact-role = "rust-artifact:radio"
 rust-companion-role = "rust-companion:radio"
 rust-prefix = "open_trace_"
@@ -147,6 +145,12 @@ dispositions = ["dispositions/radio.toml"]
 baselines = ["baselines/radio.toml"]
 gate = "regression"
 match-floor = 2
+[[verification.suites.vendor]]
+source = "rom"
+prefix = "phy_"
+[[verification.suites.vendor]]
+source = "archive"
+all = true
 "#,
     )
     .unwrap();
@@ -253,10 +257,16 @@ match-floor = 2
             report: directory.join("generated/verification.json"),
             suites: vec![VerificationSuiteSpec {
                 id: "radio".to_owned(),
-                sources: vec!["rom".parse().unwrap(), "archive".parse().unwrap()],
-                source_prefixes: [("rom".parse().unwrap(), "phy_".to_owned())]
-                    .into_iter()
-                    .collect(),
+                vendor: vec![
+                    VerificationVendorSpec {
+                        source: "rom".parse().unwrap(),
+                        selection: VerificationVendorSelection::Prefix("phy_".to_owned()),
+                    },
+                    VerificationVendorSpec {
+                        source: "archive".parse().unwrap(),
+                        selection: VerificationVendorSelection::All,
+                    },
+                ],
                 rust_artifact_role: InputRole::parse("rust-artifact:radio").unwrap(),
                 rust_companion_role: Some(InputRole::parse("rust-companion:radio").unwrap()),
                 rust_prefix: "open_trace_".to_owned(),
@@ -393,6 +403,46 @@ fn rejects_removed_workspace_configuration_keys() {
             .contains("unknown project verification key \"profiles\"")
     );
 
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn completion_suite_may_start_without_an_evidence_baseline() {
+    let directory = std::env::temp_dir().join(format!(
+        "open-radio-workbench-project-completion-baseline-{}",
+        std::process::id()
+    ));
+    std::fs::create_dir_all(&directory).unwrap();
+    let manifest = directory.join(DEFAULT_PROJECT_MANIFEST);
+    std::fs::write(
+        &manifest,
+        r#"
+schema = 1
+id = "fixture"
+target-spec = "target.toml"
+
+[verification]
+report = "generated/verification.json"
+
+[[verification.suites]]
+id = "uncovered-leaf"
+rust-artifact-role = "rust-artifact"
+rust-prefix = "open_trace_"
+profiles = ["profile.toml"]
+dispositions = ["dispositions.toml"]
+baselines = []
+gate = "completion"
+
+[[verification.suites.vendor]]
+source = "vendor"
+symbols = ["uncovered_leaf"]
+"#,
+    )
+    .unwrap();
+
+    let project = ProjectSpec::load(&manifest).unwrap();
+    let suite = &project.verification.unwrap().suites[0];
+    assert!(suite.evidence_baselines.is_empty());
     std::fs::remove_dir_all(directory).unwrap();
 }
 

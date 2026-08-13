@@ -23,9 +23,10 @@ use esp_hal::{
 };
 use open_esp_radio::esp32s31::wifi::embassy::await_stack_boundary;
 use open_esp_radio::{
-    AccessPointRequest, AccessPointSecurity, MonitorCapturePolicy, MonitorRequest, StationRequest,
-    StationScanChannels, StationScanPolicy, StationSecurity, WifiMacAddress, WifiMonitorConfig,
-    WifiRoleStartFailure, WifiRoleStopFailure, WifiScanRequest as DriverWifiScanRequest, WifiSsid,
+    AccessPointClientLimit, AccessPointRequest, AccessPointSecurity, MonitorCapturePolicy,
+    MonitorRequest, StationRequest, StationScanChannels, StationScanPolicy, StationSecurity,
+    WifiMacAddress, WifiMonitorConfig, WifiRoleStartFailure, WifiRoleStopFailure,
+    WifiScanRequest as DriverWifiScanRequest, WifiSsid,
     esp32s31::phy::{
         PhyCalibrationIdentity, PhyCalibrationPath, phy_rfpll::phy_get_rf_cal_version,
     },
@@ -42,8 +43,8 @@ use open_esp_radio_esp32s31_embassy_wifi::{
     Esp32s31MonitorFrame, Esp32s31MonitorFrames, Esp32s31QualificationHooks,
     Esp32s31QualificationSnapshot, Esp32s31RadioConfig, Esp32s31RadioParts, Esp32s31RadioRunner,
     Esp32s31RadioRunners, Esp32s31RadioSystem, Esp32s31StationLifecycleObservation,
-    Esp32s31StationNetworkRunner, Esp32s31WifiControl, Esp32s31WifiDevice, Esp32s31WifiParts,
-    Esp32s31WifiProtocolRunner, new_station_network,
+    Esp32s31WifiControl, Esp32s31WifiDevice, Esp32s31WifiNetworkRunner, Esp32s31WifiParts,
+    Esp32s31WifiProtocolRunner, new_wifi_network,
 };
 use open_esp_radio_esp32s31_wifi_esp_hal::EspHalRadioPeripheral;
 #[cfg(feature = "network-scheduler-telemetry")]
@@ -141,6 +142,8 @@ static AP_MAXIMUM_NETWORK_BACKPRESSURE_MICROS: AtomicU32 = AtomicU32::new(0);
 static AP_AUTHENTICATIONS: AtomicU32 = AtomicU32::new(0);
 static AP_ASSOCIATIONS: AtomicU32 = AtomicU32::new(0);
 static AP_AUTHORIZATIONS: AtomicU32 = AtomicU32::new(0);
+static AP_MAXIMUM_ASSOCIATED_PEERS: AtomicU32 = AtomicU32::new(0);
+static AP_MAXIMUM_AUTHORIZED_PEERS: AtomicU32 = AtomicU32::new(0);
 static AP_REMOVALS: AtomicU32 = AtomicU32::new(0);
 static AP_COMPLETED_RX_DESCRIPTORS: AtomicU32 = AtomicU32::new(0);
 static AP_IGNORED_RX_FRAMES: AtomicU32 = AtomicU32::new(0);
@@ -186,6 +189,14 @@ fn observe_access_point(observation: Esp32s31AccessPointObservation) {
     AP_AUTHENTICATIONS.store(observation.authentication_responses, Ordering::Release);
     AP_ASSOCIATIONS.store(observation.association_responses, Ordering::Release);
     AP_AUTHORIZATIONS.store(observation.authorized_peers, Ordering::Release);
+    AP_MAXIMUM_ASSOCIATED_PEERS.store(
+        u32::from(observation.maximum_associated_peers),
+        Ordering::Release,
+    );
+    AP_MAXIMUM_AUTHORIZED_PEERS.store(
+        u32::from(observation.maximum_authorized_peers),
+        Ordering::Release,
+    );
     AP_REMOVALS.store(observation.peer_removals, Ordering::Release);
     AP_COMPLETED_RX_DESCRIPTORS.store(observation.completed_rx_descriptors, Ordering::Release);
     AP_IGNORED_RX_FRAMES.store(observation.ignored_rx_frames, Ordering::Release);
@@ -254,6 +265,8 @@ fn access_point_evidence(generation: u32, requested_channel: u8) -> WifiAccessPo
         authentication_responses: AP_AUTHENTICATIONS.load(Ordering::Acquire),
         association_responses: AP_ASSOCIATIONS.load(Ordering::Acquire),
         authorized_peers: AP_AUTHORIZATIONS.load(Ordering::Acquire),
+        maximum_associated_peers: AP_MAXIMUM_ASSOCIATED_PEERS.load(Ordering::Acquire) as u8,
+        maximum_authorized_peers: AP_MAXIMUM_AUTHORIZED_PEERS.load(Ordering::Acquire) as u8,
         peer_removals: AP_REMOVALS.load(Ordering::Acquire),
         completed_rx_descriptors: AP_COMPLETED_RX_DESCRIPTORS.load(Ordering::Acquire),
         ignored_rx_frames: AP_IGNORED_RX_FRAMES.load(Ordering::Acquire),
@@ -667,7 +680,7 @@ pub(in crate::product_hil) async fn qualification_sample(
 }
 
 #[embassy_executor::task]
-async fn network_runner_task(runner: Esp32s31StationNetworkRunner<'static>) {
+async fn network_runner_task(runner: Esp32s31WifiNetworkRunner<'static>) {
     let network = async move {
         #[cfg(feature = "network-scheduler-telemetry")]
         runner.run_observed(observe_network_scheduler).await;
@@ -712,7 +725,7 @@ async fn run_network_composition(
     seed: u64,
 ) -> ! {
     let (stack, network_runner) =
-        new_station_network(device, network_config(ipv4), NETWORK_RESOURCES.take(), seed);
+        new_wifi_network(device, network_config(ipv4), NETWORK_RESOURCES.take(), seed);
     spawner.spawn(
         network_runner_task(network_runner).expect("network runner task must allocate once"),
     );
@@ -857,6 +870,8 @@ fn access_point_request(
         ssid,
         AccessPointSecurity::wpa2_personal(pmk),
         WifiChannel::mhz20(request.channel).expect("console validates the AP channel"),
+        AccessPointClientLimit::new(request.client_limit)
+            .expect("console validates the AP client limit"),
     )
     .expect("validated HIL AP request satisfies the production AP contract")
 }
@@ -997,6 +1012,7 @@ pub async fn run(
         control,
         device,
         monitor_frames,
+        access_point_status: _,
         qualification,
     } = wifi.into_parts();
     spawner.spawn(

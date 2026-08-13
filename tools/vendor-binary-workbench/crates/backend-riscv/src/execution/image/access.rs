@@ -137,6 +137,35 @@ impl ExecutableImage {
         self.byte(address)
     }
 
+    /// Returns one little-endian word only when every byte belongs to the
+    /// same immutable ELF load segment.
+    ///
+    /// Coverage propagation may use linked read-only data as a constant, but
+    /// must not make the same assumption for `.data`, BSS, or scenario-owned
+    /// RAM. This is what lets a concrete selector resolve a compiler-emitted
+    /// jump table without turning mutable function-pointer tables into proof.
+    pub(in crate::execution) fn immutable_word(&self, address: u32) -> Option<u32> {
+        let segment = self.segments.iter().find(|segment| {
+            if segment.writable {
+                return false;
+            }
+            address
+                .checked_sub(segment.address)
+                .and_then(|offset| offset.checked_add(4))
+                .is_some_and(|end| end <= segment.memory_size)
+        })?;
+        let offset = address.checked_sub(segment.address)? as usize;
+        let mut bytes = [0_u8; 4];
+        for (index, byte) in bytes.iter_mut().enumerate() {
+            let byte_address = address.checked_add(index as u32)?;
+            if self.unresolved_relocation_at(byte_address).is_some() {
+                return None;
+            }
+            *byte = segment.bytes.get(offset + index).copied().unwrap_or(0);
+        }
+        Some(u32::from_le_bytes(bytes))
+    }
+
     pub(in crate::execution) fn contains_memory(&self, address: u32) -> bool {
         self.segments.iter().any(|segment| {
             address

@@ -1,0 +1,79 @@
+schema = 2
+
+# Exact complete-leaf evidence for the disjoint STA=0 and SoftAP=1 hardware
+# identity banks. The six-byte address is passed through the original pointer
+# ABI and is shared by the vendor and Rust executions.
+
+[[profiles]]
+name = "wifi-interface-address"
+vendor-source = "libpp"
+vendor-symbol = "hal_mac_set_addr"
+rust-symbol = "open_libpp_interface_trace_hal_mac_set_addr"
+compare-return = false
+[[profiles.argument-ranges]]
+index = 0
+min = 0
+max = 1
+
+[[profiles.cases]]
+name = "station-bank"
+arguments = [0, 0x3fff3000]
+[[profiles.cases.ram]]
+address = 0x3fff3000
+value = 0x33221102
+[[profiles.cases.ram]]
+address = 0x3fff3004
+value = 0x00005544
+[[profiles.cases.mmio-initial]]
+address = 0x20104060
+value = 0xa5a50000
+
+[[profiles.cases]]
+name = "softap-bank"
+arguments = [1, 0x3fff3000]
+[[profiles.cases.ram]]
+address = 0x3fff3000
+value = 0xccbbaa02
+[[profiles.cases.ram]]
+address = 0x3fff3004
+value = 0x0000eedd
+[[profiles.cases.mmio-initial]]
+address = 0x20104068
+value = 0x5a5a0000
+
+[[profiles]]
+name = "wifi-interface-bssid"
+vendor-source = "libpp"
+vendor-symbol = "hal_mac_set_bssid"
+rust-symbol = "open_libpp_interface_trace_hal_mac_set_bssid"
+compare-return = false
+[[profiles.argument-ranges]]
+index = 0
+min = 0
+max = 1
+
+[[profiles.cases]]
+name = "station-bank-preserves-policy"
+arguments = [0, 0x3fff3000]
+[[profiles.cases.ram]]
+address = 0x3fff3000
+value = 0x76543210
+[[profiles.cases.ram]]
+address = 0x3fff3004
+value = 0x0000ba98
+[[profiles.cases.mmio-initial]]
+address = 0x20104004
+value = 0xd5a50000
+
+[[profiles.cases]]
+name = "softap-bank-preserves-policy"
+arguments = [1, 0x3fff3000]
+[[profiles.cases.ram]]
+address = 0x3fff3000
+value = 0x67452301
+[[profiles.cases.ram]]
+address = 0x3fff3004
+value = 0x0000ab89
+[[profiles.cases.mmio-initial]]
+address = 0x2010400c
+value = 0x95a50000

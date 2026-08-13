@@ -11,6 +11,7 @@ use open_esp_radio_ieee80211::data::{
     DataDecapError, DataInterfaceRole, EthernetFrameParts, RxDuplicateFilter, amsdu_subframes,
     plan_data_decapsulation,
 };
+use open_esp_radio_wifi_ap::AP_MAX_CLIENTS;
 use open_esp_radio_wifi_softmac::{MacRxCryptoStatus, MacRxEvidence, MacRxMetadata};
 
 const RETRY: u16 = 0x0800;
@@ -49,29 +50,42 @@ pub enum Esp32s31ApRxDispatch {
     Rejected(Esp32s31ApRxError),
 }
 
-/// Duplicate history for the one peer admitted by the initial AP service.
+struct ApPeerDuplicateState {
+    address: [u8; 6],
+    filter: RxDuplicateFilter,
+}
+
+/// Independent duplicate history for every admitted AP peer.
 pub struct Esp32s31ApRxDispatcher {
     config: Esp32s31ApRxConfig,
-    duplicates: RxDuplicateFilter,
+    duplicates: [Option<ApPeerDuplicateState>; AP_MAX_CLIENTS],
 }
 
 impl Esp32s31ApRxDispatcher {
     pub const fn new(config: Esp32s31ApRxConfig) -> Self {
         Self {
             config,
-            duplicates: RxDuplicateFilter::new(),
+            duplicates: [const { None }; AP_MAX_CLIENTS],
         }
     }
 
-    pub fn dispatch_protected<S: Esp32s31ApRxSink>(
+    /// Begin a new AP epoch without moving the per-peer duplicate table
+    /// through an executor stack.
+    pub fn reset(&mut self, config: Esp32s31ApRxConfig) {
+        self.config = config;
+        self.duplicates.fill_with(|| None);
+    }
+
+    pub fn dispatch_protected<S, A>(
         &mut self,
         segment: RxSegment<'_>,
-        authorized_peer: Option<[u8; 6]>,
+        mut is_authorized: A,
         sink: &mut S,
-    ) -> Esp32s31ApRxDispatch {
-        let Some(peer) = authorized_peer else {
-            return Esp32s31ApRxDispatch::Unauthorized;
-        };
+    ) -> Esp32s31ApRxDispatch
+    where
+        S: Esp32s31ApRxSink,
+        A: FnMut([u8; 6]) -> bool,
+    {
         let data = match view_ccmp_data(&segment, self.config.ingress) {
             Ok(data) => data,
             Err(error) => {
@@ -79,8 +93,14 @@ impl Esp32s31ApRxDispatcher {
             }
         };
         let mpdu = data.mpdu;
-        if mpdu.len() < 24 || mpdu[4..10] != self.config.access_point || mpdu[10..16] != peer {
+        if mpdu.len() < 24 || mpdu[4..10] != self.config.access_point {
             return Esp32s31ApRxDispatch::ForeignPeer;
+        }
+        let peer: [u8; 6] = mpdu[10..16]
+            .try_into()
+            .expect("validated 802.11 address width");
+        if !is_authorized(peer) {
+            return Esp32s31ApRxDispatch::Unauthorized;
         }
         let frame_control = u16::from_le_bytes([mpdu[0], mpdu[1]]);
         let sequence_control = u16::from_le_bytes([mpdu[22], mpdu[23]]);
@@ -89,10 +109,10 @@ impl Esp32s31ApRxDispatcher {
         } else {
             None
         };
-        if self
-            .duplicates
-            .is_duplicate(frame_control & RETRY != 0, sequence_control, tid)
-        {
+        let Some(duplicates) = self.duplicate_filter(peer) else {
+            return Esp32s31ApRxDispatch::Unauthorized;
+        };
+        if duplicates.is_duplicate(frame_control & RETRY != 0, sequence_control, tid) {
             return Esp32s31ApRxDispatch::Duplicate;
         }
         let Some(mut metadata) = decode_normalized_rx_metadata(segment.buffer) else {
@@ -169,6 +189,26 @@ impl Esp32s31ApRxDispatcher {
             Err(error) => rejected_data(error),
         }
     }
+
+    fn duplicate_filter(&mut self, peer: [u8; 6]) -> Option<&mut RxDuplicateFilter> {
+        if let Some(index) = self
+            .duplicates
+            .iter()
+            .position(|entry| entry.as_ref().is_some_and(|state| state.address == peer))
+        {
+            return self.duplicates[index]
+                .as_mut()
+                .map(|state| &mut state.filter);
+        }
+        let index = self.duplicates.iter().position(Option::is_none)?;
+        self.duplicates[index] = Some(ApPeerDuplicateState {
+            address: peer,
+            filter: RxDuplicateFilter::new(),
+        });
+        self.duplicates[index]
+            .as_mut()
+            .map(|state| &mut state.filter)
+    }
 }
 
 fn rejected_data(error: DataDecapError) -> Esp32s31ApRxDispatch {
@@ -182,6 +222,7 @@ mod tests {
 
     const AP: [u8; 6] = [2, 0, 0, 0, 0, 1];
     const PEER: [u8; 6] = [2, 0, 0, 0, 0, 2];
+    const OTHER_PEER: [u8; 6] = [2, 0, 0, 0, 0, 4];
     const DESTINATION: [u8; 6] = [2, 0, 0, 0, 0, 3];
     const TAIL: usize = 0x38;
     const LENGTH_SHIFT: u32 = 14;
@@ -245,13 +286,17 @@ mod tests {
         let mut dispatcher = Esp32s31ApRxDispatcher::new(config());
         let mut sink = Sink::default();
         assert_eq!(
-            dispatcher.dispatch_protected(segment(&storage, descriptor_word0), None, &mut sink),
+            dispatcher.dispatch_protected(
+                segment(&storage, descriptor_word0),
+                |_| false,
+                &mut sink,
+            ),
             Esp32s31ApRxDispatch::Unauthorized
         );
         assert_eq!(
             dispatcher.dispatch_protected(
                 segment(&storage, descriptor_word0),
-                Some(PEER),
+                |candidate| candidate == PEER,
                 &mut sink,
             ),
             Esp32s31ApRxDispatch::Data {
@@ -267,10 +312,23 @@ mod tests {
         assert_eq!(
             dispatcher.dispatch_protected(
                 segment(&storage, descriptor_word0),
-                Some(PEER),
+                |candidate| candidate == PEER,
                 &mut sink,
             ),
             Esp32s31ApRxDispatch::Duplicate
+        );
+
+        storage[PUBLIC_HEADER_SIZE + 10..PUBLIC_HEADER_SIZE + 16].copy_from_slice(&OTHER_PEER);
+        assert_eq!(
+            dispatcher.dispatch_protected(
+                segment(&storage, descriptor_word0),
+                |candidate| candidate == PEER || candidate == OTHER_PEER,
+                &mut sink,
+            ),
+            Esp32s31ApRxDispatch::Data {
+                ethernet_frames: 1,
+                amsdu: false,
+            }
         );
     }
 }

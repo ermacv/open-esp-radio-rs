@@ -493,14 +493,19 @@ mod tests {
         let ap = [2, 0, 0, 0, 0, 1];
         let mut hardware = Hardware::default();
         let mut beacon = [0; WPA2_BEACON_CAPACITY];
+        let mut peers = open_esp_radio_wifi_ap::AccessPointPeerStorage::new();
+        let mut pairwise = crate::security::Esp32s31ApPairwiseKeyStorage::new();
         let engine = Esp32s31ApEngine::start(
             &mut hardware,
             AccessPointService::new(
                 ap,
                 Pmk::derive(b"password", b"ap").unwrap(),
                 Wpa2Gtk::new(1, true, [7; 16]).unwrap(),
+                open_esp_radio_wifi_ap::AccessPointClientLimit::new(2).unwrap(),
+                &mut peers,
             ),
             &mut beacon,
+            &mut pairwise,
             &WifiSsid::new(b"ap").unwrap(),
             6,
             100,

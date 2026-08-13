@@ -1,0 +1,1584 @@
+schema = 2
+
+# Full concrete domain of the reviewed 48-event switch.
+[[profiles]]
+name = "coex-core-timer-index"
+vendor-source = "coex"
+vendor-symbol = "coex_core_timer_idx_get"
+rust-symbol = "open_coex_core_trace_timer_idx_get"
+compare-return = true
+[[profiles.argument-ranges]]
+index = 0
+min = 0
+max = 47
+
+[[profiles.cases]]
+name = "event-0"
+arguments = [0]
+
+[[profiles.cases]]
+name = "event-1"
+arguments = [1]
+
+[[profiles.cases]]
+name = "event-2"
+arguments = [2]
+
+[[profiles.cases]]
+name = "event-3"
+arguments = [3]
+
+[[profiles.cases]]
+name = "event-4"
+arguments = [4]
+
+[[profiles.cases]]
+name = "event-5"
+arguments = [5]
+
+[[profiles.cases]]
+name = "event-6"
+arguments = [6]
+
+[[profiles.cases]]
+name = "event-7"
+arguments = [7]
+
+[[profiles.cases]]
+name = "event-8"
+arguments = [8]
+
+[[profiles.cases]]
+name = "event-9"
+arguments = [9]
+
+[[profiles.cases]]
+name = "event-10"
+arguments = [10]
+
+[[profiles.cases]]
+name = "event-11"
+arguments = [11]
+
+[[profiles.cases]]
+name = "event-12"
+arguments = [12]
+
+[[profiles.cases]]
+name = "event-13"
+arguments = [13]
+
+[[profiles.cases]]
+name = "event-14"
+arguments = [14]
+
+[[profiles.cases]]
+name = "event-15"
+arguments = [15]
+
+[[profiles.cases]]
+name = "event-16"
+arguments = [16]
+
+[[profiles.cases]]
+name = "event-17"
+arguments = [17]
+
+[[profiles.cases]]
+name = "event-18"
+arguments = [18]
+
+[[profiles.cases]]
+name = "event-19"
+arguments = [19]
+
+[[profiles.cases]]
+name = "event-20"
+arguments = [20]
+
+[[profiles.cases]]
+name = "event-21"
+arguments = [21]
+
+[[profiles.cases]]
+name = "event-22"
+arguments = [22]
+
+[[profiles.cases]]
+name = "event-23"
+arguments = [23]
+
+[[profiles.cases]]
+name = "event-24"
+arguments = [24]
+
+[[profiles.cases]]
+name = "event-25"
+arguments = [25]
+
+[[profiles.cases]]
+name = "event-26"
+arguments = [26]
+
+[[profiles.cases]]
+name = "event-27"
+arguments = [27]
+
+[[profiles.cases]]
+name = "event-28"
+arguments = [28]
+
+[[profiles.cases]]
+name = "event-29"
+arguments = [29]
+
+[[profiles.cases]]
+name = "event-30"
+arguments = [30]
+
+[[profiles.cases]]
+name = "event-31"
+arguments = [31]
+
+[[profiles.cases]]
+name = "event-32"
+arguments = [32]
+
+[[profiles.cases]]
+name = "event-33"
+arguments = [33]
+
+[[profiles.cases]]
+name = "event-34"
+arguments = [34]
+
+[[profiles.cases]]
+name = "event-35"
+arguments = [35]
+
+[[profiles.cases]]
+name = "event-36"
+arguments = [36]
+
+[[profiles.cases]]
+name = "event-37"
+arguments = [37]
+
+[[profiles.cases]]
+name = "event-38"
+arguments = [38]
+
+[[profiles.cases]]
+name = "event-39"
+arguments = [39]
+
+[[profiles.cases]]
+name = "event-40"
+arguments = [40]
+
+[[profiles.cases]]
+name = "event-41"
+arguments = [41]
+
+[[profiles.cases]]
+name = "event-42"
+arguments = [42]
+
+[[profiles.cases]]
+name = "event-43"
+arguments = [43]
+
+[[profiles.cases]]
+name = "event-44"
+arguments = [44]
+
+[[profiles.cases]]
+name = "event-45"
+arguments = [45]
+
+[[profiles.cases]]
+name = "event-46"
+arguments = [46]
+
+[[profiles.cases]]
+name = "event-47"
+arguments = [47]
+
+# Complete request projection under the explicit Rust lifecycle precondition
+# that the sole COEX owner has been enabled.
+[[profiles]]
+name = "coex-core-request"
+vendor-source = "coex"
+vendor-symbol = "coex_core_request"
+rust-symbol = "open_coex_core_trace_request"
+compare-return = true
+[[profiles.argument-ranges]]
+index = 0
+min = 0
+max = 1
+[[profiles.argument-ranges]]
+index = 1
+min = 0
+max = 47
+[[profiles.argument-ranges]]
+index = 2
+min = 2_000
+max = 2_000
+[[profiles.argument-ranges]]
+index = 3
+min = 3_000
+max = 3_000
+[[profiles.mmio-domains]]
+address = 0x2010f008
+values = [0x00000008]
+
+[[profiles.cases]]
+name = "bluetooth-event-0"
+arguments = [0, 0, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+
+[[profiles.cases]]
+name = "bluetooth-event-1"
+arguments = [0, 1, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+[[profiles.cases.vendor-ram]]
+address = 0x1000299c
+value = 0x0707050a
+[[profiles.cases.mmio-initial]]
+address = 0x2010f400
+value = 0xc1234567
+[[profiles.cases.mmio-initial]]
+address = 0x2010f404
+value = 0xab654321
+[[profiles.cases.mmio-initial]]
+address = 0x2010f408
+value = 0x24681356
+[[profiles.cases.mmio-initial]]
+address = 0x2010f40c
+value = 0x13572469
+[[profiles.cases.vendor-tables]]
+layout-id = "esp32s31-radio-rev0::coex-adapter-v2"
+base-address = 0x3fce1000
+layout-size = 0x50
+pointer-cells = [0x10002ba4]
+slots = [{ offset = 0x30, target = { kind = "symbol", value = "coexist_printf" } }]
+[[profiles.cases.vendor-calls]]
+symbol = "coexist_printf"
+return-words = [1]
+[[profiles.cases.vendor-calls]]
+symbol = "coexist_printf"
+return-words = [1]
+
+[[profiles.cases]]
+name = "bluetooth-event-2"
+arguments = [0, 2, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+[[profiles.cases.vendor-ram]]
+address = 0x1000299c
+value = 0x0707050a
+[[profiles.cases.mmio-initial]]
+address = 0x2010f410
+value = 0xc2234567
+[[profiles.cases.mmio-initial]]
+address = 0x2010f414
+value = 0xac654321
+[[profiles.cases.mmio-initial]]
+address = 0x2010f418
+value = 0x25681356
+[[profiles.cases.mmio-initial]]
+address = 0x2010f41c
+value = 0x14572469
+[[profiles.cases.vendor-tables]]
+layout-id = "esp32s31-radio-rev0::coex-adapter-v2"
+base-address = 0x3fce1000
+layout-size = 0x50
+pointer-cells = [0x10002ba4]
+slots = [{ offset = 0x30, target = { kind = "symbol", value = "coexist_printf" } }]
+[[profiles.cases.vendor-calls]]
+symbol = "coexist_printf"
+return-words = [1]
+[[profiles.cases.vendor-calls]]
+symbol = "coexist_printf"
+return-words = [1]
+
+[[profiles.cases]]
+name = "bluetooth-event-3"
+arguments = [0, 3, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+
+[[profiles.cases]]
+name = "bluetooth-event-4"
+arguments = [0, 4, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+
+[[profiles.cases]]
+name = "bluetooth-event-5"
+arguments = [0, 5, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+
+[[profiles.cases]]
+name = "bluetooth-event-6"
+arguments = [0, 6, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+
+[[profiles.cases]]
+name = "bluetooth-event-7"
+arguments = [0, 7, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+
+[[profiles.cases]]
+name = "bluetooth-event-8"
+arguments = [0, 8, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+
+[[profiles.cases]]
+name = "bluetooth-event-9"
+arguments = [0, 9, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+
+[[profiles.cases]]
+name = "bluetooth-event-10"
+arguments = [0, 10, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+
+[[profiles.cases]]
+name = "bluetooth-event-11"
+arguments = [0, 11, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+
+[[profiles.cases]]
+name = "bluetooth-event-12"
+arguments = [0, 12, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+
+[[profiles.cases]]
+name = "bluetooth-event-13"
+arguments = [0, 13, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+
+[[profiles.cases]]
+name = "bluetooth-event-14"
+arguments = [0, 14, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+
+[[profiles.cases]]
+name = "bluetooth-event-15"
+arguments = [0, 15, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+
+[[profiles.cases]]
+name = "bluetooth-event-16"
+arguments = [0, 16, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+
+[[profiles.cases]]
+name = "bluetooth-event-17"
+arguments = [0, 17, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+
+[[profiles.cases]]
+name = "bluetooth-event-18"
+arguments = [0, 18, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+
+[[profiles.cases]]
+name = "bluetooth-event-19"
+arguments = [0, 19, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+
+[[profiles.cases]]
+name = "bluetooth-event-20"
+arguments = [0, 20, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+
+[[profiles.cases]]
+name = "bluetooth-event-21"
+arguments = [0, 21, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+
+[[profiles.cases]]
+name = "bluetooth-event-22"
+arguments = [0, 22, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+
+[[profiles.cases]]
+name = "bluetooth-event-23"
+arguments = [0, 23, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+
+[[profiles.cases]]
+name = "bluetooth-event-24"
+arguments = [0, 24, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+
+[[profiles.cases]]
+name = "bluetooth-event-25"
+arguments = [0, 25, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+
+[[profiles.cases]]
+name = "bluetooth-event-26"
+arguments = [0, 26, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+
+[[profiles.cases]]
+name = "bluetooth-event-27"
+arguments = [0, 27, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+
+[[profiles.cases]]
+name = "bluetooth-event-28"
+arguments = [0, 28, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+
+[[profiles.cases]]
+name = "bluetooth-event-29"
+arguments = [0, 29, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+
+[[profiles.cases]]
+name = "bluetooth-event-30"
+arguments = [0, 30, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+
+[[profiles.cases]]
+name = "bluetooth-event-31"
+arguments = [0, 31, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+
+[[profiles.cases]]
+name = "bluetooth-event-32"
+arguments = [0, 32, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+
+[[profiles.cases]]
+name = "bluetooth-event-33"
+arguments = [0, 33, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+
+[[profiles.cases]]
+name = "bluetooth-event-34"
+arguments = [0, 34, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+
+[[profiles.cases]]
+name = "bluetooth-event-35"
+arguments = [0, 35, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+
+[[profiles.cases]]
+name = "bluetooth-event-36"
+arguments = [0, 36, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+[[profiles.cases.vendor-ram]]
+address = 0x100029c0
+value = 0x0e040a0f
+[[profiles.cases.mmio-initial]]
+address = 0x2010f440
+value = 0xc5234567
+[[profiles.cases.mmio-initial]]
+address = 0x2010f444
+value = 0xaf654321
+[[profiles.cases.mmio-initial]]
+address = 0x2010f448
+value = 0x28681356
+[[profiles.cases.mmio-initial]]
+address = 0x2010f44c
+value = 0x17572469
+[[profiles.cases.vendor-tables]]
+layout-id = "esp32s31-radio-rev0::coex-adapter-v2"
+base-address = 0x3fce1000
+layout-size = 0x50
+pointer-cells = [0x10002ba4]
+slots = [{ offset = 0x30, target = { kind = "symbol", value = "coexist_printf" } }]
+[[profiles.cases.vendor-calls]]
+symbol = "coexist_printf"
+return-words = [1]
+[[profiles.cases.vendor-calls]]
+symbol = "coexist_printf"
+return-words = [1]
+
+[[profiles.cases]]
+name = "bluetooth-event-37"
+arguments = [0, 37, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+
+[[profiles.cases]]
+name = "bluetooth-event-38"
+arguments = [0, 38, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+[[profiles.cases.vendor-ram]]
+address = 0x100029c0
+value = 0x0e040a0f
+[[profiles.cases.mmio-initial]]
+address = 0x2010f420
+value = 0xc3234567
+[[profiles.cases.mmio-initial]]
+address = 0x2010f424
+value = 0xad654321
+[[profiles.cases.mmio-initial]]
+address = 0x2010f428
+value = 0x26681356
+[[profiles.cases.mmio-initial]]
+address = 0x2010f42c
+value = 0x15572469
+[[profiles.cases.vendor-tables]]
+layout-id = "esp32s31-radio-rev0::coex-adapter-v2"
+base-address = 0x3fce1000
+layout-size = 0x50
+pointer-cells = [0x10002ba4]
+slots = [{ offset = 0x30, target = { kind = "symbol", value = "coexist_printf" } }]
+[[profiles.cases.vendor-calls]]
+symbol = "coexist_printf"
+return-words = [1]
+[[profiles.cases.vendor-calls]]
+symbol = "coexist_printf"
+return-words = [1]
+
+[[profiles.cases]]
+name = "bluetooth-event-39"
+arguments = [0, 39, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+
+[[profiles.cases]]
+name = "bluetooth-event-40"
+arguments = [0, 40, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+
+[[profiles.cases]]
+name = "bluetooth-event-41"
+arguments = [0, 41, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+
+[[profiles.cases]]
+name = "bluetooth-event-42"
+arguments = [0, 42, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+
+[[profiles.cases]]
+name = "bluetooth-event-43"
+arguments = [0, 43, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+
+[[profiles.cases]]
+name = "bluetooth-event-44"
+arguments = [0, 44, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+
+[[profiles.cases]]
+name = "bluetooth-event-45"
+arguments = [0, 45, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+[[profiles.cases.vendor-ram]]
+address = 0x100029c8
+value = 0x0f0a0a01
+[[profiles.cases.mmio-initial]]
+address = 0x2010f430
+value = 0xc4234567
+[[profiles.cases.mmio-initial]]
+address = 0x2010f434
+value = 0xae654321
+[[profiles.cases.mmio-initial]]
+address = 0x2010f438
+value = 0x27681356
+[[profiles.cases.mmio-initial]]
+address = 0x2010f43c
+value = 0x16572469
+[[profiles.cases.vendor-tables]]
+layout-id = "esp32s31-radio-rev0::coex-adapter-v2"
+base-address = 0x3fce1000
+layout-size = 0x50
+pointer-cells = [0x10002ba4]
+slots = [{ offset = 0x30, target = { kind = "symbol", value = "coexist_printf" } }]
+[[profiles.cases.vendor-calls]]
+symbol = "coexist_printf"
+return-words = [1]
+[[profiles.cases.vendor-calls]]
+symbol = "coexist_printf"
+return-words = [1]
+
+[[profiles.cases]]
+name = "bluetooth-event-46"
+arguments = [0, 46, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+[[profiles.cases.vendor-ram]]
+address = 0x100029c8
+value = 0x0f0a0a01
+[[profiles.cases.mmio-initial]]
+address = 0x2010f430
+value = 0xc4234567
+[[profiles.cases.mmio-initial]]
+address = 0x2010f434
+value = 0xae654321
+[[profiles.cases.mmio-initial]]
+address = 0x2010f438
+value = 0x27681356
+[[profiles.cases.mmio-initial]]
+address = 0x2010f43c
+value = 0x16572469
+[[profiles.cases.vendor-tables]]
+layout-id = "esp32s31-radio-rev0::coex-adapter-v2"
+base-address = 0x3fce1000
+layout-size = 0x50
+pointer-cells = [0x10002ba4]
+slots = [{ offset = 0x30, target = { kind = "symbol", value = "coexist_printf" } }]
+[[profiles.cases.vendor-calls]]
+symbol = "coexist_printf"
+return-words = [1]
+[[profiles.cases.vendor-calls]]
+symbol = "coexist_printf"
+return-words = [1]
+
+[[profiles.cases]]
+name = "bluetooth-event-47"
+arguments = [0, 47, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+
+[[profiles.cases]]
+name = "wifi-event-0"
+arguments = [1, 0, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+
+[[profiles.cases]]
+name = "wifi-event-1"
+arguments = [1, 1, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+[[profiles.cases.vendor-ram]]
+address = 0x1000299c
+value = 0x0707050a
+[[profiles.cases.mmio-initial]]
+address = 0x2010f400
+value = 0xc1234567
+[[profiles.cases.mmio-initial]]
+address = 0x2010f404
+value = 0xab654321
+[[profiles.cases.mmio-initial]]
+address = 0x2010f408
+value = 0x24681356
+[[profiles.cases.mmio-initial]]
+address = 0x2010f40c
+value = 0x13572469
+[[profiles.cases.vendor-tables]]
+layout-id = "esp32s31-radio-rev0::coex-adapter-v2"
+base-address = 0x3fce1000
+layout-size = 0x50
+pointer-cells = [0x10002ba4]
+slots = [{ offset = 0x30, target = { kind = "symbol", value = "coexist_printf" } }]
+[[profiles.cases.vendor-calls]]
+symbol = "coexist_printf"
+return-words = [1]
+[[profiles.cases.vendor-calls]]
+symbol = "coexist_printf"
+return-words = [1]
+
+[[profiles.cases]]
+name = "wifi-event-2"
+arguments = [1, 2, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+[[profiles.cases.vendor-ram]]
+address = 0x1000299c
+value = 0x0707050a
+[[profiles.cases.mmio-initial]]
+address = 0x2010f410
+value = 0xc2234567
+[[profiles.cases.mmio-initial]]
+address = 0x2010f414
+value = 0xac654321
+[[profiles.cases.mmio-initial]]
+address = 0x2010f418
+value = 0x25681356
+[[profiles.cases.mmio-initial]]
+address = 0x2010f41c
+value = 0x14572469
+[[profiles.cases.vendor-tables]]
+layout-id = "esp32s31-radio-rev0::coex-adapter-v2"
+base-address = 0x3fce1000
+layout-size = 0x50
+pointer-cells = [0x10002ba4]
+slots = [{ offset = 0x30, target = { kind = "symbol", value = "coexist_printf" } }]
+[[profiles.cases.vendor-calls]]
+symbol = "coexist_printf"
+return-words = [1]
+[[profiles.cases.vendor-calls]]
+symbol = "coexist_printf"
+return-words = [1]
+
+[[profiles.cases]]
+name = "wifi-event-3"
+arguments = [1, 3, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+
+[[profiles.cases]]
+name = "wifi-event-4"
+arguments = [1, 4, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+
+[[profiles.cases]]
+name = "wifi-event-5"
+arguments = [1, 5, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+
+[[profiles.cases]]
+name = "wifi-event-6"
+arguments = [1, 6, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+
+[[profiles.cases]]
+name = "wifi-event-7"
+arguments = [1, 7, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+
+[[profiles.cases]]
+name = "wifi-event-8"
+arguments = [1, 8, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+
+[[profiles.cases]]
+name = "wifi-event-9"
+arguments = [1, 9, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+
+[[profiles.cases]]
+name = "wifi-event-10"
+arguments = [1, 10, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+
+[[profiles.cases]]
+name = "wifi-event-11"
+arguments = [1, 11, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+
+[[profiles.cases]]
+name = "wifi-event-12"
+arguments = [1, 12, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+
+[[profiles.cases]]
+name = "wifi-event-13"
+arguments = [1, 13, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+
+[[profiles.cases]]
+name = "wifi-event-14"
+arguments = [1, 14, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+
+[[profiles.cases]]
+name = "wifi-event-15"
+arguments = [1, 15, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+
+[[profiles.cases]]
+name = "wifi-event-16"
+arguments = [1, 16, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+
+[[profiles.cases]]
+name = "wifi-event-17"
+arguments = [1, 17, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+
+[[profiles.cases]]
+name = "wifi-event-18"
+arguments = [1, 18, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+
+[[profiles.cases]]
+name = "wifi-event-19"
+arguments = [1, 19, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+
+[[profiles.cases]]
+name = "wifi-event-20"
+arguments = [1, 20, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+
+[[profiles.cases]]
+name = "wifi-event-21"
+arguments = [1, 21, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+
+[[profiles.cases]]
+name = "wifi-event-22"
+arguments = [1, 22, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+
+[[profiles.cases]]
+name = "wifi-event-23"
+arguments = [1, 23, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+
+[[profiles.cases]]
+name = "wifi-event-24"
+arguments = [1, 24, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+
+[[profiles.cases]]
+name = "wifi-event-25"
+arguments = [1, 25, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+
+[[profiles.cases]]
+name = "wifi-event-26"
+arguments = [1, 26, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+
+[[profiles.cases]]
+name = "wifi-event-27"
+arguments = [1, 27, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+
+[[profiles.cases]]
+name = "wifi-event-28"
+arguments = [1, 28, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+
+[[profiles.cases]]
+name = "wifi-event-29"
+arguments = [1, 29, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+
+[[profiles.cases]]
+name = "wifi-event-30"
+arguments = [1, 30, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+
+[[profiles.cases]]
+name = "wifi-event-31"
+arguments = [1, 31, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+
+[[profiles.cases]]
+name = "wifi-event-32"
+arguments = [1, 32, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+
+[[profiles.cases]]
+name = "wifi-event-33"
+arguments = [1, 33, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+
+[[profiles.cases]]
+name = "wifi-event-34"
+arguments = [1, 34, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+
+[[profiles.cases]]
+name = "wifi-event-35"
+arguments = [1, 35, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+
+[[profiles.cases]]
+name = "wifi-event-36"
+arguments = [1, 36, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+[[profiles.cases.vendor-ram]]
+address = 0x100029c0
+value = 0x0e040a0f
+[[profiles.cases.mmio-initial]]
+address = 0x2010f440
+value = 0xc5234567
+[[profiles.cases.mmio-initial]]
+address = 0x2010f444
+value = 0xaf654321
+[[profiles.cases.mmio-initial]]
+address = 0x2010f448
+value = 0x28681356
+[[profiles.cases.mmio-initial]]
+address = 0x2010f44c
+value = 0x17572469
+[[profiles.cases.vendor-tables]]
+layout-id = "esp32s31-radio-rev0::coex-adapter-v2"
+base-address = 0x3fce1000
+layout-size = 0x50
+pointer-cells = [0x10002ba4]
+slots = [{ offset = 0x30, target = { kind = "symbol", value = "coexist_printf" } }]
+[[profiles.cases.vendor-calls]]
+symbol = "coexist_printf"
+return-words = [1]
+[[profiles.cases.vendor-calls]]
+symbol = "coexist_printf"
+return-words = [1]
+
+[[profiles.cases]]
+name = "wifi-event-37"
+arguments = [1, 37, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+
+[[profiles.cases]]
+name = "wifi-event-38"
+arguments = [1, 38, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+[[profiles.cases.vendor-ram]]
+address = 0x100029c0
+value = 0x0e040a0f
+[[profiles.cases.mmio-initial]]
+address = 0x2010f420
+value = 0xc3234567
+[[profiles.cases.mmio-initial]]
+address = 0x2010f424
+value = 0xad654321
+[[profiles.cases.mmio-initial]]
+address = 0x2010f428
+value = 0x26681356
+[[profiles.cases.mmio-initial]]
+address = 0x2010f42c
+value = 0x15572469
+[[profiles.cases.vendor-tables]]
+layout-id = "esp32s31-radio-rev0::coex-adapter-v2"
+base-address = 0x3fce1000
+layout-size = 0x50
+pointer-cells = [0x10002ba4]
+slots = [{ offset = 0x30, target = { kind = "symbol", value = "coexist_printf" } }]
+[[profiles.cases.vendor-calls]]
+symbol = "coexist_printf"
+return-words = [1]
+[[profiles.cases.vendor-calls]]
+symbol = "coexist_printf"
+return-words = [1]
+
+[[profiles.cases]]
+name = "wifi-event-39"
+arguments = [1, 39, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+
+[[profiles.cases]]
+name = "wifi-event-40"
+arguments = [1, 40, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+
+[[profiles.cases]]
+name = "wifi-event-41"
+arguments = [1, 41, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+
+[[profiles.cases]]
+name = "wifi-event-42"
+arguments = [1, 42, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+
+[[profiles.cases]]
+name = "wifi-event-43"
+arguments = [1, 43, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+
+[[profiles.cases]]
+name = "wifi-event-44"
+arguments = [1, 44, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+
+[[profiles.cases]]
+name = "wifi-event-45"
+arguments = [1, 45, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+[[profiles.cases.vendor-ram]]
+address = 0x100029c8
+value = 0x0f0a0a01
+[[profiles.cases.mmio-initial]]
+address = 0x2010f430
+value = 0xc4234567
+[[profiles.cases.mmio-initial]]
+address = 0x2010f434
+value = 0xae654321
+[[profiles.cases.mmio-initial]]
+address = 0x2010f438
+value = 0x27681356
+[[profiles.cases.mmio-initial]]
+address = 0x2010f43c
+value = 0x16572469
+[[profiles.cases.vendor-tables]]
+layout-id = "esp32s31-radio-rev0::coex-adapter-v2"
+base-address = 0x3fce1000
+layout-size = 0x50
+pointer-cells = [0x10002ba4]
+slots = [{ offset = 0x30, target = { kind = "symbol", value = "coexist_printf" } }]
+[[profiles.cases.vendor-calls]]
+symbol = "coexist_printf"
+return-words = [1]
+[[profiles.cases.vendor-calls]]
+symbol = "coexist_printf"
+return-words = [1]
+
+[[profiles.cases]]
+name = "wifi-event-46"
+arguments = [1, 46, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+[[profiles.cases.vendor-ram]]
+address = 0x100029c8
+value = 0x0f0a0a01
+[[profiles.cases.mmio-initial]]
+address = 0x2010f430
+value = 0xc4234567
+[[profiles.cases.mmio-initial]]
+address = 0x2010f434
+value = 0xae654321
+[[profiles.cases.mmio-initial]]
+address = 0x2010f438
+value = 0x27681356
+[[profiles.cases.mmio-initial]]
+address = 0x2010f43c
+value = 0x16572469
+[[profiles.cases.vendor-tables]]
+layout-id = "esp32s31-radio-rev0::coex-adapter-v2"
+base-address = 0x3fce1000
+layout-size = 0x50
+pointer-cells = [0x10002ba4]
+slots = [{ offset = 0x30, target = { kind = "symbol", value = "coexist_printf" } }]
+[[profiles.cases.vendor-calls]]
+symbol = "coexist_printf"
+return-words = [1]
+[[profiles.cases.vendor-calls]]
+symbol = "coexist_printf"
+return-words = [1]
+
+[[profiles.cases]]
+name = "wifi-event-47"
+arguments = [1, 47, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+
+[[profiles.cases]]
+name = "wifi-event-1-non-chip-clock"
+arguments = [1, 1, 2_000, 3_000, 0]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000008
+[[profiles.cases.vendor-ram]]
+address = 0x1000299c
+value = 0x0707050a
+[[profiles.cases.mmio-initial]]
+address = 0x2010f400
+value = 0xc1234567
+[[profiles.cases.mmio-initial]]
+address = 0x2010f404
+value = 0xab654321
+[[profiles.cases.mmio-initial]]
+address = 0x2010f408
+value = 0x24681356
+[[profiles.cases.mmio-initial]]
+address = 0x2010f40c
+value = 0x13572469
+[[profiles.cases.vendor-tables]]
+layout-id = "esp32s31-radio-rev0::coex-adapter-v2"
+base-address = 0x3fce1000
+layout-size = 0x50
+pointer-cells = [0x10002ba4]
+slots = [{ offset = 0x30, target = { kind = "symbol", value = "coexist_printf" } }]
+[[profiles.cases.vendor-calls]]
+symbol = "coexist_printf"
+return-words = [0]
+[[profiles.cases.vendor-calls]]
+symbol = "coexist_printf"
+return-words = [0]
+
+# One mapped request for every other clock selector accepted by the reviewed
+# platform decoder. These cases close the selector branches while retaining
+# the same event, timer, client and timer-register seed.
+[[profiles.cases]]
+name = "wifi-event-1-clock-selector-1"
+arguments = [1, 1, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000001
+[[profiles.cases.vendor-ram]]
+address = 0x1000299c
+value = 0x0707050a
+[[profiles.cases.mmio-initial]]
+address = 0x2010f400
+value = 0xc1234567
+[[profiles.cases.mmio-initial]]
+address = 0x2010f404
+value = 0xab654321
+[[profiles.cases.mmio-initial]]
+address = 0x2010f408
+value = 0x24681356
+[[profiles.cases.mmio-initial]]
+address = 0x2010f40c
+value = 0x13572469
+
+[[profiles.cases]]
+name = "wifi-event-1-clock-selector-2"
+arguments = [1, 1, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000272
+[[profiles.cases.vendor-ram]]
+address = 0x1000299c
+value = 0x0707050a
+[[profiles.cases.mmio-initial]]
+address = 0x2010f400
+value = 0xc1234567
+[[profiles.cases.mmio-initial]]
+address = 0x2010f404
+value = 0xab654321
+[[profiles.cases.mmio-initial]]
+address = 0x2010f408
+value = 0x24681356
+[[profiles.cases.mmio-initial]]
+address = 0x2010f40c
+value = 0x13572469
+
+[[profiles.cases]]
+name = "wifi-event-1-clock-selector-4"
+arguments = [1, 1, 2_000, 3_000, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f008
+value = 0x00000314
+[[profiles.cases.vendor-ram]]
+address = 0x1000299c
+value = 0x0707050a
+[[profiles.cases.mmio-initial]]
+address = 0x2010f400
+value = 0xc1234567
+[[profiles.cases.mmio-initial]]
+address = 0x2010f404
+value = 0xab654321
+[[profiles.cases.mmio-initial]]
+address = 0x2010f408
+value = 0x24681356
+[[profiles.cases.mmio-initial]]
+address = 0x2010f40c
+value = 0x13572469
+[[profiles.cases.vendor-tables]]
+layout-id = "esp32s31-radio-rev0::coex-adapter-v2"
+base-address = 0x3fce1000
+layout-size = 0x50
+pointer-cells = [0x10002ba4]
+slots = [{ offset = 0x48, target = { kind = "symbol", value = "strlen" } }]
+[[profiles.cases.vendor-calls]]
+symbol = "coexist_printf"
+return-words = [40]
+[[profiles.cases.vendor-calls]]
+symbol = "coexist_printf"
+return-words = [40]
+
+# Release covers the same complete event domain and mapped timer edges.
+[[profiles]]
+name = "coex-core-release"
+vendor-source = "coex"
+vendor-symbol = "coex_core_release"
+rust-symbol = "open_coex_core_trace_release"
+compare-return = true
+[[profiles.argument-ranges]]
+index = 1
+min = 0
+max = 47
+
+[[profiles.cases]]
+name = "event-0"
+arguments = [0, 0]
+
+[[profiles.cases]]
+name = "event-1"
+arguments = [1, 1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f408
+value = 0x24681357
+[[profiles.cases.mmio-initial]]
+address = 0x2010f40c
+value = 0x13572468
+
+[[profiles.cases]]
+name = "event-2"
+arguments = [0, 2]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f418
+value = 0x25681357
+[[profiles.cases.mmio-initial]]
+address = 0x2010f41c
+value = 0x14572468
+
+[[profiles.cases]]
+name = "event-3"
+arguments = [1, 3]
+
+[[profiles.cases]]
+name = "event-4"
+arguments = [0, 4]
+
+[[profiles.cases]]
+name = "event-5"
+arguments = [1, 5]
+
+[[profiles.cases]]
+name = "event-6"
+arguments = [0, 6]
+
+[[profiles.cases]]
+name = "event-7"
+arguments = [1, 7]
+
+[[profiles.cases]]
+name = "event-8"
+arguments = [0, 8]
+
+[[profiles.cases]]
+name = "event-9"
+arguments = [1, 9]
+
+[[profiles.cases]]
+name = "event-10"
+arguments = [0, 10]
+
+[[profiles.cases]]
+name = "event-11"
+arguments = [1, 11]
+
+[[profiles.cases]]
+name = "event-12"
+arguments = [0, 12]
+
+[[profiles.cases]]
+name = "event-13"
+arguments = [1, 13]
+
+[[profiles.cases]]
+name = "event-14"
+arguments = [0, 14]
+
+[[profiles.cases]]
+name = "event-15"
+arguments = [1, 15]
+
+[[profiles.cases]]
+name = "event-16"
+arguments = [0, 16]
+
+[[profiles.cases]]
+name = "event-17"
+arguments = [1, 17]
+
+[[profiles.cases]]
+name = "event-18"
+arguments = [0, 18]
+
+[[profiles.cases]]
+name = "event-19"
+arguments = [1, 19]
+
+[[profiles.cases]]
+name = "event-20"
+arguments = [0, 20]
+
+[[profiles.cases]]
+name = "event-21"
+arguments = [1, 21]
+
+[[profiles.cases]]
+name = "event-22"
+arguments = [0, 22]
+
+[[profiles.cases]]
+name = "event-23"
+arguments = [1, 23]
+
+[[profiles.cases]]
+name = "event-24"
+arguments = [0, 24]
+
+[[profiles.cases]]
+name = "event-25"
+arguments = [1, 25]
+
+[[profiles.cases]]
+name = "event-26"
+arguments = [0, 26]
+
+[[profiles.cases]]
+name = "event-27"
+arguments = [1, 27]
+
+[[profiles.cases]]
+name = "event-28"
+arguments = [0, 28]
+
+[[profiles.cases]]
+name = "event-29"
+arguments = [1, 29]
+
+[[profiles.cases]]
+name = "event-30"
+arguments = [0, 30]
+
+[[profiles.cases]]
+name = "event-31"
+arguments = [1, 31]
+
+[[profiles.cases]]
+name = "event-32"
+arguments = [0, 32]
+
+[[profiles.cases]]
+name = "event-33"
+arguments = [1, 33]
+
+[[profiles.cases]]
+name = "event-34"
+arguments = [0, 34]
+
+[[profiles.cases]]
+name = "event-35"
+arguments = [1, 35]
+
+[[profiles.cases]]
+name = "event-36"
+arguments = [0, 36]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f448
+value = 0x28681357
+[[profiles.cases.mmio-initial]]
+address = 0x2010f44c
+value = 0x17572468
+
+[[profiles.cases]]
+name = "event-37"
+arguments = [1, 37]
+
+[[profiles.cases]]
+name = "event-38"
+arguments = [0, 38]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f428
+value = 0x26681357
+[[profiles.cases.mmio-initial]]
+address = 0x2010f42c
+value = 0x15572468
+
+[[profiles.cases]]
+name = "event-39"
+arguments = [1, 39]
+
+[[profiles.cases]]
+name = "event-40"
+arguments = [0, 40]
+
+[[profiles.cases]]
+name = "event-41"
+arguments = [1, 41]
+
+[[profiles.cases]]
+name = "event-42"
+arguments = [0, 42]
+
+[[profiles.cases]]
+name = "event-43"
+arguments = [1, 43]
+
+[[profiles.cases]]
+name = "event-44"
+arguments = [0, 44]
+
+[[profiles.cases]]
+name = "event-45"
+arguments = [1, 45]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f438
+value = 0x27681357
+[[profiles.cases.mmio-initial]]
+address = 0x2010f43c
+value = 0x16572468
+
+[[profiles.cases]]
+name = "event-46"
+arguments = [0, 46]
+[[profiles.cases.mmio-initial]]
+address = 0x2010f438
+value = 0x27681357
+[[profiles.cases.mmio-initial]]
+address = 0x2010f43c
+value = 0x16572468
+
+[[profiles.cases]]
+name = "event-47"
+arguments = [1, 47]

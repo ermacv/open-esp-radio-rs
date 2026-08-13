@@ -36,8 +36,8 @@ pub(crate) use linked_ir_document::{
 };
 pub(crate) use linked_ir_read::{
     LinkedIrStoredDocument, StoredCall, StoredDataObject, StoredFlowValue, StoredFunction,
-    StoredLocalValueFlow, StoredMemoryObject, StoredMmioAccess, StoredMmioRegister,
-    StoredReviewCall, StoredReviewDirectEffect, parse_linked_ir,
+    StoredInstructionEffect, StoredLocalValueFlow, StoredMemoryObject, StoredMmioAccess,
+    StoredMmioRegister, StoredReviewCall, StoredReviewDirectEffect, parse_linked_ir,
 };
 pub(crate) use mmio_facts::{MmioFactsDocument, build_mmio_facts};
 pub(crate) use mmio_facts_read::parse_mmio_facts;

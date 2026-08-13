@@ -26,9 +26,9 @@ embassy-time = "0.5.1"
 embassy-time-driver = { version = "0.2", features = ["tick-hz-1_000_000"] }
 embassy-time-queue-utils = "0.3"
 embedded-io-async = "0.7.0"
-esp-bootloader-esp-idf = { git = "https://github.com/ermacv/esp-hal", branch = "esp32s31-async-platform", default-features = false }
-esp-hal = { git = "https://github.com/ermacv/esp-hal", branch = "esp32s31-async-platform", default-features = false }
-esp-sync = { git = "https://github.com/ermacv/esp-hal", branch = "esp32s31-async-platform" }
+esp-bootloader-esp-idf = { git = "https://github.com/ermacv/esp-hal", rev = "7f914782f5c689a74f37df83b89a0827d3800323", default-features = false }
+esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "7f914782f5c689a74f37df83b89a0827d3800323", default-features = false }
+esp-sync = { git = "https://github.com/ermacv/esp-hal", rev = "7f914782f5c689a74f37df83b89a0827d3800323" }
 log = { version = "0.4.27", features = ["max_level_trace", "release_max_level_info"] }
 heapless = "0.9.3"
 open-esp-radio = { path = "../../../driver/radio", default-features = false, features = ["esp32s31-wifi-embassy"] }

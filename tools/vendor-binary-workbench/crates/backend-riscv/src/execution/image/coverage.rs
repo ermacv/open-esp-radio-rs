@@ -308,7 +308,12 @@ impl ExecutableImage {
                 Inst::Lw { offset, dest, base } => {
                     let value = get(&registers, base)
                         .map(|base| base.wrapping_add(offset.as_u32()))
-                        .and_then(|address| stable_words.get(&address).copied());
+                        .and_then(|address| {
+                            stable_words
+                                .get(&address)
+                                .copied()
+                                .or_else(|| self.immutable_word(address))
+                        });
                     set(&mut registers, dest, value);
                     enqueue!(next, registers);
                 }

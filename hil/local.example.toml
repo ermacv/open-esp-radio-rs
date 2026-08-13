@@ -22,8 +22,14 @@ mode = "dhcp"
 ssid = "open-radio-device"
 passphrase = "replace-me-too"
 channel = 6
+# Admission limit enforced before an association obtains an AID/key slot.
+# The ESP32-S31 AP implementation accepts 1..=15.
+client_limit = 4
 target_address = "10.43.0.1/24"
 client_address = "10.43.0.2/24"
+# Optional second physical client hosted by the OpenWrt fixture. It is used
+# only by scenarios whose minimum_concurrent_ap_clients is two.
+secondary_client_address = "10.43.0.3/24"
 
 [station_fixture]
 # Select exactly one explicit owner. Other valid forms are:

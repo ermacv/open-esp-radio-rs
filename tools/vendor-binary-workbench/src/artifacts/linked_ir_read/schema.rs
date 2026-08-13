@@ -140,7 +140,7 @@ pub(crate) struct StoredDataObject {
     pub(crate) member: Option<String>,
     section: String,
     pub(crate) symbol: String,
-    aliases: Vec<String>,
+    pub(crate) aliases: Vec<String>,
     pub(crate) address: Option<String>,
     object_offset: String,
     pub(crate) size: u64,

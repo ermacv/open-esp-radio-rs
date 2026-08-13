@@ -10,7 +10,9 @@
 #[cfg(test)]
 extern crate std;
 
-pub use open_esp_radio_esp32s31_pac::{MacInterface, MacPti, MacStaApReceivePlan};
+pub use open_esp_radio_esp32s31_pac::{
+    MacInterface, MacPti, MacRoleReceivePolicy, MacStaApReceivePlan, MacStaPolicyMode,
+};
 
 pub mod ap_policy;
 pub mod capabilities;

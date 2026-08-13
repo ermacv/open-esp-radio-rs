@@ -65,10 +65,13 @@ same run-spec role. Artifact revision and authenticity remain caller-owned;
 the workbench reports content hashes but never substitutes its own trust
 policy for the invoking CI job.
 
-Symbol naming conventions are suite data, not generic CLI defaults. Each suite
-owns its `rust-prefix` and optional `source-prefixes`. Focused leaf commands
-must pass `--rust-prefix`; an omitted vendor prefix selects all named vendor
-functions.
+Symbol selection and naming conventions are suite data, not generic CLI
+defaults. Every `[[verification.suites.vendor]]` entry selects exactly one of
+`all = true`, `prefix = "..."`, or `symbols = ["..."]`. Exact symbol sets are
+the normal focused-suite boundary; `all` must be an explicit inventory-wide
+decision. Each suite owns its `rust-prefix`. Focused leaf commands must pass
+`--rust-prefix`; `--source-symbol SOURCE=SYMBOL` supplies an exact set and an
+omitted symbol selector selects all named vendor functions.
 
 Function identity is `(source, symbol)`, not the symbol spelling alone. Thus a
 ROM function and an archive function with the same name remain two independent

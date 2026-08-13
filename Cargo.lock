@@ -1118,7 +1118,7 @@ dependencies = [
 [[package]]
 name = "esp-config"
 version = "0.7.0"
-source = "git+https://github.com/ermacv/esp-hal?branch=esp32s31-async-platform#5b671647688974bd519d90cefe8652c2a1ddc27a"
+source = "git+https://github.com/ermacv/esp-hal?rev=7f914782f5c689a74f37df83b89a0827d3800323#7f914782f5c689a74f37df83b89a0827d3800323"
 dependencies = [
  "document-features",
  "esp-metadata-generated",
@@ -1130,7 +1130,7 @@ dependencies = [
 [[package]]
 name = "esp-hal"
 version = "1.1.0"
-source = "git+https://github.com/ermacv/esp-hal?branch=esp32s31-async-platform#5b671647688974bd519d90cefe8652c2a1ddc27a"
+source = "git+https://github.com/ermacv/esp-hal?rev=7f914782f5c689a74f37df83b89a0827d3800323#7f914782f5c689a74f37df83b89a0827d3800323"
 dependencies = [
  "bitfield",
  "bytemuck",
@@ -1177,7 +1177,7 @@ dependencies = [
 [[package]]
 name = "esp-hal-procmacros"
 version = "0.22.0"
-source = "git+https://github.com/ermacv/esp-hal?branch=esp32s31-async-platform#5b671647688974bd519d90cefe8652c2a1ddc27a"
+source = "git+https://github.com/ermacv/esp-hal?rev=7f914782f5c689a74f37df83b89a0827d3800323#7f914782f5c689a74f37df83b89a0827d3800323"
 dependencies = [
  "document-features",
  "proc-macro-crate",
@@ -1190,12 +1190,12 @@ dependencies = [
 [[package]]
 name = "esp-metadata-generated"
 version = "0.4.0"
-source = "git+https://github.com/ermacv/esp-hal?branch=esp32s31-async-platform#5b671647688974bd519d90cefe8652c2a1ddc27a"
+source = "git+https://github.com/ermacv/esp-hal?rev=7f914782f5c689a74f37df83b89a0827d3800323#7f914782f5c689a74f37df83b89a0827d3800323"
 
 [[package]]
 name = "esp-riscv-rt"
 version = "0.14.0"
-source = "git+https://github.com/ermacv/esp-hal?branch=esp32s31-async-platform#5b671647688974bd519d90cefe8652c2a1ddc27a"
+source = "git+https://github.com/ermacv/esp-hal?rev=7f914782f5c689a74f37df83b89a0827d3800323#7f914782f5c689a74f37df83b89a0827d3800323"
 dependencies = [
  "document-features",
  "riscv 0.15.0",
@@ -1205,7 +1205,7 @@ dependencies = [
 [[package]]
 name = "esp-rom-sys"
 version = "0.1.4"
-source = "git+https://github.com/ermacv/esp-hal?branch=esp32s31-async-platform#5b671647688974bd519d90cefe8652c2a1ddc27a"
+source = "git+https://github.com/ermacv/esp-hal?rev=7f914782f5c689a74f37df83b89a0827d3800323#7f914782f5c689a74f37df83b89a0827d3800323"
 dependencies = [
  "document-features",
  "esp-metadata-generated",
@@ -1215,7 +1215,7 @@ dependencies = [
 [[package]]
 name = "esp-sync"
 version = "0.2.1"
-source = "git+https://github.com/ermacv/esp-hal?branch=esp32s31-async-platform#5b671647688974bd519d90cefe8652c2a1ddc27a"
+source = "git+https://github.com/ermacv/esp-hal?rev=7f914782f5c689a74f37df83b89a0827d3800323#7f914782f5c689a74f37df83b89a0827d3800323"
 dependencies = [
  "document-features",
  "embassy-sync 0.6.2",
@@ -2040,9 +2040,6 @@ dependencies = [
 [[package]]
 name = "open-esp-radio-esp32s31-coex"
 version = "0.1.0"
-dependencies = [
- "open-esp-radio-esp32s31-pac",
-]
 
 [[package]]
 name = "open-esp-radio-esp32s31-coex-embassy"
@@ -2058,6 +2055,7 @@ name = "open-esp-radio-esp32s31-hal"
 version = "0.1.0"
 dependencies = [
  "critical-section",
+ "open-esp-radio-esp32s31-coex",
  "open-esp-radio-esp32s31-pac",
 ]
 
@@ -2151,6 +2149,7 @@ version = "0.1.0"
 dependencies = [
  "critical-section",
  "esp-hal",
+ "open-esp-radio-esp32s31-coex",
  "open-esp-radio-esp32s31-hal",
  "open-esp-radio-esp32s31-pac",
  "open-esp-radio-esp32s31-phy",
@@ -2163,6 +2162,7 @@ name = "open-esp-radio-esp32s31-wifi-mac"
 version = "0.1.0"
 dependencies = [
  "open-esp-radio-dma",
+ "open-esp-radio-esp32s31-hal",
  "open-esp-radio-esp32s31-pac",
  "open-esp-radio-esp32s31-wifi-dma",
  "open-esp-radio-ieee80211",
@@ -4077,7 +4077,7 @@ dependencies = [
 [[package]]
 name = "xtensa-lx"
 version = "0.13.0"
-source = "git+https://github.com/ermacv/esp-hal?branch=esp32s31-async-platform#5b671647688974bd519d90cefe8652c2a1ddc27a"
+source = "git+https://github.com/ermacv/esp-hal?rev=7f914782f5c689a74f37df83b89a0827d3800323#7f914782f5c689a74f37df83b89a0827d3800323"
 dependencies = [
  "critical-section",
 ]

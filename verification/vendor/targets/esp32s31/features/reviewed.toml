@@ -1,6 +1,32 @@
 schema = 4
 
 [[features]]
+id = "wifi-ap-sta-receive-registers"
+description = "Sparse vendor receive-policy cases six and eight match the closed production PAC/HAL register transactions without claiming shared AP+STA runtime ownership."
+coverage = "bounded-evidence"
+
+[[features.phases]]
+id = "receive-policy"
+description = "Program the disjoint queue-zero STA and queue-one SoftAP receive-policy banks."
+
+[[features.requirements]]
+id = "sta-ap-receive-policy-projection"
+phase = "receive-policy"
+description = "Both observed policy-six submodes and policy eight match the production register projection."
+suite = "wifi-sta-ap-receive"
+source = "wifi-sta-ap-receive"
+symbol = "wifi_set_rx_policy"
+claim = "reviewed-projection"
+
+[[features.effects]]
+id = "sta-ap-receive-policy"
+phase = "receive-policy"
+vendor = { source = "wifi-sta-ap-receive", symbol = "wifi_set_rx_policy", fingerprint = "sha256:16d45aa852e6cc8184bb39d5fe839c8db99a086f5a969dcbdaea1d1f6efab2dd" }
+disposition = "verified"
+requirement = "sta-ap-receive-policy-projection"
+rationale = "The bounded sparse selector domain contains only cases six and eight; the case-six g_ic word remains numeric Mode1/Mode2 rather than being assigned an unproved AP+STA meaning."
+
+[[features]]
 id = "wifi-ap-sta-key-role"
 description = "Production CCMP builders encode vendor connection context zero for STA and one for AP in the hardware key control word."
 coverage = "bounded-evidence"
@@ -26,7 +52,7 @@ claim = "rust-conformance"
 [[features.effects]]
 id = "key-connection-context"
 phase = "key-install"
-vendor = { source = "wifi-key-role", symbol = "wDev_Insert_KeyEntry", fingerprint = "sha256:20de802a8d8118e8ea37cb305cd5cf22bedb0e86dca61a26a7411d3e8fcb674d" }
+vendor = { source = "wifi-key-role", symbol = "wDev_Insert_KeyEntry", fingerprint = "sha256:96dacfb77e5d3916fb85ba4f0d4f8be1055d0667b93db195dca8f77cc32a29dc" }
 disposition = "verified"
 requirement = "ap-sta-key-connection-context"
 rationale = "The role is traced from vendor AP/STA constants through wDev metadata into control-halfword bits 8..=9 (key-word bits 24..=25) and independently executed through the production Rust builders."
@@ -88,6 +114,72 @@ requirement = "beacon-filter-disable-transaction"
 rationale = "Connected entry must execute the complete reviewed disable transaction before software beacon monitoring owns delivery."
 
 [[features]]
+id = "wifi-ap-sta-interface-identity"
+description = "The closed PAC programs disjoint STA=0 and SoftAP=1 MAC-address and BSSID banks with complete vendor leaves. This proves register identity storage, not shared PHY lifecycle ownership."
+coverage = "review-scopes"
+scopes = ["wifi-interface-context"]
+
+[[features.phases]]
+id = "interface-identity"
+description = "Publish role-specific receive addresses and BSSIDs in the two reviewed hardware banks."
+scopes = ["wifi-interface-context"]
+
+[[features.requirements]]
+id = "interface-address-transaction"
+phase = "interface-identity"
+description = "STA=0 and SoftAP=1 execute the complete three-edge vendor interface-address transaction."
+suite = "wifi-interface-context"
+source = "libpp"
+symbol = "hal_mac_set_addr"
+claim = "whole-function-equivalence"
+
+[[features.requirements]]
+id = "interface-bssid-transaction"
+phase = "interface-identity"
+description = "STA=0 and SoftAP=1 execute the complete four-edge vendor BSSID publication transaction."
+suite = "wifi-interface-context"
+source = "libpp"
+symbol = "hal_mac_set_bssid"
+claim = "whole-function-equivalence"
+
+[[features.effects]]
+id = "interface-address"
+phase = "interface-identity"
+vendor = { source = "libpp", symbol = "hal_mac_set_addr", fingerprint = "sha256:8a350789aaa15a67ae7ec027399f57da743240fbb953baa3ff8fdd8697ed7340" }
+disposition = "verified"
+requirement = "interface-address-transaction"
+rationale = "Concrete execution covers both role selectors and preserves the vendor pointer ABI and low/high/enable ordering."
+
+[[features.effects]]
+id = "interface-bssid"
+phase = "interface-identity"
+vendor = { source = "libpp", symbol = "hal_mac_set_bssid", fingerprint = "sha256:48b7833d24a0dc9890f6acfd06e1898ea3c91ab749af74858858c48a25c02510" }
+disposition = "verified"
+requirement = "interface-bssid-transaction"
+rationale = "Concrete execution covers both role selectors and preserves unrelated policy bits across four fresh MMIO edges."
+
+[[features.effects]]
+id = "interface-bssid-clear"
+phase = "interface-identity"
+vendor = { source = "libpp", symbol = "hal_mac_clr_bssid", fingerprint = "sha256:710364a3af98e2c0ce17ee1acdc03dc78bc2cfd92c95ad3489c8a587efe5a8de" }
+disposition = "excluded-by-feature-policy"
+rationale = "Clearing a BSSID belongs to role teardown and is outside the identity-publication contract."
+
+[[features.effects]]
+id = "standalone-bssid-check-disable"
+phase = "interface-identity"
+vendor = { source = "libpp", symbol = "hal_rx_disable_bssid_check", fingerprint = "sha256:abbce575aba181a9bd7335076965831eb073a96b93d18be5a1b639ea3122aa00" }
+disposition = "excluded-by-feature-policy"
+rationale = "The complete BSSID publication leaf owns its temporary disable edge; the standalone lifecycle operation is outside this contract."
+
+[[features.effects]]
+id = "standalone-bssid-check-enable"
+phase = "interface-identity"
+vendor = { source = "libpp", symbol = "hal_rx_enable_bssid_check", fingerprint = "sha256:25e46a06ee28dbd258817fdf77804689b31691d4a2164cc4767fc4a8025c56ac" }
+disposition = "excluded-by-feature-policy"
+rationale = "The complete BSSID publication leaf owns its final enable edge; the standalone lifecycle operation is outside this contract."
+
+[[features]]
 id = "coex-hardware-timer-control"
 description = "The open coexistence driver owns enable, disable, force and unforce control for all five hardware-timer banks."
 coverage = "review-scopes"
@@ -107,7 +199,7 @@ scopes = ["coex-timer-control"]
 id = "coex-timer-enable-transaction"
 phase = "timer-control"
 description = "Timer enable preserves both ordered fresh-read RMW edges for every timer index."
-suite = "coex-timer"
+suite = "coex-timer-control"
 source = "coex"
 symbol = "coex_hw_timer_enable"
 claim = "whole-function-equivalence"
@@ -116,7 +208,7 @@ claim = "whole-function-equivalence"
 id = "coex-timer-disable-transaction"
 phase = "timer-control"
 description = "Timer disable preserves both ordered fresh-read RMW edges for every timer index."
-suite = "coex-timer"
+suite = "coex-timer-control"
 source = "coex"
 symbol = "coex_hw_timer_disable"
 claim = "whole-function-equivalence"
@@ -125,7 +217,7 @@ claim = "whole-function-equivalence"
 id = "coex-timer-force-transaction"
 phase = "timer-control"
 description = "Timer force preserves the reviewed indexed RMW edge for every timer index."
-suite = "coex-timer"
+suite = "coex-timer-control"
 source = "coex"
 symbol = "coex_hw_timer_force"
 claim = "whole-function-equivalence"
@@ -134,7 +226,7 @@ claim = "whole-function-equivalence"
 id = "coex-timer-unforce-transaction"
 phase = "timer-control"
 description = "Timer unforce preserves the reviewed indexed RMW edge for every timer index."
-suite = "coex-timer"
+suite = "coex-timer-control"
 source = "coex"
 symbol = "coex_hw_timer_unforce"
 claim = "whole-function-equivalence"
@@ -170,6 +262,107 @@ vendor = { source = "coex", symbol = "coex_hw_timer_unforce", fingerprint = "sha
 disposition = "verified"
 requirement = "coex-timer-unforce-transaction"
 rationale = "The closed PAC preserves the indexed unforce edge across the full five-entry bank."
+
+[[features]]
+id = "wifi-mac-coex-register-programming"
+description = "The closed PAC and LMAC boundary reproduce the complete Wi-Fi MAC PTI and request-register leaves used by vendor coexistence code. This is register programming proof, not full Wi-Fi/BLE scheduler or lifecycle qualification."
+coverage = "review-scopes"
+scopes = ["wifi-coex-register-leaves"]
+
+[features.hardware]
+minimum-successful-runs = 20
+required-observations = ["wifi-traffic", "ble-activity", "pti-register-programming"]
+required-artifacts = ["firmware", "project-manifest", "feature-pack", "register-model"]
+
+[[features.phases]]
+id = "wifi-mac-pti"
+description = "Program receive, individual-TWT and transmit-queue PTI state through closed typed operations."
+scopes = ["wifi-coex-register-leaves"]
+
+[[features.requirements]]
+id = "wifi-rx-beacon-pti-transaction"
+phase = "wifi-mac-pti"
+description = "Receive-beacon and shared PTI fields preserve the exact two-register vendor transaction."
+suite = "wifi-coex-runtime"
+source = "libpp"
+symbol = "hal_set_rx_beacon_pti"
+claim = "whole-function-equivalence"
+
+[[features.requirements]]
+id = "wifi-rx-beacon-clear-transaction"
+phase = "wifi-mac-pti"
+description = "Receive-beacon clear requests preserve the exact vendor read-modify-write transaction."
+suite = "wifi-coex-runtime"
+source = "libpp"
+symbol = "hal_clear_rx_beacon_pti"
+claim = "whole-function-equivalence"
+
+[[features.requirements]]
+id = "wifi-itwt-pti-transaction"
+phase = "wifi-mac-pti"
+description = "Individual-TWT control and shared PTI fields preserve the exact two-register vendor transaction."
+suite = "wifi-coex-runtime"
+source = "libpp"
+symbol = "hal_set_itwt_pti"
+claim = "whole-function-equivalence"
+
+[[features.requirements]]
+id = "wifi-itwt-clear-transaction"
+phase = "wifi-mac-pti"
+description = "Every machine-defined request index 0 through 31 uses the exact vendor indexed-bit RMW transaction."
+suite = "wifi-coex-runtime"
+source = "libpp"
+symbol = "hal_clr_itwt_pti"
+claim = "whole-function-equivalence"
+
+[[features.requirements]]
+id = "wifi-tx-pti-transaction"
+phase = "wifi-mac-pti"
+description = "Every transmit queue uses the exact vendor scheduler and five-step PTI vector transaction."
+suite = "wifi-coex-runtime"
+source = "libpp"
+symbol = "hal_set_tx_pti"
+claim = "whole-function-equivalence"
+
+[[features.effects]]
+id = "wifi-rx-beacon-pti"
+phase = "wifi-mac-pti"
+vendor = { source = "libpp", symbol = "hal_set_rx_beacon_pti", fingerprint = "sha256:33509d2867bc2261122d70d222b02a6d22f4fea747b956047fd0daa5e3980f15" }
+disposition = "verified"
+requirement = "wifi-rx-beacon-pti-transaction"
+rationale = "The production PAC operation matches both ordered fresh-read RMW edges for every reviewed PTI input."
+
+[[features.effects]]
+id = "wifi-rx-beacon-clear"
+phase = "wifi-mac-pti"
+vendor = { source = "libpp", symbol = "hal_clear_rx_beacon_pti", fingerprint = "sha256:b0764ee03b4b79a5876f3058de0f1a5737cb9d99466ce587ef9cfaae60bebf68" }
+disposition = "verified"
+requirement = "wifi-rx-beacon-clear-transaction"
+rationale = "The generated closed PAC bridge sets only the reviewed request bit through a fresh-read RMW."
+
+[[features.effects]]
+id = "wifi-itwt-pti"
+phase = "wifi-mac-pti"
+vendor = { source = "libpp", symbol = "hal_set_itwt_pti", fingerprint = "sha256:b93faef0cc2782f5bf2eee9c6a3f2612be5047e468dfc6d06fd5968b7dc699fa" }
+disposition = "verified"
+requirement = "wifi-itwt-pti-transaction"
+rationale = "The production PAC operation matches the low-byte control replacement followed by the shared PTI nibble replacement."
+
+[[features.effects]]
+id = "wifi-itwt-clear"
+phase = "wifi-mac-pti"
+vendor = { source = "libpp", symbol = "hal_clr_itwt_pti", fingerprint = "sha256:2740e31cefb9f85df02213e1ad02ccbbbbb0f8e9f41f45f78a40e646989c4c24" }
+disposition = "verified"
+requirement = "wifi-itwt-clear-transaction"
+rationale = "The generated closed PAC bridge accepts only a bounded five-bit index and reproduces the vendor shift-and-OR transaction."
+
+[[features.effects]]
+id = "wifi-tx-pti"
+phase = "wifi-mac-pti"
+vendor = { source = "libpp", symbol = "hal_set_tx_pti", fingerprint = "sha256:a08e5672ff7e1c1b9c97a905e4fd5ba70b443dfaa888dc8471fd797590e01f13" }
+disposition = "verified"
+requirement = "wifi-tx-pti-transaction"
+rationale = "The production PAC operation covers all four reversed hardware queue banks and preserves the vendor six-RMW ordering."
 
 [[features]]
 id = "wifi-ap-bringup"

@@ -17,6 +17,7 @@ use esp_hal::{
     rng::Rng,
     system::Cpu,
 };
+use open_esp_radio_esp32s31_coex::{CoexClockHardware, CoexError, CoexTimerClock};
 use open_esp_radio_esp32s31_hal::{
     PowerClockControl, PowerClockImages,
     analog_i2c::PhyPmuControl,
@@ -109,6 +110,18 @@ impl EspHalRadioPeripheral {
 impl Esp32s31WifiMacPlatform for EspHalRadioPeripheral {
     fn install_phy_tx_power_profile(&mut self, profile: PhyTxTargetPowerProfile) {
         EspHalRadioPeripheral::install_phy_tx_power_profile(self, profile);
+    }
+}
+
+impl CoexClockHardware for EspHalRadioPeripheral {
+    fn sample(&mut self) -> Result<CoexTimerClock, CoexError> {
+        // Complete `coex_hw_timer_tick_get` samples the selector and divider
+        // through two independent volatile reads of the platform-owned
+        // MODEM_LPCON register. The fixed 40 MHz crystal is established by
+        // the qualified ESP32-S31 PHY prelude.
+        let selector_image = MODEM_LPCON::regs().coex_lp_clk_conf().read().bits();
+        let divider_image = MODEM_LPCON::regs().coex_lp_clk_conf().read().bits();
+        CoexTimerClock::from_register_images(selector_image, divider_image, 40, true)
     }
 }
 

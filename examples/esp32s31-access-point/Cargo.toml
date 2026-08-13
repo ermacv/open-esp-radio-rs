@@ -1,0 +1,39 @@
+[package]
+name = "open-esp-radio-esp32s31-access-point"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.97.1"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[dependencies]
+edge-dhcp = { version = "0.8.0", default-features = false }
+embassy-net = { git = "https://github.com/ermacv/embassy", rev = "97da28a77e15a55c412da8b51710fecf5b7a8979", features = ["medium-ethernet", "proto-ipv4", "tcp", "udp"] }
+embassy-time = "0.5.1"
+static_cell = "2.1.1"
+
+[target.'cfg(target_arch = "riscv32")'.dependencies]
+embassy-executor = { version = "0.10.0", default-features = false }
+embassy-futures = "0.1.2"
+esp-backtrace = { git = "https://github.com/ermacv/esp-hal", rev = "7f914782f5c689a74f37df83b89a0827d3800323", default-features = false, features = ["esp32s31", "panic-handler", "println"] }
+esp-bootloader-esp-idf = { git = "https://github.com/ermacv/esp-hal", rev = "7f914782f5c689a74f37df83b89a0827d3800323", default-features = false, features = ["esp32s31"] }
+esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "7f914782f5c689a74f37df83b89a0827d3800323", default-features = false, features = ["esp32s31", "rt", "unstable"] }
+esp-println = { git = "https://github.com/ermacv/esp-hal", rev = "7f914782f5c689a74f37df83b89a0827d3800323", default-features = false, features = ["auto", "esp32s31", "log-04"] }
+open-esp-radio = { path = "../../driver/radio", default-features = false, features = ["esp32s31-wifi-embassy"] }
+open-esp-radio-esp32s31-embassy-runtime = { path = "../../driver/adapters/embassy/esp32s31-platform", features = ["esp32s31"] }
+open-esp-radio-esp32s31-wifi-esp-hal = { path = "../../driver/adapters/esp-hal/esp32s31-wifi", features = ["esp32s31"] }
+open-esp-radio-esp32s31-embassy-wifi = { path = "../../driver/integration/esp32s31/embassy-wifi" }
+
+[profile.release]
+codegen-units = 1
+debug = true
+lto = "fat"
+opt-level = 3
+panic = "abort"
+strip = false
+
+[patch."https://github.com/esp-rs/esp-pacs"]
+esp32s31 = { git = "https://github.com/ermacv/esp-pacs", rev = "d0fb94ef3" }
+
+[workspace]
+resolver = "3"

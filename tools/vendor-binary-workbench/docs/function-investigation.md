@@ -173,6 +173,22 @@ cargo vendor-binary-workbench inspect object \
   wifi-sta-lifecycle:ap_no_lr
 ```
 
+For one reviewed field, keep the report focused on exact instruction effects
+and a bounded route to a consumer:
+
+```console
+cargo vendor-binary-workbench inspect object \
+  --project verification/vendor/targets/esp32s31/vendor-project.toml \
+  wifi-sta-lifecycle:g_ic --offset 0x74 \
+  --flows-to wifi_set_rx_policy
+```
+
+`--constants` retains only accesses or route callsites with an exact recovered
+constant. Human output suppresses unknown ABI tail arguments; JSON retains the
+complete access, call argument and graph-edge evidence. The route is a
+structural call-graph path and does not claim that its guards are jointly
+satisfiable.
+
 `inspect scope` reads one already generated review-scope artifact:
 
 ```console

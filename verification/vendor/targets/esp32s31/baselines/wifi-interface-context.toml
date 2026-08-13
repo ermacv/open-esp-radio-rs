@@ -1,0 +1,29 @@
+schema = 2
+
+[[evidence]]
+source = "libpp"
+symbol = "hal_mac_set_addr"
+kind = "scenario/profile:wifi-interface-address"
+digest = "159e96cadba0fd0a395814d32b6a4222219f31a546d4a6f223d903cf47be6e2f"
+
+[evidence.components]
+comparison-orchestrator = "78f3316221c5be17b39047bc588be3269db93581b7fd322ac4b092f37c8178ea"
+execution-image = "3885065e6ff308001a383d5164cd1f17dba4f452a35ef3c07baa3ce5916530da"
+execution-machine = "ecce5dd7068bb1bc30a5573d8b2c8f89fa158e96289a8653c8fea6fe58d80398"
+execution-model = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"
+profile = "4d4a095194bea82864bb8fb6b33573aedd90af9528d7db405142a17938393846"
+profile-parser = "8c816820d8881be9429d372eef1be0e19432f53e699c3bc0244875922aa5814a"
+
+[[evidence]]
+source = "libpp"
+symbol = "hal_mac_set_bssid"
+kind = "scenario/profile:wifi-interface-bssid"
+digest = "4002d0807d134a892fb3cd16d2c3b9b5a115c20973d496782e5f6d9aa6f366b1"
+
+[evidence.components]
+comparison-orchestrator = "78f3316221c5be17b39047bc588be3269db93581b7fd322ac4b092f37c8178ea"
+execution-image = "3885065e6ff308001a383d5164cd1f17dba4f452a35ef3c07baa3ce5916530da"
+execution-machine = "ecce5dd7068bb1bc30a5573d8b2c8f89fa158e96289a8653c8fea6fe58d80398"
+execution-model = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"
+profile = "c6ff1fed713c9503c1956012ceeb4bd91dfec8063ece19caa95ae6a3bbea3da2"
+profile-parser = "8c816820d8881be9429d372eef1be0e19432f53e699c3bc0244875922aa5814a"

@@ -218,6 +218,7 @@ pub struct Criteria {
     pub maximum_lost: Option<u32>,
     pub maximum_p95_ms: Option<u16>,
     pub require_no_beacon_loss: bool,
+    pub minimum_concurrent_ap_clients: Option<u8>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
@@ -546,6 +547,17 @@ impl Scenario {
             return self
                 .criteria_error("require_no_beacon_loss requires a station data-plane workload");
         }
+        if let Some(minimum) = self.criteria.minimum_concurrent_ap_clients {
+            if !matches!(self.workload, Workload::AccessPoint { .. }) {
+                return self.criteria_error(
+                    "minimum_concurrent_ap_clients requires an access-point workload",
+                );
+            }
+            if !(1..=2).contains(&minimum) {
+                return self
+                    .criteria_error("current physical HIL supports 1..=2 concurrent AP clients");
+            }
+        }
         Ok(())
     }
 
@@ -739,6 +751,15 @@ mod tests {
         assert!(catalog.get("access-point-rx").is_ok());
         assert!(catalog.get("access-point-tx").is_ok());
         assert!(catalog.get("access-point-bidirectional").is_ok());
+        for id in [
+            "access-point-load-rx",
+            "access-point-load-tx",
+            "access-point-load-bidirectional",
+        ] {
+            let scenario = catalog.get(id).unwrap();
+            assert_eq!(scenario.repetitions, 5);
+            assert_eq!(scenario.criteria.minimum_concurrent_ap_clients, Some(2));
+        }
     }
 
     #[test]

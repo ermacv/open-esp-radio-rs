@@ -168,6 +168,7 @@ pub(super) struct ProductionAccessPointEngineFault {
     _transmit: ProductionWifiTxResources,
     _engine: open_esp_radio::esp32s31::wifi::ap::engine::Esp32s31ApEngineStartFailure<'static>,
     _parked: ProductionAccessPointParked,
+    _rx_dispatcher: &'static mut open_esp_radio::esp32s31::wifi::ap::rx::Esp32s31ApRxDispatcher,
     _rx_frame: &'static mut [u8],
     _tx_frame: &'static mut [u8],
 }
@@ -180,6 +181,10 @@ pub(super) struct ProductionAccessPointSecurityMaterialFault {
     _transmit: ProductionWifiTxResources,
     _parked: ProductionAccessPointParked,
     _beacon: &'static mut [u8; open_esp_radio::wifi::ieee80211::beacon::WPA2_BEACON_CAPACITY],
+    _peer_storage: &'static mut open_esp_radio::wifi::ap::AccessPointPeerStorage,
+    _pairwise_storage:
+        &'static mut open_esp_radio::esp32s31::wifi::ap::security::Esp32s31ApPairwiseKeyStorage,
+    _rx_dispatcher: &'static mut open_esp_radio::esp32s31::wifi::ap::rx::Esp32s31ApRxDispatcher,
     _rx_frame: &'static mut [u8],
     _tx_frame: &'static mut [u8],
 }
@@ -521,6 +526,11 @@ pub(super) struct ProductionAccessPointResources {
     pub(super) address: [u8; 6],
     pub(super) beacon:
         &'static mut [u8; open_esp_radio::wifi::ieee80211::beacon::WPA2_BEACON_CAPACITY],
+    pub(super) peer_storage: &'static mut open_esp_radio::wifi::ap::AccessPointPeerStorage,
+    pub(super) pairwise_storage:
+        &'static mut open_esp_radio::esp32s31::wifi::ap::security::Esp32s31ApPairwiseKeyStorage,
+    pub(super) rx_dispatcher:
+        &'static mut open_esp_radio::esp32s31::wifi::ap::rx::Esp32s31ApRxDispatcher,
 }
 
 impl ProductionWifiEpochRunner {
@@ -706,8 +716,14 @@ impl ProductionWifiEpochRunner {
             }
         };
 
-        let (ssid, security, channel) = request.into_parts();
-        let ProductionAccessPointResources { address, beacon } = access_point;
+        let (ssid, security, channel, client_limit) = request.into_parts();
+        let ProductionAccessPointResources {
+            address,
+            beacon,
+            peer_storage,
+            pairwise_storage,
+            rx_dispatcher,
+        } = access_point;
         let mut gtk_key = [0_u8; 16];
         for word in gtk_key.chunks_exact_mut(4) {
             word.copy_from_slice(&self.trng.random().to_le_bytes());
@@ -732,17 +748,27 @@ impl ProductionWifiEpochRunner {
                             monitor,
                         },
                         _beacon: beacon,
+                        _peer_storage: peer_storage,
+                        _pairwise_storage: pairwise_storage,
+                        _rx_dispatcher: rx_dispatcher,
                         _rx_frame: scan_frame,
                         _tx_frame: ethernet,
                     },
                 });
             }
         };
-        let service = AccessPointService::new(address, security.into_pmk(), gtk);
+        let service = AccessPointService::new(
+            address,
+            security.into_pmk(),
+            gtk,
+            client_limit,
+            peer_storage,
+        );
         let engine = match Esp32s31ApEngine::start(
             &mut materialized.registers,
             service,
             beacon,
+            pairwise_storage,
             &ssid,
             channel.primary(),
             AccessPointRequest::BEACON_INTERVAL_TU,
@@ -767,6 +793,7 @@ impl ProductionWifiEpochRunner {
                             station_address,
                             monitor,
                         },
+                        _rx_dispatcher: rx_dispatcher,
                         _rx_frame: scan_frame,
                         _tx_frame: ethernet,
                     },
@@ -786,8 +813,14 @@ impl ProductionWifiEpochRunner {
                 publication_timeout_micros: TX_COMPLETION_TIMEOUT_US,
             },
         );
-        let service =
-            Esp32s31AccessPointControl::new(receive, dma.storage(), mac, scan_frame, ethernet);
+        let service = Esp32s31AccessPointControl::new(
+            receive,
+            dma.storage(),
+            mac,
+            scan_frame,
+            ethernet,
+            rx_dispatcher,
+        );
         Ok(ProductionAccessPointTask {
             channel: channel.primary(),
             owner: materialized.owner,
@@ -883,9 +916,21 @@ impl ProductionWifiEpochRunner {
                 },
             });
         }
+        let open_esp_radio::esp32s31::wifi::ap::engine::Esp32s31ApEngineStop {
+            service,
+            beacon_storage,
+            pairwise_storage,
+            security: _,
+            report: _,
+        } = stopped.engine;
+        let address = service.address();
+        let peer_storage = service.into_peer_storage();
         let access_point = ProductionAccessPointResources {
-            address: stopped.engine.service.address(),
-            beacon: stopped.engine.beacon_storage,
+            address,
+            beacon: beacon_storage,
+            peer_storage,
+            pairwise_storage,
+            rx_dispatcher: stopped.data_rx,
         };
         let (station, monitor) = restore_station_resources_after_access_point(
             ProductionAccessPointParked {
@@ -1007,6 +1052,9 @@ impl ProductionWifiEpochRunner {
                 &*platform,
                 network,
                 wait_for_access_point_stop(endpoint),
+                |status| crate::access_point_status::publish_access_point_status(
+                    generation, status
+                ),
                 || {
                     let mut nonce = [0_u8; 32];
                     for word in nonce.chunks_exact_mut(4) {
@@ -1018,6 +1066,7 @@ impl ProductionWifiEpochRunner {
                 },
             ))
         };
+        crate::access_point_status::publish_access_point_stopped();
         #[cfg(feature = "qualification")]
         if let Ok(report) = &result
             && let Some(hooks) = task.parked.board.qualification
@@ -1037,6 +1086,8 @@ impl ProductionWifiEpochRunner {
                 authentication_responses: report.mac.authentication_responses_transmitted,
                 association_responses: report.mac.association_responses_transmitted,
                 authorized_peers: report.engine.authorized_peers,
+                maximum_associated_peers: report.engine.maximum_associated_peers,
+                maximum_authorized_peers: report.engine.maximum_authorized_peers,
                 peer_removals: report.engine.peer_removals,
                 completed_rx_descriptors: report.control.completed_rx_descriptors,
                 ignored_rx_frames: report.control.ignored_rx_frames,

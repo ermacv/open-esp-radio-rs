@@ -228,7 +228,10 @@ Profile files are strict TOML with `schema = 2`, one or more `[[profiles]]`
 tables, and one or more nested `[[profiles.cases]]` tables. A profile requires
 `name`, `vendor-source`, `vendor-symbol`, and `rust-symbol`; `contract`
 (`"scenario"` or `"state"`) and `compare-return` are optional. Closed ABI
-domains use `[[profiles.argument-ranges]]` with `index`, `min`, and `max`.
+Continuous domains use `[[profiles.argument-ranges]]` with `index`, `min`,
+and `max`. Sparse selector domains use `[[profiles.argument-values]]` with
+`index` and a non-empty, duplicate-free `values` array. A profile may not
+constrain the same argument through both forms.
 
 Cases store arguments in `arguments`, stable MMIO seeds in
 `[[profiles.cases.mmio-initial]]`, ordered reads in
@@ -428,13 +431,15 @@ The default `verify profiles` view contains a profile coverage table and a
 scenario table with match, diff or incomplete details. JSON and JSONL
 serialize the same typed aggregate report directly for automation.
 
-`[[profiles.argument-ranges]]` is a closed ABI precondition, not a hint inferred from the listed
-cases. The loader requires an executed case for every value combination in
-the declared finite domain (currently at most 4096 combinations). Static
-reachability is then computed separately for every admissible combination,
-so an out-of-domain Rust safety panic does not create a false coverage hole,
-while any in-domain branch, child call, or unresolved edge remains required.
-Arguments without a declared range remain unknown.
+`[[profiles.argument-ranges]]` and `[[profiles.argument-values]]` are closed
+ABI preconditions, not hints inferred from the listed cases. The loader
+requires an executed case for every value combination in the declared finite
+domain (currently at most 4096 combinations). Static reachability is then
+computed separately for every admissible combination, so an out-of-domain
+Rust safety panic does not create a false coverage hole, while any in-domain
+branch, child call, or unresolved edge remains required. Sparse values are
+important for jump-table projections: `values = [6, 8]` does not admit case
+7. Arguments without a declared range or value set remain unknown.
 
 ## State and semantic contracts
 

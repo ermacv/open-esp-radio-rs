@@ -1,0 +1,15 @@
+schema = 2
+
+[[evidence]]
+source = "wifi-sta-ap-receive"
+symbol = "wifi_set_rx_policy"
+kind = "scenario/profile:wifi-sta-ap-receive-policy"
+digest = "a1abce58e6d26ca848e6fb71a0c2b2c874acd8562e3e7980f478b1e466ee371f"
+
+[evidence.components]
+comparison-orchestrator = "78f3316221c5be17b39047bc588be3269db93581b7fd322ac4b092f37c8178ea"
+execution-image = "3885065e6ff308001a383d5164cd1f17dba4f452a35ef3c07baa3ce5916530da"
+execution-machine = "ecce5dd7068bb1bc30a5573d8b2c8f89fa158e96289a8653c8fea6fe58d80398"
+execution-model = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"
+profile = "fcb46f85ad15d8812fdb3e664d8cb173d386b175a514f311ba8f218c5cf9cc85"
+profile-parser = "8c816820d8881be9429d372eef1be0e19432f53e699c3bc0244875922aa5814a"

@@ -1,0 +1,510 @@
+schema = 2
+
+# Complete branch-domain proof for the five reviewed `g_coex_param`
+# durations. The cases cover the null-output boundary, every accepted event,
+# and one rejected event in each gap around the accepted selector set.
+[[profiles]]
+name = "coex-core-event-duration-get"
+vendor-source = "coex"
+vendor-symbol = "coex_core_event_duration_get"
+rust-symbol = "open_coex_core_trace_event_duration_get"
+contract = "state"
+compare-return = true
+[[profiles.argument-ranges]]
+index = 0
+min = 0
+max = 48
+
+[[profiles.cases]]
+name = "null-output"
+arguments = [4, 0]
+
+[[profiles.cases]]
+name = "event-4"
+arguments = [4, 0x3fff2100]
+[[profiles.cases.ram]]
+address = 0x3fff2100
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2100
+length = 4
+
+[[profiles.cases]]
+name = "event-7"
+arguments = [7, 0x3fff2100]
+[[profiles.cases.ram]]
+address = 0x3fff2100
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2100
+length = 4
+
+[[profiles.cases]]
+name = "event-9"
+arguments = [9, 0x3fff2100]
+[[profiles.cases.ram]]
+address = 0x3fff2100
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2100
+length = 4
+
+[[profiles.cases]]
+name = "event-45"
+arguments = [45, 0x3fff2100]
+[[profiles.cases.ram]]
+address = 0x3fff2100
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2100
+length = 4
+
+[[profiles.cases]]
+name = "event-46"
+arguments = [46, 0x3fff2100]
+[[profiles.cases.ram]]
+address = 0x3fff2100
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2100
+length = 4
+
+[[profiles.cases]]
+name = "invalid-0"
+arguments = [0, 0x3fff2100]
+[[profiles.cases.ram]]
+address = 0x3fff2100
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2100
+length = 4
+
+[[profiles.cases]]
+name = "invalid-8"
+arguments = [8, 0x3fff2100]
+[[profiles.cases.ram]]
+address = 0x3fff2100
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2100
+length = 4
+
+[[profiles.cases]]
+name = "invalid-47"
+arguments = [47, 0x3fff2100]
+[[profiles.cases.ram]]
+address = 0x3fff2100
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2100
+length = 4
+
+[[profiles.cases]]
+name = "invalid-48"
+arguments = [48, 0x3fff2100]
+[[profiles.cases.ram]]
+address = 0x3fff2100
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2100
+length = 4
+
+[[profiles.cases]]
+name = "invalid-1"
+arguments = [1, 0x3fff2100]
+[[profiles.cases.ram]]
+address = 0x3fff2100
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2100
+length = 4
+
+[[profiles.cases]]
+name = "invalid-2"
+arguments = [2, 0x3fff2100]
+[[profiles.cases.ram]]
+address = 0x3fff2100
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2100
+length = 4
+
+[[profiles.cases]]
+name = "invalid-3"
+arguments = [3, 0x3fff2100]
+[[profiles.cases.ram]]
+address = 0x3fff2100
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2100
+length = 4
+
+[[profiles.cases]]
+name = "invalid-5"
+arguments = [5, 0x3fff2100]
+[[profiles.cases.ram]]
+address = 0x3fff2100
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2100
+length = 4
+
+[[profiles.cases]]
+name = "invalid-6"
+arguments = [6, 0x3fff2100]
+[[profiles.cases.ram]]
+address = 0x3fff2100
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2100
+length = 4
+
+[[profiles.cases]]
+name = "invalid-10"
+arguments = [10, 0x3fff2100]
+[[profiles.cases.ram]]
+address = 0x3fff2100
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2100
+length = 4
+
+[[profiles.cases]]
+name = "invalid-11"
+arguments = [11, 0x3fff2100]
+[[profiles.cases.ram]]
+address = 0x3fff2100
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2100
+length = 4
+
+[[profiles.cases]]
+name = "invalid-12"
+arguments = [12, 0x3fff2100]
+[[profiles.cases.ram]]
+address = 0x3fff2100
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2100
+length = 4
+
+[[profiles.cases]]
+name = "invalid-13"
+arguments = [13, 0x3fff2100]
+[[profiles.cases.ram]]
+address = 0x3fff2100
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2100
+length = 4
+
+[[profiles.cases]]
+name = "invalid-14"
+arguments = [14, 0x3fff2100]
+[[profiles.cases.ram]]
+address = 0x3fff2100
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2100
+length = 4
+
+[[profiles.cases]]
+name = "invalid-15"
+arguments = [15, 0x3fff2100]
+[[profiles.cases.ram]]
+address = 0x3fff2100
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2100
+length = 4
+
+[[profiles.cases]]
+name = "invalid-16"
+arguments = [16, 0x3fff2100]
+[[profiles.cases.ram]]
+address = 0x3fff2100
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2100
+length = 4
+
+[[profiles.cases]]
+name = "invalid-17"
+arguments = [17, 0x3fff2100]
+[[profiles.cases.ram]]
+address = 0x3fff2100
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2100
+length = 4
+
+[[profiles.cases]]
+name = "invalid-18"
+arguments = [18, 0x3fff2100]
+[[profiles.cases.ram]]
+address = 0x3fff2100
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2100
+length = 4
+
+[[profiles.cases]]
+name = "invalid-19"
+arguments = [19, 0x3fff2100]
+[[profiles.cases.ram]]
+address = 0x3fff2100
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2100
+length = 4
+
+[[profiles.cases]]
+name = "invalid-20"
+arguments = [20, 0x3fff2100]
+[[profiles.cases.ram]]
+address = 0x3fff2100
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2100
+length = 4
+
+[[profiles.cases]]
+name = "invalid-21"
+arguments = [21, 0x3fff2100]
+[[profiles.cases.ram]]
+address = 0x3fff2100
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2100
+length = 4
+
+[[profiles.cases]]
+name = "invalid-22"
+arguments = [22, 0x3fff2100]
+[[profiles.cases.ram]]
+address = 0x3fff2100
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2100
+length = 4
+
+[[profiles.cases]]
+name = "invalid-23"
+arguments = [23, 0x3fff2100]
+[[profiles.cases.ram]]
+address = 0x3fff2100
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2100
+length = 4
+
+[[profiles.cases]]
+name = "invalid-24"
+arguments = [24, 0x3fff2100]
+[[profiles.cases.ram]]
+address = 0x3fff2100
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2100
+length = 4
+
+[[profiles.cases]]
+name = "invalid-25"
+arguments = [25, 0x3fff2100]
+[[profiles.cases.ram]]
+address = 0x3fff2100
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2100
+length = 4
+
+[[profiles.cases]]
+name = "invalid-26"
+arguments = [26, 0x3fff2100]
+[[profiles.cases.ram]]
+address = 0x3fff2100
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2100
+length = 4
+
+[[profiles.cases]]
+name = "invalid-27"
+arguments = [27, 0x3fff2100]
+[[profiles.cases.ram]]
+address = 0x3fff2100
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2100
+length = 4
+
+[[profiles.cases]]
+name = "invalid-28"
+arguments = [28, 0x3fff2100]
+[[profiles.cases.ram]]
+address = 0x3fff2100
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2100
+length = 4
+
+[[profiles.cases]]
+name = "invalid-29"
+arguments = [29, 0x3fff2100]
+[[profiles.cases.ram]]
+address = 0x3fff2100
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2100
+length = 4
+
+[[profiles.cases]]
+name = "invalid-30"
+arguments = [30, 0x3fff2100]
+[[profiles.cases.ram]]
+address = 0x3fff2100
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2100
+length = 4
+
+[[profiles.cases]]
+name = "invalid-31"
+arguments = [31, 0x3fff2100]
+[[profiles.cases.ram]]
+address = 0x3fff2100
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2100
+length = 4
+
+[[profiles.cases]]
+name = "invalid-32"
+arguments = [32, 0x3fff2100]
+[[profiles.cases.ram]]
+address = 0x3fff2100
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2100
+length = 4
+
+[[profiles.cases]]
+name = "invalid-33"
+arguments = [33, 0x3fff2100]
+[[profiles.cases.ram]]
+address = 0x3fff2100
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2100
+length = 4
+
+[[profiles.cases]]
+name = "invalid-34"
+arguments = [34, 0x3fff2100]
+[[profiles.cases.ram]]
+address = 0x3fff2100
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2100
+length = 4
+
+[[profiles.cases]]
+name = "invalid-35"
+arguments = [35, 0x3fff2100]
+[[profiles.cases.ram]]
+address = 0x3fff2100
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2100
+length = 4
+
+[[profiles.cases]]
+name = "invalid-36"
+arguments = [36, 0x3fff2100]
+[[profiles.cases.ram]]
+address = 0x3fff2100
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2100
+length = 4
+
+[[profiles.cases]]
+name = "invalid-37"
+arguments = [37, 0x3fff2100]
+[[profiles.cases.ram]]
+address = 0x3fff2100
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2100
+length = 4
+
+[[profiles.cases]]
+name = "invalid-38"
+arguments = [38, 0x3fff2100]
+[[profiles.cases.ram]]
+address = 0x3fff2100
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2100
+length = 4
+
+[[profiles.cases]]
+name = "invalid-39"
+arguments = [39, 0x3fff2100]
+[[profiles.cases.ram]]
+address = 0x3fff2100
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2100
+length = 4
+
+[[profiles.cases]]
+name = "invalid-40"
+arguments = [40, 0x3fff2100]
+[[profiles.cases.ram]]
+address = 0x3fff2100
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2100
+length = 4
+
+[[profiles.cases]]
+name = "invalid-41"
+arguments = [41, 0x3fff2100]
+[[profiles.cases.ram]]
+address = 0x3fff2100
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2100
+length = 4
+
+[[profiles.cases]]
+name = "invalid-42"
+arguments = [42, 0x3fff2100]
+[[profiles.cases.ram]]
+address = 0x3fff2100
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2100
+length = 4
+
+[[profiles.cases]]
+name = "invalid-43"
+arguments = [43, 0x3fff2100]
+[[profiles.cases.ram]]
+address = 0x3fff2100
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2100
+length = 4
+
+[[profiles.cases]]
+name = "invalid-44"
+arguments = [44, 0x3fff2100]
+[[profiles.cases.ram]]
+address = 0x3fff2100
+value = 0xa5a5a5a5
+[[profiles.cases.observe]]
+address = 0x3fff2100
+length = 4

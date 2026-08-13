@@ -2,13 +2,11 @@
 
 #![forbid(unsafe_code)]
 
-use super::{RadioRegisters, device_fence};
+use super::{MacInterface, RadioRegisters, device_fence};
 
 const KEY_ENTRY_COUNT: u8 = 25;
 const KEY_ENTRY_WORDS: usize = 10;
 const PROGRAMMED_CCMP_WORDS: usize = 6;
-const STA_INTERFACE: usize = 0;
-const AP_INTERFACE: usize = 1;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum MacKeyInstallOutcome {
@@ -66,7 +64,7 @@ impl RadioRegisters {
         index: u8,
         words: [u32; PROGRAMMED_CCMP_WORDS],
     ) -> MacKeyInstallOutcome {
-        self.install_ccmp_key_entry(STA_INTERFACE, index, words)
+        self.install_ccmp_key_entry(MacInterface::Station, index, words)
     }
 
     /// Install one six-word AP CCMP image into an invalid hardware entry.
@@ -79,17 +77,17 @@ impl RadioRegisters {
         index: u8,
         words: [u32; PROGRAMMED_CCMP_WORDS],
     ) -> MacKeyInstallOutcome {
-        self.install_ccmp_key_entry(AP_INTERFACE, index, words)
+        self.install_ccmp_key_entry(MacInterface::AccessPoint, index, words)
     }
 
     fn install_ccmp_key_entry(
         &mut self,
-        interface: usize,
+        interface: MacInterface,
         index: u8,
         words: [u32; PROGRAMMED_CCMP_WORDS],
     ) -> MacKeyInstallOutcome {
         assert!(index < KEY_ENTRY_COUNT);
-        assert!(interface <= AP_INTERFACE);
+        let interface = interface.bits() as usize;
         let valid_bit = 1_u32 << index;
         let validity = self
             .peripherals

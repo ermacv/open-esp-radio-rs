@@ -1,0 +1,25 @@
+schema = 3
+id = "access-point-load-tx"
+description = "Sustained legacy AP outbound ceiling and exact-delivery qualification"
+repetitions = 5
+image = "qualification"
+isolation = "reset"
+tags = ["qualification", "wifi", "access-point", "network", "load", "tx"]
+
+[workload]
+kind = "access-point"
+cycles = 2
+boots = 1
+timeout_seconds = 180
+
+[workload.traffic]
+kind = "udp"
+direction = "tx"
+duration_seconds = 60
+tx_rate_bps = 16000000
+payload_bytes = 1400
+
+[criteria]
+exact_delivery = true
+minimum_tx_bps = 15200000
+minimum_concurrent_ap_clients = 2

@@ -24,6 +24,7 @@ impl Esp32s31PreconnectedRxDelay for ReadyDelay {
 struct Hardware {
     walker: bool,
     descriptor_base: u32,
+    last_descriptor_low: u32,
     enable_count: u32,
     disable_count: u32,
     reload_count: u32,
@@ -31,7 +32,7 @@ struct Hardware {
 
 impl RxDma for Hardware {
     fn last_descriptor_low(&mut self) -> u32 {
-        0
+        self.last_descriptor_low
     }
     fn next_descriptor_low(&mut self) -> u32 {
         BASE + DESCRIPTOR_BYTES
@@ -71,6 +72,49 @@ impl RxDma for Hardware {
         }
     }
     fn fence(&mut self) {}
+}
+
+#[test]
+fn completed_descriptors_are_delivered_in_ring_order_across_wrap() {
+    const WRAP_COUNT: usize = 4;
+    const WRAP_STORAGE_SIZE: usize = WRAP_COUNT * BUFFER_SIZE;
+    let storage = Esp32s31RxDmaStorage::<WRAP_COUNT, BUFFER_SIZE, WRAP_STORAGE_SIZE>::new();
+    let addresses = [0x2f00_2000, 0x2f00_2100, 0x2f00_2200, 0x2f00_2300];
+    let mut hardware = Hardware {
+        // A retained last descriptor at index one rotates the next cold ring
+        // to index two, so the completed interval 2,3,0 crosses physical zero.
+        last_descriptor_low: (BASE + DESCRIPTOR_BYTES) & 0x000f_ffff,
+        ..Hardware::default()
+    };
+    let halted = RxRingStopped::prepare(
+        &mut hardware,
+        storage.descriptors(),
+        BASE,
+        &addresses,
+        BUFFER_SIZE as u32,
+        |_| Ok(()),
+    )
+    .unwrap()
+    .into_halted();
+    let mut rx = Esp32s31PreconnectedRx::<ReadyDelay, WRAP_COUNT, BUFFER_SIZE>::from_halted(halted);
+    embassy_futures::block_on(rx.start_with_storage(&mut hardware, &storage)).unwrap();
+    for index in [2, 3, 0] {
+        storage.descriptors()[index].write_word0(storage.descriptors()[index].word0() | BIT_30);
+    }
+
+    let mut observed = [usize::MAX; 3];
+    let mut count = 0;
+    let progress = rx
+        .service_completed(&mut hardware, &storage, |segment| {
+            observed[count] =
+                usize::try_from((segment.descriptor_address - BASE) / DESCRIPTOR_BYTES).unwrap();
+            count += 1;
+            Esp32s31PreconnectedRxDirective::Continue
+        })
+        .unwrap();
+
+    assert_eq!(progress.completed, 3);
+    assert_eq!(observed, [2, 3, 0]);
 }
 
 fn halted_ring<'a>(

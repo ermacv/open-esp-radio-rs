@@ -180,7 +180,12 @@ pub fn hal_mac_txq_enable_register_slice(queue: u32) -> u32 {
 }
 
 #[inline(always)]
-pub fn hal_mac_tx_config_edca(queue: u32, aifsn: u8, contention_window: u16, interface: u8) -> u32 {
+pub fn hal_mac_tx_config_edca(
+    queue: u32,
+    aifsn: u8,
+    contention_window: u16,
+    interface: crate::MacInterface,
+) -> u32 {
     let (radio, _) = partitions();
     crate::mac_tx_queue::configure_edca(
         &radio.wifi_mac_tx_queue_control,
@@ -194,6 +199,85 @@ pub fn hal_mac_tx_config_edca(queue: u32, aifsn: u8, contention_window: u16, int
 #[inline(always)]
 pub fn hal_mac_tx_get_blockack(queue: u8) -> Option<crate::TxBlockAckPayload> {
     radio_registers().read_tx_block_ack_payload(queue)
+}
+
+#[inline(always)]
+fn validation_mac_interface(interface: u32) -> crate::MacInterface {
+    match interface {
+        0 => crate::MacInterface::Station,
+        1 => crate::MacInterface::AccessPoint,
+        2 => crate::MacInterface::Context2,
+        3 => crate::MacInterface::Context3,
+        _ => panic!("verification MAC interface is out of range"),
+    }
+}
+
+/// Execute the production closed-PAC replacement for complete
+/// `libpp::hal_mac_set_addr` while retaining the vendor pointer ABI.
+#[inline(always)]
+pub fn hal_mac_set_addr(interface: u32, address: &[u8; 6]) {
+    radio_registers()
+        .program_receive_interface_address(validation_mac_interface(interface), *address);
+}
+
+/// Execute the production closed-PAC replacement for complete
+/// `libpp::hal_mac_set_bssid` while retaining the vendor pointer ABI.
+#[inline(always)]
+pub fn hal_mac_set_bssid(interface: u32, address: &[u8; 6]) {
+    radio_registers().program_interface_bssid(validation_mac_interface(interface), *address);
+}
+
+#[inline(always)]
+pub fn hal_set_rx_beacon_pti(beacon: u32, shared: u32) {
+    // The complete vendor leaf consumes only each argument's low nibble. Mask
+    // first so the validation bridge has the same total input domain while
+    // production callers still require the closed `MacPti` type.
+    let beacon = crate::MacPti::new(beacon & 0x0f).expect("masked PTI fits four bits");
+    let shared = crate::MacPti::new(shared & 0x0f).expect("masked PTI fits four bits");
+    radio_registers().set_rx_beacon_pti(beacon, shared);
+}
+
+#[inline(always)]
+pub fn hal_clear_rx_beacon_pti() {
+    radio_registers().clear_rx_beacon_pti();
+}
+
+#[inline(always)]
+pub fn hal_set_itwt_pti(control: u32, shared: u32) {
+    let shared = crate::MacPti::new(shared & 0x0f).expect("masked PTI fits four bits");
+    radio_registers().set_itwt_pti(control == 0, shared);
+}
+
+#[inline(always)]
+pub fn hal_clr_itwt_pti(index: u32) {
+    let index = crate::MacItwtClearIndex::new(index & 31).expect("masked shift index fits");
+    radio_registers().clear_itwt_pti(index);
+}
+
+#[inline(always)]
+pub fn hal_set_tx_pti(
+    queue: u32,
+    scheduler_priority: u32,
+    pti_2: u32,
+    pti_1: u32,
+    pti_0: u32,
+    pti_3: u32,
+    count: u32,
+) {
+    let pti = |value| crate::MacPti::new(value & 0x0f).expect("masked PTI fits four bits");
+    let queue = crate::MacTxQueueIndex::new(queue).expect("verification queue is in range");
+    let count = crate::MacTxPtiCount::new(count & 0x0fff).expect("masked count fits twelve bits");
+    radio_registers().set_tx_pti(
+        queue,
+        crate::MacTxPtiProgram {
+            scheduler_priority: pti(scheduler_priority),
+            pti_2: pti(pti_2),
+            pti_1: pti(pti_1),
+            pti_0: pti(pti_0),
+            pti_3: pti(pti_3),
+            count,
+        },
+    );
 }
 
 #[inline(always)]

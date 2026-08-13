@@ -2,7 +2,7 @@
 
 #![forbid(unsafe_code)]
 
-use super::RadioRegisters;
+use super::{MacInterface, RadioRegisters};
 
 /// Result sampled for one completed TX hardware queue.
 ///
@@ -73,7 +73,7 @@ struct RxBlockAckImages {
 pub struct RxBlockAckEntrySnapshot {
     pub control: u32,
     pub peer: [u8; 6],
-    pub interface: u8,
+    pub interface: MacInterface,
     pub window: u8,
     pub current_sequence: u16,
     pub loaded_start_sequence: u16,
@@ -82,14 +82,14 @@ pub struct RxBlockAckEntrySnapshot {
 }
 
 const fn rx_block_ack_images(
-    interface: u8,
+    interface: MacInterface,
     peer: [u8; 6],
     tid: u8,
     window: u16,
 ) -> RxBlockAckImages {
     let peer_head = u32::from_le_bytes([peer[0], peer[1], peer[2], peer[3]]);
     let peer_tail = u16::from_le_bytes([peer[4], peer[5]]) as u32;
-    let peer_tail_and_policy = peer_tail | ((interface as u32) << 16) | ((window as u32) << 18);
+    let peer_tail_and_policy = peer_tail | (interface.bits() << 16) | ((window as u32) << 18);
     let active_control = 0xc000_0001 | ((tid as u32) << 12);
     RxBlockAckImages {
         peer_head,
@@ -147,14 +147,13 @@ impl RadioRegisters {
     pub fn program_rx_block_ack_entry(
         &mut self,
         hardware_index: u8,
-        interface: u8,
+        interface: MacInterface,
         peer: [u8; 6],
         tid: u8,
         starting_sequence: u16,
         window: u16,
     ) {
         assert!(hardware_index < 8);
-        assert!(interface <= 3);
         assert!(tid <= 15);
         assert!(starting_sequence <= 0x0fff);
         assert!((1..=0x7f).contains(&window));
@@ -173,7 +172,7 @@ impl RadioRegisters {
             block,
             register_index,
             peer_tail,
-            interface,
+            interface.bits() as u8,
             window as u8,
         );
         block
@@ -294,7 +293,13 @@ impl RadioRegisters {
                 peer_tail[0],
                 peer_tail[1],
             ],
-            interface: peer_tail_and_policy.interface().bits(),
+            interface: match peer_tail_and_policy.interface().bits() {
+                0 => MacInterface::Station,
+                1 => MacInterface::AccessPoint,
+                2 => MacInterface::Context2,
+                3 => MacInterface::Context3,
+                _ => unreachable!("two-bit interface field cannot exceed three"),
+            },
             window: peer_tail_and_policy.window().bits(),
             current_sequence: block
                 .rx_block_ack_entry_current_sequence(register_index)
@@ -517,12 +522,17 @@ impl RadioRegisters {
 
 #[cfg(test)]
 mod tests {
-    use super::{RxBlockAckImages, rx_block_ack_images};
+    use super::{MacInterface, RxBlockAckImages, rx_block_ack_images};
 
     #[test]
     fn rx_block_ack_images_match_the_recovered_leaf() {
         assert_eq!(
-            rx_block_ack_images(1, [0x70, 0x15, 0xfb, 0xa8, 0x48, 0xf0], 6, 16),
+            rx_block_ack_images(
+                MacInterface::AccessPoint,
+                [0x70, 0x15, 0xfb, 0xa8, 0x48, 0xf0],
+                6,
+                16,
+            ),
             RxBlockAckImages {
                 peer_head: 0xa8fb_1570,
                 peer_tail_and_policy: 0x0041_f048,

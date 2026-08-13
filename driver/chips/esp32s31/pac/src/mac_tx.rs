@@ -6,11 +6,29 @@ use core::marker::PhantomData;
 
 use open_esp_radio_dma::{HardwareOwnedTxDma, PreparedTxDma};
 
-use super::{RadioRegisters, device_fence, mac_tx_queue};
+use super::{
+    MacInterface, MacPti, MacTxPtiCount, MacTxQueueIndex, RadioRegisters, device_fence,
+    mac_tx_queue,
+};
 
 const ORDINARY_QUEUE_COUNT: u8 = 4;
 const ENABLE_VALID_MASK: u32 = 0xc000_0000;
 const DESCRIPTOR_ADDRESS_LOW_MASK: u32 = 0x000f_ffff;
+
+/// Closed argument projection of complete `hal_set_tx_pti`.
+///
+/// The four PTI fields are intentionally distinct: the vendor leaf accepts
+/// independent values and writes them through five separate fresh-read RMW
+/// edges after the scheduler priority edge.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MacTxPtiProgram {
+    pub scheduler_priority: MacPti,
+    pub pti_2: MacPti,
+    pub pti_1: MacPti,
+    pub pti_0: MacPti,
+    pub pti_3: MacPti,
+    pub count: MacTxPtiCount,
+}
 
 fn assert_tx_descriptor_head(authority_head: u32, control_word: u32) {
     assert_eq!(
@@ -32,7 +50,7 @@ pub struct MacLegacyTxProgram {
     pub priority_count: u16,
     pub aifsn: u8,
     pub contention_window: u16,
-    pub interface: u8,
+    pub interface: MacInterface,
 }
 
 /// Complete queue-vector image for one HT PPDU.
@@ -59,7 +77,7 @@ pub struct MacHtTxProgram {
     pub priority_count: u16,
     pub aifsn: u8,
     pub contention_window: u16,
-    pub interface: u8,
+    pub interface: MacInterface,
 }
 
 /// Complete bounded queue-vector image for one HE SU A-MPDU.
@@ -92,7 +110,7 @@ pub struct MacHeTxProgram {
     pub priority_count: u16,
     pub aifsn: u8,
     pub contention_window: u16,
-    pub interface: u8,
+    pub interface: MacInterface,
 }
 
 /// HE queue-vector words sampled from one physical queue bank.
@@ -204,6 +222,23 @@ const fn physical_bank(queue: u8) -> usize {
 }
 
 impl RadioRegisters {
+    /// Execute complete `hal_set_tx_pti` over one bounded logical queue.
+    pub fn set_tx_pti(&mut self, queue: MacTxQueueIndex, program: MacTxPtiProgram) {
+        let bank = physical_bank(queue.get() as u8);
+        let control = &self.peripherals.wifi_mac_tx_queue_control;
+        control.config(bank).modify(|_, writer| {
+            writer
+                .scheduler_priority()
+                .set(program.scheduler_priority.get() as u8)
+        });
+        let pti = self.peripherals.wifi_mac_tx_queue_vector.pti(bank);
+        pti.modify(|_, writer| writer.pti_2().set(program.pti_2.get() as u8));
+        pti.modify(|_, writer| writer.pti_1().set(program.pti_1.get() as u8));
+        pti.modify(|_, writer| writer.pti_0().set(program.pti_0.get() as u8));
+        pti.modify(|_, writer| writer.pti_3().set(program.pti_3.get() as u8));
+        pti.modify(|_, writer| writer.count().set(program.count.get() as u16));
+    }
+
     /// Prepare one legacy queue whose descriptor chain is retained by `dma`.
     pub fn prepare_bound_legacy_mac_tx(
         &mut self,
@@ -332,7 +367,6 @@ impl RadioRegisters {
         assert!(program.priority_count <= 0x0fff);
         assert!(program.aifsn <= 0x0f);
         assert!(program.contention_window <= 0x03ff);
-        assert!(program.interface <= 3);
 
         let bank = physical_bank(queue);
         let control_bank = &self.peripherals.wifi_mac_tx_queue_control;
@@ -419,7 +453,6 @@ impl RadioRegisters {
         assert!(program.priority_count <= 0x0fff);
         assert!(program.aifsn <= 0x0f);
         assert!(program.contention_window <= 0x03ff);
-        assert!(program.interface <= 3);
 
         let bank = physical_bank(queue);
         let control_bank = &self.peripherals.wifi_mac_tx_queue_control;
@@ -542,7 +575,6 @@ impl RadioRegisters {
         assert!(program.priority_count <= 0x0fff);
         assert!(program.aifsn <= 0x0f);
         assert!(program.contention_window <= 0x03ff);
-        assert!(program.interface <= 3);
 
         let bank = physical_bank(queue);
         let control_bank = &self.peripherals.wifi_mac_tx_queue_control;

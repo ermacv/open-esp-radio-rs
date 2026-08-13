@@ -7,22 +7,44 @@ use super::RadioRegisters;
 pub const COEX_TIMER_COUNT: u8 = 5;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum CoexTimerRegisterError {
-    Index,
+#[repr(u8)]
+pub enum CoexTimerRegister {
+    Timer0 = 0,
+    Timer1 = 1,
+    Timer2 = 2,
+    Timer3 = 3,
+    Timer4 = 4,
 }
 
-impl RadioRegisters {
-    fn checked_coex_timer_index(index: u8) -> Result<usize, CoexTimerRegisterError> {
-        if index < COEX_TIMER_COUNT {
-            Ok(usize::from(index))
-        } else {
-            Err(CoexTimerRegisterError::Index)
+impl CoexTimerRegister {
+    pub const ALL: [Self; COEX_TIMER_COUNT as usize] = [
+        Self::Timer0,
+        Self::Timer1,
+        Self::Timer2,
+        Self::Timer3,
+        Self::Timer4,
+    ];
+
+    pub const fn new(value: u8) -> Option<Self> {
+        match value {
+            0 => Some(Self::Timer0),
+            1 => Some(Self::Timer1),
+            2 => Some(Self::Timer2),
+            3 => Some(Self::Timer3),
+            4 => Some(Self::Timer4),
+            _ => None,
         }
     }
 
+    const fn index(self) -> usize {
+        self as usize
+    }
+}
+
+impl RadioRegisters {
     /// Enable one timer in the exact disable-clear/enable-set order.
-    pub fn enable_coex_timer(&mut self, index: u8) -> Result<(), CoexTimerRegisterError> {
-        let index = Self::checked_coex_timer_index(index)?;
+    pub fn enable_coex_timer(&mut self, timer: CoexTimerRegister) {
+        let index = timer.index();
         let timers = &self.peripherals.coex_hw_timer;
         timers
             .disable_control(index)
@@ -30,12 +52,11 @@ impl RadioRegisters {
         timers
             .enable_control(index)
             .modify(|_, writer| writer.enable().set_bit());
-        Ok(())
     }
 
     /// Disable one timer in the exact enable-clear/disable-set order.
-    pub fn disable_coex_timer(&mut self, index: u8) -> Result<(), CoexTimerRegisterError> {
-        let index = Self::checked_coex_timer_index(index)?;
+    pub fn disable_coex_timer(&mut self, timer: CoexTimerRegister) {
+        let index = timer.index();
         let timers = &self.peripherals.coex_hw_timer;
         timers
             .enable_control(index)
@@ -43,27 +64,24 @@ impl RadioRegisters {
         timers
             .disable_control(index)
             .modify(|_, writer| writer.disable().set_bit());
-        Ok(())
     }
 
     /// Force one timer by clearing only its low 24-bit tick image.
-    pub fn force_coex_timer(&mut self, index: u8) -> Result<(), CoexTimerRegisterError> {
-        let index = Self::checked_coex_timer_index(index)?;
+    pub fn force_coex_timer(&mut self, timer: CoexTimerRegister) {
+        let index = timer.index();
         self.peripherals
             .coex_hw_timer
             .configuration(index)
             .modify(|_, writer| writer.primary_tick_image().set(0));
-        Ok(())
     }
 
     /// Remove the force condition using the vendor's exact value of 1000.
-    pub fn unforce_coex_timer(&mut self, index: u8) -> Result<(), CoexTimerRegisterError> {
-        let index = Self::checked_coex_timer_index(index)?;
+    pub fn unforce_coex_timer(&mut self, timer: CoexTimerRegister) {
+        let index = timer.index();
         self.peripherals
             .coex_hw_timer
             .configuration(index)
             .modify(|_, writer| writer.primary_tick_image().set(1_000));
-        Ok(())
     }
 
     /// Program the first two fresh-read RMW edges of `coex_hw_timer_set`.
@@ -73,26 +91,25 @@ impl RadioRegisters {
     /// between the primary and secondary target writes.
     pub fn configure_coex_timer(
         &mut self,
-        index: u8,
+        timer: CoexTimerRegister,
         parameter_1: u8,
         parameter_2: u8,
-    ) -> Result<(), CoexTimerRegisterError> {
-        let index = Self::checked_coex_timer_index(index)?;
+    ) {
+        let index = timer.index();
         let timers = &self.peripherals.coex_hw_timer;
         let configuration = timers.configuration(index);
         configuration.modify(|_, writer| writer.parameter_1().set(parameter_1 & 0x03));
         configuration.modify(|_, writer| writer.parameter_2().set(parameter_2 & 0x0f));
-        Ok(())
     }
 
     /// Publish the converted primary target in the third fresh-read RMW edge
     /// of `coex_hw_timer_set`.
     pub fn set_coex_timer_primary_target(
         &mut self,
-        index: u8,
+        timer: CoexTimerRegister,
         primary_tick_image: u32,
-    ) -> Result<(), CoexTimerRegisterError> {
-        let index = Self::checked_coex_timer_index(index)?;
+    ) {
+        let index = timer.index();
         self.peripherals
             .coex_hw_timer
             .configuration(index)
@@ -101,17 +118,16 @@ impl RadioRegisters {
                     .primary_tick_image()
                     .set(primary_tick_image & 0x00ff_ffff)
             });
-        Ok(())
     }
 
     /// Publish the converted secondary target in the final fresh-read RMW
     /// edge of `coex_hw_timer_set`.
     pub fn set_coex_timer_secondary_target(
         &mut self,
-        index: u8,
+        timer: CoexTimerRegister,
         secondary_tick_image: u32,
-    ) -> Result<(), CoexTimerRegisterError> {
-        let index = Self::checked_coex_timer_index(index)?;
+    ) {
+        let index = timer.index();
         self.peripherals
             .coex_hw_timer
             .secondary_target(index)
@@ -120,7 +136,6 @@ impl RadioRegisters {
                     .secondary_tick_image()
                     .set(secondary_tick_image & 0x00ff_ffff)
             });
-        Ok(())
     }
 }
 
@@ -129,16 +144,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn timer_index_domain_includes_the_fifth_timer() {
+    fn timer_index_domain_includes_exactly_five_timers() {
+        assert_eq!(CoexTimerRegister::ALL.len(), 5);
         for index in 0..COEX_TIMER_COUNT {
             assert_eq!(
-                RadioRegisters::checked_coex_timer_index(index),
-                Ok(usize::from(index))
+                CoexTimerRegister::new(index).map(CoexTimerRegister::index),
+                Some(usize::from(index))
             );
         }
-        assert_eq!(
-            RadioRegisters::checked_coex_timer_index(COEX_TIMER_COUNT),
-            Err(CoexTimerRegisterError::Index)
-        );
+        assert_eq!(CoexTimerRegister::new(COEX_TIMER_COUNT), None);
     }
 }

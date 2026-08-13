@@ -42,6 +42,75 @@ fn reference_codegen_component() -> (String, String) {
     )
 }
 
+const EXECUTION_IMAGE_SOURCES: [(&str, &str); 5] = [
+    (
+        "execution/image.rs",
+        include_str!("../../crates/backend-riscv/src/execution/image.rs"),
+    ),
+    (
+        "execution/image/access.rs",
+        include_str!("../../crates/backend-riscv/src/execution/image/access.rs"),
+    ),
+    (
+        "execution/image/closure_identity.rs",
+        include_str!("../../crates/backend-riscv/src/execution/image/closure_identity.rs"),
+    ),
+    (
+        "execution/image/coverage.rs",
+        include_str!("../../crates/backend-riscv/src/execution/image/coverage.rs"),
+    ),
+    (
+        "execution/image/loader.rs",
+        include_str!("../../crates/backend-riscv/src/execution/image/loader.rs"),
+    ),
+];
+
+const EXECUTION_MACHINE_SOURCES: [(&str, &str); 5] = [
+    (
+        "execution/mod.rs",
+        include_str!("../../crates/backend-riscv/src/execution/mod.rs"),
+    ),
+    (
+        "execution/machine.rs",
+        include_str!("../../crates/backend-riscv/src/execution/machine.rs"),
+    ),
+    (
+        "execution/machine/events.rs",
+        include_str!("../../crates/backend-riscv/src/execution/machine/events.rs"),
+    ),
+    (
+        "execution/machine/memory.rs",
+        include_str!("../../crates/backend-riscv/src/execution/machine/memory.rs"),
+    ),
+    (
+        "execution/machine/step.rs",
+        include_str!("../../crates/backend-riscv/src/execution/machine/step.rs"),
+    ),
+];
+
+const EXECUTION_MODEL_SOURCE: (&str, &str) = (
+    "execution/model.rs",
+    include_str!("../../crates/backend-riscv/src/execution/model.rs"),
+);
+
+fn execution_image_component() -> (String, String) {
+    combined_component("execution-image", EXECUTION_IMAGE_SOURCES)
+}
+
+fn execution_machine_component() -> (String, String) {
+    combined_component("execution-machine", EXECUTION_MACHINE_SOURCES)
+}
+
+fn execution_engine_component() -> (String, String) {
+    combined_component(
+        "execution-engine",
+        EXECUTION_IMAGE_SOURCES
+            .into_iter()
+            .chain(EXECUTION_MACHINE_SOURCES)
+            .chain([EXECUTION_MODEL_SOURCE]),
+    )
+}
+
 pub(crate) fn record_evidence(
     evidence: &mut EvidenceSet,
     source: &str,
@@ -118,23 +187,7 @@ pub(crate) fn driver_adapter_effect_evidence(
                     .iter()
                     .map(|source| (source.name, source.contents)),
             ),
-            combined_component(
-                "execution-engine",
-                [
-                    (
-                        "execution/image.rs",
-                        include_str!("../../crates/backend-riscv/src/execution/image.rs"),
-                    ),
-                    (
-                        "execution/machine.rs",
-                        include_str!("../../crates/backend-riscv/src/execution/machine.rs"),
-                    ),
-                    (
-                        "execution/model.rs",
-                        include_str!("../../crates/backend-riscv/src/execution/model.rs"),
-                    ),
-                ],
-            ),
+            execution_engine_component(),
             component(
                 "reviewed-summary",
                 format!(
@@ -189,23 +242,7 @@ pub(crate) fn driver_adapter_limited_claim_evidence(
                     .iter()
                     .map(|source| (source.name, source.contents)),
             ),
-            combined_component(
-                "execution-engine",
-                [
-                    (
-                        "execution/image.rs",
-                        include_str!("../../crates/backend-riscv/src/execution/image.rs"),
-                    ),
-                    (
-                        "execution/machine.rs",
-                        include_str!("../../crates/backend-riscv/src/execution/machine.rs"),
-                    ),
-                    (
-                        "execution/model.rs",
-                        include_str!("../../crates/backend-riscv/src/execution/model.rs"),
-                    ),
-                ],
-            ),
+            execution_engine_component(),
             component(
                 "reviewed-summary",
                 format!(
@@ -237,14 +274,8 @@ pub(crate) fn profile_evidence(profile: &profiles::Profile) -> EvidenceIdentity 
                     ),
                 ],
             ),
-            component(
-                "execution-image",
-                include_str!("../../crates/backend-riscv/src/execution/image.rs"),
-            ),
-            component(
-                "execution-machine",
-                include_str!("../../crates/backend-riscv/src/execution/machine.rs"),
-            ),
+            execution_image_component(),
+            execution_machine_component(),
             component(
                 "execution-model",
                 include_str!("../../crates/backend-riscv/src/execution/model.rs"),

@@ -2,7 +2,7 @@
 
 #![forbid(unsafe_code)]
 
-use super::svd;
+use super::{MacInterface, svd};
 
 const ORDINARY_QUEUE_COUNT: u32 = 4;
 const LAST_CONTROL_ADDRESS: u32 = 0x2010_4d70;
@@ -87,12 +87,12 @@ pub(crate) fn configure_edca(
     queue: u32,
     aifsn: u8,
     contention_window: u16,
-    interface: u8,
+    interface: MacInterface,
 ) -> u32 {
     let config = registers.config(physical_bank(queue));
     config.modify(|_, writer| writer.aifsn().set(aifsn));
     config.modify(|_, writer| writer.contention_window().set(contention_window));
-    config.modify(|_, writer| writer.interface().set(interface));
+    config.modify(|_, writer| writer.interface().set(interface.bits() as u8));
     0
 }
 

@@ -49,6 +49,7 @@ mod tests {
         let plan = MacStaApReceivePlan {
             station_address: [0x02, 0, 0, 0, 0, 1],
             station_bssid: [0x02, 0, 0, 0, 0, 2],
+            station_policy_mode: crate::MacStaPolicyMode::Mode1,
             access_point_address: [0x02, 0, 0, 0, 0, 3],
         };
         let mut hardware = Hardware::default();

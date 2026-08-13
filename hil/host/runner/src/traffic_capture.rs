@@ -838,9 +838,10 @@ impl SerialCapture {
         timeout: Duration,
     ) -> Result<Capabilities> {
         let capabilities = self.prepare_protocol(lab)?;
+        let lifecycle_cursor = self.station_lifecycle_cursor();
         let handle = self.request_station_start(lab)?;
         self.wait_wifi_role_transition(handle, timeout)?;
-        self.wait_for_connected_station(timeout)?;
+        self.wait_for_connected_station_after(lifecycle_cursor, timeout)?;
         Ok(capabilities)
     }
 
@@ -1391,11 +1392,26 @@ impl SerialCapture {
     }
 
     pub(crate) fn wait_for_connected_station(&self, timeout: Duration) -> Result<u32> {
+        self.wait_for_connected_station_after(0, timeout)
+    }
+
+    /// Wait for a connected edge published after a caller-owned event cursor.
+    ///
+    /// Reusing the first connected event of the current boot is incorrect for
+    /// role roundtrips: the next AP epoch would then start while the preceding
+    /// station restart was still scanning. Callers that initiate a new station
+    /// epoch must snapshot [`Self::station_lifecycle_cursor`] before the start
+    /// command and use this method.
+    pub(crate) fn wait_for_connected_station_after(
+        &self,
+        first_event: usize,
+        timeout: Duration,
+    ) -> Result<u32> {
         let boot_id = self
             .latest_boot_id()
             .ok_or("device did not publish a current HIL boot identity")?;
         let event = self
-            .wait_for_protocol_after(0, timeout, |message| {
+            .wait_for_protocol_after(first_event, timeout, |message| {
                 message.boot_id == boot_id
                     && matches!(
                         message.body,

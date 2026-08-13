@@ -35,6 +35,15 @@ impl StaLinkRxPolicyHardware for WifiMacHal<'_> {
     }
 }
 
+impl StaLinkRxPolicyHardware for RadioRegisters {
+    fn apply_sta_link_policy(&mut self, bssid: [u8; 6]) {
+        // Initial association still owns the unique PAC value directly. Keep
+        // the trait implementation as an adapter only: the reviewed register
+        // transaction remains defined and executed by the closed MAC HAL.
+        StaLinkRxPolicyHardware::apply_sta_link_policy(&mut WifiMacHal::new(self), bssid);
+    }
+}
+
 impl StaNoiseFloorHardware for RadioRegisters {
     fn read_noise_floor_dbm(&self) -> i8 {
         RadioRegisters::read_noise_floor_dbm(self)

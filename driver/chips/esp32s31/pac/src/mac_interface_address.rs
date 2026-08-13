@@ -2,7 +2,7 @@
 
 #![forbid(unsafe_code)]
 
-use super::RadioRegisters;
+use super::{MacInterface, RadioRegisters};
 
 impl RadioRegisters {
     /// Publish one MAC address and enable it for receive-policy matching.
@@ -13,7 +13,8 @@ impl RadioRegisters {
     /// The complete leaf performs three ordered hardware operations. In
     /// particular, the enable edge is a fresh-read RMW and must not be folded
     /// into the preceding full-word high-address store.
-    pub(crate) fn program_receive_interface_address(&mut self, interface: usize, address: [u8; 6]) {
+    pub fn program_receive_interface_address(&mut self, interface: MacInterface, address: [u8; 6]) {
+        let interface = interface.bits() as usize;
         let addresses = &self.peripherals.wifi_mac_interface_address;
         super::svd::zero_based_field_write::mac_interface_address_low(
             addresses,
@@ -36,7 +37,7 @@ impl RadioRegisters {
         station_address: [u8; 6],
         access_point_address: [u8; 6],
     ) {
-        self.program_receive_interface_address(0, station_address);
-        self.program_receive_interface_address(1, access_point_address);
+        self.program_receive_interface_address(MacInterface::Station, station_address);
+        self.program_receive_interface_address(MacInterface::AccessPoint, access_point_address);
     }
 }

@@ -9,6 +9,7 @@ use core::marker::PhantomData;
 
 pub use open_esp_radio_esp32s31_pac::{CfrValue, ColdRadioRegisters, ForcedRxGain, RadioRegisters};
 pub mod analog_i2c;
+pub mod coex;
 pub mod pbus;
 pub mod phy_agc;
 pub mod phy_baseband;

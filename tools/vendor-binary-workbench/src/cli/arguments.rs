@@ -521,6 +521,15 @@ pub(crate) struct InspectObjectArgs {
     /// Project source and exact data-object symbol (`SOURCE:SYMBOL`).
     #[arg(value_name = "SOURCE:SYMBOL")]
     pub(crate) selector: String,
+    /// Restrict memory evidence to one signed byte offset (for example `0x74`).
+    #[arg(long, value_name = "OFFSET")]
+    pub(crate) offset: Option<String>,
+    /// Retain only accesses whose transferred value is an exact constant.
+    #[arg(long)]
+    pub(crate) constants: bool,
+    /// Retain writers/readers with a bounded call path to this function.
+    #[arg(long, value_name = "[SOURCE::]FUNCTION")]
+    pub(crate) flows_to: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, Args)]
@@ -844,6 +853,9 @@ pub(crate) struct VerifyInventoryArgs {
     /// Per-source symbol prefix override.
     #[arg(long, value_name = "SOURCE=PREFIX")]
     pub(crate) source_prefix: Vec<SourceValue>,
+    /// Exact per-source vendor symbol included in coverage; repeat for a set.
+    #[arg(long, value_name = "SOURCE=SYMBOL")]
+    pub(crate) source_symbol: Vec<SourceValue>,
     /// Rust executable containing generated candidates.
     #[arg(long)]
     pub(crate) rust_artifact: Option<PathBuf>,

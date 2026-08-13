@@ -1,8 +1,7 @@
-//! Embassy-owned AP control-plane RX/TX service.
+//! Embassy-owned AP MAC and network handoff service.
 //!
-//! The initial service handles beacons, management frames and WPA2 EAPOL.
-//! Authorized Ethernet traffic is intentionally a later data-plane owner; it
-//! must not be silently dropped through this finite control path.
+//! The service handles beacons, management frames, WPA2 EAPOL and authorized
+//! Ethernet traffic through one bounded RX/TX owner.
 
 use core::{future::Future, pin::pin};
 
@@ -151,6 +150,7 @@ pub struct Esp32s31AccessPointStopped<
     pub transmit: WifiTxResources<'slot, P, E, T, TX_BUFFER_SIZE>,
     pub rx_frame: &'storage mut [u8],
     pub tx_frame: &'storage mut [u8],
+    pub data_rx: &'storage mut Esp32s31ApRxDispatcher,
     pub engine: open_esp_radio_esp32s31_wifi_ap::engine::Esp32s31ApEngineStop<'beacon>,
     pub control_report: Esp32s31AccessPointControlReport,
     pub mac_report: Esp32s31ApMacReport,
@@ -202,7 +202,7 @@ pub struct Esp32s31AccessPointControl<
     mac: Esp32s31ApMac<'beacon, 'slot, P, E, T, TX_BUFFER_SIZE>,
     rx_frame: &'storage mut [u8],
     tx_frame: &'storage mut [u8],
-    data_rx: Esp32s31ApRxDispatcher,
+    data_rx: &'storage mut Esp32s31ApRxDispatcher,
     report: Esp32s31AccessPointControlReport,
 }
 
@@ -244,22 +244,24 @@ where
         mac: Esp32s31ApMac<'beacon, 'slot, P, E, T, TX_BUFFER_SIZE>,
         rx_frame: &'storage mut [u8],
         tx_frame: &'storage mut [u8],
+        data_rx: &'storage mut Esp32s31ApRxDispatcher,
     ) -> Self {
         let access_point = mac.engine().service_address();
+        data_rx.reset(Esp32s31ApRxConfig {
+            access_point,
+            ingress: RxIngressConfig {
+                ring_entry_limit: 1,
+                csi_config: 0,
+                flags: 0,
+            },
+        });
         Self {
             receive,
             storage,
             mac,
             rx_frame,
             tx_frame,
-            data_rx: Esp32s31ApRxDispatcher::new(Esp32s31ApRxConfig {
-                access_point,
-                ingress: RxIngressConfig {
-                    ring_entry_limit: 1,
-                    csi_config: 0,
-                    flags: 0,
-                },
-            }),
+            data_rx,
             report: Esp32s31AccessPointControlReport::default(),
         }
     }
@@ -282,7 +284,7 @@ where
         Ok(())
     }
 
-    /// Drain completed descriptors and stage at most one control MPDU.
+    /// Drain completed descriptors and stage at most one deliverable MPDU.
     ///
     /// The RX walker is always recycled before TX receives the PAC borrow.
     /// This avoids nested mutable access to one register owner and makes the
@@ -302,7 +304,7 @@ where
         let mut staged = None;
         let mut ethernet_length = None;
         let rx_frame = &mut *self.rx_frame;
-        let authorized_peer = self.mac.engine().authorized_peer();
+        let mac = &self.mac;
         let data_rx = &mut self.data_rx;
         let report = &mut self.report;
         let progress = self
@@ -362,7 +364,11 @@ where
                         length: &mut ethernet_length,
                     };
                     report.protected_data_frames = report.protected_data_frames.saturating_add(1);
-                    match data_rx.dispatch_protected(segment, authorized_peer, &mut sink) {
+                    match data_rx.dispatch_protected(
+                        segment,
+                        |peer| mac.engine().is_authorized_peer(peer),
+                        &mut sink,
+                    ) {
                         Esp32s31ApRxDispatch::Data { .. } => {}
                         Esp32s31ApRxDispatch::Duplicate => {
                             report.protected_data_duplicates =
@@ -493,7 +499,7 @@ where
         };
         if plan.ether_type != EAPOL_ETHERTYPE
             || plan.destination != self.mac.engine().service_address()
-            || self.mac.engine().peer() != Some(plan.source)
+            || self.mac.engine().peer_status(plan.source).is_none()
         {
             self.report.ignored_rx_frames = self.report.ignored_rx_frames.saturating_add(1);
             return Ok(());
@@ -628,6 +634,9 @@ where
             TX_QUEUE_DEPTH,
         >,
         stop: F,
+        mut status_observer: impl FnMut(
+            open_esp_radio_esp32s31_wifi_ap::protocol::AccessPointServiceStatus,
+        ),
         mut security_material: N,
     ) -> Result<Esp32s31AccessPointRunReport, Esp32s31AccessPointRunError<R::Error>>
     where
@@ -649,6 +658,8 @@ where
         interrupts.mac_runtime().notify_rx_handoff();
         self.publish_beacon(hardware, Instant::now().as_micros())
             .map_err(Esp32s31AccessPointRunError::Control)?;
+        let mut last_status_revision = self.mac.engine().service_status_revision();
+        status_observer(self.mac.engine().service_status());
 
         let mut stop = pin!(stop);
         let mut stopping = false;
@@ -787,6 +798,11 @@ where
                         let ethernet_length = self
                             .service_rx(hardware, nonce, replay_counter)
                             .map_err(Esp32s31AccessPointRunError::Control)?;
+                        let status_revision = self.mac.engine().service_status_revision();
+                        if status_revision != last_status_revision {
+                            status_observer(self.mac.engine().service_status());
+                            last_status_revision = status_revision;
+                        }
                         let service_elapsed =
                             Instant::now().as_micros().saturating_sub(service_started);
                         self.report.maximum_rx_service_micros = self
@@ -811,7 +827,7 @@ where
                             break;
                         }
                     }
-                    let authorized = self.mac.engine().authorized_peer().is_some();
+                    let authorized = self.mac.engine().authorized_peer_count() != 0;
                     if authorized != network_link_up {
                         network.set_link_state(if authorized {
                             LinkState::Up
@@ -835,17 +851,28 @@ where
                         }
                         _ => {}
                     }
-                    let Some(peer) = self.mac.engine().authorized_peer() else {
+                    if self.mac.engine().authorized_peer_count() == 0 {
                         self.report.network_tx_rejected_no_peer =
                             self.report.network_tx_rejected_no_peer.saturating_add(1);
                         self.report.network_tx_frames_rejected =
                             self.report.network_tx_frames_rejected.saturating_add(1);
                         continue;
+                    }
+                    let Some(destination) = frame
+                        .as_slice()
+                        .get(..6)
+                        .and_then(|bytes| <[u8; 6]>::try_from(bytes).ok())
+                    else {
+                        self.report.network_tx_rejected_destination = self
+                            .report
+                            .network_tx_rejected_destination
+                            .saturating_add(1);
+                        self.report.network_tx_frames_rejected =
+                            self.report.network_tx_frames_rejected.saturating_add(1);
+                        continue;
                     };
-                    if frame.as_slice().get(..6) != Some(peer.as_slice()) {
-                        // AP v1 deliberately has no GTK TX packet-number
-                        // owner. Group and foreign-unicast Ethernet therefore
-                        // remain outside the advertised data service.
+                    if destination[0] & 1 == 0 && !self.mac.engine().is_authorized_peer(destination)
+                    {
                         self.report.network_tx_rejected_destination = self
                             .report
                             .network_tx_rejected_destination
@@ -854,7 +881,7 @@ where
                             self.report.network_tx_frames_rejected.saturating_add(1);
                         continue;
                     }
-                    self.publish_ethernet(hardware, peer, frame.as_slice())
+                    self.publish_ethernet(hardware, destination, frame.as_slice())
                         .map_err(Esp32s31AccessPointRunError::Control)?;
                 }
             }
@@ -943,13 +970,13 @@ where
             }
         };
         let engine = engine.stop(hardware);
-        let _ = data_rx;
         Ok(Esp32s31AccessPointStopped {
             ring,
             storage,
             transmit,
             rx_frame,
             tx_frame,
+            data_rx,
             engine,
             control_report: report,
             mac_report,

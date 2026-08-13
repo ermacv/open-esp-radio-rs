@@ -18,3 +18,5 @@ pub mod ownership;
 pub mod rx;
 pub mod security;
 pub mod tx;
+
+pub use open_esp_radio_wifi_ap as protocol;

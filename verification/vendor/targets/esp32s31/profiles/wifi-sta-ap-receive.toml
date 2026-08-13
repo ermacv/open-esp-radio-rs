@@ -1,0 +1,167 @@
+schema = 2
+
+# The parent has fourteen policy cases; this profile intentionally proves only
+# the two reviewed role frontiers required by the open STA/AP composition.
+[[profiles]]
+name = "wifi-sta-ap-receive-policy"
+vendor-source = "wifi-sta-ap-receive"
+vendor-symbol = "wifi_set_rx_policy"
+rust-symbol = "open_wifi_sta_ap_trace_wifi_set_rx_policy"
+compare-return = true
+[[profiles.argument-values]]
+index = 0
+values = [6, 8]
+[[profiles.argument-ranges]]
+index = 1
+min = 0x44332211
+max = 0x44332211
+[[profiles.argument-ranges]]
+index = 2
+min = 0x00006655
+max = 0x00006655
+[[profiles.argument-ranges]]
+index = 3
+min = 1
+max = 2
+
+[[profiles.cases]]
+name = "station-policy-six"
+arguments = [6, 0x44332211, 0x00006655, 1]
+
+# g_ic owns a pointer to the active STA context. Policy six follows the
+# pointer to the BSSID at context +0x1460, then adds four bytes.
+[[profiles.cases.vendor-ram]]
+address = 0x100889dc
+value = 0x3fce2000
+[[profiles.cases.vendor-ram]]
+address = 0x100889ec
+value = 0x3fce4000
+[[profiles.cases.vendor-ram]]
+address = 0x10088a50
+value = 0
+[[profiles.cases.vendor-ram]]
+address = 0x3fce3460
+value = 0x3fce3000
+[[profiles.cases.vendor-ram]]
+address = 0x3fce3004
+value = 0x44332211
+[[profiles.cases.vendor-ram]]
+address = 0x3fce3008
+value = 0x00006655
+[[profiles.cases.vendor-ram]]
+address = 0x3fce4098
+value = 5
+
+[[profiles.cases.mmio-initial]]
+address = 0x20104000
+value = 0x88776655
+[[profiles.cases.mmio-initial]]
+address = 0x20104004
+value = 0x12345678
+[[profiles.cases.mmio-initial]]
+address = 0x20104060
+value = 0xa5a50000
+[[profiles.cases.mmio-initial]]
+address = 0x201040d8
+value = 0x0001c285
+
+# The same policy case selects mode two when the reviewed g_ic word is nonzero.
+# The two cases preserve the distinct queue-zero register images selected by
+# the reviewed vendor word without assigning that word a protocol name.
+[[profiles.cases]]
+name = "station-policy-six-mode-two"
+arguments = [6, 0x44332211, 0x00006655, 2]
+[[profiles.cases.vendor-ram]]
+address = 0x100889dc
+value = 0x3fce2000
+[[profiles.cases.vendor-ram]]
+address = 0x100889ec
+value = 0x3fce4000
+[[profiles.cases.vendor-ram]]
+address = 0x10088a50
+value = 1
+[[profiles.cases.vendor-ram]]
+address = 0x3fce3460
+value = 0x3fce3000
+[[profiles.cases.vendor-ram]]
+address = 0x3fce3004
+value = 0x44332211
+[[profiles.cases.vendor-ram]]
+address = 0x3fce3008
+value = 0x00006655
+[[profiles.cases.vendor-ram]]
+address = 0x3fce4098
+value = 5
+[[profiles.cases.mmio-initial]]
+address = 0x20104000
+value = 0x88776655
+[[profiles.cases.mmio-initial]]
+address = 0x20104004
+value = 0x12345678
+[[profiles.cases.mmio-initial]]
+address = 0x20104060
+value = 0xa5a50000
+[[profiles.cases.mmio-initial]]
+address = 0x201040d8
+value = 0x0001c285
+
+[[profiles.cases]]
+name = "access-point-policy-eight-mode-one"
+arguments = [8, 0x44332211, 0x00006655, 1]
+
+# Policy eight reads the first SoftAP address directly from g_ic +0x214.
+[[profiles.cases.vendor-ram]]
+address = 0x100889ec
+value = 0x3fce4000
+[[profiles.cases.vendor-ram]]
+address = 0x10088bf0
+value = 0x44332211
+[[profiles.cases.vendor-ram]]
+address = 0x10088bf4
+value = 0x00006655
+
+[[profiles.cases.mmio-initial]]
+address = 0x20104008
+value = 0x88776655
+[[profiles.cases.mmio-initial]]
+address = 0x2010400c
+value = 0x12345678
+[[profiles.cases.mmio-initial]]
+address = 0x20104064
+value = 0x01020304
+[[profiles.cases.mmio-initial]]
+address = 0x20104068
+value = 0xa5a50000
+[[profiles.cases.mmio-initial]]
+address = 0x201040dc
+value = 0x0001c285
+
+# The policy-eight vendor branch ignores the station submode. Keep the second
+# Rust selector case explicit so the complete sparse ABI domain is closed.
+[[profiles.cases]]
+name = "access-point-policy-eight-mode-two"
+arguments = [8, 0x44332211, 0x00006655, 2]
+[[profiles.cases.vendor-ram]]
+address = 0x100889ec
+value = 0x3fce4000
+[[profiles.cases.vendor-ram]]
+address = 0x10088bf0
+value = 0x44332211
+[[profiles.cases.vendor-ram]]
+address = 0x10088bf4
+value = 0x00006655
+[[profiles.cases.mmio-initial]]
+address = 0x20104008
+value = 0x88776655
+[[profiles.cases.mmio-initial]]
+address = 0x2010400c
+value = 0x12345678
+[[profiles.cases.mmio-initial]]
+address = 0x20104064
+value = 0x01020304
+[[profiles.cases.mmio-initial]]
+address = 0x20104068
+value = 0xa5a50000
+[[profiles.cases.mmio-initial]]
+address = 0x201040dc
+value = 0x0001c285

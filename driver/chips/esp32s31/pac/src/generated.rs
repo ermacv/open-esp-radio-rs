@@ -36,6 +36,119 @@ impl core::ops::BitOr for MacInterruptMask {
     }
 }
 
+/// Reviewed ESP32-S31 Wi-Fi MAC interface selector shared by address, BSSID, crypto, TX and ordinary receive-BlockAck transactions.
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum MacInterface {
+    /// Infrastructure-station hardware context; traced from STA callers into interface and key-control fields.
+    Station = 0x00000000,
+    /// SoftAP hardware context; traced from AP callers into interface and key-control fields.
+    AccessPoint = 0x00000001,
+    /// Reviewed third hardware selector accepted by the complete EDCA and RX BlockAck leaves; its protocol-role semantics are not assigned.
+    Context2 = 0x00000002,
+    /// Reviewed fourth hardware selector accepted by the complete EDCA and RX BlockAck leaves; its protocol-role semantics are not assigned.
+    Context3 = 0x00000003,
+}
+
+impl MacInterface {
+    /// Numeric image for diagnostics and the private raw-PAC bridge.
+    pub const fn bits(self) -> u32 {
+        self as u32
+    }
+}
+
+/// One reviewed four-bit Wi-Fi packet-traffic-information value. Its scheduling policy remains outside the PAC.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct MacPti(u32);
+
+impl MacPti {
+    pub const MIN: u32 = 0x00000000;
+    pub const MAX: u32 = 0x0000000f;
+
+    /// Construct a value only when it lies in the reviewed inclusive range.
+    pub const fn new(value: u32) -> Option<Self> {
+        if value >= Self::MIN && value <= Self::MAX {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    /// Return the checked numeric value.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// Machine-defined five-bit shift index accepted by complete hal_clr_itwt_pti. The protocol meaning of individual request bits remains unknown.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct MacItwtClearIndex(u32);
+
+impl MacItwtClearIndex {
+    pub const MIN: u32 = 0x00000000;
+    pub const MAX: u32 = 0x0000001f;
+
+    /// Construct a value only when it lies in the reviewed inclusive range.
+    pub const fn new(value: u32) -> Option<Self> {
+        if value >= Self::MIN && value <= Self::MAX {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    /// Return the checked numeric value.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// One of the four ordinary Wi-Fi transmit queues accepted by complete hal_set_tx_pti.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct MacTxQueueIndex(u32);
+
+impl MacTxQueueIndex {
+    pub const MIN: u32 = 0x00000000;
+    pub const MAX: u32 = 0x00000003;
+
+    /// Construct a value only when it lies in the reviewed inclusive range.
+    pub const fn new(value: u32) -> Option<Self> {
+        if value >= Self::MIN && value <= Self::MAX {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    /// Return the checked numeric value.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// Twelve-bit descriptor metadata count published by complete hal_set_tx_pti.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct MacTxPtiCount(u32);
+
+impl MacTxPtiCount {
+    pub const MIN: u32 = 0x00000000;
+    pub const MAX: u32 = 0x00000fff;
+
+    /// Construct a value only when it lies in the reviewed inclusive range.
+    pub const fn new(value: u32) -> Option<Self> {
+        if value >= Self::MIN && value <= Self::MAX {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    /// Return the checked numeric value.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
 /// Register-specific event image written to the MAC interrupt clear register.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct MacInterruptClearImage(u32);
@@ -516,6 +629,70 @@ impl TxiqSecondMismatchInput {
     }
 }
 
+/// Register-positioned receive-beacon PTI nibble accepted only by the reviewed masked RMW helper.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct MacRxBeaconPtiMaskedInput(u32);
+
+impl MacRxBeaconPtiMaskedInput {
+    /// Wrap one register-specific opaque value.
+    pub const fn new(value: u32) -> Self {
+        Self(value)
+    }
+
+    /// Return the opaque numeric image.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// Register-positioned shared receive PTI nibble accepted only by the reviewed masked replacement helper.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct MacSharedRxPtiMaskedInput(u32);
+
+impl MacSharedRxPtiMaskedInput {
+    /// Wrap one register-specific opaque value.
+    pub const fn new(value: u32) -> Self {
+        Self(value)
+    }
+
+    /// Return the opaque numeric image.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// Zero-or-one control image accepted only by the reviewed hal_set_itwt_pti low-byte replacement helper.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct MacItwtControlMaskedInput(u32);
+
+impl MacItwtControlMaskedInput {
+    /// Wrap one register-specific opaque value.
+    pub const fn new(value: u32) -> Self {
+        Self(value)
+    }
+
+    /// Return the opaque numeric image.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// Empty input domain for the reviewed bit-zero receive-beacon clear-request RMW.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct MacRxBeaconClearRequestInput(u32);
+
+impl MacRxBeaconClearRequestInput {
+    /// Wrap one register-specific opaque value.
+    pub const fn new(value: u32) -> Self {
+        Self(value)
+    }
+
+    /// Return the opaque numeric image.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
 /// Typed bridge for the reviewed `mac_interrupt_enable` complete-register transaction.
 #[inline]
 pub(crate) fn mac_interrupt_enable(
@@ -794,4 +971,49 @@ pub(crate) fn publish_txiq_second_mismatch_image(
     value: TxiqSecondMismatchInput,
 ) {
     crate::svd::masked_register_modify::publish_txiq_second_mismatch_image(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `publish_mac_rx_beacon_pti` masked transaction.
+#[inline]
+pub(crate) fn publish_mac_rx_beacon_pti(
+    registers: &crate::svd::WifiMacCoexRuntime,
+    value: MacRxBeaconPtiMaskedInput,
+) {
+    crate::svd::masked_register_modify::publish_mac_rx_beacon_pti(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `publish_mac_shared_rx_pti` masked transaction.
+#[inline]
+pub(crate) fn publish_mac_shared_rx_pti(
+    registers: &crate::svd::WifiMacCoexRuntime,
+    value: MacSharedRxPtiMaskedInput,
+) {
+    crate::svd::masked_register_modify::publish_mac_shared_rx_pti(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `publish_mac_itwt_control` masked transaction.
+#[inline]
+pub(crate) fn publish_mac_itwt_control(
+    registers: &crate::svd::WifiMacCoexRuntime,
+    value: MacItwtControlMaskedInput,
+) {
+    crate::svd::masked_register_modify::publish_mac_itwt_control(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `request_mac_rx_beacon_clear` masked transaction.
+#[inline]
+pub(crate) fn request_mac_rx_beacon_clear(
+    registers: &crate::svd::WifiMacCoexRuntime,
+    value: MacRxBeaconClearRequestInput,
+) {
+    crate::svd::masked_register_modify::request_mac_rx_beacon_clear(registers, value.get());
+}
+
+/// Typed bridge for the reviewed `request_mac_itwt_clear` indexed bit-set transaction.
+#[inline]
+pub(crate) fn request_mac_itwt_clear(
+    registers: &crate::svd::WifiMacCoexRuntime,
+    index: MacItwtClearIndex,
+) {
+    crate::svd::indexed_bit_set_modify::request_mac_itwt_clear(registers, index.get());
 }

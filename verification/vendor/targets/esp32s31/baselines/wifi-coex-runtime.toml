@@ -1,0 +1,71 @@
+schema = 2
+
+[[evidence]]
+source = "libpp"
+symbol = "hal_clear_rx_beacon_pti"
+kind = "scenario/profile:wifi-clear-rx-beacon-pti"
+digest = "74413308662489b5c39b7a17f802733fc209c0a2a0f72854072d20cac5db3533"
+
+[evidence.components]
+comparison-orchestrator = "78f3316221c5be17b39047bc588be3269db93581b7fd322ac4b092f37c8178ea"
+execution-image = "3885065e6ff308001a383d5164cd1f17dba4f452a35ef3c07baa3ce5916530da"
+execution-machine = "ecce5dd7068bb1bc30a5573d8b2c8f89fa158e96289a8653c8fea6fe58d80398"
+execution-model = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"
+profile = "a36d45be3de0f697d37c54235577fa847d274fb123c6aa07628ae7eea21b50d0"
+profile-parser = "8c816820d8881be9429d372eef1be0e19432f53e699c3bc0244875922aa5814a"
+
+[[evidence]]
+source = "libpp"
+symbol = "hal_clr_itwt_pti"
+kind = "scenario/profile:wifi-clear-itwt-pti"
+digest = "ec09ee815936483f47d556968de451ebed93f50aeac5df31c17bde05f3f46d83"
+
+[evidence.components]
+comparison-orchestrator = "78f3316221c5be17b39047bc588be3269db93581b7fd322ac4b092f37c8178ea"
+execution-image = "3885065e6ff308001a383d5164cd1f17dba4f452a35ef3c07baa3ce5916530da"
+execution-machine = "ecce5dd7068bb1bc30a5573d8b2c8f89fa158e96289a8653c8fea6fe58d80398"
+execution-model = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"
+profile = "ae3b77ba5b31462156b3f9b79c7ca9558c0c752efe4fa3c1e91a43ee70c70651"
+profile-parser = "8c816820d8881be9429d372eef1be0e19432f53e699c3bc0244875922aa5814a"
+
+[[evidence]]
+source = "libpp"
+symbol = "hal_set_itwt_pti"
+kind = "scenario/profile:wifi-set-itwt-pti"
+digest = "f010c541960fadbf8683d8fe1b1edb81185ca2281d505f56ea60d7ea9058387b"
+
+[evidence.components]
+comparison-orchestrator = "78f3316221c5be17b39047bc588be3269db93581b7fd322ac4b092f37c8178ea"
+execution-image = "3885065e6ff308001a383d5164cd1f17dba4f452a35ef3c07baa3ce5916530da"
+execution-machine = "ecce5dd7068bb1bc30a5573d8b2c8f89fa158e96289a8653c8fea6fe58d80398"
+execution-model = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"
+profile = "7e533476b9afd4dbd0d749c44198ea5ac907752025f6f65276e059c3043d9415"
+profile-parser = "8c816820d8881be9429d372eef1be0e19432f53e699c3bc0244875922aa5814a"
+
+[[evidence]]
+source = "libpp"
+symbol = "hal_set_rx_beacon_pti"
+kind = "scenario/profile:wifi-rx-beacon-pti"
+digest = "3342ddb5499fc6a2132fdc293ec32a7aadec7d8f4f7401fcbbb08910c7080402"
+
+[evidence.components]
+comparison-orchestrator = "78f3316221c5be17b39047bc588be3269db93581b7fd322ac4b092f37c8178ea"
+execution-image = "3885065e6ff308001a383d5164cd1f17dba4f452a35ef3c07baa3ce5916530da"
+execution-machine = "ecce5dd7068bb1bc30a5573d8b2c8f89fa158e96289a8653c8fea6fe58d80398"
+execution-model = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"
+profile = "7a4d3de4ba1911452d3c136aae5f13c6cfd70433f28f0992c3d031ea18cea6b5"
+profile-parser = "8c816820d8881be9429d372eef1be0e19432f53e699c3bc0244875922aa5814a"
+
+[[evidence]]
+source = "libpp"
+symbol = "hal_set_tx_pti"
+kind = "scenario/profile:wifi-set-tx-pti"
+digest = "44914646d482ee8081176c839b0df6156f8caed7e44521715b8edb293934b56e"
+
+[evidence.components]
+comparison-orchestrator = "78f3316221c5be17b39047bc588be3269db93581b7fd322ac4b092f37c8178ea"
+execution-image = "3885065e6ff308001a383d5164cd1f17dba4f452a35ef3c07baa3ce5916530da"
+execution-machine = "ecce5dd7068bb1bc30a5573d8b2c8f89fa158e96289a8653c8fea6fe58d80398"
+execution-model = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"
+profile = "fbb914bb894a0f70aac4de847209df57b92804f02ca3fcae0143628221d2f0c6"
+profile-parser = "8c816820d8881be9429d372eef1be0e19432f53e699c3bc0244875922aa5814a"

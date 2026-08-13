@@ -804,8 +804,7 @@ fn load_verification_workspace(
                 suite,
                 &[
                     "id",
-                    "sources",
-                    "source-prefixes",
+                    "vendor",
                     "rust-artifact-role",
                     "rust-companion-role",
                     "rust-prefix",
@@ -827,47 +826,7 @@ fn load_verification_workspace(
                     format!("duplicate project verification suite {id:?}"),
                 ));
             }
-            let sources = table_string_array(suite, "sources", &context, source, false)?
-                .into_iter()
-                .map(|value| {
-                    value.parse().map_err(|message| {
-                        source.table_key(suite, "sources", format!("{context}: {message}"))
-                    })
-                })
-                .collect::<Result<Vec<crate::source_id::SourceId>>>()?;
-            let source_prefixes =
-                table_string_array(suite, "source-prefixes", &context, source, true)?
-                    .into_iter()
-                    .map(|value| {
-                        let (source_id, prefix) = value.split_once('=').ok_or_else(|| {
-                            source.table_key(
-                        suite,
-                        "source-prefixes",
-                        format!("{context}.source-prefixes entry {value:?} must be SOURCE=PREFIX"),
-                    )
-                        })?;
-                        let source_id = source_id.parse().map_err(|message| {
-                            source.table_key(
-                                suite,
-                                "source-prefixes",
-                                format!("{context}: {message}"),
-                            )
-                        })?;
-                        Ok((source_id, prefix.to_owned()))
-                    })
-                    .collect::<Result<std::collections::BTreeMap<_, _>>>()?;
-            if let Some(unknown) = source_prefixes
-                .keys()
-                .find(|source_id| !sources.contains(source_id))
-            {
-                return Err(source.table_key(
-                    suite,
-                    "source-prefixes",
-                    format!(
-                        "{context}.source-prefixes configures {unknown}, which is not in sources"
-                    ),
-                ));
-            }
+            let vendor = parse_verification_vendor(suite, &context, source)?;
 
             let rust_artifact_role =
                 parse_rust_input_role(suite, "rust-artifact-role", &context, source, false)?
@@ -879,7 +838,7 @@ fn load_verification_workspace(
             let dispositions =
                 table_path_array(suite, "dispositions", &context, base, source, false)?;
             let evidence_baselines =
-                table_path_array(suite, "baselines", &context, base, source, false)?;
+                table_path_array(suite, "baselines", &context, base, source, true)?;
             let gate_name = table_string(suite, "gate", &context, source)?;
             let match_floor = suite
                 .get("match-floor")
@@ -923,8 +882,7 @@ fn load_verification_workspace(
             };
             Ok(VerificationSuiteSpec {
                 id,
-                sources,
-                source_prefixes,
+                vendor,
                 rust_artifact_role,
                 rust_companion_role,
                 rust_prefix,
@@ -936,4 +894,93 @@ fn load_verification_workspace(
         })
         .collect::<Result<Vec<_>>>()?;
     Ok(Some(VerificationWorkspacePaths { report, suites }))
+}
+
+fn parse_verification_vendor(
+    suite: &Table,
+    context: &str,
+    source: ProjectSource<'_>,
+) -> Result<Vec<VerificationVendorSpec>> {
+    let item = suite.get("vendor").ok_or_else(|| {
+        source.table_key(
+            suite,
+            "vendor",
+            format!("{context} requires [[verification.suites.vendor]]"),
+        )
+    })?;
+    let tables = item.as_array_of_tables().ok_or_else(|| {
+        source.item(
+            Some(item),
+            format!("{context}.vendor must be an array of tables"),
+        )
+    })?;
+    if tables.is_empty() {
+        return Err(source.item(Some(item), format!("{context}.vendor must not be empty")));
+    }
+    let mut seen = std::collections::BTreeSet::new();
+    tables
+        .iter()
+        .enumerate()
+        .map(|(index, table)| {
+            let entry_context = format!("{context}.vendor[{index}]");
+            reject_unknown_keys(
+                table,
+                &["source", "all", "prefix", "symbols"],
+                &entry_context,
+                source,
+            )?;
+            let source_name = table_string(table, "source", &entry_context, source)?;
+            let source_id: crate::source_id::SourceId = source_name.parse().map_err(|message| {
+                source.table_key(table, "source", format!("{entry_context}: {message}"))
+            })?;
+            if !seen.insert(source_id.clone()) {
+                return Err(source.table_key(
+                    table,
+                    "source",
+                    format!("{context} repeats vendor source {source_id}"),
+                ));
+            }
+            let all = table.get("all").map(|item| {
+                item.as_bool().ok_or_else(|| {
+                    source.item(Some(item), format!("{entry_context}.all must be a boolean"))
+                })
+            }).transpose()?;
+            let prefix = table.get("prefix").map(|item| {
+                item.as_str().map(str::to_owned).ok_or_else(|| {
+                    source.item(Some(item), format!("{entry_context}.prefix must be a string"))
+                })
+            }).transpose()?;
+            let symbols = if table.contains_key("symbols") {
+                table_string_array(table, "symbols", &entry_context, source, true)?
+            } else {
+                Vec::new()
+            };
+            if all == Some(false) {
+                return Err(source.table_key(table, "all", format!("{entry_context}.all must be true when present")));
+            }
+            let configured = usize::from(all == Some(true)) + usize::from(prefix.is_some()) + usize::from(!symbols.is_empty());
+            if configured != 1 {
+                return Err(source.table_key(
+                    table,
+                    "source",
+                    format!("{entry_context} must configure exactly one of all = true, prefix, or symbols"),
+                ));
+            }
+            let selection = if all == Some(true) {
+                VerificationVendorSelection::All
+            } else if let Some(prefix) = prefix {
+                if prefix.is_empty() {
+                    return Err(source.table_key(table, "prefix", format!("{entry_context}.prefix must not be empty")));
+                }
+                VerificationVendorSelection::Prefix(prefix)
+            } else {
+                let unique = symbols.iter().collect::<std::collections::BTreeSet<_>>();
+                if unique.len() != symbols.len() || symbols.iter().any(String::is_empty) {
+                    return Err(source.table_key(table, "symbols", format!("{entry_context}.symbols must contain unique non-empty names")));
+                }
+                VerificationVendorSelection::Symbols(symbols)
+            };
+            Ok(VerificationVendorSpec { source: source_id, selection })
+        })
+        .collect()
 }

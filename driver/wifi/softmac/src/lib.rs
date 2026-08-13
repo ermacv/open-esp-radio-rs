@@ -99,6 +99,10 @@ pub struct MacResourceLimits {
     pub access_point_pairwise_ccmp_slots: u8,
     /// Group CCMP slots exposed for one access-point interface.
     pub access_point_group_ccmp_slots: u8,
+    /// Simultaneously associated peers owned by the AP protocol service.
+    pub access_point_association_entries: u8,
+    /// Associated peers which may own independent protected data ports.
+    pub access_point_encrypted_clients: u8,
 }
 
 /// Virtual-interface roles implemented by the complete driver today.
@@ -425,6 +429,8 @@ mod tests {
             station_group_ccmp_slots: 1,
             access_point_pairwise_ccmp_slots: 1,
             access_point_group_ccmp_slots: 1,
+            access_point_association_entries: 1,
+            access_point_encrypted_clients: 1,
         },
     };
 

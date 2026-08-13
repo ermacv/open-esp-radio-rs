@@ -20,6 +20,7 @@ mod mac_antenna_init;
 mod mac_block_ack;
 mod mac_channel;
 mod mac_coex_init;
+mod mac_coex_runtime;
 mod mac_cold_start;
 mod mac_crypto;
 mod mac_enable;
@@ -52,7 +53,7 @@ mod table_memory;
 pub mod validation;
 pub use agc_runtime::ForcedRxGain;
 pub use cfr::CfrValue;
-pub use coex::{COEX_TIMER_COUNT, CoexTimerRegisterError};
+pub use coex::{COEX_TIMER_COUNT, CoexTimerRegister};
 /// Reviewed writable MAC interrupt mask.
 ///
 /// The generated domain deliberately has no public integer constructor:
@@ -62,7 +63,9 @@ pub use coex::{COEX_TIMER_COUNT, CoexTimerRegisterError};
 ///
 /// let invented = MacInterruptMask(0xdead_beef);
 /// ```
-pub use generated::MacInterruptMask;
+pub use generated::{
+    MacInterface, MacInterruptMask, MacItwtClearIndex, MacPti, MacTxPtiCount, MacTxQueueIndex,
+};
 pub use mac_block_ack::{
     InternalTxBlockAckSnapshot, TxBlockAckDiagnosticSnapshot, TxBlockAckPayload,
     TxBlockAckRegisterImage,
@@ -91,7 +94,10 @@ pub use mac_modem_wakeup::{
     StaBeaconMissLimit, StaModemSleepLimit, StaModemWakeConfig, StaTbttAutoPeriod,
 };
 pub use mac_rx_dma::MacRxDmaSnapshot;
-pub use mac_rx_policy::{MacApReceivePolicySnapshot, MacStaReceivePolicySnapshot};
+pub use mac_rx_policy::{
+    MacApReceivePolicySnapshot, MacRoleReceivePolicy, MacStaApReceivePlan, MacStaPolicyMode,
+    MacStaReceivePolicySnapshot,
+};
 pub use mac_rx_statistics::{
     MacHeColorCollisionSnapshot, MacRxDecodeErrorStatistics, MacRxHangStatistics,
     MacRxPrimaryStatistics, MacRxPrimaryStatisticsDelta, MacRxStatisticsSnapshot,
@@ -99,7 +105,7 @@ pub use mac_rx_statistics::{
 pub use mac_tx::{
     MacHeTxProgram, MacHeTxVectorSnapshot, MacHtAmpduCompletionRegisters, MacHtTxProgram,
     MacLegacyTxProgram, MacTxCompletionRegisters, MacTxDetachOutcome, MacTxDetachReason,
-    MacTxQueueDetached,
+    MacTxPtiProgram, MacTxQueueDetached,
 };
 pub use mac_tx_power_init::{
     MAC_TX_POWER_RATE_COUNT, MacPartialRuPowerSelector, MacTxPowerIndex, MacTxPowerPair,

@@ -6,6 +6,62 @@ peripheral-ownership = true
 device-access = true
 allow-clippy-empty-docs = true
 
+[[enum-domains]]
+name = "MacInterface"
+description = "Reviewed ESP32-S31 Wi-Fi MAC interface selector shared by address, BSSID, crypto, TX and ordinary receive-BlockAck transactions."
+
+[[enum-domains.values]]
+name = "Station"
+value = 0
+description = "Infrastructure-station hardware context; traced from STA callers into interface and key-control fields."
+sources = ["BLOB_LIBPP_HAL_MAC_SET_ADDR", "BLOB_LIBPP_HAL_MAC_SET_BSSID", "BLOB_LIBPP_HAL_CRYPTO", "BLOB_LIBPP_HAL_MAC_TX", "BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK"]
+
+[[enum-domains.values]]
+name = "AccessPoint"
+value = 1
+description = "SoftAP hardware context; traced from AP callers into interface and key-control fields."
+sources = ["BLOB_LIBPP_HAL_MAC_SET_ADDR", "BLOB_LIBPP_HAL_MAC_SET_BSSID", "BLOB_LIBPP_HAL_CRYPTO", "BLOB_LIBPP_HAL_MAC_TX", "BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK"]
+
+[[enum-domains.values]]
+name = "Context2"
+value = 2
+description = "Reviewed third hardware selector accepted by the complete EDCA and RX BlockAck leaves; its protocol-role semantics are not assigned."
+sources = ["BLOB_LIBPP_HAL_MAC_TX", "BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK"]
+
+[[enum-domains.values]]
+name = "Context3"
+value = 3
+description = "Reviewed fourth hardware selector accepted by the complete EDCA and RX BlockAck leaves; its protocol-role semantics are not assigned."
+sources = ["BLOB_LIBPP_HAL_MAC_TX", "BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK"]
+
+[[bounded-domains]]
+name = "MacPti"
+description = "One reviewed four-bit Wi-Fi packet-traffic-information value. Its scheduling policy remains outside the PAC."
+min = 0
+max = 15
+sources = ["BLOB_LIBPP_HAL_COEX_RUNTIME", "BLOB_LIBPP_HAL_INIT_COEX", "BLOB_LIBPP_HAL_MAC_TX"]
+
+[[bounded-domains]]
+name = "MacItwtClearIndex"
+description = "Machine-defined five-bit shift index accepted by complete hal_clr_itwt_pti. The protocol meaning of individual request bits remains unknown."
+min = 0
+max = 31
+sources = ["BLOB_LIBPP_HAL_COEX_RUNTIME"]
+
+[[bounded-domains]]
+name = "MacTxQueueIndex"
+description = "One of the four ordinary Wi-Fi transmit queues accepted by complete hal_set_tx_pti."
+min = 0
+max = 3
+sources = ["BLOB_LIBPP_HAL_COEX_RUNTIME", "BLOB_LIBPP_HAL_MAC_TX"]
+
+[[bounded-domains]]
+name = "MacTxPtiCount"
+description = "Twelve-bit descriptor metadata count published by complete hal_set_tx_pti."
+min = 0
+max = 0x0fff
+sources = ["BLOB_LIBPP_HAL_COEX_RUNTIME", "BLOB_LIBPP_HAL_MAC_TX"]
+
 [[flag-domains]]
 name = "MacInterruptMask"
 description = "Reviewed writable images for the MAC interrupt-enable register."
@@ -231,6 +287,34 @@ description = "Register-specific bits 27:24 input for the second TXIQ mismatch m
 peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
 register = "TONE_PATH_0_CONTROL"
 sources = ["ROM_REV0_PHY_TXIQ_GET_MIS_PWR"]
+
+[[opaque-domains]]
+name = "MacRxBeaconPtiMaskedInput"
+description = "Register-positioned receive-beacon PTI nibble accepted only by the reviewed masked RMW helper."
+peripheral = "WIFI_MAC_COEX_RUNTIME"
+register = "RX_BEACON_PTI"
+sources = ["BLOB_LIBPP_HAL_COEX_RUNTIME"]
+
+[[opaque-domains]]
+name = "MacSharedRxPtiMaskedInput"
+description = "Register-positioned shared receive PTI nibble accepted only by the reviewed masked replacement helper."
+peripheral = "WIFI_MAC_COEX_RUNTIME"
+register = "SHARED_RX_PTI"
+sources = ["BLOB_LIBPP_HAL_COEX_RUNTIME"]
+
+[[opaque-domains]]
+name = "MacItwtControlMaskedInput"
+description = "Zero-or-one control image accepted only by the reviewed hal_set_itwt_pti low-byte replacement helper."
+peripheral = "WIFI_MAC_COEX_RUNTIME"
+register = "ITWT_CONTROL"
+sources = ["BLOB_LIBPP_HAL_COEX_RUNTIME"]
+
+[[opaque-domains]]
+name = "MacRxBeaconClearRequestInput"
+description = "Empty input domain for the reviewed bit-zero receive-beacon clear-request RMW."
+peripheral = "WIFI_MAC_COEX_RUNTIME"
+register = "CLEAR_REQUEST"
+sources = ["BLOB_LIBPP_HAL_COEX_RUNTIME"]
 
 [[zero-based-field-writes]]
 name = "coex_timer_configuration"
@@ -899,3 +983,51 @@ preserve-mask = 0xf0ffffff
 input-mask = 0x0f000000
 set-mask = 0x00000000
 sources = ["ROM_REV0_PHY_TXIQ_GET_MIS_PWR"]
+
+[[masked-register-modifies]]
+name = "publish_mac_rx_beacon_pti"
+peripheral = "WIFI_MAC_COEX_RUNTIME"
+register = "RX_BEACON_PTI"
+domain = "MacRxBeaconPtiMaskedInput"
+preserve-mask = 0xffff0fff
+input-mask = 0x0000f000
+set-mask = 0x00000000
+sources = ["BLOB_LIBPP_HAL_COEX_RUNTIME"]
+
+[[masked-register-modifies]]
+name = "publish_mac_shared_rx_pti"
+peripheral = "WIFI_MAC_COEX_RUNTIME"
+register = "SHARED_RX_PTI"
+domain = "MacSharedRxPtiMaskedInput"
+preserve-mask = 0xfffffff0
+input-mask = 0x0000000f
+set-mask = 0x00000000
+sources = ["BLOB_LIBPP_HAL_COEX_RUNTIME"]
+
+[[masked-register-modifies]]
+name = "publish_mac_itwt_control"
+peripheral = "WIFI_MAC_COEX_RUNTIME"
+register = "ITWT_CONTROL"
+domain = "MacItwtControlMaskedInput"
+preserve-mask = 0xffffff00
+input-mask = 0x000000ff
+set-mask = 0x00000000
+sources = ["BLOB_LIBPP_HAL_COEX_RUNTIME"]
+
+[[masked-register-modifies]]
+name = "request_mac_rx_beacon_clear"
+peripheral = "WIFI_MAC_COEX_RUNTIME"
+register = "CLEAR_REQUEST"
+domain = "MacRxBeaconClearRequestInput"
+preserve-mask = 0xfffffffe
+input-mask = 0x00000000
+set-mask = 0x00000001
+sources = ["BLOB_LIBPP_HAL_COEX_RUNTIME"]
+
+[[indexed-bit-set-modifies]]
+name = "request_mac_itwt_clear"
+peripheral = "WIFI_MAC_COEX_RUNTIME"
+register = "CLEAR_REQUEST"
+field = "REQUESTS_UNKNOWN"
+domain = "MacItwtClearIndex"
+sources = ["BLOB_LIBPP_HAL_COEX_RUNTIME"]

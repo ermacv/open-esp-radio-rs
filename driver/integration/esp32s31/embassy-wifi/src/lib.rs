@@ -28,12 +28,14 @@ macro_rules! qualification_debug {
     ($($argument:tt)*) => {{}};
 }
 
+mod access_point_status;
 mod connected;
 mod facade;
 mod monitor;
 mod runtime;
-mod station_network;
+mod wifi_network;
 
+pub use access_point_status::{Esp32s31AccessPointStatus, Esp32s31AccessPointStatusSnapshot};
 #[cfg(feature = "qualification")]
 pub use connected::{
     Esp32s31ConnectedRxObserver, Esp32s31MacIrqObservation, Esp32s31QualificationSnapshot,
@@ -53,7 +55,7 @@ pub use open_esp_radio_esp32s31_wifi_embassy::connected_runner::ConnectedDisconn
 #[cfg(feature = "qualification")]
 pub use open_esp_radio_esp32s31_wifi_embassy::network_rx::RxNetworkDeliveryObserver;
 pub use runtime::{Esp32s31RadioRunner, Esp32s31RadioRunners, Esp32s31RadioSystem, new};
-pub use station_network::{Esp32s31StationNetworkRunner, new_station_network};
+pub use wifi_network::{Esp32s31WifiNetworkRunner, new_wifi_network};
 
 /// Board-derived radio identity. Reading eFuse remains an application
 /// responsibility; credentials are supplied separately to `start_station`.
@@ -145,7 +147,10 @@ pub struct Esp32s31AccessPointObservation {
     pub maximum_network_backpressure_micros: u32,
     pub authentication_responses: u32,
     pub association_responses: u32,
+    /// Successful controlled-port openings, including re-authorizations.
     pub authorized_peers: u32,
+    pub maximum_associated_peers: u8,
+    pub maximum_authorized_peers: u8,
     pub peer_removals: u32,
     pub completed_rx_descriptors: u32,
     pub ignored_rx_frames: u32,

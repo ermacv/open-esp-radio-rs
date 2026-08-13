@@ -36,6 +36,8 @@ pub struct PacApiPack {
     pub zero_register_writes: Vec<ZeroRegisterWrite>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub masked_register_modifies: Vec<MaskedRegisterModify>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub indexed_bit_set_modifies: Vec<IndexedBitSetModify>,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
@@ -178,6 +180,19 @@ pub struct MaskedRegisterModify {
     pub sources: Vec<String>,
 }
 
+/// Read-modify-write transaction that sets one bit selected by a reviewed
+/// bounded index domain.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+pub struct IndexedBitSetModify {
+    pub name: String,
+    pub peripheral: String,
+    pub register: String,
+    pub field: String,
+    pub domain: String,
+    pub sources: Vec<String>,
+}
+
 impl PacApiPack {
     pub fn load(path: &Path) -> Result<Self> {
         let input = fs::read_to_string(path)?;
@@ -210,6 +225,11 @@ impl PacApiPack {
         validate_operations("zero-based-field-write", &self.zero_based_field_writes)?;
         validate_operations("zero-register-write", &self.zero_register_writes)?;
         validate_operations("masked-register-modify", &self.masked_register_modifies)?;
+        validate_operations("indexed-bit-set-modify", &self.indexed_bit_set_modifies)?;
+
+        for operation in &self.indexed_bit_set_modifies {
+            validate_component("field", &operation.name, &operation.field)?;
+        }
 
         for operation in &self.fixed_register_writes {
             validate_component("field", &operation.name, &operation.field)?;
@@ -245,6 +265,32 @@ impl PacApiPack {
                 &operation.domain,
                 &domain_names,
             )?;
+        }
+        for operation in &self.indexed_bit_set_modifies {
+            self.validate_operation_domain(
+                "indexed-bit-set-modify",
+                &operation.name,
+                &operation.peripheral,
+                &operation.register,
+                &operation.domain,
+                &domain_names,
+            )?;
+            let Some(domain) = self
+                .bounded_domains
+                .iter()
+                .find(|candidate| candidate.name == operation.domain)
+            else {
+                return Err(Error::message(format!(
+                    "PAC API indexed-bit-set-modify {:?} requires a bounded domain",
+                    operation.name
+                )));
+            };
+            if domain.min != 0 || domain.max > 31 {
+                return Err(Error::message(format!(
+                    "PAC API indexed-bit-set-modify {:?} domain must be within 0..=31",
+                    operation.name
+                )));
+            }
         }
         for operation in &self.interrupt_snapshots {
             validate_component(
@@ -331,6 +377,7 @@ impl PacApiPack {
             + self.zero_based_field_writes.len()
             + self.zero_register_writes.len()
             + self.masked_register_modifies.len()
+            + self.indexed_bit_set_modifies.len()
     }
 
     pub fn domain_count(&self) -> usize {
@@ -376,6 +423,7 @@ impl PacApiPack {
                     .chain(self.zero_based_field_writes.iter().map(Operation::sources))
                     .chain(self.zero_register_writes.iter().map(Operation::sources))
                     .chain(self.masked_register_modifies.iter().map(Operation::sources))
+                    .chain(self.indexed_bit_set_modifies.iter().map(Operation::sources))
                     .flatten()
                     .map(String::as_str),
             )
@@ -609,6 +657,7 @@ impl_register_operation!(RegisterImageWrite);
 impl_register_operation!(ZeroBasedFieldWrite);
 impl_register_operation!(ZeroRegisterWrite);
 impl_register_operation!(MaskedRegisterModify);
+impl_register_operation!(IndexedBitSetModify);
 
 fn validate_operations<T: Operation>(kind: &str, operations: &[T]) -> Result<()> {
     let mut names = BTreeSet::new();
@@ -697,6 +746,7 @@ mod tests {
             zero_based_field_writes: Vec::new(),
             zero_register_writes: Vec::new(),
             masked_register_modifies: Vec::new(),
+            indexed_bit_set_modifies: Vec::new(),
         }
     }
 
@@ -740,6 +790,30 @@ mod tests {
         });
         assert_eq!(pack.operation_count(), 1);
         assert!(pack.validate().is_ok());
+    }
+
+    #[test]
+    fn indexed_bit_set_requires_a_machine_bounded_index() {
+        let mut pack = empty_pack();
+        pack.bounded_domains.push(BoundedDomain {
+            name: "RequestIndex".to_owned(),
+            description: "Reviewed request-bit index.".to_owned(),
+            min: 0,
+            max: 31,
+            sources: vec!["REVIEW".to_owned()],
+        });
+        pack.indexed_bit_set_modifies.push(IndexedBitSetModify {
+            name: "request_event".to_owned(),
+            peripheral: "RADIO".to_owned(),
+            register: "REQUESTS".to_owned(),
+            field: "REQUESTS_UNKNOWN".to_owned(),
+            domain: "RequestIndex".to_owned(),
+            sources: vec!["REVIEW".to_owned()],
+        });
+
+        assert!(pack.validate().is_ok());
+        pack.bounded_domains[0].max = 32;
+        assert!(pack.validate().is_err());
     }
 
     #[test]

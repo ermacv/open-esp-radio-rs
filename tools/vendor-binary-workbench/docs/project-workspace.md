@@ -105,8 +105,6 @@ report = "generated/reports/verification.json"
 
 [[verification.suites]]
 id = "phy"
-sources = ["archive", "rom"]
-source-prefixes = ["rom=phy_"]
 rust-artifact-role = "rust-artifact:phy"
 rust-prefix = "open_phy_trace_"
 profiles = ["profiles/compiled-equivalence.toml"]
@@ -114,7 +112,20 @@ dispositions = ["dispositions/phy.toml"]
 baselines = ["baselines/phy.toml"]
 gate = "regression"
 match-floor = 104
+
+[[verification.suites.vendor]]
+source = "archive"
+all = true
+
+[[verification.suites.vendor]]
+source = "rom"
+prefix = "phy_"
 ```
+
+Regression suites require one or more reviewed `baselines`. A completion
+suite may use `baselines = []` while it deliberately tracks an uncovered or
+incomplete boundary. It cannot pass until that boundary produces complete
+evidence, so there is no fingerprint to accept prematurely.
 
 `target-spec` selects the architecture and ABI. It does not select a platform
 harness; commands that use reviewed platform semantics require a project with

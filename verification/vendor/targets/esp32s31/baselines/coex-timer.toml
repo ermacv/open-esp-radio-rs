@@ -4,68 +4,54 @@ schema = 2
 source = "coex"
 symbol = "coex_hw_timer_disable"
 kind = "scenario/profile:coex-hw-timer-disable"
-digest = "ffcd07e8097740fe8b50614b34ea3ead4508dc41e1154ca0ea2051b390570be9"
+digest = "86bc2d419253d00b3fbee7bcf3f0e29cb5cf4686a6fc7f958ec7516f0928df28"
 
 [evidence.components]
 comparison-orchestrator = "78f3316221c5be17b39047bc588be3269db93581b7fd322ac4b092f37c8178ea"
-execution-image = "f46f7043c5bcc1c9ee1a8254cdd8792837871b62c63b77e6e8a4f7e5bde6822f"
-execution-machine = "a500e4f4ef3df420065df08effcd04b4c4816e6d4d7957d40abd6963ba37f5b7"
+execution-image = "3885065e6ff308001a383d5164cd1f17dba4f452a35ef3c07baa3ce5916530da"
+execution-machine = "ecce5dd7068bb1bc30a5573d8b2c8f89fa158e96289a8653c8fea6fe58d80398"
 execution-model = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"
-profile = "dcf7cb4101564d5a3321e71c7ec4a17287b9acf8b4c6acd48f064f189ce7451d"
-profile-parser = "256e0b0b410d53b7f4023a7f21b4b511bfbd65812aa9d5b3cc439f6c226661a2"
+profile = "7d1a9d69678b1ed7b95d47a2141352beac8c739bd2f0a624565fe232ae5ad185"
+profile-parser = "8c816820d8881be9429d372eef1be0e19432f53e699c3bc0244875922aa5814a"
 
 [[evidence]]
 source = "coex"
 symbol = "coex_hw_timer_enable"
 kind = "scenario/profile:coex-hw-timer-enable"
-digest = "54545c4267ad447a4102dc128a7d8c7791193af2b79ca25e348a8bd99a631109"
+digest = "18de042a63e145769b770fbfd1f580b540e8a752f92a1fb56b521cbcdc5d00e4"
 
 [evidence.components]
 comparison-orchestrator = "78f3316221c5be17b39047bc588be3269db93581b7fd322ac4b092f37c8178ea"
-execution-image = "f46f7043c5bcc1c9ee1a8254cdd8792837871b62c63b77e6e8a4f7e5bde6822f"
-execution-machine = "a500e4f4ef3df420065df08effcd04b4c4816e6d4d7957d40abd6963ba37f5b7"
+execution-image = "3885065e6ff308001a383d5164cd1f17dba4f452a35ef3c07baa3ce5916530da"
+execution-machine = "ecce5dd7068bb1bc30a5573d8b2c8f89fa158e96289a8653c8fea6fe58d80398"
 execution-model = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"
-profile = "fa0bf777e8cf1a43032d8fe5edc12e9918ca858fed9990cc6e522cd9a2393251"
-profile-parser = "256e0b0b410d53b7f4023a7f21b4b511bfbd65812aa9d5b3cc439f6c226661a2"
+profile = "b844d1a79ee81a5acf0f6710edab7561566ad8cdf009b8f42357e715debfe049"
+profile-parser = "8c816820d8881be9429d372eef1be0e19432f53e699c3bc0244875922aa5814a"
 
 [[evidence]]
 source = "coex"
 symbol = "coex_hw_timer_force"
 kind = "scenario/profile:coex-hw-timer-force"
-digest = "6ef8f69b77857f6df7274bb015d7556826c098b523e7cb964dab552d10970d89"
+digest = "e25b8fc484ce6b0acc2d734a431257b173ff5c1adfe3a82a8502f79f3bed4e2f"
 
 [evidence.components]
 comparison-orchestrator = "78f3316221c5be17b39047bc588be3269db93581b7fd322ac4b092f37c8178ea"
-execution-image = "f46f7043c5bcc1c9ee1a8254cdd8792837871b62c63b77e6e8a4f7e5bde6822f"
-execution-machine = "a500e4f4ef3df420065df08effcd04b4c4816e6d4d7957d40abd6963ba37f5b7"
+execution-image = "3885065e6ff308001a383d5164cd1f17dba4f452a35ef3c07baa3ce5916530da"
+execution-machine = "ecce5dd7068bb1bc30a5573d8b2c8f89fa158e96289a8653c8fea6fe58d80398"
 execution-model = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"
-profile = "612ab0edf67409f2d81bc2b3bf89c40965807756aac85ed58d7c7a454cf87ab4"
-profile-parser = "256e0b0b410d53b7f4023a7f21b4b511bfbd65812aa9d5b3cc439f6c226661a2"
-
-[[evidence]]
-source = "coex"
-symbol = "coex_hw_timer_set"
-kind = "scenario/profile:coex-hw-timer-set"
-digest = "b0e45a9481ab295fba3f9d28d84e8033ce2e6c49805bce8101876513db5b1c00"
-
-[evidence.components]
-comparison-orchestrator = "78f3316221c5be17b39047bc588be3269db93581b7fd322ac4b092f37c8178ea"
-execution-image = "f46f7043c5bcc1c9ee1a8254cdd8792837871b62c63b77e6e8a4f7e5bde6822f"
-execution-machine = "a500e4f4ef3df420065df08effcd04b4c4816e6d4d7957d40abd6963ba37f5b7"
-execution-model = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"
-profile = "6de53869a295c2ba69f718c9926679d56e4a26aac1a8cdc64ee5eecb21bd80b6"
-profile-parser = "256e0b0b410d53b7f4023a7f21b4b511bfbd65812aa9d5b3cc439f6c226661a2"
+profile = "be7a89c8639b50b1b65a86e02b15c021bdecdb9156cdd9c49c9c24360cd7115a"
+profile-parser = "8c816820d8881be9429d372eef1be0e19432f53e699c3bc0244875922aa5814a"
 
 [[evidence]]
 source = "coex"
 symbol = "coex_hw_timer_unforce"
 kind = "scenario/profile:coex-hw-timer-unforce"
-digest = "b2f7f203aebe8f3fca548573a00cda9bae0bd3888443a1378ea735c20888bf7a"
+digest = "502d59e610c48187cb8a74aed6d764d813ba574d7121280c4bffb94f1bcc0367"
 
 [evidence.components]
 comparison-orchestrator = "78f3316221c5be17b39047bc588be3269db93581b7fd322ac4b092f37c8178ea"
-execution-image = "f46f7043c5bcc1c9ee1a8254cdd8792837871b62c63b77e6e8a4f7e5bde6822f"
-execution-machine = "a500e4f4ef3df420065df08effcd04b4c4816e6d4d7957d40abd6963ba37f5b7"
+execution-image = "3885065e6ff308001a383d5164cd1f17dba4f452a35ef3c07baa3ce5916530da"
+execution-machine = "ecce5dd7068bb1bc30a5573d8b2c8f89fa158e96289a8653c8fea6fe58d80398"
 execution-model = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"
-profile = "373211551a94ac82a32c3678f2668c4b84a9179ef3c7ebc6e09e895ca5beaa7e"
-profile-parser = "256e0b0b410d53b7f4023a7f21b4b511bfbd65812aa9d5b3cc439f6c226661a2"
+profile = "415c45b26d50ab3fffd7f7be4348c0391d54e62179b178f9fbe1665a499a3574"
+profile-parser = "8c816820d8881be9429d372eef1be0e19432f53e699c3bc0244875922aa5814a"

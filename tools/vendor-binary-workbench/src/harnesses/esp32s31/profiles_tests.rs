@@ -185,10 +185,66 @@ fn declared_argument_domain_requires_an_executed_case_for_every_value() {
         })
         .collect::<Vec<_>>();
 
-    let error = validate_argument_domain("incomplete", &ranges, &scenarios)
+    let error = validate_argument_domain("incomplete", &ranges, &[], &scenarios)
         .unwrap_err()
         .to_string();
     assert!(error.contains("a0=0x3"), "{error}");
+}
+
+#[test]
+fn sparse_argument_domain_does_not_admit_intermediate_selectors() {
+    let profiles = parse(
+        "schema = 2\n\n[[profiles]]\nname = \"sparse\"\nvendor-source = \"vendor\"\nvendor-symbol = \"dispatch\"\nrust-symbol = \"replacement\"\n\n[[profiles.argument-values]]\nindex = 0\nvalues = [6, 8]\n\n[[profiles.cases]]\nname = \"six\"\narguments = [6]\n\n[[profiles.cases]]\nname = \"eight\"\narguments = [8]\n",
+    )
+    .unwrap();
+
+    assert_eq!(
+        profiles[0].argument_values,
+        [ArgumentValues {
+            index: 0,
+            values: vec![6, 8],
+        }]
+    );
+    assert_eq!(
+        profiles[0]
+            .coverage_argument_constraints()
+            .into_iter()
+            .map(|arguments| arguments[0].unwrap())
+            .collect::<Vec<_>>(),
+        [6, 8]
+    );
+}
+
+#[test]
+fn checked_in_sta_ap_receive_profile_closes_only_policy_six_and_eight() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .ancestors()
+        .nth(2)
+        .expect("workbench remains under tools");
+    let profiles =
+        load(&root.join("verification/vendor/targets/esp32s31/profiles/wifi-sta-ap-receive.toml"))
+            .unwrap();
+
+    assert_eq!(profiles.len(), 1);
+    let profile = &profiles[0];
+    assert_eq!(profile.vendor_symbol, "wifi_set_rx_policy");
+    assert_eq!(
+        profile.argument_values,
+        [ArgumentValues {
+            index: 0,
+            values: vec![6, 8],
+        }]
+    );
+    assert_eq!(profile.scenarios.len(), 4);
+    assert_eq!(profile.coverage_argument_constraints().len(), 4);
+    assert!(
+        profile
+            .coverage_argument_constraints()
+            .iter()
+            .all(|arguments| {
+                matches!(arguments[0], Some(6 | 8)) && matches!(arguments[3], Some(1 | 2))
+            })
+    );
 }
 
 #[test]

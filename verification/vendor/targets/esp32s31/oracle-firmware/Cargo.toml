@@ -12,10 +12,10 @@ publish = false
 [workspace.dependencies]
 embassy-executor = "0.10.0"
 embassy-time = "0.5.1"
-esp-bootloader-esp-idf = { git = "https://github.com/ermacv/esp-hal", branch = "esp32s31-async-platform", default-features = false }
-esp-hal = { git = "https://github.com/ermacv/esp-hal", branch = "esp32s31-async-platform", default-features = false }
-esp-phy = { git = "https://github.com/ermacv/esp-hal", branch = "esp32s31-async-platform" }
-esp-rtos = { git = "https://github.com/ermacv/esp-hal", branch = "esp32s31-async-platform" }
+esp-bootloader-esp-idf = { git = "https://github.com/ermacv/esp-hal", rev = "7f914782f5c689a74f37df83b89a0827d3800323", default-features = false }
+esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "7f914782f5c689a74f37df83b89a0827d3800323", default-features = false }
+esp-phy = { git = "https://github.com/ermacv/esp-hal", rev = "7f914782f5c689a74f37df83b89a0827d3800323" }
+esp-rtos = { git = "https://github.com/ermacv/esp-hal", rev = "7f914782f5c689a74f37df83b89a0827d3800323" }
 open-esp-radio = { path = "../../../../../driver/radio", features = ["validation-raw-dma"] }
 open-esp-radio-esp32s31-pac = { path = "../../../../../driver/chips/esp32s31/pac", features = ["test-register-catalog"] }
 open-esp-radio-esp32s31-wifi-esp-hal = { path = "../../../../../driver/adapters/esp-hal/esp32s31-wifi" }

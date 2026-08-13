@@ -1,0 +1,61 @@
+schema = 1
+default-disposition = "not-yet-ported"
+default-protocol = "wifi"
+
+[[functions]]
+source = "libpp"
+symbol = "hal_mac_set_addr"
+disposition = "direct"
+protocol = "wifi"
+rust-component = "open_esp_radio_esp32s31_pac::RadioRegisters::program_receive_interface_address"
+binding = "v1"
+rust-probe = "open_libpp_interface_trace_hal_mac_set_addr"
+effect-contract = "exact-effects-v1"
+
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x2010405c }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x20104060 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x20104060 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x20104064 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x20104068 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x20104068 }
+disposition = { kind = "required" }
+
+[[functions]]
+source = "libpp"
+symbol = "hal_mac_set_bssid"
+disposition = "direct"
+protocol = "wifi"
+rust-component = "open_esp_radio_esp32s31_pac::RadioRegisters::program_interface_bssid"
+binding = "v1"
+rust-probe = "open_libpp_interface_trace_hal_mac_set_bssid"
+effect-contract = "exact-effects-v1"
+
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x20104000 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x20104004 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x20104004 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x20104008 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x2010400c }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x2010400c }
+disposition = { kind = "required" }

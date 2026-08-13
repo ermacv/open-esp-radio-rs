@@ -2,7 +2,7 @@
 
 #![forbid(unsafe_code)]
 
-use super::{RadioRegisters, device_fence};
+use super::{MacInterface, RadioRegisters};
 
 /// Read-only associated-STA receive-policy evidence.
 ///
@@ -32,7 +32,73 @@ pub struct MacApReceivePolicySnapshot {
     pub interface_rx_policy_enabled: bool,
 }
 
+/// Closed register plan for simultaneous same-channel STA and SoftAP receive
+/// contexts.
+///
+/// This type proves only that the two reviewed MAC interface slots can be
+/// programmed together. Channel ownership, beacon scheduling, shared TX/RX
+/// service and lifecycle arbitration remain outside the PAC.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MacStaApReceivePlan {
+    pub station_address: [u8; 6],
+    pub station_bssid: [u8; 6],
+    pub station_policy_mode: MacStaPolicyMode,
+    pub access_point_address: [u8; 6],
+}
+
+/// The two complete queue-zero submodes selected inside
+/// `wifi_set_rx_policy(6)` by the still-untyped `g_ic + 0x74` flag.
+///
+/// The names intentionally retain the vendor numeric identity. Evidence does
+/// not yet prove that mode two means simultaneous AP+STA operation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MacStaPolicyMode {
+    Mode1,
+    Mode2,
+}
+
+/// One complete, reviewed role-specific receive-policy transaction.
+///
+/// This finite enum is the shared join key between production HAL calls and
+/// bounded vendor verification. It exposes neither vendor jump-table numbers
+/// nor arbitrary hardware interface indices.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MacRoleReceivePolicy {
+    Station {
+        bssid: [u8; 6],
+        mode: MacStaPolicyMode,
+    },
+    AccessPoint {
+        address: [u8; 6],
+    },
+}
+
 impl RadioRegisters {
+    /// Publish one interface BSSID through the complete four-edge vendor leaf.
+    ///
+    /// SOURCE: complete pinned `libpp.a[hal_mac.o]::hal_mac_set_bssid`.
+    pub fn program_interface_bssid(&mut self, interface: MacInterface, bssid_address: [u8; 6]) {
+        let bssids = &self.peripherals.wifi_mac_bssid_policy;
+        let index = interface.bits() as usize;
+        let bssid = bssids.bssid_high(index);
+        bssid.modify(|_, w| w.address_check_enable().clear_bit());
+        open_esp_radio_esp32s31_pac_raw::zero_based_field_write::mac_bssid_address_low(
+            bssids,
+            index,
+            u32::from_le_bytes([
+                bssid_address[0],
+                bssid_address[1],
+                bssid_address[2],
+                bssid_address[3],
+            ]),
+        );
+        bssid.modify(|_, w| {
+            w.bssid_high()
+                .set(u16::from_le_bytes([bssid_address[4], bssid_address[5]]))
+        });
+        bssid.modify(|_, w| w.address_check_enable().set_bit());
+    }
+
     pub fn ap_receive_policy_snapshot(&self) -> MacApReceivePolicySnapshot {
         let bssids = &self.peripherals.wifi_mac_bssid_policy;
         let bssid_low = bssids.bssid_low(1).read().bytes_0_3().bits().to_le_bytes();
@@ -168,10 +234,6 @@ impl RadioRegisters {
     /// restore its normal filtering and hardware auto-ACK policy.
     pub fn apply_sta_link_receive_policy(&mut self, bssid_address: [u8; 6]) {
         let sniffer = self.peripherals.wifi_mac_rx_filter.policy(3);
-        let filter = self.peripherals.wifi_mac_rx_filter.policy(0);
-        let bssids = &self.peripherals.wifi_mac_bssid_policy;
-        let bssid = bssids.bssid_high(0);
-        let interface = self.peripherals.wifi_mac_interface_address.address_high(0);
 
         // Complete `hal_sniffer_disable`, size 0x44. Preserve its seven
         // separate fresh-read RMW edges: clear AUTOACK_DISABLE, then restore
@@ -190,6 +252,22 @@ impl RadioRegisters {
                 .receive_unicast_check_da()
                 .set_bit()
         });
+
+        self.apply_sta_policy_six(bssid_address, MacStaPolicyMode::Mode1);
+    }
+
+    /// Apply exactly `wifi_set_rx_policy(6)` after scan ownership has already
+    /// been normalized.
+    ///
+    /// This finite leaf is separate from
+    /// [`Self::apply_sta_link_receive_policy`] so verification does not
+    /// incorrectly attribute the open driver's sniffer teardown to the vendor
+    /// parent function.
+    pub fn apply_sta_policy_six(&mut self, bssid_address: [u8; 6], mode: MacStaPolicyMode) {
+        let filter = self.peripherals.wifi_mac_rx_filter.policy(0);
+        let bssids = &self.peripherals.wifi_mac_bssid_policy;
+        let bssid = bssids.bssid_high(0);
+        let interface = self.peripherals.wifi_mac_interface_address.address_high(0);
 
         // `ic_set_bssid(0, bssid)` delegates to the complete
         // `hal_mac_set_bssid` leaf. Keep its four hardware edges ordered:
@@ -217,11 +295,17 @@ impl RadioRegisters {
 
         // `ic_set_rx_policy(0, mode=0, control=1, management=1)`.
         // Keep every complete-leaf fresh-read RMW edge separate.
-        filter.modify(|_, w| {
-            w.receive_management_not_check_bssid()
+        filter.modify(|_, w| match mode {
+            MacStaPolicyMode::Mode1 => w
+                .receive_management_not_check_bssid()
                 .clear_bit()
                 .pass_beacon()
-                .clear_bit()
+                .clear_bit(),
+            MacStaPolicyMode::Mode2 => w
+                .receive_management_not_check_bssid()
+                .set_bit()
+                .pass_beacon()
+                .set_bit(),
         });
         bssid.modify(|_, w| w.interface_is_soft_ap().clear_bit());
         filter.modify(|_, w| w.dump_management_not_check_bssid().clear_bit());
@@ -243,8 +327,6 @@ impl RadioRegisters {
         // 2026-07-28.
         filter.modify(|_, w| w.receive_unicast_check_bssid().set_bit());
         filter.modify(|_, w| w.dump_unicast_check_bssid().set_bit());
-
-        device_fence();
     }
 
     /// Activate the exact first-interface SoftAP receive policy.
@@ -255,30 +337,14 @@ impl RadioRegisters {
     /// `ic_set_rx_policy(1, 0, 1, 1)`. Unlike station policy six it does not
     /// call `ic_set_rx_policy_ubssid_check`.
     pub fn apply_ap_receive_policy(&mut self, access_point: [u8; 6]) {
-        self.program_receive_interface_address(1, access_point);
+        self.program_receive_interface_address(MacInterface::AccessPoint, access_point);
+        // `ic_set_bssid(1, ap)` / complete `hal_mac_set_bssid`.
+        self.program_interface_bssid(MacInterface::AccessPoint, access_point);
 
         let filter = self.peripherals.wifi_mac_rx_filter.policy(1);
         let bssids = &self.peripherals.wifi_mac_bssid_policy;
         let bssid = bssids.bssid_high(1);
         let interface = self.peripherals.wifi_mac_interface_address.address_high(1);
-
-        // `ic_set_bssid(1, ap)` / complete `hal_mac_set_bssid`.
-        bssid.modify(|_, w| w.address_check_enable().clear_bit());
-        open_esp_radio_esp32s31_pac_raw::zero_based_field_write::mac_bssid_address_low(
-            bssids,
-            1,
-            u32::from_le_bytes([
-                access_point[0],
-                access_point[1],
-                access_point[2],
-                access_point[3],
-            ]),
-        );
-        bssid.modify(|_, w| {
-            w.bssid_high()
-                .set(u16::from_le_bytes([access_point[4], access_point[5]]))
-        });
-        bssid.modify(|_, w| w.address_check_enable().set_bit());
 
         // `ic_set_rx_policy(interface=1, mode=0, control=1, management=1)`.
         filter.modify(|_, w| {
@@ -291,6 +357,32 @@ impl RadioRegisters {
         filter.modify(|_, w| w.dump_management_not_check_bssid().clear_bit());
         bssid.modify(|_, w| w.address_check_enable().set_bit());
         interface.modify(|_, w| w.rx_policy_enable().set_bit());
-        device_fence();
+    }
+
+    /// Apply one finite role policy through the production PAC boundary.
+    pub fn apply_role_receive_policy(&mut self, policy: MacRoleReceivePolicy) {
+        match policy {
+            MacRoleReceivePolicy::Station { bssid, mode } => self.apply_sta_policy_six(bssid, mode),
+            MacRoleReceivePolicy::AccessPoint { address } => self.apply_ap_receive_policy(address),
+        }
+    }
+
+    /// Program the disjoint STA=0 and SoftAP=1 receive contexts in a fixed
+    /// reviewed order.
+    ///
+    /// The station address is published first, followed by the selected
+    /// complete STA policy-six transaction and the complete SoftAP policy-eight
+    /// transaction. The component leaves retain their original fresh-read RMW
+    /// ordering. This composition intentionally does not touch PHY channel or
+    /// scheduler state.
+    pub fn apply_sta_ap_receive_plan(&mut self, plan: MacStaApReceivePlan) {
+        self.program_receive_interface_address(MacInterface::Station, plan.station_address);
+        self.apply_role_receive_policy(MacRoleReceivePolicy::Station {
+            bssid: plan.station_bssid,
+            mode: plan.station_policy_mode,
+        });
+        self.apply_role_receive_policy(MacRoleReceivePolicy::AccessPoint {
+            address: plan.access_point_address,
+        });
     }
 }

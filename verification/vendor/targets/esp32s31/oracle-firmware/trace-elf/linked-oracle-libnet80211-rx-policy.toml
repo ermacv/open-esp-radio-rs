@@ -1,0 +1,36 @@
+# Authoritative cross-archive execution unit for the two reviewed
+# wifi_set_rx_policy role branches. Archive extraction starts from the parent
+# and pulls only its actual libpp HAL dependency closure.
+schema = 1
+source = "libnet80211"
+linker-scripts = [
+    "../../../../../../hil/targets/esp32s31/linker/rom/esp32s31-eco0.x",
+    "link.x",
+]
+archives = [
+    "../../../../../../_oracles/libnet80211.a",
+    "../../../../../../_oracles/libpp.a",
+]
+entry-symbols = ["wifi_set_rx_policy"]
+stub-symbols = [
+    "__adddf3",
+    "__clzsi2",
+    "__ctzsi2",
+    "__extendsfdf2",
+    "__ffssi2",
+    "__fixdfsi",
+    "__floatsidf",
+    "__floatundisf",
+    "__floatunsidf",
+    "__muldf3",
+    "__popcountsi2",
+    "__popcountdi2",
+    "__bswapsi2",
+    "__subdf3",
+    "__truncdfsf2",
+    "__udivdi3",
+    "__umoddi3",
+]
+emit-relocations = true
+gc-sections = false
+unresolved-symbols = "ignore-all"

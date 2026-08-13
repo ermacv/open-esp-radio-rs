@@ -12,7 +12,23 @@ pub(crate) struct VerifySource<'a> {
     pub(crate) artifact: &'a Path,
     pub(crate) inventory: Option<&'a Path>,
     pub(crate) companion: Option<&'a Path>,
-    pub(crate) prefix: &'a str,
+    pub(crate) selection: VendorSymbolSelection<'a>,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum VendorSymbolSelection<'a> {
+    All,
+    Prefix(&'a str),
+    Symbols(&'a [String]),
+}
+
+impl VendorSymbolSelection<'_> {
+    pub(crate) fn stripped_name<'a>(self, name: &'a str) -> Option<&'a str> {
+        match self {
+            Self::Prefix(prefix) => name.strip_prefix(prefix),
+            Self::All | Self::Symbols(_) => Some(name),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, serde::Serialize)]
@@ -61,7 +77,7 @@ impl VerificationGate {
             Self::Regression { match_floor } => {
                 summary.mismatched == 0
                     && summary.incomplete == 0
-                    && summary.matched >= match_floor
+                    && summary.matched + summary.bounded_matches >= match_floor
                     && orphan_probes == 0
             }
         }
@@ -91,7 +107,35 @@ impl VerifySummary {
 }
 
 pub(crate) fn vendor_symbols(source: VerifySource<'_>) -> Result<Vec<ArtifactSymbolIdentity>> {
-    list_code_symbols(source.inventory.unwrap_or(source.artifact), source.prefix)
+    let path = source.inventory.unwrap_or(source.artifact);
+    match source.selection {
+        VendorSymbolSelection::All => list_code_symbols(path, ""),
+        VendorSymbolSelection::Prefix(prefix) => list_code_symbols(path, prefix),
+        VendorSymbolSelection::Symbols(selected) => {
+            let symbols = list_code_symbols(path, "")?;
+            let available = symbols
+                .iter()
+                .map(|symbol| symbol.name.as_str())
+                .collect::<BTreeSet<_>>();
+            let missing = selected
+                .iter()
+                .filter(|name| !available.contains(name.as_str()))
+                .cloned()
+                .collect::<Vec<_>>();
+            if !missing.is_empty() {
+                return Err(crate::Error::invalid(format!(
+                    "vendor source {} does not define selected symbol(s): {}",
+                    source.name,
+                    missing.join(", ")
+                )));
+            }
+            let selected = selected.iter().map(String::as_str).collect::<BTreeSet<_>>();
+            Ok(symbols
+                .into_iter()
+                .filter(|symbol| selected.contains(symbol.name.as_str()))
+                .collect())
+        }
+    }
 }
 
 pub(crate) fn protocol_inventory(
@@ -154,9 +198,9 @@ pub(crate) fn orphan_probe_count(
             let suffix = suffix.strip_prefix("ret_").unwrap_or(suffix);
             !sources.iter().any(|(source, symbols)| {
                 symbols.iter().any(|vendor| {
-                    vendor
-                        .name
-                        .strip_prefix(source.prefix)
+                    source
+                        .selection
+                        .stripped_name(&vendor.name)
                         .is_some_and(|vendor_suffix| {
                             rust_probe_suffix_matches(source.name, vendor_suffix, suffix)
                         })

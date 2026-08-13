@@ -1,7 +1,6 @@
 //! Stable project entry point composing public target knowledge and local inputs.
 
 use std::{
-    collections::BTreeMap,
     io,
     path::{Path, PathBuf},
 };
@@ -163,10 +162,32 @@ pub(crate) enum ProjectVerificationGate {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum VerificationVendorSelection {
+    All,
+    Prefix(String),
+    Symbols(Vec<String>),
+}
+
+impl VerificationVendorSelection {
+    pub(crate) fn includes(&self, symbol: &str) -> bool {
+        match self {
+            Self::All => true,
+            Self::Prefix(prefix) => symbol.starts_with(prefix),
+            Self::Symbols(symbols) => symbols.iter().any(|candidate| candidate == symbol),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct VerificationVendorSpec {
+    pub(crate) source: SourceId,
+    pub(crate) selection: VerificationVendorSelection,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct VerificationSuiteSpec {
     pub(crate) id: String,
-    pub(crate) sources: Vec<SourceId>,
-    pub(crate) source_prefixes: BTreeMap<SourceId, String>,
+    pub(crate) vendor: Vec<VerificationVendorSpec>,
     pub(crate) rust_artifact_role: InputRole,
     pub(crate) rust_companion_role: Option<InputRole>,
     pub(crate) rust_prefix: String,

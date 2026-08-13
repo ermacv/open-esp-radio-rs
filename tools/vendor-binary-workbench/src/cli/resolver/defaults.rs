@@ -38,6 +38,7 @@ pub(super) fn apply_project_defaults(
                 let explicit = arguments
                     .source_prefix
                     .iter()
+                    .chain(&arguments.source_symbol)
                     .map(|value| value.source.clone())
                     .collect::<std::collections::BTreeSet<_>>();
                 let configured = arguments

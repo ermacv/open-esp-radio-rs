@@ -68,8 +68,10 @@ pub const ESP32S31_MAC_SERVICE_CAPABILITIES: MacServiceCapabilities = MacService
         // not the size of the underlying hardware key table.
         station_pairwise_ccmp_slots: 1,
         station_group_ccmp_slots: 1,
-        access_point_pairwise_ccmp_slots: 1,
+        access_point_pairwise_ccmp_slots: 15,
         access_point_group_ccmp_slots: 1,
+        access_point_association_entries: 15,
+        access_point_encrypted_clients: 15,
     },
 };
 
@@ -112,6 +114,9 @@ mod tests {
             resources.tx_ampdu_max_subframes as usize,
             TX_AMPDU_SLOT_CAPACITY
         );
+        assert_eq!(resources.access_point_pairwise_ccmp_slots, 15);
+        assert_eq!(resources.access_point_association_entries, 15);
+        assert_eq!(resources.access_point_encrypted_clients, 15);
     }
 
     #[test]

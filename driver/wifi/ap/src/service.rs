@@ -1,4 +1,6 @@
-//! Bounded single-peer AP MLME and security ownership.
+//! Bounded multi-peer AP MLME and security ownership.
+
+use core::fmt;
 
 use open_esp_radio_ieee80211::beacon::WPA2_PERSONAL_CCMP_PSK_RSN_IE;
 use open_esp_radio_wpa2::{
@@ -14,10 +16,57 @@ use open_esp_radio_wpa2::{
     },
 };
 
-pub const AP_ASSOCIATION_ID: u16 = 1;
+/// Public encrypted-client ceiling for one AP epoch.
+///
+/// ESP32-S31 maps these clients to AIDs 1..=15 and hardware pairwise key
+/// entries 8..=22. Higher values are rejected before radio ownership moves.
+pub const AP_MAX_CLIENTS: usize = 15;
 pub const AP_STATUS_SUCCESS: u16 = 0;
 pub const AP_STATUS_TOO_MANY_STATIONS: u16 = 17;
 pub const AP_STATUS_INVALID_RSN: u16 = 40;
+
+/// Validated runtime admission limit for one AP epoch.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct AccessPointClientLimit(u8);
+
+impl AccessPointClientLimit {
+    pub const MAX: u8 = AP_MAX_CLIENTS as u8;
+
+    pub const fn new(value: u8) -> Result<Self, AccessPointClientLimitError> {
+        if value == 0 || value > Self::MAX {
+            return Err(AccessPointClientLimitError { value });
+        }
+        Ok(Self(value))
+    }
+
+    pub const fn get(self) -> u8 {
+        self.0
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AccessPointClientLimitError {
+    value: u8,
+}
+
+impl AccessPointClientLimitError {
+    pub const fn value(self) -> u8 {
+        self.value
+    }
+}
+
+impl fmt::Display for AccessPointClientLimitError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            formatter,
+            "access-point client limit {} is outside 1..={}",
+            self.value,
+            AccessPointClientLimit::MAX,
+        )
+    }
+}
+
+impl core::error::Error for AccessPointClientLimitError {}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ApPeerPhase {
@@ -101,15 +150,41 @@ impl From<Wpa2StateError> for ApServiceError {
 
 struct ApPeer {
     address: [u8; 6],
+    association_id: u16,
     phase: ApPeerPhase,
     wpa2: Option<Wpa2ApState>,
     pending_ptk: Option<Ptk>,
 }
 
+/// Caller-owned storage for all per-client AP protocol and key state.
+///
+/// This is intentionally separate from [`AccessPointService`]. On embedded
+/// targets the table is large enough that constructing or moving it through a
+/// cooperative task stack is unsafe; the radio integration gives it a stable
+/// static address instead.
+pub struct AccessPointPeerStorage {
+    peers: [Option<ApPeer>; AP_MAX_CLIENTS],
+}
+
+impl AccessPointPeerStorage {
+    pub const fn new() -> Self {
+        Self {
+            peers: [const { None }; AP_MAX_CLIENTS],
+        }
+    }
+}
+
+impl Default for AccessPointPeerStorage {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ApPeer {
-    const fn authenticated(address: [u8; 6]) -> Self {
+    const fn authenticated(address: [u8; 6], association_id: u16) -> Self {
         Self {
             address,
+            association_id,
             phase: ApPeerPhase::Authenticated,
             wpa2: None,
             pending_ptk: None,
@@ -117,29 +192,55 @@ impl ApPeer {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ApPeerStatus {
+    pub address: [u8; 6],
+    pub association_id: u16,
+    pub phase: ApPeerPhase,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AccessPointServiceStatus {
+    pub client_limit: AccessPointClientLimit,
+    pub associated: u8,
+    pub authorized: u8,
+    pub peers: [Option<ApPeerStatus>; AP_MAX_CLIENTS],
+}
+
 /// Complete portable owner for one AP service epoch.
 ///
 /// Dropping this value clears the PMK and GTK through their zeroize-on-drop
 /// implementations. A chip runtime still must clear its typed hardware slots
 /// before it may classify the corresponding physical owner as stopped.
-pub struct AccessPointService {
+pub struct AccessPointService<'peers> {
     address: [u8; 6],
     pmk: Pmk,
     gtk: Wpa2Gtk,
-    peer: Option<ApPeer>,
+    peer_storage: Option<&'peers mut AccessPointPeerStorage>,
+    client_limit: AccessPointClientLimit,
     next_management_sequence: u16,
     next_data_sequence: u16,
+    status_revision: u32,
 }
 
-impl AccessPointService {
-    pub const fn new(address: [u8; 6], pmk: Pmk, gtk: Wpa2Gtk) -> Self {
+impl<'peers> AccessPointService<'peers> {
+    pub fn new(
+        address: [u8; 6],
+        pmk: Pmk,
+        gtk: Wpa2Gtk,
+        client_limit: AccessPointClientLimit,
+        peer_storage: &'peers mut AccessPointPeerStorage,
+    ) -> Self {
+        peer_storage.peers.fill_with(|| None);
         Self {
             address,
             pmk,
             gtk,
-            peer: None,
+            peer_storage: Some(peer_storage),
+            client_limit,
             next_management_sequence: 0,
             next_data_sequence: 0,
+            status_revision: 0,
         }
     }
 
@@ -147,12 +248,72 @@ impl AccessPointService {
         self.address
     }
 
-    pub fn peer(&self) -> Option<[u8; 6]> {
-        self.peer.as_ref().map(|peer| peer.address)
+    pub const fn client_limit(&self) -> AccessPointClientLimit {
+        self.client_limit
     }
 
-    pub fn peer_phase(&self) -> Option<ApPeerPhase> {
-        self.peer.as_ref().map(|peer| peer.phase)
+    pub fn peer_status(&self, address: [u8; 6]) -> Option<ApPeerStatus> {
+        self.storage()
+            .peers
+            .iter()
+            .flatten()
+            .find(|peer| peer.address == address)
+            .map(|peer| ApPeerStatus {
+                address: peer.address,
+                association_id: peer.association_id,
+                phase: peer.phase,
+            })
+    }
+
+    pub fn peers(&self) -> impl Iterator<Item = ApPeerStatus> + '_ {
+        self.storage()
+            .peers
+            .iter()
+            .flatten()
+            .map(|peer| ApPeerStatus {
+                address: peer.address,
+                association_id: peer.association_id,
+                phase: peer.phase,
+            })
+    }
+
+    pub fn associated_count(&self) -> u8 {
+        self.peers()
+            .filter(|peer| peer.phase != ApPeerPhase::Authenticated)
+            .count() as u8
+    }
+
+    pub fn authorized_count(&self) -> u8 {
+        self.peers()
+            .filter(|peer| peer.phase == ApPeerPhase::Authorized)
+            .count() as u8
+    }
+
+    pub fn is_authorized(&self, address: [u8; 6]) -> bool {
+        self.peer_status(address)
+            .is_some_and(|peer| peer.phase == ApPeerPhase::Authorized)
+    }
+
+    pub fn status(&self) -> AccessPointServiceStatus {
+        let mut peers = [None; AP_MAX_CLIENTS];
+        for (destination, source) in peers.iter_mut().zip(self.storage().peers.iter()) {
+            *destination = source.as_ref().map(|peer| ApPeerStatus {
+                address: peer.address,
+                association_id: peer.association_id,
+                phase: peer.phase,
+            });
+        }
+        AccessPointServiceStatus {
+            client_limit: self.client_limit,
+            associated: self.associated_count(),
+            authorized: self.authorized_count(),
+            peers,
+        }
+    }
+
+    /// Monotonic public peer-table revision for cheap change detection.
+    pub const fn status_revision(&self) -> u32 {
+        self.status_revision
     }
 
     pub fn next_management_sequence(&mut self) -> u16 {
@@ -174,17 +335,25 @@ impl AccessPointService {
     }
 
     pub fn authenticate_open(&mut self, peer: [u8; 6]) -> ApMlmeAction {
-        let status = match self.peer.as_ref() {
-            None => {
-                self.peer = Some(ApPeer::authenticated(peer));
-                AP_STATUS_SUCCESS
-            }
-            Some(existing) if existing.address == peer => {
-                self.peer = Some(ApPeer::authenticated(peer));
-                AP_STATUS_SUCCESS
-            }
-            Some(_) => AP_STATUS_TOO_MANY_STATIONS,
+        let (status, changed) = if let Some(index) = self.peer_index(peer) {
+            let association_id = self.storage().peers[index]
+                .as_ref()
+                .expect("peer index resolves an occupied entry")
+                .association_id;
+            self.storage_mut().peers[index] = Some(ApPeer::authenticated(peer, association_id));
+            (AP_STATUS_SUCCESS, true)
+        } else if self.occupied_count() >= self.client_limit.get() {
+            (AP_STATUS_TOO_MANY_STATIONS, false)
+        } else if let Some(index) = self.storage().peers.iter().position(Option::is_none) {
+            let association_id = u16::try_from(index + 1).expect("fifteen AIDs fit u16");
+            self.storage_mut().peers[index] = Some(ApPeer::authenticated(peer, association_id));
+            (AP_STATUS_SUCCESS, true)
+        } else {
+            (AP_STATUS_TOO_MANY_STATIONS, false)
         };
+        if changed {
+            self.status_revision = self.status_revision.wrapping_add(1);
+        }
         ApMlmeAction::AuthenticationResponse { peer, status }
     }
 
@@ -195,16 +364,8 @@ impl AccessPointService {
         authenticator_nonce: [u8; 32],
         initial_replay_counter: u64,
     ) -> Result<ApMlmeAction, ApServiceError> {
-        let Some(existing) = self.peer.as_mut() else {
-            return Err(ApServiceError::UnknownPeer);
-        };
-        if existing.address != peer {
-            return Ok(ApMlmeAction::AssociationResponse {
-                peer,
-                status: AP_STATUS_TOO_MANY_STATIONS,
-                association_id: None,
-            });
-        }
+        let access_point = self.address;
+        let existing = self.checked_peer_mut(peer)?;
         if existing.phase != ApPeerPhase::Authenticated {
             return Err(ApServiceError::WrongPeerPhase);
         }
@@ -216,17 +377,19 @@ impl AccessPointService {
             });
         }
         let wpa2 = Wpa2ApState::new(
-            self.address,
+            access_point,
             peer,
             authenticator_nonce,
             initial_replay_counter,
         )?;
         existing.phase = ApPeerPhase::Securing;
         existing.wpa2 = Some(wpa2);
+        let association_id = existing.association_id;
+        self.status_revision = self.status_revision.wrapping_add(1);
         Ok(ApMlmeAction::AssociationResponse {
             peer,
             status: AP_STATUS_SUCCESS,
-            association_id: Some(AP_ASSOCIATION_ID),
+            association_id: Some(association_id),
         })
     }
 
@@ -422,29 +585,73 @@ impl AccessPointService {
         }
         existing.phase = ApPeerPhase::Authorized;
         existing.pending_ptk = None;
+        self.status_revision = self.status_revision.wrapping_add(1);
         Ok(())
     }
 
     pub fn remove_peer(&mut self, peer: [u8; 6]) -> Result<ApMlmeAction, ApServiceError> {
-        if self.peer.as_ref().map(|existing| existing.address) != Some(peer) {
-            return Err(ApServiceError::UnknownPeer);
-        }
-        self.peer = None;
+        let index = self.peer_index(peer).ok_or(ApServiceError::UnknownPeer)?;
+        self.storage_mut().peers[index] = None;
+        self.status_revision = self.status_revision.wrapping_add(1);
         Ok(ApMlmeAction::PeerRemoved { peer })
     }
 
     fn checked_peer(&self, peer: [u8; 6]) -> Result<&ApPeer, ApServiceError> {
-        self.peer
+        let index = self.peer_index(peer).ok_or(ApServiceError::UnknownPeer)?;
+        self.storage().peers[index]
             .as_ref()
-            .filter(|existing| existing.address == peer)
             .ok_or(ApServiceError::UnknownPeer)
     }
 
     fn checked_peer_mut(&mut self, peer: [u8; 6]) -> Result<&mut ApPeer, ApServiceError> {
-        self.peer
+        let index = self.peer_index(peer).ok_or(ApServiceError::UnknownPeer)?;
+        self.storage_mut().peers[index]
             .as_mut()
-            .filter(|existing| existing.address == peer)
             .ok_or(ApServiceError::UnknownPeer)
+    }
+
+    fn peer_index(&self, peer: [u8; 6]) -> Option<usize> {
+        self.storage()
+            .peers
+            .iter()
+            .position(|existing| existing.as_ref().is_some_and(|value| value.address == peer))
+    }
+
+    fn occupied_count(&self) -> u8 {
+        self.storage().peers.iter().flatten().count() as u8
+    }
+
+    /// End the service epoch, clear every per-peer secret and return the
+    /// caller-owned table for a later AP materialization.
+    pub fn into_peer_storage(mut self) -> &'peers mut AccessPointPeerStorage {
+        let storage = self
+            .peer_storage
+            .take()
+            .expect("an active AP service owns peer storage");
+        storage.peers.fill_with(|| None);
+        storage
+    }
+
+    fn storage(&self) -> &AccessPointPeerStorage {
+        self.peer_storage
+            .as_deref()
+            .expect("an active AP service owns peer storage")
+    }
+
+    fn storage_mut(&mut self) -> &mut AccessPointPeerStorage {
+        self.peer_storage
+            .as_deref_mut()
+            .expect("an active AP service owns peer storage")
+    }
+}
+
+impl Drop for AccessPointService<'_> {
+    fn drop(&mut self) {
+        // Static placement must not retain pairwise protocol/key state into a
+        // later AP epoch. Replacing every entry runs the WPA2/PTK destructors.
+        if let Some(storage) = self.peer_storage.as_deref_mut() {
+            storage.peers.fill_with(|| None);
+        }
     }
 }
 
@@ -469,17 +676,20 @@ mod tests {
         0x30, 20, 1, 0, 0, 0x0f, 0xac, 4, 1, 0, 0, 0x0f, 0xac, 4, 1, 0, 0, 0x0f, 0xac, 2, 0x0c, 0,
     ];
 
-    fn service() -> AccessPointService {
+    fn service(storage: &mut AccessPointPeerStorage) -> AccessPointService<'_> {
         AccessPointService::new(
             AP,
             Pmk::derive(b"password", b"test-ap").unwrap(),
             Wpa2Gtk::new(1, true, [0x55; 16]).unwrap(),
+            AccessPointClientLimit::new(2).unwrap(),
+            storage,
         )
     }
 
     #[test]
-    fn one_peer_is_enforced_before_hardware_moves() {
-        let mut service = service();
+    fn runtime_limit_is_enforced_before_hardware_moves() {
+        let mut storage = AccessPointPeerStorage::new();
+        let mut service = service(&mut storage);
         assert_eq!(
             service.authenticate_open(PEER),
             ApMlmeAction::AuthenticationResponse {
@@ -491,25 +701,48 @@ mod tests {
             service.authenticate_open(OTHER),
             ApMlmeAction::AuthenticationResponse {
                 peer: OTHER,
+                status: AP_STATUS_SUCCESS,
+            }
+        );
+        let third = [0x02, 0, 0, 0, 0, 4];
+        assert_eq!(
+            service.authenticate_open(third),
+            ApMlmeAction::AuthenticationResponse {
+                peer: third,
                 status: AP_STATUS_TOO_MANY_STATIONS,
             }
         );
-        assert_eq!(service.peer(), Some(PEER));
+        assert_eq!(service.associated_count(), 0);
+        assert_eq!(service.peers().count(), 2);
+        assert_eq!(service.peer_status(PEER).unwrap().association_id, 1);
+        assert_eq!(service.peer_status(OTHER).unwrap().association_id, 2);
+    }
+
+    #[test]
+    fn client_limit_rejects_zero_and_values_above_the_owned_tables() {
+        assert_eq!(AccessPointClientLimit::new(0).unwrap_err().value(), 0,);
+        assert_eq!(AccessPointClientLimit::new(16).unwrap_err().value(), 16,);
+        assert_eq!(AccessPointClientLimit::new(15).unwrap().get(), 15);
     }
 
     #[test]
     fn association_owns_a_bounded_wpa2_state() {
-        let mut service = service();
+        let mut storage = AccessPointPeerStorage::new();
+        let mut service = service(&mut storage);
         service.authenticate_open(PEER);
         assert_eq!(
             service.associate_wpa2(PEER, &WPA2_RSN, [7; 32], 9).unwrap(),
             ApMlmeAction::AssociationResponse {
                 peer: PEER,
                 status: AP_STATUS_SUCCESS,
-                association_id: Some(AP_ASSOCIATION_ID),
+                association_id: Some(1),
             }
         );
-        assert_eq!(service.peer_phase(), Some(ApPeerPhase::Securing));
+        assert_eq!(
+            service.peer_status(PEER).unwrap().phase,
+            ApPeerPhase::Securing
+        );
+        assert_eq!(service.associated_count(), 1);
         assert_eq!(
             service.begin_wpa2(PEER).unwrap(),
             ApMlmeAction::BeginWpa2 { peer: PEER }
@@ -526,7 +759,8 @@ mod tests {
         const ANONCE: [u8; 32] = [7; 32];
         const SNONCE: [u8; 32] = [8; 32];
 
-        let mut service = service();
+        let mut storage = AccessPointPeerStorage::new();
+        let mut service = service(&mut storage);
         service.authenticate_open(PEER);
         // Supplicants may add their own RSN capabilities. Message 3 must not
         // reflect those bytes back: it authenticates the AP's beacon RSN IE.
@@ -584,7 +818,10 @@ mod tests {
         ));
         assert!(service.pending_ptk(PEER).is_ok());
         service.authorize(PEER).unwrap();
-        assert_eq!(service.peer_phase(), Some(ApPeerPhase::Authorized));
+        assert_eq!(
+            service.peer_status(PEER).unwrap().phase,
+            ApPeerPhase::Authorized
+        );
         assert_eq!(
             service.pending_ptk(PEER).err(),
             Some(ApServiceError::WrongPeerPhase)
@@ -593,7 +830,8 @@ mod tests {
 
     #[test]
     fn invalid_rsn_does_not_open_the_controlled_port() {
-        let mut service = service();
+        let mut storage = AccessPointPeerStorage::new();
+        let mut service = service(&mut storage);
         service.authenticate_open(PEER);
         assert_eq!(
             service.associate_wpa2(PEER, &[0x30, 0], [7; 32], 9),
@@ -603,15 +841,82 @@ mod tests {
                 association_id: None,
             })
         );
-        assert_eq!(service.peer_phase(), Some(ApPeerPhase::Authenticated));
+        assert_eq!(
+            service.peer_status(PEER).unwrap().phase,
+            ApPeerPhase::Authenticated
+        );
     }
 
     #[test]
     fn management_sequence_wraps_at_twelve_bits() {
-        let mut service = service();
+        let mut storage = AccessPointPeerStorage::new();
+        let mut service = service(&mut storage);
         for expected in 0..=0x0fff {
             assert_eq!(service.next_management_sequence(), expected);
         }
         assert_eq!(service.next_management_sequence(), 0);
+    }
+
+    #[test]
+    fn all_fifteen_aids_are_stable_and_reused_after_removal() {
+        let mut storage = AccessPointPeerStorage::new();
+        let mut service = AccessPointService::new(
+            AP,
+            Pmk::derive(b"password", b"test-ap").unwrap(),
+            Wpa2Gtk::new(1, true, [0x55; 16]).unwrap(),
+            AccessPointClientLimit::new(15).unwrap(),
+            &mut storage,
+        );
+        for suffix in 1..=15_u8 {
+            let peer = [0x02, 0, 0, 0, 1, suffix];
+            assert_eq!(
+                service.authenticate_open(peer),
+                ApMlmeAction::AuthenticationResponse {
+                    peer,
+                    status: AP_STATUS_SUCCESS,
+                }
+            );
+            assert_eq!(
+                service.peer_status(peer).unwrap().association_id,
+                u16::from(suffix)
+            );
+            assert!(matches!(
+                service
+                    .associate_wpa2(peer, &WPA2_RSN, [suffix; 32], u64::from(suffix))
+                    .unwrap(),
+                ApMlmeAction::AssociationResponse {
+                    status: AP_STATUS_SUCCESS,
+                    association_id: Some(_),
+                    ..
+                }
+            ));
+        }
+        assert_eq!(service.associated_count(), 15);
+        let overflow = [0x02, 0, 0, 0, 2, 1];
+        assert_eq!(
+            service.authenticate_open(overflow),
+            ApMlmeAction::AuthenticationResponse {
+                peer: overflow,
+                status: AP_STATUS_TOO_MANY_STATIONS,
+            }
+        );
+        let released = [0x02, 0, 0, 0, 1, 7];
+        service.remove_peer(released).unwrap();
+        assert_eq!(
+            service.authenticate_open(overflow),
+            ApMlmeAction::AuthenticationResponse {
+                peer: overflow,
+                status: AP_STATUS_SUCCESS,
+            }
+        );
+        assert_eq!(service.peer_status(overflow).unwrap().association_id, 7);
+    }
+
+    #[test]
+    fn bounded_peer_table_has_an_explicit_memory_ceiling() {
+        // The service itself travels through the typed lifecycle, while all
+        // fifteen WPA2 state machines remain in caller-owned static storage.
+        assert!(core::mem::size_of::<AccessPointService<'_>>() <= 256);
+        assert!(core::mem::size_of::<AccessPointPeerStorage>() <= 4_096);
     }
 }

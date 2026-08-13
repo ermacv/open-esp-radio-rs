@@ -547,6 +547,7 @@ mod tests {
             credentials: NetworkCredentials::try_new(b"open-radio-ap", b"private-password")
                 .unwrap(),
             channel: 6,
+            client_limit: 4,
             ipv4: NetworkIpv4Configuration::Static {
                 address: [10, 43, 0, 1],
                 prefix_length: 24,

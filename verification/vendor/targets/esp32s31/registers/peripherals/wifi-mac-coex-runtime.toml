@@ -18,6 +18,9 @@ access = "read-write"
 name = "REQUESTS_UNKNOWN"
 bitOffset = 0
 bitWidth = 32
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0
+maximum = 0xffffffff
 
 [[peripherals.registers]]
 
@@ -51,7 +54,7 @@ bitWidth = 8
 
 [peripherals.registers.register]
 name = "SHARED_RX_PTI"
-description = "Shared low-nibble PTI word updated from the second argument by complete hal_set_rx_beacon_pti and hal_set_itwt_pti."
+description = "Shared receive PTI word updated from the second argument by complete hal_set_rx_beacon_pti and hal_set_itwt_pti. Both leaves preserve bits 31:4 and replace only bits 3:0."
 addressOffset = 0xC
 size = 32
 access = "read-write"
@@ -98,7 +101,7 @@ confidence = "instruction-exact-semantics-unknown"
 [[review]]
 entity = "WIFI_MAC_COEX_RUNTIME.SHARED_RX_PTI"
 sources = ["BLOB_LIBPP_HAL_COEX_RUNTIME"]
-confidence = "instruction-exact-semantics-unknown"
+confidence = "instruction-exact"
 
 [[review]]
 entity = "WIFI_MAC_COEX_RUNTIME.RX_BEACON_PTI"

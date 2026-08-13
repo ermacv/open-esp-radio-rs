@@ -105,9 +105,9 @@ pub(crate) fn verify_source(
     };
     let mut functions = Vec::with_capacity(vendor_symbols.len());
     for vendor in &vendor_symbols {
-        let suffix = vendor
-            .name
-            .strip_prefix(source.prefix)
+        let suffix = source
+            .selection
+            .stripped_name(&vendor.name)
             .expect("symbol was filtered by vendor prefix");
         let source_qualified_suffix = format!("{}_{suffix}", source.name);
         let manifest_entry = disposition_manifest
@@ -386,6 +386,11 @@ pub(crate) fn verify_source(
             .iter()
             .find(|profile| profile.vendor_symbol == vendor.name)
         {
+            let resolved_disposition =
+                disposition_manifest.map(|manifest| manifest.resolve(source.name, &vendor.name));
+            let bounded_feature = resolved_disposition
+                .as_ref()
+                .is_some_and(|resolved| resolved.disposition.is_bounded_feature());
             let coverage_domain = profile.coverage_constraints();
             let comparison = compare_execution_scenarios(
                 svd,
@@ -404,35 +409,65 @@ pub(crate) fn verify_source(
                 &profile.scenarios,
             )?;
             let verdict = comparison.verdict;
-            match verdict {
-                EquivalenceVerdict::Match => {
+            let bounded_projection_match = bounded_feature
+                && comparison.summary.cases > 0
+                && comparison.summary.matched == comparison.summary.cases
+                && comparison.summary.different == 0
+                && comparison.summary.incomplete == 0;
+            let accepted_match = verdict == EquivalenceVerdict::Match || bounded_projection_match;
+            if accepted_match {
+                if bounded_feature {
+                    summary.bounded_matches += 1;
+                } else {
                     summary.matched += 1;
                     match profile.contract {
                         profiles::ProfileContract::Scenario => summary.scenario_matches += 1,
                         profiles::ProfileContract::State => summary.state_matches += 1,
                     }
-                    record_evidence(
-                        evidence,
-                        source.name,
-                        &vendor.name,
-                        profile_evidence(profile),
-                    )?;
                 }
-                EquivalenceVerdict::Diff => summary.mismatched += 1,
-                EquivalenceVerdict::Incomplete => summary.incomplete += 1,
+                record_evidence(
+                    evidence,
+                    source.name,
+                    &vendor.name,
+                    profile_evidence(profile),
+                )?;
+            } else {
+                match verdict {
+                    EquivalenceVerdict::Match => unreachable!("a match is always accepted"),
+                    EquivalenceVerdict::Diff => summary.mismatched += 1,
+                    EquivalenceVerdict::Incomplete => summary.incomplete += 1,
+                }
             }
             let status = match verdict {
                 EquivalenceVerdict::Match => FunctionVerificationStatus::Match,
                 EquivalenceVerdict::Diff => FunctionVerificationStatus::Mismatch,
                 EquivalenceVerdict::Incomplete => FunctionVerificationStatus::Incomplete,
             };
+            let status = accepted_match
+                .then(|| matched_profile_classification(bounded_feature).0)
+                .unwrap_or(status);
             let mut function = FunctionVerificationReport::new(source.name, &vendor.name, status);
             function.rust_symbol = Some(rust.name.clone());
-            function.evidence = (verdict == EquivalenceVerdict::Match)
-                .then(|| profile.contract.evidence().to_owned());
-            function.claim = (verdict == EquivalenceVerdict::Match).then_some(
-                open_radio_vendor_semantics::DriverAdapterClaim::WholeFunctionEquivalence,
-            );
+            function.evidence = accepted_match.then(|| profile.contract.evidence().to_owned());
+            function.claim =
+                accepted_match.then(|| matched_profile_classification(bounded_feature).1);
+            if let Some(resolved) = resolved_disposition {
+                function.disposition = Some(resolved.disposition.label().to_owned());
+                function.protocol = Some(resolved.protocol.label().to_owned());
+                function.disposition_reviewed = resolved.entry.is_some();
+                function.rust_component = resolved.entry.and_then(|entry| {
+                    entry
+                        .rust_component
+                        .as_ref()
+                        .map(|component| component.label().to_owned())
+                });
+            }
+            if accepted_match && bounded_feature {
+                function.reason = Some(
+                    "every declared concrete case matches inside the reviewed finite input projection; static coverage outside that projection is retained and this is not whole-function vendor equivalence"
+                        .to_owned(),
+                );
+            }
             function.profile = Some(profile.name.clone());
             function.execution = Some(comparison);
             functions.push(function);
@@ -656,6 +691,25 @@ pub(crate) fn verify_source(
     })
 }
 
+fn matched_profile_classification(
+    bounded_feature: bool,
+) -> (
+    FunctionVerificationStatus,
+    open_radio_vendor_semantics::DriverAdapterClaim,
+) {
+    if bounded_feature {
+        (
+            FunctionVerificationStatus::BoundedMatch,
+            open_radio_vendor_semantics::DriverAdapterClaim::ReviewedProjection,
+        )
+    } else {
+        (
+            FunctionVerificationStatus::Match,
+            open_radio_vendor_semantics::DriverAdapterClaim::WholeFunctionEquivalence,
+        )
+    }
+}
+
 fn annotate_replacement(
     function: &mut FunctionVerificationReport,
     manifest: &dispositions::Manifest,
@@ -694,4 +748,27 @@ fn require_platform_harness<'a>(harness: Option<&'a str>, capability: &str) -> R
             "{capability} requires a project platform pack with an executable harness"
         ))
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sparse_bounded_profile_cannot_claim_the_whole_vendor_function() {
+        assert_eq!(
+            matched_profile_classification(true),
+            (
+                FunctionVerificationStatus::BoundedMatch,
+                open_radio_vendor_semantics::DriverAdapterClaim::ReviewedProjection,
+            )
+        );
+        assert_eq!(
+            matched_profile_classification(false),
+            (
+                FunctionVerificationStatus::Match,
+                open_radio_vendor_semantics::DriverAdapterClaim::WholeFunctionEquivalence,
+            )
+        );
+    }
 }

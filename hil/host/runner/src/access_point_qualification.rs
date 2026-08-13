@@ -1,4 +1,4 @@
-//! Single-client WPA2 AP lifecycle and exact data-plane qualification.
+//! WPA2 AP lifecycle, exact data-plane and concurrent-client qualification.
 
 use std::{
     fs,
@@ -19,7 +19,8 @@ use open_esp_radio_hil_protocol::{
 use crate::{
     Result,
     controlled_client::ControlledClient,
-    lab_config::LabConfig,
+    controlled_openwrt_client::{ControlledOpenWrtClient, SecondaryClientProbeEvidence},
+    lab_config::{LabConfig, StationFixtureConfig},
     paced_tcp::{
         Config as TcpConfig, HostReception as TcpReception, HostTransmission as TcpTransmission,
         exchange as exchange_tcp, receive as receive_tcp, send as send_tcp,
@@ -62,6 +63,7 @@ struct BootReport {
 struct CycleReport {
     cycle: u8,
     traffic: TrafficReport,
+    secondary_client: Option<SecondaryClientProbeEvidence>,
     access_point: open_esp_radio_hil_protocol::WifiAccessPointEvidence,
 }
 
@@ -139,8 +141,15 @@ fn qualify(capture: &SerialCapture, config: &Config, lab: &LabConfig) -> Result<
     if !capabilities.features.wifi_role_control || !capabilities.features.wifi_access_point {
         return Err("firmware does not advertise AP role control".into());
     }
-    capture.wait_for_connected_station(config.timeout)?;
     report_stack(capture, config.timeout, "ap-initial-station-connected")?;
+    let minimum_clients = config.criteria.minimum_concurrent_ap_clients.unwrap_or(1);
+    if lab.access_point.client_limit() < minimum_clients {
+        return Err(format!(
+            "AP client_limit={} is below scenario minimum_concurrent_ap_clients={minimum_clients}",
+            lab.access_point.client_limit(),
+        )
+        .into());
+    }
 
     let mut cycles = Vec::with_capacity(usize::from(config.cycles));
     for cycle in 0..config.cycles {
@@ -198,8 +207,54 @@ fn qualify(capture: &SerialCapture, config: &Config, lab: &LabConfig) -> Result<
                 ));
             }
         };
+        let secondary_client = if minimum_clients >= 2 {
+            let StationFixtureConfig::OpenWrt(fixture) = &lab.station_fixture else {
+                let restore = client.restore().err();
+                let error = with_cleanup_errors(
+                    "two-client AP qualification requires the OpenWrt fixture",
+                    restore,
+                    None,
+                    None,
+                    None,
+                );
+                return Err(cleanup_after_client_failure(
+                    capture,
+                    config.timeout,
+                    started.generation,
+                    lab,
+                    error,
+                ));
+            };
+            match ControlledOpenWrtClient::connect(&lab.access_point, fixture) {
+                Ok(client) => Some(client),
+                Err(error) => {
+                    let restore = client.restore().err();
+                    let error = with_cleanup_errors(error, restore, None, None, None);
+                    return Err(cleanup_after_client_failure(
+                        capture,
+                        config.timeout,
+                        started.generation,
+                        lab,
+                        error,
+                    ));
+                }
+            }
+        } else {
+            None
+        };
+        let secondary_probe = secondary_client.as_ref().map(|client| {
+            client.spawn_probe(
+                lab.access_point.target_address(),
+                traffic_duration(&config.traffic),
+            )
+        });
         let data_result = qualify_data_plane(capture, config, lab);
-        let client_restore = client.restore();
+        let secondary_probe_result = secondary_probe.map(|probe| {
+            probe
+                .join()
+                .map_err(|_| "secondary AP client probe thread panicked".to_owned())?
+        });
+        let client_restore = restore_clients(client, secondary_client);
         let stop_result = stop_access_point(capture, config.timeout, started.generation, lab);
         let stop_stack_result = if stop_result.is_ok() {
             report_stack(capture, config.timeout, "ap-stopped")
@@ -213,7 +268,7 @@ fn qualify(capture: &SerialCapture, config: &Config, lab: &LabConfig) -> Result<
         };
 
         if let Err(error) = &data_result {
-            let data_error = match stop_result.as_ref() {
+            let mut data_error = match stop_result.as_ref() {
                 Ok(stopped) => format!(
                     "{error}; AP TX evidence: data={} hardware_failures={} hardware_timeouts={} \
                      collision_limits={} last_hardware_status={} beacons={}; AP RX evidence: \
@@ -237,6 +292,10 @@ fn qualify(capture: &SerialCapture, config: &Config, lab: &LabConfig) -> Result<
                 ),
                 Err(_) => error.to_string(),
             };
+            if let Some(Err(probe_error)) = secondary_probe_result.as_ref() {
+                data_error.push_str("; secondary AP client: ");
+                data_error.push_str(probe_error);
+            }
             return Err(with_cleanup_errors(
                 data_error,
                 client_restore.err(),
@@ -245,7 +304,17 @@ fn qualify(capture: &SerialCapture, config: &Config, lab: &LabConfig) -> Result<
                 restart_result.err(),
             ));
         }
+        if let Some(Err(error)) = secondary_probe_result.as_ref() {
+            return Err(with_cleanup_errors(
+                error,
+                client_restore.err(),
+                stop_result.as_ref().err().map(|error| error.as_ref()),
+                stop_stack_result.err(),
+                restart_result.err(),
+            ));
+        }
         let traffic = data_result?;
+        let secondary_client = secondary_probe_result.transpose()?;
         client_restore?;
         let stopped = stop_result?;
         stop_stack_result?;
@@ -256,6 +325,10 @@ fn qualify(capture: &SerialCapture, config: &Config, lab: &LabConfig) -> Result<
             || stopped.authentication_responses == 0
             || stopped.association_responses == 0
             || stopped.authorized_peers == 0
+            || stopped.maximum_associated_peers == 0
+            || stopped.maximum_authorized_peers == 0
+            || stopped.maximum_associated_peers < minimum_clients
+            || stopped.maximum_authorized_peers < minimum_clients
             || stopped.tx_hardware_failures != 0
             || stopped.tx_hardware_timeouts != 0
             || stopped.tx_collision_limits != 0
@@ -272,10 +345,44 @@ fn qualify(capture: &SerialCapture, config: &Config, lab: &LabConfig) -> Result<
         cycles.push(CycleReport {
             cycle,
             traffic,
+            secondary_client,
             access_point: stopped,
         });
     }
     Ok(cycles)
+}
+
+fn traffic_duration(traffic: &AccessPointTraffic) -> Duration {
+    match traffic {
+        AccessPointTraffic::None => Duration::from_secs(2),
+        AccessPointTraffic::Icmp {
+            count, interval_ms, ..
+        } => Duration::from_millis(u64::from(*count) * u64::from(*interval_ms))
+            .max(Duration::from_secs(2)),
+        AccessPointTraffic::Udp {
+            duration_seconds, ..
+        }
+        | AccessPointTraffic::Tcp {
+            duration_seconds, ..
+        } => Duration::from_secs(u64::from(*duration_seconds)),
+    }
+}
+
+fn restore_clients(
+    primary: ControlledClient,
+    secondary: Option<ControlledOpenWrtClient>,
+) -> Result<()> {
+    let secondary = secondary.map(ControlledOpenWrtClient::restore).transpose();
+    let primary = primary.restore();
+    match (primary, secondary) {
+        (Ok(()), Ok(_)) => Ok(()),
+        (Err(primary), Ok(_)) => Err(primary),
+        (Ok(()), Err(secondary)) => Err(secondary),
+        (Err(primary), Err(secondary)) => Err(format!(
+            "primary client restore failed: {primary}; secondary client restore failed: {secondary}",
+        )
+        .into()),
+    }
 }
 
 fn qualify_data_plane(
@@ -380,8 +487,8 @@ fn qualify_udp(
             payload_bytes: u16::try_from(payload_bytes).expect("validated UDP payload"),
             offered_rate_bps: Some(rate),
         }),
-        // AP v1 deliberately qualifies the legacy unicast TX path. Block Ack
-        // is not part of its current public capability contract.
+        // The current AP capability contract is legacy unicast TX. Block Ack
+        // must be requested only after AP HT negotiation is implemented.
         link_requirements: SessionLinkRequirements::NONE,
     })?;
     let send_config = rx_rate_bps.map(|rate| UdpConfig {
@@ -448,6 +555,23 @@ fn validate_udp(
                     evidence.transport.rx_units,
                 )
                 .into());
+            }
+            let rx = evidence
+                .radio
+                .and_then(|radio| radio.rx)
+                .ok_or("AP UDP RX session did not publish typed RX radio evidence")?;
+            let expected_highest = u32::try_from(host.datagrams)
+                .ok()
+                .and_then(|datagrams| datagrams.checked_sub(1));
+            if rx.sequence_first != Some(0)
+                || rx.sequence_highest != expected_highest
+                || rx.sequence_gap_events != 0
+                || rx.sequence_forward_missing != 0
+                || rx.sequence_backward != 0
+                || rx.sequence_duplicates != 0
+                || rx.sequence_unsequenced != 0
+            {
+                return Err(format!("AP UDP RX ordering defect: {rx:?}").into());
             }
         }
         None if evidence.transport.rx_bytes != 0 || evidence.transport.rx_units != 0 => {
@@ -766,8 +890,9 @@ fn restore_connected_station(
     timeout: Duration,
     lab: &LabConfig,
 ) -> Result<()> {
+    let lifecycle_cursor = capture.station_lifecycle_cursor();
     start_station(capture, lab, timeout)?;
-    capture.wait_for_connected_station(timeout)?;
+    capture.wait_for_connected_station_after(lifecycle_cursor, timeout)?;
     report_stack(capture, timeout, "ap-station-reconnected")
 }
 
@@ -819,7 +944,8 @@ const fn protocol_direction(direction: Direction) -> ProtocolDirection {
 mod tests {
     use super::*;
     use open_esp_radio_hil_protocol::{
-        Finished, ResultSummary, StackUsage, StackWatermark, TransportEvidence,
+        Finished, RadioEvidence, ResultSummary, RxRadioEvidence, StackUsage, StackWatermark,
+        TransportEvidence,
     };
 
     fn evidence(rx_bytes: u64, tx_bytes: u64, rx_units: u64, tx_units: u64) -> SessionEvidence {
@@ -839,7 +965,16 @@ mod tests {
                 elapsed_micros: 1,
                 transport_errors: 0,
             },
-            radio: None,
+            radio: (rx_units != 0).then_some(RadioEvidence {
+                rx: Some(RxRadioEvidence {
+                    sequence_first: Some(0),
+                    sequence_highest: u32::try_from(rx_units)
+                        .ok()
+                        .and_then(|units| units.checked_sub(1)),
+                    ..RxRadioEvidence::default()
+                }),
+                tx: None,
+            }),
             tx_timing: None,
             rx_delivery: None,
             network_scheduler: None,
@@ -889,6 +1024,27 @@ mod tests {
             ..Burst::default()
         };
         assert!(validate_udp(None, Some(&[received]), evidence(0, 1_200, 0, 1)).is_err());
+    }
+
+    #[test]
+    fn udp_target_rx_reordering_fails_closed_even_when_counts_match() {
+        let sent = UdpTransmission {
+            bytes: 2_400,
+            datagrams: 2,
+            elapsed: Duration::from_secs(1),
+            maximum_lateness: Duration::ZERO,
+            maximum_catch_up_datagrams: 1,
+            deadline_resets: 0,
+        };
+        let mut reordered = evidence(2_400, 0, 2, 0);
+        reordered
+            .radio
+            .as_mut()
+            .and_then(|radio| radio.rx.as_mut())
+            .expect("RX evidence")
+            .sequence_backward = 1;
+
+        assert!(validate_udp(Some(sent), None, reordered).is_err());
     }
 
     #[test]

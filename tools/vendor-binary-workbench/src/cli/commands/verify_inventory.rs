@@ -10,6 +10,7 @@ struct SourceInput {
     inventory: Option<PathBuf>,
     companion: Option<PathBuf>,
     prefix: Option<String>,
+    symbols: Vec<String>,
 }
 
 struct ResolvedSourceInput {
@@ -17,7 +18,13 @@ struct ResolvedSourceInput {
     artifact: PathBuf,
     inventory: Option<PathBuf>,
     companion: Option<PathBuf>,
-    prefix: String,
+    selection: ResolvedVendorSelection,
+}
+
+enum ResolvedVendorSelection {
+    All,
+    Prefix(String),
+    Symbols(Vec<String>),
 }
 
 fn source_mut<'a>(
@@ -76,6 +83,16 @@ pub(super) fn execute(
             "--source-prefix",
         )?;
     }
+    for value in arguments.source_symbol {
+        let input = source_mut(&mut source_inputs, value.source.as_str())?;
+        if input.symbols.contains(&value.value) {
+            return Err(crate::Error::invalid(format!(
+                "duplicate --source-symbol {}={}",
+                value.source, value.value
+            )));
+        }
+        input.symbols.push(value.value);
+    }
 
     let rust_artifact = arguments.rust_artifact;
     let rust_companion = arguments.rust_companion;
@@ -102,13 +119,22 @@ pub(super) fn execute(
                 .artifact
                 .ok_or_else(|| format!("source {id} has no artifact"))
                 .map_err(crate::Error::invalid)?;
-            let prefix = input.prefix.unwrap_or_default();
+            if input.prefix.is_some() && !input.symbols.is_empty() {
+                return Err(crate::Error::invalid(format!(
+                    "source {id} cannot combine --source-prefix and --source-symbol"
+                )));
+            }
+            let selection = match (input.prefix, input.symbols) {
+                (Some(prefix), _) => ResolvedVendorSelection::Prefix(prefix),
+                (None, symbols) if !symbols.is_empty() => ResolvedVendorSelection::Symbols(symbols),
+                (None, _) => ResolvedVendorSelection::All,
+            };
             Ok(ResolvedSourceInput {
                 id,
                 artifact,
                 inventory: input.inventory,
                 companion: input.companion,
-                prefix,
+                selection,
             })
         })
         .collect::<Result<Vec<_>>>()?;
@@ -143,7 +169,13 @@ pub(super) fn execute(
             artifact: &source.artifact,
             inventory: source.inventory.as_deref(),
             companion: source.companion.as_deref(),
-            prefix: &source.prefix,
+            selection: match &source.selection {
+                ResolvedVendorSelection::All => VendorSymbolSelection::All,
+                ResolvedVendorSelection::Prefix(prefix) => VendorSymbolSelection::Prefix(prefix),
+                ResolvedVendorSelection::Symbols(symbols) => {
+                    VendorSymbolSelection::Symbols(symbols)
+                }
+            },
         })
         .collect::<Vec<_>>();
     let symbol_sets = verify_sources

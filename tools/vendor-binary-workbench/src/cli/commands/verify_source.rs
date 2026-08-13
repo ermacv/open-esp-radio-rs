@@ -34,7 +34,7 @@ pub(super) fn run(arguments: VerifySourceArgs, svd: &MmioMap, target: &TargetSpe
         artifact: &vendor_artifact,
         inventory: arguments.vendor_inventory.as_deref(),
         companion: arguments.vendor_companion.as_deref(),
-        prefix: &arguments.vendor_prefix,
+        selection: VendorSymbolSelection::Prefix(&arguments.vendor_prefix),
     };
     let symbols = vendor_symbols(source)?;
     let mut evidence = EvidenceSet::new();

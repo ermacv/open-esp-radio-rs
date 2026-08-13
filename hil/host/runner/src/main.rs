@@ -16,6 +16,7 @@ mod access_point_qualification;
 mod bidirectional;
 mod controlled_ap;
 mod controlled_client;
+mod controlled_openwrt_client;
 mod fixture_lock;
 mod icmp_latency;
 mod lab_config;
@@ -239,6 +240,7 @@ fn doctor(root: &std::path::Path, lab: &lab_config::LabConfig) -> Result<()> {
             openwrt_fixture::doctor(config)?;
             openwrt_tx_monitor::doctor(config)?;
             local_air_monitor::doctor(config)?;
+            controlled_openwrt_client::doctor(&lab.access_point, config)?;
             println!("station_fixture=openwrt status=PASS");
         }
         lab_config::StationFixtureConfig::External(_) => {

@@ -105,7 +105,6 @@ fn qualify(
     if !capabilities.features.wifi_role_control {
         return Err("firmware does not advertise explicit Wi-Fi role control".into());
     }
-    capture.wait_for_connected_station(options.timeout)?;
     report_stack(capture, options.timeout, "connected")?;
 
     let stopped = stop_station(capture, options.timeout)?;
@@ -145,13 +144,15 @@ fn qualify(
             return Err(format!("access point returned inconsistent evidence: {stopped:?}").into());
         }
         println!(
-            "wifi_ap_generation={} channel={} beacons={} auth_responses={} assoc_responses={} authorized_peers={} peer_removals={} rx_descriptors={} ignored_rx={} control_staged={} control_busy_drops={} ethernet_staged={} network_tx_rejected={} data_tx={} tx_hardware_failures={} tx_hardware_timeouts={} tx_collision_limits={} tx_last_hardware_status={}",
+            "wifi_ap_generation={} channel={} beacons={} auth_responses={} assoc_responses={} authorizations={} max_associated={} max_authorized={} peer_removals={} rx_descriptors={} ignored_rx={} control_staged={} control_busy_drops={} ethernet_staged={} network_tx_rejected={} data_tx={} tx_hardware_failures={} tx_hardware_timeouts={} tx_collision_limits={} tx_last_hardware_status={}",
             stopped.generation,
             stopped.channel,
             stopped.beacons_transmitted,
             stopped.authentication_responses,
             stopped.association_responses,
             stopped.authorized_peers,
+            stopped.maximum_associated_peers,
+            stopped.maximum_authorized_peers,
             stopped.peer_removals,
             stopped.completed_rx_descriptors,
             stopped.ignored_rx_frames,

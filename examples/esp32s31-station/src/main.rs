@@ -132,9 +132,10 @@ async fn station_task(_spawner: Spawner, radio: EspHalRadioPeripheral, trng: Trn
         control: wifi,
         device,
         monitor_frames: _,
+        access_point_status: _,
     } = wifi.into_parts();
     let network = async move {
-        let (stack, runner) = open_esp_radio_esp32s31_embassy_wifi::new_station_network(
+        let (stack, runner) = open_esp_radio_esp32s31_embassy_wifi::new_wifi_network(
             device,
             Config::dhcpv4(Default::default()),
             NETWORK_RESOURCES.take(),

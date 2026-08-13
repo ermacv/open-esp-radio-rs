@@ -1,33 +1,8 @@
 schema = 1
-# Instruction-exact leaves of the five-entry coexistence timer bank. Higher
+# Instruction-exact control leaves of the five-entry coexistence timer bank. Higher
 # scheduler and RTOS behavior remains intentionally outside this contract.
 default-disposition = "not-yet-ported"
 default-protocol = "coex"
-
-[[functions]]
-source = "coex"
-symbol = "coex_hw_timer_set"
-disposition = "replaced-by-composition"
-protocol = "coex"
-rust-component = "open_esp_radio_esp32s31_coex::program_timer"
-binding = "v1"
-rust-probe = "open_coex_trace_coex_hw_timer_set"
-effect-contract = "exact-effects-v1"
-[[functions.effects]]
-selector = { kind = "mmio-read", width = 32, address = 0x2010f008 }
-disposition = { kind = "required" }
-[[functions.effects]]
-selector = { kind = "mmio-read", width = 32, address = 0x2010f400 }
-disposition = { kind = "required" }
-[[functions.effects]]
-selector = { kind = "mmio-write", width = 32, address = 0x2010f400 }
-disposition = { kind = "required" }
-[[functions.effects]]
-selector = { kind = "mmio-read", width = 32, address = 0x2010f404 }
-disposition = { kind = "required" }
-[[functions.effects]]
-selector = { kind = "mmio-write", width = 32, address = 0x2010f404 }
-disposition = { kind = "required" }
 
 [[functions]]
 source = "coex"

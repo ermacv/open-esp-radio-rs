@@ -1,0 +1,137 @@
+schema = 1
+default-disposition = "not-yet-ported"
+default-protocol = "wifi"
+
+[[functions]]
+source = "libpp"
+symbol = "hal_set_rx_beacon_pti"
+disposition = "direct"
+protocol = "wifi"
+rust-component = "open_esp_radio_esp32s31_pac::RadioRegisters::set_rx_beacon_pti"
+binding = "v1"
+rust-probe = "open_libpp_coex_trace_hal_set_rx_beacon_pti"
+effect-contract = "exact-effects-v1"
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x2010d8ac }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x2010d8ac }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x2010d8a8 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x2010d8a8 }
+disposition = { kind = "required" }
+
+[[functions]]
+source = "libpp"
+symbol = "hal_clear_rx_beacon_pti"
+disposition = "direct"
+protocol = "wifi"
+rust-component = "open_esp_radio_esp32s31_pac::RadioRegisters::clear_rx_beacon_pti"
+binding = "v1"
+rust-probe = "open_libpp_coex_trace_hal_clear_rx_beacon_pti"
+effect-contract = "exact-effects-v1"
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x2010d89c }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x2010d89c }
+disposition = { kind = "required" }
+
+[[functions]]
+source = "libpp"
+symbol = "hal_set_itwt_pti"
+disposition = "direct"
+protocol = "wifi"
+rust-component = "open_esp_radio_esp32s31_pac::RadioRegisters::set_itwt_pti"
+binding = "v1"
+rust-probe = "open_libpp_coex_trace_hal_set_itwt_pti"
+effect-contract = "exact-effects-v1"
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x2010d8a4 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x2010d8a4 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x2010d8a8 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x2010d8a8 }
+disposition = { kind = "required" }
+
+[[functions]]
+source = "libpp"
+symbol = "hal_clr_itwt_pti"
+disposition = "direct"
+protocol = "wifi"
+rust-component = "open_esp_radio_esp32s31_pac::RadioRegisters::clear_itwt_pti"
+binding = "v1"
+rust-probe = "open_libpp_coex_trace_hal_clr_itwt_pti"
+effect-contract = "exact-effects-v1"
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x2010d89c }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x2010d89c }
+disposition = { kind = "required" }
+
+[[functions]]
+source = "libpp"
+symbol = "hal_set_tx_pti"
+disposition = "direct"
+protocol = "wifi"
+rust-component = "open_esp_radio_esp32s31_pac::RadioRegisters::set_tx_pti"
+binding = "v1"
+rust-probe = "open_libpp_coex_trace_hal_set_tx_pti"
+effect-contract = "exact-effects-v1"
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x20104d3c }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x20104d3c }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x20104d4c }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x20104d4c }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x20104d5c }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x20104d5c }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x20104d6c }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x20104d6c }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x2010536c }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x2010536c }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x201053e8 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x201053e8 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x20105464 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x20105464 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x201054e0 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x201054e0 }
+disposition = { kind = "required" }

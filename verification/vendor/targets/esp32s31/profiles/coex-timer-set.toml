@@ -7,7 +7,7 @@ schema = 2
 name = "coex-hw-timer-set"
 vendor-source = "coex"
 vendor-symbol = "coex_hw_timer_set"
-rust-symbol = "open_coex_trace_coex_hw_timer_set"
+rust-symbol = "open_coex_set_trace_coex_hw_timer_set"
 compare-return = false
 
 [[profiles.argument-ranges]]

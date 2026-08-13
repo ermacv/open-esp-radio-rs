@@ -25451,7 +25451,7 @@ pub mod wifi_mac_coex_runtime {
         pub const fn itwt_control(&self) -> &ItwtControl {
             &self.itwt_control
         }
-        #[doc = "0x0c - Shared low-nibble PTI word updated from the second argument by complete hal_set_rx_beacon_pti and hal_set_itwt_pti."]
+        #[doc = "0x0c - Shared receive PTI word updated from the second argument by complete hal_set_rx_beacon_pti and hal_set_itwt_pti. Both leaves preserve bits 31:4 and replace only bits 3:0."]
         #[inline(always)]
         pub const fn shared_rx_pti(&self) -> &SharedRxPti {
             &self.shared_rx_pti
@@ -25474,7 +25474,7 @@ pub mod wifi_mac_coex_runtime {
         #[doc = "Field `REQUESTS_UNKNOWN` reader - "]
         pub type RequestsUnknownR = crate::FieldReader<u32>;
         #[doc = "Field `REQUESTS_UNKNOWN` writer - "]
-        pub type RequestsUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        pub type RequestsUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32, crate::Safe>;
         impl R {
             #[doc = "Bits 0:31"]
             #[inline(always)]
@@ -25498,7 +25498,7 @@ pub mod wifi_mac_coex_runtime {
         impl crate::Readable for ClearRequestSpec {}
         #[doc = "`write(|w| ..)` method takes [`clear_request::W`](W) writer structure"]
         impl crate::Writable for ClearRequestSpec {
-            type Safety = crate::Unsafe;
+            type Safety = crate::Safe;
         }
     }
     #[doc = "RX_BEACON_TIME_HIGH (rw) register accessor: Complete hal_set_rx_beacon_time replaces the low byte from bits 15:8 of its second argument after updating WIFI_MAC_RTC_TIMER_UPDATE.RX_BEACON_TIME_LOW.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_beacon_time_high::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_beacon_time_high::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_beacon_time_high`] module"]
@@ -25579,10 +25579,10 @@ pub mod wifi_mac_coex_runtime {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "SHARED_RX_PTI (rw) register accessor: Shared low-nibble PTI word updated from the second argument by complete hal_set_rx_beacon_pti and hal_set_itwt_pti.\n\nYou can [`read`](crate::Reg::read) this register and get [`shared_rx_pti::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`shared_rx_pti::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@shared_rx_pti`] module"]
+    #[doc = "SHARED_RX_PTI (rw) register accessor: Shared receive PTI word updated from the second argument by complete hal_set_rx_beacon_pti and hal_set_itwt_pti. Both leaves preserve bits 31:4 and replace only bits 3:0.\n\nYou can [`read`](crate::Reg::read) this register and get [`shared_rx_pti::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`shared_rx_pti::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@shared_rx_pti`] module"]
     #[doc(alias = "SHARED_RX_PTI")]
     pub type SharedRxPti = crate::Reg<shared_rx_pti::SharedRxPtiSpec>;
-    #[doc = "Shared low-nibble PTI word updated from the second argument by complete hal_set_rx_beacon_pti and hal_set_itwt_pti."]
+    #[doc = "Shared receive PTI word updated from the second argument by complete hal_set_rx_beacon_pti and hal_set_itwt_pti. Both leaves preserve bits 31:4 and replace only bits 3:0."]
     pub mod shared_rx_pti {
         #[doc = "Register `SHARED_RX_PTI` reader"]
         pub type R = crate::R<SharedRxPtiSpec>;
@@ -25606,7 +25606,7 @@ pub mod wifi_mac_coex_runtime {
                 PtiW::new(self, 0)
             }
         }
-        #[doc = "Shared low-nibble PTI word updated from the second argument by complete hal_set_rx_beacon_pti and hal_set_itwt_pti.\n\nYou can [`read`](crate::Reg::read) this register and get [`shared_rx_pti::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`shared_rx_pti::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Shared receive PTI word updated from the second argument by complete hal_set_rx_beacon_pti and hal_set_itwt_pti. Both leaves preserve bits 31:4 and replace only bits 3:0.\n\nYou can [`read`](crate::Reg::read) this register and get [`shared_rx_pti::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`shared_rx_pti::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct SharedRxPtiSpec;
         impl crate::RegisterSpec for SharedRxPtiSpec {
             type Ux = u32;
@@ -33632,6 +33632,64 @@ pub mod masked_register_modify {
             // SAFETY: generator validation proves the three masks are
             // disjoint and partition every bit of this ordinary register.
             unsafe { writer.bits(image) }
+        });
+    }
+
+    /// Preserve mask 0xffff0fff, accept input mask 0x0000f000, and set 0x00000000 in WIFI_MAC_COEX_RUNTIME.RX_BEACON_PTI.
+    #[inline]
+    pub fn publish_mac_rx_beacon_pti(registers: &crate::WifiMacCoexRuntime, input: u32) {
+        registers.rx_beacon_pti().modify(|reader, writer| {
+            let image = (reader.bits() & 0xffff0fff) | (input & 0x0000f000);
+            // SAFETY: generator validation proves the three masks are
+            // disjoint and partition every bit of this ordinary register.
+            unsafe { writer.bits(image) }
+        });
+    }
+
+    /// Preserve mask 0xfffffff0, accept input mask 0x0000000f, and set 0x00000000 in WIFI_MAC_COEX_RUNTIME.SHARED_RX_PTI.
+    #[inline]
+    pub fn publish_mac_shared_rx_pti(registers: &crate::WifiMacCoexRuntime, input: u32) {
+        registers.shared_rx_pti().modify(|reader, writer| {
+            let image = (reader.bits() & 0xfffffff0) | (input & 0x0000000f);
+            // SAFETY: generator validation proves the three masks are
+            // disjoint and partition every bit of this ordinary register.
+            unsafe { writer.bits(image) }
+        });
+    }
+
+    /// Preserve mask 0xffffff00, accept input mask 0x000000ff, and set 0x00000000 in WIFI_MAC_COEX_RUNTIME.ITWT_CONTROL.
+    #[inline]
+    pub fn publish_mac_itwt_control(registers: &crate::WifiMacCoexRuntime, input: u32) {
+        registers.itwt_control().modify(|reader, writer| {
+            let image = (reader.bits() & 0xffffff00) | (input & 0x000000ff);
+            // SAFETY: generator validation proves the three masks are
+            // disjoint and partition every bit of this ordinary register.
+            unsafe { writer.bits(image) }
+        });
+    }
+
+    /// Preserve mask 0xfffffffe, accept input mask 0x00000000, and set 0x00000001 in WIFI_MAC_COEX_RUNTIME.CLEAR_REQUEST.
+    #[inline]
+    pub fn request_mac_rx_beacon_clear(registers: &crate::WifiMacCoexRuntime, input: u32) {
+        registers.clear_request().modify(|reader, writer| {
+            let image = (reader.bits() & 0xfffffffe) | (input & 0x00000000) | 0x00000001;
+            // SAFETY: generator validation proves the three masks are
+            // disjoint and partition every bit of this ordinary register.
+            unsafe { writer.bits(image) }
+        });
+    }
+}
+
+/// Safe, SVD-declared indexed bit-set read-modify-write transactions.
+pub mod indexed_bit_set_modify {
+
+    /// Set one bit selected by the reviewed `MacItwtClearIndex` domain in WIFI_MAC_COEX_RUNTIME.CLEAR_REQUEST.
+    #[inline]
+    pub fn request_mac_itwt_clear(registers: &crate::WifiMacCoexRuntime, bit_index: u32) {
+        registers.clear_request().modify(|reader, writer| {
+            writer
+                .requests_unknown()
+                .set(reader.bits() | (1_u32 << bit_index))
         });
     }
 }

@@ -96,6 +96,56 @@ fn closed_chip_pac_is_the_only_driver_dependency_on_the_raw_pac() {
 }
 
 #[test]
+fn reviewed_sta_ap_and_coex_boundaries_do_not_expose_register_mechanics() {
+    let repository = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let boundaries = [
+        repository.join("driver/chips/esp32s31/hal/src/wifi_mac.rs"),
+        repository.join("driver/chips/esp32s31/hal/src/coex.rs"),
+        repository.join("driver/chips/esp32s31/wifi/mac/src/sta_ap_registers.rs"),
+        repository.join("driver/chips/esp32s31/wifi/mac/src/coex_runtime.rs"),
+    ];
+    for path in boundaries {
+        let source = fs::read_to_string(&path).expect("read reviewed register boundary");
+        for forbidden in [
+            "open_esp_radio_esp32s31_pac_raw",
+            "Register32",
+            "0x2010_",
+            "write_volatile",
+            "read_volatile",
+        ] {
+            assert!(
+                !source.contains(forbidden),
+                "reviewed AP/STA or COEX boundary {} exposes {forbidden}",
+                path.display()
+            );
+        }
+    }
+
+    let wifi = fs::read_to_string(repository.join("driver/chips/esp32s31/hal/src/wifi_mac.rs"))
+        .expect("read Wi-Fi MAC HAL");
+    for required in [
+        "MacInterfaceIdentity",
+        "MacRoleReceivePolicy",
+        "MacStaApReceivePlan",
+        "MacTxQueueIndex",
+    ] {
+        assert!(
+            wifi.contains(required),
+            "Wi-Fi MAC HAL lost typed boundary {required}"
+        );
+    }
+
+    let coex = fs::read_to_string(repository.join("driver/chips/esp32s31/hal/src/coex.rs"))
+        .expect("read COEX HAL");
+    for required in ["CoexTimerIndex", "CoexClient", "CoexPti"] {
+        assert!(
+            coex.contains(required),
+            "COEX HAL lost typed boundary {required}"
+        );
+    }
+}
+
+#[test]
 fn domain_and_application_do_not_depend_on_cli_rendering() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
     let mut files = Vec::new();

@@ -18,72 +18,72 @@ reference-code-generator = "2a4b7f02cce37dae3ee0dbd3363b97266934f376f4823e4fc764
 [[evidence]]
 source = "libpp"
 symbol = "hal_mac_is_txq_enabled"
-kind = "scenario/profile:libpp-txq-enabled"
-digest = "51b8dc8dd6155b01bd33a1fe74fed40fa13d038b7bed7126f3fff50cdeaecd8d"
+kind = "whole-function-equivalence/profile:scenario/libpp-txq-enabled"
+digest = "fd12912ff4eea2152284a7d699e47d3d125f292aa6dfb597b42dcd3f9c321e6c"
 
 [evidence.components]
 comparison-orchestrator = "78f3316221c5be17b39047bc588be3269db93581b7fd322ac4b092f37c8178ea"
 execution-image = "3885065e6ff308001a383d5164cd1f17dba4f452a35ef3c07baa3ce5916530da"
 execution-machine = "ecce5dd7068bb1bc30a5573d8b2c8f89fa158e96289a8653c8fea6fe58d80398"
 execution-model = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"
-profile = "2a6722ba5b0300b75a499c9a4fdf04bedacc0a0b3078dc1751b59ef841d00be4"
-profile-parser = "8c816820d8881be9429d372eef1be0e19432f53e699c3bc0244875922aa5814a"
+profile = "18b330b3165efd9703b43ddd1c3c8e30b30da2794286d8fdf0a58ef1f52f76e7"
+profile-parser = "a24af6577263196b2823b6c48ca095597bccf652748e92b256153a5be313f4b1"
 
 [[evidence]]
 source = "libpp"
 symbol = "hal_mac_is_txq_valid"
-kind = "scenario/profile:libpp-txq-valid"
-digest = "d7c390e704044fac62baaeddb34d55a745cc0d198c925b48a07c356e399bc28e"
+kind = "whole-function-equivalence/profile:scenario/libpp-txq-valid"
+digest = "ae97c4f0888cc797088cb8bf508a888a445a9263884485255b317ff7616cff4f"
 
 [evidence.components]
 comparison-orchestrator = "78f3316221c5be17b39047bc588be3269db93581b7fd322ac4b092f37c8178ea"
 execution-image = "3885065e6ff308001a383d5164cd1f17dba4f452a35ef3c07baa3ce5916530da"
 execution-machine = "ecce5dd7068bb1bc30a5573d8b2c8f89fa158e96289a8653c8fea6fe58d80398"
 execution-model = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"
-profile = "3ca3fbbdd630746315778b8cdeff8f992bbf85a23b82504245d102a03f5b5c7f"
-profile-parser = "8c816820d8881be9429d372eef1be0e19432f53e699c3bc0244875922aa5814a"
+profile = "d77a924218fc3072a6566efd22a7bdddcded3abc3f03c789bb4fab6a54dd0cea"
+profile-parser = "a24af6577263196b2823b6c48ca095597bccf652748e92b256153a5be313f4b1"
 
 [[evidence]]
 source = "libpp"
 symbol = "hal_mac_set_txq_invalid"
-kind = "scenario/profile:libpp-set-txq-invalid"
-digest = "7330ea668929fd1e1db6042a58a36700b4ecf82ef16fcc2e58f91e938c888b39"
+kind = "whole-function-equivalence/profile:scenario/libpp-set-txq-invalid"
+digest = "2f5e7f5258e2a1b3fff013087a8fe1df3a40f445f410519f9eec651276c657b3"
 
 [evidence.components]
 comparison-orchestrator = "78f3316221c5be17b39047bc588be3269db93581b7fd322ac4b092f37c8178ea"
 execution-image = "3885065e6ff308001a383d5164cd1f17dba4f452a35ef3c07baa3ce5916530da"
 execution-machine = "ecce5dd7068bb1bc30a5573d8b2c8f89fa158e96289a8653c8fea6fe58d80398"
 execution-model = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"
-profile = "414ef286a690eea8f7460ff5aaed2d4e68bc2cf9f4f7f1a087bab324b88f0124"
-profile-parser = "8c816820d8881be9429d372eef1be0e19432f53e699c3bc0244875922aa5814a"
+profile = "e0cc201403c40e618e1c4273649fb5b1718f51d6921b9a535bbcf1a3e95e61ae"
+profile-parser = "a24af6577263196b2823b6c48ca095597bccf652748e92b256153a5be313f4b1"
 
 [[evidence]]
 source = "libpp"
 symbol = "hal_mac_tx_config_edca"
-kind = "scenario/profile:libpp-configure-tx-edca"
-digest = "565500ed209e11cb4d3e9022703ded94300eabfb4dd798ab601cabc4c849cbb2"
+kind = "whole-function-equivalence/profile:scenario/libpp-configure-tx-edca"
+digest = "b60f5eaeb92090854eeb838db2af43b0298be344a040d99486f6e122c665f061"
 
 [evidence.components]
 comparison-orchestrator = "78f3316221c5be17b39047bc588be3269db93581b7fd322ac4b092f37c8178ea"
 execution-image = "3885065e6ff308001a383d5164cd1f17dba4f452a35ef3c07baa3ce5916530da"
 execution-machine = "ecce5dd7068bb1bc30a5573d8b2c8f89fa158e96289a8653c8fea6fe58d80398"
 execution-model = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"
-profile = "c41f5bc891370a1873aced58d3ef815501ecb6a71fb6c19ac3d3a8527398f868"
-profile-parser = "8c816820d8881be9429d372eef1be0e19432f53e699c3bc0244875922aa5814a"
+profile = "74e1aaa3cbde88ed98c05f1dd164d4c0cdc2db4b011f01e9527d4436a39202d8"
+profile-parser = "a24af6577263196b2823b6c48ca095597bccf652748e92b256153a5be313f4b1"
 
 [[evidence]]
 source = "libpp"
 symbol = "hal_mac_tx_get_blockack"
-kind = "state/profile:libpp-read-tx-blockack"
-digest = "8f203dde9065534af87a92cbb799807aea4719c0cc2ae5e64247a9f24e023dd3"
+kind = "whole-function-equivalence/profile:state/libpp-read-tx-blockack"
+digest = "9250120d8a9a87433eae2309808da4dccbaa7c66f9b17d028eb495a136052290"
 
 [evidence.components]
 comparison-orchestrator = "78f3316221c5be17b39047bc588be3269db93581b7fd322ac4b092f37c8178ea"
 execution-image = "3885065e6ff308001a383d5164cd1f17dba4f452a35ef3c07baa3ce5916530da"
 execution-machine = "ecce5dd7068bb1bc30a5573d8b2c8f89fa158e96289a8653c8fea6fe58d80398"
 execution-model = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"
-profile = "90bd723b47e21c95258f34230ad3dde7d4c18b528b94b942b1fba9b65820d9d3"
-profile-parser = "8c816820d8881be9429d372eef1be0e19432f53e699c3bc0244875922aa5814a"
+profile = "cacc06dbe4545cf4ca4df88056e20fd6b7adc0dd10ffbf56ab7b2d03a3014a4e"
+profile-parser = "a24af6577263196b2823b6c48ca095597bccf652748e92b256153a5be313f4b1"
 
 [[evidence]]
 source = "libpp"
@@ -103,16 +103,16 @@ reference-code-generator = "2a4b7f02cce37dae3ee0dbd3363b97266934f376f4823e4fc764
 [[evidence]]
 source = "libpp"
 symbol = "hal_mac_txq_disable"
-kind = "scenario/profile:libpp-disable-txq"
-digest = "da2625c7abf9e76457c6edc6a538e17c38883193fb5b5cc056a39fced1826405"
+kind = "whole-function-equivalence/profile:scenario/libpp-disable-txq"
+digest = "e84134d5d83a150b5d1ac79800a1e34ae267ace3626510dd10eb11f84e5287be"
 
 [evidence.components]
 comparison-orchestrator = "78f3316221c5be17b39047bc588be3269db93581b7fd322ac4b092f37c8178ea"
 execution-image = "3885065e6ff308001a383d5164cd1f17dba4f452a35ef3c07baa3ce5916530da"
 execution-machine = "ecce5dd7068bb1bc30a5573d8b2c8f89fa158e96289a8653c8fea6fe58d80398"
 execution-model = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"
-profile = "4d9b1aa887bce1a9a26884692d4ff8e88159ea63fabbdfa509eea6c7c04807ab"
-profile-parser = "8c816820d8881be9429d372eef1be0e19432f53e699c3bc0244875922aa5814a"
+profile = "3f7b7315ed7cf14c6ac352e47a0dcff2223fb05c2563c6a5a2f606793c66e791"
+profile-parser = "a24af6577263196b2823b6c48ca095597bccf652748e92b256153a5be313f4b1"
 
 [[evidence]]
 source = "libpp"

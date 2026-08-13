@@ -8,7 +8,7 @@ default-protocol = "coex"
 [[functions]]
 source = "coex"
 symbol = "coex_hw_timer_set"
-disposition = "replaced-by-composition"
+disposition = "bounded-feature"
 protocol = "coex"
 rust-component = "open_esp_radio_esp32s31_coex::program_timer"
 binding = "v1"

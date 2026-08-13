@@ -259,8 +259,13 @@ pub(crate) fn driver_adapter_limited_claim_evidence(
 pub(crate) fn profile_evidence(profile: &profiles::Profile) -> EvidenceIdentity {
     let canonical = format!("{profile:#?}");
     EvidenceIdentity::composed(
-        format!("{}/profile:{}", profile.contract.evidence(), profile.name),
-        "open-esp-radio-execution-profile-v3",
+        format!(
+            "{}/profile:{}/{}",
+            profile.claim.label(),
+            profile.contract.evidence(),
+            profile.name
+        ),
+        "open-esp-radio-execution-profile-v4",
         [
             component("profile", canonical),
             component("profile-parser", include_str!("profiles.rs")),

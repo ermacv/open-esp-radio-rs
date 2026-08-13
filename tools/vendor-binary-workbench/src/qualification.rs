@@ -1088,7 +1088,9 @@ fn validate_unique_nonempty(feature: &str, kind: &str, values: &[String]) -> Res
 fn status_satisfies_claim(status: FunctionVerificationStatus, claim: DriverAdapterClaim) -> bool {
     match claim {
         DriverAdapterClaim::WholeFunctionEquivalence => status == FunctionVerificationStatus::Match,
-        DriverAdapterClaim::ReviewedProjection | DriverAdapterClaim::RustConformance => {
+        DriverAdapterClaim::ReviewedDomainEquivalence
+        | DriverAdapterClaim::ReviewedProjection
+        | DriverAdapterClaim::RustConformance => {
             matches!(status, FunctionVerificationStatus::BoundedMatch)
         }
     }

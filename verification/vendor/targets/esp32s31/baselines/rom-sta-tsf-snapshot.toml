@@ -3,13 +3,13 @@ schema = 2
 [[evidence]]
 source = "rom"
 symbol = "hal_get_sta_tsf"
-kind = "scenario/profile:rom-sta-tsf-snapshot"
-digest = "07c5433c000f3e41510b79456db32879da1fff0fd385a9fdc1878a365ea42848"
+kind = "whole-function-equivalence/profile:scenario/rom-sta-tsf-snapshot"
+digest = "b23a94866134909ebcd6b61b0da86aa7138eebd61825e03421a08bacd39cade4"
 
 [evidence.components]
 comparison-orchestrator = "78f3316221c5be17b39047bc588be3269db93581b7fd322ac4b092f37c8178ea"
 execution-image = "3885065e6ff308001a383d5164cd1f17dba4f452a35ef3c07baa3ce5916530da"
 execution-machine = "ecce5dd7068bb1bc30a5573d8b2c8f89fa158e96289a8653c8fea6fe58d80398"
 execution-model = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"
-profile = "dc29665ea5b619e01fd5823eca4ca7128c672e07e6b9cfdc896b7da52c8d1960"
-profile-parser = "8c816820d8881be9429d372eef1be0e19432f53e699c3bc0244875922aa5814a"
+profile = "a10583d21b71b45671b13565641f1462567efeecf15cfb38594c498d7591b652"
+profile-parser = "a24af6577263196b2823b6c48ca095597bccf652748e92b256153a5be313f4b1"

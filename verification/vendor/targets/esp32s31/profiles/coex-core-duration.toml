@@ -1,10 +1,11 @@
-schema = 2
+schema = 3
 
 # Complete branch-domain proof for the five reviewed `g_coex_param`
 # durations. The cases cover the null-output boundary, every accepted event,
 # and one rejected event in each gap around the accepted selector set.
 [[profiles]]
 name = "coex-core-event-duration-get"
+claim = "whole-function-equivalence"
 vendor-source = "coex"
 vendor-symbol = "coex_core_event_duration_get"
 rust-symbol = "open_coex_core_trace_event_duration_get"

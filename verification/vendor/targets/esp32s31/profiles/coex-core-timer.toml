@@ -1,8 +1,9 @@
-schema = 2
+schema = 3
 
 # Full concrete domain of the reviewed 48-event switch.
 [[profiles]]
 name = "coex-core-timer-index"
+claim = "whole-function-equivalence"
 vendor-source = "coex"
 vendor-symbol = "coex_core_timer_idx_get"
 rust-symbol = "open_coex_core_trace_timer_idx_get"
@@ -208,6 +209,8 @@ arguments = [47]
 # that the sole COEX owner has been enabled.
 [[profiles]]
 name = "coex-core-request"
+claim = "reviewed-domain-equivalence"
+precondition = "valid-coex-clock-event-and-type"
 vendor-source = "coex"
 vendor-symbol = "coex_core_request"
 rust-symbol = "open_coex_core_trace_request"
@@ -1346,6 +1349,7 @@ return-words = [40]
 # Release covers the same complete event domain and mapped timer edges.
 [[profiles]]
 name = "coex-core-release"
+claim = "whole-function-equivalence"
 vendor-source = "coex"
 vendor-symbol = "coex_core_release"
 rust-symbol = "open_coex_core_trace_release"

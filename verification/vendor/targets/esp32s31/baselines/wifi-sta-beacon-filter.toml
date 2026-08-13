@@ -3,13 +3,13 @@ schema = 2
 [[evidence]]
 source = "wifi-sta-lifecycle"
 symbol = "hal_disable_sta_beacon_filter"
-kind = "scenario/profile:wifi-sta-disable-beacon-filter"
-digest = "dd59c65963d0afede401664e11ebd8172a34a4ba154fb0f74cff4a31d1c30e26"
+kind = "whole-function-equivalence/profile:scenario/wifi-sta-disable-beacon-filter"
+digest = "147a3cc9c992a0dbee713e94ae1b3d207c4f638ccd2da64592b6b21ded9802d5"
 
 [evidence.components]
 comparison-orchestrator = "78f3316221c5be17b39047bc588be3269db93581b7fd322ac4b092f37c8178ea"
 execution-image = "3885065e6ff308001a383d5164cd1f17dba4f452a35ef3c07baa3ce5916530da"
 execution-machine = "ecce5dd7068bb1bc30a5573d8b2c8f89fa158e96289a8653c8fea6fe58d80398"
 execution-model = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"
-profile = "c149185193f6630b925b201cb959abdc06969ccb09a723b8d926287d472d1ea3"
-profile-parser = "8c816820d8881be9429d372eef1be0e19432f53e699c3bc0244875922aa5814a"
+profile = "5b4fc69bec4c106ae8a88eef9d8b3eb820d2c91b46c71731d6143493c1cefcaf"
+profile-parser = "a24af6577263196b2823b6c48ca095597bccf652748e92b256153a5be313f4b1"

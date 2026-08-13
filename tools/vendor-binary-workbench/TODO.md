@@ -164,26 +164,30 @@ that every user must learn.
   pseudo-code, interface/function review, verification and publication;
   record every incomplete or misleading stage. The verification segment now
   has seventeen typed project suites and a reproducible aggregate gate. The
-  2026-08-13 ESP32-S31 run matches 152 whole-function replacements plus three
-  explicit bounded feature properties with zero mismatch. Two deliberately
-  isolated COEX boundaries remain incomplete: clock/value conversion in
-  `coex_hw_timer_set` and Rust fail-closed clock branches around
-  `coex_core_request`. `wDev_AppendRxBlocks` reproduces the complete fence
-  sequence in all nine cases. The aggregate `project check` also evaluates
-  required feature qualifications before publication may pass.
+  2026-08-13 ESP32-S31 run matches 158 whole-function cases plus five explicit
+  bounded feature properties with zero mismatch or incomplete execution.
+  COEX timer programming and `coex_core_request` now carry named finite-domain
+  preconditions and cannot be reported as whole-function equivalence.
+  `wDev_AppendRxBlocks` reproduces the complete fence sequence in all nine
+  cases. The aggregate `project check` also evaluates required feature
+  qualifications before publication may pass.
   Analysis inventory backlogs remain visible but do not masquerade as failed
   replacement proofs. Verification artifact paths are canonical, so report
   freshness is independent of the current working directory.
 - [x] Replace suite-wide source prefixes with typed vendor selections (`all`,
   `prefix`, or exact `symbols`) and reject the removed configuration keys.
   Focused ESP32-S31 suites now inventory only the functions they claim. Split
-  COEX timer control (4/4 passing) from timer value programming (one explicit
-  incomplete), and allow completion suites to carry an empty baseline until
-  they produce evidence; regression suites still require accepted evidence.
+  COEX timer control (4/4 whole-function passing) from timer value programming
+  (one named reviewed-domain property), and allow completion suites to carry
+  an empty baseline until they produce evidence; regression suites still
+  require accepted evidence.
 - [x] Add focused object-field evidence to `inspect object`: signed `--offset`,
   exact constants and bounded `--flows-to` call routes. The real `g_ic+0x74`
-  report exposes selector-bearing consumers while preserving the missing
-  writer/alias blocker and deliberately avoids inventing an APSTA name.
+  report exposes selector-bearing consumers, two direct zero writes during
+  interface initialization/mesh teardown, and no observed nonzero writer.
+  Alias-hidden writers remain a blocker, so the field deliberately retains
+  neutral `Mode1`/`Mode2` names. Human output groups writes, reads and exact
+  values and bounds the default list instead of printing one monotonic stream.
 - [x] Make real-project verification one project operation rather than a set of
   remembered leaf commands. Suites own source roles, probe roles/prefixes,
   profile/disposition fragments, baseline and gate; `project verify --check`

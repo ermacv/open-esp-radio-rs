@@ -397,7 +397,11 @@ required-features = [
     "wifi-sta-connected-no-power-save",
     "wifi-ap-sta-key-role",
     "wifi-ap-sta-receive-registers",
+    "wifi-ap-sta-interface-identity",
     "coex-hardware-timer-control",
+    "coex-timer-valid-bank-programming",
+    "coex-request-valid-clock-projection",
+    "wifi-mac-coex-register-programming",
 ]
 hardware-evidence = "generated/evidence/feature-hardware.json"
 
@@ -535,7 +539,7 @@ rust-artifact-role = "rust-artifact"
 rust-prefix = "open_coex_set_trace_"
 profiles = ["profiles/coex-timer-set.toml"]
 dispositions = ["dispositions/coex-timer-set.toml"]
-baselines = []
+baselines = ["baselines/coex-timer-set.toml"]
 gate = "completion"
 [[verification.suites.vendor]]
 source = "coex"

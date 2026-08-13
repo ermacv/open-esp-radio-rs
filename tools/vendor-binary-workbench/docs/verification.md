@@ -153,6 +153,11 @@ proof class: `symbolic`, `effect-contract`, `scenario`, `state`, or
 `composition-state-scenario`. None of the concrete proof classes claims
 equality outside its declared input domain.
 
+Execution-profile schema v3 requires every profile to declare either
+`whole-function-equivalence` or `reviewed-domain-equivalence`. The latter also
+names a reviewed precondition and a finite fully enumerated input domain. It
+can produce only `BOUNDED-MATCH`, even when every concrete case agrees.
+
 The engines fail closed on unresolved control flow, calls, tail jumps, MMIO
 values, unmapped registers and incomplete branch-outcome coverage. A present
 Rust symbol is therefore not sufficient to count as a match.

@@ -194,7 +194,7 @@ fn declared_argument_domain_requires_an_executed_case_for_every_value() {
 #[test]
 fn sparse_argument_domain_does_not_admit_intermediate_selectors() {
     let profiles = parse(
-        "schema = 2\n\n[[profiles]]\nname = \"sparse\"\nvendor-source = \"vendor\"\nvendor-symbol = \"dispatch\"\nrust-symbol = \"replacement\"\n\n[[profiles.argument-values]]\nindex = 0\nvalues = [6, 8]\n\n[[profiles.cases]]\nname = \"six\"\narguments = [6]\n\n[[profiles.cases]]\nname = \"eight\"\narguments = [8]\n",
+        "schema = 3\n\n[[profiles]]\nname = \"sparse\"\nvendor-source = \"vendor\"\nvendor-symbol = \"dispatch\"\nrust-symbol = \"replacement\"\nclaim = \"whole-function-equivalence\"\n\n[[profiles.argument-values]]\nindex = 0\nvalues = [6, 8]\n\n[[profiles.cases]]\nname = \"six\"\narguments = [6]\n\n[[profiles.cases]]\nname = \"eight\"\narguments = [8]\n",
     )
     .unwrap();
 
@@ -213,6 +213,33 @@ fn sparse_argument_domain_does_not_admit_intermediate_selectors() {
             .collect::<Vec<_>>(),
         [6, 8]
     );
+}
+
+#[test]
+fn reviewed_domain_claim_requires_a_named_finite_precondition() {
+    let missing_precondition = parse(
+        "schema = 3\n\n[[profiles]]\nname = \"bounded\"\nvendor-source = \"vendor\"\nvendor-symbol = \"dispatch\"\nrust-symbol = \"replacement\"\nclaim = \"reviewed-domain-equivalence\"\n\n[[profiles.argument-values]]\nindex = 0\nvalues = [1]\n\n[[profiles.cases]]\nname = \"one\"\narguments = [1]\n",
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(missing_precondition.contains("requires a non-empty precondition"));
+
+    let missing_domain = parse(
+        "schema = 3\n\n[[profiles]]\nname = \"bounded\"\nvendor-source = \"vendor\"\nvendor-symbol = \"dispatch\"\nrust-symbol = \"replacement\"\nclaim = \"reviewed-domain-equivalence\"\nprecondition = \"valid-input\"\n\n[[profiles.cases]]\nname = \"one\"\narguments = [1]\n",
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(missing_domain.contains("must declare a finite argument or MMIO domain"));
+}
+
+#[test]
+fn whole_function_claim_rejects_a_precondition() {
+    let error = parse(
+        "schema = 3\n\n[[profiles]]\nname = \"whole\"\nvendor-source = \"vendor\"\nvendor-symbol = \"entry\"\nrust-symbol = \"replacement\"\nclaim = \"whole-function-equivalence\"\nprecondition = \"selected-input\"\n\n[[profiles.cases]]\nname = \"one\"\n",
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(error.contains("cannot declare a precondition"));
 }
 
 #[test]
@@ -249,7 +276,7 @@ fn checked_in_sta_ap_receive_profile_closes_only_policy_six_and_eight() {
 
 #[test]
 fn malformed_profile_retains_its_physical_source_line() {
-    let input = "schema = 2\n\n[[profiles]]\nname = \"fixture\"\nvendor-source = \"fixture\"\nvendor-symbol = \"vendor\"\nrust-symbol = \"rust\"\nunknown = \"value\"\n";
+    let input = "schema = 3\n\n[[profiles]]\nname = \"fixture\"\nvendor-source = \"fixture\"\nvendor-symbol = \"vendor\"\nrust-symbol = \"rust\"\nclaim = \"whole-function-equivalence\"\nunknown = \"value\"\n";
     let path = std::env::temp_dir().join(format!(
         "vendor-workbench-profile-diagnostic-{}.toml",
         std::process::id()
@@ -271,7 +298,7 @@ fn malformed_profile_retains_its_physical_source_line() {
 #[test]
 fn profile_models_runtime_tables_as_layout_instances() {
     let profiles = parse(
-        "schema = 2\n\n[[profiles]]\nname = \"callback-table\"\nvendor-source = \"rom\"\nvendor-symbol = \"vendor_entry\"\nrust-symbol = \"rust_entry\"\n\n[[profiles.cases]]\nname = \"installed\"\n\n[[profiles.cases.vendor-tables]]\nlayout-id = \"reviewed-services-v1\"\nbase-address = 0x4000\nlayout-size = 0x20\npointer-cells = [0x3000]\nslots = [{ offset = 0x4, target = { kind = \"symbol\", value = \"vendor_callback\" } }]\n\n[[profiles.cases.rust-tables]]\nlayout-id = \"reviewed-services-v1\"\nbase-address = 0x5000\nlayout-size = 0x20\npointer-cells = []\nslots = [{ offset = 0x4, target = { kind = \"symbol\", value = \"rust_callback\" } }]\n",
+        "schema = 3\n\n[[profiles]]\nname = \"callback-table\"\nvendor-source = \"rom\"\nvendor-symbol = \"vendor_entry\"\nrust-symbol = \"rust_entry\"\nclaim = \"whole-function-equivalence\"\n\n[[profiles.cases]]\nname = \"installed\"\n\n[[profiles.cases.vendor-tables]]\nlayout-id = \"reviewed-services-v1\"\nbase-address = 0x4000\nlayout-size = 0x20\npointer-cells = [0x3000]\nslots = [{ offset = 0x4, target = { kind = \"symbol\", value = \"vendor_callback\" } }]\n\n[[profiles.cases.rust-tables]]\nlayout-id = \"reviewed-services-v1\"\nbase-address = 0x5000\nlayout-size = 0x20\npointer-cells = []\nslots = [{ offset = 0x4, target = { kind = \"symbol\", value = \"rust_callback\" } }]\n",
     )
     .unwrap();
 
@@ -290,7 +317,7 @@ fn profile_models_runtime_tables_as_layout_instances() {
     assert_eq!(scenario.rust_table_instances[0].base_address, 0x5000);
 
     let error = parse(
-        "schema = 2\n\n[[profiles]]\nname = \"callback-table\"\nvendor-source = \"rom\"\nvendor-symbol = \"vendor_entry\"\nrust-symbol = \"rust_entry\"\n\n[[profiles.cases]]\nname = \"missing-layout\"\n\n[[profiles.cases.vendor-tables]]\nlayout-id = \"missing\"\n",
+        "schema = 3\n\n[[profiles]]\nname = \"callback-table\"\nvendor-source = \"rom\"\nvendor-symbol = \"vendor_entry\"\nrust-symbol = \"rust_entry\"\nclaim = \"whole-function-equivalence\"\n\n[[profiles.cases]]\nname = \"missing-layout\"\n\n[[profiles.cases.vendor-tables]]\nlayout-id = \"missing\"\n",
     )
     .unwrap_err();
     assert!(error.to_string().contains("missing field"));
@@ -299,7 +326,7 @@ fn profile_models_runtime_tables_as_layout_instances() {
 #[test]
 fn profile_models_vendor_and_rust_call_responses_independently() {
     let profiles = parse(
-        "schema = 2\n\n[[profiles]]\nname = \"external-call\"\nvendor-source = \"rom\"\nvendor-symbol = \"vendor_entry\"\nrust-symbol = \"rust_entry\"\n\n[[profiles.cases]]\nname = \"ready\"\n\n[[profiles.cases.vendor-calls]]\nsymbol = \"queue_send_from_isr\"\nreturn-words = [1, 2]\noutputs = [{ kind = \"private-stack\", pointer-argument = 2, width = 8, value = 90 }]\n\n[[profiles.cases.rust-calls]]\nsymbol = \"wake_task\"\nreturn-words = [7]\n",
+        "schema = 3\n\n[[profiles]]\nname = \"external-call\"\nvendor-source = \"rom\"\nvendor-symbol = \"vendor_entry\"\nrust-symbol = \"rust_entry\"\nclaim = \"whole-function-equivalence\"\n\n[[profiles.cases]]\nname = \"ready\"\n\n[[profiles.cases.vendor-calls]]\nsymbol = \"queue_send_from_isr\"\nreturn-words = [1, 2]\noutputs = [{ kind = \"private-stack\", pointer-argument = 2, width = 8, value = 90 }]\n\n[[profiles.cases.rust-calls]]\nsymbol = \"wake_task\"\nreturn-words = [7]\n",
     )
     .unwrap();
 
@@ -328,13 +355,14 @@ fn profile_models_vendor_and_rust_call_responses_independently() {
 #[test]
 fn profile_models_stateful_fifo_services_without_rtos_vocabulary() {
     let profiles = parse(
-        r#"schema = 2
+        r#"schema = 3
 
 [[profiles]]
 name = "event-delivery"
 vendor-source = "libpp"
 vendor-symbol = "ppTask"
 rust-symbol = "rust_event_task"
+claim = "whole-function-equivalence"
 
 [[profiles.cases]]
 name = "selector-25"
@@ -399,7 +427,7 @@ operation = { kind = "dequeue", output = { kind = "private-stack-pointer", point
 #[test]
 fn profile_models_zeroed_allocator_response_without_scalar_return() {
     let profiles = parse(
-        "schema = 2\n\n[[profiles]]\nname = \"allocator\"\nvendor-source = \"libpp\"\nvendor-symbol = \"vendor_entry\"\nrust-symbol = \"rust_entry\"\n\n[[profiles.cases]]\nname = \"allocated\"\n\n[[profiles.cases.vendor-calls]]\nsymbol = \"wifi_zalloc\"\nallocation = { address = 0x3ffe0000, size-argument = 0, capacity = 0x98 }\n",
+        "schema = 3\n\n[[profiles]]\nname = \"allocator\"\nvendor-source = \"libpp\"\nvendor-symbol = \"vendor_entry\"\nrust-symbol = \"rust_entry\"\nclaim = \"whole-function-equivalence\"\n\n[[profiles.cases]]\nname = \"allocated\"\n\n[[profiles.cases.vendor-calls]]\nsymbol = \"wifi_zalloc\"\nallocation = { address = 0x3ffe0000, size-argument = 0, capacity = 0x98 }\n",
     )
     .unwrap();
 
@@ -415,7 +443,7 @@ fn profile_models_zeroed_allocator_response_without_scalar_return() {
     );
 
     let error = parse(
-        "schema = 2\n\n[[profiles]]\nname = \"allocator\"\nvendor-source = \"libpp\"\nvendor-symbol = \"vendor_entry\"\nrust-symbol = \"rust_entry\"\n\n[[profiles.cases]]\nname = \"invalid\"\n\n[[profiles.cases.vendor-calls]]\nsymbol = \"wifi_zalloc\"\nreturn-words = [0x3ffe0000]\nallocation = { address = 0x3ffe0000, size-argument = 0, capacity = 0x98 }\n",
+        "schema = 3\n\n[[profiles]]\nname = \"allocator\"\nvendor-source = \"libpp\"\nvendor-symbol = \"vendor_entry\"\nrust-symbol = \"rust_entry\"\nclaim = \"whole-function-equivalence\"\n\n[[profiles.cases]]\nname = \"invalid\"\n\n[[profiles.cases.vendor-calls]]\nsymbol = \"wifi_zalloc\"\nreturn-words = [0x3ffe0000]\nallocation = { address = 0x3ffe0000, size-argument = 0, capacity = 0x98 }\n",
     )
     .unwrap_err();
     assert!(
@@ -428,7 +456,7 @@ fn profile_models_zeroed_allocator_response_without_scalar_return() {
 #[test]
 fn profile_keeps_runtime_memory_identity_separate_from_logical_types() {
     let profiles = parse(
-        "schema = 2\n\n[[profiles]]\nname = \"memory-alias\"\nvendor-source = \"rom\"\nvendor-symbol = \"vendor_entry\"\nrust-symbol = \"rust_entry\"\n\n[[profiles.cases]]\nname = \"shared-state\"\narguments = [0x3fff0000]\n\n[[profiles.cases.vendor-memory-instances]]\nid = \"state-0\"\nbase-address = 0x3fff0000\nlength = 0x40\nbindings = [{ kind = \"argument\", index = 0 }, { kind = \"dereferenced-global\", symbol = \"g_state\", pointer_offset = 0x4 }]\n\n[[profiles.cases.rust-memory-instances]]\nid = \"state-0\"\nbase-address = 0x3fff0000\nlength = 0x40\nbindings = [{ kind = \"argument\", index = 0 }, { kind = \"absolute\", address_space = \"dram\", address = 0x3fff0000 }]\n",
+        "schema = 3\n\n[[profiles]]\nname = \"memory-alias\"\nvendor-source = \"rom\"\nvendor-symbol = \"vendor_entry\"\nrust-symbol = \"rust_entry\"\nclaim = \"whole-function-equivalence\"\n\n[[profiles.cases]]\nname = \"shared-state\"\narguments = [0x3fff0000]\n\n[[profiles.cases.vendor-memory-instances]]\nid = \"state-0\"\nbase-address = 0x3fff0000\nlength = 0x40\nbindings = [{ kind = \"argument\", index = 0 }, { kind = \"dereferenced-global\", symbol = \"g_state\", pointer_offset = 0x4 }]\n\n[[profiles.cases.rust-memory-instances]]\nid = \"state-0\"\nbase-address = 0x3fff0000\nlength = 0x40\nbindings = [{ kind = \"argument\", index = 0 }, { kind = \"absolute\", address_space = \"dram\", address = 0x3fff0000 }]\n",
     )
     .unwrap();
 
@@ -456,7 +484,7 @@ fn profile_keeps_runtime_memory_identity_separate_from_logical_types() {
 #[test]
 fn profile_models_reviewed_register_behavior_as_a_device_factory() {
     let profiles = parse(
-        "schema = 2\n\n[[profiles]]\nname = \"device\"\nvendor-source = \"rom\"\nvendor-symbol = \"vendor_entry\"\nrust-symbol = \"rust_entry\"\n\n[[profiles.cases]]\nname = \"irq\"\n\n[[profiles.cases.device-models]]\nkind = \"w1c\"\nid = \"irq-status\"\naddress = 0x60008020\nwidth = 32\ninitial_value = 0xf\nclear_mask = 0x3\nread_clear_mask = 0xc\n",
+        "schema = 3\n\n[[profiles]]\nname = \"device\"\nvendor-source = \"rom\"\nvendor-symbol = \"vendor_entry\"\nrust-symbol = \"rust_entry\"\nclaim = \"whole-function-equivalence\"\n\n[[profiles.cases]]\nname = \"irq\"\n\n[[profiles.cases.device-models]]\nkind = \"w1c\"\nid = \"irq-status\"\naddress = 0x60008020\nwidth = 32\ninitial_value = 0xf\nclear_mask = 0x3\nread_clear_mask = 0xc\n",
     )
     .unwrap();
 

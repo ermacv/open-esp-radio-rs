@@ -1,7 +1,8 @@
-schema = 2
+schema = 3
 
 [[profiles]]
 name = "wifi-sta-disable-beacon-filter"
+claim = "whole-function-equivalence"
 vendor-source = "wifi-sta-lifecycle"
 vendor-symbol = "hal_disable_sta_beacon_filter"
 rust-symbol = "open_wifi_sta_trace_hal_disable_sta_beacon_filter"

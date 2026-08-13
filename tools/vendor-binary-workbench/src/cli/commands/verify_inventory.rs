@@ -255,6 +255,12 @@ pub(super) fn execute(
         .flat_map(dispositions::Manifest::entries)
         .filter_map(|entry| entry.binding.as_ref())
         .map(|binding| binding.rust_probe.clone())
+        .chain(
+            profiles_by_source
+                .values()
+                .flatten()
+                .map(|profile| profile.rust_symbol.clone()),
+        )
         .collect::<BTreeSet<_>>();
     let orphan_probes = orphan_probe_count(
         &rust_artifact,
@@ -274,6 +280,16 @@ pub(super) fn execute(
         .as_ref()
         .is_none_or(|comparison| comparison.passed);
     let passed = gate.passes(total, orphan_probes) && evidence_passed;
+    let profile_contracts = profiles_by_source
+        .values()
+        .flatten()
+        .map(|profile| {
+            (
+                profile.vendor_source.as_str(),
+                profile.vendor_symbol.as_str(),
+            )
+        })
+        .collect::<BTreeSet<_>>();
     let qualification_gaps = disposition_manifest
         .as_ref()
         .map(|manifest| {
@@ -283,6 +299,8 @@ pub(super) fn execute(
                     entry.disposition.is_implemented()
                         && entry.semantic_contract.is_none()
                         && entry.effect_contract.is_none()
+                        && !profile_contracts
+                            .contains(&(entry.source.as_str(), entry.symbol.as_str()))
                 })
                 .collect::<Vec<_>>()
         })

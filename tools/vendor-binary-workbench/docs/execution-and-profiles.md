@@ -224,14 +224,21 @@ The ESP32-S31 profile file contains both ROM and archive entries, so it is
 executed by the source-aware `verify inventory` command below. `verify profiles`
 is available for a focused profile file that targets one vendor artifact.
 
-Profile files are strict TOML with `schema = 2`, one or more `[[profiles]]`
+Profile files are strict TOML with `schema = 3`, one or more `[[profiles]]`
 tables, and one or more nested `[[profiles.cases]]` tables. A profile requires
-`name`, `vendor-source`, `vendor-symbol`, and `rust-symbol`; `contract`
+`name`, `vendor-source`, `vendor-symbol`, `rust-symbol`, and `claim`; `contract`
 (`"scenario"` or `"state"`) and `compare-return` are optional. Closed ABI
 Continuous domains use `[[profiles.argument-ranges]]` with `index`, `min`,
 and `max`. Sparse selector domains use `[[profiles.argument-values]]` with
 `index` and a non-empty, duplicate-free `values` array. A profile may not
 constrain the same argument through both forms.
+
+`claim = "whole-function-equivalence"` forbids a precondition and requires
+complete static coverage. `claim = "reviewed-domain-equivalence"` requires a
+stable `precondition` id and at least one finite argument or MMIO domain. Every
+Cartesian combination in that domain must have a concrete matching case. The
+result is reported as `BOUNDED-MATCH`; branch outcomes outside the declared
+precondition remain visible and are never promoted to whole-function proof.
 
 Cases store arguments in `arguments`, stable MMIO seeds in
 `[[profiles.cases.mmio-initial]]`, ordered reads in
@@ -247,7 +254,7 @@ Dynamically resolved indirect calls are reported as
 Profiles are executable coverage input; they are not a parallel function
 ledger.
 
-Schema 2 models reviewed external-call responses independently for the vendor
+Schema 3 models reviewed external-call responses independently for the vendor
 and Rust images. Each response is consumed in call order for its exact symbol,
 may provide at most the RV32 `a0`/`a1` return words, and may write reviewed
 outputs through private-stack pointer arguments. A reviewed zeroing allocator
@@ -272,8 +279,8 @@ allocation = { address = 0x3fce0000, size-argument = 0, capacity = 0x100 }
 The two sides need not use the same external symbol or ABI adapter. Unknown
 fields, more than two return words, duplicate output arguments, non-`a0..a7`
 arguments, an invalid private-stack pointer, or an unused response make the
-profile invalid or the execution incomplete. There is no schema-1 compatibility
-path. An allocation cannot also declare `return-words`; its arena must be
+profile invalid or the execution incomplete. There is no compatibility path
+for older profile schemas. An allocation cannot also declare `return-words`; its arena must be
 non-empty, 32-bit aligned, bounded to 1 MiB, large enough for the runtime
 request, and disjoint from ELF memory, MMIO, the private stack and initial RAM.
 Only the requested prefix is addressable and zero-initialized. Allocation

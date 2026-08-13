@@ -1,4 +1,4 @@
-schema = 2
+schema = 3
 
 # Exact complete-leaf evidence for the disjoint STA=0 and SoftAP=1 hardware
 # identity banks. The six-byte address is passed through the original pointer
@@ -6,6 +6,7 @@ schema = 2
 
 [[profiles]]
 name = "wifi-interface-address"
+claim = "whole-function-equivalence"
 vendor-source = "libpp"
 vendor-symbol = "hal_mac_set_addr"
 rust-symbol = "open_libpp_interface_trace_hal_mac_set_addr"
@@ -43,6 +44,7 @@ value = 0x5a5a0000
 
 [[profiles]]
 name = "wifi-interface-bssid"
+claim = "whole-function-equivalence"
 vendor-source = "libpp"
 vendor-symbol = "hal_mac_set_bssid"
 rust-symbol = "open_libpp_interface_trace_hal_mac_set_bssid"

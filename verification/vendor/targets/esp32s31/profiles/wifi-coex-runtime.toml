@@ -1,7 +1,8 @@
-schema = 2
+schema = 3
 
 [[profiles]]
 name = "wifi-rx-beacon-pti"
+claim = "whole-function-equivalence"
 vendor-source = "libpp"
 vendor-symbol = "hal_set_rx_beacon_pti"
 rust-symbol = "open_libpp_coex_trace_hal_set_rx_beacon_pti"
@@ -39,6 +40,7 @@ value = 0x00000000
 
 [[profiles]]
 name = "wifi-clear-rx-beacon-pti"
+claim = "whole-function-equivalence"
 vendor-source = "libpp"
 vendor-symbol = "hal_clear_rx_beacon_pti"
 rust-symbol = "open_libpp_coex_trace_hal_clear_rx_beacon_pti"
@@ -58,6 +60,7 @@ value = 0xa5a55a5a
 
 [[profiles]]
 name = "wifi-set-itwt-pti"
+claim = "whole-function-equivalence"
 vendor-source = "libpp"
 vendor-symbol = "hal_set_itwt_pti"
 rust-symbol = "open_libpp_coex_trace_hal_set_itwt_pti"
@@ -85,6 +88,7 @@ value = 0x87654330
 
 [[profiles]]
 name = "wifi-clear-itwt-pti"
+claim = "whole-function-equivalence"
 vendor-source = "libpp"
 vendor-symbol = "hal_clr_itwt_pti"
 rust-symbol = "open_libpp_coex_trace_hal_clr_itwt_pti"
@@ -320,6 +324,7 @@ value = 0xa5a55a50
 
 [[profiles]]
 name = "wifi-set-tx-pti"
+claim = "whole-function-equivalence"
 vendor-source = "libpp"
 vendor-symbol = "hal_set_tx_pti"
 rust-symbol = "open_libpp_coex_trace_hal_set_tx_pti"

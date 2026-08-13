@@ -3,6 +3,7 @@
 use std::collections::BTreeSet;
 
 use crate::{NamedScenario, Result};
+use open_radio_vendor_semantics::DriverAdapterClaim;
 
 use super::{ArgumentRange, ArgumentValues, MmioDomain, Profile, ProfileContract};
 
@@ -44,6 +45,8 @@ pub(super) fn validate_coverage_domain(
         vendor_source: String::new(),
         vendor_symbol: String::new(),
         rust_symbol: String::new(),
+        claim: DriverAdapterClaim::WholeFunctionEquivalence,
+        precondition: None,
         contract: ProfileContract::Scenario,
         compare_return: false,
         argument_ranges: argument_ranges.to_vec(),
@@ -284,6 +287,8 @@ pub(super) fn validate_argument_domain(
         vendor_source: String::new(),
         vendor_symbol: String::new(),
         rust_symbol: String::new(),
+        claim: DriverAdapterClaim::WholeFunctionEquivalence,
+        precondition: None,
         contract: ProfileContract::Scenario,
         compare_return: false,
         argument_ranges: ranges.to_vec(),
@@ -302,6 +307,55 @@ pub(super) fn validate_argument_domain(
                 .join(", ");
             return Err(crate::Error::invalid(format!(
                 "profile {profile} has no case for admissible argument combination {values}"
+            )));
+        }
+    }
+    Ok(())
+}
+
+pub(super) fn validate_claim(
+    profile: &str,
+    claim: DriverAdapterClaim,
+    precondition: Option<&str>,
+    ranges: &[ArgumentRange],
+    values: &[ArgumentValues],
+    mmio_domains: &[MmioDomain],
+) -> Result<()> {
+    match claim {
+        DriverAdapterClaim::WholeFunctionEquivalence => {
+            if precondition.is_some() {
+                return Err(crate::Error::invalid(format!(
+                    "whole-function profile {profile} cannot declare a precondition"
+                )));
+            }
+        }
+        DriverAdapterClaim::ReviewedDomainEquivalence => {
+            let precondition = precondition
+                .filter(|value| !value.is_empty())
+                .ok_or_else(|| {
+                    crate::Error::invalid(format!(
+                        "reviewed-domain profile {profile} requires a non-empty precondition"
+                    ))
+                })?;
+            if !precondition.bytes().all(|byte| {
+                byte.is_ascii_lowercase()
+                    || byte.is_ascii_digit()
+                    || matches!(byte, b'-' | b'_' | b'.')
+            }) {
+                return Err(crate::Error::invalid(format!(
+                    "reviewed-domain profile {profile} has invalid precondition {precondition:?}"
+                )));
+            }
+            if ranges.is_empty() && values.is_empty() && mmio_domains.is_empty() {
+                return Err(crate::Error::invalid(format!(
+                    "reviewed-domain profile {profile} must declare a finite argument or MMIO domain"
+                )));
+            }
+        }
+        DriverAdapterClaim::ReviewedProjection | DriverAdapterClaim::RustConformance => {
+            return Err(crate::Error::invalid(format!(
+                "execution profile {profile} cannot use adapter-only claim {}",
+                claim.label()
             )));
         }
     }

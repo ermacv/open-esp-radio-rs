@@ -123,9 +123,11 @@ cargo vendor-binary-workbench inspect object \
   --flows-to wifi_set_rx_policy
 ```
 
-The report currently proves reads and selector-bearing call routes, but no
-direct writer of this projection. Writers hidden behind argument aliases are a
-remaining blocker, so `Mode1`/`Mode2` must not be renamed from function names.
+The report proves reads, selector-bearing call routes, and two direct constant
+zero writes: initialization in `ieee80211_ifattach` and clearing in
+`ieee80211_mesh_quick_deinit`. No direct nonzero writer is currently observed.
+Writers hidden behind argument aliases remain a blocker, so `Mode1`/`Mode2`
+must not be renamed from function names or treated as an AP+STA lifecycle bit.
 
 The low-level policy probe is intentionally isolated from the full STA/AP and
 Embassy probe image. Rebuild it without pulling unfinished runtime adapters:
@@ -221,6 +223,31 @@ cargo vendor-binary-workbench project publish \
 
 The HAL consumes named restricted bindings. Physical addresses and arbitrary
 integer writes remain inside the generated private raw-PAC boundary.
+
+The current AP/STA and COEX register frontier is intentionally split into
+independent claims instead of one oversized "AP+STA ready" flag:
+
+```console
+cargo vendor-binary-workbench project feature wifi-ap-sta-interface-identity \
+  --project verification/vendor/targets/esp32s31/vendor-project.toml
+cargo vendor-binary-workbench project feature wifi-ap-sta-receive-registers \
+  --project verification/vendor/targets/esp32s31/vendor-project.toml
+cargo vendor-binary-workbench project feature wifi-ap-sta-key-role \
+  --project verification/vendor/targets/esp32s31/vendor-project.toml
+cargo vendor-binary-workbench project feature wifi-mac-coex-register-programming \
+  --project verification/vendor/targets/esp32s31/vendor-project.toml
+```
+
+Their production path is `StaApRegisterHardware`/`WifiMacHal` and
+`CoexTimerHardware`/`CoexTimerHal`. These APIs accept finite interface, timer,
+PTI and policy types and expose no register addresses. This proves the named
+register transactions only; shared-channel scheduling, beacon ownership and
+runtime AP+STA arbitration remain separate lifecycle obligations.
+
+Wi-Fi DMA descriptors are DMA-visible RAM, not PAC/MMIO registers. Raw
+`word0 | BIT_30` expressions in host tests emulate hardware completion and do
+not constitute a production register API; they should be migrated to a named
+test fixture builder so descriptor ownership remains readable.
 
 ## Verification and CI
 

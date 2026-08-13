@@ -388,4 +388,4 @@ width = 32
 status = "reviewed"
 name = "station_policy_variant"
 display-type = "u32"
-description = "Observed word used on paths that select receive-policy transactions; values zero and one remain Mode1/Mode2 and are not identified as an AP+STA lifecycle state."
+description = "Observed word used on paths that select receive-policy transactions. Direct evidence shows zero writes during ieee80211_ifattach and ieee80211_mesh_quick_deinit, but no nonzero writer; values zero and one therefore remain Mode1/Mode2 and are not identified as an AP+STA lifecycle state."

@@ -1,4 +1,4 @@
-schema = 2
+schema = 3
 
 # The first and last reviewed timer entries exercise the complete indexed
 # address domain. Distinct initial images make preservation of unrelated bits
@@ -6,6 +6,7 @@ schema = 2
 
 [[profiles]]
 name = "coex-hw-timer-enable"
+claim = "whole-function-equivalence"
 vendor-source = "coex"
 vendor-symbol = "coex_hw_timer_enable"
 rust-symbol = "open_coex_trace_coex_hw_timer_enable"
@@ -67,6 +68,7 @@ value = 0xabcdef00
 
 [[profiles]]
 name = "coex-hw-timer-disable"
+claim = "whole-function-equivalence"
 vendor-source = "coex"
 vendor-symbol = "coex_hw_timer_disable"
 rust-symbol = "open_coex_trace_coex_hw_timer_disable"
@@ -128,6 +130,7 @@ value = 0xabcdef00
 
 [[profiles]]
 name = "coex-hw-timer-force"
+claim = "whole-function-equivalence"
 vendor-source = "coex"
 vendor-symbol = "coex_hw_timer_force"
 rust-symbol = "open_coex_trace_coex_hw_timer_force"
@@ -174,6 +177,7 @@ value = 0xcd654321
 
 [[profiles]]
 name = "coex-hw-timer-unforce"
+claim = "whole-function-equivalence"
 vendor-source = "coex"
 vendor-symbol = "coex_hw_timer_unforce"
 rust-symbol = "open_coex_trace_coex_hw_timer_unforce"

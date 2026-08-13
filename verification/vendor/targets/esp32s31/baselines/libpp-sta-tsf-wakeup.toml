@@ -3,13 +3,13 @@ schema = 2
 [[evidence]]
 source = "libpp"
 symbol = "hal_set_sta_tsf_wakeup"
-kind = "scenario/profile:libpp-sta-tsf-wakeup"
-digest = "e1e5c4a7df473ca46b5c2def55cac99cc2ce1d19bb5623c72d0c704577cd5598"
+kind = "whole-function-equivalence/profile:scenario/libpp-sta-tsf-wakeup"
+digest = "3a8bf66da40fa97a88f9cb2d693bf0d37e6376bcf77330fcfd3b20d341afb744"
 
 [evidence.components]
 comparison-orchestrator = "78f3316221c5be17b39047bc588be3269db93581b7fd322ac4b092f37c8178ea"
 execution-image = "3885065e6ff308001a383d5164cd1f17dba4f452a35ef3c07baa3ce5916530da"
 execution-machine = "ecce5dd7068bb1bc30a5573d8b2c8f89fa158e96289a8653c8fea6fe58d80398"
 execution-model = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"
-profile = "bd0790d544f6cf2c7ca37dee5b14cbe6023b9b1cf0d09546e5ce883855a0b30f"
-profile-parser = "8c816820d8881be9429d372eef1be0e19432f53e699c3bc0244875922aa5814a"
+profile = "cbd660a327cce79beeeac8580475b545e44818fe0a21a3e49e48387a2492631d"
+profile-parser = "a24af6577263196b2823b6c48ca095597bccf652748e92b256153a5be313f4b1"

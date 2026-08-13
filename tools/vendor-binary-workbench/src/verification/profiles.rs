@@ -7,6 +7,7 @@ use std::{
     sync::Arc,
 };
 
+use open_radio_vendor_semantics::DriverAdapterClaim;
 use serde::Deserialize;
 
 use crate::{
@@ -27,6 +28,8 @@ pub struct Profile {
     pub vendor_source: String,
     pub vendor_symbol: String,
     pub rust_symbol: String,
+    pub claim: DriverAdapterClaim,
+    pub precondition: Option<String>,
     pub contract: ProfileContract,
     pub compare_return: bool,
     pub argument_ranges: Vec<ArgumentRange>,
@@ -154,6 +157,8 @@ struct ProfileInput {
     vendor_source: String,
     vendor_symbol: String,
     rust_symbol: String,
+    claim: DriverAdapterClaim,
+    precondition: Option<String>,
     #[serde(default)]
     contract: ProfileContract,
     #[serde(default)]
@@ -448,11 +453,21 @@ impl ProfileInput {
             &mmio_domains,
             &scenarios,
         )?;
+        validation::validate_claim(
+            &self.name,
+            self.claim,
+            self.precondition.as_deref(),
+            &argument_ranges,
+            &argument_values,
+            &mmio_domains,
+        )?;
         Ok(Profile {
             name: self.name,
             vendor_source: self.vendor_source,
             vendor_symbol: self.vendor_symbol,
             rust_symbol: self.rust_symbol,
+            claim: self.claim,
+            precondition: self.precondition,
             contract: self.contract,
             compare_return: self.compare_return,
             argument_ranges,
@@ -568,9 +583,9 @@ fn parse(input: &str) -> Result<Vec<Profile>> {
 }
 
 fn finish(document: ProfileDocument) -> Result<Vec<Profile>> {
-    if document.schema != 2 {
+    if document.schema != 3 {
         return Err(crate::Error::invalid(
-            "verification profile TOML requires schema = 2",
+            "verification profile TOML requires schema = 3",
         ));
     }
     if document.profiles.is_empty() {

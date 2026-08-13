@@ -71,6 +71,9 @@ pub struct DriverAdapterRequest<'a> {
 #[serde(rename_all = "kebab-case")]
 pub enum DriverAdapterClaim {
     WholeFunctionEquivalence,
+    /// Every case in an explicit finite input domain matches, while behavior
+    /// outside that reviewed precondition remains outside the claim.
+    ReviewedDomainEquivalence,
     ReviewedProjection,
     RustConformance,
 }
@@ -79,6 +82,7 @@ impl DriverAdapterClaim {
     pub fn label(self) -> &'static str {
         match self {
             Self::WholeFunctionEquivalence => "whole-function-equivalence",
+            Self::ReviewedDomainEquivalence => "reviewed-domain-equivalence",
             Self::ReviewedProjection => "reviewed-projection",
             Self::RustConformance => "rust-conformance",
         }

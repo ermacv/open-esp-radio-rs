@@ -16,7 +16,7 @@ description = "Both observed policy-six submodes and policy eight match the prod
 suite = "wifi-sta-ap-receive"
 source = "wifi-sta-ap-receive"
 symbol = "wifi_set_rx_policy"
-claim = "reviewed-projection"
+claim = "reviewed-domain-equivalence"
 
 [[features.effects]]
 id = "sta-ap-receive-policy"
@@ -262,6 +262,58 @@ vendor = { source = "coex", symbol = "coex_hw_timer_unforce", fingerprint = "sha
 disposition = "verified"
 requirement = "coex-timer-unforce-transaction"
 rationale = "The closed PAC preserves the indexed unforce edge across the full five-entry bank."
+
+[[features]]
+id = "coex-timer-valid-bank-programming"
+description = "The production timer programmer matches the complete vendor transaction for every reviewed timer bank under the finite valid-clock precondition."
+coverage = "bounded-evidence"
+
+[[features.phases]]
+id = "timer-programming"
+description = "Convert a valid coexistence clock and program one of the five hardware timer banks."
+
+[[features.requirements]]
+id = "coex-timer-reviewed-domain"
+phase = "timer-programming"
+description = "Every declared timer-bank and valid-clock case matches without claiming behavior outside the reviewed precondition."
+suite = "coex-timer-set"
+source = "coex"
+symbol = "coex_hw_timer_set"
+claim = "reviewed-domain-equivalence"
+
+[[features.effects]]
+id = "coex-timer-programming"
+phase = "timer-programming"
+vendor = { source = "coex", symbol = "coex_hw_timer_set", fingerprint = "sha256:eb992e9640ac34491648f1883a928b3ef802f5bade8c3ef6f2df6ab91c6543e4" }
+disposition = "verified"
+requirement = "coex-timer-reviewed-domain"
+rationale = "The proof covers the complete declared Cartesian domain and retains the Rust fail-closed clock outcomes outside that domain as non-claimed behavior."
+
+[[features]]
+id = "coex-request-valid-clock-projection"
+description = "The production coexistence request path matches the vendor timer projection for every reviewed event/type case under a valid coexistence clock."
+coverage = "bounded-evidence"
+
+[[features.phases]]
+id = "request-projection"
+description = "Project a reviewed coexistence request into the selected hardware timer transaction."
+
+[[features.requirements]]
+id = "coex-request-reviewed-domain"
+phase = "request-projection"
+description = "Every declared request case matches without claiming scheduler or invalid-clock behavior."
+suite = "coex-core"
+source = "coex"
+symbol = "coex_core_request"
+claim = "reviewed-domain-equivalence"
+
+[[features.effects]]
+id = "coex-request-timer-programming"
+phase = "request-projection"
+vendor = { source = "coex", symbol = "coex_hw_timer_set", fingerprint = "sha256:eb992e9640ac34491648f1883a928b3ef802f5bade8c3ef6f2df6ab91c6543e4" }
+disposition = "verified"
+requirement = "coex-request-reviewed-domain"
+rationale = "The request proof owns only its finite valid-clock projection into timer programming; scheduler, lock and invalid-clock paths remain outside the feature claim."
 
 [[features]]
 id = "wifi-mac-coex-register-programming"

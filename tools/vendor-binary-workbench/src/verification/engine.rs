@@ -9,6 +9,7 @@ use crate::*;
 
 use super::{FunctionVerificationReport, FunctionVerificationStatus, SourceVerificationReport};
 
+mod execution_profile;
 mod model;
 
 pub(crate) use model::*;
@@ -73,7 +74,7 @@ pub(crate) fn verify_source(
                 profile.name, source.name, profile.vendor_symbol
             )));
         }
-        if !rust_symbols
+        if !all_rust_symbols
             .iter()
             .any(|symbol| symbol.name == profile.rust_symbol)
         {
@@ -233,6 +234,8 @@ pub(crate) fn verify_source(
                             "reviewed projection",
                         open_radio_vendor_semantics::DriverAdapterClaim::RustConformance =>
                             "Rust conformance",
+                        open_radio_vendor_semantics::DriverAdapterClaim::ReviewedDomainEquivalence =>
+                            "reviewed domain equivalence",
                         open_radio_vendor_semantics::DriverAdapterClaim::WholeFunctionEquivalence =>
                             unreachable!(),
                     }
@@ -241,18 +244,26 @@ pub(crate) fn verify_source(
             functions.push(function);
             continue;
         }
-        let selected_rust: Option<(&ArtifactSymbolIdentity, bool)> =
-            if let Some(binding) = manifest_entry.and_then(|entry| entry.binding.as_ref()) {
-                all_rust_symbols
-                    .iter()
-                    .find(|symbol| symbol.name == binding.rust_probe)
-                    .map(|symbol| (symbol, binding.compare_return))
-            } else {
-                rust_by_suffix
-                    .get(source_qualified_suffix.as_str())
-                    .or_else(|| rust_by_suffix.get(suffix))
-                    .copied()
-            };
+        let selected_rust: Option<(&ArtifactSymbolIdentity, bool)> = if let Some(profile) =
+            execution_profiles
+                .iter()
+                .find(|profile| profile.vendor_symbol == vendor.name)
+        {
+            all_rust_symbols
+                .iter()
+                .find(|symbol| symbol.name == profile.rust_symbol)
+                .map(|symbol| (symbol, profile.compare_return))
+        } else if let Some(binding) = manifest_entry.and_then(|entry| entry.binding.as_ref()) {
+            all_rust_symbols
+                .iter()
+                .find(|symbol| symbol.name == binding.rust_probe)
+                .map(|symbol| (symbol, binding.compare_return))
+        } else {
+            rust_by_suffix
+                .get(source_qualified_suffix.as_str())
+                .or_else(|| rust_by_suffix.get(suffix))
+                .copied()
+        };
         let Some((rust, compare_return)) = selected_rust else {
             if let Some(manifest) = disposition_manifest {
                 let resolved = manifest.resolve(source.name, &vendor.name);
@@ -391,32 +402,22 @@ pub(crate) fn verify_source(
             let bounded_feature = resolved_disposition
                 .as_ref()
                 .is_some_and(|resolved| resolved.disposition.is_bounded_feature());
-            let coverage_domain = profile.coverage_constraints();
-            let comparison = compare_execution_scenarios(
+            let evaluation = execution_profile::evaluate(
                 svd,
-                ExecutionInput {
-                    artifact: source.artifact,
-                    companion: source.companion,
-                    symbol: &profile.vendor_symbol,
-                },
-                ExecutionInput {
-                    artifact: rust_artifact,
-                    companion: rust_companion,
-                    symbol: &profile.rust_symbol,
-                },
-                profile.compare_return,
-                &coverage_domain,
-                &profile.scenarios,
+                profile,
+                source,
+                rust_artifact,
+                rust_companion,
+                resolved_disposition
+                    .as_ref()
+                    .map(|resolved| resolved.disposition.label()),
+                bounded_feature,
             )?;
+            let comparison = evaluation.comparison;
             let verdict = comparison.verdict;
-            let bounded_projection_match = bounded_feature
-                && comparison.summary.cases > 0
-                && comparison.summary.matched == comparison.summary.cases
-                && comparison.summary.different == 0
-                && comparison.summary.incomplete == 0;
-            let accepted_match = verdict == EquivalenceVerdict::Match || bounded_projection_match;
+            let accepted_match = evaluation.accepted_match;
             if accepted_match {
-                if bounded_feature {
+                if evaluation.reviewed_domain {
                     summary.bounded_matches += 1;
                 } else {
                     summary.matched += 1;
@@ -444,13 +445,12 @@ pub(crate) fn verify_source(
                 EquivalenceVerdict::Incomplete => FunctionVerificationStatus::Incomplete,
             };
             let status = accepted_match
-                .then(|| matched_profile_classification(bounded_feature).0)
+                .then_some(evaluation.matched_status)
                 .unwrap_or(status);
             let mut function = FunctionVerificationReport::new(source.name, &vendor.name, status);
             function.rust_symbol = Some(rust.name.clone());
             function.evidence = accepted_match.then(|| profile.contract.evidence().to_owned());
-            function.claim =
-                accepted_match.then(|| matched_profile_classification(bounded_feature).1);
+            function.claim = accepted_match.then_some(profile.claim);
             if let Some(resolved) = resolved_disposition {
                 function.disposition = Some(resolved.disposition.label().to_owned());
                 function.protocol = Some(resolved.protocol.label().to_owned());
@@ -462,11 +462,14 @@ pub(crate) fn verify_source(
                         .map(|component| component.label().to_owned())
                 });
             }
-            if accepted_match && bounded_feature {
-                function.reason = Some(
-                    "every declared concrete case matches inside the reviewed finite input projection; static coverage outside that projection is retained and this is not whole-function vendor equivalence"
-                        .to_owned(),
-                );
+            if accepted_match && evaluation.reviewed_domain {
+                function.reason = Some(format!(
+                    "every declared concrete case matches under reviewed precondition {:?}; static coverage outside that finite domain remains visible and this is not whole-function vendor equivalence",
+                    profile
+                        .precondition
+                        .as_deref()
+                        .expect("reviewed domain has a validated precondition")
+                ));
             }
             function.profile = Some(profile.name.clone());
             function.execution = Some(comparison);
@@ -691,25 +694,6 @@ pub(crate) fn verify_source(
     })
 }
 
-fn matched_profile_classification(
-    bounded_feature: bool,
-) -> (
-    FunctionVerificationStatus,
-    open_radio_vendor_semantics::DriverAdapterClaim,
-) {
-    if bounded_feature {
-        (
-            FunctionVerificationStatus::BoundedMatch,
-            open_radio_vendor_semantics::DriverAdapterClaim::ReviewedProjection,
-        )
-    } else {
-        (
-            FunctionVerificationStatus::Match,
-            open_radio_vendor_semantics::DriverAdapterClaim::WholeFunctionEquivalence,
-        )
-    }
-}
-
 fn annotate_replacement(
     function: &mut FunctionVerificationReport,
     manifest: &dispositions::Manifest,
@@ -748,27 +732,4 @@ fn require_platform_harness<'a>(harness: Option<&'a str>, capability: &str) -> R
             "{capability} requires a project platform pack with an executable harness"
         ))
     })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn sparse_bounded_profile_cannot_claim_the_whole_vendor_function() {
-        assert_eq!(
-            matched_profile_classification(true),
-            (
-                FunctionVerificationStatus::BoundedMatch,
-                open_radio_vendor_semantics::DriverAdapterClaim::ReviewedProjection,
-            )
-        );
-        assert_eq!(
-            matched_profile_classification(false),
-            (
-                FunctionVerificationStatus::Match,
-                open_radio_vendor_semantics::DriverAdapterClaim::WholeFunctionEquivalence,
-            )
-        );
-    }
 }

@@ -3,55 +3,55 @@ schema = 2
 [[evidence]]
 source = "coex"
 symbol = "coex_hw_timer_disable"
-kind = "scenario/profile:coex-hw-timer-disable"
-digest = "86bc2d419253d00b3fbee7bcf3f0e29cb5cf4686a6fc7f958ec7516f0928df28"
+kind = "whole-function-equivalence/profile:scenario/coex-hw-timer-disable"
+digest = "a1fb3dc4d1d8d19a4948e9d36e45c307fdf3edf1490955692a3179bf05b9051c"
 
 [evidence.components]
 comparison-orchestrator = "78f3316221c5be17b39047bc588be3269db93581b7fd322ac4b092f37c8178ea"
 execution-image = "3885065e6ff308001a383d5164cd1f17dba4f452a35ef3c07baa3ce5916530da"
 execution-machine = "ecce5dd7068bb1bc30a5573d8b2c8f89fa158e96289a8653c8fea6fe58d80398"
 execution-model = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"
-profile = "7d1a9d69678b1ed7b95d47a2141352beac8c739bd2f0a624565fe232ae5ad185"
-profile-parser = "8c816820d8881be9429d372eef1be0e19432f53e699c3bc0244875922aa5814a"
+profile = "4a0a46b4f353bf5af3ecd98ed16f08614bac9cb14286c3d14d24f4076c9830a0"
+profile-parser = "a24af6577263196b2823b6c48ca095597bccf652748e92b256153a5be313f4b1"
 
 [[evidence]]
 source = "coex"
 symbol = "coex_hw_timer_enable"
-kind = "scenario/profile:coex-hw-timer-enable"
-digest = "18de042a63e145769b770fbfd1f580b540e8a752f92a1fb56b521cbcdc5d00e4"
+kind = "whole-function-equivalence/profile:scenario/coex-hw-timer-enable"
+digest = "ca54bc7507875cd8e44d313d35ddf4344b4b9f7edf950486d8b60ef3f72b69e0"
 
 [evidence.components]
 comparison-orchestrator = "78f3316221c5be17b39047bc588be3269db93581b7fd322ac4b092f37c8178ea"
 execution-image = "3885065e6ff308001a383d5164cd1f17dba4f452a35ef3c07baa3ce5916530da"
 execution-machine = "ecce5dd7068bb1bc30a5573d8b2c8f89fa158e96289a8653c8fea6fe58d80398"
 execution-model = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"
-profile = "b844d1a79ee81a5acf0f6710edab7561566ad8cdf009b8f42357e715debfe049"
-profile-parser = "8c816820d8881be9429d372eef1be0e19432f53e699c3bc0244875922aa5814a"
+profile = "a92281e5ad935c06a5941ee96398734cd8b1c85c84a71d27babba94eaaca671b"
+profile-parser = "a24af6577263196b2823b6c48ca095597bccf652748e92b256153a5be313f4b1"
 
 [[evidence]]
 source = "coex"
 symbol = "coex_hw_timer_force"
-kind = "scenario/profile:coex-hw-timer-force"
-digest = "e25b8fc484ce6b0acc2d734a431257b173ff5c1adfe3a82a8502f79f3bed4e2f"
+kind = "whole-function-equivalence/profile:scenario/coex-hw-timer-force"
+digest = "133b655388d7b332a2f15b70bb6602d02fd2cafcef9103c6b11707e4d6d1f487"
 
 [evidence.components]
 comparison-orchestrator = "78f3316221c5be17b39047bc588be3269db93581b7fd322ac4b092f37c8178ea"
 execution-image = "3885065e6ff308001a383d5164cd1f17dba4f452a35ef3c07baa3ce5916530da"
 execution-machine = "ecce5dd7068bb1bc30a5573d8b2c8f89fa158e96289a8653c8fea6fe58d80398"
 execution-model = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"
-profile = "be7a89c8639b50b1b65a86e02b15c021bdecdb9156cdd9c49c9c24360cd7115a"
-profile-parser = "8c816820d8881be9429d372eef1be0e19432f53e699c3bc0244875922aa5814a"
+profile = "2e61af5bd748d100d49c7df046dc68641ae53b2573025b2e39523187750d4297"
+profile-parser = "a24af6577263196b2823b6c48ca095597bccf652748e92b256153a5be313f4b1"
 
 [[evidence]]
 source = "coex"
 symbol = "coex_hw_timer_unforce"
-kind = "scenario/profile:coex-hw-timer-unforce"
-digest = "502d59e610c48187cb8a74aed6d764d813ba574d7121280c4bffb94f1bcc0367"
+kind = "whole-function-equivalence/profile:scenario/coex-hw-timer-unforce"
+digest = "b286834f882293afdc31bdfcdfac6b5688a3e4e6d690b379ce004f8f369ac4b9"
 
 [evidence.components]
 comparison-orchestrator = "78f3316221c5be17b39047bc588be3269db93581b7fd322ac4b092f37c8178ea"
 execution-image = "3885065e6ff308001a383d5164cd1f17dba4f452a35ef3c07baa3ce5916530da"
 execution-machine = "ecce5dd7068bb1bc30a5573d8b2c8f89fa158e96289a8653c8fea6fe58d80398"
 execution-model = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"
-profile = "415c45b26d50ab3fffd7f7be4348c0391d54e62179b178f9fbe1665a499a3574"
-profile-parser = "8c816820d8881be9429d372eef1be0e19432f53e699c3bc0244875922aa5814a"
+profile = "760ebfbc2cc67a8b4fd356b561577fe6b2c643e2a9f53cb37d8728e0458c921d"
+profile-parser = "a24af6577263196b2823b6c48ca095597bccf652748e92b256153a5be313f4b1"

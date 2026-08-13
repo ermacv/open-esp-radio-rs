@@ -99,7 +99,8 @@ reachable vendor side effect can disappear.
 
 The matching disposition for a deliberately narrow proof is
 `bounded-feature`. The verifier emits `bounded-match` only for a successful
-non-whole-function adapter claim. Project loading rejects a bounded
+non-whole-function adapter claim or an explicitly preconditioned
+`reviewed-domain-equivalence` execution profile. Project loading rejects a bounded
 disposition that is not selected by a required feature, and `project check`
 evaluates those required features as a separate fail-closed gate.
 

@@ -1,9 +1,10 @@
-schema = 2
+schema = 3
 # Concrete compiled-equivalence scenarios. This is validator input, not a
 # prose function ledger. Every conditional branch outcome must be covered.
 
 [[profiles]]
 name = "rom-bluetooth-index-to-baseband"
+claim = "whole-function-equivalence"
 vendor-source = "rom"
 vendor-symbol = "phy_bt_index_to_bb"
 rust-symbol = "open_phy_trace_ret_bt_index_to_bb"
@@ -27,6 +28,7 @@ arguments = [0xffffffff]
 
 [[profiles]]
 name = "rom-bluetooth-baseband-to-index"
+claim = "whole-function-equivalence"
 vendor-source = "rom"
 vendor-symbol = "phy_bt_bb_to_index"
 rust-symbol = "open_phy_trace_ret_bt_bb_to_index"
@@ -50,6 +52,7 @@ arguments = [0xffffffff]
 
 [[profiles]]
 name = "frequency-band-registers"
+claim = "whole-function-equivalence"
 vendor-source = "rom"
 vendor-symbol = "phy_freq_band_reg_set"
 rust-symbol = "open_phy_trace_freq_band_reg_set"
@@ -77,6 +80,7 @@ value = 0
 
 [[profiles]]
 name = "archive-watchdog-reset-enable"
+claim = "whole-function-equivalence"
 vendor-source = "archive"
 vendor-symbol = "bb_wdt_rst_enable"
 rust-symbol = "open_phy_trace_bb_wdt_rst_enable"
@@ -98,6 +102,7 @@ value = 0
 
 [[profiles]]
 name = "archive-watchdog-interrupt-enable"
+claim = "whole-function-equivalence"
 vendor-source = "archive"
 vendor-symbol = "bb_wdt_int_enable"
 rust-symbol = "open_phy_trace_bb_wdt_int_enable"
@@ -119,6 +124,7 @@ value = 0
 
 [[profiles]]
 name = "archive-watchdog-timeout-clear"
+claim = "whole-function-equivalence"
 vendor-source = "archive"
 vendor-symbol = "bb_wdt_timeout_clear"
 rust-symbol = "open_phy_trace_bb_wdt_timeout_clear"
@@ -138,6 +144,7 @@ value = 0xffffffff
 
 [[profiles]]
 name = "archive-watchdog-status"
+claim = "whole-function-equivalence"
 vendor-source = "archive"
 vendor-symbol = "bb_wdt_get_status"
 rust-symbol = "open_phy_trace_ret_bb_wdt_get_status"
@@ -157,6 +164,7 @@ value = 0xffffffff
 
 [[profiles]]
 name = "rom-rx-11b-optimization"
+claim = "whole-function-equivalence"
 vendor-source = "rom"
 vendor-symbol = "phy_rx_11b_opt"
 rust-symbol = "open_phy_trace_rx_11b_opt"
@@ -196,6 +204,7 @@ value = 0
 
 [[profiles]]
 name = "rom-rf-rx-saturation-reset"
+claim = "whole-function-equivalence"
 vendor-source = "rom"
 vendor-symbol = "phy_rfrx_sat_rst"
 rust-symbol = "open_phy_trace_rfrx_sat_rst"
@@ -223,6 +232,7 @@ value = 0
 
 [[profiles]]
 name = "rom-rx-clock-enable"
+claim = "whole-function-equivalence"
 vendor-source = "rom"
 vendor-symbol = "phy_set_rxclk_en"
 rust-symbol = "open_phy_trace_set_rxclk_en"
@@ -244,6 +254,7 @@ value = 0
 
 [[profiles]]
 name = "rom-tx-clock-enable"
+claim = "whole-function-equivalence"
 vendor-source = "rom"
 vendor-symbol = "phy_set_txclk_en"
 rust-symbol = "open_phy_trace_set_txclk_en"
@@ -265,6 +276,7 @@ value = 0
 
 [[profiles]]
 name = "rom-nrx-frequency"
+claim = "whole-function-equivalence"
 vendor-source = "rom"
 vendor-symbol = "phy_nrx_freq_set"
 rust-symbol = "open_phy_trace_nrx_freq_set"
@@ -300,6 +312,7 @@ value = 0
 
 [[profiles]]
 name = "rom-channel-cbw"
+claim = "whole-function-equivalence"
 vendor-source = "rom"
 vendor-symbol = "phy_bb_cbw_chan_cfg"
 rust-symbol = "open_phy_trace_bb_cbw_chan_cfg"
@@ -359,6 +372,7 @@ value = 0
 
 [[profiles]]
 name = "rom-i2c-tx-rate-init"
+claim = "whole-function-equivalence"
 vendor-source = "rom"
 vendor-symbol = "phy_i2c_txrate_init"
 rust-symbol = "open_phy_trace_i2c_txrate_init"
@@ -396,6 +410,7 @@ symbol = "phy_txgain_comp_pacfg_new"
 
 [[profiles]]
 name = "rom-pbus-debug-mode"
+claim = "whole-function-equivalence"
 vendor-source = "rom"
 vendor-symbol = "phy_pbus_debugmode"
 rust-symbol = "open_phy_trace_pbus_debugmode"
@@ -421,6 +436,7 @@ value = 0xffffffff
 
 [[profiles]]
 name = "rom-agc-register-init"
+claim = "whole-function-equivalence"
 vendor-source = "rom"
 vendor-symbol = "phy_agc_reg_init"
 rust-symbol = "open_phy_trace_agc_reg_init"
@@ -494,6 +510,7 @@ value = 0
 
 [[profiles]]
 name = "rom-frequency-i2c-memory-write"
+claim = "whole-function-equivalence"
 vendor-source = "rom"
 vendor-symbol = "phy_freq_i2c_mem_write"
 rust-symbol = "open_phy_trace_freq_i2c_mem_write"
@@ -522,6 +539,7 @@ value = 0
 
 [[profiles]]
 name = "archive-post-initialization-register-update"
+claim = "whole-function-equivalence"
 vendor-source = "archive"
 vendor-symbol = "phy_reg_update_new"
 rust-symbol = "open_phy_trace_phy_reg_update_new"
@@ -559,6 +577,7 @@ value = 0xffffffff
 
 [[profiles]]
 name = "archive-iccfr-enable"
+claim = "whole-function-equivalence"
 vendor-source = "archive"
 vendor-symbol = "phy_iccfr_en"
 rust-symbol = "open_phy_trace_phy_iccfr_en"
@@ -580,6 +599,7 @@ value = 0xffffffff
 
 [[profiles]]
 name = "archive-force-iccfr"
+claim = "whole-function-equivalence"
 vendor-source = "archive"
 vendor-symbol = "phy_force_iccfr"
 rust-symbol = "open_phy_trace_phy_force_iccfr"
@@ -607,6 +627,7 @@ value = 0xffffffff
 
 [[profiles]]
 name = "archive-dot11p-state"
+claim = "whole-function-equivalence"
 vendor-source = "archive"
 vendor-symbol = "phy_11p_set"
 rust-symbol = "open_phy_trace_phy_11p_set"
@@ -663,6 +684,7 @@ length = 2
 
 [[profiles]]
 name = "archive-current-level-state"
+claim = "whole-function-equivalence"
 vendor-source = "archive"
 vendor-symbol = "phy_current_level_set"
 rust-symbol = "open_phy_trace_phy_current_level_set"
@@ -703,6 +725,7 @@ length = 1
 
 [[profiles]]
 name = "archive-bt-power-tracking-state"
+claim = "whole-function-equivalence"
 vendor-source = "archive"
 vendor-symbol = "phy_bt_power_track"
 rust-symbol = "open_phy_trace_phy_bt_power_track"
@@ -743,6 +766,7 @@ length = 1
 
 [[profiles]]
 name = "archive-ble-channel-base-state"
+claim = "whole-function-equivalence"
 vendor-source = "archive"
 vendor-symbol = "phy_ble_set_chan_base"
 rust-symbol = "open_phy_trace_phy_ble_set_chan_base"
@@ -783,6 +807,7 @@ length = 1
 
 [[profiles]]
 name = "archive-initialization-parameter-state"
+claim = "whole-function-equivalence"
 vendor-source = "archive"
 vendor-symbol = "phy_init_param_set"
 rust-symbol = "open_phy_trace_phy_init_param_set"
@@ -823,6 +848,7 @@ length = 1
 
 [[profiles]]
 name = "archive-temperature-tracking-debug-state"
+claim = "whole-function-equivalence"
 vendor-source = "archive"
 vendor-symbol = "phy_track_temp_debug"
 rust-symbol = "open_phy_trace_phy_track_temp_debug"
@@ -863,6 +889,7 @@ length = 2
 
 [[profiles]]
 name = "archive-dc-value-split"
+claim = "whole-function-equivalence"
 vendor-source = "archive"
 vendor-symbol = "get_dc_value"
 rust-symbol = "open_phy_trace_get_dc_value"
@@ -900,6 +927,7 @@ length = 4
 
 [[profiles]]
 name = "archive-i2c-master-memory-configuration"
+claim = "whole-function-equivalence"
 vendor-source = "archive"
 vendor-symbol = "phy_i2c_master_mem_cfg"
 rust-symbol = "open_phy_trace_phy_i2c_master_mem_cfg"
@@ -933,6 +961,7 @@ length = 6
 
 [[profiles]]
 name = "archive-i2c-command-memory-configuration"
+claim = "whole-function-equivalence"
 vendor-source = "archive"
 vendor-symbol = "phy_i2c_master_command_mem_cfg"
 rust-symbol = "open_phy_trace_phy_i2c_master_command_mem_cfg"
@@ -978,6 +1007,7 @@ length = 4
 
 [[profiles]]
 name = "archive-tx-attenuation-compensation"
+claim = "whole-function-equivalence"
 vendor-source = "archive"
 vendor-symbol = "phy_tx_atten_comp"
 rust-symbol = "open_phy_trace_phy_tx_atten_comp"
@@ -1005,6 +1035,7 @@ length = 3
 
 [[profiles]]
 name = "rom-frequency-register-init"
+claim = "whole-function-equivalence"
 vendor-source = "rom"
 vendor-symbol = "phy_freq_reg_init"
 rust-symbol = "open_phy_trace_freq_reg_init"
@@ -1038,6 +1069,7 @@ value = 0x01000000
 
 [[profiles]]
 name = "rom-disable-hardware-frequency"
+claim = "whole-function-equivalence"
 vendor-source = "rom"
 vendor-symbol = "phy_dis_hw_set_freq"
 rust-symbol = "open_phy_trace_dis_hw_set_freq"
@@ -1057,6 +1089,7 @@ value = 0xffffffff
 
 [[profiles]]
 name = "rom-read-hardware-noise-floor"
+claim = "whole-function-equivalence"
 vendor-source = "rom"
 vendor-symbol = "phy_read_hw_noisefloor"
 rust-symbol = "open_phy_trace_ret_read_hw_noisefloor"
@@ -1088,6 +1121,7 @@ value = 0xffffffff
 
 [[profiles]]
 name = "archive-read-hardware-noise-floor"
+claim = "whole-function-equivalence"
 vendor-source = "archive"
 vendor-symbol = "read_hw_noisefloor"
 rust-symbol = "open_phy_trace_ret_read_hw_noisefloor"
@@ -1119,6 +1153,7 @@ value = 0xffffffff
 
 [[profiles]]
 name = "archive-antenna-diversity"
+claim = "whole-function-equivalence"
 vendor-source = "archive"
 vendor-symbol = "ant_dft_cfg"
 rust-symbol = "open_phy_trace_ant_dft_cfg"
@@ -1147,6 +1182,7 @@ value = 0x5a5a5a5a
 
 [[profiles]]
 name = "rom-save-pbus-registers"
+claim = "whole-function-equivalence"
 vendor-source = "rom"
 vendor-symbol = "phy_save_pbus_reg"
 rust-symbol = "open_phy_trace_save_pbus_reg"
@@ -1246,6 +1282,7 @@ length = 24
 
 [[profiles]]
 name = "rom-absolute-temperature"
+claim = "whole-function-equivalence"
 vendor-source = "rom"
 vendor-symbol = "phy_abs_temp"
 rust-symbol = "open_phy_trace_ret_abs_temp"
@@ -1273,6 +1310,7 @@ arguments = [0x7fffffff]
 
 [[profiles]]
 name = "rom-encode-i2c-master"
+claim = "whole-function-equivalence"
 vendor-source = "rom"
 vendor-symbol = "phy_encode_i2c_master"
 rust-symbol = "open_phy_trace_ret_encode_i2c_master"
@@ -1296,6 +1334,7 @@ arguments = [0xffffffff, 0xffffffff, 0xffffffff]
 
 [[profiles]]
 name = "rom-frequency-memory-address"
+claim = "whole-function-equivalence"
 vendor-source = "rom"
 vendor-symbol = "phy_get_freq_mem_addr"
 rust-symbol = "open_phy_trace_ret_get_freq_mem_addr"
@@ -1319,6 +1358,7 @@ arguments = [0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff]
 
 [[profiles]]
 name = "rom-byte-to-word"
+claim = "whole-function-equivalence"
 vendor-source = "rom"
 vendor-symbol = "phy_byte_to_word"
 rust-symbol = "open_phy_trace_ret_byte_to_word"
@@ -1347,6 +1387,7 @@ value = 0xffffffff
 
 [[profiles]]
 name = "rom-tx-power-tracking-slow-state"
+claim = "whole-function-equivalence"
 vendor-source = "rom"
 vendor-symbol = "phy_txpwr_track_slow"
 rust-symbol = "open_phy_trace_txpwr_track_slow"

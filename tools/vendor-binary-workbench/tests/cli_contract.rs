@@ -1,3 +1,5 @@
+#![recursion_limit = "256"]
+
 use std::{
     io::Write,
     path::{Path, PathBuf},
@@ -654,14 +656,16 @@ report = "verification.json"
 
 [[verification.suites]]
 id = "fixture"
-sources = ["fixture"]
-source-prefixes = ["fixture=fixture_"]
 rust-artifact-role = "rust-artifact:fixture"
 rust-prefix = "fixture_"
 profiles = []
 dispositions = ["dispositions.toml"]
 baselines = ["baseline.toml"]
 gate = "completion"
+
+[[verification.suites.vendor]]
+source = "fixture"
+prefix = "fixture_"
 "#,
     )
     .unwrap();
@@ -1260,7 +1264,7 @@ fn project_publication_json_is_one_typed_report() {
     std::fs::write(
         review_output,
         serde_json::to_vec_pretty(&serde_json::json!({
-            "schema_version": 8,
+            "schema_version": 9,
             "command": "project review scopes",
             "project": "publication-report",
             "scopes": [{
@@ -1273,6 +1277,9 @@ fn project_publication_json_is_one_typed_report() {
                 "functions": 0,
                 "replacement_functions": 0,
                 "replacement_function_keys": [],
+                "transaction_functions": 0,
+                "transaction_keys": [],
+                "transactions": [],
                 "function_identities": [],
                 "function_keys": [],
                 "complete_functions": 0,

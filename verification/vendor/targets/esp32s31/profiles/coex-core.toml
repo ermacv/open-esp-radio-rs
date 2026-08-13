@@ -1,4 +1,4 @@
-schema = 2
+schema = 3
 
 # Complete admissible domain of the reviewed 48-byte coexistence priority
 # table. Each case seeds only the aligned vendor word containing the selected
@@ -7,6 +7,7 @@ schema = 2
 
 [[profiles]]
 name = "coex-core-pti-get"
+claim = "whole-function-equivalence"
 vendor-source = "coex"
 vendor-symbol = "coex_core_pti_get"
 rust-symbol = "open_coex_core_trace_pti_get"

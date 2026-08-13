@@ -1,9 +1,10 @@
-schema = 2
+schema = 3
 # Concrete coverage for leaves whose logical queue argument selects the
 # reversed physical CONTROL[3-queue] PAC bank.
 
 [[profiles]]
 name = "libpp-txq-enabled"
+claim = "whole-function-equivalence"
 vendor-source = "libpp"
 vendor-symbol = "hal_mac_is_txq_enabled"
 rust-symbol = "open_libpp_tx_trace_hal_mac_is_txq_enabled"
@@ -79,6 +80,7 @@ value = 0x80000000
 
 [[profiles]]
 name = "libpp-txq-valid"
+claim = "whole-function-equivalence"
 vendor-source = "libpp"
 vendor-symbol = "hal_mac_is_txq_valid"
 rust-symbol = "open_libpp_tx_trace_hal_mac_is_txq_valid"
@@ -154,6 +156,7 @@ value = 0
 
 [[profiles]]
 name = "libpp-set-txq-invalid"
+claim = "whole-function-equivalence"
 vendor-source = "libpp"
 vendor-symbol = "hal_mac_set_txq_invalid"
 rust-symbol = "open_libpp_tx_trace_hal_mac_set_txq_invalid"
@@ -193,6 +196,7 @@ value = 0x87654321
 
 [[profiles]]
 name = "libpp-configure-tx-edca"
+claim = "whole-function-equivalence"
 vendor-source = "libpp"
 vendor-symbol = "hal_mac_tx_config_edca"
 rust-symbol = "open_libpp_tx_trace_hal_mac_tx_config_edca"
@@ -280,6 +284,7 @@ value = 0x00000000
 
 [[profiles]]
 name = "libpp-read-tx-blockack"
+claim = "whole-function-equivalence"
 vendor-source = "libpp"
 vendor-symbol = "hal_mac_tx_get_blockack"
 rust-symbol = "open_libpp_tx_trace_hal_mac_tx_get_blockack"
@@ -392,6 +397,7 @@ length = 12
 
 [[profiles]]
 name = "libpp-disable-txq"
+claim = "whole-function-equivalence"
 vendor-source = "libpp"
 vendor-symbol = "hal_mac_txq_disable"
 rust-symbol = "open_libpp_tx_trace_hal_mac_txq_disable"

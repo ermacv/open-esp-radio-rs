@@ -1,9 +1,11 @@
-schema = 2
+schema = 3
 
 # The parent has fourteen policy cases; this profile intentionally proves only
 # the two reviewed role frontiers required by the open STA/AP composition.
 [[profiles]]
 name = "wifi-sta-ap-receive-policy"
+claim = "reviewed-domain-equivalence"
+precondition = "reviewed-receive-policy-selectors"
 vendor-source = "wifi-sta-ap-receive"
 vendor-symbol = "wifi_set_rx_policy"
 rust-symbol = "open_wifi_sta_ap_trace_wifi_set_rx_policy"

@@ -3,27 +3,27 @@ schema = 2
 [[evidence]]
 source = "libpp"
 symbol = "hal_mac_set_addr"
-kind = "scenario/profile:wifi-interface-address"
-digest = "159e96cadba0fd0a395814d32b6a4222219f31a546d4a6f223d903cf47be6e2f"
+kind = "whole-function-equivalence/profile:scenario/wifi-interface-address"
+digest = "633cca3ca1f464bed73fa807f9e1ef85e4fd4865821d525302770d7a61b26699"
 
 [evidence.components]
 comparison-orchestrator = "78f3316221c5be17b39047bc588be3269db93581b7fd322ac4b092f37c8178ea"
 execution-image = "3885065e6ff308001a383d5164cd1f17dba4f452a35ef3c07baa3ce5916530da"
 execution-machine = "ecce5dd7068bb1bc30a5573d8b2c8f89fa158e96289a8653c8fea6fe58d80398"
 execution-model = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"
-profile = "4d4a095194bea82864bb8fb6b33573aedd90af9528d7db405142a17938393846"
-profile-parser = "8c816820d8881be9429d372eef1be0e19432f53e699c3bc0244875922aa5814a"
+profile = "b11146ea0af2a8ad98b0e2171019d55cf6f120c26573bfec9851e382e86ab916"
+profile-parser = "a24af6577263196b2823b6c48ca095597bccf652748e92b256153a5be313f4b1"
 
 [[evidence]]
 source = "libpp"
 symbol = "hal_mac_set_bssid"
-kind = "scenario/profile:wifi-interface-bssid"
-digest = "4002d0807d134a892fb3cd16d2c3b9b5a115c20973d496782e5f6d9aa6f366b1"
+kind = "whole-function-equivalence/profile:scenario/wifi-interface-bssid"
+digest = "01670dddc7c500d8a14e8c11186e06834f56955cfff023f37977f1d4f5de14d7"
 
 [evidence.components]
 comparison-orchestrator = "78f3316221c5be17b39047bc588be3269db93581b7fd322ac4b092f37c8178ea"
 execution-image = "3885065e6ff308001a383d5164cd1f17dba4f452a35ef3c07baa3ce5916530da"
 execution-machine = "ecce5dd7068bb1bc30a5573d8b2c8f89fa158e96289a8653c8fea6fe58d80398"
 execution-model = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"
-profile = "c6ff1fed713c9503c1956012ceeb4bd91dfec8063ece19caa95ae6a3bbea3da2"
-profile-parser = "8c816820d8881be9429d372eef1be0e19432f53e699c3bc0244875922aa5814a"
+profile = "aca1ed65c40c27ad9ae7c7e4ebe5f8ed1a3b639f401ba79a6abe85a5558a0296"
+profile-parser = "a24af6577263196b2823b6c48ca095597bccf652748e92b256153a5be313f4b1"

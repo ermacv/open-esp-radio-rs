@@ -1,10 +1,12 @@
-schema = 2
+schema = 3
 
 # Complete vendor/Rust transaction for one representative Wi-Fi timer. The
 # distinct latency and duration values make their intentionally reversed
 # primary/secondary placement observable.
 [[profiles]]
 name = "coex-hw-timer-set"
+claim = "reviewed-domain-equivalence"
+precondition = "valid-coex-clock-and-timer-bank"
 vendor-source = "coex"
 vendor-symbol = "coex_hw_timer_set"
 rust-symbol = "open_coex_set_trace_coex_hw_timer_set"

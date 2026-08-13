@@ -226,43 +226,101 @@ fn render_human(report: &ObjectInvestigationReport) {
             );
         }
         if !observation.accesses.is_empty() {
-            outputln!("\n{}", crate::cli::output::heading("Selected accesses"));
-            for (index, access) in observation.accesses.iter().take(100).enumerate() {
-                outputln!(
-                    "{}. {} u{} {:+#x} at {:#010x}",
-                    index + 1,
-                    access.access.to_ascii_uppercase(),
-                    access.width,
-                    access.offset,
-                    access.site
-                );
-                outputln!("   Function: {}", access.function);
-                if let Some(value) = &access.value {
-                    outputln!("   Value:    {value}");
-                }
-                if !access.flow.is_empty() {
-                    outputln!(
-                        "   Route:    {}",
-                        access
-                            .flow
-                            .iter()
-                            .map(|edge| short_identity(&edge.callee))
-                            .collect::<Vec<_>>()
-                            .join(" → ")
-                    );
-                }
-                for call in &access.flow_calls {
-                    let arguments = compact_arguments(&call.arguments);
-                    outputln!(
-                        "   Call:     {}({}){}",
-                        short_identity(&call.target),
-                        arguments.join(", "),
-                        call.site
-                            .map_or_else(String::new, |site| format!(" at {site:#010x}"))
-                    );
-                }
+            let writes = observation
+                .accesses
+                .iter()
+                .filter(|access| access.access == "write")
+                .collect::<Vec<_>>();
+            let reads = observation
+                .accesses
+                .iter()
+                .filter(|access| access.access == "read")
+                .collect::<Vec<_>>();
+            let other = observation
+                .accesses
+                .iter()
+                .filter(|access| access.access != "write" && access.access != "read")
+                .collect::<Vec<_>>();
+            let constants = observation
+                .accesses
+                .iter()
+                .filter_map(|access| access.constant)
+                .collect::<std::collections::BTreeSet<_>>();
+
+            outputln!("\n{}", crate::cli::output::heading("Access summary"));
+            outputln!("Writes:       {}", writes.len());
+            outputln!("Reads:        {}", reads.len());
+            if !other.is_empty() {
+                outputln!("Other:        {}", other.len());
             }
+            if !constants.is_empty() {
+                outputln!(
+                    "Exact values: {}",
+                    constants
+                        .iter()
+                        .map(|value| format!("{value:#010x}"))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                );
+            }
+
+            render_access_group("Writes", &writes);
+            render_access_group("Reads", &reads);
+            render_access_group("Other accesses", &other);
         }
+    }
+}
+
+fn render_access_group(heading: &str, accesses: &[&ObjectAccessEvidence]) {
+    if accesses.is_empty() {
+        return;
+    }
+    outputln!("\n{}", crate::cli::output::heading(heading));
+    let limit = if crate::cli::output::details() {
+        100
+    } else {
+        20
+    };
+    for (index, access) in accesses.iter().take(limit).enumerate() {
+        outputln!(
+            "{}. {} u{} {:+#x} at {:#010x}",
+            index + 1,
+            access.access.to_ascii_uppercase(),
+            access.width,
+            access.offset,
+            access.site
+        );
+        outputln!("   Function: {}", access.function);
+        if let Some(value) = &access.value {
+            outputln!("   Value:    {value}");
+        }
+        if !access.flow.is_empty() {
+            outputln!(
+                "   Route:    {}",
+                access
+                    .flow
+                    .iter()
+                    .map(|edge| short_identity(&edge.callee))
+                    .collect::<Vec<_>>()
+                    .join(" → ")
+            );
+        }
+        for call in &access.flow_calls {
+            let arguments = compact_arguments(&call.arguments);
+            outputln!(
+                "   Call:     {}({}){}",
+                short_identity(&call.target),
+                arguments.join(", "),
+                call.site
+                    .map_or_else(String::new, |site| format!(" at {site:#010x}"))
+            );
+        }
+    }
+    if accesses.len() > limit {
+        outputln!(
+            "… {} more; pass -v to show up to 100 entries",
+            accesses.len() - limit
+        );
     }
 }
 

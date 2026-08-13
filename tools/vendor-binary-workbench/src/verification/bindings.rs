@@ -6,6 +6,7 @@
 //! before invoking the workbench.
 
 use crate::{ArtifactSymbolIdentity, Result};
+use open_radio_vendor_semantics::RustBindingKind;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum BindingVersion {
@@ -63,6 +64,7 @@ impl BindingVersion {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct Binding {
     pub(crate) version: BindingVersion,
+    pub(crate) rust_kind: RustBindingKind,
     pub(crate) rust_probe: String,
     pub(crate) compare_return: bool,
     pub(crate) driver_adapter: Option<DriverAdapter>,
@@ -71,6 +73,7 @@ pub(crate) struct Binding {
 impl Binding {
     pub(crate) fn new(
         version: BindingVersion,
+        rust_kind: RustBindingKind,
         rust_probe: String,
         compare_return: bool,
         driver_adapter: Option<DriverAdapter>,
@@ -82,6 +85,7 @@ impl Binding {
         }
         Ok(Self {
             version,
+            rust_kind,
             rust_probe,
             compare_return,
             driver_adapter,
@@ -103,6 +107,9 @@ impl Binding {
 
     pub(crate) fn canonical(&self) -> String {
         let mut output = format!("binding {}\n", self.version.label());
+        output.push_str("rust-binding ");
+        output.push_str(self.rust_kind.label());
+        output.push('\n');
         output.push_str("rust-probe ");
         output.push_str(&self.rust_probe);
         output.push('\n');
@@ -125,6 +132,7 @@ mod tests {
     fn binding() -> Binding {
         Binding::new(
             BindingVersion::V1,
+            RustBindingKind::ExactProductionEntry,
             "open_phy_trace_leaf".to_owned(),
             false,
             None,
@@ -146,6 +154,7 @@ mod tests {
     fn return_comparison_is_an_explicit_evidence_bound_property() {
         let return_binding = Binding::new(
             BindingVersion::V1,
+            RustBindingKind::ExactProductionEntry,
             "open_custom_trace_leaf".to_owned(),
             true,
             None,

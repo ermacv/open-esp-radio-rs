@@ -4,68 +4,68 @@ schema = 2
 source = "libpp"
 symbol = "hal_clear_rx_beacon_pti"
 kind = "whole-function-equivalence/profile:scenario/wifi-clear-rx-beacon-pti"
-digest = "53b4137b7bca8d48588fb75716194d5d9909f0a880d1fda5dccdd28dc3be9635"
+digest = "1318c182ebcb5505a6e878a4fd77b9860c7ae56598ee1a9d82434bd283c7de1e"
 
 [evidence.components]
-comparison-orchestrator = "ce586fb7d4199ca0c509cb6580fa2b0a348d9b99a8895ce1db7f81a7f06b4ade"
+comparison-orchestrator = "e9af803daf6ab44af42a93b3cead563c60bf06945929c1b879c8112be2f87d60"
 execution-image = "3885065e6ff308001a383d5164cd1f17dba4f452a35ef3c07baa3ce5916530da"
 execution-machine = "ecce5dd7068bb1bc30a5573d8b2c8f89fa158e96289a8653c8fea6fe58d80398"
 execution-model = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"
 profile = "13b125482876c36cfaa56013079703cbdbe742a90ab97969d94ba1f0e013250a"
-profile-parser = "a24af6577263196b2823b6c48ca095597bccf652748e92b256153a5be313f4b1"
+profile-parser = "425e34c2aa46698971e2e8be1ab1e6e9d2d2737bd7b3afb913316708a62206f4"
 
 [[evidence]]
 source = "libpp"
 symbol = "hal_clr_itwt_pti"
 kind = "whole-function-equivalence/profile:scenario/wifi-clear-itwt-pti"
-digest = "bbe0e8a5284e96d4281575871a9cc8022dd0a282a486d3c40100f9bf266cf05b"
+digest = "eb5effb004416aee32556a6d0ffbf5593abe45b132b917747cb10f485e0f07bd"
 
 [evidence.components]
-comparison-orchestrator = "ce586fb7d4199ca0c509cb6580fa2b0a348d9b99a8895ce1db7f81a7f06b4ade"
+comparison-orchestrator = "e9af803daf6ab44af42a93b3cead563c60bf06945929c1b879c8112be2f87d60"
 execution-image = "3885065e6ff308001a383d5164cd1f17dba4f452a35ef3c07baa3ce5916530da"
 execution-machine = "ecce5dd7068bb1bc30a5573d8b2c8f89fa158e96289a8653c8fea6fe58d80398"
 execution-model = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"
 profile = "b7d8d98b6a4c73d913e64a23e2d3a826574493638e152e15129ea6f2adb98882"
-profile-parser = "a24af6577263196b2823b6c48ca095597bccf652748e92b256153a5be313f4b1"
+profile-parser = "425e34c2aa46698971e2e8be1ab1e6e9d2d2737bd7b3afb913316708a62206f4"
 
 [[evidence]]
 source = "libpp"
 symbol = "hal_set_itwt_pti"
 kind = "whole-function-equivalence/profile:scenario/wifi-set-itwt-pti"
-digest = "2a827f5423d490cf06d494adb0cefcb95111c2f5e1789f5592d2262c8ef40f18"
+digest = "1ebbbf66a2afe00110222a3222ba0434fa4955b7e2a44669d3832097d7773163"
 
 [evidence.components]
-comparison-orchestrator = "ce586fb7d4199ca0c509cb6580fa2b0a348d9b99a8895ce1db7f81a7f06b4ade"
+comparison-orchestrator = "e9af803daf6ab44af42a93b3cead563c60bf06945929c1b879c8112be2f87d60"
 execution-image = "3885065e6ff308001a383d5164cd1f17dba4f452a35ef3c07baa3ce5916530da"
 execution-machine = "ecce5dd7068bb1bc30a5573d8b2c8f89fa158e96289a8653c8fea6fe58d80398"
 execution-model = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"
 profile = "d6b35626a603684d6350de9d5e354fd5a469c0f23429321a491057a8317174e9"
-profile-parser = "a24af6577263196b2823b6c48ca095597bccf652748e92b256153a5be313f4b1"
+profile-parser = "425e34c2aa46698971e2e8be1ab1e6e9d2d2737bd7b3afb913316708a62206f4"
 
 [[evidence]]
 source = "libpp"
 symbol = "hal_set_rx_beacon_pti"
 kind = "whole-function-equivalence/profile:scenario/wifi-rx-beacon-pti"
-digest = "1371e20aa2b13eda79595b18b69d5e53772eab673df2843a22881b7994e99fc5"
+digest = "4182e699b9164183cb2b14d9cc42fb2528b833603d7f91f7862cda55b709f92e"
 
 [evidence.components]
-comparison-orchestrator = "ce586fb7d4199ca0c509cb6580fa2b0a348d9b99a8895ce1db7f81a7f06b4ade"
+comparison-orchestrator = "e9af803daf6ab44af42a93b3cead563c60bf06945929c1b879c8112be2f87d60"
 execution-image = "3885065e6ff308001a383d5164cd1f17dba4f452a35ef3c07baa3ce5916530da"
 execution-machine = "ecce5dd7068bb1bc30a5573d8b2c8f89fa158e96289a8653c8fea6fe58d80398"
 execution-model = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"
 profile = "be8f4da30ceb75a645ffa347a28d206ca699a9c86b8d10b5c7aa86acca42802a"
-profile-parser = "a24af6577263196b2823b6c48ca095597bccf652748e92b256153a5be313f4b1"
+profile-parser = "425e34c2aa46698971e2e8be1ab1e6e9d2d2737bd7b3afb913316708a62206f4"
 
 [[evidence]]
 source = "libpp"
 symbol = "hal_set_tx_pti"
 kind = "whole-function-equivalence/profile:scenario/wifi-set-tx-pti"
-digest = "8ba5a061d14f5bd5d4fcd91e549f1ef7ed8af86901b093299a23f665faf48180"
+digest = "4a8a8a03e705135da81b305aad9b9f6cf93b198002e5b4c9f92b30824217a4bf"
 
 [evidence.components]
-comparison-orchestrator = "ce586fb7d4199ca0c509cb6580fa2b0a348d9b99a8895ce1db7f81a7f06b4ade"
+comparison-orchestrator = "e9af803daf6ab44af42a93b3cead563c60bf06945929c1b879c8112be2f87d60"
 execution-image = "3885065e6ff308001a383d5164cd1f17dba4f452a35ef3c07baa3ce5916530da"
 execution-machine = "ecce5dd7068bb1bc30a5573d8b2c8f89fa158e96289a8653c8fea6fe58d80398"
 execution-model = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"
 profile = "87ecc6691b7a0d3aee1aaf001363698f637f375416e5f852ea54c1827db7da8e"
-profile-parser = "a24af6577263196b2823b6c48ca095597bccf652748e92b256153a5be313f4b1"
+profile-parser = "425e34c2aa46698971e2e8be1ab1e6e9d2d2737bd7b3afb913316708a62206f4"

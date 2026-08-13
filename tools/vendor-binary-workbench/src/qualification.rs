@@ -26,7 +26,7 @@ mod hardware;
 
 use hardware::evaluate_hardware;
 
-pub(crate) const FEATURE_PACK_SCHEMA: u32 = 4;
+pub(crate) const FEATURE_PACK_SCHEMA: u32 = 5;
 
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -48,6 +48,8 @@ pub(crate) struct FeatureSpec {
     requirements: Vec<FeatureRequirement>,
     #[serde(default)]
     effects: Vec<FeatureEffectDisposition>,
+    #[serde(default)]
+    dependencies: Vec<FeatureDependency>,
     #[serde(default)]
     hardware: Option<FeatureHardwareSpec>,
 }
@@ -74,6 +76,8 @@ struct FeaturePhase {
 pub(crate) enum FeatureCoverage {
     ReviewScopes,
     BoundedEvidence,
+    SelectedEvidence,
+    ComposedFeatures,
 }
 
 impl FeatureCoverage {
@@ -81,8 +85,17 @@ impl FeatureCoverage {
         match self {
             Self::ReviewScopes => "review-scopes",
             Self::BoundedEvidence => "bounded-evidence",
+            Self::SelectedEvidence => "selected-evidence",
+            Self::ComposedFeatures => "composed-features",
         }
     }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FeatureDependency {
+    feature: String,
+    phase: Option<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize)]
@@ -112,6 +125,14 @@ enum FeatureEffectDispositionKind {
     ExcludedByFeaturePolicy,
 }
 
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(crate) struct RequiredPolicyExclusion {
+    pub(crate) source: String,
+    pub(crate) symbol: String,
+    pub(crate) identity: Option<String>,
+    pub(crate) fingerprint: String,
+}
+
 impl FeatureEffectDispositionKind {
     const fn as_str(self) -> &'static str {
         match self {
@@ -131,6 +152,19 @@ struct FeatureRequirement {
     source: String,
     symbol: String,
     claim: DriverAdapterClaim,
+}
+
+/// Feature-policy references to one executable vendor/Rust binding.
+///
+/// The same binding may support multiple public features.  `release_required`
+/// is derived solely from the transitive closure of `[qualification]
+/// required-features`; it is not inferred from whether a baseline happens to
+/// exist.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct BindingFeatureRequirement {
+    pub(crate) feature: String,
+    pub(crate) claim: DriverAdapterClaim,
+    pub(crate) release_required: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
@@ -164,7 +198,16 @@ pub(crate) struct FeatureQualificationReport {
     pub(crate) covered_effects: usize,
     pub(crate) phases: Vec<FeaturePhaseReport>,
     pub(crate) transactions: Vec<FeatureTransactionReport>,
+    pub(crate) dependencies: Vec<FeatureDependencyReport>,
     pub(crate) hardware: Option<FeatureHardwareReport>,
+    pub(crate) blockers: Vec<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub(crate) struct FeatureDependencyReport {
+    pub(crate) feature: String,
+    pub(crate) phase: Option<String>,
+    pub(crate) status: FeatureQualificationStatus,
     pub(crate) blockers: Vec<String>,
 }
 
@@ -264,6 +307,83 @@ impl FeaturePack {
         Ok(pack)
     }
 
+    fn dependency_closure<'pack, 'root>(
+        &'pack self,
+        roots: impl IntoIterator<Item = &'root str>,
+    ) -> BTreeSet<&'pack str> {
+        fn visit<'pack>(
+            pack: &'pack FeaturePack,
+            feature: &'pack FeatureSpec,
+            selected: &mut BTreeSet<&'pack str>,
+        ) {
+            if !selected.insert(feature.id.as_str()) {
+                return;
+            }
+            for dependency in &feature.dependencies {
+                let target = pack
+                    .feature(&dependency.feature)
+                    .expect("validated dependency target exists");
+                visit(pack, target, selected);
+            }
+        }
+
+        let mut selected = BTreeSet::new();
+        for root in roots {
+            let feature = self
+                .feature(root)
+                .expect("required root existence is validated before closure");
+            visit(self, feature, &mut selected);
+        }
+        selected
+    }
+
+    fn required_review_scopes<'root>(
+        &self,
+        roots: impl IntoIterator<Item = &'root str>,
+    ) -> BTreeSet<String> {
+        fn visit(
+            pack: &FeaturePack,
+            feature: &FeatureSpec,
+            selected_phase: Option<&str>,
+            visited: &mut BTreeSet<(String, Option<String>)>,
+            scopes: &mut BTreeSet<String>,
+        ) {
+            let key = (feature.id.clone(), selected_phase.map(str::to_owned));
+            if !visited.insert(key) {
+                return;
+            }
+            match selected_phase {
+                Some(phase) => scopes.extend(
+                    feature
+                        .phases
+                        .iter()
+                        .find(|candidate| candidate.id == phase)
+                        .expect("validated dependency phase exists")
+                        .scopes
+                        .iter()
+                        .cloned(),
+                ),
+                None => scopes.extend(feature.scopes.iter().cloned()),
+            }
+            for dependency in &feature.dependencies {
+                let target = pack
+                    .feature(&dependency.feature)
+                    .expect("validated dependency target exists");
+                visit(pack, target, dependency.phase.as_deref(), visited, scopes);
+            }
+        }
+
+        let mut scopes = BTreeSet::new();
+        let mut visited = BTreeSet::new();
+        for root in roots {
+            let feature = self
+                .feature(root)
+                .expect("required root existence is validated before scope selection");
+            visit(self, feature, None, &mut visited, &mut scopes);
+        }
+        scopes
+    }
+
     fn validate(&self, path: &Path) -> Result<()> {
         if self.schema != FEATURE_PACK_SCHEMA {
             return Err(crate::Error::invalid(format!(
@@ -308,11 +428,12 @@ impl FeaturePack {
                         feature.id, phase.id
                     )));
                 }
-                if feature.coverage == FeatureCoverage::BoundedEvidence && !phase.scopes.is_empty()
-                {
+                if feature.coverage != FeatureCoverage::ReviewScopes && !phase.scopes.is_empty() {
                     return Err(crate::Error::invalid(format!(
-                        "bounded-evidence feature {:?} phase {:?} cannot select review scopes",
-                        feature.id, phase.id
+                        "{} feature {:?} phase {:?} cannot select review scopes",
+                        feature.coverage.as_str(),
+                        feature.id,
+                        phase.id
                     )));
                 }
                 for scope in &phase.scopes {
@@ -351,6 +472,18 @@ impl FeaturePack {
                 FeatureCoverage::BoundedEvidence if !feature.scopes.is_empty() => {
                     return Err(crate::Error::invalid(format!(
                         "qualification feature {:?} with bounded-evidence coverage must not select review scopes",
+                        feature.id
+                    )));
+                }
+                FeatureCoverage::SelectedEvidence if !feature.scopes.is_empty() => {
+                    return Err(crate::Error::invalid(format!(
+                        "qualification feature {:?} with selected-evidence coverage must not select review scopes",
+                        feature.id
+                    )));
+                }
+                FeatureCoverage::ComposedFeatures if !feature.scopes.is_empty() => {
+                    return Err(crate::Error::invalid(format!(
+                        "qualification feature {:?} with composed-features coverage must not select review scopes",
                         feature.id
                     )));
                 }
@@ -460,22 +593,56 @@ impl FeaturePack {
                         )));
                     }
                     FeatureEffectDispositionKind::ExcludedByFeaturePolicy => {
-                        if feature.coverage == FeatureCoverage::BoundedEvidence {
+                        if matches!(
+                            feature.coverage,
+                            FeatureCoverage::BoundedEvidence | FeatureCoverage::SelectedEvidence
+                        ) {
                             return Err(crate::Error::invalid(format!(
-                                "bounded-evidence feature {:?} cannot exclude effect {:?}; it must provide verified evidence",
-                                feature.id, effect.id
+                                "{} feature {:?} cannot exclude effect {:?}; it must provide verified evidence",
+                                feature.coverage.as_str(),
+                                feature.id,
+                                effect.id
                             )));
                         }
                     }
                 }
             }
-            if feature.coverage == FeatureCoverage::BoundedEvidence
-                && (feature.requirements.is_empty() || feature.effects.is_empty())
+            if matches!(
+                feature.coverage,
+                FeatureCoverage::BoundedEvidence | FeatureCoverage::SelectedEvidence
+            ) && (feature.requirements.is_empty() || feature.effects.is_empty())
             {
                 return Err(crate::Error::invalid(format!(
-                    "bounded-evidence feature {:?} requires explicit proofs and verified effects",
+                    "{} feature {:?} requires explicit proofs and verified effects",
+                    feature.coverage.as_str(),
                     feature.id
                 )));
+            }
+            if feature.coverage == FeatureCoverage::ComposedFeatures
+                && (!feature.requirements.is_empty() || !feature.effects.is_empty())
+            {
+                return Err(crate::Error::invalid(format!(
+                    "composed-features feature {:?} must obtain assurance through dependencies, not direct requirements or effects",
+                    feature.id
+                )));
+            }
+            if feature.coverage == FeatureCoverage::ComposedFeatures
+                && feature.dependencies.is_empty()
+            {
+                return Err(crate::Error::invalid(format!(
+                    "composed-features feature {:?} requires at least one feature dependency",
+                    feature.id
+                )));
+            }
+            let mut dependencies = BTreeSet::new();
+            for dependency in &feature.dependencies {
+                validate_id(&dependency.feature, "feature dependency")?;
+                if !dependencies.insert((&dependency.feature, &dependency.phase)) {
+                    return Err(crate::Error::invalid(format!(
+                        "qualification feature {:?} repeats dependency {:?}",
+                        feature.id, dependency.feature
+                    )));
+                }
             }
             if feature.coverage == FeatureCoverage::BoundedEvidence
                 && feature.requirements.iter().any(|requirement| {
@@ -506,12 +673,157 @@ impl FeaturePack {
                 )?;
             }
         }
+        for feature in &self.features {
+            for dependency in &feature.dependencies {
+                let target = self.feature(&dependency.feature).ok_or_else(|| {
+                    crate::Error::invalid(format!(
+                        "qualification feature {:?} depends on unknown feature {:?}",
+                        feature.id, dependency.feature
+                    ))
+                })?;
+                if dependency.feature == feature.id {
+                    return Err(crate::Error::invalid(format!(
+                        "qualification feature {:?} cannot depend on itself",
+                        feature.id
+                    )));
+                }
+                if let Some(phase) = &dependency.phase
+                    && !target.phases.iter().any(|candidate| candidate.id == *phase)
+                {
+                    return Err(crate::Error::invalid(format!(
+                        "qualification feature {:?} depends on unknown phase {:?} of feature {:?}",
+                        feature.id, phase, dependency.feature
+                    )));
+                }
+            }
+        }
+        validate_dependency_cycles(self)?;
         Ok(())
     }
 
     fn feature(&self, id: &str) -> Option<&FeatureSpec> {
         self.features.iter().find(|feature| feature.id == id)
     }
+}
+
+pub(crate) fn required_scope_policy_exclusions(
+    project: &ProjectSpec,
+) -> Result<BTreeMap<String, BTreeSet<RequiredPolicyExclusion>>> {
+    let Some(workspace) = project.qualification.as_ref() else {
+        return Ok(BTreeMap::new());
+    };
+    let pack = FeaturePack::load(&workspace.pack)?;
+    let selected = pack.dependency_closure(workspace.required_features.iter().map(String::as_str));
+    let mut exclusions = BTreeMap::<String, BTreeSet<RequiredPolicyExclusion>>::new();
+    for feature in pack
+        .features
+        .iter()
+        .filter(|feature| selected.contains(feature.id.as_str()))
+        .filter(|feature| feature.coverage == FeatureCoverage::ReviewScopes)
+    {
+        for effect in feature.effects.iter().filter(|effect| {
+            effect.disposition == FeatureEffectDispositionKind::ExcludedByFeaturePolicy
+        }) {
+            let exclusion = RequiredPolicyExclusion {
+                source: effect.vendor.source.clone(),
+                symbol: effect.vendor.symbol.clone(),
+                identity: effect.vendor.identity.clone(),
+                fingerprint: effect.vendor.fingerprint.clone(),
+            };
+            for scope in &feature.scopes {
+                exclusions
+                    .entry(scope.clone())
+                    .or_default()
+                    .insert(exclusion.clone());
+            }
+        }
+    }
+    Ok(exclusions)
+}
+
+pub(crate) fn required_review_scopes(project: &ProjectSpec) -> Result<BTreeSet<String>> {
+    let Some(workspace) = &project.qualification else {
+        return Ok(BTreeSet::new());
+    };
+    let pack = FeaturePack::load(&workspace.pack)?;
+    for id in &workspace.required_features {
+        if pack.feature(id).is_none() {
+            return Err(crate::Error::invalid(format!(
+                "unknown required feature {id:?}"
+            )));
+        }
+    }
+    Ok(pack.required_review_scopes(workspace.required_features.iter().map(String::as_str)))
+}
+
+pub(crate) fn binding_feature_requirements(
+    project: &ProjectSpec,
+) -> Result<BTreeMap<(String, String, String), Vec<BindingFeatureRequirement>>> {
+    let Some(workspace) = &project.qualification else {
+        return Ok(BTreeMap::new());
+    };
+    let pack = FeaturePack::load(&workspace.pack)?;
+    let selected = pack.dependency_closure(workspace.required_features.iter().map(String::as_str));
+    let mut requirements = BTreeMap::<
+        (String, String, String),
+        Vec<BindingFeatureRequirement>,
+    >::new();
+    for feature in &pack.features {
+        let release_required = selected.contains(feature.id.as_str());
+        for requirement in &feature.requirements {
+            requirements
+                .entry((
+                    requirement.suite.clone(),
+                    requirement.source.clone(),
+                    requirement.symbol.clone(),
+                ))
+                .or_default()
+                .push(BindingFeatureRequirement {
+                    feature: feature.id.clone(),
+                    claim: requirement.claim,
+                    release_required,
+                });
+        }
+    }
+    for policies in requirements.values_mut() {
+        policies.sort_by(|left, right| left.feature.cmp(&right.feature));
+    }
+    Ok(requirements)
+}
+
+fn validate_dependency_cycles(pack: &FeaturePack) -> Result<()> {
+    fn visit<'a>(
+        pack: &'a FeaturePack,
+        feature: &'a FeatureSpec,
+        visiting: &mut BTreeSet<&'a str>,
+        visited: &mut BTreeSet<&'a str>,
+    ) -> Result<()> {
+        if visited.contains(feature.id.as_str()) {
+            return Ok(());
+        }
+        if !visiting.insert(feature.id.as_str()) {
+            let chain = visiting.iter().copied().collect::<Vec<_>>().join(" -> ");
+            return Err(crate::Error::invalid(format!(
+                "qualification feature dependency cycle contains {} -> {}",
+                chain, feature.id
+            )));
+        }
+        for dependency in &feature.dependencies {
+            let target = pack
+                .feature(&dependency.feature)
+                .expect("dependency targets were validated");
+            visit(pack, target, visiting, visited)?;
+        }
+        visiting.remove(feature.id.as_str());
+        visited.insert(feature.id.as_str());
+        Ok(())
+    }
+
+    let mut visited = BTreeSet::new();
+    for feature in &pack.features {
+        visit(pack, feature, &mut BTreeSet::new(), &mut visited)?;
+    }
+    Ok(())
 }
 
 pub(crate) fn validate_project(project: &ProjectSpec) -> Result<()> {
@@ -542,16 +854,17 @@ pub(crate) fn validate_project(project: &ProjectSpec) -> Result<()> {
         })
         .unwrap_or_default();
     let mut releases = BTreeSet::new();
-    let mut bounded_requirements = BTreeSet::new();
     for id in &workspace.required_features {
         if !releases.insert(id) {
             return Err(crate::Error::invalid(format!(
                 "duplicate required feature {id:?}"
             )));
         }
-        let feature = pack
-            .feature(id)
+        pack.feature(id)
             .ok_or_else(|| crate::Error::invalid(format!("unknown required feature {id:?}")))?;
+    }
+    let mut bounded_requirements = BTreeSet::new();
+    for feature in &pack.features {
         for requirement in &feature.requirements {
             if requirement.claim != DriverAdapterClaim::WholeFunctionEquivalence {
                 bounded_requirements.insert((
@@ -595,7 +908,7 @@ pub(crate) fn validate_project(project: &ProjectSpec) -> Result<()> {
                     entry.symbol.as_str(),
                 )) {
                     return Err(crate::Error::invalid(format!(
-                        "bounded-feature {}:{} in verification suite {:?} is not selected by a required bounded-evidence feature",
+                        "bounded-feature {}:{} in verification suite {:?} has no bounded feature requirement",
                         entry.source, entry.symbol, suite.id
                     )));
                 }
@@ -633,7 +946,8 @@ pub(crate) fn evaluate(project: &ProjectSpec) -> Result<Vec<FeatureQualification
         })
         .collect::<BTreeMap<_, _>>();
     let required = workspace.required_features.iter().collect::<BTreeSet<_>>();
-    pack.features
+    let mut reports = pack
+        .features
         .iter()
         .map(|feature| {
             let mut blockers = Vec::new();
@@ -697,8 +1011,10 @@ pub(crate) fn evaluate(project: &ProjectSpec) -> Result<Vec<FeatureQualification
                     effect_coverage(feature, &scope_transactions)
                 }
                 FeatureCoverage::BoundedEvidence => {
-                    bounded_effect_coverage(feature)
+                    selected_effect_coverage(feature)
                 }
+                FeatureCoverage::SelectedEvidence => selected_effect_coverage(feature),
+                FeatureCoverage::ComposedFeatures => empty_effect_coverage(),
             };
             for (phase, blocker) in &effect_coverage.blockers {
                 blockers.push(blocker.clone());
@@ -832,11 +1148,119 @@ pub(crate) fn evaluate(project: &ProjectSpec) -> Result<Vec<FeatureQualification
                 covered_effects: effect_coverage.covered,
                 phases,
                 transactions: effect_coverage.transactions,
+                dependencies: Vec::new(),
                 hardware,
                 blockers,
             })
         })
-        .collect()
+        .collect::<Result<Vec<_>>>()?;
+    apply_feature_dependencies(&pack, &mut reports)?;
+    Ok(reports)
+}
+
+fn apply_feature_dependencies(
+    pack: &FeaturePack,
+    reports: &mut [FeatureQualificationReport],
+) -> Result<()> {
+    fn resolve(
+        feature_id: &str,
+        pack: &FeaturePack,
+        reports: &mut [FeatureQualificationReport],
+        resolved: &mut BTreeSet<String>,
+    ) -> Result<()> {
+        if resolved.contains(feature_id) {
+            return Ok(());
+        }
+        let feature = pack
+            .feature(feature_id)
+            .expect("reports originate from the validated feature pack");
+        for dependency in &feature.dependencies {
+            resolve(&dependency.feature, pack, reports, resolved)?;
+        }
+
+        let mut dependency_reports = Vec::new();
+        let mut dependency_blockers = Vec::new();
+        for dependency in &feature.dependencies {
+            let target = reports
+                .iter()
+                .find(|report| report.id == dependency.feature)
+                .expect("validated dependency has a qualification report");
+            let mut blockers = if let Some(phase) = &dependency.phase {
+                target
+                    .phases
+                    .iter()
+                    .find(|candidate| candidate.id == *phase)
+                    .expect("validated dependency phase has a report")
+                    .blockers
+                    .clone()
+            } else {
+                target.blockers.clone()
+            };
+            for nested in &target.dependencies {
+                if nested.status == FeatureQualificationStatus::Blocked {
+                    blockers.push(format!(
+                        "dependency {}{} is blocked",
+                        nested.feature,
+                        nested
+                            .phase
+                            .as_ref()
+                            .map_or_else(String::new, |phase| format!(" phase {phase}"))
+                    ));
+                }
+            }
+            blockers.sort();
+            blockers.dedup();
+            let status = if blockers.is_empty() {
+                if dependency.phase.is_none() {
+                    target.status
+                } else if target.status == FeatureQualificationStatus::HardwareQualified {
+                    FeatureQualificationStatus::HardwareQualified
+                } else {
+                    FeatureQualificationStatus::Qualified
+                }
+            } else {
+                FeatureQualificationStatus::Blocked
+            };
+            if status == FeatureQualificationStatus::Blocked {
+                let selector = dependency.phase.as_ref().map_or_else(
+                    || dependency.feature.clone(),
+                    |phase| format!("{} phase {phase}", dependency.feature),
+                );
+                dependency_blockers.push(format!(
+                    "feature dependency {selector} is blocked ({} blocker(s)); inspect it with `project feature {}`{}",
+                    blockers.len(),
+                    dependency.feature,
+                    dependency.phase.as_ref().map_or_else(String::new, |phase| format!(" --phase {phase}")),
+                ));
+            }
+            dependency_reports.push(FeatureDependencyReport {
+                feature: dependency.feature.clone(),
+                phase: dependency.phase.clone(),
+                status,
+                blockers,
+            });
+        }
+
+        let report = reports
+            .iter_mut()
+            .find(|report| report.id == feature_id)
+            .expect("feature has a qualification report");
+        report.dependencies = dependency_reports;
+        report.blockers.extend(dependency_blockers);
+        report.blockers.sort();
+        report.blockers.dedup();
+        if !report.blockers.is_empty() {
+            report.status = FeatureQualificationStatus::Blocked;
+        }
+        resolved.insert(feature_id.to_owned());
+        Ok(())
+    }
+
+    let mut resolved = BTreeSet::new();
+    for feature in &pack.features {
+        resolve(&feature.id, pack, reports, &mut resolved)?;
+    }
+    Ok(())
 }
 
 pub(crate) fn evidence_for_function(
@@ -891,6 +1315,15 @@ struct EffectCoverage {
     covered: usize,
     blockers: Vec<(String, String)>,
     transactions: Vec<FeatureTransactionReport>,
+}
+
+fn empty_effect_coverage() -> EffectCoverage {
+    EffectCoverage {
+        surface: 0,
+        covered: 0,
+        blockers: Vec::new(),
+        transactions: Vec::new(),
+    }
 }
 
 fn effect_coverage(
@@ -982,7 +1415,7 @@ fn effect_coverage(
     }
 }
 
-fn bounded_effect_coverage(feature: &FeatureSpec) -> EffectCoverage {
+fn selected_effect_coverage(feature: &FeatureSpec) -> EffectCoverage {
     EffectCoverage {
         surface: feature.effects.len(),
         covered: feature.effects.len(),
@@ -1109,6 +1542,7 @@ fn status_satisfies_claim(status: FunctionVerificationStatus, claim: DriverAdapt
     match claim {
         DriverAdapterClaim::WholeFunctionEquivalence => status == FunctionVerificationStatus::Match,
         DriverAdapterClaim::ReviewedDomainEquivalence
+        | DriverAdapterClaim::ReviewedRefinement
         | DriverAdapterClaim::ReviewedProjection
         | DriverAdapterClaim::RustConformance => {
             matches!(status, FunctionVerificationStatus::BoundedMatch)
@@ -1153,6 +1587,7 @@ mod tests {
             }],
             requirements: Vec::new(),
             effects,
+            dependencies: Vec::new(),
             hardware: None,
         }
     }
@@ -1206,6 +1641,7 @@ mod tests {
                 requirement: Some("role-proof".to_owned()),
                 rationale: "the exact property is replayed".to_owned(),
             }],
+            dependencies: Vec::new(),
             hardware: None,
         }
     }
@@ -1218,6 +1654,220 @@ mod tests {
         };
 
         pack.validate(Path::new("features.toml")).unwrap();
+    }
+
+    #[test]
+    fn selected_evidence_accepts_a_whole_function_leaf() {
+        let mut feature = bounded_feature();
+        feature.coverage = FeatureCoverage::SelectedEvidence;
+        feature.requirements[0].claim = DriverAdapterClaim::WholeFunctionEquivalence;
+        let pack = FeaturePack {
+            schema: FEATURE_PACK_SCHEMA,
+            features: vec![feature],
+        };
+
+        pack.validate(Path::new("features.toml")).unwrap();
+    }
+
+    #[test]
+    fn composed_features_require_valid_acyclic_dependencies() {
+        let leaf = feature_with_effects(vec![excluded("wifi", "leaf")]);
+        let composed = FeatureSpec {
+            id: "runtime".to_owned(),
+            description: "composed runtime fixture".to_owned(),
+            coverage: FeatureCoverage::ComposedFeatures,
+            scopes: Vec::new(),
+            phases: vec![FeaturePhase {
+                id: "prerequisites".to_owned(),
+                description: "fixture dependencies".to_owned(),
+                scopes: Vec::new(),
+            }],
+            requirements: Vec::new(),
+            effects: Vec::new(),
+            dependencies: vec![FeatureDependency {
+                feature: leaf.id.clone(),
+                phase: Some("policy".to_owned()),
+            }],
+            hardware: None,
+        };
+        FeaturePack {
+            schema: FEATURE_PACK_SCHEMA,
+            features: vec![leaf.clone(), composed.clone()],
+        }
+        .validate(Path::new("features.toml"))
+        .unwrap();
+
+        let mut cyclic_leaf = leaf;
+        cyclic_leaf.dependencies.push(FeatureDependency {
+            feature: composed.id.clone(),
+            phase: None,
+        });
+        let error = FeaturePack {
+            schema: FEATURE_PACK_SCHEMA,
+            features: vec![cyclic_leaf, composed],
+        }
+        .validate(Path::new("features.toml"))
+        .unwrap_err();
+        assert!(error.to_string().contains("dependency cycle"));
+    }
+
+    #[test]
+    fn required_feature_dependency_closure_selects_bounded_leaves() {
+        let leaf = bounded_feature();
+        let composed = FeatureSpec {
+            id: "radio".to_owned(),
+            description: "top-level radio contract".to_owned(),
+            coverage: FeatureCoverage::ComposedFeatures,
+            scopes: Vec::new(),
+            phases: vec![FeaturePhase {
+                id: "static".to_owned(),
+                description: "static contract".to_owned(),
+                scopes: Vec::new(),
+            }],
+            requirements: Vec::new(),
+            effects: Vec::new(),
+            dependencies: vec![FeatureDependency {
+                feature: leaf.id.clone(),
+                phase: None,
+            }],
+            hardware: None,
+        };
+        let pack = FeaturePack {
+            schema: FEATURE_PACK_SCHEMA,
+            features: vec![leaf, composed],
+        };
+        pack.validate(Path::new("features.toml")).unwrap();
+
+        assert_eq!(
+            pack.dependency_closure(["radio"]),
+            BTreeSet::from(["key-role", "radio"])
+        );
+    }
+
+    #[test]
+    fn required_publication_scopes_follow_selected_dependency_phases() {
+        let mut leaf = feature_with_effects(vec![excluded("wifi", "leaf")]);
+        leaf.scopes.push("power-save".to_owned());
+        leaf.phases.push(FeaturePhase {
+            id: "power-save".to_owned(),
+            description: "excluded power-save policy".to_owned(),
+            scopes: vec!["power-save".to_owned()],
+        });
+        let composed = FeatureSpec {
+            id: "radio".to_owned(),
+            description: "phase-selected radio contract".to_owned(),
+            coverage: FeatureCoverage::ComposedFeatures,
+            scopes: Vec::new(),
+            phases: vec![FeaturePhase {
+                id: "static".to_owned(),
+                description: "static contract".to_owned(),
+                scopes: Vec::new(),
+            }],
+            requirements: Vec::new(),
+            effects: Vec::new(),
+            dependencies: vec![FeatureDependency {
+                feature: leaf.id.clone(),
+                phase: Some("policy".to_owned()),
+            }],
+            hardware: None,
+        };
+        let pack = FeaturePack {
+            schema: FEATURE_PACK_SCHEMA,
+            features: vec![leaf, composed],
+        };
+        pack.validate(Path::new("features.toml")).unwrap();
+
+        assert_eq!(
+            pack.required_review_scopes(["radio"]),
+            BTreeSet::from(["connected".to_owned()])
+        );
+        assert_eq!(
+            pack.required_review_scopes(["sta"]),
+            BTreeSet::from(["connected".to_owned(), "power-save".to_owned()])
+        );
+    }
+
+    #[test]
+    fn composed_feature_reports_dependency_without_copying_leaf_blockers() {
+        let leaf = feature_with_effects(vec![excluded("wifi", "leaf")]);
+        let composed = FeatureSpec {
+            id: "runtime".to_owned(),
+            description: "composed runtime fixture".to_owned(),
+            coverage: FeatureCoverage::ComposedFeatures,
+            scopes: Vec::new(),
+            phases: vec![FeaturePhase {
+                id: "prerequisites".to_owned(),
+                description: "fixture dependencies".to_owned(),
+                scopes: Vec::new(),
+            }],
+            requirements: Vec::new(),
+            effects: Vec::new(),
+            dependencies: vec![FeatureDependency {
+                feature: leaf.id.clone(),
+                phase: Some("policy".to_owned()),
+            }],
+            hardware: None,
+        };
+        let pack = FeaturePack {
+            schema: FEATURE_PACK_SCHEMA,
+            features: vec![leaf, composed],
+        };
+        let mut reports = vec![
+            FeatureQualificationReport {
+                id: "sta".to_owned(),
+                description: "leaf".to_owned(),
+                required: true,
+                status: FeatureQualificationStatus::Blocked,
+                coverage: FeatureCoverage::ReviewScopes,
+                scopes: vec!["connected".to_owned()],
+                requirements: 0,
+                surface_effects: 1,
+                covered_effects: 0,
+                phases: vec![FeaturePhaseReport {
+                    id: "policy".to_owned(),
+                    description: "policy".to_owned(),
+                    scopes: vec!["connected".to_owned()],
+                    requirements: 0,
+                    transactions: 1,
+                    covered_transactions: 0,
+                    blockers: vec!["first".to_owned(), "second".to_owned()],
+                }],
+                transactions: Vec::new(),
+                dependencies: Vec::new(),
+                hardware: None,
+                blockers: vec!["first".to_owned(), "second".to_owned()],
+            },
+            FeatureQualificationReport {
+                id: "runtime".to_owned(),
+                description: "runtime".to_owned(),
+                required: true,
+                status: FeatureQualificationStatus::Qualified,
+                coverage: FeatureCoverage::ComposedFeatures,
+                scopes: Vec::new(),
+                requirements: 0,
+                surface_effects: 0,
+                covered_effects: 0,
+                phases: vec![FeaturePhaseReport {
+                    id: "prerequisites".to_owned(),
+                    description: "prerequisites".to_owned(),
+                    scopes: Vec::new(),
+                    requirements: 0,
+                    transactions: 0,
+                    covered_transactions: 0,
+                    blockers: Vec::new(),
+                }],
+                transactions: Vec::new(),
+                dependencies: Vec::new(),
+                hardware: None,
+                blockers: Vec::new(),
+            },
+        ];
+
+        apply_feature_dependencies(&pack, &mut reports).unwrap();
+
+        assert_eq!(reports[1].status, FeatureQualificationStatus::Blocked);
+        assert_eq!(reports[1].dependencies[0].blockers.len(), 2);
+        assert_eq!(reports[1].blockers.len(), 1);
     }
 
     #[test]

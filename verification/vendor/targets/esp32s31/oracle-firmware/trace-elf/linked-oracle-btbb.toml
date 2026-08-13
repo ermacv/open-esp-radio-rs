@@ -1,0 +1,13 @@
+# Focused authoritative execution unit for the reviewed Bluetooth coexistence
+# PTI initializer. The raw libbtbb archive remains the inventory authority.
+schema = 1
+source = "btbb"
+linker-scripts = [
+    "../../../../../../hil/targets/esp32s31/linker/rom/esp32s31-eco0.x",
+    "link.x",
+]
+archives = ["../../../../../../_oracles/libbtbb.a"]
+entry-symbols = ["coex_pti_v2"]
+emit-relocations = true
+gc-sections = false
+unresolved-symbols = "ignore-all"

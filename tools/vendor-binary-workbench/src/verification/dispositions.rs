@@ -7,6 +7,7 @@ use std::{
 };
 
 use crate::{ArtifactSymbolIdentity, Result};
+use open_radio_vendor_semantics::RustBindingKind;
 use serde::Deserialize;
 
 use super::bindings::{BindingVersion, DriverAdapter};
@@ -73,6 +74,8 @@ struct FunctionInput {
     effects: Vec<EffectRuleInput>,
     #[serde(default)]
     binding: Option<String>,
+    #[serde(default)]
+    rust_binding: Option<RustBindingKind>,
     #[serde(default)]
     rust_probe: Option<String>,
     #[serde(default)]
@@ -159,9 +162,9 @@ impl Manifest {
     }
 
     fn finish(document: DispositionDocument) -> Result<Self> {
-        if document.schema != 1 {
+        if document.schema != 2 {
             return Err(crate::Error::invalid(
-                "disposition TOML requires schema = 1",
+                "disposition TOML requires schema = 2",
             ));
         }
         let mut prefix_identities = BTreeSet::new();
@@ -218,6 +221,7 @@ impl Manifest {
                     .map(|rule| (rule.selector, rule.disposition))
                     .collect(),
                 binding_version,
+                rust_binding: function.rust_binding,
                 rust_probe: function.rust_probe,
                 compare_return: function.compare_return,
                 driver_adapter,
@@ -296,7 +300,3 @@ impl Manifest {
         self.entries.values()
     }
 }
-
-#[cfg(test)]
-#[path = "../harnesses/esp32s31/dispositions_tests.rs"]
-mod tests;

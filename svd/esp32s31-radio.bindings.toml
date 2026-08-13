@@ -2,6 +2,31 @@ schema = 2
 crate-name = "open_esp_radio_esp32s31_pac_raw"
 
 [[registers]]
+address = 537919504
+width = 32
+access = "read-write"
+identity = "PHY_FECOEX_RECOVERED.BT_COEX_PTI_CONFIG"
+peripheral = "PHY_FECOEX_RECOVERED"
+peripheral-type = "PhyFecoexRecovered"
+peripheral-module = "phy_fecoex_recovered"
+scope = []
+register-method = "bt_coex_pti_config"
+
+[[registers.fields]]
+svd-name = "LOW_IMAGE_UNKNOWN"
+method = "low_image_unknown"
+bit-offset = 0
+bit-width = 16
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "HIGH_IMAGE_UNKNOWN"
+method = "high_image_unknown"
+bit-offset = 16
+bit-width = 16
+access = "read-write"
+
+[[registers]]
 address = 537919516
 width = 32
 access = "read-write"
@@ -28053,6 +28078,13 @@ access = "read-write"
 svd-name = "LOAD_STATION_TSF"
 method = "load_station_tsf"
 bit-offset = 4
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "LOAD_SOFTAP_TSF"
+method = "load_softap_tsf"
+bit-offset = 5
 bit-width = 1
 access = "read-write"
 

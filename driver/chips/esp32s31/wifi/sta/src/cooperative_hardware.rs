@@ -23,7 +23,10 @@ use open_esp_radio_esp32s31_wifi_mac::{
     he::He20PeerHardware,
     init::{StaLinkRxPolicyHardware, StaNoiseFloorHardware},
     rate_control::BeamformingReportHardware,
-    rx::{RxDma, RxDmaBinding},
+    rx::{
+        RxDma, RxDmaBinding, RxDmaCursorObservation, RxDmaReloadSettled, RxDmaWalkerEnabled,
+        RxDmaWalkerStopped,
+    },
     rx_ampdu_hw::{self, S31RxBlockAckAgreement, S31RxBlockAckAgreementError},
     tx::{HardwareOwnedTxDma, PreparedTxDma, TxHardware},
     tx_ampdu::HtAmpduHardware,
@@ -295,12 +298,26 @@ impl RxDma for CooperativeRadioHardware<'_> {
         RxDma::next_descriptor_low(&mut *self.registers.borrow_mut())
     }
 
+    fn with_ordered_cursor<R>(
+        &mut self,
+        observed: impl for<'confirmation> FnOnce(RxDmaCursorObservation<'confirmation>) -> R,
+    ) -> R {
+        RxDma::with_ordered_cursor(&mut *self.registers.borrow_mut(), observed)
+    }
+
     fn walker_enabled(&mut self) -> bool {
         RxDma::walker_enabled(&mut *self.registers.borrow_mut())
     }
 
     fn reload_pending(&mut self) -> bool {
         RxDma::reload_pending(&mut *self.registers.borrow_mut())
+    }
+
+    fn try_with_reload_settled<R>(
+        &mut self,
+        settled: impl for<'confirmation> FnOnce(RxDmaReloadSettled<'confirmation>) -> R,
+    ) -> Option<R> {
+        RxDma::try_with_reload_settled(&mut *self.registers.borrow_mut(), settled)
     }
 
     fn set_descriptor_high_window(&mut self, binding: &RxDmaBinding, address_high: u16) {
@@ -319,12 +336,19 @@ impl RxDma for CooperativeRadioHardware<'_> {
         RxDma::request_reload(&mut *self.registers.borrow_mut(), binding);
     }
 
-    fn try_enable_walker(&mut self, binding: &RxDmaBinding) -> bool {
-        RxDma::try_enable_walker(&mut *self.registers.borrow_mut(), binding)
+    fn try_with_walker_enabled<R>(
+        &mut self,
+        binding: &RxDmaBinding,
+        enabled: impl for<'confirmation> FnOnce(RxDmaWalkerEnabled<'confirmation>) -> R,
+    ) -> Option<R> {
+        RxDma::try_with_walker_enabled(&mut *self.registers.borrow_mut(), binding, enabled)
     }
 
-    fn try_disable_walker(&mut self) -> bool {
-        RxDma::try_disable_walker(&mut *self.registers.borrow_mut())
+    fn try_with_walker_stopped<R>(
+        &mut self,
+        stopped: impl for<'confirmation> FnOnce(RxDmaWalkerStopped<'confirmation>) -> R,
+    ) -> Option<R> {
+        RxDma::try_with_walker_stopped(&mut *self.registers.borrow_mut(), stopped)
     }
 
     fn fence(&mut self) {

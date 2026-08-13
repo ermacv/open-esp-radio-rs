@@ -89,6 +89,9 @@ pub(super) fn resolve_command(
         Command::ProjectFiles(_) => {
             ResolvedInvocation::ProjectFiles(Box::new(environment.into_project_session()?))
         }
+        Command::ProjectAuditBindings(_) => ResolvedInvocation::ProjectAuditBindings(Box::new(
+            environment.into_project_session()?,
+        )),
         Command::ProjectStatus(arguments) => ResolvedInvocation::ProjectStatus {
             arguments,
             session: Box::new(environment.into_project_session()?),

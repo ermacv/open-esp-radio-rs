@@ -3,17 +3,18 @@ schema = 2
 [[evidence]]
 source = "libnet80211"
 symbol = "ieee80211_sta_new_state"
-kind = "driver-adapter/reviewed-projection/exact-effects-v1"
-digest = "6b6e2c1f5172aefc45ba87c24b5654c80decdca89822abe6ea76d2980310339a"
+kind = "driver-adapter/reviewed-refinement/exact-effects-v1"
+digest = "de76030af07983ce9495e9daf5b2360946ab054546be0ba5cc6740a7f07ab4fb"
 
 [evidence.components]
-adapter-proof = "3d280548ca0b65d49e8b6ee5a5447b6c3b02dde6fd96459f7ffde68a46b8ceae"
-binding = "fffdcfa3f7ad78f6c54ae1928cc4d4fe0f657b1f9a91bc666e618d06595d731d"
-binding-verifier = "8a49056ff034bb6ccbcba50a8fbb5f592af78036508fc66b91e7d26dd88f5c5b"
-claim = "5d04e61fb747cb329eae5fe9837475e27a879e9852d56d0cb325aa0d214a2d5b"
-driver-adapter = "3e58d2e6df862e697d100f5c03223c518f8e971db178fc24307d12a22dbc1af7"
+adapter-proof = "a20e655fc21aeb95be2fba21151fdc1dfe5a5a97180bd508890d097ef542d011"
+binding = "46c4392fb4aec60130263fc54b186e4497f7091d0884001954899eb68b3a1b8f"
+binding-verifier = "f2fbf3cd269f3677ac698a66501e3e387f72ed2f8aa460dacd1e5ae6b0dc8bbd"
+claim = "1210f40bda7c850368826c970dc4d931b7d0481b6986eb0adf8c93b0bdcab22d"
+driver-adapter = "f0f9d0019bbd66d76e2488d3f2667d9d37aef6e1a97620ac60fa2ce59b9dc254"
 effect-comparator = "7e0c0424ae313df2bc7e5d8c282b5c38f04e8e53e472be08a56f4f89aabdb9ab"
 execution-engine = "4b801323e2f25e0ef8067db4b5c62a510ff25991aad050c816ef5c04202fe49e"
 policy = "4e83586680473273a395674e4a587ec9f3594fe57abf0453c09bbce8dc1ef1f8"
 reference-code-generator = "2a4b7f02cce37dae3ee0dbd3363b97266934f376f4823e4fc76474690d0f908b"
 reviewed-summary = "4ccf3b6eab8e0441f1ae1646acaf2914791d969137d68273eadecac94062c2c9"
+

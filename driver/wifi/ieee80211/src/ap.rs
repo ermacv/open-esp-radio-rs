@@ -11,6 +11,7 @@ use crate::{
 
 pub const AP_ASSOCIATION_RESPONSE_BODY_LEN: usize = 51;
 pub const AP_AUTHENTICATION_RESPONSE_LEN: usize = 30;
+pub const AP_PEER_DISCONNECT_LEN: usize = MANAGEMENT_HEADER_LEN + 2;
 pub const AP_ASSOCIATION_RESPONSE_LEN: usize = 24 + AP_ASSOCIATION_RESPONSE_BODY_LEN;
 
 const MANAGEMENT_HEADER_LEN: usize = 24;
@@ -27,6 +28,12 @@ pub enum ApAssociationResponseError {
     MissingAssociationId,
     InvalidSequenceNumber,
     OutputTooSmall { required: usize },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ApPeerDisconnectKind {
+    Disassociation,
+    Deauthentication,
 }
 
 /// Invalid AP data-frame construction.
@@ -332,6 +339,40 @@ pub fn write_bg_association_response_frame(
     Ok(AP_ASSOCIATION_RESPONSE_LEN)
 }
 
+/// Encode one AP-originated peer teardown frame.
+pub fn write_ap_peer_disconnect(
+    output: &mut [u8],
+    access_point: [u8; 6],
+    peer: [u8; 6],
+    kind: ApPeerDisconnectKind,
+    reason: u16,
+    management_sequence: u16,
+) -> Result<usize, ApAssociationResponseError> {
+    if management_sequence > 0x0fff {
+        return Err(ApAssociationResponseError::InvalidSequenceNumber);
+    }
+    if output.len() < AP_PEER_DISCONNECT_LEN {
+        return Err(ApAssociationResponseError::OutputTooSmall {
+            required: AP_PEER_DISCONNECT_LEN,
+        });
+    }
+    let frame = &mut output[..AP_PEER_DISCONNECT_LEN];
+    frame.fill(0);
+    let frame_control = match kind {
+        ApPeerDisconnectKind::Disassociation => 0x00a0,
+        ApPeerDisconnectKind::Deauthentication => 0x00c0,
+    };
+    write_management_header(
+        frame,
+        frame_control,
+        access_point,
+        peer,
+        management_sequence,
+    );
+    frame[MANAGEMENT_HEADER_LEN..AP_PEER_DISCONNECT_LEN].copy_from_slice(&reason.to_le_bytes());
+    Ok(AP_PEER_DISCONNECT_LEN)
+}
+
 fn write_management_header(
     frame: &mut [u8],
     frame_control: u16,
@@ -523,6 +564,41 @@ mod tests {
             write_bg_association_response(&mut body, 0, 0),
             Err(ApAssociationResponseError::MissingAssociationId)
         );
+    }
+
+    #[test]
+    fn peer_disconnect_frames_own_subtype_reason_and_sequence() {
+        let access_point = [2, 0, 0, 0, 0, 1];
+        let peer = [2, 0, 0, 0, 0, 2];
+        let mut output = [0; AP_PEER_DISCONNECT_LEN];
+        assert_eq!(
+            write_ap_peer_disconnect(
+                &mut output,
+                access_point,
+                peer,
+                ApPeerDisconnectKind::Disassociation,
+                4,
+                7,
+            ),
+            Ok(AP_PEER_DISCONNECT_LEN),
+        );
+        assert_eq!(&output[..2], &0x00a0_u16.to_le_bytes());
+        assert_eq!(&output[4..10], &peer);
+        assert_eq!(&output[10..16], &access_point);
+        assert_eq!(&output[22..24], &0x0070_u16.to_le_bytes());
+        assert_eq!(&output[24..26], &4_u16.to_le_bytes());
+
+        write_ap_peer_disconnect(
+            &mut output,
+            access_point,
+            peer,
+            ApPeerDisconnectKind::Deauthentication,
+            2,
+            8,
+        )
+        .unwrap();
+        assert_eq!(&output[..2], &0x00c0_u16.to_le_bytes());
+        assert_eq!(&output[24..26], &2_u16.to_le_bytes());
     }
 
     #[test]

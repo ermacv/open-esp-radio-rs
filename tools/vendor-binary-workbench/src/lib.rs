@@ -49,14 +49,15 @@ pub use function_investigation::{
     ReplacementProofEvidence, ReviewedPathEvidence, ReviewedPreconditionEvidence,
     SemanticFunctionEvidence, StoredLinkedIrRecord,
 };
-#[cfg(all(test, feature = "esp32s31-harness"))]
-pub(crate) use harnesses::esp32s31::entry_contract;
+pub use harnesses::{
+    DriverAdapterVerifier, DriverEvidenceLookup, HarnessDescriptor, NamedContractVerifier,
+    ProviderError, ProviderResult, SemanticContractVerifier, SemanticEvidenceLookup,
+};
 use memory_map::MemoryMap;
-#[cfg(all(test, feature = "esp32s31-harness"))]
-use open_radio_vendor_analysis_model::reject_register_collisions;
 use open_radio_vendor_analysis_model::*;
 #[cfg(test)]
 use open_radio_vendor_analysis_model::{MmioRegion, Register};
+pub use open_radio_vendor_backend_riscv::RiscvHarnessSpec;
 #[cfg(test)]
 pub(crate) use open_radio_vendor_backend_riscv::Rv32CallArguments;
 pub use open_radio_vendor_backend_riscv::artifact::{
@@ -84,13 +85,15 @@ pub use open_radio_vendor_execution_model::{
     TableLifecycleEvent as ExecutionTableLifecycleEvent,
     TableSlotTarget as ExecutionTableSlotTarget,
 };
-pub use open_radio_vendor_semantics::{EquivalenceMode, EquivalenceOutcome, EquivalenceVerdict};
+pub use open_radio_vendor_semantics::{
+    DriverAdapterEvidenceSources, DriverAdapterRequest, DriverAdapterVerification, EquivalenceMode,
+    EquivalenceOutcome, EquivalenceVerdict, HarnessContractSpec, MmioMap, QualificationReport,
+    SemanticContractEvidenceSources, SemanticContractRequest,
+};
 pub(crate) use orchestration::generated_reference;
 use parse::u32_literal as parse_u32;
 use project::ProjectSpec;
 use target::TargetSpec;
-#[cfg(all(test, feature = "esp32s31-harness"))]
-use test_support::private_input;
 #[cfg(test)]
 use test_support::trace_disassembly;
 use verification::*;
@@ -125,6 +128,19 @@ pub fn main_entry() -> ExitCode {
         Ok(false) => ExitCode::from(2),
         Err(error) => render_error(error),
     }
+}
+
+/// Run the CLI with a caller-owned, statically linked platform-provider set.
+///
+/// A standalone generic build calls [`main_entry`] and has no platform
+/// vocabulary. Product repositories use this entry point from a thin host
+/// binary so target knowledge never becomes a dependency of the generic tool.
+pub fn main_entry_with_harnesses(registry: &'static [HarnessDescriptor]) -> ExitCode {
+    if let Err(message) = harnesses::install_registry(registry) {
+        eprintln!("platform provider initialization failed: {message}");
+        return ExitCode::FAILURE;
+    }
+    main_entry()
 }
 
 fn render_error(error: Error) -> ExitCode {

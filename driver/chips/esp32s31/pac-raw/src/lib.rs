@@ -21465,7 +21465,7 @@ pub mod wifi_mac_sta_tsf_load {
         tsf_deviation_control: TsfDeviationControl,
     }
     impl RegisterBlock {
-        #[doc = "0x00 - Complete hal_set_sta_tsf asserts bit four after writing both station TSF value words; complete hal_get_sta_tsf sets then clears bit zero around its snapshot reads."]
+        #[doc = "0x00 - Complete hal_set_sta_tsf asserts bit four after writing both station TSF value words; the SoftAP path of complete hal_mac_tsf_reset asserts bit five after clearing both shared TSF value words; complete hal_get_sta_tsf sets then clears bit zero around its snapshot reads."]
         #[inline(always)]
         pub const fn control(&self) -> &Control {
             &self.control
@@ -21496,10 +21496,10 @@ pub mod wifi_mac_sta_tsf_load {
             &self.tsf_deviation_control
         }
     }
-    #[doc = "CONTROL (rw) register accessor: Complete hal_set_sta_tsf asserts bit four after writing both station TSF value words; complete hal_get_sta_tsf sets then clears bit zero around its snapshot reads.\n\nYou can [`read`](crate::Reg::read) this register and get [`control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@control`] module"]
+    #[doc = "CONTROL (rw) register accessor: Complete hal_set_sta_tsf asserts bit four after writing both station TSF value words; the SoftAP path of complete hal_mac_tsf_reset asserts bit five after clearing both shared TSF value words; complete hal_get_sta_tsf sets then clears bit zero around its snapshot reads.\n\nYou can [`read`](crate::Reg::read) this register and get [`control::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@control`] module"]
     #[doc(alias = "CONTROL")]
     pub type Control = crate::Reg<control::ControlSpec>;
-    #[doc = "Complete hal_set_sta_tsf asserts bit four after writing both station TSF value words; complete hal_get_sta_tsf sets then clears bit zero around its snapshot reads."]
+    #[doc = "Complete hal_set_sta_tsf asserts bit four after writing both station TSF value words; the SoftAP path of complete hal_mac_tsf_reset asserts bit five after clearing both shared TSF value words; complete hal_get_sta_tsf sets then clears bit zero around its snapshot reads."]
     pub mod control {
         #[doc = "Register `CONTROL` reader"]
         pub type R = crate::R<ControlSpec>;
@@ -21513,6 +21513,10 @@ pub mod wifi_mac_sta_tsf_load {
         pub type LoadStationTsfR = crate::BitReader;
         #[doc = "Field `LOAD_STATION_TSF` writer - Station TSF load request asserted by the final fresh-read RMW in hal_set_sta_tsf."]
         pub type LoadStationTsfW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "Field `LOAD_SOFTAP_TSF` reader - SoftAP TSF load request asserted after the two zero-value writes by the arg0=0 path of complete hal_mac_tsf_reset."]
+        pub type LoadSoftapTsfR = crate::BitReader;
+        #[doc = "Field `LOAD_SOFTAP_TSF` writer - SoftAP TSF load request asserted after the two zero-value writes by the arg0=0 path of complete hal_mac_tsf_reset."]
+        pub type LoadSoftapTsfW<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
             #[doc = "Bit 0 - Complete hal_get_sta_tsf sets this bit before either station TSF word is sampled and clears it after the optional reads."]
             #[inline(always)]
@@ -21523,6 +21527,11 @@ pub mod wifi_mac_sta_tsf_load {
             #[inline(always)]
             pub fn load_station_tsf(&self) -> LoadStationTsfR {
                 LoadStationTsfR::new(((self.bits >> 4) & 1) != 0)
+            }
+            #[doc = "Bit 5 - SoftAP TSF load request asserted after the two zero-value writes by the arg0=0 path of complete hal_mac_tsf_reset."]
+            #[inline(always)]
+            pub fn load_softap_tsf(&self) -> LoadSoftapTsfR {
+                LoadSoftapTsfR::new(((self.bits >> 5) & 1) != 0)
             }
         }
         impl W {
@@ -21536,8 +21545,13 @@ pub mod wifi_mac_sta_tsf_load {
             pub fn load_station_tsf(&mut self) -> LoadStationTsfW<'_, ControlSpec> {
                 LoadStationTsfW::new(self, 4)
             }
+            #[doc = "Bit 5 - SoftAP TSF load request asserted after the two zero-value writes by the arg0=0 path of complete hal_mac_tsf_reset."]
+            #[inline(always)]
+            pub fn load_softap_tsf(&mut self) -> LoadSoftapTsfW<'_, ControlSpec> {
+                LoadSoftapTsfW::new(self, 5)
+            }
         }
-        #[doc = "Complete hal_set_sta_tsf asserts bit four after writing both station TSF value words; complete hal_get_sta_tsf sets then clears bit zero around its snapshot reads.\n\nYou can [`read`](crate::Reg::read) this register and get [`control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Complete hal_set_sta_tsf asserts bit four after writing both station TSF value words; the SoftAP path of complete hal_mac_tsf_reset asserts bit five after clearing both shared TSF value words; complete hal_get_sta_tsf sets then clears bit zero around its snapshot reads.\n\nYou can [`read`](crate::Reg::read) this register and get [`control::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`control::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct ControlSpec;
         impl crate::RegisterSpec for ControlSpec {
             type Ux = u32;
@@ -30086,12 +30100,19 @@ pub mod phy_fecoex_recovered {
     #[repr(C)]
     #[doc = "Register block"]
     pub struct RegisterBlock {
-        _reserved0: [u8; 0x20],
+        _reserved0: [u8; 0x10],
+        bt_coex_pti_config: BtCoexPtiConfig,
+        _reserved1: [u8; 0x0c],
         rf_frequency_control_opaque: RfFrequencyControlOpaque,
-        _reserved1: [u8; 0x1c],
+        _reserved2: [u8; 0x1c],
         rf_frequency_result_opaque: RfFrequencyResultOpaque,
     }
     impl RegisterBlock {
+        #[doc = "0x10 - Complete coex_pti_v2 performs two ordered fresh-read RMW operations: it first replaces bits 31:16 with 0x0640, then replaces bits 15:0 with 0x0010. Individual bit meanings remain unknown."]
+        #[inline(always)]
+        pub const fn bt_coex_pti_config(&self) -> &BtCoexPtiConfig {
+            &self.bt_coex_pti_config
+        }
         #[doc = "0x20 - Complete phy_read_rf_freq_mem performs a read-modify-write of bit 16; all other semantics remain unknown."]
         #[inline(always)]
         pub const fn rf_frequency_control_opaque(&self) -> &RfFrequencyControlOpaque {
@@ -30101,6 +30122,145 @@ pub mod phy_fecoex_recovered {
         #[inline(always)]
         pub const fn rf_frequency_result_opaque(&self) -> &RfFrequencyResultOpaque {
             &self.rf_frequency_result_opaque
+        }
+    }
+    #[doc = "BT_COEX_PTI_CONFIG (rw) register accessor: Complete coex_pti_v2 performs two ordered fresh-read RMW operations: it first replaces bits 31:16 with 0x0640, then replaces bits 15:0 with 0x0010. Individual bit meanings remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`bt_coex_pti_config::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`bt_coex_pti_config::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@bt_coex_pti_config`] module"]
+    #[doc(alias = "BT_COEX_PTI_CONFIG")]
+    pub type BtCoexPtiConfig = crate::Reg<bt_coex_pti_config::BtCoexPtiConfigSpec>;
+    #[doc = "Complete coex_pti_v2 performs two ordered fresh-read RMW operations: it first replaces bits 31:16 with 0x0640, then replaces bits 15:0 with 0x0010. Individual bit meanings remain unknown."]
+    pub mod bt_coex_pti_config {
+        #[doc = "Register `BT_COEX_PTI_CONFIG` reader"]
+        pub type R = crate::R<BtCoexPtiConfigSpec>;
+        #[doc = "Register `BT_COEX_PTI_CONFIG` writer"]
+        pub type W = crate::W<BtCoexPtiConfigSpec>;
+        #[doc = "Fixed 0x0010 image published by the second coex_pti_v2 RMW."]
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        #[repr(u16)]
+        pub enum LowImage {
+            #[doc = "16: The only low-halfword image proved by coex_pti_v2."]
+            ReviewedImage = 16,
+        }
+        impl From<LowImage> for u16 {
+            #[inline(always)]
+            fn from(variant: LowImage) -> Self {
+                variant as _
+            }
+        }
+        impl crate::FieldSpec for LowImage {
+            type Ux = u16;
+        }
+        impl crate::IsEnum for LowImage {}
+        #[doc = "Field `LOW_IMAGE_UNKNOWN` reader - Fixed 0x0010 image published by the second coex_pti_v2 RMW."]
+        pub type LowImageUnknownR = crate::FieldReader<LowImage>;
+        impl LowImageUnknownR {
+            #[doc = "Get enumerated values variant"]
+            #[inline(always)]
+            pub const fn variant(&self) -> Option<LowImage> {
+                match self.bits {
+                    16 => Some(LowImage::ReviewedImage),
+                    _ => None,
+                }
+            }
+            #[doc = "The only low-halfword image proved by coex_pti_v2."]
+            #[inline(always)]
+            pub fn is_reviewed_image(&self) -> bool {
+                *self == LowImage::ReviewedImage
+            }
+        }
+        #[doc = "Field `LOW_IMAGE_UNKNOWN` writer - Fixed 0x0010 image published by the second coex_pti_v2 RMW."]
+        pub type LowImageUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 16, LowImage>;
+        impl<'a, REG> LowImageUnknownW<'a, REG>
+        where
+            REG: crate::Writable + crate::RegisterSpec,
+            REG::Ux: From<u16>,
+        {
+            #[doc = "The only low-halfword image proved by coex_pti_v2."]
+            #[inline(always)]
+            pub fn reviewed_image(self) -> &'a mut crate::W<REG> {
+                self.variant(LowImage::ReviewedImage)
+            }
+        }
+        #[doc = "Fixed 0x0640 image published by the first coex_pti_v2 RMW."]
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        #[repr(u16)]
+        pub enum HighImage {
+            #[doc = "1600: The only high-halfword image proved by coex_pti_v2."]
+            ReviewedImage = 1600,
+        }
+        impl From<HighImage> for u16 {
+            #[inline(always)]
+            fn from(variant: HighImage) -> Self {
+                variant as _
+            }
+        }
+        impl crate::FieldSpec for HighImage {
+            type Ux = u16;
+        }
+        impl crate::IsEnum for HighImage {}
+        #[doc = "Field `HIGH_IMAGE_UNKNOWN` reader - Fixed 0x0640 image published by the first coex_pti_v2 RMW."]
+        pub type HighImageUnknownR = crate::FieldReader<HighImage>;
+        impl HighImageUnknownR {
+            #[doc = "Get enumerated values variant"]
+            #[inline(always)]
+            pub const fn variant(&self) -> Option<HighImage> {
+                match self.bits {
+                    1600 => Some(HighImage::ReviewedImage),
+                    _ => None,
+                }
+            }
+            #[doc = "The only high-halfword image proved by coex_pti_v2."]
+            #[inline(always)]
+            pub fn is_reviewed_image(&self) -> bool {
+                *self == HighImage::ReviewedImage
+            }
+        }
+        #[doc = "Field `HIGH_IMAGE_UNKNOWN` writer - Fixed 0x0640 image published by the first coex_pti_v2 RMW."]
+        pub type HighImageUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 16, HighImage>;
+        impl<'a, REG> HighImageUnknownW<'a, REG>
+        where
+            REG: crate::Writable + crate::RegisterSpec,
+            REG::Ux: From<u16>,
+        {
+            #[doc = "The only high-halfword image proved by coex_pti_v2."]
+            #[inline(always)]
+            pub fn reviewed_image(self) -> &'a mut crate::W<REG> {
+                self.variant(HighImage::ReviewedImage)
+            }
+        }
+        impl R {
+            #[doc = "Bits 0:15 - Fixed 0x0010 image published by the second coex_pti_v2 RMW."]
+            #[inline(always)]
+            pub fn low_image_unknown(&self) -> LowImageUnknownR {
+                LowImageUnknownR::new((self.bits & 0xffff) as u16)
+            }
+            #[doc = "Bits 16:31 - Fixed 0x0640 image published by the first coex_pti_v2 RMW."]
+            #[inline(always)]
+            pub fn high_image_unknown(&self) -> HighImageUnknownR {
+                HighImageUnknownR::new(((self.bits >> 16) & 0xffff) as u16)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:15 - Fixed 0x0010 image published by the second coex_pti_v2 RMW."]
+            #[inline(always)]
+            pub fn low_image_unknown(&mut self) -> LowImageUnknownW<'_, BtCoexPtiConfigSpec> {
+                LowImageUnknownW::new(self, 0)
+            }
+            #[doc = "Bits 16:31 - Fixed 0x0640 image published by the first coex_pti_v2 RMW."]
+            #[inline(always)]
+            pub fn high_image_unknown(&mut self) -> HighImageUnknownW<'_, BtCoexPtiConfigSpec> {
+                HighImageUnknownW::new(self, 16)
+            }
+        }
+        #[doc = "Complete coex_pti_v2 performs two ordered fresh-read RMW operations: it first replaces bits 31:16 with 0x0640, then replaces bits 15:0 with 0x0010. Individual bit meanings remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`bt_coex_pti_config::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`bt_coex_pti_config::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        pub struct BtCoexPtiConfigSpec;
+        impl crate::RegisterSpec for BtCoexPtiConfigSpec {
+            type Ux = u32;
+        }
+        #[doc = "`read()` method returns [`bt_coex_pti_config::R`](R) reader structure"]
+        impl crate::Readable for BtCoexPtiConfigSpec {}
+        #[doc = "`write(|w| ..)` method takes [`bt_coex_pti_config::W`](W) writer structure"]
+        impl crate::Writable for BtCoexPtiConfigSpec {
+            type Safety = crate::Unsafe;
         }
     }
     #[doc = "RF_FREQUENCY_CONTROL_OPAQUE (rw) register accessor: Complete phy_read_rf_freq_mem performs a read-modify-write of bit 16; all other semantics remain unknown.\n\nYou can [`read`](crate::Reg::read) this register and get [`rf_frequency_control_opaque::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rf_frequency_control_opaque::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rf_frequency_control_opaque`] module"]

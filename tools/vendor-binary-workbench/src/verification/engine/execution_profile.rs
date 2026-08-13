@@ -87,6 +87,7 @@ fn matched_status(
             FunctionVerificationStatus::Match
         }
         open_radio_vendor_semantics::DriverAdapterClaim::ReviewedProjection
+        | open_radio_vendor_semantics::DriverAdapterClaim::ReviewedRefinement
         | open_radio_vendor_semantics::DriverAdapterClaim::RustConformance => {
             unreachable!("adapter-only claims are rejected by profile validation")
         }

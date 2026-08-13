@@ -2342,8 +2342,6 @@ dependencies = [
  "open-radio-vendor-analysis-model",
  "open-radio-vendor-backend-riscv",
  "open-radio-vendor-execution-model",
- "open-radio-vendor-harness-esp32s31",
- "open-radio-vendor-harness-esp32s31-semantic",
  "open-radio-vendor-semantics",
  "petgraph",
  "ratatui",
@@ -2406,6 +2404,15 @@ dependencies = [
  "serde",
  "thiserror 2.0.19",
  "toml_edit",
+]
+
+[[package]]
+name = "open-radio-vendor-workbench-esp32s31-host"
+version = "0.1.0"
+dependencies = [
+ "open-radio-vendor-binary-workbench",
+ "open-radio-vendor-harness-esp32s31-semantic",
+ "serde_json",
 ]
 
 [[package]]

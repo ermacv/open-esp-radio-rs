@@ -40,10 +40,7 @@ fn contains_bare_macro_call(source: &str, name: &str) -> bool {
 #[test]
 fn production_modules_cannot_bypass_the_command_output_boundary() {
     let manifest_root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let source_roots = [
-        manifest_root.join("src"),
-        manifest_root.join("crates/harness-esp32s31-semantic/src"),
-    ];
+    let source_roots = [manifest_root.join("src")];
     for path in source_roots.iter().flat_map(|root| rust_sources(root)) {
         if path.components().any(|component| {
             matches!(
@@ -65,26 +62,11 @@ fn production_modules_cannot_bypass_the_command_output_boundary() {
 }
 
 #[test]
-fn cargo_alias_keeps_workbench_preparation_visible() {
-    let manifest_root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let config = fs::read_to_string(manifest_root.join("../../.cargo/config.toml")).unwrap();
-    let alias = config
-        .lines()
-        .find(|line| line.trim_start().starts_with("vendor-binary-workbench ="))
-        .expect("workspace must provide the documented Workbench Cargo alias");
-    assert!(alias.contains("run --profile workbench"));
-    assert!(
-        !alias.contains("run --quiet"),
-        "Cargo preparation and build-lock messages must remain visible"
-    );
-}
-
-#[test]
 fn facade_and_register_model_errors_cannot_implicitly_absorb_strings() {
     let manifest_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let sources = [
         manifest_root.join("src/error.rs"),
-        manifest_root.join("../register-model/src/lib.rs"),
+        manifest_root.join("crates/register-model/src/lib.rs"),
     ];
     for forbidden in [
         "impl From<String> for WorkbenchError",

@@ -9040,7 +9040,7 @@
       <registers>
         <register>
           <name>CONTROL</name>
-          <description>Complete hal_set_sta_tsf asserts bit four after writing both station TSF value words; complete hal_get_sta_tsf sets then clears bit zero around its snapshot reads.</description>
+          <description>Complete hal_set_sta_tsf asserts bit four after writing both station TSF value words; the SoftAP path of complete hal_mac_tsf_reset asserts bit five after clearing both shared TSF value words; complete hal_get_sta_tsf sets then clears bit zero around its snapshot reads.</description>
           <addressOffset>0x0</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
@@ -9055,6 +9055,12 @@
               <name>LOAD_STATION_TSF</name>
               <description>Station TSF load request asserted by the final fresh-read RMW in hal_set_sta_tsf.</description>
               <bitOffset>4</bitOffset>
+              <bitWidth>1</bitWidth>
+            </field>
+            <field>
+              <name>LOAD_SOFTAP_TSF</name>
+              <description>SoftAP TSF load request asserted after the two zero-value writes by the arg0=0 path of complete hal_mac_tsf_reset.</description>
+              <bitOffset>5</bitOffset>
               <bitWidth>1</bitWidth>
             </field>
           </fields>
@@ -12320,6 +12326,51 @@
       <description>Sparse FECOEX words absent from the public platform PAC.</description>
       <baseAddress>0x20100000</baseAddress>
       <registers>
+        <register>
+          <name>BT_COEX_PTI_CONFIG</name>
+          <description>Complete coex_pti_v2 performs two ordered fresh-read RMW operations: it first replaces bits 31:16 with 0x0640, then replaces bits 15:0 with 0x0010. Individual bit meanings remain unknown.</description>
+          <addressOffset>0x10</addressOffset>
+          <size>0x20</size>
+          <access>read-write</access>
+          <fields>
+            <field>
+              <name>LOW_IMAGE_UNKNOWN</name>
+              <description>Fixed 0x0010 image published by the second coex_pti_v2 RMW.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>16</bitWidth>
+              <writeConstraint>
+                <useEnumeratedValues>true</useEnumeratedValues>
+              </writeConstraint>
+              <enumeratedValues>
+                <name>LOW_IMAGE</name>
+                <usage>write</usage>
+                <enumeratedValue>
+                  <name>REVIEWED_IMAGE</name>
+                  <description>The only low-halfword image proved by coex_pti_v2.</description>
+                  <value>16</value>
+                </enumeratedValue>
+              </enumeratedValues>
+            </field>
+            <field>
+              <name>HIGH_IMAGE_UNKNOWN</name>
+              <description>Fixed 0x0640 image published by the first coex_pti_v2 RMW.</description>
+              <bitOffset>16</bitOffset>
+              <bitWidth>16</bitWidth>
+              <writeConstraint>
+                <useEnumeratedValues>true</useEnumeratedValues>
+              </writeConstraint>
+              <enumeratedValues>
+                <name>HIGH_IMAGE</name>
+                <usage>write</usage>
+                <enumeratedValue>
+                  <name>REVIEWED_IMAGE</name>
+                  <description>The only high-halfword image proved by coex_pti_v2.</description>
+                  <value>1600</value>
+                </enumeratedValue>
+              </enumeratedValues>
+            </field>
+          </fields>
+        </register>
         <register>
           <name>RF_FREQUENCY_CONTROL_OPAQUE</name>
           <description>Complete phy_read_rf_freq_mem performs a read-modify-write of bit 16; all other semantics remain unknown.</description>

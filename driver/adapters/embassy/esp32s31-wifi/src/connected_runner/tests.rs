@@ -158,6 +158,60 @@ struct PreparedBackend {
     cancelled: bool,
 }
 
+struct RxProbeBackend {
+    service_calls: u8,
+}
+
+impl ConnectedRunnerServices<'static, NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>
+    for RxProbeBackend
+{
+    type Error = TestError;
+
+    fn service_rx(&mut self) -> impl Future<Output = Result<WifiRxProgress, Self::Error>> + '_ {
+        async move {
+            self.service_calls = self.service_calls.saturating_add(1);
+            if self.service_calls == 1 {
+                Ok(WifiRxProgress::ProbePending)
+            } else {
+                Err(TestError::Finished)
+            }
+        }
+    }
+
+    fn start_tx<'a>(
+        &'a mut self,
+        _frame: PinnedTxFrame<
+            'static,
+            NoopRawMutex,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            QUEUE_DEPTH,
+        >,
+        _network: &'a PinnedTxConsumer<
+            'static,
+            NoopRawMutex,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            QUEUE_DEPTH,
+        >,
+    ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a {
+        pending()
+    }
+
+    fn wait_tx_deadline(&mut self) -> impl Future<Output = ()> + '_ {
+        pending()
+    }
+
+    fn service_tx<'a>(
+        &'a mut self,
+        _wake: WifiTxWake,
+    ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a {
+        pending()
+    }
+}
+
 struct CompletionFillBackend {
     order: [u8; 2],
     count: usize,
@@ -425,6 +479,25 @@ fn frame_arriving_inside_select_rechecks_control_as_network_pending() {
     );
     drop(run);
     assert!(runner.services().network_pending_seen);
+}
+
+#[test]
+fn exhausted_rx_republication_is_serviced_again_without_a_new_hardware_irq() {
+    let resources = std::boxed::Box::leak(std::boxed::Box::new(Resources::new()));
+    let pool = Pool::pin_static(std::boxed::Box::leak(std::boxed::Box::new(Pool::new())));
+    let (_device, network) = resources.split(pool, [2, 3, 4, 5, 6, 7]);
+    let irq = std::boxed::Box::leak(std::boxed::Box::new(
+        EmbassyMacIrqRuntime::<NoopRawMutex>::new(),
+    ));
+    irq.publish(MAC_INT_RX_SUCCESS);
+    let services = RxProbeBackend { service_calls: 0 };
+    let mut runner = ConnectedRunner::new(irq, network, services);
+
+    assert_eq!(
+        embassy_futures::block_on(runner.run()),
+        Err(TestError::Finished)
+    );
+    assert_eq!(runner.services().service_calls, 2);
 }
 
 #[test]

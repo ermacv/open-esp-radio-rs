@@ -167,8 +167,7 @@ pub enum CoexClient {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct CoexRequest {
-    pub client: CoexClient,
+pub struct CoexClientRequest {
     pub event: CoexEventId,
     /// Delay before the request must be granted. The vendor timer stores this
     /// converted value in the secondary target word.
@@ -176,4 +175,10 @@ pub struct CoexRequest {
     /// Requested ownership duration. The vendor timer stores this converted
     /// value in the primary configuration word.
     pub duration: u32,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct CoexRequest {
+    pub(crate) client: CoexClient,
+    pub(crate) request: CoexClientRequest,
 }

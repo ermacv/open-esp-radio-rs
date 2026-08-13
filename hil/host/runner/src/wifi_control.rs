@@ -144,7 +144,7 @@ fn qualify(
             return Err(format!("access point returned inconsistent evidence: {stopped:?}").into());
         }
         println!(
-            "wifi_ap_generation={} channel={} beacons={} auth_responses={} assoc_responses={} authorizations={} max_associated={} max_authorized={} peer_removals={} rx_descriptors={} ignored_rx={} control_staged={} control_busy_drops={} ethernet_staged={} network_tx_rejected={} data_tx={} tx_hardware_failures={} tx_hardware_timeouts={} tx_collision_limits={} tx_last_hardware_status={}",
+            "wifi_ap_generation={} channel={} beacons={} auth_responses={} assoc_responses={} authorizations={} max_associated={} max_authorized={} peer_removals={} auth_timeouts={} inactivity_timeouts={} disassoc_prepared={} disassoc_published={} disassoc_acked={} deauth_prepared={} deauth_published={} deauth_acked={} rx_units={} rx_descriptors={} recycled_rx_descriptors={} discarded_rx_units={} ignored_rx={} control_staged={} control_busy_drops={} ethernet_staged={} network_tx_rejected={} data_tx={} tx_hardware_failures={} tx_hardware_timeouts={} tx_collision_limits={} tx_last_hardware_status={}",
             stopped.generation,
             stopped.channel,
             stopped.beacons_transmitted,
@@ -154,7 +154,18 @@ fn qualify(
             stopped.maximum_associated_peers,
             stopped.maximum_authorized_peers,
             stopped.peer_removals,
+            stopped.authentication_timeouts,
+            stopped.inactivity_timeouts,
+            stopped.disassociations_prepared,
+            stopped.disassociations_published,
+            stopped.disassociations_acknowledged,
+            stopped.deauthentications_prepared,
+            stopped.deauthentications_published,
+            stopped.deauthentications_acknowledged,
+            stopped.completed_rx_units,
             stopped.completed_rx_descriptors,
+            stopped.recycled_rx_descriptors,
+            stopped.discarded_rx_units,
             stopped.ignored_rx_frames,
             stopped.control_frames_staged,
             stopped.control_frames_dropped_while_busy,

@@ -5,6 +5,8 @@
 //! and host models share the same state machine without exposing the generated
 //! PAC above the register leaf.
 
+use core::marker::PhantomData;
+
 use open_esp_radio_dma::StableDmaRange;
 use open_esp_radio_esp32s31_pac::{ColdRadioRegisters, RadioRegisters};
 
@@ -19,6 +21,100 @@ pub struct RxDmaBinding<'storage> {
     descriptor_base: u32,
     descriptor_count: u8,
     range: StableDmaRange<'storage>,
+}
+
+/// Opaque proof that the RX walker disable request completed and read back
+/// as stopped.
+///
+/// Production code can obtain this value only from the PAC-backed
+/// [`RxDma`] implementation. Native models and explicit raw-DMA validation
+/// may construct a model proof for deterministic state-machine tests.
+pub struct RxDmaWalkerStopped<'confirmation> {
+    _confirmation: PhantomData<&'confirmation mut ()>,
+}
+
+/// Opaque current proof that the RX walker enable edge was accepted.
+pub struct RxDmaWalkerEnabled<'confirmation> {
+    _confirmation: PhantomData<&'confirmation mut ()>,
+}
+
+impl RxDmaWalkerEnabled<'_> {
+    const fn confirmed() -> Self {
+        Self {
+            _confirmation: PhantomData,
+        }
+    }
+
+    #[cfg(any(not(target_pointer_width = "32"), feature = "validation-raw-dma"))]
+    pub const fn validation() -> Self {
+        Self::confirmed()
+    }
+}
+
+/// Opaque current proof that the append/reload doorbell has self-cleared.
+pub struct RxDmaReloadSettled<'confirmation> {
+    _confirmation: PhantomData<&'confirmation mut ()>,
+}
+
+impl RxDmaReloadSettled<'_> {
+    const fn confirmed() -> Self {
+        Self {
+            _confirmation: PhantomData,
+        }
+    }
+
+    #[cfg(any(not(target_pointer_width = "32"), feature = "validation-raw-dma"))]
+    pub const fn validation() -> Self {
+        Self::confirmed()
+    }
+}
+
+impl RxDmaWalkerStopped<'_> {
+    const fn confirmed() -> Self {
+        Self {
+            _confirmation: PhantomData,
+        }
+    }
+
+    #[cfg(any(not(target_pointer_width = "32"), feature = "validation-raw-dma"))]
+    pub const fn validation() -> Self {
+        Self::confirmed()
+    }
+}
+
+/// One ordered RX walker cursor observation.
+///
+/// The PAC implementation samples `LAST`, executes a device fence, samples
+/// `NEXT`, then executes the second fence before invoking the callback. The
+/// confirmation lifetime prevents safe forwarding layers from retaining and
+/// replaying a stale observation as current ownership evidence.
+pub struct RxDmaCursorObservation<'confirmation> {
+    last_descriptor_low: u32,
+    next_descriptor_low: u32,
+    _confirmation: PhantomData<&'confirmation mut ()>,
+}
+
+impl RxDmaCursorObservation<'_> {
+    const fn confirmed(last_descriptor_low: u32, next_descriptor_low: u32) -> Self {
+        Self {
+            last_descriptor_low,
+            next_descriptor_low,
+            _confirmation: PhantomData,
+        }
+    }
+
+    #[cfg(any(not(target_pointer_width = "32"), feature = "validation-raw-dma"))]
+    pub const fn validation(last_descriptor_low: u32, next_descriptor_low: u32) -> Self {
+        Self::confirmed(last_descriptor_low, next_descriptor_low)
+    }
+
+    pub const fn last_descriptor_low(&self) -> u32 {
+        self.last_descriptor_low
+    }
+
+    pub const fn next_descriptor_low(&self) -> u32 {
+        self.next_descriptor_low
+    }
 }
 
 impl<'storage> RxDmaBinding<'storage> {
@@ -91,14 +187,29 @@ pub trait RxDma {
 
     fn last_descriptor_low(&mut self) -> u32;
     fn next_descriptor_low(&mut self) -> u32;
+    fn with_ordered_cursor<R>(
+        &mut self,
+        observed: impl for<'confirmation> FnOnce(RxDmaCursorObservation<'confirmation>) -> R,
+    ) -> R;
     fn walker_enabled(&mut self) -> bool;
     fn reload_pending(&mut self) -> bool;
+    fn try_with_reload_settled<R>(
+        &mut self,
+        settled: impl for<'confirmation> FnOnce(RxDmaReloadSettled<'confirmation>) -> R,
+    ) -> Option<R>;
     fn set_descriptor_high_window(&mut self, binding: &RxDmaBinding<'_>, address_high: u16);
     fn write_descriptor_base(&mut self, binding: &RxDmaBinding<'_>, address: u32);
     fn publish_walker_enable(&mut self, binding: &RxDmaBinding<'_>);
     fn request_reload(&mut self, binding: &RxDmaBinding<'_>);
-    fn try_enable_walker(&mut self, binding: &RxDmaBinding<'_>) -> bool;
-    fn try_disable_walker(&mut self) -> bool;
+    fn try_with_walker_enabled<R>(
+        &mut self,
+        binding: &RxDmaBinding<'_>,
+        enabled: impl for<'confirmation> FnOnce(RxDmaWalkerEnabled<'confirmation>) -> R,
+    ) -> Option<R>;
+    fn try_with_walker_stopped<R>(
+        &mut self,
+        stopped: impl for<'confirmation> FnOnce(RxDmaWalkerStopped<'confirmation>) -> R,
+    ) -> Option<R>;
     fn fence(&mut self);
 }
 
@@ -115,12 +226,33 @@ impl RxDma for RadioRegisters {
         self.mac_rx_next_descriptor_low()
     }
 
+    fn with_ordered_cursor<R>(
+        &mut self,
+        observed: impl for<'confirmation> FnOnce(RxDmaCursorObservation<'confirmation>) -> R,
+    ) -> R {
+        let last_descriptor_low = self.mac_rx_last_descriptor_low();
+        self.order_device_accesses();
+        let next_descriptor_low = self.mac_rx_next_descriptor_low();
+        self.order_device_accesses();
+        observed(RxDmaCursorObservation::confirmed(
+            last_descriptor_low,
+            next_descriptor_low,
+        ))
+    }
+
     fn walker_enabled(&mut self) -> bool {
         self.mac_rx_walker_enabled()
     }
 
     fn reload_pending(&mut self) -> bool {
         self.mac_rx_reload_pending()
+    }
+
+    fn try_with_reload_settled<R>(
+        &mut self,
+        settled: impl for<'confirmation> FnOnce(RxDmaReloadSettled<'confirmation>) -> R,
+    ) -> Option<R> {
+        (!self.mac_rx_reload_pending()).then(|| settled(RxDmaReloadSettled::confirmed()))
     }
 
     fn set_descriptor_high_window(&mut self, binding: &RxDmaBinding<'_>, address_high: u16) {
@@ -143,12 +275,21 @@ impl RxDma for RadioRegisters {
         self.request_mac_rx_descriptor_reload(binding.range());
     }
 
-    fn try_enable_walker(&mut self, binding: &RxDmaBinding<'_>) -> bool {
+    fn try_with_walker_enabled<R>(
+        &mut self,
+        binding: &RxDmaBinding<'_>,
+        enabled: impl for<'confirmation> FnOnce(RxDmaWalkerEnabled<'confirmation>) -> R,
+    ) -> Option<R> {
         self.try_enable_mac_rx_walker(binding.range())
+            .then(|| enabled(RxDmaWalkerEnabled::confirmed()))
     }
 
-    fn try_disable_walker(&mut self) -> bool {
+    fn try_with_walker_stopped<R>(
+        &mut self,
+        stopped: impl for<'confirmation> FnOnce(RxDmaWalkerStopped<'confirmation>) -> R,
+    ) -> Option<R> {
         self.try_disable_mac_rx_walker()
+            .then(|| stopped(RxDmaWalkerStopped::confirmed()))
     }
 
     fn fence(&mut self) {
@@ -169,12 +310,26 @@ impl RxDma for ColdRadioRegisters {
         RxDma::next_descriptor_low(&mut **self)
     }
 
+    fn with_ordered_cursor<R>(
+        &mut self,
+        observed: impl for<'confirmation> FnOnce(RxDmaCursorObservation<'confirmation>) -> R,
+    ) -> R {
+        RxDma::with_ordered_cursor(&mut **self, observed)
+    }
+
     fn walker_enabled(&mut self) -> bool {
         RxDma::walker_enabled(&mut **self)
     }
 
     fn reload_pending(&mut self) -> bool {
         RxDma::reload_pending(&mut **self)
+    }
+
+    fn try_with_reload_settled<R>(
+        &mut self,
+        settled: impl for<'confirmation> FnOnce(RxDmaReloadSettled<'confirmation>) -> R,
+    ) -> Option<R> {
+        RxDma::try_with_reload_settled(&mut **self, settled)
     }
 
     fn set_descriptor_high_window(&mut self, binding: &RxDmaBinding, address_high: u16) {
@@ -193,12 +348,19 @@ impl RxDma for ColdRadioRegisters {
         RxDma::request_reload(&mut **self, binding);
     }
 
-    fn try_enable_walker(&mut self, binding: &RxDmaBinding) -> bool {
-        RxDma::try_enable_walker(&mut **self, binding)
+    fn try_with_walker_enabled<R>(
+        &mut self,
+        binding: &RxDmaBinding,
+        enabled: impl for<'confirmation> FnOnce(RxDmaWalkerEnabled<'confirmation>) -> R,
+    ) -> Option<R> {
+        RxDma::try_with_walker_enabled(&mut **self, binding, enabled)
     }
 
-    fn try_disable_walker(&mut self) -> bool {
-        RxDma::try_disable_walker(&mut **self)
+    fn try_with_walker_stopped<R>(
+        &mut self,
+        stopped: impl for<'confirmation> FnOnce(RxDmaWalkerStopped<'confirmation>) -> R,
+    ) -> Option<R> {
+        RxDma::try_with_walker_stopped(&mut **self, stopped)
     }
 
     fn fence(&mut self) {

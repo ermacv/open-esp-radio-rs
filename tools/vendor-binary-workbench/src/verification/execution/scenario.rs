@@ -205,6 +205,17 @@ pub(crate) fn extend_dynamic_inventory(
     indirect_calls: &BTreeSet<execution::IndirectCall>,
 ) -> Result<()> {
     for call in indirect_calls {
+        // A reviewed `modeled-symbol` table target deliberately has no text
+        // definition in the linked image. Its control edge is covered by the
+        // concrete table instance and its behavior is covered by the
+        // scenario's call-response/FIFO model. Only image-resident indirect
+        // targets have another executable CFG which can extend static
+        // coverage. Treating an external model as linked code makes valid
+        // OSI/RTOS table scenarios fail with "execution symbol ... was not
+        // found" after their concrete execution already succeeded.
+        if image.symbol_address(&call.symbol).is_none() {
+            continue;
+        }
         let dynamic =
             image.coverage_inventory_with_arguments(&call.symbol, Some(&call.arguments))?;
         inventory.branch_sites.extend(dynamic.branch_sites);

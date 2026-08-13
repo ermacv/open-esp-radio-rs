@@ -13,138 +13,6 @@ fn rust_files(root: &Path, output: &mut Vec<std::path::PathBuf>) {
     }
 }
 
-fn named_files(root: &Path, name: &str, output: &mut Vec<std::path::PathBuf>) {
-    for entry in fs::read_dir(root).expect("read source directory") {
-        let path = entry.expect("read source entry").path();
-        if path.is_dir() {
-            named_files(&path, name, output);
-        } else if path.file_name().and_then(|value| value.to_str()) == Some(name) {
-            output.push(path);
-        }
-    }
-}
-
-#[test]
-fn closed_chip_pac_is_the_only_driver_dependency_on_the_raw_pac() {
-    let repository = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let driver = repository.join("driver");
-    let closed_manifest = driver.join("chips/esp32s31/pac/Cargo.toml");
-    let raw_manifest = driver.join("chips/esp32s31/pac-raw/Cargo.toml");
-    let mut manifests = Vec::new();
-    named_files(&driver, "Cargo.toml", &mut manifests);
-    let violations = manifests
-        .into_iter()
-        .filter(|path| path != &closed_manifest && path != &raw_manifest)
-        .filter_map(|path| {
-            fs::read_to_string(&path)
-                .expect("read driver manifest")
-                .contains("open-esp-radio-esp32s31-pac-raw")
-                .then_some(path)
-        })
-        .collect::<Vec<_>>();
-    assert!(
-        violations.is_empty(),
-        "driver crates bypass the closed PAC: {violations:#?}"
-    );
-
-    let closed_source = fs::read_to_string(driver.join("chips/esp32s31/pac/src/lib.rs"))
-        .expect("read closed PAC root");
-    assert!(!closed_source.contains("pub use open_esp_radio_esp32s31_pac_raw"));
-    assert!(!closed_source.contains("pub mod svd"));
-    assert!(!closed_source.contains("pub const fn contains(address"));
-
-    let generated = fs::read_to_string(driver.join("chips/esp32s31/pac/src/generated.rs"))
-        .expect("read generated closed-PAC domains");
-    assert!(generated.contains("pub struct MacInterruptMask(u32);"));
-    assert!(!generated.contains("from_bits"));
-    assert!(!generated.contains("impl MacInterruptMask {\n    pub const fn new"));
-    assert!(!generated.contains("open_esp_radio_esp32s31_pac_raw"));
-    let mut closed_files = Vec::new();
-    rust_files(&driver.join("chips/esp32s31/pac/src"), &mut closed_files);
-    let bypasses = closed_files
-        .into_iter()
-        .filter(|path| {
-            !matches!(
-                path.file_name().and_then(|name| name.to_str()),
-                Some("generated.rs" | "validation.rs")
-            )
-        })
-        .filter(|path| {
-            let source = fs::read_to_string(path).expect("read closed PAC module");
-            source.contains("::full_register_write::")
-                || source.contains("::register_image_write::")
-                || source.contains("::masked_register_modify::")
-        })
-        .collect::<Vec<_>>();
-    assert!(
-        bypasses.is_empty(),
-        "closed PAC modules bypass generated typed complete-register transactions: {bypasses:#?}"
-    );
-
-    let project = fs::read_to_string(
-        repository.join("verification/vendor/targets/esp32s31/vendor-project.toml"),
-    )
-    .expect("read ESP32-S31 workbench project");
-    assert!(project.contains("[registers.pac-raw]"));
-    assert!(project.contains("[registers.api]"));
-    assert!(project.contains("pac/src/generated.rs"));
-
-    let hal_source =
-        fs::read_to_string(driver.join("chips/esp32s31/hal/src/lib.rs")).expect("read HAL root");
-    assert!(!hal_source.contains("power as radio_registers"));
-    assert!(!hal_source.contains("pub use open_esp_radio_esp32s31_pac_raw"));
-}
-
-#[test]
-fn reviewed_sta_ap_and_coex_boundaries_do_not_expose_register_mechanics() {
-    let repository = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let boundaries = [
-        repository.join("driver/chips/esp32s31/hal/src/wifi_mac.rs"),
-        repository.join("driver/chips/esp32s31/hal/src/coex.rs"),
-        repository.join("driver/chips/esp32s31/wifi/mac/src/sta_ap_registers.rs"),
-        repository.join("driver/chips/esp32s31/wifi/mac/src/coex_runtime.rs"),
-    ];
-    for path in boundaries {
-        let source = fs::read_to_string(&path).expect("read reviewed register boundary");
-        for forbidden in [
-            "open_esp_radio_esp32s31_pac_raw",
-            "Register32",
-            "0x2010_",
-            "write_volatile",
-            "read_volatile",
-        ] {
-            assert!(
-                !source.contains(forbidden),
-                "reviewed AP/STA or COEX boundary {} exposes {forbidden}",
-                path.display()
-            );
-        }
-    }
-
-    let wifi = fs::read_to_string(repository.join("driver/chips/esp32s31/hal/src/wifi_mac.rs"))
-        .expect("read Wi-Fi MAC HAL");
-    for required in [
-        "MacInterfaceIdentity",
-        "MacRoleReceivePolicy",
-        "MacStaApReceivePlan",
-        "MacTxQueueIndex",
-    ] {
-        assert!(
-            wifi.contains(required),
-            "Wi-Fi MAC HAL lost typed boundary {required}"
-        );
-    }
-
-    let coex = fs::read_to_string(repository.join("driver/chips/esp32s31/hal/src/coex.rs"))
-        .expect("read COEX HAL");
-    for required in ["CoexTimerIndex", "CoexClient", "CoexPti"] {
-        assert!(
-            coex.contains(required),
-            "COEX HAL lost typed boundary {required}"
-        );
-    }
-}
-
 #[test]
 fn domain_and_application_do_not_depend_on_cli_rendering() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
@@ -297,24 +165,17 @@ fn execution_environment_contracts_do_not_live_in_the_riscv_backend() {
 }
 
 #[test]
-fn platform_harness_dependencies_are_optional_addons() {
+fn generic_manifest_has_no_platform_provider_dependency() {
     let manifest = fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml"))
         .expect("read workbench manifest");
-    assert!(
-        manifest.contains("default = [\"esp32s31-harness\"]"),
-        "the normal repository binary must open its checked ESP32-S31 project out of the box"
-    );
+    assert!(!manifest.contains("harness-esp32s31"));
     for dependency in [
         "open-radio-vendor-harness-esp32s31",
         "open-radio-vendor-harness-esp32s31-semantic",
     ] {
-        let line = manifest
-            .lines()
-            .find(|line| line.starts_with(dependency))
-            .unwrap_or_else(|| panic!("missing optional dependency {dependency}"));
         assert!(
-            line.contains("optional = true"),
-            "compiled addon dependency is unconditional: {line}"
+            !manifest.lines().any(|line| line.starts_with(dependency)),
+            "generic Workbench still depends on platform provider {dependency}"
         );
     }
 }

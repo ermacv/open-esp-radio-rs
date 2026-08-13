@@ -46,6 +46,8 @@ pub(super) fn run(arguments: ProjectCheckArgs, session: &ProjectSession) -> Resu
     if !(1..=8).contains(&arguments.jobs) {
         return Err(crate::Error::invalid("project check --jobs accepts 1..=8"));
     }
+    let binding_audit =
+        crate::verification::audit(&session.project, session.target.harness.as_deref())?;
     let analysis = crate::application::project_analysis::analyze_project(
         session,
         ProjectAnalysisRequest {
@@ -76,7 +78,8 @@ pub(super) fn run(arguments: ProjectCheckArgs, session: &ProjectSession) -> Resu
         arguments.hardware,
     );
 
-    let passed = analysis.succeeded()
+    let passed = binding_audit.passed
+        && analysis.succeeded()
         && verification.passed
         && qualification.passed
         && publication.succeeded();
@@ -96,6 +99,42 @@ pub(super) fn run(arguments: ProjectCheckArgs, session: &ProjectSession) -> Resu
         hardware: arguments.hardware,
         passed,
         stages: vec![
+            ProjectCheckStage {
+                name: "binding-trust",
+                status: if binding_audit.passed { "passed" } else { "failed" },
+                passed: binding_audit.passed,
+                summary: format!(
+                    "{}/{} required release-ready, {} invalid, {} research-only",
+                    binding_audit
+                        .release_required
+                        .saturating_sub(binding_audit.release_blocked),
+                    binding_audit.release_required,
+                    binding_audit.invalid,
+                    binding_audit.research_only,
+                ),
+                issues: binding_audit
+                    .bindings
+                    .iter()
+                    .filter(|binding| matches!(binding.status, "invalid" | "release-blocked"))
+                    .map(|binding| ProjectCheckIssue {
+                        component: format!("{}:{}", binding.source, binding.vendor_symbol),
+                        status: binding.status.to_owned(),
+                        reason: binding
+                            .blocker
+                            .clone()
+                            .unwrap_or_else(|| "binding is not release eligible".to_owned()),
+                    })
+                    .collect(),
+                next_actions: (!binding_audit.passed)
+                    .then(|| {
+                        format!(
+                            "run `vendor-binary-workbench project audit bindings --project {}`; fix every invalid declaration and every release-blocked binding in the required feature closure before accepting baselines",
+                            session.manifest.display()
+                        )
+                    })
+                    .into_iter()
+                    .collect(),
+            },
             ProjectCheckStage {
                 name: "analysis",
                 status: if analysis_passed { "passed" } else { "failed" },

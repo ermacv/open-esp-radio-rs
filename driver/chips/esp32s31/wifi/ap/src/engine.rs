@@ -7,34 +7,31 @@ use crate::{
         Esp32s31ApSecurityStopReport,
     },
 };
-use open_esp_radio_esp32s31_pac::RadioRegisters;
 use open_esp_radio_esp32s31_wifi_mac::{
     ap_policy::{ApRxPolicyHardware, configure_ap_receive_policy},
+    ap_tsf::{ApTsfHardware, reset_and_start_access_point_tsf, stop_access_point_tsf},
     crypto::{CcmpKeyHardware, CryptoKeyError},
 };
 use open_esp_radio_ieee80211::{
     ap::{
         ApAssociationResponseError, ApDataFrame, ApDataFrameError, ApManagementRequest,
-        ApProtectedDataFrame, parse_ap_management_request, write_bg_association_response_frame,
+        ApPeerDisconnectKind, ApProtectedDataFrame, parse_ap_management_request,
+        write_ap_peer_disconnect, write_bg_association_response_frame,
         write_open_authentication_response,
     },
     beacon::{ApBeaconBuildError, WPA2_BEACON_CAPACITY, write_wpa2_erp_beacon},
     ssid::WifiSsid,
 };
 use open_esp_radio_wifi_ap::{
-    AccessPointService, ApMlmeAction, ApPeerStatus, ApServiceError, ApWpa2Error, ApWpa2Progress,
+    AccessPointService, ApMlmeAction, ApPeerClose, ApPeerCloseKind, ApPeerPhase, ApPeerStatus,
+    ApServiceError, ApWpa2Error, ApWpa2Progress,
 };
 use open_esp_radio_wpa2::{OwnedEapolFrame, frames::Wpa2TxFrame};
 
-pub trait Esp32s31ApRuntimeHardware: CcmpKeyHardware + ApRxPolicyHardware {
-    fn stop_ap_tsf(&mut self);
-}
+pub trait Esp32s31ApRuntimeHardware: CcmpKeyHardware + ApRxPolicyHardware + ApTsfHardware {}
 
-impl Esp32s31ApRuntimeHardware for RadioRegisters {
-    fn stop_ap_tsf(&mut self) {
-        self.stop_softap_tsf();
-    }
-}
+impl<T> Esp32s31ApRuntimeHardware for T where T: CcmpKeyHardware + ApRxPolicyHardware + ApTsfHardware
+{}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Esp32s31ApEngineError {
@@ -125,6 +122,10 @@ pub struct Esp32s31ApEngineReport {
     /// Largest number of simultaneously open controlled ports during the epoch.
     pub maximum_authorized_peers: u8,
     pub peer_removals: u32,
+    pub authentication_timeouts: u32,
+    pub inactivity_timeouts: u32,
+    pub disassociations_prepared: u32,
+    pub deauthentications_prepared: u32,
 }
 
 /// Active AP policy and hardware-key owner.
@@ -188,6 +189,10 @@ impl<'storage> Esp32s31ApEngine<'storage> {
                     });
                 }
             };
+        // This is the first irreversible timing edge. Beacon construction and
+        // group-key installation have succeeded, so a failed start never
+        // leaves an unowned hardware TSF epoch behind.
+        reset_and_start_access_point_tsf(hardware);
         Ok(Self {
             service,
             beacon,
@@ -234,6 +239,7 @@ impl<'storage> Esp32s31ApEngine<'storage> {
         frame: &[u8],
         authenticator_nonce: [u8; 32],
         initial_replay_counter: u64,
+        now_micros: u64,
         output: &mut [u8],
     ) -> Result<Esp32s31ApManagementOutcome, Esp32s31ApEngineError> {
         let Some(request) = parse_ap_management_request(frame, self.service.address()) else {
@@ -250,7 +256,7 @@ impl<'storage> Esp32s31ApEngine<'storage> {
                     self.security.clear_peer(hardware, peer)?;
                 }
                 let ApMlmeAction::AuthenticationResponse { status, .. } =
-                    self.service.authenticate_open(peer)
+                    self.service.authenticate_open(peer, now_micros)
                 else {
                     unreachable!("authenticate_open has one response action")
                 };
@@ -282,6 +288,7 @@ impl<'storage> Esp32s31ApEngine<'storage> {
                     maximum_legacy_rate_500kbps,
                     authenticator_nonce,
                     initial_replay_counter,
+                    now_micros,
                 )?;
                 let ApMlmeAction::AssociationResponse {
                     status,
@@ -303,6 +310,13 @@ impl<'storage> Esp32s31ApEngine<'storage> {
                 self.report.association_responses_prepared =
                     self.report.association_responses_prepared.saturating_add(1);
                 if association_id.is_some() {
+                    // Recovered `ic_set_sta` evidence gives the legacy B/G
+                    // path a software transmit-rate context, represented here
+                    // by the peer's negotiated rate and stable AID. Its extra
+                    // station-programming calls are HE-only. Pairwise hardware
+                    // state is installed later through the AID-owned key slot,
+                    // so the current B/G AP has no unevidenced station-table
+                    // MMIO operation to imitate.
                     self.report.maximum_associated_peers = self
                         .report
                         .maximum_associated_peers
@@ -315,7 +329,14 @@ impl<'storage> Esp32s31ApEngine<'storage> {
             }
             ApManagementRequest::Disassociation { peer, .. }
             | ApManagementRequest::Deauthentication { peer, .. } => {
-                if self.service.peer_status(peer).is_none() {
+                let Some(peer_status) = self.service.peer_status(peer) else {
+                    return Ok(Esp32s31ApManagementOutcome::Ignored);
+                };
+                // Once local timeout/stop teardown owns the peer, its ordered
+                // disassociation -> deauthentication -> key clear transaction
+                // is authoritative. A peer response racing that transaction
+                // must not remove the state below the in-flight TX owner.
+                if peer_status.phase == ApPeerPhase::Closing {
                     return Ok(Esp32s31ApManagementOutcome::Ignored);
                 }
                 self.security.clear_peer(hardware, peer)?;
@@ -332,6 +353,7 @@ impl<'storage> Esp32s31ApEngine<'storage> {
         &mut self,
         hardware: &mut H,
         peer: [u8; 6],
+        now_micros: u64,
     ) -> Result<(), Esp32s31ApEngineError> {
         if !self.service.wpa2_authorized(peer)? {
             return Err(Esp32s31ApEngineError::Service(
@@ -346,7 +368,7 @@ impl<'storage> Esp32s31ApEngine<'storage> {
             .association_id;
         self.security
             .install_pairwise(hardware, peer, association_id, ptk)?;
-        self.service.authorize(peer)?;
+        self.service.authorize(peer, now_micros)?;
         self.report.authorized_peers = self.report.authorized_peers.saturating_add(1);
         self.report.maximum_authorized_peers = self
             .report
@@ -362,12 +384,14 @@ impl<'storage> Esp32s31ApEngine<'storage> {
         hardware: &mut H,
         peer: [u8; 6],
         frame: OwnedEapolFrame<N>,
+        now_micros: u64,
     ) -> Result<Esp32s31ApWpa2Outcome<N>, Esp32s31ApEngineError> {
+        self.service.observe_activity(peer, now_micros)?;
         match self.service.on_eapol(peer, frame)? {
             ApWpa2Progress::None => Ok(Esp32s31ApWpa2Outcome::None),
             ApWpa2Progress::Transmit(frame) => Ok(Esp32s31ApWpa2Outcome::Transmit(frame)),
             ApWpa2Progress::AuthorizePeer => {
-                self.authorize_peer(hardware, peer)?;
+                self.authorize_peer(hardware, peer, now_micros)?;
                 Ok(Esp32s31ApWpa2Outcome::PeerAuthorized { peer })
             }
             ApWpa2Progress::DeauthenticatePeer => {
@@ -486,12 +510,98 @@ impl<'storage> Esp32s31ApEngine<'storage> {
         self.service.status_revision()
     }
 
+    pub fn next_peer_deadline(&self) -> Option<u64> {
+        self.service.next_peer_deadline()
+    }
+
+    pub fn observe_peer_activity(
+        &mut self,
+        peer: [u8; 6],
+        now_micros: u64,
+    ) -> Result<(), Esp32s31ApEngineError> {
+        self.service.observe_activity(peer, now_micros)?;
+        Ok(())
+    }
+
+    pub fn begin_due_peer_close(&mut self, now_micros: u64) -> Option<ApPeerClose> {
+        let close = self.service.begin_due_peer_close(now_micros)?;
+        match close.kind {
+            ApPeerCloseKind::AuthenticationTimeout => {
+                self.report.authentication_timeouts =
+                    self.report.authentication_timeouts.saturating_add(1);
+            }
+            ApPeerCloseKind::InactivityTimeout => {
+                self.report.inactivity_timeouts = self.report.inactivity_timeouts.saturating_add(1);
+            }
+            ApPeerCloseKind::AccessPointStop => {}
+        }
+        Some(close)
+    }
+
+    pub fn begin_stop_peer(&mut self) -> Option<ApPeerClose> {
+        self.service.begin_stop_peer()
+    }
+
+    pub fn encode_peer_disconnect(
+        &mut self,
+        close: ApPeerClose,
+        kind: ApPeerDisconnectKind,
+        reason: u16,
+        output: &mut [u8],
+    ) -> Result<usize, Esp32s31ApEngineError> {
+        let status = self
+            .service
+            .peer_status(close.peer)
+            .ok_or(ApServiceError::UnknownPeer)?;
+        if status.phase != ApPeerPhase::Closing {
+            return Err(ApServiceError::WrongPeerPhase.into());
+        }
+        let sequence = self.service.next_management_sequence();
+        let length = write_ap_peer_disconnect(
+            output,
+            self.service.address(),
+            close.peer,
+            kind,
+            reason,
+            sequence,
+        )?;
+        match kind {
+            ApPeerDisconnectKind::Disassociation => {
+                self.report.disassociations_prepared =
+                    self.report.disassociations_prepared.saturating_add(1);
+            }
+            ApPeerDisconnectKind::Deauthentication => {
+                self.report.deauthentications_prepared =
+                    self.report.deauthentications_prepared.saturating_add(1);
+            }
+        }
+        Ok(length)
+    }
+
+    pub fn complete_peer_close<H: Esp32s31ApRuntimeHardware>(
+        &mut self,
+        hardware: &mut H,
+        close: ApPeerClose,
+    ) -> Result<(), Esp32s31ApEngineError> {
+        let status = self
+            .service
+            .peer_status(close.peer)
+            .ok_or(ApServiceError::UnknownPeer)?;
+        if status.phase != ApPeerPhase::Closing {
+            return Err(ApServiceError::WrongPeerPhase.into());
+        }
+        self.security.clear_peer(hardware, close.peer)?;
+        self.service.remove_peer(close.peer)?;
+        self.report.peer_removals = self.report.peer_removals.saturating_add(1);
+        Ok(())
+    }
+
     pub fn stop<H: Esp32s31ApRuntimeHardware>(
         self,
         hardware: &mut H,
     ) -> Esp32s31ApEngineStop<'storage> {
         let (security, pairwise_storage) = self.security.stop(hardware);
-        hardware.stop_ap_tsf();
+        stop_access_point_tsf(hardware);
         Esp32s31ApEngineStop {
             service: self.service,
             beacon_storage: self.beacon.into_storage(),
@@ -516,6 +626,7 @@ mod tests {
         policy: Option<[u8; 6]>,
         installed: std::vec::Vec<u8>,
         cleared: std::vec::Vec<u8>,
+        tsf_started: bool,
         tsf_stopped: bool,
     }
 
@@ -536,8 +647,12 @@ mod tests {
         }
     }
 
-    impl Esp32s31ApRuntimeHardware for Hardware {
-        fn stop_ap_tsf(&mut self) {
+    impl ApTsfHardware for Hardware {
+        fn reset_and_start_access_point_tsf(&mut self) {
+            self.tsf_started = true;
+        }
+
+        fn stop_access_point_tsf(&mut self) {
             self.tsf_stopped = true;
         }
     }
@@ -551,6 +666,7 @@ mod tests {
             Pmk::derive(b"password", b"ap").unwrap(),
             Wpa2Gtk::new(1, true, [0x55; 16]).unwrap(),
             open_esp_radio_wifi_ap::AccessPointClientLimit::new(2).unwrap(),
+            open_esp_radio_wifi_ap::AccessPointInactiveTimeout::default(),
             storage,
         )
     }
@@ -585,7 +701,7 @@ mod tests {
         let mut response = [0; 160];
         assert_eq!(
             engine
-                .handle_management(&mut hardware, &request, [1; 32], 7, &mut response)
+                .handle_management(&mut hardware, &request, [1; 32], 7, 1, &mut response)
                 .unwrap(),
             Esp32s31ApManagementOutcome::Response {
                 len: 30,
@@ -598,6 +714,7 @@ mod tests {
         assert_eq!(hardware.policy, Some(ap));
         assert_eq!(hardware.installed, [2]);
         assert_eq!(hardware.cleared, [2]);
+        assert!(hardware.tsf_started);
         assert!(hardware.tsf_stopped);
         assert_eq!(
             stopped.report,
@@ -607,6 +724,111 @@ mod tests {
                 ..Esp32s31ApEngineReport::default()
             }
         );
+    }
+
+    #[test]
+    fn associated_peer_stop_emits_vendor_ordered_disconnects_before_removal() {
+        const RSN: [u8; 22] = [
+            0x30, 20, 1, 0, 0, 0x0f, 0xac, 4, 1, 0, 0, 0x0f, 0xac, 4, 1, 0, 0, 0x0f, 0xac, 2, 0, 0,
+        ];
+        let ap = [2, 0, 0, 0, 0, 1];
+        let peer = [2, 0, 0, 0, 0, 2];
+        let mut beacon = [0; WPA2_BEACON_CAPACITY];
+        let mut peers = open_esp_radio_wifi_ap::AccessPointPeerStorage::new();
+        let mut pairwise = Esp32s31ApPairwiseKeyStorage::new();
+        let ssid = WifiSsid::new(b"ap").unwrap();
+        let mut hardware = Hardware::default();
+        let mut engine = Esp32s31ApEngine::start(
+            &mut hardware,
+            service(ap, &mut peers),
+            &mut beacon,
+            &mut pairwise,
+            &ssid,
+            6,
+            100,
+            2,
+        )
+        .unwrap_or_else(|_| panic!("AP start"));
+
+        let mut authentication = [0; 30];
+        authentication[..2].copy_from_slice(&0x00b0_u16.to_le_bytes());
+        authentication[4..10].copy_from_slice(&ap);
+        authentication[10..16].copy_from_slice(&peer);
+        authentication[16..22].copy_from_slice(&ap);
+        authentication[26..28].copy_from_slice(&1_u16.to_le_bytes());
+        let mut output = [0; 160];
+        engine
+            .handle_management(&mut hardware, &authentication, [7; 32], 9, 1, &mut output)
+            .unwrap();
+
+        let mut association = [0; 56];
+        association[4..10].copy_from_slice(&ap);
+        association[10..16].copy_from_slice(&peer);
+        association[16..22].copy_from_slice(&ap);
+        association[28..34].copy_from_slice(&[1, 4, 12, 24, 48, 108]);
+        association[34..].copy_from_slice(&RSN);
+        engine
+            .handle_management(&mut hardware, &association, [7; 32], 9, 2, &mut output)
+            .unwrap();
+
+        let close = engine.begin_stop_peer().expect("associated peer to close");
+        assert!(close.was_associated);
+
+        let mut peer_deauthentication = [0; 26];
+        peer_deauthentication[..2].copy_from_slice(&0x00c0_u16.to_le_bytes());
+        peer_deauthentication[4..10].copy_from_slice(&ap);
+        peer_deauthentication[10..16].copy_from_slice(&peer);
+        peer_deauthentication[16..22].copy_from_slice(&ap);
+        peer_deauthentication[24..26].copy_from_slice(&3_u16.to_le_bytes());
+        assert_eq!(
+            engine
+                .handle_management(
+                    &mut hardware,
+                    &peer_deauthentication,
+                    [9; 32],
+                    10,
+                    3,
+                    &mut output,
+                )
+                .unwrap(),
+            Esp32s31ApManagementOutcome::Ignored
+        );
+        assert_eq!(
+            engine.service.peer_status(peer).unwrap().phase,
+            ApPeerPhase::Closing
+        );
+
+        let disassociation = engine
+            .encode_peer_disconnect(close, ApPeerDisconnectKind::Disassociation, 2, &mut output)
+            .unwrap();
+        assert_eq!(
+            disassociation,
+            open_esp_radio_ieee80211::ap::AP_PEER_DISCONNECT_LEN
+        );
+        assert_eq!(&output[..2], &0x00a0_u16.to_le_bytes());
+        assert_eq!(&output[24..26], &2_u16.to_le_bytes());
+
+        let deauthentication = engine
+            .encode_peer_disconnect(
+                close,
+                ApPeerDisconnectKind::Deauthentication,
+                2,
+                &mut output,
+            )
+            .unwrap();
+        assert_eq!(
+            deauthentication,
+            open_esp_radio_ieee80211::ap::AP_PEER_DISCONNECT_LEN
+        );
+        assert_eq!(&output[..2], &0x00c0_u16.to_le_bytes());
+        assert_eq!(&output[24..26], &2_u16.to_le_bytes());
+
+        engine.complete_peer_close(&mut hardware, close).unwrap();
+        assert!(engine.service_status().peers.iter().all(Option::is_none));
+        assert_eq!(engine.report().peer_removals, 1);
+        assert_eq!(engine.report().disassociations_prepared, 1);
+        assert_eq!(engine.report().deauthentications_prepared, 1);
+        let _ = engine.stop(&mut hardware);
     }
 
     #[test]
@@ -643,7 +865,7 @@ mod tests {
         authentication[26..28].copy_from_slice(&1_u16.to_le_bytes());
         let mut response = [0; 160];
         engine
-            .handle_management(&mut hardware, &authentication, ANONCE, 9, &mut response)
+            .handle_management(&mut hardware, &authentication, ANONCE, 9, 1, &mut response)
             .unwrap();
 
         let mut association = [0; 56];
@@ -654,7 +876,7 @@ mod tests {
         association[34..].copy_from_slice(&RSN);
         assert!(matches!(
             engine
-                .handle_management(&mut hardware, &association, ANONCE, 9, &mut response)
+                .handle_management(&mut hardware, &association, ANONCE, 9, 2, &mut response)
                 .unwrap(),
             Esp32s31ApManagementOutcome::Response {
                 begin_wpa2: true,
@@ -678,8 +900,9 @@ mod tests {
         let message2 =
             OwnedEapolFrame::<512>::try_copy(Wpa2Interface::AccessPoint, peer, message2.as_bytes())
                 .unwrap();
-        let Esp32s31ApWpa2Outcome::Transmit(message3) =
-            engine.handle_eapol(&mut hardware, peer, message2).unwrap()
+        let Esp32s31ApWpa2Outcome::Transmit(message3) = engine
+            .handle_eapol(&mut hardware, peer, message2, 3)
+            .unwrap()
         else {
             panic!("message two must produce message three");
         };
@@ -699,7 +922,9 @@ mod tests {
             OwnedEapolFrame::<512>::try_copy(Wpa2Interface::AccessPoint, peer, message4.as_bytes())
                 .unwrap();
         assert!(matches!(
-            engine.handle_eapol(&mut hardware, peer, message4).unwrap(),
+            engine
+                .handle_eapol(&mut hardware, peer, message4, 4)
+                .unwrap(),
             Esp32s31ApWpa2Outcome::PeerAuthorized { peer: authorized } if authorized == peer
         ));
         assert_eq!(engine.report().authorized_peers, 1);
@@ -732,7 +957,7 @@ mod tests {
         // deauthentication. The old PTK must leave hardware before the same
         // AID begins a new handshake.
         engine
-            .handle_management(&mut hardware, &authentication, ANONCE, 11, &mut response)
+            .handle_management(&mut hardware, &authentication, ANONCE, 11, 5, &mut response)
             .unwrap();
         assert_eq!(hardware.cleared, [8]);
         assert!(!engine.is_authorized_peer(peer));

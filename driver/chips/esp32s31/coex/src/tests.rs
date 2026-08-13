@@ -183,8 +183,7 @@ fn request_programs_then_enables_and_release_disables() {
         ..TimerModel::default()
     };
     core.enable();
-    let request = CoexRequest {
-        client: CoexClient::Wifi,
+    let request = CoexClientRequest {
         event: CoexEventId::new(1).unwrap(),
         latency: 2,
         duration: 3,
@@ -200,7 +199,8 @@ fn request_programs_then_enables_and_release_disables() {
         operations: operations.clone(),
     };
     assert_eq!(
-        core.request(&mut hardware, &mut clock, request).unwrap(),
+        core.request_wifi(&mut hardware, &mut clock, request)
+            .unwrap(),
         CoexTimerIndex::new(0).unwrap()
     );
     assert_eq!(hardware.programmed, Some((0, 1, 5, 1_572_864, 1_048_576)));
@@ -242,11 +242,10 @@ fn unmapped_events_return_vendor_invalid_event_without_hardware_effects() {
     core.enable();
     let event = CoexEventId::new(0).unwrap();
     assert_eq!(
-        core.request(
+        core.request_wifi(
             &mut hardware,
             &mut clock,
-            CoexRequest {
-                client: CoexClient::Wifi,
+            CoexClientRequest {
                 event,
                 latency: 0,
                 duration: 100,
@@ -269,11 +268,10 @@ fn unsupported_clock_never_publishes_an_active_timer() {
     core.enable();
 
     assert_eq!(
-        core.request(
+        core.request_wifi(
             &mut hardware,
             &mut FailingClock,
-            CoexRequest {
-                client: CoexClient::Wifi,
+            CoexClientRequest {
                 event: CoexEventId::new(1).unwrap(),
                 latency: 2,
                 duration: 3,

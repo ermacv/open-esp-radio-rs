@@ -40,7 +40,7 @@ artifact-sha256 = "851cac6122d2e047fb22f1059b7875a55b526a07a19d94022fc0e30f4bf2f
 [[inputs]]
 profile = "btbb-all"
 source = "btbb"
-artifact-sha256 = "ebd67c6a32081d0fcd143bbb0ed53f962fc587058e20eceb59012beae47528df"
+artifact-sha256 = "340de1f0948e70bb7355e74f1652daad7bcb14c4b0a909bda1fff89f96b63a60"
 
 # Sparse review overlay: add only reviewed or ignored functions, contexts, fields, and logical types.
 # All omitted generated observations remain part of the computed unreviewed backlog.

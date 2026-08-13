@@ -262,7 +262,15 @@ impl ResolvedProjectAnalysisOperations<'_> {
             ),
             "linked-ir" => format!("{:?}", project.ir_profiles),
             "event-replays" => format!("{:?}", project.functions),
-            "review-scopes" => format!("{:?}", project.review),
+            // A feature pack may promote or remove review scopes without
+            // changing the explicit `[review]` table. Publication membership
+            // is derived from the required feature closure, so both the
+            // qualification configuration and the pack contents belong to
+            // this stage's cache identity.
+            "review-scopes" => format!(
+                "review={:?};qualification={:?}",
+                project.review, project.qualification
+            ),
             "navigation-index" => format!("{:?}", project.navigation_index),
             "code-boundary-validation" | "code-boundary-review" => {
                 format!("{:?}", project.code)
@@ -485,6 +493,9 @@ impl ProjectAnalysisOperations for ResolvedProjectAnalysisOperations<'_> {
     fn build_review_scopes(&mut self, check: bool) -> Result<StageRun> {
         let mut inputs = self.common_inputs();
         inputs.extend(self.linked_ir_outputs());
+        if let Some(qualification) = self.session.project.qualification.as_ref() {
+            inputs.push(qualification.pack.clone());
+        }
         if let Some(registers) = self.session.project.registers.as_ref() {
             inputs.push(registers.facts.clone());
         }

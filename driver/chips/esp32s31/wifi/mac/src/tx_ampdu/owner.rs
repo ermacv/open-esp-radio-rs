@@ -355,9 +355,23 @@ impl<B: StableDmaBacking, const SLOTS: usize, const BUFFER_SIZE: usize>
             source_indices[retained_count] = location.index as u8;
             retained_count += 1;
         }
-        self.dma_mut()
-            .compact_active_backings(&source_indices[..retained_count])?;
-        self.dma_mut().begin_retry()?;
+        if let Err(error) = self
+            .dma_mut()
+            .compact_active_backings(&source_indices[..retained_count])
+        {
+            // Retry bits have already been changed in retained frame bytes.
+            // An impossible metadata/backing disagreement is therefore no
+            // longer a recoverable Detached aggregate.
+            self.quarantine();
+            return Err(error.into());
+        }
+        if let Err(error) = self.dma_mut().begin_retry() {
+            // The logical backing order was committed above. Keep the two
+            // aggregate owners inseparable if the expected Detached ->
+            // Reserved edge cannot be made.
+            self.quarantine();
+            return Err(error.into());
+        }
         match self.metadata_mut().compact_retry_metadata(locations) {
             Ok(length) => Ok(length),
             Err(error) => {

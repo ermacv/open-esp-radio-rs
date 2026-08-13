@@ -2,9 +2,8 @@
 
 #![forbid(unsafe_code)]
 
-use super::{MacInterface, RadioRegisters, device_fence};
+use super::{MacInterface, MacKeyEntryIndex, RadioRegisters, device_fence};
 
-const KEY_ENTRY_COUNT: u8 = 25;
 const KEY_ENTRY_WORDS: usize = 10;
 const PROGRAMMED_CCMP_WORDS: usize = 6;
 
@@ -17,10 +16,8 @@ pub enum MacKeyInstallOutcome {
 
 impl RadioRegisters {
     /// Report whether one bounded hardware key-table entry is currently valid.
-    pub fn mac_key_entry_is_valid(&self, index: u8) -> Option<bool> {
-        if index >= KEY_ENTRY_COUNT {
-            return None;
-        }
+    pub fn mac_key_entry_is_valid(&self, index: MacKeyEntryIndex) -> bool {
+        let index = index.get();
         let validity = self
             .peripherals
             .wifi_mac_crypto_control
@@ -28,7 +25,7 @@ impl RadioRegisters {
             .read()
             .valid_entries()
             .bits();
-        Some(validity & (1_u32 << index) != 0)
+        validity & (1_u32 << index) != 0
     }
 
     /// Establish the common cold hardware-crypto bypass state.
@@ -61,7 +58,7 @@ impl RadioRegisters {
     /// `hal_crypto_enable(STA, CCMP, true, false)` branch.
     pub fn install_sta_ccmp_key_entry(
         &mut self,
-        index: u8,
+        index: MacKeyEntryIndex,
         words: [u32; PROGRAMMED_CCMP_WORDS],
     ) -> MacKeyInstallOutcome {
         self.install_ccmp_key_entry(MacInterface::Station, index, words)
@@ -74,7 +71,7 @@ impl RadioRegisters {
     /// slots 1..=4; the first associated AP peer observed hardware slot 8.
     pub fn install_ap_ccmp_key_entry(
         &mut self,
-        index: u8,
+        index: MacKeyEntryIndex,
         words: [u32; PROGRAMMED_CCMP_WORDS],
     ) -> MacKeyInstallOutcome {
         self.install_ccmp_key_entry(MacInterface::AccessPoint, index, words)
@@ -83,10 +80,10 @@ impl RadioRegisters {
     fn install_ccmp_key_entry(
         &mut self,
         interface: MacInterface,
-        index: u8,
+        index: MacKeyEntryIndex,
         words: [u32; PROGRAMMED_CCMP_WORDS],
     ) -> MacKeyInstallOutcome {
-        assert!(index < KEY_ENTRY_COUNT);
+        let index = index.get();
         let interface = interface.bits() as usize;
         let valid_bit = 1_u32 << index;
         let validity = self
@@ -105,7 +102,7 @@ impl RadioRegisters {
         for (word, value) in words.into_iter().enumerate() {
             super::svd::zero_based_field_write::mac_key_table_entry_word(
                 table,
-                usize::from(index) * KEY_ENTRY_WORDS + word,
+                index as usize * KEY_ENTRY_WORDS + word,
                 value,
             );
         }
@@ -137,8 +134,8 @@ impl RadioRegisters {
     }
 
     /// Invalidate and zero all ten words of one hardware key entry.
-    pub fn clear_mac_key_entry(&mut self, index: u8) {
-        assert!(index < KEY_ENTRY_COUNT);
+    pub fn clear_mac_key_entry(&mut self, index: MacKeyEntryIndex) {
+        let index = index.get();
         let control = &self.peripherals.wifi_mac_crypto_control;
         let validity = control.key_valid_bitmap().read().valid_entries().bits();
         super::svd::zero_based_field_write::mac_crypto_key_valid_bitmap(
@@ -149,12 +146,12 @@ impl RadioRegisters {
         device_fence();
     }
 
-    fn clear_mac_key_entry_words(&mut self, index: u8) {
+    fn clear_mac_key_entry_words(&mut self, index: u32) {
         let table = &self.peripherals.wifi_mac_key_table;
         for word in 0..KEY_ENTRY_WORDS {
             super::svd::zero_based_field_write::mac_key_table_entry_word(
                 table,
-                usize::from(index) * KEY_ENTRY_WORDS + word,
+                index as usize * KEY_ENTRY_WORDS + word,
                 0,
             );
         }

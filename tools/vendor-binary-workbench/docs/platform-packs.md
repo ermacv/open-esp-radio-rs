@@ -73,26 +73,30 @@ entry contracts or proprietary table-shape enrichment requires one.
 
 ## Compiled addon registry
 
-Compiled harnesses are entries in one static `HarnessDescriptor` registry.
-The normal build has an empty compiled-harness registry. The explicit
-`esp32s31-harness` feature alone pulls in the ESP32-S31 ABI fixture, semantic
-harness and production PHY/MAC dependencies. Build and test the generic binary
-with:
+Compiled providers are entries in a caller-owned `HarnessDescriptor` registry.
+The standalone binary has an empty registry and no chip or production-driver
+dependencies. A product host calls `main_entry_with_harnesses` with the
+providers it links. Build and test the generic binary with:
 
 ```console
 cargo build --manifest-path tools/vendor-binary-workbench/Cargo.toml \
-  --no-default-features
+  --all-features
 cargo test --manifest-path tools/vendor-binary-workbench/Cargo.toml \
-  --no-default-features --lib
+  --all-features --lib
 ```
 
-The normal repository binary includes the compiled ESP32-S31 addon:
+The open-esp-radio-rs Cargo alias selects its thin ESP32-S31 provider host:
 
 ```console
-cargo build -p open-radio-vendor-binary-workbench
+cargo build -p open-radio-vendor-workbench-esp32s31-host
 cargo vendor-binary-workbench project doctor \
   --project verification/vendor/targets/esp32s31/vendor-project.toml
 ```
+
+Provider callbacks return architecture-neutral request, evidence and
+qualification types. If a project selects a provider ID absent from the host,
+configuration fails explicitly; neutral analysis is never silently promoted
+to target-aware verification.
 
 Generic project, artifact, MMIO and IR operations remain available; selecting
 a platform pack whose harness was not compiled in fails during resolution,

@@ -12,6 +12,7 @@ PHY_STATE="$STATE_DIR/phy"
 MAC_STATE="$STATE_DIR/mac"
 WPA_PID="$STATE_DIR/wpa-supplicant.pid"
 WPA_CONFIG="$STATE_DIR/wpa-supplicant.conf"
+WPA_CTRL="$STATE_DIR/wpa-supplicant-control"
 
 usage() {
     echo "usage: open-radio-net {capabilities|start-ht40|start-he20|client|monitor|monitor-1|monitor-6|monitor-11|observer-ht40-1|managed|stop|status|usb-reset|kernel-log}" >&2
@@ -58,6 +59,7 @@ stop_radio_services() {
     /usr/bin/ip link set wlan0 down 2>/dev/null || true
     /usr/bin/ip address flush dev wlan0 2>/dev/null || true
     /bin/rm -f "$WPA_CONFIG"
+    /bin/rm -rf "$WPA_CTRL"
 }
 
 take_network_manager_ownership() {
@@ -90,6 +92,27 @@ restore_managed_interface() {
     mac=$(/bin/cat "$MAC_STATE")
     test -e "/sys/class/ieee80211/$phy"
     /usr/bin/iw phy "$phy" interface add wlan0 type managed addr "$mac"
+}
+
+recreate_managed_interface() {
+    # Repeated target-AP stop/start qualification keeps the Intel PHY alive
+    # across many independent peer epochs. Merely killing wpa_supplicant and
+    # toggling IFF_UP eventually leaves an iwlwifi firmware peer context that
+    # reports authentication attempts to cfg80211 but puts no usable frame on
+    # air. Recreating only the managed wdev releases that fixture-owned state;
+    # the physical adapter, MAC identity and AP-under-test remain unchanged.
+    if test -e /sys/class/net/wlan0; then
+        /usr/bin/iw dev wlan0 del
+    fi
+    restore_managed_interface
+    # NetworkManager's `managed no` property belongs to the old netdev. The
+    # recreated wdev is a new device and can otherwise be claimed immediately
+    # by the desktop's global supplicant, which was observed reconnecting it
+    # to the normal uplink while the private HIL supplicant remained scanning.
+    take_network_manager_ownership
+    /usr/bin/wpa_cli -g /run/wpa_supplicant/global interface_remove wlan0 \
+        >/dev/null 2>&1 || true
+    /usr/bin/ip address flush dev wlan0 2>/dev/null || true
 }
 
 start_ap() {
@@ -176,10 +199,12 @@ start_client() {
     take_network_manager_ownership
     remember_wifi_identity
     stop_radio_services
-    restore_managed_interface
+    recreate_managed_interface
     /usr/bin/ip link set wlan0 up
     /bin/mkdir -p "$STATE_DIR"
     /bin/chmod 0700 "$STATE_DIR"
+    /bin/rm -rf "$WPA_CTRL"
+    /bin/mkdir -m 0700 "$WPA_CTRL"
 
     # Do not place the passphrase in argv: /proc would expose it to unrelated
     # local processes. Arch's wpa_passphrase requires a terminal even when its
@@ -189,7 +214,19 @@ start_client() {
     escaped_ssid=$(/usr/bin/printf '%s' "$ssid" | /usr/bin/sed 's/\\/\\\\/g; s/"/\\"/g')
     escaped_passphrase=$(/usr/bin/printf '%s' "$passphrase" | /usr/bin/sed 's/\\/\\\\/g; s/"/\\"/g')
     {
-        /usr/bin/printf 'ctrl_interface=/run/wpa_supplicant\n'
+        # The desktop NetworkManager owns a global wpa_supplicant instance in
+        # /run/wpa_supplicant. A private control directory prevents a fixture
+        # epoch from colliding with that daemon's wlan0 socket while keeping
+        # the system network service alive for the Ethernet uplink.
+        /usr/bin/printf 'ctrl_interface=%s\n' "$WPA_CTRL"
+        # The fixture owns exactly one managed STA. P2P creates a second wdev
+        # and a second nl80211 lifecycle on the same Intel PHY; repeated AP
+        # epochs then race that auxiliary interface during teardown. Keep the
+        # hardware address stable so every cycle qualifies the same AP peer
+        # identity instead of wpa_supplicant MAC randomization behavior.
+        /usr/bin/printf 'p2p_disabled=1\n'
+        /usr/bin/printf 'mac_addr=0\n'
+        /usr/bin/printf 'preassoc_mac_addr=0\n'
         /usr/bin/printf 'network={\n'
         /usr/bin/printf '    ssid="%s"\n' "$escaped_ssid"
         /usr/bin/printf '    psk="%s"\n' "$escaped_passphrase"
@@ -208,12 +245,12 @@ start_client() {
     # Do not depend on the supplicant's background-scan backoff after a rapid
     # reset-separated AP epoch. One explicit scan is still ordinary client
     # behavior and cannot make an AP pass without emitting discoverable frames.
-    /usr/bin/wpa_cli -i wlan0 scan >/dev/null
+    /usr/bin/wpa_cli -p "$WPA_CTRL" -i wlan0 scan >/dev/null
 
     attempts=0
     maximum_attempts=200
     while test "$attempts" -lt "$maximum_attempts"; do
-        if /usr/bin/wpa_cli -i wlan0 status 2>/dev/null \
+        if /usr/bin/wpa_cli -p "$WPA_CTRL" -i wlan0 status 2>/dev/null \
             | /usr/bin/grep -Fq 'wpa_state=COMPLETED'
         then
             break
@@ -223,7 +260,7 @@ start_client() {
     done
     if test "$attempts" -eq "$maximum_attempts"; then
         echo "open-radio-net: client did not associate within 20 seconds" >&2
-        /usr/bin/wpa_cli -i wlan0 status >&2 2>/dev/null || true
+        /usr/bin/wpa_cli -p "$WPA_CTRL" -i wlan0 status >&2 2>/dev/null || true
         /usr/bin/iw dev wlan0 link >&2 2>/dev/null || true
         stop_radio_services
         exit 1

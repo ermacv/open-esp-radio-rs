@@ -18,12 +18,15 @@ use core::marker::PhantomData;
 
 use crate::rx::{RxPhyInfo, decode_normalized_rx_metadata};
 use open_esp_radio_dma::{RxHandoffPool, RxNetworkLease, RxRadioLease};
+#[cfg(any(not(target_pointer_width = "32"), feature = "validation-raw-dma"))]
+use open_esp_radio_esp32s31_wifi_dma::descriptor::length as descriptor_length;
+#[cfg(any(not(target_pointer_width = "32"), feature = "validation-raw-dma"))]
+use open_esp_radio_esp32s31_wifi_dma::rx_ring::RxCompletedDescriptor;
 use open_esp_radio_esp32s31_wifi_dma::{
-    descriptor::length as descriptor_length,
     rx_dma::RxDma,
     rx_ring::{
-        RX_DESCRIPTOR_RELOAD_ATTEMPT_LIMIT, RxCompletedDescriptor, RxCompletedUnit,
-        RxReloadObservation, RxRingError, RxRingLive, RxSegment,
+        RX_DESCRIPTOR_RELOAD_ATTEMPT_LIMIT, RxCompletedUnit, RxReloadObservation, RxRingError,
+        RxRingLive, RxSegment,
     },
     rx_storage::RxDmaCompletedUnit,
 };
@@ -70,6 +73,7 @@ struct StagedMetadata {
     length: usize,
 }
 
+#[cfg(any(not(target_pointer_width = "32"), feature = "validation-raw-dma"))]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct CompletedDescriptorObservation {
     descriptor_address: u32,
@@ -77,6 +81,7 @@ struct CompletedDescriptorObservation {
     next_descriptor_address: u32,
 }
 
+#[cfg(any(not(target_pointer_width = "32"), feature = "validation-raw-dma"))]
 impl From<RxCompletedDescriptor> for CompletedDescriptorObservation {
     fn from(completed: RxCompletedDescriptor) -> Self {
         Self {
@@ -105,6 +110,7 @@ impl<const SLOTS: usize, const CAPACITY: usize> RxStagePool<SLOTS, CAPACITY> {
         }
     }
 
+    #[cfg(any(not(target_pointer_width = "32"), feature = "validation-raw-dma"))]
     fn try_stage<'pool>(
         &'pool self,
         completed: CompletedDescriptorObservation,
@@ -215,6 +221,7 @@ impl<const SLOTS: usize, const CAPACITY: usize> RxStagePool<SLOTS, CAPACITY> {
     /// TX preparation and delivered 10.036-Mbit/s RX plus 67.942-Mbit/s TX.
     /// The preceding parse-before-recycle path produced `BUFFER_FULL`.
     #[inline(never)]
+    #[cfg(any(not(target_pointer_width = "32"), feature = "validation-raw-dma"))]
     pub fn stage_recycle<'pool, const COUNT: usize, M, F>(
         &'pool self,
         completed: RxCompletedDescriptor,
@@ -246,6 +253,7 @@ impl<const SLOTS: usize, const CAPACITY: usize> RxStagePool<SLOTS, CAPACITY> {
     /// Copy one complete RX unit, then atomically recycle all DMA descriptors
     /// that carried it. `copy_segment` receives the zero-based unit segment
     /// and an exactly sized destination range in the independent stage slot.
+    #[cfg(any(not(target_pointer_width = "32"), feature = "validation-raw-dma"))]
     pub fn stage_unit_recycle<'pool, const COUNT: usize, M, C, F>(
         &'pool self,
         unit: RxCompletedUnit,

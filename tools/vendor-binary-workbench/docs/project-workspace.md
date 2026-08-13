@@ -202,10 +202,14 @@ Schema 7 additionally stores the exact `replacement_function_keys` used by
 feature qualification. Every explicit scope root must be verified or excluded
 by reviewed feature policy; see [feature qualification](feature-qualification.md).
 
-`publication-scopes` is the explicit publication boundary. SVD, PAC and binding
-generation require reviewed register-model entries only for MMIO in those
-scopes and owned memory-map ranges. Other artifact-wide findings remain in the
-review reports but do not block a deliberately smaller release.
+`publication-scopes` is the project-wide base publication boundary. When
+`[qualification]` is configured, the workbench unions it with every review
+scope selected by the transitive dependency graph of `required-features`;
+phase-qualified dependencies contribute only that phase's scopes. SVD, PAC
+and binding generation therefore cannot stay green by omitting a required
+feature scope, while excluded or unrelated artifact-wide findings do not
+silently expand the release. Every selected MMIO address inside an owned
+memory-map range still requires a reviewed register-model entry.
 
 Optional `[analysis.symbols]` gives the complete cross-input symbol inventory
 a stable project-relative `output`. `symbols inventory` uses that destination
@@ -291,6 +295,14 @@ it selects vendor source IDs, an exact Rust artifact role, its probe prefix,
 zero or more execution-profile fragments, disposition fragments, accepted
 baseline fragments and a completion or regression gate. IDs and profile names
 must be unique; conflicting disposition or baseline entries fail loading.
+
+An optional `auxiliary-sources = ["linked-replay"]` list exposes additional
+linked executables to registered driver adapters. Each ID resolves through the
+normal `source-artifact:ID` run-spec role, but its symbols are deliberately not
+added to the suite's vendor coverage denominator. Use this for a relocation-
+complete replay image while retaining an archive or focused ELF as the
+authoritative inventory source. It is not an implicit companion and adapters
+must request the stable ID explicitly.
 
 Artifact paths remain private. Vendor sources resolve through
 `source-artifact:ID`, optional `source-inventory:ID` and

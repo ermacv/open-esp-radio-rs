@@ -24,6 +24,7 @@ mod interface_discovery_options;
 mod interface_pack;
 mod ir_build;
 mod project_check;
+mod project_audit_bindings;
 mod project_configure;
 mod project_doctor;
 mod project_feature;
@@ -87,6 +88,12 @@ pub(super) fn run_project_doctor(context: ProjectContext<'_>) -> Result<bool> {
 
 pub(super) fn run_project_files(context: ProjectContext<'_>) -> Result<bool> {
     project_files::run(context)
+}
+
+pub(super) fn run_project_audit_bindings(
+    session: &crate::application::ProjectSession,
+) -> Result<bool> {
+    project_audit_bindings::run(session)
 }
 
 pub(super) fn run_project_status(

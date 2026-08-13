@@ -102,13 +102,17 @@ pub(super) fn execute(
             )));
         }
         for (suite, report) in selected.iter().zip(&suites) {
+            let evidence = report.verification.evidence_set();
+            if evidence.is_empty() {
+                continue;
+            }
             let candidate = directory.join(format!("{}.toml", suite.id));
             let protected = suite
                 .evidence_baselines
                 .iter()
                 .map(|path| ("accepted baseline", path.as_path()))
                 .collect::<Vec<_>>();
-            write_evidence_candidate(&candidate, &protected, &report.verification.evidence_set())?;
+            write_evidence_candidate(&candidate, &protected, &evidence)?;
         }
     }
     let report = ProjectVerificationReport::new(
@@ -220,15 +224,33 @@ fn suite_arguments(
         dispositions: suite.dispositions.clone(),
         evidence_baseline: suite.evidence_baselines.clone(),
         gate: match suite.gate {
+            ProjectVerificationGate::Informational => "informational".to_owned(),
             ProjectVerificationGate::Completion => "completion".to_owned(),
             ProjectVerificationGate::Regression { .. } => "regression".to_owned(),
         },
         match_floor: match suite.gate {
+            ProjectVerificationGate::Informational => None,
             ProjectVerificationGate::Completion => None,
             ProjectVerificationGate::Regression { match_floor } => Some(match_floor),
         },
         ..VerifyInventoryArgs::default()
     };
+    arguments.auxiliary_artifact.extend(
+        suite
+            .auxiliary_sources
+            .iter()
+            .map(|source| {
+                Ok(SourcePath {
+                    source: source.clone(),
+                    path: required_input(
+                        run_spec,
+                        &InputRole::SourceArtifact(source.clone()),
+                        &suite.id,
+                    )?,
+                })
+            })
+            .collect::<Result<Vec<_>>>()?,
+    );
     for vendor in &suite.vendor {
         let source = &vendor.source;
         arguments.source_artifact.push(SourcePath {

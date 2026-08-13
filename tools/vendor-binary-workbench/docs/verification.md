@@ -18,6 +18,21 @@ project result. `verify source` and `verify inventory` are focused leaf tools;
 `verify evidence` reviews a persisted inventory report without loading
 proprietary artifacts.
 
+`project audit bindings` is the trust-boundary view. It reports the vendor
+oracle, production binding, admissible claim ceiling and exact blocker for
+every executable binding. Run it before accepting candidate evidence; the
+same audit is part of `project check`.
+
+The audit evaluates the transitive closure of
+`qualification.required-features`. Bindings in that closure are either
+`release-ready` or `release-blocked`; unselected bounded work remains visible
+as `available` or `research-only` and does not block an unrelated release.
+Invalid claim/disposition declarations always fail. Release eligibility
+requires concrete vendor replay and a real production binding. A finite
+`rust-conformance` property is eligible when it meets those requirements;
+`reviewed-projection` and `verification-projection` remain non-release
+evidence.
+
 ```console
 cargo vendor-binary-workbench advanced verify source \
   --project verification/vendor/targets/esp32s31/vendor-project.toml \
@@ -78,6 +93,12 @@ ROM function and an archive function with the same name remain two independent
 rows. Binding-v1 probes are selected by their exact declared name. Unbound
 probes use the source-aware naming convention and `--rust-prefix` controls
 their pairing and orphan accounting.
+
+A suite may name `auxiliary-sources`. These are resolved as
+`source-artifact:ID` inputs and delivered only to registered driver adapters;
+they do not create inventory rows or change source coverage. This supports
+concrete execution from a relocation-complete linked image without pretending
+that every symbol in that image belongs to the focused verification surface.
 
 ## Replacement graph
 

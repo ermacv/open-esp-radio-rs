@@ -137,6 +137,7 @@ report = "generated/verification.json"
 
 [[verification.suites]]
 id = "radio"
+auxiliary-sources = ["linked-replay"]
 rust-artifact-role = "rust-artifact:radio"
 rust-companion-role = "rust-companion:radio"
 rust-prefix = "open_trace_"
@@ -267,6 +268,7 @@ all = true
                         selection: VerificationVendorSelection::All,
                     },
                 ],
+                auxiliary_sources: vec!["linked-replay".parse().unwrap()],
                 rust_artifact_role: InputRole::parse("rust-artifact:radio").unwrap(),
                 rust_companion_role: Some(InputRole::parse("rust-companion:radio").unwrap()),
                 rust_prefix: "open_trace_".to_owned(),

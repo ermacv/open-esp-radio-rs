@@ -1,6 +1,3 @@
-#[cfg(feature = "esp32s31-harness")]
-use std::path::PathBuf;
-
 use super::*;
 
 mod architecture_boundaries;
@@ -165,42 +162,6 @@ fn assert_generated_reference_compiles(name: &str, source: &str) {
     );
 }
 
-#[cfg(feature = "esp32s31-harness")]
-fn assert_generated_reference_tests_run(name: &str, source: &str, tests: &str) {
-    let stem = format!("open-esp-radio-{name}-tests-{}", std::process::id());
-    let source_path = env::temp_dir().join(format!("{stem}.rs"));
-    let output_path = env::temp_dir().join(&stem);
-    fs::write(&source_path, format!("{source}\n{tests}")).unwrap();
-    let compile = std::process::Command::new("rustc")
-        .arg("--edition=2024")
-        .arg("--test")
-        .arg("-Dwarnings")
-        .arg("-o")
-        .arg(&output_path)
-        .arg(&source_path)
-        .output()
-        .unwrap();
-    if !compile.status.success() {
-        let _ = fs::remove_file(&source_path);
-        if output_path.exists() {
-            let _ = fs::remove_file(&output_path);
-        }
-        panic!(
-            "generated reference tests did not compile:\n{}",
-            String::from_utf8_lossy(&compile.stderr)
-        );
-    }
-    let run = std::process::Command::new(&output_path).output().unwrap();
-    fs::remove_file(source_path).unwrap();
-    fs::remove_file(output_path).unwrap();
-    assert!(
-        run.status.success(),
-        "generated reference tests failed:\n{}\n{}",
-        String::from_utf8_lossy(&run.stdout),
-        String::from_utf8_lossy(&run.stderr)
-    );
-}
-
 const TEST_NONE_ENTRY_SPEC: EntryContractSpec = EntryContractSpec {
     id: "none",
     function_table: None,
@@ -315,91 +276,5 @@ fn synthetic_delay_pointer_context() -> StructuralPointerContext {
     StructuralPointerContext::from_harness(&TEST_RISCV_HARNESS)
 }
 
-#[cfg(feature = "esp32s31-harness")]
-fn wifi_osi_tail_symbol(slot_offset: u32) -> artifact::ArtifactSymbolDefinition {
-    let slot_load = ((slot_offset & 0x0fff) << 20) | (15 << 15) | (2 << 12) | (15 << 7) | 0x03;
-    let mut bytes = vec![
-        0xb7, 0x07, 0x00, 0x00, // lui a5, %hi(g_osi_funcs_p)
-        0x83, 0xa7, 0x07, 0x00, // lw a5, %lo(g_osi_funcs_p)(a5)
-    ];
-    bytes.extend_from_slice(&slot_load.to_le_bytes());
-    bytes.extend_from_slice(&[0x82, 0x87]); // jr a5
-    artifact::ArtifactSymbolDefinition {
-        member: Some("synthetic.o".to_owned()),
-        name: "wifi_osi_tail".to_owned(),
-        address: 0x1000,
-        bytes,
-        addresses_resolved: false,
-        memory_regions: Default::default(),
-        relocations: vec![artifact::SymbolRelocation {
-            address: 0x1004,
-            kind: artifact::RelocationKind::Lo12I,
-            symbol: "g_osi_funcs_p".to_owned(),
-            addend: 0,
-        }],
-    }
-}
-
-#[cfg(feature = "esp32s31-harness")]
-fn esp32s31_interface_workspace() -> interfaces::InterfaceWorkspace {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .ancestors()
-        .nth(2)
-        .expect("workbench remains under tools");
-    let project = project::ProjectSpec::load(
-        &root.join("verification/vendor/targets/esp32s31/vendor-project.toml"),
-    )
-    .unwrap();
-    let mut target = TargetSpec::load(&project.target_spec).unwrap();
-    if let Some(pack) = &project.platform_pack {
-        pack.apply_to_target(&mut target).unwrap();
-    }
-    linked_ir_export::load_project_interfaces(&project, &target)
-        .unwrap()
-        .expect("ESP32-S31 project has a reviewed interface workspace")
-}
-
-#[cfg(feature = "esp32s31-harness")]
-fn reviewed_wifi_osi_context() -> StructuralPointerContext {
-    let interfaces = esp32s31_interface_workspace();
-    let mut resolver = ReferenceResolver {
-        symbols: Vec::new(),
-        symbols_by_address: BTreeMap::new(),
-        symbol_ids: BTreeMap::new(),
-        exported_symbol_keys: BTreeSet::new(),
-        relocated_calls: BTreeMap::new(),
-        pointer_context: StructuralPointerContext::from_harness(
-            &harnesses::esp32s31::RISCV_HARNESS,
-        ),
-        data_symbols: Vec::new(),
-        data_objects: Vec::new(),
-        projected_direct_semantics: BTreeMap::new(),
-        projected_origins: BTreeMap::new(),
-    };
-    linked_ir_export::register_reviewed_external_calls(&mut resolver, &interfaces, "archive", &[]);
-    let contract = interfaces
-        .contracts()
-        .iter()
-        .find(|contract| contract.anchor == "wifi-osi-v9")
-        .expect("reviewed Wi-Fi OSI contract exists");
-    resolver.pointer_context.relocated_pointer_symbols.insert(
-        "g_osi_funcs_p".to_owned(),
-        SymbolicValue::ReviewedExternalTable(contract.id.clone()),
-    );
-    resolver.pointer_context
-}
-
-#[cfg(feature = "esp32s31-harness")]
-fn reviewed_reference_resolver(artifact: &Path, companions: &[PathBuf]) -> ReferenceResolver {
-    let interfaces = esp32s31_interface_workspace();
-    let mut resolver =
-        ReferenceResolver::load(artifact, companions, &harnesses::esp32s31::RISCV_HARNESS).unwrap();
-    linked_ir_export::register_reviewed_external_calls(&mut resolver, &interfaces, "archive", &[]);
-    resolver
-}
-
-#[cfg(feature = "esp32s31-harness")]
-#[path = "../harnesses/esp32s31/oracle_tests/mod.rs"]
-mod oracle;
 mod structural;
 mod verification;

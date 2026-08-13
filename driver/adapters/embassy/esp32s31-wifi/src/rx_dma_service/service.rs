@@ -1,5 +1,29 @@
 use super::*;
 
+async fn await_completed_unit_link_release<H, D, const COUNT: usize>(
+    ring: &mut RxRingLive<'_, COUNT>,
+    hardware: &mut H,
+    delay: &mut D,
+    descriptor_count: usize,
+) -> Result<(), RxRingError>
+where
+    H: RxDma,
+    D: RxReloadDelay,
+{
+    let mut samples = 0_u32;
+    loop {
+        if ring.observe_current_completed_unit_link_release(hardware, descriptor_count) {
+            break;
+        }
+        samples = samples.saturating_add(1);
+        if samples >= RX_DESCRIPTOR_RELOAD_ATTEMPT_LIMIT {
+            return Err(RxRingError::Busy);
+        }
+        delay.after_micros(1).await;
+    }
+    Ok(())
+}
+
 impl<
     'storage,
     'pool,
@@ -47,12 +71,21 @@ where
             let hardware_buffer_full = self
                 .pipeline_observer
                 .and_then(|_| hardware.buffer_full_count());
+            // A direct BASE publication has no reload doorbell and may consume
+            // its only completion edge while the previous IRQ is still being
+            // serviced. Advance its durable two-turn probe before freezing the
+            // next LAST-bounded completion frontier.
+            self.ring.observe_exhausted_republication(hardware);
             // Freeze the completion frontier before any descriptor is rearmed.
             // A saturated producer can therefore only create a later epoch; it
             // cannot make this service call unbounded by refilling the ring.
+            let last_descriptor_low = hardware.last_descriptor_low();
+            // LAST is the ownership frontier for the following descriptor
+            // scan. Make the MMIO observation precede all descriptor reads.
+            hardware.fence();
             let frontier_snapshot = self
                 .storage
-                .completed_unit_frontier(&self.ring)
+                .completed_unit_frontier_through(&self.ring, last_descriptor_low)
                 .map_err(RxStageTransactionError::Ring)?;
             let frontier = frontier_snapshot.unit_count;
             let pool_credits = self.pool.available_slots();
@@ -63,9 +96,28 @@ where
             let mut remaining_descriptors = frontier_snapshot.descriptor_count;
 
             for _ in 0..admitted {
+                let unit_frontier = self
+                    .storage
+                    .first_completed_unit_frontier_through(&self.ring, last_descriptor_low)
+                    .map_err(RxStageTransactionError::Ring)?;
+                if unit_frontier.unit_count != 1
+                    || unit_frontier.descriptor_count == 0
+                    || unit_frontier.descriptor_count > remaining_descriptors
+                {
+                    return Err(RxStageTransactionError::Ring(RxRingError::Corrupt));
+                }
+                let unit_descriptor_count = unit_frontier.descriptor_count;
+                await_completed_unit_link_release(
+                    &mut self.ring,
+                    hardware,
+                    &mut self.delay,
+                    unit_descriptor_count,
+                )
+                .await
+                .map_err(RxStageTransactionError::Ring)?;
                 let unit = self
                     .storage
-                    .take_completed_unit(&mut self.ring, remaining_descriptors)
+                    .take_completed_unit(&mut self.ring, unit_descriptor_count)
                     .map_err(RxStageTransactionError::Ring)?
                     .ok_or(RxStageTransactionError::Ring(RxRingError::Corrupt))?;
                 let unit_descriptor_count = unit.descriptor_count();
@@ -152,6 +204,8 @@ where
 
             Ok(if admitted < frontier {
                 WifiRxProgress::Backpressured
+            } else if self.ring.exhausted_republication_probe_pending() {
+                WifiRxProgress::ProbePending
             } else {
                 WifiRxProgress::Drained
             })

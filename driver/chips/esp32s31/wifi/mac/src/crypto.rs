@@ -5,7 +5,7 @@
 //! publication; WPA2 derivation and long-lived secret ownership remain in the
 //! protocol crate.
 
-use open_esp_radio_esp32s31_pac::{MacKeyInstallOutcome, RadioRegisters};
+use open_esp_radio_esp32s31_pac::{MacKeyEntryIndex, MacKeyInstallOutcome, RadioRegisters};
 use open_esp_radio_ieee80211::ccmp::ccmp_header;
 
 const STA_PAIRWISE_HARDWARE_INDEX: u8 = 4;
@@ -56,6 +56,9 @@ impl CcmpKeyHardware for RadioRegisters {
         index: u8,
         words: [u32; CCMP_ENTRY_WORDS],
     ) -> MacKeyInstallOutcome {
+        let Some(index) = MacKeyEntryIndex::new(u32::from(index)) else {
+            return MacKeyInstallOutcome::Rejected;
+        };
         self.install_sta_ccmp_key_entry(index, words)
     }
 
@@ -64,15 +67,20 @@ impl CcmpKeyHardware for RadioRegisters {
         index: u8,
         words: [u32; CCMP_ENTRY_WORDS],
     ) -> MacKeyInstallOutcome {
+        let Some(index) = MacKeyEntryIndex::new(u32::from(index)) else {
+            return MacKeyInstallOutcome::Rejected;
+        };
         self.install_ap_ccmp_key_entry(index, words)
     }
 
     fn clear_ccmp_entry(&mut self, index: u8) {
-        self.clear_mac_key_entry(index);
+        if let Some(index) = MacKeyEntryIndex::new(u32::from(index)) {
+            self.clear_mac_key_entry(index);
+        }
     }
 
     fn ccmp_entry_is_valid(&self, index: u8) -> Option<bool> {
-        self.mac_key_entry_is_valid(index)
+        MacKeyEntryIndex::new(u32::from(index)).map(|index| self.mac_key_entry_is_valid(index))
     }
 }
 

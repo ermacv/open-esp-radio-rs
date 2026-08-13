@@ -76,6 +76,7 @@ impl Esp32s31MonitorRunReport {
             .recycled_descriptors
             .saturating_add(progress.recycled_descriptors);
         self.receive.reload_pending = progress.reload_pending;
+        self.receive.service_probe_pending = progress.service_probe_pending;
     }
 
     fn record_interrupt_posts(&mut self, start: u32, current: u32) {
@@ -358,7 +359,19 @@ where
                         receive.service(hardware, sink)
                     };
                     match service {
-                        Ok(progress) => report.record(progress),
+                        Ok(progress) => {
+                            let service_probe_pending = progress.service_probe_pending;
+                            report.record(progress);
+                            if service_probe_pending {
+                                // A completed descriptor may have published
+                                // RX_DONE/LAST before the walker latched its
+                                // old link. That ownership edge need not
+                                // produce another interrupt, so keep this
+                                // finite bottom half runnable cooperatively.
+                                yield_now().await;
+                                self.interrupts().mac_runtime().notify_rx_handoff();
+                            }
+                        }
                         Err(error) => {
                             let stop = self.stop().await.err();
                             report.record_interrupt_posts(

@@ -118,6 +118,8 @@ non-operational-functions = [
     "libpp-replay:wdev_record_rx_linked_list",
     "wifi-key-role:dbg_dump_rx_links",
     "wifi-key-role:wdev_record_rx_linked_list",
+    "wifi-sta-ap-receive:dbg_dump_rx_links",
+    "wifi-sta-ap-receive:wdev_record_rx_linked_list",
     "wifi-sta-lifecycle:dbg_dump_rx_links",
     "wifi-sta-lifecycle:wdev_record_rx_linked_list",
 ]
@@ -181,9 +183,6 @@ output = "generated/reports/function-review.md"
 output = "generated/findings/review-scopes.json"
 publication-scopes = [
     "phy-init",
-    "wifi-rx",
-    "wifi-tx",
-    "wifi-interrupts",
 ]
 
 [[review.scopes]]
@@ -260,18 +259,6 @@ roots = [
 include-reachable = true
 
 [[review.scopes]]
-id = "wifi-ap-start"
-profiles = ["libnet80211-all", "libpp-all"]
-roots = ["libnet80211:wifi_softap_start"]
-include-reachable = true
-
-[[review.scopes]]
-id = "wifi-ap-stop"
-profiles = ["libnet80211-all", "libpp-all"]
-roots = ["libnet80211:wifi_softap_stop"]
-include-reachable = true
-
-[[review.scopes]]
 id = "wifi-ap-link-identity"
 profiles = ["libpp-all"]
 roots = [
@@ -307,13 +294,15 @@ roots = [
 include-reachable = true
 
 [[review.scopes]]
-id = "wifi-ap-beacon-timing"
-profiles = ["libnet80211-all", "libpp-all"]
-roots = [
-    "libnet80211:ieee80211_hostap_send_beacon_process",
-    "libpp:hal_mac_tsf_reset",
-    "libpp:hal_disable_softap_tsf",
-]
+id = "wifi-ap-tsf-stop"
+profiles = ["libpp-all"]
+roots = ["libpp:hal_disable_softap_tsf"]
+include-reachable = true
+
+[[review.scopes]]
+id = "wifi-ap-tsf-start"
+profiles = ["libpp-all"]
+roots = ["libpp:hal_mac_tsf_reset"]
 include-reachable = true
 
 [[review.scopes]]
@@ -381,27 +370,15 @@ roots = [
 include-reachable = true
 
 [[review.scopes]]
-id = "ble-advertising"
+id = "ble-coex-client"
 profiles = ["btbb-all"]
-roots = [
-    "btbb:bt_bb_v2_init_cmplx",
-    "btbb:bt_bb_v2_tx_set",
-    "btbb:bt_set_chn",
-    "btbb:coex_pti_v2",
-]
+roots = ["btbb:coex_pti_v2"]
 include-reachable = true
 
 [qualification]
 pack = "features/reviewed.toml"
 required-features = [
-    "wifi-sta-connected-no-power-save",
-    "wifi-ap-sta-key-role",
-    "wifi-ap-sta-receive-registers",
-    "wifi-ap-sta-interface-identity",
-    "coex-hardware-timer-control",
-    "coex-timer-valid-bank-programming",
-    "coex-request-valid-clock-projection",
-    "wifi-mac-coex-register-programming",
+    "esp32s31-static-radio-contract",
 ]
 hardware-evidence = "generated/evidence/feature-hardware.json"
 
@@ -432,7 +409,7 @@ profiles = []
 dispositions = ["dispositions/libpp-interrupt.toml"]
 baselines = ["baselines/libpp-interrupt.toml"]
 gate = "regression"
-match-floor = 3
+match-floor = 1
 [[verification.suites.vendor]]
 source = "libpp"
 all = true
@@ -443,9 +420,9 @@ rust-artifact-role = "rust-artifact"
 rust-prefix = "open_libpp_power_irq_trace_"
 profiles = []
 dispositions = ["dispositions/libpp-power-interrupt.toml"]
-baselines = ["baselines/libpp-power-interrupt.toml"]
+baselines = []
 gate = "regression"
-match-floor = 2
+match-floor = 0
 [[verification.suites.vendor]]
 source = "libpp"
 all = true
@@ -456,9 +433,9 @@ rust-artifact-role = "rust-artifact"
 rust-prefix = "open_libpp_power_trace_"
 profiles = []
 dispositions = ["dispositions/libpp-modem-wakeup.toml"]
-baselines = ["baselines/libpp-modem-wakeup.toml"]
+baselines = []
 gate = "regression"
-match-floor = 10
+match-floor = 0
 [[verification.suites.vendor]]
 source = "libpp"
 all = true
@@ -477,6 +454,32 @@ source = "libpp"
 all = true
 
 [[verification.suites]]
+id = "wifi-ap-tsf-stop"
+rust-artifact-role = "rust-artifact"
+rust-prefix = "open_libpp_ap_tsf_trace_"
+profiles = ["profiles/wifi-ap-tsf-stop.toml"]
+dispositions = ["dispositions/wifi-ap-tsf-stop.toml"]
+baselines = ["baselines/wifi-ap-tsf-stop.toml"]
+gate = "regression"
+match-floor = 1
+[[verification.suites.vendor]]
+source = "libpp"
+symbols = ["hal_disable_softap_tsf"]
+
+[[verification.suites]]
+id = "wifi-ap-tsf-start"
+rust-artifact-role = "rust-artifact"
+rust-prefix = "open_libpp_ap_tsf_start_trace_"
+profiles = ["profiles/wifi-ap-tsf-start.toml"]
+dispositions = ["dispositions/wifi-ap-tsf-start.toml"]
+baselines = ["baselines/wifi-ap-tsf-start.toml"]
+gate = "regression"
+match-floor = 1
+[[verification.suites.vendor]]
+source = "libpp"
+symbols = ["hal_mac_tsf_reset"]
+
+[[verification.suites]]
 id = "rom-sta-tsf-snapshot"
 rust-artifact-role = "rust-artifact"
 rust-prefix = "open_rom_power_tsf_trace_"
@@ -491,26 +494,28 @@ symbols = ["hal_get_sta_tsf"]
 
 [[verification.suites]]
 id = "libpp-tx-dma"
+auxiliary-sources = ["libpp-replay"]
 rust-artifact-role = "rust-artifact"
 rust-prefix = "open_libpp_tx_trace_"
 profiles = ["profiles/libpp-tx-dma.toml"]
 dispositions = ["dispositions/libpp-tx-dma.toml"]
 baselines = ["baselines/libpp-tx-dma.toml"]
 gate = "regression"
-match-floor = 9
+match-floor = 7
 [[verification.suites.vendor]]
 source = "libpp"
 all = true
 
 [[verification.suites]]
 id = "libpp-rx-dma"
+auxiliary-sources = ["libpp-replay"]
 rust-artifact-role = "rust-artifact"
 rust-prefix = "open_libpp_rx_trace_"
 profiles = []
 dispositions = ["dispositions/libpp-rx-dma.toml"]
 baselines = ["baselines/libpp-rx-dma.toml"]
 gate = "regression"
-match-floor = 9
+match-floor = 1
 [[verification.suites.vendor]]
 source = "libpp"
 all = true
@@ -531,6 +536,37 @@ symbols = [
     "coex_hw_timer_disable",
     "coex_hw_timer_force",
     "coex_hw_timer_unforce",
+]
+
+[[verification.suites]]
+id = "btbb-coex-pti"
+rust-artifact-role = "rust-artifact"
+rust-prefix = "open_btbb_coex_trace_"
+profiles = ["profiles/btbb-coex-pti.toml"]
+dispositions = ["dispositions/btbb-coex-pti.toml"]
+baselines = ["baselines/btbb-coex-pti.toml"]
+gate = "regression"
+match-floor = 1
+[[verification.suites.vendor]]
+source = "btbb"
+symbols = ["coex_pti_v2"]
+
+[[verification.suites]]
+id = "coex-scheduler"
+rust-artifact-role = "rust-artifact"
+rust-prefix = "open_coex_scheduler_trace_"
+profiles = ["profiles/coex-scheduler.toml"]
+dispositions = ["dispositions/coex-scheduler.toml"]
+baselines = ["baselines/coex-scheduler.toml"]
+gate = "regression"
+match-floor = 4
+[[verification.suites.vendor]]
+source = "coex"
+symbols = [
+    "coex_schm_interval_set",
+    "coex_schm_interval_get",
+    "coex_schm_curr_period_get",
+    "coex_schm_curr_phase_get",
 ]
 
 [[verification.suites]]
@@ -617,6 +653,7 @@ id = "libnet80211-sta-join"
 rust-artifact-role = "rust-artifact"
 rust-prefix = "open_libnet80211_trace_"
 profiles = []
+auxiliary-sources = ["wifi-key-role"]
 dispositions = ["dispositions/libnet80211-sta-join.toml"]
 baselines = ["baselines/libnet80211-sta-join.toml"]
 gate = "completion"

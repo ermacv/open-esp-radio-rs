@@ -1,6 +1,7 @@
 //! Verification manifests and concrete equivalence profiles.
 
 pub(crate) mod bindings;
+mod binding_audit;
 pub(crate) mod dispositions;
 pub(crate) use open_radio_vendor_semantics as effect_contract;
 mod engine;
@@ -14,6 +15,7 @@ mod report;
 mod rust_component_index;
 
 pub(crate) use engine::*;
+pub(crate) use binding_audit::*;
 pub(crate) use evidence::*;
 pub(crate) use execution::*;
 pub use execution_report::*;

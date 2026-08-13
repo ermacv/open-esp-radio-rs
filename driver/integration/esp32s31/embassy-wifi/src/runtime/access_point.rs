@@ -716,7 +716,7 @@ impl ProductionWifiEpochRunner {
             }
         };
 
-        let (ssid, security, channel, client_limit) = request.into_parts();
+        let (ssid, security, channel, client_limit, inactive_timeout) = request.into_parts();
         let ProductionAccessPointResources {
             address,
             beacon,
@@ -762,6 +762,7 @@ impl ProductionWifiEpochRunner {
             security.into_pmk(),
             gtk,
             client_limit,
+            inactive_timeout,
             peer_storage,
         );
         let engine = match Esp32s31ApEngine::start(
@@ -1037,6 +1038,10 @@ impl ProductionWifiEpochRunner {
                 WifiStartReport::new(generation),
             )))
             .await;
+        #[cfg(feature = "qualification")]
+        let rx_statistics_before = task.registers.rx_statistics_snapshot();
+        #[cfg(feature = "qualification")]
+        let rx_policy_before = task.registers.ap_receive_policy_snapshot();
         let result = {
             let network = task.parked.resume.radio_runner();
             let (_, platform) = task.owner.radio_mut();
@@ -1062,6 +1067,71 @@ impl ProductionWifiEpochRunner {
         };
         crate::access_point_status::publish_access_point_stopped();
         #[cfg(feature = "qualification")]
+        {
+            // A rare repeated STA/AP lifecycle failure leaves the AP receive
+            // path after exactly one completed descriptor. Capture the
+            // hardware-owned frontier before teardown republishes the ring;
+            // production images compile this one-shot diagnostic out.
+            let rx_dma = task.registers.mac_rx_dma_snapshot();
+            let rx_statistics_after = task.registers.rx_statistics_snapshot();
+            let rx_delta = rx_statistics_after
+                .primary
+                .wrapping_delta_since(rx_statistics_before.primary);
+            let rx_policy_after = task.registers.ap_receive_policy_snapshot();
+            let rx_head = task.service.rx_descriptor_snapshot(0);
+            let rx_second = task.service.rx_descriptor_snapshot(1);
+            let rx_tail = task
+                .service
+                .rx_descriptor_snapshot(RX_DESCRIPTOR_COUNT.saturating_sub(1));
+            let descriptor_base_low = rx_head.map(|descriptor| descriptor.address & 0x000f_ffff);
+            let descriptor_index = |low: u32| {
+                let offset = low.checked_sub(descriptor_base_low?)?;
+                // ESP32-S31 Wi-Fi DMA descriptors are exactly three words.
+                (offset % 12 == 0)
+                    .then(|| usize::try_from(offset / 12).ok())
+                    .flatten()
+                    .filter(|index| *index < RX_DESCRIPTOR_COUNT)
+            };
+            let rx_base = descriptor_index(rx_dma.descriptor_base & 0x000f_ffff)
+                .and_then(|index| task.service.rx_descriptor_snapshot(index));
+            let rx_next = descriptor_index(rx_dma.next_descriptor_low)
+                .and_then(|index| task.service.rx_descriptor_snapshot(index));
+            let rx_last = descriptor_index(rx_dma.last_descriptor_low)
+                .and_then(|index| task.service.rx_descriptor_snapshot(index));
+            qualification_event!(
+                "open-radio: access-point RX DMA stop walker={} reload={} base={:#010x} next={:#07x} last={:#07x}",
+                rx_dma.walker_enabled,
+                rx_dma.reload_pending,
+                rx_dma.descriptor_base,
+                rx_dma.next_descriptor_low,
+                rx_dma.last_descriptor_low,
+            );
+            qualification_event!(
+                "open-radio: access-point RX descriptors head={:?} second={:?} tail={:?}",
+                rx_head,
+                rx_second,
+                rx_tail,
+            );
+            qualification_event!(
+                "open-radio: access-point RX hardware descriptors base={:?} next={:?} last={:?}",
+                rx_base,
+                rx_next,
+                rx_last,
+            );
+            qualification_event!(
+                "open-radio: access-point RX hardware delta mpdu={} data={} other_unicast={} fcs={} abort={} buffer_full={} fifo_overflow={} policy_before={:?} policy_after={:?}",
+                rx_delta.mpdu_count,
+                rx_delta.data_success,
+                rx_delta.other_unicast,
+                rx_delta.fcs_error,
+                rx_delta.abort,
+                rx_delta.buffer_full,
+                rx_delta.fifo_overflow,
+                rx_policy_before,
+                rx_policy_after,
+            );
+        }
+        #[cfg(feature = "qualification")]
         if let Ok(report) = &result
             && let Some(hooks) = task.parked.board.qualification
         {
@@ -1083,7 +1153,18 @@ impl ProductionWifiEpochRunner {
                 maximum_associated_peers: report.engine.maximum_associated_peers,
                 maximum_authorized_peers: report.engine.maximum_authorized_peers,
                 peer_removals: report.engine.peer_removals,
+                authentication_timeouts: report.engine.authentication_timeouts,
+                inactivity_timeouts: report.engine.inactivity_timeouts,
+                disassociations_prepared: report.engine.disassociations_prepared,
+                disassociations_published: report.mac.disassociations_published,
+                disassociations_acknowledged: report.mac.disassociations_acknowledged,
+                deauthentications_prepared: report.engine.deauthentications_prepared,
+                deauthentications_published: report.mac.deauthentications_published,
+                deauthentications_acknowledged: report.mac.deauthentications_acknowledged,
+                completed_rx_units: report.control.completed_rx_units,
                 completed_rx_descriptors: report.control.completed_rx_descriptors,
+                recycled_rx_descriptors: report.control.recycled_rx_descriptors,
+                discarded_rx_units: report.control.discarded_rx_units,
                 ignored_rx_frames: report.control.ignored_rx_frames,
                 rx_mic_failures: report.control.rx_mic_failures,
                 rx_quarantined_frames: report.control.rx_quarantined_frames,

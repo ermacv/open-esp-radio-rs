@@ -1,0 +1,20 @@
+schema = 2
+default-disposition = "not-yet-ported"
+default-protocol = "wifi"
+
+[[functions]]
+source = "libpp"
+symbol = "hal_disable_softap_tsf"
+disposition = "direct"
+protocol = "wifi"
+rust-component = "open_esp_radio_esp32s31_wifi_mac::ap_tsf::stop_access_point_tsf"
+binding = "v1"
+rust-binding = "exact-production-entry"
+rust-probe = "open_libpp_ap_tsf_trace_hal_disable_softap_tsf"
+effect-contract = "exact-effects-v1"
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x2010d860 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x2010d860 }
+disposition = { kind = "required" }

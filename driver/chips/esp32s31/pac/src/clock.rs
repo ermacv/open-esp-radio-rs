@@ -27,7 +27,7 @@ impl RadioRegisters {
     /// operations in the complete ROM body. Its fourth PMU operation belongs
     /// to the official platform PAC and is sequenced by the HAL.
     pub fn open_frontend_baseband_internal_clocks(&mut self) {
-        open_esp_radio_esp32s31_pac_raw::fixed_register_write::open_frontend_clock_gates(
+        super::svd::fixed_register_write::open_frontend_clock_gates(
             &self.peripherals.phy_clock_oracle,
         );
 
@@ -36,7 +36,7 @@ impl RadioRegisters {
             .fe_bb_clock_control_opaque()
             .modify(|_, w| w.rom_fe_bb_enable_unknown().open());
 
-        open_esp_radio_esp32s31_pac_raw::fixed_register_write::open_baseband_clock_gates(
+        super::svd::fixed_register_write::open_baseband_clock_gates(
             &self.peripherals.phy_clock_oracle,
         );
     }
@@ -47,7 +47,7 @@ impl RadioRegisters {
     /// three-operation blob leaf. It intentionally leaves PMU power policy to
     /// the surrounding lifecycle owner, matching the source.
     pub fn close_frontend_baseband_clocks(&mut self) {
-        open_esp_radio_esp32s31_pac_raw::fixed_register_write::close_frontend_clock_gates(
+        super::svd::fixed_register_write::close_frontend_clock_gates(
             &self.peripherals.phy_clock_oracle,
         );
 
@@ -56,7 +56,7 @@ impl RadioRegisters {
             .fe_bb_clock_control_opaque()
             .modify(|_, w| w.rom_fe_bb_enable_unknown().closed());
 
-        open_esp_radio_esp32s31_pac_raw::fixed_register_write::close_baseband_clock_gates(
+        super::svd::fixed_register_write::close_baseband_clock_gates(
             &self.peripherals.phy_clock_oracle,
         );
     }

@@ -850,6 +850,10 @@ pub(crate) struct VerifyInventoryArgs {
     /// Vendor executable keyed by stable source identifier.
     #[arg(long, value_name = "SOURCE=PATH")]
     pub(crate) source_artifact: Vec<SourcePath>,
+    /// Executable replay/support image keyed by stable identifier. Its symbols
+    /// are available to driver adapters but are not added to source coverage.
+    #[arg(long, value_name = "ID=PATH")]
+    pub(crate) auxiliary_artifact: Vec<SourcePath>,
     /// Vendor archive keyed by stable source identifier.
     #[arg(long, value_name = "SOURCE=PATH")]
     pub(crate) source_inventory: Vec<SourcePath>,

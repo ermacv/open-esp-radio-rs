@@ -1,61 +1,57 @@
-//! Static registry for optional compiled platform harnesses.
+//! Runtime registry for optional compiled platform providers.
 
-#[cfg(feature = "esp32s31-harness")]
-pub(crate) mod esp32s31;
+use std::{error::Error as StdError, sync::OnceLock};
+
 mod neutral;
 
-#[cfg(feature = "esp32s31-harness")]
-pub(crate) use open_radio_vendor_harness_esp32s31_semantic::verification::{
-    QualificationCase, QualificationDifference, QualificationReport,
-};
 pub(crate) use open_radio_vendor_semantics::{
     DriverAdapterEvidenceSources, DriverAdapterRequest, DriverAdapterVerification,
-    SemanticContractEvidenceSources, SemanticContractRequest,
+    QualificationReport, SemanticContractEvidenceSources, SemanticContractRequest,
 };
 
-type DriverAdapterVerifier =
-    for<'a> fn(&DriverAdapterRequest<'a>) -> crate::Result<Option<DriverAdapterVerification>>;
-type SemanticContractVerifier =
-    for<'a> fn(&SemanticContractRequest<'a>) -> crate::Result<Option<bool>>;
-type DriverEvidenceLookup = fn(&str) -> Option<DriverAdapterEvidenceSources>;
-type SemanticEvidenceLookup = fn(&str) -> Option<SemanticContractEvidenceSources>;
+pub type ProviderError = Box<dyn StdError + Send + Sync + 'static>;
+pub type ProviderResult<T> = std::result::Result<T, ProviderError>;
+pub type DriverAdapterVerifier =
+    for<'a> fn(&DriverAdapterRequest<'a>) -> ProviderResult<Option<DriverAdapterVerification>>;
+pub type SemanticContractVerifier =
+    for<'a> fn(&SemanticContractRequest<'a>) -> ProviderResult<Option<bool>>;
+pub type DriverEvidenceLookup = fn(&str) -> Option<DriverAdapterEvidenceSources>;
+pub type SemanticEvidenceLookup = fn(&str) -> Option<SemanticContractEvidenceSources>;
+pub type NamedContractVerifier = fn(
+    &str,
+    &crate::MmioMap,
+    &std::path::Path,
+    &std::path::Path,
+) -> ProviderResult<QualificationReport>;
 
-/// One statically linked executable addon. Data-only platform packs select it
-/// by `id`; generic analysis remains available when the registry is empty.
-pub(crate) struct HarnessDescriptor {
-    pub(crate) id: &'static str,
-    contracts: &'static crate::HarnessContractSpec,
-    riscv: Option<&'static crate::RiscvHarnessSpec>,
-    verify_driver_adapter: DriverAdapterVerifier,
-    verify_semantic_contract: SemanticContractVerifier,
-    driver_adapter_evidence_sources: DriverEvidenceLookup,
-    semantic_contract_evidence_sources: SemanticEvidenceLookup,
-    #[cfg(feature = "esp32s31-harness")]
-    verify_named_contract: fn(
-        &str,
-        &crate::MmioMap,
-        &std::path::Path,
-        &std::path::Path,
-    ) -> crate::Result<QualificationReport>,
+/// One statically linked executable provider. Data-only platform packs select
+/// it by `id`; generic analysis remains available when the registry is empty.
+pub struct HarnessDescriptor {
+    pub id: &'static str,
+    pub contracts: &'static crate::HarnessContractSpec,
+    pub riscv: Option<&'static crate::RiscvHarnessSpec>,
+    pub verify_driver_adapter: DriverAdapterVerifier,
+    pub verify_semantic_contract: SemanticContractVerifier,
+    pub driver_adapter_evidence_sources: DriverEvidenceLookup,
+    pub semantic_contract_evidence_sources: SemanticEvidenceLookup,
+    pub verify_named_contract: NamedContractVerifier,
 }
 
-#[cfg(feature = "esp32s31-harness")]
-static REGISTRY: &[HarnessDescriptor] = &[HarnessDescriptor {
-    id: "esp32s31-radio-v1",
-    contracts: &esp32s31::CONTRACTS,
-    riscv: Some(&esp32s31::RISCV_HARNESS),
-    verify_driver_adapter: esp32s31::verify_driver_adapter_registered,
-    verify_semantic_contract: esp32s31::verify_semantic_contract_registered,
-    driver_adapter_evidence_sources: esp32s31::driver_adapter_evidence_sources,
-    semantic_contract_evidence_sources: esp32s31::semantic_contract_evidence_sources,
-    verify_named_contract: esp32s31::verify_named_contract_registered,
-}];
+static BUILTIN_REGISTRY: &[HarnessDescriptor] = &[];
 
-#[cfg(not(feature = "esp32s31-harness"))]
-static REGISTRY: &[HarnessDescriptor] = &[];
+static INSTALLED_REGISTRY: OnceLock<&'static [HarnessDescriptor]> = OnceLock::new();
+
+pub fn install_registry(registry: &'static [HarnessDescriptor]) -> std::result::Result<(), String> {
+    INSTALLED_REGISTRY
+        .set(registry)
+        .map_err(|_| "platform provider registry was already installed".to_owned())
+}
 
 pub(crate) fn registry() -> &'static [HarnessDescriptor] {
-    REGISTRY
+    INSTALLED_REGISTRY
+        .get()
+        .copied()
+        .unwrap_or(BUILTIN_REGISTRY)
 }
 
 fn descriptor(harness: &str) -> crate::Result<&'static HarnessDescriptor> {
@@ -115,6 +111,7 @@ pub(crate) fn verify_driver_adapter(
     request: &DriverAdapterRequest<'_>,
 ) -> crate::Result<Option<DriverAdapterVerification>> {
     (descriptor(harness)?.verify_driver_adapter)(request)
+        .map_err(|error| crate::Error::platform_provider(harness, error))
 }
 
 pub(crate) fn verify_semantic_contract(
@@ -122,6 +119,7 @@ pub(crate) fn verify_semantic_contract(
     request: &SemanticContractRequest<'_>,
 ) -> crate::Result<Option<bool>> {
     (descriptor(harness)?.verify_semantic_contract)(request)
+        .map_err(|error| crate::Error::platform_provider(harness, error))
 }
 
 pub(crate) fn driver_adapter_evidence_sources(
@@ -142,7 +140,6 @@ pub(crate) fn semantic_contract_evidence_sources(
         .and_then(|descriptor| (descriptor.semantic_contract_evidence_sources)(id))
 }
 
-#[cfg(feature = "esp32s31-harness")]
 pub(crate) fn verify_named_contract(
     harness: &str,
     name: &str,
@@ -151,6 +148,7 @@ pub(crate) fn verify_named_contract(
     vendor_companion: &std::path::Path,
 ) -> crate::Result<QualificationReport> {
     (descriptor(harness)?.verify_named_contract)(name, svd, vendor_artifact, vendor_companion)
+        .map_err(|error| crate::Error::platform_provider(harness, error))
 }
 
 #[cfg(test)]

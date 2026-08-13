@@ -13,7 +13,7 @@ use open_esp_radio_esp32s31_wifi_dma::{
 };
 use open_esp_radio_esp32s31_wifi_mac::{
     irq::{MAC_INT_RX_SUCCESS, MacInterruptRoute},
-    rx::{RxDma, RxDmaBinding, RxPhyInfo},
+    rx::{RxDma, RxDmaBinding, RxDmaWalkerStopped, RxPhyInfo},
 };
 use open_esp_radio_wifi_softmac::{
     MonitorDropReason, MonitorFilter, MonitorFrame, MonitorFrameTypeMask, MonitorPublishOutcome,
@@ -39,6 +39,7 @@ const RX_BUFFERS: [u32; RX_COUNT] = [0x2f00_2000, 0x2f00_2080];
 struct Hardware {
     walker: bool,
     reloads: u32,
+    base_writes: u32,
     disable_busy_count: u8,
     walker_when_dropped: Option<Rc<Cell<Option<bool>>>>,
 }
@@ -53,11 +54,34 @@ impl Drop for Hardware {
 
 impl RxDma for Hardware {
     fn last_descriptor_low(&mut self) -> u32 {
-        0
+        if self.walker {
+            RX_BASE & 0x000f_ffff
+        } else {
+            0
+        }
     }
 
     fn next_descriptor_low(&mut self) -> u32 {
-        RX_BASE + 12
+        if self.walker {
+            (RX_BASE + 12) & 0x000f_ffff
+        } else {
+            0
+        }
+    }
+
+    fn with_ordered_cursor<R>(
+        &mut self,
+        observed: impl for<'confirmation> FnOnce(
+            open_esp_radio_esp32s31_wifi_mac::rx::RxDmaCursorObservation<'confirmation>,
+        ) -> R,
+    ) -> R {
+        let last = self.last_descriptor_low();
+        self.fence();
+        let next = self.next_descriptor_low();
+        self.fence();
+        observed(
+            open_esp_radio_esp32s31_wifi_mac::rx::RxDmaCursorObservation::validation(last, next),
+        )
     }
 
     fn walker_enabled(&mut self) -> bool {
@@ -68,9 +92,22 @@ impl RxDma for Hardware {
         false
     }
 
+    fn try_with_reload_settled<R>(
+        &mut self,
+        settled: impl for<'confirmation> FnOnce(
+            open_esp_radio_esp32s31_wifi_mac::rx::RxDmaReloadSettled<'confirmation>,
+        ) -> R,
+    ) -> Option<R> {
+        (!self.reload_pending()).then(|| {
+            settled(open_esp_radio_esp32s31_wifi_mac::rx::RxDmaReloadSettled::validation())
+        })
+    }
+
     fn set_descriptor_high_window(&mut self, _: &RxDmaBinding, _: u16) {}
 
-    fn write_descriptor_base(&mut self, _: &RxDmaBinding, _: u32) {}
+    fn write_descriptor_base(&mut self, _: &RxDmaBinding, _: u32) {
+        self.base_writes = self.base_writes.saturating_add(1);
+    }
 
     fn publish_walker_enable(&mut self, _: &RxDmaBinding) {
         self.walker = true;
@@ -80,18 +117,29 @@ impl RxDma for Hardware {
         self.reloads = self.reloads.saturating_add(1);
     }
 
-    fn try_enable_walker(&mut self, _: &RxDmaBinding) -> bool {
+    fn try_with_walker_enabled<R>(
+        &mut self,
+        _: &RxDmaBinding,
+        enabled: impl for<'confirmation> FnOnce(
+            open_esp_radio_esp32s31_wifi_mac::rx::RxDmaWalkerEnabled<'confirmation>,
+        ) -> R,
+    ) -> Option<R> {
         self.walker = true;
-        true
+        Some(enabled(
+            open_esp_radio_esp32s31_wifi_mac::rx::RxDmaWalkerEnabled::validation(),
+        ))
     }
 
-    fn try_disable_walker(&mut self) -> bool {
+    fn try_with_walker_stopped<R>(
+        &mut self,
+        stopped: impl for<'confirmation> FnOnce(RxDmaWalkerStopped<'confirmation>) -> R,
+    ) -> Option<R> {
         if self.disable_busy_count != 0 {
             self.disable_busy_count -= 1;
-            return false;
+            return None;
         }
         self.walker = false;
-        true
+        Some(stopped(RxDmaWalkerStopped::validation()))
     }
 
     fn fence(&mut self) {}
@@ -377,7 +425,12 @@ fn saturation_is_counted_without_preventing_dma_recycle() {
         Ok(parts) => parts,
         Err(_) => panic!("stopped monitor owners must be extractable"),
     };
-    assert_eq!(hardware.reloads, 1);
+    // Both descriptors completed before service, so discarding this complete
+    // software list makes its head null. The vendor append branch republishes
+    // the returned chain through RX_DESCRIPTOR_BASE instead of ringing the
+    // live-list reload doorbell.
+    assert_eq!(hardware.reloads, 0);
+    assert_eq!(hardware.base_writes, 2);
 }
 
 #[test]

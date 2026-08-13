@@ -4,8 +4,9 @@ use crate::{ProjectSpec, Result, artifacts};
 
 use super::{
     EvidenceLevel, FlowBlocker, FlowClaims, FlowEffectEvidence, FlowInvestigationReport,
-    FlowLimits, FlowStatus, FlowStepEvidence, FlowTargetRequest, MAX_EXAMINED_EDGES,
-    MAX_LOADED_FUNCTIONS, MAX_VISITED_NODES, TargetFlowRequest,
+    FlowLimits, FlowStatus, FlowStepEvidence, FlowTargetRequest, MAX_LOADED_FUNCTIONS,
+    TargetFlowRequest,
+    project_graph::{PROJECT_ASSOCIATED, ProjectGraph},
     value::{compose_call_arguments, root_domains},
 };
 
@@ -13,100 +14,60 @@ pub(super) fn investigate(
     request: TargetFlowRequest<'_>,
     project: &ProjectSpec,
 ) -> Result<FlowInvestigationReport> {
-    let mut reports = Vec::new();
-    for profile in project
-        .ir_profiles
-        .iter()
-        .filter(|profile| {
-            profile
-                .sources
-                .iter()
-                .any(|source| source == request.source)
-        })
-        .filter(|profile| profile.output.is_dir())
-    {
-        let reader = artifacts::LinkedIrReader::open(&profile.output)?;
-        let roots = reader.function_identities(request.source, request.root_symbol);
-        if roots.len() != 1 {
-            continue;
-        }
-        let root = &roots[0];
-        let targets = target_identities(&reader, &request.target)?;
-        if targets.is_empty() {
-            reports.push(not_reached(
-                profile,
-                root,
-                &request.target,
-                request.max_depth,
-                "flow target is absent from the selected linked-IR profile",
-            ));
-            continue;
-        }
-        let search = reader.shortest_path_to_any(
-            root,
-            &targets,
-            artifacts::GraphSearchLimits {
-                max_depth: request.max_depth,
-                max_visited_nodes: MAX_VISITED_NODES,
-                max_examined_edges: MAX_EXAMINED_EDGES,
-            },
-        )?;
-        let Some(path) = search.path.as_ref() else {
-            let mut report = not_reached(
-                profile,
-                root,
-                &request.target,
-                request.max_depth,
-                "no structural call-graph path reaches the requested target",
-            );
-            report.limits.visited_nodes = search.visited_nodes;
-            report.limits.examined_edges = search.examined_edges;
-            report.limits.reached = search.limit.map(str::to_owned);
-            if let Some(limit) = search.limit {
-                report.status = FlowStatus::Incomplete;
-                report.blockers.push(limit_blocker(limit));
-            }
-            reports.push(report);
-            continue;
-        };
-        reports.push(compose_path(
-            profile,
-            &reader,
+    let graph = ProjectGraph::open(project)?;
+    let roots = graph.root_identities(request.source, request.root_symbol);
+    if roots.len() != 1 {
+        return Err(crate::Error::invalid(format!(
+            "generated project IR contains {} roots for {}:{}; use an exact identity or regenerate project analysis",
+            roots.len(),
+            request.source,
+            request.root_symbol
+        )));
+    }
+    let root = roots.iter().next().expect("one root was checked");
+    let targets = graph.target_identities(&request.target)?;
+    if targets.is_empty() {
+        return Ok(not_reached(
+            &graph,
             root,
             &request.target,
-            path,
             request.max_depth,
-            search.visited_nodes,
-            search.examined_edges,
-            search.limit,
-        )?);
+            "flow target is absent from the generated project IR",
+        ));
     }
-
-    reports
-        .into_iter()
-        .min_by_key(|report| {
-            (
-                match report.status {
-                    FlowStatus::Complete => 0,
-                    FlowStatus::Incomplete => 1,
-                    FlowStatus::NotReached => 2,
-                },
-                report.steps.len(),
-                report.profile.clone(),
-            )
-        })
-        .ok_or_else(|| {
-            crate::Error::invalid(format!(
-                "no generated linked-IR profile contains exactly one root {}:{}; run `project analyze` after selecting the function",
-                request.source, request.root_symbol
-            ))
-        })
+    let search = graph.shortest_path(root, &targets, request.max_depth)?;
+    let Some(path) = search.path.as_ref() else {
+        let mut report = not_reached(
+            &graph,
+            root,
+            &request.target,
+            request.max_depth,
+            "no bounded project call-graph path reaches the requested target",
+        );
+        report.limits.visited_nodes = search.visited_nodes;
+        report.limits.examined_edges = search.examined_edges;
+        report.limits.reached = search.limit.map(str::to_owned);
+        if let Some(limit) = search.limit {
+            report.status = FlowStatus::Incomplete;
+            report.blockers.push(limit_blocker(limit));
+        }
+        return Ok(report);
+    };
+    compose_path(
+        &graph,
+        root,
+        &request.target,
+        path,
+        request.max_depth,
+        search.visited_nodes,
+        search.examined_edges,
+        search.limit,
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
 fn compose_path(
-    profile: &crate::project_ir::ProjectIrProfile,
-    reader: &artifacts::LinkedIrReader,
+    graph: &ProjectGraph<'_>,
     root: &str,
     target: &FlowTargetRequest<'_>,
     path: &[artifacts::StoredGraphEdge],
@@ -128,9 +89,9 @@ fn compose_path(
     }
     let mut functions = BTreeMap::new();
     for identity in selected {
-        match reader.get_function_by_identity(&identity)? {
-            Some(function) => {
-                functions.insert(identity, function);
+        match graph.function(&identity)? {
+            Some((function, profile)) => {
+                functions.insert(identity, (function, profile.output.display().to_string()));
             }
             None => blockers.push(FlowBlocker::new(
                 "missing-function-record",
@@ -143,7 +104,7 @@ fn compose_path(
     let mut domains = root_domains();
     let mut steps = Vec::new();
     for (ordinal, edge) in path.iter().enumerate() {
-        let Some(caller) = functions.get(&edge.caller) else {
+        let Some((caller, origin)) = functions.get(&edge.caller) else {
             blockers.push(FlowBlocker::new(
                 "missing-caller-record",
                 format!("cannot load caller {}", edge.caller),
@@ -151,9 +112,11 @@ fn compose_path(
             ));
             continue;
         };
-        let Some(call) = caller.calls.iter().find(|call| {
-            call.target == edge.callee && call.site == edge.site && call.kind == edge.kind
-        }) else {
+        let Some(call) = caller
+            .calls
+            .iter()
+            .find(|call| call_matches_edge(call, edge))
+        else {
             blockers.push(FlowBlocker::new(
                 "missing-call-fact",
                 format!(
@@ -187,10 +150,24 @@ fn compose_path(
                 "review the call boundary and its ABI model",
             ));
         }
+        if edge.kind == PROJECT_ASSOCIATED {
+            blockers.push(FlowBlocker::new(
+                "project-associated-call",
+                format!(
+                    "{} -> {} is associated through one exported project symbol, not authoritative linker selection",
+                    edge.caller, edge.callee
+                ),
+                "provide an authoritative linked ELF containing both functions to promote this edge",
+            ));
+        }
         domains = next;
         steps.push(FlowStepEvidence {
             ordinal,
-            evidence: EvidenceLevel::Observed,
+            evidence: if edge.kind == PROJECT_ASSOCIATED {
+                EvidenceLevel::Reviewed
+            } else {
+                EvidenceLevel::Observed
+            },
             context: "synchronous".to_owned(),
             caller: edge.caller.clone(),
             callee: edge.callee.clone(),
@@ -200,7 +177,7 @@ fn compose_path(
             argument_shapes: call.argument_shapes(),
             arguments,
             guards: call.guard_expressions(),
-            origin: profile.output.display().to_string(),
+            origin: origin.clone(),
         });
     }
     if let Some(limit) = reached_limit {
@@ -208,7 +185,7 @@ fn compose_path(
     }
 
     let mut effects = Vec::new();
-    if let Some(function) = functions.get(&sink) {
+    if let Some((function, _)) = functions.get(&sink) {
         for effect in &function.instruction_effects {
             let Some((access, width, address, register, value)) = effect.mmio() else {
                 continue;
@@ -297,13 +274,14 @@ fn compose_path(
     } else {
         FlowStatus::Incomplete
     };
+    let (profile, linked_ir) = graph.profile_labels();
     Ok(FlowInvestigationReport {
         schema_version: 3,
         command: "inspect flow",
         mode: "target",
         status,
-        profile: profile.id.clone(),
-        linked_ir: profile.output.display().to_string(),
+        profile,
+        linked_ir,
         root: root.to_owned(),
         target_kind: Some(target_kind(target).to_owned()),
         target: Some(target_label(target)),
@@ -328,19 +306,20 @@ fn compose_path(
 }
 
 fn not_reached(
-    profile: &crate::project_ir::ProjectIrProfile,
+    graph: &ProjectGraph<'_>,
     root: &str,
     target: &FlowTargetRequest<'_>,
     max_depth: usize,
     message: &str,
 ) -> FlowInvestigationReport {
+    let (profile, linked_ir) = graph.profile_labels();
     FlowInvestigationReport {
         schema_version: 3,
         command: "inspect flow",
         mode: "target",
         status: FlowStatus::NotReached,
-        profile: profile.id.clone(),
-        linked_ir: profile.output.display().to_string(),
+        profile,
+        linked_ir,
         root: root.to_owned(),
         target_kind: Some(target_kind(target).to_owned()),
         target: Some(target_label(target)),
@@ -358,19 +337,14 @@ fn not_reached(
     }
 }
 
-fn target_identities(
-    reader: &artifacts::LinkedIrReader,
-    target: &FlowTargetRequest<'_>,
-) -> Result<BTreeSet<String>> {
-    match target {
-        FlowTargetRequest::Function(target) => Ok(reader.matching_function_identities(target)),
-        FlowTargetRequest::Register(register) => {
-            reader.mmio_function_identities(Some(register), None)
-        }
-        FlowTargetRequest::Address(address) => {
-            reader.mmio_function_identities(None, Some(*address))
-        }
+fn call_matches_edge(call: &artifacts::StoredCall, edge: &artifacts::StoredGraphEdge) -> bool {
+    if call.site != edge.site {
+        return false;
     }
+    if edge.kind == PROJECT_ASSOCIATED {
+        return call.kind == "unresolved" && call.project_symbol().is_some();
+    }
+    call.target == edge.callee && call.kind == edge.kind
 }
 
 fn target_matches_effect(

@@ -13,14 +13,16 @@ extern crate std;
 mod clock;
 mod core;
 mod model;
+mod scheduler;
 mod timer;
 
 pub use clock::{CoexClockHardware, CoexClockSelector, CoexTimerClock};
 pub use core::{CoexCore, CoexStatus};
 pub use model::{
-    COEX_EVENT_COUNT, COEX_TIMER_COUNT, CoexClient, CoexError, CoexEventDurations, CoexEventId,
-    CoexPti, CoexPtiTable, CoexRequest, CoexTimerIndex,
+    COEX_EVENT_COUNT, COEX_TIMER_COUNT, CoexClient, CoexClientRequest, CoexError,
+    CoexEventDurations, CoexEventId, CoexPti, CoexPtiTable, CoexTimerIndex,
 };
+pub use scheduler::{CoexPhase, CoexSchedule, CoexScheduler};
 pub use timer::{CoexTimerHardware, program_timer};
 
 #[cfg(test)]

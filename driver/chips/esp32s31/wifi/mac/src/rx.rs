@@ -5,16 +5,23 @@ use open_esp_radio_esp32s31_wifi_dma::descriptor::{
 };
 #[cfg(all(target_pointer_width = "32", feature = "validation-raw-dma"))]
 pub use open_esp_radio_esp32s31_wifi_dma::rx_ring::publish_cold_ring;
+#[cfg(any(not(target_pointer_width = "32"), feature = "validation-raw-dma"))]
+pub use open_esp_radio_esp32s31_wifi_dma::rx_ring::{
+    build_cold_ring, disable_receive, rearm_descriptor,
+};
 #[cfg(not(target_pointer_width = "32"))]
 pub use open_esp_radio_esp32s31_wifi_dma::rx_ring::{enable_receive, publish_cold_ring};
 pub use open_esp_radio_esp32s31_wifi_dma::{
-    rx_dma::{RxDma, RxDmaBinding},
+    rx_dma::{
+        RxDma, RxDmaBinding, RxDmaCursorObservation, RxDmaReloadSettled, RxDmaWalkerEnabled,
+        RxDmaWalkerStopped,
+    },
     rx_ring::{
         RX_BUFFER_SENTINEL, RX_DESCRIPTOR_RELOAD_ATTEMPT_LIMIT, RxCompletedDescriptor,
         RxCompletedDescriptorFrontier, RxCompletedUnit, RxCompletedUnitFrontier,
         RxDescriptorSnapshot, RxDmaArenaState, RxLiveAppend, RxReloadObservation, RxRingError,
         RxRingHalted, RxRingLive, RxRingStopped, RxRingTopologySnapshot, RxSegment,
-        build_cold_ring, disable_receive, prepare_recycled_buffer, rearm_descriptor,
+        prepare_recycled_buffer,
     },
 };
 

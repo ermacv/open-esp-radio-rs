@@ -34,6 +34,10 @@ id = "BLOB_LIBBTBB_BT_CTE_ACCESSORS"
 description = "_oracles/libbtbb.a sha256 ebd67c6a32081d0fcd143bbb0ed53f962fc587058e20eceb59012beae47528df; bt_cte.o public getter/setter pairs. Matching independent masks provide instruction-exact CTE and BTAGC field geometry; these BT-only registers remain evidence for a separate canonical BT-radio SVD rather than duplicate singleton peripherals in this Wi-Fi-oriented map."
 
 [[sources]]
+id = "BLOB_LIBBTBB_COEX_PTI_V2"
+description = "_oracles/libbtbb.a sha256 ebd67c6a32081d0fcd143bbb0ed53f962fc587058e20eceb59012beae47528df; complete 0x20-byte bt_bb_v2.o coex_pti_v2 body. Two fresh-read RMW operations preserve the opposite halfword while publishing the fixed low image 0x0010 and high image 0x0640 at 0x20100010. The instruction evidence does not assign individual bit semantics."
+
+[[sources]]
 id = "BLOB_LIBPHY_PHY_I2C"
 description = "_oracles/libphy.a sha256 51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223; complete phy_i2c.o callbacks and phy_i2c_master_cmd_mem_init"
 

@@ -242,7 +242,7 @@ impl<const BUFFER_SIZE: usize> PinnedTxDmaStorage<BUFFER_SIZE> {
             .descriptor
             .as_ref()
             .get_ref()
-            .publish(word0, self.binding.buffer_address, 0);
+            .publish_owned(word0, self.binding.buffer_address, 0);
         *storage.state = TxDmaState::Reserved;
         Ok(())
     }
@@ -314,7 +314,7 @@ impl<const BUFFER_SIZE: usize> PinnedTxDmaStorage<BUFFER_SIZE> {
         if *storage.state != expected {
             return Err(TxDmaStorageError::State);
         }
-        storage.descriptor.as_ref().get_ref().publish(0, 0, 0);
+        storage.descriptor.as_ref().get_ref().publish_owned(0, 0, 0);
         *storage.state = TxDmaState::Free;
         Ok(())
     }
@@ -465,9 +465,8 @@ mod tests {
             Err(TxDmaStorageError::State)
         );
         assert_eq!(storage.buffer_mut(), Err(TxDmaStorageError::Busy));
-        // Dropping the movable capability must not unwind. The permanently
-        // located backing remains quarantined in `ResetRequired` until reset.
-        drop(storage);
+        // Letting the movable capability leave scope must not unwind. The
+        // permanently located backing remains quarantined until reset.
     }
 
     #[test]
@@ -482,7 +481,6 @@ mod tests {
             storage.release_completed(MacTxQueueDetached::new_model(DESCRIPTOR_ADDRESS)),
             Err(TxDmaStorageError::State)
         );
-        drop(storage);
     }
 
     #[test]

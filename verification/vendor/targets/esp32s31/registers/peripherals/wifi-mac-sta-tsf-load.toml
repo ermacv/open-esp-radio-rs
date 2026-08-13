@@ -9,7 +9,7 @@ baseAddress = 0x2010D814
 
 [peripherals.registers.register]
 name = "CONTROL"
-description = "Complete hal_set_sta_tsf asserts bit four after writing both station TSF value words; complete hal_get_sta_tsf sets then clears bit zero around its snapshot reads."
+description = "Complete hal_set_sta_tsf asserts bit four after writing both station TSF value words; the SoftAP path of complete hal_mac_tsf_reset asserts bit five after clearing both shared TSF value words; complete hal_get_sta_tsf sets then clears bit zero around its snapshot reads."
 addressOffset = 0x0
 size = 32
 access = "read-write"
@@ -24,6 +24,12 @@ bitWidth = 1
 name = "LOAD_STATION_TSF"
 description = "Station TSF load request asserted by the final fresh-read RMW in hal_set_sta_tsf."
 bitOffset = 4
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "LOAD_SOFTAP_TSF"
+description = "SoftAP TSF load request asserted after the two zero-value writes by the arg0=0 path of complete hal_mac_tsf_reset."
+bitOffset = 5
 bitWidth = 1
 
 [[peripherals.registers]]
@@ -137,6 +143,11 @@ confidence = "instruction-exact"
 
 [[review]]
 entity = "WIFI_MAC_STA_TSF_LOAD.CONTROL.LOAD_STATION_TSF"
+sources = ["BLOB_LIBPP_HAL_TSF"]
+confidence = "instruction-exact"
+
+[[review]]
+entity = "WIFI_MAC_STA_TSF_LOAD.CONTROL.LOAD_SOFTAP_TSF"
 sources = ["BLOB_LIBPP_HAL_TSF"]
 confidence = "instruction-exact"
 

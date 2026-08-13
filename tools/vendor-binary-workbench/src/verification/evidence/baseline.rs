@@ -294,28 +294,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn every_checked_in_esp32s31_baseline_is_valid_toml() {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .ancestors()
-            .nth(2)
-            .expect("workbench remains under tools");
-        let directory = root.join("verification/vendor/targets/esp32s31/baselines");
-        let mut paths = fs::read_dir(directory)
-            .unwrap()
-            .map(|entry| entry.unwrap().path())
-            .filter(|path| {
-                path.extension()
-                    .is_some_and(|extension| extension == "toml")
-            })
-            .collect::<Vec<_>>();
-        paths.sort();
-        assert!(!paths.is_empty());
-        for path in paths {
-            assert!(!load_evidence_baseline(&path).unwrap().is_empty());
-        }
-    }
-
-    #[test]
     fn malformed_baseline_retains_its_physical_source_line() {
         let input =
             "schema = 2\n\n[[evidence]]\nsource = \"rom\"\nsymbol = 42\nkind = \"symbolic\"\n";

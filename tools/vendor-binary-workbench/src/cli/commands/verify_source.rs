@@ -48,6 +48,7 @@ pub(super) fn run(arguments: VerifySourceArgs, svd: &MmioMap, target: &TargetSpe
         rust_prefix,
         &execution_profiles,
         None,
+        &[],
         &mut evidence,
     )?;
     let orphan_probes = orphan_probe_count(

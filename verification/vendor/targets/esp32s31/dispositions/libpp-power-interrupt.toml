@@ -1,4 +1,4 @@
-schema = 1
+schema = 2
 # Finite WDEVPWR hard-ISR boundary. Cause meanings and task-side policy remain
 # opaque until independently qualified; this slice proves only STATUS/CLEAR.
 default-disposition = "not-yet-ported"
@@ -11,6 +11,7 @@ disposition = "direct"
 protocol = "wifi"
 rust-component = "open_esp_radio_esp32s31_pac::interrupt_snapshot::sample_mac_power_interrupt"
 binding = "v1"
+rust-binding = "exact-production-entry"
 rust-probe = "open_libpp_power_irq_trace_hal_pwr_interrupt_get_event"
 compare-return = true
 effect-contract = "exact-effects-v1"
@@ -25,6 +26,7 @@ disposition = "direct"
 protocol = "wifi"
 rust-component = "open_esp_radio_esp32s31_pac::interrupt_snapshot::acknowledge_mac_power_interrupt"
 binding = "v1"
+rust-binding = "exact-production-entry"
 rust-probe = "open_libpp_power_irq_trace_hal_pwr_interrupt_clr_event"
 effect-contract = "exact-effects-v1"
 [[functions.effects]]

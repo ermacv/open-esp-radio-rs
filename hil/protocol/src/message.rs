@@ -3,7 +3,7 @@ use core::fmt;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-pub const PROTOCOL_VERSION: u16 = 40;
+pub const PROTOCOL_VERSION: u16 = 42;
 // Keep command envelopes small: startup artifacts are transferred as an
 // ordered CRC-protected stream, so a large per-command inline buffer only
 // inflates UART queues and executor futures without improving semantics.
@@ -862,7 +862,23 @@ pub struct WifiAccessPointEvidence {
     /// Maximum number of controlled ports open at the same time.
     pub maximum_authorized_peers: u8,
     pub peer_removals: u32,
+    pub authentication_timeouts: u32,
+    pub inactivity_timeouts: u32,
+    pub disassociations_prepared: u32,
+    /// Disconnect frames accepted by the target hardware TX owner.
+    pub disassociations_published: u32,
+    /// Published disconnect frames whose terminal completion reported an ACK.
+    pub disassociations_acknowledged: u32,
+    pub deauthentications_prepared: u32,
+    pub deauthentications_published: u32,
+    pub deauthentications_acknowledged: u32,
+    /// Complete vendor-shaped RX units made visible to the AP protocol path.
+    pub completed_rx_units: u32,
     pub completed_rx_descriptors: u32,
+    /// Descriptors returned to DMA immediately after copying their complete unit.
+    pub recycled_rx_descriptors: u32,
+    /// Complete units intentionally discarded after their descriptors were recycled.
+    pub discarded_rx_units: u32,
     pub ignored_rx_frames: u32,
     pub rx_mic_failures: u32,
     pub rx_quarantined_frames: u32,

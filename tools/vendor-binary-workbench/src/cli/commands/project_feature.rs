@@ -9,7 +9,8 @@ use crate::{
     ProjectSpec,
     cli::{ProjectFeatureArgs, output, table},
     qualification::{
-        FeatureQualificationReport, FeatureQualificationStatus, FeatureTransactionReport,
+        FeatureCoverage, FeatureQualificationReport, FeatureQualificationStatus,
+        FeatureTransactionReport,
     },
 };
 
@@ -45,7 +46,7 @@ pub(super) fn run(arguments: ProjectFeatureArgs, project: &ProjectSpec) -> Resul
         .transpose()?;
     let passed = feature.status != FeatureQualificationStatus::Blocked;
     let report = ProjectFeatureReport {
-        schema: 2,
+        schema: 3,
         command: "project feature",
         project: project.id.clone(),
         selected_phase: arguments.phase,
@@ -66,6 +67,11 @@ fn render_human(report: &ProjectFeatureReport) {
     }
     outputln!("Claim:   {}", feature.description);
     let outcome = match feature.status {
+        FeatureQualificationStatus::Qualified
+            if feature.coverage == FeatureCoverage::ComposedFeatures =>
+        {
+            output::success("QUALIFIED — every selected feature dependency is qualified")
+        }
         FeatureQualificationStatus::Qualified => output::success(
             "QUALIFIED — every discovered transaction has a current reviewed disposition and proof",
         ),
@@ -77,12 +83,24 @@ fn render_human(report: &ProjectFeatureReport) {
         }
     };
     outputln!("\n{outcome}");
-    outputln!(
-        "Surface: {}/{} transaction(s), {} proof requirement(s)",
-        feature.covered_effects,
-        feature.surface_effects,
-        feature.requirements
-    );
+    if feature.coverage == FeatureCoverage::ComposedFeatures {
+        outputln!(
+            "Dependencies: {}/{} qualified",
+            feature
+                .dependencies
+                .iter()
+                .filter(|dependency| dependency.status != FeatureQualificationStatus::Blocked)
+                .count(),
+            feature.dependencies.len()
+        );
+    } else {
+        outputln!(
+            "Surface: {}/{} transaction(s), {} proof requirement(s)",
+            feature.covered_effects,
+            feature.surface_effects,
+            feature.requirements
+        );
+    }
 
     if let Some(hardware) = &feature.hardware {
         outputln!("\n{}", output::heading("Hardware evidence"));
@@ -95,6 +113,22 @@ fn render_human(report: &ProjectFeatureReport) {
         for blocker in &hardware.blockers {
             outputln!("- {blocker}");
         }
+    }
+
+    if !feature.dependencies.is_empty() {
+        outputln!("\n{}", output::heading("Feature dependencies"));
+        outputln!(
+            "{}",
+            table::render(
+                ["Feature", "Phase", "Status", "Blockers"],
+                feature.dependencies.iter().map(|dependency| [
+                    dependency.feature.clone(),
+                    dependency.phase.clone().unwrap_or_else(|| "all".to_owned()),
+                    dependency.status.as_str().to_owned(),
+                    dependency.blockers.len().to_string(),
+                ]),
+            )
+        );
     }
 
     if !feature.blockers.is_empty() {
@@ -133,10 +167,12 @@ fn render_human(report: &ProjectFeatureReport) {
         )
     );
 
-    outputln!("\n{}", output::heading("Vendor → Rust transactions"));
-    if feature.transactions.is_empty() {
+    if feature.coverage != FeatureCoverage::ComposedFeatures {
+        outputln!("\n{}", output::heading("Vendor → Rust transactions"));
+    }
+    if feature.coverage != FeatureCoverage::ComposedFeatures && feature.transactions.is_empty() {
         outputln!("No transactions were discovered for this feature.");
-    } else {
+    } else if !feature.transactions.is_empty() {
         let limit = if output::details() {
             feature.transactions.len()
         } else {
@@ -210,6 +246,24 @@ fn select_phase(feature: &mut FeatureQualificationReport, selected: &str) -> Res
         .transactions
         .retain(|transaction| transaction.phase == selected);
     feature.blockers = phase.blockers.clone();
+    feature.blockers.extend(
+        feature
+            .dependencies
+            .iter()
+            .filter(|dependency| dependency.status == FeatureQualificationStatus::Blocked)
+            .map(|dependency| {
+                format!(
+                    "feature dependency {}{} is blocked",
+                    dependency.feature,
+                    dependency
+                        .phase
+                        .as_ref()
+                        .map_or_else(String::new, |phase| format!(" phase {phase}"))
+                )
+            }),
+    );
+    feature.blockers.sort();
+    feature.blockers.dedup();
     feature.phases = vec![phase];
     feature.hardware = None;
     feature.status = if feature.blockers.is_empty() {
@@ -271,7 +325,7 @@ fn write_review_draft(path: &Path, feature: &FeatureQualificationReport) -> Resu
     writeln!(draft, "# Review candidate for feature {}", feature.id).unwrap();
     writeln!(
         draft,
-        "# Copy reviewed entries into the schema-4 feature pack. REVIEW values are intentionally invalid."
+        "# Copy reviewed entries into the schema-5 feature pack. REVIEW values are intentionally invalid."
     )
     .unwrap();
     for transaction in &feature.transactions {
@@ -412,6 +466,7 @@ mod tests {
                 },
             ],
             transactions: Vec::new(),
+            dependencies: Vec::new(),
             hardware: None,
             blockers: vec!["start blocker".to_owned()],
         }

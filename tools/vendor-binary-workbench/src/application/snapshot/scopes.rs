@@ -36,6 +36,7 @@ pub(super) fn collect(
                 crate::review_scopes::ReplacementQualification::Blocked => "blocked",
             }
             .to_owned(),
+            replacement_policy_excluded: scope.replacement_policy_excluded,
             analysis_inventory_complete: scope.analysis_inventory_complete,
             profiles: scope.profiles,
             roots: scope.roots,

@@ -10,7 +10,7 @@ use core::{
 };
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use open_esp_radio_esp32s31_wifi_mac::{
-    rx::{RxDmaBinding, RxRingStopped},
+    rx::{RxDmaBinding, RxDmaWalkerStopped, RxRingStopped},
     rx_pool::RxStagePool,
 };
 use open_esp_radio_wifi_embassy::{MonitorCapturePool, MonitorCaptureResources};
@@ -48,11 +48,34 @@ struct MockRxDma {
 
 impl RxDma for MockRxDma {
     fn last_descriptor_low(&mut self) -> u32 {
-        0
+        if self.walker {
+            RX_TEST_BASE & 0x000f_ffff
+        } else {
+            0
+        }
     }
 
     fn next_descriptor_low(&mut self) -> u32 {
-        RX_TEST_BASE + 12
+        if self.walker {
+            (RX_TEST_BASE + 12) & 0x000f_ffff
+        } else {
+            0
+        }
+    }
+
+    fn with_ordered_cursor<R>(
+        &mut self,
+        observed: impl for<'confirmation> FnOnce(
+            open_esp_radio_esp32s31_wifi_mac::rx::RxDmaCursorObservation<'confirmation>,
+        ) -> R,
+    ) -> R {
+        let last = self.last_descriptor_low();
+        self.fence();
+        let next = self.next_descriptor_low();
+        self.fence();
+        observed(
+            open_esp_radio_esp32s31_wifi_mac::rx::RxDmaCursorObservation::validation(last, next),
+        )
     }
 
     fn walker_enabled(&mut self) -> bool {
@@ -61,6 +84,17 @@ impl RxDma for MockRxDma {
 
     fn reload_pending(&mut self) -> bool {
         false
+    }
+
+    fn try_with_reload_settled<R>(
+        &mut self,
+        settled: impl for<'confirmation> FnOnce(
+            open_esp_radio_esp32s31_wifi_mac::rx::RxDmaReloadSettled<'confirmation>,
+        ) -> R,
+    ) -> Option<R> {
+        (!self.reload_pending()).then(|| {
+            settled(open_esp_radio_esp32s31_wifi_mac::rx::RxDmaReloadSettled::validation())
+        })
     }
 
     fn set_descriptor_high_window(&mut self, _: &RxDmaBinding, _address_high: u16) {}
@@ -77,21 +111,32 @@ impl RxDma for MockRxDma {
         self.reload_requests = self.reload_requests.saturating_add(1);
     }
 
-    fn try_enable_walker(&mut self, _: &RxDmaBinding) -> bool {
+    fn try_with_walker_enabled<R>(
+        &mut self,
+        _: &RxDmaBinding,
+        enabled: impl for<'confirmation> FnOnce(
+            open_esp_radio_esp32s31_wifi_mac::rx::RxDmaWalkerEnabled<'confirmation>,
+        ) -> R,
+    ) -> Option<R> {
         if self.fail_enable {
-            false
+            None
         } else {
             self.walker = true;
-            true
+            Some(enabled(
+                open_esp_radio_esp32s31_wifi_mac::rx::RxDmaWalkerEnabled::validation(),
+            ))
         }
     }
 
-    fn try_disable_walker(&mut self) -> bool {
+    fn try_with_walker_stopped<R>(
+        &mut self,
+        stopped: impl for<'confirmation> FnOnce(RxDmaWalkerStopped<'confirmation>) -> R,
+    ) -> Option<R> {
         if self.fail_disable {
-            false
+            None
         } else {
             self.walker = false;
-            true
+            Some(stopped(RxDmaWalkerStopped::validation()))
         }
     }
 

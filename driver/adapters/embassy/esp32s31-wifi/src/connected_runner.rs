@@ -41,6 +41,11 @@ pub enum WifiRxProgress {
     /// Completed descriptors remain, but no independent staging owner is
     /// available. Resume only after protocol processing returns a credit.
     Backpressured,
+    /// An exhausted-list BASE publication still needs a cooperative hardware
+    /// ownership observation. Re-run RX service without waiting for another
+    /// interrupt: the just-republished terminal can complete on the IRQ edge
+    /// currently being consumed.
+    ProbePending,
 }
 
 /// Terminal, non-error outcome of the connected radio event loop.

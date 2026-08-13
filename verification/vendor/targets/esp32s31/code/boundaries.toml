@@ -21,6 +21,10 @@ artifact-sha256 = "62dbe7216619d1f1e3dcd51233d91b211add15c7c746851af0be6a632cdae
 
 [[inputs]]
 source = "btbb"
+artifact-sha256 = "340de1f0948e70bb7355e74f1652daad7bcb14c4b0a909bda1fff89f96b63a60"
+
+[[inputs]]
+source = "btbb"
 artifact-sha256 = "ebd67c6a32081d0fcd143bbb0ed53f962fc587058e20eceb59012beae47528df"
 
 [[inputs]]
@@ -77,7 +81,7 @@ artifact-sha256 = "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227
 
 [[inputs]]
 source = "rust"
-artifact-sha256 = "8c2ffbb5938f9ae5def97382ac54dae8b0f3b81ed4c4064d30944cef442a046c"
+artifact-sha256 = "7457b7bbe5d23fe83422f4294e7b35f5e5e8b2f97a4db20811f22759c302bf2a"
 
 [[inputs]]
 source = "wifi-key-role"
@@ -90,6 +94,22 @@ artifact-sha256 = "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227
 [[inputs]]
 source = "wifi-key-role"
 artifact-sha256 = "f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e"
+
+[[inputs]]
+source = "wifi-registers"
+artifact-sha256 = "df8bdb9372d855ffff0a6479765e943fc61ffb11157a68cb177e4d46c241c71d"
+
+[[inputs]]
+source = "wifi-sta-ap-receive"
+artifact-sha256 = "92550813de20ed0d51110dbd72b646e891a86a8a2f81fa53714ebf2ebf9c8f40"
+
+[[inputs]]
+source = "wifi-sta-ap-receive"
+artifact-sha256 = "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542"
+
+[[inputs]]
+source = "wifi-sta-ap-receive"
+artifact-sha256 = "f4c9e33afc1446cb1fd6c010f6ab860b7d7823cebda899a6e4607ce0a67592d6"
 
 [[inputs]]
 source = "wifi-sta-lifecycle"

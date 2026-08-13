@@ -254,8 +254,12 @@ fn qualify(capture: &SerialCapture, config: &Config, lab: &LabConfig) -> Result<
                 .join()
                 .map_err(|_| "secondary AP client probe thread panicked".to_owned())?
         });
-        let client_restore = restore_clients(client, secondary_client);
+        // Keep every admitted peer alive until the target has completed its
+        // AP stop transaction. Otherwise the clients deauthenticate first and
+        // the qualification never exercises the driver's ordered
+        // disassociation/deauthentication teardown.
         let stop_result = stop_access_point(capture, config.timeout, started.generation, lab);
+        let client_restore = restore_clients(client, secondary_client);
         let stop_stack_result = if stop_result.is_ok() {
             report_stack(capture, config.timeout, "ap-stopped")
         } else {
@@ -272,7 +276,8 @@ fn qualify(capture: &SerialCapture, config: &Config, lab: &LabConfig) -> Result<
                 Ok(stopped) => format!(
                     "{error}; AP TX evidence: data={} hardware_failures={} hardware_timeouts={} \
                      collision_limits={} last_hardware_status={} beacons={}; AP RX evidence: \
-                     descriptors={} protected={} mic_failures={} quarantined={} duplicates={} \
+                     units={} descriptors={} recycled_descriptors={} discarded_units={} \
+                     protected={} mic_failures={} quarantined={} duplicates={} \
                      radio_rejected={} protocol_rejected={} ethernet_staged={} tcp_staged={}",
                     stopped.data_frames_transmitted,
                     stopped.tx_hardware_failures,
@@ -280,7 +285,10 @@ fn qualify(capture: &SerialCapture, config: &Config, lab: &LabConfig) -> Result<
                     stopped.tx_collision_limits,
                     stopped.tx_last_hardware_status,
                     stopped.beacons_transmitted,
+                    stopped.completed_rx_units,
                     stopped.completed_rx_descriptors,
+                    stopped.recycled_rx_descriptors,
+                    stopped.discarded_rx_units,
                     stopped.protected_data_frames,
                     stopped.rx_mic_failures,
                     stopped.rx_quarantined_frames,
@@ -319,6 +327,14 @@ fn qualify(capture: &SerialCapture, config: &Config, lab: &LabConfig) -> Result<
         let stopped = stop_result?;
         stop_stack_result?;
         restart_result?;
+        let unacknowledged_disconnects = stopped
+            .disassociations_published
+            .saturating_sub(stopped.disassociations_acknowledged)
+            .saturating_add(
+                stopped
+                    .deauthentications_published
+                    .saturating_sub(stopped.deauthentications_acknowledged),
+            );
         if stopped.beacons_transmitted == 0
             || stopped.missed_beacon_intervals != 0
             || stopped.maximum_beacon_lateness_micros >= 102_400
@@ -329,7 +345,22 @@ fn qualify(capture: &SerialCapture, config: &Config, lab: &LabConfig) -> Result<
             || stopped.maximum_authorized_peers == 0
             || stopped.maximum_associated_peers < minimum_clients
             || stopped.maximum_authorized_peers < minimum_clients
-            || stopped.tx_hardware_failures != 0
+            || stopped.peer_removals < u32::from(minimum_clients)
+            || stopped.disassociations_prepared < u32::from(minimum_clients)
+            || stopped.disassociations_published < u32::from(minimum_clients)
+            || stopped.disassociations_prepared != stopped.disassociations_published
+            || stopped.deauthentications_prepared < u32::from(minimum_clients)
+            || stopped.deauthentications_published < u32::from(minimum_clients)
+            || stopped.deauthentications_prepared != stopped.deauthentications_published
+            || stopped.completed_rx_units == 0
+            || stopped.completed_rx_descriptors != stopped.recycled_rx_descriptors
+            // Complete vendor `wifi_softap_stop` submits disassociation and
+            // deauthentication back-to-back and does not make peer removal
+            // conditional on their ACKs. Our owner waits for each terminal
+            // DMA outcome, but an unacknowledged disconnect is expected once
+            // the client has already left. No other terminal TX failure is
+            // accepted by this gate.
+            || u32::from(stopped.tx_hardware_failures) != unacknowledged_disconnects
             || stopped.tx_hardware_timeouts != 0
             || stopped.tx_collision_limits != 0
             || stopped.control_frames_dropped_while_busy != 0

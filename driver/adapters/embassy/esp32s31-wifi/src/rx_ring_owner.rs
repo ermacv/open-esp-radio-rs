@@ -39,6 +39,7 @@ pub struct Esp32s31RxRingServiceProgress {
     pub completed_descriptors: u32,
     pub recycled_descriptors: u32,
     pub reload_pending: bool,
+    pub service_probe_pending: bool,
 }
 
 enum Esp32s31RxRingState<'storage, const COUNT: usize> {
@@ -178,6 +179,7 @@ impl<'storage, const COUNT: usize, const DMA_BUFFER_SIZE: usize, const DMA_STORA
             reload_pending: ring.poll_pending_reload(hardware)? == RxReloadObservation::Pending,
             ..Esp32s31RxRingServiceProgress::default()
         };
+        ring.observe_exhausted_republication(hardware);
         let frontier = ring.completed_descriptor_frontier();
         for step in 0..frontier.descriptor_count {
             let index = (frontier.start_index + step) % COUNT;
@@ -194,6 +196,8 @@ impl<'storage, const COUNT: usize, const DMA_BUFFER_SIZE: usize, const DMA_STORA
         {
             progress.recycled_descriptors = append.descriptor_count as u32;
         }
+        progress.service_probe_pending =
+            ring.completion_release_probe_pending() || ring.exhausted_republication_probe_pending();
         Ok(progress)
     }
 

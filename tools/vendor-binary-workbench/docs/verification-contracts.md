@@ -42,15 +42,42 @@ Protocol classification is independent from completion. Shared PHY/RF,
 Wi-Fi, Bluetooth, BLE, Coex and 802.15.4 counts therefore remain visible even
 when a function is not yet ported.
 
-## Bindings
+## Bindings and trust ceilings
 
-Binding v1 selects one exact compiled Rust probe. It is independent of the
+Disposition schema 2 keeps the executable binding format at `binding = "v1"`
+and additionally requires a `rust-binding` trust classification. The binding
+selects one exact compiled Rust probe and is independent of the
 convention-based `--rust-prefix`. `compare-return = true` additionally compares
 the observable ABI return register; it is opt-in because a machine value in
 `a0` alone does not prove the unavailable C prototype declared a return.
 
+The closed Rust binding vocabulary is:
+
+- `generated-transaction`: generated code is itself the transaction under test;
+- `exact-production-entry`: the probe invokes the exact production entry;
+- `shared-production-core`: the probe and driver invoke the same stateful core;
+- `verification-projection`: verification-only code that does not establish a
+  production replacement.
+
+Driver adapters separately declare the vendor oracle (`concrete-replay`,
+`complete-lifted-trace`, `static-reviewed-facts` or `manual-assumption`), the
+reviewed domain and the relation being checked. The verifier computes the
+maximum claim from those facts; adapter code cannot choose a stronger label.
+Whole-function equivalence requires concrete vendor replay and an exact
+production entry or generated transaction over the whole-function domain. A
+shared production core can establish a reviewed refinement, but not identity
+of the surrounding vendor and Rust functions. Lifted/static facts and a
+verification projection remain non-release evidence even when their checks
+pass.
+
+`rust-conformance` describes a reviewed property rather than whole-function
+equivalence. It is release-eligible only when the vendor property is
+concretely replayed over its finite domain and the Rust side executes an exact
+production entry or shared production core. Static instruction shapes alone
+remain useful research evidence but cannot cross that boundary.
+
 ```toml
-schema = 1
+schema = 2
 default-disposition = "not-yet-ported"
 default-protocol = "unknown"
 
@@ -60,6 +87,7 @@ symbol = "phy_disable_agc"
 disposition = "direct"
 rust-component = "open_esp_radio_esp32s31_hal::phy_agc::set_enabled"
 binding = "v1"
+rust-binding = "exact-production-entry"
 rust-probe = "open_phy_trace_disable_agc"
 effect-contract = "exact-effects-v1"
 
@@ -71,6 +99,24 @@ disposition = { kind = "required" }
 selector = { kind = "mmio-write", width = 32, address = 0x20107030 }
 disposition = { kind = "required" }
 ```
+
+Run `project audit bindings` before reviewing a baseline. `project check`
+includes the same fail-closed gate. A baseline records an already admissible
+proof; it cannot promote a shadow model, static trace or unregistered adapter
+into production evidence.
+
+Stateful verification code must therefore be an adapter, not a second driver:
+
+```text
+vendor replay ──┐
+                ├─ reviewed relation and compact observable contract
+production core ┘
+```
+
+The adapter may seed RAM/MMIO, model external services and assert the declared
+relation. It must not reimplement the production state transition as its own
+expected algorithm. For finite MMIO leaves, generated transactions are the
+preferred way to avoid handwritten duplication.
 
 ## Effect Contract v1
 

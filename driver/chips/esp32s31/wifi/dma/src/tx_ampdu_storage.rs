@@ -336,6 +336,13 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> PinnedAmpduDmaStorage<SLOTS, 
             return Err(AmpduDmaStorageError::Count);
         }
 
+        // Validate and derive the entire image before touching descriptor
+        // memory. In particular, a backing arena may be larger than the
+        // descriptor's 14-bit size field; discovering that on a later entry
+        // must not leave an earlier descriptor published.
+        let mut words = [0_u32; SLOTS];
+        let mut buffer_addresses = [0_u32; SLOTS];
+        let mut descriptor_addresses = [0_u32; SLOTS];
         for (index, entry) in entries.iter().enumerate() {
             if entry.buffer_capacity == 0
                 || entry.buffer_capacity > self.binding.buffer_capacity
@@ -344,34 +351,31 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> PinnedAmpduDmaStorage<SLOTS, 
             {
                 return Err(AmpduDmaStorageError::InvalidLength);
             }
-            self.binding
-                .internal_buffer_address(index)
-                .ok_or(AmpduDmaStorageError::Address)?;
-            self.binding
-                .descriptor_address(index)
-                .ok_or(AmpduDmaStorageError::Address)?;
-        }
-
-        for (index, entry) in entries.iter().enumerate() {
-            let buffer_address = self
+            buffer_addresses[index] = self
                 .binding
                 .internal_buffer_address(index)
                 .ok_or(AmpduDmaStorageError::Address)?;
+            descriptor_addresses[index] = self
+                .binding
+                .descriptor_address(index)
+                .ok_or(AmpduDmaStorageError::Address)?;
+            words[index] = tx_owned_word(entry.buffer_capacity, entry.transfer_length)
+                .ok_or(AmpduDmaStorageError::InvalidLength)?;
+        }
+
+        for index in 0..entries.len() {
             let next_address = if index + 1 == entries.len() {
                 0
             } else {
-                self.binding
-                    .descriptor_address(index + 1)
-                    .ok_or(AmpduDmaStorageError::Address)?
+                descriptor_addresses[index + 1]
             };
-            let mut word0 = tx_owned_word(entry.buffer_capacity, entry.transfer_length)
-                .ok_or(AmpduDmaStorageError::InvalidLength)?;
+            let mut word0 = words[index];
             if next_address != 0 {
                 word0 &= !BIT_30;
             }
-            self.storage.as_ref().get_ref().descriptors[index].publish(
+            self.storage.as_ref().get_ref().descriptors[index].publish_owned(
                 word0,
-                buffer_address,
+                buffer_addresses[index],
                 next_address,
             );
         }
@@ -476,7 +480,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> PinnedAmpduDmaStorage<SLOTS, 
             return Err(AmpduDmaStorageError::State);
         }
         for descriptor in &self.storage.as_ref().get_ref().descriptors {
-            descriptor.publish(0, 0, 0);
+            descriptor.publish_owned(0, 0, 0);
         }
         *self.storage.as_mut().project().state = AmpduDmaState::Free;
         Ok(())
@@ -810,6 +814,9 @@ impl<'retention, B: StableDmaBacking, const SLOTS: usize, const BUFFER_SIZE: usi
             return Err(AmpduDmaStorageError::State);
         }
         let index = self.held;
+        if index >= SLOTS {
+            return Err(AmpduDmaStorageError::Count);
+        }
         let backing_index = u8::try_from(index).map_err(|_| AmpduDmaStorageError::Count)?;
         if self
             .retention()
@@ -824,26 +831,28 @@ impl<'retention, B: StableDmaBacking, const SLOTS: usize, const BUFFER_SIZE: usi
         let descriptor_head = self.descriptor_head();
         let generation = self.next_lease_generation()?;
         self.retention_mut().backings[index] = Some(backing);
-        let (address, len) = {
-            let bytes = self.retention_mut().backings[index]
-                .as_mut()
-                .expect("retained backing was inserted")
-                .stable_dma_region()
-                .into_mut_slice();
-            (bytes.as_ptr().addr(), bytes.len())
-        };
-        let identity = RetainedDmaBackingIdentity {
-            generation,
-            address,
-            len,
-        };
-        self.retention_mut().backing_identities[index] = Some(identity);
+        // Count the lease before borrowing its region. If a backing's unsafe
+        // implementation panics while producing the region, Drop still owns
+        // and releases the inserted value. Split the retention fields so the
+        // exact slice returned by the single stability call can also be
+        // returned to the encoder without sampling the backing twice.
         self.held += 1;
-        let bytes = self.retention_mut().backings[index]
+        let retention = self
+            .retention
+            .as_deref_mut()
+            .expect("retained aggregate owner contains its lease arena");
+        let (backings, identities) = (&mut retention.backings, &mut retention.backing_identities);
+        let bytes = backings[index]
             .as_mut()
             .expect("retained backing was inserted")
             .stable_dma_region()
             .into_mut_slice();
+        let identity = RetainedDmaBackingIdentity {
+            generation,
+            address: bytes.as_ptr().addr(),
+            len: bytes.len(),
+        };
+        identities[index] = Some(identity);
         Ok((
             RetainedDmaBacking {
                 descriptor_head,
@@ -975,17 +984,20 @@ impl<'retention, B: StableDmaBacking, const SLOTS: usize, const BUFFER_SIZE: usi
         &mut self,
         source_indices: &[u8],
     ) -> Result<(), AmpduDmaStorageError> {
-        if self.state() != AmpduDmaState::Detached || source_indices.is_empty() {
+        if self.state() != AmpduDmaState::Detached {
             return Err(AmpduDmaStorageError::State);
         }
+        if source_indices.is_empty() || source_indices.len() > SLOTS {
+            return Err(AmpduDmaStorageError::Count);
+        }
         let mut next = self.retention().active_backing_indices;
-        let mut seen = 0_u32;
         for (destination, source) in source_indices.iter().copied().enumerate() {
             let source = usize::from(source);
-            if source >= self.active_count || source >= 32 || seen & (1_u32 << source) != 0 {
+            if source >= self.active_count
+                || source_indices[..destination].contains(&(source as u8))
+            {
                 return Err(AmpduDmaStorageError::Count);
             }
-            seen |= 1_u32 << source;
             next[destination] = self.retention().active_backing_indices[source];
         }
         self.retention_mut().active_backing_indices = next;
@@ -1036,6 +1048,9 @@ impl<'retention, B: StableDmaBacking, const SLOTS: usize, const BUFFER_SIZE: usi
             return Err(AmpduDmaStorageError::Count);
         }
 
+        // This is a transaction over the descriptor arena: derive every
+        // address and ownership word before the first volatile publication.
+        let mut words = [0_u32; SLOTS];
         let mut buffer_addresses = [0_u32; SLOTS];
         let mut descriptor_addresses = [0_u32; SLOTS];
         for (index, entry) in entries.iter().enumerate() {
@@ -1057,20 +1072,21 @@ impl<'retention, B: StableDmaBacking, const SLOTS: usize, const BUFFER_SIZE: usi
                 .binding
                 .descriptor_address(index)
                 .ok_or(AmpduDmaStorageError::Address)?;
+            words[index] = tx_owned_word(entry.buffer_capacity, entry.transfer_length)
+                .ok_or(AmpduDmaStorageError::InvalidLength)?;
         }
 
-        for (index, entry) in entries.iter().enumerate() {
+        for index in 0..entries.len() {
             let next_address = if index + 1 == entries.len() {
                 0
             } else {
                 descriptor_addresses[index + 1]
             };
-            let mut word0 = tx_owned_word(entry.buffer_capacity, entry.transfer_length)
-                .ok_or(AmpduDmaStorageError::InvalidLength)?;
+            let mut word0 = words[index];
             if next_address != 0 {
                 word0 &= !BIT_30;
             }
-            self.dma().storage.as_ref().get_ref().descriptors[index].publish(
+            self.dma().storage.as_ref().get_ref().descriptors[index].publish_owned(
                 word0,
                 buffer_addresses[index],
                 next_address,
@@ -1095,7 +1111,8 @@ impl<'retention, B: StableDmaBacking, const SLOTS: usize, const BUFFER_SIZE: usi
             return Err(AmpduDmaStorageError::Count);
         }
 
-        for logical_index in 0..count {
+        let mut descriptors = [None; SLOTS];
+        for (logical_index, destination) in descriptors.iter_mut().enumerate().take(count) {
             let backing_index = usize::from(self.retention().active_backing_indices[logical_index]);
             let descriptor = self
                 .retention()
@@ -1103,7 +1120,16 @@ impl<'retention, B: StableDmaBacking, const SLOTS: usize, const BUFFER_SIZE: usi
                 .get(backing_index)
                 .copied()
                 .flatten()
-                .expect("active retained backing has a committed descriptor image");
+                .ok_or(AmpduDmaStorageError::StaleBacking)?;
+            self.dma()
+                .binding
+                .descriptor_address(logical_index)
+                .ok_or(AmpduDmaStorageError::Address)?;
+            *destination = Some(descriptor);
+        }
+
+        for (logical_index, descriptor) in descriptors[..count].iter().copied().enumerate() {
+            let descriptor = descriptor.ok_or(AmpduDmaStorageError::StaleBacking)?;
             let next_address = if logical_index + 1 == count {
                 0
             } else {
@@ -1117,7 +1143,7 @@ impl<'retention, B: StableDmaBacking, const SLOTS: usize, const BUFFER_SIZE: usi
             } else {
                 descriptor.word0 & !BIT_30
             };
-            self.dma().storage.as_ref().get_ref().descriptors[logical_index].publish(
+            self.dma().storage.as_ref().get_ref().descriptors[logical_index].publish_owned(
                 word0,
                 descriptor.buffer_address,
                 next_address,
@@ -1264,6 +1290,11 @@ mod tests {
     struct TestBacking {
         bytes: Box<[u8; 128]>,
         drops: Rc<Cell<usize>>,
+        region_calls: Option<Rc<Cell<usize>>>,
+    }
+
+    struct LargeTestBacking {
+        bytes: Box<[u8]>,
     }
 
     impl TestBacking {
@@ -1271,6 +1302,15 @@ mod tests {
             Self {
                 bytes: Box::new([0; 128]),
                 drops,
+                region_calls: None,
+            }
+        }
+
+        fn counting(drops: Rc<Cell<usize>>, region_calls: Rc<Cell<usize>>) -> Self {
+            Self {
+                bytes: Box::new([0; 128]),
+                drops,
+                region_calls: Some(region_calls),
             }
         }
     }
@@ -1287,8 +1327,22 @@ mod tests {
     )]
     unsafe impl StableDmaBacking for TestBacking {
         fn stable_dma_region(&mut self) -> StableDmaRegion<'_> {
+            if let Some(calls) = &self.region_calls {
+                calls.set(calls.get() + 1);
+            }
             // SAFETY: moving `TestBacking` does not move its boxed allocation.
             unsafe { StableDmaRegion::new(&mut self.bytes[..]) }
+        }
+    }
+
+    #[allow(
+        unsafe_code,
+        reason = "test backing owns one non-moving boxed allocation"
+    )]
+    unsafe impl StableDmaBacking for LargeTestBacking {
+        fn stable_dma_region(&mut self) -> StableDmaRegion<'_> {
+            // SAFETY: moving `LargeTestBacking` does not move its boxed allocation.
+            unsafe { StableDmaRegion::new(&mut self.bytes) }
         }
     }
 
@@ -1304,6 +1358,34 @@ mod tests {
     fn retained_owner() -> RetainedAmpduDma<'static, TestBacking, 2, 0> {
         let retention = Box::leak(Box::new(RetainedAmpduDmaStorage::new()));
         RetainedAmpduDma::new(descriptor_only_storage(), retention)
+    }
+
+    fn retained_owner_with_slots<const SLOTS: usize>()
+    -> RetainedAmpduDma<'static, TestBacking, SLOTS, 0> {
+        let dma = AmpduDmaStorage::pin_static_model(
+            Box::leak(Box::new(AmpduDmaStorage::new())),
+            DESCRIPTOR_BASE,
+            0,
+        )
+        .unwrap();
+        let retention = Box::leak(Box::new(RetainedAmpduDmaStorage::new()));
+        RetainedAmpduDma::new(dma, retention)
+    }
+
+    #[test]
+    fn retaining_a_backing_samples_its_dma_region_once() {
+        let drops = Rc::new(Cell::new(0));
+        let region_calls = Rc::new(Cell::new(0));
+        let mut owner = retained_owner();
+        owner.begin().unwrap();
+
+        let (backing, bytes) = owner
+            .push_backing_region(TestBacking::counting(drops.clone(), region_calls.clone()))
+            .unwrap();
+        assert_eq!(bytes.len(), 128);
+        assert_eq!(region_calls.get(), 1);
+        drop(owner.pop_last_backing(backing).unwrap());
+        assert_eq!(drops.get(), 1);
     }
 
     #[test]
@@ -1364,6 +1446,74 @@ mod tests {
     }
 
     #[test]
+    fn late_internal_word_overflow_does_not_partially_publish_the_chain() {
+        let arena = Box::leak(Box::new(AmpduDmaStorage::<2, 20_000>::new()));
+        let mut storage =
+            AmpduDmaStorage::pin_static_model(arena, DESCRIPTOR_BASE, BUFFER_BASE).unwrap();
+        storage.begin().unwrap();
+
+        assert!(matches!(
+            storage.publish_internal_chain(&[
+                AmpduInternalDescriptor {
+                    buffer_capacity: 128,
+                    transfer_length: 64,
+                },
+                AmpduInternalDescriptor {
+                    buffer_capacity: 0x4000,
+                    transfer_length: 64,
+                },
+            ]),
+            Err(AmpduDmaStorageError::InvalidLength)
+        ));
+        assert_eq!(storage.descriptor_word0(0), Some(0));
+        assert_eq!(storage.descriptor_buffer_address(0), Some(0));
+        storage.cancel().unwrap();
+    }
+
+    #[test]
+    fn late_external_word_overflow_does_not_partially_publish_the_chain() {
+        let retention = Box::leak(Box::new(RetainedAmpduDmaStorage::new()));
+        let mut owner = RetainedAmpduDma::new(descriptor_only_storage(), retention);
+        owner.begin().unwrap();
+        let first = owner
+            .push_backing(LargeTestBacking {
+                bytes: std::vec![0; 20_000].into_boxed_slice(),
+            })
+            .unwrap();
+        let second = owner
+            .push_backing(LargeTestBacking {
+                bytes: std::vec![0; 20_000].into_boxed_slice(),
+            })
+            .unwrap();
+        let first_address = owner
+            .reserved_backing_mut(&first)
+            .unwrap()
+            .bytes
+            .as_ptr()
+            .addr();
+        let second_address = owner
+            .reserved_backing_mut(&second)
+            .unwrap()
+            .bytes
+            .as_ptr()
+            .addr();
+        let entries = [
+            first.external_descriptor(first_address, 128, 64).unwrap(),
+            second
+                .external_descriptor(second_address, 0x4000, 64)
+                .unwrap(),
+        ];
+
+        assert!(matches!(
+            owner.publish_external_chain(&entries),
+            Err(AmpduDmaStorageError::InvalidLength)
+        ));
+        assert_eq!(owner.dma().descriptor_word0(0), Some(0));
+        assert_eq!(owner.dma().descriptor_buffer_address(0), Some(0));
+        owner.cancel().unwrap();
+    }
+
+    #[test]
     fn reset_quarantine_has_no_release_edge() {
         let mut storage = storage();
         storage.begin().unwrap();
@@ -1371,7 +1521,6 @@ mod tests {
         assert_eq!(storage.state(), AmpduDmaState::ResetRequired);
         assert_eq!(storage.cancel(), Err(AmpduDmaStorageError::State));
         assert_eq!(storage.begin(), Err(AmpduDmaStorageError::State));
-        drop(storage);
     }
 
     #[test]
@@ -1487,6 +1636,156 @@ mod tests {
         assert_eq!(owner.detached_region_mut(address, 64).unwrap().len(), 64);
         owner.release_detached().unwrap();
         assert_eq!(drops.get(), 1);
+    }
+
+    #[test]
+    fn detached_compaction_rejects_more_logical_entries_than_dma_slots() {
+        let drops = Rc::new(Cell::new(0));
+        let mut owner = retained_owner();
+        owner.begin().unwrap();
+        let first = owner.push_backing(TestBacking::new(drops.clone())).unwrap();
+        let second = owner.push_backing(TestBacking::new(drops.clone())).unwrap();
+        let first_address = owner
+            .reserved_backing_mut(&first)
+            .unwrap()
+            .bytes
+            .as_ptr()
+            .addr();
+        let second_address = owner
+            .reserved_backing_mut(&second)
+            .unwrap()
+            .bytes
+            .as_ptr()
+            .addr();
+        owner
+            .commit_backing_descriptor(&first, first_address, 64, 32)
+            .unwrap();
+        owner
+            .commit_backing_descriptor(&second, second_address, 64, 32)
+            .unwrap();
+        owner.publish_retained_chain(2).unwrap().commit(|_| {});
+        owner.mark_completed().unwrap();
+        owner
+            .mark_detached(MacTxQueueDetached::new_model(DESCRIPTOR_BASE))
+            .unwrap();
+
+        assert_eq!(
+            owner.compact_active_backings(&[0, 1, 0]),
+            Err(AmpduDmaStorageError::Count)
+        );
+        assert_eq!(owner.state(), AmpduDmaState::Detached);
+        assert_eq!(
+            owner
+                .detached_logical_region_mut(0, first_address, 64)
+                .unwrap()[0],
+            0
+        );
+        assert_eq!(
+            owner
+                .detached_logical_region_mut(1, second_address, 64)
+                .unwrap()[0],
+            0
+        );
+        owner.release_detached().unwrap();
+        assert_eq!(drops.get(), 2);
+    }
+
+    #[test]
+    fn detached_compaction_supports_every_slot_admitted_by_the_owner() {
+        const SLOTS: usize = 33;
+
+        let drops = Rc::new(Cell::new(0));
+        let mut owner = retained_owner_with_slots::<SLOTS>();
+        owner.begin().unwrap();
+        let mut last_address = 0;
+        for _ in 0..SLOTS {
+            let backing = owner.push_backing(TestBacking::new(drops.clone())).unwrap();
+            let address = owner
+                .reserved_backing_mut(&backing)
+                .unwrap()
+                .bytes
+                .as_ptr()
+                .addr();
+            owner
+                .commit_backing_descriptor(&backing, address, 64, 32)
+                .unwrap();
+            last_address = address;
+        }
+        owner.publish_retained_chain(SLOTS).unwrap().commit(|_| {});
+        owner.mark_completed().unwrap();
+        owner
+            .mark_detached(MacTxQueueDetached::new_model(DESCRIPTOR_BASE))
+            .unwrap();
+
+        owner.compact_active_backings(&[32]).unwrap();
+        assert_eq!(
+            owner
+                .detached_logical_region_mut(0, last_address, 64)
+                .unwrap()
+                .len(),
+            64
+        );
+        owner.release_detached().unwrap();
+        assert_eq!(drops.get(), SLOTS);
+    }
+
+    #[test]
+    fn full_retention_arena_reports_count_without_mutating_the_owner() {
+        let drops = Rc::new(Cell::new(0));
+        let mut owner = retained_owner();
+        owner.begin().unwrap();
+        owner.push_backing(TestBacking::new(drops.clone())).unwrap();
+        owner.push_backing(TestBacking::new(drops.clone())).unwrap();
+
+        assert!(matches!(
+            owner.push_backing(TestBacking::new(drops.clone())),
+            Err(AmpduDmaStorageError::Count)
+        ));
+        assert_eq!(owner.held_backing_count(), 2);
+        assert_eq!(drops.get(), 1);
+        owner.cancel().unwrap();
+        assert_eq!(drops.get(), 3);
+    }
+
+    #[test]
+    fn retained_publication_fails_closed_when_descriptor_image_is_missing() {
+        let drops = Rc::new(Cell::new(0));
+        let mut owner = retained_owner();
+        owner.begin().unwrap();
+        let first = owner.push_backing(TestBacking::new(drops.clone())).unwrap();
+        let second = owner.push_backing(TestBacking::new(drops.clone())).unwrap();
+        let first_address = owner
+            .reserved_backing_mut(&first)
+            .unwrap()
+            .bytes
+            .as_ptr()
+            .addr();
+        let second_address = owner
+            .reserved_backing_mut(&second)
+            .unwrap()
+            .bytes
+            .as_ptr()
+            .addr();
+        owner
+            .commit_backing_descriptor(&first, first_address, 64, 32)
+            .unwrap();
+        owner
+            .commit_backing_descriptor(&second, second_address, 64, 32)
+            .unwrap();
+
+        // Model corrupted retained metadata directly. The safe publication
+        // boundary must reject it before mutating even an earlier valid
+        // descriptor or handing the arena to hardware.
+        owner.retention_mut().backing_descriptors[usize::from(second.index)] = None;
+        assert!(matches!(
+            owner.publish_retained_chain(2),
+            Err(AmpduDmaStorageError::StaleBacking)
+        ));
+        assert_eq!(owner.state(), AmpduDmaState::Reserved);
+        assert_eq!(owner.dma().descriptor_word0(0), Some(0));
+        assert_eq!(owner.dma().descriptor_buffer_address(0), Some(0));
+        owner.cancel().unwrap();
+        assert_eq!(drops.get(), 2);
     }
 
     #[test]

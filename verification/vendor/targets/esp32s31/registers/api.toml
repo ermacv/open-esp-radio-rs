@@ -62,6 +62,62 @@ min = 0
 max = 0x0fff
 sources = ["BLOB_LIBPP_HAL_COEX_RUNTIME", "BLOB_LIBPP_HAL_MAC_TX"]
 
+[[bounded-domains]]
+name = "MacKeyEntryIndex"
+description = "One of the twenty-five hardware crypto-table entries accepted by the reviewed MAC key transactions."
+min = 0
+max = 24
+sources = ["BLOB_LIBPP_HAL_CRYPTO"]
+
+[[bounded-domains]]
+name = "MacRxBlockAckEntryIndex"
+description = "One of the eight reverse-addressed ordinary receive BlockAck hardware banks."
+min = 0
+max = 7
+sources = ["BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK"]
+
+[[bounded-domains]]
+name = "MacRxBlockAckTid"
+description = "Four-bit traffic identifier encoded by the reviewed receive BlockAck transaction."
+min = 0
+max = 15
+sources = ["BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK"]
+
+[[bounded-domains]]
+name = "MacRxBlockAckStartingSequence"
+description = "Twelve-bit starting sequence encoded by the reviewed receive BlockAck transaction."
+min = 0
+max = 0x0fff
+sources = ["BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK"]
+
+[[bounded-domains]]
+name = "MacRxBlockAckWindow"
+description = "Non-zero seven-bit receive BlockAck window accepted by the reviewed transaction."
+min = 1
+max = 0x7f
+sources = ["BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK"]
+
+[[bounded-domains]]
+name = "CoexTimerClientValue"
+description = "Two-bit coexistence client selector published by complete coex_hw_timer_set."
+min = 0
+max = 3
+sources = ["BLOB_LIBCOEX_HW_TIMER"]
+
+[[bounded-domains]]
+name = "CoexTimerPtiValue"
+description = "Four-bit coexistence priority value published by complete coex_hw_timer_set."
+min = 0
+max = 15
+sources = ["BLOB_LIBCOEX_HW_TIMER"]
+
+[[bounded-domains]]
+name = "CoexTimerTickImage"
+description = "Twenty-four-bit converted coexistence timer target image."
+min = 0
+max = 0x00ff_ffff
+sources = ["BLOB_LIBCOEX_HW_TIMER"]
+
 [[flag-domains]]
 name = "MacInterruptMask"
 description = "Reviewed writable images for the MAC interrupt-enable register."

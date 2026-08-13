@@ -1,4 +1,4 @@
-schema = 1
+schema = 2
 # Every inventory function resolves through these fail-closed defaults. A new
 # vendor symbol is therefore visible as not-yet-ported instead of disappearing
 # from the report. Protocol remains unknown until a reviewed family rule or an
@@ -91,6 +91,7 @@ disposition = "direct"
 protocol = "shared"
 rust-component = "open_esp_radio_esp32s31_hal::phy_agc::set_enabled"
 binding = "v1"
+rust-binding = "exact-production-entry"
 rust-probe = "open_phy_trace_disable_agc"
 effect-contract = "exact-effects-v1"
 [[functions.effects]]
@@ -111,6 +112,7 @@ disposition = "state-transition"
 protocol = "shared"
 rust-component = "open_esp_radio_esp32s31_phy::phy_dc_iq::PhyDcIqEstimateTransition"
 binding = "v1"
+rust-binding = "shared-production-core"
 rust-probe = "open_phy_trace_iq_est_enable"
 driver-adapter = "esp32s31-iq-est-enable-v1"
 effect-contract = "exact-effects-v1"

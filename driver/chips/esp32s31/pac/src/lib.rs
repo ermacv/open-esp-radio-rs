@@ -9,6 +9,7 @@ mod baseband;
 mod cfr;
 pub mod clock;
 mod coex;
+mod coex_bluetooth;
 mod frequency;
 mod generated;
 mod iq_estimator;
@@ -63,8 +64,11 @@ pub use coex::{COEX_TIMER_COUNT, CoexTimerRegister};
 ///
 /// let invented = MacInterruptMask(0xdead_beef);
 /// ```
+pub use generated::MacInterruptMask;
 pub use generated::{
-    MacInterface, MacInterruptMask, MacItwtClearIndex, MacPti, MacTxPtiCount, MacTxQueueIndex,
+    CoexTimerClientValue, CoexTimerPtiValue, CoexTimerTickImage, MacInterface, MacItwtClearIndex,
+    MacKeyEntryIndex, MacPti, MacRxBlockAckEntryIndex, MacRxBlockAckStartingSequence,
+    MacRxBlockAckTid, MacRxBlockAckWindow, MacTxPtiCount, MacTxQueueIndex,
 };
 pub use mac_block_ack::{
     InternalTxBlockAckSnapshot, TxBlockAckDiagnosticSnapshot, TxBlockAckPayload,
@@ -339,6 +343,27 @@ impl Field32 {
 /// WDEVPWR status/clear transactions. Those disjoint banks belong to
 /// [`MacInterruptSetup`] and then to [`MacInterruptRegisters`] plus
 /// [`MacPowerInterruptRegisters`].
+///
+/// Raw PAC types are deliberately not part of this crate's public API:
+///
+/// ```compile_fail
+/// use open_esp_radio_esp32s31_pac::svd;
+/// ```
+///
+/// The address-bearing host catalog is also unavailable in production:
+///
+/// ```compile_fail
+/// use open_esp_radio_esp32s31_pac::Register32;
+/// ```
+///
+/// Finally, the owner has no generic address/value escape hatch. Every
+/// writable transaction must be an explicitly reviewed capability:
+///
+/// ```compile_fail
+/// use open_esp_radio_esp32s31_pac::RadioRegisters;
+///
+/// let unreviewed_write = RadioRegisters::write_register;
+/// ```
 pub struct RadioRegisters {
     peripherals: svd::peripheral_ownership::RadioPeripherals,
     wifi_baseband_enabled: bool,

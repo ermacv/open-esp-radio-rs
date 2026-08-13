@@ -35,12 +35,13 @@ use open_esp_radio_esp32s31_wifi_mac::{
     rx::{
         HeBandwidth, HeGuardIntervalAndLtf, HeMuBandwidth, HeMuSignal, HeSuSignal,
         HeTriggerBasedSignal, INGRESS_STRICT_DUMP, INGRESS_STRICT_RXEND, RX_BUFFER_SENTINEL,
-        RX_DESCRIPTOR_RELOAD_ATTEMPT_LIMIT, RxBasebandFormat, RxDma, RxDmaBinding, RxError,
-        RxHe20MuSigBUsersError, RxIngressConfig, RxPhyInfo, RxReloadObservation, RxRingError,
-        RxRingStopped, RxSegment, build_cold_ring, decode_normalized_rx_metadata,
-        decode_rx_he_mu_sig_b, decode_rx_phy_info, disable_receive, enable_receive,
-        extract_ccmp_data, extract_control, extract_data, extract_management, first_segment_layout,
-        prepare_recycled_buffer, publish_cold_ring, rearm_descriptor, view_normalized_rx_frame,
+        RX_DESCRIPTOR_RELOAD_ATTEMPT_LIMIT, RxBasebandFormat, RxDma, RxDmaBinding,
+        RxDmaCursorObservation, RxDmaWalkerStopped, RxError, RxHe20MuSigBUsersError,
+        RxIngressConfig, RxPhyInfo, RxReloadObservation, RxRingError, RxRingStopped, RxSegment,
+        build_cold_ring, decode_normalized_rx_metadata, decode_rx_he_mu_sig_b, decode_rx_phy_info,
+        disable_receive, enable_receive, extract_ccmp_data, extract_control, extract_data,
+        extract_management, first_segment_layout, prepare_recycled_buffer, publish_cold_ring,
+        rearm_descriptor, view_normalized_rx_frame,
     },
     rx_pool::{RxStagePool, RxStageTransactionError},
     tx::{
@@ -149,12 +150,34 @@ impl RxDma for MockMmio {
         self.read32(RX_NEXT_DESCRIPTOR) & 0x000f_ffff
     }
 
+    fn with_ordered_cursor<R>(
+        &mut self,
+        observed: impl for<'confirmation> FnOnce(RxDmaCursorObservation<'confirmation>) -> R,
+    ) -> R {
+        let last = self.last_descriptor_low();
+        Mmio::fence(self);
+        let next = self.next_descriptor_low();
+        Mmio::fence(self);
+        observed(RxDmaCursorObservation::validation(last, next))
+    }
+
     fn walker_enabled(&mut self) -> bool {
         self.read32(RX_CONTROL) & RX_ENABLE != 0
     }
 
     fn reload_pending(&mut self) -> bool {
         self.read32(RX_CONTROL) & RX_RELOAD != 0
+    }
+
+    fn try_with_reload_settled<R>(
+        &mut self,
+        settled: impl for<'confirmation> FnOnce(
+            open_esp_radio_esp32s31_wifi_mac::rx::RxDmaReloadSettled<'confirmation>,
+        ) -> R,
+    ) -> Option<R> {
+        (!self.reload_pending()).then(|| {
+            settled(open_esp_radio_esp32s31_wifi_mac::rx::RxDmaReloadSettled::validation())
+        })
     }
 
     fn set_descriptor_high_window(&mut self, _: &RxDmaBinding, address_high: u16) {
@@ -179,21 +202,33 @@ impl RxDma for MockMmio {
         self.write32(RX_CONTROL, control | RX_RELOAD);
     }
 
-    fn try_enable_walker(&mut self, _: &RxDmaBinding) -> bool {
+    fn try_with_walker_enabled<R>(
+        &mut self,
+        _: &RxDmaBinding,
+        enabled: impl for<'confirmation> FnOnce(
+            open_esp_radio_esp32s31_wifi_mac::rx::RxDmaWalkerEnabled<'confirmation>,
+        ) -> R,
+    ) -> Option<R> {
         let control = self.read32(RX_CONTROL);
         if control & RX_ENABLE != 0 {
-            return false;
+            return None;
         }
         self.write32(RX_CONTROL, control | RX_ENABLE);
         Mmio::fence(self);
-        self.read32(RX_CONTROL) & RX_ENABLE != 0
+        (self.read32(RX_CONTROL) & RX_ENABLE != 0).then(|| {
+            enabled(open_esp_radio_esp32s31_wifi_mac::rx::RxDmaWalkerEnabled::validation())
+        })
     }
 
-    fn try_disable_walker(&mut self) -> bool {
+    fn try_with_walker_stopped<R>(
+        &mut self,
+        stopped: impl for<'confirmation> FnOnce(RxDmaWalkerStopped<'confirmation>) -> R,
+    ) -> Option<R> {
         let control = self.read32(RX_CONTROL);
         self.write32(RX_CONTROL, control & !RX_ENABLE);
         Mmio::fence(self);
-        self.read32(RX_CONTROL) & RX_ENABLE == 0
+        (self.read32(RX_CONTROL) & RX_ENABLE == 0)
+            .then(|| stopped(RxDmaWalkerStopped::validation()))
     }
 
     fn fence(&mut self) {
@@ -1456,6 +1491,8 @@ fn live_rx_ring_owns_physical_cold_order_reload_and_rom_base_repair() {
     let completed = BUFFER_SIZE | (80 << LENGTH_SHIFT) | BIT_30 | BIT_31;
     descriptors[0].write_word0(completed);
     descriptors[1].write_word0(completed);
+    mmio.set(RX_LAST_DESCRIPTOR, BASE + DESCRIPTOR_BYTES);
+    mmio.set(RX_NEXT_DESCRIPTOR, BASE + 2 * DESCRIPTOR_BYTES);
     assert_eq!(live.take_completed(0).unwrap().index(), 0);
     assert_eq!(live.take_completed(0), None);
     assert_eq!(live.take_completed(1).unwrap().index(), 1);
@@ -1494,6 +1531,16 @@ fn live_rx_ring_owns_physical_cold_order_reload_and_rom_base_repair() {
     assert_eq!(live.accepted_tail(), 1);
     assert!(!live.reload_pending());
     recycled.clear();
+    // LAST reached descriptor three while NEXT was zero, so the base-repair
+    // write has been issued but hardware has not yet proved that it fetched
+    // descriptor three's newly appended link to descriptor zero.
+    assert!(
+        live.recycle_completed_half(&mut mmio, |_| Ok(()))
+            .unwrap()
+            .is_none()
+    );
+    assert!(live.completion_release_probe_pending());
+    mmio.set(RX_NEXT_DESCRIPTOR, BASE);
     let second = live
         .recycle_completed_half(&mut mmio, |index| {
             recycled.push(index);
@@ -1544,6 +1591,62 @@ fn stopped_rx_ring_ignores_every_retained_last_for_cold_publication() {
         assert_eq!(topology.terminal_descriptors, 1);
         assert_eq!(descriptors[COUNT - 1].next_address(), 0);
     }
+}
+
+#[test]
+fn stopped_rx_ring_rebuilds_from_the_retained_hardware_next_cursor() {
+    const COUNT: usize = 4;
+    const BASE: u32 = 0x2f00_1000;
+    const BUFFER_SIZE: u32 = 256;
+    let descriptors = [const { Descriptor::new() }; COUNT];
+    let buffers = [0x2f00_2000, 0x2f00_2200, 0x2f00_2400, 0x2f00_2600];
+    let mut mmio = MockMmio::default();
+    mmio.set(RX_CONTROL, RX_ENABLE);
+    mmio.set(RX_NEXT_DESCRIPTOR, BASE + DESCRIPTOR_BYTES);
+    mmio.set(RX_LAST_DESCRIPTOR, BASE);
+
+    let stopped =
+        RxRingStopped::prepare(&mut mmio, &descriptors, BASE, &buffers, BUFFER_SIZE, |_| {
+            Ok(())
+        })
+        .unwrap();
+
+    assert_eq!(
+        stopped.retained_next_low(),
+        (BASE + DESCRIPTOR_BYTES) & 0x000f_ffff
+    );
+    assert_eq!(stopped.retained_last_low(), BASE & 0x000f_ffff);
+    assert_eq!(stopped.initial_start(), 1);
+    assert_eq!(stopped.accepted_tail(), 0);
+    assert_eq!(descriptors[1].next_address(), BASE + 2 * DESCRIPTOR_BYTES);
+    assert_eq!(descriptors[3].next_address(), BASE);
+    assert_eq!(descriptors[0].next_address(), 0);
+    assert_eq!(mmio.words[&RX_DESCRIPTOR_BASE], BASE + DESCRIPTOR_BYTES);
+    assert!(stopped.topology_snapshot().valid);
+}
+
+#[test]
+fn stopped_rx_ring_rejects_a_nonzero_cursor_outside_its_owned_arena() {
+    const COUNT: usize = 4;
+    const BASE: u32 = 0x2f00_1000;
+    const BUFFER_SIZE: u32 = 256;
+    let descriptors = [const { Descriptor::new() }; COUNT];
+    let buffers = [0x2f00_2000, 0x2f00_2200, 0x2f00_2400, 0x2f00_2600];
+    let mut mmio = MockMmio::default();
+    mmio.set(RX_CONTROL, RX_ENABLE);
+    mmio.set(RX_NEXT_DESCRIPTOR, BASE + COUNT as u32 * DESCRIPTOR_BYTES);
+
+    assert!(matches!(
+        RxRingStopped::prepare(
+            &mut mmio,
+            &descriptors,
+            BASE,
+            &buffers,
+            BUFFER_SIZE,
+            |_| Ok(())
+        ),
+        Err(RxRingError::Corrupt)
+    ));
 }
 
 #[test]
@@ -1640,6 +1743,8 @@ fn live_rx_ring_can_replenish_one_descriptor_per_rom_append() {
     let completed = BUFFER_SIZE | (80 << LENGTH_SHIFT) | BIT_30 | BIT_31;
 
     descriptors[0].write_word0(completed);
+    mmio.set(RX_LAST_DESCRIPTOR, BASE);
+    mmio.set(RX_NEXT_DESCRIPTOR, BASE + DESCRIPTOR_BYTES);
     assert!(live.take_completed(0).is_some());
     let first = live
         .recycle_completed_batch::<1, _, _>(&mut mmio, |_| Ok(()))
@@ -1660,6 +1765,8 @@ fn live_rx_ring_can_replenish_one_descriptor_per_rom_append() {
     assert_eq!(live.accepted_tail(), 0);
 
     descriptors[1].write_word0(completed);
+    mmio.set(RX_LAST_DESCRIPTOR, BASE + DESCRIPTOR_BYTES);
+    mmio.set(RX_NEXT_DESCRIPTOR, BASE + 2 * DESCRIPTOR_BYTES);
     assert!(live.take_completed(1).is_some());
     let second = live
         .recycle_completed_batch::<1, _, _>(&mut mmio, |_| Ok(()))
@@ -1677,6 +1784,322 @@ fn live_rx_ring_can_replenish_one_descriptor_per_rom_append() {
         live.recycle_completed_batch::<3, _, _>(&mut mmio, |_| Ok(())),
         Err(RxRingError::Count)
     );
+    assert!(live.try_stop(&mut mmio).is_ok());
+}
+
+#[test]
+fn live_rx_ring_republishes_an_exhausted_software_list_without_a_self_link() {
+    const COUNT: usize = 2;
+    const BASE: u32 = 0x2f00_1000;
+    const BUFFER_SIZE: u32 = 256;
+    let descriptors = [const { Descriptor::new() }; COUNT];
+    let buffers = [0x2f00_2000, 0x2f00_2200];
+    let mut mmio = MockMmio::default();
+
+    let stopped =
+        RxRingStopped::prepare(&mut mmio, &descriptors, BASE, &buffers, BUFFER_SIZE, |_| {
+            Ok(())
+        })
+        .unwrap();
+    let mut live = stopped.start(&mut mmio).unwrap();
+    let completed = BUFFER_SIZE | (80 << LENGTH_SHIFT) | BIT_30 | BIT_31;
+
+    // First append descriptor zero normally, making it the accepted tail of
+    // the software list 1 -> 0.
+    descriptors[0].write_word0(completed);
+    mmio.set(RX_LAST_DESCRIPTOR, BASE);
+    mmio.set(RX_NEXT_DESCRIPTOR, BASE + DESCRIPTOR_BYTES);
+    assert!(live.take_completed(0).is_some());
+    live.recycle_completed_batch::<1, _, _>(&mut mmio, |_| Ok(()))
+        .unwrap()
+        .unwrap();
+    mmio.set(RX_CONTROL, RX_ENABLE);
+    mmio.set(RX_NEXT_DESCRIPTOR, BASE + DESCRIPTOR_BYTES);
+    assert_eq!(
+        live.poll_pending_reload(&mut mmio).unwrap(),
+        RxReloadObservation::Settled
+    );
+    assert_eq!(live.accepted_tail(), 0);
+
+    // Hardware then exhausts that whole list before software returns either
+    // node. Discarding 1 -> 0 leaves the vendor software head null, so the
+    // returned chain must become the new BASE directly. Linking old tail zero
+    // to head one would create the invalid cycle 1 -> 0 -> 1.
+    descriptors[1].write_word0(completed);
+    descriptors[0].write_word0(completed);
+    mmio.set(RX_NEXT_DESCRIPTOR, 0);
+    mmio.set(RX_LAST_DESCRIPTOR, BASE);
+    assert!(live.take_completed(1).is_some());
+    assert!(live.take_completed(0).is_some());
+    mmio.operations.clear();
+    let append = live
+        .recycle_completed_prefix::<COUNT, _, _>(&mut mmio, |_| Ok(()))
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(append.head_index, 1);
+    assert_eq!(append.tail_index, 0);
+    assert_eq!(descriptors[1].next_address(), BASE);
+    assert_eq!(descriptors[0].next_address(), 0);
+    assert_eq!(mmio.words[&RX_DESCRIPTOR_BASE], BASE + DESCRIPTOR_BYTES);
+    assert_eq!(live.recycle_start(), 1);
+    assert!(!live.reload_pending());
+    assert!(live.exhausted_republication_probe_pending());
+    assert!(!mmio.operations().iter().any(|operation| {
+        matches!(operation, Operation::Write(register, value) if *register == RX_CONTROL && value & RX_RELOAD != 0)
+    }));
+
+    // A timer is not evidence that hardware accepted BASE. Keep polling while
+    // NEXT is still exhausted. Even an exact cursor match retains one final
+    // cooperative probe: the returned head may complete while this task is
+    // still consuming the IRQ which exhausted the preceding list.
+    live.observe_exhausted_republication(&mut mmio);
+    assert!(live.exhausted_republication_probe_pending());
+    mmio.set(RX_NEXT_DESCRIPTOR, BASE);
+    live.observe_exhausted_republication(&mut mmio);
+    assert!(
+        live.exhausted_republication_probe_pending(),
+        "a nonzero cursor outside the republished head is stale evidence"
+    );
+    mmio.set(RX_NEXT_DESCRIPTOR, BASE + DESCRIPTOR_BYTES);
+    live.observe_exhausted_republication(&mut mmio);
+    assert!(live.exhausted_republication_probe_pending());
+    live.observe_exhausted_republication(&mut mmio);
+    assert!(!live.exhausted_republication_probe_pending());
+
+    // Hardware resumes at the newly published head. The next RX edge must
+    // inspect that same descriptor rather than the physical slot after the
+    // returned chain's tail.
+    descriptors[1].write_word0(completed);
+    mmio.set(RX_LAST_DESCRIPTOR, BASE + DESCRIPTOR_BYTES);
+    let frontier = live.completed_unit_frontier_through_with(mmio.last_descriptor_low(), |_| true);
+    assert_eq!(frontier.unit_count, 1);
+    assert_eq!(frontier.descriptor_count, 1);
+    assert!(live.take_completed_unit(1).unwrap().is_some());
+    assert!(live.try_stop(&mut mmio).is_ok());
+}
+
+#[test]
+fn live_rx_ring_does_not_rewrite_a_nonterminal_link_before_next_accepts_it() {
+    const COUNT: usize = 4;
+    const BASE: u32 = 0x2f00_1000;
+    const BUFFER_SIZE: u32 = 256;
+    let descriptors = [const { Descriptor::new() }; COUNT];
+    let buffers = [0x2f00_2000, 0x2f00_2200, 0x2f00_2400, 0x2f00_2600];
+    let mut mmio = MockMmio::default();
+
+    let stopped =
+        RxRingStopped::prepare(&mut mmio, &descriptors, BASE, &buffers, BUFFER_SIZE, |_| {
+            Ok(())
+        })
+        .unwrap();
+    let mut live = stopped.start(&mut mmio).unwrap();
+    let completed = BUFFER_SIZE | (80 << LENGTH_SHIFT) | BIT_30 | BIT_31;
+    descriptors[0].write_word0(completed);
+
+    // LAST/RX_DONE can precede the walker's fetch of descriptor zero's link.
+    // Rewriting that nonzero link to the recycle-chain terminal here would
+    // strand descriptors one through three.
+    let head_low = BASE & 0x000f_ffff;
+    let successor_low = (BASE + DESCRIPTOR_BYTES) & 0x000f_ffff;
+    mmio.set(RX_NEXT_DESCRIPTOR, 0);
+    assert!(!live.observe_completed_unit_link_release(&mut mmio, head_low, 1));
+    assert!(live.completion_release_probe_pending());
+    assert_eq!(descriptors[0].next_address(), BASE + DESCRIPTOR_BYTES);
+
+    // The exact old successor in NEXT is the ownership handoff proof.
+    mmio.set(RX_NEXT_DESCRIPTOR, successor_low);
+    assert!(live.observe_completed_unit_link_release(&mut mmio, head_low, 1));
+    assert!(!live.completion_release_probe_pending());
+    assert!(live.take_completed_unit(1).unwrap().is_some());
+    assert!(live.try_stop(&mut mmio).is_ok());
+}
+
+fn exercise_single_descriptor_rx_interleavings<const COUNT: usize>() {
+    const BASE: u32 = 0x2f00_1000;
+    const BUFFER_SIZE: u32 = 256;
+    let descriptors = [const { Descriptor::new() }; COUNT];
+    let buffers = core::array::from_fn(|index| 0x2f01_0000 + index as u32 * 0x400);
+    let mut mmio = MockMmio::default();
+    let stopped =
+        RxRingStopped::prepare(&mut mmio, &descriptors, BASE, &buffers, BUFFER_SIZE, |_| {
+            Ok(())
+        })
+        .unwrap();
+    let mut live = stopped.start(&mut mmio).unwrap();
+    let completed = BUFFER_SIZE | (80 << LENGTH_SHIFT) | BIT_30 | BIT_31;
+
+    // Two complete rotations cover both the cold physical topology and the
+    // live topology assembled entirely through append/reload transactions.
+    for epoch in 0..2 {
+        for cursor in 0..COUNT {
+            assert_eq!(
+                live.recycle_start(),
+                cursor,
+                "epoch {epoch}, cursor {cursor}"
+            );
+            let old_next = descriptors[cursor].next_address();
+            assert_ne!(
+                old_next, 0,
+                "the live head must not also be the accepted terminal"
+            );
+            descriptors[cursor].write_word0(completed);
+            mmio.set(RX_LAST_DESCRIPTOR, BASE + cursor as u32 * DESCRIPTOR_BYTES);
+            assert!(live.take_completed(cursor).is_some());
+
+            // LAST/RX_DONE without the old successor in NEXT does not release
+            // the link word. A failed probe must be a read-only transaction.
+            mmio.set(RX_NEXT_DESCRIPTOR, 0);
+            let before_word0 = descriptors[cursor].word0();
+            assert!(
+                live.recycle_completed_batch::<1, _, _>(&mut mmio, |_| Ok(()))
+                    .unwrap()
+                    .is_none()
+            );
+            assert_eq!(descriptors[cursor].word0(), before_word0);
+            assert_eq!(descriptors[cursor].next_address(), old_next);
+
+            // The exact successor is the handoff proof. Publication may then
+            // mutate this descriptor and the preceding accepted tail.
+            mmio.set(RX_NEXT_DESCRIPTOR, old_next);
+            let append = live
+                .recycle_completed_batch::<1, _, _>(&mut mmio, |_| Ok(()))
+                .unwrap()
+                .unwrap();
+            assert_eq!(append.head_index, cursor);
+            assert_eq!(append.tail_index, cursor);
+            assert_eq!(descriptors[cursor].next_address(), 0);
+            assert_eq!(descriptors[cursor].word0() & BIT_30, 0);
+            assert!(live.topology_snapshot().valid);
+
+            mmio.set(RX_CONTROL, RX_ENABLE);
+            mmio.set(RX_NEXT_DESCRIPTOR, old_next);
+            assert_eq!(
+                live.poll_pending_reload(&mut mmio).unwrap(),
+                RxReloadObservation::Settled
+            );
+            assert_eq!(live.accepted_tail(), cursor);
+            let topology = live.topology_snapshot();
+            assert!(topology.valid, "epoch {epoch}, cursor {cursor}");
+            assert_eq!(topology.visited_descriptors, COUNT);
+            assert_eq!(topology.terminal_descriptors, 1);
+            assert_eq!(topology.tail_index, cursor);
+        }
+    }
+    assert!(live.try_stop(&mut mmio).is_ok());
+}
+
+#[test]
+fn live_rx_ring_preserves_topology_across_every_two_and_four_slot_interleaving() {
+    exercise_single_descriptor_rx_interleavings::<2>();
+    exercise_single_descriptor_rx_interleavings::<4>();
+}
+
+#[test]
+fn live_rx_frontier_rejects_last_beyond_the_accepted_tail_during_reload() {
+    const COUNT: usize = 4;
+    const BASE: u32 = 0x2f00_1000;
+    const BUFFER_SIZE: u32 = 256;
+    let descriptors = [const { Descriptor::new() }; COUNT];
+    let buffers = [0x2f00_2000, 0x2f00_2200, 0x2f00_2400, 0x2f00_2600];
+    let mut mmio = MockMmio::default();
+    let stopped =
+        RxRingStopped::prepare(&mut mmio, &descriptors, BASE, &buffers, BUFFER_SIZE, |_| {
+            Ok(())
+        })
+        .unwrap();
+    let mut live = stopped.start(&mut mmio).unwrap();
+    let completed = BUFFER_SIZE | (80 << LENGTH_SHIFT) | BIT_30 | BIT_31;
+
+    descriptors[0].write_word0(completed);
+    mmio.set(RX_LAST_DESCRIPTOR, BASE);
+    mmio.set(RX_NEXT_DESCRIPTOR, BASE + DESCRIPTOR_BYTES);
+    assert!(live.take_completed(0).is_some());
+    live.recycle_completed_batch::<1, _, _>(&mut mmio, |_| Ok(()))
+        .unwrap()
+        .unwrap();
+    assert!(live.reload_pending());
+    assert_eq!(live.recycle_start(), 1);
+    assert_eq!(live.accepted_tail(), 3);
+
+    // Hardware-visible pending tail zero is outside the still accepted list
+    // 1 -> 2 -> 3. Even if descriptor one is complete, that impossible LAST
+    // snapshot must not manufacture ownership before reload settles.
+    descriptors[1].write_word0(completed);
+    let pending_tail_low = BASE & 0x000f_ffff;
+    let frontier = live.completed_unit_frontier_through_with(pending_tail_low, |_| true);
+    assert_eq!(frontier, Default::default());
+
+    mmio.set(RX_CONTROL, RX_ENABLE);
+    mmio.set(RX_NEXT_DESCRIPTOR, BASE + DESCRIPTOR_BYTES);
+    assert_eq!(
+        live.poll_pending_reload(&mut mmio).unwrap(),
+        RxReloadObservation::Settled
+    );
+    let frontier = live.completed_unit_frontier_through_with(pending_tail_low, |_| true);
+    assert_eq!(frontier.unit_count, 1);
+    assert_eq!(frontier.descriptor_count, 1);
+    assert!(live.try_stop(&mut mmio).is_ok());
+}
+
+#[test]
+fn live_rx_recycle_rejects_a_corrupt_append_tail_before_any_mutation() {
+    const COUNT: usize = 4;
+    const BASE: u32 = 0x2f00_1000;
+    const BUFFER_SIZE: u32 = 256;
+    let descriptors = [const { Descriptor::new() }; COUNT];
+    let buffers = [0x2f00_2000, 0x2f00_2200, 0x2f00_2400, 0x2f00_2600];
+    let mut mmio = MockMmio::default();
+    let stopped =
+        RxRingStopped::prepare(&mut mmio, &descriptors, BASE, &buffers, BUFFER_SIZE, |_| {
+            Ok(())
+        })
+        .unwrap();
+    let mut live = stopped.start(&mut mmio).unwrap();
+    let completed = BUFFER_SIZE | (80 << LENGTH_SHIFT) | BIT_30 | BIT_31;
+
+    descriptors[0].write_word0(completed);
+    mmio.set(RX_LAST_DESCRIPTOR, BASE);
+    mmio.set(RX_NEXT_DESCRIPTOR, BASE + DESCRIPTOR_BYTES);
+    assert!(live.take_completed(0).is_some());
+
+    // The accepted tail must be zero-terminated until the sole ring owner
+    // publishes an append. Model foreign/corrupt mutation of that link.
+    descriptors[3].publish(
+        descriptors[3].word0(),
+        descriptors[3].buffer_address(),
+        BASE + 2 * DESCRIPTOR_BYTES,
+    );
+    let before = core::array::from_fn::<_, COUNT, _>(|index| {
+        (
+            descriptors[index].word0(),
+            descriptors[index].buffer_address(),
+            descriptors[index].next_address(),
+        )
+    });
+    let mut prepare_calls = 0;
+    assert_eq!(
+        live.recycle_completed_batch::<1, _, _>(&mut mmio, |_| {
+            prepare_calls += 1;
+            Ok(())
+        }),
+        Err(RxRingError::Corrupt)
+    );
+    assert_eq!(prepare_calls, 0);
+    for (index, expected) in before.into_iter().enumerate() {
+        assert_eq!(
+            (
+                descriptors[index].word0(),
+                descriptors[index].buffer_address(),
+                descriptors[index].next_address(),
+            ),
+            expected
+        );
+    }
+
+    // Restore the deliberately corrupted host model so teardown can prove a
+    // conventional halted list.
+    descriptors[3].publish(descriptors[3].word0(), descriptors[3].buffer_address(), 0);
     assert!(live.try_stop(&mut mmio).is_ok());
 }
 
@@ -1704,6 +2127,8 @@ fn live_rx_ring_snapshots_only_the_current_contiguous_frontier() {
     assert_eq!(live.completed_frontier_len(), 2);
 
     assert!(live.take_completed(0).is_some());
+    mmio.set(RX_LAST_DESCRIPTOR, BASE);
+    mmio.set(RX_NEXT_DESCRIPTOR, BASE + DESCRIPTOR_BYTES);
     assert_eq!(live.completed_frontier_len(), 0);
     let first = live
         .recycle_completed_batch::<1, _, _>(&mut mmio, |_| Ok(()))
@@ -1738,12 +2163,17 @@ fn live_rx_ring_transfers_and_recycles_one_chained_unit_atomically() {
     let mut live = stopped.start(&mut mmio).unwrap();
     descriptors[0].write_word0(BUFFER_SIZE | (BUFFER_SIZE << LENGTH_SHIFT) | BIT_31);
     descriptors[1].write_word0(BUFFER_SIZE | (80 << LENGTH_SHIFT) | BIT_30 | BIT_31);
+    mmio.set(RX_LAST_DESCRIPTOR, BASE + DESCRIPTOR_BYTES);
+    mmio.set(RX_NEXT_DESCRIPTOR, BASE + 2 * DESCRIPTOR_BYTES);
 
     assert_eq!(live.completed_frontier_len(), 0);
     let frontier = live.completed_unit_frontier();
     assert_eq!(frontier.unit_count, 1);
     assert_eq!(frontier.descriptor_count, 2);
-    let unit = live.take_completed_unit(frontier.descriptor_count).unwrap();
+    let unit = live
+        .take_completed_unit(frontier.descriptor_count)
+        .unwrap()
+        .unwrap();
     assert_eq!(unit.head_index(), 0);
     assert_eq!(unit.descriptor_count(), 2);
     assert_eq!(unit.segment_length(0), Some(256));
@@ -1787,6 +2217,8 @@ fn live_rx_ring_replenishes_the_available_variable_prefix() {
 
     descriptors[0].write_word0(completed);
     descriptors[1].write_word0(completed);
+    mmio.set(RX_LAST_DESCRIPTOR, BASE + DESCRIPTOR_BYTES);
+    mmio.set(RX_NEXT_DESCRIPTOR, BASE + 2 * DESCRIPTOR_BYTES);
     assert!(live.take_completed(0).is_some());
     assert!(live.take_completed(1).is_some());
     let first = live
@@ -1805,6 +2237,8 @@ fn live_rx_ring_replenishes_the_available_variable_prefix() {
     );
 
     descriptors[2].write_word0(completed);
+    mmio.set(RX_LAST_DESCRIPTOR, BASE + 2 * DESCRIPTOR_BYTES);
+    mmio.set(RX_NEXT_DESCRIPTOR, BASE + 3 * DESCRIPTOR_BYTES);
     assert!(live.take_completed(2).is_some());
     let second = live
         .recycle_completed_prefix::<4, _, _>(&mut mmio, |_| Ok(()))
@@ -1836,6 +2270,8 @@ fn staged_rx_frame_remains_private_until_reload_settles() {
         .unwrap();
     let mut live = stopped.start(&mut mmio).unwrap();
     descriptors[0].write_word0(BUFFER_SIZE | (4 << LENGTH_SHIFT) | BIT_30 | BIT_31);
+    mmio.set(RX_LAST_DESCRIPTOR, BASE);
+    mmio.set(RX_NEXT_DESCRIPTOR, BASE + DESCRIPTOR_BYTES);
     let completed = live.take_completed(0).unwrap();
     let pool = RxStagePool::<1, 16>::new();
     mmio.operations.clear();
@@ -1848,12 +2284,16 @@ fn staged_rx_frame_remains_private_until_reload_settles() {
         &[
             Operation::Read(RX_CONTROL),
             Operation::Read(RX_CONTROL),
+            Operation::Read(RX_LAST_DESCRIPTOR),
+            Operation::Fence,
+            Operation::Read(RX_NEXT_DESCRIPTOR),
+            Operation::Fence,
             Operation::Fence,
             Operation::Read(RX_CONTROL),
             Operation::Write(RX_CONTROL, RX_ENABLE | RX_RELOAD),
             Operation::Fence,
         ],
-        "descriptor publication and the reload doorbell retain their two exact device-ordering boundaries",
+        "release observation, descriptor publication and reload retain their exact device-ordering boundaries",
     );
 
     assert_eq!(pool.claimed_slots(), 1);
@@ -1889,6 +2329,8 @@ fn staged_rx_reload_timeout_is_exact_and_releases_the_private_copy() {
         .unwrap();
     let mut live = stopped.start(&mut mmio).unwrap();
     descriptors[0].write_word0(BUFFER_SIZE | (4 << LENGTH_SHIFT) | BIT_30 | BIT_31);
+    mmio.set(RX_LAST_DESCRIPTOR, BASE);
+    mmio.set(RX_NEXT_DESCRIPTOR, BASE + DESCRIPTOR_BYTES);
     let completed = live.take_completed(0).unwrap();
     let pool = RxStagePool::<1, 16>::new();
     let mut pending = pool

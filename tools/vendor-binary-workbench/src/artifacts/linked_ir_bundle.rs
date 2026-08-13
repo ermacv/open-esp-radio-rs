@@ -292,6 +292,17 @@ impl LinkedIrReader {
             .collect()
     }
 
+    pub(crate) fn outgoing_edges(&self, identity: &str) -> Result<Vec<StoredGraphEdge>> {
+        let graph = self.graph()?;
+        Ok(graph
+            .outgoing
+            .get(identity)
+            .into_iter()
+            .flatten()
+            .map(|index| graph.edges[*index].clone())
+            .collect())
+    }
+
     pub(crate) fn mmio_function_identities(
         &self,
         register: Option<&str>,

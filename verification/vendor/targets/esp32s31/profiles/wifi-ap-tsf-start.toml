@@ -1,0 +1,25 @@
+schema = 3
+
+# Only selector zero is claimed: it is the complete SoftAP path reached from
+# wDev_Reset_TBTT. STA and NAN selectors remain outside this Rust component.
+[[profiles]]
+name = "wifi-ap-tsf-start"
+claim = "reviewed-domain-equivalence"
+precondition = "softap-tsf-selector-zero"
+vendor-source = "libpp"
+vendor-symbol = "hal_mac_tsf_reset"
+rust-symbol = "open_libpp_ap_tsf_start_trace_hal_mac_tsf_reset"
+compare-return = false
+[[profiles.argument-values]]
+index = 0
+values = [0]
+
+[[profiles.cases]]
+name = "selector-zero"
+arguments = [0]
+[[profiles.cases.mmio-initial]]
+address = 0x2010d860
+value = 0xffffffff
+[[profiles.cases.mmio-initial]]
+address = 0x2010d814
+value = 0x55aa5500

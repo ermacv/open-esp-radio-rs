@@ -12,7 +12,8 @@ use open_esp_radio_esp32s31_wifi::{
     tx::{WifiTxProgress, WifiTxWake},
 };
 use open_esp_radio_esp32s31_wifi_mac::tx::{LegacyRate, TxHardware};
-use open_esp_radio_wifi_ap::ApServiceError;
+use open_esp_radio_ieee80211::ap::ApPeerDisconnectKind;
+use open_esp_radio_wifi_ap::{ApPeerClose, ApServiceError};
 use open_esp_radio_wpa2::frames::Wpa2TxFrame;
 
 use crate::{
@@ -29,9 +30,26 @@ use crate::{
 enum PendingPublication {
     Beacon,
     Authentication,
-    Association { peer: [u8; 6], begin_wpa2: bool },
-    Eapol,
-    Data,
+    Association {
+        peer: [u8; 6],
+        begin_wpa2: bool,
+    },
+    Eapol {
+        peer: [u8; 6],
+    },
+    Data {
+        peer: [u8; 6],
+    },
+    PeerDisconnect {
+        close: ApPeerClose,
+        stage: Esp32s31ApPeerDisconnectStage,
+    },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Esp32s31ApPeerDisconnectStage {
+    Disassociation,
+    Deauthentication,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -41,6 +59,12 @@ pub struct Esp32s31ApMacReport {
     pub association_responses_transmitted: u32,
     pub eapol_frames_transmitted: u32,
     pub data_frames_transmitted: u32,
+    /// Disconnect transactions accepted by the hardware TX owner.
+    pub disassociations_published: u32,
+    pub deauthentications_published: u32,
+    /// Disconnect transactions whose terminal completion reported an ACK.
+    pub disassociations_acknowledged: u32,
+    pub deauthentications_acknowledged: u32,
     pub tx_failures: Esp32s31ApTxFailureReport,
 }
 
@@ -60,8 +84,15 @@ pub struct Esp32s31ApTxFailureReport {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Esp32s31ApTxCompletionAction {
     None,
-    BeginWpa2 { peer: [u8; 6] },
+    BeginWpa2 {
+        peer: [u8; 6],
+    },
     PublicationFailed,
+    PeerDisconnectTerminal {
+        close: ApPeerClose,
+        stage: Esp32s31ApPeerDisconnectStage,
+        acknowledged: bool,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -170,6 +201,7 @@ where
         request: &[u8],
         authenticator_nonce: [u8; 32],
         initial_replay_counter: u64,
+        now_micros: u64,
         scratch: &mut [u8],
     ) -> Result<Esp32s31ApManagementOutcome, Esp32s31ApMacError>
     where
@@ -181,6 +213,7 @@ where
             request,
             authenticator_nonce,
             initial_replay_counter,
+            now_micros,
             scratch,
         )?;
         let Esp32s31ApManagementOutcome::Response { len, begin_wpa2 } = outcome else {
@@ -215,7 +248,7 @@ where
         let len = self.engine.encode_eapol(peer, frame, scratch)?;
         self.transmit
             .start_encoded(hardware, Esp32s31ApTxClass::Eapol, &scratch[..len])?;
-        self.pending = Some(PendingPublication::Eapol);
+        self.pending = Some(PendingPublication::Eapol { peer });
         Ok(())
     }
 
@@ -252,7 +285,55 @@ where
             encoded.hardware_key_selector,
             rate,
         )?;
-        self.pending = Some(PendingPublication::Data);
+        self.pending = Some(PendingPublication::Data { peer });
+        Ok(())
+    }
+
+    pub fn publish_peer_disconnect<H>(
+        &mut self,
+        hardware: &mut H,
+        close: ApPeerClose,
+        stage: Esp32s31ApPeerDisconnectStage,
+        scratch: &mut [u8],
+    ) -> Result<(), Esp32s31ApMacError>
+    where
+        H: TxHardware,
+    {
+        self.require_idle()?;
+        let (kind, reason) = match stage {
+            Esp32s31ApPeerDisconnectStage::Disassociation => (
+                ApPeerDisconnectKind::Disassociation,
+                if close.kind == open_esp_radio_wifi_ap::ApPeerCloseKind::InactivityTimeout {
+                    4
+                } else {
+                    2
+                },
+            ),
+            Esp32s31ApPeerDisconnectStage::Deauthentication => {
+                (ApPeerDisconnectKind::Deauthentication, 2)
+            }
+        };
+        let length = self
+            .engine
+            .encode_peer_disconnect(close, kind, reason, scratch)?;
+        // Complete vendor `wifi_softap_stop` publishes subtype 0xa0 and then
+        // 0xc0 before `cnx_node_leave`; neither call waits for an ACK. Keep our
+        // stronger DMA-ownership rule (each transaction reaches a terminal
+        // completion before the next one), but distinguish hardware
+        // publication from an ACK that a departing peer may never return.
+        self.transmit
+            .start_encoded(hardware, Esp32s31ApTxClass::Management, &scratch[..length])?;
+        match stage {
+            Esp32s31ApPeerDisconnectStage::Disassociation => {
+                self.report.disassociations_published =
+                    self.report.disassociations_published.saturating_add(1);
+            }
+            Esp32s31ApPeerDisconnectStage::Deauthentication => {
+                self.report.deauthentications_published =
+                    self.report.deauthentications_published.saturating_add(1);
+            }
+        }
+        self.pending = Some(PendingPublication::PeerDisconnect { close, stage });
         Ok(())
     }
 
@@ -260,6 +341,7 @@ where
         &mut self,
         hardware: &mut H,
         wake: WifiTxWake,
+        now_micros: u64,
     ) -> Result<(WifiTxProgress, Esp32s31ApTxCompletionAction), Esp32s31ApMacError> {
         if self.pending.is_none() {
             return Err(Esp32s31ApMacError::Busy);
@@ -293,7 +375,19 @@ where
                 }
                 OrdinaryTxOutcome::Success(_) => unreachable!("checked failed AP publication"),
             }
-            return Ok((progress, Esp32s31ApTxCompletionAction::PublicationFailed));
+            return Ok((
+                progress,
+                match pending {
+                    PendingPublication::PeerDisconnect { close, stage } => {
+                        Esp32s31ApTxCompletionAction::PeerDisconnectTerminal {
+                            close,
+                            stage,
+                            acknowledged: false,
+                        }
+                    }
+                    _ => Esp32s31ApTxCompletionAction::PublicationFailed,
+                },
+            ));
         }
         let action = match pending {
             PendingPublication::Beacon => {
@@ -318,15 +412,36 @@ where
                     Esp32s31ApTxCompletionAction::None
                 }
             }
-            PendingPublication::Eapol => {
+            PendingPublication::Eapol { peer } => {
                 self.report.eapol_frames_transmitted =
                     self.report.eapol_frames_transmitted.saturating_add(1);
+                self.engine.observe_peer_activity(peer, now_micros)?;
                 Esp32s31ApTxCompletionAction::None
             }
-            PendingPublication::Data => {
+            PendingPublication::Data { peer } => {
                 self.report.data_frames_transmitted =
                     self.report.data_frames_transmitted.saturating_add(1);
+                if peer[0] & 1 == 0 {
+                    self.engine.observe_peer_activity(peer, now_micros)?;
+                }
                 Esp32s31ApTxCompletionAction::None
+            }
+            PendingPublication::PeerDisconnect { close, stage } => {
+                match stage {
+                    Esp32s31ApPeerDisconnectStage::Disassociation => {
+                        self.report.disassociations_acknowledged =
+                            self.report.disassociations_acknowledged.saturating_add(1);
+                    }
+                    Esp32s31ApPeerDisconnectStage::Deauthentication => {
+                        self.report.deauthentications_acknowledged =
+                            self.report.deauthentications_acknowledged.saturating_add(1);
+                    }
+                }
+                Esp32s31ApTxCompletionAction::PeerDisconnectTerminal {
+                    close,
+                    stage,
+                    acknowledged: true,
+                }
             }
         };
         Ok((progress, action))
@@ -431,8 +546,10 @@ mod tests {
         fn clear_ccmp_entry(&mut self, _index: u8) {}
     }
 
-    impl Esp32s31ApRuntimeHardware for Hardware {
-        fn stop_ap_tsf(&mut self) {}
+    impl open_esp_radio_esp32s31_wifi_mac::ap_tsf::ApTsfHardware for Hardware {
+        fn reset_and_start_access_point_tsf(&mut self) {}
+
+        fn stop_access_point_tsf(&mut self) {}
     }
 
     impl TxHardware for Hardware {
@@ -519,6 +636,7 @@ mod tests {
                 Pmk::derive(b"password", b"ap").unwrap(),
                 Wpa2Gtk::new(1, true, [7; 16]).unwrap(),
                 open_esp_radio_wifi_ap::AccessPointClientLimit::new(2).unwrap(),
+                open_esp_radio_wifi_ap::AccessPointInactiveTimeout::default(),
                 &mut peers,
             ),
             &mut beacon,
@@ -559,6 +677,7 @@ mod tests {
             WifiTxWake::Interrupt {
                 events: open_esp_radio_esp32s31_wifi_mac::irq::MAC_INT_TX_COMPLETE,
             },
+            1,
         ))
         .unwrap();
         assert_eq!(progress, WifiTxProgress::Complete);

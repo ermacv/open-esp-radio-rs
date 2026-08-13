@@ -6,6 +6,7 @@
 mod effects;
 mod event;
 mod model;
+mod project_graph;
 mod target;
 mod value;
 

@@ -1,4 +1,4 @@
-schema = 1
+schema = 2
 # Finite register leaves used by the production RX descriptor-ring owner.
 # Descriptor memory ownership, recycle policy and the bounded async reload
 # transaction remain Rust composition responsibilities.
@@ -12,6 +12,7 @@ disposition = "direct"
 protocol = "wifi"
 rust-component = "open_esp_radio_esp32s31_pac::mac_rx_dma::set_walker_enabled"
 binding = "v1"
+rust-binding = "exact-production-entry"
 rust-probe = "open_libpp_rx_trace_hal_mac_rx_disable"
 effect-contract = "exact-effects-v1"
 [[functions.effects]]
@@ -28,6 +29,7 @@ disposition = "direct"
 protocol = "wifi"
 rust-component = "open_esp_radio_esp32s31_pac::mac_rx_dma::set_walker_enabled"
 binding = "v1"
+rust-binding = "exact-production-entry"
 rust-probe = "open_libpp_rx_trace_hal_mac_rx_enable"
 effect-contract = "exact-effects-v1"
 [[functions.effects]]
@@ -44,6 +46,7 @@ disposition = "direct"
 protocol = "wifi"
 rust-component = "open_esp_radio_esp32s31_pac::mac_rx_dma::read_last_descriptor"
 binding = "v1"
+rust-binding = "exact-production-entry"
 rust-probe = "open_libpp_rx_trace_hal_mac_rx_read_rxdscrlast"
 compare-return = true
 effect-contract = "exact-effects-v1"
@@ -58,6 +61,7 @@ disposition = "direct"
 protocol = "wifi"
 rust-component = "open_esp_radio_esp32s31_pac::mac_rx_dma::read_next_descriptor"
 binding = "v1"
+rust-binding = "exact-production-entry"
 rust-probe = "open_libpp_rx_trace_hal_mac_rx_read_rxdscrnext"
 compare-return = true
 effect-contract = "exact-effects-v1"
@@ -72,6 +76,7 @@ disposition = "direct"
 protocol = "wifi"
 rust-component = "open_esp_radio_esp32s31_pac::mac_rx_dma::write_descriptor_base"
 binding = "v1"
+rust-binding = "exact-production-entry"
 rust-probe = "open_libpp_rx_trace_hal_mac_rx_set_base"
 effect-contract = "exact-effects-v1"
 [[functions.effects]]
@@ -85,6 +90,7 @@ disposition = "direct"
 protocol = "wifi"
 rust-component = "open_esp_radio_esp32s31_pac::mac_rx_dma::read_last_descriptor_address"
 binding = "v1"
+rust-binding = "exact-production-entry"
 rust-probe = "open_libpp_rx_trace_hal_mac_rx_get_last_dscr"
 compare-return = true
 effect-contract = "exact-effects-v1"
@@ -102,6 +108,7 @@ disposition = "direct"
 protocol = "wifi"
 rust-component = "open_esp_radio_esp32s31_pac::mac_rx_dma::descriptor_reload_pending"
 binding = "v1"
+rust-binding = "exact-production-entry"
 rust-probe = "open_libpp_rx_trace_hal_mac_rx_is_dscr_reload"
 compare-return = true
 effect-contract = "exact-effects-v1"
@@ -120,6 +127,7 @@ disposition = "direct"
 protocol = "wifi"
 rust-component = "open_esp_radio_esp32s31_pac::mac_rx_dma::request_descriptor_reload"
 binding = "v1"
+rust-binding = "exact-production-entry"
 rust-probe = "open_libpp_rx_trace_hal_mac_rx_set_dscr_reload"
 effect-contract = "exact-effects-v1"
 [[functions.effects]]
@@ -132,10 +140,11 @@ disposition = { kind = "required" }
 [[functions]]
 source = "libpp"
 symbol = "wDev_AppendRxBlocks"
-disposition = "replaced-by-composition"
+disposition = "bounded-feature"
 protocol = "wifi"
-rust-component = "open_esp_radio_esp32s31_wifi_mac::rx_pool::RxStagePool::stage_recycle"
+rust-component = "open_esp_radio_esp32s31_wifi_mac::rx_pool::RxStagePool::stage_dma_unit_recycle_bounded"
 binding = "v1"
+rust-binding = "shared-production-core"
 rust-probe = "open_libpp_rx_trace_wdev_append_rx_blocks"
 driver-adapter = "esp32s31-wdev-append-rx-blocks-v1"
 effect-contract = "exact-effects-v1"

@@ -5,14 +5,14 @@ feature. The feature pack closes either a complete vendor review surface or a
 narrow, explicitly replayed property against the intended Rust policy. These
 are different claims and must not be inferred from one another.
 
-Feature-pack schema 4 makes that boundary explicit with `coverage` and named
+Feature-pack schema 5 makes that boundary explicit with `coverage` and named
 lifecycle phases. `review-scopes` requires every effect-bearing function in
 the reachable closure of every selected review scope to have exactly one
 fingerprinted `[[features.effects]]` disposition. Pure routing helpers stay in
 the call graph but do not inflate the transaction denominator:
 
 ```toml
-schema = 4
+schema = 5
 
 [[features]]
 id = "wifi-sta-connected-no-power-save"
@@ -91,6 +91,43 @@ semantic coverage. Policy exclusions therefore belong only to
 `review-scopes`; they are rejected for bounded evidence because that mode has
 no discovered surface denominator from which an omission could be justified.
 
+Use `selected-evidence` when the feature boundary is a finite list of named
+vendor functions rather than a reachable review scope. Unlike
+`bounded-evidence`, it may require `whole-function-equivalence`; every listed
+transaction still needs a pinned fingerprint, verified disposition and current
+verification result. It deliberately makes no statement about unlisted
+functions, so a product capability should compose it with the other required
+leaves instead of treating it as complete artifact coverage.
+
+Use `composed-features` for a product capability whose proof is the conjunction
+of already reviewed features. It cannot select scopes or repeat requirements
+and effects. Dependencies may select the complete feature or one lifecycle
+phase, and cycles or unknown selectors are rejected while loading the pack:
+
+```toml
+[[features]]
+id = "wifi-sta-ap-register-prerequisites"
+description = "Role-specific register leaves needed by concurrent STA+AP."
+coverage = "composed-features"
+
+[[features.phases]]
+id = "register-prerequisites"
+description = "Collect independently qualified register contracts."
+
+[[features.dependencies]]
+feature = "wifi-ap-sta-interface-identity"
+phase = "interface-identity"
+
+[[features.dependencies]]
+feature = "wifi-ap-sta-key-role"
+phase = "key-install"
+```
+
+The composed report contains one concise blocker per failed dependency and
+keeps the leaf blockers on the leaf report. This prevents an umbrella feature
+from duplicating hundreds of transaction diagnostics while preserving a
+fail-closed path to the exact evidence.
+
 The generated review-scope schema 9 stores `transactions`, their canonical
 fingerprints and every root-to-transaction path. This is the exact denominator
 for `review-scopes` coverage. `replacement_function_keys` remains useful for
@@ -100,17 +137,23 @@ reachable vendor side effect can disappear.
 The matching disposition for a deliberately narrow proof is
 `bounded-feature`. The verifier emits `bounded-match` only for a successful
 non-whole-function adapter claim or an explicitly preconditioned
-`reviewed-domain-equivalence` execution profile. Project loading rejects a bounded
-disposition that is not selected by a required feature, and `project check`
-evaluates those required features as a separate fail-closed gate.
+`reviewed-domain-equivalence` execution profile. Project loading validates
+bounded declarations across every feature, while the binding audit gates only
+the transitive dependency closure of required features. This permits honest
+research-only bounded work without letting it block or silently qualify an
+unrelated release. `project check` evaluates the required closure as a
+separate fail-closed gate.
 
 `project status`, the Features TUI view and the application snapshot expose the
 coverage mode and covered/total surface effects separately from verification
 requirements. A `review-scopes` feature is qualified only when scope analysis
 is complete and every discovered effect has a current disposition. A
-`bounded-evidence` feature is qualified only for its explicit effects. In both
-modes every referenced proof must satisfy its requested claim and reviewed
-production binding.
+`bounded-evidence` feature is qualified only for its explicit effects. A
+`selected-evidence` feature is qualified only for its explicit named
+transactions and accepts the claim strength requested by each requirement. A
+`composed-features` feature is qualified only when all selected dependencies
+are qualified. In every mode each referenced proof must satisfy its requested
+claim and reviewed production binding.
 
 Use `project feature FEATURE` for the focused human report. It shows the
 lifecycle phases, current transaction coverage and proof blockers without
@@ -138,7 +181,7 @@ The project points to the HIL-produced JSON document explicitly:
 ```toml
 [qualification]
 pack = "features/reviewed.toml"
-required-features = ["wifi-ap-bringup"]
+required-features = ["radio-product-contract"]
 hardware-evidence = "generated/evidence/feature-hardware.json"
 ```
 
@@ -155,7 +198,7 @@ hand-edited review pack:
   "schema": 1,
   "command": "project hardware evidence",
   "features": [{
-    "id": "wifi-ap-bringup",
+    "id": "radio-product-contract",
     "passed": true,
     "successful_runs": 20,
     "observations": ["beacon", "wpa2-association", "bidirectional-data", "clean-stop"],

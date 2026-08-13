@@ -39,6 +39,7 @@ pub struct Esp32s31MonitorRxProgress {
     pub malformed_frames: u32,
     pub recycled_descriptors: u32,
     pub reload_pending: bool,
+    pub service_probe_pending: bool,
 }
 
 pub struct Esp32s31MonitorRx<
@@ -170,6 +171,7 @@ impl<'storage, const COUNT: usize, const DMA_BUFFER_SIZE: usize, const DMA_STORA
         progress.completed_descriptors = ring.completed_descriptors;
         progress.recycled_descriptors = ring.recycled_descriptors;
         progress.reload_pending = ring.reload_pending;
+        progress.service_probe_pending = ring.service_probe_pending;
         Ok(progress)
     }
 

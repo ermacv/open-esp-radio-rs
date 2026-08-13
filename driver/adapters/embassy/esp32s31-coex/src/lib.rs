@@ -15,7 +15,7 @@ use embassy_sync::{
     channel::{Channel, Receiver, Sender},
 };
 use open_esp_radio_esp32s31_coex::{
-    CoexClockHardware, CoexCore, CoexError, CoexEventId, CoexRequest, CoexStatus,
+    CoexClientRequest, CoexClockHardware, CoexCore, CoexError, CoexEventId, CoexStatus,
     CoexTimerHardware, CoexTimerIndex,
 };
 
@@ -23,7 +23,8 @@ use open_esp_radio_esp32s31_coex::{
 pub enum CoexCommand {
     Enable,
     Disable,
-    Request(CoexRequest),
+    WifiRequest(CoexClientRequest),
+    BluetoothRequest(CoexClientRequest),
     Release(CoexEventId),
     Status,
     Shutdown,
@@ -113,8 +114,13 @@ impl<M: RawMutex, const DEPTH: usize> CoexOwner<'_, M, DEPTH> {
                         .map(|()| CoexOutcome::Status(core.status())),
                     false,
                 ),
-                CoexCommand::Request(request) => (
-                    core.request(hardware, clock, request)
+                CoexCommand::WifiRequest(request) => (
+                    core.request_wifi(hardware, clock, request)
+                        .map(CoexOutcome::Request),
+                    false,
+                ),
+                CoexCommand::BluetoothRequest(request) => (
+                    core.request_bluetooth(hardware, clock, request)
                         .map(CoexOutcome::Request),
                     false,
                 ),
@@ -218,8 +224,7 @@ mod tests {
             xtal_mhz: 40,
             real_chip: true,
         });
-        let request = CoexRequest {
-            client: CoexClient::Wifi,
+        let request = CoexClientRequest {
             event: CoexEventId::new(1).unwrap(),
             latency: 1_000,
             duration: 2_000,
@@ -235,7 +240,7 @@ mod tests {
                     }))
                 );
                 assert_eq!(
-                    control.execute(CoexCommand::Request(request)).await,
+                    control.execute(CoexCommand::WifiRequest(request)).await,
                     Ok(CoexOutcome::Request(CoexTimerIndex::new(0).unwrap()))
                 );
                 assert_eq!(

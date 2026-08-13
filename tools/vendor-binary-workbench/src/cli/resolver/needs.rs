@@ -64,6 +64,9 @@ impl ResolutionNeeds {
 
             Command::ProjectDoctor(_) => Self::new(true, false, false, false, true, true, true),
             Command::ProjectFiles(_) => Self::new(true, false, false, false, false, false, false),
+            Command::ProjectAuditBindings(_) => {
+                Self::new(true, false, true, false, false, false, false)
+            }
             Command::ProjectStatus(_) => Self::new(true, false, false, false, true, false, true),
             Command::ProjectFeature(_) => Self::new(true, false, false, false, false, false, false),
             Command::ProjectAnalyze(_) => {

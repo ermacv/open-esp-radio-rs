@@ -1,0 +1,15 @@
+schema = 2
+
+[[evidence]]
+source = "libpp"
+symbol = "hal_mac_tsf_reset"
+kind = "reviewed-domain-equivalence/profile:scenario/wifi-ap-tsf-start"
+digest = "b6998af44b8801d788a5792495651d4fe1d2306f4b0e2f8e569d7ef338824936"
+
+[evidence.components]
+comparison-orchestrator = "e9af803daf6ab44af42a93b3cead563c60bf06945929c1b879c8112be2f87d60"
+execution-image = "3885065e6ff308001a383d5164cd1f17dba4f452a35ef3c07baa3ce5916530da"
+execution-machine = "ecce5dd7068bb1bc30a5573d8b2c8f89fa158e96289a8653c8fea6fe58d80398"
+execution-model = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"
+profile = "4ee78a8a2586e7ee2bbd694945f8faa240890749b52ab7abdaa754b93a5579fd"
+profile-parser = "425e34c2aa46698971e2e8be1ab1e6e9d2d2737bd7b3afb913316708a62206f4"

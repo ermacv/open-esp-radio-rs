@@ -68,7 +68,7 @@ mod tests {
         rx_storage::RxDmaStorage,
     };
     use open_esp_radio_esp32s31_wifi_mac::{
-        rx::{RxDma, RxDmaBinding, RxRingStopped},
+        rx::{RxDma, RxDmaBinding, RxDmaWalkerStopped, RxRingStopped},
         rx_pool::RxStagePool,
     };
 
@@ -87,11 +87,36 @@ mod tests {
 
     impl RxDma for MockRxDma {
         fn last_descriptor_low(&mut self) -> u32 {
-            0
+            if self.walker_enabled {
+                BASE & 0x000f_ffff
+            } else {
+                0
+            }
         }
 
         fn next_descriptor_low(&mut self) -> u32 {
-            BASE + DESCRIPTOR_BYTES
+            if self.walker_enabled {
+                (BASE + DESCRIPTOR_BYTES) & 0x000f_ffff
+            } else {
+                0
+            }
+        }
+
+        fn with_ordered_cursor<R>(
+            &mut self,
+            observed: impl for<'confirmation> FnOnce(
+                open_esp_radio_esp32s31_wifi_mac::rx::RxDmaCursorObservation<'confirmation>,
+            ) -> R,
+        ) -> R {
+            let last = self.last_descriptor_low();
+            self.fence();
+            let next = self.next_descriptor_low();
+            self.fence();
+            observed(
+                open_esp_radio_esp32s31_wifi_mac::rx::RxDmaCursorObservation::validation(
+                    last, next,
+                ),
+            )
         }
 
         fn walker_enabled(&mut self) -> bool {
@@ -108,6 +133,17 @@ mod tests {
             }
         }
 
+        fn try_with_reload_settled<R>(
+            &mut self,
+            settled: impl for<'confirmation> FnOnce(
+                open_esp_radio_esp32s31_wifi_mac::rx::RxDmaReloadSettled<'confirmation>,
+            ) -> R,
+        ) -> Option<R> {
+            (!self.reload_pending()).then(|| {
+                settled(open_esp_radio_esp32s31_wifi_mac::rx::RxDmaReloadSettled::validation())
+            })
+        }
+
         fn set_descriptor_high_window(&mut self, _: &RxDmaBinding, _address_high: u16) {}
 
         fn write_descriptor_base(&mut self, _: &RxDmaBinding, address: u32) {
@@ -122,18 +158,29 @@ mod tests {
             self.reload_requested = true;
         }
 
-        fn try_enable_walker(&mut self, _: &RxDmaBinding) -> bool {
+        fn try_with_walker_enabled<R>(
+            &mut self,
+            _: &RxDmaBinding,
+            enabled: impl for<'confirmation> FnOnce(
+                open_esp_radio_esp32s31_wifi_mac::rx::RxDmaWalkerEnabled<'confirmation>,
+            ) -> R,
+        ) -> Option<R> {
             if self.walker_enabled {
-                false
+                None
             } else {
                 self.walker_enabled = true;
-                true
+                Some(enabled(
+                    open_esp_radio_esp32s31_wifi_mac::rx::RxDmaWalkerEnabled::validation(),
+                ))
             }
         }
 
-        fn try_disable_walker(&mut self) -> bool {
+        fn try_with_walker_stopped<R>(
+            &mut self,
+            stopped: impl for<'confirmation> FnOnce(RxDmaWalkerStopped<'confirmation>) -> R,
+        ) -> Option<R> {
             self.walker_enabled = false;
-            true
+            Some(stopped(RxDmaWalkerStopped::validation()))
         }
 
         fn fence(&mut self) {}

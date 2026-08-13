@@ -1,7 +1,8 @@
 use core::marker::PhantomData;
 
 use open_esp_radio_esp32s31_wifi_mac::rx::{
-    RxDma, RxRingError, RxRingHalted, RxRingLive, RxRingStopped, RxSegment,
+    RX_DESCRIPTOR_RELOAD_ATTEMPT_LIMIT, RxDescriptorSnapshot, RxDma, RxReloadObservation,
+    RxRingError, RxRingHalted, RxRingLive, RxRingStopped, RxSegment,
 };
 
 use crate::rx_dma_service::{ESP32S31_RX_WALKER_ENABLE_SETTLE_US, Esp32s31RxDmaStorage};
@@ -10,7 +11,8 @@ use super::state::Esp32s31PreconnectedRxState;
 use super::{
     Esp32s31PreconnectedRx, Esp32s31PreconnectedRxDelay, Esp32s31PreconnectedRxDirective,
     Esp32s31PreconnectedRxError, Esp32s31PreconnectedRxIntoLiveFailure,
-    Esp32s31PreconnectedRxPhase, Esp32s31PreconnectedRxProgress,
+    Esp32s31PreconnectedRxPhase, Esp32s31PreconnectedRxProgress, Esp32s31RecycledRxDirective,
+    Esp32s31RecycledRxProgress,
 };
 
 impl<'storage, D, const COUNT: usize, const DMA_BUFFER_SIZE: usize>
@@ -51,6 +53,11 @@ where
 
     /// Prepare a halted frontier if needed, wait the qualified walker settle
     /// edge, and publish one live RX epoch.
+    ///
+    /// Native models may provide an explicit buffer-preparation callback.
+    /// Hardware builds must use [`Self::start_with_storage`] so the callback
+    /// cannot bypass the DMA arena's guard restoration.
+    #[cfg(not(target_pointer_width = "32"))]
     pub async fn start<M, F>(
         &mut self,
         hardware: &mut M,
@@ -162,6 +169,20 @@ where
         }
     }
 
+    /// Read one descriptor image in any owned, non-vacant RX phase.
+    ///
+    /// This is observation only: callers receive no descriptor mutation or
+    /// DMA-publication authority. It allows lifecycle fault reports to retain
+    /// the terminal hardware image after the walker has been stopped.
+    pub fn descriptor_snapshot(&self, index: usize) -> Option<RxDescriptorSnapshot> {
+        match &self.state {
+            Esp32s31PreconnectedRxState::Halted(ring) => ring.descriptor_snapshot(index),
+            Esp32s31PreconnectedRxState::Prepared(ring) => ring.descriptor_snapshot(index),
+            Esp32s31PreconnectedRxState::Live(ring) => ring.descriptor_snapshot(index),
+            Esp32s31PreconnectedRxState::Vacant => None,
+        }
+    }
+
     /// Whether a published append still needs its finite reload suffix.
     ///
     /// An exhausted walker cannot raise another RX interrupt while this edge
@@ -170,6 +191,18 @@ where
     pub const fn reload_pending(&self) -> bool {
         match &self.state {
             Esp32s31PreconnectedRxState::Live(ring) => ring.reload_pending(),
+            _ => false,
+        }
+    }
+
+    /// Whether an exhausted-list BASE publication requires one follow-up
+    /// descriptor ownership probe even if hardware emits no new RX wake.
+    pub const fn service_probe_pending(&self) -> bool {
+        match &self.state {
+            Esp32s31PreconnectedRxState::Live(ring) => {
+                ring.exhausted_republication_probe_pending()
+                    || ring.completion_release_probe_pending()
+            }
             _ => false,
         }
     }
@@ -215,8 +248,126 @@ where
         // aligned with rev0's physical walker boundary. The AP runner drives
         // the explicit pending-reload suffix even if no later RX IRQ arrives.
         storage.recycle_completed_half(ring, hardware)?;
-        if ring.all_observed() {
+        if ring.all_observed()
+            && !ring.completion_release_probe_pending()
+            && !ring.exhausted_republication_probe_pending()
+        {
             return Err(Esp32s31PreconnectedRxError::Ring(RxRingError::Corrupt));
+        }
+        Ok(progress)
+    }
+
+    /// Copy, recycle and completely publish the first complete RX unit.
+    ///
+    /// SOURCE[ROM_REV0_WDEV_APPEND_RX_BLOCKS]: `wDev_AppendRxBlocks` accepts
+    /// the exact head/count returned by one completed receive unit. The AP
+    /// path therefore must not retain descriptors until a physical half-ring
+    /// happens to complete. `wDev_AppendRxBlocks` does not return between its
+    /// reload doorbell and base-repair suffix. Preserve that transaction
+    /// boundary asynchronously: the observer sees the independent staging
+    /// copy only after hardware has accepted the returned descriptors.
+    pub async fn service_completed_unit<M, F, const DMA_STORAGE_SIZE: usize>(
+        &mut self,
+        hardware: &mut M,
+        storage: &'storage Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
+        staging: &mut [u8],
+        mut observe: F,
+    ) -> Result<Esp32s31RecycledRxProgress, Esp32s31PreconnectedRxError>
+    where
+        M: RxDma,
+        F: for<'frame> FnMut(RxSegment<'frame>) -> Esp32s31RecycledRxDirective,
+    {
+        let ring = self.live_mut()?;
+        // A cancelled caller can leave an already-published append pending.
+        // Finish that transaction before observing another ownership epoch.
+        let mut reload_samples = 0_u32;
+        while ring.poll_pending_reload(hardware)? == RxReloadObservation::Pending {
+            reload_samples = reload_samples.saturating_add(1);
+            if reload_samples >= RX_DESCRIPTOR_RELOAD_ATTEMPT_LIMIT {
+                return Err(Esp32s31PreconnectedRxError::Ring(RxRingError::Busy));
+            }
+            D::after_micros(1).await;
+        }
+        ring.observe_exhausted_republication(hardware);
+        // SOURCE[libpp:wdevProcessRxSucDataAll]: the vendor receive worker
+        // snapshots `hal_mac_rx_get_last_dscr`, processes through that finite
+        // frontier, and refreshes LAST before extending the pass. It does not
+        // wait for RX_NEXT_DESCRIPTOR before clearing and returning a node.
+        let last_descriptor_low = hardware.last_descriptor_low();
+        // LAST is the ownership frontier for the following descriptor scan.
+        // Order that MMIO observation before reading uncached SRAM.
+        hardware.fence();
+        let frontier = storage.completed_unit_frontier_through(ring, last_descriptor_low)?;
+        if frontier.unit_count == 0 {
+            return Ok(Esp32s31RecycledRxProgress::default());
+        }
+        if !ring.observe_current_completed_unit_link_release(hardware, frontier.descriptor_count) {
+            return Ok(Esp32s31RecycledRxProgress::default());
+        }
+
+        let unit = storage
+            .take_completed_unit(ring, frontier.descriptor_count)?
+            .ok_or(Esp32s31PreconnectedRxError::Ring(RxRingError::Corrupt))?;
+        let descriptor_count = unit.descriptor_count();
+        let descriptor_address = unit.metadata().descriptor_address();
+        let descriptor_word0 = unit.metadata().staged_word0();
+        let total_length = unit.total_length();
+
+        let staged = if total_length == 0 || total_length > staging.len() {
+            false
+        } else {
+            let mut offset = 0_usize;
+            for step in 0..descriptor_count {
+                let source = unit
+                    .segment(step)
+                    .ok_or(Esp32s31PreconnectedRxError::Ring(RxRingError::Corrupt))?;
+                let end = offset
+                    .checked_add(source.len())
+                    .ok_or(Esp32s31PreconnectedRxError::Ring(RxRingError::Overflow))?;
+                staging
+                    .get_mut(offset..end)
+                    .ok_or(Esp32s31PreconnectedRxError::Ring(RxRingError::Corrupt))?
+                    .copy_from_slice(source);
+                offset = end;
+            }
+            if offset != total_length {
+                return Err(Esp32s31PreconnectedRxError::Ring(RxRingError::Corrupt));
+            }
+            true
+        };
+
+        let append = unit
+            .recycle(hardware)?
+            .ok_or(Esp32s31PreconnectedRxError::Ring(RxRingError::Busy))?;
+        if append.descriptor_count != descriptor_count {
+            return Err(Esp32s31PreconnectedRxError::Ring(RxRingError::Corrupt));
+        }
+
+        // Complete the exact vendor append suffix before protocol processing
+        // is allowed to borrow the same MAC register owner for a response TX.
+        reload_samples = 0;
+        while ring.poll_pending_reload(hardware)? == RxReloadObservation::Pending {
+            reload_samples = reload_samples.saturating_add(1);
+            if reload_samples >= RX_DESCRIPTOR_RELOAD_ATTEMPT_LIMIT {
+                return Err(Esp32s31PreconnectedRxError::Ring(RxRingError::Busy));
+            }
+            D::after_micros(1).await;
+        }
+
+        let mut progress = Esp32s31RecycledRxProgress {
+            completed_units: 1,
+            completed_descriptors: u32::try_from(descriptor_count).unwrap_or(u32::MAX),
+            discarded_units: u32::from(!staged),
+            paused: false,
+        };
+        if staged {
+            let segment = RxSegment {
+                descriptor_address,
+                descriptor_word0,
+                buffer: &staging[..total_length],
+                next_descriptor_address: 0,
+            };
+            progress.paused = observe(segment) == Esp32s31RecycledRxDirective::Pause;
         }
         Ok(progress)
     }

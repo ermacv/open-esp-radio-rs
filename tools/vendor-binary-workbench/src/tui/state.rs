@@ -559,6 +559,7 @@ mod tests {
             id: "radio-init".to_owned(),
             publication: true,
             replacement_qualification: "qualified".to_owned(),
+            replacement_policy_excluded: 0,
             analysis_inventory_complete: true,
             profiles: vec!["radio".to_owned()],
             roots: 1,

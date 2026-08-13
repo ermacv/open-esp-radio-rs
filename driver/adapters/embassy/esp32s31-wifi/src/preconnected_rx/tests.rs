@@ -1,7 +1,11 @@
 use core::future::{Future, ready};
 
-use open_esp_radio_esp32s31_wifi_dma::descriptor::{BIT_30, DESCRIPTOR_BYTES};
-use open_esp_radio_esp32s31_wifi_mac::rx::{RxDma, RxDmaBinding, RxRingHalted, RxRingStopped};
+use open_esp_radio_esp32s31_wifi_dma::descriptor::{
+    BIT_30, BIT_31, DESCRIPTOR_BYTES, LENGTH_SHIFT,
+};
+use open_esp_radio_esp32s31_wifi_mac::rx::{
+    RxDma, RxDmaBinding, RxDmaWalkerStopped, RxRingHalted, RxRingStopped,
+};
 
 use super::*;
 use crate::rx_dma_service::Esp32s31RxDmaStorage;
@@ -24,10 +28,20 @@ impl Esp32s31PreconnectedRxDelay for ReadyDelay {
 struct Hardware {
     walker: bool,
     descriptor_base: u32,
+    next_descriptor_low: u32,
     last_descriptor_low: u32,
     enable_count: u32,
     disable_count: u32,
     reload_count: u32,
+}
+
+impl Hardware {
+    fn release_through(&mut self, last_index: usize, next_index: Option<usize>) {
+        self.last_descriptor_low = (BASE + last_index as u32 * DESCRIPTOR_BYTES) & 0x000f_ffff;
+        self.next_descriptor_low = next_index
+            .map(|index| (BASE + index as u32 * DESCRIPTOR_BYTES) & 0x000f_ffff)
+            .unwrap_or(0);
+    }
 }
 
 impl RxDma for Hardware {
@@ -35,7 +49,21 @@ impl RxDma for Hardware {
         self.last_descriptor_low
     }
     fn next_descriptor_low(&mut self) -> u32 {
-        BASE + DESCRIPTOR_BYTES
+        self.next_descriptor_low
+    }
+    fn with_ordered_cursor<R>(
+        &mut self,
+        observed: impl for<'confirmation> FnOnce(
+            open_esp_radio_esp32s31_wifi_mac::rx::RxDmaCursorObservation<'confirmation>,
+        ) -> R,
+    ) -> R {
+        let last = self.last_descriptor_low();
+        self.fence();
+        let next = self.next_descriptor_low();
+        self.fence();
+        observed(
+            open_esp_radio_esp32s31_wifi_mac::rx::RxDmaCursorObservation::validation(last, next),
+        )
     }
     fn walker_enabled(&mut self) -> bool {
         self.walker
@@ -43,32 +71,59 @@ impl RxDma for Hardware {
     fn reload_pending(&mut self) -> bool {
         false
     }
+    fn try_with_reload_settled<R>(
+        &mut self,
+        settled: impl for<'confirmation> FnOnce(
+            open_esp_radio_esp32s31_wifi_mac::rx::RxDmaReloadSettled<'confirmation>,
+        ) -> R,
+    ) -> Option<R> {
+        (!self.reload_pending()).then(|| {
+            settled(open_esp_radio_esp32s31_wifi_mac::rx::RxDmaReloadSettled::validation())
+        })
+    }
     fn set_descriptor_high_window(&mut self, _: &RxDmaBinding, _address_high: u16) {}
     fn write_descriptor_base(&mut self, _: &RxDmaBinding, address: u32) {
         self.descriptor_base = address;
     }
     fn publish_walker_enable(&mut self, _: &RxDmaBinding) {
         self.walker = true;
+        if self.next_descriptor_low == 0 {
+            self.next_descriptor_low = self.descriptor_base & 0x000f_ffff;
+        }
     }
     fn request_reload(&mut self, _: &RxDmaBinding) {
         self.reload_count += 1;
     }
-    fn try_enable_walker(&mut self, _: &RxDmaBinding) -> bool {
+    fn try_with_walker_enabled<R>(
+        &mut self,
+        _: &RxDmaBinding,
+        enabled: impl for<'confirmation> FnOnce(
+            open_esp_radio_esp32s31_wifi_mac::rx::RxDmaWalkerEnabled<'confirmation>,
+        ) -> R,
+    ) -> Option<R> {
         if self.walker {
-            false
+            None
         } else {
             self.walker = true;
+            if self.next_descriptor_low == 0 {
+                self.next_descriptor_low = self.descriptor_base & 0x000f_ffff;
+            }
             self.enable_count += 1;
-            true
+            Some(enabled(
+                open_esp_radio_esp32s31_wifi_mac::rx::RxDmaWalkerEnabled::validation(),
+            ))
         }
     }
-    fn try_disable_walker(&mut self) -> bool {
+    fn try_with_walker_stopped<R>(
+        &mut self,
+        stopped: impl for<'confirmation> FnOnce(RxDmaWalkerStopped<'confirmation>) -> R,
+    ) -> Option<R> {
         if self.walker {
             self.walker = false;
             self.disable_count += 1;
-            true
+            Some(stopped(RxDmaWalkerStopped::validation()))
         } else {
-            false
+            None
         }
     }
     fn fence(&mut self) {}
@@ -97,6 +152,7 @@ fn completed_descriptors_are_delivered_in_ring_order_across_wrap() {
     for index in [0, 1] {
         storage.descriptors()[index].write_word0(storage.descriptors()[index].word0() | BIT_30);
     }
+    hardware.release_through(1, Some(2));
     rx.service_completed(&mut hardware, &storage, |_| {
         Esp32s31PreconnectedRxDirective::Continue
     })
@@ -110,6 +166,7 @@ fn completed_descriptors_are_delivered_in_ring_order_across_wrap() {
     for index in [2, 3, 0] {
         storage.descriptors()[index].write_word0(storage.descriptors()[index].word0() | BIT_30);
     }
+    hardware.release_through(3, Some(0));
 
     let mut observed = [usize::MAX; 3];
     let mut count = 0;
@@ -143,6 +200,152 @@ fn halted_ring<'a>(
 }
 
 #[test]
+fn completed_unit_is_recycled_without_waiting_for_a_half_ring() {
+    const UNIT_COUNT: usize = 4;
+    const UNIT_STORAGE_SIZE: usize = UNIT_COUNT * BUFFER_SIZE;
+    let mut storage = Esp32s31RxDmaStorage::<UNIT_COUNT, BUFFER_SIZE, UNIT_STORAGE_SIZE>::new();
+    storage.buffer_mut(0).unwrap()[..4].copy_from_slice(&[1, 2, 3, 4]);
+    let addresses = [0x2f00_2000, 0x2f00_2100, 0x2f00_2200, 0x2f00_2300];
+    let mut hardware = Hardware::default();
+    let prepared = RxRingStopped::prepare(
+        &mut hardware,
+        storage.descriptors(),
+        BASE,
+        &addresses,
+        BUFFER_SIZE as u32,
+        |_| Ok(()),
+    )
+    .unwrap();
+    let mut rx =
+        Esp32s31PreconnectedRx::<ReadyDelay, UNIT_COUNT, BUFFER_SIZE>::from_prepared(prepared);
+    embassy_futures::block_on(rx.start_with_storage(&mut hardware, &storage)).unwrap();
+    storage.descriptors()[0]
+        .write_word0(BUFFER_SIZE as u32 | (4 << LENGTH_SHIFT) | BIT_30 | BIT_31);
+    hardware.last_descriptor_low = BASE & 0x000f_ffff;
+    hardware.next_descriptor_low = (BASE + DESCRIPTOR_BYTES) & 0x000f_ffff;
+
+    let mut staging = [0; 8];
+    let progress = embassy_futures::block_on(rx.service_completed_unit(
+        &mut hardware,
+        &storage,
+        &mut staging,
+        |segment| {
+            assert_eq!(segment.buffer, &[1, 2, 3, 4]);
+            Esp32s31RecycledRxDirective::Pause
+        },
+    ))
+    .unwrap();
+
+    assert_eq!(
+        progress,
+        Esp32s31RecycledRxProgress {
+            completed_units: 1,
+            completed_descriptors: 1,
+            discarded_units: 0,
+            paused: true,
+        }
+    );
+    assert_eq!(storage.descriptors()[0].word0() & BIT_30, 0);
+    assert_eq!(hardware.reload_count, 1);
+    assert!(!rx.reload_pending());
+
+    let settled = embassy_futures::block_on(rx.service_completed_unit(
+        &mut hardware,
+        &storage,
+        &mut staging,
+        |_| panic!("settling an append must not manufacture a second unit"),
+    ))
+    .unwrap();
+    assert_eq!(settled, Esp32s31RecycledRxProgress::default());
+    assert!(!rx.reload_pending());
+}
+
+#[test]
+fn oversize_unit_is_recycled_without_exposing_a_partial_frame() {
+    let mut storage = Esp32s31RxDmaStorage::<COUNT, BUFFER_SIZE, STORAGE_SIZE>::new();
+    storage.buffer_mut(0).unwrap()[..4].copy_from_slice(&[1, 2, 3, 4]);
+    let mut hardware = Hardware::default();
+    let prepared = RxRingStopped::prepare(
+        &mut hardware,
+        storage.descriptors(),
+        BASE,
+        &BUFFERS,
+        BUFFER_SIZE as u32,
+        |_| Ok(()),
+    )
+    .unwrap();
+    let mut rx = Esp32s31PreconnectedRx::<ReadyDelay, COUNT, BUFFER_SIZE>::from_prepared(prepared);
+    embassy_futures::block_on(rx.start_with_storage(&mut hardware, &storage)).unwrap();
+    storage.descriptors()[0]
+        .write_word0(BUFFER_SIZE as u32 | (4 << LENGTH_SHIFT) | BIT_30 | BIT_31);
+    hardware.last_descriptor_low = BASE & 0x000f_ffff;
+    hardware.next_descriptor_low = (BASE + DESCRIPTOR_BYTES) & 0x000f_ffff;
+
+    let mut staging = [0; 2];
+    let progress = embassy_futures::block_on(rx.service_completed_unit(
+        &mut hardware,
+        &storage,
+        &mut staging,
+        |_| panic!("an oversize unit must never expose a partial staging view"),
+    ))
+    .unwrap();
+
+    assert_eq!(progress.completed_units, 1);
+    assert_eq!(progress.completed_descriptors, 1);
+    assert_eq!(progress.discarded_units, 1);
+    assert_eq!(storage.descriptors()[0].word0() & BIT_30, 0);
+}
+
+#[test]
+fn completed_unit_waits_for_hardware_last_descriptor_frontier() {
+    let mut storage = Esp32s31RxDmaStorage::<COUNT, BUFFER_SIZE, STORAGE_SIZE>::new();
+    storage.buffer_mut(0).unwrap()[..4].copy_from_slice(&[1, 2, 3, 4]);
+    let mut hardware = Hardware::default();
+    let prepared = RxRingStopped::prepare(
+        &mut hardware,
+        storage.descriptors(),
+        BASE,
+        &BUFFERS,
+        BUFFER_SIZE as u32,
+        |_| Ok(()),
+    )
+    .unwrap();
+    let mut rx = Esp32s31PreconnectedRx::<ReadyDelay, COUNT, BUFFER_SIZE>::from_prepared(prepared);
+    embassy_futures::block_on(rx.start_with_storage(&mut hardware, &storage)).unwrap();
+    storage.descriptors()[0]
+        .write_word0(BUFFER_SIZE as u32 | (4 << LENGTH_SHIFT) | BIT_30 | BIT_31);
+
+    let mut staging = [0; 8];
+    let early = embassy_futures::block_on(rx.service_completed_unit(
+        &mut hardware,
+        &storage,
+        &mut staging,
+        |_| panic!("RX_DONE without the hardware frontier must not transfer ownership"),
+    ))
+    .unwrap();
+    assert_eq!(early, Esp32s31RecycledRxProgress::default());
+    assert_ne!(storage.descriptors()[0].word0() & BIT_30, 0);
+    assert_eq!(hardware.reload_count, 0);
+
+    hardware.last_descriptor_low = BASE & 0x000f_ffff;
+    hardware.next_descriptor_low = (BASE + DESCRIPTOR_BYTES) & 0x000f_ffff;
+    let released = embassy_futures::block_on(rx.service_completed_unit(
+        &mut hardware,
+        &storage,
+        &mut staging,
+        |segment| {
+            assert_eq!(segment.buffer, &[1, 2, 3, 4]);
+            Esp32s31RecycledRxDirective::Pause
+        },
+    ))
+    .unwrap();
+    assert_eq!(released.completed_units, 1);
+    assert_eq!(released.completed_descriptors, 1);
+    assert_eq!(storage.descriptors()[0].word0() & BIT_30, 0);
+    assert_eq!(hardware.reload_count, 1);
+}
+
+#[test]
 fn owner_services_a_terminal_descriptor_and_round_trips_between_phases() {
     let storage = Esp32s31RxDmaStorage::<COUNT, BUFFER_SIZE, STORAGE_SIZE>::new();
     let mut hardware = Hardware::default();
@@ -155,6 +358,7 @@ fn owner_services_a_terminal_descriptor_and_round_trips_between_phases() {
     for descriptor in storage.descriptors() {
         descriptor.write_word0(descriptor.word0() | BIT_30);
     }
+    hardware.release_through(1, None);
     let progress = rx
         .service_completed(&mut hardware, &storage, |segment| {
             assert_eq!(segment.descriptor_address, BASE);
@@ -190,6 +394,7 @@ fn pause_bounds_one_service_pass_without_retaining_a_terminal_descriptor() {
     for descriptor in storage.descriptors() {
         descriptor.write_word0(descriptor.word0() | BIT_30);
     }
+    hardware.release_through(0, Some(1));
 
     let first = rx
         .service_completed(&mut hardware, &storage, |_| {
@@ -200,6 +405,7 @@ fn pause_bounds_one_service_pass_without_retaining_a_terminal_descriptor() {
     assert!(!first.stopped);
     assert_eq!(storage.descriptors()[0].word0() & BIT_30, 0);
 
+    hardware.release_through(1, Some(0));
     let second = rx
         .service_completed(&mut hardware, &storage, |_| {
             Esp32s31PreconnectedRxDirective::Continue
@@ -219,6 +425,7 @@ fn an_append_remains_explicit_until_a_later_service_settles_it() {
     );
     embassy_futures::block_on(rx.start_with_storage(&mut hardware, &storage)).unwrap();
     storage.descriptors()[0].write_word0(storage.descriptors()[0].word0() | BIT_30);
+    hardware.release_through(0, Some(1));
 
     let completed = rx
         .service_completed(&mut hardware, &storage, |_| {

@@ -2,10 +2,6 @@
 
 use std::collections::BTreeMap;
 
-#[cfg(test)]
-#[cfg(all(test, feature = "esp32s31-harness"))]
-use sha2::{Digest, Sha256};
-
 use crate::{Result, profiles};
 
 mod baseline;
@@ -129,6 +125,7 @@ pub(crate) fn record_evidence(
     Ok(())
 }
 
+#[cfg(test)]
 pub(crate) fn effect_contract_evidence(
     policy: &super::effect_contract::EffectPolicy,
     binding: &super::bindings::Binding,
@@ -288,23 +285,6 @@ pub(crate) fn profile_evidence(profile: &profiles::Profile) -> EvidenceIdentity 
         ],
     )
     .expect("static execution-profile evidence components are valid")
-}
-
-#[cfg(all(test, feature = "esp32s31-harness"))]
-pub(crate) fn semantic_contract_digest_from_sources(
-    label: &str,
-    sources: &[(&str, &str)],
-) -> String {
-    let mut digest = Sha256::new();
-    digest.update(b"open-esp-radio semantic contract\0");
-    digest.update(label.as_bytes());
-    for (name, source) in sources {
-        digest.update([0]);
-        digest.update(name.as_bytes());
-        digest.update([0]);
-        digest.update(source.as_bytes());
-    }
-    format!("{:x}", digest.finalize())
 }
 
 pub(crate) fn semantic_contract_evidence(harness_id: &str, label: &str) -> EvidenceIdentity {

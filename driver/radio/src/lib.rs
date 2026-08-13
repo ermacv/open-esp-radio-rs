@@ -28,11 +28,12 @@ pub use open_esp_radio_wifi_softmac::{
 };
 #[cfg(feature = "wifi")]
 pub use requests::{
-    AccessPointClientLimit, AccessPointClientLimitError, AccessPointRequest,
-    AccessPointRequestError, AccessPointSecurity, MonitorCapturePolicy, MonitorRequest,
-    StationDiscovery, StationRequest, StationScanChannelIter, StationScanChannelOrderIter,
-    StationScanChannels, StationScanChannelsError, StationScanPolicy, StationSecurity,
-    WifiScanRequest, WifiServicePlanningError, WifiServicePlanningFailure, WifiServiceRequest,
+    AccessPointClientLimit, AccessPointClientLimitError, AccessPointInactiveTimeout,
+    AccessPointInactiveTimeoutError, AccessPointRequest, AccessPointRequestError,
+    AccessPointSecurity, MonitorCapturePolicy, MonitorRequest, StationDiscovery, StationRequest,
+    StationScanChannelIter, StationScanChannelOrderIter, StationScanChannels,
+    StationScanChannelsError, StationScanPolicy, StationSecurity, WifiScanRequest,
+    WifiServicePlanningError, WifiServicePlanningFailure, WifiServiceRequest,
     WifiServiceRequestError, WifiServiceRequestFailure, WifiSupervisorConfiguration,
 };
 #[cfg(feature = "wifi")]

@@ -14,7 +14,8 @@ pub mod service;
 
 pub use service::{
     AP_MAX_CLIENTS, AP_STATUS_INVALID_RSN, AP_STATUS_SUCCESS, AP_STATUS_TOO_MANY_STATIONS,
-    AccessPointClientLimit, AccessPointClientLimitError, AccessPointPeerStorage,
-    AccessPointService, AccessPointServiceStatus, ApMlmeAction, ApPeerPhase, ApPeerStatus,
-    ApServiceError, ApWpa2Error, ApWpa2Progress,
+    AccessPointClientLimit, AccessPointClientLimitError, AccessPointInactiveTimeout,
+    AccessPointInactiveTimeoutError, AccessPointPeerStorage, AccessPointService,
+    AccessPointServiceStatus, ApMlmeAction, ApPeerClose, ApPeerCloseKind, ApPeerPhase,
+    ApPeerStatus, ApServiceError, ApWpa2Error, ApWpa2Progress,
 };

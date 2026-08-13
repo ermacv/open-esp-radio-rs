@@ -66,6 +66,17 @@ impl<'registers> WifiMacHal<'registers> {
         self.registers.apply_sta_ap_receive_plan(plan);
     }
 
+    /// Stop the access-point TSF using the complete reviewed vendor leaf.
+    pub fn stop_access_point_tsf(&mut self) {
+        self.registers.stop_softap_tsf();
+    }
+
+    /// Start a new access-point TSF epoch through the reviewed selector-zero
+    /// transaction. No raw timestamp word or register image crosses the HAL.
+    pub fn reset_and_start_access_point_tsf(&mut self) {
+        self.registers.reset_and_start_softap_tsf();
+    }
+
     /// Publish the complete two-edge receive-beacon PTI transaction.
     pub fn set_rx_beacon_pti(&mut self, beacon: MacPti, shared: MacPti) {
         self.registers.set_rx_beacon_pti(beacon, shared);

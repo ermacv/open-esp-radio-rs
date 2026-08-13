@@ -7,7 +7,7 @@ The implementation is split by responsibility:
 - `crates/analysis-model` owns architecture-neutral symbolic/reference IR,
   indexed-MMIO proofs and the physical register-catalog model populated by SVD
   imports or direct reviewed-model identities;
-- `tools/register-model` owns the editable schema-2 hardware model, clean SVD
+- `crates/register-model` owns the editable schema-2 hardware model, clean SVD
   encoding, generic model invariants and reusable PAC/evidence pack schemas;
 - `crates/semantics` owns architecture-neutral effect-policy, verification
   request/result and evidence-source interfaces;
@@ -17,10 +17,6 @@ The implementation is split by responsibility:
 - `crates/backend-riscv` owns ELF decoding, RISC-V relocations, reference CFG
   analysis, code generation, the RV32 machine and image auditing; it consumes
   execution environments from `execution-model`;
-- `crates/harness-esp32s31` owns the external ABI versions and lifecycle
-  fixture data and depends only on contracts;
-- `crates/harness-esp32s31-semantic` owns reviewed summaries, typed
-  verification and the only workbench-side dependency on the production PHY;
 - `analysis` contains the thin architecture-facing artifact service;
 - `application` owns project analysis, linked-IR build, publication, status
   and frontend-neutral workspace/detail services;
@@ -41,19 +37,18 @@ The implementation is split by responsibility:
   without private report DTOs and without feeding facts or semantics back into
   those analyzers;
 - `verification` owns profiles, dispositions, evidence and comparisons;
-- `harnesses` owns one static descriptor registry; the optional
-  `esp32s31-harness` feature contributes the ESP32-S31 descriptor and is the
-  only path to its production-driver dependencies;
-- `verification/vendor/targets/esp32s31` owns the checked target/profile/disposition data;
+- `harnesses` owns the runtime provider registry API; the standalone binary
+  installs an empty registry;
+- the consuming repository owns compiled target providers, checked target
+  packs and production-driver dependencies;
 - `cli` parses a typed top-level command and dispatches it to those services.
 
 The backend depends only on neutral contracts, analysis and execution-model
 crates. Chip-specific secondary-return recognition and reviewed summaries are
 supplied through the typed `RiscvHarnessSpec`; the backend contains no platform
 registry and does not own device or callback-table vocabulary. The neutral
-facade build has no production PHY/MAC dependency. The default build enables
-no compiled harness. Enabling `esp32s31-harness` adds the optional ESP32-S31
-descriptor, whose dependency ends at the ESP32-S31 semantic harness boundary.
+facade build has no production PHY/MAC dependency. The open-esp-radio-rs host
+registers its ESP32-S31 descriptor through `main_entry_with_harnesses`.
 
 Register discovery facts and coverage remain in the workbench facade. The
 shared register-model crate knows neither artifacts nor targets. A project may
@@ -296,12 +291,11 @@ exports while delegating to:
 The comparator consumes `EffectPolicy` through its public query methods.
 Parser and comparison logic do not access the policy's internal rule map.
 
-## ESP32-S31 reviewed-summary layout
+## Product-provider layout
 
-`harness-esp32s31-semantic/src/reviewed_summaries.rs` is the single registry
-facade used by the backend hooks. It applies reviewed recognizers in an
-explicit order and delegates exact identity checks and trace construction to
-subsystem modules:
+A target provider owns its reviewed-summary registry and applies recognizers
+in an explicit order. The generic provider API carries the resulting hooks,
+requests and typed reports without acquiring target vocabulary.
 
 | Module | Responsibility |
 | --- | --- |

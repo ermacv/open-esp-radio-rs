@@ -7,7 +7,7 @@ binary="$workspace_root/target/workbench/vendor-binary-workbench"
 
 if [[ ! -x "$binary" ]]; then
     echo "error: optimized workbench binary is missing: $binary" >&2
-    echo "build it first with: cargo build --profile workbench -p open-radio-vendor-binary-workbench --bin vendor-binary-workbench" >&2
+    echo "build it first with: cargo build --profile workbench -p open-radio-vendor-workbench-esp32s31-host --bin vendor-binary-workbench" >&2
     exit 2
 fi
 

@@ -1,6 +1,7 @@
 use crate::{
-    COEX_TIMER_COUNT, CoexClockHardware, CoexError, CoexEventDurations, CoexEventId, CoexPti,
-    CoexPtiTable, CoexRequest, CoexTimerHardware, CoexTimerIndex, program_timer,
+    COEX_TIMER_COUNT, CoexClient, CoexClientRequest, CoexClockHardware, CoexError,
+    CoexEventDurations, CoexEventId, CoexPti, CoexPtiTable, CoexTimerHardware, CoexTimerIndex,
+    model::CoexRequest, program_timer,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -46,11 +47,30 @@ impl CoexCore {
     /// The explicit enabled guard is Rust lifecycle policy. With that
     /// precondition satisfied, unmapped events follow `coex_core_request` and
     /// return the vendor invalid-event status instead of becoming no-ops.
-    pub fn request<H: CoexTimerHardware, C: CoexClockHardware>(
+    pub fn request_wifi<H: CoexTimerHardware, C: CoexClockHardware>(
         &mut self,
         hardware: &mut H,
         clock: &mut C,
-        request: CoexRequest,
+        request: CoexClientRequest,
+    ) -> Result<CoexTimerIndex, CoexError> {
+        self.request(hardware, clock, CoexClient::Wifi, request)
+    }
+
+    pub fn request_bluetooth<H: CoexTimerHardware, C: CoexClockHardware>(
+        &mut self,
+        hardware: &mut H,
+        clock: &mut C,
+        request: CoexClientRequest,
+    ) -> Result<CoexTimerIndex, CoexError> {
+        self.request(hardware, clock, CoexClient::Bluetooth, request)
+    }
+
+    fn request<H: CoexTimerHardware, C: CoexClockHardware>(
+        &mut self,
+        hardware: &mut H,
+        clock: &mut C,
+        client: CoexClient,
+        request: CoexClientRequest,
     ) -> Result<CoexTimerIndex, CoexError> {
         if !self.enabled {
             return Err(CoexError::Disabled);
@@ -60,13 +80,13 @@ impl CoexCore {
             hardware,
             clock,
             index,
-            request.client,
+            client,
             self.pti.pti(request.event),
             request.latency,
             request.duration,
         )?;
         hardware.enable(index)?;
-        self.active[usize::from(index.value())] = Some(request);
+        self.active[usize::from(index.value())] = Some(CoexRequest { client, request });
         Ok(index)
     }
 

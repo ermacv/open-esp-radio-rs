@@ -805,6 +805,7 @@ fn load_verification_workspace(
                 &[
                     "id",
                     "vendor",
+                    "auxiliary-sources",
                     "rust-artifact-role",
                     "rust-companion-role",
                     "rust-prefix",
@@ -827,6 +828,16 @@ fn load_verification_workspace(
                 ));
             }
             let vendor = parse_verification_vendor(suite, &context, source)?;
+            let auxiliary_sources = suite
+                .get("auxiliary-sources")
+                .map(|_| {
+                    table_string_array(suite, "auxiliary-sources", &context, source, true)?
+                        .into_iter()
+                        .map(|value| value.parse().map_err(crate::Error::invalid))
+                        .collect::<Result<Vec<_>>>()
+                })
+                .transpose()?
+                .unwrap_or_default();
 
             let rust_artifact_role =
                 parse_rust_input_role(suite, "rust-artifact-role", &context, source, false)?
@@ -854,6 +865,7 @@ fn load_verification_workspace(
                 })
                 .transpose()?;
             let gate = match (gate_name.as_str(), match_floor) {
+                ("informational", None) => ProjectVerificationGate::Informational,
                 ("completion", None) => ProjectVerificationGate::Completion,
                 ("regression", Some(match_floor)) => {
                     ProjectVerificationGate::Regression { match_floor }
@@ -876,13 +888,16 @@ fn load_verification_workspace(
                     return Err(source.table_key(
                         suite,
                         "gate",
-                        format!("{context}.gate must be \"completion\" or \"regression\""),
+                        format!(
+                            "{context}.gate must be \"informational\", \"completion\" or \"regression\""
+                        ),
                     ));
                 }
             };
             Ok(VerificationSuiteSpec {
                 id,
                 vendor,
+                auxiliary_sources,
                 rust_artifact_role,
                 rust_companion_role,
                 rust_prefix,

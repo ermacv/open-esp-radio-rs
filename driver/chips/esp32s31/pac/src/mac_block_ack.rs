@@ -2,7 +2,10 @@
 
 #![forbid(unsafe_code)]
 
-use super::{MacInterface, RadioRegisters};
+use super::{
+    MacInterface, MacRxBlockAckEntryIndex, MacRxBlockAckStartingSequence, MacRxBlockAckTid,
+    MacRxBlockAckWindow, RadioRegisters,
+};
 
 /// Result sampled for one completed TX hardware queue.
 ///
@@ -84,13 +87,13 @@ pub struct RxBlockAckEntrySnapshot {
 const fn rx_block_ack_images(
     interface: MacInterface,
     peer: [u8; 6],
-    tid: u8,
-    window: u16,
+    tid: MacRxBlockAckTid,
+    window: MacRxBlockAckWindow,
 ) -> RxBlockAckImages {
     let peer_head = u32::from_le_bytes([peer[0], peer[1], peer[2], peer[3]]);
     let peer_tail = u16::from_le_bytes([peer[4], peer[5]]) as u32;
-    let peer_tail_and_policy = peer_tail | (interface.bits() << 16) | ((window as u32) << 18);
-    let active_control = 0xc000_0001 | ((tid as u32) << 12);
+    let peer_tail_and_policy = peer_tail | (interface.bits() << 16) | (window.get() << 18);
+    let active_control = 0xc000_0001 | (tid.get() << 12);
     RxBlockAckImages {
         peer_head,
         peer_tail_and_policy,
@@ -98,8 +101,8 @@ const fn rx_block_ack_images(
     }
 }
 
-const fn rx_block_ack_register_index(hardware_index: u8) -> usize {
-    7 - hardware_index as usize
+const fn rx_block_ack_register_index(hardware_index: MacRxBlockAckEntryIndex) -> usize {
+    7 - hardware_index.get() as usize
 }
 
 impl RadioRegisters {
@@ -146,61 +149,50 @@ impl RadioRegisters {
     /// at `0x2010_4274`; each successive index subtracts `0x24`.
     pub fn program_rx_block_ack_entry(
         &mut self,
-        hardware_index: u8,
+        hardware_index: MacRxBlockAckEntryIndex,
         interface: MacInterface,
         peer: [u8; 6],
-        tid: u8,
-        starting_sequence: u16,
-        window: u16,
+        tid: MacRxBlockAckTid,
+        starting_sequence: MacRxBlockAckStartingSequence,
+        window: MacRxBlockAckWindow,
     ) {
-        assert!(hardware_index < 8);
-        assert!(tid <= 15);
-        assert!(starting_sequence <= 0x0fff);
-        assert!((1..=0x7f).contains(&window));
-
         let block = &self.peripherals.wifi_mac_rx_dma;
         let register_index = rx_block_ack_register_index(hardware_index);
         let images = rx_block_ack_images(interface, peer, tid, window);
         let peer_tail = images.peer_tail_and_policy as u16;
 
-        open_esp_radio_esp32s31_pac_raw::zero_based_field_write::rx_block_ack_peer_head(
+        super::svd::zero_based_field_write::rx_block_ack_peer_head(
             block,
             register_index,
             images.peer_head,
         );
-        open_esp_radio_esp32s31_pac_raw::zero_based_field_write::rx_block_ack_peer_tail_and_policy(
+        super::svd::zero_based_field_write::rx_block_ack_peer_tail_and_policy(
             block,
             register_index,
             peer_tail,
             interface.bits() as u8,
-            window as u8,
+            window.get() as u8,
         );
         block
             .rx_block_ack_entry_start_sequence_load(register_index)
-            .modify(|_, w| w.sequence().set(starting_sequence));
+            .modify(|_, w| w.sequence().set(starting_sequence.get() as u16));
         block
             .rx_block_ack_entry_control(register_index)
             .modify(|_, w| w.valid().clear_bit());
-        open_esp_radio_esp32s31_pac_raw::zero_register_write::clear_rx_block_ack_bitmap_low_load(
-            block,
-            register_index,
-        );
-        open_esp_radio_esp32s31_pac_raw::zero_register_write::clear_rx_block_ack_bitmap_high_load(
-            block,
-            register_index,
-        );
-        let update_bit = 1_u8 << hardware_index;
+        super::svd::zero_register_write::clear_rx_block_ack_bitmap_low_load(block, register_index);
+        super::svd::zero_register_write::clear_rx_block_ack_bitmap_high_load(block, register_index);
+        let update_bit = 1_u8 << hardware_index.get();
         // The checked index keeps the OR result inside the eight-bit field.
         // This preserves the blob's fresh-read OR operation.
         block.rx_block_ack_agreement_update().modify(|r, w| {
             w.ordinary_entry_update()
                 .set(r.ordinary_entry_update().bits() | update_bit)
         });
-        open_esp_radio_esp32s31_pac_raw::zero_based_field_write::rx_block_ack_active_control(
+        super::svd::zero_based_field_write::rx_block_ack_active_control(
             block,
             register_index,
             true,
-            tid,
+            tid.get() as u8,
             true,
             true,
         );
@@ -210,39 +202,26 @@ impl RadioRegisters {
     ///
     /// SOURCE: complete `libpp.a[hal_ampdu.o]::
     /// hal_agreement_del_rx_ba`, size `0x72`.
-    pub fn delete_rx_block_ack_entry(&mut self, hardware_index: u8) {
-        assert!(hardware_index < 8);
+    pub fn delete_rx_block_ack_entry(&mut self, hardware_index: MacRxBlockAckEntryIndex) {
         let block = &self.peripherals.wifi_mac_rx_dma;
         let register_index = rx_block_ack_register_index(hardware_index);
         block
             .rx_block_ack_entry_control(register_index)
             .modify(|_, w| w.valid().clear_bit());
-        open_esp_radio_esp32s31_pac_raw::zero_register_write::clear_rx_block_ack_bitmap_low_load(
-            block,
-            register_index,
-        );
-        open_esp_radio_esp32s31_pac_raw::zero_register_write::clear_rx_block_ack_bitmap_high_load(
-            block,
-            register_index,
-        );
+        super::svd::zero_register_write::clear_rx_block_ack_bitmap_low_load(block, register_index);
+        super::svd::zero_register_write::clear_rx_block_ack_bitmap_high_load(block, register_index);
         block
             .rx_block_ack_entry_control(register_index)
             .modify(|_, w| w.valid().set_bit());
         // The final full-word zero is a distinct observable edge in the blob.
-        open_esp_radio_esp32s31_pac_raw::zero_register_write::clear_rx_block_ack_entry_control(
-            block,
-            register_index,
-        );
+        super::svd::zero_register_write::clear_rx_block_ack_entry_control(block, register_index);
     }
 
     /// Sample both hardware-maintained and software-load words of one entry.
     pub fn rx_block_ack_entry_snapshot(
         &self,
-        hardware_index: u8,
+        hardware_index: MacRxBlockAckEntryIndex,
     ) -> Option<RxBlockAckEntrySnapshot> {
-        if hardware_index >= 8 {
-            return None;
-        }
         let block = &self.peripherals.wifi_mac_rx_dma;
         let register_index = rx_block_ack_register_index(hardware_index);
         let control = block
@@ -522,7 +501,9 @@ impl RadioRegisters {
 
 #[cfg(test)]
 mod tests {
-    use super::{MacInterface, RxBlockAckImages, rx_block_ack_images};
+    use super::{
+        MacInterface, MacRxBlockAckTid, MacRxBlockAckWindow, RxBlockAckImages, rx_block_ack_images,
+    };
 
     #[test]
     fn rx_block_ack_images_match_the_recovered_leaf() {
@@ -530,8 +511,8 @@ mod tests {
             rx_block_ack_images(
                 MacInterface::AccessPoint,
                 [0x70, 0x15, 0xfb, 0xa8, 0x48, 0xf0],
-                6,
-                16,
+                MacRxBlockAckTid::new(6).unwrap(),
+                MacRxBlockAckWindow::new(16).unwrap(),
             ),
             RxBlockAckImages {
                 peer_head: 0xa8fb_1570,

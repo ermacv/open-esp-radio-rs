@@ -6,7 +6,10 @@
 
 #![forbid(unsafe_code)]
 
-use open_esp_radio_esp32s31_pac::{MacInterface, RadioRegisters};
+use open_esp_radio_esp32s31_pac::{
+    MacInterface, MacRxBlockAckEntryIndex, MacRxBlockAckStartingSequence, MacRxBlockAckTid,
+    MacRxBlockAckWindow, RadioRegisters,
+};
 
 const RX_BLOCK_ACK_CAPACITY: u8 = 8;
 /// Highest receive BlockAck TID accepted by the vendor net80211 state machine.
@@ -74,12 +77,15 @@ pub fn program(
 ) -> Result<(), S31RxBlockAckAgreementError> {
     let agreement = agreement.validate()?;
     mmio.program_rx_block_ack_entry(
-        agreement.hardware_index,
+        MacRxBlockAckEntryIndex::new(u32::from(agreement.hardware_index))
+            .expect("validated receive BlockAck hardware index"),
         agreement.interface,
         agreement.peer,
-        agreement.tid,
-        agreement.starting_sequence,
-        agreement.window,
+        MacRxBlockAckTid::new(u32::from(agreement.tid)).expect("validated receive BlockAck TID"),
+        MacRxBlockAckStartingSequence::new(u32::from(agreement.starting_sequence))
+            .expect("validated receive BlockAck starting sequence"),
+        MacRxBlockAckWindow::new(u32::from(agreement.window))
+            .expect("validated receive BlockAck window"),
     );
     Ok(())
 }
@@ -94,7 +100,10 @@ pub fn clear(
     if hardware_index >= RX_BLOCK_ACK_CAPACITY {
         return Err(S31RxBlockAckAgreementError::HardwareIndex(hardware_index));
     }
-    mmio.delete_rx_block_ack_entry(hardware_index);
+    mmio.delete_rx_block_ack_entry(
+        MacRxBlockAckEntryIndex::new(u32::from(hardware_index))
+            .expect("validated receive BlockAck hardware index"),
+    );
     Ok(())
 }
 

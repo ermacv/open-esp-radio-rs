@@ -2,7 +2,7 @@
 
 #![forbid(unsafe_code)]
 
-use super::RadioRegisters;
+use super::{CoexTimerClientValue, CoexTimerPtiValue, CoexTimerTickImage, RadioRegisters};
 
 pub const COEX_TIMER_COUNT: u8 = 5;
 
@@ -92,14 +92,14 @@ impl RadioRegisters {
     pub fn configure_coex_timer(
         &mut self,
         timer: CoexTimerRegister,
-        parameter_1: u8,
-        parameter_2: u8,
+        parameter_1: CoexTimerClientValue,
+        parameter_2: CoexTimerPtiValue,
     ) {
         let index = timer.index();
         let timers = &self.peripherals.coex_hw_timer;
         let configuration = timers.configuration(index);
-        configuration.modify(|_, writer| writer.parameter_1().set(parameter_1 & 0x03));
-        configuration.modify(|_, writer| writer.parameter_2().set(parameter_2 & 0x0f));
+        configuration.modify(|_, writer| writer.parameter_1().set(parameter_1.get() as u8));
+        configuration.modify(|_, writer| writer.parameter_2().set(parameter_2.get() as u8));
     }
 
     /// Publish the converted primary target in the third fresh-read RMW edge
@@ -107,17 +107,13 @@ impl RadioRegisters {
     pub fn set_coex_timer_primary_target(
         &mut self,
         timer: CoexTimerRegister,
-        primary_tick_image: u32,
+        primary_tick_image: CoexTimerTickImage,
     ) {
         let index = timer.index();
         self.peripherals
             .coex_hw_timer
             .configuration(index)
-            .modify(|_, writer| {
-                writer
-                    .primary_tick_image()
-                    .set(primary_tick_image & 0x00ff_ffff)
-            });
+            .modify(|_, writer| writer.primary_tick_image().set(primary_tick_image.get()));
     }
 
     /// Publish the converted secondary target in the final fresh-read RMW
@@ -125,7 +121,7 @@ impl RadioRegisters {
     pub fn set_coex_timer_secondary_target(
         &mut self,
         timer: CoexTimerRegister,
-        secondary_tick_image: u32,
+        secondary_tick_image: CoexTimerTickImage,
     ) {
         let index = timer.index();
         self.peripherals
@@ -134,7 +130,7 @@ impl RadioRegisters {
             .modify(|_, writer| {
                 writer
                     .secondary_tick_image()
-                    .set(secondary_tick_image & 0x00ff_ffff)
+                    .set(secondary_tick_image.get())
             });
     }
 }
@@ -153,5 +149,15 @@ mod tests {
             );
         }
         assert_eq!(CoexTimerRegister::new(COEX_TIMER_COUNT), None);
+    }
+
+    #[test]
+    fn generated_timer_fields_reject_values_the_register_cannot_represent() {
+        assert!(CoexTimerClientValue::new(3).is_some());
+        assert!(CoexTimerClientValue::new(4).is_none());
+        assert!(CoexTimerPtiValue::new(15).is_some());
+        assert!(CoexTimerPtiValue::new(16).is_none());
+        assert!(CoexTimerTickImage::new(0x00ff_ffff).is_some());
+        assert!(CoexTimerTickImage::new(0x0100_0000).is_none());
     }
 }

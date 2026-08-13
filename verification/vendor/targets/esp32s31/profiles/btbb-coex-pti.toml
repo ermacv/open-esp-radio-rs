@@ -1,0 +1,20 @@
+schema = 3
+
+# Complete leaf with no arguments or control-flow alternatives. Scripted reads
+# retain the hardware-observed first write in the second fresh register sample.
+[[profiles]]
+name = "btbb-coex-pti"
+claim = "whole-function-equivalence"
+vendor-source = "btbb"
+vendor-symbol = "coex_pti_v2"
+rust-symbol = "open_btbb_coex_trace_coex_pti_v2"
+compare-return = false
+
+[[profiles.cases]]
+name = "nonzero-preserved-halves"
+[[profiles.cases.mmio-reads]]
+address = 0x20100010
+value = 0xa5a55a5a
+[[profiles.cases.mmio-reads]]
+address = 0x20100010
+value = 0x06405a5a

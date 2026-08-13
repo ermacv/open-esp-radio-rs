@@ -1,4 +1,4 @@
-schema = 1
+schema = 2
 # Time conversion and timer-value programming are isolated from the four
 # instruction-exact control leaves so their incomplete clock projection cannot
 # hide the independently qualified control surface.
@@ -12,6 +12,7 @@ disposition = "bounded-feature"
 protocol = "coex"
 rust-component = "open_esp_radio_esp32s31_coex::program_timer"
 binding = "v1"
+rust-binding = "exact-production-entry"
 rust-probe = "open_coex_set_trace_coex_hw_timer_set"
 effect-contract = "exact-effects-v1"
 [[functions.effects]]

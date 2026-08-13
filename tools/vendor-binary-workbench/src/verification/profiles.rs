@@ -19,9 +19,6 @@ use super::dispositions::validate_source_id;
 
 mod validation;
 
-#[cfg(test)]
-use validation::validate_argument_domain;
-
 #[derive(Clone, Debug)]
 pub struct Profile {
     pub name: String,
@@ -575,13 +572,6 @@ pub fn load(path: &Path) -> Result<Vec<Profile>> {
     })
 }
 
-#[cfg(test)]
-fn parse(input: &str) -> Result<Vec<Profile>> {
-    let document: ProfileDocument = toml_edit::de::from_str(input)
-        .map_err(|error| crate::Error::invalid(format!("invalid profile TOML: {error}")))?;
-    finish(document)
-}
-
 fn finish(document: ProfileDocument) -> Result<Vec<Profile>> {
     if document.schema != 3 {
         return Err(crate::Error::invalid(
@@ -599,7 +589,3 @@ fn finish(document: ProfileDocument) -> Result<Vec<Profile>> {
         .map(ProfileInput::finish)
         .collect()
 }
-
-#[cfg(test)]
-#[path = "../harnesses/esp32s31/profiles_tests.rs"]
-mod tests;

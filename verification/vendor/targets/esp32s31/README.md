@@ -1,13 +1,23 @@
 # ESP32-S31 vendor-analysis project
 
 This directory is a complete Vendor Binary Workbench project for the
-ESP32-S31 rev0 radio stack. The normal repository binary includes its compiled
-platform harness. Build with `--no-default-features` only when developing the
-platform-neutral backend.
+ESP32-S31 rev0 radio stack. Its `workbench-host/` binary links the generic
+Workbench facade with the target-owned providers from `workbench-provider/`.
+The generic `open-radio-vendor-binary-workbench` package remains platform
+neutral and does not depend on the ESP32-S31 driver, SVD, evidence, or harness.
+
+The repository's `cargo vendor-binary-workbench` alias selects this product
+host. Use the generic package directly only while developing the standalone
+analysis engine.
 
 `vendor-project.toml` is the only normal entry point. Do not pass the target,
 memory map, SVD, interface pack, or function pack separately: the project
 manifest composes them.
+
+`semantics/embedded-platform.toml` is the project's pinned reusable semantic
+vocabulary. It is deliberately versioned beside the interface/function packs
+instead of referring into the Workbench source tree, so a project revision
+remains reproducible against an exact standalone Workbench revision.
 
 ## First use
 
@@ -71,7 +81,7 @@ Cold artifact-wide analysis must use the optimized, resource-limited binary:
 
 ```console
 CARGO_BUILD_JOBS=2 cargo build --profile workbench \
-  -p open-radio-vendor-binary-workbench --bin vendor-binary-workbench
+  -p open-radio-vendor-workbench-esp32s31-host --bin vendor-binary-workbench
 
 tools/vendor-binary-workbench/scripts/run-limited \
   project analyze \
@@ -110,6 +120,24 @@ cargo vendor-binary-workbench project verify --suite wifi-sta-ap-receive \
   --project verification/vendor/targets/esp32s31/vendor-project.toml \
   --run-spec verification/vendor/targets/esp32s31/local.toml
 ```
+
+The AP TSF stop edge is an independently executable lower-layer proof:
+
+```console
+cargo vendor-binary-workbench project verify --suite wifi-ap-tsf-stop \
+  --project verification/vendor/targets/esp32s31/vendor-project.toml \
+  --run-spec verification/vendor/targets/esp32s31/local.toml
+
+cargo vendor-binary-workbench project feature wifi-ap-tsf-stop --phase stop \
+  --project verification/vendor/targets/esp32s31/vendor-project.toml
+```
+
+It proves `libpp:hal_disable_softap_tsf` against the production
+`wifi_mac::ap_tsf -> WifiMacHal -> RadioRegisters` path: one fresh read of
+`WIFI_MAC_AUX_TSF_CONTROL.SOFTAP_CONTROL`, followed by one write that preserves
+bits 29:0 and clears bits 31:30. The comparison deliberately admits no extra
+fence or MMIO edge. This qualifies the register transaction, not the AP
+runtime's decision about when teardown is safe.
 
 The first suite proves the complete address/BSSID leaves for STA=0 and AP=1.
 The second uses one cross-archive linked oracle to execute exactly the sparse
@@ -272,11 +300,22 @@ cargo vendor-binary-workbench project feature wifi-mac-coex-register-programming
   --project verification/vendor/targets/esp32s31/vendor-project.toml
 ```
 
+Use the top-level static product gate to see which capability is still open,
+then inspect that leaf rather than reading one monolithic AP report:
+
+```console
+cargo vendor-binary-workbench project feature esp32s31-static-radio-contract \
+  --project verification/vendor/targets/esp32s31/vendor-project.toml
+cargo vendor-binary-workbench project feature wifi-ap-stop-boundary --phase stop \
+  --project verification/vendor/targets/esp32s31/vendor-project.toml
+```
+
 Their production path is `StaApRegisterHardware`/`WifiMacHal` and
 `CoexTimerHardware`/`CoexTimerHal`. These APIs accept finite interface, timer,
 PTI and policy types and expose no register addresses. This proves the named
 register transactions only; shared-channel scheduling, beacon ownership and
-runtime AP+STA arbitration remain separate lifecycle obligations.
+runtime AP+STA arbitration remain separate lifecycle obligations and keep the
+top-level gate blocked until reviewed.
 
 Wi-Fi DMA descriptors are DMA-visible RAM, not PAC/MMIO registers. Raw
 `word0 | BIT_30` expressions in host tests emulate hardware completion and do
@@ -298,6 +337,37 @@ dispositions, and accepted baselines live in their corresponding TOML
 directories. Those files, rather than prose command lists, are the source of
 truth for current coverage. Candidate evidence is always separate from
 accepted baselines.
+
+The RX DMA pilot demonstrates the required production-binding architecture.
+`libpp-replay` is an auxiliary, relocation-complete vendor ELF used to execute
+the real `wDev_AppendRxBlocks`; it is not added to the suite coverage inventory.
+The Rust probe invokes the production `RxDmaStorage` and
+`RxStagePool::stage_dma_unit_recycle_bounded` path. The provider checks a
+compact append/rearm/refinement contract and does not contain a second RX-ring
+algorithm or a hand-maintained full expected trace. Its maximum claim is
+`reviewed-refinement`, not whole-function equivalence.
+
+Audit this boundary directly before reviewing any baseline:
+
+```console
+cargo vendor-binary-workbench project audit bindings \
+  --project verification/vendor/targets/esp32s31/vendor-project.toml
+```
+
+The required-feature closure now has no binding-trust blockers. In particular,
+the MAC IRQ slice, ordinary TX ownership publication, AP/STA key role and STA
+join protocol boundary all use concrete vendor replay plus a shared production
+Rust core. Older lifted/static checks remain visible outside that closure as
+research-only evidence and cannot be promoted by an accepted baseline.
+
+The TX adapter executes the real vendor `hal_mac_txq_enable` non-HE path and
+the real `TxSlot::submit_legacy` production path for all four queues, including
+already-active guards and DMA ownership-before-doorbell ordering. The key-role
+adapter replays `hal_crypto_set_key_entry` for context zero/one and executes the
+production STA/AP CCMP builders. The STA adapter replays the Authentication and
+Association entries of `ieee80211_sta_new_state`, including management-call
+arguments and the 1,000-ms timer arm, then executes the production
+`StaJoinRunner` success/timeout cases.
 
 For the generic workflow and schema rationale, see
 [`tools/vendor-binary-workbench/docs/getting-started.md`](../../../../tools/vendor-binary-workbench/docs/getting-started.md).

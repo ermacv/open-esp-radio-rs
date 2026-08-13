@@ -33,6 +33,7 @@ pub(crate) fn verify_source(
     rust_prefix: &str,
     execution_profiles: &[profiles::Profile],
     disposition_manifest: Option<&dispositions::Manifest>,
+    auxiliary_artifacts: &[open_radio_vendor_semantics::DriverAdapterArtifact<'_>],
     evidence: &mut EvidenceSet,
 ) -> Result<SourceVerificationReport> {
     let vendor_symbols = vendor_symbols(source)?;
@@ -136,6 +137,7 @@ pub(crate) fn verify_source(
                     vendor_inventory: source.inventory,
                     vendor_artifact: source.artifact,
                     vendor_companion: source.companion,
+                    auxiliary_artifacts,
                     rust_artifact,
                     rust_companion,
                     rust_symbol: &binding.rust_probe,
@@ -144,6 +146,21 @@ pub(crate) fn verify_source(
             )?
             .ok_or_else(|| format!("no harness registered driver adapter {}", adapter.label()))
             .map_err(crate::Error::invalid)?;
+            let registered_trust =
+                harnesses::driver_adapter_evidence_sources(harness, adapter.label())
+                    .ok_or_else(|| {
+                        crate::Error::invalid(format!(
+                            "driver adapter {} has no registered trust boundary",
+                            adapter.label()
+                        ))
+                    })?
+                    .trust;
+            if proof.trust != registered_trust || proof.claim != registered_trust.claim() {
+                return Err(crate::Error::invalid(format!(
+                    "driver adapter {} returned trust/claim inconsistent with its registered trust boundary",
+                    adapter.label()
+                )));
+            }
             let whole_function = proof.claim
                 == open_radio_vendor_semantics::DriverAdapterClaim::WholeFunctionEquivalence;
             let bounded_feature = entry.disposition.is_bounded_feature();
@@ -228,7 +245,7 @@ pub(crate) fn verify_source(
             }
             if proof.matched && !whole_function {
                 function.reason = Some(format!(
-                    "{} evidence establishes only the reviewed bounded feature, not whole-function vendor equivalence",
+                    "{} evidence establishes only its declared reviewed claim domain, not whole-function vendor equivalence",
                     match proof.claim {
                         open_radio_vendor_semantics::DriverAdapterClaim::ReviewedProjection =>
                             "reviewed projection",
@@ -236,6 +253,8 @@ pub(crate) fn verify_source(
                             "Rust conformance",
                         open_radio_vendor_semantics::DriverAdapterClaim::ReviewedDomainEquivalence =>
                             "reviewed domain equivalence",
+                        open_radio_vendor_semantics::DriverAdapterClaim::ReviewedRefinement =>
+                            "reviewed refinement",
                         open_radio_vendor_semantics::DriverAdapterClaim::WholeFunctionEquivalence =>
                             unreachable!(),
                     }
@@ -529,6 +548,12 @@ pub(crate) fn verify_source(
                     &generated_companions,
                     &vendor_trace,
                 )?;
+            tracing::debug!(
+                source = source.name,
+                symbol = vendor.name,
+                identity = %generated_proof.canonical(),
+                "validated independent generated-reference trace"
+            );
             let vendor_effects = effect_contract::effects_from_observable(&vendor_trace.events)?;
             let generated_effects =
                 effect_contract::effects_from_observable(&generated_proof.trace.events)?;
@@ -548,21 +573,19 @@ pub(crate) fn verify_source(
                         ..
                     },
                 ) if !compare_return || returns_equal(&vendor_trace, &rust_trace) => {
-                    summary.matched += 1;
-                    summary.effect_contract_matches += 1;
-                    record_evidence(
-                        evidence,
-                        source.name,
-                        &vendor.name,
-                        effect_contract_evidence(
-                            policy,
-                            manifest_entry
-                                .and_then(|entry| entry.binding.as_ref())
-                                .expect("effect contract requires an executable binding"),
-                            &generated_proof.canonical(),
+                    // This path compares complete lifted traces, not concrete
+                    // executions. It remains useful reviewed evidence but may
+                    // not mint release equivalence or a reusable accepted
+                    // baseline. Concrete profiles and provider replays take
+                    // the branches above.
+                    summary.implemented_unqualified += 1;
+                    (
+                        FunctionVerificationStatus::ImplementedUnqualified,
+                        Some(
+                            "complete lifted/static trace agrees, but release equivalence requires concrete vendor replay"
+                                .to_owned(),
                         ),
-                    )?;
-                    (FunctionVerificationStatus::Match, None)
+                    )
                 }
                 (
                     effect_contract::EquivalenceOutcome {

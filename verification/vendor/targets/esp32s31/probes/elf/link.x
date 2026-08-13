@@ -3,6 +3,7 @@ ENTRY(_start)
 MEMORY
 {
   TRACE (rwx) : ORIGIN = 0x10000000, LENGTH = 2M
+  DMA (rw)    : ORIGIN = 0x2f000000, LENGTH = 512K
 }
 
 SECTIONS
@@ -24,6 +25,14 @@ SECTIONS
     *(.sdata .sdata.*)
     *(.data .data.*)
   } > TRACE
+
+  /* Production RX APIs reject addresses outside internal DMA SRAM. Keep the
+     validation arena in the same physical window instead of weakening that
+     invariant for a probe image. */
+  .dma_bss (NOLOAD) : ALIGN(16)
+  {
+    *(.dma.bss .dma.bss.*)
+  } > DMA
 
   .bss (NOLOAD) : ALIGN(4)
   {

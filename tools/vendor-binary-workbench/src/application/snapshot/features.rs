@@ -26,6 +26,16 @@ pub(super) fn collect(
                 requirements: feature.requirements,
                 surface_effects: feature.surface_effects,
                 covered_effects: feature.covered_effects,
+                dependencies: feature
+                    .dependencies
+                    .into_iter()
+                    .map(|dependency| FeatureDependencySummary {
+                        feature: dependency.feature,
+                        phase: dependency.phase,
+                        status: dependency.status.as_str().to_owned(),
+                        blockers: dependency.blockers.len(),
+                    })
+                    .collect(),
                 phases: feature
                     .phases
                     .into_iter()

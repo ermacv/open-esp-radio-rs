@@ -15,6 +15,7 @@ pub use open_esp_radio_esp32s31_pac::{
 };
 
 pub mod ap_policy;
+pub mod ap_tsf;
 pub mod capabilities;
 pub mod channel_state;
 pub mod coex_runtime;
@@ -45,6 +46,7 @@ pub mod rx_ampdu;
 pub mod rx_ampdu_hw;
 pub mod rx_pool;
 mod sniffer;
+pub mod sta_ap_lifecycle;
 pub mod sta_ap_registers;
 mod sta_link_policy;
 pub mod tx;

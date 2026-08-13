@@ -144,15 +144,22 @@ pub(crate) enum WorkbenchError {
         #[source]
         source: Box<WorkbenchError>,
     },
+    #[error("platform provider {harness:?} failed")]
+    #[diagnostic(
+        code(workbench::platform::provider),
+        help("inspect the provider's source error and the target project's reviewed inputs")
+    )]
+    PlatformProvider {
+        harness: String,
+        #[source]
+        source: crate::ProviderError,
+    },
     #[error(transparent)]
     Analysis(#[from] open_radio_vendor_analysis_model::Error),
     #[error(transparent)]
     Semantics(#[from] open_radio_vendor_semantics::Error),
     #[error(transparent)]
     RiscvBackend(#[from] open_radio_vendor_backend_riscv::Error),
-    #[cfg(feature = "esp32s31-harness")]
-    #[error(transparent)]
-    Esp32s31Harness(#[from] open_radio_vendor_harness_esp32s31_semantic::Error),
     #[error(transparent)]
     RegisterModel(open_esp_radio_register_model::Error),
 }
@@ -182,6 +189,16 @@ impl WorkbenchError {
         Self::VerificationSuite {
             suite: suite.into(),
             source: Box::new(self),
+        }
+    }
+
+    pub(crate) fn platform_provider(
+        harness: impl Into<String>,
+        source: crate::ProviderError,
+    ) -> Self {
+        Self::PlatformProvider {
+            harness: harness.into(),
+            source,
         }
     }
 

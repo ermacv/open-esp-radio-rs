@@ -20,9 +20,13 @@ use open_esp_radio_esp32s31_wifi::{
     ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxResources, WifiTxTimer},
     tx::{WifiTxProgress, WifiTxWake},
 };
+use open_esp_radio_esp32s31_wifi_ap::protocol::ApPeerClose;
 use open_esp_radio_esp32s31_wifi_ap::{
     engine::{Esp32s31ApRuntimeHardware, Esp32s31ApWpa2Outcome},
-    mac::{Esp32s31ApMac, Esp32s31ApMacError, Esp32s31ApMacReport, Esp32s31ApTxCompletionAction},
+    mac::{
+        Esp32s31ApMac, Esp32s31ApMacError, Esp32s31ApMacReport, Esp32s31ApPeerDisconnectStage,
+        Esp32s31ApTxCompletionAction,
+    },
     rx::{
         Esp32s31ApRxConfig, Esp32s31ApRxDispatch, Esp32s31ApRxDispatcher, Esp32s31ApRxError,
         Esp32s31ApRxEvent, Esp32s31ApRxSink,
@@ -31,7 +35,7 @@ use open_esp_radio_esp32s31_wifi_ap::{
 use open_esp_radio_esp32s31_wifi_mac::{
     init::MAC_COLD_RX_INTERRUPT_MASK,
     irq::MacInterruptRoute,
-    rx::{RxDma, RxIngressConfig, RxRingHalted, view_normalized_rx_frame},
+    rx::{RxDescriptorSnapshot, RxDma, RxIngressConfig, RxRingHalted, view_normalized_rx_frame},
     tx::TxHardware,
 };
 use open_esp_radio_ieee80211::data::{
@@ -46,8 +50,8 @@ use crate::{
         Esp32s31MacInterruptEpochDrain, Esp32s31MacInterruptEpochQuiesceError,
     },
     preconnected_rx::{
-        Esp32s31PreconnectedRx, Esp32s31PreconnectedRxDelay, Esp32s31PreconnectedRxDirective,
-        Esp32s31PreconnectedRxError,
+        Esp32s31PreconnectedRx, Esp32s31PreconnectedRxDelay, Esp32s31PreconnectedRxError,
+        Esp32s31RecycledRxDirective,
     },
     rx_dma_service::Esp32s31RxDmaStorage,
 };
@@ -85,7 +89,10 @@ pub struct Esp32s31AccessPointControlReport {
     pub maximum_tx_pending_micros: u32,
     pub maximum_rx_service_micros: u32,
     pub maximum_network_backpressure_micros: u32,
+    pub completed_rx_units: u32,
     pub completed_rx_descriptors: u32,
+    pub recycled_rx_descriptors: u32,
+    pub discarded_rx_units: u32,
     pub ignored_rx_frames: u32,
     pub rx_mic_failures: u32,
     pub rx_quarantined_frames: u32,
@@ -284,16 +291,22 @@ where
         Ok(())
     }
 
-    /// Drain completed descriptors and stage at most one deliverable MPDU.
+    /// Observe one RX descriptor without exposing its DMA ownership.
+    pub fn rx_descriptor_snapshot(&self, index: usize) -> Option<RxDescriptorSnapshot> {
+        self.receive.descriptor_snapshot(index)
+    }
+
+    /// Recycle one complete RX unit and stage at most one deliverable MPDU.
     ///
     /// The RX walker is always recycled before TX receives the PAC borrow.
     /// This avoids nested mutable access to one register owner and makes the
     /// ISR→RX→TX ordering explicit.
-    pub fn service_rx<H>(
+    pub async fn service_rx<H>(
         &mut self,
         hardware: &mut H,
         authenticator_nonce: [u8; 32],
         initial_replay_counter: u64,
+        now_micros: u64,
     ) -> Result<Option<usize>, Esp32s31AccessPointControlError>
     where
         H: RxDma + TxHardware + Esp32s31ApRuntimeHardware,
@@ -303,17 +316,19 @@ where
         }
         let mut staged = None;
         let mut ethernet_length = None;
+        let mut activity_peer = None;
         let rx_frame = &mut *self.rx_frame;
+        let unit_staging = &mut *self.tx_frame;
         let mac = &self.mac;
         let data_rx = &mut self.data_rx;
         let report = &mut self.report;
         let progress = self
             .receive
-            .service_completed(hardware, self.storage, |segment| {
+            .service_completed_unit(hardware, self.storage, unit_staging, |segment| {
                 if staged.is_some() {
                     report.control_frames_dropped_while_busy =
                         report.control_frames_dropped_while_busy.saturating_add(1);
-                    return Esp32s31PreconnectedRxDirective::Pause;
+                    return Esp32s31RecycledRxDirective::Pause;
                 }
                 let frame = match view_normalized_rx_frame(
                     &segment,
@@ -338,11 +353,15 @@ where
                             }
                         }
                         report.ignored_rx_frames = report.ignored_rx_frames.saturating_add(1);
-                        return Esp32s31PreconnectedRxDirective::Continue;
+                        return Esp32s31RecycledRxDirective::Continue;
                     }
                 };
                 let frame_control = u16::from_le_bytes([frame.mpdu[0], frame.mpdu[1]]);
                 if frame_control & 0x000c == 0x0008 && frame_control & 0x4000 != 0 {
+                    let source = frame
+                        .mpdu
+                        .get(10..16)
+                        .and_then(|bytes| <[u8; 6]>::try_from(bytes).ok());
                     struct StageEthernet<'a> {
                         storage: &'a mut [u8],
                         length: &'a mut Option<usize>,
@@ -369,7 +388,7 @@ where
                         |peer| mac.engine().is_authorized_peer(peer),
                         &mut sink,
                     ) {
-                        Esp32s31ApRxDispatch::Data { .. } => {}
+                        Esp32s31ApRxDispatch::Data { .. } => activity_peer = source,
                         Esp32s31ApRxDispatch::Duplicate => {
                             report.protected_data_duplicates =
                                 report.protected_data_duplicates.saturating_add(1);
@@ -407,14 +426,14 @@ where
                             _ => {}
                         }
                         staged = Some(StagedControlFrame::Ethernet);
-                        return Esp32s31PreconnectedRxDirective::Pause;
+                        return Esp32s31RecycledRxDirective::Pause;
                     }
                     report.ignored_rx_frames = report.ignored_rx_frames.saturating_add(1);
-                    return Esp32s31PreconnectedRxDirective::Continue;
+                    return Esp32s31RecycledRxDirective::Continue;
                 }
                 if frame.mpdu.len() > rx_frame.len() {
                     report.ignored_rx_frames = report.ignored_rx_frames.saturating_add(1);
-                    return Esp32s31PreconnectedRxDirective::Continue;
+                    return Esp32s31RecycledRxDirective::Continue;
                 }
                 rx_frame[..frame.mpdu.len()].copy_from_slice(frame.mpdu);
                 staged = if frame_control & 0x000c == 0 {
@@ -430,15 +449,33 @@ where
                     None
                 };
                 if staged.is_some() {
-                    Esp32s31PreconnectedRxDirective::Pause
+                    Esp32s31RecycledRxDirective::Pause
                 } else {
-                    Esp32s31PreconnectedRxDirective::Continue
+                    Esp32s31RecycledRxDirective::Continue
                 }
-            })?;
+            })
+            .await?;
+        if let Some(peer) = activity_peer {
+            self.mac
+                .engine_mut()
+                .observe_peer_activity(peer, now_micros)?;
+        }
+        self.report.completed_rx_units = self
+            .report
+            .completed_rx_units
+            .saturating_add(progress.completed_units);
         self.report.completed_rx_descriptors = self
             .report
             .completed_rx_descriptors
-            .saturating_add(progress.completed);
+            .saturating_add(progress.completed_descriptors);
+        self.report.recycled_rx_descriptors = self
+            .report
+            .recycled_rx_descriptors
+            .saturating_add(progress.completed_descriptors);
+        self.report.discarded_rx_units = self
+            .report
+            .discarded_rx_units
+            .saturating_add(progress.discarded_units);
 
         let Some(staged) = staged else {
             return Ok(None);
@@ -450,6 +487,7 @@ where
                     &self.rx_frame[..length],
                     authenticator_nonce,
                     initial_replay_counter,
+                    now_micros,
                     self.tx_frame,
                 )?;
                 if matches!(
@@ -463,7 +501,7 @@ where
                 }
             }
             StagedControlFrame::Eapol { length } => {
-                self.service_eapol(hardware, length)?;
+                self.service_eapol(hardware, length, now_micros)?;
             }
             StagedControlFrame::Ethernet => {}
         }
@@ -474,6 +512,7 @@ where
         &mut self,
         hardware: &mut H,
         length: usize,
+        now_micros: u64,
     ) -> Result<(), Esp32s31AccessPointControlError>
     where
         H: TxHardware + Esp32s31ApRuntimeHardware,
@@ -516,7 +555,7 @@ where
         match self
             .mac
             .engine_mut()
-            .handle_eapol(hardware, plan.source, frame)?
+            .handle_eapol(hardware, plan.source, frame, now_micros)?
         {
             Esp32s31ApWpa2Outcome::Transmit(frame) => {
                 self.mac
@@ -535,16 +574,63 @@ where
         &mut self,
         hardware: &mut H,
         wake: WifiTxWake,
-    ) -> Result<WifiTxProgress, Esp32s31AccessPointControlError> {
-        let (progress, action) = self.mac.service_tx(hardware, wake).await?;
-        if let Esp32s31ApTxCompletionAction::BeginWpa2 { peer } = action {
-            let message1 = self.mac.engine().begin_wpa2::<EAPOL_CAPACITY>(peer)?;
-            self.mac
-                .publish_eapol(hardware, peer, &message1, self.tx_frame)?;
-            self.report.control_frames_staged = self.report.control_frames_staged.saturating_add(1);
-            return Ok(WifiTxProgress::Pending);
+    ) -> Result<WifiTxProgress, Esp32s31AccessPointControlError>
+    where
+        H: Esp32s31ApRuntimeHardware,
+    {
+        let (progress, action) = self
+            .mac
+            .service_tx(hardware, wake, Instant::now().as_micros())
+            .await?;
+        match action {
+            Esp32s31ApTxCompletionAction::BeginWpa2 { peer } => {
+                let message1 = self.mac.engine().begin_wpa2::<EAPOL_CAPACITY>(peer)?;
+                self.mac
+                    .publish_eapol(hardware, peer, &message1, self.tx_frame)?;
+                self.report.control_frames_staged =
+                    self.report.control_frames_staged.saturating_add(1);
+                return Ok(WifiTxProgress::Pending);
+            }
+            Esp32s31ApTxCompletionAction::PeerDisconnectTerminal {
+                close,
+                stage: Esp32s31ApPeerDisconnectStage::Disassociation,
+                ..
+            } => {
+                self.mac.publish_peer_disconnect(
+                    hardware,
+                    close,
+                    Esp32s31ApPeerDisconnectStage::Deauthentication,
+                    self.tx_frame,
+                )?;
+                self.report.control_frames_staged =
+                    self.report.control_frames_staged.saturating_add(1);
+                return Ok(WifiTxProgress::Pending);
+            }
+            Esp32s31ApTxCompletionAction::PeerDisconnectTerminal {
+                close,
+                stage: Esp32s31ApPeerDisconnectStage::Deauthentication,
+                ..
+            } => self.mac.engine_mut().complete_peer_close(hardware, close)?,
+            Esp32s31ApTxCompletionAction::None
+            | Esp32s31ApTxCompletionAction::PublicationFailed => {}
         }
         Ok(progress)
+    }
+
+    fn publish_peer_close<H: TxHardware>(
+        &mut self,
+        hardware: &mut H,
+        close: ApPeerClose,
+    ) -> Result<(), Esp32s31AccessPointControlError> {
+        let stage = if close.was_associated {
+            Esp32s31ApPeerDisconnectStage::Disassociation
+        } else {
+            Esp32s31ApPeerDisconnectStage::Deauthentication
+        };
+        self.mac
+            .publish_peer_disconnect(hardware, close, stage, self.tx_frame)?;
+        self.report.control_frames_staged = self.report.control_frames_staged.saturating_add(1);
+        Ok(())
     }
 
     pub const fn report(&self) -> Esp32s31AccessPointControlReport {
@@ -699,6 +785,20 @@ where
                 self.service_tx(hardware, wake)
                     .await
                     .map_err(Esp32s31AccessPointRunError::Control)?;
+                let status_revision = self.mac.engine().service_status_revision();
+                if status_revision != last_status_revision {
+                    status_observer(self.mac.engine().service_status());
+                    last_status_revision = status_revision;
+                }
+                let authorized = self.mac.engine().authorized_peer_count() != 0;
+                if authorized != network_link_up {
+                    network.set_link_state(if authorized {
+                        LinkState::Up
+                    } else {
+                        LinkState::Down
+                    });
+                    network_link_up = authorized;
+                }
                 if !self.tx_pending() {
                     let elapsed = Instant::now().as_micros().saturating_sub(pending_since);
                     self.report.maximum_tx_pending_micros = self
@@ -710,9 +810,16 @@ where
                 continue;
             }
             if stopping {
-                if pending_network_rx.is_none() {
-                    break;
+                if pending_network_rx.is_some() {
+                    pending_network_rx = None;
+                    network_backpressure_since_micros = None;
                 }
+                if let Some(close) = self.mac.engine_mut().begin_stop_peer() {
+                    self.publish_peer_close(hardware, close)
+                        .map_err(Esp32s31AccessPointRunError::Control)?;
+                    continue;
+                }
+                break;
             }
 
             let now_micros = Instant::now().as_micros();
@@ -726,12 +833,26 @@ where
                     .map_err(Esp32s31AccessPointRunError::Control)?;
                 continue;
             }
+            if let Some(close) = self.mac.engine_mut().begin_due_peer_close(now_micros) {
+                self.publish_peer_close(hardware, close)
+                    .map_err(Esp32s31AccessPointRunError::Control)?;
+                continue;
+            }
             let (_, beacon_delay_ms) = self
                 .next_beacon_delay(now_micros as u32)
                 .ok_or(Esp32s31AccessPointRunError::InvalidBeaconSchedule)?;
+            let peer_delay_ms = self.mac.engine().next_peer_deadline().map(|deadline| {
+                let remaining = deadline.saturating_sub(now_micros);
+                u32::try_from(remaining.saturating_add(999) / 1_000)
+                    .unwrap_or(u32::MAX)
+                    .max(1)
+            });
+            let work_delay_ms = peer_delay_ms
+                .map(|delay| delay.min(beacon_delay_ms))
+                .unwrap_or(beacon_delay_ms);
             if let Some(length) = pending_network_rx {
                 let ready = select(
-                    Timer::after_millis(u64::from(beacon_delay_ms)),
+                    Timer::after_millis(u64::from(work_delay_ms)),
                     network_rx.wait_ready(),
                 );
                 let ready = if stopping {
@@ -747,8 +868,7 @@ where
                 };
                 match ready {
                     Either::First(()) => {
-                        self.publish_beacon(hardware, Instant::now().as_micros())
-                            .map_err(Esp32s31AccessPointRunError::Control)?;
+                        continue;
                     }
                     Either::Second(()) => {
                         network_rx
@@ -766,9 +886,10 @@ where
                 }
                 continue;
             }
-            let rx_reload_pending = self.receive.reload_pending();
+            let rx_service_pending =
+                self.receive.reload_pending() || self.receive.service_probe_pending();
             let rx_work = async {
-                if rx_reload_pending {
+                if rx_service_pending {
                     // `wDev_AppendRxBlocks` repairs an exhausted descriptor
                     // base only after the reload doorbell self-clears. With
                     // no descriptor left, hardware cannot produce another RX
@@ -781,17 +902,14 @@ where
             };
             match wait_for_ap_work(
                 stop.as_mut(),
-                Timer::after_millis(u64::from(beacon_delay_ms)),
+                Timer::after_millis(u64::from(work_delay_ms)),
                 rx_work,
                 network.receive_tx(),
             )
             .await
             {
                 Either4::First(()) => stopping = true,
-                Either4::Second(()) => {
-                    self.publish_beacon(hardware, Instant::now().as_micros())
-                        .map_err(Esp32s31AccessPointRunError::Control)?;
-                }
+                Either4::Second(()) => continue,
                 Either4::Third(()) => {
                     // One IRQ publication may represent several completed
                     // descriptors. Drain until the walker reports no further
@@ -809,8 +927,11 @@ where
                         let completed_before = self.report.completed_rx_descriptors;
                         let service_started = Instant::now().as_micros();
                         let ethernet_length = self
-                            .service_rx(hardware, nonce, replay_counter)
+                            .service_rx(hardware, nonce, replay_counter, Instant::now().as_micros())
+                            .await
                             .map_err(Esp32s31AccessPointRunError::Control)?;
+                        let rx_progressed =
+                            self.report.completed_rx_descriptors != completed_before;
                         let status_revision = self.mac.engine().service_status_revision();
                         if status_revision != last_status_revision {
                             status_observer(self.mac.engine().service_status());
@@ -841,10 +962,10 @@ where
                         // that frame's handoff before scheduling the reload
                         // suffix; checking earlier silently discarded every
                         // boundary descriptor.
-                        if self.receive.reload_pending() {
+                        if self.receive.reload_pending() || self.receive.service_probe_pending() {
                             break;
                         }
-                        if self.report.completed_rx_descriptors == completed_before {
+                        if !rx_progressed {
                             break;
                         }
                     }

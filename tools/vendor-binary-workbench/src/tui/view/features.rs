@@ -87,6 +87,22 @@ pub(super) fn render(frame: &mut Frame<'_>, state: &BrowserState, area: Rect) {
                     );
                 }
                 lines.push(Line::from(""));
+                if !feature.dependencies.is_empty() {
+                    lines.push(Line::from("Dependencies"));
+                    lines.extend(feature.dependencies.iter().map(|dependency| {
+                        Line::from(format!(
+                            "{}{}: {} ({} blocker(s))",
+                            dependency.feature,
+                            dependency
+                                .phase
+                                .as_ref()
+                                .map_or_else(String::new, |phase| format!("/{phase}")),
+                            dependency.status,
+                            dependency.blockers,
+                        ))
+                    }));
+                    lines.push(Line::from(""));
+                }
                 lines.push(Line::from("Lifecycle"));
                 lines.extend(feature.phases.iter().map(|phase| {
                     Line::from(format!(

@@ -149,6 +149,190 @@ impl MacTxPtiCount {
     }
 }
 
+/// One of the twenty-five hardware crypto-table entries accepted by the reviewed MAC key transactions.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct MacKeyEntryIndex(u32);
+
+impl MacKeyEntryIndex {
+    pub const MIN: u32 = 0x00000000;
+    pub const MAX: u32 = 0x00000018;
+
+    /// Construct a value only when it lies in the reviewed inclusive range.
+    pub const fn new(value: u32) -> Option<Self> {
+        if value >= Self::MIN && value <= Self::MAX {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    /// Return the checked numeric value.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// One of the eight reverse-addressed ordinary receive BlockAck hardware banks.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct MacRxBlockAckEntryIndex(u32);
+
+impl MacRxBlockAckEntryIndex {
+    pub const MIN: u32 = 0x00000000;
+    pub const MAX: u32 = 0x00000007;
+
+    /// Construct a value only when it lies in the reviewed inclusive range.
+    pub const fn new(value: u32) -> Option<Self> {
+        if value >= Self::MIN && value <= Self::MAX {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    /// Return the checked numeric value.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// Four-bit traffic identifier encoded by the reviewed receive BlockAck transaction.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct MacRxBlockAckTid(u32);
+
+impl MacRxBlockAckTid {
+    pub const MIN: u32 = 0x00000000;
+    pub const MAX: u32 = 0x0000000f;
+
+    /// Construct a value only when it lies in the reviewed inclusive range.
+    pub const fn new(value: u32) -> Option<Self> {
+        if value >= Self::MIN && value <= Self::MAX {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    /// Return the checked numeric value.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// Twelve-bit starting sequence encoded by the reviewed receive BlockAck transaction.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct MacRxBlockAckStartingSequence(u32);
+
+impl MacRxBlockAckStartingSequence {
+    pub const MIN: u32 = 0x00000000;
+    pub const MAX: u32 = 0x00000fff;
+
+    /// Construct a value only when it lies in the reviewed inclusive range.
+    pub const fn new(value: u32) -> Option<Self> {
+        if value >= Self::MIN && value <= Self::MAX {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    /// Return the checked numeric value.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// Non-zero seven-bit receive BlockAck window accepted by the reviewed transaction.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct MacRxBlockAckWindow(u32);
+
+impl MacRxBlockAckWindow {
+    pub const MIN: u32 = 0x00000001;
+    pub const MAX: u32 = 0x0000007f;
+
+    /// Construct a value only when it lies in the reviewed inclusive range.
+    pub const fn new(value: u32) -> Option<Self> {
+        if value >= Self::MIN && value <= Self::MAX {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    /// Return the checked numeric value.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// Two-bit coexistence client selector published by complete coex_hw_timer_set.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct CoexTimerClientValue(u32);
+
+impl CoexTimerClientValue {
+    pub const MIN: u32 = 0x00000000;
+    pub const MAX: u32 = 0x00000003;
+
+    /// Construct a value only when it lies in the reviewed inclusive range.
+    pub const fn new(value: u32) -> Option<Self> {
+        if value >= Self::MIN && value <= Self::MAX {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    /// Return the checked numeric value.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// Four-bit coexistence priority value published by complete coex_hw_timer_set.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct CoexTimerPtiValue(u32);
+
+impl CoexTimerPtiValue {
+    pub const MIN: u32 = 0x00000000;
+    pub const MAX: u32 = 0x0000000f;
+
+    /// Construct a value only when it lies in the reviewed inclusive range.
+    pub const fn new(value: u32) -> Option<Self> {
+        if value >= Self::MIN && value <= Self::MAX {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    /// Return the checked numeric value.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// Twenty-four-bit converted coexistence timer target image.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct CoexTimerTickImage(u32);
+
+impl CoexTimerTickImage {
+    pub const MIN: u32 = 0x00000000;
+    pub const MAX: u32 = 0x00ffffff;
+
+    /// Construct a value only when it lies in the reviewed inclusive range.
+    pub const fn new(value: u32) -> Option<Self> {
+        if value >= Self::MIN && value <= Self::MAX {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    /// Return the checked numeric value.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
 /// Register-specific event image written to the MAC interrupt clear register.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct MacInterruptClearImage(u32);

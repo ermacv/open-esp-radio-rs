@@ -420,7 +420,7 @@ fn semantic_contract_commands_keep_failed_qualifications_off_stdout() {
             "contract",
             contract,
             "--project",
-            "verification/vendor/targets/esp32s31/vendor-project.toml",
+            GENERIC_PROJECT,
             "--vendor-artifact",
             "/missing/vendor-contract.elf",
             "--vendor-companion",
@@ -635,7 +635,7 @@ fn project_verify_executes_typed_suites_and_reproduces_the_aggregate_report() {
     .unwrap();
     std::fs::write(
         directory.join("dispositions.toml"),
-        "schema = 1\ndefault-disposition = \"not-yet-ported\"\ndefault-protocol = \"unknown\"\nfunctions = []\n",
+        "schema = 2\ndefault-disposition = \"not-yet-ported\"\ndefault-protocol = \"unknown\"\nfunctions = []\n",
     )
     .unwrap();
     std::fs::write(
@@ -793,7 +793,7 @@ fn direct_target_audit_json_is_one_typed_report() {
             "image",
             "audit-targets",
             "--project",
-            "verification/vendor/targets/esp32s31/vendor-project.toml",
+            GENERIC_PROJECT,
             "--artifact",
         ])
         .arg(&artifact)
@@ -882,7 +882,8 @@ fn project_inputs_validate_elf_and_archive_roles_before_writing() {
         std::fs::remove_dir_all(&directory).unwrap();
     }
     std::fs::create_dir_all(&directory).unwrap();
-    let target = repository_root().join("verification/vendor/targets/esp32s31/target.toml");
+    let target = repository_root()
+        .join("tools/vendor-binary-workbench/tests/fixtures/generic-project/target.toml");
     let manifest = directory.join("vendor-project.toml");
     std::fs::write(
         &manifest,
@@ -943,7 +944,8 @@ fn project_symbol_inventory_writes_and_checks_its_manifest_owned_report() {
         std::fs::remove_dir_all(&directory).unwrap();
     }
     std::fs::create_dir_all(&directory).unwrap();
-    let target = repository_root().join("verification/vendor/targets/esp32s31/target.toml");
+    let target = repository_root()
+        .join("tools/vendor-binary-workbench/tests/fixtures/generic-project/target.toml");
     let manifest = directory.join("vendor-project.toml");
     std::fs::write(
         &manifest,
@@ -1352,98 +1354,6 @@ fn project_publication_json_is_one_typed_report() {
         })
     );
     std::fs::remove_dir_all(directory).unwrap();
-}
-
-#[test]
-fn register_lifecycle_commands_emit_one_typed_report() {
-    let project = "verification/vendor/targets/esp32s31/vendor-project.toml";
-    for (arguments, kind, status) in [
-        (
-            vec!["registers", "validate", "--project", project],
-            "register-workspace",
-            "valid",
-        ),
-        (
-            vec!["registers", "export-svd", "--check", "--project", project],
-            "svd-publication",
-            "verified",
-        ),
-        (
-            vec![
-                "registers",
-                "generate-pac-raw",
-                "--check",
-                "--project",
-                project,
-            ],
-            "pac-publication",
-            "verified",
-        ),
-        (
-            vec![
-                "registers",
-                "generate-bindings",
-                "--check",
-                "--project",
-                project,
-            ],
-            "binding-publication",
-            "verified",
-        ),
-    ] {
-        let mut command = workbench();
-        command
-            .current_dir(repository_root())
-            .args(arguments)
-            .args(["--format", "json", "--color", "never"]);
-        let output = command.output().expect("run register lifecycle command");
-        assert!(
-            output.status.success(),
-            "{kind} stderr: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-        let document: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-        assert_eq!(document["schema"], 1);
-        assert_eq!(document["status"], status);
-    }
-}
-
-#[test]
-fn human_tables_are_presentation_and_removed_tsv_is_rejected() {
-    let project = "verification/vendor/targets/esp32s31/vendor-project.toml";
-    let human = run(&[
-        "registers",
-        "validate",
-        "--project",
-        project,
-        "--format",
-        "human",
-        "--color",
-        "never",
-    ]);
-    assert!(
-        human.status.success(),
-        "stderr: {}",
-        String::from_utf8_lossy(&human.stderr)
-    );
-    let human = String::from_utf8(human.stdout).unwrap();
-    assert!(human.contains("Coverage:\n╭"));
-    assert!(human.contains("Checks:\n╭"));
-    assert!(!human.contains("REGISTER-WORKSPACE\t"));
-
-    let removed = run(&[
-        "registers",
-        "validate",
-        "--project",
-        project,
-        "--format",
-        "tsv",
-        "--color",
-        "never",
-    ]);
-    assert!(!removed.status.success());
-    assert!(removed.stdout.is_empty());
-    assert!(String::from_utf8_lossy(&removed.stderr).contains("invalid value 'tsv'"));
 }
 
 #[test]

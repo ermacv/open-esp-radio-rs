@@ -8,6 +8,29 @@ trace_package="open-esp-radio-vendor-oracle-esp32s31-trace-elf"
 rust_target="riscv32imafc-unknown-none-elf"
 build_jobs=${OPEN_RADIO_ANALYSIS_BUILD_JOBS:-1}
 
+produced_roles=(
+    source-artifact:archive
+    source-artifact:libpp
+    source-artifact:libpp-replay
+    source-artifact:libnet80211
+    source-artifact:wifi-sta-ap-receive
+    source-artifact:wifi-sta-lifecycle
+    source-artifact:wifi-key-role
+    source-artifact:coex
+    source-artifact:btbb
+    rust-artifact
+    rust-artifact:wifi-registers
+)
+
+if [[ ${1:-} == "--list-roles" ]]; then
+    printf '%s\n' "${produced_roles[@]}"
+    exit 0
+fi
+if [[ $# -ne 0 ]]; then
+    echo "usage: ${0##*/} [--list-roles]" >&2
+    exit 2
+fi
+
 if [[ ! "${build_jobs}" =~ ^[1-9][0-9]*$ ]]; then
     echo "OPEN_RADIO_ANALYSIS_BUILD_JOBS must be a positive integer" >&2
     exit 2
@@ -19,6 +42,7 @@ required_oracles=(
     libpp.a
     libnet80211.a
     libcoexist.a
+    libbtbb.a
 )
 for artifact in "${required_oracles[@]}"; do
     path="${repository_root}/_oracles/${artifact}"
@@ -49,15 +73,26 @@ build_link_unit vendor-linked linked-oracle.toml
 build_link_unit vendor-linked-libpp linked-oracle-libpp.toml
 build_link_unit vendor-linked-libpp-replay linked-oracle-libpp-replay.toml
 build_link_unit vendor-linked-libnet80211 linked-oracle-libnet80211.toml
+build_link_unit vendor-linked-libnet80211-rx-policy linked-oracle-libnet80211-rx-policy.toml
 build_link_unit vendor-linked-wifi-sta-lifecycle linked-oracle-wifi-sta-lifecycle.toml
 build_link_unit vendor-linked-wifi-key-role linked-oracle-wifi-key-role.toml
 build_link_unit vendor-linked-coex linked-oracle-coex.toml
+build_link_unit vendor-linked-btbb linked-oracle-btbb.toml
 
 echo "Building ESP32-S31 Rust comparison probes" >&2
 CARGO_TARGET_DIR="${repository_root}/target/verification/esp32s31-probes" \
     cargo build \
         --manifest-path "${script_dir}/probes/Cargo.toml" \
         --package open-esp-radio-verification-esp32s31-probes-elf \
+        --target "${rust_target}" \
+        --release \
+        --jobs "${build_jobs}"
+
+echo "Building ESP32-S31 register comparison probes" >&2
+CARGO_TARGET_DIR="${repository_root}/target/verification/esp32s31-register-probes" \
+    cargo build \
+        --manifest-path "${script_dir}/probes/Cargo.toml" \
+        --package open-esp-radio-verification-esp32s31-register-probes-elf \
         --target "${rust_target}" \
         --release \
         --jobs "${build_jobs}"

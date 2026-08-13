@@ -79,8 +79,6 @@ fn default_diagnostic_filter(level: LevelFilter) -> EnvFilter {
         "open_radio_vendor_analysis_model",
         "open_radio_vendor_backend_riscv",
         "open_radio_vendor_semantics",
-        "open_radio_vendor_harness_esp32s31",
-        "open_radio_vendor_harness_esp32s31_semantic",
         "open_esp_radio_register_model",
     ];
     WORKBENCH_TARGETS.iter().fold(

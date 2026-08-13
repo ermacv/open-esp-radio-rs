@@ -114,6 +114,12 @@ fn known_sources(project: &ProjectSpec) -> BTreeSet<String> {
                 .iter()
                 .flat_map(|suite| suite.vendor.iter().map(|vendor| vendor.source.to_string())),
         );
+        sources.extend(
+            workspace
+                .suites
+                .iter()
+                .flat_map(|suite| suite.auxiliary_sources.iter().map(ToString::to_string)),
+        );
     }
     sources
 }

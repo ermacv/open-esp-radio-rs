@@ -1,10 +1,45 @@
-//! Safe generated-PAC ownership for the recovered SoftAP TSF stop edge.
+//! Safe generated-PAC ownership for recovered SoftAP TSF lifecycle edges.
 
 #![forbid(unsafe_code)]
 
-use super::{RadioRegisters, device_fence};
+use super::RadioRegisters;
 
 impl RadioRegisters {
+    /// Reset the SoftAP TSF value and start its hardware domain.
+    ///
+    /// SOURCE: the `arg0 == 0` path of complete
+    /// `libpp.a[hal_mac.o]::hal_mac_tsf_reset`. The vendor code first clears
+    /// both high control bits, clears the shared TSF load words, asserts the
+    /// SoftAP load request and finally sets both high control bits through a
+    /// fresh read-modify-write.
+    pub fn reset_and_start_softap_tsf(&mut self) {
+        let control = self.peripherals.wifi_mac_aux_tsf_control.softap_control();
+        control.modify(|_, writer| {
+            writer
+                .tsf_enable()
+                .clear_bit()
+                .high_control_unknown()
+                .clear_bit()
+        });
+
+        let load = &self.peripherals.wifi_mac_sta_tsf_load;
+        super::generated::station_tsf_value_low(load, super::generated::StationTsfLowWord::new(0));
+        super::generated::station_tsf_value_high(
+            load,
+            super::generated::StationTsfHighWord::new(0),
+        );
+        load.control()
+            .modify(|_, writer| writer.load_softap_tsf().set_bit());
+
+        control.modify(|_, writer| {
+            writer
+                .tsf_enable()
+                .set_bit()
+                .high_control_unknown()
+                .set_bit()
+        });
+    }
+
     /// Stop the SoftAP TSF domain using the complete vendor leaf transaction.
     ///
     /// SOURCE: complete `libpp.a[hal_tsf.o]::hal_disable_softap_tsf`
@@ -22,7 +57,6 @@ impl RadioRegisters {
                     .high_control_unknown()
                     .clear_bit()
             });
-        device_fence();
     }
 
     /// Return the SoftAP control image for diagnostics and HIL comparison.

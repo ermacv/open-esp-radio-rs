@@ -55,6 +55,19 @@ pub(super) fn execute(
     target: &TargetSpec,
 ) -> Result<VerificationCommandReport> {
     let mut source_inputs = BTreeMap::<String, SourceInput>::new();
+    let mut auxiliary_artifacts = BTreeMap::<String, PathBuf>::new();
+    for value in arguments.auxiliary_artifact {
+        dispositions::validate_source_id(value.source.as_str(), 0)?;
+        if auxiliary_artifacts
+            .insert(value.source.to_string(), value.path)
+            .is_some()
+        {
+            return Err(crate::Error::invalid(format!(
+                "duplicate --auxiliary-artifact {}",
+                value.source
+            )));
+        }
+    }
     for value in arguments.source_artifact {
         set_path(
             &mut source_mut(&mut source_inputs, value.source.as_str())?.artifact,
@@ -178,6 +191,10 @@ pub(super) fn execute(
             },
         })
         .collect::<Vec<_>>();
+    let adapter_artifacts = auxiliary_artifacts
+        .iter()
+        .map(|(id, artifact)| open_radio_vendor_semantics::DriverAdapterArtifact { id, artifact })
+        .collect::<Vec<_>>();
     let symbol_sets = verify_sources
         .iter()
         .copied()
@@ -240,6 +257,7 @@ pub(super) fn execute(
             &rust_prefix,
             source_profiles,
             disposition_manifest.as_ref(),
+            &adapter_artifacts,
             &mut evidence,
         )?;
         total.add(report.summary);
@@ -314,6 +332,9 @@ pub(super) fn execute(
         if let Some(companion) = source.companion.as_deref() {
             artifacts.push((format!("source:{}:companion", source.id), companion));
         }
+    }
+    for (id, artifact) in &auxiliary_artifacts {
+        artifacts.push((format!("auxiliary:{id}"), artifact));
     }
     artifacts.push(("rust-probes".to_owned(), &rust_artifact));
     if let Some(companion) = rust_companion.as_deref() {

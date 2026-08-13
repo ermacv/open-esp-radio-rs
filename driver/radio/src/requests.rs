@@ -11,7 +11,10 @@ use open_esp_radio_ieee80211::{
     channel::{WifiChannel, WifiChannelWidth},
     ssid::WifiSsid,
 };
-pub use open_esp_radio_wifi_ap::{AccessPointClientLimit, AccessPointClientLimitError};
+pub use open_esp_radio_wifi_ap::{
+    AccessPointClientLimit, AccessPointClientLimitError, AccessPointInactiveTimeout,
+    AccessPointInactiveTimeoutError,
+};
 use open_esp_radio_wifi_softmac::{
     MacServiceCapabilities, WifiAccessPointConfig, WifiConfig, WifiConfigError, WifiStationConfig,
 };
@@ -133,6 +136,7 @@ pub struct AccessPointRequest {
     security: AccessPointSecurity,
     channel: WifiChannel,
     client_limit: AccessPointClientLimit,
+    inactive_timeout: AccessPointInactiveTimeout,
 }
 
 impl AccessPointRequest {
@@ -157,6 +161,7 @@ impl AccessPointRequest {
             security,
             channel,
             client_limit,
+            inactive_timeout: AccessPointInactiveTimeout::default(),
         })
     }
 
@@ -176,6 +181,15 @@ impl AccessPointRequest {
         self.client_limit
     }
 
+    pub const fn inactive_timeout(&self) -> AccessPointInactiveTimeout {
+        self.inactive_timeout
+    }
+
+    pub const fn with_inactive_timeout(mut self, timeout: AccessPointInactiveTimeout) -> Self {
+        self.inactive_timeout = timeout;
+        self
+    }
+
     pub fn into_parts(
         self,
     ) -> (
@@ -183,8 +197,15 @@ impl AccessPointRequest {
         AccessPointSecurity,
         WifiChannel,
         AccessPointClientLimit,
+        AccessPointInactiveTimeout,
     ) {
-        (self.ssid, self.security, self.channel, self.client_limit)
+        (
+            self.ssid,
+            self.security,
+            self.channel,
+            self.client_limit,
+            self.inactive_timeout,
+        )
     }
 }
 
@@ -196,6 +217,7 @@ impl fmt::Debug for AccessPointRequest {
             .field("security", &self.security)
             .field("channel", &self.channel)
             .field("client_limit", &self.client_limit)
+            .field("inactive_timeout", &self.inactive_timeout)
             .finish()
     }
 }
@@ -881,6 +903,7 @@ mod tests {
         assert_eq!(AccessPointRequest::DTIM_PERIOD, 2);
         assert_eq!(AccessPointRequest::PEER_CAPACITY, 15);
         assert_eq!(request.client_limit().get(), 4);
+        assert_eq!(request.inactive_timeout().seconds(), 300);
         let debug = std::format!("{request:?}");
         assert!(debug.contains("<redacted>"));
         assert!(!debug.contains("password"));
@@ -893,6 +916,13 @@ mod tests {
         )
         .unwrap_err();
         assert_eq!(wide, AccessPointRequestError::UnsupportedChannelWidth);
+
+        let request = access_point_request().with_inactive_timeout(
+            AccessPointInactiveTimeout::new(30).expect("valid inactivity timeout"),
+        );
+        assert_eq!(request.inactive_timeout().seconds(), 30);
+        let (_, _, _, _, timeout) = request.into_parts();
+        assert_eq!(timeout.seconds(), 30);
     }
 
     #[test]

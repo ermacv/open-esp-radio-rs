@@ -352,7 +352,9 @@ pub(super) fn validate_claim(
                 )));
             }
         }
-        DriverAdapterClaim::ReviewedProjection | DriverAdapterClaim::RustConformance => {
+        DriverAdapterClaim::ReviewedRefinement
+        | DriverAdapterClaim::ReviewedProjection
+        | DriverAdapterClaim::RustConformance => {
             return Err(crate::Error::invalid(format!(
                 "execution profile {profile} cannot use adapter-only claim {}",
                 claim.label()

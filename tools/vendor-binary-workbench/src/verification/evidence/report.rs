@@ -28,6 +28,7 @@ pub(crate) struct VerificationTargetDocument {
 #[derive(Serialize)]
 #[serde(tag = "mode", rename_all = "kebab-case")]
 pub(crate) enum VerificationGateDocument {
+    Informational,
     Completion,
     Regression { match_floor: usize },
 }
@@ -129,6 +130,7 @@ pub(crate) fn verification_core_report<S: AsRef<str>>(
             rust_target: target.rust_target.clone(),
         },
         gate: match gate {
+            VerificationGate::Informational => VerificationGateDocument::Informational,
             VerificationGate::Completion => VerificationGateDocument::Completion,
             VerificationGate::Regression { match_floor } => {
                 VerificationGateDocument::Regression { match_floor }

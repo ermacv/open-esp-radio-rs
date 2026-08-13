@@ -14,7 +14,7 @@ open-esp-radio-esp32s31-hal.workspace = true
 open-esp-radio-esp32s31-pac.workspace = true
 open-esp-radio-esp32s31-phy.workspace = true
 open-esp-radio-esp32s31-wifi-dma.workspace = true
-open-esp-radio-esp32s31-wifi-mac = { workspace = true, features = ["validation-raw-dma"] }
+open-esp-radio-esp32s31-wifi-mac.workspace = true
 open-esp-radio-ieee80211.workspace = true
 open-esp-radio-wifi-sta.workspace = true
 

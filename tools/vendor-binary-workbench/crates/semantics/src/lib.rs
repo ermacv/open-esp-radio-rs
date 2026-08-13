@@ -7,6 +7,7 @@
 mod driver_plan;
 mod effect_contract;
 mod equivalence;
+mod qualification;
 
 use std::path::Path;
 
@@ -14,6 +15,7 @@ pub use driver_plan::*;
 pub use effect_contract::*;
 pub use equivalence::*;
 pub use open_radio_vendor_analysis_model::*;
+pub use qualification::*;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -47,6 +49,16 @@ impl From<&str> for Error {
 
 pub type Result<T> = std::result::Result<T, Error>;
 
+/// Additional executable image supplied to a platform adapter without adding
+/// its symbols to the suite's coverage inventory.
+///
+/// This is intended for authoritative replay link units which provide
+/// fixtures or external-call implementations for one reviewed vendor root.
+pub struct DriverAdapterArtifact<'a> {
+    pub id: &'a str,
+    pub artifact: &'a Path,
+}
+
 pub struct DriverAdapterRequest<'a> {
     pub id: &'a str,
     pub source: &'a str,
@@ -57,6 +69,7 @@ pub struct DriverAdapterRequest<'a> {
     /// Executable linked view used for concrete verification.
     pub vendor_artifact: &'a Path,
     pub vendor_companion: Option<&'a Path>,
+    pub auxiliary_artifacts: &'a [DriverAdapterArtifact<'a>],
     pub rust_artifact: &'a Path,
     pub rust_companion: Option<&'a Path>,
     pub rust_symbol: &'a str,
@@ -74,6 +87,10 @@ pub enum DriverAdapterClaim {
     /// Every case in an explicit finite input domain matches, while behavior
     /// outside that reviewed precondition remains outside the claim.
     ReviewedDomainEquivalence,
+    /// The same reviewed behavior is preserved through an explicit, bounded
+    /// production refinement (for example a blocking wait replaced by an
+    /// asynchronous scheduling edge).
+    ReviewedRefinement,
     ReviewedProjection,
     RustConformance,
 }
@@ -83,9 +100,149 @@ impl DriverAdapterClaim {
         match self {
             Self::WholeFunctionEquivalence => "whole-function-equivalence",
             Self::ReviewedDomainEquivalence => "reviewed-domain-equivalence",
+            Self::ReviewedRefinement => "reviewed-refinement",
             Self::ReviewedProjection => "reviewed-projection",
             Self::RustConformance => "rust-conformance",
         }
+    }
+}
+
+/// Origin of the vendor-side behavior used by a driver adapter.
+///
+/// This is deliberately independent of a friendly claim label. Only concrete
+/// replay may establish equivalence with a production implementation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum VendorOracleKind {
+    ConcreteReplay,
+    CompleteLiftedTrace,
+    StaticReviewedFacts,
+    ManualAssumption,
+}
+
+impl VendorOracleKind {
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::ConcreteReplay => "concrete-replay",
+            Self::CompleteLiftedTrace => "complete-lifted-trace",
+            Self::StaticReviewedFacts => "static-reviewed-facts",
+            Self::ManualAssumption => "manual-assumption",
+        }
+    }
+}
+
+/// Relationship between a compiled probe and the production Rust component.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum RustBindingKind {
+    GeneratedTransaction,
+    ExactProductionEntry,
+    SharedProductionCore,
+    VerificationProjection,
+}
+
+impl RustBindingKind {
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::GeneratedTransaction => "generated-transaction",
+            Self::ExactProductionEntry => "exact-production-entry",
+            Self::SharedProductionCore => "shared-production-core",
+            Self::VerificationProjection => "verification-projection",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum DriverAdapterDomain {
+    WholeFunction,
+    ReviewedDomain,
+}
+
+impl DriverAdapterDomain {
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::WholeFunction => "whole-function",
+            Self::ReviewedDomain => "reviewed-domain",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum DriverAdapterRelation {
+    Exact,
+    Refinement,
+    Projection,
+    Conformance,
+}
+
+impl DriverAdapterRelation {
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Exact => "exact",
+            Self::Refinement => "refinement",
+            Self::Projection => "projection",
+            Self::Conformance => "conformance",
+        }
+    }
+}
+
+/// Facts from which the verifier computes the strongest admissible claim.
+/// Adapter code cannot select a stronger claim directly.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
+pub struct DriverAdapterTrust {
+    pub vendor: VendorOracleKind,
+    pub rust: RustBindingKind,
+    pub domain: DriverAdapterDomain,
+    pub relation: DriverAdapterRelation,
+}
+
+impl DriverAdapterTrust {
+    pub const fn claim(self) -> DriverAdapterClaim {
+        use DriverAdapterClaim as Claim;
+        use DriverAdapterDomain as Domain;
+        use DriverAdapterRelation as Relation;
+        use RustBindingKind as Rust;
+        use VendorOracleKind as Vendor;
+
+        match (self.vendor, self.rust, self.domain, self.relation) {
+            (
+                Vendor::ConcreteReplay,
+                Rust::GeneratedTransaction | Rust::ExactProductionEntry,
+                Domain::WholeFunction,
+                Relation::Exact,
+            ) => Claim::WholeFunctionEquivalence,
+            (
+                Vendor::ConcreteReplay,
+                Rust::GeneratedTransaction | Rust::ExactProductionEntry,
+                Domain::ReviewedDomain,
+                Relation::Exact,
+            ) => Claim::ReviewedDomainEquivalence,
+            (
+                Vendor::ConcreteReplay,
+                Rust::GeneratedTransaction
+                | Rust::ExactProductionEntry
+                | Rust::SharedProductionCore,
+                _,
+                Relation::Exact | Relation::Refinement,
+            ) => Claim::ReviewedRefinement,
+            (_, _, _, Relation::Conformance) | (Vendor::ManualAssumption, _, _, _) => {
+                Claim::RustConformance
+            }
+            _ => Claim::ReviewedProjection,
+        }
+    }
+
+    pub fn canonical(self) -> String {
+        format!(
+            "vendor-oracle {}\nrust-binding {}\ndomain {}\nrelation {}\nclaim {}\n",
+            self.vendor.label(),
+            self.rust.label(),
+            self.domain.label(),
+            self.relation.label(),
+            self.claim().label(),
+        )
     }
 }
 
@@ -100,33 +257,18 @@ pub struct DriverAdapterCase {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DriverAdapterVerification {
     pub claim: DriverAdapterClaim,
+    pub trust: DriverAdapterTrust,
     pub matched: bool,
     pub canonical: String,
     pub cases: Vec<DriverAdapterCase>,
 }
 
 impl DriverAdapterVerification {
-    pub fn whole_function_equivalence(matched: bool, canonical: String) -> Self {
+    pub fn from_trust(trust: DriverAdapterTrust, matched: bool, mut canonical: String) -> Self {
+        canonical.push_str(&trust.canonical());
         Self {
-            claim: DriverAdapterClaim::WholeFunctionEquivalence,
-            matched,
-            canonical,
-            cases: Vec::new(),
-        }
-    }
-
-    pub fn reviewed_projection(matched: bool, canonical: String) -> Self {
-        Self {
-            claim: DriverAdapterClaim::ReviewedProjection,
-            matched,
-            canonical,
-            cases: Vec::new(),
-        }
-    }
-
-    pub fn rust_conformance(matched: bool, canonical: String) -> Self {
-        Self {
-            claim: DriverAdapterClaim::RustConformance,
+            claim: trust.claim(),
+            trust,
             matched,
             canonical,
             cases: Vec::new(),
@@ -158,10 +300,78 @@ pub struct EvidenceSource {
 pub struct DriverAdapterEvidenceSources {
     pub adapter: &'static [EvidenceSource],
     pub reviewed_summary: EvidenceSource,
+    pub trust: DriverAdapterTrust,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SemanticContractEvidenceSources {
     pub common: &'static [EvidenceSource],
     pub contract: EvidenceSource,
+}
+
+#[cfg(test)]
+mod trust_tests {
+    use super::*;
+
+    fn trust(
+        vendor: VendorOracleKind,
+        rust: RustBindingKind,
+        domain: DriverAdapterDomain,
+        relation: DriverAdapterRelation,
+    ) -> DriverAdapterTrust {
+        DriverAdapterTrust {
+            vendor,
+            rust,
+            domain,
+            relation,
+        }
+    }
+
+    #[test]
+    fn only_concrete_replay_of_an_exact_production_entry_can_claim_whole_function() {
+        assert_eq!(
+            trust(
+                VendorOracleKind::ConcreteReplay,
+                RustBindingKind::ExactProductionEntry,
+                DriverAdapterDomain::WholeFunction,
+                DriverAdapterRelation::Exact,
+            )
+            .claim(),
+            DriverAdapterClaim::WholeFunctionEquivalence
+        );
+        assert_eq!(
+            trust(
+                VendorOracleKind::CompleteLiftedTrace,
+                RustBindingKind::ExactProductionEntry,
+                DriverAdapterDomain::WholeFunction,
+                DriverAdapterRelation::Exact,
+            )
+            .claim(),
+            DriverAdapterClaim::ReviewedProjection
+        );
+    }
+
+    #[test]
+    fn production_refinement_and_verification_projection_have_distinct_ceilings() {
+        assert_eq!(
+            trust(
+                VendorOracleKind::ConcreteReplay,
+                RustBindingKind::SharedProductionCore,
+                DriverAdapterDomain::ReviewedDomain,
+                DriverAdapterRelation::Refinement,
+            )
+            .claim(),
+            DriverAdapterClaim::ReviewedRefinement
+        );
+        assert_eq!(
+            trust(
+                VendorOracleKind::ConcreteReplay,
+                RustBindingKind::VerificationProjection,
+                DriverAdapterDomain::ReviewedDomain,
+                DriverAdapterRelation::Exact,
+            )
+            .claim(),
+            DriverAdapterClaim::ReviewedProjection
+        );
+    }
 }

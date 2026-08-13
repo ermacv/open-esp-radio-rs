@@ -8,12 +8,12 @@ mod linked_ir;
 mod mmio_discovery;
 mod service;
 
-pub(crate) use direct::{
-    RiscvHarnessSpec, StructuralCallSite, StructuralPointerContext, StructuralProjectedRelocation,
-    trace_binary_symbol,
-};
 #[cfg(test)]
 pub(crate) use direct::{RiscvSummaryHooks, SymbolicStack};
+pub(crate) use direct::{
+    StructuralCallSite, StructuralPointerContext, StructuralProjectedRelocation,
+    trace_binary_symbol,
+};
 pub(crate) use effective_code::*;
 pub(crate) use interface_tables::*;
 pub(crate) use linkage::*;

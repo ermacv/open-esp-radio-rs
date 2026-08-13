@@ -68,6 +68,9 @@ fn suite_inputs(
         for vendor in &suite.vendor {
             required.insert(InputRole::SourceArtifact(vendor.source.clone()));
         }
+        for source in &suite.auxiliary_sources {
+            required.insert(InputRole::SourceArtifact(source.clone()));
+        }
     }
     let missing = required
         .difference(&configured)
@@ -556,21 +559,6 @@ fn artifact_currency(suites: &[StoredSuiteReport]) -> Result<ArtifactCurrency, S
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ProjectSpec;
-
-    #[test]
-    fn checked_project_exposes_parseable_verification_suites() {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .ancestors()
-            .nth(2)
-            .expect("workbench remains under tools");
-        let project = ProjectSpec::load(
-            &root.join("verification/vendor/targets/esp32s31/vendor-project.toml"),
-        )
-        .unwrap();
-        let component = suite_configuration(project.verification.as_ref().unwrap());
-        assert_eq!(component.status, Readiness::Ready, "{component:?}");
-    }
 
     #[test]
     fn artifact_currency_deduplicates_inputs_and_detects_changes() {

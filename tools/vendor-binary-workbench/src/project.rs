@@ -157,6 +157,7 @@ pub(crate) struct CodeWorkspacePaths {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum ProjectVerificationGate {
+    Informational,
     Completion,
     Regression { match_floor: usize },
 }
@@ -188,6 +189,9 @@ pub(crate) struct VerificationVendorSpec {
 pub(crate) struct VerificationSuiteSpec {
     pub(crate) id: String,
     pub(crate) vendor: Vec<VerificationVendorSpec>,
+    /// Additional linked images available only to platform verification
+    /// adapters; they do not enlarge the suite's source inventory.
+    pub(crate) auxiliary_sources: Vec<SourceId>,
     pub(crate) rust_artifact_role: InputRole,
     pub(crate) rust_companion_role: Option<InputRole>,
     pub(crate) rust_prefix: String,

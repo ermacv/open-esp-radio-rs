@@ -25,6 +25,63 @@ pub const AP_STATUS_SUCCESS: u16 = 0;
 pub const AP_STATUS_TOO_MANY_STATIONS: u16 = 17;
 pub const AP_STATUS_UNSUPPORTED_RATES: u16 = 18;
 pub const AP_STATUS_INVALID_RSN: u16 = 40;
+pub const AP_ASSOCIATION_DEADLINE_MICROS: u64 = 15_000_000;
+
+/// Validated inactivity policy for an associated SoftAP peer.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct AccessPointInactiveTimeout(u16);
+
+impl AccessPointInactiveTimeout {
+    pub const MIN_SECONDS: u16 = 10;
+    pub const MAX_SECONDS: u16 = 3_600;
+    pub const DEFAULT_SECONDS: u16 = 300;
+
+    pub const fn new(seconds: u16) -> Result<Self, AccessPointInactiveTimeoutError> {
+        if seconds < Self::MIN_SECONDS || seconds > Self::MAX_SECONDS {
+            return Err(AccessPointInactiveTimeoutError { seconds });
+        }
+        Ok(Self(seconds))
+    }
+
+    pub const fn seconds(self) -> u16 {
+        self.0
+    }
+
+    pub const fn micros(self) -> u64 {
+        self.0 as u64 * 1_000_000
+    }
+}
+
+impl Default for AccessPointInactiveTimeout {
+    fn default() -> Self {
+        Self(Self::DEFAULT_SECONDS)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AccessPointInactiveTimeoutError {
+    seconds: u16,
+}
+
+impl AccessPointInactiveTimeoutError {
+    pub const fn seconds(self) -> u16 {
+        self.seconds
+    }
+}
+
+impl fmt::Display for AccessPointInactiveTimeoutError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            formatter,
+            "access-point inactivity timeout {} is outside {}..={} seconds",
+            self.seconds,
+            AccessPointInactiveTimeout::MIN_SECONDS,
+            AccessPointInactiveTimeout::MAX_SECONDS,
+        )
+    }
+}
+
+impl core::error::Error for AccessPointInactiveTimeoutError {}
 
 /// Validated runtime admission limit for one AP epoch.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -74,6 +131,22 @@ pub enum ApPeerPhase {
     Authenticated,
     Securing,
     Authorized,
+    Closing,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ApPeerCloseKind {
+    AuthenticationTimeout,
+    InactivityTimeout,
+    AccessPointStop,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ApPeerClose {
+    pub peer: [u8; 6],
+    pub kind: ApPeerCloseKind,
+    pub was_associated: bool,
+    pub maximum_legacy_rate_500kbps: u8,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -156,6 +229,8 @@ struct ApPeer {
     wpa2: Option<Wpa2ApState>,
     pending_ptk: Option<Ptk>,
     maximum_legacy_rate_500kbps: u8,
+    last_activity_micros: u64,
+    deadline_micros: u64,
 }
 
 /// Caller-owned storage for all per-client AP protocol and key state.
@@ -183,7 +258,7 @@ impl Default for AccessPointPeerStorage {
 }
 
 impl ApPeer {
-    const fn authenticated(address: [u8; 6], association_id: u16) -> Self {
+    const fn authenticated(address: [u8; 6], association_id: u16, now_micros: u64) -> Self {
         Self {
             address,
             association_id,
@@ -193,6 +268,8 @@ impl ApPeer {
             // Authentication precedes rate negotiation. Keep the universally
             // compatible 1-Mbit/s value until Association succeeds.
             maximum_legacy_rate_500kbps: 2,
+            last_activity_micros: now_micros,
+            deadline_micros: now_micros.saturating_add(AP_ASSOCIATION_DEADLINE_MICROS),
         }
     }
 }
@@ -203,6 +280,8 @@ pub struct ApPeerStatus {
     pub association_id: u16,
     pub phase: ApPeerPhase,
     pub maximum_legacy_rate_500kbps: u8,
+    pub last_activity_micros: u64,
+    pub deadline_micros: u64,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -224,6 +303,7 @@ pub struct AccessPointService<'peers> {
     gtk: Wpa2Gtk,
     peer_storage: Option<&'peers mut AccessPointPeerStorage>,
     client_limit: AccessPointClientLimit,
+    inactive_timeout: AccessPointInactiveTimeout,
     next_management_sequence: u16,
     next_data_sequence: u16,
     status_revision: u32,
@@ -235,6 +315,7 @@ impl<'peers> AccessPointService<'peers> {
         pmk: Pmk,
         gtk: Wpa2Gtk,
         client_limit: AccessPointClientLimit,
+        inactive_timeout: AccessPointInactiveTimeout,
         peer_storage: &'peers mut AccessPointPeerStorage,
     ) -> Self {
         peer_storage.peers.fill_with(|| None);
@@ -244,6 +325,7 @@ impl<'peers> AccessPointService<'peers> {
             gtk,
             peer_storage: Some(peer_storage),
             client_limit,
+            inactive_timeout,
             next_management_sequence: 0,
             next_data_sequence: 0,
             status_revision: 0,
@@ -269,6 +351,8 @@ impl<'peers> AccessPointService<'peers> {
                 association_id: peer.association_id,
                 phase: peer.phase,
                 maximum_legacy_rate_500kbps: peer.maximum_legacy_rate_500kbps,
+                last_activity_micros: peer.last_activity_micros,
+                deadline_micros: peer.deadline_micros,
             })
     }
 
@@ -282,12 +366,14 @@ impl<'peers> AccessPointService<'peers> {
                 association_id: peer.association_id,
                 phase: peer.phase,
                 maximum_legacy_rate_500kbps: peer.maximum_legacy_rate_500kbps,
+                last_activity_micros: peer.last_activity_micros,
+                deadline_micros: peer.deadline_micros,
             })
     }
 
     pub fn associated_count(&self) -> u8 {
         self.peers()
-            .filter(|peer| peer.phase != ApPeerPhase::Authenticated)
+            .filter(|peer| matches!(peer.phase, ApPeerPhase::Securing | ApPeerPhase::Authorized))
             .count() as u8
     }
 
@@ -310,6 +396,8 @@ impl<'peers> AccessPointService<'peers> {
                 association_id: peer.association_id,
                 phase: peer.phase,
                 maximum_legacy_rate_500kbps: peer.maximum_legacy_rate_500kbps,
+                last_activity_micros: peer.last_activity_micros,
+                deadline_micros: peer.deadline_micros,
             });
         }
         AccessPointServiceStatus {
@@ -343,19 +431,21 @@ impl<'peers> AccessPointService<'peers> {
         self.next_data_sequence
     }
 
-    pub fn authenticate_open(&mut self, peer: [u8; 6]) -> ApMlmeAction {
+    pub fn authenticate_open(&mut self, peer: [u8; 6], now_micros: u64) -> ApMlmeAction {
         let (status, changed) = if let Some(index) = self.peer_index(peer) {
             let association_id = self.storage().peers[index]
                 .as_ref()
                 .expect("peer index resolves an occupied entry")
                 .association_id;
-            self.storage_mut().peers[index] = Some(ApPeer::authenticated(peer, association_id));
+            self.storage_mut().peers[index] =
+                Some(ApPeer::authenticated(peer, association_id, now_micros));
             (AP_STATUS_SUCCESS, true)
         } else if self.occupied_count() >= self.client_limit.get() {
             (AP_STATUS_TOO_MANY_STATIONS, false)
         } else if let Some(index) = self.storage().peers.iter().position(Option::is_none) {
             let association_id = u16::try_from(index + 1).expect("fifteen AIDs fit u16");
-            self.storage_mut().peers[index] = Some(ApPeer::authenticated(peer, association_id));
+            self.storage_mut().peers[index] =
+                Some(ApPeer::authenticated(peer, association_id, now_micros));
             (AP_STATUS_SUCCESS, true)
         } else {
             (AP_STATUS_TOO_MANY_STATIONS, false)
@@ -373,8 +463,10 @@ impl<'peers> AccessPointService<'peers> {
         maximum_legacy_rate_500kbps: u8,
         authenticator_nonce: [u8; 32],
         initial_replay_counter: u64,
+        now_micros: u64,
     ) -> Result<ApMlmeAction, ApServiceError> {
         let access_point = self.address;
+        let inactive_timeout_micros = self.inactive_timeout.micros();
         let existing = self.checked_peer_mut(peer)?;
         if existing.phase != ApPeerPhase::Authenticated {
             return Err(ApServiceError::WrongPeerPhase);
@@ -402,6 +494,8 @@ impl<'peers> AccessPointService<'peers> {
         existing.phase = ApPeerPhase::Securing;
         existing.wpa2 = Some(wpa2);
         existing.maximum_legacy_rate_500kbps = maximum_legacy_rate_500kbps;
+        existing.last_activity_micros = now_micros;
+        existing.deadline_micros = now_micros.saturating_add(inactive_timeout_micros);
         let association_id = existing.association_id;
         self.status_revision = self.status_revision.wrapping_add(1);
         Ok(ApMlmeAction::AssociationResponse {
@@ -596,15 +690,87 @@ impl<'peers> AccessPointService<'peers> {
         &self.gtk
     }
 
-    pub fn authorize(&mut self, peer: [u8; 6]) -> Result<(), ApServiceError> {
+    pub fn authorize(&mut self, peer: [u8; 6], now_micros: u64) -> Result<(), ApServiceError> {
+        let inactive_timeout_micros = self.inactive_timeout.micros();
         let existing = self.checked_peer_mut(peer)?;
         if existing.wpa2.as_ref().map(Wpa2ApState::phase) != Some(Wpa2ApPhase::Authorized) {
             return Err(ApServiceError::WrongPeerPhase);
         }
         existing.phase = ApPeerPhase::Authorized;
         existing.pending_ptk = None;
+        existing.last_activity_micros = now_micros;
+        existing.deadline_micros = now_micros.saturating_add(inactive_timeout_micros);
         self.status_revision = self.status_revision.wrapping_add(1);
         Ok(())
+    }
+
+    pub fn observe_activity(
+        &mut self,
+        peer: [u8; 6],
+        now_micros: u64,
+    ) -> Result<(), ApServiceError> {
+        let inactive_timeout_micros = self.inactive_timeout.micros();
+        let existing = self.checked_peer_mut(peer)?;
+        if !matches!(
+            existing.phase,
+            ApPeerPhase::Securing | ApPeerPhase::Authorized
+        ) {
+            return Err(ApServiceError::WrongPeerPhase);
+        }
+        existing.last_activity_micros = now_micros;
+        existing.deadline_micros = now_micros.saturating_add(inactive_timeout_micros);
+        Ok(())
+    }
+
+    pub fn next_peer_deadline(&self) -> Option<u64> {
+        self.storage()
+            .peers
+            .iter()
+            .flatten()
+            .filter(|peer| peer.phase != ApPeerPhase::Closing)
+            .map(|peer| peer.deadline_micros)
+            .min()
+    }
+
+    pub fn begin_due_peer_close(&mut self, now_micros: u64) -> Option<ApPeerClose> {
+        let index = self.storage().peers.iter().position(|peer| {
+            peer.as_ref().is_some_and(|peer| {
+                peer.phase != ApPeerPhase::Closing && peer.deadline_micros <= now_micros
+            })
+        })?;
+        let peer = self.storage_mut().peers[index].as_mut()?;
+        let was_associated = matches!(peer.phase, ApPeerPhase::Securing | ApPeerPhase::Authorized);
+        let close = ApPeerClose {
+            peer: peer.address,
+            kind: if was_associated {
+                ApPeerCloseKind::InactivityTimeout
+            } else {
+                ApPeerCloseKind::AuthenticationTimeout
+            },
+            was_associated,
+            maximum_legacy_rate_500kbps: peer.maximum_legacy_rate_500kbps,
+        };
+        peer.phase = ApPeerPhase::Closing;
+        self.status_revision = self.status_revision.wrapping_add(1);
+        Some(close)
+    }
+
+    pub fn begin_stop_peer(&mut self) -> Option<ApPeerClose> {
+        let index = self.storage().peers.iter().position(|peer| {
+            peer.as_ref()
+                .is_some_and(|peer| peer.phase != ApPeerPhase::Closing)
+        })?;
+        let peer = self.storage_mut().peers[index].as_mut()?;
+        let was_associated = matches!(peer.phase, ApPeerPhase::Securing | ApPeerPhase::Authorized);
+        let close = ApPeerClose {
+            peer: peer.address,
+            kind: ApPeerCloseKind::AccessPointStop,
+            was_associated,
+            maximum_legacy_rate_500kbps: peer.maximum_legacy_rate_500kbps,
+        };
+        peer.phase = ApPeerPhase::Closing;
+        self.status_revision = self.status_revision.wrapping_add(1);
+        Some(close)
     }
 
     pub fn remove_peer(&mut self, peer: [u8; 6]) -> Result<ApMlmeAction, ApServiceError> {
@@ -700,6 +866,7 @@ mod tests {
             Pmk::derive(b"password", b"test-ap").unwrap(),
             Wpa2Gtk::new(1, true, [0x55; 16]).unwrap(),
             AccessPointClientLimit::new(2).unwrap(),
+            AccessPointInactiveTimeout::default(),
             storage,
         )
     }
@@ -709,14 +876,14 @@ mod tests {
         let mut storage = AccessPointPeerStorage::new();
         let mut service = service(&mut storage);
         assert_eq!(
-            service.authenticate_open(PEER),
+            service.authenticate_open(PEER, 0),
             ApMlmeAction::AuthenticationResponse {
                 peer: PEER,
                 status: AP_STATUS_SUCCESS,
             }
         );
         assert_eq!(
-            service.authenticate_open(OTHER),
+            service.authenticate_open(OTHER, 0),
             ApMlmeAction::AuthenticationResponse {
                 peer: OTHER,
                 status: AP_STATUS_SUCCESS,
@@ -724,7 +891,7 @@ mod tests {
         );
         let third = [0x02, 0, 0, 0, 0, 4];
         assert_eq!(
-            service.authenticate_open(third),
+            service.authenticate_open(third, 0),
             ApMlmeAction::AuthenticationResponse {
                 peer: third,
                 status: AP_STATUS_TOO_MANY_STATIONS,
@@ -744,13 +911,84 @@ mod tests {
     }
 
     #[test]
+    fn inactivity_timeout_is_bounded_and_defaults_to_vendor_policy() {
+        assert_eq!(AccessPointInactiveTimeout::default().seconds(), 300);
+        assert_eq!(AccessPointInactiveTimeout::new(9).unwrap_err().seconds(), 9);
+        assert_eq!(AccessPointInactiveTimeout::new(10).unwrap().seconds(), 10);
+        assert_eq!(
+            AccessPointInactiveTimeout::new(3_600).unwrap().seconds(),
+            3_600
+        );
+        assert_eq!(
+            AccessPointInactiveTimeout::new(3_601)
+                .unwrap_err()
+                .seconds(),
+            3_601
+        );
+    }
+
+    #[test]
+    fn authenticated_peer_expires_at_the_recovered_fifteen_second_frontier() {
+        let mut storage = AccessPointPeerStorage::new();
+        let mut service = service(&mut storage);
+        service.authenticate_open(PEER, 1_000);
+        assert_eq!(service.next_peer_deadline(), Some(15_001_000));
+        assert_eq!(service.begin_due_peer_close(15_000_999), None);
+        assert_eq!(
+            service.begin_due_peer_close(15_001_000),
+            Some(ApPeerClose {
+                peer: PEER,
+                kind: ApPeerCloseKind::AuthenticationTimeout,
+                was_associated: false,
+                maximum_legacy_rate_500kbps: 2,
+            })
+        );
+        assert_eq!(
+            service.peer_status(PEER).unwrap().phase,
+            ApPeerPhase::Closing
+        );
+        assert_eq!(service.associated_count(), 0);
+    }
+
+    #[test]
+    fn associated_activity_refreshes_the_configured_inactivity_frontier() {
+        let mut storage = AccessPointPeerStorage::new();
+        let mut service = AccessPointService::new(
+            AP,
+            Pmk::derive(b"password", b"test-ap").unwrap(),
+            Wpa2Gtk::new(1, true, [0x55; 16]).unwrap(),
+            AccessPointClientLimit::new(2).unwrap(),
+            AccessPointInactiveTimeout::new(10).unwrap(),
+            &mut storage,
+        );
+        service.authenticate_open(PEER, 0);
+        service
+            .associate_wpa2(PEER, &WPA2_RSN, 108, [7; 32], 9, 2_000)
+            .unwrap();
+        assert_eq!(service.next_peer_deadline(), Some(10_002_000));
+        service.observe_activity(PEER, 5_000_000).unwrap();
+        assert_eq!(service.next_peer_deadline(), Some(15_000_000));
+        assert_eq!(service.begin_due_peer_close(14_999_999), None);
+        assert_eq!(
+            service.begin_due_peer_close(15_000_000),
+            Some(ApPeerClose {
+                peer: PEER,
+                kind: ApPeerCloseKind::InactivityTimeout,
+                was_associated: true,
+                maximum_legacy_rate_500kbps: 108,
+            })
+        );
+        assert_eq!(service.associated_count(), 0);
+    }
+
+    #[test]
     fn association_owns_a_bounded_wpa2_state() {
         let mut storage = AccessPointPeerStorage::new();
         let mut service = service(&mut storage);
-        service.authenticate_open(PEER);
+        service.authenticate_open(PEER, 0);
         assert_eq!(
             service
-                .associate_wpa2(PEER, &WPA2_RSN, 108, [7; 32], 9)
+                .associate_wpa2(PEER, &WPA2_RSN, 108, [7; 32], 9, 1)
                 .unwrap(),
             ApMlmeAction::AssociationResponse {
                 peer: PEER,
@@ -785,10 +1023,10 @@ mod tests {
     fn association_rejects_a_peer_without_a_common_legacy_rate() {
         let mut storage = AccessPointPeerStorage::new();
         let mut service = service(&mut storage);
-        service.authenticate_open(PEER);
+        service.authenticate_open(PEER, 0);
         assert_eq!(
             service
-                .associate_wpa2(PEER, &WPA2_RSN, 0, [7; 32], 9)
+                .associate_wpa2(PEER, &WPA2_RSN, 0, [7; 32], 9, 1)
                 .unwrap(),
             ApMlmeAction::AssociationResponse {
                 peer: PEER,
@@ -809,11 +1047,11 @@ mod tests {
 
         let mut storage = AccessPointPeerStorage::new();
         let mut service = service(&mut storage);
-        service.authenticate_open(PEER);
+        service.authenticate_open(PEER, 0);
         // Supplicants may add their own RSN capabilities. Message 3 must not
         // reflect those bytes back: it authenticates the AP's beacon RSN IE.
         service
-            .associate_wpa2(PEER, &SUPPLICANT_RSN, 108, ANONCE, 9)
+            .associate_wpa2(PEER, &SUPPLICANT_RSN, 108, ANONCE, 9, 1)
             .unwrap();
         let message1 = service.begin_wpa2_frame::<512>(PEER).unwrap();
         assert_eq!(
@@ -865,7 +1103,7 @@ mod tests {
             ApWpa2Progress::AuthorizePeer
         ));
         assert!(service.pending_ptk(PEER).is_ok());
-        service.authorize(PEER).unwrap();
+        service.authorize(PEER, 2).unwrap();
         assert_eq!(
             service.peer_status(PEER).unwrap().phase,
             ApPeerPhase::Authorized
@@ -880,9 +1118,9 @@ mod tests {
     fn invalid_rsn_does_not_open_the_controlled_port() {
         let mut storage = AccessPointPeerStorage::new();
         let mut service = service(&mut storage);
-        service.authenticate_open(PEER);
+        service.authenticate_open(PEER, 0);
         assert_eq!(
-            service.associate_wpa2(PEER, &[0x30, 0], 108, [7; 32], 9),
+            service.associate_wpa2(PEER, &[0x30, 0], 108, [7; 32], 9, 1),
             Ok(ApMlmeAction::AssociationResponse {
                 peer: PEER,
                 status: AP_STATUS_INVALID_RSN,
@@ -913,12 +1151,13 @@ mod tests {
             Pmk::derive(b"password", b"test-ap").unwrap(),
             Wpa2Gtk::new(1, true, [0x55; 16]).unwrap(),
             AccessPointClientLimit::new(15).unwrap(),
+            AccessPointInactiveTimeout::default(),
             &mut storage,
         );
         for suffix in 1..=15_u8 {
             let peer = [0x02, 0, 0, 0, 1, suffix];
             assert_eq!(
-                service.authenticate_open(peer),
+                service.authenticate_open(peer, 0),
                 ApMlmeAction::AuthenticationResponse {
                     peer,
                     status: AP_STATUS_SUCCESS,
@@ -930,7 +1169,7 @@ mod tests {
             );
             assert!(matches!(
                 service
-                    .associate_wpa2(peer, &WPA2_RSN, 108, [suffix; 32], u64::from(suffix))
+                    .associate_wpa2(peer, &WPA2_RSN, 108, [suffix; 32], u64::from(suffix), 1,)
                     .unwrap(),
                 ApMlmeAction::AssociationResponse {
                     status: AP_STATUS_SUCCESS,
@@ -942,7 +1181,7 @@ mod tests {
         assert_eq!(service.associated_count(), 15);
         let overflow = [0x02, 0, 0, 0, 2, 1];
         assert_eq!(
-            service.authenticate_open(overflow),
+            service.authenticate_open(overflow, 0),
             ApMlmeAction::AuthenticationResponse {
                 peer: overflow,
                 status: AP_STATUS_TOO_MANY_STATIONS,
@@ -951,7 +1190,7 @@ mod tests {
         let released = [0x02, 0, 0, 0, 1, 7];
         service.remove_peer(released).unwrap();
         assert_eq!(
-            service.authenticate_open(overflow),
+            service.authenticate_open(overflow, 0),
             ApMlmeAction::AuthenticationResponse {
                 peer: overflow,
                 status: AP_STATUS_SUCCESS,

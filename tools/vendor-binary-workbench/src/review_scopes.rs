@@ -85,6 +85,7 @@ pub(crate) fn analyze(project: &ProjectSpec) -> Result<Vec<ReviewScopeReport>> {
         .transpose()?;
     let mut nodes_by_profiles = BTreeMap::new();
     let mut reports = Vec::with_capacity(workspace.scopes.len());
+    let publication_scopes = publication_scopes(project, workspace)?;
     for scope in &workspace.scopes {
         if !nodes_by_profiles.contains_key(&scope.profiles) {
             nodes_by_profiles.insert(
@@ -94,7 +95,7 @@ pub(crate) fn analyze(project: &ProjectSpec) -> Result<Vec<ReviewScopeReport>> {
         }
         reports.push(analyze_scope(
             scope,
-            workspace.publication_scopes.contains(&scope.id),
+            publication_scopes.contains(&scope.id),
             register_facts.as_ref(),
             &nodes_by_profiles[&scope.profiles],
         )?);
@@ -156,6 +157,7 @@ pub(crate) fn load_for_project(project: &ProjectSpec) -> Result<ReviewScopesDocu
             )
         })
         .collect::<Vec<_>>();
+    let publication_scopes = publication_scopes(project, workspace)?;
     let expected = workspace
         .scopes
         .iter()
@@ -163,7 +165,7 @@ pub(crate) fn load_for_project(project: &ProjectSpec) -> Result<ReviewScopesDocu
             (
                 scope.id.as_str(),
                 scope.profiles.as_slice(),
-                workspace.publication_scopes.contains(&scope.id),
+                publication_scopes.contains(&scope.id),
             )
         })
         .collect::<Vec<_>>();
@@ -174,10 +176,28 @@ pub(crate) fn load_for_project(project: &ProjectSpec) -> Result<ReviewScopesDocu
         )));
     }
     let replacements = load_replacements(project)?;
+    let policy_exclusions = crate::qualification::required_scope_policy_exclusions(project)?;
+    let no_policy_exclusions = BTreeSet::new();
     for scope in &mut document.scopes {
-        apply_replacement_assurance(scope, &replacements)?;
+        let scope_policy_exclusions = policy_exclusions
+            .get(&scope.id)
+            .unwrap_or(&no_policy_exclusions);
+        apply_replacement_assurance(scope, &replacements, scope_policy_exclusions)?;
     }
     Ok(document)
+}
+
+fn publication_scopes(
+    project: &ProjectSpec,
+    workspace: &crate::project::ReviewWorkspaceSpec,
+) -> Result<BTreeSet<String>> {
+    let mut scopes = workspace
+        .publication_scopes
+        .iter()
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    scopes.extend(crate::qualification::required_review_scopes(project)?);
+    Ok(scopes)
 }
 
 fn load_profile_nodes(
@@ -402,6 +422,7 @@ fn analyze_scope(
         unresolved_calls: 0,
         replacement_behavioral_matches: 0,
         replacement_production_matches: 0,
+        replacement_policy_excluded: 0,
         replacement_bounded_matches: 0,
         replacement_probe_only_matches: 0,
         replacement_unmapped_matches: 0,
@@ -554,6 +575,7 @@ fn analyze_scope(
 fn apply_replacement_assurance(
     report: &mut ReviewScopeReport,
     replacements: &[StoredReplacement],
+    policy_exclusions: &BTreeSet<crate::qualification::RequiredPolicyExclusion>,
 ) -> Result<()> {
     let mut review_queue = queue::new();
     for item in std::mem::take(&mut report.review_queue) {
@@ -567,6 +589,25 @@ fn apply_replacement_assurance(
             ))
         })?;
         let function = format!("{source}::{symbol}");
+        let transaction = report
+            .transactions
+            .iter()
+            .find(|transaction| transaction.source == source && transaction.symbol == symbol);
+        let excluded = transaction.is_some_and(|transaction| {
+            policy_exclusions.iter().any(|exclusion| {
+                exclusion.source == source
+                    && exclusion.symbol == symbol
+                    && exclusion
+                        .identity
+                        .as_deref()
+                        .is_none_or(|identity| identity == transaction.identity)
+                    && exclusion.fingerprint == transaction.fingerprint
+            })
+        });
+        if excluded {
+            report.replacement_policy_excluded += 1;
+            continue;
+        }
         let Some(replacement) = replacements.iter().find(|replacement| {
             replacement.vendor.source == source && replacement.vendor.symbol == symbol
         }) else {
@@ -655,7 +696,8 @@ fn apply_replacement_assurance(
     report.replacement_qualification = if !report.publication {
         ReplacementQualification::NotPublished
     } else if report.has_replacement_qualification_blockers()
-        || report.replacement_production_matches != report.replacement_functions
+        || report.replacement_production_matches + report.replacement_policy_excluded
+            != report.replacement_functions
     {
         ReplacementQualification::Blocked
     } else {
@@ -1042,6 +1084,7 @@ mod tests {
                     verification_probes: Vec::new(),
                 }),
             }],
+            &BTreeSet::new(),
         )
         .unwrap();
 
@@ -1053,5 +1096,89 @@ mod tests {
         assert!(json.get("replacement_qualification").is_none());
         assert!(json.get("replacement_production_matches").is_none());
         assert!(json["review_queue"].as_array().unwrap().is_empty());
+    }
+
+    #[test]
+    fn exact_required_feature_policy_exclusion_closes_replacement_boundary() {
+        let nodes = BTreeMap::from([("vendor::root".to_owned(), node("vendor", "root"))]);
+        let scope = ReviewScopeSpec {
+            id: "feature".to_owned(),
+            profiles: vec!["fixture".to_owned()],
+            roots: vec!["vendor:root".to_owned()],
+            include_reachable: false,
+        };
+        let mut report = analyze_scope(&scope, true, None, &nodes).unwrap();
+        report.transactions.push(ReviewScopeTransaction {
+            id: "vendor:root".to_owned(),
+            identity: "vendor::root".to_owned(),
+            source: "vendor".to_owned(),
+            symbol: "root".to_owned(),
+            fingerprint: "sha256:reviewed".to_owned(),
+            paths: vec![vec!["vendor::root".to_owned()]],
+            effects: Vec::new(),
+        });
+        let exclusions = BTreeSet::from([crate::qualification::RequiredPolicyExclusion {
+            source: "vendor".to_owned(),
+            symbol: "root".to_owned(),
+            identity: None,
+            fingerprint: "sha256:reviewed".to_owned(),
+        }]);
+
+        apply_replacement_assurance(
+            &mut report,
+            &[StoredReplacement {
+                vendor: model::StoredVendorFunction {
+                    source: "vendor".to_owned(),
+                    symbol: "root".to_owned(),
+                },
+                status: "uncovered".to_owned(),
+                rust: None,
+            }],
+            &exclusions,
+        )
+        .unwrap();
+
+        assert_eq!(report.replacement_policy_excluded, 1);
+        assert_eq!(report.replacement_uncovered, 0);
+        assert_eq!(
+            report.replacement_qualification,
+            ReplacementQualification::Qualified
+        );
+    }
+
+    #[test]
+    fn stale_feature_policy_exclusion_remains_uncovered() {
+        let nodes = BTreeMap::from([("vendor::root".to_owned(), node("vendor", "root"))]);
+        let scope = ReviewScopeSpec {
+            id: "feature".to_owned(),
+            profiles: vec!["fixture".to_owned()],
+            roots: vec!["vendor:root".to_owned()],
+            include_reachable: false,
+        };
+        let mut report = analyze_scope(&scope, true, None, &nodes).unwrap();
+        report.transactions.push(ReviewScopeTransaction {
+            id: "vendor:root".to_owned(),
+            identity: "vendor::root".to_owned(),
+            source: "vendor".to_owned(),
+            symbol: "root".to_owned(),
+            fingerprint: "sha256:changed".to_owned(),
+            paths: vec![vec!["vendor::root".to_owned()]],
+            effects: Vec::new(),
+        });
+        let exclusions = BTreeSet::from([crate::qualification::RequiredPolicyExclusion {
+            source: "vendor".to_owned(),
+            symbol: "root".to_owned(),
+            identity: None,
+            fingerprint: "sha256:reviewed".to_owned(),
+        }]);
+
+        apply_replacement_assurance(&mut report, &[], &exclusions).unwrap();
+
+        assert_eq!(report.replacement_policy_excluded, 0);
+        assert_eq!(report.replacement_uncovered, 1);
+        assert_eq!(
+            report.replacement_qualification,
+            ReplacementQualification::Blocked
+        );
     }
 }

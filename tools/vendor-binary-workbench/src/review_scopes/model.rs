@@ -121,6 +121,8 @@ pub(crate) struct ReviewScopeReport {
     #[serde(skip)]
     pub(crate) replacement_production_matches: usize,
     #[serde(skip)]
+    pub(crate) replacement_policy_excluded: usize,
+    #[serde(skip)]
     pub(crate) replacement_bounded_matches: usize,
     #[serde(skip)]
     pub(crate) replacement_probe_only_matches: usize,

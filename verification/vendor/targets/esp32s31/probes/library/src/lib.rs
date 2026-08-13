@@ -10,20 +10,25 @@
 use core::{
     cell::Cell,
     future::{Future, ready},
+    pin::Pin,
 };
 
 use open_esp_radio_esp32s31_hal::RadioRegisters;
+use open_esp_radio_esp32s31_hal::wifi_mac::WifiMacHal;
 use open_esp_radio_esp32s31_wifi_dma::descriptor::{
-    BIT_30, BIT_31, DESCRIPTOR_BYTES, Descriptor, LENGTH_SHIFT,
+    BIT_30, BIT_31, DESCRIPTOR_BYTES, LENGTH_SHIFT,
 };
+use open_esp_radio_esp32s31_wifi_dma::rx_storage::RxDmaStorage;
+use open_esp_radio_esp32s31_wifi_dma::tx_storage::TxDmaStorage;
 use open_esp_radio_esp32s31_wifi_mac::{
+    ap_tsf::{reset_and_start_access_point_tsf, stop_access_point_tsf},
     crypto::{install_ap_pairwise_ccmp, install_sta_pairwise_ccmp},
     irq::{
         HANDLED_MAC_MASK, IrqDisposition, IrqSink, IrqWork, MAC_INT_RX_ASSOCIATED_AUXILIARY_MASK,
         handle_mac_irq, next_irq_work,
     },
-    rx::RxRingStopped,
     rx_pool::RxStagePool,
+    tx::{LegacyTxConfig, LegacyTxQueue, TxSlot, TxSlotState, legacy_q0_image},
 };
 use open_esp_radio_ieee80211::station::{
     StaAssociationAttempt, StaAssociationFailure, StaAuthenticationAttempt,
@@ -32,6 +37,14 @@ use open_esp_radio_ieee80211::station::{
 use open_esp_radio_wifi_sta::join::{
     StaJoinBackend, StaJoinError, StaJoinRunner, StaJoinRxObserver, StaJoinTimer,
 };
+
+#[unsafe(no_mangle)]
+#[unsafe(link_section = ".dma.bss.open_radio_verification_rx")]
+static mut OPEN_LIBPP_RX_STORAGE: RxDmaStorage<2, 16, 20> = RxDmaStorage::new();
+
+#[unsafe(no_mangle)]
+#[unsafe(link_section = ".dma.bss.open_radio_verification_tx")]
+static mut OPEN_LIBPP_TX_STORAGE: TxDmaStorage<64> = TxDmaStorage::new();
 
 // Stable test-only projection protocol. Production PHY types keep their Rust
 // layout private; these small C-layout records are the explicit binary
@@ -450,16 +463,11 @@ pub extern "C" fn open_coex_core_trace_request(
     is_real_chip: u32,
 ) -> u32 {
     use open_esp_radio_esp32s31_coex::{
-        CoexClient, CoexCore, CoexError, CoexEventId, CoexPtiTable, CoexRequest,
+        CoexClientRequest, CoexCore, CoexError, CoexEventId, CoexPtiTable,
     };
 
     let Ok(event) = CoexEventId::new(event as u8) else {
         return 0x102;
-    };
-    let client = if client == 0 {
-        CoexClient::Bluetooth
-    } else {
-        CoexClient::Wifi
     };
     let mut core = CoexCore::new(CoexPtiTable::reviewed_vendor());
     core.enable();
@@ -468,16 +476,17 @@ pub extern "C" fn open_coex_core_trace_request(
     let mut clock = CoexProbeClock {
         is_real_chip: is_real_chip != 0,
     };
-    match core.request(
-        &mut timer,
-        &mut clock,
-        CoexRequest {
-            client,
-            event,
-            latency,
-            duration,
-        },
-    ) {
+    let request = CoexClientRequest {
+        event,
+        latency,
+        duration,
+    };
+    let result = if client == 0 {
+        core.request_bluetooth(&mut timer, &mut clock, request)
+    } else {
+        core.request_wifi(&mut timer, &mut clock, request)
+    };
+    match result {
         Ok(_) => 0,
         Err(CoexError::InvalidEvent) => 0x102,
         Err(_) => u32::MAX,
@@ -516,25 +525,20 @@ pub extern "C" fn open_coex_core_trace_release(_client: u32, event: u32) -> u32 
 #[inline(never)]
 pub extern "C" fn open_libpp_rx_trace_wdev_append_rx_blocks(scenario: u32) -> u32 {
     const COUNT: usize = 2;
-    const BASE: u32 = 0x2f00_1000;
-    const BUFFER_SIZE: u32 = 256;
+    const BUFFER_SIZE: u32 = 16;
 
-    let descriptors = [const { Descriptor::new() }; COUNT];
-    let buffers = [0x2f00_2000, 0x2f00_2200];
+    // SAFETY: the executor starts every probe scenario from a fresh image.
+    // The production arena API then owns the only live borrow for the rest of
+    // this call; the raw reference merely supplies the stable root required
+    // by the target-side DMA typestate.
+    let storage: &'static RxDmaStorage<COUNT, 16, 20> =
+        unsafe { &*core::ptr::addr_of!(OPEN_LIBPP_RX_STORAGE) };
+    let mut buffers = [0_u32; COUNT];
+    let Ok(base) = storage.dma_layout(&mut buffers) else {
+        return 0;
+    };
     let mut registers = open_esp_radio_esp32s31_pac::validation::radio_registers();
-    // SAFETY: this retained staticlib symbol is inspected by the compiled
-    // parity harness; no hardware DMA walker executes its synthetic SRAM
-    // addresses or outlives these local probe values.
-    let stopped = match unsafe {
-        RxRingStopped::prepare(
-            &mut registers,
-            &descriptors,
-            BASE,
-            &buffers,
-            BUFFER_SIZE,
-            |_| Ok(()),
-        )
-    } {
+    let stopped = match storage.prepare_ring(&mut registers, base, &buffers) {
         Ok(stopped) => stopped,
         Err(_) => return 0,
     };
@@ -543,21 +547,22 @@ pub extern "C" fn open_libpp_rx_trace_wdev_append_rx_blocks(scenario: u32) -> u3
         Err(_) => return 0,
     };
 
-    descriptors[0].write_word0(BUFFER_SIZE | (4 << LENGTH_SHIFT) | BIT_30 | BIT_31);
-    let Some(completed) = ring.take_completed(0) else {
-        return 0;
+    storage.descriptors()[0].write_word0(BUFFER_SIZE | (4 << LENGTH_SHIFT) | BIT_30 | BIT_31);
+    let completed = match storage.take_completed_unit(&mut ring, 1) {
+        Ok(Some(completed)) => completed,
+        _ => return 0,
     };
     let pool = RxStagePool::<1, 16>::new();
-    let mut pending = match pool.stage_recycle(
-        completed,
-        &[0x11, 0x22, 0x33, 0x44],
-        &mut registers,
-        &mut ring,
-        |_| Ok(()),
-    ) {
-        Ok(pending) => pending,
-        Err(_) => return 0,
+    let mut pending = match pool.stage_dma_unit_recycle_bounded(completed, &mut registers, 16) {
+        Ok(open_esp_radio_esp32s31_wifi_mac::rx_pool::RxDmaStageUnitOutcome::Staged(pending)) => {
+            pending
+        }
+        _ => return 0,
     };
+    if storage.lifecycle_state() != open_esp_radio_esp32s31_wifi_dma::rx_ring::RxDmaArenaState::Live
+    {
+        return 0;
+    }
     let mut async_edges = 0_u32;
     let frame = loop {
         match pending.poll_reload(&mut registers, &mut ring) {
@@ -571,9 +576,11 @@ pub extern "C" fn open_libpp_rx_trace_wdev_append_rx_blocks(scenario: u32) -> u3
         }
     };
     let segment = frame.segment();
-    if segment.descriptor_address != BASE
-        || segment.next_descriptor_address != BASE + DESCRIPTOR_BYTES
-        || segment.buffer != [0x11, 0x22, 0x33, 0x44]
+    if segment.descriptor_address != base
+        // Staging deliberately severs the DMA-list link: the independent
+        // frame is not a second descriptor owner and must never retain the
+        // hardware successor address.
+        || segment.next_descriptor_address != 0
         || ring.accepted_tail() != 0
         || ring.reload_pending()
     {
@@ -917,10 +924,51 @@ pub extern "C" fn open_libpp_tx_trace_hal_mac_txq_disable(queue: u32) -> u32 {
 
 #[unsafe(no_mangle)]
 #[inline(never)]
-pub extern "C" fn open_libpp_tx_trace_hal_mac_txq_enable_register_slice(queue: u32) -> u32 {
-    // SAFETY: this validation-only function is the sole user of the stolen
-    // peripheral in its isolated probe image.
-    open_esp_radio_esp32s31_pac::validation::hal_mac_txq_enable_register_slice(queue)
+pub extern "C" fn open_libpp_tx_trace_hal_mac_txq_publish_owned(queue: u32) -> u32 {
+    let queue = match queue {
+        0 => LegacyTxQueue::Voice,
+        1 => LegacyTxQueue::Video,
+        2 => LegacyTxQueue::BestEffort,
+        3 => LegacyTxQueue::Background,
+        _ => return 0,
+    };
+    // SAFETY: each executor scenario starts from a fresh probe image. The
+    // production DMA owner consumes this unique static allocation and keeps
+    // it pinned through the complete hardware-ownership interval.
+    let storage = unsafe { &mut *core::ptr::addr_of_mut!(OPEN_LIBPP_TX_STORAGE) };
+    let dma = match TxDmaStorage::pin_static(storage) {
+        Ok(dma) => dma,
+        Err(_) => return 0,
+    };
+    let mut slot = TxSlot::from_dma(dma);
+    let mut slot = Pin::new(&mut slot);
+    if slot.as_mut().buffer_mut().is_err() {
+        return 0;
+    }
+    let cookie = match slot.as_mut().reserve(64, 32) {
+        Ok(cookie) => cookie,
+        Err(_) => return 0,
+    };
+    let Some(config) = LegacyTxConfig::management_1m_from_mpdu_length(32) else {
+        return 0;
+    };
+    let descriptor_address = slot.as_ref().descriptor_address();
+    let Some(image) = legacy_q0_image(descriptor_address, config) else {
+        return 0;
+    };
+    if image.plcp0 & 0x000f_ffff != descriptor_address & 0x000f_ffff {
+        return 0x1000_0000 | (image.plcp0 & 0x000f_ffff);
+    }
+    let mut registers = open_esp_radio_esp32s31_pac::validation::radio_registers();
+    if slot
+        .as_mut()
+        .submit_legacy(&mut registers, cookie, queue, config)
+        .is_err()
+        || slot.state() != TxSlotState::HardwareOwned
+    {
+        return 0;
+    }
+    slot.descriptor_word0()
 }
 
 #[unsafe(no_mangle)]
@@ -1139,6 +1187,93 @@ pub extern "C" fn open_libpp_power_trace_pwr_hal_set_mac_modem_tbtt_auto_period_
 pub extern "C" fn open_libpp_power_tsf_trace_hal_set_sta_tsf_wakeup(enabled: u32) {
     let mut registers = open_esp_radio_esp32s31_pac::validation::radio_registers();
     registers.set_station_tsf_wakeup(enabled != 0);
+}
+
+#[unsafe(no_mangle)]
+#[inline(never)]
+pub extern "C" fn open_libpp_ap_tsf_trace_hal_disable_softap_tsf() {
+    let mut registers = open_esp_radio_esp32s31_pac::validation::radio_registers();
+    let mut hardware = WifiMacHal::new(&mut registers);
+    stop_access_point_tsf(&mut hardware);
+}
+
+#[unsafe(no_mangle)]
+#[inline(never)]
+pub extern "C" fn open_libpp_ap_tsf_start_trace_hal_mac_tsf_reset(selector: u32) {
+    if selector == 0 {
+        let mut registers = open_esp_radio_esp32s31_pac::validation::radio_registers();
+        let mut hardware = WifiMacHal::new(&mut registers);
+        reset_and_start_access_point_tsf(&mut hardware);
+    }
+}
+
+#[unsafe(no_mangle)]
+#[inline(never)]
+pub extern "C" fn open_btbb_coex_trace_coex_pti_v2() {
+    let mut registers = open_esp_radio_esp32s31_pac::validation::radio_registers();
+    open_esp_radio_esp32s31_hal::coex::configure_bluetooth_pti(&mut registers);
+}
+
+#[unsafe(no_mangle)]
+#[inline(never)]
+pub extern "C" fn open_coex_scheduler_trace_interval_set(value: u32, output: *mut u32) -> u32 {
+    let mut scheduler = open_esp_radio_esp32s31_coex::CoexScheduler::new();
+    scheduler.set_interval(value);
+    // SAFETY: executable profiles provide one aligned writable scratch word.
+    unsafe { output.write(scheduler.interval()) };
+    0
+}
+
+#[unsafe(no_mangle)]
+#[inline(never)]
+pub extern "C" fn open_coex_scheduler_trace_interval_get(value: u32) -> u32 {
+    let mut scheduler = open_esp_radio_esp32s31_coex::CoexScheduler::new();
+    scheduler.set_interval(value);
+    scheduler.interval()
+}
+
+#[unsafe(no_mangle)]
+#[inline(never)]
+pub extern "C" fn open_coex_scheduler_trace_current_period(active: u32, period: u32) -> u32 {
+    use open_esp_radio_esp32s31_coex::{CoexPhase, CoexSchedule, CoexScheduler};
+
+    let phases = [CoexPhase::from_reviewed_image([0; 4])];
+    let schedule = CoexSchedule::new(period as u8, &phases);
+    let mut scheduler = CoexScheduler::new();
+    if active != 0 {
+        scheduler.activate(&schedule);
+    }
+    u32::from(scheduler.current_period())
+}
+
+#[unsafe(no_mangle)]
+#[inline(never)]
+pub extern "C" fn open_coex_scheduler_trace_current_phase(
+    active: u32,
+    phase_count: u32,
+    phase_index: u32,
+    vendor_layout_base: u32,
+) -> u32 {
+    use open_esp_radio_esp32s31_coex::{CoexPhase, CoexSchedule, CoexScheduler};
+
+    let phases = [
+        CoexPhase::from_reviewed_image([0x11; 4]),
+        CoexPhase::from_reviewed_image([0x22; 4]),
+    ];
+    let phase_count = usize::try_from(phase_count)
+        .unwrap_or(usize::MAX)
+        .min(phases.len());
+    let schedule = CoexSchedule::new(1, &phases[..phase_count]);
+    let mut scheduler = CoexScheduler::new();
+    if active != 0 {
+        scheduler.activate(&schedule);
+    }
+    scheduler.set_phase_index(phase_index as u8);
+    if scheduler.current_phase().is_some() {
+        vendor_layout_base.wrapping_add(2 + phase_index.wrapping_mul(4))
+    } else {
+        0
+    }
 }
 
 #[unsafe(no_mangle)]
@@ -1974,7 +2109,7 @@ pub fn retain_all_probes() {
     core::hint::black_box(open_libpp_tx_trace_hal_mac_is_txq_valid as *const ());
     core::hint::black_box(open_libpp_tx_trace_hal_mac_set_txq_invalid as *const ());
     core::hint::black_box(open_libpp_tx_trace_hal_mac_txq_disable as *const ());
-    core::hint::black_box(open_libpp_tx_trace_hal_mac_txq_enable_register_slice as *const ());
+    core::hint::black_box(open_libpp_tx_trace_hal_mac_txq_publish_owned as *const ());
     core::hint::black_box(open_libpp_tx_trace_hal_mac_tx_config_edca as *const ());
     core::hint::black_box(open_libpp_tx_trace_hal_mac_tx_get_blockack as *const ());
     core::hint::black_box(open_libpp_interface_trace_hal_mac_set_addr as *const ());
@@ -2017,6 +2152,13 @@ pub fn retain_all_probes() {
         open_libpp_power_trace_pwr_hal_set_mac_modem_tbtt_auto_period_interval as *const (),
     );
     core::hint::black_box(open_libpp_power_tsf_trace_hal_set_sta_tsf_wakeup as *const ());
+    core::hint::black_box(open_libpp_ap_tsf_trace_hal_disable_softap_tsf as *const ());
+    core::hint::black_box(open_libpp_ap_tsf_start_trace_hal_mac_tsf_reset as *const ());
+    core::hint::black_box(open_btbb_coex_trace_coex_pti_v2 as *const ());
+    core::hint::black_box(open_coex_scheduler_trace_interval_set as *const ());
+    core::hint::black_box(open_coex_scheduler_trace_interval_get as *const ());
+    core::hint::black_box(open_coex_scheduler_trace_current_period as *const ());
+    core::hint::black_box(open_coex_scheduler_trace_current_phase as *const ());
     core::hint::black_box(open_rom_power_tsf_trace_hal_get_sta_tsf as *const ());
     core::hint::black_box(open_phy_trace_enable_agc as *const ());
     core::hint::black_box(open_phy_trace_vht_support as *const ());

@@ -4,7 +4,7 @@ The editable source is the schema-2 project model under
 `verification/vendor/targets/esp32s31/registers/`. It is split into one TOML
 fragment per logical peripheral and keeps provenance in structured `[[review]]`
 records. The same model is loaded directly by the vendor validator and by the
-production PAC generator through the shared `tools/register-model` crate.
+production PAC generator through the Workbench `crates/register-model` crate.
 
 `esp32s31-radio.svd` is the generated, portable CMSIS-SVD representation. It
 contains hardware names and semantics, but no validator provenance tags,

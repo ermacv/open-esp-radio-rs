@@ -4,4 +4,4 @@ id = "esp32s31-radio-platform-v1"
 architecture = "riscv32"
 calling-convention = "riscv-ilp32"
 harness = "esp32s31-radio-v1"
-semantic-catalogs = ["../../../../tools/vendor-binary-workbench/catalogs/embedded-semantics.toml"]
+semantic-catalogs = ["semantics/embedded-platform.toml"]

@@ -50,6 +50,7 @@ pub(crate) struct VerifySummary {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum VerificationGate {
+    Informational,
     Completion,
     Regression { match_floor: usize },
 }
@@ -57,6 +58,7 @@ pub(crate) enum VerificationGate {
 impl VerificationGate {
     pub(crate) fn parse(name: &str, match_floor: Option<usize>) -> Result<Self> {
         match (name, match_floor) {
+            ("informational", None) => Ok(Self::Informational),
             ("completion", None) => Ok(Self::Completion),
             ("completion", Some(_)) => Err(crate::Error::invalid(
                 "--match-floor requires --gate regression",
@@ -73,6 +75,7 @@ impl VerificationGate {
 
     pub(crate) const fn passes(self, summary: VerifySummary, orphan_probes: usize) -> bool {
         match self {
+            Self::Informational => true,
             Self::Completion => summary.is_complete() && orphan_probes == 0,
             Self::Regression { match_floor } => {
                 summary.mismatched == 0

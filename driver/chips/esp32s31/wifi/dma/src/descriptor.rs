@@ -59,12 +59,26 @@ impl Descriptor {
 
     /// Writes address/link first and publishes the ownership word last.
     #[inline]
-    pub fn publish(&self, word0: u32, buffer_address: u32, next_address: u32) {
+    pub(crate) fn publish_owned(&self, word0: u32, buffer_address: u32, next_address: u32) {
         self.buffer_address.set(buffer_address);
         self.next_address.set(next_address);
         self.word0.set(word0);
     }
 
+    /// Model a complete descriptor publication without a hardware actor.
+    #[cfg(any(not(target_pointer_width = "32"), feature = "validation-raw-dma"))]
+    #[inline]
+    pub fn publish(&self, word0: u32, buffer_address: u32, next_address: u32) {
+        self.publish_owned(word0, buffer_address, next_address);
+    }
+
+    /// Model one hardware ownership-word update.
+    ///
+    /// Production target code cannot call this safe method: live descriptor
+    /// mutation belongs exclusively to the ring owner and the DMA actor. It
+    /// exists only for native models and the explicit raw-DMA validation
+    /// feature used by compiled vendor probes.
+    #[cfg(any(not(target_pointer_width = "32"), feature = "validation-raw-dma"))]
     #[inline]
     pub fn write_word0(&self, word0: u32) {
         self.word0.set(word0);

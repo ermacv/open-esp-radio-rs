@@ -8,6 +8,45 @@ baseAddress = 0x20100000
 [[peripherals.registers]]
 
 [peripherals.registers.register]
+name = "BT_COEX_PTI_CONFIG"
+description = "Complete coex_pti_v2 performs two ordered fresh-read RMW operations: it first replaces bits 31:16 with 0x0640, then replaces bits 15:0 with 0x0010. Individual bit meanings remain unknown."
+addressOffset = 0x10
+size = 32
+access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "LOW_IMAGE_UNKNOWN"
+description = "Fixed 0x0010 image published by the second coex_pti_v2 RMW."
+bitOffset = 0
+bitWidth = 16
+[peripherals.registers.register.fields.writeConstraint]
+useEnumeratedValues = true
+[[peripherals.registers.register.fields.enumeratedValues]]
+name = "LOW_IMAGE"
+usage = "write"
+[[peripherals.registers.register.fields.enumeratedValues.values]]
+name = "REVIEWED_IMAGE"
+description = "The only low-halfword image proved by coex_pti_v2."
+value = 0x0010
+
+[[peripherals.registers.register.fields]]
+name = "HIGH_IMAGE_UNKNOWN"
+description = "Fixed 0x0640 image published by the first coex_pti_v2 RMW."
+bitOffset = 16
+bitWidth = 16
+[peripherals.registers.register.fields.writeConstraint]
+useEnumeratedValues = true
+[[peripherals.registers.register.fields.enumeratedValues]]
+name = "HIGH_IMAGE"
+usage = "write"
+[[peripherals.registers.register.fields.enumeratedValues.values]]
+name = "REVIEWED_IMAGE"
+description = "The only high-halfword image proved by coex_pti_v2."
+value = 0x0640
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
 name = "RF_FREQUENCY_CONTROL_OPAQUE"
 description = "Complete phy_read_rf_freq_mem performs a read-modify-write of bit 16; all other semantics remain unknown."
 addressOffset = 0x20
@@ -27,8 +66,14 @@ entity = "PHY_FECOEX_RECOVERED"
 sources = [
     "ESP_IDF_25FE69F_S31_PHY_RETENTION",
     "BLOB_LIBPHY_PHY_DEBUG_REG_CHECK",
+    "BLOB_LIBBTBB_COEX_PTI_V2",
 ]
 confidence = "block-exact-register-semantics-opaque"
+
+[[review]]
+entity = "PHY_FECOEX_RECOVERED.BT_COEX_PTI_CONFIG"
+sources = ["BLOB_LIBBTBB_COEX_PTI_V2"]
+confidence = "instruction-exact-semantics-unknown"
 
 [[review]]
 entity = "PHY_FECOEX_RECOVERED.RF_FREQUENCY_CONTROL_OPAQUE"

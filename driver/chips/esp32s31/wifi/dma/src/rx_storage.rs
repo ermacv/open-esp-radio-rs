@@ -142,6 +142,7 @@ pub struct RxDmaCompletedUnit<
     unit: RxCompletedUnit,
     storage: &'owner RxDmaStorage<COUNT, BUFFER_SIZE, STORAGE_SIZE>,
     ring: &'owner mut RxRingLive<'ring, COUNT>,
+    requires_recycle: bool,
 }
 
 impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
@@ -182,14 +183,33 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
         unsafe_code,
         reason = "consuming completed unit owns the rearm transition"
     )]
-    pub fn recycle<M: RxDma>(self, mmio: &mut M) -> Result<Option<RxLiveAppend>, RxRingError> {
+    pub fn recycle<M: RxDma>(mut self, mmio: &mut M) -> Result<Option<RxLiveAppend>, RxRingError> {
         let descriptor_count = self.unit.descriptor_count();
-        self.ring
-            .recycle_completed_unit(mmio, descriptor_count, |index| {
+        let result = self
+            .ring
+            .recycle_completed_unit_owned(mmio, descriptor_count, |index| {
                 // SAFETY: this consuming token owns every segment until this
                 // rearm closure returns it to the live walker.
                 unsafe { self.storage.buffers[index].prepare_for_recycle() }
-            })
+            });
+        if matches!(result, Ok(Some(_))) {
+            self.requires_recycle = false;
+        }
+        result
+    }
+}
+
+impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize> Drop
+    for RxDmaCompletedUnit<'_, '_, COUNT, BUFFER_SIZE, STORAGE_SIZE>
+{
+    fn drop(&mut self) {
+        if self.requires_recycle {
+            // `take_completed_unit` marks the complete descriptor group as
+            // observed exactly once. Losing that linear CPU owner before a
+            // successful rearm would otherwise leave an arena which looks
+            // live but can never transfer the same group again.
+            self.ring.require_reset();
+        }
     }
 }
 
@@ -199,6 +219,7 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
 /// it for its entire epoch. Keeping that table separate avoids a
 /// self-referential owner and lets a platform place only DMA-visible storage
 /// in its dedicated linker section.
+#[repr(C)]
 pub struct RxDmaStorage<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize> {
     descriptors: [Descriptor; COUNT],
     buffers: [RxDmaBuffer<BUFFER_SIZE, STORAGE_SIZE>; COUNT],
@@ -296,15 +317,23 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
         descriptor_base: u32,
         buffer_addresses: &'storage [u32; COUNT],
     ) -> Result<RxRingStopped<'storage, COUNT>, RxRingError> {
-        match self.lifecycle_state() {
-            RxDmaArenaState::Reusable => {}
-            RxDmaArenaState::Live => return Err(RxRingError::Busy),
-            RxDmaArenaState::ResetRequired => return Err(RxRingError::ResetRequired),
-        }
         self.validate_descriptor_base(descriptor_base)?;
         self.validate_buffer_addresses(buffer_addresses)?;
+        match self.lifecycle_state() {
+            RxDmaArenaState::Reusable => {}
+            RxDmaArenaState::Prepared | RxDmaArenaState::Live => {
+                return Err(RxRingError::Busy);
+            }
+            RxDmaArenaState::ResetRequired => return Err(RxRingError::ResetRequired),
+        }
         let buffer_size = u32::try_from(BUFFER_SIZE).map_err(|_| RxRingError::Size)?;
-        RxRingStopped::prepare_inner(
+        // `prepare_ring` takes a shared static arena reference, so Rust
+        // borrowing alone cannot prevent two root capabilities. Claim the
+        // stopped/halted owner graph before mutating any descriptor.
+        if !RxDmaArenaState::claim_prepared(&self.lifecycle) {
+            return Err(RxRingError::Busy);
+        }
+        let prepared = RxRingStopped::prepare_inner(
             mmio,
             &self.descriptors,
             descriptor_base,
@@ -316,7 +345,15 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
                 unsafe { self.buffers[index].prepare_for_recycle() }
             },
             Some(&self.lifecycle),
-        )
+        );
+        if prepared.is_err() {
+            // Preparation may have failed while disabling an unexpectedly
+            // live walker. Without the returned ring capability there is no
+            // proof that DMA stopped referencing this arena, so never reopen
+            // the root constructor until radio reset.
+            RxDmaArenaState::ResetRequired.store(&self.lifecycle);
+        }
+        prepared
     }
 
     /// Rebuild a halted ring only when it belongs to this storage arena.
@@ -326,8 +363,28 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
         ring: RxRingHalted<'storage, COUNT>,
         mmio: &mut M,
     ) -> Result<RxRingStopped<'storage, COUNT>, (RxRingHalted<'storage, COUNT>, RxRingError)> {
-        if self.lifecycle_state() == RxDmaArenaState::ResetRequired {
-            return Err((ring, RxRingError::ResetRequired));
+        match self.lifecycle_state() {
+            RxDmaArenaState::Prepared => {}
+            #[cfg(not(target_pointer_width = "32"))]
+            RxDmaArenaState::Reusable => {
+                // Native models may construct a raw halted ring over this
+                // arena because no asynchronous DMA actor exists. Claim the
+                // same singleton lifecycle before accepting that test owner.
+                if !RxDmaArenaState::claim_prepared(&self.lifecycle) {
+                    return Err((ring, RxRingError::Busy));
+                }
+            }
+            RxDmaArenaState::ResetRequired => {
+                return Err((ring, RxRingError::ResetRequired));
+            }
+            #[cfg(target_pointer_width = "32")]
+            RxDmaArenaState::Reusable | RxDmaArenaState::Live => {
+                return Err((ring, RxRingError::Busy));
+            }
+            #[cfg(not(target_pointer_width = "32"))]
+            RxDmaArenaState::Live => {
+                return Err((ring, RxRingError::Busy));
+            }
         }
         if let Err(error) = self.validate_ring_layout(
             ring.descriptor_base(),
@@ -340,7 +397,7 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
             Ok(buffer_size) => buffer_size,
             Err(_) => return Err((ring, RxRingError::Size)),
         };
-        ring.prepare(mmio, buffer_size, |index| {
+        ring.prepare_owned(mmio, buffer_size, |index| {
             // SAFETY: the halted owner proves that DMA is stopped, and the
             // validated layout binds the descriptor to this exact buffer.
             unsafe { self.buffers[index].prepare_for_recycle() }
@@ -358,7 +415,17 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
         RxRingError,
     > {
         self.validate_live_ring(ring)?;
-        let Some(descriptor) = ring.take_completed(index) else {
+        match ring.validate_completed_descriptor(index) {
+            Ok(true) => {}
+            Ok(false) => return Ok(None),
+            Err(error) => {
+                if error != RxRingError::Count {
+                    ring.require_reset();
+                }
+                return Err(error);
+            }
+        }
+        let Some(descriptor) = ring.take_completed_owned(index) else {
             return Ok(None);
         };
         let buffer = self.buffers.get(index).ok_or(RxRingError::Count)?;
@@ -379,7 +446,7 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
         mmio: &mut M,
     ) -> Result<Option<RxLiveAppend>, RxRingError> {
         self.validate_live_ring(ring)?;
-        ring.recycle_completed_half(mmio, |index| {
+        ring.recycle_completed_half_owned(mmio, |index| {
             // SAFETY: the ring invokes the closure only after observing the
             // complete half and immediately before descriptor publication.
             unsafe { self.buffers[index].prepare_for_recycle() }
@@ -396,7 +463,7 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
         mmio: &mut M,
     ) -> Result<Option<RxLiveAppend>, RxRingError> {
         self.validate_live_ring(ring)?;
-        ring.recycle_completed_prefix::<MAX_BATCH, _, _>(mmio, |index| {
+        ring.recycle_completed_prefix_owned::<MAX_BATCH, _, _>(mmio, |index| {
             // SAFETY: the ring invokes the closure only for its observed
             // prefix immediately before returning those buffers to DMA.
             unsafe { self.buffers[index].prepare_for_recycle() }
@@ -412,6 +479,38 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
             .completed_unit_frontier_with(|index| self.buffers[index].leading_guard_overwritten()))
     }
 
+    /// Return only complete units which the hardware last-descriptor frontier
+    /// has released to software. A descriptor-local `RX_DONE` observation is
+    /// intentionally insufficient for recycling its link word.
+    pub fn completed_unit_frontier_through(
+        &self,
+        ring: &RxRingLive<'_, COUNT>,
+        last_descriptor_low: u32,
+    ) -> Result<RxCompletedUnitFrontier, RxRingError> {
+        self.validate_live_ring(ring)?;
+        Ok(
+            ring.completed_unit_frontier_through_with(last_descriptor_low, |index| {
+                self.buffers[index].leading_guard_overwritten()
+            }),
+        )
+    }
+
+    /// Return the first complete unit at the software frontier, bounded by
+    /// the hardware LAST snapshot. This is the unit-sized counterpart used
+    /// when every recycle requires its own link-release proof.
+    pub fn first_completed_unit_frontier_through(
+        &self,
+        ring: &RxRingLive<'_, COUNT>,
+        last_descriptor_low: u32,
+    ) -> Result<RxCompletedUnitFrontier, RxRingError> {
+        self.validate_live_ring(ring)?;
+        Ok(
+            ring.first_completed_unit_frontier_through_with(last_descriptor_low, |index| {
+                self.buffers[index].leading_guard_overwritten()
+            }),
+        )
+    }
+
     pub fn take_completed_unit<'owner, 'ring>(
         &'owner self,
         ring: &'owner mut RxRingLive<'ring, COUNT>,
@@ -421,13 +520,19 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
         RxRingError,
     > {
         self.validate_live_ring(ring)?;
-        let Some(unit) = ring.take_completed_unit(descriptor_limit) else {
-            return Ok(None);
+        let unit = match ring.take_completed_unit_owned(descriptor_limit) {
+            Ok(Some(unit)) => unit,
+            Ok(None) => return Ok(None),
+            Err(error) => {
+                ring.require_reset();
+                return Err(error);
+            }
         };
         Ok(Some(RxDmaCompletedUnit {
             unit,
             storage: self,
             ring,
+            requires_recycle: true,
         }))
     }
 
@@ -494,6 +599,99 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize> De
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::rx_dma::RxDmaBinding;
+
+    #[derive(Default)]
+    struct MockRxDma {
+        walker: bool,
+        descriptor_base: u32,
+        last_descriptor_low: u32,
+        next_descriptor_low: u32,
+        fail_disable: bool,
+        ambiguous_enable: bool,
+    }
+
+    impl RxDma for MockRxDma {
+        fn last_descriptor_low(&mut self) -> u32 {
+            self.last_descriptor_low
+        }
+
+        fn next_descriptor_low(&mut self) -> u32 {
+            self.next_descriptor_low
+        }
+
+        fn with_ordered_cursor<R>(
+            &mut self,
+            observed: impl for<'confirmation> FnOnce(
+                crate::rx_dma::RxDmaCursorObservation<'confirmation>,
+            ) -> R,
+        ) -> R {
+            let last = self.last_descriptor_low();
+            self.fence();
+            let next = self.next_descriptor_low();
+            self.fence();
+            observed(crate::rx_dma::RxDmaCursorObservation::validation(
+                last, next,
+            ))
+        }
+
+        fn walker_enabled(&mut self) -> bool {
+            self.walker
+        }
+
+        fn reload_pending(&mut self) -> bool {
+            false
+        }
+
+        fn try_with_reload_settled<R>(
+            &mut self,
+            settled: impl for<'confirmation> FnOnce(
+                crate::rx_dma::RxDmaReloadSettled<'confirmation>,
+            ) -> R,
+        ) -> Option<R> {
+            (!self.reload_pending())
+                .then(|| settled(crate::rx_dma::RxDmaReloadSettled::validation()))
+        }
+
+        fn set_descriptor_high_window(&mut self, _: &RxDmaBinding<'_>, _: u16) {}
+
+        fn write_descriptor_base(&mut self, _: &RxDmaBinding<'_>, address: u32) {
+            self.descriptor_base = address;
+        }
+
+        fn publish_walker_enable(&mut self, _: &RxDmaBinding<'_>) {
+            self.walker = true;
+        }
+
+        fn request_reload(&mut self, _: &RxDmaBinding<'_>) {}
+
+        fn try_with_walker_enabled<R>(
+            &mut self,
+            _: &RxDmaBinding<'_>,
+            enabled: impl for<'confirmation> FnOnce(
+                crate::rx_dma::RxDmaWalkerEnabled<'confirmation>,
+            ) -> R,
+        ) -> Option<R> {
+            self.walker = true;
+            (!self.ambiguous_enable)
+                .then(|| enabled(crate::rx_dma::RxDmaWalkerEnabled::validation()))
+        }
+
+        fn try_with_walker_stopped<R>(
+            &mut self,
+            stopped: impl for<'confirmation> FnOnce(
+                crate::rx_dma::RxDmaWalkerStopped<'confirmation>,
+            ) -> R,
+        ) -> Option<R> {
+            if self.fail_disable {
+                return None;
+            }
+            self.walker = false;
+            Some(stopped(crate::rx_dma::RxDmaWalkerStopped::validation()))
+        }
+
+        fn fence(&mut self) {}
+    }
 
     #[test]
     fn arena_initializes_in_its_final_location_and_recycles_one_buffer() {
@@ -505,5 +703,276 @@ mod tests {
 
         storage.prepare_unpublished_buffer(0).unwrap();
         assert!(!storage.buffers()[0].leading_guard_overwritten());
+    }
+
+    #[test]
+    fn one_arena_cannot_issue_two_root_ring_capabilities() {
+        const COUNT: usize = 2;
+        const BASE: u32 = 0x2f00_1000;
+        let buffers = [0x2f00_2000, 0x2f00_2200];
+        let storage = RxDmaStorage::<COUNT, 16, 20>::new();
+        let mut first_mmio = MockRxDma::default();
+        let mut second_mmio = MockRxDma::default();
+
+        let first = storage
+            .prepare_ring(&mut first_mmio, BASE, &buffers)
+            .expect("first root capability");
+        assert_eq!(storage.lifecycle_state(), RxDmaArenaState::Prepared);
+        assert!(matches!(
+            storage.prepare_ring(&mut second_mmio, BASE, &buffers),
+            Err(RxRingError::Busy)
+        ));
+
+        let live = first.start(&mut first_mmio).expect("first live epoch");
+        assert_eq!(storage.lifecycle_state(), RxDmaArenaState::Live);
+        let _halted = live
+            .try_stop(&mut first_mmio)
+            .unwrap_or_else(|_| panic!("walker stops"));
+        assert_eq!(storage.lifecycle_state(), RxDmaArenaState::Prepared);
+        assert!(matches!(
+            storage.prepare_ring(&mut second_mmio, BASE, &buffers),
+            Err(RxRingError::Busy)
+        ));
+    }
+
+    #[test]
+    fn failed_root_prepare_quarantines_the_arena_when_walker_stop_is_unproved() {
+        const COUNT: usize = 2;
+        const BASE: u32 = 0x2f00_1000;
+        let buffers = [0x2f00_2000, 0x2f00_2200];
+        let storage = RxDmaStorage::<COUNT, 16, 20>::new();
+        let mut mmio = MockRxDma {
+            walker: true,
+            fail_disable: true,
+            ..MockRxDma::default()
+        };
+
+        assert!(matches!(
+            storage.prepare_ring(&mut mmio, BASE, &buffers),
+            Err(RxRingError::Busy)
+        ));
+        assert_eq!(storage.lifecycle_state(), RxDmaArenaState::ResetRequired);
+    }
+
+    #[test]
+    fn failed_halted_prepare_quarantines_the_arena_when_walker_stop_is_unproved() {
+        const COUNT: usize = 2;
+        const BASE: u32 = 0x2f00_1000;
+        let buffers = [0x2f00_2000, 0x2f00_2200];
+        let storage = RxDmaStorage::<COUNT, 16, 20>::new();
+        let mut mmio = MockRxDma::default();
+        let prepared = storage
+            .prepare_ring(&mut mmio, BASE, &buffers)
+            .expect("prepared owner");
+        let live = prepared.start(&mut mmio).expect("live epoch");
+        let halted = match live.try_stop(&mut mmio) {
+            Ok(halted) => halted,
+            Err(_) => panic!("walker stops"),
+        };
+
+        // Model an external hardware fault between epochs: the walker became
+        // active again and refuses the stop request made by preparation.
+        mmio.walker = true;
+        mmio.fail_disable = true;
+        let (_halted, error) = match storage.prepare_halted(halted, &mut mmio) {
+            Ok(_) => panic!("unproved stop must reject preparation"),
+            Err(failure) => failure,
+        };
+
+        assert_eq!(error, RxRingError::Busy);
+        assert!(mmio.walker);
+        assert_eq!(storage.lifecycle_state(), RxDmaArenaState::ResetRequired);
+    }
+
+    #[test]
+    fn partial_live_buffer_rearm_quarantines_the_arena() {
+        const COUNT: usize = 2;
+        const BASE: u32 = 0x2f00_1000;
+        const ADDRESS_LOW_MASK: u32 = 0x000f_ffff;
+        let buffers = [0x2f00_2000, 0x2f00_2200];
+        let storage = RxDmaStorage::<COUNT, 16, 20>::new();
+        let mut mmio = MockRxDma::default();
+        let prepared = storage
+            .prepare_ring(&mut mmio, BASE, &buffers)
+            .expect("prepared owner");
+        let mut live = prepared.start(&mut mmio).expect("live epoch");
+        storage.descriptors()[0].write_word0(
+            crate::descriptor::rx_armed_word(16).expect("valid size") | crate::descriptor::BIT_30,
+        );
+        mmio.last_descriptor_low = BASE & ADDRESS_LOW_MASK;
+        mmio.next_descriptor_low = (BASE + crate::descriptor::DESCRIPTOR_BYTES) & ADDRESS_LOW_MASK;
+        assert!(live.take_completed(0).is_some());
+
+        assert_eq!(
+            live.recycle_completed_prefix::<1, _, _>(&mut mmio, |_| Err(RxRingError::Size)),
+            Err(RxRingError::Size),
+        );
+        assert_eq!(storage.lifecycle_state(), RxDmaArenaState::ResetRequired);
+    }
+
+    #[test]
+    fn completed_descriptor_metadata_is_validated_before_payload_transfer() {
+        const COUNT: usize = 2;
+        const BASE: u32 = 0x2f00_1000;
+        let buffers = [0x2f00_2000, 0x2f00_2200];
+
+        for corruption in 0..3 {
+            let storage = RxDmaStorage::<COUNT, 16, 20>::new();
+            let mut mmio = MockRxDma::default();
+            let prepared = storage
+                .prepare_ring(&mut mmio, BASE, &buffers)
+                .expect("prepared owner");
+            let mut live = prepared.start(&mut mmio).expect("live epoch");
+            let descriptor = &storage.descriptors()[0];
+            let mut word0 = 16
+                | (8 << crate::descriptor::LENGTH_SHIFT)
+                | crate::descriptor::BIT_30
+                | crate::descriptor::BIT_31;
+            let mut buffer_address = buffers[0];
+            let mut next_address = BASE + crate::descriptor::DESCRIPTOR_BYTES;
+            match corruption {
+                0 => word0 = (word0 & !crate::descriptor::SIZE_MASK) | 17,
+                1 => buffer_address = buffers[0] + 4,
+                2 => next_address = 0,
+                _ => unreachable!(),
+            }
+            descriptor.publish(word0, buffer_address, next_address);
+
+            assert!(matches!(
+                storage.take_completed(&mut live, 0),
+                Err(RxRingError::Corrupt)
+            ));
+            assert_eq!(live.observed_mask(), 0);
+            assert_eq!(storage.lifecycle_state(), RxDmaArenaState::ResetRequired);
+            assert!(live.try_stop(&mut mmio).is_ok());
+        }
+    }
+
+    #[test]
+    fn impossible_reload_frontier_quarantines_the_static_arena() {
+        const COUNT: usize = 2;
+        const BASE: u32 = 0x2f00_1000;
+        const ADDRESS_LOW_MASK: u32 = 0x000f_ffff;
+        let buffers = [0x2f00_2000, 0x2f00_2200];
+        let storage = RxDmaStorage::<COUNT, 16, 20>::new();
+        let mut mmio = MockRxDma::default();
+        let prepared = storage
+            .prepare_ring(&mut mmio, BASE, &buffers)
+            .expect("prepared owner");
+        let mut live = prepared.start(&mut mmio).expect("live epoch");
+        storage.descriptors()[0].write_word0(
+            crate::descriptor::rx_armed_word(16).expect("valid size") | crate::descriptor::BIT_30,
+        );
+        mmio.last_descriptor_low = BASE & ADDRESS_LOW_MASK;
+        mmio.next_descriptor_low = (BASE + crate::descriptor::DESCRIPTOR_BYTES) & ADDRESS_LOW_MASK;
+        assert!(storage.take_completed(&mut live, 0).unwrap().is_some());
+        assert!(
+            storage
+                .recycle_completed_prefix::<1, _>(&mut live, &mut mmio)
+                .unwrap()
+                .is_some()
+        );
+        assert!(live.reload_pending());
+
+        mmio.next_descriptor_low = 0;
+        mmio.last_descriptor_low = (BASE + 1) & ADDRESS_LOW_MASK;
+        assert_eq!(
+            live.poll_pending_reload(&mut mmio),
+            Err(RxRingError::Corrupt)
+        );
+        assert_eq!(storage.lifecycle_state(), RxDmaArenaState::ResetRequired);
+        assert!(live.try_stop(&mut mmio).is_ok());
+    }
+
+    #[test]
+    fn in_arena_but_non_tail_reload_frontier_is_not_a_base_repair_proof() {
+        const COUNT: usize = 4;
+        const BASE: u32 = 0x2f00_1000;
+        const ADDRESS_LOW_MASK: u32 = 0x000f_ffff;
+        let buffers = [0x2f00_2000, 0x2f00_2200, 0x2f00_2400, 0x2f00_2600];
+        let storage = RxDmaStorage::<COUNT, 16, 20>::new();
+        let mut mmio = MockRxDma::default();
+        let prepared = storage
+            .prepare_ring(&mut mmio, BASE, &buffers)
+            .expect("prepared owner");
+        let mut live = prepared.start(&mut mmio).expect("live epoch");
+        storage.descriptors()[0].write_word0(
+            crate::descriptor::rx_armed_word(16).expect("valid size") | crate::descriptor::BIT_30,
+        );
+        mmio.last_descriptor_low = BASE & ADDRESS_LOW_MASK;
+        mmio.next_descriptor_low = (BASE + crate::descriptor::DESCRIPTOR_BYTES) & ADDRESS_LOW_MASK;
+        assert!(storage.take_completed(&mut live, 0).unwrap().is_some());
+        assert!(
+            storage
+                .recycle_completed_prefix::<1, _>(&mut live, &mut mmio)
+                .unwrap()
+                .is_some()
+        );
+        assert!(live.reload_pending());
+
+        // Old accepted tail is descriptor 3 and the pending tail is 0.
+        // Descriptor 1 is a syntactically valid arena address but cannot be
+        // the zero-terminated frontier of this append transaction.
+        mmio.next_descriptor_low = 0;
+        mmio.last_descriptor_low = (BASE + crate::descriptor::DESCRIPTOR_BYTES) & ADDRESS_LOW_MASK;
+        assert_eq!(
+            live.poll_pending_reload(&mut mmio),
+            Err(RxRingError::Corrupt)
+        );
+        assert_eq!(storage.lifecycle_state(), RxDmaArenaState::ResetRequired);
+        assert!(live.try_stop(&mut mmio).is_ok());
+    }
+
+    #[test]
+    fn dropping_a_taken_completed_unit_requires_radio_reset() {
+        const COUNT: usize = 2;
+        const BASE: u32 = 0x2f00_1000;
+        const ADDRESS_LOW_MASK: u32 = 0x000f_ffff;
+        let buffers = [0x2f00_2000, 0x2f00_2200];
+        let storage = RxDmaStorage::<COUNT, 16, 20>::new();
+        let mut mmio = MockRxDma::default();
+        let prepared = storage
+            .prepare_ring(&mut mmio, BASE, &buffers)
+            .expect("prepared owner");
+        let mut live = prepared.start(&mut mmio).expect("live epoch");
+        storage.descriptors()[0].write_word0(
+            crate::descriptor::rx_armed_word(16).expect("valid size") | crate::descriptor::BIT_30,
+        );
+        mmio.last_descriptor_low = BASE & ADDRESS_LOW_MASK;
+        mmio.next_descriptor_low = (BASE + crate::descriptor::DESCRIPTOR_BYTES) & ADDRESS_LOW_MASK;
+        let frontier = storage
+            .completed_unit_frontier_through(&live, mmio.last_descriptor_low)
+            .unwrap();
+        let unit = storage
+            .take_completed_unit(&mut live, frontier.descriptor_count)
+            .unwrap()
+            .expect("completed unit");
+
+        drop(unit);
+        assert_eq!(storage.lifecycle_state(), RxDmaArenaState::ResetRequired);
+        assert!(live.try_stop(&mut mmio).is_ok());
+    }
+
+    #[test]
+    fn ambiguous_start_quarantines_the_arena_when_walker_is_observed_live() {
+        const COUNT: usize = 2;
+        const BASE: u32 = 0x2f00_1000;
+        let buffers = [0x2f00_2000, 0x2f00_2200];
+        let storage = RxDmaStorage::<COUNT, 16, 20>::new();
+        let mut mmio = MockRxDma {
+            ambiguous_enable: true,
+            ..MockRxDma::default()
+        };
+        let prepared = storage
+            .prepare_ring(&mut mmio, BASE, &buffers)
+            .expect("prepared owner");
+
+        let (_prepared, error) = match prepared.try_start(&mut mmio) {
+            Ok(_) => panic!("ambiguous enable is not a live capability"),
+            Err(failure) => failure,
+        };
+        assert_eq!(error, RxRingError::Busy);
+        assert!(mmio.walker);
+        assert_eq!(storage.lifecycle_state(), RxDmaArenaState::ResetRequired);
     }
 }

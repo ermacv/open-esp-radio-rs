@@ -1,0 +1,59 @@
+schema = 2
+default-disposition = "not-yet-ported"
+default-protocol = "coex"
+
+[[functions]]
+source = "coex"
+symbol = "coex_schm_interval_set"
+disposition = "bounded-feature"
+protocol = "coex"
+rust-component = "open_esp_radio_esp32s31_coex::CoexScheduler::set_interval"
+binding = "v1"
+rust-binding = "exact-production-entry"
+rust-probe = "open_coex_scheduler_trace_interval_set"
+effect-contract = "exact-effects-v1"
+[[functions.effects]]
+selector = { kind = "platform-call", operation = "critical-section" }
+disposition = { kind = "allowed-omission", value = "rtos-scheduling-adapter" }
+
+[[functions]]
+source = "coex"
+symbol = "coex_schm_interval_get"
+disposition = "bounded-feature"
+protocol = "coex"
+rust-component = "open_esp_radio_esp32s31_coex::CoexScheduler::interval"
+binding = "v1"
+rust-binding = "exact-production-entry"
+rust-probe = "open_coex_scheduler_trace_interval_get"
+effect-contract = "exact-effects-v1"
+[[functions.effects]]
+selector = { kind = "platform-call", operation = "critical-section" }
+disposition = { kind = "allowed-omission", value = "rtos-scheduling-adapter" }
+
+[[functions]]
+source = "coex"
+symbol = "coex_schm_curr_period_get"
+disposition = "bounded-feature"
+protocol = "coex"
+rust-component = "open_esp_radio_esp32s31_coex::CoexScheduler::current_period"
+binding = "v1"
+rust-binding = "exact-production-entry"
+rust-probe = "open_coex_scheduler_trace_current_period"
+effect-contract = "exact-effects-v1"
+[[functions.effects]]
+selector = { kind = "platform-call", operation = "critical-section" }
+disposition = { kind = "allowed-omission", value = "rtos-scheduling-adapter" }
+
+[[functions]]
+source = "coex"
+symbol = "coex_schm_curr_phase_get"
+disposition = "bounded-feature"
+protocol = "coex"
+rust-component = "open_esp_radio_esp32s31_coex::CoexScheduler::current_phase"
+binding = "v1"
+rust-binding = "exact-production-entry"
+rust-probe = "open_coex_scheduler_trace_current_phase"
+effect-contract = "exact-effects-v1"
+[[functions.effects]]
+selector = { kind = "platform-call", operation = "critical-section" }
+disposition = { kind = "allowed-omission", value = "rtos-scheduling-adapter" }

@@ -11,8 +11,11 @@ low-level analysis commands before using a project.
 
 ## Start here
 
-The normal build includes the repository's ESP32-S31 platform harness. Use
-`--no-default-features` only when developing a platform-neutral host binary.
+The standalone Workbench build is platform-neutral. A product repository may
+link reviewed target knowledge through a thin provider host. In this
+repository, `cargo vendor-binary-workbench` selects the ESP32-S31 host under
+`verification/vendor/targets/esp32s31/workbench-host`; invoking the generic
+package directly installs no platform provider.
 
 For an existing project:
 
@@ -141,6 +144,9 @@ cargo vendor-binary-workbench advanced ir export --help
 cargo vendor-binary-workbench advanced execute compare --help
 ```
 
+The generic repository boundary and the product-provider workflow are
+documented in [repository separation](docs/repository-separation.md).
+
 ## Resource safety
 
 Artifact-wide analysis defaults to one worker. Build the optimized binary once
@@ -148,7 +154,7 @@ and use the hard-limit wrapper for real vendor inputs:
 
 ```console
 CARGO_BUILD_JOBS=2 cargo build --profile workbench \
-  -p open-radio-vendor-binary-workbench --bin vendor-binary-workbench
+  -p open-radio-vendor-workbench-esp32s31-host --bin vendor-binary-workbench
 
 tools/vendor-binary-workbench/scripts/run-limited \
   project analyze --check --project /path/to/vendor-project.toml --jobs 1

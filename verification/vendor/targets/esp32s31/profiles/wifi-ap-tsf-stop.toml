@@ -1,0 +1,15 @@
+schema = 3
+
+[[profiles]]
+name = "wifi-ap-tsf-stop"
+claim = "whole-function-equivalence"
+vendor-source = "libpp"
+vendor-symbol = "hal_disable_softap_tsf"
+rust-symbol = "open_libpp_ap_tsf_trace_hal_disable_softap_tsf"
+compare-return = false
+
+[[profiles.cases]]
+name = "nonzero-control"
+[[profiles.cases.mmio-initial]]
+address = 0x2010d860
+value = 0xffffffff

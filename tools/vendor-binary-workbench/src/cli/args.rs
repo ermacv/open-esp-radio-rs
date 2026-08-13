@@ -309,6 +309,11 @@ enum ProjectCommand {
         after_long_help = "Use this before editing a project to distinguish local bindings, reviewed knowledge, generated evidence and external artifacts."
     )]
     Files(EmptyArgs),
+    /// Audit the trust boundary between vendor evidence, probes and production Rust.
+    Audit {
+        #[command(subcommand)]
+        command: ProjectAuditCommand,
+    },
     /// Summarize project workflow readiness without modifying artifacts.
     #[command(
         after_long_help = "Use `project doctor` for detailed configuration diagnostics, or `project analyze` to refresh generated evidence."
@@ -351,6 +356,7 @@ impl ProjectCommand {
             Self::Inputs { command } => command.into_command(),
             Self::Doctor(arguments) => Command::ProjectDoctor(arguments),
             Self::Files(arguments) => Command::ProjectFiles(arguments),
+            Self::Audit { command } => command.into_command(),
             Self::Status(arguments) => Command::ProjectStatus(arguments),
             Self::Feature(arguments) => Command::ProjectFeature(arguments),
             Self::Browse(arguments) => Command::ProjectBrowse(arguments),
@@ -361,6 +367,11 @@ impl ProjectCommand {
         }
     }
 }
+
+leaf_commands!(ProjectAuditCommand {
+    /// Classify every executable binding and show its maximum admissible claim.
+    Bindings(EmptyArgs) => Command::ProjectAuditBindings, Empty,
+});
 
 leaf_commands!(ProjectInputsCommand {
     /// Create or verify caller-owned local artifact bindings.
@@ -558,6 +569,7 @@ pub(crate) enum Command {
     ProjectInputsInit(ProjectInputsInitArgs),
     ProjectDoctor(EmptyArgs),
     ProjectFiles(EmptyArgs),
+    ProjectAuditBindings(EmptyArgs),
     ProjectStatus(ProjectStatusArgs),
     ProjectFeature(ProjectFeatureArgs),
     ProjectBrowse(EmptyArgs),
@@ -913,6 +925,34 @@ mod tests {
             panic!("unexpected argument type")
         };
         assert_eq!(arguments.jobs, 2);
+    }
+
+    #[test]
+    fn verification_inventory_keeps_replay_artifacts_outside_source_coverage() {
+        let invocation = ParsedInvocation::parse([
+            "advanced".to_owned(),
+            "verify".to_owned(),
+            "inventory".to_owned(),
+            "--source-artifact".to_owned(),
+            "libpp=/tmp/libpp.elf".to_owned(),
+            "--auxiliary-artifact".to_owned(),
+            "libpp-replay=/tmp/libpp-replay.elf".to_owned(),
+        ])
+        .unwrap();
+        let Command::VerifyInventory(arguments) = invocation.command else {
+            panic!("unexpected argument type")
+        };
+        assert_eq!(arguments.source_artifact.len(), 1);
+        assert_eq!(arguments.source_artifact[0].source.as_str(), "libpp");
+        assert_eq!(arguments.auxiliary_artifact.len(), 1);
+        assert_eq!(
+            arguments.auxiliary_artifact[0].source.as_str(),
+            "libpp-replay"
+        );
+        assert_eq!(
+            arguments.auxiliary_artifact[0].path,
+            PathBuf::from("/tmp/libpp-replay.elf")
+        );
     }
 
     #[test]

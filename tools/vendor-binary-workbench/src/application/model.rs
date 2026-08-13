@@ -497,6 +497,7 @@ pub struct ReviewScopeSummary {
     pub id: String,
     pub publication: bool,
     pub replacement_qualification: String,
+    pub replacement_policy_excluded: usize,
     pub analysis_inventory_complete: bool,
     pub profiles: Vec<String>,
     pub roots: usize,
@@ -526,9 +527,18 @@ pub struct FeatureQualificationSummary {
     pub requirements: usize,
     pub surface_effects: usize,
     pub covered_effects: usize,
+    pub dependencies: Vec<FeatureDependencySummary>,
     pub phases: Vec<FeaturePhaseSummary>,
     pub hardware: Option<FeatureHardwareSummary>,
     pub blockers: Vec<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct FeatureDependencySummary {
+    pub feature: String,
+    pub phase: Option<String>,
+    pub status: String,
+    pub blockers: usize,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]

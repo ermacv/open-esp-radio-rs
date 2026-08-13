@@ -26,11 +26,18 @@ where
     B: ConnectedRunnerServices<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
 {
     pub(super) async fn service_rx(&mut self) -> Result<(), B::Error> {
-        self.rx_backpressured = self.services.service_rx().await? == WifiRxProgress::Backpressured;
+        let progress = self.services.service_rx().await?;
+        self.rx_backpressured = progress == WifiRxProgress::Backpressured;
         // One service call owns exactly the completion frontier captured at
         // its start. Yield at that hardware epoch boundary so a separate
         // protocol task can consume staged ownership before another RX epoch.
         yield_now().await;
+        if progress == WifiRxProgress::ProbePending {
+            // Direct BASE publication of an exhausted list has no reload
+            // interrupt. Repost only after the cooperative boundary so the
+            // next service observes hardware after a distinct executor turn.
+            self.irq.notify_rx_handoff();
+        }
         Ok(())
     }
 

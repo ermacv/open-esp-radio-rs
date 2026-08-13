@@ -7,6 +7,7 @@ use super::super::effect_contract::{
     EffectComparison, EffectDisposition, EffectPolicy, EffectSelector,
 };
 use crate::Result;
+use open_radio_vendor_semantics::RustBindingKind;
 use serde::Deserialize;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd)]
@@ -172,6 +173,7 @@ pub(super) struct EntryBuilder {
     pub(super) effect_comparison: Option<EffectComparison>,
     pub(super) effect_rules: Vec<(EffectSelector, EffectDisposition)>,
     pub(super) binding_version: Option<BindingVersion>,
+    pub(super) rust_binding: Option<RustBindingKind>,
     pub(super) rust_probe: Option<String>,
     pub(super) compare_return: Option<bool>,
     pub(super) driver_adapter: Option<DriverAdapter>,
@@ -244,11 +246,20 @@ impl EntryBuilder {
                 .map(|comparison| EffectPolicy::new(comparison, self.effect_rules))
                 .transpose()?;
             let has_binding_fields = self.rust_probe.is_some()
+                || self.rust_binding.is_some()
                 || self.compare_return.is_some()
                 || self.driver_adapter.is_some();
             let binding = match self.binding_version {
                 Some(version) => Some(Binding::new(
                     version,
+                    self.rust_binding
+                        .ok_or_else(|| {
+                            format!(
+                                "binding {} {} has no rust-binding trust classification",
+                                self.source, self.symbol
+                            )
+                        })
+                        .map_err(crate::Error::invalid)?,
                     self.rust_probe
                         .ok_or_else(|| {
                             format!("binding {} {} has no rust-probe", self.source, self.symbol)

@@ -1,0 +1,227 @@
+schema = 3
+
+# The open implementation owns scheduler state behind the Rust runtime's
+# synchronization primitive. These profiles therefore prove the operational
+# projection after vendor scheduler installation and successful semaphore
+# acquisition; null-handle and RTOS lock-failure policy are intentionally not
+# claimed as part of the source-owned state model.
+
+[[profiles]]
+name = "coex-scheduler-interval-set"
+claim = "reviewed-domain-equivalence"
+precondition = "installed-scheduler-and-acquired-lock"
+vendor-source = "coex"
+vendor-symbol = "coex_schm_interval_set"
+rust-symbol = "open_coex_scheduler_trace_interval_set"
+contract = "state"
+compare-return = true
+[[profiles.argument-values]]
+index = 0
+values = [0xa5a55a5a]
+
+[[profiles.cases]]
+name = "nonzero"
+arguments = [0xa5a55a5a, 0x3fff2000]
+vendor-ram = [
+    { address = 0x10002864, value = 0xdeadbeef },
+    { address = 0x10002868, value = 0x3fce2000 },
+]
+rust-ram = [{ address = 0x3fff2000, value = 0xdeadbeef }]
+vendor-tables = [{
+    layout-id = "esp32s31-radio-rev0::coex-adapter-v2",
+    base-address = 0x3fce1000,
+    layout-size = 0x50,
+    pointer-cells = [0x10002ba4],
+    slots = [
+        { offset = 0x18, target = { kind = "modeled-symbol", value = "semphr_take" } },
+        { offset = 0x1c, target = { kind = "modeled-symbol", value = "semphr_give" } },
+    ],
+}]
+vendor-calls = [
+    { symbol = "semphr_take", return-words = [1] },
+    { symbol = "semphr_give", return-words = [1] },
+]
+vendor-observations = [
+    { kind = "symbol", symbol = "coex_schm_env", offset = 0x0c, length = 4 },
+]
+rust-observations = [{ kind = "absolute", address = 0x3fff2000, length = 4 }]
+
+[[profiles]]
+name = "coex-scheduler-interval-get"
+claim = "reviewed-domain-equivalence"
+precondition = "installed-scheduler-and-acquired-lock"
+vendor-source = "coex"
+vendor-symbol = "coex_schm_interval_get"
+rust-symbol = "open_coex_scheduler_trace_interval_get"
+contract = "state"
+compare-return = true
+[[profiles.argument-values]]
+index = 0
+values = [0xa5a55a5a]
+
+[[profiles.cases]]
+name = "nonzero"
+arguments = [0xa5a55a5a]
+vendor-ram = [
+    { address = 0x10002864, value = 0xa5a55a5a },
+    { address = 0x10002868, value = 0x3fce2000 },
+]
+vendor-tables = [{
+    layout-id = "esp32s31-radio-rev0::coex-adapter-v2",
+    base-address = 0x3fce1000,
+    layout-size = 0x50,
+    pointer-cells = [0x10002ba4],
+    slots = [
+        { offset = 0x18, target = { kind = "modeled-symbol", value = "semphr_take" } },
+        { offset = 0x1c, target = { kind = "modeled-symbol", value = "semphr_give" } },
+    ],
+}]
+vendor-calls = [
+    { symbol = "semphr_take", return-words = [1] },
+    { symbol = "semphr_give", return-words = [1] },
+]
+
+[[profiles]]
+name = "coex-scheduler-current-period"
+claim = "reviewed-domain-equivalence"
+precondition = "installed-scheduler-and-acquired-lock"
+vendor-source = "coex"
+vendor-symbol = "coex_schm_curr_period_get"
+rust-symbol = "open_coex_scheduler_trace_current_period"
+contract = "state"
+compare-return = true
+[[profiles.argument-values]]
+index = 0
+values = [0, 1]
+[[profiles.argument-values]]
+index = 1
+values = [9]
+
+[[profiles.cases]]
+name = "inactive-default"
+arguments = [0, 9]
+vendor-ram = [
+    { address = 0x10002858, value = 0 },
+    { address = 0x10002868, value = 0x3fce2000 },
+]
+vendor-tables = [{
+    layout-id = "esp32s31-radio-rev0::coex-adapter-v2",
+    base-address = 0x3fce1000,
+    layout-size = 0x50,
+    pointer-cells = [0x10002ba4],
+    slots = [
+        { offset = 0x18, target = { kind = "modeled-symbol", value = "semphr_take" } },
+        { offset = 0x1c, target = { kind = "modeled-symbol", value = "semphr_give" } },
+    ],
+}]
+vendor-calls = [
+    { symbol = "semphr_take", return-words = [1] },
+    { symbol = "semphr_give", return-words = [1] },
+]
+
+[[profiles.cases]]
+name = "active-period"
+arguments = [1, 9]
+vendor-ram = [
+    { address = 0x10002858, value = 0x3fff0000 },
+    { address = 0x10002868, value = 0x3fce2000 },
+    { address = 0x3fff0000, value = 0x00000901 },
+]
+vendor-tables = [{
+    layout-id = "esp32s31-radio-rev0::coex-adapter-v2",
+    base-address = 0x3fce1000,
+    layout-size = 0x50,
+    pointer-cells = [0x10002ba4],
+    slots = [
+        { offset = 0x18, target = { kind = "modeled-symbol", value = "semphr_take" } },
+        { offset = 0x1c, target = { kind = "modeled-symbol", value = "semphr_give" } },
+    ],
+}]
+vendor-calls = [
+    { symbol = "semphr_take", return-words = [1] },
+    { symbol = "semphr_give", return-words = [1] },
+]
+
+[[profiles]]
+name = "coex-scheduler-current-phase"
+claim = "reviewed-domain-equivalence"
+precondition = "installed-scheduler-and-acquired-lock"
+vendor-source = "coex"
+vendor-symbol = "coex_schm_curr_phase_get"
+rust-symbol = "open_coex_scheduler_trace_current_phase"
+contract = "state"
+compare-return = true
+[[profiles.argument-values]]
+index = 0
+values = [0, 1]
+
+[[profiles.cases]]
+name = "inactive"
+arguments = [0, 2, 0, 0x3fff0000]
+vendor-ram = [
+    { address = 0x10002858, value = 0 },
+    { address = 0x1000285c, value = 0 },
+    { address = 0x10002868, value = 0x3fce2000 },
+]
+vendor-tables = [{
+    layout-id = "esp32s31-radio-rev0::coex-adapter-v2",
+    base-address = 0x3fce1000,
+    layout-size = 0x50,
+    pointer-cells = [0x10002ba4],
+    slots = [
+        { offset = 0x18, target = { kind = "modeled-symbol", value = "semphr_take" } },
+        { offset = 0x1c, target = { kind = "modeled-symbol", value = "semphr_give" } },
+    ],
+}]
+vendor-calls = [
+    { symbol = "semphr_take", return-words = [1] },
+    { symbol = "semphr_give", return-words = [1] },
+]
+
+[[profiles.cases]]
+name = "active-first-phase"
+arguments = [1, 2, 0, 0x3fff0000]
+vendor-ram = [
+    { address = 0x10002858, value = 0x3fff0000 },
+    { address = 0x1000285c, value = 0 },
+    { address = 0x10002868, value = 0x3fce2000 },
+    { address = 0x3fff0000, value = 0x11110102 },
+]
+vendor-tables = [{
+    layout-id = "esp32s31-radio-rev0::coex-adapter-v2",
+    base-address = 0x3fce1000,
+    layout-size = 0x50,
+    pointer-cells = [0x10002ba4],
+    slots = [
+        { offset = 0x18, target = { kind = "modeled-symbol", value = "semphr_take" } },
+        { offset = 0x1c, target = { kind = "modeled-symbol", value = "semphr_give" } },
+    ],
+}]
+vendor-calls = [
+    { symbol = "semphr_take", return-words = [1] },
+    { symbol = "semphr_give", return-words = [1] },
+]
+
+[[profiles.cases]]
+name = "active-out-of-range"
+arguments = [1, 2, 2, 0x3fff0000]
+vendor-ram = [
+    { address = 0x10002858, value = 0x3fff0000 },
+    { address = 0x1000285c, value = 2 },
+    { address = 0x10002868, value = 0x3fce2000 },
+    { address = 0x3fff0000, value = 0x11110102 },
+]
+vendor-tables = [{
+    layout-id = "esp32s31-radio-rev0::coex-adapter-v2",
+    base-address = 0x3fce1000,
+    layout-size = 0x50,
+    pointer-cells = [0x10002ba4],
+    slots = [
+        { offset = 0x18, target = { kind = "modeled-symbol", value = "semphr_take" } },
+        { offset = 0x1c, target = { kind = "modeled-symbol", value = "semphr_give" } },
+    ],
+}]
+vendor-calls = [
+    { symbol = "semphr_take", return-words = [1] },
+    { symbol = "semphr_give", return-words = [1] },
+]

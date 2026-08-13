@@ -1,10 +1,11 @@
 # Vendor Binary Workbench architecture
 
 Status: active. Neutral contracts, shared IR/MMIO, semantic adapter interfaces,
-the RISC-V backend, optional ESP32-S31 compiled addon and typed verification
-have compile-time crate boundaries. Project workflows and persistent artifact
-schemas live outside the CLI, so further backend work does not change frontend
-ownership.
+the RISC-V backend and typed verification have compile-time crate boundaries.
+The standalone facade has no ESP32-S31 dependency; a target-owned host links
+the ESP32-S31 provider beside the production project. Project workflows and
+persistent artifact schemas live outside the CLI, so further backend work does
+not change frontend ownership.
 
 ## Purpose
 
@@ -102,12 +103,12 @@ The first two boundary slices are complete:
   verifier; their registry and dispatch live in the platform harness.
 
 The facade owns application workflows, generated-reference compile/re-extract,
-profiles, dispositions, reports and frontend dispatch. Compiled addons are a
-feature-gated static registry: `--no-default-features` produces a neutral build
-without ESP32-S31 production dependencies, while the default
-`esp32s31-harness` feature contributes that descriptor. Neither model,
+profiles, dispositions, reports and frontend dispatch. The standalone binary
+has an empty runtime provider registry. A product-owned host supplies
+`HarnessDescriptor` values through `main_entry_with_harnesses`; no feature of
+the generic crate adds a production-driver dependency. Neither model,
 semantic interfaces nor the RISC-V backend depends on the facade, production
-driver or a platform harness.
+driver or a platform provider.
 
 ## Target layout
 
@@ -121,28 +122,28 @@ tools/vendor-binary-workbench/
     analysis-model/            shared symbolic/effect IR and MMIO (implemented)
     semantics/                 neutral verification interfaces (implemented)
     backend-riscv/             RV32 + riscv-ilp32 backend (implemented)
-    harness-esp32s31/          ABI/lifecycle fixture data (implemented)
-    harness-esp32s31-semantic/ reviewed summaries and typed verification
+    register-model/            editable model, SVD and PAC publication
   src/application/             project workflows and frontend-neutral API
   src/artifacts/               persistent evidence schemas and strict readers
   src/cli/                     command grammar, adapters and presentation
   src/orchestration/           generated-reference compile/prove workflow
-  src/harnesses/               feature-gated static addon registry
-tools/register-model/          editable hardware schema + clean SVD encoder
+  src/harnesses/               public runtime provider registry
+verification/vendor/targets/esp32s31/
+  workbench-provider/          target ABI and executable semantics
+  workbench-host/              product CLI composition root
 ```
 
 These may initially be workspace crates below one directory. Compile-time
 dependencies must point only downwards:
 
 ```text
-frontends -> application/domain services -> orchestration + registries
+frontends -> application/domain services -> orchestration + provider registry
                |-> semantic interfaces -> analysis-model -> contracts
                |-> riscv backend -------> analysis-model -> contracts
-               |-> esp32s31 ABI fixture --------------------> contracts
-               \-> esp32s31 semantic harness -> semantic interfaces
-                                                + riscv backend
-                                                + esp32s31 ABI fixture
-                                                + production PHY
+
+ESP32-S31 host -> generic facade + ESP32-S31 provider
+ESP32-S31 provider -> semantic interfaces + RISC-V backend
+                    + ESP32-S31 ABI contracts + production driver
 ```
 
 `contracts` and `analysis-model` must not depend on an architecture backend, a chip crate,

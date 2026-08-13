@@ -60,11 +60,48 @@ The normal user path must remain project-oriented:
       Reject every direct raw-PAC path in those classes outside generated or
       validation code with an architecture test.
 - [ ] Migrate the remaining ESP32-S31 public numeric transaction parameters
-  to generated domains and add compile-fail fixtures for addresses, raw PAC
-  imports, arbitrary mask construction and unreviewed writes.
+  to generated domains. Key-table indices, receive-BlockAck indices/TID/
+  sequence/window and coexistence timer fields/targets are now bounded at the
+  closed-PAC boundary; calibration payloads and the remaining finite selectors
+  still require classification as bounded, enum or register-specific opaque
+  values.
+- [x] Add compile-fail fixtures for physical-address catalogs, the private raw
+  PAC, arbitrary interrupt-mask construction and nonexistent generic writes.
+  A repository architecture test also keeps the raw dependency behind the one
+  private facade alias and rejects direct generated-transaction bypasses.
 
 Leaf commands are focused inspection and repair tools, not a second workflow
 that every user must learn.
+
+## Repository separation (2026-08-13)
+
+- [x] Make `tools/vendor-binary-workbench` a self-contained workspace tree.
+  `scripts/check-standalone` copies only that tree, rejects escaping path
+  dependencies, generates an independent lockfile and checks every target.
+- [x] Remove the compiled ESP32-S31 provider from the generic facade. A public
+  `HarnessDescriptor` registry is installed by a thin product-owned host; the
+  standalone binary has an empty registry and retains generic analysis.
+- [x] Move the editable register model into the generic Workbench tree and
+  move ESP32-S31 ABI/semantic providers under the target project. Keep SVD,
+  PAC, reviewed evidence, generated reports and HIL beside the driver.
+- [x] Add target-owned black-box tests for provider dispatch, checked register
+  publication, the closed-PAC boundary and the repository Cargo alias.
+- [x] Replace the removed facade-private ESP32-S31 white-box suites with
+  target-owned black-box/project checks where they still add coverage. Do not
+  restore a target dependency or target vocabulary to the generic crate. The
+  provider crates retain ABI/semantic unit tests, the product host validates
+  provider dispatch and every checked-in project/review pack through
+  `project doctor`, repository tests own the closed-PAC and producer
+  boundaries, and the target's authoritative regression is the resource-limited
+  real `project check`.
+- [x] Remove the target platform pack's runtime path back into the generic
+  Workbench tree. ESP32-S31 now owns a pinned semantic-catalog snapshot beside
+  its reviewed interface/function packs, so repository separation does not
+  depend on a sibling checkout layout.
+- [ ] After a clean integration checkpoint passes `project check`, create the
+  standalone Git remote with history filtered from the self-contained tree.
+  Then consume an exact Workbench revision from the product repository and
+  use separate Workbench, driver/HIL and integration worktrees.
 
 ## Focused investigation migration (2026-08-11)
 
@@ -168,9 +205,9 @@ that every user must learn.
 - [x] Audit a complete real project from inputs through MMIO, linked IR,
   pseudo-code, interface/function review, verification and publication;
   record every incomplete or misleading stage. The verification segment now
-  has seventeen typed project suites and a reproducible aggregate gate. The
-  2026-08-13 ESP32-S31 run matches 158 whole-function cases plus five explicit
-  bounded feature properties with zero mismatch or incomplete execution.
+  has 21 typed project suites and a reproducible aggregate gate. The
+  2026-08-13 ESP32-S31 run records 160 behavioral matches plus ten explicit
+  bounded feature matches with zero mismatch or incomplete execution.
   COEX timer programming and `coex_core_request` now carry named finite-domain
   preconditions and cannot be reported as whole-function equivalence.
   `wDev_AppendRxBlocks` reproduces the complete fence sequence in all nine
@@ -360,8 +397,10 @@ that every user must learn.
   origin bytes in 2.4 seconds; the TUI consumes the same lazy report.
 - [x] Make driver-feature qualification cover the complete explicit vendor
   effect boundary. Review-scope schema 8 stores exact replacement function
-  keys and feature-pack schema 3 distinguishes complete `review-scopes` from
-  narrow `bounded-evidence`. Scope features require every discovered key to be
+  keys and feature-pack schema 5 distinguishes complete `review-scopes`,
+  narrow `bounded-evidence`, finite `selected-evidence` and dependency-only
+  `composed-features`. Scope
+  features require every discovered key to be
   proven or policy-excluded; bounded properties require explicit replayed
   proofs and forbid exclusions. Missing and stale dispositions fail closed.
   The STA beacon-filter scope exposes all three set/enable/disable transactions
@@ -372,6 +411,10 @@ that every user must learn.
   propagation and AP=1/STA=0 constants; the adapter executes the production
   Rust CCMP builders, checks the resulting control field and proves that the
   two role images differ only in the reviewed context bit.
+- [x] Add schema-v5 feature composition. Product capabilities can depend on
+  independently reviewed features or lifecycle phases without copying their
+  scopes, effects and blockers into a monolithic umbrella report; dependency
+  cycles and unknown phase selectors fail while loading the project.
 - [x] Preserve the distinction between a recognized external operation and an
   executable external-call model. A semantic label alone does not make
   execution complete.
@@ -664,7 +707,17 @@ that every user must learn.
   declared inputs and outputs, bypasses reuse in `--check`, and reports a
   distinct `up-to-date` state. On the real schema-38 project, the cache-seeding
   run completed all 13 stages in 5:56.13 / 1,249,016 KiB; an unchanged repeat
-  completed with 13 cache hits in 10.82 s / 410,896 KiB.
+  completed with 13 cache hits in 10.82 s / 410,896 KiB. Cache schema 3 adds a
+  stage-owned configuration fingerprint: editing a review/qualification scope
+  no longer invalidates symbol, MMIO, interface and linked-IR stages merely
+  because they shared `vendor-project.toml`. On the expanded schema-52 project,
+  the one-time two-worker rebuild took 3:59.26 / 729,788 KiB; the unchanged
+  14-stage repeat took 8.74 s / 147,884 KiB.
+- [ ] Render live nested progress during the long linked-IR stage. The
+  2026-08-13 cold rebuild remained silent for almost four minutes even with
+  `--progress always`; the final stage table is correct but is not adequate
+  feedback for an interactive first run. Progress must remain stderr-only and
+  must not alter analysis scheduling or proof output.
 - [x] Add source/ELF/DWARF enrichment where it strengthens navigation without
   changing proof semantics. The project verification report now resolves all
   42 reviewed Rust components in source, 34 in configured target ELFs and 200

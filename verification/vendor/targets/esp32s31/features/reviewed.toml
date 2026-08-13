@@ -1,4 +1,4 @@
-schema = 4
+schema = 5
 
 [[features]]
 id = "wifi-ap-sta-receive-registers"
@@ -76,11 +76,11 @@ scopes = ["wifi-sta-beacon-filter-policy"]
 [[features.requirements]]
 id = "sta-join-protocol-projection"
 phase = "connected-policy"
-description = "Authentication and association state uses the reviewed Rust protocol projection."
+description = "Authentication and association state uses the concretely replayed vendor boundary and production Rust join runner."
 suite = "libnet80211-sta-join"
 source = "libnet80211"
 symbol = "ieee80211_sta_new_state"
-claim = "reviewed-projection"
+claim = "reviewed-refinement"
 
 [[features.requirements]]
 id = "beacon-filter-disable-transaction"
@@ -417,51 +417,383 @@ requirement = "wifi-tx-pti-transaction"
 rationale = "The production PAC operation covers all four reversed hardware queue banks and preserves the vendor six-RMW ordering."
 
 [[features]]
-id = "wifi-ap-bringup"
-description = "The open driver owns a complete AP epoch from radio materialization through beaconing, protected data exchange and clean stop."
+id = "wifi-ap-tsf-stop"
+description = "The low-MAC stop edge clears both reviewed SoftAP TSF control bits through the closed HAL/PAC transaction."
 coverage = "review-scopes"
-scopes = [
-    "wifi-ap-start",
-    "wifi-ap-stop",
-    "wifi-ap-link-identity",
-    "wifi-ap-beacon-timing",
-    "wifi-rx",
-    "wifi-tx",
-    "wifi-interrupts",
-    "wifi-key-role",
-]
-
-[features.hardware]
-minimum-successful-runs = 20
-required-observations = ["beacon", "wpa2-association", "bidirectional-data", "clean-stop"]
-required-artifacts = ["firmware", "project-manifest", "feature-pack", "register-model"]
-
-[[features.phases]]
-id = "radio-ownership"
-description = "Acquire and release the shared radio, DMA and interrupt ownership epoch."
-scopes = ["wifi-ap-start"]
-
-[[features.phases]]
-id = "link-identity"
-description = "Program AP BSSID identity and receive filtering policy."
-scopes = ["wifi-ap-link-identity"]
-
-[[features.phases]]
-id = "beacon-timing"
-description = "Own TSF state, beacon scheduling and beacon publication."
-scopes = ["wifi-ap-beacon-timing"]
-
-[[features.phases]]
-id = "rx-tx"
-description = "Own shared RX, TX and interrupt delivery during the AP epoch."
-scopes = ["wifi-rx", "wifi-tx", "wifi-interrupts"]
-
-[[features.phases]]
-id = "security"
-description = "Encode AP connection context and own group and pairwise CCMP slots."
-scopes = ["wifi-key-role"]
+scopes = ["wifi-ap-tsf-stop"]
 
 [[features.phases]]
 id = "stop"
-description = "Stop beacon timing, clear key state, quiesce data paths and return radio ownership."
-scopes = ["wifi-ap-stop"]
+description = "Stop the SoftAP TSF domain before relinquishing or changing the AP role."
+scopes = ["wifi-ap-tsf-stop"]
+
+[[features.requirements]]
+id = "softap-tsf-stop-transaction"
+phase = "stop"
+description = "The production low-MAC/HAL/PAC path matches the complete vendor read-modify-write transaction."
+suite = "wifi-ap-tsf-stop"
+source = "libpp"
+symbol = "hal_disable_softap_tsf"
+claim = "whole-function-equivalence"
+
+[[features.effects]]
+id = "softap-tsf-stop"
+phase = "stop"
+vendor = { source = "libpp", symbol = "hal_disable_softap_tsf", fingerprint = "sha256:a78a03e650881091fe8a74f12f5d63334e794648be46db65d28da89d84cc3d62" }
+disposition = "verified"
+requirement = "softap-tsf-stop-transaction"
+rationale = "Concrete execution proves one fresh read and one write that preserve bits 29:0 while clearing bits 31:30; no additional fence or MMIO effect is admitted."
+
+[[features]]
+id = "wifi-ap-tsf-start"
+description = "The low-MAC AP epoch start reproduces the selector-zero MMIO projection of vendor hal_mac_tsf_reset without owning the vendor beacon-tick global."
+coverage = "bounded-evidence"
+
+[[features.phases]]
+id = "start"
+description = "Reset the shared load value and start the SoftAP TSF domain."
+
+[[features.requirements]]
+id = "softap-tsf-start-transaction"
+phase = "start"
+description = "The production low-MAC/HAL/PAC path matches the complete selector-zero MMIO transaction."
+suite = "wifi-ap-tsf-start"
+source = "libpp"
+symbol = "hal_mac_tsf_reset"
+claim = "reviewed-domain-equivalence"
+
+[[features.effects]]
+id = "softap-tsf-start"
+phase = "start"
+vendor = { source = "libpp", symbol = "hal_mac_tsf_reset", fingerprint = "sha256:f4fcf1b38138e11cfe1e169b7e59acc897dd22572461a794936907d082dfe513" }
+disposition = "verified"
+requirement = "softap-tsf-start-transaction"
+rationale = "Selector zero clears the SoftAP control pair, writes a zero TSF value, requests the SoftAP load and restores the control pair. The vendor beacon-tick global is replaced by the Rust beacon scheduler epoch."
+
+[[features]]
+id = "wifi-sta-ap-register-prerequisites"
+description = "The reviewed role-specific register leaves required before a shared STA+AP runtime can be claimed are independently qualified and remain visible as separate dependencies."
+coverage = "composed-features"
+
+[[features.phases]]
+id = "register-prerequisites"
+description = "Qualify interface identity, receive policy, key role and the AP TSF lifecycle without claiming shared scheduler ownership."
+
+[[features.dependencies]]
+feature = "wifi-ap-sta-interface-identity"
+phase = "interface-identity"
+
+[[features.dependencies]]
+feature = "wifi-ap-sta-receive-registers"
+phase = "receive-policy"
+
+[[features.dependencies]]
+feature = "wifi-ap-sta-key-role"
+phase = "key-install"
+
+[[features.dependencies]]
+feature = "wifi-ap-tsf-start"
+phase = "start"
+
+[[features.dependencies]]
+feature = "wifi-ap-tsf-stop"
+phase = "stop"
+
+[[features]]
+id = "wifi-rx-runtime-primitive"
+description = "The source-owned RX ring recycle boundary refines the reviewed vendor descriptor and MMIO transaction."
+coverage = "selected-evidence"
+
+[[features.phases]]
+id = "rx-ring"
+description = "Recycle and republish a completed RX descriptor without losing the ring frontier."
+
+[[features.requirements]]
+id = "rx-ring-recycle-equivalence"
+phase = "rx-ring"
+description = "The production RX composition refines wDev_AppendRxBlocks over the reviewed RX-ring domain."
+suite = "libpp-rx-dma"
+source = "libpp"
+symbol = "wDev_AppendRxBlocks"
+claim = "reviewed-refinement"
+
+[[features.effects]]
+id = "rx-ring-recycle"
+phase = "rx-ring"
+vendor = { source = "libpp", symbol = "wDev_AppendRxBlocks", fingerprint = "sha256:25dbf9f263b8a5e4443211bd0d1c6386e6f4fe4fd2c7dffd4029d8292fcf13e2" }
+disposition = "verified"
+requirement = "rx-ring-recycle-equivalence"
+rationale = "The adapter covers the descriptor frontier, bounded reload wait, MMIO ordering and source-owned critical-section replacement."
+
+[[features]]
+id = "wifi-tx-runtime-primitive"
+description = "The source-owned TX publication boundary matches the reviewed vendor queue-enable transaction."
+coverage = "selected-evidence"
+
+[[features.phases]]
+id = "tx-publish"
+description = "Publish one prepared TX queue to the MAC without admitting unreviewed register writes."
+
+[[features.requirements]]
+id = "tx-queue-enable-equivalence"
+phase = "tx-publish"
+description = "The production owned TX publication refines the reviewed non-HE hal_mac_txq_enable queue edge."
+suite = "libpp-tx-dma"
+source = "libpp"
+symbol = "hal_mac_txq_enable"
+claim = "reviewed-refinement"
+
+[[features.effects]]
+id = "tx-queue-enable"
+phase = "tx-publish"
+vendor = { source = "libpp", symbol = "hal_mac_txq_enable", fingerprint = "sha256:0195693c6b728e3f85269c824abf3abd31ec4e65da892515613cb55943b401ec" }
+disposition = "verified"
+requirement = "tx-queue-enable-equivalence"
+rationale = "The adapter proves the vendor queue-enable edge and the production descriptor ownership transition over the reviewed non-HE ordinary-queue domain."
+
+[[features]]
+id = "wifi-interrupt-runtime-primitive"
+description = "The source-owned IRQ boundary matches the reviewed vendor MAC event acknowledge and wakeup transaction."
+coverage = "selected-evidence"
+
+[[features.phases]]
+id = "irq-dispatch"
+description = "Snapshot and acknowledge MAC work before waking the source-owned dispatcher."
+
+[[features.requirements]]
+id = "mac-irq-equivalence"
+phase = "irq-dispatch"
+description = "The production IRQ boundary refines the reviewed MAC-event slice of wDev_ProcessFiq."
+suite = "libpp-interrupt"
+source = "libpp"
+symbol = "wDev_ProcessFiq"
+claim = "reviewed-refinement"
+
+[[features.effects]]
+id = "mac-irq-dispatch"
+phase = "irq-dispatch"
+vendor = { source = "libpp", symbol = "wDev_ProcessFiq", fingerprint = "sha256:a71f2a359019c177e681a63fe62a3036acab63182d0cd21b74cd21f4bbed9839" }
+disposition = "verified"
+requirement = "mac-irq-equivalence"
+rationale = "The adapter proves the reviewed interrupt snapshot, acknowledge and explicit Embassy wakeup refinement; unrelated vendor ISR behavior remains outside this bounded claim."
+
+[[features]]
+id = "wifi-mac-runtime-primitives"
+description = "The common RX, TX and interrupt primitives required by either Wi-Fi role are independently qualified."
+coverage = "composed-features"
+
+[[features.phases]]
+id = "shared-datapath"
+description = "Qualify the shared source-owned MAC datapath leaves."
+
+[[features.dependencies]]
+feature = "wifi-rx-runtime-primitive"
+
+[[features.dependencies]]
+feature = "wifi-tx-runtime-primitive"
+
+[[features.dependencies]]
+feature = "wifi-interrupt-runtime-primitive"
+
+[[features]]
+id = "wifi-sta-static-contract"
+description = "Static standalone-STA register, key, connected-policy and common datapath evidence is closed; hardware qualification is not evaluated here."
+coverage = "composed-features"
+
+[[features.phases]]
+id = "station"
+description = "Compose the independently reviewed standalone station leaves."
+
+[[features.dependencies]]
+feature = "wifi-mac-runtime-primitives"
+
+[[features.dependencies]]
+feature = "wifi-sta-connected-no-power-save"
+
+[[features.dependencies]]
+feature = "wifi-ap-sta-interface-identity"
+
+[[features.dependencies]]
+feature = "wifi-ap-sta-receive-registers"
+
+[[features.dependencies]]
+feature = "wifi-ap-sta-key-role"
+
+[[features]]
+id = "wifi-ap-static-contract"
+description = "Static standalone-AP register and low-MAC closure requires the closed role-specific PAC/HAL leaves plus the common RX, TX and interrupt primitives; it does not claim full vendor MLME, beacon scheduler or RTOS orchestration equivalence."
+coverage = "composed-features"
+
+[[features.phases]]
+id = "access-point"
+description = "Compose the reviewed AP register, TSF, key, receive-policy and common low-MAC datapath leaves."
+
+[[features.dependencies]]
+feature = "wifi-mac-runtime-primitives"
+
+[[features.dependencies]]
+feature = "wifi-sta-ap-register-prerequisites"
+
+[[features]]
+id = "wifi-sta-ap-static-contract"
+description = "Same-channel AP+STA static register and low-MAC closure requires both role-specific static contracts and the shared register prerequisites; full concurrent runtime and beacon-service behavior remains a separate HIL boundary."
+coverage = "composed-features"
+
+[[features.phases]]
+id = "same-channel-lifecycle"
+description = "Preserve the source-owned finite same-channel role policy without widening this static binary-evidence claim to runtime scheduling or RF qualification."
+
+[[features.dependencies]]
+feature = "wifi-sta-static-contract"
+
+[[features.dependencies]]
+feature = "wifi-ap-static-contract"
+
+[[features.dependencies]]
+feature = "wifi-sta-ap-register-prerequisites"
+
+[[features]]
+id = "internal-coex-scheduler-boundary"
+description = "The source-owned internal coexistence scheduler preserves the reviewed operational interval, period and bounded phase projection after scheduler installation and lock acquisition."
+coverage = "selected-evidence"
+
+[[features.phases]]
+id = "scheduler"
+description = "Replace the vendor RTOS-guarded scheduler environment with typed source-owned state and runtime-provided synchronization."
+
+[[features.requirements]]
+id = "scheduler-interval-set"
+phase = "scheduler"
+description = "The reviewed operational path stores the requested interval and returns success."
+suite = "coex-scheduler"
+source = "coex"
+symbol = "coex_schm_interval_set"
+claim = "reviewed-domain-equivalence"
+
+[[features.requirements]]
+id = "scheduler-interval-get"
+phase = "scheduler"
+description = "The reviewed operational path returns the source-owned interval."
+suite = "coex-scheduler"
+source = "coex"
+symbol = "coex_schm_interval_get"
+claim = "reviewed-domain-equivalence"
+
+[[features.requirements]]
+id = "scheduler-current-period"
+phase = "scheduler"
+description = "Inactive and active current-period behavior preserves the vendor defaults and schedule byte projection."
+suite = "coex-scheduler"
+source = "coex"
+symbol = "coex_schm_curr_period_get"
+claim = "reviewed-domain-equivalence"
+
+[[features.requirements]]
+id = "scheduler-current-phase"
+phase = "scheduler"
+description = "Inactive, in-range and out-of-range phase lookup is bounded by the typed schedule slice."
+suite = "coex-scheduler"
+source = "coex"
+symbol = "coex_schm_curr_phase_get"
+claim = "reviewed-domain-equivalence"
+
+[[features.effects]]
+id = "scheduler-interval-store"
+phase = "scheduler"
+vendor = { source = "coex", symbol = "coex_schm_interval_set", fingerprint = "sha256:3daf04117193f43da4ffd97b175f4fe57f837a9c34d077751d1d9fb65ea09931" }
+disposition = "verified"
+requirement = "scheduler-interval-set"
+rationale = "The bounded state proof observes the exact source-owned interval word and preserves the requested value."
+
+[[features.effects]]
+id = "scheduler-lock"
+phase = "scheduler"
+vendor = { source = "coex", symbol = "coex_schm_lock", fingerprint = "sha256:3c2883ccb6c1d9457fee2ff8a8c37f4579d34a747602219f3a8d97da9099b5c5" }
+disposition = "verified"
+requirement = "scheduler-interval-set"
+rationale = "The concrete vendor path resolves the reviewed OSI semaphore-take slot; the production boundary replaces that RTOS effect with runtime-owned synchronization under the declared acquired-lock precondition."
+
+[[features.effects]]
+id = "scheduler-unlock"
+phase = "scheduler"
+vendor = { source = "coex", symbol = "coex_schm_unlock", fingerprint = "sha256:6ea65ef7d8bba39779373c4e68afb99000e3a2bf63d0ac9b68d434e58a5f1fcc" }
+disposition = "verified"
+requirement = "scheduler-interval-set"
+rationale = "The concrete vendor path resolves the reviewed OSI semaphore-give slot; Rust guard release owns the corresponding synchronization lifetime without importing the vendor RTOS ABI."
+
+[[features]]
+id = "internal-ble-coex-client-boundary"
+description = "The BLE-side internal coexistence client has an executed request projection and a complete closed-PAC PTI initialization leaf; external wired coexistence and the complete BLE datapath remain excluded."
+coverage = "selected-evidence"
+
+[[features.phases]]
+id = "ble-client"
+description = "Initialize the reviewed Bluetooth PTI image and enter the shared internal arbiter through its Bluetooth client selector."
+
+[[features.requirements]]
+id = "bluetooth-pti-initialization"
+phase = "ble-client"
+description = "The complete Bluetooth baseband leaf and closed PAC preserve both ordered fresh-read RMW operations."
+suite = "btbb-coex-pti"
+source = "btbb"
+symbol = "coex_pti_v2"
+claim = "whole-function-equivalence"
+
+[[features.effects]]
+id = "bluetooth-pti-register-image"
+phase = "ble-client"
+vendor = { source = "btbb", symbol = "coex_pti_v2", fingerprint = "sha256:f50473569ebf013131bae5e402e5ab66cf42e48b965bd2489904297d16d57e74" }
+disposition = "verified"
+requirement = "bluetooth-pti-initialization"
+rationale = "The closed PAC publishes only the two complete vendor-evidenced halfword images and preserves the fresh-read ordering without exposing the register address or arbitrary integers."
+
+[[features.dependencies]]
+feature = "coex-request-valid-clock-projection"
+
+[[features]]
+id = "internal-wifi-ble-coex-static-contract"
+description = "Internal Wi-Fi/BLE coexistence closure excludes external wired COEX and requires both clients, scheduler and timer/register leaves."
+coverage = "composed-features"
+
+[[features.phases]]
+id = "internal-coex"
+description = "Compose the internal two-client coexistence boundary."
+
+[[features.dependencies]]
+feature = "coex-hardware-timer-control"
+
+[[features.dependencies]]
+feature = "coex-timer-valid-bank-programming"
+
+[[features.dependencies]]
+feature = "coex-request-valid-clock-projection"
+
+[[features.dependencies]]
+feature = "wifi-mac-coex-register-programming"
+
+[[features.dependencies]]
+feature = "internal-coex-scheduler-boundary"
+
+[[features.dependencies]]
+feature = "internal-ble-coex-client-boundary"
+
+[[features]]
+id = "esp32s31-static-radio-contract"
+description = "Top-level static gate for standalone STA, standalone AP, same-channel AP+STA and internal Wi-Fi/BLE coexistence; HIL is intentionally not evaluated."
+coverage = "composed-features"
+
+[[features.phases]]
+id = "static-radio"
+description = "Require every selected static product capability before publication."
+
+[[features.dependencies]]
+feature = "wifi-sta-static-contract"
+
+[[features.dependencies]]
+feature = "wifi-ap-static-contract"
+
+[[features.dependencies]]
+feature = "wifi-sta-ap-static-contract"
+
+[[features.dependencies]]
+feature = "internal-wifi-ble-coex-static-contract"

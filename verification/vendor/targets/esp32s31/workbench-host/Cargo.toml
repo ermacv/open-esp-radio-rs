@@ -1,0 +1,22 @@
+[package]
+name = "open-radio-vendor-workbench-esp32s31-host"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+default-run = "vendor-binary-workbench"
+description = "open-esp-radio-rs host for the ESP32-S31 Vendor Binary Workbench provider"
+
+[[bin]]
+name = "vendor-binary-workbench"
+path = "src/main.rs"
+
+[dependencies]
+open-radio-vendor-binary-workbench = { path = "../../../../../tools/vendor-binary-workbench", default-features = false }
+open-radio-vendor-harness-esp32s31-semantic = { path = "../workbench-provider/semantic" }
+serde_json = "=1.0.151"
+
+[lints]
+workspace = true

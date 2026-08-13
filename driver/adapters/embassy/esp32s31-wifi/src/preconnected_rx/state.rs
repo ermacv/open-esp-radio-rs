@@ -60,6 +60,23 @@ pub enum Esp32s31PreconnectedRxDirective {
     Stop,
 }
 
+/// Decision made after one complete RX unit has been copied out of DMA and
+/// every descriptor belonging to it has been returned to the live walker.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Esp32s31RecycledRxDirective {
+    Continue,
+    Pause,
+}
+
+/// Progress of one vendor-shaped RX-unit recycle transaction.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct Esp32s31RecycledRxProgress {
+    pub completed_units: u32,
+    pub completed_descriptors: u32,
+    pub discarded_units: u32,
+    pub paused: bool,
+}
+
 /// Finite progress returned by one descriptor service transaction.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct Esp32s31PreconnectedRxProgress {

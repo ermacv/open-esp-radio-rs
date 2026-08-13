@@ -145,7 +145,18 @@ static AP_AUTHORIZATIONS: AtomicU32 = AtomicU32::new(0);
 static AP_MAXIMUM_ASSOCIATED_PEERS: AtomicU32 = AtomicU32::new(0);
 static AP_MAXIMUM_AUTHORIZED_PEERS: AtomicU32 = AtomicU32::new(0);
 static AP_REMOVALS: AtomicU32 = AtomicU32::new(0);
+static AP_AUTHENTICATION_TIMEOUTS: AtomicU32 = AtomicU32::new(0);
+static AP_INACTIVITY_TIMEOUTS: AtomicU32 = AtomicU32::new(0);
+static AP_DISASSOCIATIONS_PREPARED: AtomicU32 = AtomicU32::new(0);
+static AP_DISASSOCIATIONS_PUBLISHED: AtomicU32 = AtomicU32::new(0);
+static AP_DISASSOCIATIONS_ACKNOWLEDGED: AtomicU32 = AtomicU32::new(0);
+static AP_DEAUTHENTICATIONS_PREPARED: AtomicU32 = AtomicU32::new(0);
+static AP_DEAUTHENTICATIONS_PUBLISHED: AtomicU32 = AtomicU32::new(0);
+static AP_DEAUTHENTICATIONS_ACKNOWLEDGED: AtomicU32 = AtomicU32::new(0);
+static AP_COMPLETED_RX_UNITS: AtomicU32 = AtomicU32::new(0);
 static AP_COMPLETED_RX_DESCRIPTORS: AtomicU32 = AtomicU32::new(0);
+static AP_RECYCLED_RX_DESCRIPTORS: AtomicU32 = AtomicU32::new(0);
+static AP_DISCARDED_RX_UNITS: AtomicU32 = AtomicU32::new(0);
 static AP_IGNORED_RX_FRAMES: AtomicU32 = AtomicU32::new(0);
 static AP_RX_MIC_FAILURES: AtomicU32 = AtomicU32::new(0);
 static AP_RX_QUARANTINED_FRAMES: AtomicU32 = AtomicU32::new(0);
@@ -198,7 +209,20 @@ fn observe_access_point(observation: Esp32s31AccessPointObservation) {
         Ordering::Release,
     );
     AP_REMOVALS.store(observation.peer_removals, Ordering::Release);
+    AP_AUTHENTICATION_TIMEOUTS.store(observation.authentication_timeouts, Ordering::Release);
+    AP_INACTIVITY_TIMEOUTS.store(observation.inactivity_timeouts, Ordering::Release);
+    AP_DISASSOCIATIONS_PREPARED.store(observation.disassociations_prepared, Ordering::Release);
+    AP_DISASSOCIATIONS_PUBLISHED.store(observation.disassociations_published, Ordering::Release);
+    AP_DISASSOCIATIONS_ACKNOWLEDGED
+        .store(observation.disassociations_acknowledged, Ordering::Release);
+    AP_DEAUTHENTICATIONS_PREPARED.store(observation.deauthentications_prepared, Ordering::Release);
+    AP_DEAUTHENTICATIONS_PUBLISHED.store(observation.deauthentications_published, Ordering::Release);
+    AP_DEAUTHENTICATIONS_ACKNOWLEDGED
+        .store(observation.deauthentications_acknowledged, Ordering::Release);
+    AP_COMPLETED_RX_UNITS.store(observation.completed_rx_units, Ordering::Release);
     AP_COMPLETED_RX_DESCRIPTORS.store(observation.completed_rx_descriptors, Ordering::Release);
+    AP_RECYCLED_RX_DESCRIPTORS.store(observation.recycled_rx_descriptors, Ordering::Release);
+    AP_DISCARDED_RX_UNITS.store(observation.discarded_rx_units, Ordering::Release);
     AP_IGNORED_RX_FRAMES.store(observation.ignored_rx_frames, Ordering::Release);
     AP_RX_MIC_FAILURES.store(observation.rx_mic_failures, Ordering::Release);
     AP_RX_QUARANTINED_FRAMES.store(observation.rx_quarantined_frames, Ordering::Release);
@@ -268,7 +292,18 @@ fn access_point_evidence(generation: u32, requested_channel: u8) -> WifiAccessPo
         maximum_associated_peers: AP_MAXIMUM_ASSOCIATED_PEERS.load(Ordering::Acquire) as u8,
         maximum_authorized_peers: AP_MAXIMUM_AUTHORIZED_PEERS.load(Ordering::Acquire) as u8,
         peer_removals: AP_REMOVALS.load(Ordering::Acquire),
+        authentication_timeouts: AP_AUTHENTICATION_TIMEOUTS.load(Ordering::Acquire),
+        inactivity_timeouts: AP_INACTIVITY_TIMEOUTS.load(Ordering::Acquire),
+        disassociations_prepared: AP_DISASSOCIATIONS_PREPARED.load(Ordering::Acquire),
+        disassociations_published: AP_DISASSOCIATIONS_PUBLISHED.load(Ordering::Acquire),
+        disassociations_acknowledged: AP_DISASSOCIATIONS_ACKNOWLEDGED.load(Ordering::Acquire),
+        deauthentications_prepared: AP_DEAUTHENTICATIONS_PREPARED.load(Ordering::Acquire),
+        deauthentications_published: AP_DEAUTHENTICATIONS_PUBLISHED.load(Ordering::Acquire),
+        deauthentications_acknowledged: AP_DEAUTHENTICATIONS_ACKNOWLEDGED.load(Ordering::Acquire),
+        completed_rx_units: AP_COMPLETED_RX_UNITS.load(Ordering::Acquire),
         completed_rx_descriptors: AP_COMPLETED_RX_DESCRIPTORS.load(Ordering::Acquire),
+        recycled_rx_descriptors: AP_RECYCLED_RX_DESCRIPTORS.load(Ordering::Acquire),
+        discarded_rx_units: AP_DISCARDED_RX_UNITS.load(Ordering::Acquire),
         ignored_rx_frames: AP_IGNORED_RX_FRAMES.load(Ordering::Acquire),
         rx_mic_failures: AP_RX_MIC_FAILURES.load(Ordering::Acquire),
         rx_quarantined_frames: AP_RX_QUARANTINED_FRAMES.load(Ordering::Acquire),
@@ -1206,7 +1241,18 @@ async fn wifi_role_task(
                     AP_ASSOCIATIONS.store(0, Ordering::Release);
                     AP_AUTHORIZATIONS.store(0, Ordering::Release);
                     AP_REMOVALS.store(0, Ordering::Release);
+                    AP_AUTHENTICATION_TIMEOUTS.store(0, Ordering::Release);
+                    AP_INACTIVITY_TIMEOUTS.store(0, Ordering::Release);
+                    AP_DISASSOCIATIONS_PREPARED.store(0, Ordering::Release);
+                    AP_DISASSOCIATIONS_PUBLISHED.store(0, Ordering::Release);
+                    AP_DISASSOCIATIONS_ACKNOWLEDGED.store(0, Ordering::Release);
+                    AP_DEAUTHENTICATIONS_PREPARED.store(0, Ordering::Release);
+                    AP_DEAUTHENTICATIONS_PUBLISHED.store(0, Ordering::Release);
+                    AP_DEAUTHENTICATIONS_ACKNOWLEDGED.store(0, Ordering::Release);
+                    AP_COMPLETED_RX_UNITS.store(0, Ordering::Release);
                     AP_COMPLETED_RX_DESCRIPTORS.store(0, Ordering::Release);
+                    AP_RECYCLED_RX_DESCRIPTORS.store(0, Ordering::Release);
+                    AP_DISCARDED_RX_UNITS.store(0, Ordering::Release);
                     AP_IGNORED_RX_FRAMES.store(0, Ordering::Release);
                     AP_RX_MIC_FAILURES.store(0, Ordering::Release);
                     AP_RX_QUARANTINED_FRAMES.store(0, Ordering::Release);

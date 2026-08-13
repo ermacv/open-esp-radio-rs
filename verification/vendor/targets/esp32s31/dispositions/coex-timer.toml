@@ -1,4 +1,4 @@
-schema = 1
+schema = 2
 # Instruction-exact control leaves of the five-entry coexistence timer bank. Higher
 # scheduler and RTOS behavior remains intentionally outside this contract.
 default-disposition = "not-yet-ported"
@@ -11,6 +11,7 @@ disposition = "direct"
 protocol = "coex"
 rust-component = "open_esp_radio_esp32s31_pac::RadioRegisters::enable_coex_timer"
 binding = "v1"
+rust-binding = "exact-production-entry"
 rust-probe = "open_coex_trace_coex_hw_timer_enable"
 effect-contract = "exact-effects-v1"
 [[functions.effects]]
@@ -33,6 +34,7 @@ disposition = "direct"
 protocol = "coex"
 rust-component = "open_esp_radio_esp32s31_pac::RadioRegisters::disable_coex_timer"
 binding = "v1"
+rust-binding = "exact-production-entry"
 rust-probe = "open_coex_trace_coex_hw_timer_disable"
 effect-contract = "exact-effects-v1"
 [[functions.effects]]
@@ -55,6 +57,7 @@ disposition = "direct"
 protocol = "coex"
 rust-component = "open_esp_radio_esp32s31_pac::RadioRegisters::force_coex_timer"
 binding = "v1"
+rust-binding = "exact-production-entry"
 rust-probe = "open_coex_trace_coex_hw_timer_force"
 effect-contract = "exact-effects-v1"
 [[functions.effects]]
@@ -71,6 +74,7 @@ disposition = "direct"
 protocol = "coex"
 rust-component = "open_esp_radio_esp32s31_pac::RadioRegisters::unforce_coex_timer"
 binding = "v1"
+rust-binding = "exact-production-entry"
 rust-probe = "open_coex_trace_coex_hw_timer_unforce"
 effect-contract = "exact-effects-v1"
 [[functions.effects]]

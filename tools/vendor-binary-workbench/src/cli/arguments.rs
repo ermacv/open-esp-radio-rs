@@ -81,6 +81,9 @@ pub(crate) struct ProjectStatusArgs {
 pub(crate) struct ProjectFeatureArgs {
     /// Stable feature identifier from the reviewed qualification pack.
     pub(crate) feature: String,
+    /// Restrict the report and review draft to one lifecycle phase.
+    #[arg(long, value_name = "PHASE")]
+    pub(crate) phase: Option<String>,
     /// Write a review-only TOML candidate for the currently discovered surface.
     #[arg(long, value_name = "PATH")]
     pub(crate) write_review_draft: Option<PathBuf>,

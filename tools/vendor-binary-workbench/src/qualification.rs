@@ -184,6 +184,7 @@ pub(crate) struct FeatureHardwareReport {
 pub(crate) struct FeaturePhaseReport {
     pub(crate) id: String,
     pub(crate) description: String,
+    pub(crate) scopes: Vec<String>,
     pub(crate) requirements: usize,
     pub(crate) transactions: usize,
     pub(crate) covered_transactions: usize,
@@ -790,6 +791,7 @@ pub(crate) fn evaluate(project: &ProjectSpec) -> Result<Vec<FeatureQualification
                     FeaturePhaseReport {
                         id: phase.id.clone(),
                         description: phase.description.clone(),
+                        scopes: phase.scopes.clone(),
                         requirements: feature
                             .requirements
                             .iter()

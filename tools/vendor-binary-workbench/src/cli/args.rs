@@ -863,6 +863,8 @@ mod tests {
             "project".to_owned(),
             "feature".to_owned(),
             "wifi-ap-bringup".to_owned(),
+            "--phase".to_owned(),
+            "beacon-timing".to_owned(),
             "--write-review-draft".to_owned(),
             "candidate.toml".to_owned(),
         ])
@@ -871,6 +873,7 @@ mod tests {
             panic!("unexpected argument type")
         };
         assert_eq!(arguments.feature, "wifi-ap-bringup");
+        assert_eq!(arguments.phase.as_deref(), Some("beacon-timing"));
         assert_eq!(
             arguments.write_review_draft.as_deref(),
             Some(std::path::Path::new("candidate.toml"))

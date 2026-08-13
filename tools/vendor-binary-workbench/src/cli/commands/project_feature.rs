@@ -18,13 +18,15 @@ struct ProjectFeatureReport {
     schema: u32,
     command: &'static str,
     project: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    selected_phase: Option<String>,
     feature: FeatureQualificationReport,
     #[serde(skip_serializing_if = "Option::is_none")]
     review_draft: Option<String>,
 }
 
 pub(super) fn run(arguments: ProjectFeatureArgs, project: &ProjectSpec) -> Result<bool> {
-    let feature = crate::qualification::evaluate(project)?
+    let mut feature = crate::qualification::evaluate(project)?
         .into_iter()
         .find(|feature| feature.id == arguments.feature)
         .ok_or_else(|| {
@@ -33,6 +35,9 @@ pub(super) fn run(arguments: ProjectFeatureArgs, project: &ProjectSpec) -> Resul
                 arguments.feature
             ))
         })?;
+    if let Some(phase) = arguments.phase.as_deref() {
+        select_phase(&mut feature, phase)?;
+    }
     let review_draft = arguments
         .write_review_draft
         .as_deref()
@@ -40,9 +45,10 @@ pub(super) fn run(arguments: ProjectFeatureArgs, project: &ProjectSpec) -> Resul
         .transpose()?;
     let passed = feature.status != FeatureQualificationStatus::Blocked;
     let report = ProjectFeatureReport {
-        schema: 1,
+        schema: 2,
         command: "project feature",
         project: project.id.clone(),
+        selected_phase: arguments.phase,
         feature,
         review_draft,
     };
@@ -55,6 +61,9 @@ fn render_human(report: &ProjectFeatureReport) {
     outputln!("{}", output::heading("Feature assurance"));
     outputln!("Project: {}", report.project);
     outputln!("Feature: {}", feature.id);
+    if let Some(phase) = &report.selected_phase {
+        outputln!("Phase:   {phase}");
+    }
     outputln!("Claim:   {}", feature.description);
     let outcome = match feature.status {
         FeatureQualificationStatus::Qualified => output::success(
@@ -93,7 +102,7 @@ fn render_human(report: &ProjectFeatureReport) {
         let limit = if output::details() {
             feature.blockers.len()
         } else {
-            10
+            5
         };
         for (index, blocker) in feature.blockers.iter().take(limit).enumerate() {
             outputln!("{}. {blocker}", index + 1);
@@ -168,16 +177,63 @@ fn render_human(report: &ProjectFeatureReport) {
 
     if !feature.blockers.is_empty() {
         outputln!("\n{}", output::heading("Next"));
-        outputln!(
-            "1. Review the new or changed transaction surface and update the feature pack; use --write-review-draft PATH for a candidate."
-        );
-        outputln!(
-            "2. Add or repair the referenced production verification proof, then run `project verify --check`."
-        );
-        outputln!("3. Refresh with `project analyze` and inspect this feature again.");
+        outputln!("1. {}", next_action(&feature.blockers[0]));
     }
     if let Some(path) = &report.review_draft {
         outputln!("\nReview draft written: {path}");
+    }
+}
+
+fn select_phase(feature: &mut FeatureQualificationReport, selected: &str) -> Result<()> {
+    let phase = feature
+        .phases
+        .iter()
+        .find(|phase| phase.id == selected)
+        .cloned()
+        .ok_or_else(|| {
+            let known = feature
+                .phases
+                .iter()
+                .map(|phase| phase.id.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
+            crate::Error::invalid(format!(
+                "qualification feature {:?} has no phase {selected:?}; expected one of: {known}",
+                feature.id
+            ))
+        })?;
+    feature.scopes = phase.scopes.clone();
+    feature.requirements = phase.requirements;
+    feature.surface_effects = phase.transactions;
+    feature.covered_effects = phase.covered_transactions;
+    feature
+        .transactions
+        .retain(|transaction| transaction.phase == selected);
+    feature.blockers = phase.blockers.clone();
+    feature.phases = vec![phase];
+    feature.hardware = None;
+    feature.status = if feature.blockers.is_empty() {
+        FeatureQualificationStatus::Qualified
+    } else {
+        FeatureQualificationStatus::Blocked
+    };
+    Ok(())
+}
+
+fn next_action(blocker: &str) -> String {
+    if blocker.contains("cannot load suite") || blocker.contains("has no result in suite") {
+        "Run `project verify`, then inspect the referenced suite and production binding.".to_owned()
+    } else if blocker.contains("new transaction")
+        || blocker.contains("changed:")
+        || blocker.contains("is stale")
+    {
+        "Write a phase-scoped review candidate with `--write-review-draft PATH`, then review its fingerprint and effects.".to_owned()
+    } else if blocker.contains("analysis scope") {
+        "Run `project analyze`, then inspect the named review scope and its first semantic blocker."
+            .to_owned()
+    } else {
+        "Inspect the first blocker above, repair its production proof, and rerun this phase."
+            .to_owned()
     }
 }
 
@@ -288,11 +344,76 @@ fn toml_string(value: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::encode_id;
+    use super::{encode_id, select_phase};
+    use crate::qualification::{
+        FeatureCoverage, FeaturePhaseReport, FeatureQualificationReport, FeatureQualificationStatus,
+    };
 
     #[test]
     fn review_ids_escape_punctuation_without_collisions() {
         assert_ne!(encode_id("wifi::foo-a"), encode_id("wifi::foo_a"));
         assert_ne!(encode_id("wifi::foo@0x10"), encode_id("wifi::foo@0x20"));
+    }
+
+    #[test]
+    fn phase_selection_reduces_the_report_to_that_lifecycle_slice() {
+        let mut report = qualification_report();
+
+        select_phase(&mut report, "stop").unwrap();
+
+        assert_eq!(report.scopes, ["stop-scope"]);
+        assert_eq!(report.requirements, 1);
+        assert_eq!(report.surface_effects, 1);
+        assert_eq!(report.covered_effects, 1);
+        assert_eq!(report.phases.len(), 1);
+        assert_eq!(report.phases[0].id, "stop");
+        assert!(report.hardware.is_none());
+        assert_eq!(report.status, FeatureQualificationStatus::Qualified);
+    }
+
+    #[test]
+    fn phase_selection_reports_the_known_phase_ids() {
+        let mut report = qualification_report();
+
+        let error = select_phase(&mut report, "missing").unwrap_err();
+
+        assert!(error.to_string().contains("expected one of: start, stop"));
+    }
+
+    fn qualification_report() -> FeatureQualificationReport {
+        FeatureQualificationReport {
+            id: "feature".to_owned(),
+            description: "feature".to_owned(),
+            required: true,
+            status: FeatureQualificationStatus::Blocked,
+            coverage: FeatureCoverage::ReviewScopes,
+            scopes: vec!["start-scope".to_owned(), "stop-scope".to_owned()],
+            requirements: 2,
+            surface_effects: 2,
+            covered_effects: 1,
+            phases: vec![
+                FeaturePhaseReport {
+                    id: "start".to_owned(),
+                    description: "start".to_owned(),
+                    scopes: vec!["start-scope".to_owned()],
+                    requirements: 1,
+                    transactions: 1,
+                    covered_transactions: 0,
+                    blockers: vec!["start blocker".to_owned()],
+                },
+                FeaturePhaseReport {
+                    id: "stop".to_owned(),
+                    description: "stop".to_owned(),
+                    scopes: vec!["stop-scope".to_owned()],
+                    requirements: 1,
+                    transactions: 1,
+                    covered_transactions: 1,
+                    blockers: Vec::new(),
+                },
+            ],
+            transactions: Vec::new(),
+            hardware: None,
+            blockers: vec!["start blocker".to_owned()],
+        }
     }
 }

@@ -15,7 +15,7 @@ use sha2::{Digest, Sha256};
 
 use crate::Result;
 
-const CACHE_SCHEMA: u32 = 2;
+const CACHE_SCHEMA: u32 = 3;
 
 #[derive(Debug, Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -65,13 +65,14 @@ impl ProjectAnalysisCache {
     pub(super) fn is_current(
         &mut self,
         stage: &str,
+        configuration: &str,
         inputs: &[PathBuf],
         outputs: &[PathBuf],
     ) -> Result<bool> {
         if outputs.iter().any(|path| !path.is_file()) {
             return Ok(false);
         }
-        let signature = self.signature(stage, inputs)?;
+        let signature = self.signature(stage, configuration, inputs)?;
         let Some(cached) = self.document.stages.get(stage) else {
             return Ok(false);
         };
@@ -94,10 +95,11 @@ impl ProjectAnalysisCache {
     pub(super) fn record(
         &mut self,
         stage: &str,
+        configuration: &str,
         inputs: &[PathBuf],
         outputs: &[PathBuf],
     ) -> Result<()> {
-        let signature = self.signature(stage, inputs)?;
+        let signature = self.signature(stage, configuration, inputs)?;
         let mut output_digests = BTreeMap::new();
         for path in outputs {
             self.digests.remove(path);
@@ -120,17 +122,24 @@ impl ProjectAnalysisCache {
         Ok(())
     }
 
-    fn signature(&mut self, stage: &str, inputs: &[PathBuf]) -> Result<String> {
+    fn signature(
+        &mut self,
+        stage: &str,
+        configuration: &str,
+        inputs: &[PathBuf],
+    ) -> Result<String> {
         let mut inputs = inputs.to_vec();
         inputs.sort();
         inputs.dedup();
         let mut digest = Sha256::new();
-        digest.update(b"vendor-binary-workbench-project-stage-v2\0");
+        digest.update(b"vendor-binary-workbench-project-stage-v3\0");
         digest.update(stage.as_bytes());
         digest.update([0]);
         digest.update(env!("CARGO_PKG_VERSION").as_bytes());
         digest.update([0]);
         digest.update(stage_revision(stage)?.to_le_bytes());
+        digest.update([0]);
+        digest.update(configuration.as_bytes());
         for path in inputs {
             digest.update([0]);
             digest.update(path_key(&path).as_bytes());
@@ -185,6 +194,14 @@ fn stage_revision(stage: &str) -> Result<u32> {
         "code-boundary-review" => Ok(1),
         "register-review" => Ok(1),
         "function-review" => Ok(1),
+        "code-boundary-validation:deny-unreviewed=false"
+        | "code-boundary-validation:deny-unreviewed=true"
+        | "register-validation:deny-unreviewed=false"
+        | "register-validation:deny-unreviewed=true"
+        | "function-validation:deny-unreviewed=false"
+        | "function-validation:deny-unreviewed=true"
+        | "interface-validation:deny-unreviewed=false"
+        | "interface-validation:deny-unreviewed=true" => Ok(1),
         _ => Err(crate::Error::invalid(format!(
             "analysis cache has no semantic revision for stage {stage:?}"
         ))),
@@ -218,6 +235,7 @@ mod tests {
             !cache
                 .is_current(
                     "linked-ir",
+                    "profile=a",
                     std::slice::from_ref(&input),
                     std::slice::from_ref(&output)
                 )
@@ -226,6 +244,7 @@ mod tests {
         cache
             .record(
                 "linked-ir",
+                "profile=a",
                 std::slice::from_ref(&input),
                 std::slice::from_ref(&output),
             )
@@ -234,6 +253,7 @@ mod tests {
             cache
                 .is_current(
                     "linked-ir",
+                    "profile=a",
                     std::slice::from_ref(&input),
                     std::slice::from_ref(&output)
                 )
@@ -245,6 +265,21 @@ mod tests {
             !cache
                 .is_current(
                     "linked-ir",
+                    "profile=a",
+                    std::slice::from_ref(&input),
+                    std::slice::from_ref(&output)
+                )
+                .unwrap()
+        );
+
+        fs::write(&output, "output-a").unwrap();
+        fs::write(&input, "input-a").unwrap();
+        cache.digests.clear();
+        assert!(
+            !cache
+                .is_current(
+                    "linked-ir",
+                    "profile=b",
                     std::slice::from_ref(&input),
                     std::slice::from_ref(&output)
                 )
@@ -257,6 +292,7 @@ mod tests {
             !cache
                 .is_current(
                     "linked-ir",
+                    "profile=a",
                     std::slice::from_ref(&input),
                     std::slice::from_ref(&output)
                 )
@@ -279,6 +315,14 @@ mod tests {
             "code-boundary-review",
             "register-review",
             "function-review",
+            "code-boundary-validation:deny-unreviewed=false",
+            "code-boundary-validation:deny-unreviewed=true",
+            "register-validation:deny-unreviewed=false",
+            "register-validation:deny-unreviewed=true",
+            "function-validation:deny-unreviewed=false",
+            "function-validation:deny-unreviewed=true",
+            "interface-validation:deny-unreviewed=false",
+            "interface-validation:deny-unreviewed=true",
         ] {
             assert!(stage_revision(stage).unwrap() > 0);
         }

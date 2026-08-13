@@ -77,10 +77,7 @@ impl ResolvedProjectAnalysisOperations<'_> {
 
     fn linked_ir_inputs(&self) -> Vec<std::path::PathBuf> {
         let project = &self.session.project;
-        let mut paths = vec![
-            self.session.manifest.clone(),
-            self.session.target_path.clone(),
-        ];
+        let mut paths = vec![self.session.target_path.clone()];
         paths.extend(self.session.run_spec_path.iter().cloned());
         paths.extend(self.session.svd_paths.iter().cloned());
         if let Some(pack) = project.platform_pack.as_ref() {
@@ -105,7 +102,7 @@ impl ResolvedProjectAnalysisOperations<'_> {
     }
 
     fn common_inputs(&self) -> Vec<std::path::PathBuf> {
-        vec![self.session.manifest.clone()]
+        Vec::new()
     }
 
     fn run_inputs(&self) -> Vec<std::path::PathBuf> {
@@ -219,7 +216,10 @@ impl ResolvedProjectAnalysisOperations<'_> {
         if check {
             return Ok(false);
         }
-        let current = self.cache.is_current(stage, inputs, outputs)?;
+        let configuration = self.stage_configuration(stage);
+        let current = self
+            .cache
+            .is_current(stage, &configuration, inputs, outputs)?;
         if current {
             tracing::info!(cache_stage = stage, "content-addressed outputs are current");
         }
@@ -234,9 +234,48 @@ impl ResolvedProjectAnalysisOperations<'_> {
         outputs: &[std::path::PathBuf],
     ) -> Result<()> {
         if !check {
-            self.cache.record(stage, inputs, outputs)?;
+            let configuration = self.stage_configuration(stage);
+            self.cache.record(stage, &configuration, inputs, outputs)?;
         }
         Ok(())
+    }
+
+    /// Stable, stage-owned project configuration included in the cache key.
+    ///
+    /// File contents remain explicit inputs. Keeping unrelated manifest
+    /// sections out of this value prevents, for example, a review-scope edit
+    /// from invalidating artifact-wide decoding and linked IR.
+    fn stage_configuration(&self, stage: &str) -> String {
+        let project = &self.session.project;
+        match stage.split_once(':').map_or(stage, |(owner, _)| owner) {
+            "symbol-inventory" => format!("{:?}", project.symbol_inventory),
+            "mmio-discovery" => format!(
+                "facts={:?}",
+                project.registers.as_ref().map(|registers| &registers.facts)
+            ),
+            "interface-discovery" => format!(
+                "facts={:?}",
+                project
+                    .interfaces
+                    .as_ref()
+                    .map(|interfaces| &interfaces.facts)
+            ),
+            "linked-ir" => format!("{:?}", project.ir_profiles),
+            "event-replays" => format!("{:?}", project.functions),
+            "review-scopes" => format!("{:?}", project.review),
+            "navigation-index" => format!("{:?}", project.navigation_index),
+            "code-boundary-validation" | "code-boundary-review" => {
+                format!("{:?}", project.code)
+            }
+            "register-validation" | "register-review" => {
+                format!("{:?}", project.registers)
+            }
+            "function-validation" | "function-review" => {
+                format!("{:?}", project.functions)
+            }
+            "interface-validation" => format!("{:?}", project.interfaces),
+            _ => unreachable!("cache stage revision rejects unknown stage {stage:?}"),
+        }
     }
 
     fn linked_ir_outputs(&self) -> Vec<std::path::PathBuf> {

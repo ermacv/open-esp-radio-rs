@@ -32,9 +32,13 @@ maximum = 0xFFFFFFFF
 [[review]]
 entity = "WIFI_MAC_KEY_TABLE"
 sources = ["BLOB_LIBPP_HAL_CRYPTO"]
-confidence = "instruction-exact-hil-qualified"
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_KEY_TABLE.ENTRY_WORD%s"
 sources = ["BLOB_LIBPP_HAL_CRYPTO"]
-confidence = "instruction-exact-partial"
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"

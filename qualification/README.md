@@ -15,8 +15,8 @@ Each capability has five independent axes:
 
 - `implementation`: a production owner exists under `driver/*/src`;
 - `host-proof`: named host tests exercise the capability contract;
-- `vendor-proof`: roots have executable validator contracts, are only mapped
-  to reviewed source anchors, or are explicitly outside vendor comparison;
+- vendor evidence: version 2 derives `qualified`, `mapped` or `unmapped` from
+  the Workbench's compact evidence index; it is not manually declared;
 - `hil-proof`: a dated hardware record contains the named qualification ID;
 - `async-proof`: waits are bounded scheduling edges or not applicable.
 
@@ -34,9 +34,14 @@ new immutable record (or an explicit current-revision addendum).
 
 Owner, test, source-anchor and HIL references are checked against their real
 repository files. A `vendor-root` must be an explicit entry in a disposition
-pack selected by the target verification project; `vendor-proof qualified`
-additionally requires its Rust component and executable semantic/effect
-contract.
+pack selected by the target verification project. A `vendor-evidence`
+reference qualifies that root only when the generated index records a fresh,
+baseline-accepted concrete trace of the exact compiled production entry.
+Shared-core adapters, semantic models and static traces remain mapped evidence.
+
+See the canonical
+[verification and qualification contract](../docs/VERIFICATION_AND_QUALIFICATION.md)
+for evidence classes and the update workflow.
 
 Dated, immutable ESP32-S31 hardware evidence lives in
 [`targets/esp32s31/records/`](targets/esp32s31/records/README.md). The ledger

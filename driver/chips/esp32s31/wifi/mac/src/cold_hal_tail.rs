@@ -1,21 +1,37 @@
 //! Ownership boundary for the direct pre-COEX tail of `hal_init`.
 
-use open_esp_radio_esp32s31_pac::{ColdRadioRegisters, MacInterruptMask};
+use open_esp_radio_esp32s31_hal::{MacInterruptMask, wifi_mac::WifiMacColdHal};
 
-/// OS-adapter slow-clock calibration reduced to the blob's 18-bit field.
+/// Availability of the platform slow-clock calibration used by the MAC RTC.
+///
+/// `Unavailable` is intentionally distinct from a measured zero.  The current
+/// ESP32-S31 platform cannot obtain this value, and must not silently promote
+/// its placeholder to calibrated hardware knowledge.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct MacSlowClockCalibration(u32);
+pub enum MacSlowClockCalibration {
+    Unavailable,
+    Calibrated(u32),
+}
 
 impl MacSlowClockCalibration {
     const MASK: u32 = 0x0003_ffff;
 
     /// Preserve the exact truncation performed by `hal_timer_update_by_rtc`.
     pub const fn from_osi_value(value: u32) -> Self {
-        Self(value & Self::MASK)
+        Self::Calibrated(value & Self::MASK)
     }
 
-    pub const fn value(self) -> u32 {
-        self.0
+    /// Convert the explicit platform state to the value written by the
+    /// currently recovered vendor-compatible transaction.
+    ///
+    /// The vendor OS adapter returns zero when no calibration source exists.
+    /// Keeping that mapping here preserves the observed transaction while the
+    /// enum prevents callers from treating the zero as reviewed calibration.
+    pub const fn register_value(self) -> u32 {
+        match self {
+            Self::Unavailable => 0,
+            Self::Calibrated(value) => value,
+        }
     }
 }
 
@@ -27,13 +43,14 @@ pub trait MacColdHalTailHardware {
     );
 }
 
-impl MacColdHalTailHardware for ColdRadioRegisters {
+impl MacColdHalTailHardware for WifiMacColdHal<'_> {
     fn initialize_hal_tail(
         &mut self,
         event_mask: MacInterruptMask,
         slow_clock_calibration: MacSlowClockCalibration,
     ) {
-        let programmed = self.initialize_mac_hal_tail(event_mask, slow_clock_calibration.value());
+        let programmed =
+            self.initialize_hal_tail(event_mask, slow_clock_calibration.register_value());
         debug_assert!(programmed);
     }
 }

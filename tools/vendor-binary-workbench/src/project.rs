@@ -10,7 +10,8 @@ use thiserror::Error;
 
 use crate::{
     Error, Result,
-    platform_pack::PlatformPack,
+    chip_pack::ChipPack,
+    ecosystem_pack::EcosystemPack,
     project_analysis::{NavigationIndexSpec, SymbolInventorySpec},
     project_ir::ProjectIrProfile,
     run_spec::InputRole,
@@ -203,7 +204,10 @@ pub(crate) struct VerificationSuiteSpec {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct VerificationWorkspacePaths {
+    pub(crate) provider: String,
     pub(crate) report: PathBuf,
+    pub(crate) evidence_index: PathBuf,
+    pub(crate) policy: Option<PathBuf>,
     pub(crate) suites: Vec<VerificationSuiteSpec>,
 }
 
@@ -223,20 +227,13 @@ pub(crate) struct ReviewWorkspaceSpec {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct QualificationWorkspaceSpec {
-    pub(crate) pack: PathBuf,
-    pub(crate) required_features: Vec<String>,
-    pub(crate) hardware_evidence: Option<PathBuf>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct ProjectSpec {
     pub(crate) id: String,
     pub(crate) target_spec: PathBuf,
-    pub(crate) platform_pack: Option<PlatformPack>,
+    pub(crate) ecosystem_packs: Vec<EcosystemPack>,
+    pub(crate) chip_pack: Option<ChipPack>,
     pub(crate) run_spec: Option<PathBuf>,
     pub(crate) memory_map: Option<PathBuf>,
-    pub(crate) svd_configured: bool,
     pub(crate) svd_paths: Vec<PathBuf>,
     pub(crate) symbol_inventory: Option<SymbolInventorySpec>,
     pub(crate) navigation_index: Option<NavigationIndexSpec>,
@@ -246,7 +243,6 @@ pub(crate) struct ProjectSpec {
     pub(crate) interfaces: Option<InterfaceWorkspacePaths>,
     pub(crate) functions: Option<FunctionWorkspacePaths>,
     pub(crate) review: Option<ReviewWorkspaceSpec>,
-    pub(crate) qualification: Option<QualificationWorkspaceSpec>,
     pub(crate) verification: Option<VerificationWorkspacePaths>,
 }
 

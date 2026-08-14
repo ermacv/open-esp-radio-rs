@@ -39,7 +39,9 @@ sources = [
     "BLOB_LIBPP_HAL_RX_MISC_DEBUG",
     "BLOB_LIBPP_HAL_HE_INIT_PREFIX",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_BSSID_LIST.CONTROL.RX_CONTROL_9_BSSID_POSITION"
@@ -47,4 +49,6 @@ sources = [
     "BLOB_LIBPP_HAL_RX_MISC_DEBUG",
     "BLOB_LIBPP_HAL_HE_INIT_PREFIX",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"

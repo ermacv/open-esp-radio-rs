@@ -556,7 +556,7 @@ fn validate_tables(
         crate::Error::invalid("runtime table replay requires a reviewed interface pack")
     })?;
     let harness = target
-        .harness
+        .knowledge_provider
         .as_deref()
         .and_then(|harness| crate::harnesses::contracts(harness).ok());
     let workspace = InterfaceWorkspace::load(

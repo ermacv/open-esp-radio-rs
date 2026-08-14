@@ -352,7 +352,7 @@ pub(super) fn run(
     svd: &MmioMap,
     target: &TargetSpec,
 ) -> Result<bool> {
-    let harness = target.require_available_harness()?;
+    let harness = target.require_available_knowledge_provider()?;
     let riscv_harness = harnesses::riscv(harness)?;
     let entry_contract = harnesses::entry_contract(harness, &arguments.entry_contract)?;
     let artifact = arguments

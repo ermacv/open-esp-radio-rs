@@ -176,17 +176,23 @@ sources = [
     "BLOB_LIBNET80211_PARTIAL_RU_MAX_POWER",
     "ROM_REV0_PHY_GET_MAX_PWR",
 ]
-confidence = "instruction-exact-partial"
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_TX_POWER_INIT.IMMEDIATE_RESPONSE%s"
 sources = ["BLOB_LIBPP_HAL_TX_POWER_INIT"]
-confidence = "instruction-exact-partial"
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_TX_POWER_INIT.TB_POWER%s"
 sources = ["BLOB_LIBPP_HAL_TX_POWER_INIT"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_POWER_INIT.TB_RU_POWER_TAIL"
@@ -194,7 +200,9 @@ sources = [
     "BLOB_LIBPP_HAL_TX_POWER_INIT",
     "BLOB_LIBNET80211_PARTIAL_RU_MAX_POWER",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_POWER_INIT.TB_RU_POWER%s"
@@ -202,4 +210,6 @@ sources = [
     "BLOB_LIBPP_HAL_TX_POWER_INIT",
     "BLOB_LIBNET80211_PARTIAL_RU_MAX_POWER",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"

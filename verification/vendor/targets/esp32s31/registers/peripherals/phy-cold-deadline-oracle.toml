@@ -26,14 +26,20 @@ bitWidth = 32
 [[review]]
 entity = "PHY_COLD_DEADLINE_ORACLE"
 sources = ["ROM_REV0_PHY_WAIT_I2C_SDM_STABLE"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_COLD_DEADLINE_ORACLE.DEADLINE_COUNTER_UNKNOWN"
 sources = ["ROM_REV0_PHY_WAIT_I2C_SDM_STABLE"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_COLD_DEADLINE_ORACLE.DEADLINE_COUNTER_UNKNOWN.VALUE"
 sources = ["ROM_REV0_PHY_WAIT_I2C_SDM_STABLE"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"

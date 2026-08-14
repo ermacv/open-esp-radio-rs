@@ -1,7 +1,6 @@
 //! Common ownership boundary between stopped Wi-Fi and one station role.
 
-use open_esp_radio_esp32s31_hal::RadioRegisters;
-use open_esp_radio_esp32s31_pac::MacInterruptSetup;
+use open_esp_radio_esp32s31_hal::{MacInterruptSetup, RadioRuntimeOwner};
 use open_esp_radio_esp32s31_phy::PhyState;
 use open_esp_radio_esp32s31_wifi::runtime::{
     Esp32s31WifiRuntimeContext, Esp32s31WifiRuntimeParts, Esp32s31WifiStopped,
@@ -38,7 +37,7 @@ impl<P> Esp32s31StationRoleOwner<P> {
     /// PAC and interrupt-route capabilities.
     pub fn into_stopped<L>(
         self,
-        registers: RadioRegisters,
+        registers: RadioRuntimeOwner,
         interrupt_setup: MacInterruptSetup,
         resources: L,
     ) -> Esp32s31StationStopped<P, L> {
@@ -62,7 +61,7 @@ impl<P> Esp32s31StationRadioOwner for Esp32s31StationRoleOwner<P> {
 /// Capabilities transferred from stopped Wi-Fi into the first station phase.
 pub struct Esp32s31StationMaterialized<P, L> {
     pub owner: Esp32s31StationRoleOwner<P>,
-    pub registers: RadioRegisters,
+    pub registers: RadioRuntimeOwner,
     pub interrupt_setup: MacInterruptSetup,
     /// Exact role-local owner graph which must move into the station task.
     pub resources: L,

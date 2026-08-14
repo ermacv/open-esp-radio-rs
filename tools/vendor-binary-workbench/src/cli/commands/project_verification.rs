@@ -14,7 +14,7 @@ use crate::{
     run_spec::{InputRole, RunSpec},
     verification::{
         ProjectVerificationReport, ProjectVerificationSuiteReport, RustArtifactInput,
-        RustComponentIndex, dispositions::Manifest, write_evidence_candidate,
+        RustComponentIndex, VendorEvidenceIndex, dispositions::Manifest, write_evidence_candidate,
     },
 };
 
@@ -76,8 +76,14 @@ pub(super) fn execute(
     for suite in &selected {
         let arguments = suite_arguments(suite, run_spec)
             .map_err(|error| error.verification_suite(suite.id.clone()))?;
-        let report = super::verify_inventory::execute(arguments, svd, target)
-            .map_err(|error| error.verification_suite(suite.id.clone()))?;
+        let report = super::verify_inventory::execute(
+            arguments,
+            svd,
+            target,
+            target.knowledge_provider.as_deref(),
+            Some(&workspace.provider),
+        )
+        .map_err(|error| error.verification_suite(suite.id.clone()))?;
         passed &= report.verification.passed;
         suites.push(ProjectVerificationSuiteReport {
             id: suite.id.clone(),
@@ -85,7 +91,7 @@ pub(super) fn execute(
         });
     }
     for suite in &suites {
-        let path = crate::qualification::suite_report_path(&workspace.report, &suite.id);
+        let path = crate::verification::policy::suite_report_path(&workspace.report, &suite.id);
         generated_file::write_or_check_json(
             &path,
             suite,
@@ -125,11 +131,19 @@ pub(super) fn execute(
     )?;
 
     if complete_project_run {
+        let evidence_index = VendorEvidenceIndex::build(&report, project_manifest)?;
         generated_file::write_or_check_json(
             &workspace.report,
             &report,
             arguments.check,
             "project verification report",
+            true,
+        )?;
+        generated_file::write_or_check_json(
+            &workspace.evidence_index,
+            &evidence_index,
+            arguments.check,
+            "vendor evidence index",
             true,
         )?;
     }
@@ -350,7 +364,7 @@ fn render_human(report: &ProjectVerificationReport, output: &std::path::Path) {
         };
         let _ = writeln!(
             &mut text,
-            "  {}: {} ({} whole-function matched{limited}, {} mismatched, {} incomplete)",
+            "  {}: {} ({} behavioral match(es){limited}, {} mismatched, {} incomplete)",
             suite.id,
             if core.passed { "passed" } else { "failed" },
             matched,
@@ -381,11 +395,18 @@ fn render_human(report: &ProjectVerificationReport, output: &std::path::Path) {
             graph.bounded_matches,
         );
     }
-    if graph.mismatches != 0 || graph.incomplete != 0 || graph.implemented_unqualified != 0 {
+    if graph.mismatches != 0 || graph.incomplete != 0 {
         let _ = writeln!(
             &mut text,
-            "  qualification: {} mismatched, {} incomplete, {} limited claim(s) awaiting or using feature qualification",
-            graph.mismatches, graph.incomplete, graph.implemented_unqualified
+            "  verification failures: {} mismatched, {} incomplete",
+            graph.mismatches, graph.incomplete
+        );
+    }
+    if graph.implemented_unqualified != 0 {
+        let _ = writeln!(
+            &mut text,
+            "  research coverage: {} implemented function(s) have no qualifying production trace",
+            graph.implemented_unqualified
         );
     }
     let components = &report.rust_component_index.summary;

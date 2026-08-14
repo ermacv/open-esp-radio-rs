@@ -358,7 +358,9 @@ bitWidth = 1
 [[review]]
 entity = "WIFI_MAC_HE_INIT_PREFIX"
 sources = ["BLOB_LIBPP_HAL_HE_INIT_PREFIX"]
-confidence = "instruction-exact-partial"
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_PREFIX.RX_FIELD_CONTROL"
@@ -366,9 +368,11 @@ sources = [
     "BLOB_LIBPP_HAL_HE_INIT_PREFIX",
     "BLOB_LIBPP_HAL_RX_DEBUG_COUNTERS",
     "BLOB_LIBNET80211_IEEE80211_PARSE_HEOPR",
-    "MIGRATION_HE20_PEER",
+    "PROMOTED_HE20_PEER",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_PREFIX.BF_MODE_CONTROL"
@@ -376,17 +380,23 @@ sources = [
     "BLOB_LIBPP_HAL_HE_INIT_PREFIX",
     "BLOB_LIBPP_TEST_BF_SET_FEEDBACK",
 ]
-confidence = "instruction-exact-partial"
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_PREFIX.BF_MODE_CONTROL.HIGH_SELECTOR_CLASS"
 sources = ["BLOB_LIBPP_TEST_BF_SET_FEEDBACK"]
-confidence = "instruction-exact-partial"
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_PREFIX.BF_MODE_CONTROL.HIGH_SELECTOR_PARITY"
 sources = ["BLOB_LIBPP_TEST_BF_SET_FEEDBACK"]
-confidence = "instruction-exact-partial"
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_PREFIX.BF_REPORT_RATE"
@@ -394,17 +404,23 @@ sources = [
     "BLOB_LIBPP_HAL_HE_INIT_PREFIX",
     "BLOB_LIBPP_HAL_BF_CONFIG",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_PREFIX.BF_VECTOR_CONTROL"
 sources = ["BLOB_LIBPP_HAL_HE_INIT_PREFIX"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_PREFIX.BF_ENABLE"
 sources = ["BLOB_LIBPP_HAL_HE_INIT_PREFIX"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_PREFIX.PARENT_ENABLE"
@@ -412,22 +428,30 @@ sources = [
     "BLOB_LIBPP_HAL_HE_INIT_PREFIX",
     "BLOB_LIBPP_ISR_REGISTER_DUMP",
 ]
-confidence = "instruction-exact-partial"
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_PREFIX.INTERRUPT_1_RAW"
 sources = ["BLOB_LIBPP_ISR_REGISTER_DUMP", "BLOB_LIBPP_HAL_DISABLE_MAC"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_PREFIX.INTERRUPT_1_STATUS"
 sources = ["BLOB_LIBPP_ISR_REGISTER_DUMP"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_PREFIX.INTERRUPT_1_CLEAR"
 sources = ["BLOB_LIBPP_HAL_RUNTIME_MMIO_LEAVES"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_PREFIX.BF_TIMING_CONTROL"
@@ -437,12 +461,16 @@ sources = [
     "BLOB_LIBPP_HAL_BF_DEBUG_CONTROL",
     "BLOB_LIBPP_TEST_HAL_CSI",
 ]
-confidence = "instruction-exact-partial"
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_PREFIX.BF_TIMING_CONTROL.RX_BFRP_TIMEOUT_MS"
 sources = ["BLOB_LIBPP_TEST_HAL_CSI"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_PREFIX.BF_TIMING_CONTROL.HE_BEAM_ENABLE"
@@ -450,14 +478,20 @@ sources = [
     "BLOB_LIBPP_HAL_BF_CONFIG",
     "BLOB_LIBPP_HAL_BF_DEBUG_CONTROL",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_PREFIX.BF_HIGH_IMAGE"
 sources = ["BLOB_LIBPP_HAL_HE_INIT_PREFIX"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_PREFIX.TB_TX_CONTROL"
 sources = ["BLOB_LIBPP_HAL_HE_INIT_PREFIX"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"

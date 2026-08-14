@@ -53,6 +53,8 @@ pub(super) fn execute(
     arguments: VerifyInventoryArgs,
     svd: &MmioMap,
     target: &TargetSpec,
+    knowledge_provider: Option<&str>,
+    verification_provider: Option<&str>,
 ) -> Result<VerificationCommandReport> {
     let mut source_inputs = BTreeMap::<String, SourceInput>::new();
     let mut auxiliary_artifacts = BTreeMap::<String, PathBuf>::new();
@@ -249,7 +251,8 @@ pub(super) fn execute(
             .unwrap_or_default();
         let report = verify_source(
             svd,
-            target.harness.as_deref(),
+            knowledge_provider,
+            verification_provider,
             &target.rust_target,
             *source,
             &rust_artifact,
@@ -308,7 +311,7 @@ pub(super) fn execute(
             )
         })
         .collect::<BTreeSet<_>>();
-    let qualification_gaps = disposition_manifest
+    let release_gaps = disposition_manifest
         .as_ref()
         .map(|manifest| {
             manifest
@@ -351,6 +354,7 @@ pub(super) fn execute(
     }
     let verification = verification_core_report(VerificationCoreInputs {
         target,
+        verification_provider,
         gate,
         summary: total,
         orphan_probes,
@@ -358,7 +362,7 @@ pub(super) fn execute(
         passed,
         evidence: &evidence,
         artifacts: &artifacts,
-        qualification_gaps: &qualification_gaps,
+        release_gaps: &release_gaps,
     })?;
     let publication = output.as_deref().map(PublishedVerificationReport::written);
     let inventory = verify_sources
@@ -390,7 +394,13 @@ pub(super) fn run(
     svd: &MmioMap,
     target: &TargetSpec,
 ) -> Result<bool> {
-    let report = execute(arguments, svd, target)?;
+    let report = execute(
+        arguments,
+        svd,
+        target,
+        target.knowledge_provider.as_deref(),
+        None,
+    )?;
     let passed = report.verification.passed;
     crate::cli::output::render_report(&report, || crate::cli::render::verification_human(&report));
     Ok(passed)

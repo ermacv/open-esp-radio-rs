@@ -4,17 +4,16 @@ schema = 2
 source = "libnet80211"
 symbol = "ieee80211_sta_new_state"
 kind = "driver-adapter/reviewed-refinement/exact-effects-v1"
-digest = "de76030af07983ce9495e9daf5b2360946ab054546be0ba5cc6740a7f07ab4fb"
+digest = "499bfc934da336b50ffdb4d69825d1380477eca865c70b8cb2843d30945f6be0"
 
 [evidence.components]
-adapter-proof = "a20e655fc21aeb95be2fba21151fdc1dfe5a5a97180bd508890d097ef542d011"
-binding = "46c4392fb4aec60130263fc54b186e4497f7091d0884001954899eb68b3a1b8f"
+adapter-proof = "f0e4cad120f605592f850771fe406aa84fad4e4610b73aa116a15a45aba10396"
+binding = "c2c7c0129c53986ae92aa5f1b89f14a5de9cd2829ad22b2a2f916b83c6e727de"
 binding-verifier = "f2fbf3cd269f3677ac698a66501e3e387f72ed2f8aa460dacd1e5ae6b0dc8bbd"
 claim = "1210f40bda7c850368826c970dc4d931b7d0481b6986eb0adf8c93b0bdcab22d"
-driver-adapter = "f0f9d0019bbd66d76e2488d3f2667d9d37aef6e1a97620ac60fa2ce59b9dc254"
+driver-adapter = "a8a4c679302a997262ebf80b87377c3cc3ee1f9f8c902b8f62106ec1e558f00b"
 effect-comparator = "7e0c0424ae313df2bc7e5d8c282b5c38f04e8e53e472be08a56f4f89aabdb9ab"
-execution-engine = "4b801323e2f25e0ef8067db4b5c62a510ff25991aad050c816ef5c04202fe49e"
+execution-engine = "450053b2430eee14958fc224a9e36950d3d5b5fb232f42105b36ecca5b37e87e"
 policy = "4e83586680473273a395674e4a587ec9f3594fe57abf0453c09bbce8dc1ef1f8"
 reference-code-generator = "2a4b7f02cce37dae3ee0dbd3363b97266934f376f4823e4fc76474690d0f908b"
-reviewed-summary = "4ccf3b6eab8e0441f1ae1646acaf2914791d969137d68273eadecac94062c2c9"
-
+reviewed-summary = "c26e1436a0cbebb1d53e68bdaf739beadaac2513a49273173c400e4ac202e37b"

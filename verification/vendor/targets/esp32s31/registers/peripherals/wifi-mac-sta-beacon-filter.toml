@@ -26,9 +26,13 @@ maximum = 7
 [[review]]
 entity = "WIFI_MAC_STA_BEACON_FILTER"
 sources = ["BLOB_LIBPP_HAL_RUNTIME_MMIO_LEAVES"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "WIFI_MAC_STA_BEACON_FILTER.CONTROL"
 sources = ["BLOB_LIBPP_HAL_RUNTIME_MMIO_LEAVES"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"

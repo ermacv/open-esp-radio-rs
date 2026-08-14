@@ -86,7 +86,7 @@ enum ProductionAccessPointReturnedPhase {
         aggregate_tx: ConnectedAmpduStorage,
         control: &'static ControlResources,
         station: Esp32s31StaAttemptStation,
-        registers: Esp32s31RadioRegistersRepublish<'static>,
+        registers: Esp32s31RadioOwnerRepublish<'static>,
     },
     Reconnected {
         network: StationNetwork,
@@ -94,7 +94,7 @@ enum ProductionAccessPointReturnedPhase {
         aggregate_tx: ConnectedAmpduStorage,
         control: &'static ControlResources,
         station: Esp32s31StaAttemptStation,
-        registers: Esp32s31RadioRegistersRepublish<'static>,
+        registers: Esp32s31RadioOwnerRepublish<'static>,
     },
 }
 
@@ -133,7 +133,7 @@ struct ProductionAccessPointStationResources {
 pub(super) struct ProductionAccessPointTask {
     channel: u8,
     owner: Esp32s31AccessPointRoleOwner<EspHalRadioPeripheral>,
-    registers: RadioRegisters,
+    registers: RadioRuntimeOwner,
     interrupts: MacInterruptEpoch,
     service: ProductionAccessPointControl,
     parked: ProductionAccessPointParked,
@@ -141,8 +141,8 @@ pub(super) struct ProductionAccessPointTask {
 
 pub(super) struct ProductionAccessPointPreflightFault {
     _owner: Esp32s31AccessPointRoleOwner<EspHalRadioPeripheral>,
-    _registers: RadioRegisters,
-    _interrupt_setup: open_esp_radio::esp32s31::registers::MacInterruptSetup,
+    _registers: RadioRuntimeOwner,
+    _interrupt_setup: open_esp_radio::esp32s31::hal::MacInterruptSetup,
     _station: ProductionAccessPointStationResources,
     _access_point: ProductionAccessPointResources,
     _monitor: ProductionMonitorResources,
@@ -152,8 +152,8 @@ pub(super) struct ProductionAccessPointPreflightFault {
 
 pub(super) struct ProductionAccessPointRxOwnerFault {
     _owner: Esp32s31AccessPointRoleOwner<EspHalRadioPeripheral>,
-    _registers: RadioRegisters,
-    _interrupt_setup: open_esp_radio::esp32s31::registers::MacInterruptSetup,
+    _registers: RadioRuntimeOwner,
+    _interrupt_setup: open_esp_radio::esp32s31::hal::MacInterruptSetup,
     _scan_rx: ProductionScanRx,
     _station: ProductionAccessPointStationResources,
     _access_point: ProductionAccessPointResources,
@@ -162,8 +162,8 @@ pub(super) struct ProductionAccessPointRxOwnerFault {
 
 pub(super) struct ProductionAccessPointEngineFault {
     _owner: Esp32s31AccessPointRoleOwner<EspHalRadioPeripheral>,
-    _registers: RadioRegisters,
-    _interrupt_setup: open_esp_radio::esp32s31::registers::MacInterruptSetup,
+    _registers: RadioRuntimeOwner,
+    _interrupt_setup: open_esp_radio::esp32s31::hal::MacInterruptSetup,
     _receive: ProductionPreconnectedRx,
     _transmit: ProductionWifiTxResources,
     _engine: open_esp_radio::esp32s31::wifi::ap::engine::Esp32s31ApEngineStartFailure<'static>,
@@ -175,8 +175,8 @@ pub(super) struct ProductionAccessPointEngineFault {
 
 pub(super) struct ProductionAccessPointSecurityMaterialFault {
     _owner: Esp32s31AccessPointRoleOwner<EspHalRadioPeripheral>,
-    _registers: RadioRegisters,
-    _interrupt_setup: open_esp_radio::esp32s31::registers::MacInterruptSetup,
+    _registers: RadioRuntimeOwner,
+    _interrupt_setup: open_esp_radio::esp32s31::hal::MacInterruptSetup,
     _receive: ProductionPreconnectedRx,
     _transmit: ProductionWifiTxResources,
     _parked: ProductionAccessPointParked,
@@ -215,15 +215,15 @@ pub(super) enum ProductionAccessPointPreparationFault {
 pub(super) enum ProductionAccessPointTeardownFault {
     Interrupt {
         _owner: Esp32s31AccessPointRoleOwner<EspHalRadioPeripheral>,
-        _registers: RadioRegisters,
+        _registers: RadioRuntimeOwner,
         _interrupts: MacInterruptEpoch,
         _stopped: ProductionAccessPointStopped,
         _parked: ProductionAccessPointParked,
     },
     TxRestore {
         _owner: Esp32s31AccessPointRoleOwner<EspHalRadioPeripheral>,
-        _registers: RadioRegisters,
-        _interrupt_setup: open_esp_radio::esp32s31::registers::MacInterruptSetup,
+        _registers: RadioRuntimeOwner,
+        _interrupt_setup: open_esp_radio::esp32s31::hal::MacInterruptSetup,
         _ring: open_esp_radio::esp32s31::wifi::mac::rx::RxRingHalted<'static, RX_DESCRIPTOR_COUNT>,
         _storage: &'static RxStorage,
         _rx_frame: &'static mut [u8],
@@ -1039,9 +1039,9 @@ impl ProductionWifiEpochRunner {
             )))
             .await;
         #[cfg(feature = "qualification")]
-        let rx_statistics_before = task.registers.rx_statistics_snapshot();
+        let rx_statistics_before = task.registers.receive_statistics_snapshot();
         #[cfg(feature = "qualification")]
-        let rx_policy_before = task.registers.ap_receive_policy_snapshot();
+        let rx_policy_before = task.registers.access_point_receive_policy_snapshot();
         let result = {
             let network = task.parked.resume.radio_runner();
             let (_, platform) = task.owner.radio_mut();
@@ -1072,12 +1072,12 @@ impl ProductionWifiEpochRunner {
             // path after exactly one completed descriptor. Capture the
             // hardware-owned frontier before teardown republishes the ring;
             // production images compile this one-shot diagnostic out.
-            let rx_dma = task.registers.mac_rx_dma_snapshot();
-            let rx_statistics_after = task.registers.rx_statistics_snapshot();
+            let rx_dma = task.registers.receive_dma_snapshot();
+            let rx_statistics_after = task.registers.receive_statistics_snapshot();
             let rx_delta = rx_statistics_after
                 .primary
                 .wrapping_delta_since(rx_statistics_before.primary);
-            let rx_policy_after = task.registers.ap_receive_policy_snapshot();
+            let rx_policy_after = task.registers.access_point_receive_policy_snapshot();
             let rx_head = task.service.rx_descriptor_snapshot(0);
             let rx_second = task.service.rx_descriptor_snapshot(1);
             let rx_tail = task
@@ -1194,7 +1194,10 @@ impl ProductionWifiEpochRunner {
             });
         }
         if let Err(error) = result {
+            #[cfg(feature = "qualification")]
             log::error!("open-radio: access-point runtime fault: {error:?}");
+            #[cfg(not(feature = "qualification"))]
+            let _ = error;
             let faulted = ProductionWifiFault::AccessPointRuntime { _task: task };
             endpoint
                 .respond(EmbassyWifiSupervisorResponse::Stop(Err(

@@ -85,7 +85,6 @@ mod tests {
         future::{Future, ready},
         task::{Context, Poll, Waker},
     };
-    use std::{sync::Arc, task::Wake};
 
     use super::{PhyRegisterPort, PhyRegisterRunError, run_phy_register};
     use crate::{
@@ -96,15 +95,8 @@ mod tests {
         },
     };
 
-    struct WakeWithoutSideEffects;
-
-    impl Wake for WakeWithoutSideEffects {
-        fn wake(self: Arc<Self>) {}
-    }
-
     fn run_ready<F: Future>(future: F) -> F::Output {
-        let waker = Waker::from(Arc::new(WakeWithoutSideEffects));
-        let mut context = Context::from_waker(&waker);
+        let mut context = Context::from_waker(Waker::noop());
         let mut future = std::pin::pin!(future);
         match future.as_mut().poll(&mut context) {
             Poll::Ready(output) => output,

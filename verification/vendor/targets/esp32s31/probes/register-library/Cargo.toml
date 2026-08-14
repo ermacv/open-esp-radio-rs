@@ -8,8 +8,7 @@ publish.workspace = true
 description = "Isolated ESP32-S31 PAC/HAL register conformance probes"
 
 [dependencies]
-open-esp-radio-esp32s31-hal.workspace = true
-open-esp-radio-esp32s31-pac.workspace = true
+open-esp-radio-esp32s31-hal = { workspace = true, features = ["validation-probes"] }
 
 [lib]
 crate-type = ["rlib", "staticlib"]

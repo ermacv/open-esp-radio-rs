@@ -58,7 +58,9 @@ sources = [
     "BLOB_LIBPP_MAC_LAST_RXBUF_INIT",
     "BLOB_LIBPP_HAL_INIT_TAIL",
 ]
-confidence = "instruction-exact-partial"
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_RX_CSI_CONTROL.CONTROL"
@@ -66,19 +68,27 @@ sources = [
     "BLOB_LIBPP_MAC_LAST_RXBUF_INIT",
     "BLOB_LIBPP_HAL_INIT_TAIL",
 ]
-confidence = "instruction-exact-partial"
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_RX_CSI_CONTROL.CONTROL.HAL_INIT_LOW_BYTE_UNKNOWN"
 sources = ["BLOB_LIBPP_HAL_INIT_TAIL"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "WIFI_MAC_RX_CSI_CONTROL.CONTROL.HAL_INIT_SECOND_BYTE_UNKNOWN"
 sources = ["BLOB_LIBPP_HAL_INIT_TAIL"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "WIFI_MAC_RX_CSI_CONTROL.CONTROL.LAST_RX_BUFFER_ENABLE_UNKNOWN"
 sources = ["BLOB_LIBPP_MAC_LAST_RXBUF_INIT"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"

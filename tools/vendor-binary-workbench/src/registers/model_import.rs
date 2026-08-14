@@ -154,7 +154,7 @@ pub(crate) fn import_svd_model(
             )));
         }
         let mut review = Vec::new();
-        clean_peripheral(&mut peripheral, &mut review);
+        clean_peripheral(&mut peripheral, &mut review)?;
         annotation_count += review.len();
         let fragment = RegisterModelFragment {
             schema: 2,
@@ -289,42 +289,43 @@ fn file_stem(name: &str) -> String {
     }
 }
 
-fn clean_peripheral(peripheral: &mut Peripheral, review: &mut Vec<ReviewAnnotation>) {
+fn clean_peripheral(peripheral: &mut Peripheral, review: &mut Vec<ReviewAnnotation>) -> Result<()> {
     let path = peripheral.name.clone();
-    clean_description(&path, &mut peripheral.description, review);
+    clean_description(&path, &mut peripheral.description, review)?;
     for interrupt in &mut peripheral.interrupt {
         clean_description(
             &format!("{path}.interrupt.{}", interrupt.name),
             &mut interrupt.description,
             review,
-        );
+        )?;
     }
     if let Some(children) = &mut peripheral.registers {
-        clean_children(&path, children, review);
+        clean_children(&path, children, review)?;
     }
+    Ok(())
 }
 
 fn clean_children(
     parent: &str,
     children: &mut [RegisterCluster],
     review: &mut Vec<ReviewAnnotation>,
-) {
+) -> Result<()> {
     for child in children {
         match child {
             RegisterCluster::Register(register) => {
                 let path = format!("{parent}.{}", register.name);
-                clean_description(&path, &mut register.description, review);
+                clean_description(&path, &mut register.description, review)?;
                 if let Some(fields) = &mut register.fields {
                     for field in fields {
                         let field_path = format!("{path}.{}", field.name);
-                        clean_description(&field_path, &mut field.description, review);
+                        clean_description(&field_path, &mut field.description, review)?;
                         for values in &mut field.enumerated_values {
                             for value in &mut values.values {
                                 clean_description(
                                     &format!("{field_path}.{}", value.name),
                                     &mut value.description,
                                     review,
-                                );
+                                )?;
                             }
                         }
                     }
@@ -332,20 +333,21 @@ fn clean_children(
             }
             RegisterCluster::Cluster(cluster) => {
                 let path = format!("{parent}.{}", cluster.name);
-                clean_description(&path, &mut cluster.description, review);
-                clean_children(&path, &mut cluster.children, review);
+                clean_description(&path, &mut cluster.description, review)?;
+                clean_children(&path, &mut cluster.children, review)?;
             }
         }
     }
+    Ok(())
 }
 
 fn clean_description(
     entity: &str,
     description: &mut Option<String>,
     review: &mut Vec<ReviewAnnotation>,
-) {
+) -> Result<()> {
     let Some(current) = description.take() else {
-        return;
+        return Ok(());
     };
     let sources = annotation_values(&current, "SOURCE")
         .map(|value| {
@@ -357,16 +359,27 @@ fn clean_description(
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
-    let confidence = annotation_values(&current, "CONFIDENCE").map(str::to_owned);
+    let provenance = annotation_values(&current, "PROVENANCE")
+        .map(parse_provenance)
+        .transpose()?;
+    let accuracy = annotation_values(&current, "ACCURACY")
+        .map(parse_accuracy)
+        .transpose()?;
+    let completeness = annotation_values(&current, "COMPLETENESS")
+        .map(parse_completeness)
+        .transpose()?;
     let cleaned = strip_leading_annotations(&current);
     *description = (!cleaned.is_empty()).then_some(cleaned);
-    if !sources.is_empty() || confidence.is_some() {
+    if !sources.is_empty() || provenance.is_some() || accuracy.is_some() || completeness.is_some() {
         review.push(ReviewAnnotation {
             entity: entity.to_owned(),
             sources,
-            confidence,
+            provenance,
+            accuracy,
+            completeness,
         });
     }
+    Ok(())
 }
 
 fn annotation_values<'a>(value: &'a str, name: &str) -> Option<&'a str> {
@@ -384,8 +397,16 @@ fn strip_leading_annotations(value: &str) -> String {
             .strip_prefix("SOURCE[")
             .map(|tail| ("SOURCE", tail))
             .or_else(|| {
-                rest.strip_prefix("CONFIDENCE[")
-                    .map(|tail| ("CONFIDENCE", tail))
+                rest.strip_prefix("PROVENANCE[")
+                    .map(|tail| ("PROVENANCE", tail))
+                    .or_else(|| {
+                        rest.strip_prefix("ACCURACY[")
+                            .map(|tail| ("ACCURACY", tail))
+                    })
+                    .or_else(|| {
+                        rest.strip_prefix("COMPLETENESS[")
+                            .map(|tail| ("COMPLETENESS", tail))
+                    })
             })
         else {
             break;
@@ -397,6 +418,45 @@ fn strip_leading_annotations(value: &str) -> String {
         rest = &tail[end + 1..];
     }
     rest.trim().to_owned()
+}
+
+fn parse_provenance(value: &str) -> Result<crate::FactProvenance> {
+    use crate::FactProvenance::*;
+    match value {
+        "observed" => Ok(Observed),
+        "derived" => Ok(Derived),
+        "imported" => Ok(Imported),
+        "hint" => Ok(Hint),
+        "reviewed" => Ok(Reviewed),
+        _ => Err(crate::Error::invalid(format!(
+            "invalid fact provenance {value:?}"
+        ))),
+    }
+}
+
+fn parse_accuracy(value: &str) -> Result<crate::FactAccuracy> {
+    use crate::FactAccuracy::*;
+    match value {
+        "exact" => Ok(Exact),
+        "bounded" => Ok(Bounded),
+        "approximate" => Ok(Approximate),
+        "unknown" => Ok(Unknown),
+        _ => Err(crate::Error::invalid(format!(
+            "invalid fact accuracy {value:?}"
+        ))),
+    }
+}
+
+fn parse_completeness(value: &str) -> Result<crate::FactCompleteness> {
+    use crate::FactCompleteness::*;
+    match value {
+        "complete" => Ok(Complete),
+        "partial" => Ok(Partial),
+        "unknown" => Ok(Unknown),
+        _ => Err(crate::Error::invalid(format!(
+            "invalid fact completeness {value:?}"
+        ))),
+    }
 }
 
 #[cfg(test)]
@@ -467,14 +527,21 @@ mod tests {
 
     #[test]
     fn separates_provenance_from_hardware_description() {
-        let mut description =
-            Some("SOURCE[ROM_FN, BLOB_FN]; CONFIDENCE[instruction-exact]. Enable radio".to_owned());
+        let mut description = Some(
+            "SOURCE[ROM_FN, BLOB_FN]; PROVENANCE[observed]; ACCURACY[exact]; COMPLETENESS[complete]. Enable radio"
+                .to_owned(),
+        );
         let mut review = Vec::new();
-        clean_description("RADIO.CONTROL", &mut description, &mut review);
+        clean_description("RADIO.CONTROL", &mut description, &mut review).unwrap();
         assert_eq!(description.as_deref(), Some("Enable radio"));
         assert_eq!(review.len(), 1);
         assert_eq!(review[0].sources, ["ROM_FN", "BLOB_FN"]);
-        assert_eq!(review[0].confidence.as_deref(), Some("instruction-exact"));
+        assert_eq!(review[0].provenance, Some(crate::FactProvenance::Observed));
+        assert_eq!(review[0].accuracy, Some(crate::FactAccuracy::Exact));
+        assert_eq!(
+            review[0].completeness,
+            Some(crate::FactCompleteness::Complete)
+        );
     }
 
     #[test]

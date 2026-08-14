@@ -120,7 +120,6 @@ pub(super) fn apply_run_spec_defaults(command: &mut Command, run_spec: &RunSpec)
         Command::InspectAnalyze(arguments) => arguments.companion.is_empty(),
         Command::GenerateReference(arguments) => arguments.companion.is_empty(),
         Command::GenerateReferenceBatch(arguments) => arguments.companion.is_empty(),
-        Command::GenerateDriver(arguments) => arguments.companion.is_empty(),
         _ => false,
     };
     for input in run_spec.inputs() {
@@ -183,15 +182,6 @@ pub(super) fn apply_run_spec_defaults(command: &mut Command, run_spec: &RunSpec)
                 );
             }
             Command::GenerateReferenceBatch(args) => {
-                set_path_role(
-                    &mut args.artifact,
-                    &mut args.companion,
-                    role,
-                    path,
-                    use_default_companions,
-                );
-            }
-            Command::GenerateDriver(args) => {
                 set_path_role(
                     &mut args.artifact,
                     &mut args.companion,

@@ -181,22 +181,30 @@ sources = [
     "BLOB_LIBPP_MAC_TXRX_INIT_PREFIX",
     "BLOB_LIBPP_HAL_INIT_TAIL",
 ]
-confidence = "instruction-exact-partial"
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_TXRX_PREFIX.RX_QUEUE_DEFAULT%s"
 sources = ["BLOB_LIBPP_MAC_TXRX_INIT_PREFIX"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "WIFI_MAC_TXRX_PREFIX.CONTROL_EDGES"
 sources = ["BLOB_LIBPP_MAC_TXRX_INIT_PREFIX"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "WIFI_MAC_TXRX_PREFIX.TIMING_CONTROL"
 sources = ["BLOB_LIBPP_MAC_TXRX_INIT_PREFIX"]
-confidence = "instruction-exact-partial"
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_TXRX_PREFIX.FEATURE_EDGES"
@@ -204,7 +212,9 @@ sources = [
     "BLOB_LIBPP_MAC_TXRX_INIT_PREFIX",
     "BLOB_LIBPP_HAL_INIT_TAIL",
 ]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "WIFI_MAC_TXRX_PREFIX.FEATURE_EDGES.THIRD_ENABLE_UNKNOWN"
@@ -212,7 +222,9 @@ sources = [
     "BLOB_LIBPP_MAC_TXRX_INIT_PREFIX",
     "BLOB_LIBPP_HAL_INIT_TAIL",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TXRX_PREFIX.MODE_CONTROL"
@@ -220,14 +232,20 @@ sources = [
     "BLOB_LIBPP_MAC_TXRX_INIT_PREFIX",
     "BLOB_LIBPP_HAL_HE_INIT_SUFFIX",
 ]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "WIFI_MAC_TXRX_PREFIX.MODE_CONTROL.HE_ENABLE_UNKNOWN"
 sources = ["BLOB_LIBPP_HAL_HE_INIT_SUFFIX"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "WIFI_MAC_TXRX_PREFIX.SHARED_ENABLE_CONTROL"
 sources = ["BLOB_LIBPP_MAC_TXRX_INIT_PREFIX"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"

@@ -266,41 +266,37 @@ mod tests {
         type Candidate = u8;
         type Error = Error;
 
-        fn begin_scan(
+        async fn begin_scan(
             &mut self,
             owner: Self::Owner,
-        ) -> impl Future<Output = StaScanStepOutcome<Self::Owner, Self::Error>> + '_ {
-            async move {
-                self.events.push("begin");
-                let owner = owner + 1;
-                if self.stop_at_begin {
-                    StaScanStepOutcome::Stopped { owner }
-                } else {
-                    match self.begin {
-                        Ok(()) => StaScanStepOutcome::Completed { owner },
-                        Err(error) => StaScanStepOutcome::Failed { owner, error },
-                    }
+        ) -> StaScanStepOutcome<Self::Owner, Self::Error> {
+            self.events.push("begin");
+            let owner = owner + 1;
+            if self.stop_at_begin {
+                StaScanStepOutcome::Stopped { owner }
+            } else {
+                match self.begin {
+                    Ok(()) => StaScanStepOutcome::Completed { owner },
+                    Err(error) => StaScanStepOutcome::Failed { owner, error },
                 }
             }
         }
 
-        fn scan_channel(
+        async fn scan_channel(
             &mut self,
             owner: Self::Owner,
             context: StaScanChannelContext<Self::Channel>,
-        ) -> impl Future<Output = StaScanStepOutcome<Self::Owner, Self::Error>> + '_ {
-            async move {
-                self.events.push("channel");
-                self.contexts.push(context);
-                let owner = owner + 1;
-                if self.fail_channel == Some(context.channel) {
-                    StaScanStepOutcome::Failed {
-                        owner,
-                        error: Error::Channel(context.channel),
-                    }
-                } else {
-                    StaScanStepOutcome::Completed { owner }
+        ) -> StaScanStepOutcome<Self::Owner, Self::Error> {
+            self.events.push("channel");
+            self.contexts.push(context);
+            let owner = owner + 1;
+            if self.fail_channel == Some(context.channel) {
+                StaScanStepOutcome::Failed {
+                    owner,
+                    error: Error::Channel(context.channel),
                 }
+            } else {
+                StaScanStepOutcome::Completed { owner }
             }
         }
 

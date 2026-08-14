@@ -81,29 +81,41 @@ bitWidth = 4
 [[review]]
 entity = "WIFI_MAC_COEX_RUNTIME"
 sources = ["BLOB_LIBPP_HAL_COEX_RUNTIME"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "WIFI_MAC_COEX_RUNTIME.CLEAR_REQUEST"
 sources = ["BLOB_LIBPP_HAL_COEX_RUNTIME"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "WIFI_MAC_COEX_RUNTIME.RX_BEACON_TIME_HIGH"
 sources = ["BLOB_LIBPP_HAL_COEX_RUNTIME"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_COEX_RUNTIME.ITWT_CONTROL"
 sources = ["BLOB_LIBPP_HAL_COEX_RUNTIME"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "WIFI_MAC_COEX_RUNTIME.SHARED_RX_PTI"
 sources = ["BLOB_LIBPP_HAL_COEX_RUNTIME"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_COEX_RUNTIME.RX_BEACON_PTI"
 sources = ["BLOB_LIBPP_HAL_COEX_RUNTIME"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"

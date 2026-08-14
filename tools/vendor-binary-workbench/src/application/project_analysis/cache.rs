@@ -187,7 +187,7 @@ fn stage_revision(stage: &str) -> Result<u32> {
         "symbol-inventory" => Ok(1),
         "mmio-discovery" => Ok(1),
         "interface-discovery" => Ok(1),
-        "linked-ir" => Ok(1),
+        "linked-ir" => Ok(2),
         "event-replays" => Ok(1),
         "review-scopes" => Ok(3),
         "navigation-index" => Ok(1),

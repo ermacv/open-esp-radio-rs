@@ -2,9 +2,10 @@
 # A terminal capability needs complete production ownership, host coverage,
 # executable vendor proof (or an explicit not-applicable classification), HIL
 # qualification and bounded/non-applicable scheduling.
-ledger-version 1
+ledger-version 2
 target esp32s31-wifi-sta
 verification-project verification/vendor/targets/esp32s31/vendor-project.toml
+vendor-evidence-index verification/vendor/targets/esp32s31/evidence/vendor-evidence.json
 require-capability cold-registration
 require-capability rf-bb-initialization
 require-capability channel-selection-switch
@@ -21,13 +22,13 @@ title Cold PHY registration
 scope One cold register_chipv7_phy composition through the typed target port
 implementation complete
 host-proof covered
-vendor-proof mapped
 hil-proof qualified
 async-proof bounded
 owner driver/chips/esp32s31/phy/src/phy_register.rs PhyRegisterTransition
 owner driver/chips/esp32s31/phy/src/executor.rs run_phy_register
 test driver/chips/esp32s31/phy/src/phy_register.rs stuck_i2c_reset_fails_only_after_bounded_async_samples_and_cleans_up
 vendor-root archive register_chipv7_phy
+vendor-evidence phy archive register_chipv7_phy
 hil-evidence qualification/targets/esp32s31/records/2026-07-31-driver-repo-he20-bidirectional.md HIL_OPEN_HE20_DRIVER_REPO_BIDIRECTIONAL_2026_07_31
 hil-evidence qualification/targets/esp32s31/records/2026-08-10-phy-parent-and-sta-lifecycle.md HIL_ESP32S31_PHY_PARENT_STA_LIFECYCLE_2026_08_10
 depends-on rf-bb-initialization
@@ -38,7 +39,6 @@ title RF and baseband initialization
 scope Cold phy_rf_init and phy_bb_init transitions needed by Wi-Fi registration
 implementation complete
 host-proof covered
-vendor-proof mapped
 hil-proof qualified
 async-proof bounded
 owner driver/chips/esp32s31/phy/src/phy_cold.rs PhyRfColdInit
@@ -47,6 +47,8 @@ test driver/chips/esp32s31/phy/src/phy_cold.rs open_i2c_deadline_keeps_one_epoch
 test driver/chips/esp32s31/phy/src/phy_bb.rs complete_parent_failure_always_restores_idle_mode_and_agc
 vendor-root archive phy_rf_init
 vendor-root archive phy_bb_init
+vendor-evidence phy archive phy_rf_init
+vendor-evidence phy archive phy_bb_init
 hil-evidence qualification/targets/esp32s31/records/2026-07-31-driver-repo-he20-bidirectional.md HIL_OPEN_HE20_DRIVER_REPO_BIDIRECTIONAL_2026_07_31
 hil-evidence qualification/targets/esp32s31/records/2026-08-10-phy-parent-and-sta-lifecycle.md HIL_ESP32S31_PHY_PARENT_STA_LIFECYCLE_2026_08_10
 gap vendor bb-init-contract-and-blocker-chain-incomplete
@@ -56,23 +58,23 @@ title Channel selection and live switch
 scope Typed 2.4-GHz PHY selection plus MAC stop restart around a live switch
 implementation complete
 host-proof covered
-vendor-proof qualified
 hil-proof qualified
 async-proof bounded
 owner driver/chips/esp32s31/phy/src/phy_channel.rs PhyChipChannelTransition
-owner driver/chips/esp32s31/phy/src/target_port.rs switch_phy_channel_with_mac_restart
+owner driver/chips/esp32s31/phy/src/target_port.rs switch_phy_channel_with_hal_and_mac_restart
 test driver/chips/esp32s31/phy/src/phy_channel.rs frequency_timeout_runs_full_radio_cleanup
 vendor-root archive phy_chip_set_chan
+vendor-evidence phy archive phy_chip_set_chan
 hil-evidence qualification/targets/esp32s31/records/2026-07-31-driver-repo-he20-bidirectional.md HIL_OPEN_HE20_DRIVER_REPO_BIDIRECTIONAL_2026_07_31
 hil-evidence qualification/targets/esp32s31/records/2026-08-10-phy-parent-and-sta-lifecycle.md HIL_ESP32S31_PHY_PARENT_STA_LIFECYCLE_2026_08_10
 depends-on rf-bb-initialization
+gap vendor channel-production-trace-difference-unreviewed
 
 capability rx-tx-dma
 title RX and TX DMA ownership
 scope Descriptor lifetime staging publication and finite TX completion for the connected STA path
 implementation complete
 host-proof covered
-vendor-proof mapped
 hil-proof qualified
 async-proof bounded
 owner driver/chips/esp32s31/wifi/mac/src/rx_pool.rs RxStageReloadPending
@@ -125,7 +127,6 @@ title Interrupt acknowledgement and recovery ordering
 scope Finite CPU route epoch hard MAC acknowledgement priority dispatch and Embassy wake coalescing
 implementation complete
 host-proof covered
-vendor-proof mapped
 hil-proof qualified
 async-proof bounded
 owner driver/chips/esp32s31/wifi/mac/src/irq.rs IrqState
@@ -149,7 +150,6 @@ title Open authentication and STA association
 scope Finite selected-peer Open Authentication and Association epochs through accepted response
 implementation complete
 host-proof covered
-vendor-proof mapped
 hil-proof qualified
 async-proof bounded
 owner driver/wifi/ieee80211/src/station.rs StaAuthenticationRuntime
@@ -176,7 +176,6 @@ title WPA2 Personal station handshake
 scope Four-way handshake replay protection key installation response deadline and protected traffic
 implementation complete
 host-proof covered
-vendor-proof mapped
 hil-proof qualified
 async-proof bounded
 owner driver/wifi/wpa2/src/supplicant.rs Wpa2StaSupplicant
@@ -200,7 +199,6 @@ title Bounded asynchronous hardware deadlines
 scope Production PHY I2C PBus IQ-estimator RX reload and protocol waits contain no CPU spin
 implementation complete
 host-proof covered
-vendor-proof mapped
 hil-proof qualified
 async-proof bounded
 owner driver/chips/esp32s31/phy/src/target_executor.rs complete_final_i2c
@@ -210,6 +208,7 @@ test driver/chips/esp32s31/phy/src/phy_cold.rs open_i2c_deadline_keeps_one_epoch
 test driver/adapters/embassy/esp32s31-wifi/src/embassy_rx.rs awaits_once_for_every_pending_reload_observation
 test driver/wifi/wpa2/src/retry.rs each_alarm_edge_emits_at_most_one_bounded_retransmission
 vendor-root rom phy_iq_est_enable
+vendor-evidence phy rom phy_iq_est_enable
 vendor-anchor verification/vendor/targets/esp32s31/registers/evidence/vendor-rom.toml wDev_AppendRxBlocks
 hil-evidence qualification/targets/esp32s31/records/2026-07-31-driver-repo-he20-bidirectional.md HIL_OPEN_HE20_DRIVER_REPO_BIDIRECTIONAL_2026_07_31
 hil-evidence qualification/targets/esp32s31/records/2026-08-10-esp32s31-rx-delivery-frontier.md HIL_ESP32S31_RX_DELIVERY_FRONTIER_2026_08_10
@@ -220,7 +219,6 @@ title Always-awake radio cold start
 scope Clock reset and power-up handoff of the unique radio owner; station sleep and wake are outside the supported profile
 implementation complete
 host-proof covered
-vendor-proof mapped
 hil-proof qualified
 async-proof not-applicable
 owner driver/chips/esp32s31/hal/src/lib.rs PowerUpFailure
@@ -238,7 +236,6 @@ title Finite failure and owner disposition
 scope Typed cleanup returns the reusable owner only after proven quiescence; otherwise a terminal fault retains the exact hardware frontier
 implementation complete
 host-proof covered
-vendor-proof mapped
 hil-proof partial
 async-proof bounded
 owner driver/chips/esp32s31/phy/src/phy_channel.rs PhyChipChannelTransition

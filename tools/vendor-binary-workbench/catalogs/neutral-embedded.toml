@@ -1,0 +1,36 @@
+# Vendor-neutral vocabulary. These entries annotate observed calls but never
+# supply addresses, table slots, register names, or execution behavior.
+schema = 1
+id = "neutral.embedded"
+
+[[operations]]
+id = "rtos.queue.send-from-isr"
+domain = "rtos"
+summary = "Attempt to enqueue an item from interrupt context"
+argument-roles = ["queue", "item", "task-woken-out"]
+return-role = "success"
+effects = ["scheduler.queue-send", "scheduler.may-wake-task"]
+
+[[operations]]
+id = "storage.nvs.read"
+domain = "storage"
+summary = "Read a named non-volatile value into caller-owned storage"
+argument-roles = ["namespace", "key", "buffer-out", "length-inout"]
+return-role = "status"
+effects = ["storage.read"]
+
+[[operations]]
+id = "logging.record"
+domain = "logging"
+summary = "Emit a structured diagnostic record"
+argument-roles = ["level", "tag", "message"]
+return-role = "none"
+effects = ["diagnostic.emit"]
+
+[[operations]]
+id = "time.blocking-delay"
+domain = "time"
+summary = "Block the current execution context for a requested duration"
+argument-roles = ["duration"]
+return-role = "none"
+effects = ["time.blocking-wait"]

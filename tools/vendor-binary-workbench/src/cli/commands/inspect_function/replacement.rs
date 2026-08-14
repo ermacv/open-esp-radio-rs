@@ -212,30 +212,6 @@ pub(super) fn render(report: &ReplacementInvestigationReport) {
             }
         }
     }
-
-    if !report.feature_qualifications.is_empty() {
-        outputln!("\n{}", output::heading("Feature qualification"));
-        for feature in &report.feature_qualifications {
-            outputln!(
-                "- {}: {}{} — {}",
-                feature.feature,
-                feature.status.as_str(),
-                if feature.required { " (required)" } else { "" },
-                feature.description,
-            );
-            for requirement in &feature.requirements {
-                outputln!(
-                    "  proof {}: suite={}, claim={}",
-                    requirement.id,
-                    requirement.suite,
-                    requirement.claim.label(),
-                );
-            }
-            for blocker in &feature.blockers {
-                outputln!("  blocker: {blocker}");
-            }
-        }
-    }
 }
 
 fn render_vendor_effect(index: usize, evidence: &VendorEffectEvidence) {

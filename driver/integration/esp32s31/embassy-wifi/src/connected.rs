@@ -17,7 +17,7 @@ use embassy_sync::{
     channel::{Channel, Receiver},
 };
 use embassy_time::{Instant, Timer};
-use open_esp_radio::esp32s31::wifi::device::register_arena::Esp32s31RadioRegistersArena;
+use open_esp_radio::esp32s31::hal::radio_arena::Esp32s31RadioOwnerArena;
 #[cfg(feature = "qualification")]
 use open_esp_radio::esp32s31::wifi::dma::descriptor::{rx_done, rx_rearm_word};
 #[cfg(feature = "qualification")]
@@ -31,8 +31,7 @@ use open_esp_radio::esp32s31::wifi::mac::irq::{
 use open_esp_radio::esp32s31::wifi::sta::attempt::Esp32s31StaAttemptSecurity;
 use open_esp_radio::esp32s31::wifi::sta::cooperative_hardware::CooperativeRadioHardware;
 use open_esp_radio::esp32s31::{
-    hal::RadioRegisters,
-    registers::MacInterruptSetup,
+    hal::{MacInterruptSetup, RadioRuntimeOwner},
     wifi::dma::tx_ampdu_storage::AmpduDmaStorage,
     wifi::mac::{
         crypto::{StaCcmpClearReport, StaGroupCcmpSlot},
@@ -503,8 +502,8 @@ static QUALIFICATION_LINK_BANDWIDTH_MHZ: AtomicU32 = AtomicU32::new(0);
 static QUALIFICATION_DATA_RATE_KBPS: AtomicU32 = AtomicU32::new(0);
 #[cfg(feature = "qualification")]
 static QUALIFICATION_AGGREGATE_RATE_KBPS: AtomicU32 = AtomicU32::new(0);
-static REGISTER_ARENA: ConstStaticCell<Esp32s31RadioRegistersArena> =
-    ConstStaticCell::new(Esp32s31RadioRegistersArena::new());
+static REGISTER_ARENA: ConstStaticCell<Esp32s31RadioOwnerArena> =
+    ConstStaticCell::new(Esp32s31RadioOwnerArena::new());
 // Ethernet scratch belongs to the driver datapath. Application socket buffers
 // are deliberately not allocated by this product integration.
 static ETHERNET_FRAME: ConstStaticCell<[u8; RX_STAGE_CAPACITY]> =
@@ -529,7 +528,7 @@ pub type StationNetwork = StationNetworkResources<(), NetworkRunner, ()>;
 
 /// Hardware frontier accepted by one connected epoch.
 pub type ConnectedStationEpoch = Esp32s31ConnectedEpochResources<
-    RadioRegisters,
+    RadioRuntimeOwner,
     Esp32s31PreconnectedRx<
         'static,
         EmbassyEsp32s31PreconnectedRxDelay,
@@ -563,7 +562,7 @@ type ConnectedEpochStartFault = Esp32s31ConnectedEpochStartFailure<
 /// Initial-only connected resources materialized before the supervisor can
 /// activate any station IRQ or DMA epoch.
 pub(super) struct InitialConnectedStaticResources {
-    registers: &'static Esp32s31RadioRegistersArena,
+    registers: &'static Esp32s31RadioOwnerArena,
     aggregate: ConnectedAmpduStorage,
     control: &'static ControlResources,
 }
@@ -574,7 +573,7 @@ pub(super) struct InitialConnectedStaticResources {
 #[cfg(feature = "qualification")]
 #[derive(Clone, Copy)]
 pub struct Esp32s31QualificationSnapshot {
-    registers: &'static Esp32s31RadioRegistersArena,
+    registers: &'static Esp32s31RadioOwnerArena,
 }
 
 #[cfg(feature = "qualification")]
@@ -709,9 +708,9 @@ impl Esp32s31QualificationSnapshot {
     /// the connected epoch owns the register arena.
     pub fn sta_receive_policy(
         self,
-    ) -> Option<open_esp_radio::esp32s31::registers::MacStaReceivePolicySnapshot> {
+    ) -> Option<open_esp_radio::esp32s31::hal::wifi_mac::MacStaReceivePolicySnapshot> {
         self.registers
-            .try_with_ref(|registers| registers.sta_receive_policy_snapshot())
+            .try_station_receive_policy_snapshot()
             .ok()
     }
 
@@ -720,9 +719,9 @@ impl Esp32s31QualificationSnapshot {
     /// driver transaction currently has the bounded borrow.
     pub fn rx_statistics(
         self,
-    ) -> Option<open_esp_radio::esp32s31::registers::MacRxStatisticsSnapshot> {
+    ) -> Option<open_esp_radio::esp32s31::hal::wifi_mac::MacRxStatisticsSnapshot> {
         self.registers
-            .try_with_ref(|registers| registers.rx_statistics_snapshot())
+            .try_receive_statistics_snapshot()
             .ok()
     }
 
@@ -752,7 +751,7 @@ impl Esp32s31QualificationSnapshot {
 #[cfg(feature = "qualification")]
 fn log_sta_receive_policy(
     edge: &str,
-    policy: open_esp_radio::esp32s31::registers::MacStaReceivePolicySnapshot,
+    policy: open_esp_radio::esp32s31::hal::wifi_mac::MacStaReceivePolicySnapshot,
 ) {
     let bssid = policy.bssid;
     qualification_event!(
@@ -879,7 +878,7 @@ pub enum ConnectedStationFault<'state, 'security> {
     },
     InitialStaticResourcesUnavailable {
         _runtime: ProductionStationRuntime<'state>,
-        _hardware: RadioRegisters,
+        _hardware: RadioRuntimeOwner,
         _receive: ConnectedPreconnectedRx,
         _stack: (),
         _network: NetworkRunner,
@@ -976,7 +975,7 @@ pub(super) fn initialize_connected_static_resources()
         )?,
         TX_AMPDU_STANDBY_RETENTION.take(),
     );
-    let registers: &'static Esp32s31RadioRegistersArena = REGISTER_ARENA.take();
+    let registers: &'static Esp32s31RadioOwnerArena = REGISTER_ARENA.take();
     Ok(InitialConnectedInitialization {
         resources: InitialConnectedStaticResources {
             registers,
@@ -1173,15 +1172,18 @@ pub async fn run_connected<'state, 'security>(
             Ok(setup) => {
                 let prepared = match epoch {
                     Esp32s31ConnectedEpochResources::Initial { hardware, .. } => {
-                        setup.prepare_connected_sta_without_power_save(hardware)
+                        Ok(setup.prepare_connected_sta_without_power_save(hardware))
                     }
                     Esp32s31ConnectedEpochResources::Reconnected(reconnected) => {
                         let access = reconnected.hardware_mut().register_access();
-                        let mut registers = access.borrow_mut();
-                        setup.prepare_connected_sta_without_power_save(&mut registers)
+                        access.try_prepare_connected_sta_without_power_save(setup).map_err(|_| {
+                            open_esp_radio_esp32s31_wifi_embassy::embassy_irq::Esp32s31MacInterruptEpochActivateError::AlreadyActive
+                        })
                     }
                 };
-                activate_esp32s31_connected_epoch(interrupt, platform, prepared)
+                prepared.and_then(|prepared| {
+                    activate_esp32s31_connected_epoch(interrupt, platform, prepared)
+                })
             }
             Err(error) => Err(error),
         }
@@ -1507,8 +1509,8 @@ pub async fn run_connected<'state, 'security>(
             .services()
             .hardware()
             .register_access()
-            .borrow()
-            .rx_statistics_snapshot(),
+            .try_receive_statistics_snapshot()
+            .expect("qualification snapshot must not overlap another MMIO transaction"),
     );
     #[cfg(feature = "qualification")]
     qualification_debug!(
@@ -1553,8 +1555,8 @@ pub async fn run_connected<'state, 'security>(
                         .services()
                         .hardware()
                         .register_access()
-                        .borrow()
-                        .rx_statistics_snapshot(),
+                        .try_receive_statistics_snapshot()
+                        .expect("qualification snapshot must not overlap another MMIO transaction"),
                 );
                 qualification_debug!(
                     "open-radio: connected exit RX DMA: {:?}",

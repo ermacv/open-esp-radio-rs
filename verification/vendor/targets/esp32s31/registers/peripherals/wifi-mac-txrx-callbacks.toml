@@ -337,7 +337,9 @@ maximum = 0x3FF
 [[review]]
 entity = "WIFI_MAC_TXRX_CALLBACKS"
 sources = ["BLOB_LIBPP_MAC_TXRX_CALLBACKS"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TXRX_CALLBACKS.ACK_RATE_TABLE"
@@ -345,7 +347,9 @@ sources = [
     "BLOB_LIBPP_MAC_TXRX_CALLBACKS",
     "BLOB_LIBPP_HAL_RESPONSE_RATE_DEBUG",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TXRX_CALLBACKS.ACK_CCK_RATE_TABLE"
@@ -353,12 +357,16 @@ sources = [
     "BLOB_LIBPP_MAC_TXRX_CALLBACKS",
     "BLOB_LIBPP_HAL_RESPONSE_RATE_DEBUG",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TXRX_CALLBACKS.ACK_SCCK_RATE_TABLE"
 sources = ["BLOB_LIBPP_HAL_RESPONSE_RATE_DEBUG"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TXRX_CALLBACKS.CTS_RATE_TABLE"
@@ -366,7 +374,9 @@ sources = [
     "BLOB_LIBPP_MAC_TXRX_CALLBACKS",
     "BLOB_LIBPP_HAL_RESPONSE_RATE_DEBUG",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TXRX_CALLBACKS.CTS_CCK_RATE_TABLE"
@@ -374,12 +384,16 @@ sources = [
     "BLOB_LIBPP_MAC_TXRX_CALLBACKS",
     "BLOB_LIBPP_HAL_RESPONSE_RATE_DEBUG",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TXRX_CALLBACKS.CTS_SCCK_RATE_TABLE"
 sources = ["BLOB_LIBPP_HAL_RESPONSE_RATE_DEBUG"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TXRX_CALLBACKS.BB_RX_HANG_CONTROL"
@@ -387,7 +401,9 @@ sources = [
     "BLOB_LIBPP_MAC_TXRX_CALLBACKS",
     "BLOB_LIBPP_MAC_TXRX_INIT_SUFFIX",
 ]
-confidence = "instruction-exact-partial"
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_TXRX_CALLBACKS.DELAY_SECONDARY"
@@ -396,12 +412,16 @@ sources = [
     "BLOB_LIBPP_HAL_WDEV_DELAY_DEBUG",
     "ROM_REV0_PHY_SIFS_REG_INIT",
 ]
-confidence = "instruction-exact-partial"
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_TXRX_CALLBACKS.DELAY_SECONDARY.TX_CCK_DELAY"
 sources = ["BLOB_LIBPP_HAL_WDEV_DELAY_DEBUG"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TXRX_CALLBACKS.DELAY_PRIMARY"
@@ -410,9 +430,13 @@ sources = [
     "BLOB_LIBPP_HAL_WDEV_DELAY_DEBUG",
     "ROM_REV0_PHY_SIFS_REG_INIT",
 ]
-confidence = "instruction-exact-partial"
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_TXRX_CALLBACKS.DELAY_PRIMARY.RX_CCK_DELAY"
 sources = ["BLOB_LIBPP_HAL_WDEV_DELAY_DEBUG"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"

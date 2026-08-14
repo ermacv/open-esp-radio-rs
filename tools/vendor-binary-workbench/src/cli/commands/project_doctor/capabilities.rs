@@ -5,27 +5,49 @@ use crate::{application::ProjectContext, memory_map::MemoryRegionKind, registers
 use super::model::{CapabilityReport, DoctorReport};
 
 pub(super) fn collect(context: &ProjectContext<'_>, report: &mut DoctorReport) {
-    collect_platform(context, report);
+    collect_knowledge_packs(context, report);
     collect_backend(context, report);
-    collect_harness(context, report);
+    collect_knowledge_provider(context, report);
     collect_memory_map(context, report);
     collect_register_catalog(context, report);
     collect_symbol_inventory(context, report);
     collect_navigation_index(context, report);
 }
 
-fn collect_platform(context: &ProjectContext<'_>, report: &mut DoctorReport) {
-    let capability = match &context.project.platform_pack {
-        Some(pack) => CapabilityReport::new("platform-pack", "available")
+fn collect_knowledge_packs(context: &ProjectContext<'_>, report: &mut DoctorReport) {
+    report.capability(
+        CapabilityReport::new(
+            "ecosystem-packs",
+            if context.project.ecosystem_packs.is_empty() {
+                "not-configured"
+            } else {
+                "available"
+            },
+        )
+        .field(
+            "ids",
+            context
+                .project
+                .ecosystem_packs
+                .iter()
+                .map(|pack| pack.id.clone())
+                .collect::<Vec<_>>(),
+        ),
+    );
+    let chip = match &context.project.chip_pack {
+        Some(pack) => CapabilityReport::new("chip-pack", "available")
             .field("id", pack.id.as_str())
-            .field("harness", pack.harness.as_deref().unwrap_or("-"))
-            .field("semantic-catalogs", pack.semantic_catalogs.len())
-            .field("semantic-operations", pack.semantic_operations)
+            .field(
+                "knowledge-provider",
+                pack.knowledge_provider.as_deref().unwrap_or("-"),
+            )
+            .field("knowledge-packs", pack.knowledge_packs.len())
+            .field("knowledge-operations", pack.knowledge_operations)
             .field("path", pack.path.display().to_string()),
-        None => CapabilityReport::new("platform-pack", "not-configured")
-            .field("reason", "generic-target-only"),
+        None => CapabilityReport::new("chip-pack", "not-configured")
+            .field("reason", "architecture-and-ecosystem-only"),
     };
-    report.capability(capability);
+    report.capability(chip);
 }
 
 fn collect_backend(context: &ProjectContext<'_>, report: &mut DoctorReport) {
@@ -44,15 +66,18 @@ fn collect_backend(context: &ProjectContext<'_>, report: &mut DoctorReport) {
     report.capability(capability);
 }
 
-fn collect_harness(context: &ProjectContext<'_>, report: &mut DoctorReport) {
-    let capability = match &context.target.harness {
-        None => CapabilityReport::new("harness", "not-configured")
+fn collect_knowledge_provider(context: &ProjectContext<'_>, report: &mut DoctorReport) {
+    let capability = match &context.target.knowledge_provider {
+        None => CapabilityReport::new("knowledge-provider", "not-configured")
             .field("reason", "generic-analysis-only"),
-        Some(_) => match context.target.require_available_harness() {
-            Ok(harness) => CapabilityReport::new("harness", "available").field("id", harness),
+        Some(_) => match context.target.require_available_knowledge_provider() {
+            Ok(provider) => {
+                CapabilityReport::new("knowledge-provider", "available").field("id", provider)
+            }
             Err(error) => {
                 report.absorb(0, 1);
-                CapabilityReport::new("harness", "unavailable").field("error", error.to_string())
+                CapabilityReport::new("knowledge-provider", "unavailable")
+                    .field("error", error.to_string())
             }
         },
     };

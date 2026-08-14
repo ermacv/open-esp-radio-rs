@@ -92,8 +92,7 @@ pub struct RxMpduFrame {
 
 /// Geometry decoded from the first completed S31 RX descriptor.
 ///
-/// The fields mirror the recovered `wDev_IndicateFrame` boundary retained in
-/// `migration/esp32s31-hybrid-runtime/src/rx_descriptor.rs`: the descriptor
+/// The fields mirror the recovered `wDev_IndicateFrame` boundary: the descriptor
 /// publishes its received byte count independently from the 14-bit on-air
 /// `sig_len`, and the latter includes the four-byte FCS. Keeping both values
 /// visible is necessary for protected RX, where the MAC may consume cipher
@@ -779,7 +778,7 @@ pub struct RxDataFrame {
 /// The S31 MAC decrypts the payload in place and reports MIC failure through
 /// RX metadata. It leaves the eight-byte CCMP header in the DMA view. The
 /// The eight-byte MIC can be wholly or partially absent from the completed
-/// DMA view. The recovered migration path passed the logical `sig_len - FCS`
+/// DMA view. The reviewed vendor path passed the logical `sig_len - FCS`
 /// to `ccmp_decap`, which removed the complete MIC without reading it.
 /// [`mic_bytes_in_dma`](Self::mic_bytes_in_dma) records the bounded physical
 /// view while [`mic_offset`](Self::mic_offset) remains the logical payload
@@ -1144,7 +1143,7 @@ open_esp_radio_esp32s31_wifi_dma::place_rx_hot_path! {
 ///
 /// S31 HIL shows that successful hardware verification can publish a DMA view
 /// ending anywhere inside the eight-byte CCMP MIC while `sig_len` still
-/// describes the complete on-air MPDU. This reproduces the migration
+/// describes the complete on-air MPDU. This reproduces the reviewed
 /// `ccmp_decap` invariant: only bytes after the logical payload boundary may
 /// be absent. Unprotected extraction remains strict.
 #[inline(never)]

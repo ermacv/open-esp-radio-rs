@@ -1489,7 +1489,9 @@ sources = [
     "ROM_REV0_PHY_IQ_COEFFICIENTS",
     "BLOB_LIBPHY_PHY_BASEBAND_CONFIG",
 ]
-confidence = "instruction-exact-partial"
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
 
 [[review]]
 entity = "PHY_BASEBAND_CONFIG_ORACLE.FRONT_END_AND_TONE_STOP_CONTROL"
@@ -1497,27 +1499,37 @@ sources = [
     "ROM_REV0_PHY_FE_REG_INIT",
     "ROM_REV0_PHY_START_STOP_TX_TONE",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_BASEBAND_CONFIG_ORACLE.FRONT_END_AND_TONE_STOP_CONTROL.TONE_STOP_CONTROL_UNKNOWN"
 sources = ["ROM_REV0_PHY_START_STOP_TX_TONE"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_BASEBAND_CONFIG_ORACLE.TX_GAIN_COMPENSATION"
 sources = ["BLOB_LIBPHY_PHY_BASEBAND_CONFIG"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_BASEBAND_CONFIG_ORACLE.TX_GAIN_COMPENSATION_AUX"
 sources = ["BLOB_LIBPHY_PHY_START_TX_TONE_STEP_NEW"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_BASEBAND_CONFIG_ORACLE.TX_DC_MEASUREMENT_CONTROL_STATUS"
 sources = ["ROM_REV0_PHY_TXDC_CAL"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_BASEBAND_CONFIG_ORACLE.TONE_PATH_0_CONTROL"
@@ -1526,17 +1538,23 @@ sources = [
     "ROM_REV0_PHY_TXIQ_GET_MIS_PWR",
     "BLOB_LIBPHY_PHY_START_TX_TONE_STEP_NEW",
 ]
-confidence = "instruction-exact-partial"
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
 
 [[review]]
 entity = "PHY_BASEBAND_CONFIG_ORACLE.TONE_PATH_0_CONTROL.TXIQ_MISMATCH_MODE_UNKNOWN"
 sources = ["ROM_REV0_PHY_TXIQ_GET_MIS_PWR"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_BASEBAND_CONFIG_ORACLE.TONE_PATH_0_CONTROL.TXIQ_POLARITY_IMAGE"
 sources = ["ROM_REV0_PHY_TXIQ_GET_MIS_PWR"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_BASEBAND_CONFIG_ORACLE.TONE_PATH_1_CONTROL"
@@ -1544,12 +1562,16 @@ sources = [
     "ROM_REV0_PHY_START_STOP_TX_TONE",
     "BLOB_LIBPHY_PHY_START_TX_TONE_STEP_NEW",
 ]
-confidence = "instruction-exact-partial"
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
 
 [[review]]
 entity = "PHY_BASEBAND_CONFIG_ORACLE.RX_GAIN_DC_CONTROL"
 sources = ["ROM_REV0_PHY_SET_RX_GAIN_CAL_DC"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_BASEBAND_CONFIG_ORACLE.TONE_SELECTOR_CONTROL"
@@ -1558,7 +1580,9 @@ sources = [
     "ROM_REV0_PHY_TXIQ_GET_MIS_PWR",
     "BLOB_LIBPHY_PHY_START_TX_TONE_STEP_NEW",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_BASEBAND_CONFIG_ORACLE.IQ_CORRECTION_CONTROL"
@@ -1567,7 +1591,9 @@ sources = [
     "ROM_REV0_PHY_IQ_COEFFICIENTS",
     "BLOB_LIBPHY_PHY_RXIQ_CAL_INIT",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_BASEBAND_CONFIG_ORACLE.IQ_CORRECTION_CONTROL.RX_IQ_CORRECTION_MODE_LOW"
@@ -1575,7 +1601,9 @@ sources = [
     "ROM_REV0_PHY_REGISTER_INITIALIZATION",
     "BLOB_LIBPHY_PHY_RXIQ_CAL_INIT",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_BASEBAND_CONFIG_ORACLE.IQ_CORRECTION_CONTROL.RX_IQ_CORRECTION_MODE_HIGH"
@@ -1583,17 +1611,23 @@ sources = [
     "ROM_REV0_PHY_REGISTER_INITIALIZATION",
     "BLOB_LIBPHY_PHY_RXIQ_CAL_INIT",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_BASEBAND_CONFIG_ORACLE.IQ_CORRECTION_CONTROL.FRONT_END_INIT_HIGH_UNKNOWN"
 sources = ["ROM_REV0_PHY_FE_REG_INIT"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_BASEBAND_CONFIG_ORACLE.FRONT_END_CLEAR_CONTROL"
 sources = ["ROM_REV0_PHY_FE_REG_INIT"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_BASEBAND_CONFIG_ORACLE.ADC_RATE_AND_FRONT_END_CONTROL"
@@ -1603,7 +1637,9 @@ sources = [
     "ROM_REV0_PHY_FE_REG_INIT",
     "BLOB_LIBPHY_PHY_FE_REG_UPDATE",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_BASEBAND_CONFIG_ORACLE.POWER_DETECTOR_CONTROL"
@@ -1611,7 +1647,9 @@ sources = [
     "ROM_REV0_PHY_POWER_DETECTOR",
     "BLOB_LIBPHY_PHY_TXDC_PWDET",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_BASEBAND_CONFIG_ORACLE.POWER_DETECTOR_SAR_CONTROL_STATUS"
@@ -1619,7 +1657,9 @@ sources = [
     "ROM_REV0_PHY_POWER_DETECTOR",
     "BLOB_LIBPHY_PHY_TXDC_PWDET",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_BASEBAND_CONFIG_ORACLE.POWER_DETECTOR_SAR_CONTROL_STATUS.SAR_READY"
@@ -1627,12 +1667,16 @@ sources = [
     "ROM_REV0_PHY_POWER_DETECTOR",
     "BLOB_LIBPHY_PHY_TXDC_PWDET",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_BASEBAND_CONFIG_ORACLE.POWER_DETECTOR_TABLE_0_OPAQUE"
 sources = ["ROM_REV0_PHY_POWER_DETECTOR"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_BASEBAND_CONFIG_ORACLE.POWER_DETECTOR_TABLE_1"
@@ -1640,37 +1684,51 @@ sources = [
     "ROM_REV0_PHY_POWER_DETECTOR",
     "BLOB_LIBPHY_PHY_TXDC_PWDET",
 ]
-confidence = "instruction-exact-partial"
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
 
 [[review]]
 entity = "PHY_BASEBAND_CONFIG_ORACLE.POWER_DETECTOR_REFERENCE"
 sources = ["ROM_REV0_PHY_POWER_DETECTOR"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_BASEBAND_CONFIG_ORACLE.POWER_DETECTOR_SAR_RESULT"
 sources = ["ROM_REV0_PHY_POWER_DETECTOR"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_BASEBAND_CONFIG_ORACLE.POWER_DETECTOR_SAR_RESULT_1"
 sources = ["ROM_REV0_PHY_POWER_DETECTOR"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_BASEBAND_CONFIG_ORACLE.POWER_DETECTOR_SAR_RESULT_2"
 sources = ["ROM_REV0_PHY_POWER_DETECTOR"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_BASEBAND_CONFIG_ORACLE.POWER_DETECTOR_SAR_RESULT_3"
 sources = ["ROM_REV0_PHY_POWER_DETECTOR"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_BASEBAND_CONFIG_ORACLE.TX_PA_CONTROL_0"
 sources = ["ROM_REV0_PHY_REGISTER_INITIALIZATION"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_BASEBAND_CONFIG_ORACLE.TX_PA_CONTROL_1"
@@ -1678,17 +1736,23 @@ sources = [
     "ROM_REV0_PHY_REGISTER_INITIALIZATION",
     "BLOB_LIBBTBB_BLE_TX_CONFIG_CHECK",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_BASEBAND_CONFIG_ORACLE.TX_PA_CONTROL_1.RF_ON_BT_DELAY_CODE"
 sources = ["BLOB_LIBBTBB_BLE_TX_CONFIG_CHECK"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_BASEBAND_CONFIG_ORACLE.TX_PA_CONTROL_1.PA_ON_BT_DELAY"
 sources = ["BLOB_LIBBTBB_BLE_TX_CONFIG_CHECK"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_BASEBAND_CONFIG_ORACLE.DAC_SCALE_CONTROL"
@@ -1696,7 +1760,9 @@ sources = [
     "ROM_REV0_PHY_START_STOP_TX_TONE",
     "ROM_REV0_PHY_DAC_SCALE_SET",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_BASEBAND_CONFIG_ORACLE.FRONT_END_INIT_0C08"
@@ -1704,7 +1770,9 @@ sources = [
     "ROM_REV0_PHY_FE_REG_INIT",
     "BLOB_LIBPHY_PHY_FE_REG_UPDATE",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_BASEBAND_CONFIG_ORACLE.IQ_CORRECTION_AUX"
@@ -1713,7 +1781,9 @@ sources = [
     "ROM_REV0_PHY_IQ_COEFFICIENTS",
     "BLOB_LIBPHY_PHY_RXIQ_CAL_INIT",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_BASEBAND_CONFIG_ORACLE.IQ_CORRECTION_AUX.TX_IQ_CORRECTION_MODE_LOW"
@@ -1721,7 +1791,9 @@ sources = [
     "ROM_REV0_PHY_REGISTER_INITIALIZATION",
     "BLOB_LIBPHY_PHY_RXIQ_CAL_INIT",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_BASEBAND_CONFIG_ORACLE.IQ_CORRECTION_AUX.TX_IQ_CORRECTION_MODE_HIGH"
@@ -1729,27 +1801,37 @@ sources = [
     "ROM_REV0_PHY_REGISTER_INITIALIZATION",
     "BLOB_LIBPHY_PHY_RXIQ_CAL_INIT",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_BASEBAND_CONFIG_ORACLE.IQ_CORRECTION_AUX.FRONT_END_INIT_HIGH_UNKNOWN"
 sources = ["ROM_REV0_PHY_FE_REG_INIT"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_BASEBAND_CONFIG_ORACLE.FRONT_END_INIT_0C20"
 sources = ["ROM_REV0_PHY_FE_REG_INIT"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_BASEBAND_CONFIG_ORACLE.I2C_TX_RATE_CONTROL"
 sources = ["ROM_REV0_PHY_REGISTER_INITIALIZATION"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_BASEBAND_CONFIG_ORACLE.NOISE_FLOOR_CONTROL"
 sources = ["ROM_REV0_PHY_REGISTER_INITIALIZATION"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_BASEBAND_CONFIG_ORACLE.NOISE_FLOOR_MEASUREMENT"
@@ -1757,7 +1839,9 @@ sources = [
     "ROM_REV0_PHY_READ_NOISE_FLOOR",
     "HIL_OPEN_STA_RATE_CONTROL_2026_07_30",
 ]
-confidence = "instruction-exact-hil-qualified"
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_BASEBAND_CONFIG_ORACLE.NOISE_FLOOR_MEASUREMENT.SIGNED_SIXTEENTH_DB_CODE"
@@ -1765,97 +1849,135 @@ sources = [
     "ROM_REV0_PHY_READ_NOISE_FLOOR",
     "HIL_OPEN_STA_RATE_CONTROL_2026_07_30",
 ]
-confidence = "instruction-exact-hil-qualified"
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_7400"
 sources = ["ROM_REV0_PHY_REGISTER_INITIALIZATION"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_7428"
 sources = ["ROM_REV0_PHY_REGISTER_INITIALIZATION"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_743C"
 sources = ["ROM_REV0_PHY_REGISTER_INITIALIZATION"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_BASEBAND_CONFIG_ORACLE.TX_OUTPUT_FILTER_CONTROL"
 sources = ["ROM_REV0_PHY_CBW_FEATURE_WATCHDOG"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_BASEBAND_CONFIG_ORACLE.TX_POWER_TRACK_CONTROL_0"
 sources = ["BLOB_LIBPHY_PHY_BASEBAND_CONFIG"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_BASEBAND_CONFIG_ORACLE.TX_POWER_TRACK_CONTROL_1"
 sources = ["BLOB_LIBPHY_PHY_BASEBAND_CONFIG"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_BASEBAND_CONFIG_ORACLE.TX_POWER_TRACK_CONTROL_2"
 sources = ["BLOB_LIBPHY_PHY_BASEBAND_CONFIG"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_BASEBAND_CONFIG_ORACLE.TX_POWER_TRACK_CONTROL_3"
 sources = ["BLOB_LIBPHY_PHY_BASEBAND_CONFIG"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_BASEBAND_CONFIG_ORACLE.HCCFR_CONTROL"
 sources = ["BLOB_LIBPHY_PHY_CFR_CONTROL"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_BASEBAND_CONFIG_ORACLE.HCCFR_CONTROL.ENABLE"
 sources = ["BLOB_LIBPHY_PHY_CFR_CONTROL"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_BASEBAND_CONFIG_ORACLE.HCCFR_VALUE"
 sources = ["BLOB_LIBPHY_PHY_CFR_CONTROL"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_BASEBAND_CONFIG_ORACLE.HCCFR_VALUE.VALUE"
 sources = ["BLOB_LIBPHY_PHY_CFR_CONTROL"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_BASEBAND_CONFIG_ORACLE.ICCFR_FORCE_CONTROL"
 sources = ["BLOB_LIBPHY_PHY_CFR_CONTROL"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_BASEBAND_CONFIG_ORACLE.ICCFR_FORCE_CONTROL.FORCE_ENABLE"
 sources = ["BLOB_LIBPHY_PHY_CFR_CONTROL"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_BASEBAND_CONFIG_ORACLE.ICCFR_FORCE_CONTROL.FORCE_VALUE"
 sources = ["BLOB_LIBPHY_PHY_CFR_CONTROL"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_BASEBAND_CONFIG_ORACLE.ICCFR_ENABLE_CONTROL"
 sources = ["BLOB_LIBPHY_PHY_CFR_CONTROL"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_BASEBAND_CONFIG_ORACLE.ICCFR_ENABLE_CONTROL.GATE"
 sources = ["BLOB_LIBPHY_PHY_CFR_CONTROL"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_7808"
 sources = ["ROM_REV0_PHY_REGISTER_INITIALIZATION"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_7890"
@@ -1863,17 +1985,23 @@ sources = [
     "ROM_REV0_PHY_REGISTER_INITIALIZATION",
     "ROM_REV0_PHY_CBW_FEATURE_WATCHDOG",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_78DC"
 sources = ["ROM_REV0_PHY_REGISTER_INITIALIZATION"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_78E4"
 sources = ["ROM_REV0_PHY_REGISTER_INITIALIZATION"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_790C"
@@ -1882,22 +2010,30 @@ sources = [
     "ROM_REV0_PHY_CBW_FEATURE_WATCHDOG",
     "ROM_REV0_PHY_CHAN_DUMP_CFG",
 ]
-confidence = "instruction-exact-partial"
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
 
 [[review]]
 entity = "PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_790C.CHANNEL_DUMP_VALUE_UNKNOWN"
 sources = ["ROM_REV0_PHY_CHAN_DUMP_CFG"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_7980"
 sources = ["ROM_REV0_PHY_REGISTER_INITIALIZATION"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_7A28"
 sources = ["ROM_REV0_PHY_REGISTER_INITIALIZATION"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_TX_PA_CONTROL"
@@ -1905,27 +2041,37 @@ sources = [
     "ROM_REV0_PHY_REGISTER_INITIALIZATION",
     "ROM_REV0_PHY_CHAN_DUMP_CFG",
 ]
-confidence = "instruction-exact-partial"
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
 
 [[review]]
 entity = "PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_TX_PA_CONTROL.CHANNEL_DUMP_ENABLE_UNKNOWN"
 sources = ["ROM_REV0_PHY_CHAN_DUMP_CFG"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_WATCHDOG_STATUS"
 sources = ["ROM_REV0_PHY_CBW_FEATURE_WATCHDOG"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_TX_PA_TIMING"
 sources = ["ROM_REV0_PHY_REGISTER_INITIALIZATION"]
-confidence = "instruction-exact-partial"
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
 
 [[review]]
 entity = "PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_WATCHDOG_CONTROL"
 sources = ["ROM_REV0_PHY_REGISTER_INITIALIZATION"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_WATCHDOG_ENABLE"
@@ -1933,27 +2079,37 @@ sources = [
     "ROM_REV0_PHY_REGISTER_INITIALIZATION",
     "ROM_REV0_PHY_CBW_FEATURE_WATCHDOG",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_BASEBAND_CONFIG_ORACLE.NOISE_FLOOR_ENABLE_0"
 sources = ["ROM_REV0_PHY_REGISTER_INITIALIZATION"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_BASEBAND_CONFIG_ORACLE.NOISE_FLOOR_ENABLE_1"
 sources = ["ROM_REV0_PHY_REGISTER_INITIALIZATION"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_BASEBAND_CONFIG_ORACLE.TX_PA_TABLE_OPAQUE"
 sources = ["ROM_REV0_PHY_REGISTER_INITIALIZATION"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_7CA8"
 sources = ["ROM_REV0_PHY_REGISTER_INITIALIZATION"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_7CD0"
@@ -1961,4 +2117,6 @@ sources = [
     "ROM_REV0_PHY_REGISTER_INITIALIZATION",
     "ROM_REV0_PHY_BTBB_WIFI_BB_CFG2",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"

@@ -5,7 +5,7 @@ use core::{
 };
 
 use open_esp_radio_embassy_net::{
-    Driver as _, NoopRawMutex, PinnedDevice, PinnedResources, PinnedTxPool, TxToken as _,
+    Driver as _, NoopRawMutex, PinnedTxPool, SplitPinnedDevice, SplitPinnedResources, TxToken as _,
 };
 use open_esp_radio_esp32s31_wifi_mac::irq::{MAC_INT_RX_SUCCESS, MAC_INT_TX_COMPLETE};
 
@@ -16,9 +16,18 @@ const HEADROOM: usize = 32;
 const TRAILER: usize = 8;
 const QUEUE_DEPTH: usize = 1;
 
-type Resources = PinnedResources<NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>;
+type Resources =
+    SplitPinnedResources<NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH, QUEUE_DEPTH>;
 type Pool = PinnedTxPool<FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>;
-type Device = PinnedDevice<'static, NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>;
+type Device = SplitPinnedDevice<
+    'static,
+    NoopRawMutex,
+    FRAME_CAPACITY,
+    HEADROOM,
+    TRAILER,
+    QUEUE_DEPTH,
+    QUEUE_DEPTH,
+>;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum TestError {

@@ -83,7 +83,7 @@ description = "_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788
 
 [[sources]]
 id = "BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK"
-description = "_oracles/libpp.a pinned ESP32-S31 archive; complete hal_mac_tx_get_blockack leaf recovered into MIGRATION_TX_AMPDU and moved to driver/chips/esp32s31/wifi/mac/src/tx_ampdu.rs. Queue register banks descend by 0x7c bytes. No independent HIL qualification yet."
+description = "_oracles/libpp.a pinned ESP32-S31 archive; complete hal_mac_tx_get_blockack leaf recovered into PROMOTED_TX_AMPDU and moved to driver/chips/esp32s31/wifi/mac/src/tx_ampdu.rs. Queue register banks descend by 0x7c bytes. No independent HIL qualification yet."
 
 [[sources]]
 id = "BLOB_LIBPP_HAL_TX_TRIGGER_FLOW"

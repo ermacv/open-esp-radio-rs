@@ -6,7 +6,7 @@ use toml_edit::{Document, DocumentMut, Item};
 
 use super::{InterfaceFactStep, InterfaceFacts, SemanticCatalogs};
 use crate::Result;
-use crate::{ExternalOutputModel, ExternalReturnModel, HarnessContractSpec};
+use crate::{ExternalOutputModel, ExternalReturnModel, KnowledgeContractSpec};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum ReviewStatus {
@@ -18,7 +18,7 @@ pub(crate) enum ReviewStatus {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum PackOrigin {
     Observed,
-    Manual,
+    Reviewed,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -112,11 +112,11 @@ pub(crate) struct InterfaceWorkspaceSummary {
     pub(crate) reviewed_anchors: usize,
     pub(crate) ignored_anchors: usize,
     pub(crate) unreviewed_anchors: usize,
-    pub(crate) manual_anchors: usize,
+    pub(crate) asserted_anchors: usize,
     pub(crate) reviewed_slots: usize,
     pub(crate) ignored_slots: usize,
     pub(crate) unreviewed_slots: usize,
-    pub(crate) manual_slots: usize,
+    pub(crate) asserted_slots: usize,
     pub(crate) semantic_links: usize,
     pub(crate) semantic_operations: usize,
     pub(crate) execution_contracts: usize,
@@ -223,7 +223,7 @@ pub(crate) struct ResolvedInterfaceExecutionContract {
 ///
 /// Semantic annotations remain descriptive. Only `execution_contract` and a
 /// slot's explicit `execution_model` foreign key authorize use of compiled
-/// behavior supplied by a platform harness.
+/// behavior supplied by a compiled knowledge provider.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct ResolvedInterfaceContract {
     pub(crate) id: String,
@@ -256,7 +256,7 @@ impl InterfaceWorkspace {
         pack_path: &Path,
         semantic_paths: &[impl AsRef<Path>],
         calling_convention: &str,
-        execution_contracts: Option<&HarnessContractSpec>,
+        execution_contracts: Option<&KnowledgeContractSpec>,
     ) -> Result<Self> {
         let facts = InterfaceFacts::load(facts_path)?;
         let catalogs = SemanticCatalogs::load(semantic_paths)?;

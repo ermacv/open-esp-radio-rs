@@ -7,7 +7,8 @@
 
 use core::future::Future;
 
-use open_esp_radio_esp32s31_hal::{RadioRegisters, phy_i2c::PhyI2cMasterControl};
+use open_esp_radio_esp32s31_hal::PhyHal;
+use open_esp_radio_esp32s31_hal::phy_i2c::PhyI2cMasterControl;
 
 use crate::{
     HARDWARE_EDGE_LIMIT,
@@ -59,6 +60,7 @@ pub trait PhyAsyncDelay {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PhyTargetPortError {
     HardwareEdgeTimedOut,
+    HardwareCapabilityUnavailable,
     RfOperationLimit,
     UnexpectedBinding,
 }
@@ -146,7 +148,7 @@ macro_rules! define_pbus_executor {
     ($function:ident, $binding:ty, $completion:ty) => {
         pub async fn $function<D: PhyAsyncDelay>(
             mut binding: $binding,
-            registers: &mut RadioRegisters,
+            registers: &mut PhyHal,
         ) -> Result<$completion, PhyTargetPortError> {
             let mut started = false;
             for _ in 0..HARDWARE_EDGE_LIMIT {
@@ -186,7 +188,7 @@ macro_rules! define_timeout_pbus_executor {
     ($function:ident, $binding:ty, $completion:ty) => {
         pub async fn $function<D: PhyAsyncDelay>(
             mut binding: $binding,
-            registers: &mut RadioRegisters,
+            registers: &mut PhyHal,
         ) -> Result<$completion, PhyTargetPortError> {
             let mut started = false;
             for _ in 0..HARDWARE_EDGE_LIMIT {

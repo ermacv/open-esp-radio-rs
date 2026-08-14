@@ -1,7 +1,6 @@
 //! Closed low-MAC ownership of access-point TSF lifecycle edges.
 
-use open_esp_radio_esp32s31_hal::wifi_mac::WifiMacHal;
-use open_esp_radio_esp32s31_pac::RadioRegisters;
+use open_esp_radio_esp32s31_hal::{RadioRuntimeOwner, wifi_mac::WifiMacHal};
 
 /// Minimal hardware capability required to own the AP TSF domain.
 pub trait ApTsfHardware {
@@ -19,16 +18,13 @@ impl ApTsfHardware for WifiMacHal<'_> {
     }
 }
 
-// The AP runtime currently owns one `RadioRegisters` value for receive,
-// crypto and timing. Keep the physical owner opaque by adapting it through
-// the same closed HAL used by independently composed clients.
-impl ApTsfHardware for RadioRegisters {
+impl ApTsfHardware for RadioRuntimeOwner {
     fn reset_and_start_access_point_tsf(&mut self) {
-        WifiMacHal::new(self).reset_and_start_access_point_tsf();
+        self.wifi_mac_hal().reset_and_start_access_point_tsf();
     }
 
     fn stop_access_point_tsf(&mut self) {
-        WifiMacHal::new(self).stop_access_point_tsf();
+        self.wifi_mac_hal().stop_access_point_tsf();
     }
 }
 

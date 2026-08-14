@@ -125,10 +125,12 @@ entity = "WIFI_MAC_TX_COMMON"
 sources = [
     "BLOB_LIBPP_HAL_MAC_TX",
     "BLOB_LIBPP_HAL_TX_TRIGGER_FLOW",
-    "MIGRATION_LMAC_TX",
+    "PROMOTED_LMAC_TX",
     "ROM_REV0_PHY_CCA_CONTROL",
 ]
-confidence = "instruction-exact-hil-qualified"
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_COMMON.CCA_CONTROL"
@@ -136,61 +138,79 @@ sources = [
     "BLOB_LIBPP_HAL_MAC_TX",
     "ROM_REV0_PHY_CCA_CONTROL",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_COMMON.CCA_CONTROL.PHY_AUX_FORCE"
 sources = ["ROM_REV0_PHY_CCA_CONTROL"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_COMMON.CCA_CONTROL.FORCE"
 sources = [
     "BLOB_LIBPP_HAL_MAC_TX",
-    "MIGRATION_LMAC_TX",
+    "PROMOTED_LMAC_TX",
     "ROM_REV0_PHY_CCA_CONTROL",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_COMMON.QUEUE_STATE_CLEAR"
 sources = ["BLOB_LIBPP_HAL_MAC_TX"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_COMMON.QUEUE_STATE"
 sources = [
     "BLOB_LIBPP_HAL_MAC_TX",
     "BLOB_LIBPP_HAL_TX_TRIGGER_FLOW",
-    "MIGRATION_LMAC_TX",
+    "PROMOTED_LMAC_TX",
 ]
-confidence = "instruction-exact-partial"
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_TX_COMMON.QUEUE_STATE.TIMEOUT"
 sources = ["BLOB_LIBPP_HAL_MAC_TX"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_COMMON.QUEUE_STATE.TRIGGER_FLOW"
 sources = [
     "BLOB_LIBPP_HAL_TX_TRIGGER_FLOW",
-    "MIGRATION_LMAC_TX",
+    "PROMOTED_LMAC_TX",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_COMMON.COMPLETE_CLEAR"
 sources = [
     "BLOB_LIBPP_HAL_MAC_TX",
-    "MIGRATION_LMAC_TX",
+    "PROMOTED_LMAC_TX",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_COMMON.COMPLETE_STATE"
 sources = [
     "BLOB_LIBPP_HAL_MAC_TX",
-    "MIGRATION_LMAC_TX",
+    "PROMOTED_LMAC_TX",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"

@@ -1,4 +1,7 @@
 //! Machine-readable implementation disposition parsing and inventory validation.
+//!
+//! Dispositions own reviewed binding and claim declarations. They do not own
+//! vendor/Rust observations and cannot change the generic engine's verdict.
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -225,7 +228,7 @@ impl Manifest {
                 rust_probe: function.rust_probe,
                 compare_return: function.compare_return,
                 driver_adapter,
-                qualification_blockers: function
+                release_blockers: function
                     .blocked_by
                     .into_iter()
                     .map(|blocker| (blocker.source, blocker.symbol))
@@ -284,10 +287,10 @@ impl Manifest {
             }
         }
         for entry in self.entries.values() {
-            for blocker in &entry.qualification_blockers {
+            for blocker in &entry.release_blockers {
                 if !inventory.contains(blocker) {
                     return Err(crate::Error::invalid(format!(
-                        "qualification blocker for {} {} refers to missing {} vendor symbol {}",
+                        "release blocker for {} {} refers to missing {} vendor symbol {}",
                         entry.source, entry.symbol, blocker.0, blocker.1
                     )));
                 }

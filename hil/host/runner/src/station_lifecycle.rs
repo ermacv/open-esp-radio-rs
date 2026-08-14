@@ -32,7 +32,7 @@ pub(crate) fn run(
     require_no_beacon_loss: bool,
 ) -> Result<()> {
     let options = parse_options(&arguments, lab)?;
-    fs::create_dir_all(&output)?;
+    fs::create_dir_all(output)?;
     for boot in 1..=options.boots {
         let capture = SerialCapture::start_with_reset(&options.serial);
         let result = qualify(

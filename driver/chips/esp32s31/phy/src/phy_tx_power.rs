@@ -957,7 +957,7 @@ impl PhyPowerControlPointMmioBinding {
     #[cfg(target_arch = "riscv32")]
     pub fn execute_target(
         self,
-        registers: &mut open_esp_radio_esp32s31_hal::RadioRegisters,
+        registers: &mut open_esp_radio_esp32s31_hal::PhyHal,
     ) -> PhyPowerControlPointCompletion {
         match self.action {
             PhyPowerControlPointAction::ConfigureTone {
@@ -1004,7 +1004,7 @@ impl PhyTxPowerMmioBinding {
     #[cfg(target_arch = "riscv32")]
     pub fn execute_target(
         self,
-        registers: &mut open_esp_radio_esp32s31_hal::RadioRegisters,
+        registers: &mut open_esp_radio_esp32s31_hal::PhyHal,
     ) -> PhyTxPowerCompletion {
         match self.action {
             PhyTxPowerAction::ConfigureTone {
@@ -1314,7 +1314,7 @@ mod tests {
             crate::phy_state::PhyConfig::esp32s31_default().with_target_power(80, targets, false),
         );
         let profile = state.tx_target_power_profile();
-        drop(state);
+        let _ = state;
         assert_eq!(
             profile.pair(0),
             PhyTxTargetPowerPair {

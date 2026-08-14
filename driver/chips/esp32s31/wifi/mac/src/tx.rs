@@ -10,12 +10,12 @@ extern crate alloc;
 use alloc::boxed::Box;
 
 pub use open_esp_radio_dma::{HardwareOwnedTxDma, PreparedTxDma};
-use open_esp_radio_esp32s31_pac::{
-    ColdRadioRegisters, MacHeTbTidLimit, MacHeTid, MacHeTxProgram, MacHeTxVectorSnapshot,
-    MacHtTxProgram, MacInterface, MacLegacyTxProgram, MacPartialRuPowerSelector,
-    MacTxCompletionRegisters, MacTxDetachOutcome, MacTxDetachReason, MacTxQueueDetached,
-    RadioRegisters,
+use open_esp_radio_esp32s31_hal::types::{
+    MacHeTbTidLimit, MacHeTid, MacHeTxProgram, MacHeTxVectorSnapshot, MacHtTxProgram, MacInterface,
+    MacLegacyTxProgram, MacPartialRuPowerSelector, MacTxCompletionRegisters, MacTxDetachOutcome,
+    MacTxDetachReason, MacTxQueueDetached,
 };
+use open_esp_radio_esp32s31_hal::{RadioRuntimeOwner, wifi_mac::WifiMacHal};
 use open_esp_radio_esp32s31_wifi_dma::descriptor::descriptor_address_valid;
 pub use open_esp_radio_esp32s31_wifi_dma::tx_storage::TxDmaState as TxSlotState;
 #[cfg(not(target_pointer_width = "32"))]
@@ -227,18 +227,18 @@ fn assert_tx_dma_head(authority_head: u32, plcp0: u32) {
     assert_eq!(authority_head & 0x000f_ffff, plcp0 & 0x000f_ffff);
 }
 
-impl TxHardware for RadioRegisters {
+impl TxHardware for WifiMacHal<'_> {
     fn prepare_bound_legacy_tx(
         &mut self,
         dma: &dyn PreparedTxDma,
         queue: u8,
         program: MacLegacyTxProgram,
     ) -> bool {
-        self.prepare_bound_legacy_mac_tx(dma, queue, program)
+        WifiMacHal::prepare_bound_legacy_tx(self, dma, queue, program)
     }
 
     fn start_bound_legacy_tx(&mut self, dma: &dyn HardwareOwnedTxDma, queue: u8, _plcp0: u32) {
-        self.start_bound_mac_tx(dma, queue);
+        WifiMacHal::start_bound_tx(self, dma, queue);
     }
 
     fn prepare_bound_ht_tx(
@@ -247,11 +247,11 @@ impl TxHardware for RadioRegisters {
         queue: u8,
         program: MacHtTxProgram,
     ) -> bool {
-        self.prepare_bound_ht_mac_tx(dma, queue, program)
+        WifiMacHal::prepare_bound_ht_tx(self, dma, queue, program)
     }
 
     fn start_bound_ht_tx(&mut self, dma: &dyn HardwareOwnedTxDma, queue: u8, _plcp0: u32) {
-        self.start_bound_mac_tx(dma, queue);
+        WifiMacHal::start_bound_tx(self, dma, queue);
     }
 
     fn prepare_bound_he_tx(
@@ -260,23 +260,23 @@ impl TxHardware for RadioRegisters {
         queue: u8,
         program: MacHeTxProgram,
     ) -> bool {
-        self.prepare_bound_he_mac_tx(dma, queue, program)
+        WifiMacHal::prepare_bound_he_tx(self, dma, queue, program)
     }
 
     fn start_bound_he_tx(&mut self, dma: &dyn HardwareOwnedTxDma, queue: u8, _plcp0: u32) {
-        self.start_bound_mac_tx(dma, queue);
+        WifiMacHal::start_bound_tx(self, dma, queue);
     }
 
     fn he_tx_vector_snapshot(&self, queue: u8) -> Option<MacHeTxVectorSnapshot> {
-        Some(self.he_mac_tx_vector_snapshot(queue))
+        Some(WifiMacHal::he_tx_vector_snapshot(self, queue))
     }
 
     fn take_tx_completion(&mut self, queue: u8) -> Option<MacTxCompletionRegisters> {
-        self.take_mac_tx_completion(queue)
+        WifiMacHal::take_tx_completion(self, queue)
     }
 
     fn begin_tx_timeout_abort(&mut self, queue: u8) -> bool {
-        self.begin_mac_tx_timeout_abort(queue)
+        WifiMacHal::begin_tx_timeout_abort(self, queue)
     }
 
     fn with_tx_queue_detached<R>(
@@ -286,22 +286,22 @@ impl TxHardware for RadioRegisters {
         reason: MacTxDetachReason,
         detached: impl for<'detached> FnOnce(MacTxQueueDetached<'detached>) -> R,
     ) -> MacTxDetachOutcome<R> {
-        self.with_detached_mac_tx(queue, reason, detached)
+        WifiMacHal::with_tx_queue_detached(self, queue, reason, detached)
     }
 }
 
-impl TxHardware for ColdRadioRegisters {
+impl TxHardware for RadioRuntimeOwner {
     fn prepare_bound_legacy_tx(
         &mut self,
         dma: &dyn PreparedTxDma,
         queue: u8,
         program: MacLegacyTxProgram,
     ) -> bool {
-        TxHardware::prepare_bound_legacy_tx(&mut **self, dma, queue, program)
+        TxHardware::prepare_bound_legacy_tx(&mut self.wifi_mac_hal(), dma, queue, program)
     }
 
     fn start_bound_legacy_tx(&mut self, dma: &dyn HardwareOwnedTxDma, queue: u8, plcp0: u32) {
-        TxHardware::start_bound_legacy_tx(&mut **self, dma, queue, plcp0);
+        TxHardware::start_bound_legacy_tx(&mut self.wifi_mac_hal(), dma, queue, plcp0);
     }
 
     fn prepare_bound_ht_tx(
@@ -310,11 +310,11 @@ impl TxHardware for ColdRadioRegisters {
         queue: u8,
         program: MacHtTxProgram,
     ) -> bool {
-        TxHardware::prepare_bound_ht_tx(&mut **self, dma, queue, program)
+        TxHardware::prepare_bound_ht_tx(&mut self.wifi_mac_hal(), dma, queue, program)
     }
 
     fn start_bound_ht_tx(&mut self, dma: &dyn HardwareOwnedTxDma, queue: u8, plcp0: u32) {
-        TxHardware::start_bound_ht_tx(&mut **self, dma, queue, plcp0);
+        TxHardware::start_bound_ht_tx(&mut self.wifi_mac_hal(), dma, queue, plcp0);
     }
 
     fn prepare_bound_he_tx(
@@ -323,23 +323,23 @@ impl TxHardware for ColdRadioRegisters {
         queue: u8,
         program: MacHeTxProgram,
     ) -> bool {
-        TxHardware::prepare_bound_he_tx(&mut **self, dma, queue, program)
+        TxHardware::prepare_bound_he_tx(&mut self.wifi_mac_hal(), dma, queue, program)
     }
 
     fn start_bound_he_tx(&mut self, dma: &dyn HardwareOwnedTxDma, queue: u8, plcp0: u32) {
-        TxHardware::start_bound_he_tx(&mut **self, dma, queue, plcp0);
+        TxHardware::start_bound_he_tx(&mut self.wifi_mac_hal(), dma, queue, plcp0);
     }
 
     fn he_tx_vector_snapshot(&self, queue: u8) -> Option<MacHeTxVectorSnapshot> {
-        TxHardware::he_tx_vector_snapshot(&**self, queue)
+        Some(RadioRuntimeOwner::he_tx_vector_snapshot(self, queue))
     }
 
     fn take_tx_completion(&mut self, queue: u8) -> Option<MacTxCompletionRegisters> {
-        TxHardware::take_tx_completion(&mut **self, queue)
+        TxHardware::take_tx_completion(&mut self.wifi_mac_hal(), queue)
     }
 
     fn begin_tx_timeout_abort(&mut self, queue: u8) -> bool {
-        TxHardware::begin_tx_timeout_abort(&mut **self, queue)
+        TxHardware::begin_tx_timeout_abort(&mut self.wifi_mac_hal(), queue)
     }
 
     fn with_tx_queue_detached<R>(
@@ -350,7 +350,7 @@ impl TxHardware for ColdRadioRegisters {
         detached: impl for<'detached> FnOnce(MacTxQueueDetached<'detached>) -> R,
     ) -> MacTxDetachOutcome<R> {
         TxHardware::with_tx_queue_detached(
-            &mut **self,
+            &mut self.wifi_mac_hal(),
             queue,
             expected_descriptor_head,
             reason,
@@ -377,8 +377,8 @@ pub struct TxCompletion {
     pub used_alternate: bool,
     /// Raw completion-extension word A.
     ///
-    /// SOURCE: `libpp.a[hal_mac_tx.o]` completion reader and the
-    /// promoted `migration/esp32s31-hybrid-runtime/src/lmac.rs` decoder.
+    /// SOURCE: `libpp.a[hal_mac_tx.o]` completion reader and
+    /// SOURCE[PROMOTED_LMAC_TX].
     /// Bits 19:16 contribute to the reconstructed extension word that selects
     /// the primary or alternate status record. Retaining the raw word lets HIL
     /// distinguish a real ACK-timeout result from a selector-decoding error.
@@ -576,7 +576,7 @@ impl LegacyRate {
     ///
     /// SOURCE: `libpp.a[trc.o]::{rcGetRate, rcUpdatePhyMode}` and the
     /// exact Rust-owned schedule arenas in [`crate::rate_schedule`],
-    /// cross-checked against the promoted migration
+    /// cross-checked against SOURCE[PROMOTED_LMAC_TX]
     /// `lmac.rs::select_basic_retry_rate`.
     pub fn vendor_retry_rate(self, failed_attempts: u8) -> Option<Self> {
         let schedule = dot11g_schedule_for_legacy_rate(self.code())?;
@@ -602,9 +602,8 @@ impl LegacyRate {
     /// request explicit RTS/CTS protection.
     ///
     /// SOURCE: complete `libpp.a[hal_mac_tx.o]::
-    /// mac_tx_get_rts_rate` (size `0x96`) and the identical exhaustive
-    /// `migration/esp32s31-hybrid-runtime/src/tx_rate.rs::
-    /// basic_non_he_rts_rate` reconstruction.
+    /// mac_tx_get_rts_rate` (size `0x96`) and the exhaustive reviewed
+    /// production reconstruction.
     pub const fn vendor_rts_rate(self) -> Self {
         match self {
             Self::Dsss1MLong => Self::Dsss1MLong,
@@ -3032,7 +3031,7 @@ impl<const BUFFER_SIZE: usize> TxSlot<BUFFER_SIZE> {
 
     /// Starts the recovered two-phase abort for this queue's TX-timeout edge.
     ///
-    /// `migration/lmac.rs::begin_tx_timeout` forces CCA to three before its
+    /// SOURCE[PROMOTED_LMAC_TX] forces CCA to three before its
     /// fixed 16-us settling interval. `Ok(false)` means that this queue has no
     /// timeout edge and leaves all registers untouched.
     pub fn begin_timeout_abort<H: TxHardware>(
@@ -3098,7 +3097,7 @@ impl<const BUFFER_SIZE: usize> TxSlot<BUFFER_SIZE> {
     ///
     /// The caller owns the one timer edge between this method and
     /// [`begin_timeout_abort`](Self::begin_timeout_abort). The register order
-    /// matches the recovered migration path: invalidate, release forced CCA,
+    /// matches the reviewed vendor path: invalidate, release forced CCA,
     /// disable a queue that was still valid, then clear its timeout bit.
     pub fn finish_timeout_abort<H: TxHardware>(
         self: Pin<&mut Self>,

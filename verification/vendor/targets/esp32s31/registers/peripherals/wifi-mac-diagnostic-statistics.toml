@@ -177,4 +177,6 @@ bitWidth = 32
 [[review]]
 entity = "WIFI_MAC_DIAGNOSTIC_STATISTICS"
 sources = ["BLOB_LIBPP_PP_DEBUG_DIAGNOSTIC_STATISTICS"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"

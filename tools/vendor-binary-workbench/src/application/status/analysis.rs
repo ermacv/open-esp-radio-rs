@@ -166,7 +166,7 @@ fn linked_ir(context: &ProjectContext<'_>) -> Component {
             incomplete = true;
         }
         let contract = harnesses::entry_contract_or_neutral(
-            context.target.harness.as_deref(),
+            context.target.knowledge_provider.as_deref(),
             &profile.entry_contract,
         );
         if contract.is_err() {

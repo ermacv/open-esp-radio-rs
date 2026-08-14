@@ -10,18 +10,18 @@ use crate::tx::{
     HeDcmRate, HeMcs, HeRate, HtChannelWidth, HtGuardInterval, HtMcs, HtRate, LegacyRate,
     TxCompletion, TxPhyRate,
 };
-use open_esp_radio_esp32s31_pac::{
+use open_esp_radio_esp32s31_hal::types::{
     MacHeBeamformingReportProfile, MacHeBeamformingReportProfileError, MacHeErSuAckRateProfile,
-    RadioRegisters,
 };
+use open_esp_radio_esp32s31_hal::{RadioRuntimeOwner, wifi_mac::WifiMacHal};
 use open_esp_radio_ieee80211::he::HeDcmConstellation;
 use open_esp_radio_ieee80211::station::StaAssociationPhy;
 
 /// Instruction-evidenced fields of one 12-byte rate schedule record.
 ///
-/// The remaining bytes select the actual PHY rate and retry sequence.  They
-/// stay in the compatibility projection for now; only the mutable schedule
-/// state used by TX completion is owned here.
+/// The remaining bytes select the actual PHY rate and retry sequence. They
+/// are outside this reviewed projection; only the mutable schedule state used
+/// by TX completion is owned here.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RateScheduleState {
     pub reference: RateScheduleRef,
@@ -511,13 +511,26 @@ pub trait BeamformingReportHardware {
     fn set_he_ersu_ack_rate_profile(&mut self, profile: MacHeErSuAckRateProfile);
 }
 
-impl BeamformingReportHardware for RadioRegisters {
+impl BeamformingReportHardware for WifiMacHal<'_> {
     fn set_he_beamforming_report_profile(&mut self, profile: MacHeBeamformingReportProfile) {
-        RadioRegisters::set_he_beamforming_report_profile(self, profile);
+        WifiMacHal::set_he_beamforming_report_profile(self, profile);
     }
 
     fn set_he_ersu_ack_rate_profile(&mut self, profile: MacHeErSuAckRateProfile) {
-        RadioRegisters::set_he_ersu_ack_rate_profile(self, profile);
+        WifiMacHal::set_he_ersu_ack_rate_profile(self, profile);
+    }
+}
+
+impl BeamformingReportHardware for RadioRuntimeOwner {
+    fn set_he_beamforming_report_profile(&mut self, profile: MacHeBeamformingReportProfile) {
+        BeamformingReportHardware::set_he_beamforming_report_profile(
+            &mut self.wifi_mac_hal(),
+            profile,
+        );
+    }
+
+    fn set_he_ersu_ack_rate_profile(&mut self, profile: MacHeErSuAckRateProfile) {
+        BeamformingReportHardware::set_he_ersu_ack_rate_profile(&mut self.wifi_mac_hal(), profile);
     }
 }
 

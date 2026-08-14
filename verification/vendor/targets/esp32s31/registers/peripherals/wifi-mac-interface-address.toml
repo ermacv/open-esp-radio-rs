@@ -64,12 +64,16 @@ sources = [
     "BLOB_LIBPP_HAL_MAC_SET_ADDR",
     "BLOB_LIBPP_RX_POLICY",
 ]
-confidence = "instruction-exact-hil-qualified"
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_INTERFACE_ADDRESS.ADDRESS_LOW%s"
 sources = ["BLOB_LIBPP_HAL_MAC_SET_ADDR"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_INTERFACE_ADDRESS.ADDRESS_HIGH%s"
@@ -77,7 +81,9 @@ sources = [
     "BLOB_LIBPP_HAL_MAC_SET_ADDR",
     "BLOB_LIBPP_RX_POLICY",
 ]
-confidence = "instruction-exact-partial"
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_INTERFACE_ADDRESS.ADDRESS_HIGH%s.RX_POLICY_ENABLE"
@@ -86,4 +92,6 @@ sources = [
     "BLOB_LIBPP_RX_POLICY",
     "BLOB_LIBNET80211_WIFI_RX_POLICY",
 ]
-confidence = "instruction-exact-partial"
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"

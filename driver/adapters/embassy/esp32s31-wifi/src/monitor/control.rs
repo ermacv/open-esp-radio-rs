@@ -120,7 +120,7 @@ impl<M: RawMutex> Esp32s31MonitorControlResources<M> {
         self.completion.store(MONITOR_RUNNING, Ordering::Release);
         self.command_wake.reset();
         self.completion_wake.reset();
-        let resources = &*self;
+        let resources = self;
         (
             Esp32s31MonitorController { resources },
             Esp32s31MonitorCommandReceiver {

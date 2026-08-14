@@ -79,6 +79,7 @@ pub(super) fn validate_function(
             if reviewed.name.is_some()
                 || reviewed.role.is_some()
                 || reviewed.summary.is_some()
+                || reviewed.signature.is_some()
                 || !reviewed.preconditions.is_empty()
                 || !reviewed.paths.is_empty()
                 || !reviewed.contexts.is_empty()
@@ -142,9 +143,69 @@ pub(super) fn validate_function(
             summary.reviewed_functions += usize::from(fact.is_root());
             summary.accepted_incomplete += usize::from(!fact.review_complete());
             validate_reviewed_paths(reviewed)?;
+            validate_signature(reviewed)?;
         }
     }
     validate_contexts(reviewed, fact, summary)
+}
+
+fn validate_signature(reviewed: &ReviewedFunction) -> ValidationResult<()> {
+    let Some(signature) = &reviewed.signature else {
+        return Ok(());
+    };
+    if let Some(return_abi) = &signature.return_abi {
+        crate::interfaces::validate_abi_type(return_abi, true, "reviewed function return")
+            .map_err(|message| ValidationError::function(reviewed, "signature", message))?;
+    }
+    if signature.return_abi.as_deref() == Some("void") && signature.return_role.is_some() {
+        return Err(ValidationError::function(
+            reviewed,
+            "signature",
+            "void reviewed function cannot define a return role",
+        ));
+    }
+    if let Some(role) = &signature.return_role {
+        if signature.return_abi.is_none() {
+            return Err(ValidationError::function(
+                reviewed,
+                "signature",
+                "reviewed function return role requires a reviewed return ABI",
+            ));
+        }
+        validate_id(role, "reviewed function return role")
+            .map_err(|message| ValidationError::function(reviewed, "signature", message))?;
+    }
+    let mut names = BTreeSet::new();
+    for (expected, argument) in signature.arguments.iter().enumerate() {
+        if usize::from(argument.index) != expected
+            || argument.index >= super::super::MAX_CONTEXT_ARGUMENTS
+        {
+            return Err(ValidationError::function(
+                reviewed,
+                "signature",
+                "reviewed function argument indices must be contiguous from zero and fit the modeled ABI",
+            ));
+        }
+        validate_identifier(&argument.name, "reviewed function argument name")
+            .map_err(|message| ValidationError::function(reviewed, "signature", message))?;
+        if !names.insert(argument.name.as_str()) {
+            return Err(ValidationError::function(
+                reviewed,
+                "signature",
+                format!(
+                    "duplicate reviewed function argument name {:?}",
+                    argument.name
+                ),
+            ));
+        }
+        crate::interfaces::validate_abi_type(&argument.abi, false, "reviewed function argument")
+            .map_err(|message| ValidationError::function(reviewed, "signature", message))?;
+        if let Some(role) = &argument.role {
+            validate_id(role, "reviewed function argument role")
+                .map_err(|message| ValidationError::function(reviewed, "signature", message))?;
+        }
+    }
+    Ok(())
 }
 
 fn validate_reviewed_paths(reviewed: &ReviewedFunction) -> ValidationResult<()> {

@@ -589,13 +589,15 @@ sources = [
     "BLOB_LIBPP_HAL_HE_TX",
     "BLOB_LIBPP_MAC_TX_SET_TB",
     "ROM_REV0_MAC_TX_SET_TB",
-    "MIGRATION_LMAC_TX",
+    "PROMOTED_LMAC_TX",
     "HIL_VENDOR_HE20_MCS9_SU_2026_07_29",
     "HIL_VENDOR_HE20_MCS0_DCM_RAW_2026_07_29",
     "HIL_OPEN_HE20_MCS9_AMPDU_2026_07_29",
     "HIL_OPEN_HE20_MCS0_DCM_SMPDU_2026_07_29",
 ]
-confidence = "instruction-exact-hil-qualified"
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_QUEUE_VECTOR.PLCP1%s"
@@ -604,15 +606,19 @@ sources = [
     "BLOB_LIBPP_DBG_READ_KEY_ENTRY",
     "HIL_VENDOR_HE20_MCS0_DCM_RAW_2026_07_29",
 ]
-confidence = "instruction-exact-hil-qualified"
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_QUEUE_VECTOR.HE_RTS_CONTROL%s"
 sources = [
     "BLOB_LIBNET80211_IEEE80211_PARSE_HEOPR",
-    "MIGRATION_HE20_PEER",
+    "PROMOTED_HE20_PEER",
 ]
-confidence = "instruction-exact-partial"
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_TX_QUEUE_VECTOR.PTI%s"
@@ -622,7 +628,9 @@ sources = [
     "HIL_OPEN_AUTH_PTI_2026_07_29",
     "HIL_OPEN_HT_AMPDU_32_RETRY_2026_07_29",
 ]
-confidence = "instruction-exact-hil-qualified"
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_QUEUE_VECTOR.PTI%s.COUNT"
@@ -630,7 +638,9 @@ sources = [
     "BLOB_LIBPP_HAL_MAC_TX",
     "HIL_OPEN_HT_AMPDU_32_RETRY_2026_07_29",
 ]
-confidence = "instruction-exact-hil-qualified"
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_QUEUE_VECTOR.HE_CONTROL%s"
@@ -638,7 +648,9 @@ sources = [
     "BLOB_LIBPP_HAL_HE_TX",
     "BLOB_LIBNET80211_HE_CONTROL_TX",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_QUEUE_VECTOR.HT_SIGNAL%s"
@@ -651,17 +663,23 @@ sources = [
     "HIL_OPEN_HT_SINGLE_EXTREMES_2026_07_29",
     "HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_QUEUE_VECTOR.VHT_SIGNAL_1%s"
 sources = ["BLOB_LIBPP_DBG_READ_TX_SIG"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_QUEUE_VECTOR.VHT_MODE%s"
 sources = ["BLOB_LIBPP_DBG_READ_TX_SIG"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_QUEUE_VECTOR.HE_SU_SIGNAL_A1%s"
@@ -672,7 +690,9 @@ sources = [
     "HIL_OPEN_HE20_MCS9_AMPDU_2026_07_29",
     "ESP_WIFI_SYS_S31_HE_SU_SIG",
 ]
-confidence = "instruction-exact-hil-qualified"
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_QUEUE_VECTOR.HE_SU_SIGNAL_A1%s.DCM"
@@ -685,7 +705,9 @@ sources = [
     "HIL_OPEN_HE20_MCS0_DCM_AMPDU_2026_07_29",
     "IEEE80211_HE_PHY_CAP_DCM",
 ]
-confidence = "instruction-exact-hil-qualified"
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_QUEUE_VECTOR.HE_SU_SIGNAL_A1%s.VECTOR_REQUIRED_14"
@@ -693,7 +715,9 @@ sources = [
     "BLOB_LIBPP_HAL_HE_TX",
     "HIL_VENDOR_HE20_MCS9_SU_2026_07_29",
 ]
-confidence = "instruction-exact-hil-qualified"
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_QUEUE_VECTOR.HE_SU_SIGNAL_A1%s.NSTS_AND_MIDAMBLE_PERIODICITY"
@@ -702,7 +726,9 @@ sources = [
     "ESP_WIFI_SYS_S31_HE_SU_SIG",
     "HIL_OPEN_HE20_STBC_NSTS_2026_07_30",
 ]
-confidence = "instruction-exact-hil-qualified"
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_QUEUE_VECTOR.HE_SU_SIGNAL_A1%s.VECTOR_REQUIRED_HIGH"
@@ -710,7 +736,9 @@ sources = [
     "BLOB_LIBPP_HAL_HE_TX",
     "HIL_VENDOR_HE20_MCS9_SU_2026_07_29",
 ]
-confidence = "instruction-exact-hil-qualified"
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_QUEUE_VECTOR.HE_SU_SIGNAL_A2_LENGTH%s"
@@ -724,7 +752,9 @@ sources = [
     "HIL_OPEN_HE_CONTROL_METADATA_2026_07_30",
     "HIL_OPEN_HE20_MCS0_DCM_SMPDU_2026_07_29",
 ]
-confidence = "instruction-exact-hil-qualified"
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_QUEUE_VECTOR.HE_SU_SIGNAL_A2_LENGTH%s.CONTROL_LOW"
@@ -732,12 +762,16 @@ sources = [
     "BLOB_LIBPP_HAL_HE_TX",
     "HIL_VENDOR_HE20_MCS9_SU_2026_07_29",
 ]
-confidence = "instruction-exact-hil-qualified"
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_QUEUE_VECTOR.HE_SU_SIGNAL_A2_LENGTH%s.DESCRIPTOR_CLASS_MATCH"
 sources = ["BLOB_LIBPP_HAL_HE_TX"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "WIFI_MAC_TX_QUEUE_VECTOR.HE_SU_SIGNAL_A2_LENGTH%s.APEP_LENGTH"
@@ -751,7 +785,9 @@ sources = [
     "HIL_OPEN_HE_CONTROL_METADATA_2026_07_30",
     "HIL_OPEN_HE20_MCS0_DCM_SMPDU_2026_07_29",
 ]
-confidence = "instruction-exact-hil-qualified"
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_QUEUE_VECTOR.HE_SU_SIGNAL_A2_LENGTH%s.AMPDU_LENGTH_VALID"
@@ -761,7 +797,9 @@ sources = [
     "HIL_VENDOR_HE20_MCS0_DCM_RAW_2026_07_29",
     "HIL_OPEN_HE20_MCS0_DCM_SMPDU_2026_07_29",
 ]
-confidence = "instruction-exact-hil-qualified"
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_QUEUE_VECTOR.HE_MPDU_LENGTH_TAIL%s"
@@ -769,12 +807,16 @@ sources = [
     "BLOB_LIBPP_MAC_TX_SET_TB",
     "ROM_REV0_MAC_TX_SET_TB",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_QUEUE_VECTOR.POWER%s"
 sources = ["BLOB_LIBPP_HAL_MAC_TX"]
-confidence = "instruction-exact-partial"
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_TX_QUEUE_VECTOR.HT_DESCRIPTOR_COUNTS%s"
@@ -784,7 +826,9 @@ sources = [
     "HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29",
     "HIL_OPEN_HT_AMPDU_32_RETRY_2026_07_29",
 ]
-confidence = "instruction-exact-hil-qualified"
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_QUEUE_VECTOR.DATA_LENGTH%s"
@@ -795,7 +839,9 @@ sources = [
     "HIL_VENDOR_HT_AMPDU_PPDU",
     "HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29",
 ]
-confidence = "instruction-exact-hil-qualified"
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_QUEUE_VECTOR.LENGTH_CONTROL%s"
@@ -803,14 +849,16 @@ sources = [
     "BLOB_LIBPP_HAL_MAC_TX",
     "BLOB_LIBPP_DBG_READ_TX_SIG",
     "BLOB_LIBPP_HAL_ANTENNA_INIT",
-    "MIGRATION_LMAC_TX",
+    "PROMOTED_LMAC_TX",
     "HIL_VENDOR_HT20_MCS0_SINGLE_PPDU_2026_07_29",
     "HIL_VENDOR_HT_AMPDU_PPDU",
     "HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29",
     "HIL_VENDOR_HE20_MCS0_DCM_RAW_2026_07_29",
     "HIL_OPEN_HE20_MCS0_DCM_SMPDU_2026_07_29",
 ]
-confidence = "instruction-exact-hil-qualified"
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_QUEUE_VECTOR.HE_CONTROL_CONFIG%s"
@@ -820,4 +868,6 @@ sources = [
     "HIL_VENDOR_HE_CONTROL_INSERTION_2026_07_30",
     "HIL_OPEN_HE_CONTROL_METADATA_2026_07_30",
 ]
-confidence = "instruction-exact-hil-qualified"
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"

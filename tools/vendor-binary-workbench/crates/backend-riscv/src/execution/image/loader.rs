@@ -53,7 +53,11 @@ impl ExecutableImage {
         let mut call_trampoline_addresses = BTreeSet::new();
         let mut global_pointer = None;
         for symbol in file.symbols() {
-            if !symbol.is_definition() || symbol.address() == 0 {
+            // Linker-provided ROM call vectors are commonly absolute NOTYPE
+            // symbols. `object` does not classify those as definitions, but
+            // their authenticated address is still a valid callable binding.
+            let is_absolute = symbol.section() == SymbolSection::Absolute;
+            if (!symbol.is_definition() && !is_absolute) || symbol.address() == 0 {
                 continue;
             }
             let Ok(name) = symbol.name() else {
@@ -62,9 +66,16 @@ impl ExecutableImage {
             let address = symbol.address() as u32;
             if name.starts_with("__call_") {
                 call_trampoline_addresses.insert(address);
+                // ESP ROM ELFs describe their call-vector slots as zero-sized
+                // NOTYPE symbols.  The vector address is nevertheless a named
+                // control-flow target and must survive loading even though it
+                // has no executable bytes of its own.
+                symbols_by_name.insert(name.to_owned(), address);
+                symbols_by_address
+                    .entry(address)
+                    .or_insert_with(|| name.to_owned());
             }
-            let absolute_callable =
-                symbol.kind() == SymbolKind::Unknown && symbol.section() == SymbolSection::Absolute;
+            let absolute_callable = symbol.kind() == SymbolKind::Unknown && is_absolute;
             if symbol.kind() == SymbolKind::Text
                 || symbol.kind() == SymbolKind::Data
                 || absolute_callable

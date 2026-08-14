@@ -18,7 +18,7 @@ mod model;
 use compiled::{compiled_matches, compiled_symbols};
 use model::*;
 
-pub(crate) use model::{RustArtifactInput, RustComponentIndex};
+pub(crate) use model::{RustArtifactInput, RustComponentEvidence, RustComponentIndex};
 
 #[derive(Clone, Debug)]
 struct SourceDefinition {

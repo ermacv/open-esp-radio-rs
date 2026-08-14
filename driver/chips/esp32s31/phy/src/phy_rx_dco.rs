@@ -697,7 +697,7 @@ impl PhyRxDcoMmioBinding {
     #[cfg(target_arch = "riscv32")]
     pub fn execute_target(
         self,
-        registers: &mut open_esp_radio_esp32s31_hal::RadioRegisters,
+        registers: &mut open_esp_radio_esp32s31_hal::PhyHal,
     ) -> PhyRxDcoCompletion {
         match self.action {
             PhyRxDcoAction::MaskRxDcoControl => PhyRxDcoCompletion::RxDcoControlMasked {
@@ -765,7 +765,7 @@ impl PhyRxDcoPbusBinding {
     #[cfg(target_arch = "riscv32")]
     pub fn start_target(
         &mut self,
-        registers: &mut open_esp_radio_esp32s31_hal::RadioRegisters,
+        registers: &mut open_esp_radio_esp32s31_hal::PhyHal,
     ) -> Result<(), crate::phy_pbus::PhyPbusHardwareBindingError> {
         self.hardware.start_target(registers)
     }
@@ -773,7 +773,7 @@ impl PhyRxDcoPbusBinding {
     #[cfg(target_arch = "riscv32")]
     pub fn observe_target_edge(
         &mut self,
-        registers: &mut open_esp_radio_esp32s31_hal::RadioRegisters,
+        registers: &mut open_esp_radio_esp32s31_hal::PhyHal,
     ) -> Result<
         crate::phy_pbus::PhyPbusHardwareObservation,
         crate::phy_pbus::PhyPbusHardwareBindingError,
@@ -1163,10 +1163,7 @@ mod tests {
     #[test]
     fn rx_dc_minimum_propagates_child_timeout_after_disable_tail() {
         let mut transition = PhyRxDcMinimumTransition::new(MINIMUM_REQUEST);
-        loop {
-            let PhyRxDcMinimumAction::DcIq(action) = transition.action() else {
-                break;
-            };
+        while let PhyRxDcMinimumAction::DcIq(action) = transition.action() {
             let completion = match action {
                 PhyDcIqAction::Configure(request) => PhyDcIqCompletion::Configured(request),
                 PhyDcIqAction::SetEnable {

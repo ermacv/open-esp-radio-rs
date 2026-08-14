@@ -171,11 +171,12 @@ fn generic_manifest_has_no_platform_provider_dependency() {
     assert!(!manifest.contains("harness-esp32s31"));
     for dependency in [
         "open-radio-vendor-harness-esp32s31",
-        "open-radio-vendor-harness-esp32s31-semantic",
+        "open-radio-vendor-knowledge-esp32s31",
+        "open-radio-vendor-verification-esp32s31",
     ] {
         assert!(
             !manifest.lines().any(|line| line.starts_with(dependency)),
-            "generic Workbench still depends on platform provider {dependency}"
+            "generic Workbench still depends on add-on provider {dependency}"
         );
     }
 }

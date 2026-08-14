@@ -485,7 +485,7 @@ mod tests {
         pin::Pin,
     };
 
-    use open_esp_radio_esp32s31_pac::{
+    use open_esp_radio_esp32s31_hal::types::{
         MacKeyInstallOutcome, MacLegacyTxProgram, MacTxCompletionRegisters, MacTxDetachOutcome,
         MacTxDetachReason, MacTxQueueDetached,
     };
@@ -739,26 +739,27 @@ mod tests {
             prepare: true,
             ..Hardware::default()
         };
-        let mut tx = make_tx(slot.as_mut());
+        {
+            let mut tx = make_tx(slot.as_mut());
 
-        let result = crate::test_support::block_on(tx.transmit_open_authentication(
-            &mut hardware,
-            OpenAuthenticationRequest {
-                source: [2, 3, 4, 5, 6, 7],
-                bssid: [0x20, 0x21, 0x22, 0x23, 0x24, 0x25],
-                sequence_number: 13,
-            },
-        ));
+            let result = crate::test_support::block_on(tx.transmit_open_authentication(
+                &mut hardware,
+                OpenAuthenticationRequest {
+                    source: [2, 3, 4, 5, 6, 7],
+                    bssid: [0x20, 0x21, 0x22, 0x23, 0x24, 0x25],
+                    sequence_number: 13,
+                },
+            ));
 
-        assert_eq!(
-            result,
-            Err(ControlTxError::RadioResetRequired(
-                TxResetReason::ExecutorDeadline
-            ))
-        );
-        assert_eq!(tx.ordinary.slot.state(), TxSlotState::ResetRequired);
-        assert!(tx.ordinary.slot.as_mut().reserve(64, 32).is_err());
-        drop(tx);
+            assert_eq!(
+                result,
+                Err(ControlTxError::RadioResetRequired(
+                    TxResetReason::ExecutorDeadline
+                ))
+            );
+            assert_eq!(tx.ordinary.slot.state(), TxSlotState::ResetRequired);
+            assert!(tx.ordinary.slot.as_mut().reserve(64, 32).is_err());
+        }
         let drop_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| drop(slot)));
         assert!(drop_result.is_ok());
     }

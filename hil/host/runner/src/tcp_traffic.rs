@@ -101,8 +101,8 @@ fn run(
 ) -> Result<()> {
     let mut options = parse_options(&arguments, lab, direction)?;
     let mode = direction_name(direction);
-    fs::create_dir_all(&output)?;
-    invalidate_previous_report(&output)?;
+    fs::create_dir_all(output)?;
+    invalidate_previous_report(output)?;
     let capture = SerialCapture::start_with_reset(&options.serial);
     let ready = match await_tcp_ready(
         &capture,
@@ -181,7 +181,7 @@ fn run(
         .err()
         .map(|error| error.to_string());
     write_report(
-        &output,
+        output,
         &options,
         host_tx,
         host_rx,

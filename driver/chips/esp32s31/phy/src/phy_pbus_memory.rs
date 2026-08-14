@@ -371,7 +371,7 @@ impl PhyPbusMemoryMmioBinding {
     #[cfg(target_arch = "riscv32")]
     pub fn execute_target(
         self,
-        registers: &mut open_esp_radio_esp32s31_hal::RadioRegisters,
+        registers: &mut open_esp_radio_esp32s31_hal::PhyHal,
     ) -> Result<PhyPbusMemoryCompletion, PhyPbusMemoryBindingError> {
         match self.action {
             PhyPbusMemoryAction::Program(entry) => {
@@ -533,14 +533,8 @@ mod tests {
     #[test]
     fn mmio_binding_covers_program_and_capture_but_not_terminal() {
         let transition = PhyPbusMemoryTransition::new(PARAMETERS);
-        assert!(matches!(
-            PhyPbusMemoryMmioBinding::new(transition.action()),
-            Ok(_)
-        ));
-        assert!(matches!(
-            PhyPbusMemoryMmioBinding::new(PhyPbusMemoryAction::Capture),
-            Ok(_)
-        ));
+        assert!(PhyPbusMemoryMmioBinding::new(transition.action()).is_ok());
+        assert!(PhyPbusMemoryMmioBinding::new(PhyPbusMemoryAction::Capture).is_ok());
         assert_eq!(
             PhyPbusMemoryMmioBinding::new(PhyPbusMemoryAction::Complete(PhyPbusMemoryOutcome {
                 saved_registers: [0; 6],

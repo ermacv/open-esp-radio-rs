@@ -126,7 +126,9 @@ sources = [
     "BLOB_LIBPP_HAL_ENABLE_MAC",
     "BLOB_LIBPP_HAL_INIT_TAIL",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_INTERRUPT.ENABLE"
@@ -135,7 +137,9 @@ sources = [
     "BLOB_LIBPP_WDEV_PROCESS_FIQ",
     "BLOB_LIBPP_HAL_INIT_TAIL",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_INTERRUPT.ENABLE.EVENT_MASK"
@@ -143,12 +147,16 @@ sources = [
     "BLOB_LIBPP_HAL_ENABLE_MAC",
     "BLOB_LIBPP_HAL_INIT_TAIL",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_INTERRUPT.RAW"
 sources = ["BLOB_LIBPP_ISR_REGISTER_DUMP", "BLOB_LIBPP_HAL_DISABLE_MAC"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_INTERRUPT.STATUS"
@@ -156,7 +164,9 @@ sources = [
     "BLOB_LIBPP_HAL_MAC_INTERRUPT_GET_EVENT",
     "BLOB_LIBPP_WDEV_PROCESS_FIQ",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_INTERRUPT.STATUS.RX_ASSOCIATED_AUXILIARY_5"
@@ -165,12 +175,16 @@ sources = [
     "BLOB_LIBPP_HAL_INIT_TAIL",
     "HIL_OPEN_MAC_IRQ_STATUS_CLASSIFICATION_2026_08_03",
 ]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "WIFI_MAC_INTERRUPT.STATUS.TX_COMPLETE"
 sources = ["BLOB_LIBPP_WDEV_PROCESS_FIQ"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_INTERRUPT.STATUS.BSS_COLOR_COLLISION"
@@ -178,22 +192,30 @@ sources = [
     "BLOB_LIBPP_WDEV_PROCESS_FIQ",
     "BLOB_LIBPP_HAL_MAC_COLOR_COLLISION_ISR",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_INTERRUPT.STATUS.WATCHDOG"
 sources = ["BLOB_LIBPP_HAL_MAC_INTERRUPT_CLR_WATCHDOG"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_INTERRUPT.STATUS.RX_SUCCESS"
 sources = ["BLOB_LIBPP_WDEV_PROCESS_FIQ"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_INTERRUPT.STATUS.TX_TIMEOUT"
 sources = ["BLOB_LIBPP_WDEV_PROCESS_FIQ"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_INTERRUPT.STATUS.RX_ASSOCIATED_AUXILIARY_24"
@@ -202,7 +224,9 @@ sources = [
     "BLOB_LIBPP_HAL_INIT_TAIL",
     "HIL_OPEN_MAC_IRQ_STATUS_CLASSIFICATION_2026_08_03",
 ]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "WIFI_MAC_INTERRUPT.CLEAR"
@@ -210,9 +234,13 @@ sources = [
     "BLOB_LIBPP_HAL_MAC_INTERRUPT_CLR_EVENT",
     "BLOB_LIBPP_WDEV_PROCESS_FIQ",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_INTERRUPT.CLEAR.EVENTS"
 sources = ["BLOB_LIBPP_HAL_MAC_INTERRUPT_CLR_EVENT"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"

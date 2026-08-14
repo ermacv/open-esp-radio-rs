@@ -55,29 +55,41 @@ bitWidth = 32
 [[review]]
 entity = "WIFI_MAC_TSF_TIMER"
 sources = ["BLOB_LIBPP_HAL_TSF_TIMER"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TSF_TIMER.CONTROL%s"
 sources = ["BLOB_LIBPP_HAL_TSF_TIMER"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "WIFI_MAC_TSF_TIMER.CONTROL%s.LOW_CONTROL_UNKNOWN"
 sources = ["BLOB_LIBPP_HAL_TSF_TIMER"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "WIFI_MAC_TSF_TIMER.CONTROL%s.WAKEUP_ENABLE"
 sources = ["BLOB_LIBPP_HAL_TSF_TIMER"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TSF_TIMER.CONTROL%s.TIMER_ENABLE"
 sources = ["BLOB_LIBPP_HAL_TSF_TIMER"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TSF_TIMER.TARGET%s"
 sources = ["BLOB_LIBPP_HAL_TSF_TIMER"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"

@@ -47,13 +47,6 @@ use open_esp_radio::esp32s31::{
             PhyTemperatureI2cBinding,
         },
     },
-    registers::{
-        Register32,
-        mac::{
-            INT_RAW, RX_CONTROL, RX_DESCRIPTOR_BASE, RX_LAST_DESCRIPTOR, RX_LAST_DESCRIPTOR_HIGH,
-            RX_NEXT_DESCRIPTOR,
-        },
-    },
     wifi::{
         dma::descriptor::{Descriptor, rx_done},
         mac::{
@@ -496,6 +489,21 @@ impl RxStorage {
 static RX_STORAGE: StaticCell<RxStorage> = StaticCell::new();
 static TX_DMA_STORAGE: StaticCell<TxDmaStorage<TX_BUFFER_SIZE>> = StaticCell::new();
 static TX_SLOT_STORAGE: StaticCell<TxSlot<TX_BUFFER_SIZE>> = StaticCell::new();
+
+/// Read-only addresses used only by the vendor-oracle diagnostic logger.
+///
+/// This target-local observation catalog carries no production access
+/// authority and is intentionally independent from the restricted PAC.
+#[derive(Clone, Copy)]
+struct DiagnosticRegister(usize);
+
+const INT_RAW: DiagnosticRegister = DiagnosticRegister(0x2010_4c44);
+const RX_CONTROL: DiagnosticRegister = DiagnosticRegister(0x2010_4080);
+const RX_DESCRIPTOR_BASE: DiagnosticRegister = DiagnosticRegister(0x2010_4084);
+const RX_NEXT_DESCRIPTOR: DiagnosticRegister = DiagnosticRegister(0x2010_4088);
+const RX_LAST_DESCRIPTOR: DiagnosticRegister = DiagnosticRegister(0x2010_408c);
+const RX_LAST_DESCRIPTOR_HIGH: DiagnosticRegister = DiagnosticRegister(0x2010_4c70);
+
 #[unsafe(link_section = ".critical.bss.open_radio_irq")]
 fn read_diagnostic_mmio(address: usize) -> u32 {
     // SAFETY: diagnostic-only oracle reads; the open MAC path itself accepts
@@ -503,8 +511,8 @@ fn read_diagnostic_mmio(address: usize) -> u32 {
     unsafe { (address as *const u32).read_volatile() }
 }
 
-fn read_diagnostic_register(register: Register32) -> u32 {
-    read_diagnostic_mmio(register.address())
+fn read_diagnostic_register(register: DiagnosticRegister) -> u32 {
+    read_diagnostic_mmio(register.0)
 }
 
 fn log_rx_descriptor_pipeline(stage: &str, descriptors: &[Descriptor], descriptor_base: u32) {

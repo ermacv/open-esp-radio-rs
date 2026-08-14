@@ -22,11 +22,8 @@ Current records:
 - [connected HE20 LDPC DCM](2026-07-31-he20-dcm-ldpc-connected.md);
 - [vendor-oracle transfer](2026-07-31-vendor-oracle-transfer.md).
 
-The canonical result matrix and repeat conditions live in the
-[Wi-Fi feature ledger](../../../../docs/ESP32S31_WIFI_FEATURE_STATUS.md). Add a new dated
+The canonical result graph and open gaps live in the
+[machine-checked qualification ledger](../wifi-sta.ledger). Add a new dated
 record when a materially different cell is qualified. Do not revise an old
-record to claim a result from a newer implementation.
-
-Superseded frontier narratives belong in
-[`docs/archive/hil/`](../../../../docs/archive/hil/),
-not beside current qualification records.
+record to claim a result from a newer implementation. Git history is the
+archive for superseded narratives.

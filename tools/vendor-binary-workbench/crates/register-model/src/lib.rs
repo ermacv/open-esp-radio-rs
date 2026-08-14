@@ -162,7 +162,11 @@ pub struct ReviewAnnotation {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub sources: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub confidence: Option<String>,
+    pub provenance: Option<open_radio_vendor_contracts::FactProvenance>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub accuracy: Option<open_radio_vendor_contracts::FactAccuracy>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub completeness: Option<open_radio_vendor_contracts::FactCompleteness>,
 }
 
 #[derive(Clone, Debug)]
@@ -360,13 +364,12 @@ fn validate_review_annotations(fragments: &[RegisterModelFragment]) -> Result<()
                 annotation.entity
             )));
         }
-        if annotation
-            .confidence
-            .as_ref()
-            .is_some_and(|confidence| confidence.is_empty())
-        {
+        let classification_fields = usize::from(annotation.provenance.is_some())
+            + usize::from(annotation.accuracy.is_some())
+            + usize::from(annotation.completeness.is_some());
+        if classification_fields != 0 && classification_fields != 3 {
             return Err(Error::message(format!(
-                "register review entity {:?} has empty confidence",
+                "register review entity {:?} must define provenance, accuracy and completeness together",
                 annotation.entity
             )));
         }

@@ -34,11 +34,11 @@ pub(super) struct InterfaceWorkspaceDocument<'a> {
     pub(super) reviewed_anchors: usize,
     pub(super) ignored_anchors: usize,
     pub(super) unreviewed_anchors: usize,
-    pub(super) manual_anchors: usize,
+    pub(super) asserted_anchors: usize,
     pub(super) reviewed_slots: usize,
     pub(super) ignored_slots: usize,
     pub(super) unreviewed_slots: usize,
-    pub(super) manual_slots: usize,
+    pub(super) asserted_slots: usize,
     pub(super) semantic_links: usize,
     pub(super) semantic_operations: usize,
     pub(super) artifact_guards: usize,
@@ -189,7 +189,7 @@ pub(super) fn print_workspace_human(report: &InterfaceWorkspaceDocument<'_>) {
                 "Reviewed",
                 "Ignored",
                 "Unreviewed",
-                "Manual"
+                "Reviewed assertion"
             ],
             [
                 [
@@ -198,7 +198,7 @@ pub(super) fn print_workspace_human(report: &InterfaceWorkspaceDocument<'_>) {
                     report.reviewed_anchors.to_string(),
                     report.ignored_anchors.to_string(),
                     report.unreviewed_anchors.to_string(),
-                    report.manual_anchors.to_string(),
+                    report.asserted_anchors.to_string(),
                 ],
                 [
                     "Slots".into(),
@@ -206,7 +206,7 @@ pub(super) fn print_workspace_human(report: &InterfaceWorkspaceDocument<'_>) {
                     report.reviewed_slots.to_string(),
                     report.ignored_slots.to_string(),
                     report.unreviewed_slots.to_string(),
-                    report.manual_slots.to_string(),
+                    report.asserted_slots.to_string(),
                 ],
             ],
         )

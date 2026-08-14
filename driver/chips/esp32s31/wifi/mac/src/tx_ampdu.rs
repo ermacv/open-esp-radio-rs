@@ -9,7 +9,7 @@
 
 use core::{marker::PhantomPinned, pin::Pin};
 
-use open_esp_radio_esp32s31_pac::{
+use open_esp_radio_esp32s31_hal::types::{
     MacHeTbLinkReservation, MacHeTbProgramError, MacHeTriggerTxQueueSnapshot,
 };
 use open_esp_radio_esp32s31_wifi_dma::tx_ampdu_storage::AmpduDmaStorageError;

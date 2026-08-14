@@ -316,7 +316,7 @@ impl RadioRegisters {
         // before Open Authentication, finishes with
         // `ic_set_rx_policy_ubssid_check(0, true)`. Its complete libpp leaf
         // performs these two ordered RMWs. The earlier open transcription used
-        // policy five/false from migration and produced filter 0x0001_c285;
+        // the earlier reviewed policy-five/false image produced filter 0x0001_c285;
         // the working vendor authentication capture on ESP32-S31 rev0 shows
         // 0x0001_c387, differing by exactly these bits.
         //

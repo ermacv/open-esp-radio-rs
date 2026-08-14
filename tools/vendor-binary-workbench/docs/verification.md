@@ -1,204 +1,151 @@
 # Verification
 
-Verification is the project workflow that compares source-qualified vendor
-functions with compiled Rust implementations. It intentionally keeps four
-concerns separate:
+Verification answers whether observed vendor behavior agrees with a named
+Rust binding under an explicit contract. It is supporting evidence. Product
+readiness is decided only by the repository qualification ledger.
 
-| Concern | Document |
-| --- | --- |
-| Source inventory, pairing, verdicts and gates | this document |
-| Profiles, concrete scenarios and branch coverage | [Execution and profiles](execution-and-profiles.md) |
-| Dispositions, bindings and effect contracts | [Verification contracts](verification-contracts.md) |
-| Schema-v10 reports, schema-v2 baselines and evidence review | [Verification evidence](verification-evidence.md) |
+## Evidence classes
+
+The report keeps proof strength visible:
+
+- `production-trace`: concrete vendor replay compared with an exact compiled
+  production entry;
+- `shared-core`: concrete replay reaches production logic but not the exact
+  integration entry;
+- `semantic-model`: a reviewed behavior model agrees with vendor replay;
+- `static-analysis`: lifted or generated-reference evidence without concrete
+  production execution;
+- `reviewed` and `hil`: explicit external evidence.
+
+Lower-strength evidence is useful for research and implementation, but cannot
+be silently promoted to production equivalence.
+
+## Observations, dispositions and bindings
+
+Authenticated compiled vendor/Rust artifacts, execution inputs, and recorded
+observations are the source of observed behavior. The generic engine owns the
+comparison verdict. A disposition cannot alter either side of the trace.
+
+A disposition states who owns the replacement and whether the vendor function
+is direct, composed, a state transition, bounded, or not yet implemented. A
+binding names the compiled Rust probe and classifies it as an exact production
+entry, shared production core, generated reference or verification
+projection.
+
+Suites and provider selection live in `verification-addon.toml`, outside the
+neutral project manifest. A generic project can therefore analyze and publish
+register evidence without linking a production comparison implementation.
+The chip pack's knowledge provider and the add-on's verification provider are
+independent inputs: lifting/generated references use only the former, while
+production adapters and semantic-contract replays use only the latter.
+
+Effect contracts define the ordered observable reads, writes, calls, state
+changes and allowed normalizations. Unlisted effects fail closed. Concrete
+profiles define arguments, initial memory/device state, observations and
+finite-domain preconditions.
+
+Function identity is `(source, symbol)`, not symbol spelling alone. Probe names
+never imply production ownership; dispositions provide that reviewed mapping
+and an upper bound on the claim, not execution truth.
+
+## Flat verification policy
+
+`verification-policy.toml` contains independent surfaces of three kinds:
+
+- `review-scope`: every selected vendor function must be accounted for;
+- `selected-functions`: named requirements must have acceptable evidence;
+- `bounded-property`: a finite reviewed property may pass without claiming
+  whole-function equivalence.
+
+The policy does not contain product phases, HIL campaigns or an umbrella
+feature hierarchy. It consumes verification suites and produces pass/fail
+supporting evidence. The qualification ledger references that evidence and
+remains the only readiness authority.
+
+## Production trace versus semantic model
+
+A semantic model is retained while it helps explain or normalize recovered
+behavior. It stays marked `semantic-model` and does not prove that manually
+written driver code follows the same operation order.
+
+Migration happens one function at a time:
+
+1. compile a thin probe that invokes the real production entry;
+2. replay vendor and Rust under the same explicit environment;
+3. compare ordered effects and fail on unresolved behavior;
+4. bind the resulting production trace in the disposition;
+5. delete the redundant semantic model only after no policy/report depends on
+   it.
+
+`phy_chip_set_chan` is the first such production binding. Its wrapper now
+builds against the same ESP-HAL and PAC revisions as firmware; the semantic
+contract remains explicitly research-only. Both concrete entries execute to
+completion, but their analog-I²C host-selection writes currently differ: the
+vendor ROM path uses the recovered `0x1a00` configuration and production uses
+the newer recovered `0x3fa00` configuration. That difference must be classified
+from target provenance and HIL evidence before it can be accepted, fixed or
+normalized.
+
+## Reports and gates
+
+`MATCH`, `DIFF` and `INCOMPLETE` are distinct outcomes. Missing inputs,
+unresolved effects and stale evidence never count as a match. A bounded match
+applies only to its declared finite precondition and cannot become a
+whole-function claim.
+
+The RISC-V executor recognizes ABI facts, not vendor meaning. Absolute ROM
+call-vector symbols retain their authenticated addresses, and standard
+`memcpy`, `memmove`, and `memset` leaves have bounded concrete memory effects.
+An unknown vector without linked code or an explicit model is an
+`INCOMPLETE`-class execution blocker with a named remedy, never guessed code.
+
+The replacement graph connects vendor identities, production components,
+compiled probes, contracts and proof results without treating a passing probe
+as proof of an unrelated driver implementation.
+
+Candidate evidence is written separately and never overwrites an accepted
+baseline. Reviewers compare artifact hashes, binding identities, evidence
+class and contract before accepting it.
+
+### Reviewing an intentional difference
+
+An observed `DIFF` is never converted to `MATCH` by changing a disposition,
+baseline, or broad normalization. Review it as a new bounded claim:
+
+1. Pin both artifact identities, the exact production entry, input scenario,
+   initial device/memory state, and the first differing ordered effect.
+2. Classify the difference as a production defect, an unsupported artifact
+   pairing, or a proposed platform refinement. Unknown provenance remains
+   `DIFF`.
+3. For a proposed refinement, declare the narrow precondition and the exact
+   effect difference. Every other observed effect remains comparison-visible;
+   a wildcard or value-erasing normalization is invalid.
+4. Record target HIL that distinguishes the two behaviors and its product
+   consequence. Evidence that only shows the Rust path works does not explain
+   why the vendor effect may differ.
+5. Add a reviewed bounded relation only after those inputs exist, then replay
+   both sides. The result may support that relation; it does not establish
+   whole-function equivalence.
+
+The current `phy_chip_set_chan` difference is deliberately stopped before
+step 4: vendor writes `I2C_ANA_MST.ANA_CONF2 = 0x1a00`, while production writes
+`0x3fa00`. Until target provenance and discriminating HIL classify it, the
+qualification ledger keeps
+`channel-production-trace-difference-unreviewed` open.
 
 ## Commands
 
-`project verify` executes every configured suite and is the authoritative
-project result. `verify source` and `verify inventory` are focused leaf tools;
-`verify evidence` reviews a persisted inventory report without loading
-proprietary artifacts.
-
-`project audit bindings` is the trust-boundary view. It reports the vendor
-oracle, production binding, admissible claim ceiling and exact blocker for
-every executable binding. Run it before accepting candidate evidence; the
-same audit is part of `project check`.
-
-The audit evaluates the transitive closure of
-`qualification.required-features`. Bindings in that closure are either
-`release-ready` or `release-blocked`; unselected bounded work remains visible
-as `available` or `research-only` and does not block an unrelated release.
-Invalid claim/disposition declarations always fail. Release eligibility
-requires concrete vendor replay and a real production binding. A finite
-`rust-conformance` property is eligible when it meets those requirements;
-`reviewed-projection` and `verification-projection` remain non-release
-evidence.
-
 ```console
-cargo vendor-binary-workbench advanced verify source \
-  --project verification/vendor/targets/esp32s31/vendor-project.toml \
-  --vendor-artifact "$ESP32S31_ROM_ELF" \
-  --rust-artifact target/verification/esp32s31-probes/riscv32imafc-unknown-none-elf/release/open-esp-radio-verification-esp32s31-probes-elf
-
-cargo vendor-binary-workbench advanced verify inventory \
-  --project verification/vendor/targets/esp32s31/vendor-project.toml \
-  --run-spec /path/to/authenticated.toml \
-  --gate regression --match-floor 104 \
-  --output /tmp/esp32s31-verification.json
-
-cargo vendor-binary-workbench project verify \
-  --project verification/vendor/targets/esp32s31/vendor-project.toml
-
-mkdir -p /tmp/evidence-candidates
-cargo vendor-binary-workbench project verify \
-  --project verification/vendor/targets/esp32s31/vendor-project.toml \
-  --candidate-evidence-dir /tmp/evidence-candidates
-
-cargo vendor-binary-workbench project verify --check \
-  --project verification/vendor/targets/esp32s31/vendor-project.toml
-
-cargo vendor-binary-workbench project check \
-  --project verification/vendor/targets/esp32s31/vendor-project.toml
+cargo vendor-binary-workbench project verify --project path/to/vendor-project.toml
+cargo vendor-binary-workbench project audit bindings --project path/to/vendor-project.toml
+cargo vendor-binary-workbench project check --project path/to/vendor-project.toml
 ```
 
-`project check` is the single CI gate when analysis evidence, accepted
-behavioral baselines, required feature qualifications and publication outputs
-must all reproduce. It delegates to the same typed workflows in check mode and
-never updates evidence.
+Focused `advanced verify ...` and `advanced execute ...` commands are backend
+tools. The project commands are the normal reproducible interface.
 
-Candidate generation never promotes or overwrites accepted baselines. It
-writes one deterministic `<suite-id>.toml` into an existing review directory;
-the reviewer must compare identities, proof classes and hashes before copying
-accepted rows into the project.
-
-These examples use the ESP32-S31 Cargo alias because the selected platform
-pack requires its compiled harness. A generic build now rejects that mismatch
-during command resolution, before starting artifact-wide analysis or
-verification.
-
-Run-spec paths are relative to the run spec. Explicit CLI inputs override the
-same run-spec role. Artifact revision and authenticity remain caller-owned;
-the workbench reports content hashes but never substitutes its own trust
-policy for the invoking CI job.
-
-Symbol selection and naming conventions are suite data, not generic CLI
-defaults. Every `[[verification.suites.vendor]]` entry selects exactly one of
-`all = true`, `prefix = "..."`, or `symbols = ["..."]`. Exact symbol sets are
-the normal focused-suite boundary; `all` must be an explicit inventory-wide
-decision. Each suite owns its `rust-prefix`. Focused leaf commands must pass
-`--rust-prefix`; `--source-symbol SOURCE=SYMBOL` supplies an exact set and an
-omitted symbol selector selects all named vendor functions.
-
-Function identity is `(source, symbol)`, not the symbol spelling alone. Thus a
-ROM function and an archive function with the same name remain two independent
-rows. Binding-v1 probes are selected by their exact declared name. Unbound
-probes use the source-aware naming convention and `--rust-prefix` controls
-their pairing and orphan accounting.
-
-A suite may name `auxiliary-sources`. These are resolved as
-`source-artifact:ID` inputs and delivered only to registered driver adapters;
-they do not create inventory rows or change source coverage. This supports
-concrete execution from a relocation-complete linked image without pretending
-that every symbol in that image belongs to the focused verification surface.
-
-## Replacement graph
-
-A complete `project verify` also emits one `replacement_graph`. It deduplicates
-suite inventories by the project identity `(source, symbol)` and keeps every
-suite result as a separate proof edge. A function seen by six libpp suites is
-therefore one vendor node with six proofs, not six vendor functions.
-
-Each reviewed edge joins the vendor identity to its canonical Rust component
-path, exact compiled probe symbols, disposition, protocol, proof contract and
-qualification blockers. The component path is a validated Rust item path and
-is the stable component id in schema v1. Conflicting reviewed component,
-disposition or protocol assignments across suites fail the project run.
-
-The graph summary deliberately distinguishes production ownership from a
-verification-only executable boundary:
-
-- `behavioral_matches`: unique vendor functions with at least one passing proof;
-- `production_replacements`: functions with a reviewed production Rust owner;
-- `production_feature_bindings`: vendor functions whose reviewed Rust owner
-  implements only a named bounded property;
-- `verification_probe_bindings`: functions connected to compiled verification
-  probes;
-- `production_matches`: passing proofs with a reviewed production owner;
-- `probe_only_matches`: passing probes that deliberately remain verification
-  boundaries and do not claim production ownership;
-- `unmapped_matches`: passing evidence with neither production owner nor probe;
-- `implemented_unqualified`: reviewed implementations whose blockers still
-  prevent a proof.
-
-`bounded_matches` is deliberately separate from `behavioral_matches`. It
-records a successful reviewed property without promoting that result to a
-whole-function replacement.
-
-Each replacement target carries `binding_scope = "production"`,
-`"production-feature"` or `"verification-probe-only"`. Probe symbol spelling
-is never used to infer a production component.
-
-`project status` reads the same summary from the last complete report. This
-makes a green regression gate distinct from complete project mapping: a proof
-can pass while its production Rust owner is still unknown.
-
-Project-report schema v10 also contains `rust_component_index`. No additional
-project configuration owns this data: reviewed component paths still come
-from dispositions, Cargo workspace/package roots come from `cargo metadata`,
-and suite ELF paths come from the existing run-spec roles. Rust source is
-parsed as an AST to resolve functions, methods and types. ELF symbols are
-demangled and DWARF inline frames supply compiled file/line evidence, so an
-inlined production operation can still join its probe boundary. Source and
-compiled statuses remain separate. It also compares mapped source and probe
-artifact modification times before execution. The check covers both reviewed
-component declarations and every existing local source path recovered from the
-probe's symbol/DWARF evidence, including inlined helpers. A definitely newer
-production source rejects the configured probe as stale instead of producing a
-misleading semantic mismatch. Unknown timestamp provenance remains explicit and
-does not become proof. A source match does not make an effect proof, and missing
-compiled evidence remains visible instead of being inferred from a probe name.
-
-## Gates
-
-The two gates answer different questions:
-
-- `--gate regression --match-floor N` requires no mismatch, incomplete result,
-  orphan probe or accepted-evidence regression, and retains at least `N`
-  matches. The floor is mandatory.
-- `--gate completion` additionally requires a proven replacement for every
-  selected vendor function.
-
-The aggregate result contains `MATCH`, `BOUNDED-MATCH`, `MISMATCH`,
-`INCOMPLETE`, `UNCOVERED` and `IMPLEMENTED-UNQUALIFIED` per-function verdicts.
-A match identifies its
-proof class: `symbolic`, `effect-contract`, `scenario`, `state`, or
-`composition-state-scenario`. None of the concrete proof classes claims
-equality outside its declared input domain.
-
-Execution-profile schema v3 requires every profile to declare either
-`whole-function-equivalence` or `reviewed-domain-equivalence`. The latter also
-names a reviewed precondition and a finite fully enumerated input domain. It
-can produce only `BOUNDED-MATCH`, even when every concrete case agrees.
-
-The engines fail closed on unresolved control flow, calls, tail jumps, MMIO
-values, unmapped registers and incomplete branch-outcome coverage. A present
-Rust symbol is therefore not sufficient to count as a match.
-
-## Project data
-
-The project normally owns, per suite:
-
-- the source and Rust artifact roles in an untracked local run spec;
-- execution profile fragments;
-- disposition fragments;
-- accepted evidence-baseline fragments;
-- the gate, match floor and exact Rust artifact role;
-- the target/platform selection and register catalog.
-
-The ESP32-S31 checked example is under
-`verification/vendor/targets/esp32s31`. Private artifacts are deliberately not
-part of the repository. Synthetic unit fixtures cover parsers, decoders,
-policies and report contracts; protected CI supplies authenticated vendor
-artifacts for the oracle regression.
-
-No parity exceptions are implicit. A future exception must be a closed typed
-rule with exact source, symbol and behavior scope plus tests.
+The qualification ledger remains outside the project. Workbench owns no
+ledger parser, readiness types, or policy calculation. A future frontend may
+display a read-only result emitted by the independent `qualification-check`
+tool, but it cannot update the ledger or turn Workbench evidence into
+readiness.

@@ -49,7 +49,7 @@ pub struct ArtifactDetail {
 pub struct ReviewScopeDetail {
     pub id: String,
     pub publication: bool,
-    pub replacement_qualification: String,
+    pub replacement_coverage: String,
     pub analysis_inventory_complete: bool,
     pub profiles: Vec<String>,
     pub roots: usize,
@@ -254,7 +254,7 @@ pub struct TargetIdentity {
     pub architecture: String,
     #[serde(rename = "calling_convention")]
     pub calling_convention: String,
-    pub harness: Option<String>,
+    pub knowledge_provider: Option<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]

@@ -9,6 +9,7 @@ publish = false
 description = "Versioned editable register model and clean CMSIS-SVD materialization"
 
 [dependencies]
+open-radio-vendor-contracts = { path = "../contracts" }
 serde = { version = "=1.0.229", features = ["derive"] }
 svd-encoder = "=0.14.7"
 svd-parser = "=0.14.9"

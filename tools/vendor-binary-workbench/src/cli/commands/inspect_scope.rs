@@ -7,7 +7,7 @@ struct ScopeInvestigationReport {
     schema_version: u32,
     command: &'static str,
     scope: crate::review_scopes::ReviewScopeReport,
-    features: Vec<crate::qualification::FeatureQualificationReport>,
+    verification_surfaces: Vec<crate::verification::policy::SurfaceReport>,
 }
 
 pub(super) fn run(arguments: InspectScopeArgs, project: &ProjectSpec) -> Result<bool> {
@@ -19,16 +19,17 @@ pub(super) fn run(arguments: InspectScopeArgs, project: &ProjectSpec) -> Result<
         .ok_or_else(|| {
             crate::Error::invalid(format!("unknown review scope {:?}", arguments.scope))
         })?;
-    let features = crate::qualification::evaluate(project)?
+    let verification_surfaces = crate::verification::policy::evaluate(project)?
         .into_iter()
-        .filter(|feature| feature.scopes.iter().any(|id| id == &scope.id))
+        .flat_map(|report| report.surfaces)
+        .filter(|surface| surface.review_scopes.iter().any(|id| id == &scope.id))
         .collect::<Vec<_>>();
     let complete = scope.analysis_inventory_complete;
     let report = ScopeInvestigationReport {
-        schema_version: 1,
+        schema_version: 2,
         command: "inspect scope",
         scope,
-        features,
+        verification_surfaces,
     };
     crate::cli::output::render_report(&report, || {
         let scope = &report.scope;
@@ -67,19 +68,18 @@ pub(super) fn run(arguments: InspectScopeArgs, project: &ProjectSpec) -> Result<
                 );
             }
         }
-        if !report.features.is_empty() {
-            outputln!("  feature qualifications:");
-            for feature in &report.features {
+        if !report.verification_surfaces.is_empty() {
+            outputln!("  verification policy:");
+            for surface in &report.verification_surfaces {
                 outputln!(
-                    "    - {}: {:?}, effects={}/{}, proofs={}, blockers={}",
-                    feature.id,
-                    feature.status,
-                    feature.covered_effects,
-                    feature.surface_effects,
-                    feature.requirements,
-                    feature.blockers.len(),
+                    "    - {}: {}, effects={}, proofs={}, blockers={}",
+                    surface.id,
+                    if surface.closed { "closed" } else { "blocked" },
+                    surface.effects,
+                    surface.requirements,
+                    surface.blockers.len(),
                 );
-                for blocker in &feature.blockers {
+                for blocker in &surface.blockers {
                     outputln!("        ! {blocker}");
                 }
             }

@@ -69,7 +69,9 @@ sources = [
     "BLOB_LIBPP_HAL_PWR",
     "HIL_OPEN_REGDMA_LINK4_2026_07_29",
 ]
-confidence = "instruction-exact-partial"
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_REGDMA_CONTROL.CONTROL"
@@ -78,12 +80,16 @@ sources = [
     "BLOB_LIBPP_HAL_PWR",
     "HIL_OPEN_REGDMA_LINK4_2026_07_29",
 ]
-confidence = "instruction-exact-partial"
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_REGDMA_CONTROL.CONTROL.MODEM_WAKEUP_PROTECT_EARLY_TIME"
 sources = ["BLOB_LIBPP_HAL_PWR"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_REGDMA_CONTROL.CONTROL.ACTIVE_LINK"
@@ -91,14 +97,20 @@ sources = [
     "BLOB_LIBPP_MAC_CHANNEL_SWITCH",
     "HIL_OPEN_REGDMA_LINK4_2026_07_29",
 ]
-confidence = "instruction-exact-hil-qualified"
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_REGDMA_CONTROL.CONTROL.MODEM_TBTT_AUTO_PERIOD_INTERVAL"
 sources = ["BLOB_LIBPP_HAL_PWR"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "WIFI_MAC_REGDMA_CONTROL.CONTROL.MODEM_TBTT_AUTO_PERIOD_ENABLE"
 sources = ["BLOB_LIBPP_HAL_PWR"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"

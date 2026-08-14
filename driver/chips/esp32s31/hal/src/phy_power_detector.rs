@@ -5,7 +5,7 @@
 //! in the PHY state machines.
 
 #[cfg(target_arch = "riscv32")]
-use open_esp_radio_esp32s31_pac::RadioRegisters;
+use crate::{PhyAccess, phy_pac_mut};
 
 /// Apply the complete power-detector register initialization leaf.
 ///
@@ -15,8 +15,9 @@ use open_esp_radio_esp32s31_pac::RadioRegisters;
 #[cfg(target_arch = "riscv32")]
 pub fn initialize_registers(
     platform: &mut impl crate::power_detector_platform::PhyPowerDetectorPlatformControl,
-    registers: &mut RadioRegisters,
+    registers: &mut impl PhyAccess,
 ) {
+    let registers = phy_pac_mut(registers);
     registers.initialize_power_detector_registers();
     crate::power_detector_platform::select_initialization_mode(platform);
 }
@@ -31,8 +32,9 @@ pub fn initialize_registers(
 #[cfg(target_arch = "riscv32")]
 pub fn configure_background(
     platform: &mut impl crate::power_detector_platform::PhyPowerDetectorPlatformControl,
-    registers: &mut RadioRegisters,
+    registers: &mut impl PhyAccess,
 ) {
+    let registers = phy_pac_mut(registers);
     configure_enabled(platform, registers);
     registers.enable_power_detector_background_control();
 }
@@ -45,8 +47,9 @@ pub fn configure_background(
 #[cfg(target_arch = "riscv32")]
 pub fn configure_enabled(
     platform: &mut impl crate::power_detector_platform::PhyPowerDetectorPlatformControl,
-    registers: &mut RadioRegisters,
+    registers: &mut impl PhyAccess,
 ) {
+    let registers = phy_pac_mut(registers);
     registers.configure_power_detector_enabled();
     crate::power_detector_platform::select_enabled_mode(platform);
 }
@@ -71,7 +74,8 @@ pub fn configure_calibration_mode(
 /// control bits 11:4 with `0x78`. The returned tuple contains the original
 /// low byte and its original already-shifted mask.
 #[cfg(target_arch = "riscv32")]
-pub fn capture_txdc_fields(registers: &mut RadioRegisters) -> (u8, u32) {
+pub fn capture_txdc_fields(registers: &mut impl PhyAccess) -> (u8, u32) {
+    let registers = phy_pac_mut(registers);
     registers.capture_txdc_power_detector_fields()
 }
 
@@ -80,7 +84,8 @@ pub fn capture_txdc_fields(registers: &mut RadioRegisters) -> (u8, u32) {
 /// Complete pinned `libphy.a[phy_tx_cal.o]::phy_txdc_cal_pwdet_init`, size
 /// `0x208`, replaces the two-bit PAC SAR-mode field with one at this point.
 #[cfg(target_arch = "riscv32")]
-pub fn configure_txdc_sar(registers: &mut RadioRegisters) {
+pub fn configure_txdc_sar(registers: &mut impl PhyAccess) {
+    let registers = phy_pac_mut(registers);
     registers.configure_txdc_power_detector_sar();
 }
 
@@ -92,10 +97,11 @@ pub fn configure_txdc_sar(registers: &mut RadioRegisters) {
 /// two-bit SAR-mode field.
 #[cfg(target_arch = "riscv32")]
 pub fn restore_txdc_fields(
-    registers: &mut RadioRegisters,
+    registers: &mut impl PhyAccess,
     power_table_low: u8,
     shifted_power_control_field: u32,
 ) {
+    let registers = phy_pac_mut(registers);
     registers.restore_txdc_power_detector_fields(power_table_low, shifted_power_control_field);
 }
 
@@ -107,7 +113,8 @@ pub fn restore_txdc_fields(
 /// uses `0x016a`. This finite leaf performs the full 32-bit zero-extended
 /// store.
 #[cfg(target_arch = "riscv32")]
-pub fn write_reference(registers: &mut RadioRegisters, value: u16) {
+pub fn write_reference(registers: &mut impl PhyAccess, value: u16) {
+    let registers = phy_pac_mut(registers);
     registers.write_power_detector_reference(value);
 }
 
@@ -117,7 +124,8 @@ pub fn write_reference(registers: &mut RadioRegisters, value: u16) {
 /// clears then sets the PAC `SAR_TRIGGER` bit through two fresh reads, with the
 /// one-microsecond delay remaining in the caller.
 #[cfg(target_arch = "riscv32")]
-pub fn trigger_sar(registers: &mut RadioRegisters) {
+pub fn trigger_sar(registers: &mut impl PhyAccess) {
+    let registers = phy_pac_mut(registers);
     registers.trigger_power_detector_sar();
 }
 
@@ -127,7 +135,8 @@ pub fn trigger_sar(registers: &mut RadioRegisters) {
 /// samples `POWER_DETECTOR_SAR_CONTROL_STATUS`; repetition and deadline
 /// ownership remain in the Rust async state machine.
 #[cfg(target_arch = "riscv32")]
-pub fn sample_ready(registers: &mut RadioRegisters) -> bool {
+pub fn sample_ready(registers: &mut impl PhyAccess) -> bool {
+    let registers = phy_pac_mut(registers);
     registers.power_detector_ready()
 }
 
@@ -136,6 +145,7 @@ pub fn sample_ready(registers: &mut RadioRegisters) -> bool {
 /// Complete rev0 ROM `phy_get_tone_sar_dout_` at `0x2f82_66da`, size `0x40`,
 /// consumes the upper thirteen-bit sample from `POWER_DETECTOR_SAR_RESULT`.
 #[cfg(target_arch = "riscv32")]
-pub fn sample_sar(registers: &mut RadioRegisters) -> u16 {
+pub fn sample_sar(registers: &mut impl PhyAccess) -> u16 {
+    let registers = phy_pac_mut(registers);
     registers.power_detector_sar_sample()
 }

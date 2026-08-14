@@ -1,4 +1,4 @@
-//! Task-first human summary and stable schema-3 JSON document.
+//! Task-first human summary and stable schema-4 JSON document.
 
 use std::collections::BTreeMap;
 
@@ -57,9 +57,7 @@ pub(super) fn print_text(report: &ProjectStatusReport) {
         report.target.calling_convention
     );
     let outcome = match report.overall {
-        Readiness::Ready => {
-            output::success("READY — all configured required feature gates can proceed")
-        }
+        Readiness::Ready => output::success("READY — all configured verification gates pass"),
         Readiness::Inventory => output::success("READY — inventory evidence is available"),
         Readiness::Incomplete => {
             output::warning("INCOMPLETE — generated or reviewed evidence is missing")
@@ -70,35 +68,6 @@ pub(super) fn print_text(report: &ProjectStatusReport) {
         Readiness::Invalid => output::failure("BLOCKED — project state is invalid"),
     };
     outputln!("\n{outcome}");
-
-    if let Some(backlog) = report
-        .phases
-        .iter()
-        .find(|phase| phase.name == "qualification")
-        .and_then(|phase| {
-            phase
-                .components
-                .iter()
-                .find(|component| component.name == "feature_backlog")
-        })
-    {
-        let features = match backlog.details.get("features") {
-            Some(DetailValue::Strings(features)) => features.as_slice(),
-            _ => &[],
-        };
-        let remaining = match backlog.details.get("remaining_transactions") {
-            Some(DetailValue::Unsigned(remaining)) => *remaining,
-            _ => 0,
-        };
-        if !features.is_empty() {
-            outputln!(
-                "Coverage backlog: {} optional feature(s), {remaining} transaction(s): {}",
-                features.len(),
-                features.join(", ")
-            );
-            outputln!("Inspect with `project feature {}`.", features[0]);
-        }
-    }
 
     let problems = report
         .phases
@@ -230,7 +199,7 @@ pub(super) fn document(
         })
         .collect();
     StatusDocument {
-        schema: 3,
+        schema: 5,
         command: "project status",
         project: ProjectIdentity {
             id: &report.project_id,
@@ -273,7 +242,7 @@ mod tests {
                 id: "target".to_owned(),
                 architecture: "riscv32".to_owned(),
                 calling_convention: "riscv-ilp32".to_owned(),
-                harness: None,
+                knowledge_provider: None,
             },
             vec![Phase::collect(
                 "analysis",
@@ -286,7 +255,7 @@ mod tests {
         );
         let document: serde_json::Value =
             serde_json::from_str(&json_document(&document(&report, None)).unwrap()).unwrap();
-        assert_eq!(document["schema"], 3);
+        assert_eq!(document["schema"], 5);
         assert_eq!(document["overall"], "incomplete");
         assert_eq!(
             document["phases"]["analysis"]["components"][0]["profiles"],

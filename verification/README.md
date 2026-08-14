@@ -29,3 +29,7 @@ cargo vendor-binary-workbench project doctor \
 Artifact paths, revisions and authentication remain caller-owned. The target
 pack may report evidence identities but must not select a private input by a
 hard-coded path or digest.
+
+Evidence strength and the only path from a Workbench comparison to driver
+readiness are defined in the canonical
+[verification and qualification contract](../docs/VERIFICATION_AND_QUALIFICATION.md).

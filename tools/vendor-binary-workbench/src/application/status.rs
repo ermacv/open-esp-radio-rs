@@ -6,8 +6,8 @@ use model::{ProjectStatusReport, TargetIdentity};
 mod analysis;
 mod configuration_inputs;
 pub(crate) mod model;
+mod policy;
 mod publication;
-mod qualification;
 mod review;
 mod verification;
 
@@ -29,7 +29,7 @@ pub(crate) fn collect(context: &ProjectContext<'_>) -> ProjectStatusReport {
             id: context.target.id.clone(),
             architecture: context.target.architecture.label().to_owned(),
             calling_convention: context.target.calling_convention.label().to_owned(),
-            harness: context.target.harness.clone(),
+            knowledge_provider: context.target.knowledge_provider.clone(),
         },
         vec![
             phase("configuration", || {
@@ -39,7 +39,7 @@ pub(crate) fn collect(context: &ProjectContext<'_>) -> ProjectStatusReport {
             phase("analysis", || analysis::collect(context)),
             phase("review", || review::collect(context)),
             phase("verification", || verification::collect(context)),
-            phase("qualification", || qualification::collect(context)),
+            phase("verification-policy", || policy::collect(context)),
             phase("publication", || publication::collect(context)),
         ],
     )

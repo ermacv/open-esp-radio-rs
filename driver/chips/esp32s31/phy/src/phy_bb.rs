@@ -13,7 +13,7 @@
 //! accesses per entry. It has no callback, allocation, hidden software state,
 //! wait, delay, or hardware-dependent exit.
 
-/// Complete pinned `libphy.a` compatibility leaf.
+/// Required pinned `libphy.a` vendor-ABI no-op leaf.
 ///
 /// The ESP32-S31 `set_bb_wdg` body is exactly one `ret` instruction.
 #[inline]
@@ -403,7 +403,7 @@ impl PhyTxCfrMmioBinding {
     #[cfg(target_arch = "riscv32")]
     pub fn execute_target(
         self,
-        registers: &mut open_esp_radio_esp32s31_hal::RadioRegisters,
+        registers: &mut open_esp_radio_esp32s31_hal::PhyHal,
     ) -> PhyTxCfrCompletion {
         match self.action {
             PhyTxCfrAction::ReadStartIndex => PhyTxCfrCompletion::StartIndexRead {
@@ -525,7 +525,7 @@ impl PhyBbMmioBinding {
     >(
         self,
         platform: &mut P,
-        registers: &mut open_esp_radio_esp32s31_hal::RadioRegisters,
+        registers: &mut open_esp_radio_esp32s31_hal::PhyHal,
     ) -> PhyBbMmioCompletion {
         match self.action {
             PhyBbMmioAction::EnableBasebandInitialization => {

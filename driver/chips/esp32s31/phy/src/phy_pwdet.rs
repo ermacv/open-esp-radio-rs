@@ -22,14 +22,14 @@ use crate::{phy_dc_iq::phy_linear_to_db, phy_pbus::PhyPbusForceTest};
 // returns the unsigned average.
 pub const PHY_PWDET_SAMPLES_PER_REFERENCE: u8 = 4;
 
-/// Complete pinned `libphy.a` compatibility leaf.
+/// Required pinned `libphy.a` vendor-ABI no-op leaf.
 ///
 /// The ESP32-S31 archive body is exactly one `ret` instruction; power-detector
 /// ownership is instead expressed by the surrounding Rust state machine.
 #[inline]
 pub const fn phy_pwdet_always_en() {}
 
-/// Complete pinned `libphy.a` compatibility leaf.
+/// Required pinned `libphy.a` vendor-ABI no-op leaf.
 ///
 /// Like [`phy_pwdet_always_en`], the vendor body has no observable operation.
 #[inline]
@@ -805,7 +805,7 @@ impl PhyPwdetReadyBinding {
     #[cfg(target_arch = "riscv32")]
     pub fn execute_target(
         self,
-        registers: &mut open_esp_radio_esp32s31_hal::RadioRegisters,
+        registers: &mut open_esp_radio_esp32s31_hal::PhyHal,
     ) -> PhyPwdetCompletion {
         PhyPwdetCompletion::SarReadySampled {
             measurement_index: self.measurement_index,
@@ -848,7 +848,7 @@ impl PhyPwdetMmioBinding {
     >(
         self,
         platform: &mut P,
-        registers: &mut open_esp_radio_esp32s31_hal::RadioRegisters,
+        registers: &mut open_esp_radio_esp32s31_hal::PhyHal,
     ) -> PhyPwdetCompletion {
         match self.action {
             PhyPwdetAction::ConfigurePbusDebugMode => {
@@ -1024,7 +1024,7 @@ impl PhyPwdetPbusBinding {
     #[cfg(target_arch = "riscv32")]
     pub fn start_target(
         &mut self,
-        registers: &mut open_esp_radio_esp32s31_hal::RadioRegisters,
+        registers: &mut open_esp_radio_esp32s31_hal::PhyHal,
     ) -> Result<(), PhyPwdetPbusBindingError> {
         self.hardware
             .start_target(registers)
@@ -1034,7 +1034,7 @@ impl PhyPwdetPbusBinding {
     #[cfg(target_arch = "riscv32")]
     pub fn sample_target_once(
         &mut self,
-        registers: &mut open_esp_radio_esp32s31_hal::RadioRegisters,
+        registers: &mut open_esp_radio_esp32s31_hal::PhyHal,
     ) -> Result<PhyPwdetPbusObservation, PhyPwdetPbusBindingError> {
         match self
             .hardware

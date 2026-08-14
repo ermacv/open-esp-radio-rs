@@ -3,9 +3,8 @@
 //! This is the maintained source-owned passive-scan frontier. Channel changes,
 //! dwell timers, and RX ownership remain explicit responsibilities of the
 //! radio owner; this module owns only bounded observations and selection. The
-//! earlier hybrid-runtime copy was removed after hardware qualification. The
-//! implementation is chip-independent and now forms the first maintained
-//! upper-stack extraction from the migration archive.
+//! implementation is chip-independent and forms the maintained upper-stack
+//! extraction.
 
 pub const SCAN_RECORD_CAPACITY: usize = 32;
 pub const RSN_IE_CAPACITY: usize = 64;

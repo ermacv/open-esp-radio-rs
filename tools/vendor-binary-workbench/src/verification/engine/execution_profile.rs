@@ -59,7 +59,13 @@ pub(super) fn evaluate(
         profile.compare_return,
         &profile.coverage_constraints(),
         &profile.scenarios,
-    )?;
+    )
+    .map_err(|error| {
+        crate::Error::invalid(format!(
+            "execution profile {:?} ({}:{} -> {}) failed: {error}",
+            profile.name, source.name, profile.vendor_symbol, profile.rust_symbol
+        ))
+    })?;
     let all_declared_cases_match = comparison.summary.cases > 0
         && comparison.summary.matched == comparison.summary.cases
         && comparison.summary.different == 0

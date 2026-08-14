@@ -168,10 +168,10 @@ fn interface_caller_and_relocated_root_join_inventory_locations() {
     let project = ProjectSpec {
         id: "fixture".to_owned(),
         target_spec: PathBuf::from("target.toml"),
-        platform_pack: None,
+        ecosystem_packs: Vec::new(),
+        chip_pack: None,
         run_spec: None,
         memory_map: None,
-        svd_configured: false,
         svd_paths: Vec::new(),
         symbol_inventory: Some(SymbolInventorySpec {
             output: symbols_path,
@@ -189,7 +189,6 @@ fn interface_caller_and_relocated_root_join_inventory_locations() {
         }),
         functions: None,
         review: None,
-        qualification: None,
         verification: None,
     };
     let document = build(&project).unwrap();

@@ -7,7 +7,7 @@ use std::{
 };
 
 fn workbench() -> Command {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_vendor-binary-workbench"));
+    let mut command = Command::new(env!("CARGO_BIN_EXE_vendor-binary-workbench-generic"));
     command.env_remove("RUST_LOG");
     command
 }
@@ -114,7 +114,7 @@ fn project_status_json_is_pipe_safe_and_dependency_warnings_are_suppressed() {
     );
     let document: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("stdout must be one JSON document");
-    assert_eq!(document["schema"], 3);
+    assert_eq!(document["schema"], 5);
     assert_eq!(document["command"], "project status");
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
@@ -314,7 +314,7 @@ fn project_manifest_diagnostics_highlight_the_nested_physical_value() {
     let manifest = directory.join("vendor-project.toml");
     std::fs::write(
         &manifest,
-        "schema = 1\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[[analysis.ir]]\nid = \"known\"\nroots = \"all\"\noutput = \"known.json\"\n[functions]\npack = \"functions.toml\"\nprofiles = [\"missing\"]\n",
+        "schema = 3\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[[analysis.ir]]\nid = \"known\"\nroots = \"all\"\noutput = \"known.json\"\n[functions]\npack = \"functions.toml\"\nprofiles = [\"missing\"]\n",
     )
     .unwrap();
 
@@ -350,17 +350,17 @@ fn composed_manifest_diagnostics_highlight_the_physical_value() {
     let project = directory.join("vendor-project.toml");
     std::fs::write(
         directory.join("target.toml"),
-        "schema = 1\nid = \"fixture\"\narchitecture = \"riscv32\"\ncalling-convention = \"riscv-ilp32\"\nendianness = \"little\"\npointer-width = 32\nrust-target = \"riscv32imac-unknown-none-elf\"\n",
+        "schema = 3\nid = \"fixture\"\narchitecture = \"riscv32\"\ncalling-convention = \"riscv-ilp32\"\nendianness = \"little\"\npointer-width = 32\nrust-target = \"riscv32imac-unknown-none-elf\"\n",
     )
     .unwrap();
     std::fs::write(
-        directory.join("platform.toml"),
-        "schema = 1\nid = \"fixture\"\narchitecture = \"riscv32\"\ncalling-convention = \"riscv-ilp32\"\nharness = [\"bad\"]\n",
+        directory.join("chip.toml"),
+        "schema = 3\nid = \"fixture\"\nknowledge-provider = [\"bad\"]\n",
     )
     .unwrap();
     std::fs::write(
         &project,
-        "schema = 1\nid = \"fixture\"\ntarget-spec = \"target.toml\"\nplatform-pack = \"platform.toml\"\n",
+        "schema = 3\nid = \"fixture\"\ntarget-spec = \"target.toml\"\nchip-pack = \"chip.toml\"\n",
     )
     .unwrap();
 
@@ -370,12 +370,12 @@ fn composed_manifest_diagnostics_highlight_the_physical_value() {
         .arg(&project)
         .args(["--format", "json", "--color", "never"])
         .output()
-        .expect("diagnose invalid platform pack");
+        .expect("diagnose invalid chip pack");
     assert!(!platform_output.status.success());
     assert!(platform_output.stdout.is_empty());
     let platform_stderr = String::from_utf8_lossy(&platform_output.stderr);
-    assert!(platform_stderr.contains("harness = [\"bad\"]"));
-    assert!(platform_stderr.contains("platform.toml"));
+    assert!(platform_stderr.contains("knowledge-provider = [\"bad\"]"));
+    assert!(platform_stderr.contains("chip.toml"));
     assert!(!platform_stderr.contains("Usage:"));
 
     std::fs::write(
@@ -384,8 +384,13 @@ fn composed_manifest_diagnostics_highlight_the_physical_value() {
     )
     .unwrap();
     std::fs::write(
+        directory.join("chip.toml"),
+        "schema = 3\nid = \"fixture-chip\"\nmemory-map = \"memory.toml\"\n",
+    )
+    .unwrap();
+    std::fs::write(
         &project,
-        "schema = 1\nid = \"fixture\"\ntarget-spec = \"target.toml\"\nmemory-map = \"memory.toml\"\n",
+        "schema = 3\nid = \"fixture\"\ntarget-spec = \"target.toml\"\nchip-pack = \"chip.toml\"\n",
     )
     .unwrap();
     let memory_output = workbench()
@@ -406,7 +411,7 @@ fn composed_manifest_diagnostics_highlight_the_physical_value() {
 }
 
 #[test]
-fn semantic_contract_commands_keep_failed_qualifications_off_stdout() {
+fn semantic_contract_commands_keep_failed_verification_off_stdout() {
     for contract in [
         "channel",
         "rf-init",
@@ -436,7 +441,7 @@ fn semantic_contract_commands_keep_failed_qualifications_off_stdout() {
         );
         assert!(
             output.stdout.is_empty(),
-            "{contract} leaked qualification output: {}",
+            "{contract} leaked verification output: {}",
             String::from_utf8_lossy(&output.stdout)
         );
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -605,7 +610,7 @@ fn verify_inventory_json_combines_results_and_publication_in_one_report() {
 
     let persistent: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&report_path).unwrap()).unwrap();
-    assert_eq!(persistent["schema_version"], 10);
+    assert_eq!(persistent["schema_version"], 12);
     assert_eq!(persistent["command"], "verify inventory");
     assert_eq!(persistent["sources"][0]["functions"][0]["status"], "match");
     std::fs::remove_file(artifact).unwrap();
@@ -646,15 +651,28 @@ fn project_verify_executes_typed_suites_and_reproduces_the_aggregate_report() {
     let manifest = directory.join("vendor-project.toml");
     std::fs::write(
         &manifest,
-        r#"schema = 1
+        r#"schema = 3
 id = "project-verify-fixture"
 target-spec = "target.toml"
-memory-map = "memory.toml"
-
-[verification]
+chip-pack = "chip.toml"
+verification-addon = "verification-addon.toml"
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        directory.join("chip.toml"),
+        "schema = 3\nid = \"fixture-chip\"\nmemory-map = \"memory.toml\"\nknowledge-packs = []\n",
+    )
+    .unwrap();
+    std::fs::write(
+        directory.join("verification-addon.toml"),
+        r#"schema = 2
+id = "fixture-verification"
+provider = "fixture-provider"
 report = "verification.json"
+evidence-index = "vendor-evidence.json"
 
-[[verification.suites]]
+[[suites]]
 id = "fixture"
 rust-artifact-role = "rust-artifact:fixture"
 rust-prefix = "fixture_"
@@ -663,7 +681,7 @@ dispositions = ["dispositions.toml"]
 baselines = ["baseline.toml"]
 gate = "completion"
 
-[[verification.suites.vendor]]
+[[suites.vendor]]
 source = "fixture"
 prefix = "fixture_"
 "#,
@@ -705,7 +723,7 @@ prefix = "fixture_"
     );
     let document: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(document["command"], "project verify");
-    assert_eq!(document["schema_version"], 11);
+    assert_eq!(document["schema_version"], 13);
     assert!(
         document["suites"][0]["artifacts"]
             .as_array()
@@ -746,6 +764,35 @@ prefix = "fixture_"
         )
         .unwrap(),
         document
+    );
+    let evidence_index: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(directory.join("vendor-evidence.json")).unwrap())
+            .unwrap();
+    assert_eq!(evidence_index["schema_version"], 1);
+    assert_eq!(
+        evidence_index["entries"][0]["evidence_class"],
+        "static-analysis"
+    );
+    assert_eq!(evidence_index["entries"][0]["release_eligible"], false);
+    assert!(
+        evidence_index["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|entry| {
+                entry["source_hashes"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .all(|source| {
+                        !std::path::Path::new(source["path"].as_str().unwrap()).is_absolute()
+                    })
+                    && entry["artifact_hashes"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .all(|artifact| artifact.get("path").is_none())
+            })
     );
 
     let check = workbench()
@@ -888,7 +935,7 @@ fn project_inputs_validate_elf_and_archive_roles_before_writing() {
     std::fs::write(
         &manifest,
         format!(
-            "schema = 1\nid = \"input-contract\"\ntarget-spec = {:?}\n\n[[analysis.ir]]\nid = \"fixture\"\nsources = [\"fixture\"]\nroots = \"all\"\noutput = \"generated/fixture.ir\"\n",
+            "schema = 3\nid = \"input-contract\"\ntarget-spec = {:?}\n\n[[analysis.ir]]\nid = \"fixture\"\nsources = [\"fixture\"]\nroots = \"all\"\noutput = \"generated/fixture.ir\"\n",
             target.display().to_string()
         ),
     )
@@ -950,7 +997,7 @@ fn project_symbol_inventory_writes_and_checks_its_manifest_owned_report() {
     std::fs::write(
         &manifest,
         format!(
-            "schema = 1\nid = \"symbol-contract\"\ntarget-spec = {:?}\n\n[analysis.symbols]\noutput = \"generated/symbols.json\"\n\n[analysis.navigation]\noutput = \"generated/navigation.json\"\n\n[[analysis.ir]]\nid = \"fixture\"\nsources = [\"fixture\"]\nroots = \"all\"\ninclude-reachable = true\nentry-contract = \"none\"\noutput = \"generated/fixture.ir\"\n\n[interfaces]\nfacts = \"generated/interfaces.json\"\n",
+            "schema = 3\nid = \"symbol-contract\"\ntarget-spec = {:?}\n\n[analysis.symbols]\noutput = \"generated/symbols.json\"\n\n[analysis.navigation]\noutput = \"generated/navigation.json\"\n\n[[analysis.ir]]\nid = \"fixture\"\nsources = [\"fixture\"]\nroots = \"all\"\ninclude-reachable = true\nentry-contract = \"none\"\noutput = \"generated/fixture.ir\"\n\n[interfaces]\nfacts = \"generated/interfaces.json\"\n",
             target.display().to_string()
         ),
     )

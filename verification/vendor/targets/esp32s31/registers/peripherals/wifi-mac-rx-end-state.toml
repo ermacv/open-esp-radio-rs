@@ -27,9 +27,13 @@ bitWidth = 16
 [[review]]
 entity = "WIFI_MAC_RX_END_STATE"
 sources = ["BLOB_LIBPP_HAL_RUNTIME_MMIO_LEAVES"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "WIFI_MAC_RX_END_STATE.STATE"
 sources = ["BLOB_LIBPP_HAL_RUNTIME_MMIO_LEAVES"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"

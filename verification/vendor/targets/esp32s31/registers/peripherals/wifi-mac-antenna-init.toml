@@ -65,44 +65,62 @@ bitWidth = 1
 [[review]]
 entity = "WIFI_MAC_ANTENNA_INIT"
 sources = ["BLOB_LIBPP_HAL_ANTENNA_INIT"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "WIFI_MAC_ANTENNA_INIT.COMMON_CONTROL"
 sources = ["BLOB_LIBPP_HAL_ANTENNA_INIT"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "WIFI_MAC_ANTENNA_INIT.COMMON_CONTROL.COMMON_CLEAR_UNKNOWN"
 sources = ["BLOB_LIBPP_HAL_ANTENNA_INIT"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_ANTENNA_INIT.COMMON_CONTROL.COMMON_ENABLE_UNKNOWN"
 sources = ["BLOB_LIBPP_HAL_ANTENNA_INIT"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_ANTENNA_INIT.BANK_CONTROL%s"
 sources = ["BLOB_LIBPP_HAL_ANTENNA_INIT"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "WIFI_MAC_ANTENNA_INIT.BANK_CONTROL%s.FIRST_CLEAR_UNKNOWN"
 sources = ["BLOB_LIBPP_HAL_ANTENNA_INIT"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_ANTENNA_INIT.BANK_CONTROL%s.SECOND_CLEAR_UNKNOWN"
 sources = ["BLOB_LIBPP_HAL_ANTENNA_INIT"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_ANTENNA_INIT.BANK_CONTROL%s.THIRD_CLEAR_UNKNOWN"
 sources = ["BLOB_LIBPP_HAL_ANTENNA_INIT"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_ANTENNA_INIT.BANK_CONTROL%s.BANK_ENABLE_UNKNOWN"
 sources = ["BLOB_LIBPP_HAL_ANTENNA_INIT"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"

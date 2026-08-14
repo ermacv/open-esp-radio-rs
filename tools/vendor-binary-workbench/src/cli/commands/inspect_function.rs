@@ -40,7 +40,6 @@ pub(super) struct ReplacementInvestigationReport {
     replacements: Vec<ReplacementEvidence>,
     vendor_effects: Vec<VendorEffectEvidence>,
     reviewed_effects: Vec<ReviewedEffectRuleEvidence>,
-    feature_qualifications: Vec<crate::qualification::FunctionQualificationEvidence>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -71,7 +70,7 @@ pub(super) fn run(arguments: InspectFunctionArgs, project: &ProjectSpec) -> Resu
     }
     let (symbol, runtime_address) = parse_exact_symbol(symbol)?;
     if arguments.replacement {
-        let mut replacements = replacement_evidence(source, &symbol, project)?;
+        let mut replacements = replacement_evidence(source, symbol, project)?;
         if let Some(requested) = arguments.case.as_deref() {
             let found = replacements.iter().any(|replacement| {
                 replacement.proofs.iter().any(|proof| {
@@ -98,7 +97,7 @@ pub(super) fn run(arguments: InspectFunctionArgs, project: &ProjectSpec) -> Resu
                 let investigation = investigate(
                     FunctionInvestigationRequest {
                         source,
-                        symbol: &symbol,
+                        symbol,
                         runtime_address,
                         artifact,
                         inventory: arguments.inventory.as_deref(),
@@ -116,17 +115,14 @@ pub(super) fn run(arguments: InspectFunctionArgs, project: &ProjectSpec) -> Resu
             None => Vec::new(),
         };
         let report = ReplacementInvestigationReport {
-            schema_version: 4,
+            schema_version: 5,
             command: "inspect function replacement",
             source: source.to_owned(),
             symbol: symbol.to_owned(),
             requested_case: arguments.case,
             replacements,
             vendor_effects,
-            reviewed_effects: reviewed_effect_rules(source, &symbol, project)?,
-            feature_qualifications: crate::qualification::evidence_for_function(
-                project, source, &symbol,
-            )?,
+            reviewed_effects: reviewed_effect_rules(source, symbol, project)?,
         };
         let found = !report.replacements.is_empty();
         crate::cli::output::render_report(&report, || replacement::render(&report));

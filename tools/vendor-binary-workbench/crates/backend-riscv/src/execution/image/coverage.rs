@@ -142,7 +142,7 @@ impl ExecutableImage {
                 .into());
             }
             let mut registers = states[&address];
-            if let Some(symbol) = self.symbol_at(address)
+            if let Some(symbol) = self.call_symbol_at(address)
                 && is_opaque_runtime_support(symbol)
             {
                 continue;
@@ -153,7 +153,7 @@ impl ExecutableImage {
                     enqueue!(address.wrapping_add(8), after_call(registers));
                 }
                 if let Some(target) = call.target
-                    && self.symbol_at(target) != Some("ets_delay_us")
+                    && self.call_symbol_at(target) != Some("ets_delay_us")
                 {
                     enqueue!(target, registers);
                 } else if call.target.is_none() {
@@ -405,6 +405,9 @@ fn is_opaque_runtime_support(symbol: &str) -> bool {
     matches!(
         symbol,
         "ets_delay_us"
+            | "memcpy"
+            | "memmove"
+            | "memset"
             | "__divdi3"
             | "__moddi3"
             | "__udivdi3"

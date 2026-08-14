@@ -80,9 +80,13 @@ impl ResolvedProjectAnalysisOperations<'_> {
         let mut paths = vec![self.session.target_path.clone()];
         paths.extend(self.session.run_spec_path.iter().cloned());
         paths.extend(self.session.svd_paths.iter().cloned());
-        if let Some(pack) = project.platform_pack.as_ref() {
+        for pack in &project.ecosystem_packs {
             paths.push(pack.path.clone());
-            paths.extend(pack.semantic_catalogs.iter().cloned());
+            paths.extend(pack.knowledge_packs.iter().cloned());
+        }
+        if let Some(pack) = project.chip_pack.as_ref() {
+            paths.push(pack.path.clone());
+            paths.extend(pack.knowledge_packs.iter().cloned());
         }
         if let Some(run_spec) = self.session.run_spec.as_ref() {
             paths.extend(run_spec.inputs().iter().map(|input| input.path.clone()));
@@ -116,9 +120,13 @@ impl ResolvedProjectAnalysisOperations<'_> {
 
     fn target_inputs(&self) -> Vec<std::path::PathBuf> {
         let mut paths = vec![self.session.target_path.clone()];
-        if let Some(pack) = self.session.project.platform_pack.as_ref() {
+        for pack in &self.session.project.ecosystem_packs {
             paths.push(pack.path.clone());
-            paths.extend(pack.semantic_catalogs.iter().cloned());
+            paths.extend(pack.knowledge_packs.iter().cloned());
+        }
+        if let Some(pack) = self.session.project.chip_pack.as_ref() {
+            paths.push(pack.path.clone());
+            paths.extend(pack.knowledge_packs.iter().cloned());
         }
         paths
     }
@@ -181,7 +189,7 @@ impl ResolvedProjectAnalysisOperations<'_> {
                 self.session.target.calling_convention.label(),
                 self.session
                     .target
-                    .harness
+                    .knowledge_provider
                     .as_deref()
                     .map(crate::harnesses::contracts)
                     .transpose()?,
@@ -262,14 +270,13 @@ impl ResolvedProjectAnalysisOperations<'_> {
             ),
             "linked-ir" => format!("{:?}", project.ir_profiles),
             "event-replays" => format!("{:?}", project.functions),
-            // A feature pack may promote or remove review scopes without
-            // changing the explicit `[review]` table. Publication membership
-            // is derived from the required feature closure, so both the
-            // qualification configuration and the pack contents belong to
-            // this stage's cache identity.
             "review-scopes" => format!(
-                "review={:?};qualification={:?}",
-                project.review, project.qualification
+                "review={:?};policy={:?}",
+                project.review,
+                project
+                    .verification
+                    .as_ref()
+                    .and_then(|verification| verification.policy.as_ref())
             ),
             "navigation-index" => format!("{:?}", project.navigation_index),
             "code-boundary-validation" | "code-boundary-review" => {
@@ -493,8 +500,14 @@ impl ProjectAnalysisOperations for ResolvedProjectAnalysisOperations<'_> {
     fn build_review_scopes(&mut self, check: bool) -> Result<StageRun> {
         let mut inputs = self.common_inputs();
         inputs.extend(self.linked_ir_outputs());
-        if let Some(qualification) = self.session.project.qualification.as_ref() {
-            inputs.push(qualification.pack.clone());
+        if let Some(policy) = self
+            .session
+            .project
+            .verification
+            .as_ref()
+            .and_then(|verification| verification.policy.as_ref())
+        {
+            inputs.push(policy.clone());
         }
         if let Some(registers) = self.session.project.registers.as_ref() {
             inputs.push(registers.facts.clone());

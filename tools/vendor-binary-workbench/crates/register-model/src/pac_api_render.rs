@@ -71,9 +71,21 @@ impl PacApiPack {
         }
         for domain in &self.bounded_domains {
             push_doc(&mut output, &domain.description, "");
+            let constructor = match (domain.min, domain.max) {
+                (0, u32::MAX) => "        Some(Self(value))\n".to_owned(),
+                (0, max) => format!(
+                    "        if value <= 0x{max:08x} {{ Some(Self(value)) }} else {{ None }}\n"
+                ),
+                (min, u32::MAX) => format!(
+                    "        if value >= 0x{min:08x} {{ Some(Self(value)) }} else {{ None }}\n"
+                ),
+                (min, max) => format!(
+                    "        if value >= 0x{min:08x} && value <= 0x{max:08x} {{ Some(Self(value)) }} else {{ None }}\n"
+                ),
+            };
             output.push_str(&format!(
-                "#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]\npub struct {}(u32);\n\nimpl {} {{\n    pub const MIN: u32 = 0x{:08x};\n    pub const MAX: u32 = 0x{:08x};\n\n    /// Construct a value only when it lies in the reviewed inclusive range.\n    pub const fn new(value: u32) -> Option<Self> {{\n        if value >= Self::MIN && value <= Self::MAX {{ Some(Self(value)) }} else {{ None }}\n    }}\n\n    /// Return the checked numeric value.\n    pub const fn get(self) -> u32 {{ self.0 }}\n}}\n\n",
-                domain.name, domain.name, domain.min, domain.max,
+                "#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]\npub struct {}(u32);\n\nimpl {} {{\n    pub const MIN: u32 = 0x{:08x};\n    pub const MAX: u32 = 0x{:08x};\n\n    /// Construct a value only when it lies in the reviewed inclusive range.\n    pub const fn new(value: u32) -> Option<Self> {{\n{}    }}\n\n    /// Return the checked numeric value.\n    pub const fn get(self) -> u32 {{ self.0 }}\n}}\n\n",
+                domain.name, domain.name, domain.min, domain.max, constructor,
             ));
         }
         for domain in &self.opaque_domains {
@@ -139,18 +151,25 @@ impl PacApiPack {
             ));
         }
         for operation in &self.indexed_bit_set_modifies {
+            let domain = operation.domain.as_str();
+            let index = if flag_or_enum_domains.contains(domain) {
+                "index.bits()"
+            } else {
+                "index.get()"
+            };
             let (index_parameter, index_argument) = if operation.register.contains("%s") {
                 ("register_index: usize, ", "register_index, ")
             } else {
                 ("", "")
             };
             output.push_str(&format!(
-                "/// Typed bridge for the reviewed `{}` indexed bit-set transaction.\n#[inline]\npub(crate) fn {}(registers: &crate::svd::{}, {index_parameter}index: {}) {{\n    crate::svd::indexed_bit_set_modify::{}(registers, {index_argument}index.get());\n}}\n\n",
+                "/// Typed bridge for the reviewed `{}` indexed bit-set transaction.\n#[inline]\npub(crate) fn {}(registers: &crate::svd::{}, {index_parameter}index: {}) {{\n    crate::svd::indexed_bit_set_modify::{}(registers, {index_argument}{});\n}}\n\n",
                 operation.name,
                 operation.name,
                 type_binding_name(&operation.peripheral),
-                operation.domain,
+                domain,
                 operation.name,
+                index,
             ));
         }
         Ok(output)
@@ -853,6 +872,14 @@ peripheral = "RADIO"
 register = "CALIBRATION"
 domain = "CalibrationWord"
 sources = ["VENDOR_CALIBRATION"]
+
+[[indexed-bit-set-modifies]]
+name = "request_receive"
+peripheral = "RADIO"
+register = "REQUESTS"
+field = "REQUEST"
+domain = "RadioMode"
+sources = ["VENDOR_MODE"]
 "#,
         )
         .unwrap();
@@ -861,11 +888,17 @@ sources = ["VENDOR_CALIBRATION"]
         assert!(source.contains("pub const RX_READY: Self = Self(0x00000008);"));
         assert!(source.contains("pub enum RadioMode"));
         assert!(source.contains("pub const MAX: u32 = 0x00000003;"));
+        assert!(source.contains("if value <= 0x00000003"));
+        assert!(!source.contains("value >= Self::MIN"));
         assert!(source.contains("pub struct CalibrationWord(u32);"));
         assert!(source.contains("value: InterruptMask"));
         assert!(source.contains("full_register_write::write_interrupt_mask"));
         assert!(source.contains("value: CalibrationWord"));
         assert!(source.contains("register_image_write::write_calibration"));
+        assert!(source.contains("index: RadioMode"));
+        assert!(
+            source.contains("indexed_bit_set_modify::request_receive(registers, index.bits())")
+        );
         assert!(!source.contains("from_bits"));
         assert!(!source.contains("impl InterruptMask {\n    pub fn new"));
     }

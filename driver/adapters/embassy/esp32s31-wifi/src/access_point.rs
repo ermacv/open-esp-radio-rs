@@ -570,13 +570,13 @@ where
         Ok(())
     }
 
-    pub async fn service_tx<H: TxHardware>(
+    pub async fn service_tx<H>(
         &mut self,
         hardware: &mut H,
         wake: WifiTxWake,
     ) -> Result<WifiTxProgress, Esp32s31AccessPointControlError>
     where
-        H: Esp32s31ApRuntimeHardware,
+        H: Esp32s31ApRuntimeHardware + TxHardware,
     {
         let (progress, action) = self
             .mac

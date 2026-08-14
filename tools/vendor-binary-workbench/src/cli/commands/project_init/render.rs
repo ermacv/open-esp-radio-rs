@@ -5,12 +5,12 @@ use super::options::Options;
 pub(super) fn render_manifest(options: &Options) -> String {
     let mut output = format!(
         "# Shareable project configuration. Keep local artifact paths in local.toml.\n\
-schema = 1\n\
+schema = 3\n\
 id = \"{}\"\n\
 target-spec = \"target.toml\"\n\
-platform-pack = \"platform.toml\"\n\
-memory-map = \"memory.toml\"\n\
-svd = []\n",
+ecosystem-packs = [\"ecosystem.toml\"]\n\
+chip-pack = \"chip.toml\"\n\
+",
         options.id
     );
     output.push_str(
@@ -90,29 +90,38 @@ allow-clippy-empty-docs = false\n"
         .to_owned()
 }
 
-pub(super) fn render_platform(options: &Options) -> String {
+pub(super) fn render_ecosystem(options: &Options) -> String {
     format!(
-        "# Reviewed platform composition. Add a harness or semantic catalogs explicitly.\n\
-schema = 1\n\
-id = \"{}-platform\"\n\
-architecture = \"riscv32\"\n\
-calling-convention = \"riscv-ilp32\"\n\
-semantic-catalogs = []\n",
+        "# Reusable vendor/ecosystem semantics; no chip addresses belong here.\n\
+schema = 3\n\
+id = \"{}-ecosystem\"\n\
+knowledge-packs = []\n",
+        options.id
+    )
+}
+
+pub(super) fn render_chip(options: &Options) -> String {
+    format!(
+        "# Reusable chip/address knowledge referenced by one or more projects.\n\
+schema = 3\n\
+id = \"{}-chip\"\n\
+memory-map = \"memory.toml\"\n\
+svd = []\n\
+knowledge-packs = []\n",
         options.id
     )
 }
 
 pub(super) fn render_target(options: &Options) -> String {
     format!(
-        "# Generic RV32 target; select reviewed platform semantics in platform.toml.\n\
-schema = 1\n\
+        "# Generic RV32 target; ecosystem and chip knowledge are composed separately.\n\
+schema = 3\n\
 id = \"{}\"\n\
 architecture = \"riscv32\"\n\
 calling-convention = \"riscv-ilp32\"\n\
 endianness = \"little\"\n\
 pointer-width = 32\n\
-rust-target = \"{}\"\n\
-memory-map = \"memory.toml\"\n",
+rust-target = \"{}\"\n",
         options.id, options.rust_target
     )
 }
@@ -152,8 +161,8 @@ pub(super) fn render_readme(options: &Options) -> String {
         .join(" \\\n");
     format!(
         "# {} vendor analysis project\n\n\
-This directory is a generic Vendor Binary Workbench project. Hardware addresses live in\n\
-`memory.toml`; reviewed register names and fields live under `registers/`.\n\
+This directory is a generic Vendor Binary Workbench project. `chip.toml` owns the\n\
+reusable address inputs; reviewed register names and fields live under `registers/`.\n\
 Generated findings and reports are ignored.\n\n\
 ## Bootstrap\n\n\
 ```console\n\

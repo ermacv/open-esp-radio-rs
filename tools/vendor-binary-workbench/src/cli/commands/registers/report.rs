@@ -92,7 +92,6 @@ pub(super) struct RegisterMemoryDocument {
 #[derive(Serialize)]
 pub(super) struct RegisterEvidenceDocument {
     pub(super) catalogs: usize,
-    pub(super) confidence_levels: usize,
     pub(super) sources: usize,
     pub(super) ranges: usize,
 }
@@ -234,8 +233,8 @@ pub(super) fn print_workspace_human(report: &RegisterWorkspaceDocument<'_>) {
             "Evidence".into(),
             "valid".into(),
             format!(
-                "catalogs={} confidence-levels={} sources={} ranges={}",
-                evidence.catalogs, evidence.confidence_levels, evidence.sources, evidence.ranges
+                "catalogs={} sources={} ranges={}",
+                evidence.catalogs, evidence.sources, evidence.ranges
             ),
         ]);
     }

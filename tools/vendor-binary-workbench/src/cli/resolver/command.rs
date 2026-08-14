@@ -89,14 +89,10 @@ pub(super) fn resolve_command(
         Command::ProjectFiles(_) => {
             ResolvedInvocation::ProjectFiles(Box::new(environment.into_project_session()?))
         }
-        Command::ProjectAuditBindings(_) => ResolvedInvocation::ProjectAuditBindings(Box::new(
-            environment.into_project_session()?,
-        )),
+        Command::ProjectAuditBindings(_) => {
+            ResolvedInvocation::ProjectAuditBindings(Box::new(environment.into_project_session()?))
+        }
         Command::ProjectStatus(arguments) => ResolvedInvocation::ProjectStatus {
-            arguments,
-            session: Box::new(environment.into_project_session()?),
-        },
-        Command::ProjectFeature(arguments) => ResolvedInvocation::ProjectFeature {
             arguments,
             session: Box::new(environment.into_project_session()?),
         },
@@ -355,12 +351,6 @@ pub(super) fn resolve_command(
         },
         Command::GenerateReferenceBatch(arguments) => ResolvedInvocation::Target {
             command: TargetCommand::GenerateReferenceBatch(arguments),
-            target: environment.target,
-            svd: environment.svd,
-            project: environment.project.map(Box::new),
-        },
-        Command::GenerateDriver(arguments) => ResolvedInvocation::Target {
-            command: TargetCommand::GenerateDriver(arguments),
             target: environment.target,
             svd: environment.svd,
             project: environment.project.map(Box::new),

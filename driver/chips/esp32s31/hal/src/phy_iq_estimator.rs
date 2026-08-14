@@ -5,7 +5,7 @@
 //! arithmetic remain explicit in the PHY state machines.
 
 #[cfg(target_arch = "riscv32")]
-use open_esp_radio_esp32s31_pac::RadioRegisters;
+use crate::{PhyAccess, phy_pac_mut};
 
 /// One observation of the estimator completion signals.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -40,7 +40,8 @@ pub struct SignalPowerSnapshot {
 /// caller's low fifteen control bits. The diagnostic halfword write, delays
 /// and readiness loop are deliberately owned by the PHY transition.
 #[cfg(target_arch = "riscv32")]
-pub fn configure(registers: &mut RadioRegisters, control: u16) {
+pub fn configure(registers: &mut impl PhyAccess, control: u16) {
+    let registers = phy_pac_mut(registers);
     registers.configure_iq_estimator(control);
 }
 
@@ -50,7 +51,8 @@ pub fn configure(registers: &mut RadioRegisters, control: u16) {
 /// one-microsecond delay. Complete `phy_iq_est_disable` at `0x2f82_8a88`,
 /// size `0x2c`, clears the same bit after its final delay.
 #[cfg(target_arch = "riscv32")]
-pub fn set_start_enabled(registers: &mut RadioRegisters, enabled: bool) {
+pub fn set_start_enabled(registers: &mut impl PhyAccess, enabled: bool) {
+    let registers = phy_pac_mut(registers);
     registers.set_iq_estimator_start_enabled(enabled);
 }
 
@@ -60,7 +62,8 @@ pub fn set_start_enabled(registers: &mut RadioRegisters, enabled: bool) {
 /// one-microsecond delay. Complete `phy_iq_est_disable` clears it before its
 /// one-microsecond delay.
 #[cfg(target_arch = "riscv32")]
-pub fn set_measurement_enabled(registers: &mut RadioRegisters, enabled: bool) {
+pub fn set_measurement_enabled(registers: &mut impl PhyAccess, enabled: bool) {
+    let registers = phy_pac_mut(registers);
     registers.set_iq_estimator_measurement_enabled(enabled);
 }
 
@@ -70,7 +73,8 @@ pub fn set_measurement_enabled(registers: &mut RadioRegisters, enabled: bool) {
 /// it is clear, tests the PAC activity field. Rust retains repeat policy
 /// outside this finite observation leaf.
 #[cfg(target_arch = "riscv32")]
-pub fn sample_readiness(registers: &mut RadioRegisters) -> ReadinessSnapshot {
+pub fn sample_readiness(registers: &mut impl PhyAccess) -> ReadinessSnapshot {
+    let registers = phy_pac_mut(registers);
     let (ready, activity) = registers.sample_iq_estimator_readiness();
     ReadinessSnapshot { ready, activity }
 }
@@ -80,7 +84,8 @@ pub fn sample_readiness(registers: &mut RadioRegisters) -> ReadinessSnapshot {
 /// The complete rev0 ROM body at `0x2f82_8ab4`, size `0x84`, reads
 /// `DC_I_ACCUMULATOR`, `DC_Q_ACCUMULATOR`, then `POWER_ACCUMULATOR`.
 #[cfg(target_arch = "riscv32")]
-pub fn read_dc_iq_accumulators(registers: &mut RadioRegisters) -> DcIqAccumulatorSnapshot {
+pub fn read_dc_iq_accumulators(registers: &mut impl PhyAccess) -> DcIqAccumulatorSnapshot {
+    let registers = phy_pac_mut(registers);
     let [i, q, power] = registers.read_iq_estimator_dc_accumulators();
     DcIqAccumulatorSnapshot { i, q, power }
 }
@@ -90,7 +95,8 @@ pub fn read_dc_iq_accumulators(registers: &mut RadioRegisters) -> DcIqAccumulato
 /// Complete rev0 ROM `phy_set_rx_gain_cal_iq` at `0x2f82_964c`, size
 /// `0x20c`, and complete `phy_rxiq_get_mis` both consume this identity.
 #[cfg(target_arch = "riscv32")]
-pub fn read_total_power(registers: &mut RadioRegisters) -> i32 {
+pub fn read_total_power(registers: &mut impl PhyAccess) -> i32 {
+    let registers = phy_pac_mut(registers);
     registers.read_iq_estimator_total_power()
 }
 
@@ -99,7 +105,8 @@ pub fn read_total_power(registers: &mut RadioRegisters) -> i32 {
 /// The complete rev0 ROM body at `0x2f82_8b84`, size `0x13e`, reads the
 /// physical addresses in order `0x0454`, `0x0460`, `0x045c`, `0x0458`.
 #[cfg(target_arch = "riscv32")]
-pub fn read_rxiq_mismatch(registers: &mut RadioRegisters) -> SignalPowerSnapshot {
+pub fn read_rxiq_mismatch(registers: &mut impl PhyAccess) -> SignalPowerSnapshot {
+    let registers = phy_pac_mut(registers);
     let [sum_i, difference_i, difference_q, sum_q] = registers.read_iq_estimator_rxiq_mismatch();
     SignalPowerSnapshot {
         sum_i,
@@ -114,7 +121,8 @@ pub fn read_rxiq_mismatch(registers: &mut RadioRegisters) -> SignalPowerSnapshot
 /// The complete rev0 ROM body at `0x2f82_9ea2`, size `0x76`, reads the
 /// physical addresses in order `0x0454`, `0x0460`, `0x0458`, `0x045c`.
 #[cfg(target_arch = "riscv32")]
-pub fn read_signal_power(registers: &mut RadioRegisters) -> SignalPowerSnapshot {
+pub fn read_signal_power(registers: &mut impl PhyAccess) -> SignalPowerSnapshot {
+    let registers = phy_pac_mut(registers);
     let [sum_i, difference_i, difference_q, sum_q] = registers.read_iq_estimator_signal_power();
     SignalPowerSnapshot {
         sum_i,
@@ -130,6 +138,7 @@ pub fn read_signal_power(registers: &mut RadioRegisters) -> SignalPowerSnapshot 
 /// samples the PAC activity field exactly 100 times. The bounded repeat count
 /// remains in the caller-driven PHY transition.
 #[cfg(target_arch = "riscv32")]
-pub fn sample_activity(registers: &mut RadioRegisters) -> bool {
+pub fn sample_activity(registers: &mut impl PhyAccess) -> bool {
+    let registers = phy_pac_mut(registers);
     registers.iq_estimator_active()
 }

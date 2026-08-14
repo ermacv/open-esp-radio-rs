@@ -77,7 +77,9 @@ sources = [
     "BLOB_LIBPP_HAL_HE_BSSID_LIFECYCLE",
     "HIL_OPEN_HE_BSSID_LIFECYCLE_2026_07_30",
 ]
-confidence = "instruction-exact-hil-qualified"
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_POWER_SAVE.CONTROL.INTRA_PS_CHECK_BSS_COLOR_ENABLE"
@@ -85,7 +87,9 @@ sources = [
     "BLOB_LIBPP_HAL_HE_BSSID_LIFECYCLE",
     "BLOB_LIBPP_HAL_RX_MISC_DEBUG",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_POWER_SAVE.CONTROL.INTRA_PPDU_PS_ENABLE"
@@ -93,4 +97,6 @@ sources = [
     "BLOB_LIBPP_HAL_HE_BSSID_LIFECYCLE",
     "BLOB_LIBPP_HAL_RX_MISC_DEBUG",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"

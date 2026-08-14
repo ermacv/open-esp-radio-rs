@@ -98,7 +98,7 @@ pub(crate) fn run(
     } else {
         None
     };
-    fs::create_dir_all(&output)?;
+    fs::create_dir_all(output)?;
     let report_path = output.join("report.md");
     fs::write(
         &report_path,

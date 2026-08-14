@@ -21,12 +21,12 @@ pub(super) fn validate_anchor_shape(
             ValidationError::anchor(anchor, "execution-contract", error.to_string())
         })?;
     }
-    if anchor.origin == PackOrigin::Manual && anchor.status != ReviewStatus::Reviewed {
+    if anchor.origin == PackOrigin::Reviewed && anchor.status != ReviewStatus::Reviewed {
         return Err(ValidationError::anchor(
             anchor,
             "status",
             format!(
-                "manual interface anchor {:?} must have status = \"reviewed\"",
+                "reviewed interface anchor {:?} must have status = \"reviewed\"",
                 anchor.id
             ),
         ));
@@ -379,7 +379,7 @@ fn validate_slot(
             format!("anchor {:?} has unsupported slot width", anchor.id),
         ));
     }
-    if slot.origin == PackOrigin::Manual && slot.status != ReviewStatus::Reviewed {
+    if slot.origin == PackOrigin::Reviewed && slot.status != ReviewStatus::Reviewed {
         return Err(ValidationError::slot(
             anchor,
             slot,
@@ -627,7 +627,7 @@ fn validate_source_id(value: &str) -> std::result::Result<(), String> {
     Ok(())
 }
 
-fn validate_abi_type(
+pub(crate) fn validate_abi_type(
     value: &str,
     allow_void: bool,
     context: &str,

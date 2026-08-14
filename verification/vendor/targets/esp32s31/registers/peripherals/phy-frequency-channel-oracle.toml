@@ -459,7 +459,9 @@ sources = [
     "BLOB_LIBPHY_PHY_BB_INIT",
     "BLOB_LIBPHY_REGISTER_CHIPV7_PHY",
 ]
-confidence = "instruction-exact-partial"
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
 
 [[review]]
 entity = "PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_CONTROL"
@@ -467,42 +469,58 @@ sources = [
     "ROM_REV0_PHY_FREQUENCY_CHANNEL",
     "BLOB_LIBPHY_REGISTER_CHIPV7_PHY",
 ]
-confidence = "instruction-exact-partial"
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
 
 [[review]]
 entity = "PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_CONTROL.CHANNEL_INDEX"
 sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_CONTROL.MEMORY_ADDRESS_LOW_UNKNOWN"
 sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_CONTROL.MEMORY_ADDRESS_HIGH_OR_MODULE_RESET_UNKNOWN"
 sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL"]
-confidence = "instruction-exact-partial"
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
 
 [[review]]
 entity = "PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_CONTROL.CHANNEL_SWITCH_PULSE"
 sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_CONTROL.MEMORY_WRITE_PULSE"
 sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_CONTROL.REGISTER_MODE_UNKNOWN"
 sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_CONTROL.MODULE_ENABLE_UNKNOWN"
 sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_CONTROL.HARDWARE_FREQUENCY_DISABLE"
@@ -510,12 +528,16 @@ sources = [
     "ROM_REV0_PHY_FREQUENCY_CHANNEL",
     "BLOB_LIBPHY_REGISTER_CHIPV7_PHY",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_PARAMETER_0_OPAQUE"
 sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_PARAMETER_1_STATUS"
@@ -523,52 +545,72 @@ sources = [
     "ROM_REV0_PHY_FREQUENCY_CHANNEL",
     "BLOB_LIBPHY_PHY_BB_INIT",
 ]
-confidence = "instruction-exact-partial"
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
 
 [[review]]
 entity = "PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_PARAMETER_1_STATUS.BASEBAND_MODE_UNKNOWN"
 sources = ["BLOB_LIBPHY_PHY_BB_INIT"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_PARAMETER_1_STATUS.INIT_LOW_UNKNOWN"
 sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_PARAMETER_1_STATUS.FREQUENCY_READY"
 sources = ["BLOB_LIBPHY_PHY_RFPLL_CHANNEL"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_PARAMETER_1_STATUS.INIT_HIGH_UNKNOWN"
 sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_MEMORY_DATA"
 sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_FREQUENCY_CHANNEL_ORACLE.I2C_NUMBER_CONTROL"
 sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_FREQUENCY_CHANNEL_ORACLE.I2C_NUMBER_WORD%s"
 sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_FREQUENCY_CHANNEL_ORACLE.I2C_NUMBER_WORD%s.HIGH_UNKNOWN"
 sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_FREQUENCY_CHANNEL_ORACLE.FBW_BT_FILTER_CONTROL"
 sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL"]
-confidence = "instruction-exact-partial"
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
 
 [[review]]
 entity = "PHY_FREQUENCY_CHANNEL_ORACLE.CHANNEL_TX_OFFSET_CONTROL"
@@ -576,27 +618,37 @@ sources = [
     "ROM_REV0_PHY_FREQUENCY_CHANNEL",
     "BLOB_LIBPP_HAL_HE_INIT_SUFFIX",
 ]
-confidence = "instruction-exact-partial"
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
 
 [[review]]
 entity = "PHY_FREQUENCY_CHANNEL_ORACLE.CHANNEL_TX_OFFSET_CONTROL.MINIMUM_POWER_INDEX"
 sources = ["BLOB_LIBPP_HAL_HE_INIT_SUFFIX"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_FREQUENCY_CHANNEL_ORACLE.CHANNEL_TX_OFFSET_CONTROL.HE_PARENT_ENABLE_UNKNOWN"
 sources = ["BLOB_LIBPP_HAL_HE_INIT_SUFFIX"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_FREQUENCY_CHANNEL_ORACLE.NRX_FREQUENCY_CONTROL"
 sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL"]
-confidence = "instruction-exact-partial"
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
 
 [[review]]
 entity = "PHY_FREQUENCY_CHANNEL_ORACLE.CHANNEL_CBW_CONTROL_0"
 sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_FREQUENCY_CHANNEL_ORACLE.CHANNEL_CBW_CONTROL_1"
@@ -604,4 +656,6 @@ sources = [
     "ROM_REV0_PHY_FREQUENCY_CHANNEL",
     "ROM_REV0_PHY_CBW_FEATURE_WATCHDOG",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"

@@ -32,7 +32,9 @@ sources = [
     "BLOB_LIBPHY_PHY_XTAL_DUTY_CAL",
     "ROM_REV0_PHY_RX_DCO_CAL",
 ]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_RX_DCO_ORACLE.CONTROL"
@@ -40,7 +42,9 @@ sources = [
     "BLOB_LIBPHY_PHY_XTAL_DUTY_CAL",
     "ROM_REV0_PHY_RX_DCO_CAL",
 ]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_RX_DCO_ORACLE.CONTROL.CALIBRATION_CONTROL_UNKNOWN"
@@ -48,4 +52,6 @@ sources = [
     "BLOB_LIBPHY_PHY_XTAL_DUTY_CAL",
     "ROM_REV0_PHY_RX_DCO_CAL",
 ]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"

@@ -1,14 +1,16 @@
 //! Vendor Binary Workbench facade and CLI implementation.
 //!
 //! This facade composes neutral contracts and analysis/semantics layers with
-//! the RISC-V backend, ESP32-S31 harness, CLI and verification workflows.
+//! the RISC-V backend, optional target providers, CLI and verification workflows.
 
 mod analysis;
 mod application;
 mod artifacts;
+mod chip_pack;
 mod cli;
 mod code_workspace;
 mod digest;
+mod ecosystem_pack;
 mod error;
 mod flow_investigation;
 mod function_investigation;
@@ -20,11 +22,9 @@ mod memory_map;
 mod navigation;
 mod orchestration;
 mod parse;
-mod platform_pack;
 mod project;
 mod project_analysis;
 mod project_ir;
-mod qualification;
 mod register_catalog;
 mod registers;
 mod resource_usage;
@@ -50,8 +50,9 @@ pub use function_investigation::{
     SemanticFunctionEvidence, StoredLinkedIrRecord,
 };
 pub use harnesses::{
-    DriverAdapterVerifier, DriverEvidenceLookup, HarnessDescriptor, NamedContractVerifier,
-    ProviderError, ProviderResult, SemanticContractVerifier, SemanticEvidenceLookup,
+    DriverAdapterVerifier, DriverEvidenceLookup, KnowledgeProviderDescriptor,
+    NamedContractVerifier, ProviderError, ProviderRegistry, ProviderResult,
+    SemanticContractVerifier, SemanticEvidenceLookup, VerificationProviderDescriptor,
 };
 use memory_map::MemoryMap;
 use open_radio_vendor_analysis_model::*;
@@ -87,8 +88,8 @@ pub use open_radio_vendor_execution_model::{
 };
 pub use open_radio_vendor_semantics::{
     DriverAdapterEvidenceSources, DriverAdapterRequest, DriverAdapterVerification, EquivalenceMode,
-    EquivalenceOutcome, EquivalenceVerdict, HarnessContractSpec, MmioMap, QualificationReport,
-    SemanticContractEvidenceSources, SemanticContractRequest,
+    EquivalenceOutcome, EquivalenceVerdict, KnowledgeContractSpec, MmioMap,
+    SemanticContractEvidenceSources, SemanticContractRequest, SemanticVerificationReport,
 };
 pub(crate) use orchestration::generated_reference;
 use parse::u32_literal as parse_u32;
@@ -135,9 +136,9 @@ pub fn main_entry() -> ExitCode {
 /// A standalone generic build calls [`main_entry`] and has no platform
 /// vocabulary. Product repositories use this entry point from a thin host
 /// binary so target knowledge never becomes a dependency of the generic tool.
-pub fn main_entry_with_harnesses(registry: &'static [HarnessDescriptor]) -> ExitCode {
+pub fn main_entry_with_providers(registry: &'static ProviderRegistry) -> ExitCode {
     if let Err(message) = harnesses::install_registry(registry) {
-        eprintln!("platform provider initialization failed: {message}");
+        eprintln!("add-on provider initialization failed: {message}");
         return ExitCode::FAILURE;
     }
     main_entry()

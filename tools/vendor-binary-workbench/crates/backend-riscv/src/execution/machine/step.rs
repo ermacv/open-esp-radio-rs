@@ -59,6 +59,84 @@ const fn atomic_operation(operation: AmoOp) -> AtomicOperation {
 }
 
 impl Machine<'_> {
+    fn finish_external_leaf(&mut self) -> bool {
+        let return_address = self.register(Reg::RA);
+        if return_address == RETURN_SENTINEL {
+            false
+        } else {
+            self.pc = return_address;
+            true
+        }
+    }
+
+    fn dispatch_builtin_memory_call(&mut self, symbol: &str) -> Result<Option<bool>> {
+        const MAX_BUILTIN_MEMORY_BYTES: u32 = 1 << 20;
+
+        let destination = self.register(Reg::A0);
+        let source_or_value = self.register(Reg::A1);
+        let length = self.register(Reg::A2);
+        if !matches!(symbol, "memcpy" | "memmove" | "memset") {
+            return Ok(None);
+        }
+        if length > MAX_BUILTIN_MEMORY_BYTES {
+            return Err(format!(
+                "builtin {symbol} length {length:#x} exceeds the executor limit {MAX_BUILTIN_MEMORY_BYTES:#x}"
+            )
+            .into());
+        }
+
+        match symbol {
+            "memcpy" | "memmove" => {
+                // Snapshot first so memmove overlap has its specified behavior.
+                // The same implementation is valid for memcpy's non-overlap
+                // contract and keeps the executor independent of host memory.
+                let bytes = (0..length)
+                    .map(|offset| self.normal_byte(source_or_value.wrapping_add(offset)))
+                    .collect::<Result<Vec<_>>>()?;
+                for (offset, byte) in bytes.into_iter().enumerate() {
+                    self.write(destination.wrapping_add(offset as u32), 8, u32::from(byte))?;
+                }
+            }
+            "memset" => {
+                for offset in 0..length {
+                    self.write(destination.wrapping_add(offset), 8, source_or_value & 0xff)?;
+                }
+            }
+            _ => unreachable!(),
+        }
+        self.set_register(Reg::A0, destination);
+        Ok(Some(self.finish_external_leaf()))
+    }
+
+    fn dispatch_builtin_arithmetic_call(&mut self, symbol: &str) -> Result<Option<bool>> {
+        if !matches!(symbol, "__divdi3" | "__moddi3" | "__udivdi3" | "__umoddi3") {
+            return Ok(None);
+        }
+
+        // RV32 passes a 64-bit dividend in a1:a0 and divisor in a3:a2.
+        // Compiler runtime helpers return the 64-bit result in a1:a0.
+        let dividend =
+            u64::from(self.register(Reg::A0)) | (u64::from(self.register(Reg::A1)) << 32);
+        let divisor = u64::from(self.register(Reg::A2)) | (u64::from(self.register(Reg::A3)) << 32);
+        if divisor == 0 {
+            return Err(format!(
+                "builtin {symbol} cannot execute with a zero divisor; the result is undefined by the helper ABI"
+            )
+            .into());
+        }
+
+        let result = match symbol {
+            "__divdi3" => (dividend as i64).wrapping_div(divisor as i64) as u64,
+            "__moddi3" => (dividend as i64).wrapping_rem(divisor as i64) as u64,
+            "__udivdi3" => dividend / divisor,
+            "__umoddi3" => dividend % divisor,
+            _ => unreachable!(),
+        };
+        self.set_register(Reg::A0, result as u32);
+        self.set_register(Reg::A1, (result >> 32) as u32);
+        Ok(Some(self.finish_external_leaf()))
+    }
+
     pub(in crate::execution) fn step(&mut self) -> Result<bool> {
         if self.steps == self.max_steps {
             let context = self
@@ -92,16 +170,49 @@ impl Machine<'_> {
         }
         self.steps += 1;
 
-        if let Some(symbol) = self.image.symbol_at(self.pc)
-            && symbol == "ets_delay_us"
-        {
-            self.record_event(ExecutionEvent::DelayMicros(self.register(Reg::A0)));
-            let return_address = self.register(Reg::RA);
-            if return_address == RETURN_SENTINEL {
-                return Ok(false);
+        if let Some(symbol) = self.call_symbol_at(self.pc).map(str::to_owned) {
+            if let Some(running) = self.dispatch_builtin_memory_call(&symbol)? {
+                return Ok(running);
             }
-            self.pc = return_address;
-            return Ok(true);
+            if let Some(running) = self.dispatch_builtin_arithmetic_call(&symbol)? {
+                return Ok(running);
+            }
+            if symbol == "ets_delay_us" {
+                self.record_event(ExecutionEvent::DelayMicros(self.register(Reg::A0)));
+                return Ok(self.finish_external_leaf());
+            }
+
+            if self.image.call_trampoline_addresses.contains(&self.pc) {
+                if self.fifo_bindings.contains_key(&symbol) {
+                    self.apply_fifo_service_call(&symbol, self.pc)?;
+                    let return_address = self.register(Reg::RA);
+                    if return_address == RETURN_SENTINEL {
+                        return Ok(false);
+                    }
+                    self.pc = return_address;
+                    return Ok(true);
+                }
+                if let Some(response) = self.modeled_call_response(&symbol, self.pc)? {
+                    self.apply_modeled_call_response(&symbol, self.pc, response)?;
+                    let return_address = self.register(Reg::RA);
+                    if return_address == RETURN_SENTINEL {
+                        return Ok(false);
+                    }
+                    self.pc = return_address;
+                    return Ok(true);
+                }
+                if let Some(target) = self.image.symbol_address(&symbol)
+                    && target != self.pc
+                {
+                    self.pc = target;
+                    return Ok(true);
+                }
+                return Err(format!(
+                    "unresolved call trampoline {symbol} at {:#010x}; provide the target image or an explicit call model",
+                    self.pc
+                )
+                .into());
+            }
         }
         if let Some(call) = self.image.relocated_call_at(self.pc).cloned() {
             let link = self.image.relocated_call_link_register(self.pc)?;

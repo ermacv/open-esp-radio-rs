@@ -5,7 +5,7 @@
 //! retains the exact descriptor across successful and passive-fallback paths.
 
 use crate::scan::Esp32s31ActiveProbeOutcome;
-use open_esp_radio_esp32s31_pac::MacInterruptSetup;
+use open_esp_radio_esp32s31_hal::MacInterruptSetup;
 use open_esp_radio_esp32s31_wifi_mac::tx::{TxCompletion, TxHardware};
 use open_esp_radio_ieee80211::management::ProbeRequest;
 
@@ -107,6 +107,12 @@ impl Esp32s31ScanTxState {
     }
 }
 
+impl Default for Esp32s31ScanTxState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Polling TX owner for a running rescan after the MAC IRQ epoch is quiesced.
 ///
 /// The connected teardown returns the exact ordinary descriptor and disables
@@ -202,7 +208,7 @@ mod tests {
         task::{Context, Poll},
     };
 
-    use open_esp_radio_esp32s31_pac::{
+    use open_esp_radio_esp32s31_hal::types::{
         MacLegacyTxProgram, MacTxCompletionRegisters, MacTxDetachOutcome, MacTxDetachReason,
         MacTxQueueDetached,
     };

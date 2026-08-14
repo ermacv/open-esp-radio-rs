@@ -317,7 +317,12 @@ pub(crate) fn detail(
             && !non_operational_only
             && !outside_publication_scope,
         publication_scopes,
-        review_confidence: annotation.and_then(|item| item.confidence.clone()),
+        review_classification: annotation.and_then(|item| {
+            Some(format!(
+                "provenance={:?}, accuracy={:?}, completeness={:?}",
+                item.provenance?, item.accuracy?, item.completeness?
+            ))
+        }),
         review_sources: annotation.map_or_else(Vec::new, |item| item.sources.clone()),
         reads: fact.map_or(0, |fact| fact.reads),
         writes: fact.map_or(0, |fact| fact.writes),
@@ -366,7 +371,7 @@ fn catalog_only_detail(address: u32, name: String) -> RegisterDetailSummary {
         review_status: RegisterReviewState::Unreviewed,
         publication_scopes: Vec::new(),
         publication_debt: false,
-        review_confidence: None,
+        review_classification: None,
         review_sources: Vec::new(),
         reads: 0,
         writes: 0,

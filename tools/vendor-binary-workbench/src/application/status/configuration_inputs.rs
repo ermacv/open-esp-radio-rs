@@ -21,31 +21,50 @@ pub(super) fn configuration(context: &ProjectContext<'_>) -> Phase {
                 context.project_path.display()
             )),
     };
-    let platform = context.project.platform_pack.as_ref().map_or_else(
-        || Component::new("platform_pack", Readiness::NotConfigured),
+    let ecosystem = Component::new(
+        "ecosystem_packs",
+        if context.project.ecosystem_packs.is_empty() {
+            Readiness::NotConfigured
+        } else {
+            Readiness::Ready
+        },
+    )
+    .detail(
+        "ids",
+        context
+            .project
+            .ecosystem_packs
+            .iter()
+            .map(|pack| pack.id.clone())
+            .collect::<Vec<_>>(),
+    )
+    .detail(
+        "knowledge_operations",
+        context
+            .project
+            .ecosystem_packs
+            .iter()
+            .map(|pack| pack.knowledge_operations)
+            .sum::<usize>(),
+    );
+    let chip = context.project.chip_pack.as_ref().map_or_else(
+        || Component::new("chip_pack", Readiness::NotConfigured),
         |pack| {
-            Component::new("platform_pack", Readiness::Ready)
+            Component::new("chip_pack", Readiness::Ready)
                 .detail("id", pack.id.clone())
                 .detail("path", pack.path.display().to_string())
-                .detail("semantic_catalogs", pack.semantic_catalogs.len())
-                .detail(
-                    "semantic_catalog_paths",
-                    pack.semantic_catalogs
-                        .iter()
-                        .map(|path| path.display().to_string())
-                        .collect::<Vec<_>>(),
-                )
-                .detail("semantic_operations", pack.semantic_operations)
+                .detail("knowledge_packs", pack.knowledge_packs.len())
+                .detail("knowledge_operations", pack.knowledge_operations)
         },
     );
-    let harness = match &context.target.harness {
-        None => Component::new("harness", Readiness::NotConfigured),
-        Some(_) => match context.target.require_available_harness() {
-            Ok(id) => Component::new("harness", Readiness::Ready).detail("id", id),
-            Err(error) => Component::new("harness", Readiness::Invalid)
+    let knowledge_provider = match &context.target.knowledge_provider {
+        None => Component::new("knowledge_provider", Readiness::NotConfigured),
+        Some(_) => match context.target.require_available_knowledge_provider() {
+            Ok(id) => Component::new("knowledge_provider", Readiness::Ready).detail("id", id),
+            Err(error) => Component::new("knowledge_provider", Readiness::Invalid)
                 .diagnostic(error)
                 .next_action(format!(
-                    "rebuild the workbench with the feature that registers this target harness; the target is selected by {}",
+                    "rebuild the workbench host with the add-on that registers this knowledge provider; the target is selected by {}",
                     context.project_path.display()
                 )),
         },
@@ -54,7 +73,7 @@ pub(super) fn configuration(context: &ProjectContext<'_>) -> Phase {
         None => Component::new("memory_map", Readiness::Incomplete)
             .diagnostic("project has no memory map")
             .next_action(format!(
-                "configure memory-map in {}",
+                "attach a chip-pack with memory-map in {}",
                 context.project_path.display()
             )),
         Some(memory) => {
@@ -88,7 +107,10 @@ pub(super) fn configuration(context: &ProjectContext<'_>) -> Phase {
             )
         }
     };
-    Phase::collect("configuration", vec![backend, platform, harness, memory])
+    Phase::collect(
+        "configuration",
+        vec![backend, ecosystem, chip, knowledge_provider, memory],
+    )
 }
 
 pub(super) fn inputs(context: &ProjectContext<'_>) -> Phase {

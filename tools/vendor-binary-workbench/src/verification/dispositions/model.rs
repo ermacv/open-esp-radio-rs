@@ -52,7 +52,7 @@ pub enum Disposition {
 /// The canonical Rust module/item path is deliberately used as the component
 /// id. This keeps the reviewed manifest reproducible while preventing an
 /// arbitrary human description from becoming the join key for project-wide
-/// qualification reports.
+/// verification reports.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct RustComponentId(String);
 
@@ -158,7 +158,7 @@ pub struct Entry {
     pub semantic_contract: Option<SemanticContract>,
     pub effect_contract: Option<EffectPolicy>,
     pub binding: Option<Binding>,
-    pub qualification_blockers: Vec<(String, String)>,
+    pub release_blockers: Vec<(String, String)>,
 }
 
 #[derive(Clone, Debug)]
@@ -177,7 +177,7 @@ pub(super) struct EntryBuilder {
     pub(super) rust_probe: Option<String>,
     pub(super) compare_return: Option<bool>,
     pub(super) driver_adapter: Option<DriverAdapter>,
-    pub(super) qualification_blockers: Vec<(String, String)>,
+    pub(super) release_blockers: Vec<(String, String)>,
     pub(super) line: usize,
 }
 
@@ -227,17 +227,17 @@ impl EntryBuilder {
                     self.source, self.symbol
                 )));
             }
-            if !self.qualification_blockers.is_empty() && !disposition.is_implemented() {
+            if !self.release_blockers.is_empty() && !disposition.is_implemented() {
                 return Err(crate::Error::invalid(format!(
-                    "unimplemented function {} {} cannot have qualification blockers",
+                    "unimplemented function {} {} cannot have release blockers",
                     self.source, self.symbol
                 )));
             }
-            if !self.qualification_blockers.is_empty()
+            if !self.release_blockers.is_empty()
                 && (self.semantic_contract.is_some() || self.effect_comparison.is_some())
             {
                 return Err(crate::Error::invalid(format!(
-                    "qualified function {} {} cannot have qualification blockers",
+                    "verified function {} {} cannot have release blockers",
                     self.source, self.symbol
                 )));
             }
@@ -311,7 +311,7 @@ impl EntryBuilder {
                 semantic_contract: self.semantic_contract,
                 effect_contract,
                 binding,
-                qualification_blockers: self.qualification_blockers,
+                release_blockers: self.release_blockers,
             })
         })()
         .map_err(|error: crate::error::WorkbenchError| error.at_line(line))

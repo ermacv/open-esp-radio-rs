@@ -15,7 +15,7 @@ use crate::{
     },
 };
 use open_esp_radio_esp32s31_hal::{
-    RadioRegisters, phy_i2c::PhyI2cMasterControl, phy_temperature::PhyTemperatureSystemControl,
+    RadioRuntimeOwner, phy_i2c::PhyI2cMasterControl, phy_temperature::PhyTemperatureSystemControl,
     wifi_bb::PhyWifiBbControl,
 };
 use open_esp_radio_esp32s31_phy::{PhyAsyncDelay, PhyTargetObserver, PhyTargetPortError};
@@ -39,14 +39,13 @@ where
     ) -> impl core::future::Future<Output = Result<(), Self::Error>> + 'a {
         async move {
             let access = hardware.register_access();
-            let mut registers = access.borrow_mut();
-            self.switch_channel(u16::from(channel), 0, &mut registers)
+            self.switch_published_channel(u16::from(channel), 0, access)
                 .await
         }
     }
 }
 
-impl<P, O, D> Esp32s31ScanPhyPort<RadioRegisters> for Esp32s31ScanPhy<'_, P, O, D>
+impl<P, O, D> Esp32s31ScanPhyPort<RadioRuntimeOwner> for Esp32s31ScanPhy<'_, P, O, D>
 where
     P: PhyWifiBbControl + PhyTemperatureSystemControl + PhyI2cMasterControl,
     O: PhyTargetObserver,
@@ -56,7 +55,7 @@ where
 
     fn switch_channel<'a>(
         &'a mut self,
-        hardware: &'a mut RadioRegisters,
+        hardware: &'a mut RadioRuntimeOwner,
         channel: u8,
     ) -> impl core::future::Future<Output = Result<(), Self::Error>> + 'a {
         async move { self.switch_channel(u16::from(channel), 0, hardware).await }

@@ -1,9 +1,6 @@
 //! Bounded handoff from borrowed RX dispatch to the connected control owner.
 
-use core::{
-    future::Future,
-    sync::atomic::{AtomicU32, Ordering},
-};
+use core::sync::atomic::{AtomicU32, Ordering};
 
 use embassy_futures::select::select3;
 use embassy_sync::channel::{Channel, Receiver, Sender, TrySendError};
@@ -230,19 +227,21 @@ impl<M: RawMutex, const CAPACITY: usize> ConnectedControlReceiver<'_, M, CAPACIT
         self.security.try_receive().ok()
     }
 
-    pub fn ready(&self) -> impl Future<Output = ()> + '_ {
-        async {
-            select3(
-                self.terminal.ready_to_receive(),
-                self.security.ready_to_receive(),
-                self.receiver.ready_to_receive(),
-            )
-            .await;
-        }
+    pub async fn ready(&self) {
+        select3(
+            self.terminal.ready_to_receive(),
+            self.security.ready_to_receive(),
+            self.receiver.ready_to_receive(),
+        )
+        .await;
     }
 
     pub fn len(&self) -> usize {
         self.terminal.len() + self.security.len() + self.receiver.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 
     pub fn dropped(&self) -> u32 {

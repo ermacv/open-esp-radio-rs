@@ -235,7 +235,7 @@ pub(crate) fn replacement_evidence(
         })
         .collect::<std::collections::BTreeSet<_>>();
     for suite in suites {
-        let path = crate::qualification::suite_report_path(&workspace.report, &suite);
+        let path = crate::verification::policy::suite_report_path(&workspace.report, &suite);
         let input = std::fs::read_to_string(&path)
             .map_err(|source| crate::Error::read("verification suite report", &path, source))?;
         let report: StoredSuiteProjection = serde_json::from_str(&input)?;

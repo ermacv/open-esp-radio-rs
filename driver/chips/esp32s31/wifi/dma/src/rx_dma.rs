@@ -8,14 +8,15 @@
 use core::marker::PhantomData;
 
 use open_esp_radio_dma::StableDmaRange;
-use open_esp_radio_esp32s31_pac::{ColdRadioRegisters, RadioRegisters};
+use open_esp_radio_esp32s31_hal::RadioRuntimeOwner;
+use open_esp_radio_esp32s31_hal::wifi_mac::WifiMacHal;
 
 use crate::descriptor::{DESCRIPTOR_BYTES, Descriptor};
 
 /// Unforgeable authority for mutating one validated RX descriptor walker.
 ///
-/// Public trait methods accept this type so owning `RadioRegisters` alone is
-/// insufficient to publish an arbitrary DMA address. Constructors remain
+/// Public trait methods accept this type so owning a runtime radio capability
+/// alone is insufficient to publish an arbitrary DMA address. Constructors remain
 /// inside the chip DMA leaf and ring typestates keep the value private.
 pub struct RxDmaBinding<'storage> {
     descriptor_base: u32,
@@ -213,26 +214,26 @@ pub trait RxDma {
     fn fence(&mut self);
 }
 
-impl RxDma for RadioRegisters {
+impl RxDma for WifiMacHal<'_> {
     fn buffer_full_count(&mut self) -> Option<u16> {
-        Some(self.mac_rx_buffer_full_count())
+        Some(self.rx_buffer_full_count())
     }
 
     fn last_descriptor_low(&mut self) -> u32 {
-        self.mac_rx_last_descriptor_low()
+        self.rx_last_descriptor_low()
     }
 
     fn next_descriptor_low(&mut self) -> u32 {
-        self.mac_rx_next_descriptor_low()
+        self.rx_next_descriptor_low()
     }
 
     fn with_ordered_cursor<R>(
         &mut self,
         observed: impl for<'confirmation> FnOnce(RxDmaCursorObservation<'confirmation>) -> R,
     ) -> R {
-        let last_descriptor_low = self.mac_rx_last_descriptor_low();
+        let last_descriptor_low = self.rx_last_descriptor_low();
         self.order_device_accesses();
-        let next_descriptor_low = self.mac_rx_next_descriptor_low();
+        let next_descriptor_low = self.rx_next_descriptor_low();
         self.order_device_accesses();
         observed(RxDmaCursorObservation::confirmed(
             last_descriptor_low,
@@ -241,22 +242,22 @@ impl RxDma for RadioRegisters {
     }
 
     fn walker_enabled(&mut self) -> bool {
-        self.mac_rx_walker_enabled()
+        self.rx_walker_enabled()
     }
 
     fn reload_pending(&mut self) -> bool {
-        self.mac_rx_reload_pending()
+        self.rx_reload_pending()
     }
 
     fn try_with_reload_settled<R>(
         &mut self,
         settled: impl for<'confirmation> FnOnce(RxDmaReloadSettled<'confirmation>) -> R,
     ) -> Option<R> {
-        (!self.mac_rx_reload_pending()).then(|| settled(RxDmaReloadSettled::confirmed()))
+        (!self.rx_reload_pending()).then(|| settled(RxDmaReloadSettled::confirmed()))
     }
 
     fn set_descriptor_high_window(&mut self, binding: &RxDmaBinding<'_>, address_high: u16) {
-        self.set_mac_rx_descriptor_high_window(binding.range(), address_high);
+        self.set_rx_descriptor_high_window(binding.range(), address_high);
     }
 
     fn write_descriptor_base(&mut self, binding: &RxDmaBinding<'_>, address: u32) {
@@ -264,15 +265,15 @@ impl RxDma for RadioRegisters {
             binding.admits(address),
             "RX descriptor base must belong to the bound static ring"
         );
-        self.write_mac_rx_descriptor_base(binding.range(), address);
+        self.write_rx_descriptor_base(binding.range(), address);
     }
 
     fn publish_walker_enable(&mut self, binding: &RxDmaBinding<'_>) {
-        self.publish_mac_rx_walker_enable(binding.range());
+        self.publish_rx_walker_enable(binding.range());
     }
 
     fn request_reload(&mut self, binding: &RxDmaBinding<'_>) {
-        self.request_mac_rx_descriptor_reload(binding.range());
+        self.request_rx_descriptor_reload(binding.range());
     }
 
     fn try_with_walker_enabled<R>(
@@ -280,7 +281,7 @@ impl RxDma for RadioRegisters {
         binding: &RxDmaBinding<'_>,
         enabled: impl for<'confirmation> FnOnce(RxDmaWalkerEnabled<'confirmation>) -> R,
     ) -> Option<R> {
-        self.try_enable_mac_rx_walker(binding.range())
+        self.try_enable_rx_walker(binding.range())
             .then(|| enabled(RxDmaWalkerEnabled::confirmed()))
     }
 
@@ -288,7 +289,7 @@ impl RxDma for RadioRegisters {
         &mut self,
         stopped: impl for<'confirmation> FnOnce(RxDmaWalkerStopped<'confirmation>) -> R,
     ) -> Option<R> {
-        self.try_disable_mac_rx_walker()
+        self.try_disable_rx_walker()
             .then(|| stopped(RxDmaWalkerStopped::confirmed()))
     }
 
@@ -297,73 +298,73 @@ impl RxDma for RadioRegisters {
     }
 }
 
-impl RxDma for ColdRadioRegisters {
+impl RxDma for RadioRuntimeOwner {
     fn buffer_full_count(&mut self) -> Option<u16> {
-        RxDma::buffer_full_count(&mut **self)
+        RxDma::buffer_full_count(&mut self.wifi_mac_hal())
     }
 
     fn last_descriptor_low(&mut self) -> u32 {
-        RxDma::last_descriptor_low(&mut **self)
+        RxDma::last_descriptor_low(&mut self.wifi_mac_hal())
     }
 
     fn next_descriptor_low(&mut self) -> u32 {
-        RxDma::next_descriptor_low(&mut **self)
+        RxDma::next_descriptor_low(&mut self.wifi_mac_hal())
     }
 
     fn with_ordered_cursor<R>(
         &mut self,
         observed: impl for<'confirmation> FnOnce(RxDmaCursorObservation<'confirmation>) -> R,
     ) -> R {
-        RxDma::with_ordered_cursor(&mut **self, observed)
+        RxDma::with_ordered_cursor(&mut self.wifi_mac_hal(), observed)
     }
 
     fn walker_enabled(&mut self) -> bool {
-        RxDma::walker_enabled(&mut **self)
+        RxDma::walker_enabled(&mut self.wifi_mac_hal())
     }
 
     fn reload_pending(&mut self) -> bool {
-        RxDma::reload_pending(&mut **self)
+        RxDma::reload_pending(&mut self.wifi_mac_hal())
     }
 
     fn try_with_reload_settled<R>(
         &mut self,
         settled: impl for<'confirmation> FnOnce(RxDmaReloadSettled<'confirmation>) -> R,
     ) -> Option<R> {
-        RxDma::try_with_reload_settled(&mut **self, settled)
+        RxDma::try_with_reload_settled(&mut self.wifi_mac_hal(), settled)
     }
 
-    fn set_descriptor_high_window(&mut self, binding: &RxDmaBinding, address_high: u16) {
-        RxDma::set_descriptor_high_window(&mut **self, binding, address_high);
+    fn set_descriptor_high_window(&mut self, binding: &RxDmaBinding<'_>, address_high: u16) {
+        RxDma::set_descriptor_high_window(&mut self.wifi_mac_hal(), binding, address_high);
     }
 
-    fn write_descriptor_base(&mut self, binding: &RxDmaBinding, address: u32) {
-        RxDma::write_descriptor_base(&mut **self, binding, address);
+    fn write_descriptor_base(&mut self, binding: &RxDmaBinding<'_>, address: u32) {
+        RxDma::write_descriptor_base(&mut self.wifi_mac_hal(), binding, address);
     }
 
-    fn publish_walker_enable(&mut self, binding: &RxDmaBinding) {
-        RxDma::publish_walker_enable(&mut **self, binding);
+    fn publish_walker_enable(&mut self, binding: &RxDmaBinding<'_>) {
+        RxDma::publish_walker_enable(&mut self.wifi_mac_hal(), binding);
     }
 
-    fn request_reload(&mut self, binding: &RxDmaBinding) {
-        RxDma::request_reload(&mut **self, binding);
+    fn request_reload(&mut self, binding: &RxDmaBinding<'_>) {
+        RxDma::request_reload(&mut self.wifi_mac_hal(), binding);
     }
 
     fn try_with_walker_enabled<R>(
         &mut self,
-        binding: &RxDmaBinding,
+        binding: &RxDmaBinding<'_>,
         enabled: impl for<'confirmation> FnOnce(RxDmaWalkerEnabled<'confirmation>) -> R,
     ) -> Option<R> {
-        RxDma::try_with_walker_enabled(&mut **self, binding, enabled)
+        RxDma::try_with_walker_enabled(&mut self.wifi_mac_hal(), binding, enabled)
     }
 
     fn try_with_walker_stopped<R>(
         &mut self,
         stopped: impl for<'confirmation> FnOnce(RxDmaWalkerStopped<'confirmation>) -> R,
     ) -> Option<R> {
-        RxDma::try_with_walker_stopped(&mut **self, stopped)
+        RxDma::try_with_walker_stopped(&mut self.wifi_mac_hal(), stopped)
     }
 
     fn fence(&mut self) {
-        RxDma::fence(&mut **self);
+        RxDma::fence(&mut self.wifi_mac_hal());
     }
 }

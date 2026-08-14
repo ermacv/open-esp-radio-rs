@@ -179,9 +179,11 @@ bitWidth = 1
 entity = "WIFI_MAC_TX_QUEUE_CONTROL"
 sources = [
     "BLOB_LIBPP_HAL_MAC_TX",
-    "MIGRATION_LMAC_TX",
+    "PROMOTED_LMAC_TX",
 ]
-confidence = "instruction-exact-hil-qualified"
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_QUEUE_CONTROL.PROTECTION%s"
@@ -194,17 +196,23 @@ sources = [
     "HIL_VENDOR_ACTIVE_HT_VECTOR_2026_07_29",
     "HIL_OPEN_HE20_MCS9_EMPTY_DELIMITERS_2026_07_29",
 ]
-confidence = "instruction-exact-hil-qualified"
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_QUEUE_CONTROL.PROTECTION%s.SOFTWARE_RTS"
 sources = ["BLOB_LIBPP_HAL_HE_MU_EDCA_DEBUG"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_QUEUE_CONTROL.PROTECTION%s.SOFTWARE_CTS"
 sources = ["BLOB_LIBPP_HAL_HE_MU_EDCA_DEBUG"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_QUEUE_CONTROL.CONFIG%s"
@@ -213,7 +221,9 @@ sources = [
     "BLOB_LIBCOEX_PTI_TABLE",
     "HIL_OPEN_AUTH_PTI_2026_07_29",
 ]
-confidence = "instruction-exact-hil-qualified"
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_QUEUE_CONTROL.CONFIG%s.SCHEDULER_PRIORITY"
@@ -222,45 +232,57 @@ sources = [
     "BLOB_LIBCOEX_PTI_TABLE",
     "HIL_OPEN_AUTH_PTI_2026_07_29",
 ]
-confidence = "instruction-exact-hil-qualified"
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_QUEUE_CONTROL.CONTROL%s"
 sources = [
     "BLOB_LIBPP_HAL_MAC_TX",
-    "MIGRATION_LMAC_TX",
+    "PROMOTED_LMAC_TX",
     "HIL_OPEN_RX_LIVE_APPEND_2026_07_27",
     "HIL_VENDOR_HT20_MCS0_SINGLE_PPDU_2026_07_29",
     "HIL_VENDOR_HE20_MCS0_DCM_RAW_2026_07_29",
     "HIL_OPEN_HE20_MCS0_DCM_SMPDU_2026_07_29",
 ]
-confidence = "instruction-exact-hil-qualified"
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_QUEUE_CONTROL.CONTROL%s.DESCRIPTOR_ADDRESS_LOW"
-sources = ["MIGRATION_LMAC_TX"]
-confidence = "instruction-exact"
+sources = ["PROMOTED_LMAC_TX"]
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_QUEUE_CONTROL.CONTROL%s.CONTROL_21_20_UNKNOWN"
 sources = ["BLOB_LIBPP_HAL_MAC_TX"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "WIFI_MAC_TX_QUEUE_CONTROL.CONTROL%s.TXOP_DESCRIPTOR_CLASS_UNKNOWN"
 sources = ["BLOB_LIBPP_HAL_MAC_TX"]
-confidence = "instruction-exact-hil-qualified"
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_QUEUE_CONTROL.CONTROL%s.CONTROL_23_UNKNOWN"
 sources = ["BLOB_LIBPP_HAL_MAC_TX"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "WIFI_MAC_TX_QUEUE_CONTROL.CONTROL%s.PLCP_FORMAT"
 sources = [
     "BLOB_LIBPP_HAL_MAC_TX",
-    "MIGRATION_LMAC_TX",
+    "PROMOTED_LMAC_TX",
     "HIL_OPEN_RX_LIVE_APPEND_2026_07_27",
     "HIL_OPEN_AUTH_PLCP_FORMAT_2026_07_28",
     "HIL_VENDOR_HT20_MCS0_SINGLE_PPDU_2026_07_29",
@@ -269,9 +291,13 @@ sources = [
     "HIL_VENDOR_HE20_MCS0_DCM_RAW_2026_07_29",
     "HIL_OPEN_HE20_MCS0_DCM_SMPDU_2026_07_29",
 ]
-confidence = "instruction-exact-hil-qualified"
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_QUEUE_CONTROL.CONTROL%s.CONTROL_29_27_UNKNOWN"
 sources = ["BLOB_LIBPP_HAL_MAC_TX"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"

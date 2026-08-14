@@ -140,11 +140,11 @@ where
     let wifi_report = cold.report();
     let (mut radio, phy, tx_power, calibration_cache, _) = cold.into_parts();
     let mac = {
-        let (platform, registers) = radio.cold_parts_mut();
+        let (platform, mut mac) = radio.cold_mac_parts();
         platform.install_phy_tx_power_profile(tx_power);
         initialize_wifi_mac(
             platform,
-            registers,
+            &mut mac,
             open_esp_radio_esp32s31_wifi_mac::init::MacColdStartConfig {
                 handshake_sample_limit: config.handshake_sample_limit,
                 station_address: config.station_address.bytes(),

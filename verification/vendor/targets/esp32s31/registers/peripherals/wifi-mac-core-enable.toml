@@ -48,7 +48,9 @@ bitWidth = 1
 [[review]]
 entity = "WIFI_MAC_CORE_ENABLE"
 sources = ["BLOB_LIBPP_HAL_ENABLE_MAC"]
-confidence = "instruction-exact-partial"
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_CORE_ENABLE.CONTROL"
@@ -56,9 +58,13 @@ sources = [
     "BLOB_LIBPP_HAL_ENABLE_MAC",
     "BLOB_LIBPP_DEBUG_STATISTICS_CONTROL",
 ]
-confidence = "instruction-exact-partial"
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_CORE_ENABLE.CONTROL.MAC_DISABLE_GATES_UNKNOWN"
 sources = ["BLOB_LIBPP_HAL_ENABLE_MAC"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"

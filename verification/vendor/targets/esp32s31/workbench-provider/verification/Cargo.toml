@@ -1,0 +1,25 @@
+[package]
+name = "open-radio-vendor-verification-esp32s31"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+description = "ESP32-S31 typed production-driver verification provider"
+
+[dependencies]
+open-esp-radio-esp32s31-phy = { path = "../../../../../../driver/chips/esp32s31/phy" }
+open-esp-radio-esp32s31-wifi-mac = { path = "../../../../../../driver/chips/esp32s31/wifi/mac" }
+open-esp-radio-ieee80211 = { path = "../../../../../../driver/wifi/ieee80211" }
+open-radio-vendor-backend-riscv = { path = "../../../../../../tools/vendor-binary-workbench/crates/backend-riscv" }
+open-radio-vendor-execution-model = { path = "../../../../../../tools/vendor-binary-workbench/crates/execution-model" }
+open-radio-vendor-harness-esp32s31 = { path = "../contracts" }
+open-radio-vendor-knowledge-esp32s31 = { path = "../knowledge" }
+open-radio-vendor-semantics = { path = "../../../../../../tools/vendor-binary-workbench/crates/semantics" }
+sha2 = "=0.10.9"
+serde = { version = "=1.0.229", features = ["derive"] }
+thiserror = "=2.0.19"
+
+[lints]
+workspace = true

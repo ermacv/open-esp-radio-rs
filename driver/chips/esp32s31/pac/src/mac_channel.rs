@@ -9,7 +9,7 @@ impl RadioRegisters {
     ///
     /// SOURCE: `BLOB_LIBPP_MAC_CHANNEL_SWITCH`, specifically complete
     /// `hal_mac_deinit`, and the exact transcription retained in
-    /// `MIGRATION_CHANNEL_SWITCH`. With the all-ones no-power-save retention
+    /// `PROMOTED_CHANNEL_SWITCH`. With the all-ones no-power-save retention
     /// mask the vendor leaf sets bit 12 and bits 23:16 in one RMW.
     pub fn request_mac_channel_stop_without_power_save(&mut self) {
         let control = self.peripherals.wifi_mac_control.control();
@@ -32,15 +32,8 @@ impl RadioRegisters {
             .bits()
     }
 
-    /// Restart MAC and select its active REGDMA link after PHY retuning.
-    ///
-    /// SOURCE: complete `ic_mac_init -> hal_mac_init ->
-    /// pwr_hal_select_wifimac_regdma_link` in
-    /// `BLOB_LIBPP_MAC_CHANNEL_SWITCH`; `MIGRATION_CHANNEL_SWITCH` preserves
-    /// the same finite `WIFI_PS_NONE` transaction. The vendor
-    /// `hal_mac_set_csi_cbw` between PHY and this tail is a two-byte `ret` on
-    /// ESP32-S31 and therefore has no omitted hardware effect.
-    pub fn restart_mac_after_channel_switch_without_power_save(&mut self) {
+    /// Clear the no-power-save MAC stop request after PHY retuning.
+    pub fn resume_mac_channel_without_power_save(&mut self) {
         let control = self.peripherals.wifi_mac_control.control();
         control.modify(|_, w| {
             w.no_retention_stop_request()
@@ -48,7 +41,11 @@ impl RadioRegisters {
                 .tx_block_stop_request()
                 .run_all()
         });
+        device_fence();
+    }
 
+    /// Select the Wi-Fi no-power-save REGDMA link.
+    pub fn select_wifi_no_power_save_regdma_link(&mut self) {
         self.peripherals
             .wifi_mac_regdma_control
             .control()

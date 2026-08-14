@@ -13,7 +13,6 @@ embassy-sync = "0.8.0"
 embassy-time = "0.5.1"
 open-esp-radio-embassy-net = { path = "../../embassy-net" }
 open-esp-radio-esp32s31-hal = { path = "../../../chips/esp32s31/hal" }
-open-esp-radio-esp32s31-pac = { path = "../../../chips/esp32s31/pac" }
 open-esp-radio-esp32s31-phy = { path = "../../../chips/esp32s31/phy" }
 open-esp-radio-esp32s31-wifi = { path = "../../../chips/esp32s31/wifi" }
 open-esp-radio-esp32s31-wifi-dma = { path = "../../../chips/esp32s31/wifi/dma" }

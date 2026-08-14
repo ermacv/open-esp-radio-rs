@@ -468,4 +468,6 @@ bitWidth = 4
 [[review]]
 entity = "WIFI_MAC_HE_TRIGGER_RX_DIAGNOSTICS"
 sources = ["BLOB_LIBPP_HAL_HE_TRIGGER_RX_DIAGNOSTICS"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"

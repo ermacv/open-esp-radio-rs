@@ -5,7 +5,8 @@
 //! publication; WPA2 derivation and long-lived secret ownership remain in the
 //! protocol crate.
 
-use open_esp_radio_esp32s31_pac::{MacKeyEntryIndex, MacKeyInstallOutcome, RadioRegisters};
+use open_esp_radio_esp32s31_hal::types::MacKeyInstallOutcome;
+use open_esp_radio_esp32s31_hal::{RadioRuntimeOwner, wifi_mac::WifiMacHal};
 use open_esp_radio_ieee80211::ccmp::ccmp_header;
 
 const STA_PAIRWISE_HARDWARE_INDEX: u8 = 4;
@@ -50,16 +51,13 @@ pub trait CcmpKeyHardware {
     }
 }
 
-impl CcmpKeyHardware for RadioRegisters {
+impl CcmpKeyHardware for WifiMacHal<'_> {
     fn install_sta_ccmp_entry(
         &mut self,
         index: u8,
         words: [u32; CCMP_ENTRY_WORDS],
     ) -> MacKeyInstallOutcome {
-        let Some(index) = MacKeyEntryIndex::new(u32::from(index)) else {
-            return MacKeyInstallOutcome::Rejected;
-        };
-        self.install_sta_ccmp_key_entry(index, words)
+        self.install_station_ccmp_entry(index, words)
     }
 
     fn install_ap_ccmp_entry(
@@ -67,20 +65,41 @@ impl CcmpKeyHardware for RadioRegisters {
         index: u8,
         words: [u32; CCMP_ENTRY_WORDS],
     ) -> MacKeyInstallOutcome {
-        let Some(index) = MacKeyEntryIndex::new(u32::from(index)) else {
-            return MacKeyInstallOutcome::Rejected;
-        };
-        self.install_ap_ccmp_key_entry(index, words)
+        self.install_access_point_ccmp_entry(index, words)
     }
 
     fn clear_ccmp_entry(&mut self, index: u8) {
-        if let Some(index) = MacKeyEntryIndex::new(u32::from(index)) {
-            self.clear_mac_key_entry(index);
-        }
+        WifiMacHal::clear_ccmp_entry(self, index);
     }
 
     fn ccmp_entry_is_valid(&self, index: u8) -> Option<bool> {
-        MacKeyEntryIndex::new(u32::from(index)).map(|index| self.mac_key_entry_is_valid(index))
+        WifiMacHal::ccmp_entry_is_valid(self, index)
+    }
+}
+
+impl CcmpKeyHardware for RadioRuntimeOwner {
+    fn install_sta_ccmp_entry(
+        &mut self,
+        index: u8,
+        words: [u32; CCMP_ENTRY_WORDS],
+    ) -> MacKeyInstallOutcome {
+        CcmpKeyHardware::install_sta_ccmp_entry(&mut self.wifi_mac_hal(), index, words)
+    }
+
+    fn install_ap_ccmp_entry(
+        &mut self,
+        index: u8,
+        words: [u32; CCMP_ENTRY_WORDS],
+    ) -> MacKeyInstallOutcome {
+        CcmpKeyHardware::install_ap_ccmp_entry(&mut self.wifi_mac_hal(), index, words)
+    }
+
+    fn clear_ccmp_entry(&mut self, index: u8) {
+        CcmpKeyHardware::clear_ccmp_entry(&mut self.wifi_mac_hal(), index);
+    }
+
+    fn ccmp_entry_is_valid(&self, _index: u8) -> Option<bool> {
+        None
     }
 }
 
@@ -122,7 +141,7 @@ pub struct StaPairwiseCcmpSlot {
 }
 
 /// Authority for the one active STA group CCMP slot recovered from the
-/// migration backend.
+/// promoted production backend.
 #[must_use = "the installed hardware key must remain owned until it is explicitly cleared"]
 pub struct StaGroupCcmpSlot {
     key_id: u8,
@@ -323,7 +342,7 @@ pub fn install_sta_pairwise_ccmp<H: CcmpKeyHardware>(
 ///
 /// ESP32-S31 exposes one active station group slot regardless of the logical
 /// RSN key ID. The logical ID is still encoded in the hardware control word,
-/// exactly as in `migration::wpa2_s31::install_ccmp`.
+/// exactly as in the reviewed promoted CCMP installation path.
 pub fn install_sta_group_ccmp<H: CcmpKeyHardware>(
     hardware: &mut H,
     key_id: u8,

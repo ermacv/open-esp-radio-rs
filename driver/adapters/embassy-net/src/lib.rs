@@ -9,11 +9,11 @@
 //! `embassy-net` builds an owned Ethernet frame that the radio task receives
 //! from [`RadioRunner::try_receive_tx`].
 //!
-//! This follows the ownership boundary proven by the migration runtime:
+//! This follows the source-owned network-device ownership boundary:
 //! descriptor and vendor-object pointers never escape into the network stack,
 //! and both directions apply explicit bounded backpressure.
 //!
-//! [`PinnedResources`] provides the high-throughput alternative. On RX, the
+//! [`SplitPinnedResources`] provides the high-throughput alternative. On RX, the
 //! protocol adapter copies directly into a permanently located final slot and
 //! passes only its index to the network stack. On TX, the network stack writes
 //! directly into a separate permanently located slot with caller-selected
@@ -39,10 +39,10 @@ use embassy_sync::{
 mod pinned;
 
 pub use pinned::{
-    PinnedDevice, PinnedRadioRunner, PinnedReceiveToken, PinnedResources, PinnedRxPublisher,
-    PinnedTransmitToken, PinnedTxConsumer, PinnedTxFrame, PinnedTxPool, SharedPinnedReceiveToken,
-    SharedPinnedRxConsumer, SharedPinnedRxPublisher, SharedPinnedRxQueue, SharedPoolReceiveToken,
-    SharedRxSplitPinnedDevice, SplitPinnedDevice, SplitPinnedRadioRunner, SplitPinnedResources,
+    PinnedReceiveToken, PinnedRxPublisher, PinnedTransmitToken, PinnedTxConsumer, PinnedTxFrame,
+    PinnedTxPool, SharedPinnedReceiveToken, SharedPinnedRxConsumer, SharedPinnedRxPublisher,
+    SharedPinnedRxQueue, SharedPoolReceiveToken, SharedRxSplitPinnedDevice, SplitPinnedDevice,
+    SplitPinnedRadioRunner, SplitPinnedResources,
 };
 
 /// Ethernet header length, excluding an FCS.

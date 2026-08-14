@@ -17,7 +17,7 @@ pub(super) fn write_draft(
     output.push_str("[[peripherals.registers]]\n\n[peripherals.registers.register]\n");
     writeln!(output, "name = \"{}\"", candidate_name(fact, offset))
         .expect("writing to String cannot fail");
-    output.push_str("description = \"TODO: reviewed hardware meaning\"\n");
+    output.push_str("description = \"REVIEW_REQUIRED: hardware meaning\"\n");
     writeln!(output, "addressOffset = {offset:#X}").expect("writing to String cannot fail");
     writeln!(output, "size = {}", fact.width).expect("writing to String cannot fail");
     writeln!(output, "access = \"{}\"", inferred_access(fact))

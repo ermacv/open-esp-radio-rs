@@ -10,7 +10,7 @@ pub trait Esp32s31StaAttemptChannel<H> {
     ) -> impl Future<Output = Result<(), PhyTargetPortError>> + 'a;
 }
 
-impl<P, O, D> Esp32s31StaAttemptChannel<RadioRegisters> for Esp32s31ScanPhy<'_, P, O, D>
+impl<P, O, D> Esp32s31StaAttemptChannel<RadioRuntimeOwner> for Esp32s31ScanPhy<'_, P, O, D>
 where
     P: PhyWifiBbControl + PhyTemperatureSystemControl + PhyI2cMasterControl,
     O: PhyTargetObserver,
@@ -18,7 +18,7 @@ where
 {
     fn switch_channel<'a>(
         &'a mut self,
-        hardware: &'a mut RadioRegisters,
+        hardware: &'a mut RadioRuntimeOwner,
         channel_or_frequency: u16,
         cbw: u8,
     ) -> impl Future<Output = Result<(), PhyTargetPortError>> + 'a {
@@ -41,8 +41,8 @@ where
     ) -> impl Future<Output = Result<(), PhyTargetPortError>> + 'a {
         async move {
             let access = hardware.register_access();
-            let mut registers = access.borrow_mut();
-            Esp32s31ScanPhy::switch_channel(self, channel_or_frequency, cbw, &mut registers).await
+            self.switch_published_channel(channel_or_frequency, cbw, access)
+                .await
         }
     }
 }

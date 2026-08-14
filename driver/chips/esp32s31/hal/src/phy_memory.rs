@@ -1,8 +1,8 @@
 //! Owned access to the shared ESP32-S31 PHY table-memory aperture.
 
+pub use crate::types::{PbusMemoryGroupBoundary, PhyMemoryError};
 #[cfg(target_arch = "riscv32")]
-use open_esp_radio_esp32s31_pac::RadioRegisters;
-pub use open_esp_radio_esp32s31_pac::{PbusMemoryGroupBoundary, PhyMemoryError};
+use crate::{PhyAccess, phy_pac, phy_pac_mut};
 
 /// Publish one entry of the PBUS-memory table.
 ///
@@ -12,11 +12,12 @@ pub use open_esp_radio_esp32s31_pac::{PbusMemoryGroupBoundary, PhyMemoryError};
 /// preserves that exact access order and performs no polling.
 #[cfg(target_arch = "riscv32")]
 pub fn program_pbus_memory_entry(
-    registers: &mut RadioRegisters,
+    registers: &mut impl PhyAccess,
     boundary: Option<PbusMemoryGroupBoundary>,
     data: u32,
     command: u16,
 ) -> Result<(), PhyMemoryError> {
+    let registers = phy_pac_mut(registers);
     registers.program_pbus_memory_entry(boundary, data, command)
 }
 
@@ -27,7 +28,8 @@ pub fn program_pbus_memory_entry(
 /// `TABLE_MEMORY_INDEX_SOURCE.BASE_INDEX` field exactly once before
 /// publishing any table entry.
 #[cfg(target_arch = "riscv32")]
-pub fn read_table_memory_base_index(registers: &RadioRegisters) -> u8 {
+pub fn read_table_memory_base_index(registers: &impl PhyAccess) -> u8 {
+    let registers = phy_pac(registers);
     registers.read_table_memory_base_index()
 }
 
@@ -37,13 +39,15 @@ pub fn read_table_memory_base_index(registers: &RadioRegisters) -> u8 {
 /// fresh-read RMW replaces exactly the generated base-index field with
 /// `0xa0`. Complete S31 CFR and gain publishers later sample that same byte.
 #[cfg(target_arch = "riscv32")]
-pub fn configure_table_memory_base_index(registers: &mut RadioRegisters, index: u8) {
+pub fn configure_table_memory_base_index(registers: &mut impl PhyAccess, index: u8) {
+    let registers = phy_pac_mut(registers);
     registers.configure_table_memory_base_index(index);
 }
 
 /// Apply complete rev0 ROM `phy_force_pwr_index`.
 #[cfg(target_arch = "riscv32")]
-pub fn configure_forced_power_index(registers: &mut RadioRegisters, enabled: u32, index: u32) {
+pub fn configure_forced_power_index(registers: &mut impl PhyAccess, enabled: u32, index: u32) {
+    let registers = phy_pac_mut(registers);
     registers.configure_forced_power_index(enabled, index);
 }
 
@@ -53,7 +57,8 @@ pub fn configure_forced_power_index(registers: &mut RadioRegisters, enabled: u32
 /// `0x76`. The body writes `DATA_0`, replaces only the index, then performs
 /// fresh-read set and clear RMW operations on the commit bit.
 #[cfg(target_arch = "riscv32")]
-pub fn program_tx_cfr_entry(registers: &mut RadioRegisters, data: u32, index: u8) {
+pub fn program_tx_cfr_entry(registers: &mut impl PhyAccess, data: u32, index: u8) {
+    let registers = phy_pac_mut(registers);
     registers.program_tx_cfr_entry(data, index);
 }
 
@@ -64,7 +69,8 @@ pub fn program_tx_cfr_entry(registers: &mut RadioRegisters, data: u32, index: u8
 /// field, writes the index, sets gain-write, and preserves the upper fields
 /// in one final RMW.
 #[cfg(target_arch = "riscv32")]
-pub fn program_gain_memory_entry(registers: &mut RadioRegisters, words: [u32; 3], index: u8) {
+pub fn program_gain_memory_entry(registers: &mut impl PhyAccess, words: [u32; 3], index: u8) {
+    let registers = phy_pac_mut(registers);
     registers.program_gain_memory_entry(words, index);
 }
 
@@ -75,6 +81,7 @@ pub fn program_gain_memory_entry(registers: &mut RadioRegisters, words: [u32; 3]
 /// its unique state owner instead of storing through ROM's global
 /// `phy_param` pointer.
 #[cfg(target_arch = "riscv32")]
-pub fn capture_pbus_memory_boundaries(registers: &RadioRegisters) -> [u32; 6] {
+pub fn capture_pbus_memory_boundaries(registers: &impl PhyAccess) -> [u32; 6] {
+    let registers = phy_pac(registers);
     registers.capture_pbus_memory_boundaries()
 }

@@ -49,9 +49,9 @@ sockets. The driver returns an `embassy-net-driver::Driver`; its eternal runner
 owns PAC, DMA and ISR state. Shared cross-chip code is extracted only after a
 second backend demonstrates the same semantic operation.
 
-See the canonical [driver architecture](driver/README.md), concise
-[feature status](docs/ESP32S31_WIFI_FEATURE_STATUS.md), and
-[documentation index](docs/README.md).
+See the canonical [driver architecture](driver/README.md), the
+[machine-checked qualification ledger](qualification/README.md), and the
+[verification/qualification contract](docs/VERIFICATION_AND_QUALIFICATION.md).
 
 ## Verification
 
@@ -79,9 +79,10 @@ external symbols and its dependency tree. It deliberately does not inspect
 Rust source text for required or forbidden function names.
 
 Hardware workflows are documented in [the ESP32-S31 HIL README](hil/targets/esp32s31/README.md).
-Current cross-layer readiness and stale-HIL gaps are tracked by the
-[machine-checked qualification ledger](qualification/README.md); the detailed PHY
-and MAC matrix remains in [the feature status](docs/ESP32S31_WIFI_FEATURE_STATUS.md).
+Current cross-layer readiness, dependencies and stale-HIL gaps are tracked by
+the [machine-checked qualification ledger](qualification/README.md). Stable
+public API limits belong in [the driver architecture](driver/README.md), not a
+second hand-maintained status matrix.
 
 No vendor ELF, static library, disassembly dump, generated proprietary header,
 or extracted binary table belongs in the tracked repository.

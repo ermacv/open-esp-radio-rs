@@ -1375,7 +1375,7 @@ impl PhyPowerAttenuationMmioBinding {
     #[cfg(target_arch = "riscv32")]
     pub fn execute_target(
         self,
-        registers: &mut open_esp_radio_esp32s31_hal::RadioRegisters,
+        registers: &mut open_esp_radio_esp32s31_hal::PhyHal,
     ) -> PhyPowerAttenuationCompletion {
         match self.action {
             PhyPowerAttenuationAction::ConfigureTone {
@@ -1424,7 +1424,7 @@ impl PhyToneSarMmioBinding {
     #[cfg(target_arch = "riscv32")]
     pub fn execute_target(
         self,
-        registers: &mut open_esp_radio_esp32s31_hal::RadioRegisters,
+        registers: &mut open_esp_radio_esp32s31_hal::PhyHal,
     ) -> PhyToneSarCompletion {
         match self.action {
             PhyToneSarAction::ArmTone {
@@ -1518,7 +1518,7 @@ impl PhyTxCalibrationEnvironmentMmioBinding {
     >(
         self,
         platform: &mut P,
-        registers: &mut open_esp_radio_esp32s31_hal::RadioRegisters,
+        registers: &mut open_esp_radio_esp32s31_hal::PhyHal,
     ) -> PhyTxCalibrationEnvironmentCompletion {
         match self.action {
             PhyTxCalibrationEnvironmentAction::ConfigurePbusDebugMode => {
@@ -1586,7 +1586,7 @@ impl PhyTxCapSearchMmioBinding {
     #[cfg(target_arch = "riscv32")]
     pub fn execute_target(
         self,
-        registers: &mut open_esp_radio_esp32s31_hal::RadioRegisters,
+        registers: &mut open_esp_radio_esp32s31_hal::PhyHal,
     ) -> PhyTxCapSearchCompletion {
         match self.action {
             PhyTxCapSearchAction::ConfigureTone {
@@ -1660,7 +1660,7 @@ impl PhyTxCalibrationEnvironmentPbusBinding {
     #[cfg(target_arch = "riscv32")]
     pub fn start_target(
         &mut self,
-        registers: &mut open_esp_radio_esp32s31_hal::RadioRegisters,
+        registers: &mut open_esp_radio_esp32s31_hal::PhyHal,
     ) -> Result<(), crate::phy_pbus::PhyPbusHardwareBindingError> {
         self.hardware.start_target(registers)
     }
@@ -1668,7 +1668,7 @@ impl PhyTxCalibrationEnvironmentPbusBinding {
     #[cfg(target_arch = "riscv32")]
     pub fn observe_target_edge(
         &mut self,
-        registers: &mut open_esp_radio_esp32s31_hal::RadioRegisters,
+        registers: &mut open_esp_radio_esp32s31_hal::PhyHal,
     ) -> Result<
         crate::phy_pbus::PhyPbusHardwareObservation,
         crate::phy_pbus::PhyPbusHardwareBindingError,
@@ -1948,10 +1948,7 @@ mod tests {
     }
 
     fn complete_tone_sar(transition: &mut PhyPowerAttenuationTransition, value: u16) {
-        loop {
-            let PhyPowerAttenuationAction::ToneSar(action) = transition.action() else {
-                break;
-            };
+        while let PhyPowerAttenuationAction::ToneSar(action) = transition.action() {
             transition
                 .advance(PhyPowerAttenuationCompletion::ToneSar(tone_sar_completion(
                     action, value,

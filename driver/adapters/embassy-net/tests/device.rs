@@ -9,8 +9,8 @@ use embassy_net_driver::{Driver, HardwareAddress, LinkState, RxToken as _, TxTok
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use open_esp_radio_dma::RxHandoffPool;
 use open_esp_radio_embassy_net::{
-    ETHERNET_HEADER_LEN, FrameLengthError, PinnedResources, PinnedTxPool, Resources,
-    RxEnqueueError, SharedPinnedRxQueue, SplitPinnedResources,
+    ETHERNET_HEADER_LEN, FrameLengthError, PinnedTxPool, Resources, RxEnqueueError,
+    SharedPinnedRxQueue, SplitPinnedResources,
 };
 
 const FRAME_CAPACITY: usize = 64;
@@ -56,19 +56,18 @@ fn owned_device_ends_a_refilled_ingress_epoch_at_its_physical_depth() {
     radio.try_send_rx(&[0x11; ETHERNET_HEADER_LEN]).unwrap();
     radio.try_send_rx(&[0x22; ETHERNET_HEADER_LEN]).unwrap();
 
-    let first = device.receive(&mut context()).unwrap();
-    drop(first);
+    let (first, _reply) = device.receive(&mut context()).unwrap();
+    first.consume(|_| ());
     radio.try_send_rx(&[0x33; ETHERNET_HEADER_LEN]).unwrap();
-    let second = device.receive(&mut context()).unwrap();
-    drop(second);
+    let (second, _reply) = device.receive(&mut context()).unwrap();
+    second.consume(|_| ());
 
     // The producer refilled the queue while smoltcp's current poll was
     // draining it. End that poll after the two-slot physical epoch; the
     // immediately self-woken next poll can consume the retained third frame.
     assert!(device.receive(&mut context()).is_none());
-    let (third, reply) = device.receive(&mut context()).unwrap();
+    let (third, _reply) = device.receive(&mut context()).unwrap();
     third.consume(|frame| assert_eq!(frame[0], 0x33));
-    drop(reply);
 }
 
 #[test]
@@ -106,7 +105,8 @@ fn invalid_and_full_rx_frames_are_reported() {
 
 #[test]
 fn pinned_rx_publisher_exposes_a_real_capacity_edge() {
-    type TestResources = PinnedResources<NoopRawMutex, FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 1>;
+    type TestResources =
+        SplitPinnedResources<NoopRawMutex, FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 1, 1>;
     type TestPool = PinnedTxPool<FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 1>;
     let resources = Box::leak(Box::new(TestResources::new()));
     let pool = TestPool::pin_static(Box::leak(Box::new(TestPool::new())));
@@ -133,7 +133,8 @@ fn pinned_rx_publisher_exposes_a_real_capacity_edge() {
 
 #[test]
 fn pinned_device_has_no_artificial_frame_count_ingress_ceiling() {
-    type TestResources = PinnedResources<NoopRawMutex, FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 2>;
+    type TestResources =
+        SplitPinnedResources<NoopRawMutex, FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 2, 2>;
     type TestPool = PinnedTxPool<FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 2>;
     let resources = Box::leak(Box::new(TestResources::new()));
     let pool = TestPool::pin_static(Box::leak(Box::new(TestPool::new())));
@@ -155,7 +156,8 @@ fn pinned_device_has_no_artificial_frame_count_ingress_ceiling() {
 
 #[test]
 fn pinned_rx_slot_keeps_one_address_across_network_ownership() {
-    type TestResources = PinnedResources<NoopRawMutex, FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 1>;
+    type TestResources =
+        SplitPinnedResources<NoopRawMutex, FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 1, 1>;
     type TestPool = PinnedTxPool<FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 1>;
     let resources = Box::leak(Box::new(TestResources::new()));
     let pool = TestPool::pin_static(Box::leak(Box::new(TestPool::new())));
@@ -188,7 +190,8 @@ fn pinned_rx_slot_keeps_one_address_across_network_ownership() {
 
 #[test]
 fn shared_staging_slot_reaches_device_without_a_second_pool_copy() {
-    type TestResources = PinnedResources<NoopRawMutex, FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 2>;
+    type TestResources =
+        SplitPinnedResources<NoopRawMutex, FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 2, 2>;
     type TestPool = PinnedTxPool<FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 2>;
     let resources = Box::leak(Box::new(TestResources::new()));
     let tx_pool = TestPool::pin_static(Box::leak(Box::new(TestPool::new())));
@@ -225,7 +228,8 @@ fn shared_staging_slot_reaches_device_without_a_second_pool_copy() {
 #[cfg(feature = "rx-delivery-observation")]
 #[test]
 fn observed_pinned_admission_precedes_network_visibility() {
-    type TestResources = PinnedResources<NoopRawMutex, FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 1>;
+    type TestResources =
+        SplitPinnedResources<NoopRawMutex, FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 1, 1>;
     type TestPool = PinnedTxPool<FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 1>;
     let resources = Box::leak(Box::new(TestResources::new()));
     let pool = TestPool::pin_static(Box::leak(Box::new(TestPool::new())));
@@ -262,7 +266,8 @@ fn link_and_device_metadata_match_radio_state() {
 
 #[test]
 fn pinned_tx_slot_moves_between_network_and_radio_without_copying() {
-    type TestResources = PinnedResources<NoopRawMutex, FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 1>;
+    type TestResources =
+        SplitPinnedResources<NoopRawMutex, FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 1, 1>;
     type TestPool = PinnedTxPool<FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 1>;
     let resources = Box::leak(Box::new(TestResources::new()));
     let pool = TestPool::pin_static(Box::leak(Box::new(TestPool::new())));
@@ -297,7 +302,8 @@ fn pinned_tx_slot_moves_between_network_and_radio_without_copying() {
 
 #[test]
 fn pinned_device_observes_role_selected_hardware_address() {
-    type TestResources = PinnedResources<NoopRawMutex, FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 1>;
+    type TestResources =
+        SplitPinnedResources<NoopRawMutex, FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 1, 1>;
     type TestPool = PinnedTxPool<FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 1>;
     let resources = Box::leak(Box::new(TestResources::new()));
     let pool = TestPool::pin_static(Box::leak(Box::new(TestPool::new())));
@@ -318,7 +324,8 @@ fn pinned_device_observes_role_selected_hardware_address() {
 
 #[test]
 fn dropped_pinned_tx_token_returns_its_reserved_slot() {
-    type TestResources = PinnedResources<NoopRawMutex, FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 1>;
+    type TestResources =
+        SplitPinnedResources<NoopRawMutex, FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 1, 1>;
     type TestPool = PinnedTxPool<FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 1>;
     let resources = Box::leak(Box::new(TestResources::new()));
     let pool = TestPool::pin_static(Box::leak(Box::new(TestPool::new())));
@@ -331,7 +338,8 @@ fn dropped_pinned_tx_token_returns_its_reserved_slot() {
 
 #[test]
 fn pinned_ingress_credit_survives_saturated_application_egress() {
-    type TestResources = PinnedResources<NoopRawMutex, FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 2>;
+    type TestResources =
+        SplitPinnedResources<NoopRawMutex, FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 2, 2>;
     type TestPool = PinnedTxPool<FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 2>;
     let resources = Box::leak(Box::new(TestResources::new()));
     let pool = TestPool::pin_static(Box::leak(Box::new(TestPool::new())));

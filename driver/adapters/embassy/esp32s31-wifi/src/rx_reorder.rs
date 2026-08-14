@@ -12,7 +12,7 @@ use core::sync::atomic::{AtomicUsize, Ordering};
 
 use embassy_sync::{
     blocking_mutex::raw::CriticalSectionRawMutex,
-    channel::{Channel, Receiver, Sender, TryReceiveError, TrySendError},
+    channel::{Channel, Receiver, Sender, TrySendError},
     mutex::{Mutex, MutexGuard},
 };
 use open_esp_radio_embassy_net::RawMutex;
@@ -283,10 +283,7 @@ pub fn try_send_rx_reorder_command<M: RawMutex>(
 pub fn try_receive_rx_reorder_command<M: RawMutex>(
     receiver: &RxReorderCommandReceiver<'_, M>,
 ) -> Option<RxReorderCommand> {
-    match receiver.try_receive() {
-        Ok(command) => Some(command),
-        Err(TryReceiveError::Empty) => None,
-    }
+    receiver.try_receive().ok()
 }
 
 #[cfg(test)]

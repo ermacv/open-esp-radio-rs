@@ -109,8 +109,8 @@ fn render_detail(lines: &mut Vec<Line<'_>>, detail: &crate::RegisterDetailSummar
             detail.reads, detail.writes, detail.read_modify_writes
         ),
     ));
-    if let Some(confidence) = &detail.review_confidence {
-        lines.push(field("Confidence", confidence));
+    if let Some(classification) = &detail.review_classification {
+        lines.push(field("Fact classification", classification));
     }
     if !detail.functions.is_empty() {
         lines.push(field("Functions", detail.functions.join(", ")));

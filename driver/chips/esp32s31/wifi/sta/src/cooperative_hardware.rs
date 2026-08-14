@@ -5,8 +5,12 @@
 //! TX-complete, so a single-task Rust runtime needs to let its RX bottom half
 //! borrow the same register owner between finite TX hardware transactions.
 
-use open_esp_radio_esp32s31_hal::{RadioRegisters, wifi_mac::WifiMacHal};
-use open_esp_radio_esp32s31_pac::{
+use open_esp_radio_esp32s31_hal::RadioRuntimeOwner;
+use open_esp_radio_esp32s31_hal::radio_arena::{
+    Esp32s31PublishedRadioOwner, Esp32s31RadioAccess, Esp32s31RadioOwnerArenaError,
+    Esp32s31ReclaimedRadioOwner,
+};
+use open_esp_radio_esp32s31_hal::types::{
     MacHe20PeerConfig, MacHe20PeerError, MacHeBeamformingReportProfile, MacHeErSuAckRateProfile,
     MacHeTbLinkReservation, MacHeTbProgramError, MacHeTbTidLimit, MacHeTid,
     MacHeTriggerTxQueueSnapshot, MacHeTxProgram, MacHeTxVectorSnapshot,
@@ -14,10 +18,7 @@ use open_esp_radio_esp32s31_pac::{
     MacRxDmaSnapshot, MacStaReceivePolicySnapshot, MacTxCompletionRegisters, MacTxDetachOutcome,
     MacTxDetachReason, MacTxQueueDetached,
 };
-use open_esp_radio_esp32s31_wifi::register_arena::{
-    Esp32s31PublishedRadioRegisters, Esp32s31RadioRegistersAccess,
-    Esp32s31RadioRegistersArenaError, Esp32s31ReclaimedRadioRegisters,
-};
+use open_esp_radio_esp32s31_hal::wifi_mac::WifiMacHal;
 use open_esp_radio_esp32s31_wifi_mac::{
     crypto::{CcmpKeyHardware, CryptoKeyError, StaGroupCcmpSlot, replace_sta_group_ccmp},
     he::He20PeerHardware,
@@ -34,7 +35,7 @@ use open_esp_radio_esp32s31_wifi_mac::{
 
 use crate::connected_control_hardware::ConnectedControlHardware;
 
-/// Short-lived radio facade over the task's sole [`RadioRegisters`] owner.
+/// Short-lived radio facade over the task's sole opaque runtime owner.
 ///
 /// Every trait method borrows the register owner only for one synchronous
 /// hardware transaction. Consequently an async TX operation may keep this
@@ -44,46 +45,58 @@ use crate::connected_control_hardware::ConnectedControlHardware;
 ///
 /// A dynamic borrow failure identifies an accidental overlap of two
 /// synchronous register transactions. This type neither steals peripherals
-/// nor creates another `RadioRegisters` value.
+/// nor creates another runtime owner.
 ///
 /// SOURCE: complete `libpp.a[wdev.o]::wDev_ProcessFiq` handles
 /// RX-success bit `0x4000` before TX-complete bit `0x80`.
 pub struct CooperativeRadioHardware<'arena> {
-    registers: Esp32s31PublishedRadioRegisters<'arena>,
+    registers: Esp32s31PublishedRadioOwner<'arena>,
 }
 
 impl<'arena> CooperativeRadioHardware<'arena> {
-    /// Borrow the one task-owned register cell for cooperative radio access.
-    pub const fn new(registers: Esp32s31PublishedRadioRegisters<'arena>) -> Self {
+    /// Bind the unique published register lease to cooperative radio access.
+    pub const fn new(registers: Esp32s31PublishedRadioOwner<'arena>) -> Self {
         Self { registers }
     }
 
-    /// Shared cell used by executor tasks which perform bounded cooperative
-    /// register transactions.
+    /// Copyable handle used by executor tasks for bounded HAL transactions.
     ///
-    /// Returning the cell does not expose a second PAC owner: every access is
-    /// still dynamically serialized by the same `RefCell`, and lifecycle code
-    /// must stop those tasks before consuming this hardware facade.
-    pub const fn register_access(&self) -> Esp32s31RadioRegistersAccess<'arena> {
+    /// Returning the handle does not expose the PAC owner: every operation is
+    /// dynamically serialized by the same HAL arena, and lifecycle code must
+    /// stop those tasks before consuming this hardware facade.
+    pub const fn register_access(&self) -> Esp32s31RadioAccess<'arena> {
         self.registers.access()
+    }
+
+    fn wifi_mac_hal(&self) -> WifiMacHal<'arena> {
+        self.registers
+            .access()
+            .try_wifi_mac_hal()
+            .expect("a synchronous Wi-Fi MAC transaction must not overlap another MMIO transaction")
     }
 
     /// Read the associated-STA RX policy through the same serialized PAC
     /// owner used by the live service.
     pub fn sta_receive_policy_snapshot(&self) -> MacStaReceivePolicySnapshot {
-        self.registers.borrow().sta_receive_policy_snapshot()
+        self.registers
+            .access()
+            .try_station_receive_policy_snapshot()
+            .expect("a synchronous STA policy snapshot must not overlap another MMIO transaction")
     }
 
     /// Read the live MAC RX walker frontier through the serialized PAC owner.
     pub fn mac_rx_dma_snapshot(&self) -> MacRxDmaSnapshot {
-        self.registers.borrow().mac_rx_dma_snapshot()
+        self.registers
+            .access()
+            .try_receive_dma_snapshot()
+            .expect("a synchronous RX DMA snapshot must not overlap another MMIO transaction")
     }
 
     /// Recover the exact PAC owner after every child task and synchronous
     /// register transaction has returned.
     pub fn try_into_registers(
         self,
-    ) -> Result<RadioRegisters, (Self, Esp32s31RadioRegistersArenaError)> {
+    ) -> Result<RadioRuntimeOwner, (Self, Esp32s31RadioOwnerArenaError)> {
         match self.registers.try_reclaim() {
             Ok(registers) => Ok(registers),
             Err((registers, error)) => Err((Self { registers }, error)),
@@ -93,8 +106,7 @@ impl<'arena> CooperativeRadioHardware<'arena> {
     /// Recover the PAC owner and its exact task-stable arena binding.
     pub fn try_into_reclaimed_registers(
         self,
-    ) -> Result<Esp32s31ReclaimedRadioRegisters<'arena>, (Self, Esp32s31RadioRegistersArenaError)>
-    {
+    ) -> Result<Esp32s31ReclaimedRadioOwner<'arena>, (Self, Esp32s31RadioOwnerArenaError)> {
         match self.registers.try_reclaim_with_republish() {
             Ok(reclaimed) => Ok(reclaimed),
             Err((registers, error)) => Err((Self { registers }, error)),
@@ -104,15 +116,24 @@ impl<'arena> CooperativeRadioHardware<'arena> {
 
 impl CcmpKeyHardware for CooperativeRadioHardware<'_> {
     fn install_sta_ccmp_entry(&mut self, index: u8, words: [u32; 6]) -> MacKeyInstallOutcome {
-        CcmpKeyHardware::install_sta_ccmp_entry(&mut *self.registers.borrow_mut(), index, words)
+        self.registers
+            .access()
+            .try_install_station_ccmp_entry(index, words)
+            .expect("CCMP installation must not overlap another MMIO transaction")
     }
 
     fn clear_ccmp_entry(&mut self, index: u8) {
-        CcmpKeyHardware::clear_ccmp_entry(&mut *self.registers.borrow_mut(), index);
+        self.registers
+            .access()
+            .try_clear_ccmp_entry(index)
+            .expect("CCMP clearing must not overlap another MMIO transaction");
     }
 
     fn ccmp_entry_is_valid(&self, index: u8) -> Option<bool> {
-        CcmpKeyHardware::ccmp_entry_is_valid(&*self.registers.borrow(), index)
+        self.registers
+            .access()
+            .try_ccmp_entry_is_valid(index)
+            .expect("CCMP observation must not overlap another MMIO transaction")
     }
 }
 
@@ -122,11 +143,7 @@ impl He20PeerHardware for CooperativeRadioHardware<'_> {
         config: MacHe20PeerConfig,
         rts_threshold: Option<u16>,
     ) -> Result<(), MacHe20PeerError> {
-        He20PeerHardware::program_he20_peer(
-            &mut *self.registers.borrow_mut(),
-            config,
-            rts_threshold,
-        )
+        He20PeerHardware::program_he20_peer(&mut self.wifi_mac_hal(), config, rts_threshold)
     }
 
     fn program_he20_association(
@@ -136,7 +153,7 @@ impl He20PeerHardware for CooperativeRadioHardware<'_> {
         bssid_index: u8,
     ) -> Result<(), MacHe20PeerError> {
         He20PeerHardware::program_he20_association(
-            &mut *self.registers.borrow_mut(),
+            &mut self.wifi_mac_hal(),
             association_id,
             minimum_mpdu_start_spacing,
             bssid_index,
@@ -144,37 +161,38 @@ impl He20PeerHardware for CooperativeRadioHardware<'_> {
     }
 
     fn initialize_he_buffer_status_report(&mut self) {
-        He20PeerHardware::initialize_he_buffer_status_report(&mut *self.registers.borrow_mut());
+        He20PeerHardware::initialize_he_buffer_status_report(&mut self.wifi_mac_hal());
     }
 }
 
 impl BeamformingReportHardware for CooperativeRadioHardware<'_> {
     fn set_he_beamforming_report_profile(&mut self, profile: MacHeBeamformingReportProfile) {
         BeamformingReportHardware::set_he_beamforming_report_profile(
-            &mut *self.registers.borrow_mut(),
+            &mut self.wifi_mac_hal(),
             profile,
         );
     }
 
     fn set_he_ersu_ack_rate_profile(&mut self, profile: MacHeErSuAckRateProfile) {
-        BeamformingReportHardware::set_he_ersu_ack_rate_profile(
-            &mut *self.registers.borrow_mut(),
-            profile,
-        );
+        BeamformingReportHardware::set_he_ersu_ack_rate_profile(&mut self.wifi_mac_hal(), profile);
     }
 }
 
 impl StaLinkRxPolicyHardware for CooperativeRadioHardware<'_> {
     fn apply_sta_link_policy(&mut self, bssid: [u8; 6]) {
-        let mut registers = self.registers.borrow_mut();
-        let mut hal = WifiMacHal::new(&mut registers);
-        StaLinkRxPolicyHardware::apply_sta_link_policy(&mut hal, bssid);
+        self.registers
+            .access()
+            .try_configure_station_receive_policy(bssid)
+            .expect("STA policy configuration must not overlap another MMIO transaction");
     }
 }
 
 impl StaNoiseFloorHardware for CooperativeRadioHardware<'_> {
     fn read_noise_floor_dbm(&self) -> i8 {
-        StaNoiseFloorHardware::read_noise_floor_dbm(&*self.registers.borrow())
+        self.registers
+            .access()
+            .try_noise_floor_dbm()
+            .expect("noise-floor sampling must not overlap another MMIO transaction")
     }
 }
 
@@ -185,11 +203,11 @@ impl TxHardware for CooperativeRadioHardware<'_> {
         queue: u8,
         program: MacLegacyTxProgram,
     ) -> bool {
-        TxHardware::prepare_bound_legacy_tx(&mut *self.registers.borrow_mut(), dma, queue, program)
+        TxHardware::prepare_bound_legacy_tx(&mut self.wifi_mac_hal(), dma, queue, program)
     }
 
     fn start_bound_legacy_tx(&mut self, dma: &dyn HardwareOwnedTxDma, queue: u8, plcp0: u32) {
-        TxHardware::start_bound_legacy_tx(&mut *self.registers.borrow_mut(), dma, queue, plcp0);
+        TxHardware::start_bound_legacy_tx(&mut self.wifi_mac_hal(), dma, queue, plcp0);
     }
 
     fn prepare_bound_ht_tx(
@@ -198,11 +216,11 @@ impl TxHardware for CooperativeRadioHardware<'_> {
         queue: u8,
         program: MacHtTxProgram,
     ) -> bool {
-        TxHardware::prepare_bound_ht_tx(&mut *self.registers.borrow_mut(), dma, queue, program)
+        TxHardware::prepare_bound_ht_tx(&mut self.wifi_mac_hal(), dma, queue, program)
     }
 
     fn start_bound_ht_tx(&mut self, dma: &dyn HardwareOwnedTxDma, queue: u8, plcp0: u32) {
-        TxHardware::start_bound_ht_tx(&mut *self.registers.borrow_mut(), dma, queue, plcp0);
+        TxHardware::start_bound_ht_tx(&mut self.wifi_mac_hal(), dma, queue, plcp0);
     }
 
     fn prepare_bound_he_tx(
@@ -211,23 +229,23 @@ impl TxHardware for CooperativeRadioHardware<'_> {
         queue: u8,
         program: MacHeTxProgram,
     ) -> bool {
-        TxHardware::prepare_bound_he_tx(&mut *self.registers.borrow_mut(), dma, queue, program)
+        TxHardware::prepare_bound_he_tx(&mut self.wifi_mac_hal(), dma, queue, program)
     }
 
     fn start_bound_he_tx(&mut self, dma: &dyn HardwareOwnedTxDma, queue: u8, plcp0: u32) {
-        TxHardware::start_bound_he_tx(&mut *self.registers.borrow_mut(), dma, queue, plcp0);
+        TxHardware::start_bound_he_tx(&mut self.wifi_mac_hal(), dma, queue, plcp0);
     }
 
     fn he_tx_vector_snapshot(&self, queue: u8) -> Option<MacHeTxVectorSnapshot> {
-        TxHardware::he_tx_vector_snapshot(&*self.registers.borrow(), queue)
+        TxHardware::he_tx_vector_snapshot(&self.wifi_mac_hal(), queue)
     }
 
     fn take_tx_completion(&mut self, queue: u8) -> Option<MacTxCompletionRegisters> {
-        TxHardware::take_tx_completion(&mut *self.registers.borrow_mut(), queue)
+        TxHardware::take_tx_completion(&mut self.wifi_mac_hal(), queue)
     }
 
     fn begin_tx_timeout_abort(&mut self, queue: u8) -> bool {
-        TxHardware::begin_tx_timeout_abort(&mut *self.registers.borrow_mut(), queue)
+        TxHardware::begin_tx_timeout_abort(&mut self.wifi_mac_hal(), queue)
     }
 
     fn with_tx_queue_detached<R>(
@@ -238,7 +256,7 @@ impl TxHardware for CooperativeRadioHardware<'_> {
         detached: impl for<'detached> FnOnce(MacTxQueueDetached<'detached>) -> R,
     ) -> MacTxDetachOutcome<R> {
         TxHardware::with_tx_queue_detached(
-            &mut *self.registers.borrow_mut(),
+            &mut self.wifi_mac_hal(),
             queue,
             expected_descriptor_head,
             reason,
@@ -249,7 +267,7 @@ impl TxHardware for CooperativeRadioHardware<'_> {
 
 impl HtAmpduHardware for CooperativeRadioHardware<'_> {
     fn take_ht_ampdu_completion(&mut self, queue: u8) -> Option<MacHtAmpduCompletionRegisters> {
-        HtAmpduHardware::take_ht_ampdu_completion(&mut *self.registers.borrow_mut(), queue)
+        HtAmpduHardware::take_ht_ampdu_completion(&mut self.wifi_mac_hal(), queue)
     }
 
     fn prepare_he_trigger_based_queue(
@@ -261,7 +279,7 @@ impl HtAmpduHardware for CooperativeRadioHardware<'_> {
         queued_msdu_bytes: u32,
     ) -> Result<MacHeTriggerTxQueueSnapshot, MacHeTbProgramError> {
         HtAmpduHardware::prepare_he_trigger_based_queue(
-            &mut *self.registers.borrow_mut(),
+            &mut self.wifi_mac_hal(),
             policy,
             reservation,
             tid,
@@ -271,69 +289,66 @@ impl HtAmpduHardware for CooperativeRadioHardware<'_> {
     }
 
     fn clear_he_trigger_based_queue(&mut self, reservation: MacHeTbLinkReservation) {
-        HtAmpduHardware::clear_he_trigger_based_queue(
-            &mut *self.registers.borrow_mut(),
-            reservation,
-        );
+        HtAmpduHardware::clear_he_trigger_based_queue(&mut self.wifi_mac_hal(), reservation);
     }
 
     fn he_trigger_based_queue_snapshot(
         &self,
         reservation: MacHeTbLinkReservation,
     ) -> Option<MacHeTriggerTxQueueSnapshot> {
-        HtAmpduHardware::he_trigger_based_queue_snapshot(&*self.registers.borrow(), reservation)
+        HtAmpduHardware::he_trigger_based_queue_snapshot(&self.wifi_mac_hal(), reservation)
     }
 }
 
 impl RxDma for CooperativeRadioHardware<'_> {
     fn buffer_full_count(&mut self) -> Option<u16> {
-        RxDma::buffer_full_count(&mut *self.registers.borrow_mut())
+        RxDma::buffer_full_count(&mut self.wifi_mac_hal())
     }
 
     fn last_descriptor_low(&mut self) -> u32 {
-        RxDma::last_descriptor_low(&mut *self.registers.borrow_mut())
+        RxDma::last_descriptor_low(&mut self.wifi_mac_hal())
     }
 
     fn next_descriptor_low(&mut self) -> u32 {
-        RxDma::next_descriptor_low(&mut *self.registers.borrow_mut())
+        RxDma::next_descriptor_low(&mut self.wifi_mac_hal())
     }
 
     fn with_ordered_cursor<R>(
         &mut self,
         observed: impl for<'confirmation> FnOnce(RxDmaCursorObservation<'confirmation>) -> R,
     ) -> R {
-        RxDma::with_ordered_cursor(&mut *self.registers.borrow_mut(), observed)
+        RxDma::with_ordered_cursor(&mut self.wifi_mac_hal(), observed)
     }
 
     fn walker_enabled(&mut self) -> bool {
-        RxDma::walker_enabled(&mut *self.registers.borrow_mut())
+        RxDma::walker_enabled(&mut self.wifi_mac_hal())
     }
 
     fn reload_pending(&mut self) -> bool {
-        RxDma::reload_pending(&mut *self.registers.borrow_mut())
+        RxDma::reload_pending(&mut self.wifi_mac_hal())
     }
 
     fn try_with_reload_settled<R>(
         &mut self,
         settled: impl for<'confirmation> FnOnce(RxDmaReloadSettled<'confirmation>) -> R,
     ) -> Option<R> {
-        RxDma::try_with_reload_settled(&mut *self.registers.borrow_mut(), settled)
+        RxDma::try_with_reload_settled(&mut self.wifi_mac_hal(), settled)
     }
 
     fn set_descriptor_high_window(&mut self, binding: &RxDmaBinding, address_high: u16) {
-        RxDma::set_descriptor_high_window(&mut *self.registers.borrow_mut(), binding, address_high);
+        RxDma::set_descriptor_high_window(&mut self.wifi_mac_hal(), binding, address_high);
     }
 
     fn write_descriptor_base(&mut self, binding: &RxDmaBinding, address: u32) {
-        RxDma::write_descriptor_base(&mut *self.registers.borrow_mut(), binding, address);
+        RxDma::write_descriptor_base(&mut self.wifi_mac_hal(), binding, address);
     }
 
     fn publish_walker_enable(&mut self, binding: &RxDmaBinding) {
-        RxDma::publish_walker_enable(&mut *self.registers.borrow_mut(), binding);
+        RxDma::publish_walker_enable(&mut self.wifi_mac_hal(), binding);
     }
 
     fn request_reload(&mut self, binding: &RxDmaBinding) {
-        RxDma::request_reload(&mut *self.registers.borrow_mut(), binding);
+        RxDma::request_reload(&mut self.wifi_mac_hal(), binding);
     }
 
     fn try_with_walker_enabled<R>(
@@ -341,38 +356,38 @@ impl RxDma for CooperativeRadioHardware<'_> {
         binding: &RxDmaBinding,
         enabled: impl for<'confirmation> FnOnce(RxDmaWalkerEnabled<'confirmation>) -> R,
     ) -> Option<R> {
-        RxDma::try_with_walker_enabled(&mut *self.registers.borrow_mut(), binding, enabled)
+        RxDma::try_with_walker_enabled(&mut self.wifi_mac_hal(), binding, enabled)
     }
 
     fn try_with_walker_stopped<R>(
         &mut self,
         stopped: impl for<'confirmation> FnOnce(RxDmaWalkerStopped<'confirmation>) -> R,
     ) -> Option<R> {
-        RxDma::try_with_walker_stopped(&mut *self.registers.borrow_mut(), stopped)
+        RxDma::try_with_walker_stopped(&mut self.wifi_mac_hal(), stopped)
     }
 
     fn fence(&mut self) {
-        RxDma::fence(&mut *self.registers.borrow_mut());
+        RxDma::fence(&mut self.wifi_mac_hal());
     }
 }
 
 impl ConnectedControlHardware for CooperativeRadioHardware<'_> {
     fn station_tsf(&mut self) -> u64 {
-        self.registers.borrow_mut().station_tsf()
+        self.wifi_mac_hal().station_tsf()
     }
 
     fn program_rx_block_ack(
         &mut self,
         agreement: S31RxBlockAckAgreement,
     ) -> Result<(), S31RxBlockAckAgreementError> {
-        rx_ampdu_hw::program(&mut self.registers.borrow_mut(), agreement)
+        rx_ampdu_hw::program(&mut self.wifi_mac_hal(), agreement)
     }
 
     fn clear_rx_block_ack(
         &mut self,
         hardware_index: u8,
     ) -> Result<(), S31RxBlockAckAgreementError> {
-        rx_ampdu_hw::clear(&mut self.registers.borrow_mut(), hardware_index)
+        rx_ampdu_hw::clear(&mut self.wifi_mac_hal(), hardware_index)
     }
 
     fn set_he_tid_enabled(
@@ -381,8 +396,7 @@ impl ConnectedControlHardware for CooperativeRadioHardware<'_> {
         enabled: bool,
     ) -> Result<(), S31RxBlockAckAgreementError> {
         let tid = MacHeTid::new(tid).ok_or(S31RxBlockAckAgreementError::Tid(tid))?;
-        self.registers
-            .borrow_mut()
+        self.wifi_mac_hal()
             .set_he_trigger_based_tid_enabled(tid, enabled);
         Ok(())
     }
@@ -393,11 +407,6 @@ impl ConnectedControlHardware for CooperativeRadioHardware<'_> {
         key_id: u8,
         temporal_key: &[u8; 16],
     ) -> Result<(), CryptoKeyError> {
-        replace_sta_group_ccmp(
-            &mut *self.registers.borrow_mut(),
-            slot,
-            key_id,
-            temporal_key,
-        )
+        replace_sta_group_ccmp(&mut self.wifi_mac_hal(), slot, key_id, temporal_key)
     }
 }

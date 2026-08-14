@@ -1,6 +1,6 @@
 //! Pseudo-Rust value and flow rendering for manual linked-IR analysis.
 
-use std::{fmt::Write as _, sync::Arc};
+use std::{collections::BTreeMap, fmt::Write as _, sync::Arc};
 
 use super::*;
 
@@ -157,6 +157,28 @@ fn pseudo_masked_bits(bits: &[BitSource; 32]) -> Option<String> {
     }
 }
 
+fn pseudo_partial_bits(bits: &[BitSource; 32]) -> String {
+    let mut known_mask = 0_u32;
+    let mut known_value = 0_u32;
+    let mut dynamic_bits = 0_u8;
+    let mut unknown_bits = 0_u8;
+    for (bit, source) in bits.iter().enumerate() {
+        match source {
+            BitSource::Constant(value) => {
+                known_mask |= 1 << bit;
+                if *value {
+                    known_value |= 1 << bit;
+                }
+            }
+            BitSource::Unknown => unknown_bits += 1,
+            _ => dynamic_bits += 1,
+        }
+    }
+    format!(
+        "bit_value(known_mask={known_mask:#010x}, known_value={known_value:#010x}, dynamic_bits={dynamic_bits}, unknown_bits={unknown_bits})"
+    )
+}
+
 pub(super) fn pseudo_value(value: &SymbolicValue) -> String {
     if let Some(index) = value.direct_input_index() {
         return format!("arg{index}");
@@ -251,23 +273,49 @@ pub(super) fn pseudo_value(value: &SymbolicValue) -> String {
             or_mask,
         } => format!("((ramread{read_token} & {and_mask:#010x}) | {or_mask:#010x})"),
         SymbolicValue::Bits(bits) => {
-            pseudo_masked_bits(bits).unwrap_or_else(|| format!("symbolic({:?})", value.canonical()))
+            pseudo_masked_bits(bits).unwrap_or_else(|| pseudo_partial_bits(bits))
         }
-        SymbolicValue::ReviewedExternalTable(_)
-        | SymbolicValue::ReviewedExternalFunction { .. }
-        | SymbolicValue::FunctionTable(_)
-        | SymbolicValue::FunctionPointer { .. } => {
-            format!("symbolic({:?})", value.canonical())
-        }
+        SymbolicValue::ReviewedExternalTable(_) => "reviewed_external_table".to_owned(),
+        SymbolicValue::ReviewedExternalFunction { .. } => "reviewed_external_function".to_owned(),
+        SymbolicValue::FunctionTable(_) => "function_table".to_owned(),
+        SymbolicValue::FunctionPointer { .. } => "function_pointer".to_owned(),
     }
 }
 
 pub(super) fn pseudo_arguments(arguments: &[SymbolicValue]) -> String {
-    arguments
-        .iter()
-        .map(pseudo_value)
-        .collect::<Vec<_>>()
-        .join(", ")
+    fn is_unknown(value: &SymbolicValue) -> bool {
+        matches!(value, SymbolicValue::Unknown)
+            || matches!(value, SymbolicValue::Bits(bits) if bits.iter().all(|bit| matches!(bit, BitSource::Unknown)))
+    }
+
+    let mut rendered = Vec::new();
+    let mut index = 0;
+    while index < arguments.len() {
+        let exact_end = (index + 1..=arguments.len())
+            .take_while(|end| arguments[*end - 1].direct_input_index() == Some((*end - 1) as u8))
+            .last()
+            .unwrap_or(index);
+        if exact_end.saturating_sub(index) >= 4 {
+            rendered.push(format!("abi_inputs[{index}..{exact_end}]"));
+            index = exact_end;
+            continue;
+        }
+
+        let unknown_end = arguments[index..]
+            .iter()
+            .take_while(|argument| is_unknown(argument))
+            .count()
+            + index;
+        if unknown_end.saturating_sub(index) >= 4 {
+            rendered.push(format!("unknown_abi_inputs[{index}..{unknown_end}]"));
+            index = unknown_end;
+            continue;
+        }
+
+        rendered.push(pseudo_value(&arguments[index]));
+        index += 1;
+    }
+    rendered.join(", ")
 }
 
 #[derive(Clone, Default)]
@@ -275,14 +323,49 @@ pub(super) struct RenderState {
     mmio_reads: u32,
     memory_reads: u32,
     data_symbols: Arc<Vec<artifact::ArtifactDataSymbolDefinition>>,
+    call_names: Arc<BTreeMap<u32, Option<String>>>,
 }
 
 impl RenderState {
-    fn with_resolver(resolver: &ReferenceResolver) -> Self {
+    fn with_context(resolver: Option<&ReferenceResolver>, calls: &[LinkedCall]) -> Self {
+        let mut call_names = BTreeMap::new();
+        for call in calls.iter().filter(|call| {
+            !call.kind.contains("unresolved")
+                && !call.kind.contains("ambiguous")
+                && !call.target.contains(" | ")
+        }) {
+            let Some(site) = call.site else {
+                continue;
+            };
+            match call_names.entry(site) {
+                std::collections::btree_map::Entry::Vacant(entry) => {
+                    entry.insert(Some(call.target.clone()));
+                }
+                std::collections::btree_map::Entry::Occupied(mut entry)
+                    if entry.get().as_deref() != Some(call.target.as_str()) =>
+                {
+                    entry.insert(None);
+                }
+                std::collections::btree_map::Entry::Occupied(_) => {}
+            }
+        }
         Self {
-            data_symbols: Arc::new(resolver.data_symbols.clone()),
+            data_symbols: Arc::new(
+                resolver
+                    .map(|resolver| resolver.data_symbols.clone())
+                    .unwrap_or_default(),
+            ),
+            call_names: Arc::new(call_names),
             ..Self::default()
         }
+    }
+
+    fn call_name(&self, site: u32, target: u32) -> String {
+        self.call_names
+            .get(&site)
+            .and_then(|name| name.as_deref())
+            .map(pseudo_identifier)
+            .unwrap_or_else(|| format!("unresolved_call_{target:08x}"))
     }
 
     fn indexed_global(
@@ -647,23 +730,33 @@ pub(super) fn render_event(
         .unwrap(),
         DraftReferenceEvent::Call {
             token,
+            site,
             target,
             arguments,
             ..
-        } => writeln!(
-            output,
-            "{prefix}let call{token} = sub_{target:08x}({});",
-            pseudo_arguments(arguments)
-        )
-        .unwrap(),
+        } => {
+            let callee = state.call_name(*site, *target);
+            writeln!(
+                output,
+                "{prefix}let call{token} = {callee}({});",
+                pseudo_arguments(arguments)
+            )
+            .unwrap();
+        }
         DraftReferenceEvent::TailCall {
-            target, arguments, ..
-        } => writeln!(
-            output,
-            "{prefix}return sub_{target:08x}({}); // tail call",
-            pseudo_arguments(arguments)
-        )
-        .unwrap(),
+            site,
+            target,
+            arguments,
+            ..
+        } => {
+            let callee = state.call_name(*site, *target);
+            writeln!(
+                output,
+                "{prefix}return {callee}({}); // tail call",
+                pseudo_arguments(arguments)
+            )
+            .unwrap();
+        }
         DraftReferenceEvent::ComposedCall {
             token,
             symbol,
@@ -690,17 +783,21 @@ pub(super) fn render_event(
         }
         DraftReferenceEvent::ScratchCall {
             token,
+            site,
             target,
             arguments,
             scratch_argument,
             scratch_size,
             ..
-        } => writeln!(
-            output,
-            "{prefix}let call{token} = sub_{target:08x}_with_scratch(arg={scratch_argument}, size={scratch_size}, [{}]);",
-            pseudo_arguments(arguments)
-        )
-        .unwrap(),
+        } => {
+            let callee = state.call_name(*site, *target);
+            writeln!(
+                output,
+                "{prefix}let call{token} = {callee}_with_scratch(arg={scratch_argument}, size={scratch_size}, [{}]);",
+                pseudo_arguments(arguments)
+            )
+            .unwrap();
+        }
         DraftReferenceEvent::ComposedCallWithScratch {
             token,
             symbol,
@@ -854,10 +951,10 @@ pub(super) fn render_pseudo(
             flow,
             &mut output,
             1,
-            resolver.map_or_else(RenderState::default, RenderState::with_resolver),
+            RenderState::with_context(resolver, calls),
         );
     } else {
-        let mut state = resolver.map_or_else(RenderState::default, RenderState::with_resolver);
+        let mut state = RenderState::with_context(resolver, calls);
         for event in &trace.reference_events {
             render_event(event, &mut output, 1, &mut state);
         }

@@ -61,7 +61,7 @@ pub(super) fn collect(context: &ProjectContext<'_>, report: &mut DoctorReport) {
         context.target.calling_convention.label(),
         context
             .target
-            .harness
+            .knowledge_provider
             .as_deref()
             .and_then(|harness| crate::harnesses::contracts(harness).ok()),
     ) {

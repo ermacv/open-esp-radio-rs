@@ -1,0 +1,5 @@
+schema = 3
+id = "generic-fixture-chip"
+memory-map = "memory.toml"
+svd = []
+knowledge-packs = []

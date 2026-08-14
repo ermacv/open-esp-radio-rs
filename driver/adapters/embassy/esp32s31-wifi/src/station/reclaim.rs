@@ -1,6 +1,6 @@
 //! Role-neutral PAC reclaim from a finite station lifecycle phase.
 //!
-//! Scan and initial-join phases own `RadioRegisters` directly. Connected
+//! Scan and initial-join phases own `RadioRuntimeOwner` directly. Connected
 //! phases own the same PAC through one cooperative register arena. This module
 //! normalizes those four clean frontiers without knowing HIL, board, network
 //! or executor policy. A failed arena reclaim returns the exact original
@@ -8,9 +8,9 @@
 //! mistake it for stopped Wi-Fi.
 
 use open_esp_radio_embassy_net::RawMutex;
-use open_esp_radio_esp32s31_hal::RadioRegisters;
-use open_esp_radio_esp32s31_wifi::register_arena::{
-    Esp32s31RadioRegistersArenaError, Esp32s31RadioRegistersRepublish,
+use open_esp_radio_esp32s31_hal::RadioRuntimeOwner;
+use open_esp_radio_esp32s31_hal::radio_arena::{
+    Esp32s31RadioOwnerArenaError, Esp32s31RadioOwnerRepublish,
 };
 use open_esp_radio_esp32s31_wifi_mac::irq::MacInterruptRoute;
 use open_esp_radio_esp32s31_wifi_sta::{
@@ -58,7 +58,7 @@ pub enum Esp32s31StationStoppedPhaseResources<'arena, S, J, N, DN, DR, A, C, E> 
         aggregate_tx: A,
         control: C,
         station: Esp32s31StaAttemptStation,
-        registers: Esp32s31RadioRegistersRepublish<'arena>,
+        registers: Esp32s31RadioOwnerRepublish<'arena>,
     },
     Reconnected {
         network: N,
@@ -67,19 +67,19 @@ pub enum Esp32s31StationStoppedPhaseResources<'arena, S, J, N, DN, DR, A, C, E> 
         aggregate_tx: A,
         control: C,
         station: Esp32s31StaAttemptStation,
-        registers: Esp32s31RadioRegistersRepublish<'arena>,
+        registers: Esp32s31RadioOwnerRepublish<'arena>,
     },
 }
 
 /// PAC and role-local resources returned by one successful phase reclaim.
 pub struct Esp32s31StationPhaseReclaimed<R> {
-    registers: RadioRegisters,
+    registers: RadioRuntimeOwner,
     resources: R,
     primary_channel: Option<WifiChannel>,
 }
 
 impl<R> Esp32s31StationPhaseReclaimed<R> {
-    pub fn into_parts(self) -> (RadioRegisters, R, Option<WifiChannel>) {
+    pub fn into_parts(self) -> (RadioRuntimeOwner, R, Option<WifiChannel>) {
         (self.registers, self.resources, self.primary_channel)
     }
 }
@@ -87,7 +87,7 @@ impl<R> Esp32s31StationPhaseReclaimed<R> {
 /// Why a finite station phase could not be normalized into a reusable PAC.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Esp32s31StationPhaseReclaimError {
-    Registers(Esp32s31RadioRegistersArenaError),
+    Registers(Esp32s31RadioOwnerArenaError),
     InvalidChannel(WifiChannelError),
     /// The phase still owns an active connected data-plane transaction and
     /// therefore has not reached a reclaimable stop frontier.
@@ -106,8 +106,8 @@ pub struct Esp32s31StationPhaseReclaimFailure<P> {
 /// caller may retain this quarantined frontier but cannot lose the arena token
 /// or retry with a newly fabricated register owner.
 pub struct Esp32s31StationPhaseRestoreFailure<R> {
-    pub error: Esp32s31RadioRegistersArenaError,
-    pub registers: RadioRegisters,
+    pub error: Esp32s31RadioOwnerArenaError,
+    pub registers: RadioRuntimeOwner,
     pub resources: R,
 }
 
@@ -208,7 +208,7 @@ pub struct Esp32s31StationRuntimeReclaimed<
     S,
     const RECORDS: usize,
 > {
-    registers: RadioRegisters,
+    registers: RadioRuntimeOwner,
     role: Esp32s31StationRoleOwner<P>,
     interrupt: I,
     storage: Esp32s31StationStorageResources<'storage, D, T, RECORDS>,
@@ -225,7 +225,7 @@ impl<'storage, 'security, P, I, D, T, B, S, const RECORDS: usize>
     pub fn into_parts(
         self,
     ) -> (
-        RadioRegisters,
+        RadioRuntimeOwner,
         Esp32s31StationRoleOwner<P>,
         I,
         Esp32s31StationStorageResources<'storage, D, T, RECORDS>,
@@ -266,7 +266,7 @@ pub enum Esp32s31StationRuntimeReclaimFailure<O> {
 #[allow(clippy::type_complexity)]
 pub fn try_reclaim_esp32s31_station_phase<'arena, S, J, N, DN, DR, A, C, E, K>(
     phase: Esp32s31StationServicePhase<
-        RadioRegisters,
+        RadioRuntimeOwner,
         S,
         J,
         N,
@@ -280,7 +280,7 @@ pub fn try_reclaim_esp32s31_station_phase<'arena, S, J, N, DN, DR, A, C, E, K>(
     >,
     Esp32s31StationPhaseReclaimFailure<
         Esp32s31StationServicePhase<
-            RadioRegisters,
+            RadioRuntimeOwner,
             S,
             J,
             N,
@@ -436,11 +436,11 @@ pub fn try_reclaim_esp32s31_station_phase<'arena, S, J, N, DN, DR, A, C, E, K>(
 /// connected phase, or directly restore a scan/join phase.
 #[allow(clippy::type_complexity)]
 pub fn try_restore_esp32s31_station_phase<'arena, S, J, N, DN, DR, A, C, E, K>(
-    registers: RadioRegisters,
+    registers: RadioRuntimeOwner,
     resources: Esp32s31StationStoppedPhaseResources<'arena, S, J, N, DN, DR, A, C, E>,
 ) -> Result<
     Esp32s31StationServicePhase<
-        RadioRegisters,
+        RadioRuntimeOwner,
         S,
         J,
         N,
@@ -493,7 +493,7 @@ pub fn try_restore_esp32s31_station_phase<'arena, S, J, N, DN, DR, A, C, E, K>(
             }),
             Err(failure) => Err(Esp32s31StationPhaseRestoreFailure {
                 error: failure.error,
-                registers: failure.registers,
+                registers: failure.owner,
                 resources: Esp32s31StationStoppedPhaseResources::Disconnected {
                     network,
                     receive,
@@ -526,7 +526,7 @@ pub fn try_restore_esp32s31_station_phase<'arena, S, J, N, DN, DR, A, C, E, K>(
             }),
             Err(failure) => Err(Esp32s31StationPhaseRestoreFailure {
                 error: failure.error,
-                registers: failure.registers,
+                registers: failure.owner,
                 resources: Esp32s31StationStoppedPhaseResources::Reconnected {
                     network,
                     receive,
@@ -781,7 +781,7 @@ pub fn try_reclaim_esp32s31_station_runtime<
             RECORDS,
         >,
         Esp32s31StationServicePhase<
-            RadioRegisters,
+            RadioRuntimeOwner,
             S,
             J,
             N,
@@ -816,7 +816,7 @@ pub fn try_reclaim_esp32s31_station_runtime<
                 RECORDS,
             >,
             Esp32s31StationServicePhase<
-                RadioRegisters,
+                RadioRuntimeOwner,
                 S,
                 J,
                 N,

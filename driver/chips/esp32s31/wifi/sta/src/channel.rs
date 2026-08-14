@@ -3,12 +3,12 @@
 use core::marker::PhantomData;
 
 use open_esp_radio_esp32s31_hal::{
-    RadioRegisters, phy_i2c::PhyI2cMasterControl, phy_temperature::PhyTemperatureSystemControl,
-    wifi_bb::PhyWifiBbControl,
+    RadioRuntimeOwner, phy_i2c::PhyI2cMasterControl, phy_temperature::PhyTemperatureSystemControl,
+    radio_arena::Esp32s31RadioAccess, wifi_bb::PhyWifiBbControl,
 };
 use open_esp_radio_esp32s31_phy::{
-    PhyAsyncDelay, PhyState, PhyTargetObserver, PhyTargetPortError,
-    switch_phy_channel_with_mac_restart,
+    PhyAsyncDelay, PhyState, PhyTargetObserver, PhyTargetPortError, select_phy_channel_with_hal,
+    switch_phy_channel_with_hal_and_mac_restart,
 };
 
 /// Persistent PHY authority used by either an initial scan or a reconnect scan.
@@ -43,14 +43,14 @@ where
         &mut self,
         channel_or_frequency: u16,
         cbw: u8,
-        registers: &mut RadioRegisters,
+        radio: &mut RadioRuntimeOwner,
     ) -> Result<(), PhyTargetPortError> {
-        open_esp_radio_esp32s31_phy::select_phy_channel::<D, _, _>(
+        let mut hardware = radio.channel_hal(self.platform);
+        select_phy_channel_with_hal::<D, _, _>(
             self.state,
             channel_or_frequency,
             cbw,
-            self.platform,
-            registers,
+            &mut hardware,
             &mut self.observer,
         )
         .await
@@ -61,14 +61,35 @@ where
         &mut self,
         channel_or_frequency: u16,
         cbw: u8,
-        registers: &mut RadioRegisters,
+        radio: &mut RadioRuntimeOwner,
     ) -> Result<(), PhyTargetPortError> {
-        switch_phy_channel_with_mac_restart::<D, _, _>(
+        let mut hardware = radio.channel_hal(self.platform);
+        switch_phy_channel_with_hal_and_mac_restart::<D, _, _>(
             self.state,
             channel_or_frequency,
             cbw,
-            self.platform,
-            registers,
+            &mut hardware,
+            &mut self.observer,
+        )
+        .await
+    }
+
+    /// Stop, retune and restart through the arena's serialized channel-only
+    /// capability. No PAC owner or generic register borrow crosses this API.
+    pub async fn switch_published_channel(
+        &mut self,
+        channel_or_frequency: u16,
+        cbw: u8,
+        access: Esp32s31RadioAccess<'_>,
+    ) -> Result<(), PhyTargetPortError> {
+        let mut channel = access
+            .try_channel_hal(self.platform)
+            .map_err(|_| PhyTargetPortError::HardwareCapabilityUnavailable)?;
+        switch_phy_channel_with_hal_and_mac_restart::<D, _, _>(
+            self.state,
+            channel_or_frequency,
+            cbw,
+            &mut channel,
             &mut self.observer,
         )
         .await

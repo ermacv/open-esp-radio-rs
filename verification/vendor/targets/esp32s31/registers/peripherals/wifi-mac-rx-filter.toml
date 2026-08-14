@@ -177,7 +177,9 @@ sources = [
     "BLOB_LIBPP_HAL_SNIFFER_ENABLE",
     "BLOB_LIBPP_HAL_RX_MISC_DEBUG",
 ]
-confidence = "instruction-exact-hil-qualified"
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_FILTER.POLICY%s"
@@ -185,7 +187,9 @@ sources = [
     "BLOB_LIBPP_RX_POLICY",
     "BLOB_LIBPP_HAL_RX_MISC_DEBUG",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_FILTER.POLICY%s.DUMP_UNICAST_CHECK_BSSID"
@@ -194,12 +198,16 @@ sources = [
     "BLOB_LIBNET80211_WIFI_RX_POLICY",
     "HIL_VENDOR_STA_AUTH_POLICY_2026_07_28",
 ]
-confidence = "instruction-exact-hil-qualified"
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_FILTER.POLICY%s.PASS_BEACON"
 sources = ["BLOB_LIBPP_RX_POLICY"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_FILTER.POLICY%s.RECEIVE_UNICAST_CHECK_BSSID"
@@ -208,7 +216,9 @@ sources = [
     "BLOB_LIBNET80211_WIFI_RX_POLICY",
     "HIL_VENDOR_STA_AUTH_POLICY_2026_07_28",
 ]
-confidence = "instruction-exact-hil-qualified"
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_FILTER.POLICY%s.AUTO_ACK_DISABLE"
@@ -216,12 +226,16 @@ sources = [
     "BLOB_LIBPP_HAL_SNIFFER_ENABLE",
     "BLOB_LIBPP_HAL_RX_MISC_DEBUG",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_FILTER.BASEBAND_ERROR_STATUS%s"
 sources = ["BLOB_LIBPP_HAL_RUNTIME_MMIO_LEAVES"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "WIFI_MAC_RX_FILTER.MISC_PACKET_POLICY"
@@ -230,14 +244,20 @@ sources = [
     "BLOB_LIBPP_HAL_SNIFFER_MISC",
     "BLOB_LIBPP_HAL_RUNTIME_MMIO_LEAVES",
 ]
-confidence = "instruction-exact-hil-qualified"
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_FILTER.MISC_PACKET_POLICY.OPEN_MISC_PACKET_CLASSES"
 sources = ["OPEN_DRIVER_PROMISCUOUS_RX_FRONTIER"]
-confidence = "hil-observed"
+provenance = "observed"
+accuracy = "bounded"
+completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_RX_FILTER.MISC_PACKET_POLICY.BASEBAND_ERROR"
 sources = ["BLOB_LIBPP_HAL_RUNTIME_MMIO_LEAVES"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"

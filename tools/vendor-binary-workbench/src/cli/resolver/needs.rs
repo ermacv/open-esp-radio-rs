@@ -11,8 +11,8 @@ use crate::cli::args::Command;
 pub(super) struct ResolutionNeeds {
     pub(super) project: bool,
     pub(super) backend: bool,
-    pub(super) harness: bool,
-    pub(super) harness_if_configured: bool,
+    pub(super) knowledge_provider: bool,
+    pub(super) knowledge_provider_if_configured: bool,
     pub(super) mmio_map: bool,
     pub(super) memory_map: bool,
     pub(super) register_catalog: bool,
@@ -23,7 +23,7 @@ impl ResolutionNeeds {
     pub(super) const fn new(
         project: bool,
         backend: bool,
-        harness: bool,
+        knowledge_provider: bool,
         mmio_map: bool,
         memory_map: bool,
         register_catalog: bool,
@@ -32,8 +32,8 @@ impl ResolutionNeeds {
         Self {
             project,
             backend,
-            harness,
-            harness_if_configured: false,
+            knowledge_provider,
+            knowledge_provider_if_configured: false,
             mmio_map,
             memory_map,
             register_catalog,
@@ -41,13 +41,13 @@ impl ResolutionNeeds {
         }
     }
 
-    pub(super) const fn with_configured_harness(mut self) -> Self {
-        self.harness_if_configured = true;
+    pub(super) const fn with_configured_knowledge_provider(mut self) -> Self {
+        self.knowledge_provider_if_configured = true;
         self
     }
 
-    pub(super) const fn requires_harness(self, configured: bool) -> bool {
-        self.harness || (self.harness_if_configured && configured)
+    pub(super) const fn requires_knowledge_provider(self, configured: bool) -> bool {
+        self.knowledge_provider || (self.knowledge_provider_if_configured && configured)
     }
 
     pub(super) const fn for_command(command: &Command) -> Self {
@@ -68,16 +68,12 @@ impl ResolutionNeeds {
                 Self::new(true, false, true, false, false, false, false)
             }
             Command::ProjectStatus(_) => Self::new(true, false, false, false, true, false, true),
-            Command::ProjectFeature(_) => Self::new(true, false, false, false, false, false, false),
-            Command::ProjectAnalyze(_) => {
-                Self::new(true, true, false, false, true, true, true).with_configured_harness()
-            }
-            Command::ProjectVerify(_) => {
-                Self::new(true, true, false, true, true, true, true).with_configured_harness()
-            }
-            Command::ProjectCheck(_) => {
-                Self::new(true, true, false, true, true, true, true).with_configured_harness()
-            }
+            Command::ProjectAnalyze(_) => Self::new(true, true, false, false, true, true, true)
+                .with_configured_knowledge_provider(),
+            Command::ProjectVerify(_) => Self::new(true, true, false, true, true, true, true)
+                .with_configured_knowledge_provider(),
+            Command::ProjectCheck(_) => Self::new(true, true, false, true, true, true, true)
+                .with_configured_knowledge_provider(),
             Command::ProjectPublish(_) => Self::new(true, false, false, false, true, false, false),
 
             Command::FunctionInitPack(_)
@@ -94,7 +90,8 @@ impl ResolutionNeeds {
                 Self::new(true, false, false, false, false, false, false)
             }
             Command::FunctionReview(_) | Command::InterfaceValidate(_) => {
-                Self::new(true, false, false, false, false, false, false).with_configured_harness()
+                Self::new(true, false, false, false, false, false, false)
+                    .with_configured_knowledge_provider()
             }
             Command::RegisterInitModel(_) | Command::RegisterImportSvd(_) => {
                 Self::new(true, false, false, false, true, false, false)
@@ -107,12 +104,10 @@ impl ResolutionNeeds {
                 Self::new(false, true, false, false, false, false, true)
             }
             Command::DiscoverMmio(_) => Self::new(false, true, false, false, true, true, true),
-            Command::ExportIr(_) => {
-                Self::new(false, true, false, false, true, true, true).with_configured_harness()
-            }
-            Command::BuildIr(_) => {
-                Self::new(true, true, false, false, true, true, true).with_configured_harness()
-            }
+            Command::ExportIr(_) => Self::new(false, true, false, false, true, true, true)
+                .with_configured_knowledge_provider(),
+            Command::BuildIr(_) => Self::new(true, true, false, false, true, true, true)
+                .with_configured_knowledge_provider(),
 
             Command::ExecuteRun(_)
             | Command::ExecuteReplay(_)
@@ -130,13 +125,15 @@ impl ResolutionNeeds {
             | Command::VerifyContractBluetoothTxPower(_)
             | Command::VerifyContractBluetoothTxGainInit(_)
             | Command::VerifyContractBasebandInit(_)
-            | Command::VerifyContractRegisterInit(_)
-            | Command::GenerateReference(_)
+            | Command::VerifyContractRegisterInit(_) => {
+                Self::new(true, true, false, true, true, true, true)
+            }
+            Command::GenerateReference(_)
             | Command::GenerateReferenceBatch(_)
-            | Command::GenerateDriver(_)
             | Command::InspectAnalyze(_) => Self::new(true, true, true, true, true, true, true),
             Command::VerifyInventory(_) | Command::VerifySource(_) => {
-                Self::new(true, true, false, true, true, true, true).with_configured_harness()
+                Self::new(true, true, false, true, true, true, true)
+                    .with_configured_knowledge_provider()
             }
         }
     }

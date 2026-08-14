@@ -96,7 +96,7 @@ impl ReferenceResolver {
         let entry_contract = harness
             .contracts
             .entry_contract("none")
-            .ok_or("selected harness has no neutral entry contract")?;
+            .ok_or("selected RISC-V adapter has no neutral entry contract")?;
         Self::load_with_entry_contract(artifact, companions, harness, entry_contract)
     }
 

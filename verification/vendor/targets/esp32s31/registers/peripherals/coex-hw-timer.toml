@@ -122,24 +122,34 @@ bitWidth = 31
 [[review]]
 entity = "COEX_HW_TIMER"
 sources = ["BLOB_LIBCOEX_HW_TIMER"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "COEX_HW_TIMER.CONFIGURATION%s"
 sources = ["BLOB_LIBCOEX_HW_TIMER"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "COEX_HW_TIMER.SECONDARY_TARGET%s"
 sources = ["BLOB_LIBCOEX_HW_TIMER"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "COEX_HW_TIMER.ENABLE_CONTROL%s"
 sources = ["BLOB_LIBCOEX_HW_TIMER"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "COEX_HW_TIMER.DISABLE_CONTROL%s"
 sources = ["BLOB_LIBCOEX_HW_TIMER"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"

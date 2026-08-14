@@ -1135,8 +1135,8 @@ pub(crate) fn run(
     capture_independent_laptop_monitor_rx: bool,
 ) -> Result<()> {
     let mut options = parse_options(&arguments, lab)?;
-    fs::create_dir_all(&output)?;
-    invalidate_previous_report(&output)?;
+    fs::create_dir_all(output)?;
+    invalidate_previous_report(output)?;
     let tx_sink = UdpSocket::bind(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, options.tx_port))?;
     let host_receive_buffer_bytes = configure_qualification_receive_buffer(&tx_sink)?;
     tx_sink.set_read_timeout(Some(Duration::from_millis(100)))?;
@@ -1498,7 +1498,7 @@ pub(crate) fn run(
         });
     }
     write_report(
-        &output,
+        output,
         &options,
         BidirectionalEvidence {
             host_offer: host,
@@ -1673,8 +1673,8 @@ fn parse_device_report(log: &str) -> DeviceReport {
     // be merged into the sustained interval selected for qualification.
     let mut include_rx_interval_evidence = false;
     for line in log.lines() {
-        if line.contains("OAMP aggregates=") {
-            if let (
+        if line.contains("OAMP aggregates=")
+            && let (
                 Some(aggregates),
                 Some(publications),
                 Some(completed),
@@ -1704,29 +1704,28 @@ fn parse_device_report(log: &str) -> DeviceReport {
                 field(line, "stop_frame"),
                 field(line, "stop_capacity"),
                 field(line, "stop_empty"),
-            ) {
-                if let (Ok(minimum), Ok(maximum)) = (u8::try_from(minimum), u8::try_from(maximum)) {
-                    report.ampdu.push(AmpduSample {
-                        aggregates,
-                        publications,
-                        completed,
-                        subframes,
-                        acknowledged,
-                        single,
-                        individual_retry,
-                        timeout,
-                        collision,
-                        minimum,
-                        maximum,
-                        stop_frame,
-                        stop_capacity,
-                        stop_empty,
-                    });
-                }
-            }
+            )
+            && let (Ok(minimum), Ok(maximum)) = (u8::try_from(minimum), u8::try_from(maximum))
+        {
+            report.ampdu.push(AmpduSample {
+                aggregates,
+                publications,
+                completed,
+                subframes,
+                acknowledged,
+                single,
+                individual_retry,
+                timeout,
+                collision,
+                minimum,
+                maximum,
+                stop_frame,
+                stop_capacity,
+                stop_empty,
+            });
         }
-        if line.contains("OAMPH one=") {
-            if let (
+        if line.contains("OAMPH one=")
+            && let (
                 Some(one),
                 Some(two_three),
                 Some(four_seven),
@@ -1744,21 +1743,21 @@ fn parse_device_report(log: &str) -> DeviceReport {
                 field(line, "twentyfour_thirty"),
                 field(line, "thirtyone"),
                 field(line, "full32"),
-            ) {
-                report.ampdu_histograms.push(AmpduHistogramSample {
-                    one,
-                    two_three,
-                    four_seven,
-                    eight_fifteen,
-                    sixteen_twentythree,
-                    twentyfour_thirty,
-                    thirtyone,
-                    full32,
-                });
-            }
+            )
+        {
+            report.ampdu_histograms.push(AmpduHistogramSample {
+                one,
+                two_three,
+                four_seven,
+                eight_fifteen,
+                sixteen_twentythree,
+                twentyfour_thirty,
+                thirtyone,
+                full32,
+            });
         }
-        if line.contains("OAMPT preparation_us=") {
-            if let (
+        if line.contains("OAMPT preparation_us=")
+            && let (
                 Some(preparation_us),
                 Some(preparation_max_us),
                 Some(publication_us),
@@ -1786,26 +1785,26 @@ fn parse_device_report(log: &str) -> DeviceReport {
                 field(line, "retry_publications"),
                 field(line, "retry_exchange_us"),
                 field(line, "retry_exchange_max_us"),
-            ) {
-                report.ampdu_timings.push(AmpduTimingSample {
-                    preparation_us,
-                    preparation_max_us,
-                    publication_us,
-                    publication_max_us,
-                    exchange_us,
-                    exchange_max_us,
-                    first_exchanges,
-                    first_exchange_us,
-                    first_exchange_max_us,
-                    retried_exchanges,
-                    retry_publications,
-                    retry_exchange_us,
-                    retry_exchange_max_us,
-                });
-            }
+            )
+        {
+            report.ampdu_timings.push(AmpduTimingSample {
+                preparation_us,
+                preparation_max_us,
+                publication_us,
+                publication_max_us,
+                exchange_us,
+                exchange_max_us,
+                first_exchanges,
+                first_exchange_us,
+                first_exchange_max_us,
+                retried_exchanges,
+                retry_publications,
+                retry_exchange_us,
+                retry_exchange_max_us,
+            });
         }
-        if line.contains("OAMPI tx_irq_epochs=") {
-            if let (
+        if line.contains("OAMPI tx_irq_epochs=")
+            && let (
                 Some(tx_irq_epochs),
                 Some(tx_irq_samples),
                 Some(tx_irq_skew),
@@ -1823,21 +1822,21 @@ fn parse_device_report(log: &str) -> DeviceReport {
                 field(line, "tx_flight_samples"),
                 field(line, "tx_flight_us"),
                 field(line, "tx_flight_max_us"),
-            ) {
-                report.tx_irq_timings.push(TxIrqTimingSample {
-                    tx_irq_epochs,
-                    tx_irq_samples,
-                    tx_irq_skew,
-                    tx_irq_service_us,
-                    tx_irq_service_max_us,
-                    tx_flight_samples,
-                    tx_flight_us,
-                    tx_flight_max_us,
-                });
-            }
+            )
+        {
+            report.tx_irq_timings.push(TxIrqTimingSample {
+                tx_irq_epochs,
+                tx_irq_samples,
+                tx_irq_skew,
+                tx_irq_service_us,
+                tx_irq_service_max_us,
+                tx_flight_samples,
+                tx_flight_us,
+                tx_flight_max_us,
+            });
         }
-        if line.starts_with("OAMPB ") || line.contains(" OAMPB ") {
-            if let (
+        if (line.starts_with("OAMPB ") || line.contains(" OAMPB "))
+            && let (
                 Some(samples),
                 Some(received),
                 Some(success_without),
@@ -1857,19 +1856,19 @@ fn parse_device_report(log: &str) -> DeviceReport {
                 field(line, "full"),
                 field(line, "partial"),
                 field(line, "empty"),
-            ) {
-                report.ampdu_block_acks.push(AmpduBlockAckSample {
-                    samples,
-                    received,
-                    success_without,
-                    nonzero_control,
-                    start_outside,
-                    start_lag_max,
-                    full,
-                    partial,
-                    empty,
-                });
-            }
+            )
+        {
+            report.ampdu_block_acks.push(AmpduBlockAckSample {
+                samples,
+                received,
+                success_without,
+                nonzero_control,
+                start_outside,
+                start_lag_max,
+                full,
+                partial,
+                empty,
+            });
         }
         if line.starts_with("ORXQ ") || line.contains(" ORXQ ") {
             let sample = (|| {
@@ -2235,10 +2234,10 @@ fn parse_device_report(log: &str) -> DeviceReport {
             {
                 report.dma_health.push((buffer_full, fifo_overflow));
             }
-        } else if line.contains("stage=tx-runtime") {
-            if let Some(address) = field(line, "code_address") {
-                report.code_addresses.push(address);
-            }
+        } else if line.contains("stage=tx-runtime")
+            && let Some(address) = field(line, "code_address")
+        {
+            report.code_addresses.push(address);
         }
         if line.contains("result=FAIL")
             && (line.contains("raw-mac")

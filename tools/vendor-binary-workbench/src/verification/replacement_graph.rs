@@ -1,4 +1,4 @@
-//! Project-wide vendor-to-Rust replacement and qualification projection.
+//! Project-wide vendor-to-Rust replacement and verification projection.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -6,7 +6,8 @@ use open_radio_vendor_semantics::DriverAdapterClaim;
 use serde::Serialize;
 
 use super::{
-    FunctionVerificationReport, FunctionVerificationStatus, ProjectVerificationSuiteReport,
+    EvidenceClass, FunctionVerificationReport, FunctionVerificationStatus,
+    ProjectVerificationSuiteReport,
 };
 use crate::Result;
 
@@ -41,6 +42,7 @@ pub(crate) struct RustReplacementTarget {
 pub(crate) struct ReplacementProof {
     pub(crate) suite: String,
     pub(crate) status: FunctionVerificationStatus,
+    pub(crate) evidence_class: EvidenceClass,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) claim: Option<DriverAdapterClaim>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -322,7 +324,12 @@ fn update_status_summary(
 }
 
 fn classify_match(summary: &mut ReplacementGraphSummary, builder: &ReplacementBuilder) {
-    if builder.component.is_some() {
+    if builder.component.is_some()
+        && builder
+            .proofs
+            .iter()
+            .any(|proof| proof.evidence_class == EvidenceClass::ProductionTrace)
+    {
         summary.production_matches += 1;
     } else if !builder.probes.is_empty() {
         summary.probe_only_matches += 1;
@@ -335,13 +342,14 @@ fn proof(suite: &str, function: &FunctionVerificationReport) -> ReplacementProof
     ReplacementProof {
         suite: suite.to_owned(),
         status: function.status,
+        evidence_class: function.evidence_class,
         claim: function.claim,
         probe_symbol: function.rust_symbol.clone(),
         evidence: function.evidence.clone(),
         contract: function.contract.clone(),
         profile: function.profile.clone(),
         hil_evidence: function.hil_evidence.clone(),
-        blockers: function.qualification_blockers.clone(),
+        blockers: function.release_blockers.clone(),
     }
 }
 
@@ -354,6 +362,7 @@ mod tests {
         let proof = |status| ReplacementProof {
             suite: "suite".to_owned(),
             status,
+            evidence_class: EvidenceClass::StaticAnalysis,
             claim: None,
             probe_symbol: None,
             evidence: None,
@@ -409,6 +418,18 @@ mod tests {
         let production = ReplacementBuilder {
             component: Some("crate_name::module::leaf".to_owned()),
             probes: BTreeSet::from(["open_trace_leaf".to_owned()]),
+            proofs: vec![ReplacementProof {
+                suite: "suite".to_owned(),
+                status: FunctionVerificationStatus::Match,
+                evidence_class: EvidenceClass::ProductionTrace,
+                claim: None,
+                probe_symbol: None,
+                evidence: None,
+                contract: None,
+                profile: None,
+                hil_evidence: None,
+                blockers: Vec::new(),
+            }],
             ..ReplacementBuilder::default()
         };
         classify_match(&mut summary, &production);

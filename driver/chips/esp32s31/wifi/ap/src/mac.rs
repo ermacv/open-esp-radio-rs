@@ -501,7 +501,7 @@ mod tests {
         task::{Context, Poll},
     };
 
-    use open_esp_radio_esp32s31_pac::{
+    use open_esp_radio_esp32s31_hal::types::{
         MacKeyInstallOutcome, MacLegacyTxProgram, MacTxCompletionRegisters, MacTxDetachOutcome,
         MacTxDetachReason, MacTxQueueDetached,
     };

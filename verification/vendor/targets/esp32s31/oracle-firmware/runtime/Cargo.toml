@@ -15,7 +15,6 @@ esp-hal = { workspace = true, features = ["esp32s31", "rt", "unstable"] }
 esp-phy = { workspace = true, features = ["esp32s31"] }
 esp-rtos = { workspace = true, features = ["embassy", "esp32s31"] }
 open-esp-radio.workspace = true
-open-esp-radio-esp32s31-pac.workspace = true
 open-esp-radio-esp32s31-wifi-esp-hal = { workspace = true, features = ["esp32s31"] }
 static_cell.workspace = true
 

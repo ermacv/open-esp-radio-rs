@@ -8,10 +8,11 @@ pub(super) fn compare_profile(
     resolved: &ProjectSession,
     name: &str,
 ) -> ApplicationResult<crate::ExecutionComparisonReport> {
-    let workspace =
-        resolved.project.verification.as_ref().ok_or_else(|| {
-            crate::Error::invalid("project has no [verification] profile workspace")
-        })?;
+    let workspace = resolved
+        .project
+        .verification
+        .as_ref()
+        .ok_or_else(|| crate::Error::invalid("project has no verification add-on workspace"))?;
     let mut selected = None;
     for suite in &workspace.suites {
         for path in &suite.profiles {

@@ -107,44 +107,62 @@ sources = [
     "BLOB_LIBPP_HAL_CRYPTO",
     "BLOB_LIBPP_HAL_CRYPTO_INIT",
 ]
-confidence = "instruction-exact-hil-qualified"
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_CRYPTO_CONTROL.INTERFACE_CONTROL%s"
 sources = ["BLOB_LIBPP_HAL_CRYPTO"]
-confidence = "instruction-exact-partial"
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_CRYPTO_CONTROL.INTERFACE_CONTROL%s.CONTROL_LOW_UNKNOWN"
 sources = ["BLOB_LIBPP_HAL_CRYPTO"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "WIFI_MAC_CRYPTO_CONTROL.INTERFACE_CONTROL%s.MODE_HIGH_UNKNOWN"
 sources = ["BLOB_LIBPP_HAL_CRYPTO"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "WIFI_MAC_CRYPTO_CONTROL.POLICY_CONTROL"
 sources = ["BLOB_LIBPP_HAL_CRYPTO"]
-confidence = "instruction-exact-partial"
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_CRYPTO_CONTROL.POLICY_CONTROL.ORDINARY_ENABLE_CLEAR_UNKNOWN"
 sources = ["BLOB_LIBPP_HAL_CRYPTO"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "WIFI_MAC_CRYPTO_CONTROL.INIT_AUX_UNKNOWN"
 sources = ["BLOB_LIBPP_HAL_CRYPTO_INIT"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "WIFI_MAC_CRYPTO_CONTROL.KEY_VALID_BITMAP"
 sources = ["BLOB_LIBPP_HAL_CRYPTO"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_CRYPTO_CONTROL.KEY_VALID_BITMAP.VALID_ENTRIES"
 sources = ["BLOB_LIBPP_HAL_CRYPTO"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"

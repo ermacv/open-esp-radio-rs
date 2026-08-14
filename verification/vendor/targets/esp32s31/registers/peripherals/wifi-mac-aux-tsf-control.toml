@@ -75,19 +75,27 @@ bitWidth = 1
 [[review]]
 entity = "WIFI_MAC_AUX_TSF_CONTROL"
 sources = ["BLOB_LIBPP_HAL_TSF_RUNTIME"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "WIFI_MAC_AUX_TSF_CONTROL.SOFTAP_CONTROL"
 sources = ["BLOB_LIBPP_HAL_TSF_RUNTIME"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "WIFI_MAC_AUX_TSF_CONTROL.NAN_CONTROL"
 sources = ["BLOB_LIBPP_HAL_TSF_RUNTIME"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "WIFI_MAC_AUX_TSF_CONTROL.BTWT_CONTROL"
 sources = ["BLOB_LIBPP_HAL_TSF_RUNTIME"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"

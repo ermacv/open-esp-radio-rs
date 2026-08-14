@@ -219,7 +219,7 @@ fn parse_status(table: &Table, context: &str) -> Result<ReviewStatus> {
 fn parse_origin(table: &Table, context: &str) -> Result<PackOrigin> {
     Ok(match optional_table_string(table, "origin").as_deref() {
         None | Some("observed") => PackOrigin::Observed,
-        Some("manual") => PackOrigin::Manual,
+        Some("reviewed") => PackOrigin::Reviewed,
         Some(value) => {
             return Err(crate::Error::invalid(format!(
                 "invalid origin {value:?} in {context}"

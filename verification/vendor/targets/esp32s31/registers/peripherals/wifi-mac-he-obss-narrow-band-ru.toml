@@ -50,4 +50,6 @@ maximum = 0x1F
 [[review]]
 entity = "WIFI_MAC_HE_OBSS_NARROW_BAND_RU"
 sources = ["BLOB_LIBPP_HAL_HE_OBSS_NARROW_BAND_RU"]
-confidence = "instruction-exact-partial"
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"

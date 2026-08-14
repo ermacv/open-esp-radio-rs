@@ -33,25 +33,28 @@ pub extern "C" fn open_wifi_sta_ap_trace_wifi_set_rx_policy(
     address_high: u32,
     mode: u32,
 ) -> u32 {
+    use open_esp_radio_esp32s31_hal::{
+        types::{MacRoleReceivePolicy, MacStaPolicyMode},
+        wifi_mac::validation_configure_role_receive_policy,
+    };
+
     let address = mac_address_from_words(address_low, address_high);
-    let mut registers = open_esp_radio_esp32s31_pac::validation::radio_registers();
-    let mut hal = open_esp_radio_esp32s31_hal::wifi_mac::WifiMacHal::new(&mut registers);
     let policy = match policy {
         6 => {
             let mode = if mode == 2 {
-                open_esp_radio_esp32s31_pac::MacStaPolicyMode::Mode2
+                MacStaPolicyMode::Mode2
             } else {
-                open_esp_radio_esp32s31_pac::MacStaPolicyMode::Mode1
+                MacStaPolicyMode::Mode1
             };
-            open_esp_radio_esp32s31_pac::MacRoleReceivePolicy::Station {
+            MacRoleReceivePolicy::Station {
                 bssid: address,
                 mode,
             }
         }
-        8 => open_esp_radio_esp32s31_pac::MacRoleReceivePolicy::AccessPoint { address },
+        8 => MacRoleReceivePolicy::AccessPoint { address },
         _ => return 0,
     };
-    hal.configure_role_receive_policy(policy);
+    validation_configure_role_receive_policy(policy);
     1
 }
 

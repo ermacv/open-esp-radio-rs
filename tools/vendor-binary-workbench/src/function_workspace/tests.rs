@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn schema_v8_parses_reviewed_event_delivery_and_case_handler() {
+fn schema_v9_parses_reviewed_event_delivery_and_case_handler() {
     let directory = std::env::temp_dir().join(format!(
         "vendor-workbench-function-event-route-{}",
         std::process::id()
@@ -10,7 +10,7 @@ fn schema_v8_parses_reviewed_event_delivery_and_case_handler() {
     let pack_path = directory.join("functions.toml");
     std::fs::write(
         &pack_path,
-        r#"schema = 8
+        r#"schema = 9
 id = "fixture"
 
 [[event-routes]]
@@ -335,7 +335,7 @@ fn reviewed_names_require_matching_digest_and_complete_explicit_claims() {
     let pack = directory.join("functions.toml");
     write_ir(&report);
     let reports = vec![("rom-phy".to_owned(), report)];
-    let reviewed = r#"schema = 8
+    let reviewed = r#"schema = 9
 id = "fixture"
 
 [[inputs]]
@@ -351,6 +351,15 @@ status = "reviewed"
 name = "vendor_interrupt_handler"
 role = "interrupt.handler"
 summary = "Posts the recovered event after updating caller-owned state."
+
+[functions.signature]
+return-abi = "void"
+
+[[functions.signature.arguments]]
+index = 0
+name = "state"
+abi = "mut-ptr"
+role = "state"
 
 [[functions.contexts]]
 argument = 0
@@ -417,6 +426,9 @@ display-type = "u16"
     assert_eq!(summary.type_bindings, 2);
     assert_eq!(summary.type_fields, 3);
     assert_eq!(summary.unreviewed_type_fields, 1);
+    let signature = workspace.pack.functions[0].signature.as_ref().unwrap();
+    assert_eq!(signature.arguments[0].name, "state");
+    assert_eq!(signature.return_abi.as_deref(), Some("void"));
     let binding = crate::interfaces::ResolvedInterfaceSlot {
         id: "fixture::wifi-osi@+0x38".to_owned(),
         contract: "fixture::wifi-osi".to_owned(),
@@ -512,6 +524,13 @@ display-type = "u16"
     assert!(error.to_string().contains("duplicate or unobserved field"));
     std::fs::write(&pack, &reviewed).unwrap();
 
+    let gapped_signature =
+        reviewed.replace("index = 0\nname = \"state\"", "index = 1\nname = \"state\"");
+    std::fs::write(&pack, gapped_signature).unwrap();
+    let error = FunctionWorkspace::load(&reports, &pack).unwrap_err();
+    assert!(error.to_string().contains("indices must be contiguous"));
+    std::fs::write(&pack, &reviewed).unwrap();
+
     let stale = std::fs::read_to_string(&pack)
         .unwrap()
         .replace(&"a".repeat(64), &"b".repeat(64));
@@ -539,7 +558,7 @@ fn ignored_context_covers_its_observed_fields_without_claiming_names() {
     let pack = directory.join("functions.toml");
     write_ir(&report);
     let reports = vec![("rom-phy".to_owned(), report)];
-    let ignored = r#"schema = 8
+    let ignored = r#"schema = 9
 id = "fixture"
 
 [[inputs]]

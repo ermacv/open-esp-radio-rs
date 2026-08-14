@@ -1,5 +1,25 @@
 #![no_std]
 #![forbid(unsafe_code)]
+#![expect(
+    clippy::large_enum_variant,
+    reason = "executor state enums retain concrete no-alloc owners across transitions"
+)]
+#![expect(
+    clippy::manual_async_fn,
+    reason = "port traits expose explicit borrowed Future contracts shared by host and Embassy implementations"
+)]
+#![expect(
+    clippy::result_large_err,
+    reason = "failure paths return ownership-bearing state so callers can recover without allocation"
+)]
+#![expect(
+    clippy::too_many_arguments,
+    reason = "top-level composition methods make independent hardware and service dependencies explicit"
+)]
+#![expect(
+    clippy::type_complexity,
+    reason = "composition signatures preserve the exact static owner graph and executor lifetimes"
+)]
 
 //! Embassy-specific composition for the ESP32-S31 Wi-Fi backend.
 //!

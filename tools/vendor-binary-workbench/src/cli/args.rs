@@ -92,7 +92,7 @@ pub(crate) struct UiArgs {
     version,
     arg_required_else_help = true,
     about = "Analyze, reconstruct and verify Rust implementations against compiled vendor binaries",
-    long_about = "Project-oriented analysis, reconstruction, publication and Rust conformance verification for compiled vendor binaries.\n\nA project composes a target spec, optional platform pack, local run bindings, a memory map and SVD catalogs. Without an explicit configuration root, the nearest vendor-project.toml is used.",
+    long_about = "Project-oriented analysis, reconstruction, publication and Rust conformance verification for compiled vendor binaries.\n\nA project composes an architecture target, zero or more ecosystem packs, an optional chip pack, and local run bindings. Reusable memory-map and SVD knowledge belongs to the chip pack. Without an explicit configuration root, the nearest vendor-project.toml is used.",
     after_help = "START HERE:\n  vendor-binary-workbench project status --project PATH/vendor-project.toml\n\nNEW PROJECT:\n  vendor-binary-workbench project init --help\n\nUse `project` for the normal workflow. Low-level analysis engines are under `advanced`."
 )]
 struct Cli {
@@ -209,11 +209,6 @@ enum AdvancedCommand {
         #[command(subcommand)]
         command: ReferenceCommand,
     },
-    /// Generate Rust driver candidates.
-    Driver {
-        #[command(subcommand)]
-        command: DriverCommand,
-    },
     /// Execute and compare functions.
     Execute {
         #[command(subcommand)]
@@ -289,7 +284,7 @@ enum ProjectCommand {
         after_long_help = "Next: run `vendor-binary-workbench project doctor --project PATH/vendor-project.toml`.\nThen add caller-owned binaries with `project inputs init`."
     )]
     Init(ProjectInitArgs),
-    /// Attach or remove a reusable platform pack.
+    /// Attach or remove a reusable ecosystem knowledge pack.
     #[command(
         after_long_help = "Next: run `vendor-binary-workbench project doctor --project PATH` to validate the resolved configuration."
     )]
@@ -319,11 +314,6 @@ enum ProjectCommand {
         after_long_help = "Use `project doctor` for detailed configuration diagnostics, or `project analyze` to refresh generated evidence."
     )]
     Status(ProjectStatusArgs),
-    /// Inspect one complete vendor-to-Rust feature assurance boundary.
-    #[command(
-        after_long_help = "Reads current generated evidence without rebuilding it. Use `project analyze` when the report is stale."
-    )]
-    Feature(ProjectFeatureArgs),
     /// Browse the resolved project in a read-only terminal interface.
     Browse(EmptyArgs),
     /// Generate or verify reproducible binary-analysis evidence.
@@ -358,7 +348,6 @@ impl ProjectCommand {
             Self::Files(arguments) => Command::ProjectFiles(arguments),
             Self::Audit { command } => command.into_command(),
             Self::Status(arguments) => Command::ProjectStatus(arguments),
-            Self::Feature(arguments) => Command::ProjectFeature(arguments),
             Self::Browse(arguments) => Command::ProjectBrowse(arguments),
             Self::Analyze(arguments) => Command::ProjectAnalyze(arguments),
             Self::Verify(arguments) => Command::ProjectVerify(arguments),
@@ -467,11 +456,6 @@ leaf_commands!(ReferenceCommand {
     GenerateBatch(ReferenceBatchArgs) => Command::GenerateReferenceBatch, ReferenceBatch,
 });
 
-leaf_commands!(DriverCommand {
-    /// Generate a review candidate for a Rust driver function.
-    Generate(DriverGenerateArgs) => Command::GenerateDriver, DriverGenerate,
-});
-
 leaf_commands!(ExecuteCommand {
     /// Execute a vendor function under a concrete scenario.
     Run(ExecuteRunArgs) => Command::ExecuteRun, ExecuteRun,
@@ -552,7 +536,6 @@ impl AdvancedCommand {
             Self::Mmio { command } => command.into_command(),
             Self::Ir { command } => command.into_command(),
             Self::Reference { command } => command.into_command(),
-            Self::Driver { command } => command.into_command(),
             Self::Execute { command } => command.into_command(),
             Self::Verify { command } => command.into_command(),
             Self::Image { command } => command.into_command(),
@@ -571,7 +554,6 @@ pub(crate) enum Command {
     ProjectFiles(EmptyArgs),
     ProjectAuditBindings(EmptyArgs),
     ProjectStatus(ProjectStatusArgs),
-    ProjectFeature(ProjectFeatureArgs),
     ProjectBrowse(EmptyArgs),
     ProjectAnalyze(ProjectAnalyzeArgs),
     ProjectVerify(ProjectVerifyArgs),
@@ -612,7 +594,6 @@ pub(crate) enum Command {
     VerifyEvidence(VerifyEvidenceArgs),
     GenerateReference(ReferenceArgs),
     GenerateReferenceBatch(ReferenceBatchArgs),
-    GenerateDriver(DriverGenerateArgs),
     InspectAnalyze(InspectAnalyzeArgs),
     InspectFunction(InspectFunctionArgs),
     InspectFlow(InspectFlowArgs),
@@ -718,9 +699,9 @@ mod tests {
             ParsedInvocation::parse([
                 "project".to_owned(),
                 "configure".to_owned(),
-                "--platform-pack".to_owned(),
-                "platform.toml".to_owned(),
-                "--no-platform-pack".to_owned(),
+                "--ecosystem-pack".to_owned(),
+                "ecosystem.toml".to_owned(),
+                "--no-ecosystem-pack".to_owned(),
             ])
             .is_err()
         );
@@ -858,38 +839,13 @@ mod tests {
         assert!(arguments.deny_unreviewed);
         assert_eq!(arguments.jobs, 2);
 
-        let invocation = ParsedInvocation::parse([
-            "project".to_owned(),
-            "check".to_owned(),
-            "--hardware".to_owned(),
-        ])
-        .unwrap();
+        let invocation =
+            ParsedInvocation::parse(["project".to_owned(), "check".to_owned()]).unwrap();
         let Command::ProjectCheck(arguments) = invocation.command else {
             panic!("unexpected argument type")
         };
         assert!(!arguments.deny_unreviewed);
         assert_eq!(arguments.jobs, 1);
-        assert!(arguments.hardware);
-
-        let invocation = ParsedInvocation::parse([
-            "project".to_owned(),
-            "feature".to_owned(),
-            "wifi-ap-bringup".to_owned(),
-            "--phase".to_owned(),
-            "beacon-timing".to_owned(),
-            "--write-review-draft".to_owned(),
-            "candidate.toml".to_owned(),
-        ])
-        .unwrap();
-        let Command::ProjectFeature(arguments) = invocation.command else {
-            panic!("unexpected argument type")
-        };
-        assert_eq!(arguments.feature, "wifi-ap-bringup");
-        assert_eq!(arguments.phase.as_deref(), Some("beacon-timing"));
-        assert_eq!(
-            arguments.write_review_draft.as_deref(),
-            Some(std::path::Path::new("candidate.toml"))
-        );
 
         let error =
             ParsedInvocation::parse(["project".to_owned(), "build".to_owned()]).unwrap_err();

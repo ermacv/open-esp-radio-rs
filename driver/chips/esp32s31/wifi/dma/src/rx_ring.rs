@@ -649,12 +649,6 @@ impl<'a, const COUNT: usize> RxRingStopped<'a, COUNT> {
             requires_stop: true,
         })
     }
-
-    /// Compatibility form for callers that terminate the complete radio
-    /// owner when walker activation fails.
-    pub fn start<M: RxDma>(self, mmio: &mut M) -> Result<RxRingLive<'a, COUNT>, RxRingError> {
-        self.try_start(mmio).map_err(|(_, error)| error)
-    }
 }
 
 impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
@@ -1844,9 +1838,8 @@ fn relink_rotated_ring<const COUNT: usize>(
 
 /// Restores the two guard words required by the recovered RX recycle path.
 ///
-/// SOURCE\[ROM_REV0_WDEV_APPEND_RX_BLOCKS] and the preserved Rust transcription
-/// in `migration/esp32s31-hybrid-runtime/src/wdev.rs::
-/// prepare_rx_recycle_chain`.
+/// SOURCE\[ROM_REV0_WDEV_APPEND_RX_BLOCKS] and the source-owned production
+/// recycle transaction.
 ///
 /// `buffer` is the complete allocation, including the four-byte trailing
 /// guard. `capacity` is the byte count published in the DMA descriptor.

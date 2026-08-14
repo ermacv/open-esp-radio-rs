@@ -42,7 +42,7 @@ use open_esp_radio::{
     },
     esp32s31::{
         Esp32s31RadioStartConfig, Esp32s31WifiMacStartConfig, Esp32s31WifiStartConfig,
-        hal::{Radio, RadioRegisters},
+        hal::{Radio, RadioRuntimeOwner},
         phy::{NoopPhyTargetObserver, PhyTxTargetPowerProfile},
         start_esp32s31_radio,
         wifi::ap::{
@@ -97,7 +97,7 @@ use open_esp_radio_esp32s31_wifi_embassy::{
     scan_rx::{Esp32s31RunningScanRx, Esp32s31ScanFrameObserver, Esp32s31ScanRx},
     sta_tx_epoch::Esp32s31StaTxEpochExt,
     station::{
-        Esp32s31RadioRegistersRepublish, Esp32s31StationCommandReceiver, Esp32s31StationConfig,
+        Esp32s31RadioOwnerRepublish, Esp32s31StationCommandReceiver, Esp32s31StationConfig,
         Esp32s31StationConnectedPhase, Esp32s31StationControlResources, Esp32s31StationController,
         Esp32s31StationDmaResources, Esp32s31StationEngine, Esp32s31StationEnginePort,
         Esp32s31StationExit, Esp32s31StationInitialJoinPhase, Esp32s31StationInitialScanExit,
@@ -237,7 +237,7 @@ fn tx_entropy() -> u32 {
 }
 
 type ProductionStationPhase = Esp32s31StationServicePhase<
-    RadioRegisters,
+    RadioRuntimeOwner,
     Esp32s31ScanRx<'static, RX_DESCRIPTOR_COUNT, RX_BUFFER_SIZE, RX_BUFFER_STORAGE_SIZE>,
     Esp32s31PreconnectedRx<
         'static,
@@ -397,7 +397,7 @@ enum ProductionStationReclaimFault<'security> {
         _failure: Esp32s31StationRuntimeReclaimFailure<ProductionStationOwner<'static, 'security>>,
     },
     InterruptInvariant {
-        _registers: RadioRegisters,
+        _registers: RadioRuntimeOwner,
         _role: open_esp_radio_esp32s31_wifi_embassy::station::Esp32s31StationRoleOwner<
             EspHalRadioPeripheral,
         >,
@@ -464,8 +464,8 @@ struct ProductionInitialRxFault {
     _owner: open_esp_radio_esp32s31_wifi_embassy::station::Esp32s31StationRoleOwner<
         EspHalRadioPeripheral,
     >,
-    _registers: RadioRegisters,
-    _interrupt_setup: open_esp_radio::esp32s31::registers::MacInterruptSetup,
+    _registers: RadioRuntimeOwner,
+    _interrupt_setup: open_esp_radio::esp32s31::hal::MacInterruptSetup,
     _dma: Esp32s31StationDmaResources<'static, RxStorage, RX_DESCRIPTOR_COUNT>,
     _tx_storage: &'static mut TxStorage,
     _scan_table: &'static mut ScanTable,
@@ -481,8 +481,8 @@ struct ProductionStationResumeFault {
     _owner: open_esp_radio_esp32s31_wifi_embassy::station::Esp32s31StationRoleOwner<
         EspHalRadioPeripheral,
     >,
-    _registers: RadioRegisters,
-    _interrupt_setup: open_esp_radio::esp32s31::registers::MacInterruptSetup,
+    _registers: RadioRuntimeOwner,
+    _interrupt_setup: open_esp_radio::esp32s31::hal::MacInterruptSetup,
     _storage: ProductionStationStorage,
     _board: ProductionStationBoardResources,
     _phase: ProductionStationStoppedPhase,
@@ -605,7 +605,7 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
         phase: Esp32s31StationInitialScanPhase<
             'security,
             ProductionStationRuntime<'state>,
-            RadioRegisters,
+            RadioRuntimeOwner,
             Esp32s31ScanRx<'static, RX_DESCRIPTOR_COUNT, RX_BUFFER_SIZE, RX_BUFFER_STORAGE_SIZE>,
             StationNetwork,
         >,
@@ -613,7 +613,7 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
     ) -> Esp32s31StationInitialScanExit<
         'security,
         ProductionStationRuntime<'state>,
-        RadioRegisters,
+        RadioRuntimeOwner,
         Esp32s31PreconnectedRx<
             'static,
             EmbassyEsp32s31PreconnectedRxDelay,
@@ -943,7 +943,7 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
         phase: Esp32s31StationInitialJoinPhase<
             'security,
             ProductionStationRuntime<'state>,
-            RadioRegisters,
+            RadioRuntimeOwner,
             Esp32s31PreconnectedRx<
                 'static,
                 EmbassyEsp32s31PreconnectedRxDelay,
@@ -1251,7 +1251,7 @@ impl<'state, 'security> Esp32s31StationEnginePort<'security, CriticalSectionRawM
     for ProductionStationEnginePort<ProductionStationOwner<'state, 'security>>
 {
     type Runtime = ProductionStationRuntime<'state>;
-    type InitialHardware = RadioRegisters;
+    type InitialHardware = RadioRuntimeOwner;
     type InitialScanRx =
         Esp32s31ScanRx<'static, RX_DESCRIPTOR_COUNT, RX_BUFFER_SIZE, RX_BUFFER_STORAGE_SIZE>;
     type PreconnectedRx = Esp32s31PreconnectedRx<

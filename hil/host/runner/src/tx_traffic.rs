@@ -173,8 +173,8 @@ pub(crate) fn run(
     require_no_beacon_loss: bool,
 ) -> Result<()> {
     let mut options = parse_options(&arguments, lab)?;
-    fs::create_dir_all(&output)?;
-    invalidate_previous_report(&output)?;
+    fs::create_dir_all(output)?;
+    invalidate_previous_report(output)?;
     let socket = UdpSocket::bind(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, options.port))?;
     let host_receive_buffer_bytes = configure_qualification_receive_buffer(&socket)?;
     socket.set_read_timeout(Some(Duration::from_millis(100)))?;
@@ -416,7 +416,7 @@ pub(crate) fn run(
         }
     }
     write_report(
-        &output,
+        output,
         TxReport {
             options: &options,
             host_address,

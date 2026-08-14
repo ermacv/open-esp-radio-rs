@@ -105,7 +105,9 @@ maximum = 0xF
 [[review]]
 entity = "WIFI_MAC_TXRX_SUFFIX"
 sources = ["BLOB_LIBPP_MAC_TXRX_INIT_SUFFIX"]
-confidence = "instruction-exact-partial"
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_TXRX_SUFFIX.AUX_ENABLE"
@@ -113,24 +115,34 @@ sources = [
     "BLOB_LIBPP_MAC_TXRX_INIT_SUFFIX",
     "BLOB_LIBPP_DEBUG_STATISTICS_CONTROL",
 ]
-confidence = "instruction-exact-partial"
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_TXRX_SUFFIX.DEFAULT_IMAGE_A"
 sources = ["BLOB_LIBPP_MAC_TXRX_INIT_SUFFIX"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "WIFI_MAC_TXRX_SUFFIX.DEFAULT_IMAGE_B"
 sources = ["BLOB_LIBPP_MAC_TXRX_INIT_SUFFIX"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "WIFI_MAC_TXRX_SUFFIX.GATE_CONTROL"
 sources = ["BLOB_LIBPP_MAC_TXRX_INIT_SUFFIX"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TXRX_SUFFIX.FIELD_CONTROL"
 sources = ["BLOB_LIBPP_MAC_TXRX_INIT_SUFFIX"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"

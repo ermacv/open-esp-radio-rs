@@ -4,12 +4,12 @@ schema = 2
 source = "libpp"
 symbol = "hal_set_sta_tsf_wakeup"
 kind = "whole-function-equivalence/profile:scenario/libpp-sta-tsf-wakeup"
-digest = "9d5ed5b1b35558e33d9546e1644e4309fa613dc4e4de7a8b09256499b36d3449"
+digest = "fed0bf503592181a9efd2f15e39c449390118c98593e48e72c99572d62e0fb21"
 
 [evidence.components]
 comparison-orchestrator = "e9af803daf6ab44af42a93b3cead563c60bf06945929c1b879c8112be2f87d60"
-execution-image = "3885065e6ff308001a383d5164cd1f17dba4f452a35ef3c07baa3ce5916530da"
-execution-machine = "ecce5dd7068bb1bc30a5573d8b2c8f89fa158e96289a8653c8fea6fe58d80398"
+execution-image = "241a2c07ca5860bd273851868270bbd5d33c68217d8c83ef8c9589f1dd821663"
+execution-machine = "47a8bd9864cefabd70bc0448b3e95298e716a9bad89247e9e425905d3b2ee806"
 execution-model = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"
 profile = "cbd660a327cce79beeeac8580475b545e44818fe0a21a3e49e48387a2492631d"
 profile-parser = "425e34c2aa46698971e2e8be1ab1e6e9d2d2737bd7b3afb913316708a62206f4"

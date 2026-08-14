@@ -8,14 +8,18 @@ trap 'rm -rf -- "$audit_dir"' EXIT
 
 cd "$repo_root"
 
+# Research resumes only from a warning-free workspace. Keep this fail-closed:
+# adding a new target or crate automatically subjects it to the same budget.
+cargo clippy --workspace --all-targets -- -D warnings
+
 tools/audit-driver-safety.sh
 
 # Verify generated code from its canonical input instead of inspecting Rust
 # source text for particular identifiers or function spellings.
-cargo vendor-binary-workbench-esp32s31 project configure \
+cargo vendor-binary-workbench project configure \
     --project verification/vendor/targets/esp32s31/vendor-project.toml \
     --check
-cargo vendor-binary-workbench-esp32s31 project publish \
+cargo vendor-binary-workbench project publish \
     --project verification/vendor/targets/esp32s31/vendor-project.toml \
     --check
 
@@ -68,7 +72,7 @@ dependency_tree="$(
         --prefix none
 )"
 if printf '%s\n' "$dependency_tree" |
-    rg -v '^(open-esp-radio-dma|open-esp-radio-esp32s31-(phy|hal|registers|pac)|critical-section|vcell) v'
+    rg -v '^(open-esp-radio-dma|open-esp-radio-esp32s31-(coex|phy|hal|registers|pac|pac-raw)|critical-section|vcell) v'
 then
     echo "non-workspace dependency survived source-only build" >&2
     exit 1
@@ -82,8 +86,10 @@ production_packages=(
     open-esp-radio
     open-esp-radio-dma
     open-esp-radio-embassy-net
+    open-esp-radio-esp32s31-coex
     open-esp-radio-esp32s31-hal
     open-esp-radio-esp32s31-pac
+    open-esp-radio-esp32s31-pac-raw
     open-esp-radio-esp32s31-phy
     open-esp-radio-esp32s31-wifi-embassy
     open-esp-radio-esp32s31-wifi-dma
@@ -147,9 +153,9 @@ fi
 # Build the exact final image from the locked dependencies. A sibling esp-hal
 # checkout is a useful HIL development override, but using it here would both
 # mutate the embedded lockfile and make this policy gate machine-dependent.
-env -u ESP_HAL_ROOT cargo hil build radio
+env -u ESP_HAL_ROOT cargo hil image build qualification
 
-runtime_elf="target/hil/esp32s31/psram-code-psram-data-open-radio-hil/cargo/runtime/$target_triple/release/open-esp-radio-hil-esp32s31-runtime"
+runtime_elf="target/hil/esp32s31/psram-code-psram-data-qualification/cargo/runtime/$target_triple/release/open-esp-radio-hil-esp32s31-runtime"
 test -f "$runtime_elf"
 
 # The linker script exposes absolute ESP32-S31 ECO0 ROM symbols even when no
@@ -157,7 +163,7 @@ test -f "$runtime_elf"
 # executable sections and reject statically resolved jumps/calls into the
 # pinned radio API table or the contiguous radio implementation body. System
 # ROM outside these ranges (for example ets_printf) remains permitted.
-cargo vendor-binary-workbench image audit-targets \
+cargo vendor-binary-workbench advanced image audit-targets \
     --target-spec verification/vendor/targets/esp32s31/target.toml \
     --artifact "$runtime_elf" \
     --forbid 'esp32s31-eco0-radio-api=0x2f800bf0..0x2f8016bc' \

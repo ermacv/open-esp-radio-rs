@@ -1,6 +1,7 @@
 //! ESP32-S31 HE20 peer installation at the protocol/PAC boundary.
 
-use open_esp_radio_esp32s31_pac::{MacHe20PeerConfig, MacHe20PeerError, RadioRegisters};
+use open_esp_radio_esp32s31_hal::types::{MacHe20PeerConfig, MacHe20PeerError};
+use open_esp_radio_esp32s31_hal::{RadioRuntimeOwner, wifi_mac::WifiMacHal};
 use open_esp_radio_ieee80211::he::{He20PeerState, HeElementError, parse_he20_peer_state};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -27,13 +28,13 @@ pub trait He20PeerHardware {
     fn initialize_he_buffer_status_report(&mut self);
 }
 
-impl He20PeerHardware for RadioRegisters {
+impl He20PeerHardware for WifiMacHal<'_> {
     fn program_he20_peer(
         &mut self,
         config: MacHe20PeerConfig,
         rts_threshold: Option<u16>,
     ) -> Result<(), MacHe20PeerError> {
-        RadioRegisters::program_he20_peer(self, config, rts_threshold)
+        WifiMacHal::program_he20_peer(self, config, rts_threshold)
     }
 
     fn program_he20_association(
@@ -42,7 +43,7 @@ impl He20PeerHardware for RadioRegisters {
         minimum_mpdu_start_spacing: u8,
         bssid_index: u8,
     ) -> Result<(), MacHe20PeerError> {
-        RadioRegisters::program_he20_association(
+        WifiMacHal::program_he20_association(
             self,
             association_id,
             minimum_mpdu_start_spacing,
@@ -51,7 +52,35 @@ impl He20PeerHardware for RadioRegisters {
     }
 
     fn initialize_he_buffer_status_report(&mut self) {
-        RadioRegisters::initialize_he_buffer_status_report(self);
+        WifiMacHal::initialize_he_buffer_status_report(self);
+    }
+}
+
+impl He20PeerHardware for RadioRuntimeOwner {
+    fn program_he20_peer(
+        &mut self,
+        config: MacHe20PeerConfig,
+        rts_threshold: Option<u16>,
+    ) -> Result<(), MacHe20PeerError> {
+        He20PeerHardware::program_he20_peer(&mut self.wifi_mac_hal(), config, rts_threshold)
+    }
+
+    fn program_he20_association(
+        &mut self,
+        association_id: u16,
+        minimum_mpdu_start_spacing: u8,
+        bssid_index: u8,
+    ) -> Result<(), MacHe20PeerError> {
+        He20PeerHardware::program_he20_association(
+            &mut self.wifi_mac_hal(),
+            association_id,
+            minimum_mpdu_start_spacing,
+            bssid_index,
+        )
+    }
+
+    fn initialize_he_buffer_status_report(&mut self) {
+        He20PeerHardware::initialize_he_buffer_status_report(&mut self.wifi_mac_hal());
     }
 }
 
@@ -60,7 +89,7 @@ impl He20PeerHardware for RadioRegisters {
 ///
 /// SOURCE: complete pinned `libnet80211.a[ieee80211_he.o]`
 /// capability/operation parsers and `libpp.a[hal_mac_ctl.o]`
-/// hardware leaves. The former migration copy is not an oracle.
+/// hardware leaves. Earlier source history is not an oracle.
 pub fn install_he20_peer<H: He20PeerHardware>(
     hardware: &mut H,
     capability: &[u8],

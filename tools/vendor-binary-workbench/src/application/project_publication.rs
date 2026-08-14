@@ -72,7 +72,8 @@ pub(crate) fn execute(
         .registers
         .as_ref()
         .ok_or_else(|| crate::Error::invalid("project publish requires [registers]"))?;
-    let publication_mmio = crate::review_scopes::load_for_project(project)?.publication_mmio();
+    let publication_mmio =
+        crate::review_scopes::load_structural_for_project(project)?.publication_mmio();
     let mut operations = RegisterPublicationOperations {
         paths,
         memory_map,

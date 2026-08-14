@@ -56,7 +56,6 @@ pub mod wifi {
 #[cfg(feature = "esp32s31")]
 pub mod esp32s31 {
     pub use open_esp_radio_esp32s31_hal as hal;
-    pub use open_esp_radio_esp32s31_pac as registers;
     pub use open_esp_radio_esp32s31_phy as phy;
 
     #[cfg(feature = "esp32s31-wifi")]

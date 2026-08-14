@@ -244,6 +244,85 @@ fn coverage_treats_compiler_arithmetic_runtime_as_an_atomic_operation() {
     assert!(inventory.unresolved_edges.is_empty());
 }
 
+fn arithmetic_runtime_result(symbol: &str, dividend: u64, divisor: u64) -> crate::Result<u64> {
+    let mut image = tiny_image(
+        vec![
+            0xef, 0x00, 0x00, 0x01, // jal ra, +16
+            0x67, 0x80, 0x00, 0x00, // ret
+        ],
+        8,
+    );
+    image.symbols_by_name.insert(symbol.to_owned(), 0x1010);
+    image.symbols_by_address.insert(0x1010, symbol.to_owned());
+    let scenario = Scenario {
+        arguments: vec![
+            dividend as u32,
+            (dividend >> 32) as u32,
+            divisor as u32,
+            (divisor >> 32) as u32,
+        ],
+        ..Scenario::default()
+    };
+    let svd = empty_svd();
+    let mut machine = Machine::new(&image, &svd, 0x1000, scenario);
+
+    assert!(machine.step()?);
+    assert!(machine.step()?);
+    Ok(u64::from(machine.register(rv_asm::Reg::A0))
+        | (u64::from(machine.register(rv_asm::Reg::A1)) << 32))
+}
+
+#[test]
+fn compiler_arithmetic_runtime_executes_unsigned_division_and_remainder() {
+    let dividend = 0x1234_5678_9abc_def0;
+    let divisor = 0x0000_0001_0000_0011;
+
+    assert_eq!(
+        arithmetic_runtime_result("__udivdi3", dividend, divisor).unwrap(),
+        dividend / divisor
+    );
+    assert_eq!(
+        arithmetic_runtime_result("__umoddi3", dividend, divisor).unwrap(),
+        dividend % divisor
+    );
+}
+
+#[test]
+fn compiler_arithmetic_runtime_executes_signed_division_and_remainder() {
+    let dividend = (-0x0000_0002_0000_0003_i64) as u64;
+    let divisor = 0x0000_0001_0000_0001_i64 as u64;
+
+    assert_eq!(
+        arithmetic_runtime_result("__divdi3", dividend, divisor).unwrap(),
+        ((dividend as i64) / (divisor as i64)) as u64
+    );
+    assert_eq!(
+        arithmetic_runtime_result("__moddi3", dividend, divisor).unwrap(),
+        ((dividend as i64) % (divisor as i64)) as u64
+    );
+}
+
+#[test]
+fn compiler_arithmetic_runtime_wraps_signed_overflow_like_rv32_helpers() {
+    assert_eq!(
+        arithmetic_runtime_result("__divdi3", i64::MIN as u64, (-1_i64) as u64).unwrap(),
+        i64::MIN as u64
+    );
+    assert_eq!(
+        arithmetic_runtime_result("__moddi3", i64::MIN as u64, (-1_i64) as u64).unwrap(),
+        0
+    );
+}
+
+#[test]
+fn compiler_arithmetic_runtime_fails_closed_on_zero_divisor() {
+    for symbol in ["__divdi3", "__moddi3", "__udivdi3", "__umoddi3"] {
+        let error = arithmetic_runtime_result(symbol, 1, 0).unwrap_err();
+        assert!(error.to_string().contains("zero divisor"));
+        assert!(error.to_string().contains(symbol));
+    }
+}
+
 #[test]
 fn call_trampoline_does_not_duplicate_the_ordered_target_call() {
     let image = ExecutableImage {
@@ -294,6 +373,83 @@ fn call_trampoline_does_not_duplicate_the_ordered_target_call() {
     let result = execute(&image, &empty_svd(), "wrapper", Scenario::default()).unwrap();
     assert_eq!(result.ordered_calls.len(), 1);
     assert_eq!(result.ordered_calls[0].symbol, "callee");
+}
+
+#[test]
+fn rom_call_vector_without_bytes_dispatches_named_delay() {
+    let mut image = tiny_image(
+        vec![
+            0x6f, 0x00, 0x00, 0x01, // jal zero, +16
+        ],
+        4,
+    );
+    image
+        .symbols_by_name
+        .insert("__call_ets_delay_us".to_owned(), 0x1010);
+    image
+        .symbols_by_address
+        .insert(0x1010, "__call_ets_delay_us".to_owned());
+    image.call_trampoline_addresses.insert(0x1010);
+
+    let scenario = Scenario {
+        arguments: vec![2],
+        ..Scenario::default()
+    };
+    let result = execute(&image, &empty_svd(), "test", scenario).unwrap();
+    assert_eq!(result.events, [ExecutionEvent::DelayMicros(2)]);
+}
+
+#[test]
+fn unresolved_rom_call_vector_fails_with_named_remedy() {
+    let mut image = tiny_image(vec![0x6f, 0x00, 0x00, 0x01], 4);
+    image
+        .symbols_by_name
+        .insert("__call_missing_service".to_owned(), 0x1010);
+    image
+        .symbols_by_address
+        .insert(0x1010, "__call_missing_service".to_owned());
+    image.call_trampoline_addresses.insert(0x1010);
+
+    let error = execute(&image, &empty_svd(), "test", Scenario::default()).unwrap_err();
+    let message = error.to_string();
+    assert!(message.contains("unresolved call trampoline missing_service at 0x00001010"));
+    assert!(message.contains("target image or an explicit call model"));
+}
+
+#[test]
+fn absolute_memcpy_without_linked_bytes_has_concrete_memory_effects() {
+    let mut image = tiny_image(vec![0x6f, 0x00, 0x00, 0x01], 4);
+    image.symbols_by_name.insert("memcpy".to_owned(), 0x1010);
+    image.symbols_by_address.insert(0x1010, "memcpy".to_owned());
+
+    let source = 0x3000;
+    let destination = 0x4000;
+    let mut scenario = Scenario {
+        arguments: vec![destination, source, 3],
+        observed_memory: vec![MemoryRange {
+            start: destination,
+            length: 3,
+        }],
+        ..Scenario::default()
+    };
+    scenario
+        .memory_initial
+        .extend([(source, 0x11), (source + 1, 0x22), (source + 2, 0x33)]);
+    scenario
+        .memory_initial
+        .extend([(destination, 0), (destination + 1, 0), (destination + 2, 0)]);
+
+    let result = execute(&image, &empty_svd(), "test", scenario).unwrap();
+    assert_eq!(result.return_value, destination);
+    assert_eq!(result.memory_changes.len(), 3);
+    assert_eq!(
+        result
+            .memory_changes
+            .iter()
+            .map(|change| change.after)
+            .collect::<Vec<_>>(),
+        [0x11, 0x22, 0x33]
+    );
 }
 
 #[test]

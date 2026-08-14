@@ -11,11 +11,11 @@
 //! SRAM. Every hardware-memory publication is an identity-bound finite MMIO
 //! action completed by the caller.
 
-/// Complete pinned `libphy.a` compatibility leaf; the body is one `ret`.
+/// Required pinned `libphy.a` vendor-ABI no-op leaf; the body is one `ret`.
 #[inline]
 pub const fn phy_freq_mem_backup() {}
 
-/// Complete pinned `libphy.a` compatibility leaf; the body is one `ret`.
+/// Required pinned `libphy.a` vendor-ABI no-op leaf; the body is one `ret`.
 #[inline]
 pub const fn phy_freq_offset_set() {}
 
@@ -1448,17 +1448,14 @@ mod tests {
         transition: &mut PhyFrequencyI2cTransition,
     ) -> std::vec::Vec<(u8, u8, u16, u32, u8)> {
         let mut writes = std::vec::Vec::new();
-        loop {
-            let PhyFrequencyI2cAction::WriteMemory {
-                descriptor_index,
-                copy_index,
-                address,
-                value,
-                mode,
-            } = transition.action()
-            else {
-                break;
-            };
+        while let PhyFrequencyI2cAction::WriteMemory {
+            descriptor_index,
+            copy_index,
+            address,
+            value,
+            mode,
+        } = transition.action()
+        {
             writes.push((descriptor_index, copy_index, address, value, mode));
             transition
                 .advance(PhyFrequencyI2cCompletion::MemoryWrite {

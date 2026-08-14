@@ -71,7 +71,7 @@ fn run(arguments: impl IntoIterator<Item = String>) -> Result<()> {
     } else {
         arguments.root.join(&arguments.manifest)
     };
-    let ledger = Ledger::load(&manifest_path)?;
+    let mut ledger = Ledger::load(&manifest_path)?;
     ledger.validate(&arguments.root)?;
     report::print(&ledger);
     if let Some(path) = arguments.json_report.as_deref() {

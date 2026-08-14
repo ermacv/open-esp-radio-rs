@@ -480,14 +480,20 @@ sources = [
     "BLOB_LIBPP_HAL_RX_DEBUG_COUNTERS",
     "HIL_OPEN_RX_STATISTICS_BASELINE_2026_07_29",
 ]
-confidence = "instruction-exact-hil-qualified"
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_STATISTICS.CTS_INTERRUPT"
 sources = ["BLOB_LIBPP_PP_DEBUG_HW_STATISTICS"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_STATISTICS.TRIGGER"
 sources = ["BLOB_LIBPP_PP_DEBUG_HW_STATISTICS"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"

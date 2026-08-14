@@ -8,5 +8,8 @@ repository.workspace = true
 publish = false
 description = "Architecture-neutral contracts for compiled vendor-binary analysis and verification"
 
+[dependencies]
+serde = { version = "=1.0.229", features = ["derive"] }
+
 [lints]
 workspace = true

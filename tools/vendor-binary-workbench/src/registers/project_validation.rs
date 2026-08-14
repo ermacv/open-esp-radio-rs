@@ -109,13 +109,6 @@ pub(crate) fn validate_register_evidence(
             .iter()
             .flat_map(|annotation| annotation.sources.iter().map(String::as_str)),
     )?;
-    evidence.validate_confidence_levels(
-        "register model review",
-        model
-            .review()
-            .iter()
-            .filter_map(|annotation| annotation.confidence.as_deref()),
-    )?;
     if let Some(path) = &paths.api_pack {
         let api = PacApiPack::load(path)?;
         evidence.validate_references("PAC API pack", api.source_ids())?;

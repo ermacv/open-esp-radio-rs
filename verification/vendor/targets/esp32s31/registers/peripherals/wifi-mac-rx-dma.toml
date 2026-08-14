@@ -1417,12 +1417,16 @@ sources = [
     "ROM_REV0_HAL_MAC_RX_LAST_DESCRIPTOR",
     "HIL_OPEN_RX_LIVE_APPEND_2026_07_27",
 ]
-confidence = "instruction-exact-hil-qualified"
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.RX_COLD_CONTROL_UNKNOWN"
 sources = ["BLOB_LIBPP_MAC_RXBUF_INIT_PREFIX"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.RX_CONTROL"
@@ -1432,7 +1436,9 @@ sources = [
     "BLOB_LIBPP_HAL_INIT_TAIL",
     "HIL_OPEN_RX_LIVE_APPEND_2026_07_27",
 ]
-confidence = "instruction-exact-hil-qualified"
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.RX_CONTROL.APPEND_DESCRIPTOR_RELOAD"
@@ -1440,7 +1446,9 @@ sources = [
     "ROM_REV0_WDEV_APPEND_RX_BLOCKS",
     "HIL_OPEN_RX_LIVE_APPEND_2026_07_27",
 ]
-confidence = "instruction-exact-hil-qualified"
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.RX_CONTROL.WALKER_ENABLE"
@@ -1448,12 +1456,16 @@ sources = [
     "ROM_REV0_HAL_MAC_RX_GATE",
     "HIL_OPEN_RX_LIVE_APPEND_2026_07_27",
 ]
-confidence = "instruction-exact-hil-qualified"
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.RX_CONTROL.HARDWARE_BEACON_RELOAD_UNKNOWN"
 sources = ["BLOB_LIBPP_HAL_INIT_TAIL"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.RX_DESCRIPTOR_BASE"
@@ -1462,7 +1474,9 @@ sources = [
     "BLOB_LIBPP_MAC_RXBUF_INIT_PREFIX",
     "HIL_OPEN_RX_LIVE_APPEND_2026_07_27",
 ]
-confidence = "instruction-exact-hil-qualified"
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.RX_NEXT_DESCRIPTOR"
@@ -1470,7 +1484,9 @@ sources = [
     "ROM_REV0_WDEV_APPEND_RX_BLOCKS",
     "HIL_OPEN_RX_LIVE_APPEND_2026_07_27",
 ]
-confidence = "instruction-exact-hil-qualified"
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.RX_LAST_DESCRIPTOR"
@@ -1478,27 +1494,37 @@ sources = [
     "ROM_REV0_HAL_MAC_RX_LAST_DESCRIPTOR",
     "HIL_OPEN_RX_LIVE_APPEND_2026_07_27",
 ]
-confidence = "instruction-exact-hil-qualified"
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.CSI_DUMP_CONFIG"
 sources = ["BLOB_LIBPP_TEST_HAL_CSI"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.CSI_DUMP_CONFIG.BEAMFORMED"
 sources = ["BLOB_LIBPP_TEST_HAL_CSI"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.RX_BUFFER_LIMIT_UNKNOWN"
 sources = ["BLOB_LIBPP_MAC_RXBUF_INIT_PREFIX"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.RX_BUFFER_BASE_UNKNOWN"
 sources = ["BLOB_LIBPP_MAC_RXBUF_INIT_PREFIX"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.RX_DESCRIPTOR_HIGH_WINDOW"
@@ -1507,27 +1533,37 @@ sources = [
     "ROM_REV0_HAL_MAC_RX_LAST_DESCRIPTOR",
     "HIL_OPEN_RX_LIVE_APPEND_2026_07_27",
 ]
-confidence = "instruction-exact-hil-qualified"
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q7"
 sources = ["BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_BITMAP_HIGH_Q7"
 sources = ["BLOB_LIBPP_DBG_READ_RX_BA"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_BITMAP_LOW_Q7"
 sources = ["BLOB_LIBPP_DBG_READ_RX_BA"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_CONTROL_SEQUENCE_Q7"
 sources = ["BLOB_LIBPP_DBG_READ_RX_BA"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q7"
@@ -1535,32 +1571,44 @@ sources = [
     "BLOB_LIBPP_DBG_READ_RX_BA",
     "BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_LOW_Q7"
 sources = ["BLOB_LIBPP_DBG_READ_RX_BA"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q6"
 sources = ["BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_BITMAP_HIGH_Q6"
 sources = ["BLOB_LIBPP_DBG_READ_RX_BA"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_BITMAP_LOW_Q6"
 sources = ["BLOB_LIBPP_DBG_READ_RX_BA"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_CONTROL_SEQUENCE_Q6"
 sources = ["BLOB_LIBPP_DBG_READ_RX_BA"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q6"
@@ -1568,32 +1616,44 @@ sources = [
     "BLOB_LIBPP_DBG_READ_RX_BA",
     "BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_LOW_Q6"
 sources = ["BLOB_LIBPP_DBG_READ_RX_BA"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q5"
 sources = ["BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_BITMAP_HIGH_Q5"
 sources = ["BLOB_LIBPP_DBG_READ_RX_BA"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_BITMAP_LOW_Q5"
 sources = ["BLOB_LIBPP_DBG_READ_RX_BA"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_CONTROL_SEQUENCE_Q5"
 sources = ["BLOB_LIBPP_DBG_READ_RX_BA"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q5"
@@ -1601,32 +1661,44 @@ sources = [
     "BLOB_LIBPP_DBG_READ_RX_BA",
     "BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_LOW_Q5"
 sources = ["BLOB_LIBPP_DBG_READ_RX_BA"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q4"
 sources = ["BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_BITMAP_HIGH_Q4"
 sources = ["BLOB_LIBPP_DBG_READ_RX_BA"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_BITMAP_LOW_Q4"
 sources = ["BLOB_LIBPP_DBG_READ_RX_BA"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_CONTROL_SEQUENCE_Q4"
 sources = ["BLOB_LIBPP_DBG_READ_RX_BA"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q4"
@@ -1634,41 +1706,53 @@ sources = [
     "BLOB_LIBPP_DBG_READ_RX_BA",
     "BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_LOW_Q4"
 sources = ["BLOB_LIBPP_DBG_READ_RX_BA"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q3"
 sources = ["BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_BITMAP_HIGH_Q3"
 sources = [
     "BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK",
-    "MIGRATION_TX_AMPDU",
+    "PROMOTED_TX_AMPDU",
 ]
-confidence = "instruction-exact-hil-qualified"
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_BITMAP_LOW_Q3"
 sources = [
     "BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK",
-    "MIGRATION_TX_AMPDU",
+    "PROMOTED_TX_AMPDU",
 ]
-confidence = "instruction-exact-hil-qualified"
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_CONTROL_SEQUENCE_Q3"
 sources = [
     "BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK",
-    "MIGRATION_TX_AMPDU",
+    "PROMOTED_TX_AMPDU",
 ]
-confidence = "instruction-exact-hil-qualified"
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q3"
@@ -1676,41 +1760,53 @@ sources = [
     "BLOB_LIBPP_DBG_READ_RX_BA",
     "BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_LOW_Q3"
 sources = ["BLOB_LIBPP_DBG_READ_RX_BA"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q2"
 sources = ["BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_BITMAP_HIGH_Q2"
 sources = [
     "BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK",
-    "MIGRATION_TX_AMPDU",
+    "PROMOTED_TX_AMPDU",
 ]
-confidence = "instruction-exact-hil-qualified"
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_BITMAP_LOW_Q2"
 sources = [
     "BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK",
-    "MIGRATION_TX_AMPDU",
+    "PROMOTED_TX_AMPDU",
 ]
-confidence = "instruction-exact-hil-qualified"
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_CONTROL_SEQUENCE_Q2"
 sources = [
     "BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK",
-    "MIGRATION_TX_AMPDU",
+    "PROMOTED_TX_AMPDU",
 ]
-confidence = "instruction-exact-hil-qualified"
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q2"
@@ -1718,41 +1814,53 @@ sources = [
     "BLOB_LIBPP_DBG_READ_RX_BA",
     "BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_LOW_Q2"
 sources = ["BLOB_LIBPP_DBG_READ_RX_BA"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q1"
 sources = ["BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_BITMAP_HIGH_Q1"
 sources = [
     "BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK",
-    "MIGRATION_TX_AMPDU",
+    "PROMOTED_TX_AMPDU",
 ]
-confidence = "instruction-exact-hil-qualified"
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_BITMAP_LOW_Q1"
 sources = [
     "BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK",
-    "MIGRATION_TX_AMPDU",
+    "PROMOTED_TX_AMPDU",
 ]
-confidence = "instruction-exact-hil-qualified"
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_CONTROL_SEQUENCE_Q1"
 sources = [
     "BLOB_LIBPP_HAL_MAC_TX_BLOCK_ACK",
-    "MIGRATION_TX_AMPDU",
+    "PROMOTED_TX_AMPDU",
 ]
-confidence = "instruction-exact-hil-qualified"
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q1"
@@ -1760,17 +1868,23 @@ sources = [
     "BLOB_LIBPP_DBG_READ_RX_BA",
     "BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_LOW_Q1"
 sources = ["BLOB_LIBPP_DBG_READ_RX_BA"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_QUEUE_INFORMATION_Q0"
 sources = ["BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_BITMAP_HIGH_Q0"
@@ -1779,7 +1893,9 @@ sources = [
     "HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29",
     "HIL_OPEN_HT_AMPDU_32_RETRY_2026_07_29",
 ]
-confidence = "instruction-exact-hil-qualified"
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_BITMAP_LOW_Q0"
@@ -1788,7 +1904,9 @@ sources = [
     "HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29",
     "HIL_OPEN_HT_AMPDU_32_RETRY_2026_07_29",
 ]
-confidence = "instruction-exact-hil-qualified"
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_CONTROL_SEQUENCE_Q0"
@@ -1797,7 +1915,9 @@ sources = [
     "HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29",
     "HIL_OPEN_HT_AMPDU_32_RETRY_2026_07_29",
 ]
-confidence = "instruction-exact-hil-qualified"
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_HIGH_Q0"
@@ -1806,7 +1926,9 @@ sources = [
     "BLOB_LIBPP_DBG_DUMP_TXQ_TXINFO",
     "HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29",
 ]
-confidence = "instruction-exact-hil-qualified"
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.TX_BLOCK_ACK_TRANSMITTER_ADDRESS_LOW_Q0"
@@ -1814,7 +1936,9 @@ sources = [
     "BLOB_LIBPP_DBG_READ_RX_BA",
     "HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29",
 ]
-confidence = "instruction-exact-hil-qualified"
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY%s_CONTROL"
@@ -1822,7 +1946,9 @@ sources = [
     "BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK",
     "HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30",
 ]
-confidence = "instruction-exact-hil-qualified"
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY%s_CONTROL.TID"
@@ -1830,7 +1956,9 @@ sources = [
     "BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK",
     "BLOB_LIBNET80211_RX_BLOCK_ACK",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY%s_PEER_TAIL_AND_POLICY"
@@ -1839,7 +1967,9 @@ sources = [
     "BLOB_LIBNET80211_RX_BLOCK_ACK",
     "HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30",
 ]
-confidence = "instruction-exact-hil-qualified"
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY%s_PEER_TAIL_AND_POLICY.WINDOW"
@@ -1847,7 +1977,9 @@ sources = [
     "BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK",
     "BLOB_LIBNET80211_RX_BLOCK_ACK",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY%s_PEER_HEAD"
@@ -1855,7 +1987,9 @@ sources = [
     "BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK",
     "HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30",
 ]
-confidence = "instruction-exact-hil-qualified"
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY%s_CURRENT_SEQUENCE"
@@ -1863,7 +1997,9 @@ sources = [
     "BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK",
     "HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30",
 ]
-confidence = "instruction-exact-hil-qualified"
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY%s_START_SEQUENCE_LOAD"
@@ -1871,7 +2007,9 @@ sources = [
     "BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK",
     "HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30",
 ]
-confidence = "instruction-exact-hil-qualified"
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY%s_BITMAP_LOW_STATUS"
@@ -1879,7 +2017,9 @@ sources = [
     "BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK",
     "HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30",
 ]
-confidence = "instruction-exact-hil-qualified"
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY%s_BITMAP_LOW_LOAD"
@@ -1887,7 +2027,9 @@ sources = [
     "BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK",
     "HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30",
 ]
-confidence = "instruction-exact-hil-qualified"
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY%s_BITMAP_HIGH_STATUS"
@@ -1895,7 +2037,9 @@ sources = [
     "BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK",
     "HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30",
 ]
-confidence = "instruction-exact-hil-qualified"
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY%s_BITMAP_HIGH_LOAD"
@@ -1903,7 +2047,9 @@ sources = [
     "BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK",
     "HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30",
 ]
-confidence = "instruction-exact-hil-qualified"
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.RX_BLOCK_ACK_AGREEMENT_UPDATE"
@@ -1911,34 +2057,48 @@ sources = [
     "BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK",
     "HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30",
 ]
-confidence = "instruction-exact-hil-qualified"
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.EXTRA_SOFTAP_RX_BLOCK_ACK_CONTROL"
 sources = ["BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.EXTRA_SOFTAP_RX_BLOCK_ACK_PEER_TAIL_AND_POLICY"
 sources = ["BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.EXTRA_SOFTAP_RX_BLOCK_ACK_PEER_HEAD"
 sources = ["BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.EXTRA_SOFTAP_RX_BLOCK_ACK_START_SEQUENCE"
 sources = ["BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.EXTRA_SOFTAP_RX_BLOCK_ACK_BITMAP_LOW"
 sources = ["BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_RX_DMA.EXTRA_SOFTAP_RX_BLOCK_ACK_BITMAP_HIGH"
 sources = ["BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"

@@ -22,8 +22,8 @@ mod tests;
 
 use options::{Options, resolve_options};
 use render::{
-    render_manifest, render_memory, render_platform, render_readme, render_register_api,
-    render_run_spec, render_target,
+    render_chip, render_ecosystem, render_manifest, render_memory, render_readme,
+    render_register_api, render_run_spec, render_target,
 };
 
 #[derive(Serialize)]
@@ -122,7 +122,8 @@ fn write_project(root: &Path, options: &Options) -> Result<()> {
         render_manifest(options),
     )?;
     fs::write(root.join("target.toml"), render_target(options))?;
-    fs::write(root.join("platform.toml"), render_platform(options))?;
+    fs::write(root.join("ecosystem.toml"), render_ecosystem(options))?;
+    fs::write(root.join("chip.toml"), render_chip(options))?;
     fs::write(root.join("memory.toml"), render_memory(options))?;
     fs::write(root.join("local.example.toml"), render_run_spec(options))?;
     fs::write(root.join("README.md"), render_readme(options))?;
@@ -155,7 +156,7 @@ fn write_project(root: &Path, options: &Options) -> Result<()> {
 fn validate_project(root: &Path) -> Result<()> {
     let project = ProjectSpec::load(&root.join(DEFAULT_PROJECT_MANIFEST))?;
     let mut target = TargetSpec::load(&root.join("target.toml"))?;
-    if let Some(pack) = &project.platform_pack {
+    if let Some(pack) = &project.chip_pack {
         pack.apply_to_target(&mut target)?;
     }
     target.require_available_backend()?;

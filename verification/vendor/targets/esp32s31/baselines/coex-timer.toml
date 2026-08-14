@@ -4,12 +4,12 @@ schema = 2
 source = "coex"
 symbol = "coex_hw_timer_disable"
 kind = "whole-function-equivalence/profile:scenario/coex-hw-timer-disable"
-digest = "4fbd91d8cf7447995ebc8e9df68825c529911e7311cfb4e9cfbe369346a6b74f"
+digest = "eb7bc6c519a96e7b31a3d3cbc54cc9c2fbcf2e2c460ac920a5e48c9e6e1721e1"
 
 [evidence.components]
 comparison-orchestrator = "e9af803daf6ab44af42a93b3cead563c60bf06945929c1b879c8112be2f87d60"
-execution-image = "3885065e6ff308001a383d5164cd1f17dba4f452a35ef3c07baa3ce5916530da"
-execution-machine = "ecce5dd7068bb1bc30a5573d8b2c8f89fa158e96289a8653c8fea6fe58d80398"
+execution-image = "241a2c07ca5860bd273851868270bbd5d33c68217d8c83ef8c9589f1dd821663"
+execution-machine = "47a8bd9864cefabd70bc0448b3e95298e716a9bad89247e9e425905d3b2ee806"
 execution-model = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"
 profile = "4a0a46b4f353bf5af3ecd98ed16f08614bac9cb14286c3d14d24f4076c9830a0"
 profile-parser = "425e34c2aa46698971e2e8be1ab1e6e9d2d2737bd7b3afb913316708a62206f4"
@@ -18,12 +18,12 @@ profile-parser = "425e34c2aa46698971e2e8be1ab1e6e9d2d2737bd7b3afb913316708a62206
 source = "coex"
 symbol = "coex_hw_timer_enable"
 kind = "whole-function-equivalence/profile:scenario/coex-hw-timer-enable"
-digest = "fe547e55ce57d4efd703dbb80079182621fe3b2dc2e63b0a6bdf5842afd043b1"
+digest = "ea9f8e5d25068ed0282a5c66c8a5ce8d47284d4c73bdf8c904658067699ec6fe"
 
 [evidence.components]
 comparison-orchestrator = "e9af803daf6ab44af42a93b3cead563c60bf06945929c1b879c8112be2f87d60"
-execution-image = "3885065e6ff308001a383d5164cd1f17dba4f452a35ef3c07baa3ce5916530da"
-execution-machine = "ecce5dd7068bb1bc30a5573d8b2c8f89fa158e96289a8653c8fea6fe58d80398"
+execution-image = "241a2c07ca5860bd273851868270bbd5d33c68217d8c83ef8c9589f1dd821663"
+execution-machine = "47a8bd9864cefabd70bc0448b3e95298e716a9bad89247e9e425905d3b2ee806"
 execution-model = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"
 profile = "a92281e5ad935c06a5941ee96398734cd8b1c85c84a71d27babba94eaaca671b"
 profile-parser = "425e34c2aa46698971e2e8be1ab1e6e9d2d2737bd7b3afb913316708a62206f4"
@@ -32,12 +32,12 @@ profile-parser = "425e34c2aa46698971e2e8be1ab1e6e9d2d2737bd7b3afb913316708a62206
 source = "coex"
 symbol = "coex_hw_timer_force"
 kind = "whole-function-equivalence/profile:scenario/coex-hw-timer-force"
-digest = "08ac1ff21293fcf2ccfbed7571023ac802bead80295f03fb9ad1bca8e6b3eca4"
+digest = "65efdbd02931dfe2c17b3ce64cdf311fa7520fc00e6950757d0d06c20c0cdc3a"
 
 [evidence.components]
 comparison-orchestrator = "e9af803daf6ab44af42a93b3cead563c60bf06945929c1b879c8112be2f87d60"
-execution-image = "3885065e6ff308001a383d5164cd1f17dba4f452a35ef3c07baa3ce5916530da"
-execution-machine = "ecce5dd7068bb1bc30a5573d8b2c8f89fa158e96289a8653c8fea6fe58d80398"
+execution-image = "241a2c07ca5860bd273851868270bbd5d33c68217d8c83ef8c9589f1dd821663"
+execution-machine = "47a8bd9864cefabd70bc0448b3e95298e716a9bad89247e9e425905d3b2ee806"
 execution-model = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"
 profile = "2e61af5bd748d100d49c7df046dc68641ae53b2573025b2e39523187750d4297"
 profile-parser = "425e34c2aa46698971e2e8be1ab1e6e9d2d2737bd7b3afb913316708a62206f4"
@@ -46,12 +46,12 @@ profile-parser = "425e34c2aa46698971e2e8be1ab1e6e9d2d2737bd7b3afb913316708a62206
 source = "coex"
 symbol = "coex_hw_timer_unforce"
 kind = "whole-function-equivalence/profile:scenario/coex-hw-timer-unforce"
-digest = "0d2e97a910d9d8cf0b186557ffcb0e358c85bea665bf12312e505db53110641a"
+digest = "1ea18b005d71f022ed450133a6aa0fd05aee9da214aedac7e72ec92fbd95599a"
 
 [evidence.components]
 comparison-orchestrator = "e9af803daf6ab44af42a93b3cead563c60bf06945929c1b879c8112be2f87d60"
-execution-image = "3885065e6ff308001a383d5164cd1f17dba4f452a35ef3c07baa3ce5916530da"
-execution-machine = "ecce5dd7068bb1bc30a5573d8b2c8f89fa158e96289a8653c8fea6fe58d80398"
+execution-image = "241a2c07ca5860bd273851868270bbd5d33c68217d8c83ef8c9589f1dd821663"
+execution-machine = "47a8bd9864cefabd70bc0448b3e95298e716a9bad89247e9e425905d3b2ee806"
 execution-model = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"
 profile = "760ebfbc2cc67a8b4fd356b561577fe6b2c643e2a9f53cb37d8728e0458c921d"
 profile-parser = "425e34c2aa46698971e2e8be1ab1e6e9d2d2737bd7b3afb913316708a62206f4"

@@ -171,10 +171,10 @@ bitWidth = 1
     let project = ProjectSpec {
         id: project_id,
         target_spec: directory.join("target.toml"),
-        platform_pack: None,
+        ecosystem_packs: Vec::new(),
+        chip_pack: None,
         run_spec: None,
         memory_map: None,
-        svd_configured: false,
         svd_paths: Vec::new(),
         symbol_inventory: None,
         navigation_index: None,
@@ -188,7 +188,6 @@ bitWidth = 1
             publication_scopes: Vec::new(),
             scopes: Vec::new(),
         }),
-        qualification: None,
         verification: None,
     };
     (directory, project)

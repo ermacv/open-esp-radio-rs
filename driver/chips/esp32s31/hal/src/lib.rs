@@ -5,10 +5,14 @@
 extern crate std;
 
 use core::future::Future;
-use core::marker::PhantomData;
 
-pub use open_esp_radio_esp32s31_pac::{CfrValue, ColdRadioRegisters, ForcedRxGain, RadioRegisters};
+use open_esp_radio_esp32s31_pac::{
+    ColdRadioRegisters, MacInterruptRegisters as PacMacInterruptRegisters,
+    MacInterruptSetup as PacMacInterruptSetup,
+    MacPowerInterruptRegisters as PacMacPowerInterruptRegisters, RadioRegisters,
+};
 pub mod analog_i2c;
+pub mod channel;
 pub mod coex;
 pub mod pbus;
 pub mod phy_agc;
@@ -24,22 +28,190 @@ pub mod phy_rx_dco;
 pub mod phy_temperature;
 pub mod power;
 pub mod power_detector_platform;
+pub mod radio_arena;
+pub mod types;
+#[cfg(feature = "validation-probes")]
+#[doc(hidden)]
+pub mod validation;
 pub mod wifi_bb;
 pub mod wifi_mac;
 pub use power::{PowerCheckpoint, PowerClockControl, PowerClockImages, PowerError};
+pub use types::{
+    CfrValue, ForcedRxGain, MacInterruptEvents, MacInterruptMask, MacInterruptSnapshot,
+    MacPowerInterruptSnapshot,
+};
+
+/// Powered-lifecycle PHY capability.
+///
+/// The PAC owner remains private to HAL. PHY code can pass this value only to
+/// named HAL operations; it cannot dereference or recover a generic register
+/// block from it.
+pub struct PhyHal {
+    registers: ColdRadioRegisters,
+}
+
+mod sealed {
+    use super::RadioRegisters;
+
+    pub trait PhyAccess {
+        fn pac(&self) -> &RadioRegisters;
+        fn pac_mut(&mut self) -> &mut RadioRegisters;
+    }
+}
+
+/// Sealed marker accepted by named PHY HAL operations.
+///
+/// External crates can use an acquired [`PhyHal`] but cannot implement this
+/// trait for an arbitrary owner or use it to recover the underlying PAC.
+pub trait PhyAccess: sealed::PhyAccess {}
+
+impl sealed::PhyAccess for PhyHal {
+    fn pac(&self) -> &RadioRegisters {
+        &self.registers
+    }
+
+    fn pac_mut(&mut self) -> &mut RadioRegisters {
+        &mut self.registers
+    }
+}
+
+impl PhyAccess for PhyHal {}
+
+impl sealed::PhyAccess for RadioRegisters {
+    fn pac(&self) -> &RadioRegisters {
+        self
+    }
+
+    fn pac_mut(&mut self) -> &mut RadioRegisters {
+        self
+    }
+}
+
+impl PhyAccess for RadioRegisters {}
+
+#[cfg(target_arch = "riscv32")]
+pub(crate) fn phy_pac(access: &(impl PhyAccess + ?Sized)) -> &RadioRegisters {
+    sealed::PhyAccess::pac(access)
+}
+
+pub(crate) fn phy_pac_mut(access: &mut (impl PhyAccess + ?Sized)) -> &mut RadioRegisters {
+    sealed::PhyAccess::pac_mut(access)
+}
+
+impl PhyHal {
+    pub fn set_phy_calibration_clock(&mut self, enabled: bool) {
+        self.registers.set_phy_calibration_clock(enabled);
+    }
+
+    pub fn set_rx_gain_dc_calibration(&mut self, enabled: bool) {
+        self.registers.set_rx_gain_dc_calibration(enabled);
+    }
+
+    pub fn configure_power_control_tone(&mut self, selector: u16, step: u8) {
+        self.registers.configure_power_control_tone(selector, step);
+    }
+
+    pub fn configure_calibration_tone(&mut self, enabled: bool, selector: u16, step: u8) {
+        self.registers
+            .configure_calibration_tone(enabled, selector, step);
+    }
+
+    pub fn configure_tx_iq_correction(&mut self, begin: bool) {
+        self.registers.configure_tx_iq_correction(begin);
+    }
+
+    pub fn txiq_tone_control(&mut self) -> u32 {
+        self.registers.txiq_tone_control()
+    }
+
+    pub fn restore_txiq_tone_control(&mut self, saved: u32) {
+        self.registers.restore_txiq_tone_control(saved);
+    }
+
+    pub fn configure_txiq_mismatch_power(
+        &mut self,
+        first: bool,
+        polarity: bool,
+        attenuation: u8,
+        selector: u16,
+    ) {
+        self.registers
+            .configure_txiq_mismatch_power(first, polarity, attenuation, selector);
+    }
+
+    pub fn set_tx_iq_gain_coefficient(&mut self, coefficient: i8) {
+        self.registers.set_tx_iq_gain_coefficient(coefficient);
+    }
+
+    pub fn set_tx_iq_phase_coefficient(&mut self, coefficient: i8) {
+        self.registers.set_tx_iq_phase_coefficient(coefficient);
+    }
+
+    pub fn set_rx_iq_gain_coefficient(&mut self, coefficient: i8) {
+        self.registers.set_rx_iq_gain_coefficient(coefficient);
+    }
+
+    pub fn set_rx_iq_phase_coefficient(&mut self, coefficient: i8) {
+        self.registers.set_rx_iq_phase_coefficient(coefficient);
+    }
+
+    pub fn configure_rx_iq_calibration_mode(&mut self) {
+        self.registers.configure_rx_iq_calibration_mode();
+    }
+
+    pub fn configure_adc_rate(&mut self, rate: u32) {
+        self.registers.configure_adc_rate(rate);
+    }
+
+    pub fn set_power_detector_tone_armed(&mut self, armed: bool) {
+        self.registers.set_power_detector_tone_armed(armed);
+    }
+
+    pub fn stop_power_detector_tone(&mut self) {
+        self.registers.stop_power_detector_tone();
+    }
+
+    pub fn trigger_tx_dc_measurement(&mut self) {
+        self.registers.trigger_tx_dc_measurement();
+    }
+
+    pub fn tx_dc_measurement_is_ready(&mut self) -> bool {
+        self.registers.tx_dc_measurement_is_ready()
+    }
+
+    pub fn sample_tx_dc_comparators(&mut self) -> [bool; 2] {
+        self.registers.sample_tx_dc_comparators()
+    }
+
+    pub fn clear_tx_dc_measurement(&mut self) {
+        self.registers.clear_tx_dc_measurement();
+    }
+
+    pub fn open_frontend_baseband_internal_clocks(&mut self) {
+        self.registers.open_frontend_baseband_internal_clocks();
+    }
+}
 
 /// Type states for the coarse radio power lifecycle.
 pub mod state {
+    use super::{ColdRadioRegisters, MacInterruptSetup, PhyHal, RadioRuntimeOwner};
+
     /// The application uniquely owns the peripheral, but the open driver has
     /// not yet established its clock/reset prerequisites.
     pub struct Owned {
-        _private: (),
+        pub(super) registers: ColdRadioRegisters,
     }
 
     /// The radio clock/reset prerequisites have been established and finite
     /// PHY register operations may access MMIO.
     pub struct Powered {
-        _private: (),
+        pub(super) registers: PhyHal,
+    }
+
+    /// Cold initialization has completed and task/ISR authority is disjoint.
+    pub struct Running {
+        pub(super) registers: RadioRuntimeOwner,
+        pub(super) interrupts: MacInterruptSetup,
     }
 }
 
@@ -50,8 +222,170 @@ pub mod state {
 /// driver's register capability to the safe peripheral owner.
 pub struct Radio<P, State = state::Owned> {
     peripheral: P,
-    registers: ColdRadioRegisters,
-    state: PhantomData<State>,
+    state: State,
+}
+
+/// Opaque task-side owner of the running radio register partition.
+///
+/// This value can be moved between lifecycle owners and the runtime arena, but
+/// it exposes no PAC owner, dereference operation, or generic register
+/// callback. Finite hardware transactions are borrowed through HAL
+/// capabilities.
+pub struct RadioRuntimeOwner {
+    registers: RadioRegisters,
+}
+
+impl RadioRuntimeOwner {
+    /// Construct the running register owner inside an isolated validation
+    /// image without exposing the underlying PAC owner.
+    #[cfg(feature = "validation-probes")]
+    #[doc(hidden)]
+    pub fn claim_for_validation() -> Self {
+        Self::from_pac(open_esp_radio_esp32s31_pac::validation::radio_registers())
+    }
+
+    pub fn wifi_mac_hal(&mut self) -> wifi_mac::WifiMacHal<'_> {
+        wifi_mac::WifiMacHal::from_owned(&mut self.registers)
+    }
+
+    pub fn channel_hal<'owner, P>(
+        &'owner mut self,
+        platform: &'owner mut P,
+    ) -> channel::RadioChannelHal<'owner, P> {
+        channel::RadioChannelHal::from_owned(platform, &mut self.registers)
+    }
+
+    /// Read the calibrated baseband observation without exposing the PAC
+    /// owner or its register encoding.
+    pub fn read_noise_floor_dbm(&self) -> i8 {
+        self.registers.read_noise_floor_dbm()
+    }
+
+    pub fn access_point_receive_policy_snapshot(&self) -> wifi_mac::MacApReceivePolicySnapshot {
+        self.registers.ap_receive_policy_snapshot()
+    }
+
+    pub fn receive_statistics_snapshot(&self) -> wifi_mac::MacRxStatisticsSnapshot {
+        self.registers.rx_statistics_snapshot()
+    }
+
+    pub fn receive_dma_snapshot(&self) -> wifi_mac::MacRxDmaSnapshot {
+        self.registers.mac_rx_dma_snapshot()
+    }
+
+    /// Copy the reviewed HE transmit-vector readback for one queue.
+    pub fn he_tx_vector_snapshot(&self, queue: u8) -> types::MacHeTxVectorSnapshot {
+        self.registers.he_mac_tx_vector_snapshot(queue)
+    }
+
+    /// Copy the reviewed Trigger-queue readback for one reservation.
+    pub fn he_trigger_based_queue_snapshot(
+        &self,
+        reservation: types::MacHeTbLinkReservation,
+    ) -> types::MacHeTriggerTxQueueSnapshot {
+        self.registers.he_trigger_based_queue_snapshot(reservation)
+    }
+
+    pub(crate) fn from_pac(registers: RadioRegisters) -> Self {
+        Self { registers }
+    }
+
+    pub(crate) fn pac(&self) -> &RadioRegisters {
+        &self.registers
+    }
+
+    pub(crate) fn pac_mut(&mut self) -> &mut RadioRegisters {
+        &mut self.registers
+    }
+}
+
+/// Task-side setup authority for one finite MAC interrupt epoch.
+pub struct MacInterruptSetup {
+    inner: PacMacInterruptSetup,
+}
+
+/// Proof that connected-STA interrupt policy was applied before activation.
+pub struct ConnectedStaInterruptPrepared {
+    _private: (),
+}
+
+/// Disjoint HAL capability installed in the hard MAC interrupt handler.
+pub struct MacInterruptRegisters {
+    inner: PacMacInterruptRegisters,
+}
+
+impl MacInterruptRegisters {
+    pub fn mac_interrupt_status(&self) -> MacInterruptSnapshot {
+        self.inner.mac_interrupt_status()
+    }
+
+    pub fn acknowledge_mac_interrupts(&mut self, snapshot: MacInterruptSnapshot) {
+        self.inner.acknowledge_mac_interrupts(snapshot);
+    }
+
+    pub fn deactivate(self, power: MacPowerInterruptRegisters) -> MacInterruptSetup {
+        MacInterruptSetup {
+            inner: self.inner.deactivate(power.inner),
+        }
+    }
+}
+
+/// Construct the hard-MAC interrupt capability inside an isolated validation
+/// image without exposing the PAC partition.
+#[cfg(feature = "validation-probes")]
+#[doc(hidden)]
+pub fn validation_mac_interrupt_registers() -> MacInterruptRegisters {
+    MacInterruptRegisters {
+        inner: open_esp_radio_esp32s31_pac::validation::mac_interrupt_registers(),
+    }
+}
+
+/// Disjoint HAL capability installed in the hard power interrupt handler.
+pub struct MacPowerInterruptRegisters {
+    inner: PacMacPowerInterruptRegisters,
+}
+
+impl MacPowerInterruptRegisters {
+    pub fn power_interrupt_status(&self) -> MacPowerInterruptSnapshot {
+        self.inner.power_interrupt_status()
+    }
+
+    pub fn acknowledge_power_interrupts(&mut self, snapshot: MacPowerInterruptSnapshot) {
+        self.inner.acknowledge_power_interrupts(snapshot);
+    }
+}
+
+impl MacInterruptSetup {
+    pub fn prepare_connected_sta_without_power_save(
+        &mut self,
+        radio: &mut RadioRuntimeOwner,
+    ) -> ConnectedStaInterruptPrepared {
+        let _ = self
+            .inner
+            .prepare_connected_sta_without_power_save(&mut radio.registers);
+        ConnectedStaInterruptPrepared { _private: () }
+    }
+
+    pub(crate) fn prepare_connected_sta_with_pac(
+        &mut self,
+        registers: &mut RadioRegisters,
+    ) -> ConnectedStaInterruptPrepared {
+        let _ = self
+            .inner
+            .prepare_connected_sta_without_power_save(registers);
+        ConnectedStaInterruptPrepared { _private: () }
+    }
+
+    pub fn activate(
+        self,
+        event_mask: MacInterruptMask,
+    ) -> (MacInterruptRegisters, MacPowerInterruptRegisters) {
+        let (mac, power) = self.inner.activate(event_mask);
+        (
+            MacInterruptRegisters { inner: mac },
+            MacPowerInterruptRegisters { inner: power },
+        )
+    }
 }
 
 /// Failed power transition retaining the unique unpowered radio owner.
@@ -92,9 +426,23 @@ impl<P> Radio<P, state::Owned> {
         let registers = ColdRadioRegisters::for_validation();
         Ok(Self {
             peripheral,
-            registers,
-            state: PhantomData,
+            state: state::Owned { registers },
         })
+    }
+
+    /// Construct the complete owner inside an isolated validation image.
+    ///
+    /// This bypasses only the process-wide singleton acquisition required by
+    /// production. The returned ownership and lifecycle API is identical.
+    #[cfg(feature = "validation-probes")]
+    #[doc(hidden)]
+    pub fn claim_for_validation(peripheral: P) -> Self {
+        Self {
+            peripheral,
+            state: state::Owned {
+                registers: ColdRadioRegisters::for_validation(),
+            },
+        }
     }
 
     /// Release a radio that has not crossed into the powered state.
@@ -116,12 +464,16 @@ impl<P> Radio<P, state::Owned> {
     where
         P: wifi_bb::PhyWifiBbControl,
     {
-        self.registers
+        self.state
+            .registers
             .set_wifi_baseband_enabled_image(self.peripheral.wifi_baseband_is_enabled());
         Radio {
             peripheral: self.peripheral,
-            registers: self.registers,
-            state: PhantomData,
+            state: state::Powered {
+                registers: PhyHal {
+                    registers: self.state.registers,
+                },
+            },
         }
     }
 }
@@ -143,48 +495,56 @@ impl<P: PowerClockControl> Radio<P, state::Owned> {
         }
         Ok(Radio {
             peripheral: self.peripheral,
-            registers: self.registers,
-            state: PhantomData,
+            state: state::Powered {
+                registers: PhyHal {
+                    registers: self.state.registers,
+                },
+            },
         })
     }
 }
 
 impl<P> Radio<P, state::Powered> {
+    /// Borrow the platform and the narrow cold-MAC capability together for
+    /// one lifecycle transition.
+    pub fn cold_mac_parts(&mut self) -> (&mut P, wifi_mac::WifiMacColdHal<'_>) {
+        (
+            &mut self.peripheral,
+            wifi_mac::WifiMacColdHal::from_owned(&mut self.state.registers.registers),
+        )
+    }
+
+    /// Close the cold polling interrupt phase before constructing disjoint
+    /// task/ISR runtime capabilities.
+    pub fn close_cold_interrupt_phase(&mut self) -> u32 {
+        let mask = self.state.registers.registers.mac_interrupt_enable();
+        self.state
+            .registers
+            .registers
+            .mask_and_clear_all_mac_interrupts();
+        mask
+    }
+
     /// Borrow the integration token without releasing register ownership.
     pub const fn peripheral(&self) -> &P {
         &self.peripheral
     }
 
-    /// Borrow the platform and recovered-radio capabilities independently.
+    /// Borrow a narrow channel capability for one transaction.
+    pub fn channel_hal(&mut self) -> channel::RadioChannelHal<'_, P> {
+        channel::RadioChannelHal::from_owned(
+            &mut self.peripheral,
+            phy_pac_mut(&mut self.state.registers),
+        )
+    }
+
+    /// Borrow the platform and PHY capability independently.
     ///
     /// The two mutable borrows are tied to this unique powered owner and refer
     /// to disjoint fields, allowing a lifecycle function to coordinate an
-    /// official system PAC operation with internal Wi-Fi MMIO.
-    #[doc(hidden)]
-    pub fn parts_mut(&mut self) -> (&mut P, &mut RadioRegisters) {
-        (&mut self.peripheral, &mut self.registers)
-    }
-
-    /// Borrow the pre-runtime register owner while cold MAC setup still needs
-    /// access to the disjoint interrupt configuration bank.
-    ///
-    /// Role-neutral PHY operations should use [`Self::parts_mut`]. This
-    /// narrower lifecycle method exists for the single common-MAC transition
-    /// and prevents that transition from splitting the recoverable `Radio`
-    /// owner merely to reach its cold-only PAC capabilities.
-    #[doc(hidden)]
-    pub fn cold_parts_mut(&mut self) -> (&mut P, &mut ColdRadioRegisters) {
-        (&mut self.peripheral, &mut self.registers)
-    }
-
-    /// Consume the powered owner at the cold-MAC/runtime boundary.
-    ///
-    /// The returned [`ColdRadioRegisters`] must complete cold MAC setup and
-    /// then be consumed by `ColdRadioRegisters::into_running` before a task can
-    /// install the finite hard-interrupt capability.
-    #[doc(hidden)]
-    pub fn into_parts(self) -> (P, ColdRadioRegisters) {
-        (self.peripheral, self.registers)
+    /// official system operation with internal Wi-Fi MMIO.
+    pub fn phy_hal_parts(&mut self) -> (&mut P, &mut PhyHal) {
+        (&mut self.peripheral, &mut self.state.registers)
     }
 
     /// Enable the Wi-Fi RX/baseband path after the PHY transition completes.
@@ -194,12 +554,60 @@ impl<P> Radio<P, state::Powered> {
     /// on the powered owner makes that final lifecycle edge explicit and
     /// prevents application code from writing `WIFI_BB_CFG` without owning the
     /// radio peripheral.
-    /// Internal register capability used by source-owned target bindings.
+    /// Internal PHY capability used by source-owned target bindings.
     ///
     /// The returned borrow cannot outlive the unique powered radio owner.
-    #[doc(hidden)]
-    pub fn registers_mut(&mut self) -> &mut RadioRegisters {
-        &mut self.registers
+    pub fn phy_hal_mut(&mut self) -> &mut PhyHal {
+        &mut self.state.registers
+    }
+}
+
+impl<P> Radio<P, state::Powered> {
+    /// Complete the one-way ownership transition after cold MAC setup.
+    pub fn into_running(self) -> Radio<P, state::Running> {
+        let (registers, interrupts) = self.state.registers.registers.into_running();
+        Radio {
+            peripheral: self.peripheral,
+            state: state::Running {
+                registers: RadioRuntimeOwner::from_pac(registers),
+                interrupts: MacInterruptSetup { inner: interrupts },
+            },
+        }
+    }
+}
+
+impl<P> Radio<P, state::Running> {
+    pub const fn peripheral(&self) -> &P {
+        &self.peripheral
+    }
+
+    pub fn channel_hal(&mut self) -> channel::RadioChannelHal<'_, P> {
+        self.state.registers.channel_hal(&mut self.peripheral)
+    }
+
+    pub fn wifi_mac_hal(&mut self) -> wifi_mac::WifiMacHal<'_> {
+        self.state.registers.wifi_mac_hal()
+    }
+
+    /// Split only at the role-epoch ownership boundary. Both returned
+    /// capabilities remain opaque and can be recombined only through
+    /// [`Self::from_runtime_parts`].
+    pub fn into_runtime_parts(self) -> (P, RadioRuntimeOwner, MacInterruptSetup) {
+        (self.peripheral, self.state.registers, self.state.interrupts)
+    }
+
+    pub fn from_runtime_parts(
+        peripheral: P,
+        registers: RadioRuntimeOwner,
+        interrupts: MacInterruptSetup,
+    ) -> Self {
+        Self {
+            peripheral,
+            state: state::Running {
+                registers,
+                interrupts,
+            },
+        }
     }
 }
 
@@ -210,7 +618,7 @@ impl<P: wifi_bb::PhyWifiBbControl> Radio<P, state::Powered> {
     /// updated together under the unique radio owner.
     #[cfg(target_arch = "riscv32")]
     pub fn enable_wifi_rx(&mut self) {
-        let (platform, registers) = self.parts_mut();
+        let (platform, registers) = self.phy_hal_parts();
         phy_frequency::set_wifi_enabled(platform, registers, true);
     }
 }
@@ -305,6 +713,19 @@ mod tests {
         let powered = owned.assume_powered_after_external_initialization();
         require_powered(&powered);
         assert_eq!(powered.peripheral(), &TestPeripheral { id: 8, ready: true });
+    }
+
+    #[test]
+    fn channel_capability_is_a_temporary_borrow_not_a_consuming_split() {
+        let owned = Radio::claim(TestPeripheral {
+            id: 10,
+            ready: true,
+        })
+        .unwrap_or_else(|_| panic!("test radio claim failed"));
+        let mut powered = owned.assume_powered_after_external_initialization();
+        let channel = powered.channel_hal();
+        drop(channel);
+        assert_eq!(powered.peripheral().id, 10);
     }
 
     #[test]

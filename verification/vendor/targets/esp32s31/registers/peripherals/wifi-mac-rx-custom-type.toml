@@ -66,4 +66,6 @@ bitWidth = 2
 [[review]]
 entity = "WIFI_MAC_RX_CUSTOM_TYPE"
 sources = ["BLOB_LIBPP_HAL_RX_MISC_DEBUG"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"

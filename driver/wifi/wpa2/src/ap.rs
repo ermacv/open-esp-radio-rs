@@ -1,7 +1,7 @@
 //! WPA2-Personal association validation for an allocation-free authenticator.
 //!
-//! This is the hardware-independent prefix extracted from the former
-//! migration `wpa2_ap` module. Peer queues, callbacks and ESP32-S31 node
+//! This is the hardware-independent prefix of the production AP
+//! implementation. Peer queues, callbacks and ESP32-S31 node
 //! pointers are deliberately outside this crate.
 
 use crate::frames::{OwnedRsnIe, Wpa2FrameError};

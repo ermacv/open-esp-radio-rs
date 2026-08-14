@@ -386,10 +386,10 @@ mod tests {
         ProjectSpec {
             id: "fixture".to_owned(),
             target_spec: "target.toml".into(),
-            platform_pack: None,
+            ecosystem_packs: Vec::new(),
+            chip_pack: None,
             run_spec: None,
             memory_map: None,
-            svd_configured: false,
             svd_paths: Vec::new(),
             symbol_inventory: None,
             navigation_index: None,
@@ -399,7 +399,6 @@ mod tests {
             interfaces: None,
             functions: None,
             review: None,
-            qualification: None,
             verification: None,
         }
     }

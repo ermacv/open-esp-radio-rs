@@ -153,7 +153,7 @@ pub(super) fn investigate(
                 "semantic operation {:?} does not define output role {:?}",
                 route.delivery.operation, route.delivery.output_role
             ),
-            "correct the reviewed route or add the role to the reusable semantic catalog",
+            "correct the reviewed route or add the role to the reusable knowledge pack",
         ));
     }
     let delivery_calls = consumer
@@ -679,18 +679,23 @@ fn profile<'a>(
 }
 
 fn semantic_catalogs(project: &ProjectSpec) -> Result<SemanticCatalogs> {
-    let paths = project
-        .interfaces
-        .as_ref()
-        .map(|interfaces| interfaces.semantic_catalogs.as_slice())
-        .or_else(|| {
+    let paths = project.interfaces.as_ref().map_or_else(
+        || {
             project
-                .platform_pack
-                .as_ref()
-                .map(|pack| pack.semantic_catalogs.as_slice())
-        })
-        .unwrap_or_default();
-    SemanticCatalogs::load(paths)
+                .ecosystem_packs
+                .iter()
+                .flat_map(|pack| pack.knowledge_packs.iter().cloned())
+                .chain(
+                    project
+                        .chip_pack
+                        .iter()
+                        .flat_map(|pack| pack.knowledge_packs.iter().cloned()),
+                )
+                .collect::<Vec<_>>()
+        },
+        |interfaces| interfaces.semantic_catalogs.clone(),
+    );
+    SemanticCatalogs::load(&paths)
 }
 
 fn direct_dispatch_matches(
@@ -737,7 +742,7 @@ fn direct_dispatch_matches(
             .is_some_and(|value| value == selector);
     }
 
-    // Some reviewed direct-call contracts predate reusable semantic catalog
+    // Some reviewed direct-call contracts predate reusable knowledge pack
     // entries.  They still name the event role, and the recovered ABI values
     // can locate an exact selector when that value occurs at one position.
     // Ambiguous equal constants fail closed.

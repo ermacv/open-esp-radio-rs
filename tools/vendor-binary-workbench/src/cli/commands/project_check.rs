@@ -18,7 +18,6 @@ struct ProjectCheckReport {
     schema: u32,
     command: &'static str,
     project: String,
-    hardware: bool,
     passed: bool,
     stages: Vec<ProjectCheckStage>,
 }
@@ -46,8 +45,14 @@ pub(super) fn run(arguments: ProjectCheckArgs, session: &ProjectSession) -> Resu
     if !(1..=8).contains(&arguments.jobs) {
         return Err(crate::Error::invalid("project check --jobs accepts 1..=8"));
     }
-    let binding_audit =
-        crate::verification::audit(&session.project, session.target.harness.as_deref())?;
+    let binding_audit = crate::verification::audit(
+        &session.project,
+        session
+            .project
+            .verification
+            .as_ref()
+            .map(|workspace| workspace.provider.as_str()),
+    )?;
     let analysis = crate::application::project_analysis::analyze_project(
         session,
         ProjectAnalysisRequest {
@@ -72,16 +77,12 @@ pub(super) fn run(arguments: ProjectCheckArgs, session: &ProjectSession) -> Resu
         session.memory_map.as_ref(),
         ProjectPublicationRequest { check: true },
     )?;
-    let qualification = qualification_stage(
-        session,
-        verification.replacement_graph.summary.bounded_matches,
-        arguments.hardware,
-    );
+    let policy = policy_stage(session);
 
     let passed = binding_audit.passed
         && analysis.succeeded()
         && verification.passed
-        && qualification.passed
+        && policy.passed
         && publication.succeeded();
     let analysis_passed = analysis.succeeded();
     let publication_passed = publication.succeeded();
@@ -93,10 +94,9 @@ pub(super) fn run(arguments: ProjectCheckArgs, session: &ProjectSession) -> Resu
         .report;
     let graph = &verification.replacement_graph.summary;
     let report = ProjectCheckReport {
-        schema: 4,
+        schema: 5,
         command: "project check",
         project: session.project.id.clone(),
-        hardware: arguments.hardware,
         passed,
         stages: vec![
             ProjectCheckStage {
@@ -104,31 +104,31 @@ pub(super) fn run(arguments: ProjectCheckArgs, session: &ProjectSession) -> Resu
                 status: if binding_audit.passed { "passed" } else { "failed" },
                 passed: binding_audit.passed,
                 summary: format!(
-                    "{}/{} required release-ready, {} invalid, {} research-only",
+                    "{}/{} required verification-ready, {} invalid, {} research-only",
                     binding_audit
-                        .release_required
-                        .saturating_sub(binding_audit.release_blocked),
-                    binding_audit.release_required,
+                        .verification_required
+                        .saturating_sub(binding_audit.verification_blocked),
+                    binding_audit.verification_required,
                     binding_audit.invalid,
                     binding_audit.research_only,
                 ),
                 issues: binding_audit
                     .bindings
                     .iter()
-                    .filter(|binding| matches!(binding.status, "invalid" | "release-blocked"))
+                    .filter(|binding| matches!(binding.status, "invalid" | "verification-blocked"))
                     .map(|binding| ProjectCheckIssue {
                         component: format!("{}:{}", binding.source, binding.vendor_symbol),
                         status: binding.status.to_owned(),
                         reason: binding
                             .blocker
                             .clone()
-                            .unwrap_or_else(|| "binding is not release eligible".to_owned()),
+                            .unwrap_or_else(|| "binding is not verification eligible".to_owned()),
                     })
                     .collect(),
                 next_actions: (!binding_audit.passed)
                     .then(|| {
                         format!(
-                            "run `vendor-binary-workbench project audit bindings --project {}`; fix every invalid declaration and every release-blocked binding in the required feature closure before accepting baselines",
+                            "run `vendor-binary-workbench project audit bindings --project {}`; fix every invalid declaration and every verification-blocked binding required by the verification policy before accepting baselines",
                             session.manifest.display()
                         )
                     })
@@ -161,7 +161,7 @@ pub(super) fn run(arguments: ProjectCheckArgs, session: &ProjectSession) -> Resu
                 status: if verification.passed { "passed" } else { "failed" },
                 passed: verification.passed,
                 summary: format!(
-                    "{} suites, {} whole-function matches, {} bounded feature matches, {} mismatches, {} incomplete, {} implemented-unqualified",
+                    "{} suites, {} whole-function matches, {} bounded matches, {} mismatches, {} incomplete, {} implemented without executable proof",
                     verification.suites.len(),
                     graph.behavioral_matches,
                     graph.bounded_matches,
@@ -181,7 +181,7 @@ pub(super) fn run(arguments: ProjectCheckArgs, session: &ProjectSession) -> Resu
                     .into_iter()
                     .collect(),
             },
-            qualification,
+            policy,
             ProjectCheckStage {
                 name: "publication",
                 status: if publication_passed { "passed" } else { "failed" },
@@ -212,18 +212,8 @@ fn render_human(report: &ProjectCheckReport) {
 
     outputln!("{}", output::heading("Project check"));
     outputln!("Project: {}", report.project);
-    outputln!(
-        "Assurance: {}",
-        if report.hardware {
-            "static + hardware"
-        } else {
-            "static"
-        }
-    );
     let outcome = if report.passed {
-        output::success(
-            "PASS — analysis, verification, feature qualification and publication reproduce",
-        )
+        output::success("PASS — analysis, verification policy and publication reproduce")
     } else {
         output::failure("FAIL — one or more project gates did not reproduce")
     };
@@ -273,108 +263,72 @@ fn render_human(report: &ProjectCheckReport) {
     );
 }
 
-fn qualification_stage(
-    session: &ProjectSession,
-    bounded_matches: usize,
-    require_hardware: bool,
-) -> ProjectCheckStage {
+fn policy_stage(session: &ProjectSession) -> ProjectCheckStage {
     let manifest = session.manifest.display();
-    let Some(workspace) = session.project.qualification.as_ref() else {
-        let passed = bounded_matches == 0;
+    let Some(policy_path) = session
+        .project
+        .verification
+        .as_ref()
+        .and_then(|verification| verification.policy.as_ref())
+    else {
         return ProjectCheckStage {
-            name: "qualification",
-            status: if passed { "not-configured" } else { "failed" },
-            passed,
-            summary: if passed {
-                "not configured; no bounded feature evidence is present".to_owned()
-            } else {
-                format!(
-                    "{bounded_matches} bounded feature match(es) have no project qualification gate"
-                )
-            },
-            issues: (!passed)
-                .then(|| ProjectCheckIssue {
-                    component: "bounded-feature-qualification".to_owned(),
-                    status: "failed".to_owned(),
-                    reason: "bounded evidence must be selected by an explicit required feature"
-                        .to_owned(),
-                })
-                .into_iter()
-                .collect(),
-            next_actions: (!passed)
-                .then(|| format!("configure [qualification] in {manifest}"))
-                .into_iter()
-                .collect(),
+            name: "verification-policy",
+            status: "failed",
+            passed: false,
+            summary: "verification policy is not configured".to_owned(),
+            issues: vec![ProjectCheckIssue {
+                component: "verification-policy".to_owned(),
+                status: "failed".to_owned(),
+                reason: "every project check requires an explicit flat verification policy"
+                    .to_owned(),
+            }],
+            next_actions: vec![format!("configure verification.policy in {manifest}")],
         };
     };
-    match crate::qualification::evaluate(&session.project) {
-        Ok(features) => {
-            let required = features
+    match crate::verification::policy::evaluate(&session.project) {
+        Ok(Some(report)) => {
+            let issues = report
+                .surfaces
                 .iter()
-                .filter(|feature| feature.required)
-                .collect::<Vec<_>>();
-            let blocked = required
-                .iter()
-                .filter(|feature| !qualification_status_passes(feature.status, require_hardware))
-                .collect::<Vec<_>>();
-            let passed = !required.is_empty() && blocked.is_empty();
-            let issues = blocked
-                .iter()
-                .flat_map(|feature| {
-                    let blockers = if feature.status
-                        == crate::qualification::FeatureQualificationStatus::Blocked
-                    {
-                        feature.blockers.clone()
-                    } else if let Some(hardware) = &feature.hardware {
-                        hardware.blockers.clone()
-                    } else {
-                        vec!["feature has no hardware assurance contract".to_owned()]
-                    };
-                    blockers.into_iter().map(|blocker| ProjectCheckIssue {
-                        component: format!("feature:{}", feature.id),
+                .filter(|surface| !surface.closed)
+                .flat_map(|surface| {
+                    surface.blockers.iter().map(|blocker| ProjectCheckIssue {
+                        component: format!("surface:{}", surface.id),
                         status: "failed".to_owned(),
-                        reason: blocker,
+                        reason: blocker.clone(),
                     })
                 })
                 .collect();
             ProjectCheckStage {
-                name: "qualification",
-                status: if passed { "passed" } else { "failed" },
-                passed,
+                name: "verification-policy",
+                status: if report.passed { "passed" } else { "failed" },
+                passed: report.passed,
                 summary: format!(
-                    "{} required feature(s), {} {}, {} blocked, {} bounded match(es)",
-                    required.len(),
-                    required.len().saturating_sub(blocked.len()),
-                    if require_hardware {
-                        "hardware-qualified"
-                    } else {
-                        "qualified"
-                    },
-                    blocked.len(),
-                    bounded_matches,
+                    "{} closed verification surface(s), {} blocked",
+                    report.closed, report.blocked,
                 ),
                 issues,
-                next_actions: (!passed)
+                next_actions: (!report.passed)
                     .then(|| {
                         format!(
-                            "close the reported feature boundary and rerun `vendor-binary-workbench project check{} --project {manifest}`",
-                            if require_hardware { " --hardware" } else { "" }
+                            "close the reported verification surface and rerun `vendor-binary-workbench project check --project {manifest}`"
                         )
                     })
                     .into_iter()
                     .collect(),
             }
         }
+        Ok(None) => unreachable!("policy path was present"),
         Err(error) => ProjectCheckStage {
-            name: "qualification",
+            name: "verification-policy",
             status: "failed",
             passed: false,
             summary: format!(
-                "cannot evaluate required features from {}",
-                workspace.pack.display()
+                "cannot evaluate verification policy from {}",
+                policy_path.display()
             ),
             issues: vec![ProjectCheckIssue {
-                component: "required-features".to_owned(),
+                component: "verification-policy".to_owned(),
                 status: "failed".to_owned(),
                 reason: error.to_string(),
             }],
@@ -382,17 +336,6 @@ fn qualification_stage(
                 "regenerate analysis and verification reports, then rerun `vendor-binary-workbench project check --project {manifest}`"
             )],
         },
-    }
-}
-
-fn qualification_status_passes(
-    status: crate::qualification::FeatureQualificationStatus,
-    require_hardware: bool,
-) -> bool {
-    match status {
-        crate::qualification::FeatureQualificationStatus::Blocked => false,
-        crate::qualification::FeatureQualificationStatus::Qualified => !require_hardware,
-        crate::qualification::FeatureQualificationStatus::HardwareQualified => true,
     }
 }
 
@@ -426,11 +369,6 @@ fn verification_issues(
             "replacement-incomplete",
             summary.incomplete,
             "one or more comparisons lack complete evidence",
-        ),
-        (
-            "implemented-unqualified",
-            summary.implemented_unqualified,
-            "implemented replacements have no completed executable qualification",
         ),
     ] {
         if count != 0 {
@@ -489,10 +427,9 @@ mod tests {
     #[test]
     fn aggregate_schema_keeps_issues_and_next_actions_separate() {
         let report = ProjectCheckReport {
-            schema: 4,
+            schema: 5,
             command: "project check",
             project: "fixture".to_owned(),
-            hardware: false,
             passed: false,
             stages: vec![ProjectCheckStage {
                 name: "verification",
@@ -502,14 +439,13 @@ mod tests {
                 issues: vec![ProjectCheckIssue {
                     component: "implemented-unqualified".to_owned(),
                     status: "failed".to_owned(),
-                    reason: "1: missing qualification".to_owned(),
+                    reason: "1: missing production trace".to_owned(),
                 }],
                 next_actions: vec!["inspect verification.json".to_owned()],
             }],
         };
         let value = serde_json::to_value(report).unwrap();
-        assert_eq!(value["schema"], 4);
-        assert_eq!(value["hardware"], false);
+        assert_eq!(value["schema"], 5);
         assert_eq!(value["stages"][0]["status"], "failed");
         assert_eq!(
             value["stages"][0]["issues"][0]["component"],
@@ -519,19 +455,5 @@ mod tests {
             value["stages"][0]["next_actions"][0],
             "inspect verification.json"
         );
-    }
-
-    #[test]
-    fn hardware_gate_never_promotes_static_qualification() {
-        use crate::qualification::FeatureQualificationStatus::{
-            Blocked, HardwareQualified, Qualified,
-        };
-
-        assert!(qualification_status_passes(Qualified, false));
-        assert!(!qualification_status_passes(Qualified, true));
-        assert!(qualification_status_passes(HardwareQualified, false));
-        assert!(qualification_status_passes(HardwareQualified, true));
-        assert!(!qualification_status_passes(Blocked, false));
-        assert!(!qualification_status_passes(Blocked, true));
     }
 }

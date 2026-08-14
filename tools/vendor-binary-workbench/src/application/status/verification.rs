@@ -272,9 +272,13 @@ fn last_report(
         || report.command != "project verify"
         || report.project != project_id
     {
-        return Component::new("last-verification", Readiness::Invalid)
+        return Component::new("last-verification", Readiness::Incomplete)
             .detail("path", workspace.report.display().to_string())
-            .diagnostic("project verification report has an incompatible identity or schema");
+            .diagnostic("project verification report is stale for the current identity or schema")
+            .next_action(format!(
+                "run `vendor-binary-workbench project verify --project {}`",
+                project_path.display()
+            ));
     }
     let expected_suite_ids = workspace
         .suites

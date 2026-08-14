@@ -5,11 +5,13 @@
 //! register layer moves into the ESP32-S31 radio HAL crate.
 
 #[cfg(target_arch = "riscv32")]
-use open_esp_radio_esp32s31_hal::RadioRegisters;
+use open_esp_radio_esp32s31_hal::PhyHal;
+#[cfg(target_arch = "riscv32")]
+use open_esp_radio_esp32s31_hal::channel::RadioChannelHal;
 
 /// Gate the calibration region around `phy_rf_init` and `phy_bb_init`.
 #[cfg(target_arch = "riscv32")]
-pub(crate) fn set_phy_register_calibration_clock(registers: &mut RadioRegisters, enabled: bool) {
+pub(crate) fn set_phy_register_calibration_clock(registers: &mut PhyHal, enabled: bool) {
     registers.set_phy_calibration_clock(enabled);
 }
 
@@ -17,14 +19,14 @@ pub(crate) fn set_phy_register_calibration_clock(registers: &mut RadioRegisters,
 #[cfg(target_arch = "riscv32")]
 pub(crate) fn configure_phy_bb_agc_register_update(
     platform: &mut impl open_esp_radio_esp32s31_hal::wifi_bb::PhyWifiBbControl,
-    registers: &mut RadioRegisters,
+    registers: &mut PhyHal,
 ) {
     open_esp_radio_esp32s31_hal::phy_agc::update_baseband_registers(platform, registers);
 }
 
 /// Complete rev0 ROM `phy_enable_agc`, size `0x28`.
 #[cfg(target_arch = "riscv32")]
-pub(crate) fn enable_phy_agc(registers: &mut RadioRegisters) {
+pub(crate) fn enable_phy_agc(registers: &mut PhyHal) {
     open_esp_radio_esp32s31_hal::phy_agc::set_enabled(registers, true);
 }
 
@@ -35,13 +37,13 @@ pub(crate) fn enable_phy_agc(registers: &mut RadioRegisters) {
 /// Re-enabling uses the already recovered three-write `phy_enable_agc`
 /// sequence. Both branches are finite and touch no software state.
 #[cfg(target_arch = "riscv32")]
-pub(crate) fn set_phy_channel_agc(registers: &mut RadioRegisters, enabled: bool) {
+pub(crate) fn set_phy_channel_agc(registers: &mut PhyHal, enabled: bool) {
     open_esp_radio_esp32s31_hal::phy_agc::set_enabled(registers, enabled);
 }
 
 /// Complete both branches of rev0 ROM `phy_rx_11b_opt`, size `0xc4`.
 #[cfg(target_arch = "riscv32")]
-fn configure_phy_rx_11b_optimization(registers: &mut RadioRegisters, enabled: bool) {
+fn configure_phy_rx_11b_optimization(registers: &mut PhyHal, enabled: bool) {
     open_esp_radio_esp32s31_hal::phy_agc::configure_rx_11b_optimization(registers, enabled);
 }
 
@@ -53,7 +55,7 @@ pub(crate) fn configure_phy_registers(
              impl open_esp_radio_esp32s31_hal::wifi_bb::PhyWifiBbControl
              + open_esp_radio_esp32s31_hal::power_detector_platform::PhyPowerDetectorPlatformControl
          ),
-    registers: &mut RadioRegisters,
+    registers: &mut PhyHal,
     parameters: crate::phy_bb::PhyRegisterInitParameters,
 ) {
     open_esp_radio_esp32s31_hal::phy_baseband::enable_iq_correction(registers);
@@ -88,7 +90,7 @@ pub(crate) fn configure_phy_rx_table(
              impl open_esp_radio_esp32s31_hal::wifi_bb::PhyWifiBbControl
              + open_esp_radio_esp32s31_hal::power_detector_platform::PhyPowerDetectorPlatformControl
          ),
-    registers: &mut RadioRegisters,
+    registers: &mut PhyHal,
     parameters: crate::phy_bb::PhyRxTableInitParameters,
 ) {
     let mut index = 0_u8;
@@ -129,12 +131,10 @@ const fn encode_phy_gain_memory_words(
     gain_72: u16,
     gain_64: u16,
     gain_32: u8,
-    seed_0: u16,
-    seed_1: u16,
-    seed_2: u16,
-    seed_3: u16,
+    seed: [u16; 4],
     config: u16,
 ) -> (u32, u32, u32) {
+    let [seed_0, seed_1, seed_2, seed_3] = seed;
     let gain_72 = gain_72 as u32;
     let gain_64 = gain_64 as u32;
     let word_0 = ((config & 0x1fff) as u32)
@@ -182,7 +182,7 @@ fn bluetooth_tx_gain_seed_halfword(
 /// Apply the complete direct-register prefix/suffix of ROM
 /// `phy_set_rx_gain_cal_dc`.
 #[cfg(target_arch = "riscv32")]
-pub(crate) fn configure_phy_rx_gain_dc_registers(registers: &mut RadioRegisters, enabled: bool) {
+pub(crate) fn configure_phy_rx_gain_dc_registers(registers: &mut PhyHal, enabled: bool) {
     if enabled {
         registers.set_phy_calibration_clock(true);
     }
@@ -204,7 +204,7 @@ pub(crate) fn configure_phy_rx_gain_dc_registers(registers: &mut RadioRegisters,
 /// callback, loop, wait, allocation, or software-global access.
 #[cfg(target_arch = "riscv32")]
 pub(crate) fn configure_phy_calibration_tone(
-    registers: &mut RadioRegisters,
+    registers: &mut PhyHal,
     enabled: bool,
     selector: u8,
     step: u8,
@@ -218,11 +218,7 @@ pub(crate) fn configure_phy_calibration_tone(
 /// the DAC scale and TX-gain compensation, and leaves both disabled while the
 /// power-control loop measures the tone.
 #[cfg(target_arch = "riscv32")]
-pub(crate) fn configure_phy_power_control_tone(
-    registers: &mut RadioRegisters,
-    selector: u16,
-    step: u8,
-) {
+pub(crate) fn configure_phy_power_control_tone(registers: &mut PhyHal, selector: u16, step: u8) {
     registers.configure_power_control_tone(selector, step);
 }
 
@@ -231,7 +227,7 @@ pub(crate) fn configure_phy_power_control_tone(
 #[cfg(target_arch = "riscv32")]
 #[inline(always)]
 pub(crate) fn configure_phy_calibration_tone_wide(
-    registers: &mut RadioRegisters,
+    registers: &mut PhyHal,
     enabled: bool,
     selector: u16,
     step: u8,
@@ -244,19 +240,19 @@ pub(crate) fn configure_phy_calibration_tone_wide(
 /// Reference: complete ROM `phy_rfcal_txiq` prefix and suffix. Each branch is
 /// one finite read/modify/write and owns no software state.
 #[cfg(target_arch = "riscv32")]
-pub(crate) fn configure_phy_txiq_correction(registers: &mut RadioRegisters, begin: bool) {
+pub(crate) fn configure_phy_txiq_correction(registers: &mut PhyHal, begin: bool) {
     registers.configure_tx_iq_correction(begin);
 }
 
 /// Capture the complete tone-control word saved by ROM `phy_rfcal_txiq`.
 #[cfg(target_arch = "riscv32")]
-pub(crate) fn read_phy_txiq_tone_control(registers: &mut RadioRegisters) -> u32 {
+pub(crate) fn read_phy_txiq_tone_control(registers: &mut PhyHal) -> u32 {
     registers.txiq_tone_control()
 }
 
 /// Restore the exact tone-control word after TX-IQ work-mode cleanup.
 #[cfg(target_arch = "riscv32")]
-pub(crate) fn restore_phy_txiq_tone_control(registers: &mut RadioRegisters, saved: u32) {
+pub(crate) fn restore_phy_txiq_tone_control(registers: &mut PhyHal, saved: u32) {
     registers.restore_txiq_tone_control(saved);
 }
 
@@ -268,7 +264,7 @@ pub(crate) fn restore_phy_txiq_tone_control(registers: &mut RadioRegisters, save
 /// separate async actions in `phy_txiq`.
 #[cfg(target_arch = "riscv32")]
 pub(crate) fn configure_phy_txiq_mis_power(
-    registers: &mut RadioRegisters,
+    registers: &mut PhyHal,
     first: bool,
     polarity: bool,
     attenuation: u8,
@@ -280,7 +276,7 @@ pub(crate) fn configure_phy_txiq_mis_power(
 /// Publish one bounded TX-IQ gain or phase coefficient.
 #[cfg(target_arch = "riscv32")]
 pub(crate) fn configure_phy_txiq_coefficient(
-    registers: &mut RadioRegisters,
+    registers: &mut PhyHal,
     kind: crate::phy_txiq::PhyTxIqCoefficientKind,
     value: i8,
 ) {
@@ -297,7 +293,7 @@ pub(crate) fn configure_phy_txiq_coefficient(
 /// Publish one bounded RX-IQ gain or phase coefficient.
 #[cfg(target_arch = "riscv32")]
 pub(crate) fn configure_phy_rxiq_coefficient(
-    registers: &mut RadioRegisters,
+    registers: &mut PhyHal,
     kind: crate::phy_rxiq::PhyRxIqCoefficientKind,
     value: i8,
 ) {
@@ -313,7 +309,7 @@ pub(crate) fn configure_phy_rxiq_coefficient(
 
 /// Select the finite correction path at entry to ROM `phy_rfcal_rxiq`.
 #[cfg(target_arch = "riscv32")]
-pub(crate) fn configure_phy_rxiq_calibration_mode(registers: &mut RadioRegisters) {
+pub(crate) fn configure_phy_rxiq_calibration_mode(registers: &mut PhyHal) {
     registers.configure_rx_iq_calibration_mode();
 }
 
@@ -323,7 +319,7 @@ pub(crate) fn configure_phy_rxiq_calibration_mode(registers: &mut RadioRegisters
 /// This leaf preserves the following two fresh-read writes to the generated
 /// PAC `ADC_RATE_AND_FRONT_END_CONTROL` identity.
 #[cfg(target_arch = "riscv32")]
-pub(crate) fn configure_phy_adc_rate(registers: &mut RadioRegisters, rate: u32) {
+pub(crate) fn configure_phy_adc_rate(registers: &mut PhyHal, rate: u32) {
     registers.configure_adc_rate(rate);
 }
 
@@ -334,7 +330,7 @@ pub(crate) fn configure_phy_adc_rate(registers: &mut RadioRegisters, rate: u32) 
 /// repeated fresh-read writes to the same register. There is no wait, delay,
 /// loop, callback, or mutable software-state access.
 #[cfg(target_arch = "riscv32")]
-pub(crate) fn configure_phy_front_end_registers(registers: &mut RadioRegisters) {
+pub(crate) fn configure_phy_front_end_registers(registers: &mut PhyHal) {
     open_esp_radio_esp32s31_hal::phy_baseband::initialize_front_end(registers);
 }
 
@@ -346,19 +342,19 @@ pub(crate) fn configure_phy_front_end_registers(registers: &mut RadioRegisters) 
 /// tail-call to `phy_dac_scale_set`. There is no loop, delay, callback, or
 /// mutable software-state access.
 #[cfg(target_arch = "riscv32")]
-pub(crate) fn configure_phy_front_end_update(registers: &mut RadioRegisters) {
+pub(crate) fn configure_phy_front_end_update(registers: &mut PhyHal) {
     open_esp_radio_esp32s31_hal::phy_baseband::update_front_end(registers);
 }
 
 /// Arm one PWDET tone sample before the async one-microsecond timer edge.
 #[cfg(target_arch = "riscv32")]
-pub(crate) fn arm_phy_power_detector_tone(registers: &mut RadioRegisters) {
+pub(crate) fn arm_phy_power_detector_tone(registers: &mut PhyHal) {
     registers.set_power_detector_tone_armed(true);
 }
 
 /// Clear the temporary tone-arm bit selected by former `phy_param[0x1aa]`.
 #[cfg(target_arch = "riscv32")]
-pub(crate) fn clear_phy_power_detector_tone_arm(registers: &mut RadioRegisters) {
+pub(crate) fn clear_phy_power_detector_tone_arm(registers: &mut PhyHal) {
     registers.set_power_detector_tone_armed(false);
 }
 
@@ -368,32 +364,32 @@ pub(crate) fn clear_phy_power_detector_tone_arm(registers: &mut RadioRegisters) 
 /// is an unconditional cleanup leaf with no wait, branch, callback, or
 /// software-global access.
 #[cfg(target_arch = "riscv32")]
-pub(crate) fn stop_phy_power_detector_tone(registers: &mut RadioRegisters) {
+pub(crate) fn stop_phy_power_detector_tone(registers: &mut PhyHal) {
     registers.stop_power_detector_tone();
 }
 
 /// Trigger one TX-DC comparator measurement using the three fresh-read writes
 /// at rev0 ROM `phy_txdc_cal+0x9c..=0xbe`.
 #[cfg(target_arch = "riscv32")]
-pub(crate) fn trigger_phy_tx_dc_measurement(registers: &mut RadioRegisters) {
+pub(crate) fn trigger_phy_tx_dc_measurement(registers: &mut PhyHal) {
     registers.trigger_tx_dc_measurement();
 }
 
 /// Read one TX-DC readiness sample. Repetition remains an executor decision.
 #[cfg(target_arch = "riscv32")]
-pub(crate) fn read_phy_tx_dc_ready_status(registers: &mut RadioRegisters) -> bool {
+pub(crate) fn read_phy_tx_dc_ready_status(registers: &mut PhyHal) -> bool {
     registers.tx_dc_measurement_is_ready()
 }
 
 /// Preserve the two independent post-ready comparator reads from the ROM.
 #[cfg(target_arch = "riscv32")]
-pub(crate) fn read_phy_tx_dc_comparator_status(registers: &mut RadioRegisters) -> [bool; 2] {
+pub(crate) fn read_phy_tx_dc_comparator_status(registers: &mut PhyHal) -> [bool; 2] {
     registers.sample_tx_dc_comparators()
 }
 
 /// Clear the TX-DC measurement controls as two fresh-read writes.
 #[cfg(target_arch = "riscv32")]
-pub(crate) fn clear_phy_tx_dc_measurement(registers: &mut RadioRegisters) {
+pub(crate) fn clear_phy_tx_dc_measurement(registers: &mut PhyHal) {
     registers.clear_tx_dc_measurement();
 }
 
@@ -417,13 +413,40 @@ pub(crate) fn clear_phy_tx_dc_measurement(registers: &mut RadioRegisters) {
 /// allocation, wait, indirect call, hidden state, raw pointer, or
 /// hardware-dependent loop exit.
 #[cfg(target_arch = "riscv32")]
-pub(crate) fn publish_phy_tx_gain_memory(
-    registers: &mut RadioRegisters,
+trait PhyGainMemory {
+    fn table_memory_base_index(&self) -> u8;
+    fn program_gain_memory_entry(&mut self, words: [u32; 3], index: u8);
+}
+
+#[cfg(target_arch = "riscv32")]
+impl PhyGainMemory for PhyHal {
+    fn table_memory_base_index(&self) -> u8 {
+        open_esp_radio_esp32s31_hal::phy_memory::read_table_memory_base_index(self)
+    }
+
+    fn program_gain_memory_entry(&mut self, words: [u32; 3], index: u8) {
+        open_esp_radio_esp32s31_hal::phy_memory::program_gain_memory_entry(self, words, index);
+    }
+}
+
+#[cfg(target_arch = "riscv32")]
+impl<P> PhyGainMemory for RadioChannelHal<'_, P> {
+    fn table_memory_base_index(&self) -> u8 {
+        self.table_memory_base_index()
+    }
+
+    fn program_gain_memory_entry(&mut self, words: [u32; 3], index: u8) {
+        self.program_gain_memory_entry(words, index);
+    }
+}
+
+#[cfg(target_arch = "riscv32")]
+fn publish_phy_tx_gain_memory_to(
+    registers: &mut impl PhyGainMemory,
     bank: bool,
     image: crate::phy_channel::PhyWifiTxGainImage,
 ) {
-    let hardware_base =
-        open_esp_radio_esp32s31_hal::phy_memory::read_table_memory_base_index(registers);
+    let hardware_base = registers.table_memory_base_index();
     let memory_base = hardware_base.wrapping_add(if bank { 32 } else { 0 });
     let mut entry = 0_u8;
     while entry != 32 {
@@ -436,20 +459,37 @@ pub(crate) fn publish_phy_tx_gain_memory(
             gain_72,
             gain_64,
             gain_32,
-            tx_gain_seed_halfword(&image, seed_index),
-            tx_gain_seed_halfword(&image, seed_index + 1),
-            tx_gain_seed_halfword(&image, seed_index + 2),
-            tx_gain_seed_halfword(&image, seed_index + 3),
+            [
+                tx_gain_seed_halfword(&image, seed_index),
+                tx_gain_seed_halfword(&image, seed_index + 1),
+                tx_gain_seed_halfword(&image, seed_index + 2),
+                tx_gain_seed_halfword(&image, seed_index + 3),
+            ],
             image.config,
         );
 
-        open_esp_radio_esp32s31_hal::phy_memory::program_gain_memory_entry(
-            registers,
-            [word_0, word_1, word_2],
-            memory_base.wrapping_add(entry),
-        );
+        registers
+            .program_gain_memory_entry([word_0, word_1, word_2], memory_base.wrapping_add(entry));
         entry += 1;
     }
+}
+
+#[cfg(target_arch = "riscv32")]
+pub(crate) fn publish_phy_tx_gain_memory(
+    registers: &mut PhyHal,
+    bank: bool,
+    image: crate::phy_channel::PhyWifiTxGainImage,
+) {
+    publish_phy_tx_gain_memory_to(registers, bank, image);
+}
+
+#[cfg(target_arch = "riscv32")]
+pub(crate) fn publish_phy_tx_gain_memory_channel<P>(
+    channel: &mut RadioChannelHal<'_, P>,
+    bank: bool,
+    image: crate::phy_channel::PhyWifiTxGainImage,
+) {
+    publish_phy_tx_gain_memory_to(channel, bank, image);
 }
 
 /// Publish the 16-entry Bluetooth bank produced by
@@ -458,7 +498,7 @@ pub(crate) fn publish_phy_tx_gain_memory(
 /// explicitly Bluetooth-owned.
 #[cfg(target_arch = "riscv32")]
 pub(crate) fn publish_bluetooth_tx_gain_memory(
-    registers: &mut RadioRegisters,
+    registers: &mut PhyHal,
     image: crate::phy_bluetooth::PhyBluetoothTxGainImage,
 ) {
     let hardware_base =
@@ -475,10 +515,12 @@ pub(crate) fn publish_bluetooth_tx_gain_memory(
             gain_72,
             gain_64,
             gain_32,
-            bluetooth_tx_gain_seed_halfword(&image, seed_index),
-            bluetooth_tx_gain_seed_halfword(&image, seed_index + 1),
-            bluetooth_tx_gain_seed_halfword(&image, seed_index + 2),
-            bluetooth_tx_gain_seed_halfword(&image, seed_index + 3),
+            [
+                bluetooth_tx_gain_seed_halfword(&image, seed_index),
+                bluetooth_tx_gain_seed_halfword(&image, seed_index + 1),
+                bluetooth_tx_gain_seed_halfword(&image, seed_index + 2),
+                bluetooth_tx_gain_seed_halfword(&image, seed_index + 3),
+            ],
             image.config,
         );
         open_esp_radio_esp32s31_hal::phy_memory::program_gain_memory_entry(
@@ -510,12 +552,16 @@ mod tests {
     #[test]
     fn phy_gain_words_match_the_complete_vendor_transform() {
         assert_eq!(
-            encode_phy_gain_memory_words(0, 0, 0, 0, 0, 0, 0, 0),
+            encode_phy_gain_memory_words(0, 0, 0, [0; 4], 0),
             (0, 0x1000_0000, 0x0000_7f80)
         );
         assert_eq!(
             encode_phy_gain_memory_words(
-                0x0007, 0x00bf, 0xa5, 0x1234, 0x5678, 0x9abc, 0xdef0, 0xffff,
+                0x0007,
+                0x00bf,
+                0xa5,
+                [0x1234, 0x5678, 0x9abc, 0xdef0],
+                0xffff,
             ),
             (0xbfde_1fff, 0x93f6_3f3c, 0x0052_ff83)
         );

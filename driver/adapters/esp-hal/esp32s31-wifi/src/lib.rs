@@ -31,7 +31,7 @@ use open_esp_radio_esp32s31_phy::PhyTxTargetPowerProfile;
 use open_esp_radio_esp32s31_wifi::mac_start::Esp32s31WifiMacPlatform;
 use open_esp_radio_esp32s31_wifi_mac::init::{
     MacClockControl, MacCoexEvent, MacCoexPti, MacCoexPtiSource, MacDelayEntropy,
-    MacSlowClockCalibrationSource, MacTxPowerPair, MacTxPowerSource,
+    MacSlowClockCalibration, MacSlowClockCalibrationSource, MacTxPowerPair, MacTxPowerSource,
 };
 
 pub mod mac_interrupt_epoch;
@@ -729,12 +729,12 @@ impl MacDelayEntropy for EspHalRadioPeripheral {
 }
 
 impl MacSlowClockCalibrationSource for EspHalRadioPeripheral {
-    fn mac_slow_clock_calibration(&mut self) -> u32 {
+    fn mac_slow_clock_calibration(&mut self) -> MacSlowClockCalibration {
         // SOURCE: the S31 esp-hal radio adapter installs slowclk_cal_get in
-        // its OSI table and currently returns zero with an explicit TODO. Keep
-        // that behavior visible here; a future real calibration belongs behind
-        // this platform trait.
-        0
+        // its OSI table and currently returns an unimplemented zero placeholder.
+        // Keep that absence visible here; a future real calibration belongs behind
+        // this platform trait and must return `Calibrated` with provenance.
+        MacSlowClockCalibration::Unavailable
     }
 }
 

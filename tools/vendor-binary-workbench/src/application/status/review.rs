@@ -6,8 +6,8 @@ use crate::application::ProjectContext;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct ScopeGate {
     publication_count: usize,
-    replacement_qualified: usize,
-    replacement_blocked: usize,
+    replacement_coverage_complete: usize,
+    replacement_coverage_gaps: usize,
     analysis_inventory_blocked: usize,
 }
 
@@ -15,15 +15,15 @@ fn scope_gate(states: impl IntoIterator<Item = (bool, bool, bool)>) -> ScopeGate
     states.into_iter().fold(
         ScopeGate {
             publication_count: 0,
-            replacement_qualified: 0,
-            replacement_blocked: 0,
+            replacement_coverage_complete: 0,
+            replacement_coverage_gaps: 0,
             analysis_inventory_blocked: 0,
         },
-        |mut gate, (publication, qualified, inventory_complete)| {
+        |mut gate, (publication, coverage_complete, inventory_complete)| {
             if publication {
                 gate.publication_count += 1;
-                gate.replacement_qualified += usize::from(qualified);
-                gate.replacement_blocked += usize::from(!qualified);
+                gate.replacement_coverage_complete += usize::from(coverage_complete);
+                gate.replacement_coverage_gaps += usize::from(!coverage_complete);
             }
             gate.analysis_inventory_blocked += usize::from(!inventory_complete);
             gate
@@ -70,8 +70,8 @@ fn scopes(context: &ProjectContext<'_>) -> Component {
             let gate = scope_gate(reports.iter().map(|report| {
                 (
                     report.publication,
-                    report.replacement_qualification
-                        == crate::review_scopes::ReplacementQualification::Qualified,
+                    report.replacement_coverage
+                        == crate::review_scopes::ReplacementCoverage::Complete,
                     report.analysis_inventory_complete,
                 )
             }));
@@ -90,12 +90,9 @@ fn scopes(context: &ProjectContext<'_>) -> Component {
                 .map(|report| ReviewScopeDetail {
                     id: report.id.clone(),
                     publication: report.publication,
-                    replacement_qualification: match report.replacement_qualification {
-                        crate::review_scopes::ReplacementQualification::NotPublished => {
-                            "not-published"
-                        }
-                        crate::review_scopes::ReplacementQualification::Qualified => "qualified",
-                        crate::review_scopes::ReplacementQualification::Blocked => "blocked",
+                    replacement_coverage: match report.replacement_coverage {
+                        crate::review_scopes::ReplacementCoverage::Complete => "complete",
+                        crate::review_scopes::ReplacementCoverage::Gaps => "gaps",
                     }
                     .to_owned(),
                     analysis_inventory_complete: report.analysis_inventory_complete,
@@ -128,30 +125,20 @@ fn scopes(context: &ProjectContext<'_>) -> Component {
                     replacement_uncovered: report.replacement_uncovered,
                 })
                 .collect::<Vec<_>>();
-            let mut component = Component::new(
-                "scopes",
-                if gate.replacement_blocked != 0 {
-                    Readiness::Incomplete
-                } else {
-                    Readiness::Ready
-                },
-            )
-            .detail("report", workspace.output.display().to_string())
-            .detail("count", reports.len())
-            .detail("publication_count", gate.publication_count)
-            .detail("replacement_qualified", gate.replacement_qualified)
-            .detail("replacement_blocked", gate.replacement_blocked)
-            .detail(
-                "analysis_inventory_blocked",
-                gate.analysis_inventory_blocked,
-            )
-            .detail("scopes", details);
-            if gate.replacement_blocked != 0 {
-                component = component.next_action(
-                    "qualify production replacements for the explicit roots of the blocked publication scopes",
-                );
-            }
-            component
+            Component::new("scopes", Readiness::Ready)
+                .detail("report", workspace.output.display().to_string())
+                .detail("count", reports.len())
+                .detail("publication_count", gate.publication_count)
+                .detail(
+                    "replacement_coverage_complete",
+                    gate.replacement_coverage_complete,
+                )
+                .detail("replacement_coverage_gaps", gate.replacement_coverage_gaps)
+                .detail(
+                    "analysis_inventory_blocked",
+                    gate.analysis_inventory_blocked,
+                )
+                .detail("scopes", details)
         }
         Err(error) => Component::new("scopes", Readiness::Invalid).diagnostic(error),
     }
@@ -295,28 +282,28 @@ mod tests {
     use super::*;
 
     #[test]
-    fn artifact_inventory_blockers_do_not_gate_release_readiness() {
+    fn artifact_inventory_blockers_remain_visible_without_changing_scope_selection() {
         let gate = scope_gate([
             (false, false, false),
             (true, true, false),
             (false, false, false),
         ]);
         assert_eq!(gate.publication_count, 1);
-        assert_eq!(gate.replacement_qualified, 1);
-        assert_eq!(gate.replacement_blocked, 0);
+        assert_eq!(gate.replacement_coverage_complete, 1);
+        assert_eq!(gate.replacement_coverage_gaps, 0);
         assert_eq!(gate.analysis_inventory_blocked, 3);
     }
 
     #[test]
-    fn release_blockers_remain_gating() {
+    fn replacement_coverage_gaps_remain_visible_as_research_debt() {
         let gate = scope_gate([
             (true, true, true),
             (true, false, false),
             (false, false, false),
         ]);
         assert_eq!(gate.publication_count, 2);
-        assert_eq!(gate.replacement_qualified, 1);
-        assert_eq!(gate.replacement_blocked, 1);
+        assert_eq!(gate.replacement_coverage_complete, 1);
+        assert_eq!(gate.replacement_coverage_gaps, 1);
         assert_eq!(gate.analysis_inventory_blocked, 2);
     }
 }

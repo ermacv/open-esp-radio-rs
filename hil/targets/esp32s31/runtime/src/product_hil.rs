@@ -103,7 +103,7 @@ pub(in crate::product_hil) enum QualificationRequester {
 
 #[derive(Clone, Copy)]
 pub(in crate::product_hil) struct QualificationSample {
-    pub rx_primary: Option<open_esp_radio::esp32s31::registers::MacRxPrimaryStatistics>,
+    pub rx_primary: Option<open_esp_radio::esp32s31::hal::wifi_mac::MacRxPrimaryStatistics>,
     pub rx_interrupt_posts: u32,
     pub tx_vector: Option<open_esp_radio_esp32s31_embassy_wifi::Esp32s31QualificationTxVector>,
 }

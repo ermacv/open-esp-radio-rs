@@ -1,0 +1,312 @@
+# Optional ESP32-S31 production comparison add-on. Generic analysis and PAC
+# publication do not require this file or its compiled provider.
+schema = 2
+id = "esp32s31-radio-verification-v1"
+provider = "esp32s31-radio-verification-v1"
+report = "generated/reports/verification.json"
+evidence-index = "evidence/vendor-evidence.json"
+policy = "verification-policy.toml"
+
+[[suites]]
+id = "phy"
+rust-artifact-role = "rust-artifact"
+rust-prefix = "open_phy_trace_"
+profiles = ["profiles/compiled-equivalence.toml"]
+dispositions = ["dispositions/phy.toml"]
+baselines = ["baselines/phy.toml"]
+gate = "regression"
+# Only production-bound whole-function and bounded-feature matches count.
+# The 51 implemented-but-unqualified PHY entries remain visible research
+# evidence and must not inflate this regression floor.
+match-floor = 56
+[[suites.vendor]]
+source = "archive"
+all = true
+[[suites.vendor]]
+source = "rom"
+prefix = "phy_"
+
+[[suites]]
+id = "libpp-interrupt"
+rust-artifact-role = "rust-artifact"
+rust-prefix = "open_libpp_trace_"
+profiles = []
+dispositions = ["dispositions/libpp-interrupt.toml"]
+baselines = ["baselines/libpp-interrupt.toml"]
+gate = "regression"
+match-floor = 1
+[[suites.vendor]]
+source = "libpp"
+all = true
+
+[[suites]]
+id = "libpp-power-interrupt"
+rust-artifact-role = "rust-artifact"
+rust-prefix = "open_libpp_power_irq_trace_"
+profiles = []
+dispositions = ["dispositions/libpp-power-interrupt.toml"]
+baselines = []
+gate = "informational"
+[[suites.vendor]]
+source = "libpp"
+all = true
+
+[[suites]]
+id = "libpp-modem-wakeup"
+rust-artifact-role = "rust-artifact"
+rust-prefix = "open_libpp_power_trace_"
+profiles = []
+dispositions = ["dispositions/libpp-modem-wakeup.toml"]
+baselines = []
+gate = "informational"
+[[suites.vendor]]
+source = "libpp"
+all = true
+
+[[suites]]
+id = "libpp-sta-tsf-wakeup"
+rust-artifact-role = "rust-artifact"
+rust-prefix = "open_libpp_power_tsf_trace_"
+profiles = ["profiles/libpp-sta-tsf-wakeup.toml"]
+dispositions = ["dispositions/libpp-sta-tsf-wakeup.toml"]
+baselines = ["baselines/libpp-sta-tsf-wakeup.toml"]
+gate = "regression"
+match-floor = 1
+[[suites.vendor]]
+source = "libpp"
+all = true
+
+[[suites]]
+id = "wifi-ap-tsf-stop"
+rust-artifact-role = "rust-artifact"
+rust-prefix = "open_libpp_ap_tsf_trace_"
+profiles = ["profiles/wifi-ap-tsf-stop.toml"]
+dispositions = ["dispositions/wifi-ap-tsf-stop.toml"]
+baselines = ["baselines/wifi-ap-tsf-stop.toml"]
+gate = "regression"
+match-floor = 1
+[[suites.vendor]]
+source = "libpp"
+symbols = ["hal_disable_softap_tsf"]
+
+[[suites]]
+id = "wifi-ap-tsf-start"
+rust-artifact-role = "rust-artifact"
+rust-prefix = "open_libpp_ap_tsf_start_trace_"
+profiles = ["profiles/wifi-ap-tsf-start.toml"]
+dispositions = ["dispositions/wifi-ap-tsf-start.toml"]
+baselines = ["baselines/wifi-ap-tsf-start.toml"]
+gate = "regression"
+match-floor = 1
+[[suites.vendor]]
+source = "libpp"
+symbols = ["hal_mac_tsf_reset"]
+
+[[suites]]
+id = "rom-sta-tsf-snapshot"
+rust-artifact-role = "rust-artifact"
+rust-prefix = "open_rom_power_tsf_trace_"
+profiles = ["profiles/rom-sta-tsf-snapshot.toml"]
+dispositions = ["dispositions/rom-sta-tsf-snapshot.toml"]
+baselines = ["baselines/rom-sta-tsf-snapshot.toml"]
+gate = "regression"
+match-floor = 1
+[[suites.vendor]]
+source = "rom"
+symbols = ["hal_get_sta_tsf"]
+
+[[suites]]
+id = "libpp-tx-dma"
+auxiliary-sources = ["libpp-replay"]
+rust-artifact-role = "rust-artifact"
+rust-prefix = "open_libpp_tx_trace_"
+profiles = ["profiles/libpp-tx-dma.toml"]
+dispositions = ["dispositions/libpp-tx-dma.toml"]
+baselines = ["baselines/libpp-tx-dma.toml"]
+gate = "regression"
+match-floor = 7
+[[suites.vendor]]
+source = "libpp"
+all = true
+
+[[suites]]
+id = "libpp-rx-dma"
+auxiliary-sources = ["libpp-replay"]
+rust-artifact-role = "rust-artifact"
+rust-prefix = "open_libpp_rx_trace_"
+profiles = []
+dispositions = ["dispositions/libpp-rx-dma.toml"]
+baselines = ["baselines/libpp-rx-dma.toml"]
+gate = "regression"
+match-floor = 1
+[[suites.vendor]]
+source = "libpp"
+all = true
+
+[[suites]]
+id = "coex-timer-control"
+rust-artifact-role = "rust-artifact"
+rust-prefix = "open_coex_trace_"
+profiles = ["profiles/coex-timer.toml"]
+dispositions = ["dispositions/coex-timer.toml"]
+baselines = ["baselines/coex-timer.toml"]
+gate = "regression"
+match-floor = 4
+[[suites.vendor]]
+source = "coex"
+symbols = [
+    "coex_hw_timer_enable",
+    "coex_hw_timer_disable",
+    "coex_hw_timer_force",
+    "coex_hw_timer_unforce",
+]
+
+[[suites]]
+id = "btbb-coex-pti"
+rust-artifact-role = "rust-artifact"
+rust-prefix = "open_btbb_coex_trace_"
+profiles = ["profiles/btbb-coex-pti.toml"]
+dispositions = ["dispositions/btbb-coex-pti.toml"]
+baselines = ["baselines/btbb-coex-pti.toml"]
+gate = "regression"
+match-floor = 1
+[[suites.vendor]]
+source = "btbb"
+symbols = ["coex_pti_v2"]
+
+[[suites]]
+id = "coex-scheduler"
+rust-artifact-role = "rust-artifact"
+rust-prefix = "open_coex_scheduler_trace_"
+profiles = ["profiles/coex-scheduler.toml"]
+dispositions = ["dispositions/coex-scheduler.toml"]
+baselines = ["baselines/coex-scheduler.toml"]
+gate = "regression"
+match-floor = 4
+[[suites.vendor]]
+source = "coex"
+symbols = [
+    "coex_schm_interval_set",
+    "coex_schm_interval_get",
+    "coex_schm_curr_period_get",
+    "coex_schm_curr_phase_get",
+]
+
+[[suites]]
+id = "coex-timer-set"
+rust-artifact-role = "rust-artifact"
+rust-prefix = "open_coex_set_trace_"
+profiles = ["profiles/coex-timer-set.toml"]
+dispositions = ["dispositions/coex-timer-set.toml"]
+baselines = ["baselines/coex-timer-set.toml"]
+gate = "completion"
+[[suites.vendor]]
+source = "coex"
+symbols = ["coex_hw_timer_set"]
+
+[[suites]]
+id = "coex-core"
+rust-artifact-role = "rust-artifact"
+rust-prefix = "open_coex_core_trace_"
+profiles = [
+    "profiles/coex-core.toml",
+    "profiles/coex-core-duration.toml",
+    "profiles/coex-core-timer.toml",
+]
+dispositions = ["dispositions/coex-core.toml"]
+baselines = ["baselines/coex-core.toml"]
+gate = "regression"
+# Three additional functions have implementations but no qualifying binding;
+# only the one whole-function and one bounded-feature match count here.
+match-floor = 2
+[[suites.vendor]]
+source = "coex"
+symbols = [
+    "coex_core_pti_get",
+    "coex_core_event_duration_get",
+    "coex_core_timer_idx_get",
+    "coex_core_request",
+    "coex_core_release",
+]
+
+[[suites]]
+id = "wifi-coex-runtime"
+rust-artifact-role = "rust-artifact"
+rust-prefix = "open_libpp_coex_trace_"
+profiles = ["profiles/wifi-coex-runtime.toml"]
+dispositions = ["dispositions/wifi-coex-runtime.toml"]
+baselines = ["baselines/wifi-coex-runtime.toml"]
+gate = "regression"
+match-floor = 5
+[[suites.vendor]]
+source = "libpp"
+symbols = [
+    "hal_set_rx_beacon_pti",
+    "hal_clear_rx_beacon_pti",
+    "hal_set_itwt_pti",
+    "hal_clr_itwt_pti",
+    "hal_set_tx_pti",
+]
+
+[[suites]]
+id = "wifi-interface-context"
+rust-artifact-role = "rust-artifact"
+rust-prefix = "open_libpp_interface_trace_"
+profiles = ["profiles/wifi-interface-context.toml"]
+dispositions = ["dispositions/wifi-interface-context.toml"]
+baselines = ["baselines/wifi-interface-context.toml"]
+gate = "regression"
+match-floor = 2
+[[suites.vendor]]
+source = "libpp"
+symbols = ["hal_mac_set_addr", "hal_mac_set_bssid"]
+
+[[suites]]
+id = "wifi-sta-ap-receive"
+rust-artifact-role = "rust-artifact:wifi-registers"
+rust-prefix = "open_wifi_sta_ap_trace_"
+profiles = ["profiles/wifi-sta-ap-receive.toml"]
+dispositions = ["dispositions/wifi-sta-ap-receive.toml"]
+baselines = ["baselines/wifi-sta-ap-receive.toml"]
+gate = "completion"
+[[suites.vendor]]
+source = "wifi-sta-ap-receive"
+symbols = ["wifi_set_rx_policy"]
+
+[[suites]]
+id = "libnet80211-sta-join"
+rust-artifact-role = "rust-artifact"
+rust-prefix = "open_libnet80211_trace_"
+profiles = []
+auxiliary-sources = ["wifi-key-role"]
+dispositions = ["dispositions/libnet80211-sta-join.toml"]
+baselines = ["baselines/libnet80211-sta-join.toml"]
+gate = "completion"
+[[suites.vendor]]
+source = "libnet80211"
+symbols = ["ieee80211_sta_new_state"]
+
+[[suites]]
+id = "wifi-sta-beacon-filter"
+rust-artifact-role = "rust-artifact"
+rust-prefix = "open_wifi_sta_trace_"
+profiles = ["profiles/wifi-sta-beacon-filter.toml"]
+dispositions = ["dispositions/wifi-sta-beacon-filter.toml"]
+baselines = ["baselines/wifi-sta-beacon-filter.toml"]
+gate = "regression"
+match-floor = 1
+[[suites.vendor]]
+source = "wifi-sta-lifecycle"
+symbols = ["hal_disable_sta_beacon_filter"]
+
+[[suites]]
+id = "wifi-key-role"
+rust-artifact-role = "rust-artifact"
+rust-prefix = "open_wifi_key_role_trace_"
+profiles = []
+dispositions = ["dispositions/wifi-key-role.toml"]
+baselines = ["baselines/wifi-key-role.toml"]
+gate = "completion"
+[[suites.vendor]]
+source = "wifi-key-role"
+symbols = ["wDev_Insert_KeyEntry"]

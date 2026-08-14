@@ -2005,7 +2005,6 @@ dependencies = [
  "embassy-futures",
  "embassy-sync 0.8.0",
  "open-esp-radio-esp32s31-hal",
- "open-esp-radio-esp32s31-pac",
  "open-esp-radio-esp32s31-phy",
  "open-esp-radio-esp32s31-wifi",
  "open-esp-radio-esp32s31-wifi-ap",
@@ -2055,6 +2054,7 @@ name = "open-esp-radio-esp32s31-hal"
 version = "0.1.0"
 dependencies = [
  "critical-section",
+ "open-esp-radio-dma",
  "open-esp-radio-esp32s31-coex",
  "open-esp-radio-esp32s31-pac",
 ]
@@ -2087,7 +2087,6 @@ name = "open-esp-radio-esp32s31-wifi"
 version = "0.1.0"
 dependencies = [
  "open-esp-radio-esp32s31-hal",
- "open-esp-radio-esp32s31-pac",
  "open-esp-radio-esp32s31-phy",
  "open-esp-radio-esp32s31-wifi-mac",
  "open-esp-radio-ieee80211",
@@ -2098,7 +2097,7 @@ dependencies = [
 name = "open-esp-radio-esp32s31-wifi-ap"
 version = "0.1.0"
 dependencies = [
- "open-esp-radio-esp32s31-pac",
+ "open-esp-radio-esp32s31-hal",
  "open-esp-radio-esp32s31-phy",
  "open-esp-radio-esp32s31-wifi",
  "open-esp-radio-esp32s31-wifi-mac",
@@ -2113,7 +2112,7 @@ name = "open-esp-radio-esp32s31-wifi-dma"
 version = "0.1.0"
 dependencies = [
  "open-esp-radio-dma",
- "open-esp-radio-esp32s31-pac",
+ "open-esp-radio-esp32s31-hal",
  "pin-project",
  "vcell",
 ]
@@ -2128,7 +2127,6 @@ dependencies = [
  "embassy-time",
  "open-esp-radio-embassy-net",
  "open-esp-radio-esp32s31-hal",
- "open-esp-radio-esp32s31-pac",
  "open-esp-radio-esp32s31-phy",
  "open-esp-radio-esp32s31-wifi",
  "open-esp-radio-esp32s31-wifi-ap",
@@ -2151,7 +2149,6 @@ dependencies = [
  "esp-hal",
  "open-esp-radio-esp32s31-coex",
  "open-esp-radio-esp32s31-hal",
- "open-esp-radio-esp32s31-pac",
  "open-esp-radio-esp32s31-phy",
  "open-esp-radio-esp32s31-wifi",
  "open-esp-radio-esp32s31-wifi-mac",
@@ -2163,7 +2160,6 @@ version = "0.1.0"
 dependencies = [
  "open-esp-radio-dma",
  "open-esp-radio-esp32s31-hal",
- "open-esp-radio-esp32s31-pac",
  "open-esp-radio-esp32s31-wifi-dma",
  "open-esp-radio-ieee80211",
  "open-esp-radio-wifi-softmac",
@@ -2175,7 +2171,6 @@ name = "open-esp-radio-esp32s31-wifi-sta"
 version = "0.1.0"
 dependencies = [
  "open-esp-radio-esp32s31-hal",
- "open-esp-radio-esp32s31-pac",
  "open-esp-radio-esp32s31-phy",
  "open-esp-radio-esp32s31-wifi",
  "open-esp-radio-esp32s31-wifi-mac",
@@ -2238,6 +2233,8 @@ name = "open-esp-radio-qualification-check"
 version = "0.1.0"
 dependencies = [
  "serde",
+ "serde_json",
+ "sha2",
  "toml_edit",
 ]
 
@@ -2245,6 +2242,7 @@ dependencies = [
 name = "open-esp-radio-register-model"
 version = "0.1.0"
 dependencies = [
+ "open-radio-vendor-contracts",
  "serde",
  "svd-encoder",
  "svd-parser",
@@ -2364,6 +2362,9 @@ dependencies = [
 [[package]]
 name = "open-radio-vendor-contracts"
 version = "0.1.0"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "open-radio-vendor-execution-model"
@@ -2381,19 +2382,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "open-radio-vendor-harness-esp32s31-semantic"
+name = "open-radio-vendor-knowledge-esp32s31"
 version = "0.1.0"
 dependencies = [
- "open-esp-radio-esp32s31-phy",
- "open-esp-radio-esp32s31-wifi-mac",
- "open-esp-radio-ieee80211",
  "open-radio-vendor-backend-riscv",
  "open-radio-vendor-execution-model",
  "open-radio-vendor-harness-esp32s31",
  "open-radio-vendor-semantics",
- "serde",
- "sha2",
- "thiserror 2.0.19",
 ]
 
 [[package]]
@@ -2407,12 +2402,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "open-radio-vendor-verification-esp32s31"
+version = "0.1.0"
+dependencies = [
+ "open-esp-radio-esp32s31-phy",
+ "open-esp-radio-esp32s31-wifi-mac",
+ "open-esp-radio-ieee80211",
+ "open-radio-vendor-backend-riscv",
+ "open-radio-vendor-execution-model",
+ "open-radio-vendor-harness-esp32s31",
+ "open-radio-vendor-knowledge-esp32s31",
+ "open-radio-vendor-semantics",
+ "serde",
+ "sha2",
+ "thiserror 2.0.19",
+]
+
+[[package]]
 name = "open-radio-vendor-workbench-esp32s31-host"
 version = "0.1.0"
 dependencies = [
  "open-radio-vendor-binary-workbench",
- "open-radio-vendor-harness-esp32s31-semantic",
+ "open-radio-vendor-knowledge-esp32s31",
+ "open-radio-vendor-verification-esp32s31",
  "serde_json",
+ "toml_edit",
 ]
 
 [[package]]

@@ -3,8 +3,7 @@
 #![forbid(unsafe_code)]
 
 use open_esp_radio_embassy_net::RawMutex;
-use open_esp_radio_esp32s31_hal::RadioRegisters;
-use open_esp_radio_esp32s31_pac::MacInterruptSetup;
+use open_esp_radio_esp32s31_hal::{MacInterruptSetup, RadioRuntimeOwner};
 use open_esp_radio_esp32s31_phy::{PhyAsyncDelay, PhyTargetObserver, PhyTargetPortError};
 use open_esp_radio_esp32s31_wifi::{
     mac_start::Esp32s31WifiMacStartReport,
@@ -248,7 +247,7 @@ struct Esp32s31MonitorOwner<
     service: Esp32s31MonitorService<
         'static,
         'runtime,
-        RadioRegisters,
+        RadioRuntimeOwner,
         R,
         M,
         S,
@@ -418,11 +417,11 @@ where
 {
     let cold_interrupt_mask = wifi.transition_report().cold_interrupt_mask;
     let receive = {
-        let (registers, _) = wifi.radio_mut();
-        activate_promiscuous_receive(registers);
+        let (mut registers, _) = wifi.radio_mut();
+        activate_promiscuous_receive(&mut registers);
         Esp32s31MonitorRx::prepare_initial(
             plan,
-            registers,
+            &mut registers,
             resources.dma.storage,
             resources.dma.descriptor_base,
             resources.dma.buffer_addresses,

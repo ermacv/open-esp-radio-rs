@@ -1,21 +1,19 @@
 //! Architecture-neutral semantic verification interfaces.
 //!
 //! The workbench facade dispatches these requests to an explicitly selected
-//! platform harness. Implementations may bind a production driver, while the
+//! verification provider. Implementations may bind a production driver, while the
 //! interface itself contains no chip registry or driver dependency.
 
-mod driver_plan;
 mod effect_contract;
 mod equivalence;
-mod qualification;
+mod semantic_verification;
 
 use std::path::Path;
 
-pub use driver_plan::*;
 pub use effect_contract::*;
 pub use equivalence::*;
 pub use open_radio_vendor_analysis_model::*;
-pub use qualification::*;
+pub use semantic_verification::*;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -135,7 +133,9 @@ impl VendorOracleKind {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum RustBindingKind {
-    GeneratedTransaction,
+    /// Generated research/static-evidence entry. This is never production
+    /// driver code and cannot by itself establish a production binding.
+    GeneratedReference,
     ExactProductionEntry,
     SharedProductionCore,
     VerificationProjection,
@@ -144,7 +144,7 @@ pub enum RustBindingKind {
 impl RustBindingKind {
     pub const fn label(self) -> &'static str {
         match self {
-            Self::GeneratedTransaction => "generated-transaction",
+            Self::GeneratedReference => "generated-reference",
             Self::ExactProductionEntry => "exact-production-entry",
             Self::SharedProductionCore => "shared-production-core",
             Self::VerificationProjection => "verification-projection",
@@ -209,21 +209,19 @@ impl DriverAdapterTrust {
         match (self.vendor, self.rust, self.domain, self.relation) {
             (
                 Vendor::ConcreteReplay,
-                Rust::GeneratedTransaction | Rust::ExactProductionEntry,
+                Rust::GeneratedReference | Rust::ExactProductionEntry,
                 Domain::WholeFunction,
                 Relation::Exact,
             ) => Claim::WholeFunctionEquivalence,
             (
                 Vendor::ConcreteReplay,
-                Rust::GeneratedTransaction | Rust::ExactProductionEntry,
+                Rust::GeneratedReference | Rust::ExactProductionEntry,
                 Domain::ReviewedDomain,
                 Relation::Exact,
             ) => Claim::ReviewedDomainEquivalence,
             (
                 Vendor::ConcreteReplay,
-                Rust::GeneratedTransaction
-                | Rust::ExactProductionEntry
-                | Rust::SharedProductionCore,
+                Rust::GeneratedReference | Rust::ExactProductionEntry | Rust::SharedProductionCore,
                 _,
                 Relation::Exact | Relation::Refinement,
             ) => Claim::ReviewedRefinement,

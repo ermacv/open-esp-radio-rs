@@ -16,7 +16,7 @@ pub(crate) const REVIEW_SCOPES_SCHEMA: u32 = 10;
 
 mod model;
 pub(crate) use model::{
-    ReplacementQualification, ReviewScopeEffect, ReviewScopeMmio, ReviewScopeReport,
+    ReplacementCoverage, ReviewScopeEffect, ReviewScopeMmio, ReviewScopeReport,
     ReviewScopeTransaction, ReviewScopesDocument,
 };
 use model::{StoredReplacement, VerificationDocument};
@@ -135,6 +135,25 @@ pub(crate) fn load(path: &std::path::Path) -> Result<ReviewScopesDocument> {
 }
 
 pub(crate) fn load_for_project(project: &ProjectSpec) -> Result<ReviewScopesDocument> {
+    let mut document = load_structural_for_project(project)?;
+    let replacements = load_replacements(project)?;
+    let policy_exclusions = crate::verification::policy::required_scope_policy_exclusions(project)?;
+    let no_policy_exclusions = BTreeSet::new();
+    for scope in &mut document.scopes {
+        let scope_policy_exclusions = policy_exclusions
+            .get(&scope.id)
+            .unwrap_or(&no_policy_exclusions);
+        apply_replacement_assurance(scope, &replacements, scope_policy_exclusions)?;
+    }
+    Ok(document)
+}
+
+/// Load only analysis-owned scope membership and MMIO facts.
+///
+/// Register publication deliberately does not join verification add-on state:
+/// reviewed PAC generation remains available when verification is absent or
+/// its reports need regeneration.
+pub(crate) fn load_structural_for_project(project: &ProjectSpec) -> Result<ReviewScopesDocument> {
     let workspace = project
         .review
         .as_ref()
@@ -149,25 +168,17 @@ pub(crate) fn load_for_project(project: &ProjectSpec) -> Result<ReviewScopesDocu
     let actual = document
         .scopes
         .iter()
-        .map(|scope| {
-            (
-                scope.id.as_str(),
-                scope.profiles.as_slice(),
-                scope.publication,
-            )
-        })
+        .map(|scope| (scope.id.as_str(), scope.profiles.as_slice()))
         .collect::<Vec<_>>();
-    let publication_scopes = publication_scopes(project, workspace)?;
+    let publication_scopes = workspace
+        .publication_scopes
+        .iter()
+        .cloned()
+        .collect::<BTreeSet<_>>();
     let expected = workspace
         .scopes
         .iter()
-        .map(|scope| {
-            (
-                scope.id.as_str(),
-                scope.profiles.as_slice(),
-                publication_scopes.contains(&scope.id),
-            )
-        })
+        .map(|scope| (scope.id.as_str(), scope.profiles.as_slice()))
         .collect::<Vec<_>>();
     if actual != expected {
         return Err(crate::Error::invalid(format!(
@@ -175,14 +186,8 @@ pub(crate) fn load_for_project(project: &ProjectSpec) -> Result<ReviewScopesDocu
             workspace.output.display()
         )));
     }
-    let replacements = load_replacements(project)?;
-    let policy_exclusions = crate::qualification::required_scope_policy_exclusions(project)?;
-    let no_policy_exclusions = BTreeSet::new();
     for scope in &mut document.scopes {
-        let scope_policy_exclusions = policy_exclusions
-            .get(&scope.id)
-            .unwrap_or(&no_policy_exclusions);
-        apply_replacement_assurance(scope, &replacements, scope_policy_exclusions)?;
+        scope.publication = publication_scopes.contains(&scope.id);
     }
     Ok(document)
 }
@@ -196,7 +201,9 @@ fn publication_scopes(
         .iter()
         .cloned()
         .collect::<BTreeSet<_>>();
-    scopes.extend(crate::qualification::required_review_scopes(project)?);
+    scopes.extend(crate::verification::policy::required_review_scopes(
+        project,
+    )?);
     Ok(scopes)
 }
 
@@ -391,7 +398,7 @@ fn analyze_scope(
     let mut report = ReviewScopeReport {
         id: scope.id.clone(),
         publication,
-        replacement_qualification: ReplacementQualification::NotPublished,
+        replacement_coverage: ReplacementCoverage::Gaps,
         analysis_inventory_complete: false,
         profiles: scope.profiles.clone(),
         roots: scope.roots.len(),
@@ -575,7 +582,7 @@ fn analyze_scope(
 fn apply_replacement_assurance(
     report: &mut ReviewScopeReport,
     replacements: &[StoredReplacement],
-    policy_exclusions: &BTreeSet<crate::qualification::RequiredPolicyExclusion>,
+    policy_exclusions: &BTreeSet<crate::verification::policy::RequiredPolicyExclusion>,
 ) -> Result<()> {
     let mut review_queue = queue::new();
     for item in std::mem::take(&mut report.review_queue) {
@@ -693,15 +700,13 @@ fn apply_replacement_assurance(
             }
         }
     }
-    report.replacement_qualification = if !report.publication {
-        ReplacementQualification::NotPublished
-    } else if report.has_replacement_qualification_blockers()
+    report.replacement_coverage = if report.has_replacement_coverage_gaps()
         || report.replacement_production_matches + report.replacement_policy_excluded
             != report.replacement_functions
     {
-        ReplacementQualification::Blocked
+        ReplacementCoverage::Gaps
     } else {
-        ReplacementQualification::Qualified
+        ReplacementCoverage::Complete
     };
     report.review_queue = queue::finish(review_queue);
     Ok(())
@@ -965,7 +970,7 @@ mod tests {
     }
 
     #[test]
-    fn reachable_effect_helper_enters_the_feature_surface_but_pure_helpers_do_not() {
+    fn reachable_effect_helper_enters_the_policy_surface_but_pure_helpers_do_not() {
         let mut root = node("vendor", "root");
         root.dependencies = vec!["vendor::pure".to_owned()];
         let mut pure = node("vendor", "pure");
@@ -1088,18 +1093,15 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(
-            report.replacement_qualification,
-            ReplacementQualification::Qualified
-        );
+        assert_eq!(report.replacement_coverage, ReplacementCoverage::Complete);
         let json = serde_json::to_value(&report).unwrap();
-        assert!(json.get("replacement_qualification").is_none());
+        assert!(json.get("replacement_coverage").is_none());
         assert!(json.get("replacement_production_matches").is_none());
         assert!(json["review_queue"].as_array().unwrap().is_empty());
     }
 
     #[test]
-    fn exact_required_feature_policy_exclusion_closes_replacement_boundary() {
+    fn exact_verification_policy_exclusion_closes_replacement_boundary() {
         let nodes = BTreeMap::from([("vendor::root".to_owned(), node("vendor", "root"))]);
         let scope = ReviewScopeSpec {
             id: "feature".to_owned(),
@@ -1117,7 +1119,7 @@ mod tests {
             paths: vec![vec!["vendor::root".to_owned()]],
             effects: Vec::new(),
         });
-        let exclusions = BTreeSet::from([crate::qualification::RequiredPolicyExclusion {
+        let exclusions = BTreeSet::from([crate::verification::policy::RequiredPolicyExclusion {
             source: "vendor".to_owned(),
             symbol: "root".to_owned(),
             identity: None,
@@ -1140,14 +1142,11 @@ mod tests {
 
         assert_eq!(report.replacement_policy_excluded, 1);
         assert_eq!(report.replacement_uncovered, 0);
-        assert_eq!(
-            report.replacement_qualification,
-            ReplacementQualification::Qualified
-        );
+        assert_eq!(report.replacement_coverage, ReplacementCoverage::Complete);
     }
 
     #[test]
-    fn stale_feature_policy_exclusion_remains_uncovered() {
+    fn stale_verification_policy_exclusion_remains_uncovered() {
         let nodes = BTreeMap::from([("vendor::root".to_owned(), node("vendor", "root"))]);
         let scope = ReviewScopeSpec {
             id: "feature".to_owned(),
@@ -1165,7 +1164,7 @@ mod tests {
             paths: vec![vec!["vendor::root".to_owned()]],
             effects: Vec::new(),
         });
-        let exclusions = BTreeSet::from([crate::qualification::RequiredPolicyExclusion {
+        let exclusions = BTreeSet::from([crate::verification::policy::RequiredPolicyExclusion {
             source: "vendor".to_owned(),
             symbol: "root".to_owned(),
             identity: None,
@@ -1176,9 +1175,6 @@ mod tests {
 
         assert_eq!(report.replacement_policy_excluded, 0);
         assert_eq!(report.replacement_uncovered, 1);
-        assert_eq!(
-            report.replacement_qualification,
-            ReplacementQualification::Blocked
-        );
+        assert_eq!(report.replacement_coverage, ReplacementCoverage::Gaps);
     }
 }

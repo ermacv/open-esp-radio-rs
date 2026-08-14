@@ -40,7 +40,8 @@ pub(super) fn run(arguments: VerifySourceArgs, svd: &MmioMap, target: &TargetSpe
     let mut evidence = EvidenceSet::new();
     let source_report = verify_source(
         svd,
-        target.harness.as_deref(),
+        target.knowledge_provider.as_deref(),
+        None,
         &target.rust_target,
         source,
         &rust_artifact,
@@ -88,6 +89,9 @@ pub(super) fn run(arguments: VerifySourceArgs, svd: &MmioMap, target: &TargetSpe
     }
     let verification = verification_core_report(VerificationCoreInputs {
         target,
+        // The standalone command has architecture/chip knowledge only. It
+        // must not label that provider as a production verification add-on.
+        verification_provider: None,
         gate,
         summary: source_report.summary,
         orphan_probes,
@@ -95,7 +99,7 @@ pub(super) fn run(arguments: VerifySourceArgs, svd: &MmioMap, target: &TargetSpe
         passed,
         evidence: &evidence,
         artifacts: &artifacts,
-        qualification_gaps: &[],
+        release_gaps: &[],
     })?;
     let report = VerificationCommandReport {
         schema_version: VERIFICATION_REPORT_SCHEMA,

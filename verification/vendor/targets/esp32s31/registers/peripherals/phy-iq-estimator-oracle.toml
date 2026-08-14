@@ -164,72 +164,100 @@ sources = [
     "ROM_REV0_PHY_IQ_ESTIMATOR",
     "BLOB_LIBPHY_PHY_CHECK_RX_SAT",
 ]
-confidence = "instruction-exact-partial"
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
 
 [[review]]
 entity = "PHY_IQ_ESTIMATOR_ORACLE.ESTIMATOR_CONFIG"
 sources = ["ROM_REV0_PHY_IQ_ESTIMATOR"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_IQ_ESTIMATOR_ORACLE.ESTIMATOR_CONFIG.CONFIG_MODE_UNKNOWN"
 sources = ["ROM_REV0_PHY_IQ_ESTIMATOR"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_IQ_ESTIMATOR_ORACLE.ESTIMATOR_CONTROL"
 sources = ["ROM_REV0_PHY_IQ_ESTIMATOR"]
-confidence = "instruction-exact-partial"
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
 
 [[review]]
 entity = "PHY_IQ_ESTIMATOR_ORACLE.ESTIMATOR_CONTROL.CONTROL_WINDOW_UNKNOWN"
 sources = ["ROM_REV0_PHY_IQ_ESTIMATOR"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_IQ_ESTIMATOR_ORACLE.ESTIMATOR_CONTROL.MODE_UNKNOWN"
 sources = ["ROM_REV0_PHY_IQ_ESTIMATOR"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_IQ_ESTIMATOR_ORACLE.SIGNAL_POWER_SUM_I"
 sources = ["ROM_REV0_PHY_IQ_ESTIMATOR"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_IQ_ESTIMATOR_ORACLE.SIGNAL_POWER_DIFFERENCE_I"
 sources = ["ROM_REV0_PHY_IQ_ESTIMATOR"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_IQ_ESTIMATOR_ORACLE.SIGNAL_POWER_DIFFERENCE_Q"
 sources = ["ROM_REV0_PHY_IQ_ESTIMATOR"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_IQ_ESTIMATOR_ORACLE.SIGNAL_POWER_SUM_Q"
 sources = ["ROM_REV0_PHY_IQ_ESTIMATOR"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_IQ_ESTIMATOR_ORACLE.DC_I_ACCUMULATOR"
 sources = ["ROM_REV0_PHY_IQ_ESTIMATOR"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_IQ_ESTIMATOR_ORACLE.DC_Q_ACCUMULATOR"
 sources = ["ROM_REV0_PHY_IQ_ESTIMATOR"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_IQ_ESTIMATOR_ORACLE.POWER_ACCUMULATOR"
 sources = ["ROM_REV0_PHY_IQ_ESTIMATOR"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_IQ_ESTIMATOR_ORACLE.ESTIMATOR_READY_STATUS"
 sources = ["ROM_REV0_PHY_IQ_ESTIMATOR"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_IQ_ESTIMATOR_ORACLE.ESTIMATOR_ACTIVITY_STATUS"
@@ -237,7 +265,9 @@ sources = [
     "ROM_REV0_PHY_IQ_ESTIMATOR",
     "BLOB_LIBPHY_PHY_CHECK_RX_SAT",
 ]
-confidence = "instruction-exact-partial"
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
 
 [[review]]
 entity = "PHY_IQ_ESTIMATOR_ORACLE.ESTIMATOR_ACTIVITY_STATUS.ACTIVITY_UNKNOWN"
@@ -245,4 +275,6 @@ sources = [
     "ROM_REV0_PHY_IQ_ESTIMATOR",
     "BLOB_LIBPHY_PHY_CHECK_RX_SAT",
 ]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"

@@ -6,7 +6,7 @@
 //! uses the same field around its bounded measurement graph.
 
 #[cfg(target_arch = "riscv32")]
-use open_esp_radio_esp32s31_pac::RadioRegisters;
+use crate::{PhyAccess, phy_pac_mut};
 
 /// Capture and clear the two RX-DCO calibration-control bits.
 ///
@@ -15,7 +15,8 @@ use open_esp_radio_esp32s31_pac::RadioRegisters;
 /// value is the generated two-bit field value, with no physical register
 /// identity exposed to the caller.
 #[cfg(target_arch = "riscv32")]
-pub fn capture_and_clear_control(registers: &mut RadioRegisters) -> u8 {
+pub fn capture_and_clear_control(registers: &mut impl PhyAccess) -> u8 {
+    let registers = phy_pac_mut(registers);
     registers.capture_and_clear_rx_dco_control()
 }
 
@@ -25,6 +26,7 @@ pub fn capture_and_clear_control(registers: &mut RadioRegisters) -> u8 {
 /// only the generated field after the nested measurement, preserving every
 /// unrelated hardware bit.
 #[cfg(target_arch = "riscv32")]
-pub fn restore_control(registers: &mut RadioRegisters, saved_field: u8) {
+pub fn restore_control(registers: &mut impl PhyAccess, saved_field: u8) {
+    let registers = phy_pac_mut(registers);
     registers.restore_rx_dco_control(saved_field);
 }

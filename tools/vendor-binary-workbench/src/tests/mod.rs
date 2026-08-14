@@ -169,7 +169,7 @@ const TEST_NONE_ENTRY_SPEC: EntryContractSpec = EntryContractSpec {
     data_pointer_binding: None,
 };
 const TEST_NONE_ENTRY: EntryContractRef = EntryContractRef::new(&TEST_NONE_ENTRY_SPEC);
-const TEST_CONTRACTS: HarnessContractSpec = HarnessContractSpec {
+const TEST_CONTRACTS: KnowledgeContractSpec = KnowledgeContractSpec {
     external_call_model_sets: &[],
     entry_contracts: &[TEST_NONE_ENTRY],
     diagnostic_calls: &[],

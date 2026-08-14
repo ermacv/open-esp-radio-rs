@@ -121,7 +121,9 @@ sources = [
     "HIL_OPEN_HE_BSR_TID_LIFECYCLE_2026_07_29",
     "HIL_OPEN_HE_TB_QUEUE_PUBLICATION_2026_07_30",
 ]
-confidence = "instruction-exact-hil-qualified"
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_BUFFER_STATUS.HARDWARE_BSR%s"
@@ -129,7 +131,9 @@ sources = [
     "BLOB_LIBPP_HAL_HE_BSR_DEBUG",
     "BLOB_LIBPP_HAL_HE_BSR_STATUS",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_BUFFER_STATUS.SOFTWARE_BSR%s"
@@ -140,7 +144,9 @@ sources = [
     "ROM_REV0_MAC_TX_SET_TB",
     "HIL_OPEN_HE_TB_QUEUE_PUBLICATION_2026_07_30",
 ]
-confidence = "instruction-exact-hil-qualified"
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_BUFFER_STATUS.CONTROL"
@@ -152,4 +158,6 @@ sources = [
     "HIL_OPEN_HE_BSR_TID_LIFECYCLE_2026_07_29",
     "HIL_OPEN_HE_TB_QUEUE_PUBLICATION_2026_07_30",
 ]
-confidence = "instruction-exact-hil-qualified"
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"

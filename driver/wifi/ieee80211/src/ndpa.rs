@@ -601,7 +601,7 @@ mod tests {
         );
         assert_eq!(decoded.transmitter_address(), &RA);
         assert_eq!(decoded.sequence_number(), 10);
-        assert_eq!(decoded.mimo_control(), 0x0dc4_0082_08);
+        assert_eq!(decoded.mimo_control(), 0x000d_c400_8208);
         assert_eq!(decoded.column_count(), 1);
         assert_eq!(decoded.row_count(), 2);
         assert_eq!(decoded.bandwidth_encoding(), 0);

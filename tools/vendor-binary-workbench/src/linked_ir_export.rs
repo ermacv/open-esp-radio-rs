@@ -155,7 +155,7 @@ pub(crate) fn analyze(
         jobs,
         compact_projected_actions,
     } = request;
-    let harness = target.harness.as_deref();
+    let harness = target.knowledge_provider.as_deref();
     let riscv_harness = harnesses::riscv_or_neutral(harness)?;
     let entry_contract = harnesses::entry_contract_or_neutral(harness, entry_contract_id)?;
     validate_artifact_inputs(artifacts, companions)?;
@@ -339,7 +339,7 @@ fn register_projected_relocations(
                     origin_member: origin.member.clone(),
                     origin_symbol: origin.name.clone(),
                     origin_offsets: origin_offsets.clone(),
-                    kind: relocation.kind.clone(),
+                    kind: relocation.kind,
                     symbol: relocation.symbol.clone(),
                     addend: relocation.addend,
                     correspondence: item.kind,
@@ -454,7 +454,7 @@ pub(crate) fn load_project_interfaces(
         &paths.semantic_catalogs,
         target.calling_convention.label(),
         target
-            .harness
+            .knowledge_provider
             .as_deref()
             .map(harnesses::contracts)
             .transpose()?,

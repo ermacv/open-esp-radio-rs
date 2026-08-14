@@ -28,4 +28,6 @@ bitWidth = 24
 [[review]]
 entity = "WIFI_MAC_BEAMFORMING_REPORT"
 sources = ["BLOB_LIBPP_BFR_AVERAGE_SNR"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"

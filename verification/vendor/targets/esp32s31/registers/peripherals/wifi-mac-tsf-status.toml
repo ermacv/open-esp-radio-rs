@@ -36,14 +36,20 @@ bitWidth = 1
 [[review]]
 entity = "WIFI_MAC_TSF_STATUS"
 sources = ["BLOB_LIBPP_HAL_TSF_RUNTIME"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "WIFI_MAC_TSF_STATUS.STATUS"
 sources = ["BLOB_LIBPP_HAL_TSF_RUNTIME"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "WIFI_MAC_TSF_STATUS.WAKEUP_SIGNAL_CLEAR"
 sources = ["ROM_REV0_WIFI_RUNTIME_MMIO_GAPS"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"

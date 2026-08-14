@@ -159,7 +159,7 @@ impl PhyBluetoothTxGainPublication {
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub fn execute_target(self, registers: &mut open_esp_radio_esp32s31_hal::RadioRegisters) {
+    pub fn execute_target(self, registers: &mut open_esp_radio_esp32s31_hal::PhyHal) {
         crate::radio_hal::publish_bluetooth_tx_gain_memory(registers, self.image);
     }
 }
@@ -1081,7 +1081,7 @@ impl PhyBluetoothPbusBinding {
     #[cfg(target_arch = "riscv32")]
     pub fn start_target(
         &mut self,
-        registers: &mut open_esp_radio_esp32s31_hal::RadioRegisters,
+        registers: &mut open_esp_radio_esp32s31_hal::PhyHal,
     ) -> Result<(), crate::phy_pbus::PhyPbusHardwareBindingError> {
         self.inner.start_target(registers)
     }
@@ -1089,7 +1089,7 @@ impl PhyBluetoothPbusBinding {
     #[cfg(target_arch = "riscv32")]
     pub fn observe_target_edge(
         &mut self,
-        registers: &mut open_esp_radio_esp32s31_hal::RadioRegisters,
+        registers: &mut open_esp_radio_esp32s31_hal::PhyHal,
     ) -> Result<
         crate::phy_pbus::PhyPbusHardwareObservation,
         crate::phy_pbus::PhyPbusHardwareBindingError,
@@ -1125,7 +1125,7 @@ impl PhyBluetoothPbusReadBinding {
     #[cfg(target_arch = "riscv32")]
     pub fn execute_target(
         self,
-        registers: &mut open_esp_radio_esp32s31_hal::RadioRegisters,
+        registers: &mut open_esp_radio_esp32s31_hal::PhyHal,
     ) -> PhyBluetoothTxPowerCompletion {
         let value =
             open_esp_radio_esp32s31_hal::pbus::read_result(registers, self.selector, self.path);
@@ -1200,7 +1200,7 @@ impl PhyBluetoothTxGainPublicationBinding {
     #[cfg(target_arch = "riscv32")]
     pub fn execute_target(
         self,
-        registers: &mut open_esp_radio_esp32s31_hal::RadioRegisters,
+        registers: &mut open_esp_radio_esp32s31_hal::PhyHal,
     ) -> PhyBluetoothTxGainInitCompletion {
         self.publication.execute_target(registers);
         PhyBluetoothTxGainInitCompletion::Published(self.publication)
@@ -1378,10 +1378,7 @@ mod tests {
             let completion = complete_i2c_request(transition.action(), 0);
             transition.advance(completion).unwrap();
         }
-        loop {
-            let PhyBluetoothTxPowerAction::Prepare(action) = transition.action() else {
-                break;
-            };
+        while let PhyBluetoothTxPowerAction::Prepare(action) = transition.action() {
             use crate::phy_tx_cal::{
                 PhyTxCalibrationEnvironmentAction as Action,
                 PhyTxCalibrationEnvironmentCompletion as Completion,

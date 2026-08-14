@@ -1,8 +1,8 @@
 //! Architecture-neutral symbolic values, observable-effect IR and MMIO catalog.
 //!
 //! This crate deliberately contains no instruction decoder, physical register
-//! file or platform harness. Architecture backends produce these values and
-//! platform harnesses may inspect them through the same stable vocabulary.
+//! file or target provider. Architecture backends produce these values and
+//! providers may inspect them through the same stable vocabulary.
 
 mod ir;
 mod mmio;

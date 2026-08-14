@@ -5,7 +5,7 @@ use std::path::Path;
 use serde::Serialize;
 
 use super::ReplacementEvidence;
-use crate::{Result, artifact, artifacts};
+use crate::{FactAccuracy, FactCompleteness, FactProvenance, Result, artifact, artifacts};
 
 #[derive(Clone, Debug)]
 pub struct StoredLinkedIrRecord(Box<serde_json::value::RawValue>);
@@ -126,6 +126,8 @@ pub struct SemanticFunctionEvidence {
     pub report: String,
     pub complete: bool,
     pub exact: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reviewed_signature: Option<ReviewedFunctionSignatureEvidence>,
     pub pseudo: String,
     pub blockers: Vec<BlockerExplanationEvidence>,
     pub instruction_evidence: Vec<InstructionEvidence>,
@@ -140,6 +142,26 @@ pub struct SemanticFunctionEvidence {
     /// evidence report and points at `report` for indexed retrieval.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub linked_ir: Option<StoredLinkedIrRecord>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct ReviewedFunctionSignatureEvidence {
+    pub name: String,
+    pub arguments: Vec<ReviewedFunctionArgumentEvidence>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub return_abi: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub return_role: Option<String>,
+    pub provenance: &'static str,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct ReviewedFunctionArgumentEvidence {
+    pub index: u8,
+    pub name: String,
+    pub abi: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub role: Option<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -200,7 +222,9 @@ pub struct BlockerExplanationEvidence {
     pub message: String,
     pub required_model: String,
     pub relocation_candidates: Vec<String>,
-    pub confidence: &'static str,
+    pub provenance: FactProvenance,
+    pub accuracy: FactAccuracy,
+    pub completeness: FactCompleteness,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]

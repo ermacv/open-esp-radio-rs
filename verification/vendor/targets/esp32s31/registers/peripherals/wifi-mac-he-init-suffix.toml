@@ -680,7 +680,9 @@ bitWidth = 11
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX"
 sources = ["BLOB_LIBPP_HAL_HE_INIT_SUFFIX"]
-confidence = "instruction-exact-partial"
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.MULTI_BSSID_CONTROL"
@@ -690,7 +692,9 @@ sources = [
     "BLOB_LIBPP_HAL_HE_BSSID_LIFECYCLE",
     "HIL_OPEN_HE_BSSID_LIFECYCLE_2026_07_30",
 ]
-confidence = "instruction-exact-hil-qualified"
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.MULTI_BSSID_CONTROL.BSSID_SELECT"
@@ -698,7 +702,9 @@ sources = [
     "BLOB_LIBPP_HAL_HE_BSSID_LIFECYCLE",
     "BLOB_LIBPP_HAL_RX_MISC_DEBUG",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.MULTI_BSSID_CONTROL.HE_BSSID_ENABLE"
@@ -706,52 +712,72 @@ sources = [
     "BLOB_LIBPP_HAL_HE_BSSID_LIFECYCLE",
     "BLOB_LIBPP_HAL_RX_MISC_DEBUG",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.MULTI_BSSID_HIGH"
 sources = ["BLOB_LIBPP_HAL_HE_INIT_SUFFIX"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.MULTI_BSSID_CONTROL_INTERFACE_1"
 sources = ["ROM_REV0_WIFI_RUNTIME_MMIO_GAPS"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.MULTI_BSSID_CONTROL_INTERFACE_1.BSS_COLOR"
 sources = ["ROM_REV0_WIFI_RUNTIME_MMIO_GAPS"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.MULTI_BSSID_CONTROL_INTERFACE_1.BSS_COLOR_ENABLE"
 sources = ["ROM_REV0_WIFI_RUNTIME_MMIO_GAPS"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.BROADCAST_RU_LOW"
 sources = ["BLOB_LIBPP_HAL_HE_INIT_SUFFIX"]
-confidence = "instruction-exact-partial"
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.BROADCAST_RU_LOW.ASSOCIATION_ID"
 sources = ["BLOB_LIBPP_HAL_HE_SET_MMSS_AND_AID"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.BROADCAST_RU_HIGH"
 sources = ["BLOB_LIBPP_HAL_HE_INIT_SUFFIX"]
-confidence = "instruction-exact-partial"
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.TX_MODE_CONTROL"
 sources = ["BLOB_LIBPP_HAL_HE_INIT_SUFFIX"]
-confidence = "instruction-exact-partial"
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.DUMP_COMPLETE_HESIGB"
 sources = ["BLOB_LIBPP_HAL_HE_INIT_SUFFIX"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.ERSU_ACK_RATE"
@@ -759,7 +785,9 @@ sources = [
     "BLOB_LIBPP_HAL_HE_INIT_SUFFIX",
     "BLOB_LIBPP_HAL_BF_CONFIG",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.ERSU_ACK_RATE.RATE_0"
@@ -767,7 +795,9 @@ sources = [
     "BLOB_LIBPP_HAL_HE_INIT_SUFFIX",
     "BLOB_LIBPP_HAL_BF_CONFIG",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.ERSU_ACK_RATE.RATE_1"
@@ -775,7 +805,9 @@ sources = [
     "BLOB_LIBPP_HAL_HE_INIT_SUFFIX",
     "BLOB_LIBPP_HAL_BF_CONFIG",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.ERSU_ACK_RATE.RATE_2"
@@ -783,7 +815,9 @@ sources = [
     "BLOB_LIBPP_HAL_HE_INIT_SUFFIX",
     "BLOB_LIBPP_HAL_BF_CONFIG",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.ERSU_ACK_RATE.RATE_3"
@@ -791,7 +825,9 @@ sources = [
     "BLOB_LIBPP_HAL_HE_INIT_SUFFIX",
     "BLOB_LIBPP_HAL_BF_CONFIG",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.ERSU_AND_VHT_CONTROL"
@@ -802,7 +838,9 @@ sources = [
     "BLOB_LIBPP_HAL_RX_MISC_DEBUG",
     "BLOB_LIBNET80211_IEEE80211_PARSE_HEOPR",
 ]
-confidence = "instruction-exact-partial"
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.ERSU_AND_VHT_CONTROL.BSR_ACI_HIGH_COMPARISON_METHOD"
@@ -810,47 +848,65 @@ sources = [
     "BLOB_LIBPP_HAL_HE_BSR_INIT",
     "BLOB_LIBPP_HAL_HE_BSR_DEBUG",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.ERSU_AND_VHT_CONTROL.PREAC_DISABLE_LOW_AC_TX_WHEN_EMPTY"
 sources = ["BLOB_LIBPP_HAL_HE_BSR_DEBUG"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.ERSU_AND_VHT_CONTROL.PREAC_DISABLE_LOW_AC_TX_WHEN_NO_RESOURCE"
 sources = ["BLOB_LIBPP_HAL_HE_BSR_DEBUG"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.ERSU_AND_VHT_CONTROL.AC_EMPTY_SINGLE_BSR"
 sources = ["BLOB_LIBPP_HAL_HE_BSR_DEBUG"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.ERSU_AND_VHT_CONTROL.PREAC_NO_RESOURCE_ENABLE_BSR"
 sources = ["BLOB_LIBPP_HAL_HE_BSR_DEBUG"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.ERSU_AND_VHT_CONTROL.QOS_DATA_UPDATE_BSR"
 sources = ["BLOB_LIBPP_HAL_HE_BSR_DEBUG"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.ERSU_AND_VHT_CONTROL.IGNORE_VALID_TB"
 sources = ["BLOB_LIBPP_HAL_HE_BSR_DEBUG"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.ERSU_AND_VHT_CONTROL.IGNORE_VALID_EDCA"
 sources = ["BLOB_LIBPP_HAL_HE_BSR_DEBUG"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.ERSU_AND_VHT_CONTROL.TB_NO_RESOURCE_CONTINUE_TX"
 sources = ["BLOB_LIBPP_HAL_RX_MISC_DEBUG"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.ERSU_AND_VHT_CONTROL.AUTO_ACK_ALLOW_ERSU"
@@ -859,31 +915,41 @@ sources = [
     "BLOB_LIBPP_HAL_RX_MISC_DEBUG",
     "BLOB_LIBNET80211_IEEE80211_PARSE_HEOPR",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.ERSU_AND_VHT_CONTROL.HE_RESPONSE_ACK"
 sources = ["BLOB_LIBPP_HAL_RX_MISC_DEBUG"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.ERSU_AND_VHT_CONTROL.TB_CARE_CCA_AND_NAV"
 sources = ["BLOB_LIBPP_HAL_HE_BSR_DEBUG"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.ERSU_AND_VHT_CONTROL.BSR_ENABLE"
 sources = ["BLOB_LIBPP_HAL_HE_BSR_INIT"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.HE_PACKET_PADDING"
 sources = [
     "BLOB_LIBPP_HAL_RX_MISC_DEBUG",
     "BLOB_LIBNET80211_IEEE80211_PARSE_HECAP",
-    "MIGRATION_HE20_PEER",
+    "PROMOTED_HE20_PEER",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.HE_DEFAULT_CONTROL"
@@ -896,7 +962,9 @@ sources = [
     "BLOB_LIBPP_HAL_HE_UL_MU_OMC",
     "BLOB_LIBNET80211_IEEE80211_PARSE_HEOPR",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.HE_DEFAULT_CONTROL.DEFAULT_PE_DURATION"
@@ -904,7 +972,9 @@ sources = [
     "BLOB_LIBPP_HAL_HE_SET_DEFAULT_PE",
     "BLOB_LIBNET80211_IEEE80211_PARSE_HEOPR",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.HE_DEFAULT_CONTROL.MPDU_LENGTH_OFFSET"
@@ -912,12 +982,16 @@ sources = [
     "BLOB_LIBPP_HAL_HE_INIT_SUFFIX",
     "BLOB_LIBPP_HAL_RX_MISC_DEBUG",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.HE_DEFAULT_CONTROL.TX_ACK_ENABLED_AMPDU_ENABLE"
 sources = ["BLOB_LIBPP_HAL_HE_BSR_DEBUG"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.HE_DEFAULT_CONTROL.BSR_UPDATE_ENABLE"
@@ -925,7 +999,9 @@ sources = [
     "BLOB_LIBPP_HAL_HE_BSR_INIT",
     "BLOB_LIBPP_HAL_HE_BSR_DEBUG",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.HE_DEFAULT_CONTROL.UL_MU_DATA_DISABLE"
@@ -933,7 +1009,9 @@ sources = [
     "BLOB_LIBPP_HAL_HE_UL_MU_OMC",
     "BLOB_LIBPP_HAL_RX_MISC_DEBUG",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.HE_DEFAULT_CONTROL.UL_MU_DISABLE"
@@ -941,27 +1019,37 @@ sources = [
     "BLOB_LIBPP_HAL_HE_UL_MU_OMC",
     "BLOB_LIBPP_HAL_RX_MISC_DEBUG",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.UORA_CONTROL"
 sources = ["BLOB_LIBPP_HAL_HE_INIT_SUFFIX"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.FEATURE_EDGES"
 sources = ["BLOB_LIBPP_HAL_HE_INIT_SUFFIX"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.SHARED_ENABLE_CONTROL"
 sources = ["BLOB_LIBPP_HAL_HE_INIT_SUFFIX"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.QOS_NULL_TRANSLATION_CONTROL%s"
 sources = ["BLOB_LIBPP_HAL_RUNTIME_MMIO_LEAVES"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.QUEUE_CONTROL%s"
@@ -973,7 +1061,9 @@ sources = [
     "BLOB_LIBPP_HAL_MAC_TX",
     "HIL_OPEN_HE_QUEUE_SCHEDULING_BASELINE_2026_07_29",
 ]
-confidence = "instruction-exact-hil-qualified"
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.HE_SCRATCH%s"
@@ -983,4 +1073,6 @@ sources = [
     "BLOB_LIBPP_MAC_TX_SET_TB",
     "ROM_REV0_MAC_TX_SET_TB",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"

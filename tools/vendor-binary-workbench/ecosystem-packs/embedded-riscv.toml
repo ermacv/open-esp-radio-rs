@@ -1,0 +1,5 @@
+# Reusable semantic vocabulary for a generic RV32 embedded project.
+# This pack intentionally selects no chip-specific compiled knowledge provider.
+schema = 3
+id = "embedded-riscv"
+knowledge-packs = ["../catalogs/neutral-embedded.toml"]

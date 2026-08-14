@@ -197,7 +197,7 @@ impl MacInterruptRoute for Route<'_> {
         &mut self,
         _: &Self::Platform,
         setup: Self::Setup,
-        event_mask: open_esp_radio_esp32s31_pac::MacInterruptMask,
+        event_mask: open_esp_radio_esp32s31_hal::types::MacInterruptMask,
     ) -> Result<(), (Self::Error, Self::Setup)> {
         if self.fail_activate {
             return Err((RouteError::Activate, setup));
@@ -338,7 +338,7 @@ fn service_with_plan<'storage, 'runtime>(
         &runtime.irq,
         &runtime.power,
     );
-    Esp32s31MonitorService::new(hardware, receive, sink, interrupts, runtime.platform)
+    Esp32s31MonitorService::new(hardware, receive, sink, interrupts, ())
 }
 
 #[test]

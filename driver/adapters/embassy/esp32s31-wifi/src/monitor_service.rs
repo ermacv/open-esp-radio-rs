@@ -9,7 +9,7 @@ use embassy_futures::{
     yield_now,
 };
 use open_esp_radio_embassy_net::RawMutex;
-use open_esp_radio_esp32s31_pac::MacInterruptMask;
+use open_esp_radio_esp32s31_hal::types::MacInterruptMask;
 use open_esp_radio_esp32s31_wifi_mac::{
     init::MAC_COLD_RX_INTERRUPT_MASK,
     irq::MacInterruptRoute,

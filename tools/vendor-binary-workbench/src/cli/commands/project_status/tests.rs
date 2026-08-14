@@ -27,7 +27,7 @@ fn initialized_project_reports_incomplete_without_mutating_owned_outputs() {
     let project = ProjectSpec::load(&manifest).unwrap();
     let mut target = TargetSpec::load(&project.target_spec).unwrap();
     project
-        .platform_pack
+        .chip_pack
         .as_ref()
         .unwrap()
         .apply_to_target(&mut target)

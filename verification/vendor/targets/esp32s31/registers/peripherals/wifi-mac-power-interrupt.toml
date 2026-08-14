@@ -84,7 +84,9 @@ sources = [
     "BLOB_LIBPP_HAL_PWR_INTERRUPT",
     "BLOB_LIBPP_HAL_TSF_TIMER",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_POWER_INTERRUPT.ENABLE"
@@ -92,7 +94,9 @@ sources = [
     "BLOB_LIBPP_ISR_REGISTER_DUMP",
     "BLOB_LIBPP_HAL_TSF_TIMER",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_POWER_INTERRUPT.STATUS"
@@ -100,7 +104,9 @@ sources = [
     "BLOB_LIBPP_ISR_REGISTER_DUMP",
     "BLOB_LIBPP_HAL_PWR_INTERRUPT",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_POWER_INTERRUPT.CLEAR"
@@ -108,4 +114,6 @@ sources = [
     "BLOB_LIBPP_HAL_PWR_INTERRUPT",
     "BLOB_LIBPP_HAL_TSF_TIMER",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"

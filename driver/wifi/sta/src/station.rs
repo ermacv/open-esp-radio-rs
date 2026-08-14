@@ -428,44 +428,39 @@ mod tests {
         type Error = u8;
         type Fault = u64;
 
-        fn run_attempt(
+        async fn run_attempt(
             &mut self,
             owner: Self::Owner,
             context: StaAttemptContext,
-        ) -> impl Future<Output = StaAttemptOutcome<Self::Owner, Self::Error, Self::Fault>> + '_
-        {
-            async move {
-                self.contexts.push(context);
-                let owner = owner + 1;
-                match self.outcomes.pop_front().expect("planned attempt") {
-                    Planned::Advanced => StaAttemptOutcome::Advanced { owner },
-                    Planned::Disconnected(next_candidate) => StaAttemptOutcome::Disconnected {
-                        owner,
-                        next_candidate,
-                    },
-                    Planned::Stopped => StaAttemptOutcome::Stopped { owner },
-                    Planned::Failed(stage, disposition, error) => StaAttemptOutcome::Failed {
-                        owner,
-                        failure: StaAttemptFailure::new(stage, disposition, error),
-                    },
-                    Planned::Faulted(fault) => StaAttemptOutcome::Faulted { fault },
-                }
+        ) -> StaAttemptOutcome<Self::Owner, Self::Error, Self::Fault> {
+            self.contexts.push(context);
+            let owner = owner + 1;
+            match self.outcomes.pop_front().expect("planned attempt") {
+                Planned::Advanced => StaAttemptOutcome::Advanced { owner },
+                Planned::Disconnected(next_candidate) => StaAttemptOutcome::Disconnected {
+                    owner,
+                    next_candidate,
+                },
+                Planned::Stopped => StaAttemptOutcome::Stopped { owner },
+                Planned::Failed(stage, disposition, error) => StaAttemptOutcome::Failed {
+                    owner,
+                    failure: StaAttemptFailure::new(stage, disposition, error),
+                },
+                Planned::Faulted(fault) => StaAttemptOutcome::Faulted { fault },
             }
         }
 
-        fn wait_backoff(
+        async fn wait_backoff(
             &mut self,
             owner: Self::Owner,
             delay_millis: u32,
             reason: StaBackoffReason,
-        ) -> impl Future<Output = StaBackoffOutcome<Self::Owner>> + '_ {
-            async move {
-                self.backoffs.push((delay_millis, reason));
-                if self.stop_in_backoff {
-                    StaBackoffOutcome::Stopped { owner }
-                } else {
-                    StaBackoffOutcome::Elapsed { owner }
-                }
+        ) -> StaBackoffOutcome<Self::Owner> {
+            self.backoffs.push((delay_millis, reason));
+            if self.stop_in_backoff {
+                StaBackoffOutcome::Stopped { owner }
+            } else {
+                StaBackoffOutcome::Elapsed { owner }
             }
         }
     }

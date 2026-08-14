@@ -38,8 +38,7 @@ const RSN_CAPABILITY_SPP_AMSDU_CAPABLE: u16 = 1 << 10;
 // large A-MSDU and 40-MHz claims remain disabled until their matching
 // Rust-owned paths are enabled.
 //
-// SOURCE: promoted migration
-// `migration/esp32s31-hybrid-runtime/src/sta_link.rs::HT20_CAPABILITY_IE`,
+// SOURCE[PROMOTED_HE20_PEER]: reviewed promoted HT20 capability image,
 // originally qualified by the strict ESP32-S31 STA WPA2/ADDBA throughput HIL.
 const HT20_CAPABILITY_IE: [u8; 28] = [
     45, 26, 0x20, 0x00, 0x00, 0xff, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01, 0, 0, 0, 0, 0, 0, 0,
@@ -84,9 +83,8 @@ const HE20_HT_CAPABILITY_IE: [u8; 28] = [
 // Set) on both its STA branches. The chip's vendor path advertises 40 MHz
 // separately through HT Capabilities, as represented by HT40_CAPABILITY_IE.
 //
-// SOURCE: promoted migration
-// `migration/esp32s31-hybrid-runtime/src/sta_link.rs::
-// HE20_MCS9_CAPABILITY_IE`, originally compared with the request constructed
+// SOURCE[PROMOTED_HE20_ASSOCIATION]: reviewed promoted HE20 MCS9 capability
+// image, originally compared with the request constructed
 // by pinned `libnet80211.a`.
 //
 // FIELD AUDIT: complete
@@ -464,8 +462,7 @@ pub struct StaDisconnect {
 /// BlockAck negotiation uses this common 24-byte management header followed
 /// by the nine-byte action body owned by the MAC BlockAck state machine.
 ///
-/// SOURCE: promoted migration
-/// `migration/esp32s31-hybrid-runtime/src/sta_link.rs::send_addba_response`,
+/// SOURCE[PROMOTED_RX_AMPDU]: reviewed promoted ADDBA response builder,
 /// where the same header was constructed around
 /// `rx_ampdu::write_successful_addba_response`; the frame-control subtype is
 /// the IEEE 802.11 Action management subtype also parsed by

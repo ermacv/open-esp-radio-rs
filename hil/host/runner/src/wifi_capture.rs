@@ -44,7 +44,7 @@ pub(crate) fn run(
         &lab.station_fixture,
         phy,
     )?);
-    fs::create_dir_all(&artifact_dir)?;
+    fs::create_dir_all(artifact_dir)?;
     if let Some(parent) = options.output.parent()
         && !parent.as_os_str().is_empty()
     {

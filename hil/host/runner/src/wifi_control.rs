@@ -85,7 +85,7 @@ pub(crate) fn run(
             phy,
         )?)
     };
-    fs::create_dir_all(&output)?;
+    fs::create_dir_all(output)?;
     let capture = SerialCapture::start_with_reset(&options.serial);
     let result = qualify(&capture, lab, operation, &options);
     capture.finish_to(output)?;

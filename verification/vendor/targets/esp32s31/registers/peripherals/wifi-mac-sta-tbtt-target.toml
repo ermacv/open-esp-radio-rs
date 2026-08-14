@@ -22,9 +22,13 @@ bitWidth = 26
 [[review]]
 entity = "WIFI_MAC_STA_TBTT_TARGET"
 sources = ["BLOB_LIBPP_HAL_TSF_RUNTIME"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "WIFI_MAC_STA_TBTT_TARGET.TARGET"
 sources = ["BLOB_LIBPP_HAL_TSF_RUNTIME"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"

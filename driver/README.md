@@ -89,6 +89,47 @@ Safe code above the generated PAC, DMA leaves and minimal platform runtime
 cannot manufacture register, descriptor or interrupt ownership. See
 [`UNSAFE.md`](UNSAFE.md). No public software-reset escape hatch exists.
 
+### Register authority
+
+The intended production direction is:
+
+```text
+reviewed register model -> generated/register-local PAC -> narrow HAL -> driver
+```
+
+The PAC owns register-local fields, masks, encodings and indivisible access.
+The HAL owns polling, delays, multi-register order, lifecycle transitions,
+recovery and runtime MMIO serialization. Wi-Fi role and protocol policy stays
+in the driver. Rust ownership expresses who may perform an operation; it does
+not by itself prove that a reverse-engineered register meaning is correct.
+
+Capabilities are shaped by real exclusivity and sharing requirements. A
+borrowed `RadioChannelHal` is the current channel-switch capability, not a
+requirement to mechanically `split()` every peripheral. Copyable runtime
+handles remain tied to the HAL-owned register arena, whose `RefCell` is the
+explicit same-task serialization owner. A shared handle must not imply
+unsynchronized cross-thread MMIO access.
+
+Runtime and cold-MAC ownership is held by an opaque `RadioRuntimeOwner` in the
+HAL arena. Its access handles provide finite serialized HAL transactions,
+never a PAC callback. The cooperative STA facade reaches HE peer setup,
+beamforming, TX/A-MPDU, RX DMA and connected control only through a guarded
+`WifiMacHal`.
+
+Powered PHY setup borrows an opaque `PhyHal`. It has no `Deref`, generic
+register callback, conversion to a PAC owner, or compatibility alias. PHY has
+no PAC Cargo dependency and may pass this capability only to named HAL
+operations. `Radio::phy_hal_parts` exists where one lifecycle operation also
+needs the platform singleton; `Radio::phy_hal_mut` borrows only the PHY
+capability. These are ownership APIs, not mechanical peripheral `split()`.
+
+Repository contracts reject direct production dependencies on the PAC above
+HAL, PAC-owner re-exports, the removed broad PHY APIs and reintroduction of a
+`Deref` escape. Further PAC-to-HAL movement is semantic: when a reviewed PAC
+leaf contains polling, delay, recovery, lifecycle policy or a composition of
+separately meaningful hardware operations, migrate that complete sequence to
+HAL and compare the compiled production entry before changing evidence.
+
 ## Extension rules
 
 - Extend AP only through its peer Wi-Fi role; never place AP policy inside STA.

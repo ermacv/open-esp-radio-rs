@@ -37,10 +37,6 @@ pub(in crate::cli) enum ResolvedInvocation {
         arguments: ProjectStatusArgs,
         session: Box<ProjectSession>,
     },
-    ProjectFeature {
-        arguments: ProjectFeatureArgs,
-        session: Box<ProjectSession>,
-    },
     ProjectAnalyze {
         arguments: ProjectAnalyzeArgs,
         session: Box<ProjectSession>,
@@ -145,7 +141,6 @@ pub(in crate::cli) enum TargetCommand {
     VerifyProfiles(VerifyProfilesArgs),
     GenerateReference(ReferenceArgs),
     GenerateReferenceBatch(ReferenceBatchArgs),
-    GenerateDriver(DriverGenerateArgs),
     InspectAnalyze(InspectAnalyzeArgs),
     InspectFunction(InspectFunctionArgs),
     InspectFlow(InspectFlowArgs),

@@ -1,6 +1,10 @@
 //! Reusable semantic operations kept independent from chip table layouts.
 
-use std::{collections::BTreeMap, fs, path::Path};
+use std::{
+    collections::{BTreeMap, btree_map::Entry},
+    fs,
+    path::Path,
+};
 
 use toml_edit::{Array, DocumentMut, Item, Table};
 
@@ -32,7 +36,7 @@ impl SemanticCatalogs {
             let input = fs::read_to_string(path)?;
             let document = input.parse::<DocumentMut>().map_err(|error| {
                 crate::error::WorkbenchError::manifest_source(
-                    "semantic catalog",
+                    "knowledge pack",
                     path,
                     &input,
                     &error,
@@ -45,8 +49,8 @@ impl SemanticCatalogs {
                     path.display()
                 )));
             }
-            let catalog_id = required_string(document.as_item(), "id", "semantic catalog")?;
-            validate_dotted_id(&catalog_id, "semantic catalog id")?;
+            let catalog_id = required_string(document.as_item(), "id", "knowledge pack")?;
+            validate_dotted_id(&catalog_id, "knowledge pack id")?;
             let tables = document
                 .get("operations")
                 .and_then(Item::as_array_of_tables)
@@ -61,11 +65,20 @@ impl SemanticCatalogs {
             for (index, table) in tables.iter().enumerate() {
                 let context = format!("{} operations[{index}]", path.display());
                 let operation = parse_operation(table, &context)?;
-                if operations.insert(operation.id.clone(), operation).is_some() {
-                    return Err(crate::Error::invalid(format!(
-                        "duplicate semantic operation {:?} across configured catalogs",
-                        required_table_string(table, "id", &context)?
-                    )));
+                match operations.entry(operation.id.clone()) {
+                    Entry::Vacant(entry) => {
+                        entry.insert(operation);
+                    }
+                    Entry::Occupied(entry) if entry.get() == &operation => {
+                        // Identical knowledge is order-independent and may be
+                        // shared by family and chip composition layers.
+                    }
+                    Entry::Occupied(_) => {
+                        return Err(crate::Error::invalid(format!(
+                            "conflicting semantic operation {:?} across configured knowledge packs",
+                            required_table_string(table, "id", &context)?
+                        )));
+                    }
                 }
             }
         }
@@ -192,4 +205,35 @@ fn parse_string_array(array: &Array, key: &str, context: &str) -> Result<Vec<Str
             })
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn catalog(id: &str, summary: &str) -> String {
+        format!(
+            "schema = 1\nid = \"{id}\"\n[[operations]]\nid = \"rtos.yield-now\"\ndomain = \"rtos\"\nsummary = \"{summary}\"\nargument-roles = []\nreturn-role = \"none\"\neffects = [\"scheduler.yield-request\"]\n"
+        )
+    }
+
+    #[test]
+    fn composition_deduplicates_identical_knowledge_and_rejects_conflicts() {
+        let root = std::env::temp_dir().join(format!(
+            "workbench-knowledge-composition-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let first = root.join("first.toml");
+        let same = root.join("same.toml");
+        let conflict = root.join("conflict.toml");
+        std::fs::write(&first, catalog("fixture.first", "Yield")).unwrap();
+        std::fs::write(&same, catalog("fixture.same", "Yield")).unwrap();
+        std::fs::write(&conflict, catalog("fixture.conflict", "Different meaning")).unwrap();
+
+        assert_eq!(SemanticCatalogs::load(&[&first, &same]).unwrap().len(), 1);
+        let error = SemanticCatalogs::load(&[&first, &conflict]).unwrap_err();
+        assert!(error.to_string().contains("conflicting semantic operation"));
+        std::fs::remove_dir_all(root).unwrap();
+    }
 }

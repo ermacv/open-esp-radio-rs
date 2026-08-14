@@ -1,58 +1,42 @@
-//! Generated-PAC ownership for the cold MAC handshake prefix.
+//! Register-local PAC operations for the cold MAC handshake.
 
 #![forbid(unsafe_code)]
 
 use super::{ColdRadioRegisters, MacInterruptMask};
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct MacColdHandshakeOutcome {
-    pub samples: u32,
-    pub value: u32,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct MacColdHandshakeTimeout {
-    pub samples: u32,
-    pub observed: u32,
-}
-
 impl ColdRadioRegisters {
-    /// Request cold MAC initialization, wait for READY, then mask and clear
-    /// every MAC event.
-    ///
-    /// SOURCE: complete pinned `libpp.a[hal_mac.o]::hal_init`, offsets
-    /// `0x00..0x3a`. The blob waits forever; this source-owned form adds the
-    /// caller-supplied finite sample limit without changing the successful
-    /// hardware order.
-    pub fn begin_mac_cold_start(
-        &mut self,
-        sample_limit: u32,
-    ) -> Result<MacColdHandshakeOutcome, MacColdHandshakeTimeout> {
-        let handshake = self.registers.peripherals.wifi_mac_cold_handshake.control();
-        handshake.modify(|_, w| w.request().set_bit());
+    /// Set the cold-start request bit.
+    pub fn request_mac_cold_start(&mut self) {
+        self.registers
+            .peripherals
+            .wifi_mac_cold_handshake
+            .control()
+            .modify(|_, w| w.request().set_bit());
+    }
 
-        let mut samples = 0;
-        let value = loop {
-            let value = handshake.read().bits();
-            if value & 1 != 0 {
-                break value;
-            }
-            samples += 1;
-            if samples >= sample_limit {
-                return Err(MacColdHandshakeTimeout {
-                    samples,
-                    observed: value,
-                });
-            }
-        };
+    /// Sample the cold-start handshake register once.
+    pub fn sample_mac_cold_start(&self) -> u32 {
+        self.registers
+            .peripherals
+            .wifi_mac_cold_handshake
+            .control()
+            .read()
+            .bits()
+    }
 
-        let interrupt = &self.interrupts.wifi_mac_interrupt;
-        super::generated::mac_interrupt_enable(interrupt, MacInterruptMask::NONE);
+    /// Mask every MAC interrupt source.
+    pub fn mask_all_mac_interrupts(&mut self) {
+        super::generated::mac_interrupt_enable(
+            &self.interrupts.wifi_mac_interrupt,
+            MacInterruptMask::NONE,
+        );
+    }
+
+    /// Acknowledge every pending MAC interrupt source.
+    pub fn clear_all_mac_interrupts(&mut self) {
         super::generated::mac_interrupt_clear(
-            interrupt,
+            &self.interrupts.wifi_mac_interrupt,
             super::generated::MacInterruptClearImage::new(u32::MAX),
         );
-
-        Ok(MacColdHandshakeOutcome { samples, value })
     }
 }

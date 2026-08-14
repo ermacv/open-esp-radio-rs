@@ -147,80 +147,76 @@ where
     type Candidate = O::Candidate;
     type Error = Esp32s31StaScanError<O::Error>;
 
-    fn begin_scan(
+    async fn begin_scan(
         &mut self,
         mut owner: Self::Owner,
-    ) -> impl Future<Output = StaScanStepOutcome<Self::Owner, Self::Error>> + '_ {
-        async move {
-            match owner.begin_scan().await {
-                Ok(()) => StaScanStepOutcome::Completed { owner },
-                Err(error) => StaScanStepOutcome::Failed {
-                    owner,
-                    error: Esp32s31StaScanError::Begin(error),
-                },
-            }
+    ) -> StaScanStepOutcome<Self::Owner, Self::Error> {
+        match owner.begin_scan().await {
+            Ok(()) => StaScanStepOutcome::Completed { owner },
+            Err(error) => StaScanStepOutcome::Failed {
+                owner,
+                error: Esp32s31StaScanError::Begin(error),
+            },
         }
     }
 
-    fn scan_channel(
+    async fn scan_channel(
         &mut self,
         mut owner: Self::Owner,
         context: StaScanChannelContext<Self::Channel>,
-    ) -> impl Future<Output = StaScanStepOutcome<Self::Owner, Self::Error>> + '_ {
-        async move {
-            if let Err(error) = owner.switch_channel(context).await {
-                return StaScanStepOutcome::Failed {
-                    owner,
-                    error: Esp32s31StaScanError::ChannelSwitch(error),
-                };
-            }
-            if let Err(error) = owner.start_receive(context).await {
-                return StaScanStepOutcome::Failed {
-                    owner,
-                    error: Esp32s31StaScanError::ReceiveStart(error),
-                };
-            }
-
-            let mut transaction_failure = match owner.transmit_active_probe(context).await {
-                Ok(_probe) => None,
-                Err(error) => Some(Esp32s31StaScanError::ActiveProbe(error)),
+    ) -> StaScanStepOutcome<Self::Owner, Self::Error> {
+        if let Err(error) = owner.switch_channel(context).await {
+            return StaScanStepOutcome::Failed {
+                owner,
+                error: Esp32s31StaScanError::ChannelSwitch(error),
             };
-            if transaction_failure.is_none() {
-                for _ in 0..self.config.dwell_ticks() {
-                    if let Err(error) = owner.observe_receive(context) {
-                        transaction_failure = Some(Esp32s31StaScanError::ReceiveObserve(error));
-                        break;
-                    }
-                    if let Err(error) = owner.wait_dwell_tick().await {
-                        transaction_failure = Some(Esp32s31StaScanError::DwellWait(error));
-                        break;
-                    }
+        }
+        if let Err(error) = owner.start_receive(context).await {
+            return StaScanStepOutcome::Failed {
+                owner,
+                error: Esp32s31StaScanError::ReceiveStart(error),
+            };
+        }
+
+        let mut transaction_failure = match owner.transmit_active_probe(context).await {
+            Ok(_probe) => None,
+            Err(error) => Some(Esp32s31StaScanError::ActiveProbe(error)),
+        };
+        if transaction_failure.is_none() {
+            for _ in 0..self.config.dwell_ticks() {
+                if let Err(error) = owner.observe_receive(context) {
+                    transaction_failure = Some(Esp32s31StaScanError::ReceiveObserve(error));
+                    break;
+                }
+                if let Err(error) = owner.wait_dwell_tick().await {
+                    transaction_failure = Some(Esp32s31StaScanError::DwellWait(error));
+                    break;
                 }
             }
-
-            // Always try to close a live RX epoch after dwell began. A stop
-            // failure takes precedence because descriptor ownership is then
-            // uncertain and no ring mutation or retry is safe.
-            if let Err(error) = owner.stop_receive(context) {
-                return StaScanStepOutcome::Failed {
-                    owner,
-                    error: Esp32s31StaScanError::ReceiveStop(error),
-                };
-            }
-            if let Some(error) = transaction_failure {
-                return StaScanStepOutcome::Failed { owner, error };
-            }
-
-            if !context.is_last()
-                && let Err(error) = owner.prepare_next_ring(context)
-            {
-                return StaScanStepOutcome::Failed {
-                    owner,
-                    error: Esp32s31StaScanError::PrepareNextRing(error),
-                };
-            }
-            StaScanStepOutcome::Completed { owner }
         }
+
+        // Always try to close a live RX epoch after dwell began. A stop
+        // failure takes precedence because descriptor ownership is then
+        // uncertain and no ring mutation or retry is safe.
+        if let Err(error) = owner.stop_receive(context) {
+            return StaScanStepOutcome::Failed {
+                owner,
+                error: Esp32s31StaScanError::ReceiveStop(error),
+            };
+        }
+        if let Some(error) = transaction_failure {
+            return StaScanStepOutcome::Failed { owner, error };
+        }
+
+        if !context.is_last()
+            && let Err(error) = owner.prepare_next_ring(context)
+        {
+            return StaScanStepOutcome::Failed {
+                owner,
+                error: Esp32s31StaScanError::PrepareNextRing(error),
+            };
+        }
+        StaScanStepOutcome::Completed { owner }
     }
 
     fn select_candidate(

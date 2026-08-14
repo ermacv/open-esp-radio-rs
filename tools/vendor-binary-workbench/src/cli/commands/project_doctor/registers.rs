@@ -251,7 +251,6 @@ fn collect_evidence(context: &ProjectContext<'_>, report: &mut DoctorReport) {
         Some(paths) => match validate_register_evidence(paths, context.memory_map) {
             Ok(Some(evidence)) => CapabilityReport::new("register-evidence", "available")
                 .field("catalogs", paths.evidence_catalogs.len())
-                .field("confidence-levels", evidence.confidence_levels.len())
                 .field("sources", evidence.sources.len())
                 .field("ranges", evidence.ranges.len()),
             Ok(None) => unreachable!("evidence catalogs were configured before validation"),

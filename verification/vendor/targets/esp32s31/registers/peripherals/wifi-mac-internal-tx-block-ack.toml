@@ -65,4 +65,6 @@ bitWidth = 4
 [[review]]
 entity = "WIFI_MAC_INTERNAL_TX_BLOCK_ACK"
 sources = ["BLOB_LIBPP_DBG_READ_INTERNAL_TXBA"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"

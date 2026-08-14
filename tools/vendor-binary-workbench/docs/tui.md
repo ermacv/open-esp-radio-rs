@@ -96,7 +96,7 @@ follows the first affected function when it exists. Priorities are review
 ordering, not proof results; the underlying typed diagnostic and its exact
 sites remain authoritative.
 The Scopes view is the entry point for release-oriented review. It shows
-replacement qualification separately from analysis-inventory completeness, plus
+replacement verification separately from analysis-inventory completeness, plus
 the review queue size, decode and call gaps, replacement coverage, register
 membership and the exact stable function identities stored in the generated
 scope artifact. Enter follows the first
@@ -104,12 +104,12 @@ available member into Functions. The view does not rebuild reachability or
 infer scope membership independently from the CLI pipeline.
 Reviewed logical-type and field names are applied to the pseudo-Rust detail
 without erasing the recovered access width. Scenario candidates also include
-an editable verification-profile draft with explicit TODO arguments; the
+an editable verification-profile draft with explicit `REVIEW_REQUIRED` arguments; the
 draft remains `replay required` until the user reviews it and concrete
 execution closes its coverage.
 
 Comparison execution uses the same worker and the same application API. The
-selected profile must be declared under `[verification]`, while its local
+selected profile must be declared by `verification-addon.toml`, while its local
 vendor and Rust binaries are resolved from `local.toml`. A result stays attached
 to the current snapshot generation and is discarded on reload. The TUI renders
 the typed first-difference context, coverage blockers, table lifecycle and
@@ -120,8 +120,8 @@ symbol-relative offset on both sides.
 The mode is intentionally read-only. It does not rewrite register, function or
 interface packs and has no hidden state that competes with checked-in project
 files. Editing, analysis generation and publication remain explicit CLI
-workflows. See [Application API and alternate frontends](application-api.md)
-for the boundary shared by both frontends.
+workflows. See [Architecture](architecture.md) for the boundary shared by both
+frontends.
 
 Scenario candidates are derived from bounded argument guards, MMIO predicates,
 and poll shapes in linked IR. The browser labels them `replay required` because

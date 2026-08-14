@@ -1,7 +1,7 @@
 //! Allocation-free parsing for the bounded 2.4-GHz HE20 capability prefix.
 //!
 //! This module does not enable HE transmission. It owns the stateless peer
-//! representation recovered from the former migration runtime. Register
+//! representation recovered from reviewed vendor behavior. Register
 //! programming belongs to the chip MAC/PAC boundary.
 
 pub const HE_CAPABILITIES_EXTENSION_ID: u8 = 35;

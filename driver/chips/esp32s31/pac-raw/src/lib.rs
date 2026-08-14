@@ -33827,21 +33827,20 @@ pub mod masked_register_modify {
             unsafe { writer.bits(image) }
         });
     }
-
-    /// Preserve mask 0xfffffffe, accept input mask 0x00000000, and set 0x00000001 in WIFI_MAC_COEX_RUNTIME.CLEAR_REQUEST.
-    #[inline]
-    pub fn request_mac_rx_beacon_clear(registers: &crate::WifiMacCoexRuntime, input: u32) {
-        registers.clear_request().modify(|reader, writer| {
-            let image = (reader.bits() & 0xfffffffe) | (input & 0x00000000) | 0x00000001;
-            // SAFETY: generator validation proves the three masks are
-            // disjoint and partition every bit of this ordinary register.
-            unsafe { writer.bits(image) }
-        });
-    }
 }
 
 /// Safe, SVD-declared indexed bit-set read-modify-write transactions.
 pub mod indexed_bit_set_modify {
+
+    /// Set one bit selected by the reviewed `MacRxBeaconClearRequest` domain in WIFI_MAC_COEX_RUNTIME.CLEAR_REQUEST.
+    #[inline]
+    pub fn request_mac_rx_beacon_clear(registers: &crate::WifiMacCoexRuntime, bit_index: u32) {
+        registers.clear_request().modify(|reader, writer| {
+            writer
+                .requests_unknown()
+                .set(reader.bits() | (1_u32 << bit_index))
+        });
+    }
 
     /// Set one bit selected by the reviewed `MacItwtClearIndex` domain in WIFI_MAC_COEX_RUNTIME.CLEAR_REQUEST.
     #[inline]

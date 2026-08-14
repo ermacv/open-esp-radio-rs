@@ -1,7 +1,7 @@
 //! Allocation-free AP association and power-save frame transforms.
 //!
-//! These pure transforms were extracted from the former migration
-//! `wpa2_ap` and `ap_power_save` modules. Association ownership, deferred
+//! These pure transforms form the source-owned AP protocol boundary.
+//! Association ownership, deferred
 //! queues and wakeups stay with the radio owner.
 
 use crate::{

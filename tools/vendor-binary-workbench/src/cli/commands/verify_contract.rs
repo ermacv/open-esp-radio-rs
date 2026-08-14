@@ -1,14 +1,14 @@
-//! Typed semantic-contract qualification and CLI-only presentation.
+//! Typed semantic-contract verification and CLI-only presentation.
 
 use super::super::*;
 use open_radio_vendor_semantics::{
-    QualificationCase, QualificationDifference, QualificationReport,
+    SemanticVerificationCase, SemanticVerificationDifference, SemanticVerificationReport,
 };
 
 pub(super) fn run(
     arguments: VerifyContractArgs,
     svd: &MmioMap,
-    harness: &str,
+    provider: &str,
     contract: &str,
 ) -> Result<bool> {
     let vendor_artifact = arguments
@@ -20,7 +20,7 @@ pub(super) fn run(
         .ok_or("missing --vendor-companion")
         .map_err(crate::Error::invalid)?;
     let report = crate::harnesses::verify_named_contract(
-        harness,
+        provider,
         contract,
         svd,
         &vendor_artifact,
@@ -31,9 +31,9 @@ pub(super) fn run(
     Ok(matched)
 }
 
-fn render_human(report: &QualificationReport) {
+fn render_human(report: &SemanticVerificationReport) {
     outputln!(
-        "Semantic qualification: {} — {}",
+        "Semantic verification: {} — {}",
         report.contract,
         report.verdict.label()
     );
@@ -61,7 +61,7 @@ fn render_human(report: &QualificationReport) {
     );
 }
 
-fn render_case_human(case: &QualificationCase) {
+fn render_case_human(case: &SemanticVerificationCase) {
     outputln!("  {}: {}", case.name, case.verdict.label());
     if let Some(events) = case.events {
         outputln!(
@@ -76,7 +76,7 @@ fn render_case_human(case: &QualificationCase) {
     }
 }
 
-fn render_difference_human(difference: &QualificationDifference) {
+fn render_difference_human(difference: &SemanticVerificationDifference) {
     if let Some(reason) = difference.reason.as_deref() {
         outputln!("    difference: {reason}");
     }
@@ -98,11 +98,11 @@ fn render_difference_human(difference: &QualificationDifference) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use open_radio_vendor_semantics::QualificationSummary;
+    use open_radio_vendor_semantics::SemanticVerificationSummary;
 
     #[test]
-    fn qualification_report_is_a_stable_typed_document() {
-        let report = QualificationReport {
+    fn semantic_verification_report_is_a_stable_typed_document() {
+        let report = SemanticVerificationReport {
             schema: 2,
             mode: EquivalenceMode::Semantic,
             contract: "fixture",
@@ -110,7 +110,7 @@ mod tests {
             verdict: EquivalenceVerdict::Match,
             matched: true,
             artifacts: Vec::new(),
-            cases: vec![QualificationCase {
+            cases: vec![SemanticVerificationCase {
                 name: "cold".to_owned(),
                 verdict: EquivalenceVerdict::Match,
                 events: Some(3),
@@ -122,7 +122,7 @@ mod tests {
                 state: None,
                 difference: None,
             }],
-            summary: QualificationSummary {
+            summary: SemanticVerificationSummary {
                 scenarios: 1,
                 matched: 1,
                 mismatched: 0,

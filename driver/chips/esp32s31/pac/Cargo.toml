@@ -9,7 +9,6 @@ description = "Closed typed ESP32-S31 radio peripheral access crate"
 
 [features]
 validation-probes = ["open-esp-radio-esp32s31-pac-raw/validation-probes"]
-test-register-catalog = []
 
 [dependencies]
 open-esp-radio-dma = { path = "../../../common/dma" }

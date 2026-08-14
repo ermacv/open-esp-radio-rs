@@ -592,7 +592,7 @@ mod tests {
         pin::Pin,
     };
 
-    use open_esp_radio_esp32s31_pac::{
+    use open_esp_radio_esp32s31_hal::types::{
         MacKeyInstallOutcome, MacLegacyTxProgram, MacTxCompletionRegisters, MacTxDetachOutcome,
         MacTxDetachReason, MacTxQueueDetached,
     };
@@ -1080,19 +1080,20 @@ mod tests {
             prepare: true,
             ..Hardware::default()
         };
-        let mut tx = make_tx(slot.as_mut(), &mut hardware, 2);
-        tx.start(&mut hardware, &ethernet()).unwrap();
+        {
+            let mut tx = make_tx(slot.as_mut(), &mut hardware, 2);
+            tx.start(&mut hardware, &ethernet()).unwrap();
 
-        assert_eq!(
-            crate::test_support::block_on(tx.service(&mut hardware, WifiTxWake::Deadline)),
-            Err(SingleMpduTxError::RadioResetRequired(
-                TxResetReason::ExecutorDeadline
-            ))
-        );
-        assert_eq!(tx.ordinary.slot.state(), TxSlotState::ResetRequired);
-        assert_eq!(tx.queue_state(), MacTxQueueState::ResetRequired);
-        assert!(tx.ordinary.slot.as_mut().reserve(64, 32).is_err());
-        drop(tx);
+            assert_eq!(
+                crate::test_support::block_on(tx.service(&mut hardware, WifiTxWake::Deadline)),
+                Err(SingleMpduTxError::RadioResetRequired(
+                    TxResetReason::ExecutorDeadline
+                ))
+            );
+            assert_eq!(tx.ordinary.slot.state(), TxSlotState::ResetRequired);
+            assert_eq!(tx.queue_state(), MacTxQueueState::ResetRequired);
+            assert!(tx.ordinary.slot.as_mut().reserve(64, 32).is_err());
+        }
         let drop_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| drop(slot)));
         assert!(drop_result.is_ok());
     }

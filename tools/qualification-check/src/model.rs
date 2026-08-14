@@ -5,6 +5,7 @@ use std::{
 };
 
 use serde::Deserialize;
+use sha2::{Digest, Sha256};
 
 use crate::Result;
 
@@ -72,12 +73,28 @@ proof_axis!(HostProof, |value| matches!(value, HostProof::Covered), {
     "partial" => Partial,
     "missing" => Missing,
 });
-proof_axis!(VendorProof, |value| matches!(value, VendorProof::Qualified | VendorProof::NotApplicable), {
-    "qualified" => Qualified,
-    "mapped" => Mapped,
-    "unmapped" => Unmapped,
-    "not-applicable" => NotApplicable,
-});
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum VendorProof {
+    Qualified,
+    Mapped,
+    Unmapped,
+    NotApplicable,
+}
+
+impl VendorProof {
+    pub(crate) const fn label(self) -> &'static str {
+        match self {
+            Self::Qualified => "qualified",
+            Self::Mapped => "mapped",
+            Self::Unmapped => "unmapped",
+            Self::NotApplicable => "not-applicable",
+        }
+    }
+
+    pub(crate) const fn is_terminal(self) -> bool {
+        matches!(self, Self::Qualified | Self::NotApplicable)
+    }
+}
 proof_axis!(HilProof, |value| matches!(value, HilProof::Qualified), {
     "qualified" => Qualified,
     "partial" => Partial,
@@ -104,6 +121,13 @@ pub(crate) struct VendorRoot {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct VendorEvidenceRef {
+    pub(crate) suite: String,
+    pub(crate) source: String,
+    pub(crate) symbol: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct Gap {
     pub(crate) axis: Axis,
     pub(crate) id: String,
@@ -122,6 +146,8 @@ pub(crate) struct Capability {
     pub(crate) owners: Vec<FileReference>,
     pub(crate) tests: Vec<FileReference>,
     pub(crate) vendor_roots: Vec<VendorRoot>,
+    pub(crate) vendor_evidence: Vec<VendorEvidenceRef>,
+    pub(crate) vendor_not_applicable: Option<String>,
     pub(crate) vendor_anchors: Vec<FileReference>,
     pub(crate) hil_evidence: Vec<FileReference>,
     pub(crate) dependencies: Vec<String>,
@@ -149,12 +175,13 @@ struct CapabilityBuilder {
     scope: Option<String>,
     implementation: Option<ImplementationProof>,
     host: Option<HostProof>,
-    vendor: Option<VendorProof>,
     hil: Option<HilProof>,
     async_proof: Option<AsyncProof>,
     owners: Vec<FileReference>,
     tests: Vec<FileReference>,
     vendor_roots: Vec<VendorRoot>,
+    vendor_evidence: Vec<VendorEvidenceRef>,
+    vendor_not_applicable: Option<String>,
     vendor_anchors: Vec<FileReference>,
     hil_evidence: Vec<FileReference>,
     dependencies: Vec<String>,
@@ -177,12 +204,14 @@ impl CapabilityBuilder {
             scope: required(self.scope, &id, line, "scope")?,
             implementation: required(self.implementation, &id, line, "implementation proof")?,
             host: required(self.host, &id, line, "host proof")?,
-            vendor: required(self.vendor, &id, line, "vendor proof")?,
+            vendor: VendorProof::Unmapped,
             hil: required(self.hil, &id, line, "HIL proof")?,
             async_proof: required(self.async_proof, &id, line, "async proof")?,
             owners: self.owners,
             tests: self.tests,
             vendor_roots: self.vendor_roots,
+            vendor_evidence: self.vendor_evidence,
+            vendor_not_applicable: self.vendor_not_applicable,
             vendor_anchors: self.vendor_anchors,
             hil_evidence: self.hil_evidence,
             dependencies: self.dependencies,
@@ -195,6 +224,7 @@ impl CapabilityBuilder {
 pub(crate) struct Ledger {
     pub(crate) target: String,
     pub(crate) verification_project: PathBuf,
+    pub(crate) vendor_evidence_index: PathBuf,
     pub(crate) capabilities: BTreeMap<String, Capability>,
 }
 
@@ -272,6 +302,7 @@ impl Ledger {
         let mut version = None;
         let mut target = None;
         let mut verification_project = None;
+        let mut vendor_evidence_index = None;
         let mut required_capabilities = BTreeSet::new();
         let mut capabilities = BTreeMap::new();
         let mut current: Option<CapabilityBuilder> = None;
@@ -300,6 +331,7 @@ impl Ledger {
                 .ok_or_else(|| format!("directive needs a value at line {line}"))?;
             if directive == "capability" {
                 if let Some(builder) = current.take() {
+                    version.ok_or("ledger-version must precede capabilities")?;
                     finish(builder, &mut capabilities)?;
                 }
                 current = Some(CapabilityBuilder {
@@ -313,7 +345,7 @@ impl Ledger {
                 match directive {
                     "ledger-version" => {
                         let parsed = value.parse::<u32>()?;
-                        if parsed != 1 {
+                        if parsed != 2 {
                             return Err(format!("unsupported ledger version {parsed}").into());
                         }
                         set_once(&mut version, parsed, directive, line)?;
@@ -323,6 +355,12 @@ impl Ledger {
                     }
                     "verification-project" => set_once(
                         &mut verification_project,
+                        relative_path(value, line)?,
+                        directive,
+                        line,
+                    )?,
+                    "vendor-evidence-index" => set_once(
+                        &mut vendor_evidence_index,
                         relative_path(value, line)?,
                         directive,
                         line,
@@ -361,12 +399,6 @@ impl Ledger {
                     directive,
                     line,
                 )?,
-                "vendor-proof" => set_once(
-                    &mut builder.vendor,
-                    VendorProof::parse(value, line)?,
-                    directive,
-                    line,
-                )?,
                 "hil-proof" => set_once(
                     &mut builder.hil,
                     HilProof::parse(value, line)?,
@@ -399,6 +431,20 @@ impl Ledger {
                         symbol: words[1].to_owned(),
                     });
                 }
+                "vendor-evidence" => {
+                    let words = words_exact(value, 3, directive, line)?;
+                    builder.vendor_evidence.push(VendorEvidenceRef {
+                        suite: slug(words[0], "verification suite", line)?,
+                        source: words[1].to_owned(),
+                        symbol: words[2].to_owned(),
+                    });
+                }
+                "vendor-not-applicable" => set_once(
+                    &mut builder.vendor_not_applicable,
+                    slug(value, "vendor not-applicable reason", line)?,
+                    directive,
+                    line,
+                )?,
                 "depends-on" => builder.dependencies.push(slug(value, "dependency", line)?),
                 "gap" => {
                     let words = words_exact(value, 2, directive, line)?;
@@ -416,12 +462,15 @@ impl Ledger {
             }
         }
         if let Some(builder) = current {
+            version.ok_or("ledger-version must precede capabilities")?;
             finish(builder, &mut capabilities)?;
         }
         version.ok_or("ledger has no ledger-version")?;
         let target = target.ok_or("ledger has no target")?;
         let verification_project =
             verification_project.ok_or("ledger has no verification-project")?;
+        let vendor_evidence_index =
+            vendor_evidence_index.ok_or("ledger version 2 has no vendor-evidence-index")?;
         for required in &required_capabilities {
             if !capabilities.contains_key(required) {
                 return Err(format!("required capability {required} is missing").into());
@@ -442,15 +491,33 @@ impl Ledger {
         Ok(Self {
             target,
             verification_project,
+            vendor_evidence_index,
             capabilities,
         })
     }
 
-    pub(crate) fn validate(&self, root: &Path) -> Result<()> {
+    pub(crate) fn validate(&mut self, root: &Path) -> Result<()> {
         if !root.is_dir() {
             return Err(format!("repository root {} is not a directory", root.display()).into());
         }
         let dispositions = DispositionIndex::load_project(&root.join(&self.verification_project))?;
+        let index_path = root.join(&self.vendor_evidence_index);
+        let project_index = dispositions
+            .vendor_evidence_index
+            .as_ref()
+            .ok_or("ledger version 2 verification project has no evidence-index output")?;
+        if fs::canonicalize(&index_path)? != fs::canonicalize(project_index)? {
+            return Err(format!(
+                "ledger vendor evidence index {} does not match verification project output {}",
+                index_path.display(),
+                project_index.display()
+            )
+            .into());
+        }
+        let index = VendorEvidenceIndex::load(&index_path)?;
+        for capability in self.capabilities.values_mut() {
+            capability.vendor = derive_vendor_proof(capability, &index, root)?;
+        }
         let mut files = BTreeMap::new();
         for capability in self.capabilities.values() {
             validate_capability(capability, root, &dispositions, &mut files)?;
@@ -482,15 +549,231 @@ struct DispositionEntry {
 }
 
 #[derive(Debug)]
-struct DispositionIndex(BTreeMap<(String, String), DispositionEntry>);
+struct DispositionIndex {
+    entries: BTreeMap<(String, String), DispositionEntry>,
+    vendor_evidence_index: Option<PathBuf>,
+}
 
-#[derive(Deserialize)]
-struct VerificationProjectDocument {
-    verification: VerificationProjectSection,
+#[derive(Debug, Deserialize)]
+struct VendorEvidenceIndex {
+    schema_version: u32,
+    complete_project_run: bool,
+    entries: Vec<VendorEvidenceIndexEntry>,
+}
+
+#[derive(Debug, Deserialize)]
+struct VendorEvidenceIndexEntry {
+    suite: String,
+    source: String,
+    symbol: String,
+    evidence_class: String,
+    status: String,
+    release_eligible: bool,
+    rust_component: Option<String>,
+    evidence_digest: Option<String>,
+    baseline_passed: bool,
+    artifact_hashes: Vec<VendorEvidenceArtifactHash>,
+    source_hashes: Vec<VendorEvidenceSourceHash>,
+    #[serde(default)]
+    release_blockers: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct VendorEvidenceArtifactHash {
+    sha256: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct VendorEvidenceSourceHash {
+    path: PathBuf,
+    sha256: String,
+}
+
+impl VendorEvidenceIndex {
+    fn load(path: &Path) -> Result<Self> {
+        let input = fs::read_to_string(path).map_err(|error| {
+            format!(
+                "cannot read vendor evidence index {}: {error}",
+                path.display()
+            )
+        })?;
+        let index: Self = serde_json::from_str(&input).map_err(|error| {
+            format!(
+                "cannot parse vendor evidence index {}: {error}",
+                path.display()
+            )
+        })?;
+        if index.schema_version != 1 {
+            return Err(format!(
+                "vendor evidence index {} has unsupported schema {}",
+                path.display(),
+                index.schema_version
+            )
+            .into());
+        }
+        if !index.complete_project_run {
+            return Err(format!(
+                "vendor evidence index {} was not produced by a complete project run",
+                path.display()
+            )
+            .into());
+        }
+        let mut identities = BTreeSet::new();
+        for entry in &index.entries {
+            if !identities.insert((&entry.suite, &entry.source, &entry.symbol)) {
+                return Err(format!(
+                    "vendor evidence index {} repeats {} {} {}",
+                    path.display(),
+                    entry.suite,
+                    entry.source,
+                    entry.symbol
+                )
+                .into());
+            }
+        }
+        Ok(index)
+    }
+
+    fn get(&self, reference: &VendorEvidenceRef) -> Option<&VendorEvidenceIndexEntry> {
+        self.entries.iter().find(|entry| {
+            entry.suite == reference.suite
+                && entry.source == reference.source
+                && entry.symbol == reference.symbol
+        })
+    }
+}
+
+impl VendorEvidenceIndexEntry {
+    fn is_current_release_evidence(&self, root: &Path) -> bool {
+        if !self.release_eligible
+            || self.evidence_class != "production-trace"
+            || !matches!(self.status.as_str(), "match" | "bounded-match")
+            || !self.baseline_passed
+            || self.rust_component.is_none()
+            || self.evidence_digest.is_none()
+            || self.artifact_hashes.is_empty()
+            || self.source_hashes.is_empty()
+            || !self.release_blockers.is_empty()
+        {
+            return false;
+        }
+        if !self.evidence_digest.as_deref().is_some_and(valid_sha256)
+            || self
+                .artifact_hashes
+                .iter()
+                .any(|artifact| !valid_sha256(&artifact.sha256))
+        {
+            return false;
+        }
+        for source in &self.source_hashes {
+            if source.path.as_os_str().is_empty()
+                || source.path.is_absolute()
+                || source
+                    .path
+                    .components()
+                    .any(|component| !matches!(component, Component::Normal(_)))
+                || !valid_sha256(&source.sha256)
+            {
+                return false;
+            }
+            let contents = match fs::read(root.join(&source.path)) {
+                Ok(contents) => contents,
+                Err(_) => return false,
+            };
+            if format!("{:x}", Sha256::digest(contents)) != source.sha256 {
+                return false;
+            }
+        }
+        true
+    }
+}
+
+fn valid_sha256(value: &str) -> bool {
+    value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
+fn derive_vendor_proof(
+    capability: &Capability,
+    index: &VendorEvidenceIndex,
+    root: &Path,
+) -> Result<VendorProof> {
+    if capability.vendor_not_applicable.is_some() {
+        if !capability.vendor_roots.is_empty()
+            || !capability.vendor_anchors.is_empty()
+            || !capability.vendor_evidence.is_empty()
+        {
+            return Err(format!(
+                "vendor-not-applicable capability {} cannot claim vendor roots, anchors or evidence",
+                capability.id
+            )
+            .into());
+        }
+        return Ok(VendorProof::NotApplicable);
+    }
+    let roots = capability
+        .vendor_roots
+        .iter()
+        .map(|root| (root.source.as_str(), root.symbol.as_str()))
+        .collect::<BTreeSet<_>>();
+    let mut references = BTreeSet::new();
+    for reference in &capability.vendor_evidence {
+        let key = (
+            reference.suite.as_str(),
+            reference.source.as_str(),
+            reference.symbol.as_str(),
+        );
+        if !references.insert(key) {
+            return Err(format!(
+                "capability {} repeats vendor evidence {} {} {}",
+                capability.id, reference.suite, reference.source, reference.symbol
+            )
+            .into());
+        }
+        if !roots.contains(&(reference.source.as_str(), reference.symbol.as_str())) {
+            return Err(format!(
+                "vendor evidence {} {} {} for {} does not name a declared vendor-root",
+                reference.suite, reference.source, reference.symbol, capability.id
+            )
+            .into());
+        }
+        if index.get(reference).is_none() {
+            return Err(format!(
+                "vendor evidence index has no {} {} {} entry required by {}",
+                reference.suite, reference.source, reference.symbol, capability.id
+            )
+            .into());
+        }
+    }
+
+    let all_roots_release_eligible = !roots.is_empty()
+        && roots.iter().all(|(source, symbol)| {
+            capability.vendor_evidence.iter().any(|reference| {
+                reference.source == *source
+                    && reference.symbol == *symbol
+                    && index
+                        .get(reference)
+                        .is_some_and(|entry| entry.is_current_release_evidence(root))
+            })
+        });
+    if all_roots_release_eligible && capability.vendor_anchors.is_empty() {
+        Ok(VendorProof::Qualified)
+    } else if !capability.vendor_roots.is_empty() || !capability.vendor_anchors.is_empty() {
+        Ok(VendorProof::Mapped)
+    } else {
+        Ok(VendorProof::Unmapped)
+    }
 }
 
 #[derive(Deserialize)]
-struct VerificationProjectSection {
+struct VerificationProjectDocument {
+    #[serde(rename = "verification-addon")]
+    verification_addon: PathBuf,
+}
+
+#[derive(Deserialize)]
+struct VerificationAddonDocument {
+    #[serde(rename = "evidence-index")]
+    evidence_index: Option<PathBuf>,
     #[serde(default)]
     suites: Vec<VerificationSuiteDocument>,
 }
@@ -534,11 +817,62 @@ impl DispositionIndex {
                     path.display()
                 )
             })?;
-        let base = path
+        let project_base = path
             .parent()
             .ok_or_else(|| format!("verification project has no parent: {}", path.display()))?;
+        if project.verification_addon.is_absolute()
+            || project
+                .verification_addon
+                .components()
+                .any(|component| !matches!(component, Component::Normal(_)))
+        {
+            return Err(format!(
+                "unsafe verification add-on path {:?} in {}",
+                project.verification_addon,
+                path.display()
+            )
+            .into());
+        }
+        let addon_path = project_base.join(project.verification_addon);
+        let addon_input = fs::read_to_string(&addon_path).map_err(|error| {
+            format!(
+                "cannot read verification add-on {}: {error}",
+                addon_path.display()
+            )
+        })?;
+        let verification: VerificationAddonDocument = toml_edit::de::from_str(&addon_input)
+            .map_err(|error| {
+                format!(
+                    "cannot parse verification add-on {}: {error}",
+                    addon_path.display()
+                )
+            })?;
+        let base = addon_path.parent().ok_or_else(|| {
+            format!(
+                "verification add-on has no parent: {}",
+                addon_path.display()
+            )
+        })?;
+        let vendor_evidence_index = verification
+            .evidence_index
+            .map(|evidence_index| -> Result<PathBuf> {
+                if evidence_index.is_absolute()
+                    || evidence_index
+                        .components()
+                        .any(|component| !matches!(component, Component::Normal(_)))
+                {
+                    return Err(format!(
+                        "unsafe vendor evidence index path {:?} in {}",
+                        evidence_index,
+                        path.display()
+                    )
+                    .into());
+                }
+                Ok(base.join(evidence_index))
+            })
+            .transpose()?;
         let mut entries = BTreeMap::new();
-        for suite in project.verification.suites {
+        for suite in verification.suites {
             for relative in suite.dispositions {
                 if relative.is_absolute()
                     || relative
@@ -584,11 +918,15 @@ impl DispositionIndex {
                 }
             }
         }
-        Ok(Self(entries))
+        Ok(Self {
+            entries,
+            vendor_evidence_index,
+        })
     }
 
     fn get(&self, root: &VendorRoot) -> Option<&DispositionEntry> {
-        self.0.get(&(root.source.clone(), root.symbol.clone()))
+        self.entries
+            .get(&(root.source.clone(), root.symbol.clone()))
     }
 }
 
@@ -930,9 +1268,10 @@ mod tests {
     use super::*;
 
     const COMPLETE: &str = r#"
-ledger-version 1
+ledger-version 2
 target test-radio
 verification-project tools/verification-project.toml
+vendor-evidence-index evidence/vendor.json
 require-capability channel-switch
 
 capability channel-switch
@@ -940,12 +1279,12 @@ title Channel switch
 scope One finite transition
 implementation complete
 host-proof covered
-vendor-proof qualified
 hil-proof qualified
 async-proof bounded
 owner driver/radio/src/channel.rs Channel
 test driver/radio/src/channel.rs completes_channel
 vendor-root archive set_channel
+vendor-evidence radio archive set_channel
 hil-evidence qualification/targets/esp32s31/records/record.md HIL_CHANNEL
 "#;
 
@@ -953,18 +1292,18 @@ hil-evidence qualification/targets/esp32s31/records/record.md HIL_CHANNEL
     fn parses_a_closed_five_axis_capability() {
         let ledger = Ledger::parse(COMPLETE).unwrap();
         let capability = &ledger.capabilities["channel-switch"];
-        assert!(capability.proof_ready());
+        assert_eq!(capability.vendor, VendorProof::Unmapped);
         assert_eq!(capability.vendor_roots[0].symbol, "set_channel");
     }
 
     #[test]
     fn non_terminal_axis_requires_a_named_gap() {
-        let input = COMPLETE.replace("vendor-proof qualified", "vendor-proof mapped");
+        let input = COMPLETE.replace("host-proof covered", "host-proof partial");
         let ledger = Ledger::parse(&input).unwrap();
         let capability = &ledger.capabilities["channel-switch"];
-        assert!(!capability.vendor.is_terminal());
+        assert!(!capability.host.is_terminal());
         let error = validate_gap_contract(capability).unwrap_err();
-        assert!(error.to_string().contains("vendor axis"));
+        assert!(error.to_string().contains("host axis"));
     }
 
     #[test]
@@ -992,6 +1331,81 @@ hil-evidence qualification/targets/esp32s31/records/record.md HIL_CHANNEL
             error
                 .to_string()
                 .contains("unsafe repository-relative path")
+        );
+    }
+
+    #[test]
+    fn vendor_status_is_derived_from_release_eligible_index_rows() {
+        let ledger = Ledger::parse(COMPLETE).unwrap();
+        let capability = &ledger.capabilities["channel-switch"];
+        let root = std::env::temp_dir().join(format!(
+            "qualification-check-vendor-index-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join("channel.rs"), "production source").unwrap();
+        let mut index = VendorEvidenceIndex {
+            schema_version: 1,
+            complete_project_run: true,
+            entries: vec![VendorEvidenceIndexEntry {
+                suite: "radio".to_owned(),
+                source: "archive".to_owned(),
+                symbol: "set_channel".to_owned(),
+                evidence_class: "production-trace".to_owned(),
+                status: "match".to_owned(),
+                release_eligible: true,
+                rust_component: Some("driver::set_channel".to_owned()),
+                evidence_digest: Some("11".repeat(32)),
+                baseline_passed: true,
+                artifact_hashes: vec![VendorEvidenceArtifactHash {
+                    sha256: "22".repeat(32),
+                }],
+                source_hashes: vec![VendorEvidenceSourceHash {
+                    path: PathBuf::from("channel.rs"),
+                    sha256: format!(
+                        "{:x}",
+                        Sha256::digest(std::fs::read(root.join("channel.rs")).unwrap())
+                    ),
+                }],
+                release_blockers: Vec::new(),
+            }],
+        };
+        assert_eq!(
+            derive_vendor_proof(capability, &index, &root).unwrap(),
+            VendorProof::Qualified
+        );
+        index.entries[0].release_eligible = false;
+        assert_eq!(
+            derive_vendor_proof(capability, &index, &root).unwrap(),
+            VendorProof::Mapped
+        );
+        index.entries[0].release_eligible = true;
+        std::fs::write(root.join("channel.rs"), "changed production source").unwrap();
+        assert_eq!(
+            derive_vendor_proof(capability, &index, &root).unwrap(),
+            VendorProof::Mapped
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn rejects_removed_ledger_version_one() {
+        let error =
+            Ledger::parse(&COMPLETE.replace("ledger-version 2", "ledger-version 1")).unwrap_err();
+        assert!(error.to_string().contains("unsupported ledger version 1"));
+    }
+
+    #[test]
+    fn rejects_removed_handwritten_vendor_proof() {
+        let input = COMPLETE.replace(
+            "host-proof covered",
+            "host-proof covered\nvendor-proof qualified",
+        );
+        let error = Ledger::parse(&input).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("unknown capability directive \"vendor-proof\"")
         );
     }
 }

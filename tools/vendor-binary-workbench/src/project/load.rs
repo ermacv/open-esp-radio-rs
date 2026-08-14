@@ -13,7 +13,8 @@ use toml_edit::{Item, Table};
 
 use crate::{
     Result,
-    platform_pack::PlatformPack,
+    chip_pack::ChipPack,
+    ecosystem_pack::EcosystemPack,
     project_analysis::{load_navigation_index, load_symbol_inventory},
     project_ir::load_ir_profiles,
 };
@@ -34,10 +35,10 @@ pub(super) fn load(path: &Path) -> Result<ProjectSpec> {
         }
     })?;
     let source = ProjectSource::new(path, &input);
-    if document.get("schema").and_then(Item::as_integer) != Some(1) {
+    if document.get("schema").and_then(Item::as_integer) != Some(3) {
         return Err(source.item(
             document.get("schema"),
-            "project manifest requires schema = 1",
+            "project manifest requires schema = 3",
         ));
     }
     reject_unknown_keys(
@@ -46,18 +47,16 @@ pub(super) fn load(path: &Path) -> Result<ProjectSpec> {
             "schema",
             "id",
             "target-spec",
-            "platform-pack",
+            "ecosystem-packs",
+            "chip-pack",
             "run-spec",
-            "memory-map",
-            "svd",
             "analysis",
             "code",
             "registers",
             "interfaces",
             "functions",
             "review",
-            "qualification",
-            "verification",
+            "verification-addon",
         ],
         "project manifest",
         source,
@@ -67,38 +66,66 @@ pub(super) fn load(path: &Path) -> Result<ProjectSpec> {
     validate_id(&id).map_err(|message| source.item(document.get("id"), message))?;
     let target_spec_value = required_string(&document, "target-spec", source)?;
     let target_spec = resolve_path(base, &target_spec_value);
-    let platform_pack = optional_string(&document, "platform-pack", source)?
-        .map(|path| PlatformPack::load(&resolve_path(base, &path)))
-        .transpose()?;
-    let run_spec =
-        optional_string(&document, "run-spec", source)?.map(|path| resolve_path(base, &path));
-    let memory_map =
-        optional_string(&document, "memory-map", source)?.map(|path| resolve_path(base, &path));
-    let svd_configured = document.get("svd").is_some();
-    let svd_paths = document
-        .get("svd")
+    let ecosystem_pack_paths = document
+        .get("ecosystem-packs")
         .map(|item| {
-            let array = item.as_array().ok_or_else(|| {
-                source.item(Some(item), "project manifest svd must be an array of paths")
+            let values = item.as_array().ok_or_else(|| {
+                source.item(
+                    Some(item),
+                    "project manifest ecosystem-packs must be an array of paths",
+                )
             })?;
-            array
+            let mut seen = std::collections::BTreeSet::new();
+            values
                 .iter()
                 .enumerate()
                 .map(|(index, value)| {
-                    value
-                        .as_str()
-                        .map(|path| resolve_path(base, path))
-                        .ok_or_else(|| {
-                            source.error(
-                                value.span(),
-                                format!("project manifest svd[{index}] must be a string"),
-                            )
-                        })
+                    let span = value.span();
+                    let value = value.as_str().filter(|value| !value.is_empty()).ok_or_else(|| {
+                        source.error(
+                            span.clone(),
+                            format!(
+                                "project manifest ecosystem-packs[{index}] must be a non-empty string"
+                            ),
+                        )
+                    })?;
+                    let path = resolve_path(base, value);
+                    if !seen.insert(path.clone()) {
+                        return Err(source.error(
+                            span,
+                            format!("duplicate ecosystem pack path {}", path.display()),
+                        ));
+                    }
+                    Ok(path)
                 })
                 .collect::<Result<Vec<_>>>()
         })
         .transpose()?
         .unwrap_or_default();
+    let ecosystem_packs = ecosystem_pack_paths
+        .iter()
+        .map(|path| EcosystemPack::load(path))
+        .collect::<Result<Vec<_>>>()?;
+    let chip_pack = optional_string(&document, "chip-pack", source)?
+        .map(|path| ChipPack::load(&resolve_path(base, &path)))
+        .transpose()?;
+    let run_spec =
+        optional_string(&document, "run-spec", source)?.map(|path| resolve_path(base, &path));
+    let memory_map = chip_pack.as_ref().and_then(|pack| pack.memory_map.clone());
+    let svd_paths = chip_pack
+        .as_ref()
+        .map(|pack| pack.svd_paths.clone())
+        .unwrap_or_default();
+    let semantic_catalogs = ecosystem_packs
+        .iter()
+        .flat_map(|pack| pack.knowledge_packs.iter().cloned())
+        .chain(
+            chip_pack
+                .iter()
+                .flat_map(|pack| pack.knowledge_packs.iter().cloned()),
+        )
+        .collect::<Vec<_>>();
+    crate::interfaces::SemanticCatalogs::load(&semantic_catalogs)?;
     let ir_profiles = load_ir_profiles(&document, base, source)?;
     let symbol_inventory = load_symbol_inventory(&document, base, &ir_profiles, source)?;
     let navigation_index = load_navigation_index(
@@ -286,7 +313,7 @@ pub(super) fn load(path: &Path) -> Result<ProjectSpec> {
                 .as_table()
                 .ok_or_else(|| source.item(Some(item), "project manifest interfaces must be a table"))?;
             if let Some(catalogs) = table.get("semantic-catalogs") {
-                return Err(source.item(Some(catalogs), "unknown project interfaces key \"semantic-catalogs\"; semantic catalogs belong to the platform pack"));
+                return Err(source.item(Some(catalogs), "unknown project interfaces key \"semantic-catalogs\"; knowledge packs belong to ecosystem or chip packs"));
             }
             reject_unknown_keys(
                 table,
@@ -294,10 +321,6 @@ pub(super) fn load(path: &Path) -> Result<ProjectSpec> {
                 "project interfaces",
                 source,
             )?;
-            let semantic_catalogs = platform_pack
-                .as_ref()
-                .map(|pack| pack.semantic_catalogs.clone())
-                .unwrap_or_default();
             Ok(InterfaceWorkspacePaths {
                 facts: resolve_path(
                     base,
@@ -305,7 +328,7 @@ pub(super) fn load(path: &Path) -> Result<ProjectSpec> {
                 ),
                 pack: optional_table_string(table, "pack", "project interfaces", source)?
                     .map(|path| resolve_path(base, &path)),
-                semantic_catalogs,
+                semantic_catalogs: semantic_catalogs.clone(),
             })
         })
         .transpose()?;
@@ -393,8 +416,9 @@ pub(super) fn load(path: &Path) -> Result<ProjectSpec> {
         })
         .transpose()?;
     let review = load_review_workspace(&document, base, &ir_profiles, source)?;
-    let qualification = load_qualification_workspace(&document, base, source)?;
-    let verification = load_verification_workspace(&document, base, source)?;
+    let verification = optional_string(&document, "verification-addon", source)?
+        .map(|value| load_verification_addon(&resolve_path(base, &value)))
+        .transpose()?;
     if let Some(symbols) = &symbol_inventory {
         let conflicting_fact = registers
             .as_ref()
@@ -509,10 +533,10 @@ pub(super) fn load(path: &Path) -> Result<ProjectSpec> {
     let project = ProjectSpec {
         id,
         target_spec,
-        platform_pack,
+        ecosystem_packs,
+        chip_pack,
         run_spec,
         memory_map,
-        svd_configured,
         svd_paths,
         symbol_inventory,
         navigation_index,
@@ -522,59 +546,10 @@ pub(super) fn load(path: &Path) -> Result<ProjectSpec> {
         interfaces,
         functions,
         review,
-        qualification,
         verification,
     };
-    crate::qualification::validate_project(&project)?;
+    crate::verification::policy::validate_project(&project)?;
     Ok(project)
-}
-
-fn load_qualification_workspace(
-    document: &Table,
-    base: &Path,
-    source: ProjectSource<'_>,
-) -> Result<Option<QualificationWorkspaceSpec>> {
-    let Some(item) = document.get("qualification") else {
-        return Ok(None);
-    };
-    let table = item
-        .as_table()
-        .ok_or_else(|| source.item(Some(item), "project manifest qualification must be a table"))?;
-    reject_unknown_keys(
-        table,
-        &["pack", "required-features", "hardware-evidence"],
-        "project qualification",
-        source,
-    )?;
-    let pack = resolve_path(
-        base,
-        &table_string(table, "pack", "project qualification", source)?,
-    );
-    let required_features = table_string_array(
-        table,
-        "required-features",
-        "project qualification",
-        source,
-        false,
-    )?;
-    if required_features.is_empty() {
-        return Err(source.table_key(
-            table,
-            "required-features",
-            "project qualification requires at least one feature",
-        ));
-    }
-    Ok(Some(QualificationWorkspaceSpec {
-        pack,
-        required_features,
-        hardware_evidence: table
-            .get("hardware-evidence")
-            .map(|_| {
-                table_string(table, "hardware-evidence", "project qualification", source)
-                    .map(|path| resolve_path(base, &path))
-            })
-            .transpose()?,
-    }))
 }
 
 fn load_review_workspace(
@@ -758,22 +733,81 @@ fn required_table_string_array(
         .collect()
 }
 
+fn load_verification_addon(path: &Path) -> Result<VerificationWorkspacePaths> {
+    let input = fs::read_to_string(path).map_err(|source| ProjectError::Read {
+        path: path.to_owned(),
+        source,
+    })?;
+    let document = toml_edit::Document::parse(input.as_str()).map_err(|error| {
+        let span = error.span().unwrap_or(0..input.len().min(1));
+        ProjectError::Parse {
+            message: error.message().to_owned(),
+            src: NamedSource::new(path.display().to_string(), input.clone()),
+            span: (span.start, span.len().max(1)).into(),
+        }
+    })?;
+    let source = ProjectSource::new(path, &input);
+    if document.get("schema").and_then(Item::as_integer) != Some(2) {
+        return Err(source.item(
+            document.get("schema"),
+            "verification add-on requires schema = 2",
+        ));
+    }
+    reject_unknown_keys(
+        &document,
+        &[
+            "schema",
+            "id",
+            "provider",
+            "report",
+            "evidence-index",
+            "policy",
+            "suites",
+        ],
+        "verification add-on",
+        source,
+    )?;
+    let id = required_string(&document, "id", source)?;
+    validate_id(&id).map_err(|message| source.item(document.get("id"), message))?;
+    let provider = required_string(&document, "provider", source)?;
+    validate_id(&provider).map_err(|message| source.item(document.get("provider"), message))?;
+    let base = path.parent().unwrap_or_else(|| Path::new("."));
+    load_verification_workspace(&document, base, source, provider)
+}
+
 fn load_verification_workspace(
-    document: &Table,
+    table: &Table,
     base: &Path,
     source: ProjectSource<'_>,
-) -> Result<Option<VerificationWorkspacePaths>> {
-    let Some(item) = document.get("verification") else {
-        return Ok(None);
-    };
-    let table = item
-        .as_table()
-        .ok_or_else(|| source.item(Some(item), "project manifest verification must be a table"))?;
-    reject_unknown_keys(table, &["report", "suites"], "project verification", source)?;
+    provider: String,
+) -> Result<VerificationWorkspacePaths> {
+    reject_unknown_keys(
+        table,
+        &[
+            "schema",
+            "id",
+            "provider",
+            "report",
+            "evidence-index",
+            "policy",
+            "suites",
+        ],
+        "verification add-on",
+        source,
+    )?;
     let report = resolve_path(
         base,
         &table_string(table, "report", "project verification", source)?,
     );
+    let evidence_index = resolve_path(
+        base,
+        &table_string(table, "evidence-index", "project verification", source)?,
+    );
+    let policy = table
+        .get("policy")
+        .map(|_| table_string(table, "policy", "project verification", source))
+        .transpose()?
+        .map(|path| resolve_path(base, &path));
     let suites_item = table.get("suites").ok_or_else(|| {
         source.table_key(
             table,
@@ -908,7 +942,13 @@ fn load_verification_workspace(
             })
         })
         .collect::<Result<Vec<_>>>()?;
-    Ok(Some(VerificationWorkspacePaths { report, suites }))
+    Ok(VerificationWorkspacePaths {
+        provider,
+        report,
+        evidence_index,
+        policy,
+        suites,
+    })
 }
 
 fn parse_verification_vendor(

@@ -144,13 +144,13 @@ pub(crate) enum WorkbenchError {
         #[source]
         source: Box<WorkbenchError>,
     },
-    #[error("platform provider {harness:?} failed")]
+    #[error("add-on provider {provider:?} failed")]
     #[diagnostic(
-        code(workbench::platform::provider),
+        code(workbench::addon::provider),
         help("inspect the provider's source error and the target project's reviewed inputs")
     )]
-    PlatformProvider {
-        harness: String,
+    AddonProvider {
+        provider: String,
         #[source]
         source: crate::ProviderError,
     },
@@ -192,12 +192,12 @@ impl WorkbenchError {
         }
     }
 
-    pub(crate) fn platform_provider(
-        harness: impl Into<String>,
+    pub(crate) fn addon_provider(
+        provider: impl Into<String>,
         source: crate::ProviderError,
     ) -> Self {
-        Self::PlatformProvider {
-            harness: harness.into(),
+        Self::AddonProvider {
+            provider: provider.into(),
             source,
         }
     }

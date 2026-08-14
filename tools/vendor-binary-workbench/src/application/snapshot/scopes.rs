@@ -1,4 +1,4 @@
-//! Release-scope summaries for the project browser.
+//! Review-scope summaries for the project browser.
 
 use super::super::{ProjectSession, model::*};
 
@@ -30,10 +30,9 @@ pub(super) fn collect(
         .map(|scope| ReviewScopeSummary {
             id: scope.id,
             publication: scope.publication,
-            replacement_qualification: match scope.replacement_qualification {
-                crate::review_scopes::ReplacementQualification::NotPublished => "not-published",
-                crate::review_scopes::ReplacementQualification::Qualified => "qualified",
-                crate::review_scopes::ReplacementQualification::Blocked => "blocked",
+            replacement_coverage: match scope.replacement_coverage {
+                crate::review_scopes::ReplacementCoverage::Complete => "complete",
+                crate::review_scopes::ReplacementCoverage::Gaps => "gaps",
             }
             .to_owned(),
             replacement_policy_excluded: scope.replacement_policy_excluded,

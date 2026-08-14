@@ -371,7 +371,7 @@ pub struct RegisterDetailSummary {
     pub review_status: RegisterReviewState,
     pub publication_scopes: Vec<String>,
     pub publication_debt: bool,
-    pub review_confidence: Option<String>,
+    pub review_classification: Option<String>,
     pub review_sources: Vec<String>,
     pub reads: usize,
     pub writes: usize,
@@ -496,7 +496,7 @@ pub struct ReviewQueueSummary {
 pub struct ReviewScopeSummary {
     pub id: String,
     pub publication: bool,
-    pub replacement_qualification: String,
+    pub replacement_coverage: String,
     pub replacement_policy_excluded: usize,
     pub analysis_inventory_complete: bool,
     pub profiles: Vec<String>,
@@ -517,44 +517,14 @@ pub struct ReviewScopeSummary {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-pub struct FeatureQualificationSummary {
+pub struct VerificationSurfaceSummary {
     pub id: String,
     pub description: String,
-    pub required: bool,
-    pub status: String,
-    pub coverage: String,
+    pub kind: String,
     pub scopes: Vec<String>,
     pub requirements: usize,
-    pub surface_effects: usize,
-    pub covered_effects: usize,
-    pub dependencies: Vec<FeatureDependencySummary>,
-    pub phases: Vec<FeaturePhaseSummary>,
-    pub hardware: Option<FeatureHardwareSummary>,
-    pub blockers: Vec<String>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-pub struct FeatureDependencySummary {
-    pub feature: String,
-    pub phase: Option<String>,
-    pub status: String,
-    pub blockers: usize,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-pub struct FeaturePhaseSummary {
-    pub id: String,
-    pub transactions: usize,
-    pub covered_transactions: usize,
-    pub requirements: usize,
-    pub blockers: usize,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-pub struct FeatureHardwareSummary {
-    pub status: String,
-    pub successful_runs: usize,
-    pub minimum_successful_runs: usize,
+    pub effects: usize,
+    pub closed: bool,
     pub blockers: Vec<String>,
 }
 
@@ -568,7 +538,7 @@ pub struct WorkspaceSnapshot {
     pub registers: RegisterWorkspaceReport,
     pub interfaces: InterfaceWorkspaceReport,
     pub review_scopes: Vec<ReviewScopeSummary>,
-    pub features: Vec<FeatureQualificationSummary>,
+    pub verification_policy: Vec<VerificationSurfaceSummary>,
     pub review_queue: Vec<ReviewQueueSummary>,
     pub comparisons: Vec<ComparisonProfileSummary>,
     pub diagnostics: Vec<DiagnosticRecord>,

@@ -1,0 +1,24 @@
+# Minimal portability fixture. A private run spec may bind an ESP32-C5 image;
+# generated observations remain local and cannot publish a PAC until a
+# reviewed memory map and register model are explicitly added.
+schema = 3
+id = "esp32c5-review-bootstrap"
+target-spec = "target.toml"
+ecosystem-packs = ["ecosystem.toml"]
+
+[analysis.symbols]
+output = "generated/findings/symbols.json"
+
+[analysis.navigation]
+output = "generated/findings/navigation.json"
+
+[[analysis.ir]]
+id = "vendor"
+sources = ["vendor"]
+roots = "all"
+include-reachable = true
+entry-contract = "none"
+output = "generated/findings/vendor.ir"
+
+[interfaces]
+facts = "generated/findings/interfaces.json"

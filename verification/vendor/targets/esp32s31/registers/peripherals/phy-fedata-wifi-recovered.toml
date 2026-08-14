@@ -38,7 +38,9 @@ sources = [
     "ESP_IDF_25FE69F_S31_PHY_RETENTION",
     "BLOB_LIBPHY_PHY_DEBUG_REG_CHECK",
 ]
-confidence = "block-exact-register-semantics-opaque"
+provenance = "derived"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_FEDATA_WIFI_RECOVERED.CFO_CONFIG_WORD_0_OPAQUE"

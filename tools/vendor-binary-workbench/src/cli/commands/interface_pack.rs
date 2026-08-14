@@ -77,7 +77,7 @@ fn validate(
         &paths.semantic_catalogs,
         target.calling_convention.label(),
         target
-            .harness
+            .knowledge_provider
             .as_deref()
             .map(crate::harnesses::contracts)
             .transpose()?,
@@ -98,11 +98,11 @@ fn validate(
         reviewed_anchors: summary.reviewed_anchors,
         ignored_anchors: summary.ignored_anchors,
         unreviewed_anchors: summary.unreviewed_anchors,
-        manual_anchors: summary.manual_anchors,
+        asserted_anchors: summary.asserted_anchors,
         reviewed_slots: summary.reviewed_slots,
         ignored_slots: summary.ignored_slots,
         unreviewed_slots: summary.unreviewed_slots,
-        manual_slots: summary.manual_slots,
+        asserted_slots: summary.asserted_slots,
         semantic_links: summary.semantic_links,
         semantic_operations: summary.semantic_operations,
         artifact_guards: summary.artifact_guards,

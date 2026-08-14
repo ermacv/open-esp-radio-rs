@@ -76,6 +76,19 @@ pub(super) struct TableRuntimeLayout {
     layout_size: u32,
 }
 
+struct RuntimeBindings {
+    devices: Vec<DeviceRuntime>,
+    table_layouts: Vec<TableRuntimeLayout>,
+    modeled_call_targets: BTreeMap<u32, String>,
+    table_lifecycle: Vec<TableLifecycleEvent>,
+}
+
+type MaterializedTables = (
+    Vec<TableRuntimeLayout>,
+    BTreeMap<u32, String>,
+    Vec<TableLifecycleEvent>,
+);
+
 impl DeviceRuntime {
     pub(super) fn contains_access(&self, address: u32, width: u8) -> bool {
         self.descriptor.range.contains_access(address, width)
@@ -99,10 +112,12 @@ impl<'a> Machine<'a> {
             svd,
             start,
             scenario,
-            Vec::new(),
-            Vec::new(),
-            BTreeMap::new(),
-            Vec::new(),
+            RuntimeBindings {
+                devices: Vec::new(),
+                table_layouts: Vec::new(),
+                modeled_call_targets: BTreeMap::new(),
+                table_lifecycle: Vec::new(),
+            },
         )
     }
 
@@ -111,10 +126,7 @@ impl<'a> Machine<'a> {
         svd: &'a MmioMap,
         start: u32,
         scenario: Scenario,
-        devices: Vec<DeviceRuntime>,
-        table_layouts: Vec<TableRuntimeLayout>,
-        modeled_call_targets: BTreeMap<u32, String>,
-        table_lifecycle: Vec<TableLifecycleEvent>,
+        runtime: RuntimeBindings,
     ) -> Self {
         let mut registers = [0_u32; 32];
         registers[usize::from(Reg::RA.0)] = RETURN_SENTINEL;
@@ -140,7 +152,7 @@ impl<'a> Machine<'a> {
             memory_ownership: scenario.memory_ownership,
             mmio_read_seeds: scenario.mmio_initial,
             mmio_reads: scenario.mmio_reads,
-            devices,
+            devices: runtime.devices,
             events: Vec::new(),
             event_producers: Vec::new(),
             timeline: Vec::new(),
@@ -150,9 +162,9 @@ impl<'a> Machine<'a> {
             ordered_calls: Vec::new(),
             indirect_calls: BTreeSet::new(),
             allocations: Vec::new(),
-            table_layouts,
-            modeled_call_targets,
-            table_lifecycle,
+            table_layouts: runtime.table_layouts,
+            modeled_call_targets: runtime.modeled_call_targets,
+            table_lifecycle: runtime.table_lifecycle,
             table_lifecycle_complete: true,
             call_responses: scenario.call_responses,
             fifo_services: scenario.fifo_services,
@@ -184,7 +196,7 @@ impl<'a> Machine<'a> {
 
     pub(super) fn call_symbol_at(&self, address: u32) -> Option<&str> {
         self.image
-            .symbol_at(address)
+            .call_symbol_at(address)
             .or_else(|| self.modeled_call_targets.get(&address).map(String::as_str))
     }
 
@@ -232,10 +244,12 @@ pub fn execute(
         svd,
         start,
         scenario,
-        devices,
-        table_layouts,
-        modeled_call_targets,
-        table_lifecycle,
+        RuntimeBindings {
+            devices,
+            table_layouts,
+            modeled_call_targets,
+            table_lifecycle,
+        },
     );
     let completion = loop {
         if goal.is_satisfied(&machine) {
@@ -636,11 +650,7 @@ fn instantiate_device_models(scenario: &Scenario) -> Result<Vec<DeviceRuntime>> 
 fn materialize_table_instances(
     image: &ExecutableImage,
     scenario: &mut Scenario,
-) -> Result<(
-    Vec<TableRuntimeLayout>,
-    BTreeMap<u32, String>,
-    Vec<TableLifecycleEvent>,
-)> {
+) -> Result<MaterializedTables> {
     const MODELED_CALL_TARGET_START: u32 = 0xffff_0000;
     let mut layout_ids = BTreeSet::new();
     let mut layouts = Vec::new();

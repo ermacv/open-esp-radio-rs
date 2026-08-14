@@ -142,24 +142,34 @@ sources = [
     "BLOB_LIBPP_HAL_HE_TB_DIAGNOSTICS",
     "HIL_OPEN_HE_TB_COUNTER_BASELINE_2026_07_29",
 ]
-confidence = "instruction-exact-hil-qualified"
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_TB_DIAGNOSTICS.TIMING"
 sources = ["BLOB_LIBPP_HAL_HE_TB_DIAGNOSTICS"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_TB_DIAGNOSTICS.PSDU"
 sources = ["BLOB_LIBPP_HAL_HE_TB_DIAGNOSTICS"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_TB_DIAGNOSTICS.TRIGGER"
 sources = ["BLOB_LIBPP_HAL_HE_TB_DIAGNOSTICS"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_HE_TB_DIAGNOSTICS.USER"
 sources = ["BLOB_LIBPP_HAL_HE_TB_DIAGNOSTICS"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"

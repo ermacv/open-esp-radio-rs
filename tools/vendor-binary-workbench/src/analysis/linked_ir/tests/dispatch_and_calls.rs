@@ -825,3 +825,14 @@ fn pseudo_value_compacts_aligned_symbolic_bit_slices_into_masks() {
         "(call10 & 0x000000f0)"
     );
 }
+
+#[test]
+fn pseudo_arguments_compact_exact_and_unknown_abi_slot_runs() {
+    let mut arguments = (0..8).map(SymbolicValue::input).collect::<Vec<_>>();
+    arguments.extend((0..8).map(|_| SymbolicValue::Unknown));
+
+    assert_eq!(
+        pseudo_arguments(&arguments),
+        "abi_inputs[0..8], unknown_abi_inputs[8..16]"
+    );
+}

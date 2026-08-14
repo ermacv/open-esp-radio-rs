@@ -11,7 +11,7 @@ publish = false
 
 [workspace.dependencies]
 embassy-futures = "0.1.2"
-open-esp-radio-esp32s31-hal = { path = "../../../../../driver/chips/esp32s31/hal" }
+open-esp-radio-esp32s31-hal = { path = "../../../../../driver/chips/esp32s31/hal", features = ["validation-probes"] }
 open-esp-radio-esp32s31-coex = { path = "../../../../../driver/chips/esp32s31/coex" }
 open-esp-radio-esp32s31-pac = { path = "../../../../../driver/chips/esp32s31/pac", features = ["validation-probes"] }
 open-esp-radio-esp32s31-phy = { path = "../../../../../driver/chips/esp32s31/phy" }
@@ -27,3 +27,9 @@ opt-level = 3
 debug = true
 panic = "abort"
 strip = false
+
+# Keep production probes on the same PAC revision as the repository workspace.
+# This workspace is intentionally excluded from the root workspace, so Cargo
+# does not inherit the root patch table automatically.
+[patch."https://github.com/esp-rs/esp-pacs"]
+esp32s31 = { git = "https://github.com/ermacv/esp-pacs", rev = "d0fb94ef3" }

@@ -309,7 +309,7 @@ impl PhyDcodeMmioBinding {
     #[cfg(target_arch = "riscv32")]
     pub fn execute_target(
         self,
-        registers: &mut open_esp_radio_esp32s31_hal::RadioRegisters,
+        registers: &mut open_esp_radio_esp32s31_hal::PhyHal,
     ) -> PhyDcodeCompletion {
         open_esp_radio_esp32s31_hal::phy_frequency::configure_nrx_frequency(
             registers,

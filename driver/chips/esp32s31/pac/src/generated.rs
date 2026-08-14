@@ -57,6 +57,21 @@ impl MacInterface {
     }
 }
 
+/// Reviewed receive-beacon clear requests. The type cannot select an unknown request bit.
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum MacRxBeaconClearRequest {
+    /// The bit-zero receive-beacon clear request traced from hal_clear_rx_beacon_pti.
+    Beacon = 0x00000000,
+}
+
+impl MacRxBeaconClearRequest {
+    /// Numeric image for diagnostics and the private raw-PAC bridge.
+    pub const fn bits(self) -> u32 {
+        self as u32
+    }
+}
+
 /// One reviewed four-bit Wi-Fi packet-traffic-information value. Its scheduling policy remains outside the PAC.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct MacPti(u32);
@@ -67,7 +82,7 @@ impl MacPti {
 
     /// Construct a value only when it lies in the reviewed inclusive range.
     pub const fn new(value: u32) -> Option<Self> {
-        if value >= Self::MIN && value <= Self::MAX {
+        if value <= 0x0000000f {
             Some(Self(value))
         } else {
             None
@@ -90,7 +105,7 @@ impl MacItwtClearIndex {
 
     /// Construct a value only when it lies in the reviewed inclusive range.
     pub const fn new(value: u32) -> Option<Self> {
-        if value >= Self::MIN && value <= Self::MAX {
+        if value <= 0x0000001f {
             Some(Self(value))
         } else {
             None
@@ -113,7 +128,7 @@ impl MacTxQueueIndex {
 
     /// Construct a value only when it lies in the reviewed inclusive range.
     pub const fn new(value: u32) -> Option<Self> {
-        if value >= Self::MIN && value <= Self::MAX {
+        if value <= 0x00000003 {
             Some(Self(value))
         } else {
             None
@@ -136,7 +151,7 @@ impl MacTxPtiCount {
 
     /// Construct a value only when it lies in the reviewed inclusive range.
     pub const fn new(value: u32) -> Option<Self> {
-        if value >= Self::MIN && value <= Self::MAX {
+        if value <= 0x00000fff {
             Some(Self(value))
         } else {
             None
@@ -159,7 +174,7 @@ impl MacKeyEntryIndex {
 
     /// Construct a value only when it lies in the reviewed inclusive range.
     pub const fn new(value: u32) -> Option<Self> {
-        if value >= Self::MIN && value <= Self::MAX {
+        if value <= 0x00000018 {
             Some(Self(value))
         } else {
             None
@@ -182,7 +197,7 @@ impl MacRxBlockAckEntryIndex {
 
     /// Construct a value only when it lies in the reviewed inclusive range.
     pub const fn new(value: u32) -> Option<Self> {
-        if value >= Self::MIN && value <= Self::MAX {
+        if value <= 0x00000007 {
             Some(Self(value))
         } else {
             None
@@ -205,7 +220,7 @@ impl MacRxBlockAckTid {
 
     /// Construct a value only when it lies in the reviewed inclusive range.
     pub const fn new(value: u32) -> Option<Self> {
-        if value >= Self::MIN && value <= Self::MAX {
+        if value <= 0x0000000f {
             Some(Self(value))
         } else {
             None
@@ -228,7 +243,7 @@ impl MacRxBlockAckStartingSequence {
 
     /// Construct a value only when it lies in the reviewed inclusive range.
     pub const fn new(value: u32) -> Option<Self> {
-        if value >= Self::MIN && value <= Self::MAX {
+        if value <= 0x00000fff {
             Some(Self(value))
         } else {
             None
@@ -251,7 +266,7 @@ impl MacRxBlockAckWindow {
 
     /// Construct a value only when it lies in the reviewed inclusive range.
     pub const fn new(value: u32) -> Option<Self> {
-        if value >= Self::MIN && value <= Self::MAX {
+        if value >= 0x00000001 && value <= 0x0000007f {
             Some(Self(value))
         } else {
             None
@@ -274,7 +289,7 @@ impl CoexTimerClientValue {
 
     /// Construct a value only when it lies in the reviewed inclusive range.
     pub const fn new(value: u32) -> Option<Self> {
-        if value >= Self::MIN && value <= Self::MAX {
+        if value <= 0x00000003 {
             Some(Self(value))
         } else {
             None
@@ -297,7 +312,7 @@ impl CoexTimerPtiValue {
 
     /// Construct a value only when it lies in the reviewed inclusive range.
     pub const fn new(value: u32) -> Option<Self> {
-        if value >= Self::MIN && value <= Self::MAX {
+        if value <= 0x0000000f {
             Some(Self(value))
         } else {
             None
@@ -320,7 +335,7 @@ impl CoexTimerTickImage {
 
     /// Construct a value only when it lies in the reviewed inclusive range.
     pub const fn new(value: u32) -> Option<Self> {
-        if value >= Self::MIN && value <= Self::MAX {
+        if value <= 0x00ffffff {
             Some(Self(value))
         } else {
             None
@@ -861,22 +876,6 @@ impl MacItwtControlMaskedInput {
     }
 }
 
-/// Empty input domain for the reviewed bit-zero receive-beacon clear-request RMW.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct MacRxBeaconClearRequestInput(u32);
-
-impl MacRxBeaconClearRequestInput {
-    /// Wrap one register-specific opaque value.
-    pub const fn new(value: u32) -> Self {
-        Self(value)
-    }
-
-    /// Return the opaque numeric image.
-    pub const fn get(self) -> u32 {
-        self.0
-    }
-}
-
 /// Typed bridge for the reviewed `mac_interrupt_enable` complete-register transaction.
 #[inline]
 pub(crate) fn mac_interrupt_enable(
@@ -1184,13 +1183,13 @@ pub(crate) fn publish_mac_itwt_control(
     crate::svd::masked_register_modify::publish_mac_itwt_control(registers, value.get());
 }
 
-/// Typed bridge for the reviewed `request_mac_rx_beacon_clear` masked transaction.
+/// Typed bridge for the reviewed `request_mac_rx_beacon_clear` indexed bit-set transaction.
 #[inline]
 pub(crate) fn request_mac_rx_beacon_clear(
     registers: &crate::svd::WifiMacCoexRuntime,
-    value: MacRxBeaconClearRequestInput,
+    index: MacRxBeaconClearRequest,
 ) {
-    crate::svd::masked_register_modify::request_mac_rx_beacon_clear(registers, value.get());
+    crate::svd::indexed_bit_set_modify::request_mac_rx_beacon_clear(registers, index.bits());
 }
 
 /// Typed bridge for the reviewed `request_mac_itwt_clear` indexed bit-set transaction.

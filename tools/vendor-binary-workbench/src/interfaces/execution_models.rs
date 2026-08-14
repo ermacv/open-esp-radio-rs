@@ -2,16 +2,16 @@
 //!
 //! Layout and ABI claims come from the reviewed pack. This module only joins
 //! an explicit `execution-model` foreign key to behavior supplied by the
-//! configured platform harness and checks that the two sides agree.
+//! configured knowledge provider and checks that the two sides agree.
 
 use super::{InterfacePack, validation::ValidationResult};
 use crate::{
-    ExternalCallModelSetRef, ExternalOutputModel, ExternalReturnModel, HarnessContractSpec,
+    ExternalCallModelSetRef, ExternalOutputModel, ExternalReturnModel, KnowledgeContractSpec,
 };
 
 pub(super) fn resolve(
     pack: &InterfacePack,
-    contracts: Option<&HarnessContractSpec>,
+    contracts: Option<&KnowledgeContractSpec>,
 ) -> ValidationResult<Vec<Option<ExternalCallModelSetRef>>> {
     pack.anchors
         .iter()
@@ -24,7 +24,7 @@ pub(super) fn resolve(
                     anchor,
                     "execution-contract",
                     format!(
-                        "execution contract {id:?} requires a configured compiled platform harness"
+                        "execution contract {id:?} requires a configured compiled knowledge provider"
                     ),
                 )
             })?;
@@ -37,7 +37,7 @@ pub(super) fn resolve(
                     super::validation::ValidationError::anchor(
                         anchor,
                         "execution-contract",
-                        format!("compiled platform harness has no execution contract {id:?}"),
+                        format!("compiled knowledge provider has no execution contract {id:?}"),
                     )
                 })?;
             for slot in &anchor.slots {

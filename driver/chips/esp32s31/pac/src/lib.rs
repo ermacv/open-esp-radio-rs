@@ -13,7 +13,7 @@ mod coex_bluetooth;
 mod frequency;
 mod generated;
 mod iq_estimator;
-#[cfg(any(test, feature = "test-register-catalog"))]
+#[cfg(test)]
 #[doc(hidden)]
 #[allow(dead_code)]
 pub mod mac;
@@ -74,7 +74,6 @@ pub use mac_block_ack::{
     InternalTxBlockAckSnapshot, TxBlockAckDiagnosticSnapshot, TxBlockAckPayload,
     TxBlockAckRegisterImage,
 };
-pub use mac_cold_start::{MacColdHandshakeOutcome, MacColdHandshakeTimeout};
 pub use mac_crypto::MacKeyInstallOutcome;
 pub use mac_he_beamforming::{
     MacHeBeamformingReportProfile, MacHeBeamformingReportProfileError, MacHeErSuAckRateProfile,
@@ -197,7 +196,7 @@ fn device_fence() {
 ///
 /// This catalog is absent from ordinary builds. Production code uses closed
 /// capabilities and cannot obtain raw register descriptors.
-#[cfg(any(test, feature = "test-register-catalog"))]
+#[cfg(test)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum RegisterAccess {
     /// Software may only observe the register.
@@ -209,7 +208,7 @@ pub enum RegisterAccess {
 }
 
 /// One test-only, PAC-described 32-bit MMIO register.
-#[cfg(any(test, feature = "test-register-catalog"))]
+#[cfg(test)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Register32 {
     address: usize,
@@ -217,7 +216,7 @@ pub struct Register32 {
     reset_value: Option<u32>,
 }
 
-#[cfg(any(test, feature = "test-register-catalog"))]
+#[cfg(test)]
 impl Register32 {
     pub(crate) const fn new(address: usize) -> Self {
         Self {
@@ -239,13 +238,6 @@ impl Register32 {
         }
     }
 
-    /// Numeric address for test-only host register models.
-    #[cfg(feature = "test-register-catalog")]
-    pub const fn address(self) -> usize {
-        self.address
-    }
-
-    #[cfg(not(feature = "test-register-catalog"))]
     pub(crate) const fn address(self) -> usize {
         self.address
     }
@@ -267,14 +259,14 @@ impl Register32 {
 ///
 /// Instances are generated from the recovered SVD. Construction remains
 /// crate-private so higher layers cannot assign guessed bit positions.
-#[cfg(any(test, feature = "test-register-catalog"))]
+#[cfg(test)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Field32 {
     offset: u8,
     width: u8,
 }
 
-#[cfg(any(test, feature = "test-register-catalog"))]
+#[cfg(test)]
 impl Field32 {
     pub(crate) const fn new(offset: u8, width: u8) -> Self {
         assert!(width != 0 && width <= 32);
@@ -354,6 +346,8 @@ impl Field32 {
 ///
 /// ```compile_fail
 /// use open_esp_radio_esp32s31_pac::Register32;
+///
+/// let forged = Register32::new(0x2010_4000);
 /// ```
 ///
 /// Finally, the owner has no generic address/value escape hatch. Every
@@ -405,7 +399,7 @@ impl RadioRegisters {
         device_fence();
     }
 
-    #[cfg(any(test, feature = "test-register-catalog"))]
+    #[cfg(test)]
     #[allow(dead_code)]
     pub(crate) const fn contains(address: usize) -> bool {
         // The official platform PAC owns HP, PMU and LP peripherals. Legacy

@@ -90,7 +90,7 @@ pub struct RiscvSummaryHooks {
 }
 
 pub struct RiscvHarnessSpec {
-    pub contracts: &'static crate::HarnessContractSpec,
+    pub contracts: &'static crate::KnowledgeContractSpec,
     pub summaries: &'static RiscvSummaryHooks,
 }
 

@@ -3,8 +3,8 @@
 
 //! Allocation-free WPA2-Personal protocol primitives.
 //!
-//! This is the active home for hardware-independent WPA2 code recovered in
-//! `migration/esp32s31-hybrid-runtime`. It validates and classifies complete
+//! This is the source-owned home for hardware-independent WPA2 code. It
+//! validates and classifies complete
 //! RSN EAPOL-Key packets, owns the station/authenticator state machines and
 //! joins station PTK/MIC/key-data processing to typed key-install requests.
 //! Platform MAC crates remain responsible only for executing those requests.

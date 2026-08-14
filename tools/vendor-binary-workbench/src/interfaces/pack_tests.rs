@@ -8,7 +8,7 @@ use std::{
 use super::*;
 use crate::{
     ExternalCallModelSetRef, ExternalCallModelSetSpec, ExternalCallModelSpec, ExternalOutputModel,
-    ExternalReturnModel, HarnessContractSpec,
+    ExternalReturnModel, KnowledgeContractSpec,
 };
 
 const EXECUTION_MODELS: &[ExternalCallModelSpec] = &[ExternalCallModelSpec {
@@ -23,7 +23,7 @@ const EXECUTION_MODEL_SET_SPEC: ExternalCallModelSetSpec = ExternalCallModelSetS
 const EXECUTION_MODEL_SET: ExternalCallModelSetRef =
     ExternalCallModelSetRef::new(&EXECUTION_MODEL_SET_SPEC);
 const EXECUTION_MODEL_SETS: &[ExternalCallModelSetRef] = &[EXECUTION_MODEL_SET];
-const EXECUTION_CONTRACTS: HarnessContractSpec = HarnessContractSpec {
+const EXECUTION_CONTRACTS: KnowledgeContractSpec = KnowledgeContractSpec {
     external_call_model_sets: EXECUTION_MODEL_SETS,
     entry_contracts: &[],
     diagnostic_calls: &[],
@@ -44,7 +44,7 @@ const INVALID_EXECUTION_MODEL_SET_SPEC: ExternalCallModelSetSpec = ExternalCallM
 const INVALID_EXECUTION_MODEL_SET: ExternalCallModelSetRef =
     ExternalCallModelSetRef::new(&INVALID_EXECUTION_MODEL_SET_SPEC);
 const INVALID_EXECUTION_MODEL_SETS: &[ExternalCallModelSetRef] = &[INVALID_EXECUTION_MODEL_SET];
-const INVALID_EXECUTION_CONTRACTS: HarnessContractSpec = HarnessContractSpec {
+const INVALID_EXECUTION_CONTRACTS: KnowledgeContractSpec = KnowledgeContractSpec {
     external_call_model_sets: INVALID_EXECUTION_MODEL_SETS,
     entry_contracts: &[],
     diagnostic_calls: &[],
@@ -368,7 +368,7 @@ fn indexed_slot_evidence_requires_and_keeps_a_reviewed_index_domain() {
         .replace("layout-size = 32", "layout-size = 8")
         .replace(
             "offset = 16\nwidth = 32\nstatus = \"reviewed\"\norigin = \"observed\"\nname = \"queue_send_from_isr\"",
-            "offset = 0\nwidth = 32\nstatus = \"reviewed\"\norigin = \"manual\"\nname = \"slot_zero\"",
+            "offset = 0\nwidth = 32\nstatus = \"reviewed\"\norigin = \"reviewed\"\nname = \"slot_zero\"",
         )
         + r#"
 
@@ -382,7 +382,7 @@ evidence = "reviewed caller branch plus exhaustive scenario arg-range"
 offset = 4
 width = 32
 status = "reviewed"
-origin = "manual"
+origin = "reviewed"
 name = "slot_one"
 arguments = ["opaque-handle", "const-ptr", "out-ptr"]
 return = "bool"
@@ -450,7 +450,7 @@ fn execution_model_requires_the_compiled_harness_contract() {
     assert!(
         error
             .to_string()
-            .contains("requires a configured compiled platform harness")
+            .contains("requires a configured compiled knowledge provider")
     );
 }
 
@@ -700,7 +700,7 @@ return = "void"
 
 #[test]
 fn shipped_catalog_covers_the_initial_cross_platform_domains() {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("catalogs/embedded-semantics.toml");
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("catalogs/neutral-embedded.toml");
     let catalogs = SemanticCatalogs::load(&[path]).unwrap();
     for operation in [
         "rtos.queue.send-from-isr",

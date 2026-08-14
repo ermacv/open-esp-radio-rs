@@ -220,7 +220,6 @@ fn validate(
         }),
         evidence: evidence.as_ref().map(|evidence| RegisterEvidenceDocument {
             catalogs: paths.evidence_catalogs.len(),
-            confidence_levels: evidence.confidence_levels.len(),
             sources: evidence.sources.len(),
             ranges: evidence.ranges.len(),
         }),

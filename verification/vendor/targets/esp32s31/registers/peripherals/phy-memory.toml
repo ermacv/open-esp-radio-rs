@@ -171,7 +171,9 @@ sources = [
     "BLOB_LIBPHY_PHY_SET_TX_CFR_MEM",
     "ROM_REV0_PHY_WRITE_GAIN_MEM",
 ]
-confidence = "instruction-exact-partial"
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
 
 [[review]]
 entity = "PHY_MEMORY.COMMAND"
@@ -180,12 +182,16 @@ sources = [
     "BLOB_LIBPHY_PHY_SET_TX_CFR_MEM",
     "ROM_REV0_PHY_WRITE_GAIN_MEM",
 ]
-confidence = "instruction-exact-partial"
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
 
 [[review]]
 entity = "PHY_MEMORY.COMMAND.GAIN_COMMAND_LOW_ZERO_UNKNOWN"
 sources = ["ROM_REV0_PHY_WRITE_GAIN_MEM"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_MEMORY.COMMAND.MEMORY_INDEX"
@@ -194,7 +200,9 @@ sources = [
     "BLOB_LIBPHY_PHY_SET_TX_CFR_MEM",
     "ROM_REV0_PHY_WRITE_GAIN_MEM",
 ]
-confidence = "instruction-exact-partial"
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
 
 [[review]]
 entity = "PHY_MEMORY.COMMAND.GAIN_WRITE_OR_PBUS_COMMAND_BIT_8"
@@ -202,17 +210,23 @@ sources = [
     "ROM_REV0_PHY_WRITE_PBUS_MEM",
     "ROM_REV0_PHY_WRITE_GAIN_MEM",
 ]
-confidence = "instruction-exact-partial"
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
 
 [[review]]
 entity = "PHY_MEMORY.COMMAND.PBUS_COMMAND_BIT_9"
 sources = ["ROM_REV0_PHY_WRITE_PBUS_MEM"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_MEMORY.COMMAND.TX_CFR_COMMIT"
 sources = ["BLOB_LIBPHY_PHY_SET_TX_CFR_MEM"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_MEMORY.DATA_0"
@@ -221,17 +235,23 @@ sources = [
     "BLOB_LIBPHY_PHY_SET_TX_CFR_MEM",
     "ROM_REV0_PHY_WRITE_GAIN_MEM",
 ]
-confidence = "instruction-exact-partial"
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
 
 [[review]]
 entity = "PHY_MEMORY.DATA_1"
 sources = ["ROM_REV0_PHY_WRITE_GAIN_MEM"]
-confidence = "instruction-exact-partial"
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
 
 [[review]]
 entity = "PHY_MEMORY.DATA_2"
 sources = ["ROM_REV0_PHY_WRITE_GAIN_MEM"]
-confidence = "instruction-exact-partial"
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
 
 [[review]]
 entity = "PHY_MEMORY.GROUP_BOUNDARY%s"
@@ -240,4 +260,6 @@ sources = [
     "ROM_REV0_PHY_WRITE_PBUS_MEM",
     "ROM_REV0_PHY_SAVE_PBUS_REG",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"

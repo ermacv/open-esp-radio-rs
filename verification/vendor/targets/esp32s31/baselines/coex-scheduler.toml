@@ -4,12 +4,12 @@ schema = 2
 source = "coex"
 symbol = "coex_schm_curr_period_get"
 kind = "reviewed-domain-equivalence/profile:state/coex-scheduler-current-period"
-digest = "d29655c2a4a1bec37cc609cef3be6fdd69254b629317b53dd9a4c0b1a91504de"
+digest = "a83a7dcc273da3242268064a7725b5e7628d002e733d6deaa3ab284284badd65"
 
 [evidence.components]
 comparison-orchestrator = "e9af803daf6ab44af42a93b3cead563c60bf06945929c1b879c8112be2f87d60"
-execution-image = "3885065e6ff308001a383d5164cd1f17dba4f452a35ef3c07baa3ce5916530da"
-execution-machine = "ecce5dd7068bb1bc30a5573d8b2c8f89fa158e96289a8653c8fea6fe58d80398"
+execution-image = "241a2c07ca5860bd273851868270bbd5d33c68217d8c83ef8c9589f1dd821663"
+execution-machine = "47a8bd9864cefabd70bc0448b3e95298e716a9bad89247e9e425905d3b2ee806"
 execution-model = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"
 profile = "4e2115c22bfc3ff3320660418656c53846fe4f0c34893ab76588709f2532fbfd"
 profile-parser = "425e34c2aa46698971e2e8be1ab1e6e9d2d2737bd7b3afb913316708a62206f4"
@@ -18,12 +18,12 @@ profile-parser = "425e34c2aa46698971e2e8be1ab1e6e9d2d2737bd7b3afb913316708a62206
 source = "coex"
 symbol = "coex_schm_curr_phase_get"
 kind = "reviewed-domain-equivalence/profile:state/coex-scheduler-current-phase"
-digest = "9dbf162d9cd395eca03e7f4a35ce5626890aaa0cfd3228071d6783b980c03367"
+digest = "59d431ce8723a5b1043a6b6ee1851e1d16bccdfb323239e54931cb96017a2120"
 
 [evidence.components]
 comparison-orchestrator = "e9af803daf6ab44af42a93b3cead563c60bf06945929c1b879c8112be2f87d60"
-execution-image = "3885065e6ff308001a383d5164cd1f17dba4f452a35ef3c07baa3ce5916530da"
-execution-machine = "ecce5dd7068bb1bc30a5573d8b2c8f89fa158e96289a8653c8fea6fe58d80398"
+execution-image = "241a2c07ca5860bd273851868270bbd5d33c68217d8c83ef8c9589f1dd821663"
+execution-machine = "47a8bd9864cefabd70bc0448b3e95298e716a9bad89247e9e425905d3b2ee806"
 execution-model = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"
 profile = "63ea8606d209a7bf927b567f2eed451fafc232ae7eb3ab85063973b0b66c1b60"
 profile-parser = "425e34c2aa46698971e2e8be1ab1e6e9d2d2737bd7b3afb913316708a62206f4"
@@ -32,12 +32,12 @@ profile-parser = "425e34c2aa46698971e2e8be1ab1e6e9d2d2737bd7b3afb913316708a62206
 source = "coex"
 symbol = "coex_schm_interval_get"
 kind = "reviewed-domain-equivalence/profile:state/coex-scheduler-interval-get"
-digest = "8c88dacf30cb4f9c671a8cbe7dc48c2a274a91b71dbe4a0f2d9d4210ede6fb27"
+digest = "2c00be17ca759344ab50a5b59588ff00895ea2dff137447c57cbfe05e88babe9"
 
 [evidence.components]
 comparison-orchestrator = "e9af803daf6ab44af42a93b3cead563c60bf06945929c1b879c8112be2f87d60"
-execution-image = "3885065e6ff308001a383d5164cd1f17dba4f452a35ef3c07baa3ce5916530da"
-execution-machine = "ecce5dd7068bb1bc30a5573d8b2c8f89fa158e96289a8653c8fea6fe58d80398"
+execution-image = "241a2c07ca5860bd273851868270bbd5d33c68217d8c83ef8c9589f1dd821663"
+execution-machine = "47a8bd9864cefabd70bc0448b3e95298e716a9bad89247e9e425905d3b2ee806"
 execution-model = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"
 profile = "0619cd8089facef5a578b88d51bec4a6e75fb0f766a7785e607d99fc6a9ded58"
 profile-parser = "425e34c2aa46698971e2e8be1ab1e6e9d2d2737bd7b3afb913316708a62206f4"
@@ -46,12 +46,12 @@ profile-parser = "425e34c2aa46698971e2e8be1ab1e6e9d2d2737bd7b3afb913316708a62206
 source = "coex"
 symbol = "coex_schm_interval_set"
 kind = "reviewed-domain-equivalence/profile:state/coex-scheduler-interval-set"
-digest = "ac809e79754f4969001ad928e5f6c9888c879cdc79fcf2bf5bb35ef19c18053a"
+digest = "a59a821628b9b85c694fe3136cc55dd6de18cfd28e5b7ef7dffb5ecaeb3bee97"
 
 [evidence.components]
 comparison-orchestrator = "e9af803daf6ab44af42a93b3cead563c60bf06945929c1b879c8112be2f87d60"
-execution-image = "3885065e6ff308001a383d5164cd1f17dba4f452a35ef3c07baa3ce5916530da"
-execution-machine = "ecce5dd7068bb1bc30a5573d8b2c8f89fa158e96289a8653c8fea6fe58d80398"
+execution-image = "241a2c07ca5860bd273851868270bbd5d33c68217d8c83ef8c9589f1dd821663"
+execution-machine = "47a8bd9864cefabd70bc0448b3e95298e716a9bad89247e9e425905d3b2ee806"
 execution-model = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"
 profile = "b0253bf32eb7908e1326cbfec987445583d0f40dd9ba58a94ee042546256063f"
 profile-parser = "425e34c2aa46698971e2e8be1ab1e6e9d2d2737bd7b3afb913316708a62206f4"

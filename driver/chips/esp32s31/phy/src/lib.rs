@@ -63,5 +63,6 @@ pub use target_executor::{PhyAsyncDelay, PhyTargetPortError};
 #[cfg(target_arch = "riscv32")]
 pub use target_port::{
     NoopPhyTargetObserver, PhyRfBoundary, PhyTargetObserver, PhyTargetPortCounters,
-    TargetPhyRegisterPort, select_phy_channel, switch_phy_channel_with_mac_restart,
+    TargetPhyRegisterPort, select_phy_channel_with_hal,
+    switch_phy_channel_with_hal_and_mac_restart,
 };

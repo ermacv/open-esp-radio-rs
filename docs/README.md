@@ -2,11 +2,11 @@
 
 - [`../driver/README.md`](../driver/README.md): canonical driver boundaries,
   ownership and lifecycle.
-- [`ESP32S31_WIFI_FEATURE_STATUS.md`](ESP32S31_WIFI_FEATURE_STATUS.md): concise
-  implemented/qualified feature status.
 - [`SOURCE_POLICY.md`](SOURCE_POLICY.md): permitted source and vendor evidence.
-- [`VENDOR_BINARY_WORKBENCH_ARCHITECTURE.md`](VENDOR_BINARY_WORKBENCH_ARCHITECTURE.md)
-  and [`vendor-binary-workbench/`](vendor-binary-workbench/): analysis tool.
+- [`VERIFICATION_AND_QUALIFICATION.md`](VERIFICATION_AND_QUALIFICATION.md):
+  evidence classes, the production-trace gate and ledger workflow.
+- [`../tools/vendor-binary-workbench/README.md`](../tools/vendor-binary-workbench/README.md):
+  Vendor Binary Workbench workflow and canonical documentation.
 - [`../qualification/`](../qualification/README.md): machine-readable claims
   and dated hardware evidence.
 - [`../verification/`](../verification/README.md): structured vendor evidence,

@@ -39,4 +39,6 @@ sources = [
     "BLOB_LIBPP_HAL_RX_DEBUG_COUNTERS",
     "HIL_OPEN_RX_STATISTICS_BASELINE_2026_07_29",
 ]
-confidence = "instruction-exact-hil-qualified"
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"

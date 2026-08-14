@@ -1,9 +1,10 @@
 //! Safe register-side authority required by the A-MPDU lifecycle.
 
-use open_esp_radio_esp32s31_pac::{
+use open_esp_radio_esp32s31_hal::types::{
     MacHeTbLinkReservation, MacHeTbProgramError, MacHeTbTidLimit, MacHeTid,
-    MacHeTriggerTxQueueSnapshot, MacHtAmpduCompletionRegisters, RadioRegisters,
+    MacHeTriggerTxQueueSnapshot, MacHtAmpduCompletionRegisters,
 };
+use open_esp_radio_esp32s31_hal::{RadioRuntimeOwner, wifi_mac::WifiMacHal};
 
 use crate::tx::TxHardware;
 
@@ -42,9 +43,9 @@ pub trait HtAmpduHardware: TxHardware {
     }
 }
 
-impl HtAmpduHardware for RadioRegisters {
+impl HtAmpduHardware for WifiMacHal<'_> {
     fn take_ht_ampdu_completion(&mut self, queue: u8) -> Option<MacHtAmpduCompletionRegisters> {
-        self.take_mac_ht_ampdu_completion(queue)
+        WifiMacHal::take_ht_ampdu_completion(self, queue)
     }
 
     fn prepare_he_trigger_based_queue(
@@ -55,7 +56,7 @@ impl HtAmpduHardware for RadioRegisters {
         mpdu_lengths: &[u16],
         queued_msdu_bytes: u32,
     ) -> Result<MacHeTriggerTxQueueSnapshot, MacHeTbProgramError> {
-        RadioRegisters::prepare_he_trigger_based_queue(
+        WifiMacHal::prepare_he_trigger_based_queue(
             self,
             policy,
             reservation,
@@ -66,14 +67,52 @@ impl HtAmpduHardware for RadioRegisters {
     }
 
     fn clear_he_trigger_based_queue(&mut self, reservation: MacHeTbLinkReservation) {
-        RadioRegisters::clear_he_trigger_based_queue(self, reservation);
+        WifiMacHal::clear_he_trigger_based_queue(self, reservation);
     }
 
     fn he_trigger_based_queue_snapshot(
         &self,
         reservation: MacHeTbLinkReservation,
     ) -> Option<MacHeTriggerTxQueueSnapshot> {
-        Some(RadioRegisters::he_trigger_based_queue_snapshot(
+        Some(WifiMacHal::he_trigger_based_queue_snapshot(
+            self,
+            reservation,
+        ))
+    }
+}
+
+impl HtAmpduHardware for RadioRuntimeOwner {
+    fn take_ht_ampdu_completion(&mut self, queue: u8) -> Option<MacHtAmpduCompletionRegisters> {
+        HtAmpduHardware::take_ht_ampdu_completion(&mut self.wifi_mac_hal(), queue)
+    }
+
+    fn prepare_he_trigger_based_queue(
+        &mut self,
+        policy: MacHeTbTidLimit,
+        reservation: MacHeTbLinkReservation,
+        tid: MacHeTid,
+        mpdu_lengths: &[u16],
+        queued_msdu_bytes: u32,
+    ) -> Result<MacHeTriggerTxQueueSnapshot, MacHeTbProgramError> {
+        HtAmpduHardware::prepare_he_trigger_based_queue(
+            &mut self.wifi_mac_hal(),
+            policy,
+            reservation,
+            tid,
+            mpdu_lengths,
+            queued_msdu_bytes,
+        )
+    }
+
+    fn clear_he_trigger_based_queue(&mut self, reservation: MacHeTbLinkReservation) {
+        HtAmpduHardware::clear_he_trigger_based_queue(&mut self.wifi_mac_hal(), reservation);
+    }
+
+    fn he_trigger_based_queue_snapshot(
+        &self,
+        reservation: MacHeTbLinkReservation,
+    ) -> Option<MacHeTriggerTxQueueSnapshot> {
+        Some(RadioRuntimeOwner::he_trigger_based_queue_snapshot(
             self,
             reservation,
         ))

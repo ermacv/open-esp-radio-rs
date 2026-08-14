@@ -7,7 +7,7 @@
 use core::{future::Future, marker::PhantomData};
 
 use open_esp_radio_esp32s31_hal::{
-    RadioRegisters, phy_i2c::PhyI2cMasterControl, phy_temperature::PhyTemperatureSystemControl,
+    RadioRuntimeOwner, phy_i2c::PhyI2cMasterControl, phy_temperature::PhyTemperatureSystemControl,
     wifi_bb::PhyWifiBbControl,
 };
 use open_esp_radio_esp32s31_phy::{PhyAsyncDelay, PhyTargetObserver, PhyTargetPortError};

@@ -1,4 +1,4 @@
-//! Release-scope overview and navigation.
+//! Review-scope overview and navigation.
 
 use ratatui::{
     Frame,
@@ -21,7 +21,7 @@ pub(super) fn render(frame: &mut Frame<'_>, state: &BrowserState, area: Rect) {
             let scope = &state.snapshot.review_scopes[index];
             Row::new([
                 Cell::from(scope.id.clone()),
-                Cell::from(scope.replacement_qualification.clone()),
+                Cell::from(scope.replacement_coverage.clone()),
                 Cell::from(if scope.analysis_inventory_complete {
                     "complete"
                 } else {
@@ -62,10 +62,7 @@ pub(super) fn render(frame: &mut Frame<'_>, state: &BrowserState, area: Rect) {
             vec![
                 field("ID", &scope.id),
                 field("Publication", scope.publication),
-                field(
-                    "Replacement qualification",
-                    &scope.replacement_qualification,
-                ),
+                field("Replacement coverage", &scope.replacement_coverage),
                 field(
                     "Analysis inventory",
                     if scope.analysis_inventory_complete {

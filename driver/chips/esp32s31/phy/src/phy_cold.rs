@@ -12,7 +12,7 @@ pub const fn phy_get_rfdata_num() -> u32 {
     0x20c
 }
 
-/// Complete pinned `libphy.a::phy_internal_delay` compatibility leaf.
+/// Required pinned `libphy.a::phy_internal_delay` vendor-ABI no-op leaf.
 #[inline]
 pub const fn phy_internal_delay() -> u32 {
     0
@@ -52,7 +52,7 @@ use crate::{
     },
 };
 #[cfg(target_arch = "riscv32")]
-use open_esp_radio_esp32s31_hal::RadioRegisters;
+use open_esp_radio_esp32s31_hal::PhyHal;
 
 pub use crate::phy_state::{
     PhyDot11pConfiguration, PhyRegisterTemperatureControl, PhyState, PhyTemperatureTrackingDebug,
@@ -1031,58 +1031,58 @@ impl PhyColdMmioBinding {
     ) -> Result<PhyRfInitPrefixCompletion, PhyColdLoweringError> {
         match self.outer_action {
             PhyRfInitPrefixAction::ConfigureFeBbClock => {
-                let (platform, registers) = radio.parts_mut();
+                let (platform, registers) = radio.phy_hal_parts();
                 registers.open_frontend_baseband_internal_clocks();
                 open_esp_radio_esp32s31_hal::analog_i2c::enable_frontend_baseband_power(platform);
                 return self.into_completion();
             }
             PhyRfInitPrefixAction::OpenI2cXpd(OpenI2cXpdAction::ConfigurePreDelay) => {
-                let (platform, _) = radio.parts_mut();
+                let (platform, _) = radio.phy_hal_parts();
                 crate::phy_i2c::configure_open_i2c_pre_delay(platform);
                 return self.into_completion();
             }
             PhyRfInitPrefixAction::ConfigurePowerDetectorRegisters => {
-                let (platform, registers) = radio.parts_mut();
+                let (platform, registers) = radio.phy_hal_parts();
                 open_esp_radio_esp32s31_hal::phy_power_detector::initialize_registers(
                     platform, registers,
                 );
                 return self.into_completion();
             }
             PhyRfInitPrefixAction::ConfigureTxPowerControlBackground => {
-                let (platform, registers) = radio.parts_mut();
+                let (platform, registers) = radio.phy_hal_parts();
                 open_esp_radio_esp32s31_hal::phy_power_detector::configure_background(
                     platform, registers,
                 );
                 return self.into_completion();
             }
             PhyRfInitPrefixAction::ConfigureTemperatureSensorRead => {
-                let (platform, _) = radio.parts_mut();
+                let (platform, _) = radio.phy_hal_parts();
                 open_esp_radio_esp32s31_hal::phy_temperature::initialize(platform);
                 return self.into_completion();
             }
             PhyRfInitPrefixAction::ConfigureBbpllCalibration { enabled } => {
-                let (platform, _) = radio.parts_mut();
+                let (platform, _) = radio.phy_hal_parts();
                 open_esp_radio_esp32s31_hal::phy_i2c::configure_bbpll_calibration(
                     platform, enabled,
                 );
                 return self.into_completion();
             }
             PhyRfInitPrefixAction::ConfigureI2cClockSelection { selection } => {
-                let (platform, _) = radio.parts_mut();
+                let (platform, _) = radio.phy_hal_parts();
                 open_esp_radio_esp32s31_hal::phy_i2c::configure_clock_selection(
                     platform, selection,
                 );
                 return self.into_completion();
             }
             PhyRfInitPrefixAction::ConfigureI2cMasterRegisters => {
-                let (platform, _) = radio.parts_mut();
+                let (platform, _) = radio.phy_hal_parts();
                 open_esp_radio_esp32s31_hal::phy_i2c::configure_master_registers(platform);
                 return self.into_completion();
             }
             _ => {}
         }
 
-        let registers = radio.registers_mut();
+        let registers = radio.phy_hal_mut();
         match self.outer_action {
             PhyRfInitPrefixAction::PbusClear(PhyPbusClearAction::ConfigureDebugMode) => {
                 open_esp_radio_esp32s31_hal::pbus::configure_debug_mode(registers)
@@ -2048,7 +2048,7 @@ impl PhyColdObservationBinding {
         >,
     ) -> Result<PhyRfInitPrefixCompletion, PhyColdLoweringError> {
         if self.request == PhyColdObservationRequest::ConfigureOpenI2cPowerAndPulse {
-            let (platform, registers) = radio.parts_mut();
+            let (platform, registers) = radio.phy_hal_parts();
             crate::phy_i2c::configure_open_i2c_power_and_pulse(platform);
             let started_at_cycle =
                 open_esp_radio_esp32s31_hal::phy_prelude::sample_sdm_deadline_counter(registers);
@@ -2057,7 +2057,7 @@ impl PhyColdObservationBinding {
             });
         }
 
-        let registers = radio.registers_mut();
+        let registers = radio.phy_hal_mut();
         match self.request {
             // Consumed by the semantic platform branch above before borrowing
             // only the recovered radio register owner.
@@ -2258,7 +2258,7 @@ impl PhyColdPbusBinding {
     }
 
     #[cfg(target_arch = "riscv32")]
-    pub fn start_target(&mut self, registers: &mut RadioRegisters) -> Result<(), PhyColdPbusError> {
+    pub fn start_target(&mut self, registers: &mut PhyHal) -> Result<(), PhyColdPbusError> {
         if self.phase != PhyColdPbusPhase::Start {
             return Err(if self.phase == PhyColdPbusPhase::Complete {
                 PhyColdPbusError::AlreadyComplete
@@ -2278,7 +2278,7 @@ impl PhyColdPbusBinding {
     #[cfg(target_arch = "riscv32")]
     pub fn observe_target_edge(
         &mut self,
-        registers: &mut RadioRegisters,
+        registers: &mut PhyHal,
     ) -> Result<PhyColdPbusObservation, PhyColdPbusError> {
         if self.phase != PhyColdPbusPhase::AwaitCompletionEdge {
             return Err(if self.phase == PhyColdPbusPhase::Complete {

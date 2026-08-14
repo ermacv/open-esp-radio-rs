@@ -2,7 +2,7 @@
 
 use core::sync::atomic::{AtomicU32, Ordering};
 
-use open_esp_radio_esp32s31_pac::{
+use open_esp_radio_esp32s31_hal::{
     MacInterruptEvents, MacInterruptMask, MacInterruptRegisters, MacInterruptSnapshot,
     MacPowerInterruptRegisters, MacPowerInterruptSnapshot,
 };
@@ -11,7 +11,7 @@ use open_esp_radio_esp32s31_pac::{
 /// handlers for one finite connected epoch.
 ///
 /// Implementations own CPU routing and stable ISR storage. They must disable
-/// the routes and recover both PAC values before `quiesce` returns. Their
+/// the routes and recover both HAL capabilities before `quiesce` returns. Their
 /// active representation must also be safe to retain indefinitely: a lost
 /// higher-level epoch forgets the installed route rather than dropping ISR
 /// storage which hardware can still reach, and role control then requires

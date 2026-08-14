@@ -65,7 +65,7 @@ pub trait DeviceModel: Debug + Send + Sync {
     fn instantiate(&self) -> Result<Box<dyn DeviceModelInstance>>;
 }
 
-/// Named compiled-addon models supplied by one selected platform harness.
+/// Named compiled-addon models supplied by one selected knowledge provider.
 ///
 /// The registry does not infer a model from an address or semantic name. A
 /// scenario or platform resolver must request an exact reviewed ID.

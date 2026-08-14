@@ -61,18 +61,22 @@ bitWidth = 32
 entity = "WIFI_MAC_TX_COMPLETION"
 sources = [
     "BLOB_LIBPP_HAL_MAC_TX",
-    "MIGRATION_LMAC_TX",
+    "PROMOTED_LMAC_TX",
 ]
-confidence = "instruction-exact-hil-qualified"
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_COMPLETION.PRIMARY%s"
 sources = [
     "BLOB_LIBPP_HAL_MAC_TX",
-    "MIGRATION_LMAC_TX",
+    "PROMOTED_LMAC_TX",
     "HIL_OPEN_HE_RATE_CONTROL_ACK_SNR_2026_07_30",
 ]
-confidence = "instruction-exact-hil-qualified"
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_COMPLETION.PRIMARY%s.ACK_SNR_ENCODED"
@@ -80,20 +84,26 @@ sources = [
     "BLOB_LIBPP_HAL_MAC_TX",
     "HIL_OPEN_HE_RATE_CONTROL_ACK_SNR_2026_07_30",
 ]
-confidence = "instruction-exact-hil-qualified"
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_TX_COMPLETION.ALTERNATE%s"
 sources = [
     "BLOB_LIBPP_HAL_MAC_TX",
-    "MIGRATION_LMAC_TX",
+    "PROMOTED_LMAC_TX",
 ]
-confidence = "instruction-exact-partial"
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_TX_COMPLETION.AUX_C%s"
 sources = [
     "BLOB_LIBPP_HAL_MAC_TX",
-    "MIGRATION_LMAC_TX",
+    "PROMOTED_LMAC_TX",
 ]
-confidence = "instruction-exact-partial"
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"

@@ -4,7 +4,7 @@
 //! instruction decoder, verifier policy, vendor artifact hashes, or private
 //! artifact paths.
 
-use open_radio_vendor_contracts::{DiagnosticCallSpec, HarnessContractSpec};
+use open_radio_vendor_contracts::{DiagnosticCallSpec, KnowledgeContractSpec};
 
 pub mod entry_contract;
 pub mod external_abi;
@@ -34,7 +34,7 @@ const DIAGNOSTIC_CALLS: &[DiagnosticCallSpec] = &[
     },
 ];
 
-pub const CONTRACTS: HarnessContractSpec = HarnessContractSpec {
+pub const CONTRACTS: KnowledgeContractSpec = KnowledgeContractSpec {
     external_call_model_sets: EXTERNAL_CALL_MODEL_SETS,
     entry_contracts: entry_contract::ALL,
     diagnostic_calls: DIAGNOSTIC_CALLS,

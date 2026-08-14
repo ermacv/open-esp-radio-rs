@@ -96,12 +96,13 @@ where
 
         let dispatch_started = self.pipeline_observer.map(|observer| observer.now_micros());
         let segment = frame.segment();
-        let mut capture = StagedEthernetCapture::new(&mut self.sink, segment.buffer);
-        let result = self
-            .dispatcher
-            .dispatch(segment, self.mpdu, &mut [], &mut capture);
-        let ethernet = capture.captured;
-        drop(capture);
+        let (result, ethernet) = {
+            let mut capture = StagedEthernetCapture::new(&mut self.sink, segment.buffer);
+            let result = self
+                .dispatcher
+                .dispatch(segment, self.mpdu, &mut [], &mut capture);
+            (result, capture.captured)
+        };
         if let (Some(observer), Some(started)) = (self.pipeline_observer, dispatch_started) {
             let (data, amsdu, amsdu_subframes) = match result {
                 ConnectedRxDispatch::Data {
@@ -153,13 +154,13 @@ where
         segment: open_esp_radio_esp32s31_wifi_mac::rx::RxSegment<'_>,
     ) -> ConnectedRxDispatch {
         let dispatch_started = self.pipeline_observer.map(|observer| observer.now_micros());
-        let mut deferred = DeferredEthernetFrames::new(self.ethernet);
-        let result = self
-            .dispatcher
-            .dispatch(segment, self.mpdu, &mut [], &mut deferred);
-        let used = deferred.used;
-        let metadata = deferred.metadata;
-        drop(deferred);
+        let (result, used, metadata) = {
+            let mut deferred = DeferredEthernetFrames::new(self.ethernet);
+            let result = self
+                .dispatcher
+                .dispatch(segment, self.mpdu, &mut [], &mut deferred);
+            (result, deferred.used, deferred.metadata)
+        };
         if let (Some(observer), Some(started)) = (self.pipeline_observer, dispatch_started) {
             let (data, amsdu, amsdu_subframes) = match result {
                 ConnectedRxDispatch::Data {

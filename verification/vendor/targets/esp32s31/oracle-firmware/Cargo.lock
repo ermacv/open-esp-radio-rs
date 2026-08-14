@@ -1284,7 +1284,6 @@ name = "open-esp-radio"
 version = "0.1.0"
 dependencies = [
  "open-esp-radio-esp32s31-hal",
- "open-esp-radio-esp32s31-pac",
  "open-esp-radio-esp32s31-phy",
  "open-esp-radio-esp32s31-wifi",
  "open-esp-radio-esp32s31-wifi-ap",
@@ -1310,6 +1309,7 @@ version = "0.1.0"
 name = "open-esp-radio-esp32s31-hal"
 version = "0.1.0"
 dependencies = [
+ "open-esp-radio-dma",
  "open-esp-radio-esp32s31-coex",
  "open-esp-radio-esp32s31-pac",
 ]
@@ -1342,7 +1342,6 @@ name = "open-esp-radio-esp32s31-wifi"
 version = "0.1.0"
 dependencies = [
  "open-esp-radio-esp32s31-hal",
- "open-esp-radio-esp32s31-pac",
  "open-esp-radio-esp32s31-phy",
  "open-esp-radio-esp32s31-wifi-mac",
  "open-esp-radio-ieee80211",
@@ -1353,7 +1352,7 @@ dependencies = [
 name = "open-esp-radio-esp32s31-wifi-ap"
 version = "0.1.0"
 dependencies = [
- "open-esp-radio-esp32s31-pac",
+ "open-esp-radio-esp32s31-hal",
  "open-esp-radio-esp32s31-phy",
  "open-esp-radio-esp32s31-wifi",
  "open-esp-radio-esp32s31-wifi-mac",
@@ -1368,7 +1367,7 @@ name = "open-esp-radio-esp32s31-wifi-dma"
 version = "0.1.0"
 dependencies = [
  "open-esp-radio-dma",
- "open-esp-radio-esp32s31-pac",
+ "open-esp-radio-esp32s31-hal",
  "pin-project",
  "vcell",
 ]
@@ -1381,7 +1380,6 @@ dependencies = [
  "esp-hal",
  "open-esp-radio-esp32s31-coex",
  "open-esp-radio-esp32s31-hal",
- "open-esp-radio-esp32s31-pac",
  "open-esp-radio-esp32s31-phy",
  "open-esp-radio-esp32s31-wifi",
  "open-esp-radio-esp32s31-wifi-mac",
@@ -1393,7 +1391,6 @@ version = "0.1.0"
 dependencies = [
  "open-esp-radio-dma",
  "open-esp-radio-esp32s31-hal",
- "open-esp-radio-esp32s31-pac",
  "open-esp-radio-esp32s31-wifi-dma",
  "open-esp-radio-ieee80211",
  "open-esp-radio-wifi-softmac",
@@ -1405,7 +1402,6 @@ name = "open-esp-radio-esp32s31-wifi-sta"
 version = "0.1.0"
 dependencies = [
  "open-esp-radio-esp32s31-hal",
- "open-esp-radio-esp32s31-pac",
  "open-esp-radio-esp32s31-phy",
  "open-esp-radio-esp32s31-wifi",
  "open-esp-radio-esp32s31-wifi-mac",
@@ -1438,7 +1434,6 @@ dependencies = [
  "esp-phy",
  "esp-rtos",
  "open-esp-radio",
- "open-esp-radio-esp32s31-pac",
  "open-esp-radio-esp32s31-wifi-esp-hal",
  "static_cell",
 ]

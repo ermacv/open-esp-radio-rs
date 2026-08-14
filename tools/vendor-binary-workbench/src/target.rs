@@ -36,15 +36,15 @@ pub(crate) enum TargetError {
     #[error("target {id} is valid but its architecture backend is not implemented")]
     #[diagnostic(code(workbench::target::backend_unavailable))]
     BackendUnavailable { id: String },
-    #[error("target {id} has no platform harness")]
+    #[error("target {id} has no knowledge provider")]
     #[diagnostic(
         code(workbench::target::missing_harness),
-        help("attach a compatible platform pack to the project")
+        help("attach a compatible chip pack to the project")
     )]
-    MissingHarness { id: String },
-    #[error("target {id} selects unavailable harness {harness:?}")]
+    MissingKnowledgeProvider { id: String },
+    #[error("target {id} selects unavailable knowledge provider {provider:?}")]
     #[diagnostic(code(workbench::target::harness_unavailable))]
-    HarnessUnavailable { id: String, harness: String },
+    KnowledgeProviderUnavailable { id: String, provider: String },
 }
 
 type Result<T> = std::result::Result<T, TargetError>;
@@ -110,15 +110,12 @@ impl Endianness {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct TargetSpec {
     pub(crate) id: String,
-    pub(crate) harness: Option<String>,
+    pub(crate) knowledge_provider: Option<String>,
     pub(crate) architecture: Architecture,
     pub(crate) calling_convention: CallingConvention,
     pub(crate) endianness: Endianness,
     pub(crate) pointer_width: u8,
     pub(crate) rust_target: String,
-    pub(crate) memory_map: Option<PathBuf>,
-    pub(crate) svd_paths: Vec<PathBuf>,
-    pub(crate) pac_bindings: Option<PathBuf>,
 }
 
 #[derive(Deserialize)]
@@ -131,12 +128,6 @@ struct TargetDocument {
     endianness: Endianness,
     pointer_width: u8,
     rust_target: String,
-    #[serde(default)]
-    memory_map: Option<PathBuf>,
-    #[serde(default)]
-    svd: Vec<PathBuf>,
-    #[serde(default)]
-    pac_bindings: Option<PathBuf>,
 }
 
 impl TargetSpec {
@@ -153,25 +144,17 @@ impl TargetSpec {
                 span: (span.start, span.len().max(1)).into(),
             }
         })?;
-        if document.schema != 1 {
-            return Err(invalid(path, &input, "target TOML requires schema = 1"));
+        if document.schema != 3 {
+            return Err(invalid(path, &input, "target TOML requires schema = 3"));
         }
-        let base = path.parent().unwrap_or_else(|| Path::new("."));
         let target = Self {
             id: document.id,
-            harness: None,
+            knowledge_provider: None,
             architecture: document.architecture,
             calling_convention: document.calling_convention,
             endianness: document.endianness,
             pointer_width: document.pointer_width,
             rust_target: document.rust_target,
-            memory_map: document.memory_map.map(|path| resolve_path(base, path)),
-            svd_paths: document
-                .svd
-                .into_iter()
-                .map(|path| resolve_path(base, path))
-                .collect(),
-            pac_bindings: document.pac_bindings.map(|path| resolve_path(base, path)),
         };
         target.validate_pair()?;
         Ok(target)
@@ -211,29 +194,20 @@ impl TargetSpec {
         Ok(())
     }
 
-    /// Harness selection is supplied by a reviewed platform pack.
-    pub(crate) fn require_available_harness(&self) -> Result<&str> {
-        let harness = self
-            .harness
-            .as_deref()
-            .ok_or_else(|| TargetError::MissingHarness {
+    /// Executable chip knowledge is selected by a reviewed chip pack.
+    pub(crate) fn require_available_knowledge_provider(&self) -> Result<&str> {
+        let provider = self.knowledge_provider.as_deref().ok_or_else(|| {
+            TargetError::MissingKnowledgeProvider {
                 id: self.id.clone(),
-            })?;
-        if !crate::harnesses::is_available(harness) {
-            return Err(TargetError::HarnessUnavailable {
+            }
+        })?;
+        if !crate::harnesses::is_available(provider) {
+            return Err(TargetError::KnowledgeProviderUnavailable {
                 id: self.id.clone(),
-                harness: harness.to_owned(),
+                provider: provider.to_owned(),
             });
         }
-        Ok(harness)
-    }
-}
-
-fn resolve_path(base: &Path, path: PathBuf) -> PathBuf {
-    if path.is_absolute() {
-        path
-    } else {
-        base.join(path)
+        Ok(provider)
     }
 }
 
@@ -262,7 +236,7 @@ mod tests {
     fn loads_an_explicit_riscv_abi_pair() {
         let path = write_spec(
             "riscv",
-            "schema = 1\nid = \"fixture\"\narchitecture = \"riscv32\"\ncalling-convention = \"riscv-ilp32\"\nendianness = \"little\"\npointer-width = 32\nrust-target = \"riscv32imafc-unknown-none-elf\"\n",
+            "schema = 3\nid = \"fixture\"\narchitecture = \"riscv32\"\ncalling-convention = \"riscv-ilp32\"\nendianness = \"little\"\npointer-width = 32\nrust-target = \"riscv32imafc-unknown-none-elf\"\n",
         );
         let target = TargetSpec::load(&path).unwrap();
         std::fs::remove_file(path).unwrap();
@@ -270,34 +244,31 @@ mod tests {
     }
 
     #[test]
-    fn resolves_an_optional_target_memory_map() {
+    fn rejects_chip_resources_in_the_architecture_target() {
         let path = write_spec(
             "memory-map",
-            "schema = 1\nid = \"fixture\"\narchitecture = \"riscv32\"\ncalling-convention = \"riscv-ilp32\"\nendianness = \"little\"\npointer-width = 32\nrust-target = \"riscv32imac-unknown-none-elf\"\nmemory-map = \"maps/device.toml\"\n",
+            "schema = 3\nid = \"fixture\"\narchitecture = \"riscv32\"\ncalling-convention = \"riscv-ilp32\"\nendianness = \"little\"\npointer-width = 32\nrust-target = \"riscv32imac-unknown-none-elf\"\nmemory-map = \"maps/device.toml\"\n",
         );
-        let target = TargetSpec::load(&path).unwrap();
+        let error = TargetSpec::load(&path).unwrap_err();
         std::fs::remove_file(&path).unwrap();
-        assert_eq!(
-            target.memory_map,
-            Some(path.parent().unwrap().join("maps/device.toml"))
-        );
+        assert!(error.to_string().contains("unknown field `memory-map`"));
     }
 
     #[test]
     fn generic_target_has_no_platform_harness() {
         let path = write_spec(
             "generic-riscv",
-            "schema = 1\nid = \"generic-riscv\"\narchitecture = \"riscv32\"\ncalling-convention = \"riscv-ilp32\"\nendianness = \"little\"\npointer-width = 32\nrust-target = \"riscv32imac-unknown-none-elf\"\n",
+            "schema = 3\nid = \"generic-riscv\"\narchitecture = \"riscv32\"\ncalling-convention = \"riscv-ilp32\"\nendianness = \"little\"\npointer-width = 32\nrust-target = \"riscv32imac-unknown-none-elf\"\n",
         );
         let target = TargetSpec::load(&path).unwrap();
         std::fs::remove_file(path).unwrap();
         target.require_available_backend().unwrap();
         assert!(
             target
-                .require_available_harness()
+                .require_available_knowledge_provider()
                 .unwrap_err()
                 .to_string()
-                .contains("no platform harness")
+                .contains("no knowledge provider")
         );
     }
 
@@ -305,7 +276,7 @@ mod tests {
     fn rejects_harness_selection_in_a_target_spec() {
         let path = write_spec(
             "target-harness",
-            "schema = 1\nid = \"fixture\"\nharness = \"fixture\"\narchitecture = \"riscv32\"\ncalling-convention = \"riscv-ilp32\"\nendianness = \"little\"\npointer-width = 32\nrust-target = \"riscv32imac-unknown-none-elf\"\n",
+            "schema = 3\nid = \"fixture\"\nharness = \"fixture\"\narchitecture = \"riscv32\"\ncalling-convention = \"riscv-ilp32\"\nendianness = \"little\"\npointer-width = 32\nrust-target = \"riscv32imac-unknown-none-elf\"\n",
         );
         let error = TargetSpec::load(&path).unwrap_err();
         std::fs::remove_file(path).unwrap();
@@ -316,7 +287,7 @@ mod tests {
     fn rejects_an_architecture_abi_mismatch() {
         let path = write_spec(
             "mismatch",
-            "schema = 1\nid = \"fixture\"\narchitecture = \"arm-thumb\"\ncalling-convention = \"riscv-ilp32\"\nendianness = \"little\"\npointer-width = 32\nrust-target = \"thumbv7em-none-eabi\"\n",
+            "schema = 3\nid = \"fixture\"\narchitecture = \"arm-thumb\"\ncalling-convention = \"riscv-ilp32\"\nendianness = \"little\"\npointer-width = 32\nrust-target = \"thumbv7em-none-eabi\"\n",
         );
         let error = TargetSpec::load(&path).unwrap_err();
         std::fs::remove_file(path).unwrap();
@@ -327,7 +298,7 @@ mod tests {
     fn recognizes_arm_float_abi_without_claiming_a_backend() {
         let path = write_spec(
             "arm-hardfloat",
-            "schema = 1\nid = \"fixture\"\narchitecture = \"arm-thumb\"\ncalling-convention = \"aapcs32-hardfloat\"\nendianness = \"little\"\npointer-width = 32\nrust-target = \"thumbv7em-none-eabihf\"\n",
+            "schema = 3\nid = \"fixture\"\narchitecture = \"arm-thumb\"\ncalling-convention = \"aapcs32-hardfloat\"\nendianness = \"little\"\npointer-width = 32\nrust-target = \"thumbv7em-none-eabihf\"\n",
         );
         let target = TargetSpec::load(&path).unwrap();
         std::fs::remove_file(path).unwrap();

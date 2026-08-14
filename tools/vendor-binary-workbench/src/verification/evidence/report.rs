@@ -17,7 +17,9 @@ use crate::{Result, TargetSpec, VerificationGate, VerifySummary};
 pub(crate) struct VerificationTargetDocument {
     id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    harness: Option<String>,
+    knowledge_provider: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    verification_provider: Option<String>,
     architecture: &'static str,
     calling_convention: &'static str,
     endianness: &'static str,
@@ -52,24 +54,24 @@ pub(crate) struct VerificationSummaryDocument {
 }
 
 #[derive(Serialize)]
-pub(crate) struct QualificationBlockerDocument {
+pub(crate) struct ReleaseBlockerDocument {
     source: String,
     symbol: String,
 }
 
 #[derive(Serialize)]
-pub(crate) struct QualificationGapDocument {
+pub(crate) struct ReleaseGapDocument {
     source: String,
     symbol: String,
     rust_component: String,
-    blocked_by: Vec<QualificationBlockerDocument>,
+    blocked_by: Vec<ReleaseBlockerDocument>,
 }
 
 #[derive(Serialize)]
 pub(crate) struct VerificationArtifactDocument {
-    role: String,
+    pub(crate) role: String,
     path: String,
-    sha256: String,
+    pub(crate) sha256: String,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -88,13 +90,14 @@ pub(crate) struct VerificationCoreReport {
     pub(crate) passed: bool,
     pub(crate) evidence_baseline_passed: bool,
     summary: VerificationSummaryDocument,
-    qualification_gaps: Vec<QualificationGapDocument>,
-    artifacts: Vec<VerificationArtifactDocument>,
+    release_gaps: Vec<ReleaseGapDocument>,
+    pub(crate) artifacts: Vec<VerificationArtifactDocument>,
     pub(crate) evidence: Vec<VerificationEvidenceDocument>,
 }
 
 pub(crate) struct VerificationCoreInputs<'a, S> {
     pub(crate) target: &'a TargetSpec,
+    pub(crate) verification_provider: Option<&'a str>,
     pub(crate) gate: VerificationGate,
     pub(crate) summary: VerifySummary,
     pub(crate) orphan_probes: usize,
@@ -102,7 +105,7 @@ pub(crate) struct VerificationCoreInputs<'a, S> {
     pub(crate) passed: bool,
     pub(crate) evidence: &'a EvidenceSet,
     pub(crate) artifacts: &'a [(S, &'a Path)],
-    pub(crate) qualification_gaps: &'a [&'a dispositions::Entry],
+    pub(crate) release_gaps: &'a [&'a dispositions::Entry],
 }
 
 pub(crate) fn verification_core_report<S: AsRef<str>>(
@@ -110,6 +113,7 @@ pub(crate) fn verification_core_report<S: AsRef<str>>(
 ) -> Result<VerificationCoreReport> {
     let VerificationCoreInputs {
         target,
+        verification_provider,
         gate,
         summary,
         orphan_probes,
@@ -117,12 +121,13 @@ pub(crate) fn verification_core_report<S: AsRef<str>>(
         passed,
         evidence,
         artifacts,
-        qualification_gaps,
+        release_gaps,
     } = inputs;
     Ok(VerificationCoreReport {
         target: VerificationTargetDocument {
             id: target.id.clone(),
-            harness: target.harness.clone(),
+            knowledge_provider: target.knowledge_provider.clone(),
+            verification_provider: verification_provider.map(str::to_owned),
             architecture: target.architecture.label(),
             calling_convention: target.calling_convention.label(),
             endianness: target.endianness.label(),
@@ -154,9 +159,9 @@ pub(crate) fn verification_core_report<S: AsRef<str>>(
             not_yet_ported: summary.not_yet_ported,
             orphan_rust_probes: orphan_probes,
         },
-        qualification_gaps: qualification_gaps
+        release_gaps: release_gaps
             .iter()
-            .map(|gap| QualificationGapDocument {
+            .map(|gap| ReleaseGapDocument {
                 source: gap.source.clone(),
                 symbol: gap.symbol.clone(),
                 rust_component: gap
@@ -165,9 +170,9 @@ pub(crate) fn verification_core_report<S: AsRef<str>>(
                     .map(|component| component.label().to_owned())
                     .unwrap_or_else(|| "missing".to_owned()),
                 blocked_by: gap
-                    .qualification_blockers
+                    .release_blockers
                     .iter()
-                    .map(|(source, symbol)| QualificationBlockerDocument {
+                    .map(|(source, symbol)| ReleaseBlockerDocument {
                         source: source.clone(),
                         symbol: symbol.clone(),
                     })
@@ -218,19 +223,17 @@ mod tests {
         let manifest = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/../Cargo.toml");
         let target = TargetSpec {
             id: "fixture".to_owned(),
-            harness: None,
+            knowledge_provider: None,
             architecture: crate::target::Architecture::Riscv32,
             calling_convention: crate::target::CallingConvention::RiscvIlp32,
             endianness: crate::target::Endianness::Little,
             pointer_width: 32,
             rust_target: "riscv32imac-unknown-none-elf".to_owned(),
-            memory_map: None,
-            svd_paths: Vec::new(),
-            pac_bindings: None,
         };
         let evidence = EvidenceSet::new();
         let report = verification_core_report(VerificationCoreInputs {
             target: &target,
+            verification_provider: None,
             gate: VerificationGate::Completion,
             summary: VerifySummary::default(),
             orphan_probes: 0,
@@ -238,7 +241,7 @@ mod tests {
             passed: true,
             evidence: &evidence,
             artifacts: &[("manifest", manifest.as_path())],
-            qualification_gaps: &[],
+            release_gaps: &[],
         })
         .unwrap();
         assert_eq!(report.artifacts.len(), 1);

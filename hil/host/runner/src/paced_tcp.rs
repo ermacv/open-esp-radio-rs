@@ -83,7 +83,7 @@ pub(crate) fn send(config: Config) -> Result<HostTransmission> {
 }
 
 pub(crate) fn receive(config: Config) -> Result<HostReception> {
-    receive_stream(connect(config)?, config).map_err(Into::into)
+    receive_stream(connect(config)?, config)
 }
 
 pub(crate) fn exchange(config: Config) -> Result<(HostTransmission, HostReception)> {

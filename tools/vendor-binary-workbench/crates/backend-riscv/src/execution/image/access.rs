@@ -35,6 +35,11 @@ impl ExecutableImage {
         self.symbols_by_address.get(&address).map(String::as_str)
     }
 
+    pub(in crate::execution) fn call_symbol_at(&self, address: u32) -> Option<&str> {
+        self.symbol_at(address)
+            .map(|symbol| symbol.strip_prefix("__call_").unwrap_or(symbol))
+    }
+
     pub(in crate::execution) fn symbol_containing(&self, address: u32) -> Option<(u32, &str)> {
         let (start, name) = self.symbols_by_address.range(..=address).next_back()?;
         let end = self
@@ -189,7 +194,14 @@ impl ExecutableImage {
         }
         let low = self
             .byte(address)
-            .ok_or_else(|| format!("instruction fetch outside image at {address:#x}"))?;
+            .ok_or_else(|| {
+                let symbol = self.symbol_at(address).unwrap_or("<unnamed>");
+                let call_symbol = self.call_symbol_at(address).unwrap_or("<unresolved>");
+                let trampoline = self.call_trampoline_addresses.contains(&address);
+                format!(
+                    "instruction fetch outside image at {address:#x} (symbol={symbol}, call-symbol={call_symbol}, call-trampoline={trampoline})"
+                )
+            })?;
         let width = if Inst::first_byte_is_compressed(low) {
             2
         } else {

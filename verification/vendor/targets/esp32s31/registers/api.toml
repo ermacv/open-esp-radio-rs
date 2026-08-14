@@ -48,6 +48,16 @@ min = 0
 max = 31
 sources = ["BLOB_LIBPP_HAL_COEX_RUNTIME"]
 
+[[enum-domains]]
+name = "MacRxBeaconClearRequest"
+description = "Reviewed receive-beacon clear requests. The type cannot select an unknown request bit."
+
+[[enum-domains.values]]
+name = "Beacon"
+value = 0
+description = "The bit-zero receive-beacon clear request traced from hal_clear_rx_beacon_pti."
+sources = ["BLOB_LIBPP_HAL_COEX_RUNTIME"]
+
 [[bounded-domains]]
 name = "MacTxQueueIndex"
 description = "One of the four ordinary Wi-Fi transmit queues accepted by complete hal_set_tx_pti."
@@ -216,7 +226,7 @@ name = "MacTxCompleteClearImage"
 description = "Register-specific completion-state image acknowledged by the TX capability."
 peripheral = "WIFI_MAC_TX_COMMON"
 register = "COMPLETE_CLEAR"
-sources = ["BLOB_LIBPP_HAL_MAC_TX", "MIGRATION_LMAC_TX"]
+sources = ["BLOB_LIBPP_HAL_MAC_TX", "PROMOTED_LMAC_TX"]
 
 [[opaque-domains]]
 name = "MacTxQueueStateClearMask"
@@ -230,7 +240,7 @@ name = "MacTxControlImage"
 description = "Complete queue-specific MAC TX control image assembled by a reviewed TX program."
 peripheral = "WIFI_MAC_TX_QUEUE_CONTROL"
 register = "CONTROL%s"
-sources = ["BLOB_LIBPP_HAL_MAC_TX", "MIGRATION_LMAC_TX"]
+sources = ["BLOB_LIBPP_HAL_MAC_TX", "PROMOTED_LMAC_TX"]
 
 [[opaque-domains]]
 name = "MacTxPlcp1Image"
@@ -363,13 +373,6 @@ name = "MacItwtControlMaskedInput"
 description = "Zero-or-one control image accepted only by the reviewed hal_set_itwt_pti low-byte replacement helper."
 peripheral = "WIFI_MAC_COEX_RUNTIME"
 register = "ITWT_CONTROL"
-sources = ["BLOB_LIBPP_HAL_COEX_RUNTIME"]
-
-[[opaque-domains]]
-name = "MacRxBeaconClearRequestInput"
-description = "Empty input domain for the reviewed bit-zero receive-beacon clear-request RMW."
-peripheral = "WIFI_MAC_COEX_RUNTIME"
-register = "CLEAR_REQUEST"
 sources = ["BLOB_LIBPP_HAL_COEX_RUNTIME"]
 
 [[zero-based-field-writes]]
@@ -516,7 +519,7 @@ peripheral = "WIFI_MAC_TX_COMMON"
 register = "COMPLETE_CLEAR"
 field = "STATE"
 domain = "MacTxCompleteClearImage"
-sources = ["BLOB_LIBPP_HAL_MAC_TX", "MIGRATION_LMAC_TX"]
+sources = ["BLOB_LIBPP_HAL_MAC_TX", "PROMOTED_LMAC_TX"]
 
 [[full-register-writes]]
 name = "mac_tx_queue_state_clear"
@@ -683,7 +686,7 @@ name = "publish_mac_tx_control"
 peripheral = "WIFI_MAC_TX_QUEUE_CONTROL"
 register = "CONTROL%s"
 domain = "MacTxControlImage"
-sources = ["BLOB_LIBPP_HAL_MAC_TX", "MIGRATION_LMAC_TX"]
+sources = ["BLOB_LIBPP_HAL_MAC_TX", "PROMOTED_LMAC_TX"]
 
 [[register-image-writes]]
 name = "publish_mac_tx_plcp1"
@@ -1070,14 +1073,12 @@ input-mask = 0x000000ff
 set-mask = 0x00000000
 sources = ["BLOB_LIBPP_HAL_COEX_RUNTIME"]
 
-[[masked-register-modifies]]
+[[indexed-bit-set-modifies]]
 name = "request_mac_rx_beacon_clear"
 peripheral = "WIFI_MAC_COEX_RUNTIME"
 register = "CLEAR_REQUEST"
-domain = "MacRxBeaconClearRequestInput"
-preserve-mask = 0xfffffffe
-input-mask = 0x00000000
-set-mask = 0x00000001
+field = "REQUESTS_UNKNOWN"
+domain = "MacRxBeaconClearRequest"
 sources = ["BLOB_LIBPP_HAL_COEX_RUNTIME"]
 
 [[indexed-bit-set-modifies]]

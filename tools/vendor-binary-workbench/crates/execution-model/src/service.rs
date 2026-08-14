@@ -1,7 +1,7 @@
 //! Scenario-owned stateful external services.
 //!
 //! These models deliberately describe mechanism-neutral FIFO behavior. A
-//! platform harness binds concrete ABI functions such as an RTOS queue API to
+//! knowledge provider binds concrete ABI functions such as an RTOS queue API to
 //! these operations; the executor never learns RTOS or vendor vocabulary.
 
 use serde::{Deserialize, Serialize};

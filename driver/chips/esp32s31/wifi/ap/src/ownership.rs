@@ -1,6 +1,6 @@
 //! Common ownership boundary between stopped Wi-Fi and one AP role.
 
-use open_esp_radio_esp32s31_pac::{MacInterruptSetup, RadioRegisters};
+use open_esp_radio_esp32s31_hal::{MacInterruptSetup, RadioRuntimeOwner};
 use open_esp_radio_esp32s31_phy::PhyState;
 use open_esp_radio_esp32s31_wifi::runtime::{
     Esp32s31WifiRuntimeContext, Esp32s31WifiRuntimeParts, Esp32s31WifiStopped,
@@ -26,7 +26,7 @@ impl<P> Esp32s31AccessPointRoleOwner<P> {
     /// have independently returned their exact capabilities.
     pub fn into_stopped<L>(
         self,
-        registers: RadioRegisters,
+        registers: RadioRuntimeOwner,
         interrupt_setup: MacInterruptSetup,
         resources: L,
     ) -> Esp32s31AccessPointStopped<P, L> {
@@ -41,7 +41,7 @@ impl<P> Esp32s31AccessPointRoleOwner<P> {
 
 pub struct Esp32s31AccessPointMaterialized<P, L> {
     pub owner: Esp32s31AccessPointRoleOwner<P>,
-    pub registers: RadioRegisters,
+    pub registers: RadioRuntimeOwner,
     pub interrupt_setup: MacInterruptSetup,
     pub resources: L,
 }

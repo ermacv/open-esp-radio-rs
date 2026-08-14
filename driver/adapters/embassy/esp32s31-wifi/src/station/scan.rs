@@ -6,11 +6,11 @@
 //! provide one coherent resource set and receive every owner back together
 //! with a value-only decision.
 
+use open_esp_radio_esp32s31_hal::MacInterruptSetup;
 use open_esp_radio_esp32s31_hal::{
     phy_i2c::PhyI2cMasterControl, phy_temperature::PhyTemperatureSystemControl,
     wifi_bb::PhyWifiBbControl,
 };
-use open_esp_radio_esp32s31_pac::MacInterruptSetup;
 use open_esp_radio_esp32s31_phy::{PhyAsyncDelay, PhyState, PhyTargetObserver, PhyTargetPortError};
 use open_esp_radio_esp32s31_wifi::ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer};
 use open_esp_radio_esp32s31_wifi_mac::tx::TxHardware;

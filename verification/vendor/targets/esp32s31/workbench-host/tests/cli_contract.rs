@@ -39,8 +39,8 @@ fn provider_contract_failures_stay_on_stderr() {
     assert!(!output.status.success());
     assert!(output.stdout.is_empty());
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("workbench::platform::provider"));
-    assert!(stderr.contains("platform provider \"esp32s31-radio-v1\" failed"));
+    assert!(stderr.contains("workbench::addon::provider"));
+    assert!(stderr.contains("add-on provider \"esp32s31-radio-verification-v1\" failed"));
     assert!(stderr.contains("No such file or directory"));
     assert!(!stderr.contains("Usage:"));
 }

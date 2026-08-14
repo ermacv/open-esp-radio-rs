@@ -33,16 +33,16 @@ pub(crate) fn investigate(
         request.runtime_address,
     )?;
     let (origin, origin_ledger) = origin_evidence(&request, &runtime, project)?;
-    let semantics = semantic_evidence(
-        request.source,
-        request.symbol,
-        &runtime,
-        request.graph_depth,
-        request.include_callers,
-        request.include_linked_ir_record,
-        origin.as_ref(),
+    let semantics = semantic_evidence(SemanticEvidenceRequest {
+        source: request.source,
+        symbol: request.symbol,
+        runtime: &runtime,
+        graph_depth: request.graph_depth,
+        include_callers: request.include_callers,
+        include_linked_ir_record: request.include_linked_ir_record,
+        origin: origin.as_ref(),
         project,
-    )?;
+    })?;
     let reviewed_address = origin
         .as_ref()
         .and_then(|origin| origin.linked_address)
@@ -87,7 +87,7 @@ pub(crate) fn investigate(
         }
     };
     Ok(FunctionInvestigationReport {
-        schema_version: 10,
+        schema_version: 12,
         command: "inspect function",
         source: request.source.to_owned(),
         symbol: request.symbol.to_owned(),
@@ -269,16 +269,30 @@ fn reviewed_path_knowledge(
     ))
 }
 
-fn semantic_evidence(
-    source: &str,
-    symbol: &str,
-    runtime: &artifact::FunctionBody,
+struct SemanticEvidenceRequest<'a> {
+    source: &'a str,
+    symbol: &'a str,
+    runtime: &'a artifact::FunctionBody,
     graph_depth: usize,
     include_callers: bool,
     include_linked_ir_record: bool,
-    origin: Option<&OriginFunctionEvidence>,
-    project: &ProjectSpec,
+    origin: Option<&'a OriginFunctionEvidence>,
+    project: &'a ProjectSpec,
+}
+
+fn semantic_evidence(
+    request: SemanticEvidenceRequest<'_>,
 ) -> Result<Vec<SemanticFunctionEvidence>> {
+    let SemanticEvidenceRequest {
+        source,
+        symbol,
+        runtime,
+        graph_depth,
+        include_callers,
+        include_linked_ir_record,
+        origin,
+        project,
+    } = request;
     let mut evidence = Vec::new();
     let function_pack = project
         .functions
@@ -306,7 +320,40 @@ fn semantic_evidence(
         };
         let complete = function.complete;
         let exact = function.exact();
-        let pseudo = function.pseudo.clone();
+        let reviewed = function_pack.as_ref().and_then(|pack| {
+            pack.functions.iter().find(|reviewed| {
+                reviewed.profile == profile.id
+                    && reviewed.source == source
+                    && reviewed.identity == function.identity
+            })
+        });
+        let reviewed_signature = reviewed
+            .and_then(|reviewed| {
+                reviewed
+                    .signature
+                    .as_ref()
+                    .map(|signature| (reviewed, signature))
+            })
+            .map(|(reviewed, signature)| ReviewedFunctionSignatureEvidence {
+                name: reviewed.name.clone().unwrap_or_else(|| symbol.to_owned()),
+                arguments: signature
+                    .arguments
+                    .iter()
+                    .map(|argument| ReviewedFunctionArgumentEvidence {
+                        index: argument.index,
+                        name: argument.name.clone(),
+                        abi: argument.abi.clone(),
+                        role: argument.role.clone(),
+                    })
+                    .collect(),
+                return_abi: signature.return_abi.clone(),
+                return_role: signature.return_role.clone(),
+                provenance: "reviewed-function-pack",
+            });
+        let pseudo = reviewed_signature.as_ref().map_or_else(
+            || function.pseudo.clone(),
+            |signature| apply_reviewed_signature(&function.pseudo, signature),
+        );
         let mut blockers = function
             .diagnostics()
             .map(|(layer, diagnostic)| BlockerExplanationEvidence {
@@ -321,7 +368,9 @@ fn semantic_evidence(
                     .site
                     .map(|site| relocation_candidates_at(runtime, origin, site))
                     .unwrap_or_default(),
-                confidence: "review-required",
+                provenance: crate::FactProvenance::Derived,
+                accuracy: crate::FactAccuracy::Exact,
+                completeness: crate::FactCompleteness::Partial,
             })
             .collect::<Vec<_>>();
         let calls = function
@@ -358,7 +407,9 @@ fn semantic_evidence(
                 required_model: "narrow the root/depth or raise the explicit investigation budget"
                     .to_owned(),
                 relocation_candidates: Vec::new(),
-                confidence: "bounded-navigation",
+                provenance: crate::FactProvenance::Derived,
+                accuracy: crate::FactAccuracy::Bounded,
+                completeness: crate::FactCompleteness::Partial,
             });
         }
         let mut call_graph_edges = graph_slice
@@ -417,6 +468,7 @@ fn semantic_evidence(
             report: profile.output.display().to_string(),
             complete,
             exact,
+            reviewed_signature,
             pseudo,
             blockers,
             instruction_evidence,
@@ -437,6 +489,78 @@ fn semantic_evidence(
         });
     }
     Ok(evidence)
+}
+
+fn abi_pseudo_type(abi: &str) -> &str {
+    match abi {
+        "void" => "()",
+        "ptr" | "mut-ptr" | "out-ptr" => "*mut opaque",
+        "const-ptr" => "*const opaque",
+        "fn-ptr" => "fn_ptr",
+        "opaque-handle" => "opaque_handle",
+        value => value,
+    }
+}
+
+fn replace_identifier(input: &str, from: &str, to: &str) -> String {
+    let mut output = String::with_capacity(input.len());
+    let mut cursor = 0;
+    while let Some(relative) = input[cursor..].find(from) {
+        let start = cursor + relative;
+        let end = start + from.len();
+        let identifier = |byte: u8| byte.is_ascii_alphanumeric() || byte == b'_';
+        let left_clear = start == 0 || !identifier(input.as_bytes()[start - 1]);
+        let right_clear = end == input.len() || !identifier(input.as_bytes()[end]);
+        output.push_str(&input[cursor..start]);
+        if left_clear && right_clear {
+            output.push_str(to);
+        } else {
+            output.push_str(from);
+        }
+        cursor = end;
+    }
+    output.push_str(&input[cursor..]);
+    output
+}
+
+fn apply_reviewed_signature(pseudo: &str, signature: &ReviewedFunctionSignatureEvidence) -> String {
+    let arguments = signature
+        .arguments
+        .iter()
+        .map(|argument| format!("{}: {}", argument.name, abi_pseudo_type(&argument.abi)))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let header = format!(
+        "fn {}({arguments}) -> {} {{",
+        signature.name,
+        signature
+            .return_abi
+            .as_deref()
+            .map(abi_pseudo_type)
+            .unwrap_or("unknown_abi")
+    );
+    let mut output = String::new();
+    for line in pseudo.lines() {
+        if line.starts_with("fn ") {
+            output
+                .push_str("// REVIEWED-SIGNATURE: function pack; body remains generated facts.\n");
+            output.push_str(&header);
+        } else if line.trim_start().starts_with("// argN denotes args[N]") {
+            output.push_str("    // Argument names below are reviewed aliases for raw ABI inputs.");
+        } else {
+            output.push_str(line);
+        }
+        output.push('\n');
+    }
+    for argument in signature.arguments.iter().rev() {
+        output = replace_identifier(
+            &output,
+            &format!("ctx{}", argument.index),
+            &format!("{}_memory", argument.name),
+        );
+        output = replace_identifier(&output, &format!("arg{}", argument.index), &argument.name);
+    }
+    output
 }
 
 fn call_knowledge(
@@ -594,9 +718,11 @@ fn compact_argument_value(value: &str) -> String {
             .strip_prefix(&format!("{bit}="))
             .is_some_and(|source| source == format!("{base}.{bit}"))
     });
-    aligned
-        .then(|| base.to_owned())
-        .unwrap_or_else(|| value.to_owned())
+    if aligned {
+        base.to_owned()
+    } else {
+        value.to_owned()
+    }
 }
 
 fn event_route_evidence(
@@ -957,5 +1083,41 @@ mod tests {
             compact_argument_value("ram:read0&0xffffffff|0x00000000"),
             "ram:read0"
         );
+    }
+
+    #[test]
+    fn reviewed_signature_names_only_reviewed_abi_inputs() {
+        let signature = ReviewedFunctionSignatureEvidence {
+            name: "select_phy_channel".to_owned(),
+            arguments: vec![
+                ReviewedFunctionArgumentEvidence {
+                    index: 0,
+                    name: "channel_or_frequency".to_owned(),
+                    abi: "u32".to_owned(),
+                    role: Some("channel-or-frequency".to_owned()),
+                },
+                ReviewedFunctionArgumentEvidence {
+                    index: 1,
+                    name: "cbw".to_owned(),
+                    abi: "u32".to_owned(),
+                    role: Some("channel-bandwidth".to_owned()),
+                },
+            ],
+            return_abi: None,
+            return_role: None,
+            provenance: "reviewed-function-pack",
+        };
+        let pseudo = apply_reviewed_signature(
+            "// vendor symbol: archive::phy_chip_set_chan\nfn archive__phy_chip_set_chan(args: [u32; 16]) -> u32 {\n    // argN denotes args[N]; ctxN denotes memory rooted at pointer argument N.\n    let call0 = helper(arg0, arg1, abi_inputs[2..16]);\n    return arg10;\n}\n",
+            &signature,
+        );
+        assert!(
+            pseudo.contains(
+                "fn select_phy_channel(channel_or_frequency: u32, cbw: u32) -> unknown_abi"
+            )
+        );
+        assert!(pseudo.contains("helper(channel_or_frequency, cbw, abi_inputs[2..16])"));
+        assert!(pseudo.contains("return arg10;"));
+        assert!(!pseudo.contains("args: [u32; 16]"));
     }
 }

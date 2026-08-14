@@ -76,7 +76,7 @@ impl ProjectSession {
             .target_spec
             .unwrap_or_else(|| project.target_spec.clone());
         let mut target = TargetSpec::load(&target_path)?;
-        if let Some(pack) = project.platform_pack.as_ref() {
+        if let Some(pack) = project.chip_pack.as_ref() {
             pack.apply_to_target(&mut target)?;
         }
 
@@ -95,10 +95,7 @@ impl ProjectSession {
             })
             .flatten();
         let run_spec = run_spec_path.as_deref().map(RunSpec::load).transpose()?;
-        let memory_map_path = project
-            .memory_map
-            .as_deref()
-            .or(target.memory_map.as_deref());
+        let memory_map_path = project.memory_map.as_deref();
         let memory_map = if options.load_memory_map {
             memory_map_path.map(MemoryMap::load).transpose()?
         } else {
@@ -106,10 +103,8 @@ impl ProjectSession {
         };
         let svd_paths = if !options.svd_paths.is_empty() {
             options.svd_paths
-        } else if project.svd_configured {
-            project.svd_paths.clone()
         } else {
-            target.svd_paths.clone()
+            project.svd_paths.clone()
         };
         let mut mmio = if options.load_register_catalog {
             crate::register_catalog::load(&svd_paths, Some(&project))?
@@ -235,7 +230,7 @@ fn cached_interface_workspace<'a>(
             return Ok(None);
         }
         let contracts = target
-            .harness
+            .knowledge_provider
             .as_deref()
             .and_then(|harness| crate::harnesses::contracts(harness).ok());
         crate::interfaces::InterfaceWorkspace::load(

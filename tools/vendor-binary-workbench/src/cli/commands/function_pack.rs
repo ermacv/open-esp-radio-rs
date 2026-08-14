@@ -155,7 +155,7 @@ fn reviewed_interface_links(
         &paths.semantic_catalogs,
         target.calling_convention.label(),
         target
-            .harness
+            .knowledge_provider
             .as_deref()
             .map(crate::harnesses::contracts)
             .transpose()?,

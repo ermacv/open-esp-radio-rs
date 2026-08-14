@@ -179,18 +179,9 @@ pub struct SplitPinnedResources<
     split: AtomicBool,
 }
 
-/// Compatibility form with equal receive and transmit queue depths.
-pub type PinnedResources<
-    M,
-    const FRAME_CAPACITY: usize,
-    const HEADROOM: usize,
-    const TRAILER: usize,
-    const QUEUE_DEPTH: usize,
-> = SplitPinnedResources<M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH, QUEUE_DEPTH>;
-
 /// Permanently located storage for the TX allocations exposed to radio DMA.
 ///
-/// This is separate from [`PinnedResources`] so a platform linker can place
+/// This is separate from [`SplitPinnedResources`] so a platform linker can place
 /// only the DMA-visible bytes in internal SRAM while keeping RX queues and
 /// Embassy synchronization state in ordinary memory.
 pub type PinnedTxPool<
@@ -351,16 +342,6 @@ pub struct SplitPinnedDevice<
     reserve_ingress_tx: bool,
     tx_reservation: (),
 }
-
-/// Compatibility form with equal receive and transmit queue depths.
-pub type PinnedDevice<
-    'resources,
-    M,
-    const FRAME_CAPACITY: usize,
-    const HEADROOM: usize,
-    const TRAILER: usize,
-    const QUEUE_DEPTH: usize,
-> = SplitPinnedDevice<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH, QUEUE_DEPTH>;
 
 impl<
     'resources,
@@ -1029,24 +1010,6 @@ pub struct SplitPinnedRadioRunner<
     link: &'resources SharedLinkState<M>,
     hardware_address: &'resources SharedHardwareAddress<M>,
 }
-
-/// Compatibility form with equal receive and transmit queue depths.
-pub type PinnedRadioRunner<
-    'resources,
-    M,
-    const FRAME_CAPACITY: usize,
-    const HEADROOM: usize,
-    const TRAILER: usize,
-    const QUEUE_DEPTH: usize,
-> = SplitPinnedRadioRunner<
-    'resources,
-    M,
-    FRAME_CAPACITY,
-    HEADROOM,
-    TRAILER,
-    QUEUE_DEPTH,
-    QUEUE_DEPTH,
->;
 
 impl<
     'resources,

@@ -60,4 +60,6 @@ sources = [
     "ROM_REV0_MAC_TX_SET_TB",
     "HIL_OPEN_HE_QUEUE_SCHEDULING_BASELINE_2026_07_29",
 ]
-confidence = "instruction-exact-hil-qualified"
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"

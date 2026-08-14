@@ -21,4 +21,6 @@ bitWidth = 32
 [[review]]
 entity = "WIFI_MAC_BEACON_IE_CRC"
 sources = ["BLOB_LIBPP_HAL_RUNTIME_MMIO_LEAVES"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"

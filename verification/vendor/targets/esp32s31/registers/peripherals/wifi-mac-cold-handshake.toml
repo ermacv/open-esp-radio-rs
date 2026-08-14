@@ -91,39 +91,55 @@ bitWidth = 32
 [[review]]
 entity = "WIFI_MAC_COLD_HANDSHAKE"
 sources = ["BLOB_LIBPP_HAL_INIT_PREFIX"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_COLD_HANDSHAKE.CONTROL"
 sources = ["BLOB_LIBPP_HAL_INIT_PREFIX"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_COLD_HANDSHAKE.CONTROL.READY"
 sources = ["BLOB_LIBPP_HAL_INIT_PREFIX"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_COLD_HANDSHAKE.CONTROL.REQUEST"
 sources = ["BLOB_LIBPP_HAL_INIT_PREFIX"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_COLD_HANDSHAKE.WDEV_TIMER_TARGET_0_CONTROL"
 sources = ["ROM_REV0_WIFI_RUNTIME_MMIO_GAPS"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "WIFI_MAC_COLD_HANDSHAKE.WDEV_TIMER_TARGET_0_VALUE"
 sources = ["ROM_REV0_WIFI_RUNTIME_MMIO_GAPS"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "WIFI_MAC_COLD_HANDSHAKE.WDEV_TIMER_TARGET_1_CONTROL"
 sources = ["ROM_REV0_WIFI_RUNTIME_MMIO_GAPS"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "WIFI_MAC_COLD_HANDSHAKE.WDEV_TIMER_TARGET_1_VALUE"
 sources = ["ROM_REV0_WIFI_RUNTIME_MMIO_GAPS"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"

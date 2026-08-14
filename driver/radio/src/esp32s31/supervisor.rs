@@ -1,7 +1,7 @@
 //! ESP32-S31 local-role bindings for the physical radio supervisor.
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
-use open_esp_radio_esp32s31_pac::MacInterruptSetup;
+use open_esp_radio_esp32s31_hal::MacInterruptSetup;
 use open_esp_radio_esp32s31_wifi::runtime::Esp32s31WifiStopped;
 use open_esp_radio_esp32s31_wifi_embassy::{
     monitor::{

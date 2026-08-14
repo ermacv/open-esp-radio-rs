@@ -16,22 +16,16 @@ fn fixture_directory(name: &str) -> PathBuf {
     directory
 }
 
-fn write_target(path: &std::path::Path, svd: Option<&str>) {
-    let svd = svd
-        .map(|path| format!("svd = [\"{path}\"]\n"))
-        .unwrap_or_default();
+fn write_target(path: &std::path::Path) {
     std::fs::write(
         path,
-        format!(
-            "schema = 1\n\
+        "schema = 3\n\
              id = \"fixture\"\n\
              architecture = \"riscv32\"\n\
              calling-convention = \"riscv-ilp32\"\n\
              endianness = \"little\"\n\
              pointer-width = 32\n\
-             rust-target = \"riscv32imafc-unknown-none-elf\"\n\
-             {svd}"
-        ),
+             rust-target = \"riscv32imafc-unknown-none-elf\"\n",
     )
     .unwrap();
 }
@@ -40,7 +34,7 @@ fn write_project(path: &std::path::Path, extra: &str) {
     std::fs::write(
         path,
         format!(
-            "schema = 1\n\
+            "schema = 3\n\
              id = \"fixture-project\"\n\
              target-spec = \"target.toml\"\n\
              {extra}"
@@ -72,11 +66,13 @@ fn command_resources_are_classified_by_one_positive_plan() {
     );
     assert_eq!(
         ResolutionNeeds::for_command(&Command::ProjectAnalyze(Default::default())),
-        ResolutionNeeds::new(true, true, false, false, true, true, true).with_configured_harness()
+        ResolutionNeeds::new(true, true, false, false, true, true, true)
+            .with_configured_knowledge_provider()
     );
     assert_eq!(
         ResolutionNeeds::for_command(&Command::ProjectVerify(Default::default())),
-        ResolutionNeeds::new(true, true, false, true, true, true, true).with_configured_harness()
+        ResolutionNeeds::new(true, true, false, true, true, true, true)
+            .with_configured_knowledge_provider()
     );
     assert_eq!(
         ResolutionNeeds::for_command(&Command::RegisterValidate(Default::default())),
@@ -95,11 +91,11 @@ fn command_resources_are_classified_by_one_positive_plan() {
 #[test]
 fn composite_analysis_requires_only_a_selected_harness() {
     let analysis = ResolutionNeeds::for_command(&Command::ProjectAnalyze(Default::default()));
-    assert!(!analysis.requires_harness(false));
-    assert!(analysis.requires_harness(true));
+    assert!(!analysis.requires_knowledge_provider(false));
+    assert!(analysis.requires_knowledge_provider(true));
 
     let status = ResolutionNeeds::for_command(&Command::ProjectStatus(Default::default()));
-    assert!(!status.requires_harness(true));
+    assert!(!status.requires_knowledge_provider(true));
 }
 
 #[test]
@@ -186,7 +182,7 @@ fn discovered_project_resolves_project_owned_paths_from_the_manifest() {
     let directory = fixture_directory("discovery");
     let nested = directory.join("nested");
     std::fs::create_dir(&nested).unwrap();
-    write_target(&directory.join("target.toml"), None);
+    write_target(&directory.join("target.toml"));
     write_project(
         &directory.join(DEFAULT_PROJECT_MANIFEST),
         "run-spec = \"local.toml\"\n",
@@ -215,7 +211,7 @@ fn discovered_project_resolves_project_owned_paths_from_the_manifest() {
 #[test]
 fn project_browser_resolves_only_the_manifest_for_the_application_frontend() {
     let directory = fixture_directory("browser");
-    write_target(&directory.join("target.toml"), None);
+    write_target(&directory.join("target.toml"));
     write_project(&directory.join(DEFAULT_PROJECT_MANIFEST), "");
 
     let resolved = resolve_from(parse(&["project", "browse"]), &directory).unwrap();
@@ -242,7 +238,7 @@ fn project_browser_resolves_only_the_manifest_for_the_application_frontend() {
 #[test]
 fn sibling_local_run_is_discovered_but_manifest_configuration_wins() {
     let directory = fixture_directory("local-run-discovery");
-    write_target(&directory.join("target.toml"), None);
+    write_target(&directory.join("target.toml"));
     write_project(&directory.join(DEFAULT_PROJECT_MANIFEST), "");
     std::fs::write(
         directory.join("local.toml"),
@@ -303,11 +299,16 @@ fn sibling_local_run_is_discovered_but_manifest_configuration_wins() {
 #[test]
 fn explicit_run_spec_and_svd_override_project_defaults() {
     let directory = fixture_directory("precedence");
-    write_target(&directory.join("target.toml"), Some("target.svd"));
+    write_target(&directory.join("target.toml"));
     write_project(
         &directory.join(DEFAULT_PROJECT_MANIFEST),
-        "run-spec = \"project.toml\"\nsvd = [\"project.svd\"]\n",
+        "run-spec = \"project.toml\"\nchip-pack = \"chip.toml\"\n",
     );
+    std::fs::write(
+        directory.join("chip.toml"),
+        "schema = 3\nid = \"fixture-chip\"\nsvd = [\"project.svd\"]\nknowledge-provider = \"none\"\nknowledge-packs = []\n",
+    )
+    .unwrap();
     std::fs::write(
         directory.join("project.toml"),
         "schema = 1\n\n[[inputs]]\nrole = \"artifact\"\npath = \"project.elf\"\n",
@@ -350,7 +351,7 @@ fn explicit_run_spec_and_svd_override_project_defaults() {
 #[test]
 fn explicit_cli_arguments_remain_authoritative_after_full_resolution() {
     let directory = fixture_directory("cli-input");
-    write_target(&directory.join("target.toml"), None);
+    write_target(&directory.join("target.toml"));
     write_project(
         &directory.join(DEFAULT_PROJECT_MANIFEST),
         "run-spec = \"project.toml\"\n",
@@ -389,7 +390,7 @@ fn explicit_cli_arguments_remain_authoritative_after_full_resolution() {
 #[test]
 fn project_symbol_inventory_supplies_the_default_report_path() {
     let directory = fixture_directory("symbol-inventory");
-    write_target(&directory.join("target.toml"), None);
+    write_target(&directory.join("target.toml"));
     write_project(
         &directory.join(DEFAULT_PROJECT_MANIFEST),
         "run-spec = \"project.toml\"\n[analysis.symbols]\noutput = \"generated/symbols.json\"\n",

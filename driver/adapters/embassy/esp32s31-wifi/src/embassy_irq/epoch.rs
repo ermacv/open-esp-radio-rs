@@ -1,5 +1,5 @@
 use open_esp_radio_embassy_net::RawMutex;
-use open_esp_radio_esp32s31_pac::MacInterruptMask;
+use open_esp_radio_esp32s31_hal::types::MacInterruptMask;
 use open_esp_radio_esp32s31_wifi_mac::irq::MacInterruptRoute;
 
 use super::{EmbassyMacIrqDrain, EmbassyMacIrqRuntime, EmbassyPowerIrqRuntime};

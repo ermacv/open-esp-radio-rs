@@ -1,6 +1,6 @@
 //! Owned CCMP keys and a fixed-capacity software key table.
 //!
-//! This is the source-owned part of the former migration `wpa2_io` boundary.
+//! This is the source-owned hardware-independent key boundary.
 //! Hardware slot selection remains in the chip MAC crate; this module owns
 //! key material, slot identity, replacement, and zeroization.
 

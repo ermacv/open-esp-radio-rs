@@ -53,9 +53,13 @@ bitWidth = 1
 [[review]]
 entity = "WIFI_MAC_BEAMFORMING_FEEDBACK_TEST"
 sources = ["BLOB_LIBPP_TEST_BF_SET_FEEDBACK"]
-confidence = "instruction-exact-partial"
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_BEAMFORMING_FEEDBACK_TEST.CONFIGURATION"
 sources = ["BLOB_LIBPP_TEST_BF_SET_FEEDBACK"]
-confidence = "instruction-exact-partial"
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"

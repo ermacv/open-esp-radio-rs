@@ -139,7 +139,7 @@ impl<M: RawMutex> Esp32s31StationControlResources<M> {
         self.completion.store(NO_COMPLETION, Ordering::Release);
         self.wake.reset();
         self.completion_wake.reset();
-        let shared = &*self;
+        let shared = self;
         Ok((
             Esp32s31StationController { resources: shared },
             Esp32s31StationCommandReceiver { resources: shared },

@@ -1,7 +1,7 @@
 //! Owned access to the ESP32-S31 PHY analog-register I2C master.
 
 #[cfg(target_arch = "riscv32")]
-use open_esp_radio_esp32s31_pac::RadioRegisters;
+use crate::{PhyAccess, phy_pac_mut};
 
 /// One of the two analog-register command hosts.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -193,10 +193,11 @@ pub fn configure_bbpll_calibration(platform: &mut impl PhyI2cMasterControl, enab
 /// for the instruction-recovered block/register/data word.
 #[cfg(target_arch = "riscv32")]
 pub fn write_command_memory(
-    registers: &mut RadioRegisters,
+    registers: &mut impl PhyAccess,
     index: usize,
     command: u32,
 ) -> Result<(), PhyI2cError> {
+    let registers = phy_pac_mut(registers);
     if index >= 45 {
         return Err(PhyI2cError::CommandMemoryIndexOutOfRange);
     }

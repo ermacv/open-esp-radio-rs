@@ -1,19 +1,28 @@
 //! Ownership boundary for the open promiscuous receive frontier.
 
-use open_esp_radio_esp32s31_pac::{ColdRadioRegisters, RadioRegisters};
+use open_esp_radio_esp32s31_hal::{
+    RadioRuntimeOwner,
+    wifi_mac::{WifiMacColdHal, WifiMacHal},
+};
 
 pub trait MacSnifferHardware {
     fn configure_open_promiscuous_receive(&mut self);
 }
 
-impl MacSnifferHardware for ColdRadioRegisters {
+impl MacSnifferHardware for WifiMacColdHal<'_> {
     fn configure_open_promiscuous_receive(&mut self) {
-        self.configure_open_mac_promiscuous_receive();
+        WifiMacColdHal::configure_open_promiscuous_receive(self);
     }
 }
 
-impl MacSnifferHardware for RadioRegisters {
+impl MacSnifferHardware for WifiMacHal<'_> {
     fn configure_open_promiscuous_receive(&mut self) {
-        self.configure_open_mac_promiscuous_receive();
+        WifiMacHal::configure_open_promiscuous_receive(self);
+    }
+}
+
+impl MacSnifferHardware for RadioRuntimeOwner {
+    fn configure_open_promiscuous_receive(&mut self) {
+        self.wifi_mac_hal().configure_open_promiscuous_receive();
     }
 }

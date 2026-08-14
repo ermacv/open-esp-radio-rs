@@ -2,7 +2,7 @@
 
 use open_radio_vendor_analysis_model::{
     DirectSemanticFunctionSpec, EntryContractRef, EntryContractSpec, FunctionAnalysis,
-    HarnessContractSpec, MmioMap, SymbolicValue,
+    KnowledgeContractSpec, MmioMap, SymbolicValue,
 };
 use open_radio_vendor_backend_riscv::{
     RiscvHarnessSpec, RiscvSummaryHooks, Rv32CallArguments, StructuralPointerContext, artifact,
@@ -17,7 +17,7 @@ const NONE_ENTRY_SPEC: EntryContractSpec = EntryContractSpec {
 
 const ENTRY_CONTRACTS: [EntryContractRef; 1] = [EntryContractRef::new(&NONE_ENTRY_SPEC)];
 
-static CONTRACTS: HarnessContractSpec = HarnessContractSpec {
+static CONTRACTS: KnowledgeContractSpec = KnowledgeContractSpec {
     external_call_model_sets: &[],
     entry_contracts: &ENTRY_CONTRACTS,
     diagnostic_calls: &[],

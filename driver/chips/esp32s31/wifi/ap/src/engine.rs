@@ -615,7 +615,7 @@ impl<'storage> Esp32s31ApEngine<'storage> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use open_esp_radio_esp32s31_pac::MacKeyInstallOutcome;
+    use open_esp_radio_esp32s31_hal::types::MacKeyInstallOutcome;
     use open_esp_radio_wpa2::{
         OwnedEapolFrame, Pmk, PtkContext, Wpa2Interface,
         frames::{OwnedRsnIe, Wpa2Gtk, Wpa2TxFrame},

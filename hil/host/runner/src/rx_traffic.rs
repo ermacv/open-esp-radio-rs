@@ -53,8 +53,8 @@ pub(crate) fn run(
     require_no_beacon_loss: bool,
 ) -> Result<()> {
     let mut options = parse_options(&arguments, lab)?;
-    fs::create_dir_all(&output)?;
-    invalidate_previous_report(&output)?;
+    fs::create_dir_all(output)?;
+    invalidate_previous_report(output)?;
     let capture = SerialCapture::start_with_reset(&options.serial);
     let discovered_address = match await_udp_rx_ready(
         &capture,
@@ -190,14 +190,17 @@ pub(crate) fn run(
             None
         }
     };
-    let typed_delivery_failure = require_exact_delivery
-        .then_some(())
-        .and_then(|()| structured.rx_delivery)
-        .and_then(|delivery| {
+    let typed_delivery_failure = if require_exact_delivery {
+        structured.rx_delivery.and_then(|delivery| {
             let assessment = rx_delivery::assess(host.datagrams, delivery);
-            (!assessment.exact())
-                .then(|| format!("typed RX delivery frontier is {}", assessment.frontier()))
-        });
+            (!assessment.exact()).then_some(format!(
+                "typed RX delivery frontier is {}",
+                assessment.frontier()
+            ))
+        })
+    } else {
+        None
+    };
     let acceptance_failure = if host.throughput_bps() < minimum_bps {
         Some(String::from(
             "host failed to offer at least 90% of the requested RX rate",
@@ -210,19 +213,20 @@ pub(crate) fn run(
     } else {
         None
     };
-    let fixture_failure = require_exact_delivery
-        .then_some(())
-        .and_then(|()| fixture.as_ref())
-        .and_then(|fixture| {
+    let fixture_failure = if require_exact_delivery {
+        fixture.as_ref().and_then(|fixture| {
             let expected = host.datagrams.saturating_add(1);
-            (fixture.wireless_packets() != expected).then(|| {
+            (fixture.wireless_packets() != expected).then_some({
                 format!(
                     "host/AP Wi-Fi egress mismatch: expected={} observed={} packets",
                     expected,
                     fixture.wireless_packets()
                 )
             })
-        });
+        })
+    } else {
+        None
+    };
     let failure = fixture_failure
         .or(typed_delivery_failure)
         .or(typed_radio_failure)

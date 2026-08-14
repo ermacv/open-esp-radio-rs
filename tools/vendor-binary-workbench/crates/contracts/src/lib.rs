@@ -1,9 +1,44 @@
-//! Architecture-neutral contracts supplied by a platform harness.
+//! Architecture-neutral contracts supplied by an optional knowledge provider.
 //!
 //! The analysis layers carry opaque references to these immutable specs. They
 //! does not know which chip, SDK revision, or runtime lifecycle produced them.
 
 use std::cmp::Ordering;
+
+/// Origin of one asserted fact. A hint is navigation metadata only and must
+/// never be promoted to a reviewed hardware meaning by generic analysis.
+#[derive(
+    Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, serde::Deserialize, serde::Serialize,
+)]
+#[serde(rename_all = "kebab-case")]
+pub enum FactProvenance {
+    Observed,
+    Derived,
+    Imported,
+    Hint,
+    Reviewed,
+}
+
+#[derive(
+    Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, serde::Deserialize, serde::Serialize,
+)]
+#[serde(rename_all = "kebab-case")]
+pub enum FactAccuracy {
+    Exact,
+    Bounded,
+    Approximate,
+    Unknown,
+}
+
+#[derive(
+    Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, serde::Deserialize, serde::Serialize,
+)]
+#[serde(rename_all = "kebab-case")]
+pub enum FactCompleteness {
+    Complete,
+    Partial,
+    Unknown,
+}
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum ExternalReturnModel {
@@ -109,7 +144,7 @@ pub struct DirectSemanticFunctionSpec {
     pub evidence: &'static str,
 }
 
-/// Executable behavior supplied by a compiled platform harness.
+/// Executable behavior supplied by a compiled knowledge provider.
 ///
 /// Layout, slot offsets, names, ABI types and semantic annotations belong to
 /// the reviewed interface pack.  The model ID is only a foreign-key target
@@ -301,13 +336,13 @@ pub struct DiagnosticCallSpec {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct HarnessContractSpec {
+pub struct KnowledgeContractSpec {
     pub external_call_model_sets: &'static [ExternalCallModelSetRef],
     pub entry_contracts: &'static [EntryContractRef],
     pub diagnostic_calls: &'static [DiagnosticCallSpec],
 }
 
-impl HarnessContractSpec {
+impl KnowledgeContractSpec {
     pub fn entry_contract(self, id: &str) -> Option<EntryContractRef> {
         self.entry_contracts
             .iter()

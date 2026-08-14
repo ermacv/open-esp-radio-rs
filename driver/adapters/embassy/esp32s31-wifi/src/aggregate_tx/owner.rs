@@ -232,11 +232,10 @@ where
             let was_operational = *entry & 0x7f != 0;
             *entry = encoded;
             let operational = window != 0;
-            if let Some(observer) = self.observer {
-                if was_operational != operational {
-                    observer
-                        .observe(AggregateTxObservation::BlockAckOperational { tid, operational });
-                }
+            if let Some(observer) = self.observer
+                && was_operational != operational
+            {
+                observer.observe(AggregateTxObservation::BlockAckOperational { tid, operational });
             }
         }
     }

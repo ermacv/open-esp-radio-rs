@@ -79,8 +79,8 @@ fn context_projection_bounds_scheduled_simple_paths() {
     for layer in 0..LAYERS - 1 {
         let current = 1 + layer * 2;
         let next = current + 2;
-        for source in current..current + 2 {
-            edges[source] = vec![
+        for outgoing in edges.iter_mut().skip(current).take(2) {
+            *outgoing = vec![
                 SummaryCallEdge {
                     target: next,
                     site: Some(0x20),

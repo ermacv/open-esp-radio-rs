@@ -723,7 +723,10 @@ mod tests {
             Err(RxRingError::Busy)
         ));
 
-        let live = first.start(&mut first_mmio).expect("first live epoch");
+        let live = first
+            .try_start(&mut first_mmio)
+            .map_err(|(_, error)| error)
+            .expect("first live epoch");
         assert_eq!(storage.lifecycle_state(), RxDmaArenaState::Live);
         let _halted = live
             .try_stop(&mut first_mmio)
@@ -764,7 +767,10 @@ mod tests {
         let prepared = storage
             .prepare_ring(&mut mmio, BASE, &buffers)
             .expect("prepared owner");
-        let live = prepared.start(&mut mmio).expect("live epoch");
+        let live = prepared
+            .try_start(&mut mmio)
+            .map_err(|(_, error)| error)
+            .expect("live epoch");
         let halted = match live.try_stop(&mut mmio) {
             Ok(halted) => halted,
             Err(_) => panic!("walker stops"),
@@ -795,7 +801,10 @@ mod tests {
         let prepared = storage
             .prepare_ring(&mut mmio, BASE, &buffers)
             .expect("prepared owner");
-        let mut live = prepared.start(&mut mmio).expect("live epoch");
+        let mut live = prepared
+            .try_start(&mut mmio)
+            .map_err(|(_, error)| error)
+            .expect("live epoch");
         storage.descriptors()[0].write_word0(
             crate::descriptor::rx_armed_word(16).expect("valid size") | crate::descriptor::BIT_30,
         );
@@ -822,7 +831,10 @@ mod tests {
             let prepared = storage
                 .prepare_ring(&mut mmio, BASE, &buffers)
                 .expect("prepared owner");
-            let mut live = prepared.start(&mut mmio).expect("live epoch");
+            let mut live = prepared
+                .try_start(&mut mmio)
+                .map_err(|(_, error)| error)
+                .expect("live epoch");
             let descriptor = &storage.descriptors()[0];
             let mut word0 = 16
                 | (8 << crate::descriptor::LENGTH_SHIFT)
@@ -859,7 +871,10 @@ mod tests {
         let prepared = storage
             .prepare_ring(&mut mmio, BASE, &buffers)
             .expect("prepared owner");
-        let mut live = prepared.start(&mut mmio).expect("live epoch");
+        let mut live = prepared
+            .try_start(&mut mmio)
+            .map_err(|(_, error)| error)
+            .expect("live epoch");
         storage.descriptors()[0].write_word0(
             crate::descriptor::rx_armed_word(16).expect("valid size") | crate::descriptor::BIT_30,
         );
@@ -895,7 +910,10 @@ mod tests {
         let prepared = storage
             .prepare_ring(&mut mmio, BASE, &buffers)
             .expect("prepared owner");
-        let mut live = prepared.start(&mut mmio).expect("live epoch");
+        let mut live = prepared
+            .try_start(&mut mmio)
+            .map_err(|(_, error)| error)
+            .expect("live epoch");
         storage.descriptors()[0].write_word0(
             crate::descriptor::rx_armed_word(16).expect("valid size") | crate::descriptor::BIT_30,
         );
@@ -934,7 +952,10 @@ mod tests {
         let prepared = storage
             .prepare_ring(&mut mmio, BASE, &buffers)
             .expect("prepared owner");
-        let mut live = prepared.start(&mut mmio).expect("live epoch");
+        let mut live = prepared
+            .try_start(&mut mmio)
+            .map_err(|(_, error)| error)
+            .expect("live epoch");
         storage.descriptors()[0].write_word0(
             crate::descriptor::rx_armed_word(16).expect("valid size") | crate::descriptor::BIT_30,
         );

@@ -168,7 +168,7 @@ pub(super) fn inspect(
         };
         let mut diagnostics = Vec::new();
         let contract_status = match harnesses::entry_contract_or_neutral(
-            target.harness.as_deref(),
+            target.knowledge_provider.as_deref(),
             &profile.entry_contract,
         ) {
             Ok(_) => "ready",

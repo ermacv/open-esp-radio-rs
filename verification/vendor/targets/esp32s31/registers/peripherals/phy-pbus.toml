@@ -242,7 +242,9 @@ sources = [
     "ROM_REV0_PHY_PBUS",
     "BLOB_LIBPHY_PHY_DEBUG_PBUS",
 ]
-confidence = "instruction-exact-partial"
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
 
 [[review]]
 entity = "PHY_PBUS.COMMAND"
@@ -250,12 +252,16 @@ sources = [
     "ROM_REV0_PHY_PBUS",
     "ROM_REV0_PHY_RX_DCO",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_PBUS.COMMAND.SELECTOR"
 sources = ["BLOB_LIBPHY_PHY_DEBUG_PBUS"]
-confidence = "instruction-exact-partial"
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
 
 [[review]]
 entity = "PHY_PBUS.COMMAND.TEST_VALUE"
@@ -263,7 +269,9 @@ sources = [
     "ROM_REV0_PHY_PBUS",
     "ROM_REV0_PHY_RX_DCO",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_PBUS.COMMAND.PATH"
@@ -272,12 +280,16 @@ sources = [
     "ROM_REV0_PHY_RX_DCO",
     "BLOB_LIBPHY_PHY_DEBUG_PBUS",
 ]
-confidence = "instruction-exact-partial"
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
 
 [[review]]
 entity = "PHY_PBUS.MODE"
 sources = ["ROM_REV0_PHY_PBUS"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_PBUS.STATUS_CLOCK_FORCE"
@@ -285,12 +297,16 @@ sources = [
     "ROM_REV0_PHY_PBUS",
     "ROM_REV0_PHY_CLOCK_FORCE",
 ]
-confidence = "instruction-exact-partial"
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
 
 [[review]]
 entity = "PHY_PBUS.STATUS_CLOCK_FORCE.FORCE_TXRX_MODE_UNKNOWN"
 sources = ["ROM_REV0_PHY_CLOCK_FORCE"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_PBUS.STATUS_CLOCK_FORCE.RX_CLOCK_LOW_OR_RXIQ_STATUS_FIRST_UNKNOWN"
@@ -298,7 +314,9 @@ sources = [
     "ROM_REV0_PHY_CLOCK_FORCE",
     "BLOB_LIBPHY_PHY_RXIQ_CAL_INIT",
 ]
-confidence = "instruction-exact-partial"
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
 
 [[review]]
 entity = "PHY_PBUS.STATUS_CLOCK_FORCE.RX_CLOCK_HIGH_OR_RXIQ_STATUS_SECOND_UNKNOWN"
@@ -306,12 +324,16 @@ sources = [
     "ROM_REV0_PHY_CLOCK_FORCE",
     "BLOB_LIBPHY_PHY_RXIQ_CAL_INIT",
 ]
-confidence = "instruction-exact-partial"
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
 
 [[review]]
 entity = "PHY_PBUS.STATUS_CLOCK_FORCE.TX_CLOCK_ENABLE_PAIR"
 sources = ["ROM_REV0_PHY_CLOCK_FORCE"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_PBUS.READ_RESULT_0"
@@ -319,29 +341,41 @@ sources = [
     "ROM_REV0_PHY_PBUS",
     "ROM_REV0_PHY_FE_REG_INIT",
 ]
-confidence = "instruction-exact-partial"
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
 
 [[review]]
 entity = "PHY_PBUS.READ_RESULT_0.FE_INIT_ENABLE_UNKNOWN"
 sources = ["ROM_REV0_PHY_FE_REG_INIT"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_PBUS.READ_RESULT_1"
 sources = ["ROM_REV0_PHY_PBUS"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_PBUS.READ_RESULT_2"
 sources = ["ROM_REV0_PHY_PBUS"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_PBUS.READ_RESULT_3"
 sources = ["ROM_REV0_PHY_PBUS"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_PBUS.READ_RESULT_4"
 sources = ["ROM_REV0_PHY_PBUS"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"

@@ -1,0 +1,9 @@
+# Architecture-only ESP32-C5 target. Memory ranges and SVD inputs are omitted
+# until they are supplied by reviewed public sources or observed binaries.
+schema = 3
+id = "esp32c5-review-bootstrap"
+architecture = "riscv32"
+calling-convention = "riscv-ilp32"
+endianness = "little"
+pointer-width = 32
+rust-target = "riscv32imac-unknown-none-elf"

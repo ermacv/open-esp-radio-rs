@@ -4,7 +4,7 @@ use core::{
 };
 
 use open_esp_radio_embassy_net::NoopRawMutex;
-use open_esp_radio_esp32s31_pac::{
+use open_esp_radio_esp32s31_hal::types::{
     MacKeyInstallOutcome, MacLegacyTxProgram, MacTxCompletionRegisters, MacTxDetachOutcome,
     MacTxDetachReason, MacTxQueueDetached,
 };

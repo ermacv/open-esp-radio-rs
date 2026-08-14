@@ -304,7 +304,7 @@ impl PhyPbusHardwareBinding {
     #[cfg(target_arch = "riscv32")]
     pub fn start_target(
         &mut self,
-        registers: &mut open_esp_radio_esp32s31_hal::RadioRegisters,
+        registers: &mut open_esp_radio_esp32s31_hal::PhyHal,
     ) -> Result<(), PhyPbusHardwareBindingError> {
         if self.phase != PhyPbusHardwarePhase::Start {
             return Err(if self.phase == PhyPbusHardwarePhase::Complete {
@@ -325,7 +325,7 @@ impl PhyPbusHardwareBinding {
     #[cfg(target_arch = "riscv32")]
     pub fn observe_target_edge(
         &mut self,
-        registers: &mut open_esp_radio_esp32s31_hal::RadioRegisters,
+        registers: &mut open_esp_radio_esp32s31_hal::PhyHal,
     ) -> Result<PhyPbusHardwareObservation, PhyPbusHardwareBindingError> {
         if self.phase != PhyPbusHardwarePhase::AwaitCompletionEdge {
             return Err(if self.phase == PhyPbusHardwarePhase::Complete {

@@ -7,7 +7,7 @@ use core::cell::RefCell;
 use crate::EspHalRadioPeripheral;
 use critical_section::Mutex;
 use esp_hal::interrupt::InterruptHandler;
-use open_esp_radio_esp32s31_pac::{
+use open_esp_radio_esp32s31_hal::{
     MacInterruptMask, MacInterruptRegisters, MacInterruptSetup, MacPowerInterruptRegisters,
 };
 use open_esp_radio_esp32s31_wifi_mac::irq::{

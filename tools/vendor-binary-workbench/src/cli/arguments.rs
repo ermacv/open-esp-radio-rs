@@ -37,12 +37,12 @@ pub(crate) struct ProjectInitArgs {
 
 #[derive(Clone, Debug, Default, Args)]
 pub(crate) struct ProjectConfigureArgs {
-    /// Attach a reusable platform pack to the project.
-    #[arg(long, conflicts_with = "no_platform_pack")]
-    pub(crate) platform_pack: Option<PathBuf>,
-    /// Remove the configured platform pack.
-    #[arg(long, conflicts_with = "platform_pack")]
-    pub(crate) no_platform_pack: bool,
+    /// Replace the project ecosystem-pack list with this reusable pack.
+    #[arg(long, conflicts_with = "no_ecosystem_pack")]
+    pub(crate) ecosystem_pack: Option<PathBuf>,
+    /// Remove every configured ecosystem pack.
+    #[arg(long, conflicts_with = "ecosystem_pack")]
+    pub(crate) no_ecosystem_pack: bool,
     /// Verify that the manifest already contains the requested configuration.
     #[arg(long)]
     pub(crate) check: bool,
@@ -75,18 +75,6 @@ pub(crate) struct ProjectStatusArgs {
     /// Return failure when any required project component is incomplete.
     #[arg(long)]
     pub(crate) deny_incomplete: bool,
-}
-
-#[derive(Clone, Debug, Args)]
-pub(crate) struct ProjectFeatureArgs {
-    /// Stable feature identifier from the reviewed qualification pack.
-    pub(crate) feature: String,
-    /// Restrict the report and review draft to one lifecycle phase.
-    #[arg(long, value_name = "PHASE")]
-    pub(crate) phase: Option<String>,
-    /// Write a review-only TOML candidate for the currently discovered surface.
-    #[arg(long, value_name = "PATH")]
-    pub(crate) write_review_draft: Option<PathBuf>,
 }
 
 #[derive(Clone, Debug, Default, Args)]
@@ -123,9 +111,6 @@ pub(crate) struct ProjectCheckArgs {
     /// Worker threads for independent analysis.
     #[arg(long, default_value_t = 1, value_parser = clap::value_parser!(u8).range(1..=8), value_name = "N")]
     pub(crate) jobs: u8,
-    /// Require configured features to carry current passing hardware evidence.
-    #[arg(long)]
-    pub(crate) hardware: bool,
 }
 
 #[derive(Clone, Debug, Default, Args)]
@@ -471,7 +456,7 @@ pub(crate) struct InspectFunctionArgs {
     /// Restrict focused callsites by target, semantic operation or slot name.
     #[arg(long, value_name = "TARGET|OPERATION|SLOT", conflicts_with = "full")]
     pub(crate) call: Option<String>,
-    /// Show only reviewed vendor-to-Rust ownership, proof strength and feature qualification.
+    /// Show only reviewed vendor-to-Rust ownership, proof strength and verification policy.
     #[arg(
         long,
         conflicts_with_all = ["full", "calls", "call", "path"]
@@ -603,43 +588,6 @@ pub(crate) struct ReferenceBatchArgs {
     /// Replace existing generated candidate files.
     #[arg(long)]
     pub(crate) force: bool,
-}
-
-#[derive(Clone, Debug, Default, Args)]
-pub(crate) struct DriverGenerateArgs {
-    /// Artifact containing the function to translate.
-    #[arg(long)]
-    pub(crate) artifact: Option<PathBuf>,
-    /// Companion image used for symbol and call resolution.
-    #[arg(long)]
-    pub(crate) companion: Vec<PathBuf>,
-    /// Archive member containing the function.
-    #[arg(long)]
-    pub(crate) member: Option<String>,
-    /// Function symbol to translate.
-    #[arg(long)]
-    pub(crate) symbol: Option<String>,
-    /// Stable vendor source identifier used by dispositions.
-    #[arg(long)]
-    pub(crate) source: Option<String>,
-    /// Reviewed disposition manifest controlling replacements.
-    #[arg(long)]
-    pub(crate) dispositions: Option<PathBuf>,
-    /// Generated safe PAC bindings used for MMIO operations.
-    #[arg(long)]
-    pub(crate) pac_bindings: Option<PathBuf>,
-    /// Driver candidate kind selected by the generator.
-    #[arg(long)]
-    pub(crate) kind: Option<String>,
-    /// Rust driver candidate to generate.
-    #[arg(long)]
-    pub(crate) output: Option<PathBuf>,
-    /// Machine-readable generation plan to write.
-    #[arg(long)]
-    pub(crate) plan_output: Option<PathBuf>,
-    /// Registered entry contract used at the binary boundary.
-    #[arg(long, default_value = "none")]
-    pub(crate) entry_contract: String,
 }
 
 #[derive(Clone, Debug, Default, Args)]

@@ -370,7 +370,7 @@ mod tests {
             &mut self,
             _platform: &Self::Platform,
             setup: Self::Setup,
-            _event_mask: open_esp_radio_esp32s31_pac::MacInterruptMask,
+            _event_mask: open_esp_radio_esp32s31_hal::types::MacInterruptMask,
         ) -> Result<(), (Self::Error, Self::Setup)> {
             let _ = setup;
             Ok(())
@@ -392,7 +392,7 @@ mod tests {
             &mut self,
             _platform: &Self::Platform,
             _setup: Self::Setup,
-            _event_mask: open_esp_radio_esp32s31_pac::MacInterruptMask,
+            _event_mask: open_esp_radio_esp32s31_hal::types::MacInterruptMask,
         ) -> Result<(), (Self::Error, Self::Setup)> {
             Ok(())
         }
@@ -470,7 +470,10 @@ mod tests {
         let power = EmbassyPowerIrqRuntime::<NoopRawMutex>::new();
         let mut interrupt = Esp32s31MacInterruptEpoch::new(TestRoute, 18, &mac, &power);
         interrupt
-            .activate(&(), open_esp_radio_esp32s31_pac::MacInterruptMask::COLD_RX)
+            .activate(
+                &(),
+                open_esp_radio_esp32s31_hal::types::MacInterruptMask::COLD_RX,
+            )
             .expect("test interrupt epoch activates");
         let control = Esp32s31StationControlResources::<NoopRawMutex>::new();
         let (_controller, mut receiver) = control.split().expect("fresh control owner");
@@ -522,7 +525,10 @@ mod tests {
         let mut interrupt =
             Esp32s31MacInterruptEpoch::new(RetryRoute(route_attempts.clone()), 18, &mac, &power);
         interrupt
-            .activate(&(), open_esp_radio_esp32s31_pac::MacInterruptMask::COLD_RX)
+            .activate(
+                &(),
+                open_esp_radio_esp32s31_hal::types::MacInterruptMask::COLD_RX,
+            )
             .expect("test interrupt epoch activates");
         let control = Esp32s31StationControlResources::<NoopRawMutex>::new();
         let (_controller, mut receiver) = control.split().expect("fresh control owner");

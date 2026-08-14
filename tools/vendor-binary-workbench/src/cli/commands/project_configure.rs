@@ -1,17 +1,17 @@
-//! Declarative attachment of a reusable platform pack to a project manifest.
+//! Declarative attachment of reusable ecosystem semantics to a project.
 
 use std::{
     env, fs,
     path::{Component, Path, PathBuf},
 };
 
-use toml_edit::{DocumentMut, Item, value};
+use toml_edit::{Array, DocumentMut, Item, value};
 
 use serde::Serialize;
 
 use super::Result;
 use crate::cli::ProjectConfigureArgs;
-use crate::{TargetSpec, platform_pack::PlatformPack, project::ProjectSpec};
+use crate::{TargetSpec, ecosystem_pack::EcosystemPack, project::ProjectSpec};
 
 #[derive(Debug, Eq, PartialEq)]
 enum Selection {
@@ -30,10 +30,10 @@ struct ProjectConfigureReport {
     schema_version: u32,
     command: &'static str,
     status: &'static str,
-    platform_pack: Option<String>,
-    harness: Option<String>,
-    semantic_catalogs: usize,
-    semantic_operations: usize,
+    ecosystem_packs: Vec<String>,
+    knowledge_provider: Option<String>,
+    knowledge_packs: usize,
+    knowledge_operations: usize,
     manifest: String,
 }
 
@@ -41,24 +41,26 @@ pub(super) fn run(arguments: ProjectConfigureArgs, manifest: &Path) -> Result<bo
     let options = resolve_options(arguments);
     if options.selection.is_none() && !options.check {
         return Err(crate::Error::invalid(
-            "project configure requires --platform-pack PATH, --no-platform-pack, or --check",
+            "project configure requires --ecosystem-pack PATH, --no-ecosystem-pack, or --check",
         ));
     }
 
     let input = fs::read_to_string(manifest)?;
     let mut document = input.parse::<DocumentMut>()?;
-    if document.get("schema").and_then(Item::as_integer) != Some(1) {
+    if document.get("schema").and_then(Item::as_integer) != Some(3) {
         return Err(crate::Error::invalid(
-            "project manifest requires schema = 1",
+            "project manifest requires schema = 3",
         ));
     }
     match options.selection {
         Some(Selection::Set(input_path)) => {
             let stored = project_relative_pack_path(manifest, &input_path)?;
-            document["platform-pack"] = value(stored);
+            let mut packs = Array::new();
+            packs.push(stored);
+            document["ecosystem-packs"] = value(packs);
         }
         Some(Selection::Clear) => {
-            document.remove("platform-pack");
+            document.remove("ecosystem-packs");
         }
         None => {}
     }
@@ -111,19 +113,33 @@ pub(super) fn run(arguments: ProjectConfigureArgs, manifest: &Path) -> Result<bo
         "unchanged"
     };
     let report = ProjectConfigureReport {
-        schema_version: 1,
+        schema_version: 2,
         command: "project configure",
         status,
-        platform_pack: project.platform_pack.as_ref().map(|pack| pack.id.clone()),
-        harness: target.harness.clone(),
-        semantic_catalogs: project
-            .platform_pack
-            .as_ref()
-            .map_or(0, |pack| pack.semantic_catalogs.len()),
-        semantic_operations: project
-            .platform_pack
-            .as_ref()
-            .map_or(0, |pack| pack.semantic_operations),
+        ecosystem_packs: project
+            .ecosystem_packs
+            .iter()
+            .map(|pack| pack.id.clone())
+            .collect(),
+        knowledge_provider: target.knowledge_provider.clone(),
+        knowledge_packs: project
+            .ecosystem_packs
+            .iter()
+            .map(|pack| pack.knowledge_packs.len())
+            .sum::<usize>()
+            + project
+                .chip_pack
+                .as_ref()
+                .map_or(0, |pack| pack.knowledge_packs.len()),
+        knowledge_operations: project
+            .ecosystem_packs
+            .iter()
+            .map(|pack| pack.knowledge_operations)
+            .sum::<usize>()
+            + project
+                .chip_pack
+                .as_ref()
+                .map_or(0, |pack| pack.knowledge_operations),
         manifest: manifest.display().to_string(),
     };
     if !crate::cli::output::structured(&report) {
@@ -135,10 +151,10 @@ pub(super) fn run(arguments: ProjectConfigureArgs, manifest: &Path) -> Result<bo
 fn validate_project(manifest: &Path) -> Result<(ProjectSpec, TargetSpec)> {
     let project = ProjectSpec::load(manifest)?;
     let mut target = TargetSpec::load(&project.target_spec)?;
-    if let Some(pack) = &project.platform_pack {
+    if let Some(pack) = &project.chip_pack {
         pack.apply_to_target(&mut target)?;
-        if pack.harness.is_some() {
-            target.require_available_harness()?;
+        if pack.knowledge_provider.is_some() {
+            target.require_available_knowledge_provider()?;
         }
     }
     Ok((project, target))
@@ -151,19 +167,19 @@ fn print_report(report: &ProjectConfigureReport) {
         crate::cli::output::success(format!("{} — configuration is valid", report.status))
     );
     outputln!("\nManifest: {}", report.manifest);
-    if let Some(pack) = &report.platform_pack {
-        outputln!("Platform pack:       {pack}");
+    if !report.ecosystem_packs.is_empty() {
+        outputln!("Ecosystem packs:     {}", report.ecosystem_packs.join(", "));
         outputln!(
-            "Harness:             {}",
-            report.harness.as_deref().unwrap_or("none")
+            "Knowledge provider:  {}",
+            report.knowledge_provider.as_deref().unwrap_or("none")
         );
-        outputln!("Semantic catalogs:   {}", report.semantic_catalogs);
-        outputln!("Semantic operations: {}", report.semantic_operations);
+        outputln!("Knowledge packs:     {}", report.knowledge_packs);
+        outputln!("Knowledge operations:{}", report.knowledge_operations);
     } else {
-        outputln!("Platform pack: none");
+        outputln!("Ecosystem packs: none");
         outputln!(
-            "Harness:       {}",
-            report.harness.as_deref().unwrap_or("none")
+            "Knowledge provider: {}",
+            report.knowledge_provider.as_deref().unwrap_or("none")
         );
     }
     outputln!("\n{}", crate::cli::output::heading("Next"));
@@ -175,9 +191,9 @@ fn print_report(report: &ProjectConfigureReport) {
 
 fn resolve_options(arguments: ProjectConfigureArgs) -> Options {
     let selection = arguments
-        .platform_pack
+        .ecosystem_pack
         .map(Selection::Set)
-        .or_else(|| arguments.no_platform_pack.then_some(Selection::Clear));
+        .or_else(|| arguments.no_ecosystem_pack.then_some(Selection::Clear));
     Options {
         selection,
         check: arguments.check,
@@ -192,9 +208,9 @@ fn project_relative_pack_path(manifest: &Path, input: &Path) -> Result<String> {
     };
     let input = input
         .canonicalize()
-        .map_err(|error| format!("cannot resolve platform pack {}: {error}", input.display()))
+        .map_err(|error| format!("cannot resolve ecosystem pack {}: {error}", input.display()))
         .map_err(crate::Error::invalid)?;
-    let _ = PlatformPack::load(&input)?;
+    let _ = EcosystemPack::load(&input)?;
     let base = manifest
         .parent()
         .unwrap_or_else(|| Path::new("."))
@@ -202,7 +218,7 @@ fn project_relative_pack_path(manifest: &Path, input: &Path) -> Result<String> {
     relative_path(&base, &input)?
         .to_str()
         .map(str::to_owned)
-        .ok_or_else(|| crate::Error::invalid("platform pack path cannot be represented as UTF-8"))
+        .ok_or_else(|| crate::Error::invalid("ecosystem pack path cannot be represented as UTF-8"))
 }
 
 fn relative_path(base: &Path, target: &Path) -> Result<PathBuf> {
@@ -215,7 +231,7 @@ fn relative_path(base: &Path, target: &Path) -> Result<PathBuf> {
         .count();
     if common == 0 {
         return Err(crate::Error::invalid(
-            "project and platform pack do not share a filesystem root",
+            "project and ecosystem pack do not share a filesystem root",
         ));
     }
     let mut output = PathBuf::new();
@@ -227,7 +243,7 @@ fn relative_path(base: &Path, target: &Path) -> Result<PathBuf> {
     }
     if output.as_os_str().is_empty() {
         return Err(crate::Error::invalid(
-            "platform pack path resolves to the project directory",
+            "ecosystem pack path resolves to the project directory",
         ));
     }
     Ok(output)

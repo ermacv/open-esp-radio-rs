@@ -8,7 +8,6 @@ mod execute_replay;
 mod execute_run;
 mod export_ir;
 mod function_pack;
-mod generate_driver;
 mod generate_reference;
 mod generate_reference_batch;
 mod inspect_analyze;
@@ -23,11 +22,10 @@ mod interface_discovery;
 mod interface_discovery_options;
 mod interface_pack;
 mod ir_build;
-mod project_check;
 mod project_audit_bindings;
+mod project_check;
 mod project_configure;
 mod project_doctor;
-mod project_feature;
 mod project_files;
 mod project_function_doctor;
 mod project_init;
@@ -101,13 +99,6 @@ pub(super) fn run_project_status(
     context: ProjectContext<'_>,
 ) -> Result<bool> {
     project_status::run(arguments, context)
-}
-
-pub(super) fn run_project_feature(
-    arguments: super::ProjectFeatureArgs,
-    project: &crate::ProjectSpec,
-) -> Result<bool> {
-    project_feature::run(arguments, project)
 }
 
 pub(super) fn run_project_browser(manifest: &std::path::Path) -> Result<bool> {
@@ -213,45 +204,39 @@ pub(super) fn run_target(
         TargetCommand::AuditImageTargets(arguments) => audit_image_targets::run(arguments),
         TargetCommand::DiscoverMmio(arguments) => discover_mmio::run(arguments, svd, project),
         TargetCommand::ExportIr(arguments) => export_ir::run(arguments, svd, target, project),
-        TargetCommand::VerifyContractChannel(arguments) => verify_contract::run(
-            arguments,
-            svd,
-            target.require_available_harness()?,
-            "channel",
-        ),
-        TargetCommand::VerifyContractRfInit(arguments) => verify_contract::run(
-            arguments,
-            svd,
-            target.require_available_harness()?,
-            "rf-init",
-        ),
+        TargetCommand::VerifyContractChannel(arguments) => {
+            verify_contract::run(arguments, svd, verification_provider(project)?, "channel")
+        }
+        TargetCommand::VerifyContractRfInit(arguments) => {
+            verify_contract::run(arguments, svd, verification_provider(project)?, "rf-init")
+        }
         TargetCommand::VerifyContractBluetoothTxPower(arguments) => verify_contract::run(
             arguments,
             svd,
-            target.require_available_harness()?,
+            verification_provider(project)?,
             "bluetooth-tx-power",
         ),
         TargetCommand::VerifyContractBluetoothTxGainInit(arguments) => verify_contract::run(
             arguments,
             svd,
-            target.require_available_harness()?,
+            verification_provider(project)?,
             "bluetooth-tx-gain-init",
         ),
         TargetCommand::VerifyContractBasebandInit(arguments) => verify_contract::run(
             arguments,
             svd,
-            target.require_available_harness()?,
+            verification_provider(project)?,
             "baseband-init",
         ),
         TargetCommand::VerifyContractRegisterInit(arguments) => verify_contract::run(
             arguments,
             svd,
-            target.require_available_harness()?,
+            verification_provider(project)?,
             "register-init",
         ),
         TargetCommand::ExecuteRun(arguments) => execute_run::run(arguments, svd),
         TargetCommand::ExecuteReplay(arguments) => {
-            execute_replay::run(arguments, svd, target, project.as_deref())
+            execute_replay::run(arguments, svd, target, project)
         }
         TargetCommand::ExecuteCompare(arguments) => execute_compare::run(arguments, svd),
         TargetCommand::VerifyProfiles(arguments) => verify_profiles::run(arguments, svd),
@@ -261,7 +246,6 @@ pub(super) fn run_target(
         TargetCommand::GenerateReferenceBatch(arguments) => {
             generate_reference_batch::run(arguments, svd, target)
         }
-        TargetCommand::GenerateDriver(arguments) => generate_driver::run(arguments, svd, target),
         TargetCommand::InspectAnalyze(arguments) => inspect_analyze::run(arguments, svd, target),
         TargetCommand::InspectFunction(arguments) => inspect_function::run(
             arguments,
@@ -289,6 +273,17 @@ pub(super) fn run_target(
         TargetCommand::InspectTrace(arguments) => inspect_trace::run(arguments, svd),
         TargetCommand::InspectCompare(arguments) => inspect_compare::run(arguments, svd),
     }
+}
+
+fn verification_provider(project: Option<&crate::project::ProjectSpec>) -> Result<&str> {
+    project
+        .and_then(|project| project.verification.as_ref())
+        .map(|verification| verification.provider.as_str())
+        .ok_or_else(|| {
+            crate::Error::invalid(
+                "named contract verification requires a project verification add-on",
+            )
+        })
 }
 
 pub(super) fn run_verify_evidence(arguments: super::VerifyEvidenceArgs) -> Result<bool> {

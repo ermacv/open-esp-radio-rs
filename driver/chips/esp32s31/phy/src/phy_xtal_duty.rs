@@ -1501,7 +1501,7 @@ mod tests {
                 let value = if address.register() == 5 {
                     100
                 } else {
-                    let value = if *cap_status_reads % 3 == 0 {
+                    let value = if (*cap_status_reads).is_multiple_of(3) {
                         0
                     } else {
                         1 << 2

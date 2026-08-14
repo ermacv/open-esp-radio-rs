@@ -795,13 +795,78 @@ impl PhyChipChannelMmioBinding {
     }
 
     #[cfg(target_arch = "riscv32")]
+    pub fn execute_channel_hal<P: open_esp_radio_esp32s31_hal::channel::RadioChannelPlatform>(
+        self,
+        channel: &mut open_esp_radio_esp32s31_hal::channel::RadioChannelHal<'_, P>,
+    ) -> PhyChipChannelCompletion {
+        match self.action {
+            PhyChipChannelAction::SetAgc { enabled } => {
+                channel.set_agc_enabled(enabled);
+                PhyChipChannelCompletion::AgcSet { enabled }
+            }
+            PhyChipChannelAction::SetBbpllCalibration { enabled } => {
+                channel.set_bbpll_calibration_enabled(enabled);
+                PhyChipChannelCompletion::BbpllCalibrationSet { enabled }
+            }
+            PhyChipChannelAction::StartFrequencySwitch {
+                frequency_index,
+                crystal_selector,
+            } => {
+                channel.start_frequency_switch(frequency_index);
+                PhyChipChannelCompletion::FrequencySwitchStarted {
+                    frequency_index,
+                    crystal_selector,
+                }
+            }
+            PhyChipChannelAction::ClearFrequencySwitch => {
+                channel.clear_frequency_switch();
+                PhyChipChannelCompletion::FrequencySwitchCleared
+            }
+            PhyChipChannelAction::AwaitFrequencyReadyEdge { .. } => {
+                PhyChipChannelCompletion::FrequencyReadyObserved {
+                    ready: channel.frequency_ready(),
+                }
+            }
+            PhyChipChannelAction::ConfigureNrx { frequency_mhz } => {
+                channel.configure_nrx(frequency_mhz);
+                PhyChipChannelCompletion::NrxConfigured { frequency_mhz }
+            }
+            PhyChipChannelAction::ConfigureBssCbw { cbw } => {
+                channel.configure_bss_cbw(cbw);
+                PhyChipChannelCompletion::BssCbwConfigured { cbw }
+            }
+            PhyChipChannelAction::ConfigureRxCompensation => {
+                channel.configure_rx_compensation();
+                PhyChipChannelCompletion::RxCompensationConfigured
+            }
+            PhyChipChannelAction::PublishTxGain(image) => {
+                crate::radio_hal::publish_phy_tx_gain_memory_channel(channel, false, image);
+                PhyChipChannelCompletion::TxGainPublished
+            }
+            PhyChipChannelAction::PublishTxCapCommandMemory { value } => {
+                channel.publish_tx_cap(value);
+                PhyChipChannelCompletion::TxCapCommandMemoryPublished { value }
+            }
+            PhyChipChannelAction::ConfigureChannelCbw { cbw } => {
+                channel.configure_channel_cbw(cbw);
+                PhyChipChannelCompletion::ChannelCbwConfigured { cbw }
+            }
+            PhyChipChannelAction::ClearDcMemory => {
+                channel.clear_dc_memory();
+                PhyChipChannelCompletion::DcMemoryCleared
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    #[cfg(target_arch = "riscv32")]
     pub fn execute_target<
         P: open_esp_radio_esp32s31_hal::wifi_bb::PhyWifiBbControl
             + open_esp_radio_esp32s31_hal::phy_i2c::PhyI2cMasterControl,
     >(
         self,
         platform: &mut P,
-        registers: &mut open_esp_radio_esp32s31_hal::RadioRegisters,
+        registers: &mut open_esp_radio_esp32s31_hal::PhyHal,
     ) -> PhyChipChannelCompletion {
         match self.action {
             PhyChipChannelAction::SetAgc { enabled } => {

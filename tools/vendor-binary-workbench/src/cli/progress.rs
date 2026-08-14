@@ -20,7 +20,6 @@ fn command_message(command: &Command) -> Option<&'static str> {
         | Command::ProjectFiles(_)
         | Command::ProjectAuditBindings(_)
         | Command::ProjectStatus(_)
-        | Command::ProjectFeature(_)
         | Command::ProjectBrowse(_)
         | Command::FunctionInitPack(_)
         | Command::CodeInitPack(_)
@@ -63,7 +62,6 @@ fn command_message(command: &Command) -> Option<&'static str> {
         Command::VerifyProfiles(_) => "Profile verification",
         Command::GenerateReference(_) => "Reference generation",
         Command::GenerateReferenceBatch(_) => "Batch reference generation",
-        Command::GenerateDriver(_) => "Driver generation",
         Command::InspectAnalyze(_) => "Artifact analysis",
         Command::InspectFunction(_) => "Function investigation",
         Command::InspectFlow(_) => "Inter-function value-flow investigation",

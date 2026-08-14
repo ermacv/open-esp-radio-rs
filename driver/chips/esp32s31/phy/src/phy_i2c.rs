@@ -13,7 +13,7 @@
 //! installed around those ROM leaves. Neither oracle is linked into the
 //! firmware.
 
-/// Complete pinned `libphy.a` compatibility leaf; the body is one `ret`.
+/// Required pinned `libphy.a` vendor-ABI no-op leaf; the body is one `ret`.
 #[inline]
 pub const fn phy_get_i2c_data() {}
 
@@ -78,7 +78,9 @@ use crate::phy_xtal_duty::{
     XtalDutyCalibrationParameters, XtalDutyCalibrationTransition,
 };
 #[cfg(target_arch = "riscv32")]
-use open_esp_radio_esp32s31_hal::{RadioRegisters, analog_i2c, phy_i2c as hal_phy_i2c};
+use open_esp_radio_esp32s31_hal::PhyHal;
+#[cfg(target_arch = "riscv32")]
+use open_esp_radio_esp32s31_hal::{analog_i2c, phy_i2c as hal_phy_i2c};
 
 #[cfg(test)]
 const PHY_I2C_BUSY: u32 = 1 << 25;
@@ -395,7 +397,7 @@ fn master_command_from_snapshot(index: usize, parameter: PhyRfInitParameterSnaps
 /// the SVD-generated 45-element command-RAM array.
 #[cfg(target_arch = "riscv32")]
 pub fn configure_i2c_master_command_memory(
-    registers: &mut RadioRegisters,
+    registers: &mut PhyHal,
     parameter: PhyRfInitParameterSnapshot,
 ) {
     let dynamic_values = master_dynamic_values_from_snapshot(parameter);
@@ -3138,7 +3140,7 @@ mod tests {
                 let value = if address.register() == 5 {
                     100
                 } else {
-                    let value = if *cap_status_reads % 3 == 0 {
+                    let value = if (*cap_status_reads).is_multiple_of(3) {
                         0
                     } else {
                         1 << 2

@@ -8,7 +8,20 @@ use serde::{Deserialize, Serialize};
 use super::EvidenceSet;
 use super::{EvidenceComparison, ExecutionComparisonReport, VerificationCoreReport, VerifySummary};
 
-pub(crate) const VERIFICATION_REPORT_SCHEMA: u32 = 10;
+pub(crate) const VERIFICATION_REPORT_SCHEMA: u32 = 12;
+
+/// Strength of the Rust-side evidence used for a vendor comparison.
+///
+/// Only `ProductionTrace` may feed product qualification. The other classes
+/// remain useful review evidence, but must not be promoted by report wording.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum EvidenceClass {
+    ProductionTrace,
+    SharedCore,
+    SemanticModel,
+    StaticAnalysis,
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -26,6 +39,7 @@ pub(crate) struct FunctionVerificationReport {
     pub(crate) source: String,
     pub(crate) vendor_symbol: String,
     pub(crate) status: FunctionVerificationStatus,
+    pub(crate) evidence_class: EvidenceClass,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) rust_symbol: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -50,7 +64,7 @@ pub(crate) struct FunctionVerificationReport {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) hil_evidence: Option<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub(crate) qualification_blockers: Vec<String>,
+    pub(crate) release_blockers: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) reason: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -77,6 +91,7 @@ impl FunctionVerificationReport {
             source: source.to_owned(),
             vendor_symbol: vendor_symbol.to_owned(),
             status,
+            evidence_class: EvidenceClass::StaticAnalysis,
             rust_symbol: None,
             rust_component: None,
             evidence: None,
@@ -89,7 +104,7 @@ impl FunctionVerificationReport {
             claim: None,
             adapter_cases: Vec::new(),
             hil_evidence: None,
-            qualification_blockers: Vec::new(),
+            release_blockers: Vec::new(),
             reason: None,
             uncovered: None,
             vendor_events: None,

@@ -86,12 +86,16 @@ sources = [
     "BLOB_LIBPP_RX_POLICY",
     "BLOB_LIBNET80211_WIFI_RX_POLICY",
 ]
-confidence = "instruction-exact-hil-qualified"
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_BSSID_POLICY.BSSID_LOW%s"
 sources = ["BLOB_LIBPP_HAL_MAC_SET_BSSID"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_BSSID_POLICY.BSSID_HIGH%s"
@@ -100,19 +104,25 @@ sources = [
     "BLOB_LIBPP_RX_POLICY",
     "BLOB_LIBPP_HAL_RX_MISC_DEBUG",
     "BLOB_LIBPP_HAL_HE_SET_MMSS_AND_AID",
-    "MIGRATION_HE20_ASSOCIATION",
+    "PROMOTED_HE20_ASSOCIATION",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_BSSID_POLICY.BSSID_HIGH%s.ASSOCIATION_ID"
 sources = ["BLOB_LIBPP_HAL_RX_MISC_DEBUG"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_BSSID_POLICY.BSSID_HIGH%s.MINIMUM_MPDU_START_SPACING"
 sources = ["BLOB_LIBPP_HAL_RX_MISC_DEBUG"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_BSSID_POLICY.BSSID_HIGH%s.INTERFACE_IS_SOFT_AP"
@@ -120,7 +130,9 @@ sources = [
     "BLOB_LIBPP_HAL_RX_MISC_DEBUG",
     "BLOB_LIBPP_RX_POLICY",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_BSSID_POLICY.BSSID_HIGH%s.ADDRESS_CHECK_ENABLE"
@@ -130,4 +142,6 @@ sources = [
     "BLOB_LIBNET80211_WIFI_RX_POLICY",
     "BLOB_LIBPP_HAL_RX_MISC_DEBUG",
 ]
-confidence = "instruction-exact-partial"
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"

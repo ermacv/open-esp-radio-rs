@@ -210,11 +210,12 @@ fn delta(name: &str, before: u64, after: u64) -> Result<u64> {
 
 impl Drop for OpenWrtRxCapture {
     fn drop(&mut self) {
-        for capture in [&mut self.ingress, &mut self.wireless] {
-            if let Some(capture) = capture {
-                let _ = capture.child.kill();
-                let _ = capture.child.wait();
-            }
+        for capture in [&mut self.ingress, &mut self.wireless]
+            .into_iter()
+            .flatten()
+        {
+            let _ = capture.child.kill();
+            let _ = capture.child.wait();
         }
     }
 }

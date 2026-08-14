@@ -15,4 +15,4 @@ facts, the project memory map and target-owned reviewed packs. RTOS, NVS,
 logging and delay semantics remain outside this crate.
 
 The format and editing workflow are documented in
-[`../vendor-binary-workbench/docs/register-workspace.md`](../vendor-binary-workbench/docs/register-workspace.md).
+[`../../docs/registers-and-pac.md`](../../docs/registers-and-pac.md).

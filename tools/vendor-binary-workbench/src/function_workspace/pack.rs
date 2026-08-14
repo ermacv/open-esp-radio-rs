@@ -51,10 +51,26 @@ pub(crate) struct ReviewedFunction {
     pub(crate) name: Option<String>,
     pub(crate) role: Option<String>,
     pub(crate) summary: Option<String>,
+    pub(crate) signature: Option<ReviewedFunctionSignature>,
     pub(crate) accept_incomplete: bool,
     pub(crate) preconditions: Vec<ReviewedPrecondition>,
     pub(crate) paths: Vec<ReviewedPath>,
     pub(crate) contexts: Vec<ReviewedContext>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ReviewedFunctionSignature {
+    pub(crate) arguments: Vec<ReviewedFunctionArgument>,
+    pub(crate) return_abi: Option<String>,
+    pub(crate) return_role: Option<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ReviewedFunctionArgument {
+    pub(crate) index: u8,
+    pub(crate) name: String,
+    pub(crate) abi: String,
+    pub(crate) role: Option<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -290,12 +306,12 @@ impl FunctionPack {
             )
         })?;
         let document: DocumentMut = source_document.clone().into_mut();
-        if document.get("schema").and_then(Item::as_integer) != Some(8) {
+        if document.get("schema").and_then(Item::as_integer) != Some(9) {
             return Err(crate::error::WorkbenchError::manifest_source(
                 "function pack",
                 path,
                 &input,
-                "requires schema = 8",
+                "requires schema = 9",
                 source_document.get("schema").and_then(Item::span),
             ));
         }

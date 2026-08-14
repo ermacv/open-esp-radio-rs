@@ -35,7 +35,7 @@ pub(super) fn resolve_from(
         project: requested_project,
         target_spec: requested_target,
         run_spec: requested_run_spec,
-        mut svd_paths,
+        svd_paths,
     } = invocation;
 
     let mut command = match command {
@@ -168,18 +168,7 @@ pub(super) fn resolve_from(
         let target = TargetSpec::load(&target_path)?;
         let run_spec_path = needs.run_spec.then_some(requested_run_spec).flatten();
         let run_spec = run_spec_path.as_deref().map(RunSpec::load).transpose()?;
-        if svd_paths.is_empty() {
-            svd_paths.clone_from(&target.svd_paths);
-        }
-        let memory_map = if needs.memory_map {
-            target
-                .memory_map
-                .as_deref()
-                .map(crate::MemoryMap::load)
-                .transpose()?
-        } else {
-            None
-        };
+        let memory_map = None;
         let svd = register_catalog::load(needs.register_catalog, &svd_paths, None)?;
         (
             None,
@@ -196,8 +185,8 @@ pub(super) fn resolve_from(
     if needs.backend {
         target.require_available_backend()?;
     }
-    if needs.requires_harness(target.harness.is_some()) {
-        target.require_available_harness()?;
+    if needs.requires_knowledge_provider(target.knowledge_provider.is_some()) {
+        target.require_available_knowledge_provider()?;
     }
     trace_resolved_target(&command, project_path.as_deref(), project.as_ref(), &target);
 
@@ -266,8 +255,8 @@ fn required_project_path(path: Option<PathBuf>, message: &str) -> Result<PathBuf
 
 fn require_project(needs: ResolutionNeeds, project: Option<&PathBuf>) -> Result<()> {
     if needs.project && project.is_none() {
-        let message = if needs.harness {
-            "platform-harness commands require a project manifest and platform pack"
+        let message = if needs.knowledge_provider {
+            "knowledge-provider commands require a project manifest and chip pack"
         } else {
             "project/workspace commands require a project manifest"
         };
@@ -284,7 +273,7 @@ fn trace_resolved_target(
 ) {
     if matches!(
         command,
-        Command::ProjectDoctor(_) | Command::ProjectStatus(_) | Command::ProjectFeature(_)
+        Command::ProjectDoctor(_) | Command::ProjectStatus(_)
     ) {
         return;
     }
@@ -300,7 +289,7 @@ fn trace_resolved_target(
     }
     tracing::info!(
         target.id = %target.id,
-        target.harness = target.harness.as_deref().unwrap_or("-"),
+        target.knowledge_provider = target.knowledge_provider.as_deref().unwrap_or("-"),
         target.architecture = target.architecture.label(),
         target.calling_convention = target.calling_convention.label(),
         target.endianness = target.endianness.label(),

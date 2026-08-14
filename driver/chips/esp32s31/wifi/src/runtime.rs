@@ -1,7 +1,6 @@
 //! Role-neutral ownership after the one-way cold-MAC/runtime transition.
 
-use open_esp_radio_esp32s31_hal::RadioRegisters;
-use open_esp_radio_esp32s31_pac::MacInterruptSetup;
+use open_esp_radio_esp32s31_hal::{MacInterruptSetup, RadioRuntimeOwner};
 use open_esp_radio_esp32s31_phy::{PhyCalibrationCache, PhyState};
 use open_esp_radio_ieee80211::channel::WifiChannel;
 
@@ -22,7 +21,7 @@ pub struct Esp32s31WifiRuntimeTransitionReport {
 /// both DMA and interrupt routing have acknowledged their stopped edges.
 pub struct Esp32s31WifiStopped<P> {
     platform: P,
-    registers: RadioRegisters,
+    registers: RadioRuntimeOwner,
     interrupt_setup: MacInterruptSetup,
     phy: PhyState,
     start_report: Esp32s31WifiMacStartReport,
@@ -44,8 +43,13 @@ impl<P> Esp32s31WifiStopped<P> {
     }
 
     /// Borrow the role-neutral radio state for stopped-only operations.
-    pub fn radio_mut(&mut self) -> (&mut RadioRegisters, &mut P) {
-        (&mut self.registers, &mut self.platform)
+    pub fn radio_mut(
+        &mut self,
+    ) -> (
+        open_esp_radio_esp32s31_hal::wifi_mac::WifiMacHal<'_>,
+        &mut P,
+    ) {
+        (self.registers.wifi_mac_hal(), &mut self.platform)
     }
 
     /// Move the exact common ownership frontier into one role runtime.
@@ -72,7 +76,7 @@ impl<P> Esp32s31WifiStopped<P> {
 #[doc(hidden)]
 pub struct Esp32s31WifiRuntimeParts<P> {
     pub platform: P,
-    pub registers: RadioRegisters,
+    pub registers: RadioRuntimeOwner,
     pub interrupt_setup: MacInterruptSetup,
     pub context: Esp32s31WifiRuntimeContext,
 }
@@ -81,7 +85,7 @@ pub struct Esp32s31WifiRuntimeParts<P> {
 ///
 /// Register ownership and the interrupt setup token deliberately do not live
 /// in this value. A role can reconstruct [`Esp32s31WifiStopped`] only after
-/// its DMA/task graph returns the exact [`RadioRegisters`] and its interrupt
+/// its DMA/task graph returns the exact runtime owner and its interrupt
 /// route returns the exact [`MacInterruptSetup`].
 #[doc(hidden)]
 pub struct Esp32s31WifiRuntimeContext {
@@ -109,7 +113,7 @@ impl Esp32s31WifiRuntimeContext {
     pub fn into_stopped<P>(
         self,
         platform: P,
-        registers: RadioRegisters,
+        registers: RadioRuntimeOwner,
         interrupt_setup: MacInterruptSetup,
     ) -> Esp32s31WifiStopped<P> {
         Esp32s31WifiStopped {
@@ -137,15 +141,9 @@ pub struct Esp32s31WifiRuntimeStart<P> {
 pub fn enter_esp32s31_wifi_runtime<P>(
     mut mac: Esp32s31WifiMacReady<P>,
 ) -> Esp32s31WifiRuntimeStart<P> {
-    let cold_interrupt_mask = {
-        let (_, registers) = mac.radio_mut().cold_parts_mut();
-        let mask = registers.mac_interrupt_enable();
-        registers.mask_and_clear_all_mac_interrupts();
-        mask
-    };
+    let cold_interrupt_mask = { mac.radio_mut().close_cold_interrupt_phase() };
     let (radio, phy, calibration_cache, start_report) = mac.into_parts();
-    let (platform, registers) = radio.into_parts();
-    let (registers, interrupt_setup) = registers.into_running();
+    let (platform, registers, interrupt_setup) = radio.into_running().into_runtime_parts();
     let current_channel = start_report.wifi.initial_channel;
     Esp32s31WifiRuntimeStart {
         wifi: Esp32s31WifiStopped {

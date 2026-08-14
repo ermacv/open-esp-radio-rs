@@ -1,0 +1,7 @@
+# Reusable ESP32-S31 rev0 address, register-catalog and compiled knowledge.
+schema = 3
+id = "esp32s31-rev0-radio-v1"
+memory-map = "memory.toml"
+svd = ["../../../../svd/esp32s31-platform-radio-deps.svd"]
+knowledge-provider = "esp32s31-radio-knowledge-v1"
+knowledge-packs = []

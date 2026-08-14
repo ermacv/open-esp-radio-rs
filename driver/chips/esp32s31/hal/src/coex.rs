@@ -3,6 +3,8 @@
 //! The executor-neutral COEX core sees only [`CoexTimerHardware`]. Raw PAC
 //! ownership stays inside this adapter and is never exposed through `Deref`.
 
+#![cfg(feature = "validation-probes")]
+
 use open_esp_radio_esp32s31_coex::{
     CoexClient, CoexError, CoexPti, CoexTimerHardware, CoexTimerIndex,
 };
@@ -20,12 +22,12 @@ const fn pac_timer(index: CoexTimerIndex) -> CoexTimerRegister {
     }
 }
 
-pub struct CoexTimerHal<'registers> {
+struct CoexTimerHal<'registers> {
     registers: &'registers mut RadioRegisters,
 }
 
 impl<'registers> CoexTimerHal<'registers> {
-    pub fn new(registers: &'registers mut RadioRegisters) -> Self {
+    fn new(registers: &'registers mut RadioRegisters) -> Self {
         Self { registers }
     }
 }
@@ -36,8 +38,115 @@ impl<'registers> CoexTimerHal<'registers> {
 /// halfword images proved by `libbtbb::coex_pti_v2` remain private to the
 /// closed PAC. The HAL exposes no raw address, register image or integer
 /// field through which an unreviewed value could be written.
-pub fn configure_bluetooth_pti(registers: &mut RadioRegisters) {
+fn configure_bluetooth_pti(registers: &mut RadioRegisters) {
     registers.configure_reviewed_bluetooth_pti();
+}
+
+/// Run the reviewed Bluetooth PTI transaction in an isolated validation
+/// image without exposing the PAC owner to the probe crate.
+#[cfg(feature = "validation-probes")]
+#[doc(hidden)]
+pub fn validation_configure_bluetooth_pti() {
+    let mut registers = open_esp_radio_esp32s31_pac::validation::radio_registers();
+    configure_bluetooth_pti(&mut registers);
+}
+
+#[doc(hidden)]
+pub fn validation_enable_timer(index: u32) {
+    let Some(timer) = CoexTimerRegister::new(index as u8) else {
+        return;
+    };
+    let mut registers = open_esp_radio_esp32s31_pac::validation::radio_registers();
+    registers.enable_coex_timer(timer);
+}
+
+#[doc(hidden)]
+pub fn validation_disable_timer(index: u32) {
+    let Some(timer) = CoexTimerRegister::new(index as u8) else {
+        return;
+    };
+    let mut registers = open_esp_radio_esp32s31_pac::validation::radio_registers();
+    registers.disable_coex_timer(timer);
+}
+
+#[doc(hidden)]
+pub fn validation_force_timer(index: u32) {
+    let Some(timer) = CoexTimerRegister::new(index as u8) else {
+        return;
+    };
+    let mut registers = open_esp_radio_esp32s31_pac::validation::radio_registers();
+    registers.force_coex_timer(timer);
+}
+
+#[doc(hidden)]
+pub fn validation_unforce_timer(index: u32) {
+    let Some(timer) = CoexTimerRegister::new(index as u8) else {
+        return;
+    };
+    let mut registers = open_esp_radio_esp32s31_pac::validation::radio_registers();
+    registers.unforce_coex_timer(timer);
+}
+
+/// Execute one complete COEX timer program against an isolated validation
+/// owner. The caller supplies only the clock environment and typed values.
+#[cfg(feature = "validation-probes")]
+#[doc(hidden)]
+pub fn validation_program_timer<C: open_esp_radio_esp32s31_coex::CoexClockHardware>(
+    clock: &mut C,
+    index: CoexTimerIndex,
+    client: CoexClient,
+    pti: CoexPti,
+    latency: u32,
+    duration: u32,
+) -> Result<(), CoexError> {
+    let mut registers = open_esp_radio_esp32s31_pac::validation::radio_registers();
+    let mut timer = CoexTimerHal::new(&mut registers);
+    open_esp_radio_esp32s31_coex::program_timer(
+        &mut timer,
+        &mut *clock,
+        index,
+        client,
+        pti,
+        latency,
+        duration,
+    )
+}
+
+/// Execute one enabled COEX-core request against an isolated validation
+/// owner. The boolean selects Bluetooth (`false`) or Wi-Fi (`true`).
+#[cfg(feature = "validation-probes")]
+#[doc(hidden)]
+pub fn validation_core_request<C: open_esp_radio_esp32s31_coex::CoexClockHardware>(
+    clock: &mut C,
+    wifi: bool,
+    request: open_esp_radio_esp32s31_coex::CoexClientRequest,
+) -> Result<(), CoexError> {
+    use open_esp_radio_esp32s31_coex::{CoexCore, CoexPtiTable};
+
+    let mut core = CoexCore::new(CoexPtiTable::reviewed_vendor());
+    core.enable();
+    let mut registers = open_esp_radio_esp32s31_pac::validation::radio_registers();
+    let mut timer = CoexTimerHal::new(&mut registers);
+    if wifi {
+        core.request_wifi(&mut timer, clock, request).map(|_| ())
+    } else {
+        core.request_bluetooth(&mut timer, clock, request)
+            .map(|_| ())
+    }
+}
+
+/// Execute one COEX-core release against an isolated validation owner.
+#[cfg(feature = "validation-probes")]
+#[doc(hidden)]
+pub fn validation_core_release(
+    event: open_esp_radio_esp32s31_coex::CoexEventId,
+) -> Result<(), CoexError> {
+    use open_esp_radio_esp32s31_coex::{CoexCore, CoexPtiTable};
+
+    let mut core = CoexCore::new(CoexPtiTable::reviewed_vendor());
+    let mut registers = open_esp_radio_esp32s31_pac::validation::radio_registers();
+    let mut timer = CoexTimerHal::new(&mut registers);
+    core.release(&mut timer, event).map(|_| ())
 }
 
 impl CoexTimerHardware for CoexTimerHal<'_> {

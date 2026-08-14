@@ -198,17 +198,23 @@ sources = [
     "BLOB_LIBPP_HAL_INIT_COEX",
     "BLOB_LIBCOEX_PTI_TABLE",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_COEX_INIT.RX_PTI"
 sources = ["BLOB_LIBPP_HAL_INIT_COEX"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_COEX_INIT.RX_PTI.RX_ACTIVE"
 sources = ["BLOB_LIBPP_HAL_INIT_COEX"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_COEX_INIT.RX_PTI.RX_ACK"
@@ -216,7 +222,9 @@ sources = [
     "BLOB_LIBPP_HAL_INIT_COEX",
     "BLOB_LIBCOEX_PTI_TABLE",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_COEX_INIT.OFDMA_TB_AND_BEAMFORMING"
@@ -224,7 +232,9 @@ sources = [
     "BLOB_LIBPP_HAL_INIT_COEX",
     "BLOB_LIBCOEX_PTI_TABLE",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_COEX_INIT.BEAMFORMING"
@@ -232,12 +242,16 @@ sources = [
     "BLOB_LIBPP_HAL_INIT_COEX",
     "BLOB_LIBCOEX_PTI_TABLE",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_COEX_INIT.BEAMFORMING.MULTI_TARGET_0"
 sources = ["BLOB_LIBPP_HAL_INIT_COEX"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_COEX_INIT.DEFAULT_CONTROL"
@@ -245,7 +259,9 @@ sources = [
     "BLOB_LIBPP_HAL_INIT_COEX",
     "BLOB_LIBCOEX_PTI_TABLE",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_COEX_INIT.DEFAULT_CONTROL.WIFI_DEFAULT_PTI"
@@ -253,14 +269,20 @@ sources = [
     "BLOB_LIBPP_HAL_INIT_COEX",
     "BLOB_LIBCOEX_PTI_TABLE",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_COEX_INIT.DEFAULT_CONTROL.DEFAULT_PTI_ENABLE"
 sources = ["BLOB_LIBPP_HAL_INIT_COEX"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_COEX_INIT.DEFAULT_CONTROL.COEX_PTI_INIT_UNKNOWN"
 sources = ["BLOB_LIBPP_HAL_INIT_COEX"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"

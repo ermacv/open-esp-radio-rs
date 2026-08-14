@@ -1,7 +1,7 @@
 //! Stateless ordinary STA/AP data encapsulation.
 //!
-//! This is the live, chip-independent extraction of the finite policy
-//! formerly held in `migration/.../net80211_encap.rs`. Raw ESF, descriptor,
+//! This is the live, chip-independent owner of the finite encapsulation
+//! policy. Raw ESF, descriptor,
 //! node, key, and interface accesses deliberately remain outside this module.
 
 pub const ETHERNET_HEADER_LEN: usize = 14;
@@ -132,8 +132,7 @@ impl DataEncapPlan {
 /// The plan borrows no DMA storage. After [`decapsulate_data`] succeeds, the
 /// caller owns a complete Ethernet frame in its output buffer and may return
 /// the source RX descriptor to the radio. This is the copy-owned counterpart
-/// of the slot/token boundary retained in
-/// `migration/esp32s31-hybrid-runtime/src/data_rx.rs`.
+/// of the slot/token boundary retained by the production RX owner.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct DataDecapPlan {
     pub destination: [u8; 6],
@@ -189,8 +188,7 @@ pub struct AmsduSubframe<'a> {
 ///
 /// SOURCE: IEEE 802.11 A-MSDU subframe format (DA, SA, big-endian MSDU
 /// length, LLC/SNAP MSDU and four-byte padding). The need for this path was
-/// confirmed by the promoted migration implementation at the parent of
-/// `f233006`, `migration/esp32s31-hybrid-runtime/src/wdev.rs`, whose
+/// confirmed by the reviewed source promoted at commit `f233006`, whose
 /// `indicate_multi_received_frame` joins a received MPDU split across Wi-Fi
 /// DMA descriptors before handing it to the upper data path.
 #[derive(Clone, Debug)]

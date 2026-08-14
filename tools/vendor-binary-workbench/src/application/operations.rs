@@ -119,7 +119,7 @@ pub(super) fn validate_table_instances(
     })?;
     let harness = resolved
         .target
-        .harness
+        .knowledge_provider
         .as_deref()
         .and_then(|harness| crate::harnesses::contracts(harness).ok());
     let workspace = InterfaceWorkspace::load(

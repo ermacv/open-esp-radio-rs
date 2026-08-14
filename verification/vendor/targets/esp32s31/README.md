@@ -1,55 +1,15 @@
 # ESP32-S31 vendor-analysis project
 
-This directory is a complete Vendor Binary Workbench project for the
-ESP32-S31 rev0 radio stack. Its `workbench-host/` binary links the generic
-Workbench facade with the target-owned providers from `workbench-provider/`.
-The generic `open-radio-vendor-binary-workbench` package remains platform
-neutral and does not depend on the ESP32-S31 driver, SVD, evidence, or harness.
+This directory is the reviewed ESP32-S31 configuration for Vendor Binary
+Workbench. `vendor-project.toml` is the entry point. The target host links the
+generic Workbench with ESP32-S31 contracts and semantic providers; target
+addresses and driver dependencies do not enter the generic package.
 
-The repository's `cargo vendor-binary-workbench` alias selects this product
-host. Use the generic package directly only while developing the standalone
-analysis engine.
+## Local inputs
 
-`vendor-project.toml` is the only normal entry point. Do not pass the target,
-memory map, SVD, interface pack, or function pack separately: the project
-manifest composes them.
-
-`semantics/embedded-platform.toml` is the project's pinned reusable semantic
-vocabulary. It is deliberately versioned beside the interface/function packs
-instead of referring into the Workbench source tree, so a project revision
-remains reproducible against an exact standalone Workbench revision.
-
-## First use
-
-Start with the three read-only project views:
-
-```console
-cargo vendor-binary-workbench project doctor \
-  --project verification/vendor/targets/esp32s31/vendor-project.toml
-
-cargo vendor-binary-workbench project files \
-  --project verification/vendor/targets/esp32s31/vendor-project.toml
-
-cargo vendor-binary-workbench project status \
-  --project verification/vendor/targets/esp32s31/vendor-project.toml
-```
-
-- `doctor` deeply validates configuration, local inputs, and reviewed workspaces;
-- `files` explains ownership and identifies missing external artifacts;
-- `status` quickly reports usable outputs, current review/verification gates,
-  and publication readiness without reparsing every artifact-wide report.
-
-Use `status` while investigating and `project doctor` after changing inputs or
-reviewed packs. Before publishing or merging a replacement, run `project
-check` to reproduce every generated output and enforce strict freshness.
-
-Use `--details` only for the expanded evidence inventory.
-
-## Local artifacts
-
-`local.toml` is ignored and machine-local. Create or validate it with
-`project inputs init`; never add private artifact paths to the tracked project
-manifest.
+`local.toml` is ignored and contains machine-local paths to authenticated
+vendor artifacts and compiled Rust probes. Initialize it from
+`local.example.toml` or with:
 
 ```console
 cargo vendor-binary-workbench project inputs init \
@@ -58,273 +18,22 @@ cargo vendor-binary-workbench project inputs init \
   --bind source-inventory:archive=/path/to/libphy.a \
   --bind source-inventory:libpp=/path/to/libpp.a \
   --bind source-inventory:libnet80211=/path/to/libnet80211.a \
-  --bind source-inventory:coex=/path/to/libcoexist.a \
   --bind rust-artifact=/path/to/rust-trace-probes.elf
 ```
 
-The project also uses fully linked, source-scoped oracle ELF files for exact
-call selection and concrete comparison. `project files` lists every required
-role and resolved path. The local input schema is documented by
-`local.example.toml`.
+Never commit vendor binaries, extracted tables, disassembly dumps or private
+paths. `project files` lists every required role.
 
-The checked helper crates are:
-
-- `oracle-firmware/` — builds source-scoped vendor link units;
-- `probes/` — builds Rust verification probes.
-
-Their own READMEs own build details. The Workbench treats the resulting files
-as caller-owned inputs; it does not emulate the linker or silently build them.
-
-## Analyze safely
-
-Cold artifact-wide analysis must use the optimized, resource-limited binary:
+## Normal workflow
 
 ```console
-CARGO_BUILD_JOBS=2 cargo build --profile workbench \
-  -p open-radio-vendor-workbench-esp32s31-host --bin vendor-binary-workbench
+cargo vendor-binary-workbench project doctor \
+  --project verification/vendor/targets/esp32s31/vendor-project.toml
 
 tools/vendor-binary-workbench/scripts/run-limited \
   project analyze \
-  --project verification/vendor/targets/esp32s31/vendor-project.toml \
-  --jobs 1
-```
+  --project verification/vendor/targets/esp32s31/vendor-project.toml --jobs 1
 
-The wrapper applies a 1-GiB/no-swap limit and a 15-minute timeout. One worker
-is the safe default; higher values are an explicit measured opt-in.
-
-For one changed analysis profile, do not run the project-wide pipeline. Build
-only that profile from its declared project inputs:
-
-```console
-tools/vendor-binary-workbench/scripts/run-limited \
-  advanced ir build --profile libpp-all --jobs 1 \
-  --project verification/vendor/targets/esp32s31/vendor-project.toml
-```
-
-A partial profile build updates only its linked-IR bundle and deliberately
-does not rebuild aggregate review scopes from unrelated stale profiles.
-Focused compiled evidence is similarly run with `project verify --suite ID`;
-it updates that suite report while leaving the aggregate verification report
-for a complete project run.
-
-Current same-channel AP+STA register evidence can be inspected directly:
-
-```console
-cargo vendor-binary-workbench project verify --suite wifi-interface-context \
-  --project verification/vendor/targets/esp32s31/vendor-project.toml
-
-cargo vendor-binary-workbench project feature wifi-ap-sta-interface-identity \
-  --project verification/vendor/targets/esp32s31/vendor-project.toml
-
-cargo vendor-binary-workbench project verify --suite wifi-sta-ap-receive \
-  --project verification/vendor/targets/esp32s31/vendor-project.toml \
-  --run-spec verification/vendor/targets/esp32s31/local.toml
-```
-
-The AP TSF stop edge is an independently executable lower-layer proof:
-
-```console
-cargo vendor-binary-workbench project verify --suite wifi-ap-tsf-stop \
-  --project verification/vendor/targets/esp32s31/vendor-project.toml \
-  --run-spec verification/vendor/targets/esp32s31/local.toml
-
-cargo vendor-binary-workbench project feature wifi-ap-tsf-stop --phase stop \
-  --project verification/vendor/targets/esp32s31/vendor-project.toml
-```
-
-It proves `libpp:hal_disable_softap_tsf` against the production
-`wifi_mac::ap_tsf -> WifiMacHal -> RadioRegisters` path: one fresh read of
-`WIFI_MAC_AUX_TSF_CONTROL.SOFTAP_CONTROL`, followed by one write that preserves
-bits 29:0 and clears bits 31:30. The comparison deliberately admits no extra
-fence or MMIO edge. This qualifies the register transaction, not the AP
-runtime's decision about when teardown is safe.
-
-The first suite proves the complete address/BSSID leaves for STA=0 and AP=1.
-The second uses one cross-archive linked oracle to execute exactly the sparse
-`wifi_set_rx_policy` cases 6 and 8 against the production HAL/PAC probe. It
-also preserves both observed case-six submodes. The still-untyped
-`g_ic + 0x74` word is deliberately named only as `Mode1`/`Mode2`; this evidence
-does not identify either value as an AP+STA lifecycle state.
-
-The reviewed logical object and its lifecycle consumers can be inspected
-without scanning the full IR document:
-
-```console
-cargo vendor-binary-workbench inspect object \
-  --project verification/vendor/targets/esp32s31/vendor-project.toml \
-  wifi-sta-lifecycle:g_ic --offset 0x74 \
-  --flows-to wifi_set_rx_policy
-```
-
-The report proves reads, selector-bearing call routes, and two direct constant
-zero writes: initialization in `ieee80211_ifattach` and clearing in
-`ieee80211_mesh_quick_deinit`. No direct nonzero writer is currently observed.
-Writers hidden behind argument aliases remain a blocker, so `Mode1`/`Mode2`
-must not be renamed from function names or treated as an AP+STA lifecycle bit.
-
-The low-level policy probe is intentionally isolated from the full STA/AP and
-Embassy probe image. Rebuild it without pulling unfinished runtime adapters:
-
-```console
-cargo build \
-  --manifest-path verification/vendor/targets/esp32s31/probes/register-elf/Cargo.toml \
-  --target riscv32imafc-unknown-none-elf --release \
-  --target-dir target/verification/esp32s31-register-probes
-```
-
-The current internal COEX core boundary is checked independently of the
-unmodeled scheduler/runtime environment:
-
-```console
-cargo vendor-binary-workbench project verify --suite coex-core \
-  --project verification/vendor/targets/esp32s31/vendor-project.toml \
-  --run-spec verification/vendor/targets/esp32s31/local.toml
-
-cargo vendor-binary-workbench project verify --suite coex-timer-control \
-  --project verification/vendor/targets/esp32s31/vendor-project.toml \
-  --run-spec verification/vendor/targets/esp32s31/local.toml
-
-cargo vendor-binary-workbench project verify --suite coex-timer-set \
-  --project verification/vendor/targets/esp32s31/vendor-project.toml \
-  --run-spec verification/vendor/targets/esp32s31/local.toml
-```
-
-This proves PTI lookup, event-duration lookup and the complete release leaf.
-All 100 valid-clock concrete request cases also match, but the request profile
-remains incomplete because five Rust-only fail-closed clock error branches
-are intentionally unreachable under the vendor valid-clock precondition. It
-does not qualify the semaphore-backed scheduler or joint Wi-Fi/BLE hardware
-behavior. Timer enable/disable/force/unforce are a separate 4/4 passing suite;
-time conversion and value programming remain isolated in `coex-timer-set` as
-one explicit incomplete boundary rather than making the qualified timer-control
-surface appear incomplete.
-
-This internal Wi-Fi/BLE arbitration boundary is distinct from the optional
-external wired-COEX HAL (`hal_*_extern_coex`). Those leaves access the high
-MODEM_LPCON block around `0x2010f49c..0x2010f4d8`, which the current official
-ESP32-S31 PAC does not expose. Their vendor transactions remain reviewed
-evidence only: they are not required by the current AP+STA/internal-COEX gate,
-must not be added to the radio-owned PAC, and require a separate platform-owned
-register model before an external-wired-COEX feature can be qualified.
-
-After analysis:
-
-```console
-cargo vendor-binary-workbench project status \
-  --project verification/vendor/targets/esp32s31/vendor-project.toml
-
-cargo vendor-binary-workbench project browse \
-  --project verification/vendor/targets/esp32s31/vendor-project.toml
-```
-
-Use `inspect function SOURCE:SYMBOL` for one lossless body and `inspect flow`
-for a bounded target/effect query. The first reviewed asynchronous route is:
-
-```console
-tools/vendor-binary-workbench/scripts/run-limited \
-  --project verification/vendor/targets/esp32s31/vendor-project.toml \
-  --run-spec verification/vendor/targets/esp32s31/local.toml \
-  inspect flow --event-route rx-success-to-pp-task
-```
-
-The checked replay now proves the concrete route from `pp_post(0x19)` through
-the reviewed FIFO, counted latch, `ppTask` dequeue/indexed dispatch and the
-`wdevProcessRxSucDataAll` boundary in one persistent execution session. The
-report deliberately keeps `path-feasibility=false` for the complete IRQ route:
-the executable replay starts at `pp_post`, so the higher IRQ-to-post prefix is
-structural evidence rather than a concrete end-to-end replay. Low-level
-engines live under `advanced` and are not a second required workflow.
-
-To compare one mapped vendor function with its production Rust replacement,
-request the joined evidence directly:
-
-```console
-cargo vendor-binary-workbench inspect function libpp:hal_mac_set_bssid \
-  --project verification/vendor/targets/esp32s31/vendor-project.toml \
-  --replacement
-```
-
-Every successful concrete case includes one ordered MMIO/delay/fence trace,
-with vendor and Rust producer PCs when the execution images provide them.
-Use `--case CASE_ID` for one scenario or `--details` for every matching case;
-the command rejects `--case` without `--replacement`.
-
-## Registers and the closed PAC
-
-The data flow is:
-
-```text
-declared MMIO regions
-  → generated access facts
-  → reviewed registers/device.toml + peripheral fragments
-  → clean SVD + private pac-raw
-  → reviewed registers/api.toml
-  → restricted public PAC API
-```
-
-Generated facts never invent register names, W1C behavior, reset values, or
-field semantics. Review and publication are separate operations:
-
-```console
-cargo vendor-binary-workbench registers review \
-  --project verification/vendor/targets/esp32s31/vendor-project.toml
-
-cargo vendor-binary-workbench registers validate \
-  --project verification/vendor/targets/esp32s31/vendor-project.toml
-
-cargo vendor-binary-workbench project publish \
-  --project verification/vendor/targets/esp32s31/vendor-project.toml
-```
-
-The HAL consumes named restricted bindings. Physical addresses and arbitrary
-integer writes remain inside the generated private raw-PAC boundary.
-
-`inspect function SOURCE:SYMBOL --replacement` joins the reviewed Rust owner,
-proof strength, concrete cases and the selected vendor function's direct
-MMIO/RAM effects in instruction order. Indexed register banks are collapsed in
-the normal human view; use `--details` for every concrete target. These ordered
-vendor effects are static evidence, while the scenario rows remain the
-execution-equivalence authority.
-
-The current AP/STA and COEX register frontier is intentionally split into
-independent claims instead of one oversized "AP+STA ready" flag:
-
-```console
-cargo vendor-binary-workbench project feature wifi-ap-sta-interface-identity \
-  --project verification/vendor/targets/esp32s31/vendor-project.toml
-cargo vendor-binary-workbench project feature wifi-ap-sta-receive-registers \
-  --project verification/vendor/targets/esp32s31/vendor-project.toml
-cargo vendor-binary-workbench project feature wifi-ap-sta-key-role \
-  --project verification/vendor/targets/esp32s31/vendor-project.toml
-cargo vendor-binary-workbench project feature wifi-mac-coex-register-programming \
-  --project verification/vendor/targets/esp32s31/vendor-project.toml
-```
-
-Use the top-level static product gate to see which capability is still open,
-then inspect that leaf rather than reading one monolithic AP report:
-
-```console
-cargo vendor-binary-workbench project feature esp32s31-static-radio-contract \
-  --project verification/vendor/targets/esp32s31/vendor-project.toml
-cargo vendor-binary-workbench project feature wifi-ap-stop-boundary --phase stop \
-  --project verification/vendor/targets/esp32s31/vendor-project.toml
-```
-
-Their production path is `StaApRegisterHardware`/`WifiMacHal` and
-`CoexTimerHardware`/`CoexTimerHal`. These APIs accept finite interface, timer,
-PTI and policy types and expose no register addresses. This proves the named
-register transactions only; shared-channel scheduling, beacon ownership and
-runtime AP+STA arbitration remain separate lifecycle obligations and keep the
-top-level gate blocked until reviewed.
-
-Wi-Fi DMA descriptors are DMA-visible RAM, not PAC/MMIO registers. Raw
-`word0 | BIT_30` expressions in host tests emulate hardware completion and do
-not constitute a production register API; they should be migrated to a named
-test fixture builder so descriptor ownership remains readable.
-
-## Verification and CI
-
-```console
 cargo vendor-binary-workbench project verify \
   --project verification/vendor/targets/esp32s31/vendor-project.toml
 
@@ -332,42 +41,48 @@ cargo vendor-binary-workbench project check \
   --project verification/vendor/targets/esp32s31/vendor-project.toml
 ```
 
-Verification suites are declared in `vendor-project.toml`; scenarios,
-dispositions, and accepted baselines live in their corresponding TOML
-directories. Those files, rather than prose command lists, are the source of
-truth for current coverage. Candidate evidence is always separate from
-accepted baselines.
+Use `project status` for the quick overview, `project browse` for navigation,
+and `inspect function SOURCE:SYMBOL` for a focused body. The suite and policy
+TOML files are the coverage source of truth; this README intentionally does
+not duplicate the suite inventory.
 
-The RX DMA pilot demonstrates the required production-binding architecture.
-`libpp-replay` is an auxiliary, relocation-complete vendor ELF used to execute
-the real `wDev_AppendRxBlocks`; it is not added to the suite coverage inventory.
-The Rust probe invokes the production `RxDmaStorage` and
-`RxStagePool::stage_dma_unit_recycle_bounded` path. The provider checks a
-compact append/rearm/refinement contract and does not contain a second RX-ring
-algorithm or a hand-maintained full expected trace. Its maximum claim is
-`reviewed-refinement`, not whole-function equivalence.
-
-Audit this boundary directly before reviewing any baseline:
+## Register publication
 
 ```console
-cargo vendor-binary-workbench project audit bindings \
+cargo vendor-binary-workbench registers review \
+  --project verification/vendor/targets/esp32s31/vendor-project.toml
+cargo vendor-binary-workbench registers validate \
+  --project verification/vendor/targets/esp32s31/vendor-project.toml
+cargo vendor-binary-workbench project publish \
   --project verification/vendor/targets/esp32s31/vendor-project.toml
 ```
 
-The required-feature closure now has no binding-trust blockers. In particular,
-the MAC IRQ slice, ordinary TX ownership publication, AP/STA key role and STA
-join protocol boundary all use concrete vendor replay plus a shared production
-Rust core. Older lifted/static checks remain visible outside that closure as
-research-only evidence and cannot be promoted by an accepted baseline.
+Discovery facts feed the reviewed register model, which publishes the clean
+SVD, private raw PAC and restricted production PAC API. Generated facts do not
+invent field semantics.
 
-The TX adapter executes the real vendor `hal_mac_txq_enable` non-HE path and
-the real `TxSlot::submit_legacy` production path for all four queues, including
-already-active guards and DMA ownership-before-doorbell ordering. The key-role
-adapter replays `hal_crypto_set_key_entry` for context zero/one and executes the
-production STA/AP CCMP builders. The STA adapter replays the Authentication and
-Association entries of `ieee80211_sta_new_state`, including management-call
-arguments and the 1,000-ms timer arm, then executes the production
-`StaJoinRunner` success/timeout cases.
+## Verification boundary
 
-For the generic workflow and schema rationale, see
-[`tools/vendor-binary-workbench/docs/getting-started.md`](../../../../tools/vendor-binary-workbench/docs/getting-started.md).
+`verification-policy.toml` selects independent review scopes, function
+requirements and bounded properties. It does not define product readiness.
+The repository qualification ledger is the sole authority for that decision.
+
+Bindings distinguish exact production entries, shared production core and
+verification projections. Concrete replay may support release evidence only
+when it reaches the declared compiled production boundary. Semantic contracts
+remain useful research evidence but do not prove manually written driver
+sequencing.
+
+`phy_chip_set_chan` is the first semantic-to-production binding. The probe
+symbol `open_phy_production_trace_phy_chip_set_chan` invokes the real
+`select_phy_channel` implementation and firmware ESP-HAL adapter. It already
+builds against the same PAC revision as firmware, and both concrete entries
+execute to completion. Their first unreviewed difference is analog-I²C host
+selection: the vendor ROM path uses the recovered `0x1a00` configuration while
+production uses the newer recovered `0x3fa00` configuration. The existing
+`esp32s31-channel` semantic contract remains research-only until that difference
+and the remaining ordered effects have been reviewed; it must not be described
+as production equivalence before then.
+
+For concepts and schemas, start at
+[`tools/vendor-binary-workbench/README.md`](../../../../tools/vendor-binary-workbench/README.md).

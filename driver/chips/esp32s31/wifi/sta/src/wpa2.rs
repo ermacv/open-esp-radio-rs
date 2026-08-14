@@ -185,61 +185,51 @@ where
 {
     type Error = Esp32s31Wpa2HandshakePortError<R::Error, T::Error>;
 
-    fn service_receive(
-        &mut self,
-    ) -> impl Future<Output = Result<Wpa2RxProgress, Self::Error>> + '_ {
-        async {
-            self.radio
-                .receive
-                .service(self.radio.hardware, self.storage.frame)
-                .map_err(Esp32s31Wpa2HandshakePortError::Receive)
-        }
+    async fn service_receive(&mut self) -> Result<Wpa2RxProgress, Self::Error> {
+        self.radio
+            .receive
+            .service(self.radio.hardware, self.storage.frame)
+            .map_err(Esp32s31Wpa2HandshakePortError::Receive)
     }
 
-    fn restart_receive(&mut self) -> impl Future<Output = Result<(), Self::Error>> + '_ {
-        async {
-            self.radio
-                .receive
-                .restart(self.radio.hardware)
-                .await
-                .map_err(Esp32s31Wpa2HandshakePortError::Receive)
-        }
+    async fn restart_receive(&mut self) -> Result<(), Self::Error> {
+        self.radio
+            .receive
+            .restart(self.radio.hardware)
+            .await
+            .map_err(Esp32s31Wpa2HandshakePortError::Receive)
     }
 
-    fn stop_receive(&mut self) -> impl Future<Output = Result<(), Self::Error>> + '_ {
-        async {
-            self.radio
-                .receive
-                .stop(self.radio.hardware)
-                .map_err(Esp32s31Wpa2HandshakePortError::Receive)
-        }
+    async fn stop_receive(&mut self) -> Result<(), Self::Error> {
+        self.radio
+            .receive
+            .stop(self.radio.hardware)
+            .map_err(Esp32s31Wpa2HandshakePortError::Receive)
     }
 
-    fn transmit_message2<'a>(
+    async fn transmit_message2<'a>(
         &'a mut self,
         frame: &'a Wpa2TxFrame<DEFAULT_EAPOL_FRAME_CAPACITY>,
         sequence_number: u16,
-    ) -> impl Future<Output = Result<(), Self::Error>> + 'a {
-        async move {
-            self.radio
-                .transmit
-                .transmit_unprotected(
-                    self.radio.hardware,
-                    StaDataFrame {
-                        source: self.station.station_address,
-                        bssid: self.station.bssid,
-                        destination: self.station.bssid,
-                        sequence_number,
-                        ether_type: 0x888e,
-                        payload: frame.as_bytes(),
-                    },
-                )
-                .await
-                .map_err(Esp32s31Wpa2HandshakePortError::Transmit)?;
-            self.telemetry.message2_transmissions =
-                self.telemetry.message2_transmissions.saturating_add(1);
-            Ok(())
-        }
+    ) -> Result<(), Self::Error> {
+        self.radio
+            .transmit
+            .transmit_unprotected(
+                self.radio.hardware,
+                StaDataFrame {
+                    source: self.station.station_address,
+                    bssid: self.station.bssid,
+                    destination: self.station.bssid,
+                    sequence_number,
+                    ether_type: 0x888e,
+                    payload: frame.as_bytes(),
+                },
+            )
+            .await
+            .map_err(Esp32s31Wpa2HandshakePortError::Transmit)?;
+        self.telemetry.message2_transmissions =
+            self.telemetry.message2_transmissions.saturating_add(1);
+        Ok(())
     }
 }
 
@@ -389,64 +379,62 @@ where
         Ok(())
     }
 
-    fn transmit_message4<'a>(
+    async fn transmit_message4<'a>(
         &'a mut self,
         frame: &'a Wpa2TxFrame<DEFAULT_EAPOL_FRAME_CAPACITY>,
         keys: &'a mut Self::InstalledKeys,
-    ) -> impl Future<Output = Result<(), Self::Error>> + 'a {
-        async move {
-            let completion = match self.session.message4_protection {
-                Esp32s31Wpa2Message4Protection::Unprotected => {
-                    self.radio
-                        .transmit
-                        .transmit_unprotected(
-                            self.radio.hardware,
-                            StaDataFrame {
-                                source: self.session.station.station_address,
-                                bssid: self.session.station.bssid,
-                                destination: self.session.station.bssid,
-                                sequence_number: self.session.sequences.take_non_qos(),
-                                ether_type: 0x888e,
-                                payload: frame.as_bytes(),
-                            },
-                        )
-                        .await
-                }
-                Esp32s31Wpa2Message4Protection::PairwiseCcmp => {
-                    let ccmp_header = keys.pairwise.next_tx_ccmp_header();
-                    self.radio
-                        .transmit
-                        .transmit_protected(
-                            self.radio.hardware,
-                            StaProtectedDataFrame {
-                                source: self.session.station.station_address,
-                                bssid: self.session.station.bssid,
-                                destination: self.session.station.bssid,
-                                sequence_number: self
-                                    .session
-                                    .sequences
-                                    .take_data(self.session.peer_qos.then_some(0))
-                                    .expect("selected EAPOL sequence-number owner exists"),
-                                user_priority: 7,
-                                peer_qos: self.session.peer_qos,
-                                ccmp_header,
-                                ether_type: 0x888e,
-                                payload: frame.as_bytes(),
-                            },
-                            LegacyTxQueue::Voice,
-                            TxPhyRate::Legacy(LegacyRate::Dsss1MLong),
-                            keys.pairwise.hardware_index(),
-                        )
-                        .await
-                }
+    ) -> Result<(), Self::Error> {
+        let completion = match self.session.message4_protection {
+            Esp32s31Wpa2Message4Protection::Unprotected => {
+                self.radio
+                    .transmit
+                    .transmit_unprotected(
+                        self.radio.hardware,
+                        StaDataFrame {
+                            source: self.session.station.station_address,
+                            bssid: self.session.station.bssid,
+                            destination: self.session.station.bssid,
+                            sequence_number: self.session.sequences.take_non_qos(),
+                            ether_type: 0x888e,
+                            payload: frame.as_bytes(),
+                        },
+                    )
+                    .await
             }
-            .map_err(Esp32s31Wpa2KeyPortError::Transmit)?;
-            self.completion = Some(completion);
-            if completion.status == 0 {
-                Ok(())
-            } else {
-                Err(Esp32s31Wpa2KeyPortError::TxStatus(completion.status))
+            Esp32s31Wpa2Message4Protection::PairwiseCcmp => {
+                let ccmp_header = keys.pairwise.next_tx_ccmp_header();
+                self.radio
+                    .transmit
+                    .transmit_protected(
+                        self.radio.hardware,
+                        StaProtectedDataFrame {
+                            source: self.session.station.station_address,
+                            bssid: self.session.station.bssid,
+                            destination: self.session.station.bssid,
+                            sequence_number: self
+                                .session
+                                .sequences
+                                .take_data(self.session.peer_qos.then_some(0))
+                                .expect("selected EAPOL sequence-number owner exists"),
+                            user_priority: 7,
+                            peer_qos: self.session.peer_qos,
+                            ccmp_header,
+                            ether_type: 0x888e,
+                            payload: frame.as_bytes(),
+                        },
+                        LegacyTxQueue::Voice,
+                        TxPhyRate::Legacy(LegacyRate::Dsss1MLong),
+                        keys.pairwise.hardware_index(),
+                    )
+                    .await
             }
+        }
+        .map_err(Esp32s31Wpa2KeyPortError::Transmit)?;
+        self.completion = Some(completion);
+        if completion.status == 0 {
+            Ok(())
+        } else {
+            Err(Esp32s31Wpa2KeyPortError::TxStatus(completion.status))
         }
     }
 }

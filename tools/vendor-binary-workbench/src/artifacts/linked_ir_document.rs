@@ -625,7 +625,7 @@ struct FunctionOverviewDocument<'a> {
     decode_blockers: &'a [crate::LinkedDecodeBlocker],
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 struct FunctionOverviewDirectEffect {
     kind: &'static str,
     site: Option<u32>,
@@ -638,6 +638,11 @@ struct FunctionOverviewDirectEffect {
     forced_zero_mask: Option<u32>,
     forced_one_mask: Option<u32>,
     arguments: Vec<String>,
+}
+
+fn deduplicate_observable_effects(effects: &mut Vec<FunctionOverviewDirectEffect>) {
+    let mut observed = BTreeSet::new();
+    effects.retain(|effect| observed.insert(effect.clone()));
 }
 
 #[derive(Serialize)]
@@ -840,6 +845,7 @@ impl<'a> FunctionOverviewDocument<'a> {
                     .collect(),
             }
         }));
+        deduplicate_observable_effects(&mut direct_effects);
         Self {
             source: &function.source,
             identity: &function.identity,
@@ -1385,5 +1391,26 @@ mod bundle_write_tests {
         drop(writer);
         assert_eq!(total, 4);
         std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn overview_deduplicates_path_variants_with_identical_observable_effects() {
+        let effect = FunctionOverviewDirectEffect {
+            kind: "mmio",
+            site: Some(0x1000),
+            operation: "write:static".to_owned(),
+            target: "0x60000010".to_owned(),
+            width: Some(32),
+            value: Some("0x00000001".to_owned()),
+            modified_mask: Some(1),
+            preserved_mask: Some(!1),
+            forced_zero_mask: Some(0),
+            forced_one_mask: Some(1),
+            arguments: Vec::new(),
+        };
+        let mut effects = vec![effect.clone(), effect.clone()];
+        deduplicate_observable_effects(&mut effects);
+
+        assert_eq!(effects, [effect]);
     }
 }

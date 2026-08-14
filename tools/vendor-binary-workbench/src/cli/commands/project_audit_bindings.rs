@@ -3,7 +3,12 @@
 use crate::{Result, application::ProjectSession, cli::output, verification};
 
 pub(super) fn run(session: &ProjectSession) -> Result<bool> {
-    let report = verification::audit(&session.project, session.target.harness.as_deref())?;
+    let provider = session
+        .project
+        .verification
+        .as_ref()
+        .map(|workspace| workspace.provider.as_str());
+    let report = verification::audit(&session.project, provider)?;
     let passed = report.passed;
     output::render_report(&report, || render_human(&report));
     Ok(passed)
@@ -15,13 +20,13 @@ fn render_human(report: &verification::BindingAuditReport) {
     outputln!("Bindings: {}", report.bindings.len());
     let outcome = if report.passed {
         output::success(format!(
-            "PASS — all {} required bindings are release-ready; {} research-only",
-            report.release_required, report.research_only
+            "PASS — all {} required bindings are verification-ready; {} research-only",
+            report.verification_required, report.research_only
         ))
     } else {
         output::failure(format!(
-            "BLOCKED — {} required binding(s) lack release proof; {} invalid declaration(s)",
-            report.release_blocked, report.invalid
+            "BLOCKED — {} required binding(s) lack qualifying verification proof; {} invalid declaration(s)",
+            report.verification_blocked, report.invalid
         ))
     };
     outputln!("\n{outcome}");
@@ -29,7 +34,7 @@ fn render_human(report: &verification::BindingAuditReport) {
     let blocked = report
         .bindings
         .iter()
-        .filter(|binding| matches!(binding.status, "invalid" | "release-blocked"))
+        .filter(|binding| matches!(binding.status, "invalid" | "verification-blocked"))
         .collect::<Vec<_>>();
     if !blocked.is_empty() {
         outputln!("\n{}", output::heading("Trust blockers"));
@@ -52,7 +57,7 @@ fn render_human(report: &verification::BindingAuditReport) {
                 binding
                     .blocker
                     .as_deref()
-                    .unwrap_or("binding is not release eligible")
+                    .unwrap_or("binding is not verification eligible")
             );
             if !binding.required_by.is_empty() {
                 outputln!("   Required by: {}", binding.required_by.join(", "));

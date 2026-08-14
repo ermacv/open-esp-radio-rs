@@ -1,8 +1,9 @@
 //! Ownership boundary for bounded complete `hal_he_init` transactions.
 
-use open_esp_radio_esp32s31_pac::{
-    ColdRadioRegisters, MAC_TX_POWER_RATE_COUNT, MacTxPowerPair, MacTxPowerTable,
+use open_esp_radio_esp32s31_hal::types::{
+    MAC_TX_POWER_RATE_COUNT, MacTxPowerPair, MacTxPowerTable,
 };
+use open_esp_radio_esp32s31_hal::wifi_mac::WifiMacColdHal;
 
 pub trait MacColdHeHardware {
     fn initialize_he_prefix(&mut self);
@@ -43,16 +44,16 @@ pub fn run_tx_power_diagnostic_queries(source: &mut impl MacTxPowerSource) {
     }
 }
 
-impl MacColdHeHardware for ColdRadioRegisters {
+impl MacColdHeHardware for WifiMacColdHal<'_> {
     fn initialize_he_prefix(&mut self) {
-        self.initialize_mac_he_prefix();
+        WifiMacColdHal::initialize_he_prefix(self);
     }
 
     fn initialize_tx_power(&mut self, table: &MacTxPowerTable) {
-        self.initialize_mac_tx_power(table);
+        WifiMacColdHal::initialize_tx_power(self, table);
     }
 
     fn initialize_he_suffix(&mut self) {
-        self.initialize_mac_he_suffix();
+        WifiMacColdHal::initialize_he_suffix(self);
     }
 }

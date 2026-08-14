@@ -5,9 +5,9 @@ use toml_edit::{ArrayOfTables, DocumentMut, Item, Table};
 use super::{
     FunctionPack, FunctionReviewStatus, ReviewedContext, ReviewedContextField,
     ReviewedEventCaseHandler, ReviewedEventDelivery, ReviewedEventReplay, ReviewedEventRoute,
-    ReviewedEventStateModel, ReviewedEventTerminal, ReviewedFunction, ReviewedFunctionInput,
-    ReviewedLogicalType, ReviewedMemoryObject, ReviewedPath, ReviewedPrecondition,
-    ReviewedTypeBinding, ReviewedTypeField,
+    ReviewedEventStateModel, ReviewedEventTerminal, ReviewedFunction, ReviewedFunctionArgument,
+    ReviewedFunctionInput, ReviewedFunctionSignature, ReviewedLogicalType, ReviewedMemoryObject,
+    ReviewedPath, ReviewedPrecondition, ReviewedTypeBinding, ReviewedTypeField,
 };
 use crate::Result;
 
@@ -316,6 +316,11 @@ fn parse_functions(tables: &ArrayOfTables) -> Result<Vec<ReviewedFunction>> {
                 name: optional_string(table, "name"),
                 role: optional_string(table, "role"),
                 summary: optional_string(table, "summary"),
+                signature: table
+                    .get("signature")
+                    .and_then(Item::as_table)
+                    .map(|signature| parse_function_signature(signature, &context))
+                    .transpose()?,
                 accept_incomplete: optional_bool(table, "accept-incomplete", &context)?
                     .unwrap_or(false),
                 preconditions: table
@@ -339,6 +344,40 @@ fn parse_functions(tables: &ArrayOfTables) -> Result<Vec<ReviewedFunction>> {
             })
         })
         .collect()
+}
+
+fn parse_function_signature(table: &Table, function: &str) -> Result<ReviewedFunctionSignature> {
+    let context = format!("{function}.signature");
+    Ok(ReviewedFunctionSignature {
+        arguments: table
+            .get("arguments")
+            .and_then(Item::as_array_of_tables)
+            .map(|arguments| {
+                arguments
+                    .iter()
+                    .enumerate()
+                    .map(|(position, argument)| -> Result<ReviewedFunctionArgument> {
+                        let argument_context = format!("{context}.arguments[{position}]");
+                        Ok(ReviewedFunctionArgument {
+                            index: required_integer(argument, "index", &argument_context)?
+                                .try_into()
+                                .map_err(|_| {
+                                    crate::Error::invalid(format!(
+                                        "{argument_context}.index must fit u8"
+                                    ))
+                                })?,
+                            name: required_table_string(argument, "name", &argument_context)?,
+                            abi: required_table_string(argument, "abi", &argument_context)?,
+                            role: optional_string(argument, "role"),
+                        })
+                    })
+                    .collect()
+            })
+            .transpose()?
+            .unwrap_or_default(),
+        return_abi: optional_string(table, "return-abi"),
+        return_role: optional_string(table, "return-role"),
+    })
 }
 
 fn parse_preconditions(

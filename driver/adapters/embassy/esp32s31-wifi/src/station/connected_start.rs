@@ -9,9 +9,9 @@
 use core::future::Future;
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
-use open_esp_radio_esp32s31_hal::RadioRegisters;
-use open_esp_radio_esp32s31_wifi::register_arena::{
-    Esp32s31RadioRegistersArena, Esp32s31RadioRegistersArenaError,
+use open_esp_radio_esp32s31_hal::RadioRuntimeOwner;
+use open_esp_radio_esp32s31_hal::radio_arena::{
+    Esp32s31RadioOwnerArena, Esp32s31RadioOwnerArenaError,
 };
 use open_esp_radio_esp32s31_wifi_sta::cooperative_hardware::CooperativeRadioHardware;
 
@@ -35,7 +35,7 @@ pub enum Esp32s31ConnectedEpochStartPhase {
 /// Supplying these only to [`start_esp32s31_initial_connected_epoch`]
 /// prevents reconnect from initializing the same static cells again.
 pub struct Esp32s31InitialConnectedEpochResources<'arena, X, A, C> {
-    registers: &'arena Esp32s31RadioRegistersArena,
+    registers: &'arena Esp32s31RadioOwnerArena,
     rx: X,
     aggregate_tx: A,
     control: C,
@@ -43,7 +43,7 @@ pub struct Esp32s31InitialConnectedEpochResources<'arena, X, A, C> {
 
 impl<'arena, X, A, C> Esp32s31InitialConnectedEpochResources<'arena, X, A, C> {
     pub const fn new(
-        registers: &'arena Esp32s31RadioRegistersArena,
+        registers: &'arena Esp32s31RadioOwnerArena,
         rx: X,
         aggregate_tx: A,
         control: C,
@@ -75,8 +75,8 @@ pub struct Esp32s31ConnectedEpochStarted<H, X, A, C> {
 #[allow(clippy::large_enum_variant)]
 pub enum Esp32s31ConnectedEpochStartFailure<I, H, P, X, A, C, E> {
     RegisterPublication {
-        error: Esp32s31RadioRegistersArenaError,
-        hardware: RadioRegisters,
+        error: Esp32s31RadioOwnerArenaError,
+        hardware: RadioRuntimeOwner,
         receive: P,
         initial: I,
     },
@@ -186,7 +186,7 @@ where
 /// of initial static resources is not representable at this boundary.
 #[allow(clippy::type_complexity)]
 pub async fn start_esp32s31_initial_connected_epoch<'arena, P, X, A, C>(
-    hardware: RadioRegisters,
+    hardware: RadioRuntimeOwner,
     receive: P,
     initial: Esp32s31InitialConnectedEpochResources<'arena, X, A, C>,
 ) -> Result<
@@ -209,7 +209,7 @@ where
         Err(failure) => {
             return Err(Esp32s31ConnectedEpochStartFailure::RegisterPublication {
                 error: failure.error,
-                hardware: failure.registers,
+                hardware: failure.owner,
                 receive,
                 initial,
             });
@@ -308,7 +308,7 @@ where
 #[cfg(test)]
 mod tests {
     use embassy_futures::block_on;
-    use open_esp_radio_esp32s31_hal::ColdRadioRegisters;
+    use open_esp_radio_esp32s31_hal::{Radio, wifi_bb::PhyWifiBbControl};
 
     use crate::station_epoch::{Esp32s31DisconnectedStaEpoch, Esp32s31StoppedStaRx};
 
@@ -317,6 +317,19 @@ mod tests {
     struct TestRxResources {
         value: u8,
         fail: bool,
+    }
+
+    struct TestRadioPeripheral;
+
+    impl PhyWifiBbControl for TestRadioPeripheral {
+        fn clear_cold_start_wifi_control(&mut self) {}
+        fn wifi_baseband_is_enabled(&self) -> bool {
+            false
+        }
+        fn set_wifi_baseband_enabled(&mut self, _enabled: bool) {}
+        fn set_bss_cbw_40_digital(&mut self, _enabled: bool) {}
+        fn set_bb_agc_update_encoding(&mut self, _encoding: u8) {}
+        fn set_mac_baseband_enabled(&mut self, _enabled: bool) {}
     }
 
     impl<'arena> Esp32s31ConnectedRxMaterializer<CooperativeRadioHardware<'arena>, u8>
@@ -368,10 +381,12 @@ mod tests {
 
     #[test]
     fn connected_start_unifies_initial_and_reconnected_owner_frontiers() {
-        let cold = ColdRadioRegisters::take()
-            .unwrap_or_else(|| panic!("register singleton must be free for connected-start test"));
-        let (registers, _interrupt_setup) = cold.into_running();
-        let arena = Esp32s31RadioRegistersArena::new();
+        let radio = Radio::claim(TestRadioPeripheral)
+            .unwrap_or_else(|_| panic!("radio singleton must be free for connected-start test"))
+            .assume_powered_after_external_initialization()
+            .into_running();
+        let (_platform, registers, _interrupt_setup) = radio.into_runtime_parts();
+        let arena = Esp32s31RadioOwnerArena::new();
 
         let started = block_on(start_esp32s31_initial_connected_epoch(
             registers,
@@ -416,7 +431,7 @@ mod tests {
             .hardware
             .try_into_reclaimed_registers()
             .unwrap_or_else(|_| panic!("reconnected transition must retain its arena binding"))
-            .into_registers();
+            .into_owner();
 
         let failure = block_on(start_esp32s31_initial_connected_epoch(
             registers,

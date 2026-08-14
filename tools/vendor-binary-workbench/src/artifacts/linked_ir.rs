@@ -1,4 +1,8 @@
 //! Typed summary projection for stored linked-IR artifacts.
+//!
+//! Linked IR is a canonical derived representation. Authenticated artifact
+//! bytes, ABI/load mapping, and provenance remain the authoritative observed
+//! inputs; storing or executing this IR cannot promote it to hardware truth.
 
 use std::path::Path;
 

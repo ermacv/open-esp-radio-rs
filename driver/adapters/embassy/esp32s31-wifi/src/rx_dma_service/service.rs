@@ -155,15 +155,13 @@ where
                             };
                             observer.observe(RxPipelineObservation::StageDiscarded(discard));
                         }
-                        loop {
-                            match self
-                                .ring
-                                .poll_pending_reload(hardware)
-                                .map_err(RxStageTransactionError::Ring)?
-                            {
-                                RxReloadObservation::Pending => self.delay.after_micros(1).await,
-                                RxReloadObservation::Settled => break,
-                            }
+                        while self
+                            .ring
+                            .poll_pending_reload(hardware)
+                            .map_err(RxStageTransactionError::Ring)?
+                            == RxReloadObservation::Pending
+                        {
+                            self.delay.after_micros(1).await;
                         }
                         self.admission
                             .observe(Esp32s31RxIngressObservation::DiscardReloaded {

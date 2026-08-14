@@ -15,8 +15,6 @@ use crate::{Error, Result};
 pub struct RegisterEvidenceCatalog {
     pub schema: u32,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub confidence_levels: Vec<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub sources: Vec<RegisterEvidenceSource>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub ranges: Vec<RegisterEvidenceRange>,
@@ -40,7 +38,6 @@ pub struct RegisterEvidenceRange {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RegisterEvidenceSet {
-    pub confidence_levels: Vec<String>,
     pub sources: Vec<RegisterEvidenceSource>,
     pub ranges: Vec<RegisterEvidenceRange>,
 }
@@ -64,15 +61,6 @@ impl RegisterEvidenceCatalog {
             )));
         }
         let mut sources = BTreeSet::new();
-        let mut confidence_levels = BTreeSet::new();
-        for confidence in &self.confidence_levels {
-            validate_id(confidence, "confidence level")?;
-            if !confidence_levels.insert(confidence) {
-                return Err(Error::message(format!(
-                    "duplicate confidence level {confidence:?}"
-                )));
-            }
-        }
         for source in &self.sources {
             validate_id(&source.id, "evidence source")?;
             if source.description.trim().is_empty() {
@@ -140,10 +128,8 @@ impl RegisterEvidenceSet {
     pub fn load_all(paths: &[PathBuf]) -> Result<Self> {
         let mut sources = BTreeMap::new();
         let mut ranges = BTreeMap::new();
-        let mut confidence_levels = BTreeSet::new();
         for path in paths {
             let catalog = RegisterEvidenceCatalog::load(path)?;
-            confidence_levels.extend(catalog.confidence_levels);
             for source in catalog.sources {
                 let id = source.id.clone();
                 if sources.insert(id.clone(), source).is_some() {
@@ -162,7 +148,6 @@ impl RegisterEvidenceSet {
             }
         }
         let set = Self {
-            confidence_levels: confidence_levels.into_iter().collect(),
             sources: sources.into_values().collect(),
             ranges: ranges.into_values().collect(),
         };
@@ -189,24 +174,6 @@ impl RegisterEvidenceSet {
         {
             return Err(Error::message(format!(
                 "{context} references undefined evidence source {reference:?}"
-            )));
-        }
-        Ok(())
-    }
-
-    pub fn validate_confidence_levels<'a>(
-        &self,
-        context: &str,
-        levels: impl IntoIterator<Item = &'a str>,
-    ) -> Result<()> {
-        let allowed = self
-            .confidence_levels
-            .iter()
-            .map(String::as_str)
-            .collect::<BTreeSet<_>>();
-        if let Some(level) = levels.into_iter().find(|level| !allowed.contains(level)) {
-            return Err(Error::message(format!(
-                "{context} uses undefined confidence level {level:?}"
             )));
         }
         Ok(())
@@ -267,7 +234,6 @@ mod tests {
         let path = Path::new("fixture.toml");
         let mut catalog = RegisterEvidenceCatalog {
             schema: 1,
-            confidence_levels: vec!["instruction-exact".to_owned()],
             sources: vec![RegisterEvidenceSource {
                 id: "REVIEW".to_owned(),
                 description: "reviewed source".to_owned(),

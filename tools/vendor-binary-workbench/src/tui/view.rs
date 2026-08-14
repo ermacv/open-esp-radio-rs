@@ -14,9 +14,9 @@ use crate::{DiagnosticSeverity, Readiness};
 mod blockers;
 mod code;
 mod comparisons;
-mod features;
 mod functions;
 mod interfaces;
+mod policy;
 mod registers;
 mod scopes;
 
@@ -48,7 +48,7 @@ pub(super) fn render(frame: &mut Frame<'_>, state: &BrowserState) {
     render_tabs(frame, state, tabs);
     match state.section {
         Section::Overview => render_overview(frame, state, content),
-        Section::Features => features::render(frame, state, content),
+        Section::Policy => policy::render(frame, state, content),
         Section::Scopes => scopes::render(frame, state, content),
         Section::Code => code::render(frame, state, content),
         Section::Functions => functions::render(frame, state, content),
@@ -373,7 +373,7 @@ fn section_title(section: Section, compact: bool) -> &'static str {
     }
     match section {
         Section::Overview => "Home",
-        Section::Features => "Feat",
+        Section::Policy => "Policy",
         Section::Scopes => "Scope",
         Section::Code => "Code",
         Section::Functions => "Func",
@@ -467,7 +467,7 @@ mod tests {
                     id: "fixture-target".to_owned(),
                     architecture: "riscv32".to_owned(),
                     calling_convention: "riscv-ilp32".to_owned(),
-                    harness: None,
+                    knowledge_provider: None,
                 },
                 overall: Readiness::Incomplete,
                 phases: vec![ProjectStatusPhase {
@@ -513,7 +513,7 @@ mod tests {
                 slots: Vec::new(),
             },
             review_scopes: Vec::new(),
-            features: Vec::new(),
+            verification_policy: Vec::new(),
             review_queue: Vec::new(),
             comparisons: vec![ComparisonProfileSummary {
                 name: "trace-init".to_owned(),

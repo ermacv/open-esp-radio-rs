@@ -13,7 +13,7 @@
 //! external completion. A missed lock remains ordinary outcome data; the
 //! non-terminating ROM search condition becomes a typed failure.
 
-/// Complete pinned `libphy.a` compatibility leaf; the ESP32-S31 body is one
+/// Required pinned `libphy.a` vendor-ABI no-op leaf; the ESP32-S31 body is one
 /// `ret` and does not touch shared RFPLL state.
 #[inline]
 pub const fn phy_bbpll_en_usb() {}
@@ -907,7 +907,7 @@ impl RfpllFrequencyMmioBinding {
     #[cfg(target_arch = "riscv32")]
     pub fn execute_target(
         self,
-        registers: &mut open_esp_radio_esp32s31_hal::RadioRegisters,
+        registers: &mut open_esp_radio_esp32s31_hal::PhyHal,
     ) -> RfpllFrequencyCompletion {
         match self.action {
             RfpllFrequencyAction::StartChannelSwitch {

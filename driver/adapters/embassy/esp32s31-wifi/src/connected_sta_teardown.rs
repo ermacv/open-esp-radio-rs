@@ -281,7 +281,7 @@ impl Esp32s31ConnectedStaTeardownPort {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use open_esp_radio_esp32s31_pac::MacKeyInstallOutcome;
+    use open_esp_radio_esp32s31_hal::types::MacKeyInstallOutcome;
     use open_esp_radio_esp32s31_wifi_mac::crypto::{
         install_sta_group_ccmp, install_sta_pairwise_ccmp,
     };

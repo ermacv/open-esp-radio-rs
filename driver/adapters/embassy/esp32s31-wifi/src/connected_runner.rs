@@ -70,7 +70,7 @@ pub enum ConnectedRunnerExit {
 ///
 /// An implementation normally owns the live RX descriptor ring, staging
 /// storage, staging publisher, TX descriptor state and a short-lived PAC
-/// facade such as `RadioRegisters`. `service_rx` must snapshot and drain one
+/// facade such as `CooperativeRadioHardware`. `service_rx` must snapshot and drain one
 /// durable RX frontier into independent staging ownership. A separate
 /// protocol consumer retains duplicate/protocol history.
 ///

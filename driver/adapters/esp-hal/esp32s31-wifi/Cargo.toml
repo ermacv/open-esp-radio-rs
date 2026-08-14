@@ -16,7 +16,6 @@ esp32s31 = [
     "dep:open-esp-radio-esp32s31-phy",
     "dep:open-esp-radio-esp32s31-wifi",
     "dep:open-esp-radio-esp32s31-wifi-mac",
-    "dep:open-esp-radio-esp32s31-pac",
     "dep:critical-section",
 ]
 
@@ -26,7 +25,6 @@ open-esp-radio-esp32s31-coex = { path = "../../../chips/esp32s31/coex", optional
 open-esp-radio-esp32s31-hal = { path = "../../../chips/esp32s31/hal", optional = true }
 open-esp-radio-esp32s31-phy = { path = "../../../chips/esp32s31/phy", optional = true }
 open-esp-radio-esp32s31-wifi = { path = "../../../chips/esp32s31/wifi", optional = true }
-open-esp-radio-esp32s31-pac = { path = "../../../chips/esp32s31/pac", optional = true }
 open-esp-radio-esp32s31-wifi-mac = { path = "../../../chips/esp32s31/wifi/mac", optional = true }
 critical-section = { version = "1.2.0", optional = true }
 

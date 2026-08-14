@@ -15,8 +15,12 @@ path = "src/main.rs"
 
 [dependencies]
 open-radio-vendor-binary-workbench = { path = "../../../../../tools/vendor-binary-workbench", default-features = false }
-open-radio-vendor-harness-esp32s31-semantic = { path = "../workbench-provider/semantic" }
+open-radio-vendor-knowledge-esp32s31 = { path = "../workbench-provider/knowledge" }
+open-radio-vendor-verification-esp32s31 = { path = "../workbench-provider/verification" }
 serde_json = "=1.0.151"
+
+[dev-dependencies]
+toml_edit = "=0.25.13"
 
 [lints]
 workspace = true

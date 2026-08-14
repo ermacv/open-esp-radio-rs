@@ -11,11 +11,12 @@ low-level analysis commands before using a project.
 
 ## Start here
 
-The standalone Workbench build is platform-neutral. A product repository may
-link reviewed target knowledge through a thin provider host. In this
+The standalone Workbench build is target-neutral. A product repository may
+link reviewed chip knowledge and production verification through independent
+provider descriptors in a thin host. In this
 repository, `cargo vendor-binary-workbench` selects the ESP32-S31 host under
 `verification/vendor/targets/esp32s31/workbench-host`; invoking the generic
-package directly installs no platform provider.
+package directly installs no add-on provider.
 
 For an existing project:
 
@@ -36,13 +37,18 @@ These three commands answer different questions:
   reviewed workspaces internally consistent?
 - `files`: which files are local, external, reviewed, generated, or missing?
 - `status`: which analysis, review, verification, and publication phases have
-  usable outputs and current qualification results?
+  usable outputs and current policy results?
 
 `status` is the fast everyday overview. It checks typed gates and compact
 summaries, but deliberately does not deserialize every artifact-wide report or
 regenerate publication output. Use `project doctor` for deep input/evidence
 and reviewed-workspace validation and `project check` to reproduce every
 generated result byte for byte before publishing or merging a replacement.
+
+Workbench assurance is not the product readiness authority. The repository's
+[verification and qualification contract](../../docs/VERIFICATION_AND_QUALIFICATION.md)
+defines which results are supporting research and which exact production
+traces may enter the qualification ledger.
 
 Use `--details` only when you need the complete component or file inventory.
 Use `--format json` for automation. Human results go to stdout; diagnostics,
@@ -144,8 +150,8 @@ cargo vendor-binary-workbench advanced ir export --help
 cargo vendor-binary-workbench advanced execute compare --help
 ```
 
-The generic repository boundary and the product-provider workflow are
-documented in [repository separation](docs/repository-separation.md).
+The generic repository boundary and product-provider workflow are documented
+in [architecture](docs/architecture.md).
 
 ## Resource safety
 
@@ -170,14 +176,13 @@ format is human or JSON.
 
 ## Documentation
 
-- [Getting started with the ESP32-S31 project](docs/getting-started.md)
-- [Project files and ownership](docs/project-workspace.md)
-- [Register discovery, review, SVD, and PAC](docs/register-workspace.md)
-- [Focused function investigation](docs/function-investigation.md)
-- [Verification and evidence](docs/verification.md)
-- [Architecture and responsibility boundaries](docs/internals.md)
+- [Project workflow and file ownership](docs/project-workflow.md)
+- [Binary analysis, semantic IR and pseudo-Rust](docs/analysis-and-semantic-ir.md)
+- [Verification policy and evidence](docs/verification.md)
+- [Register discovery, SVD and PAC generation](docs/registers-and-pac.md)
+- [Architecture and responsibility boundaries](docs/architecture.md)
+- [Persistent formats and schemas](docs/formats.md)
 - [Read-only TUI](docs/tui.md)
-- [Product TODO](TODO.md)
 
 Shell completions and the complete command manual are generated from the same
 `clap` grammar:

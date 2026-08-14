@@ -1,11 +1,9 @@
 use std::collections::BTreeMap;
 
 use open_esp_radio_dma::{HardwareOwnedTxDma, PreparedTxDma};
-use open_esp_radio_esp32s31_pac::{
-    MacHtTxProgram, MacInterface, MacKeyInstallOutcome, MacLegacyTxProgram,
+use open_esp_radio_esp32s31_hal::types::{
+    MacHtTxProgram, MacInterface, MacInterruptMask, MacKeyInstallOutcome, MacLegacyTxProgram,
     MacTxCompletionRegisters, MacTxDetachOutcome, MacTxDetachReason, MacTxQueueDetached,
-    Register32,
-    mac::{self, init as mac_init},
 };
 use open_esp_radio_esp32s31_wifi_dma::descriptor::{
     BIT_30, BIT_31, DESCRIPTOR_BYTES, Descriptor, LENGTH_SHIFT, descriptor_address_valid,
@@ -60,28 +58,211 @@ use open_esp_radio_ieee80211::trigger::{
 };
 use open_esp_radio_wifi_softmac::{MacRxEvidence, MacRxMetadata};
 
+/// Logical register identities used by the protocol-layer test double.
+///
+/// These values deliberately carry no address, width, reset value or access
+/// authority. Register addresses and access policy are tested by the PAC and
+/// HAL owners; this test observes only which logical hardware operation the
+/// MAC requested.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+enum TestRegister {
+    Named(&'static str),
+    Indexed(&'static str, u8),
+    CryptoKeyWord(u8, u8),
+}
+
+const fn named(name: &'static str) -> TestRegister {
+    TestRegister::Named(name)
+}
+
+const fn indexed(name: &'static str, index: u8) -> TestRegister {
+    TestRegister::Indexed(name, index)
+}
+
+#[derive(Clone, Copy)]
+struct TestField(u32);
+
+impl TestField {
+    const fn mask(self) -> u32 {
+        self.0
+    }
+}
+
+mod mac {
+    use super::{TestField, TestRegister, indexed, named};
+
+    pub const RX_CONTROL: TestRegister = named("RX_CONTROL");
+    pub const RX_DESCRIPTOR_BASE: TestRegister = named("RX_DESCRIPTOR_BASE");
+    pub const RX_NEXT_DESCRIPTOR: TestRegister = named("RX_NEXT_DESCRIPTOR");
+    pub const RX_LAST_DESCRIPTOR: TestRegister = named("RX_LAST_DESCRIPTOR");
+    pub const RX_LAST_DESCRIPTOR_HIGH: TestRegister = named("RX_LAST_DESCRIPTOR_HIGH");
+    pub const CRYPTO_KEY_VALID_BITMAP: TestRegister = named("CRYPTO_KEY_VALID_BITMAP");
+    pub const CRYPTO_POLICY_CONTROL: TestRegister = named("CRYPTO_POLICY_CONTROL");
+    pub const CRYPTO_INTERFACE_CONTROL: [TestRegister; 3] = [
+        indexed("CRYPTO_INTERFACE_CONTROL", 0),
+        indexed("CRYPTO_INTERFACE_CONTROL", 1),
+        indexed("CRYPTO_INTERFACE_CONTROL", 2),
+    ];
+    pub const CRYPTO_KEY_ENTRY_WORDS: u8 = 10;
+
+    pub const TX_Q_CONFIG: [TestRegister; 4] = queue("TX_Q_CONFIG");
+    pub const TX_Q_CONTROL: [TestRegister; 4] = queue("TX_Q_CONTROL");
+    pub const TX_Q_PPDU_CONTROL: [TestRegister; 4] = queue("TX_Q_PPDU_CONTROL");
+    pub const TX_Q_PROTECTION: [TestRegister; 4] = queue("TX_Q_PROTECTION");
+    pub const TX_Q_PLCP1: [TestRegister; 4] = queue("TX_Q_PLCP1");
+    pub const TX_Q_PTI: [TestRegister; 4] = queue("TX_Q_PTI");
+    pub const TX_Q_HT_SIGNAL: [TestRegister; 4] = queue("TX_Q_HT_SIGNAL");
+    pub const TX_Q_POWER: [TestRegister; 4] = queue("TX_Q_POWER");
+    pub const TX_Q_HT_DESCRIPTOR_COUNTS: [TestRegister; 4] = queue("TX_Q_HT_DESCRIPTOR_COUNTS");
+    pub const TX_Q_DATA_LENGTH: [TestRegister; 4] = queue("TX_Q_DATA_LENGTH");
+    pub const TX_Q_LENGTH_CONTROL: [TestRegister; 4] = queue("TX_Q_LENGTH_CONTROL");
+    pub const TX_Q0_CONTROL: TestRegister = TX_Q_CONTROL[0];
+    pub const TX_STATE_CLEAR: TestRegister = named("TX_STATE_CLEAR");
+    pub const TX_STATE: TestRegister = named("TX_STATE");
+    pub const TX_CCA_CONTROL: TestRegister = named("TX_CCA_CONTROL");
+    pub const TX_COMPLETE_CLEAR: TestRegister = named("TX_COMPLETE_CLEAR");
+    pub const TX_COMPLETE_STATE: TestRegister = named("TX_COMPLETE_STATE");
+    pub const TX_COMPLETE_PRIMARY: [TestRegister; 4] = queue("TX_COMPLETE_PRIMARY");
+    pub const TX_COMPLETE_ALTERNATE: [TestRegister; 4] = queue("TX_COMPLETE_ALTERNATE");
+    pub const TX_COMPLETE_AUX_A: [TestRegister; 4] = queue("TX_COMPLETE_AUX_A");
+    pub const TX_COMPLETE_AUX_B: [TestRegister; 4] = queue("TX_COMPLETE_AUX_B");
+    pub const TX_COMPLETE_AUX_C: [TestRegister; 4] = queue("TX_COMPLETE_AUX_C");
+    pub const TX_COMPLETE_PRIMARY_Q0: TestRegister = TX_COMPLETE_PRIMARY[0];
+    pub const TX_COMPLETE_ALTERNATE_Q0: TestRegister = TX_COMPLETE_ALTERNATE[0];
+    pub const TX_COMPLETE_AUX_A_Q0: TestRegister = TX_COMPLETE_AUX_A[0];
+    pub const TX_COMPLETE_AUX_B_Q0: TestRegister = TX_COMPLETE_AUX_B[0];
+    pub const TX_COMPLETE_AUX_C_Q0: TestRegister = TX_COMPLETE_AUX_C[0];
+
+    const fn queue(name: &'static str) -> [TestRegister; 4] {
+        [
+            indexed(name, 0),
+            indexed(name, 1),
+            indexed(name, 2),
+            indexed(name, 3),
+        ]
+    }
+
+    pub const fn crypto_key_entry_word(index: u8, word: u8) -> Option<TestRegister> {
+        if index < 25 && word < CRYPTO_KEY_ENTRY_WORDS {
+            Some(TestRegister::CryptoKeyWord(index, word))
+        } else {
+            None
+        }
+    }
+
+    pub mod rx_control {
+        use super::TestField;
+        pub const APPEND_DESCRIPTOR_RELOAD: TestField = TestField(1);
+        pub const WALKER_ENABLE: TestField = TestField(1 << 31);
+    }
+
+    pub mod tx_state {
+        pub const TIMEOUT_SHIFT: u32 = 16;
+    }
+
+    pub mod tx_cca_control {
+        use super::TestField;
+        pub const FORCE: TestField = TestField(3 << 30);
+    }
+}
+
+mod mac_init {
+    use super::{TestRegister, indexed, named};
+
+    pub const HANDSHAKE: TestRegister = named("HANDSHAKE");
+    pub const R_4C00: TestRegister = named("R_4C00");
+    pub const R_407C: TestRegister = named("R_407C");
+    pub const R_4098: TestRegister = named("R_4098");
+    pub const R_4114: TestRegister = named("R_4114");
+    pub const R_4118: TestRegister = named("R_4118");
+    pub const R_4120: TestRegister = named("R_4120");
+    pub const R_4308: TestRegister = named("R_4308");
+    pub const R_444C: TestRegister = named("R_444C");
+    pub const R_4450: TestRegister = named("R_4450");
+    pub const R_4458: TestRegister = named("R_4458");
+    pub const R_445C: TestRegister = named("R_445C");
+    pub const R_4C1C: TestRegister = named("R_4C1C");
+    pub const R_4C20: TestRegister = named("R_4C20");
+    pub const R_4C24: TestRegister = named("R_4C24");
+    pub const R_4C54: TestRegister = named("R_4C54");
+    pub const R_4C58: TestRegister = named("R_4C58");
+    pub const R_4C60: TestRegister = named("R_4C60");
+    pub const R_4C68: TestRegister = named("R_4C68");
+    pub const R_4C6C: TestRegister = named("R_4C6C");
+    pub const R_4C8C: TestRegister = named("R_4C8C");
+    pub const R_4C98: TestRegister = named("R_4C98");
+    pub const R_4CA0: TestRegister = named("R_4CA0");
+    pub const R_4CA8: TestRegister = named("R_4CA8");
+    pub const R_4E04: TestRegister = named("R_4E04");
+    pub const R_8060: TestRegister = named("R_8060");
+    pub const R_807C: TestRegister = named("R_807C");
+
+    pub const INTERFACE_ADDRESS_LOW: [TestRegister; 4] = group("INTERFACE_ADDRESS_LOW");
+    pub const INTERFACE_ADDRESS_HIGH: [TestRegister; 4] = group("INTERFACE_ADDRESS_HIGH");
+    pub const RX_FILTER: [TestRegister; 4] = group("RX_FILTER");
+    pub const BSSID_LOW: [TestRegister; 4] = group("BSSID_LOW");
+    pub const BSSID_HIGH: [TestRegister; 4] = group("BSSID_HIGH");
+    pub const RX_QUEUE_DEFAULT: [TestRegister; 4] = group("RX_QUEUE_DEFAULT");
+    pub const CRYPTO_BYPASS: [TestRegister; 5] = [
+        indexed("CRYPTO_BYPASS", 0),
+        indexed("CRYPTO_BYPASS", 1),
+        indexed("CRYPTO_BYPASS", 2),
+        indexed("CRYPTO_BYPASS", 3),
+        indexed("CRYPTO_BYPASS", 4),
+    ];
+    pub const LAST_RX_BUFFER: [TestRegister; 18] = [
+        indexed("LAST_RX_BUFFER", 0),
+        indexed("LAST_RX_BUFFER", 1),
+        indexed("LAST_RX_BUFFER", 2),
+        indexed("LAST_RX_BUFFER", 3),
+        indexed("LAST_RX_BUFFER", 4),
+        indexed("LAST_RX_BUFFER", 5),
+        indexed("LAST_RX_BUFFER", 6),
+        indexed("LAST_RX_BUFFER", 7),
+        indexed("LAST_RX_BUFFER", 8),
+        indexed("LAST_RX_BUFFER", 9),
+        indexed("LAST_RX_BUFFER", 10),
+        indexed("LAST_RX_BUFFER", 11),
+        indexed("LAST_RX_BUFFER", 12),
+        indexed("LAST_RX_BUFFER", 13),
+        indexed("LAST_RX_BUFFER", 14),
+        indexed("LAST_RX_BUFFER", 15),
+        indexed("LAST_RX_BUFFER", 16),
+        indexed("LAST_RX_BUFFER", 17),
+    ];
+
+    const fn group(name: &'static str) -> [TestRegister; 4] {
+        [
+            indexed(name, 0),
+            indexed(name, 1),
+            indexed(name, 2),
+            indexed(name, 3),
+        ]
+    }
+}
+
 trait Mmio {
-    fn read32(&mut self, register: Register32) -> u32;
-    fn write32(&mut self, register: Register32, value: u32);
+    fn read32(&mut self, register: TestRegister) -> u32;
+    fn write32(&mut self, register: TestRegister, value: u32);
     fn fence(&mut self);
 }
 
-const RX_CONTROL: Register32 = mac::RX_CONTROL;
-const RX_DESCRIPTOR_BASE: Register32 = mac::RX_DESCRIPTOR_BASE;
-const RX_LAST_DESCRIPTOR: Register32 = mac::RX_LAST_DESCRIPTOR;
-const RX_LAST_DESCRIPTOR_HIGH: Register32 = mac::RX_LAST_DESCRIPTOR_HIGH;
-const RX_NEXT_DESCRIPTOR: Register32 = mac::RX_NEXT_DESCRIPTOR;
-const TX_CCA_CONTROL: Register32 = mac::TX_CCA_CONTROL;
-const TX_COMPLETE_ALTERNATE_Q0: Register32 = mac::TX_COMPLETE_ALTERNATE_Q0;
-const TX_COMPLETE_AUX_A_Q0: Register32 = mac::TX_COMPLETE_AUX_A_Q0;
-const TX_COMPLETE_AUX_B_Q0: Register32 = mac::TX_COMPLETE_AUX_B_Q0;
-const TX_COMPLETE_AUX_C_Q0: Register32 = mac::TX_COMPLETE_AUX_C_Q0;
-const TX_COMPLETE_CLEAR: Register32 = mac::TX_COMPLETE_CLEAR;
-const TX_COMPLETE_PRIMARY_Q0: Register32 = mac::TX_COMPLETE_PRIMARY_Q0;
-const TX_COMPLETE_STATE: Register32 = mac::TX_COMPLETE_STATE;
-const TX_Q0_CONTROL: Register32 = mac::TX_Q0_CONTROL;
-const TX_STATE: Register32 = mac::TX_STATE;
-const TX_STATE_CLEAR: Register32 = mac::TX_STATE_CLEAR;
+const RX_CONTROL: TestRegister = mac::RX_CONTROL;
+const RX_DESCRIPTOR_BASE: TestRegister = mac::RX_DESCRIPTOR_BASE;
+const RX_LAST_DESCRIPTOR: TestRegister = mac::RX_LAST_DESCRIPTOR;
+const RX_LAST_DESCRIPTOR_HIGH: TestRegister = mac::RX_LAST_DESCRIPTOR_HIGH;
+const RX_NEXT_DESCRIPTOR: TestRegister = mac::RX_NEXT_DESCRIPTOR;
+const TX_CCA_CONTROL: TestRegister = mac::TX_CCA_CONTROL;
+const TX_COMPLETE_ALTERNATE_Q0: TestRegister = mac::TX_COMPLETE_ALTERNATE_Q0;
+const TX_COMPLETE_AUX_A_Q0: TestRegister = mac::TX_COMPLETE_AUX_A_Q0;
+const TX_COMPLETE_AUX_B_Q0: TestRegister = mac::TX_COMPLETE_AUX_B_Q0;
+const TX_COMPLETE_AUX_C_Q0: TestRegister = mac::TX_COMPLETE_AUX_C_Q0;
+const TX_COMPLETE_CLEAR: TestRegister = mac::TX_COMPLETE_CLEAR;
+const TX_COMPLETE_PRIMARY_Q0: TestRegister = mac::TX_COMPLETE_PRIMARY_Q0;
+const TX_COMPLETE_STATE: TestRegister = mac::TX_COMPLETE_STATE;
+const TX_Q0_CONTROL: TestRegister = mac::TX_Q0_CONTROL;
+const TX_STATE: TestRegister = mac::TX_STATE;
+const TX_STATE_CLEAR: TestRegister = mac::TX_STATE_CLEAR;
 
 const RX_ENABLE: u32 = mac::rx_control::WALKER_ENABLE.mask();
 const RX_RELOAD: u32 = mac::rx_control::APPEND_DESCRIPTOR_RELOAD.mask();
@@ -92,8 +273,8 @@ const TX_COMPLETE_Q0: u32 = 1;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Operation {
-    Read(Register32),
-    Write(Register32, u32),
+    Read(TestRegister),
+    Write(TestRegister, u32),
     InitializeMacAntenna,
     InitializeHalTail(u32, MacSlowClockCalibration),
     InitializeColdCoex(MacColdCoexPti),
@@ -109,14 +290,14 @@ enum Operation {
 
 #[derive(Default)]
 struct MockMmio {
-    words: BTreeMap<Register32, u32>,
+    words: BTreeMap<TestRegister, u32>,
     operations: Vec<Operation>,
     interrupt_status: u32,
     interrupt_enable: u32,
 }
 
 impl MockMmio {
-    fn set(&mut self, register: Register32, value: u32) {
+    fn set(&mut self, register: TestRegister, value: u32) {
         self.words.insert(register, value);
     }
 
@@ -126,12 +307,12 @@ impl MockMmio {
 }
 
 impl Mmio for MockMmio {
-    fn read32(&mut self, register: Register32) -> u32 {
+    fn read32(&mut self, register: TestRegister) -> u32 {
         self.operations.push(Operation::Read(register));
         self.words.get(&register).copied().unwrap_or(0)
     }
 
-    fn write32(&mut self, register: Register32, value: u32) {
+    fn write32(&mut self, register: TestRegister, value: u32) {
         self.operations.push(Operation::Write(register, value));
         self.words.insert(register, value);
     }
@@ -316,7 +497,7 @@ impl StaLinkRxPolicyHardware for MockMmio {
         );
         let current = self.read32(bssid);
         self.write32(bssid, current | (1 << 31));
-        let mut modify = |register: Register32, mask: u32, value: u32| {
+        let mut modify = |register: TestRegister, mask: u32, value: u32| {
             let current = self.read32(register);
             self.write32(register, (current & !mask) | (value & mask));
         };
@@ -406,7 +587,7 @@ impl MacColdAntennaHardware for MockMmio {
 impl MacColdHalTailHardware for MockMmio {
     fn initialize_hal_tail(
         &mut self,
-        event_mask: open_esp_radio_esp32s31_pac::MacInterruptMask,
+        event_mask: MacInterruptMask,
         slow_clock_calibration: MacSlowClockCalibration,
     ) {
         self.operations.push(Operation::InitializeHalTail(
@@ -438,7 +619,7 @@ impl MacColdHeHardware for MockMmio {
 }
 
 impl MacColdEnableHardware for MockMmio {
-    fn enable_mac_interrupts(&mut self, event_mask: open_esp_radio_esp32s31_pac::MacInterruptMask) {
+    fn enable_mac_interrupts(&mut self, event_mask: MacInterruptMask) {
         let current = self.read32(mac_init::R_4C00);
         self.write32(mac_init::R_4C00, current & !0x0000_00f0);
         self.interrupt_enable = event_mask.bits();
@@ -484,7 +665,7 @@ impl MacColdLastRxBufferHardware for MockMmio {
 
 impl MacColdTxRxHardware for MockMmio {
     fn initialize_txrx_prefix(&mut self) {
-        let mut modify = |register: Register32, mask: u32, value: u32| {
+        let mut modify = |register: TestRegister, mask: u32, value: u32| {
             let current = self.read32(register);
             self.write32(register, (current & !mask) | (value & mask));
         };
@@ -510,7 +691,7 @@ impl MacColdTxRxHardware for MockMmio {
     fn initialize_txrx_callbacks(&mut self, delay_slot: MacDelaySlot) {
         let slot = u32::from(delay_slot.value());
         {
-            let mut modify = |register: Register32, mask: u32, value: u32| {
+            let mut modify = |register: TestRegister, mask: u32, value: u32| {
                 let current = self.read32(register);
                 self.write32(register, (current & !mask) | (value & mask));
             };
@@ -529,7 +710,7 @@ impl MacColdTxRxHardware for MockMmio {
     }
 
     fn initialize_txrx_suffix(&mut self) {
-        let mut modify = |register: Register32, mask: u32, value: u32| {
+        let mut modify = |register: TestRegister, mask: u32, value: u32| {
             let current = self.read32(register);
             self.write32(register, (current & !mask) | (value & mask));
         };
@@ -547,7 +728,7 @@ impl MacColdTxRxHardware for MockMmio {
 
 impl MacColdRxPolicyHardware for MockMmio {
     fn initialize_cold_receive_policy(&mut self) {
-        fn modify(mmio: &mut MockMmio, register: Register32, mask: u32, value: u32) {
+        fn modify(mmio: &mut MockMmio, register: TestRegister, mask: u32, value: u32) {
             let current = mmio.read32(register);
             mmio.write32(register, (current & !mask) | (value & mask));
         }
@@ -596,7 +777,7 @@ impl MacLowRateHardware for MockMmio {
 
 impl MacColdRxBufferHardware for MockMmio {
     fn initialize_rx_buffer_prefix(&mut self) {
-        let mut modify = |register: Register32, mask: u32, value: u32| {
+        let mut modify = |register: TestRegister, mask: u32, value: u32| {
             let current = self.read32(register);
             self.write32(register, (current & !mask) | (value & mask));
         };
@@ -925,10 +1106,10 @@ impl MacDelayEntropy for MockPlatform {
 }
 
 impl MacSlowClockCalibrationSource for MockPlatform {
-    fn mac_slow_clock_calibration(&mut self) -> u32 {
+    fn mac_slow_clock_calibration(&mut self) -> MacSlowClockCalibration {
         self.operations
             .push(PlatformOperation::RequestSlowClockCalibration);
-        0
+        MacSlowClockCalibration::Unavailable
     }
 }
 
@@ -997,13 +1178,17 @@ fn mac_delay_slot_reproduces_vendor_modulo_eleven() {
 
 #[test]
 fn slow_clock_calibration_reproduces_vendor_eighteen_bit_truncation() {
-    assert_eq!(MacSlowClockCalibration::from_osi_value(0).value(), 0);
+    assert_eq!(MacSlowClockCalibration::Unavailable.register_value(), 0);
     assert_eq!(
-        MacSlowClockCalibration::from_osi_value(0x0003_ffff).value(),
+        MacSlowClockCalibration::from_osi_value(0).register_value(),
+        0
+    );
+    assert_eq!(
+        MacSlowClockCalibration::from_osi_value(0x0003_ffff).register_value(),
         0x0003_ffff
     );
     assert_eq!(
-        MacSlowClockCalibration::from_osi_value(0xabcd_0001).value(),
+        MacSlowClockCalibration::from_osi_value(0xabcd_0001).register_value(),
         0x0001_0001
     );
 }
@@ -1262,7 +1447,7 @@ fn cold_mac_init_uses_only_pac_registers_and_publishes_both_interfaces() {
     assert!(mmio.operations().contains(&Operation::InitializeMacAntenna));
     assert!(mmio.operations().contains(&Operation::InitializeHalTail(
         0x19a8_79e0,
-        MacSlowClockCalibration::from_osi_value(0),
+        MacSlowClockCalibration::Unavailable,
     )));
     assert!(
         mmio.operations()
@@ -1361,7 +1546,7 @@ fn sta_link_rx_policy_matches_live_vendor_policy_six() {
 
     assert_eq!(
         mmio.words.get(&mac_init::RX_FILTER[0]),
-        Some(&(u32::MAX & !((1 << 10) | (1 << 6) | (1 << 4))))
+        Some(&!((1 << 10) | (1 << 6) | (1 << 4)))
     );
     assert_eq!(mmio.words.get(&mac_init::BSSID_LOW[0]), Some(&0x54c8_15dc));
     assert_eq!(mmio.words.get(&mac_init::BSSID_HIGH[0]), Some(&0xbfff_1ebc));
@@ -1487,7 +1672,10 @@ fn live_rx_ring_owns_physical_cold_order_reload_and_rom_base_repair() {
     assert_eq!(topology.visited_descriptors, COUNT);
     assert_eq!(topology.terminal_descriptors, 1);
 
-    let mut live = stopped.start(&mut mmio).unwrap();
+    let mut live = stopped
+        .try_start(&mut mmio)
+        .map_err(|(_, error)| error)
+        .unwrap();
     let completed = BUFFER_SIZE | (80 << LENGTH_SHIFT) | BIT_30 | BIT_31;
     descriptors[0].write_word0(completed);
     descriptors[1].write_word0(completed);
@@ -1739,7 +1927,10 @@ fn live_rx_ring_can_replenish_one_descriptor_per_rom_append() {
             Ok(())
         })
         .unwrap();
-    let mut live = stopped.start(&mut mmio).unwrap();
+    let mut live = stopped
+        .try_start(&mut mmio)
+        .map_err(|(_, error)| error)
+        .unwrap();
     let completed = BUFFER_SIZE | (80 << LENGTH_SHIFT) | BIT_30 | BIT_31;
 
     descriptors[0].write_word0(completed);
@@ -1801,7 +1992,10 @@ fn live_rx_ring_republishes_an_exhausted_software_list_without_a_self_link() {
             Ok(())
         })
         .unwrap();
-    let mut live = stopped.start(&mut mmio).unwrap();
+    let mut live = stopped
+        .try_start(&mut mmio)
+        .map_err(|(_, error)| error)
+        .unwrap();
     let completed = BUFFER_SIZE | (80 << LENGTH_SHIFT) | BIT_30 | BIT_31;
 
     // First append descriptor zero normally, making it the accepted tail of
@@ -1893,7 +2087,10 @@ fn live_rx_ring_does_not_rewrite_a_nonterminal_link_before_next_accepts_it() {
             Ok(())
         })
         .unwrap();
-    let mut live = stopped.start(&mut mmio).unwrap();
+    let mut live = stopped
+        .try_start(&mut mmio)
+        .map_err(|(_, error)| error)
+        .unwrap();
     let completed = BUFFER_SIZE | (80 << LENGTH_SHIFT) | BIT_30 | BIT_31;
     descriptors[0].write_word0(completed);
 
@@ -1926,24 +2123,27 @@ fn exercise_single_descriptor_rx_interleavings<const COUNT: usize>() {
             Ok(())
         })
         .unwrap();
-    let mut live = stopped.start(&mut mmio).unwrap();
+    let mut live = stopped
+        .try_start(&mut mmio)
+        .map_err(|(_, error)| error)
+        .unwrap();
     let completed = BUFFER_SIZE | (80 << LENGTH_SHIFT) | BIT_30 | BIT_31;
 
     // Two complete rotations cover both the cold physical topology and the
     // live topology assembled entirely through append/reload transactions.
     for epoch in 0..2 {
-        for cursor in 0..COUNT {
+        for (cursor, descriptor) in descriptors.iter().enumerate() {
             assert_eq!(
                 live.recycle_start(),
                 cursor,
                 "epoch {epoch}, cursor {cursor}"
             );
-            let old_next = descriptors[cursor].next_address();
+            let old_next = descriptor.next_address();
             assert_ne!(
                 old_next, 0,
                 "the live head must not also be the accepted terminal"
             );
-            descriptors[cursor].write_word0(completed);
+            descriptor.write_word0(completed);
             mmio.set(RX_LAST_DESCRIPTOR, BASE + cursor as u32 * DESCRIPTOR_BYTES);
             assert!(live.take_completed(cursor).is_some());
 
@@ -2008,7 +2208,10 @@ fn live_rx_frontier_rejects_last_beyond_the_accepted_tail_during_reload() {
             Ok(())
         })
         .unwrap();
-    let mut live = stopped.start(&mut mmio).unwrap();
+    let mut live = stopped
+        .try_start(&mut mmio)
+        .map_err(|(_, error)| error)
+        .unwrap();
     let completed = BUFFER_SIZE | (80 << LENGTH_SHIFT) | BIT_30 | BIT_31;
 
     descriptors[0].write_word0(completed);
@@ -2055,7 +2258,10 @@ fn live_rx_recycle_rejects_a_corrupt_append_tail_before_any_mutation() {
             Ok(())
         })
         .unwrap();
-    let mut live = stopped.start(&mut mmio).unwrap();
+    let mut live = stopped
+        .try_start(&mut mmio)
+        .map_err(|(_, error)| error)
+        .unwrap();
     let completed = BUFFER_SIZE | (80 << LENGTH_SHIFT) | BIT_30 | BIT_31;
 
     descriptors[0].write_word0(completed);
@@ -2117,7 +2323,10 @@ fn live_rx_ring_snapshots_only_the_current_contiguous_frontier() {
             Ok(())
         })
         .unwrap();
-    let mut live = stopped.start(&mut mmio).unwrap();
+    let mut live = stopped
+        .try_start(&mut mmio)
+        .map_err(|(_, error)| error)
+        .unwrap();
     let completed = BUFFER_SIZE | (80 << LENGTH_SHIFT) | BIT_30 | BIT_31;
 
     assert_eq!(live.completed_frontier_len(), 0);
@@ -2160,7 +2369,10 @@ fn live_rx_ring_transfers_and_recycles_one_chained_unit_atomically() {
             Ok(())
         })
         .unwrap();
-    let mut live = stopped.start(&mut mmio).unwrap();
+    let mut live = stopped
+        .try_start(&mut mmio)
+        .map_err(|(_, error)| error)
+        .unwrap();
     descriptors[0].write_word0(BUFFER_SIZE | (BUFFER_SIZE << LENGTH_SHIFT) | BIT_31);
     descriptors[1].write_word0(BUFFER_SIZE | (80 << LENGTH_SHIFT) | BIT_30 | BIT_31);
     mmio.set(RX_LAST_DESCRIPTOR, BASE + DESCRIPTOR_BYTES);
@@ -2212,7 +2424,10 @@ fn live_rx_ring_replenishes_the_available_variable_prefix() {
             Ok(())
         })
         .unwrap();
-    let mut live = stopped.start(&mut mmio).unwrap();
+    let mut live = stopped
+        .try_start(&mut mmio)
+        .map_err(|(_, error)| error)
+        .unwrap();
     let completed = BUFFER_SIZE | (80 << LENGTH_SHIFT) | BIT_30 | BIT_31;
 
     descriptors[0].write_word0(completed);
@@ -2268,7 +2483,10 @@ fn staged_rx_frame_remains_private_until_reload_settles() {
             Ok(())
         })
         .unwrap();
-    let mut live = stopped.start(&mut mmio).unwrap();
+    let mut live = stopped
+        .try_start(&mut mmio)
+        .map_err(|(_, error)| error)
+        .unwrap();
     descriptors[0].write_word0(BUFFER_SIZE | (4 << LENGTH_SHIFT) | BIT_30 | BIT_31);
     mmio.set(RX_LAST_DESCRIPTOR, BASE);
     mmio.set(RX_NEXT_DESCRIPTOR, BASE + DESCRIPTOR_BYTES);
@@ -2327,7 +2545,10 @@ fn staged_rx_reload_timeout_is_exact_and_releases_the_private_copy() {
             Ok(())
         })
         .unwrap();
-    let mut live = stopped.start(&mut mmio).unwrap();
+    let mut live = stopped
+        .try_start(&mut mmio)
+        .map_err(|(_, error)| error)
+        .unwrap();
     descriptors[0].write_word0(BUFFER_SIZE | (4 << LENGTH_SHIFT) | BIT_30 | BIT_31);
     mmio.set(RX_LAST_DESCRIPTOR, BASE);
     mmio.set(RX_NEXT_DESCRIPTOR, BASE + DESCRIPTOR_BYTES);
@@ -2888,12 +3109,14 @@ fn ccmp_data_rx_rejects_missing_extiv_and_hardware_mic_failure() {
 
 #[test]
 fn irq_state_coalesces_known_bits_and_records_unknown_bits() {
-    let mut mmio = MockMmio::default();
-    mmio.interrupt_enable = u32::MAX;
-    mmio.interrupt_status = MAC_INT_TX_COMPLETE
-        | MAC_INT_RX_SUCCESS
-        | MAC_INT_RX_ASSOCIATED_AUXILIARY_MASK
-        | 0x8000_0000;
+    let mut mmio = MockMmio {
+        interrupt_enable: u32::MAX,
+        interrupt_status: MAC_INT_TX_COMPLETE
+            | MAC_INT_RX_SUCCESS
+            | MAC_INT_RX_ASSOCIATED_AUXILIARY_MASK
+            | 0x8000_0000,
+        ..MockMmio::default()
+    };
     let state = IrqState::new();
     let (disposition, snapshot) = handle_mac_irq(&mut mmio, &state);
 
@@ -2912,9 +3135,11 @@ fn irq_state_coalesces_known_bits_and_records_unknown_bits() {
 
 #[test]
 fn irq_acknowledges_auxiliary_status_without_posting_independent_work() {
-    let mut mmio = MockMmio::default();
-    mmio.interrupt_enable = u32::MAX;
-    mmio.interrupt_status = MAC_INT_RX_ASSOCIATED_AUXILIARY_MASK;
+    let mut mmio = MockMmio {
+        interrupt_enable: u32::MAX,
+        interrupt_status: MAC_INT_RX_ASSOCIATED_AUXILIARY_MASK,
+        ..MockMmio::default()
+    };
     let state = IrqState::new();
     let (disposition, snapshot) = handle_mac_irq(&mut mmio, &state);
 
@@ -2932,10 +3157,14 @@ fn irq_acknowledges_auxiliary_status_without_posting_independent_work() {
 
 #[test]
 fn irq_state_exposes_vendor_run_to_completion_order() {
-    let mut mmio = MockMmio::default();
-    mmio.interrupt_enable = u32::MAX;
-    mmio.interrupt_status =
-        MAC_INT_COLLISION | MAC_INT_TX_TIMEOUT | MAC_INT_TX_COMPLETE | MAC_INT_RX_SUCCESS;
+    let mut mmio = MockMmio {
+        interrupt_enable: u32::MAX,
+        interrupt_status: MAC_INT_COLLISION
+            | MAC_INT_TX_TIMEOUT
+            | MAC_INT_TX_COMPLETE
+            | MAC_INT_RX_SUCCESS,
+        ..MockMmio::default()
+    };
     let state = IrqState::new();
     assert_eq!(handle_mac_irq(&mut mmio, &state).0, IrqDisposition::Posted);
 
@@ -3983,8 +4212,8 @@ fn ht_single_and_ampdu_formatters_cover_every_mcs_width_and_gi() {
                     (aggregate.ht_signal >> 7) & 1,
                     (width == HtChannelWidth::Mhz40) as u32
                 );
-                assert_eq!(single.plcp1 & 0x2000_0000 != 0, false);
-                assert_eq!(aggregate.plcp1 & 0x2000_0000 != 0, false);
+                assert!(!(single.plcp1 & 0x2000_0000 != 0));
+                assert!(!(aggregate.plcp1 & 0x2000_0000 != 0));
             }
         }
     }

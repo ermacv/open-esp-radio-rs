@@ -8,8 +8,7 @@ use crate::{
     },
     tx::{HeEdcaTxopLimit, HeMcs, HtPeerAmpduParameters},
 };
-use open_esp_radio_esp32s31_hal::wifi_mac::WifiMacHal;
-use open_esp_radio_esp32s31_pac::RadioRegisters;
+use open_esp_radio_esp32s31_hal::{RadioRuntimeOwner, wifi_mac::WifiMacHal};
 use open_esp_radio_ieee80211::{
     he::{
         He20Capabilities, He20PeerState, HeDcmConstellation, HeElementError, HeMcsNssSupport,
@@ -35,28 +34,31 @@ impl StaLinkRxPolicyHardware for WifiMacHal<'_> {
     }
 }
 
-impl StaLinkRxPolicyHardware for RadioRegisters {
-    fn apply_sta_link_policy(&mut self, bssid: [u8; 6]) {
-        // Initial association still owns the unique PAC value directly. Keep
-        // the trait implementation as an adapter only: the reviewed register
-        // transaction remains defined and executed by the closed MAC HAL.
-        StaLinkRxPolicyHardware::apply_sta_link_policy(&mut WifiMacHal::new(self), bssid);
+impl StaNoiseFloorHardware for WifiMacHal<'_> {
+    fn read_noise_floor_dbm(&self) -> i8 {
+        self.read_noise_floor_dbm()
     }
 }
 
-impl StaNoiseFloorHardware for RadioRegisters {
+impl StaLinkRxPolicyHardware for RadioRuntimeOwner {
+    fn apply_sta_link_policy(&mut self, bssid: [u8; 6]) {
+        self.wifi_mac_hal().configure_station_receive_policy(bssid);
+    }
+}
+
+impl StaNoiseFloorHardware for RadioRuntimeOwner {
     fn read_noise_floor_dbm(&self) -> i8 {
-        RadioRegisters::read_noise_floor_dbm(self)
+        RadioRuntimeOwner::read_noise_floor_dbm(self)
     }
 }
 
 /// Switch RX queue zero from the cold/default scan policy to the associated
 /// station-link policy.
 ///
-/// This is the source-owned form of migration's
+/// This is the source-owned form of the reviewed
 /// `scan::enable_sta_link_rx_policy`, completed with the preceding
 /// `ic_set_bssid`/`hal_mac_set_bssid` transaction recovered from the same
-/// vendor STA transition. Unlike migration's policy-five snapshot, the final
+/// vendor STA transition. Unlike the earlier policy-five snapshot, the final
 /// UBSSID edge follows `wifi_set_rx_policy(6)`, which is the branch observed
 /// immediately before the first live vendor Authentication TX.
 ///

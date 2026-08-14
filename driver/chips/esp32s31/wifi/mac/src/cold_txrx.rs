@@ -1,6 +1,6 @@
 //! Ownership boundary for the complete cold `mac_txrx_init` transaction.
 
-use open_esp_radio_esp32s31_pac::ColdRadioRegisters;
+use open_esp_radio_esp32s31_hal::wifi_mac::WifiMacColdHal;
 
 /// Vendor MAC-delay jitter reduced to the only representable hardware range.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -24,17 +24,17 @@ pub trait MacColdTxRxHardware {
     fn initialize_txrx_suffix(&mut self);
 }
 
-impl MacColdTxRxHardware for ColdRadioRegisters {
+impl MacColdTxRxHardware for WifiMacColdHal<'_> {
     fn initialize_txrx_prefix(&mut self) {
-        self.initialize_mac_txrx_prefix();
+        WifiMacColdHal::initialize_txrx_prefix(self);
     }
 
     fn initialize_txrx_callbacks(&mut self, delay_slot: MacDelaySlot) {
-        let programmed = self.initialize_mac_txrx_callbacks(delay_slot.value());
+        let programmed = self.initialize_txrx_callbacks(delay_slot.value());
         debug_assert!(programmed);
     }
 
     fn initialize_txrx_suffix(&mut self) {
-        self.initialize_mac_txrx_suffix();
+        WifiMacColdHal::initialize_txrx_suffix(self);
     }
 }

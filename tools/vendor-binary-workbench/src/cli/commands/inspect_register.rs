@@ -112,7 +112,7 @@ fn neighbors(
 fn conclusion(detail: &crate::RegisterDetailSummary) -> String {
     match detail.review_status {
         crate::RegisterReviewState::Reviewed | crate::RegisterReviewState::Manual => {
-            "The register has an explicit reviewed project identity; consult its evidence and confidence before relying on field semantics.".to_owned()
+            "The register has an explicit reviewed project identity; consult its provenance, accuracy, completeness, and evidence before relying on field semantics.".to_owned()
         }
         crate::RegisterReviewState::NonOperational => {
             "The address is observed exclusively in reviewed non-operational code. Evidence is retained, but it does not control the driver and does not block publication.".to_owned()

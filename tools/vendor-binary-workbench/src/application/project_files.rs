@@ -93,21 +93,21 @@ pub(crate) fn collect(context: ProjectContext<'_>) -> Result<ProjectFilesReport>
         true,
         None,
     );
-    if let Some(pack) = &project.platform_pack {
+    for (pack_index, pack) in project.ecosystem_packs.iter().enumerate() {
         push(
             &mut files,
-            "platform-pack",
+            format!("ecosystem-pack[{pack_index}]"),
             ProjectFileOwnership::Reviewed,
             &pack.path,
             None,
-            &["semantic analysis", "verification harness"],
+            &["semantic analysis", "interface enrichment"],
             false,
             None,
         );
-        for (index, path) in pack.semantic_catalogs.iter().enumerate() {
+        for (index, path) in pack.knowledge_packs.iter().enumerate() {
             push(
                 &mut files,
-                format!("semantic-catalog[{index}]"),
+                format!("ecosystem-pack[{pack_index}].knowledge[{index}]"),
                 ProjectFileOwnership::Reviewed,
                 path,
                 None,
@@ -117,11 +117,35 @@ pub(crate) fn collect(context: ProjectContext<'_>) -> Result<ProjectFilesReport>
             );
         }
     }
-    if let Some(path) = project
-        .memory_map
-        .as_deref()
-        .or(context.target.memory_map.as_deref())
-    {
+    if let Some(pack) = &project.chip_pack {
+        push(
+            &mut files,
+            "chip-pack",
+            ProjectFileOwnership::Reviewed,
+            &pack.path,
+            None,
+            &[
+                "chip addresses",
+                "register catalogs",
+                "compiled chip knowledge",
+            ],
+            true,
+            None,
+        );
+        for (index, path) in pack.knowledge_packs.iter().enumerate() {
+            push(
+                &mut files,
+                format!("chip-pack.knowledge[{index}]"),
+                ProjectFileOwnership::Reviewed,
+                path,
+                None,
+                &["linked IR", "chip semantics"],
+                false,
+                None,
+            );
+        }
+    }
+    if let Some(path) = project.memory_map.as_deref() {
         push(
             &mut files,
             "memory-map",
@@ -338,21 +362,28 @@ pub(crate) fn collect(context: ProjectContext<'_>) -> Result<ProjectFilesReport>
             &["manual driver analysis"],
         );
     }
-    if let Some(qualification) = &project.qualification {
-        push_reviewed(
-            &mut files,
-            "qualification-pack",
-            &qualification.pack,
-            &["project check"],
-        );
-    }
     if let Some(verification) = &project.verification {
+        if let Some(policy) = &verification.policy {
+            push_reviewed(
+                &mut files,
+                "verification-policy",
+                policy,
+                &["project check"],
+            );
+        }
         push_generated(
             &mut files,
             "verification-report",
             &verification.report,
             "project verify",
             &["project check"],
+        );
+        push_generated(
+            &mut files,
+            "vendor-evidence-index",
+            &verification.evidence_index,
+            "project verify",
+            &["repository qualification check"],
         );
         for suite in &verification.suites {
             for (kind, paths) in [

@@ -348,7 +348,7 @@ mod tests {
     use core::task::{Context, Waker};
 
     use open_esp_radio_embassy_net::{
-        Driver as _, NoopRawMutex, PinnedResources, PinnedTxPool, RxEnqueueError,
+        Driver as _, NoopRawMutex, PinnedTxPool, RxEnqueueError, SplitPinnedResources,
     };
     use open_esp_radio_esp32s31_wifi_mac::connected_rx::{ConnectedRxEvent, ConnectedRxSink};
     use open_esp_radio_ieee80211::data::EthernetFrameParts;
@@ -386,8 +386,14 @@ mod tests {
         const HEADROOM: usize = 32;
         const TRAILER: usize = 8;
         const QUEUE_DEPTH: usize = 1;
-        type Resources =
-            PinnedResources<NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>;
+        type Resources = SplitPinnedResources<
+            NoopRawMutex,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            QUEUE_DEPTH,
+            QUEUE_DEPTH,
+        >;
         type Pool = PinnedTxPool<FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>;
 
         let resources = std::boxed::Box::leak(std::boxed::Box::new(Resources::new()));
@@ -439,8 +445,8 @@ mod tests {
         );
         assert_eq!(sink.observer().0, 2);
         let mut context = Context::from_waker(Waker::noop());
-        assert!(matches!(device.receive(&mut context), Some(_)));
-        assert!(matches!(device.receive(&mut context), None));
+        assert!(device.receive(&mut context).is_some());
+        assert!(device.receive(&mut context).is_none());
 
         let eapol = ConnectedRxEvent::Ethernet {
             frame: EthernetFrameParts {
@@ -457,6 +463,6 @@ mod tests {
         assert_eq!(sink.enqueued(), 1);
         assert_eq!(sink.dropped(), 1);
         assert_eq!(sink.observer().0, 3);
-        assert!(matches!(device.receive(&mut context), None));
+        assert!(device.receive(&mut context).is_none());
     }
 }

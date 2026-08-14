@@ -117,7 +117,7 @@ pub use lifecycle::{
     Esp32s31StationTask, prepare_esp32s31_station_task,
 };
 #[cfg(target_arch = "riscv32")]
-pub use open_esp_radio_esp32s31_wifi::register_arena::Esp32s31RadioRegistersRepublish;
+pub use open_esp_radio_esp32s31_hal::radio_arena::Esp32s31RadioOwnerRepublish;
 #[cfg(target_arch = "riscv32")]
 pub use ownership::{
     Esp32s31StationMaterialized, Esp32s31StationRoleOwner, Esp32s31StationStopped,

@@ -61,17 +61,16 @@ pub(crate) struct ReviewQueueItem {
     pub(crate) message: String,
 }
 
-/// Qualification of the explicit Rust replacement boundary for this scope.
+/// Executable verification coverage of the explicit Rust replacement roots.
 ///
 /// Reachable vendor helpers and their blockers remain analysis inventory;
 /// they do not require invented one-to-one Rust component identities.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
-pub(crate) enum ReplacementQualification {
+pub(crate) enum ReplacementCoverage {
     #[default]
-    NotPublished,
-    Qualified,
-    Blocked,
+    Gaps,
+    Complete,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -79,12 +78,11 @@ pub(crate) enum ReplacementQualification {
 pub(crate) struct ReviewScopeReport {
     pub(crate) id: String,
     pub(crate) publication: bool,
-    /// Current verification assurance joined when the structural document is
-    /// loaded.  It is deliberately absent from `review-scopes.json`: project
-    /// analysis runs before verification and must not persist a stale proof
-    /// snapshot.
+    /// Current executable coverage joined when the structural document is
+    /// loaded. It is deliberately absent from `review-scopes.json`: project
+    /// analysis runs before verification and must not persist stale evidence.
     #[serde(skip)]
-    pub(crate) replacement_qualification: ReplacementQualification,
+    pub(crate) replacement_coverage: ReplacementCoverage,
     pub(crate) analysis_inventory_complete: bool,
     pub(crate) profiles: Vec<String>,
     pub(crate) roots: usize,
@@ -92,7 +90,7 @@ pub(crate) struct ReviewScopeReport {
     /// Distinct explicit roots that require reviewed Rust coverage.
     pub(crate) replacement_functions: usize,
     /// Exact explicit scope roots requiring either verification evidence or a
-    /// reviewed feature-policy disposition.
+    /// reviewed verification-policy disposition.
     pub(crate) replacement_function_keys: Vec<String>,
     /// Every reachable function with a direct observable effect. This is the
     /// fail-closed feature denominator and is intentionally independent from
@@ -149,7 +147,7 @@ impl ReviewScopeReport {
             || self.unresolved_calls != 0
     }
 
-    pub(crate) fn has_replacement_qualification_blockers(&self) -> bool {
+    pub(crate) fn has_replacement_coverage_gaps(&self) -> bool {
         self.replacement_mismatches != 0
             || self.replacement_incomplete != 0
             || self.replacement_unqualified != 0

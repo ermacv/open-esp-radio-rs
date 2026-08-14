@@ -7,7 +7,7 @@ use core::{
 
 use embassy_net::{Config, Ipv4Address, Ipv4Cidr, StackResources, StaticConfigV4};
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
-use open_esp_radio_embassy_net::{PinnedResources, PinnedTxPool};
+use open_esp_radio_embassy_net::{PinnedTxPool, SplitPinnedResources};
 
 const FRAME_CAPACITY: usize = 1_536;
 const TX_HEADROOM: usize = 28;
@@ -27,7 +27,8 @@ fn role_change_delivers_arp_to_the_reconfigured_embassy_stack() {
 
 #[embassy_executor::task]
 async fn run_role_change_arp_test(done: &'static AtomicBool) {
-    type Resources = PinnedResources<NoopRawMutex, FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 2>;
+    type Resources =
+        SplitPinnedResources<NoopRawMutex, FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 2, 2>;
     type TxPool = PinnedTxPool<FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 2>;
 
     let resources = Box::leak(Box::new(Resources::new()));

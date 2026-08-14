@@ -16,7 +16,7 @@ use open_esp_radio_esp32s31_phy::{
     PhyAsyncDelay, PhyCalibrationCache, PhyCalibrationIdentity, PhyRegisterOutcome,
     PhyRegisterRunError, PhyRegisterTransition, PhyState, PhyTargetObserver, PhyTargetPortCounters,
     PhyTargetPortError, PhyTxTargetPowerProfile, TargetPhyRegisterPort, run_phy_register,
-    select_phy_channel,
+    select_phy_channel_with_hal,
 };
 use open_esp_radio_ieee80211::channel::WifiChannel;
 
@@ -174,19 +174,19 @@ where
     };
 
     powered.enable_wifi_rx();
-    let (platform, registers) = powered.parts_mut();
+    let mut channel_hal = powered.channel_hal();
     let mut channel_observer = observer;
     let initial_channel = lower_wifi_channel(config.initial_channel);
-    if let Err(error) = select_phy_channel::<D, _, _>(
+    if let Err(error) = select_phy_channel_with_hal::<D, _, _>(
         &mut phy,
         initial_channel.channel_or_frequency,
         initial_channel.cbw,
-        platform,
-        registers,
+        &mut channel_hal,
         &mut channel_observer,
     )
     .await
     {
+        drop(channel_hal);
         return Err(Esp32s31WifiColdStartFailure::InitialChannel {
             radio: powered,
             phy,
@@ -195,6 +195,7 @@ where
             error,
         });
     }
+    drop(channel_hal);
 
     let tx_power = phy
         .tx_target_power_profile()

@@ -31,7 +31,7 @@ pub(crate) fn run(
     phy: PhyExpectation,
 ) -> Result<()> {
     let options = parse_options(&arguments, lab)?;
-    fs::create_dir_all(&output)?;
+    fs::create_dir_all(output)?;
 
     let mut ap = ControlledAp::start(&lab.station, &lab.station_fixture, phy)?;
     let capture = SerialCapture::start_with_reset(&options.serial);

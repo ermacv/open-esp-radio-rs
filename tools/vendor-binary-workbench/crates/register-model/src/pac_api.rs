@@ -275,22 +275,36 @@ impl PacApiPack {
                 &operation.domain,
                 &domain_names,
             )?;
-            let Some(domain) = self
+            if let Some(domain) = self
                 .bounded_domains
                 .iter()
                 .find(|candidate| candidate.name == operation.domain)
-            else {
-                return Err(Error::message(format!(
-                    "PAC API indexed-bit-set-modify {:?} requires a bounded domain",
-                    operation.name
-                )));
-            };
-            if domain.min != 0 || domain.max > 31 {
-                return Err(Error::message(format!(
-                    "PAC API indexed-bit-set-modify {:?} domain must be within 0..=31",
-                    operation.name
-                )));
+            {
+                if domain.min != 0 || domain.max > 31 {
+                    return Err(Error::message(format!(
+                        "PAC API indexed-bit-set-modify {:?} bounded domain must be within 0..=31",
+                        operation.name
+                    )));
+                }
+                continue;
             }
+            if let Some(domain) = self
+                .enum_domains
+                .iter()
+                .find(|candidate| candidate.name == operation.domain)
+            {
+                if domain.values.iter().any(|value| value.value > 31) {
+                    return Err(Error::message(format!(
+                        "PAC API indexed-bit-set-modify {:?} enum values must be within 0..=31",
+                        operation.name
+                    )));
+                }
+                continue;
+            }
+            return Err(Error::message(format!(
+                "PAC API indexed-bit-set-modify {:?} requires a bounded or enum domain",
+                operation.name
+            )));
         }
         for operation in &self.interrupt_snapshots {
             validate_component(
@@ -813,6 +827,33 @@ mod tests {
 
         assert!(pack.validate().is_ok());
         pack.bounded_domains[0].max = 32;
+        assert!(pack.validate().is_err());
+    }
+
+    #[test]
+    fn indexed_bit_set_accepts_a_closed_enum_index() {
+        let mut pack = empty_pack();
+        pack.enum_domains.push(EnumDomain {
+            name: "RequestIndex".to_owned(),
+            description: "Reviewed request-bit selector.".to_owned(),
+            values: vec![EnumValue {
+                name: "Beacon".to_owned(),
+                value: 0,
+                description: "Request beacon handling.".to_owned(),
+                sources: vec!["REVIEW".to_owned()],
+            }],
+        });
+        pack.indexed_bit_set_modifies.push(IndexedBitSetModify {
+            name: "request_event".to_owned(),
+            peripheral: "RADIO".to_owned(),
+            register: "REQUESTS".to_owned(),
+            field: "REQUESTS_UNKNOWN".to_owned(),
+            domain: "RequestIndex".to_owned(),
+            sources: vec!["REVIEW".to_owned()],
+        });
+
+        assert!(pack.validate().is_ok());
+        pack.enum_domains[0].values[0].value = 32;
         assert!(pack.validate().is_err());
     }
 

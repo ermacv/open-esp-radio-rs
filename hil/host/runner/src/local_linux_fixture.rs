@@ -164,7 +164,7 @@ impl LocalPacketCapture {
                 "-i",
                 interface,
                 "-f",
-                &filter,
+                filter,
                 "-a",
                 &format!("duration:{}", timeout.as_secs().max(1)),
                 "-w",

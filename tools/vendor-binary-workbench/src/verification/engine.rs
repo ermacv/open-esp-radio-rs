@@ -7,7 +7,9 @@ use std::{
 
 use crate::*;
 
-use super::{FunctionVerificationReport, FunctionVerificationStatus, SourceVerificationReport};
+use super::{
+    EvidenceClass, FunctionVerificationReport, FunctionVerificationStatus, SourceVerificationReport,
+};
 
 mod execution_profile;
 mod model;
@@ -25,7 +27,8 @@ pub(crate) use model::*;
 )]
 pub(crate) fn verify_source(
     svd: &MmioMap,
-    harness: Option<&str>,
+    knowledge_provider: Option<&str>,
+    verification_provider: Option<&str>,
     rust_target: &str,
     source: VerifySource<'_>,
     rust_artifact: &Path,
@@ -122,13 +125,16 @@ pub(crate) fn verify_source(
                     .map(|adapter| (entry, binding, adapter))
             })
         }) {
-            let harness = require_platform_harness(harness, "driver-adapter verification")?;
+            let provider = require_verification_provider(
+                verification_provider,
+                "driver-adapter verification",
+            )?;
             let policy = entry
                 .effect_contract
                 .as_ref()
                 .expect("driver adapter requires an effect contract");
             let proof = harnesses::verify_driver_adapter(
-                harness,
+                provider,
                 &harnesses::DriverAdapterRequest {
                     id: adapter.label(),
                     source: source.name,
@@ -144,10 +150,10 @@ pub(crate) fn verify_source(
                     policy,
                 },
             )?
-            .ok_or_else(|| format!("no harness registered driver adapter {}", adapter.label()))
+            .ok_or_else(|| format!("no provider registered driver adapter {}", adapter.label()))
             .map_err(crate::Error::invalid)?;
             let registered_trust =
-                harnesses::driver_adapter_evidence_sources(harness, adapter.label())
+                harnesses::driver_adapter_evidence_sources(provider, adapter.label())
                     .ok_or_else(|| {
                         crate::Error::invalid(format!(
                             "driver adapter {} has no registered trust boundary",
@@ -170,23 +176,27 @@ pub(crate) fn verify_source(
                     source.name, vendor.name
                 )));
             }
-            if proof.matched && whole_function {
+            let production_trace = proof.trust.vendor
+                == open_radio_vendor_semantics::VendorOracleKind::ConcreteReplay
+                && binding.rust_kind
+                    == open_radio_vendor_semantics::RustBindingKind::ExactProductionEntry;
+            if proof.matched && production_trace && whole_function {
                 summary.matched += 1;
                 summary.effect_contract_matches += 1;
                 record_evidence(
                     evidence,
                     source.name,
                     &vendor.name,
-                    driver_adapter_effect_evidence(harness, policy, binding, &proof.canonical),
+                    driver_adapter_effect_evidence(provider, policy, binding, &proof.canonical),
                 )?;
-            } else if proof.matched && bounded_feature {
+            } else if proof.matched && production_trace && bounded_feature {
                 summary.bounded_matches += 1;
                 record_evidence(
                     evidence,
                     source.name,
                     &vendor.name,
                     driver_adapter_limited_claim_evidence(
-                        harness,
+                        provider,
                         policy,
                         binding,
                         proof.claim,
@@ -200,7 +210,7 @@ pub(crate) fn verify_source(
                     source.name,
                     &vendor.name,
                     driver_adapter_limited_claim_evidence(
-                        harness,
+                        provider,
                         policy,
                         binding,
                         proof.claim,
@@ -212,14 +222,31 @@ pub(crate) fn verify_source(
             }
             let status = if !proof.matched {
                 FunctionVerificationStatus::Mismatch
-            } else if whole_function {
+            } else if production_trace && whole_function {
                 FunctionVerificationStatus::Match
-            } else if bounded_feature {
+            } else if production_trace && bounded_feature {
                 FunctionVerificationStatus::BoundedMatch
             } else {
                 FunctionVerificationStatus::ImplementedUnqualified
             };
             let mut function = FunctionVerificationReport::new(source.name, &vendor.name, status);
+            function.evidence_class = match binding.rust_kind {
+                open_radio_vendor_semantics::RustBindingKind::ExactProductionEntry
+                    if production_trace =>
+                {
+                    EvidenceClass::ProductionTrace
+                }
+                open_radio_vendor_semantics::RustBindingKind::ExactProductionEntry => {
+                    EvidenceClass::StaticAnalysis
+                }
+                open_radio_vendor_semantics::RustBindingKind::SharedProductionCore => {
+                    EvidenceClass::SharedCore
+                }
+                open_radio_vendor_semantics::RustBindingKind::GeneratedReference
+                | open_radio_vendor_semantics::RustBindingKind::VerificationProjection => {
+                    EvidenceClass::StaticAnalysis
+                }
+            };
             function.rust_symbol = Some(binding.rust_probe.clone());
             function.evidence = proof.matched.then(|| {
                 if whole_function {
@@ -243,7 +270,12 @@ pub(crate) fn verify_source(
                             .map(|reason| format!("case {:?}: {reason}", case.name))
                     });
             }
-            if proof.matched && !whole_function {
+            if proof.matched && !production_trace {
+                function.reason = Some(
+                    "concrete comparison reaches shared or generated verification code, not the exact production driver entry"
+                        .to_owned(),
+                );
+            } else if proof.matched && !whole_function {
                 function.reason = Some(format!(
                     "{} evidence establishes only its declared reviewed claim domain, not whole-function vendor equivalence",
                     match proof.claim {
@@ -291,10 +323,12 @@ pub(crate) fn verify_source(
                         .entry
                         .expect("implemented disposition must be an exact function entry");
                     if let Some(contract) = entry.semantic_contract.as_ref() {
-                        let harness =
-                            require_platform_harness(harness, "semantic-contract verification")?;
+                        let provider = require_verification_provider(
+                            verification_provider,
+                            "semantic-contract verification",
+                        )?;
                         let matched = harnesses::verify_semantic_contract(
-                            harness,
+                            provider,
                             &harnesses::SemanticContractRequest {
                                 id: contract.label(),
                                 source: source.name,
@@ -306,19 +340,19 @@ pub(crate) fn verify_source(
                         )?
                         .ok_or_else(|| {
                             format!(
-                                "no harness registered semantic contract {}",
+                                "no provider registered semantic contract {}",
                                 contract.label()
                             )
                         })
                         .map_err(crate::Error::invalid)?;
                         if matched {
-                            summary.matched += 1;
+                            summary.implemented_unqualified += 1;
                             summary.composition_matches += 1;
                             record_evidence(
                                 evidence,
                                 source.name,
                                 &vendor.name,
-                                semantic_contract_evidence(harness, contract.label()),
+                                semantic_contract_evidence(provider, contract.label()),
                             )?;
                         } else {
                             summary.mismatched += 1;
@@ -327,11 +361,12 @@ pub(crate) fn verify_source(
                             source.name,
                             &vendor.name,
                             if matched {
-                                FunctionVerificationStatus::Match
+                                FunctionVerificationStatus::ImplementedUnqualified
                             } else {
                                 FunctionVerificationStatus::Mismatch
                             },
                         );
+                        function.evidence_class = EvidenceClass::SemanticModel;
                         function.rust_component = entry
                             .rust_component
                             .as_ref()
@@ -340,12 +375,18 @@ pub(crate) fn verify_source(
                             matched.then(|| "composition-state-scenario".to_owned());
                         function.contract = Some(contract.label().to_owned());
                         function.hil_evidence = entry.hil_evidence.clone();
+                        if matched {
+                            function.reason = Some(
+                                "semantic model scenario agrees, but it does not execute the compiled production driver entry"
+                                    .to_owned(),
+                            );
+                        }
                         functions.push(function);
                     } else {
                         summary.missing += 1;
                         summary.implemented_unqualified += 1;
-                        let qualification_blockers = entry
-                            .qualification_blockers
+                        let release_blockers = entry
+                            .release_blockers
                             .iter()
                             .map(|(source, symbol)| format!("{source}:{symbol}"))
                             .collect::<Vec<_>>();
@@ -361,7 +402,7 @@ pub(crate) fn verify_source(
                         function.disposition = Some(resolved.disposition.label().to_owned());
                         function.protocol = Some(resolved.protocol.label().to_owned());
                         function.hil_evidence = entry.hil_evidence.clone();
-                        function.qualification_blockers = qualification_blockers;
+                        function.release_blockers = release_blockers;
                         function.reason = Some("missing-semantic-contract".to_owned());
                         functions.push(function);
                     }
@@ -416,6 +457,12 @@ pub(crate) fn verify_source(
             .iter()
             .find(|profile| profile.vendor_symbol == vendor.name)
         {
+            let production_trace = manifest_entry
+                .and_then(|entry| entry.binding.as_ref())
+                .is_some_and(|binding| {
+                    binding.rust_kind
+                        == open_radio_vendor_semantics::RustBindingKind::ExactProductionEntry
+                });
             let resolved_disposition =
                 disposition_manifest.map(|manifest| manifest.resolve(source.name, &vendor.name));
             let bounded_feature = resolved_disposition
@@ -435,7 +482,7 @@ pub(crate) fn verify_source(
             let comparison = evaluation.comparison;
             let verdict = comparison.verdict;
             let accepted_match = evaluation.accepted_match;
-            if accepted_match {
+            if accepted_match && production_trace {
                 if evaluation.reviewed_domain {
                     summary.bounded_matches += 1;
                 } else {
@@ -445,6 +492,14 @@ pub(crate) fn verify_source(
                         profiles::ProfileContract::State => summary.state_matches += 1,
                     }
                 }
+                record_evidence(
+                    evidence,
+                    source.name,
+                    &vendor.name,
+                    profile_evidence(profile),
+                )?;
+            } else if accepted_match {
+                summary.implemented_unqualified += 1;
                 record_evidence(
                     evidence,
                     source.name,
@@ -463,10 +518,19 @@ pub(crate) fn verify_source(
                 EquivalenceVerdict::Diff => FunctionVerificationStatus::Mismatch,
                 EquivalenceVerdict::Incomplete => FunctionVerificationStatus::Incomplete,
             };
-            let status = accepted_match
-                .then_some(evaluation.matched_status)
-                .unwrap_or(status);
+            let status = if accepted_match && production_trace {
+                evaluation.matched_status
+            } else if accepted_match {
+                FunctionVerificationStatus::ImplementedUnqualified
+            } else {
+                status
+            };
             let mut function = FunctionVerificationReport::new(source.name, &vendor.name, status);
+            function.evidence_class = if production_trace {
+                EvidenceClass::ProductionTrace
+            } else {
+                EvidenceClass::StaticAnalysis
+            };
             function.rust_symbol = Some(rust.name.clone());
             function.evidence = accepted_match.then(|| profile.contract.evidence().to_owned());
             function.claim = accepted_match.then_some(profile.claim);
@@ -481,7 +545,12 @@ pub(crate) fn verify_source(
                         .map(|component| component.label().to_owned())
                 });
             }
-            if accepted_match && evaluation.reviewed_domain {
+            if accepted_match && !production_trace {
+                function.reason = Some(
+                    "concrete profile does not bind the exact compiled production driver entry"
+                        .to_owned(),
+                );
+            } else if accepted_match && evaluation.reviewed_domain {
                 function.reason = Some(format!(
                     "every declared concrete case matches under reviewed precondition {:?}; static coverage outside that finite domain remains visible and this is not whole-function vendor equivalence",
                     profile
@@ -530,8 +599,8 @@ pub(crate) fn verify_source(
             function.return_compared = Some(compare_return);
             functions.push(function);
         } else if let Some(policy) = effect_policy {
-            let harness = require_platform_harness(
-                harness,
+            let provider = require_verification_provider(
+                knowledge_provider,
                 "generated-reference effect-contract verification",
             )?;
             let generated_companions = source
@@ -542,7 +611,7 @@ pub(crate) fn verify_source(
             let generated_proof =
                 crate::generated_reference::generate_compile_and_prove_exact_mmio_leaf(
                     svd,
-                    harness,
+                    provider,
                     rust_target,
                     &vendor_input,
                     &generated_companions,
@@ -749,10 +818,13 @@ fn annotate_replacement(
     }
 }
 
-fn require_platform_harness<'a>(harness: Option<&'a str>, capability: &str) -> Result<&'a str> {
-    harness.ok_or_else(|| {
+fn require_verification_provider<'a>(
+    provider: Option<&'a str>,
+    capability: &str,
+) -> Result<&'a str> {
+    provider.ok_or_else(|| {
         crate::Error::invalid(format!(
-            "{capability} requires a project platform pack with an executable harness"
+            "{capability} requires a project chip pack with an executable knowledge provider"
         ))
     })
 }

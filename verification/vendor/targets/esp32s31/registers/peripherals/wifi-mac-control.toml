@@ -65,7 +65,9 @@ sources = [
     "OPEN_DRIVER_PROMISCUOUS_RX_FRONTIER",
     "BLOB_LIBPP_MAC_CHANNEL_SWITCH",
 ]
-confidence = "instruction-exact-hil-qualified"
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_CONTROL.CONTROL"
@@ -73,22 +75,30 @@ sources = [
     "OPEN_DRIVER_PROMISCUOUS_RX_FRONTIER",
     "BLOB_LIBPP_MAC_CHANNEL_SWITCH",
 ]
-confidence = "instruction-exact-hil-qualified"
+provenance = "reviewed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_CONTROL.CONTROL.NO_RETENTION_STOP_REQUEST"
 sources = ["BLOB_LIBPP_MAC_CHANNEL_SWITCH"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_CONTROL.CONTROL.ACTIVE_STATE"
 sources = [
     "BLOB_LIBPP_MAC_CHANNEL_SWITCH",
-    "MIGRATION_CHANNEL_SWITCH",
+    "PROMOTED_CHANNEL_SWITCH",
 ]
-confidence = "instruction-exact-partial"
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_CONTROL.CONTROL.TX_BLOCK_STOP_REQUEST"
 sources = ["BLOB_LIBPP_MAC_CHANNEL_SWITCH"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"

@@ -29,7 +29,7 @@ pub use crate::sta_link_policy::{
     StaPeerAssociationPlanError, StaPeerScanPolicy, StaWmmPolicy, StaWmmSource,
     configure_sta_link_receive_policy,
 };
-pub use open_esp_radio_esp32s31_pac::{MacInterruptMask, MacTxPowerPair, MacTxPowerTable};
+pub use open_esp_radio_esp32s31_hal::types::{MacInterruptMask, MacTxPowerPair, MacTxPowerTable};
 
 /// Complete event mask published by the recovered cold receive initializer.
 ///
@@ -64,7 +64,7 @@ pub trait MacDelayEntropy {
 /// `_slowclk_cal_get` callback. It keeps the open MAC independent of the
 /// vendor function table and of any future platform clock peripheral.
 pub trait MacSlowClockCalibrationSource {
-    fn mac_slow_clock_calibration(&mut self) -> u32;
+    fn mac_slow_clock_calibration(&mut self) -> MacSlowClockCalibration;
 }
 
 /// Inputs for the role-neutral Wi-Fi MAC cold transition.
@@ -160,9 +160,9 @@ pub fn initialize_wifi_mac<
     mmio.initialize_mac_antenna();
 
     // Complete direct hal_init tail before its first COEX operation. The OSI
-    // callback's u32 is reduced exactly as the complete RTC-update leaf does.
-    let slow_clock_calibration =
-        MacSlowClockCalibration::from_osi_value(platform.mac_slow_clock_calibration());
+    // callback result retains whether the platform actually supplied a
+    // calibration. The hardware mapping remains explicit in the HAL adapter.
+    let slow_clock_calibration = platform.mac_slow_clock_calibration();
     mmio.initialize_hal_tail(MAC_COLD_RX_INTERRUPT_MASK, slow_clock_calibration);
 
     // Complete seventeen-edge COEX/PTI tail. Query values in the blob's exact

@@ -154,7 +154,7 @@ pub(crate) fn effect_contract_evidence(
 }
 
 pub(crate) fn driver_adapter_effect_evidence(
-    harness: &str,
+    provider: &str,
     policy: &super::effect_contract::EffectPolicy,
     binding: &super::bindings::Binding,
     adapter_proof: &str,
@@ -163,8 +163,8 @@ pub(crate) fn driver_adapter_effect_evidence(
         .driver_adapter
         .as_ref()
         .expect("driver adapter evidence requires a registered adapter");
-    let sources = crate::harnesses::driver_adapter_evidence_sources(harness, adapter.label())
-        .expect("binding adapter must be registered by the selected harness");
+    let sources = crate::harnesses::driver_adapter_evidence_sources(provider, adapter.label())
+        .expect("binding adapter must be registered by the selected provider");
     EvidenceIdentity::composed(
         format!("effect-contract/{}", policy.comparison.label()),
         "open-esp-radio-driver-adapter-effect-contract-v2",
@@ -199,7 +199,7 @@ pub(crate) fn driver_adapter_effect_evidence(
 }
 
 pub(crate) fn driver_adapter_limited_claim_evidence(
-    harness: &str,
+    provider: &str,
     policy: &super::effect_contract::EffectPolicy,
     binding: &super::bindings::Binding,
     claim: open_radio_vendor_semantics::DriverAdapterClaim,
@@ -213,8 +213,8 @@ pub(crate) fn driver_adapter_limited_claim_evidence(
         .driver_adapter
         .as_ref()
         .expect("driver adapter evidence requires a registered adapter");
-    let sources = crate::harnesses::driver_adapter_evidence_sources(harness, adapter.label())
-        .expect("binding adapter must be registered by the selected harness");
+    let sources = crate::harnesses::driver_adapter_evidence_sources(provider, adapter.label())
+        .expect("binding adapter must be registered by the selected provider");
     EvidenceIdentity::composed(
         format!(
             "driver-adapter/{}/{}",
@@ -288,9 +288,9 @@ pub(crate) fn profile_evidence(profile: &profiles::Profile) -> EvidenceIdentity 
 }
 
 pub(crate) fn semantic_contract_evidence(harness_id: &str, label: &str) -> EvidenceIdentity {
-    let harness = crate::harnesses::semantic_contract_evidence_sources(harness_id, label)
-        .expect("semantic contract must be registered by the selected harness");
-    let mut sources = harness
+    let provider = crate::harnesses::semantic_contract_evidence_sources(harness_id, label)
+        .expect("semantic contract must be registered by the selected provider");
+    let mut sources = provider
         .common
         .iter()
         .map(|source| (source.name, source.contents))
@@ -314,7 +314,7 @@ pub(crate) fn semantic_contract_evidence(harness_id: &str, label: &str) -> Evide
             include_str!("../../crates/backend-riscv/src/execution/machine.rs"),
         ),
     ]);
-    sources.push((harness.contract.name, harness.contract.contents));
+    sources.push((provider.contract.name, provider.contract.contents));
     let components = sources
         .into_iter()
         .map(|(name, contents)| component(name, contents))

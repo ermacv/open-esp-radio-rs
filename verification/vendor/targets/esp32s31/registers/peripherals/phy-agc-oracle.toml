@@ -689,22 +689,30 @@ sources = [
     "BLOB_LIBPHY_PHY_SET_RX_GAIN_TABLE",
     "BLOB_LIBPHY_PHY_SET_RX_COMP_NEW",
 ]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_AGC_ORACLE.AGC_PARAMETER_CONTROL"
 sources = ["ROM_REV0_PHY_AGC"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_AGC_ORACLE.AGC_PARAMETER_CONTROL.PARAMETER_121_UNKNOWN"
 sources = ["ROM_REV0_PHY_AGC"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_AGC_ORACLE.AGC_PARAMETER_CONTROL.PARAMETER_120_OFFSET_UNKNOWN"
 sources = ["ROM_REV0_PHY_AGC"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_AGC_ORACLE.AGC_SHARED_CONTROL"
@@ -715,12 +723,16 @@ sources = [
     "BLOB_LIBPHY_PHY_SET_RX_GAIN_TABLE",
     "BLOB_LIBPHY_PHY_SET_RX_COMP_NEW",
 ]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_AGC_ORACLE.AGC_SHARED_CONTROL.RX_COMPENSATION_LOW_UNKNOWN"
 sources = ["BLOB_LIBPHY_PHY_SET_RX_COMP_NEW"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_AGC_ORACLE.AGC_SHARED_CONTROL.RX_GAIN_INDEX_UNKNOWN"
@@ -728,7 +740,9 @@ sources = [
     "ROM_REV0_PHY_AGC",
     "BLOB_LIBPHY_PHY_SET_RX_GAIN_TABLE",
 ]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_AGC_ORACLE.AGC_SHARED_CONTROL.PULSE_UNKNOWN"
@@ -737,7 +751,9 @@ sources = [
     "ROM_REV0_PHY_PBUS",
     "ROM_REV0_PHY_FORCE_RX_GAIN",
 ]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_AGC_ORACLE.AGC_SHARED_CONTROL.CONTROL_HIGH_UNKNOWN"
@@ -746,7 +762,9 @@ sources = [
     "ROM_REV0_PHY_PBUS",
     "ROM_REV0_PHY_FORCE_RX_GAIN",
 ]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_AGC_ORACLE.AGC_ANTENNA_CONTROL"
@@ -755,57 +773,79 @@ sources = [
     "ROM_REV0_PHY_ANT_INIT",
     "ROM_REV0_PHY_CBW_FEATURE_WATCHDOG",
 ]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_AGC_ORACLE.AGC_ANTENNA_CONTROL.FREQUENCY_BAND_INVERSE"
 sources = ["ROM_REV0_PHY_CBW_FEATURE_WATCHDOG"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_AGC_ORACLE.AGC_ANTENNA_CONTROL.ANTENNA_INIT_UNKNOWN"
 sources = ["ROM_REV0_PHY_ANT_INIT"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_AGC_ORACLE.AGC_ANTENNA_CONTROL.AGC_DISABLE_UNKNOWN"
 sources = ["ROM_REV0_PHY_AGC"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_AGC_ORACLE.CSI_DUMP_FORCE_CONTROL"
 sources = ["ROM_REV0_PHY_CBW_FEATURE_WATCHDOG"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_AGC_ORACLE.DC_MEMORY_CONTROL"
 sources = ["BLOB_LIBPHY_PHY_DC_MEM_CLR"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_AGC_ORACLE.DC_MEMORY_CONTROL.CLEAR_PULSE_UNKNOWN"
 sources = ["BLOB_LIBPHY_PHY_DC_MEM_CLR"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_AGC_ORACLE.RX_11B_PATH_CONTROL_0"
 sources = ["ROM_REV0_PHY_AGC"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_AGC_ORACLE.RX_11B_PATH_CONTROL_0.RX_11B_LOW_UNKNOWN"
 sources = ["ROM_REV0_PHY_AGC"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_AGC_ORACLE.RX_11B_PATH_CONTROL_0.RX_11B_HIGH_UNKNOWN"
 sources = ["ROM_REV0_PHY_AGC"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_AGC_ORACLE.AGC_UPDATE_7048_OPAQUE"
 sources = ["ROM_REV0_PHY_AGC"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_AGC_ORACLE.AGC_SATURATION_CONTROL"
@@ -813,67 +853,93 @@ sources = [
     "ROM_REV0_PHY_AGC",
     "BLOB_LIBPHY_PHY_REG_UPDATE_NEW",
 ]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_AGC_ORACLE.AGC_SATURATION_CONTROL.LOW_UNKNOWN"
 sources = ["ROM_REV0_PHY_AGC"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_AGC_ORACLE.AGC_SATURATION_CONTROL.RF_RX_SATURATION_BIT_19_UNKNOWN"
 sources = ["ROM_REV0_PHY_AGC"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_AGC_ORACLE.AGC_SATURATION_CONTROL.RF_RX_SATURATION_BIT_24_UNKNOWN"
 sources = ["ROM_REV0_PHY_AGC"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_AGC_ORACLE.AGC_SATURATION_CONTROL.POST_INIT_SET_UNKNOWN"
 sources = ["BLOB_LIBPHY_PHY_REG_UPDATE_NEW"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_AGC_ORACLE.AGC_SATURATION_CONTROL.RF_RX_SATURATION_BIT_28_UNKNOWN"
 sources = ["ROM_REV0_PHY_AGC"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_AGC_ORACLE.AGC_SATURATION_CONTROL.RF_RX_SATURATION_HIGH_UNKNOWN"
 sources = ["ROM_REV0_PHY_AGC"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_AGC_ORACLE.SATURATION_GAIN_LOW"
 sources = ["BLOB_LIBPHY_PHY_REG_UPDATE_NEW"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_AGC_ORACLE.RF_RX_SATURATION_CONFIG"
 sources = ["ROM_REV0_PHY_AGC"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_AGC_ORACLE.AGC_GAIN_LIMIT_LOW"
 sources = ["ROM_REV0_PHY_AGC"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_AGC_ORACLE.AGC_GAIN_LIMIT_LOW.PARAMETER_MINUS_ONE_UNKNOWN"
 sources = ["ROM_REV0_PHY_AGC"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_AGC_ORACLE.RX_COMPENSATION_HIGH_CONTROL"
 sources = ["BLOB_LIBPHY_PHY_SET_RX_COMP_NEW"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_AGC_ORACLE.RX_COMPENSATION_HIGH_CONTROL.RX_COMPENSATION_HIGH_UNKNOWN"
 sources = ["BLOB_LIBPHY_PHY_SET_RX_COMP_NEW"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_AGC_ORACLE.RX_11B_WINDOW_CONTROL"
@@ -881,7 +947,9 @@ sources = [
     "ROM_REV0_PHY_AGC",
     "BLOB_LIBPHY_PHY_REG_UPDATE_NEW",
 ]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_AGC_ORACLE.RX_11B_WINDOW_CONTROL.WINDOW_UNKNOWN"
@@ -889,12 +957,16 @@ sources = [
     "ROM_REV0_PHY_AGC",
     "BLOB_LIBPHY_PHY_REG_UPDATE_NEW",
 ]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_AGC_ORACLE.SATURATION_GAIN_HIGH"
 sources = ["BLOB_LIBPHY_PHY_REG_UPDATE_NEW"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_AGC_ORACLE.ANTENNA_CONTROL_0"
@@ -902,52 +974,72 @@ sources = [
     "ROM_REV0_PHY_ANT_INIT",
     "ROM_REV0_PHY_ANT_DFT_CFG",
 ]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_AGC_ORACLE.ANTENNA_CONTROL_0.LOW_CLEAR_UNKNOWN"
 sources = ["ROM_REV0_PHY_ANT_INIT"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_AGC_ORACLE.ANTENNA_CONTROL_0.ANTENNA_DIVERSITY_ENABLE_UNKNOWN"
 sources = ["ROM_REV0_PHY_ANT_DFT_CFG"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_AGC_ORACLE.ANTENNA_CONTROL_0.BIT_12_CLEAR_UNKNOWN"
 sources = ["ROM_REV0_PHY_ANT_INIT"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_AGC_ORACLE.ANTENNA_CONTROL_2"
 sources = ["ROM_REV0_PHY_ANT_INIT"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_AGC_ORACLE.ANTENNA_CONTROL_2.LOW_UNKNOWN"
 sources = ["ROM_REV0_PHY_ANT_INIT"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_AGC_ORACLE.ANTENNA_CONTROL_2.HIGH_UNKNOWN"
 sources = ["ROM_REV0_PHY_ANT_INIT"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_AGC_ORACLE.RX_11B_PATH_CONTROL_1"
 sources = ["ROM_REV0_PHY_AGC"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_AGC_ORACLE.RX_11B_PATH_CONTROL_1.RX_11B_LOW_UNKNOWN"
 sources = ["ROM_REV0_PHY_AGC"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_AGC_ORACLE.RX_11B_PATH_CONTROL_1.RX_11B_HIGH_UNKNOWN"
 sources = ["ROM_REV0_PHY_AGC"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_AGC_ORACLE.AGC_INIT_HIGH_CONTROL"
@@ -955,12 +1047,16 @@ sources = [
     "ROM_REV0_PHY_AGC",
     "BLOB_LIBPP_HAL_HE_INIT_PREFIX",
 ]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_AGC_ORACLE.AGC_INIT_HIGH_CONTROL.INIT_HIGH_UNKNOWN"
 sources = ["ROM_REV0_PHY_AGC"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_AGC_ORACLE.RX_GAIN_LIMIT_CONTROL"
@@ -968,7 +1064,9 @@ sources = [
     "ROM_REV0_PHY_AGC",
     "BLOB_LIBPHY_PHY_SET_RX_GAIN_TABLE",
 ]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_AGC_ORACLE.RX_GAIN_LIMIT_CONTROL.RX_GAIN_LIMIT_UNKNOWN"
@@ -976,97 +1074,135 @@ sources = [
     "ROM_REV0_PHY_AGC",
     "BLOB_LIBPHY_PHY_SET_RX_GAIN_TABLE",
 ]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_AGC_ORACLE.AGC_UPDATE_78A4_OPAQUE"
 sources = ["ROM_REV0_PHY_AGC"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_AGC_ORACLE.POST_INIT_RX_CONTROL"
 sources = ["BLOB_LIBPHY_PHY_REG_UPDATE_NEW"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_AGC_ORACLE.POST_INIT_RX_CONTROL.LOW_UNKNOWN"
 sources = ["BLOB_LIBPHY_PHY_REG_UPDATE_NEW"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_AGC_ORACLE.POST_INIT_RX_CONTROL.HIGH_UNKNOWN"
 sources = ["BLOB_LIBPHY_PHY_REG_UPDATE_NEW"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_AGC_ORACLE.FTM_CONTROL"
 sources = ["BLOB_LIBPHY_PHY_REG_UPDATE_NEW"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_AGC_ORACLE.FTM_CONTROL.ENABLE"
 sources = ["BLOB_LIBPHY_PHY_REG_UPDATE_NEW"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_AGC_ORACLE.RX_11B_MODE_CONTROL"
 sources = ["ROM_REV0_PHY_AGC"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_AGC_ORACLE.RX_11B_MODE_CONTROL.RX_11B_MODE_UNKNOWN"
 sources = ["ROM_REV0_PHY_AGC"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_AGC_ORACLE.RX_11B_MODE_CONTROL.BB_AGC_UPDATE_CLEAR_UNKNOWN"
 sources = ["ROM_REV0_PHY_AGC"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_AGC_ORACLE.AGC_UPDATE_8010_OPAQUE"
 sources = ["ROM_REV0_PHY_AGC"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_AGC_ORACLE.AGC_UPDATE_8018_OPAQUE"
 sources = ["ROM_REV0_PHY_AGC"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_AGC_ORACLE.AGC_UPDATE_801C_OPAQUE"
 sources = ["ROM_REV0_PHY_AGC"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_AGC_ORACLE.AGC_UPDATE_8020_OPAQUE"
 sources = ["ROM_REV0_PHY_AGC"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_AGC_ORACLE.AGC_UPDATE_8028_OPAQUE"
 sources = ["ROM_REV0_PHY_AGC"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_AGC_ORACLE.AGC_UPDATE_802C_OPAQUE"
 sources = ["ROM_REV0_PHY_AGC"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_AGC_ORACLE.AGC_UPDATE_8070_OPAQUE"
 sources = ["ROM_REV0_PHY_AGC"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_AGC_ORACLE.AGC_UPDATE_8078_CONTROL"
 sources = ["ROM_REV0_PHY_AGC"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_AGC_ORACLE.AGC_UPDATE_8078_CONTROL.BB_AGC_UPDATE_SET_UNKNOWN"
 sources = ["ROM_REV0_PHY_AGC"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_AGC_ORACLE.LOW_RATE_PRIMARY_CONTROL"
@@ -1074,17 +1210,23 @@ sources = [
     "ROM_REV0_PHY_LOW_RATE",
     "ROM_REV0_PHY_RX11BLR_CFG",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_AGC_ORACLE.LOW_RATE_PRIMARY_CONTROL.LOW_RATE_ENABLE_FIRST"
 sources = ["ROM_REV0_PHY_LOW_RATE"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_AGC_ORACLE.LOW_RATE_PRIMARY_CONTROL.LOW_RATE_ENABLE_SECOND"
 sources = ["ROM_REV0_PHY_LOW_RATE"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_AGC_ORACLE.LOW_RATE_SECONDARY_CONTROL"
@@ -1092,9 +1234,13 @@ sources = [
     "ROM_REV0_PHY_LOW_RATE",
     "ROM_REV0_PHY_RX11BLR_CFG",
 ]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "PHY_AGC_ORACLE.LOW_RATE_SECONDARY_CONTROL.LOW_RATE_ENABLE"
 sources = ["ROM_REV0_PHY_LOW_RATE"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"

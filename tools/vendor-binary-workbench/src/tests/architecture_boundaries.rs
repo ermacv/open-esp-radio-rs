@@ -123,7 +123,7 @@ fn executable_contract_api_uses_verification_vocabulary() {
         for forbidden in &forbidden_names {
             assert!(
                 !source.contains(forbidden),
-                "executable qualification name {forbidden} survived in {}",
+                "obsolete executable-qualification name {forbidden} survived in {}",
                 path.display()
             );
         }
@@ -147,9 +147,17 @@ fn neutral_contracts_have_no_architecture_or_platform_identity() {
         Path::new(env!("CARGO_MANIFEST_DIR")).join("crates/contracts/Cargo.toml"),
     )
     .unwrap();
+    let dependencies = manifest
+        .split("[dependencies]")
+        .nth(1)
+        .and_then(|tail| tail.split("\n[").next())
+        .unwrap_or_default();
     assert!(
-        !manifest.contains("[dependencies]"),
-        "neutral contracts must remain dependency-free"
+        dependencies.lines().all(|line| {
+            let line = line.trim();
+            line.is_empty() || line.starts_with("serde =")
+        }),
+        "neutral contracts may depend only on serialization, got:\n{dependencies}"
     );
 }
 
@@ -236,4 +244,14 @@ fn semantic_interface_has_no_platform_or_backend_dependency() {
             "semantic interface manifest contains platform/backend dependency {forbidden}"
         );
     }
+}
+
+#[test]
+fn standalone_verification_does_not_alias_chip_knowledge_as_a_verification_addon() {
+    let source = fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("src/cli/commands/verify_source.rs"),
+    )
+    .unwrap();
+    assert!(source.contains("verification_provider: None"));
+    assert!(!source.contains("verification_provider: target.knowledge_provider"));
 }

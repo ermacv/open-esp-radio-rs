@@ -387,25 +387,23 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
         self.security
             .as_ref()
             .is_some_and(ConnectedWpa2Security::tx_in_flight)
-            || self.core.has_immediate_work(self.receiver.len() != 0)
+            || self.core.has_immediate_work(!self.receiver.is_empty())
     }
 
     /// Wait without consuming the event that made control work ready.
-    pub fn wait_ready<'a, X>(&'a mut self, tx: &'a mut X) -> impl Future<Output = ()> + 'a
+    pub async fn wait_ready<'a, X>(&'a mut self, tx: &'a mut X)
     where
         X: ConnectedControlTx + ConnectedControlTimer + 'a,
     {
-        async move {
-            if self.has_immediate_work() {
-                return;
+        if self.has_immediate_work() {
+            return;
+        }
+        if let Some(deadline) = self.core.next_alarm_deadline() {
+            match select(self.receiver.ready(), tx.wait_until_micros(deadline)).await {
+                Either::First(()) | Either::Second(()) => {}
             }
-            if let Some(deadline) = self.core.next_alarm_deadline() {
-                match select(self.receiver.ready(), tx.wait_until_micros(deadline)).await {
-                    Either::First(()) | Either::Second(()) => {}
-                }
-            } else {
-                self.receiver.ready().await;
-            }
+        } else {
+            self.receiver.ready().await;
         }
     }
 
@@ -421,70 +419,68 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
         self.service_with_context(hardware, tx, WifiControlContext::IDLE)
     }
 
-    pub fn service_with_context<'a, H, X>(
+    pub async fn service_with_context<'a, H, X>(
         &'a mut self,
         hardware: &'a mut H,
         tx: &'a mut X,
         context: WifiControlContext,
-    ) -> impl Future<Output = Result<WifiControlProgress, ConnectedControlError>> + 'a
+    ) -> Result<WifiControlProgress, ConnectedControlError>
     where
         H: ConnectedControlHardware + 'a,
         X: ConnectedControlTx + 'a,
     {
-        async move {
-            // The shared ordinary-TX completion always precedes newly queued
-            // RX work. Security and the generic control core can never both
-            // own that transaction.
-            if let Some(security) = self.security.as_mut()
-                && security.tx_in_flight()
-            {
-                return Ok(security.complete_tx(tx));
-            }
+        // The shared ordinary-TX completion always precedes newly queued
+        // RX work. Security and the generic control core can never both
+        // own that transaction.
+        if let Some(security) = self.security.as_mut()
+            && security.tx_in_flight()
+        {
+            return Ok(security.complete_tx(tx));
+        }
 
-            let mut reorder = EmbassyReorderSink {
-                sender: self.rx_reorder_commands.as_ref(),
-            };
-            if self.core.tx_in_flight() {
-                return self.core.service_step(
-                    hardware,
-                    tx,
-                    &mut reorder,
-                    None,
-                    self.receiver.len() != 0,
-                    context,
-                );
-            }
-
-            // A peer disconnect keeps terminal priority once TX ownership is
-            // free. GTK rekey then precedes non-terminal BlockAck work.
-            if let Some(event) = self.receiver.try_receive_terminal() {
-                return self.core.service_step(
-                    hardware,
-                    tx,
-                    &mut reorder,
-                    Some(event),
-                    self.receiver.len() != 0,
-                    context,
-                );
-            }
-            if let Some(frame) = self.receiver.try_receive_security() {
-                let Some(security) = self.security.as_mut() else {
-                    return Ok(WifiControlProgress::Disconnected(
-                        open_esp_radio_esp32s31_wifi_sta::connected_control::ConnectedDisconnectReason::GroupKeyHandshakeFailed,
-                    ));
-                };
-                return Ok(security.process(hardware, tx, frame).await);
-            }
-            let event = self.receiver.try_receive_control();
-            self.core.service_step(
+        let mut reorder = EmbassyReorderSink {
+            sender: self.rx_reorder_commands.as_ref(),
+        };
+        if self.core.tx_in_flight() {
+            return self.core.service_step(
                 hardware,
                 tx,
                 &mut reorder,
-                event,
-                self.receiver.len() != 0,
+                None,
+                !self.receiver.is_empty(),
                 context,
-            )
+            );
         }
+
+        // A peer disconnect keeps terminal priority once TX ownership is
+        // free. GTK rekey then precedes non-terminal BlockAck work.
+        if let Some(event) = self.receiver.try_receive_terminal() {
+            return self.core.service_step(
+                hardware,
+                tx,
+                &mut reorder,
+                Some(event),
+                !self.receiver.is_empty(),
+                context,
+            );
+        }
+        if let Some(frame) = self.receiver.try_receive_security() {
+            let Some(security) = self.security.as_mut() else {
+                return Ok(WifiControlProgress::Disconnected(
+                    open_esp_radio_esp32s31_wifi_sta::connected_control::ConnectedDisconnectReason::GroupKeyHandshakeFailed,
+                ));
+            };
+            return Ok(security.process(hardware, tx, frame).await);
+        }
+        let event = self.receiver.try_receive_control();
+        self.core.service_step(
+            hardware,
+            tx,
+            &mut reorder,
+            event,
+            !self.receiver.is_empty(),
+            context,
+        )
     }
 }
 

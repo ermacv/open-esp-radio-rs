@@ -462,7 +462,10 @@ fn running_scan_rx_returns_the_exact_connected_epoch_resources() {
         |_| Ok(()),
     )
     .unwrap();
-    let ring = stopped.start(&mut hardware).unwrap();
+    let ring = stopped
+        .try_start(&mut hardware)
+        .map_err(|(_, error)| error)
+        .unwrap();
     let pool = RxStagePool::<STAGE_SLOTS, STAGE_CAPACITY>::new();
     let queue =
         Esp32s31StagedRxQueue::<NoopRawMutex, STAGE_SLOTS, STAGE_CAPACITY, STAGE_SLOTS>::new();

@@ -13,11 +13,11 @@ impl RadioRegisters {
         let runtime = &self.peripherals.wifi_mac_coex_runtime;
         super::generated::publish_mac_rx_beacon_pti(
             runtime,
-            super::generated::MacRxBeaconPtiMaskedInput::new(u32::from(beacon.get()) << 12),
+            super::generated::MacRxBeaconPtiMaskedInput::new(beacon.get() << 12),
         );
         super::generated::publish_mac_shared_rx_pti(
             runtime,
-            super::generated::MacSharedRxPtiMaskedInput::new(u32::from(shared.get())),
+            super::generated::MacSharedRxPtiMaskedInput::new(shared.get()),
         );
     }
 
@@ -29,7 +29,7 @@ impl RadioRegisters {
     pub fn clear_rx_beacon_pti(&mut self) {
         super::generated::request_mac_rx_beacon_clear(
             &self.peripherals.wifi_mac_coex_runtime,
-            super::generated::MacRxBeaconClearRequestInput::new(0),
+            super::generated::MacRxBeaconClearRequest::Beacon,
         );
     }
 

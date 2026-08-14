@@ -10,7 +10,7 @@ use super::{
     ResolvedInterfaceExecutionContract, ResolvedInterfaceSlot, ResolvedSemanticAnnotation,
     ReviewStatus, SemanticCatalogs, UnreviewedInterfaceObservation, validate_dotted_id,
 };
-use crate::{ExternalCallModelSetRef, HarnessContractSpec};
+use crate::{ExternalCallModelSetRef, KnowledgeContractSpec};
 
 type ValidatedInterfacePack = (
     InterfaceWorkspaceSummary,
@@ -25,7 +25,7 @@ impl InterfacePack {
         facts: &InterfaceFacts,
         catalogs: &SemanticCatalogs,
         calling_convention: &str,
-        execution_contracts: Option<&HarnessContractSpec>,
+        execution_contracts: Option<&KnowledgeContractSpec>,
     ) -> ValidationResult<ValidatedInterfacePack> {
         validate_dotted_id(&self.id, "interface pack id")
             .map_err(|error| ValidationError::pack("id", error.to_string()))?;
@@ -91,12 +91,12 @@ impl InterfacePack {
                         ),
                     ));
                 }
-                PackOrigin::Manual if !matches.is_empty() => {
+                PackOrigin::Reviewed if !matches.is_empty() => {
                     return Err(ValidationError::anchor(
                         anchor,
                         "origin",
                         format!(
-                            "manual interface anchor {:?} matches generated facts; use origin = \"observed\"",
+                            "reviewed-only interface anchor {:?} matches generated facts; use origin = \"observed\"",
                             anchor.id
                         ),
                     ));
@@ -174,7 +174,7 @@ fn validate_anchor_evidence(
                     ),
                 ));
             }
-            PackOrigin::Manual if observed.contains(&key) => {
+            PackOrigin::Reviewed if observed.contains(&key) => {
                 return Err(ValidationError::slot(
                     anchor,
                     slot,
@@ -285,8 +285,8 @@ fn build_summary(
             ReviewStatus::Ignored => summary.ignored_anchors += 1,
             ReviewStatus::Unreviewed => summary.unreviewed_anchors += 1,
         }
-        if anchor.origin == PackOrigin::Manual {
-            summary.manual_anchors += 1;
+        if anchor.origin == PackOrigin::Reviewed {
+            summary.asserted_anchors += 1;
         }
         summary.artifact_guards += anchor
             .guards
@@ -298,10 +298,10 @@ fn build_summary(
             .iter()
             .filter(|guard| matches!(guard, InterfaceGuard::RuntimeValue { .. }))
             .count();
-        summary.manual_slots += anchor
+        summary.asserted_slots += anchor
             .slots
             .iter()
-            .filter(|slot| slot.origin == PackOrigin::Manual)
+            .filter(|slot| slot.origin == PackOrigin::Reviewed)
             .count();
         summary.semantic_links += anchor
             .slots

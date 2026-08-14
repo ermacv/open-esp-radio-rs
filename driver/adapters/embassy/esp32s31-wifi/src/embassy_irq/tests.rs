@@ -33,7 +33,7 @@ impl MacInterruptRoute for Route {
         &mut self,
         platform: &Self::Platform,
         setup: Self::Setup,
-        _event_mask: open_esp_radio_esp32s31_pac::MacInterruptMask,
+        _event_mask: open_esp_radio_esp32s31_hal::types::MacInterruptMask,
     ) -> Result<(), (Self::Error, Self::Setup)> {
         if platform.get() == 10 {
             return Err((RouteError::Activation, setup));
@@ -73,7 +73,7 @@ impl MacInterruptRoute for DropObservedRoute {
         &mut self,
         platform: &Self::Platform,
         _setup: Self::Setup,
-        _event_mask: open_esp_radio_esp32s31_pac::MacInterruptMask,
+        _event_mask: open_esp_radio_esp32s31_hal::types::MacInterruptMask,
     ) -> Result<(), (Self::Error, Self::Setup)> {
         platform.set(1);
         Ok(())
@@ -156,7 +156,7 @@ fn irq_epoch_recovers_setup_before_draining_every_executor_wake() {
     epoch
         .activate(
             &platform,
-            open_esp_radio_esp32s31_pac::MacInterruptMask::COLD_RX,
+            open_esp_radio_esp32s31_hal::types::MacInterruptMask::COLD_RX,
         )
         .unwrap();
     assert!(epoch.is_active());
@@ -204,7 +204,7 @@ fn active_irq_epoch_cannot_release_its_route_or_setup() {
     epoch
         .activate(
             &platform,
-            open_esp_radio_esp32s31_pac::MacInterruptMask::COLD_RX,
+            open_esp_radio_esp32s31_hal::types::MacInterruptMask::COLD_RX,
         )
         .unwrap();
 
@@ -233,7 +233,7 @@ fn irq_epoch_retains_the_exact_frontier_on_each_route_failure() {
     assert_eq!(
         epoch.activate(
             &platform,
-            open_esp_radio_esp32s31_pac::MacInterruptMask::COLD_RX,
+            open_esp_radio_esp32s31_hal::types::MacInterruptMask::COLD_RX,
         ),
         Err(Esp32s31MacInterruptEpochActivateError::Route(
             RouteError::Activation
@@ -244,7 +244,7 @@ fn irq_epoch_retains_the_exact_frontier_on_each_route_failure() {
     epoch
         .activate(
             &platform,
-            open_esp_radio_esp32s31_pac::MacInterruptMask::COLD_RX,
+            open_esp_radio_esp32s31_hal::types::MacInterruptMask::COLD_RX,
         )
         .unwrap();
     platform.set(20);
@@ -281,7 +281,7 @@ fn active_irq_epoch_drop_retains_the_installed_route_without_panicking() {
     epoch
         .activate(
             &platform,
-            open_esp_radio_esp32s31_pac::MacInterruptMask::COLD_RX,
+            open_esp_radio_esp32s31_hal::types::MacInterruptMask::COLD_RX,
         )
         .unwrap();
 

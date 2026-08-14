@@ -5,9 +5,9 @@ use core::{
 };
 
 use open_esp_radio_embassy_net::{
-    Driver as _, NoopRawMutex, PinnedDevice, PinnedResources, PinnedTxPool, TxToken as _,
+    Driver as _, NoopRawMutex, PinnedTxPool, SplitPinnedDevice, SplitPinnedResources, TxToken as _,
 };
-use open_esp_radio_esp32s31_pac::{
+use open_esp_radio_esp32s31_hal::types::{
     MacHeTbLinkReservation, MacHeTbProgramError, MacHeTbTidLimit, MacHeTid,
     MacHeTriggerTxQueueSnapshot, MacHeTxProgram, MacHtAmpduCompletionRegisters, MacHtTxProgram,
     MacKeyInstallOutcome, MacLegacyTxProgram, MacTxCompletionRegisters, MacTxDetachOutcome,
@@ -77,20 +77,22 @@ const TEST_RATE: HtRate = HtRate::new(
     HtChannelWidth::Mhz20,
 );
 
-type Resources = PinnedResources<
+type Resources = SplitPinnedResources<
     NoopRawMutex,
     TEST_FRAME_CAPACITY,
     TEST_HEADROOM,
     TEST_TRAILER,
     TEST_QUEUE_DEPTH,
+    TEST_QUEUE_DEPTH,
 >;
 type Pool = PinnedTxPool<TEST_FRAME_CAPACITY, TEST_HEADROOM, TEST_TRAILER, TEST_QUEUE_DEPTH>;
-type Device = PinnedDevice<
+type Device = SplitPinnedDevice<
     'static,
     NoopRawMutex,
     TEST_FRAME_CAPACITY,
     TEST_HEADROOM,
     TEST_TRAILER,
+    TEST_QUEUE_DEPTH,
     TEST_QUEUE_DEPTH,
 >;
 
@@ -302,12 +304,13 @@ fn make_ordinary<'a, const BUFFER_SIZE: usize>(
 
 fn make_network() -> (
     Device,
-    open_esp_radio_embassy_net::PinnedRadioRunner<
+    open_esp_radio_embassy_net::SplitPinnedRadioRunner<
         'static,
         NoopRawMutex,
         TEST_FRAME_CAPACITY,
         TEST_HEADROOM,
         TEST_TRAILER,
+        TEST_QUEUE_DEPTH,
         TEST_QUEUE_DEPTH,
     >,
 ) {
@@ -431,8 +434,14 @@ fn production_sized_he_frame_fits_a_fresh_default_txop_aggregate() {
     const HEADROOM: usize = TEST_HEADROOM;
     const TRAILER: usize = 12;
     const QUEUE_DEPTH: usize = 3;
-    type LargeResources =
-        PinnedResources<NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>;
+    type LargeResources = SplitPinnedResources<
+        NoopRawMutex,
+        FRAME_CAPACITY,
+        HEADROOM,
+        TRAILER,
+        QUEUE_DEPTH,
+        QUEUE_DEPTH,
+    >;
     type LargePool = PinnedTxPool<FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>;
 
     let resources = std::boxed::Box::leak(std::boxed::Box::new(LargeResources::new()));
@@ -503,8 +512,14 @@ fn negotiated_amsdu_pairs_network_frames_inside_the_block_ack_window() {
     const HEADROOM: usize = TEST_HEADROOM;
     const TRAILER: usize = 1_632;
     const QUEUE_DEPTH: usize = 4;
-    type LargeResources =
-        PinnedResources<NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>;
+    type LargeResources = SplitPinnedResources<
+        NoopRawMutex,
+        FRAME_CAPACITY,
+        HEADROOM,
+        TRAILER,
+        QUEUE_DEPTH,
+        QUEUE_DEPTH,
+    >;
     type LargePool = PinnedTxPool<FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>;
 
     let resources = std::boxed::Box::leak(std::boxed::Box::new(LargeResources::new()));
@@ -630,11 +645,12 @@ fn aggregate_never_exceeds_the_peer_negotiated_block_ack_window() {
 #[test]
 fn pipelined_arena_survives_current_retry_and_publishes_at_next_boundary() {
     const PIPELINE_DEPTH: usize = 6;
-    type PipelineResources = PinnedResources<
+    type PipelineResources = SplitPinnedResources<
         NoopRawMutex,
         TEST_FRAME_CAPACITY,
         TEST_HEADROOM,
         TEST_TRAILER,
+        PIPELINE_DEPTH,
         PIPELINE_DEPTH,
     >;
     type PipelinePool =

@@ -223,7 +223,10 @@ mod tests {
                 Ok(())
             })
             .unwrap();
-        let mut ring = stopped.start(&mut mmio).unwrap();
+        let mut ring = stopped
+            .try_start(&mut mmio)
+            .map_err(|(_, error)| error)
+            .unwrap();
         descriptors[0].write_word0(BUFFER_SIZE | (4 << LENGTH_SHIFT) | BIT_30 | BIT_31);
         let completed = ring.take_completed(0).unwrap();
         let pool = RxStagePool::<1, 16>::new();
@@ -253,7 +256,10 @@ mod tests {
         let storage = RxDmaStorage::<COUNT, 256, 260>::new();
         let mut mmio = MockRxDma::default();
         let stopped = storage.prepare_ring(&mut mmio, BASE, &buffers).unwrap();
-        let ring = stopped.start(&mut mmio).unwrap();
+        let ring = stopped
+            .try_start(&mut mmio)
+            .map_err(|(_, error)| error)
+            .unwrap();
         assert_eq!(storage.lifecycle_state(), RxDmaArenaState::Live);
 
         drop(ring);

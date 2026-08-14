@@ -1,4 +1,7 @@
 //! Human-oriented bridge from immutable MMIO facts to the reviewed model.
+//!
+//! The reviewed model owns accepted assertions and evidence links, never the
+//! underlying immutable observations.
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -377,11 +380,15 @@ fn render_report(
             if let Some(identity) = identity
                 && let Some(annotation) = annotation_map.get(identity.as_str())
             {
-                if let Some(confidence) = &annotation.confidence {
+                if let (Some(provenance), Some(accuracy), Some(completeness)) = (
+                    annotation.provenance,
+                    annotation.accuracy,
+                    annotation.completeness,
+                ) {
                     writeln!(
                         output,
-                        "Review confidence: `{}`.",
-                        markdown_code(confidence)
+                        "Fact classification: provenance `{:?}`, accuracy `{:?}`, completeness `{:?}`.",
+                        provenance, accuracy, completeness,
                     )
                     .expect("writing to String cannot fail");
                 }

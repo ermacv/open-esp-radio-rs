@@ -2,9 +2,9 @@
 
 mod code;
 mod comparisons;
-mod features;
 mod functions;
 mod interfaces;
+mod policy;
 pub(super) mod registers;
 mod review_queue;
 mod scopes;
@@ -47,7 +47,7 @@ pub(super) fn collect(resolved: &ProjectSession, generation: u64) -> WorkspaceSn
     let registers = self::registers::collect(resolved, &mut diagnostics);
     let interfaces = self::interfaces::collect(resolved, &mut diagnostics);
     let review_scopes = self::scopes::collect(resolved, &mut diagnostics);
-    let features = self::features::collect(resolved, &mut diagnostics);
+    let verification_policy = self::policy::collect(resolved, &mut diagnostics);
     let review_queue = self::review_queue::collect(resolved, &mut diagnostics);
     let comparisons = self::comparisons::collect(resolved, &mut diagnostics);
     diagnostics.sort_by(|left, right| {
@@ -63,7 +63,7 @@ pub(super) fn collect(resolved: &ProjectSession, generation: u64) -> WorkspaceSn
         registers,
         interfaces,
         review_scopes,
-        features,
+        verification_policy,
         review_queue,
         comparisons,
         diagnostics,
@@ -338,7 +338,7 @@ fn profile_draft(fact: &FunctionFact, suggestions: &[ScenarioSuggestionSummary])
         return None;
     }
     let mut output = format!(
-        "# Generated coverage draft; replace TODO values and replay every case.\nschema = 3\n\n[[profiles]]\nname = {}\nvendor-source = {}\nvendor-symbol = {}\nrust-symbol = \"TODO_RUST_SYMBOL\"\nclaim = \"whole-function-equivalence\"\n",
+        "# Generated coverage draft; replace REVIEW_REQUIRED values and replay every case.\nschema = 3\n\n[[profiles]]\nname = {}\nvendor-source = {}\nvendor-symbol = {}\nrust-symbol = \"REVIEW_REQUIRED_RUST_SYMBOL\"\nclaim = \"whole-function-equivalence\"\n",
         toml_edit::Value::from(format!(
             "draft-{}",
             fact.symbol
@@ -367,7 +367,7 @@ fn profile_draft(fact: &FunctionFact, suggestions: &[ScenarioSuggestionSummary])
                         output.push_str(&format!("  {value:#010x},\n"));
                     } else {
                         output.push_str(&format!(
-                            "  0x00000000, # TODO: supply unconstrained argument a{index}\n"
+                            "  0x00000000, # REVIEW_REQUIRED: supply unconstrained argument a{index}\n"
                         ));
                     }
                 }
@@ -651,8 +651,8 @@ mod tests {
         }];
 
         let draft = profile_draft(&fact, &suggestions).unwrap();
-        assert!(draft.contains("rust-symbol = \"TODO_RUST_SYMBOL\""));
-        assert!(draft.contains("TODO: supply unconstrained argument a0"));
+        assert!(draft.contains("rust-symbol = \"REVIEW_REQUIRED_RUST_SYMBOL\""));
+        assert!(draft.contains("REVIEW_REQUIRED: supply unconstrained argument a0"));
         assert!(draft.contains("  0x00000001,"));
         assert!(draft.contains("address = 0x00004000\nvalue = 0x00000000"));
         assert!(draft.contains("address = 0x00004000\nvalue = 0x00000001"));

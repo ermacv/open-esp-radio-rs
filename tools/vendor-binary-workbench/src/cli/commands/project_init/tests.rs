@@ -67,8 +67,8 @@ fn creates_a_valid_project_and_refuses_to_overwrite_it() {
         )
     );
     assert_eq!(
-        project.platform_pack.as_ref().map(|pack| pack.id.as_str()),
-        Some("radio-platform")
+        project.ecosystem_packs.first().map(|pack| pack.id.as_str()),
+        Some("radio-ecosystem")
     );
     assert!(project.interfaces.is_some());
     assert!(project.functions.is_some());

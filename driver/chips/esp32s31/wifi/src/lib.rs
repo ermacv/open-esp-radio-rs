@@ -16,7 +16,6 @@ pub mod cold_start;
 #[cfg(target_arch = "riscv32")]
 pub mod mac_start;
 pub mod ordinary_tx;
-pub mod register_arena;
 #[cfg(target_arch = "riscv32")]
 pub mod runtime;
 pub mod tx;

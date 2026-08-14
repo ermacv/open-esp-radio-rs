@@ -21,13 +21,13 @@ fn invalid_project_span(input: &str, name: &str) -> (usize, usize, String) {
 #[test]
 fn register_workspace_requires_an_explicit_nonempty_publication_scope() {
     let (_, _, missing) = invalid_project_span(
-        "schema = 1\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[registers]\nfacts = \"facts.json\"\nmodel = \"registers.toml\"\n",
+        "schema = 3\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[registers]\nfacts = \"facts.json\"\nmodel = \"registers.toml\"\n",
         "missing-owned-ranges.toml",
     );
     assert!(missing.contains("requires \"owned-ranges\""));
 
     let (_, _, duplicate) = invalid_project_span(
-        "schema = 1\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[registers]\nfacts = \"facts.json\"\nmodel = \"registers.toml\"\nowned-ranges = [\"radio\", \"radio\"]\n",
+        "schema = 3\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[registers]\nfacts = \"facts.json\"\nmodel = \"registers.toml\"\nowned-ranges = [\"radio\", \"radio\"]\n",
         "duplicate-owned-ranges.toml",
     );
     assert!(duplicate.contains("duplicate project registers.owned-ranges"));
@@ -36,7 +36,7 @@ fn register_workspace_requires_an_explicit_nonempty_publication_scope() {
 #[test]
 fn project_manifest_rejects_misspelled_nested_configuration_tables() {
     let (_, _, error) = invalid_project_span(
-        "schema = 1\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[registers]\nfacts = \"facts.json\"\nmodel = \"registers.toml\"\nowned-ranges = [\"radio\"]\n[registers.toml]\ncatalogs = [\"evidence.toml\"]\n",
+        "schema = 3\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[registers]\nfacts = \"facts.json\"\nmodel = \"registers.toml\"\nowned-ranges = [\"radio\"]\n[registers.toml]\ncatalogs = [\"evidence.toml\"]\n",
         "unknown-register-table.toml",
     );
     assert!(error.contains("unknown project registers key \"toml\""));
@@ -53,12 +53,12 @@ fn resolves_composed_specs_relative_to_the_project() {
     std::fs::write(
         &path,
         r#"
-schema = 1
+schema = 3
 id = "fixture"
 target-spec = "target.toml"
+verification-addon = "verification.toml"
 run-spec = "local.toml"
-memory-map = "memory.toml"
-svd = ["registers/base.svd"]
+chip-pack = "chip.toml"
 
 [analysis.symbols]
 output = "generated/symbols.json"
@@ -132,10 +132,29 @@ profiles = ["vendor"]
 roots = ["archive:phy_init"]
 include-reachable = true
 
-[verification]
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        directory.join("chip.toml"),
+        r#"schema = 3
+id = "fixture-chip"
+memory-map = "memory.toml"
+svd = ["registers/base.svd"]
+knowledge-provider = "none"
+knowledge-packs = []
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        directory.join("verification.toml"),
+        r#"schema = 2
+id = "fixture-verification"
+provider = "fixture-provider"
 report = "generated/verification.json"
+evidence-index = "generated/vendor-evidence.json"
 
-[[verification.suites]]
+[[suites]]
 id = "radio"
 auxiliary-sources = ["linked-replay"]
 rust-artifact-role = "rust-artifact:radio"
@@ -146,10 +165,10 @@ dispositions = ["dispositions/radio.toml"]
 baselines = ["baselines/radio.toml"]
 gate = "regression"
 match-floor = 2
-[[verification.suites.vendor]]
+[[suites.vendor]]
 source = "rom"
 prefix = "phy_"
-[[verification.suites.vendor]]
+[[suites.vendor]]
 source = "archive"
 all = true
 "#,
@@ -162,7 +181,6 @@ all = true
     assert_eq!(project.target_spec, directory.join("target.toml"));
     assert_eq!(project.run_spec, Some(directory.join("local.toml")));
     assert_eq!(project.memory_map, Some(directory.join("memory.toml")));
-    assert!(project.svd_configured);
     assert_eq!(project.svd_paths, [directory.join("registers/base.svd")]);
     assert_eq!(
         project.symbol_inventory,
@@ -255,7 +273,10 @@ all = true
     assert_eq!(
         project.verification,
         Some(VerificationWorkspacePaths {
+            provider: "fixture-provider".to_owned(),
             report: directory.join("generated/verification.json"),
+            evidence_index: directory.join("generated/vendor-evidence.json"),
+            policy: None,
             suites: vec![VerificationSuiteSpec {
                 id: "radio".to_owned(),
                 vendor: vec![
@@ -289,43 +310,43 @@ fn nested_project_errors_retain_the_exact_manifest_value_span() {
     let cases = [
         (
             "wrong-run-spec-type.toml",
-            "schema = 1\nid = \"fixture\"\ntarget-spec = \"target.toml\"\nrun-spec = 7\n",
+            "schema = 3\nid = \"fixture\"\ntarget-spec = \"target.toml\"\nrun-spec = 7\n",
             "7",
             "run-spec",
         ),
         (
             "wrong-analysis-shape.toml",
-            "schema = 1\nid = \"fixture\"\ntarget-spec = \"target.toml\"\nanalysis = \"wrong\"\n",
+            "schema = 3\nid = \"fixture\"\ntarget-spec = \"target.toml\"\nanalysis = \"wrong\"\n",
             "\"wrong\"",
             "analysis must be a table",
         ),
         (
             "wrong-source-id.toml",
-            "schema = 1\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[[analysis.ir]]\nid = \"fixture\"\nsources = [\"bad.source\"]\noutput = \"generated/fixture.json\"\n",
+            "schema = 3\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[[analysis.ir]]\nid = \"fixture\"\nsources = [\"bad.source\"]\noutput = \"generated/fixture.json\"\n",
             "\"bad.source\"",
             "invalid source id",
         ),
         (
             "wrong-pac-edition.toml",
-            "schema = 1\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[registers]\nfacts = \"facts.json\"\nmodel = \"registers.toml\"\nowned-ranges = [\"radio\"]\n[registers.pac-raw]\noutput = \"pac.rs\"\nedition = \"2018\"\n",
+            "schema = 3\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[registers]\nfacts = \"facts.json\"\nmodel = \"registers.toml\"\nowned-ranges = [\"radio\"]\n[registers.pac-raw]\noutput = \"pac.rs\"\nedition = \"2018\"\n",
             "\"2018\"",
             "edition must be",
         ),
         (
             "removed-pac-key.toml",
-            "schema = 1\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[registers]\nfacts = \"facts.json\"\nmodel = \"registers.toml\"\nowned-ranges = [\"radio\"]\n[registers.pac]\noutput = \"pac.rs\"\n",
+            "schema = 3\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[registers]\nfacts = \"facts.json\"\nmodel = \"registers.toml\"\nowned-ranges = [\"radio\"]\n[registers.pac]\noutput = \"pac.rs\"\n",
             "[registers.pac]",
             "[registers.pac-raw]",
         ),
         (
             "removed-interface-key.toml",
-            "schema = 1\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[interfaces]\nfacts = \"interfaces.json\"\nsemantic-catalogs = []\n",
+            "schema = 3\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[interfaces]\nfacts = \"interfaces.json\"\nsemantic-catalogs = []\n",
             "[]",
-            "semantic catalogs belong to the platform pack",
+            "knowledge packs belong to ecosystem or chip packs",
         ),
         (
             "unknown-function-profile.toml",
-            "schema = 1\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[[analysis.ir]]\nid = \"known\"\nroots = \"all\"\noutput = \"known.json\"\n[functions]\npack = \"functions.toml\"\nprofiles = [\"missing\"]\n",
+            "schema = 3\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[[analysis.ir]]\nid = \"known\"\nroots = \"all\"\noutput = \"known.json\"\n[functions]\npack = \"functions.toml\"\nprofiles = [\"missing\"]\n",
             "[\"missing\"]",
             "unknown IR profile",
         ),
@@ -352,7 +373,7 @@ fn discovers_the_nearest_project_manifest_from_a_child_directory() {
     let child = directory.join("generated/findings");
     std::fs::create_dir_all(&child).unwrap();
     let manifest = directory.join(DEFAULT_PROJECT_MANIFEST);
-    std::fs::write(&manifest, "schema = 1\n").unwrap();
+    std::fs::write(&manifest, "schema = 3\n").unwrap();
 
     assert_eq!(ProjectSpec::discover_from(&child).unwrap(), Some(manifest));
     std::fs::remove_dir_all(directory).unwrap();
@@ -369,7 +390,7 @@ fn rejects_removed_workspace_configuration_keys() {
     let registers = directory.join("registers.toml");
     std::fs::write(
         &registers,
-        "schema = 1\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[registers]\nfacts = \"facts.json\"\noverlay = \"reviewed.toml\"\n",
+        "schema = 3\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[registers]\nfacts = \"facts.json\"\noverlay = \"reviewed.toml\"\n",
     )
     .unwrap();
     assert!(
@@ -382,27 +403,27 @@ fn rejects_removed_workspace_configuration_keys() {
     let interfaces = directory.join("interfaces.toml");
     std::fs::write(
         &interfaces,
-        "schema = 1\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[interfaces]\nfacts = \"facts.json\"\nsemantic-catalogs = []\n",
+        "schema = 3\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[interfaces]\nfacts = \"facts.json\"\nsemantic-catalogs = []\n",
     )
     .unwrap();
     assert!(
         ProjectSpec::load(&interfaces)
             .unwrap_err()
             .to_string()
-            .contains("semantic catalogs belong to the platform pack")
+            .contains("knowledge packs belong to ecosystem or chip packs")
     );
 
     let legacy_verification = directory.join("legacy-verification.toml");
     std::fs::write(
         &legacy_verification,
-        "schema = 1\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[verification]\nprofiles = [\"profiles.toml\"]\n",
+        "schema = 3\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[verification]\nprofiles = [\"profiles.toml\"]\n",
     )
     .unwrap();
     assert!(
         ProjectSpec::load(&legacy_verification)
             .unwrap_err()
             .to_string()
-            .contains("unknown project verification key \"profiles\"")
+            .contains("unknown project manifest key \"verification\"")
     );
 
     std::fs::remove_dir_all(directory).unwrap();
@@ -419,14 +440,22 @@ fn completion_suite_may_start_without_an_evidence_baseline() {
     std::fs::write(
         &manifest,
         r#"
-schema = 1
+schema = 3
 id = "fixture"
 target-spec = "target.toml"
-
-[verification]
+verification-addon = "verification.toml"
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        directory.join("verification.toml"),
+        r#"schema = 2
+id = "fixture-verification"
+provider = "fixture-provider"
 report = "generated/verification.json"
+evidence-index = "generated/vendor-evidence.json"
 
-[[verification.suites]]
+[[suites]]
 id = "uncovered-leaf"
 rust-artifact-role = "rust-artifact"
 rust-prefix = "open_trace_"
@@ -435,7 +464,7 @@ dispositions = ["dispositions.toml"]
 baselines = []
 gate = "completion"
 
-[[verification.suites.vendor]]
+[[suites.vendor]]
 source = "vendor"
 symbols = ["uncovered_leaf"]
 "#,
@@ -459,7 +488,7 @@ fn rejects_generic_analysis_output_collisions() {
     std::fs::write(
         &manifest,
         r#"
-schema = 1
+schema = 3
 id = "fixture"
 target-spec = "target.toml"
 
@@ -482,7 +511,7 @@ owned-ranges = ["radio"]
     std::fs::write(
         &manifest,
         r#"
-schema = 1
+schema = 3
 id = "fixture"
 target-spec = "target.toml"
 
@@ -517,7 +546,7 @@ fn reviewed_code_pack_and_review_own_distinct_paths() {
     std::fs::write(
         &manifest,
         r#"
-schema = 1
+schema = 3
 id = "fixture"
 target-spec = "target.toml"
 
@@ -538,7 +567,7 @@ pack = "generated/symbols.json"
     std::fs::write(
         &manifest,
         r#"
-schema = 1
+schema = 3
 id = "fixture"
 target-spec = "target.toml"
 
@@ -563,7 +592,7 @@ output = "code/boundaries.toml"
 }
 
 #[test]
-fn distinguishes_an_explicit_empty_svd_catalog_from_an_omitted_one() {
+fn accepts_an_explicit_or_omitted_empty_chip_svd_catalog() {
     let directory = std::env::temp_dir().join(format!(
         "open-radio-workbench-project-empty-svd-{}",
         std::process::id()
@@ -572,21 +601,56 @@ fn distinguishes_an_explicit_empty_svd_catalog_from_an_omitted_one() {
     let explicit = directory.join("explicit.toml");
     let omitted = directory.join("omitted.toml");
     std::fs::write(
+        directory.join("chip.toml"),
+        "schema = 3\nid = \"fixture-chip\"\nsvd = []\nknowledge-provider = \"none\"\nknowledge-packs = []\n",
+    )
+    .unwrap();
+    std::fs::write(
         &explicit,
-        "schema = 1\nid = \"explicit\"\ntarget-spec = \"target.toml\"\nsvd = []\n",
+        "schema = 3\nid = \"explicit\"\ntarget-spec = \"target.toml\"\nchip-pack = \"chip.toml\"\n",
     )
     .unwrap();
     std::fs::write(
         &omitted,
-        "schema = 1\nid = \"omitted\"\ntarget-spec = \"target.toml\"\n",
+        "schema = 3\nid = \"omitted\"\ntarget-spec = \"target.toml\"\n",
     )
     .unwrap();
 
     let explicit = ProjectSpec::load(&explicit).unwrap();
     let omitted = ProjectSpec::load(&omitted).unwrap();
     std::fs::remove_dir_all(directory).unwrap();
-    assert!(explicit.svd_configured);
     assert!(explicit.svd_paths.is_empty());
-    assert!(!omitted.svd_configured);
     assert!(omitted.svd_paths.is_empty());
+}
+
+#[test]
+fn one_chip_pack_is_reused_by_multiple_project_compositions() {
+    let directory = std::env::temp_dir().join(format!(
+        "open-radio-workbench-shared-chip-{}",
+        std::process::id()
+    ));
+    std::fs::create_dir_all(&directory).unwrap();
+    std::fs::write(
+        directory.join("chip.toml"),
+        "schema = 3\nid = \"shared-chip\"\nmemory-map = \"memory.toml\"\nsvd = [\"chip.svd\"]\n",
+    )
+    .unwrap();
+    for id in ["first", "second"] {
+        std::fs::write(
+            directory.join(format!("{id}.toml")),
+            format!(
+                "schema = 3\nid = \"{id}\"\ntarget-spec = \"target.toml\"\nchip-pack = \"chip.toml\"\n"
+            ),
+        )
+        .unwrap();
+    }
+
+    let first = ProjectSpec::load(&directory.join("first.toml")).unwrap();
+    let second = ProjectSpec::load(&directory.join("second.toml")).unwrap();
+    std::fs::remove_dir_all(&directory).unwrap();
+
+    assert_eq!(first.memory_map, second.memory_map);
+    assert_eq!(first.svd_paths, second.svd_paths);
+    assert_eq!(first.chip_pack.unwrap().id, "shared-chip");
+    assert_eq!(second.chip_pack.unwrap().id, "shared-chip");
 }

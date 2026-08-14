@@ -6,10 +6,11 @@
 
 #![forbid(unsafe_code)]
 
-use open_esp_radio_esp32s31_pac::{
+use open_esp_radio_esp32s31_hal::types::{
     MacInterface, MacRxBlockAckEntryIndex, MacRxBlockAckStartingSequence, MacRxBlockAckTid,
-    MacRxBlockAckWindow, RadioRegisters,
+    MacRxBlockAckWindow,
 };
+use open_esp_radio_esp32s31_hal::wifi_mac::WifiMacHal;
 
 const RX_BLOCK_ACK_CAPACITY: u8 = 8;
 /// Highest receive BlockAck TID accepted by the vendor net80211 state machine.
@@ -72,7 +73,7 @@ impl S31RxBlockAckAgreement {
 /// operations. The caller must keep the matching software reorder state alive
 /// until [`clear`] completes.
 pub fn program(
-    mmio: &mut RadioRegisters,
+    mmio: &mut WifiMacHal<'_>,
     agreement: S31RxBlockAckAgreement,
 ) -> Result<(), S31RxBlockAckAgreementError> {
     let agreement = agreement.validate()?;
@@ -94,7 +95,7 @@ pub fn program(
 ///
 /// The caller must recycle all retained software reorder slots first.
 pub fn clear(
-    mmio: &mut RadioRegisters,
+    mmio: &mut WifiMacHal<'_>,
     hardware_index: u8,
 ) -> Result<(), S31RxBlockAckAgreementError> {
     if hardware_index >= RX_BLOCK_ACK_CAPACITY {

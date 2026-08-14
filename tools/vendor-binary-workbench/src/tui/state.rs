@@ -13,7 +13,7 @@ mod navigation;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum Section {
     Overview,
-    Features,
+    Policy,
     Scopes,
     Code,
     Functions,
@@ -28,7 +28,7 @@ pub(super) enum Section {
 impl Section {
     pub(super) const ALL: [Self; 11] = [
         Self::Overview,
-        Self::Features,
+        Self::Policy,
         Self::Scopes,
         Self::Code,
         Self::Functions,
@@ -43,7 +43,7 @@ impl Section {
     pub(super) const fn title(self) -> &'static str {
         match self {
             Self::Overview => "Overview",
-            Self::Features => "Features",
+            Self::Policy => "Policy",
             Self::Scopes => "Scopes",
             Self::Code => "Code",
             Self::Functions => "Functions",
@@ -307,7 +307,7 @@ mod tests {
                     id: "target".to_owned(),
                     architecture: "riscv32".to_owned(),
                     calling_convention: "ilp32".to_owned(),
-                    harness: None,
+                    knowledge_provider: None,
                 },
                 overall: Readiness::Incomplete,
                 phases: (0..phases)
@@ -355,7 +355,7 @@ mod tests {
                 slots: Vec::new(),
             },
             review_scopes: Vec::new(),
-            features: Vec::new(),
+            verification_policy: Vec::new(),
             review_queue: Vec::new(),
             comparisons: Vec::new(),
             diagnostics: (0..diagnostics)
@@ -532,7 +532,7 @@ mod tests {
     }
 
     #[test]
-    fn activation_opens_the_first_function_in_a_release_scope() {
+    fn activation_opens_the_first_function_in_a_publication_scope() {
         let mut workspace = snapshot(1, 0, 0);
         workspace.functions.push(FunctionSummary {
             profile: "radio".to_owned(),
@@ -558,7 +558,7 @@ mod tests {
         workspace.review_scopes.push(ReviewScopeSummary {
             id: "radio-init".to_owned(),
             publication: true,
-            replacement_qualification: "qualified".to_owned(),
+            replacement_coverage: "complete".to_owned(),
             replacement_policy_excluded: 0,
             analysis_inventory_complete: true,
             profiles: vec!["radio".to_owned()],

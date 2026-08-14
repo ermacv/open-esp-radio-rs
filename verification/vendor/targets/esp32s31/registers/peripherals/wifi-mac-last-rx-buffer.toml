@@ -100,34 +100,48 @@ maximum = 0xFFFFFFFF
 [[review]]
 entity = "WIFI_MAC_LAST_RX_BUFFER"
 sources = ["BLOB_LIBPP_MAC_LAST_RXBUF_INIT"]
-confidence = "instruction-exact-partial"
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_LAST_RX_BUFFER.CONTROL"
 sources = ["BLOB_LIBPP_MAC_LAST_RXBUF_INIT"]
-confidence = "instruction-exact-partial"
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_LAST_RX_BUFFER.CONTROL.LOW_ENABLE_GROUP_UNKNOWN"
 sources = ["BLOB_LIBPP_MAC_LAST_RXBUF_INIT"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_LAST_RX_BUFFER.CONTROL.HIGH_ENABLE_GROUP_UNKNOWN"
 sources = ["BLOB_LIBPP_MAC_LAST_RXBUF_INIT"]
-confidence = "instruction-exact"
+provenance = "observed"
+accuracy = "exact"
+completeness = "complete"
 
 [[review]]
 entity = "WIFI_MAC_LAST_RX_BUFFER.ENTRY_CONTROL%s"
 sources = ["BLOB_LIBPP_MAC_LAST_RXBUF_INIT"]
-confidence = "instruction-exact-partial"
+provenance = "observed"
+accuracy = "exact"
+completeness = "partial"
 
 [[review]]
 entity = "WIFI_MAC_LAST_RX_BUFFER.ENTRY_PARAMETER_A%s"
 sources = ["BLOB_LIBPP_MAC_LAST_RXBUF_INIT"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "WIFI_MAC_LAST_RX_BUFFER.ENTRY_PARAMETER_B%s"
 sources = ["BLOB_LIBPP_MAC_LAST_RXBUF_INIT"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"

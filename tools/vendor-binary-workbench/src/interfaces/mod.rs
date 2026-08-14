@@ -1,4 +1,4 @@
-//! Generated interface facts, reviewed layout packs, and semantic catalogs.
+//! Generated interface facts, reviewed layout packs, and semantic knowledge packs.
 
 mod execution_models;
 mod facts;
@@ -15,5 +15,6 @@ mod validation;
 
 pub(crate) use facts::*;
 pub(crate) use pack_model::*;
+pub(crate) use pack_schema::validate_abi_type;
 pub(crate) use pack_template::*;
 pub(crate) use semantics::*;

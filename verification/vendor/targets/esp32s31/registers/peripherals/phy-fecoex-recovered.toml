@@ -68,12 +68,16 @@ sources = [
     "BLOB_LIBPHY_PHY_DEBUG_REG_CHECK",
     "BLOB_LIBBTBB_COEX_PTI_V2",
 ]
-confidence = "block-exact-register-semantics-opaque"
+provenance = "derived"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_FECOEX_RECOVERED.BT_COEX_PTI_CONFIG"
 sources = ["BLOB_LIBBTBB_COEX_PTI_V2"]
-confidence = "instruction-exact-semantics-unknown"
+provenance = "observed"
+accuracy = "exact"
+completeness = "unknown"
 
 [[review]]
 entity = "PHY_FECOEX_RECOVERED.RF_FREQUENCY_CONTROL_OPAQUE"

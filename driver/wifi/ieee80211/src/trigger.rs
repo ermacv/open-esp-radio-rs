@@ -912,8 +912,7 @@ mod tests {
 
     #[test]
     fn parses_every_common_info_field_across_the_word_boundary() {
-        let bits = 0_u64
-            | 4
+        let bits = 4_u64
             | (0xabc << 4)
             | (1 << 16)
             | (1 << 17)

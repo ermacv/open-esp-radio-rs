@@ -23,7 +23,7 @@ pub(crate) enum VendorSymbolSelection<'a> {
 }
 
 impl VendorSymbolSelection<'_> {
-    pub(crate) fn stripped_name<'a>(self, name: &'a str) -> Option<&'a str> {
+    pub(crate) fn stripped_name(self, name: &str) -> Option<&str> {
         match self {
             Self::Prefix(prefix) => name.strip_prefix(prefix),
             Self::All | Self::Symbols(_) => Some(name),

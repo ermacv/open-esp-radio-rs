@@ -249,7 +249,10 @@ fn finite_service_uses_queue_credits_and_protocol_dispatch_returns_ownership() {
         |_| Ok(()),
     )
     .unwrap();
-    let ring = stopped.start(&mut hardware).unwrap();
+    let ring = stopped
+        .try_start(&mut hardware)
+        .map_err(|(_, error)| error)
+        .unwrap();
     storage.descriptors()[0]
         .write_word0(ESP32S31_RX_BUFFER_SIZE as u32 | (8 << LENGTH_SHIFT) | BIT_30 | BIT_31);
     storage.descriptors()[1]
@@ -320,7 +323,10 @@ fn connected_rx_stop_confirms_walker_off_and_preserves_static_resources() {
         |_| Ok(()),
     )
     .unwrap();
-    let ring = stopped.start(&mut hardware).unwrap();
+    let ring = stopped
+        .try_start(&mut hardware)
+        .map_err(|(_, error)| error)
+        .unwrap();
     let pool = RxStagePool::<STAGED_DEPTH, ESP32S31_RX_BUFFER_SIZE>::new();
     let queue = Esp32s31StagedRxQueue::<
         NoopRawMutex,
@@ -382,7 +388,10 @@ fn connected_rx_stop_confirms_walker_off_and_preserves_static_resources() {
         Ok(prepared) => prepared,
         Err(_) => panic!("split halted ring must rebuild"),
     };
-    let ring = prepared.start(&mut hardware).unwrap();
+    let ring = prepared
+        .try_start(&mut hardware)
+        .map_err(|(_, error)| error)
+        .unwrap();
     let restarted = epoch_resources.with_live_ring(ring);
     assert!(hardware.walker);
     assert_eq!(restarted.ring().descriptor_base(), BASE);
@@ -411,7 +420,10 @@ fn finite_service_stages_a_descriptor_chain_as_one_contiguous_unit() {
         |_| Ok(()),
     )
     .unwrap();
-    let ring = stopped.start(&mut hardware).unwrap();
+    let ring = stopped
+        .try_start(&mut hardware)
+        .map_err(|(_, error)| error)
+        .unwrap();
     storage.descriptors()[0]
         .write_word0(ESP32S31_RX_BUFFER_SIZE as u32 | (4 << LENGTH_SHIFT) | BIT_31);
     storage.descriptors()[1]
@@ -492,7 +504,10 @@ fn negotiated_rx_block_ack_releases_staged_leases_in_sequence_order() {
         |_| Ok(()),
     )
     .unwrap();
-    let ring = stopped.start(&mut hardware).unwrap();
+    let ring = stopped
+        .try_start(&mut hardware)
+        .map_err(|(_, error)| error)
+        .unwrap();
     for index in 0..3 {
         storage.descriptors()[index].write_word0(
             ESP32S31_RX_BUFFER_SIZE as u32 | ((RECEIVED as u32) << LENGTH_SHIFT) | BIT_30 | BIT_31,
@@ -582,7 +597,10 @@ fn finite_service_discards_oversize_unit_and_keeps_the_ring_live() {
         |_| Ok(()),
     )
     .unwrap();
-    let ring = stopped.start(&mut hardware).unwrap();
+    let ring = stopped
+        .try_start(&mut hardware)
+        .map_err(|(_, error)| error)
+        .unwrap();
     storage.descriptors()[0].write_word0(
         ESP32S31_RX_BUFFER_SIZE as u32
             | ((VENDOR_LARGE_RX_PAYLOAD_CAPACITY as u32 + 1) << LENGTH_SHIFT)
@@ -645,7 +663,10 @@ fn one_shot_admission_discards_before_staging_then_observes_same_live_ring() {
         |_| Ok(()),
     )
     .unwrap();
-    let ring = stopped.start(&mut hardware).unwrap();
+    let ring = stopped
+        .try_start(&mut hardware)
+        .map_err(|(_, error)| error)
+        .unwrap();
     let pool = RxStagePool::new();
     let admission = OneShotNarrowAdmission::default();
     let queue = Esp32s31StagedRxQueue::<NoopRawMutex, STAGED_DEPTH>::new();
@@ -704,7 +725,10 @@ fn finite_service_accepts_a_unit_within_a_wider_negotiated_stage() {
         |_| Ok(()),
     )
     .unwrap();
-    let ring = stopped.start(&mut hardware).unwrap();
+    let ring = stopped
+        .try_start(&mut hardware)
+        .map_err(|(_, error)| error)
+        .unwrap();
     storage.descriptors()[0].write_word0(
         ESP32S31_RX_BUFFER_SIZE as u32
             | ((WIDE_STAGE_CAPACITY as u32) << LENGTH_SHIFT)

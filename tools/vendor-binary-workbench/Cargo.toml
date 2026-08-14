@@ -6,11 +6,11 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 publish = false
-default-run = "vendor-binary-workbench"
+default-run = "vendor-binary-workbench-generic"
 description = "Project-oriented analysis, reconstruction, publication and Rust conformance verification for compiled vendor binaries"
 
 [[bin]]
-name = "vendor-binary-workbench"
+name = "vendor-binary-workbench-generic"
 path = "src/main.rs"
 
 [dependencies]

@@ -26,7 +26,7 @@ Use the regression gate to protect already established evidence while the
 port is incomplete; use the completion gate to require the entire selected
 vendor inventory. The machine-readable disposition manifest separates
 not-yet-ported functions from implemented architectural replacements that do
-not yet have a semantic contract. Qualification dependencies for those roots
+not yet have a qualifying compiled comparison. Qualification dependencies for those roots
 are source-qualified `blocked-by` edges in that same manifest and are checked
 against the vendor inventory. The tool README defines both gates and the
 current floor.

@@ -120,14 +120,6 @@ impl ResolutionNeeds {
             Command::InspectObject(_) => Self::new(true, false, false, false, false, false, false),
             Command::InspectRegister(_) => Self::new(true, false, false, false, true, false, false),
             Command::InspectScope(_) => Self::new(true, false, false, false, false, false, false),
-            Command::VerifyContractChannel(_)
-            | Command::VerifyContractRfInit(_)
-            | Command::VerifyContractBluetoothTxPower(_)
-            | Command::VerifyContractBluetoothTxGainInit(_)
-            | Command::VerifyContractBasebandInit(_)
-            | Command::VerifyContractRegisterInit(_) => {
-                Self::new(true, true, false, true, true, true, true)
-            }
             Command::GenerateReference(_)
             | Command::GenerateReferenceBatch(_)
             | Command::InspectAnalyze(_) => Self::new(true, true, true, true, true, true, true),

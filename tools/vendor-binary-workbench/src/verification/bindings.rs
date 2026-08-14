@@ -1,7 +1,7 @@
 //! Executable vendor-to-Rust binding identity.
 //!
-//! A binding selects the Rust probe and optional semantic adapter used for a
-//! comparison. It deliberately does not authenticate input artifacts. The
+//! A binding selects one compiled Rust symbol used for a generic comparison.
+//! It deliberately does not authenticate input artifacts. The
 //! caller owns artifact provenance and may enforce any digest/signature policy
 //! before invoking the workbench.
 
@@ -10,23 +10,28 @@ use open_radio_vendor_semantics::RustBindingKind;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum BindingVersion {
-    V1,
+    V2,
 }
 
-/// Closed executable bridge between a compiled probe and a Rust architectural
-/// replacement whose control flow cannot be compared as one direct leaf.
-///
-/// This registry is still platform-specific and will move to the ESP32-S31
-/// harness. Keeping it here temporarily preserves the existing verifier while
-/// the generic engine/harness boundary is introduced.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct DriverAdapter(String);
+pub(crate) struct ComparisonPlan(String);
 
-impl DriverAdapter {
+impl ComparisonPlan {
     pub(crate) fn parse(value: &str, line: usize) -> Result<Self> {
-        if !valid_registry_id(value) {
+        let valid = !value.is_empty()
+            && value.bytes().all(|byte| {
+                byte.is_ascii_lowercase()
+                    || byte.is_ascii_digit()
+                    || matches!(byte, b'-' | b'_' | b'.')
+            });
+        if !valid {
             return Err(crate::Error::invalid(format!(
-                "invalid driver adapter id {value:?} at line {line}"
+                "invalid comparison plan id {value:?} at line {line}"
+            )));
+        }
+        if value != "direct-effects-v1" {
+            return Err(crate::Error::invalid(format!(
+                "unsupported comparison plan {value:?} at line {line}; only generic direct-effects-v1 is available"
             )));
         }
         Ok(Self(value.to_owned()))
@@ -37,17 +42,10 @@ impl DriverAdapter {
     }
 }
 
-fn valid_registry_id(value: &str) -> bool {
-    !value.is_empty()
-        && value.bytes().all(|byte| {
-            byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'-' | b'_' | b'.')
-        })
-}
-
 impl BindingVersion {
     pub(crate) fn parse(value: &str, line: usize) -> Result<Self> {
         match value {
-            "v1" => Ok(Self::V1),
+            "v2" => Ok(Self::V2),
             _ => Err(crate::Error::invalid(format!(
                 "unknown binding version {value:?} at line {line}"
             ))),
@@ -56,7 +54,7 @@ impl BindingVersion {
 
     pub(crate) const fn label(self) -> &'static str {
         match self {
-            Self::V1 => "v1",
+            Self::V2 => "v2",
         }
     }
 }
@@ -66,8 +64,8 @@ pub(crate) struct Binding {
     pub(crate) version: BindingVersion,
     pub(crate) rust_kind: RustBindingKind,
     pub(crate) rust_probe: String,
+    pub(crate) comparison_plan: ComparisonPlan,
     pub(crate) compare_return: bool,
-    pub(crate) driver_adapter: Option<DriverAdapter>,
 }
 
 impl Binding {
@@ -75,8 +73,8 @@ impl Binding {
         version: BindingVersion,
         rust_kind: RustBindingKind,
         rust_probe: String,
+        comparison_plan: ComparisonPlan,
         compare_return: bool,
-        driver_adapter: Option<DriverAdapter>,
     ) -> Result<Self> {
         if rust_probe.is_empty() || rust_probe.chars().any(char::is_whitespace) {
             return Err(crate::Error::invalid(
@@ -87,8 +85,8 @@ impl Binding {
             version,
             rust_kind,
             rust_probe,
+            comparison_plan,
             compare_return,
-            driver_adapter,
         })
     }
 
@@ -105,23 +103,16 @@ impl Binding {
         Ok(())
     }
 
+    #[cfg(test)]
     pub(crate) fn canonical(&self) -> String {
-        let mut output = format!("binding {}\n", self.version.label());
-        output.push_str("rust-binding ");
-        output.push_str(self.rust_kind.label());
-        output.push('\n');
-        output.push_str("rust-probe ");
-        output.push_str(&self.rust_probe);
-        output.push('\n');
-        if self.compare_return {
-            output.push_str("compare-return true\n");
-        }
-        if let Some(adapter) = &self.driver_adapter {
-            output.push_str("driver-adapter ");
-            output.push_str(adapter.label());
-            output.push('\n');
-        }
-        output
+        format!(
+            "binding {}\nrust-binding {}\nrust-probe {}\ncomparison-plan {}\ncompare-return {}\n",
+            self.version.label(),
+            self.rust_kind.label(),
+            self.rust_probe,
+            self.comparison_plan.label(),
+            self.compare_return,
+        )
     }
 }
 
@@ -131,11 +122,11 @@ mod tests {
 
     fn binding() -> Binding {
         Binding::new(
-            BindingVersion::V1,
+            BindingVersion::V2,
             RustBindingKind::ExactProductionEntry,
             "open_phy_trace_leaf".to_owned(),
+            ComparisonPlan::parse("direct-effects-v1", 1).unwrap(),
             false,
-            None,
         )
         .unwrap()
     }
@@ -153,16 +144,16 @@ mod tests {
     #[test]
     fn return_comparison_is_an_explicit_evidence_bound_property() {
         let return_binding = Binding::new(
-            BindingVersion::V1,
+            BindingVersion::V2,
             RustBindingKind::ExactProductionEntry,
             "open_custom_trace_leaf".to_owned(),
+            ComparisonPlan::parse("direct-effects-v1", 1).unwrap(),
             true,
-            None,
         )
         .unwrap();
 
         assert!(return_binding.compare_return);
-        assert!(return_binding.canonical().contains("compare-return true\n"));
-        assert!(!binding().canonical().contains("compare-return"));
+        assert!(return_binding.compare_return);
+        assert!(!binding().compare_return);
     }
 }

@@ -1,19 +1,16 @@
-//! Static trust audit for every reviewed vendor-to-Rust executable binding.
+//! Static declaration audit for reviewed vendor-to-Rust executable bindings.
+//!
+//! This module validates manifest consistency only. It never infers execution
+//! truth, trust, equivalence, or qualification readiness from declarations.
 
 use std::collections::BTreeMap;
 
-use open_radio_vendor_semantics::{
-    DriverAdapterClaim, DriverAdapterDomain, DriverAdapterRelation, DriverAdapterTrust,
-    RustBindingKind, VendorOracleKind,
-};
+use open_radio_vendor_semantics::{RustBindingKind, VerificationClaim};
 use serde::Serialize;
 
-use crate::{ProjectSpec, Result, harnesses};
+use crate::{ProjectSpec, Result};
 
-use super::{
-    dispositions::{Disposition, Manifest},
-    profiles,
-};
+use super::dispositions::{Disposition, Manifest};
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub(crate) struct BindingAuditRow {
@@ -22,77 +19,50 @@ pub(crate) struct BindingAuditRow {
     pub(crate) vendor_symbol: String,
     pub(crate) rust_component: String,
     pub(crate) rust_probe: String,
+    pub(crate) binding_version: &'static str,
+    pub(crate) comparison_plan: String,
     pub(crate) rust_binding: RustBindingKind,
-    pub(crate) vendor_oracle: VendorOracleKind,
-    pub(crate) relation: DriverAdapterRelation,
-    pub(crate) domain: DriverAdapterDomain,
-    pub(crate) maximum_claim: DriverAdapterClaim,
     pub(crate) disposition: String,
-    pub(crate) declared_claims: Vec<DriverAdapterClaim>,
+    pub(crate) declared_claims: Vec<VerificationClaim>,
     pub(crate) required_by: Vec<String>,
     pub(crate) verification_required: bool,
-    pub(crate) claim_valid: bool,
-    pub(crate) disposition_valid: bool,
-    pub(crate) verification_eligible: bool,
+    pub(crate) declaration_valid: bool,
     pub(crate) status: &'static str,
-    pub(crate) driver_adapter: Option<String>,
     pub(crate) blocker: Option<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub(crate) struct BindingAuditReport {
     pub(crate) schema: u32,
+    pub(crate) scope: &'static str,
     pub(crate) project: String,
     pub(crate) bindings: Vec<BindingAuditRow>,
-    pub(crate) verification_eligible: usize,
+    pub(crate) declared: usize,
     pub(crate) verification_required: usize,
-    pub(crate) verification_blocked: usize,
-    pub(crate) research_only: usize,
     pub(crate) invalid: usize,
+    pub(crate) unbound_requirements: Vec<UnboundPolicyRequirement>,
     pub(crate) passed: bool,
 }
 
-fn disposition_policy(
-    claim: DriverAdapterClaim,
-    disposition: Disposition,
-    verification_required: bool,
-) -> (bool, bool) {
-    let qualifies = match claim {
-        DriverAdapterClaim::WholeFunctionEquivalence => disposition != Disposition::BoundedFeature,
-        _ => disposition == Disposition::BoundedFeature,
-    };
-    let valid = match claim {
-        DriverAdapterClaim::WholeFunctionEquivalence => qualifies,
-        _ => !verification_required || qualifies,
-    };
-    (valid, qualifies)
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub(crate) struct UnboundPolicyRequirement {
+    pub(crate) suite: String,
+    pub(crate) source: String,
+    pub(crate) vendor_symbol: String,
+    pub(crate) required_by: Vec<String>,
 }
 
-fn binding_status(
-    declaration_valid: bool,
-    verification_required: bool,
-    verification_eligible: bool,
-) -> &'static str {
-    if !declaration_valid {
-        "invalid"
-    } else if verification_required && !verification_eligible {
-        "verification-blocked"
-    } else if verification_required {
-        "verification-ready"
-    } else if verification_eligible {
-        "available"
-    } else {
-        "research-only"
+fn disposition_accepts_claim(claim: VerificationClaim, disposition: Disposition) -> bool {
+    match claim {
+        VerificationClaim::WholeFunctionEquivalence => disposition != Disposition::BoundedFeature,
+        VerificationClaim::ReviewedDomainEquivalence
+        | VerificationClaim::ReviewedRefinement
+        | VerificationClaim::ReviewedProjection
+        | VerificationClaim::RustConformance => disposition == Disposition::BoundedFeature,
     }
 }
 
-fn trust_qualifies_for_verification(trust: DriverAdapterTrust, binding: RustBindingKind) -> bool {
-    trust.vendor == VendorOracleKind::ConcreteReplay
-        && binding == RustBindingKind::ExactProductionEntry
-        && trust.claim() != DriverAdapterClaim::ReviewedProjection
-}
-
-pub(crate) fn audit(project: &ProjectSpec, provider: Option<&str>) -> Result<BindingAuditReport> {
+pub(crate) fn audit(project: &ProjectSpec) -> Result<BindingAuditReport> {
     let workspace = project.verification.as_ref().ok_or_else(|| {
         crate::Error::invalid("project audit bindings requires [[verification.suites]]")
     })?;
@@ -103,10 +73,6 @@ pub(crate) fn audit(project: &ProjectSpec, provider: Option<&str>) -> Result<Bin
         let Some(manifest) = Manifest::load_all(&suite.dispositions)? else {
             continue;
         };
-        let mut configured_profiles = Vec::new();
-        for path in &suite.profiles {
-            configured_profiles.extend(profiles::load(path)?);
-        }
         for entry in manifest.entries() {
             let Some(binding) = &entry.binding else {
                 continue;
@@ -124,180 +90,92 @@ pub(crate) fn audit(project: &ProjectSpec, provider: Option<&str>) -> Result<Bin
                 .collect::<Vec<_>>();
             declared_claims.sort_by_key(|claim| claim.label());
             declared_claims.dedup();
-            let component = entry
-                .rust_component
-                .as_ref()
-                .map_or_else(|| "<missing>".to_owned(), |value| value.label().to_owned());
 
-            let (trust, adapter, mut issues) = if let Some(adapter) = &binding.driver_adapter {
-                let id = adapter.label().to_owned();
-                match provider
-                    .and_then(|provider| harnesses::driver_adapter_evidence_sources(provider, &id))
-                {
-                    Some(sources) => (sources.trust, Some(id), Vec::new()),
-                    None => (
-                        DriverAdapterTrust {
-                            vendor: VendorOracleKind::ManualAssumption,
-                            rust: binding.rust_kind,
-                            domain: DriverAdapterDomain::ReviewedDomain,
-                            relation: DriverAdapterRelation::Conformance,
-                        },
-                        Some(id.clone()),
-                        vec![format!("adapter {id} has no registered trust boundary")],
-                    ),
+            let mut issues = Vec::new();
+            for claim in &declared_claims {
+                if !disposition_accepts_claim(*claim, entry.disposition) {
+                    issues.push(format!(
+                        "declared {} requires a {} disposition",
+                        claim.label(),
+                        if *claim == VerificationClaim::WholeFunctionEquivalence {
+                            "whole-function"
+                        } else {
+                            "bounded-feature"
+                        }
+                    ));
                 }
-            } else if let Some(profile) = configured_profiles.iter().find(|profile| {
-                profile.vendor_source == entry.source && profile.vendor_symbol == entry.symbol
-            }) {
-                (
-                    DriverAdapterTrust {
-                        vendor: VendorOracleKind::ConcreteReplay,
-                        rust: binding.rust_kind,
-                        domain: match profile.claim {
-                            DriverAdapterClaim::WholeFunctionEquivalence => {
-                                DriverAdapterDomain::WholeFunction
-                            }
-                            _ => DriverAdapterDomain::ReviewedDomain,
-                        },
-                        relation: DriverAdapterRelation::Exact,
-                    },
-                    None,
-                    Vec::new(),
-                )
-            } else {
-                (
-                    DriverAdapterTrust {
-                        vendor: VendorOracleKind::CompleteLiftedTrace,
-                        rust: binding.rust_kind,
-                        domain: DriverAdapterDomain::WholeFunction,
-                        relation: DriverAdapterRelation::Projection,
-                    },
-                    None,
-                    vec![
-                        "vendor behavior is a lifted/static trace, not concrete replay".to_owned(),
-                    ],
-                )
-            };
-
-            if trust.rust != binding.rust_kind {
-                issues.push(format!(
-                    "binding declares {}, adapter proves {}",
-                    binding.rust_kind.label(),
-                    trust.rust.label()
-                ));
             }
-            if binding.rust_kind == RustBindingKind::VerificationProjection {
+            if verification_required && binding.rust_kind == RustBindingKind::VerificationProjection
+            {
                 issues.push(
-                    "verification projection is not an executable production boundary".to_owned(),
+                    "required verification cannot target a verification projection".to_owned(),
                 );
             }
-            if binding.rust_kind != RustBindingKind::ExactProductionEntry {
-                issues.push(format!(
-                    "qualifying verification evidence requires exact-production-entry, not {}",
-                    binding.rust_kind.label()
-                ));
-            }
-            let maximum_claim = trust.claim();
-            let claim_valid = declared_claims.iter().all(|claim| *claim == maximum_claim);
-            if !claim_valid {
-                issues.push(format!(
-                    "verification policy requests [{}], but the binding proves only {}",
-                    declared_claims
-                        .iter()
-                        .map(|claim| claim.label())
-                        .collect::<Vec<_>>()
-                        .join(", "),
-                    maximum_claim.label(),
-                ));
-            }
-            let (disposition_valid, disposition_qualifies) =
-                disposition_policy(maximum_claim, entry.disposition, verification_required);
-            if !disposition_valid {
-                issues.push(format!(
-                    "{} claim requires {} disposition{}",
-                    maximum_claim.label(),
-                    if maximum_claim == DriverAdapterClaim::WholeFunctionEquivalence {
-                        "a whole-function"
-                    } else {
-                        "bounded-feature"
-                    },
-                    if verification_required {
-                        " in a required verification surface"
-                    } else {
-                        ""
-                    },
-                ));
-            }
-            let declaration_valid = claim_valid && disposition_valid;
-            let verification_eligible = declaration_valid
-                && issues.is_empty()
-                && disposition_qualifies
-                && trust_qualifies_for_verification(trust, binding.rust_kind);
-            let status = binding_status(
-                declaration_valid,
-                verification_required,
-                verification_eligible,
-            );
-            let blocker = (!issues.is_empty()).then(|| issues.join("; "));
+
+            let declaration_valid = issues.is_empty();
             rows.insert(
                 key,
                 BindingAuditRow {
                     suite: suite.id.clone(),
                     source: entry.source.clone(),
                     vendor_symbol: entry.symbol.clone(),
-                    rust_component: component,
+                    rust_component: entry
+                        .rust_component
+                        .as_ref()
+                        .map_or_else(|| "<missing>".to_owned(), |value| value.label().to_owned()),
                     rust_probe: binding.rust_probe.clone(),
+                    binding_version: binding.version.label(),
+                    comparison_plan: binding.comparison_plan.label().to_owned(),
                     rust_binding: binding.rust_kind,
-                    vendor_oracle: trust.vendor,
-                    relation: trust.relation,
-                    domain: trust.domain,
-                    maximum_claim,
                     disposition: entry.disposition.label().to_owned(),
                     declared_claims,
                     required_by,
                     verification_required,
-                    claim_valid,
-                    disposition_valid,
-                    verification_eligible,
-                    status,
-                    driver_adapter: adapter,
-                    blocker,
+                    declaration_valid,
+                    status: if declaration_valid {
+                        "declared"
+                    } else {
+                        "invalid"
+                    },
+                    blocker: (!issues.is_empty()).then(|| issues.join("; ")),
                 },
             );
         }
     }
 
     let bindings = rows.into_values().collect::<Vec<_>>();
-    let verification_eligible = bindings
+    let unbound_requirements = policy_requirements
+        .into_iter()
+        .map(
+            |((suite, source, vendor_symbol), requirements)| UnboundPolicyRequirement {
+                suite,
+                source,
+                vendor_symbol,
+                required_by: requirements
+                    .into_iter()
+                    .map(|requirement| requirement.surface)
+                    .collect(),
+            },
+        )
+        .collect::<Vec<_>>();
+    let invalid = bindings
         .iter()
-        .filter(|binding| binding.verification_eligible)
+        .filter(|binding| !binding.declaration_valid)
         .count();
     let verification_required = bindings
         .iter()
         .filter(|binding| binding.verification_required)
         .count();
-    let verification_blocked = bindings
-        .iter()
-        .filter(|binding| binding.verification_required && !binding.verification_eligible)
-        .count();
-    let research_only = bindings
-        .iter()
-        .filter(|binding| binding.status == "research-only")
-        .count();
-    let invalid = bindings
-        .iter()
-        .filter(|binding| binding.status == "invalid")
-        .count();
     Ok(BindingAuditReport {
-        schema: 3,
+        schema: 5,
+        scope: "binding-declarations",
         project: project.id.clone(),
-        bindings,
-        verification_eligible,
+        declared: bindings.len().saturating_sub(invalid),
         verification_required,
-        verification_blocked,
-        research_only,
-        invalid,
-        passed: verification_blocked == 0 && invalid == 0,
+        invalid: invalid + unbound_requirements.len(),
+        passed: invalid == 0 && unbound_requirements.is_empty(),
+        unbound_requirements,
+        bindings,
     })
 }
 
@@ -306,65 +184,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn non_required_projection_remains_visible_without_blocking_verification() {
-        let (valid, qualifies) = disposition_policy(
-            DriverAdapterClaim::ReviewedProjection,
-            Disposition::ReplacedByComposition,
-            false,
-        );
-        assert!(valid);
-        assert!(!qualifies);
-        assert_eq!(binding_status(valid, false, false), "research-only");
-    }
-
-    #[test]
-    fn required_projection_needs_a_bounded_disposition() {
-        let (valid, qualifies) = disposition_policy(
-            DriverAdapterClaim::ReviewedProjection,
-            Disposition::ReplacedByComposition,
-            true,
-        );
-        assert!(!valid);
-        assert!(!qualifies);
-        assert_eq!(binding_status(valid, true, false), "invalid");
-    }
-
-    #[test]
-    fn required_bounded_proof_can_be_verification_ready() {
-        let (valid, qualifies) = disposition_policy(
-            DriverAdapterClaim::ReviewedRefinement,
+    fn declaration_policy_does_not_claim_execution_readiness() {
+        assert!(disposition_accepts_claim(
+            VerificationClaim::WholeFunctionEquivalence,
+            Disposition::Direct,
+        ));
+        assert!(disposition_accepts_claim(
+            VerificationClaim::ReviewedRefinement,
             Disposition::BoundedFeature,
-            true,
-        );
-        assert!(valid);
-        assert!(qualifies);
-        assert_eq!(binding_status(valid, true, true), "verification-ready");
-    }
-
-    #[test]
-    fn concrete_replay_requires_an_exact_production_entry() {
-        let trust = DriverAdapterTrust {
-            vendor: VendorOracleKind::ConcreteReplay,
-            rust: RustBindingKind::SharedProductionCore,
-            domain: DriverAdapterDomain::ReviewedDomain,
-            relation: DriverAdapterRelation::Conformance,
-        };
-        assert_eq!(trust.claim(), DriverAdapterClaim::RustConformance);
-        assert!(!trust_qualifies_for_verification(trust, trust.rust));
-
-        let exact = DriverAdapterTrust {
-            rust: RustBindingKind::ExactProductionEntry,
-            ..trust
-        };
-        assert!(trust_qualifies_for_verification(exact, exact.rust));
-
-        let projection = DriverAdapterTrust {
-            rust: RustBindingKind::VerificationProjection,
-            ..trust
-        };
-        assert!(!trust_qualifies_for_verification(
-            projection,
-            projection.rust
+        ));
+        assert!(!disposition_accepts_claim(
+            VerificationClaim::ReviewedProjection,
+            Disposition::ReplacedByComposition,
         ));
     }
 }

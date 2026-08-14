@@ -1,4 +1,4 @@
-schema = 2
+schema = 3
 # Every inventory function resolves through these fail-closed defaults. A new
 # vendor symbol is therefore visible as not-yet-ported instead of disappearing
 # from the report. Protocol remains unknown until a reviewed family rule or an
@@ -90,9 +90,10 @@ symbol = "phy_disable_agc"
 disposition = "direct"
 protocol = "shared"
 rust-component = "open_esp_radio_esp32s31_hal::phy_agc::set_enabled"
-binding = "v1"
+binding = "v2"
 rust-binding = "exact-production-entry"
 rust-probe = "open_phy_trace_disable_agc"
+comparison-plan = "direct-effects-v1"
 effect-contract = "exact-effects-v1"
 [[functions.effects]]
 selector = { kind = "mmio-read", width = 32, address = 0x20107030 }
@@ -101,53 +102,16 @@ disposition = { kind = "required" }
 selector = { kind = "mmio-write", width = 32, address = 0x20107030 }
 disposition = { kind = "required" }
 
-# Blocking-to-async vertical slice. The closed driver adapter executes three
+# Blocking-to-async vertical slice. The production implementation executes three
 # ROM branch scenarios, the compiled release HAL probe and the typed Rust
 # transition. The ROM activity halfword is projected onto owned Rust state;
 # the polling read and fixed delay require named, bounded async replacements.
 [[functions]]
 source = "rom"
 symbol = "phy_iq_est_enable"
-disposition = "state-transition"
+disposition = "generation-candidate"
 protocol = "shared"
 rust-component = "open_esp_radio_esp32s31_phy::phy_dc_iq::PhyDcIqEstimateTransition"
-binding = "v1"
-rust-binding = "shared-production-core"
-rust-probe = "open_phy_trace_iq_est_enable"
-driver-adapter = "esp32s31-iq-est-enable-v1"
-effect-contract = "exact-effects-v1"
-[[functions.effects]]
-selector = { kind = "state-read", width = 16, field = "phy_dc_iq.readiness_activity_edges" }
-disposition = { kind = "required" }
-[[functions.effects]]
-selector = { kind = "state-write", width = 16, field = "phy_dc_iq.readiness_activity_edges" }
-disposition = { kind = "required" }
-[[functions.effects]]
-selector = { kind = "mmio-read", width = 32, address = 0x2010044c }
-disposition = { kind = "required" }
-[[functions.effects]]
-selector = { kind = "mmio-write", width = 32, address = 0x2010044c }
-disposition = { kind = "required" }
-[[functions.effects]]
-selector = { kind = "mmio-read", width = 32, address = 0x20100450 }
-disposition = { kind = "required" }
-[[functions.effects]]
-selector = { kind = "mmio-write", width = 32, address = 0x20100450 }
-disposition = { kind = "required" }
-[[functions.effects]]
-selector = { kind = "delay" }
-disposition = { kind = "replaced-by-async", value = { condition = "timer-1us", timeout = { kind = "deadline-micros", value = 1 } } }
-[[functions.effects]]
-selector = { kind = "mmio-read", width = 32, address = 0x2010047c }
-disposition = { kind = "replaced-by-async", value = { condition = "iq-estimator-ready", timeout = { kind = "attempts", value = 10000 } } }
-[[functions.effects]]
-selector = { kind = "mmio-read", width = 32, address = 0x201008d0 }
-disposition = { kind = "required" }
-
-# The complete cold-registration graph already has a single Rust owner and
-# successful hardware evidence. These entries describe implementation only:
-# until a semantic transition contract is executable, they remain
-# IMPLEMENTED-UNQUALIFIED and do not satisfy the completion gate.
 [[functions]]
 source = "archive"
 symbol = "register_chipv7_phy"

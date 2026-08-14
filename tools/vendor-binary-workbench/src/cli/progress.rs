@@ -48,14 +48,6 @@ fn command_message(command: &Command) -> Option<&'static str> {
         Command::DiscoverMmio(_) => "MMIO discovery",
         Command::ExportIr(_) => "IR export",
         Command::BuildIr(_) => "Linked IR build",
-        Command::VerifyContractChannel(_) => "Channel contract verification",
-        Command::VerifyContractRfInit(_) => "RF-init contract verification",
-        Command::VerifyContractBluetoothTxPower(_) => "Bluetooth TX-power contract verification",
-        Command::VerifyContractBluetoothTxGainInit(_) => {
-            "Bluetooth TX-gain parent contract verification"
-        }
-        Command::VerifyContractBasebandInit(_) => "Baseband-init parent contract verification",
-        Command::VerifyContractRegisterInit(_) => "PHY registration contract verification",
         Command::ExecuteRun(_) => "Vendor function execution",
         Command::ExecuteReplay(_) => "Multi-phase vendor execution replay",
         Command::ExecuteCompare(_) => "Function comparison",

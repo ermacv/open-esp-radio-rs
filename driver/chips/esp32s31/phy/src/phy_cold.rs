@@ -1094,16 +1094,16 @@ impl PhyColdMmioBinding {
                 open_esp_radio_esp32s31_hal::phy_agc::clear_pbus_work_mode_pulse(registers)
             }
             PhyRfInitPrefixAction::AdcRate(AdcRateAction::ConfigureMmio { rate }) => {
-                crate::radio_hal::configure_phy_adc_rate(registers, rate)
+                crate::phy_hardware::configure_phy_adc_rate(registers, rate)
             }
             PhyRfInitPrefixAction::ConfigureFrontEndRegisters => {
-                crate::radio_hal::configure_phy_front_end_registers(registers)
+                crate::phy_hardware::configure_phy_front_end_registers(registers)
             }
             PhyRfInitPrefixAction::ConfigureI2cMasterCommandMemory { parameter } => {
                 crate::phy_i2c::configure_i2c_master_command_memory(registers, parameter)
             }
             PhyRfInitPrefixAction::ConfigureFrontEndRegisterUpdate => {
-                crate::radio_hal::configure_phy_front_end_update(registers)
+                crate::phy_hardware::configure_phy_front_end_update(registers)
             }
             PhyRfInitPrefixAction::ChannelFrequency(
                 PhyChannelFrequencyInitAction::ConfigureFrequencyRegisters { parameter_override },
@@ -1142,9 +1142,9 @@ impl PhyColdMmioBinding {
                     selector,
                     step,
                 }),
-            )) => {
-                crate::radio_hal::configure_phy_calibration_tone(registers, enabled, selector, step)
-            }
+            )) => crate::phy_hardware::configure_phy_calibration_tone(
+                registers, enabled, selector, step,
+            ),
             PhyRfInitPrefixAction::XtalDuty(XtalDutyCalibrationAction::Pass(
                 XtalDutyPassAction::Prepare(XtalDutyPrepareAction::ConfigureRxClock { enabled }),
             )) => open_esp_radio_esp32s31_hal::pbus::configure_rx_clock(registers, enabled),
@@ -1203,9 +1203,9 @@ impl PhyColdMmioBinding {
                     selector,
                     step,
                 }),
-            )) => {
-                crate::radio_hal::configure_phy_calibration_tone(registers, enabled, selector, step)
-            }
+            )) => crate::phy_hardware::configure_phy_calibration_tone(
+                registers, enabled, selector, step,
+            ),
             PhyRfInitPrefixAction::XtalDuty(XtalDutyCalibrationAction::Pass(
                 XtalDutyPassAction::Restore(XtalDutyRestoreAction::ConfigureRxClock { enabled }),
             )) => open_esp_radio_esp32s31_hal::pbus::configure_rx_clock(registers, enabled),

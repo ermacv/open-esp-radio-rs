@@ -1103,7 +1103,7 @@ impl PhyTxDcPwdetMmioBinding {
                 selector,
                 attenuation,
             } => {
-                crate::radio_hal::configure_phy_calibration_tone_wide(
+                crate::phy_hardware::configure_phy_calibration_tone_wide(
                     registers,
                     enabled,
                     selector,

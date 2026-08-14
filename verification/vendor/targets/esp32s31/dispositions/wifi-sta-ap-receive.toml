@@ -1,4 +1,4 @@
-schema = 2
+schema = 3
 # Register-only projection of two cases from the fourteen-way vendor policy
 # dispatcher. This does not claim whole-function equivalence or identify the
 # still-untyped g_ic+0x74 word with a protocol lifecycle state.
@@ -11,9 +11,10 @@ symbol = "wifi_set_rx_policy"
 disposition = "bounded-feature"
 protocol = "wifi"
 rust-component = "open_esp_radio_esp32s31_hal::wifi_mac::WifiMacHal::configure_role_receive_policy"
-binding = "v1"
+binding = "v2"
 rust-binding = "exact-production-entry"
 rust-probe = "open_wifi_sta_ap_trace_wifi_set_rx_policy"
+comparison-plan = "direct-effects-v1"
 effect-contract = "exact-effects-v1"
 
 # STA policy six: queue-zero BSSID and receive-policy bank.

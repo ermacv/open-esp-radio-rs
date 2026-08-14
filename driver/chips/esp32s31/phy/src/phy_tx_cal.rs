@@ -1383,7 +1383,7 @@ impl PhyPowerAttenuationMmioBinding {
                 selector,
                 attenuation,
             } => {
-                crate::radio_hal::configure_phy_power_control_tone(
+                crate::phy_hardware::configure_phy_power_control_tone(
                     registers,
                     selector,
                     attenuation,
@@ -1431,7 +1431,7 @@ impl PhyToneSarMmioBinding {
                 measurement,
                 sample,
             } => {
-                crate::radio_hal::arm_phy_power_detector_tone(registers);
+                crate::phy_hardware::arm_phy_power_detector_tone(registers);
                 PhyToneSarCompletion::ToneArmed {
                     measurement,
                     sample,
@@ -1459,7 +1459,7 @@ impl PhyToneSarMmioBinding {
                 measurement,
                 sample,
             } => {
-                crate::radio_hal::clear_phy_power_detector_tone_arm(registers);
+                crate::phy_hardware::clear_phy_power_detector_tone_arm(registers);
                 PhyToneSarCompletion::ToneCleared {
                     measurement,
                     sample,
@@ -1542,7 +1542,7 @@ impl PhyTxCalibrationEnvironmentMmioBinding {
                 PhyTxCalibrationEnvironmentCompletion::CalibrationModeConfigured
             }
             PhyTxCalibrationEnvironmentAction::StopTone => {
-                crate::radio_hal::stop_phy_power_detector_tone(registers);
+                crate::phy_hardware::stop_phy_power_detector_tone(registers);
                 PhyTxCalibrationEnvironmentCompletion::ToneStopped
             }
             PhyTxCalibrationEnvironmentAction::ConfigurePbusWorkMode => {
@@ -1595,13 +1595,13 @@ impl PhyTxCapSearchMmioBinding {
                 enabled,
             } => {
                 if enabled {
-                    crate::radio_hal::configure_phy_power_control_tone(
+                    crate::phy_hardware::configure_phy_power_control_tone(
                         registers,
                         selector,
                         attenuation,
                     );
                 } else {
-                    crate::radio_hal::stop_phy_power_detector_tone(registers);
+                    crate::phy_hardware::stop_phy_power_detector_tone(registers);
                 }
                 PhyTxCapSearchCompletion::ToneConfigured {
                     selector,

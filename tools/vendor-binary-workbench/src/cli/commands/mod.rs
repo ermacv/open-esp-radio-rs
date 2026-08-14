@@ -38,7 +38,6 @@ mod project_verification;
 mod registers;
 mod symbol_inventory;
 mod tooling;
-mod verify_contract;
 mod verify_evidence;
 mod verify_inventory;
 mod verify_profiles;
@@ -204,36 +203,6 @@ pub(super) fn run_target(
         TargetCommand::AuditImageTargets(arguments) => audit_image_targets::run(arguments),
         TargetCommand::DiscoverMmio(arguments) => discover_mmio::run(arguments, svd, project),
         TargetCommand::ExportIr(arguments) => export_ir::run(arguments, svd, target, project),
-        TargetCommand::VerifyContractChannel(arguments) => {
-            verify_contract::run(arguments, svd, verification_provider(project)?, "channel")
-        }
-        TargetCommand::VerifyContractRfInit(arguments) => {
-            verify_contract::run(arguments, svd, verification_provider(project)?, "rf-init")
-        }
-        TargetCommand::VerifyContractBluetoothTxPower(arguments) => verify_contract::run(
-            arguments,
-            svd,
-            verification_provider(project)?,
-            "bluetooth-tx-power",
-        ),
-        TargetCommand::VerifyContractBluetoothTxGainInit(arguments) => verify_contract::run(
-            arguments,
-            svd,
-            verification_provider(project)?,
-            "bluetooth-tx-gain-init",
-        ),
-        TargetCommand::VerifyContractBasebandInit(arguments) => verify_contract::run(
-            arguments,
-            svd,
-            verification_provider(project)?,
-            "baseband-init",
-        ),
-        TargetCommand::VerifyContractRegisterInit(arguments) => verify_contract::run(
-            arguments,
-            svd,
-            verification_provider(project)?,
-            "register-init",
-        ),
         TargetCommand::ExecuteRun(arguments) => execute_run::run(arguments, svd),
         TargetCommand::ExecuteReplay(arguments) => {
             execute_replay::run(arguments, svd, target, project)
@@ -273,17 +242,6 @@ pub(super) fn run_target(
         TargetCommand::InspectTrace(arguments) => inspect_trace::run(arguments, svd),
         TargetCommand::InspectCompare(arguments) => inspect_compare::run(arguments, svd),
     }
-}
-
-fn verification_provider(project: Option<&crate::project::ProjectSpec>) -> Result<&str> {
-    project
-        .and_then(|project| project.verification.as_ref())
-        .map(|verification| verification.provider.as_str())
-        .ok_or_else(|| {
-            crate::Error::invalid(
-                "named contract verification requires a project verification add-on",
-            )
-        })
 }
 
 pub(super) fn run_verify_evidence(arguments: super::VerifyEvidenceArgs) -> Result<bool> {

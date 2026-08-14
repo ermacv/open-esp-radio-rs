@@ -1,4 +1,4 @@
-//! Task-first human summary and stable schema-4 JSON document.
+//! Task-first human summary and scope-explicit machine document.
 
 use std::collections::BTreeMap;
 
@@ -38,9 +38,10 @@ struct PhaseDocument<'a> {
 pub(super) struct StatusDocument<'a> {
     schema: u32,
     command: &'static str,
+    scope: &'static str,
     project: ProjectIdentity<'a>,
     target: &'a TargetIdentity,
-    overall: Readiness,
+    pipeline_status: Readiness,
     phases: BTreeMap<&'a str, PhaseDocument<'a>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     publication: Option<crate::cli::output::Publication>,
@@ -57,15 +58,19 @@ pub(super) fn print_text(report: &ProjectStatusReport) {
         report.target.calling_convention
     );
     let outcome = match report.overall {
-        Readiness::Ready => output::success("READY — all configured verification gates pass"),
-        Readiness::Inventory => output::success("READY — inventory evidence is available"),
+        Readiness::Ready => output::success(
+            "PIPELINE READY — configured Workbench analysis and verification gates pass",
+        ),
+        Readiness::Inventory => {
+            output::success("PIPELINE INVENTORY — observed evidence is available for review")
+        }
         Readiness::Incomplete => {
-            output::warning("INCOMPLETE — generated or reviewed evidence is missing")
+            output::warning("PIPELINE INCOMPLETE — generated or reviewed evidence is missing")
         }
         Readiness::NotConfigured => {
-            output::warning("NOT CONFIGURED — initialize the project workflow")
+            output::warning("PIPELINE NOT CONFIGURED — initialize the project workflow")
         }
-        Readiness::Invalid => output::failure("BLOCKED — project state is invalid"),
+        Readiness::Invalid => output::failure("PIPELINE BLOCKED — project state is invalid"),
     };
     outputln!("\n{outcome}");
 
@@ -199,14 +204,15 @@ pub(super) fn document(
         })
         .collect();
     StatusDocument {
-        schema: 5,
+        schema: 6,
         command: "project status",
+        scope: "workbench-pipeline",
         project: ProjectIdentity {
             id: &report.project_id,
             manifest: &report.manifest,
         },
         target: &report.target,
-        overall: report.overall,
+        pipeline_status: report.overall,
         phases,
         publication,
     }
@@ -255,8 +261,10 @@ mod tests {
         );
         let document: serde_json::Value =
             serde_json::from_str(&json_document(&document(&report, None)).unwrap()).unwrap();
-        assert_eq!(document["schema"], 5);
-        assert_eq!(document["overall"], "incomplete");
+        assert_eq!(document["schema"], 6);
+        assert_eq!(document["scope"], "workbench-pipeline");
+        assert_eq!(document["pipeline_status"], "incomplete");
+        assert!(document.get("overall").is_none());
         assert_eq!(
             document["phases"]["analysis"]["components"][0]["profiles"],
             2

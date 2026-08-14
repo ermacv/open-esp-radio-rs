@@ -538,12 +538,12 @@ impl PhyBbMmioBinding {
                 )
             }
             PhyBbMmioAction::UpdateAgcRegisters => {
-                crate::radio_hal::configure_phy_bb_agc_register_update(platform, registers)
+                crate::phy_hardware::configure_phy_bb_agc_register_update(platform, registers)
             }
             PhyBbMmioAction::UpdatePostInitRegisters => {
                 open_esp_radio_esp32s31_hal::phy_agc::update_post_initialization(registers)
             }
-            PhyBbMmioAction::EnableAgc => crate::radio_hal::enable_phy_agc(registers),
+            PhyBbMmioAction::EnableAgc => crate::phy_hardware::enable_phy_agc(registers),
             PhyBbMmioAction::SetWifiEnabled { enabled } => {
                 open_esp_radio_esp32s31_hal::phy_frequency::set_wifi_enabled(
                     platform, registers, enabled,
@@ -592,10 +592,10 @@ impl PhyBbMmioBinding {
                 open_esp_radio_esp32s31_hal::phy_frequency::configure_bt_filter(registers)
             }
             PhyBbMmioAction::ConfigurePhyRegisters { parameters } => {
-                crate::radio_hal::configure_phy_registers(platform, registers, parameters)
+                crate::phy_hardware::configure_phy_registers(platform, registers, parameters)
             }
             PhyBbMmioAction::ConfigureRxTable { parameters } => {
-                crate::radio_hal::configure_phy_rx_table(platform, registers, parameters)
+                crate::phy_hardware::configure_phy_rx_table(platform, registers, parameters)
             }
         }
         PhyBbMmioCompletion {

@@ -1,4 +1,4 @@
-schema = 2
+schema = 3
 # Finite WDEVPWR leaves used by the source-owned Embassy station wake policy.
 # The vendor PM state machine, RF callbacks, timers, locks, mesh and statistics
 # remain explicit architectural replacements rather than part of this slice.
@@ -8,169 +8,60 @@ default-protocol = "wifi"
 [[functions]]
 source = "libpp"
 symbol = "pwr_hal_set_mac_modem_beacon_miss_timeout"
-disposition = "direct"
+disposition = "generation-candidate"
 protocol = "wifi"
 rust-component = "open_esp_radio_esp32s31_pac::mac_modem_wakeup::set_beacon_miss_timeout"
-binding = "v1"
-rust-binding = "exact-production-entry"
-rust-probe = "open_libpp_power_trace_pwr_hal_set_mac_modem_beacon_miss_timeout"
-effect-contract = "exact-effects-v1"
-[[functions.effects]]
-selector = { kind = "mmio-read", width = 32, address = 0x2010d854 }
-disposition = { kind = "required" }
-[[functions.effects]]
-selector = { kind = "mmio-write", width = 32, address = 0x2010d854 }
-disposition = { kind = "required" }
-
 [[functions]]
 source = "libpp"
 symbol = "pwr_hal_set_mac_modem_beacon_miss_limit"
-disposition = "direct"
+disposition = "generation-candidate"
 protocol = "wifi"
 rust-component = "open_esp_radio_esp32s31_pac::mac_modem_wakeup::set_beacon_miss_limit"
-binding = "v1"
-rust-binding = "exact-production-entry"
-rust-probe = "open_libpp_power_trace_pwr_hal_set_mac_modem_beacon_miss_limit"
-effect-contract = "exact-effects-v1"
-[[functions.effects]]
-selector = { kind = "mmio-read", width = 32, address = 0x2010d838 }
-disposition = { kind = "required" }
-[[functions.effects]]
-selector = { kind = "mmio-write", width = 32, address = 0x2010d838 }
-disposition = { kind = "required" }
-
 [[functions]]
 source = "libpp"
 symbol = "pwr_hal_set_mac_modem_beacon_miss_limit_exceeded_wakeup_enable"
-disposition = "direct"
+disposition = "generation-candidate"
 protocol = "wifi"
 rust-component = "open_esp_radio_esp32s31_pac::mac_modem_wakeup::enable_beacon_miss_limit_wakeup"
-binding = "v1"
-rust-binding = "exact-production-entry"
-rust-probe = "open_libpp_power_trace_pwr_hal_set_mac_modem_beacon_miss_limit_exceeded_wakeup_enable"
-effect-contract = "exact-effects-v1"
-[[functions.effects]]
-selector = { kind = "mmio-read", width = 32, address = 0x2010d838 }
-disposition = { kind = "required" }
-[[functions.effects]]
-selector = { kind = "mmio-write", width = 32, address = 0x2010d838 }
-disposition = { kind = "required" }
-
 [[functions]]
 source = "libpp"
 symbol = "pwr_hal_set_mac_modem_state_sleep_limit"
-disposition = "direct"
+disposition = "generation-candidate"
 protocol = "wifi"
 rust-component = "open_esp_radio_esp32s31_pac::mac_modem_wakeup::set_modem_state_sleep_limit"
-binding = "v1"
-rust-binding = "exact-production-entry"
-rust-probe = "open_libpp_power_trace_pwr_hal_set_mac_modem_state_sleep_limit"
-effect-contract = "exact-effects-v1"
-[[functions.effects]]
-selector = { kind = "mmio-read", width = 32, address = 0x2010d838 }
-disposition = { kind = "required" }
-[[functions.effects]]
-selector = { kind = "mmio-write", width = 32, address = 0x2010d838 }
-disposition = { kind = "required" }
-
 [[functions]]
 source = "libpp"
 symbol = "pwr_hal_set_mac_modem_state_sleep_limit_exceeded_wakeup_enable"
-disposition = "direct"
+disposition = "generation-candidate"
 protocol = "wifi"
 rust-component = "open_esp_radio_esp32s31_pac::mac_modem_wakeup::enable_modem_state_sleep_limit_wakeup"
-binding = "v1"
-rust-binding = "exact-production-entry"
-rust-probe = "open_libpp_power_trace_pwr_hal_set_mac_modem_state_sleep_limit_exceeded_wakeup_enable"
-effect-contract = "exact-effects-v1"
-[[functions.effects]]
-selector = { kind = "mmio-read", width = 32, address = 0x2010d838 }
-disposition = { kind = "required" }
-[[functions.effects]]
-selector = { kind = "mmio-write", width = 32, address = 0x2010d838 }
-disposition = { kind = "required" }
-
 [[functions]]
 source = "libpp"
 symbol = "pwr_hal_set_mac_modem_state_wakeup_protect_enable"
-disposition = "direct"
+disposition = "generation-candidate"
 protocol = "wifi"
 rust-component = "open_esp_radio_esp32s31_pac::mac_modem_wakeup::enable_modem_state_wakeup_protect"
-binding = "v1"
-rust-binding = "exact-production-entry"
-rust-probe = "open_libpp_power_trace_pwr_hal_set_mac_modem_state_wakeup_protect_enable"
-effect-contract = "exact-effects-v1"
-[[functions.effects]]
-selector = { kind = "mmio-read", width = 32, address = 0x2010d858 }
-disposition = { kind = "required" }
-[[functions.effects]]
-selector = { kind = "mmio-write", width = 32, address = 0x2010d858 }
-disposition = { kind = "required" }
-
 [[functions]]
 source = "libpp"
 symbol = "pwr_hal_set_mac_modem_state_wakeup_protect_early_time"
-disposition = "direct"
+disposition = "generation-candidate"
 protocol = "wifi"
 rust-component = "open_esp_radio_esp32s31_pac::mac_modem_wakeup::set_wakeup_protect_early_time"
-binding = "v1"
-rust-binding = "exact-production-entry"
-rust-probe = "open_libpp_power_trace_pwr_hal_set_mac_modem_state_wakeup_protect_early_time"
-effect-contract = "exact-effects-v1"
-[[functions.effects]]
-selector = { kind = "mmio-read", width = 32, address = 0x2010d83c }
-disposition = { kind = "required" }
-[[functions.effects]]
-selector = { kind = "mmio-write", width = 32, address = 0x2010d83c }
-disposition = { kind = "required" }
-
 [[functions]]
 source = "libpp"
 symbol = "pwr_hal_set_mac_modem_tbtt_auto_period_enable"
-disposition = "direct"
+disposition = "generation-candidate"
 protocol = "wifi"
 rust-component = "open_esp_radio_esp32s31_pac::mac_modem_wakeup::enable_tbtt_auto_period"
-binding = "v1"
-rust-binding = "exact-production-entry"
-rust-probe = "open_libpp_power_trace_pwr_hal_set_mac_modem_tbtt_auto_period_enable"
-effect-contract = "exact-effects-v1"
-[[functions.effects]]
-selector = { kind = "mmio-read", width = 32, address = 0x2010d83c }
-disposition = { kind = "required" }
-[[functions.effects]]
-selector = { kind = "mmio-write", width = 32, address = 0x2010d83c }
-disposition = { kind = "required" }
-
 [[functions]]
 source = "libpp"
 symbol = "pwr_hal_set_mac_modem_tbtt_auto_period_disable"
-disposition = "direct"
+disposition = "generation-candidate"
 protocol = "wifi"
 rust-component = "open_esp_radio_esp32s31_pac::mac_modem_wakeup::disable_tbtt_auto_period"
-binding = "v1"
-rust-binding = "exact-production-entry"
-rust-probe = "open_libpp_power_trace_pwr_hal_set_mac_modem_tbtt_auto_period_disable"
-effect-contract = "exact-effects-v1"
-[[functions.effects]]
-selector = { kind = "mmio-read", width = 32, address = 0x2010d83c }
-disposition = { kind = "required" }
-[[functions.effects]]
-selector = { kind = "mmio-write", width = 32, address = 0x2010d83c }
-disposition = { kind = "required" }
-
 [[functions]]
 source = "libpp"
 symbol = "pwr_hal_set_mac_modem_tbtt_auto_period_interval"
-disposition = "direct"
+disposition = "generation-candidate"
 protocol = "wifi"
 rust-component = "open_esp_radio_esp32s31_pac::mac_modem_wakeup::set_tbtt_auto_period"
-binding = "v1"
-rust-binding = "exact-production-entry"
-rust-probe = "open_libpp_power_trace_pwr_hal_set_mac_modem_tbtt_auto_period_interval"
-effect-contract = "exact-effects-v1"
-[[functions.effects]]
-selector = { kind = "mmio-read", width = 32, address = 0x2010d83c }
-disposition = { kind = "required" }
-[[functions.effects]]
-selector = { kind = "mmio-write", width = 32, address = 0x2010d83c }
-disposition = { kind = "required" }

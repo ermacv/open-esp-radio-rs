@@ -2402,29 +2402,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "open-radio-vendor-verification-esp32s31"
-version = "0.1.0"
-dependencies = [
- "open-esp-radio-esp32s31-phy",
- "open-esp-radio-esp32s31-wifi-mac",
- "open-esp-radio-ieee80211",
- "open-radio-vendor-backend-riscv",
- "open-radio-vendor-execution-model",
- "open-radio-vendor-harness-esp32s31",
- "open-radio-vendor-knowledge-esp32s31",
- "open-radio-vendor-semantics",
- "serde",
- "sha2",
- "thiserror 2.0.19",
-]
-
-[[package]]
 name = "open-radio-vendor-workbench-esp32s31-host"
 version = "0.1.0"
 dependencies = [
  "open-radio-vendor-binary-workbench",
  "open-radio-vendor-knowledge-esp32s31",
- "open-radio-vendor-verification-esp32s31",
  "serde_json",
  "toml_edit",
 ]

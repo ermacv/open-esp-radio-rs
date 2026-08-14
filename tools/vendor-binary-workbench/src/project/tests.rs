@@ -148,9 +148,8 @@ knowledge-packs = []
     .unwrap();
     std::fs::write(
         directory.join("verification.toml"),
-        r#"schema = 2
+        r#"schema = 3
 id = "fixture-verification"
-provider = "fixture-provider"
 report = "generated/verification.json"
 evidence-index = "generated/vendor-evidence.json"
 
@@ -273,7 +272,6 @@ all = true
     assert_eq!(
         project.verification,
         Some(VerificationWorkspacePaths {
-            provider: "fixture-provider".to_owned(),
             report: directory.join("generated/verification.json"),
             evidence_index: directory.join("generated/vendor-evidence.json"),
             policy: None,
@@ -449,9 +447,8 @@ verification-addon = "verification.toml"
     .unwrap();
     std::fs::write(
         directory.join("verification.toml"),
-        r#"schema = 2
+        r#"schema = 3
 id = "fixture-verification"
-provider = "fixture-provider"
 report = "generated/verification.json"
 evidence-index = "generated/vendor-evidence.json"
 

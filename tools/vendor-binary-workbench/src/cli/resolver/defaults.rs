@@ -273,20 +273,6 @@ pub(super) fn apply_run_spec_defaults(command: &mut Command, run_spec: &RunSpec)
                     args.rust_companion = Some(path.clone());
                 }
             }
-            Command::VerifyContractChannel(args)
-            | Command::VerifyContractRfInit(args)
-            | Command::VerifyContractBluetoothTxPower(args)
-            | Command::VerifyContractBluetoothTxGainInit(args)
-            | Command::VerifyContractBasebandInit(args)
-            | Command::VerifyContractRegisterInit(args) => match role {
-                InputRole::VendorArtifact if args.vendor_artifact.is_none() => {
-                    args.vendor_artifact = Some(path.clone())
-                }
-                InputRole::VendorCompanion if args.vendor_companion.is_none() => {
-                    args.vendor_companion = Some(path.clone())
-                }
-                _ => {}
-            },
             _ => {}
         }
     }

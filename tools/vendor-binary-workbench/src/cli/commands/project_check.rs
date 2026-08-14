@@ -45,14 +45,7 @@ pub(super) fn run(arguments: ProjectCheckArgs, session: &ProjectSession) -> Resu
     if !(1..=8).contains(&arguments.jobs) {
         return Err(crate::Error::invalid("project check --jobs accepts 1..=8"));
     }
-    let binding_audit = crate::verification::audit(
-        &session.project,
-        session
-            .project
-            .verification
-            .as_ref()
-            .map(|workspace| workspace.provider.as_str()),
-    )?;
+    let binding_audit = crate::verification::audit(&session.project)?;
     let analysis = crate::application::project_analysis::analyze_project(
         session,
         ProjectAnalysisRequest {
@@ -94,35 +87,32 @@ pub(super) fn run(arguments: ProjectCheckArgs, session: &ProjectSession) -> Resu
         .report;
     let graph = &verification.replacement_graph.summary;
     let report = ProjectCheckReport {
-        schema: 5,
+        schema: 6,
         command: "project check",
         project: session.project.id.clone(),
         passed,
         stages: vec![
             ProjectCheckStage {
-                name: "binding-trust",
+                name: "binding-declarations",
                 status: if binding_audit.passed { "passed" } else { "failed" },
                 passed: binding_audit.passed,
                 summary: format!(
-                    "{}/{} required verification-ready, {} invalid, {} research-only",
-                    binding_audit
-                        .verification_required
-                        .saturating_sub(binding_audit.verification_blocked),
+                    "{} valid declarations, {} required by policy, {} invalid; execution is evaluated by the verification stage",
+                    binding_audit.declared,
                     binding_audit.verification_required,
                     binding_audit.invalid,
-                    binding_audit.research_only,
                 ),
                 issues: binding_audit
                     .bindings
                     .iter()
-                    .filter(|binding| matches!(binding.status, "invalid" | "verification-blocked"))
+                    .filter(|binding| binding.status == "invalid")
                     .map(|binding| ProjectCheckIssue {
                         component: format!("{}:{}", binding.source, binding.vendor_symbol),
                         status: binding.status.to_owned(),
                         reason: binding
                             .blocker
                             .clone()
-                            .unwrap_or_else(|| "binding is not verification eligible".to_owned()),
+                            .unwrap_or_else(|| "binding declaration is invalid".to_owned()),
                     })
                     .collect(),
                 next_actions: (!binding_audit.passed)
@@ -357,6 +347,12 @@ fn pipeline_issues(stages: &[StageReport]) -> Vec<ProjectCheckIssue> {
 fn verification_issues(
     report: &crate::verification::ProjectVerificationReport,
 ) -> Vec<ProjectCheckIssue> {
+    if report.passed {
+        // Informational suites deliberately retain DIFF/INCOMPLETE facts in
+        // the replacement summary. They belong in the verification-stage
+        // summary, not in the list of failed project gates.
+        return Vec::new();
+    }
     let summary = &report.replacement_graph.summary;
     let mut issues = Vec::new();
     for (component, count, reason) in [
@@ -427,7 +423,7 @@ mod tests {
     #[test]
     fn aggregate_schema_keeps_issues_and_next_actions_separate() {
         let report = ProjectCheckReport {
-            schema: 5,
+            schema: 6,
             command: "project check",
             project: "fixture".to_owned(),
             passed: false,
@@ -445,7 +441,7 @@ mod tests {
             }],
         };
         let value = serde_json::to_value(report).unwrap();
-        assert_eq!(value["schema"], 5);
+        assert_eq!(value["schema"], 6);
         assert_eq!(value["stages"][0]["status"], "failed");
         assert_eq!(
             value["stages"][0]["issues"][0]["component"],

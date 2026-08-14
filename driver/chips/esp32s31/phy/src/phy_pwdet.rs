@@ -876,7 +876,7 @@ impl PhyPwdetMmioBinding {
                 // `phy_start_tx_tone_step(1, 0x80, 0x50, 0, 0, 0)`.
                 // Its measurement invariant requires DAC scale and TX-gain
                 // compensation to remain disabled until `StopTone`.
-                crate::radio_hal::configure_phy_power_control_tone(registers, 0x80, 0x50);
+                crate::phy_hardware::configure_phy_power_control_tone(registers, 0x80, 0x50);
                 PhyPwdetCompletion::ToneConfigured
             }
             PhyPwdetAction::WriteReferenceControl { value } => {
@@ -887,7 +887,7 @@ impl PhyPwdetMmioBinding {
                 measurement_index,
                 sample_index,
             } => {
-                crate::radio_hal::arm_phy_power_detector_tone(registers);
+                crate::phy_hardware::arm_phy_power_detector_tone(registers);
                 PhyPwdetCompletion::ToneArmed {
                     measurement_index,
                     sample_index,
@@ -907,7 +907,7 @@ impl PhyPwdetMmioBinding {
                 measurement_index,
                 sample_index,
             } => {
-                crate::radio_hal::clear_phy_power_detector_tone_arm(registers);
+                crate::phy_hardware::clear_phy_power_detector_tone_arm(registers);
                 PhyPwdetCompletion::ToneArmCleared {
                     measurement_index,
                     sample_index,
@@ -922,7 +922,7 @@ impl PhyPwdetMmioBinding {
                 value: open_esp_radio_esp32s31_hal::phy_power_detector::sample_sar(registers),
             },
             PhyPwdetAction::StopTone => {
-                crate::radio_hal::stop_phy_power_detector_tone(registers);
+                crate::phy_hardware::stop_phy_power_detector_tone(registers);
                 PhyPwdetCompletion::ToneStopped
             }
             PhyPwdetAction::ConfigurePbusWorkMode => PhyPwdetCompletion::PbusWorkModeConfigured {

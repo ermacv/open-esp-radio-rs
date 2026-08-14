@@ -54,7 +54,6 @@ pub(super) fn execute(
     svd: &MmioMap,
     target: &TargetSpec,
     knowledge_provider: Option<&str>,
-    verification_provider: Option<&str>,
 ) -> Result<VerificationCommandReport> {
     let mut source_inputs = BTreeMap::<String, SourceInput>::new();
     let mut auxiliary_artifacts = BTreeMap::<String, PathBuf>::new();
@@ -193,10 +192,6 @@ pub(super) fn execute(
             },
         })
         .collect::<Vec<_>>();
-    let adapter_artifacts = auxiliary_artifacts
-        .iter()
-        .map(|(id, artifact)| open_radio_vendor_semantics::DriverAdapterArtifact { id, artifact })
-        .collect::<Vec<_>>();
     let symbol_sets = verify_sources
         .iter()
         .copied()
@@ -252,7 +247,6 @@ pub(super) fn execute(
         let report = verify_source(
             svd,
             knowledge_provider,
-            verification_provider,
             &target.rust_target,
             *source,
             &rust_artifact,
@@ -260,7 +254,6 @@ pub(super) fn execute(
             &rust_prefix,
             source_profiles,
             disposition_manifest.as_ref(),
-            &adapter_artifacts,
             &mut evidence,
         )?;
         total.add(report.summary);
@@ -318,7 +311,6 @@ pub(super) fn execute(
                 .entries()
                 .filter(|entry| {
                     entry.disposition.is_implemented()
-                        && entry.semantic_contract.is_none()
                         && entry.effect_contract.is_none()
                         && !profile_contracts
                             .contains(&(entry.source.as_str(), entry.symbol.as_str()))
@@ -354,7 +346,6 @@ pub(super) fn execute(
     }
     let verification = verification_core_report(VerificationCoreInputs {
         target,
-        verification_provider,
         gate,
         summary: total,
         orphan_probes,
@@ -394,13 +385,7 @@ pub(super) fn run(
     svd: &MmioMap,
     target: &TargetSpec,
 ) -> Result<bool> {
-    let report = execute(
-        arguments,
-        svd,
-        target,
-        target.knowledge_provider.as_deref(),
-        None,
-    )?;
+    let report = execute(arguments, svd, target, target.knowledge_provider.as_deref())?;
     let passed = report.verification.passed;
     crate::cli::output::render_report(&report, || crate::cli::render::verification_human(&report));
     Ok(passed)

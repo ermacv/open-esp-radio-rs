@@ -2,7 +2,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use open_radio_vendor_semantics::DriverAdapterClaim;
+use open_radio_vendor_semantics::VerificationClaim;
 use serde::Serialize;
 
 use super::{
@@ -44,7 +44,7 @@ pub(crate) struct ReplacementProof {
     pub(crate) status: FunctionVerificationStatus,
     pub(crate) evidence_class: EvidenceClass,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) claim: Option<DriverAdapterClaim>,
+    pub(crate) claim: Option<VerificationClaim>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) probe_symbol: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]

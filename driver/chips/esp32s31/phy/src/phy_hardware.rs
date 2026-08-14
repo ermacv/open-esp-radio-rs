@@ -1,8 +1,9 @@
-//! Narrow ESP32-S31 radio-register leaves.
+//! PHY-owned action lowering onto narrow ESP32-S31 HAL capabilities.
 //!
-//! These functions reproduce complete, finite ROM bodies whose only state is
-//! documented MMIO. They are temporary runtime-local HAL boundaries until the
-//! register layer moves into the ESP32-S31 radio HAL crate.
+//! Hardware-independent PHY state machines decide when an action occurs.
+//! This module owns PHY-specific value transforms and composes the finite HAL
+//! operations that realize each action. It does not own PAC capabilities,
+//! register identities, polling policy, or runtime/protocol state.
 
 #[cfg(target_arch = "riscv32")]
 use open_esp_radio_esp32s31_hal::PhyHal;

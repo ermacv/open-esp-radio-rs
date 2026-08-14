@@ -32,32 +32,14 @@ impl<'registers> CoexTimerHal<'registers> {
     }
 }
 
-/// Publish the complete reviewed Bluetooth coexistence PTI image.
-///
-/// This is intentionally a parameter-free operation: the only two writable
-/// halfword images proved by `libbtbb::coex_pti_v2` remain private to the
-/// closed PAC. The HAL exposes no raw address, register image or integer
-/// field through which an unreviewed value could be written.
-fn configure_bluetooth_pti(registers: &mut RadioRegisters) {
-    registers.configure_reviewed_bluetooth_pti();
-}
-
-/// Run the reviewed Bluetooth PTI transaction in an isolated validation
-/// image without exposing the PAC owner to the probe crate.
-#[cfg(feature = "validation-probes")]
-#[doc(hidden)]
-pub fn validation_configure_bluetooth_pti() {
-    let mut registers = open_esp_radio_esp32s31_pac::validation::radio_registers();
-    configure_bluetooth_pti(&mut registers);
-}
-
 #[doc(hidden)]
 pub fn validation_enable_timer(index: u32) {
     let Some(timer) = CoexTimerRegister::new(index as u8) else {
         return;
     };
-    let mut registers = open_esp_radio_esp32s31_pac::validation::radio_registers();
-    registers.enable_coex_timer(timer);
+    crate::RadioRuntimeOwner::claim_for_validation()
+        .pac_mut()
+        .enable_coex_timer(timer);
 }
 
 #[doc(hidden)]
@@ -65,8 +47,9 @@ pub fn validation_disable_timer(index: u32) {
     let Some(timer) = CoexTimerRegister::new(index as u8) else {
         return;
     };
-    let mut registers = open_esp_radio_esp32s31_pac::validation::radio_registers();
-    registers.disable_coex_timer(timer);
+    crate::RadioRuntimeOwner::claim_for_validation()
+        .pac_mut()
+        .disable_coex_timer(timer);
 }
 
 #[doc(hidden)]
@@ -74,8 +57,9 @@ pub fn validation_force_timer(index: u32) {
     let Some(timer) = CoexTimerRegister::new(index as u8) else {
         return;
     };
-    let mut registers = open_esp_radio_esp32s31_pac::validation::radio_registers();
-    registers.force_coex_timer(timer);
+    crate::RadioRuntimeOwner::claim_for_validation()
+        .pac_mut()
+        .force_coex_timer(timer);
 }
 
 #[doc(hidden)]
@@ -83,8 +67,9 @@ pub fn validation_unforce_timer(index: u32) {
     let Some(timer) = CoexTimerRegister::new(index as u8) else {
         return;
     };
-    let mut registers = open_esp_radio_esp32s31_pac::validation::radio_registers();
-    registers.unforce_coex_timer(timer);
+    crate::RadioRuntimeOwner::claim_for_validation()
+        .pac_mut()
+        .unforce_coex_timer(timer);
 }
 
 /// Execute one complete COEX timer program against an isolated validation
@@ -99,8 +84,8 @@ pub fn validation_program_timer<C: open_esp_radio_esp32s31_coex::CoexClockHardwa
     latency: u32,
     duration: u32,
 ) -> Result<(), CoexError> {
-    let mut registers = open_esp_radio_esp32s31_pac::validation::radio_registers();
-    let mut timer = CoexTimerHal::new(&mut registers);
+    let mut owner = crate::RadioRuntimeOwner::claim_for_validation();
+    let mut timer = CoexTimerHal::new(owner.pac_mut());
     open_esp_radio_esp32s31_coex::program_timer(
         &mut timer,
         &mut *clock,
@@ -125,8 +110,8 @@ pub fn validation_core_request<C: open_esp_radio_esp32s31_coex::CoexClockHardwar
 
     let mut core = CoexCore::new(CoexPtiTable::reviewed_vendor());
     core.enable();
-    let mut registers = open_esp_radio_esp32s31_pac::validation::radio_registers();
-    let mut timer = CoexTimerHal::new(&mut registers);
+    let mut owner = crate::RadioRuntimeOwner::claim_for_validation();
+    let mut timer = CoexTimerHal::new(owner.pac_mut());
     if wifi {
         core.request_wifi(&mut timer, clock, request).map(|_| ())
     } else {
@@ -144,8 +129,8 @@ pub fn validation_core_release(
     use open_esp_radio_esp32s31_coex::{CoexCore, CoexPtiTable};
 
     let mut core = CoexCore::new(CoexPtiTable::reviewed_vendor());
-    let mut registers = open_esp_radio_esp32s31_pac::validation::radio_registers();
-    let mut timer = CoexTimerHal::new(&mut registers);
+    let mut owner = crate::RadioRuntimeOwner::claim_for_validation();
+    let mut timer = CoexTimerHal::new(owner.pac_mut());
     core.release(&mut timer, event).map(|_| ())
 }
 

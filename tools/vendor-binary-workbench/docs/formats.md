@@ -22,8 +22,9 @@ Old inline `memory-map`, `svd`, `platform-pack`, `harness`, and
 
 ## Other reviewed inputs
 
-- `verification-addon.toml` (`schema = 2`): verification provider, suites,
-  declarations, and report paths; it does not grant analysis knowledge;
+- `verification-addon.toml` (`schema = 3`): suites, compiled-artifact
+  comparison inputs, declarations, and report paths; it has no executable
+  verdict provider and grants no analysis knowledge;
 - register/interface/function packs: reviewed assertions and evidence links;
 - disposition manifests: reviewed vendor-to-production binding and claim
   declarations, never execution truth;

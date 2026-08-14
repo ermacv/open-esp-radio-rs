@@ -252,6 +252,5 @@ fn standalone_verification_does_not_alias_chip_knowledge_as_a_verification_addon
         Path::new(env!("CARGO_MANIFEST_DIR")).join("src/cli/commands/verify_source.rs"),
     )
     .unwrap();
-    assert!(source.contains("verification_provider: None"));
-    assert!(!source.contains("verification_provider: target.knowledge_provider"));
+    assert!(!source.contains("verification_provider"));
 }

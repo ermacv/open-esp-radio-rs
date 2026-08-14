@@ -1928,7 +1928,7 @@ impl PhyRxGainDcMmioBinding {
     ) -> PhyRxGainDcCompletion {
         match self.action {
             PhyRxGainDcAction::ConfigureRegisters { enabled } => {
-                crate::radio_hal::configure_phy_rx_gain_dc_registers(registers, enabled);
+                crate::phy_hardware::configure_phy_rx_gain_dc_registers(registers, enabled);
                 PhyRxGainDcCompletion::RegistersConfigured { enabled }
             }
             PhyRxGainDcAction::ConfigurePbusDebugMode => {

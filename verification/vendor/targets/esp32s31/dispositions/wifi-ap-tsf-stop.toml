@@ -1,4 +1,4 @@
-schema = 2
+schema = 3
 default-disposition = "not-yet-ported"
 default-protocol = "wifi"
 
@@ -8,9 +8,10 @@ symbol = "hal_disable_softap_tsf"
 disposition = "direct"
 protocol = "wifi"
 rust-component = "open_esp_radio_esp32s31_wifi_mac::ap_tsf::stop_access_point_tsf"
-binding = "v1"
+binding = "v2"
 rust-binding = "exact-production-entry"
 rust-probe = "open_libpp_ap_tsf_trace_hal_disable_softap_tsf"
+comparison-plan = "direct-effects-v1"
 effect-contract = "exact-effects-v1"
 [[functions.effects]]
 selector = { kind = "mmio-read", width = 32, address = 0x2010d860 }

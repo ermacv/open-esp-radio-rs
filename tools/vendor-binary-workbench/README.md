@@ -12,11 +12,11 @@ low-level analysis commands before using a project.
 ## Start here
 
 The standalone Workbench build is target-neutral. A product repository may
-link reviewed chip knowledge and production verification through independent
-provider descriptors in a thin host. In this
-repository, `cargo vendor-binary-workbench` selects the ESP32-S31 host under
+link one reviewed chip-knowledge descriptor in a thin host. In this repository,
+`cargo vendor-binary-workbench` selects the ESP32-S31 host under
 `verification/vendor/targets/esp32s31/workbench-host`; invoking the generic
-package directly installs no add-on provider.
+package directly installs no chip knowledge. Production comparison remains in
+the generic engine and is configured by data, not target-owned verdict code.
 
 For an existing project:
 
@@ -150,7 +150,7 @@ cargo vendor-binary-workbench advanced ir export --help
 cargo vendor-binary-workbench advanced execute compare --help
 ```
 
-The generic repository boundary and product-provider workflow are documented
+The generic repository boundary and add-on composition workflow are documented
 in [architecture](docs/architecture.md).
 
 ## Resource safety

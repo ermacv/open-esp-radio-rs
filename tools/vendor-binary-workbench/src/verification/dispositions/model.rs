@@ -2,7 +2,7 @@
 
 use std::{collections::BTreeMap, ops::Deref};
 
-use super::super::bindings::{Binding, BindingVersion, DriverAdapter};
+use super::super::bindings::{Binding, BindingVersion, ComparisonPlan};
 use super::super::effect_contract::{
     EffectComparison, EffectDisposition, EffectPolicy, EffectSelector,
 };
@@ -116,30 +116,6 @@ impl Disposition {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct SemanticContract(String);
-
-impl SemanticContract {
-    pub(super) fn parse(value: &str, line: usize) -> Result<Self> {
-        if value.is_empty()
-            || !value.bytes().all(|byte| {
-                byte.is_ascii_lowercase()
-                    || byte.is_ascii_digit()
-                    || matches!(byte, b'-' | b'_' | b'.')
-            })
-        {
-            return Err(crate::Error::invalid(format!(
-                "invalid semantic contract id {value:?} at line {line}"
-            )));
-        }
-        Ok(Self(value.to_owned()))
-    }
-
-    pub fn label(&self) -> &str {
-        &self.0
-    }
-}
-
 #[derive(Clone, Debug)]
 pub(super) struct ProtocolPrefix {
     pub(super) source: String,
@@ -155,7 +131,6 @@ pub struct Entry {
     pub protocol: Option<Protocol>,
     pub rust_component: Option<RustComponentId>,
     pub hil_evidence: Option<String>,
-    pub semantic_contract: Option<SemanticContract>,
     pub effect_contract: Option<EffectPolicy>,
     pub binding: Option<Binding>,
     pub release_blockers: Vec<(String, String)>,
@@ -169,14 +144,13 @@ pub(super) struct EntryBuilder {
     pub(super) protocol: Option<Protocol>,
     pub(super) rust_component: Option<RustComponentId>,
     pub(super) hil_evidence: Option<String>,
-    pub(super) semantic_contract: Option<SemanticContract>,
     pub(super) effect_comparison: Option<EffectComparison>,
     pub(super) effect_rules: Vec<(EffectSelector, EffectDisposition)>,
     pub(super) binding_version: Option<BindingVersion>,
     pub(super) rust_binding: Option<RustBindingKind>,
     pub(super) rust_probe: Option<String>,
+    pub(super) comparison_plan: Option<ComparisonPlan>,
     pub(super) compare_return: Option<bool>,
-    pub(super) driver_adapter: Option<DriverAdapter>,
     pub(super) release_blockers: Vec<(String, String)>,
     pub(super) line: usize,
 }
@@ -200,24 +174,12 @@ impl EntryBuilder {
                     self.source, self.symbol
                 )));
             }
-            if self.semantic_contract.is_some() && !disposition.has_production_owner() {
-                return Err(crate::Error::invalid(format!(
-                    "unimplemented function {} {} cannot have a semantic-contract",
-                    self.source, self.symbol
-                )));
-            }
             if self.effect_comparison.is_some()
                 && !disposition.has_production_owner()
                 && disposition != Disposition::GenerationCandidate
             {
                 return Err(crate::Error::invalid(format!(
                     "unimplemented function {} {} cannot have an effect-contract",
-                    self.source, self.symbol
-                )));
-            }
-            if self.semantic_contract.is_some() && self.effect_comparison.is_some() {
-                return Err(crate::Error::invalid(format!(
-                    "function {} {} cannot combine semantic-contract and effect-contract",
                     self.source, self.symbol
                 )));
             }
@@ -233,9 +195,7 @@ impl EntryBuilder {
                     self.source, self.symbol
                 )));
             }
-            if !self.release_blockers.is_empty()
-                && (self.semantic_contract.is_some() || self.effect_comparison.is_some())
-            {
+            if !self.release_blockers.is_empty() && self.effect_comparison.is_some() {
                 return Err(crate::Error::invalid(format!(
                     "verified function {} {} cannot have release blockers",
                     self.source, self.symbol
@@ -247,8 +207,8 @@ impl EntryBuilder {
                 .transpose()?;
             let has_binding_fields = self.rust_probe.is_some()
                 || self.rust_binding.is_some()
-                || self.compare_return.is_some()
-                || self.driver_adapter.is_some();
+                || self.comparison_plan.is_some()
+                || self.compare_return.is_some();
             let binding = match self.binding_version {
                 Some(version) => Some(Binding::new(
                     version,
@@ -265,8 +225,15 @@ impl EntryBuilder {
                             format!("binding {} {} has no rust-probe", self.source, self.symbol)
                         })
                         .map_err(crate::Error::invalid)?,
+                    self.comparison_plan
+                        .ok_or_else(|| {
+                            format!(
+                                "binding {} {} has no comparison-plan",
+                                self.source, self.symbol
+                            )
+                        })
+                        .map_err(crate::Error::invalid)?,
                     self.compare_return.unwrap_or(false),
-                    self.driver_adapter,
                 )?),
                 None if has_binding_fields => {
                     return Err(crate::Error::invalid(format!(
@@ -285,19 +252,9 @@ impl EntryBuilder {
                     self.source, self.symbol
                 )));
             }
-            if binding.is_some() && effect_contract.is_none() && self.semantic_contract.is_none() {
+            if binding.is_some() && effect_contract.is_none() {
                 return Err(crate::Error::invalid(format!(
-                    "binding {} {} has no registered effect or semantic contract",
-                    self.source, self.symbol
-                )));
-            }
-            if binding
-                .as_ref()
-                .is_some_and(|binding| binding.driver_adapter.is_some())
-                && effect_contract.is_none()
-            {
-                return Err(crate::Error::invalid(format!(
-                    "driver adapter {} {} requires an effect-contract",
+                    "binding {} {} has no registered effect contract",
                     self.source, self.symbol
                 )));
             }
@@ -308,7 +265,6 @@ impl EntryBuilder {
                 protocol: self.protocol,
                 rust_component: self.rust_component,
                 hil_evidence: self.hil_evidence,
-                semantic_contract: self.semantic_contract,
                 effect_contract,
                 binding,
                 release_blockers: self.release_blockers,

@@ -21,6 +21,7 @@ pub mod phy_cold;
 pub mod phy_dc_iq;
 pub mod phy_dcode;
 pub mod phy_frequency;
+mod phy_hardware;
 pub mod phy_i2c;
 pub mod phy_pbus;
 pub mod phy_pbus_memory;
@@ -41,7 +42,6 @@ pub mod phy_txdc;
 pub mod phy_txdc_pwdet;
 pub mod phy_txiq;
 pub mod phy_xtal_duty;
-mod radio_hal;
 mod size_limits;
 
 pub use executor::{PhyRegisterPort, PhyRegisterRunError, run_phy_register};

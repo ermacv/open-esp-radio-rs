@@ -49,11 +49,7 @@ pub use function_investigation::{
     ReplacementProofEvidence, ReviewedPathEvidence, ReviewedPreconditionEvidence,
     SemanticFunctionEvidence, StoredLinkedIrRecord,
 };
-pub use harnesses::{
-    DriverAdapterVerifier, DriverEvidenceLookup, KnowledgeProviderDescriptor,
-    NamedContractVerifier, ProviderError, ProviderRegistry, ProviderResult,
-    SemanticContractVerifier, SemanticEvidenceLookup, VerificationProviderDescriptor,
-};
+pub use harnesses::{KnowledgeProviderDescriptor, ProviderRegistry};
 use memory_map::MemoryMap;
 use open_radio_vendor_analysis_model::*;
 #[cfg(test)]
@@ -87,9 +83,7 @@ pub use open_radio_vendor_execution_model::{
     TableSlotTarget as ExecutionTableSlotTarget,
 };
 pub use open_radio_vendor_semantics::{
-    DriverAdapterEvidenceSources, DriverAdapterRequest, DriverAdapterVerification, EquivalenceMode,
-    EquivalenceOutcome, EquivalenceVerdict, KnowledgeContractSpec, MmioMap,
-    SemanticContractEvidenceSources, SemanticContractRequest, SemanticVerificationReport,
+    EquivalenceMode, EquivalenceOutcome, EquivalenceVerdict, KnowledgeContractSpec, MmioMap,
 };
 pub(crate) use orchestration::generated_reference;
 use parse::u32_literal as parse_u32;

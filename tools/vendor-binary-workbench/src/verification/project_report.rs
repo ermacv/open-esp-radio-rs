@@ -6,7 +6,7 @@ use std::path::Path;
 
 use super::{ReplacementGraph, RustArtifactInput, RustComponentIndex, VerificationCommandReport};
 
-pub(crate) const PROJECT_VERIFICATION_REPORT_SCHEMA: u32 = 13;
+pub(crate) const PROJECT_VERIFICATION_REPORT_SCHEMA: u32 = 14;
 
 #[derive(Serialize)]
 pub(crate) struct ProjectVerificationSuiteReport {
@@ -42,11 +42,15 @@ impl ProjectVerificationReport {
             &replacement_graph.components,
             rust_artifacts,
         )?;
-        let passed = passed
-            && replacement_graph.summary.mismatches == 0
-            && replacement_graph.summary.incomplete == 0
-            && rust_component_index.stale_components().is_empty()
-            && rust_component_index.stale_artifacts().is_empty();
+        // Each suite gate owns whether its observations are blocking.
+        // Reapplying a global zero-DIFF/zero-INCOMPLETE rule here would make
+        // `informational` suites indistinguishable from completion gates.
+        // The replacement graph still preserves every such observation.
+        let passed = project_gate_passes(
+            passed,
+            rust_component_index.stale_components().is_empty(),
+            rust_component_index.stale_artifacts().is_empty(),
+        );
         Ok(Self {
             schema_version: PROJECT_VERIFICATION_REPORT_SCHEMA,
             command: "project verify",
@@ -57,5 +61,30 @@ impl ProjectVerificationReport {
             rust_component_index,
             suites,
         })
+    }
+}
+
+const fn project_gate_passes(
+    suite_gates_passed: bool,
+    components_fresh: bool,
+    artifacts_fresh: bool,
+) -> bool {
+    suite_gates_passed && components_fresh && artifacts_fresh
+}
+
+#[cfg(test)]
+mod tests {
+    use super::project_gate_passes;
+
+    #[test]
+    fn aggregate_respects_suite_gate_classification() {
+        assert!(project_gate_passes(true, true, true));
+        assert!(!project_gate_passes(false, true, true));
+    }
+
+    #[test]
+    fn stale_compiled_evidence_always_blocks_the_project() {
+        assert!(!project_gate_passes(true, false, true));
+        assert!(!project_gate_passes(true, true, false));
     }
 }

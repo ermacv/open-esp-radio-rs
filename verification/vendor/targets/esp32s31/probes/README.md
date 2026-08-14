@@ -12,6 +12,11 @@ CARGO_TARGET_DIR="$PWD/target/verification/esp32s31-probes" \
 cargo build --manifest-path verification/vendor/targets/esp32s31/probes/Cargo.toml \
   -p open-esp-radio-verification-esp32s31-probes-elf \
   --target riscv32imafc-unknown-none-elf --release
+
+CARGO_TARGET_DIR="$PWD/target/verification/esp32s31-register-probes" \
+cargo build --manifest-path verification/vendor/targets/esp32s31/probes/Cargo.toml \
+  -p open-esp-radio-verification-esp32s31-register-probes-elf \
+  --target riscv32imafc-unknown-none-elf --release
 ```
 
 `library/` owns stable retained wrappers and explicit C-layout projections.

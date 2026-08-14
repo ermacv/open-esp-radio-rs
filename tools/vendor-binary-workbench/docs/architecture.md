@@ -111,8 +111,6 @@ schema index. Other retained files explain one subsystem. Generated CLI help,
 reports, PAC/SVD output, and manpages are generated documentation. Git history,
 not checked-in migration narratives, is the historical archive.
 
-The ESP32-S31 binding audit lives in
-`verification/vendor/targets/esp32s31/audits/verification-bindings.toml`.
-It records reviewed attestation/rewrite/quarantine dispositions but grants no
-trust and is not a Workbench input. Qualification state remains exclusively in
-the external ledger.
+The completed binding cutover has no compatibility manifest: current
+dispositions, profiles, suites, and repository contract tests are the only
+maintained representation.

@@ -4,7 +4,7 @@ schema = 2
 source = "coex"
 symbol = "coex_hw_timer_disable"
 kind = "whole-function-equivalence/profile:scenario/coex-hw-timer-disable"
-digest = "eb7bc6c519a96e7b31a3d3cbc54cc9c2fbcf2e2c460ac920a5e48c9e6e1721e1"
+digest = "19811843756574639b19cc07b26b9c377c6b4a17c3d36f4c2dcc64f1aad0a844"
 
 [evidence.components]
 comparison-orchestrator = "e9af803daf6ab44af42a93b3cead563c60bf06945929c1b879c8112be2f87d60"
@@ -12,13 +12,13 @@ execution-image = "241a2c07ca5860bd273851868270bbd5d33c68217d8c83ef8c9589f1dd821
 execution-machine = "47a8bd9864cefabd70bc0448b3e95298e716a9bad89247e9e425905d3b2ee806"
 execution-model = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"
 profile = "4a0a46b4f353bf5af3ecd98ed16f08614bac9cb14286c3d14d24f4076c9830a0"
-profile-parser = "425e34c2aa46698971e2e8be1ab1e6e9d2d2737bd7b3afb913316708a62206f4"
+profile-parser = "b74a953178bd2336018bed3f51b66360202345578297934e7c8c6e79886fb86b"
 
 [[evidence]]
 source = "coex"
 symbol = "coex_hw_timer_enable"
 kind = "whole-function-equivalence/profile:scenario/coex-hw-timer-enable"
-digest = "ea9f8e5d25068ed0282a5c66c8a5ce8d47284d4c73bdf8c904658067699ec6fe"
+digest = "ff5f4b369683cce808fb162ffc81e4f56a5151cf2b2154c6640973e77a3035b0"
 
 [evidence.components]
 comparison-orchestrator = "e9af803daf6ab44af42a93b3cead563c60bf06945929c1b879c8112be2f87d60"
@@ -26,13 +26,13 @@ execution-image = "241a2c07ca5860bd273851868270bbd5d33c68217d8c83ef8c9589f1dd821
 execution-machine = "47a8bd9864cefabd70bc0448b3e95298e716a9bad89247e9e425905d3b2ee806"
 execution-model = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"
 profile = "a92281e5ad935c06a5941ee96398734cd8b1c85c84a71d27babba94eaaca671b"
-profile-parser = "425e34c2aa46698971e2e8be1ab1e6e9d2d2737bd7b3afb913316708a62206f4"
+profile-parser = "b74a953178bd2336018bed3f51b66360202345578297934e7c8c6e79886fb86b"
 
 [[evidence]]
 source = "coex"
 symbol = "coex_hw_timer_force"
 kind = "whole-function-equivalence/profile:scenario/coex-hw-timer-force"
-digest = "65efdbd02931dfe2c17b3ce64cdf311fa7520fc00e6950757d0d06c20c0cdc3a"
+digest = "59ec6964671e96498834814b4c71bc7e4b7dc4f7a17bc6dfd14a0b2af4b8fd76"
 
 [evidence.components]
 comparison-orchestrator = "e9af803daf6ab44af42a93b3cead563c60bf06945929c1b879c8112be2f87d60"
@@ -40,13 +40,13 @@ execution-image = "241a2c07ca5860bd273851868270bbd5d33c68217d8c83ef8c9589f1dd821
 execution-machine = "47a8bd9864cefabd70bc0448b3e95298e716a9bad89247e9e425905d3b2ee806"
 execution-model = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"
 profile = "2e61af5bd748d100d49c7df046dc68641ae53b2573025b2e39523187750d4297"
-profile-parser = "425e34c2aa46698971e2e8be1ab1e6e9d2d2737bd7b3afb913316708a62206f4"
+profile-parser = "b74a953178bd2336018bed3f51b66360202345578297934e7c8c6e79886fb86b"
 
 [[evidence]]
 source = "coex"
 symbol = "coex_hw_timer_unforce"
 kind = "whole-function-equivalence/profile:scenario/coex-hw-timer-unforce"
-digest = "1ea18b005d71f022ed450133a6aa0fd05aee9da214aedac7e72ec92fbd95599a"
+digest = "0bb7097d6055fd4a74f0301f546c562c18ae1e3f7ce061b0de71b011977690eb"
 
 [evidence.components]
 comparison-orchestrator = "e9af803daf6ab44af42a93b3cead563c60bf06945929c1b879c8112be2f87d60"
@@ -54,4 +54,4 @@ execution-image = "241a2c07ca5860bd273851868270bbd5d33c68217d8c83ef8c9589f1dd821
 execution-machine = "47a8bd9864cefabd70bc0448b3e95298e716a9bad89247e9e425905d3b2ee806"
 execution-model = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"
 profile = "760ebfbc2cc67a8b4fd356b561577fe6b2c643e2a9f53cb37d8728e0458c921d"
-profile-parser = "425e34c2aa46698971e2e8be1ab1e6e9d2d2737bd7b3afb913316708a62206f4"
+profile-parser = "b74a953178bd2336018bed3f51b66360202345578297934e7c8c6e79886fb86b"

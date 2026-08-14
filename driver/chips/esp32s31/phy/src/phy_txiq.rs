@@ -1631,7 +1631,7 @@ impl PhyTxIqMmioBinding {
     ) -> PhyTxIqCalibrationCompletion {
         match self.action {
             PhyTxIqCalibrationAction::ConfigureCorrection { begin } => {
-                crate::radio_hal::configure_phy_txiq_correction(registers, begin);
+                crate::phy_hardware::configure_phy_txiq_correction(registers, begin);
                 PhyTxIqCalibrationCompletion::CorrectionConfigured { begin }
             }
             PhyTxIqCalibrationAction::ConfigurePbusDebugMode => {
@@ -1640,11 +1640,11 @@ impl PhyTxIqMmioBinding {
             }
             PhyTxIqCalibrationAction::CaptureToneControl => {
                 PhyTxIqCalibrationCompletion::ToneControlCaptured {
-                    value: crate::radio_hal::read_phy_txiq_tone_control(registers),
+                    value: crate::phy_hardware::read_phy_txiq_tone_control(registers),
                 }
             }
             PhyTxIqCalibrationAction::RestoreToneControl { saved } => {
-                crate::radio_hal::restore_phy_txiq_tone_control(registers, saved);
+                crate::phy_hardware::restore_phy_txiq_tone_control(registers, saved);
                 PhyTxIqCalibrationCompletion::ToneControlRestored { saved }
             }
             _ => unreachable!(),
@@ -1678,7 +1678,7 @@ impl PhyTxIqMisPowerMmioBinding {
                 attenuation,
                 selector,
             } => {
-                crate::radio_hal::configure_phy_txiq_mis_power(
+                crate::phy_hardware::configure_phy_txiq_mis_power(
                     registers,
                     first,
                     polarity,
@@ -1723,7 +1723,7 @@ impl PhyTxIqCoverMmioBinding {
                 kind,
                 value,
             } => {
-                crate::radio_hal::configure_phy_txiq_coefficient(registers, kind, value);
+                crate::phy_hardware::configure_phy_txiq_coefficient(registers, kind, value);
                 PhyTxIqCoverCompletion::CoefficientConfigured {
                     identity,
                     iteration,

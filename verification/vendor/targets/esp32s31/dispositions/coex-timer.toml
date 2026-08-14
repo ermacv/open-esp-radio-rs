@@ -1,4 +1,4 @@
-schema = 2
+schema = 3
 # Instruction-exact control leaves of the five-entry coexistence timer bank. Higher
 # scheduler and RTOS behavior remains intentionally outside this contract.
 default-disposition = "not-yet-ported"
@@ -10,9 +10,10 @@ symbol = "coex_hw_timer_enable"
 disposition = "direct"
 protocol = "coex"
 rust-component = "open_esp_radio_esp32s31_pac::RadioRegisters::enable_coex_timer"
-binding = "v1"
+binding = "v2"
 rust-binding = "exact-production-entry"
 rust-probe = "open_coex_trace_coex_hw_timer_enable"
+comparison-plan = "direct-effects-v1"
 effect-contract = "exact-effects-v1"
 [[functions.effects]]
 selector = { kind = "mmio-read", width = 32, address = 0x2010f40c }
@@ -33,9 +34,10 @@ symbol = "coex_hw_timer_disable"
 disposition = "direct"
 protocol = "coex"
 rust-component = "open_esp_radio_esp32s31_pac::RadioRegisters::disable_coex_timer"
-binding = "v1"
+binding = "v2"
 rust-binding = "exact-production-entry"
 rust-probe = "open_coex_trace_coex_hw_timer_disable"
+comparison-plan = "direct-effects-v1"
 effect-contract = "exact-effects-v1"
 [[functions.effects]]
 selector = { kind = "mmio-read", width = 32, address = 0x2010f408 }
@@ -56,9 +58,10 @@ symbol = "coex_hw_timer_force"
 disposition = "direct"
 protocol = "coex"
 rust-component = "open_esp_radio_esp32s31_pac::RadioRegisters::force_coex_timer"
-binding = "v1"
+binding = "v2"
 rust-binding = "exact-production-entry"
 rust-probe = "open_coex_trace_coex_hw_timer_force"
+comparison-plan = "direct-effects-v1"
 effect-contract = "exact-effects-v1"
 [[functions.effects]]
 selector = { kind = "mmio-read", width = 32, address = 0x2010f400 }
@@ -73,9 +76,10 @@ symbol = "coex_hw_timer_unforce"
 disposition = "direct"
 protocol = "coex"
 rust-component = "open_esp_radio_esp32s31_pac::RadioRegisters::unforce_coex_timer"
-binding = "v1"
+binding = "v2"
 rust-binding = "exact-production-entry"
 rust-probe = "open_coex_trace_coex_hw_timer_unforce"
+comparison-plan = "direct-effects-v1"
 effect-contract = "exact-effects-v1"
 [[functions.effects]]
 selector = { kind = "mmio-read", width = 32, address = 0x2010f400 }

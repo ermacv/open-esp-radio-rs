@@ -480,11 +480,6 @@ enum VerifyCommand {
     Inventory(VerifyInventoryArgs),
     /// Review or update a verification evidence baseline.
     Evidence(VerifyEvidenceArgs),
-    /// Run a focused built-in behavioral contract.
-    Contract {
-        #[command(subcommand)]
-        command: VerifyContractCommand,
-    },
 }
 
 impl VerifyCommand {
@@ -494,25 +489,9 @@ impl VerifyCommand {
             Self::Source(arguments) => Command::VerifySource(arguments),
             Self::Inventory(arguments) => Command::VerifyInventory(arguments),
             Self::Evidence(arguments) => Command::VerifyEvidence(arguments),
-            Self::Contract { command } => command.into_command(),
         }
     }
 }
-
-leaf_commands!(VerifyContractCommand {
-    /// Verify the Wi-Fi channel-selection contract.
-    Channel(VerifyContractArgs) => Command::VerifyContractChannel, VerifyContract,
-    /// Verify the RF initialization contract.
-    RfInit(VerifyContractArgs) => Command::VerifyContractRfInit, VerifyContract,
-    /// Verify Bluetooth transmit-power behavior.
-    BluetoothTxPower(VerifyContractArgs) => Command::VerifyContractBluetoothTxPower, VerifyContract,
-    /// Verify Bluetooth transmit-gain initialization behavior.
-    BluetoothTxGainInit(VerifyContractArgs) => Command::VerifyContractBluetoothTxGainInit, VerifyContract,
-    /// Verify the baseband initialization parent contract.
-    BasebandInit(VerifyContractArgs) => Command::VerifyContractBasebandInit, VerifyContract,
-    /// Verify the PHY registration initialization contract.
-    RegisterInit(VerifyContractArgs) => Command::VerifyContractRegisterInit, VerifyContract,
-});
 
 impl Workflow {
     fn into_command(self) -> Command {
@@ -581,12 +560,6 @@ pub(crate) enum Command {
     DiscoverMmio(MmioDiscoverArgs),
     ExportIr(IrExportArgs),
     BuildIr(IrBuildArgs),
-    VerifyContractChannel(VerifyContractArgs),
-    VerifyContractRfInit(VerifyContractArgs),
-    VerifyContractBluetoothTxPower(VerifyContractArgs),
-    VerifyContractBluetoothTxGainInit(VerifyContractArgs),
-    VerifyContractBasebandInit(VerifyContractArgs),
-    VerifyContractRegisterInit(VerifyContractArgs),
     ExecuteRun(ExecuteRunArgs),
     ExecuteReplay(ExecuteReplayArgs),
     ExecuteCompare(ExecuteCompareArgs),

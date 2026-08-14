@@ -279,14 +279,26 @@ impl<'registers> WifiMacHal<'registers> {
         self.pac_mut().wifi_mac_regdma_link()
     }
 
+    /// Publish one interface receive address through the complete register
+    /// transaction. The typed interface selector prevents accidental bank
+    /// aliasing while keeping register encoding private to the PAC.
+    pub fn program_interface_address(&mut self, interface: MacInterface, address: [u8; 6]) {
+        self.registers
+            .pac_mut()
+            .program_receive_interface_address(interface, address);
+    }
+
+    /// Publish one interface BSSID through the complete register transaction.
+    pub fn program_interface_bssid(&mut self, interface: MacInterface, bssid: [u8; 6]) {
+        self.registers
+            .pac_mut()
+            .program_interface_bssid(interface, bssid);
+    }
+
     /// Publish the receive address and BSSID using two complete vendor leaves.
     pub fn program_interface_identity(&mut self, identity: MacInterfaceIdentity) {
-        self.registers
-            .pac_mut()
-            .program_receive_interface_address(identity.interface, identity.address);
-        self.registers
-            .pac_mut()
-            .program_interface_bssid(identity.interface, identity.bssid);
+        self.program_interface_address(identity.interface, identity.address);
+        self.program_interface_bssid(identity.interface, identity.bssid);
     }
 
     /// Apply one exact reviewed role-policy transaction.
@@ -656,8 +668,9 @@ impl<'registers> WifiMacHal<'registers> {
 #[cfg(feature = "validation-probes")]
 #[doc(hidden)]
 pub fn validation_configure_role_receive_policy(policy: MacRoleReceivePolicy) {
-    let mut registers = open_esp_radio_esp32s31_pac::validation::radio_registers();
-    WifiMacHal::from_owned(&mut registers).configure_role_receive_policy(policy);
+    crate::RadioRuntimeOwner::claim_for_validation()
+        .wifi_mac_hal()
+        .configure_role_receive_policy(policy);
 }
 
 /// Apply complete rev0 ROM `phy_enable_cca` or `phy_disable_cca`.
@@ -675,13 +688,13 @@ fn initialize_sifs(registers: &mut RadioRegisters) {
 #[cfg(all(feature = "validation-probes", target_arch = "riscv32"))]
 #[doc(hidden)]
 pub fn validation_set_cca_enabled(enabled: bool) {
-    let mut registers = open_esp_radio_esp32s31_pac::validation::radio_registers();
-    set_cca_enabled(&mut registers, enabled);
+    let mut owner = crate::RadioRuntimeOwner::claim_for_validation();
+    set_cca_enabled(owner.pac_mut(), enabled);
 }
 
 #[cfg(all(feature = "validation-probes", target_arch = "riscv32"))]
 #[doc(hidden)]
 pub fn validation_initialize_sifs() {
-    let mut registers = open_esp_radio_esp32s31_pac::validation::radio_registers();
-    initialize_sifs(&mut registers);
+    let mut owner = crate::RadioRuntimeOwner::claim_for_validation();
+    initialize_sifs(owner.pac_mut());
 }

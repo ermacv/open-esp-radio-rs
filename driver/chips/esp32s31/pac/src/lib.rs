@@ -50,6 +50,8 @@ pub mod phy_i2c;
 mod table_memory;
 #[cfg(feature = "validation-probes")]
 pub mod validation;
+#[cfg(feature = "validation-probes")]
+mod validation_transactions;
 pub use agc_runtime::ForcedRxGain;
 pub use cfr::CfrValue;
 pub use coex::{COEX_TIMER_COUNT, CoexTimerRegister};
@@ -174,6 +176,12 @@ impl MacInterruptSnapshot {
     pub fn bits(&self) -> u32 {
         self.events().bits()
     }
+
+    #[cfg(feature = "validation-probes")]
+    #[doc(hidden)]
+    pub fn for_validation(bits: u32) -> Self {
+        Self(svd::interrupt_snapshot::mac_interrupt_for_validation(bits))
+    }
 }
 
 /// One sampled power-interrupt image with intentionally opaque bit semantics.
@@ -182,6 +190,14 @@ pub struct MacPowerInterruptSnapshot(svd::interrupt_snapshot::MacPowerInterruptS
 impl MacPowerInterruptSnapshot {
     pub fn bits(&self) -> u32 {
         self.0.bits()
+    }
+
+    #[cfg(feature = "validation-probes")]
+    #[doc(hidden)]
+    pub fn for_validation(bits: u32) -> Self {
+        Self(svd::interrupt_snapshot::mac_power_interrupt_for_validation(
+            bits,
+        ))
     }
 }
 

@@ -80,7 +80,9 @@ fn initialized_project_reports_incomplete_without_mutating_owned_outputs() {
     );
     let document: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(&output).unwrap()).unwrap();
-    assert_eq!(document["overall"], "incomplete");
+    assert_eq!(document["scope"], "workbench-pipeline");
+    assert_eq!(document["pipeline_status"], "incomplete");
+    assert!(document.get("overall").is_none());
     assert_eq!(document["phases"]["configuration"]["status"], "ready");
     assert_eq!(
         document["phases"]["verification"]["status"],

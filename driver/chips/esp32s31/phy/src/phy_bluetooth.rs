@@ -160,7 +160,7 @@ impl PhyBluetoothTxGainPublication {
 
     #[cfg(target_arch = "riscv32")]
     pub fn execute_target(self, registers: &mut open_esp_radio_esp32s31_hal::PhyHal) {
-        crate::radio_hal::publish_bluetooth_tx_gain_memory(registers, self.image);
+        crate::phy_hardware::publish_bluetooth_tx_gain_memory(registers, self.image);
     }
 }
 

@@ -1,4 +1,4 @@
-schema = 2
+schema = 3
 # Reviewed non-RTOS coexistence core leaves. Scheduler and synchronization
 # entry points remain outside this manifest until their external-call models
 # are executable.
@@ -32,9 +32,10 @@ symbol = "coex_core_request"
 disposition = "bounded-feature"
 protocol = "coex"
 rust-component = "open_esp_radio_esp32s31_coex::CoexCore::request"
-binding = "v1"
+binding = "v2"
 rust-binding = "exact-production-entry"
 rust-probe = "open_coex_core_trace_request"
+comparison-plan = "direct-effects-v1"
 effect-contract = "exact-effects-v1"
 [[functions.effects]]
 selector = { kind = "mmio-read", width = 32, address = 0x2010f008 }
@@ -166,9 +167,10 @@ symbol = "coex_core_release"
 disposition = "replaced-by-composition"
 protocol = "coex"
 rust-component = "open_esp_radio_esp32s31_coex::CoexCore::release"
-binding = "v1"
+binding = "v2"
 rust-binding = "exact-production-entry"
 rust-probe = "open_coex_core_trace_release"
+comparison-plan = "direct-effects-v1"
 effect-contract = "exact-effects-v1"
 [[functions.effects]]
 selector = { kind = "mmio-read", width = 32, address = 0x2010f408 }

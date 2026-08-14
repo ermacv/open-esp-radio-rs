@@ -283,42 +283,6 @@ pub(super) fn resolve_command(
             svd: environment.svd,
             project: environment.project.map(Box::new),
         },
-        Command::VerifyContractChannel(arguments) => ResolvedInvocation::Target {
-            command: TargetCommand::VerifyContractChannel(arguments),
-            target: environment.target,
-            svd: environment.svd,
-            project: environment.project.map(Box::new),
-        },
-        Command::VerifyContractRfInit(arguments) => ResolvedInvocation::Target {
-            command: TargetCommand::VerifyContractRfInit(arguments),
-            target: environment.target,
-            svd: environment.svd,
-            project: environment.project.map(Box::new),
-        },
-        Command::VerifyContractBluetoothTxPower(arguments) => ResolvedInvocation::Target {
-            command: TargetCommand::VerifyContractBluetoothTxPower(arguments),
-            target: environment.target,
-            svd: environment.svd,
-            project: environment.project.map(Box::new),
-        },
-        Command::VerifyContractBluetoothTxGainInit(arguments) => ResolvedInvocation::Target {
-            command: TargetCommand::VerifyContractBluetoothTxGainInit(arguments),
-            target: environment.target,
-            svd: environment.svd,
-            project: environment.project.map(Box::new),
-        },
-        Command::VerifyContractBasebandInit(arguments) => ResolvedInvocation::Target {
-            command: TargetCommand::VerifyContractBasebandInit(arguments),
-            target: environment.target,
-            svd: environment.svd,
-            project: environment.project.map(Box::new),
-        },
-        Command::VerifyContractRegisterInit(arguments) => ResolvedInvocation::Target {
-            command: TargetCommand::VerifyContractRegisterInit(arguments),
-            target: environment.target,
-            svd: environment.svd,
-            project: environment.project.map(Box::new),
-        },
         Command::ExecuteRun(arguments) => ResolvedInvocation::Target {
             command: TargetCommand::ExecuteRun(arguments),
             target: environment.target,

@@ -365,6 +365,15 @@ pub fn validation_mac_interrupt_registers() -> MacInterruptRegisters {
     }
 }
 
+/// Construct the hard power-interrupt capability inside an isolated probe.
+#[cfg(feature = "validation-probes")]
+#[doc(hidden)]
+pub fn validation_mac_power_interrupt_registers() -> MacPowerInterruptRegisters {
+    MacPowerInterruptRegisters {
+        inner: open_esp_radio_esp32s31_pac::validation::mac_power_interrupt_registers(),
+    }
+}
+
 /// Disjoint HAL capability installed in the hard power interrupt handler.
 pub struct MacPowerInterruptRegisters {
     inner: PacMacPowerInterruptRegisters,

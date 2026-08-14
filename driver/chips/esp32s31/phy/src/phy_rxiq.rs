@@ -2338,7 +2338,7 @@ impl PhyRxIqCalibrationMmioBinding {
     ) -> PhyRxIqRfCalibrationCompletion {
         match self.action {
             PhyRxIqRfCalibrationAction::ConfigureCalibrationMode => {
-                crate::radio_hal::configure_phy_rxiq_calibration_mode(registers);
+                crate::phy_hardware::configure_phy_rxiq_calibration_mode(registers);
                 PhyRxIqRfCalibrationCompletion::CalibrationModeConfigured
             }
             PhyRxIqRfCalibrationAction::ConfigureTone {
@@ -2346,7 +2346,7 @@ impl PhyRxIqCalibrationMmioBinding {
                 selector,
                 attenuation,
             } => {
-                crate::radio_hal::configure_phy_calibration_tone_wide(
+                crate::phy_hardware::configure_phy_calibration_tone_wide(
                     registers,
                     enabled,
                     selector,
@@ -2390,7 +2390,7 @@ impl PhyRxIqCoverMmioBinding {
                 value,
                 final_value,
             } => {
-                crate::radio_hal::configure_phy_rxiq_coefficient(registers, kind, value);
+                crate::phy_hardware::configure_phy_rxiq_coefficient(registers, kind, value);
                 PhyRxIqCoverCompletion::CoefficientConfigured {
                     identity,
                     iteration,
@@ -2428,7 +2428,7 @@ impl PhyRxIqGainMmioBinding {
     ) -> PhyRxIqGainCompletion {
         match self.action {
             PhyRxIqGainAction::ConfigureTxIq { kind, value } => {
-                crate::radio_hal::configure_phy_txiq_coefficient(registers, kind, value);
+                crate::phy_hardware::configure_phy_txiq_coefficient(registers, kind, value);
                 PhyRxIqGainCompletion::TxIqConfigured { kind, value }
             }
             PhyRxIqGainAction::ConfigureTone {
@@ -2436,7 +2436,7 @@ impl PhyRxIqGainMmioBinding {
                 selector,
                 attenuation,
             } => {
-                crate::radio_hal::configure_phy_calibration_tone_wide(
+                crate::phy_hardware::configure_phy_calibration_tone_wide(
                     registers,
                     enabled,
                     selector,

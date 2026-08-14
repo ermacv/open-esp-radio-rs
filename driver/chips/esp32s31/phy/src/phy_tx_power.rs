@@ -966,7 +966,7 @@ impl PhyPowerControlPointMmioBinding {
                 selector,
                 attenuation,
             } => {
-                crate::radio_hal::configure_phy_power_control_tone(
+                crate::phy_hardware::configure_phy_power_control_tone(
                     registers,
                     selector,
                     attenuation,
@@ -979,7 +979,7 @@ impl PhyPowerControlPointMmioBinding {
                 }
             }
             PhyPowerControlPointAction::StopTone { identity } => {
-                crate::radio_hal::stop_phy_power_detector_tone(registers);
+                crate::phy_hardware::stop_phy_power_detector_tone(registers);
                 PhyPowerControlPointCompletion::ToneStopped { identity }
             }
             _ => unreachable!(),
@@ -1012,7 +1012,7 @@ impl PhyTxPowerMmioBinding {
                 attenuation,
                 enabled: true,
             } => {
-                crate::radio_hal::configure_phy_power_control_tone(
+                crate::phy_hardware::configure_phy_power_control_tone(
                     registers,
                     selector,
                     attenuation,

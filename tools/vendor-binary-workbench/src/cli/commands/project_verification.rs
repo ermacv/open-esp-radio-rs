@@ -81,7 +81,6 @@ pub(super) fn execute(
             svd,
             target,
             target.knowledge_provider.as_deref(),
-            Some(&workspace.provider),
         )
         .map_err(|error| error.verification_suite(suite.id.clone()))?;
         passed &= report.verification.passed;

@@ -808,7 +808,7 @@ impl PhyTxDcReadyBinding {
         PhyTxDcCompletion::ReadySampled {
             gain_index: self.gain_index,
             iteration: self.iteration,
-            ready: crate::radio_hal::read_phy_tx_dc_ready_status(registers),
+            ready: crate::phy_hardware::read_phy_tx_dc_ready_status(registers),
         }
     }
 }
@@ -877,16 +877,18 @@ impl PhyTxDcMmioBinding {
                     // replacement. The original leaf deliberately leaves DAC
                     // scale and TX-gain compensation disabled while the
                     // comparator search is active.
-                    crate::radio_hal::configure_phy_power_control_tone(registers, selector, step);
+                    crate::phy_hardware::configure_phy_power_control_tone(
+                        registers, selector, step,
+                    );
                 } else {
                     // Preserve the selector/path write performed by
                     // `phy_start_tx_tone_step(0, ...)`, then restore the stop
                     // controls and DAC scale. The surrounding state machine
                     // has already cleared the comparator measurement.
-                    crate::radio_hal::configure_phy_calibration_tone_wide(
+                    crate::phy_hardware::configure_phy_calibration_tone_wide(
                         registers, false, selector, step,
                     );
-                    crate::radio_hal::stop_phy_power_detector_tone(registers);
+                    crate::phy_hardware::stop_phy_power_detector_tone(registers);
                 }
                 PhyTxDcCompletion::ToneConfigured {
                     enabled,
@@ -898,7 +900,7 @@ impl PhyTxDcMmioBinding {
                 gain_index,
                 iteration,
             } => {
-                crate::radio_hal::trigger_phy_tx_dc_measurement(registers);
+                crate::phy_hardware::trigger_phy_tx_dc_measurement(registers);
                 PhyTxDcCompletion::MeasurementTriggered {
                     gain_index,
                     iteration,
@@ -910,10 +912,10 @@ impl PhyTxDcMmioBinding {
             } => PhyTxDcCompletion::ComparatorsRead {
                 gain_index,
                 iteration,
-                comparator_high: crate::radio_hal::read_phy_tx_dc_comparator_status(registers),
+                comparator_high: crate::phy_hardware::read_phy_tx_dc_comparator_status(registers),
             },
             PhyTxDcAction::ClearMeasurement => {
-                crate::radio_hal::clear_phy_tx_dc_measurement(registers);
+                crate::phy_hardware::clear_phy_tx_dc_measurement(registers);
                 PhyTxDcCompletion::MeasurementCleared
             }
             PhyTxDcAction::ConfigurePbusWorkMode => PhyTxDcCompletion::PbusWorkModeConfigured {

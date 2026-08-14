@@ -12,7 +12,6 @@ The report keeps proof strength visible:
   production entry;
 - `shared-core`: concrete replay reaches production logic but not the exact
   integration entry;
-- `semantic-model`: a reviewed behavior model agrees with vendor replay;
 - `static-analysis`: lifted or generated-reference evidence without concrete
   production execution;
 - `reviewed` and `hil`: explicit external evidence.
@@ -32,14 +31,12 @@ binding names the compiled Rust probe and classifies it as an exact production
 entry, shared production core, generated reference or verification
 projection.
 
-Suites and provider selection live in `verification-addon.toml`, outside the
+Suites and comparison inputs live in `verification-addon.toml`, outside the
 neutral project manifest. A generic project can therefore analyze and publish
-register evidence without linking a production comparison implementation.
-The chip pack's knowledge provider and the add-on's verification provider are
-independent inputs: lifting/generated references use only the former, while
-compiled-production adapters use only the latter. Generic semantic contracts
-remain a research evidence class, but the ESP32-S31 provider no longer owns
-self-verdict contracts.
+register evidence without configuring production comparison. The chip pack's
+optional knowledge provider may enrich lifting and generated references, but
+it cannot execute a production comparison or return a verdict. The generic
+verification engine alone compares compiled artifacts and observations.
 
 Effect contracts define the ordered observable reads, writes, calls, state
 changes and allowed normalizations. Unlisted effects fail closed. Concrete
@@ -64,11 +61,11 @@ feature hierarchy. It consumes verification suites and produces pass/fail
 supporting evidence. The qualification ledger references that evidence and
 remains the only readiness authority.
 
-## Production trace versus semantic model
+## Production trace versus environment model
 
-A semantic model is retained while it helps explain or normalize recovered
-behavior. It stays marked `semantic-model` and does not prove that manually
-written driver code follows the same operation order.
+An environment model may supply explicit external-call and device responses.
+It cannot replace either compared implementation, hide an effect, or prove
+that manually written driver code follows the vendor operation order.
 
 Migration happens one function at a time:
 
@@ -76,8 +73,7 @@ Migration happens one function at a time:
 2. replay vendor and Rust under the same explicit environment;
 3. compare ordered effects and fail on unresolved behavior;
 4. bind the resulting production trace in the disposition;
-5. delete the redundant semantic model only after no policy/report depends on
-   it.
+5. delete obsolete probe/model glue after no current suite references it.
 
 The former ESP32-S31 `phy_chip_set_chan` self-verdict contract has been
 deleted. Its retained observations expose a real production-verification gap:

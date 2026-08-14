@@ -20,7 +20,7 @@ fn workbench() -> Command {
 }
 
 #[test]
-fn removed_provider_contracts_fail_before_reading_artifacts() {
+fn removed_self_verdict_command_is_not_in_the_cli_grammar() {
     let output = workbench()
         .args(["advanced", "verify", "contract", "channel", "--project"])
         .arg(project())
@@ -35,15 +35,16 @@ fn removed_provider_contracts_fail_before_reading_artifacts() {
             "never",
         ])
         .output()
-        .expect("run provider contract");
+        .expect("run removed command");
     assert!(!output.status.success());
     assert!(output.stdout.is_empty());
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("workbench::addon::provider"));
-    assert!(stderr.contains("add-on provider \"esp32s31-radio-verification-v1\" failed"));
-    assert!(stderr.contains("has no self-verdict semantic contract \"channel\""));
+    assert!(
+        stderr.contains("unexpected argument 'contract'")
+            || stderr.contains("unrecognized subcommand 'contract'")
+    );
     assert!(!stderr.contains("No such file or directory"));
-    assert!(!stderr.contains("Usage:"));
+    assert!(!stderr.contains("provider"));
 }
 
 #[test]

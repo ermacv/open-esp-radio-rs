@@ -7,7 +7,7 @@ use std::{
     sync::Arc,
 };
 
-use open_radio_vendor_semantics::DriverAdapterClaim;
+use open_radio_vendor_semantics::VerificationClaim;
 use serde::Deserialize;
 
 use crate::{
@@ -25,7 +25,7 @@ pub struct Profile {
     pub vendor_source: String,
     pub vendor_symbol: String,
     pub rust_symbol: String,
-    pub claim: DriverAdapterClaim,
+    pub claim: VerificationClaim,
     pub precondition: Option<String>,
     pub contract: ProfileContract,
     pub compare_return: bool,
@@ -154,7 +154,7 @@ struct ProfileInput {
     vendor_source: String,
     vendor_symbol: String,
     rust_symbol: String,
-    claim: DriverAdapterClaim,
+    claim: VerificationClaim,
     precondition: Option<String>,
     #[serde(default)]
     contract: ProfileContract,

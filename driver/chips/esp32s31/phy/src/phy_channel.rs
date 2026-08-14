@@ -840,7 +840,7 @@ impl PhyChipChannelMmioBinding {
                 PhyChipChannelCompletion::RxCompensationConfigured
             }
             PhyChipChannelAction::PublishTxGain(image) => {
-                crate::radio_hal::publish_phy_tx_gain_memory_channel(channel, false, image);
+                crate::phy_hardware::publish_phy_tx_gain_memory_channel(channel, false, image);
                 PhyChipChannelCompletion::TxGainPublished
             }
             PhyChipChannelAction::PublishTxCapCommandMemory { value } => {
@@ -870,7 +870,7 @@ impl PhyChipChannelMmioBinding {
     ) -> PhyChipChannelCompletion {
         match self.action {
             PhyChipChannelAction::SetAgc { enabled } => {
-                crate::radio_hal::set_phy_channel_agc(registers, enabled);
+                crate::phy_hardware::set_phy_channel_agc(registers, enabled);
                 PhyChipChannelCompletion::AgcSet { enabled }
             }
             PhyChipChannelAction::SetBbpllCalibration { enabled } => {
@@ -921,7 +921,7 @@ impl PhyChipChannelMmioBinding {
                 PhyChipChannelCompletion::RxCompensationConfigured
             }
             PhyChipChannelAction::PublishTxGain(image) => {
-                crate::radio_hal::publish_phy_tx_gain_memory(registers, false, image);
+                crate::phy_hardware::publish_phy_tx_gain_memory(registers, false, image);
                 PhyChipChannelCompletion::TxGainPublished
             }
             PhyChipChannelAction::PublishTxCapCommandMemory { value } => {

@@ -1089,7 +1089,10 @@ impl PhyRegisterMmioBinding {
                 open_esp_radio_esp32s31_hal::phy_prelude::configure_fixed_xtal_40mhz(platform)
             }
             PhyRegisterMmioAction::SetCalibrationClock { enabled } => {
-                crate::radio_hal::set_phy_register_calibration_clock(radio.phy_hal_mut(), enabled)
+                crate::phy_hardware::set_phy_register_calibration_clock(
+                    radio.phy_hal_mut(),
+                    enabled,
+                )
             }
             PhyRegisterMmioAction::SetBbpllCalibration { enabled } => {
                 let (platform, _) = radio.phy_hal_parts();

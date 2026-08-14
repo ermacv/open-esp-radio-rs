@@ -15,10 +15,7 @@ open-esp-radio-esp32s31-hal = { path = "../../../../../driver/chips/esp32s31/hal
 open-esp-radio-esp32s31-coex = { path = "../../../../../driver/chips/esp32s31/coex" }
 open-esp-radio-esp32s31-pac = { path = "../../../../../driver/chips/esp32s31/pac", features = ["validation-probes"] }
 open-esp-radio-esp32s31-phy = { path = "../../../../../driver/chips/esp32s31/phy" }
-open-esp-radio-esp32s31-wifi-dma = { path = "../../../../../driver/chips/esp32s31/wifi/dma" }
 open-esp-radio-esp32s31-wifi-mac = { path = "../../../../../driver/chips/esp32s31/wifi/mac", features = ["validation-raw-dma"] }
-open-esp-radio-ieee80211 = { path = "../../../../../driver/wifi/ieee80211" }
-open-esp-radio-wifi-sta = { path = "../../../../../driver/wifi/sta" }
 
 [profile.release]
 codegen-units = 1

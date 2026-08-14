@@ -799,7 +799,7 @@ pub(crate) struct VerifyInventoryArgs {
     #[arg(long, value_name = "SOURCE=PATH")]
     pub(crate) source_artifact: Vec<SourcePath>,
     /// Executable replay/support image keyed by stable identifier. Its symbols
-    /// are available to driver adapters but are not added to source coverage.
+    /// are available to execution profiles but are not added to source coverage.
     #[arg(long, value_name = "ID=PATH")]
     pub(crate) auxiliary_artifact: Vec<SourcePath>,
     /// Vendor archive keyed by stable source identifier.
@@ -854,16 +854,6 @@ pub(crate) struct VerifyEvidenceArgs {
     /// Write a deterministic candidate baseline without promoting it.
     #[arg(long)]
     pub(crate) candidate: Option<PathBuf>,
-}
-
-#[derive(Clone, Debug, Default, Args)]
-pub(crate) struct VerifyContractArgs {
-    /// Vendor executable containing the contract entry point.
-    #[arg(long)]
-    pub(crate) vendor_artifact: Option<PathBuf>,
-    /// Companion image used for symbol and call resolution.
-    #[arg(long)]
-    pub(crate) vendor_companion: Option<PathBuf>,
 }
 
 #[cfg(test)]

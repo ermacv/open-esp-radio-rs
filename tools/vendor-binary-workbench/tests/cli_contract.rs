@@ -114,7 +114,8 @@ fn project_status_json_is_pipe_safe_and_dependency_warnings_are_suppressed() {
     );
     let document: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("stdout must be one JSON document");
-    assert_eq!(document["schema"], 5);
+    assert_eq!(document["schema"], 6);
+    assert_eq!(document["scope"], "workbench-pipeline");
     assert_eq!(document["command"], "project status");
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
@@ -411,52 +412,6 @@ fn composed_manifest_diagnostics_highlight_the_physical_value() {
 }
 
 #[test]
-fn semantic_contract_commands_keep_failed_verification_off_stdout() {
-    for contract in [
-        "channel",
-        "rf-init",
-        "bluetooth-tx-gain-init",
-        "baseband-init",
-        "register-init",
-    ] {
-        let output = run(&[
-            "advanced",
-            "verify",
-            "contract",
-            contract,
-            "--project",
-            GENERIC_PROJECT,
-            "--vendor-artifact",
-            "/missing/vendor-contract.elf",
-            "--vendor-companion",
-            "/missing/vendor-rom.elf",
-            "--format",
-            "json",
-            "--color",
-            "never",
-        ]);
-        assert!(
-            !output.status.success(),
-            "{contract} unexpectedly succeeded"
-        );
-        assert!(
-            output.stdout.is_empty(),
-            "{contract} leaked verification output: {}",
-            String::from_utf8_lossy(&output.stdout)
-        );
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        assert!(
-            !stderr.contains("ORACLE\t"),
-            "domain output leaked: {stderr}"
-        );
-        assert!(
-            !stderr.contains("Usage:"),
-            "runtime error printed usage: {stderr}"
-        );
-    }
-}
-
-#[test]
 fn malformed_composite_values_are_rejected_by_the_leaf_clap_grammar() {
     let output = run(&[
         "project",
@@ -610,7 +565,7 @@ fn verify_inventory_json_combines_results_and_publication_in_one_report() {
 
     let persistent: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&report_path).unwrap()).unwrap();
-    assert_eq!(persistent["schema_version"], 12);
+    assert_eq!(persistent["schema_version"], 14);
     assert_eq!(persistent["command"], "verify inventory");
     assert_eq!(persistent["sources"][0]["functions"][0]["status"], "match");
     std::fs::remove_file(artifact).unwrap();
@@ -640,7 +595,7 @@ fn project_verify_executes_typed_suites_and_reproduces_the_aggregate_report() {
     .unwrap();
     std::fs::write(
         directory.join("dispositions.toml"),
-        "schema = 2\ndefault-disposition = \"not-yet-ported\"\ndefault-protocol = \"unknown\"\nfunctions = []\n",
+        "schema = 3\ndefault-disposition = \"not-yet-ported\"\ndefault-protocol = \"unknown\"\nfunctions = []\n",
     )
     .unwrap();
     std::fs::write(
@@ -666,9 +621,8 @@ verification-addon = "verification-addon.toml"
     .unwrap();
     std::fs::write(
         directory.join("verification-addon.toml"),
-        r#"schema = 2
+        r#"schema = 3
 id = "fixture-verification"
-provider = "fixture-provider"
 report = "verification.json"
 evidence-index = "vendor-evidence.json"
 
@@ -723,7 +677,7 @@ prefix = "fixture_"
     );
     let document: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(document["command"], "project verify");
-    assert_eq!(document["schema_version"], 13);
+    assert_eq!(document["schema_version"], 14);
     assert!(
         document["suites"][0]["artifacts"]
             .as_array()

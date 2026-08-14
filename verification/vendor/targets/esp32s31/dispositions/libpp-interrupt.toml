@@ -1,7 +1,7 @@
-schema = 2
+schema = 3
 # Qualification manifest for the first libpp vertical slice. The generated
 # PAC leaves are composed by the source-owned MAC ISR replacement; the root
-# adapter checks the selected vendor control path against compiled Rust.
+# generic comparison checks the selected vendor control path against compiled Rust.
 default-disposition = "not-yet-ported"
 default-protocol = "wifi"
 
@@ -11,9 +11,10 @@ symbol = "hal_mac_interrupt_get_event"
 disposition = "direct"
 protocol = "wifi"
 rust-component = "open_esp_radio_esp32s31_pac::interrupt_snapshot::sample_mac_interrupt"
-binding = "v1"
+binding = "v2"
 rust-binding = "exact-production-entry"
 rust-probe = "open_libpp_trace_hal_mac_interrupt_ret_get_event"
+comparison-plan = "direct-effects-v1"
 compare-return = true
 effect-contract = "exact-effects-v1"
 [[functions.effects]]
@@ -26,9 +27,10 @@ symbol = "hal_mac_interrupt_clr_event"
 disposition = "direct"
 protocol = "wifi"
 rust-component = "open_esp_radio_esp32s31_pac::interrupt_snapshot::acknowledge_mac_interrupt"
-binding = "v1"
+binding = "v2"
 rust-binding = "exact-production-entry"
 rust-probe = "open_libpp_trace_hal_mac_interrupt_ret_clr_event"
+comparison-plan = "direct-effects-v1"
 compare-return = true
 effect-contract = "exact-effects-v1"
 [[functions.effects]]
@@ -38,38 +40,6 @@ disposition = { kind = "required" }
 [[functions]]
 source = "libpp"
 symbol = "wDev_ProcessFiq"
-disposition = "bounded-feature"
+disposition = "generation-candidate"
 protocol = "wifi"
 rust-component = "open_esp_radio_esp32s31_wifi_mac::irq::handle_mac_irq"
-binding = "v1"
-rust-binding = "exact-production-entry"
-rust-probe = "open_libpp_trace_wdev_process_fiq_mac_slice"
-driver-adapter = "esp32s31-wdev-process-fiq-mac-slice-v1"
-effect-contract = "exact-effects-v1"
-[[functions.effects]]
-selector = { kind = "mmio-read", width = 32, address = 0x20104c48 }
-disposition = { kind = "required" }
-[[functions.effects]]
-selector = { kind = "mmio-write", width = 32, address = 0x20104c4c }
-disposition = { kind = "required" }
-[[functions.effects]]
-selector = { kind = "platform-provided-service", service = "embassy-mac-work-wakeup" }
-disposition = { kind = "required" }
-[[functions.effects]]
-selector = { kind = "published-event", event = "mac-rx-success" }
-disposition = { kind = "required" }
-[[functions.effects]]
-selector = { kind = "published-event", event = "mac-tx-complete" }
-disposition = { kind = "required" }
-[[functions.effects]]
-selector = { kind = "published-event", event = "mac-tx-timeout" }
-disposition = { kind = "required" }
-[[functions.effects]]
-selector = { kind = "published-event", event = "mac-collision" }
-disposition = { kind = "required" }
-[[functions.effects]]
-selector = { kind = "initialization-prerequisite", prerequisite = "wifi-bss-color-interrupts-disabled" }
-disposition = { kind = "required" }
-[[functions.effects]]
-selector = { kind = "initialization-prerequisite", prerequisite = "wifi-power-interrupts-disabled" }
-disposition = { kind = "required" }

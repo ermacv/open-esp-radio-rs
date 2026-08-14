@@ -144,16 +144,6 @@ pub(crate) enum WorkbenchError {
         #[source]
         source: Box<WorkbenchError>,
     },
-    #[error("add-on provider {provider:?} failed")]
-    #[diagnostic(
-        code(workbench::addon::provider),
-        help("inspect the provider's source error and the target project's reviewed inputs")
-    )]
-    AddonProvider {
-        provider: String,
-        #[source]
-        source: crate::ProviderError,
-    },
     #[error(transparent)]
     Analysis(#[from] open_radio_vendor_analysis_model::Error),
     #[error(transparent)]
@@ -189,16 +179,6 @@ impl WorkbenchError {
         Self::VerificationSuite {
             suite: suite.into(),
             source: Box::new(self),
-        }
-    }
-
-    pub(crate) fn addon_provider(
-        provider: impl Into<String>,
-        source: crate::ProviderError,
-    ) -> Self {
-        Self::AddonProvider {
-            provider: provider.into(),
-            source,
         }
     }
 

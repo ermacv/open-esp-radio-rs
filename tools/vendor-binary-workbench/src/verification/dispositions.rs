@@ -13,14 +13,12 @@ use crate::{ArtifactSymbolIdentity, Result};
 use open_radio_vendor_semantics::RustBindingKind;
 use serde::Deserialize;
 
-use super::bindings::{BindingVersion, DriverAdapter};
+use super::bindings::{BindingVersion, ComparisonPlan};
 use super::effect_contract::{EffectComparison, EffectDisposition, EffectSelector};
 
 mod model;
 
-pub use model::{
-    Disposition, Entry, Manifest, Protocol, ResolvedDisposition, RustComponentId, SemanticContract,
-};
+pub use model::{Disposition, Entry, Manifest, Protocol, ResolvedDisposition, RustComponentId};
 use model::{EntryBuilder, ProtocolPrefix};
 
 #[derive(Deserialize)]
@@ -70,8 +68,6 @@ struct FunctionInput {
     #[serde(default)]
     hil_evidence: Option<String>,
     #[serde(default)]
-    semantic_contract: Option<String>,
-    #[serde(default)]
     effect_contract: Option<EffectComparison>,
     #[serde(default)]
     effects: Vec<EffectRuleInput>,
@@ -82,9 +78,9 @@ struct FunctionInput {
     #[serde(default)]
     rust_probe: Option<String>,
     #[serde(default)]
-    compare_return: Option<bool>,
+    comparison_plan: Option<String>,
     #[serde(default)]
-    driver_adapter: Option<String>,
+    compare_return: Option<bool>,
     #[serde(default)]
     blocked_by: Vec<BlockerInput>,
 }
@@ -165,9 +161,9 @@ impl Manifest {
     }
 
     fn finish(document: DispositionDocument) -> Result<Self> {
-        if document.schema != 2 {
+        if document.schema != 3 {
             return Err(crate::Error::invalid(
-                "disposition TOML requires schema = 2",
+                "disposition TOML requires schema = 3",
             ));
         }
         let mut prefix_identities = BTreeSet::new();
@@ -194,20 +190,15 @@ impl Manifest {
                 .as_deref()
                 .map(|value| RustComponentId::parse(value, index + 1))
                 .transpose()?;
-            let semantic_contract = function
-                .semantic_contract
-                .as_deref()
-                .map(|value| SemanticContract::parse(value, index + 1))
-                .transpose()?;
             let binding_version = function
                 .binding
                 .as_deref()
                 .map(|value| BindingVersion::parse(value, index + 1))
                 .transpose()?;
-            let driver_adapter = function
-                .driver_adapter
+            let comparison_plan = function
+                .comparison_plan
                 .as_deref()
-                .map(|value| DriverAdapter::parse(value, index + 1))
+                .map(|value| ComparisonPlan::parse(value, index + 1))
                 .transpose()?;
             let entry = EntryBuilder {
                 source: function.source,
@@ -216,7 +207,6 @@ impl Manifest {
                 protocol: function.protocol,
                 rust_component,
                 hil_evidence: function.hil_evidence,
-                semantic_contract,
                 effect_comparison: function.effect_contract,
                 effect_rules: function
                     .effects
@@ -226,8 +216,8 @@ impl Manifest {
                 binding_version,
                 rust_binding: function.rust_binding,
                 rust_probe: function.rust_probe,
+                comparison_plan,
                 compare_return: function.compare_return,
-                driver_adapter,
                 release_blockers: function
                     .blocked_by
                     .into_iter()

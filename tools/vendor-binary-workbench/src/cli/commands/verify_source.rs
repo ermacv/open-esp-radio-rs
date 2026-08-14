@@ -41,7 +41,6 @@ pub(super) fn run(arguments: VerifySourceArgs, svd: &MmioMap, target: &TargetSpe
     let source_report = verify_source(
         svd,
         target.knowledge_provider.as_deref(),
-        None,
         &target.rust_target,
         source,
         &rust_artifact,
@@ -49,7 +48,6 @@ pub(super) fn run(arguments: VerifySourceArgs, svd: &MmioMap, target: &TargetSpe
         rust_prefix,
         &execution_profiles,
         None,
-        &[],
         &mut evidence,
     )?;
     let orphan_probes = orphan_probe_count(
@@ -89,9 +87,6 @@ pub(super) fn run(arguments: VerifySourceArgs, svd: &MmioMap, target: &TargetSpe
     }
     let verification = verification_core_report(VerificationCoreInputs {
         target,
-        // The standalone command has architecture/chip knowledge only. It
-        // must not label that provider as a production verification add-on.
-        verification_provider: None,
         gate,
         summary: source_report.summary,
         orphan_probes,

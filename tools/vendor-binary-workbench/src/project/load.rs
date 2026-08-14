@@ -747,10 +747,10 @@ fn load_verification_addon(path: &Path) -> Result<VerificationWorkspacePaths> {
         }
     })?;
     let source = ProjectSource::new(path, &input);
-    if document.get("schema").and_then(Item::as_integer) != Some(2) {
+    if document.get("schema").and_then(Item::as_integer) != Some(3) {
         return Err(source.item(
             document.get("schema"),
-            "verification add-on requires schema = 2",
+            "verification add-on requires schema = 3",
         ));
     }
     reject_unknown_keys(
@@ -758,7 +758,6 @@ fn load_verification_addon(path: &Path) -> Result<VerificationWorkspacePaths> {
         &[
             "schema",
             "id",
-            "provider",
             "report",
             "evidence-index",
             "policy",
@@ -769,24 +768,20 @@ fn load_verification_addon(path: &Path) -> Result<VerificationWorkspacePaths> {
     )?;
     let id = required_string(&document, "id", source)?;
     validate_id(&id).map_err(|message| source.item(document.get("id"), message))?;
-    let provider = required_string(&document, "provider", source)?;
-    validate_id(&provider).map_err(|message| source.item(document.get("provider"), message))?;
     let base = path.parent().unwrap_or_else(|| Path::new("."));
-    load_verification_workspace(&document, base, source, provider)
+    load_verification_workspace(&document, base, source)
 }
 
 fn load_verification_workspace(
     table: &Table,
     base: &Path,
     source: ProjectSource<'_>,
-    provider: String,
 ) -> Result<VerificationWorkspacePaths> {
     reject_unknown_keys(
         table,
         &[
             "schema",
             "id",
-            "provider",
             "report",
             "evidence-index",
             "policy",
@@ -943,7 +938,6 @@ fn load_verification_workspace(
         })
         .collect::<Result<Vec<_>>>()?;
     Ok(VerificationWorkspacePaths {
-        provider,
         report,
         evidence_index,
         policy,

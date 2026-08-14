@@ -29,11 +29,11 @@ fn regression_and_completion_gates_are_independent() {
 #[test]
 fn effect_contract_evidence_is_bound_to_closed_policy_rules() {
     let binding = bindings::Binding::new(
-        bindings::BindingVersion::V1,
+        bindings::BindingVersion::V2,
         open_radio_vendor_semantics::RustBindingKind::ExactProductionEntry,
         "open_phy_trace_leaf".to_owned(),
+        bindings::ComparisonPlan::parse("direct-effects-v1", 1).unwrap(),
         false,
-        None,
     )
     .unwrap();
     let exact = effect_contract::EffectPolicy::new(

@@ -9,14 +9,14 @@ Vendor Binary Workbench evidence, HIL records and the qualification ledger.
 | --- | --- | --- |
 | `driver/` tests | Does production Rust satisfy its local invariants? | Required, not sufficient |
 | Workbench `production-trace` | Does a concrete vendor execution have the same ordered observable effects as the exact compiled production entry? | Yes, for the named bounded contract |
-| Workbench `shared-core` | Does a verification adapter exercise code shared with production? | No; supporting evidence only |
-| Workbench `semantic-model` | Does production state-machine logic agree with a modeled environment/scenario? | No; supporting evidence only |
+| Workbench `shared-core` | Does a compiled probe exercise code shared with production? | No; supporting evidence only |
+| Environment model | Does an explicit environment make a comparison executable? | No; it is an input, not an implementation or verdict |
 | Workbench `static-analysis` | Do lifted, symbolic or generated traces agree? | No; supporting evidence only |
 | HIL record | Did the dated production composition work on hardware? | Required for hardware-qualified axes |
 | Qualification ledger | Are all required capability axes and dependencies closed? | **Sole readiness authority** |
 
 Workbench is intentionally broader than the qualification gate. Its analysis,
-register discovery, semantic models and focused investigations remain useful
+register discovery, environment models and focused investigations remain useful
 for understanding vendor code. They must not be described as product
 qualification unless their result reaches the ledger through the strict
 production-trace path.

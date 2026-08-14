@@ -27,7 +27,7 @@ pub(super) fn evaluate(
     bounded_feature: bool,
 ) -> Result<Evaluation> {
     let reviewed_domain =
-        profile.claim == open_radio_vendor_semantics::DriverAdapterClaim::ReviewedDomainEquivalence;
+        profile.claim == open_radio_vendor_semantics::VerificationClaim::ReviewedDomainEquivalence;
     if reviewed_domain != bounded_feature {
         return Err(crate::Error::invalid(format!(
             "profile {} claim {} requires disposition {}, but {}:{} uses {}",
@@ -83,18 +83,18 @@ pub(super) fn evaluate(
 }
 
 fn matched_status(
-    claim: open_radio_vendor_semantics::DriverAdapterClaim,
+    claim: open_radio_vendor_semantics::VerificationClaim,
 ) -> FunctionVerificationStatus {
     match claim {
-        open_radio_vendor_semantics::DriverAdapterClaim::ReviewedDomainEquivalence => {
+        open_radio_vendor_semantics::VerificationClaim::ReviewedDomainEquivalence => {
             FunctionVerificationStatus::BoundedMatch
         }
-        open_radio_vendor_semantics::DriverAdapterClaim::WholeFunctionEquivalence => {
+        open_radio_vendor_semantics::VerificationClaim::WholeFunctionEquivalence => {
             FunctionVerificationStatus::Match
         }
-        open_radio_vendor_semantics::DriverAdapterClaim::ReviewedProjection
-        | open_radio_vendor_semantics::DriverAdapterClaim::ReviewedRefinement
-        | open_radio_vendor_semantics::DriverAdapterClaim::RustConformance => {
+        open_radio_vendor_semantics::VerificationClaim::ReviewedProjection
+        | open_radio_vendor_semantics::VerificationClaim::ReviewedRefinement
+        | open_radio_vendor_semantics::VerificationClaim::RustConformance => {
             unreachable!("adapter-only claims are rejected by profile validation")
         }
     }
@@ -108,13 +108,13 @@ mod tests {
     fn profile_claims_have_distinct_success_classes() {
         assert_eq!(
             matched_status(
-                open_radio_vendor_semantics::DriverAdapterClaim::ReviewedDomainEquivalence
+                open_radio_vendor_semantics::VerificationClaim::ReviewedDomainEquivalence
             ),
             FunctionVerificationStatus::BoundedMatch
         );
         assert_eq!(
             matched_status(
-                open_radio_vendor_semantics::DriverAdapterClaim::WholeFunctionEquivalence
+                open_radio_vendor_semantics::VerificationClaim::WholeFunctionEquivalence
             ),
             FunctionVerificationStatus::Match
         );

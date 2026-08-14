@@ -204,11 +204,10 @@ test driver/chips/esp32s31/phy/src/phy_cold.rs open_i2c_deadline_keeps_one_epoch
 test driver/adapters/embassy/esp32s31-wifi/src/embassy_rx.rs awaits_once_for_every_pending_reload_observation
 test driver/wifi/wpa2/src/retry.rs each_alarm_edge_emits_at_most_one_bounded_retransmission
 vendor-root rom phy_iq_est_enable
-vendor-evidence phy rom phy_iq_est_enable
 vendor-anchor verification/vendor/targets/esp32s31/registers/evidence/vendor-rom.toml wDev_AppendRxBlocks
 hil-evidence qualification/targets/esp32s31/records/2026-07-31-driver-repo-he20-bidirectional.md HIL_OPEN_HE20_DRIVER_REPO_BIDIRECTIONAL_2026_07_31
 hil-evidence qualification/targets/esp32s31/records/2026-08-10-esp32s31-rx-delivery-frontier.md HIL_ESP32S31_RX_DELIVERY_FRONTIER_2026_08_10
-gap vendor remaining-wait-contracts-not-bound
+gap vendor iq-estimator-and-remaining-wait-contracts-not-bound
 
 capability radio-cold-start
 title Always-awake radio cold start

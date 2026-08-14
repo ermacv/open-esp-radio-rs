@@ -147,6 +147,11 @@ impl MacPowerInterruptRegisters {
         interrupt_snapshot::acknowledge_mac_power_interrupt(&self.peripheral, snapshot.0);
         device_fence();
     }
+
+    #[cfg(feature = "validation-probes")]
+    pub(crate) fn from_peripheral_for_validation(peripheral: svd::WifiMacPowerInterrupt) -> Self {
+        Self { peripheral }
+    }
 }
 
 /// Disjoint generated register capability intended for the hard MAC ISR.
@@ -155,7 +160,7 @@ impl MacPowerInterruptRegisters {
 /// crate-private so application code cannot manufacture another ISR owner or
 /// retain task-side interrupt enable/clear access during an active epoch.
 pub struct MacInterruptRegisters {
-    peripheral: svd::WifiMacInterrupt,
+    pub(crate) peripheral: svd::WifiMacInterrupt,
 }
 
 impl MacInterruptRegisters {

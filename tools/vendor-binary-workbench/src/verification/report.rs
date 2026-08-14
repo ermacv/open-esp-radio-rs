@@ -2,13 +2,13 @@
 
 use std::path::Path;
 
-use open_radio_vendor_semantics::{DriverAdapterCase, DriverAdapterClaim};
+use open_radio_vendor_semantics::VerificationClaim;
 use serde::{Deserialize, Serialize};
 
 use super::EvidenceSet;
 use super::{EvidenceComparison, ExecutionComparisonReport, VerificationCoreReport, VerifySummary};
 
-pub(crate) const VERIFICATION_REPORT_SCHEMA: u32 = 12;
+pub(crate) const VERIFICATION_REPORT_SCHEMA: u32 = 14;
 
 /// Strength of the Rust-side evidence used for a vendor comparison.
 ///
@@ -19,7 +19,6 @@ pub(crate) const VERIFICATION_REPORT_SCHEMA: u32 = 12;
 pub(crate) enum EvidenceClass {
     ProductionTrace,
     SharedCore,
-    SemanticModel,
     StaticAnalysis,
 }
 
@@ -56,11 +55,7 @@ pub(crate) struct FunctionVerificationReport {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) protocol: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) driver_adapter: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) claim: Option<DriverAdapterClaim>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub(crate) adapter_cases: Vec<DriverAdapterCase>,
+    pub(crate) claim: Option<VerificationClaim>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) hil_evidence: Option<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -100,9 +95,7 @@ impl FunctionVerificationReport {
             disposition: None,
             disposition_reviewed: false,
             protocol: None,
-            driver_adapter: None,
             claim: None,
-            adapter_cases: Vec::new(),
             hil_evidence: None,
             release_blockers: Vec::new(),
             reason: None,

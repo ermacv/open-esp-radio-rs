@@ -11,7 +11,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use open_radio_vendor_semantics::DriverAdapterClaim;
+use open_radio_vendor_semantics::VerificationClaim;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -71,7 +71,7 @@ struct Requirement {
     suite: String,
     source: String,
     symbol: String,
-    claim: DriverAdapterClaim,
+    claim: VerificationClaim,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize)]
@@ -111,7 +111,7 @@ pub(crate) struct RequiredPolicyExclusion {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct BindingRequirement {
     pub(crate) surface: String,
-    pub(crate) claim: DriverAdapterClaim,
+    pub(crate) claim: VerificationClaim,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -151,7 +151,7 @@ struct StoredSourceReport {
 struct StoredFunctionReport {
     vendor_symbol: String,
     status: FunctionVerificationStatus,
-    claim: Option<DriverAdapterClaim>,
+    claim: Option<VerificationClaim>,
     disposition_reviewed: bool,
     rust_component: Option<String>,
 }
@@ -236,7 +236,7 @@ impl Policy {
                     )));
                 }
                 if surface.kind == SurfaceKind::BoundedProperty
-                    && requirement.claim == DriverAdapterClaim::WholeFunctionEquivalence
+                    && requirement.claim == VerificationClaim::WholeFunctionEquivalence
                 {
                     return Err(crate::Error::invalid(format!(
                         "bounded-property surface {:?} cannot claim whole-function equivalence",
@@ -418,7 +418,7 @@ pub(crate) fn validate_project(project: &ProjectSpec) -> Result<()> {
                     surface.id, requirement.suite
                 )));
             }
-            if requirement.claim != DriverAdapterClaim::WholeFunctionEquivalence {
+            if requirement.claim != VerificationClaim::WholeFunctionEquivalence {
                 bounded_requirements.insert((
                     requirement.suite.as_str(),
                     requirement.source.as_str(),
@@ -668,13 +668,13 @@ fn validate_fingerprint(value: &str) -> Result<()> {
     Ok(())
 }
 
-fn status_satisfies_claim(status: FunctionVerificationStatus, claim: DriverAdapterClaim) -> bool {
+fn status_satisfies_claim(status: FunctionVerificationStatus, claim: VerificationClaim) -> bool {
     match claim {
-        DriverAdapterClaim::WholeFunctionEquivalence => status == FunctionVerificationStatus::Match,
-        DriverAdapterClaim::ReviewedDomainEquivalence
-        | DriverAdapterClaim::ReviewedRefinement
-        | DriverAdapterClaim::ReviewedProjection
-        | DriverAdapterClaim::RustConformance => {
+        VerificationClaim::WholeFunctionEquivalence => status == FunctionVerificationStatus::Match,
+        VerificationClaim::ReviewedDomainEquivalence
+        | VerificationClaim::ReviewedRefinement
+        | VerificationClaim::ReviewedProjection
+        | VerificationClaim::RustConformance => {
             matches!(status, FunctionVerificationStatus::BoundedMatch)
         }
     }
@@ -688,7 +688,7 @@ mod tests {
     fn whole_function_claim_rejects_bounded_match() {
         assert!(!status_satisfies_claim(
             FunctionVerificationStatus::BoundedMatch,
-            DriverAdapterClaim::WholeFunctionEquivalence
+            VerificationClaim::WholeFunctionEquivalence
         ));
     }
 
@@ -696,11 +696,11 @@ mod tests {
     fn bounded_claim_accepts_only_bounded_match() {
         assert!(status_satisfies_claim(
             FunctionVerificationStatus::BoundedMatch,
-            DriverAdapterClaim::ReviewedRefinement
+            VerificationClaim::ReviewedRefinement
         ));
         assert!(!status_satisfies_claim(
             FunctionVerificationStatus::Match,
-            DriverAdapterClaim::ReviewedRefinement
+            VerificationClaim::ReviewedRefinement
         ));
     }
 }

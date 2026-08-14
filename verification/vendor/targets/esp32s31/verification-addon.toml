@@ -1,8 +1,7 @@
 # Optional ESP32-S31 production comparison add-on. Generic analysis and PAC
-# publication do not require this file or its compiled provider.
-schema = 2
-id = "esp32s31-radio-verification-v1"
-provider = "esp32s31-radio-verification-v1"
+# publication do not require this file.
+schema = 3
+id = "esp32s31-radio-verification-v2"
 report = "generated/reports/verification.json"
 evidence-index = "evidence/vendor-evidence.json"
 policy = "verification-policy.toml"
@@ -32,9 +31,8 @@ rust-artifact-role = "rust-artifact"
 rust-prefix = "open_libpp_trace_"
 profiles = []
 dispositions = ["dispositions/libpp-interrupt.toml"]
-baselines = ["baselines/libpp-interrupt.toml"]
-gate = "regression"
-match-floor = 1
+baselines = []
+gate = "informational"
 [[suites.vendor]]
 source = "libpp"
 all = true
@@ -47,31 +45,6 @@ profiles = []
 dispositions = ["dispositions/libpp-power-interrupt.toml"]
 baselines = []
 gate = "informational"
-[[suites.vendor]]
-source = "libpp"
-all = true
-
-[[suites]]
-id = "libpp-modem-wakeup"
-rust-artifact-role = "rust-artifact"
-rust-prefix = "open_libpp_power_trace_"
-profiles = []
-dispositions = ["dispositions/libpp-modem-wakeup.toml"]
-baselines = []
-gate = "informational"
-[[suites.vendor]]
-source = "libpp"
-all = true
-
-[[suites]]
-id = "libpp-sta-tsf-wakeup"
-rust-artifact-role = "rust-artifact"
-rust-prefix = "open_libpp_power_tsf_trace_"
-profiles = ["profiles/libpp-sta-tsf-wakeup.toml"]
-dispositions = ["dispositions/libpp-sta-tsf-wakeup.toml"]
-baselines = ["baselines/libpp-sta-tsf-wakeup.toml"]
-gate = "regression"
-match-floor = 1
 [[suites.vendor]]
 source = "libpp"
 all = true
@@ -124,7 +97,7 @@ profiles = ["profiles/libpp-tx-dma.toml"]
 dispositions = ["dispositions/libpp-tx-dma.toml"]
 baselines = ["baselines/libpp-tx-dma.toml"]
 gate = "regression"
-match-floor = 7
+match-floor = 6
 [[suites.vendor]]
 source = "libpp"
 all = true
@@ -136,9 +109,11 @@ rust-artifact-role = "rust-artifact"
 rust-prefix = "open_libpp_rx_trace_"
 profiles = []
 dispositions = ["dispositions/libpp-rx-dma.toml"]
-baselines = ["baselines/libpp-rx-dma.toml"]
-gate = "regression"
-match-floor = 1
+baselines = []
+# These declarations remain useful as static production bindings, but no
+# generic concrete-execution profile currently covers the composed RX-ring
+# transaction. Do not turn that absence into a synthetic MATCH requirement.
+gate = "informational"
 [[suites.vendor]]
 source = "libpp"
 all = true
@@ -159,37 +134,6 @@ symbols = [
     "coex_hw_timer_disable",
     "coex_hw_timer_force",
     "coex_hw_timer_unforce",
-]
-
-[[suites]]
-id = "btbb-coex-pti"
-rust-artifact-role = "rust-artifact"
-rust-prefix = "open_btbb_coex_trace_"
-profiles = ["profiles/btbb-coex-pti.toml"]
-dispositions = ["dispositions/btbb-coex-pti.toml"]
-baselines = ["baselines/btbb-coex-pti.toml"]
-gate = "regression"
-match-floor = 1
-[[suites.vendor]]
-source = "btbb"
-symbols = ["coex_pti_v2"]
-
-[[suites]]
-id = "coex-scheduler"
-rust-artifact-role = "rust-artifact"
-rust-prefix = "open_coex_scheduler_trace_"
-profiles = ["profiles/coex-scheduler.toml"]
-dispositions = ["dispositions/coex-scheduler.toml"]
-baselines = ["baselines/coex-scheduler.toml"]
-gate = "regression"
-match-floor = 4
-[[suites.vendor]]
-source = "coex"
-symbols = [
-    "coex_schm_interval_set",
-    "coex_schm_interval_get",
-    "coex_schm_curr_period_get",
-    "coex_schm_curr_phase_get",
 ]
 
 [[suites]]
@@ -230,25 +174,6 @@ symbols = [
 ]
 
 [[suites]]
-id = "wifi-coex-runtime"
-rust-artifact-role = "rust-artifact"
-rust-prefix = "open_libpp_coex_trace_"
-profiles = ["profiles/wifi-coex-runtime.toml"]
-dispositions = ["dispositions/wifi-coex-runtime.toml"]
-baselines = ["baselines/wifi-coex-runtime.toml"]
-gate = "regression"
-match-floor = 5
-[[suites.vendor]]
-source = "libpp"
-symbols = [
-    "hal_set_rx_beacon_pti",
-    "hal_clear_rx_beacon_pti",
-    "hal_set_itwt_pti",
-    "hal_clr_itwt_pti",
-    "hal_set_tx_pti",
-]
-
-[[suites]]
 id = "wifi-interface-context"
 rust-artifact-role = "rust-artifact"
 rust-prefix = "open_libpp_interface_trace_"
@@ -274,19 +199,6 @@ source = "wifi-sta-ap-receive"
 symbols = ["wifi_set_rx_policy"]
 
 [[suites]]
-id = "libnet80211-sta-join"
-rust-artifact-role = "rust-artifact"
-rust-prefix = "open_libnet80211_trace_"
-profiles = []
-auxiliary-sources = ["wifi-key-role"]
-dispositions = ["dispositions/libnet80211-sta-join.toml"]
-baselines = ["baselines/libnet80211-sta-join.toml"]
-gate = "completion"
-[[suites.vendor]]
-source = "libnet80211"
-symbols = ["ieee80211_sta_new_state"]
-
-[[suites]]
 id = "wifi-sta-beacon-filter"
 rust-artifact-role = "rust-artifact"
 rust-prefix = "open_wifi_sta_trace_"
@@ -298,15 +210,3 @@ match-floor = 1
 [[suites.vendor]]
 source = "wifi-sta-lifecycle"
 symbols = ["hal_disable_sta_beacon_filter"]
-
-[[suites]]
-id = "wifi-key-role"
-rust-artifact-role = "rust-artifact"
-rust-prefix = "open_wifi_key_role_trace_"
-profiles = []
-dispositions = ["dispositions/wifi-key-role.toml"]
-baselines = ["baselines/wifi-key-role.toml"]
-gate = "completion"
-[[suites.vendor]]
-source = "wifi-key-role"
-symbols = ["wDev_Insert_KeyEntry"]

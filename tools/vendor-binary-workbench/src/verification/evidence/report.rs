@@ -18,8 +18,6 @@ pub(crate) struct VerificationTargetDocument {
     id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     knowledge_provider: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    verification_provider: Option<String>,
     architecture: &'static str,
     calling_convention: &'static str,
     endianness: &'static str,
@@ -97,7 +95,6 @@ pub(crate) struct VerificationCoreReport {
 
 pub(crate) struct VerificationCoreInputs<'a, S> {
     pub(crate) target: &'a TargetSpec,
-    pub(crate) verification_provider: Option<&'a str>,
     pub(crate) gate: VerificationGate,
     pub(crate) summary: VerifySummary,
     pub(crate) orphan_probes: usize,
@@ -113,7 +110,6 @@ pub(crate) fn verification_core_report<S: AsRef<str>>(
 ) -> Result<VerificationCoreReport> {
     let VerificationCoreInputs {
         target,
-        verification_provider,
         gate,
         summary,
         orphan_probes,
@@ -127,7 +123,6 @@ pub(crate) fn verification_core_report<S: AsRef<str>>(
         target: VerificationTargetDocument {
             id: target.id.clone(),
             knowledge_provider: target.knowledge_provider.clone(),
-            verification_provider: verification_provider.map(str::to_owned),
             architecture: target.architecture.label(),
             calling_convention: target.calling_convention.label(),
             endianness: target.endianness.label(),
@@ -233,7 +228,6 @@ mod tests {
         let evidence = EvidenceSet::new();
         let report = verification_core_report(VerificationCoreInputs {
             target: &target,
-            verification_provider: None,
             gate: VerificationGate::Completion,
             summary: VerifySummary::default(),
             orphan_probes: 0,

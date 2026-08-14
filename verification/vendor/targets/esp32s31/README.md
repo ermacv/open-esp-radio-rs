@@ -2,8 +2,9 @@
 
 This directory is the reviewed ESP32-S31 configuration for Vendor Binary
 Workbench. `vendor-project.toml` is the entry point. The target host links the
-generic Workbench with ESP32-S31 contracts and semantic providers; target
-addresses and driver dependencies do not enter the generic package.
+generic Workbench with ESP32-S31 knowledge contracts. Target addresses and
+driver dependencies do not enter the generic package, and target code cannot
+return a comparison verdict.
 
 ## Local inputs
 
@@ -42,9 +43,9 @@ cargo vendor-binary-workbench project check \
 ```
 
 Use `project status` for the quick overview, `project browse` for navigation,
-and `inspect function SOURCE:SYMBOL` for a focused body. The suite and policy
-TOML files are the coverage source of truth; this README intentionally does
-not duplicate the suite inventory.
+and `inspect function SOURCE:SYMBOL` for a focused body. Current suite,
+disposition, profile, and policy TOML files define comparison scope; this
+README intentionally does not duplicate their inventory.
 
 ## Register publication
 
@@ -74,7 +75,7 @@ remain useful research evidence but do not prove manually written driver
 sequencing.
 
 `phy_chip_set_chan` remains an explicit production-verification gap. The old
-provider-owned semantic contract was removed because it normalized both traces
+target-owned self-verdict contract was removed because it normalized both traces
 and computed its own verdict instead of proving the compiled shipping entry.
 The retained observations show the first unreviewed difference at analog-I²C
 host selection: the vendor ROM path uses the recovered `0x1a00` configuration,

@@ -2,7 +2,7 @@
 
 use std::{collections::BTreeSet, fs, path::Path};
 
-use open_radio_vendor_semantics::DriverAdapterClaim;
+use open_radio_vendor_semantics::VerificationClaim;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
@@ -36,7 +36,7 @@ pub(crate) struct VendorEvidenceEntry {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) rust_probe: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) claim: Option<DriverAdapterClaim>,
+    pub(crate) claim: Option<VerificationClaim>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) evidence_kind: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -273,7 +273,6 @@ const fn evidence_class_label(class: EvidenceClass) -> &'static str {
     match class {
         EvidenceClass::ProductionTrace => "production-trace",
         EvidenceClass::SharedCore => "shared-core",
-        EvidenceClass::SemanticModel => "semantic-model",
         EvidenceClass::StaticAnalysis => "static-analysis",
     }
 }

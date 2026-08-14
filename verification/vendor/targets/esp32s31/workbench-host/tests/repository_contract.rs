@@ -1,4 +1,3 @@
-use std::collections::{BTreeMap, BTreeSet};
 use std::process::Command;
 use std::{fs, path::Path};
 
@@ -205,61 +204,18 @@ fn hal_public_functions_do_not_accept_a_pac_owner() {
 }
 
 #[test]
-fn trust_reset_inventory_has_one_machine_readable_owner() {
+fn completed_trust_reset_inventory_cannot_return() {
     let repository = repository_root();
     assert!(
         !repository.join("TRUST_RESET_INVENTORY.md").exists(),
         "the retired narrative inventory must not return"
     );
-    let path =
-        repository.join("verification/vendor/targets/esp32s31/audits/verification-bindings.toml");
-    let source = fs::read_to_string(path).expect("read reviewed binding audit");
-    let document = source
-        .parse::<toml_edit::DocumentMut>()
-        .expect("binding audit is valid TOML");
-    assert_eq!(document["schema"].as_integer(), Some(1));
-    assert_eq!(document["status"].as_str(), Some("untrusted"));
-
-    let bindings = document["bindings"]
-        .as_array_of_tables()
-        .expect("binding audit has records");
-    assert_eq!(bindings.len(), 70, "all audited bindings were migrated");
-    let mut ids = BTreeSet::new();
-    let mut dispositions = BTreeMap::new();
-    for binding in bindings {
-        let id = binding["id"].as_str().expect("binding id");
-        assert!(ids.insert(id), "duplicate binding id {id}");
-        for required in [
-            "title",
-            "proof_kind",
-            "disposition",
-            "purpose",
-            "vendor_target",
-            "rust_target",
-            "shipping_profile",
-            "shipping_root",
-            "source_production_call_path",
-            "oracle_kind",
-            "terminal_match_capable",
-            "required_for_terminal_match",
-            "current_consumer",
-            "allowed_consumer",
-            "previous_status",
-            "reason",
-        ] {
-            assert!(binding.contains_key(required), "{id} lacks {required}");
-        }
-        assert!(
-            !binding.contains_key("trust"),
-            "{id} must not carry an independently mutable trust flag"
-        );
-        *dispositions
-            .entry(binding["disposition"].as_str().expect("disposition"))
-            .or_insert(0_usize) += 1;
-    }
-    assert_eq!(dispositions.get("ACCEPT_ATTEST"), Some(&31));
-    assert_eq!(dispositions.get("ACCEPT_REWRITE"), Some(&16));
-    assert_eq!(dispositions.get("ACCEPT_QUARANTINE"), Some(&23));
+    assert!(
+        !repository
+            .join("verification/vendor/targets/esp32s31/audits/verification-bindings.toml")
+            .exists(),
+        "the cutover inventory must be deleted after every decision is encoded in current manifests"
+    );
 }
 
 #[test]
@@ -367,10 +323,10 @@ fn chip_knowledge_cannot_acquire_a_production_or_qualification_dependency() {
         );
     }
 
-    let verification = fs::read_to_string(provider.join("verification/Cargo.toml")).unwrap();
-    assert!(verification.contains("open-radio-vendor-knowledge-esp32s31"));
-    assert!(verification.contains("driver/chips/esp32s31/phy"));
-    assert!(verification.contains("driver/chips/esp32s31/wifi/mac"));
+    assert!(
+        !provider.join("verification").exists(),
+        "compiled target code must not own comparison verdicts"
+    );
 }
 
 #[test]
@@ -379,11 +335,7 @@ fn removed_provider_and_provenance_paths_do_not_return() {
     let provider = repository.join("verification/vendor/targets/esp32s31/workbench-provider");
     assert!(!provider.join("semantic").exists());
     assert!(!provider.join("verification/src/qualification").exists());
-    assert!(
-        provider
-            .join("verification/src/production_adapter")
-            .is_dir()
-    );
+    assert!(!provider.join("verification").exists());
     assert!(!provider.join("verification/src/semantic_replay").exists());
 
     let evidence = repository.join("verification/vendor/targets/esp32s31/registers/evidence");
@@ -455,13 +407,64 @@ fn channel_lifecycle_reaches_the_pac_only_through_the_hal() {
 
 #[test]
 fn compiled_probe_operations_do_not_call_pac_validation_directly() {
+    let repository = repository_root();
     let probe = fs::read_to_string(
-        repository_root().join("verification/vendor/targets/esp32s31/probes/library/src/lib.rs"),
+        repository.join("verification/vendor/targets/esp32s31/probes/library/src/lib.rs"),
     )
     .expect("read compiled probe library");
     assert!(
         !probe.contains("open_esp_radio_esp32s31_pac::validation"),
         "compiled operations must acquire validation ownership through HAL"
+    );
+    for retired_prefix in [
+        "open_libpp_coex_trace_",
+        "open_libpp_power_trace_",
+        "open_libpp_power_tsf_trace_",
+        "open_btbb_coex_trace_",
+        "open_coex_scheduler_trace_",
+        "open_libpp_trace_wdev_process_fiq_mac_slice",
+        "open_phy_trace_iq_est_enable",
+        "open_libpp_tx_trace_hal_mac_txq_publish_owned",
+        "open_libnet80211_trace_sta_join_state",
+        "open_wifi_key_role_trace_wdev_insert_key_entry",
+    ] {
+        assert!(
+            !probe.contains(retired_prefix),
+            "quarantined probe entry returned: {retired_prefix}"
+        );
+    }
+
+    let pac_validation =
+        fs::read_to_string(repository.join("driver/chips/esp32s31/pac/src/validation.rs"))
+            .expect("read PAC validation capability factory");
+    let exported = pac_validation
+        .lines()
+        .filter(|line| line.trim_start().starts_with("pub fn "))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        exported.len(),
+        3,
+        "PAC validation regained semantic operations"
+    );
+    assert!(pac_validation.contains("pub fn radio_registers()"));
+    assert!(pac_validation.contains("pub fn mac_interrupt_registers()"));
+    assert!(pac_validation.contains("pub fn mac_power_interrupt_registers()"));
+
+    let hal = repository.join("driver/chips/esp32s31/hal/src");
+    let mut hal_files = Vec::new();
+    rust_files(&hal, &mut hal_files);
+    let direct_acquisition = hal_files
+        .into_iter()
+        .filter(|path| path.file_name().and_then(|name| name.to_str()) != Some("lib.rs"))
+        .filter(|path| {
+            fs::read_to_string(path)
+                .expect("read HAL source")
+                .contains("open_esp_radio_esp32s31_pac::validation")
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        direct_acquisition.is_empty(),
+        "HAL modules bypass the single validation owner factory: {direct_acquisition:#?}"
     );
 }
 

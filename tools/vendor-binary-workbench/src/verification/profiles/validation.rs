@@ -3,7 +3,7 @@
 use std::collections::BTreeSet;
 
 use crate::{NamedScenario, Result};
-use open_radio_vendor_semantics::DriverAdapterClaim;
+use open_radio_vendor_semantics::VerificationClaim;
 
 use super::{ArgumentRange, ArgumentValues, MmioDomain, Profile, ProfileContract};
 
@@ -45,7 +45,7 @@ pub(super) fn validate_coverage_domain(
         vendor_source: String::new(),
         vendor_symbol: String::new(),
         rust_symbol: String::new(),
-        claim: DriverAdapterClaim::WholeFunctionEquivalence,
+        claim: VerificationClaim::WholeFunctionEquivalence,
         precondition: None,
         contract: ProfileContract::Scenario,
         compare_return: false,
@@ -287,7 +287,7 @@ pub(super) fn validate_argument_domain(
         vendor_source: String::new(),
         vendor_symbol: String::new(),
         rust_symbol: String::new(),
-        claim: DriverAdapterClaim::WholeFunctionEquivalence,
+        claim: VerificationClaim::WholeFunctionEquivalence,
         precondition: None,
         contract: ProfileContract::Scenario,
         compare_return: false,
@@ -315,21 +315,21 @@ pub(super) fn validate_argument_domain(
 
 pub(super) fn validate_claim(
     profile: &str,
-    claim: DriverAdapterClaim,
+    claim: VerificationClaim,
     precondition: Option<&str>,
     ranges: &[ArgumentRange],
     values: &[ArgumentValues],
     mmio_domains: &[MmioDomain],
 ) -> Result<()> {
     match claim {
-        DriverAdapterClaim::WholeFunctionEquivalence => {
+        VerificationClaim::WholeFunctionEquivalence => {
             if precondition.is_some() {
                 return Err(crate::Error::invalid(format!(
                     "whole-function profile {profile} cannot declare a precondition"
                 )));
             }
         }
-        DriverAdapterClaim::ReviewedDomainEquivalence => {
+        VerificationClaim::ReviewedDomainEquivalence => {
             let precondition = precondition
                 .filter(|value| !value.is_empty())
                 .ok_or_else(|| {
@@ -352,9 +352,9 @@ pub(super) fn validate_claim(
                 )));
             }
         }
-        DriverAdapterClaim::ReviewedRefinement
-        | DriverAdapterClaim::ReviewedProjection
-        | DriverAdapterClaim::RustConformance => {
+        VerificationClaim::ReviewedRefinement
+        | VerificationClaim::ReviewedProjection
+        | VerificationClaim::RustConformance => {
             return Err(crate::Error::invalid(format!(
                 "execution profile {profile} cannot use adapter-only claim {}",
                 claim.label()

@@ -15,7 +15,7 @@ rust-binding = "exact-production-entry"
 rust-probe = "open_libpp_power_irq_trace_hal_pwr_interrupt_get_event"
 comparison-plan = "direct-effects-v1"
 compare-return = true
-effect-contract = "exact-effects-v1"
+effect-contract = "exact-effects-v2"
 [[functions.effects]]
 selector = { kind = "mmio-read", width = 32, address = 0x2010d8bc }
 disposition = { kind = "required" }
@@ -30,7 +30,10 @@ binding = "v2"
 rust-binding = "exact-production-entry"
 rust-probe = "open_libpp_power_irq_trace_hal_pwr_interrupt_clr_event"
 comparison-plan = "direct-effects-v1"
-effect-contract = "exact-effects-v1"
+effect-contract = "exact-effects-v2"
 [[functions.effects]]
 selector = { kind = "mmio-write", width = 32, address = 0x2010d8c0 }
 disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "fence", fm = 0, predecessor = 15, successor = 15 }
+disposition = { kind = "rust-addition", value = "device-ordering" }

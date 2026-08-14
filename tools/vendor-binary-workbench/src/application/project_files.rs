@@ -1,6 +1,10 @@
 //! Typed inventory of project inputs, reviewed knowledge and generated outputs.
 
-use std::path::{Path, PathBuf};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fs,
+    path::{Path, PathBuf},
+};
 
 use serde::Serialize;
 
@@ -68,6 +72,131 @@ pub(crate) struct ProjectFilesReport {
     pub(crate) present: usize,
     pub(crate) missing: usize,
     pub(crate) pending: usize,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ProjectOwnershipReport {
+    pub(crate) unowned_reviewed: Vec<PathBuf>,
+    pub(crate) stale_generated: Vec<PathBuf>,
+}
+
+impl ProjectOwnershipReport {
+    pub(crate) fn passed(&self) -> bool {
+        self.unowned_reviewed.is_empty() && self.stale_generated.is_empty()
+    }
+
+    pub(crate) fn issue_count(&self) -> usize {
+        self.unowned_reviewed.len() + self.stale_generated.len()
+    }
+}
+
+/// Find files that survive after their owning verification declaration has
+/// been removed. Only declaration-owned leaf directories are scanned: linked
+/// IR directories contain internal indexes and are deliberately outside this
+/// check.
+pub(crate) fn collect_ownership(project: &crate::ProjectSpec) -> Result<ProjectOwnershipReport> {
+    let Some(verification) = project.verification.as_ref() else {
+        return Ok(ProjectOwnershipReport {
+            unowned_reviewed: Vec::new(),
+            stale_generated: Vec::new(),
+        });
+    };
+
+    let mut reviewed = BTreeMap::<PathBuf, BTreeSet<PathBuf>>::new();
+    for suite in &verification.suites {
+        for paths in [
+            &suite.profiles,
+            &suite.dispositions,
+            &suite.evidence_baselines,
+        ] {
+            for path in paths {
+                let Some(parent) = path.parent() else {
+                    continue;
+                };
+                reviewed
+                    .entry(parent.to_owned())
+                    .or_default()
+                    .insert(path.to_owned());
+            }
+        }
+    }
+    let unowned_reviewed = unowned_files(&reviewed, Some("toml"))?;
+
+    let suite_report_directory = verification
+        .report
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .join("verification-suites");
+    let expected_suite_reports = verification
+        .suites
+        .iter()
+        .map(|suite| suite_report_directory.join(format!("{}.json", suite.id)))
+        .collect::<BTreeSet<_>>();
+    let mut generated = BTreeMap::new();
+    generated.insert(suite_report_directory, expected_suite_reports);
+
+    let report_directory = verification
+        .report
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .to_owned();
+    let mut expected_reports = BTreeSet::from([verification.report.clone()]);
+    for output in [
+        project
+            .code
+            .as_ref()
+            .and_then(|paths| paths.review_output.as_ref()),
+        project
+            .registers
+            .as_ref()
+            .and_then(|paths| paths.review_output.as_ref()),
+        project
+            .functions
+            .as_ref()
+            .and_then(|paths| paths.review_output.as_ref()),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        if output.parent() == Some(report_directory.as_path()) {
+            expected_reports.insert(output.clone());
+        }
+    }
+    generated.insert(report_directory, expected_reports);
+    let stale_generated = unowned_files(&generated, None)?;
+
+    Ok(ProjectOwnershipReport {
+        unowned_reviewed,
+        stale_generated,
+    })
+}
+
+fn unowned_files(
+    directories: &BTreeMap<PathBuf, BTreeSet<PathBuf>>,
+    extension: Option<&str>,
+) -> Result<Vec<PathBuf>> {
+    let mut unowned = Vec::new();
+    for (directory, expected) in directories {
+        if !directory.is_dir() {
+            continue;
+        }
+        for entry in fs::read_dir(directory)? {
+            let path = entry?.path();
+            if !path.is_file()
+                || extension.is_some_and(|extension| {
+                    path.extension().and_then(|value| value.to_str()) != Some(extension)
+                })
+            {
+                continue;
+            }
+            if !expected.contains(&path) {
+                unowned.push(path);
+            }
+        }
+    }
+    unowned.sort();
+    unowned.dedup();
+    Ok(unowned)
 }
 
 pub(crate) fn collect(context: ProjectContext<'_>) -> Result<ProjectFilesReport> {
@@ -510,4 +639,35 @@ fn push(
             .then(|| next_action.map(str::to_owned))
             .flatten(),
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ownership_scan_rejects_only_unreferenced_leaf_files() {
+        let directory = std::env::temp_dir().join(format!(
+            "vendor-workbench-file-ownership-{}",
+            std::process::id()
+        ));
+        if directory.exists() {
+            fs::remove_dir_all(&directory).unwrap();
+        }
+        fs::create_dir_all(&directory).unwrap();
+        let owned = directory.join("owned.toml");
+        let stale = directory.join("stale.toml");
+        let unrelated = directory.join("notes.md");
+        fs::write(&owned, "schema = 3\n").unwrap();
+        fs::write(&stale, "schema = 3\n").unwrap();
+        fs::write(&unrelated, "review notes\n").unwrap();
+
+        let directories = BTreeMap::from([(directory.clone(), BTreeSet::from([owned]))]);
+        assert_eq!(
+            unowned_files(&directories, Some("toml")).unwrap(),
+            vec![stale]
+        );
+
+        fs::remove_dir_all(directory).unwrap();
+    }
 }

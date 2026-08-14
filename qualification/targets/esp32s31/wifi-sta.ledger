@@ -220,7 +220,7 @@ owner driver/chips/esp32s31/hal/src/lib.rs PowerUpFailure
 owner driver/chips/esp32s31/hal/src/lib.rs power_up
 test driver/chips/esp32s31/hal/src/power.rs exact_semantic_sequence_is_finite_and_ordered
 test driver/chips/esp32s31/hal/src/lib.rs failed_power_transition_returns_the_unique_owned_radio
-vendor-anchor verification/vendor/targets/esp32s31/dispositions/libpp-modem-wakeup.toml pwr_hal_set_mac_modem_state_wakeup_protect_enable
+vendor-anchor verification/vendor/targets/esp32s31/registers/peripherals/wifi-mac-rtc-timer-update.toml pwr_hal_set_mac_modem_state_wakeup_protect_enable
 vendor-anchor driver/chips/esp32s31/hal/src/lib.rs phy_wakeup_init
 hil-evidence qualification/targets/esp32s31/records/2026-07-31-driver-repo-he20-bidirectional.md HIL_OPEN_HE20_DRIVER_REPO_BIDIRECTIONAL_2026_07_31
 hil-evidence qualification/targets/esp32s31/records/2026-08-10-phy-parent-and-sta-lifecycle.md HIL_ESP32S31_PHY_PARENT_STA_LIFECYCLE_2026_08_10

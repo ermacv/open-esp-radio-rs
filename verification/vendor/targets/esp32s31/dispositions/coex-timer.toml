@@ -14,7 +14,7 @@ binding = "v2"
 rust-binding = "exact-production-entry"
 rust-probe = "open_coex_trace_coex_hw_timer_enable"
 comparison-plan = "direct-effects-v1"
-effect-contract = "exact-effects-v1"
+effect-contract = "exact-effects-v2"
 [[functions.effects]]
 selector = { kind = "mmio-read", width = 32, address = 0x2010f40c }
 disposition = { kind = "required" }
@@ -38,7 +38,7 @@ binding = "v2"
 rust-binding = "exact-production-entry"
 rust-probe = "open_coex_trace_coex_hw_timer_disable"
 comparison-plan = "direct-effects-v1"
-effect-contract = "exact-effects-v1"
+effect-contract = "exact-effects-v2"
 [[functions.effects]]
 selector = { kind = "mmio-read", width = 32, address = 0x2010f408 }
 disposition = { kind = "required" }
@@ -62,7 +62,7 @@ binding = "v2"
 rust-binding = "exact-production-entry"
 rust-probe = "open_coex_trace_coex_hw_timer_force"
 comparison-plan = "direct-effects-v1"
-effect-contract = "exact-effects-v1"
+effect-contract = "exact-effects-v2"
 [[functions.effects]]
 selector = { kind = "mmio-read", width = 32, address = 0x2010f400 }
 disposition = { kind = "required" }
@@ -80,7 +80,7 @@ binding = "v2"
 rust-binding = "exact-production-entry"
 rust-probe = "open_coex_trace_coex_hw_timer_unforce"
 comparison-plan = "direct-effects-v1"
-effect-contract = "exact-effects-v1"
+effect-contract = "exact-effects-v2"
 [[functions.effects]]
 selector = { kind = "mmio-read", width = 32, address = 0x2010f400 }
 disposition = { kind = "required" }

@@ -15,7 +15,7 @@ rust-binding = "exact-production-entry"
 rust-probe = "open_libpp_tx_trace_hal_mac_tx_set_cca"
 comparison-plan = "direct-effects-v1"
 compare-return = true
-effect-contract = "exact-effects-v1"
+effect-contract = "exact-effects-v2"
 [[functions.effects]]
 selector = { kind = "mmio-read", width = 32, address = 0x20104c5c }
 disposition = { kind = "required" }
@@ -34,7 +34,7 @@ rust-binding = "exact-production-entry"
 rust-probe = "open_libpp_tx_trace_hal_mac_get_txq_in_trig_flow_state"
 comparison-plan = "direct-effects-v1"
 compare-return = true
-effect-contract = "exact-effects-v1"
+effect-contract = "exact-effects-v2"
 [[functions.effects]]
 selector = { kind = "mmio-read", width = 32, address = 0x20104cb4 }
 disposition = { kind = "required" }
@@ -50,7 +50,7 @@ rust-binding = "exact-production-entry"
 rust-probe = "open_libpp_tx_trace_hal_mac_is_txq_enabled"
 comparison-plan = "direct-effects-v1"
 compare-return = true
-effect-contract = "exact-effects-v1"
+effect-contract = "exact-effects-v2"
 [[functions.effects]]
 selector = { kind = "mmio-read", width = 32, address = 0x20104d40 }
 disposition = { kind = "required" }
@@ -75,7 +75,7 @@ rust-binding = "exact-production-entry"
 rust-probe = "open_libpp_tx_trace_hal_mac_is_txq_valid"
 comparison-plan = "direct-effects-v1"
 compare-return = true
-effect-contract = "exact-effects-v1"
+effect-contract = "exact-effects-v2"
 [[functions.effects]]
 selector = { kind = "mmio-read", width = 32, address = 0x20104d40 }
 disposition = { kind = "required" }
@@ -99,7 +99,7 @@ binding = "v2"
 rust-binding = "exact-production-entry"
 rust-probe = "open_libpp_tx_trace_hal_mac_set_txq_invalid"
 comparison-plan = "direct-effects-v1"
-effect-contract = "exact-effects-v1"
+effect-contract = "exact-effects-v2"
 [[functions.effects]]
 selector = { kind = "mmio-read", width = 32, address = 0x20104d40 }
 disposition = { kind = "required" }
@@ -139,7 +139,7 @@ binding = "v2"
 rust-binding = "exact-production-entry"
 rust-probe = "open_libpp_tx_trace_hal_mac_txq_disable"
 comparison-plan = "direct-effects-v1"
-effect-contract = "exact-effects-v1"
+effect-contract = "exact-effects-v2"
 [[functions.effects]]
 selector = { kind = "mmio-read", width = 32, address = 0x20104d40 }
 disposition = { kind = "required" }
@@ -176,7 +176,7 @@ rust-binding = "exact-production-entry"
 rust-probe = "open_libpp_tx_trace_hal_mac_tx_config_edca"
 comparison-plan = "direct-effects-v1"
 compare-return = true
-effect-contract = "exact-effects-v1"
+effect-contract = "exact-effects-v2"
 [[functions.effects]]
 selector = { kind = "mmio-read", width = 32, address = 0x20104d3c }
 disposition = { kind = "required" }
@@ -213,7 +213,7 @@ rust-binding = "exact-production-entry"
 rust-probe = "open_libpp_tx_trace_hal_mac_tx_get_blockack"
 comparison-plan = "direct-effects-v1"
 compare-return = true
-effect-contract = "exact-effects-v1"
+effect-contract = "exact-effects-v2"
 [[functions.effects]]
 selector = { kind = "mmio-read", width = 32, address = 0x201053b4 }
 disposition = { kind = "required" }

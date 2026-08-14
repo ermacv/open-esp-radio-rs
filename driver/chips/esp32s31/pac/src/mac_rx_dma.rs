@@ -103,12 +103,14 @@ impl RadioRegisters {
             .modify(|_, w| w.cold_low_unknown().set(0));
     }
 
-    pub fn mac_rx_last_descriptor_low(&self) -> u32 {
-        read_last_descriptor(&self.peripherals.wifi_mac_rx_dma) & 0x000f_ffff
+    /// Read the complete hardware word. HAL owns any address-field projection.
+    pub fn mac_rx_last_descriptor_word(&self) -> u32 {
+        read_last_descriptor(&self.peripherals.wifi_mac_rx_dma)
     }
 
-    pub fn mac_rx_next_descriptor_low(&self) -> u32 {
-        read_next_descriptor(&self.peripherals.wifi_mac_rx_dma) & 0x000f_ffff
+    /// Read the complete hardware word. HAL owns any address-field projection.
+    pub fn mac_rx_next_descriptor_word(&self) -> u32 {
+        read_next_descriptor(&self.peripherals.wifi_mac_rx_dma)
     }
 
     /// Reconstruct the complete last descriptor pointer exactly as the

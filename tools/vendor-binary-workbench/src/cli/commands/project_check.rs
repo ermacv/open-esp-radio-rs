@@ -71,8 +71,10 @@ pub(super) fn run(arguments: ProjectCheckArgs, session: &ProjectSession) -> Resu
         ProjectPublicationRequest { check: true },
     )?;
     let policy = policy_stage(session);
+    let ownership = crate::application::project_files::collect_ownership(&session.project)?;
 
-    let passed = binding_audit.passed
+    let passed = ownership.passed()
+        && binding_audit.passed
         && analysis.succeeded()
         && verification.passed
         && policy.passed
@@ -92,6 +94,42 @@ pub(super) fn run(arguments: ProjectCheckArgs, session: &ProjectSession) -> Resu
         project: session.project.id.clone(),
         passed,
         stages: vec![
+            ProjectCheckStage {
+                name: "file-ownership",
+                status: if ownership.passed() { "passed" } else { "failed" },
+                passed: ownership.passed(),
+                summary: format!(
+                    "{} unowned reviewed asset(s), {} stale generated report(s)",
+                    ownership.unowned_reviewed.len(),
+                    ownership.stale_generated.len(),
+                ),
+                issues: ownership
+                    .unowned_reviewed
+                    .iter()
+                    .map(|path| ProjectCheckIssue {
+                        component: "unowned-reviewed-asset".to_owned(),
+                        status: "failed".to_owned(),
+                        reason: path.display().to_string(),
+                    })
+                    .chain(ownership.stale_generated.iter().map(|path| {
+                        ProjectCheckIssue {
+                            component: "stale-generated-report".to_owned(),
+                            status: "failed".to_owned(),
+                            reason: path.display().to_string(),
+                        }
+                    }))
+                    .collect(),
+                next_actions: (!ownership.passed())
+                    .then(|| {
+                        format!(
+                            "remove the {} files without a current project owner, then rerun `vendor-binary-workbench project check --project {}`",
+                            ownership.issue_count(),
+                            session.manifest.display()
+                        )
+                    })
+                    .into_iter()
+                    .collect(),
+            },
             ProjectCheckStage {
                 name: "binding-declarations",
                 status: if binding_audit.passed { "passed" } else { "failed" },

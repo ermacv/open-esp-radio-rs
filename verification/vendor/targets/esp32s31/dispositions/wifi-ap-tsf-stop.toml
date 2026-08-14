@@ -12,7 +12,7 @@ binding = "v2"
 rust-binding = "exact-production-entry"
 rust-probe = "open_libpp_ap_tsf_trace_hal_disable_softap_tsf"
 comparison-plan = "direct-effects-v1"
-effect-contract = "exact-effects-v1"
+effect-contract = "exact-effects-v2"
 [[functions.effects]]
 selector = { kind = "mmio-read", width = 32, address = 0x2010d860 }
 disposition = { kind = "required" }

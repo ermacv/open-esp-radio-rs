@@ -41,9 +41,15 @@ pub fn effects_from_observable(events: &[ObservableEvent]) -> Result<Vec<Contrac
                 };
                 effects.push(effect);
             }
-            ObservableEvent::Fence { .. } => {
-                return Err("memory fence has no Effect Contract v1 classification".into());
-            }
+            ObservableEvent::Fence {
+                fm,
+                predecessor,
+                successor,
+            } => effects.push(ContractEffect::Fence {
+                fm: *fm,
+                predecessor: *predecessor,
+                successor: *successor,
+            }),
         }
     }
     Ok(effects)
@@ -57,6 +63,7 @@ pub fn compare_effects(
     let mut rust_index = 0_usize;
     let mut used_rules = BTreeSet::new();
     for (vendor_index, vendor_effect) in vendor.iter().enumerate() {
+        rust_index = consume_rust_additions(rust, rust_index, policy, &mut used_rules);
         let selector = vendor_effect.selector();
         let Some(disposition) = policy.disposition(&selector) else {
             return Ok(EquivalenceOutcome::incomplete(
@@ -175,6 +182,15 @@ pub fn compare_effects(
                     }
                 };
             }
+            EffectDisposition::RustAddition(_) => {
+                return Ok(EquivalenceOutcome::incomplete(
+                    EquivalenceMode::Semantic,
+                    format!(
+                        "rust-addition rule unexpectedly matched vendor effect at index {vendor_index}: {}",
+                        selector.canonical()
+                    ),
+                ));
+            }
             EffectDisposition::AllowedOmission(_) => {
                 if rust
                     .get(rust_index)
@@ -194,6 +210,7 @@ pub fn compare_effects(
             }
         }
     }
+    rust_index = consume_rust_additions(rust, rust_index, policy, &mut used_rules);
     if let Some(extra) = rust.get(rust_index) {
         return Ok(EquivalenceOutcome::incomplete(
             EquivalenceMode::Semantic,
@@ -215,6 +232,26 @@ pub fn compare_effects(
         }
     }
     Ok(EquivalenceOutcome::matched(EquivalenceMode::Semantic))
+}
+
+fn consume_rust_additions(
+    rust: &[ContractEffect],
+    mut rust_index: usize,
+    policy: &EffectPolicy,
+    used_rules: &mut BTreeSet<EffectSelector>,
+) -> usize {
+    while let Some(effect) = rust.get(rust_index) {
+        let selector = effect.selector();
+        if !matches!(
+            policy.disposition(&selector),
+            Some(EffectDisposition::RustAddition(_))
+        ) {
+            break;
+        }
+        used_rules.insert(selector);
+        rust_index += 1;
+    }
+    rust_index
 }
 
 fn consume_replacement(

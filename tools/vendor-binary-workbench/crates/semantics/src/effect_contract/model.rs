@@ -26,7 +26,7 @@ impl StateField {
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[allow(
     dead_code,
-    reason = "Effect Contract v1 defines concrete, state, and async values before all pilots consume them"
+    reason = "Effect Contract v2 defines concrete, state, and async values before all pilots consume them"
 )]
 pub enum ContractValue {
     Concrete(u32),
@@ -65,7 +65,7 @@ impl PlatformOperation {
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[allow(
     dead_code,
-    reason = "named and MMIO readiness are both part of the v1 async contract"
+    reason = "named and MMIO readiness are both part of the v2 async contract"
 )]
 pub enum ReadyCondition {
     Named(String),
@@ -96,7 +96,7 @@ impl ReadyCondition {
 #[serde(tag = "kind", content = "value", rename_all = "kebab-case")]
 #[allow(
     dead_code,
-    reason = "attempt and deadline timeouts are both part of the v1 async contract"
+    reason = "attempt and deadline timeouts are both part of the v2 async contract"
 )]
 pub enum Timeout {
     Attempts(u32),
@@ -115,7 +115,7 @@ impl Timeout {
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[allow(
     dead_code,
-    reason = "the v1 schema is complete before state and async pilots are connected"
+    reason = "the v2 schema is complete before state and async pilots are connected"
 )]
 pub enum ContractEffect {
     MmioRead {
@@ -157,22 +157,56 @@ pub enum ContractEffect {
     InitializationPrerequisite {
         prerequisite: String,
     },
+    Fence {
+        fm: u8,
+        predecessor: u8,
+        successor: u8,
+    },
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum EffectSelector {
-    MmioRead { width: u8, address: u32 },
-    MmioWrite { width: u8, address: u32 },
-    StateRead { width: u8, field: String },
-    StateWrite { width: u8, field: String },
+    MmioRead {
+        width: u8,
+        address: u32,
+    },
+    MmioWrite {
+        width: u8,
+        address: u32,
+    },
+    StateRead {
+        width: u8,
+        field: String,
+    },
+    StateWrite {
+        width: u8,
+        field: String,
+    },
     Delay,
-    AwaitReady { condition: String },
-    PlatformCall { operation: PlatformOperation },
-    PlatformProvidedInput { input: String },
-    PlatformProvidedService { service: String },
-    PublishedEvent { event: String },
-    InitializationPrerequisite { prerequisite: String },
+    AwaitReady {
+        condition: String,
+    },
+    PlatformCall {
+        operation: PlatformOperation,
+    },
+    PlatformProvidedInput {
+        input: String,
+    },
+    PlatformProvidedService {
+        service: String,
+    },
+    PublishedEvent {
+        event: String,
+    },
+    InitializationPrerequisite {
+        prerequisite: String,
+    },
+    Fence {
+        fm: u8,
+        predecessor: u8,
+        successor: u8,
+    },
 }
 
 impl EffectSelector {
@@ -201,6 +235,11 @@ impl EffectSelector {
             Self::InitializationPrerequisite { prerequisite } => {
                 format!("initialization-prerequisite {prerequisite}")
             }
+            Self::Fence {
+                fm,
+                predecessor,
+                successor,
+            } => format!("fence {fm:#04x} {predecessor:#04x} {successor:#04x}"),
         }
     }
 }
@@ -245,6 +284,15 @@ impl ContractEffect {
                     prerequisite: prerequisite.clone(),
                 }
             }
+            Self::Fence {
+                fm,
+                predecessor,
+                successor,
+            } => EffectSelector::Fence {
+                fm: *fm,
+                predecessor: *predecessor,
+                successor: *successor,
+            },
         }
     }
 
@@ -332,6 +380,22 @@ impl ContractEffect {
                     prerequisite: right,
                 },
             ) => left == right,
+            (
+                Self::Fence {
+                    fm: left_fm,
+                    predecessor: left_predecessor,
+                    successor: left_successor,
+                },
+                Self::Fence {
+                    fm: right_fm,
+                    predecessor: right_predecessor,
+                    successor: right_successor,
+                },
+            ) => {
+                left_fm == right_fm
+                    && left_predecessor == right_predecessor
+                    && left_successor == right_successor
+            }
             _ => false,
         }
     }
@@ -366,9 +430,24 @@ pub enum EffectDisposition {
     PlatformProvidedService { service: String },
     PublishedEvent { event: String },
     InitializationPrerequisite { prerequisite: String },
+    RustAddition(RustAdditionReason),
     AllowedOmission(OmissionReason),
     PlatformOwned,
     Forbidden,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd)]
+#[serde(rename_all = "kebab-case")]
+pub enum RustAdditionReason {
+    DeviceOrdering,
+}
+
+impl RustAdditionReason {
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::DeviceOrdering => "device-ordering",
+        }
+    }
 }
 
 impl EffectDisposition {
@@ -388,6 +467,7 @@ impl EffectDisposition {
             Self::InitializationPrerequisite { prerequisite } => {
                 format!("initialization-prerequisite {prerequisite}")
             }
+            Self::RustAddition(reason) => format!("rust-addition {}", reason.label()),
             Self::AllowedOmission(reason) => {
                 format!("allowed-omission {}", reason.label())
             }
@@ -400,13 +480,13 @@ impl EffectDisposition {
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "kebab-case")]
 pub enum EffectComparison {
-    ExactEffectsV1,
+    ExactEffectsV2,
 }
 
 impl EffectComparison {
     pub const fn label(self) -> &'static str {
         match self {
-            Self::ExactEffectsV1 => "exact-effects-v1",
+            Self::ExactEffectsV2 => "exact-effects-v2",
         }
     }
 }
@@ -524,7 +604,11 @@ fn validate_effect_rule(selector: &EffectSelector, disposition: &EffectDispositi
             EffectSelector::StateWrite { .. } | EffectSelector::PlatformCall { .. },
             EffectDisposition::PublishedEvent { .. },
         )
+        | (EffectSelector::Fence { .. }, EffectDisposition::RustAddition(_))
         | (_, EffectDisposition::InitializationPrerequisite { .. }) => Ok(()),
+        (_, EffectDisposition::RustAddition(_)) => {
+            Err("rust-addition applies only to fence effects".into())
+        }
         (_, EffectDisposition::AllowedOmission(_)) => {
             Err("allowed-omission applies only to platform-call effects".into())
         }

@@ -12,7 +12,7 @@ binding = "v2"
 rust-binding = "exact-production-entry"
 rust-probe = "open_wifi_sta_trace_hal_disable_sta_beacon_filter"
 comparison-plan = "direct-effects-v1"
-effect-contract = "exact-effects-v1"
+effect-contract = "exact-effects-v2"
 [[functions.effects]]
 selector = { kind = "mmio-read", width = 32, address = 0x201042b4 }
 disposition = { kind = "required" }

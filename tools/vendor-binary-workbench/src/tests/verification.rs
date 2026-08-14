@@ -37,7 +37,7 @@ fn effect_contract_evidence_is_bound_to_closed_policy_rules() {
     )
     .unwrap();
     let exact = effect_contract::EffectPolicy::new(
-        effect_contract::EffectComparison::ExactEffectsV1,
+        effect_contract::EffectComparison::ExactEffectsV2,
         [(
             effect_contract::EffectSelector::MmioRead {
                 width: 32,
@@ -48,7 +48,7 @@ fn effect_contract_evidence_is_bound_to_closed_policy_rules() {
     )
     .unwrap();
     let forbidden = effect_contract::EffectPolicy::new(
-        effect_contract::EffectComparison::ExactEffectsV1,
+        effect_contract::EffectComparison::ExactEffectsV2,
         [(
             effect_contract::EffectSelector::MmioRead {
                 width: 32,
@@ -62,7 +62,7 @@ fn effect_contract_evidence_is_bound_to_closed_policy_rules() {
     assert!(
         evidence
             .label()
-            .starts_with("effect-contract/exact-effects-v1/sha256:")
+            .starts_with("effect-contract/exact-effects-v2/sha256:")
     );
     assert_ne!(
         evidence,

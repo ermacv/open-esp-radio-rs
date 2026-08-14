@@ -21,7 +21,7 @@ fn read() -> ContractEffect {
 #[test]
 fn exact_policy_rejects_an_unclassified_vendor_effect() {
     let policy = EffectPolicy::new(
-        EffectComparison::ExactEffectsV1,
+        EffectComparison::ExactEffectsV2,
         [(EffectSelector::Delay, EffectDisposition::Required)],
     )
     .unwrap();
@@ -40,7 +40,7 @@ fn exact_policy_rejects_an_unclassified_vendor_effect() {
 fn exact_policy_rejects_an_extra_rust_effect() {
     let selector = read().selector();
     let policy = EffectPolicy::new(
-        EffectComparison::ExactEffectsV1,
+        EffectComparison::ExactEffectsV2,
         [(selector, EffectDisposition::Required)],
     )
     .unwrap();
@@ -55,9 +55,76 @@ fn exact_policy_rejects_an_extra_rust_effect() {
 }
 
 #[test]
+fn v2_requires_an_exactly_declared_rust_device_ordering_fence() {
+    let selector = read().selector();
+    let fence = ContractEffect::Fence {
+        fm: 0,
+        predecessor: 15,
+        successor: 15,
+    };
+    let policy = EffectPolicy::new(
+        EffectComparison::ExactEffectsV2,
+        [
+            (selector, EffectDisposition::Required),
+            (
+                fence.selector(),
+                EffectDisposition::RustAddition(RustAdditionReason::DeviceOrdering),
+            ),
+        ],
+    )
+    .unwrap();
+    assert_eq!(
+        compare_effects(&[read()], &[read(), fence.clone()], &policy).unwrap(),
+        EquivalenceOutcome::matched(EquivalenceMode::Semantic)
+    );
+    assert_eq!(
+        compare_effects(&[read()], &[fence.clone(), read()], &policy).unwrap(),
+        EquivalenceOutcome::matched(EquivalenceMode::Semantic)
+    );
+    assert_eq!(
+        compare_effects(&[read(), read()], &[read(), fence.clone(), read()], &policy,).unwrap(),
+        EquivalenceOutcome::matched(EquivalenceMode::Semantic)
+    );
+    let wrong_fence = ContractEffect::Fence {
+        fm: 0,
+        predecessor: 3,
+        successor: 3,
+    };
+    assert_eq!(
+        compare_effects(&[read()], &[read(), wrong_fence], &policy)
+            .unwrap()
+            .verdict,
+        EquivalenceVerdict::Incomplete
+    );
+    assert_eq!(
+        compare_effects(&[read()], &[read()], &policy)
+            .unwrap()
+            .verdict,
+        EquivalenceVerdict::Incomplete
+    );
+}
+
+#[test]
+fn v2_preserves_observed_fence_parameters() {
+    assert_eq!(
+        effects_from_observable(&[ObservableEvent::Fence {
+            fm: 1,
+            predecessor: 3,
+            successor: 12,
+        }])
+        .unwrap(),
+        vec![ContractEffect::Fence {
+            fm: 1,
+            predecessor: 3,
+            successor: 12,
+        }]
+    );
+}
+
+#[test]
 fn blocking_effect_requires_an_explicit_await_ready_replacement() {
     let policy = EffectPolicy::new(
-        EffectComparison::ExactEffectsV1,
+        EffectComparison::ExactEffectsV2,
         [(
             EffectSelector::Delay,
             EffectDisposition::ReplacedByAsync {
@@ -110,7 +177,7 @@ fn omission_reason_and_platform_operation_vocabularies_are_closed() {
 fn typed_effect_rules_are_closed_and_restrict_omissions() {
     assert!(
         EffectPolicy::new(
-            EffectComparison::ExactEffectsV1,
+            EffectComparison::ExactEffectsV2,
             [(
                 EffectSelector::PlatformCall {
                     operation: PlatformOperation::DebugDiagnostic,
@@ -122,7 +189,7 @@ fn typed_effect_rules_are_closed_and_restrict_omissions() {
     );
     assert!(
         EffectPolicy::new(
-            EffectComparison::ExactEffectsV1,
+            EffectComparison::ExactEffectsV2,
             [(
                 EffectSelector::MmioWrite {
                     width: 32,
@@ -158,7 +225,7 @@ fn semantic_boundary_dispositions_require_exact_typed_replacements() {
         },
     ];
     let policy = EffectPolicy::new(
-        EffectComparison::ExactEffectsV1,
+        EffectComparison::ExactEffectsV2,
         [
             (
                 vendor[0].selector(),
@@ -232,7 +299,7 @@ fn boundary_effect_selectors_are_valid_contract_rules() {
     ] {
         assert!(
             EffectPolicy::new(
-                EffectComparison::ExactEffectsV1,
+                EffectComparison::ExactEffectsV2,
                 [(selector, EffectDisposition::Required)],
             )
             .is_ok()
@@ -284,7 +351,7 @@ fn semantic_boundary_rule_syntax_is_closed_and_canonical() {
         ),
     ] {
         EffectPolicy::new(
-            EffectComparison::ExactEffectsV1,
+            EffectComparison::ExactEffectsV2,
             [(selector.clone(), disposition.clone())],
         )
         .unwrap();
@@ -295,7 +362,7 @@ fn semantic_boundary_rule_syntax_is_closed_and_canonical() {
     }
     assert!(
         EffectPolicy::new(
-            EffectComparison::ExactEffectsV1,
+            EffectComparison::ExactEffectsV2,
             [(
                 EffectSelector::MmioWrite {
                     width: 32,
@@ -310,7 +377,7 @@ fn semantic_boundary_rule_syntax_is_closed_and_canonical() {
     );
     assert!(
         EffectPolicy::new(
-            EffectComparison::ExactEffectsV1,
+            EffectComparison::ExactEffectsV2,
             [(
                 EffectSelector::PlatformCall {
                     operation: PlatformOperation::Random,

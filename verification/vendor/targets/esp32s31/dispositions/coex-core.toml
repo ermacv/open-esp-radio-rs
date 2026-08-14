@@ -36,7 +36,7 @@ binding = "v2"
 rust-binding = "exact-production-entry"
 rust-probe = "open_coex_core_trace_request"
 comparison-plan = "direct-effects-v1"
-effect-contract = "exact-effects-v1"
+effect-contract = "exact-effects-v2"
 [[functions.effects]]
 selector = { kind = "mmio-read", width = 32, address = 0x2010f008 }
 disposition = { kind = "required" }
@@ -171,7 +171,7 @@ binding = "v2"
 rust-binding = "exact-production-entry"
 rust-probe = "open_coex_core_trace_release"
 comparison-plan = "direct-effects-v1"
-effect-contract = "exact-effects-v1"
+effect-contract = "exact-effects-v2"
 [[functions.effects]]
 selector = { kind = "mmio-read", width = 32, address = 0x2010f408 }
 disposition = { kind = "required" }

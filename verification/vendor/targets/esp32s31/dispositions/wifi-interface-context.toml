@@ -12,7 +12,7 @@ binding = "v2"
 rust-binding = "exact-production-entry"
 rust-probe = "open_libpp_interface_trace_hal_mac_set_addr"
 comparison-plan = "direct-effects-v1"
-effect-contract = "exact-effects-v1"
+effect-contract = "exact-effects-v2"
 
 [[functions.effects]]
 selector = { kind = "mmio-write", width = 32, address = 0x2010405c }
@@ -43,7 +43,7 @@ binding = "v2"
 rust-binding = "exact-production-entry"
 rust-probe = "open_libpp_interface_trace_hal_mac_set_bssid"
 comparison-plan = "direct-effects-v1"
-effect-contract = "exact-effects-v1"
+effect-contract = "exact-effects-v2"
 
 [[functions.effects]]
 selector = { kind = "mmio-write", width = 32, address = 0x20104000 }

@@ -80,7 +80,7 @@ protocol = "ieee802154"
 source = "archive"
 prefix = "phy_154_"
 protocol = "ieee802154"
-# Effect Contract v1 pilot: exact finite MMIO leaf. The contract classifies
+# Effect Contract v2 pilot: exact finite MMIO leaf. The contract classifies
 # every vendor effect; a new read, write, call, delay, or state edge fails
 # closed instead of being ignored by a normalizer.
 
@@ -94,7 +94,7 @@ binding = "v2"
 rust-binding = "exact-production-entry"
 rust-probe = "open_phy_trace_disable_agc"
 comparison-plan = "direct-effects-v1"
-effect-contract = "exact-effects-v1"
+effect-contract = "exact-effects-v2"
 [[functions.effects]]
 selector = { kind = "mmio-read", width = 32, address = 0x20107030 }
 disposition = { kind = "required" }

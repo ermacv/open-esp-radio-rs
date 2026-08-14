@@ -485,6 +485,25 @@ fn polling_and_multi_register_channel_sequences_are_owned_by_the_hal() {
 }
 
 #[test]
+fn rx_descriptor_projection_is_owned_by_the_hal() {
+    let repository = repository_root();
+    let pac =
+        fs::read_to_string(repository.join("driver/chips/esp32s31/pac/src/mac_rx_dma.rs")).unwrap();
+    assert!(!pac.contains("mac_rx_last_descriptor_low"));
+    assert!(!pac.contains("mac_rx_next_descriptor_low"));
+
+    let hal =
+        fs::read_to_string(repository.join("driver/chips/esp32s31/hal/src/wifi_mac.rs")).unwrap();
+    assert!(hal.contains("rx_last_descriptor_word() & 0x000f_ffff"));
+    assert!(hal.contains("rx_next_descriptor_word() & 0x000f_ffff"));
+
+    let validation =
+        fs::read_to_string(repository.join("driver/chips/esp32s31/hal/src/validation.rs")).unwrap();
+    assert!(validation.contains("wifi_mac_hal().rx_last_descriptor_word()"));
+    assert!(validation.contains("wifi_mac_hal().rx_next_descriptor_word()"));
+}
+
+#[test]
 fn radio_arena_escape_surface_is_frozen() {
     let repository = repository_root();
     assert!(

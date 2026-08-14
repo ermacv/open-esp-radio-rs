@@ -76,12 +76,12 @@ pub fn hal_mac_rx_enable(passthrough: u32) -> u32 {
 
 #[inline(always)]
 pub fn hal_mac_rx_read_rxdscrlast() -> u32 {
-    owner().pac().mac_rx_last_descriptor_low()
+    owner().wifi_mac_hal().rx_last_descriptor_word()
 }
 
 #[inline(always)]
 pub fn hal_mac_rx_read_rxdscrnext() -> u32 {
-    owner().pac().mac_rx_next_descriptor_low()
+    owner().wifi_mac_hal().rx_next_descriptor_word()
 }
 
 #[inline(always)]

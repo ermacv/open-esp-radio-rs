@@ -407,7 +407,7 @@ pub(crate) fn verify_source(
                     function.rust_symbol = Some(rust.name.clone());
                     function.contract = Some(policy.comparison.label().to_owned());
                     function.reason = Some(format!(
-                        "effect-contract-v1 cannot represent an observed effect: {reason}"
+                        "effect-contract-v2 cannot represent an observed effect: {reason}"
                     ));
                     function.return_compared = Some(compare_return);
                     functions.push(function);

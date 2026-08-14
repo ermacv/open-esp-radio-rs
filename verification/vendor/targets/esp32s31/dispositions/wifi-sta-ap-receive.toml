@@ -15,7 +15,7 @@ binding = "v2"
 rust-binding = "exact-production-entry"
 rust-probe = "open_wifi_sta_ap_trace_wifi_set_rx_policy"
 comparison-plan = "direct-effects-v1"
-effect-contract = "exact-effects-v1"
+effect-contract = "exact-effects-v2"
 
 # STA policy six: queue-zero BSSID and receive-policy bank.
 [[functions.effects]]

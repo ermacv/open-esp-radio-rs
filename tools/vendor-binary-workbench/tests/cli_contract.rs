@@ -6,6 +6,8 @@ use std::{
     process::{Command, Output},
 };
 
+use sha2::{Digest, Sha256};
+
 fn workbench() -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_vendor-binary-workbench-generic"));
     command.env_remove("RUST_LOG");
@@ -69,6 +71,31 @@ fn write_rv32_symbol_fixture(path: &Path) {
         .map(|octet| u8::from_str_radix(octet, 16).unwrap())
         .collect::<Vec<_>>();
     std::fs::write(path, bytes).unwrap();
+}
+
+fn write_rv32_e2e_fixture(path: &Path) {
+    let hex = include_str!("fixtures/generic-e2e-rv32.hex")
+        .chars()
+        .filter(|character| !character.is_ascii_whitespace())
+        .collect::<String>();
+    assert_eq!(hex.len() % 2, 0);
+    let bytes = hex
+        .as_bytes()
+        .chunks_exact(2)
+        .map(|octet| u8::from_str_radix(std::str::from_utf8(octet).unwrap(), 16).unwrap())
+        .collect::<Vec<_>>();
+    std::fs::write(path, bytes).unwrap();
+}
+
+fn run_project_command(project: &Path, arguments: &[&str]) -> Output {
+    workbench()
+        .current_dir(repository_root())
+        .args(arguments)
+        .args(["--project"])
+        .arg(project)
+        .args(["--format", "json", "--color", "never"])
+        .output()
+        .expect("run project command")
 }
 
 fn write_rv32_archive_fixture(path: &Path) {
@@ -212,6 +239,202 @@ fn root_help_is_project_first_and_project_files_is_typed() {
             file["role"] == "project-manifest" && file["ownership"] == "entrypoint"
         })
     );
+}
+
+#[test]
+fn generic_second_target_runs_analysis_review_and_pac_publication_end_to_end() {
+    let root = std::env::temp_dir().join(format!(
+        "vendor-workbench-generic-e2e-{}",
+        std::process::id()
+    ));
+    if root.exists() {
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+    std::fs::create_dir_all(&root).unwrap();
+    let directory = root.join("project");
+    let initialized = workbench()
+        .current_dir(repository_root())
+        .args(["project", "init", "--directory"])
+        .arg(&directory)
+        .args([
+            "--id",
+            "generic-e2e",
+            "--mmio",
+            "device=0x40000000..0x40001000",
+            "--format",
+            "json",
+            "--color",
+            "never",
+        ])
+        .output()
+        .expect("initialize generic e2e project");
+    assert!(
+        initialized.status.success(),
+        "project init stderr: {}",
+        String::from_utf8_lossy(&initialized.stderr)
+    );
+
+    let manifest = directory.join("vendor-project.toml");
+    let artifact = directory.join("vendor.elf");
+    write_rv32_e2e_fixture(&artifact);
+    let binding = format!("source-artifact:vendor={}", artifact.display());
+    let inputs = workbench()
+        .current_dir(repository_root())
+        .args(["project", "inputs", "init", "--project"])
+        .arg(&manifest)
+        .args(["--bind", &binding, "--format", "json", "--color", "never"])
+        .output()
+        .expect("bind generic artifact");
+    assert!(
+        inputs.status.success(),
+        "project inputs stderr: {}",
+        String::from_utf8_lossy(&inputs.stderr)
+    );
+
+    for arguments in [
+        ["advanced", "symbols", "inventory"].as_slice(),
+        ["advanced", "code", "init-pack"].as_slice(),
+        ["advanced", "interfaces", "discover"].as_slice(),
+        ["advanced", "interfaces", "init-pack"].as_slice(),
+    ] {
+        let output = run_project_command(&manifest, arguments);
+        assert!(
+            output.status.success(),
+            "{} stderr: {}",
+            arguments.join(" "),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    let interface_pack = directory.join("interfaces/reviewed.toml");
+    let mut interfaces = std::fs::read_to_string(&interface_pack).unwrap();
+    let artifact_sha = format!("{:x}", Sha256::digest(std::fs::read(&artifact).unwrap()));
+    interfaces.push_str(&format!(
+        r#"
+[[anchors]]
+id = "fixture-table"
+status = "reviewed"
+origin = "observed"
+source = "vendor"
+root-kind = "absolute-address"
+address = 0x2000002c
+container-path = []
+layout-version = "fixture-v1"
+pointer-width = 32
+layout-size = 4
+slot-stride = 4
+
+[[anchors.guards]]
+kind = "artifact-sha256"
+sha256 = "{artifact_sha}"
+
+[[anchors.slots]]
+offset = 0
+width = 32
+status = "reviewed"
+origin = "observed"
+name = "fixture_callback"
+arguments = []
+return = "void"
+"#,
+    ));
+    std::fs::write(interface_pack, interfaces).unwrap();
+
+    std::fs::write(
+        directory.join("registers/peripherals/device.toml"),
+        r#"schema = 2
+
+[[peripherals]]
+name = "DEVICE"
+baseAddress = 0x40000000
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "CONTROL"
+description = "Synthetic read-modify-write control register."
+addressOffset = 0
+size = 32
+access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "ENABLE"
+bitOffset = 0
+bitWidth = 1
+"#,
+    )
+    .unwrap();
+
+    let mut project = std::fs::read_to_string(&manifest).unwrap();
+    project.push_str(
+        r#"
+[review]
+output = "generated/findings/review-scopes.json"
+publication-scopes = ["fixture"]
+
+[[review.scopes]]
+id = "fixture"
+profiles = ["vendor"]
+roots = ["vendor:fixture_entry"]
+include-reachable = true
+"#,
+    );
+    std::fs::write(&manifest, project).unwrap();
+
+    for arguments in [
+        ["advanced", "ir", "build"].as_slice(),
+        ["advanced", "functions", "init-pack"].as_slice(),
+        ["project", "analyze"].as_slice(),
+        ["project", "publish"].as_slice(),
+        ["project", "analyze", "--check"].as_slice(),
+        ["project", "publish", "--check"].as_slice(),
+    ] {
+        let output = run_project_command(&manifest, arguments);
+        assert!(
+            output.status.success(),
+            "{} stderr: {}\nstdout: {}",
+            arguments.join(" "),
+            String::from_utf8_lossy(&output.stderr),
+            String::from_utf8_lossy(&output.stdout)
+        );
+    }
+
+    let inspected =
+        run_project_command(&manifest, &["inspect", "function", "vendor:fixture_entry"]);
+    assert!(inspected.status.success());
+    let report: serde_json::Value = serde_json::from_slice(&inspected.stdout).unwrap();
+    let pseudo = report["semantics"][0]["pseudo"].as_str().unwrap();
+    assert!(pseudo.contains("mmio.read32(0x40000000)"));
+    assert!(pseudo.contains("mmio.write32(0x40000000"));
+    assert!(pseudo.contains("fence(fm=0x0, pred=0xf, succ=0xf)"));
+    assert!(pseudo.contains("reviewed_abi.fixture_callback()"));
+    assert_eq!(
+        report["semantics"][0]["calls"][0]["kind"],
+        "reviewed-external"
+    );
+
+    let unknown = run_project_command(
+        &manifest,
+        &["inspect", "function", "vendor:fixture_unknown"],
+    );
+    assert!(unknown.status.success());
+    let unknown: serde_json::Value = serde_json::from_slice(&unknown.stdout).unwrap();
+    assert_eq!(unknown["runtime"]["unsupported_instructions"], 1);
+
+    for path in [
+        "generated/svd/device.svd",
+        "generated/svd/device.bindings.toml",
+        "generated/pac-raw/src/lib.rs",
+        "generated/pac/src/generated.rs",
+    ] {
+        assert!(directory.join(path).is_file(), "missing publication {path}");
+    }
+    let svd = std::fs::read_to_string(directory.join("generated/svd/device.svd")).unwrap();
+    assert!(svd.contains("<name>CONTROL</name>"));
+    let pac = std::fs::read_to_string(directory.join("generated/pac-raw/src/lib.rs")).unwrap();
+    assert!(pac.contains("pub const fn control"));
+
+    std::fs::remove_dir_all(root).unwrap();
 }
 
 #[test]

@@ -10,7 +10,10 @@ use std::{
     time::Duration,
 };
 
-use crate::{Result, lab_config::OpenWrtConfig, network_helper, openwrt_tx_monitor::MacFrameKey};
+use crate::{
+    Result, lab_config::OpenWrtConfig, network_helper, openwrt_fixture::resolve_station_mac,
+    openwrt_tx_monitor::MacFrameKey,
+};
 
 const MONITOR_INTERFACE: &str = "mon0";
 const MAX_CAPTURE_BYTES: u64 = 128 * 1024 * 1024;
@@ -46,7 +49,7 @@ impl LocalAirMonitorCapture {
                     .into(),
             );
         }
-        let target_mac = resolve_target_mac(config, target)?;
+        let target_mac = resolve_station_mac(config, target)?;
         helper_action("observer-ht40-1")?;
         let capture_path = output.join("independent-air.pcapng");
         let timeout = duration.saturating_add(Duration::from_secs(3));
@@ -157,29 +160,6 @@ pub(crate) fn doctor(config: &OpenWrtConfig) -> Result<()> {
         }
     }
     Ok(())
-}
-
-fn resolve_target_mac(config: &OpenWrtConfig, target: Ipv4Addr) -> Result<String> {
-    let output = Command::new("ssh")
-        .args(["-o", "BatchMode=yes", "-o", "ConnectTimeout=5"])
-        .arg(&config.ssh_target)
-        .arg(format!("ip neigh show {target} | awk 'NR==1 {{print $5}}'"))
-        .output()?;
-    if !output.status.success() {
-        return Err("cannot resolve target MAC through the OpenWrt fixture".into());
-    }
-    let mac = String::from_utf8(output.stdout)?
-        .trim()
-        .to_ascii_lowercase();
-    let valid = mac.len() == 17
-        && mac.split(':').count() == 6
-        && mac
-            .split(':')
-            .all(|octet| octet.len() == 2 && octet.chars().all(|value| value.is_ascii_hexdigit()));
-    if !valid {
-        return Err(format!("OpenWrt returned an invalid target MAC `{mac}`").into());
-    }
-    Ok(mac)
 }
 
 fn parse_capture(path: &Path, target_mac: &str) -> Result<LocalAirMonitorEvidence> {

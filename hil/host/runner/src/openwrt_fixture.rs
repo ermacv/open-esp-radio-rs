@@ -24,6 +24,7 @@ pub(crate) struct OpenWrtRxEvidence {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct Snapshot {
+    station_mac: [u8; 6],
     ingress_rx_packets: u64,
     wireless_tx_packets: u64,
     station_tx_packets: u64,
@@ -54,7 +55,7 @@ impl OpenWrtRxCapture {
         traffic_duration: Duration,
         expected_phy: PhyExpectation,
     ) -> Result<Self> {
-        let before = snapshot(config, target)?;
+        let before = snapshot(config, target, None)?;
         require_width(expected_phy, before.channel_width_mhz)?;
         let timeout = traffic_duration.saturating_add(Duration::from_secs(3));
         let mut ingress = spawn_capture(
@@ -106,7 +107,7 @@ impl OpenWrtRxCapture {
     pub(crate) fn finish(mut self) -> Result<OpenWrtRxEvidence> {
         let ingress = finish_capture(self.ingress.take().expect("capture owns ingress"))?;
         let wireless = finish_capture(self.wireless.take().expect("capture owns wireless"))?;
-        let after = snapshot(&self.config, self.target)?;
+        let after = snapshot(&self.config, self.target, Some(self.before.station_mac))?;
         require_width(self.expected_phy, after.channel_width_mhz)?;
         Ok(OpenWrtRxEvidence {
             ingress_packets: ingress,
@@ -141,12 +142,31 @@ impl OpenWrtRxCapture {
     }
 }
 
-fn snapshot(config: &OpenWrtConfig, target: Ipv4Addr) -> Result<Snapshot> {
+fn snapshot(
+    config: &OpenWrtConfig,
+    target: Ipv4Addr,
+    station_mac: Option<[u8; 6]>,
+) -> Result<Snapshot> {
+    let mac_assignment = match station_mac {
+        Some(mac) => format!(
+            "mac='{:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}'; ",
+            mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]
+        ),
+        None => format!(
+            "mac=$(ip neigh show {target} | awk 'NR==1 {{print $5}}'); \
+             if test -z \"$mac\"; then \
+               set -- $(iw dev {} station dump | awk '/^Station / {{print $2}}'); \
+               test \"$#\" -eq 1; mac=\"$1\"; \
+             fi; ",
+            config.wireless_interface
+        ),
+    };
     let script = format!(
         "set -eu; \
-         mac=$(ip neigh show {target} | awk 'NR==1 {{print $5}}'); \
+         {mac_assignment}\
          test -n \"$mac\"; \
          stats=$(iw dev {wireless} station get \"$mac\"); \
+         printf 'station_mac=%s\n' \"$mac\"; \
          printf 'ingress_rx=%s\\n' \"$(cat /sys/class/net/{ingress}/statistics/rx_packets)\"; \
          printf 'wireless_tx=%s\\n' \"$(cat /sys/class/net/{wireless}/statistics/tx_packets)\"; \
          printf 'station_tx=%s\\n' \"$(printf '%s\\n' \"$stats\" | awk '/tx packets:/ {{print $3}}')\"; \
@@ -170,6 +190,7 @@ fn snapshot(config: &OpenWrtConfig, target: Ipv4Addr) -> Result<Snapshot> {
     }
     let stdout = String::from_utf8(output.stdout)?;
     Ok(Snapshot {
+        station_mac: parse_mac(tagged_text(&stdout, "station_mac")?)?,
         ingress_rx_packets: tagged(&stdout, "ingress_rx")?,
         wireless_tx_packets: tagged(&stdout, "wireless_tx")?,
         station_tx_packets: tagged(&stdout, "station_tx")?,
@@ -177,6 +198,60 @@ fn snapshot(config: &OpenWrtConfig, target: Ipv4Addr) -> Result<Snapshot> {
         station_tx_failed: tagged(&stdout, "station_failed")?,
         channel_width_mhz: u8::try_from(tagged(&stdout, "channel_width")?)?,
     })
+}
+
+fn tagged_text<'a>(output: &'a str, key: &str) -> Result<&'a str> {
+    output
+        .lines()
+        .find_map(|line| line.strip_prefix(key)?.strip_prefix('='))
+        .ok_or_else(|| format!("OpenWrt snapshot omitted `{key}`").into())
+}
+
+fn parse_mac(value: &str) -> Result<[u8; 6]> {
+    let mut bytes = [0_u8; 6];
+    let mut octets = value.split(':');
+    for byte in &mut bytes {
+        let octet = octets
+            .next()
+            .filter(|octet| octet.len() == 2)
+            .ok_or_else(|| format!("invalid OpenWrt station MAC `{value}`"))?;
+        *byte = u8::from_str_radix(octet, 16)
+            .map_err(|_| format!("invalid OpenWrt station MAC `{value}`"))?;
+    }
+    if octets.next().is_some() {
+        return Err(format!("invalid OpenWrt station MAC `{value}`").into());
+    }
+    Ok(bytes)
+}
+
+pub(crate) fn resolve_station_mac(config: &OpenWrtConfig, target: Ipv4Addr) -> Result<String> {
+    let script = format!(
+        "set -eu; \
+         mac=$(ip neigh show {target} | awk 'NR==1 {{print $5}}'); \
+         if test -z \"$mac\"; then \
+           set -- $(iw dev {} station dump | awk '/^Station / {{print $2}}'); \
+           test \"$#\" -eq 1; mac=\"$1\"; \
+         fi; \
+         printf '%s\\n' \"$mac\"",
+        config.wireless_interface
+    );
+    let output = Command::new("ssh")
+        .args(["-o", "BatchMode=yes", "-o", "ConnectTimeout=5"])
+        .arg(&config.ssh_target)
+        .arg(script)
+        .output()?;
+    if !output.status.success() {
+        return Err(format!(
+            "cannot resolve the sole associated OpenWrt station: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        )
+        .into());
+    }
+    let mac = String::from_utf8(output.stdout)?
+        .trim()
+        .to_ascii_lowercase();
+    parse_mac(&mac)?;
+    Ok(mac)
 }
 
 fn require_width(phy: PhyExpectation, observed: u8) -> Result<()> {
@@ -330,5 +405,16 @@ mod tests {
     fn counter_reset_is_not_misreported_as_a_wrapping_delta() {
         assert_eq!(delta("counter", 10, 14).unwrap(), 4);
         assert!(delta("counter", 14, 10).is_err());
+    }
+
+    #[test]
+    fn station_mac_is_strictly_parsed_for_bridge_capture_reuse() {
+        assert_eq!(
+            parse_mac("30:ed:a0:f3:f6:d0").unwrap(),
+            [0x30, 0xed, 0xa0, 0xf3, 0xf6, 0xd0]
+        );
+        assert!(parse_mac("30:ed:a0:f3:f6").is_err());
+        assert!(parse_mac("30:ed:a0:f3:f6:d0:00").is_err());
+        assert!(parse_mac("30:ed:a0:f3:f6:zz").is_err());
     }
 }

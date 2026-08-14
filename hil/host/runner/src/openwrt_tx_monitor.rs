@@ -10,7 +10,7 @@ use std::{
     time::Duration,
 };
 
-use crate::{Result, lab_config::OpenWrtConfig};
+use crate::{Result, lab_config::OpenWrtConfig, openwrt_fixture::resolve_station_mac};
 
 const REMOTE_CAPTURE: &str = "/tmp/open-radio-ap-tx-monitor.pcap";
 const MAX_CAPTURE_BYTES: u64 = 64 * 1024 * 1024;
@@ -62,12 +62,13 @@ impl OpenWrtTxMonitorCapture {
             .monitor_interface
             .clone()
             .ok_or("OpenWrt TX-monitor evidence requires `station_fixture.monitor_interface`")?;
+        let station_mac = resolve_station_mac(config, target)?;
         let seconds = duration.saturating_add(Duration::from_secs(3)).as_secs();
         let script = format!(
             "set -eu; \
              ! iw dev {monitor} info >/dev/null 2>&1; \
              wiphy=$(iw dev {wireless} info | awk '/wiphy/ {{print \"phy\" $2; exit}}'); \
-             mac=$(ip neigh show {target} | awk 'NR==1 {{print $5}}'); \
+             mac='{station_mac}'; \
              test -n \"$wiphy\"; test -n \"$mac\"; \
              rm -f {remote}; \
              iw phy \"$wiphy\" interface add {monitor} type monitor; \
@@ -88,8 +89,10 @@ impl OpenWrtTxMonitorCapture {
             .map_err(|error| format!("cannot start OpenWrt TX-monitor capture: {error}"))?;
         thread::sleep(Duration::from_secs(1));
         if let Some(status) = child.try_wait()? {
+            let output = child.wait_with_output()?;
             return Err(format!(
-                "OpenWrt TX-monitor capture exited before the session started: {status}"
+                "OpenWrt TX-monitor capture exited before the session started: {status}: {}",
+                String::from_utf8_lossy(&output.stderr).trim()
             )
             .into());
         }

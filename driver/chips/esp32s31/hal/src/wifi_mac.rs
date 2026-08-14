@@ -4,10 +4,7 @@
 //! physical registers belong to the 802.11 MAC and are not reusable by
 //! Bluetooth, BLE or IEEE 802.15.4 PHY paths.
 
-use core::{
-    cell::RefMut,
-    ops::{Deref, DerefMut},
-};
+use core::cell::RefMut;
 
 pub use crate::types::{
     MacApReceivePolicySnapshot, MacInterface, MacItwtClearIndex, MacKeyInstallOutcome, MacPti,
@@ -92,7 +89,7 @@ impl<'registers> WifiMacColdHal<'registers> {
     }
 
     pub fn initialize_antenna(&mut self) {
-        self.registers.initialize_mac_antenna();
+        self.registers.radio_mut().initialize_mac_antenna();
     }
 
     pub fn initialize_coex(
@@ -103,12 +100,17 @@ impl<'registers> WifiMacColdHal<'registers> {
         beamforming: [u8; 3],
         multi_target: [u8; 2],
     ) {
-        self.registers
-            .initialize_mac_coex(rx_ack, wifi_default, tb, beamforming, multi_target);
+        self.registers.radio_mut().initialize_mac_coex(
+            rx_ack,
+            wifi_default,
+            tb,
+            beamforming,
+            multi_target,
+        );
     }
 
     pub fn initialize_crypto_bypass(&mut self) {
-        self.registers.initialize_mac_crypto_bypass();
+        self.registers.radio_mut().initialize_mac_crypto_bypass();
     }
 
     pub fn enable_interrupts(&mut self, event_mask: super::MacInterruptMask) {
@@ -132,52 +134,57 @@ impl<'registers> WifiMacColdHal<'registers> {
     }
 
     pub fn initialize_he_prefix(&mut self) {
-        self.registers.initialize_mac_he_prefix();
+        self.registers.radio_mut().initialize_mac_he_prefix();
     }
 
     pub fn initialize_tx_power(&mut self, table: &MacTxPowerTable) {
-        self.registers.initialize_mac_tx_power(table);
+        self.registers.radio_mut().initialize_mac_tx_power(table);
     }
 
     pub fn initialize_he_suffix(&mut self) {
-        self.registers.initialize_mac_he_suffix();
+        self.registers.radio_mut().initialize_mac_he_suffix();
     }
 
     pub fn initialize_last_rx_buffer_table(&mut self) {
-        self.registers.initialize_mac_last_rx_buffer();
+        self.registers.radio_mut().initialize_mac_last_rx_buffer();
     }
 
     pub fn initialize_rx_buffer_prefix(&mut self) {
-        self.registers.initialize_mac_rx_buffer_prefix();
+        self.registers.radio_mut().initialize_mac_rx_buffer_prefix();
     }
 
     pub fn initialize_receive_policy(&mut self) {
-        self.registers.initialize_cold_receive_policy();
+        self.registers.radio_mut().initialize_cold_receive_policy();
     }
 
     pub fn initialize_txrx_prefix(&mut self) {
-        self.registers.initialize_mac_txrx_prefix();
+        self.registers.radio_mut().initialize_mac_txrx_prefix();
     }
 
     pub fn initialize_txrx_callbacks(&mut self, delay_slot: u8) -> bool {
-        self.registers.initialize_mac_txrx_callbacks(delay_slot)
+        self.registers
+            .radio_mut()
+            .initialize_mac_txrx_callbacks(delay_slot)
     }
 
     pub fn initialize_txrx_suffix(&mut self) {
-        self.registers.initialize_mac_txrx_suffix();
+        self.registers.radio_mut().initialize_mac_txrx_suffix();
     }
 
     pub fn program_interface_address(&mut self, interface: MacInterface, address: [u8; 6]) {
         self.registers
+            .radio_mut()
             .program_receive_interface_address(interface, address);
     }
 
     pub fn disable_phy_low_rate(&mut self) {
-        self.registers.configure_phy_low_rate(false);
+        self.registers.radio_mut().configure_phy_low_rate(false);
     }
 
     pub fn configure_open_promiscuous_receive(&mut self) {
-        self.registers.configure_open_mac_promiscuous_receive();
+        self.registers
+            .radio_mut()
+            .configure_open_mac_promiscuous_receive();
     }
 }
 
@@ -190,19 +197,15 @@ enum WifiMacRegisters<'registers> {
     Published(RefMut<'registers, RadioRegisters>),
 }
 
-impl Deref for WifiMacRegisters<'_> {
-    type Target = RadioRegisters;
-
-    fn deref(&self) -> &Self::Target {
+impl WifiMacRegisters<'_> {
+    fn pac(&self) -> &RadioRegisters {
         match self {
             Self::Owned(registers) => registers,
             Self::Published(registers) => registers,
         }
     }
-}
 
-impl DerefMut for WifiMacRegisters<'_> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
+    fn pac_mut(&mut self) -> &mut RadioRegisters {
         match self {
             Self::Owned(registers) => registers,
             Self::Published(registers) => registers,
@@ -227,27 +230,37 @@ impl<'registers> WifiMacHal<'registers> {
         }
     }
 
+    fn pac(&self) -> &RadioRegisters {
+        self.registers.pac()
+    }
+
+    fn pac_mut(&mut self) -> &mut RadioRegisters {
+        self.registers.pac_mut()
+    }
+
     pub fn configure_open_promiscuous_receive(&mut self) {
-        self.registers.configure_open_mac_promiscuous_receive();
+        self.pac_mut().configure_open_mac_promiscuous_receive();
     }
 
     /// Read the calibrated baseband noise-floor observation used by link
     /// policy. This exposes the measured value, not the underlying register
     /// owner or encoding.
     pub fn read_noise_floor_dbm(&self) -> i8 {
-        self.registers.read_noise_floor_dbm()
+        self.pac().read_noise_floor_dbm()
     }
 
     /// Begin the reviewed no-power-save MAC quiesce sequence before PHY
     /// retuning. Sequencing belongs to the HAL; the PAC method is only the
     /// register-local RMW transaction.
     pub fn request_channel_stop(&mut self) {
-        self.registers.request_mac_channel_stop_without_power_save();
+        self.registers
+            .pac_mut()
+            .request_mac_channel_stop_without_power_save();
     }
 
     /// Sample the hardware activity field used by the bounded HAL poll.
     pub fn channel_active_state(&self) -> u8 {
-        self.registers.mac_channel_active_state()
+        self.pac().mac_channel_active_state()
     }
 
     /// Finish a channel switch and return the selected REGDMA link for
@@ -257,26 +270,34 @@ impl<'registers> WifiMacHal<'registers> {
         // pwr_hal_select_wifimac_regdma_link` in
         // `BLOB_LIBPP_MAC_CHANNEL_SWITCH`. This is intentionally a HAL
         // sequence: the PAC exposes only the two register-local operations.
-        self.registers.resume_mac_channel_without_power_save();
-        self.registers.select_wifi_no_power_save_regdma_link();
-        self.registers.wifi_mac_regdma_link()
+        self.registers
+            .pac_mut()
+            .resume_mac_channel_without_power_save();
+        self.registers
+            .pac_mut()
+            .select_wifi_no_power_save_regdma_link();
+        self.pac_mut().wifi_mac_regdma_link()
     }
 
     /// Publish the receive address and BSSID using two complete vendor leaves.
     pub fn program_interface_identity(&mut self, identity: MacInterfaceIdentity) {
         self.registers
+            .pac_mut()
             .program_receive_interface_address(identity.interface, identity.address);
         self.registers
+            .pac_mut()
             .program_interface_bssid(identity.interface, identity.bssid);
     }
 
     /// Apply one exact reviewed role-policy transaction.
     pub fn configure_role_receive_policy(&mut self, policy: MacRoleReceivePolicy) {
-        self.registers.apply_role_receive_policy(policy);
+        self.pac_mut().apply_role_receive_policy(policy);
     }
 
     pub fn configure_station_receive_policy(&mut self, bssid: [u8; 6]) {
-        self.registers.apply_sta_link_receive_policy(bssid);
+        self.registers
+            .pac_mut()
+            .apply_sta_link_receive_policy(bssid);
     }
 
     /// Apply only the exact vendor policy-six register transaction.
@@ -294,25 +315,25 @@ impl<'registers> WifiMacHal<'registers> {
     ///
     /// This does not claim simultaneous runtime ownership or select a channel.
     pub fn configure_sta_ap_receive_plan(&mut self, plan: MacStaApReceivePlan) {
-        self.registers.apply_sta_ap_receive_plan(plan);
+        self.pac_mut().apply_sta_ap_receive_plan(plan);
     }
 
     pub fn station_receive_policy_snapshot(&self) -> MacStaReceivePolicySnapshot {
-        self.registers.sta_receive_policy_snapshot()
+        self.pac().sta_receive_policy_snapshot()
     }
 
     pub fn access_point_receive_policy_snapshot(&self) -> MacApReceivePolicySnapshot {
-        self.registers.ap_receive_policy_snapshot()
+        self.pac().ap_receive_policy_snapshot()
     }
 
     pub fn receive_statistics_snapshot(&self) -> MacRxStatisticsSnapshot {
-        self.registers.rx_statistics_snapshot()
+        self.pac().rx_statistics_snapshot()
     }
 
     /// Read the bounded hardware-owned RX walker projection without exposing
     /// the PAC owner to diagnostics or runtime integration code.
     pub fn receive_dma_snapshot(&self) -> MacRxDmaSnapshot {
-        self.registers.mac_rx_dma_snapshot()
+        self.pac().mac_rx_dma_snapshot()
     }
 
     /// Install one reviewed station key-table image. Slot selection and key
@@ -326,7 +347,9 @@ impl<'registers> WifiMacHal<'registers> {
         let Some(index) = MacKeyEntryIndex::new(u32::from(index)) else {
             return MacKeyInstallOutcome::Rejected;
         };
-        self.registers.install_sta_ccmp_key_entry(index, words)
+        self.registers
+            .pac_mut()
+            .install_sta_ccmp_key_entry(index, words)
     }
 
     /// Install one reviewed access-point key-table image. Association/key-ID
@@ -339,56 +362,60 @@ impl<'registers> WifiMacHal<'registers> {
         let Some(index) = MacKeyEntryIndex::new(u32::from(index)) else {
             return MacKeyInstallOutcome::Rejected;
         };
-        self.registers.install_ap_ccmp_key_entry(index, words)
+        self.registers
+            .pac_mut()
+            .install_ap_ccmp_key_entry(index, words)
     }
 
     /// Clear one key-table entry when its generated index is valid.
     pub fn clear_ccmp_entry(&mut self, index: u8) {
         if let Some(index) = MacKeyEntryIndex::new(u32::from(index)) {
-            self.registers.clear_mac_key_entry(index);
+            self.pac_mut().clear_mac_key_entry(index);
         }
     }
 
     /// Observe key-table validity without exposing the table owner.
     pub fn ccmp_entry_is_valid(&self, index: u8) -> Option<bool> {
         MacKeyEntryIndex::new(u32::from(index))
-            .map(|index| self.registers.mac_key_entry_is_valid(index))
+            .map(|index| self.pac().mac_key_entry_is_valid(index))
     }
 
     /// Stop the access-point TSF using the complete reviewed vendor leaf.
     pub fn stop_access_point_tsf(&mut self) {
-        self.registers.stop_softap_tsf();
+        self.pac_mut().stop_softap_tsf();
     }
 
     /// Start a new access-point TSF epoch through the reviewed selector-zero
     /// transaction. No raw timestamp word or register image crosses the HAL.
     pub fn reset_and_start_access_point_tsf(&mut self) {
-        self.registers.reset_and_start_softap_tsf();
+        self.pac_mut().reset_and_start_softap_tsf();
     }
 
     /// Publish the complete two-edge receive-beacon PTI transaction.
     pub fn set_rx_beacon_pti(&mut self, beacon: MacPti, shared: MacPti) {
-        self.registers.set_rx_beacon_pti(beacon, shared);
+        self.pac_mut().set_rx_beacon_pti(beacon, shared);
     }
 
     /// Publish the complete receive-beacon PTI clear edge.
     pub fn clear_rx_beacon_pti(&mut self) {
-        self.registers.clear_rx_beacon_pti();
+        self.pac_mut().clear_rx_beacon_pti();
     }
 
     /// Publish the complete two-edge individual-TWT PTI transaction.
     pub fn set_itwt_pti(&mut self, argument_is_zero: bool, shared: MacPti) {
-        self.registers.set_itwt_pti(argument_is_zero, shared);
+        self.registers
+            .pac_mut()
+            .set_itwt_pti(argument_is_zero, shared);
     }
 
     /// Publish one bounded individual-TWT clear request.
     pub fn clear_itwt_pti(&mut self, index: MacItwtClearIndex) {
-        self.registers.clear_itwt_pti(index);
+        self.pac_mut().clear_itwt_pti(index);
     }
 
     /// Publish the complete scheduler and queue-vector PTI transaction.
     pub fn set_tx_pti(&mut self, queue: MacTxQueueIndex, program: MacTxPtiProgram) {
-        self.registers.set_tx_pti(queue, program);
+        self.pac_mut().set_tx_pti(queue, program);
     }
 
     /// Program the reviewed HE20 peer register image.
@@ -397,7 +424,9 @@ impl<'registers> WifiMacHal<'registers> {
         config: MacHe20PeerConfig,
         rts_threshold: Option<u16>,
     ) -> Result<(), MacHe20PeerError> {
-        self.registers.program_he20_peer(config, rts_threshold)
+        self.registers
+            .pac_mut()
+            .program_he20_peer(config, rts_threshold)
     }
 
     /// Program the reviewed HE20 association fields.
@@ -407,7 +436,7 @@ impl<'registers> WifiMacHal<'registers> {
         minimum_mpdu_start_spacing: u8,
         bssid_index: u8,
     ) -> Result<(), MacHe20PeerError> {
-        self.registers.program_he20_association(
+        self.pac_mut().program_he20_association(
             association_id,
             minimum_mpdu_start_spacing,
             bssid_index,
@@ -416,17 +445,23 @@ impl<'registers> WifiMacHal<'registers> {
 
     /// Initialize the reviewed HE buffer-status-report register state.
     pub fn initialize_he_buffer_status_report(&mut self) {
-        self.registers.initialize_he_buffer_status_report();
+        self.registers
+            .pac_mut()
+            .initialize_he_buffer_status_report();
     }
 
     /// Publish the reviewed HE beamforming report-rate register image.
     pub fn set_he_beamforming_report_profile(&mut self, profile: MacHeBeamformingReportProfile) {
-        self.registers.set_he_beamforming_report_profile(profile);
+        self.registers
+            .pac_mut()
+            .set_he_beamforming_report_profile(profile);
     }
 
     /// Publish the matching reviewed ER-SU ACK-rate register image.
     pub fn set_he_ersu_ack_rate_profile(&mut self, profile: MacHeErSuAckRateProfile) {
-        self.registers.set_he_ersu_ack_rate_profile(profile);
+        self.registers
+            .pac_mut()
+            .set_he_ersu_ack_rate_profile(profile);
     }
 
     pub fn prepare_bound_legacy_tx(
@@ -436,11 +471,12 @@ impl<'registers> WifiMacHal<'registers> {
         program: MacLegacyTxProgram,
     ) -> bool {
         self.registers
+            .pac_mut()
             .prepare_bound_legacy_mac_tx(dma, queue, program)
     }
 
     pub fn start_bound_tx(&mut self, dma: &dyn HardwareOwnedTxDma, queue: u8) {
-        self.registers.start_bound_mac_tx(dma, queue);
+        self.pac_mut().start_bound_mac_tx(dma, queue);
     }
 
     pub fn prepare_bound_ht_tx(
@@ -449,7 +485,9 @@ impl<'registers> WifiMacHal<'registers> {
         queue: u8,
         program: MacHtTxProgram,
     ) -> bool {
-        self.registers.prepare_bound_ht_mac_tx(dma, queue, program)
+        self.registers
+            .pac_mut()
+            .prepare_bound_ht_mac_tx(dma, queue, program)
     }
 
     pub fn prepare_bound_he_tx(
@@ -458,19 +496,21 @@ impl<'registers> WifiMacHal<'registers> {
         queue: u8,
         program: MacHeTxProgram,
     ) -> bool {
-        self.registers.prepare_bound_he_mac_tx(dma, queue, program)
+        self.registers
+            .pac_mut()
+            .prepare_bound_he_mac_tx(dma, queue, program)
     }
 
     pub fn he_tx_vector_snapshot(&self, queue: u8) -> MacHeTxVectorSnapshot {
-        self.registers.he_mac_tx_vector_snapshot(queue)
+        self.pac().he_mac_tx_vector_snapshot(queue)
     }
 
     pub fn take_tx_completion(&mut self, queue: u8) -> Option<MacTxCompletionRegisters> {
-        self.registers.take_mac_tx_completion(queue)
+        self.pac_mut().take_mac_tx_completion(queue)
     }
 
     pub fn begin_tx_timeout_abort(&mut self, queue: u8) -> bool {
-        self.registers.begin_mac_tx_timeout_abort(queue)
+        self.pac_mut().begin_mac_tx_timeout_abort(queue)
     }
 
     pub fn with_tx_queue_detached<R>(
@@ -479,11 +519,13 @@ impl<'registers> WifiMacHal<'registers> {
         reason: MacTxDetachReason,
         detached: impl for<'detached> FnOnce(MacTxQueueDetached<'detached>) -> R,
     ) -> MacTxDetachOutcome<R> {
-        self.registers.with_detached_mac_tx(queue, reason, detached)
+        self.registers
+            .pac_mut()
+            .with_detached_mac_tx(queue, reason, detached)
     }
 
     pub fn take_ht_ampdu_completion(&mut self, queue: u8) -> Option<MacHtAmpduCompletionRegisters> {
-        self.registers.take_mac_ht_ampdu_completion(queue)
+        self.pac_mut().take_mac_ht_ampdu_completion(queue)
     }
 
     pub fn prepare_he_trigger_based_queue(
@@ -494,7 +536,7 @@ impl<'registers> WifiMacHal<'registers> {
         mpdu_lengths: &[u16],
         queued_msdu_bytes: u32,
     ) -> Result<MacHeTriggerTxQueueSnapshot, MacHeTbProgramError> {
-        self.registers.prepare_he_trigger_based_queue(
+        self.pac_mut().prepare_he_trigger_based_queue(
             policy,
             reservation,
             tid,
@@ -504,67 +546,76 @@ impl<'registers> WifiMacHal<'registers> {
     }
 
     pub fn clear_he_trigger_based_queue(&mut self, reservation: MacHeTbLinkReservation) {
-        self.registers.clear_he_trigger_based_queue(reservation);
+        self.registers
+            .pac_mut()
+            .clear_he_trigger_based_queue(reservation);
     }
 
     pub fn he_trigger_based_queue_snapshot(
         &self,
         reservation: MacHeTbLinkReservation,
     ) -> MacHeTriggerTxQueueSnapshot {
-        self.registers.he_trigger_based_queue_snapshot(reservation)
+        self.registers
+            .pac()
+            .he_trigger_based_queue_snapshot(reservation)
     }
 
     pub fn rx_buffer_full_count(&mut self) -> u16 {
-        self.registers.mac_rx_buffer_full_count()
+        self.pac_mut().mac_rx_buffer_full_count()
     }
 
     pub fn rx_last_descriptor_low(&mut self) -> u32 {
-        self.registers.mac_rx_last_descriptor_low()
+        self.pac_mut().mac_rx_last_descriptor_low()
     }
 
     pub fn rx_next_descriptor_low(&mut self) -> u32 {
-        self.registers.mac_rx_next_descriptor_low()
+        self.pac_mut().mac_rx_next_descriptor_low()
     }
 
     pub fn rx_walker_enabled(&mut self) -> bool {
-        self.registers.mac_rx_walker_enabled()
+        self.pac_mut().mac_rx_walker_enabled()
     }
 
     pub fn rx_reload_pending(&mut self) -> bool {
-        self.registers.mac_rx_reload_pending()
+        self.pac_mut().mac_rx_reload_pending()
     }
 
     pub fn set_rx_descriptor_high_window(&mut self, range: &StableDmaRange<'_>, address_high: u16) {
         self.registers
+            .pac_mut()
             .set_mac_rx_descriptor_high_window(range, address_high);
     }
 
     pub fn write_rx_descriptor_base(&mut self, range: &StableDmaRange<'_>, address: u32) {
-        self.registers.write_mac_rx_descriptor_base(range, address);
+        self.registers
+            .pac_mut()
+            .write_mac_rx_descriptor_base(range, address);
     }
 
     pub fn publish_rx_walker_enable(&mut self, range: &StableDmaRange<'_>) {
-        self.registers.publish_mac_rx_walker_enable(range);
+        self.pac_mut().publish_mac_rx_walker_enable(range);
     }
 
     pub fn request_rx_descriptor_reload(&mut self, range: &StableDmaRange<'_>) {
-        self.registers.request_mac_rx_descriptor_reload(range);
+        self.registers
+            .pac_mut()
+            .request_mac_rx_descriptor_reload(range);
     }
 
     pub fn try_enable_rx_walker(&mut self, range: &StableDmaRange<'_>) -> bool {
-        self.registers.try_enable_mac_rx_walker(range)
+        self.pac_mut().try_enable_mac_rx_walker(range)
     }
 
     pub fn try_disable_rx_walker(&mut self) -> bool {
-        self.registers.try_disable_mac_rx_walker()
+        self.pac_mut().try_disable_mac_rx_walker()
     }
 
     pub fn order_device_accesses(&mut self) {
-        self.registers.order_device_accesses();
+        self.pac_mut().order_device_accesses();
     }
 
     pub fn station_tsf(&mut self) -> u64 {
-        self.registers.station_tsf()
+        self.pac_mut().station_tsf()
     }
 
     pub fn program_rx_block_ack_entry(
@@ -576,7 +627,7 @@ impl<'registers> WifiMacHal<'registers> {
         starting_sequence: MacRxBlockAckStartingSequence,
         window: MacRxBlockAckWindow,
     ) {
-        self.registers.program_rx_block_ack_entry(
+        self.pac_mut().program_rx_block_ack_entry(
             index,
             interface,
             peer,
@@ -587,11 +638,12 @@ impl<'registers> WifiMacHal<'registers> {
     }
 
     pub fn delete_rx_block_ack_entry(&mut self, index: MacRxBlockAckEntryIndex) {
-        self.registers.delete_rx_block_ack_entry(index);
+        self.pac_mut().delete_rx_block_ack_entry(index);
     }
 
     pub fn set_he_trigger_based_tid_enabled(&mut self, tid: MacHeTid, enabled: bool) {
         self.registers
+            .pac_mut()
             .set_he_trigger_based_tid_enabled(tid, enabled);
     }
 }

@@ -67,11 +67,11 @@ pub trait PhyAccess: sealed::PhyAccess {}
 
 impl sealed::PhyAccess for PhyHal {
     fn pac(&self) -> &RadioRegisters {
-        &self.registers
+        self.registers.radio()
     }
 
     fn pac_mut(&mut self) -> &mut RadioRegisters {
-        &mut self.registers
+        self.registers.radio_mut()
     }
 }
 
@@ -100,32 +100,39 @@ pub(crate) fn phy_pac_mut(access: &mut (impl PhyAccess + ?Sized)) -> &mut RadioR
 
 impl PhyHal {
     pub fn set_phy_calibration_clock(&mut self, enabled: bool) {
-        self.registers.set_phy_calibration_clock(enabled);
+        self.registers
+            .radio_mut()
+            .set_phy_calibration_clock(enabled);
     }
 
     pub fn set_rx_gain_dc_calibration(&mut self, enabled: bool) {
-        self.registers.set_rx_gain_dc_calibration(enabled);
+        self.registers
+            .radio_mut()
+            .set_rx_gain_dc_calibration(enabled);
     }
 
     pub fn configure_power_control_tone(&mut self, selector: u16, step: u8) {
-        self.registers.configure_power_control_tone(selector, step);
+        self.registers
+            .radio_mut()
+            .configure_power_control_tone(selector, step);
     }
 
     pub fn configure_calibration_tone(&mut self, enabled: bool, selector: u16, step: u8) {
         self.registers
+            .radio_mut()
             .configure_calibration_tone(enabled, selector, step);
     }
 
     pub fn configure_tx_iq_correction(&mut self, begin: bool) {
-        self.registers.configure_tx_iq_correction(begin);
+        self.registers.radio_mut().configure_tx_iq_correction(begin);
     }
 
     pub fn txiq_tone_control(&mut self) -> u32 {
-        self.registers.txiq_tone_control()
+        self.registers.radio_mut().txiq_tone_control()
     }
 
     pub fn restore_txiq_tone_control(&mut self, saved: u32) {
-        self.registers.restore_txiq_tone_control(saved);
+        self.registers.radio_mut().restore_txiq_tone_control(saved);
     }
 
     pub fn configure_txiq_mismatch_power(
@@ -135,60 +142,78 @@ impl PhyHal {
         attenuation: u8,
         selector: u16,
     ) {
-        self.registers
-            .configure_txiq_mismatch_power(first, polarity, attenuation, selector);
+        self.registers.radio_mut().configure_txiq_mismatch_power(
+            first,
+            polarity,
+            attenuation,
+            selector,
+        );
     }
 
     pub fn set_tx_iq_gain_coefficient(&mut self, coefficient: i8) {
-        self.registers.set_tx_iq_gain_coefficient(coefficient);
+        self.registers
+            .radio_mut()
+            .set_tx_iq_gain_coefficient(coefficient);
     }
 
     pub fn set_tx_iq_phase_coefficient(&mut self, coefficient: i8) {
-        self.registers.set_tx_iq_phase_coefficient(coefficient);
+        self.registers
+            .radio_mut()
+            .set_tx_iq_phase_coefficient(coefficient);
     }
 
     pub fn set_rx_iq_gain_coefficient(&mut self, coefficient: i8) {
-        self.registers.set_rx_iq_gain_coefficient(coefficient);
+        self.registers
+            .radio_mut()
+            .set_rx_iq_gain_coefficient(coefficient);
     }
 
     pub fn set_rx_iq_phase_coefficient(&mut self, coefficient: i8) {
-        self.registers.set_rx_iq_phase_coefficient(coefficient);
+        self.registers
+            .radio_mut()
+            .set_rx_iq_phase_coefficient(coefficient);
     }
 
     pub fn configure_rx_iq_calibration_mode(&mut self) {
-        self.registers.configure_rx_iq_calibration_mode();
+        self.registers
+            .radio_mut()
+            .configure_rx_iq_calibration_mode();
     }
 
     pub fn configure_adc_rate(&mut self, rate: u32) {
-        self.registers.configure_adc_rate(rate);
+        self.registers.radio_mut().configure_adc_rate(rate);
     }
 
     pub fn set_power_detector_tone_armed(&mut self, armed: bool) {
-        self.registers.set_power_detector_tone_armed(armed);
+        self.registers
+            .radio_mut()
+            .set_power_detector_tone_armed(armed);
     }
 
     pub fn stop_power_detector_tone(&mut self) {
-        self.registers.stop_power_detector_tone();
+        self.registers.radio_mut().stop_power_detector_tone();
     }
 
     pub fn trigger_tx_dc_measurement(&mut self) {
-        self.registers.trigger_tx_dc_measurement();
+        self.registers.radio_mut().trigger_tx_dc_measurement();
     }
 
     pub fn tx_dc_measurement_is_ready(&mut self) -> bool {
-        self.registers.tx_dc_measurement_is_ready()
+        self.registers.radio_mut().tx_dc_measurement_is_ready()
     }
 
     pub fn sample_tx_dc_comparators(&mut self) -> [bool; 2] {
-        self.registers.sample_tx_dc_comparators()
+        self.registers.radio_mut().sample_tx_dc_comparators()
     }
 
     pub fn clear_tx_dc_measurement(&mut self) {
-        self.registers.clear_tx_dc_measurement();
+        self.registers.radio_mut().clear_tx_dc_measurement();
     }
 
     pub fn open_frontend_baseband_internal_clocks(&mut self) {
-        self.registers.open_frontend_baseband_internal_clocks();
+        self.registers
+            .radio_mut()
+            .open_frontend_baseband_internal_clocks();
     }
 }
 
@@ -466,6 +491,7 @@ impl<P> Radio<P, state::Owned> {
     {
         self.state
             .registers
+            .radio_mut()
             .set_wifi_baseband_enabled_image(self.peripheral.wifi_baseband_is_enabled());
         Radio {
             peripheral: self.peripheral,

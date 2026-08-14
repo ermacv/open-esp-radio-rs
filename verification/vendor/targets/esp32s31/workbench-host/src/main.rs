@@ -20,34 +20,11 @@ fn verify_semantic_contract(request: &SemanticContractRequest<'_>) -> ProviderRe
 
 fn verify_named_contract(
     name: &str,
-    svd: &open_radio_vendor_binary_workbench::MmioMap,
-    vendor_artifact: &Path,
-    vendor_companion: &Path,
+    _svd: &open_radio_vendor_binary_workbench::MmioMap,
+    _vendor_artifact: &Path,
+    _vendor_companion: &Path,
 ) -> ProviderResult<SemanticVerificationReport> {
-    use esp32s31_verification::verification;
-
-    let report = match name {
-        "channel" => verification::verify_esp32s31_channel(svd, vendor_artifact, vendor_companion)?,
-        "rf-init" => verification::verify_esp32s31_rf_init(svd, vendor_artifact, vendor_companion)?,
-        "bluetooth-tx-power" => verification::verify_esp32s31_bluetooth_tx_power(
-            svd,
-            vendor_artifact,
-            vendor_companion,
-        )?,
-        "bluetooth-tx-gain-init" => verification::verify_esp32s31_bluetooth_tx_gain_init(
-            svd,
-            vendor_artifact,
-            vendor_companion,
-        )?,
-        "baseband-init" => {
-            verification::verify_esp32s31_baseband_init(svd, vendor_artifact, vendor_companion)?
-        }
-        "register-init" => {
-            verification::verify_esp32s31_register_init(svd, vendor_artifact, vendor_companion)?
-        }
-        _ => return Err(format!("ESP32-S31 provider has no contract {name:?}").into()),
-    };
-    Ok(report)
+    Err(format!("ESP32-S31 provider has no self-verdict semantic contract {name:?}").into())
 }
 
 static KNOWLEDGE_PROVIDERS: &[KnowledgeProviderDescriptor] = &[KnowledgeProviderDescriptor {

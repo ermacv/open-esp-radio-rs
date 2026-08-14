@@ -379,7 +379,12 @@ fn removed_provider_and_provenance_paths_do_not_return() {
     let provider = repository.join("verification/vendor/targets/esp32s31/workbench-provider");
     assert!(!provider.join("semantic").exists());
     assert!(!provider.join("verification/src/qualification").exists());
-    assert!(provider.join("verification/src/semantic_replay").is_dir());
+    assert!(
+        provider
+            .join("verification/src/production_adapter")
+            .is_dir()
+    );
+    assert!(!provider.join("verification/src/semantic_replay").exists());
 
     let evidence = repository.join("verification/vendor/targets/esp32s31/registers/evidence");
     assert!(!evidence.join("migration.toml").exists());

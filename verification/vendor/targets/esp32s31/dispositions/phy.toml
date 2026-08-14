@@ -155,7 +155,6 @@ disposition = "replaced-by-composition"
 protocol = "shared"
 rust-component = "open_esp_radio_esp32s31_phy::phy_register::PhyRegisterTransition"
 hil-evidence = "qualification/targets/esp32s31/records/2026-07-31-driver-repo-he20-bidirectional.md"
-semantic-contract = "esp32s31-register-init"
 
 [[functions]]
 source = "archive"
@@ -164,7 +163,6 @@ disposition = "state-transition"
 protocol = "shared"
 rust-component = "open_esp_radio_esp32s31_phy::phy_cold::PhyRfColdInit"
 hil-evidence = "qualification/targets/esp32s31/records/2026-07-31-driver-repo-he20-bidirectional.md"
-semantic-contract = "esp32s31-rf-init"
 
 [[functions]]
 source = "archive"
@@ -173,7 +171,6 @@ disposition = "state-transition"
 protocol = "shared"
 rust-component = "open_esp_radio_esp32s31_phy::phy_bb::PhyBbInitTransition"
 hil-evidence = "qualification/targets/esp32s31/records/2026-07-31-driver-repo-he20-bidirectional.md"
-semantic-contract = "esp32s31-baseband-init"
 
 [[functions]]
 source = "archive"
@@ -181,7 +178,6 @@ symbol = "phy_bt_tx_gain_init"
 disposition = "replaced-by-composition"
 protocol = "shared"
 rust-component = "open_esp_radio_esp32s31_phy::phy_bluetooth::PhyBluetoothTxGainInitTransition"
-semantic-contract = "esp32s31-bluetooth-tx-gain-init"
 
 [[functions]]
 source = "archive"
@@ -190,7 +186,6 @@ disposition = "state-transition"
 protocol = "shared"
 rust-component = "open_esp_radio_esp32s31_phy::phy_channel::PhyChipChannelTransition"
 hil-evidence = "qualification/targets/esp32s31/records/2026-07-31-driver-repo-he20-bidirectional.md"
-semantic-contract = "esp32s31-channel"
 
 [[functions]]
 source = "archive"
@@ -198,7 +193,6 @@ symbol = "phy_bt_txdc_cal_new"
 disposition = "state-transition"
 protocol = "bluetooth"
 rust-component = "open_esp_radio_esp32s31_phy::phy_bluetooth::PhyBluetoothTxDcTransition"
-semantic-contract = "esp32s31-bluetooth-txdc"
 
 [[functions]]
 source = "archive"
@@ -206,7 +200,6 @@ symbol = "phy_bt_tx_pwctrl_init"
 disposition = "state-transition"
 protocol = "bluetooth"
 rust-component = "open_esp_radio_esp32s31_phy::phy_bluetooth::PhyBluetoothTxPowerTransition"
-semantic-contract = "esp32s31-bluetooth-tx-power"
 
 [[functions]]
 source = "archive"
@@ -214,4 +207,3 @@ symbol = "phy_txdc_cal_pwdet_init"
 disposition = "state-transition"
 protocol = "shared"
 rust-component = "open_esp_radio_esp32s31_phy::phy_bluetooth::PhyBluetoothTxDcPwdetTransition"
-semantic-contract = "esp32s31-bluetooth-txdc-pwdet"

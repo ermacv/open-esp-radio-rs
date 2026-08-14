@@ -154,6 +154,29 @@ then
     exit 1
 fi
 
+# Cold authority is deliberately stronger than running authority, but the
+# widening must remain explicit inside HAL. An implicit Deref recreates every
+# runtime PAC method on the cold owner and hides the ownership boundary from
+# call sites.
+if rg -n 'impl([[:space:]]*<[^>]+>)?[[:space:]]+(core::ops::)?Deref(Mut)?[[:space:]]+for[[:space:]]+ColdRadioRegisters' \
+    driver/chips/esp32s31/pac \
+    --glob '*.rs'
+then
+    echo "ColdRadioRegisters must not dereference to the runtime PAC owner" >&2
+    exit 1
+fi
+
+# Internal HAL wrappers must also keep PAC widening explicit. A private
+# `Deref` would make every future PAC method silently available throughout the
+# Wi-Fi MAC facade and invalidate the finite-operation review boundary.
+if rg -n 'impl([[:space:]]*<[^>]+>)?[[:space:]]+(core::ops::)?Deref(Mut)?[[:space:]]+for[[:space:]]+WifiMacRegisters' \
+    driver/chips/esp32s31/hal \
+    --glob '*.rs'
+then
+    echo "WifiMacRegisters must not dereference to the PAC owner" >&2
+    exit 1
+fi
+
 # Removed migration surfaces must stay removed. The `SplitPinned*` names are
 # the canonical resource API and do not match these former aliases.
 if rg -n '\b(PinnedResources|PinnedDevice|PinnedRadioRunner)\b|register_arena|esp32s31::registers' \

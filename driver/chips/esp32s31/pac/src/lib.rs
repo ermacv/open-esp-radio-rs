@@ -1,8 +1,6 @@
 #![no_std]
 #![forbid(unsafe_code)]
 
-use core::ops::{Deref, DerefMut};
-
 mod agc;
 mod agc_runtime;
 mod baseband;
@@ -454,6 +452,24 @@ impl ColdRadioRegisters {
         )
     }
 
+    /// Borrow the radio-register capability during the cold lifecycle.
+    ///
+    /// This explicit bridge exists for the HAL crate, which owns the cold
+    /// hardware sequence.  Unlike the former `Deref` implementation it does
+    /// not let an arbitrary method call silently widen cold authority into a
+    /// runtime register owner.  Production crates above HAL never receive
+    /// either side of this borrow.
+    #[doc(hidden)]
+    pub fn radio(&self) -> &RadioRegisters {
+        &self.registers
+    }
+
+    /// Mutably borrow the radio-register capability during the cold lifecycle.
+    #[doc(hidden)]
+    pub fn radio_mut(&mut self) -> &mut RadioRegisters {
+        &mut self.registers
+    }
+
     /// Read the cold initializer's currently published interrupt mask.
     pub fn mac_interrupt_enable(&self) -> u32 {
         self.interrupts
@@ -470,20 +486,6 @@ impl ColdRadioRegisters {
         generated::mac_interrupt_enable(interrupt, MacInterruptMask::NONE);
         generated::mac_interrupt_clear(interrupt, generated::MacInterruptClearImage::new(u32::MAX));
         device_fence();
-    }
-}
-
-impl Deref for ColdRadioRegisters {
-    type Target = RadioRegisters;
-
-    fn deref(&self) -> &Self::Target {
-        &self.registers
-    }
-}
-
-impl DerefMut for ColdRadioRegisters {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.registers
     }
 }
 
@@ -779,6 +781,7 @@ mod tests {
         let registers = ColdRadioRegisters::for_validation();
         assert_eq!(
             registers
+                .radio()
                 .peripherals
                 .wifi_mac_core_enable
                 .control()
@@ -800,7 +803,7 @@ mod tests {
         // This host test inspects generated register pointers only and
         // performs no volatile access.
         let registers = ColdRadioRegisters::for_validation();
-        let he = &registers.peripherals.wifi_mac_he_init_prefix;
+        let he = &registers.radio().peripherals.wifi_mac_he_init_prefix;
         assert_eq!(he.parent_enable().as_ptr() as usize, 0x2010_4c2c);
         assert_eq!(he.interrupt_1_raw().as_ptr() as usize, 0x2010_4c30);
         assert_eq!(he.interrupt_1_status().as_ptr() as usize, 0x2010_4c34);
@@ -813,6 +816,7 @@ mod tests {
 
         assert_eq!(
             registers
+                .radio()
                 .peripherals
                 .wifi_mac_rx_dma
                 .csi_dump_config()

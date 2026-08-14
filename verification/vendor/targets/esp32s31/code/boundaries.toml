@@ -81,7 +81,7 @@ artifact-sha256 = "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227
 
 [[inputs]]
 source = "rust"
-artifact-sha256 = "5f43e45e1656afd0332ea6c0286ae0945014723b221051e3710c3acd495db51a"
+artifact-sha256 = "91ae4f1553b5d40722988ba542ef6c891f3ddffcc21ce39c900d4296337bb47b"
 
 [[inputs]]
 source = "wifi-key-role"
@@ -97,7 +97,7 @@ artifact-sha256 = "f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b949
 
 [[inputs]]
 source = "wifi-registers"
-artifact-sha256 = "1a227cbb32c52d5fa2635137b743c40289f1daaea249d32aa6ed860c0a9bfc4e"
+artifact-sha256 = "9e60ffc8a58427d83d3179268c275328e55428c75ce137c5e8193d09826c8fff"
 
 [[inputs]]
 source = "wifi-sta-ap-receive"

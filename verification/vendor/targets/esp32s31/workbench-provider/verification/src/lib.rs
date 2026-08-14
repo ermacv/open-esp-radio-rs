@@ -54,7 +54,7 @@ impl From<&str> for Error {
 
 pub type Result<T> = std::result::Result<T, Error>;
 
-#[path = "semantic_replay/mod.rs"]
+#[path = "production_adapter/mod.rs"]
 pub mod verification;
 
 /// Reviewed trust boundary for every compiled driver adapter.
@@ -236,200 +236,73 @@ pub fn verify_driver_adapter(
 }
 
 pub fn verify_semantic_contract(request: &SemanticContractRequest<'_>) -> Result<Option<bool>> {
-    let id = request.id;
-    let source = request.source;
-    let vendor_symbol = request.vendor_symbol;
-    let expected = match id {
-        "esp32s31-channel" => ("archive", "phy_chip_set_chan"),
-        "esp32s31-rf-init" => ("archive", "phy_rf_init"),
-        "esp32s31-bluetooth-txdc" => ("archive", "phy_bt_txdc_cal_new"),
-        "esp32s31-bluetooth-txdc-pwdet" => ("archive", "phy_txdc_cal_pwdet_init"),
-        "esp32s31-bluetooth-tx-power" => ("archive", "phy_bt_tx_pwctrl_init"),
-        "esp32s31-bluetooth-tx-gain-init" => ("archive", "phy_bt_tx_gain_init"),
-        "esp32s31-baseband-init" => ("archive", "phy_bb_init"),
-        "esp32s31-register-init" => ("archive", "register_chipv7_phy"),
-        _ => return Ok(None),
-    };
-    if (source, vendor_symbol) != expected {
-        return Err(
-            format!("semantic contract {id} cannot verify {source} {vendor_symbol}").into(),
-        );
-    }
-    let companion = request
-        .vendor_companion
-        .ok_or_else(|| format!("semantic contract {id} requires an archive companion"))?;
-    let matched = match id {
-        "esp32s31-channel" => {
-            verification::verify_esp32s31_channel(request.svd, request.vendor_artifact, companion)?
-                .matched
-        }
-        "esp32s31-rf-init" => {
-            verification::verify_esp32s31_rf_init(request.svd, request.vendor_artifact, companion)?
-                .matched
-        }
-        "esp32s31-bluetooth-txdc" => {
-            verification::verify_esp32s31_bluetooth_txdc(
-                request.svd,
-                request.vendor_artifact,
-                companion,
-            )?
-            .matched
-        }
-        "esp32s31-bluetooth-txdc-pwdet" => {
-            verification::verify_esp32s31_bluetooth_txdc_pwdet(
-                request.svd,
-                request.vendor_artifact,
-                companion,
-            )?
-            .matched
-        }
-        "esp32s31-bluetooth-tx-power" => {
-            verification::verify_esp32s31_bluetooth_tx_power(
-                request.svd,
-                request.vendor_artifact,
-                companion,
-            )?
-            .matched
-        }
-        "esp32s31-bluetooth-tx-gain-init" => {
-            verification::verify_esp32s31_bluetooth_tx_gain_init(
-                request.svd,
-                request.vendor_artifact,
-                companion,
-            )?
-            .matched
-        }
-        "esp32s31-baseband-init" => {
-            verification::verify_esp32s31_baseband_init(
-                request.svd,
-                request.vendor_artifact,
-                companion,
-            )?
-            .matched
-        }
-        "esp32s31-register-init" => {
-            verification::verify_esp32s31_register_init(
-                request.svd,
-                request.vendor_artifact,
-                companion,
-            )?
-            .matched
-        }
-        _ => unreachable!("registered contract was matched above"),
-    };
-    Ok(Some(matched))
+    let _ = request;
+    Ok(None)
 }
 
 const IQ_DRIVER_ADAPTER_SOURCES: &[EvidenceSource] = &[
     EvidenceSource {
-        name: "semantic_replay/iq_estimator.rs",
-        contents: include_str!("semantic_replay/iq_estimator.rs"),
+        name: "production_adapter/iq_estimator.rs",
+        contents: include_str!("production_adapter/iq_estimator.rs"),
     },
     EvidenceSource {
-        name: "semantic_replay/mod.rs",
-        contents: include_str!("semantic_replay/mod.rs"),
+        name: "production_adapter/mod.rs",
+        contents: include_str!("production_adapter/mod.rs"),
     },
 ];
 
 const WDEV_PROCESS_FIQ_DRIVER_ADAPTER_SOURCES: &[EvidenceSource] = &[
     EvidenceSource {
-        name: "semantic_replay/wdev_process_fiq.rs",
-        contents: include_str!("semantic_replay/wdev_process_fiq.rs"),
+        name: "production_adapter/wdev_process_fiq.rs",
+        contents: include_str!("production_adapter/wdev_process_fiq.rs"),
     },
     EvidenceSource {
-        name: "semantic_replay/mod.rs",
-        contents: include_str!("semantic_replay/mod.rs"),
+        name: "production_adapter/mod.rs",
+        contents: include_str!("production_adapter/mod.rs"),
     },
 ];
 
 const HAL_MAC_TXQ_ENABLE_DRIVER_ADAPTER_SOURCES: &[EvidenceSource] = &[
     EvidenceSource {
-        name: "semantic_replay/hal_mac_txq_enable.rs",
-        contents: include_str!("semantic_replay/hal_mac_txq_enable.rs"),
+        name: "production_adapter/hal_mac_txq_enable.rs",
+        contents: include_str!("production_adapter/hal_mac_txq_enable.rs"),
     },
     EvidenceSource {
-        name: "semantic_replay/mod.rs",
-        contents: include_str!("semantic_replay/mod.rs"),
+        name: "production_adapter/mod.rs",
+        contents: include_str!("production_adapter/mod.rs"),
     },
 ];
 
 const WDEV_APPEND_RX_BLOCKS_DRIVER_ADAPTER_SOURCES: &[EvidenceSource] = &[
     EvidenceSource {
-        name: "semantic_replay/wdev_append_rx_blocks.rs",
-        contents: include_str!("semantic_replay/wdev_append_rx_blocks.rs"),
+        name: "production_adapter/wdev_append_rx_blocks.rs",
+        contents: include_str!("production_adapter/wdev_append_rx_blocks.rs"),
     },
     EvidenceSource {
-        name: "semantic_replay/mod.rs",
-        contents: include_str!("semantic_replay/mod.rs"),
+        name: "production_adapter/mod.rs",
+        contents: include_str!("production_adapter/mod.rs"),
     },
 ];
 
 const STA_JOIN_STATE_DRIVER_ADAPTER_SOURCES: &[EvidenceSource] = &[
     EvidenceSource {
-        name: "semantic_replay/sta_join_state.rs",
-        contents: include_str!("semantic_replay/sta_join_state.rs"),
+        name: "production_adapter/sta_join_state.rs",
+        contents: include_str!("production_adapter/sta_join_state.rs"),
     },
     EvidenceSource {
-        name: "semantic_replay/mod.rs",
-        contents: include_str!("semantic_replay/mod.rs"),
+        name: "production_adapter/mod.rs",
+        contents: include_str!("production_adapter/mod.rs"),
     },
 ];
 
 const WIFI_KEY_ROLE_DRIVER_ADAPTER_SOURCES: &[EvidenceSource] = &[
     EvidenceSource {
-        name: "semantic_replay/wifi_key_role.rs",
-        contents: include_str!("semantic_replay/wifi_key_role.rs"),
+        name: "production_adapter/wifi_key_role.rs",
+        contents: include_str!("production_adapter/wifi_key_role.rs"),
     },
     EvidenceSource {
-        name: "semantic_replay/mod.rs",
-        contents: include_str!("semantic_replay/mod.rs"),
-    },
-];
-
-const SEMANTIC_COMMON_SOURCES: &[EvidenceSource] = &[
-    EvidenceSource {
-        name: "semantic_replay/mod.rs",
-        contents: include_str!("semantic_replay/mod.rs"),
-    },
-    EvidenceSource {
-        name: "semantic_replay/state.rs",
-        contents: include_str!("semantic_replay/state.rs"),
-    },
-    EvidenceSource {
-        name: "semantic_replay/runner.rs",
-        contents: include_str!("semantic_replay/runner.rs"),
-    },
-    EvidenceSource {
-        name: "semantic_replay/runner/parents.rs",
-        contents: include_str!("semantic_replay/runner/parents.rs"),
-    },
-    EvidenceSource {
-        name: "semantic_replay/bb_init/environment.rs",
-        contents: include_str!("semantic_replay/bb_init/environment.rs"),
-    },
-    EvidenceSource {
-        name: "semantic_replay/completion.rs",
-        contents: include_str!("semantic_replay/completion.rs"),
-    },
-    EvidenceSource {
-        name: "semantic_replay/completion/common.rs",
-        contents: include_str!("semantic_replay/completion/common.rs"),
-    },
-    EvidenceSource {
-        name: "semantic_replay/completion/parent.rs",
-        contents: include_str!("semantic_replay/completion/parent.rs"),
-    },
-    EvidenceSource {
-        name: "semantic_replay/completion/rx_gain.rs",
-        contents: include_str!("semantic_replay/completion/rx_gain.rs"),
-    },
-    EvidenceSource {
-        name: "semantic_replay/completion/rx_iq.rs",
-        contents: include_str!("semantic_replay/completion/rx_iq.rs"),
-    },
-    EvidenceSource {
-        name: "semantic_replay/completion/tx.rs",
-        contents: include_str!("semantic_replay/completion/tx.rs"),
+        name: "production_adapter/mod.rs",
+        contents: include_str!("production_adapter/mod.rs"),
     },
 ];
 
@@ -451,45 +324,8 @@ pub fn driver_adapter_evidence_sources(id: &str) -> Option<DriverAdapterEvidence
 }
 
 pub fn semantic_contract_evidence_sources(id: &str) -> Option<SemanticContractEvidenceSources> {
-    let contract = match id {
-        "esp32s31-channel" => EvidenceSource {
-            name: "semantic_replay/channel.rs",
-            contents: include_str!("semantic_replay/channel.rs"),
-        },
-        "esp32s31-rf-init" => EvidenceSource {
-            name: "semantic_replay/rf_init.rs",
-            contents: include_str!("semantic_replay/rf_init.rs"),
-        },
-        "esp32s31-bluetooth-txdc" => EvidenceSource {
-            name: "semantic_replay/bluetooth_txdc.rs",
-            contents: include_str!("semantic_replay/bluetooth_txdc.rs"),
-        },
-        "esp32s31-bluetooth-txdc-pwdet" => EvidenceSource {
-            name: "semantic_replay/bluetooth_txdc_pwdet.rs",
-            contents: include_str!("semantic_replay/bluetooth_txdc_pwdet.rs"),
-        },
-        "esp32s31-bluetooth-tx-power" => EvidenceSource {
-            name: "semantic_replay/bluetooth_tx_power.rs",
-            contents: include_str!("semantic_replay/bluetooth_tx_power.rs"),
-        },
-        "esp32s31-bluetooth-tx-gain-init" => EvidenceSource {
-            name: "semantic_replay/bluetooth_tx_gain.rs",
-            contents: include_str!("semantic_replay/bluetooth_tx_gain.rs"),
-        },
-        "esp32s31-baseband-init" => EvidenceSource {
-            name: "semantic_replay/bb_init.rs",
-            contents: include_str!("semantic_replay/bb_init.rs"),
-        },
-        "esp32s31-register-init" => EvidenceSource {
-            name: "semantic_replay/register_init.rs",
-            contents: include_str!("semantic_replay/register_init.rs"),
-        },
-        _ => return None,
-    };
-    Some(SemanticContractEvidenceSources {
-        common: SEMANTIC_COMMON_SOURCES,
-        contract,
-    })
+    let _ = id;
+    None
 }
 
 pub fn artifact_sha256(path: &Path) -> Result<String> {

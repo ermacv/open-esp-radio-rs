@@ -73,16 +73,14 @@ when it reaches the declared compiled production boundary. Semantic contracts
 remain useful research evidence but do not prove manually written driver
 sequencing.
 
-`phy_chip_set_chan` is the first semantic-to-production binding. The probe
-symbol `open_phy_production_trace_phy_chip_set_chan` invokes the real
-`select_phy_channel` implementation and firmware ESP-HAL adapter. It already
-builds against the same PAC revision as firmware, and both concrete entries
-execute to completion. Their first unreviewed difference is analog-I²C host
-selection: the vendor ROM path uses the recovered `0x1a00` configuration while
-production uses the newer recovered `0x3fa00` configuration. The existing
-`esp32s31-channel` semantic contract remains research-only until that difference
-and the remaining ordered effects have been reviewed; it must not be described
-as production equivalence before then.
+`phy_chip_set_chan` remains an explicit production-verification gap. The old
+provider-owned semantic contract was removed because it normalized both traces
+and computed its own verdict instead of proving the compiled shipping entry.
+The retained observations show the first unreviewed difference at analog-I²C
+host selection: the vendor ROM path uses the recovered `0x1a00` configuration,
+while production uses the newer recovered `0x3fa00` configuration. Closing the
+gap requires a generic comparison of the compiled production boundary, with
+that difference and the remaining ordered effects reviewed explicitly.
 
 For concepts and schemas, start at
 [`tools/vendor-binary-workbench/README.md`](../../../../tools/vendor-binary-workbench/README.md).

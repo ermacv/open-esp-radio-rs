@@ -37,7 +37,9 @@ neutral project manifest. A generic project can therefore analyze and publish
 register evidence without linking a production comparison implementation.
 The chip pack's knowledge provider and the add-on's verification provider are
 independent inputs: lifting/generated references use only the former, while
-production adapters and semantic-contract replays use only the latter.
+compiled-production adapters use only the latter. Generic semantic contracts
+remain a research evidence class, but the ESP32-S31 provider no longer owns
+self-verdict contracts.
 
 Effect contracts define the ordered observable reads, writes, calls, state
 changes and allowed normalizations. Unlisted effects fail closed. Concrete
@@ -77,14 +79,13 @@ Migration happens one function at a time:
 5. delete the redundant semantic model only after no policy/report depends on
    it.
 
-`phy_chip_set_chan` is the first such production binding. Its wrapper now
-builds against the same ESP-HAL and PAC revisions as firmware; the semantic
-contract remains explicitly research-only. Both concrete entries execute to
-completion, but their analog-I²C host-selection writes currently differ: the
-vendor ROM path uses the recovered `0x1a00` configuration and production uses
-the newer recovered `0x3fa00` configuration. That difference must be classified
-from target provenance and HIL evidence before it can be accepted, fixed or
-normalized.
+The former ESP32-S31 `phy_chip_set_chan` self-verdict contract has been
+deleted. Its retained observations expose a real production-verification gap:
+the vendor ROM path uses the recovered `0x1a00` analog-I²C host configuration,
+while production uses the newer recovered `0x3fa00` configuration. A new
+generic comparison must bind the compiled shipping entry and classify that
+difference from target provenance and HIL evidence before it can be accepted
+or fixed. It must not be normalized into a whole-function match.
 
 ## Reports and gates
 

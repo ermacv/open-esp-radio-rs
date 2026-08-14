@@ -88,14 +88,14 @@ profile-parser = "425e34c2aa46698971e2e8be1ab1e6e9d2d2737bd7b3afb913316708a62206
 source = "libpp"
 symbol = "hal_mac_txq_enable"
 kind = "driver-adapter/reviewed-refinement/exact-effects-v1"
-digest = "6d4ea14ed094025d966152a9796c6ec1e31a1ef2dc69aeded6dec076e4949cbd"
+digest = "ead51d22e6f873cddfbaf01cf491edd3b5a251d4b78b3500fa483e831efd3bf1"
 
 [evidence.components]
 adapter-proof = "cd4563c0070920a680e3ce3eef0091f3b1266d8f7893fffce273e04074120a63"
 binding = "5b7ce9c2851069b434b71c88c93c575af9e8880f1b0daaf3ea182094737b5954"
 binding-verifier = "f2fbf3cd269f3677ac698a66501e3e387f72ed2f8aa460dacd1e5ae6b0dc8bbd"
 claim = "1210f40bda7c850368826c970dc4d931b7d0481b6986eb0adf8c93b0bdcab22d"
-driver-adapter = "19f430ee47832ae1f7730f462618cf3ee7136aabee6bd8c56d0fd92465d46057"
+driver-adapter = "9c8a1965cf65d113a8186231c60a0fb840030ac32bb3a5ea4af6acbad7c0e17a"
 effect-comparator = "7e0c0424ae313df2bc7e5d8c282b5c38f04e8e53e472be08a56f4f89aabdb9ab"
 execution-engine = "450053b2430eee14958fc224a9e36950d3d5b5fb232f42105b36ecca5b37e87e"
 policy = "1be79c5ae70e1fef97ad742b318df8002dd802361168114d28f1eaffba66f0d0"

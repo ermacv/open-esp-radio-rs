@@ -110,31 +110,6 @@ profile-parser = "425e34c2aa46698971e2e8be1ab1e6e9d2d2737bd7b3afb913316708a62206
 
 [[evidence]]
 source = "archive"
-symbol = "phy_bb_init"
-kind = "composition-state-scenario/esp32s31-baseband-init"
-digest = "bc93b6b9825235542605e4cd7cd5c6a8771c912c7ebd97b38621669e8e33d6b6"
-
-[evidence.components]
-"execution/image.rs" = "f46f7043c5bcc1c9ee1a8254cdd8792837871b62c63b77e6e8a4f7e5bde6822f"
-"execution/machine.rs" = "b62a77d18f4dcae33adaf2ba9f22d97a27d344da4c34e31083ffe9a66c213978"
-"execution/model.rs" = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"
-"semantic_replay/bb_init.rs" = "686c7aa7a312c4ffce35be2b13d2baa9563951113e18ab06b03ca39abf300da6"
-"semantic_replay/bb_init/environment.rs" = "6dc49b94027dd66c5c827fa9b634b5c643ab2868b76e1349a28241d470390a48"
-"semantic_replay/completion.rs" = "d6d8ce9c5e86dd7386c3cf04ab4bb86fa062cb8138b16dd4065b20c6440f827c"
-"semantic_replay/completion/common.rs" = "279783a54d84974bd89d69b58e113f6a6e4b29bbb87769ccb042088f6e034c4e"
-"semantic_replay/completion/parent.rs" = "0bc123f5a3fb19e79cedfa8f17f47cf832e55b3e7c596083ef686499d23bffe0"
-"semantic_replay/completion/rx_gain.rs" = "97e54b12c7963cb84b2967289e9babb02e6bd57955804149b48a60433f48f670"
-"semantic_replay/completion/rx_iq.rs" = "f85d1c4f0cedc755da49fe63df2b105e21266cca1b4a6eb4992d9d0fb21deba9"
-"semantic_replay/completion/tx.rs" = "a67dab5353c51e15092eb62e1754f4f4c8b59d286f875e56c045b35288e02b10"
-"semantic_replay/mod.rs" = "4c7b03e2970bfe8034c6ff53b1999280f6387f449501c813f4202773b0bb0cdb"
-"semantic_replay/runner.rs" = "678e1e28abcca0fa87ea9d7822386c73340f0fefa2742b30445f80147d03a5da"
-"semantic_replay/runner/parents.rs" = "5a68262954aedc808aebe54ce7aefb4cdf10aed7fdfd179ba9707a65444c6acc"
-"semantic_replay/state.rs" = "8d206cd5af397189b4e0daa68a51a4baed312e82fde29a35b5eaa466d7ac6869"
-"verification/execution.rs" = "1a8d215f1a93e93155e791b0a566763718c6e402a8539209d518f96fc51d63fd"
-"verification/execution/scenario.rs" = "b2591a60e5e03d908d77486c3f4545204e3ad6e6b4c26da2a57efec747c5ddc6"
-
-[[evidence]]
-source = "archive"
 symbol = "phy_bb_txpwr_track"
 kind = "symbolic"
 
@@ -170,106 +145,6 @@ execution-machine = "47a8bd9864cefabd70bc0448b3e95298e716a9bad89247e9e425905d3b2
 execution-model = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"
 profile = "fa2e2c230a1dc0ff24c08750256faaff15380de061923d3bbd30132ef9ab8359"
 profile-parser = "425e34c2aa46698971e2e8be1ab1e6e9d2d2737bd7b3afb913316708a62206f4"
-
-[[evidence]]
-source = "archive"
-symbol = "phy_bt_tx_gain_init"
-kind = "composition-state-scenario/esp32s31-bluetooth-tx-gain-init"
-digest = "328a0be0ff6c53071bb050ea298f3a7d8cca43a90c191c87f263b023cdae9256"
-
-[evidence.components]
-"execution/image.rs" = "f46f7043c5bcc1c9ee1a8254cdd8792837871b62c63b77e6e8a4f7e5bde6822f"
-"execution/machine.rs" = "b62a77d18f4dcae33adaf2ba9f22d97a27d344da4c34e31083ffe9a66c213978"
-"execution/model.rs" = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"
-"semantic_replay/bb_init/environment.rs" = "6dc49b94027dd66c5c827fa9b634b5c643ab2868b76e1349a28241d470390a48"
-"semantic_replay/bluetooth_tx_gain.rs" = "f60f70c67307f65b106d9e0f394d792363221314602815f03070a2a3fc73a9b0"
-"semantic_replay/completion.rs" = "d6d8ce9c5e86dd7386c3cf04ab4bb86fa062cb8138b16dd4065b20c6440f827c"
-"semantic_replay/completion/common.rs" = "279783a54d84974bd89d69b58e113f6a6e4b29bbb87769ccb042088f6e034c4e"
-"semantic_replay/completion/parent.rs" = "0bc123f5a3fb19e79cedfa8f17f47cf832e55b3e7c596083ef686499d23bffe0"
-"semantic_replay/completion/rx_gain.rs" = "97e54b12c7963cb84b2967289e9babb02e6bd57955804149b48a60433f48f670"
-"semantic_replay/completion/rx_iq.rs" = "f85d1c4f0cedc755da49fe63df2b105e21266cca1b4a6eb4992d9d0fb21deba9"
-"semantic_replay/completion/tx.rs" = "a67dab5353c51e15092eb62e1754f4f4c8b59d286f875e56c045b35288e02b10"
-"semantic_replay/mod.rs" = "4c7b03e2970bfe8034c6ff53b1999280f6387f449501c813f4202773b0bb0cdb"
-"semantic_replay/runner.rs" = "678e1e28abcca0fa87ea9d7822386c73340f0fefa2742b30445f80147d03a5da"
-"semantic_replay/runner/parents.rs" = "5a68262954aedc808aebe54ce7aefb4cdf10aed7fdfd179ba9707a65444c6acc"
-"semantic_replay/state.rs" = "8d206cd5af397189b4e0daa68a51a4baed312e82fde29a35b5eaa466d7ac6869"
-"verification/execution.rs" = "1a8d215f1a93e93155e791b0a566763718c6e402a8539209d518f96fc51d63fd"
-"verification/execution/scenario.rs" = "b2591a60e5e03d908d77486c3f4545204e3ad6e6b4c26da2a57efec747c5ddc6"
-
-[[evidence]]
-source = "archive"
-symbol = "phy_bt_tx_pwctrl_init"
-kind = "composition-state-scenario/esp32s31-bluetooth-tx-power"
-digest = "06b7cee995180c79a9c9bddf829c694da3411779c691c09b58f7378fd7b2e2d1"
-
-[evidence.components]
-"execution/image.rs" = "f46f7043c5bcc1c9ee1a8254cdd8792837871b62c63b77e6e8a4f7e5bde6822f"
-"execution/machine.rs" = "b62a77d18f4dcae33adaf2ba9f22d97a27d344da4c34e31083ffe9a66c213978"
-"execution/model.rs" = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"
-"semantic_replay/bb_init/environment.rs" = "6dc49b94027dd66c5c827fa9b634b5c643ab2868b76e1349a28241d470390a48"
-"semantic_replay/bluetooth_tx_power.rs" = "b7e1df9954eefe0124756da85738a922190926d565a02f078cb4c58de2af8962"
-"semantic_replay/completion.rs" = "d6d8ce9c5e86dd7386c3cf04ab4bb86fa062cb8138b16dd4065b20c6440f827c"
-"semantic_replay/completion/common.rs" = "279783a54d84974bd89d69b58e113f6a6e4b29bbb87769ccb042088f6e034c4e"
-"semantic_replay/completion/parent.rs" = "0bc123f5a3fb19e79cedfa8f17f47cf832e55b3e7c596083ef686499d23bffe0"
-"semantic_replay/completion/rx_gain.rs" = "97e54b12c7963cb84b2967289e9babb02e6bd57955804149b48a60433f48f670"
-"semantic_replay/completion/rx_iq.rs" = "f85d1c4f0cedc755da49fe63df2b105e21266cca1b4a6eb4992d9d0fb21deba9"
-"semantic_replay/completion/tx.rs" = "a67dab5353c51e15092eb62e1754f4f4c8b59d286f875e56c045b35288e02b10"
-"semantic_replay/mod.rs" = "4c7b03e2970bfe8034c6ff53b1999280f6387f449501c813f4202773b0bb0cdb"
-"semantic_replay/runner.rs" = "678e1e28abcca0fa87ea9d7822386c73340f0fefa2742b30445f80147d03a5da"
-"semantic_replay/runner/parents.rs" = "5a68262954aedc808aebe54ce7aefb4cdf10aed7fdfd179ba9707a65444c6acc"
-"semantic_replay/state.rs" = "8d206cd5af397189b4e0daa68a51a4baed312e82fde29a35b5eaa466d7ac6869"
-"verification/execution.rs" = "1a8d215f1a93e93155e791b0a566763718c6e402a8539209d518f96fc51d63fd"
-"verification/execution/scenario.rs" = "b2591a60e5e03d908d77486c3f4545204e3ad6e6b4c26da2a57efec747c5ddc6"
-
-[[evidence]]
-source = "archive"
-symbol = "phy_bt_txdc_cal_new"
-kind = "composition-state-scenario/esp32s31-bluetooth-txdc"
-digest = "ba61526dd2ed4356bbb3848a61d385f65f24d9e25f23e025b1adec1a2ca4b268"
-
-[evidence.components]
-"execution/image.rs" = "f46f7043c5bcc1c9ee1a8254cdd8792837871b62c63b77e6e8a4f7e5bde6822f"
-"execution/machine.rs" = "b62a77d18f4dcae33adaf2ba9f22d97a27d344da4c34e31083ffe9a66c213978"
-"execution/model.rs" = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"
-"semantic_replay/bb_init/environment.rs" = "6dc49b94027dd66c5c827fa9b634b5c643ab2868b76e1349a28241d470390a48"
-"semantic_replay/bluetooth_txdc.rs" = "ce26b76b5c77b50a152cbc938202521a2f1b0b035b86bf3aa712cdab9a41926c"
-"semantic_replay/completion.rs" = "d6d8ce9c5e86dd7386c3cf04ab4bb86fa062cb8138b16dd4065b20c6440f827c"
-"semantic_replay/completion/common.rs" = "279783a54d84974bd89d69b58e113f6a6e4b29bbb87769ccb042088f6e034c4e"
-"semantic_replay/completion/parent.rs" = "0bc123f5a3fb19e79cedfa8f17f47cf832e55b3e7c596083ef686499d23bffe0"
-"semantic_replay/completion/rx_gain.rs" = "97e54b12c7963cb84b2967289e9babb02e6bd57955804149b48a60433f48f670"
-"semantic_replay/completion/rx_iq.rs" = "f85d1c4f0cedc755da49fe63df2b105e21266cca1b4a6eb4992d9d0fb21deba9"
-"semantic_replay/completion/tx.rs" = "a67dab5353c51e15092eb62e1754f4f4c8b59d286f875e56c045b35288e02b10"
-"semantic_replay/mod.rs" = "4c7b03e2970bfe8034c6ff53b1999280f6387f449501c813f4202773b0bb0cdb"
-"semantic_replay/runner.rs" = "678e1e28abcca0fa87ea9d7822386c73340f0fefa2742b30445f80147d03a5da"
-"semantic_replay/runner/parents.rs" = "5a68262954aedc808aebe54ce7aefb4cdf10aed7fdfd179ba9707a65444c6acc"
-"semantic_replay/state.rs" = "8d206cd5af397189b4e0daa68a51a4baed312e82fde29a35b5eaa466d7ac6869"
-"verification/execution.rs" = "1a8d215f1a93e93155e791b0a566763718c6e402a8539209d518f96fc51d63fd"
-"verification/execution/scenario.rs" = "b2591a60e5e03d908d77486c3f4545204e3ad6e6b4c26da2a57efec747c5ddc6"
-
-[[evidence]]
-source = "archive"
-symbol = "phy_chip_set_chan"
-kind = "composition-state-scenario/esp32s31-channel"
-digest = "28b588917dd9af4773bbabdb55cf3ba2fd73de972ffcb2012528c3023598fda4"
-
-[evidence.components]
-"execution/image.rs" = "f46f7043c5bcc1c9ee1a8254cdd8792837871b62c63b77e6e8a4f7e5bde6822f"
-"execution/machine.rs" = "b62a77d18f4dcae33adaf2ba9f22d97a27d344da4c34e31083ffe9a66c213978"
-"execution/model.rs" = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"
-"semantic_replay/bb_init/environment.rs" = "6dc49b94027dd66c5c827fa9b634b5c643ab2868b76e1349a28241d470390a48"
-"semantic_replay/channel.rs" = "37f2f59f99edfa25face00755e347def2085f70f25d84144ba893744abf315bb"
-"semantic_replay/completion.rs" = "d6d8ce9c5e86dd7386c3cf04ab4bb86fa062cb8138b16dd4065b20c6440f827c"
-"semantic_replay/completion/common.rs" = "279783a54d84974bd89d69b58e113f6a6e4b29bbb87769ccb042088f6e034c4e"
-"semantic_replay/completion/parent.rs" = "0bc123f5a3fb19e79cedfa8f17f47cf832e55b3e7c596083ef686499d23bffe0"
-"semantic_replay/completion/rx_gain.rs" = "97e54b12c7963cb84b2967289e9babb02e6bd57955804149b48a60433f48f670"
-"semantic_replay/completion/rx_iq.rs" = "f85d1c4f0cedc755da49fe63df2b105e21266cca1b4a6eb4992d9d0fb21deba9"
-"semantic_replay/completion/tx.rs" = "a67dab5353c51e15092eb62e1754f4f4c8b59d286f875e56c045b35288e02b10"
-"semantic_replay/mod.rs" = "4c7b03e2970bfe8034c6ff53b1999280f6387f449501c813f4202773b0bb0cdb"
-"semantic_replay/runner.rs" = "678e1e28abcca0fa87ea9d7822386c73340f0fefa2742b30445f80147d03a5da"
-"semantic_replay/runner/parents.rs" = "5a68262954aedc808aebe54ce7aefb4cdf10aed7fdfd179ba9707a65444c6acc"
-"semantic_replay/state.rs" = "8d206cd5af397189b4e0daa68a51a4baed312e82fde29a35b5eaa466d7ac6869"
-"verification/execution.rs" = "1a8d215f1a93e93155e791b0a566763718c6e402a8539209d518f96fc51d63fd"
-"verification/execution/scenario.rs" = "b2591a60e5e03d908d77486c3f4545204e3ad6e6b4c26da2a57efec747c5ddc6"
 
 [[evidence]]
 source = "archive"
@@ -441,31 +316,6 @@ profile-parser = "425e34c2aa46698971e2e8be1ab1e6e9d2d2737bd7b3afb913316708a62206
 
 [[evidence]]
 source = "archive"
-symbol = "phy_rf_init"
-kind = "composition-state-scenario/esp32s31-rf-init"
-digest = "6addb69cf216717e8281343f11ca7e0d187a26711ac9d234fe7067cb7688cc16"
-
-[evidence.components]
-"execution/image.rs" = "f46f7043c5bcc1c9ee1a8254cdd8792837871b62c63b77e6e8a4f7e5bde6822f"
-"execution/machine.rs" = "b62a77d18f4dcae33adaf2ba9f22d97a27d344da4c34e31083ffe9a66c213978"
-"execution/model.rs" = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"
-"semantic_replay/bb_init/environment.rs" = "6dc49b94027dd66c5c827fa9b634b5c643ab2868b76e1349a28241d470390a48"
-"semantic_replay/completion.rs" = "d6d8ce9c5e86dd7386c3cf04ab4bb86fa062cb8138b16dd4065b20c6440f827c"
-"semantic_replay/completion/common.rs" = "279783a54d84974bd89d69b58e113f6a6e4b29bbb87769ccb042088f6e034c4e"
-"semantic_replay/completion/parent.rs" = "0bc123f5a3fb19e79cedfa8f17f47cf832e55b3e7c596083ef686499d23bffe0"
-"semantic_replay/completion/rx_gain.rs" = "97e54b12c7963cb84b2967289e9babb02e6bd57955804149b48a60433f48f670"
-"semantic_replay/completion/rx_iq.rs" = "f85d1c4f0cedc755da49fe63df2b105e21266cca1b4a6eb4992d9d0fb21deba9"
-"semantic_replay/completion/tx.rs" = "a67dab5353c51e15092eb62e1754f4f4c8b59d286f875e56c045b35288e02b10"
-"semantic_replay/mod.rs" = "4c7b03e2970bfe8034c6ff53b1999280f6387f449501c813f4202773b0bb0cdb"
-"semantic_replay/rf_init.rs" = "d8aadfc48f8bb684f3b2ea667a2817d0bf3a4d049605f59cd4650c25f3b7234d"
-"semantic_replay/runner.rs" = "678e1e28abcca0fa87ea9d7822386c73340f0fefa2742b30445f80147d03a5da"
-"semantic_replay/runner/parents.rs" = "5a68262954aedc808aebe54ce7aefb4cdf10aed7fdfd179ba9707a65444c6acc"
-"semantic_replay/state.rs" = "8d206cd5af397189b4e0daa68a51a4baed312e82fde29a35b5eaa466d7ac6869"
-"verification/execution.rs" = "1a8d215f1a93e93155e791b0a566763718c6e402a8539209d518f96fc51d63fd"
-"verification/execution/scenario.rs" = "b2591a60e5e03d908d77486c3f4545204e3ad6e6b4c26da2a57efec747c5ddc6"
-
-[[evidence]]
-source = "archive"
 symbol = "phy_set_ftm_en"
 kind = "symbolic"
 
@@ -509,31 +359,6 @@ profile-parser = "425e34c2aa46698971e2e8be1ab1e6e9d2d2737bd7b3afb913316708a62206
 
 [[evidence]]
 source = "archive"
-symbol = "phy_txdc_cal_pwdet_init"
-kind = "composition-state-scenario/esp32s31-bluetooth-txdc-pwdet"
-digest = "7bea3ed41d6b7f27466e02637947899dacd415a3ca89c72a8df72de8b971550f"
-
-[evidence.components]
-"execution/image.rs" = "f46f7043c5bcc1c9ee1a8254cdd8792837871b62c63b77e6e8a4f7e5bde6822f"
-"execution/machine.rs" = "b62a77d18f4dcae33adaf2ba9f22d97a27d344da4c34e31083ffe9a66c213978"
-"execution/model.rs" = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"
-"semantic_replay/bb_init/environment.rs" = "6dc49b94027dd66c5c827fa9b634b5c643ab2868b76e1349a28241d470390a48"
-"semantic_replay/bluetooth_txdc_pwdet.rs" = "53393594fa11de20c247df89c0ccc6c134d61e946cbb1ecd94ac9384229ac516"
-"semantic_replay/completion.rs" = "d6d8ce9c5e86dd7386c3cf04ab4bb86fa062cb8138b16dd4065b20c6440f827c"
-"semantic_replay/completion/common.rs" = "279783a54d84974bd89d69b58e113f6a6e4b29bbb87769ccb042088f6e034c4e"
-"semantic_replay/completion/parent.rs" = "0bc123f5a3fb19e79cedfa8f17f47cf832e55b3e7c596083ef686499d23bffe0"
-"semantic_replay/completion/rx_gain.rs" = "97e54b12c7963cb84b2967289e9babb02e6bd57955804149b48a60433f48f670"
-"semantic_replay/completion/rx_iq.rs" = "f85d1c4f0cedc755da49fe63df2b105e21266cca1b4a6eb4992d9d0fb21deba9"
-"semantic_replay/completion/tx.rs" = "a67dab5353c51e15092eb62e1754f4f4c8b59d286f875e56c045b35288e02b10"
-"semantic_replay/mod.rs" = "4c7b03e2970bfe8034c6ff53b1999280f6387f449501c813f4202773b0bb0cdb"
-"semantic_replay/runner.rs" = "678e1e28abcca0fa87ea9d7822386c73340f0fefa2742b30445f80147d03a5da"
-"semantic_replay/runner/parents.rs" = "5a68262954aedc808aebe54ce7aefb4cdf10aed7fdfd179ba9707a65444c6acc"
-"semantic_replay/state.rs" = "8d206cd5af397189b4e0daa68a51a4baed312e82fde29a35b5eaa466d7ac6869"
-"verification/execution.rs" = "1a8d215f1a93e93155e791b0a566763718c6e402a8539209d518f96fc51d63fd"
-"verification/execution/scenario.rs" = "b2591a60e5e03d908d77486c3f4545204e3ad6e6b4c26da2a57efec747c5ddc6"
-
-[[evidence]]
-source = "archive"
 symbol = "read_hw_noisefloor"
 kind = "whole-function-equivalence/profile:scenario/archive-read-hardware-noise-floor"
 digest = "06f7f9ce7e0c6623b4a6b5108cfe5b6b1fe3ffee6b4fe29a7969116841aea672"
@@ -545,31 +370,6 @@ execution-machine = "47a8bd9864cefabd70bc0448b3e95298e716a9bad89247e9e425905d3b2
 execution-model = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"
 profile = "2aa06097de9f219d3c93880c39df3e167cfe3efdd6b7c0fda2a14166c574ea9a"
 profile-parser = "425e34c2aa46698971e2e8be1ab1e6e9d2d2737bd7b3afb913316708a62206f4"
-
-[[evidence]]
-source = "archive"
-symbol = "register_chipv7_phy"
-kind = "composition-state-scenario/esp32s31-register-init"
-digest = "6edc34bbea4571b1a38ac8f6103d557ec97874a7d75297eb8ae1d00620b3b15f"
-
-[evidence.components]
-"execution/image.rs" = "f46f7043c5bcc1c9ee1a8254cdd8792837871b62c63b77e6e8a4f7e5bde6822f"
-"execution/machine.rs" = "b62a77d18f4dcae33adaf2ba9f22d97a27d344da4c34e31083ffe9a66c213978"
-"execution/model.rs" = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"
-"semantic_replay/bb_init/environment.rs" = "6dc49b94027dd66c5c827fa9b634b5c643ab2868b76e1349a28241d470390a48"
-"semantic_replay/completion.rs" = "d6d8ce9c5e86dd7386c3cf04ab4bb86fa062cb8138b16dd4065b20c6440f827c"
-"semantic_replay/completion/common.rs" = "279783a54d84974bd89d69b58e113f6a6e4b29bbb87769ccb042088f6e034c4e"
-"semantic_replay/completion/parent.rs" = "0bc123f5a3fb19e79cedfa8f17f47cf832e55b3e7c596083ef686499d23bffe0"
-"semantic_replay/completion/rx_gain.rs" = "97e54b12c7963cb84b2967289e9babb02e6bd57955804149b48a60433f48f670"
-"semantic_replay/completion/rx_iq.rs" = "f85d1c4f0cedc755da49fe63df2b105e21266cca1b4a6eb4992d9d0fb21deba9"
-"semantic_replay/completion/tx.rs" = "a67dab5353c51e15092eb62e1754f4f4c8b59d286f875e56c045b35288e02b10"
-"semantic_replay/mod.rs" = "4c7b03e2970bfe8034c6ff53b1999280f6387f449501c813f4202773b0bb0cdb"
-"semantic_replay/register_init.rs" = "2c088ae935e1ba8de58c321a5a9e253b56c2ae91825ef7c70c288ca1017840c8"
-"semantic_replay/runner.rs" = "678e1e28abcca0fa87ea9d7822386c73340f0fefa2742b30445f80147d03a5da"
-"semantic_replay/runner/parents.rs" = "5a68262954aedc808aebe54ce7aefb4cdf10aed7fdfd179ba9707a65444c6acc"
-"semantic_replay/state.rs" = "8d206cd5af397189b4e0daa68a51a4baed312e82fde29a35b5eaa466d7ac6869"
-"verification/execution.rs" = "1a8d215f1a93e93155e791b0a566763718c6e402a8539209d518f96fc51d63fd"
-"verification/execution/scenario.rs" = "b2591a60e5e03d908d77486c3f4545204e3ad6e6b4c26da2a57efec747c5ddc6"
 
 [[evidence]]
 source = "archive"
@@ -892,14 +692,14 @@ kind = "symbolic"
 source = "rom"
 symbol = "phy_iq_est_enable"
 kind = "driver-adapter/reviewed-refinement/exact-effects-v1"
-digest = "13373e498e8bee279319fb6a665a6e9e8babdeeef9c720eb4b5d2b73f107b01f"
+digest = "d91f4c1ec5a72f7228879ed8b7192fe9a1a5c08091cfc91e372ec2f4551e1013"
 
 [evidence.components]
 adapter-proof = "65c8a0336b18a78ae46068bac6087bd8a6bc0be16964fad52458edb8016cd945"
 binding = "acca0bca887d3e085472d19634b97a3590a8bb5dbfaeebdd3f2471f4ea29b313"
 binding-verifier = "f2fbf3cd269f3677ac698a66501e3e387f72ed2f8aa460dacd1e5ae6b0dc8bbd"
 claim = "1210f40bda7c850368826c970dc4d931b7d0481b6986eb0adf8c93b0bdcab22d"
-driver-adapter = "1122c198b1665dc6b4167f53f0ce0d6b7bc9101ad4256c5bad17a4d594e8fac1"
+driver-adapter = "6cefbb98da8481c550ec7c23e0ab188df86126b323c1a6d6eecb601988e227fd"
 effect-comparator = "7e0c0424ae313df2bc7e5d8c282b5c38f04e8e53e472be08a56f4f89aabdb9ab"
 execution-engine = "450053b2430eee14958fc224a9e36950d3d5b5fb232f42105b36ecca5b37e87e"
 policy = "27b20a43eba0dd7ed60ab572a9a88733422bc12b58829e1f9d8f51d8d7c31f5b"

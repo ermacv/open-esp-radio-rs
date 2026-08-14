@@ -4,14 +4,14 @@ schema = 2
 source = "wifi-key-role"
 symbol = "wDev_Insert_KeyEntry"
 kind = "driver-adapter/rust-conformance/exact-effects-v1"
-digest = "fa27d2791488b2bbfe2207e08d261864f383899f76e632e4867a2e6f2eacfb01"
+digest = "f2470d5fd2e2540bb2fcb16f17ecffe8fb463be0986b358feac735fcb58565eb"
 
 [evidence.components]
 adapter-proof = "53dc3cad05504cfba00d34ffcc94641cf780dfec2d6b6eda1cb9d9de13f5a96a"
 binding = "b528ca7e9231026a8be29bc14d3f85d4b1483e78bb48daccc7b6db428b1ae32c"
 binding-verifier = "f2fbf3cd269f3677ac698a66501e3e387f72ed2f8aa460dacd1e5ae6b0dc8bbd"
 claim = "7d715299d4ce03d4a4a120036c14adae28e138306fc3e268fc70fd9ddb954616"
-driver-adapter = "8bc2bd096009bda597bc001cc2e6eed111fa4dab12f8438f72ea431170be7751"
+driver-adapter = "7977c4845d059873855c3be56750fd18198d36ca0e98d335a2ef71831779edda"
 effect-comparator = "7e0c0424ae313df2bc7e5d8c282b5c38f04e8e53e472be08a56f4f89aabdb9ab"
 execution-engine = "450053b2430eee14958fc224a9e36950d3d5b5fb232f42105b36ecca5b37e87e"
 policy = "02e083c0db9be2fd7715f8c51849d388691a4986d43b5f0117c1413c855c101a"

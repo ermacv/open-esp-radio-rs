@@ -20,7 +20,7 @@ fn workbench() -> Command {
 }
 
 #[test]
-fn provider_contract_failures_stay_on_stderr() {
+fn removed_provider_contracts_fail_before_reading_artifacts() {
     let output = workbench()
         .args(["advanced", "verify", "contract", "channel", "--project"])
         .arg(project())
@@ -41,7 +41,8 @@ fn provider_contract_failures_stay_on_stderr() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("workbench::addon::provider"));
     assert!(stderr.contains("add-on provider \"esp32s31-radio-verification-v1\" failed"));
-    assert!(stderr.contains("No such file or directory"));
+    assert!(stderr.contains("has no self-verdict semantic contract \"channel\""));
+    assert!(!stderr.contains("No such file or directory"));
     assert!(!stderr.contains("Usage:"));
 }
 

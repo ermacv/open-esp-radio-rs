@@ -4,25 +4,24 @@ schema = 2
 source = "libpp"
 symbol = "hal_mac_set_addr"
 kind = "whole-function-equivalence/profile:scenario/wifi-interface-address"
-digest = "5c76b3063ccfdc50e4d252fd14757cbb61d55e47a0cef93332c4869e95aa81bb"
+digest = "bf6df792aa89e5891589e952851b091f52e480659b5eeabd120c4e68910c688f"
 
 [evidence.components]
-comparison-orchestrator = "e9af803daf6ab44af42a93b3cead563c60bf06945929c1b879c8112be2f87d60"
-execution-image = "241a2c07ca5860bd273851868270bbd5d33c68217d8c83ef8c9589f1dd821663"
+comparison-orchestrator = "44e7ab697efc3977500cf4393dd8f1439778e73626bdec039df5c42020d8a347"
+execution-image = "86b7410aff6595f1a02c224e2996cd0305c4589329caac31daca4d364133fba6"
 execution-machine = "47a8bd9864cefabd70bc0448b3e95298e716a9bad89247e9e425905d3b2ee806"
 execution-model = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"
 profile = "b11146ea0af2a8ad98b0e2171019d55cf6f120c26573bfec9851e382e86ab916"
 profile-parser = "b74a953178bd2336018bed3f51b66360202345578297934e7c8c6e79886fb86b"
-
 [[evidence]]
 source = "libpp"
 symbol = "hal_mac_set_bssid"
 kind = "whole-function-equivalence/profile:scenario/wifi-interface-bssid"
-digest = "5a272983cad9e058cf8dec7edf4e1fb259921a7211645c7cc71b787c8db2d88f"
+digest = "7ddd3d5a61905cad8694b4186d68708a20cfde0f1cba4d49ded7c3c61d740df4"
 
 [evidence.components]
-comparison-orchestrator = "e9af803daf6ab44af42a93b3cead563c60bf06945929c1b879c8112be2f87d60"
-execution-image = "241a2c07ca5860bd273851868270bbd5d33c68217d8c83ef8c9589f1dd821663"
+comparison-orchestrator = "44e7ab697efc3977500cf4393dd8f1439778e73626bdec039df5c42020d8a347"
+execution-image = "86b7410aff6595f1a02c224e2996cd0305c4589329caac31daca4d364133fba6"
 execution-machine = "47a8bd9864cefabd70bc0448b3e95298e716a9bad89247e9e425905d3b2ee806"
 execution-model = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"
 profile = "aca1ed65c40c27ad9ae7c7e4ebe5f8ed1a3b639f401ba79a6abe85a5558a0296"

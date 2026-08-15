@@ -1,0 +1,154 @@
+schema = 3
+
+# Normal 802.11g 54M schedule only. The vendor and compiled production sides
+# receive the same descriptor image and are compared through the selected-rate
+# byte at offset 0x0c. Vendor replay stops at rcGetSMPDURate so this claim does
+# not silently absorb PLCP construction or fixed-rate branches.
+[[profiles]]
+name = "libpp-ordinary-rc-get-rate"
+claim = "reviewed-domain-equivalence"
+precondition = "normal-dot11g-54m-schedule-before-rc-get-smpdu-rate"
+vendor-source = "libpp"
+vendor-symbol = "rcGetRate"
+rust-symbol = "open_libpp_tx_retry_trace_rc_get_rate"
+compare-return = false
+[[profiles.argument-values]]
+index = 0
+values = [0x3fff1100]
+[[profiles.argument-values]]
+index = 1
+values = [0x3fff1000]
+
+[[profiles.cases]]
+name = "initial-publication"
+arguments = [0x3fff1100, 0x3fff1000]
+vendor-goal = { kind = "observe-call", symbol = "rcGetSMPDURate" }
+observe = [{ address = 0x3fff100c, length = 1 }]
+vendor-calls = [{ symbol = "wifi_assert", return-words = [0] }]
+ram = [
+    { address = 0x3fff1000, value = 0 },
+    { address = 0x3fff1004, value = 0 },
+    { address = 0x3fff100c, value = 0xffffffff },
+    { address = 0x3fff101c, value = 0x3fff1200 },
+    { address = 0x3fff110c, value = 0 },
+    { address = 0x3fff1200, value = 0x0208020c },
+    { address = 0x3fff1204, value = 0x1906030b },
+]
+
+[[profiles.cases]]
+name = "second-publication"
+arguments = [0x3fff1100, 0x3fff1000]
+vendor-goal = { kind = "observe-call", symbol = "rcGetSMPDURate" }
+observe = [{ address = 0x3fff100c, length = 1 }]
+vendor-calls = [{ symbol = "wifi_assert", return-words = [0] }]
+ram = [
+    { address = 0x3fff1000, value = 0 },
+    { address = 0x3fff1004, value = 0x00010100 },
+    { address = 0x3fff100c, value = 0xffffffff },
+    { address = 0x3fff101c, value = 0x3fff1200 },
+    { address = 0x3fff110c, value = 0 },
+    { address = 0x3fff1200, value = 0x0208020c },
+    { address = 0x3fff1204, value = 0x1906030b },
+]
+
+[[profiles.cases]]
+name = "first-rate-fallback"
+arguments = [0x3fff1100, 0x3fff1000]
+vendor-goal = { kind = "observe-call", symbol = "rcGetSMPDURate" }
+observe = [{ address = 0x3fff100c, length = 1 }]
+vendor-calls = [{ symbol = "wifi_assert", return-words = [0] }]
+ram = [
+    { address = 0x3fff1000, value = 0 },
+    { address = 0x3fff1004, value = 0x00020200 },
+    { address = 0x3fff100c, value = 0xffffffff },
+    { address = 0x3fff101c, value = 0x3fff1200 },
+    { address = 0x3fff110c, value = 0 },
+    { address = 0x3fff1200, value = 0x0208020c },
+    { address = 0x3fff1204, value = 0x1906030b },
+]
+
+[[profiles.cases]]
+name = "short-counter-dominates-mpdu"
+arguments = [0x3fff1100, 0x3fff1000]
+vendor-goal = { kind = "observe-call", symbol = "rcGetSMPDURate" }
+observe = [{ address = 0x3fff100c, length = 1 }]
+vendor-calls = [{ symbol = "wifi_assert", return-words = [0] }]
+ram = [
+    { address = 0x3fff1000, value = 0 },
+    { address = 0x3fff1004, value = 0x00040200 },
+    { address = 0x3fff100c, value = 0xffffffff },
+    { address = 0x3fff101c, value = 0x3fff1200 },
+    { address = 0x3fff110c, value = 0 },
+    { address = 0x3fff1200, value = 0x0208020c },
+    { address = 0x3fff1204, value = 0x1906030b },
+]
+
+# Retry-relevant status-four dispatch. Each side stops at the selected leaf:
+# the vendor lmacProcess* call and a validation-only marker reached through the
+# exact compiled production TxCompletion::disposition implementation.
+[[profiles]]
+name = "libpp-lmac-process-tx-error-dispatch"
+claim = "reviewed-domain-equivalence"
+precondition = "status-four-zero-selector-retry-relevant-detail-domain"
+vendor-source = "libpp-replay"
+vendor-symbol = "lmacProcessTxError"
+rust-symbol = "open_libpp_tx_retry_trace_lmac_process_tx_error"
+compare-return = false
+[[profiles.argument-values]]
+index = 0
+values = [0]
+[[profiles.argument-values]]
+index = 1
+values = [0, 1, 2, 3, 4, 5, 6]
+[[profiles.argument-values]]
+index = 2
+values = [0]
+
+[[profiles.cases]]
+name = "detail-zero-cts-timeout"
+arguments = [0, 0, 0]
+vendor-goal = { kind = "observe-call", symbol = "lmacProcessCtsTimeout" }
+rust-goal = { kind = "observe-call", symbol = "open_libpp_tx_retry_cts_timeout" }
+vendor-calls = [{ symbol = "wifi_assert", return-words = [0] }]
+
+[[profiles.cases]]
+name = "detail-one-collision"
+arguments = [0, 1, 0]
+vendor-goal = { kind = "observe-call", symbol = "lmacProcessCollision" }
+rust-goal = { kind = "observe-call", symbol = "open_libpp_tx_retry_collision" }
+vendor-calls = [{ symbol = "wifi_assert", return-words = [0] }]
+
+[[profiles.cases]]
+name = "detail-two-ack-timeout"
+arguments = [0, 2, 0]
+vendor-goal = { kind = "observe-call", symbol = "lmacProcessAckTimeout" }
+rust-goal = { kind = "observe-call", symbol = "open_libpp_tx_retry_ack_timeout" }
+vendor-calls = [{ symbol = "wifi_assert", return-words = [0] }]
+
+[[profiles.cases]]
+name = "detail-three-collision"
+arguments = [0, 3, 0]
+vendor-goal = { kind = "observe-call", symbol = "lmacProcessCollision" }
+rust-goal = { kind = "observe-call", symbol = "open_libpp_tx_retry_collision" }
+vendor-calls = [{ symbol = "wifi_assert", return-words = [0] }]
+
+[[profiles.cases]]
+name = "detail-four-collision"
+arguments = [0, 4, 0]
+vendor-goal = { kind = "observe-call", symbol = "lmacProcessCollision" }
+rust-goal = { kind = "observe-call", symbol = "open_libpp_tx_retry_collision" }
+vendor-calls = [{ symbol = "wifi_assert", return-words = [0] }]
+
+[[profiles.cases]]
+name = "detail-five-collision"
+arguments = [0, 5, 0]
+vendor-goal = { kind = "observe-call", symbol = "lmacProcessCollision" }
+rust-goal = { kind = "observe-call", symbol = "open_libpp_tx_retry_collision" }
+vendor-calls = [{ symbol = "wifi_assert", return-words = [0] }]
+
+[[profiles.cases]]
+name = "detail-six-ack-timeout"
+arguments = [0, 6, 0]
+vendor-goal = { kind = "observe-call", symbol = "lmacProcessAckTimeout" }
+rust-goal = { kind = "observe-call", symbol = "open_libpp_tx_retry_ack_timeout" }
+vendor-calls = [{ symbol = "wifi_assert", return-words = [0] }]

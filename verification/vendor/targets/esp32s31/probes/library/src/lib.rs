@@ -476,6 +476,95 @@ pub extern "C" fn open_libpp_tx_trace_hal_mac_tx_get_blockack(
     0
 }
 
+/// ABI projection around the exact production normal-rate selector.
+///
+/// The vendor entry receives a pointer-rich descriptor and stores the chosen
+/// rate at byte `0x0c`. The wrapper performs only that ABI projection; rate
+/// selection is owned by the compiled production function.
+#[unsafe(no_mangle)]
+#[inline(never)]
+pub extern "C" fn open_libpp_tx_retry_trace_rc_get_rate(
+    _rate_context: u32,
+    descriptor_address: u32,
+) {
+    use open_esp_radio_esp32s31_wifi_mac::{
+        tx::{LegacyRate, TxPhyRate},
+        tx_runtime::{OrdinaryRetryCounters, select_ordinary_retry_rate},
+    };
+
+    let descriptor = descriptor_address as *mut u8;
+    // SAFETY: every comparison case supplies a writable descriptor object
+    // covering the vendor counter and selected-rate bytes.
+    let counters = unsafe {
+        OrdinaryRetryCounters {
+            mpdu: descriptor.add(5).read(),
+            short: descriptor.add(6).read(),
+            long: descriptor.add(7).read(),
+        }
+    };
+    let selected = select_ordinary_retry_rate(TxPhyRate::Legacy(LegacyRate::Ofdm54M), counters)
+        .expect("reviewed rcGetRate cases remain inside the 54M schedule");
+    // SAFETY: the same case-owned descriptor covers byte 0x0c.
+    unsafe { descriptor.add(0x0c).write(selected.code()) };
+}
+
+// These validation-only leaves make the result of the compiled production
+// completion classifier observable without introducing a shadow numeric
+// encoding. The non-pure inline assembly prevents LLVM from deleting the
+// calls; comparison stops at the selected leaf before executing its body.
+#[unsafe(no_mangle)]
+#[inline(never)]
+pub extern "C" fn open_libpp_tx_retry_ack_timeout() {
+    // SAFETY: an empty volatile assembly block has no machine-visible inputs
+    // or outputs and exists only as an optimizer barrier in the probe image.
+    unsafe { core::arch::asm!("addi zero, zero, 1", options(nomem, nostack)) };
+}
+
+#[unsafe(no_mangle)]
+#[inline(never)]
+pub extern "C" fn open_libpp_tx_retry_cts_timeout() {
+    // SAFETY: see `open_libpp_tx_retry_ack_timeout`.
+    unsafe { core::arch::asm!("addi zero, zero, 2", options(nomem, nostack)) };
+}
+
+#[unsafe(no_mangle)]
+#[inline(never)]
+pub extern "C" fn open_libpp_tx_retry_collision() {
+    // SAFETY: see `open_libpp_tx_retry_ack_timeout`.
+    unsafe { core::arch::asm!("addi zero, zero, 3", options(nomem, nostack)) };
+}
+
+/// ABI projection around the exact production status-four classifier.
+#[unsafe(no_mangle)]
+#[inline(never)]
+pub extern "C" fn open_libpp_tx_retry_trace_lmac_process_tx_error(
+    _queue: u32,
+    detail: u32,
+    _selector: u32,
+) {
+    use open_esp_radio_esp32s31_wifi_mac::tx::{
+        TxCompletion, TxCompletionDisposition, TxCookie,
+    };
+
+    let completion = TxCompletion {
+        cookie: TxCookie(0),
+        status: 4,
+        trigger_flow: false,
+        used_alternate: false,
+        auxiliary_a_word: 0,
+        auxiliary_b_word: 0,
+        auxiliary_c_word: 0,
+        primary_word: detail,
+        alternate_word: 0,
+    };
+    match completion.disposition() {
+        TxCompletionDisposition::AckTimeout => open_libpp_tx_retry_ack_timeout(),
+        TxCompletionDisposition::CtsTimeout => open_libpp_tx_retry_cts_timeout(),
+        TxCompletionDisposition::Collision => open_libpp_tx_retry_collision(),
+        TxCompletionDisposition::Success | TxCompletionDisposition::Terminal(_) => {}
+    }
+}
+
 #[unsafe(no_mangle)]
 #[inline(never)]
 pub extern "C" fn open_libpp_interface_trace_hal_mac_set_addr(interface: u32, address: &[u8; 6]) {
@@ -1268,6 +1357,11 @@ pub fn retain_all_probes() {
     core::hint::black_box(open_libpp_tx_trace_hal_mac_txq_disable as *const ());
     core::hint::black_box(open_libpp_tx_trace_hal_mac_tx_config_edca as *const ());
     core::hint::black_box(open_libpp_tx_trace_hal_mac_tx_get_blockack as *const ());
+    core::hint::black_box(open_libpp_tx_retry_trace_rc_get_rate as *const ());
+    core::hint::black_box(open_libpp_tx_retry_trace_lmac_process_tx_error as *const ());
+    core::hint::black_box(open_libpp_tx_retry_ack_timeout as *const ());
+    core::hint::black_box(open_libpp_tx_retry_cts_timeout as *const ());
+    core::hint::black_box(open_libpp_tx_retry_collision as *const ());
     core::hint::black_box(open_libpp_interface_trace_hal_mac_set_addr as *const ());
     core::hint::black_box(open_libpp_interface_trace_hal_mac_set_bssid as *const ());
     core::hint::black_box(open_libpp_ap_tsf_trace_hal_disable_softap_tsf as *const ());

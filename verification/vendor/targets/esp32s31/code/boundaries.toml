@@ -69,7 +69,7 @@ artifact-sha256 = "fe37745f692a55bc930cdd7597b5f0c66c470ba208af9d109badc3801aa0a
 
 [[inputs]]
 source = "libpp-replay"
-artifact-sha256 = "f09fa8ac4ba05c3fb5e3cc161882af9ca5992a3d48058486264e5df9723e1a1d"
+artifact-sha256 = "cfcd9a207f760c69bf22037fc4f7213f27a6e09e9420690523b2d9fef487eba9"
 
 [[inputs]]
 source = "rom"
@@ -81,7 +81,7 @@ artifact-sha256 = "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227
 
 [[inputs]]
 source = "rust"
-artifact-sha256 = "d02346c4d19b3e1cd3ee662bcc8344dc1198cc4bbc0b1197dbbd9ea716d95422"
+artifact-sha256 = "5bb24e3955b4e1a41848bb8aa57f4f916b13c956f64503165910cf280bac3d39"
 
 [[inputs]]
 source = "wifi-key-role"

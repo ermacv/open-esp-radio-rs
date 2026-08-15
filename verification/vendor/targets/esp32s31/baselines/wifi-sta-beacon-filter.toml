@@ -4,11 +4,11 @@ schema = 2
 source = "wifi-sta-lifecycle"
 symbol = "hal_disable_sta_beacon_filter"
 kind = "whole-function-equivalence/profile:scenario/wifi-sta-disable-beacon-filter"
-digest = "be2aea49d121e76f57da7cadddec225138db021e8f491465117fb89e90efa52a"
+digest = "3310e78bd4f588d9c559c5c537722781e86ae97b7a1301642c5294ca8c3806ce"
 
 [evidence.components]
-comparison-orchestrator = "e9af803daf6ab44af42a93b3cead563c60bf06945929c1b879c8112be2f87d60"
-execution-image = "241a2c07ca5860bd273851868270bbd5d33c68217d8c83ef8c9589f1dd821663"
+comparison-orchestrator = "44e7ab697efc3977500cf4393dd8f1439778e73626bdec039df5c42020d8a347"
+execution-image = "86b7410aff6595f1a02c224e2996cd0305c4589329caac31daca4d364133fba6"
 execution-machine = "47a8bd9864cefabd70bc0448b3e95298e716a9bad89247e9e425905d3b2ee806"
 execution-model = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"
 profile = "5b4fc69bec4c106ae8a88eef9d8b3eb820d2c91b46c71731d6143493c1cefcaf"

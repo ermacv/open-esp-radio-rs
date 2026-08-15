@@ -1,6 +1,46 @@
 schema = 1
 
 [[surfaces]]
+id = "wifi-ordinary-tx-completion-dispatch"
+description = "The compiled ordinary-TX completion classifier separates status-four ACK timeout, CTS timeout and collision details over the reviewed zero-selector domain."
+kind = "bounded-property"
+
+[[surfaces.requirements]]
+id = "ordinary-tx-status-four-dispatch-reviewed-domain"
+description = "Every declared retry-relevant status-four detail reaches the same typed completion class as the vendor LMAC leaf dispatcher."
+suite = "libpp-tx-retry"
+source = "libpp-replay"
+symbol = "lmacProcessTxError"
+claim = "reviewed-domain-equivalence"
+
+[[surfaces.effects]]
+id = "ordinary-tx-status-four-disposition"
+vendor = { source = "libpp", symbol = "lmacProcessTxError", fingerprint = "sha256:9ebf922400b1ac0c6ec1602f08cf92b62c2f6fb57f7b28822b1325be1a909ba3" }
+disposition = "verified"
+requirement = "ordinary-tx-status-four-dispatch-reviewed-domain"
+rationale = "The bounded transaction observes only which retry-relevant LMAC leaf is selected for status four and selector zero."
+
+[[surfaces]]
+id = "wifi-ordinary-tx-normal-rate-selection"
+description = "The compiled ordinary-TX retry owner selects the next legacy rate from max(MPDU retry, short retry) for the reviewed 54M schedule domain."
+kind = "bounded-property"
+
+[[surfaces.requirements]]
+id = "ordinary-tx-rc-get-rate-reviewed-domain"
+description = "Every declared normal-schedule counter case writes the same selected-rate byte before vendor rcGetSMPDURate processing."
+suite = "libpp-tx-retry"
+source = "libpp"
+symbol = "rcGetRate"
+claim = "reviewed-domain-equivalence"
+
+[[surfaces.effects]]
+id = "ordinary-tx-selected-rate"
+vendor = { source = "libpp", symbol = "rcGetRate", fingerprint = "sha256:f2765e0061168c747978b7e4f018d22d8afe924dc441703146d8930b57dd2be4" }
+disposition = "verified"
+requirement = "ordinary-tx-rc-get-rate-reviewed-domain"
+rationale = "The bounded transaction observes only the selected-rate descriptor byte before PLCP reconstruction."
+
+[[surfaces]]
 id = "wifi-ap-sta-receive-registers"
 description = "Sparse vendor receive-policy cases six and eight match the closed production PAC/HAL register transactions without claiming shared AP+STA runtime ownership."
 kind = "bounded-property"

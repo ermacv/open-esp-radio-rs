@@ -306,6 +306,18 @@ roots = ["libpp:hal_mac_tsf_reset"]
 include-reachable = true
 
 [[review.scopes]]
+id = "wifi-tx-retry-rate"
+profiles = ["libpp-all"]
+roots = ["libpp:rcGetRate"]
+include-reachable = false
+
+[[review.scopes]]
+id = "wifi-tx-completion-dispatch"
+profiles = ["libpp-all"]
+roots = ["libpp:lmacProcessTxError"]
+include-reachable = false
+
+[[review.scopes]]
 id = "coex-core"
 profiles = ["coex-all"]
 roots = [

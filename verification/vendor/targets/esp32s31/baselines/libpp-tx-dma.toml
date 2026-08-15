@@ -4,25 +4,24 @@ schema = 2
 source = "libpp"
 symbol = "hal_mac_is_txq_enabled"
 kind = "whole-function-equivalence/profile:scenario/libpp-txq-enabled"
-digest = "20d6efda3beea6474195cb88b82670544109dec05bba7859a46de73f2bb9ef01"
+digest = "16c234e25f653773e91ec5a0086dd8ac44c9fd454820516c25c93c7543d53fb1"
 
 [evidence.components]
-comparison-orchestrator = "e9af803daf6ab44af42a93b3cead563c60bf06945929c1b879c8112be2f87d60"
-execution-image = "241a2c07ca5860bd273851868270bbd5d33c68217d8c83ef8c9589f1dd821663"
+comparison-orchestrator = "44e7ab697efc3977500cf4393dd8f1439778e73626bdec039df5c42020d8a347"
+execution-image = "86b7410aff6595f1a02c224e2996cd0305c4589329caac31daca4d364133fba6"
 execution-machine = "47a8bd9864cefabd70bc0448b3e95298e716a9bad89247e9e425905d3b2ee806"
 execution-model = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"
 profile = "18b330b3165efd9703b43ddd1c3c8e30b30da2794286d8fdf0a58ef1f52f76e7"
 profile-parser = "b74a953178bd2336018bed3f51b66360202345578297934e7c8c6e79886fb86b"
-
 [[evidence]]
 source = "libpp"
 symbol = "hal_mac_is_txq_valid"
 kind = "whole-function-equivalence/profile:scenario/libpp-txq-valid"
-digest = "37ae01ae5ac5afc7545c3aa595b228dbbf438185c2b23cb6d2391b2bebaf6b0a"
+digest = "9f9e0696ea41a22ed1df42ddd190d4ac4c3f017c2d68a06d84bd29257121996c"
 
 [evidence.components]
-comparison-orchestrator = "e9af803daf6ab44af42a93b3cead563c60bf06945929c1b879c8112be2f87d60"
-execution-image = "241a2c07ca5860bd273851868270bbd5d33c68217d8c83ef8c9589f1dd821663"
+comparison-orchestrator = "44e7ab697efc3977500cf4393dd8f1439778e73626bdec039df5c42020d8a347"
+execution-image = "86b7410aff6595f1a02c224e2996cd0305c4589329caac31daca4d364133fba6"
 execution-machine = "47a8bd9864cefabd70bc0448b3e95298e716a9bad89247e9e425905d3b2ee806"
 execution-model = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"
 profile = "d77a924218fc3072a6566efd22a7bdddcded3abc3f03c789bb4fab6a54dd0cea"
@@ -32,11 +31,11 @@ profile-parser = "b74a953178bd2336018bed3f51b66360202345578297934e7c8c6e79886fb8
 source = "libpp"
 symbol = "hal_mac_set_txq_invalid"
 kind = "whole-function-equivalence/profile:scenario/libpp-set-txq-invalid"
-digest = "382546ede96b2d8e733aa9ac6f615cf869dc97a5c788867ce67d97191626ca8a"
+digest = "38146f250f62b4227b12694b42f5e2d91275b131ab4d7ea87a0983c2ebe21acd"
 
 [evidence.components]
-comparison-orchestrator = "e9af803daf6ab44af42a93b3cead563c60bf06945929c1b879c8112be2f87d60"
-execution-image = "241a2c07ca5860bd273851868270bbd5d33c68217d8c83ef8c9589f1dd821663"
+comparison-orchestrator = "44e7ab697efc3977500cf4393dd8f1439778e73626bdec039df5c42020d8a347"
+execution-image = "86b7410aff6595f1a02c224e2996cd0305c4589329caac31daca4d364133fba6"
 execution-machine = "47a8bd9864cefabd70bc0448b3e95298e716a9bad89247e9e425905d3b2ee806"
 execution-model = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"
 profile = "e0cc201403c40e618e1c4273649fb5b1718f51d6921b9a535bbcf1a3e95e61ae"
@@ -46,11 +45,11 @@ profile-parser = "b74a953178bd2336018bed3f51b66360202345578297934e7c8c6e79886fb8
 source = "libpp"
 symbol = "hal_mac_tx_config_edca"
 kind = "whole-function-equivalence/profile:scenario/libpp-configure-tx-edca"
-digest = "6828296068260e2b1de1ad8c25e5b11554981642ddfaa653d6ac711576aadfff"
+digest = "56d682de6872049e3bd7e1ad3c681f109088096d274905b13aa801eba6ee5880"
 
 [evidence.components]
-comparison-orchestrator = "e9af803daf6ab44af42a93b3cead563c60bf06945929c1b879c8112be2f87d60"
-execution-image = "241a2c07ca5860bd273851868270bbd5d33c68217d8c83ef8c9589f1dd821663"
+comparison-orchestrator = "44e7ab697efc3977500cf4393dd8f1439778e73626bdec039df5c42020d8a347"
+execution-image = "86b7410aff6595f1a02c224e2996cd0305c4589329caac31daca4d364133fba6"
 execution-machine = "47a8bd9864cefabd70bc0448b3e95298e716a9bad89247e9e425905d3b2ee806"
 execution-model = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"
 profile = "74e1aaa3cbde88ed98c05f1dd164d4c0cdc2db4b011f01e9527d4436a39202d8"
@@ -60,11 +59,11 @@ profile-parser = "b74a953178bd2336018bed3f51b66360202345578297934e7c8c6e79886fb8
 source = "libpp"
 symbol = "hal_mac_tx_get_blockack"
 kind = "whole-function-equivalence/profile:state/libpp-read-tx-blockack"
-digest = "1163d1549a8c3dfcedcb4f775cea523ca27a15062529fd3f4f072d846a250010"
+digest = "43d34c690ef7e2e68bd39175b833de233c5add2a6e7173d67382d848709056fd"
 
 [evidence.components]
-comparison-orchestrator = "e9af803daf6ab44af42a93b3cead563c60bf06945929c1b879c8112be2f87d60"
-execution-image = "241a2c07ca5860bd273851868270bbd5d33c68217d8c83ef8c9589f1dd821663"
+comparison-orchestrator = "44e7ab697efc3977500cf4393dd8f1439778e73626bdec039df5c42020d8a347"
+execution-image = "86b7410aff6595f1a02c224e2996cd0305c4589329caac31daca4d364133fba6"
 execution-machine = "47a8bd9864cefabd70bc0448b3e95298e716a9bad89247e9e425905d3b2ee806"
 execution-model = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"
 profile = "cacc06dbe4545cf4ca4df88056e20fd6b7adc0dd10ffbf56ab7b2d03a3014a4e"
@@ -74,11 +73,11 @@ profile-parser = "b74a953178bd2336018bed3f51b66360202345578297934e7c8c6e79886fb8
 source = "libpp"
 symbol = "hal_mac_txq_disable"
 kind = "whole-function-equivalence/profile:scenario/libpp-disable-txq"
-digest = "6bb94e119ee17c0f14f0b771b88483cf1bcb09e1ab1d6ad98151c0f314fe66bd"
+digest = "480dc28cfff970eb3b85587f9f1de913a31d5a968c7e69024030a2cfe1568ab7"
 
 [evidence.components]
-comparison-orchestrator = "e9af803daf6ab44af42a93b3cead563c60bf06945929c1b879c8112be2f87d60"
-execution-image = "241a2c07ca5860bd273851868270bbd5d33c68217d8c83ef8c9589f1dd821663"
+comparison-orchestrator = "44e7ab697efc3977500cf4393dd8f1439778e73626bdec039df5c42020d8a347"
+execution-image = "86b7410aff6595f1a02c224e2996cd0305c4589329caac31daca4d364133fba6"
 execution-machine = "47a8bd9864cefabd70bc0448b3e95298e716a9bad89247e9e425905d3b2ee806"
 execution-model = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"
 profile = "3f7b7315ed7cf14c6ac352e47a0dcff2223fb05c2563c6a5a2f606793c66e791"

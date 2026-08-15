@@ -224,14 +224,6 @@ display-type = "u16"
 description = "First observed SAR reference code used by power calibration."
 
 [[types.fields]]
-offset = 0x020
-width = 16
-status = "reviewed"
-name = "frequency_offset"
-display-type = "i16"
-description = "Frequency offset input consumed while selecting a channel."
-
-[[types.fields]]
 offset = 0x028
 width = 8
 status = "reviewed"

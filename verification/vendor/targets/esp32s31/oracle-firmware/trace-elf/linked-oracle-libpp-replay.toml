@@ -32,6 +32,7 @@ fixture-data-symbols = [
     { name = "g_dbg_interp_tsf_end", size = 4, alignment = 4 },
     { name = "g_osi_funcs_p", size = 4, alignment = 4 },
     { name = "g_intr_lock_mux", size = 4, alignment = 4 },
+    { name = "our_instances_ptr", size = 4, alignment = 4 },
     { name = "s_pp_task_create_sem", size = 4, alignment = 4 },
     { name = "xphyQueue", size = 4, alignment = 4 },
 ]

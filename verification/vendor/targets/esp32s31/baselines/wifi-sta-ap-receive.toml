@@ -4,11 +4,11 @@ schema = 2
 source = "wifi-sta-ap-receive"
 symbol = "wifi_set_rx_policy"
 kind = "reviewed-domain-equivalence/profile:scenario/wifi-sta-ap-receive-policy"
-digest = "9b119f707eb6ecc1ff5e2cd5f3e401529fd6ae17059f18b7a7595f7c24c218db"
+digest = "cb4facdd19ebab29cd51ed9f335d8d03dc9d462e6bfe30b19d059ac33b4706c9"
 
 [evidence.components]
-comparison-orchestrator = "e9af803daf6ab44af42a93b3cead563c60bf06945929c1b879c8112be2f87d60"
-execution-image = "241a2c07ca5860bd273851868270bbd5d33c68217d8c83ef8c9589f1dd821663"
+comparison-orchestrator = "44e7ab697efc3977500cf4393dd8f1439778e73626bdec039df5c42020d8a347"
+execution-image = "86b7410aff6595f1a02c224e2996cd0305c4589329caac31daca4d364133fba6"
 execution-machine = "47a8bd9864cefabd70bc0448b3e95298e716a9bad89247e9e425905d3b2ee806"
 execution-model = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"
 profile = "623ac22289c639900a5566f35b6ee89963d617aa10242f7c67edaeea68d50c90"

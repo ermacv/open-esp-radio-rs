@@ -4,11 +4,11 @@ schema = 2
 source = "libpp"
 symbol = "hal_disable_softap_tsf"
 kind = "whole-function-equivalence/profile:scenario/wifi-ap-tsf-stop"
-digest = "8561a2e9361df54fca1104f0ecf82db2be0e5a190ea3d3efcb19336e161c3bd8"
+digest = "4484e162088a6b5bb921d58aabe8cff96763e4f4fbaf191501ae80f92599aff9"
 
 [evidence.components]
-comparison-orchestrator = "e9af803daf6ab44af42a93b3cead563c60bf06945929c1b879c8112be2f87d60"
-execution-image = "241a2c07ca5860bd273851868270bbd5d33c68217d8c83ef8c9589f1dd821663"
+comparison-orchestrator = "44e7ab697efc3977500cf4393dd8f1439778e73626bdec039df5c42020d8a347"
+execution-image = "86b7410aff6595f1a02c224e2996cd0305c4589329caac31daca4d364133fba6"
 execution-machine = "47a8bd9864cefabd70bc0448b3e95298e716a9bad89247e9e425905d3b2ee806"
 execution-model = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"
 profile = "4b309ad3863e2e20b806a43d2695bfe244aebbc7ae2bce05474b427d8598a989"

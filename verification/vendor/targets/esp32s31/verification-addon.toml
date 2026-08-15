@@ -120,6 +120,21 @@ source = "libpp"
 all = true
 
 [[suites]]
+id = "libpp-tx-retry"
+rust-artifact-role = "rust-artifact"
+rust-prefix = "open_libpp_tx_retry_trace_"
+profiles = ["profiles/libpp-tx-retry.toml"]
+dispositions = ["dispositions/libpp-tx-retry.toml"]
+baselines = []
+gate = "completion"
+[[suites.vendor]]
+source = "libpp"
+symbols = ["rcGetRate"]
+[[suites.vendor]]
+source = "libpp-replay"
+symbols = ["lmacProcessTxError"]
+
+[[suites]]
 id = "coex-timer-control"
 rust-artifact-role = "rust-artifact"
 rust-prefix = "open_coex_trace_"

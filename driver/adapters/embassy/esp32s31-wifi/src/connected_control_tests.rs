@@ -547,7 +547,7 @@ fn tx_addba_response_and_delba_toggle_he_tid_ownership() {
 }
 
 #[test]
-fn beacon_loss_deadline_disables_block_ack_and_disconnects() {
+fn beacon_loss_disconnects_only_after_bounded_active_probes() {
     let resources = ConnectedControlResources::<NoopRawMutex, 8>::new();
     let (_publisher, receiver) = resources.split();
     let mut control = Esp32s31ConnectedControl::new(
@@ -568,6 +568,18 @@ fn beacon_loss_deadline_disables_block_ack_and_disconnects() {
         embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
         Ok(WifiControlProgress::Idle)
     );
+    for _ in 0..5 {
+        embassy_futures::block_on(control.wait_ready(&mut tx));
+        assert_eq!(
+            embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
+            Ok(WifiControlProgress::TxPending)
+        );
+        finish_tx(&mut hardware, &mut tx, 0);
+        assert_eq!(
+            embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
+            Ok(WifiControlProgress::More)
+        );
+    }
     embassy_futures::block_on(control.wait_ready(&mut tx));
     assert_eq!(
         embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
@@ -579,6 +591,51 @@ fn beacon_loss_deadline_disables_block_ack_and_disconnects() {
     assert_eq!(
         hardware.he_tid[..3],
         [Some((0, false)), Some((7, false)), Some((5, false))]
+    );
+}
+
+#[test]
+fn associated_probe_response_cancels_beacon_loss_recovery() {
+    let resources = ConnectedControlResources::<NoopRawMutex, 8>::new();
+    let (mut publisher, receiver) = resources.split();
+    let mut control = Esp32s31ConnectedControl::new(
+        receiver,
+        BSSID,
+        false,
+        StaTxBlockAckSessions::new(32, 100_000, true).unwrap(),
+    );
+    control.enable_beacon_loss(StaBeaconLossConfig::new(100, 3).unwrap());
+    let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
+    let mut hardware = Hardware {
+        prepare: true,
+        ..Hardware::default()
+    };
+    let mut tx = make_tx(slot.as_mut(), &mut hardware, 1);
+
+    assert_eq!(
+        embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
+        Ok(WifiControlProgress::Idle)
+    );
+    embassy_futures::block_on(control.wait_ready(&mut tx));
+    assert_eq!(
+        embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
+        Ok(WifiControlProgress::TxPending)
+    );
+    finish_tx(&mut hardware, &mut tx, 0);
+    assert_eq!(
+        embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
+        Ok(WifiControlProgress::More)
+    );
+
+    publisher.publish(ConnectedRxEvent::ProbeResponse);
+    assert_eq!(
+        embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
+        Ok(WifiControlProgress::More)
+    );
+    assert!(!control.beacon_lost());
+    assert_eq!(
+        control.beacon_monitor().unwrap().deadline_micros(),
+        Some(614_400)
     );
 }
 

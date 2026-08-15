@@ -178,7 +178,9 @@ where
             .transmit_probe_request(
                 hardware,
                 ProbeRequest {
+                    destination: open_esp_radio_ieee80211::management::BROADCAST_ADDRESS,
                     source,
+                    bssid: open_esp_radio_ieee80211::management::BROADCAST_ADDRESS,
                     sequence_number,
                     ssid,
                     supported_rates,
@@ -381,7 +383,9 @@ mod tests {
         block_on(control.transmit_probe_request(
             &mut hardware,
             ProbeRequest {
+                destination: open_esp_radio_ieee80211::management::BROADCAST_ADDRESS,
                 source: [2, 3, 4, 5, 6, 7],
+                bssid: open_esp_radio_ieee80211::management::BROADCAST_ADDRESS,
                 sequence_number: 10,
                 ssid: b"",
                 supported_rates: &[0x82, 0x84],

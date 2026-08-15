@@ -34,6 +34,12 @@ use crate::{
     },
 };
 
+// Complete `libnet80211.a[ieee80211_sta.o]::send_ap_probe` rearms
+// `mgd_probe_send_timeout` for 500 ms. Its timeout process retries a bounded
+// five times before returning to the disconnect path.
+const BEACON_PROBE_INTERVAL_MICROS: u64 = 500_000;
+const BEACON_PROBE_ATTEMPT_LIMIT: u8 = 5;
+
 /// Coherent runner-owned scheduling facts supplied to one control step.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct ConnectedControlContext {
@@ -87,12 +93,14 @@ impl From<StaDisconnect> for ConnectedDisconnectReason {
 pub enum ConnectedControlTxKind {
     RxAddbaResponse { tid: u8 },
     TxAddbaRequest { tid: u8 },
+    BeaconProbe,
     PowerManagement(StaPowerManagement),
 }
 
 enum ControlInFlight {
     RxAddba(StaRxBlockAckActivation),
     TxAddba { tid: u8 },
+    BeaconProbe,
     PowerManagement(StaPowerManagement),
 }
 
@@ -103,6 +111,7 @@ impl ControlInFlight {
                 tid: activation.negotiated().tid,
             },
             Self::TxAddba { tid } => ConnectedControlTxKind::TxAddbaRequest { tid: *tid },
+            Self::BeaconProbe => ConnectedControlTxKind::BeaconProbe,
             Self::PowerManagement(mode) => ConnectedControlTxKind::PowerManagement(*mode),
         }
     }
@@ -148,6 +157,11 @@ pub trait ConnectedControlTx {
         config: ActionTxConfig,
     ) -> Result<ConnectedControlProgress, SingleMpduTxError>;
 
+    fn start_beacon_probe<H: TxHardware>(
+        &mut self,
+        hardware: &mut H,
+    ) -> Result<ConnectedControlProgress, SingleMpduTxError>;
+
     fn start_power_management_null<H: TxHardware>(
         &mut self,
         hardware: &mut H,
@@ -177,6 +191,14 @@ where
 {
     fn take_last_outcome(&mut self) -> Option<SingleMpduTxOutcome> {
         Esp32s31SingleMpduTx::take_last_outcome(self)
+    }
+
+    fn start_beacon_probe<H: TxHardware>(
+        &mut self,
+        hardware: &mut H,
+    ) -> Result<ConnectedControlProgress, SingleMpduTxError> {
+        Esp32s31SingleMpduTx::start_beacon_probe(self, hardware)
+            .map(|_| ConnectedControlProgress::TxPending)
     }
 
     fn now_micros(&self) -> u64 {
@@ -307,6 +329,7 @@ pub struct Esp32s31ConnectedControlCore {
     tx_block_ack_attempts_remaining: [u8; 3],
     in_flight: Option<ControlInFlight>,
     beacon_monitor: Option<StaBeaconMonitor>,
+    beacon_probe_attempts: u8,
     beacon_lost: bool,
     power_save: Option<StaPowerSavePlanner>,
     pending_doze_permit: Option<StaDozePermit>,
@@ -324,6 +347,7 @@ impl Esp32s31ConnectedControlCore {
             tx_block_ack_attempts_remaining: [0; 3],
             in_flight: None,
             beacon_monitor: None,
+            beacon_probe_attempts: 0,
             beacon_lost: false,
             power_save: None,
             pending_doze_permit: None,
@@ -341,6 +365,7 @@ impl Esp32s31ConnectedControlCore {
 
     pub fn enable_beacon_loss(&mut self, config: StaBeaconLossConfig) {
         self.beacon_monitor = Some(StaBeaconMonitor::new(config));
+        self.beacon_probe_attempts = 0;
         self.beacon_lost = false;
     }
 
@@ -420,12 +445,11 @@ impl Esp32s31ConnectedControlCore {
             .filter_map(|tid| self.tx_block_ack.alarm(tid))
             .map(|alarm| alarm.deadline_us)
             .min();
-        match (
-            block_ack,
-            self.beacon_monitor
-                .as_ref()
-                .and_then(StaBeaconMonitor::deadline_micros),
-        ) {
+        let link = self
+            .beacon_monitor
+            .as_ref()
+            .and_then(StaBeaconMonitor::deadline_micros);
+        match (block_ack, link) {
             (Some(left), Some(right)) => Some(left.min(right)),
             (Some(deadline), None) | (None, Some(deadline)) => Some(deadline),
             (None, None) => None,
@@ -457,6 +481,7 @@ impl Esp32s31ConnectedControlCore {
                     self.tx_block_ack.stop(tid);
                     tx.set_tx_block_ack_agreement(tid, None);
                 }
+                ControlInFlight::BeaconProbe => {}
                 ControlInFlight::PowerManagement(_) => {}
             }
         }
@@ -488,6 +513,7 @@ impl Esp32s31ConnectedControlCore {
         self.initial_tx_block_ack.fill(false);
         self.tx_block_ack_attempts_remaining.fill(0);
         self.beacon_monitor = None;
+        self.beacon_probe_attempts = 0;
         self.beacon_lost = false;
         self.power_save = None;
         self.pending_doze_permit = None;
@@ -551,6 +577,7 @@ impl Esp32s31ConnectedControlCore {
                         self.initial_tx_block_ack[index] = true;
                     }
                 }
+                ControlInFlight::BeaconProbe => {}
                 ControlInFlight::PowerManagement(advertised) => {
                     let completion = StaPowerManagementTxCompletion {
                         advertised,
@@ -614,22 +641,10 @@ impl Esp32s31ConnectedControlCore {
             .as_ref()
             .is_some_and(|monitor| monitor.expired(now_micros))
         {
-            for agreement in self.rx_block_ack.snapshots().into_iter().flatten() {
-                self.rx_block_ack.stop(agreement.tid);
-                hardware.clear_rx_block_ack(agreement.hardware_index)?;
+            if self.beacon_probe_attempts < BEACON_PROBE_ATTEMPT_LIMIT {
+                return self.start_beacon_probe(hardware, tx);
             }
-            reorder.publish(RxReorderCommand::StopAll)?;
-            for tid in STA_TX_BLOCK_ACK_TIDS {
-                self.tx_block_ack.stop(tid);
-                tx.set_tx_block_ack_agreement(tid, None);
-                if self.he_enabled {
-                    hardware.set_he_tid_enabled(tid, false)?;
-                }
-            }
-            self.beacon_lost = true;
-            return Ok(ConnectedControlProgress::Disconnected(
-                ConnectedDisconnectReason::BeaconLoss,
-            ));
+            return self.disconnect_for_beacon_loss(hardware, tx, reorder);
         }
 
         if context.network_tx_pending
@@ -678,6 +693,7 @@ impl Esp32s31ConnectedControlCore {
             return Ok(ConnectedControlProgress::Disconnected(disconnect.into()));
         }
         if let ConnectedRxControlEvent::Beacon(observation) = event {
+            self.beacon_probe_attempts = 0;
             if let Some(monitor) = &mut self.beacon_monitor {
                 monitor.observe(tx.now_micros(), observation)?;
             }
@@ -706,6 +722,13 @@ impl Esp32s31ConnectedControlCore {
                     decision
                 };
                 return self.apply_power_save_decision(hardware, tx, decision);
+            }
+            return Ok(ConnectedControlProgress::More);
+        }
+        if let ConnectedRxControlEvent::ProbeResponse = event {
+            self.beacon_probe_attempts = 0;
+            if let Some(monitor) = &mut self.beacon_monitor {
+                monitor.observe_reachability(tx.now_micros())?;
             }
             return Ok(ConnectedControlProgress::More);
         }
@@ -797,6 +820,56 @@ impl Esp32s31ConnectedControlCore {
         context.network_tx_pending
             || control_event_pending
             || self.initial_tx_block_ack.into_iter().any(|pending| pending)
+    }
+
+    fn start_beacon_probe<H, X>(
+        &mut self,
+        hardware: &mut H,
+        tx: &mut X,
+    ) -> Result<ConnectedControlProgress, ConnectedControlError>
+    where
+        H: ConnectedControlHardware,
+        X: ConnectedControlTx,
+    {
+        let now_micros = tx.now_micros();
+        self.beacon_monitor
+            .as_mut()
+            .expect("beacon probes require an enabled beacon monitor")
+            .wait_for_reachability(now_micros, BEACON_PROBE_INTERVAL_MICROS)?;
+        let progress = tx.start_beacon_probe(hardware)?;
+        self.beacon_probe_attempts += 1;
+        self.in_flight = Some(ControlInFlight::BeaconProbe);
+        Ok(progress)
+    }
+
+    fn disconnect_for_beacon_loss<H, X, R>(
+        &mut self,
+        hardware: &mut H,
+        tx: &mut X,
+        reorder: &mut R,
+    ) -> Result<ConnectedControlProgress, ConnectedControlError>
+    where
+        H: ConnectedControlHardware,
+        X: ConnectedControlTx,
+        R: ConnectedControlReorder,
+    {
+        for agreement in self.rx_block_ack.snapshots().into_iter().flatten() {
+            self.rx_block_ack.stop(agreement.tid);
+            hardware.clear_rx_block_ack(agreement.hardware_index)?;
+        }
+        reorder.publish(RxReorderCommand::StopAll)?;
+        for tid in STA_TX_BLOCK_ACK_TIDS {
+            self.tx_block_ack.stop(tid);
+            tx.set_tx_block_ack_agreement(tid, None);
+            if self.he_enabled {
+                hardware.set_he_tid_enabled(tid, false)?;
+            }
+        }
+        self.beacon_probe_attempts = 0;
+        self.beacon_lost = true;
+        Ok(ConnectedControlProgress::Disconnected(
+            ConnectedDisconnectReason::BeaconLoss,
+        ))
     }
 
     fn apply_power_save_decision<H, X>(

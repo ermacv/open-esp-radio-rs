@@ -37,9 +37,9 @@ fn scheduled_connected_control(event: ConnectedRxEvent<'_>) -> Option<ConnectedR
         // `Esp32s31ConnectedControl` today. Diagnostic Trigger/NDPA events
         // must not starve a beacon or ADDBA/DELBA transition in the bounded
         // mailbox.
-        event @ (ConnectedRxControlEvent::Beacon(_) | ConnectedRxControlEvent::BlockAck(_)) => {
-            Some(event)
-        }
+        event @ (ConnectedRxControlEvent::Beacon(_)
+        | ConnectedRxControlEvent::ProbeResponse
+        | ConnectedRxControlEvent::BlockAck(_)) => Some(event),
         event @ ConnectedRxControlEvent::PeerDisconnect(_) => Some(event),
         ConnectedRxControlEvent::Trigger { .. } | ConnectedRxControlEvent::Ndpa { .. } => None,
     }

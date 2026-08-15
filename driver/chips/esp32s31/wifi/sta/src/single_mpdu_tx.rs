@@ -12,6 +12,7 @@ use open_esp_radio_esp32s31_wifi_mac::{
     tx::{LegacyTxQueue, TxError, TxHardware, TxPhyRate},
     tx_runtime::{UnicastRetryError, WifiTxRuntimePolicy},
 };
+use open_esp_radio_ieee80211::management::ProbeRequest;
 use open_esp_radio_ieee80211::station::{
     StaActionFrame, StaProtectedDataFrame, StaProtectedEthernetFrame, StaTxSequenceCounters,
     StationFrameError,
@@ -79,6 +80,7 @@ pub enum SingleMpduTxError {
     UnsupportedHeOrdinaryMpdu,
     BufferSizeOverflow,
     DeadlineOverflow,
+    ProbeEncode,
     Encode(StationFrameError),
     Tx(TxError),
     Retry(UnicastRetryError),
@@ -514,6 +516,59 @@ where
                         open_esp_radio_esp32s31_wifi::ordinary_tx::OrdinaryTxInterface::Station,
                     scheduler_priority: config.scheduler_priority,
                     packet_priority: config.packet_priority,
+                },
+            )
+            .map_err(Into::into)
+    }
+
+    /// Encode and publish one directed AP reachability Probe Request.
+    ///
+    /// TX completion is not reachability evidence: connected control waits
+    /// for a BSSID-validated Probe Response or beacon before cancelling its
+    /// bounded probe sequence.
+    pub fn start_beacon_probe<H: TxHardware>(
+        &mut self,
+        hardware: &mut H,
+    ) -> Result<WifiTxProgress, SingleMpduTxError> {
+        const BASIC_RATES: &[u8] = &[0x82, 0x84, 0x8b, 0x96];
+
+        if self.ordinary.active() {
+            return Err(SingleMpduTxError::Busy);
+        }
+        let sequence_number = self.sequences.take_non_qos();
+        let frame_length = {
+            let buffer = self.ordinary.buffer_mut()?;
+            ProbeRequest {
+                destination: self.config.bssid,
+                source: self.config.station_address,
+                bssid: self.config.bssid,
+                sequence_number,
+                ssid: b"",
+                supported_rates: BASIC_RATES,
+            }
+            .encode(&mut buffer[TX_METADATA_SIZE..])
+            .map_err(|_| SingleMpduTxError::ProbeEncode)?
+        };
+        self.ordinary
+            .start(
+                hardware,
+                OrdinaryTxPlan {
+                    frame_length,
+                    descriptor_capacity: None,
+                    exchange: MacTxPlan {
+                        access_category: LegacyTxQueue::Voice.access_category(),
+                        initial_rate: TxPhyRate::Legacy(
+                            open_esp_radio_esp32s31_wifi_mac::tx::LegacyRate::Dsss1MLong,
+                        ),
+                        publication_limit: 1,
+                        publication_timeout_micros: self.config.exchange.publication_timeout_micros,
+                    },
+                    hardware_mic_length: 0,
+                    hardware_key_selector: 0,
+                    interface:
+                        open_esp_radio_esp32s31_wifi::ordinary_tx::OrdinaryTxInterface::Station,
+                    scheduler_priority: ActionTxConfig::VENDOR_MANAGEMENT.scheduler_priority,
+                    packet_priority: ActionTxConfig::VENDOR_MANAGEMENT.packet_priority,
                 },
             )
             .map_err(Into::into)

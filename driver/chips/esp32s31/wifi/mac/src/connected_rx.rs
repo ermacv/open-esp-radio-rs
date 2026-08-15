@@ -31,6 +31,7 @@ use crate::{
 const TRIGGER_FRAME_CONTROL: u16 = 0x0024;
 const NDPA_FRAME_CONTROL: u16 = 0x0054;
 const ACTION_FRAME_CONTROL: u16 = 0x00d0;
+const PROBE_RESPONSE_FRAME_CONTROL: u16 = 0x0050;
 const BEACON_FRAME_CONTROL: u16 = 0x0080;
 const DISASSOCIATION_FRAME_CONTROL: u16 = 0x00a0;
 const DEAUTHENTICATION_FRAME_CONTROL: u16 = 0x00c0;
@@ -82,6 +83,7 @@ pub enum ConnectedRxEvent<'frame> {
         observation: StaBeaconObservation,
         metadata: MacRxMetadata<RxPhyInfo>,
     },
+    ProbeResponse,
     Trigger {
         common: TriggerCommonInfo,
         schedule: Result<HeTriggerScheduledRate, HeTriggerScheduledRateError>,
@@ -114,6 +116,7 @@ pub enum ConnectedRxEvent<'frame> {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ConnectedRxControlEvent {
     Beacon(StaBeaconObservation),
+    ProbeResponse,
     Trigger {
         common: TriggerCommonInfo,
         schedule: Result<HeTriggerScheduledRate, HeTriggerScheduledRateError>,
@@ -133,6 +136,7 @@ impl ConnectedRxEvent<'_> {
     pub const fn control(self) -> Option<ConnectedRxControlEvent> {
         match self {
             Self::Beacon { observation, .. } => Some(ConnectedRxControlEvent::Beacon(observation)),
+            Self::ProbeResponse => Some(ConnectedRxControlEvent::ProbeResponse),
             Self::Trigger {
                 common,
                 schedule,
@@ -179,6 +183,7 @@ pub enum ConnectedRxError {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ConnectedRxDispatch {
     Beacon,
+    ProbeResponse,
     Trigger,
     Ndpa,
     BlockAck,
@@ -325,6 +330,25 @@ impl ConnectedRxDispatcher {
                     metadata,
                 });
                 ConnectedRxDispatch::Beacon
+            }
+            PROBE_RESPONSE_FRAME_CONTROL => {
+                let management = match extract_management(
+                    core::slice::from_ref(&segment),
+                    self.config.ingress,
+                    mpdu,
+                ) {
+                    Ok(management) => management,
+                    Err(error) => return rejected(protection, ConnectedRxError::Rx(error)),
+                };
+                if management.length < 24
+                    || mpdu[4..10] != self.config.station_address
+                    || mpdu[10..16] != self.config.bssid
+                    || mpdu[16..22] != self.config.bssid
+                {
+                    return ConnectedRxDispatch::Ignored;
+                }
+                sink.publish(ConnectedRxEvent::ProbeResponse);
+                ConnectedRxDispatch::ProbeResponse
             }
             TRIGGER_FRAME_CONTROL => {
                 let control = match extract_control(
@@ -597,6 +621,7 @@ mod tests {
     struct RecordingSink {
         beacons: Vec<StaBeaconObservation>,
         beacon_metadata: Vec<MacRxMetadata<RxPhyInfo>>,
+        probe_responses: u32,
         ethernet: Vec<Vec<u8>>,
         ethernet_metadata: Vec<MacRxMetadata<RxPhyInfo>>,
         block_ack: Vec<BlockAckAction>,
@@ -612,6 +637,9 @@ mod tests {
                 } => {
                     self.beacons.push(observation);
                     self.beacon_metadata.push(metadata);
+                }
+                ConnectedRxEvent::ProbeResponse => {
+                    self.probe_responses = self.probe_responses.saturating_add(1);
                 }
                 ConnectedRxEvent::Ethernet {
                     frame, metadata, ..
@@ -675,6 +703,46 @@ mod tests {
             sink.beacon_metadata[0].ampdu,
             MacRxEvidence::ProtocolValidated(false)
         );
+    }
+
+    #[test]
+    fn routes_only_probe_responses_from_the_associated_bssid() {
+        const MPDU: usize = 36;
+        const SIGNAL: usize = MPDU + 4;
+        let mut storage = [0_u8; 192];
+        set_tail(&mut storage, SIGNAL);
+        let frame = &mut storage[FRAME_OFFSET..FRAME_OFFSET + MPDU];
+        frame[..2].copy_from_slice(&PROBE_RESPONSE_FRAME_CONTROL.to_le_bytes());
+        frame[4..10].copy_from_slice(&STATION);
+        frame[10..16].copy_from_slice(&BSSID);
+        frame[16..22].copy_from_slice(&BSSID);
+
+        let mut dispatcher = ConnectedRxDispatcher::new(config());
+        let mut sink = RecordingSink::default();
+        let mut mpdu = [0_u8; 128];
+        let mut ethernet = [0_u8; 128];
+        assert_eq!(
+            dispatcher.dispatch(
+                segment(&storage, SIGNAL),
+                &mut mpdu,
+                &mut ethernet,
+                &mut sink,
+            ),
+            ConnectedRxDispatch::ProbeResponse
+        );
+        assert_eq!(sink.probe_responses, 1);
+
+        storage[FRAME_OFFSET + 10..FRAME_OFFSET + 16].copy_from_slice(&SOURCE);
+        assert_eq!(
+            dispatcher.dispatch(
+                segment(&storage, SIGNAL),
+                &mut mpdu,
+                &mut ethernet,
+                &mut sink,
+            ),
+            ConnectedRxDispatch::Ignored
+        );
+        assert_eq!(sink.probe_responses, 1);
     }
 
     fn config() -> ConnectedRxConfig {

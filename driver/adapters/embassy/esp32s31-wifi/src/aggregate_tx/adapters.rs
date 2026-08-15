@@ -70,6 +70,18 @@ impl<
         Ok(WifiControlProgress::TxPending)
     }
 
+    fn start_beacon_probe<H: open_esp_radio_esp32s31_wifi_mac::tx::TxHardware>(
+        &mut self,
+        hardware: &mut H,
+    ) -> Result<WifiControlProgress, SingleMpduTxError> {
+        if self.active() {
+            return Err(SingleMpduTxError::Busy);
+        }
+        self.ordinary.start_beacon_probe(hardware)?;
+        self.active = ConnectedTxActive::Ordinary;
+        Ok(WifiControlProgress::TxPending)
+    }
+
     fn start_protected_eapol<H: open_esp_radio_esp32s31_wifi_mac::tx::TxHardware>(
         &mut self,
         hardware: &mut H,

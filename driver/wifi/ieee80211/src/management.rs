@@ -5,7 +5,7 @@ pub const MAX_SSID_LEN: usize = 32;
 pub const MAX_SUPPORTED_RATES_LEN: usize = 24;
 
 const PROBE_REQUEST_FRAME_CONTROL: u16 = 0x0040;
-const BROADCAST_ADDRESS: [u8; 6] = [0xff; 6];
+pub const BROADCAST_ADDRESS: [u8; 6] = [0xff; 6];
 const SSID_ELEMENT_ID: u8 = 0;
 const SUPPORTED_RATES_ELEMENT_ID: u8 = 1;
 const EXTENDED_SUPPORTED_RATES_ELEMENT_ID: u8 = 50;
@@ -27,7 +27,9 @@ pub enum ProbeRequestError {
 /// memory, so this type needs neither allocation nor global buffers.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ProbeRequest<'a> {
+    pub destination: [u8; 6],
     pub source: [u8; 6],
+    pub bssid: [u8; 6],
     pub sequence_number: u16,
     pub ssid: &'a [u8],
     pub supported_rates: &'a [u8],
@@ -71,9 +73,9 @@ impl ProbeRequest<'_> {
         let frame = &mut output[..required];
         frame.fill(0);
         frame[0..2].copy_from_slice(&PROBE_REQUEST_FRAME_CONTROL.to_le_bytes());
-        frame[4..10].copy_from_slice(&BROADCAST_ADDRESS);
+        frame[4..10].copy_from_slice(&self.destination);
         frame[10..16].copy_from_slice(&self.source);
-        frame[16..22].copy_from_slice(&BROADCAST_ADDRESS);
+        frame[16..22].copy_from_slice(&self.bssid);
         frame[22..24].copy_from_slice(&(self.sequence_number << 4).to_le_bytes());
 
         let mut offset = MANAGEMENT_HEADER_LEN;
@@ -114,7 +116,9 @@ mod tests {
     fn encodes_wildcard_probe_request() {
         let mut output = [0xa5; 64];
         let length = ProbeRequest {
+            destination: BROADCAST_ADDRESS,
             source: SOURCE,
+            bssid: BROADCAST_ADDRESS,
             sequence_number: 0x123,
             ssid: b"",
             supported_rates: &[0x82, 0x84, 0x8b, 0x96],
@@ -140,7 +144,9 @@ mod tests {
         ];
         let mut output = [0; 64];
         let length = ProbeRequest {
+            destination: BROADCAST_ADDRESS,
             source: SOURCE,
+            bssid: BROADCAST_ADDRESS,
             sequence_number: 0,
             ssid: b"open",
             supported_rates: &rates,
@@ -161,7 +167,9 @@ mod tests {
     fn rejects_invalid_inputs_before_touching_output() {
         let mut output = [0xa5; 31];
         let error = ProbeRequest {
+            destination: BROADCAST_ADDRESS,
             source: SOURCE,
+            bssid: BROADCAST_ADDRESS,
             sequence_number: 0,
             ssid: b"",
             supported_rates: &[0x82, 0x84, 0x8b, 0x96],
@@ -173,7 +181,9 @@ mod tests {
 
         assert_eq!(
             ProbeRequest {
+                destination: BROADCAST_ADDRESS,
                 source: SOURCE,
+                bssid: BROADCAST_ADDRESS,
                 sequence_number: 0x1000,
                 ssid: b"",
                 supported_rates: &[0x82],
@@ -183,7 +193,9 @@ mod tests {
         );
         assert_eq!(
             ProbeRequest {
+                destination: BROADCAST_ADDRESS,
                 source: SOURCE,
+                bssid: BROADCAST_ADDRESS,
                 sequence_number: 0,
                 ssid: &[0; MAX_SSID_LEN + 1],
                 supported_rates: &[0x82],
@@ -193,7 +205,9 @@ mod tests {
         );
         assert_eq!(
             ProbeRequest {
+                destination: BROADCAST_ADDRESS,
                 source: SOURCE,
+                bssid: BROADCAST_ADDRESS,
                 sequence_number: 0,
                 ssid: b"",
                 supported_rates: &[],

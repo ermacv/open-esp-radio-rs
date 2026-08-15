@@ -125,6 +125,38 @@ impl StaBeaconMonitor {
         Ok(())
     }
 
+    /// Refresh link reachability from a response already validated as coming
+    /// from the associated BSSID.
+    ///
+    /// This deliberately does not fabricate a beacon observation or TIM:
+    /// active-probe reachability and passive beacon state remain distinct.
+    pub fn observe_reachability(
+        &mut self,
+        now_micros: u64,
+    ) -> Result<(), StaBeaconLossConfigError> {
+        self.deadline_micros = Some(
+            now_micros
+                .checked_add(self.config.window_micros)
+                .ok_or(StaBeaconLossConfigError::DeadlineOverflow)?,
+        );
+        Ok(())
+    }
+
+    /// Replace the passive beacon deadline with one bounded active-probe
+    /// response deadline selected by the chip control policy.
+    pub fn wait_for_reachability(
+        &mut self,
+        now_micros: u64,
+        timeout_micros: u64,
+    ) -> Result<(), StaBeaconLossConfigError> {
+        self.deadline_micros = Some(
+            now_micros
+                .checked_add(timeout_micros)
+                .ok_or(StaBeaconLossConfigError::DeadlineOverflow)?,
+        );
+        Ok(())
+    }
+
     pub const fn expired(&self, now_micros: u64) -> bool {
         matches!(self.deadline_micros, Some(deadline) if now_micros >= deadline)
     }
@@ -167,5 +199,17 @@ mod tests {
             StaBeaconLossConfig::new(100, 0),
             Err(StaBeaconLossConfigError::ZeroMissLimit)
         );
+    }
+
+    #[test]
+    fn active_reachability_refresh_does_not_fabricate_a_beacon() {
+        let config = StaBeaconLossConfig::new(100, 3).unwrap();
+        let mut monitor = StaBeaconMonitor::new(config);
+        monitor.arm(1_000).unwrap();
+        monitor.observe_reachability(308_200).unwrap();
+
+        assert_eq!(monitor.deadline_micros(), Some(615_400));
+        assert_eq!(monitor.observed(), 0);
+        assert_eq!(monitor.last_observation(), None);
     }
 }

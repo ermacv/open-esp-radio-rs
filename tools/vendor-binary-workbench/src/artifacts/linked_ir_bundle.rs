@@ -529,7 +529,12 @@ impl LinkedIrReader {
         for line in std::io::BufReader::new(file).lines() {
             let line = line?;
             if !line.is_empty() {
-                functions.push(super::json::from_str(&line)?);
+                let function: StoredFunction = super::json::from_str(&line)?;
+                super::linked_ir_read::schema::validate_function_loops(
+                    &function.identity,
+                    &function.loops,
+                )?;
+                functions.push(function);
             }
         }
         if functions.len() != self.index.len() {
@@ -577,7 +582,12 @@ impl LinkedIrReader {
         for line in std::io::BufReader::new(file).lines() {
             let line = line?;
             if !line.is_empty() {
-                functions.push(super::json::from_str(&line)?);
+                let function: StoredFunctionReviewProjection = super::json::from_str(&line)?;
+                super::linked_ir_read::schema::validate_function_loops(
+                    &function.identity,
+                    &function.loops,
+                )?;
+                functions.push(function);
             }
         }
         if functions.len() != self.index.len() {
@@ -924,6 +934,7 @@ fn fixture_function_overview(encoded: &str) -> Result<String> {
         "member": full["member"],
         "symbol": full["symbol"],
         "binding": full["binding"],
+        "loops": full["loops"],
         "completeness": full["completeness"],
         "dependencies": full["dependencies"],
         "direct_calls": full["calls"].as_array().map_or(0, Vec::len),

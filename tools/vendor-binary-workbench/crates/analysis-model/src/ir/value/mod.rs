@@ -110,6 +110,14 @@ pub enum SymbolicValue {
         left: Arc<SymbolicValue>,
         right: Arc<SymbolicValue>,
     },
+    /// Bit-level result of one reviewed IEEE-754 instruction. Operands are
+    /// stored as raw 32-bit register images; no host floating-point assumption
+    /// is folded into the observation.
+    FloatingPoint {
+        operation: FloatingPointOperation,
+        rounding: FloatingRoundingMode,
+        operands: Box<[SymbolicValue]>,
+    },
     WideSignedDivide {
         dividend_low: Arc<SymbolicValue>,
         dividend_high: Arc<SymbolicValue>,
@@ -157,6 +165,35 @@ pub enum ExpressionOperation {
     CountLeadingZeros,
     CountTrailingZeros,
     PopulationCount,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum FloatingPointOperation {
+    SignedWordToSingle,
+    SubtractSingle,
+    DivideSingle,
+    FusedMultiplyAddSingle,
+    SingleToSignedWord,
+}
+
+impl FloatingPointOperation {
+    pub const fn operand_count(self) -> usize {
+        match self {
+            Self::SignedWordToSingle | Self::SingleToSignedWord => 1,
+            Self::SubtractSingle | Self::DivideSingle => 2,
+            Self::FusedMultiplyAddSingle => 3,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum FloatingRoundingMode {
+    NearestEven,
+    TowardZero,
+    Down,
+    Up,
+    NearestMaxMagnitude,
+    Dynamic,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

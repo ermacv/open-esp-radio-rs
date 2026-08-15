@@ -32,6 +32,21 @@ const DIAGNOSTIC_CALLS: &[DiagnosticCallSpec] = &[
         symbol: "phy_printf",
         argument_count: 1,
     },
+    // These private archive hooks are printf-style diagnostic sinks. Their
+    // stable boundary is the format pointer; variadic payload registers are
+    // deliberately not promoted to reviewed semantic inputs.
+    DiagnosticCallSpec {
+        symbol: "pp_printf",
+        argument_count: 1,
+    },
+    DiagnosticCallSpec {
+        symbol: "net80211_printf",
+        argument_count: 1,
+    },
+    DiagnosticCallSpec {
+        symbol: "coexist_printf",
+        argument_count: 1,
+    },
 ];
 
 pub const CONTRACTS: KnowledgeContractSpec = KnowledgeContractSpec {
@@ -52,5 +67,13 @@ mod tests {
         assert_eq!(DIAGNOSTIC_CALLS[1].argument_count, 4);
         assert_eq!(DIAGNOSTIC_CALLS[2].symbol, "phy_printf");
         assert_eq!(DIAGNOSTIC_CALLS[2].argument_count, 1);
+        assert_eq!(DIAGNOSTIC_CALLS[3].symbol, "pp_printf");
+        assert_eq!(DIAGNOSTIC_CALLS[4].symbol, "net80211_printf");
+        assert_eq!(DIAGNOSTIC_CALLS[5].symbol, "coexist_printf");
+        assert!(
+            DIAGNOSTIC_CALLS[3..]
+                .iter()
+                .all(|call| call.argument_count == 1)
+        );
     }
 }

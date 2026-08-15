@@ -18,5 +18,8 @@ pub(crate) fn parse_linked_ir(input: &str) -> Result<LinkedIrStoredDocument> {
             "linked-IR artifact makes an unsupported completeness or field-semantics claim",
         ));
     }
+    for function in &document.functions {
+        schema::validate_function_loops(&function.identity, &function.loops)?;
+    }
     Ok(document)
 }

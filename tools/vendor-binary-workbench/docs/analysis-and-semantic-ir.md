@@ -12,6 +12,7 @@ and executable reference generation.
 For each selected function the IR retains:
 
 - exact instruction and control-flow provenance;
+- natural-loop regions, latches, exits, nesting, and irreducible CFG regions;
 - direct calls and resolved indirect targets;
 - arguments, return-value provenance and branch guards;
 - MMIO reads, writes and read-modify-write operations;
@@ -47,6 +48,22 @@ reviewed global tables, pointer slots, callbacks, RTOS primitives and MMIO
 fields while retaining an `unknown(...)` expression where evidence is
 incomplete. It should never fill a gap with a plausible implementation.
 
+The compact view folds CFG-backed natural loops instead of printing bounded
+unrolling. A narrowly recognized affine induction pattern may be rendered as
+`for`/`step_by`, but the IR marks its trip count as a structural candidate and
+never as an execution or termination proof. Unknown loops remain
+`loop_at(...)`; multiple-entry cycles remain `irreducible_cfg_region(...)`.
+`--full` retains the lossless instruction and basic-block view.
+
+The RV32 backend may lift a reviewed subset of floating-point instructions as
+raw-bit symbolic value flow. This is enough to retain relationships such as
+`fcvt.s.w -> fsub.s -> fdiv.s -> fmadd.s -> fcvt.w.s` in memory-write
+expressions and loop pseudo-code. It is deliberately not host floating-point
+execution: the instruction rounding mode is retained on every node, dynamic
+rounding remains explicit, and executable-reference generation fails closed
+until a reviewed architectural FP environment and exception model exist.
+Unsupported FP operations remain ordinary decode blockers.
+
 The Workbench no longer generates a production-driver candidate. Driver code
 is written and reviewed in `driver/`.
 
@@ -75,10 +92,26 @@ Resolution follows evidence in layers:
 4. reviewed interface slots and ABI contracts;
 5. target-provider semantics for ROM and RTOS boundaries.
 
+The optional C add-on treats exact, standardized library identities as opaque
+semantic boundaries. It does not lift their implementation bodies merely
+because bytes are present in an archive. Fixed-arity string/memory contracts
+retain typed arguments and known return shape. Variadic functions remain
+explicitly unresolved until a variadic ABI/effect contract exists; a fixed
+arity must not be invented for `sprintf` or printf-style payloads. Target
+providers may separately classify exact logging hooks as diagnostic sinks and
+record only the reviewed stable arguments.
+
 For a global function table, the IR records both the load path and the selected
 slot. For RTOS or callback boundaries it records the concrete callsite plus
 the reviewed semantic action. A friendly label alone is insufficient: the
 slot address, guard and provenance remain available for inspection.
+
+The generated navigation index also joins calls across separately generated IR
+profiles by exact project symbol and source-qualified function identity. One
+candidate is reported as `unique`, multiple candidates as `ambiguous`, and no
+candidate as `unresolved`. This is a navigation association only:
+`linker_resolution_claim` remains false and no callee body is transitively
+inlined across profiles.
 
 ## Completeness
 

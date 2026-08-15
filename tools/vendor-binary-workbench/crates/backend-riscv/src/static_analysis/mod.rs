@@ -7,13 +7,14 @@ use rv_asm::{Inst, Reg};
 use crate::{
     ALLOCATED_EXTERNAL_RESULT_TOKEN_FLAG, BitSource, BranchCondition, BranchOperation,
     DEFERRED_CALLER_MEMORY_REGION, DirectSemanticFunctionSpec, DraftReferenceEvent,
-    ExpressionOperation, ExternalOutputModel, ExternalReturnModel, FunctionAnalysis,
-    FunctionTableRef, IndexedMmioDomain, IndexedMmioRegister, LocatedObservableEvent,
-    LocatedReferenceEvent, MemoryAccess, MemoryObjectLocation, MemoryObjectRoot, MmioMap,
-    OPAQUE_POINTER_EXTERNAL_RESULT_TOKEN_FLAG, ObservableEvent, RV32_REGISTER_ARGUMENT_COUNT,
-    RV32_STACK_ARGUMENT_COUNT, Result, ReviewedExternalCall, Rv32CallArguments,
-    SECONDARY_CALL_RESULT_TOKEN_FLAG, StandardMemoryFunction, SymbolicValue, artifact,
-    collect_evaluable_input_bits, encode_fence_set, evaluate_for_input, indexed_mmio_domain,
+    ExpressionOperation, ExternalOutputModel, ExternalReturnModel, FloatingPointOperation,
+    FloatingRoundingMode, FunctionAnalysis, FunctionTableRef, IndexedMmioDomain,
+    IndexedMmioRegister, LocatedObservableEvent, LocatedReferenceEvent, MemoryAccess,
+    MemoryObjectLocation, MemoryObjectRoot, MmioMap, OPAQUE_POINTER_EXTERNAL_RESULT_TOKEN_FLAG,
+    ObservableEvent, RV32_REGISTER_ARGUMENT_COUNT, RV32_STACK_ARGUMENT_COUNT, Result,
+    ReviewedExternalCall, Rv32CallArguments, SECONDARY_CALL_RESULT_TOKEN_FLAG,
+    StandardMemoryFunction, SymbolicValue, artifact, collect_evaluable_input_bits,
+    encode_fence_set, evaluate_for_input, indexed_mmio_domain,
 };
 
 mod alu;
@@ -121,6 +122,84 @@ fn apply_floating_data_instruction(
             if instruction.destination != 0 {
                 state.values[usize::from(instruction.destination)] =
                     state.floating_values[usize::from(instruction.source1)].clone();
+            }
+        }
+        artifact::FloatingDataOperation::SignedWordToSingle
+        | artifact::FloatingDataOperation::SubtractSingle
+        | artifact::FloatingDataOperation::DivideSingle
+        | artifact::FloatingDataOperation::FusedMultiplyAddSingle
+        | artifact::FloatingDataOperation::SingleToSignedWord => {
+            let operation = match instruction.operation {
+                artifact::FloatingDataOperation::SignedWordToSingle => {
+                    FloatingPointOperation::SignedWordToSingle
+                }
+                artifact::FloatingDataOperation::SubtractSingle => {
+                    FloatingPointOperation::SubtractSingle
+                }
+                artifact::FloatingDataOperation::DivideSingle => {
+                    FloatingPointOperation::DivideSingle
+                }
+                artifact::FloatingDataOperation::FusedMultiplyAddSingle => {
+                    FloatingPointOperation::FusedMultiplyAddSingle
+                }
+                artifact::FloatingDataOperation::SingleToSignedWord => {
+                    FloatingPointOperation::SingleToSignedWord
+                }
+                _ => unreachable!(),
+            };
+            let rounding = instruction
+                .rounding
+                .expect("arithmetic floating instruction has a rounding mode");
+            let operands = match instruction.operation {
+                artifact::FloatingDataOperation::SignedWordToSingle => {
+                    vec![state.values[usize::from(instruction.source1)].clone()]
+                }
+                artifact::FloatingDataOperation::SubtractSingle
+                | artifact::FloatingDataOperation::DivideSingle => vec![
+                    state.floating_values[usize::from(instruction.source1)].clone(),
+                    state.floating_values[usize::from(instruction.source2)].clone(),
+                ],
+                artifact::FloatingDataOperation::FusedMultiplyAddSingle => vec![
+                    state.floating_values[usize::from(instruction.source1)].clone(),
+                    state.floating_values[usize::from(instruction.source2)].clone(),
+                    state.floating_values
+                        [usize::from(instruction.source3.expect("fused operation has source3"))]
+                    .clone(),
+                ],
+                artifact::FloatingDataOperation::SingleToSignedWord => {
+                    vec![state.floating_values[usize::from(instruction.source1)].clone()]
+                }
+                _ => unreachable!(),
+            };
+            let value = SymbolicValue::floating_point(operation, rounding, operands);
+            if instruction.operation == artifact::FloatingDataOperation::SingleToSignedWord {
+                structural_set(&mut state.values, Reg(instruction.destination), value);
+            } else {
+                state.floating_values[usize::from(instruction.destination)] = value;
+            }
+            let executable_rounding = matches!(
+                (operation, rounding),
+                (
+                    FloatingPointOperation::SingleToSignedWord,
+                    FloatingRoundingMode::TowardZero
+                ) | (
+                    FloatingPointOperation::SignedWordToSingle
+                        | FloatingPointOperation::SubtractSingle
+                        | FloatingPointOperation::DivideSingle
+                        | FloatingPointOperation::FusedMultiplyAddSingle,
+                    FloatingRoundingMode::NearestEven
+                )
+            );
+            if !executable_rounding {
+                state.reference_blockers.push(format!(
+                    "floating-rounding-mode at {:#x}: {operation:?} uses {rounding:?}; executable reference requires an explicit reviewed rounding state",
+                    blocker.address
+                ));
+            } else {
+                state.reference_blockers.push(format!(
+                    "floating-execution-model at {:#x}: {operation:?} with {rounding:?} is structurally recovered but not executable",
+                    blocker.address
+                ));
             }
         }
         operation => {

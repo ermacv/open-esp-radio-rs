@@ -315,6 +315,13 @@ pub(super) fn render_value_scoped(
                 }
             })
         }
+        SymbolicValue::FloatingPoint {
+            operation,
+            rounding,
+            ..
+        } => Err(format!(
+            "floating-point value {operation:?} with {rounding:?} has no executable reference model"
+        )),
         SymbolicValue::WideSignedDivide {
             dividend_low,
             dividend_high,

@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use rv_asm::{Imm, Inst, IsCompressed, Reg, Xlen};
 
-use crate::{Error, Result};
+use crate::{Error, FloatingRoundingMode, Result};
 
 use super::model::{
     AnalysisInstruction, ArtifactSymbolDefinition, DecodedInstruction, UnsupportedInstruction,
@@ -37,6 +37,11 @@ pub enum FloatingDataOperation {
     CompareLessOrEqual,
     CompareLess,
     CompareEqual,
+    SignedWordToSingle,
+    SubtractSingle,
+    DivideSingle,
+    FusedMultiplyAddSingle,
+    SingleToSignedWord,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -45,6 +50,8 @@ pub struct FloatingDataInstruction {
     pub destination: u8,
     pub source1: u8,
     pub source2: u8,
+    pub source3: Option<u8>,
+    pub rounding: Option<FloatingRoundingMode>,
 }
 
 /// Return the architectural immediate for ANDI.
@@ -434,9 +441,7 @@ pub fn decode_floating_memory_instruction(
     Some(decoded)
 }
 
-/// Decode RV32F operations whose structural effects can be recovered without
-/// implementing floating-point arithmetic. Comparisons are useful only when
-/// both input bit patterns are already exact; the original F blocker remains.
+/// Decode the reviewed RV32F subset used by structural value flow.
 pub fn decode_floating_data_instruction(
     blocker: UnsupportedInstruction,
 ) -> Option<FloatingDataInstruction> {
@@ -444,23 +449,55 @@ pub fn decode_floating_data_instruction(
         return None;
     }
     let raw = blocker.raw;
-    if raw & 0x7f != 0x53 {
-        return None;
-    }
+    let opcode = raw & 0x7f;
     let funct7 = (raw >> 25) & 0x7f;
     let funct3 = (raw >> 12) & 0x7;
     let destination = ((raw >> 7) & 0x1f) as u8;
     let source1 = ((raw >> 15) & 0x1f) as u8;
     let source2 = ((raw >> 20) & 0x1f) as u8;
-    let operation = match (funct7, funct3, source2) {
-        (0x78, 0, 0) => FloatingDataOperation::MoveFromInteger,
-        (0x70, 0, 0) => FloatingDataOperation::MoveToInteger,
-        (0x10, 0, _) => FloatingDataOperation::SignCopy,
-        (0x10, 1, _) => FloatingDataOperation::SignNegate,
-        (0x10, 2, _) => FloatingDataOperation::SignXor,
-        (0x50, 0, _) => FloatingDataOperation::CompareLessOrEqual,
-        (0x50, 1, _) => FloatingDataOperation::CompareLess,
-        (0x50, 2, _) => FloatingDataOperation::CompareEqual,
+    let source3 = ((raw >> 27) & 0x1f) as u8;
+    let rounding = || match funct3 {
+        0 => Some(FloatingRoundingMode::NearestEven),
+        1 => Some(FloatingRoundingMode::TowardZero),
+        2 => Some(FloatingRoundingMode::Down),
+        3 => Some(FloatingRoundingMode::Up),
+        4 => Some(FloatingRoundingMode::NearestMaxMagnitude),
+        7 => Some(FloatingRoundingMode::Dynamic),
+        _ => None,
+    };
+    let (operation, source3, rounding) = match opcode {
+        0x43 if ((raw >> 25) & 0x3) == 0 => (
+            FloatingDataOperation::FusedMultiplyAddSingle,
+            Some(source3),
+            Some(rounding()?),
+        ),
+        0x53 => match (funct7, funct3, source2) {
+            (0x78, 0, 0) => (FloatingDataOperation::MoveFromInteger, None, None),
+            (0x70, 0, 0) => (FloatingDataOperation::MoveToInteger, None, None),
+            (0x10, 0, _) => (FloatingDataOperation::SignCopy, None, None),
+            (0x10, 1, _) => (FloatingDataOperation::SignNegate, None, None),
+            (0x10, 2, _) => (FloatingDataOperation::SignXor, None, None),
+            (0x50, 0, _) => (FloatingDataOperation::CompareLessOrEqual, None, None),
+            (0x50, 1, _) => (FloatingDataOperation::CompareLess, None, None),
+            (0x50, 2, _) => (FloatingDataOperation::CompareEqual, None, None),
+            (0x68, _, 0) => (
+                FloatingDataOperation::SignedWordToSingle,
+                None,
+                Some(rounding()?),
+            ),
+            (0x04, _, _) => (
+                FloatingDataOperation::SubtractSingle,
+                None,
+                Some(rounding()?),
+            ),
+            (0x0c, _, _) => (FloatingDataOperation::DivideSingle, None, Some(rounding()?)),
+            (0x60, _, 0) => (
+                FloatingDataOperation::SingleToSignedWord,
+                None,
+                Some(rounding()?),
+            ),
+            _ => return None,
+        },
         _ => return None,
     };
     Some(FloatingDataInstruction {
@@ -468,6 +505,8 @@ pub fn decode_floating_data_instruction(
         destination,
         source1,
         source2,
+        source3,
+        rounding,
     })
 }
 

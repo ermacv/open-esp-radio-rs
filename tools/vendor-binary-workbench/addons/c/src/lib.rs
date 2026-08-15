@@ -41,6 +41,61 @@ const WORD_ARGUMENTS: &[ExternalArgumentSpec] = &[ExternalArgumentSpec {
     c_type: "unsigned int",
     direction: ExternalArgumentDirection::Input,
 }];
+const STRING: ExternalArgumentSpec = ExternalArgumentSpec {
+    name: "string",
+    c_type: "const char *",
+    direction: ExternalArgumentDirection::Input,
+};
+const LEFT_STRING: ExternalArgumentSpec = ExternalArgumentSpec {
+    name: "left",
+    c_type: "const char *",
+    direction: ExternalArgumentDirection::Input,
+};
+const RIGHT_STRING: ExternalArgumentSpec = ExternalArgumentSpec {
+    name: "right",
+    c_type: "const char *",
+    direction: ExternalArgumentDirection::Input,
+};
+const LEFT_BYTES: ExternalArgumentSpec = ExternalArgumentSpec {
+    name: "left",
+    c_type: "const void *",
+    direction: ExternalArgumentDirection::Input,
+};
+const RIGHT_BYTES: ExternalArgumentSpec = ExternalArgumentSpec {
+    name: "right",
+    c_type: "const void *",
+    direction: ExternalArgumentDirection::Input,
+};
+const CHAR_DESTINATION: ExternalArgumentSpec = ExternalArgumentSpec {
+    name: "destination",
+    c_type: "char *",
+    direction: ExternalArgumentDirection::Output,
+};
+const MUTABLE_STRING: ExternalArgumentSpec = ExternalArgumentSpec {
+    name: "string",
+    c_type: "char *",
+    direction: ExternalArgumentDirection::InputOutput,
+};
+const DELIMITERS: ExternalArgumentSpec = ExternalArgumentSpec {
+    name: "delimiters",
+    c_type: "const char *",
+    direction: ExternalArgumentDirection::Input,
+};
+const CHARACTER: ExternalArgumentSpec = ExternalArgumentSpec {
+    name: "character",
+    c_type: "int",
+    direction: ExternalArgumentDirection::Input,
+};
+
+const ONE_STRING_ARGUMENT: &[ExternalArgumentSpec] = &[STRING];
+const TWO_STRING_ARGUMENTS: &[ExternalArgumentSpec] = &[LEFT_STRING, RIGHT_STRING];
+const TWO_STRING_LENGTH_ARGUMENTS: &[ExternalArgumentSpec] = &[LEFT_STRING, RIGHT_STRING, LENGTH];
+const STRING_LENGTH_ARGUMENTS: &[ExternalArgumentSpec] = &[STRING, LENGTH];
+const BYTE_COMPARE_ARGUMENTS: &[ExternalArgumentSpec] = &[LEFT_BYTES, RIGHT_BYTES, LENGTH];
+const STRING_COPY_ARGUMENTS: &[ExternalArgumentSpec] = &[CHAR_DESTINATION, STRING];
+const STRING_COPY_LENGTH_ARGUMENTS: &[ExternalArgumentSpec] = &[CHAR_DESTINATION, STRING, LENGTH];
+const TOKEN_ARGUMENTS: &[ExternalArgumentSpec] = &[MUTABLE_STRING, DELIMITERS];
+const CHARACTER_ARGUMENTS: &[ExternalArgumentSpec] = &[CHARACTER];
 
 static MEMCPY: DirectSemanticFunctionSpec = DirectSemanticFunctionSpec {
     id: "c.standard.memcpy",
@@ -133,6 +188,126 @@ pure_word_runtime_spec!(
     "integer.population-count"
 );
 
+macro_rules! opaque_c_function {
+    (
+        $name:ident,
+        $id:literal,
+        $symbol:literal,
+        $operation:literal,
+        $arguments:ident,
+        $return_type:literal,
+        $return_model:expr
+    ) => {
+        static $name: DirectSemanticFunctionSpec = DirectSemanticFunctionSpec {
+            id: $id,
+            source: "c-addon",
+            c_name: $symbol,
+            argument_count: $arguments.len() as u8,
+            body_policy: SemanticFunctionBodyPolicy::OpaqueBoundary,
+            return_model: $return_model,
+            semantic: ExternalSemanticSpec {
+                operation: $operation,
+                arguments: $arguments,
+                return_type: $return_type,
+                replacement: None,
+                event_dispatch: None,
+            },
+            evidence: "exact public symbol identity and standardized C function contract",
+        };
+    };
+}
+
+opaque_c_function!(
+    MEMCMP,
+    "c.standard.memcmp",
+    "memcmp",
+    "memory.compare",
+    BYTE_COMPARE_ARGUMENTS,
+    "int",
+    ExternalReturnModel::SymbolicU32
+);
+opaque_c_function!(
+    STRLEN,
+    "c.standard.strlen",
+    "strlen",
+    "string.length",
+    ONE_STRING_ARGUMENT,
+    "size_t",
+    ExternalReturnModel::SymbolicU32
+);
+opaque_c_function!(
+    STRNLEN,
+    "c.standard.strnlen",
+    "strnlen",
+    "string.bounded-length",
+    STRING_LENGTH_ARGUMENTS,
+    "size_t",
+    ExternalReturnModel::SymbolicU32
+);
+opaque_c_function!(
+    STRCMP,
+    "c.standard.strcmp",
+    "strcmp",
+    "string.compare",
+    TWO_STRING_ARGUMENTS,
+    "int",
+    ExternalReturnModel::SymbolicU32
+);
+opaque_c_function!(
+    STRNCMP,
+    "c.standard.strncmp",
+    "strncmp",
+    "string.bounded-compare",
+    TWO_STRING_LENGTH_ARGUMENTS,
+    "int",
+    ExternalReturnModel::SymbolicU32
+);
+opaque_c_function!(
+    STRCPY,
+    "c.standard.strcpy",
+    "strcpy",
+    "string.copy",
+    STRING_COPY_ARGUMENTS,
+    "char *",
+    ExternalReturnModel::Unmodeled
+);
+opaque_c_function!(
+    STRNCPY,
+    "c.standard.strncpy",
+    "strncpy",
+    "string.bounded-copy",
+    STRING_COPY_LENGTH_ARGUMENTS,
+    "char *",
+    ExternalReturnModel::Unmodeled
+);
+opaque_c_function!(
+    STRTOK,
+    "c.standard.strtok",
+    "strtok",
+    "string.tokenize",
+    TOKEN_ARGUMENTS,
+    "char *",
+    ExternalReturnModel::Unmodeled
+);
+opaque_c_function!(
+    PUTS,
+    "c.standard.puts",
+    "puts",
+    "diagnostic.puts",
+    ONE_STRING_ARGUMENT,
+    "int",
+    ExternalReturnModel::SymbolicU32
+);
+opaque_c_function!(
+    PUTCHAR,
+    "c.standard.putchar",
+    "putchar",
+    "diagnostic.putchar",
+    CHARACTER_ARGUMENTS,
+    "int",
+    ExternalReturnModel::SymbolicU32
+);
+
 /// Return the standardized memory contract selected by one exact C symbol.
 pub fn standard_memory_function(name: &str) -> Option<StandardMemoryFunction> {
     match name {
@@ -161,6 +336,16 @@ pub fn direct_external_semantic_function(
         "__ctzsi2" => Some(&CTZSI2),
         "__clzsi2" => Some(&CLZSI2),
         "__popcountsi2" => Some(&POPCOUNTSI2),
+        "memcmp" => Some(&MEMCMP),
+        "strlen" => Some(&STRLEN),
+        "strnlen" => Some(&STRNLEN),
+        "strcmp" => Some(&STRCMP),
+        "strncmp" => Some(&STRNCMP),
+        "strcpy" => Some(&STRCPY),
+        "strncpy" => Some(&STRNCPY),
+        "strtok" => Some(&STRTOK),
+        "puts" => Some(&PUTS),
+        "putchar" => Some(&PUTCHAR),
         _ => match standard_memory_function(name)? {
             StandardMemoryFunction::Copy => Some(&MEMCPY),
             StandardMemoryFunction::Move => Some(&MEMMOVE),
@@ -223,6 +408,22 @@ mod tests {
                 .operation,
             "integer.trailing-zeros"
         );
+        assert_eq!(
+            direct_external_semantic_function("strncmp")
+                .unwrap()
+                .semantic
+                .arguments
+                .len(),
+            3
+        );
+        assert_eq!(
+            direct_external_semantic_function("strlen")
+                .unwrap()
+                .return_model,
+            ExternalReturnModel::SymbolicU32
+        );
+        assert!(direct_external_semantic_function("sprintf").is_none());
+        assert!(direct_external_semantic_function("pp_printf").is_none());
     }
 
     #[test]

@@ -87,7 +87,7 @@ pub(crate) fn investigate(
         }
     };
     Ok(FunctionInvestigationReport {
-        schema_version: 12,
+        schema_version: 14,
         command: "inspect function",
         source: request.source.to_owned(),
         symbol: request.symbol.to_owned(),
@@ -121,9 +121,10 @@ pub(crate) fn investigate(
                 layer: "cfg",
                 status: "conservative",
                 detail: format!(
-                    "{} basic blocks, {} entry-reachable",
+                    "{} basic blocks, {} entry-reachable, {} loop region(s)",
                     runtime.basic_blocks.len(),
-                    reachable_blocks
+                    reachable_blocks,
+                    runtime.loops.len(),
                 ),
             },
             origin_ledger,
@@ -1060,6 +1061,7 @@ mod tests {
                     successors: Vec::new(),
                 },
             ],
+            loops: Vec::new(),
             labels: Vec::new(),
         };
 

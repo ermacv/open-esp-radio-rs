@@ -1,4 +1,5 @@
 use super::*;
+use crate::FloatingRoundingMode;
 use object::{SectionKind, SymbolKind};
 use rv_asm::{Inst, IsCompressed, Reg, Xlen};
 
@@ -426,6 +427,8 @@ fn floating_data_decoder_accepts_exact_structural_operations() {
             destination: 10,
             source1: 11,
             source2: 0,
+            source3: None,
+            rounding: None,
         })
     );
     assert_eq!(
@@ -435,6 +438,8 @@ fn floating_data_decoder_accepts_exact_structural_operations() {
             destination: 10,
             source1: 11,
             source2: 12,
+            source3: None,
+            rounding: None,
         })
     );
     assert_eq!(
@@ -444,12 +449,96 @@ fn floating_data_decoder_accepts_exact_structural_operations() {
             destination: 10,
             source1: 11,
             source2: 12,
+            source3: None,
+            rounding: None,
         })
     );
     assert_eq!(
         decode_floating_data_instruction(blocker(encode(0x00, 0, 10, 11, 12))),
         None,
         "fadd.s is arithmetic, not a bit-preserving operation"
+    );
+}
+
+#[test]
+fn floating_data_decoder_accepts_rx11ax_ampdu_limit_sequence() {
+    let blocker = |raw| UnsupportedInstruction {
+        address: 0x1000,
+        width: 4,
+        raw,
+        class: UnsupportedInstructionClass::FloatingPoint,
+        integer_destination: None,
+        linear_control_flow: true,
+    };
+    let cases = [
+        (
+            0xd005_77d3,
+            FloatingDataInstruction {
+                operation: FloatingDataOperation::SignedWordToSingle,
+                destination: 15,
+                source1: 10,
+                source2: 0,
+                source3: None,
+                rounding: Some(FloatingRoundingMode::Dynamic),
+            },
+        ),
+        (
+            0x08d7_f7d3,
+            FloatingDataInstruction {
+                operation: FloatingDataOperation::SubtractSingle,
+                destination: 15,
+                source1: 15,
+                source2: 13,
+                source3: None,
+                rounding: Some(FloatingRoundingMode::Dynamic),
+            },
+        ),
+        (
+            0x18d7_f7d3,
+            FloatingDataInstruction {
+                operation: FloatingDataOperation::DivideSingle,
+                destination: 15,
+                source1: 15,
+                source2: 13,
+                source3: None,
+                rounding: Some(FloatingRoundingMode::Dynamic),
+            },
+        ),
+        (
+            0x40f7_7743,
+            FloatingDataInstruction {
+                operation: FloatingDataOperation::FusedMultiplyAddSingle,
+                destination: 14,
+                source1: 14,
+                source2: 15,
+                source3: Some(8),
+                rounding: Some(FloatingRoundingMode::Dynamic),
+            },
+        ),
+        (
+            0xc007_17d3,
+            FloatingDataInstruction {
+                operation: FloatingDataOperation::SingleToSignedWord,
+                destination: 15,
+                source1: 14,
+                source2: 0,
+                source3: None,
+                rounding: Some(FloatingRoundingMode::TowardZero),
+            },
+        ),
+    ];
+
+    for (raw, expected) in cases {
+        assert_eq!(
+            decode_floating_data_instruction(blocker(raw)),
+            Some(expected)
+        );
+    }
+
+    assert_eq!(
+        decode_floating_data_instruction(blocker(0x08d7_d7d3)),
+        None,
+        "reserved rounding encodings must remain blockers"
     );
 }
 

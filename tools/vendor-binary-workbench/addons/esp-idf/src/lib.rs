@@ -14,6 +14,23 @@ const DELAY_ARGUMENTS: &[ExternalArgumentSpec] = &[ExternalArgumentSpec {
     c_type: "u32",
     direction: ExternalArgumentDirection::Input,
 }];
+const WIFI_MODE_ARGUMENTS: &[ExternalArgumentSpec] = &[ExternalArgumentSpec {
+    name: "mode",
+    c_type: "wifi_mode_t *",
+    direction: ExternalArgumentDirection::Output,
+}];
+const WIFI_MAC_ARGUMENTS: &[ExternalArgumentSpec] = &[
+    ExternalArgumentSpec {
+        name: "interface",
+        c_type: "wifi_interface_t",
+        direction: ExternalArgumentDirection::Input,
+    },
+    ExternalArgumentSpec {
+        name: "mac",
+        c_type: "uint8_t[6]",
+        direction: ExternalArgumentDirection::Output,
+    },
+];
 
 static ETS_DELAY_US: DirectSemanticFunctionSpec = DirectSemanticFunctionSpec {
     id: "esp-idf.ets-delay-us",
@@ -32,6 +49,40 @@ static ETS_DELAY_US: DirectSemanticFunctionSpec = DirectSemanticFunctionSpec {
     evidence: "exact ESP-IDF public symbol and documented SDK ABI",
 };
 
+static ESP_WIFI_GET_MODE: DirectSemanticFunctionSpec = DirectSemanticFunctionSpec {
+    id: "esp-idf.esp-wifi-get-mode",
+    source: "esp-idf-addon",
+    c_name: "esp_wifi_get_mode",
+    argument_count: 1,
+    body_policy: SemanticFunctionBodyPolicy::OpaqueBoundary,
+    return_model: ExternalReturnModel::Unmodeled,
+    semantic: ExternalSemanticSpec {
+        operation: "wifi.query-mode",
+        arguments: WIFI_MODE_ARGUMENTS,
+        return_type: "esp_err_t",
+        replacement: None,
+        event_dispatch: None,
+    },
+    evidence: "exact ESP-IDF public symbol and documented SDK ABI; output memory is not execution-modeled",
+};
+
+static ESP_WIFI_GET_MAC: DirectSemanticFunctionSpec = DirectSemanticFunctionSpec {
+    id: "esp-idf.esp-wifi-get-mac",
+    source: "esp-idf-addon",
+    c_name: "esp_wifi_get_mac",
+    argument_count: 2,
+    body_policy: SemanticFunctionBodyPolicy::OpaqueBoundary,
+    return_model: ExternalReturnModel::Unmodeled,
+    semantic: ExternalSemanticSpec {
+        operation: "wifi.query-mac-address",
+        arguments: WIFI_MAC_ARGUMENTS,
+        return_type: "esp_err_t",
+        replacement: None,
+        event_dispatch: None,
+    },
+    evidence: "exact ESP-IDF public symbol and documented SDK ABI; output memory is not execution-modeled",
+};
+
 pub fn direct_semantic_function(
     symbol: &ArtifactSymbolDefinition,
 ) -> Option<&'static DirectSemanticFunctionSpec> {
@@ -43,6 +94,8 @@ pub fn direct_external_semantic_function(
 ) -> Option<&'static DirectSemanticFunctionSpec> {
     match name {
         "ets_delay_us" => Some(&ETS_DELAY_US),
+        "esp_wifi_get_mode" => Some(&ESP_WIFI_GET_MODE),
+        "esp_wifi_get_mac" => Some(&ESP_WIFI_GET_MAC),
         _ => None,
     }
 }
@@ -81,6 +134,23 @@ mod tests {
         assert_eq!(contract.source, "esp-idf-addon");
         assert_eq!(contract.semantic.operation, "time.blocking-delay");
         assert_eq!(contract.semantic.arguments.len(), 1);
+        assert_eq!(
+            direct_external_semantic_function("esp_wifi_get_mode")
+                .unwrap()
+                .semantic
+                .arguments[0]
+                .direction,
+            ExternalArgumentDirection::Output
+        );
+        assert_eq!(
+            direct_external_semantic_function("esp_wifi_get_mac")
+                .unwrap()
+                .semantic
+                .arguments
+                .len(),
+            2
+        );
         assert!(direct_external_semantic_function("vendor_ets_delay_us").is_none());
+        assert!(direct_external_semantic_function("esp_wifi_internal_set_retry_counter").is_none());
     }
 }

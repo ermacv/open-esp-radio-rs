@@ -9,3 +9,8 @@ the caller being reconstructed.
 Chip addresses and ROM identities do not belong here. Function-table layouts
 remain reviewed interface bindings; they may reference the reusable operation
 vocabulary without turning that vocabulary into evidence for a concrete slot.
+
+The implemented direct boundaries currently cover exact reviewed SDK
+identities for delay and selected public Wi-Fi queries. Private Wi-Fi archive
+wrappers are not inferred from spelling; target knowledge must classify an
+exact diagnostic hook or provide a reviewed contract.

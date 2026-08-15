@@ -195,6 +195,7 @@ fn write_ir(path: &std::path::Path) {
         object_offset,
         size: 4,
         flow_kind: "linear",
+        loops: Vec::new(),
         completeness: crate::LinkedFunctionCompleteness {
             body_complete: true,
             call_targets_complete: true,

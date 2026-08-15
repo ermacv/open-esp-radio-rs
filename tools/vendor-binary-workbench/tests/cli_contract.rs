@@ -1404,7 +1404,7 @@ fn project_symbol_inventory_writes_and_checks_its_manifest_owned_report() {
         &std::fs::read(directory.join("generated/navigation.json")).unwrap(),
     )
     .unwrap();
-    assert_eq!(navigation["schema_version"], 2);
+    assert_eq!(navigation["schema_version"], 3);
     assert_eq!(navigation["summary"]["linked_ir_functions"], 1);
     let fixture = navigation["symbols"]
         .as_array()

@@ -93,3 +93,17 @@ fn signed_branch_casts_the_complete_rendered_expression() {
         "((args[1] & 0xffffffff_u32) as i32) < ((0x00000000_u32) as i32)"
     );
 }
+
+#[test]
+fn rejects_structural_floating_value_without_architectural_execution_model() {
+    let value = SymbolicValue::floating_point(
+        crate::FloatingPointOperation::SignedWordToSingle,
+        crate::FloatingRoundingMode::Dynamic,
+        vec![SymbolicValue::input(0)],
+    );
+
+    let error = render_value(&value, &[], &[], 0).unwrap_err();
+    assert!(error.contains("SignedWordToSingle"), "{error}");
+    assert!(error.contains("Dynamic"), "{error}");
+    assert!(error.contains("no executable reference model"), "{error}");
+}

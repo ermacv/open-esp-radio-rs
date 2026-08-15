@@ -22,6 +22,9 @@ fn symbolic_nodes(value: &SymbolicValue) -> usize {
                 pending.push(left);
                 pending.push(right);
             }
+            SymbolicValue::FloatingPoint { operands, .. } => {
+                pending.extend(operands.iter());
+            }
             SymbolicValue::WideSignedDivide {
                 dividend_low,
                 dividend_high,
@@ -40,9 +43,16 @@ fn symbolic_nodes(value: &SymbolicValue) -> usize {
     count
 }
 
+fn requires_expression_bits(value: &SymbolicValue) -> bool {
+    matches!(
+        value,
+        SymbolicValue::Expression { .. } | SymbolicValue::FloatingPoint { .. }
+    )
+}
+
 impl SymbolicValue {
     pub fn and(self, constant: u32) -> Self {
-        if matches!(&self, Self::Expression { .. }) {
+        if requires_expression_bits(&self) {
             return Self::expression(ExpressionOperation::BitAnd, self, Self::Constant(constant));
         }
         Self::from_bits(core::array::from_fn(|bit| {
@@ -55,7 +65,7 @@ impl SymbolicValue {
     }
 
     pub fn or(self, constant: u32) -> Self {
-        if matches!(&self, Self::Expression { .. }) {
+        if requires_expression_bits(&self) {
             return Self::expression(ExpressionOperation::BitOr, self, Self::Constant(constant));
         }
         Self::from_bits(core::array::from_fn(|bit| {
@@ -74,7 +84,7 @@ impl SymbolicValue {
         if let Some(constant) = other.as_constant() {
             return self.and(constant);
         }
-        if matches!(&self, Self::Expression { .. }) || matches!(&other, Self::Expression { .. }) {
+        if requires_expression_bits(&self) || requires_expression_bits(&other) {
             return Self::expression(ExpressionOperation::BitAnd, self, other);
         }
         let left = self.bits();
@@ -102,7 +112,7 @@ impl SymbolicValue {
         if let Some(constant) = other.as_constant() {
             return self.or(constant);
         }
-        if matches!(&self, Self::Expression { .. }) || matches!(&other, Self::Expression { .. }) {
+        if requires_expression_bits(&self) || requires_expression_bits(&other) {
             return Self::expression(ExpressionOperation::BitOr, self, other);
         }
         let left = self.bits();
@@ -126,7 +136,7 @@ impl SymbolicValue {
     }
 
     pub fn shift_left(self, amount: u32) -> Self {
-        if matches!(&self, Self::Expression { .. }) {
+        if requires_expression_bits(&self) {
             return Self::expression(ExpressionOperation::ShiftLeft, self, Self::Constant(amount));
         }
         let source = self.bits();
@@ -137,7 +147,7 @@ impl SymbolicValue {
     }
 
     pub fn shift_right(self, amount: u32) -> Self {
-        if matches!(&self, Self::Expression { .. }) {
+        if requires_expression_bits(&self) {
             return Self::expression(
                 ExpressionOperation::ShiftRight,
                 self,
@@ -329,7 +339,7 @@ impl SymbolicValue {
     }
 
     pub fn xor(self, constant: u32) -> Self {
-        if matches!(&self, Self::Expression { .. }) {
+        if requires_expression_bits(&self) {
             return Self::expression(ExpressionOperation::BitXor, self, Self::Constant(constant));
         }
         let bits = self.bits();

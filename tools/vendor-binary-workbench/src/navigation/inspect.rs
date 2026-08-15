@@ -15,6 +15,10 @@ pub(crate) struct StoredNavigationSummary {
     pub(crate) interface_callers: usize,
     pub(crate) interface_roots: usize,
     pub(crate) unmatched_interface_roots: usize,
+    pub(crate) project_call_links: usize,
+    pub(crate) unique_project_calls: usize,
+    pub(crate) ambiguous_project_calls: usize,
+    pub(crate) unresolved_project_calls: usize,
 }
 
 pub(crate) fn inspect_report(path: &Path) -> Result<StoredNavigationSummary> {
@@ -23,6 +27,7 @@ pub(crate) fn inspect_report(path: &Path) -> Result<StoredNavigationSummary> {
     validate_inputs(&document, path.parent().unwrap_or_else(|| Path::new(".")))?;
     let artifact_ids = validate_artifacts(&document)?;
     validate_symbols(&document.symbols, &artifact_ids)?;
+    validate_project_calls(&document)?;
     validate_summary(&document)?;
     Ok(StoredNavigationSummary {
         artifacts: document.summary.artifacts,
@@ -31,7 +36,45 @@ pub(crate) fn inspect_report(path: &Path) -> Result<StoredNavigationSummary> {
         interface_callers: document.summary.interface_callers,
         interface_roots: document.summary.interface_roots,
         unmatched_interface_roots: document.summary.unmatched_interface_roots,
+        project_call_links: document.summary.project_call_links,
+        unique_project_calls: document.summary.unique_project_calls,
+        ambiguous_project_calls: document.summary.ambiguous_project_calls,
+        unresolved_project_calls: document.summary.unresolved_project_calls,
     })
+}
+
+fn validate_project_calls(document: &NavigationDocument) -> Result<()> {
+    let identities = document
+        .symbols
+        .iter()
+        .flat_map(|symbol| symbol.linked_ir.iter().map(|item| item.identity.as_str()))
+        .collect::<BTreeSet<_>>();
+    for call in &document.project_calls {
+        if call.caller.is_empty()
+            || call.symbol.is_empty()
+            || call.linker_resolution_claim
+            || !identities.contains(call.caller.as_str())
+            || call
+                .candidates
+                .iter()
+                .any(|candidate| !identities.contains(candidate.as_str()))
+        {
+            return Err(crate::Error::invalid(
+                "navigation project call has invalid identity or claim",
+            ));
+        }
+        let expected = match call.candidates.len() {
+            0 => "unresolved",
+            1 => "unique",
+            _ => "ambiguous",
+        };
+        if call.status != expected {
+            return Err(crate::Error::invalid(
+                "navigation project call status does not match its candidates",
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn validate_header(document: &NavigationDocument) -> Result<()> {
@@ -161,12 +204,31 @@ fn validate_summary(document: &NavigationDocument) -> Result<()> {
         .iter()
         .filter(|symbol| !symbol.interface_roots.is_empty())
         .count();
+    let actual_unique = document
+        .project_calls
+        .iter()
+        .filter(|call| call.status == "unique")
+        .count();
+    let actual_ambiguous = document
+        .project_calls
+        .iter()
+        .filter(|call| call.status == "ambiguous")
+        .count();
+    let actual_unresolved = document
+        .project_calls
+        .iter()
+        .filter(|call| call.status == "unresolved")
+        .count();
     if expected.artifacts != document.artifacts.len()
         || expected.symbols != document.symbols.len()
         || expected.inventory_symbols != actual_inventory
         || expected.linked_ir_functions != actual_ir
         || expected.interface_callers != actual_callers
         || expected.interface_roots != actual_roots
+        || expected.project_call_links != document.project_calls.len()
+        || expected.unique_project_calls != actual_unique
+        || expected.ambiguous_project_calls != actual_ambiguous
+        || expected.unresolved_project_calls != actual_unresolved
     {
         return Err(crate::Error::invalid(
             "navigation index summary does not match its typed contents",

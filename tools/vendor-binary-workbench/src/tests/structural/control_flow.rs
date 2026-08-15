@@ -62,6 +62,73 @@ fn unsupported_floating_arithmetic_remains_a_blocker() {
 }
 
 #[test]
+fn rx11ax_ampdu_float_slice_preserves_structural_value_flow() {
+    let fmv_from_integer =
+        |floating: u32, integer: u32| (0x78_u32 << 25) | (integer << 15) | (floating << 7) | 0x53;
+    let symbol = artifact::ArtifactSymbolDefinition {
+        member: None,
+        name: "rx11ax_ampdu_float_slice".to_owned(),
+        address: 0x1000,
+        bytes: [
+            fmv_from_integer(13, 12), // f13 <- raw bits from a2
+            fmv_from_integer(8, 13),  // f8 <- raw bits from a3
+            fmv_from_integer(14, 14), // f14 <- raw bits from a4
+            0xd005_77d3,              // fcvt.s.w f15, a0, dyn
+            0x08d7_f7d3,              // fsub.s f15, f15, f13, dyn
+            0x18d7_f7d3,              // fdiv.s f15, f15, f13, dyn
+            0x40f7_7743,              // fmadd.s f14, f14, f15, f8, dyn
+            0xc007_17d3,              // fcvt.w.s a5, f14, rtz
+            0x00f5_a023,              // sw a5, 0(a1)
+            0x0000_8067,              // ret
+        ]
+        .into_iter()
+        .flat_map(u32::to_le_bytes)
+        .collect(),
+        addresses_resolved: true,
+        memory_regions: Default::default(),
+        relocations: Vec::new(),
+    };
+
+    let trace = trace_binary_symbol(
+        &symbol,
+        &map(),
+        &BTreeMap::new(),
+        &StructuralPointerContext::default(),
+        None,
+    )
+    .unwrap();
+
+    assert!(trace.blockers.is_empty(), "{trace:#?}");
+    assert_eq!(trace.reference_blockers.len(), 5, "{trace:#?}");
+    assert!(
+        trace
+            .reference_blockers
+            .iter()
+            .all(|blocker| blocker.starts_with("floating-")),
+        "{trace:#?}"
+    );
+    assert!(!trace.is_reference_eligible());
+    let value = trace
+        .reference_events
+        .iter()
+        .find_map(|event| match event {
+            DraftReferenceEvent::Memory {
+                access: MemoryAccess::Write,
+                value: Some(value),
+                ..
+            } => Some(value),
+            _ => None,
+        })
+        .expect("the final store retains its structural value");
+    let canonical = value.canonical();
+    assert!(canonical.contains("SingleToSignedWord"), "{canonical}");
+    assert!(canonical.contains("FusedMultiplyAddSingle"), "{canonical}");
+    assert!(canonical.contains("DivideSingle"), "{canonical}");
+    assert!(canonical.contains("SubtractSingle"), "{canonical}");
+    assert!(canonical.contains("SignedWordToSingle"), "{canonical}");
+}
+
+#[test]
 fn floating_comparison_with_unknown_inputs_remains_a_blocker() {
     let fmv_f10 = (0x78_u32 << 25) | (10 << 15) | (10 << 7) | 0x53;
     let fmv_f11 = (0x78_u32 << 25) | (11 << 15) | (11 << 7) | 0x53;

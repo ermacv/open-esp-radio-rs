@@ -7,8 +7,8 @@ use std::{
 
 use super::model::{
     ArtifactDocument, IDENTITY_SCHEME, InterfaceCallObservation, InterfaceRootObservation,
-    InventoryObservation, IrObservation, NavigationDocument, SCHEMA_VERSION, SummaryDocument,
-    SymbolDocument, SymbolKey, address, artifact, input, symbol,
+    InventoryObservation, IrObservation, NavigationDocument, ProjectCallLinkDocument,
+    SCHEMA_VERSION, SummaryDocument, SymbolDocument, SymbolKey, address, artifact, input, symbol,
 };
 use crate::{
     Result,
@@ -79,13 +79,18 @@ pub(crate) fn build(project: &ProjectSpec) -> Result<NavigationDocument> {
         });
     }
 
+    let mut project_definitions = BTreeMap::<String, BTreeSet<String>>::new();
+    let mut pending_project_calls = BTreeSet::new();
     add_linked_ir(
         project,
         navigation_output,
         &mut inputs,
         &mut artifacts,
         &mut symbols,
+        &mut project_definitions,
+        &mut pending_project_calls,
     )?;
+    let project_calls = project_call_links(&project_definitions, pending_project_calls);
     let unmatched_interface_roots = add_interfaces(
         project,
         navigation_output,
@@ -117,6 +122,19 @@ pub(crate) fn build(project: &ProjectSpec) -> Result<NavigationDocument> {
             .filter(|symbol| !symbol.interface_roots.is_empty())
             .count(),
         unmatched_interface_roots,
+        project_call_links: project_calls.len(),
+        unique_project_calls: project_calls
+            .iter()
+            .filter(|call| call.status == "unique")
+            .count(),
+        ambiguous_project_calls: project_calls
+            .iter()
+            .filter(|call| call.status == "ambiguous")
+            .count(),
+        unresolved_project_calls: project_calls
+            .iter()
+            .filter(|call| call.status == "unresolved")
+            .count(),
     };
     Ok(NavigationDocument {
         schema_version: SCHEMA_VERSION,
@@ -127,9 +145,12 @@ pub(crate) fn build(project: &ProjectSpec) -> Result<NavigationDocument> {
         inputs,
         artifacts,
         symbols,
+        project_calls,
         summary,
     })
 }
+
+type PendingProjectCall = (String, Option<u32>, String);
 
 fn add_linked_ir(
     project: &ProjectSpec,
@@ -137,6 +158,8 @@ fn add_linked_ir(
     inputs: &mut Vec<super::model::InputDocument>,
     artifacts: &mut BTreeMap<String, ArtifactDocument>,
     symbols: &mut BTreeMap<SymbolKey, SymbolDocument>,
+    project_definitions: &mut BTreeMap<String, BTreeSet<String>>,
+    pending_project_calls: &mut BTreeSet<PendingProjectCall>,
 ) -> Result<()> {
     for profile in &project.ir_profiles {
         let report: LinkedIrStoredDocument =
@@ -155,6 +178,21 @@ fn add_linked_ir(
             source_artifacts.insert(item.source, item.artifact.sha256);
         }
         for function in report.functions {
+            if function.is_exported() {
+                project_definitions
+                    .entry(function.symbol.clone())
+                    .or_default()
+                    .insert(function.identity.clone());
+            }
+            for call in &function.calls {
+                if let Some(project_symbol) = call.project_symbol() {
+                    pending_project_calls.insert((
+                        function.identity.clone(),
+                        call.site,
+                        project_symbol.to_owned(),
+                    ));
+                }
+            }
             let sha256 = source_artifacts
                 .get(&function.source)
                 .ok_or_else(|| {
@@ -180,6 +218,34 @@ fn add_linked_ir(
         }
     }
     Ok(())
+}
+
+fn project_call_links(
+    definitions: &BTreeMap<String, BTreeSet<String>>,
+    calls: BTreeSet<PendingProjectCall>,
+) -> Vec<ProjectCallLinkDocument> {
+    calls
+        .into_iter()
+        .map(|(caller, site, symbol)| {
+            let candidates = definitions
+                .get(&symbol)
+                .map(|candidates| candidates.iter().cloned().collect::<Vec<_>>())
+                .unwrap_or_default();
+            let status = match candidates.len() {
+                0 => "unresolved",
+                1 => "unique",
+                _ => "ambiguous",
+            };
+            ProjectCallLinkDocument {
+                caller,
+                site,
+                symbol,
+                status: status.to_owned(),
+                candidates,
+                linker_resolution_claim: false,
+            }
+        })
+        .collect()
 }
 
 fn add_interfaces(
@@ -345,6 +411,30 @@ fn read_artifact<T>(
 #[cfg(test)]
 mod index_tests {
     use super::*;
+
+    #[test]
+    fn project_calls_preserve_unique_ambiguous_and_unresolved_candidates() {
+        let definitions = BTreeMap::from([
+            ("one".to_owned(), BTreeSet::from(["rom::one".to_owned()])),
+            (
+                "many".to_owned(),
+                BTreeSet::from(["a::many".to_owned(), "b::many".to_owned()]),
+            ),
+        ]);
+        let calls = BTreeSet::from([
+            ("archive::root".to_owned(), Some(0x10), "one".to_owned()),
+            ("archive::root".to_owned(), Some(0x20), "many".to_owned()),
+            ("archive::root".to_owned(), Some(0x30), "missing".to_owned()),
+        ]);
+
+        let links = project_call_links(&definitions, calls);
+        assert_eq!(links[0].status, "unique");
+        assert_eq!(links[0].candidates, ["rom::one"]);
+        assert_eq!(links[1].status, "ambiguous");
+        assert_eq!(links[1].candidates, ["a::many", "b::many"]);
+        assert_eq!(links[2].status, "unresolved");
+        assert!(links.iter().all(|link| !link.linker_resolution_claim));
+    }
 
     #[test]
     fn unknown_zero_absolute_root_never_joins_zero_offset_symbols() {

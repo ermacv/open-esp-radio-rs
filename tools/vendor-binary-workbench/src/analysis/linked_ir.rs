@@ -550,6 +550,11 @@ fn build_linked_functions_for_roots(
             "reachable-internal"
         };
         let function_identity = identities.symbol(symbol);
+        let structural_body = artifact::inspect_function_definition(symbol).ok();
+        let structural_loops = structural_body
+            .as_ref()
+            .map(|body| body.loops.clone())
+            .unwrap_or_default();
         let binding = if resolver.symbol_is_exported(symbol) {
             "global-or-weak"
         } else {
@@ -656,7 +661,7 @@ fn build_linked_functions_for_roots(
                 let direct_diagnostics = compact_diagnostics(&trace.blockers);
                 let reference_diagnostics = compact_diagnostics(&trace.reference_blockers);
                 let completeness = function_completeness(&trace, &calls, &direct_diagnostics);
-                let pseudo = render_pseudo(
+                let expanded_pseudo = render_pseudo(
                     &function_identity,
                     &trace,
                     &calls,
@@ -665,6 +670,17 @@ fn build_linked_functions_for_roots(
                     &call_graph_diagnostics,
                     Some(resolver),
                 );
+                let pseudo = structural_body
+                    .as_ref()
+                    .and_then(|body| {
+                        render_structural_loop_pseudo(
+                            &function_identity,
+                            body,
+                            &calls,
+                            &instruction_effects,
+                        )
+                    })
+                    .unwrap_or(expanded_pseudo);
                 functions.push(LinkedIrFunction {
                     source: source.to_owned(),
                     identity: function_identity.clone(),
@@ -676,6 +692,7 @@ fn build_linked_functions_for_roots(
                     object_offset: symbol.address as u32,
                     size: symbol.bytes.len(),
                     flow_kind,
+                    loops: structural_loops.clone(),
                     completeness,
                     exact: trace.is_exact(),
                     return_value: trace.return_value.canonical(),
@@ -727,6 +744,7 @@ fn build_linked_functions_for_roots(
                     object_offset: symbol.address as u32,
                     size: symbol.bytes.len(),
                     flow_kind: "unavailable",
+                    loops: structural_loops,
                     completeness: LinkedFunctionCompleteness {
                         body_complete: false,
                         call_targets_complete: false,

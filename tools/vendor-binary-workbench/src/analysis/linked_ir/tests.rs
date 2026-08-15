@@ -46,6 +46,7 @@ fn linked_test_function(
         object_offset: 0,
         size: 4,
         flow_kind: "partial",
+        loops: Vec::new(),
         completeness: LinkedFunctionCompleteness {
             body_complete: false,
             call_targets_complete: false,

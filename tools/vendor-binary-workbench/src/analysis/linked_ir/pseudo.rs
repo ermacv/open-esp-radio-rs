@@ -2,7 +2,9 @@
 
 use std::{collections::BTreeMap, fmt::Write as _, sync::Arc};
 
-use open_radio_vendor_analysis_model::{MemoryObjectLocation, MemoryObjectRoot};
+use open_radio_vendor_analysis_model::{
+    FloatingPointOperation, MemoryObjectLocation, MemoryObjectRoot,
+};
 
 use super::*;
 
@@ -246,6 +248,25 @@ pub(super) fn pseudo_value(value: &SymbolicValue) -> String {
                 ExpressionOperation::CountTrailingZeros => format!("{left}.trailing_zeros()"),
                 ExpressionOperation::PopulationCount => format!("{left}.count_ones()"),
             }
+        }
+        SymbolicValue::FloatingPoint {
+            operation,
+            rounding,
+            operands,
+        } => {
+            let operands = operands
+                .iter()
+                .map(pseudo_value)
+                .collect::<Vec<_>>()
+                .join(", ");
+            let operation = match operation {
+                FloatingPointOperation::SignedWordToSingle => "f32_from_i32_bits",
+                FloatingPointOperation::SubtractSingle => "f32_sub_bits",
+                FloatingPointOperation::DivideSingle => "f32_div_bits",
+                FloatingPointOperation::FusedMultiplyAddSingle => "f32_fma_bits",
+                FloatingPointOperation::SingleToSignedWord => "i32_from_f32_bits",
+            };
+            format!("{operation}({operands}, rounding={rounding:?})")
         }
         SymbolicValue::WideSignedDivide {
             dividend_low,
@@ -1020,4 +1041,285 @@ pub(super) fn render_pseudo(
     }
     output.push_str("}\n");
     output
+}
+
+/// Replace a bounded-unrolling presentation with a compact CFG-derived loop
+/// outline. The full instruction stream, blocks, calls and effects remain
+/// stored independently; this function changes presentation only.
+pub(super) fn render_structural_loop_pseudo(
+    identity: &str,
+    body: &artifact::FunctionBody,
+    calls: &[LinkedCall],
+    effects: &[LinkedInstructionEffect],
+) -> Option<String> {
+    if body.loops.is_empty() {
+        return None;
+    }
+
+    fn block_for_site(body: &artifact::FunctionBody, site: u32) -> Option<usize> {
+        let offset = u64::from(site).checked_sub(body.address)?;
+        body.basic_blocks
+            .iter()
+            .find(|block| offset >= block.start_offset && offset < block.end_offset)
+            .map(|block| block.id)
+    }
+
+    fn deepest_region_for_block(regions: &[artifact::FunctionLoop], block: usize) -> Option<usize> {
+        regions
+            .iter()
+            .filter(|region| region.body_blocks.contains(&block))
+            .max_by_key(|region| region.depth)
+            .map(|region| region.id)
+    }
+
+    fn structural_floating_instruction(
+        instruction: &artifact::FunctionInstruction,
+    ) -> Option<artifact::UnsupportedInstruction> {
+        if instruction.blocker_class.as_deref() != Some("floating-point") {
+            return None;
+        }
+        Some(artifact::UnsupportedInstruction {
+            address: instruction.address,
+            width: instruction.width,
+            raw: u32::from_str_radix(instruction.raw.trim_start_matches("0x"), 16).ok()?,
+            class: artifact::UnsupportedInstructionClass::FloatingPoint,
+            integer_destination: None,
+            linear_control_flow: true,
+        })
+    }
+
+    fn render_region(
+        region: &artifact::FunctionLoop,
+        regions: &[artifact::FunctionLoop],
+        calls_by_region: &BTreeMap<usize, Vec<&LinkedCall>>,
+        effects_by_region: &BTreeMap<usize, Vec<&LinkedInstructionEffect>>,
+        blockers_by_region: &BTreeMap<usize, Vec<&artifact::FunctionInstruction>>,
+        output: &mut String,
+        level: usize,
+    ) {
+        let prefix = indent(level);
+        match (region.kind, region.counted.as_ref()) {
+            (artifact::FunctionLoopKind::Natural, Some(counted)) if counted.step > 0 => {
+                writeln!(
+                    output,
+                    "{prefix}for {} in ({}..{}).step_by({}) {{ // {} iterations; structural candidate, not execution proof",
+                    counted.induction_register,
+                    counted.initial,
+                    counted.bound,
+                    counted.step,
+                    counted.trip_count,
+                )
+                .unwrap();
+            }
+            (artifact::FunctionLoopKind::Natural, Some(counted)) => {
+                writeln!(
+                    output,
+                    "{prefix}counted_loop({}, initial={}, bound={}, step={}) {{ // {} iterations; structural candidate, not execution proof",
+                    counted.induction_register,
+                    counted.initial,
+                    counted.bound,
+                    counted.step,
+                    counted.trip_count,
+                )
+                .unwrap();
+            }
+            (artifact::FunctionLoopKind::Natural, None) => {
+                writeln!(
+                    output,
+                    "{prefix}loop_at(bb{}) {{ // trip count unknown",
+                    region.header_block.expect("natural loop has a header")
+                )
+                .unwrap();
+            }
+            (artifact::FunctionLoopKind::Irreducible, _) => {
+                writeln!(
+                    output,
+                    "{prefix}irreducible_cfg_region({:?}) {{ // multiple entry blocks; no structured-loop claim",
+                    region.body_blocks
+                )
+                .unwrap();
+            }
+        }
+        writeln!(
+            output,
+            "{prefix}    // loop{} header={:?} latches={:?} body={:?} exits={:?}",
+            region.id,
+            region.header_block,
+            region.latch_blocks,
+            region.body_blocks,
+            region.exit_blocks,
+        )
+        .unwrap();
+
+        for call in calls_by_region.get(&region.id).into_iter().flatten() {
+            let site = call
+                .site
+                .map_or_else(|| "unknown".to_owned(), |site| format!("{site:#010x}"));
+            let operation = call
+                .semantic_operation
+                .as_deref()
+                .unwrap_or("internal-code");
+            writeln!(
+                output,
+                "{prefix}    call {}(); // site={site}, kind={}, operation={operation}, argument-shapes={}",
+                pseudo_identifier(&call.target),
+                call.kind,
+                call.argument_shapes,
+            )
+            .unwrap();
+        }
+        if let Some(effects) = effects_by_region.get(&region.id) {
+            let mmio = effects
+                .iter()
+                .filter(|effect| matches!(effect, LinkedInstructionEffect::Mmio { .. }))
+                .count();
+            let memory = effects.len() - mmio;
+            writeln!(
+                output,
+                "{prefix}    loop_effects(mmio={mmio}, memory={memory}); // exact effects remain in linked IR"
+            )
+            .unwrap();
+        }
+        for instruction in blockers_by_region.get(&region.id).into_iter().flatten() {
+            let floating = structural_floating_instruction(instruction);
+            if let Some(decoded) = floating.and_then(artifact::decode_floating_data_instruction) {
+                writeln!(
+                    output,
+                    "{prefix}    floating_value_flow(site={:#010x}, operation={:?}, rounding={:?}); // structural bits only; no executable FP claim",
+                    instruction.address,
+                    decoded.operation,
+                    decoded.rounding,
+                )
+                .unwrap();
+            } else if let Some(decoded) =
+                floating.and_then(artifact::decode_floating_memory_instruction)
+            {
+                writeln!(
+                    output,
+                    "{prefix}    floating_memory(site={:#010x}, access={:?}, width=32, register=f{}); // structural raw-bit transfer",
+                    instruction.address,
+                    decoded.access,
+                    decoded.floating_register,
+                )
+                .unwrap();
+            } else {
+                writeln!(
+                    output,
+                    "{prefix}    unknown_instruction(site={:#010x}, raw={}, class={});",
+                    instruction.address,
+                    instruction.raw,
+                    instruction.blocker_class.as_deref().unwrap_or("unknown"),
+                )
+                .unwrap();
+            }
+        }
+        for child in regions
+            .iter()
+            .filter(|candidate| candidate.parent == Some(region.id))
+        {
+            render_region(
+                child,
+                regions,
+                calls_by_region,
+                effects_by_region,
+                blockers_by_region,
+                output,
+                level + 1,
+            );
+        }
+        writeln!(output, "{prefix}}}").unwrap();
+    }
+
+    let mut calls_by_region = BTreeMap::<usize, Vec<&LinkedCall>>::new();
+    let mut outside_calls = Vec::new();
+    for call in calls {
+        let region = call
+            .site
+            .and_then(|site| block_for_site(body, site))
+            .and_then(|block| deepest_region_for_block(&body.loops, block));
+        if let Some(region) = region {
+            calls_by_region.entry(region).or_default().push(call);
+        } else {
+            outside_calls.push(call);
+        }
+    }
+    let mut effects_by_region = BTreeMap::<usize, Vec<&LinkedInstructionEffect>>::new();
+    for effect in effects {
+        let Some(block) = block_for_site(body, effect.site()) else {
+            continue;
+        };
+        if let Some(region) = deepest_region_for_block(&body.loops, block) {
+            effects_by_region.entry(region).or_default().push(effect);
+        }
+    }
+    let mut blockers_by_region = BTreeMap::<usize, Vec<&artifact::FunctionInstruction>>::new();
+    for instruction in body
+        .instructions
+        .iter()
+        .filter(|instruction| !instruction.supported)
+    {
+        let Some(block) = block_for_site(body, instruction.address as u32) else {
+            continue;
+        };
+        if let Some(region) = deepest_region_for_block(&body.loops, block) {
+            blockers_by_region
+                .entry(region)
+                .or_default()
+                .push(instruction);
+        }
+    }
+
+    let mut output = String::new();
+    writeln!(output, "// vendor symbol: {identity}").unwrap();
+    writeln!(
+        output,
+        "// STRUCTURAL-LOOP-VIEW: derived from the conservative CFG; use --full for every instruction and block."
+    )
+    .unwrap();
+    writeln!(
+        output,
+        "fn {}(args: [u32; 16]) -> u32 {{",
+        pseudo_identifier(identity)
+    )
+    .unwrap();
+    writeln!(
+        output,
+        "    // Non-loop branch ordering is not reconstructed in this compact view."
+    )
+    .unwrap();
+    outside_calls.sort_by_key(|call| call.site);
+    for call in outside_calls {
+        let site = call
+            .site
+            .map_or_else(|| "unknown".to_owned(), |site| format!("{site:#010x}"));
+        let operation = call
+            .semantic_operation
+            .as_deref()
+            .unwrap_or("internal-code");
+        writeln!(
+            output,
+            "    {}(); // outside recognized loops; site={site}, kind={}, operation={operation}",
+            pseudo_identifier(&call.target),
+            call.kind,
+        )
+        .unwrap();
+    }
+    for region in body.loops.iter().filter(|region| region.parent.is_none()) {
+        render_region(
+            region,
+            &body.loops,
+            &calls_by_region,
+            &effects_by_region,
+            &blockers_by_region,
+            &mut output,
+            1,
+        );
+    }
+    writeln!(
+        output,
+        "    return unknown; // exact return and non-loop flow remain in the lossless IR"
+    )
+    .unwrap();
+    output.push_str("}\n");
+    Some(output)
 }

@@ -125,6 +125,34 @@ pub(super) fn human(report: &FunctionInvestigationReport, full: bool) {
         }
     }
     if full {
+        if !report.runtime.loops.is_empty() {
+            crate::cli::output::line(format_args!("\nLOOPS"));
+            for region in &report.runtime.loops {
+                crate::cli::output::line(format_args!(
+                    "  loop{} kind={:?} depth={} parent={:?} header={:?} latches={:?} body={:?} exits={:?}",
+                    region.id,
+                    region.kind,
+                    region.depth,
+                    region.parent,
+                    region.header_block,
+                    region.latch_blocks,
+                    region.body_blocks,
+                    region.exit_blocks,
+                ));
+                if let Some(counted) = &region.counted {
+                    crate::cli::output::line(format_args!(
+                        "    counted candidate: {}={} step={} bound={} comparison={} trips={} execution-proof={}",
+                        counted.induction_register,
+                        counted.initial,
+                        counted.step,
+                        counted.bound,
+                        counted.comparison,
+                        counted.trip_count,
+                        counted.execution_proof,
+                    ));
+                }
+            }
+        }
         crate::cli::output::line(format_args!("\nCFG"));
         for block in &report.runtime.basic_blocks {
             let successors = block
@@ -539,10 +567,11 @@ fn render_summary(report: &FunctionInvestigationReport) {
         outputln!("Member:   {member}");
     }
     outputln!(
-        "Body:     {} byte(s), {} instruction(s), {} basic block(s)",
+        "Body:     {} byte(s), {} instruction(s), {} basic block(s), {} loop region(s)",
         report.runtime.size,
         report.runtime.instructions.len(),
-        report.runtime.basic_blocks.len()
+        report.runtime.basic_blocks.len(),
+        report.runtime.loops.len(),
     );
 
     let complete_body = report.runtime.accounted_bytes == report.runtime.size;

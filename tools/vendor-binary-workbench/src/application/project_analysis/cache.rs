@@ -221,12 +221,12 @@ impl ProjectAnalysisCache {
 fn stage_revision(stage: &str) -> Result<u32> {
     match stage {
         "symbol-inventory" => Ok(2),
-        "mmio-discovery" => Ok(3),
+        "mmio-discovery" => Ok(4),
         "interface-discovery" => Ok(2),
-        "linked-ir" => Ok(16),
+        "linked-ir" => Ok(19),
         "event-replays" => Ok(1),
         "review-scopes" => Ok(3),
-        "navigation-index" => Ok(1),
+        "navigation-index" => Ok(2),
         "code-boundary-review" => Ok(1),
         "register-review" => Ok(1),
         "function-review" => Ok(1),

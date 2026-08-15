@@ -5,6 +5,150 @@ use crate::LocatedReferenceEvent;
 use open_radio_vendor_analysis_model::MemoryObjectRoot;
 
 #[test]
+fn structural_loop_pseudo_folds_nested_counted_regions_without_proof_claims() {
+    let counted = |register: &str, bound, step, trip_count| artifact::FunctionCountedLoop {
+        induction_register: register.to_owned(),
+        initial: 0,
+        step,
+        bound,
+        comparison: "not-equal",
+        trip_count,
+        execution_proof: false,
+    };
+    let body = artifact::FunctionBody {
+        artifact: "fixture.elf".to_owned(),
+        member: None,
+        symbol: "nested".to_owned(),
+        address: 0x1000,
+        size: 16,
+        addresses_resolved: true,
+        accounted_bytes: 16,
+        instructions: Vec::new(),
+        basic_blocks: Vec::new(),
+        loops: vec![
+            artifact::FunctionLoop {
+                id: 0,
+                kind: artifact::FunctionLoopKind::Natural,
+                header_block: Some(1),
+                latch_blocks: vec![3],
+                body_blocks: vec![1, 2, 3],
+                exit_blocks: vec![4],
+                parent: None,
+                depth: 0,
+                counted: Some(counted("s11", 30, 10, 3)),
+            },
+            artifact::FunctionLoop {
+                id: 1,
+                kind: artifact::FunctionLoopKind::Natural,
+                header_block: Some(2),
+                latch_blocks: vec![2],
+                body_blocks: vec![2],
+                exit_blocks: vec![3],
+                parent: Some(0),
+                depth: 1,
+                counted: Some(counted("s4", 10, 1, 10)),
+            },
+        ],
+        labels: Vec::new(),
+    };
+
+    let pseudo = render_structural_loop_pseudo("nested", &body, &[], &[]).unwrap();
+    assert!(
+        pseudo.contains("for s11 in (0..30).step_by(10) { // 3 iterations"),
+        "{pseudo}"
+    );
+    assert!(
+        pseudo.contains("for s4 in (0..10).step_by(1) { // 10 iterations"),
+        "{pseudo}"
+    );
+    assert!(pseudo.contains("not execution proof"), "{pseudo}");
+}
+
+#[test]
+fn structural_loop_pseudo_distinguishes_lifted_float_from_unknown_code() {
+    let instruction = |address, raw: &str| artifact::FunctionInstruction {
+        offset: address - 0x1000,
+        address,
+        width: 4,
+        raw: raw.to_owned(),
+        text: "floating".to_owned(),
+        supported: false,
+        blocker_class: Some("floating-point".to_owned()),
+        control_flow: artifact::FunctionControlFlow {
+            kind: artifact::FunctionControlFlowKind::Unknown,
+            target: None,
+        },
+        relocations: Vec::new(),
+    };
+    let body = artifact::FunctionBody {
+        artifact: "fixture.elf".to_owned(),
+        member: None,
+        symbol: "floating_loop".to_owned(),
+        address: 0x1000,
+        size: 8,
+        addresses_resolved: true,
+        accounted_bytes: 8,
+        instructions: vec![
+            instruction(0x1000, "0x00492687"),
+            instruction(0x1004, "0xd00577d3"),
+        ],
+        basic_blocks: vec![artifact::FunctionBasicBlock {
+            id: 0,
+            start_offset: 0,
+            end_offset: 8,
+            reachable: true,
+            successors: Vec::new(),
+        }],
+        loops: vec![artifact::FunctionLoop {
+            id: 0,
+            kind: artifact::FunctionLoopKind::Natural,
+            header_block: Some(0),
+            latch_blocks: vec![0],
+            body_blocks: vec![0],
+            exit_blocks: Vec::new(),
+            parent: None,
+            depth: 0,
+            counted: None,
+        }],
+        labels: Vec::new(),
+    };
+
+    let pseudo = render_structural_loop_pseudo("floating_loop", &body, &[], &[]).unwrap();
+    assert!(
+        pseudo.contains("floating_memory(site=0x00001000"),
+        "{pseudo}"
+    );
+    assert!(pseudo.contains("operation=SignedWordToSingle"), "{pseudo}");
+    assert!(pseudo.contains("rounding=Some(Dynamic)"), "{pseudo}");
+    assert!(!pseudo.contains("unknown_instruction"), "{pseudo}");
+    assert!(pseudo.contains("no executable FP claim"), "{pseudo}");
+}
+
+#[test]
+fn pseudo_value_exposes_floating_operation_and_rounding_provenance() {
+    let converted = SymbolicValue::floating_point(
+        crate::FloatingPointOperation::SignedWordToSingle,
+        crate::FloatingRoundingMode::Dynamic,
+        vec![SymbolicValue::input(0)],
+    );
+    let divided = SymbolicValue::floating_point(
+        crate::FloatingPointOperation::DivideSingle,
+        crate::FloatingRoundingMode::NearestEven,
+        vec![converted, SymbolicValue::Constant(0x3f80_0000)],
+    );
+    let result = SymbolicValue::floating_point(
+        crate::FloatingPointOperation::SingleToSignedWord,
+        crate::FloatingRoundingMode::TowardZero,
+        vec![divided],
+    );
+
+    assert_eq!(
+        pseudo_value(&result),
+        "i32_from_f32_bits(f32_div_bits(f32_from_i32_bits(arg0, rounding=Dynamic), 0x3f800000, rounding=NearestEven), rounding=TowardZero)"
+    );
+}
+
+#[test]
 fn nominal_memory_object_projection_bounds_linked_list_nesting() {
     let mut root = MemoryObjectRoot::Argument { index: 0 };
     for _ in 0..16 {

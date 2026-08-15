@@ -99,6 +99,21 @@ pub(super) fn summarize_linked_ir_with_options(
         .iter()
         .filter(|function| function.flow_kind == "structured")
         .count();
+    let loop_functions = functions
+        .iter()
+        .filter(|function| !function.loops.is_empty())
+        .count();
+    let loop_regions = functions.iter().map(|function| function.loops.len()).sum();
+    let counted_loop_candidates = functions
+        .iter()
+        .flat_map(|function| &function.loops)
+        .filter(|region| region.counted.is_some())
+        .count();
+    let irreducible_loop_regions = functions
+        .iter()
+        .flat_map(|function| &function.loops)
+        .filter(|region| region.kind == artifact::FunctionLoopKind::Irreducible)
+        .count();
     let internal_calls = functions
         .iter()
         .flat_map(|function| &function.calls)
@@ -252,6 +267,10 @@ pub(super) fn summarize_linked_ir_with_options(
         transitive_effects_complete_functions,
         executable_complete_functions,
         structured_functions,
+        loop_functions,
+        loop_regions,
+        counted_loop_candidates,
+        irreducible_loop_regions,
         internal_calls,
         indexed_dispatch_calls,
         external_calls,

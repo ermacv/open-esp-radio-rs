@@ -4,7 +4,7 @@ use std::ops::{Deref, Index};
 
 use serde::{Serialize, Serializer};
 
-use crate::MemoryObjectRoot;
+use crate::{MemoryObjectRoot, artifact};
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 pub(crate) struct LinkedCallArgument {
@@ -940,6 +940,7 @@ pub(crate) struct LinkedIrFunction {
     pub(crate) object_offset: u32,
     pub(crate) size: usize,
     pub(crate) flow_kind: &'static str,
+    pub(crate) loops: Vec<artifact::FunctionLoop>,
     pub(crate) completeness: LinkedFunctionCompleteness,
     pub(crate) exact: bool,
     pub(crate) return_value: String,
@@ -990,6 +991,10 @@ pub(crate) struct LinkedIrReport {
     pub(crate) transitive_effects_complete_functions: usize,
     pub(crate) executable_complete_functions: usize,
     pub(crate) structured_functions: usize,
+    pub(crate) loop_functions: usize,
+    pub(crate) loop_regions: usize,
+    pub(crate) counted_loop_candidates: usize,
+    pub(crate) irreducible_loop_regions: usize,
     pub(crate) internal_calls: usize,
     pub(crate) indexed_dispatch_calls: usize,
     pub(crate) external_calls: usize,

@@ -10,7 +10,7 @@ use sha2::{Digest, Sha256};
 
 use crate::{Result, artifact_path_sha256, parse_u32};
 
-pub(super) const SCHEMA_VERSION: u32 = 2;
+pub(super) const SCHEMA_VERSION: u32 = 3;
 pub(super) const IDENTITY_SCHEME: &str = "artifact-sha256-member-symbol-object-address-v1";
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -124,6 +124,23 @@ pub(super) struct SummaryDocument {
     pub(super) interface_callers: usize,
     pub(super) interface_roots: usize,
     pub(super) unmatched_interface_roots: usize,
+    pub(super) project_call_links: usize,
+    pub(super) unique_project_calls: usize,
+    pub(super) ambiguous_project_calls: usize,
+    pub(super) unresolved_project_calls: usize,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct ProjectCallLinkDocument {
+    pub(super) caller: String,
+    pub(super) site: Option<u32>,
+    pub(super) symbol: String,
+    pub(super) status: String,
+    pub(super) candidates: Vec<String>,
+    /// Always false. Unique source-qualified identity is a navigation fact,
+    /// not proof of linker selection or transitive behavior.
+    pub(super) linker_resolution_claim: bool,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -137,6 +154,7 @@ pub(crate) struct NavigationDocument {
     pub(super) inputs: Vec<InputDocument>,
     pub(super) artifacts: Vec<ArtifactDocument>,
     pub(super) symbols: Vec<SymbolDocument>,
+    pub(super) project_calls: Vec<ProjectCallLinkDocument>,
     pub(super) summary: SummaryDocument,
 }
 

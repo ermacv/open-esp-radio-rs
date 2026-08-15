@@ -304,6 +304,7 @@ mod tests {
                 .sum(),
             instructions,
             basic_blocks: Vec::new(),
+            loops: Vec::new(),
             labels: Vec::new(),
         }
     }

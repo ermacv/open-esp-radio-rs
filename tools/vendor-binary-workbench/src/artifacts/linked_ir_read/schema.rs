@@ -1,4 +1,4 @@
-//! Complete owned DTO for linked-IR schema v56.
+//! Complete owned DTO for linked-IR schema v58.
 
 #![allow(
     dead_code,
@@ -112,6 +112,10 @@ pub(crate) struct StoredReportSummary {
     transitive_effects_complete: usize,
     executable_complete: usize,
     structured: usize,
+    loop_functions: usize,
+    loop_regions: usize,
+    counted_loop_candidates: usize,
+    irreducible_loop_regions: usize,
     internal_calls: usize,
     indexed_dispatch_calls: usize,
     external_calls: usize,
@@ -188,6 +192,7 @@ pub(crate) struct StoredFunction {
     pub(crate) object_offset: u32,
     size: usize,
     flow_kind: String,
+    pub(crate) loops: Vec<StoredFunctionLoop>,
     pub(crate) completeness: StoredFunctionCompleteness,
     exact: bool,
     return_value: String,
@@ -211,6 +216,161 @@ pub(crate) struct StoredFunction {
     reference_diagnostics: Vec<StoredDiagnostic>,
     pub(crate) decode_blockers: Vec<StoredDecodeBlocker>,
     pub(crate) pseudo: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct StoredFunctionLoop {
+    pub(crate) id: usize,
+    pub(crate) kind: String,
+    pub(crate) header_block: Option<usize>,
+    pub(crate) latch_blocks: Vec<usize>,
+    pub(crate) body_blocks: Vec<usize>,
+    pub(crate) exit_blocks: Vec<usize>,
+    pub(crate) parent: Option<usize>,
+    pub(crate) depth: usize,
+    pub(crate) counted: Option<StoredCountedLoop>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct StoredCountedLoop {
+    pub(crate) induction_register: String,
+    pub(crate) initial: u32,
+    pub(crate) step: i32,
+    pub(crate) bound: u32,
+    pub(crate) comparison: String,
+    pub(crate) trip_count: u32,
+    pub(crate) execution_proof: bool,
+}
+
+pub(crate) fn validate_function_loops(
+    identity: &str,
+    loops: &[StoredFunctionLoop],
+) -> crate::Result<()> {
+    fn sorted_unique(values: &[usize]) -> bool {
+        values.windows(2).all(|pair| pair[0] < pair[1])
+    }
+
+    for (index, region) in loops.iter().enumerate() {
+        if region.id != index
+            || region.body_blocks.is_empty()
+            || !sorted_unique(&region.latch_blocks)
+            || !sorted_unique(&region.body_blocks)
+            || !sorted_unique(&region.exit_blocks)
+        {
+            return Err(crate::Error::invalid(format!(
+                "linked-IR function {identity:?} has a malformed loop region {index}"
+            )));
+        }
+        match region.kind.as_str() {
+            "natural"
+                if region
+                    .header_block
+                    .is_some_and(|header| region.body_blocks.contains(&header))
+                    && !region.latch_blocks.is_empty()
+                    && region
+                        .latch_blocks
+                        .iter()
+                        .all(|latch| region.body_blocks.contains(latch)) => {}
+            "irreducible"
+                if region.header_block.is_none()
+                    && region.latch_blocks.is_empty()
+                    && region.counted.is_none() => {}
+            "natural" | "irreducible" => {
+                return Err(crate::Error::invalid(format!(
+                    "linked-IR function {identity:?} has inconsistent {} loop region {index}",
+                    region.kind
+                )));
+            }
+            _ => {
+                return Err(crate::Error::invalid(format!(
+                    "linked-IR function {identity:?} has unknown loop kind {:?}",
+                    region.kind
+                )));
+            }
+        }
+        if let Some(counted) = &region.counted
+            && (counted.execution_proof
+                || counted.step == 0
+                || counted.trip_count == 0
+                || counted.comparison != "not-equal")
+        {
+            return Err(crate::Error::invalid(format!(
+                "linked-IR function {identity:?} has an invalid counted-loop candidate {index}"
+            )));
+        }
+
+        let mut expected_depth = 0;
+        let mut parent = region.parent;
+        let mut visited = std::collections::BTreeSet::new();
+        while let Some(parent_id) = parent {
+            if parent_id >= loops.len()
+                || parent_id == index
+                || !visited.insert(parent_id)
+                || loops[parent_id].body_blocks.len() <= region.body_blocks.len()
+                || !region
+                    .body_blocks
+                    .iter()
+                    .all(|block| loops[parent_id].body_blocks.contains(block))
+            {
+                return Err(crate::Error::invalid(format!(
+                    "linked-IR function {identity:?} has an invalid loop parent for region {index}"
+                )));
+            }
+            expected_depth += 1;
+            parent = loops[parent_id].parent;
+        }
+        if region.depth != expected_depth {
+            return Err(crate::Error::invalid(format!(
+                "linked-IR function {identity:?} has depth {} for loop region {index}, expected {expected_depth}",
+                region.depth
+            )));
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod loop_validation_tests {
+    use super::*;
+
+    fn counted_region() -> StoredFunctionLoop {
+        StoredFunctionLoop {
+            id: 0,
+            kind: "natural".to_owned(),
+            header_block: Some(1),
+            latch_blocks: vec![2],
+            body_blocks: vec![1, 2],
+            exit_blocks: vec![3],
+            parent: None,
+            depth: 0,
+            counted: Some(StoredCountedLoop {
+                induction_register: "s4".to_owned(),
+                initial: 0,
+                step: 1,
+                bound: 10,
+                comparison: "not-equal".to_owned(),
+                trip_count: 10,
+                execution_proof: false,
+            }),
+        }
+    }
+
+    #[test]
+    fn persistent_loop_candidate_cannot_claim_execution_proof() {
+        let valid = counted_region();
+        validate_function_loops("source::function", &[valid]).unwrap();
+
+        let mut invalid = counted_region();
+        invalid.counted.as_mut().unwrap().execution_proof = true;
+        assert!(
+            validate_function_loops("source::function", &[invalid])
+                .unwrap_err()
+                .to_string()
+                .contains("invalid counted-loop candidate")
+        );
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -273,6 +433,7 @@ pub(crate) struct StoredFunctionReviewProjection {
     pub(crate) member: Option<String>,
     pub(crate) symbol: String,
     pub(crate) binding: String,
+    pub(crate) loops: Vec<StoredFunctionLoop>,
     pub(crate) completeness: StoredFunctionCompleteness,
     pub(crate) dependencies: Vec<String>,
     pub(crate) direct_calls: usize,

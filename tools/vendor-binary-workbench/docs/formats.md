@@ -34,8 +34,12 @@ Old inline `memory-map`, `svd`, `platform-pack`, `harness`, and
 ## Generated outputs
 
 - symbol, MMIO, and interface observations;
-- canonical derived linked-IR bundles and indexes;
-- navigation and review-scope indexes;
+- canonical derived linked-IR bundles and indexes, including structural loop
+  regions, explicitly non-proving counted-loop candidates, and raw-bit
+  floating value-flow nodes whose operation and rounding mode remain explicit;
+- navigation and review-scope indexes; project-wide call associations retain
+  source-qualified candidates and a unique/ambiguous/unresolved status without
+  claiming linker resolution;
 - pseudo-Rust and executable reference artifacts;
 - verification reports and evidence index;
 - SVD, raw PAC, bindings index, and restricted API output.

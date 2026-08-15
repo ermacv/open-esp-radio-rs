@@ -12,7 +12,8 @@ pub use indexed_mmio::{
 pub use reference::*;
 pub use trace::*;
 pub use value::{
-    ALLOCATED_EXTERNAL_RESULT_TOKEN_FLAG, BitSource, ExpressionOperation, MemoryObjectLocation,
-    MemoryObjectRoot, OPAQUE_POINTER_EXTERNAL_RESULT_TOKEN_FLAG, PRIVATE_STACK_READ_TOKEN_FLAG,
-    SymbolicValue, external_result_call_token,
+    ALLOCATED_EXTERNAL_RESULT_TOKEN_FLAG, BitSource, ExpressionOperation, FloatingPointOperation,
+    FloatingRoundingMode, MemoryObjectLocation, MemoryObjectRoot,
+    OPAQUE_POINTER_EXTERNAL_RESULT_TOKEN_FLAG, PRIVATE_STACK_READ_TOKEN_FLAG, SymbolicValue,
+    external_result_call_token,
 };

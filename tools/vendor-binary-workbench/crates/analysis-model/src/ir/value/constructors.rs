@@ -3,6 +3,24 @@
 use super::*;
 
 impl SymbolicValue {
+    pub fn floating_point(
+        operation: FloatingPointOperation,
+        rounding: FloatingRoundingMode,
+        operands: impl Into<Box<[SymbolicValue]>>,
+    ) -> Self {
+        let operands = operands.into();
+        assert_eq!(
+            operands.len(),
+            operation.operand_count(),
+            "floating-point symbolic operation arity"
+        );
+        Self::FloatingPoint {
+            operation,
+            rounding,
+            operands,
+        }
+    }
+
     pub fn input(index: u8) -> Self {
         Self::Input { index }
     }
@@ -27,6 +45,7 @@ impl SymbolicValue {
             | Self::FunctionTable(_)
             | Self::FunctionPointer { .. }
             | Self::Expression { .. }
+            | Self::FloatingPoint { .. }
             | Self::WideSignedDivide { .. } => [BitSource::Unknown; 32],
             Self::CallResult(call_token) => core::array::from_fn(|bit| BitSource::CallResult {
                 call_token: *call_token,

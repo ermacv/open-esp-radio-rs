@@ -197,6 +197,9 @@ impl SymbolicValue {
                 left.has_memory_address_provenance(read_sources)
                     || right.has_memory_address_provenance(read_sources)
             }
+            Self::FloatingPoint { operands, .. } => operands
+                .iter()
+                .any(|operand| operand.has_memory_address_provenance(read_sources)),
             Self::WideSignedDivide {
                 dividend_low,
                 dividend_high,
@@ -364,6 +367,9 @@ impl SymbolicValue {
             Self::Expression { left, right, .. } => {
                 left.depends_on_private_stack_read() || right.depends_on_private_stack_read()
             }
+            Self::FloatingPoint { operands, .. } => operands
+                .iter()
+                .any(SymbolicValue::depends_on_private_stack_read),
             Self::WideSignedDivide {
                 dividend_low,
                 dividend_high,
@@ -506,6 +512,7 @@ impl SymbolicValue {
     pub fn is_resolved(&self) -> bool {
         match self {
             Self::Expression { left, right, .. } => left.is_resolved() && right.is_resolved(),
+            Self::FloatingPoint { operands, .. } => operands.iter().all(SymbolicValue::is_resolved),
             Self::WideSignedDivide {
                 dividend_low,
                 dividend_high,
@@ -592,6 +599,18 @@ impl SymbolicValue {
                 "expr:{operation:?}({},{})",
                 left.canonical(),
                 right.canonical()
+            ),
+            Self::FloatingPoint {
+                operation,
+                rounding,
+                operands,
+            } => format!(
+                "float:{operation:?}:{rounding:?}({})",
+                operands
+                    .iter()
+                    .map(SymbolicValue::canonical)
+                    .collect::<Vec<_>>()
+                    .join(",")
             ),
             Self::WideSignedDivide {
                 dividend_low,

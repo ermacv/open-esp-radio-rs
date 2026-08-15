@@ -26,7 +26,8 @@ pub use decode::{
 };
 pub use function_body::{
     FunctionBasicBlock, FunctionBlockSuccessor, FunctionBody, FunctionControlFlow,
-    FunctionControlFlowKind, FunctionInstruction, FunctionInstructionRelocation, FunctionLabel,
+    FunctionControlFlowKind, FunctionCountedLoop, FunctionInstruction,
+    FunctionInstructionRelocation, FunctionLabel, FunctionLoop, FunctionLoopKind,
     basic_block_ids_for_sites, inspect_function_body, inspect_function_body_at,
     inspect_function_definition,
 };

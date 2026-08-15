@@ -47,6 +47,20 @@ impl SymbolicValue {
                 )?),
             });
         }
+        if let Self::FloatingPoint {
+            operation,
+            rounding,
+            operands,
+        } = self
+        {
+            let operands = operands
+                .iter()
+                .map(|operand| {
+                    operand.substitute(arguments, read_tokens, memory_read_tokens, external_tokens)
+                })
+                .collect::<std::result::Result<Vec<_>, _>>()?;
+            return Ok(Self::floating_point(*operation, *rounding, operands));
+        }
         if let Self::WideSignedDivide {
             dividend_low,
             dividend_high,
@@ -251,6 +265,26 @@ impl SymbolicValue {
                 )?),
             });
         }
+        if let Self::FloatingPoint {
+            operation,
+            rounding,
+            operands,
+        } = self
+        {
+            let operands = operands
+                .iter()
+                .map(|operand| {
+                    operand.rewrite_call_context(
+                        read_tokens,
+                        memory_read_tokens,
+                        external_tokens,
+                        call_results,
+                        private_stack_reads,
+                    )
+                })
+                .collect::<std::result::Result<Vec<_>, _>>()?;
+            return Ok(Self::floating_point(*operation, *rounding, operands));
+        }
         if let Self::WideSignedDivide {
             dividend_low,
             dividend_high,
@@ -427,6 +461,18 @@ impl SymbolicValue {
                 left: Arc::new(left.rewrite_private_stack_context(private_stack_reads)?),
                 right: Arc::new(right.rewrite_private_stack_context(private_stack_reads)?),
             });
+        }
+        if let Self::FloatingPoint {
+            operation,
+            rounding,
+            operands,
+        } = self
+        {
+            let operands = operands
+                .iter()
+                .map(|operand| operand.rewrite_private_stack_context(private_stack_reads))
+                .collect::<std::result::Result<Vec<_>, _>>()?;
+            return Ok(Self::floating_point(*operation, *rounding, operands));
         }
         if let Self::WideSignedDivide {
             dividend_low,

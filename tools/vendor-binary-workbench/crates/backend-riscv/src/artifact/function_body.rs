@@ -31,6 +31,12 @@ pub struct FunctionBody {
     pub accounted_bytes: usize,
     pub instructions: Vec<FunctionInstruction>,
     pub basic_blocks: Vec<FunctionBasicBlock>,
+    /// Lossless structural loop regions recovered from the conservative CFG.
+    ///
+    /// These facts describe graph shape only. A counted-loop candidate is
+    /// emitted only for one exact affine induction pattern and remains a
+    /// presentation aid rather than an execution or termination proof.
+    pub loops: Vec<FunctionLoop>,
     pub labels: Vec<FunctionLabel>,
 }
 
@@ -104,6 +110,39 @@ pub struct FunctionBlockSuccessor {
     pub kind: String,
     pub block: Option<usize>,
     pub target: Option<u64>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
+pub struct FunctionLoop {
+    pub id: usize,
+    pub kind: FunctionLoopKind,
+    pub header_block: Option<usize>,
+    pub latch_blocks: Vec<usize>,
+    pub body_blocks: Vec<usize>,
+    pub exit_blocks: Vec<usize>,
+    pub parent: Option<usize>,
+    pub depth: usize,
+    pub counted: Option<FunctionCountedLoop>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum FunctionLoopKind {
+    Natural,
+    Irreducible,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
+pub struct FunctionCountedLoop {
+    pub induction_register: String,
+    pub initial: u32,
+    pub step: i32,
+    pub bound: u32,
+    pub comparison: &'static str,
+    pub trip_count: u32,
+    /// This is deliberately false. Structural affine recovery makes the loop
+    /// readable but does not prove that the path is executable or terminating.
+    pub execution_proof: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
@@ -282,6 +321,7 @@ pub(super) fn build_body(
         accounted_bytes += usize::from(width);
     }
     let basic_blocks = build_cfg(&instructions, definition.address, definition.bytes.len());
+    let loops = recover_loops(&basic_blocks, &decoded, definition.address);
     Ok(FunctionBody {
         artifact: artifact.display().to_string(),
         member: definition.member,
@@ -292,6 +332,7 @@ pub(super) fn build_body(
         accounted_bytes,
         instructions,
         basic_blocks,
+        loops,
         labels,
     })
 }
@@ -466,6 +507,489 @@ fn instruction_successors(
     }
 }
 
+fn recover_loops(
+    blocks: &[FunctionBasicBlock],
+    instructions: &[AnalysisInstruction],
+    base: u64,
+) -> Vec<FunctionLoop> {
+    if blocks.is_empty() {
+        return Vec::new();
+    }
+    let reachable = blocks
+        .iter()
+        .filter(|block| block.reachable)
+        .map(|block| block.id)
+        .collect::<BTreeSet<_>>();
+    let mut predecessors = vec![BTreeSet::new(); blocks.len()];
+    for block in blocks.iter().filter(|block| block.reachable) {
+        for successor in block
+            .successors
+            .iter()
+            .filter_map(|successor| successor.block)
+        {
+            if reachable.contains(&successor) {
+                predecessors[successor].insert(block.id);
+            }
+        }
+    }
+
+    let mut dominators = vec![BTreeSet::new(); blocks.len()];
+    for block in &reachable {
+        dominators[*block] = if *block == 0 {
+            BTreeSet::from([0])
+        } else {
+            reachable.clone()
+        };
+    }
+    loop {
+        let mut changed = false;
+        for block in reachable.iter().copied().filter(|block| *block != 0) {
+            let mut incoming = predecessors[block].iter().copied();
+            let mut next = incoming
+                .next()
+                .map(|predecessor| dominators[predecessor].clone())
+                .unwrap_or_default();
+            for predecessor in incoming {
+                next = next
+                    .intersection(&dominators[predecessor])
+                    .copied()
+                    .collect();
+            }
+            next.insert(block);
+            if next != dominators[block] {
+                dominators[block] = next;
+                changed = true;
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+
+    let mut latches_by_header = BTreeMap::<usize, BTreeSet<usize>>::new();
+    for block in blocks.iter().filter(|block| block.reachable) {
+        for successor in block
+            .successors
+            .iter()
+            .filter_map(|successor| successor.block)
+        {
+            if dominators[block.id].contains(&successor) {
+                latches_by_header
+                    .entry(successor)
+                    .or_default()
+                    .insert(block.id);
+            }
+        }
+    }
+
+    let mut regions = Vec::new();
+    for (header, latches) in latches_by_header {
+        let mut body = BTreeSet::from([header]);
+        let mut pending = VecDeque::new();
+        for latch in &latches {
+            if body.insert(*latch) {
+                pending.push_back(*latch);
+            }
+        }
+        while let Some(block) = pending.pop_front() {
+            for predecessor in &predecessors[block] {
+                if body.insert(*predecessor) && *predecessor != header {
+                    pending.push_back(*predecessor);
+                }
+            }
+        }
+        let exits = loop_exit_blocks(blocks, &body);
+        regions.push(FunctionLoop {
+            id: 0,
+            kind: FunctionLoopKind::Natural,
+            header_block: Some(header),
+            latch_blocks: latches.into_iter().collect(),
+            body_blocks: body.into_iter().collect(),
+            exit_blocks: exits,
+            parent: None,
+            depth: 0,
+            counted: None,
+        });
+    }
+
+    for component in strongly_connected_components(blocks, &reachable) {
+        let cyclic = component.len() > 1
+            || component.iter().any(|block| {
+                blocks[*block]
+                    .successors
+                    .iter()
+                    .any(|successor| successor.block == Some(*block))
+            });
+        if !cyclic {
+            continue;
+        }
+        let entries = component
+            .iter()
+            .filter(|block| {
+                predecessors[**block]
+                    .iter()
+                    .any(|predecessor| !component.contains(predecessor))
+            })
+            .count();
+        if entries <= 1 {
+            continue;
+        }
+        regions.push(FunctionLoop {
+            id: 0,
+            kind: FunctionLoopKind::Irreducible,
+            header_block: None,
+            latch_blocks: Vec::new(),
+            body_blocks: component.iter().copied().collect(),
+            exit_blocks: loop_exit_blocks(blocks, &component),
+            parent: None,
+            depth: 0,
+            counted: None,
+        });
+    }
+
+    regions.sort_by_key(|region| {
+        (
+            region.body_blocks.first().copied().unwrap_or(usize::MAX),
+            std::cmp::Reverse(region.body_blocks.len()),
+            matches!(region.kind, FunctionLoopKind::Irreducible),
+        )
+    });
+    for (id, region) in regions.iter_mut().enumerate() {
+        region.id = id;
+    }
+    for child in 0..regions.len() {
+        let child_body = regions[child]
+            .body_blocks
+            .iter()
+            .copied()
+            .collect::<BTreeSet<_>>();
+        let parent = regions
+            .iter()
+            .filter(|candidate| {
+                candidate.id != child && candidate.body_blocks.len() > child_body.len()
+            })
+            .filter(|candidate| {
+                child_body
+                    .iter()
+                    .all(|block| candidate.body_blocks.contains(block))
+            })
+            .min_by_key(|candidate| candidate.body_blocks.len())
+            .map(|candidate| candidate.id);
+        regions[child].parent = parent;
+    }
+    for index in 0..regions.len() {
+        let mut depth = 0;
+        let mut parent = regions[index].parent;
+        while let Some(parent_id) = parent {
+            depth += 1;
+            parent = regions[parent_id].parent;
+        }
+        regions[index].depth = depth;
+    }
+    for region in &mut regions {
+        if region.kind == FunctionLoopKind::Natural {
+            region.counted = recover_counted_loop(region, blocks, instructions, base);
+        }
+    }
+    regions
+}
+
+fn loop_exit_blocks(blocks: &[FunctionBasicBlock], body: &BTreeSet<usize>) -> Vec<usize> {
+    body.iter()
+        .flat_map(|block| {
+            blocks[*block]
+                .successors
+                .iter()
+                .filter_map(|successor| successor.block)
+        })
+        .filter(|successor| !body.contains(successor))
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
+}
+
+fn strongly_connected_components(
+    blocks: &[FunctionBasicBlock],
+    reachable: &BTreeSet<usize>,
+) -> Vec<BTreeSet<usize>> {
+    fn visit(
+        block: usize,
+        blocks: &[FunctionBasicBlock],
+        reachable: &BTreeSet<usize>,
+        visited: &mut BTreeSet<usize>,
+        order: &mut Vec<usize>,
+    ) {
+        if !visited.insert(block) {
+            return;
+        }
+        for successor in blocks[block]
+            .successors
+            .iter()
+            .filter_map(|successor| successor.block)
+            .filter(|successor| reachable.contains(successor))
+        {
+            visit(successor, blocks, reachable, visited, order);
+        }
+        order.push(block);
+    }
+
+    let mut order = Vec::new();
+    let mut visited = BTreeSet::new();
+    for block in reachable {
+        visit(*block, blocks, reachable, &mut visited, &mut order);
+    }
+    let mut reverse = vec![Vec::new(); blocks.len()];
+    for block in reachable {
+        for successor in blocks[*block]
+            .successors
+            .iter()
+            .filter_map(|successor| successor.block)
+            .filter(|successor| reachable.contains(successor))
+        {
+            reverse[successor].push(*block);
+        }
+    }
+    fn collect(
+        block: usize,
+        reverse: &[Vec<usize>],
+        visited: &mut BTreeSet<usize>,
+        component: &mut BTreeSet<usize>,
+    ) {
+        if !visited.insert(block) {
+            return;
+        }
+        component.insert(block);
+        for predecessor in &reverse[block] {
+            collect(*predecessor, reverse, visited, component);
+        }
+    }
+    visited.clear();
+    let mut output = Vec::new();
+    while let Some(block) = order.pop() {
+        if visited.contains(&block) {
+            continue;
+        }
+        let mut component = BTreeSet::new();
+        collect(block, &reverse, &mut visited, &mut component);
+        output.push(component);
+    }
+    output
+}
+
+fn recover_counted_loop(
+    region: &FunctionLoop,
+    blocks: &[FunctionBasicBlock],
+    instructions: &[AnalysisInstruction],
+    base: u64,
+) -> Option<FunctionCountedLoop> {
+    let header = region.header_block?;
+    let header_address = base.checked_add(blocks[header].start_offset)?;
+    let latch = match region.latch_blocks.as_slice() {
+        [latch] => *latch,
+        _ => return None,
+    };
+    let terminator_address = base.checked_add(blocks[latch].end_offset)?;
+    let terminator = instructions
+        .iter()
+        .rev()
+        .find(|instruction| instruction.address() < terminator_address)?;
+    let AnalysisInstruction::Supported(decoded) = terminator else {
+        return None;
+    };
+    let (left, right, comparison) = match decoded.instruction {
+        Inst::Bne { offset, src1, src2 }
+            if (decoded.address as u32).wrapping_add(offset.as_i32() as u32)
+                == header_address as u32 =>
+        {
+            (src1, src2, "not-equal")
+        }
+        _ => return None,
+    };
+    let body_ranges = region
+        .body_blocks
+        .iter()
+        .map(|block| {
+            (
+                base + blocks[*block].start_offset,
+                base + blocks[*block].end_offset,
+            )
+        })
+        .collect::<Vec<_>>();
+    let in_body = |address: u64| {
+        body_ranges
+            .iter()
+            .any(|(start, end)| address >= *start && address < *end)
+    };
+    for (induction, bound_register) in [(left, right), (right, left)] {
+        let steps = instructions
+            .iter()
+            .filter(|instruction| in_body(instruction.address()))
+            .filter_map(|instruction| match instruction {
+                AnalysisInstruction::Supported(decoded) => match decoded.instruction {
+                    Inst::Addi { imm, dest, src1 } if dest == induction && src1 == induction => {
+                        Some(imm.as_i32())
+                    }
+                    _ => None,
+                },
+                AnalysisInstruction::Unsupported(_) => None,
+            })
+            .collect::<Vec<_>>();
+        let step = match steps.as_slice() {
+            [step] if *step != 0 => *step,
+            _ => continue,
+        };
+        let mut induction_writes = 0;
+        for instruction in instructions
+            .iter()
+            .filter(|instruction| in_body(instruction.address()))
+        {
+            if integer_destination(*instruction)? == Some(induction) {
+                induction_writes += 1;
+            }
+        }
+        if induction_writes != 1 {
+            continue;
+        }
+        let initial = closest_constant_assignment_before(instructions, header_address, induction);
+        let bound =
+            closest_constant_assignment_before(instructions, decoded.address, bound_register);
+        let (Some(initial), Some(bound)) = (initial, bound) else {
+            continue;
+        };
+        let distance = i64::from(bound).checked_sub(i64::from(initial))?;
+        let step64 = i64::from(step);
+        if distance == 0 || distance.signum() != step64.signum() || distance % step64 != 0 {
+            continue;
+        }
+        let trip_count = u32::try_from(distance / step64).ok()?;
+        if trip_count == 0 {
+            continue;
+        }
+        return Some(FunctionCountedLoop {
+            induction_register: induction.to_string(),
+            initial,
+            step,
+            bound,
+            comparison,
+            trip_count,
+            execution_proof: false,
+        });
+    }
+    None
+}
+
+fn closest_constant_assignment_before(
+    instructions: &[AnalysisInstruction],
+    before: u64,
+    register: Reg,
+) -> Option<u32> {
+    for instruction in instructions
+        .iter()
+        .rev()
+        .filter(|instruction| instruction.address() < before)
+    {
+        if integer_destination(*instruction)? == Some(register) {
+            return constant_assignment(*instruction, register);
+        }
+    }
+    None
+}
+
+fn constant_assignment(instruction: AnalysisInstruction, register: Reg) -> Option<u32> {
+    match instruction {
+        AnalysisInstruction::Supported(decoded) => match decoded.instruction {
+            Inst::Addi { imm, dest, src1 } if dest == register && src1 == Reg::ZERO => {
+                Some(imm.as_u32())
+            }
+            _ => None,
+        },
+        AnalysisInstruction::Unsupported(_) => None,
+    }
+}
+
+/// `None` means the decoder introduced a supported instruction whose integer
+/// destination semantics this structural pass has not reviewed. The inner
+/// option distinguishes a known instruction without an integer destination.
+fn integer_destination(instruction: AnalysisInstruction) -> Option<Option<Reg>> {
+    let AnalysisInstruction::Supported(decoded) = instruction else {
+        let AnalysisInstruction::Unsupported(blocker) = instruction else {
+            unreachable!()
+        };
+        return Some(blocker.integer_destination.map(Reg));
+    };
+    match decoded.instruction {
+        Inst::Lui { dest, .. }
+        | Inst::Auipc { dest, .. }
+        | Inst::Jal { dest, .. }
+        | Inst::Jalr { dest, .. }
+        | Inst::Lb { dest, .. }
+        | Inst::Lbu { dest, .. }
+        | Inst::Lh { dest, .. }
+        | Inst::Lhu { dest, .. }
+        | Inst::Lw { dest, .. }
+        | Inst::Lwu { dest, .. }
+        | Inst::Ld { dest, .. }
+        | Inst::Addi { dest, .. }
+        | Inst::AddiW { dest, .. }
+        | Inst::Slti { dest, .. }
+        | Inst::Sltiu { dest, .. }
+        | Inst::Xori { dest, .. }
+        | Inst::Ori { dest, .. }
+        | Inst::Andi { dest, .. }
+        | Inst::Slli { dest, .. }
+        | Inst::SlliW { dest, .. }
+        | Inst::Srli { dest, .. }
+        | Inst::SrliW { dest, .. }
+        | Inst::Srai { dest, .. }
+        | Inst::SraiW { dest, .. }
+        | Inst::Add { dest, .. }
+        | Inst::AddW { dest, .. }
+        | Inst::Sub { dest, .. }
+        | Inst::SubW { dest, .. }
+        | Inst::Sll { dest, .. }
+        | Inst::SllW { dest, .. }
+        | Inst::Slt { dest, .. }
+        | Inst::Sltu { dest, .. }
+        | Inst::Xor { dest, .. }
+        | Inst::Srl { dest, .. }
+        | Inst::SrlW { dest, .. }
+        | Inst::Sra { dest, .. }
+        | Inst::SraW { dest, .. }
+        | Inst::Or { dest, .. }
+        | Inst::And { dest, .. }
+        | Inst::Mul { dest, .. }
+        | Inst::MulW { dest, .. }
+        | Inst::Mulh { dest, .. }
+        | Inst::Mulhsu { dest, .. }
+        | Inst::Mulhu { dest, .. }
+        | Inst::Div { dest, .. }
+        | Inst::DivW { dest, .. }
+        | Inst::Divu { dest, .. }
+        | Inst::DivuW { dest, .. }
+        | Inst::Rem { dest, .. }
+        | Inst::RemW { dest, .. }
+        | Inst::Remu { dest, .. }
+        | Inst::RemuW { dest, .. }
+        | Inst::LrW { dest, .. }
+        | Inst::ScW { dest, .. }
+        | Inst::AmoW { dest, .. } => Some(Some(dest)),
+        Inst::Beq { .. }
+        | Inst::Bne { .. }
+        | Inst::Blt { .. }
+        | Inst::Bge { .. }
+        | Inst::Bltu { .. }
+        | Inst::Bgeu { .. }
+        | Inst::Sb { .. }
+        | Inst::Sh { .. }
+        | Inst::Sw { .. }
+        | Inst::Sd { .. }
+        | Inst::Fence { .. }
+        | Inst::Ecall
+        | Inst::Ebreak => Some(None),
+        _ => None,
+    }
+}
+
 fn load_labels(
     artifact: &Path,
     definition: &ArtifactSymbolDefinition,
@@ -600,5 +1124,160 @@ mod tests {
             Some("floating-point")
         );
         assert_eq!(body.instructions[1].text, "ret");
+    }
+
+    fn supported(address: u64, instruction: Inst) -> AnalysisInstruction {
+        AnalysisInstruction::Supported(super::super::DecodedInstruction {
+            address,
+            width: 4,
+            instruction,
+        })
+    }
+
+    fn block(
+        id: usize,
+        start_offset: u64,
+        end_offset: u64,
+        successors: &[usize],
+    ) -> FunctionBasicBlock {
+        FunctionBasicBlock {
+            id,
+            start_offset,
+            end_offset,
+            reachable: true,
+            successors: successors
+                .iter()
+                .map(|target| FunctionBlockSuccessor {
+                    kind: "test".to_owned(),
+                    block: Some(*target),
+                    target: Some(0x1000 + *target as u64 * 4),
+                })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn nested_natural_loops_retain_structure_and_affine_count_candidates() {
+        let base = 0x1000;
+        let blocks = vec![
+            block(0, 0, 8, &[1]),
+            block(1, 8, 12, &[2]),
+            block(2, 12, 24, &[2, 3]),
+            block(3, 24, 36, &[1, 4]),
+            block(4, 36, 40, &[]),
+        ];
+        let instructions = vec![
+            supported(
+                base,
+                Inst::Addi {
+                    imm: 0_u32.into(),
+                    dest: Reg::S11,
+                    src1: Reg::ZERO,
+                },
+            ),
+            supported(
+                base + 4,
+                Inst::Addi {
+                    imm: 30_u32.into(),
+                    dest: Reg::A1,
+                    src1: Reg::ZERO,
+                },
+            ),
+            supported(
+                base + 8,
+                Inst::Addi {
+                    imm: 0_u32.into(),
+                    dest: Reg::S4,
+                    src1: Reg::ZERO,
+                },
+            ),
+            supported(
+                base + 12,
+                Inst::Addi {
+                    imm: 1_u32.into(),
+                    dest: Reg::S4,
+                    src1: Reg::S4,
+                },
+            ),
+            supported(
+                base + 16,
+                Inst::Addi {
+                    imm: 10_u32.into(),
+                    dest: Reg::A2,
+                    src1: Reg::ZERO,
+                },
+            ),
+            supported(
+                base + 20,
+                Inst::Bne {
+                    offset: (-8_i32 as u32).into(),
+                    src1: Reg::S4,
+                    src2: Reg::A2,
+                },
+            ),
+            supported(
+                base + 24,
+                Inst::Addi {
+                    imm: 10_u32.into(),
+                    dest: Reg::S11,
+                    src1: Reg::S11,
+                },
+            ),
+            supported(
+                base + 28,
+                Inst::Addi {
+                    imm: 30_u32.into(),
+                    dest: Reg::A1,
+                    src1: Reg::ZERO,
+                },
+            ),
+            supported(
+                base + 32,
+                Inst::Bne {
+                    offset: (-24_i32 as u32).into(),
+                    src1: Reg::S11,
+                    src2: Reg::A1,
+                },
+            ),
+            supported(
+                base + 36,
+                Inst::Jalr {
+                    offset: 0_u32.into(),
+                    base: Reg::RA,
+                    dest: Reg::ZERO,
+                },
+            ),
+        ];
+
+        let loops = recover_loops(&blocks, &instructions, base);
+        assert_eq!(loops.len(), 2);
+        assert_eq!(loops[0].body_blocks, vec![1, 2, 3]);
+        assert_eq!(loops[0].counted.as_ref().unwrap().trip_count, 3);
+        assert_eq!(loops[1].body_blocks, vec![2]);
+        assert_eq!(loops[1].parent, Some(0));
+        assert_eq!(loops[1].depth, 1);
+        assert_eq!(loops[1].counted.as_ref().unwrap().trip_count, 10);
+        assert!(loops.iter().all(|region| {
+            region
+                .counted
+                .as_ref()
+                .is_none_or(|counted| !counted.execution_proof)
+        }));
+    }
+
+    #[test]
+    fn multiple_entry_cycle_is_reported_as_irreducible() {
+        let blocks = vec![
+            block(0, 0, 4, &[1, 2]),
+            block(1, 4, 8, &[2]),
+            block(2, 8, 12, &[1, 3]),
+            block(3, 12, 16, &[]),
+        ];
+        let loops = recover_loops(&blocks, &[], 0x1000);
+        assert!(loops.iter().any(|region| {
+            region.kind == FunctionLoopKind::Irreducible
+                && region.body_blocks == vec![1, 2]
+                && region.header_block.is_none()
+        }));
     }
 }

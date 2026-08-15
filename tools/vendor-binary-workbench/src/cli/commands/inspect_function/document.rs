@@ -182,6 +182,7 @@ mod tests {
                     target: None,
                 }],
             }],
+            loops: Vec::new(),
             labels: vec![FunctionLabel {
                 offset: 0,
                 name: "entry".to_owned(),
@@ -193,7 +194,7 @@ mod tests {
     #[test]
     fn compact_document_counts_the_body_without_serializing_instructions() {
         let report = FunctionInvestigationReport {
-            schema_version: 12,
+            schema_version: 14,
             command: "inspect function",
             source: "fixture".to_owned(),
             symbol: "entry".to_owned(),

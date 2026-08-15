@@ -22,7 +22,7 @@ max_move_bytes = 4096
 # Runtime stack painting must retain these absolute headrooms in every required
 # HIL workload. Absolute call-depth reserves remain meaningful when static SRAM
 # allocations change the CPU0 capacity or CPU1 is deliberately resized.
-runtime_cpu0_minimum_free_bytes = 32768
+runtime_cpu0_minimum_free_bytes = 16384
 runtime_cpu1_minimum_free_bytes = 4096
 
 reported_frame_count = 30

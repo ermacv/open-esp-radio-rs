@@ -57,14 +57,14 @@ reason = "production station constructor transfers its unique resource graph int
 [[reviewed_frames]]
 function_contains = "ProductionWifiEpochRunner as"
 source_ends_with = "driver/integration/esp32s31/embassy-wifi/src/runtime.rs"
-max_bytes = 16896
-reason = "role epoch future retains the exact station, AP or monitor return ownership, including the 88-byte Rust rate-control owner"
+max_bytes = 16992
+reason = "role epoch future retains the exact station, AP or monitor return ownership, including the Rust rate-control owner and typed AP retry counters"
 
 [[reviewed_frames]]
 function_contains = "run_access_point_service::{closure#0}"
 source_ends_with = "driver/integration/esp32s31/embassy-wifi/src/runtime/access_point.rs"
-max_bytes = 9216
-reason = "AP epoch future retains the halted DMA owner and exact STA resume frontier until typed teardown; runtime painting still enforces aggregate CPU-stack headroom"
+max_bytes = 9264
+reason = "AP epoch future retains the halted DMA owner, exact STA resume frontier and typed retry report until teardown; runtime painting still enforces aggregate CPU-stack headroom"
 
 [[reviewed_frames]]
 function_contains = "::__wifi_role_task_task::__wifi_role_task_task_inner_function::{closure#0}"
@@ -99,8 +99,8 @@ reason = "shared initial/reconnect attempt future retains the exact phase owner 
 [[reviewed_frames]]
 function_contains = "run_esp32s31_station_supervisor_epoch"
 source_ends_with = "driver/radio/src/esp32s31/supervisor.rs"
-max_bytes = 11776
-reason = "chip station supervisor retains the typed role return and Rust rate-control owner across one epoch"
+max_bytes = 11872
+reason = "chip station supervisor retains the typed role return, Rust rate-control owner and AP retry report across one epoch"
 
 [[reviewed_frames]]
 function_contains = "::station::lifecycle::Esp32s31StationTask<"
@@ -111,8 +111,8 @@ reason = "station task future retains lifecycle command and returned owner state
 [[reviewed_frames]]
 function_contains = "EmbassyWifiSupervisorTask<"
 source_ends_with = "driver/radio/src/embassy_supervisor.rs"
-max_bytes = 11776
-reason = "radio supervisor retains the affine Wi-Fi role owner plus bounded network, service-epoch and rate-control state"
+max_bytes = 11808
+reason = "radio supervisor retains the affine Wi-Fi role owner plus bounded network, service-epoch, rate-control and AP retry-report state"
 
 [[reviewed_frames]]
 function_contains = "TaskStorage<open_esp_radio_hil_esp32s31_runtime"

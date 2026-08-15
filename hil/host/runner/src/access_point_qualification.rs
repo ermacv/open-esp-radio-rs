@@ -274,12 +274,16 @@ fn qualify(capture: &SerialCapture, config: &Config, lab: &LabConfig) -> Result<
         if let Err(error) = &data_result {
             let mut data_error = match stop_result.as_ref() {
                 Ok(stopped) => format!(
-                    "{error}; AP TX evidence: data={} hardware_failures={} hardware_timeouts={} \
-                     collision_limits={} last_hardware_status={} beacons={}; AP RX evidence: \
+                    "{error}; AP TX evidence: data={} ack_timeout_retries={} \
+                     cts_timeout_retries={} collision_retries={} hardware_failures={} \
+                     hardware_timeouts={} collision_limits={} last_hardware_status={} beacons={}; AP RX evidence: \
                      units={} descriptors={} recycled_descriptors={} discarded_units={} \
                      protected={} mic_failures={} quarantined={} duplicates={} \
                      radio_rejected={} protocol_rejected={} ethernet_staged={} tcp_staged={}",
                     stopped.data_frames_transmitted,
+                    stopped.tx_ack_timeout_retries,
+                    stopped.tx_cts_timeout_retries,
+                    stopped.tx_collision_retries,
                     stopped.tx_hardware_failures,
                     stopped.tx_hardware_timeouts,
                     stopped.tx_collision_limits,

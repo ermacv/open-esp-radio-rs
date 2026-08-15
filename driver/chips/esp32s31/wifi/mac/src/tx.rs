@@ -391,6 +391,24 @@ pub struct TxCompletion {
     pub alternate_word: u32,
 }
 
+/// Vendor LMAC disposition of one decoded ordinary-queue completion.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TxCompletionDisposition {
+    Success,
+    AckTimeout,
+    CtsTimeout,
+    Collision,
+    Terminal(TxCompletionFailure),
+}
+
+/// Terminal completion classes which the recovered LMAC does not retry.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TxCompletionFailure {
+    InvalidStatus { status: u8 },
+    RtsError { detail: u8 },
+    SecurityKeyError,
+}
+
 impl TxCompletion {
     /// Hardware completion status used by the vendor ACK-timeout path.
     ///
@@ -398,6 +416,52 @@ impl TxCompletion {
     /// `libpp.a[lmac.o]::lmacProcessTxComplete` maps status five to
     /// `lmacProcessAckTimeout` (status zero maps to ordinary TX success).
     pub const ACK_TIMEOUT_STATUS: u8 = 5;
+
+    /// Word selected by the completion-extension alternate-record bit.
+    pub const fn selected_word(&self) -> u32 {
+        if self.used_alternate {
+            self.alternate_word
+        } else {
+            self.primary_word
+        }
+    }
+
+    /// Low completion detail byte passed by `lmacProcessTxComplete` to the
+    /// status-one/status-four secondary dispatchers.
+    pub const fn detail(&self) -> u8 {
+        self.selected_word() as u8
+    }
+
+    /// Reproduce the complete top-level LMAC completion dispatch and the
+    /// retry-relevant leaves of `lmacProcessTxRtsError`/`TxError`.
+    ///
+    /// Status four is not terminal by itself. With the zero selector supplied
+    /// by `lmacProcessTxComplete`, detail zero becomes CTS timeout, details
+    /// one and three through five become collision, detail `0xc0` becomes a
+    /// security-key failure, and every remaining detail becomes ACK timeout.
+    pub const fn disposition(&self) -> TxCompletionDisposition {
+        match self.status {
+            0 => TxCompletionDisposition::Success,
+            1 if matches!(self.detail(), 3..=5) => TxCompletionDisposition::Collision,
+            1 => TxCompletionDisposition::Terminal(TxCompletionFailure::RtsError {
+                detail: self.detail(),
+            }),
+            2 => TxCompletionDisposition::CtsTimeout,
+            3 => {
+                TxCompletionDisposition::Terminal(TxCompletionFailure::InvalidStatus { status: 3 })
+            }
+            4 => match self.detail() {
+                0 => TxCompletionDisposition::CtsTimeout,
+                1 | 3..=5 => TxCompletionDisposition::Collision,
+                0xc0 => TxCompletionDisposition::Terminal(TxCompletionFailure::SecurityKeyError),
+                _ => TxCompletionDisposition::AckTimeout,
+            },
+            5 => TxCompletionDisposition::AckTimeout,
+            status => {
+                TxCompletionDisposition::Terminal(TxCompletionFailure::InvalidStatus { status })
+            }
+        }
+    }
 
     /// Return whether this completion belongs to a Trigger-based transmit flow.
     pub const fn is_trigger_based(&self) -> bool {
@@ -3165,5 +3229,77 @@ fn map_dma_storage_error(error: TxDmaStorageError) -> TxError {
         TxDmaStorageError::Address | TxDmaStorageError::InvalidLength => TxError::Invalid,
         TxDmaStorageError::Busy => TxError::Busy,
         TxDmaStorageError::State => TxError::Stale,
+    }
+}
+
+#[cfg(test)]
+mod completion_disposition_tests {
+    use super::*;
+
+    fn completion(status: u8, detail: u8) -> TxCompletion {
+        TxCompletion {
+            cookie: TxCookie(1),
+            status,
+            trigger_flow: false,
+            used_alternate: false,
+            auxiliary_a_word: 0,
+            auxiliary_b_word: 0,
+            auxiliary_c_word: 0,
+            primary_word: u32::from(detail),
+            alternate_word: 0,
+        }
+    }
+
+    #[test]
+    fn decoded_completion_uses_vendor_status_and_detail_dispatch() {
+        assert_eq!(
+            completion(0, 0).disposition(),
+            TxCompletionDisposition::Success
+        );
+        assert_eq!(
+            completion(1, 3).disposition(),
+            TxCompletionDisposition::Collision
+        );
+        assert_eq!(
+            completion(1, 2).disposition(),
+            TxCompletionDisposition::Terminal(TxCompletionFailure::RtsError { detail: 2 })
+        );
+        assert_eq!(
+            completion(2, 0xff).disposition(),
+            TxCompletionDisposition::CtsTimeout
+        );
+        assert_eq!(
+            completion(4, 0).disposition(),
+            TxCompletionDisposition::CtsTimeout
+        );
+        assert_eq!(
+            completion(4, 4).disposition(),
+            TxCompletionDisposition::Collision
+        );
+        assert_eq!(
+            completion(4, 2).disposition(),
+            TxCompletionDisposition::AckTimeout
+        );
+        assert_eq!(
+            completion(4, 0xc0).disposition(),
+            TxCompletionDisposition::Terminal(TxCompletionFailure::SecurityKeyError)
+        );
+        assert_eq!(
+            completion(5, 0).disposition(),
+            TxCompletionDisposition::AckTimeout
+        );
+        assert_eq!(
+            completion(6, 0).disposition(),
+            TxCompletionDisposition::Terminal(TxCompletionFailure::InvalidStatus { status: 6 })
+        );
+    }
+
+    #[test]
+    fn decoded_completion_detail_uses_the_selected_record() {
+        let mut completion = completion(4, 2);
+        completion.alternate_word = 3;
+        completion.used_alternate = true;
+        assert_eq!(completion.detail(), 3);
+        assert_eq!(completion.disposition(), TxCompletionDisposition::Collision);
     }
 }

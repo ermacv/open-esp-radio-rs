@@ -1,0 +1,26 @@
+schema = 3
+id = "access-point-single-client-bidirectional-task-poll"
+description = "Single-client AP full-duplex executor-residence diagnostic"
+repetitions = 1
+image = "diagnostic-task-poll"
+isolation = "reset"
+data_plane = "single-core"
+tags = ["diagnostic", "wifi", "access-point", "network", "single-client", "load", "bidirectional", "task-poll"]
+
+[workload]
+kind = "access-point"
+cycles = 2
+boots = 1
+timeout_seconds = 120
+
+[workload.traffic]
+kind = "udp"
+direction = "bidirectional"
+duration_seconds = 16
+rx_rate_bps = 8000000
+tx_rate_bps = 8000000
+payload_bytes = 1400
+
+[criteria]
+exact_delivery = false
+minimum_concurrent_ap_clients = 1

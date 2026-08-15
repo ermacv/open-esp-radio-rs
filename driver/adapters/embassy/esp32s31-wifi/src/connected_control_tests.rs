@@ -440,7 +440,9 @@ fn failed_rx_addba_response_rolls_back_hardware_and_software() {
         Some(RxReorderCommand::Start { tid: 3, .. })
     ));
 
-    finish_tx(&mut hardware, &mut tx, 2);
+    // Status 2 is the vendor CTS-timeout retry path. Use the terminal
+    // status-1 RTS error to exercise rollback after a failed response.
+    finish_tx(&mut hardware, &mut tx, 1);
     assert_eq!(
         embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
         Ok(WifiControlProgress::More)
@@ -463,7 +465,7 @@ fn failed_rx_addba_response_rolls_back_hardware_and_software() {
             kind: ConnectedControlTxKind::RxAddbaResponse { tid: 3 },
             outcome: SingleMpduTxOutcome::HardwareFailure(report),
         })
-        if matches!(report.completion, Some(TxCompletion { status: 2, .. }))
+        if matches!(report.completion, Some(TxCompletion { status: 1, .. }))
     ));
 }
 

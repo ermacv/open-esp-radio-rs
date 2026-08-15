@@ -3,7 +3,7 @@ use core::fmt;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-pub const PROTOCOL_VERSION: u16 = 42;
+pub const PROTOCOL_VERSION: u16 = 43;
 // Keep command envelopes small: startup artifacts are transferred as an
 // ordered CRC-protected stream, so a large per-command inline buffer only
 // inflates UART queues and executor futures without improving semantics.
@@ -841,7 +841,7 @@ pub struct WifiMonitorEvidence {
 ///
 /// These counters describe MAC/runtime work only. IP services and host-side
 /// client observations belong to the qualification report, not the driver.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct WifiAccessPointEvidence {
     pub generation: u32,
     pub channel: u8,
@@ -900,6 +900,9 @@ pub struct WifiAccessPointEvidence {
     pub network_tx_rejected_destination: u32,
     pub network_tx_frames_rejected: u32,
     pub data_frames_transmitted: u32,
+    pub tx_ack_timeout_retries: u32,
+    pub tx_cts_timeout_retries: u32,
+    pub tx_collision_retries: u32,
     pub tx_hardware_failures: u8,
     pub tx_hardware_timeouts: u8,
     pub tx_collision_limits: u8,

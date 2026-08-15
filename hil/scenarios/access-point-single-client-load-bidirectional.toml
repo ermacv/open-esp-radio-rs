@@ -1,0 +1,27 @@
+schema = 3
+id = "access-point-single-client-load-bidirectional"
+description = "Sustained balanced single-client legacy AP bidirectional characterization"
+repetitions = 1
+image = "qualification"
+isolation = "reset"
+tags = ["characterization", "wifi", "access-point", "network", "single-client", "load", "bidirectional"]
+
+[workload]
+kind = "access-point"
+cycles = 2
+boots = 1
+timeout_seconds = 180
+
+[workload.traffic]
+kind = "udp"
+direction = "bidirectional"
+duration_seconds = 60
+rx_rate_bps = 8000000
+tx_rate_bps = 8000000
+payload_bytes = 1400
+
+[criteria]
+exact_delivery = true
+minimum_rx_bps = 7600000
+minimum_tx_bps = 7600000
+minimum_concurrent_ap_clients = 1

@@ -9,7 +9,7 @@ use open_esp_radio_ieee80211::wmm::WmmParameterSet;
 
 use crate::{
     edca::{EdcaContentionParameters, EdcaParametersError, EdcaQueues},
-    tx::{HtPeerAmpduParameters, LegacyTxQueue, TxPhyRate},
+    tx::{HtPeerAmpduParameters, LegacyTxQueue, TxCompletionDisposition, TxPhyRate},
     tx_ampdu::HtAmpduTxCompletion,
 };
 
@@ -93,133 +93,208 @@ impl Default for WifiTxRuntimePolicy {
     }
 }
 
-/// Invalid construction or a missing vendor retry-ladder entry.
+/// Complete `lmacInit` defaults stored in `lmacConfMib[0x15]` and `[0x14]`.
+pub const VENDOR_SHORT_RETRY_LIMIT: u8 = 0x20;
+pub const VENDOR_LONG_RETRY_LIMIT: u8 = 0x20;
+pub const VENDOR_RTS_THRESHOLD_BYTES: u32 = 0x092a;
+
+/// Invalid construction or a missing normal-schedule rate entry.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum UnicastRetryError {
-    ZeroAttemptLimit,
-    RetryRateUnavailable { failed_attempts: u8 },
+pub enum OrdinaryRetryError {
+    ZeroMpduRetryLimit,
+    RetryRateUnavailable { retry_index: u8 },
 }
 
 /// Driver-owned action after one ordinary MPDU attempt.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum UnicastRetryDecision {
+pub enum OrdinaryRetryDecision {
     Complete,
-    /// Re-publish the same encoded MPDU after setting its Retry bit.
-    Retry,
+    /// Re-publish the same encoded MPDU. Only the ACK-timeout path sets the
+    /// 802.11 Retry bit; CTS timeout and collision deliberately do not.
+    Retry {
+        set_retry_bit: bool,
+    },
 }
 
-/// One bounded ordinary-MPDU retry transaction.
+/// Vendor short/long classification used by the separate retry counters.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum OrdinaryFrameClass {
+    Short,
+    Long,
+}
+
+/// Descriptor retry bytes consumed by `rcGetRate`, `rcReachRetryLimit` and
+/// the LMAC short/long retry-limit checks.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct OrdinaryRetryCounters {
+    pub mpdu: u8,
+    pub short: u8,
+    pub long: u8,
+}
+
+/// One bounded ordinary-MPDU retry transaction for the normal schedule path.
 ///
 /// The caller retains the encoded MPDU and its DMA storage. This type owns
-/// attempt counting, exact vendor rate-ladder selection and EDCA CW changes.
-pub struct UnicastRetryState {
+/// the three vendor descriptor counters, publication count, normal
+/// `rcGetRate` ladder selection and EDCA CW changes.
+pub struct OrdinaryMpduRetryState {
     queue: LegacyTxQueue,
     initial_rate: TxPhyRate,
-    attempt_limit: u8,
-    attempt: u8,
+    mpdu_retry_limit: u8,
+    publications: u8,
+    frame_class: OrdinaryFrameClass,
+    counters: OrdinaryRetryCounters,
 }
 
-impl UnicastRetryState {
+impl OrdinaryMpduRetryState {
     pub const fn new(
         queue: LegacyTxQueue,
         initial_rate: TxPhyRate,
-        attempt_limit: u8,
-    ) -> Result<Self, UnicastRetryError> {
-        if attempt_limit == 0 {
-            return Err(UnicastRetryError::ZeroAttemptLimit);
+        mpdu_retry_limit: u8,
+        frame_class: OrdinaryFrameClass,
+    ) -> Result<Self, OrdinaryRetryError> {
+        if mpdu_retry_limit == 0 {
+            return Err(OrdinaryRetryError::ZeroMpduRetryLimit);
         }
         Ok(Self {
             queue,
             initial_rate,
-            attempt_limit,
-            attempt: 1,
+            mpdu_retry_limit,
+            publications: 1,
+            frame_class,
+            counters: OrdinaryRetryCounters {
+                mpdu: 0,
+                short: 0,
+                long: 0,
+            },
         })
     }
 
-    pub const fn attempt(&self) -> u8 {
-        self.attempt
+    pub const fn publications(&self) -> u8 {
+        self.publications
+    }
+
+    pub const fn counters(&self) -> OrdinaryRetryCounters {
+        self.counters
     }
 
     /// Select the rate for the current publication.
     ///
-    /// SOURCE: complete `libpp.a[trc.o]::rcGetRate` and the exact
-    /// Rust-owned Dot11G/Dot11N schedule arenas. Explicit HT SGI MCS0..6 has
-    /// no independent vendor record, so it retains the requested rate. The
-    /// currently qualified HE ordinary path likewise retains its original
-    /// rate until the full vendor HE transition is promoted.
-    pub fn current_rate(&self) -> Result<TxPhyRate, UnicastRetryError> {
-        let failed_attempts = self.attempt - 1;
-        match self.initial_rate {
-            TxPhyRate::Legacy(rate) => rate
-                .vendor_retry_rate(failed_attempts)
-                .map(TxPhyRate::Legacy)
-                .ok_or(UnicastRetryError::RetryRateUnavailable { failed_attempts }),
-            TxPhyRate::Ht(rate) => Ok(rate
-                .vendor_retry_rate(failed_attempts)
-                .unwrap_or(TxPhyRate::Ht(rate))),
-            TxPhyRate::He(rate) => Ok(TxPhyRate::He(rate)),
-        }
+    /// This is specifically the normal `rcGetRate` branch. The descriptor
+    /// bypass and context-fixed-rate branches remain separate production
+    /// modes and are not inferred here. The normal branch selects with
+    /// `max(desc[5], desc[6])`; a long collision changes only `desc[7]` and
+    /// therefore retains its current rate.
+    pub fn current_rate(&self) -> Result<TxPhyRate, OrdinaryRetryError> {
+        select_ordinary_retry_rate(self.initial_rate, self.counters)
     }
 
-    /// Apply one detached hardware completion.
-    ///
-    /// SOURCE: complete `libpp.a[lmac.o]::{lmacProcessTxComplete,
-    /// lmacProcessAckTimeout,lmacProcessShortRetryFail,
-    /// lmacProcessLongRetryFail}`. Status 0 succeeds; statuses 2 and 5 are
-    /// bounded retry candidates; every other status terminates the exchange.
+    /// Apply one typed completion after the raw status/detail dispatcher.
     pub fn observe_completion(
         &mut self,
         policy: &mut WifiTxRuntimePolicy,
-        status: u8,
-    ) -> UnicastRetryDecision {
-        if status == 0 {
-            policy.record_success(self.queue);
-            return UnicastRetryDecision::Complete;
+        disposition: TxCompletionDisposition,
+    ) -> OrdinaryRetryDecision {
+        match disposition {
+            TxCompletionDisposition::Success => {
+                policy.record_success(self.queue);
+                OrdinaryRetryDecision::Complete
+            }
+            TxCompletionDisposition::AckTimeout => self.observe_ack_timeout(policy),
+            TxCompletionDisposition::CtsTimeout => self.observe_cts_timeout(policy),
+            TxCompletionDisposition::Collision => self.observe_collision(policy),
+            TxCompletionDisposition::Terminal(_) => {
+                policy.reset_terminal_exchange(self.queue);
+                OrdinaryRetryDecision::Complete
+            }
         }
-        if matches!(status, 2 | 5) && self.attempt < self.attempt_limit {
-            policy.record_retry_failure(self.queue);
-            self.attempt += 1;
-            return UnicastRetryDecision::Retry;
-        }
-        policy.reset_terminal_exchange(self.queue);
-        UnicastRetryDecision::Complete
     }
 
-    /// Treat a bounded software observation timeout like the vendor ACK/CTS
-    /// timeout path while publications remain in the transaction budget.
-    pub fn observe_hardware_timeout(
-        &mut self,
-        policy: &mut WifiTxRuntimePolicy,
-    ) -> UnicastRetryDecision {
-        if self.attempt < self.attempt_limit {
-            policy.record_retry_failure(self.queue);
-            self.attempt += 1;
-            UnicastRetryDecision::Retry
-        } else {
-            policy.reset_terminal_exchange(self.queue);
-            UnicastRetryDecision::Complete
-        }
+    fn observe_ack_timeout(&mut self, policy: &mut WifiTxRuntimePolicy) -> OrdinaryRetryDecision {
+        self.counters.mpdu = self.counters.mpdu.saturating_add(1);
+        let class_limit_reached = match self.frame_class {
+            OrdinaryFrameClass::Short => {
+                self.counters.short = self.counters.short.saturating_add(1);
+                self.counters.short >= VENDOR_SHORT_RETRY_LIMIT
+            }
+            OrdinaryFrameClass::Long => {
+                self.counters.long = self.counters.long.saturating_add(1);
+                self.counters.long >= VENDOR_LONG_RETRY_LIMIT
+            }
+        };
+        self.finish_or_retry(
+            policy,
+            class_limit_reached || self.counters.mpdu >= self.mpdu_retry_limit,
+            true,
+        )
+    }
+
+    fn observe_cts_timeout(&mut self, policy: &mut WifiTxRuntimePolicy) -> OrdinaryRetryDecision {
+        self.counters.short = self.counters.short.saturating_add(1);
+        self.finish_or_retry(
+            policy,
+            self.counters.short >= VENDOR_SHORT_RETRY_LIMIT,
+            false,
+        )
     }
 
     /// Apply one detached ordinary-queue collision.
-    ///
-    /// A collision consumes the same bounded publication/EDCA budget as the
-    /// recovered timeout retry body, but the caller does not set the 802.11
-    /// Retry bit: hardware never completed the original MPDU exchange.
-    pub fn observe_collision(&mut self, policy: &mut WifiTxRuntimePolicy) -> UnicastRetryDecision {
-        if self.attempt < self.attempt_limit {
-            policy.record_retry_failure(self.queue);
-            self.attempt += 1;
-            UnicastRetryDecision::Retry
-        } else {
+    pub fn observe_collision(&mut self, policy: &mut WifiTxRuntimePolicy) -> OrdinaryRetryDecision {
+        let class_limit_reached = match self.frame_class {
+            OrdinaryFrameClass::Short => {
+                self.counters.short = self.counters.short.saturating_add(1);
+                self.counters.short >= VENDOR_SHORT_RETRY_LIMIT
+            }
+            OrdinaryFrameClass::Long => {
+                self.counters.long = self.counters.long.saturating_add(1);
+                self.counters.long >= VENDOR_LONG_RETRY_LIMIT
+            }
+        };
+        self.finish_or_retry(policy, class_limit_reached, false)
+    }
+
+    fn finish_or_retry(
+        &mut self,
+        policy: &mut WifiTxRuntimePolicy,
+        limit_reached: bool,
+        set_retry_bit: bool,
+    ) -> OrdinaryRetryDecision {
+        if limit_reached {
             policy.reset_terminal_exchange(self.queue);
-            UnicastRetryDecision::Complete
+            OrdinaryRetryDecision::Complete
+        } else {
+            policy.record_retry_failure(self.queue);
+            self.publications = self.publications.saturating_add(1);
+            OrdinaryRetryDecision::Retry { set_retry_bit }
         }
     }
 
     /// End ownership after a non-retryable executor or hardware error.
     pub fn abort(&self, policy: &mut WifiTxRuntimePolicy) {
         policy.reset_terminal_exchange(self.queue);
+    }
+}
+
+/// Exact production rate-selection entry for the normal `rcGetRate` slice.
+///
+/// Keeping this as a named, non-inlined entry lets vendor comparison execute
+/// the same compiled function used by [`OrdinaryMpduRetryState`] rather than
+/// a shadow retry model.
+#[inline(never)]
+pub fn select_ordinary_retry_rate(
+    initial_rate: TxPhyRate,
+    counters: OrdinaryRetryCounters,
+) -> Result<TxPhyRate, OrdinaryRetryError> {
+    let retry_index = counters.mpdu.max(counters.short);
+    match initial_rate {
+        TxPhyRate::Legacy(rate) => rate
+            .vendor_retry_rate(retry_index)
+            .map(TxPhyRate::Legacy)
+            .ok_or(OrdinaryRetryError::RetryRateUnavailable { retry_index }),
+        TxPhyRate::Ht(rate) => Ok(rate
+            .vendor_retry_rate(retry_index)
+            .unwrap_or(TxPhyRate::Ht(rate))),
+        TxPhyRate::He(rate) => Ok(TxPhyRate::He(rate)),
     }
 }
 
@@ -455,18 +530,33 @@ mod tests {
     fn ordinary_retry_owns_rate_ladder_and_edca_transitions() {
         let mut policy = WifiTxRuntimePolicy::vendor_defaults();
         let queue = LegacyTxQueue::BestEffort;
-        let mut retry =
-            UnicastRetryState::new(queue, TxPhyRate::Legacy(LegacyRate::Ofdm54M), 4).unwrap();
+        let mut retry = OrdinaryMpduRetryState::new(
+            queue,
+            TxPhyRate::Legacy(LegacyRate::Ofdm54M),
+            4,
+            OrdinaryFrameClass::Short,
+        )
+        .unwrap();
 
         assert_eq!(
             retry.current_rate(),
             Ok(TxPhyRate::Legacy(LegacyRate::Ofdm54M))
         );
         assert_eq!(
-            retry.observe_completion(&mut policy, 5),
-            UnicastRetryDecision::Retry
+            retry.observe_completion(&mut policy, TxCompletionDisposition::AckTimeout),
+            OrdinaryRetryDecision::Retry {
+                set_retry_bit: true
+            }
         );
-        assert_eq!(retry.attempt(), 2);
+        assert_eq!(retry.publications(), 2);
+        assert_eq!(
+            retry.counters(),
+            OrdinaryRetryCounters {
+                mpdu: 1,
+                short: 1,
+                long: 0
+            }
+        );
         assert_eq!(policy.contention_exponent(queue), 5);
         assert_eq!(
             retry.current_rate(),
@@ -474,10 +564,20 @@ mod tests {
         );
 
         assert_eq!(
-            retry.observe_completion(&mut policy, 2),
-            UnicastRetryDecision::Retry
+            retry.observe_completion(&mut policy, TxCompletionDisposition::CtsTimeout),
+            OrdinaryRetryDecision::Retry {
+                set_retry_bit: false
+            }
         );
-        assert_eq!(retry.attempt(), 3);
+        assert_eq!(retry.publications(), 3);
+        assert_eq!(
+            retry.counters(),
+            OrdinaryRetryCounters {
+                mpdu: 1,
+                short: 2,
+                long: 0
+            }
+        );
         assert_eq!(policy.contention_exponent(queue), 6);
         assert_eq!(
             retry.current_rate(),
@@ -485,35 +585,58 @@ mod tests {
         );
 
         assert_eq!(
-            retry.observe_completion(&mut policy, 0),
-            UnicastRetryDecision::Complete
+            retry.observe_completion(&mut policy, TxCompletionDisposition::Success),
+            OrdinaryRetryDecision::Complete
         );
         assert_eq!(policy.contention_exponent(queue), 4);
     }
 
     #[test]
-    fn ordinary_retry_limit_and_abort_restore_the_minimum_cw() {
+    fn ordinary_retry_limit_collision_and_abort_restore_the_minimum_cw() {
         let queue = LegacyTxQueue::Voice;
         let mut policy = WifiTxRuntimePolicy::vendor_defaults();
-        let mut retry =
-            UnicastRetryState::new(queue, TxPhyRate::Legacy(LegacyRate::Ofdm6M), 2).unwrap();
+        let mut retry = OrdinaryMpduRetryState::new(
+            queue,
+            TxPhyRate::Legacy(LegacyRate::Ofdm6M),
+            2,
+            OrdinaryFrameClass::Long,
+        )
+        .unwrap();
         assert_eq!(
-            retry.observe_hardware_timeout(&mut policy),
-            UnicastRetryDecision::Retry
+            retry.observe_collision(&mut policy),
+            OrdinaryRetryDecision::Retry {
+                set_retry_bit: false
+            }
+        );
+        assert_eq!(retry.publications(), 2);
+        assert_eq!(retry.counters().long, 1);
+        assert_eq!(retry.counters().mpdu, 0);
+        assert_eq!(retry.counters().short, 0);
+        assert_eq!(
+            retry.current_rate(),
+            Ok(TxPhyRate::Legacy(LegacyRate::Ofdm6M))
         );
         assert_eq!(policy.contention_exponent(queue), 3);
         assert_eq!(
-            retry.observe_hardware_timeout(&mut policy),
-            UnicastRetryDecision::Complete
+            retry.observe_completion(&mut policy, TxCompletionDisposition::AckTimeout),
+            OrdinaryRetryDecision::Retry {
+                set_retry_bit: true
+            }
         );
-        assert_eq!(policy.contention_exponent(queue), 2);
+        assert_eq!(retry.counters().mpdu, 1);
+        assert_eq!(retry.counters().long, 2);
 
-        policy.record_retry_failure(queue);
         retry.abort(&mut policy);
         assert_eq!(policy.contention_exponent(queue), 2);
         assert_eq!(
-            UnicastRetryState::new(queue, TxPhyRate::Legacy(LegacyRate::Ofdm6M), 0).err(),
-            Some(UnicastRetryError::ZeroAttemptLimit)
+            OrdinaryMpduRetryState::new(
+                queue,
+                TxPhyRate::Legacy(LegacyRate::Ofdm6M),
+                0,
+                OrdinaryFrameClass::Short,
+            )
+            .err(),
+            Some(OrdinaryRetryError::ZeroMpduRetryLimit)
         );
     }
 

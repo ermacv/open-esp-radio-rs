@@ -178,6 +178,9 @@ static AP_NETWORK_TX_REJECTED_NO_PEER: AtomicU32 = AtomicU32::new(0);
 static AP_NETWORK_TX_REJECTED_DESTINATION: AtomicU32 = AtomicU32::new(0);
 static AP_NETWORK_TX_FRAMES_REJECTED: AtomicU32 = AtomicU32::new(0);
 static AP_DATA_FRAMES_TRANSMITTED: AtomicU32 = AtomicU32::new(0);
+static AP_TX_ACK_TIMEOUT_RETRIES: AtomicU32 = AtomicU32::new(0);
+static AP_TX_CTS_TIMEOUT_RETRIES: AtomicU32 = AtomicU32::new(0);
+static AP_TX_COLLISION_RETRIES: AtomicU32 = AtomicU32::new(0);
 static AP_TX_FAILURES: AtomicU32 = AtomicU32::new(0);
 static AP_PROTECTED_DATA_FRAMES: AtomicU32 = AtomicU32::new(0);
 static AP_PROTECTED_DATA_UNAUTHORIZED: AtomicU32 = AtomicU32::new(0);
@@ -257,6 +260,9 @@ fn observe_access_point(observation: Esp32s31AccessPointObservation) {
     );
     AP_NETWORK_TX_FRAMES_REJECTED.store(observation.network_tx_frames_rejected, Ordering::Release);
     AP_DATA_FRAMES_TRANSMITTED.store(observation.data_frames_transmitted, Ordering::Release);
+    AP_TX_ACK_TIMEOUT_RETRIES.store(observation.tx_ack_timeout_retries, Ordering::Release);
+    AP_TX_CTS_TIMEOUT_RETRIES.store(observation.tx_cts_timeout_retries, Ordering::Release);
+    AP_TX_COLLISION_RETRIES.store(observation.tx_collision_retries, Ordering::Release);
     AP_TX_FAILURES.store(
         u32::from(observation.tx_hardware_failures)
             | (u32::from(observation.tx_hardware_timeouts) << 8)
@@ -336,6 +342,9 @@ fn access_point_evidence(generation: u32, requested_channel: u8) -> WifiAccessPo
         network_tx_rejected_destination: AP_NETWORK_TX_REJECTED_DESTINATION.load(Ordering::Acquire),
         network_tx_frames_rejected: AP_NETWORK_TX_FRAMES_REJECTED.load(Ordering::Acquire),
         data_frames_transmitted: AP_DATA_FRAMES_TRANSMITTED.load(Ordering::Acquire),
+        tx_ack_timeout_retries: AP_TX_ACK_TIMEOUT_RETRIES.load(Ordering::Acquire),
+        tx_cts_timeout_retries: AP_TX_CTS_TIMEOUT_RETRIES.load(Ordering::Acquire),
+        tx_collision_retries: AP_TX_COLLISION_RETRIES.load(Ordering::Acquire),
         tx_hardware_failures: tx_failures as u8,
         tx_hardware_timeouts: (tx_failures >> 8) as u8,
         tx_collision_limits: (tx_failures >> 16) as u8,
@@ -1289,6 +1298,9 @@ async fn wifi_role_task(
                     AP_NETWORK_TX_REJECTED_DESTINATION.store(0, Ordering::Release);
                     AP_NETWORK_TX_FRAMES_REJECTED.store(0, Ordering::Release);
                     AP_DATA_FRAMES_TRANSMITTED.store(0, Ordering::Release);
+                    AP_TX_ACK_TIMEOUT_RETRIES.store(0, Ordering::Release);
+                    AP_TX_CTS_TIMEOUT_RETRIES.store(0, Ordering::Release);
+                    AP_TX_COLLISION_RETRIES.store(0, Ordering::Release);
                     AP_TX_FAILURES.store(0, Ordering::Release);
                     AP_PROTECTED_DATA_FRAMES.store(0, Ordering::Release);
                     AP_PROTECTED_DATA_UNAUTHORIZED.store(0, Ordering::Release);

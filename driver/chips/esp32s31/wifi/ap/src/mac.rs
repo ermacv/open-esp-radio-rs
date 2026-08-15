@@ -60,6 +60,7 @@ pub struct Esp32s31ApMacReport {
     pub association_responses_transmitted: u32,
     pub eapol_frames_transmitted: u32,
     pub data_frames_transmitted: u32,
+    pub data_tx: Esp32s31ApDataTxReport,
     /// Disconnect transactions accepted by the hardware TX owner.
     pub disassociations_published: u32,
     pub deauthentications_published: u32,
@@ -67,6 +68,56 @@ pub struct Esp32s31ApMacReport {
     pub disassociations_acknowledged: u32,
     pub deauthentications_acknowledged: u32,
     pub tx_failures: Esp32s31ApTxFailureReport,
+}
+
+/// Aggregate terminal evidence for AP data-frame TX transactions.
+///
+/// This is observation only: it consumes the already-decoded ordinary TX
+/// outcome and does not participate in retry, rate or queue decisions.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct Esp32s31ApDataTxReport {
+    pub attempts: u32,
+    pub retried_frames: u32,
+    pub cts_timeout_retries: u32,
+    pub ack_timeout_retries: u32,
+    pub collision_retries: u32,
+    pub maximum_attempts: u8,
+    pub minimum_final_rate_kbps: u32,
+    pub ack_snr_samples: u32,
+    pub minimum_ack_snr_db: i8,
+    pub maximum_ack_snr_db: i8,
+}
+
+impl Esp32s31ApDataTxReport {
+    fn observe(&mut self, report: open_esp_radio_esp32s31_wifi::ordinary_tx::OrdinaryTxReport) {
+        let attempts = report.status.attempts;
+        self.attempts = self.attempts.saturating_add(u32::from(attempts));
+        self.retried_frames = self.retried_frames.saturating_add(u32::from(attempts > 1));
+        self.cts_timeout_retries = self
+            .cts_timeout_retries
+            .saturating_add(u32::from(report.retries.cts_timeouts));
+        self.ack_timeout_retries = self
+            .ack_timeout_retries
+            .saturating_add(u32::from(report.retries.ack_timeouts));
+        self.collision_retries = self
+            .collision_retries
+            .saturating_add(u32::from(report.retries.collisions));
+        self.maximum_attempts = self.maximum_attempts.max(attempts);
+        let final_rate_kbps = report.status.final_rate.nominal_kbps();
+        if self.minimum_final_rate_kbps == 0 || final_rate_kbps < self.minimum_final_rate_kbps {
+            self.minimum_final_rate_kbps = final_rate_kbps;
+        }
+        if let Some(ack_snr_db) = report.status.ack_snr_db {
+            if self.ack_snr_samples == 0 {
+                self.minimum_ack_snr_db = ack_snr_db;
+                self.maximum_ack_snr_db = ack_snr_db;
+            } else {
+                self.minimum_ack_snr_db = self.minimum_ack_snr_db.min(ack_snr_db);
+                self.maximum_ack_snr_db = self.maximum_ack_snr_db.max(ack_snr_db);
+            }
+            self.ack_snr_samples = self.ack_snr_samples.saturating_add(1);
+        }
+    }
 }
 
 /// Compact semantic classification of terminal AP TX failures.
@@ -359,6 +410,9 @@ where
             .transmit
             .take_last_outcome()
             .expect("terminal AP TX retains an outcome");
+        if matches!(pending, PendingPublication::Data { .. }) {
+            self.report.data_tx.observe(outcome.report());
+        }
         if !matches!(outcome, OrdinaryTxOutcome::Success(_)) {
             match outcome {
                 OrdinaryTxOutcome::HardwareFailure(report) => {

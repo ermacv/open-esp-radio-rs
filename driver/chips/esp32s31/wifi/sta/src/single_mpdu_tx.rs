@@ -10,7 +10,7 @@ use core::future::Future;
 use open_esp_radio_esp32s31_wifi_mac::{
     crypto::StaPairwiseCcmpSlot,
     tx::{LegacyTxQueue, TxError, TxHardware, TxPhyRate},
-    tx_runtime::{UnicastRetryError, WifiTxRuntimePolicy},
+    tx_runtime::{OrdinaryRetryError, WifiTxRuntimePolicy},
 };
 use open_esp_radio_ieee80211::management::ProbeRequest;
 use open_esp_radio_ieee80211::station::{
@@ -83,7 +83,7 @@ pub enum SingleMpduTxError {
     ProbeEncode,
     Encode(StationFrameError),
     Tx(TxError),
-    Retry(UnicastRetryError),
+    Retry(OrdinaryRetryError),
     RadioResetRequired(TxResetReason),
 }
 
@@ -93,8 +93,8 @@ impl From<TxError> for SingleMpduTxError {
     }
 }
 
-impl From<UnicastRetryError> for SingleMpduTxError {
-    fn from(error: UnicastRetryError) -> Self {
+impl From<OrdinaryRetryError> for SingleMpduTxError {
+    fn from(error: OrdinaryRetryError) -> Self {
         Self::Retry(error)
     }
 }
@@ -655,6 +655,7 @@ mod tests {
         MacInterface,
         crypto::{CcmpKeyHardware, install_sta_pairwise_ccmp},
         tx::{HardwareOwnedTxDma, LegacyRate, PreparedTxDma, TxCompletion, TxSlot, TxSlotState},
+        tx_runtime::VENDOR_SHORT_RETRY_LIMIT,
     };
     use open_esp_radio_wifi_softmac::MacTxResult;
 
@@ -1057,7 +1058,7 @@ mod tests {
     }
 
     #[test]
-    fn timeout_waits_sixteen_micros_and_uses_the_bounded_retry_budget() {
+    fn timeout_waits_sixteen_micros_and_terminates_without_republication() {
         let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
         let mut hardware = Hardware {
             prepare: true,
@@ -1072,15 +1073,10 @@ mod tests {
 
         assert_eq!(
             crate::test_support::block_on(tx.service(&mut hardware, timeout)),
-            Ok(WifiTxProgress::Pending)
-        );
-        assert_eq!(tx.ordinary.timer.settled, 16);
-        hardware.timeout = true;
-        assert_eq!(
-            crate::test_support::block_on(tx.service(&mut hardware, timeout)),
             Ok(WifiTxProgress::Complete)
         );
-        assert_eq!(tx.ordinary.timer.settled, 32);
+        assert_eq!(tx.ordinary.timer.settled, 16);
+        assert_eq!(hardware.publications, 1);
         assert_eq!(
             tx.take_last_outcome()
                 .expect("terminal timeout report")
@@ -1105,27 +1101,29 @@ mod tests {
             events: open_esp_radio_esp32s31_wifi_mac::irq::MAC_INT_COLLISION,
         };
 
-        assert_eq!(
-            crate::test_support::block_on(tx.service(&mut hardware, collision)),
-            Ok(WifiTxProgress::Pending)
-        );
-        hardware.collision = true;
-        assert_eq!(
-            crate::test_support::block_on(tx.service(&mut hardware, collision)),
-            Ok(WifiTxProgress::Complete)
-        );
+        for collision_number in 1..=VENDOR_SHORT_RETRY_LIMIT {
+            hardware.collision = true;
+            let expected = if collision_number < VENDOR_SHORT_RETRY_LIMIT {
+                WifiTxProgress::Pending
+            } else {
+                WifiTxProgress::Complete
+            };
+            assert_eq!(
+                crate::test_support::block_on(tx.service(&mut hardware, collision)),
+                Ok(expected)
+            );
+        }
         assert_eq!(
             tx.ordinary.slot.as_mut().buffer_mut().unwrap()[TX_METADATA_SIZE + 1] & 0x08,
             0
         );
-        assert_eq!(
-            tx.take_last_outcome()
-                .expect("terminal collision report")
-                .report()
-                .status
-                .result,
-            MacTxResult::CollisionLimit
-        );
+        let report = tx
+            .take_last_outcome()
+            .expect("terminal collision report")
+            .report();
+        assert_eq!(report.status.result, MacTxResult::CollisionLimit);
+        assert_eq!(report.status.attempts, VENDOR_SHORT_RETRY_LIMIT);
+        assert_eq!(report.retries.collisions, VENDOR_SHORT_RETRY_LIMIT - 1);
     }
 
     #[test]

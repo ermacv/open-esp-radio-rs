@@ -1,0 +1,31 @@
+schema = 3
+id = "access-point-single-client-bidirectional-rx-delivery"
+description = "Single-client AP full-duplex RX delivery-frontier diagnostic"
+repetitions = 1
+image = "diagnostic-rx-delivery"
+isolation = "reset"
+tags = ["diagnostic", "wifi", "access-point", "network", "single-client", "load", "bidirectional", "rx-delivery"]
+
+[workload]
+kind = "access-point"
+cycles = 2
+boots = 1
+timeout_seconds = 120
+
+[workload.traffic]
+kind = "udp"
+direction = "bidirectional"
+duration_seconds = 16
+rx_rate_bps = 8000000
+tx_rate_bps = 8000000
+payload_bytes = 1400
+
+[criteria]
+exact_delivery = true
+minimum_rx_bps = 7600000
+minimum_tx_bps = 7600000
+minimum_concurrent_ap_clients = 1
+
+[evidence]
+openwrt_tx_monitor_rx = false
+independent_laptop_monitor_rx = false

@@ -13,7 +13,7 @@ use open_esp_radio_esp32s31_wifi_mac::{
         HtPeerAmpduParameters, LegacyRate, LegacyTxQueue, TxCompletion, TxError, TxHardware,
         TxPhyRate,
     },
-    tx_runtime::{UnicastRetryError, WifiTxRuntimePolicy},
+    tx_runtime::{OrdinaryRetryError, WifiTxRuntimePolicy},
 };
 use open_esp_radio_ieee80211::{
     management::{ProbeRequest, ProbeRequestError},
@@ -72,7 +72,7 @@ pub enum ControlTxError {
     BufferSizeOverflow,
     DeadlineOverflow,
     Tx(TxError),
-    Retry(UnicastRetryError),
+    Retry(OrdinaryRetryError),
     HardwareTimeout,
     CollisionLimit,
     RadioResetRequired(TxResetReason),

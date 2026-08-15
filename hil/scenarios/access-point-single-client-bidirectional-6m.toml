@@ -1,0 +1,27 @@
+schema = 3
+id = "access-point-single-client-bidirectional-6m"
+description = "Single-client legacy AP 6+6 Mbit/s bidirectional characterization"
+repetitions = 1
+image = "qualification"
+isolation = "reset"
+tags = ["characterization", "wifi", "access-point", "network", "single-client", "bidirectional"]
+
+[workload]
+kind = "access-point"
+cycles = 2
+boots = 1
+timeout_seconds = 120
+
+[workload.traffic]
+kind = "udp"
+direction = "bidirectional"
+duration_seconds = 30
+rx_rate_bps = 6000000
+tx_rate_bps = 6000000
+payload_bytes = 1400
+
+[criteria]
+exact_delivery = true
+minimum_rx_bps = 5700000
+minimum_tx_bps = 5700000
+minimum_concurrent_ap_clients = 1

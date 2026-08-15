@@ -380,6 +380,26 @@ mod tests {
     }
 
     #[test]
+    fn access_point_retry_evidence_fits_and_round_trips() {
+        use crate::WifiAccessPointEvidence;
+
+        let evidence = WifiAccessPointEvidence {
+            tx_ack_timeout_retries: u32::MAX,
+            tx_cts_timeout_retries: u32::MAX,
+            tx_collision_retries: u32::MAX,
+            ..WifiAccessPointEvidence::default()
+        };
+        let expected = Envelope::new(7, 3, 9, 2, Event::WifiAccessPointStopped(evidence));
+        let mut encoder = FrameEncoder::new();
+        let frame = encoder.encode(&expected).unwrap();
+        assert!(frame.len() <= MAX_WIRE_FRAME_BYTES);
+        let mut decoder = FrameDecoder::new();
+        let mut observed = None;
+        decoder.feed(frame, |result| observed = Some(result.unwrap()));
+        assert_eq!(observed, Some(expected));
+    }
+
+    #[test]
     fn round_trips_one_byte_at_a_time() {
         let expected = command(7);
         let mut encoder = FrameEncoder::new();

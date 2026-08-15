@@ -39,6 +39,9 @@ pub struct RxPipelineCounters {
     maximum_admitted: AtomicU32,
     service_micros: AtomicU32,
     service_lifetime_max_micros: AtomicU32,
+    reload_transactions: AtomicU32,
+    reload_micros: AtomicU32,
+    reload_lifetime_max_micros: AtomicU32,
     dma_buffer_full_last_observation: AtomicU32,
     dma_buffer_full_increments: AtomicU32,
     dma_buffer_full_service_samples: AtomicU32,
@@ -120,6 +123,9 @@ impl RxPipelineCounters {
             maximum_admitted: AtomicU32::new(0),
             service_micros: AtomicU32::new(0),
             service_lifetime_max_micros: AtomicU32::new(0),
+            reload_transactions: AtomicU32::new(0),
+            reload_micros: AtomicU32::new(0),
+            reload_lifetime_max_micros: AtomicU32::new(0),
             dma_buffer_full_last_observation: AtomicU32::new(0),
             dma_buffer_full_increments: AtomicU32::new(0),
             dma_buffer_full_service_samples: AtomicU32::new(0),
@@ -266,6 +272,11 @@ impl RxPipelineCounters {
             maximum_admitted: self.maximum_admitted.load(Ordering::Relaxed),
             service_micros: self.service_micros.load(Ordering::Relaxed),
             service_lifetime_max_micros: self.service_lifetime_max_micros.load(Ordering::Relaxed),
+            reload_transactions: self.reload_transactions.load(Ordering::Relaxed),
+            reload_micros: self.reload_micros.load(Ordering::Relaxed),
+            reload_lifetime_max_micros: self
+                .reload_lifetime_max_micros
+                .load(Ordering::Relaxed),
             dma_buffer_full_increments: self.dma_buffer_full_increments.load(Ordering::Relaxed),
             dma_buffer_full_service_samples: self
                 .dma_buffer_full_service_samples
@@ -598,6 +609,14 @@ impl RxPipelineObserver for RxPipelineCounters {
             RxPipelineObservation::ServiceCompleted(observation) => {
                 self.record_service(observation)
             }
+            RxPipelineObservation::ReloadCompleted { micros } => {
+                self.reload_transactions.fetch_add(1, Ordering::Relaxed);
+                Self::record_time(
+                    &self.reload_micros,
+                    &self.reload_lifetime_max_micros,
+                    micros,
+                );
+            }
             RxPipelineObservation::StageDiscarded(discard) => self.record_stage_discard(discard),
             RxPipelineObservation::NetworkReadyWait { micros } => {
                 self.record_network_ready_wait(micros)
@@ -674,6 +693,10 @@ pub struct RxPipelineCounterSnapshot {
     pub service_micros: u32,
     /// Maximum observed since boot, not an interval delta.
     pub service_lifetime_max_micros: u32,
+    pub reload_transactions: u32,
+    pub reload_micros: u32,
+    /// Maximum observed since boot, not an interval delta.
+    pub reload_lifetime_max_micros: u32,
     /// Hardware `BUFFER_FULL` increments observed at RX service boundaries.
     pub dma_buffer_full_increments: u32,
     /// Service boundaries at which one or more new increments were observed.
@@ -788,6 +811,11 @@ impl RxPipelineCounterSnapshot {
             maximum_admitted: self.maximum_admitted,
             service_micros: self.service_micros.wrapping_sub(earlier.service_micros),
             service_lifetime_max_micros: self.service_lifetime_max_micros,
+            reload_transactions: self
+                .reload_transactions
+                .wrapping_sub(earlier.reload_transactions),
+            reload_micros: self.reload_micros.wrapping_sub(earlier.reload_micros),
+            reload_lifetime_max_micros: self.reload_lifetime_max_micros,
             dma_buffer_full_increments: self
                 .dma_buffer_full_increments
                 .wrapping_sub(earlier.dma_buffer_full_increments),
@@ -888,7 +916,7 @@ mod tests {
 
     use super::{RxPipelineCounters, RxServiceObservation};
     use open_esp_radio_esp32s31_wifi_embassy::rx_pipeline_observer::{
-        RxNetworkPublicationOutcome, RxPipelineObserver, RxStageDiscard,
+        RxNetworkPublicationOutcome, RxPipelineObservation, RxPipelineObserver, RxStageDiscard,
     };
 
     static IRQ_CLOCK: AtomicU64 = AtomicU64::new(0);
@@ -925,6 +953,8 @@ mod tests {
         counters.record_network_publish(1_514, 13, RxNetworkPublicationOutcome::Enqueued);
         counters.record_network_publish(1_514, 17, RxNetworkPublicationOutcome::Dropped);
         counters.record_dispatch(true, true, 3, 2_750, 31);
+        counters.observe(RxPipelineObservation::ReloadCompleted { micros: 4 });
+        counters.observe(RxPipelineObservation::ReloadCompleted { micros: 7 });
         let delta = counters.snapshot().wrapping_delta_since(before);
 
         assert_eq!(delta.service_calls, 1);
@@ -932,6 +962,9 @@ mod tests {
         assert_eq!(delta.completion_frontier_frames, 4);
         assert_eq!(delta.admitted_frames, 3);
         assert_eq!(delta.staged_bytes, 4_500);
+        assert_eq!(delta.reload_transactions, 2);
+        assert_eq!(delta.reload_micros, 11);
+        assert_eq!(delta.reload_lifetime_max_micros, 7);
         assert_eq!(delta.stage_empty_discards, 1);
         assert_eq!(delta.stage_too_long_discards, 1);
         assert_eq!(delta.backpressured_services, 1);

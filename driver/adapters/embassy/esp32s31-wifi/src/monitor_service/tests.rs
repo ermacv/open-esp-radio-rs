@@ -63,10 +63,17 @@ impl RxDma for Hardware {
 
     fn next_descriptor_low(&mut self) -> u32 {
         if self.walker {
-            (RX_BASE + 12) & 0x000f_ffff
+            // The fixture services only finite two-descriptor epochs. A
+            // service wake is published after the modeled walker consumed
+            // the zero-successor tail, so NEXT=0 is the reclaim handshake.
+            0
         } else {
             0
         }
+    }
+
+    fn next_descriptor_word(&mut self) -> u32 {
+        self.next_descriptor_low()
     }
 
     fn with_ordered_cursor<R>(
@@ -354,10 +361,17 @@ fn one_irq_epoch_services_durable_rx_then_returns_every_owner() {
     );
     let stop_polls = Cell::new(0_u8);
     let stop = poll_fn(|context| {
-        if stop_polls.get() == 0 {
+        let poll = stop_polls.get();
+        if poll == 0 {
             stop_polls.set(1);
             complete_beacon(&storage, 0);
             runtime.irq.publish(MAC_INT_RX_SUCCESS);
+            context.waker().wake_by_ref();
+            Poll::Pending
+        } else if poll == 1 {
+            // Let the monitor's self-posted ownership-confirmation turn run
+            // before asking the finite role to stop.
+            stop_polls.set(2);
             context.waker().wake_by_ref();
             Poll::Pending
         } else {
@@ -370,7 +384,7 @@ fn one_irq_epoch_services_durable_rx_then_returns_every_owner() {
     assert_eq!(report.rx_service_wakes, 1);
     assert_eq!(report.rx_interrupt_posts, 1);
     assert_eq!(report.receive.published_frames, 1);
-    assert_eq!(report.receive.recycled_descriptors, 1);
+    assert_eq!(report.receive.recycled_descriptors, 0);
     assert_eq!(
         runtime.event_mask.get(),
         ESP32S31_STANDALONE_MONITOR_INTERRUPT_MASK.bits()
@@ -383,7 +397,7 @@ fn one_irq_epoch_services_durable_rx_then_returns_every_owner() {
         Err(_) => panic!("stopped monitor owners must be extractable"),
     };
     assert!(!hardware.walker);
-    assert_eq!(hardware.reloads, 1);
+    assert_eq!(hardware.reloads, 0);
     assert_eq!(sink.frames, 1);
 }
 
@@ -434,7 +448,7 @@ fn saturation_is_counted_without_preventing_dma_recycle() {
 }
 
 #[test]
-fn bounded_filter_runs_before_the_sink_and_still_recycles_dma() {
+fn bounded_filter_runs_before_the_sink_and_stop_recovers_current_last() {
     let mut storage = Esp32s31RxDmaStorage::new();
     write_beacon(&mut storage, 0);
     let runtime = RuntimeFixture::new();
@@ -449,11 +463,17 @@ fn bounded_filter_runs_before_the_sink_and_still_recycles_dma() {
         RouteBehavior::default(),
         plan,
     );
-    let first_poll = Cell::new(true);
+    let stop_polls = Cell::new(0_u8);
     let stop = poll_fn(|context| {
-        if first_poll.replace(false) {
+        let poll = stop_polls.get();
+        if poll == 0 {
+            stop_polls.set(1);
             complete_beacon(&storage, 0);
             runtime.irq.publish(MAC_INT_RX_SUCCESS);
+            context.waker().wake_by_ref();
+            Poll::Pending
+        } else if poll == 1 {
+            stop_polls.set(2);
             context.waker().wake_by_ref();
             Poll::Pending
         } else {
@@ -468,7 +488,7 @@ fn bounded_filter_runs_before_the_sink_and_still_recycles_dma() {
     assert_eq!(report.receive.published_frames, 0);
     assert_eq!(report.receive.dropped_frames, 1);
     assert_eq!(report.receive.filtered_drops, 1);
-    assert_eq!(report.receive.recycled_descriptors, 1);
+    assert_eq!(report.receive.recycled_descriptors, 0);
     let (_, _, sink, _, _) = owner
         .try_into_parts()
         .unwrap_or_else(|_| panic!("stopped monitor owners must be extractable"));

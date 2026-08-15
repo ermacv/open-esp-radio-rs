@@ -1,0 +1,21 @@
+schema = 3
+id = "udp-tx-ht40-task-poll-diagnostic"
+description = "Single-core HT40 saturated TX executor-residence diagnostic"
+image = "diagnostic-task-poll"
+isolation = "reset"
+data_plane = "single-core"
+tags = ["diagnostic", "udp", "station", "tx", "ht40", "single-core", "task-poll"]
+
+[link]
+phy = "ht40"
+
+[workload]
+kind = "udp"
+direction = "tx"
+duration_seconds = 16
+tx_rate_bps = 130000000
+payload_bytes = 1472
+
+[criteria]
+exact_delivery = false
+require_no_beacon_loss = true

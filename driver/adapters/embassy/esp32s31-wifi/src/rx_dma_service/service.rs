@@ -1,29 +1,5 @@
 use super::*;
 
-async fn await_completed_unit_link_release<H, D, const COUNT: usize>(
-    ring: &mut RxRingLive<'_, COUNT>,
-    hardware: &mut H,
-    delay: &mut D,
-    descriptor_count: usize,
-) -> Result<(), RxRingError>
-where
-    H: RxDma,
-    D: RxReloadDelay,
-{
-    let mut samples = 0_u32;
-    loop {
-        if ring.observe_current_completed_unit_link_release(hardware, descriptor_count) {
-            break;
-        }
-        samples = samples.saturating_add(1);
-        if samples >= RX_DESCRIPTOR_RELOAD_ATTEMPT_LIMIT {
-            return Err(RxRingError::Busy);
-        }
-        delay.after_micros(1).await;
-    }
-    Ok(())
-}
-
 impl<
     'storage,
     'pool,
@@ -55,7 +31,7 @@ impl<
     >
 where
     H: RxDma,
-    D: RxReloadDelay,
+    D: RxDmaObservationDelay,
     P: Esp32s31RxStageAdmissionPolicy,
 {
     type Error = RxStageTransactionError;
@@ -91,11 +67,12 @@ where
             let pool_credits = self.pool.available_slots();
             let queue_credits = self.frames.free_capacity();
             let credits = pool_credits.min(queue_credits);
-            let admitted = frontier.min(credits);
+            let admission_budget = frontier.min(credits);
+            let mut admitted = 0_usize;
             let mut staged_bytes = 0_usize;
             let mut remaining_descriptors = frontier_snapshot.descriptor_count;
 
-            for _ in 0..admitted {
+            for _ in 0..admission_budget {
                 let unit_frontier = self
                     .storage
                     .first_completed_unit_frontier_through(&self.ring, last_descriptor_low)
@@ -107,14 +84,6 @@ where
                     return Err(RxStageTransactionError::Ring(RxRingError::Corrupt));
                 }
                 let unit_descriptor_count = unit_frontier.descriptor_count;
-                await_completed_unit_link_release(
-                    &mut self.ring,
-                    hardware,
-                    &mut self.delay,
-                    unit_descriptor_count,
-                )
-                .await
-                .map_err(RxStageTransactionError::Ring)?;
                 let unit = self
                     .storage
                     .take_completed_unit(&mut self.ring, unit_descriptor_count)
@@ -129,24 +98,22 @@ where
                 remaining_descriptors = remaining_descriptors
                     .checked_sub(unit_descriptor_count)
                     .ok_or(RxStageTransactionError::Ring(RxRingError::Corrupt))?;
+                admitted = admitted.saturating_add(1);
                 let maximum_payload_length = self
                     .admission
                     .maximum_payload_length(unit_observation, STAGE_CAPACITY)
                     .min(STAGE_CAPACITY);
-                let pending = match self.pool.stage_dma_unit_recycle_bounded(
-                    unit,
-                    hardware,
-                    maximum_payload_length,
-                )? {
-                    RxDmaStageUnitOutcome::Staged(pending) => pending,
-                    RxDmaStageUnitOutcome::Discarded(error) => {
+                let frame = match self
+                    .pool
+                    .stage_dma_unit_deferred_bounded(unit, maximum_payload_length)?
+                {
+                    RxDmaDeferredStageUnitOutcome::Staged(frame) => frame,
+                    RxDmaDeferredStageUnitOutcome::Discarded(error) => {
                         // Length is supplied by an untrusted receive unit. A
                         // malformed/FCS/oversize unit must not terminate the
-                        // sole radio owner: the vendor path discards such a
-                        // frame and immediately returns its descriptor to the
-                        // DMA walker. Preserve that ownership order and the
-                        // asynchronous reload edge without publishing a
-                        // staging token.
+                        // sole radio owner. It remains part of the same
+                        // observed descriptor epoch and is reclaimed with the
+                        // other copied/discarded units at the terminal tail.
                         if let Some(observer) = self.pipeline_observer {
                             let discard = match error {
                                 RxStageError::Empty => RxStageDiscard::Empty,
@@ -155,16 +122,8 @@ where
                             };
                             observer.observe(RxPipelineObservation::StageDiscarded(discard));
                         }
-                        while self
-                            .ring
-                            .poll_pending_reload(hardware)
-                            .map_err(RxStageTransactionError::Ring)?
-                            == RxReloadObservation::Pending
-                        {
-                            self.delay.after_micros(1).await;
-                        }
                         self.admission
-                            .observe(Esp32s31RxIngressObservation::DiscardReloaded {
+                            .observe(Esp32s31RxIngressObservation::DiscardRetained {
                                 unit: unit_observation,
                                 reason: match error {
                                     RxStageError::Empty => RxStageDiscard::Empty,
@@ -175,9 +134,6 @@ where
                         continue;
                     }
                 };
-                let frame =
-                    await_staged_rx_reload(pending, hardware, &mut self.ring, &mut self.delay)
-                        .await?;
                 staged_bytes = staged_bytes.saturating_add(frame.length());
                 self.frames.try_send(frame).map_err(|error| match error {
                     TrySendError::Full(_) => RxStageTransactionError::Ring(RxRingError::Corrupt),
@@ -185,6 +141,46 @@ where
                 self.admission
                     .observe(Esp32s31RxIngressObservation::Staged(unit_observation));
             }
+
+            if self
+                .storage
+                .recycle_observed_prefix_with_guard(&mut self.ring, hardware)
+                .map_err(RxStageTransactionError::Ring)?
+                .is_some()
+            {
+                // The vendor append path does not yield between its reload
+                // doorbell and conditional BASE-repair suffix. Preserve that
+                // transaction boundary so a later completion cannot replace
+                // the cursor observation used to settle this append.
+                let reload_started = self.pipeline_observer.map(RxPipelineObserver::now_micros);
+                self.ring
+                    .complete_pending_reload(hardware)
+                    .map_err(RxStageTransactionError::Ring)?;
+                if let (Some(observer), Some(started)) = (self.pipeline_observer, reload_started) {
+                    observer.observe(RxPipelineObservation::ReloadCompleted {
+                        micros: observer.elapsed_micros_since(started),
+                    });
+                }
+            }
+
+            // A chained unit deliberately bounds one frontier scan. LAST may
+            // already cover following complete units, so retain a cooperative
+            // continuation instead of waiting for an IRQ which hardware has
+            // already emitted for that frozen frontier.
+            let completion_frontier_remaining = self
+                .storage
+                .completed_unit_frontier_through(&self.ring, last_descriptor_low)
+                .map_err(RxStageTransactionError::Ring)?
+                .unit_count
+                != 0;
+            // The terminal cursor can precede the final descriptor writeback,
+            // and that writeback has no guaranteed fresh RX-success edge.
+            // Retain a cooperative pass until the exhausted finite list has
+            // been staged and republished.
+            let exhausted_writeback_pending =
+                self.ring.exhausted_terminal_writeback_pending(hardware);
+
+            let credit_limited = admission_budget < frontier;
 
             if let (Some(observer), Some(started)) = (self.pipeline_observer, service_started) {
                 observer.observe(RxPipelineObservation::ServiceCompleted(
@@ -200,9 +196,12 @@ where
                 ));
             }
 
-            Ok(if admitted < frontier {
+            Ok(if credit_limited {
                 WifiRxProgress::Backpressured
-            } else if self.ring.exhausted_republication_probe_pending() {
+            } else if completion_frontier_remaining
+                || exhausted_writeback_pending
+                || self.ring.exhausted_republication_probe_pending()
+            {
                 WifiRxProgress::ProbePending
             } else {
                 WifiRxProgress::Drained

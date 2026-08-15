@@ -2,7 +2,7 @@ use super::*;
 /// Running-scan RX owner which retains every connected-epoch resource.
 ///
 /// A connected teardown returns more than a halted descriptor ring: the
-/// staging pool, queue sender, reload delay and telemetry binding must survive
+/// staging pool, queue sender, DMA observation delay and telemetry binding must survive
 /// candidate refresh too. This owner separates the halted ring only while the
 /// finite scan runs and can then return either exact join parts or the original
 /// stopped connected owner without recreating static storage.
@@ -100,7 +100,7 @@ impl<
         hardware: &mut H,
     ) -> Result<(), Esp32s31RxRingOwnerError>
     where
-        D: RxReloadDelay,
+        D: RxDmaObservationDelay,
     {
         self.resources
             .delay_mut()

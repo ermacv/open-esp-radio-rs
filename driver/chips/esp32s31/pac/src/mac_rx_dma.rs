@@ -12,6 +12,12 @@ pub struct MacRxDmaSnapshot {
     pub walker_enabled: bool,
     pub reload_pending: bool,
     pub descriptor_base: u32,
+    /// Complete `RX_NEXT_DESCRIPTOR` register image.
+    ///
+    /// The vendor reload suffix branches on the whole word, so retaining only
+    /// the projected low address would erase fault evidence carried by the
+    /// upper bits.
+    pub next_descriptor_word: u32,
     pub next_descriptor_low: u32,
     pub last_descriptor_low: u32,
 }
@@ -77,11 +83,13 @@ impl RadioRegisters {
     pub fn mac_rx_dma_snapshot(&self) -> MacRxDmaSnapshot {
         let dma = &self.peripherals.wifi_mac_rx_dma;
         let control = dma.rx_control().read();
+        let next_descriptor_word = dma.rx_next_descriptor().read().bits();
         MacRxDmaSnapshot {
             walker_enabled: control.walker_enable().bit(),
             reload_pending: control.append_descriptor_reload().bit(),
             descriptor_base: dma.rx_descriptor_base().read().bits(),
-            next_descriptor_low: dma.rx_next_descriptor().read().bits() & 0x000f_ffff,
+            next_descriptor_word,
+            next_descriptor_low: next_descriptor_word & 0x000f_ffff,
             last_descriptor_low: dma.rx_last_descriptor().read().bits() & 0x000f_ffff,
         }
     }

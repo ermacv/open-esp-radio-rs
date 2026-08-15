@@ -37,6 +37,14 @@ pub enum RxPipelineObservation {
         at_micros: u64,
     },
     ServiceCompleted(RxServiceObservation),
+    /// One complete vendor-ordered append/reload transaction.
+    ///
+    /// The measurement covers the synchronous doorbell-clear loop and its
+    /// immediate NEXT/LAST/conditional-BASE suffix. No observer means no
+    /// clock reads on the production path.
+    ReloadCompleted {
+        micros: u64,
+    },
     StageDiscarded(RxStageDiscard),
     NetworkReadyWait {
         micros: u64,

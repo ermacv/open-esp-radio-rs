@@ -9,7 +9,7 @@ use open_esp_radio_esp32s31_wifi_mac::rx::{
 use open_esp_radio_ieee80211::scan::{ScanObservation, ScanTable};
 
 use crate::{
-    embassy_rx::RxReloadDelay,
+    embassy_rx::RxDmaObservationDelay,
     rx_dma_service::{
         ESP32S31_RX_WALKER_ENABLE_SETTLE_US, Esp32s31RxDmaStorage, Esp32s31RxEpochResources,
         Esp32s31StoppedRx,

@@ -66,7 +66,7 @@ use open_esp_radio_esp32s31_wifi_embassy::{
     connected_sta_teardown::Esp32s31ConnectedStaTeardownFailure,
     control_mailbox::{ConnectedControlPublisher, ConnectedControlResources},
     embassy_irq::{EmbassyMacIrqRuntime, EmbassyPowerIrqRuntime, Esp32s31MacInterruptEpoch},
-    embassy_rx::EmbassyEsp32s31RxReloadDelay,
+    embassy_rx::EmbassyEsp32s31RxDmaObservationDelay,
     monitor::Esp32s31MonitorInterrupts,
     network_rx::EmbassyNetConnectedRxSink,
     preconnected_rx::{
@@ -213,7 +213,7 @@ type ConnectedLiveRx = Esp32s31ConnectedRx<
     'static,
     'static,
     'static,
-    EmbassyEsp32s31RxReloadDelay,
+    EmbassyEsp32s31RxDmaObservationDelay,
     CriticalSectionRawMutex,
     RX_STAGE_SLOT_COUNT,
     RX_DESCRIPTOR_COUNT,
@@ -226,6 +226,7 @@ type ConnectedLiveRx = Esp32s31ConnectedRx<
 #[cfg(feature = "qualification")]
 fn log_rx_ring_topology(label: &str, rx: &ConnectedLiveRx) {
     let topology = rx.ring().topology_snapshot();
+    let reload = rx.ring().reload_repair_evidence();
     let mut armed_mask = 0_u64;
     let mut completed_mask = 0_u64;
     let mut invalid_mask = 0_u64;
@@ -242,6 +243,16 @@ fn log_rx_ring_topology(label: &str, rx: &ConnectedLiveRx) {
             invalid_mask |= 1_u64 << index;
         }
     }
+    qualification_event!(
+        "open-radio: connected RX reload label={} observations={} upper_only={} base_repairs={} last_next={:#010x} last_last={:?} last_head={:?}",
+        label,
+        reload.observations,
+        reload.nonzero_word_with_zero_address,
+        reload.base_repairs,
+        reload.last_next_word,
+        reload.last_last_low,
+        reload.last_repair_head,
+    );
     qualification_event!(
         "open-radio: connected RX topology label={} valid={} base={:#010x} start={} head={:#010x} head_next={:#010x} tail={} tail_address={:#010x} visited={} terminals={} armed_mask={:#018x} completed_mask={:#018x} invalid_mask={:#018x}",
         label,
@@ -280,7 +291,7 @@ pub(super) type ConnectedStoppedRx = Esp32s31StoppedRx<
     'static,
     'static,
     'static,
-    EmbassyEsp32s31RxReloadDelay,
+    EmbassyEsp32s31RxDmaObservationDelay,
     CriticalSectionRawMutex,
     RX_STAGE_SLOT_COUNT,
     RX_DESCRIPTOR_COUNT,
@@ -293,7 +304,7 @@ pub(super) type ConnectedRxEpochResources = Esp32s31RxEpochResources<
     'static,
     'static,
     'static,
-    EmbassyEsp32s31RxReloadDelay,
+    EmbassyEsp32s31RxDmaObservationDelay,
     CriticalSectionRawMutex,
     RX_STAGE_SLOT_COUNT,
     RX_DESCRIPTOR_COUNT,
@@ -1105,6 +1116,10 @@ pub(super) const fn connected_config() -> Esp32s31ConnectedStaConfig {
             // backing allocation and is not advertised by this 1,648-byte
             // DMA-slot profile.
             tid0_amsdu: false,
+            // Keep one negotiated receive window in the live DMA ring and
+            // one complete window as service-latency headroom. The hardware
+            // agreement geometry remains the vendor-qualified 64 entries;
+            // this value is the protocol/reorder limit returned to the peer.
             rx_block_ack_maximum_window: RX_REORDER_WINDOW as u16,
             request_initial_tx_block_ack: true,
         },
@@ -1249,7 +1264,7 @@ pub async fn run_connected<'state, 'security>(
                 dma.storage(),
                 &RX_STAGE_POOL,
                 staged_sender,
-                EmbassyEsp32s31RxReloadDelay,
+                EmbassyEsp32s31RxDmaObservationDelay,
             );
             start_esp32s31_initial_connected_epoch(hardware, receive, initial.with_rx(rx)).await
         }
@@ -1558,7 +1573,7 @@ pub async fn run_connected<'state, 'security>(
                         .try_receive_statistics_snapshot()
                         .expect("qualification snapshot must not overlap another MMIO transaction"),
                 );
-                qualification_debug!(
+                qualification_event!(
                     "open-radio: connected exit RX DMA: {:?}",
                     runner.services().hardware().mac_rx_dma_snapshot(),
                 );

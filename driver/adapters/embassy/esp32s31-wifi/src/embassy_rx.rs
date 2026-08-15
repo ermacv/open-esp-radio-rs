@@ -1,4 +1,4 @@
-//! Embassy scheduling boundary for a pending ESP32-S31 RX append.
+//! ESP32-S31 RX append completion and independent link-release delays.
 
 use core::future::Future;
 
@@ -9,57 +9,46 @@ use open_esp_radio_esp32s31_wifi_mac::{
     rx_pool::{NetworkRxFrame, RxStageReloadPending, RxStageTransactionError},
 };
 
-/// Timer capability used between two live reload observations.
-pub trait RxReloadDelay {
+/// Timer capability for cooperative RX ownership probes and walker settle.
+pub trait RxDmaObservationDelay {
     fn after_micros(&mut self, micros: u32) -> impl Future<Output = ()> + '_;
 }
 
 /// Executor timer used by a normal ESP32-S31 connected RX owner.
 ///
 /// HIL compositions may wrap the same edge to collect timing evidence, but
-/// the driver itself only requires a finite asynchronous delay between PAC
-/// reload observations.
+/// the driver itself only requires finite asynchronous delays at explicitly
+/// schedulable ownership edges. The reload suffix is intentionally not one.
 #[derive(Clone, Copy, Debug, Default)]
-pub struct EmbassyEsp32s31RxReloadDelay;
+pub struct EmbassyEsp32s31RxDmaObservationDelay;
 
-impl RxReloadDelay for EmbassyEsp32s31RxReloadDelay {
+impl RxDmaObservationDelay for EmbassyEsp32s31RxDmaObservationDelay {
     fn after_micros(&mut self, micros: u32) -> impl Future<Output = ()> + '_ {
         Timer::after_micros(u64::from(micros))
     }
 }
 
-/// Complete one typed staged-frame transaction without blocking the executor.
+/// Complete one typed staged-frame transaction without a scheduler boundary.
 ///
-/// The MAC owner performs exactly one MMIO observation per `poll_reload` call.
-/// Every pending result crosses this adapter's awaited one-microsecond edge
-/// before another observation. The transaction itself owns the recovered ROM
-/// attempt bound and does not release a network-visible frame early.
-pub async fn await_staged_rx_reload<
+/// The recovered vendor transaction spins on the doorbell and immediately
+/// performs its NEXT/LAST suffix. Splitting those observations across an
+/// executor yield permits unrelated RX progress to replace the cursor epoch.
+pub fn complete_staged_rx_reload<
     'pool,
     const SLOTS: usize,
     const CAPACITY: usize,
     const COUNT: usize,
     M: RxDma,
-    D: RxReloadDelay,
 >(
     mut pending: RxStageReloadPending<'pool, SLOTS, CAPACITY>,
     mmio: &mut M,
     ring: &mut RxRingLive<'_, COUNT>,
-    delay: &mut D,
 ) -> Result<NetworkRxFrame<'pool, SLOTS, CAPACITY>, RxStageTransactionError> {
-    loop {
-        match pending.poll_reload(mmio, ring)? {
-            Some(frame) => return Ok(frame),
-            None => delay.after_micros(1).await,
-        }
-    }
+    pending.complete_reload(mmio, ring)
 }
 
 #[cfg(test)]
 mod tests {
-    use core::future::{Future, ready};
-    use std::task::{Context, Poll, Waker};
-
     use open_esp_radio_esp32s31_wifi_dma::descriptor::{
         BIT_30, BIT_31, DESCRIPTOR_BYTES, Descriptor, LENGTH_SHIFT,
     };
@@ -72,7 +61,7 @@ mod tests {
         rx_pool::RxStagePool,
     };
 
-    use super::{RxReloadDelay, await_staged_rx_reload};
+    use super::complete_staged_rx_reload;
 
     const BASE: u32 = 0x2f00_1000;
 
@@ -88,7 +77,7 @@ mod tests {
     impl RxDma for MockRxDma {
         fn last_descriptor_low(&mut self) -> u32 {
             if self.walker_enabled {
-                BASE & 0x000f_ffff
+                (BASE + DESCRIPTOR_BYTES) & 0x000f_ffff
             } else {
                 0
             }
@@ -100,6 +89,10 @@ mod tests {
             } else {
                 0
             }
+        }
+
+        fn next_descriptor_word(&mut self) -> u32 {
+            self.next_descriptor_low()
         }
 
         fn with_ordered_cursor<R>(
@@ -186,30 +179,8 @@ mod tests {
         fn fence(&mut self) {}
     }
 
-    #[derive(Default)]
-    struct CountingDelay {
-        calls: u32,
-    }
-
-    impl RxReloadDelay for CountingDelay {
-        fn after_micros(&mut self, micros: u32) -> impl Future<Output = ()> + '_ {
-            assert_eq!(micros, 1);
-            self.calls = self.calls.saturating_add(1);
-            ready(())
-        }
-    }
-
-    fn run_ready<F: Future>(future: F) -> F::Output {
-        let mut future = core::pin::pin!(future);
-        let mut context = Context::from_waker(Waker::noop());
-        match future.as_mut().poll(&mut context) {
-            Poll::Ready(output) => output,
-            Poll::Pending => panic!("ready-only test future unexpectedly suspended"),
-        }
-    }
-
     #[test]
-    fn awaits_once_for_every_pending_reload_observation() {
+    fn completes_pending_reload_without_a_scheduling_boundary() {
         const COUNT: usize = 2;
         const BUFFER_SIZE: u32 = 256;
         let descriptors = [const { Descriptor::new() }; COUNT];
@@ -229,19 +200,18 @@ mod tests {
             .unwrap();
         descriptors[0].write_word0(BUFFER_SIZE | (4 << LENGTH_SHIFT) | BIT_30 | BIT_31);
         let completed = ring.take_completed(0).unwrap();
+        assert!(!ring.observe_completed_unit_link_release(&mut mmio, BASE & 0x000f_ffff, 1));
+        descriptors[1].write_word0(descriptors[1].word0() | BIT_30);
+        let later_low = (BASE + DESCRIPTOR_BYTES) & 0x000f_ffff;
+        assert!(ring.observe_completed_unit_link_release(&mut mmio, later_low, 1));
         let pool = RxStagePool::<1, 16>::new();
         let pending = pool
             .stage_recycle(completed, &[1, 2, 3, 4], &mut mmio, &mut ring, |_| Ok(()))
             .unwrap();
-        let mut delay = CountingDelay::default();
-        let reload_reads_before_await = mmio.reload_reads;
+        let reload_reads_before_completion = mmio.reload_reads;
 
-        let network = run_ready(await_staged_rx_reload(
-            pending, &mut mmio, &mut ring, &mut delay,
-        ))
-        .unwrap();
-        assert_eq!(delay.calls, 2);
-        assert_eq!(mmio.reload_reads - reload_reads_before_await, 3);
+        let network = complete_staged_rx_reload(pending, &mut mmio, &mut ring).unwrap();
+        assert_eq!(mmio.reload_reads - reload_reads_before_completion, 3);
         assert_eq!(network.segment().buffer, &[1, 2, 3, 4]);
         assert_eq!(pool.network_slots(), 1);
         drop(network);

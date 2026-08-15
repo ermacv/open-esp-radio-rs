@@ -35,9 +35,9 @@ scope = "adapter"
 reason = "latency-critical"
 placement = "required-sram"
 region = "internal-sram"
-count = 64
+count = 32
 element_capacity = 1700
-optimization = "One BlockAck retention horizon plus one complete 32-descriptor burst; tune only against measured BUFFER_FULL and staging backpressure."
+optimization = "Two complete negotiated 16-frame BlockAck windows; tune only against measured BUFFER_FULL and staging backpressure."
 
 [[rules]]
 symbol = "*::connected::RX_REORDER_STORAGE"

@@ -11027,7 +11027,7 @@
         </register>
         <register>
           <name>RX_NEXT_DESCRIPTOR</name>
-          <description>Low 20 bits of the hardware current/next descriptor. ROM interprets zero after reload completion as a terminal frontier and may repair RX_DESCRIPTOR_BASE.</description>
+          <description>Complete hardware current/next descriptor word. The low 20 bits are the reviewed address projection; meanings of bits 31:20 remain unknown. Complete ROM wDev_AppendRxBlocks compares the entire 32-bit word with zero after reload completion, not only ADDRESS_LOW, before it may read LAST and repair RX_DESCRIPTOR_BASE.</description>
           <addressOffset>0x88</addressOffset>
           <size>0x20</size>
           <access>read-only</access>

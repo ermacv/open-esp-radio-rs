@@ -171,7 +171,7 @@ description = "_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125
 
 [[sources]]
 id = "ROM_REV0_WDEV_APPEND_RX_BLOCKS"
-description = "_oracles/esp32s31_rev0_rom.elf sha256 a52ad7513deb656a910a5740125f1cce2c7941f11ce57213b7b43aea93d5ab87; complete wDev_AppendRxBlocks at 0x2f838a7e size 0x132, including descriptor rearm/sentinels, live old_tail.next publication, RX_CONTROL bit-0 reload, RX_NEXT_DESCRIPTOR terminal test and RX_DESCRIPTOR_BASE repair"
+description = "_oracles/esp32s31_rev0_rom.elf sha256 d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542; complete wDev_AppendRxBlocks at 0x2f838a7e size 0x132, including descriptor rearm/sentinels and live old_tail.next publication. Its reload suffix performs a bounded in-function wait for RX_CONTROL bit 0 to clear and, without returning or introducing a scheduler boundary, reads and compares the complete 32-bit RX_NEXT_DESCRIPTOR word with zero, reads RX_LAST_DESCRIPTOR only when that complete word is zero, and repairs RX_DESCRIPTOR_BASE only when the accepted LAST is not the newly appended tail. This uninterrupted whole-word NEXT -> conditional LAST ordering is an observed vendor fact; it is distinct from the low-address LAST -> NEXT completion-frontier observation used by the Rust ring owner."
 
 [[sources]]
 id = "ROM_REV0_HAL_MAC_RX_GATE"

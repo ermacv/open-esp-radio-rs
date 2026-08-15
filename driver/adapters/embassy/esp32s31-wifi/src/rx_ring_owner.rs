@@ -7,7 +7,7 @@
 #![forbid(unsafe_code)]
 
 use open_esp_radio_esp32s31_wifi_mac::rx::{
-    RxDma, RxReloadObservation, RxRingError, RxRingHalted, RxRingLive, RxRingStopped, RxSegment,
+    RxDma, RxRingError, RxRingHalted, RxRingLive, RxRingStopped, RxSegment,
 };
 
 use crate::rx_dma_service::Esp32s31RxDmaStorage;
@@ -175,10 +175,8 @@ impl<'storage, const COUNT: usize, const DMA_BUFFER_SIZE: usize, const DMA_STORA
                 actual,
             });
         };
-        let mut progress = Esp32s31RxRingServiceProgress {
-            reload_pending: ring.poll_pending_reload(hardware)? == RxReloadObservation::Pending,
-            ..Esp32s31RxRingServiceProgress::default()
-        };
+        ring.complete_pending_reload(hardware)?;
+        let mut progress = Esp32s31RxRingServiceProgress::default();
         ring.observe_exhausted_republication(hardware);
         let frontier = ring.completed_descriptor_frontier();
         for step in 0..frontier.descriptor_count {
@@ -196,8 +194,10 @@ impl<'storage, const COUNT: usize, const DMA_BUFFER_SIZE: usize, const DMA_STORA
         {
             progress.recycled_descriptors = append.descriptor_count as u32;
         }
-        progress.service_probe_pending =
-            ring.completion_release_probe_pending() || ring.exhausted_republication_probe_pending();
+        // A current-LAST completion is released by a later RX completion and
+        // therefore needs no synthetic wake. Only direct BASE republication
+        // can consume its sole IRQ edge and must keep the service runnable.
+        progress.service_probe_pending = ring.exhausted_republication_probe_pending();
         Ok(progress)
     }
 

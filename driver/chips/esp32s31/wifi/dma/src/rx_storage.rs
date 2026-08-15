@@ -197,6 +197,16 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
         }
         result
     }
+
+    /// Finish the staging handoff without returning this descriptor unit to
+    /// the active walker yet.
+    ///
+    /// The unit remains represented by the ring's observed mask. A later
+    /// completed unit then serves as a generation-safe guard while this unit
+    /// is reclaimed and appended behind the live hardware tail.
+    pub fn retain_for_deferred_recycle(mut self) {
+        self.requires_recycle = false;
+    }
 }
 
 impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize> Drop
@@ -536,6 +546,29 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
         }))
     }
 
+    /// Return one copied/discarded half while retaining a completed half.
+    ///
+    /// The retained unit proves that hardware consumed every reclaimed link
+    /// in this descriptor generation and prevents the finite list from being
+    /// deliberately drained before software appends reusable buffers.
+    #[allow(
+        unsafe_code,
+        reason = "a later completed unit proves exclusive prefix-buffer rearm"
+    )]
+    pub fn recycle_observed_prefix_with_guard<M: RxDma>(
+        &self,
+        ring: &mut RxRingLive<'_, COUNT>,
+        mmio: &mut M,
+    ) -> Result<Option<RxLiveAppend>, RxRingError> {
+        self.validate_live_ring(ring)?;
+        ring.recycle_observed_prefix_with_guard_owned(mmio, |index| {
+            // SAFETY: the ring only calls this closure for the observed prefix
+            // protected by a later completed unit, and the storage/ring layout
+            // was validated above.
+            unsafe { self.buffers[index].prepare_for_recycle() }
+        })
+    }
+
     fn validate_live_ring(&self, ring: &RxRingLive<'_, COUNT>) -> Result<(), RxRingError> {
         self.validate_ring_layout(
             ring.descriptor_base(),
@@ -617,6 +650,10 @@ mod tests {
         }
 
         fn next_descriptor_low(&mut self) -> u32 {
+            self.next_descriptor_low
+        }
+
+        fn next_descriptor_word(&mut self) -> u32 {
             self.next_descriptor_low
         }
 
@@ -814,6 +851,14 @@ mod tests {
 
         assert_eq!(
             live.recycle_completed_prefix::<1, _, _>(&mut mmio, |_| Err(RxRingError::Size)),
+            Ok(None),
+        );
+        storage.descriptors()[1].write_word0(
+            crate::descriptor::rx_armed_word(16).expect("valid size") | crate::descriptor::BIT_30,
+        );
+        mmio.last_descriptor_low = (BASE + crate::descriptor::DESCRIPTOR_BYTES) & ADDRESS_LOW_MASK;
+        assert_eq!(
+            live.recycle_completed_prefix::<1, _, _>(&mut mmio, |_| Err(RxRingError::Size)),
             Err(RxRingError::Size),
         );
         assert_eq!(storage.lifecycle_state(), RxDmaArenaState::ResetRequired);
@@ -885,6 +930,16 @@ mod tests {
             storage
                 .recycle_completed_prefix::<1, _>(&mut live, &mut mmio)
                 .unwrap()
+                .is_none()
+        );
+        storage.descriptors()[1].write_word0(
+            crate::descriptor::rx_armed_word(16).expect("valid size") | crate::descriptor::BIT_30,
+        );
+        mmio.last_descriptor_low = (BASE + crate::descriptor::DESCRIPTOR_BYTES) & ADDRESS_LOW_MASK;
+        assert!(
+            storage
+                .recycle_completed_prefix::<1, _>(&mut live, &mut mmio)
+                .unwrap()
                 .is_some()
         );
         assert!(live.reload_pending());
@@ -924,6 +979,16 @@ mod tests {
             storage
                 .recycle_completed_prefix::<1, _>(&mut live, &mut mmio)
                 .unwrap()
+                .is_none()
+        );
+        storage.descriptors()[1].write_word0(
+            crate::descriptor::rx_armed_word(16).expect("valid size") | crate::descriptor::BIT_30,
+        );
+        mmio.last_descriptor_low = (BASE + crate::descriptor::DESCRIPTOR_BYTES) & ADDRESS_LOW_MASK;
+        assert!(
+            storage
+                .recycle_completed_prefix::<1, _>(&mut live, &mut mmio)
+                .unwrap()
                 .is_some()
         );
         assert!(live.reload_pending());
@@ -938,6 +1003,69 @@ mod tests {
             Err(RxRingError::Corrupt)
         );
         assert_eq!(storage.lifecycle_state(), RxDmaArenaState::ResetRequired);
+        assert!(live.try_stop(&mut mmio).is_ok());
+    }
+
+    #[test]
+    fn exhausted_reload_records_the_direct_base_repair_facts() {
+        const COUNT: usize = 2;
+        const BASE: u32 = 0x2f00_1000;
+        const ADDRESS_LOW_MASK: u32 = 0x000f_ffff;
+        let buffers = [0x2f00_2000, 0x2f00_2200];
+        let storage = RxDmaStorage::<COUNT, 16, 20>::new();
+        let mut mmio = MockRxDma::default();
+        let prepared = storage
+            .prepare_ring(&mut mmio, BASE, &buffers)
+            .expect("prepared owner");
+        let mut live = prepared
+            .try_start(&mut mmio)
+            .map_err(|(_, error)| error)
+            .expect("live epoch");
+        storage.descriptors()[0].write_word0(
+            crate::descriptor::rx_armed_word(16).expect("valid size") | crate::descriptor::BIT_30,
+        );
+        mmio.last_descriptor_low = BASE & ADDRESS_LOW_MASK;
+        mmio.next_descriptor_low = (BASE + crate::descriptor::DESCRIPTOR_BYTES) & ADDRESS_LOW_MASK;
+        assert!(storage.take_completed(&mut live, 0).unwrap().is_some());
+        assert!(
+            storage
+                .recycle_completed_prefix::<1, _>(&mut live, &mut mmio)
+                .unwrap()
+                .is_none()
+        );
+        storage.descriptors()[1].write_word0(
+            crate::descriptor::rx_armed_word(16).expect("valid size") | crate::descriptor::BIT_30,
+        );
+        mmio.last_descriptor_low = (BASE + crate::descriptor::DESCRIPTOR_BYTES) & ADDRESS_LOW_MASK;
+        assert!(
+            storage
+                .recycle_completed_prefix::<1, _>(&mut live, &mut mmio)
+                .unwrap()
+                .is_some()
+        );
+
+        // The walker exhausted the previously accepted tail before observing
+        // its new link. The vendor suffix republishes that link through BASE.
+        mmio.next_descriptor_low = 0;
+        mmio.last_descriptor_low = (BASE + crate::descriptor::DESCRIPTOR_BYTES) & ADDRESS_LOW_MASK;
+        assert_eq!(
+            live.poll_pending_reload(&mut mmio),
+            Ok(crate::rx_ring::RxReloadObservation::Settled)
+        );
+        assert_eq!(mmio.descriptor_base, BASE);
+        assert_eq!(
+            live.reload_repair_evidence(),
+            crate::rx_ring::RxReloadRepairEvidence {
+                observations: 1,
+                nonzero_word_with_zero_address: 0,
+                base_repairs: 1,
+                last_next_word: 0,
+                last_last_low: Some(
+                    (BASE + crate::descriptor::DESCRIPTOR_BYTES) & ADDRESS_LOW_MASK
+                ),
+                last_repair_head: Some(BASE),
+            }
+        );
         assert!(live.try_stop(&mut mmio).is_ok());
     }
 
@@ -971,6 +1099,112 @@ mod tests {
 
         drop(unit);
         assert_eq!(storage.lifecycle_state(), RxDmaArenaState::ResetRequired);
+        assert!(live.try_stop(&mut mmio).is_ok());
+    }
+
+    #[test]
+    fn later_completed_unit_guards_prompt_observed_prefix_reclaim() {
+        const COUNT: usize = 4;
+        const BASE: u32 = 0x2f00_1000;
+        const ADDRESS_LOW_MASK: u32 = 0x000f_ffff;
+        let buffers = [0x2f00_2000, 0x2f00_2200, 0x2f00_2400, 0x2f00_2600];
+        let storage = RxDmaStorage::<COUNT, 16, 20>::new();
+        let mut mmio = MockRxDma::default();
+        let prepared = storage
+            .prepare_ring(&mut mmio, BASE, &buffers)
+            .expect("prepared owner");
+        let mut live = prepared
+            .try_start(&mut mmio)
+            .map_err(|(_, error)| error)
+            .expect("live epoch");
+        assert_eq!(live.recycle_start(), 0);
+        assert_eq!(live.accepted_tail(), COUNT - 1);
+
+        for (index, buffer_address) in buffers.iter().copied().enumerate() {
+            storage.descriptors()[index].write_word0(
+                16 | (4 << crate::descriptor::LENGTH_SHIFT)
+                    | crate::descriptor::BIT_30
+                    | crate::descriptor::BIT_31,
+            );
+            mmio.last_descriptor_low =
+                (BASE + index as u32 * crate::descriptor::DESCRIPTOR_BYTES) & ADDRESS_LOW_MASK;
+            mmio.next_descriptor_low = (BASE
+                + (index as u32 + 1) * crate::descriptor::DESCRIPTOR_BYTES)
+                & ADDRESS_LOW_MASK;
+            assert_eq!(
+                crate::descriptor::size(storage.descriptors()[index].word0()),
+                16
+            );
+            assert_eq!(
+                storage.descriptors()[index].buffer_address(),
+                buffer_address
+            );
+            assert_eq!(
+                storage.descriptors()[index].next_address(),
+                if index + 1 == COUNT {
+                    0
+                } else {
+                    BASE + (index as u32 + 1) * crate::descriptor::DESCRIPTOR_BYTES
+                }
+            );
+            assert!(live.topology_snapshot().valid);
+            let frontier = storage
+                .first_completed_unit_frontier_through(&live, mmio.last_descriptor_low)
+                .expect("frontier");
+            assert_eq!(frontier.unit_count, 1);
+            assert_eq!(frontier.descriptor_count, 1);
+            let unit = match storage.take_completed_unit(&mut live, 1) {
+                Ok(Some(unit)) => unit,
+                Ok(None) => panic!("descriptor {index} was not transferred"),
+                Err(error) => panic!("descriptor {index} transfer failed: {error:?}"),
+            };
+            unit.retain_for_deferred_recycle();
+
+            assert_ne!(
+                storage.descriptors()[index].word0() & crate::descriptor::BIT_30,
+                0
+            );
+            if index < 3 {
+                assert!(
+                    storage
+                        .recycle_observed_prefix_with_guard(&mut live, &mut mmio)
+                        .expect("reclaim waits for a guarded half-ring window")
+                        .is_none()
+                );
+                assert_ne!(
+                    storage.descriptors()[index].word0() & crate::descriptor::BIT_30,
+                    0
+                );
+            }
+        }
+
+        let append = storage
+            .recycle_observed_prefix_with_guard(&mut live, &mut mmio)
+            .expect("guarded prefix reclaim")
+            .expect("first half appended behind retained second half");
+        assert_eq!(append.head_index, 0);
+        assert_eq!(append.descriptor_count, 2);
+        assert_eq!(
+            storage.descriptors()[0].word0() & crate::descriptor::BIT_30,
+            0
+        );
+        assert_eq!(
+            storage.descriptors()[1].word0() & crate::descriptor::BIT_30,
+            0
+        );
+        assert_ne!(
+            storage.descriptors()[2].word0() & crate::descriptor::BIT_30,
+            0
+        );
+        assert_ne!(
+            storage.descriptors()[3].word0() & crate::descriptor::BIT_30,
+            0
+        );
+        assert_eq!(live.observed_mask(), 0b1100);
+        live.complete_pending_reload(&mut mmio)
+            .expect("vendor reload suffix");
+        assert_eq!(live.accepted_tail(), 1);
+        assert!(live.topology_snapshot().valid);
         assert!(live.try_stop(&mut mmio).is_ok());
     }
 

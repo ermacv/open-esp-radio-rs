@@ -354,7 +354,7 @@ impl<
         (Self, RxRingError),
     >
     where
-        D: RxReloadDelay,
+        D: RxDmaObservationDelay,
     {
         let Self {
             ring,

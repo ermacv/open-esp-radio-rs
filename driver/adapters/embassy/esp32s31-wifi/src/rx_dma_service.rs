@@ -2,8 +2,10 @@
 //!
 //! DMA storage, the live descriptor frontier and independent staging storage
 //! are kept in one finite service. No DMA pointer escapes this owner: a
-//! completed unit is copied and recycled before its staging lease is handed to
-//! the separate protocol consumer.
+//! completed unit is copied into independent staging before its lease is handed
+//! to the protocol consumer. A completed unit remains untouched until a later
+//! completed unit proves that DMA consumed its links; the protected prefix is
+//! then appended promptly without deliberately exhausting the finite list.
 
 #![forbid(unsafe_code)]
 
@@ -14,12 +16,9 @@ use embassy_sync::channel::{Sender, TrySendError};
 use open_esp_radio_embassy_net::RawMutex;
 use open_esp_radio_esp32s31_wifi_dma::rx_storage::{RxDmaBuffer, RxDmaStorage};
 use open_esp_radio_esp32s31_wifi_mac::{
-    rx::{
-        RX_DESCRIPTOR_RELOAD_ATTEMPT_LIMIT, RxDma, RxReloadObservation, RxRingError, RxRingHalted,
-        RxRingLive, RxRingStopped,
-    },
+    rx::{RxDma, RxRingError, RxRingHalted, RxRingLive, RxRingStopped},
     rx_pool::{
-        RxDmaStageUnitOutcome, RxStageError, RxStagePool, RxStageTransactionError,
+        RxDmaDeferredStageUnitOutcome, RxStageError, RxStagePool, RxStageTransactionError,
         VENDOR_LARGE_RX_PAYLOAD_CAPACITY, VENDOR_LARGE_RX_SLOT_COUNT,
     },
 };
@@ -28,7 +27,7 @@ use crate::{
     connected_runner::WifiRxProgress,
     connected_rx_protocol::Esp32s31StagedRxFrame,
     connected_services::Esp32s31ConnectedRxService,
-    embassy_rx::{RxReloadDelay, await_staged_rx_reload},
+    embassy_rx::RxDmaObservationDelay,
     rx_pipeline_observer::{
         RxPipelineObservation, RxPipelineObserver, RxServiceObservation, RxStageDiscard,
     },
@@ -36,7 +35,7 @@ use crate::{
 
 /// Descriptor count and allocation geometry qualified by the ordinary S31
 /// large-RX profile.
-pub const ESP32S31_RX_DESCRIPTOR_COUNT: usize = 32;
+pub const ESP32S31_RX_DESCRIPTOR_COUNT: usize = 64;
 pub const ESP32S31_RX_BUFFER_SIZE: usize = 4_608;
 pub const ESP32S31_RX_BUFFER_STORAGE_SIZE: usize = ESP32S31_RX_BUFFER_SIZE + 4;
 /// Platform settle edge between stopped-ring publication and walker enable.
@@ -57,7 +56,7 @@ pub type Esp32s31RxDmaStorage<
 ///
 /// The policy never receives a descriptor pointer, payload view or ring
 /// capability. It can narrow the admitted payload length, but ownership and
-/// descriptor recycle remain exclusively inside [`Esp32s31ConnectedRx`].
+/// descriptor reclaim remain exclusively inside [`Esp32s31ConnectedRx`].
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Esp32s31RxCompletedUnit {
     pub head_index: usize,
@@ -68,8 +67,8 @@ pub struct Esp32s31RxCompletedUnit {
 /// A completed ingress transaction observed after its ownership edge.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Esp32s31RxIngressObservation {
-    /// The unit was discarded and its descriptor reload has settled.
-    DiscardReloaded {
+    /// The unit was discarded and retained for guarded deferred reclaim.
+    DiscardRetained {
         unit: Esp32s31RxCompletedUnit,
         reason: RxStageDiscard,
     },
@@ -82,7 +81,7 @@ pub enum Esp32s31RxIngressObservation {
 /// This hook is intentionally narrower than a general RX observer. It may
 /// only lower the maximum staged payload for the current real unit and then
 /// observe the completed transaction. It cannot mutate descriptor metadata,
-/// recycle buffers, fabricate frames or retain hardware ownership.
+/// reclaim buffers, fabricate frames or retain hardware ownership.
 pub trait Esp32s31RxStageAdmissionPolicy {
     fn maximum_payload_length(
         &self,
@@ -173,7 +172,7 @@ pub struct Esp32s31StoppedRx<
 ///
 /// Splitting these resources from [`RxRingHalted`] lets the station lifecycle
 /// pass the descriptor frontier through its pre-connected type state without
-/// discarding the production staging pool, queue sender, reload delay or
+/// discarding the production staging pool, queue sender, observation delay or
 /// telemetry binding. Reassembly consumes both owners, so it cannot create a
 /// second connected RX service for the same static storage.
 pub struct Esp32s31RxEpochResources<

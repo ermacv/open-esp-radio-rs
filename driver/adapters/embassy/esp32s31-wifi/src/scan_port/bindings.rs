@@ -27,7 +27,7 @@ impl<
         DMA_STORAGE_SIZE,
     >
 where
-    D: RxReloadDelay,
+    D: RxDmaObservationDelay,
     H: RxDma,
 {
     type Error = Esp32s31RxRingOwnerError;

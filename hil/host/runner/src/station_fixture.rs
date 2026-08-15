@@ -71,7 +71,7 @@ impl RxEvidence {
                 evidence.rx_bitrate,
             ),
             Self::OpenWrt(evidence) => format!(
-                "- OpenWrt filtered Ethernet ingress (diagnostic) / Wi-Fi egress (exact): `{}` / `{}`; interface RX/TX: `{}` / `{}`; station TX/retries/failed: `{}` / `{}` / `{}`; channel width: `{}` MHz\n",
+                "- OpenWrt filtered Ethernet ingress (diagnostic) / Wi-Fi egress (exact): `{}` / `{}`; interface RX/TX: `{}` / `{}`; station TX/retries/failed: `{}` / `{}` / `{}`; pre-air TID-0 AQM drops: `{}`; channel width: `{}` MHz\n",
                 evidence.ingress_packets,
                 evidence.wireless_packets,
                 evidence.ingress_interface_rx_packets,
@@ -79,6 +79,7 @@ impl RxEvidence {
                 evidence.station_tx_packets,
                 evidence.station_tx_retries,
                 evidence.station_tx_failed,
+                evidence.station_tid0_aqm_drops,
                 evidence.channel_width_mhz,
             ),
         }

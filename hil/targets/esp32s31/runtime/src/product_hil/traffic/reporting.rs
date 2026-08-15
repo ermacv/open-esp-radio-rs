@@ -210,7 +210,7 @@ pub(in crate::product_hil) async fn log_open_radio_rx_pipeline_interval(
     counters: &RxPipelineCounters,
 ) {
     let pipeline = counters.snapshot().wrapping_delta_since(earlier);
-    runtime_log(format_args!(
+    runtime_log_reliably(format_args!(
         "ORXS calls={} frontier={} admitted={} bytes={} discard_empty={} discard_long={} \
          back={} pool={} queue={} deferred_max={} pool_min={} queue_min={} \
          fmax={} amax={} service_us={} service_boot_max_us={}",
@@ -230,9 +230,16 @@ pub(in crate::product_hil) async fn log_open_radio_rx_pipeline_interval(
         pipeline.maximum_admitted,
         pipeline.service_micros,
         pipeline.service_lifetime_max_micros,
-    ));
+    ))
+    .await;
     yield_now().await;
-    runtime_log(format_args!(
+    runtime_log_reliably(format_args!(
+        "ORXL transactions={} reload_us={} reload_boot_max_us={}",
+        pipeline.reload_transactions, pipeline.reload_micros, pipeline.reload_lifetime_max_micros,
+    ))
+    .await;
+    yield_now().await;
+    runtime_log_reliably(format_args!(
         "ORXB increments={} samples={} last_service={} last_counter={} \
          last_frontier={} last_admitted={} last_pool={} last_queue={} last_service_us={}",
         pipeline.dma_buffer_full_increments,
@@ -244,9 +251,10 @@ pub(in crate::product_hil) async fn log_open_radio_rx_pipeline_interval(
         pipeline.dma_buffer_full_last_pool_credits,
         pipeline.dma_buffer_full_last_queue_credits,
         pipeline.dma_buffer_full_last_service_micros,
-    ));
+    ))
+    .await;
     yield_now().await;
-    runtime_log(format_args!(
+    runtime_log_reliably(format_args!(
         "ORXD frames={} data={} amsdu={} amsdu_subframes={} unit_le1700={} \
          unit_1701_3400={} unit_over3400={} unit_boot_max_bytes={} \
          waits={} wait_us={} wait_boot_max_us={} dispatch_us={} \
@@ -271,9 +279,10 @@ pub(in crate::product_hil) async fn log_open_radio_rx_pipeline_interval(
         pipeline.network_published_bytes,
         pipeline.network_publish_micros,
         pipeline.network_publish_lifetime_max_micros,
-    ));
+    ))
+    .await;
     yield_now().await;
-    runtime_log(format_args!(
+    runtime_log_reliably(format_args!(
         "ORXR starts={} stops={} start_tid={} start_seq={} window={} first_samples={} \
          first_tid={} first_start={} first_seq={} first_distance={} buffered={} released={} \
          missing={} stale={} expiries={} occupied={} occupied_max={}",
@@ -294,9 +303,10 @@ pub(in crate::product_hil) async fn log_open_radio_rx_pipeline_interval(
         pipeline.reorder_gap_expiries,
         pipeline.reorder_current_occupied,
         pipeline.reorder_maximum_occupied,
-    ));
+    ))
+    .await;
     yield_now().await;
-    runtime_log(format_args!(
+    runtime_log_reliably(format_args!(
         "ORXF zero={} one={} two_three={} four_seven={} eight_fifteen={} \
          sixteen_thirty_one={} thirty_two_plus={} irq_posts={} irq_epochs={} \
          irq_entries={} irq_coalesced={} irq_samples={} irq_skew={} \
@@ -316,9 +326,10 @@ pub(in crate::product_hil) async fn log_open_radio_rx_pipeline_interval(
         pipeline.rx_irq_clock_skew_samples,
         pipeline.rx_irq_to_service_micros,
         pipeline.rx_irq_to_service_lifetime_max_micros,
-    ));
+    ))
+    .await;
     yield_now().await;
-    runtime_log(format_args!(
+    runtime_log_reliably(format_args!(
         "ORXI spurious={} rx_only={} rx_mixed={} tx_only={} tx_mixed={} other_only={} \
          extra={} saturated={} aux_or={} unknown_or={}",
         irq_classification.spurious_entries,
@@ -331,7 +342,8 @@ pub(in crate::product_hil) async fn log_open_radio_rx_pipeline_interval(
         irq_classification.saturated_entries,
         irq_auxiliary_status_or,
         irq_unknown_status_or,
-    ));
+    ))
+    .await;
     yield_now().await;
 }
 

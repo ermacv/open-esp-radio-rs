@@ -1,8 +1,7 @@
 use core::marker::PhantomData;
 
 use open_esp_radio_esp32s31_wifi_mac::rx::{
-    RX_DESCRIPTOR_RELOAD_ATTEMPT_LIMIT, RxDescriptorSnapshot, RxDma, RxReloadObservation,
-    RxRingError, RxRingHalted, RxRingLive, RxRingStopped, RxSegment,
+    RxDescriptorSnapshot, RxDma, RxRingError, RxRingHalted, RxRingLive, RxRingStopped, RxSegment,
 };
 
 use crate::rx_dma_service::{ESP32S31_RX_WALKER_ENABLE_SETTLE_US, Esp32s31RxDmaStorage};
@@ -199,10 +198,7 @@ where
     /// descriptor ownership probe even if hardware emits no new RX wake.
     pub const fn service_probe_pending(&self) -> bool {
         match &self.state {
-            Esp32s31PreconnectedRxState::Live(ring) => {
-                ring.exhausted_republication_probe_pending()
-                    || ring.completion_release_probe_pending()
-            }
+            Esp32s31PreconnectedRxState::Live(ring) => ring.exhausted_republication_probe_pending(),
             _ => false,
         }
     }
@@ -227,7 +223,11 @@ where
         let ring = self.live_mut()?;
         let mut progress = Esp32s31PreconnectedRxProgress::default();
         let frontier = ring.completed_descriptor_frontier();
-        for step in 0..frontier.descriptor_count {
+        // This finite port publishes one physical half at a time. Do not mark
+        // a later descriptor observed merely because it was needed as the
+        // LAST-advance proof for the preceding half; that descriptor belongs
+        // to the next service/recycle epoch.
+        for step in 0..frontier.descriptor_count.min(COUNT / 2) {
             let index = (frontier.start_index + step) % COUNT;
             let Some(completed) = storage.take_completed(ring, index)? else {
                 return Err(Esp32s31PreconnectedRxError::Ring(RxRingError::Corrupt));
@@ -280,14 +280,7 @@ where
         let ring = self.live_mut()?;
         // A cancelled caller can leave an already-published append pending.
         // Finish that transaction before observing another ownership epoch.
-        let mut reload_samples = 0_u32;
-        while ring.poll_pending_reload(hardware)? == RxReloadObservation::Pending {
-            reload_samples = reload_samples.saturating_add(1);
-            if reload_samples >= RX_DESCRIPTOR_RELOAD_ATTEMPT_LIMIT {
-                return Err(Esp32s31PreconnectedRxError::Ring(RxRingError::Busy));
-            }
-            D::after_micros(1).await;
-        }
+        ring.complete_pending_reload(hardware)?;
         ring.observe_exhausted_republication(hardware);
         // SOURCE[libpp:wdevProcessRxSucDataAll]: the vendor receive worker
         // snapshots `hal_mac_rx_get_last_dscr`, processes through that finite
@@ -297,12 +290,22 @@ where
         // LAST is the ownership frontier for the following descriptor scan.
         // Order that MMIO observation before reading uncached SRAM.
         hardware.fence();
-        let frontier = storage.completed_unit_frontier_through(ring, last_descriptor_low)?;
+        let frontier = storage.first_completed_unit_frontier_through(ring, last_descriptor_low)?;
         if frontier.unit_count == 0 {
             return Ok(Esp32s31RecycledRxProgress::default());
         }
         if !ring.observe_current_completed_unit_link_release(hardware, frontier.descriptor_count) {
-            return Ok(Esp32s31RecycledRxProgress::default());
+            // A repeated LAST/NEXT image is not an ownership proof. This
+            // finite wait can only help when hardware actually completes a
+            // later descriptor and advances LAST; otherwise retain the unit
+            // for the next RX service edge. It remains outside the reload
+            // suffix, which must be one uninterrupted transaction.
+            D::after_micros(1).await;
+            if !ring
+                .observe_current_completed_unit_link_release(hardware, frontier.descriptor_count)
+            {
+                return Ok(Esp32s31RecycledRxProgress::default());
+            }
         }
 
         let unit = storage
@@ -345,14 +348,7 @@ where
 
         // Complete the exact vendor append suffix before protocol processing
         // is allowed to borrow the same MAC register owner for a response TX.
-        reload_samples = 0;
-        while ring.poll_pending_reload(hardware)? == RxReloadObservation::Pending {
-            reload_samples = reload_samples.saturating_add(1);
-            if reload_samples >= RX_DESCRIPTOR_RELOAD_ATTEMPT_LIMIT {
-                return Err(Esp32s31PreconnectedRxError::Ring(RxRingError::Busy));
-            }
-            D::after_micros(1).await;
-        }
+        ring.complete_pending_reload(hardware)?;
 
         let mut progress = Esp32s31RecycledRxProgress {
             completed_units: 1,

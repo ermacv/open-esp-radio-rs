@@ -313,6 +313,10 @@ impl RxDma for CooperativeRadioHardware<'_> {
         RxDma::next_descriptor_low(&mut self.wifi_mac_hal())
     }
 
+    fn next_descriptor_word(&mut self) -> u32 {
+        RxDma::next_descriptor_word(&mut self.wifi_mac_hal())
+    }
+
     fn with_ordered_cursor<R>(
         &mut self,
         observed: impl for<'confirmation> FnOnce(RxDmaCursorObservation<'confirmation>) -> R,

@@ -258,6 +258,7 @@ pub(crate) fn run(
     let pipeline = rx.pipeline;
     let irq = rx.irq;
     let average_service_us = pipeline.service_us as f64 / pipeline.admitted_frames.max(1) as f64;
+    let average_reload_us = pipeline.reload_us as f64 / pipeline.reload_transactions.max(1) as f64;
     let average_dispatch_us = pipeline.dispatch_us as f64 / pipeline.protocol_frames.max(1) as f64;
     let average_publish_us =
         pipeline.network_publish_us as f64 / pipeline.network_publications.max(1) as f64;
@@ -309,6 +310,7 @@ pub(crate) fn run(
              - RX IRQ posts/wake epochs/hard entries/coalesced/sampled services/clock-skew rejects: `{}` / `{}` / `{}` / `{}` / `{}` / `{}`; sampled IRQ-to-service: `{:.2} us` average, `{}` us boot maximum\n\
              - MAC entry causes spurious / RX-work-only / RX-mixed / TX-only / TX-mixed / auxiliary-or-unknown-only: `{}` / `{}` / `{}` / `{}` / `{}` / `{}`; classified `{}` entries; extra snapshots `{}`, loop saturations `{}`, auxiliary STATUS OR `0x{:08x}`, unknown STATUS OR `0x{:08x}`\n\
              - Staged bytes: `{}`; invalid empty/oversize units recycled: `{}` / `{}`; service: `{:.2} us/frame` average, `{}` us boot maximum\n\
+             - Safe reload transactions: `{}`; `{:.2} us` average, `{}` us boot maximum; `{}` us total\n\
              - Backpressured services: `{}`; pool/queue credit limited: `{}` / `{}`; maximum deferred frames: `{}`; minimum pool/queue credits: `{}` / `{}`\n\
              - Protocol frames/data: `{}` / `{}`; dispatch: `{:.2} us/frame` average, `{}` us boot maximum\n\
              - A-MSDU MPDUs/subframes: `{}` / `{}`; raw unit buckets <=1700 / 1701-3400 / >3400 bytes: `{}` / `{}` / `{}`; boot maximum: `{}` bytes\n\
@@ -397,6 +399,10 @@ pub(crate) fn run(
             pipeline.stage_too_long_discards,
             average_service_us,
             pipeline.service_max_us,
+            pipeline.reload_transactions,
+            average_reload_us,
+            pipeline.reload_max_us,
+            pipeline.reload_us,
             pipeline.backpressured_services,
             pipeline.pool_credit_limited_services,
             pipeline.queue_credit_limited_services,

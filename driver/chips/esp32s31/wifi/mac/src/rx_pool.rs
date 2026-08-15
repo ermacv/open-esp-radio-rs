@@ -24,10 +24,7 @@ use open_esp_radio_esp32s31_wifi_dma::descriptor::length as descriptor_length;
 use open_esp_radio_esp32s31_wifi_dma::rx_ring::RxCompletedDescriptor;
 use open_esp_radio_esp32s31_wifi_dma::{
     rx_dma::RxDma,
-    rx_ring::{
-        RX_DESCRIPTOR_RELOAD_ATTEMPT_LIMIT, RxCompletedUnit, RxReloadObservation, RxRingError,
-        RxRingLive, RxSegment,
-    },
+    rx_ring::{RxCompletedUnit, RxRingError, RxRingLive, RxSegment},
     rx_storage::RxDmaCompletedUnit,
 };
 use open_esp_radio_wifi_softmac::MacRxMetadata;
@@ -62,6 +59,15 @@ pub enum RxInPlaceEthernetError {
 pub enum RxDmaStageUnitOutcome<'pool, const SLOTS: usize, const CAPACITY: usize> {
     Staged(RxStageReloadPending<'pool, SLOTS, CAPACITY>),
     /// Malformed length metadata was discarded after descriptor recycle.
+    Discarded(RxStageError),
+}
+
+/// Result after a completed DMA unit has been copied while its descriptor is
+/// retained for guarded deferred reclaim.
+pub enum RxDmaDeferredStageUnitOutcome<'pool, const SLOTS: usize, const CAPACITY: usize> {
+    Staged(NetworkRxFrame<'pool, SLOTS, CAPACITY>),
+    /// Malformed length metadata was discarded while the descriptor remained
+    /// in the CPU-owned observed prefix.
     Discarded(RxStageError),
 }
 
@@ -246,7 +252,6 @@ impl<const SLOTS: usize, const CAPACITY: usize> RxStagePool<SLOTS, CAPACITY> {
         }
         Ok(RxStageReloadPending {
             frame: Some(radio_frame),
-            reload_samples: 0,
         })
     }}
 
@@ -282,7 +287,6 @@ impl<const SLOTS: usize, const CAPACITY: usize> RxStagePool<SLOTS, CAPACITY> {
         }
         Ok(RxStageReloadPending {
             frame: Some(radio_frame),
-            reload_samples: 0,
         })
     }
 
@@ -364,8 +368,50 @@ impl<const SLOTS: usize, const CAPACITY: usize> RxStagePool<SLOTS, CAPACITY> {
         }
         Ok(RxDmaStageUnitOutcome::Staged(RxStageReloadPending {
             frame: radio_frame,
-            reload_samples: 0,
         }))
+    }
+
+    /// Copy one completed unit without immediately rewriting its descriptor.
+    ///
+    /// The independent frame can be published immediately, while descriptor
+    /// ownership remains recorded in the ring until a later completed unit
+    /// proves that hardware consumed this unit's links. This removes the
+    /// address-reuse (ABA) ambiguity of using LAST/NEXT alone as a release
+    /// handshake while still replenishing the live list promptly.
+    pub fn stage_dma_unit_deferred_bounded<
+        'pool,
+        const COUNT: usize,
+        const BUFFER_SIZE: usize,
+        const STORAGE_SIZE: usize,
+    >(
+        &'pool self,
+        completed: RxDmaCompletedUnit<'_, '_, COUNT, BUFFER_SIZE, STORAGE_SIZE>,
+        maximum_length: usize,
+    ) -> Result<RxDmaDeferredStageUnitOutcome<'pool, SLOTS, CAPACITY>, RxStageTransactionError>
+    {
+        let staged =
+            self.try_stage_unit(completed.metadata(), maximum_length, |step, destination| {
+                let source = completed
+                    .segment(step)
+                    .ok_or(RxStageError::SourceTooShort)?;
+                if source.len() != destination.len() {
+                    return Err(RxStageError::SourceTooShort);
+                }
+                destination.copy_from_slice(source);
+                Ok(())
+            });
+
+        match staged {
+            Ok(frame) => {
+                completed.retain_for_deferred_recycle();
+                Ok(RxDmaDeferredStageUnitOutcome::Staged(frame.publish()))
+            }
+            Err(error @ (RxStageError::Empty | RxStageError::TooLong)) => {
+                completed.retain_for_deferred_recycle();
+                Ok(RxDmaDeferredStageUnitOutcome::Discarded(error))
+            }
+            Err(error) => Err(RxStageTransactionError::Stage(error)),
+        }
     }
 
     pub fn claimed_slots(&self) -> u32 {
@@ -402,51 +448,30 @@ impl<const SLOTS: usize, const CAPACITY: usize> RxStagePool<SLOTS, CAPACITY> {
 #[must_use = "the staged frame must be polled to reload completion or explicitly dropped"]
 pub struct RxStageReloadPending<'pool, const SLOTS: usize, const CAPACITY: usize> {
     frame: Option<RadioRxFrame<'pool, SLOTS, CAPACITY>>,
-    reload_samples: u32,
 }
 
 impl<'pool, const SLOTS: usize, const CAPACITY: usize>
     RxStageReloadPending<'pool, SLOTS, CAPACITY>
 {
-    /// Perform one hardware observation.
-    ///
-    /// `Ok(None)` is an explicit scheduling boundary: an async integration
-    /// must yield or await a timer before calling this method again. The exact
-    /// recovered ROM attempt bound is retained without spinning inside the
-    /// source-owned MAC crate.
-    pub fn poll_reload<const COUNT: usize, M: RxDma>(
+    /// Complete the exact vendor reload transaction before exposing the
+    /// independent staged copy to the network.
+    pub fn complete_reload<const COUNT: usize, M: RxDma>(
         &mut self,
         mmio: &mut M,
         ring: &mut RxRingLive<'_, COUNT>,
-    ) -> Result<Option<NetworkRxFrame<'pool, SLOTS, CAPACITY>>, RxStageTransactionError> {
+    ) -> Result<NetworkRxFrame<'pool, SLOTS, CAPACITY>, RxStageTransactionError> {
         if self.frame.is_none() {
             return Err(RxStageTransactionError::Ownership);
         }
-        match ring
-            .poll_pending_reload(mmio)
-            .map_err(RxStageTransactionError::Ring)?
-        {
-            RxReloadObservation::Pending => {
-                self.reload_samples = self.reload_samples.saturating_add(1);
-                if self.reload_samples >= RX_DESCRIPTOR_RELOAD_ATTEMPT_LIMIT {
-                    self.frame.take();
-                    Err(RxStageTransactionError::Ring(RxRingError::Busy))
-                } else {
-                    Ok(None)
-                }
-            }
-            RxReloadObservation::Settled => {
-                let frame = self
-                    .frame
-                    .take()
-                    .ok_or(RxStageTransactionError::Ownership)?;
-                Ok(Some(frame.publish()))
-            }
+        if let Err(error) = ring.complete_pending_reload(mmio) {
+            self.frame.take();
+            return Err(RxStageTransactionError::Ring(error));
         }
-    }
-
-    pub const fn reload_samples(&self) -> u32 {
-        self.reload_samples
+        let frame = self
+            .frame
+            .take()
+            .ok_or(RxStageTransactionError::Ownership)?;
+        Ok(frame.publish())
     }
 }
 

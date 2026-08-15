@@ -51,6 +51,9 @@ impl RxDma for Hardware {
     fn next_descriptor_low(&mut self) -> u32 {
         self.next_descriptor_low
     }
+    fn next_descriptor_word(&mut self) -> u32 {
+        self.next_descriptor_low
+    }
     fn with_ordered_cursor<R>(
         &mut self,
         observed: impl for<'confirmation> FnOnce(
@@ -149,16 +152,12 @@ fn completed_descriptors_are_delivered_in_ring_order_across_wrap() {
     let mut rx = Esp32s31PreconnectedRx::<ReadyDelay, WRAP_COUNT, BUFFER_SIZE>::from_halted(halted);
     embassy_futures::block_on(rx.start_with_storage(&mut hardware, &storage)).unwrap();
     // First reclaim 0,1 so the next logical receive frontier begins at two.
-    for index in [0, 1] {
+    for index in [0, 1, 2] {
         storage.descriptors()[index].write_word0(storage.descriptors()[index].word0() | BIT_30);
     }
-    hardware.release_through(1, Some(2));
+    hardware.release_through(2, Some(3));
     rx.service_completed(&mut hardware, &storage, |_| {
         Esp32s31PreconnectedRxDirective::Continue
-    })
-    .unwrap();
-    rx.service_completed(&mut hardware, &storage, |_| {
-        panic!("settling the first append must not observe another descriptor")
     })
     .unwrap();
 
@@ -166,11 +165,19 @@ fn completed_descriptors_are_delivered_in_ring_order_across_wrap() {
     for index in [2, 3, 0] {
         storage.descriptors()[index].write_word0(storage.descriptors()[index].word0() | BIT_30);
     }
-    hardware.release_through(3, Some(0));
+    hardware.release_through(0, Some(1));
 
     let mut observed = [usize::MAX; 3];
     let mut count = 0;
-    let progress = rx
+    let first = rx
+        .service_completed(&mut hardware, &storage, |segment| {
+            observed[count] =
+                usize::try_from((segment.descriptor_address - BASE) / DESCRIPTOR_BYTES).unwrap();
+            count += 1;
+            Esp32s31PreconnectedRxDirective::Continue
+        })
+        .unwrap();
+    let second = rx
         .service_completed(&mut hardware, &storage, |segment| {
             observed[count] =
                 usize::try_from((segment.descriptor_address - BASE) / DESCRIPTOR_BYTES).unwrap();
@@ -179,7 +186,8 @@ fn completed_descriptors_are_delivered_in_ring_order_across_wrap() {
         })
         .unwrap();
 
-    assert_eq!(progress.completed, 3);
+    assert_eq!(first.completed, 2);
+    assert_eq!(second.completed, 1);
     assert_eq!(observed, [2, 3, 0]);
 }
 
@@ -221,8 +229,14 @@ fn completed_unit_is_recycled_without_waiting_for_a_half_ring() {
     embassy_futures::block_on(rx.start_with_storage(&mut hardware, &storage)).unwrap();
     storage.descriptors()[0]
         .write_word0(BUFFER_SIZE as u32 | (4 << LENGTH_SHIFT) | BIT_30 | BIT_31);
-    hardware.last_descriptor_low = BASE & 0x000f_ffff;
-    hardware.next_descriptor_low = (BASE + DESCRIPTOR_BYTES) & 0x000f_ffff;
+    storage.descriptors()[1].write_word0(storage.descriptors()[1].word0() | BIT_30);
+    hardware.last_descriptor_low = (BASE + DESCRIPTOR_BYTES) & 0x000f_ffff;
+    hardware.next_descriptor_low = (BASE + 2 * DESCRIPTOR_BYTES) & 0x000f_ffff;
+    assert!(
+        rx.live_mut()
+            .unwrap()
+            .observe_current_completed_unit_link_release(&mut hardware, 1)
+    );
 
     let mut staging = [0; 8];
     let progress = embassy_futures::block_on(rx.service_completed_unit(
@@ -278,8 +292,9 @@ fn oversize_unit_is_recycled_without_exposing_a_partial_frame() {
     embassy_futures::block_on(rx.start_with_storage(&mut hardware, &storage)).unwrap();
     storage.descriptors()[0]
         .write_word0(BUFFER_SIZE as u32 | (4 << LENGTH_SHIFT) | BIT_30 | BIT_31);
-    hardware.last_descriptor_low = BASE & 0x000f_ffff;
-    hardware.next_descriptor_low = (BASE + DESCRIPTOR_BYTES) & 0x000f_ffff;
+    storage.descriptors()[1].write_word0(storage.descriptors()[1].word0() | BIT_30);
+    hardware.last_descriptor_low = (BASE + DESCRIPTOR_BYTES) & 0x000f_ffff;
+    hardware.next_descriptor_low = 0;
 
     let mut staging = [0; 2];
     let progress = embassy_futures::block_on(rx.service_completed_unit(
@@ -327,8 +342,9 @@ fn completed_unit_waits_for_hardware_last_descriptor_frontier() {
     assert_ne!(storage.descriptors()[0].word0() & BIT_30, 0);
     assert_eq!(hardware.reload_count, 0);
 
-    hardware.last_descriptor_low = BASE & 0x000f_ffff;
-    hardware.next_descriptor_low = (BASE + DESCRIPTOR_BYTES) & 0x000f_ffff;
+    storage.descriptors()[1].write_word0(storage.descriptors()[1].word0() | BIT_30);
+    hardware.last_descriptor_low = (BASE + DESCRIPTOR_BYTES) & 0x000f_ffff;
+    hardware.next_descriptor_low = 0;
     let released = embassy_futures::block_on(rx.service_completed_unit(
         &mut hardware,
         &storage,
@@ -403,7 +419,9 @@ fn pause_bounds_one_service_pass_without_retaining_a_terminal_descriptor() {
         .unwrap();
     assert_eq!(first.completed, 1);
     assert!(!first.stopped);
-    assert_eq!(storage.descriptors()[0].word0() & BIT_30, 0);
+    // One cursor observation only records a release candidate.  The
+    // descriptor remains DMA-owned until a later service turn confirms it.
+    assert_ne!(storage.descriptors()[0].word0() & BIT_30, 0);
 
     hardware.release_through(1, Some(0));
     let second = rx
@@ -413,11 +431,23 @@ fn pause_bounds_one_service_pass_without_retaining_a_terminal_descriptor() {
         .unwrap();
     assert_eq!(second.completed, 1);
     assert!(!second.stopped);
-    assert_eq!(storage.descriptors()[1].word0() & BIT_30, 0);
+    // Advancing LAST to descriptor one proves that hardware has crossed the
+    // first descriptor, so that older candidate may be recycled immediately.
+    assert_eq!(storage.descriptors()[0].word0() & BIT_30, 0);
+    assert_ne!(storage.descriptors()[1].word0() & BIT_30, 0);
+
+    let retained = rx
+        .service_completed(&mut hardware, &storage, |_| {
+            panic!("confirmation must not manufacture another completion")
+        })
+        .unwrap();
+    assert_eq!(retained.completed, 0);
+    assert_ne!(storage.descriptors()[1].word0() & BIT_30, 0);
+    assert_eq!(storage.descriptors()[0].word0() & BIT_30, 0);
 }
 
 #[test]
-fn an_append_remains_explicit_until_a_later_service_settles_it() {
+fn an_append_is_published_only_after_a_later_service_confirms_link_release() {
     let storage = Esp32s31RxDmaStorage::<COUNT, BUFFER_SIZE, STORAGE_SIZE>::new();
     let mut hardware = Hardware::default();
     let mut rx = Esp32s31PreconnectedRx::<ReadyDelay, COUNT, BUFFER_SIZE>::from_halted(
@@ -433,15 +463,21 @@ fn an_append_remains_explicit_until_a_later_service_settles_it() {
         })
         .unwrap();
     assert_eq!(completed.completed, 1);
-    assert!(rx.reload_pending());
+    assert!(!rx.reload_pending());
+    assert_ne!(storage.descriptors()[0].word0() & BIT_30, 0);
 
-    let settled = rx
+    storage.descriptors()[1].write_word0(storage.descriptors()[1].word0() | BIT_30);
+    hardware.release_through(1, None);
+    let confirmed = rx
         .service_completed(&mut hardware, &storage, |_| {
-            panic!("settling an append must not manufacture a completion")
+            Esp32s31PreconnectedRxDirective::Continue
         })
         .unwrap();
-    assert_eq!(settled.completed, 0);
-    assert!(!rx.reload_pending());
+    assert_eq!(confirmed.completed, 1);
+    assert_eq!(storage.descriptors()[0].word0() & BIT_30, 0);
+    // This synchronous finite-phase service deliberately leaves the append
+    // suffix explicit; the following role turn settles it before reuse.
+    assert!(rx.reload_pending());
 }
 
 #[test]

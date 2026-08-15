@@ -905,6 +905,9 @@ pub(crate) struct RxPipelineEvidence {
     pub(crate) maximum_admitted: u64,
     pub(crate) service_us: u64,
     pub(crate) service_max_us: u64,
+    pub(crate) reload_transactions: u64,
+    pub(crate) reload_us: u64,
+    pub(crate) reload_max_us: u64,
     pub(crate) dma_buffer_full_increments: u64,
     pub(crate) dma_buffer_full_service_samples: u64,
     pub(crate) dma_buffer_full_last_service: u64,
@@ -1006,6 +1009,11 @@ impl RxPipelineEvidence {
         self.maximum_admitted = self.maximum_admitted.max(sample.maximum_admitted);
         self.service_us = self.service_us.saturating_add(sample.service_us);
         self.service_max_us = self.service_max_us.max(sample.service_max_us);
+        self.reload_transactions = self
+            .reload_transactions
+            .saturating_add(sample.reload_transactions);
+        self.reload_us = self.reload_us.saturating_add(sample.reload_us);
+        self.reload_max_us = self.reload_max_us.max(sample.reload_max_us);
         let sample_has_buffer_full = sample.dma_buffer_full_increments != 0;
         self.dma_buffer_full_increments = self
             .dma_buffer_full_increments
@@ -2008,6 +2016,18 @@ fn parse_device_report(log: &str) -> DeviceReport {
                     dma_buffer_full_last_pool_credits: field(line, "last_pool")?,
                     dma_buffer_full_last_queue_credits: field(line, "last_queue")?,
                     dma_buffer_full_last_service_us: field(line, "last_service_us")?,
+                    ..RxPipelineEvidence::default()
+                })
+            })();
+            if include_rx_interval_evidence && let Some(sample) = sample {
+                report.rx_service.push(sample);
+            }
+        } else if line.starts_with("ORXL ") || line.contains(" ORXL ") {
+            let sample = (|| {
+                Some(RxPipelineEvidence {
+                    reload_transactions: field(line, "transactions")?,
+                    reload_us: field(line, "reload_us")?,
+                    reload_max_us: field(line, "reload_boot_max_us")?,
                     ..RxPipelineEvidence::default()
                 })
             })();
@@ -3023,6 +3043,7 @@ fn write_report(
     let pipeline = rx.pipeline;
     let irq = rx.irq;
     let average_service_us = pipeline.service_us as f64 / pipeline.admitted_frames.max(1) as f64;
+    let average_reload_us = pipeline.reload_us as f64 / pipeline.reload_transactions.max(1) as f64;
     let average_dispatch_us = pipeline.dispatch_us as f64 / pipeline.protocol_frames.max(1) as f64;
     let average_publish_us =
         pipeline.network_publish_us as f64 / pipeline.network_publications.max(1) as f64;
@@ -3255,6 +3276,7 @@ fn write_report(
              - RX IRQ posts/wake epochs/hard entries/coalesced/sampled services/clock-skew rejects: `{}` / `{}` / `{}` / `{}` / `{}` / `{}`; sampled IRQ-to-service: `{:.2} us` average, `{}` us boot maximum\n\
              - MAC entry causes spurious / RX-work-only / RX-mixed / TX-only / TX-mixed / auxiliary-or-unknown-only: `{}` / `{}` / `{}` / `{}` / `{}` / `{}`; classified `{}` entries; extra snapshots `{}`, loop saturations `{}`, auxiliary STATUS OR `0x{:08x}`, unknown STATUS OR `0x{:08x}`\n\
              - Staged bytes: `{}`; invalid empty/oversize units recycled: `{}` / `{}`; service: `{:.2} us/frame` average, `{}` us boot maximum\n\
+             - Safe reload transactions: `{}`; `{:.2} us` average, `{}` us boot maximum; `{}` us total\n\
              - Backpressured services: `{}`; pool/queue credit limited: `{}` / `{}`; maximum deferred frames: `{}`; minimum pool/queue credits: `{}` / `{}`\n\
              - Protocol frames/data: `{}` / `{}`; dispatch: `{:.2} us/frame` average, `{}` us boot maximum\n\
              - A-MSDU MPDUs/subframes: `{}` / `{}`; raw unit buckets <=1700 / 1701-3400 / >3400 bytes: `{}` / `{}` / `{}`; boot maximum: `{}` bytes\n\
@@ -3368,6 +3390,10 @@ fn write_report(
             pipeline.stage_too_long_discards,
             average_service_us,
             pipeline.service_max_us,
+            pipeline.reload_transactions,
+            average_reload_us,
+            pipeline.reload_max_us,
+            pipeline.reload_us,
             pipeline.backpressured_services,
             pipeline.pool_credit_limited_services,
             pipeline.queue_credit_limited_services,
@@ -3685,13 +3711,17 @@ mod tests {
              ORXSM s_mpdu=100 not_s_mpdu=4900 unavailable=0 beacon_s_mpdu=0 beacon_not_s_mpdu=50 beacon_unavailable=0\n\
              ORXAG ampdu=5000 not_ampdu=0 hardware_ampdu=0 hardware_not_ampdu=0 protocol_ampdu=5000 protocol_not_ampdu=0 unavailable=0\n\
              ORXS calls=5000 frontier=5000 admitted=5000 bytes=7800000 back=0 pool=0 queue=0 deferred_max=0 pool_min=4294967295 queue_min=4294967295 fmax=1 amax=1 service_us=100000 service_boot_max_us=24\n\
+             ORXL transactions=300 reload_us=1500 reload_boot_max_us=9\n\
              ORTP task=network polls=5100 poll_us=210000 poll_boot_max_us=140 over_100us=2 over_500us=0 over_1000us=0 over_5000us=0\n",
         );
 
         assert_eq!(report.software_health, [(5_000, 0)]);
         assert_eq!(report.dma_health, [(0, 0)]);
-        assert_eq!(report.rx_service.len(), 1);
+        assert_eq!(report.rx_service.len(), 2);
         assert_eq!(report.rx_service[0].service_calls, 5_000);
+        assert_eq!(report.rx_service[1].reload_transactions, 300);
+        assert_eq!(report.rx_service[1].reload_us, 1_500);
+        assert_eq!(report.rx_service[1].reload_max_us, 9);
         assert_eq!(report.task_polls.network.intervals, 1);
         assert_eq!(report.task_polls.network.polls, 5_100);
         assert_eq!(report.rx_sequences.len(), 1);

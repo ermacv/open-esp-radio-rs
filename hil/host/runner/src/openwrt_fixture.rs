@@ -19,6 +19,7 @@ pub(crate) struct OpenWrtRxEvidence {
     pub(crate) station_tx_packets: u64,
     pub(crate) station_tx_retries: u64,
     pub(crate) station_tx_failed: u64,
+    pub(crate) station_tid0_aqm_drops: u64,
     pub(crate) channel_width_mhz: u8,
 }
 
@@ -30,6 +31,7 @@ struct Snapshot {
     station_tx_packets: u64,
     station_tx_retries: u64,
     station_tx_failed: u64,
+    station_tid0_aqm_drops: u64,
     channel_width_mhz: u8,
 }
 
@@ -137,6 +139,11 @@ impl OpenWrtRxCapture {
                 self.before.station_tx_failed,
                 after.station_tx_failed,
             )?,
+            station_tid0_aqm_drops: delta(
+                "station TID-0 AQM drops",
+                self.before.station_tid0_aqm_drops,
+                after.station_tid0_aqm_drops,
+            )?,
             channel_width_mhz: after.channel_width_mhz,
         })
     }
@@ -172,6 +179,9 @@ fn snapshot(
          printf 'station_tx=%s\\n' \"$(printf '%s\\n' \"$stats\" | awk '/tx packets:/ {{print $3}}')\"; \
          printf 'station_retries=%s\\n' \"$(printf '%s\\n' \"$stats\" | awk '/tx retries:/ {{print $3}}')\"; \
          printf 'station_failed=%s\\n' \"$(printf '%s\\n' \"$stats\" | awk '/tx failed:/ {{print $3}}')\"; \
+         set -- /sys/kernel/debug/ieee80211/*/netdev:{wireless}/stations/$mac/aqm; \
+         test \"$#\" -eq 1; test -r \"$1\"; \
+         printf 'station_tid0_aqm_drops=%s\\n' \"$(awk '$1 == 0 {{print $6}}' \"$1\")\"; \
          printf 'channel_width=%s\\n' \"$(iw dev {wireless} info | sed -n 's/.*width: \\([0-9][0-9]*\\) MHz.*/\\1/p')\"",
         ingress = config.ingress_interface,
         wireless = config.wireless_interface,
@@ -196,6 +206,7 @@ fn snapshot(
         station_tx_packets: tagged(&stdout, "station_tx")?,
         station_tx_retries: tagged(&stdout, "station_retries")?,
         station_tx_failed: tagged(&stdout, "station_failed")?,
+        station_tid0_aqm_drops: tagged(&stdout, "station_tid0_aqm_drops")?,
         channel_width_mhz: u8::try_from(tagged(&stdout, "channel_width")?)?,
     })
 }
@@ -298,6 +309,7 @@ impl Drop for OpenWrtRxCapture {
 pub(crate) fn doctor(config: &OpenWrtConfig) -> Result<()> {
     let script = format!(
         "set -eu; command -v tcpdump >/dev/null; command -v timeout >/dev/null; \
+         test -d /sys/kernel/debug/ieee80211; \
          test -d /sys/class/net/{ingress}; \
          test -d /sys/class/net/{wireless}; \
          iw dev {wireless} info | grep -q 'type AP'; \

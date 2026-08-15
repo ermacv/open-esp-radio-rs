@@ -16,7 +16,7 @@ use static_cell::{ConstStaticCell, StaticCell};
 use crate::rx_dma_service::Esp32s31RxDmaStorage;
 use crate::station::Esp32s31StationControlResources;
 
-pub const ESP32S31_DEFAULT_RX_DESCRIPTOR_COUNT: usize = 32;
+pub const ESP32S31_DEFAULT_RX_DESCRIPTOR_COUNT: usize = 64;
 pub const ESP32S31_DEFAULT_RX_BUFFER_SIZE: usize = 1_700;
 pub const ESP32S31_DEFAULT_RX_BUFFER_STORAGE_SIZE: usize = ESP32S31_DEFAULT_RX_BUFFER_SIZE + 4;
 pub const ESP32S31_DEFAULT_TX_BUFFER_SIZE: usize = 1_700;
@@ -25,12 +25,14 @@ pub const ESP32S31_DEFAULT_SCAN_RECORD_CAPACITY: usize = 32;
 
 pub const ESP32S31_DEFAULT_RX_STAGE_CAPACITY: usize = 1_700;
 // These slots form the latency-critical copy-before-DMA-reload working set and
-// stay in SRAM. They retain one 32-descriptor burst while earlier frames
-// remain behind a BlockAck gap.
-pub const ESP32S31_DEFAULT_RX_STAGE_SLOT_COUNT: usize = 64;
-// A complete HT BlockAck window is retained independently of whether
-// qualification observers are compiled into the image.
-pub const ESP32S31_DEFAULT_RX_REORDER_WINDOW: usize = 32;
+// stay in SRAM. Two complete negotiated BlockAck windows let one window remain
+// downstream while the next is copied out of the 64-descriptor DMA ring.
+pub const ESP32S31_DEFAULT_RX_STAGE_SLOT_COUNT: usize = 32;
+// Keep one complete negotiated HT BlockAck window of DMA descriptors in
+// reserve while software copies and republishes the preceding window. A
+// 32-entry agreement consumed the entire 32-descriptor frontier and exposed
+// ordinary executor latency as RX BUFFER_FULL under sustained HT40 traffic.
+pub const ESP32S31_DEFAULT_RX_REORDER_WINDOW: usize = 16;
 pub const ESP32S31_DEFAULT_CONTROL_QUEUE_DEPTH: usize = 16;
 
 pub const ESP32S31_DEFAULT_NETWORK_FRAME_CAPACITY: usize = 1_600;
@@ -149,6 +151,10 @@ const _: () =
     assert!(ESP32S31_DEFAULT_NETWORK_FRAME_CAPACITY <= ESP32S31_DEFAULT_RX_STAGE_CAPACITY);
 const _: () = assert!(ESP32S31_DEFAULT_RX_REORDER_WINDOW <= ESP32S31_DEFAULT_RX_STAGE_SLOT_COUNT);
 const _: () =
+    assert!(ESP32S31_DEFAULT_RX_STAGE_SLOT_COUNT >= 2 * ESP32S31_DEFAULT_RX_REORDER_WINDOW);
+const _: () =
+    assert!(ESP32S31_DEFAULT_RX_DESCRIPTOR_COUNT >= 2 * ESP32S31_DEFAULT_RX_REORDER_WINDOW);
+const _: () =
     assert!(ESP32S31_DEFAULT_TX_AMPDU_FRAME_COUNT < ESP32S31_DEFAULT_NETWORK_TX_QUEUE_DEPTH);
 
 #[cfg(test)]
@@ -167,7 +173,7 @@ mod tests {
             Esp32s31DefaultWifiResourceProfile::TX_AMPDU_FRAME_COUNT,
             ESP32S31_DEFAULT_TX_AMPDU_FRAME_COUNT
         );
-        assert_eq!(Esp32s31DefaultWifiResourceProfile::RX_REORDER_WINDOW, 32);
+        assert_eq!(Esp32s31DefaultWifiResourceProfile::RX_REORDER_WINDOW, 16);
     }
 
     #[test]

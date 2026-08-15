@@ -25,7 +25,7 @@ use open_esp_radio_ieee80211::{
 use open_esp_radio_wifi_sta::scan::StaScanChannelContext;
 
 use crate::{
-    embassy_rx::RxReloadDelay,
+    embassy_rx::RxDmaObservationDelay,
     rx_ring_owner::Esp32s31RxRingOwnerError,
     scan_rx::{
         Esp32s31RunningScanRx, Esp32s31ScanFrameObserver, Esp32s31ScanObservationContext,

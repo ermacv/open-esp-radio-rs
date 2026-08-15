@@ -63,6 +63,10 @@ impl RxDma for MockRxDma {
         }
     }
 
+    fn next_descriptor_word(&mut self) -> u32 {
+        self.next_descriptor_low()
+    }
+
     fn with_ordered_cursor<R>(
         &mut self,
         observed: impl for<'confirmation> FnOnce(
@@ -244,11 +248,15 @@ fn scan_rx_hands_the_exact_halted_ring_to_the_next_phase() {
     let mut observer = FrameObserver::default();
     let mut context = Esp32s31ScanObservationContext::new(6, &mut frame, &mut table, &mut observer);
     let progress = rx.observe_management(&mut hardware, &mut context).unwrap();
+    let release = rx.observe_management(&mut hardware, &mut context).unwrap();
 
     assert_eq!(progress.completed_descriptors, 1);
     assert_eq!(progress.parsed_management_frames, 1);
     assert_eq!(progress.inserted_records, 1);
-    assert_eq!(progress.recycled_descriptors, 1);
+    assert_eq!(progress.recycled_descriptors, 0);
+    assert!(!progress.service_probe_pending);
+    assert_eq!(release.completed_descriptors, 0);
+    assert_eq!(release.recycled_descriptors, 0);
     assert_eq!(observer.frames, 1);
     assert_eq!(table.records()[0].ssid_bytes(), b"ap");
     assert_eq!(table.records()[0].channel, 6);
@@ -263,7 +271,7 @@ fn scan_rx_hands_the_exact_halted_ring_to_the_next_phase() {
 }
 
 #[test]
-fn normalized_monitor_borrows_the_mpdu_and_recycles_after_publication() {
+fn normalized_monitor_borrows_the_mpdu_and_retains_current_last_until_stop() {
     let mut storage =
         Esp32s31RxDmaStorage::<RX_TEST_COUNT, RX_TEST_BUFFER_SIZE, RX_TEST_STORAGE_SIZE>::new();
     write_test_beacon(&mut storage);
@@ -281,10 +289,15 @@ fn normalized_monitor_borrows_the_mpdu_and_recycles_after_publication() {
 
     let mut sink = MonitorObserver::default();
     let progress = monitor.service(&mut hardware, &mut sink).unwrap();
+    let release = monitor.service(&mut hardware, &mut sink).unwrap();
     assert_eq!(progress.completed_descriptors, 1);
     assert_eq!(progress.published_frames, 1);
     assert_eq!(progress.dropped_frames, 0);
-    assert_eq!(progress.recycled_descriptors, 1);
+    assert_eq!(progress.recycled_descriptors, 0);
+    assert!(!progress.service_probe_pending);
+    assert_eq!(release.completed_descriptors, 0);
+    assert_eq!(release.published_frames, 0);
+    assert_eq!(release.recycled_descriptors, 0);
     assert_eq!(sink.frames, 1);
     assert_eq!(sink.first_byte, Some(0x80));
     monitor.stop(&mut hardware).unwrap();
@@ -312,18 +325,23 @@ fn full_monitor_sink_drops_observation_without_backpressuring_the_ring() {
         ..MonitorObserver::default()
     };
     let progress = monitor.service(&mut hardware, &mut sink).unwrap();
+    let release = monitor.service(&mut hardware, &mut sink).unwrap();
     assert_eq!(progress.published_frames, 0);
     assert_eq!(progress.dropped_frames, 1);
     assert_eq!(progress.full_drops, 1);
     assert_eq!(progress.oversized_drops, 0);
     assert_eq!(progress.filtered_drops, 0);
-    assert_eq!(progress.recycled_descriptors, 1);
-    assert_eq!(hardware.reload_requests, 1);
+    assert_eq!(progress.recycled_descriptors, 0);
+    assert!(!progress.service_probe_pending);
+    assert_eq!(release.completed_descriptors, 0);
+    assert_eq!(release.dropped_frames, 0);
+    assert_eq!(release.recycled_descriptors, 0);
+    assert_eq!(hardware.reload_requests, 0);
     monitor.stop(&mut hardware).unwrap();
 }
 
 #[test]
-fn monitor_service_recycles_dma_before_async_capture_is_consumed() {
+fn monitor_capture_owns_its_copy_while_current_last_remains_dma_visible() {
     let mut storage =
         Esp32s31RxDmaStorage::<RX_TEST_COUNT, RX_TEST_BUFFER_SIZE, RX_TEST_STORAGE_SIZE>::new();
     write_test_beacon(&mut storage);
@@ -349,10 +367,15 @@ fn monitor_service_recycles_dma_before_async_capture_is_consumed() {
     monitor.start(&mut hardware).unwrap();
     complete_test_beacon(&storage);
     let progress = monitor.service(&mut hardware, &mut sink).unwrap();
+    let release = monitor.service(&mut hardware, &mut sink).unwrap();
 
     assert_eq!(progress.published_frames, 1);
-    assert_eq!(progress.recycled_descriptors, 1);
-    assert_eq!(hardware.reload_requests, 1);
+    assert_eq!(progress.recycled_descriptors, 0);
+    assert!(!progress.service_probe_pending);
+    assert_eq!(release.completed_descriptors, 0);
+    assert_eq!(release.published_frames, 0);
+    assert_eq!(release.recycled_descriptors, 0);
+    assert_eq!(hardware.reload_requests, 0);
     assert_eq!(pool.claimed_slots(), 1);
     let captured = receiver.try_receive().expect("async capture owns its copy");
     assert_eq!(captured.bytes().first(), Some(&0x80));
@@ -444,7 +467,7 @@ fn running_scan_rx_returns_the_exact_connected_epoch_resources() {
     const STAGE_CAPACITY: usize = 64;
     struct TestDelay;
 
-    impl RxReloadDelay for TestDelay {
+    impl RxDmaObservationDelay for TestDelay {
         fn after_micros(&mut self, _micros: u32) -> impl Future<Output = ()> + '_ {
             ready(())
         }

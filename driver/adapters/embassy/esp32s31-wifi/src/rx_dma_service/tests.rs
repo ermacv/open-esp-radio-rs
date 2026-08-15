@@ -65,7 +65,7 @@ impl Esp32s31RxStageAdmissionPolicy for OneShotNarrowAdmission {
 
     fn observe(&self, observation: Esp32s31RxIngressObservation) {
         match observation {
-            Esp32s31RxIngressObservation::DiscardReloaded {
+            Esp32s31RxIngressObservation::DiscardRetained {
                 reason: RxStageDiscard::TooLong,
                 ..
             } => assert_eq!(
@@ -87,6 +87,7 @@ struct MockRxDma {
     walker: bool,
     descriptor_base: u32,
     fail_enable: bool,
+    exhaust_on_reload: bool,
     last_descriptor_low: u32,
     next_descriptor_low: u32,
 }
@@ -97,6 +98,7 @@ impl Default for MockRxDma {
             walker: false,
             descriptor_base: 0,
             fail_enable: false,
+            exhaust_on_reload: false,
             last_descriptor_low: BASE & 0x000f_ffff,
             next_descriptor_low: (BASE + DESCRIPTOR_BYTES) & 0x000f_ffff,
         }
@@ -126,6 +128,10 @@ impl RxDma for MockRxDma {
         } else {
             0
         }
+    }
+
+    fn next_descriptor_word(&mut self) -> u32 {
+        self.next_descriptor_low()
     }
     fn with_ordered_cursor<R>(
         &mut self,
@@ -164,7 +170,11 @@ impl RxDma for MockRxDma {
     fn publish_walker_enable(&mut self, _: &RxDmaBinding) {
         self.walker = true;
     }
-    fn request_reload(&mut self, _: &RxDmaBinding) {}
+    fn request_reload(&mut self, _: &RxDmaBinding) {
+        if self.exhaust_on_reload {
+            self.release_through(3, None);
+        }
+    }
     fn try_with_walker_enabled<R>(
         &mut self,
         _: &RxDmaBinding,
@@ -192,7 +202,7 @@ impl RxDma for MockRxDma {
 
 struct NoDelay;
 
-impl RxReloadDelay for NoDelay {
+impl RxDmaObservationDelay for NoDelay {
     fn after_micros(&mut self, _micros: u32) -> impl Future<Output = ()> + '_ {
         ready(())
     }
@@ -257,7 +267,7 @@ fn finite_service_uses_queue_credits_and_protocol_dispatch_returns_ownership() {
         .write_word0(ESP32S31_RX_BUFFER_SIZE as u32 | (8 << LENGTH_SHIFT) | BIT_30 | BIT_31);
     storage.descriptors()[1]
         .write_word0(ESP32S31_RX_BUFFER_SIZE as u32 | (8 << LENGTH_SHIFT) | BIT_30 | BIT_31);
-    hardware.release_through(1, None);
+    hardware.release_through(1, Some(0));
     let pool = RxStagePool::new();
     let queue = Esp32s31StagedRxQueue::<NoopRawMutex, STAGED_DEPTH>::new();
     let (sender, receiver) = queue.split();
@@ -288,16 +298,15 @@ fn finite_service_uses_queue_credits_and_protocol_dispatch_returns_ownership() {
     embassy_futures::block_on(protocol.dispatch_next());
     assert_eq!(pool.claimed_slots(), 0);
     assert_eq!(pool.network_slots(), 0);
-    assert_eq!(service.ring().recycle_start(), 1);
-    assert_eq!(storage.descriptors()[0].word0() & BIT_30, 0);
+    assert_eq!(service.ring().recycle_start(), 0);
+    assert_ne!(storage.descriptors()[0].word0() & BIT_30, 0);
     assert_ne!(storage.descriptors()[0].word0() & BIT_31, 0);
 
-    hardware.release_through(1, Some(0));
     assert_eq!(
         embassy_futures::block_on(service.service(&mut hardware)),
         Ok(WifiRxProgress::Drained),
     );
-    assert_eq!(service.ring().recycle_start(), 0);
+    assert_eq!(service.ring().recycle_start(), 1);
     assert_eq!(protocol.queue_len(), 1);
     embassy_futures::block_on(protocol.dispatch_next());
     assert_eq!(pool.claimed_slots(), 0);
@@ -402,6 +411,56 @@ fn connected_rx_stop_confirms_walker_off_and_preserves_static_resources() {
 }
 
 #[test]
+fn exhausted_cursor_keeps_service_live_until_terminal_writeback_arrives() {
+    const COUNT: usize = 4;
+    const STAGE_CAPACITY: usize = 16;
+    let storage = Esp32s31RxDmaStorage::<COUNT>::new();
+    let addresses = [0x2f00_2000, 0x2f00_2200, 0x2f00_2400, 0x2f00_2600];
+    let mut hardware = MockRxDma::default();
+    let stopped = RxRingStopped::prepare(
+        &mut hardware,
+        storage.descriptors(),
+        BASE,
+        &addresses,
+        ESP32S31_RX_BUFFER_SIZE as u32,
+        |_| Ok(()),
+    )
+    .unwrap();
+    let ring = stopped
+        .try_start(&mut hardware)
+        .map_err(|(_, error)| error)
+        .unwrap();
+    for index in 0..3 {
+        storage.descriptors()[index]
+            .write_word0(ESP32S31_RX_BUFFER_SIZE as u32 | (4 << LENGTH_SHIFT) | BIT_30 | BIT_31);
+    }
+    hardware.release_through(3, None);
+    let pool = RxStagePool::<COUNT, STAGE_CAPACITY>::new();
+    let queue = Esp32s31StagedRxQueue::<NoopRawMutex, COUNT, STAGE_CAPACITY, COUNT>::new();
+    let (sender, receiver) = queue.split();
+    let mut service = Esp32s31ConnectedRx::new(ring, &storage, &pool, NoDelay, sender);
+
+    assert_eq!(
+        embassy_futures::block_on(service.service(&mut hardware)),
+        Ok(WifiRxProgress::ProbePending),
+        "NEXT=0/LAST=tail must survive a delayed terminal descriptor writeback"
+    );
+    assert_eq!(receiver.len(), 3);
+
+    storage.descriptors()[3]
+        .write_word0(ESP32S31_RX_BUFFER_SIZE as u32 | (4 << LENGTH_SHIFT) | BIT_30 | BIT_31);
+    assert_eq!(
+        embassy_futures::block_on(service.service(&mut hardware)),
+        Ok(WifiRxProgress::ProbePending),
+    );
+    assert_eq!(receiver.len(), 4);
+    assert_eq!(service.ring().observed_mask(), 0b1100);
+    service
+        .try_stop(&mut hardware)
+        .unwrap_or_else(|_| panic!("test RX service must stop"));
+}
+
+#[test]
 fn finite_service_stages_a_descriptor_chain_as_one_contiguous_unit() {
     const COUNT: usize = 2;
     const STAGED_DEPTH: usize = 1;
@@ -437,14 +496,64 @@ fn finite_service_stages_a_descriptor_chain_as_one_contiguous_unit() {
 
     assert_eq!(
         embassy_futures::block_on(service.service(&mut hardware)),
-        Ok(WifiRxProgress::ProbePending),
+        Ok(WifiRxProgress::Drained),
     );
     let frame = receiver.try_receive().expect("one chained staged unit");
     assert_eq!(frame.segment().buffer, &[1, 2, 3, 4, 5, 6, 7, 8]);
     assert_eq!(service.ring().recycle_start(), 0);
-    // A direct BASE publication of the exhausted two-descriptor list has no
-    // reload IRQ. The connected service keeps itself runnable until hardware
-    // names the republished head and one later executor turn observes it.
+    // With no later completed unit this chain remains the retained guard; a
+    // bare address sample cannot authorize rewriting either descriptor.
+    assert_ne!(storage.descriptors()[0].word0() & BIT_31, 0);
+    assert_ne!(storage.descriptors()[1].word0() & BIT_30, 0);
+    drop(frame);
+    assert_eq!(pool.claimed_slots(), 0);
+    service
+        .try_stop(&mut hardware)
+        .unwrap_or_else(|_| panic!("test RX service must stop"));
+}
+
+#[test]
+fn completed_unit_guard_reclaims_the_preceding_observed_prefix() {
+    const COUNT: usize = 4;
+    const STAGE_CAPACITY: usize = 16;
+    let mut storage = Esp32s31RxDmaStorage::<COUNT>::new();
+    storage.buffer_mut(0).unwrap()[..4].copy_from_slice(&[1, 2, 3, 4]);
+    storage.buffer_mut(1).unwrap()[..4].copy_from_slice(&[5, 6, 7, 8]);
+    let addresses = [0x2f00_2000, 0x2f00_2200, 0x2f00_2400, 0x2f00_2600];
+    let mut hardware = MockRxDma::default();
+    let stopped = RxRingStopped::prepare(
+        &mut hardware,
+        storage.descriptors(),
+        BASE,
+        &addresses,
+        ESP32S31_RX_BUFFER_SIZE as u32,
+        |_| Ok(()),
+    )
+    .unwrap();
+    let ring = stopped
+        .try_start(&mut hardware)
+        .map_err(|(_, error)| error)
+        .unwrap();
+    storage.descriptors()[0]
+        .write_word0(ESP32S31_RX_BUFFER_SIZE as u32 | (4 << LENGTH_SHIFT) | BIT_31);
+    storage.descriptors()[1]
+        .write_word0(ESP32S31_RX_BUFFER_SIZE as u32 | (4 << LENGTH_SHIFT) | BIT_30 | BIT_31);
+    storage.descriptors()[2].write_word0(ESP32S31_RX_BUFFER_SIZE as u32 | BIT_30 | BIT_31);
+    storage.descriptors()[3].write_word0(ESP32S31_RX_BUFFER_SIZE as u32 | BIT_30 | BIT_31);
+    hardware.release_through(3, None);
+    let pool = RxStagePool::<COUNT, STAGE_CAPACITY>::new();
+    let queue = Esp32s31StagedRxQueue::<NoopRawMutex, COUNT, STAGE_CAPACITY, COUNT>::new();
+    let (sender, receiver) = queue.split();
+    let mut service = Esp32s31ConnectedRx::new(ring, &storage, &pool, NoDelay, sender);
+
+    assert_eq!(
+        embassy_futures::block_on(service.service(&mut hardware)),
+        Ok(WifiRxProgress::ProbePending),
+    );
+    assert_eq!(
+        embassy_futures::block_on(service.service(&mut hardware)),
+        Ok(WifiRxProgress::ProbePending),
+    );
     hardware.next_descriptor_low = BASE & 0x000f_ffff;
     assert_eq!(
         embassy_futures::block_on(service.service(&mut hardware)),
@@ -454,8 +563,14 @@ fn finite_service_stages_a_descriptor_chain_as_one_contiguous_unit() {
         embassy_futures::block_on(service.service(&mut hardware)),
         Ok(WifiRxProgress::Drained),
     );
+    assert_eq!(storage.descriptors()[0].word0() & BIT_30, 0);
+    assert_eq!(storage.descriptors()[1].word0() & BIT_30, 0);
+    assert_ne!(storage.descriptors()[2].word0() & BIT_30, 0);
+    assert_ne!(storage.descriptors()[3].word0() & BIT_30, 0);
+    assert!(!service.ring().exhausted_republication_probe_pending());
+    let frame = receiver.try_receive().expect("one staged unit");
+    assert_eq!(frame.segment().buffer, &[1, 2, 3, 4, 5, 6, 7, 8]);
     drop(frame);
-    assert_eq!(pool.claimed_slots(), 0);
     service
         .try_stop(&mut hardware)
         .unwrap_or_else(|_| panic!("test RX service must stop"));
@@ -513,7 +628,8 @@ fn negotiated_rx_block_ack_releases_staged_leases_in_sequence_order() {
             ESP32S31_RX_BUFFER_SIZE as u32 | ((RECEIVED as u32) << LENGTH_SHIFT) | BIT_30 | BIT_31,
         );
     }
-    hardware.release_through(2, Some(3));
+    storage.descriptors()[3].write_word0(ESP32S31_RX_BUFFER_SIZE as u32 | BIT_30 | BIT_31);
+    hardware.release_through(3, Some(0));
 
     let pool = RxStagePool::<STAGED_DEPTH, STAGE_CAPACITY>::new();
     // Declared before the queue because protocol frame types borrow both
@@ -556,7 +672,7 @@ fn negotiated_rx_block_ack_releases_staged_leases_in_sequence_order() {
 
     assert_eq!(
         embassy_futures::block_on(service.service(&mut hardware)),
-        Ok(WifiRxProgress::Drained),
+        Ok(WifiRxProgress::Backpressured),
     );
     assert_eq!(pool.claimed_slots(), 3);
     embassy_futures::block_on(protocol.dispatch_next());
@@ -575,6 +691,10 @@ fn negotiated_rx_block_ack_releases_staged_leases_in_sequence_order() {
     assert_eq!(
         reorder_storage.available_slots(),
         crate::rx_reorder::RX_REORDER_BACKING_SLOT_COUNT
+    );
+    assert_eq!(
+        embassy_futures::block_on(service.service(&mut hardware)),
+        Ok(WifiRxProgress::Drained),
     );
     service
         .try_stop(&mut hardware)
@@ -607,7 +727,8 @@ fn finite_service_discards_oversize_unit_and_keeps_the_ring_live() {
             | BIT_30
             | BIT_31,
     );
-    hardware.release_through(0, Some(1));
+    storage.descriptors()[1].write_word0(ESP32S31_RX_BUFFER_SIZE as u32 | BIT_30 | BIT_31);
+    hardware.release_through(1, Some(0));
     let pool = RxStagePool::new();
     let observer = RecordingRxObserver::default();
     let queue = Esp32s31StagedRxQueue::<NoopRawMutex, STAGED_DEPTH>::new();
@@ -617,10 +738,10 @@ fn finite_service_discards_oversize_unit_and_keeps_the_ring_live() {
 
     assert_eq!(
         embassy_futures::block_on(service.service(&mut hardware)),
-        Ok(WifiRxProgress::Drained),
+        Ok(WifiRxProgress::Backpressured),
     );
-    assert_eq!(service.ring().recycle_start(), 1);
-    assert_eq!(storage.descriptors()[0].word0() & BIT_30, 0);
+    assert_eq!(service.ring().recycle_start(), 0);
+    assert_ne!(storage.descriptors()[0].word0() & BIT_30, 0);
     assert_ne!(storage.descriptors()[0].word0() & BIT_31, 0);
     assert_eq!(pool.claimed_slots(), 0);
     assert!(matches!(
@@ -629,18 +750,39 @@ fn finite_service_discards_oversize_unit_and_keeps_the_ring_live() {
     ));
     assert_eq!(observer.stage_too_long_discards.load(Ordering::Relaxed), 1);
 
-    // The recovered discard path is not a reset frontier: the following
-    // descriptor is still accepted, staged and returned to the caller.
-    storage.descriptors()[1]
-        .write_word0(ESP32S31_RX_BUFFER_SIZE as u32 | (4 << LENGTH_SHIFT) | BIT_30 | BIT_31);
-    hardware.release_through(1, Some(0));
     assert_eq!(
         embassy_futures::block_on(service.service(&mut hardware)),
         Ok(WifiRxProgress::Drained),
     );
+    assert_eq!(storage.descriptors()[0].word0() & BIT_30, 0);
+    hardware.release_through(1, None);
+    assert_eq!(
+        embassy_futures::block_on(service.service(&mut hardware)),
+        Ok(WifiRxProgress::Drained),
+    );
+    assert_eq!(storage.descriptors()[0].word0() & BIT_30, 0);
+
+    // The recovered discard path is not a reset frontier: the following
+    // descriptor is still accepted, staged and returned to the caller.
+    storage.descriptors()[0]
+        .write_word0(ESP32S31_RX_BUFFER_SIZE as u32 | (4 << LENGTH_SHIFT) | BIT_30 | BIT_31);
+    hardware.release_through(0, None);
+    assert_eq!(
+        embassy_futures::block_on(service.service(&mut hardware)),
+        Ok(WifiRxProgress::ProbePending),
+    );
     let next = receiver.try_receive().expect("post-discard frame");
     assert_eq!(next.length(), 4);
     drop(next);
+    hardware.next_descriptor_low = (BASE + DESCRIPTOR_BYTES) & 0x000f_ffff;
+    assert_eq!(
+        embassy_futures::block_on(service.service(&mut hardware)),
+        Ok(WifiRxProgress::ProbePending),
+    );
+    assert_eq!(
+        embassy_futures::block_on(service.service(&mut hardware)),
+        Ok(WifiRxProgress::Drained),
+    );
     assert_eq!(pool.claimed_slots(), 0);
     service
         .try_stop(&mut hardware)
@@ -676,10 +818,12 @@ fn one_shot_admission_discards_before_staging_then_observes_same_live_ring() {
 
     storage.descriptors()[0]
         .write_word0(ESP32S31_RX_BUFFER_SIZE as u32 | (4 << LENGTH_SHIFT) | BIT_30 | BIT_31);
-    hardware.release_through(0, Some(1));
+    storage.descriptors()[1]
+        .write_word0(ESP32S31_RX_BUFFER_SIZE as u32 | (4 << LENGTH_SHIFT) | BIT_30 | BIT_31);
+    hardware.release_through(1, Some(0));
     assert_eq!(
         embassy_futures::block_on(service.service(&mut hardware)),
-        Ok(WifiRxProgress::Drained),
+        Ok(WifiRxProgress::Backpressured),
     );
     assert_eq!(admission.0.load(Ordering::Acquire), 2);
     assert!(matches!(
@@ -687,9 +831,6 @@ fn one_shot_admission_discards_before_staging_then_observes_same_live_ring() {
         Err(TryReceiveError::Empty)
     ));
 
-    storage.descriptors()[1]
-        .write_word0(ESP32S31_RX_BUFFER_SIZE as u32 | (4 << LENGTH_SHIFT) | BIT_30 | BIT_31);
-    hardware.release_through(1, Some(0));
     assert_eq!(
         embassy_futures::block_on(service.service(&mut hardware)),
         Ok(WifiRxProgress::Drained),
@@ -698,11 +839,12 @@ fn one_shot_admission_discards_before_staging_then_observes_same_live_ring() {
     assert_eq!(
         receiver
             .try_receive()
-            .expect("follow-up staged unit")
+            .expect("following staged unit")
             .length(),
         4
     );
-    assert_eq!(service.ring().recycle_start(), 0);
+
+    assert_eq!(service.ring().recycle_start(), 1);
     service
         .try_stop(&mut hardware)
         .unwrap_or_else(|_| panic!("test RX service must stop"));
@@ -735,7 +877,8 @@ fn finite_service_accepts_a_unit_within_a_wider_negotiated_stage() {
             | BIT_30
             | BIT_31,
     );
-    hardware.release_through(0, Some(1));
+    storage.descriptors()[1].write_word0(ESP32S31_RX_BUFFER_SIZE as u32 | BIT_30 | BIT_31);
+    hardware.release_through(1, Some(0));
     let pool = RxStagePool::<VENDOR_LARGE_RX_SLOT_COUNT, WIDE_STAGE_CAPACITY>::new();
     let queue = Esp32s31StagedRxQueue::<NoopRawMutex, STAGED_DEPTH, WIDE_STAGE_CAPACITY>::new();
     let (sender, receiver) = queue.split();
@@ -743,12 +886,16 @@ fn finite_service_accepts_a_unit_within_a_wider_negotiated_stage() {
 
     assert_eq!(
         embassy_futures::block_on(service.service(&mut hardware)),
-        Ok(WifiRxProgress::Drained),
+        Ok(WifiRxProgress::Backpressured),
     );
     let frame = receiver.try_receive().expect("wide staged frame");
     assert_eq!(frame.length(), WIDE_STAGE_CAPACITY);
     drop(frame);
     assert_eq!(pool.claimed_slots(), 0);
+    assert_eq!(
+        embassy_futures::block_on(service.service(&mut hardware)),
+        Ok(WifiRxProgress::Drained),
+    );
     service
         .try_stop(&mut hardware)
         .unwrap_or_else(|_| panic!("test RX service must stop"));

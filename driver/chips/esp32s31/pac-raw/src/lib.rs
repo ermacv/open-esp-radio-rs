@@ -26248,7 +26248,7 @@ pub mod wifi_mac_rx_dma {
         pub const fn rx_descriptor_base(&self) -> &RxDescriptorBase {
             &self.rx_descriptor_base
         }
-        #[doc = "0x88 - Low 20 bits of the hardware current/next descriptor. ROM interprets zero after reload completion as a terminal frontier and may repair RX_DESCRIPTOR_BASE."]
+        #[doc = "0x88 - Complete hardware current/next descriptor word. The low 20 bits are the reviewed address projection; meanings of bits 31:20 remain unknown. Complete ROM wDev_AppendRxBlocks compares the entire 32-bit word with zero after reload completion, not only ADDRESS_LOW, before it may read LAST and repair RX_DESCRIPTOR_BASE."]
         #[inline(always)]
         pub const fn rx_next_descriptor(&self) -> &RxNextDescriptor {
             &self.rx_next_descriptor
@@ -27465,10 +27465,10 @@ pub mod wifi_mac_rx_dma {
             type Safety = crate::Safe;
         }
     }
-    #[doc = "RX_NEXT_DESCRIPTOR (r) register accessor: Low 20 bits of the hardware current/next descriptor. ROM interprets zero after reload completion as a terminal frontier and may repair RX_DESCRIPTOR_BASE.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_next_descriptor::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_next_descriptor`] module"]
+    #[doc = "RX_NEXT_DESCRIPTOR (r) register accessor: Complete hardware current/next descriptor word. The low 20 bits are the reviewed address projection; meanings of bits 31:20 remain unknown. Complete ROM wDev_AppendRxBlocks compares the entire 32-bit word with zero after reload completion, not only ADDRESS_LOW, before it may read LAST and repair RX_DESCRIPTOR_BASE.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_next_descriptor::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_next_descriptor`] module"]
     #[doc(alias = "RX_NEXT_DESCRIPTOR")]
     pub type RxNextDescriptor = crate::Reg<rx_next_descriptor::RxNextDescriptorSpec>;
-    #[doc = "Low 20 bits of the hardware current/next descriptor. ROM interprets zero after reload completion as a terminal frontier and may repair RX_DESCRIPTOR_BASE."]
+    #[doc = "Complete hardware current/next descriptor word. The low 20 bits are the reviewed address projection; meanings of bits 31:20 remain unknown. Complete ROM wDev_AppendRxBlocks compares the entire 32-bit word with zero after reload completion, not only ADDRESS_LOW, before it may read LAST and repair RX_DESCRIPTOR_BASE."]
     pub mod rx_next_descriptor {
         #[doc = "Register `RX_NEXT_DESCRIPTOR` reader"]
         pub type R = crate::R<RxNextDescriptorSpec>;
@@ -27481,7 +27481,7 @@ pub mod wifi_mac_rx_dma {
                 AddressLowR::new(self.bits & 0x000f_ffff)
             }
         }
-        #[doc = "Low 20 bits of the hardware current/next descriptor. ROM interprets zero after reload completion as a terminal frontier and may repair RX_DESCRIPTOR_BASE.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_next_descriptor::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "Complete hardware current/next descriptor word. The low 20 bits are the reviewed address projection; meanings of bits 31:20 remain unknown. Complete ROM wDev_AppendRxBlocks compares the entire 32-bit word with zero after reload completion, not only ADDRESS_LOW, before it may read LAST and repair RX_DESCRIPTOR_BASE.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_next_descriptor::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct RxNextDescriptorSpec;
         impl crate::RegisterSpec for RxNextDescriptorSpec {
             type Ux = u32;

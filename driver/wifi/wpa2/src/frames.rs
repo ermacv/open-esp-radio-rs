@@ -366,6 +366,7 @@ pub fn parse_group_gtk_key_data(bytes: &[u8]) -> Result<Wpa2Gtk, Wpa2FrameError>
 pub struct Wpa2TxFrame<const N: usize = WPA2_TX_EAPOL_CAPACITY> {
     interface: Wpa2Interface,
     peer: [u8; 6],
+    retransmission: bool,
     len: usize,
     bytes: [u8; N],
 }
@@ -546,6 +547,7 @@ impl<const N: usize> Wpa2TxFrame<N> {
         Ok(Self {
             interface,
             peer,
+            retransmission: false,
             len,
             bytes,
         })
@@ -557,6 +559,13 @@ impl<const N: usize> Wpa2TxFrame<N> {
 
     pub const fn peer(&self) -> &[u8; 6] {
         &self.peer
+    }
+
+    /// Semantic retry classification supplied by the WPA state transition.
+    /// EAPOL-Key does not carry a standalone retransmission flag, so keeping
+    /// this metadata prevents the TX-complete owner from guessing from bytes.
+    pub const fn retransmission(&self) -> bool {
+        self.retransmission
     }
 
     pub fn as_bytes(&self) -> &[u8] {
@@ -594,7 +603,7 @@ pub fn build_sta_action_frame<const N: usize, const R: usize>(
     transmit: Wpa2Transmit,
     security_ies: &OwnedAssociationSecurityIes<R>,
 ) -> Result<Wpa2TxFrame<N>, Wpa2FrameError> {
-    match transmit.message {
+    let mut frame = match transmit.message {
         Wpa2TxMessage::PairwiseMessage2 => Wpa2TxFrame::message2_with_security_ies(
             *state.peer(),
             transmit.replay_counter,
@@ -607,7 +616,9 @@ pub fn build_sta_action_frame<const N: usize, const R: usize>(
         Wpa2TxMessage::PairwiseMessage1 | Wpa2TxMessage::PairwiseMessage3 => {
             Err(Wpa2FrameError::UnexpectedTransmitAction)
         }
-    }
+    }?;
+    frame.retransmission = transmit.retransmission;
+    Ok(frame)
 }
 
 pub fn build_ap_action_frame<const N: usize>(
@@ -616,7 +627,7 @@ pub fn build_ap_action_frame<const N: usize>(
     key_rsc: [u8; 8],
     encrypted_key_data: &[u8],
 ) -> Result<Wpa2TxFrame<N>, Wpa2FrameError> {
-    match transmit.message {
+    let mut frame = match transmit.message {
         Wpa2TxMessage::PairwiseMessage1 => Wpa2TxFrame::message1(
             *state.peer(),
             transmit.replay_counter,
@@ -632,7 +643,9 @@ pub fn build_ap_action_frame<const N: usize>(
         Wpa2TxMessage::PairwiseMessage2 | Wpa2TxMessage::PairwiseMessage4 => {
             Err(Wpa2FrameError::UnexpectedTransmitAction)
         }
-    }
+    }?;
+    frame.retransmission = transmit.retransmission;
+    Ok(frame)
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

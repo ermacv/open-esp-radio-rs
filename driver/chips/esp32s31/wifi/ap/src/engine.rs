@@ -24,7 +24,7 @@ use open_esp_radio_ieee80211::{
 };
 use open_esp_radio_wifi_ap::{
     AccessPointService, ApMlmeAction, ApPeerClose, ApPeerCloseKind, ApPeerPhase, ApPeerStatus,
-    ApServiceError, ApWpa2Error, ApWpa2Progress,
+    ApServiceError, ApWpa2Error, ApWpa2Progress, ApWpa2RetryProgress,
 };
 use open_esp_radio_wpa2::{OwnedEapolFrame, frames::Wpa2TxFrame};
 
@@ -123,6 +123,11 @@ pub struct Esp32s31ApEngineReport {
     pub maximum_authorized_peers: u8,
     pub peer_removals: u32,
     pub authentication_timeouts: u32,
+    pub wpa2_response_windows: u32,
+    pub wpa2_pending_on_stop: u32,
+    pub wpa2_retransmissions: u32,
+    pub wpa2_handshake_failures: u32,
+    pub wpa2_handshake_timeouts: u32,
     pub inactivity_timeouts: u32,
     pub disassociations_prepared: u32,
     pub deauthentications_prepared: u32,
@@ -245,8 +250,38 @@ impl<'storage> Esp32s31ApEngine<'storage> {
         let Some(request) = parse_ap_management_request(frame, self.service.address()) else {
             return Ok(Esp32s31ApManagementOutcome::Ignored);
         };
+        let retry = frame.get(1).is_some_and(|byte| byte & 0x08 != 0);
         match request {
             ApManagementRequest::OpenAuthentication { peer } => {
+                if retry
+                    && self
+                        .service
+                        .peer_status(peer)
+                        .is_some_and(|status| status.phase != ApPeerPhase::Authenticated)
+                {
+                    // libnet80211 routes retry/duplicate management frames as
+                    // ordinary receive outcomes; it does not tear down its
+                    // station node merely because an earlier response ACK was
+                    // lost. Re-emit success while preserving the current WPA2
+                    // or authorized key epoch. A non-retry authentication
+                    // below still owns the explicit reauthentication reset.
+                    let sequence = self.service.next_management_sequence();
+                    let len = write_open_authentication_response(
+                        output,
+                        self.service.address(),
+                        peer,
+                        0,
+                        sequence,
+                    )?;
+                    self.report.authentication_responses_prepared = self
+                        .report
+                        .authentication_responses_prepared
+                        .saturating_add(1);
+                    return Ok(Esp32s31ApManagementOutcome::Response {
+                        len,
+                        begin_wpa2: false,
+                    });
+                }
                 // A peer may restart authentication without first sending a
                 // deauthentication frame. End its old pairwise-key epoch
                 // before the portable service resets the handshake state;
@@ -282,6 +317,38 @@ impl<'storage> Esp32s31ApEngine<'storage> {
                 rsn_ie,
                 maximum_legacy_rate_500kbps,
             } => {
+                let Some(peer_status) = self.service.peer_status(peer) else {
+                    // Vendor `hostap_recv_mgmt` treats a peer lookup miss as
+                    // an on-air management outcome (including explicit
+                    // deauthentication paths), never as a task failure. This
+                    // bounded port has no deauthentication response for the
+                    // class-2 case yet, so retain the owner and ignore it.
+                    return Ok(Esp32s31ApManagementOutcome::Ignored);
+                };
+                if peer_status.phase == ApPeerPhase::Securing {
+                    // A station can repeat Association Request when the first
+                    // response ACK was lost. Preserve the in-flight WPA2
+                    // state, retransmit the same successful association and
+                    // do not start a second Message-1 transaction.
+                    let sequence = self.service.next_management_sequence();
+                    let len = write_bg_association_response_frame(
+                        output,
+                        self.service.address(),
+                        peer,
+                        0,
+                        peer_status.association_id,
+                        sequence,
+                    )?;
+                    self.report.association_responses_prepared =
+                        self.report.association_responses_prepared.saturating_add(1);
+                    return Ok(Esp32s31ApManagementOutcome::Response {
+                        len,
+                        begin_wpa2: false,
+                    });
+                }
+                if peer_status.phase != ApPeerPhase::Authenticated {
+                    return Ok(Esp32s31ApManagementOutcome::Ignored);
+                }
                 let action = self.service.associate_wpa2(
                     peer,
                     rsn_ie.unwrap_or(&[]),
@@ -386,6 +453,15 @@ impl<'storage> Esp32s31ApEngine<'storage> {
         frame: OwnedEapolFrame<N>,
         now_micros: u64,
     ) -> Result<Esp32s31ApWpa2Outcome<N>, Esp32s31ApEngineError> {
+        let Some(status) = self.service.peer_status(peer) else {
+            return Ok(Esp32s31ApWpa2Outcome::None);
+        };
+        if status.phase != ApPeerPhase::Securing {
+            // Late/replayed EAPOL is an untrusted peer event. Vendor receive
+            // dispatch returns from such state branches; it does not abort
+            // the PP task or surrender MAC ownership.
+            return Ok(Esp32s31ApWpa2Outcome::None);
+        }
         self.service.observe_activity(peer, now_micros)?;
         match self.service.on_eapol(peer, frame)? {
             ApWpa2Progress::None => Ok(Esp32s31ApWpa2Outcome::None),
@@ -514,6 +590,45 @@ impl<'storage> Esp32s31ApEngine<'storage> {
         self.service.next_peer_deadline()
     }
 
+    pub fn next_wpa2_retry_deadline(&self) -> Option<u64> {
+        self.service.next_wpa2_retry_deadline()
+    }
+
+    pub fn observe_wpa2_transmit(
+        &mut self,
+        peer: [u8; 6],
+        retransmission: bool,
+        acknowledged: bool,
+        now_micros: u64,
+    ) -> Result<(), Esp32s31ApEngineError> {
+        if self
+            .service
+            .observe_wpa2_transmit(peer, retransmission, acknowledged, now_micros)?
+        {
+            self.report.wpa2_response_windows = self.report.wpa2_response_windows.saturating_add(1);
+        }
+        Ok(())
+    }
+
+    pub fn take_due_wpa2_retry<const N: usize>(
+        &mut self,
+        now_micros: u64,
+    ) -> Result<ApWpa2RetryProgress<N>, Esp32s31ApEngineError> {
+        let progress = self.service.take_due_wpa2_retry(now_micros)?;
+        match progress {
+            ApWpa2RetryProgress::Transmit { .. } => {
+                self.report.wpa2_retransmissions =
+                    self.report.wpa2_retransmissions.saturating_add(1);
+            }
+            ApWpa2RetryProgress::Close(_) => {
+                self.report.wpa2_handshake_timeouts =
+                    self.report.wpa2_handshake_timeouts.saturating_add(1);
+            }
+            ApWpa2RetryProgress::None => {}
+        }
+        Ok(progress)
+    }
+
     pub fn observe_peer_activity(
         &mut self,
         peer: [u8; 6],
@@ -530,6 +645,14 @@ impl<'storage> Esp32s31ApEngine<'storage> {
                 self.report.authentication_timeouts =
                     self.report.authentication_timeouts.saturating_add(1);
             }
+            ApPeerCloseKind::Wpa2HandshakeTimeout => {
+                self.report.wpa2_handshake_timeouts =
+                    self.report.wpa2_handshake_timeouts.saturating_add(1);
+            }
+            ApPeerCloseKind::Wpa2HandshakeFailure => {
+                self.report.wpa2_handshake_failures =
+                    self.report.wpa2_handshake_failures.saturating_add(1);
+            }
             ApPeerCloseKind::InactivityTimeout => {
                 self.report.inactivity_timeouts = self.report.inactivity_timeouts.saturating_add(1);
             }
@@ -538,7 +661,19 @@ impl<'storage> Esp32s31ApEngine<'storage> {
         Some(close)
     }
 
+    pub fn begin_wpa2_failure_close(
+        &mut self,
+        peer: [u8; 6],
+    ) -> Result<ApPeerClose, Esp32s31ApEngineError> {
+        let close = self.service.begin_wpa2_failure_close(peer)?;
+        self.report.wpa2_handshake_failures = self.report.wpa2_handshake_failures.saturating_add(1);
+        Ok(close)
+    }
+
     pub fn begin_stop_peer(&mut self) -> Option<ApPeerClose> {
+        if self.service.next_wpa2_retry_deadline().is_some() {
+            self.report.wpa2_pending_on_stop = self.report.wpa2_pending_on_stop.saturating_add(1);
+        }
         self.service.begin_stop_peer()
     }
 
@@ -770,6 +905,43 @@ mod tests {
         engine
             .handle_management(&mut hardware, &association, [7; 32], 9, 2, &mut output)
             .unwrap();
+        assert!(matches!(
+            engine
+                .handle_management(&mut hardware, &association, [8; 32], 10, 3, &mut output)
+                .unwrap(),
+            Esp32s31ApManagementOutcome::Response {
+                begin_wpa2: false,
+                ..
+            }
+        ));
+        assert_eq!(
+            engine.service.peer_status(peer).unwrap().phase,
+            ApPeerPhase::Securing,
+            "a duplicate association must not replace the in-flight WPA2 owner"
+        );
+        let mut retried_authentication = authentication;
+        retried_authentication[1] |= 0x08;
+        assert!(matches!(
+            engine
+                .handle_management(
+                    &mut hardware,
+                    &retried_authentication,
+                    [9; 32],
+                    11,
+                    4,
+                    &mut output,
+                )
+                .unwrap(),
+            Esp32s31ApManagementOutcome::Response {
+                begin_wpa2: false,
+                ..
+            }
+        ));
+        assert_eq!(
+            engine.service.peer_status(peer).unwrap().phase,
+            ApPeerPhase::Securing,
+            "an authentication retry must not erase the in-flight WPA2 owner"
+        );
 
         let close = engine.begin_stop_peer().expect("associated peer to close");
         assert!(close.was_associated);
@@ -926,6 +1098,23 @@ mod tests {
                 .handle_eapol(&mut hardware, peer, message4, 4)
                 .unwrap(),
             Esp32s31ApWpa2Outcome::PeerAuthorized { peer: authorized } if authorized == peer
+        ));
+        assert_eq!(engine.report().authorized_peers, 1);
+
+        let repeated_message4 = Wpa2TxFrame::<512>::message4(ap, 10)
+            .unwrap()
+            .authenticate(&ptk);
+        let repeated_message4 = OwnedEapolFrame::<512>::try_copy(
+            Wpa2Interface::AccessPoint,
+            peer,
+            repeated_message4.as_bytes(),
+        )
+        .unwrap();
+        assert!(matches!(
+            engine
+                .handle_eapol(&mut hardware, peer, repeated_message4, 5)
+                .unwrap(),
+            Esp32s31ApWpa2Outcome::None
         ));
         assert_eq!(engine.report().authorized_peers, 1);
 

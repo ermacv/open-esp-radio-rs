@@ -505,6 +505,23 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
         )
     }
 
+    /// LAST-bounded frontier with the matching ordered NEXT observation.
+    /// NEXT=0 and LAST at the accepted tail release untouched intermediate
+    /// descriptors which the vendor worker also walks before the terminal.
+    pub fn completed_unit_frontier_through_cursor(
+        &self,
+        ring: &RxRingLive<'_, COUNT>,
+        last_descriptor_low: u32,
+        next_descriptor_low: u32,
+    ) -> Result<RxCompletedUnitFrontier, RxRingError> {
+        self.validate_live_ring(ring)?;
+        Ok(ring.completed_unit_frontier_through_cursor_with(
+            last_descriptor_low,
+            next_descriptor_low,
+            |index| self.buffers[index].leading_guard_overwritten(),
+        ))
+    }
+
     /// Return the first complete unit at the software frontier, bounded by
     /// the hardware LAST snapshot. This is the unit-sized counterpart used
     /// when every recycle requires its own link-release proof.
@@ -521,6 +538,20 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
         )
     }
 
+    pub fn first_completed_unit_frontier_through_cursor(
+        &self,
+        ring: &RxRingLive<'_, COUNT>,
+        last_descriptor_low: u32,
+        next_descriptor_low: u32,
+    ) -> Result<RxCompletedUnitFrontier, RxRingError> {
+        self.validate_live_ring(ring)?;
+        Ok(ring.first_completed_unit_frontier_through_cursor_with(
+            last_descriptor_low,
+            next_descriptor_low,
+            |index| self.buffers[index].leading_guard_overwritten(),
+        ))
+    }
+
     pub fn take_completed_unit<'owner, 'ring>(
         &'owner self,
         ring: &'owner mut RxRingLive<'ring, COUNT>,
@@ -530,7 +561,9 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
         RxRingError,
     > {
         self.validate_live_ring(ring)?;
-        let unit = match ring.take_completed_unit_owned(descriptor_limit) {
+        let unit = match ring.take_completed_unit_owned(descriptor_limit, |index| {
+            self.buffers[index].leading_guard_overwritten()
+        }) {
             Ok(Some(unit)) => unit,
             Ok(None) => return Ok(None),
             Err(error) => {
@@ -1066,6 +1099,87 @@ mod tests {
                 last_repair_head: Some(BASE),
             }
         );
+        assert!(live.try_stop(&mut mmio).is_ok());
+    }
+
+    #[test]
+    fn exhausted_list_reclaims_untouched_prefix_before_terminal_payload() {
+        const COUNT: usize = 4;
+        const BASE: u32 = 0x2f00_1000;
+        const ADDRESS_LOW_MASK: u32 = 0x000f_ffff;
+        let buffers = [0x2f00_2000, 0x2f00_2200, 0x2f00_2400, 0x2f00_2600];
+        let storage = RxDmaStorage::<COUNT, 16, 20>::new();
+        let mut mmio = MockRxDma::default();
+        let prepared = storage
+            .prepare_ring(&mut mmio, BASE, &buffers)
+            .expect("prepared owner");
+        let mut live = prepared
+            .try_start(&mut mmio)
+            .map_err(|(_, error)| error)
+            .expect("live epoch");
+
+        // Return descriptor zero while the old finite list has already
+        // exhausted at descriptor three. The vendor append suffix repairs
+        // BASE to the returned descriptor, leaving software head at one.
+        storage.descriptors()[0].write_word0(
+            16 | (4 << crate::descriptor::LENGTH_SHIFT)
+                | crate::descriptor::BIT_30
+                | crate::descriptor::BIT_31,
+        );
+        mmio.last_descriptor_low =
+            (BASE + 3 * crate::descriptor::DESCRIPTOR_BYTES) & ADDRESS_LOW_MASK;
+        mmio.next_descriptor_low = 0;
+        let unit = storage
+            .take_completed_unit(&mut live, 1)
+            .expect("completed descriptor")
+            .expect("unit owner");
+        unit.recycle(&mut mmio)
+            .expect("live append")
+            .expect("returned descriptor");
+        live.complete_pending_reload(&mut mmio)
+            .expect("vendor reload repair");
+        assert_eq!(live.recycle_start(), 1);
+        assert_eq!(live.accepted_tail(), 0);
+
+        // Hardware consumed only the repaired terminal before exhausting
+        // again. Descriptors one through three retain their guards and armed
+        // lengths, but NEXT=0/LAST=tail proves their links are released.
+        storage.descriptors()[0].write_word0(
+            16 | (4 << crate::descriptor::LENGTH_SHIFT)
+                | crate::descriptor::BIT_30
+                | crate::descriptor::BIT_31,
+        );
+        mmio.last_descriptor_low = BASE & ADDRESS_LOW_MASK;
+        mmio.next_descriptor_low = 0;
+        let frontier = storage
+            .first_completed_unit_frontier_through_cursor(
+                &live,
+                mmio.last_descriptor_low,
+                mmio.next_descriptor_low,
+            )
+            .expect("exhausted frontier");
+        assert_eq!(frontier.unit_count, 1);
+        assert_eq!(frontier.descriptor_count, COUNT);
+
+        let unit = storage
+            .take_completed_unit(&mut live, frontier.descriptor_count)
+            .expect("released unit")
+            .expect("terminal payload owner");
+        assert_eq!(unit.descriptor_count(), COUNT);
+        assert_eq!(unit.total_length(), 4);
+        assert_eq!(unit.segment(0), Some(&[][..]));
+        assert_eq!(unit.segment(1), Some(&[][..]));
+        assert_eq!(unit.segment(2), Some(&[][..]));
+        assert_eq!(unit.segment(3).map(<[u8]>::len), Some(4));
+        let append = unit
+            .recycle(&mut mmio)
+            .expect("exhausted list recycle")
+            .expect("full list republished");
+        assert_eq!(append.head_index, 1);
+        assert_eq!(append.descriptor_count, COUNT);
+        assert_eq!(live.recycle_start(), 1);
+        assert_eq!(live.accepted_tail(), 0);
+        assert!(live.topology_snapshot().valid);
         assert!(live.try_stop(&mut mmio).is_ok());
     }
 

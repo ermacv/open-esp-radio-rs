@@ -1,6 +1,8 @@
 use core::marker::PhantomData;
 
-use open_esp_radio_esp32s31_wifi_mac::rx::{RxRingError, RxRingHalted, RxRingLive, RxRingStopped};
+use open_esp_radio_esp32s31_wifi_mac::rx::{
+    RxRingError, RxRingHalted, RxRingLive, RxRingStopped, RxRingTopologySnapshot,
+};
 
 /// Hardware-valid RX phase retained by the pre-connected owner.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -66,6 +68,28 @@ pub enum Esp32s31PreconnectedRxDirective {
 pub enum Esp32s31RecycledRxDirective {
     Continue,
     Pause,
+}
+
+/// Scheduler edge required after one finite RX ownership observation.
+///
+/// The vendor `wdevProcessRxSucDataAll` consumes one PP event and remains in
+/// its descriptor loop while refreshing the hardware LAST frontier. Rust may
+/// cooperatively yield while waiting for a safe ownership proof, but it must
+/// not turn that yield into a requirement for another RX interrupt.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum Esp32s31PreconnectedRxContinuation {
+    #[default]
+    AwaitInterrupt,
+    ProbePending,
+}
+
+/// Read-only scheduler state retained before a live RX owner is halted.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Esp32s31PreconnectedRxSchedulerSnapshot {
+    pub recycle_start: usize,
+    pub accepted_tail: usize,
+    pub observed_mask: u64,
+    pub topology: RxRingTopologySnapshot,
 }
 
 /// Progress of one vendor-shaped RX-unit recycle transaction.

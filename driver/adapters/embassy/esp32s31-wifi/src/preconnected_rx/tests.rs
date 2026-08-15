@@ -341,6 +341,11 @@ fn completed_unit_waits_for_hardware_last_descriptor_frontier() {
     assert_eq!(early, Esp32s31RecycledRxProgress::default());
     assert_ne!(storage.descriptors()[0].word0() & BIT_30, 0);
     assert_eq!(hardware.reload_count, 0);
+    assert_eq!(
+        rx.service_continuation(&mut hardware).unwrap(),
+        Esp32s31PreconnectedRxContinuation::ProbePending,
+        "a deferred link-release proof must not become a wait for a new RX IRQ"
+    );
 
     storage.descriptors()[1].write_word0(storage.descriptors()[1].word0() | BIT_30);
     hardware.last_descriptor_low = (BASE + DESCRIPTOR_BYTES) & 0x000f_ffff;
@@ -359,6 +364,41 @@ fn completed_unit_waits_for_hardware_last_descriptor_frontier() {
     assert_eq!(released.completed_descriptors, 1);
     assert_eq!(storage.descriptors()[0].word0() & BIT_30, 0);
     assert_eq!(hardware.reload_count, 1);
+}
+
+#[test]
+fn exhausted_terminal_writeback_without_a_fresh_irq_retains_task_continuation() {
+    let storage = Esp32s31RxDmaStorage::<COUNT, BUFFER_SIZE, STORAGE_SIZE>::new();
+    let mut hardware = Hardware::default();
+    let prepared = RxRingStopped::prepare(
+        &mut hardware,
+        storage.descriptors(),
+        BASE,
+        &BUFFERS,
+        BUFFER_SIZE as u32,
+        |_| Ok(()),
+    )
+    .unwrap();
+    let mut rx = Esp32s31PreconnectedRx::<ReadyDelay, COUNT, BUFFER_SIZE>::from_prepared(prepared);
+    embassy_futures::block_on(rx.start_with_storage(&mut hardware, &storage)).unwrap();
+
+    // The walker reached the accepted terminal and stopped at NEXT=0. The
+    // descriptor writeback can become visible after the RX-success edge which
+    // woke the task, so no second interrupt may follow. Complete vendor
+    // wdevProcessRxSucDataAll remains in its LAST-refresh loop here.
+    hardware.release_through(COUNT - 1, None);
+    assert_eq!(
+        rx.service_continuation(&mut hardware).unwrap(),
+        Esp32s31PreconnectedRxContinuation::ProbePending
+    );
+
+    // A nonzero walker cursor removes this exhausted-terminal condition; no
+    // elapsed time or repeated sample is treated as ownership evidence.
+    hardware.next_descriptor_low = BASE & 0x000f_ffff;
+    assert_eq!(
+        rx.service_continuation(&mut hardware).unwrap(),
+        Esp32s31PreconnectedRxContinuation::AwaitInterrupt
+    );
 }
 
 #[test]

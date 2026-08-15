@@ -971,6 +971,33 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
         self.completed_unit_frontier_with_limit(descriptor_limit, nonterminal_consumed)
     }
 
+    /// Snapshot complete units through one ordered LAST/NEXT cursor image.
+    ///
+    /// A zero NEXT with LAST at the accepted tail proves that the finite
+    /// hardware list was exhausted. In that state every link from the
+    /// software head through LAST has been consumed, even when an unused
+    /// intermediate buffer retained its recycle guard. The complete vendor
+    /// `wdevProcessRxSucDataAll` likewise walks every node through its saved
+    /// LAST and uses only terminal bit 30 to delimit receive units.
+    pub fn completed_unit_frontier_through_cursor_with<F>(
+        &self,
+        last_descriptor_low: u32,
+        next_descriptor_low: u32,
+        nonterminal_consumed: F,
+    ) -> RxCompletedUnitFrontier
+    where
+        F: FnMut(usize) -> bool,
+    {
+        if next_descriptor_low == 0
+            && descriptor_index(last_descriptor_low, self.descriptor_base, COUNT)
+                == Some(self.accepted_tail)
+        {
+            self.completed_unit_frontier_through_with(last_descriptor_low, |_| true)
+        } else {
+            self.completed_unit_frontier_through_with(last_descriptor_low, nonterminal_consumed)
+        }
+    }
+
     /// Snapshot only the first complete unit through the hardware LAST
     /// frontier. Unlike [`Self::completed_unit_frontier_through_with`], a run
     /// of single-descriptor frames is deliberately truncated to one unit so
@@ -985,6 +1012,32 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
     {
         let frontier =
             self.completed_unit_frontier_through_with(last_descriptor_low, nonterminal_consumed);
+        if frontier.unit_count > 1 {
+            RxCompletedUnitFrontier {
+                unit_count: 1,
+                descriptor_count: 1,
+            }
+        } else {
+            frontier
+        }
+    }
+
+    /// Unit-sized counterpart of
+    /// [`Self::completed_unit_frontier_through_cursor_with`].
+    pub fn first_completed_unit_frontier_through_cursor_with<F>(
+        &self,
+        last_descriptor_low: u32,
+        next_descriptor_low: u32,
+        nonterminal_consumed: F,
+    ) -> RxCompletedUnitFrontier
+    where
+        F: FnMut(usize) -> bool,
+    {
+        let frontier = self.completed_unit_frontier_through_cursor_with(
+            last_descriptor_low,
+            next_descriptor_low,
+            nonterminal_consumed,
+        );
         if frontier.unit_count > 1 {
             RxCompletedUnitFrontier {
                 unit_count: 1,
@@ -1076,10 +1129,14 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
     /// [`completed_unit_frontier`](Self::completed_unit_frontier) snapshot. It
     /// prevents a saturated producer from extending this ownership transfer
     /// to a later completion epoch.
-    pub(crate) fn take_completed_unit_owned(
+    pub(crate) fn take_completed_unit_owned<F>(
         &mut self,
         descriptor_limit: usize,
-    ) -> Result<Option<RxCompletedUnit>, RxRingError> {
+        mut nonterminal_consumed: F,
+    ) -> Result<Option<RxCompletedUnit>, RxRingError>
+    where
+        F: FnMut(usize) -> bool,
+    {
         if COUNT == 0 || COUNT > 64 || descriptor_limit == 0 || descriptor_limit > COUNT {
             return Ok(None);
         }
@@ -1114,8 +1171,12 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
         }
 
         let mut segment_lengths = [0_u16; 64];
-        segment_lengths[0] = u16::try_from(first_length).map_err(|_| RxRingError::Size)?;
-        let mut total_length = first_length as usize;
+        let first_consumed = nonterminal_consumed(first_index);
+        let first_segment_length = if first_consumed { first_length } else { 0 };
+        segment_lengths[0] = u16::try_from(first_segment_length).map_err(|_| RxRingError::Size)?;
+        let mut total_length = first_segment_length as usize;
+        let mut metadata_word0 = first_word0;
+        let mut metadata_index = first_index;
         for step in 1..descriptor_limit {
             let index = wrap_add::<COUNT>(first_index, step);
             let bit = 1_u64 << index;
@@ -1129,7 +1190,16 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
                     return Err(error);
                 }
             };
-            let length = descriptor_length(word0);
+            let consumed = rx_done(word0) || nonterminal_consumed(index);
+            let length = if consumed {
+                descriptor_length(word0)
+            } else {
+                0
+            };
+            if total_length == 0 && consumed {
+                metadata_word0 = word0;
+                metadata_index = index;
+            }
             segment_lengths[step] = u16::try_from(length).map_err(|_| RxRingError::Size)?;
             total_length = total_length
                 .checked_add(length as usize)
@@ -1143,13 +1213,13 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
             let descriptor_count = step + 1;
             let group_mask = recycle_group_mask::<COUNT>(first_index, descriptor_count);
             let encoded_length = u32::try_from(total_length).map_err(|_| RxRingError::Overflow)?;
-            let descriptor_address = descriptor_address(self.descriptor_base, first_index)?;
+            let descriptor_address = descriptor_address(self.descriptor_base, metadata_index)?;
             self.observed_mask |= group_mask;
             return Ok(Some(RxCompletedUnit {
                 head_index: first_index,
                 descriptor_count,
                 descriptor_address,
-                staged_word0: (first_word0 & !(SIZE_MASK | LENGTH_MASK))
+                staged_word0: (metadata_word0 & !(SIZE_MASK | LENGTH_MASK))
                     | encoded_length
                     | (encoded_length << LENGTH_SHIFT)
                     | BIT_30
@@ -1167,7 +1237,7 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
         &mut self,
         descriptor_limit: usize,
     ) -> Result<Option<RxCompletedUnit>, RxRingError> {
-        self.take_completed_unit_owned(descriptor_limit)
+        self.take_completed_unit_owned(descriptor_limit, |_| true)
     }
 
     crate::place_rx_hot_path! {
@@ -1789,7 +1859,10 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
         // has consumed that terminal link. Only NEXT=0 proves the finite list
         // is exhausted and permits descriptor word/buffer rearm.
         let exhausted_terminal = tail_next_low == 0 && next_descriptor_low == 0;
-        if exhausted_terminal || later_completed_frontier {
+        let exhausted_accepted_list = next_descriptor_low == 0
+            && last_index == self.accepted_tail
+            && tail_distance <= last_distance;
+        if exhausted_terminal || exhausted_accepted_list || later_completed_frontier {
             self.completion_release_probe_pending = false;
             return true;
         }

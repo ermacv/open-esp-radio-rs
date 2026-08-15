@@ -538,6 +538,27 @@ impl Wpa2ApState {
         }))
     }
 
+    /// Return the authenticator frame that owns the current response window.
+    ///
+    /// Timing and retry budgets belong to the AP service. The WPA state only
+    /// exposes the protocol-correct message and replay counter for its current
+    /// phase; it never reads time or schedules work itself.
+    pub const fn retry_transmit(&self) -> Result<Wpa2Transmit, Wpa2StateError> {
+        match self.phase {
+            Wpa2ApPhase::AwaitingMessage2 => Ok(Wpa2Transmit {
+                message: Wpa2TxMessage::PairwiseMessage1,
+                replay_counter: self.message1_replay,
+                retransmission: true,
+            }),
+            Wpa2ApPhase::AwaitingMessage4 => Ok(Wpa2Transmit {
+                message: Wpa2TxMessage::PairwiseMessage3,
+                replay_counter: self.message3_replay,
+                retransmission: true,
+            }),
+            _ => Err(Wpa2StateError::WrongPhase),
+        }
+    }
+
     pub fn on_frame<const N: usize>(
         &mut self,
         frame: OwnedEapolFrame<N>,

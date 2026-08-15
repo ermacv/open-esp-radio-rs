@@ -55,13 +55,20 @@ where
             // Freeze the completion frontier before any descriptor is rearmed.
             // A saturated producer can therefore only create a later epoch; it
             // cannot make this service call unbounded by refilling the ring.
-            let last_descriptor_low = hardware.last_descriptor_low();
+            let (last_descriptor_low, next_descriptor_low) =
+                hardware.with_ordered_cursor(|cursor| {
+                    (cursor.last_descriptor_low(), cursor.next_descriptor_low())
+                });
             // LAST is the ownership frontier for the following descriptor
             // scan. Make the MMIO observation precede all descriptor reads.
             hardware.fence();
             let frontier_snapshot = self
                 .storage
-                .completed_unit_frontier_through(&self.ring, last_descriptor_low)
+                .completed_unit_frontier_through_cursor(
+                    &self.ring,
+                    last_descriptor_low,
+                    next_descriptor_low,
+                )
                 .map_err(RxStageTransactionError::Ring)?;
             let frontier = frontier_snapshot.unit_count;
             let pool_credits = self.pool.available_slots();
@@ -75,7 +82,11 @@ where
             for _ in 0..admission_budget {
                 let unit_frontier = self
                     .storage
-                    .first_completed_unit_frontier_through(&self.ring, last_descriptor_low)
+                    .first_completed_unit_frontier_through_cursor(
+                        &self.ring,
+                        last_descriptor_low,
+                        next_descriptor_low,
+                    )
                     .map_err(RxStageTransactionError::Ring)?;
                 if unit_frontier.unit_count != 1
                     || unit_frontier.descriptor_count == 0
@@ -169,7 +180,11 @@ where
             // already emitted for that frozen frontier.
             let completion_frontier_remaining = self
                 .storage
-                .completed_unit_frontier_through(&self.ring, last_descriptor_low)
+                .completed_unit_frontier_through_cursor(
+                    &self.ring,
+                    last_descriptor_low,
+                    next_descriptor_low,
+                )
                 .map_err(RxStageTransactionError::Ring)?
                 .unit_count
                 != 0;

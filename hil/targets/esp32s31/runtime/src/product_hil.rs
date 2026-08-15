@@ -146,6 +146,11 @@ static AP_MAXIMUM_ASSOCIATED_PEERS: AtomicU32 = AtomicU32::new(0);
 static AP_MAXIMUM_AUTHORIZED_PEERS: AtomicU32 = AtomicU32::new(0);
 static AP_REMOVALS: AtomicU32 = AtomicU32::new(0);
 static AP_AUTHENTICATION_TIMEOUTS: AtomicU32 = AtomicU32::new(0);
+static AP_WPA2_RESPONSE_WINDOWS: AtomicU32 = AtomicU32::new(0);
+static AP_WPA2_PENDING_ON_STOP: AtomicU32 = AtomicU32::new(0);
+static AP_WPA2_RETRANSMISSIONS: AtomicU32 = AtomicU32::new(0);
+static AP_WPA2_HANDSHAKE_FAILURES: AtomicU32 = AtomicU32::new(0);
+static AP_WPA2_HANDSHAKE_TIMEOUTS: AtomicU32 = AtomicU32::new(0);
 static AP_INACTIVITY_TIMEOUTS: AtomicU32 = AtomicU32::new(0);
 static AP_DISASSOCIATIONS_PREPARED: AtomicU32 = AtomicU32::new(0);
 static AP_DISASSOCIATIONS_PUBLISHED: AtomicU32 = AtomicU32::new(0);
@@ -210,6 +215,11 @@ fn observe_access_point(observation: Esp32s31AccessPointObservation) {
     );
     AP_REMOVALS.store(observation.peer_removals, Ordering::Release);
     AP_AUTHENTICATION_TIMEOUTS.store(observation.authentication_timeouts, Ordering::Release);
+    AP_WPA2_RESPONSE_WINDOWS.store(observation.wpa2_response_windows, Ordering::Release);
+    AP_WPA2_PENDING_ON_STOP.store(observation.wpa2_pending_on_stop, Ordering::Release);
+    AP_WPA2_RETRANSMISSIONS.store(observation.wpa2_retransmissions, Ordering::Release);
+    AP_WPA2_HANDSHAKE_FAILURES.store(observation.wpa2_handshake_failures, Ordering::Release);
+    AP_WPA2_HANDSHAKE_TIMEOUTS.store(observation.wpa2_handshake_timeouts, Ordering::Release);
     AP_INACTIVITY_TIMEOUTS.store(observation.inactivity_timeouts, Ordering::Release);
     AP_DISASSOCIATIONS_PREPARED.store(observation.disassociations_prepared, Ordering::Release);
     AP_DISASSOCIATIONS_PUBLISHED.store(observation.disassociations_published, Ordering::Release);
@@ -293,6 +303,11 @@ fn access_point_evidence(generation: u32, requested_channel: u8) -> WifiAccessPo
         maximum_authorized_peers: AP_MAXIMUM_AUTHORIZED_PEERS.load(Ordering::Acquire) as u8,
         peer_removals: AP_REMOVALS.load(Ordering::Acquire),
         authentication_timeouts: AP_AUTHENTICATION_TIMEOUTS.load(Ordering::Acquire),
+        wpa2_response_windows: AP_WPA2_RESPONSE_WINDOWS.load(Ordering::Acquire),
+        wpa2_pending_on_stop: AP_WPA2_PENDING_ON_STOP.load(Ordering::Acquire),
+        wpa2_retransmissions: AP_WPA2_RETRANSMISSIONS.load(Ordering::Acquire),
+        wpa2_handshake_failures: AP_WPA2_HANDSHAKE_FAILURES.load(Ordering::Acquire),
+        wpa2_handshake_timeouts: AP_WPA2_HANDSHAKE_TIMEOUTS.load(Ordering::Acquire),
         inactivity_timeouts: AP_INACTIVITY_TIMEOUTS.load(Ordering::Acquire),
         disassociations_prepared: AP_DISASSOCIATIONS_PREPARED.load(Ordering::Acquire),
         disassociations_published: AP_DISASSOCIATIONS_PUBLISHED.load(Ordering::Acquire),
@@ -1242,6 +1257,11 @@ async fn wifi_role_task(
                     AP_AUTHORIZATIONS.store(0, Ordering::Release);
                     AP_REMOVALS.store(0, Ordering::Release);
                     AP_AUTHENTICATION_TIMEOUTS.store(0, Ordering::Release);
+                    AP_WPA2_RESPONSE_WINDOWS.store(0, Ordering::Release);
+                    AP_WPA2_PENDING_ON_STOP.store(0, Ordering::Release);
+                    AP_WPA2_RETRANSMISSIONS.store(0, Ordering::Release);
+                    AP_WPA2_HANDSHAKE_FAILURES.store(0, Ordering::Release);
+                    AP_WPA2_HANDSHAKE_TIMEOUTS.store(0, Ordering::Release);
                     AP_INACTIVITY_TIMEOUTS.store(0, Ordering::Release);
                     AP_DISASSOCIATIONS_PREPARED.store(0, Ordering::Release);
                     AP_DISASSOCIATIONS_PUBLISHED.store(0, Ordering::Release);

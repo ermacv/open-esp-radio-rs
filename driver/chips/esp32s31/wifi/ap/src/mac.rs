@@ -36,6 +36,7 @@ enum PendingPublication {
     },
     Eapol {
         peer: [u8; 6],
+        retransmission: bool,
     },
     Data {
         peer: [u8; 6],
@@ -248,7 +249,10 @@ where
         let len = self.engine.encode_eapol(peer, frame, scratch)?;
         self.transmit
             .start_encoded(hardware, Esp32s31ApTxClass::Eapol, &scratch[..len])?;
-        self.pending = Some(PendingPublication::Eapol { peer });
+        self.pending = Some(PendingPublication::Eapol {
+            peer,
+            retransmission: frame.retransmission(),
+        });
         Ok(())
     }
 
@@ -385,6 +389,18 @@ where
                             acknowledged: false,
                         }
                     }
+                    PendingPublication::Eapol {
+                        peer,
+                        retransmission,
+                    } => {
+                        self.engine.observe_wpa2_transmit(
+                            peer,
+                            retransmission,
+                            false,
+                            now_micros,
+                        )?;
+                        Esp32s31ApTxCompletionAction::PublicationFailed
+                    }
                     _ => Esp32s31ApTxCompletionAction::PublicationFailed,
                 },
             ));
@@ -412,10 +428,14 @@ where
                     Esp32s31ApTxCompletionAction::None
                 }
             }
-            PendingPublication::Eapol { peer } => {
+            PendingPublication::Eapol {
+                peer,
+                retransmission,
+            } => {
                 self.report.eapol_frames_transmitted =
                     self.report.eapol_frames_transmitted.saturating_add(1);
-                self.engine.observe_peer_activity(peer, now_micros)?;
+                self.engine
+                    .observe_wpa2_transmit(peer, retransmission, true, now_micros)?;
                 Esp32s31ApTxCompletionAction::None
             }
             PendingPublication::Data { peer } => {

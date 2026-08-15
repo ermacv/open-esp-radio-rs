@@ -340,6 +340,10 @@ fn qualify(capture: &SerialCapture, config: &Config, lab: &LabConfig) -> Result<
             || stopped.maximum_beacon_lateness_micros >= 102_400
             || stopped.authentication_responses == 0
             || stopped.association_responses == 0
+            || stopped.wpa2_response_windows < 2
+            || stopped.wpa2_pending_on_stop != 0
+            || stopped.wpa2_handshake_failures != 0
+            || stopped.wpa2_handshake_timeouts != 0
             || stopped.authorized_peers == 0
             || stopped.maximum_associated_peers == 0
             || stopped.maximum_authorized_peers == 0

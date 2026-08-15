@@ -20,7 +20,7 @@ use open_esp_radio_esp32s31_wifi::{
     ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxResources, WifiTxTimer},
     tx::{WifiTxProgress, WifiTxWake},
 };
-use open_esp_radio_esp32s31_wifi_ap::protocol::ApPeerClose;
+use open_esp_radio_esp32s31_wifi_ap::protocol::{ApPeerClose, ApWpa2RetryProgress};
 use open_esp_radio_esp32s31_wifi_ap::{
     engine::{Esp32s31ApRuntimeHardware, Esp32s31ApWpa2Outcome},
     mac::{
@@ -50,7 +50,8 @@ use crate::{
         Esp32s31MacInterruptEpochDrain, Esp32s31MacInterruptEpochQuiesceError,
     },
     preconnected_rx::{
-        Esp32s31PreconnectedRx, Esp32s31PreconnectedRxDelay, Esp32s31PreconnectedRxError,
+        Esp32s31PreconnectedRx, Esp32s31PreconnectedRxContinuation, Esp32s31PreconnectedRxDelay,
+        Esp32s31PreconnectedRxError, Esp32s31PreconnectedRxSchedulerSnapshot,
         Esp32s31RecycledRxDirective,
     },
     rx_dma_service::Esp32s31RxDmaStorage,
@@ -137,6 +138,7 @@ pub struct Esp32s31AccessPointRunReport {
     pub mac: Esp32s31ApMacReport,
     pub engine: open_esp_radio_esp32s31_wifi_ap::engine::Esp32s31ApEngineReport,
     pub interrupt_drain: Esp32s31MacInterruptEpochDrain,
+    pub rx_scheduler: Option<Esp32s31PreconnectedRxSchedulerSnapshot>,
 }
 
 /// Complete reusable frontier after IRQ, RX, TX, keys and AP TSF stop.
@@ -294,6 +296,11 @@ where
     /// Observe one RX descriptor without exposing its DMA ownership.
     pub fn rx_descriptor_snapshot(&self, index: usize) -> Option<RxDescriptorSnapshot> {
         self.receive.descriptor_snapshot(index)
+    }
+
+    /// Observe the live RX scheduler frontier without exposing ownership.
+    pub fn rx_scheduler_snapshot(&self) -> Option<Esp32s31PreconnectedRxSchedulerSnapshot> {
+        self.receive.scheduler_snapshot()
     }
 
     /// Recycle one complete RX unit and stage at most one deliverable MPDU.
@@ -563,9 +570,15 @@ where
                 self.report.control_frames_staged =
                     self.report.control_frames_staged.saturating_add(1);
             }
-            Esp32s31ApWpa2Outcome::None
-            | Esp32s31ApWpa2Outcome::PeerAuthorized { .. }
-            | Esp32s31ApWpa2Outcome::DeauthenticatePeer { .. } => {}
+            Esp32s31ApWpa2Outcome::DeauthenticatePeer { peer } => {
+                let close = self
+                    .mac
+                    .engine_mut()
+                    .begin_wpa2_failure_close(peer)
+                    .map_err(Esp32s31ApMacError::Engine)?;
+                self.publish_peer_close(hardware, close)?;
+            }
+            Esp32s31ApWpa2Outcome::None | Esp32s31ApWpa2Outcome::PeerAuthorized { .. } => {}
         }
         Ok(())
     }
@@ -833,6 +846,30 @@ where
                     .map_err(Esp32s31AccessPointRunError::Control)?;
                 continue;
             }
+            match self
+                .mac
+                .engine_mut()
+                .take_due_wpa2_retry::<EAPOL_CAPACITY>(now_micros)
+                .map_err(Esp32s31ApMacError::Engine)
+                .map_err(Esp32s31AccessPointControlError::from)
+                .map_err(Esp32s31AccessPointRunError::Control)?
+            {
+                ApWpa2RetryProgress::Transmit { peer, frame } => {
+                    self.mac
+                        .publish_eapol(hardware, peer, &frame, self.tx_frame)
+                        .map_err(Esp32s31AccessPointControlError::from)
+                        .map_err(Esp32s31AccessPointRunError::Control)?;
+                    self.report.control_frames_staged =
+                        self.report.control_frames_staged.saturating_add(1);
+                    continue;
+                }
+                ApWpa2RetryProgress::Close(close) => {
+                    self.publish_peer_close(hardware, close)
+                        .map_err(Esp32s31AccessPointRunError::Control)?;
+                    continue;
+                }
+                ApWpa2RetryProgress::None => {}
+            }
             if let Some(close) = self.mac.engine_mut().begin_due_peer_close(now_micros) {
                 self.publish_peer_close(hardware, close)
                     .map_err(Esp32s31AccessPointRunError::Control)?;
@@ -847,9 +884,20 @@ where
                     .unwrap_or(u32::MAX)
                     .max(1)
             });
+            let wpa2_delay_ms = self
+                .mac
+                .engine()
+                .next_wpa2_retry_deadline()
+                .map(|deadline| {
+                    let remaining = deadline.saturating_sub(now_micros);
+                    u32::try_from(remaining.saturating_add(999) / 1_000)
+                        .unwrap_or(u32::MAX)
+                        .max(1)
+                });
             let work_delay_ms = peer_delay_ms
-                .map(|delay| delay.min(beacon_delay_ms))
-                .unwrap_or(beacon_delay_ms);
+                .into_iter()
+                .chain(wpa2_delay_ms)
+                .fold(beacon_delay_ms, u32::min);
             if let Some(length) = pending_network_rx {
                 let ready = select(
                     Timer::after_millis(u64::from(work_delay_ms)),
@@ -886,15 +934,18 @@ where
                 }
                 continue;
             }
-            let rx_service_pending =
-                self.receive.reload_pending() || self.receive.service_probe_pending();
+            let rx_service_pending = self
+                .receive
+                .service_continuation(hardware)
+                .map_err(|error| Esp32s31AccessPointRunError::Control(error.into()))?
+                == Esp32s31PreconnectedRxContinuation::ProbePending;
             let rx_work = async {
                 if rx_service_pending {
-                    // `wDev_AppendRxBlocks` repairs an exhausted descriptor
-                    // base only after the reload doorbell self-clears. With
-                    // no descriptor left, hardware cannot produce another RX
-                    // interrupt to drive that suffix, so retain cooperative
-                    // scheduling and poll the owned edge explicitly.
+                    // One vendor ppTask signal enters wdevProcessRxSucDataAll,
+                    // which refreshes LAST and remains in its descriptor loop.
+                    // Rust yields cooperatively while a terminal writeback,
+                    // link-release proof or append suffix remains pending,
+                    // but cannot require a fresh IRQ after NEXT reached zero.
                     Timer::after_micros(1).await;
                 } else {
                     interrupts.mac_runtime().wait_rx().await;
@@ -962,7 +1013,12 @@ where
                         // that frame's handoff before scheduling the reload
                         // suffix; checking earlier silently discarded every
                         // boundary descriptor.
-                        if self.receive.reload_pending() || self.receive.service_probe_pending() {
+                        if self
+                            .receive
+                            .service_continuation(hardware)
+                            .map_err(|error| Esp32s31AccessPointRunError::Control(error.into()))?
+                            == Esp32s31PreconnectedRxContinuation::ProbePending
+                        {
                             break;
                         }
                         if !rx_progressed {
@@ -1030,6 +1086,7 @@ where
         }
 
         network.set_link_state(LinkState::Down);
+        let rx_scheduler = self.receive.scheduler_snapshot();
         let interrupt_drain = interrupts
             .quiesce(platform)
             .map_err(Esp32s31AccessPointRunError::InterruptQuiesce)?;
@@ -1049,6 +1106,7 @@ where
             mac: self.mac_report(),
             engine: self.mac.engine().report(),
             interrupt_drain,
+            rx_scheduler,
         })
     }
 

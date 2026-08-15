@@ -8,10 +8,11 @@ use crate::rx_dma_service::{ESP32S31_RX_WALKER_ENABLE_SETTLE_US, Esp32s31RxDmaSt
 
 use super::state::Esp32s31PreconnectedRxState;
 use super::{
-    Esp32s31PreconnectedRx, Esp32s31PreconnectedRxDelay, Esp32s31PreconnectedRxDirective,
-    Esp32s31PreconnectedRxError, Esp32s31PreconnectedRxIntoLiveFailure,
-    Esp32s31PreconnectedRxPhase, Esp32s31PreconnectedRxProgress, Esp32s31RecycledRxDirective,
-    Esp32s31RecycledRxProgress,
+    Esp32s31PreconnectedRx, Esp32s31PreconnectedRxContinuation, Esp32s31PreconnectedRxDelay,
+    Esp32s31PreconnectedRxDirective, Esp32s31PreconnectedRxError,
+    Esp32s31PreconnectedRxIntoLiveFailure, Esp32s31PreconnectedRxPhase,
+    Esp32s31PreconnectedRxProgress, Esp32s31PreconnectedRxSchedulerSnapshot,
+    Esp32s31RecycledRxDirective, Esp32s31RecycledRxProgress,
 };
 
 impl<'storage, D, const COUNT: usize, const DMA_BUFFER_SIZE: usize>
@@ -182,6 +183,21 @@ where
         }
     }
 
+    /// Snapshot the live software frontier without exposing publication
+    /// authority. AP fault evidence retains this before stop consumes the
+    /// live owner and discards scheduler bookkeeping.
+    pub fn scheduler_snapshot(&self) -> Option<Esp32s31PreconnectedRxSchedulerSnapshot> {
+        let Esp32s31PreconnectedRxState::Live(ring) = &self.state else {
+            return None;
+        };
+        Some(Esp32s31PreconnectedRxSchedulerSnapshot {
+            recycle_start: ring.recycle_start(),
+            accepted_tail: ring.accepted_tail(),
+            observed_mask: ring.observed_mask(),
+            topology: ring.topology_snapshot(),
+        })
+    }
+
     /// Whether a published append still needs its finite reload suffix.
     ///
     /// An exhausted walker cannot raise another RX interrupt while this edge
@@ -194,13 +210,32 @@ where
         }
     }
 
-    /// Whether an exhausted-list BASE publication requires one follow-up
-    /// descriptor ownership probe even if hardware emits no new RX wake.
-    pub const fn service_probe_pending(&self) -> bool {
-        match &self.state {
-            Esp32s31PreconnectedRxState::Live(ring) => ring.exhausted_republication_probe_pending(),
-            _ => false,
-        }
+    /// Select the next RX scheduler edge from the complete live-ring state.
+    ///
+    /// Complete vendor `wdevProcessRxSucDataAll` processes through its saved
+    /// LAST descriptor, refreshes LAST and continues in the same `ppTask`
+    /// invocation. A terminal descriptor writeback, a deferred link-release
+    /// proof, or an exhausted-list BASE publication therefore cannot require
+    /// another RX-success interrupt: none is guaranteed after `NEXT=0`.
+    pub fn service_continuation<M: RxDma>(
+        &mut self,
+        hardware: &mut M,
+    ) -> Result<Esp32s31PreconnectedRxContinuation, Esp32s31PreconnectedRxError> {
+        let ring = self.live_mut()?;
+        let probe_pending = ring.reload_pending()
+            || ring.completion_release_probe_pending()
+            || ring.exhausted_republication_probe_pending()
+            // RX_DONE can become visible before LAST advances far enough to
+            // authorize recycling. The current PP event already covers that
+            // writeback; waiting for another interrupt would lose the vendor
+            // worker's same-invocation frontier refresh.
+            || ring.completed_descriptor_frontier().descriptor_count != 0
+            || ring.exhausted_terminal_writeback_pending(hardware);
+        Ok(if probe_pending {
+            Esp32s31PreconnectedRxContinuation::ProbePending
+        } else {
+            Esp32s31PreconnectedRxContinuation::AwaitInterrupt
+        })
     }
 
     /// Observe every currently completed descriptor, then recycle the
@@ -286,11 +321,17 @@ where
         // snapshots `hal_mac_rx_get_last_dscr`, processes through that finite
         // frontier, and refreshes LAST before extending the pass. It does not
         // wait for RX_NEXT_DESCRIPTOR before clearing and returning a node.
-        let last_descriptor_low = hardware.last_descriptor_low();
+        let (last_descriptor_low, next_descriptor_low) = hardware.with_ordered_cursor(|cursor| {
+            (cursor.last_descriptor_low(), cursor.next_descriptor_low())
+        });
         // LAST is the ownership frontier for the following descriptor scan.
         // Order that MMIO observation before reading uncached SRAM.
         hardware.fence();
-        let frontier = storage.first_completed_unit_frontier_through(ring, last_descriptor_low)?;
+        let frontier = storage.first_completed_unit_frontier_through_cursor(
+            ring,
+            last_descriptor_low,
+            next_descriptor_low,
+        )?;
         if frontier.unit_count == 0 {
             return Ok(Esp32s31RecycledRxProgress::default());
         }

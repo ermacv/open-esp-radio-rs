@@ -863,6 +863,11 @@ pub struct WifiAccessPointEvidence {
     pub maximum_authorized_peers: u8,
     pub peer_removals: u32,
     pub authentication_timeouts: u32,
+    pub wpa2_response_windows: u32,
+    pub wpa2_pending_on_stop: u32,
+    pub wpa2_retransmissions: u32,
+    pub wpa2_handshake_failures: u32,
+    pub wpa2_handshake_timeouts: u32,
     pub inactivity_timeouts: u32,
     pub disassociations_prepared: u32,
     /// Disconnect frames accepted by the target hardware TX owner.

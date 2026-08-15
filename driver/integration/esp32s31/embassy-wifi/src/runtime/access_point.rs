@@ -1135,6 +1135,10 @@ impl ProductionWifiEpochRunner {
         if let Ok(report) = &result
             && let Some(hooks) = task.parked.board.qualification
         {
+            qualification_event!(
+                "open-radio: access-point RX scheduler stop {:?}",
+                report.rx_scheduler,
+            );
             (hooks.access_point)(crate::Esp32s31AccessPointObservation {
                 channel: task.channel,
                 beacons_transmitted: report.mac.beacons_transmitted,
@@ -1154,6 +1158,11 @@ impl ProductionWifiEpochRunner {
                 maximum_authorized_peers: report.engine.maximum_authorized_peers,
                 peer_removals: report.engine.peer_removals,
                 authentication_timeouts: report.engine.authentication_timeouts,
+                wpa2_response_windows: report.engine.wpa2_response_windows,
+                wpa2_pending_on_stop: report.engine.wpa2_pending_on_stop,
+                wpa2_retransmissions: report.engine.wpa2_retransmissions,
+                wpa2_handshake_failures: report.engine.wpa2_handshake_failures,
+                wpa2_handshake_timeouts: report.engine.wpa2_handshake_timeouts,
                 inactivity_timeouts: report.engine.inactivity_timeouts,
                 disassociations_prepared: report.engine.disassociations_prepared,
                 disassociations_published: report.mac.disassociations_published,

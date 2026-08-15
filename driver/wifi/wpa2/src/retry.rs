@@ -1,17 +1,19 @@
 //! Event-driven WPA2 retransmission state without sleeps or timer polling.
 
-use crate::state::Wpa2Transmit;
+use crate::state::{Wpa2Transmit, Wpa2TxMessage};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Wpa2RetryConfig {
-    pub interval_us: u32,
+    pub first_interval_us: u32,
+    pub subsequent_interval_us: u32,
     /// Number of retransmissions after the original transmission.
     pub attempts: u8,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Wpa2RetryError {
-    ZeroInterval,
+    ZeroFirstInterval,
+    ZeroSubsequentInterval,
     ZeroAttempts,
     DeadlineOverflow,
 }
@@ -25,9 +27,10 @@ pub struct Wpa2RetryAlarm {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Wpa2RetryAction {
     Stale,
+    Exhausted,
     Transmit {
         frame: Wpa2Transmit,
-        next_alarm: Option<Wpa2RetryAlarm>,
+        next_alarm: Wpa2RetryAlarm,
     },
 }
 
@@ -45,8 +48,11 @@ pub struct Wpa2Retry {
 
 impl Wpa2Retry {
     pub const fn new(config: Wpa2RetryConfig) -> Result<Self, Wpa2RetryError> {
-        if config.interval_us == 0 {
-            return Err(Wpa2RetryError::ZeroInterval);
+        if config.first_interval_us == 0 {
+            return Err(Wpa2RetryError::ZeroFirstInterval);
+        }
+        if config.subsequent_interval_us == 0 {
+            return Err(Wpa2RetryError::ZeroSubsequentInterval);
         }
         if config.attempts == 0 {
             return Err(Wpa2RetryError::ZeroAttempts);
@@ -65,7 +71,7 @@ impl Wpa2Retry {
         now_us: u64,
     ) -> Result<Wpa2RetryAlarm, Wpa2RetryError> {
         let deadline_us = now_us
-            .checked_add(self.config.interval_us as u64)
+            .checked_add(self.config.first_interval_us as u64)
             .ok_or(Wpa2RetryError::DeadlineOverflow)?;
         self.generation = next_generation(self.generation);
         self.pending = Some(Wpa2Transmit {
@@ -85,6 +91,21 @@ impl Wpa2Retry {
         self.attempts_left = 0;
     }
 
+    /// Rebase the first response window to the subsequent interval.
+    ///
+    /// Authenticator integrations use this after an acknowledged Message 1:
+    /// hostapd likewise replaces its short initial EAPOL-Key timeout with the
+    /// subsequent timeout once TX status proves that the station received M1.
+    pub fn defer_first_after_ack(
+        &self,
+        now_us: u64,
+    ) -> Result<Option<Wpa2RetryAlarm>, Wpa2RetryError> {
+        if self.pending.is_none() || self.attempts_left != self.config.attempts {
+            return Ok(None);
+        }
+        Ok(Some(self.alarm_after(now_us)?))
+    }
+
     pub fn on_alarm(
         &mut self,
         alarm: Wpa2RetryAlarm,
@@ -97,19 +118,15 @@ impl Wpa2Retry {
             return Ok(Wpa2RetryAction::Stale);
         };
 
-        self.attempts_left -= 1;
-        let next_alarm = if self.attempts_left == 0 {
-            None
-        } else {
-            Some(self.alarm_after(now_us)?)
-        };
-        if next_alarm.is_none() {
-            // Keep `pending` until the caller reports failure or completion.
-            // A duplicate delivery of this same edge is rejected by advancing
-            // the generation after emitting the final retransmission.
-            self.generation = next_generation(self.generation);
-            self.pending = None;
+        if self.attempts_left == 0 {
+            self.cancel();
+            return Ok(Wpa2RetryAction::Exhausted);
         }
+        self.attempts_left -= 1;
+        // Even the last retransmission retains one response window. The next
+        // alarm reports explicit exhaustion instead of silently leaving the
+        // handshake pending forever after the retry budget is consumed.
+        let next_alarm = self.alarm_after(now_us)?;
         Ok(Wpa2RetryAction::Transmit { frame, next_alarm })
     }
 
@@ -117,11 +134,18 @@ impl Wpa2Retry {
         self.pending.is_some()
     }
 
+    pub const fn pending_message(&self) -> Option<Wpa2TxMessage> {
+        match self.pending {
+            Some(transmit) => Some(transmit.message),
+            None => None,
+        }
+    }
+
     fn alarm_after(&self, now_us: u64) -> Result<Wpa2RetryAlarm, Wpa2RetryError> {
         Ok(Wpa2RetryAlarm {
             generation: self.generation,
             deadline_us: now_us
-                .checked_add(self.config.interval_us as u64)
+                .checked_add(self.config.subsequent_interval_us as u64)
                 .ok_or(Wpa2RetryError::DeadlineOverflow)?,
         })
     }
@@ -148,7 +172,8 @@ mod tests {
     #[test]
     fn each_alarm_edge_emits_at_most_one_bounded_retransmission() {
         let mut retry = Wpa2Retry::new(Wpa2RetryConfig {
-            interval_us: 100_000,
+            first_interval_us: 100_000,
+            subsequent_interval_us: 1_000_000,
             attempts: 2,
         })
         .unwrap();
@@ -157,24 +182,29 @@ mod tests {
 
         let Wpa2RetryAction::Transmit {
             frame,
-            next_alarm: Some(second),
+            next_alarm: second,
         } = retry.on_alarm(first, first.deadline_us).unwrap()
         else {
             panic!("first alarm must retransmit and rearm")
         };
         assert!(frame.retransmission);
-        assert_eq!(second.deadline_us, 200_010);
+        assert_eq!(second.deadline_us, 1_100_010);
 
         assert!(matches!(
             retry.on_alarm(second, second.deadline_us).unwrap(),
-            Wpa2RetryAction::Transmit {
-                next_alarm: None,
-                ..
-            }
+            Wpa2RetryAction::Transmit { .. }
         ));
+        let exhausted = Wpa2RetryAlarm {
+            generation: second.generation,
+            deadline_us: second.deadline_us + 1_000_000,
+        };
+        assert_eq!(
+            retry.on_alarm(exhausted, exhausted.deadline_us).unwrap(),
+            Wpa2RetryAction::Exhausted
+        );
         assert!(!retry.is_armed());
         assert_eq!(
-            retry.on_alarm(second, second.deadline_us).unwrap(),
+            retry.on_alarm(exhausted, exhausted.deadline_us).unwrap(),
             Wpa2RetryAction::Stale
         );
     }
@@ -182,12 +212,31 @@ mod tests {
     #[test]
     fn cancel_invalidates_an_already_programmed_alarm() {
         let mut retry = Wpa2Retry::new(Wpa2RetryConfig {
-            interval_us: 1,
+            first_interval_us: 1,
+            subsequent_interval_us: 1,
             attempts: 1,
         })
         .unwrap();
         let alarm = retry.arm(transmit(), 0).unwrap();
         retry.cancel();
         assert_eq!(retry.on_alarm(alarm, 1).unwrap(), Wpa2RetryAction::Stale);
+    }
+
+    #[test]
+    fn acknowledged_initial_frame_uses_the_subsequent_response_window() {
+        let mut retry = Wpa2Retry::new(Wpa2RetryConfig {
+            first_interval_us: 100_000,
+            subsequent_interval_us: 1_000_000,
+            attempts: 3,
+        })
+        .unwrap();
+        retry.arm(transmit(), 10).unwrap();
+        assert_eq!(
+            retry.defer_first_after_ack(20).unwrap(),
+            Some(Wpa2RetryAlarm {
+                generation: 1,
+                deadline_us: 1_000_020,
+            })
+        );
     }
 }

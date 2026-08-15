@@ -11,6 +11,7 @@ use open_esp_radio_wpa2::{
         OwnedRsnIe, WPA2_PLAIN_KEY_DATA_CAPACITY, Wpa2FrameError, Wpa2Gtk, Wpa2PlainKeyData,
         Wpa2TxFrame, build_ap_action_frame,
     },
+    retry::{Wpa2Retry, Wpa2RetryAction, Wpa2RetryAlarm, Wpa2RetryConfig, Wpa2RetryError},
     state::{
         PtkContext as Wpa2StatePtkContext, Wpa2ApAction, Wpa2ApPhase, Wpa2ApState, Wpa2StateError,
     },
@@ -26,6 +27,16 @@ pub const AP_STATUS_TOO_MANY_STATIONS: u16 = 17;
 pub const AP_STATUS_UNSUPPORTED_RATES: u16 = 18;
 pub const AP_STATUS_INVALID_RSN: u16 = 40;
 pub const AP_ASSOCIATION_DEADLINE_MICROS: u64 = 15_000_000;
+/// AP-owned response window for each four-way-handshake publication.
+///
+/// This follows the generic hostap authenticator policy: a 100-ms first
+/// EAPOL-Key response window, 1-second subsequent windows, and four total
+/// publications. An acknowledged Message 1 uses the subsequent window
+/// immediately. It is protocol policy, not an ESP32 hardware fact.
+pub const AP_WPA2_FIRST_RETRY_INTERVAL_MICROS: u32 = 100_000;
+pub const AP_WPA2_SUBSEQUENT_RETRY_INTERVAL_MICROS: u32 = 1_000_000;
+/// Retransmissions after the original M1 or M3 publication.
+pub const AP_WPA2_RETRY_ATTEMPTS: u8 = 3;
 
 /// Validated inactivity policy for an associated SoftAP peer.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -137,6 +148,8 @@ pub enum ApPeerPhase {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ApPeerCloseKind {
     AuthenticationTimeout,
+    Wpa2HandshakeFailure,
+    Wpa2HandshakeTimeout,
     InactivityTimeout,
     AccessPointStop,
 }
@@ -183,6 +196,13 @@ pub enum ApWpa2Error {
     KeyWrap(SoftwareAesKeyWrapError),
     MissingPairwiseKey,
     UnexpectedAction,
+    Retry(Wpa2RetryError),
+}
+
+impl From<Wpa2RetryError> for ApWpa2Error {
+    fn from(error: Wpa2RetryError) -> Self {
+        Self::Retry(error)
+    }
 }
 
 impl From<ApServiceError> for ApWpa2Error {
@@ -216,6 +236,15 @@ pub enum ApWpa2Progress<const N: usize> {
     DeauthenticatePeer,
 }
 
+pub enum ApWpa2RetryProgress<const N: usize> {
+    None,
+    Transmit {
+        peer: [u8; 6],
+        frame: Wpa2TxFrame<N>,
+    },
+    Close(ApPeerClose),
+}
+
 impl From<Wpa2StateError> for ApServiceError {
     fn from(error: Wpa2StateError) -> Self {
         Self::Wpa2(error)
@@ -228,6 +257,8 @@ struct ApPeer {
     phase: ApPeerPhase,
     wpa2: Option<Wpa2ApState>,
     pending_ptk: Option<Ptk>,
+    wpa2_retry: Wpa2Retry,
+    wpa2_retry_alarm: Option<Wpa2RetryAlarm>,
     maximum_legacy_rate_500kbps: u8,
     last_activity_micros: u64,
     deadline_micros: u64,
@@ -265,12 +296,25 @@ impl ApPeer {
             phase: ApPeerPhase::Authenticated,
             wpa2: None,
             pending_ptk: None,
+            wpa2_retry: new_ap_wpa2_retry(),
+            wpa2_retry_alarm: None,
             // Authentication precedes rate negotiation. Keep the universally
             // compatible 1-Mbit/s value until Association succeeds.
             maximum_legacy_rate_500kbps: 2,
             last_activity_micros: now_micros,
             deadline_micros: now_micros.saturating_add(AP_ASSOCIATION_DEADLINE_MICROS),
         }
+    }
+}
+
+const fn new_ap_wpa2_retry() -> Wpa2Retry {
+    match Wpa2Retry::new(Wpa2RetryConfig {
+        first_interval_us: AP_WPA2_FIRST_RETRY_INTERVAL_MICROS,
+        subsequent_interval_us: AP_WPA2_SUBSEQUENT_RETRY_INTERVAL_MICROS,
+        attempts: AP_WPA2_RETRY_ATTEMPTS,
+    }) {
+        Ok(retry) => retry,
+        Err(_) => panic!("valid AP WPA2 retry policy"),
     }
 }
 
@@ -545,6 +589,122 @@ impl<'peers> AccessPointService<'peers> {
         Ok(build_ap_action_frame(state, transmit, [0; 8], &[])?)
     }
 
+    /// Bind a terminal EAPOL-Key TX completion to the generic finite retry
+    /// owner. A new handshake message replaces the previous response window;
+    /// completion of a retransmission keeps the alarm already advanced by the
+    /// timer edge that produced it.
+    pub fn observe_wpa2_transmit(
+        &mut self,
+        peer: [u8; 6],
+        retransmission: bool,
+        acknowledged: bool,
+        now_micros: u64,
+    ) -> Result<bool, ApWpa2Error> {
+        let inactive_timeout_micros = self.inactive_timeout.micros();
+        let transmit = self
+            .checked_peer(peer)?
+            .wpa2
+            .as_ref()
+            .ok_or(ApServiceError::WrongPeerPhase)?
+            .retry_transmit()?;
+        let existing = self.checked_peer_mut(peer)?;
+        let stage_changed = existing.wpa2_retry.pending_message() != Some(transmit.message);
+        let armed = stage_changed || !retransmission;
+        if armed {
+            existing.wpa2_retry.cancel();
+            let mut alarm = existing.wpa2_retry.arm(transmit, now_micros)?;
+            // hostapd extends only the acknowledged initial M1 window. M3
+            // retains the short first timeout, then uses the subsequent one.
+            if acknowledged
+                && transmit.message == open_esp_radio_wpa2::state::Wpa2TxMessage::PairwiseMessage1
+            {
+                alarm = existing
+                    .wpa2_retry
+                    .defer_first_after_ack(now_micros)?
+                    .expect("freshly armed WPA2 retry has a first window");
+            }
+            existing.wpa2_retry_alarm = Some(alarm);
+        }
+        existing.last_activity_micros = now_micros;
+        existing.deadline_micros = now_micros.saturating_add(inactive_timeout_micros);
+        Ok(armed)
+    }
+
+    pub fn next_wpa2_retry_deadline(&self) -> Option<u64> {
+        self.storage()
+            .peers
+            .iter()
+            .flatten()
+            .filter_map(|peer| peer.wpa2_retry_alarm.map(|alarm| alarm.deadline_us))
+            .min()
+    }
+
+    /// Consume at most one due authenticator retry edge.
+    pub fn take_due_wpa2_retry<const N: usize>(
+        &mut self,
+        now_micros: u64,
+    ) -> Result<ApWpa2RetryProgress<N>, ApWpa2Error> {
+        let Some(index) = self.storage().peers.iter().position(|peer| {
+            peer.as_ref()
+                .and_then(|peer| peer.wpa2_retry_alarm)
+                .is_some_and(|alarm| alarm.deadline_us <= now_micros)
+        }) else {
+            return Ok(ApWpa2RetryProgress::None);
+        };
+        let (peer_address, action) = {
+            let peer = self.storage_mut().peers[index]
+                .as_mut()
+                .expect("due WPA2 retry belongs to an occupied peer");
+            let alarm = peer
+                .wpa2_retry_alarm
+                .take()
+                .expect("due WPA2 retry retains its alarm");
+            let action = peer.wpa2_retry.on_alarm(alarm, now_micros)?;
+            (peer.address, action)
+        };
+        match action {
+            Wpa2RetryAction::Stale => Ok(ApWpa2RetryProgress::None),
+            Wpa2RetryAction::Transmit { frame, next_alarm } => {
+                self.checked_peer_mut(peer_address)?.wpa2_retry_alarm = Some(next_alarm);
+                let frame = match frame.message {
+                    open_esp_radio_wpa2::state::Wpa2TxMessage::PairwiseMessage1 => {
+                        let state = self
+                            .checked_peer(peer_address)?
+                            .wpa2
+                            .as_ref()
+                            .ok_or(ApServiceError::WrongPeerPhase)?;
+                        build_ap_action_frame(state, frame, [0; 8], &[])?
+                    }
+                    open_esp_radio_wpa2::state::Wpa2TxMessage::PairwiseMessage3 => {
+                        let ApWpa2Progress::Transmit(frame) =
+                            self.build_pending_transmit(peer_address, frame)?
+                        else {
+                            return Err(ApWpa2Error::UnexpectedAction);
+                        };
+                        frame
+                    }
+                    _ => return Err(ApWpa2Error::UnexpectedAction),
+                };
+                Ok(ApWpa2RetryProgress::Transmit {
+                    peer: peer_address,
+                    frame,
+                })
+            }
+            Wpa2RetryAction::Exhausted => {
+                let peer = self.checked_peer_mut(peer_address)?;
+                let close = ApPeerClose {
+                    peer: peer.address,
+                    kind: ApPeerCloseKind::Wpa2HandshakeTimeout,
+                    was_associated: true,
+                    maximum_legacy_rate_500kbps: peer.maximum_legacy_rate_500kbps,
+                };
+                peer.phase = ApPeerPhase::Closing;
+                self.status_revision = self.status_revision.wrapping_add(1);
+                Ok(ApWpa2RetryProgress::Close(close))
+            }
+        }
+    }
+
     /// Advance the bounded authenticator state through Message 2 or Message 4.
     ///
     /// PTK derivation, MIC verification and GTK wrapping are pure bounded
@@ -584,7 +744,12 @@ impl<'peers> AccessPointService<'peers> {
                     .ok_or(ApServiceError::WrongPeerPhase)?
                     .complete_message4_mic(ticket, message4, valid)?;
                 match action {
-                    Wpa2ApAction::AuthorizePeer => Ok(ApWpa2Progress::AuthorizePeer),
+                    Wpa2ApAction::AuthorizePeer => {
+                        let existing = self.checked_peer_mut(peer)?;
+                        existing.wpa2_retry.cancel();
+                        existing.wpa2_retry_alarm = None;
+                        Ok(ApWpa2Progress::AuthorizePeer)
+                    }
                     Wpa2ApAction::DeauthenticatePeer => Ok(ApWpa2Progress::DeauthenticatePeer),
                     _ => Err(ApWpa2Error::UnexpectedAction),
                 }
@@ -652,7 +817,12 @@ impl<'peers> AccessPointService<'peers> {
             .ok_or(ApServiceError::WrongPeerPhase)?;
         let response =
             build_ap_action_frame(state, transmit, [0; 8], wrapped.as_bytes())?.authenticate(&ptk);
-        self.checked_peer_mut(peer)?.pending_ptk = Some(ptk);
+        let existing = self.checked_peer_mut(peer)?;
+        existing.pending_ptk = Some(ptk);
+        // Valid M2 closes the Message-1 response window. Message 3 receives a
+        // fresh schedule only after its own terminal TX completion.
+        existing.wpa2_retry.cancel();
+        existing.wpa2_retry_alarm = None;
         Ok(ApWpa2Progress::Transmit(response))
     }
 
@@ -698,6 +868,8 @@ impl<'peers> AccessPointService<'peers> {
         }
         existing.phase = ApPeerPhase::Authorized;
         existing.pending_ptk = None;
+        existing.wpa2_retry.cancel();
+        existing.wpa2_retry_alarm = None;
         existing.last_activity_micros = now_micros;
         existing.deadline_micros = now_micros.saturating_add(inactive_timeout_micros);
         self.status_revision = self.status_revision.wrapping_add(1);
@@ -753,6 +925,27 @@ impl<'peers> AccessPointService<'peers> {
         peer.phase = ApPeerPhase::Closing;
         self.status_revision = self.status_revision.wrapping_add(1);
         Some(close)
+    }
+
+    pub fn begin_wpa2_failure_close(
+        &mut self,
+        peer_address: [u8; 6],
+    ) -> Result<ApPeerClose, ApServiceError> {
+        let peer = self.checked_peer_mut(peer_address)?;
+        if peer.phase != ApPeerPhase::Securing {
+            return Err(ApServiceError::WrongPeerPhase);
+        }
+        peer.wpa2_retry.cancel();
+        peer.wpa2_retry_alarm = None;
+        let close = ApPeerClose {
+            peer: peer.address,
+            kind: ApPeerCloseKind::Wpa2HandshakeFailure,
+            was_associated: true,
+            maximum_legacy_rate_500kbps: peer.maximum_legacy_rate_500kbps,
+        };
+        peer.phase = ApPeerPhase::Closing;
+        self.status_revision = self.status_revision.wrapping_add(1);
+        Ok(close)
     }
 
     pub fn begin_stop_peer(&mut self) -> Option<ApPeerClose> {
@@ -1058,6 +1251,21 @@ mod tests {
             message1.key_frame().message(),
             EapolKeyMessage::PairwiseMessage1
         );
+        assert!(!message1.retransmission());
+        service
+            .observe_wpa2_transmit(PEER, false, true, 10)
+            .unwrap();
+        assert_eq!(service.next_wpa2_retry_deadline(), Some(1_000_010));
+        let ApWpa2RetryProgress::Transmit {
+            peer: retried_peer,
+            frame: retried_message1,
+        } = service.take_due_wpa2_retry::<512>(1_000_010).unwrap()
+        else {
+            panic!("Message 1 response timeout must retransmit")
+        };
+        assert_eq!(retried_peer, PEER);
+        assert!(retried_message1.retransmission());
+        assert_eq!(retried_message1.as_bytes(), message1.as_bytes());
 
         let ptk = Pmk::derive(b"password", b"test-ap")
             .unwrap()
@@ -1087,6 +1295,21 @@ mod tests {
         assert!(
             parse_gtk_key_data(plaintext.as_bytes(), &WPA2_PERSONAL_CCMP_PSK_RSN_IE, &[],).is_ok()
         );
+        assert_eq!(service.next_wpa2_retry_deadline(), None);
+        service
+            .observe_wpa2_transmit(PEER, false, true, 2_000_000)
+            .unwrap();
+        assert_eq!(service.next_wpa2_retry_deadline(), Some(2_100_000));
+        let ApWpa2RetryProgress::Transmit {
+            peer: retried_peer,
+            frame: retried_message3,
+        } = service.take_due_wpa2_retry::<512>(2_100_000).unwrap()
+        else {
+            panic!("Message 3 response timeout must retransmit")
+        };
+        assert_eq!(retried_peer, PEER);
+        assert!(retried_message3.retransmission());
+        assert_eq!(retried_message3.as_bytes(), message3.as_bytes());
         assert!(matches!(
             parse_gtk_key_data(plaintext.as_bytes(), &SUPPLICANT_RSN, &[]),
             Err(Wpa2FrameError::RsnIeMismatch)
@@ -1102,6 +1325,7 @@ mod tests {
             service.on_eapol(PEER, message4).unwrap(),
             ApWpa2Progress::AuthorizePeer
         ));
+        assert_eq!(service.next_wpa2_retry_deadline(), None);
         assert!(service.pending_ptk(PEER).is_ok());
         service.authorize(PEER, 2).unwrap();
         assert_eq!(
@@ -1111,6 +1335,38 @@ mod tests {
         assert_eq!(
             service.pending_ptk(PEER).err(),
             Some(ApServiceError::WrongPeerPhase)
+        );
+    }
+
+    #[test]
+    fn exhausted_pairwise_update_count_closes_the_peer() {
+        let mut storage = AccessPointPeerStorage::new();
+        let mut service = service(&mut storage);
+        service.authenticate_open(PEER, 0);
+        service
+            .associate_wpa2(PEER, &WPA2_RSN, 108, [7; 32], 9, 1)
+            .unwrap();
+        service.begin_wpa2_frame::<512>(PEER).unwrap();
+        service.observe_wpa2_transmit(PEER, false, true, 0).unwrap();
+
+        for deadline in [1_000_000, 2_000_000, 3_000_000] {
+            assert!(matches!(
+                service.take_due_wpa2_retry::<512>(deadline).unwrap(),
+                ApWpa2RetryProgress::Transmit { peer: PEER, .. }
+            ));
+        }
+        assert!(matches!(
+            service.take_due_wpa2_retry::<512>(4_000_000).unwrap(),
+            ApWpa2RetryProgress::Close(ApPeerClose {
+                peer: PEER,
+                kind: ApPeerCloseKind::Wpa2HandshakeTimeout,
+                was_associated: true,
+                ..
+            })
+        ));
+        assert_eq!(
+            service.peer_status(PEER).unwrap().phase,
+            ApPeerPhase::Closing
         );
     }
 

@@ -79,7 +79,8 @@ owner driver/chips/esp32s31/wifi/mac/src/rx.rs decode_normalized_rx_metadata
 owner driver/chips/esp32s31/wifi/mac/src/rx_pool.rs normalized_metadata
 owner driver/chips/esp32s31/wifi/mac/src/connected_rx.rs ConnectedRxEvent
 owner driver/chips/esp32s31/wifi/mac/src/tx.rs TxSlot
-owner driver/adapters/embassy/esp32s31-wifi/src/embassy_rx.rs await_staged_rx_reload
+owner driver/chips/esp32s31/wifi/dma/src/rx_ring.rs complete_pending_reload
+owner driver/adapters/embassy/esp32s31-wifi/src/embassy_rx.rs complete_staged_rx_reload
 owner driver/adapters/embassy/esp32s31-wifi/src/connected_runner.rs ConnectedRunner
 owner driver/adapters/embassy/esp32s31-wifi/src/aggregate_tx.rs Esp32s31ConnectedTx
 owner driver/adapters/embassy/esp32s31-wifi/src/connected_sta_port.rs Esp32s31ConnectedStaPort
@@ -88,6 +89,7 @@ owner driver/adapters/embassy/esp32s31-wifi/src/rx_dma_service.rs Esp32s31Prepar
 owner driver/adapters/embassy/esp32s31-wifi/src/rx_reorder.rs RxReorderFrameStorage
 owner driver/chips/esp32s31/wifi/sta/src/tx_epoch.rs Esp32s31StaTxEpoch
 test driver/chips/esp32s31/wifi/mac/tests/mac.rs staged_rx_frame_remains_private_until_reload_settles
+test driver/adapters/embassy/esp32s31-wifi/src/embassy_rx.rs completes_pending_reload_without_a_scheduling_boundary
 test driver/chips/esp32s31/wifi/dma/src/rx_storage.rs arena_initializes_in_its_final_location_and_recycles_one_buffer
 test driver/chips/esp32s31/wifi/mac/tests/mac.rs staged_rx_metadata_decodes_only_instruction_proved_s31_fields
 test driver/chips/esp32s31/wifi/mac/tests/mac.rs normalized_ht_rx_metadata_uses_the_direct_ht_sig_aggregation_bit
@@ -192,21 +194,17 @@ gap vendor supplicant-contract-not-executable
 
 capability async-deadlines
 title Bounded asynchronous hardware deadlines
-scope Production PHY I2C PBus IQ-estimator RX reload and protocol waits contain no CPU spin
+scope Production PHY I2C PBus IQ-estimator and protocol waits contain no CPU spin
 implementation complete
 host-proof covered
 hil-proof qualified
 async-proof bounded
 owner driver/chips/esp32s31/phy/src/target_executor.rs complete_final_i2c
-owner driver/adapters/embassy/esp32s31-wifi/src/embassy_rx.rs await_staged_rx_reload
 owner driver/wifi/wpa2/src/retry.rs Wpa2Retry
 test driver/chips/esp32s31/phy/src/phy_cold.rs open_i2c_deadline_keeps_one_epoch_and_the_inclusive_rom_bound
-test driver/adapters/embassy/esp32s31-wifi/src/embassy_rx.rs awaits_once_for_every_pending_reload_observation
 test driver/wifi/wpa2/src/retry.rs each_alarm_edge_emits_at_most_one_bounded_retransmission
 vendor-root rom phy_iq_est_enable
-vendor-anchor verification/vendor/targets/esp32s31/registers/evidence/vendor-rom.toml wDev_AppendRxBlocks
 hil-evidence qualification/targets/esp32s31/records/2026-07-31-driver-repo-he20-bidirectional.md HIL_OPEN_HE20_DRIVER_REPO_BIDIRECTIONAL_2026_07_31
-hil-evidence qualification/targets/esp32s31/records/2026-08-10-esp32s31-rx-delivery-frontier.md HIL_ESP32S31_RX_DELIVERY_FRONTIER_2026_08_10
 gap vendor iq-estimator-and-remaining-wait-contracts-not-bound
 
 capability radio-cold-start

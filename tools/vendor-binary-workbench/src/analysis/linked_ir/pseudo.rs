@@ -329,7 +329,7 @@ pub(super) struct RenderState {
 }
 
 impl RenderState {
-    fn with_context(resolver: Option<&ReferenceResolver>, calls: &[LinkedCall]) -> Self {
+    pub(super) fn with_context(resolver: Option<&ReferenceResolver>, calls: &[LinkedCall]) -> Self {
         let mut call_names = BTreeMap::new();
         for call in calls.iter().filter(|call| {
             !call.kind.contains("unresolved")
@@ -341,10 +341,19 @@ impl RenderState {
             };
             match call_names.entry(site) {
                 std::collections::btree_map::Entry::Vacant(entry) => {
-                    entry.insert(Some(call.target.clone()));
+                    entry.insert(Some(
+                        call.semantic_operation
+                            .clone()
+                            .unwrap_or_else(|| call.target.clone()),
+                    ));
                 }
                 std::collections::btree_map::Entry::Occupied(mut entry)
-                    if entry.get().as_deref() != Some(call.target.as_str()) =>
+                    if entry.get().as_deref()
+                        != Some(
+                            call.semantic_operation
+                                .as_deref()
+                                .unwrap_or(call.target.as_str()),
+                        ) =>
                 {
                     entry.insert(None);
                 }

@@ -15,6 +15,7 @@ static LINK_UNIT_DELAY_ARGUMENTS: [crate::ExternalArgumentSpec; 1] =
 static LINK_UNIT_DELAY_SEMANTIC: crate::DirectSemanticFunctionSpec =
     crate::DirectSemanticFunctionSpec {
         id: "test-link-unit-delay",
+        source: "test-addon",
         c_name: "ets_delay_us",
         argument_count: 1,
         return_model: crate::ExternalReturnModel::Unmodeled,
@@ -27,6 +28,39 @@ static LINK_UNIT_DELAY_SEMANTIC: crate::DirectSemanticFunctionSpec =
         },
         evidence: "authoritative-link-unit-relocation-symbol",
     };
+
+static C_MEMCPY_ARGUMENTS: [crate::ExternalArgumentSpec; 3] = [
+    crate::ExternalArgumentSpec {
+        name: "destination",
+        c_type: "void *",
+        direction: crate::ExternalArgumentDirection::Output,
+    },
+    crate::ExternalArgumentSpec {
+        name: "source",
+        c_type: "const void *",
+        direction: crate::ExternalArgumentDirection::Input,
+    },
+    crate::ExternalArgumentSpec {
+        name: "length",
+        c_type: "size_t",
+        direction: crate::ExternalArgumentDirection::Input,
+    },
+];
+static C_MEMCPY_SEMANTIC: crate::DirectSemanticFunctionSpec = crate::DirectSemanticFunctionSpec {
+    id: "test-c-standard-memcpy",
+    source: "test-c-addon",
+    c_name: "memcpy",
+    argument_count: 3,
+    return_model: crate::ExternalReturnModel::Unmodeled,
+    semantic: crate::ExternalSemanticSpec {
+        operation: "memory.copy",
+        arguments: &C_MEMCPY_ARGUMENTS,
+        return_type: "void *",
+        replacement: None,
+        event_dispatch: None,
+    },
+    evidence: "exact public symbol identity and standardized C function contract",
+};
 
 #[test]
 fn authoritative_link_unit_symbol_names_and_types_a_direct_external_call() {
@@ -47,7 +81,7 @@ fn authoritative_link_unit_symbol_names_and_types_a_direct_external_call() {
             (name == "ets_delay_us").then_some(&LINK_UNIT_DELAY_SEMANTIC)
         },
         reference_intrinsic: |_, _, _| None,
-        standard_memory_intrinsic: |_, _| None,
+        standard_memory_function: |_| None,
         wide_signed_divide: |_, _| None,
     }));
     let mut resolver = empty_resolver();
@@ -107,7 +141,7 @@ fn unique_archive_origin_can_name_a_relaxed_internal_definition() {
         direct_semantic: |_| None,
         direct_external_semantic: |_| None,
         reference_intrinsic: |_, _, _| None,
-        standard_memory_intrinsic: |_, _| None,
+        standard_memory_function: |_| None,
         wide_signed_divide: |_, _| None,
     }));
     let mut resolver = empty_resolver();
@@ -501,7 +535,7 @@ fn external_call_keeps_reviewed_table_slot_semantics() {
 
     collect_call_event(&event, &resolver, &identities, &mut calls);
     render_event(&event, &mut pseudo, 1, &mut RenderState::default());
-    let call = calls.into_iter().next().unwrap();
+    let call = calls.iter().next().unwrap();
 
     assert_eq!(call.kind, "reviewed-external");
     assert_eq!(call.site, Some(0x40));
@@ -547,6 +581,71 @@ fn external_call_keeps_reviewed_table_slot_semantics() {
         ),
         "{:?}",
         call.semantics
+    );
+}
+
+#[test]
+fn standard_memory_call_is_a_semantic_boundary_independent_of_its_body() {
+    let event = DraftReferenceEvent::Call {
+        token: 0,
+        site: 0x40,
+        target: 0x2000,
+        arguments: vec![
+            SymbolicValue::input(0),
+            SymbolicValue::input(1),
+            SymbolicValue::Constant(16),
+        ]
+        .into_boxed_slice(),
+    };
+    let owner = symbol("caller", 0x1000, vec![0x67, 0x80, 0x00, 0x00]);
+    let runtime = symbol("memcpy", 0x2000, vec![0x73, 0x00, 0x10, 0x00]);
+    let hooks = Box::leak(Box::new(crate::RiscvSummaryHooks {
+        secondary_return_target: |_| false,
+        direct_semantic: |symbol| (symbol.name == "memcpy").then_some(&C_MEMCPY_SEMANTIC),
+        direct_external_semantic: |name| (name == "memcpy").then_some(&C_MEMCPY_SEMANTIC),
+        reference_intrinsic: |_, _, _| None,
+        standard_memory_function: |_| None,
+        wide_signed_divide: |_, _| None,
+    }));
+    let mut resolver = empty_resolver();
+    resolver.symbols.push(runtime.clone());
+    resolver.symbols_by_address.insert(0x2000, runtime);
+    resolver.pointer_context.summary_hooks = Some(hooks);
+    let identities = IrIdentityCatalog::new(&resolver, None);
+    let mut calls = BTreeSet::new();
+
+    collect_call_event(&event, &resolver, &identities, &mut calls);
+    let mut calls = calls.into_iter().collect::<Vec<_>>();
+    annotate_direct_semantic_calls(&mut calls, &owner, &resolver, &identities);
+
+    let call = calls.first().unwrap();
+    assert_eq!(call.semantic_operation.as_deref(), Some("memory.copy"));
+    assert_eq!(
+        call.semantic_contract.as_ref(),
+        Some(&LinkedSemanticContract {
+            source: "test-c-addon",
+            id: "test-c-standard-memcpy".to_owned(),
+            evidence: "exact public symbol identity and standardized C function contract"
+                .to_owned(),
+            event_dispatch: None,
+        })
+    );
+    assert!(
+        call.semantics
+            .as_deref()
+            .unwrap()
+            .contains("reviewed direct semantic function=memcpy")
+    );
+    let mut pseudo = String::new();
+    render_event(
+        &event,
+        &mut pseudo,
+        1,
+        &mut RenderState::with_context(None, std::slice::from_ref(call)),
+    );
+    assert!(
+        pseudo.contains("memory_copy(arg0, arg1, 0x00000010)"),
+        "{pseudo}"
     );
 }
 

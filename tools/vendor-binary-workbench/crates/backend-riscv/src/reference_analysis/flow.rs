@@ -29,6 +29,7 @@ fn event_preview(event: Option<&DraftReferenceEvent>) -> String {
 pub(super) struct ExploredReferenceFlow {
     pub(super) flow: DraftReferenceFlow,
     pub(super) incomplete_effects: Vec<String>,
+    pub(super) reference_dependencies: Vec<String>,
     pub(super) located_events: Vec<LocatedObservableEvent>,
     pub(super) located_reference_events: Vec<LocatedReferenceEvent>,
 }
@@ -139,11 +140,9 @@ fn build_reference_flow(
 
 pub(super) fn explore_reference_flow(
     symbol: &artifact::ArtifactSymbolDefinition,
-    svd: &MmioMap,
-    relocated_calls: &StructuralRelocatedCalls,
-    pointer_context: &StructuralPointerContext,
+    context: &ReferenceCalleeContext<'_>,
     specialized_arguments: Option<&Rv32CallArguments>,
-    budget: StructuralTraceBudget,
+    visiting: &mut BTreeSet<u32>,
 ) -> std::result::Result<ExploredReferenceFlow, String> {
     let max_complete_paths = 64;
     let max_explored_states = max_complete_paths * 2 - 1;
@@ -152,7 +151,9 @@ pub(super) fn explore_reference_flow(
     let mut queue = VecDeque::from([BTreeMap::<u32, bool>::new()]);
     let mut queued = BTreeSet::from([BTreeMap::<u32, bool>::new()]);
     let mut paths = Vec::new();
+    let mut normalized_paths = Vec::new();
     let mut incomplete_effects = BTreeSet::new();
+    let mut normalized_dependencies = BTreeSet::new();
     let mut located_events = Vec::new();
     let mut located_reference_events = Vec::new();
     let mut explored_states = 0usize;
@@ -166,12 +167,12 @@ pub(super) fn explore_reference_flow(
         }
         let trace = trace_binary_symbol_with_branches_bounded(
             symbol,
-            svd,
-            relocated_calls,
-            pointer_context,
+            context.svd,
+            context.relocated_calls,
+            context.pointer_context,
             specialized_arguments,
             &forced_branches,
-            budget,
+            context.budget,
         )
         .map_err(|error| error.to_string())?;
 
@@ -305,19 +306,64 @@ pub(super) fn explore_reference_flow(
                 .filter(|blocker| preserves_partial_reference_flow(blocker))
                 .cloned(),
         );
-        for event in trace.located_events {
-            if !located_events.contains(&event) {
-                located_events.push(event);
+        for event in &trace.located_events {
+            if !located_events.contains(event) {
+                located_events.push(event.clone());
             }
         }
-        for event in trace.located_reference_events {
-            if !located_reference_events.contains(&event) {
-                located_reference_events.push(event);
+        for event in &trace.located_reference_events {
+            if !located_reference_events.contains(event) {
+                located_reference_events.push(event.clone());
             }
         }
+        // A complete forced path is straight-line even when the source
+        // function is not. Resolve its calls and private stack before merging
+        // paths back into a structured CFG. This keeps stack state path-local
+        // and avoids either sharing mutations across branches or rejecting a
+        // safe memory intrinsic merely because its caller has a branch.
+        let uncomposed = trace.clone();
+        let normalized = if typed_calls != 0
+            || trace.reference_events.iter().any(|event| {
+                matches!(
+                    event,
+                    DraftReferenceEvent::PrivateStackLoad { .. }
+                        | DraftReferenceEvent::PrivateStackStore { .. }
+                )
+            }) {
+            match flatten_reference_trace(trace, context, specialized_arguments, visiting) {
+                Ok(composed) => {
+                    if let Some(blocker) = composed.reference_blockers.iter().find(|blocker| {
+                        blocker.starts_with("call-summary-flattening: ")
+                            || blocker.starts_with("call-return-flattening: ")
+                    }) {
+                        incomplete_effects.insert(format!(
+                            "path-local-composition: {blocker}; retained uncomposed path evidence"
+                        ));
+                        None
+                    } else {
+                        Some(composed)
+                    }
+                }
+                Err(error) => {
+                    incomplete_effects.insert(format!(
+                        "path-local-composition: {error}; retained uncomposed path evidence"
+                    ));
+                    None
+                }
+            }
+        } else {
+            Some(trace)
+        };
+        normalized_paths.push(normalized.map(|trace| {
+            normalized_dependencies.extend(trace.reference_dependencies.iter().cloned());
+            ReferencePath {
+                events: trace.reference_events.into(),
+                return_value: trace.return_value,
+            }
+        }));
         paths.push(ReferencePath {
-            events: trace.reference_events.into(),
-            return_value: trace.return_value,
+            events: uncomposed.reference_events.into(),
+            return_value: uncomposed.return_value,
         });
         if paths.len() > max_complete_paths {
             return Err(format!(
@@ -326,9 +372,20 @@ pub(super) fn explore_reference_flow(
         }
     }
 
+    let all_paths_normalized = normalized_paths.iter().all(Option::is_some);
+    let paths = if all_paths_normalized {
+        normalized_paths.into_iter().flatten().collect()
+    } else {
+        paths
+    };
     Ok(ExploredReferenceFlow {
         flow: build_reference_flow(paths)?,
         incomplete_effects: incomplete_effects.into_iter().collect(),
+        reference_dependencies: if all_paths_normalized {
+            normalized_dependencies.into_iter().collect()
+        } else {
+            Vec::new()
+        },
         located_events,
         located_reference_events,
     })
@@ -351,10 +408,11 @@ pub(super) fn resolve_reference_callee(
         .symbols_by_address
         .get(&target)
         .ok_or_else(|| format!("unresolved-call at {site:#010x} to {target:#010x}"))?;
-    if let Some(trace) = context
+    if let Some(function) = context
         .pointer_context
         .summary_hooks
-        .and_then(|hooks| (hooks.standard_memory_intrinsic)(callee, arguments))
+        .and_then(|hooks| (hooks.standard_memory_function)(&callee.name))
+        && let Some(trace) = standard_memory_intrinsic_trace(function, callee, arguments)
     {
         return trace.map(|trace| (callee.name.clone(), trace));
     }

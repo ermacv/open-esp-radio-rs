@@ -6,6 +6,7 @@
 
 mod ir;
 mod mmio;
+mod standard_runtime;
 
 pub use ir::*;
 pub use mmio::{
@@ -13,6 +14,7 @@ pub use mmio::{
     RegisterCatalog, reject_register_collisions,
 };
 pub use open_radio_vendor_contracts::*;
+pub use standard_runtime::StandardMemoryFunction;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {

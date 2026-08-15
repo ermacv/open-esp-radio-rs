@@ -117,21 +117,21 @@ claim = "whole-function-equivalence"
 
 [[surfaces.effects]]
 id = "interface-address"
-vendor = { source = "libpp", symbol = "hal_mac_set_addr", fingerprint = "sha256:182bd6b7d4d842a5376d56a7125e45d60316f409149c4228fdc908bd933f1c3d" }
+vendor = { source = "libpp", symbol = "hal_mac_set_addr", fingerprint = "sha256:a98017dee2a7e176a6488b7125e3adffd7d67a9a37287cc17cff718be84e018f" }
 disposition = "verified"
 requirement = "interface-address-transaction"
 rationale = "Concrete execution covers both role selectors and preserves the vendor pointer ABI and low/high/enable ordering."
 
 [[surfaces.effects]]
 id = "interface-bssid"
-vendor = { source = "libpp", symbol = "hal_mac_set_bssid", fingerprint = "sha256:4577cb89cd8fc751c8ee04ebbc378961ddc30f97c5d39a8857a94683a3006c42" }
+vendor = { source = "libpp", symbol = "hal_mac_set_bssid", fingerprint = "sha256:8bb654c167b69db91b5d5170216108f2c653d788b48b1933868b97baf1605781" }
 disposition = "verified"
 requirement = "interface-bssid-transaction"
 rationale = "Concrete execution covers both role selectors and preserves unrelated policy bits across four fresh MMIO edges."
 
 [[surfaces.effects]]
 id = "interface-bssid-clear"
-vendor = { source = "libpp", symbol = "hal_mac_clr_bssid", fingerprint = "sha256:830098d5183bc91ab6f26153dad37f461d3242f6093012ac563c88df5eeba55d" }
+vendor = { source = "libpp", symbol = "hal_mac_clr_bssid", fingerprint = "sha256:567366f1b5c129f7d1dbdc916331be6096cff472d14b5b78dfd05e68cbe4d5b7" }
 disposition = "excluded-by-policy"
 rationale = "Clearing a BSSID belongs to role teardown and is outside the identity-publication contract."
 
@@ -187,14 +187,14 @@ claim = "whole-function-equivalence"
 
 [[surfaces.effects]]
 id = "coex-timer-enable"
-vendor = { source = "coex", symbol = "coex_hw_timer_enable", fingerprint = "sha256:5fec0e19acf5cb461e29227ad300db8a784d7626647424bf024ae4223f59251d" }
+vendor = { source = "coex", symbol = "coex_hw_timer_enable", fingerprint = "sha256:a9276c94ef03c4c038cbd7b6b63a6a77d8ae50d5a99a0f74788ea76461e79301" }
 disposition = "verified"
 requirement = "coex-timer-enable-transaction"
 rationale = "The closed PAC preserves both vendor enable edges across the full five-entry bank."
 
 [[surfaces.effects]]
 id = "coex-timer-disable"
-vendor = { source = "coex", symbol = "coex_hw_timer_disable", fingerprint = "sha256:72385ca1da8ce0a4abed17327506dcc2b309f3066a818e18d2a2d2fafe491418" }
+vendor = { source = "coex", symbol = "coex_hw_timer_disable", fingerprint = "sha256:24274fc890ac2e74082e299768b253c105637ec8d32898fa6e36b4f55f52a006" }
 disposition = "verified"
 requirement = "coex-timer-disable-transaction"
 rationale = "The closed PAC preserves both vendor disable edges across the full five-entry bank."

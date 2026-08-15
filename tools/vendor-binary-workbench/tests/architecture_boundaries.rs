@@ -170,6 +170,8 @@ fn generic_manifest_has_no_platform_provider_dependency() {
         .expect("read workbench manifest");
     assert!(!manifest.contains("harness-esp32s31"));
     for dependency in [
+        "open-radio-vendor-addon-c",
+        "open-radio-vendor-addon-esp-idf",
         "open-radio-vendor-harness-esp32s31",
         "open-radio-vendor-knowledge-esp32s31",
         "open-radio-vendor-verification-esp32s31",

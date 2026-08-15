@@ -311,9 +311,13 @@ pub(super) fn apply_relocated_call(
     };
 
     let intrinsic_event_start = state.reference_events.len();
+    let standard_memory_function = pointer_context
+        .summary_hooks
+        .and_then(|hooks| (hooks.standard_memory_function)(name));
     if target.is_none()
+        && let Some(function) = standard_memory_function
         && let Some(result) = inline_standard_memory_intrinsic(
-            name,
+            function,
             &core::array::from_fn(|index| {
                 if index < RV32_REGISTER_ARGUMENT_COUNT {
                     state.values[10 + index].clone()

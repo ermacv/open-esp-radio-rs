@@ -2,7 +2,7 @@
 
 use open_radio_vendor_analysis_model::{
     DirectSemanticFunctionSpec, EntryContractRef, EntryContractSpec, FunctionAnalysis,
-    KnowledgeContractSpec, MmioMap, SymbolicValue,
+    KnowledgeContractSpec, MmioMap, StandardMemoryFunction, SymbolicValue,
 };
 use open_radio_vendor_backend_riscv::{
     RiscvHarnessSpec, RiscvSummaryHooks, Rv32CallArguments, StructuralPointerContext, artifact,
@@ -45,10 +45,7 @@ fn no_reference_intrinsic(
     None
 }
 
-fn no_standard_memory_intrinsic(
-    _symbol: &artifact::ArtifactSymbolDefinition,
-    _arguments: &Rv32CallArguments,
-) -> Option<std::result::Result<FunctionAnalysis, String>> {
+fn no_standard_memory_function(_symbol: &str) -> Option<StandardMemoryFunction> {
     None
 }
 
@@ -64,7 +61,7 @@ static SUMMARIES: RiscvSummaryHooks = RiscvSummaryHooks {
     direct_semantic: no_direct_semantic,
     direct_external_semantic: no_direct_external_semantic,
     reference_intrinsic: no_reference_intrinsic,
-    standard_memory_intrinsic: no_standard_memory_intrinsic,
+    standard_memory_function: no_standard_memory_function,
     wide_signed_divide: no_wide_signed_divide,
 };
 

@@ -134,6 +134,9 @@ pub struct ExternalSemanticSpec {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct DirectSemanticFunctionSpec {
     pub id: &'static str,
+    /// Owning add-on or reviewed-knowledge layer. Generic analysis carries
+    /// this provenance verbatim and must not relabel it as generic truth.
+    pub source: &'static str,
     pub c_name: &'static str,
     pub argument_count: u8,
     /// Executable result model for an external boundary. Internal reviewed

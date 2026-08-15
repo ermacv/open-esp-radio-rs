@@ -3,6 +3,7 @@
 mod flatten;
 mod flow;
 mod inline;
+mod intrinsics;
 mod resolver;
 use flatten::flatten_reference_trace;
 use flow::{
@@ -10,6 +11,7 @@ use flow::{
     resolve_reference_callee, trace_into_reference_flow,
 };
 pub use inline::inline_reference_summary;
+use intrinsics::standard_memory_intrinsic_trace;
 pub use resolver::{ReferenceResolver, ReferenceSymbolKey};
 
 use std::{
@@ -121,15 +123,13 @@ fn resolve_reference_trace_with_budget(
         )
     });
     if trace.unresolved_branch.is_some() {
-        match explore_reference_flow(
-            symbol,
-            context.svd,
-            context.relocated_calls,
-            context.pointer_context,
-            specialized_arguments,
-            context.budget,
-        ) {
+        match explore_reference_flow(symbol, context, specialized_arguments, visiting) {
             Ok(explored) => {
+                trace
+                    .reference_dependencies
+                    .extend(explored.reference_dependencies.iter().cloned());
+                trace.reference_dependencies.sort();
+                trace.reference_dependencies.dedup();
                 let uncomposed_flow = explored.flow.clone();
                 let mut incomplete_effects = explored.incomplete_effects;
                 let composed = compose_calls_in_reference_flow(

@@ -294,6 +294,32 @@ pub(super) fn flatten_reference_trace(
                 output.push(event.clone());
                 Ok(())
             }
+            DraftReferenceEvent::BranchDecision { condition, taken } => (|| {
+                let left = condition.left.rewrite_call_context(
+                    &read_tokens,
+                    &memory_read_tokens,
+                    &external_tokens,
+                    &call_results,
+                    &private_stack_reads,
+                )?;
+                let right = condition.right.rewrite_call_context(
+                    &read_tokens,
+                    &memory_read_tokens,
+                    &external_tokens,
+                    &call_results,
+                    &private_stack_reads,
+                )?;
+                output.push(DraftReferenceEvent::BranchDecision {
+                    condition: crate::BranchCondition {
+                        site: condition.site,
+                        operation: condition.operation,
+                        left,
+                        right,
+                    },
+                    taken: *taken,
+                });
+                Ok(())
+            })(),
             DraftReferenceEvent::ReviewedExternalCall {
                 token,
                 site,

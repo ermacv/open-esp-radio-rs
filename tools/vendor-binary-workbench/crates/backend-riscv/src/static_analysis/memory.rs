@@ -298,16 +298,14 @@ pub(super) fn memory_intrinsic_store_byte(
 }
 
 pub(super) fn inline_standard_memory_intrinsic(
-    name: &str,
+    function: StandardMemoryFunction,
     arguments: &Rv32CallArguments,
     symbol: &artifact::ArtifactSymbolDefinition,
     stack: &mut SymbolicStack,
     reference_events: &mut Vec<DraftReferenceEvent>,
     next_memory_read_token: &mut u32,
 ) -> Option<std::result::Result<SymbolicValue, String>> {
-    if !matches!(name, "memcpy" | "memset") {
-        return None;
-    }
+    let name = function.contract_id();
     let result = (|| {
         let length = arguments[2]
             .as_constant()
@@ -318,8 +316,8 @@ pub(super) fn inline_standard_memory_intrinsic(
             ));
         }
         let destination = arguments[0].clone();
-        match name {
-            "memcpy" => {
+        match function {
+            StandardMemoryFunction::Copy | StandardMemoryFunction::Move => {
                 let mut bytes = Vec::with_capacity(length as usize);
                 for offset in 0..length {
                     bytes.push(memory_intrinsic_load_byte(
@@ -340,7 +338,7 @@ pub(super) fn inline_standard_memory_intrinsic(
                     )?;
                 }
             }
-            "memset" => {
+            StandardMemoryFunction::Set => {
                 let byte = arguments[1].clone().and(0xff);
                 for offset in 0..length {
                     memory_intrinsic_store_byte(
@@ -352,7 +350,6 @@ pub(super) fn inline_standard_memory_intrinsic(
                     )?;
                 }
             }
-            _ => unreachable!(),
         }
         Ok(destination)
     })();

@@ -9,6 +9,8 @@ publish = false
 description = "ESP32-S31 reviewed vendor-code knowledge without production-driver dependencies"
 
 [dependencies]
+open-radio-vendor-addon-c = { path = "../../../../../../tools/vendor-binary-workbench/addons/c" }
+open-radio-vendor-addon-esp-idf = { path = "../../../../../../tools/vendor-binary-workbench/addons/esp-idf" }
 open-radio-vendor-backend-riscv = { path = "../../../../../../tools/vendor-binary-workbench/crates/backend-riscv" }
 open-radio-vendor-execution-model = { path = "../../../../../../tools/vendor-binary-workbench/crates/execution-model" }
 open-radio-vendor-harness-esp32s31 = { path = "../contracts" }

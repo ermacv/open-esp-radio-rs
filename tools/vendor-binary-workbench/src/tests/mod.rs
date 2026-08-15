@@ -197,11 +197,16 @@ fn test_reference_intrinsic(
     })
 }
 
-fn no_test_memory_intrinsic(
-    _symbol: &artifact::ArtifactSymbolDefinition,
-    _arguments: &Rv32CallArguments,
-) -> Option<std::result::Result<FunctionAnalysis, String>> {
-    None
+fn test_standard_memory_function(
+    symbol: &str,
+) -> Option<open_radio_vendor_analysis_model::StandardMemoryFunction> {
+    use open_radio_vendor_analysis_model::StandardMemoryFunction;
+    match symbol {
+        "memcpy" => Some(StandardMemoryFunction::Copy),
+        "memmove" => Some(StandardMemoryFunction::Move),
+        "memset" => Some(StandardMemoryFunction::Set),
+        _ => None,
+    }
 }
 
 fn no_test_direct_semantic(
@@ -220,6 +225,7 @@ fn test_direct_external_semantic(symbol: &str) -> Option<&'static DirectSemantic
 
 static TEST_DELAY_DIRECT_SEMANTIC: DirectSemanticFunctionSpec = DirectSemanticFunctionSpec {
     id: "test-linked-ets-delay-us",
+    source: "test-addon",
     c_name: "ets_delay_us",
     argument_count: 1,
     return_model: ExternalReturnModel::Unmodeled,
@@ -239,6 +245,7 @@ static TEST_DELAY_DIRECT_SEMANTIC: DirectSemanticFunctionSpec = DirectSemanticFu
 
 static TEST_XTAL_DIRECT_SEMANTIC: DirectSemanticFunctionSpec = DirectSemanticFunctionSpec {
     id: "test-fixed-xtal-frequency",
+    source: "test-chip-addon",
     c_name: "rtc_clk_xtal_freq_get",
     argument_count: 0,
     return_model: ExternalReturnModel::Constant(40),
@@ -264,7 +271,7 @@ static TEST_SUMMARIES: RiscvSummaryHooks = RiscvSummaryHooks {
     direct_semantic: no_test_direct_semantic,
     direct_external_semantic: test_direct_external_semantic,
     reference_intrinsic: test_reference_intrinsic,
-    standard_memory_intrinsic: no_test_memory_intrinsic,
+    standard_memory_function: test_standard_memory_function,
     wide_signed_divide: no_test_wide_divide,
 };
 static TEST_RISCV_HARNESS: RiscvHarnessSpec = RiscvHarnessSpec {

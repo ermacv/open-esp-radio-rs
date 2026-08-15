@@ -424,7 +424,7 @@ fn partial_cfg_keeps_branch_evidence_across_unsupported_floating_arithmetic() {
 }
 
 #[test]
-fn structured_cfg_normalizes_common_stack_spills_before_path_specific_loads() {
+fn structured_cfg_resolves_common_stack_spills_on_each_complete_path() {
     let parent = artifact::ArtifactSymbolDefinition {
         member: None,
         name: "stack_spill_branch".to_owned(),
@@ -456,26 +456,91 @@ fn structured_cfg_normalizes_common_stack_spills_before_path_specific_loads() {
     )
     .unwrap();
 
-    assert!(!trace.is_reference_eligible(), "{trace:#?}");
-    assert!(
-        trace
-            .reference_blockers
-            .iter()
-            .any(|blocker| blocker.contains("composed call result")),
-        "{trace:#?}"
-    );
+    assert!(trace.is_reference_eligible(), "{trace:#?}");
     let flow = trace.reference_flow.as_ref().expect("structured branch");
-    assert!(matches!(
-        flow.events.first(),
-        Some(DraftReferenceEvent::PrivateStackStore {
-            offset: -4,
-            width: 32,
-            ..
-        })
-    ));
+    assert!(flow.events.is_empty(), "{flow:#?}");
     assert!(matches!(
         flow.terminator,
         DraftReferenceTerminator::Branch { .. }
+    ));
+}
+
+#[test]
+fn structured_cfg_composes_private_stack_memset_on_only_one_path() {
+    let parent = artifact::ArtifactSymbolDefinition {
+        member: Some("branch.o".to_owned()),
+        name: "branch_with_stack_fill".to_owned(),
+        address: 0x1000,
+        bytes: [
+            0xff01_0113, // addi sp, sp, -16
+            0x0205_0263, // beq a0, zero, 0x1028
+            0x0001_0513, // mv a0, sp
+            0x05a0_0593, // li a1, 0x5a
+            0x0040_0613, // li a2, 4
+            0x0000_0317, // auipc t1, 0
+            0x0003_00e7, // jalr ra, 0(t1), relocated memset
+            0x0001_2683, // lw a3, 0(sp), initialized only on this path
+            0x0070_0513, // li a0, 7
+            0x0000_8067, // ret
+            0x0080_0513, // li a0, 8
+            0x0000_8067, // ret
+        ]
+        .into_iter()
+        .flat_map(u32::to_le_bytes)
+        .collect(),
+        addresses_resolved: false,
+        memory_regions: Default::default(),
+        relocations: Vec::new(),
+    };
+    let relocations = BTreeMap::from([(
+        StructuralCallSite::new(&parent, 0x1014),
+        ("memset".to_owned(), Some(0x2000)),
+    )]);
+    let memset = artifact::ArtifactSymbolDefinition {
+        member: Some("runtime.o".to_owned()),
+        name: "memset".to_owned(),
+        address: 0x2000,
+        // The standard ABI contract, not this deliberately unsupported body,
+        // owns the call behavior.
+        bytes: vec![0x73, 0x00, 0x10, 0x00],
+        addresses_resolved: true,
+        memory_regions: Default::default(),
+        relocations: Vec::new(),
+    };
+    let symbols = BTreeMap::from([(0x2000, memset)]);
+
+    let pointer_context = synthetic_delay_pointer_context();
+    let trace = resolve_reference_trace(
+        &parent,
+        &symbols,
+        &relocations,
+        &pointer_context,
+        None,
+        &map(),
+        &mut BTreeSet::from([0x1000]),
+    )
+    .unwrap();
+
+    assert!(trace.is_reference_eligible(), "{trace:#?}");
+    let DraftReferenceTerminator::Branch {
+        taken, not_taken, ..
+    } = &trace
+        .reference_flow
+        .as_ref()
+        .expect("structured branch")
+        .terminator
+    else {
+        panic!("expected branch: {trace:#?}");
+    };
+    assert!(taken.events.is_empty(), "{taken:#?}");
+    assert!(not_taken.events.is_empty(), "{not_taken:#?}");
+    assert!(matches!(
+        taken.terminator,
+        DraftReferenceTerminator::Return(SymbolicValue::Constant(8))
+    ));
+    assert!(matches!(
+        not_taken.terminator,
+        DraftReferenceTerminator::Return(SymbolicValue::Constant(7))
     ));
 }
 

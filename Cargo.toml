@@ -35,6 +35,8 @@ members = [
     "verification/vendor/targets/esp32s31/workbench-provider/knowledge",
     "tools/vendor-binary-workbench/crates/analysis-model",
     "tools/vendor-binary-workbench/crates/semantics",
+    "tools/vendor-binary-workbench/addons/c",
+    "tools/vendor-binary-workbench/addons/esp-idf",
     "verification/vendor/targets/esp32s31/workbench-host",
 ]
 exclude = [

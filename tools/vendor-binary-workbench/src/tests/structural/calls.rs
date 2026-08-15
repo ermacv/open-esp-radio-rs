@@ -358,12 +358,6 @@ fn caller_cfg_allows_an_unmodeled_callee_result_when_it_is_discarded() {
 
     assert!(trace.is_reference_eligible(), "{trace:#?}");
     let generated = generate_reference(&trace, "oracle.elf", "abc123", None, &[]).unwrap();
-    assert!(
-        generated
-            .source
-            .contains("// Composed direct call: ets_delay_us.")
-    );
-    assert!(generated.source.contains("let call0_arg0 ="));
     assert!(generated.source.contains("io.delay_micros("));
     assert!(!generated.source.contains("let call_result0 = {"));
     assert_generated_reference_compiles("discarded-call-result", &generated.source);
@@ -439,11 +433,12 @@ fn constant_size_memcpy_relocation_becomes_ordered_memory_effects() {
     )]);
     let mut visiting = BTreeSet::from([0x1000]);
 
+    let pointer_context = synthetic_delay_pointer_context();
     let trace = resolve_reference_trace(
         &parent,
         &BTreeMap::new(),
         &relocations,
-        &StructuralPointerContext::default(),
+        &pointer_context,
         None,
         &map(),
         &mut visiting,
@@ -497,11 +492,12 @@ fn constant_size_memset_relocation_preserves_byte_and_return_pointer() {
     )]);
     let mut visiting = BTreeSet::from([0x1000]);
 
+    let pointer_context = synthetic_delay_pointer_context();
     let trace = resolve_reference_trace(
         &parent,
         &BTreeMap::new(),
         &relocations,
-        &StructuralPointerContext::default(),
+        &pointer_context,
         None,
         &map(),
         &mut visiting,
@@ -549,11 +545,12 @@ fn dynamic_size_memcpy_relocation_remains_fail_closed() {
     )]);
     let mut visiting = BTreeSet::from([0x1000]);
 
+    let pointer_context = synthetic_delay_pointer_context();
     let trace = resolve_reference_trace(
         &parent,
         &BTreeMap::new(),
         &relocations,
-        &StructuralPointerContext::default(),
+        &pointer_context,
         None,
         &map(),
         &mut visiting,

@@ -16,10 +16,21 @@ mod reviewed_summaries;
 
 const RISCV_SUMMARIES: RiscvSummaryHooks = RiscvSummaryHooks {
     secondary_return_target: |target| target == wide_signed_divide_target_address(),
-    direct_semantic: reviewed_summaries::direct_semantic_function,
-    direct_external_semantic: reviewed_summaries::direct_external_semantic_function,
-    reference_intrinsic: reviewed_summaries::reference_intrinsic_trace,
-    standard_memory_intrinsic: reviewed_summaries::standard_memory_intrinsic_trace,
+    direct_semantic: |symbol| {
+        open_radio_vendor_addon_c::direct_semantic_function(symbol)
+            .or_else(|| open_radio_vendor_addon_esp_idf::direct_semantic_function(symbol))
+            .or_else(|| reviewed_summaries::direct_semantic_function(symbol))
+    },
+    direct_external_semantic: |symbol| {
+        open_radio_vendor_addon_c::direct_external_semantic_function(symbol)
+            .or_else(|| open_radio_vendor_addon_esp_idf::direct_external_semantic_function(symbol))
+            .or_else(|| reviewed_summaries::direct_external_semantic_function(symbol))
+    },
+    reference_intrinsic: |symbol, svd, context| {
+        open_radio_vendor_addon_esp_idf::reference_intrinsic_trace(symbol, svd, context)
+            .or_else(|| reviewed_summaries::reference_intrinsic_trace(symbol, svd, context))
+    },
+    standard_memory_function: open_radio_vendor_addon_c::standard_memory_function,
     wide_signed_divide: reviewed_summaries::wide_signed_divide_intrinsic,
 };
 

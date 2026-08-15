@@ -327,6 +327,12 @@ fn chip_knowledge_cannot_acquire_a_production_or_qualification_dependency() {
         !provider.join("verification").exists(),
         "compiled target code must not own comparison verdicts"
     );
+
+    assert!(
+        knowledge.contains("open-radio-vendor-addon-c")
+            && knowledge.contains("open-radio-vendor-addon-esp-idf"),
+        "the target provider must compose language and ecosystem semantics explicitly"
+    );
 }
 
 #[test]

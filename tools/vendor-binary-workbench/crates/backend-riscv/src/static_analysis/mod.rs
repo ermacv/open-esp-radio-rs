@@ -12,8 +12,8 @@ use crate::{
     LocatedReferenceEvent, MemoryAccess, MemoryObjectLocation, MemoryObjectRoot, MmioMap,
     OPAQUE_POINTER_EXTERNAL_RESULT_TOKEN_FLAG, ObservableEvent, RV32_REGISTER_ARGUMENT_COUNT,
     RV32_STACK_ARGUMENT_COUNT, Result, ReviewedExternalCall, Rv32CallArguments,
-    SECONDARY_CALL_RESULT_TOKEN_FLAG, SymbolicValue, artifact, collect_evaluable_input_bits,
-    encode_fence_set, evaluate_for_input, indexed_mmio_domain,
+    SECONDARY_CALL_RESULT_TOKEN_FLAG, StandardMemoryFunction, SymbolicValue, artifact,
+    collect_evaluable_input_bits, encode_fence_set, evaluate_for_input, indexed_mmio_domain,
 };
 
 mod alu;
@@ -79,10 +79,10 @@ pub struct RiscvSummaryHooks {
         &MmioMap,
         &StructuralPointerContext,
     ) -> Option<FunctionAnalysis>,
-    pub standard_memory_intrinsic: fn(
-        &artifact::ArtifactSymbolDefinition,
-        &Rv32CallArguments,
-    ) -> Option<std::result::Result<FunctionAnalysis, String>>,
+    /// Optional language add-on mapping from an exact public symbol to a
+    /// standardized memory contract. The backend interprets the contract for
+    /// RV32; it never infers one from symbol spelling on its own.
+    pub standard_memory_function: fn(&str) -> Option<StandardMemoryFunction>,
     pub wide_signed_divide: fn(
         &artifact::ArtifactSymbolDefinition,
         &Rv32CallArguments,

@@ -2299,6 +2299,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "open-radio-vendor-addon-c"
+version = "0.1.0"
+dependencies = [
+ "open-radio-vendor-analysis-model",
+ "open-radio-vendor-backend-riscv",
+]
+
+[[package]]
+name = "open-radio-vendor-addon-esp-idf"
+version = "0.1.0"
+dependencies = [
+ "open-radio-vendor-analysis-model",
+ "open-radio-vendor-backend-riscv",
+]
+
+[[package]]
 name = "open-radio-vendor-analysis-model"
 version = "0.1.0"
 dependencies = [
@@ -2385,6 +2401,8 @@ dependencies = [
 name = "open-radio-vendor-knowledge-esp32s31"
 version = "0.1.0"
 dependencies = [
+ "open-radio-vendor-addon-c",
+ "open-radio-vendor-addon-esp-idf",
  "open-radio-vendor-backend-riscv",
  "open-radio-vendor-execution-model",
  "open-radio-vendor-harness-esp32s31",

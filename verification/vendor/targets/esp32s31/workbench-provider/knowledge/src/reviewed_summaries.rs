@@ -19,7 +19,7 @@ use i2c::{
     HOST_ID_SUMMARIES, PHY_CHIP_I2C_READ_REG_ORG_BODY, PHY_CHIP_I2C_WRITE_REG_BODY,
     chip_i2c_read_reg_org_trace, chip_i2c_write_reg_trace, host_id_trace,
 };
-pub(super) use intrinsics::{standard_memory_intrinsic_trace, wide_signed_divide_intrinsic};
+pub(super) use intrinsics::wide_signed_divide_intrinsic;
 use rf::{
     exact_iq_estimator_poll, exact_rf_frequency_offset_scratch_wrapper,
     exact_rfpll_calibration_poll, exact_rfpll_cap_calibration_search, iq_estimator_poll_trace,
@@ -64,24 +64,6 @@ pub(super) fn reference_intrinsic_trace(
 
     if exact_iq_estimator_poll(symbol) {
         return iq_estimator_poll_trace(symbol, svd, pointer_context);
-    }
-
-    if symbol.name == "ets_delay_us" {
-        return Some(FunctionAnalysis {
-            symbol: symbol.name.clone(),
-            events: Vec::new(),
-            located_events: Vec::new(),
-            located_reference_events: Vec::new(),
-            reference_events: vec![DraftReferenceEvent::DelayMicros {
-                micros: SymbolicValue::input(0),
-            }],
-            reference_dependencies: Vec::new(),
-            blockers: Vec::new(),
-            reference_blockers: Vec::new(),
-            return_value: SymbolicValue::Unknown,
-            reference_flow: None,
-            unresolved_branch: None,
-        });
     }
 
     if symbol.name == "phy_chip_i2c_readReg_org"

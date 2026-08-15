@@ -337,7 +337,7 @@ fn annotate_direct_semantic_calls(
                     continue;
                 };
                 let source = if (hooks.direct_semantic)(symbol).is_some() {
-                    "reviewed-internal-function"
+                    function.source
                 } else {
                     "unique-reviewed-archive-origin"
                 };

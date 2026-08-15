@@ -167,6 +167,121 @@ class = "diagnostic"
 summary = "Reports a violated caller precondition through wifi_assert."
 evidence = "Relocated wifi_assert call at runtime PC 0x1001b576."
 
+# LMAC initialization ABI recovered from complete linked and relocatable
+# bodies. These signatures constrain presentation and call arguments; they do
+# not claim that the incomplete rx11AX callee chain is executable or verified.
+[[functions]]
+profile = "libpp-all"
+source = "libpp"
+identity = "libpp::lmacInit"
+status = "reviewed"
+name = "initialize_lmac_defaults"
+role = "wifi.lmac-initialization"
+summary = "Initializes LMAC defaults, the five access categories, the basic-rate mask, and the rate-control arenas in recovered call order."
+accept-incomplete = true
+
+[functions.signature]
+
+[[functions]]
+profile = "libpp-all"
+source = "libpp"
+identity = "libpp::lmacInitAc"
+status = "reviewed"
+name = "initialize_lmac_access_category"
+role = "wifi.lmac-access-category-initialization"
+summary = "Initializes one 56-byte LMAC access-category record before tail-calling the reviewed structural AMPDU-limit update."
+accept-incomplete = true
+
+[functions.signature]
+
+[[functions.signature.arguments]]
+index = 0
+name = "queue"
+abi = "u8"
+role = "queue"
+
+[[functions.signature.arguments]]
+index = 1
+name = "aifsn"
+abi = "u8"
+role = "aifsn"
+
+[[functions.signature.arguments]]
+index = 2
+name = "ecw_min"
+abi = "u8"
+role = "ecw-min"
+
+[[functions.signature.arguments]]
+index = 3
+name = "ecw_max"
+abi = "u8"
+role = "ecw-max"
+
+[[functions.signature.arguments]]
+index = 4
+name = "txop"
+abi = "u16"
+role = "txop"
+
+[[functions]]
+profile = "libpp-all"
+source = "libpp"
+identity = "libpp::RC_SetBasicRate"
+status = "reviewed"
+name = "set_basic_rate_mask"
+role = "wifi.rate-control-basic-rate"
+summary = "Linked vendor stub consumes the two call-site inputs only as ABI context and returns the exact constant zero."
+accept-incomplete = true
+
+[functions.signature]
+return-abi = "u32"
+return-role = "stub-result"
+
+[[functions.signature.arguments]]
+index = 0
+name = "basic_rate_mask"
+abi = "u16"
+role = "basic-rate-mask"
+
+[[functions.signature.arguments]]
+index = 1
+name = "update"
+abi = "bool"
+role = "update"
+
+[[functions]]
+profile = "libpp-all"
+source = "libpp"
+identity = "libpp::rcAttach"
+status = "reviewed"
+name = "attach_rate_control_arenas"
+role = "wifi.rate-control-arena-initialization"
+summary = "Initializes the global rate-control arena indices without consuming caller ABI arguments."
+accept-incomplete = true
+
+[functions.signature]
+
+[[functions]]
+profile = "libpp-all"
+source = "libpp"
+identity = "libpp::get_estimated_batime@0x10018984"
+status = "reviewed"
+name = "estimated_block_ack_time"
+role = "wifi.ampdu-block-ack-time"
+summary = "Maps the recovered selector domain to exact block-ack duration constants 68, 44, or 32."
+accept-incomplete = true
+
+[functions.signature]
+return-abi = "u32"
+return-role = "duration"
+
+[[functions.signature.arguments]]
+index = 0
+name = "selector"
+abi = "u32"
+role = "selector"
+
 # The linked vendor image exports one 508-byte `phy_param` object. This type
 # names only exact machine-level observations that are also classified by the
 # executable semantic harness. It is evidence about the vendor layout, not a

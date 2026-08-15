@@ -77,6 +77,7 @@ pub struct CallEquivalence {
     pub vendor_symbol: String,
     pub rust_symbol: String,
     pub argument_comparison: CallArgumentComparison,
+    pub argument_indices: Vec<u8>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
@@ -84,6 +85,7 @@ pub struct CallEquivalence {
 pub enum CallArgumentComparison {
     Exact,
     Ignore,
+    Selected,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -254,6 +256,8 @@ struct CallEquivalenceInput {
     vendor_symbol: String,
     rust_symbol: String,
     argument_comparison: CallArgumentComparison,
+    #[serde(default)]
+    argument_indices: Vec<u8>,
 }
 
 #[derive(Clone, Copy, Deserialize)]
@@ -456,6 +460,7 @@ impl ProfileInput {
                 vendor_symbol: pair.vendor_symbol,
                 rust_symbol: pair.rust_symbol,
                 argument_comparison: pair.argument_comparison,
+                argument_indices: pair.argument_indices,
             })
             .collect::<Vec<_>>();
         validate_call_equivalences(&self.name, transaction_comparison, &call_equivalences)?;
@@ -588,6 +593,31 @@ fn validate_call_equivalences(
         {
             return Err(crate::Error::invalid(format!(
                 "profile {profile} has an ambiguous call-equivalence mapping"
+            )));
+        }
+        match pair.argument_comparison {
+            CallArgumentComparison::Selected
+                if pair.argument_indices.is_empty()
+                    || pair.argument_indices.iter().any(|index| *index >= 8) =>
+            {
+                return Err(crate::Error::invalid(format!(
+                    "profile {profile} selected call argument comparison requires unique indices in 0..8"
+                )));
+            }
+            CallArgumentComparison::Exact | CallArgumentComparison::Ignore
+                if !pair.argument_indices.is_empty() =>
+            {
+                return Err(crate::Error::invalid(format!(
+                    "profile {profile} call argument indices require selected comparison"
+                )));
+            }
+            _ => {}
+        }
+        if pair.argument_indices.iter().collect::<BTreeSet<_>>().len()
+            != pair.argument_indices.len()
+        {
+            return Err(crate::Error::invalid(format!(
+                "profile {profile} selected call argument indices must be unique"
             )));
         }
     }
@@ -733,5 +763,39 @@ mod schema_tests {
                 Err(error) => error.to_string(),
             };
         assert!(missing_policy.contains("transaction-comparison"));
+    }
+
+    #[test]
+    fn selected_call_arguments_are_explicit_and_abi_bounded() {
+        let pair = |comparison, indices| CallEquivalence {
+            operation: "semantic.operation".to_owned(),
+            vendor_symbol: "vendor_leaf".to_owned(),
+            rust_symbol: "rust_leaf".to_owned(),
+            argument_comparison: comparison,
+            argument_indices: indices,
+        };
+        assert!(
+            validate_call_equivalences(
+                "selected",
+                TransactionComparison::ObservablesAndReviewedCalls,
+                &[pair(CallArgumentComparison::Selected, vec![0, 7])],
+            )
+            .is_ok()
+        );
+        for invalid in [
+            pair(CallArgumentComparison::Selected, Vec::new()),
+            pair(CallArgumentComparison::Selected, vec![8]),
+            pair(CallArgumentComparison::Selected, vec![0, 0]),
+            pair(CallArgumentComparison::Exact, vec![0]),
+        ] {
+            assert!(
+                validate_call_equivalences(
+                    "invalid",
+                    TransactionComparison::ObservablesAndReviewedCalls,
+                    &[invalid],
+                )
+                .is_err()
+            );
+        }
     }
 }

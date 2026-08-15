@@ -514,31 +514,49 @@ pub extern "C" fn open_libpp_tx_retry_trace_rc_get_rate(
 // calls; comparison stops at the selected leaf before executing its body.
 #[unsafe(no_mangle)]
 #[inline(never)]
-pub extern "C" fn open_libpp_tx_retry_ack_timeout() {
+pub extern "C" fn open_libpp_tx_retry_ack_timeout(queue: u32) {
     // SAFETY: an empty volatile assembly block has no machine-visible inputs
     // or outputs and exists only as an optimizer barrier in the probe image.
-    unsafe { core::arch::asm!("addi zero, zero, 1", options(nomem, nostack)) };
+    unsafe {
+        core::arch::asm!(
+            "addi zero, zero, 1",
+            in("a0") queue,
+            options(nomem, nostack)
+        )
+    };
 }
 
 #[unsafe(no_mangle)]
 #[inline(never)]
-pub extern "C" fn open_libpp_tx_retry_cts_timeout() {
+pub extern "C" fn open_libpp_tx_retry_cts_timeout(queue: u32) {
     // SAFETY: see `open_libpp_tx_retry_ack_timeout`.
-    unsafe { core::arch::asm!("addi zero, zero, 2", options(nomem, nostack)) };
+    unsafe {
+        core::arch::asm!(
+            "addi zero, zero, 2",
+            in("a0") queue,
+            options(nomem, nostack)
+        )
+    };
 }
 
 #[unsafe(no_mangle)]
 #[inline(never)]
-pub extern "C" fn open_libpp_tx_retry_collision() {
+pub extern "C" fn open_libpp_tx_retry_collision(queue: u32) {
     // SAFETY: see `open_libpp_tx_retry_ack_timeout`.
-    unsafe { core::arch::asm!("addi zero, zero, 3", options(nomem, nostack)) };
+    unsafe {
+        core::arch::asm!(
+            "addi zero, zero, 3",
+            in("a0") queue,
+            options(nomem, nostack)
+        )
+    };
 }
 
 /// ABI projection around the exact production status-four classifier.
 #[unsafe(no_mangle)]
 #[inline(never)]
 pub extern "C" fn open_libpp_tx_retry_trace_lmac_process_tx_error(
-    _queue: u32,
+    queue: u32,
     detail: u32,
     _selector: u32,
 ) {
@@ -558,9 +576,9 @@ pub extern "C" fn open_libpp_tx_retry_trace_lmac_process_tx_error(
         alternate_word: 0,
     };
     match completion.disposition() {
-        TxCompletionDisposition::AckTimeout => open_libpp_tx_retry_ack_timeout(),
-        TxCompletionDisposition::CtsTimeout => open_libpp_tx_retry_cts_timeout(),
-        TxCompletionDisposition::Collision => open_libpp_tx_retry_collision(),
+        TxCompletionDisposition::AckTimeout => open_libpp_tx_retry_ack_timeout(queue),
+        TxCompletionDisposition::CtsTimeout => open_libpp_tx_retry_cts_timeout(queue),
+        TxCompletionDisposition::Collision => open_libpp_tx_retry_collision(queue),
         TxCompletionDisposition::Success | TxCompletionDisposition::Terminal(_) => {}
     }
 }

@@ -65,6 +65,23 @@ static C_MEMCPY_SEMANTIC: crate::DirectSemanticFunctionSpec = crate::DirectSeman
 };
 
 #[test]
+fn opaque_runtime_body_is_not_an_artifact_wide_analysis_root() {
+    let runtime = symbol("memcpy", 0x2000, vec![0x67, 0x80, 0x00, 0x00]);
+    let hooks = Box::leak(Box::new(crate::RiscvSummaryHooks {
+        secondary_return_target: |_| false,
+        direct_semantic: |symbol| (symbol.name == "memcpy").then_some(&C_MEMCPY_SEMANTIC),
+        direct_external_semantic: |_| None,
+        reference_intrinsic: |_, _, _| None,
+        standard_memory_function: |_| None,
+        wide_signed_divide: |_, _| None,
+    }));
+    let mut resolver = empty_resolver();
+    resolver.pointer_context.summary_hooks = Some(hooks);
+
+    assert!(opaque_semantic_boundary(&resolver, &runtime));
+}
+
+#[test]
 fn authoritative_link_unit_symbol_names_and_types_a_direct_external_call() {
     let owner = symbol("vendor_init", 0x1000, vec![0x67, 0x80, 0x00, 0x00]);
     let external = artifact::ArtifactSymbolDefinition {
@@ -843,6 +860,27 @@ fn diagnostic_compaction_leaves_a_single_fragment_unchanged() {
     assert_eq!(
         diagnostic.rendered,
         "decoder stopped at unsupported instruction"
+    );
+}
+
+#[test]
+fn diagnostic_compaction_exposes_nested_cause_chain_as_typed_fragments() {
+    let diagnostic = compact_diagnostic(
+        "call-summary-flattening: callee-ineligible at 0x1010: child [causes: call/jump instruction at 0x2020: child | nested [causes: unmodeled-memory-load at 0x3030: lw a0, 0(a1) | repeated; repeated; repeated]]",
+    );
+
+    assert_eq!(diagnostic.kind, "call-boundary");
+    assert_eq!(diagnostic.site, Some(0x2020));
+    assert!(diagnostic.fragments.iter().any(|fragment| {
+        fragment
+            .message
+            .starts_with("unmodeled-memory-load at 0x3030")
+    }));
+    assert!(
+        diagnostic
+            .fragments
+            .iter()
+            .any(|fragment| fragment.message == "repeated" && fragment.occurrences == 3)
     );
 }
 

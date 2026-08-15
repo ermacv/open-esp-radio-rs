@@ -99,23 +99,44 @@ pub(super) fn collect_guard_result_source_bits(
     if recovered_bits {
         return;
     }
-    match value {
-        SymbolicValue::Expression { left, right, .. } => {
-            collect_guard_result_source_bits(left, sources);
-            collect_guard_result_source_bits(right, sources);
+    for nested in value.tree().skip(1) {
+        for source in nested.bits() {
+            let (kind, token, bit) = match source {
+                BitSource::CallResult {
+                    call_token, bit, ..
+                } => ("call-result", call_token, bit),
+                BitSource::ExternalResult {
+                    call_token, bit, ..
+                } => (
+                    "external-result",
+                    external_result_call_token(call_token),
+                    bit,
+                ),
+                _ => continue,
+            };
+            *sources.entry((kind, token)).or_default() |= 1_u32 << bit;
         }
-        SymbolicValue::WideSignedDivide {
-            dividend_low,
-            dividend_high,
-            divisor_low,
-            divisor_high,
-            ..
-        } => {
-            for value in [dividend_low, dividend_high, divisor_low, divisor_high] {
-                collect_guard_result_source_bits(value, sources);
-            }
-        }
-        _ => {}
+    }
+}
+
+#[cfg(test)]
+mod floating_provenance_tests {
+    use open_radio_vendor_analysis_model::{FloatingPointOperation, FloatingRoundingMode};
+
+    use super::*;
+
+    #[test]
+    fn floating_guard_keeps_nested_call_result_provenance() {
+        let value = SymbolicValue::FloatingPoint {
+            operation: FloatingPointOperation::SignedWordToSingle,
+            rounding: FloatingRoundingMode::Dynamic,
+            operands: vec![SymbolicValue::CallResult(8)].into_boxed_slice(),
+        };
+        let mut sources = BTreeMap::new();
+
+        collect_guard_result_source_bits(&value, &mut sources);
+
+        assert_eq!(sources.get(&("call-result", 8)), Some(&u32::MAX));
     }
 }
 

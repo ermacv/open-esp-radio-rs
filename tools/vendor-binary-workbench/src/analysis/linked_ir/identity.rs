@@ -94,6 +94,49 @@ fn bounded_fragment(fragment: &str) -> String {
     }
 }
 
+fn split_top_level_causes(input: &str) -> Vec<&str> {
+    let mut output = Vec::new();
+    let mut depth = 0_usize;
+    let mut start = 0_usize;
+    let bytes = input.as_bytes();
+    let mut index = 0_usize;
+    while index < bytes.len() {
+        match bytes[index] {
+            b'[' => depth += 1,
+            b']' => depth = depth.saturating_sub(1),
+            b'|' if depth == 0
+                && index > 0
+                && index + 1 < bytes.len()
+                && bytes[index - 1] == b' '
+                && bytes[index + 1] == b' ' =>
+            {
+                output.push(input[start..index - 1].trim());
+                start = index + 2;
+            }
+            _ => {}
+        }
+        index += 1;
+    }
+    output.push(input[start..].trim());
+    output
+}
+
+fn collect_cause_fragments(message: &str, output: &mut Vec<String>) {
+    let Some(cause_start) = message.find(" [causes: ") else {
+        output.extend(message.split("; ").map(str::to_owned));
+        return;
+    };
+    let prefix = message[..cause_start].trim();
+    if !prefix.is_empty() {
+        output.push(prefix.to_owned());
+    }
+    let causes = &message[cause_start + " [causes: ".len()..];
+    let causes = causes.strip_suffix(']').unwrap_or(causes);
+    for cause in split_top_level_causes(causes) {
+        collect_cause_fragments(cause, output);
+    }
+}
+
 pub(super) fn identity(member: Option<&str>, symbol: &str) -> String {
     member.map_or_else(|| symbol.to_owned(), |member| format!("{member}:{symbol}"))
 }
@@ -103,7 +146,9 @@ pub(super) fn compact_diagnostic(message: &str) -> LinkedDiagnostic {
     let mut fragments = Vec::<LinkedDiagnosticFragment>::new();
     let mut original_fragments = 0;
 
-    for (ordinal, fragment) in message.split("; ").enumerate() {
+    let mut cause_fragments = Vec::new();
+    collect_cause_fragments(message, &mut cause_fragments);
+    for (ordinal, fragment) in cause_fragments.iter().enumerate() {
         original_fragments += 1;
         if ordinal >= MAX_DIAGNOSTIC_FRAGMENTS {
             continue;
@@ -147,7 +192,9 @@ pub(super) fn compact_diagnostic(message: &str) -> LinkedDiagnostic {
         .join("; ");
 
     let root_fragment = fragments
-        .first()
+        .iter()
+        .find(|fragment| diagnostic_kind(&fragment.message) != "other")
+        .or_else(|| fragments.first())
         .map_or(message, |fragment| fragment.message.as_str());
     let kind = diagnostic_kind(root_fragment);
     LinkedDiagnostic {

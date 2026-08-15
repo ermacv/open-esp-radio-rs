@@ -924,6 +924,12 @@ fn render_flow(
     for event in &flow.events {
         render_event(event, output, level, &mut state);
     }
+    if matches!(
+        flow.events.last(),
+        Some(DraftReferenceEvent::TailCall { .. })
+    ) {
+        return;
+    }
     let prefix = indent(level);
     match &flow.terminator {
         DraftReferenceTerminator::Return(value) => {
@@ -1037,7 +1043,12 @@ pub(super) fn render_pseudo(
             )
             .unwrap();
         }
-        writeln!(output, "    return {};", pseudo_value(&trace.return_value)).unwrap();
+        if !matches!(
+            trace.reference_events.last(),
+            Some(DraftReferenceEvent::TailCall { .. })
+        ) {
+            writeln!(output, "    return {};", pseudo_value(&trace.return_value)).unwrap();
+        }
     }
     output.push_str("}\n");
     output

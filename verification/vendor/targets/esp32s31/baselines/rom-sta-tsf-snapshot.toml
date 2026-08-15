@@ -4,12 +4,12 @@ schema = 2
 source = "rom"
 symbol = "hal_get_sta_tsf"
 kind = "whole-function-equivalence/profile:scenario/rom-sta-tsf-snapshot"
-digest = "3caec1bdfb6b667b948b4f7435f8b4c15eee21be0c125455f2677452727abcc9"
+digest = "9b243b8161cf9f4d9d8ab04e97838072e19bb7650cf2c0d31ca9a1ae78edf608"
 
 [evidence.components]
-comparison-orchestrator = "44e7ab697efc3977500cf4393dd8f1439778e73626bdec039df5c42020d8a347"
+comparison-orchestrator = "c314f6dcc0679e46bed7dcb4cc545e757f66bb354fd1f10b4a5fa7d8518ed9d0"
 execution-image = "86b7410aff6595f1a02c224e2996cd0305c4589329caac31daca4d364133fba6"
-execution-machine = "47a8bd9864cefabd70bc0448b3e95298e716a9bad89247e9e425905d3b2ee806"
-execution-model = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"
-profile = "a10583d21b71b45671b13565641f1462567efeecf15cfb38594c498d7591b652"
-profile-parser = "b74a953178bd2336018bed3f51b66360202345578297934e7c8c6e79886fb86b"
+execution-machine = "c171232ac0b858d3966f4776fd4664974b30e232f0c9ccd4234c10fecda3363d"
+execution-model = "8c7a0f02fe17fef8eb770a563c02ff4608fb6c29ed79648eab13e2a65a1b7e5f"
+profile = "4f1e84741acf6bd6112f990ce6c350f8d33aaa492fa7e9e4de25113f4585eb8c"
+profile-parser = "9d00705526dfd10854547b1de00b5a7488bc88dd269a5b41b97c0676f77130c8"

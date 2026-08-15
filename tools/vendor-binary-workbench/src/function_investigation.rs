@@ -351,10 +351,23 @@ fn semantic_evidence(
                 return_role: signature.return_role.clone(),
                 provenance: "reviewed-function-pack",
             });
-        let pseudo = reviewed_signature.as_ref().map_or_else(
+        let pseudo = function_pack.as_ref().map_or_else(
             || function.pseudo.clone(),
-            |signature| apply_reviewed_signature(&function.pseudo, signature),
+            |pack| {
+                apply_reviewed_call_signatures(
+                    &function.pseudo,
+                    profile.id.as_str(),
+                    source,
+                    &function.calls,
+                    pack,
+                )
+            },
         );
+        let pseudo = reviewed_signature
+            .as_ref()
+            .map_or(pseudo.clone(), |signature| {
+                apply_reviewed_signature(&pseudo, signature)
+            });
         let mut blockers = function
             .diagnostics()
             .map(|(layer, diagnostic)| BlockerExplanationEvidence {
@@ -560,6 +573,118 @@ fn apply_reviewed_signature(pseudo: &str, signature: &ReviewedFunctionSignatureE
             &format!("{}_memory", argument.name),
         );
         output = replace_identifier(&output, &format!("arg{}", argument.index), &argument.name);
+    }
+    output
+}
+
+fn pseudo_call_identifier(identity: &str) -> String {
+    let mut output = identity
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() || character == '_' {
+                character
+            } else {
+                '_'
+            }
+        })
+        .collect::<String>();
+    if output.is_empty() {
+        output.push_str("unnamed");
+    } else if output.as_bytes()[0].is_ascii_digit() {
+        output.insert_str(0, "fn_");
+    }
+    output
+}
+
+fn truncate_call_arguments(line: &str, callee: &str, argument_count: usize) -> String {
+    let needle = format!("{callee}(");
+    let mut output = line.to_owned();
+    let mut cursor = 0;
+    while let Some(relative_start) = output[cursor..].find(&needle) {
+        let open = cursor + relative_start + needle.len() - 1;
+        let mut parenthesis_depth = 0_usize;
+        let mut bracket_depth = 0_usize;
+        let mut close = None;
+        for (relative, character) in output[open..].char_indices() {
+            match character {
+                '(' => parenthesis_depth += 1,
+                ')' => {
+                    parenthesis_depth = parenthesis_depth.saturating_sub(1);
+                    if parenthesis_depth == 0 {
+                        close = Some(open + relative);
+                        break;
+                    }
+                }
+                '[' => bracket_depth += 1,
+                ']' => bracket_depth = bracket_depth.saturating_sub(1),
+                _ => {}
+            }
+        }
+        let Some(close) = close else {
+            break;
+        };
+        let arguments = &output[open + 1..close];
+        let mut ends = Vec::new();
+        let mut nested_parentheses = 0_usize;
+        let mut nested_brackets = 0_usize;
+        for (relative, character) in arguments.char_indices() {
+            match character {
+                '(' => nested_parentheses += 1,
+                ')' => nested_parentheses = nested_parentheses.saturating_sub(1),
+                '[' => nested_brackets += 1,
+                ']' => nested_brackets = nested_brackets.saturating_sub(1),
+                ',' if nested_parentheses == 0 && nested_brackets == 0 => ends.push(relative),
+                _ => {}
+            }
+        }
+        let retained = if argument_count == 0 {
+            String::new()
+        } else if argument_count > ends.len() {
+            arguments.to_owned()
+        } else {
+            arguments[..ends[argument_count - 1]].to_owned()
+        };
+        let retained = retained.trim_end().to_owned();
+        output.replace_range(open + 1..close, &retained);
+        cursor = open + retained.len() + 2;
+    }
+    output
+}
+
+fn apply_reviewed_call_signatures(
+    pseudo: &str,
+    profile: &str,
+    source: &str,
+    calls: &[artifacts::StoredCall],
+    pack: &crate::function_workspace::FunctionPack,
+) -> String {
+    let mut output = pseudo.to_owned();
+    let mut applied = BTreeSet::new();
+    for call in calls {
+        if !applied.insert(call.target.as_str()) {
+            continue;
+        }
+        let Some(signature) = pack.functions.iter().find_map(|reviewed| {
+            (reviewed.profile == profile
+                && reviewed.source == source
+                && reviewed.identity == call.target)
+                .then_some(reviewed.signature.as_ref())
+                .flatten()
+        }) else {
+            continue;
+        };
+        output = output
+            .lines()
+            .map(|line| {
+                truncate_call_arguments(
+                    line,
+                    &pseudo_call_identifier(&call.target),
+                    signature.arguments.len(),
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        output.push('\n');
     }
     output
 }
@@ -1121,5 +1246,21 @@ mod tests {
         assert!(pseudo.contains("helper(channel_or_frequency, cbw, abi_inputs[2..16])"));
         assert!(pseudo.contains("return arg10;"));
         assert!(!pseudo.contains("args: [u32; 16]"));
+    }
+
+    #[test]
+    fn reviewed_callee_arity_hides_unrelated_live_abi_registers() {
+        let line = "    let call0 = libpp__lmacInitAc(0x2, 0x3, nested(arg0, arg1), 0xa, 0x0, unknown_abi_inputs[5..12], arg8);";
+
+        let truncated = truncate_call_arguments(line, "libpp__lmacInitAc", 5);
+
+        assert_eq!(
+            truncated,
+            "    let call0 = libpp__lmacInitAc(0x2, 0x3, nested(arg0, arg1), 0xa, 0x0);"
+        );
+        assert_eq!(
+            truncate_call_arguments("return libpp__rcAttach(call5, arg1);", "libpp__rcAttach", 0),
+            "return libpp__rcAttach();"
+        );
     }
 }

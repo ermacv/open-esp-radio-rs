@@ -228,6 +228,37 @@ fn pseudo_ir_keeps_a_named_call_and_structured_branch() {
 }
 
 #[test]
+fn pseudo_ir_does_not_render_a_second_return_after_tail_call() {
+    let flow = DraftReferenceFlow {
+        events: vec![DraftReferenceEvent::TailCall {
+            token: 0,
+            site: 0x1020,
+            target: 0x2040,
+            arguments: vec![SymbolicValue::input(0)].into_boxed_slice(),
+        }],
+        terminator: DraftReferenceTerminator::Return(SymbolicValue::CallResult(0)),
+    };
+    let trace = FunctionAnalysis {
+        symbol: "vendor_tail".to_owned(),
+        events: Vec::new(),
+        located_events: Vec::new(),
+        located_reference_events: Vec::new(),
+        reference_events: Vec::new(),
+        reference_dependencies: Vec::new(),
+        blockers: Vec::new(),
+        reference_blockers: Vec::new(),
+        return_value: SymbolicValue::CallResult(0),
+        reference_flow: Some(flow),
+        unresolved_branch: None,
+    };
+
+    let pseudo = render_pseudo("vendor_tail", &trace, &[], &[], &[], &[], None);
+
+    assert_eq!(pseudo.matches("return ").count(), 1, "{pseudo}");
+    assert!(pseudo.contains("// tail call"), "{pseudo}");
+}
+
+#[test]
 fn context_map_recovers_argument_offsets_branch_paths_and_rmw_masks() {
     let write = DraftReferenceEvent::Memory {
         access: MemoryAccess::Write,

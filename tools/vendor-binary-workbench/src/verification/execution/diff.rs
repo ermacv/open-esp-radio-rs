@@ -240,15 +240,22 @@ fn comparable_transactions(
                     }) == &symbol
                 }) {
                     symbol.clone_from(&pair.operation);
-                    if pair.argument_comparison
-                        == super::super::profiles::CallArgumentComparison::Ignore
-                    {
-                        return OrderedTransactionReport::Call {
-                            site: 0,
-                            symbol,
-                            arguments: [0; 8],
-                        };
-                    }
+                    let arguments = match pair.argument_comparison {
+                        super::super::profiles::CallArgumentComparison::Exact => arguments,
+                        super::super::profiles::CallArgumentComparison::Ignore => [0; 8],
+                        super::super::profiles::CallArgumentComparison::Selected => {
+                            let mut selected = [0; 8];
+                            for index in &pair.argument_indices {
+                                selected[usize::from(*index)] = arguments[usize::from(*index)];
+                            }
+                            selected
+                        }
+                    };
+                    return OrderedTransactionReport::Call {
+                        site: 0,
+                        symbol,
+                        arguments,
+                    };
                 }
                 OrderedTransactionReport::Call {
                     site: 0,
@@ -661,9 +668,48 @@ mod tests {
             vendor_symbol: "lmacProcessAckTimeout".to_owned(),
             rust_symbol: "open_libpp_tx_retry_ack_timeout".to_owned(),
             argument_comparison: super::super::super::profiles::CallArgumentComparison::Ignore,
+            argument_indices: Vec::new(),
         }];
 
         assert!(ordered_transactions_equal(
+            &vendor,
+            &rust,
+            super::super::super::profiles::TransactionComparison::ObservablesAndReviewedCalls,
+            false,
+            &mappings,
+        ));
+    }
+
+    #[test]
+    fn reviewed_call_mapping_can_compare_only_reviewed_abi_positions() {
+        let call = |symbol: &str, arguments| {
+            execution::ExecutionTimelineEvent::Call(execution::OrderedCall {
+                site: 0,
+                symbol: symbol.to_owned(),
+                arguments,
+            })
+        };
+        let mut vendor = result(Vec::new());
+        vendor.timeline = vec![call("vendor_leaf", [7, 11, 13, 0, 0, 0, 0, 0])];
+        let mut rust = result(Vec::new());
+        rust.timeline = vec![call("rust_leaf", [7, 99, 101, 0, 0, 0, 0, 0])];
+        let mappings = [super::super::super::profiles::CallEquivalence {
+            operation: "semantic-leaf".to_owned(),
+            vendor_symbol: "vendor_leaf".to_owned(),
+            rust_symbol: "rust_leaf".to_owned(),
+            argument_comparison: super::super::super::profiles::CallArgumentComparison::Selected,
+            argument_indices: vec![0],
+        }];
+
+        assert!(ordered_transactions_equal(
+            &vendor,
+            &rust,
+            super::super::super::profiles::TransactionComparison::ObservablesAndReviewedCalls,
+            false,
+            &mappings,
+        ));
+        rust.timeline = vec![call("rust_leaf", [8, 11, 13, 0, 0, 0, 0, 0])];
+        assert!(!ordered_transactions_equal(
             &vendor,
             &rust,
             super::super::super::profiles::TransactionComparison::ObservablesAndReviewedCalls,

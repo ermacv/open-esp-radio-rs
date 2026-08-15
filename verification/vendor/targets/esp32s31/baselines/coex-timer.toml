@@ -4,53 +4,54 @@ schema = 2
 source = "coex"
 symbol = "coex_hw_timer_disable"
 kind = "whole-function-equivalence/profile:scenario/coex-hw-timer-disable"
-digest = "8d790705274cfda371bc7a7a1da26bebec4d18e14b4928140e943de73740a43c"
+digest = "d1deb6194582af02df44acaf34de71c2213959ac272110802aaea26faefdbf47"
 
 [evidence.components]
-comparison-orchestrator = "44e7ab697efc3977500cf4393dd8f1439778e73626bdec039df5c42020d8a347"
+comparison-orchestrator = "c314f6dcc0679e46bed7dcb4cc545e757f66bb354fd1f10b4a5fa7d8518ed9d0"
 execution-image = "86b7410aff6595f1a02c224e2996cd0305c4589329caac31daca4d364133fba6"
-execution-machine = "47a8bd9864cefabd70bc0448b3e95298e716a9bad89247e9e425905d3b2ee806"
-execution-model = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"
-profile = "4a0a46b4f353bf5af3ecd98ed16f08614bac9cb14286c3d14d24f4076c9830a0"
-profile-parser = "b74a953178bd2336018bed3f51b66360202345578297934e7c8c6e79886fb86b"
+execution-machine = "c171232ac0b858d3966f4776fd4664974b30e232f0c9ccd4234c10fecda3363d"
+execution-model = "8c7a0f02fe17fef8eb770a563c02ff4608fb6c29ed79648eab13e2a65a1b7e5f"
+profile = "76e062032318f66c335fbf2e1f39560dd99ae3ec72f4d4d2d1133488368ce5b1"
+profile-parser = "9d00705526dfd10854547b1de00b5a7488bc88dd269a5b41b97c0676f77130c8"
+
 [[evidence]]
 source = "coex"
 symbol = "coex_hw_timer_enable"
 kind = "whole-function-equivalence/profile:scenario/coex-hw-timer-enable"
-digest = "3f8354de35762e159713b3583c741351f28df475b8d4c04db92532f01db7ca78"
+digest = "6159f6794ac0320b24846daf8d25103888e213046f50f791e480c6ba467061c0"
 
 [evidence.components]
-comparison-orchestrator = "44e7ab697efc3977500cf4393dd8f1439778e73626bdec039df5c42020d8a347"
+comparison-orchestrator = "c314f6dcc0679e46bed7dcb4cc545e757f66bb354fd1f10b4a5fa7d8518ed9d0"
 execution-image = "86b7410aff6595f1a02c224e2996cd0305c4589329caac31daca4d364133fba6"
-execution-machine = "47a8bd9864cefabd70bc0448b3e95298e716a9bad89247e9e425905d3b2ee806"
-execution-model = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"
-profile = "a92281e5ad935c06a5941ee96398734cd8b1c85c84a71d27babba94eaaca671b"
-profile-parser = "b74a953178bd2336018bed3f51b66360202345578297934e7c8c6e79886fb86b"
+execution-machine = "c171232ac0b858d3966f4776fd4664974b30e232f0c9ccd4234c10fecda3363d"
+execution-model = "8c7a0f02fe17fef8eb770a563c02ff4608fb6c29ed79648eab13e2a65a1b7e5f"
+profile = "3271e0503d58ecbd1835870799f701bc8f5c6945b0a5cb19652acf20509038e0"
+profile-parser = "9d00705526dfd10854547b1de00b5a7488bc88dd269a5b41b97c0676f77130c8"
 
 [[evidence]]
 source = "coex"
 symbol = "coex_hw_timer_force"
 kind = "whole-function-equivalence/profile:scenario/coex-hw-timer-force"
-digest = "b9ce63c056d212d647eb54e4b9c0e3a2da2d216973f3a47f37bbfa965bc0932f"
+digest = "ddf8886e53f7c46a82f2abfb883756237523e5e3f7321a744acb651a147e5e4b"
 
 [evidence.components]
-comparison-orchestrator = "44e7ab697efc3977500cf4393dd8f1439778e73626bdec039df5c42020d8a347"
+comparison-orchestrator = "c314f6dcc0679e46bed7dcb4cc545e757f66bb354fd1f10b4a5fa7d8518ed9d0"
 execution-image = "86b7410aff6595f1a02c224e2996cd0305c4589329caac31daca4d364133fba6"
-execution-machine = "47a8bd9864cefabd70bc0448b3e95298e716a9bad89247e9e425905d3b2ee806"
-execution-model = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"
-profile = "2e61af5bd748d100d49c7df046dc68641ae53b2573025b2e39523187750d4297"
-profile-parser = "b74a953178bd2336018bed3f51b66360202345578297934e7c8c6e79886fb86b"
+execution-machine = "c171232ac0b858d3966f4776fd4664974b30e232f0c9ccd4234c10fecda3363d"
+execution-model = "8c7a0f02fe17fef8eb770a563c02ff4608fb6c29ed79648eab13e2a65a1b7e5f"
+profile = "9eb04c36e96334639c6e7368a77253eff5bda6328ef05ac465e341bbfa3938e3"
+profile-parser = "9d00705526dfd10854547b1de00b5a7488bc88dd269a5b41b97c0676f77130c8"
 
 [[evidence]]
 source = "coex"
 symbol = "coex_hw_timer_unforce"
 kind = "whole-function-equivalence/profile:scenario/coex-hw-timer-unforce"
-digest = "3d46fac410eb01347dda0843a5c8a1db88d28508feb69c8a88db2f599579be5f"
+digest = "28f9a1fbd4fc1bc3592d21e0b6dcf4ed4c15df3b0ed465f54401376d6cfcdb42"
 
 [evidence.components]
-comparison-orchestrator = "44e7ab697efc3977500cf4393dd8f1439778e73626bdec039df5c42020d8a347"
+comparison-orchestrator = "c314f6dcc0679e46bed7dcb4cc545e757f66bb354fd1f10b4a5fa7d8518ed9d0"
 execution-image = "86b7410aff6595f1a02c224e2996cd0305c4589329caac31daca4d364133fba6"
-execution-machine = "47a8bd9864cefabd70bc0448b3e95298e716a9bad89247e9e425905d3b2ee806"
-execution-model = "6240795168c7a0c45c245f009a2aba75a24c0229786fcfc0bdfa545180fdc311"
-profile = "760ebfbc2cc67a8b4fd356b561577fe6b2c643e2a9f53cb37d8728e0458c921d"
-profile-parser = "b74a953178bd2336018bed3f51b66360202345578297934e7c8c6e79886fb86b"
+execution-machine = "c171232ac0b858d3966f4776fd4664974b30e232f0c9ccd4234c10fecda3363d"
+execution-model = "8c7a0f02fe17fef8eb770a563c02ff4608fb6c29ed79648eab13e2a65a1b7e5f"
+profile = "a8d5aa7895047e8177f279a1dbedf7d943f1e06710840909449521c4fcf13faf"
+profile-parser = "9d00705526dfd10854547b1de00b5a7488bc88dd269a5b41b97c0676f77130c8"

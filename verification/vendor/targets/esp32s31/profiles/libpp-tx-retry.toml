@@ -100,20 +100,23 @@ transaction-comparison = "observables-and-reviewed-calls"
 operation = "tx.retry.cts-timeout"
 vendor-symbol = "lmacProcessCtsTimeout"
 rust-symbol = "open_libpp_tx_retry_cts_timeout"
-argument-comparison = "ignore"
+argument-comparison = "selected"
+argument-indices = [0]
 [[profiles.call-equivalences]]
 operation = "tx.retry.collision"
 vendor-symbol = "lmacProcessCollision"
 rust-symbol = "open_libpp_tx_retry_collision"
-argument-comparison = "ignore"
+argument-comparison = "selected"
+argument-indices = [0]
 [[profiles.call-equivalences]]
 operation = "tx.retry.ack-timeout"
 vendor-symbol = "lmacProcessAckTimeout"
 rust-symbol = "open_libpp_tx_retry_ack_timeout"
-argument-comparison = "ignore"
+argument-comparison = "selected"
+argument-indices = [0]
 [[profiles.argument-values]]
 index = 0
-values = [0]
+values = [0, 4]
 [[profiles.argument-values]]
 index = 1
 values = [0, 1, 2, 3, 4, 5, 6]
@@ -166,6 +169,59 @@ vendor-calls = [{ symbol = "wifi_assert", return-words = [0] }]
 [[profiles.cases]]
 name = "detail-six-ack-timeout"
 arguments = [0, 6, 0]
+vendor-goal = { kind = "observe-call", symbol = "lmacProcessAckTimeout" }
+rust-goal = { kind = "observe-call", symbol = "open_libpp_tx_retry_ack_timeout" }
+vendor-calls = [{ symbol = "wifi_assert", return-words = [0] }]
+
+# Repeat the complete detail partition at the highest ordinary queue. Selected
+# call-argument comparison proves that both compiled sides preserve queue
+# identity across the classifier-to-leaf boundary; unreviewed live ABI
+# registers remain deliberately outside this bounded claim.
+[[profiles.cases]]
+name = "queue-four-detail-zero-cts-timeout"
+arguments = [4, 0, 0]
+vendor-goal = { kind = "observe-call", symbol = "lmacProcessCtsTimeout" }
+rust-goal = { kind = "observe-call", symbol = "open_libpp_tx_retry_cts_timeout" }
+vendor-calls = [{ symbol = "wifi_assert", return-words = [0] }]
+
+[[profiles.cases]]
+name = "queue-four-detail-one-collision"
+arguments = [4, 1, 0]
+vendor-goal = { kind = "observe-call", symbol = "lmacProcessCollision" }
+rust-goal = { kind = "observe-call", symbol = "open_libpp_tx_retry_collision" }
+vendor-calls = [{ symbol = "wifi_assert", return-words = [0] }]
+
+[[profiles.cases]]
+name = "queue-four-detail-two-ack-timeout"
+arguments = [4, 2, 0]
+vendor-goal = { kind = "observe-call", symbol = "lmacProcessAckTimeout" }
+rust-goal = { kind = "observe-call", symbol = "open_libpp_tx_retry_ack_timeout" }
+vendor-calls = [{ symbol = "wifi_assert", return-words = [0] }]
+
+[[profiles.cases]]
+name = "queue-four-detail-three-collision"
+arguments = [4, 3, 0]
+vendor-goal = { kind = "observe-call", symbol = "lmacProcessCollision" }
+rust-goal = { kind = "observe-call", symbol = "open_libpp_tx_retry_collision" }
+vendor-calls = [{ symbol = "wifi_assert", return-words = [0] }]
+
+[[profiles.cases]]
+name = "queue-four-detail-four-collision"
+arguments = [4, 4, 0]
+vendor-goal = { kind = "observe-call", symbol = "lmacProcessCollision" }
+rust-goal = { kind = "observe-call", symbol = "open_libpp_tx_retry_collision" }
+vendor-calls = [{ symbol = "wifi_assert", return-words = [0] }]
+
+[[profiles.cases]]
+name = "queue-four-detail-five-collision"
+arguments = [4, 5, 0]
+vendor-goal = { kind = "observe-call", symbol = "lmacProcessCollision" }
+rust-goal = { kind = "observe-call", symbol = "open_libpp_tx_retry_collision" }
+vendor-calls = [{ symbol = "wifi_assert", return-words = [0] }]
+
+[[profiles.cases]]
+name = "queue-four-detail-six-ack-timeout"
+arguments = [4, 6, 0]
 vendor-goal = { kind = "observe-call", symbol = "lmacProcessAckTimeout" }
 rust-goal = { kind = "observe-call", symbol = "open_libpp_tx_retry_ack_timeout" }
 vendor-calls = [{ symbol = "wifi_assert", return-words = [0] }]

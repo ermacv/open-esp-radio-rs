@@ -37,33 +37,19 @@ pub struct DraftReferenceFlow {
 }
 
 pub fn collect_value_inputs(value: &SymbolicValue, output: &mut BTreeSet<u8>) {
-    match value {
-        SymbolicValue::Input { index } | SymbolicValue::InputConstant { index, .. } => {
-            output.insert(*index);
+    for value in value.tree() {
+        match value {
+            SymbolicValue::Input { index } | SymbolicValue::InputConstant { index, .. } => {
+                output.insert(*index);
+            }
+            SymbolicValue::Bits(bits) => {
+                output.extend(bits.iter().filter_map(|source| match source {
+                    BitSource::Input { index, .. } => Some(*index),
+                    _ => None,
+                }));
+            }
+            _ => {}
         }
-        SymbolicValue::Expression { left, right, .. } => {
-            collect_value_inputs(left, output);
-            collect_value_inputs(right, output);
-        }
-        SymbolicValue::WideSignedDivide {
-            dividend_low,
-            dividend_high,
-            divisor_low,
-            divisor_high,
-            ..
-        } => {
-            collect_value_inputs(dividend_low, output);
-            collect_value_inputs(dividend_high, output);
-            collect_value_inputs(divisor_low, output);
-            collect_value_inputs(divisor_high, output);
-        }
-        SymbolicValue::Bits(bits) => {
-            output.extend(bits.iter().filter_map(|source| match source {
-                BitSource::Input { index, .. } => Some(*index),
-                _ => None,
-            }));
-        }
-        _ => {}
     }
 }
 
@@ -205,4 +191,35 @@ pub fn reference_flow_input_indices(flow: &DraftReferenceFlow) -> BTreeSet<u8> {
     let mut output = BTreeSet::new();
     collect_reference_flow_inputs(flow, &mut output);
     output
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use crate::{ExpressionOperation, FloatingPointOperation, FloatingRoundingMode};
+
+    use super::*;
+
+    #[test]
+    fn floating_value_inputs_are_part_of_reference_dependencies() {
+        let value = SymbolicValue::FloatingPoint {
+            operation: FloatingPointOperation::SubtractSingle,
+            rounding: FloatingRoundingMode::Dynamic,
+            operands: vec![
+                SymbolicValue::Input { index: 3 },
+                SymbolicValue::Expression {
+                    operation: ExpressionOperation::Add,
+                    left: Arc::new(SymbolicValue::Input { index: 6 }),
+                    right: Arc::new(SymbolicValue::Constant(1)),
+                },
+            ]
+            .into_boxed_slice(),
+        };
+        let mut inputs = BTreeSet::new();
+
+        collect_value_inputs(&value, &mut inputs);
+
+        assert_eq!(inputs, BTreeSet::from([3, 6]));
+    }
 }

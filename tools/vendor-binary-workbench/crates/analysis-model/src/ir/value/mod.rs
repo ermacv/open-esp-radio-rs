@@ -144,6 +144,57 @@ pub enum SymbolicValue {
     Bits(Box<[BitSource; 32]>),
 }
 
+/// Depth-first view of one symbolic evidence tree, including its root.
+///
+/// Keeping child discovery here prevents provenance consumers from silently
+/// overlooking a newly introduced compound value variant. Leaf-specific data
+/// such as [`BitSource`] records remains the caller's responsibility.
+pub struct SymbolicValueTree<'a> {
+    pending: Vec<&'a SymbolicValue>,
+}
+
+impl<'a> Iterator for SymbolicValueTree<'a> {
+    type Item = &'a SymbolicValue;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let value = self.pending.pop()?;
+        match value {
+            SymbolicValue::Expression { left, right, .. } => {
+                self.pending.push(right);
+                self.pending.push(left);
+            }
+            SymbolicValue::FloatingPoint { operands, .. } => {
+                self.pending.extend(operands.iter().rev());
+            }
+            SymbolicValue::WideSignedDivide {
+                dividend_low,
+                dividend_high,
+                divisor_low,
+                divisor_high,
+                ..
+            } => {
+                self.pending.push(divisor_high);
+                self.pending.push(divisor_low);
+                self.pending.push(dividend_high);
+                self.pending.push(dividend_low);
+            }
+            _ => {}
+        }
+        Some(value)
+    }
+}
+
+impl SymbolicValue {
+    /// Visit this value and every nested symbolic operand in stable source
+    /// order. Consumers should use this instead of duplicating recursive
+    /// matches over compound value variants.
+    pub fn tree(&self) -> SymbolicValueTree<'_> {
+        SymbolicValueTree {
+            pending: vec![self],
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ExpressionOperation {
     Add,
@@ -347,3 +398,38 @@ mod constructors;
 mod inspect;
 mod operations;
 mod rewrite;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn symbolic_tree_visits_floating_operands_and_nested_expressions() {
+        let value = SymbolicValue::FloatingPoint {
+            operation: FloatingPointOperation::SubtractSingle,
+            rounding: FloatingRoundingMode::Dynamic,
+            operands: vec![
+                SymbolicValue::Input { index: 2 },
+                SymbolicValue::Expression {
+                    operation: ExpressionOperation::Add,
+                    left: Arc::new(SymbolicValue::CallResult(7)),
+                    right: Arc::new(SymbolicValue::MemoryImage {
+                        read_token: 11,
+                        and_mask: u32::MAX,
+                        or_mask: 0,
+                    }),
+                },
+            ]
+            .into_boxed_slice(),
+        };
+
+        let visited = value.tree().collect::<Vec<_>>();
+        assert_eq!(visited.len(), 5);
+        assert!(matches!(visited[1], SymbolicValue::Input { index: 2 }));
+        assert!(matches!(visited[3], SymbolicValue::CallResult(7)));
+        assert!(matches!(
+            visited[4],
+            SymbolicValue::MemoryImage { read_token: 11, .. }
+        ));
+    }
+}

@@ -34,24 +34,8 @@ pub fn value_call_results_available(
     value: &SymbolicValue,
     available: &BTreeMap<u32, bool>,
 ) -> bool {
-    match value {
+    value.tree().all(|value| match value {
         SymbolicValue::CallResult(token) => available.get(token).copied() == Some(true),
-        SymbolicValue::Expression { left, right, .. } => {
-            value_call_results_available(left, available)
-                && value_call_results_available(right, available)
-        }
-        SymbolicValue::WideSignedDivide {
-            dividend_low,
-            dividend_high,
-            divisor_low,
-            divisor_high,
-            ..
-        } => {
-            value_call_results_available(dividend_low, available)
-                && value_call_results_available(dividend_high, available)
-                && value_call_results_available(divisor_low, available)
-                && value_call_results_available(divisor_high, available)
-        }
         SymbolicValue::Bits(bits) => bits.iter().all(|source| match source {
             BitSource::CallResult { call_token, .. } => {
                 available.get(call_token).copied() == Some(true)
@@ -59,7 +43,7 @@ pub fn value_call_results_available(
             _ => true,
         }),
         _ => true,
-    }
+    })
 }
 
 fn value_is_reference_ready(value: &SymbolicValue, available: &BTreeMap<u32, bool>) -> bool {
@@ -447,5 +431,27 @@ pub(super) fn validate_reference_flow_with_calls_detailed(
             validate_reference_flow_with_calls_detailed(not_taken, available)
                 .map_err(|error| format!("not-taken branch at {:#010x}: {error}", condition.site))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{FloatingPointOperation, FloatingRoundingMode};
+
+    use super::*;
+
+    #[test]
+    fn floating_value_rejects_an_unavailable_nested_call_result() {
+        let value = SymbolicValue::FloatingPoint {
+            operation: FloatingPointOperation::SignedWordToSingle,
+            rounding: FloatingRoundingMode::TowardZero,
+            operands: vec![SymbolicValue::CallResult(4)].into_boxed_slice(),
+        };
+
+        assert!(!value_call_results_available(&value, &BTreeMap::new()));
+        assert!(value_call_results_available(
+            &value,
+            &BTreeMap::from([(4, true)])
+        ));
     }
 }

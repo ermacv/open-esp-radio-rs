@@ -10,23 +10,115 @@ fn argument_assignment(index: u8, value: u32) -> ScenarioArgumentAssignment {
     ScenarioArgumentAssignment { index, value }
 }
 
-fn argument_branch(condition: &BranchCondition) -> Option<ScenarioSuggestion> {
-    let (argument, expected) = condition
-        .left
-        .direct_input_index()
-        .zip(condition.right.as_constant())
-        .or_else(|| {
-            condition
-                .right
-                .direct_input_index()
-                .zip(condition.left.as_constant())
-        })?;
-    let differs = expected ^ 1;
-    let (taken, not_taken) = match condition.operation {
-        BranchOperation::Equal => (expected, differs),
-        BranchOperation::NotEqual => (differs, expected),
-        _ => return None,
+#[derive(Clone, Copy)]
+struct ArgumentValue {
+    index: u8,
+    mask: u32,
+}
+
+impl ArgumentValue {
+    fn evaluate(self, value: u32) -> u32 {
+        value & self.mask
+    }
+}
+
+fn argument_value(value: &SymbolicValue) -> Option<ArgumentValue> {
+    if let Some(index) = value.direct_input_index() {
+        return Some(ArgumentValue {
+            index,
+            mask: u32::MAX,
+        });
+    }
+    let SymbolicValue::Bits(bits) = value else {
+        return None;
     };
+    let mut index = None;
+    let mut mask = 0_u32;
+    for (destination, source) in bits.iter().enumerate() {
+        match source {
+            BitSource::Constant(false) => {}
+            BitSource::Input {
+                index: source_index,
+                bit,
+                inverted: false,
+            } if usize::from(*bit) == destination => {
+                if index.is_some_and(|index| index != *source_index) {
+                    return None;
+                }
+                index = Some(*source_index);
+                mask |= 1 << destination;
+            }
+            _ => return None,
+        }
+    }
+    Some(ArgumentValue {
+        index: index?,
+        mask,
+    })
+}
+
+fn comparison(operation: BranchOperation, left: u32, right: u32) -> bool {
+    match operation {
+        BranchOperation::Equal => left == right,
+        BranchOperation::NotEqual => left != right,
+        BranchOperation::LessSigned => (left as i32) < right as i32,
+        BranchOperation::GreaterEqualSigned => (left as i32) >= right as i32,
+        BranchOperation::LessUnsigned => left < right,
+        BranchOperation::GreaterEqualUnsigned => left >= right,
+    }
+}
+
+fn candidate_arguments(expected: u32, mask: u32) -> Vec<u32> {
+    let significant_bit = mask.trailing_zeros();
+    let differing = if significant_bit < 32 {
+        expected ^ (1 << significant_bit)
+    } else {
+        expected ^ 1
+    };
+    let mut candidates = vec![
+        expected,
+        expected & mask,
+        differing,
+        expected.wrapping_sub(1),
+        expected.wrapping_add(1),
+        0,
+        1,
+        u32::MAX,
+        i32::MIN as u32,
+        i32::MAX as u32,
+        mask,
+    ];
+    candidates.sort_unstable();
+    candidates.dedup();
+    candidates
+}
+
+fn argument_branch(condition: &BranchCondition) -> Option<ScenarioSuggestion> {
+    let (argument, expected, argument_is_left) = argument_value(&condition.left)
+        .zip(condition.right.as_constant())
+        .map(|(argument, expected)| (argument, expected, true))
+        .or_else(|| {
+            argument_value(&condition.right)
+                .zip(condition.left.as_constant())
+                .map(|(argument, expected)| (argument, expected, false))
+        })?;
+    let evaluates_to = |candidate| {
+        let argument = argument.evaluate(candidate);
+        if argument_is_left {
+            comparison(condition.operation, argument, expected)
+        } else {
+            comparison(condition.operation, expected, argument)
+        }
+    };
+    let candidates = candidate_arguments(expected, argument.mask);
+    let taken = candidates
+        .iter()
+        .copied()
+        .find(|candidate| evaluates_to(*candidate))?;
+    let not_taken = candidates
+        .iter()
+        .copied()
+        .find(|candidate| !evaluates_to(*candidate))?;
     Some(ScenarioSuggestion {
         kind: "argument-branch",
         site: Some(condition.site),
@@ -39,12 +131,12 @@ fn argument_branch(condition: &BranchCondition) -> Option<ScenarioSuggestion> {
         variants: vec![
             ScenarioSuggestionVariant {
                 name: "branch-taken",
-                arguments: vec![argument_assignment(argument, taken)],
+                arguments: vec![argument_assignment(argument.index, taken)],
                 mmio_reads: Vec::new(),
             },
             ScenarioSuggestionVariant {
                 name: "branch-not-taken",
-                arguments: vec![argument_assignment(argument, not_taken)],
+                arguments: vec![argument_assignment(argument.index, not_taken)],
                 mmio_reads: Vec::new(),
             },
         ],
@@ -206,7 +298,33 @@ mod tests {
         };
         let suggestion = argument_branch(&condition).unwrap();
         assert_eq!(suggestion.variants[0].arguments[0].value, 3);
-        assert_eq!(suggestion.variants[1].arguments[0].value, 2);
+        assert_ne!(suggestion.variants[1].arguments[0].value, 3);
+    }
+
+    #[test]
+    fn unsigned_inequality_produces_values_on_both_sides() {
+        let condition = BranchCondition {
+            site: 0x1020,
+            operation: BranchOperation::LessUnsigned,
+            left: SymbolicValue::input(1),
+            right: SymbolicValue::Constant(8),
+        };
+        let suggestion = argument_branch(&condition).unwrap();
+        assert!(suggestion.variants[0].arguments[0].value < 8);
+        assert!(suggestion.variants[1].arguments[0].value >= 8);
+    }
+
+    #[test]
+    fn masked_argument_guard_preserves_the_observed_mask() {
+        let condition = BranchCondition {
+            site: 0x1030,
+            operation: BranchOperation::Equal,
+            left: SymbolicValue::input(3).and(0x0c),
+            right: SymbolicValue::Constant(0x08),
+        };
+        let suggestion = argument_branch(&condition).unwrap();
+        assert_eq!(suggestion.variants[0].arguments[0].value & 0x0c, 0x08);
+        assert_ne!(suggestion.variants[1].arguments[0].value & 0x0c, 0x08);
     }
 
     #[test]

@@ -182,23 +182,7 @@ fn try_merge_memory_transfers(
 
 pub(super) fn value_uses_memory_tokens(value: &SymbolicValue, start: u32, end: u32) -> bool {
     let token_is_elided = |token: u32| start <= token && token < end;
-    match value {
-        SymbolicValue::Expression { left, right, .. } => {
-            value_uses_memory_tokens(left, start, end)
-                || value_uses_memory_tokens(right, start, end)
-        }
-        SymbolicValue::WideSignedDivide {
-            dividend_low,
-            dividend_high,
-            divisor_low,
-            divisor_high,
-            ..
-        } => {
-            value_uses_memory_tokens(dividend_low, start, end)
-                || value_uses_memory_tokens(dividend_high, start, end)
-                || value_uses_memory_tokens(divisor_low, start, end)
-                || value_uses_memory_tokens(divisor_high, start, end)
-        }
+    value.tree().any(|value| match value {
         SymbolicValue::MemoryImage { read_token, .. } => token_is_elided(*read_token),
         SymbolicValue::Bits(bits) => bits.iter().any(|source| {
             matches!(
@@ -208,7 +192,7 @@ pub(super) fn value_uses_memory_tokens(value: &SymbolicValue, start: u32, end: u
             )
         }),
         _ => false,
-    }
+    })
 }
 
 fn event_uses_memory_tokens(event: &ResolvedReferenceEvent, start: u32, end: u32) -> bool {
@@ -495,23 +479,8 @@ fn try_merge_bytes_to_word_loops(
 
 pub(super) fn value_uses_call_tokens(value: &SymbolicValue, start: u32, end: u32) -> bool {
     let token_is_elided = |token: u32| start <= token && token < end;
-    match value {
+    value.tree().any(|value| match value {
         SymbolicValue::CallResult(token) => token_is_elided(*token),
-        SymbolicValue::Expression { left, right, .. } => {
-            value_uses_call_tokens(left, start, end) || value_uses_call_tokens(right, start, end)
-        }
-        SymbolicValue::WideSignedDivide {
-            dividend_low,
-            dividend_high,
-            divisor_low,
-            divisor_high,
-            ..
-        } => {
-            value_uses_call_tokens(dividend_low, start, end)
-                || value_uses_call_tokens(dividend_high, start, end)
-                || value_uses_call_tokens(divisor_low, start, end)
-                || value_uses_call_tokens(divisor_high, start, end)
-        }
         SymbolicValue::Bits(bits) => bits.iter().any(|source| {
             matches!(
                 source,
@@ -520,7 +489,7 @@ pub(super) fn value_uses_call_tokens(value: &SymbolicValue, start: u32, end: u32
             )
         }),
         _ => false,
-    }
+    })
 }
 
 fn event_uses_call_tokens(event: &ResolvedReferenceEvent, start: u32, end: u32) -> bool {
@@ -656,4 +625,39 @@ pub(super) fn compact_bytes_to_word_memory_loops(
         event_index += 1;
     }
     output
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{FloatingPointOperation, FloatingRoundingMode};
+
+    use super::*;
+
+    fn floating(operand: SymbolicValue) -> SymbolicValue {
+        SymbolicValue::FloatingPoint {
+            operation: FloatingPointOperation::SignedWordToSingle,
+            rounding: FloatingRoundingMode::TowardZero,
+            operands: vec![operand].into_boxed_slice(),
+        }
+    }
+
+    #[test]
+    fn floating_value_keeps_nested_memory_token_alive() {
+        let value = floating(SymbolicValue::MemoryImage {
+            read_token: 9,
+            and_mask: u32::MAX,
+            or_mask: 0,
+        });
+
+        assert!(value_uses_memory_tokens(&value, 9, 10));
+        assert!(!value_uses_memory_tokens(&value, 10, 11));
+    }
+
+    #[test]
+    fn floating_value_keeps_nested_call_token_alive() {
+        let value = floating(SymbolicValue::CallResult(12));
+
+        assert!(value_uses_call_tokens(&value, 12, 13));
+        assert!(!value_uses_call_tokens(&value, 13, 14));
+    }
 }

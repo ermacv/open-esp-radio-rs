@@ -460,7 +460,9 @@ pub(crate) fn build_linked_ir_for_source(
         .symbols
         .iter()
         .filter(|symbol| {
-            symbol.name.starts_with(symbol_prefix) && root_keys.insert(symbol_key(symbol))
+            symbol.name.starts_with(symbol_prefix)
+                && (!symbol_prefix.is_empty() || !opaque_semantic_boundary(resolver, symbol))
+                && root_keys.insert(symbol_key(symbol))
         })
         .collect::<Vec<_>>();
     let jobs = linked_ir_worker_count(jobs, roots.len());
@@ -505,6 +507,25 @@ pub(crate) fn build_linked_ir_for_source(
         "completed linked-IR source analysis"
     );
     report
+}
+
+/// Opaque language/runtime boundaries remain addressable by an explicit
+/// symbol-prefix analysis, but do not become roots of an artifact-wide
+/// project profile. Calls to them remain typed facts and reachable scheduling
+/// already excludes `semantic-boundary` edges.
+fn opaque_semantic_boundary(
+    resolver: &ReferenceResolver,
+    symbol: &artifact::ArtifactSymbolDefinition,
+) -> bool {
+    resolver
+        .pointer_context
+        .summary_hooks
+        .and_then(|hooks| {
+            (hooks.direct_semantic)(symbol).or_else(|| resolver.projected_direct_semantic(symbol))
+        })
+        .is_some_and(|semantic| {
+            semantic.body_policy == crate::SemanticFunctionBodyPolicy::OpaqueBoundary
+        })
 }
 
 #[derive(Clone, Copy)]

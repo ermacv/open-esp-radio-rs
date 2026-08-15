@@ -51,6 +51,10 @@ call pairs; and `full` additionally exposes branch and ordinary RAM state.
 Call-site addresses remain provenance rather than equality keys. A vendor and
 Rust call may share an operation only through a reviewed `call-equivalences`
 entry; symbol spelling or a semantic hint never creates equivalence.
+Call arguments can be compared exactly, ignored, or restricted to explicit
+`argument-indices`. The selected form is for reviewed ABI projections where
+the two leaves intentionally have different scratch/live-register shapes; it
+must not be used to imply equality for the omitted positions.
 
 Known C runtime and ecosystem service leaves are opaque semantic boundaries
 when an add-on supplies their signature and bounded behavior. Their calls

@@ -59,7 +59,7 @@ pub(super) fn print_text(report: &ProjectStatusReport) {
     );
     let outcome = match report.overall {
         Readiness::Ready => output::success(
-            "PIPELINE READY — configured Workbench analysis and verification gates pass",
+            "CONFIGURED GATES READY — this is not a whole-project equivalence claim",
         ),
         Readiness::Inventory => {
             output::success("PIPELINE INVENTORY — observed evidence is available for review")
@@ -73,6 +73,26 @@ pub(super) fn print_text(report: &ProjectStatusReport) {
         Readiness::Invalid => output::failure("PIPELINE BLOCKED — project state is invalid"),
     };
     outputln!("\n{outcome}");
+
+    let implemented_unqualified = report
+        .phases
+        .iter()
+        .flat_map(|phase| &phase.components)
+        .find(|component| component.name == "last-verification")
+        .and_then(|component| component.details.get("implemented_unqualified"))
+        .and_then(|value| match value {
+            DetailValue::Unsigned(value) => Some(*value),
+            _ => None,
+        })
+        .unwrap_or(0);
+    if implemented_unqualified != 0 {
+        outputln!(
+            "{}",
+            output::warning(format!(
+                "COVERAGE DEBT — {implemented_unqualified} implemented function(s) have no qualifying production trace"
+            ))
+        );
+    }
 
     let problems = report
         .phases

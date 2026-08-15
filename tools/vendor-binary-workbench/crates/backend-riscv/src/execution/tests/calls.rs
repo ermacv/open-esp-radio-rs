@@ -28,6 +28,36 @@ fn unresolved_external_tail_call_fails_closed() {
 }
 
 #[test]
+fn bounded_call_goal_stops_static_inventory_before_callee_body() {
+    let mut image = tail_relocation_image(Some(0x2000));
+    image
+        .relocated_calls_by_address
+        .get_mut(&0x1000)
+        .expect("fixture call relocation")
+        .target = Some(0x2000);
+    image.unresolved_relocations_by_address.insert(
+        0x2000,
+        UnresolvedRelocation {
+            name: "platform_global".to_owned(),
+            r_type: 2,
+            width: 4,
+        },
+    );
+
+    assert!(image.coverage_inventory("wrapper").is_err());
+    let inventory = image
+        .coverage_inventory_with_constraints_until(
+            "wrapper",
+            &[None; 8],
+            &BTreeMap::new(),
+            &BTreeSet::from(["callee".to_owned()]),
+            &BTreeSet::new(),
+        )
+        .expect("observe-call boundary must exclude the callee body");
+    assert!(inventory.unresolved_edges.is_empty());
+}
+
+#[test]
 fn reviewed_call_model_intercepts_linked_code_and_is_fully_consumed() {
     let mut image = tiny_image(
         vec![

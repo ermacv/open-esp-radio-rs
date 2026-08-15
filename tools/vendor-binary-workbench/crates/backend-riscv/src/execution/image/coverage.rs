@@ -53,6 +53,26 @@ impl ExecutableImage {
         arguments: &[Option<u32>; 8],
         stable_words: &BTreeMap<u32, u32>,
     ) -> Result<CoverageInventory> {
+        self.coverage_inventory_with_constraints_until(
+            symbol,
+            arguments,
+            stable_words,
+            &BTreeSet::new(),
+            &BTreeSet::new(),
+        )
+    }
+
+    /// Inventories only the control flow executed before an explicit bounded
+    /// replay goal. An observed call belongs to the caller boundary: neither
+    /// the callee nor the post-call continuation is part of that scenario.
+    pub fn coverage_inventory_with_constraints_until(
+        &self,
+        symbol: &str,
+        arguments: &[Option<u32>; 8],
+        stable_words: &BTreeMap<u32, u32>,
+        stop_call_symbols: &BTreeSet<String>,
+        stop_addresses: &BTreeSet<u32>,
+    ) -> Result<CoverageInventory> {
         let start = self
             .symbol_address(symbol)
             .ok_or_else(|| format!("execution symbol {symbol} was not found"))?;
@@ -134,6 +154,9 @@ impl ExecutableImage {
 
         while let Some(address) = pending.pop() {
             queued.remove(&address);
+            if stop_addresses.contains(&address) {
+                continue;
+            }
             updates += 1;
             if updates > MAX_ABSTRACT_UPDATES {
                 return Err(format!(
@@ -148,6 +171,14 @@ impl ExecutableImage {
                 continue;
             }
             if let Some(call) = self.relocated_call_at(address) {
+                if stop_call_symbols.contains(&call.name)
+                    || call.target.is_some_and(|target| {
+                        self.call_symbol_at(target)
+                            .is_some_and(|symbol| stop_call_symbols.contains(symbol))
+                    })
+                {
+                    continue;
+                }
                 let link = self.relocated_call_link_register(address)?;
                 if link != Reg::ZERO {
                     enqueue!(address.wrapping_add(8), after_call(registers));
@@ -356,6 +387,12 @@ impl ExecutableImage {
                 }
                 Inst::Jal { offset, dest } => {
                     let target = address.wrapping_add(offset.as_u32());
+                    if self
+                        .call_symbol_at(target)
+                        .is_some_and(|symbol| stop_call_symbols.contains(symbol))
+                    {
+                        continue;
+                    }
                     if dest == Reg::ZERO {
                         enqueue!(target, registers);
                     } else {
@@ -369,6 +406,12 @@ impl ExecutableImage {
                 Inst::Jalr { offset, base, dest } => {
                     if let Some(base) = get(&registers, base) {
                         let target = base.wrapping_add(offset.as_u32()) & !1;
+                        if self
+                            .call_symbol_at(target)
+                            .is_some_and(|symbol| stop_call_symbols.contains(symbol))
+                        {
+                            continue;
+                        }
                         if dest == Reg::ZERO {
                             enqueue!(target, registers);
                         } else {

@@ -329,12 +329,19 @@ fn register_projected_relocations(
                 u64::from(relocation.address) >= instruction.address
                     && u64::from(relocation.address)
                         < instruction.address + u64::from(instruction.width)
-                    && !matches!(
-                        relocation.kind,
-                        crate::artifact::RelocationKind::Call
-                            | crate::artifact::RelocationKind::CallPlt
-                    )
             }) {
+                if matches!(
+                    relocation.kind,
+                    crate::artifact::RelocationKind::Call
+                        | crate::artifact::RelocationKind::CallPlt
+                ) {
+                    resolver.register_projected_call_relocation(
+                        linked,
+                        runtime_address,
+                        &relocation.symbol,
+                        relocation.addend,
+                    );
+                }
                 let projected = StructuralProjectedRelocation {
                     origin_member: origin.member.clone(),
                     origin_symbol: origin.name.clone(),

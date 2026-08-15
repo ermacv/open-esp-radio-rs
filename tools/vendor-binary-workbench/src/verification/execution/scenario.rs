@@ -229,18 +229,40 @@ pub(crate) fn static_inventory_for_argument_domain(
     image: &execution::ExecutableImage,
     symbol: &str,
     coverage_domain: &[profiles::ProfileCoverageConstraint],
+    goals: impl IntoIterator<Item = crate::execution_model::ExecutionGoal>,
 ) -> Result<execution::CoverageInventory> {
     if coverage_domain.is_empty() {
         return Err(crate::Error::invalid(
             "static coverage domain must not be empty",
         ));
     }
+    let mut stop_call_symbols = BTreeSet::new();
+    let mut stop_addresses = BTreeSet::new();
+    for goal in goals {
+        match goal {
+            crate::execution_model::ExecutionGoal::ObserveCall { symbol } => {
+                stop_call_symbols.insert(symbol);
+            }
+            crate::execution_model::ExecutionGoal::ReachSymbol { symbol } => {
+                let address = image.symbol_address(&symbol).ok_or_else(|| {
+                    crate::Error::invalid(format!(
+                        "static coverage goal refers to missing symbol {symbol}"
+                    ))
+                })?;
+                stop_addresses.insert(address);
+            }
+            crate::execution_model::ExecutionGoal::Return
+            | crate::execution_model::ExecutionGoal::ObserveFifoDequeue { .. } => {}
+        }
+    }
     let mut aggregate = execution::CoverageInventory::default();
     for constraints in coverage_domain {
-        let inventory = image.coverage_inventory_with_constraints(
+        let inventory = image.coverage_inventory_with_constraints_until(
             symbol,
             &constraints.arguments,
             &constraints.stable_words,
+            &stop_call_symbols,
+            &stop_addresses,
         )?;
         aggregate.branch_sites.extend(inventory.branch_sites);
         aggregate.branch_outcomes.extend(inventory.branch_outcomes);

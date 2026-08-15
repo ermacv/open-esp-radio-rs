@@ -394,10 +394,20 @@ pub(crate) fn compare_execution_scenarios(
     if let Some(companion) = rust.companion {
         rust_image.add_companion(companion)?;
     }
-    let mut vendor_inventory =
-        static_inventory_for_argument_domain(&vendor_image, vendor.symbol, coverage_domain)?;
-    let mut rust_inventory =
-        static_inventory_for_argument_domain(&rust_image, rust.symbol, coverage_domain)?;
+    let mut vendor_inventory = static_inventory_for_argument_domain(
+        &vendor_image,
+        vendor.symbol,
+        coverage_domain,
+        scenarios
+            .iter()
+            .map(|scenario| scenario.vendor_goal.clone()),
+    )?;
+    let mut rust_inventory = static_inventory_for_argument_domain(
+        &rust_image,
+        rust.symbol,
+        coverage_domain,
+        scenarios.iter().map(|scenario| scenario.rust_goal.clone()),
+    )?;
     let mut vendor_covered = BTreeSet::new();
     let mut rust_covered = BTreeSet::new();
     let mut vendor_calls = BTreeSet::new();

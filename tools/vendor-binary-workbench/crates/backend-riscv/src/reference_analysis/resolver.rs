@@ -88,6 +88,48 @@ impl ReferenceResolver {
     ) -> Option<&artifact::ArtifactSymbolDefinition> {
         self.projected_origins.get(&symbol_key(linked))
     }
+
+    /// Replace a linked-address call label with the exact relocatable-origin
+    /// identity selected by the project layer.
+    ///
+    /// A linkable analysis image may fold several deliberately opaque stubs
+    /// onto one address. In that case the address does not identify a callee
+    /// body: retain the origin relocation name and leave the target unresolved
+    /// instead of choosing an arbitrary alias from `symbols_by_address`.
+    pub fn register_projected_call_relocation(
+        &mut self,
+        owner: &artifact::ArtifactSymbolDefinition,
+        runtime_address: u32,
+        symbol: &str,
+        addend: i64,
+    ) {
+        let matching_addresses = self
+            .symbols
+            .iter()
+            .filter(|candidate| candidate.addresses_resolved && candidate.name == symbol)
+            .map(|candidate| candidate.address as u32)
+            .collect::<BTreeSet<_>>();
+        let target = if addend == 0 && matching_addresses.len() == 1 {
+            let address = *matching_addresses
+                .first()
+                .expect("one matching linked call target");
+            let aliases = self
+                .symbols
+                .iter()
+                .filter(|candidate| {
+                    candidate.addresses_resolved && candidate.address as u32 == address
+                })
+                .map(|candidate| candidate.name.as_str())
+                .collect::<BTreeSet<_>>();
+            (aliases.len() == 1).then_some(address)
+        } else {
+            None
+        };
+        self.relocated_calls.insert(
+            StructuralCallSite::new(owner, runtime_address),
+            (symbol.to_owned(), target),
+        );
+    }
     pub fn load(
         artifact: &Path,
         companions: &[PathBuf],
@@ -572,6 +614,104 @@ mod tests {
             projected_direct_semantics: BTreeMap::new(),
             projected_origins: BTreeMap::new(),
         }
+    }
+
+    #[test]
+    fn projected_call_identity_wins_over_folded_linked_stub_alias() {
+        let owner = artifact::ArtifactSymbolDefinition {
+            member: None,
+            name: "lmacProcessTxComplete".to_owned(),
+            address: 0x1000,
+            bytes: vec![0; 8],
+            addresses_resolved: true,
+            memory_regions: Default::default(),
+            relocations: Vec::new(),
+        };
+        let stub = |name: &str| artifact::ArtifactSymbolDefinition {
+            member: None,
+            name: name.to_owned(),
+            address: 0x2000,
+            bytes: vec![0; 2],
+            addresses_resolved: true,
+            memory_regions: Default::default(),
+            relocations: Vec::new(),
+        };
+        let mut resolver = resolver_with_data_symbols(Vec::new());
+        resolver.symbols = vec![owner.clone(), stub("__adddf3"), stub("__ctzsi2")];
+        resolver.relocated_calls.insert(
+            StructuralCallSite::new(&owner, 0x1000),
+            ("__adddf3".to_owned(), Some(0x2000)),
+        );
+
+        resolver.register_projected_call_relocation(&owner, 0x1000, "__ctzsi2", 0);
+
+        assert_eq!(
+            resolver
+                .relocated_calls
+                .get(&StructuralCallSite::new(&owner, 0x1000)),
+            Some(&("__ctzsi2".to_owned(), None))
+        );
+    }
+
+    #[test]
+    fn projected_call_accepts_linker_relaxed_jal_form() {
+        let owner = artifact::ArtifactSymbolDefinition {
+            member: None,
+            name: "lmacProcessRxSucData".to_owned(),
+            address: 0x1006_941e,
+            bytes: vec![
+                0xef, 0xe0, 0xaf, 0xa6, // jal ra, 0x10067688 <pp_post>
+                0x67, 0x80, 0x00, 0x00, // ret
+            ],
+            addresses_resolved: true,
+            memory_regions: Default::default(),
+            relocations: Vec::new(),
+        };
+        let callee = artifact::ArtifactSymbolDefinition {
+            member: None,
+            name: "pp_post".to_owned(),
+            address: 0x1006_7688,
+            bytes: vec![0x67, 0x80, 0x00, 0x00], // ret
+            addresses_resolved: true,
+            memory_regions: Default::default(),
+            relocations: Vec::new(),
+        };
+        let mut resolver = resolver_with_data_symbols(Vec::new());
+        resolver.symbols = vec![owner.clone(), callee.clone()];
+        resolver
+            .symbols_by_address
+            .insert(owner.address as u32, owner.clone());
+        resolver
+            .symbols_by_address
+            .insert(callee.address as u32, callee.clone());
+        resolver.symbol_ids.insert(symbol_key(&owner), 1);
+        resolver.symbol_ids.insert(symbol_key(&callee), 2);
+
+        resolver.register_projected_call_relocation(&owner, owner.address as u32, "pp_post", 0);
+        let analysis = resolver
+            .trace_symbol(
+                &owner,
+                &MmioMap {
+                    registers: Vec::new(),
+                    regions: Vec::new(),
+                },
+            )
+            .expect("relaxed projected call should remain analyzable");
+
+        assert!(
+            analysis
+                .reference_blockers
+                .iter()
+                .all(|blocker| !blocker.contains("malformed-call-relocation")),
+            "unexpected blockers: {:?}",
+            analysis.reference_blockers
+        );
+        assert!(
+            analysis
+                .reference_dependencies
+                .iter()
+                .any(|dependency| dependency.contains("pp_post"))
+        );
     }
 
     #[test]

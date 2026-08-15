@@ -282,23 +282,32 @@ pub(super) fn apply_relocated_call(
     state.blockers.push(format!(
         "call/jump instruction at {pc:#x}: relocated call to {name}"
     ));
-    let Some(jalr) = next_instruction else {
-        state.reference_blockers.push(format!(
-            "malformed-call-relocation at {pc:#x}: {name} has no following JALR"
-        ));
-        return StructuralCallControl::Stop;
-    };
-    if jalr.address != pc.wrapping_add(4) {
-        state.reference_blockers.push(format!(
-            "malformed-call-relocation at {pc:#x}: {name} is not a two-instruction call"
-        ));
-        return StructuralCallControl::Stop;
-    }
-    let Inst::Jalr { dest, .. } = jalr.instruction else {
-        state.reference_blockers.push(format!(
-            "malformed-call-relocation at {pc:#x}: {name} is not followed by JALR"
-        ));
-        return StructuralCallControl::Stop;
+    // A projected origin R_RISCV_CALL may name either the original
+    // AUIPC+JALR pair or the authoritative linker's relaxed JAL. Both forms
+    // carry the same origin call identity, but consume different instruction
+    // counts and install different return PCs.
+    let (dest, return_pc, instruction_count) = if let Inst::Jal { dest, .. } = decoded.instruction {
+        (dest, (pc as u32).wrapping_add(u32::from(decoded.width)), 1)
+    } else {
+        let Some(jalr) = next_instruction else {
+            state.reference_blockers.push(format!(
+                "malformed-call-relocation at {pc:#x}: {name} has no following JALR"
+            ));
+            return StructuralCallControl::Stop;
+        };
+        if jalr.address != pc.wrapping_add(4) {
+            state.reference_blockers.push(format!(
+                "malformed-call-relocation at {pc:#x}: {name} is not a two-instruction call"
+            ));
+            return StructuralCallControl::Stop;
+        }
+        let Inst::Jalr { dest, .. } = jalr.instruction else {
+            state.reference_blockers.push(format!(
+                "malformed-call-relocation at {pc:#x}: {name} is not followed by JALR"
+            ));
+            return StructuralCallControl::Stop;
+        };
+        (dest, (pc as u32).wrapping_add(8), 2)
     };
 
     let intrinsic_event_start = state.reference_events.len();
@@ -343,8 +352,8 @@ pub(super) fn apply_relocated_call(
             state.return_value = result;
             return StructuralCallControl::Stop;
         }
-        structural_finish_call_with_result(&mut state.values, (pc as u32).wrapping_add(8), result);
-        return StructuralCallControl::Advance(2);
+        structural_finish_call_with_result(&mut state.values, return_pc, result);
+        return StructuralCallControl::Advance(instruction_count);
     }
 
     if let Some(&argument_count) = pointer_context.diagnostic_calls.get(name) {
@@ -365,12 +374,8 @@ pub(super) fn apply_relocated_call(
                 argument_count,
                 arguments,
             });
-        structural_finish_call_with_result(
-            &mut state.values,
-            (pc as u32).wrapping_add(8),
-            SymbolicValue::Unknown,
-        );
-        return StructuralCallControl::Advance(2);
+        structural_finish_call_with_result(&mut state.values, return_pc, SymbolicValue::Unknown);
+        return StructuralCallControl::Advance(instruction_count);
     }
 
     if let Some(function) = pointer_context
@@ -428,8 +433,8 @@ pub(super) fn apply_relocated_call(
                 arguments,
             });
         state.next_external_call_token += 1;
-        structural_finish_call_with_result(&mut state.values, (pc as u32).wrapping_add(8), result);
-        return StructuralCallControl::Advance(2);
+        structural_finish_call_with_result(&mut state.values, return_pc, result);
+        return StructuralCallControl::Advance(instruction_count);
     }
 
     let Some(target) = *target else {
@@ -437,8 +442,8 @@ pub(super) fn apply_relocated_call(
             .reference_blockers
             .push(format!("unresolved-call-relocation at {pc:#x}: {name}"));
         if dest == Reg::RA {
-            structural_prepare_opaque_call(state, (pc as u32).wrapping_add(8));
-            return StructuralCallControl::Advance(2);
+            structural_prepare_opaque_call(state, return_pc);
+            return StructuralCallControl::Advance(instruction_count);
         }
         return StructuralCallControl::Stop;
     };
@@ -472,7 +477,7 @@ pub(super) fn apply_relocated_call(
         });
         structural_finish_call(
             &mut state.values,
-            (pc as u32).wrapping_add(8),
+            return_pc,
             call_token,
             target,
             pointer_context,
@@ -482,7 +487,7 @@ pub(super) fn apply_relocated_call(
             "unsupported-call-link-register at {pc:#x}: {name} uses {dest}"
         ));
     }
-    StructuralCallControl::Advance(2)
+    StructuralCallControl::Advance(instruction_count)
 }
 
 pub(super) fn apply_call_instruction(

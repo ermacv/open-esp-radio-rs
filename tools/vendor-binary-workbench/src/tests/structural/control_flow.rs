@@ -1,7 +1,7 @@
 use super::super::*;
 
 #[test]
-fn floating_point_decode_blocker_does_not_discard_later_integer_ir() {
+fn structurally_accounted_floating_load_does_not_block_later_integer_ir() {
     let symbol = artifact::ArtifactSymbolDefinition {
         member: None,
         name: "float_then_integer".to_owned(),
@@ -25,12 +25,72 @@ fn floating_point_decode_blocker_does_not_discard_later_integer_ir() {
     )
     .unwrap();
 
-    assert_eq!(trace.blockers.len(), 1, "{trace:#?}");
-    assert_eq!(
-        trace.blockers[0],
-        "decode-blocker class=floating-point pc=0x1000 width=4 raw=0x00052007"
-    );
+    assert!(trace.blockers.is_empty(), "{trace:#?}");
     assert_ne!(trace.return_value, SymbolicValue::Unknown);
+    assert!(trace.is_reference_eligible());
+}
+
+#[test]
+fn unsupported_floating_arithmetic_remains_a_blocker() {
+    let fadd_s = (11_u32 << 20) | (10 << 15) | (12 << 7) | 0x53;
+    let symbol = artifact::ArtifactSymbolDefinition {
+        member: None,
+        name: "floating_arithmetic_then_integer".to_owned(),
+        address: 0x1000,
+        bytes: [fadd_s, 0x0015_0513, 0x0000_8067]
+            .into_iter()
+            .flat_map(u32::to_le_bytes)
+            .collect(),
+        addresses_resolved: true,
+        memory_regions: Default::default(),
+        relocations: Vec::new(),
+    };
+
+    let trace = trace_binary_symbol(
+        &symbol,
+        &map(),
+        &BTreeMap::new(),
+        &StructuralPointerContext::default(),
+        None,
+    )
+    .unwrap();
+
+    assert_eq!(trace.blockers.len(), 1, "{trace:#?}");
+    assert!(trace.blockers[0].contains("class=floating-point"));
+    assert_ne!(trace.return_value, SymbolicValue::Unknown);
+    assert!(!trace.is_reference_eligible());
+}
+
+#[test]
+fn floating_comparison_with_unknown_inputs_remains_a_blocker() {
+    let fmv_f10 = (0x78_u32 << 25) | (10 << 15) | (10 << 7) | 0x53;
+    let fmv_f11 = (0x78_u32 << 25) | (11 << 15) | (11 << 7) | 0x53;
+    let feq = (0x50_u32 << 25) | (11 << 20) | (10 << 15) | (2 << 12) | (10 << 7) | 0x53;
+    let symbol = artifact::ArtifactSymbolDefinition {
+        member: None,
+        name: "unknown_floating_compare".to_owned(),
+        address: 0x1000,
+        bytes: [fmv_f10, fmv_f11, feq, 0x0000_8067]
+            .into_iter()
+            .flat_map(u32::to_le_bytes)
+            .collect(),
+        addresses_resolved: true,
+        memory_regions: Default::default(),
+        relocations: Vec::new(),
+    };
+
+    let trace = trace_binary_symbol(
+        &symbol,
+        &map(),
+        &BTreeMap::new(),
+        &StructuralPointerContext::default(),
+        None,
+    )
+    .unwrap();
+
+    assert_eq!(trace.blockers.len(), 1, "{trace:#?}");
+    assert!(trace.blockers[0].contains("class=floating-point"));
+    assert_eq!(trace.return_value, SymbolicValue::Unknown);
     assert!(!trace.is_reference_eligible());
 }
 
@@ -297,6 +357,126 @@ fn partial_cfg_keeps_indexed_memory_evidence_across_an_opaque_call() {
             offset: 0,
         })
     );
+}
+
+#[test]
+fn partial_cfg_keeps_branch_evidence_across_unsupported_floating_arithmetic() {
+    let fadd_s = (11_u32 << 20) | (10 << 15) | (12 << 7) | 0x53;
+    let lui_a2 = (0x20107_u32 << 12) | (12 << 7) | 0x37;
+    let store_a1 = (1_u32 << 25) | (11 << 20) | (12 << 15) | (2 << 12) | (16 << 7) | 0x23;
+    let symbol = artifact::ArtifactSymbolDefinition {
+        member: None,
+        name: "partial_floating_branch".to_owned(),
+        address: 0x1000,
+        bytes: [
+            0x0005_0863, // beq a0, zero, 0x1010
+            fadd_s,
+            lui_a2,
+            store_a1,
+            0x0000_8067, // ret
+        ]
+        .into_iter()
+        .flat_map(u32::to_le_bytes)
+        .collect(),
+        addresses_resolved: true,
+        memory_regions: Default::default(),
+        relocations: Vec::new(),
+    };
+    let symbols = BTreeMap::from([(0x1000, symbol.clone())]);
+
+    let trace = resolve_reference_trace(
+        &symbol,
+        &symbols,
+        &BTreeMap::new(),
+        &StructuralPointerContext::default(),
+        None,
+        &map(),
+        &mut BTreeSet::new(),
+    )
+    .unwrap();
+
+    assert!(!trace.is_reference_eligible(), "{trace:#?}");
+    assert!(
+        trace
+            .reference_blockers
+            .iter()
+            .any(|blocker| blocker.contains("class=floating-point")),
+        "{trace:#?}"
+    );
+    let flow = trace
+        .reference_flow
+        .as_ref()
+        .expect("partial FP path retains structured control flow");
+    let DraftReferenceTerminator::Branch {
+        taken, not_taken, ..
+    } = &flow.terminator
+    else {
+        panic!("expected input branch: {flow:#?}");
+    };
+    assert!(
+        taken
+            .events
+            .iter()
+            .chain(&not_taken.events)
+            .any(|event| matches!(event, DraftReferenceEvent::Observable(_))),
+        "{flow:#?}"
+    );
+}
+
+#[test]
+fn structured_cfg_normalizes_common_stack_spills_before_path_specific_loads() {
+    let parent = artifact::ArtifactSymbolDefinition {
+        member: None,
+        name: "stack_spill_branch".to_owned(),
+        address: 0x1000,
+        bytes: [
+            0xff01_0113, // addi sp, sp, -16
+            0x0081_2623, // sw s0, 12(sp)
+            0x0005_0463, // beq a0, zero, 0x1010
+            0x00c1_2583, // lw a1, 12(sp), only on one path
+            0x0000_8067, // ret
+        ]
+        .into_iter()
+        .flat_map(u32::to_le_bytes)
+        .collect(),
+        addresses_resolved: true,
+        memory_regions: Default::default(),
+        relocations: Vec::new(),
+    };
+    let symbols = BTreeMap::from([(0x1000, parent.clone())]);
+
+    let trace = resolve_reference_trace(
+        &parent,
+        &symbols,
+        &BTreeMap::new(),
+        &StructuralPointerContext::default(),
+        None,
+        &map(),
+        &mut BTreeSet::new(),
+    )
+    .unwrap();
+
+    assert!(!trace.is_reference_eligible(), "{trace:#?}");
+    assert!(
+        trace
+            .reference_blockers
+            .iter()
+            .any(|blocker| blocker.contains("composed call result")),
+        "{trace:#?}"
+    );
+    let flow = trace.reference_flow.as_ref().expect("structured branch");
+    assert!(matches!(
+        flow.events.first(),
+        Some(DraftReferenceEvent::PrivateStackStore {
+            offset: -4,
+            width: 32,
+            ..
+        })
+    ));
+    assert!(matches!(
+        flow.terminator,
+        DraftReferenceTerminator::Branch { .. }
+    ));
 }
 
 #[test]

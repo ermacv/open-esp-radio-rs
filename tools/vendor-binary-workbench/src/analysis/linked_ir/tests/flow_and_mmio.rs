@@ -363,6 +363,95 @@ fn linked_absolute_table_base_is_not_reported_as_a_giant_context_offset() {
 }
 
 #[test]
+fn linked_indexed_absolute_table_base_uses_the_sized_data_symbol() {
+    let mut accesses = vec![MemoryObjectAccess {
+        object: LinkedMemoryObject::Indexed {
+            object: Box::new(LinkedMemoryObject::Absolute {
+                address_space: "dram".to_owned(),
+                address: 0x1002_eec8,
+            }),
+            argument: 0,
+            stride: 2,
+        },
+        offset: 0,
+        access: "read",
+        width: 16,
+        path: "entry".to_owned(),
+        value: None,
+        value_pseudo: None,
+        write_mask: None,
+        preserved_mask: None,
+        forced_zero_mask: None,
+        forced_one_mask: None,
+    }];
+    let resolver = ReferenceResolver {
+        symbols: Vec::new(),
+        symbols_by_address: BTreeMap::new(),
+        symbol_ids: BTreeMap::new(),
+        exported_symbol_keys: BTreeSet::new(),
+        relocated_calls: BTreeMap::new(),
+        pointer_context: direct::StructuralPointerContext::default(),
+        data_symbols: vec![artifact::ArtifactDataSymbolDefinition {
+            member: None,
+            name: "rate_limit_table".to_owned(),
+            address: 0x1002_eec8,
+            size: 8,
+            exported: true,
+        }],
+        data_objects: Vec::new(),
+        projected_direct_semantics: BTreeMap::new(),
+        projected_origins: BTreeMap::new(),
+    };
+
+    attribute_data_symbols(&mut accesses, &resolver);
+
+    assert_eq!(accesses[0].offset, 0);
+    assert!(matches!(
+        &accesses[0].object,
+        LinkedMemoryObject::Indexed {
+            object,
+            argument: 0,
+            stride: 2,
+        } if matches!(object.as_ref(), LinkedMemoryObject::Global { member: None, symbol }
+            if symbol == "rate_limit_table")
+    ));
+
+    let trace = FunctionAnalysis {
+        symbol: "update_rate_limit".to_owned(),
+        events: Vec::new(),
+        located_events: Vec::new(),
+        located_reference_events: Vec::new(),
+        reference_events: vec![DraftReferenceEvent::Memory {
+            access: MemoryAccess::Read,
+            width: 16,
+            address: SymbolicValue::Expression {
+                operation: ExpressionOperation::Add,
+                left: std::sync::Arc::new(SymbolicValue::Constant(0x1002_eec8)),
+                right: std::sync::Arc::new(SymbolicValue::input(0).shift_left(1)),
+            },
+            region: "indexed RAM object".to_owned(),
+            value: None,
+        }],
+        reference_dependencies: Vec::new(),
+        blockers: Vec::new(),
+        reference_blockers: Vec::new(),
+        return_value: SymbolicValue::Constant(0),
+        reference_flow: None,
+        unresolved_branch: None,
+    };
+    let pseudo = render_pseudo(
+        "update_rate_limit",
+        &trace,
+        &[],
+        &[],
+        &[],
+        &[],
+        Some(&resolver),
+    );
+    assert!(pseudo.contains("rate_limit_table[arg0 * 0x2 + 0x0].read16()"));
+}
+
+#[test]
 fn instruction_effects_keep_exact_mmio_and_memory_sites() {
     let memory = DraftReferenceEvent::Memory {
         access: MemoryAccess::Write,

@@ -166,6 +166,7 @@ impl StructuralTraceState {
     pub(super) fn finish(
         mut self,
         symbol: &artifact::ArtifactSymbolDefinition,
+        preserve_private_stack_stores: bool,
     ) -> FunctionAnalysis {
         let private_stack_crosses_call_boundary =
             self.reference_events.iter().any(|event| match event {
@@ -175,7 +176,8 @@ impl StructuralTraceState {
                     .any(|argument| argument.private_stack_offset().is_some()),
                 _ => false,
             });
-        if !private_stack_crosses_call_boundary
+        if !preserve_private_stack_stores
+            && !private_stack_crosses_call_boundary
             && !self
                 .reference_events
                 .iter()

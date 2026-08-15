@@ -218,6 +218,51 @@ impl SymbolicValue {
             return Some((argument, 1));
         }
         match self {
+            Self::Bits(bits) => {
+                // Constant 32-bit shifts are normally kept as exact bit
+                // provenance rather than an Expression::ShiftLeft node.
+                // Recover an affine scale only for the complete canonical
+                // pattern: zero-filled low bits followed by consecutive,
+                // non-inverted bits from one ABI input. Any mask, inversion,
+                // unknown bit or mixed input remains non-affine.
+                for shift in 1..32_usize {
+                    if !bits[..shift]
+                        .iter()
+                        .all(|source| *source == BitSource::Constant(false))
+                    {
+                        continue;
+                    }
+                    let mut argument = None;
+                    let mut matches = true;
+                    for (destination, source) in bits.iter().enumerate().skip(shift) {
+                        let BitSource::Input {
+                            index,
+                            bit,
+                            inverted: false,
+                        } = source
+                        else {
+                            matches = false;
+                            break;
+                        };
+                        if usize::from(*bit) != destination - shift {
+                            matches = false;
+                            break;
+                        }
+                        match argument {
+                            Some(existing) if existing != *index => {
+                                matches = false;
+                                break;
+                            }
+                            Some(_) => {}
+                            None => argument = Some(*index),
+                        }
+                    }
+                    if matches {
+                        return argument.map(|argument| (argument, 1_i64 << shift));
+                    }
+                }
+                None
+            }
             Self::Expression {
                 operation: ExpressionOperation::Multiply,
                 left,
@@ -741,6 +786,43 @@ mod tests {
             })
         );
         assert_eq!(address.caller_memory_location(), None);
+    }
+
+    #[test]
+    fn memory_object_location_recovers_bit_provenance_shift_as_affine_stride() {
+        let address = SymbolicValue::expression(
+            ExpressionOperation::Add,
+            SymbolicValue::input(0).shift_left(1),
+            SymbolicValue::Constant(0x1002_eec8),
+        );
+
+        assert_eq!(
+            address.memory_object_location_with_reads(&BTreeMap::new()),
+            Some(MemoryObjectLocation {
+                root: MemoryObjectRoot::Indexed {
+                    root: std::sync::Arc::new(MemoryObjectRoot::Absolute {
+                        address: 0x1002_eec8,
+                    }),
+                    argument: 0,
+                    stride: 2,
+                },
+                offset: 0,
+            })
+        );
+    }
+
+    #[test]
+    fn memory_object_location_rejects_masked_shift_as_affine_stride() {
+        let address = SymbolicValue::expression(
+            ExpressionOperation::Add,
+            SymbolicValue::input(0).shift_left(1).and(0x0e),
+            SymbolicValue::Constant(0x1002_eec8),
+        );
+
+        assert_eq!(
+            address.memory_object_location_with_reads(&BTreeMap::new()),
+            None
+        );
     }
 
     #[test]

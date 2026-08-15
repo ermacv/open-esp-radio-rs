@@ -146,10 +146,46 @@ impl ProjectAnalysisCache {
             digest.update([0]);
             let content = if path.is_file() {
                 self.digest(&path)?
+            } else if path.is_dir() {
+                self.directory_digest(&path)?
             } else {
                 "<missing>".to_owned()
             };
             digest.update(content.as_bytes());
+        }
+        Ok(format!("{:x}", digest.finalize()))
+    }
+
+    fn directory_digest(&mut self, root: &Path) -> Result<String> {
+        fn collect_files(directory: &Path, output: &mut Vec<PathBuf>) -> Result<()> {
+            for entry in fs::read_dir(directory)? {
+                let path = entry?.path();
+                if path.is_dir() {
+                    collect_files(&path, output)?;
+                } else if path.is_file() {
+                    output.push(path);
+                }
+            }
+            Ok(())
+        }
+
+        let mut files = Vec::new();
+        collect_files(root, &mut files)?;
+        files.sort();
+        let mut digest = Sha256::new();
+        digest.update(b"vendor-binary-workbench-directory-v1\0");
+        for path in files {
+            let relative = path.strip_prefix(root).map_err(|error| {
+                crate::Error::invalid(format!(
+                    "cache input {} is not below directory {}: {error}",
+                    path.display(),
+                    root.display()
+                ))
+            })?;
+            digest.update(relative.to_string_lossy().as_bytes());
+            digest.update([0]);
+            digest.update(self.digest(&path)?.as_bytes());
+            digest.update([0]);
         }
         Ok(format!("{:x}", digest.finalize()))
     }
@@ -185,9 +221,9 @@ impl ProjectAnalysisCache {
 fn stage_revision(stage: &str) -> Result<u32> {
     match stage {
         "symbol-inventory" => Ok(1),
-        "mmio-discovery" => Ok(1),
+        "mmio-discovery" => Ok(3),
         "interface-discovery" => Ok(1),
-        "linked-ir" => Ok(2),
+        "linked-ir" => Ok(9),
         "event-replays" => Ok(1),
         "review-scopes" => Ok(3),
         "navigation-index" => Ok(1),
@@ -292,6 +328,57 @@ mod tests {
             !cache
                 .is_current(
                     "linked-ir",
+                    "profile=a",
+                    std::slice::from_ref(&input),
+                    std::slice::from_ref(&output)
+                )
+                .unwrap()
+        );
+
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn cache_hashes_files_inside_declared_input_directories() {
+        let directory = std::env::temp_dir().join(format!(
+            "vendor-workbench-analysis-directory-cache-{}",
+            std::process::id()
+        ));
+        let manifest = directory.join("vendor-project.toml");
+        let input = directory.join("analysis.ir");
+        let nested_input = input.join("functions.jsonl");
+        let output = directory.join("generated/review.md");
+        fs::create_dir_all(&input).unwrap();
+        fs::create_dir_all(output.parent().unwrap()).unwrap();
+        fs::write(&manifest, "schema = 1\n").unwrap();
+        fs::write(&nested_input, "facts-a").unwrap();
+        fs::write(&output, "review-a").unwrap();
+
+        let mut cache = ProjectAnalysisCache::load(&manifest);
+        cache
+            .record(
+                "function-review",
+                "profile=a",
+                std::slice::from_ref(&input),
+                std::slice::from_ref(&output),
+            )
+            .unwrap();
+        assert!(
+            cache
+                .is_current(
+                    "function-review",
+                    "profile=a",
+                    std::slice::from_ref(&input),
+                    std::slice::from_ref(&output)
+                )
+                .unwrap()
+        );
+
+        fs::write(&nested_input, "facts-b-expanded").unwrap();
+        assert!(
+            !cache
+                .is_current(
+                    "function-review",
                     "profile=a",
                     std::slice::from_ref(&input),
                     std::slice::from_ref(&output)

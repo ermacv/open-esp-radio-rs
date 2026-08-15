@@ -183,6 +183,27 @@ pub(super) fn attribute_data_symbols(
     resolver: &ReferenceResolver,
 ) {
     for access in accesses {
+        let indexed_absolute = match &access.object {
+            LinkedMemoryObject::Indexed { object, .. } => match object.as_ref() {
+                LinkedMemoryObject::Absolute { address, .. } => Some(*address),
+                _ => None,
+            },
+            _ => None,
+        };
+        if let Some(address) = indexed_absolute
+            && let Some((member, symbol, offset)) =
+                resolver.data_symbol_location(address, access.width)
+        {
+            let LinkedMemoryObject::Indexed { object, .. } = &mut access.object else {
+                unreachable!();
+            };
+            **object = LinkedMemoryObject::Global {
+                member: member.map(str::to_owned),
+                symbol: symbol.to_owned(),
+            };
+            access.offset = access.offset.wrapping_add(offset);
+            continue;
+        }
         match &access.object {
             LinkedMemoryObject::Absolute { address, .. } => {
                 let Some((member, symbol, offset)) =

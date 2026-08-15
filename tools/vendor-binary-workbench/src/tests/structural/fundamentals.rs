@@ -59,6 +59,62 @@ fn indexed_absolute_ram_preserves_argument_stride_and_field_offset() {
 }
 
 #[test]
+fn shifted_argument_index_preserves_absolute_table_read() {
+    let slli_a1 = (1_u32 << 20) | (10 << 15) | (1 << 12) | (11 << 7) | 0x13;
+    let lui_a2 = (0x1002f_u32 << 12) | (12 << 7) | 0x37;
+    let addi_a2 = (0xec8_u32 << 20) | (12 << 15) | (12 << 7) | 0x13;
+    let add_a1_a2 = (12_u32 << 20) | (11 << 15) | (11 << 7) | 0x33;
+    let lhu_a0 = (11_u32 << 15) | (5 << 12) | (10 << 7) | 0x03;
+    let symbol = artifact::ArtifactSymbolDefinition {
+        member: None,
+        name: "shifted_table_read".to_owned(),
+        address: 0x1000_0000,
+        bytes: [slli_a1, lui_a2, addi_a2, add_a1_a2, lhu_a0, 0x0000_8067]
+            .into_iter()
+            .flat_map(u32::to_le_bytes)
+            .collect(),
+        addresses_resolved: true,
+        memory_regions: Default::default(),
+        relocations: Vec::new(),
+    };
+
+    let trace = trace_binary_symbol(
+        &symbol,
+        &map(),
+        &BTreeMap::new(),
+        &StructuralPointerContext::default(),
+        None,
+    )
+    .unwrap();
+
+    assert!(trace.is_reference_eligible(), "{trace:#?}");
+    let DraftReferenceEvent::Memory {
+        access: MemoryAccess::Read,
+        address,
+        width: 16,
+        region,
+        ..
+    } = &trace.reference_events[0]
+    else {
+        panic!("expected indexed halfword table read: {trace:#?}");
+    };
+    assert_eq!(region, "indexed RAM object");
+    assert_eq!(
+        address.memory_object_location_with_reads(&BTreeMap::new()),
+        Some(MemoryObjectLocation {
+            root: MemoryObjectRoot::Indexed {
+                root: std::sync::Arc::new(MemoryObjectRoot::Absolute {
+                    address: 0x1002_eec8,
+                }),
+                argument: 0,
+                stride: 2,
+            },
+            offset: 0,
+        })
+    );
+}
+
+#[test]
 fn unsigned_set_less_than_keeps_snez_dataflow_codegen_ready() {
     let symbol = artifact::ArtifactSymbolDefinition {
         member: None,
@@ -418,10 +474,7 @@ fn floating_word_memory_preserves_context_address_and_value_provenance() {
     )
     .unwrap();
 
-    assert!(
-        !trace.is_reference_eligible(),
-        "F semantics remain fail-closed"
-    );
+    assert!(trace.is_reference_eligible(), "{trace:#?}");
     assert_eq!(trace.reference_events.len(), 2);
     let DraftReferenceEvent::Memory {
         access: MemoryAccess::Read,
@@ -450,7 +503,7 @@ fn floating_word_memory_preserves_context_address_and_value_provenance() {
             .iter()
             .filter(|blocker| blocker.contains("class=floating-point"))
             .count(),
-        2
+        0
     );
 }
 
@@ -491,10 +544,7 @@ fn floating_bit_move_preserves_integer_argument_into_context_store() {
     };
     assert!(address.canonical().contains("arg0"));
     assert_eq!(value.canonical(), SymbolicValue::input(1).canonical());
-    assert!(
-        !trace.is_reference_eligible(),
-        "F semantics remain fail-closed"
-    );
+    assert!(trace.is_reference_eligible(), "{trace:#?}");
 }
 
 #[test]
@@ -503,8 +553,8 @@ fn floating_comparison_of_exact_bits_preserves_later_integer_control_data() {
     let fmv_f10 = (0x78_u32 << 25) | (11 << 15) | (10 << 7) | 0x53;
     let fmv_f11 = (0x78_u32 << 25) | (11 << 15) | (11 << 7) | 0x53;
     let feq = (0x50_u32 << 25) | (11 << 20) | (10 << 15) | (2 << 12) | (10 << 7) | 0x53;
-    let lui_mmio = (0x20100_u32 << 12) | (12 << 7) | 0x37;
-    let store_result = (10_u32 << 20) | (12 << 15) | (2 << 12) | 0x23;
+    let lui_mmio = (0x20107_u32 << 12) | (12 << 7) | 0x37;
+    let store_result = (1_u32 << 25) | (10 << 20) | (12 << 15) | (2 << 12) | (16 << 7) | 0x23;
     let symbol = artifact::ArtifactSymbolDefinition {
         member: None,
         name: "floating_compare".to_owned(),
@@ -546,12 +596,9 @@ fn floating_comparison_of_exact_bits_preserves_later_integer_control_data() {
             .iter()
             .filter(|blocker| blocker.contains("class=floating-point"))
             .count(),
-        3
+        0
     );
-    assert!(
-        !trace.is_reference_eligible(),
-        "exact comparison recovery must not erase F blockers"
-    );
+    assert!(trace.is_reference_eligible(), "{trace:#?}");
 }
 
 #[test]
@@ -696,6 +743,80 @@ fn projected_origin_relocation_accepts_final_linked_low_immediate() {
             address: SymbolicValue::Constant(0x1000_2840),
             ..
         })
+    ));
+}
+
+#[test]
+fn projected_relaxed_unknown_pointer_cell_preserves_pointee_provenance() {
+    let symbol = artifact::ArtifactSymbolDefinition {
+        member: None,
+        name: "linked_pointer_write".to_owned(),
+        address: 0x1000,
+        bytes: vec![
+            0x83, 0x27, 0x00, 0x00, // lw a5, 0(zero), relaxed our_instances_ptr
+            0x23, 0x82, 0xa7, 0x00, // sb a0, 4(a5)
+            0x67, 0x80, 0x00, 0x00, // ret
+        ],
+        addresses_resolved: true,
+        memory_regions: Default::default(),
+        relocations: Vec::new(),
+    };
+    let mut context = StructuralPointerContext::default();
+    context.projected_relocations.insert(
+        StructuralCallSite::new(&symbol, 0x1000),
+        vec![StructuralProjectedRelocation {
+            origin_member: Some("lmac.o".to_owned()),
+            origin_symbol: "linked_pointer_write".to_owned(),
+            origin_offsets: vec![12, 16],
+            kind: artifact::RelocationKind::Lo12I,
+            symbol: "our_instances_ptr".to_owned(),
+            addend: 0,
+            correspondence: "linker-relaxation",
+        }],
+    );
+
+    let trace = trace_binary_symbol(&symbol, &map(), &BTreeMap::new(), &context, None).unwrap();
+
+    assert!(trace.is_reference_eligible(), "{trace:#?}");
+    assert_eq!(trace.reference_events.len(), 2);
+    assert!(matches!(
+        &trace.reference_events[0],
+        DraftReferenceEvent::Memory {
+            access: MemoryAccess::Read,
+            address: SymbolicValue::SymbolAddress { symbol, .. },
+            ..
+        } if symbol == "our_instances_ptr"
+    ));
+    let DraftReferenceEvent::Memory {
+        access: MemoryAccess::Write,
+        address,
+        region,
+        value: Some(SymbolicValue::Input { index: 0 }),
+        ..
+    } = &trace.reference_events[1]
+    else {
+        panic!("expected pointee write: {:#?}", trace.reference_events);
+    };
+    assert_eq!(region, "dereferenced known pointer RAM");
+    let sources = BTreeMap::from([(
+        0,
+        MemoryObjectLocation {
+            root: MemoryObjectRoot::RelocatedSymbol {
+                member: Some("lmac.o".to_owned()),
+                symbol: "our_instances_ptr".to_owned(),
+            },
+            offset: 0,
+        },
+    )]);
+    assert!(matches!(
+        address.memory_object_location_with_reads(&sources),
+        Some(MemoryObjectLocation {
+            root: MemoryObjectRoot::Dereferenced {
+                pointer,
+                pointer_offset: 0,
+            },
+            offset: 4,
+        }) if matches!(pointer.as_ref(), MemoryObjectRoot::RelocatedSymbol { symbol, .. } if symbol == "our_instances_ptr")
     ));
 }
 

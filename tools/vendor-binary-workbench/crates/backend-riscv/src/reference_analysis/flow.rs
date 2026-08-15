@@ -16,6 +16,16 @@ struct ReferencePath {
     return_value: SymbolicValue,
 }
 
+fn event_preview(event: Option<&DraftReferenceEvent>) -> String {
+    let rendered = event.map_or_else(|| "<end-of-path>".to_owned(), |event| format!("{event:?}"));
+    const LIMIT: usize = 192;
+    let mut preview = rendered.chars().take(LIMIT).collect::<String>();
+    if rendered.chars().count() > LIMIT {
+        preview.push_str("...");
+    }
+    preview
+}
+
 pub(super) struct ExploredReferenceFlow {
     pub(super) flow: DraftReferenceFlow,
     pub(super) incomplete_effects: Vec<String>,
@@ -34,6 +44,14 @@ fn preserves_partial_reference_flow(blocker: &str) -> bool {
     ]
     .iter()
     .any(|prefix| blocker.starts_with(prefix))
+}
+
+fn preserves_partial_direct_flow(blocker: &str) -> bool {
+    // Floating-point instructions are classified as linear control flow by
+    // the decoder. Unsupported arithmetic may poison later values, and that
+    // remains an explicit blocker, but it does not erase independently
+    // recovered branch, call and memory evidence from the same path.
+    blocker.starts_with("decode-blocker class=floating-point ")
 }
 
 fn build_reference_flow(
@@ -99,7 +117,18 @@ fn build_reference_flow(
         }
 
         if paths.iter().any(|path| path.events.front() != Some(&first)) {
-            return Err("symbolic paths have incompatible observable event prefixes".to_owned());
+            let differing = paths
+                .iter()
+                .enumerate()
+                .filter(|(_, path)| path.events.front() != Some(&first))
+                .take(3)
+                .map(|(index, path)| format!("path#{index}={}", event_preview(path.events.front())))
+                .collect::<Vec<_>>()
+                .join(", ");
+            return Err(format!(
+                "symbolic paths have incompatible observable event prefixes: expected {}; {differing}",
+                event_preview(Some(&first))
+            ));
         }
         for path in &mut paths {
             path.events.pop_front();
@@ -177,6 +206,11 @@ pub(super) fn explore_reference_flow(
             .iter()
             .filter(|blocker| is_reference_only_blocker(blocker))
             .count();
+        let partial_direct_blockers = trace
+            .blockers
+            .iter()
+            .filter(|blocker| preserves_partial_direct_flow(blocker))
+            .count();
 
         if let Some(branch) = trace.unresolved_branch {
             let branch_blockers = trace
@@ -191,7 +225,11 @@ pub(super) fn explore_reference_flow(
                 .count();
             if unsupported_reference_blockers != 0
                 || branch_blockers != 1
-                || trace.blockers.len() != call_blockers + branch_blockers + reference_only_blockers
+                || trace.blockers.len()
+                    != call_blockers
+                        + branch_blockers
+                        + reference_only_blockers
+                        + partial_direct_blockers
                 || typed_calls + opaque_call_blockers != call_blockers
             {
                 return Err(format!(
@@ -232,8 +270,14 @@ pub(super) fn explore_reference_flow(
             .iter()
             .filter(|blocker| !preserves_partial_reference_flow(blocker))
             .count();
+        let partial_direct_blockers = trace
+            .blockers
+            .iter()
+            .filter(|blocker| preserves_partial_direct_flow(blocker))
+            .count();
         if unsupported_reference_blockers != 0
-            || trace.blockers.len() != call_blockers + reference_only_blockers
+            || trace.blockers.len()
+                != call_blockers + reference_only_blockers + partial_direct_blockers
             || typed_calls + opaque_call_blockers != call_blockers
         {
             return Err(format!(
@@ -247,6 +291,13 @@ pub(super) fn explore_reference_flow(
                     .join("; ")
             ));
         }
+        incomplete_effects.extend(
+            trace
+                .blockers
+                .iter()
+                .filter(|blocker| preserves_partial_direct_flow(blocker))
+                .cloned(),
+        );
         incomplete_effects.extend(
             trace
                 .reference_blockers

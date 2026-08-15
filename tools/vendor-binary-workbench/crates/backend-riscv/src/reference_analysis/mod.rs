@@ -128,45 +128,37 @@ fn resolve_reference_trace_with_budget(
             context.pointer_context,
             specialized_arguments,
             context.budget,
-        )
-        .and_then(|explored| {
-            compose_calls_in_reference_flow(
-                explored.flow,
-                context,
-                visiting,
-                &mut trace.reference_dependencies,
-            )
-            .map(|flow| {
-                (
-                    flow,
-                    explored.incomplete_effects,
-                    explored.located_events,
-                    explored.located_reference_events,
-                )
-            })
-        }) {
-            Ok((flow, incomplete_effects, located_events, located_reference_events))
-                if reference_flow_calls_are_valid(&flow) =>
-            {
-                trace.events.clear();
-                trace.reference_events.clear();
-                trace.located_events = located_events;
-                trace.located_reference_events = located_reference_events;
-                trace.blockers.clear();
-                trace.reference_blockers = incomplete_effects;
-                trace.reference_flow = Some(flow);
-                trace.unresolved_branch = None;
-            }
-            Ok((flow, mut incomplete_effects, located_events, located_reference_events)) => {
-                trace.events.clear();
-                trace.reference_events.clear();
-                trace.located_events = located_events;
-                trace.located_reference_events = located_reference_events;
-                trace.blockers.clear();
-                incomplete_effects.push(
-                    "symbolic-cfg: composed call result is used without a modeled callee `a0`"
-                        .to_owned(),
+        ) {
+            Ok(explored) => {
+                let uncomposed_flow = explored.flow.clone();
+                let mut incomplete_effects = explored.incomplete_effects;
+                let composed = compose_calls_in_reference_flow(
+                    explored.flow,
+                    context,
+                    visiting,
+                    &mut trace.reference_dependencies,
                 );
+                let flow = match composed {
+                    Ok(flow) if reference_flow_calls_are_valid(&flow) => flow,
+                    Ok(flow) => {
+                        incomplete_effects.push(
+                            "symbolic-cfg: composed call result is used without a modeled callee `a0`"
+                                .to_owned(),
+                        );
+                        flow
+                    }
+                    Err(error) => {
+                        incomplete_effects.push(format!(
+                            "symbolic-cfg-call-composition: {error}; retained uncomposed structured flow as non-executable evidence"
+                        ));
+                        uncomposed_flow
+                    }
+                };
+                trace.events.clear();
+                trace.reference_events.clear();
+                trace.located_events = explored.located_events;
+                trace.located_reference_events = explored.located_reference_events;
+                trace.blockers.clear();
                 trace.reference_blockers = incomplete_effects;
                 trace.reference_flow = Some(flow);
                 trace.unresolved_branch = None;

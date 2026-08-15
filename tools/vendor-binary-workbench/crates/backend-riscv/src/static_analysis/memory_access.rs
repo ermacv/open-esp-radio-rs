@@ -80,6 +80,22 @@ fn projected_symbol_address(relocation: &StructuralProjectedRelocation) -> Symbo
     }
 }
 
+fn projected_relaxed_zero_address(
+    relocation: &StructuralProjectedRelocation,
+    base: &SymbolicValue,
+    offset: i32,
+) -> bool {
+    // A final linker may relax an origin HI20+LO12 pair into one load/store.
+    // When the linked fixture deliberately leaves that data symbol undefined,
+    // the encoded address is zero even though the authenticated origin still
+    // proves which symbolic cell was referenced. Preserve that identity
+    // without inventing the cell's runtime contents.
+    relocation.correspondence == "linker-relaxation"
+        && relocation.origin_offsets.len() > 1
+        && base.as_constant() == Some(0)
+        && offset == 0
+}
+
 pub(super) fn apply_floating_memory_instruction(
     blocker: artifact::UnsupportedInstruction,
     symbol: &artifact::ArtifactSymbolDefinition,
@@ -195,6 +211,16 @@ pub(super) fn apply_memory_instruction(
                 });
             let address = if relocated_pointer.is_some() {
                 None
+            } else if let Some(relocation) = projected_relocation.as_ref()
+                && projected_relaxed_zero_address(
+                    relocation,
+                    &state.values[usize::from(base.0)],
+                    offset.as_i32(),
+                )
+            {
+                Some(StructuralAddress::SymbolMemory(projected_symbol_address(
+                    relocation,
+                )))
             } else if symbol.addresses_resolved
                 && let Some(address) = structural_effective_address(
                     &state.values,
@@ -544,25 +570,50 @@ pub(super) fn apply_memory_instruction(
                 _ => 32,
             };
             let value = state.values[usize::from(src.0)].clone();
-            let address = match complete_low_relocation(
+            let projected_relocation = match projected_relocation(
                 symbol,
+                pointer_context,
                 pc as u32,
                 artifact::RelocationKind::Lo12S,
-                &state.values[usize::from(base.0)],
-                offset.as_i32(),
             ) {
-                Ok(Some(address)) => Some(StructuralAddress::SymbolMemory(address)),
-                Ok(None) => structural_effective_address(
-                    &state.values,
-                    &state.memory_read_sources,
-                    base,
-                    offset.as_i32(),
-                ),
+                Ok(relocation) => relocation,
                 Err(error) => {
                     state
                         .reference_blockers
-                        .push(format!("malformed-data-relocation at {pc:#x}: {error}"));
+                        .push(format!("projected-data-relocation at {pc:#x}: {error}"));
                     return true;
+                }
+            };
+            let address = if let Some(relocation) = projected_relocation.as_ref()
+                && projected_relaxed_zero_address(
+                    relocation,
+                    &state.values[usize::from(base.0)],
+                    offset.as_i32(),
+                ) {
+                Some(StructuralAddress::SymbolMemory(projected_symbol_address(
+                    relocation,
+                )))
+            } else {
+                match complete_low_relocation(
+                    symbol,
+                    pc as u32,
+                    artifact::RelocationKind::Lo12S,
+                    &state.values[usize::from(base.0)],
+                    offset.as_i32(),
+                ) {
+                    Ok(Some(address)) => Some(StructuralAddress::SymbolMemory(address)),
+                    Ok(None) => structural_effective_address(
+                        &state.values,
+                        &state.memory_read_sources,
+                        base,
+                        offset.as_i32(),
+                    ),
+                    Err(error) => {
+                        state
+                            .reference_blockers
+                            .push(format!("malformed-data-relocation at {pc:#x}: {error}"));
+                        return true;
+                    }
                 }
             };
             match address {

@@ -132,8 +132,8 @@ fn apply_floating_data_instruction(
             ) {
                 let left = state.floating_values[usize::from(instruction.source1)].as_constant();
                 let right = state.floating_values[usize::from(instruction.source2)].as_constant();
-                let value = left
-                    .zip(right)
+                let exact = left.zip(right);
+                let value = exact
                     .map(|(left, right)| {
                         let left = f32::from_bits(left);
                         let right = f32::from_bits(right);
@@ -146,7 +146,10 @@ fn apply_floating_data_instruction(
                     })
                     .map_or(SymbolicValue::Unknown, SymbolicValue::Constant);
                 structural_set(&mut state.values, Reg(instruction.destination), value);
-                return true;
+                // The comparison relation is not represented symbolically.
+                // It is fully accounted only when both input bit patterns are
+                // concrete; otherwise retain the original decode blocker.
+                return exact.is_some();
             }
             let magnitude = state.floating_values[usize::from(instruction.source1)]
                 .clone()
@@ -359,12 +362,20 @@ pub fn trace_structural_program_with_branches_bounded(
             let artifact::AnalysisInstruction::Unsupported(blocker) = decoded_or_blocker else {
                 unreachable!();
             };
-            state.blockers.push(blocker.to_string());
-            apply_floating_memory_instruction(blocker, symbol, pointer_context, svd, &mut state);
+            let floating_memory_accounted = apply_floating_memory_instruction(
+                blocker,
+                symbol,
+                pointer_context,
+                svd,
+                &mut state,
+            );
             if let Some(destination) = blocker.integer_destination {
                 state.values[usize::from(destination)] = SymbolicValue::Unknown;
             }
-            apply_floating_data_instruction(blocker, &mut state);
+            let floating_data_accounted = apply_floating_data_instruction(blocker, &mut state);
+            if !floating_memory_accounted && !floating_data_accounted {
+                state.blockers.push(blocker.to_string());
+            }
             state.values[0] = SymbolicValue::Constant(0);
             if blocker.linear_control_flow {
                 instruction_index += 1;
@@ -583,5 +594,8 @@ pub fn trace_structural_program_with_branches_bounded(
         instruction_index += 1;
     }
 
-    Ok(state.finish(symbol))
+    // Forced-path traces are later normalized into one structured CFG. Keep
+    // common private-stack spills on every path until that merge; pruning
+    // them independently makes otherwise identical prefixes path-dependent.
+    Ok(state.finish(symbol, !forced_branches.is_empty()))
 }

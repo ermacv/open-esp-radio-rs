@@ -325,10 +325,10 @@ fn annotate_direct_semantic_calls(
     let Some(hooks) = resolver.pointer_context.summary_hooks else {
         return;
     };
-    for call in calls
-        .iter_mut()
-        .filter(|call| call.kind == "internal" && call.semantic_operation.is_none())
-    {
+    for call in calls.iter_mut().filter(|call| {
+        matches!(call.kind, "internal" | "structural-relocation")
+            && call.semantic_operation.is_none()
+    }) {
         let (function, contract_source) =
             if let Some(symbol) = identities.selectable_symbol(&call.target) {
                 let Some(function) = (hooks.direct_semantic)(symbol)
@@ -373,8 +373,14 @@ fn annotate_direct_semantic_calls(
             source: contract_source,
             id: function.id.to_owned(),
             evidence: function.evidence.to_owned(),
+            body_policy: function.body_policy.label(),
             event_dispatch: linked_event_dispatch_contract(function.semantic),
         });
+        if function.body_policy == crate::SemanticFunctionBodyPolicy::OpaqueBoundary
+            && matches!(call.kind, "internal" | "structural-relocation")
+        {
+            call.kind = "semantic-boundary";
+        }
         call.replacement_hint = function.semantic.replacement.map(str::to_owned);
         call.typed_arguments = direct_semantic_typed_arguments(function, &call.arguments);
     }
@@ -397,6 +403,32 @@ fn reachable_decode_blockers(
                 .collect()
         })
         .unwrap_or_default()
+}
+
+fn function_completeness(
+    trace: &FunctionAnalysis,
+    calls: &[LinkedCall],
+    direct_diagnostics: &[LinkedDiagnostic],
+) -> LinkedFunctionCompleteness {
+    let call_targets_complete = calls.iter().all(|call| {
+        !matches!(
+            call.kind,
+            "unresolved" | "ambiguous-project" | "indexed-dispatch-unresolved"
+        )
+    });
+    let body_diagnostics_complete = direct_diagnostics.is_empty()
+        || (call_targets_complete
+            && direct_diagnostics
+                .iter()
+                .all(|diagnostic| matches!(diagnostic.kind, "call-boundary" | "unresolved-call")));
+    LinkedFunctionCompleteness {
+        body_complete: trace.unresolved_branch.is_none()
+            && trace.reference_observables_are_mapped()
+            && body_diagnostics_complete,
+        call_targets_complete,
+        transitive_effects_complete: false,
+        executable_complete: trace.is_reference_eligible(),
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -548,6 +580,8 @@ fn build_linked_functions_for_roots(
             ));
         }
         let direct_mmio_predicates = direct_mmio_predicates.into_iter().collect::<Vec<_>>();
+        let mut direct_calls = compact_calls(direct_calls);
+        annotate_direct_semantic_calls(&mut direct_calls, symbol, resolver, &identities);
         if include_reachable {
             for call in direct_calls.iter().filter(|call| {
                 matches!(
@@ -609,7 +643,7 @@ fn build_linked_functions_for_roots(
                 let mut calls = if direct_calls.is_empty() {
                     calls_for_trace(&trace, resolver, &identities)
                 } else {
-                    compact_calls(direct_calls)
+                    direct_calls
                 };
                 annotate_direct_semantic_calls(&mut calls, symbol, resolver, &identities);
                 let flow_kind = if trace.reference_flow.is_some() {
@@ -621,6 +655,7 @@ fn build_linked_functions_for_roots(
                 };
                 let direct_diagnostics = compact_diagnostics(&trace.blockers);
                 let reference_diagnostics = compact_diagnostics(&trace.reference_blockers);
+                let completeness = function_completeness(&trace, &calls, &direct_diagnostics);
                 let pseudo = render_pseudo(
                     &function_identity,
                     &trace,
@@ -641,7 +676,7 @@ fn build_linked_functions_for_roots(
                     object_offset: symbol.address as u32,
                     size: symbol.bytes.len(),
                     flow_kind,
-                    complete: trace.is_reference_eligible(),
+                    completeness,
                     exact: trace.is_exact(),
                     return_value: trace.return_value.canonical(),
                     return_provenance,
@@ -678,7 +713,7 @@ fn build_linked_functions_for_roots(
             }
             Err(error) => {
                 let direct_diagnostics = vec![compact_diagnostic(&error.to_string())];
-                let mut calls = compact_calls(direct_calls);
+                let mut calls = direct_calls;
                 annotate_direct_semantic_calls(&mut calls, symbol, resolver, &identities);
                 let scenario_suggestions = scenario_suggestions(None, &direct_mmio_predicates, &[]);
                 functions.push(LinkedIrFunction {
@@ -692,7 +727,12 @@ fn build_linked_functions_for_roots(
                     object_offset: symbol.address as u32,
                     size: symbol.bytes.len(),
                     flow_kind: "unavailable",
-                    complete: false,
+                    completeness: LinkedFunctionCompleteness {
+                        body_complete: false,
+                        call_targets_complete: false,
+                        transitive_effects_complete: false,
+                        executable_complete: false,
+                    },
                     exact: false,
                     return_value: "unknown".to_owned(),
                     return_provenance: return_provenance(

@@ -73,7 +73,7 @@ pub(crate) fn link_reviewed_interfaces(
             .or_default()
             .push(function);
     }
-    // Keep transitive reachability as a temporary graph of borrowed
+    // Keep transitive reachability as an ephemeral in-memory graph of borrowed
     // identities. Persisting every root's closure made artifact-wide profiles
     // quadratic in both RAM and JSON size.
     let identities = workspace

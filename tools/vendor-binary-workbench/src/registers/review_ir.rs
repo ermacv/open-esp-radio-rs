@@ -242,13 +242,13 @@ mod tests {
         write_report(&path, &report(1, "rtos.event.send"));
         let manifest = path.join("manifest.json");
         let input = std::fs::read_to_string(&manifest).unwrap().replacen(
-            "\"schema_version\": 53",
+            "\"schema_version\": 56",
             "\"schema_version\": 32",
             1,
         );
         std::fs::write(&manifest, input).unwrap();
         let error = RegisterReviewIr::load_all(std::slice::from_ref(&path)).unwrap_err();
-        assert!(error.to_string().contains("expected schema_version 53"));
+        assert!(error.to_string().contains("expected schema_version 56"));
 
         std::fs::remove_dir_all(&path).unwrap();
         write_report(

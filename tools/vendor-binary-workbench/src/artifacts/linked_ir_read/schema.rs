@@ -1,4 +1,4 @@
-//! Complete owned DTO for linked-IR schema v53.
+//! Complete owned DTO for linked-IR schema v56.
 
 #![allow(
     dead_code,
@@ -107,7 +107,10 @@ pub(crate) struct StoredReportSummary {
     semantic_calls: usize,
     trampoline_slots: usize,
     trampoline_calls: usize,
-    complete: usize,
+    body_complete: usize,
+    call_targets_complete: usize,
+    transitive_effects_complete: usize,
+    executable_complete: usize,
     structured: usize,
     internal_calls: usize,
     indexed_dispatch_calls: usize,
@@ -185,7 +188,7 @@ pub(crate) struct StoredFunction {
     pub(crate) object_offset: u32,
     size: usize,
     flow_kind: String,
-    pub(crate) complete: bool,
+    pub(crate) completeness: StoredFunctionCompleteness,
     exact: bool,
     return_value: String,
     return_provenance: StoredReturnProvenance,
@@ -208,6 +211,15 @@ pub(crate) struct StoredFunction {
     reference_diagnostics: Vec<StoredDiagnostic>,
     pub(crate) decode_blockers: Vec<StoredDecodeBlocker>,
     pub(crate) pseudo: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct StoredFunctionCompleteness {
+    pub(crate) body_complete: bool,
+    pub(crate) call_targets_complete: bool,
+    pub(crate) transitive_effects_complete: bool,
+    pub(crate) executable_complete: bool,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -261,7 +273,7 @@ pub(crate) struct StoredFunctionReviewProjection {
     pub(crate) member: Option<String>,
     pub(crate) symbol: String,
     pub(crate) binding: String,
-    pub(crate) complete: bool,
+    pub(crate) completeness: StoredFunctionCompleteness,
     pub(crate) dependencies: Vec<String>,
     pub(crate) direct_calls: usize,
     pub(crate) calls: Vec<StoredReviewCall>,
@@ -673,6 +685,7 @@ pub(crate) struct StoredSemanticContract {
     source: String,
     id: String,
     evidence: String,
+    body_policy: String,
     pub(crate) event_dispatch: Option<StoredEventDispatchContract>,
 }
 

@@ -61,6 +61,7 @@ pub(crate) struct LinkedSemanticContract {
     pub(crate) source: &'static str,
     pub(crate) id: String,
     pub(crate) evidence: String,
+    pub(crate) body_policy: &'static str,
     pub(crate) event_dispatch: Option<LinkedEventDispatchContract>,
 }
 
@@ -912,6 +913,22 @@ pub(crate) struct LinkedProjectedRelocation {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub(crate) struct LinkedFunctionCompleteness {
+    /// All locally reachable instructions and observable body effects were
+    /// structurally accounted for. Callee identity is reported separately.
+    pub(crate) body_complete: bool,
+    /// Every recovered call site has one resolved target or an explicit
+    /// reviewed semantic boundary.
+    pub(crate) call_targets_complete: bool,
+    /// The complete reachable effect closure is known under the selected
+    /// semantic-boundary contracts.
+    pub(crate) transitive_effects_complete: bool,
+    /// The function can be emitted/executed as a fail-closed reference for
+    /// the currently modeled inputs and effects.
+    pub(crate) executable_complete: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub(crate) struct LinkedIrFunction {
     pub(crate) source: String,
     pub(crate) identity: String,
@@ -923,7 +940,7 @@ pub(crate) struct LinkedIrFunction {
     pub(crate) object_offset: u32,
     pub(crate) size: usize,
     pub(crate) flow_kind: &'static str,
-    pub(crate) complete: bool,
+    pub(crate) completeness: LinkedFunctionCompleteness,
     pub(crate) exact: bool,
     pub(crate) return_value: String,
     pub(crate) return_provenance: LinkedReturnProvenance,
@@ -968,7 +985,10 @@ pub(crate) struct LinkedIrReport {
     pub(crate) memory_functions: usize,
     pub(crate) memory_accesses: usize,
     pub(crate) memory_fields: usize,
-    pub(crate) complete_functions: usize,
+    pub(crate) body_complete_functions: usize,
+    pub(crate) call_targets_complete_functions: usize,
+    pub(crate) transitive_effects_complete_functions: usize,
+    pub(crate) executable_complete_functions: usize,
     pub(crate) structured_functions: usize,
     pub(crate) internal_calls: usize,
     pub(crate) indexed_dispatch_calls: usize,

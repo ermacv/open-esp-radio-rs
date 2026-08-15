@@ -88,7 +88,7 @@ pub(super) fn print_report(
     );
     let _ = writeln!(
         output,
-        "Summary: artifacts={} functions={} roots={} reachable={} decode-blockers={} MMIO-registers={} MMIO-shapes={} field-candidates={} semantic-calls={} complete={} diagnostics={}",
+        "Summary: artifacts={} functions={} roots={} reachable={} decode-blockers={} MMIO-registers={} MMIO-shapes={} field-candidates={} semantic-calls={} body-complete={} call-targets-complete={} transitive-effects-complete={} executable-complete={} diagnostics={}",
         artifacts.len(),
         report.functions.len(),
         root_functions,
@@ -110,7 +110,10 @@ pub(super) fn print_report(
             .map(|register| register.field_candidates.len())
             .sum::<usize>(),
         report.semantic_calls,
-        report.complete_functions,
+        report.body_complete_functions,
+        report.call_targets_complete_functions,
+        report.transitive_effects_complete_functions,
+        report.executable_complete_functions,
         diagnostics,
     );
     let _ = writeln!(

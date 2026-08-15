@@ -559,6 +559,8 @@ mod tests {
                     "vendor_producer": {"pc": 0x1000_u32, "symbol": "set_key", "symbol_offset": 4},
                     "rust_producer": {"pc": 0x2000_u32, "symbol": "set_key_entry", "symbol_offset": 8}
                 }],
+                "vendor_transactions": [],
+                "rust_transactions": [],
                 "memory_changes": []
             }
         }))

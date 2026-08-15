@@ -195,6 +195,9 @@ fn collect_evaluable_input_bits_masked(
                 | ExpressionOperation::Equal
                 | ExpressionOperation::LessThanSigned
                 | ExpressionOperation::LessThanUnsigned => (u32::MAX, u32::MAX),
+                ExpressionOperation::CountLeadingZeros
+                | ExpressionOperation::CountTrailingZeros
+                | ExpressionOperation::PopulationCount => (u32::MAX, 0),
             };
             collect_evaluable_input_bits_masked(left, left_mask, index, bits)
                 && collect_evaluable_input_bits_masked(right, right_mask, index, bits)
@@ -276,6 +279,9 @@ pub fn evaluate_for_input(value: &SymbolicValue, input_index: u8, input: u32) ->
                 ExpressionOperation::Equal => u32::from(left == right),
                 ExpressionOperation::LessThanSigned => u32::from((left as i32) < (right as i32)),
                 ExpressionOperation::LessThanUnsigned => u32::from(left < right),
+                ExpressionOperation::CountLeadingZeros => left.leading_zeros(),
+                ExpressionOperation::CountTrailingZeros => left.trailing_zeros(),
+                ExpressionOperation::PopulationCount => left.count_ones(),
             })
         }
         SymbolicValue::Bits(sources) => {

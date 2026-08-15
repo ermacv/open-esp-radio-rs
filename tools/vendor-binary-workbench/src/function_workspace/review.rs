@@ -354,7 +354,7 @@ fn write_function_inventory<'a>(
             markdown_code(&fact.profile),
             markdown_code(&fact.source),
             markdown_code(&fact.symbol),
-            yes_no(fact.direct_complete),
+            yes_no(fact.body_complete),
             yes_no(fact.call_graph_closed),
             yes_no(fact.context_projection_complete),
             fact.calls.len(),
@@ -460,7 +460,7 @@ fn write_function(
     writeln!(
         output,
         "- Evidence closure: direct={}, calls={}, contexts={}{}",
-        yes_no(fact.direct_complete),
+        yes_no(fact.body_complete),
         yes_no(fact.call_graph_closed),
         yes_no(fact.context_projection_complete),
         if reviewed.is_some_and(|function| function.accept_incomplete) {

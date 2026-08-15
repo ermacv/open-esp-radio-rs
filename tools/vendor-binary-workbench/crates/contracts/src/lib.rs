@@ -125,6 +125,27 @@ pub struct ExternalSemanticSpec {
     pub event_dispatch: Option<EventDispatchSemanticSpec>,
 }
 
+/// Whether generic analysis may descend into a function body after applying
+/// its reviewed semantic contract.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SemanticFunctionBodyPolicy {
+    /// The ABI and declared effects are the complete analysis boundary. The
+    /// implementation bytes are not a target of transitive analysis.
+    OpaqueBoundary,
+    /// The contract annotates the call, but the implementation remains part
+    /// of transitive analysis.
+    AnalyzeBody,
+}
+
+impl SemanticFunctionBodyPolicy {
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::OpaqueBoundary => "opaque-boundary",
+            Self::AnalyzeBody => "analyze-body",
+        }
+    }
+}
+
 /// Reviewed meaning attached to a directly linked vendor function.
 ///
 /// The platform semantic harness is responsible for returning this spec only
@@ -139,6 +160,7 @@ pub struct DirectSemanticFunctionSpec {
     pub source: &'static str,
     pub c_name: &'static str,
     pub argument_count: u8,
+    pub body_policy: SemanticFunctionBodyPolicy,
     /// Executable result model for an external boundary. Internal reviewed
     /// summaries use `Unmodeled` because their body, not the ABI boundary,
     /// determines the result.

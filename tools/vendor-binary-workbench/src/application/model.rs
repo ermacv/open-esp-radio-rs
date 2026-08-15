@@ -487,6 +487,8 @@ pub struct ReviewQueueSummary {
     pub severity: String,
     pub occurrences: usize,
     pub functions: Vec<String>,
+    pub affected_scope_roots: Vec<String>,
+    pub potentially_unblocked_functions: usize,
     pub sites: Vec<u32>,
     pub channels: Vec<String>,
     pub message: String,

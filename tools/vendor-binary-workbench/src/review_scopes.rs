@@ -12,7 +12,7 @@ use crate::{
     registers::RegisterFacts,
 };
 
-pub(crate) const REVIEW_SCOPES_SCHEMA: u32 = 10;
+pub(crate) const REVIEW_SCOPES_SCHEMA: u32 = 11;
 
 mod model;
 pub(crate) use model::{
@@ -302,10 +302,13 @@ fn load_profile_nodes(
                     class: blocker.class.clone(),
                 })
                 .collect::<Vec<_>>();
-            let complete = function.complete
-                || (decode_blockers.is_empty()
-                    && diagnostics.is_empty()
-                    && unresolved_call_sites.is_empty());
+            let complete = function.completeness.body_complete
+                && function.completeness.call_targets_complete
+                && function.completeness.transitive_effects_complete
+                && function.completeness.executable_complete
+                && decode_blockers.is_empty()
+                && diagnostics.is_empty()
+                && unresolved_call_sites.is_empty();
             let node = FunctionNode {
                 source: function.source,
                 symbol: function.symbol,
@@ -569,6 +572,7 @@ fn analyze_scope(
         )
         .collect();
     report.analysis_inventory_complete = !report.has_analysis_inventory_blockers();
+    queue::attach_scope_impact(&mut review_queue, &root_paths);
     report.review_queue = queue::finish(review_queue);
     Ok(report)
 }

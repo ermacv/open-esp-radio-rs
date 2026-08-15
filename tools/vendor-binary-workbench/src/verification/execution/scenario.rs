@@ -280,6 +280,13 @@ pub(crate) struct ExecutionInput<'a> {
     pub(crate) symbol: &'a str,
 }
 
+pub(crate) struct ExecutionComparisonPolicy<'a> {
+    pub(crate) compare_return: bool,
+    pub(crate) transaction_comparison: profiles::TransactionComparison,
+    pub(crate) call_equivalences: &'a [profiles::CallEquivalence],
+    pub(crate) coverage_domain: &'a [profiles::ProfileCoverageConstraint],
+}
+
 pub(crate) fn resolved_scenario(
     named: &NamedScenario,
     image: &execution::ExecutableImage,

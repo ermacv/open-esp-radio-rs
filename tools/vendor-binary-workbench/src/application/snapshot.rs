@@ -338,7 +338,7 @@ fn profile_draft(fact: &FunctionFact, suggestions: &[ScenarioSuggestionSummary])
         return None;
     }
     let mut output = format!(
-        "# Generated coverage draft; replace REVIEW_REQUIRED values and replay every case.\nschema = 3\n\n[[profiles]]\nname = {}\nvendor-source = {}\nvendor-symbol = {}\nrust-symbol = \"REVIEW_REQUIRED_RUST_SYMBOL\"\nclaim = \"whole-function-equivalence\"\n",
+        "# Generated coverage draft; replace REVIEW_REQUIRED values and replay every case.\nschema = 4\ntransaction-comparison = \"observables\"\n\n[[profiles]]\nname = {}\nvendor-source = {}\nvendor-symbol = {}\nrust-symbol = \"REVIEW_REQUIRED_RUST_SYMBOL\"\nclaim = \"whole-function-equivalence\"\n",
         toml_edit::Value::from(format!(
             "draft-{}",
             fact.symbol
@@ -564,7 +564,10 @@ mod tests {
             member: None,
             symbol: "init".to_owned(),
             selection: "symbol-prefix-root".to_owned(),
-            direct_complete: true,
+            body_complete: true,
+            call_targets_complete: true,
+            transitive_effects_complete: true,
+            executable_complete: true,
             transitive_effects_materialized: true,
             call_graph_closed: true,
             context_projection_materialized: true,

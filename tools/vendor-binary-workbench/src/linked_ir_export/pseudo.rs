@@ -168,6 +168,15 @@ pub(crate) fn render_pseudo(
             .expect("writing to String cannot fail");
         writeln!(
             output,
+            "// COMPLETENESS: body={} call-targets={} transitive-effects={} executable={}",
+            function.completeness.body_complete,
+            function.completeness.call_targets_complete,
+            function.completeness.transitive_effects_complete,
+            function.completeness.executable_complete,
+        )
+        .expect("writing to String cannot fail");
+        writeln!(
+            output,
             "// REACHABLE-EFFECTS: call-graph-closed={} max-depth={} functions={} mmio={} delays={} semantics={} semantic-actions={} event-dispatches={} trampolines={} context-fields={} context-projection-complete={} blockers={}",
             summary.call_graph_closed,
             summary.max_depth,

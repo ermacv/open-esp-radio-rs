@@ -166,8 +166,12 @@ pub(super) fn run(arguments: VerifyProfilesArgs, svd: &MmioMap) -> Result<bool> 
                 companion: arguments.rust_companion.as_deref(),
                 symbol: &profile.rust_symbol,
             },
-            profile.compare_return,
-            &coverage_domain,
+            crate::ExecutionComparisonPolicy {
+                compare_return: profile.compare_return,
+                transaction_comparison: profile.transaction_comparison,
+                call_equivalences: &profile.call_equivalences,
+                coverage_domain: &coverage_domain,
+            },
             &profile.scenarios,
         )?;
         match comparison.verdict {

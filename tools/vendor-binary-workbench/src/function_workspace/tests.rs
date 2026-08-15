@@ -195,7 +195,12 @@ fn write_ir(path: &std::path::Path) {
         object_offset,
         size: 4,
         flow_kind: "linear",
-        complete: true,
+        completeness: crate::LinkedFunctionCompleteness {
+            body_complete: true,
+            call_targets_complete: true,
+            transitive_effects_complete: true,
+            executable_complete: true,
+        },
         exact: true,
         return_value: "?".to_owned(),
         return_provenance: provenance(),

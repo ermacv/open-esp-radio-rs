@@ -104,6 +104,7 @@ pub enum ResolvedReferenceEvent {
         arguments: Box<[SymbolicValue]>,
     },
     DiagnosticCall {
+        site: u32,
         function: String,
         argument_count: u8,
         arguments: Box<[SymbolicValue]>,
@@ -481,10 +482,12 @@ impl ResolvedReferenceEvent {
                 }
             }
             DraftReferenceEvent::DiagnosticCall {
+                site,
                 function,
                 argument_count,
                 arguments,
             } => Self::DiagnosticCall {
+                site: *site,
                 function: function.clone(),
                 argument_count: *argument_count,
                 arguments: arguments.clone(),

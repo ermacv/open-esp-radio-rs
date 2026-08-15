@@ -149,6 +149,7 @@ pub(super) fn render_event(
             state.external_results.push(());
         }
         ResolvedReferenceEvent::DiagnosticCall {
+            site,
             function,
             argument_count,
             arguments,
@@ -160,8 +161,8 @@ pub(super) fn render_event(
                 .collect::<Result<Vec<_>, _>>()?;
             writeln!(
                 output,
-                "{indent}// Harness-reviewed diagnostic call: {}.",
-                comment_text(function)
+                "{indent}// Harness-reviewed diagnostic call at {site:#010x}: {}.",
+                comment_text(function),
             )
             .unwrap();
             writeln!(

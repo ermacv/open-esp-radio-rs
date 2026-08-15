@@ -243,7 +243,7 @@ fn compose_path(
                 origin_path: None,
             });
         }
-        if !function.complete {
+        if !function.completeness.executable_complete {
             blockers.push(FlowBlocker::new(
                 "incomplete-sink",
                 format!("sink function {sink} has semantic blockers"),

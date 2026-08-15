@@ -220,10 +220,10 @@ impl ProjectAnalysisCache {
 /// hashes continue to protect project and caller-owned state.
 fn stage_revision(stage: &str) -> Result<u32> {
     match stage {
-        "symbol-inventory" => Ok(1),
+        "symbol-inventory" => Ok(2),
         "mmio-discovery" => Ok(3),
-        "interface-discovery" => Ok(1),
-        "linked-ir" => Ok(15),
+        "interface-discovery" => Ok(2),
+        "linked-ir" => Ok(16),
         "event-replays" => Ok(1),
         "review-scopes" => Ok(3),
         "navigation-index" => Ok(1),

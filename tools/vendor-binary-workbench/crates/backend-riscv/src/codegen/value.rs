@@ -304,6 +304,15 @@ pub(super) fn render_value_scoped(
                 crate::ExpressionOperation::LessThanUnsigned => {
                     format!("u32::from(({left}) < ({right}))")
                 }
+                crate::ExpressionOperation::CountLeadingZeros => {
+                    format!("({left}).leading_zeros()")
+                }
+                crate::ExpressionOperation::CountTrailingZeros => {
+                    format!("({left}).trailing_zeros()")
+                }
+                crate::ExpressionOperation::PopulationCount => {
+                    format!("({left}).count_ones()")
+                }
             })
         }
         SymbolicValue::WideSignedDivide {

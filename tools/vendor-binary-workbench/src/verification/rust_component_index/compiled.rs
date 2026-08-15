@@ -92,7 +92,7 @@ fn artifact_freshness(
     (status, checked, stale)
 }
 
-pub(super) fn compiled_matches(component: &str, demangled: &str) -> bool {
+pub(crate) fn compiled_matches(component: &str, demangled: &str) -> bool {
     if demangled == component
         || demangled
             .strip_prefix(component)

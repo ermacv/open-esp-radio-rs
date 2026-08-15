@@ -407,6 +407,7 @@ pub(super) fn flatten_reference_trace(
                 Ok(())
             })(),
             DraftReferenceEvent::DiagnosticCall {
+                site,
                 function,
                 argument_count,
                 arguments,
@@ -425,6 +426,7 @@ pub(super) fn flatten_reference_trace(
                     .collect::<std::result::Result<Vec<_>, _>>()?
                     .into_boxed_slice();
                 output.push(DraftReferenceEvent::DiagnosticCall {
+                    site: *site,
                     function: function.clone(),
                     argument_count: *argument_count,
                     arguments,

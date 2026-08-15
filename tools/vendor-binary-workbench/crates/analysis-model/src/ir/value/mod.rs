@@ -154,6 +154,9 @@ pub enum ExpressionOperation {
     Equal,
     LessThanSigned,
     LessThanUnsigned,
+    CountLeadingZeros,
+    CountTrailingZeros,
+    PopulationCount,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

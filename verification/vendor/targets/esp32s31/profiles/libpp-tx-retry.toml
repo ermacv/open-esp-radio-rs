@@ -1,4 +1,5 @@
-schema = 3
+schema = 4
+transaction-comparison = "observables"
 
 # Normal 802.11g 54M schedule only. The vendor and compiled production sides
 # receive the same descriptor image and are compared through the selected-rate
@@ -94,6 +95,22 @@ vendor-source = "libpp-replay"
 vendor-symbol = "lmacProcessTxError"
 rust-symbol = "open_libpp_tx_retry_trace_lmac_process_tx_error"
 compare-return = false
+transaction-comparison = "observables-and-reviewed-calls"
+[[profiles.call-equivalences]]
+operation = "tx.retry.cts-timeout"
+vendor-symbol = "lmacProcessCtsTimeout"
+rust-symbol = "open_libpp_tx_retry_cts_timeout"
+argument-comparison = "ignore"
+[[profiles.call-equivalences]]
+operation = "tx.retry.collision"
+vendor-symbol = "lmacProcessCollision"
+rust-symbol = "open_libpp_tx_retry_collision"
+argument-comparison = "ignore"
+[[profiles.call-equivalences]]
+operation = "tx.retry.ack-timeout"
+vendor-symbol = "lmacProcessAckTimeout"
+rust-symbol = "open_libpp_tx_retry_ack_timeout"
+argument-comparison = "ignore"
 [[profiles.argument-values]]
 index = 0
 values = [0]

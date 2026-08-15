@@ -1,4 +1,5 @@
-schema = 3
+schema = 4
+transaction-comparison = "observables"
 
 # Complete vendor/Rust transaction for one representative Wi-Fi timer. The
 # distinct latency and duration values make their intentionally reversed

@@ -29,10 +29,61 @@ pub struct Profile {
     pub precondition: Option<String>,
     pub contract: ProfileContract,
     pub compare_return: bool,
+    pub transaction_comparison: TransactionComparison,
+    pub call_equivalences: Vec<CallEquivalence>,
     pub argument_ranges: Vec<ArgumentRange>,
     pub argument_values: Vec<ArgumentValues>,
     pub mmio_domains: Vec<MmioDomain>,
     pub scenarios: Vec<NamedScenario>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, serde::Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum TransactionComparison {
+    /// Compare the ordered externally observable MMIO/delay/fence stream.
+    Observables,
+    /// Also compare named call boundaries at their exact position in the
+    /// observable stream. Call-site addresses are provenance, not equality.
+    ObservablesAndCalls,
+    /// Compare only explicitly reviewed vendor/Rust semantic call pairs.
+    /// Unlisted implementation-detail calls remain recorded but do not enter
+    /// equivalence.
+    ObservablesAndReviewedCalls,
+    /// Include branch decisions and ordinary RAM transactions. This requires
+    /// a reviewed ABI/layout projection and is intentionally opt-in.
+    Full,
+}
+
+impl TransactionComparison {
+    pub const fn includes_calls(self) -> bool {
+        matches!(
+            self,
+            Self::ObservablesAndCalls | Self::ObservablesAndReviewedCalls | Self::Full
+        )
+    }
+
+    pub const fn includes_internal_state(self) -> bool {
+        matches!(self, Self::Full)
+    }
+
+    pub const fn reviewed_calls_only(self) -> bool {
+        matches!(self, Self::ObservablesAndReviewedCalls)
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CallEquivalence {
+    pub operation: String,
+    pub vendor_symbol: String,
+    pub rust_symbol: String,
+    pub argument_comparison: CallArgumentComparison,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "kebab-case")]
+pub enum CallArgumentComparison {
+    Exact,
+    Ignore,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -141,9 +192,10 @@ impl ProfileContract {
 }
 
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(deny_unknown_fields, rename_all = "kebab-case")]
 struct ProfileDocument {
     schema: u32,
+    transaction_comparison: TransactionComparison,
     profiles: Vec<ProfileInput>,
 }
 
@@ -160,6 +212,9 @@ struct ProfileInput {
     contract: ProfileContract,
     #[serde(default)]
     compare_return: bool,
+    transaction_comparison: Option<TransactionComparison>,
+    #[serde(default)]
+    call_equivalences: Vec<CallEquivalenceInput>,
     #[serde(default)]
     argument_ranges: Vec<ArgumentRangeInput>,
     #[serde(default)]
@@ -190,6 +245,15 @@ struct ArgumentValuesInput {
 struct MmioDomainInput {
     address: u32,
     values: Vec<u32>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "kebab-case")]
+struct CallEquivalenceInput {
+    operation: String,
+    vendor_symbol: String,
+    rust_symbol: String,
+    argument_comparison: CallArgumentComparison,
 }
 
 #[derive(Clone, Copy, Deserialize)]
@@ -380,7 +444,21 @@ struct ScenarioInput {
 }
 
 impl ProfileInput {
-    fn finish(self) -> Result<Profile> {
+    fn finish(self, document_transaction_comparison: TransactionComparison) -> Result<Profile> {
+        let transaction_comparison = self
+            .transaction_comparison
+            .unwrap_or(document_transaction_comparison);
+        let call_equivalences = self
+            .call_equivalences
+            .into_iter()
+            .map(|pair| CallEquivalence {
+                operation: pair.operation,
+                vendor_symbol: pair.vendor_symbol,
+                rust_symbol: pair.rust_symbol,
+                argument_comparison: pair.argument_comparison,
+            })
+            .collect::<Vec<_>>();
+        validate_call_equivalences(&self.name, transaction_comparison, &call_equivalences)?;
         validate_source_id(&self.vendor_source, 1)?;
         if self.scenarios.is_empty() {
             return Err(crate::Error::invalid(format!(
@@ -467,12 +545,53 @@ impl ProfileInput {
             precondition: self.precondition,
             contract: self.contract,
             compare_return: self.compare_return,
+            transaction_comparison,
+            call_equivalences,
             argument_ranges,
             argument_values,
             mmio_domains,
             scenarios,
         })
     }
+}
+
+fn validate_call_equivalences(
+    profile: &str,
+    comparison: TransactionComparison,
+    pairs: &[CallEquivalence],
+) -> Result<()> {
+    if comparison.reviewed_calls_only() && pairs.is_empty() {
+        return Err(crate::Error::invalid(format!(
+            "profile {profile} compares reviewed calls but declares no call-equivalences"
+        )));
+    }
+    if !comparison.reviewed_calls_only() && !pairs.is_empty() {
+        return Err(crate::Error::invalid(format!(
+            "profile {profile} declares call-equivalences without observables-and-reviewed-calls"
+        )));
+    }
+    let mut operations = BTreeSet::new();
+    let mut vendor = BTreeSet::new();
+    let mut rust = BTreeSet::new();
+    for pair in pairs {
+        if pair.operation.trim().is_empty()
+            || pair.vendor_symbol.trim().is_empty()
+            || pair.rust_symbol.trim().is_empty()
+        {
+            return Err(crate::Error::invalid(format!(
+                "profile {profile} has an empty call-equivalence identity"
+            )));
+        }
+        if !operations.insert(&pair.operation)
+            || !vendor.insert(&pair.vendor_symbol)
+            || !rust.insert(&pair.rust_symbol)
+        {
+            return Err(crate::Error::invalid(format!(
+                "profile {profile} has an ambiguous call-equivalence mapping"
+            )));
+        }
+    }
+    Ok(())
 }
 
 impl ScenarioInput {
@@ -573,9 +692,9 @@ pub fn load(path: &Path) -> Result<Vec<Profile>> {
 }
 
 fn finish(document: ProfileDocument) -> Result<Vec<Profile>> {
-    if document.schema != 3 {
+    if document.schema != 4 {
         return Err(crate::Error::invalid(
-            "verification profile TOML requires schema = 3",
+            "verification profile TOML requires schema = 4",
         ));
     }
     if document.profiles.is_empty() {
@@ -583,9 +702,36 @@ fn finish(document: ProfileDocument) -> Result<Vec<Profile>> {
             "verification profile TOML contains no profiles",
         ));
     }
+    let transaction_comparison = document.transaction_comparison;
     document
         .profiles
         .into_iter()
-        .map(ProfileInput::finish)
+        .map(|profile| profile.finish(transaction_comparison))
         .collect()
+}
+
+#[cfg(test)]
+mod schema_tests {
+    use super::*;
+
+    #[test]
+    fn schema_four_is_a_hard_cutover_with_explicit_transaction_policy() {
+        let old: ProfileDocument = toml_edit::de::from_str(
+            "schema = 3\ntransaction-comparison = \"observables\"\nprofiles = []\n",
+        )
+        .unwrap();
+        assert!(
+            finish(old)
+                .unwrap_err()
+                .to_string()
+                .contains("requires schema = 4")
+        );
+
+        let missing_policy =
+            match toml_edit::de::from_str::<ProfileDocument>("schema = 4\nprofiles = []\n") {
+                Ok(_) => panic!("missing transaction policy was accepted"),
+                Err(error) => error.to_string(),
+            };
+        assert!(missing_policy.contains("transaction-comparison"));
+    }
 }

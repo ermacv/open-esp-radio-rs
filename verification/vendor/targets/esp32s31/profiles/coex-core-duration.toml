@@ -1,4 +1,5 @@
-schema = 3
+schema = 4
+transaction-comparison = "observables"
 
 # Complete branch-domain proof for the five reviewed `g_coex_param`
 # durations. The cases cover the null-output boundary, every accepted event,

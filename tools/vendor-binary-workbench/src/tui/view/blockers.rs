@@ -62,6 +62,11 @@ pub(super) fn render(frame: &mut Frame<'_>, state: &BrowserState, area: Rect) {
                 field("Severity", &item.severity),
                 field("Kind", &item.kind),
                 field("Occurrences", item.occurrences),
+                field(
+                    "Potentially unblocked functions",
+                    item.potentially_unblocked_functions,
+                ),
+                field("Affected roots", item.affected_scope_roots.join(", ")),
                 field("Channels", item.channels.join(", ")),
                 field(
                     "Sites",

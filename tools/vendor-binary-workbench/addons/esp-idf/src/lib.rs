@@ -3,7 +3,7 @@
 use open_radio_vendor_analysis_model::{
     DirectSemanticFunctionSpec, DraftReferenceEvent, ExternalArgumentDirection,
     ExternalArgumentSpec, ExternalReturnModel, ExternalSemanticSpec, FunctionAnalysis, MmioMap,
-    SymbolicValue,
+    SemanticFunctionBodyPolicy, SymbolicValue,
 };
 use open_radio_vendor_backend_riscv::{
     StructuralPointerContext, artifact::ArtifactSymbolDefinition,
@@ -20,6 +20,7 @@ static ETS_DELAY_US: DirectSemanticFunctionSpec = DirectSemanticFunctionSpec {
     source: "esp-idf-addon",
     c_name: "ets_delay_us",
     argument_count: 1,
+    body_policy: SemanticFunctionBodyPolicy::OpaqueBoundary,
     return_model: ExternalReturnModel::Void,
     semantic: ExternalSemanticSpec {
         operation: "time.blocking-delay",

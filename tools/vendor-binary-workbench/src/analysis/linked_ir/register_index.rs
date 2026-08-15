@@ -79,9 +79,21 @@ pub(super) fn summarize_linked_ir_with_options(
         .iter()
         .map(|function| function.memory_fields.len())
         .sum();
-    let complete_functions = functions
+    let body_complete_functions = functions
         .iter()
-        .filter(|function| function.complete)
+        .filter(|function| function.completeness.body_complete)
+        .count();
+    let call_targets_complete_functions = functions
+        .iter()
+        .filter(|function| function.completeness.call_targets_complete)
+        .count();
+    let transitive_effects_complete_functions = functions
+        .iter()
+        .filter(|function| function.completeness.transitive_effects_complete)
+        .count();
+    let executable_complete_functions = functions
+        .iter()
+        .filter(|function| function.completeness.executable_complete)
         .count();
     let structured_functions = functions
         .iter()
@@ -235,7 +247,10 @@ pub(super) fn summarize_linked_ir_with_options(
         memory_functions,
         memory_accesses,
         memory_fields,
-        complete_functions,
+        body_complete_functions,
+        call_targets_complete_functions,
+        transitive_effects_complete_functions,
+        executable_complete_functions,
         structured_functions,
         internal_calls,
         indexed_dispatch_calls,

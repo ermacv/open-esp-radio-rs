@@ -11,6 +11,7 @@ pub(super) struct Accumulator {
     severity: &'static str,
     occurrences: usize,
     functions: BTreeSet<String>,
+    affected_scope_roots: BTreeSet<String>,
     sites: BTreeSet<u32>,
     channels: BTreeSet<String>,
     message: String,
@@ -55,6 +56,7 @@ pub(super) fn insert(
         severity,
         occurrences: 0,
         functions: BTreeSet::new(),
+        affected_scope_roots: BTreeSet::new(),
         sites: BTreeSet::new(),
         channels: BTreeSet::new(),
         message,
@@ -83,6 +85,7 @@ pub(super) fn insert_existing(queue: &mut Queue, item: ReviewQueueItem) {
             },
             occurrences: item.occurrences,
             functions: item.functions.into_iter().collect(),
+            affected_scope_roots: item.affected_scope_roots.into_iter().collect(),
             sites: item.sites.into_iter().collect(),
             channels: item.channels.into_iter().collect(),
             message: item.message,
@@ -106,16 +109,21 @@ pub(super) fn id(kind: &str, identity: &str) -> String {
 pub(super) fn finish(queue: Queue) -> Vec<ReviewQueueItem> {
     let mut queue = queue
         .into_iter()
-        .map(|(id, item)| ReviewQueueItem {
-            id,
-            kind: item.kind,
-            priority: item.priority,
-            severity: item.severity.to_owned(),
-            occurrences: item.occurrences,
-            functions: item.functions.into_iter().collect(),
-            sites: item.sites.into_iter().collect(),
-            channels: item.channels.into_iter().collect(),
-            message: item.message,
+        .map(|(id, item)| {
+            let potentially_unblocked_functions = item.functions.len();
+            ReviewQueueItem {
+                id,
+                kind: item.kind,
+                priority: item.priority,
+                severity: item.severity.to_owned(),
+                occurrences: item.occurrences,
+                functions: item.functions.into_iter().collect(),
+                affected_scope_roots: item.affected_scope_roots.into_iter().collect(),
+                potentially_unblocked_functions,
+                sites: item.sites.into_iter().collect(),
+                channels: item.channels.into_iter().collect(),
+                message: item.message,
+            }
         })
         .collect::<Vec<_>>();
     queue.sort_by(|left, right| {
@@ -124,6 +132,16 @@ pub(super) fn finish(queue: Queue) -> Vec<ReviewQueueItem> {
             .then_with(|| left.id.cmp(&right.id))
     });
     queue
+}
+
+pub(super) fn attach_scope_impact(queue: &mut Queue, root_paths: &BTreeMap<String, Vec<String>>) {
+    for item in queue.values_mut() {
+        for function in &item.functions {
+            if let Some(root) = root_paths.get(function).and_then(|path| path.first()) {
+                item.affected_scope_roots.insert(root.clone());
+            }
+        }
+    }
 }
 
 #[cfg(test)]

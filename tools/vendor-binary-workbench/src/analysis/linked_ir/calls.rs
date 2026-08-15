@@ -507,6 +507,7 @@ pub(super) fn collect_call_event(
                         || "ambiguous-reviewed-interface-evidence".to_owned(),
                         |evidence| evidence.description().to_owned(),
                     ),
+                    body_policy: "opaque-boundary",
                     event_dispatch: None,
                 }),
                 replacement_hint: (replacements.len() == 1)
@@ -545,6 +546,7 @@ pub(super) fn collect_call_event(
                 source: "reviewed-direct-external-model",
                 id: function.id.clone(),
                 evidence: function.evidence.clone(),
+                body_policy: "opaque-boundary",
                 event_dispatch: None,
             }),
             replacement_hint: function.replacement_hint.clone(),
@@ -558,13 +560,14 @@ pub(super) fn collect_call_event(
             guard_paths: None,
         }),
         DraftReferenceEvent::DiagnosticCall {
+            site,
             function,
             arguments,
             ..
         } => Some(LinkedCall {
             kind: "diagnostic",
             target: function.clone(),
-            site: None,
+            site: Some(*site),
             tail: false,
             result_modeled: false,
             execution_model: None,
@@ -574,6 +577,7 @@ pub(super) fn collect_call_event(
                 source: "registered-diagnostic-symbol",
                 id: function.clone(),
                 evidence: "relocated-symbol-and-reviewed-arity".to_owned(),
+                body_policy: "opaque-boundary",
                 event_dispatch: None,
             }),
             replacement_hint: Some("Rust logging/assertion boundary".to_owned()),

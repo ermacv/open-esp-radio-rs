@@ -61,6 +61,7 @@ pub(super) struct Machine<'a> {
     /// write is the only modeled cause of reservation loss.
     pub(super) word_reservation: Option<u32>,
     pub(super) steps: u64,
+    pub(super) executed_pcs: BTreeSet<u32>,
     pub(super) max_steps: u64,
 }
 
@@ -176,6 +177,7 @@ impl<'a> Machine<'a> {
             fifo_lifecycle: Vec::new(),
             word_reservation: None,
             steps: 0,
+            executed_pcs: BTreeSet::new(),
             max_steps: if scenario.max_steps == 0 {
                 100_000
             } else {
@@ -305,6 +307,7 @@ pub fn execute(
         return_value,
         completion,
         steps: machine.steps,
+        executed_pcs: machine.executed_pcs,
         branches: machine.branches,
         ordered_branches: machine.ordered_branches,
         calls: machine.calls,

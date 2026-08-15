@@ -56,6 +56,11 @@ pub(crate) struct ReviewQueueItem {
     pub(crate) severity: String,
     pub(crate) occurrences: usize,
     pub(crate) functions: Vec<String>,
+    /// Explicit scope roots whose reachable inventory contains this cause.
+    pub(crate) affected_scope_roots: Vec<String>,
+    /// Upper bound on functions that can lose this blocker when the root
+    /// cause is fixed. Other independent blockers may still remain.
+    pub(crate) potentially_unblocked_functions: usize,
     pub(crate) sites: Vec<u32>,
     pub(crate) channels: Vec<String>,
     pub(crate) message: String,

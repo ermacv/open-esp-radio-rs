@@ -71,6 +71,7 @@ static PP_POST_SEMANTIC: DirectSemanticFunctionSpec = DirectSemanticFunctionSpec
     source: "esp32s31-reviewed-knowledge",
     c_name: "pp_post",
     argument_count: 1,
+    body_policy: SemanticFunctionBodyPolicy::AnalyzeBody,
     return_model: ExternalReturnModel::Unmodeled,
     semantic: ExternalSemanticSpec {
         operation: "wifi.internal-signal.post",
@@ -92,6 +93,7 @@ static RTC_XTAL_FREQUENCY_SEMANTIC: DirectSemanticFunctionSpec = DirectSemanticF
     source: "esp32s31-chip-addon",
     c_name: "rtc_clk_xtal_freq_get",
     argument_count: 0,
+    body_policy: SemanticFunctionBodyPolicy::OpaqueBoundary,
     return_model: ExternalReturnModel::Constant(40),
     semantic: ExternalSemanticSpec {
         operation: "clock.xtal-frequency.read",

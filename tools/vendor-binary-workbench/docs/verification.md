@@ -43,6 +43,21 @@ changes and allowed normalizations. Unlisted effects fail closed. Concrete
 profiles define arguments, initial memory/device state, observations and
 finite-domain preconditions.
 
+Profile schema 4 requires an explicit `transaction-comparison` policy.
+`observables` compares ordered MMIO, delay, and fence events;
+`observables-and-calls` also compares every named call boundary;
+`observables-and-reviewed-calls` compares only explicitly listed semantic
+call pairs; and `full` additionally exposes branch and ordinary RAM state.
+Call-site addresses remain provenance rather than equality keys. A vendor and
+Rust call may share an operation only through a reviewed `call-equivalences`
+entry; symbol spelling or a semantic hint never creates equivalence.
+
+Known C runtime and ecosystem service leaves are opaque semantic boundaries
+when an add-on supplies their signature and bounded behavior. Their calls
+remain visible facts, but Workbench does not recursively reconstruct an
+available implementation merely because bytes for that implementation are
+present. Unknown calls remain blockers.
+
 Function identity is `(source, symbol)`, not symbol spelling alone. Probe names
 never imply production ownership; dispositions provide that reviewed mapping
 and an upper bound on the claim, not execution truth.

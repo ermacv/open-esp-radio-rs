@@ -15,7 +15,8 @@ pub(crate) const RUST_COMPONENT_INDEX_SCHEMA: u32 = 1;
 
 mod compiled;
 mod model;
-use compiled::{compiled_matches, compiled_symbols};
+pub(crate) use compiled::compiled_matches;
+use compiled::compiled_symbols;
 use model::*;
 
 pub(crate) use model::{RustArtifactInput, RustComponentEvidence, RustComponentIndex};

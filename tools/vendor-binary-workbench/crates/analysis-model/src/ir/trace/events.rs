@@ -192,6 +192,7 @@ pub enum DraftReferenceEvent {
         arguments: Box<[SymbolicValue]>,
     },
     DiagnosticCall {
+        site: u32,
         function: String,
         argument_count: u8,
         arguments: Box<[SymbolicValue]>,

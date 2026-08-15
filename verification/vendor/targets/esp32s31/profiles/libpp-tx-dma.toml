@@ -1,4 +1,5 @@
-schema = 3
+schema = 4
+transaction-comparison = "observables"
 # Concrete coverage for leaves whose logical queue argument selects the
 # reversed physical CONTROL[3-queue] PAC bank.
 

@@ -725,6 +725,7 @@ fn linked_diagnostic_symbol_remains_a_modeled_boundary() {
     assert!(matches!(
         trace.reference_events.as_slice(),
         [DraftReferenceEvent::DiagnosticCall {
+            site: 0x1000,
             function,
             argument_count: 2,
             arguments,

@@ -169,6 +169,7 @@ impl Machine<'_> {
             .into());
         }
         self.steps += 1;
+        self.executed_pcs.insert(self.pc);
 
         if let Some(symbol) = self.call_symbol_at(self.pc).map(str::to_owned) {
             if let Some(running) = self.dispatch_builtin_memory_call(&symbol)? {

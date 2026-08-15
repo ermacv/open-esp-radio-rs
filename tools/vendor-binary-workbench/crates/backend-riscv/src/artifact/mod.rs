@@ -15,7 +15,9 @@ mod sections;
 mod symbols;
 
 pub use data_objects::load_data_objects;
-pub use debug::{ArtifactDebugSymbol, inspect_rust_debug_symbols};
+pub use debug::{
+    ArtifactDebugFrame, ArtifactDebugSymbol, inspect_rust_debug_frames, inspect_rust_debug_symbols,
+};
 pub use decode::{
     FloatingDataInstruction, FloatingDataOperation, FloatingMemoryAccess,
     FloatingMemoryInstruction, andi_immediate, decode_floating_data_instruction,

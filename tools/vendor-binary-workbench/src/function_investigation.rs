@@ -318,7 +318,7 @@ fn semantic_evidence(
         let Some(function) = reader.get_function(source, symbol, member, address)? else {
             continue;
         };
-        let complete = function.complete;
+        let complete = function.completeness.executable_complete;
         let exact = function.exact();
         let reviewed = function_pack.as_ref().and_then(|pack| {
             pack.functions.iter().find(|reviewed| {
@@ -829,7 +829,7 @@ fn event_function_analysis(
             )?;
             Ok(Some(EventHandlerAnalysisEvidence {
                 identity: function.identity.clone(),
-                complete: function.complete,
+                complete: function.completeness.executable_complete,
                 exact: function.exact(),
                 direct_instruction_effects: function.direct_instruction_effect_count(),
                 direct_calls: function.direct_call_count(),

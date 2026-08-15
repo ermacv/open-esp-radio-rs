@@ -375,6 +375,7 @@ pub fn inline_reference_summary(
                 }
             }
             DraftReferenceEvent::DiagnosticCall {
+                site,
                 function,
                 argument_count,
                 arguments: diagnostic_arguments,
@@ -393,6 +394,7 @@ pub fn inline_reference_summary(
                     .collect::<std::result::Result<Vec<_>, _>>()?
                     .into_boxed_slice();
                 DraftReferenceEvent::DiagnosticCall {
+                    site: *site,
                     function: function.clone(),
                     argument_count: *argument_count,
                     arguments: mapped_arguments,

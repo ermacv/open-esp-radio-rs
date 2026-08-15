@@ -411,6 +411,7 @@ pub(super) fn rfpll_calibration_poll_trace(
                 repeat_while_mask: u32::MAX,
                 repeat_while_expected: 0,
                 on_exhausted: Some(Box::new(DraftReferenceEvent::DiagnosticCall {
+                    site: 0x2f82_58ae,
                     function: "ets_printf".to_owned(),
                     argument_count: 1,
                     arguments: Box::new(diagnostic_arguments),

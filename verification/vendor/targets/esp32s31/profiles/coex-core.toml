@@ -1,4 +1,5 @@
-schema = 3
+schema = 4
+transaction-comparison = "observables"
 
 # Complete admissible domain of the reviewed 48-byte coexistence priority
 # table. Each case seeds only the aligned vendor word containing the selected

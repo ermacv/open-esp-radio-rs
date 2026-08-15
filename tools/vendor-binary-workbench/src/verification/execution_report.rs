@@ -6,6 +6,13 @@ use std::collections::BTreeMap;
 use crate::execution;
 use open_radio_vendor_semantics::{EquivalenceMode, EquivalenceVerdict};
 
+/// Persistent concrete-comparison report schema.
+///
+/// Schema 10 adds the ordered transaction trace used by call-aware
+/// comparisons. Readers must reject older reports rather than silently
+/// interpreting observable-only evidence as transaction evidence.
+pub const EXECUTION_COMPARISON_REPORT_SCHEMA: u32 = 10;
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct ArtifactReport {
     pub path: String,
@@ -131,6 +138,7 @@ impl From<&execution::MemoryChange> for MemoryChangeReport {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum DifferenceKind {
+    Transaction,
     Event,
     Memory,
     ReturnValue,
@@ -140,6 +148,7 @@ pub enum DifferenceKind {
 impl DifferenceKind {
     pub(crate) const fn label(self) -> &'static str {
         match self {
+            Self::Transaction => "transaction",
             Self::Event => "event",
             Self::Memory => "memory",
             Self::ReturnValue => "return-value",
@@ -151,6 +160,9 @@ impl DifferenceKind {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum TraceItemReport {
+    Transaction {
+        transaction: OrderedTransactionReport,
+    },
     Event {
         event: ExecutionEventReport,
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -164,6 +176,44 @@ pub enum TraceItemReport {
     },
     Coverage {
         issue: String,
+    },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum OrderedTransactionReport {
+    Observable {
+        event: ExecutionEventReport,
+    },
+    Call {
+        site: u32,
+        symbol: String,
+        arguments: [u32; 8],
+    },
+    Branch {
+        site: u32,
+        taken: bool,
+    },
+    RamRead {
+        site: u32,
+        width: u8,
+        address: u32,
+        value: u32,
+    },
+    RamWrite {
+        site: u32,
+        width: u8,
+        address: u32,
+        value: u32,
+    },
+    Atomic {
+        operation: String,
+        ordering: String,
+        address: u32,
+        succeeded: Option<bool>,
+    },
+    Return {
+        value: u32,
     },
 }
 
@@ -414,6 +464,8 @@ pub struct MatchedEventReport {
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 pub struct MatchedTraceReport {
     pub events: Vec<MatchedEventReport>,
+    pub vendor_transactions: Vec<OrderedTransactionReport>,
+    pub rust_transactions: Vec<OrderedTransactionReport>,
     pub memory_changes: Vec<MemoryChangeReport>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub return_value: Option<u32>,
@@ -506,6 +558,11 @@ pub struct ExecutionComparisonReport {
     pub vendor: ArtifactReport,
     pub rust: ArtifactReport,
     pub compare_return: bool,
+    /// Concrete Rust PCs reached by all complete cases. Kept out of the
+    /// persistent report; the verification engine consumes it immediately to
+    /// prove that a reviewed production component was actually executed.
+    #[serde(skip)]
+    pub(crate) rust_executed_pcs: std::collections::BTreeSet<u32>,
     pub cases: Vec<CaseReport>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub coverage_gap: Option<TraceDiffReport>,

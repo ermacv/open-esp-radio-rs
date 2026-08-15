@@ -33,6 +33,38 @@ pub(crate) struct LinkageSymbolLocation {
     pub(crate) kind: artifact::ArtifactSymbolKind,
 }
 
+/// Resolution domain for one project input.
+///
+/// A project inventory is an association of several independently linked
+/// programs.  In particular, compiled Rust verification artifacts are not
+/// candidate providers for undefined symbols in vendor artifacts.  Keeping
+/// this distinction in the key prevents coincidentally equal public names
+/// from contaminating vendor linkage evidence.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+enum LinkageDomain {
+    Vendor,
+    Rust,
+    Unqualified,
+}
+
+fn linkage_domain(roles: &[String]) -> LinkageDomain {
+    let has_rust = roles.iter().any(|role| role.starts_with("rust-"));
+    let has_vendor = roles.iter().any(|role| {
+        role.starts_with("vendor-")
+            || role.starts_with("source-artifact:")
+            || role.starts_with("source-inventory:")
+            || role.starts_with("source-companion:")
+    });
+    match (has_vendor, has_rust) {
+        (true, false) => LinkageDomain::Vendor,
+        (false, true) => LinkageDomain::Rust,
+        // Generic one-shot commands use artifact/companion without a project
+        // role. A path carrying both authoritative domains is deliberately
+        // isolated instead of allowing either side to consume it.
+        (false, false) | (true, true) => LinkageDomain::Unqualified,
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(crate) enum LinkageResolution {
     DefinedLocal,
@@ -232,14 +264,19 @@ pub(crate) fn build_project_linkage_inventory(
         inventories.push(inventory);
     }
 
-    let mut definitions = BTreeMap::<String, BTreeSet<LinkageSymbolLocation>>::new();
+    let domains = artifacts
+        .iter()
+        .map(|artifact| linkage_domain(&artifact.roles))
+        .collect::<Vec<_>>();
+    let mut definitions =
+        BTreeMap::<(LinkageDomain, String), BTreeSet<LinkageSymbolLocation>>::new();
     for (artifact_index, inventory) in inventories.iter().enumerate() {
         for (object, fact) in inventory.symbols() {
             if !fact.is_exported_definition() {
                 continue;
             }
             definitions
-                .entry(fact.name.clone())
+                .entry((domains[artifact_index], fact.name.clone()))
                 .or_default()
                 .insert(LinkageSymbolLocation {
                     artifact: artifact_index,
@@ -307,7 +344,7 @@ pub(crate) fn build_project_linkage_inventory(
             let candidates =
                 if fact.definition == artifact::ArtifactSymbolDefinitionState::Undefined {
                     definitions
-                        .get(&fact.name)
+                        .get(&(domains[artifact_index], fact.name.clone()))
                         .map(|locations| locations.iter().cloned().collect())
                         .unwrap_or_default()
                 } else {
@@ -383,6 +420,30 @@ mod tests {
             member: Some("member.o".to_owned()),
             address: 0,
             kind: artifact::ArtifactSymbolKind::Text,
+        }
+    }
+
+    #[test]
+    fn vendor_and_rust_symbols_are_in_distinct_resolution_domains() {
+        let vendor = vec!["source-artifact:libphy".to_owned()];
+        let rust = vec!["rust-artifact".to_owned()];
+        assert_eq!(linkage_domain(&vendor), LinkageDomain::Vendor);
+        assert_eq!(linkage_domain(&rust), LinkageDomain::Rust);
+
+        let mut definitions =
+            BTreeMap::<(LinkageDomain, String), BTreeSet<LinkageSymbolLocation>>::new();
+        for symbol in ["phy_chan_to_freq", "phy_bbpll_cal", "__ctzsi2", "__adddf3"] {
+            definitions
+                .entry((LinkageDomain::Vendor, symbol.to_owned()))
+                .or_default()
+                .insert(location(1));
+            definitions
+                .entry((LinkageDomain::Rust, symbol.to_owned()))
+                .or_default()
+                .insert(location(2));
+
+            let candidates = &definitions[&(LinkageDomain::Vendor, symbol.to_owned())];
+            assert_eq!(candidates, &BTreeSet::from([location(1)]));
         }
     }
 

@@ -1,4 +1,5 @@
-schema = 3
+schema = 4
+transaction-comparison = "observables"
 
 # Exact complete-leaf evidence for the disjoint STA=0 and SoftAP=1 hardware
 # identity banks. The six-byte address is passed through the original pointer

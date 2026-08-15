@@ -56,8 +56,17 @@ pub(super) fn collect(
                     && function.identity == fact.identity
             });
             let mut blockers = fact.context_projection_blockers.clone();
-            if !fact.direct_complete {
-                blockers.push("direct structural analysis is incomplete".to_owned());
+            if !fact.body_complete {
+                blockers.push("local function body analysis is incomplete".to_owned());
+            }
+            if !fact.call_targets_complete {
+                blockers.push("call-target recovery is incomplete".to_owned());
+            }
+            if !fact.transitive_effects_complete {
+                blockers.push("transitive effect recovery is incomplete".to_owned());
+            }
+            if !fact.executable_complete {
+                blockers.push("executable reference recovery is incomplete".to_owned());
             }
             if !fact.call_graph_closed {
                 blockers.push("call graph is not closed".to_owned());

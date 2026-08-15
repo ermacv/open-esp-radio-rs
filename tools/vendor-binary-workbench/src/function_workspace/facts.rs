@@ -130,7 +130,10 @@ pub(crate) struct FunctionFact {
     pub(crate) member: Option<String>,
     pub(crate) symbol: String,
     pub(crate) selection: String,
-    pub(crate) direct_complete: bool,
+    pub(crate) body_complete: bool,
+    pub(crate) call_targets_complete: bool,
+    pub(crate) transitive_effects_complete: bool,
+    pub(crate) executable_complete: bool,
     pub(crate) transitive_effects_materialized: bool,
     pub(crate) call_graph_closed: bool,
     pub(crate) context_projection_materialized: bool,
@@ -155,7 +158,10 @@ impl FunctionFact {
     }
 
     pub(crate) fn review_complete(&self) -> bool {
-        self.direct_complete
+        self.body_complete
+            && self.call_targets_complete
+            && self.transitive_effects_complete
+            && self.executable_complete
             && self.transitive_effects_materialized
             && self.call_graph_closed
             && self.context_projection_materialized

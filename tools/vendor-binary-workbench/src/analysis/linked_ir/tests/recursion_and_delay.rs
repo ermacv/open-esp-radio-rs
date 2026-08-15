@@ -35,7 +35,9 @@ fn recursive_effect_summary_reaches_a_fixed_point() {
         "global-or-weak",
         vec![internal("rom::second")],
     );
-    first.complete = true;
+    first.completeness.body_complete = true;
+    first.completeness.call_targets_complete = true;
+    first.completeness.executable_complete = true;
     first.context_accesses.push(ContextAccess {
         argument: 0,
         offset: 0,
@@ -55,7 +57,9 @@ fn recursive_effect_summary_reaches_a_fixed_point() {
         "global-or-weak",
         vec![internal("rom::first")],
     );
-    second.complete = true;
+    second.completeness.body_complete = true;
+    second.completeness.call_targets_complete = true;
+    second.completeness.executable_complete = true;
 
     let report = summarize_linked_ir(vec![first, second]);
     assert_eq!(report.closed_effect_summaries, 2);

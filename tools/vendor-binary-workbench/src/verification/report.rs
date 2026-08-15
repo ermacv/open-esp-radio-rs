@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use super::EvidenceSet;
 use super::{EvidenceComparison, ExecutionComparisonReport, VerificationCoreReport, VerifySummary};
 
-pub(crate) const VERIFICATION_REPORT_SCHEMA: u32 = 14;
+pub(crate) const VERIFICATION_REPORT_SCHEMA: u32 = 15;
 
 /// Strength of the Rust-side evidence used for a vendor comparison.
 ///

@@ -228,6 +228,7 @@ static TEST_DELAY_DIRECT_SEMANTIC: DirectSemanticFunctionSpec = DirectSemanticFu
     source: "test-addon",
     c_name: "ets_delay_us",
     argument_count: 1,
+    body_policy: SemanticFunctionBodyPolicy::OpaqueBoundary,
     return_model: ExternalReturnModel::Unmodeled,
     semantic: ExternalSemanticSpec {
         operation: "time.blocking-delay",
@@ -248,6 +249,7 @@ static TEST_XTAL_DIRECT_SEMANTIC: DirectSemanticFunctionSpec = DirectSemanticFun
     source: "test-chip-addon",
     c_name: "rtc_clk_xtal_freq_get",
     argument_count: 0,
+    body_policy: SemanticFunctionBodyPolicy::OpaqueBoundary,
     return_model: ExternalReturnModel::Constant(40),
     semantic: ExternalSemanticSpec {
         operation: "clock.xtal-frequency.read",

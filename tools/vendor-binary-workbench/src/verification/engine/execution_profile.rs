@@ -56,8 +56,12 @@ pub(super) fn evaluate(
             companion: rust_companion,
             symbol: &profile.rust_symbol,
         },
-        profile.compare_return,
-        &profile.coverage_constraints(),
+        crate::ExecutionComparisonPolicy {
+            compare_return: profile.compare_return,
+            transaction_comparison: profile.transaction_comparison,
+            call_equivalences: &profile.call_equivalences,
+            coverage_domain: &profile.coverage_constraints(),
+        },
         &profile.scenarios,
     )
     .map_err(|error| {

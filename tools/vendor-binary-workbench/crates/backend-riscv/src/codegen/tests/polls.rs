@@ -45,6 +45,7 @@ fn renders_a_compact_bounded_poll_with_an_exhaustion_diagnostic() {
                 repeat_while_mask: u32::MAX,
                 repeat_while_expected: 0,
                 on_exhausted: Some(Box::new(DraftReferenceEvent::DiagnosticCall {
+                    site: 0x1010,
                     function: "ets_printf".to_owned(),
                     argument_count: 1,
                     arguments: Box::new(diagnostic_arguments),

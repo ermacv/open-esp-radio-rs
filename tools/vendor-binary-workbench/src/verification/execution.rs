@@ -7,7 +7,7 @@ use crate::*;
 mod diff;
 mod scenario;
 
-use diff::{coverage_gap, trace_difference};
+use diff::{coverage_gap, ordered_transactions, ordered_transactions_equal, trace_difference};
 pub(crate) use scenario::*;
 
 fn artifact_report(input: ExecutionInput<'_>) -> Result<ArtifactReport> {
@@ -365,10 +365,15 @@ pub(crate) fn compare_execution_scenarios(
     svd: &MmioMap,
     vendor: ExecutionInput<'_>,
     rust: ExecutionInput<'_>,
-    compare_return: bool,
-    coverage_domain: &[profiles::ProfileCoverageConstraint],
+    policy: ExecutionComparisonPolicy<'_>,
     scenarios: &[NamedScenario],
 ) -> Result<ExecutionComparisonReport> {
+    let ExecutionComparisonPolicy {
+        compare_return,
+        transaction_comparison,
+        call_equivalences,
+        coverage_domain,
+    } = policy;
     if compare_return
         && scenarios.iter().any(|scenario| {
             !matches!(
@@ -416,6 +421,7 @@ pub(crate) fn compare_execution_scenarios(
     let mut rust_indirect_calls = BTreeSet::new();
     let mut vendor_unmapped = BTreeSet::new();
     let mut rust_unmapped = BTreeSet::new();
+    let mut rust_executed_pcs = BTreeSet::new();
     let mut matched_cases = 0_usize;
     let mut different_cases = 0_usize;
     let mut incomplete_cases = 0_usize;
@@ -580,12 +586,20 @@ pub(crate) fn compare_execution_scenarios(
                 .iter()
                 .filter_map(unnamed_execution_address),
         );
+        rust_executed_pcs.extend(rust_result.executed_pcs.iter().copied());
 
+        let transactions_equal = ordered_transactions_equal(
+            &vendor_result,
+            &rust_result,
+            transaction_comparison,
+            compare_return,
+            call_equivalences,
+        );
         let events_equal = vendor_result.events == rust_result.events;
         let memory_equal = vendor_result.memory_changes == rust_result.memory_changes;
         let returns_equal =
             !compare_return || vendor_result.return_value == rust_result.return_value;
-        if events_equal && memory_equal && returns_equal {
+        if events_equal && transactions_equal && memory_equal && returns_equal {
             matched_cases += 1;
             case_reports.push(CaseReport::Match {
                 name: named.name.clone(),
@@ -608,6 +622,16 @@ pub(crate) fn compare_execution_scenarios(
                             rust_producer: rust_result.event_producers.get(index).map(Into::into),
                         })
                         .collect(),
+                    vendor_transactions: ordered_transactions(
+                        &vendor_result,
+                        transaction_comparison,
+                        compare_return,
+                    ),
+                    rust_transactions: ordered_transactions(
+                        &rust_result,
+                        transaction_comparison,
+                        compare_return,
+                    ),
                     memory_changes: vendor_result
                         .memory_changes
                         .iter()
@@ -622,8 +646,14 @@ pub(crate) fn compare_execution_scenarios(
                 name: named.name.clone(),
                 environment,
                 difference: Box::new(
-                    trace_difference(&vendor_result, &rust_result, compare_return)
-                        .expect("a different execution outcome has a first difference"),
+                    trace_difference(
+                        &vendor_result,
+                        &rust_result,
+                        compare_return,
+                        transaction_comparison,
+                        call_equivalences,
+                    )
+                    .expect("a different execution outcome has a first difference"),
                 ),
             });
         }
@@ -662,12 +692,13 @@ pub(crate) fn compare_execution_scenarios(
         EquivalenceVerdict::Match
     };
     Ok(ExecutionComparisonReport {
-        schema_version: 9,
+        schema_version: super::execution_report::EXECUTION_COMPARISON_REPORT_SCHEMA,
         command: "execute compare",
         mode: EquivalenceMode::Physical,
         vendor: vendor_report,
         rust: rust_report,
         compare_return,
+        rust_executed_pcs,
         cases: case_reports,
         coverage_gap: coverage_gap(&vendor_coverage, &rust_coverage),
         summary: ComparisonSummary {

@@ -44,6 +44,8 @@ pub(super) fn collect(
                     severity: item.severity,
                     occurrences: item.occurrences,
                     functions: item.functions,
+                    affected_scope_roots: item.affected_scope_roots,
+                    potentially_unblocked_functions: item.potentially_unblocked_functions,
                     sites: item.sites,
                     channels: item.channels,
                     message: item.message,

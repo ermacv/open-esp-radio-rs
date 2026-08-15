@@ -8,7 +8,61 @@ pub(super) fn trace_difference(
     vendor: &execution::ExecutionResult,
     rust: &execution::ExecutionResult,
     compare_return: bool,
+    transaction_comparison: super::super::profiles::TransactionComparison,
+    call_equivalences: &[super::super::profiles::CallEquivalence],
 ) -> Option<TraceDiffReport> {
+    if transaction_comparison.includes_calls() {
+        let vendor_transactions =
+            ordered_transactions(vendor, transaction_comparison, compare_return);
+        let rust_transactions = ordered_transactions(rust, transaction_comparison, compare_return);
+        let vendor_transactions = relevant_transactions(
+            vendor_transactions,
+            TransactionSide::Vendor,
+            transaction_comparison,
+            call_equivalences,
+        );
+        let rust_transactions = relevant_transactions(
+            rust_transactions,
+            TransactionSide::Rust,
+            transaction_comparison,
+            call_equivalences,
+        );
+        let vendor_keys = comparable_transactions(
+            &vendor_transactions,
+            TransactionSide::Vendor,
+            call_equivalences,
+        );
+        let rust_keys =
+            comparable_transactions(&rust_transactions, TransactionSide::Rust, call_equivalences);
+        if let Some(index) = first_difference(&vendor_keys, &rust_keys) {
+            return Some(TraceDiffReport {
+                first_difference: index,
+                kind: DifferenceKind::Transaction,
+                vendor: vendor_transactions
+                    .get(index)
+                    .cloned()
+                    .map(|transaction| TraceItemReport::Transaction { transaction }),
+                rust: rust_transactions
+                    .get(index)
+                    .cloned()
+                    .map(|transaction| TraceItemReport::Transaction { transaction }),
+                context_before: transaction_context(
+                    &vendor_transactions,
+                    &rust_transactions,
+                    context_before(index),
+                    call_equivalences,
+                ),
+                context_after: transaction_context(
+                    &vendor_transactions,
+                    &rust_transactions,
+                    index + 1
+                        ..context_end(index, vendor_transactions.len(), rust_transactions.len()),
+                    call_equivalences,
+                ),
+                path: Some(execution_path(vendor, rust)),
+            });
+        }
+    }
     if let Some(index) = first_difference(&vendor.events, &rust.events) {
         return Some(TraceDiffReport {
             first_difference: index,
@@ -61,6 +115,222 @@ pub(super) fn trace_difference(
         context_after: Vec::new(),
         path: Some(execution_path(vendor, rust)),
     })
+}
+
+pub(super) fn ordered_transactions(
+    result: &execution::ExecutionResult,
+    comparison: super::super::profiles::TransactionComparison,
+    compare_return: bool,
+) -> Vec<OrderedTransactionReport> {
+    let mut output = result
+        .timeline
+        .iter()
+        .filter_map(|event| match event {
+            execution::ExecutionTimelineEvent::Observable(event) => {
+                Some(OrderedTransactionReport::Observable {
+                    event: event.into(),
+                })
+            }
+            execution::ExecutionTimelineEvent::Call(call) if comparison.includes_calls() => {
+                Some(OrderedTransactionReport::Call {
+                    site: call.site,
+                    symbol: call.symbol.clone(),
+                    arguments: call.arguments,
+                })
+            }
+            execution::ExecutionTimelineEvent::Branch { site, taken }
+                if comparison.includes_internal_state() =>
+            {
+                Some(OrderedTransactionReport::Branch {
+                    site: *site,
+                    taken: *taken,
+                })
+            }
+            execution::ExecutionTimelineEvent::RamRead {
+                site,
+                width,
+                address,
+                value,
+            } if comparison.includes_internal_state() => Some(OrderedTransactionReport::RamRead {
+                site: *site,
+                width: *width,
+                address: *address,
+                value: *value,
+            }),
+            execution::ExecutionTimelineEvent::RamWrite {
+                site,
+                width,
+                address,
+                value,
+            } if comparison.includes_internal_state() => Some(OrderedTransactionReport::RamWrite {
+                site: *site,
+                width: *width,
+                address: *address,
+                value: *value,
+            }),
+            execution::ExecutionTimelineEvent::Atomic {
+                operation,
+                ordering,
+                address,
+                succeeded,
+            } if comparison.includes_internal_state() => Some(OrderedTransactionReport::Atomic {
+                operation: format!("{operation:?}"),
+                ordering: format!("{ordering:?}"),
+                address: *address,
+                succeeded: *succeeded,
+            }),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    if compare_return {
+        output.push(OrderedTransactionReport::Return {
+            value: result.return_value,
+        });
+    }
+    output
+}
+
+#[derive(Clone, Copy)]
+enum TransactionSide {
+    Vendor,
+    Rust,
+}
+
+fn relevant_transactions(
+    transactions: Vec<OrderedTransactionReport>,
+    side: TransactionSide,
+    comparison: super::super::profiles::TransactionComparison,
+    call_equivalences: &[super::super::profiles::CallEquivalence],
+) -> Vec<OrderedTransactionReport> {
+    if !comparison.reviewed_calls_only() {
+        return transactions;
+    }
+    transactions
+        .into_iter()
+        .filter(|transaction| match transaction {
+            OrderedTransactionReport::Call { symbol, .. } => call_equivalences.iter().any(|pair| {
+                (match side {
+                    TransactionSide::Vendor => &pair.vendor_symbol,
+                    TransactionSide::Rust => &pair.rust_symbol,
+                }) == symbol
+            }),
+            _ => true,
+        })
+        .collect()
+}
+
+fn comparable_transactions(
+    transactions: &[OrderedTransactionReport],
+    side: TransactionSide,
+    call_equivalences: &[super::super::profiles::CallEquivalence],
+) -> Vec<OrderedTransactionReport> {
+    transactions
+        .iter()
+        .cloned()
+        .map(|transaction| match transaction {
+            OrderedTransactionReport::Call {
+                mut symbol,
+                arguments,
+                ..
+            } => {
+                if let Some(pair) = call_equivalences.iter().find(|pair| {
+                    (match side {
+                        TransactionSide::Vendor => &pair.vendor_symbol,
+                        TransactionSide::Rust => &pair.rust_symbol,
+                    }) == &symbol
+                }) {
+                    symbol.clone_from(&pair.operation);
+                    if pair.argument_comparison
+                        == super::super::profiles::CallArgumentComparison::Ignore
+                    {
+                        return OrderedTransactionReport::Call {
+                            site: 0,
+                            symbol,
+                            arguments: [0; 8],
+                        };
+                    }
+                }
+                OrderedTransactionReport::Call {
+                    site: 0,
+                    symbol,
+                    arguments,
+                }
+            }
+            OrderedTransactionReport::Branch { taken, .. } => {
+                OrderedTransactionReport::Branch { site: 0, taken }
+            }
+            OrderedTransactionReport::RamRead {
+                width,
+                address,
+                value,
+                ..
+            } => OrderedTransactionReport::RamRead {
+                site: 0,
+                width,
+                address,
+                value,
+            },
+            OrderedTransactionReport::RamWrite {
+                width,
+                address,
+                value,
+                ..
+            } => OrderedTransactionReport::RamWrite {
+                site: 0,
+                width,
+                address,
+                value,
+            },
+            other => other,
+        })
+        .collect()
+}
+
+pub(super) fn ordered_transactions_equal(
+    vendor: &execution::ExecutionResult,
+    rust: &execution::ExecutionResult,
+    comparison: super::super::profiles::TransactionComparison,
+    compare_return: bool,
+    call_equivalences: &[super::super::profiles::CallEquivalence],
+) -> bool {
+    let vendor = relevant_transactions(
+        ordered_transactions(vendor, comparison, compare_return),
+        TransactionSide::Vendor,
+        comparison,
+        call_equivalences,
+    );
+    let rust = relevant_transactions(
+        ordered_transactions(rust, comparison, compare_return),
+        TransactionSide::Rust,
+        comparison,
+        call_equivalences,
+    );
+    comparable_transactions(&vendor, TransactionSide::Vendor, call_equivalences)
+        == comparable_transactions(&rust, TransactionSide::Rust, call_equivalences)
+}
+
+fn transaction_context(
+    vendor: &[OrderedTransactionReport],
+    rust: &[OrderedTransactionReport],
+    indices: std::ops::Range<usize>,
+    call_equivalences: &[super::super::profiles::CallEquivalence],
+) -> Vec<AlignedTraceItemReport> {
+    let vendor_keys = comparable_transactions(vendor, TransactionSide::Vendor, call_equivalences);
+    let rust_keys = comparable_transactions(rust, TransactionSide::Rust, call_equivalences);
+    indices
+        .map(|index| AlignedTraceItemReport {
+            index,
+            vendor: vendor
+                .get(index)
+                .cloned()
+                .map(|transaction| TraceItemReport::Transaction { transaction }),
+            rust: rust
+                .get(index)
+                .cloned()
+                .map(|transaction| TraceItemReport::Transaction { transaction }),
+            equal: vendor_keys.get(index) == rust_keys.get(index),
+        })
+        .collect()
 }
 
 pub(super) fn coverage_gap(
@@ -221,6 +491,7 @@ mod tests {
             return_value: 0,
             completion: execution::ExecutionCompletion::Returned,
             steps: 0,
+            executed_pcs: BTreeSet::new(),
             branches: BTreeSet::new(),
             ordered_branches: vec![(0x1000, true)],
             calls: BTreeSet::new(),
@@ -250,7 +521,14 @@ mod tests {
         let vendor = result(vec![event(1), event(2), event(3), event(4), event(5)]);
         let rust = result(vec![event(1), event(2), event(9), event(4), event(5)]);
 
-        let difference = trace_difference(&vendor, &rust, false).unwrap();
+        let difference = trace_difference(
+            &vendor,
+            &rust,
+            false,
+            super::super::super::profiles::TransactionComparison::Observables,
+            &[],
+        )
+        .unwrap();
         assert_eq!(difference.kind, DifferenceKind::Event);
         assert_eq!(difference.first_difference, 2);
         assert_eq!(difference.context_before.len(), 2);
@@ -271,12 +549,143 @@ mod tests {
     }
 
     #[test]
+    fn ordered_call_comparison_detects_reordering_hidden_by_observable_trace() {
+        let write = execution::ExecutionEvent::Write {
+            width: 32,
+            address: 0x4000_0010,
+            region: "radio".to_owned(),
+            register: None,
+            value: 1,
+        };
+        let call = |site, symbol: &str| {
+            execution::ExecutionTimelineEvent::Call(execution::OrderedCall {
+                site,
+                symbol: symbol.to_owned(),
+                arguments: [0; 8],
+            })
+        };
+        let mut vendor = result(vec![write.clone()]);
+        vendor.timeline = vec![
+            call(0x1000, "prepare"),
+            execution::ExecutionTimelineEvent::Observable(write.clone()),
+            call(0x1004, "publish"),
+        ];
+        let mut rust = result(vec![write.clone()]);
+        rust.timeline = vec![
+            call(0x2000, "publish"),
+            execution::ExecutionTimelineEvent::Observable(write),
+            call(0x2004, "prepare"),
+        ];
+
+        assert!(ordered_transactions_equal(
+            &vendor,
+            &rust,
+            super::super::super::profiles::TransactionComparison::Observables,
+            false,
+            &[],
+        ));
+        assert!(!ordered_transactions_equal(
+            &vendor,
+            &rust,
+            super::super::super::profiles::TransactionComparison::ObservablesAndCalls,
+            false,
+            &[],
+        ));
+        let difference = trace_difference(
+            &vendor,
+            &rust,
+            false,
+            super::super::super::profiles::TransactionComparison::ObservablesAndCalls,
+            &[],
+        )
+        .unwrap();
+        assert_eq!(difference.kind, DifferenceKind::Transaction);
+        assert_eq!(difference.first_difference, 0);
+        assert!(matches!(
+            difference.vendor,
+            Some(TraceItemReport::Transaction {
+                transaction: OrderedTransactionReport::Call { ref symbol, .. }
+            }) if symbol == "prepare"
+        ));
+    }
+
+    #[test]
+    fn transaction_comparison_treats_site_addresses_as_provenance() {
+        let mut vendor = result(Vec::new());
+        vendor.timeline = vec![execution::ExecutionTimelineEvent::Call(
+            execution::OrderedCall {
+                site: 0x1000,
+                symbol: "same_semantic_boundary".to_owned(),
+                arguments: [7; 8],
+            },
+        )];
+        let mut rust = result(Vec::new());
+        rust.timeline = vec![execution::ExecutionTimelineEvent::Call(
+            execution::OrderedCall {
+                site: 0x8000,
+                symbol: "same_semantic_boundary".to_owned(),
+                arguments: [7; 8],
+            },
+        )];
+
+        assert!(ordered_transactions_equal(
+            &vendor,
+            &rust,
+            super::super::super::profiles::TransactionComparison::ObservablesAndCalls,
+            false,
+            &[],
+        ));
+    }
+
+    #[test]
+    fn reviewed_call_mapping_compares_semantics_and_ignores_unlisted_calls() {
+        let call = |site, symbol: &str, arguments| {
+            execution::ExecutionTimelineEvent::Call(execution::OrderedCall {
+                site,
+                symbol: symbol.to_owned(),
+                arguments,
+            })
+        };
+        let mut vendor = result(Vec::new());
+        vendor.timeline = vec![
+            call(0x1000, "wifi_assert", [1; 8]),
+            call(0x1004, "lmacProcessAckTimeout", [2; 8]),
+        ];
+        let mut rust = result(Vec::new());
+        rust.timeline = vec![
+            call(0x2000, "inlined_helper_detail", [3; 8]),
+            call(0x2004, "open_libpp_tx_retry_ack_timeout", [4; 8]),
+        ];
+        let mappings = [super::super::super::profiles::CallEquivalence {
+            operation: "tx.retry.ack-timeout".to_owned(),
+            vendor_symbol: "lmacProcessAckTimeout".to_owned(),
+            rust_symbol: "open_libpp_tx_retry_ack_timeout".to_owned(),
+            argument_comparison: super::super::super::profiles::CallArgumentComparison::Ignore,
+        }];
+
+        assert!(ordered_transactions_equal(
+            &vendor,
+            &rust,
+            super::super::super::profiles::TransactionComparison::ObservablesAndReviewedCalls,
+            false,
+            &mappings,
+        ));
+    }
+
+    #[test]
     fn length_difference_retains_the_missing_side() {
         let event = execution::ExecutionEvent::DelayMicros(1);
         let vendor = result(vec![event.clone(), event]);
         let rust = result(vec![execution::ExecutionEvent::DelayMicros(1)]);
 
-        let difference = trace_difference(&vendor, &rust, false).unwrap();
+        let difference = trace_difference(
+            &vendor,
+            &rust,
+            false,
+            super::super::super::profiles::TransactionComparison::Observables,
+            &[],
+        )
+        .unwrap();
         assert_eq!(difference.first_difference, 1);
         assert!(difference.vendor.is_some());
         assert!(difference.rust.is_none());
@@ -299,7 +708,14 @@ mod tests {
         });
         rust.return_value = 2;
 
-        let difference = trace_difference(&vendor, &rust, true).unwrap();
+        let difference = trace_difference(
+            &vendor,
+            &rust,
+            true,
+            super::super::super::profiles::TransactionComparison::Observables,
+            &[],
+        )
+        .unwrap();
         assert_eq!(difference.kind, DifferenceKind::Memory);
     }
 
@@ -310,9 +726,26 @@ mod tests {
         let mut rust = result(Vec::new());
         rust.return_value = 2;
 
-        assert!(trace_difference(&vendor, &rust, false).is_none());
+        assert!(
+            trace_difference(
+                &vendor,
+                &rust,
+                false,
+                super::super::super::profiles::TransactionComparison::Observables,
+                &[],
+            )
+            .is_none()
+        );
         assert_eq!(
-            trace_difference(&vendor, &rust, true).unwrap().kind,
+            trace_difference(
+                &vendor,
+                &rust,
+                true,
+                super::super::super::profiles::TransactionComparison::Observables,
+                &[],
+            )
+            .unwrap()
+            .kind,
             DifferenceKind::ReturnValue
         );
     }

@@ -70,7 +70,7 @@ pub(in crate::analysis::linked_ir) fn populate_effect_summaries(
     let mut call_edges = vec![Vec::new(); functions.len()];
     let mut local_blockers = vec![false; functions.len()];
     for (index, function) in functions.iter().enumerate() {
-        if !function.complete {
+        if !function.completeness.body_complete || !function.completeness.call_targets_complete {
             local_blockers[index] = true;
         }
         if !function.call_graph_diagnostics.is_empty() {
@@ -102,7 +102,7 @@ pub(in crate::analysis::linked_ir) fn populate_effect_summaries(
                 "external" | "diagnostic" if call.semantic_operation.is_none() => {
                     local_blockers[index] = true;
                 }
-                "external" | "diagnostic" => {}
+                "external" | "diagnostic" | "semantic-boundary" | "modeled-direct-external" => {}
                 kind => {
                     let _ = kind;
                     local_blockers[index] = true;
@@ -204,6 +204,7 @@ pub(in crate::analysis::linked_ir) fn populate_effect_summaries(
             })
             .collect::<Vec<_>>();
         for (function, summary) in functions.iter_mut().zip(summaries) {
+            function.completeness.transitive_effects_complete = summary.call_graph_closed;
             function.effect_summary = summary;
         }
         return;
@@ -404,6 +405,7 @@ pub(in crate::analysis::linked_ir) fn populate_effect_summaries(
         })
     };
     for (function, summary) in functions.iter_mut().zip(summaries) {
+        function.completeness.transitive_effects_complete = summary.call_graph_closed;
         function.effect_summary = summary;
     }
 }

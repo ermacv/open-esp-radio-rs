@@ -48,6 +48,55 @@ fn compact_summary_retains_direct_context_and_global_fields() {
 }
 
 #[test]
+fn opaque_semantic_boundary_does_not_reach_its_implementation_body() {
+    let mut root = linked_test_function(
+        "vendor",
+        "root",
+        "global-or-weak",
+        vec![LinkedCall {
+            kind: "semantic-boundary",
+            target: "vendor::memcpy".to_owned(),
+            site: Some(0x10),
+            tail: false,
+            result_modeled: false,
+            execution_model: None,
+            semantics: Some("standard C memory operation".to_owned()),
+            semantic_operation: Some("memory.copy".to_owned()),
+            semantic_contract: Some(LinkedSemanticContract {
+                source: "c-addon",
+                id: "c.standard.memcpy".to_owned(),
+                evidence: "standardized C contract".to_owned(),
+                body_policy: "opaque-boundary",
+                event_dispatch: None,
+            }),
+            replacement_hint: None,
+            project_symbol: None,
+            project_candidates: Vec::new(),
+            trampoline: None,
+            argument_shapes: 1,
+            arguments: vec![
+                "input:0".to_owned(),
+                "input:1".to_owned(),
+                "const:16".to_owned(),
+            ],
+            argument_bindings: Vec::new(),
+            typed_arguments: Vec::new(),
+            guard_paths: None,
+        }],
+    );
+    root.completeness.body_complete = true;
+    root.completeness.call_targets_complete = true;
+    root.completeness.executable_complete = true;
+    let implementation = linked_test_function("vendor", "memcpy", "global-or-weak", Vec::new());
+    let mut functions = vec![root, implementation];
+
+    populate_effect_summaries(&mut functions, 1, false);
+
+    assert!(functions[0].effect_summary.call_graph_closed);
+    assert_eq!(functions[0].effect_summary.reachable_function_count, 0);
+}
+
+#[test]
 fn context_projection_bounds_scheduled_simple_paths() {
     const LAYERS: usize = 14;
     let mut functions = vec![linked_test_function("dense", "root", "local", Vec::new())];
@@ -348,7 +397,7 @@ fn project_call_linking_requires_one_exported_definition() {
     assert_eq!(parent.calls[0].kind, "project-linked");
     assert_eq!(parent.calls[0].target, "child::vendor_child");
     assert_eq!(parent.dependencies, ["child::vendor_child"]);
-    assert!(!parent.complete);
+    assert!(!parent.completeness.executable_complete);
 
     let mut ambiguous = vec![
         summarize_linked_ir(vec![linked_test_function(
@@ -426,7 +475,9 @@ fn reachable_effect_summary_keeps_cross_artifact_provenance() {
             guard_paths: None,
         }],
     );
-    child.complete = true;
+    child.completeness.body_complete = true;
+    child.completeness.call_targets_complete = true;
+    child.completeness.executable_complete = true;
     child.exact = true;
     child.mmio_accesses.push(LinkedMmioAccess {
         ordinal: 0,
@@ -558,12 +609,18 @@ fn affine_call_bindings_project_transitive_context_fields() {
         "global-or-weak",
         vec![internal("rom::middle", 2, 0x20)],
     );
-    root.complete = true;
+    root.completeness.body_complete = true;
+    root.completeness.call_targets_complete = true;
+    root.completeness.executable_complete = true;
     let mut middle =
         linked_test_function("rom", "middle", "local", vec![internal("rom::leaf", 0, -8)]);
-    middle.complete = true;
+    middle.completeness.body_complete = true;
+    middle.completeness.call_targets_complete = true;
+    middle.completeness.executable_complete = true;
     let mut leaf = linked_test_function("rom", "leaf", "local", Vec::new());
-    leaf.complete = true;
+    leaf.completeness.body_complete = true;
+    leaf.completeness.call_targets_complete = true;
+    leaf.completeness.executable_complete = true;
     leaf.calls.push(LinkedCall {
         kind: "external",
         target: "platform::timer_arm".to_owned(),
@@ -577,6 +634,7 @@ fn affine_call_bindings_project_transitive_context_fields() {
             source: "registered-external-table-slot",
             id: "platform::timer-arm".to_owned(),
             evidence: "exact-pointer-cell-and-slot".to_owned(),
+            body_policy: "opaque-boundary",
             event_dispatch: None,
         }),
         replacement_hint: Some("Rust async timer registration".to_owned()),

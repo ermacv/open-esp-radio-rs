@@ -105,11 +105,28 @@ pub(crate) fn audit(project: &ProjectSpec) -> Result<BindingAuditReport> {
                     ));
                 }
             }
-            if verification_required && binding.rust_kind == RustBindingKind::VerificationProjection
+            if binding.rust_kind == RustBindingKind::ReviewedAbiProjection
+                && declared_claims
+                    .iter()
+                    .any(|claim| *claim != VerificationClaim::ReviewedDomainEquivalence)
             {
                 issues.push(
-                    "required verification cannot target a verification projection".to_owned(),
+                    "a reviewed ABI projection may support only reviewed-domain-equivalence"
+                        .to_owned(),
                 );
+            }
+            if verification_required
+                && matches!(
+                    binding.rust_kind,
+                    RustBindingKind::GeneratedReference
+                        | RustBindingKind::SharedProductionCore
+                        | RustBindingKind::VerificationProjection
+                )
+            {
+                issues.push(format!(
+                    "required verification cannot target a {} binding",
+                    binding.rust_kind.label()
+                ));
             }
 
             let declaration_valid = issues.is_empty();

@@ -924,7 +924,7 @@ fn fixture_function_overview(encoded: &str) -> Result<String> {
         "member": full["member"],
         "symbol": full["symbol"],
         "binding": full["binding"],
-        "complete": full["complete"],
+        "completeness": full["completeness"],
         "dependencies": full["dependencies"],
         "direct_calls": full["calls"].as_array().map_or(0, Vec::len),
         "calls": full["calls"].as_array().into_iter().flatten().map(|call| serde_json::json!({

@@ -313,6 +313,9 @@ pub struct ExecutionResult {
     pub return_value: u32,
     pub completion: ExecutionCompletion,
     pub steps: u64,
+    /// Exact instruction addresses reached by this concrete execution. This
+    /// is execution provenance, not a semantic equivalence input.
+    pub executed_pcs: BTreeSet<u32>,
     pub branches: BTreeSet<(u32, bool)>,
     pub ordered_branches: Vec<(u32, bool)>,
     pub calls: BTreeSet<String>,

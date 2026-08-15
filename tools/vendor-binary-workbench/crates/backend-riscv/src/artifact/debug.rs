@@ -23,6 +23,13 @@ pub struct ArtifactDebugSymbol {
     pub source_column: Option<u32>,
 }
 
+/// One inline-aware DWARF function frame at a concrete executed address.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct ArtifactDebugFrame {
+    pub address: u32,
+    pub demangled_name: String,
+}
+
 type DebugSymbolKey = (String, Option<String>, Option<u32>, Option<u32>);
 type DebugSymbolMap = BTreeMap<DebugSymbolKey, ArtifactDebugSymbol>;
 
@@ -115,6 +122,38 @@ pub fn inspect_rust_debug_symbols(path: &Path) -> Result<Vec<ArtifactDebugSymbol
         }
     }
     Ok(symbols.into_values().collect())
+}
+
+/// Resolve only concrete executed PCs instead of scanning the whole text
+/// image. Missing DWARF produces no frames and therefore cannot establish a
+/// production binding.
+pub fn inspect_rust_debug_frames(
+    path: &Path,
+    addresses: &BTreeSet<u32>,
+) -> Result<Vec<ArtifactDebugFrame>> {
+    let _ = crate::read_artifact(path)?;
+    let Some(loader) = addr2line::Loader::new(path).ok() else {
+        return Ok(Vec::new());
+    };
+    let mut output = BTreeSet::new();
+    for address in addresses {
+        let Ok(mut frames) = loader.find_frames(u64::from(*address)) else {
+            continue;
+        };
+        while let Ok(Some(frame)) = frames.next() {
+            let Some(function) = frame.function else {
+                continue;
+            };
+            let Ok(name) = function.demangle() else {
+                continue;
+            };
+            output.insert(ArtifactDebugFrame {
+                address: *address,
+                demangled_name: name.into_owned(),
+            });
+        }
+    }
+    Ok(output.into_iter().collect())
 }
 
 fn demangle_rust_symbol(raw_name: &str) -> Option<String> {

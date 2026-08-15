@@ -242,6 +242,9 @@ pub(super) fn pseudo_value(value: &SymbolicValue) -> String {
                 ExpressionOperation::LessThanUnsigned => {
                     format!("u32::from({left} < {right})")
                 }
+                ExpressionOperation::CountLeadingZeros => format!("{left}.leading_zeros()"),
+                ExpressionOperation::CountTrailingZeros => format!("{left}.trailing_zeros()"),
+                ExpressionOperation::PopulationCount => format!("{left}.count_ones()"),
             }
         }
         SymbolicValue::WideSignedDivide {
@@ -766,13 +769,14 @@ pub(super) fn render_event(
         )
         .unwrap(),
         DraftReferenceEvent::DiagnosticCall {
+            site,
             function,
             arguments,
             ..
         } => writeln!(
             output,
-            "{prefix}diagnostic.{function}({});",
-            pseudo_arguments(arguments)
+            "{prefix}diagnostic.{function}({}); // site {site:#010x}",
+            pseudo_arguments(arguments),
         )
         .unwrap(),
         DraftReferenceEvent::Call {

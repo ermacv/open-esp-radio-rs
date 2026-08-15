@@ -215,12 +215,6 @@ pub(crate) fn verify_source(
             .iter()
             .find(|profile| profile.vendor_symbol == vendor.name)
         {
-            let production_trace = manifest_entry
-                .and_then(|entry| entry.binding.as_ref())
-                .is_some_and(|binding| {
-                    binding.rust_kind
-                        == open_radio_vendor_semantics::RustBindingKind::ExactProductionEntry
-                });
             let resolved_disposition =
                 disposition_manifest.map(|manifest| manifest.resolve(source.name, &vendor.name));
             let bounded_feature = resolved_disposition
@@ -240,6 +234,28 @@ pub(crate) fn verify_source(
             let comparison = evaluation.comparison;
             let verdict = comparison.verdict;
             let accepted_match = evaluation.accepted_match;
+            let binding_kind = manifest_entry
+                .and_then(|entry| entry.binding.as_ref())
+                .map(|binding| binding.rust_kind);
+            let compiled_component_executed = if accepted_match {
+                manifest_entry
+                    .map(|entry| executed_production_component(entry, &comparison, rust_artifact))
+                    .transpose()?
+                    .unwrap_or(false)
+            } else {
+                false
+            };
+            let production_trace = compiled_component_executed
+                && binding_kind.is_some_and(|kind| {
+                    matches!(
+                        kind,
+                        open_radio_vendor_semantics::RustBindingKind::ExactProductionEntry
+                            | open_radio_vendor_semantics::RustBindingKind::ReviewedAbiProjection
+                    )
+                });
+            let shared_core = compiled_component_executed
+                && binding_kind
+                    == Some(open_radio_vendor_semantics::RustBindingKind::SharedProductionCore);
             if accepted_match && production_trace {
                 if evaluation.reviewed_domain {
                     summary.bounded_matches += 1;
@@ -286,6 +302,8 @@ pub(crate) fn verify_source(
             let mut function = FunctionVerificationReport::new(source.name, &vendor.name, status);
             function.evidence_class = if production_trace {
                 EvidenceClass::ProductionTrace
+            } else if shared_core {
+                EvidenceClass::SharedCore
             } else {
                 EvidenceClass::StaticAnalysis
             };
@@ -304,10 +322,15 @@ pub(crate) fn verify_source(
                 });
             }
             if accepted_match && !production_trace {
-                function.reason = Some(
-                    "concrete profile does not bind the exact compiled production driver entry"
-                        .to_owned(),
-                );
+                function.reason = Some(if !compiled_component_executed {
+                    "concrete Rust execution did not reach the reviewed compiled production component"
+                        .to_owned()
+                } else {
+                    format!(
+                        "binding {} is supporting evidence, not a production trace",
+                        binding_kind.map_or("missing", |kind| kind.label())
+                    )
+                });
             } else if accepted_match && evaluation.reviewed_domain {
                 function.reason = Some(format!(
                     "every declared concrete case matches under reviewed precondition {:?}; static coverage outside that finite domain remains visible and this is not whole-function vendor equivalence",
@@ -605,10 +628,59 @@ fn annotate_replacement(
     }
 }
 
+fn executed_production_component(
+    entry: &dispositions::Entry,
+    comparison: &ExecutionComparisonReport,
+    rust_artifact: &Path,
+) -> Result<bool> {
+    let Some(component) = entry.rust_component.as_ref() else {
+        return Ok(false);
+    };
+    if comparison.rust_executed_pcs.is_empty() {
+        return Ok(false);
+    }
+    let frames = artifact::inspect_rust_debug_frames(rust_artifact, &comparison.rust_executed_pcs)?;
+    Ok(frames_reach_component(component.label(), &frames))
+}
+
+fn frames_reach_component(component: &str, frames: &[artifact::ArtifactDebugFrame]) -> bool {
+    frames.iter().any(|frame| {
+        super::rust_component_index::compiled_matches(component, &frame.demangled_name)
+    })
+}
+
 fn require_knowledge_provider<'a>(provider: Option<&'a str>, capability: &str) -> Result<&'a str> {
     provider.ok_or_else(|| {
         crate::Error::invalid(format!(
             "{capability} requires a project chip pack with an executable knowledge provider"
         ))
     })
+}
+
+#[cfg(test)]
+mod binding_tests {
+    use super::*;
+
+    #[test]
+    fn production_binding_requires_an_executed_component_frame() {
+        let frames = [artifact::ArtifactDebugFrame {
+            address: 0x1000,
+            demangled_name:
+                "open_esp_radio_esp32s31_wifi_mac::tx_runtime::select_ordinary_retry_rate"
+                    .to_owned(),
+        }];
+
+        assert!(frames_reach_component(
+            "open_esp_radio_esp32s31_wifi_mac::tx_runtime::select_ordinary_retry_rate",
+            &frames,
+        ));
+        assert!(!frames_reach_component(
+            "open_esp_radio_esp32s31_wifi_mac::tx::TxCompletion::disposition",
+            &frames,
+        ));
+        assert!(!frames_reach_component(
+            "open_esp_radio_esp32s31_wifi_mac::tx_runtime::select_ordinary_retry_rate",
+            &[],
+        ));
+    }
 }

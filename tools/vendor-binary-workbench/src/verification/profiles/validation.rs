@@ -5,7 +5,9 @@ use std::collections::BTreeSet;
 use crate::{NamedScenario, Result};
 use open_radio_vendor_semantics::VerificationClaim;
 
-use super::{ArgumentRange, ArgumentValues, MmioDomain, Profile, ProfileContract};
+use super::{
+    ArgumentRange, ArgumentValues, MmioDomain, Profile, ProfileContract, TransactionComparison,
+};
 
 pub(super) fn validate_coverage_domain(
     profile: &str,
@@ -49,6 +51,8 @@ pub(super) fn validate_coverage_domain(
         precondition: None,
         contract: ProfileContract::Scenario,
         compare_return: false,
+        transaction_comparison: TransactionComparison::Observables,
+        call_equivalences: Vec::new(),
         argument_ranges: argument_ranges.to_vec(),
         argument_values: argument_values.to_vec(),
         mmio_domains: mmio_domains.to_vec(),
@@ -291,6 +295,8 @@ pub(super) fn validate_argument_domain(
         precondition: None,
         contract: ProfileContract::Scenario,
         compare_return: false,
+        transaction_comparison: TransactionComparison::Observables,
+        call_equivalences: Vec::new(),
         argument_ranges: ranges.to_vec(),
         argument_values: values.to_vec(),
         mmio_domains: Vec::new(),

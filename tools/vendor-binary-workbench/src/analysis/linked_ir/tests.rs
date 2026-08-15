@@ -46,7 +46,12 @@ fn linked_test_function(
         object_offset: 0,
         size: 4,
         flow_kind: "partial",
-        complete: false,
+        completeness: LinkedFunctionCompleteness {
+            body_complete: false,
+            call_targets_complete: false,
+            transitive_effects_complete: false,
+            executable_complete: false,
+        },
         exact: false,
         return_value: "unknown".to_owned(),
         return_provenance: LinkedReturnProvenance {
@@ -109,6 +114,7 @@ fn projected_semantic_action(
             source: "test-reviewed-contract",
             id: format!("test::{operation}"),
             evidence: "unit-test".to_owned(),
+            body_policy: "opaque-boundary",
             event_dispatch,
         }),
         replacement_hint: None,

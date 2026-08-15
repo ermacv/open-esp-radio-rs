@@ -1,4 +1,5 @@
-schema = 3
+schema = 4
+transaction-comparison = "observables"
 
 # The parent has fourteen policy cases; this profile intentionally proves only
 # the two reviewed role frontiers required by the open STA/AP composition.

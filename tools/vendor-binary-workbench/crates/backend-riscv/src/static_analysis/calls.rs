@@ -374,6 +374,7 @@ pub(super) fn apply_relocated_call(
         state
             .reference_events
             .push(DraftReferenceEvent::DiagnosticCall {
+                site: pc as u32,
                 function: name.clone(),
                 argument_count,
                 arguments,

@@ -59,8 +59,13 @@ pub(super) fn run(arguments: ExecuteCompareArgs, svd: &MmioMap) -> Result<bool> 
             companion: arguments.rust_companion.as_deref(),
             symbol: &rust_symbol,
         },
-        arguments.compare_return,
-        &unconstrained_coverage,
+        crate::ExecutionComparisonPolicy {
+            compare_return: arguments.compare_return,
+            transaction_comparison:
+                crate::verification::profiles::TransactionComparison::Observables,
+            call_equivalences: &[],
+            coverage_domain: &unconstrained_coverage,
+        },
         &scenarios,
     )?;
     let matched = report.verdict == EquivalenceVerdict::Match;

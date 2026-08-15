@@ -81,6 +81,10 @@ pub enum RustBindingKind {
     /// Generated research/static-evidence entry. This is never production
     /// driver code and cannot by itself establish a production binding.
     GeneratedReference,
+    /// A reviewed, finite ABI/layout adapter around a production component.
+    /// It may support only a bounded-domain claim and becomes production
+    /// evidence only when concrete execution reaches that compiled component.
+    ReviewedAbiProjection,
     ExactProductionEntry,
     SharedProductionCore,
     VerificationProjection,
@@ -90,6 +94,7 @@ impl RustBindingKind {
     pub const fn label(self) -> &'static str {
         match self {
             Self::GeneratedReference => "generated-reference",
+            Self::ReviewedAbiProjection => "reviewed-abi-projection",
             Self::ExactProductionEntry => "exact-production-entry",
             Self::SharedProductionCore => "shared-production-core",
             Self::VerificationProjection => "verification-projection",

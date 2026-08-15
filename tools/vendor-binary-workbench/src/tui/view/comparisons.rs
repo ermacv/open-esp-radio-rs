@@ -230,6 +230,7 @@ pub(super) fn render(frame: &mut Frame<'_>, state: &BrowserState, area: Rect) {
 fn trace_item(item: Option<&TraceItemReport>) -> String {
     match item {
         None => "<missing>".to_owned(),
+        Some(TraceItemReport::Transaction { transaction }) => format!("{transaction:?}"),
         Some(TraceItemReport::Event { event, producer }) => {
             let producer = producer.as_ref().map_or_else(String::new, |producer| {
                 format!(

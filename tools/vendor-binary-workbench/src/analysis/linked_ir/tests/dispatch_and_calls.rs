@@ -18,6 +18,7 @@ static LINK_UNIT_DELAY_SEMANTIC: crate::DirectSemanticFunctionSpec =
         source: "test-addon",
         c_name: "ets_delay_us",
         argument_count: 1,
+        body_policy: crate::SemanticFunctionBodyPolicy::OpaqueBoundary,
         return_model: crate::ExternalReturnModel::Unmodeled,
         semantic: crate::ExternalSemanticSpec {
             operation: "time.blocking-delay",
@@ -51,6 +52,7 @@ static C_MEMCPY_SEMANTIC: crate::DirectSemanticFunctionSpec = crate::DirectSeman
     source: "test-c-addon",
     c_name: "memcpy",
     argument_count: 3,
+    body_policy: crate::SemanticFunctionBodyPolicy::OpaqueBoundary,
     return_model: crate::ExternalReturnModel::Unmodeled,
     semantic: crate::ExternalSemanticSpec {
         operation: "memory.copy",
@@ -551,6 +553,7 @@ fn external_call_keeps_reviewed_table_slot_semantics() {
             source: "reviewed-interface-pack",
             id: "pack::wifi-osi@+0x20".to_owned(),
             evidence: "reviewed-layout-and-observed-call-site".to_owned(),
+            body_policy: "opaque-boundary",
             event_dispatch: None,
         })
     );
@@ -619,6 +622,7 @@ fn standard_memory_call_is_a_semantic_boundary_independent_of_its_body() {
     annotate_direct_semantic_calls(&mut calls, &owner, &resolver, &identities);
 
     let call = calls.first().unwrap();
+    assert_eq!(call.kind, "semantic-boundary");
     assert_eq!(call.semantic_operation.as_deref(), Some("memory.copy"));
     assert_eq!(
         call.semantic_contract.as_ref(),
@@ -627,6 +631,7 @@ fn standard_memory_call_is_a_semantic_boundary_independent_of_its_body() {
             id: "test-c-standard-memcpy".to_owned(),
             evidence: "exact public symbol identity and standardized C function contract"
                 .to_owned(),
+            body_policy: "opaque-boundary",
             event_dispatch: None,
         })
     );

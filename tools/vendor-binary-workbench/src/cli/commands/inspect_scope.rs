@@ -61,10 +61,12 @@ pub(super) fn run(arguments: InspectScopeArgs, project: &ProjectSpec) -> Result<
             outputln!("  blockers:");
             for blocker in &scope.review_queue {
                 outputln!(
-                    "    - [{}] {} ({} occurrence(s))",
+                    "    - [{}] {} ({} occurrence(s), up to {} function(s), roots={})",
                     blocker.kind,
                     blocker.message,
-                    blocker.occurrences
+                    blocker.occurrences,
+                    blocker.potentially_unblocked_functions,
+                    blocker.affected_scope_roots.join(", "),
                 );
             }
         }

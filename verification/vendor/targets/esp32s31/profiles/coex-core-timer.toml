@@ -1,4 +1,5 @@
-schema = 3
+schema = 4
+transaction-comparison = "observables"
 
 # Full concrete domain of the reviewed 48-event switch.
 [[profiles]]

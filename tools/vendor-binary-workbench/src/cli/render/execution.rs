@@ -12,6 +12,7 @@ fn trace_item_text(item: Option<&TraceItemReport>) -> String {
         return "<missing>".to_owned();
     };
     match item {
+        TraceItemReport::Transaction { transaction } => format!("{transaction:?}"),
         TraceItemReport::Event { event, producer } => {
             let producer = producer.as_ref().map_or_else(String::new, |producer| {
                 format!(

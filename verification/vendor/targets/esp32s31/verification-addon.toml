@@ -107,13 +107,14 @@ id = "libpp-rx-dma"
 auxiliary-sources = ["libpp-replay"]
 rust-artifact-role = "rust-artifact"
 rust-prefix = "open_libpp_rx_trace_"
-profiles = []
+profiles = ["profiles/libpp-rx-dma.toml"]
 dispositions = ["dispositions/libpp-rx-dma.toml"]
-baselines = []
-# These declarations remain useful as static production bindings, but no
-# generic concrete-execution profile currently covers the composed RX-ring
-# transaction. Do not turn that absence into a synthetic MATCH requirement.
-gate = "informational"
+baselines = ["baselines/libpp-rx-dma.toml"]
+# This gate qualifies the eight finite register leaves only. The composed
+# wDev_AppendRxBlocks/RxRingLive transaction remains visibly uncovered until
+# it receives its own reviewed-domain production profile.
+gate = "regression"
+match-floor = 6
 [[suites.vendor]]
 source = "libpp"
 all = true

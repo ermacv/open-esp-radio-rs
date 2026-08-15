@@ -1,0 +1,119 @@
+schema = 3
+
+# Concrete execution coverage for the finite RX-DMA register leaves used by
+# the descriptor-ring owner. The composed list transaction remains a separate
+# production contract; these cases must not be presented as equivalence of
+# wDev_AppendRxBlocks itself.
+
+[[profiles]]
+name = "libpp-rx-disable"
+claim = "whole-function-equivalence"
+vendor-source = "libpp"
+vendor-symbol = "hal_mac_rx_disable"
+rust-symbol = "open_libpp_rx_trace_hal_mac_rx_disable"
+compare-return = false
+[[profiles.cases]]
+name = "enabled-with-unrelated-bits"
+[[profiles.cases.mmio-initial]]
+address = 0x20104080
+value = 0xd5a5a5a5
+
+[[profiles]]
+name = "libpp-rx-enable"
+claim = "whole-function-equivalence"
+vendor-source = "libpp"
+vendor-symbol = "hal_mac_rx_enable"
+rust-symbol = "open_libpp_rx_trace_hal_mac_rx_enable"
+compare-return = false
+[[profiles.cases]]
+name = "disabled-with-unrelated-bits"
+[[profiles.cases.mmio-initial]]
+address = 0x20104080
+value = 0x15a5a5a5
+
+[[profiles]]
+name = "libpp-rx-read-last-word"
+claim = "whole-function-equivalence"
+vendor-source = "libpp"
+vendor-symbol = "hal_mac_rx_read_rxdscrlast"
+rust-symbol = "open_libpp_rx_trace_hal_mac_rx_read_rxdscrlast"
+compare-return = true
+[[profiles.cases]]
+name = "complete-word"
+[[profiles.cases.mmio-initial]]
+address = 0x2010408c
+value = 0xabc12345
+
+[[profiles]]
+name = "libpp-rx-read-next-word"
+claim = "whole-function-equivalence"
+vendor-source = "libpp"
+vendor-symbol = "hal_mac_rx_read_rxdscrnext"
+rust-symbol = "open_libpp_rx_trace_hal_mac_rx_read_rxdscrnext"
+compare-return = true
+[[profiles.cases]]
+name = "complete-word"
+[[profiles.cases.mmio-initial]]
+address = 0x20104088
+value = 0xdef6789a
+
+[[profiles]]
+name = "libpp-rx-set-base"
+claim = "whole-function-equivalence"
+vendor-source = "libpp"
+vendor-symbol = "hal_mac_rx_set_base"
+rust-symbol = "open_libpp_rx_trace_hal_mac_rx_set_base"
+compare-return = false
+[[profiles.cases]]
+name = "dma-address"
+arguments = [0x2f001000]
+[[profiles.cases.mmio-initial]]
+address = 0x20104084
+value = 0
+
+[[profiles]]
+name = "libpp-rx-get-last-descriptor"
+claim = "whole-function-equivalence"
+vendor-source = "libpp"
+vendor-symbol = "hal_mac_rx_get_last_dscr"
+rust-symbol = "open_libpp_rx_trace_hal_mac_rx_get_last_dscr"
+compare-return = true
+[[profiles.cases]]
+name = "join-low-and-high"
+[[profiles.cases.mmio-initial]]
+address = 0x2010408c
+value = 0x00012340
+[[profiles.cases.mmio-initial]]
+address = 0x20104c70
+value = 0x000002f0
+
+[[profiles]]
+name = "libpp-rx-reload-pending"
+claim = "whole-function-equivalence"
+vendor-source = "libpp"
+vendor-symbol = "hal_mac_rx_is_dscr_reload"
+rust-symbol = "open_libpp_rx_trace_hal_mac_rx_is_dscr_reload"
+compare-return = true
+[[profiles.cases]]
+name = "clear"
+[[profiles.cases.mmio-initial]]
+address = 0x20104080
+value = 0x80000000
+[[profiles.cases]]
+name = "set"
+[[profiles.cases.mmio-initial]]
+address = 0x20104080
+value = 0x80000001
+
+[[profiles]]
+name = "libpp-rx-request-reload"
+claim = "whole-function-equivalence"
+vendor-source = "libpp"
+vendor-symbol = "hal_mac_rx_set_dscr_reload"
+rust-symbol = "open_libpp_rx_trace_hal_mac_rx_set_dscr_reload"
+compare-return = false
+[[profiles.cases]]
+name = "preserve-unrelated-bits"
+[[profiles.cases.mmio-initial]]
+address = 0x20104080
+value = 0xd5a5a5a4

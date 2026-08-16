@@ -63,7 +63,52 @@ pub(super) fn trace_difference(
             });
         }
     }
-    if let Some(index) = first_difference(&vendor.events, &rust.events) {
+    if transaction_comparison.state_domain() {
+        let vendor_keys = state_change_keys(&vendor.memory_changes);
+        let rust_keys = state_change_keys(&rust.memory_changes);
+        if let Some(index) = first_difference(&vendor_keys, &rust_keys) {
+            return Some(TraceDiffReport {
+                first_difference: index,
+                kind: DifferenceKind::Memory,
+                vendor: vendor.memory_changes.get(index).map(memory_item),
+                rust: rust.memory_changes.get(index).map(memory_item),
+                context_before: state_memory_context(
+                    &vendor.memory_changes,
+                    &rust.memory_changes,
+                    context_before(index),
+                ),
+                context_after: state_memory_context(
+                    &vendor.memory_changes,
+                    &rust.memory_changes,
+                    index + 1
+                        ..context_end(
+                            index,
+                            vendor.memory_changes.len(),
+                            rust.memory_changes.len(),
+                        ),
+                ),
+                path: Some(execution_path(vendor, rust)),
+            });
+        }
+        return (compare_return && vendor.return_value != rust.return_value).then(|| {
+            TraceDiffReport {
+                first_difference: 0,
+                kind: DifferenceKind::ReturnValue,
+                vendor: Some(TraceItemReport::ReturnValue {
+                    value: vendor.return_value,
+                }),
+                rust: Some(TraceItemReport::ReturnValue {
+                    value: rust.return_value,
+                }),
+                context_before: Vec::new(),
+                context_after: Vec::new(),
+                path: Some(execution_path(vendor, rust)),
+            }
+        });
+    }
+    if transaction_comparison.compares_observables()
+        && let Some(index) = first_difference(&vendor.events, &rust.events)
+    {
         return Some(TraceDiffReport {
             first_difference: index,
             kind: DifferenceKind::Event,
@@ -126,7 +171,9 @@ pub(super) fn ordered_transactions(
         .timeline
         .iter()
         .filter_map(|event| match event {
-            execution::ExecutionTimelineEvent::Observable(event) => {
+            execution::ExecutionTimelineEvent::Observable(event)
+                if comparison.compares_observables() =>
+            {
                 Some(OrderedTransactionReport::Observable {
                     event: event.into(),
                 })
@@ -300,20 +347,56 @@ pub(super) fn ordered_transactions_equal(
     compare_return: bool,
     call_equivalences: &[super::super::profiles::CallEquivalence],
 ) -> bool {
-    let vendor = relevant_transactions(
+    let vendor_transactions = relevant_transactions(
         ordered_transactions(vendor, comparison, compare_return),
         TransactionSide::Vendor,
         comparison,
         call_equivalences,
     );
-    let rust = relevant_transactions(
+    let rust_transactions = relevant_transactions(
         ordered_transactions(rust, comparison, compare_return),
         TransactionSide::Rust,
         comparison,
         call_equivalences,
     );
-    comparable_transactions(&vendor, TransactionSide::Vendor, call_equivalences)
-        == comparable_transactions(&rust, TransactionSide::Rust, call_equivalences)
+    let transactions_equal =
+        comparable_transactions(
+            &vendor_transactions,
+            TransactionSide::Vendor,
+            call_equivalences,
+        ) == comparable_transactions(&rust_transactions, TransactionSide::Rust, call_equivalences);
+    if comparison.state_domain() {
+        transactions_equal
+            && state_change_keys(&vendor.memory_changes) == state_change_keys(&rust.memory_changes)
+            && (!compare_return || vendor.return_value == rust.return_value)
+    } else {
+        transactions_equal
+    }
+}
+
+fn state_change_keys(changes: &[execution::MemoryChange]) -> Vec<(u8, u8)> {
+    changes
+        .iter()
+        .map(|change| (change.before, change.after))
+        .collect()
+}
+
+fn state_memory_context(
+    vendor: &[execution::MemoryChange],
+    rust: &[execution::MemoryChange],
+    indices: std::ops::Range<usize>,
+) -> Vec<AlignedTraceItemReport> {
+    indices
+        .map(|index| AlignedTraceItemReport {
+            index,
+            vendor: vendor.get(index).map(memory_item),
+            rust: rust.get(index).map(memory_item),
+            equal: vendor
+                .get(index)
+                .map(|change| (change.before, change.after))
+                == rust.get(index).map(|change| (change.before, change.after)),
+        })
+        .collect()
 }
 
 fn transaction_context(
@@ -512,6 +595,8 @@ mod tests {
             device_model_coverage: Vec::new(),
             memory_changes: Vec::new(),
             initial_memory: BTreeMap::new(),
+            carried_memory: BTreeMap::new(),
+            explicit_memory: BTreeMap::new(),
             persistent_memory: BTreeMap::new(),
         }
     }
@@ -552,6 +637,111 @@ mod tests {
                 }),
                 ..
             })
+        ));
+    }
+
+    #[test]
+    fn state_only_compares_projected_memory_without_claiming_event_equivalence() {
+        let event = |value| execution::ExecutionEvent::Write {
+            width: 32,
+            address: 0x4000_0010,
+            region: "radio".to_owned(),
+            register: None,
+            value,
+        };
+        let mut vendor = result(vec![event(1)]);
+        let mut rust = result(vec![event(2)]);
+        vendor.memory_changes = vec![execution::MemoryChange {
+            address: 0,
+            before: 0,
+            after: 1,
+        }];
+        rust.memory_changes = vendor.memory_changes.clone();
+        rust.memory_changes[0].address = 0x2000;
+        assert!(ordered_transactions_equal(
+            &vendor,
+            &rust,
+            super::super::super::profiles::TransactionComparison::StateOnly,
+            false,
+            &[],
+        ));
+        assert!(
+            trace_difference(
+                &vendor,
+                &rust,
+                false,
+                super::super::super::profiles::TransactionComparison::StateOnly,
+                &[],
+            )
+            .is_none()
+        );
+
+        rust.memory_changes[0].after = 2;
+        assert!(!ordered_transactions_equal(
+            &vendor,
+            &rust,
+            super::super::super::profiles::TransactionComparison::StateOnly,
+            false,
+            &[],
+        ));
+        assert_eq!(
+            trace_difference(
+                &vendor,
+                &rust,
+                false,
+                super::super::super::profiles::TransactionComparison::StateOnly,
+                &[],
+            )
+            .unwrap()
+            .kind,
+            DifferenceKind::Memory
+        );
+    }
+
+    #[test]
+    fn state_and_reviewed_calls_requires_both_state_and_semantic_edge() {
+        let call = |symbol: &str| {
+            execution::ExecutionTimelineEvent::Call(execution::OrderedCall {
+                site: 0,
+                symbol: symbol.to_owned(),
+                arguments: [0; 8],
+            })
+        };
+        let mut vendor = result(Vec::new());
+        vendor.timeline = vec![call("vendor_publish")];
+        vendor.memory_changes = vec![execution::MemoryChange {
+            address: 0x1000,
+            before: 0,
+            after: 1,
+        }];
+        let mut rust = result(Vec::new());
+        rust.timeline = vec![call("rust_publish")];
+        rust.memory_changes = vec![execution::MemoryChange {
+            address: 0x2000,
+            before: 0,
+            after: 1,
+        }];
+        let mappings = [super::super::super::profiles::CallEquivalence {
+            operation: "tx.publish".to_owned(),
+            vendor_symbol: "vendor_publish".to_owned(),
+            rust_symbol: "rust_publish".to_owned(),
+            argument_comparison: super::super::super::profiles::CallArgumentComparison::Ignore,
+            argument_indices: Vec::new(),
+        }];
+        let comparison =
+            super::super::super::profiles::TransactionComparison::StateAndReviewedCalls;
+
+        assert!(ordered_transactions_equal(
+            &vendor, &rust, comparison, false, &mappings,
+        ));
+        rust.timeline.clear();
+        assert!(!ordered_transactions_equal(
+            &vendor, &rust, comparison, false, &mappings,
+        ));
+        rust.timeline = vec![call("rust_publish")];
+        rust.memory_changes[0].after = 2;
+        assert!(!ordered_transactions_equal(
+            &vendor, &rust, comparison, false, &mappings,
         ));
     }
 

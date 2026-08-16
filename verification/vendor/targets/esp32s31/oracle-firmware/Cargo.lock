@@ -1274,6 +1274,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "object"
+version = "0.39.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2e5a6c098c7a3b6547378093f5cc30bc54fd361ce711e05293a5cc589562739b"
+dependencies = [
+ "memchr",
+]
+
+[[package]]
 name = "once_cell"
 version = "1.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1352,6 +1361,7 @@ dependencies = [
 name = "open-esp-radio-esp32s31-wifi-ap"
 version = "0.1.0"
 dependencies = [
+ "open-esp-radio-dma",
  "open-esp-radio-esp32s31-hal",
  "open-esp-radio-esp32s31-phy",
  "open-esp-radio-esp32s31-wifi",
@@ -1404,6 +1414,7 @@ dependencies = [
  "open-esp-radio-esp32s31-hal",
  "open-esp-radio-esp32s31-phy",
  "open-esp-radio-esp32s31-wifi",
+ "open-esp-radio-esp32s31-wifi-dma",
  "open-esp-radio-esp32s31-wifi-mac",
  "open-esp-radio-ieee80211",
  "open-esp-radio-wifi-softmac",
@@ -1419,6 +1430,7 @@ version = "0.1.0"
 name = "open-esp-radio-vendor-oracle-esp32s31-trace-elf"
 version = "0.1.0"
 dependencies = [
+ "object",
  "serde",
  "toml_edit",
 ]

@@ -97,10 +97,10 @@ pub use verification::{
     BranchDecisionReport, BranchOutcomeReport, CaseReport, ComparisonSummary, ControlFlowReport,
     CoverageReport, DeviceModelCoverageReport, DeviceModelReport, DifferenceKind,
     EventProducerReport, ExecutionComparisonReport, ExecutionEventReport, ExecutionPathReport,
-    ExecutionPathSideReport, MemoryChangeReport, OrderedCallReport, RuntimeMemoryBindingReport,
-    RuntimeMemoryInstanceReport, ScenarioEnvironmentReport, TableInstanceReport,
-    TableInstanceSlotReport, TableLifecycleReport, TableSlotTargetReport, TraceDiffReport,
-    TraceItemReport,
+    ExecutionPathSideReport, MemoryChangeReport, MemoryInputReport, OrderedCallReport,
+    RuntimeMemoryBindingReport, RuntimeMemoryInstanceReport, ScenarioEnvironmentReport,
+    TableInstanceReport, TableInstanceSlotReport, TableLifecycleReport, TableSlotTargetReport,
+    TraceDiffReport, TraceItemReport,
 };
 
 use std::process::ExitCode;

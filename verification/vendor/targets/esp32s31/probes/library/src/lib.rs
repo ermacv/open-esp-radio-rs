@@ -583,6 +583,305 @@ pub extern "C" fn open_libpp_tx_retry_trace_lmac_process_tx_error(
     }
 }
 
+#[repr(C)]
+pub struct CanonicalOrdinaryRetryState {
+    pub mpdu: u8,
+    pub short: u8,
+    pub long: u8,
+    pub publications: u8,
+    pub selected_rate: u8,
+    pub decision: u8,
+    pub retry_bit_mask: u8,
+    pub contention_exponent: u8,
+}
+
+const ORDINARY_TX_PROBE_BUFFER_SIZE: usize = 256;
+
+struct OrdinaryTxProbePower;
+
+impl open_esp_radio_esp32s31_wifi::tx::WifiTxPowerProfile for OrdinaryTxProbePower {
+    fn power_pair(
+        &self,
+        _rate_code: u8,
+    ) -> open_esp_radio_esp32s31_wifi::tx::WifiTxPowerPair {
+        open_esp_radio_esp32s31_wifi::tx::WifiTxPowerPair {
+            primary: 1,
+            alternate: 1,
+        }
+    }
+}
+
+struct OrdinaryTxProbeEntropy;
+
+impl open_esp_radio_esp32s31_wifi::tx::WifiTxEntropy for OrdinaryTxProbeEntropy {
+    fn next_u32(&mut self) -> u32 {
+        0
+    }
+}
+
+struct OrdinaryTxProbeTimer;
+
+impl open_esp_radio_esp32s31_wifi::tx::WifiTxTimer for OrdinaryTxProbeTimer {
+    fn now_micros(&self) -> u64 {
+        1
+    }
+
+    fn wait_until(&mut self, _deadline_micros: u64) -> impl core::future::Future<Output = ()> + '_ {
+        core::future::ready(())
+    }
+
+    fn after_micros(&mut self, _micros: u64) -> impl core::future::Future<Output = ()> + '_ {
+        core::future::ready(())
+    }
+}
+
+/// Reviewed probe edge emitted by every real production publication.
+#[unsafe(no_mangle)]
+#[inline(never)]
+pub extern "C" fn open_libpp_tx_retry_publication(queue: u32) {
+    // SAFETY: this instruction is a machine-visible optimizer barrier only.
+    unsafe {
+        core::arch::asm!("addi zero, zero, 4", in("a0") queue, options(nomem, nostack))
+    };
+}
+
+struct OrdinaryTxProbeHardware {
+    publications: u8,
+}
+
+impl open_esp_radio_esp32s31_wifi_mac::tx::TxHardware for OrdinaryTxProbeHardware {
+    fn prepare_bound_legacy_tx(
+        &mut self,
+        _dma: &dyn open_esp_radio_esp32s31_wifi_mac::tx::PreparedTxDma,
+        _queue: u8,
+        _program: open_esp_radio_esp32s31_hal::types::MacLegacyTxProgram,
+    ) -> bool {
+        true
+    }
+
+    fn start_bound_legacy_tx(
+        &mut self,
+        _dma: &dyn open_esp_radio_esp32s31_wifi_mac::tx::HardwareOwnedTxDma,
+        queue: u8,
+        _plcp0: u32,
+    ) {
+        self.publications = self.publications.saturating_add(1);
+        if self.publications > 1 {
+            open_libpp_tx_retry_publication(u32::from(queue));
+        }
+    }
+
+    fn take_tx_completion(
+        &mut self,
+        _queue: u8,
+    ) -> Option<open_esp_radio_esp32s31_hal::types::MacTxCompletionRegisters> {
+        Some(open_esp_radio_esp32s31_hal::types::MacTxCompletionRegisters {
+            aux_a: 0,
+            aux_b: 0,
+            aux_c: 0,
+            primary: 5 << 12,
+            alternate: 0,
+            trigger_flow: false,
+        })
+    }
+
+    fn begin_tx_timeout_abort(&mut self, _queue: u8) -> bool {
+        false
+    }
+
+    fn with_tx_queue_detached<R>(
+        &mut self,
+        _queue: u8,
+        expected_descriptor_head: u32,
+        reason: open_esp_radio_esp32s31_hal::types::MacTxDetachReason,
+        detached: impl for<'detached> FnOnce(
+            open_esp_radio_esp32s31_hal::types::MacTxQueueDetached<'detached>,
+        ) -> R,
+    ) -> open_esp_radio_esp32s31_hal::types::MacTxDetachOutcome<R> {
+        use open_esp_radio_esp32s31_hal::types::{
+            MacTxDetachOutcome, MacTxDetachReason, MacTxQueueDetached,
+        };
+
+        match reason {
+            MacTxDetachReason::Completed => MacTxDetachOutcome::Detached(detached(
+                MacTxQueueDetached::new_validation(expected_descriptor_head),
+            )),
+            MacTxDetachReason::Timeout | MacTxDetachReason::Collision => {
+                MacTxDetachOutcome::NoEvent
+            }
+        }
+    }
+}
+
+type OrdinaryTxProbeOwner = open_esp_radio_esp32s31_wifi::ordinary_tx::OrdinaryTxOwner<
+    'static,
+    OrdinaryTxProbePower,
+    OrdinaryTxProbeEntropy,
+    OrdinaryTxProbeTimer,
+    ORDINARY_TX_PROBE_BUFFER_SIZE,
+>;
+
+struct OrdinaryTxProbeState {
+    owner: OrdinaryTxProbeOwner,
+    hardware: OrdinaryTxProbeHardware,
+}
+
+struct OrdinaryTxProbeCell<T>(core::cell::UnsafeCell<T>);
+
+// SAFETY: the Workbench executes this probe image on one thread and invokes
+// its exported stateful entry serially.
+unsafe impl<T> Sync for OrdinaryTxProbeCell<T> {}
+
+#[unsafe(link_section = ".dma.bss.ordinary_tx")]
+static ORDINARY_TX_DMA: OrdinaryTxProbeCell<
+    open_esp_radio_esp32s31_wifi_dma::tx_storage::TxDmaStorage<ORDINARY_TX_PROBE_BUFFER_SIZE>,
+> = OrdinaryTxProbeCell(core::cell::UnsafeCell::new(
+    open_esp_radio_esp32s31_wifi_dma::tx_storage::TxDmaStorage::new(),
+));
+static ORDINARY_TX_SLOT: OrdinaryTxProbeCell<
+    core::mem::MaybeUninit<
+        open_esp_radio_esp32s31_wifi_mac::tx::TxSlot<ORDINARY_TX_PROBE_BUFFER_SIZE>,
+    >,
+> = OrdinaryTxProbeCell(core::cell::UnsafeCell::new(core::mem::MaybeUninit::uninit()));
+static ORDINARY_TX_PROBE: OrdinaryTxProbeCell<(
+    bool,
+    core::mem::MaybeUninit<OrdinaryTxProbeState>,
+)> = OrdinaryTxProbeCell(core::cell::UnsafeCell::new((
+    false,
+    core::mem::MaybeUninit::uninit(),
+)));
+
+fn initialize_ordinary_tx_probe() -> Result<OrdinaryTxProbeState, u32> {
+    use open_esp_radio_esp32s31_wifi::{
+        ordinary_tx::{OrdinaryTxOwner, OrdinaryTxPlan, OrdinaryTxInterface},
+        tx::{WifiTxProgress, WifiTxResources},
+    };
+    use open_esp_radio_esp32s31_wifi_mac::{
+        tx::{LegacyRate, LegacyTxQueue, TxPhyRate, TxSlot},
+        tx_runtime::WifiTxRuntimePolicy,
+    };
+    use open_esp_radio_wifi_softmac::MacTxPlan;
+
+    // SAFETY: initialization runs once in the single-threaded probe image;
+    // the resulting DMA owner permanently consumes this static allocation.
+    let dma =
+        open_esp_radio_esp32s31_wifi_dma::tx_storage::TxDmaStorage::pin_static(unsafe {
+            &mut *ORDINARY_TX_DMA.0.get()
+        })
+        .map_err(|_| 10_u32)?;
+    // SAFETY: this storage is initialized once and then borrowed exclusively
+    // by the retained `OrdinaryTxOwner` for the rest of the image lifetime.
+    let slot = unsafe {
+        let slot = &mut *ORDINARY_TX_SLOT.0.get();
+        slot.write(TxSlot::from_dma(dma));
+        core::pin::Pin::new_unchecked(slot.assume_init_mut())
+    };
+    let mut owner = OrdinaryTxOwner::new(WifiTxResources {
+        slot,
+        policy: WifiTxRuntimePolicy::vendor_defaults(),
+        power: OrdinaryTxProbePower,
+        entropy: OrdinaryTxProbeEntropy,
+        timer: OrdinaryTxProbeTimer,
+    });
+    owner.buffer_mut().map_err(|_| 11_u32)?[..32].fill(0);
+    let mut hardware = OrdinaryTxProbeHardware { publications: 0 };
+    let progress = owner
+        .start(
+            &mut hardware,
+            OrdinaryTxPlan {
+                frame_length: 24,
+                descriptor_capacity: None,
+                exchange: MacTxPlan {
+                    access_category: LegacyTxQueue::BestEffort.access_category(),
+                    initial_rate: TxPhyRate::Legacy(LegacyRate::Ofdm54M),
+                    publication_limit: 0x20,
+                    publication_timeout_micros: 1_000,
+                },
+                hardware_mic_length: 0,
+                hardware_key_selector: 0,
+                interface: OrdinaryTxInterface::Station,
+                scheduler_priority: 1,
+                packet_priority: 1,
+            },
+        )
+        .map_err(|_| 12_u32)?;
+    if progress != WifiTxProgress::Pending {
+        return Err(13_u32);
+    }
+    Ok(OrdinaryTxProbeState { owner, hardware })
+}
+
+/// Drive one ACK-timeout edge through the exact compiled production TX owner.
+#[inline(never)]
+fn ordinary_tx_ack_timeout_state(output_address: u32) -> u32 {
+    use open_esp_radio_esp32s31_wifi::tx::{WifiTxProgress, WifiTxWake};
+
+    if output_address == 0 {
+        return 4;
+    }
+    // SAFETY: this is the sole accessor in the single-threaded probe image.
+    let storage = unsafe { &mut *ORDINARY_TX_PROBE.0.get() };
+    if !storage.0 {
+        let Ok(state) = initialize_ordinary_tx_probe() else {
+            return 5;
+        };
+        storage.1.write(state);
+        storage.0 = true;
+    }
+    // SAFETY: the branch above initializes the state before every read.
+    let state = unsafe { storage.1.assume_init_mut() };
+    // Route the hardware completion through the exact production Embassy
+    // interrupt handoff. This keeps the compiled comparison from bypassing
+    // the adapter boundary by constructing `WifiTxWake` directly.
+    let irq = open_esp_radio_esp32s31_wifi_embassy::embassy_irq::EmbassyMacIrqRuntime::<
+        embassy_sync::blocking_mutex::raw::NoopRawMutex,
+    >::new();
+    irq.publish(open_esp_radio_esp32s31_wifi_mac::irq::MAC_INT_TX_COMPLETE);
+    let Some(events) = irq.try_take_tx() else {
+        return 8;
+    };
+    let progress = embassy_futures::block_on(state.owner.service(
+        &mut state.hardware,
+        WifiTxWake::Interrupt { events },
+    ));
+    if progress != Ok(WifiTxProgress::Pending) {
+        return 6;
+    }
+    let Ok(Some(snapshot)) = state.owner.active_snapshot() else {
+        return 7;
+    };
+    let output = output_address as *mut CanonicalOrdinaryRetryState;
+    // SAFETY: the comparison case supplies this writable eight-byte object.
+    unsafe {
+        output.write(CanonicalOrdinaryRetryState {
+            mpdu: snapshot.counters.mpdu,
+            short: snapshot.counters.short,
+            long: snapshot.counters.long,
+            publications: snapshot.publications,
+            selected_rate: snapshot.current_rate.code(),
+            decision: 1,
+            retry_bit_mask: u8::from(snapshot.retry_bit_set) * 8,
+            contention_exponent: state
+                .owner
+                .policy()
+                .contention_exponent(open_esp_radio_esp32s31_wifi_mac::tx::LegacyTxQueue::BestEffort),
+        })
+    };
+    0
+}
+
+/// Vendor-ABI-shaped entry for the stateful ACK-timeout short-frame profile.
+/// The fixed output address belongs to the comparison scenario; all retry
+/// decisions and counters come from the exact production state above.
+#[unsafe(no_mangle)]
+#[inline(never)]
+pub extern "C" fn open_libpp_tx_retry_trace_ack_timeout_state(
+    _queue: u32,
+    _selector: u32,
+) -> u32 {
+    ordinary_tx_ack_timeout_state(0x3fff_5000)
+}
+
 #[unsafe(no_mangle)]
 #[inline(never)]
 pub extern "C" fn open_libpp_interface_trace_hal_mac_set_addr(interface: u32, address: &[u8; 6]) {
@@ -1377,6 +1676,7 @@ pub fn retain_all_probes() {
     core::hint::black_box(open_libpp_tx_trace_hal_mac_tx_get_blockack as *const ());
     core::hint::black_box(open_libpp_tx_retry_trace_rc_get_rate as *const ());
     core::hint::black_box(open_libpp_tx_retry_trace_lmac_process_tx_error as *const ());
+    core::hint::black_box(open_libpp_tx_retry_trace_ack_timeout_state as *const ());
     core::hint::black_box(open_libpp_tx_retry_ack_timeout as *const ());
     core::hint::black_box(open_libpp_tx_retry_cts_timeout as *const ());
     core::hint::black_box(open_libpp_tx_retry_collision as *const ());

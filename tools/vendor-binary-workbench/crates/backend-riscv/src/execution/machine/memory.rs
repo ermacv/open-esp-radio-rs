@@ -204,7 +204,12 @@ impl Machine<'_> {
                 );
             }
             if !self.normal_address_is_valid(byte_address) {
-                return Err(format!("write to undeclared memory at {byte_address:#010x}").into());
+                return Err(format!(
+                    "write to undeclared memory at {byte_address:#010x} from instruction {:#010x} ({:?})",
+                    self.pc,
+                    self.image.symbol_containing(self.pc)
+                )
+                .into());
             }
             self.overlay
                 .insert(byte_address, (value >> (offset * 8)) as u8);

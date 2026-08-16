@@ -8,10 +8,10 @@ use open_radio_vendor_semantics::{EquivalenceMode, EquivalenceVerdict};
 
 /// Persistent concrete-comparison report schema.
 ///
-/// Schema 10 adds the ordered transaction trace used by call-aware
-/// comparisons. Readers must reject older reports rather than silently
-/// interpreting observable-only evidence as transaction evidence.
-pub const EXECUTION_COMPARISON_REPORT_SCHEMA: u32 = 10;
+/// Schema 15 also records the explicit side-specific private-stack fill used
+/// for optimized code which copies padding. Readers must reject older reports
+/// rather than silently treating poison replacement as an inferred value.
+pub const EXECUTION_COMPARISON_REPORT_SCHEMA: u32 = 15;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct ArtifactReport {
@@ -25,6 +25,23 @@ pub struct ArtifactReport {
 pub struct ArtifactIdentity {
     pub path: String,
     pub sha256: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SetupPhaseReport {
+    pub name: String,
+    pub symbol: String,
+    pub completion: ExecutionCompletionReport,
+    pub steps: u64,
+    pub calls: Vec<String>,
+    pub memory_changes: Vec<MemoryChangeReport>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum CoverageScopeReport {
+    StaticDomain,
+    ConcreteStateCases,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
@@ -369,6 +386,12 @@ pub struct RuntimeMemoryInstanceReport {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct MemoryInputReport {
+    pub address: u32,
+    pub value: u8,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct AllocationLifecycleReport {
     pub site: u32,
     pub symbol: String,
@@ -426,10 +449,16 @@ pub struct DeviceModelCoverageReport {
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
 pub struct ScenarioEnvironmentReport {
+    pub vendor_stack_fill: Option<u8>,
+    pub rust_stack_fill: Option<u8>,
     pub vendor_tables: Vec<TableInstanceReport>,
     pub rust_tables: Vec<TableInstanceReport>,
     pub vendor_memory_instances: Vec<RuntimeMemoryInstanceReport>,
     pub rust_memory_instances: Vec<RuntimeMemoryInstanceReport>,
+    pub vendor_carried_memory: Vec<MemoryInputReport>,
+    pub rust_carried_memory: Vec<MemoryInputReport>,
+    pub vendor_explicit_memory: Vec<MemoryInputReport>,
+    pub rust_explicit_memory: Vec<MemoryInputReport>,
     pub device_models: Vec<DeviceModelReport>,
     pub vendor_device_coverage: Vec<DeviceModelCoverageReport>,
     pub rust_device_coverage: Vec<DeviceModelCoverageReport>,
@@ -558,6 +587,9 @@ pub struct ExecutionComparisonReport {
     pub vendor: ArtifactReport,
     pub rust: ArtifactReport,
     pub compare_return: bool,
+    pub case_execution: super::profiles::CaseExecution,
+    pub coverage_scope: CoverageScopeReport,
+    pub vendor_setup: Vec<SetupPhaseReport>,
     /// Concrete Rust PCs reached by all complete cases. Kept out of the
     /// persistent report; the verification engine consumes it immediately to
     /// prove that a reviewed production component was actually executed.

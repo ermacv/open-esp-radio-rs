@@ -900,6 +900,15 @@ mod tests {
         assert_eq!(proof.dequeue_site, 6144);
         assert_eq!(proof.handler_site, Some(8192));
 
+        route.case_handler.as_mut().unwrap().function = "vendor::other_handler@0x2100".to_owned();
+        assert!(
+            load_replay_proof(&route)
+                .unwrap_err()
+                .to_string()
+                .contains("did not complete by reaching handler")
+        );
+        route.case_handler.as_mut().unwrap().function = "vendor::handler@0x2000".to_owned();
+
         let other_manifest = directory.join("other-route.toml");
         std::fs::write(&other_manifest, "schema = 2\n# changed\n").unwrap();
         route.replay.as_mut().unwrap().manifest = other_manifest;

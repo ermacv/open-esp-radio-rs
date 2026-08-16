@@ -35,6 +35,10 @@ role = "source-artifact:libpp-replay"
 path = "/path/to/linked-libpp-replay.elf"
 
 [[inputs]]
+role = "source-companion:libpp-replay"
+path = "/path/to/esp32s31_rev0_rom.elf"
+
+[[inputs]]
 role = "source-inventory:libpp"
 path = "/path/to/libpp.a"
 

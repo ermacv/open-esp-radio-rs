@@ -187,8 +187,9 @@ pub enum MacTxDetachOutcome<T> {
 ///
 /// The value borrows the register owner, so it cannot be retained while that
 /// same owner starts another queue transaction. Its fields and target
-/// constructor remain private to this crate; safe target code can obtain it
-/// only from [`RadioRegisters::with_detached_mac_tx`].
+/// constructor remain private to this crate; safe production code can obtain
+/// it only from [`RadioRegisters::with_detached_mac_tx`]. Validation builds
+/// additionally expose an isolated model constructor for compiled probes.
 pub struct MacTxQueueDetached<'registers> {
     descriptor_address_low: u32,
     _registers: PhantomData<&'registers mut RadioRegisters>,
@@ -210,6 +211,19 @@ impl MacTxQueueDetached<'_> {
     /// Construct a detach edge in a native model with no asynchronous DMA.
     #[cfg(not(target_pointer_width = "32"))]
     pub const fn new_model(descriptor_head: u32) -> Self {
+        Self {
+            descriptor_address_low: descriptor_head & DESCRIPTOR_ADDRESS_LOW_MASK,
+            _registers: PhantomData,
+        }
+    }
+
+    /// Construct a detach edge in an isolated compiled-validation image.
+    ///
+    /// This is unavailable in production feature sets. It lets a Workbench
+    /// hardware double drive the exact upper DMA/LMAC state machine without
+    /// claiming that a real target queue was detached.
+    #[cfg(feature = "validation-probes")]
+    pub const fn new_validation(descriptor_head: u32) -> Self {
         Self {
             descriptor_address_low: descriptor_head & DESCRIPTOR_ADDRESS_LOW_MASK,
             _registers: PhantomData,

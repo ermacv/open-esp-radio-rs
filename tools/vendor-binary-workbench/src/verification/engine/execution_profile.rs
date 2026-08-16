@@ -58,9 +58,11 @@ pub(super) fn evaluate(
         },
         crate::ExecutionComparisonPolicy {
             compare_return: profile.compare_return,
+            case_execution: profile.case_execution,
             transaction_comparison: profile.transaction_comparison,
             call_equivalences: &profile.call_equivalences,
             coverage_domain: &profile.coverage_constraints(),
+            vendor_setup: &profile.vendor_setup,
         },
         &profile.scenarios,
     )

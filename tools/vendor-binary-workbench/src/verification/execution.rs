@@ -212,6 +212,16 @@ fn memory_instance_report(instance: &RuntimeMemoryInstance) -> RuntimeMemoryInst
     }
 }
 
+fn memory_input_report(memory: &std::collections::BTreeMap<u32, u8>) -> Vec<MemoryInputReport> {
+    memory
+        .iter()
+        .map(|(address, value)| MemoryInputReport {
+            address: *address,
+            value: *value,
+        })
+        .collect()
+}
+
 fn table_lifecycle_report(
     event: &crate::execution_model::TableLifecycleEvent,
 ) -> TableLifecycleReport {
@@ -290,6 +300,8 @@ fn allocation_lifecycle_report(
 fn scenario_environment(named: &NamedScenario) -> ScenarioEnvironmentReport {
     let common = &named.scenario.table_instances;
     ScenarioEnvironmentReport {
+        vendor_stack_fill: named.vendor_stack_fill,
+        rust_stack_fill: named.rust_stack_fill,
         vendor_tables: common
             .iter()
             .chain(&named.vendor_table_instances)
@@ -310,6 +322,10 @@ fn scenario_environment(named: &NamedScenario) -> ScenarioEnvironmentReport {
             .iter()
             .map(memory_instance_report)
             .collect(),
+        vendor_carried_memory: Vec::new(),
+        rust_carried_memory: Vec::new(),
+        vendor_explicit_memory: Vec::new(),
+        rust_explicit_memory: Vec::new(),
         device_models: named
             .scenario
             .device_models
@@ -370,9 +386,11 @@ pub(crate) fn compare_execution_scenarios(
 ) -> Result<ExecutionComparisonReport> {
     let ExecutionComparisonPolicy {
         compare_return,
+        case_execution,
         transaction_comparison,
         call_equivalences,
         coverage_domain,
+        vendor_setup,
     } = policy;
     if compare_return
         && scenarios.iter().any(|scenario| {
@@ -399,20 +417,29 @@ pub(crate) fn compare_execution_scenarios(
     if let Some(companion) = rust.companion {
         rust_image.add_companion(companion)?;
     }
-    let mut vendor_inventory = static_inventory_for_argument_domain(
-        &vendor_image,
-        vendor.symbol,
-        coverage_domain,
-        scenarios
-            .iter()
-            .map(|scenario| scenario.vendor_goal.clone()),
-    )?;
-    let mut rust_inventory = static_inventory_for_argument_domain(
-        &rust_image,
-        rust.symbol,
-        coverage_domain,
-        scenarios.iter().map(|scenario| scenario.rust_goal.clone()),
-    )?;
+    let concrete_state_cases = transaction_comparison.state_domain();
+    let mut vendor_inventory = if concrete_state_cases {
+        execution::CoverageInventory::default()
+    } else {
+        static_inventory_for_argument_domain(
+            &vendor_image,
+            vendor.symbol,
+            coverage_domain,
+            scenarios
+                .iter()
+                .map(|scenario| scenario.vendor_goal.clone()),
+        )?
+    };
+    let mut rust_inventory = if concrete_state_cases {
+        execution::CoverageInventory::default()
+    } else {
+        static_inventory_for_argument_domain(
+            &rust_image,
+            rust.symbol,
+            coverage_domain,
+            scenarios.iter().map(|scenario| scenario.rust_goal.clone()),
+        )?
+    };
     let mut vendor_covered = BTreeSet::new();
     let mut rust_covered = BTreeSet::new();
     let mut vendor_calls = BTreeSet::new();
@@ -426,9 +453,48 @@ pub(crate) fn compare_execution_scenarios(
     let mut different_cases = 0_usize;
     let mut incomplete_cases = 0_usize;
     let mut case_reports = Vec::with_capacity(scenarios.len());
+    let mut vendor_session = execution::ExecutionSession::default();
+    let mut rust_session = execution::ExecutionSession::default();
+    let mut stateful_blocker: Option<String> = None;
+    let mut vendor_setup_reports = Vec::with_capacity(vendor_setup.len());
+    for setup in vendor_setup {
+        let result = vendor_session
+            .execute(&vendor_image, svd, &setup.symbol, setup.scenario.clone())
+            .map_err(|error| {
+                crate::Error::invalid(format!(
+                    "vendor setup phase {:?} (symbol {}) failed: {error}",
+                    setup.name, setup.symbol
+                ))
+            })?;
+        vendor_setup_reports.push(SetupPhaseReport {
+            name: setup.name.clone(),
+            symbol: setup.symbol.clone(),
+            completion: ExecutionCompletionReport::from(&result.completion),
+            steps: result.steps,
+            calls: result.calls.iter().cloned().collect(),
+            memory_changes: result
+                .memory_changes
+                .iter()
+                .map(MemoryChangeReport::from)
+                .collect(),
+        });
+    }
 
     for named in scenarios {
         let mut environment = scenario_environment(named);
+        if case_execution == profiles::CaseExecution::Independent {
+            vendor_session = execution::ExecutionSession::default();
+            rust_session = execution::ExecutionSession::default();
+        } else if let Some(blocker) = &stateful_blocker {
+            incomplete_cases += 1;
+            case_reports.push(CaseReport::Incomplete {
+                name: named.name.clone(),
+                environment,
+                vendor_error: Some(blocker.clone()),
+                rust_error: Some(blocker.clone()),
+            });
+            continue;
+        }
         let vendor_lengths: Vec<_> = named
             .vendor_observations
             .iter()
@@ -445,13 +511,13 @@ pub(crate) fn compare_execution_scenarios(
                 named.name
             )));
         }
-        let vendor_result = execution::execute(
+        let vendor_result = vendor_session.execute(
             &vendor_image,
             svd,
             vendor.symbol,
             resolved_scenario(named, &vendor_image, true)?,
         );
-        let rust_result = execution::execute(
+        let rust_result = rust_session.execute(
             &rust_image,
             svd,
             rust.symbol,
@@ -460,6 +526,12 @@ pub(crate) fn compare_execution_scenarios(
         let (vendor_result, rust_result) = match (vendor_result, rust_result) {
             (Ok(vendor_result), Ok(rust_result)) => (vendor_result, rust_result),
             (vendor_result, rust_result) => {
+                if case_execution == profiles::CaseExecution::Stateful {
+                    stateful_blocker = Some(format!(
+                        "stateful comparison stopped after incomplete phase {:?}",
+                        named.name
+                    ));
+                }
                 incomplete_cases += 1;
                 case_reports.push(CaseReport::Incomplete {
                     name: named.name.clone(),
@@ -470,6 +542,10 @@ pub(crate) fn compare_execution_scenarios(
                 continue;
             }
         };
+        environment.vendor_carried_memory = memory_input_report(&vendor_result.carried_memory);
+        environment.rust_carried_memory = memory_input_report(&rust_result.carried_memory);
+        environment.vendor_explicit_memory = memory_input_report(&vendor_result.explicit_memory);
+        environment.rust_explicit_memory = memory_input_report(&rust_result.explicit_memory);
         environment.vendor_table_lifecycle = vendor_result
             .table_lifecycle
             .iter()
@@ -551,6 +627,12 @@ pub(crate) fn compare_execution_scenarios(
             || vendor_device_incomplete.is_some()
             || rust_device_incomplete.is_some()
         {
+            if case_execution == profiles::CaseExecution::Stateful {
+                stateful_blocker = Some(format!(
+                    "stateful comparison stopped after incomplete phase {:?}",
+                    named.name
+                ));
+            }
             incomplete_cases += 1;
             case_reports.push(CaseReport::Incomplete {
                 name: named.name.clone(),
@@ -599,7 +681,12 @@ pub(crate) fn compare_execution_scenarios(
         let memory_equal = vendor_result.memory_changes == rust_result.memory_changes;
         let returns_equal =
             !compare_return || vendor_result.return_value == rust_result.return_value;
-        if events_equal && transactions_equal && memory_equal && returns_equal {
+        let case_equal = if transaction_comparison.state_domain() {
+            transactions_equal
+        } else {
+            events_equal && transactions_equal && memory_equal && returns_equal
+        };
+        if case_equal {
             matched_cases += 1;
             case_reports.push(CaseReport::Match {
                 name: named.name.clone(),
@@ -642,25 +729,31 @@ pub(crate) fn compare_execution_scenarios(
             });
         } else {
             different_cases += 1;
+            let difference = trace_difference(
+                &vendor_result,
+                &rust_result,
+                compare_return,
+                transaction_comparison,
+                call_equivalences,
+            )
+            .ok_or_else(|| {
+                crate::Error::invalid(format!(
+                    "scenario {} differs without a renderable first difference (events_equal={events_equal}, transactions_equal={transactions_equal}, memory_equal={memory_equal}, returns_equal={returns_equal})",
+                    named.name
+                ))
+            })?;
             case_reports.push(CaseReport::Diff {
                 name: named.name.clone(),
                 environment,
-                difference: Box::new(
-                    trace_difference(
-                        &vendor_result,
-                        &rust_result,
-                        compare_return,
-                        transaction_comparison,
-                        call_equivalences,
-                    )
-                    .expect("a different execution outcome has a first difference"),
-                ),
+                difference: Box::new(difference),
             });
         }
     }
 
-    extend_dynamic_inventory(&vendor_image, &mut vendor_inventory, &vendor_indirect_calls)?;
-    extend_dynamic_inventory(&rust_image, &mut rust_inventory, &rust_indirect_calls)?;
+    if !concrete_state_cases {
+        extend_dynamic_inventory(&vendor_image, &mut vendor_inventory, &vendor_indirect_calls)?;
+        extend_dynamic_inventory(&rust_image, &mut rust_inventory, &rust_indirect_calls)?;
+    }
     let vendor_coverage = coverage_report(
         &vendor_image,
         &vendor_inventory,
@@ -698,6 +791,13 @@ pub(crate) fn compare_execution_scenarios(
         vendor: vendor_report,
         rust: rust_report,
         compare_return,
+        case_execution,
+        coverage_scope: if concrete_state_cases {
+            CoverageScopeReport::ConcreteStateCases
+        } else {
+            CoverageScopeReport::StaticDomain
+        },
+        vendor_setup: vendor_setup_reports,
         rust_executed_pcs,
         cases: case_reports,
         coverage_gap: coverage_gap(&vendor_coverage, &rust_coverage),

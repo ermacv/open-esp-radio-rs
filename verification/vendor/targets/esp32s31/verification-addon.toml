@@ -132,7 +132,7 @@ source = "libpp"
 symbols = ["rcGetRate"]
 [[suites.vendor]]
 source = "libpp-replay"
-symbols = ["lmacProcessTxError"]
+symbols = ["lmacProcessAckTimeout", "lmacProcessTxError"]
 
 [[suites]]
 id = "coex-timer-control"

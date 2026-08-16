@@ -31,9 +31,13 @@ struct ReplayPhase {
     name: String,
     symbol: String,
     #[serde(default)]
-    arguments: Vec<u32>,
+    arguments: Vec<ReplayValue>,
     #[serde(default)]
     memory: Vec<ReplayMemorySeed>,
+    #[serde(default)]
+    mmio: Vec<ReplayMmioValue>,
+    #[serde(default)]
+    mmio_reads: Vec<ReplayMmioValue>,
     #[serde(default)]
     observe_memory: Vec<ReplayMemoryObservation>,
     #[serde(default)]
@@ -57,7 +61,34 @@ struct ReplayMemorySeed {
     #[serde(default)]
     offset: i32,
     width: u8,
-    value: u32,
+    value: ReplayValue,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum ReplayValue {
+    Literal(u32),
+    Symbol {
+        symbol: String,
+        #[serde(default)]
+        offset: i32,
+    },
+}
+
+impl ReplayValue {
+    fn resolve(&self, image: &execution::ExecutableImage) -> Result<u32> {
+        match self {
+            Self::Literal(value) => Ok(*value),
+            Self::Symbol { symbol, offset } => image
+                .symbol_address(symbol)
+                .map(|address| address.wrapping_add(*offset as u32))
+                .ok_or_else(|| {
+                    crate::Error::invalid(format!(
+                        "replay value refers to missing linked symbol {symbol}"
+                    ))
+                }),
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -71,6 +102,13 @@ struct ReplayMemoryObservation {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ReplayMmioValue {
+    address: u32,
+    value: u32,
+}
+
+#[derive(Debug, Deserialize)]
 #[serde(
     tag = "kind",
     rename_all = "kebab-case",
@@ -79,8 +117,8 @@ struct ReplayMemoryObservation {
 enum ReplayExpectation {
     Memory {
         observation: String,
-        before: u32,
-        after: u32,
+        before: ReplayValue,
+        after: ReplayValue,
     },
     FifoEnqueue {
         service_id: String,
@@ -148,8 +186,13 @@ pub(crate) fn execute(
                 phase.name
             )));
         }
+        let arguments = phase
+            .arguments
+            .iter()
+            .map(|value| value.resolve(&image))
+            .collect::<Result<Vec<_>>>()?;
         let mut scenario = execution::Scenario {
-            arguments: phase.arguments,
+            arguments,
             table_instances: phase.tables,
             fifo_services: services.take().unwrap_or_default(),
             fifo_bindings: phase.fifo_bindings,
@@ -159,6 +202,25 @@ pub(crate) fn execute(
         };
         for seed in phase.memory {
             seed_memory(&image, &mut scenario, &seed)?;
+        }
+        for seed in phase.mmio {
+            if scenario
+                .mmio_initial
+                .insert(seed.address, seed.value)
+                .is_some()
+            {
+                return Err(crate::Error::invalid(format!(
+                    "execution replay phase {} repeats MMIO initial address {:#010x}",
+                    phase.name, seed.address
+                )));
+            }
+        }
+        for read in phase.mmio_reads {
+            scenario
+                .mmio_reads
+                .entry(read.address)
+                .or_default()
+                .push_back(read.value);
         }
         let observations = resolve_observations(&image, &phase.observe_memory)?;
         scenario
@@ -233,6 +295,7 @@ pub(crate) fn execute(
             })
             .collect::<Result<Vec<_>>>()?;
         validate_expectations(
+            &image,
             &phase.name,
             &phase.expectations,
             &result,
@@ -335,6 +398,7 @@ fn read_word(
 }
 
 fn validate_expectations(
+    image: &execution::ExecutableImage,
     phase: &str,
     expectations: &[ReplayExpectation],
     result: &execution::ExecutionResult,
@@ -347,6 +411,8 @@ fn validate_expectations(
                 before,
                 after,
             } => {
+                let before = before.resolve(image)?;
+                let after = after.resolve(image)?;
                 let matches = observations
                     .iter()
                     .filter(|candidate| candidate.id == *observation)
@@ -361,7 +427,7 @@ fn validate_expectations(
                         ),
                     ));
                 };
-                if actual.before != *before || actual.after != *after {
+                if actual.before != before || actual.after != after {
                     return Err(expectation_error(
                         phase,
                         expectation,
@@ -523,7 +589,8 @@ fn seed_memory(
     })?;
     let address = base.wrapping_add(seed.offset as u32);
     let bytes = usize::from(seed.width / 8);
-    for (offset, byte) in seed.value.to_le_bytes().into_iter().take(bytes).enumerate() {
+    let value = seed.value.resolve(image)?;
+    for (offset, byte) in value.to_le_bytes().into_iter().take(bytes).enumerate() {
         scenario
             .memory_initial
             .insert(address + offset as u32, byte);

@@ -1,4 +1,5 @@
-schema = 4
+schema = 5
+case-execution = "independent"
 transaction-comparison = "observables"
 
 # The first and last reviewed timer entries exercise the complete indexed

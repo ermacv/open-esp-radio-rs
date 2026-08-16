@@ -93,24 +93,18 @@ fn execution_session_retains_elf_and_declared_ram_but_not_stack() {
         }],
         ..Scenario::default()
     };
-    assert_eq!(
-        session
-            .execute(&image, &svd, "test", first)
-            .unwrap()
-            .return_value,
-        1
-    );
+    let first = session.execute(&image, &svd, "test", first).unwrap();
+    assert_eq!(first.return_value, 1);
+    assert_eq!(first.explicit_memory.len(), 4);
+    assert!(!first.carried_memory.contains_key(&external));
     let second = Scenario {
         arguments: vec![0, external],
         ..Scenario::default()
     };
-    assert_eq!(
-        session
-            .execute(&image, &svd, "test", second)
-            .unwrap()
-            .return_value,
-        2
-    );
+    let second = session.execute(&image, &svd, "test", second).unwrap();
+    assert_eq!(second.return_value, 2);
+    assert!(second.explicit_memory.is_empty());
+    assert_eq!(second.carried_memory.get(&external), Some(&1));
 
     let stack = session
         .execute(
@@ -129,6 +123,59 @@ fn execution_session_retains_elf_and_declared_ram_but_not_stack() {
             .keys()
             .all(|address| !execution_stack_contains(*address))
     );
+}
+
+#[test]
+fn stateful_vendor_rust_pair_exposes_a_second_event_divergence() {
+    let vendor = tiny_image(
+        vec![
+            0x03, 0xa5, 0x05, 0x00, // lw a0, 0(a1)
+            0x13, 0x05, 0x15, 0x00, // addi a0, a0, 1
+            0x23, 0xa0, 0xa5, 0x00, // sw a0, 0(a1)
+            0x67, 0x80, 0x00, 0x00, // ret
+            0, 0, 0, 0, // persistent ELF-backed counter
+        ],
+        20,
+    );
+    let rust = tiny_image(
+        vec![
+            0x13, 0x05, 0x10, 0x00, // addi a0, zero, 1
+            0x23, 0xa0, 0xa5, 0x00, // sw a0, 0(a1)
+            0x67, 0x80, 0x00, 0x00, // ret
+            0x13, 0x00, 0x00, 0x00, // nop (same data address as vendor)
+            0, 0, 0, 0, // persistent ELF-backed counter
+        ],
+        20,
+    );
+    let mut vendor_session = ExecutionSession::default();
+    let mut rust_session = ExecutionSession::default();
+    let svd = empty_svd();
+    let mut outcomes = Vec::new();
+
+    for _ in 0..2 {
+        let scenario = || Scenario {
+            arguments: vec![0, 0x1010],
+            observed_memory: vec![MemoryRange {
+                start: 0x1010,
+                length: 4,
+            }],
+            ..Scenario::default()
+        };
+        let vendor_result = vendor_session
+            .execute(&vendor, &svd, "test", scenario())
+            .unwrap();
+        let rust_result = rust_session
+            .execute(&rust, &svd, "test", scenario())
+            .unwrap();
+        outcomes.push(
+            vendor_result.return_value == rust_result.return_value
+                && vendor_result.memory_changes == rust_result.memory_changes,
+        );
+    }
+
+    assert_eq!(outcomes, [true, false]);
+    assert_eq!(vendor_session.byte(&vendor, 0x1010), Some(2));
+    assert_eq!(rust_session.byte(&rust, 0x1010), Some(1));
 }
 
 #[test]

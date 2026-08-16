@@ -18,8 +18,8 @@ use open_esp_radio_esp32s31_wifi_mac::{
         TxPhyRate, TxSlot, TxSlotState,
     },
     tx_runtime::{
-        OrdinaryFrameClass, OrdinaryMpduRetryState, OrdinaryRetryDecision, OrdinaryRetryError,
-        VENDOR_RTS_THRESHOLD_BYTES, WifiTxRuntimePolicy,
+        OrdinaryFrameClass, OrdinaryMpduRetryState, OrdinaryRetryCounters, OrdinaryRetryDecision,
+        OrdinaryRetryError, VENDOR_RTS_THRESHOLD_BYTES, WifiTxRuntimePolicy,
     },
 };
 use open_esp_radio_wifi_softmac::{MacTxPlan, MacTxQueueState, MacTxResult, MacTxStatus};
@@ -107,6 +107,21 @@ pub struct OrdinaryTxRetryReport {
     pub cts_timeouts: u8,
     pub ack_timeouts: u8,
     pub collisions: u8,
+}
+
+/// Read-only state of one active production ordinary-MPDU transaction.
+///
+/// This projection is intentionally narrower than [`OrdinaryTxOwner`]: it
+/// exposes no descriptor, DMA buffer, PAC capability or mutation route. HIL
+/// and compiled-vendor comparison use it to observe the retry state retained
+/// by the real owner instead of maintaining a parallel verification model.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct OrdinaryTxActiveSnapshot {
+    pub counters: OrdinaryRetryCounters,
+    pub publications: u8,
+    pub current_rate: TxPhyRate,
+    pub retry_bit_set: bool,
+    pub retries: OrdinaryTxRetryReport,
 }
 
 impl OrdinaryTxRetryReport {
@@ -241,6 +256,27 @@ where
 
     pub const fn active(&self) -> bool {
         self.active.is_some()
+    }
+
+    /// Observe the bounded retry state retained by the active TX owner.
+    ///
+    /// `retry_bit_set` follows from a completed ACK-timeout re-publication:
+    /// the owner increments that counter, writes the Retry bit and publishes
+    /// again before restoring `active`. If either write or publication fails,
+    /// no active snapshot is returned for that failed transition.
+    pub fn active_snapshot(&self) -> Result<Option<OrdinaryTxActiveSnapshot>, OrdinaryRetryError> {
+        self.active
+            .as_ref()
+            .map(|active| {
+                Ok(OrdinaryTxActiveSnapshot {
+                    counters: active.retry.counters(),
+                    publications: active.retry.publications(),
+                    current_rate: active.retry.current_rate()?,
+                    retry_bit_set: active.retries.ack_timeouts != 0,
+                    retries: active.retries,
+                })
+            })
+            .transpose()
     }
 
     /// Exact descriptor lifecycle state retained for ownership diagnostics.

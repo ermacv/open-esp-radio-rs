@@ -1,0 +1,160 @@
+# Stateful execution of the real vendor initialization followed by the real
+# short-retry transition. All pointers are resolved from linked symbols; no
+# scenario-owned address duplicates artifact or ROM layout.
+schema = 2
+
+[[phases]]
+name = "initialize-wdev-data"
+symbol = "wdev_data_init"
+max-steps = 512
+
+[[phases.observe-memory]]
+id = "lmac-conf-mib-pointer"
+symbol = "lmacConfMib_ptr"
+width = 32
+
+[[phases.observe-memory]]
+id = "tx-rx-context-pointer"
+symbol = "pTxRx"
+width = 32
+
+[[phases.expectations]]
+kind = "memory"
+observation = "lmac-conf-mib-pointer"
+before = 0
+after = { symbol = "lmacConfMib" }
+
+[[phases.expectations]]
+kind = "memory"
+observation = "tx-rx-context-pointer"
+before = 0
+after = { symbol = "TxRxCxt" }
+
+[[phases]]
+name = "initialize-lmac-retry-limits"
+symbol = "lmacInit"
+goal = { kind = "reach-symbol", symbol = "lmacInitAc" }
+max-steps = 200000
+
+[[phases.observe-memory]]
+id = "retry-limits"
+symbol = "lmacConfMib"
+offset = 0x14
+width = 32
+
+[[phases.expectations]]
+kind = "memory"
+observation = "retry-limits"
+before = 0
+after = 0x092a2020
+
+[[phases.expectations]]
+kind = "call"
+symbol = "lmacInitAc"
+count = 1
+
+[[phases]]
+name = "ack-timeout-short-retry"
+symbol = "lmacProcessAckTimeout"
+arguments = [2, 0]
+goal = { kind = "reach-symbol", symbol = "lmacRetryTxFrame" }
+max-steps = 200000
+
+[[phases.memory]]
+symbol = "our_instances"
+offset = 0x70
+width = 32
+value = { symbol = "TxRxCxt" }
+
+[[phases.memory]]
+symbol = "our_instances"
+offset = 0x8d
+width = 8
+value = 3
+
+[[phases.memory]]
+symbol = "TxRxCxt"
+offset = 4
+width = 32
+value = { symbol = "replay_retry_ebuf" }
+
+[[phases.memory]]
+symbol = "replay_retry_ebuf"
+offset = 4
+width = 32
+value = { symbol = "replay_retry_frame" }
+
+[[phases.memory]]
+symbol = "TxRxCxt"
+offset = 0x34
+width = 32
+value = { symbol = "replay_retry_descriptor" }
+
+[[phases.memory]]
+symbol = "replay_retry_descriptor"
+offset = 0x1c
+width = 32
+value = { symbol = "replay_retry_rate" }
+
+[[phases.memory]]
+symbol = "replay_retry_rate"
+offset = 8
+width = 8
+value = 0x20
+
+[[phases.mmio-reads]]
+address = 0x2010d800
+value = 0
+
+[[phases.observe-memory]]
+id = "descriptor-retry-counters"
+symbol = "replay_retry_descriptor"
+offset = 4
+width = 32
+
+[[phases.observe-memory]]
+id = "descriptor-selected-rate"
+symbol = "replay_retry_descriptor"
+offset = 8
+width = 32
+
+[[phases.observe-memory]]
+id = "rate-state-prefix"
+symbol = "replay_retry_rate"
+width = 32
+
+[[phases.observe-memory]]
+id = "frame-control-retry-bit"
+symbol = "replay_retry_frame"
+offset = 1
+width = 8
+
+[[phases.expectations]]
+kind = "memory"
+observation = "descriptor-retry-counters"
+before = 0
+after = 0x00010100
+
+[[phases.expectations]]
+kind = "memory"
+observation = "frame-control-retry-bit"
+before = 0
+after = 8
+
+[[phases.expectations]]
+kind = "call"
+symbol = "rcReachRetryLimit"
+count = 1
+
+[[phases.expectations]]
+kind = "call"
+symbol = "lmacRetryTxFrame"
+count = 1
+
+[[phases.calls]]
+symbol = "wifi_assert"
+returns = [0, 0, 0, 0, 0, 0]
+
+[[phases.calls]]
+symbol = "esp_test_tx_count_retry"
+returns = [0]

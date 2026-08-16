@@ -320,7 +320,9 @@ pub fn execute(
         fifo_services: machine.fifo_services,
         device_model_coverage,
         memory_changes,
+        explicit_memory: initial_memory.clone(),
         initial_memory,
+        carried_memory: BTreeMap::new(),
         persistent_memory,
     })
 }

@@ -44,6 +44,34 @@ impl ExecutableImage {
                 ),
             });
         }
+        // Some authenticated ROM ELFs describe their runtime interface data
+        // and BSS with addressed sections that are intentionally absent from
+        // PT_LOAD.  Those sections are still part of the observable machine
+        // state.  Overlay them onto a covering load segment, or add an exact
+        // section-backed region when no program segment owns the address.
+        // This also restores initialized `.data` over zero-filled ROM RAM
+        // images instead of forcing callers to restate artifact bytes as
+        // scenario fixtures.
+        for section in file.sections() {
+            let writable = matches!(
+                section.flags(),
+                object::SectionFlags::Elf { sh_flags }
+                    if sh_flags & u64::from(object::elf::SHF_WRITE) != 0
+            );
+            let addressed_data = matches!(
+                section.kind(),
+                SectionKind::Data | SectionKind::UninitializedData
+            ) || writable;
+            if section.address() == 0 || section.size() == 0 || !addressed_data {
+                continue;
+            }
+            let address = u32::try_from(section.address())
+                .map_err(|_| "data section address does not fit RV32")?;
+            let memory_size =
+                u32::try_from(section.size()).map_err(|_| "data section size does not fit RV32")?;
+            let data = section.data()?;
+            overlay_addressed_data_section(&mut segments, address, data, memory_size, writable)?;
+        }
         segments.sort_by_key(|segment| segment.address);
 
         let mut symbols_by_name = HashMap::new();
@@ -216,6 +244,102 @@ impl ExecutableImage {
                 call.target = self.symbols_by_name.get(&call.name).copied();
             }
         }
+    }
+}
+
+fn overlay_addressed_data_section(
+    segments: &mut Vec<Segment>,
+    address: u32,
+    data: &[u8],
+    memory_size: u32,
+    writable: bool,
+) -> Result<()> {
+    let end = address
+        .checked_add(memory_size)
+        .ok_or("addressed data section wraps RV32 address space")?;
+    let mut section_bytes = vec![0; memory_size as usize];
+    if data.len() > section_bytes.len() {
+        return Err("addressed data section file size exceeds its memory size".into());
+    }
+    section_bytes[..data.len()].copy_from_slice(data);
+
+    if let Some(segment) = segments.iter_mut().find(|segment| {
+        address
+            .checked_sub(segment.address)
+            .and_then(|offset| offset.checked_add(memory_size))
+            .is_some_and(|section_end| section_end <= segment.memory_size)
+    }) {
+        if writable && !segment.writable {
+            return Err(format!(
+                "writable data section at {address:#010x} is covered by a read-only load segment"
+            )
+            .into());
+        }
+        let offset = address.wrapping_sub(segment.address) as usize;
+        let required = offset + section_bytes.len();
+        if segment.bytes.len() < required {
+            segment.bytes.resize(required, 0);
+        }
+        segment.bytes[offset..required].copy_from_slice(&section_bytes);
+        return Ok(());
+    }
+
+    if let Some(segment) = segments.iter().find(|segment| {
+        let segment_end = segment.address.wrapping_add(segment.memory_size);
+        address < segment_end && segment.address < end
+    }) {
+        return Err(format!(
+            "addressed data section {address:#010x}..{end:#010x} partially overlaps load region {:#010x}..{:#010x}",
+            segment.address,
+            segment.address.wrapping_add(segment.memory_size)
+        )
+        .into());
+    }
+
+    segments.push(Segment {
+        address,
+        bytes: section_bytes,
+        memory_size,
+        writable,
+    });
+    Ok(())
+}
+
+#[cfg(test)]
+mod addressed_data_tests {
+    use super::*;
+
+    #[test]
+    fn addressed_data_overlays_zero_filled_load_memory() {
+        let mut segments = vec![Segment {
+            address: 0x2000,
+            bytes: vec![0; 4],
+            memory_size: 16,
+            writable: true,
+        }];
+        overlay_addressed_data_section(&mut segments, 0x2008, &[1, 2, 3, 4], 4, true).unwrap();
+        assert_eq!(&segments[0].bytes[8..12], &[1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn unsegmented_addressed_bss_becomes_writable_zero_memory() {
+        let mut segments = Vec::new();
+        overlay_addressed_data_section(&mut segments, 0x3000, &[], 4, true).unwrap();
+        assert_eq!(segments[0].bytes, [0; 4]);
+        assert!(segments[0].writable);
+    }
+
+    #[test]
+    fn partial_overlap_fails_closed() {
+        let mut segments = vec![Segment {
+            address: 0x2000,
+            bytes: vec![0; 4],
+            memory_size: 4,
+            writable: true,
+        }];
+        let error = overlay_addressed_data_section(&mut segments, 0x2002, &[1, 2, 3, 4], 4, true)
+            .unwrap_err();
+        assert!(error.to_string().contains("partially overlaps"));
     }
 }
 

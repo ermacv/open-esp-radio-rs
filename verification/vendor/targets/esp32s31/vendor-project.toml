@@ -313,8 +313,22 @@ include-reachable = false
 
 [[review.scopes]]
 id = "wifi-tx-completion-dispatch"
-profiles = ["libpp-all"]
-roots = ["libpp:lmacProcessTxError"]
+profiles = ["wifi-sta-lifecycle"]
+roots = [
+    "wifi-sta-lifecycle:lmacPostTxComplete",
+    "wifi-sta-lifecycle:ppTask",
+    "wifi-sta-lifecycle:lmacProcessTxComplete",
+]
+include-reachable = false
+
+[[review.scopes]]
+id = "wifi-rx-completion-dispatch"
+profiles = ["wifi-sta-lifecycle"]
+roots = [
+    "wifi-sta-lifecycle:lmacRxDone",
+    "wifi-sta-lifecycle:ppTask",
+    "wifi-sta-lifecycle:ppRxPkt",
+]
 include-reachable = false
 
 [[review.scopes]]

@@ -104,7 +104,51 @@ delivery-output-role = "item-out"
 delivery-selector-offset = 0
 delivery-selector-width = 32
 delivery-encoding = "little-endian"
-rationale = "lmacRxDone posts signal 0x11 to the reviewed pp-task receiver; the signal-specific task branch remains a separate constrained-path obligation."
+case-handler-profile = "wifi-sta-lifecycle"
+case-handler-source = "wifi-sta-lifecycle"
+case-handler-function = "wifi-sta-lifecycle::ppRxPkt@0x10062cd6"
+replay-evidence = "../generated/findings/replays/pp-signal-17.json"
+replay-manifest = "../replays/pp-signal-17.toml"
+replay-source = "libpp-replay"
+replay-producer-phase = "post-signal-17"
+replay-consumer-phase = "dispatch-signal-17"
+replay-state-observation = "signal-17-count"
+replay-state-model = "counted-latch"
+rationale = "lmacRxDone posts signal 0x11 to the reviewed pp-task receiver; the relocated ppTask jump table maps selector 0x11 to ppRxPkt, and the bound replay must execute that exact queue and case transition."
+
+# TX hardware completion crosses the same interrupt-to-task queue through
+# signal 0x17. Keep this asynchronous ownership transition explicit instead
+# of flattening lmacPostTxComplete into a synchronous lmacProcessTxComplete
+# call.
+[[event-routes]]
+id = "tx-complete-to-pp-task"
+profile = "wifi-sta-lifecycle"
+source = "wifi-sta-lifecycle"
+dispatcher = "wifi-sta-lifecycle::lmacPostTxComplete@0x100693a2"
+mechanism = "internal-signal"
+selector-role = "selector"
+selector-value = 0x17
+receiver = "esp32s31::pp-task"
+execution-context = "unspecified"
+consumer-profile = "wifi-sta-lifecycle"
+consumer-source = "wifi-sta-lifecycle"
+consumer-entry = "wifi-sta-lifecycle::ppTask@0x10067fa0"
+delivery-operation = "rtos.queue.receive"
+delivery-output-role = "item-out"
+delivery-selector-offset = 0
+delivery-selector-width = 32
+delivery-encoding = "little-endian"
+case-handler-profile = "wifi-sta-lifecycle"
+case-handler-source = "wifi-sta-lifecycle"
+case-handler-function = "wifi-sta-lifecycle::lmacProcessTxComplete@0x100672ca"
+replay-evidence = "../generated/findings/replays/pp-signal-23.json"
+replay-manifest = "../replays/pp-signal-23.toml"
+replay-source = "libpp-replay"
+replay-producer-phase = "post-signal-23"
+replay-consumer-phase = "dispatch-signal-23"
+replay-state-observation = "signal-23-count"
+replay-state-model = "counted-latch"
+rationale = "lmacPostTxComplete posts signal 0x17 to the reviewed pp-task receiver; the relocated ppTask jump table maps selector 0x17 to lmacProcessTxComplete, and the bound replay must execute that exact queue and case transition."
 
 [[functions]]
 profile = "archive-all"

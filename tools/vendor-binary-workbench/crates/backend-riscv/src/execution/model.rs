@@ -332,6 +332,12 @@ pub struct ExecutionResult {
     /// this with ordered writes when they need a call-time value rather than
     /// the immutable ELF baseline or the final persistent state.
     pub initial_memory: BTreeMap<u32, u8>,
+    /// Bytes inherited from the preceding invocation in the same execution
+    /// session. Explicit phase seeds override these bytes at entry.
+    pub carried_memory: BTreeMap<u32, u8>,
+    /// Bytes explicitly supplied by this invocation after symbol and runtime
+    /// object bindings have been resolved.
+    pub explicit_memory: BTreeMap<u32, u8>,
     /// Final bytes eligible for reuse by [`ExecutionSession`]. This contains
     /// ELF-backed writes and explicitly declared persistent RAM, never the
     /// executor's private stack.
@@ -469,11 +475,14 @@ impl ExecutionSession {
         scenario.persistent_memory = self.persistent_ranges.clone();
         scenario.memory_ownership = self.memory_ownership.clone();
 
+        let carried = self.memory.clone();
         let explicit = std::mem::take(&mut scenario.memory_initial);
-        scenario.memory_initial = self.memory.clone();
-        scenario.memory_initial.extend(explicit);
+        scenario.memory_initial = carried.clone();
+        scenario.memory_initial.extend(explicit.clone());
 
-        let result = execute(image, svd, symbol, scenario)?;
+        let mut result = execute(image, svd, symbol, scenario)?;
+        result.carried_memory = carried;
+        result.explicit_memory = explicit;
         self.memory.clone_from(&result.persistent_memory);
         self.fifo_services = result
             .fifo_services

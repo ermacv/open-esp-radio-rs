@@ -49,8 +49,12 @@ pub(crate) fn parse_symbol_word(value: &str, option: &str) -> Result<SymbolWord>
         )));
     }
     Ok(SymbolWord {
-        address,
-        symbol: symbol.to_owned(),
+        address: Some(address),
+        target_symbol: None,
+        offset: 0,
+        symbol: Some(symbol.to_owned()),
+        value: None,
+        observe: true,
     })
 }
 
@@ -92,8 +96,22 @@ pub(crate) fn observe_memory(
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct SymbolWord {
-    pub(crate) address: u32,
-    pub(crate) symbol: String,
+    #[serde(default)]
+    pub(crate) address: Option<u32>,
+    #[serde(default, rename = "target-symbol")]
+    pub(crate) target_symbol: Option<String>,
+    #[serde(default)]
+    pub(crate) offset: i32,
+    #[serde(default)]
+    pub(crate) symbol: Option<String>,
+    #[serde(default)]
+    pub(crate) value: Option<u32>,
+    #[serde(default = "symbol_word_observed_by_default")]
+    pub(crate) observe: bool,
+}
+
+const fn symbol_word_observed_by_default() -> bool {
+    true
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
@@ -144,6 +162,12 @@ pub(crate) struct NamedScenario {
     pub(crate) rust_symbol_words: Vec<SymbolWord>,
     pub(crate) vendor_ram_words: Vec<(u32, u32)>,
     pub(crate) rust_ram_words: Vec<(u32, u32)>,
+    pub(crate) vendor_mmio_reads: Vec<(u32, u32)>,
+    pub(crate) rust_mmio_reads: Vec<(u32, u32)>,
+    pub(crate) vendor_stack_fill: Option<u8>,
+    pub(crate) rust_stack_fill: Option<u8>,
+    pub(crate) vendor_persistent_memory: Vec<crate::execution_model::MemoryRange>,
+    pub(crate) rust_persistent_memory: Vec<crate::execution_model::MemoryRange>,
     pub(crate) vendor_table_instances: Vec<crate::execution_model::TableInstance>,
     pub(crate) rust_table_instances: Vec<crate::execution_model::TableInstance>,
     pub(crate) vendor_fifo_services: Vec<crate::execution_model::FifoServiceInstance>,
@@ -169,6 +193,12 @@ impl NamedScenario {
             rust_symbol_words: Vec::new(),
             vendor_ram_words: Vec::new(),
             rust_ram_words: Vec::new(),
+            vendor_mmio_reads: Vec::new(),
+            rust_mmio_reads: Vec::new(),
+            vendor_stack_fill: None,
+            rust_stack_fill: None,
+            vendor_persistent_memory: Vec::new(),
+            rust_persistent_memory: Vec::new(),
             vendor_table_instances: Vec::new(),
             rust_table_instances: Vec::new(),
             vendor_fifo_services: Vec::new(),
@@ -282,9 +312,11 @@ pub(crate) struct ExecutionInput<'a> {
 
 pub(crate) struct ExecutionComparisonPolicy<'a> {
     pub(crate) compare_return: bool,
+    pub(crate) case_execution: profiles::CaseExecution,
     pub(crate) transaction_comparison: profiles::TransactionComparison,
     pub(crate) call_equivalences: &'a [profiles::CallEquivalence],
     pub(crate) coverage_domain: &'a [profiles::ProfileCoverageConstraint],
+    pub(crate) vendor_setup: &'a [profiles::VendorSetupPhase],
 }
 
 pub(crate) fn resolved_scenario(
@@ -293,6 +325,11 @@ pub(crate) fn resolved_scenario(
     vendor: bool,
 ) -> Result<execution::Scenario> {
     let mut scenario = named.scenario.clone();
+    scenario.private_stack_fill = if vendor {
+        named.vendor_stack_fill
+    } else {
+        named.rust_stack_fill
+    };
     let words = if vendor {
         &named.vendor_symbol_words
     } else {
@@ -306,6 +343,23 @@ pub(crate) fn resolved_scenario(
     for (address, value) in ram_words {
         write_ram_word(&mut scenario, *address, *value);
     }
+    let mmio_reads = if vendor {
+        &named.vendor_mmio_reads
+    } else {
+        &named.rust_mmio_reads
+    };
+    for (address, value) in mmio_reads {
+        scenario
+            .mmio_reads
+            .entry(*address)
+            .or_default()
+            .push_back(*value);
+    }
+    scenario.persistent_memory.extend(if vendor {
+        named.vendor_persistent_memory.clone()
+    } else {
+        named.rust_persistent_memory.clone()
+    });
     scenario.table_instances.extend(if vendor {
         named.vendor_table_instances.clone()
     } else {
@@ -349,18 +403,54 @@ pub(crate) fn resolved_scenario(
         if vendor { "vendor" } else { "Rust" },
     )?;
     for word in words {
-        let value = image
-            .symbol_address(&word.symbol)
-            .ok_or_else(|| {
-                format!(
-                    "scenario {} refers to missing {} symbol {}",
+        let value = match (word.symbol.as_deref(), word.value) {
+            (Some(symbol), None) => image.symbol_address(symbol).ok_or_else(|| {
+                crate::Error::invalid(format!(
+                    "scenario {} refers to missing {} source symbol {}",
                     named.name,
                     if vendor { "vendor" } else { "Rust" },
-                    word.symbol
-                )
-            })
-            .map_err(crate::Error::invalid)?;
-        seed_ram_word(&mut scenario, word.address, value);
+                    symbol
+                ))
+            })?,
+            (None, Some(value)) => value,
+            _ => {
+                return Err(crate::Error::invalid(format!(
+                    "scenario {} symbol word requires exactly one of symbol or value",
+                    named.name
+                )));
+            }
+        };
+        let address = match (word.address, word.target_symbol.as_deref()) {
+            (Some(address), None) if word.offset == 0 => address,
+            (None, Some(symbol)) => image
+                .symbol_address(symbol)
+                .map(|address| address.wrapping_add(word.offset as u32))
+                .ok_or_else(|| {
+                    crate::Error::invalid(format!(
+                        "scenario {} refers to missing {} destination symbol {}",
+                        named.name,
+                        if vendor { "vendor" } else { "Rust" },
+                        symbol
+                    ))
+                })?,
+            (Some(_), None) => {
+                return Err(crate::Error::invalid(format!(
+                    "scenario {} symbol word with an absolute address cannot also declare offset",
+                    named.name
+                )));
+            }
+            _ => {
+                return Err(crate::Error::invalid(format!(
+                    "scenario {} symbol word requires exactly one of address or target-symbol",
+                    named.name
+                )));
+            }
+        };
+        if word.observe {
+            seed_ram_word(&mut scenario, address, value);
+        } else {
+            write_ram_word(&mut scenario, address, value);
+        }
     }
     let observations = if vendor {
         &named.vendor_observations

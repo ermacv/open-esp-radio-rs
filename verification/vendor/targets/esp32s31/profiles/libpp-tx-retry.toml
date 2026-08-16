@@ -1,4 +1,5 @@
-schema = 4
+schema = 5
+case-execution = "independent"
 transaction-comparison = "observables"
 
 # Normal 802.11g 54M schedule only. The vendor and compiled production sides
@@ -82,6 +83,118 @@ ram = [
     { address = 0x3fff110c, value = 0 },
     { address = 0x3fff1200, value = 0x0208020c },
     { address = 0x3fff1204, value = 0x1906030b },
+]
+
+# Exact compiled production ACK-timeout state. The vendor side executes the
+# real queue entry through lmacProcessAckTimeout; the Rust side executes the
+# real Embassy IRQ handoff followed by the ordinary descriptor owner through
+# detach, classification and the next publication. Only reviewed counter bytes
+# and the 802.11 Retry bit are projected into the common state domain.
+[[profiles]]
+name = "libpp-lmac-ack-timeout-state"
+claim = "reviewed-domain-equivalence"
+precondition = "ordinary-queue-two-short-frame-normal-retry-path"
+contract = "state"
+vendor-source = "libpp-replay"
+vendor-symbol = "lmacProcessAckTimeout"
+rust-symbol = "open_libpp_tx_retry_trace_ack_timeout_state"
+compare-return = false
+case-execution = "stateful"
+transaction-comparison = "state-and-reviewed-calls"
+[[profiles.call-equivalences]]
+operation = "tx.retry.republish"
+vendor-symbol = "lmacRetryTxFrame"
+rust-symbol = "open_libpp_tx_retry_publication"
+argument-comparison = "ignore"
+[[profiles.vendor-setup]]
+name = "initialize-wdev-data"
+symbol = "wdev_data_init"
+max-steps = 512
+[[profiles.vendor-setup]]
+name = "initialize-lmac-retry-limits"
+symbol = "lmacInit"
+goal = { kind = "reach-symbol", symbol = "lmacInitAc" }
+max-steps = 200000
+[[profiles.argument-values]]
+index = 0
+values = [2]
+[[profiles.argument-values]]
+index = 1
+values = [0]
+
+[[profiles.cases]]
+name = "first-ack-timeout"
+arguments = [2, 0]
+vendor-stack-fill = 90
+rust-stack-fill = 165
+vendor-goal = { kind = "reach-symbol", symbol = "lmacRetryTxFrame" }
+max-steps = 200000
+vendor-calls = [
+    { symbol = "wifi_assert", return-words = [0] },
+    { symbol = "wifi_assert", return-words = [0] },
+    { symbol = "wifi_assert", return-words = [0] },
+    { symbol = "wifi_assert", return-words = [0] },
+    { symbol = "wifi_assert", return-words = [0] },
+    { symbol = "wifi_assert", return-words = [0] },
+    { symbol = "esp_test_tx_count_retry", return-words = [0] },
+]
+rust-ram = [
+    { address = 0x3fff5000, value = 0 },
+    { address = 0x3fff5004, value = 0 },
+]
+rust-persistent-memory = [{ address = 0x3fff5000, length = 8 }]
+vendor-ram-symbols = [
+    { target-symbol = "our_instances", offset = 0x70, symbol = "TxRxCxt", observe = false },
+    { target-symbol = "our_instances", offset = 0x8d, value = 3, observe = false },
+    { target-symbol = "TxRxCxt", offset = 4, symbol = "replay_retry_ebuf", observe = false },
+    { target-symbol = "TxRxCxt", offset = 0x34, symbol = "replay_retry_descriptor", observe = false },
+    { target-symbol = "replay_retry_ebuf", offset = 4, symbol = "replay_retry_frame", observe = false },
+    { target-symbol = "replay_retry_descriptor", offset = 0x1c, symbol = "replay_retry_rate", observe = false },
+    { target-symbol = "replay_retry_rate", offset = 8, value = 0x20, observe = false },
+]
+vendor-mmio-reads = [{ address = 0x2010d800, value = 0 }]
+vendor-observations = [
+    { kind = "symbol", symbol = "replay_retry_descriptor", offset = 5, length = 3 },
+    { kind = "symbol", symbol = "replay_retry_frame", offset = 1, length = 1 },
+]
+rust-observations = [
+    { kind = "absolute", address = 0x3fff5000, length = 3 },
+    { kind = "absolute", address = 0x3fff5006, length = 1 },
+]
+
+[[profiles.cases]]
+name = "second-ack-timeout"
+arguments = [2, 0]
+vendor-stack-fill = 165
+rust-stack-fill = 90
+vendor-goal = { kind = "reach-symbol", symbol = "lmacRetryTxFrame" }
+max-steps = 200000
+vendor-calls = [
+    { symbol = "wifi_assert", return-words = [0] },
+    { symbol = "wifi_assert", return-words = [0] },
+    { symbol = "wifi_assert", return-words = [0] },
+    { symbol = "wifi_assert", return-words = [0] },
+    { symbol = "wifi_assert", return-words = [0] },
+    { symbol = "wifi_assert", return-words = [0] },
+    { symbol = "esp_test_tx_count_retry", return-words = [0] },
+]
+vendor-ram-symbols = [
+    { target-symbol = "our_instances", offset = 0x70, symbol = "TxRxCxt", observe = false },
+    { target-symbol = "our_instances", offset = 0x8d, value = 3, observe = false },
+    { target-symbol = "TxRxCxt", offset = 4, symbol = "replay_retry_ebuf", observe = false },
+    { target-symbol = "TxRxCxt", offset = 0x34, symbol = "replay_retry_descriptor", observe = false },
+    { target-symbol = "replay_retry_ebuf", offset = 4, symbol = "replay_retry_frame", observe = false },
+    { target-symbol = "replay_retry_descriptor", offset = 0x1c, symbol = "replay_retry_rate", observe = false },
+    { target-symbol = "replay_retry_rate", offset = 8, value = 0x20, observe = false },
+]
+vendor-mmio-reads = [{ address = 0x2010d800, value = 0 }]
+vendor-observations = [
+    { kind = "symbol", symbol = "replay_retry_descriptor", offset = 5, length = 3 },
+    { kind = "symbol", symbol = "replay_retry_frame", offset = 1, length = 1 },
+]
+rust-observations = [
+    { kind = "absolute", address = 0x3fff5000, length = 3 },
+    { kind = "absolute", address = 0x3fff5006, length = 1 },
 ]
 
 # Retry-relevant status-four dispatch. Each side stops at the selected leaf:

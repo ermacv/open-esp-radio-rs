@@ -47,6 +47,42 @@ and `inspect function SOURCE:SYMBOL` for a focused body. Current suite,
 disposition, profile, and policy TOML files define comparison scope; this
 README intentionally does not duplicate their inventory.
 
+## Vendor subsystem map
+
+`phy`, `hal`, `lmac` and `wdev` are reviewed vendor subsystem labels, not four
+strictly ordered software layers. The observed control paths cross them in
+both directions and pass through additional PP-task, rate-control, power,
+buffer, OSI/RTOS and `libnet80211` code. The useful execution boundaries are:
+
+```text
+TX: libnet80211 -> IC/PP -> LMAC -> register HAL
+IRQ: hardware -> WDEV FIQ -> pp_post -> ppTask -> PP/LMAC/PM/WDEV
+RX: WDEV indication -> LMAC completion -> pp_post -> ppTask -> PP/libnet80211
+```
+
+The generic Workbench must not infer those subsystem names from symbol
+prefixes. It recovers calls, indexed dispatch, event values, memory/MMIO
+effects and blockers. This target project reviews the reusable Espressif and
+ESP32-S31 meaning attached to those facts.
+
+The `rx-done-to-pp-task`, `rx-success-to-pp-task` and
+`tx-complete-to-pp-task` routes execute the concrete queue and counted-latch
+lifecycle and require the selector-specific `ppTask` handler. They establish
+the asynchronous vendor order; they do not establish production equivalence.
+The generic comparison engine now supports ordered stateful profile cases and
+can expose a difference that appears only on a second invocation. The
+`libpp-lmac-ack-timeout-state` profile executes exact vendor initialization,
+then compares two ordered ACK-timeout transitions with the compiled production
+Embassy IRQ handoff and `OrdinaryTxOwner`, including real event coalescing and
+consumption, descriptor completion/detach, typed classification, Retry-bit
+mutation and one reviewed re-publication edge. The compared contract is still
+deliberately limited to the reviewed retry counters, Retry-bit projection and
+retry publication; different private-stack fills are used in both orders so
+copied padding cannot decide the result. The role-neutral ordinary owner and
+its executor TX-completion handoff are covered, but AP peer queue selection and
+A-MPDU batching remain production-test and HIL obligations rather than
+automatically recovered vendor equivalence.
+
 ## Register publication
 
 ```console

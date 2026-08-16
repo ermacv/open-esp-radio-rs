@@ -11,5 +11,6 @@ build = "build.rs"
 unexpected_cfgs = "allow"
 
 [build-dependencies]
+object = { version = "=0.39.1", default-features = false, features = ["elf", "read", "std"] }
 serde = { version = "=1.0.229", features = ["derive"] }
 toml_edit = { version = "=0.25.13", features = ["serde"] }

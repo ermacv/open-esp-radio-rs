@@ -87,10 +87,12 @@ pub(super) fn compare(
         },
         crate::ExecutionComparisonPolicy {
             compare_return: request.compare_return,
+            case_execution: crate::verification::profiles::CaseExecution::Independent,
             transaction_comparison:
                 crate::verification::profiles::TransactionComparison::Observables,
             call_equivalences: &[],
             coverage_domain: &coverage_domain,
+            vendor_setup: &[],
         },
         &scenarios,
     )

@@ -108,9 +108,11 @@ pub(super) fn compare_profile(
         },
         crate::ExecutionComparisonPolicy {
             compare_return: profile.compare_return,
+            case_execution: profile.case_execution,
             transaction_comparison: profile.transaction_comparison,
             call_equivalences: &profile.call_equivalences,
             coverage_domain: &coverage_domain,
+            vendor_setup: &profile.vendor_setup,
         },
         &profile.scenarios,
     )?)

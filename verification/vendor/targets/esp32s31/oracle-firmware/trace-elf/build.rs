@@ -7,6 +7,7 @@ use std::{
 };
 
 use serde::Deserialize;
+use object::{Object, ObjectSymbol};
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
@@ -16,6 +17,13 @@ struct FixtureDataSymbol {
     name: String,
     size: usize,
     alignment: usize,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "kebab-case")]
+struct SymbolProvider {
+    path: PathBuf,
+    symbols: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -37,6 +45,8 @@ struct LinkedOracleSpec {
     exact_builtins: Vec<String>,
     #[serde(default)]
     fixture_data_symbols: Vec<FixtureDataSymbol>,
+    #[serde(default)]
+    symbol_providers: Vec<SymbolProvider>,
     #[serde(default)]
     whole_archive: Option<bool>,
     #[serde(default)]
@@ -94,6 +104,16 @@ impl LinkedOracleSpec {
             .into_iter()
             .map(|path| resolve(base, path))
             .collect();
+        for provider in &mut spec.symbol_providers {
+            provider.path = resolve(base, std::mem::take(&mut provider.path));
+            if provider.symbols.is_empty() {
+                return Err(format!(
+                    "symbol provider {} has no selected symbols",
+                    provider.path.display()
+                )
+                .into());
+            }
+        }
         let mut stub_symbols = BTreeSet::new();
         let mut entry_symbols = BTreeSet::new();
         for symbol in &spec.entry_symbols {
@@ -142,6 +162,21 @@ impl LinkedOracleSpec {
                 );
             }
         }
+        let mut provided_symbols = BTreeSet::new();
+        for provider in &spec.symbol_providers {
+            for symbol in &provider.symbols {
+                validate_symbol(symbol, "provided")?;
+                if !provided_symbols.insert(symbol) {
+                    return Err(format!("duplicate provided symbol {symbol:?}").into());
+                }
+                if fixture_symbols.contains(symbol) {
+                    return Err(format!(
+                        "symbol {symbol:?} cannot be both provider-backed and fixture data"
+                    )
+                    .into());
+                }
+            }
+        }
         Ok(spec)
     }
 
@@ -161,6 +196,16 @@ impl LinkedOracleSpec {
         }
         if self.emit_relocations == Some(true) {
             println!("cargo:rustc-link-arg=--emit-relocs");
+        }
+        for provider in &self.symbol_providers {
+            println!("cargo:rerun-if-changed={}", provider.path.display());
+            for (symbol, address) in provider.resolve_symbols()? {
+                // Import only the explicitly selected platform symbol. Pulling
+                // the complete ROM symbol table into the aggregate image would
+                // collide with flash implementations that intentionally replace
+                // ROM functions with the same public name.
+                println!("cargo:rustc-link-arg=--defsym={symbol}=0x{address:x}");
+            }
         }
         for symbol in &self.entry_symbols {
             // Force only reviewed lifecycle roots into the link. Normal archive
@@ -206,6 +251,52 @@ impl LinkedOracleSpec {
         }
         fs::write(out_dir.join("linked_oracle_stubs.rs"), stubs)?;
         Ok(())
+    }
+}
+
+impl SymbolProvider {
+    fn resolve_symbols(&self) -> Result<Vec<(String, u64)>> {
+        let bytes = fs::read(&self.path).map_err(|error| {
+            format!(
+                "failed to read symbol provider {}: {error}",
+                self.path.display()
+            )
+        })?;
+        let file = object::File::parse(bytes.as_slice()).map_err(|error| {
+            format!(
+                "failed to parse symbol provider {}: {error}",
+                self.path.display()
+            )
+        })?;
+        let mut resolved = Vec::with_capacity(self.symbols.len());
+        for selected in &self.symbols {
+            let mut addresses = BTreeSet::new();
+            for symbol in file.symbols().chain(file.dynamic_symbols()) {
+                if !symbol.is_definition() || symbol.name().ok() != Some(selected.as_str()) {
+                    continue;
+                }
+                addresses.insert(symbol.address());
+            }
+            let address = match addresses.len() {
+                1 => *addresses.iter().next().expect("one address exists"),
+                0 => {
+                    return Err(format!(
+                        "symbol provider {} does not define selected symbol {selected:?}",
+                        self.path.display()
+                    )
+                    .into());
+                }
+                _ => {
+                    return Err(format!(
+                        "symbol provider {} defines selected symbol {selected:?} at multiple addresses: {addresses:?}",
+                        self.path.display()
+                    )
+                    .into());
+                }
+            };
+            resolved.push((selected.clone(), address));
+        }
+        Ok(resolved)
     }
 }
 

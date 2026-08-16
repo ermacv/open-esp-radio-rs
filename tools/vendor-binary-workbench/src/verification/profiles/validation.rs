@@ -6,7 +6,8 @@ use crate::{NamedScenario, Result};
 use open_radio_vendor_semantics::VerificationClaim;
 
 use super::{
-    ArgumentRange, ArgumentValues, MmioDomain, Profile, ProfileContract, TransactionComparison,
+    ArgumentRange, ArgumentValues, CaseExecution, MmioDomain, Profile, ProfileContract,
+    TransactionComparison,
 };
 
 pub(super) fn validate_coverage_domain(
@@ -51,11 +52,13 @@ pub(super) fn validate_coverage_domain(
         precondition: None,
         contract: ProfileContract::Scenario,
         compare_return: false,
+        case_execution: CaseExecution::Independent,
         transaction_comparison: TransactionComparison::Observables,
         call_equivalences: Vec::new(),
         argument_ranges: argument_ranges.to_vec(),
         argument_values: argument_values.to_vec(),
         mmio_domains: mmio_domains.to_vec(),
+        vendor_setup: Vec::new(),
         scenarios: Vec::new(),
     };
     let expected = stub.coverage_constraints();
@@ -98,6 +101,30 @@ pub(super) fn validate_coverage_domain(
 }
 
 pub(super) fn validate_scenario(scenario: &NamedScenario) -> Result<()> {
+    for range in scenario
+        .scenario
+        .persistent_memory
+        .iter()
+        .chain(&scenario.vendor_persistent_memory)
+        .chain(&scenario.rust_persistent_memory)
+    {
+        if range.length == 0 {
+            return Err(crate::Error::invalid(format!(
+                "scenario {} persistent memory length must be non-zero",
+                scenario.name
+            )));
+        }
+        range
+            .start
+            .checked_add(range.length)
+            .ok_or_else(|| {
+                format!(
+                    "scenario {} persistent memory range at {:#010x} overflows the 32-bit address space",
+                    scenario.name, range.start
+                )
+            })
+            .map_err(crate::Error::invalid)?;
+    }
     for (side, goal, services) in [
         (
             "vendor",
@@ -295,11 +322,13 @@ pub(super) fn validate_argument_domain(
         precondition: None,
         contract: ProfileContract::Scenario,
         compare_return: false,
+        case_execution: CaseExecution::Independent,
         transaction_comparison: TransactionComparison::Observables,
         call_equivalences: Vec::new(),
         argument_ranges: ranges.to_vec(),
         argument_values: values.to_vec(),
         mmio_domains: Vec::new(),
+        vendor_setup: Vec::new(),
         scenarios: Vec::new(),
     };
     for expected in profile_stub.coverage_argument_constraints() {

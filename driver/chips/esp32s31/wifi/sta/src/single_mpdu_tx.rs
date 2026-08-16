@@ -1030,6 +1030,18 @@ mod tests {
             Ok(WifiTxProgress::Pending)
         );
         assert_eq!(hardware.publications, 2);
+        let active = tx
+            .ordinary
+            .active_snapshot()
+            .expect("normal retry rate remains available")
+            .expect("ACK timeout retains an active publication");
+        assert_eq!(active.counters.mpdu, 1);
+        assert_eq!(active.counters.short, 1);
+        assert_eq!(active.counters.long, 0);
+        assert_eq!(active.publications, 2);
+        assert_eq!(active.current_rate, TxPhyRate::Legacy(LegacyRate::Ofdm54M));
+        assert!(active.retry_bit_set);
+        assert_eq!(active.retries.ack_timeouts, 1);
         hardware.completion = Some(completion(0));
         assert_eq!(
             crate::test_support::block_on(tx.service(

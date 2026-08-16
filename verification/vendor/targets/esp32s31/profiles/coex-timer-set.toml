@@ -1,4 +1,5 @@
-schema = 4
+schema = 5
+case-execution = "independent"
 transaction-comparison = "observables"
 
 # Complete vendor/Rust transaction for one representative Wi-Fi timer. The

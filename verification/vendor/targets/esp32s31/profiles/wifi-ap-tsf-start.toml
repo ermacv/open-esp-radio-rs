@@ -1,4 +1,5 @@
-schema = 4
+schema = 5
+case-execution = "independent"
 transaction-comparison = "observables"
 
 # Only selector zero is claimed: it is the complete SoftAP path reached from

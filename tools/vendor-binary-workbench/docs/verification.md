@@ -43,7 +43,55 @@ changes and allowed normalizations. Unlisted effects fail closed. Concrete
 profiles define arguments, initial memory/device state, observations and
 finite-domain preconditions.
 
-Profile schema 4 requires an explicit `transaction-comparison` policy.
+Profile schema 5 requires explicit `case-execution` and
+`transaction-comparison` policies. `case-execution = "independent"` gives
+every case a fresh vendor and Rust execution session. `case-execution =
+"stateful"` treats two or more cases, in declaration order, as phases of one
+vendor session and one Rust session. Stateful comparison carries writes to
+writable ELF segments, explicitly declared persistent RAM, and modeled FIFO
+contents across phases. The executor stack, MMIO read responses, and device
+model instances remain phase-local; the profile must state each phase's
+environment rather than inventing device state.
+
+`transaction-comparison = "state-only"` is reserved for an explicitly
+projected state contract. It compares the ordered before/after bytes of the
+declared vendor and Rust observations (their artifact addresses may differ)
+and an optional return value. Vendor-only MMIO/calls remain in the evidence
+report; the result does not claim that those transactions are equivalent or
+irrelevant. Its coverage scope is reported as `concrete-state-cases`, not as
+static whole-CFG coverage.
+
+`transaction-comparison = "state-and-reviewed-calls"` keeps the same
+address-independent state contract and additionally requires declared
+`call-equivalences`. Use it when the reviewed claim includes a semantic edge
+such as exactly one re-publication but not every platform helper call.
+
+A stateful profile may declare ordered `vendor-setup` phases. Each phase runs
+an exact linked vendor symbol in the same execution session before the first
+comparison case; its completion, calls, steps and memory changes are retained
+in the report. Use this for real initialization such as `wdev_data_init` or a
+bounded `lmacInit` prefix. Do not replace initialized `.data`, `.bss` or ROM
+interface pointers with scenario fixtures. Side-specific `vendor-mmio-reads`
+and `rust-mmio-reads` model environmental reads which only one artifact
+performs without forcing the other side to consume a fictitious response.
+Optimized code that copies otherwise-uninitialized struct or enum padding may
+use side-specific `vendor-stack-fill` and `rust-stack-fill` bytes. The declared
+domain must exercise at least two distinct fills and retain identical compared
+observations; stack fill is an explicit execution condition, never an inferred
+value.
+
+The document-level policy is the explicit default for every profile in that
+file. A profile may override it with its own `case-execution` field when one
+suite contains both finite independent-domain cases and an ordered lifecycle.
+
+Use `persistent-memory` when both artifacts use the same explicit RAM range,
+or `vendor-persistent-memory` and `rust-persistent-memory` when linked layouts
+differ. A later phase's explicit RAM seed overrides the carried byte for that
+phase. Zero-length and overflowing ranges fail profile validation. An
+incomplete stateful phase stops execution of the later phases because their
+input state is no longer known. A completed `DIFF` remains a difference and
+does not erase the concrete state needed to report later phases.
+
 `observables` compares ordered MMIO, delay, and fence events;
 `observables-and-calls` also compares every named call boundary;
 `observables-and-reviewed-calls` compares only explicitly listed semantic

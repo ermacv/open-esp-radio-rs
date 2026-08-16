@@ -1,4 +1,5 @@
-schema = 4
+schema = 5
+case-execution = "independent"
 transaction-comparison = "observables"
 
 # Complete admissible domain of the reviewed 48-byte coexistence priority

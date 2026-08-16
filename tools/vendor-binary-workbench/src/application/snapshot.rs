@@ -338,7 +338,7 @@ fn profile_draft(fact: &FunctionFact, suggestions: &[ScenarioSuggestionSummary])
         return None;
     }
     let mut output = format!(
-        "# Generated coverage draft; replace REVIEW_REQUIRED values and replay every case.\nschema = 4\ntransaction-comparison = \"observables\"\n\n[[profiles]]\nname = {}\nvendor-source = {}\nvendor-symbol = {}\nrust-symbol = \"REVIEW_REQUIRED_RUST_SYMBOL\"\nclaim = \"whole-function-equivalence\"\n",
+        "# Generated coverage draft; replace REVIEW_REQUIRED values and replay every case.\nschema = 5\ncase-execution = \"independent\"\ntransaction-comparison = \"observables\"\n\n[[profiles]]\nname = {}\nvendor-source = {}\nvendor-symbol = {}\nrust-symbol = \"REVIEW_REQUIRED_RUST_SYMBOL\"\nclaim = \"whole-function-equivalence\"\n",
         toml_edit::Value::from(format!(
             "draft-{}",
             fact.symbol

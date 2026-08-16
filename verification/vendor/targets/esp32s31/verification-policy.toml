@@ -1,6 +1,26 @@
 schema = 1
 
 [[surfaces]]
+id = "wifi-ordinary-tx-ack-timeout-state"
+description = "The compiled IRQ handoff and ordinary-TX retry owner preserve the reviewed vendor ACK-timeout counter transition, Retry-bit state and one retry publication across consecutive completions."
+kind = "bounded-property"
+
+[[surfaces.requirements]]
+id = "ordinary-tx-ack-timeout-state-reviewed-domain"
+description = "Two ordered ACK-timeout phases produce the same MPDU, short and long retry counters and Retry-bit mask through the exact production IRQ handoff/descriptor owner and vendor LMAC path, with one reviewed retry publication per phase."
+suite = "libpp-tx-retry"
+source = "libpp-replay"
+symbol = "lmacProcessAckTimeout"
+claim = "reviewed-domain-equivalence"
+
+[[surfaces.effects]]
+id = "ordinary-tx-ack-timeout-state"
+vendor = { source = "libpp", symbol = "lmacProcessAckTimeout", fingerprint = "sha256:1bbb8110af3f63a812a4892d810bfab2fcdf49a49be5a98df8ac8c29466b57df" }
+disposition = "verified"
+requirement = "ordinary-tx-ack-timeout-state-reviewed-domain"
+rationale = "The reviewed state-and-call contract routes MAC_INT_TX_COMPLETE through EmbassyMacIrqRuntime, then drives completion, detach, classification and re-publication through OrdinaryTxOwner. It projects the three vendor retry counters and frame Retry bit and pairs lmacRetryTxFrame with the exact production publication edge; vendor-only platform transactions remain recorded but are not claimed equivalent."
+
+[[surfaces]]
 id = "wifi-ordinary-tx-completion-dispatch"
 description = "The compiled ordinary-TX completion classifier separates status-four ACK timeout, CTS timeout and collision details and preserves queue identity over the reviewed zero-selector domain."
 kind = "bounded-property"

@@ -29,17 +29,53 @@ pub struct Profile {
     pub precondition: Option<String>,
     pub contract: ProfileContract,
     pub compare_return: bool,
+    pub case_execution: CaseExecution,
     pub transaction_comparison: TransactionComparison,
     pub call_equivalences: Vec<CallEquivalence>,
     pub argument_ranges: Vec<ArgumentRange>,
     pub argument_values: Vec<ArgumentValues>,
     pub mmio_domains: Vec<MmioDomain>,
+    pub vendor_setup: Vec<VendorSetupPhase>,
     pub scenarios: Vec<NamedScenario>,
+}
+
+#[derive(Clone, Debug)]
+pub struct VendorSetupPhase {
+    pub name: String,
+    pub symbol: String,
+    pub scenario: crate::execution::Scenario,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, serde::Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum CaseExecution {
+    /// Every declared case starts from an independent execution session.
+    Independent,
+    /// Cases execute in declaration order with persistent software RAM and
+    /// external FIFO state. MMIO responses remain explicit per case.
+    Stateful,
+}
+
+impl CaseExecution {
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Independent => "independent",
+            Self::Stateful => "stateful",
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, serde::Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum TransactionComparison {
+    /// Compare only explicitly projected final memory and optional return
+    /// value. Vendor-only platform/context observations remain recorded but
+    /// cannot be mistaken for whole transaction equivalence.
+    StateOnly,
+    /// Compare projected final state plus explicitly reviewed semantic call
+    /// pairs. Physical addresses and unlisted implementation calls remain
+    /// provenance rather than equality inputs.
+    StateAndReviewedCalls,
     /// Compare the ordered externally observable MMIO/delay/fence stream.
     Observables,
     /// Also compare named call boundaries at their exact position in the
@@ -55,10 +91,17 @@ pub enum TransactionComparison {
 }
 
 impl TransactionComparison {
+    pub const fn compares_observables(self) -> bool {
+        !self.state_domain()
+    }
+
     pub const fn includes_calls(self) -> bool {
         matches!(
             self,
-            Self::ObservablesAndCalls | Self::ObservablesAndReviewedCalls | Self::Full
+            Self::StateAndReviewedCalls
+                | Self::ObservablesAndCalls
+                | Self::ObservablesAndReviewedCalls
+                | Self::Full
         )
     }
 
@@ -67,7 +110,14 @@ impl TransactionComparison {
     }
 
     pub const fn reviewed_calls_only(self) -> bool {
-        matches!(self, Self::ObservablesAndReviewedCalls)
+        matches!(
+            self,
+            Self::StateAndReviewedCalls | Self::ObservablesAndReviewedCalls
+        )
+    }
+
+    pub const fn state_domain(self) -> bool {
+        matches!(self, Self::StateOnly | Self::StateAndReviewedCalls)
     }
 }
 
@@ -197,6 +247,7 @@ impl ProfileContract {
 #[serde(deny_unknown_fields, rename_all = "kebab-case")]
 struct ProfileDocument {
     schema: u32,
+    case_execution: CaseExecution,
     transaction_comparison: TransactionComparison,
     profiles: Vec<ProfileInput>,
 }
@@ -214,6 +265,7 @@ struct ProfileInput {
     contract: ProfileContract,
     #[serde(default)]
     compare_return: bool,
+    case_execution: Option<CaseExecution>,
     transaction_comparison: Option<TransactionComparison>,
     #[serde(default)]
     call_equivalences: Vec<CallEquivalenceInput>,
@@ -223,8 +275,22 @@ struct ProfileInput {
     argument_values: Vec<ArgumentValuesInput>,
     #[serde(default)]
     mmio_domains: Vec<MmioDomainInput>,
+    #[serde(default)]
+    vendor_setup: Vec<VendorSetupInput>,
     #[serde(rename = "cases")]
     scenarios: Vec<ScenarioInput>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "kebab-case")]
+struct VendorSetupInput {
+    name: String,
+    symbol: String,
+    #[serde(default)]
+    arguments: Vec<u32>,
+    #[serde(default)]
+    goal: crate::execution_model::ExecutionGoal,
+    max_steps: Option<u64>,
 }
 
 #[derive(Deserialize)]
@@ -402,6 +468,14 @@ struct ScenarioInput {
     #[serde(default)]
     mmio_reads: Vec<WordInput>,
     #[serde(default)]
+    vendor_mmio_reads: Vec<WordInput>,
+    #[serde(default)]
+    rust_mmio_reads: Vec<WordInput>,
+    #[serde(default)]
+    vendor_stack_fill: Option<u8>,
+    #[serde(default)]
+    rust_stack_fill: Option<u8>,
+    #[serde(default)]
     device_models: Vec<crate::execution_model::DeviceModelSpec>,
     #[serde(default)]
     ram: Vec<WordInput>,
@@ -409,6 +483,12 @@ struct ScenarioInput {
     vendor_ram: Vec<WordInput>,
     #[serde(default)]
     rust_ram: Vec<WordInput>,
+    #[serde(default)]
+    persistent_memory: Vec<RangeInput>,
+    #[serde(default)]
+    vendor_persistent_memory: Vec<RangeInput>,
+    #[serde(default)]
+    rust_persistent_memory: Vec<RangeInput>,
     #[serde(default)]
     vendor_ram_symbols: Vec<SymbolWord>,
     #[serde(default)]
@@ -448,10 +528,21 @@ struct ScenarioInput {
 }
 
 impl ProfileInput {
-    fn finish(self, document_transaction_comparison: TransactionComparison) -> Result<Profile> {
+    fn finish(
+        self,
+        document_transaction_comparison: TransactionComparison,
+        document_case_execution: CaseExecution,
+    ) -> Result<Profile> {
+        let case_execution = self.case_execution.unwrap_or(document_case_execution);
         let transaction_comparison = self
             .transaction_comparison
             .unwrap_or(document_transaction_comparison);
+        if transaction_comparison.state_domain() && self.contract != ProfileContract::State {
+            return Err(crate::Error::invalid(format!(
+                "profile {} uses state-only comparison without contract = \"state\"",
+                self.name
+            )));
+        }
         let call_equivalences = self
             .call_equivalences
             .into_iter()
@@ -471,6 +562,53 @@ impl ProfileInput {
                 self.name
             )));
         }
+        if case_execution == CaseExecution::Stateful && self.scenarios.len() < 2 {
+            return Err(crate::Error::invalid(format!(
+                "stateful profile {} needs at least two ordered cases",
+                self.name
+            )));
+        }
+        if !self.vendor_setup.is_empty() && case_execution != CaseExecution::Stateful {
+            return Err(crate::Error::invalid(format!(
+                "profile {} declares vendor setup phases without case-execution = \"stateful\"",
+                self.name
+            )));
+        }
+        let mut setup_names = BTreeSet::new();
+        let vendor_setup = self
+            .vendor_setup
+            .into_iter()
+            .map(|setup| {
+                if setup.name.trim().is_empty()
+                    || setup.symbol.trim().is_empty()
+                    || !setup_names.insert(setup.name.clone())
+                {
+                    return Err(crate::Error::invalid(format!(
+                        "profile {} has an empty or duplicate vendor setup phase",
+                        self.name
+                    )));
+                }
+                if setup.arguments.len() > 8 || setup.max_steps == Some(0) {
+                    return Err(crate::Error::invalid(format!(
+                        "profile {} vendor setup phase {} has an invalid RV32 scenario",
+                        self.name, setup.name
+                    )));
+                }
+                let mut scenario = crate::execution::Scenario {
+                    arguments: setup.arguments,
+                    goal: setup.goal,
+                    ..crate::execution::Scenario::default()
+                };
+                if let Some(max_steps) = setup.max_steps {
+                    scenario.max_steps = max_steps;
+                }
+                Ok(VendorSetupPhase {
+                    name: setup.name,
+                    symbol: setup.symbol,
+                    scenario,
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
         let mut argument_ranges = self
             .argument_ranges
             .into_iter()
@@ -550,11 +688,13 @@ impl ProfileInput {
             precondition: self.precondition,
             contract: self.contract,
             compare_return: self.compare_return,
+            case_execution,
             transaction_comparison,
             call_equivalences,
             argument_ranges,
             argument_values,
             mmio_domains,
+            vendor_setup,
             scenarios,
         })
     }
@@ -642,6 +782,18 @@ impl ScenarioInput {
                 .or_default()
                 .push_back(word.value);
         }
+        output.vendor_mmio_reads = self
+            .vendor_mmio_reads
+            .into_iter()
+            .map(|word| (word.address, word.value))
+            .collect();
+        output.rust_mmio_reads = self
+            .rust_mmio_reads
+            .into_iter()
+            .map(|word| (word.address, word.value))
+            .collect();
+        output.vendor_stack_fill = self.vendor_stack_fill;
+        output.rust_stack_fill = self.rust_stack_fill;
         output.scenario.device_models = self
             .device_models
             .into_iter()
@@ -659,6 +811,30 @@ impl ScenarioInput {
             .rust_ram
             .into_iter()
             .map(|word| (word.address, word.value))
+            .collect();
+        output.scenario.persistent_memory = self
+            .persistent_memory
+            .into_iter()
+            .map(|range| crate::execution_model::MemoryRange {
+                start: range.address,
+                length: range.length,
+            })
+            .collect();
+        output.vendor_persistent_memory = self
+            .vendor_persistent_memory
+            .into_iter()
+            .map(|range| crate::execution_model::MemoryRange {
+                start: range.address,
+                length: range.length,
+            })
+            .collect();
+        output.rust_persistent_memory = self
+            .rust_persistent_memory
+            .into_iter()
+            .map(|range| crate::execution_model::MemoryRange {
+                start: range.address,
+                length: range.length,
+            })
             .collect();
         output.vendor_symbol_words = self.vendor_ram_symbols;
         output.rust_symbol_words = self.rust_ram_symbols;
@@ -722,9 +898,9 @@ pub fn load(path: &Path) -> Result<Vec<Profile>> {
 }
 
 fn finish(document: ProfileDocument) -> Result<Vec<Profile>> {
-    if document.schema != 4 {
+    if document.schema != 5 {
         return Err(crate::Error::invalid(
-            "verification profile TOML requires schema = 4",
+            "verification profile TOML requires schema = 5",
         ));
     }
     if document.profiles.is_empty() {
@@ -733,10 +909,11 @@ fn finish(document: ProfileDocument) -> Result<Vec<Profile>> {
         ));
     }
     let transaction_comparison = document.transaction_comparison;
+    let case_execution = document.case_execution;
     document
         .profiles
         .into_iter()
-        .map(|profile| profile.finish(transaction_comparison))
+        .map(|profile| profile.finish(transaction_comparison, case_execution))
         .collect()
 }
 
@@ -744,25 +921,60 @@ fn finish(document: ProfileDocument) -> Result<Vec<Profile>> {
 mod schema_tests {
     use super::*;
 
+    fn minimal_profile(case_execution: &str, cases: &str) -> String {
+        format!(
+            "schema = 5\ncase-execution = {case_execution:?}\ntransaction-comparison = \"observables\"\n\n[[profiles]]\nname = \"ordered\"\nvendor-source = \"libpp\"\nvendor-symbol = \"vendor_step\"\nrust-symbol = \"rust_step\"\nclaim = \"whole-function-equivalence\"\n{cases}"
+        )
+    }
+
     #[test]
-    fn schema_four_is_a_hard_cutover_with_explicit_transaction_policy() {
+    fn schema_five_is_a_hard_cutover_with_explicit_execution_and_transaction_policy() {
         let old: ProfileDocument = toml_edit::de::from_str(
-            "schema = 3\ntransaction-comparison = \"observables\"\nprofiles = []\n",
+            "schema = 4\ncase-execution = \"independent\"\ntransaction-comparison = \"observables\"\nprofiles = []\n",
         )
         .unwrap();
         assert!(
             finish(old)
                 .unwrap_err()
                 .to_string()
-                .contains("requires schema = 4")
+                .contains("requires schema = 5")
         );
 
-        let missing_policy =
-            match toml_edit::de::from_str::<ProfileDocument>("schema = 4\nprofiles = []\n") {
-                Ok(_) => panic!("missing transaction policy was accepted"),
-                Err(error) => error.to_string(),
-            };
-        assert!(missing_policy.contains("transaction-comparison"));
+        let missing_transaction = match toml_edit::de::from_str::<ProfileDocument>(
+            "schema = 5\ncase-execution = \"independent\"\nprofiles = []\n",
+        ) {
+            Ok(_) => panic!("missing transaction policy was accepted"),
+            Err(error) => error.to_string(),
+        };
+        assert!(missing_transaction.contains("transaction-comparison"));
+        let missing_execution = match toml_edit::de::from_str::<ProfileDocument>(
+            "schema = 5\ntransaction-comparison = \"observables\"\nprofiles = []\n",
+        ) {
+            Ok(_) => panic!("missing case execution policy was accepted"),
+            Err(error) => error.to_string(),
+        };
+        assert!(missing_execution.contains("case-execution"));
+    }
+
+    #[test]
+    fn state_only_comparison_requires_an_explicit_state_contract() {
+        let scenario = "[[profiles.cases]]\nname = \"first\"\n";
+        for comparison in ["state-only", "state-and-reviewed-calls"] {
+            let mut invalid = minimal_profile("independent", scenario).replace(
+                "transaction-comparison = \"observables\"",
+                &format!("transaction-comparison = {comparison:?}"),
+            );
+            if comparison == "state-and-reviewed-calls" {
+                invalid.push_str("\n[[profiles.call-equivalences]]\noperation = \"edge\"\nvendor-symbol = \"vendor_edge\"\nrust-symbol = \"rust_edge\"\nargument-comparison = \"ignore\"\n");
+            }
+            assert!(finish(toml_edit::de::from_str(&invalid).unwrap()).is_err());
+
+            let valid = invalid.replace(
+                "claim = \"whole-function-equivalence\"",
+                "claim = \"whole-function-equivalence\"\ncontract = \"state\"",
+            );
+            assert!(finish(toml_edit::de::from_str(&valid).unwrap()).is_ok());
+        }
     }
 
     #[test]
@@ -797,5 +1009,63 @@ mod schema_tests {
                 .is_err()
             );
         }
+    }
+
+    #[test]
+    fn stateful_profiles_require_two_ordered_cases() {
+        let one_case = minimal_profile("stateful", "\n[[profiles.cases]]\nname = \"first\"\n");
+        let document: ProfileDocument = toml_edit::de::from_str(&one_case).unwrap();
+        assert!(
+            finish(document)
+                .unwrap_err()
+                .to_string()
+                .contains("needs at least two ordered cases")
+        );
+
+        let two_cases = minimal_profile(
+            "stateful",
+            "\n[[profiles.cases]]\nname = \"first\"\n\n[[profiles.cases]]\nname = \"second\"\n",
+        );
+        let profiles = finish(toml_edit::de::from_str(&two_cases).unwrap()).unwrap();
+        assert_eq!(profiles.len(), 1);
+        assert_eq!(profiles[0].case_execution, CaseExecution::Stateful);
+        assert_eq!(profiles[0].scenarios[0].name, "first");
+        assert_eq!(profiles[0].scenarios[1].name, "second");
+    }
+
+    #[test]
+    fn profile_can_override_document_case_execution() {
+        let input = minimal_profile(
+            "independent",
+            "case-execution = \"stateful\"\n\n[[profiles.cases]]\nname = \"first\"\n\n[[profiles.cases]]\nname = \"second\"\n",
+        );
+        let profiles = finish(toml_edit::de::from_str(&input).unwrap()).unwrap();
+        assert_eq!(profiles[0].case_execution, CaseExecution::Stateful);
+    }
+
+    #[test]
+    fn persistent_memory_ranges_fail_closed() {
+        for range in [
+            "{ address = 4096, length = 0 }",
+            "{ address = 4294967294, length = 4 }",
+        ] {
+            let input = minimal_profile(
+                "independent",
+                &format!("\n[[profiles.cases]]\nname = \"only\"\npersistent-memory = [{range}]\n"),
+            );
+            let document: ProfileDocument = toml_edit::de::from_str(&input).unwrap();
+            assert!(finish(document).is_err(), "accepted {range}");
+        }
+    }
+
+    #[test]
+    fn cases_preserve_independent_vendor_and_rust_stack_fills() {
+        let input = minimal_profile(
+            "independent",
+            "\n[[profiles.cases]]\nname = \"only\"\nvendor-stack-fill = 90\nrust-stack-fill = 165\n",
+        );
+        let profiles = finish(toml_edit::de::from_str(&input).unwrap()).unwrap();
+        assert_eq!(profiles[0].scenarios[0].vendor_stack_fill, Some(0x5a));
+        assert_eq!(profiles[0].scenarios[0].rust_stack_fill, Some(0xa5));
     }
 }

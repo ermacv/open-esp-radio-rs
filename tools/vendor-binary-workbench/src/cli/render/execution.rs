@@ -185,6 +185,7 @@ pub(crate) fn print_execution_comparison(report: &ExecutionComparisonReport) {
         command_output::heading("Execution comparison")
     );
     let _ = writeln!(&mut output, "{verdict} — mode {}", report.mode.label());
+    let _ = writeln!(&mut output, "Cases:  {}", report.case_execution.label());
     let _ = writeln!(&mut output, "Vendor: {}", report.vendor.path);
     if command_output::details() {
         let _ = writeln!(&mut output, "SHA-256: {}", report.vendor.sha256);
@@ -289,6 +290,18 @@ fn render_environment(output: &mut String, case: &str, environment: &ScenarioEnv
         "\nEnvironment {case}: {tables} table instance(s), {allocations} allocation(s), {} device model(s), {memory} memory instance(s)",
         environment.device_models.len()
     );
+    if environment.vendor_stack_fill.is_some() || environment.rust_stack_fill.is_some() {
+        let _ = writeln!(
+            output,
+            "  Private stack fill: vendor={}, Rust={}",
+            environment
+                .vendor_stack_fill
+                .map_or_else(|| "poison".to_owned(), |value| format!("{value:#04x}")),
+            environment
+                .rust_stack_fill
+                .map_or_else(|| "poison".to_owned(), |value| format!("{value:#04x}")),
+        );
+    }
     for device in &environment.device_models {
         let _ = writeln!(
             output,

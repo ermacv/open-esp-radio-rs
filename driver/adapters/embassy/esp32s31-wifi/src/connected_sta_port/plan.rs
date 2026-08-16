@@ -69,7 +69,7 @@ pub enum Esp32s31ConnectedStaConfigError {
     ZeroTxBlockAckNegotiationAttemptLimit,
     PeerDoesNotSupportQos,
     TxBlockAck(TxBlockAckError),
-    RxBlockAck(StaRxBlockAckSessionsError),
+    RxBlockAck(RxBlockAckSessionsError),
     BeaconLoss(StaBeaconLossConfigError),
 }
 
@@ -255,9 +255,9 @@ impl Esp32s31ConnectedStaPort {
                 peer,
             });
         }
-        if let Err(error) =
-            StaRxBlockAckSessions::with_maximum_window(config.block_ack.rx_block_ack_maximum_window)
-        {
+        if let Err(error) = RxBlockAckSessions::<1>::with_maximum_window(
+            config.block_ack.rx_block_ack_maximum_window,
+        ) {
             return Err(Esp32s31ConnectedStaPrepareFailure {
                 error: Esp32s31ConnectedStaConfigError::RxBlockAck(error),
                 peer,

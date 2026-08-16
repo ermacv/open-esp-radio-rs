@@ -13,7 +13,9 @@ use embassy_time::{Duration, Instant, Timer};
 use open_esp_radio_embassy_net::RawMutex;
 use open_esp_radio_esp32s31_wifi_mac::{
     rx::RxPhyInfo,
-    rx_ampdu::{RxAmpduError, RxAmpduMpdu, RxAmpduRelease, RxBlockAckReorderState},
+    rx_ampdu::{
+        RX_BLOCK_ACK_BANK_COUNT, RxAmpduError, RxAmpduMpdu, RxAmpduRelease, RxBlockAckReorderBanks,
+    },
     rx_pool::{NetworkRxFrame, VENDOR_LARGE_RX_PAYLOAD_CAPACITY, VENDOR_LARGE_RX_SLOT_COUNT},
 };
 use open_esp_radio_esp32s31_wifi_sta::connected_rx::{
@@ -33,8 +35,6 @@ use crate::{
         RxReorderFrameStorage, try_receive_rx_reorder_command,
     },
 };
-
-const RX_BLOCK_ACK_TID_COUNT: usize = 8;
 
 /// Maximum completed protocol dispatches in one cooperative service turn.
 ///
@@ -261,9 +261,9 @@ pub struct Esp32s31ConnectedRxProtocolStorage<
     const SLOTS: usize,
     const REORDER_SLOTS: usize = RX_REORDER_BACKING_SLOT_COUNT,
 > {
-    reorders: [Option<RxBlockAckReorderState<RX_REORDER_SLOT_DOMAIN>>; RX_BLOCK_ACK_TID_COUNT],
-    reorder_first_starts: [Option<u16>; RX_BLOCK_ACK_TID_COUNT],
-    gap_deadlines: [Option<Instant>; RX_BLOCK_ACK_TID_COUNT],
+    reorder_banks: RxBlockAckReorderBanks<RX_REORDER_SLOT_DOMAIN>,
+    reorder_first_starts: [Option<u16>; RX_BLOCK_ACK_BANK_COUNT],
+    gap_deadlines: [Option<Instant>; RX_BLOCK_ACK_BANK_COUNT],
     retained: [Option<RetainedRxFrame<'pool, CAPACITY, SLOTS, REORDER_SLOTS>>; REORDER_SLOTS],
 }
 
@@ -272,9 +272,9 @@ impl<'pool, const CAPACITY: usize, const SLOTS: usize, const REORDER_SLOTS: usiz
 {
     pub const fn new() -> Self {
         Self {
-            reorders: [const { None }; RX_BLOCK_ACK_TID_COUNT],
-            reorder_first_starts: [None; RX_BLOCK_ACK_TID_COUNT],
-            gap_deadlines: [None; RX_BLOCK_ACK_TID_COUNT],
+            reorder_banks: RxBlockAckReorderBanks::new(),
+            reorder_first_starts: [None; RX_BLOCK_ACK_BANK_COUNT],
+            gap_deadlines: [None; RX_BLOCK_ACK_BANK_COUNT],
             retained: [const { None }; REORDER_SLOTS],
         }
     }

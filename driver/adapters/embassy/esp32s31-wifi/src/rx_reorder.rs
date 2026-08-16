@@ -17,8 +17,8 @@ use embassy_sync::{
 };
 use open_esp_radio_embassy_net::RawMutex;
 use open_esp_radio_esp32s31_wifi_mac::rx::RxSegment;
-pub use open_esp_radio_esp32s31_wifi_sta::connected_control::{
-    RxReorderCommand, RxReorderCommandError,
+pub use open_esp_radio_esp32s31_wifi_mac::rx_ampdu::{
+    RxBlockAckIdentity, RxBlockAckSnapshot, RxReorderCommand, RxReorderCommandError,
 };
 
 /// One command per possible RX agreement plus replacement/teardown slack.
@@ -296,20 +296,21 @@ mod tests {
     fn mailbox_preserves_owned_agreement_edges_in_order() {
         let resources = RxReorderCommandResources::<NoopRawMutex>::new();
         let (sender, receiver) = resources.split();
-        let start = RxReorderCommand::Start {
+        let snapshot = RxBlockAckSnapshot {
+            hardware_index: 0,
+            peer: [2, 0, 0, 0, 0, 1],
             tid: 3,
             starting_sequence: 0x0ffe,
             window: 32,
         };
+        let start = RxReorderCommand::Start(snapshot);
+        let stop = RxReorderCommand::Stop(snapshot.identity());
         try_send_rx_reorder_command(&sender, start).unwrap();
-        try_send_rx_reorder_command(&sender, RxReorderCommand::Stop { tid: 3 }).unwrap();
+        try_send_rx_reorder_command(&sender, stop).unwrap();
         try_send_rx_reorder_command(&sender, RxReorderCommand::StopAll).unwrap();
 
         assert_eq!(try_receive_rx_reorder_command(&receiver), Some(start));
-        assert_eq!(
-            try_receive_rx_reorder_command(&receiver),
-            Some(RxReorderCommand::Stop { tid: 3 })
-        );
+        assert_eq!(try_receive_rx_reorder_command(&receiver), Some(stop));
         assert_eq!(
             try_receive_rx_reorder_command(&receiver),
             Some(RxReorderCommand::StopAll)
@@ -321,9 +322,16 @@ mod tests {
     fn full_mailbox_returns_the_unpublished_command() {
         let resources = RxReorderCommandResources::<NoopRawMutex>::new();
         let (sender, _receiver) = resources.split();
-        for tid in 0..RX_REORDER_COMMAND_CAPACITY {
-            try_send_rx_reorder_command(&sender, RxReorderCommand::Stop { tid: tid as u8 })
-                .unwrap();
+        for hardware_index in 0..RX_REORDER_COMMAND_CAPACITY {
+            try_send_rx_reorder_command(
+                &sender,
+                RxReorderCommand::Stop(RxBlockAckIdentity {
+                    hardware_index: hardware_index as u8,
+                    peer: [2, 0, 0, 0, 0, 1],
+                    tid: 0,
+                }),
+            )
+            .unwrap();
         }
         assert_eq!(
             try_send_rx_reorder_command(&sender, RxReorderCommand::StopAll),

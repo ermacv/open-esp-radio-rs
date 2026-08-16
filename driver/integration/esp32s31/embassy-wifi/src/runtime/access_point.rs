@@ -49,6 +49,17 @@ type ProductionAccessPointAmpdu =
         { open_esp_radio_esp32s31_wifi_embassy::resource_profile::ESP32S31_DEFAULT_TX_AMPDU_FRAME_COUNT },
         0,
     >;
+type ProductionAccessPointRxBlockAck =
+    open_esp_radio::esp32s31::wifi::mac::rx_ampdu::RxBlockAckSessions<
+        { open_esp_radio::wifi::ap::AP_MAX_CLIENTS },
+    >;
+type ProductionAccessPointRxReorder =
+    Esp32s31AccessPointRxReorder<'static, RX_BUFFER_SIZE>;
+type ProductionAccessPointRxReorderStorage =
+    open_esp_radio_esp32s31_wifi_embassy::rx_reorder::RxReorderFrameStorage<
+        RX_BUFFER_SIZE,
+        { open_esp_radio_esp32s31_wifi_embassy::rx_reorder::RX_REORDER_BACKING_SLOT_COUNT },
+    >;
 
 #[cfg(feature = "qualification")]
 #[inline(never)]
@@ -96,6 +107,7 @@ fn publish_access_point_observation(
         tx_block_ack_agreements_operational: report.engine.tx_block_ack_agreements_operational,
         tx_block_ack_responses_rejected: report.engine.tx_block_ack_responses_rejected,
         tx_block_ack_negotiation_timeouts: report.engine.tx_block_ack_negotiation_timeouts,
+        rx_block_ack_responses_transmitted: report.mac.rx_block_ack_responses_transmitted,
         completed_rx_units: report.control.completed_rx_units,
         completed_rx_descriptors: report.control.completed_rx_descriptors,
         recycled_rx_descriptors: report.control.recycled_rx_descriptors,
@@ -267,6 +279,9 @@ pub(super) struct ProductionAccessPointEngineFault {
     _engine: open_esp_radio::esp32s31::wifi::ap::engine::Esp32s31ApEngineStartFailure<'static>,
     _parked: ProductionAccessPointParked,
     _rx_dispatcher: &'static mut open_esp_radio::esp32s31::wifi::ap::rx::Esp32s31ApRxDispatcher,
+    _rx_block_ack: &'static mut ProductionAccessPointRxBlockAck,
+    _rx_reorder: &'static mut ProductionAccessPointRxReorder,
+    _rx_reorder_storage: &'static ProductionAccessPointRxReorderStorage,
     _rx_frame: &'static mut [u8],
     _tx_frame: &'static mut [u8],
 }
@@ -283,6 +298,9 @@ pub(super) struct ProductionAccessPointSecurityMaterialFault {
     _pairwise_storage:
         &'static mut open_esp_radio::esp32s31::wifi::ap::security::Esp32s31ApPairwiseKeyStorage,
     _rx_dispatcher: &'static mut open_esp_radio::esp32s31::wifi::ap::rx::Esp32s31ApRxDispatcher,
+    _rx_block_ack: &'static mut ProductionAccessPointRxBlockAck,
+    _rx_reorder: &'static mut ProductionAccessPointRxReorder,
+    _rx_reorder_storage: &'static ProductionAccessPointRxReorderStorage,
     _rx_frame: &'static mut [u8],
     _tx_frame: &'static mut [u8],
 }
@@ -334,6 +352,11 @@ pub(super) enum ProductionAccessPointTeardownFault {
         _storage: &'static RxStorage,
         _rx_frame: &'static mut [u8],
         _tx_frame: &'static mut [u8],
+        _data_rx:
+            &'static mut open_esp_radio::esp32s31::wifi::ap::rx::Esp32s31ApRxDispatcher,
+        _rx_block_ack: &'static mut ProductionAccessPointRxBlockAck,
+        _rx_reorder: &'static mut ProductionAccessPointRxReorder,
+        _rx_reorder_storage: &'static ProductionAccessPointRxReorderStorage,
         _engine: open_esp_radio::esp32s31::wifi::ap::engine::Esp32s31ApEngineStop<'static>,
         _control_report:
             open_esp_radio_esp32s31_wifi_embassy::access_point::Esp32s31AccessPointControlReport,
@@ -689,6 +712,14 @@ pub(super) struct ProductionAccessPointResources {
         &'static mut open_esp_radio::esp32s31::wifi::ap::security::Esp32s31ApPairwiseKeyStorage,
     pub(super) rx_dispatcher:
         &'static mut open_esp_radio::esp32s31::wifi::ap::rx::Esp32s31ApRxDispatcher,
+    pub(super) rx_block_ack: &'static mut open_esp_radio::esp32s31::wifi::mac::rx_ampdu::RxBlockAckSessions<
+        { open_esp_radio::wifi::ap::AP_MAX_CLIENTS },
+    >,
+    pub(super) rx_reorder: &'static mut Esp32s31AccessPointRxReorder<'static, RX_BUFFER_SIZE>,
+    pub(super) rx_reorder_storage: &'static open_esp_radio_esp32s31_wifi_embassy::rx_reorder::RxReorderFrameStorage<
+        RX_BUFFER_SIZE,
+        { open_esp_radio_esp32s31_wifi_embassy::rx_reorder::RX_REORDER_BACKING_SLOT_COUNT },
+    >,
 }
 
 impl ProductionWifiEpochRunner {
@@ -887,6 +918,9 @@ impl ProductionWifiEpochRunner {
             peer_storage,
             pairwise_storage,
             rx_dispatcher,
+            rx_block_ack,
+            rx_reorder,
+            rx_reorder_storage,
         } = access_point;
         let mut gtk_key = [0_u8; 16];
         for word in gtk_key.chunks_exact_mut(4) {
@@ -916,6 +950,9 @@ impl ProductionWifiEpochRunner {
                         _peer_storage: peer_storage,
                         _pairwise_storage: pairwise_storage,
                         _rx_dispatcher: rx_dispatcher,
+                        _rx_block_ack: rx_block_ack,
+                        _rx_reorder: rx_reorder,
+                        _rx_reorder_storage: rx_reorder_storage,
                         _rx_frame: scan_frame,
                         _tx_frame: ethernet,
                     },
@@ -961,6 +998,9 @@ impl ProductionWifiEpochRunner {
                             aggregate_tx: Some(aggregate_tx),
                         },
                         _rx_dispatcher: rx_dispatcher,
+                        _rx_block_ack: rx_block_ack,
+                        _rx_reorder: rx_reorder,
+                        _rx_reorder_storage: rx_reorder_storage,
                         _rx_frame: scan_frame,
                         _tx_frame: ethernet,
                     },
@@ -987,6 +1027,9 @@ impl ProductionWifiEpochRunner {
             scan_frame,
             ethernet,
             rx_dispatcher,
+            rx_block_ack,
+            rx_reorder,
+            rx_reorder_storage,
         );
         Ok(ProductionAccessPointTask {
             channel,
@@ -1097,6 +1140,10 @@ impl ProductionWifiEpochRunner {
                     _storage: stopped.storage,
                     _rx_frame: stopped.rx_frame,
                     _tx_frame: stopped.tx_frame,
+                    _data_rx: stopped.data_rx,
+                    _rx_block_ack: stopped.rx_block_ack,
+                    _rx_reorder: stopped.rx_reorder,
+                    _rx_reorder_storage: stopped.rx_reorder_storage,
                     _engine: stopped.engine,
                     _control_report: stopped.control_report,
                     _mac_report: stopped.mac_report,
@@ -1129,6 +1176,9 @@ impl ProductionWifiEpochRunner {
             peer_storage,
             pairwise_storage,
             rx_dispatcher: stopped.data_rx,
+            rx_block_ack: stopped.rx_block_ack,
+            rx_reorder: stopped.rx_reorder,
+            rx_reorder_storage: stopped.rx_reorder_storage,
         };
         let (station, monitor) = restore_station_resources_after_access_point(
             ProductionAccessPointParked {

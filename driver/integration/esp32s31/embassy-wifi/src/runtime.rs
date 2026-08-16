@@ -85,7 +85,8 @@ pub(super) use open_esp_radio_esp32s31_wifi_embassy::resource_profile::{
 use open_esp_radio_esp32s31_wifi_embassy::station::Esp32s31StationEngineObserver;
 use open_esp_radio_esp32s31_wifi_embassy::{
     access_point::{
-        Esp32s31AccessPointControl, Esp32s31AccessPointStopped as EmbassyAccessPointStopped,
+        Esp32s31AccessPointControl, Esp32s31AccessPointRxReorder,
+        Esp32s31AccessPointStopped as EmbassyAccessPointStopped,
     },
     phy_delay::EmbassyEsp32s31PhyDelay,
     rx_frontier::{EmbassyEsp32s31RxFrontierDelay, Esp32s31RxFrontier},
@@ -207,6 +208,13 @@ static AP_PEER_STORAGE: ConstStaticCell<open_esp_radio::wifi::ap::AccessPointPee
 static AP_RX_DISPATCHER: StaticCell<
     open_esp_radio::esp32s31::wifi::ap::rx::Esp32s31ApRxDispatcher,
 > = StaticCell::new();
+static AP_RX_BLOCK_ACK: StaticCell<
+    open_esp_radio::esp32s31::wifi::mac::rx_ampdu::RxBlockAckSessions<
+        { open_esp_radio::wifi::ap::AP_MAX_CLIENTS },
+    >,
+> = StaticCell::new();
+static AP_RX_REORDER: StaticCell<Esp32s31AccessPointRxReorder<'static, RX_BUFFER_SIZE>> =
+    StaticCell::new();
 // Hardware pairwise-key capabilities are stable epoch state. Keeping their
 // bounded table static avoids duplicating all 15 tokens in async rollback
 // variants while `stop` still clears every hardware slot before returning it.
@@ -2210,6 +2218,11 @@ pub async fn new(
                     },
                 )
             }),
+            rx_block_ack: AP_RX_BLOCK_ACK.init_with(
+                open_esp_radio::esp32s31::wifi::mac::rx_ampdu::RxBlockAckSessions::new,
+            ),
+            rx_reorder: AP_RX_REORDER.init_with(Esp32s31AccessPointRxReorder::new),
+            rx_reorder_storage: &crate::connected::RX_REORDER_STORAGE,
         },
         monitor.role,
     );

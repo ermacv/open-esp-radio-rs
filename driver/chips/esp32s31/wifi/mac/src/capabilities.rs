@@ -12,7 +12,7 @@ use open_esp_radio_wifi_softmac::{
 };
 
 use crate::{
-    rx_ampdu::{RX_BLOCK_ACK_MAX_WINDOW, STA_RX_BLOCK_ACK_BANK_COUNT},
+    rx_ampdu::{RX_BLOCK_ACK_BANK_COUNT, RX_BLOCK_ACK_MAX_WINDOW},
     rx_ampdu_hw::S31_RX_BLOCK_ACK_MAX_TID,
     tx_ampdu::{TX_AMPDU_SLOT_CAPACITY, TX_BLOCK_ACK_MAX_WINDOW},
 };
@@ -59,7 +59,7 @@ pub const ESP32S31_MAC_SERVICE_CAPABILITIES: MacServiceCapabilities = MacService
         // simultaneous multi-channel scheduler.
         channel_contexts: 1,
         ordinary_tx_queues: 4,
-        rx_block_ack_entries: STA_RX_BLOCK_ACK_BANK_COUNT as u8,
+        rx_block_ack_entries: RX_BLOCK_ACK_BANK_COUNT as u8,
         rx_block_ack_max_tid: S31_RX_BLOCK_ACK_MAX_TID,
         rx_block_ack_max_window: RX_BLOCK_ACK_MAX_WINDOW,
         tx_block_ack_max_window: TX_BLOCK_ACK_MAX_WINDOW,
@@ -106,7 +106,7 @@ mod tests {
         assert_eq!(resources.ordinary_tx_queues, 4);
         assert_eq!(
             resources.rx_block_ack_entries as usize,
-            STA_RX_BLOCK_ACK_BANK_COUNT
+            RX_BLOCK_ACK_BANK_COUNT
         );
         assert_eq!(resources.rx_block_ack_max_window, RX_BLOCK_ACK_MAX_WINDOW);
         assert_eq!(resources.tx_block_ack_max_window, TX_BLOCK_ACK_MAX_WINDOW);

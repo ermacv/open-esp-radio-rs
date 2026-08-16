@@ -146,8 +146,8 @@ where
                 shutdown.reorder_commands = shutdown.reorder_commands.saturating_add(1);
             }
         }
-        for reorder in &mut self.runtime.reorders {
-            if reorder.take().is_some() {
+        for bank in 0..RX_BLOCK_ACK_BANK_COUNT {
+            if self.runtime.reorder_banks.stop_bank(bank).is_some() {
                 shutdown.active_reorders = shutdown.active_reorders.saturating_add(1);
             }
         }

@@ -10,7 +10,8 @@ use open_esp_radio_esp32s31_hal::types::{
 };
 use open_esp_radio_esp32s31_wifi_mac::{
     crypto::{CcmpKeyHardware, install_sta_pairwise_ccmp},
-    rx_ampdu_hw::{S31RxBlockAckAgreement, S31RxBlockAckAgreementError},
+    rx_ampdu::RxBlockAckSnapshot,
+    rx_ampdu_hw::{RxBlockAckHardware, S31RxBlockAckAgreement, S31RxBlockAckAgreementError},
     tx::{HardwareOwnedTxDma, LegacyRate, PreparedTxDma, TxCompletion, TxHardware, TxSlot},
     tx_ampdu::{BlockAckAction, STA_TX_BLOCK_ACK_TIDS, StaTxBlockAckSessions},
     tx_runtime::WifiTxRuntimePolicy,
@@ -96,11 +97,7 @@ impl TxHardware for Hardware {
     }
 }
 
-impl ConnectedControlHardware for Hardware {
-    fn station_tsf(&mut self) -> u64 {
-        self.station_tsf
-    }
-
+impl RxBlockAckHardware for Hardware {
     fn program_rx_block_ack(
         &mut self,
         agreement: S31RxBlockAckAgreement,
@@ -119,6 +116,12 @@ impl ConnectedControlHardware for Hardware {
         self.cleared[self.clear_count] = Some(hardware_index);
         self.clear_count += 1;
         Ok(())
+    }
+}
+
+impl ConnectedControlHardware for Hardware {
+    fn station_tsf(&mut self) -> u64 {
+        self.station_tsf
     }
 
     fn set_he_tid_enabled(
@@ -349,6 +352,13 @@ fn rx_addba_hardware_is_committed_only_after_response_tx_success() {
         Ok(WdevControlProgress::TxPending)
     );
     let agreement = hardware.programmed.unwrap();
+    let snapshot = RxBlockAckSnapshot {
+        hardware_index: agreement.hardware_index,
+        peer: BSSID,
+        tid: 3,
+        starting_sequence: 0x123,
+        window: 16,
+    };
     assert_eq!(agreement.tid, 3);
     assert!(
         control
@@ -359,11 +369,7 @@ fn rx_addba_hardware_is_committed_only_after_response_tx_success() {
     );
     assert_eq!(
         try_receive_rx_reorder_command(&reorder_receiver),
-        Some(RxReorderCommand::Start {
-            tid: 3,
-            starting_sequence: 0x123,
-            window: 16,
-        })
+        Some(RxReorderCommand::Start(snapshot))
     );
 
     finish_tx(&mut hardware, &mut tx, 0);
@@ -393,7 +399,7 @@ fn rx_addba_hardware_is_committed_only_after_response_tx_success() {
     );
     assert_eq!(
         try_receive_rx_reorder_command(&reorder_receiver),
-        Some(RxReorderCommand::Stop { tid: 3 })
+        Some(RxReorderCommand::Stop(snapshot.identity()))
     );
     assert_eq!(hardware.cleared[0], Some(agreement.hardware_index));
 }
@@ -434,10 +440,18 @@ fn failed_rx_addba_response_rolls_back_hardware_and_software() {
         embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
         Ok(WdevControlProgress::TxPending)
     );
-    let hardware_index = hardware.programmed.unwrap().hardware_index;
+    let agreement = hardware.programmed.unwrap();
+    let snapshot = RxBlockAckSnapshot {
+        hardware_index: agreement.hardware_index,
+        peer: BSSID,
+        tid: 3,
+        starting_sequence: 0x123,
+        window: 16,
+    };
+    let hardware_index = agreement.hardware_index;
     assert!(matches!(
         try_receive_rx_reorder_command(&reorder_receiver),
-        Some(RxReorderCommand::Start { tid: 3, .. })
+        Some(RxReorderCommand::Start(observed)) if observed == snapshot
     ));
 
     // Status 2 is the vendor CTS-timeout retry path. Use the terminal
@@ -450,7 +464,7 @@ fn failed_rx_addba_response_rolls_back_hardware_and_software() {
     assert_eq!(hardware.cleared[0], Some(hardware_index));
     assert_eq!(
         try_receive_rx_reorder_command(&reorder_receiver),
-        Some(RxReorderCommand::Stop { tid: 3 })
+        Some(RxReorderCommand::Stop(snapshot.identity()))
     );
     assert!(
         control

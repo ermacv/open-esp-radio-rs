@@ -53,6 +53,7 @@ struct Backend {
     network_pending_seen: bool,
     backpressure_once: bool,
     repost_rx_when_backpressured: bool,
+    software_rx_work: bool,
     stop_after_tx: Option<&'static AtomicBool>,
 }
 
@@ -75,6 +76,7 @@ impl WdevServices<'static, NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, QUEU
     ) -> impl Future<Output = Result<WdevRxProgress, Self::Error>> + 'a {
         async move {
             self.push(1);
+            self.software_rx_work = false;
             if self.backpressure_once {
                 self.backpressure_once = false;
                 if self.repost_rx_when_backpressured {
@@ -87,6 +89,10 @@ impl WdevServices<'static, NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, QUEU
             }
             Ok(WdevRxProgress::Drained)
         }
+    }
+
+    fn has_rx_work(&self) -> bool {
+        self.software_rx_work
     }
 
     fn service_control<'a>(
@@ -649,6 +655,7 @@ fn frame_arriving_inside_select_rechecks_control_as_network_pending() {
         network_pending_seen: false,
         backpressure_once: false,
         repost_rx_when_backpressured: false,
+        software_rx_work: false,
         stop_after_tx: None,
     };
     let mut runner = WdevRunner::new(irq, network, services);
@@ -663,6 +670,41 @@ fn frame_arriving_inside_select_rechecks_control_as_network_pending() {
     );
     drop(run);
     assert!(runner.services().network_pending_seen);
+}
+
+#[test]
+fn due_software_rx_frontier_runs_without_forging_a_hardware_irq() {
+    let resources = std::boxed::Box::leak(std::boxed::Box::new(Resources::new()));
+    let pool = Pool::pin_static(std::boxed::Box::leak(std::boxed::Box::new(Pool::new())));
+    let (_device, network) = resources.split(pool, [2, 3, 4, 5, 6, 7]);
+    let irq = std::boxed::Box::leak(std::boxed::Box::new(
+        EmbassyMacIrqRuntime::<NoopRawMutex>::new(),
+    ));
+    let services = Backend {
+        irq,
+        order: [0; 3],
+        count: 0,
+        publish_irq: false,
+        deadline_ready: false,
+        tx_wake: None,
+        queue_control_on_rx: true,
+        control_pending: false,
+        complete_tx_before_control: false,
+        disconnect: false,
+        network_pending_seen: false,
+        backpressure_once: false,
+        repost_rx_when_backpressured: false,
+        software_rx_work: true,
+        stop_after_tx: None,
+    };
+    let mut runner = WdevRunner::new(irq, network, services);
+
+    assert_eq!(
+        embassy_futures::block_on(runner.run()),
+        Err(TestError::Finished)
+    );
+    assert_eq!(runner.services().order[..2], [1, 3]);
+    assert!(!irq.rx_signaled());
 }
 
 #[test]
@@ -762,6 +804,7 @@ fn rx_is_serviced_before_tx_when_both_irqs_are_ready() {
         network_pending_seen: false,
         backpressure_once: false,
         repost_rx_when_backpressured: false,
+        software_rx_work: false,
         stop_after_tx: None,
     };
     let mut runner = WdevRunner::new(irq, network, services);
@@ -802,6 +845,7 @@ fn staging_backpressure_gates_new_rx_edges_but_not_tx_completion() {
         network_pending_seen: false,
         backpressure_once: true,
         repost_rx_when_backpressured: true,
+        software_rx_work: false,
         stop_after_tx: None,
     };
     let mut runner = WdevRunner::new(irq, network, services);
@@ -843,6 +887,7 @@ fn executor_deadline_services_tx_without_an_interrupt() {
         network_pending_seen: false,
         backpressure_once: false,
         repost_rx_when_backpressured: false,
+        software_rx_work: false,
         stop_after_tx: None,
     };
     let mut runner = WdevRunner::new(irq, network, services);
@@ -878,6 +923,7 @@ fn rx_control_waits_for_the_active_network_tx_then_precedes_another_lease() {
         network_pending_seen: false,
         backpressure_once: false,
         repost_rx_when_backpressured: false,
+        software_rx_work: false,
         stop_after_tx: None,
     };
     let mut runner = WdevRunner::new(irq, network, services);
@@ -912,6 +958,7 @@ fn caller_stop_publishes_link_down_and_returns_distinct_outcome() {
         network_pending_seen: false,
         backpressure_once: false,
         repost_rx_when_backpressured: false,
+        software_rx_work: false,
         stop_after_tx: None,
     };
     let mut runner = WdevRunner::new(irq, network, services);
@@ -954,6 +1001,7 @@ fn caller_stop_waits_for_active_tx_to_release_hardware() {
         network_pending_seen: false,
         backpressure_once: false,
         repost_rx_when_backpressured: false,
+        software_rx_work: false,
         stop_after_tx: Some(stop),
     };
     let stop_future = core::future::poll_fn(|context| {
@@ -1007,6 +1055,7 @@ fn disconnected_control_edge_publishes_link_down_and_returns() {
         network_pending_seen: false,
         backpressure_once: false,
         repost_rx_when_backpressured: false,
+        software_rx_work: false,
         stop_after_tx: None,
     };
     let mut runner = WdevRunner::new(irq, network, services);

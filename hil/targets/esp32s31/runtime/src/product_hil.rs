@@ -170,6 +170,7 @@ static AP_TX_BLOCK_ACK_RESPONSES_OBSERVED: AtomicU32 = AtomicU32::new(0);
 static AP_TX_BLOCK_ACK_AGREEMENTS_OPERATIONAL: AtomicU32 = AtomicU32::new(0);
 static AP_TX_BLOCK_ACK_RESPONSES_REJECTED: AtomicU32 = AtomicU32::new(0);
 static AP_TX_BLOCK_ACK_NEGOTIATION_TIMEOUTS: AtomicU32 = AtomicU32::new(0);
+static AP_RX_BLOCK_ACK_RESPONSES_TRANSMITTED: AtomicU32 = AtomicU32::new(0);
 static AP_COMPLETED_RX_UNITS: AtomicU32 = AtomicU32::new(0);
 static AP_COMPLETED_RX_DESCRIPTORS: AtomicU32 = AtomicU32::new(0);
 static AP_RECYCLED_RX_DESCRIPTORS: AtomicU32 = AtomicU32::new(0);
@@ -279,6 +280,10 @@ fn observe_access_point(observation: Esp32s31AccessPointObservation) {
     );
     AP_TX_BLOCK_ACK_NEGOTIATION_TIMEOUTS.store(
         observation.tx_block_ack_negotiation_timeouts,
+        Ordering::Release,
+    );
+    AP_RX_BLOCK_ACK_RESPONSES_TRANSMITTED.store(
+        observation.rx_block_ack_responses_transmitted,
         Ordering::Release,
     );
     AP_COMPLETED_RX_UNITS.store(observation.completed_rx_units, Ordering::Release);
@@ -411,6 +416,8 @@ fn access_point_evidence(
         tx_block_ack_responses_rejected: AP_TX_BLOCK_ACK_RESPONSES_REJECTED
             .load(Ordering::Acquire),
         tx_block_ack_negotiation_timeouts: AP_TX_BLOCK_ACK_NEGOTIATION_TIMEOUTS
+            .load(Ordering::Acquire),
+        rx_block_ack_responses_transmitted: AP_RX_BLOCK_ACK_RESPONSES_TRANSMITTED
             .load(Ordering::Acquire),
         completed_rx_units: AP_COMPLETED_RX_UNITS.load(Ordering::Acquire),
         completed_rx_descriptors: AP_COMPLETED_RX_DESCRIPTORS.load(Ordering::Acquire),
@@ -1397,6 +1404,7 @@ async fn wifi_role_task(
                     AP_TX_BLOCK_ACK_AGREEMENTS_OPERATIONAL.store(0, Ordering::Release);
                     AP_TX_BLOCK_ACK_RESPONSES_REJECTED.store(0, Ordering::Release);
                     AP_TX_BLOCK_ACK_NEGOTIATION_TIMEOUTS.store(0, Ordering::Release);
+                    AP_RX_BLOCK_ACK_RESPONSES_TRANSMITTED.store(0, Ordering::Release);
                     AP_COMPLETED_RX_UNITS.store(0, Ordering::Release);
                     AP_COMPLETED_RX_DESCRIPTORS.store(0, Ordering::Release);
                     AP_RECYCLED_RX_DESCRIPTORS.store(0, Ordering::Release);

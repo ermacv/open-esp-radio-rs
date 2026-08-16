@@ -8,7 +8,11 @@
 use crate::connected_rx::ConnectedRxControlEvent;
 use open_esp_radio_esp32s31_wifi::wdev::{WdevControlContext, WdevControlProgress};
 use open_esp_radio_esp32s31_wifi_mac::{
-    rx_ampdu::{StaRxBlockAckActivation, StaRxBlockAckSessions, StaRxBlockAckSessionsError},
+    MacInterface,
+    rx_ampdu::{
+        RxBlockAckActivation, RxBlockAckRequest, RxBlockAckSessions, RxBlockAckSessionsError,
+        RxReorderCommand, RxReorderCommandError,
+    },
     rx_ampdu_hw::S31RxBlockAckAgreementError,
     tx::TxHardware,
     tx_ampdu::{
@@ -78,7 +82,7 @@ pub enum ConnectedControlTxKind {
 }
 
 enum ControlInFlight {
-    RxAddba(StaRxBlockAckActivation),
+    RxAddba(RxBlockAckActivation),
     TxAddba { tid: u8 },
     BeaconProbe,
     PowerManagement(StaPowerManagement),
@@ -95,26 +99,6 @@ impl ControlInFlight {
             Self::PowerManagement(mode) => ConnectedControlTxKind::PowerManagement(*mode),
         }
     }
-}
-
-/// Semantic command from connected control to the RX reorder owner.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum RxReorderCommand {
-    Start {
-        tid: u8,
-        starting_sequence: u16,
-        window: u16,
-    },
-    Stop {
-        tid: u8,
-    },
-    StopAll,
-}
-
-/// Bounded reorder-command publication failure.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum RxReorderCommandError {
-    Full(RxReorderCommand),
 }
 
 /// Runtime-neutral sink for semantic RX reorder commands.
@@ -236,7 +220,7 @@ pub struct ConnectedControlCoreShutdown {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ConnectedControlError {
-    RxSession(StaRxBlockAckSessionsError),
+    RxSession(RxBlockAckSessionsError),
     TxSession(StaTxBlockAckSessionsError),
     Hardware(S31RxBlockAckAgreementError),
     Tx(SingleMpduTxError),
@@ -248,8 +232,8 @@ pub enum ConnectedControlError {
     RxReorderCommand(RxReorderCommandError),
 }
 
-impl From<StaRxBlockAckSessionsError> for ConnectedControlError {
-    fn from(error: StaRxBlockAckSessionsError) -> Self {
+impl From<RxBlockAckSessionsError> for ConnectedControlError {
+    fn from(error: RxBlockAckSessionsError) -> Self {
         Self::RxSession(error)
     }
 }
@@ -303,7 +287,7 @@ struct ConnectedControlObservations {
 pub struct Esp32s31ConnectedControlCore {
     peer: [u8; 6],
     he_enabled: bool,
-    rx_block_ack: StaRxBlockAckSessions,
+    rx_block_ack: RxBlockAckSessions,
     tx_block_ack: StaTxBlockAckSessions,
     initial_tx_block_ack: [bool; 3],
     tx_block_ack_attempts_remaining: [u8; 3],
@@ -321,7 +305,7 @@ impl Esp32s31ConnectedControlCore {
         Self {
             peer,
             he_enabled,
-            rx_block_ack: StaRxBlockAckSessions::new(),
+            rx_block_ack: RxBlockAckSessions::new(),
             tx_block_ack,
             initial_tx_block_ack: [false; 3],
             tx_block_ack_attempts_remaining: [0; 3],
@@ -338,8 +322,8 @@ impl Esp32s31ConnectedControlCore {
     pub fn set_rx_block_ack_maximum_window(
         &mut self,
         maximum_window: u16,
-    ) -> Result<(), StaRxBlockAckSessionsError> {
-        self.rx_block_ack = StaRxBlockAckSessions::with_maximum_window(maximum_window)?;
+    ) -> Result<(), RxBlockAckSessionsError> {
+        self.rx_block_ack = RxBlockAckSessions::with_maximum_window(maximum_window)?;
         Ok(())
     }
 
@@ -363,7 +347,7 @@ impl Esp32s31ConnectedControlCore {
         self.tx_block_ack_attempts_remaining.fill(attempt_limit);
     }
 
-    pub const fn rx_block_ack(&self) -> &StaRxBlockAckSessions {
+    pub const fn rx_block_ack(&self) -> &RxBlockAckSessions {
         &self.rx_block_ack
     }
 
@@ -469,12 +453,12 @@ impl Esp32s31ConnectedControlCore {
         let mut rx_block_ack_agreements = 0_u8;
         for agreement in self.rx_block_ack.snapshots().into_iter().flatten() {
             hardware.clear_rx_block_ack(agreement.hardware_index)?;
-            let stopped = self.rx_block_ack.stop(agreement.tid);
+            let stopped = self.rx_block_ack.stop(self.peer, agreement.tid);
             debug_assert_eq!(stopped, Some(agreement));
             rx_block_ack_agreements = rx_block_ack_agreements.saturating_add(1);
         }
         let maximum_window = self.rx_block_ack.maximum_window();
-        self.rx_block_ack = StaRxBlockAckSessions::with_maximum_window(maximum_window)
+        self.rx_block_ack = RxBlockAckSessions::with_maximum_window(maximum_window)
             .expect("an existing RX BlockAck maximum remains valid");
 
         let mut tx_block_ack_sessions = 0_u8;
@@ -540,9 +524,7 @@ impl Esp32s31ConnectedControlCore {
                 }
                 ControlInFlight::RxAddba(activation) => {
                     hardware.clear_rx_block_ack(activation.hardware().hardware_index)?;
-                    reorder.publish(RxReorderCommand::Stop {
-                        tid: activation.negotiated().tid,
-                    })?;
+                    reorder.publish(RxReorderCommand::Stop(activation.negotiated().identity()))?;
                     self.rx_block_ack.cancel(activation)?;
                 }
                 ControlInFlight::TxAddba { .. } if success => {}
@@ -725,15 +707,17 @@ impl Esp32s31ConnectedControlCore {
                 starting_sequence,
                 ..
             } => {
-                self.rx_block_ack.offer(
+                self.rx_block_ack.offer(RxBlockAckRequest {
+                    peer: self.peer,
                     dialog_token,
                     tid,
                     immediate,
-                    window,
+                    requested_window: window,
                     timeout_tu,
                     starting_sequence,
-                )?;
-                let Some(activation) = self.rx_block_ack.begin_pending(self.peer)? else {
+                })?;
+                let Some(activation) = self.rx_block_ack.begin_pending(MacInterface::Station)?
+                else {
                     return Ok(WdevControlProgress::More);
                 };
                 self.start_rx_addba_response(hardware, tx, reorder, activation)
@@ -776,9 +760,9 @@ impl Esp32s31ConnectedControlCore {
             }
             BlockAckAction::Delba { tid, initiator, .. } => {
                 if initiator {
-                    if let Some(agreement) = self.rx_block_ack.stop(tid) {
+                    if let Some(agreement) = self.rx_block_ack.stop(self.peer, tid) {
                         hardware.clear_rx_block_ack(agreement.hardware_index)?;
-                        reorder.publish(RxReorderCommand::Stop { tid })?;
+                        reorder.publish(RxReorderCommand::Stop(agreement.identity()))?;
                     }
                 } else {
                     self.tx_block_ack.stop(tid);
@@ -834,7 +818,7 @@ impl Esp32s31ConnectedControlCore {
         R: ConnectedControlReorder,
     {
         for agreement in self.rx_block_ack.snapshots().into_iter().flatten() {
-            self.rx_block_ack.stop(agreement.tid);
+            self.rx_block_ack.stop(self.peer, agreement.tid);
             hardware.clear_rx_block_ack(agreement.hardware_index)?;
         }
         reorder.publish(RxReorderCommand::StopAll)?;
@@ -885,7 +869,7 @@ impl Esp32s31ConnectedControlCore {
         hardware: &mut H,
         tx: &mut X,
         reorder: &mut R,
-        activation: StaRxBlockAckActivation,
+        activation: RxBlockAckActivation,
     ) -> Result<WdevControlProgress<ConnectedDisconnectReason>, ConnectedControlError>
     where
         H: ConnectedControlHardware,
@@ -893,7 +877,7 @@ impl Esp32s31ConnectedControlCore {
         R: ConnectedControlReorder,
     {
         if let Some(replaced) = activation.replaced() {
-            if let Err(error) = reorder.publish(RxReorderCommand::Stop { tid: replaced.tid }) {
+            if let Err(error) = reorder.publish(RxReorderCommand::Stop(replaced.identity())) {
                 hardware.clear_rx_block_ack(replaced.hardware_index)?;
                 self.rx_block_ack.cancel(activation)?;
                 return Err(error.into());
@@ -902,11 +886,7 @@ impl Esp32s31ConnectedControlCore {
         }
         hardware.program_rx_block_ack(activation.hardware())?;
         let negotiated = activation.negotiated();
-        if let Err(error) = reorder.publish(RxReorderCommand::Start {
-            tid: negotiated.tid,
-            starting_sequence: negotiated.starting_sequence,
-            window: negotiated.window,
-        }) {
+        if let Err(error) = reorder.publish(RxReorderCommand::Start(negotiated)) {
             hardware.clear_rx_block_ack(activation.hardware().hardware_index)?;
             self.rx_block_ack.cancel(activation)?;
             return Err(error.into());
@@ -917,9 +897,7 @@ impl Esp32s31ConnectedControlCore {
             ActionTxConfig::RX_ADDBA_RESPONSE,
         ) {
             hardware.clear_rx_block_ack(activation.hardware().hardware_index)?;
-            reorder.publish(RxReorderCommand::Stop {
-                tid: activation.negotiated().tid,
-            })?;
+            reorder.publish(RxReorderCommand::Stop(activation.negotiated().identity()))?;
             self.rx_block_ack.cancel(activation)?;
             return Err(error.into());
         }

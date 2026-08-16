@@ -34,8 +34,8 @@ where
         let Some(key) = self.dispatcher.reorder_key(frame.segment()) else {
             return Some(self.dispatch_owned_frame(frame).await);
         };
-        let tid = usize::from(key.tid);
-        let active = tid < self.runtime.reorders.len() && self.runtime.reorders[tid].is_some();
+        let bank = self.runtime.reorder_banks.find(key.peer, key.tid);
+        let active = bank.is_some();
         if let Some(observer) = self.pipeline_observer {
             observer.observe(RxPipelineObservation::ReorderIngress {
                 active,
@@ -45,7 +45,8 @@ where
         if !active {
             return Some(self.dispatch_owned_frame(frame).await);
         }
-        if let Some(start) = self.runtime.reorder_first_starts[tid].take()
+        let bank = bank.expect("active reorder has one hardware-bank identity");
+        if let Some(start) = self.runtime.reorder_first_starts[bank].take()
             && let Some(observer) = self.pipeline_observer
         {
             observer.observe(RxPipelineObservation::ReorderFirst {
@@ -55,8 +56,10 @@ where
             });
         }
 
-        let retain = match self.runtime.reorders[tid]
-            .as_ref()
+        let retain = match self
+            .runtime
+            .reorder_banks
+            .state(bank)
             .expect("active TID was checked above")
             .retains_on_ingest(key.sequence)
         {
@@ -118,8 +121,10 @@ where
             sequence: key.sequence,
             slot: slot as u8,
         };
-        let release = match self.runtime.reorders[tid]
-            .as_mut()
+        let release = match self
+            .runtime
+            .reorder_banks
+            .state_mut(bank)
             .expect("active TID was checked above")
             .ingest(mpdu)
         {
@@ -138,7 +143,7 @@ where
                 });
             }
         };
-        self.update_gap_deadline(tid);
+        self.update_gap_deadline(bank);
         self.record_reorder_occupied();
         if release.buffered {
             if retain_hot {
@@ -154,12 +159,13 @@ where
                     if let Some(observer) = self.pipeline_observer {
                         observer.observe(RxPipelineObservation::ReorderDiscarded);
                     }
-                    let mut reorder = self.runtime.reorders[tid]
-                        .take()
+                    let rollback = self
+                        .runtime
+                        .reorder_banks
+                        .stop_bank(bank)
                         .expect("active reorder owns the failed retained copy");
-                    let rollback = reorder.stop();
-                    self.runtime.gap_deadlines[tid] = None;
-                    self.runtime.reorder_first_starts[tid] = None;
+                    self.runtime.gap_deadlines[bank] = None;
+                    self.runtime.reorder_first_starts[bank] = None;
                     drop(reservation);
                     return self
                         .dispatch_release_with_current(rollback, slot, frame)
@@ -185,44 +191,40 @@ where
         command: RxReorderCommand,
     ) -> Option<ConnectedRxDispatch> {
         match command {
-            RxReorderCommand::Start {
-                tid,
-                starting_sequence,
-                window,
-            } => {
-                let tid = usize::from(tid);
-                if tid >= self.runtime.reorders.len() {
+            RxReorderCommand::Start(agreement) => {
+                let bank = usize::from(agreement.hardware_index);
+                let released = self.runtime.reorder_banks.start(agreement).ok().flatten();
+                if self.runtime.reorder_banks.identity(bank) != Some(agreement.identity()) {
                     return None;
                 }
-                let released = self.stop_reorder(tid).await;
-                self.runtime.reorders[tid] = RxBlockAckReorderState::<RX_REORDER_SLOT_DOMAIN>::new(
-                    starting_sequence,
-                    window,
-                )
-                .ok();
-                self.runtime.reorder_first_starts[tid] = Some(starting_sequence);
-                self.runtime.gap_deadlines[tid] = None;
+                self.runtime.reorder_first_starts[bank] = Some(agreement.starting_sequence);
+                self.runtime.gap_deadlines[bank] = None;
                 if let Some(observer) = self.pipeline_observer {
                     observer.observe(RxPipelineObservation::ReorderStarted {
-                        tid: tid as u8,
-                        starting_sequence,
-                        window,
+                        tid: agreement.tid,
+                        starting_sequence: agreement.starting_sequence,
+                        window: agreement.window,
                     });
                 }
-                released
+                match released {
+                    Some(release) => self.dispatch_release(release).await,
+                    None => None,
+                }
             }
-            RxReorderCommand::Stop { tid } => {
-                let tid = usize::from(tid);
-                if tid >= self.runtime.reorders.len() {
+            RxReorderCommand::Stop(identity) => {
+                let bank = usize::from(identity.hardware_index);
+                if bank >= RX_BLOCK_ACK_BANK_COUNT
+                    || self.runtime.reorder_banks.identity(bank) != Some(identity)
+                {
                     None
                 } else {
-                    self.stop_reorder(tid).await
+                    self.stop_reorder(bank).await
                 }
             }
             RxReorderCommand::StopAll => {
                 let mut result = None;
-                for tid in 0..self.runtime.reorders.len() {
-                    if let Some(released) = self.stop_reorder(tid).await {
+                for bank in 0..RX_BLOCK_ACK_BANK_COUNT {
+                    if let Some(released) = self.stop_reorder(bank).await {
                         result = Some(released);
                     }
                 }
@@ -231,11 +233,10 @@ where
         }
     }
 
-    async fn stop_reorder(&mut self, tid: usize) -> Option<ConnectedRxDispatch> {
-        self.runtime.gap_deadlines[tid] = None;
-        self.runtime.reorder_first_starts[tid] = None;
-        let mut reorder = self.runtime.reorders[tid].take()?;
-        let release = reorder.stop();
+    async fn stop_reorder(&mut self, bank: usize) -> Option<ConnectedRxDispatch> {
+        self.runtime.gap_deadlines[bank] = None;
+        self.runtime.reorder_first_starts[bank] = None;
+        let release = self.runtime.reorder_banks.stop_bank(bank)?;
         if let Some(observer) = self.pipeline_observer {
             observer.observe(RxPipelineObservation::ReorderStopped);
         }
@@ -254,8 +255,10 @@ where
     }
 
     fn update_gap_deadline(&mut self, tid: usize) {
-        if self.runtime.reorders[tid]
-            .as_ref()
+        if self
+            .runtime
+            .reorder_banks
+            .state(tid)
             .is_some_and(|reorder| reorder.occupied() != 0)
         {
             self.runtime.gap_deadlines[tid].get_or_insert_with(|| {
@@ -268,7 +271,7 @@ where
 
     pub(super) async fn expire_reorder_gap(&mut self, tid: usize) -> Option<ConnectedRxDispatch> {
         self.runtime.gap_deadlines[tid] = None;
-        let release = self.runtime.reorders[tid].as_mut()?.expire_gap();
+        let release = self.runtime.reorder_banks.state_mut(tid)?.expire_gap();
         if let Some(observer) = self.pipeline_observer {
             observer.observe(RxPipelineObservation::ReorderGapExpired);
         }
@@ -281,13 +284,7 @@ where
         let Some(observer) = self.pipeline_observer else {
             return;
         };
-        let occupied = self
-            .runtime
-            .reorders
-            .iter()
-            .flatten()
-            .map(RxBlockAckReorderState::occupied)
-            .sum();
+        let occupied = self.runtime.reorder_banks.occupied();
         observer.observe(RxPipelineObservation::ReorderOccupied { occupied });
     }
 

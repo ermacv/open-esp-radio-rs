@@ -105,6 +105,14 @@ where
                 WdevControlProgress::Idle => {}
             }
 
+            // A reorder timeout releases already-owned frames and therefore
+            // has no new MAC interrupt edge. Service that explicit software
+            // frontier before granting a new network TX transaction.
+            if self.services.has_rx_work() {
+                self.service_rx().await?;
+                continue;
+            }
+
             let network_tx_pending =
                 self.services.has_prepared_tx() || self.network.tx_queue_len() != 0;
 

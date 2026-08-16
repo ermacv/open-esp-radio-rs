@@ -46,6 +46,7 @@ enum PendingPublication {
     BlockAckRequest {
         peer: [u8; 6],
     },
+    RxBlockAckResponse,
     PeerDisconnect {
         close: ApPeerClose,
         stage: Esp32s31ApPeerDisconnectStage,
@@ -65,6 +66,7 @@ pub struct Esp32s31ApMacReport {
     pub association_responses_transmitted: u32,
     pub eapol_frames_transmitted: u32,
     pub data_frames_transmitted: u32,
+    pub rx_block_ack_responses_transmitted: u32,
     pub data_tx: Esp32s31ApDataTxReport,
     /// Disconnect transactions accepted by the hardware TX owner.
     pub disassociations_published: u32,
@@ -338,6 +340,23 @@ where
         Ok(())
     }
 
+    pub fn publish_rx_block_ack_response<H: TxHardware>(
+        &mut self,
+        hardware: &mut H,
+        peer: [u8; 6],
+        body: &[u8],
+        scratch: &mut [u8],
+    ) -> Result<(), Esp32s31ApMacError> {
+        self.require_idle()?;
+        let length = self
+            .engine
+            .encode_rx_block_ack_response(peer, body, scratch)?;
+        self.transmit
+            .start_encoded(hardware, Esp32s31ApTxClass::Management, &scratch[..length])?;
+        self.pending = Some(PendingPublication::RxBlockAckResponse);
+        Ok(())
+    }
+
     pub fn publish_tx_block_ack_request<H: TxHardware>(
         &mut self,
         hardware: &mut H,
@@ -578,6 +597,13 @@ where
                 Esp32s31ApTxCompletionAction::None
             }
             PendingPublication::BlockAckRequest { .. } => Esp32s31ApTxCompletionAction::None,
+            PendingPublication::RxBlockAckResponse => {
+                self.report.rx_block_ack_responses_transmitted = self
+                    .report
+                    .rx_block_ack_responses_transmitted
+                    .saturating_add(1);
+                Esp32s31ApTxCompletionAction::None
+            }
             PendingPublication::PeerDisconnect { close, stage } => {
                 match stage {
                     Esp32s31ApPeerDisconnectStage::Disassociation => {

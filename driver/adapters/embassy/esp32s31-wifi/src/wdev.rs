@@ -314,6 +314,13 @@ pub trait WdevServices<
         true
     }
 
+    /// Whether role-owned software RX work is ready without a fresh hardware
+    /// interrupt. This covers finite reorder deadlines and retained batches;
+    /// it must not report speculative hardware work.
+    fn has_rx_work(&self) -> bool {
+        false
+    }
+
     /// Apply at most one owned control event or publish one control frame.
     ///
     /// The runner invokes this only while no network TX transaction owns the

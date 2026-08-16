@@ -8,6 +8,25 @@ pub(super) struct NetworkTxPending {
     attempts_before: u32,
 }
 
+#[derive(Default)]
+struct BoundedRxTurn<const LIMIT: usize> {
+    observation_passes: usize,
+    serviced_descriptors: usize,
+}
+
+impl<const LIMIT: usize> BoundedRxTurn<LIMIT> {
+    fn observe(&mut self, completed_descriptors: usize) {
+        self.observation_passes = self.observation_passes.saturating_add(1);
+        self.serviced_descriptors = self
+            .serviced_descriptors
+            .saturating_add(completed_descriptors);
+    }
+
+    fn has_budget(&self) -> bool {
+        self.observation_passes < LIMIT && self.serviced_descriptors < LIMIT
+    }
+}
+
 pub(super) struct Esp32s31AccessPointWdevServices<
     'run,
     'storage,
@@ -303,6 +322,7 @@ where
     H: RxDma
         + TxHardware
         + Esp32s31ApRuntimeHardware
+        + RxBlockAckHardware
         + open_esp_radio_esp32s31_wifi_mac::tx_ampdu::HtAmpduHardware,
     O: FnMut(AccessPointServiceStatus),
     S: FnMut() -> ([u8; 32], u64),
@@ -316,14 +336,14 @@ where
         network_rx: &'a mut dyn WdevNetworkRx,
     ) -> impl Future<Output = Result<WdevRxProgress, Self::Error>> + 'a {
         async move {
-            let mut serviced_descriptors = 0_usize;
+            let mut turn = BoundedRxTurn::<COUNT>::default();
             loop {
                 if self.publish_pending_rx_batch(network_rx)?
                     == WdevRxProgress::NetworkBackpressured
                 {
                     return Ok(WdevRxProgress::NetworkBackpressured);
                 }
-                if serviced_descriptors == COUNT {
+                if !turn.has_budget() {
                     return Ok(WdevRxProgress::ProbePending);
                 }
                 if self
@@ -357,7 +377,7 @@ where
                     )
                     .await
                     .map_err(Esp32s31AccessPointWdevError::Control)?;
-                serviced_descriptors = serviced_descriptors.saturating_add(
+                turn.observe(
                     usize::try_from(
                         self.control
                             .report
@@ -394,7 +414,14 @@ where
                     })?
                     == Esp32s31RxFrontierContinuation::ProbePending
                 {
-                    return Ok(WdevRxProgress::ProbePending);
+                    // One AP control pass can publish only one retained
+                    // Ethernet batch, whereas one network TX turn may own a
+                    // complete A-MPDU. Keep consuming this finite RX turn
+                    // until its descriptor quota is exhausted instead of
+                    // granting one aggregate TX turn after every MPDU. The
+                    // next iteration performs the required delayed hardware
+                    // observation before touching another descriptor.
+                    continue;
                 }
                 if self.control.report.completed_rx_descriptors == completed_before {
                     return Ok(WdevRxProgress::Drained);
@@ -405,6 +432,10 @@ where
 
     fn service_rx_during_tx(&self) -> bool {
         false
+    }
+
+    fn has_rx_work(&self) -> bool {
+        self.control.rx_work_due(Instant::now().as_micros())
     }
 
     fn service_control<'a>(
@@ -526,6 +557,37 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bounded_rx_turn_keeps_one_mpdu_publication_inside_the_same_turn() {
+        let mut turn = BoundedRxTurn::<4>::default();
+
+        turn.observe(1);
+
+        assert!(turn.has_budget());
+    }
+
+    #[test]
+    fn bounded_rx_turn_yields_at_or_beyond_its_descriptor_quota() {
+        let mut exact = BoundedRxTurn::<4>::default();
+        exact.observe(4);
+        assert!(!exact.has_budget());
+
+        let mut overshoot = BoundedRxTurn::<4>::default();
+        overshoot.observe(5);
+        assert!(!overshoot.has_budget());
+    }
+
+    #[test]
+    fn bounded_rx_turn_yields_after_probes_without_descriptor_progress() {
+        let mut turn = BoundedRxTurn::<2>::default();
+
+        turn.observe(0);
+        assert!(turn.has_budget());
+        turn.observe(0);
+
+        assert!(!turn.has_budget());
+    }
 
     struct NetworkRx {
         capacity: usize,

@@ -396,7 +396,10 @@ fn notify_shared_network_rx_release() {
 }
 static RX_REORDER_COMMANDS: RxReorderCommandResources<CriticalSectionRawMutex> =
     RxReorderCommandResources::new();
-static RX_REORDER_STORAGE: RxReorderFrameStorage<RX_STAGE_CAPACITY, RX_REORDER_BACKING_SLOT_COUNT> =
+pub(super) static RX_REORDER_STORAGE: RxReorderFrameStorage<
+    RX_STAGE_CAPACITY,
+    RX_REORDER_BACKING_SLOT_COUNT,
+> =
     RxReorderFrameStorage::new();
 // Reorder machines and retained RX lease tokens are long-lived protocol
 // state. Keeping their arena static prevents this multi-kilobyte owner table

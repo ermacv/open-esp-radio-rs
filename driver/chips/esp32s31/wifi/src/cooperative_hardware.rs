@@ -412,3 +412,21 @@ impl CooperativeRadioHardware<'_> {
         replace_sta_group_ccmp(&mut self.wifi_mac_hal(), slot, key_id, temporal_key)
     }
 }
+
+impl open_esp_radio_esp32s31_wifi_mac::rx_ampdu_hw::RxBlockAckHardware
+    for CooperativeRadioHardware<'_>
+{
+    fn program_rx_block_ack(
+        &mut self,
+        agreement: S31RxBlockAckAgreement,
+    ) -> Result<(), S31RxBlockAckAgreementError> {
+        CooperativeRadioHardware::program_rx_block_ack(self, agreement)
+    }
+
+    fn clear_rx_block_ack(
+        &mut self,
+        hardware_index: u8,
+    ) -> Result<(), S31RxBlockAckAgreementError> {
+        CooperativeRadioHardware::clear_rx_block_ack(self, hardware_index)
+    }
+}

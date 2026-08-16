@@ -20,7 +20,7 @@ use open_esp_radio_esp32s31_wifi::{
     tx::{WifiTxProgress, WifiTxWake},
 };
 use open_esp_radio_esp32s31_wifi_ap::protocol::{
-    AccessPointServiceStatus, ApPeerClose, ApWpa2RetryProgress,
+    AP_MAX_CLIENTS, AccessPointServiceStatus, ApPeerClose, ApWpa2RetryProgress,
 };
 use open_esp_radio_esp32s31_wifi_ap::{
     ampdu::{Esp32s31ApAmpduError, Esp32s31ApAmpduProgress},
@@ -38,12 +38,21 @@ use open_esp_radio_esp32s31_wifi_mac::{
     init::MAC_COLD_RX_INTERRUPT_MASK,
     irq::{MAC_INT_COLLISION, MAC_INT_TX_COMPLETE, MAC_INT_TX_TIMEOUT, MacInterruptRoute},
     rx::{RxDescriptorSnapshot, RxDma, RxIngressConfig, RxRingHalted, view_normalized_rx_frame},
+    rx_ampdu::{
+        RxBlockAckActivation, RxBlockAckRequest, RxBlockAckSessions, RxBlockAckSessionsError,
+        write_declined_addba_response,
+    },
+    rx_ampdu_hw::{RxBlockAckHardware, S31RxBlockAckAgreementError},
     tx::TxHardware,
 };
 use open_esp_radio_ieee80211::data::EthernetFrameParts;
 use open_esp_radio_ieee80211::data::{
     DataInterfaceRole, IEEE80211_LEGACY_DATA_HEADER_LEN, IEEE80211_QOS_DATA_HEADER_LEN,
     plan_data_decapsulation,
+};
+use open_esp_radio_ieee80211::{
+    ap::{ApManagementRequest, parse_ap_management_request},
+    block_ack::BlockAckAction,
 };
 use open_esp_radio_wifi_embassy::await_stack_boundary;
 use open_esp_radio_wpa2::{OwnedEapolFrame, Wpa2Interface};
@@ -60,6 +69,7 @@ use crate::{
         Esp32s31RecycledRxDirective, Esp32s31RxFrontier, Esp32s31RxFrontierContinuation,
         Esp32s31RxFrontierDelay, Esp32s31RxFrontierError, Esp32s31RxFrontierSchedulerSnapshot,
     },
+    rx_reorder::{RX_REORDER_BACKING_SLOT_COUNT, RxReorderFrameStorage},
     wdev::{
         WdevControlContext, WdevControlProgress, WdevNetworkRx, WdevRunner, WdevRxProgress,
         WdevServices, WdevStopProgress,
@@ -71,10 +81,12 @@ const EAPOL_CAPACITY: usize = 512;
 
 mod ampdu;
 mod network_tx;
+mod rx_reorder;
 mod wdev;
 
 pub use ampdu::Esp32s31AccessPointAmpdu;
 use network_tx::Esp32s31AccessPointNetworkTx;
+pub use rx_reorder::{Esp32s31AccessPointRxReorder, Esp32s31AccessPointRxReorderError};
 use wdev::Esp32s31AccessPointWdevServices;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -129,6 +141,9 @@ pub enum Esp32s31AccessPointControlError {
     /// A live BlockAck agreement lost its corresponding peer HT facts.
     InvalidPeerHtRate,
     InvalidBeaconSchedule,
+    RxBlockAckSession(RxBlockAckSessionsError),
+    RxBlockAckHardware(S31RxBlockAckAgreementError),
+    RxBlockAckReorder(Esp32s31AccessPointRxReorderError),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -175,6 +190,10 @@ pub struct Esp32s31AccessPointStopped<
     pub rx_frame: &'storage mut [u8],
     pub tx_frame: &'storage mut [u8],
     pub data_rx: &'storage mut Esp32s31ApRxDispatcher,
+    pub rx_block_ack: &'storage mut RxBlockAckSessions<{ AP_MAX_CLIENTS }>,
+    pub rx_reorder: &'storage mut Esp32s31AccessPointRxReorder<'storage, DMA_BUFFER_SIZE>,
+    pub rx_reorder_storage:
+        &'storage RxReorderFrameStorage<DMA_BUFFER_SIZE, RX_REORDER_BACKING_SLOT_COUNT>,
     pub engine: open_esp_radio_esp32s31_wifi_ap::engine::Esp32s31ApEngineStop<'beacon>,
     pub control_report: Esp32s31AccessPointControlReport,
     pub mac_report: Esp32s31ApMacReport,
@@ -189,6 +208,24 @@ impl From<Esp32s31RxFrontierError> for Esp32s31AccessPointControlError {
 impl From<Esp32s31ApMacError> for Esp32s31AccessPointControlError {
     fn from(error: Esp32s31ApMacError) -> Self {
         Self::Mac(error)
+    }
+}
+
+impl From<RxBlockAckSessionsError> for Esp32s31AccessPointControlError {
+    fn from(error: RxBlockAckSessionsError) -> Self {
+        Self::RxBlockAckSession(error)
+    }
+}
+
+impl From<S31RxBlockAckAgreementError> for Esp32s31AccessPointControlError {
+    fn from(error: S31RxBlockAckAgreementError) -> Self {
+        Self::RxBlockAckHardware(error)
+    }
+}
+
+impl From<Esp32s31AccessPointRxReorderError> for Esp32s31AccessPointControlError {
+    fn from(error: Esp32s31AccessPointRxReorderError) -> Self {
+        Self::RxBlockAckReorder(error)
     }
 }
 
@@ -233,6 +270,49 @@ impl Esp32s31ApRxSink for DeferredAccessPointRxSink<'_> {
     }
 }
 
+fn observe_protected_dispatch(
+    dispatch: Esp32s31ApRxDispatch,
+    peer: Option<[u8; 6]>,
+    report: &mut Esp32s31AccessPointControlReport,
+    activity_peer: &mut Option<[u8; 6]>,
+) -> bool {
+    match dispatch {
+        Esp32s31ApRxDispatch::Data {
+            ethernet_frames, ..
+        } => {
+            if ethernet_frames != 0 {
+                *activity_peer = peer;
+                true
+            } else {
+                false
+            }
+        }
+        Esp32s31ApRxDispatch::Duplicate => {
+            report.protected_data_duplicates = report.protected_data_duplicates.saturating_add(1);
+            false
+        }
+        Esp32s31ApRxDispatch::ForeignPeer => {
+            report.protected_data_foreign = report.protected_data_foreign.saturating_add(1);
+            false
+        }
+        Esp32s31ApRxDispatch::Unauthorized => {
+            report.protected_data_unauthorized =
+                report.protected_data_unauthorized.saturating_add(1);
+            false
+        }
+        Esp32s31ApRxDispatch::Rejected(Esp32s31ApRxError::Radio(_)) => {
+            report.protected_data_radio_rejected =
+                report.protected_data_radio_rejected.saturating_add(1);
+            false
+        }
+        Esp32s31ApRxDispatch::Rejected(Esp32s31ApRxError::Data(_)) => {
+            report.protected_data_protocol_rejected =
+                report.protected_data_protocol_rejected.saturating_add(1);
+            false
+        }
+    }
+}
+
 /// Control-plane owner for one active AP role.
 pub struct Esp32s31AccessPointControl<
     'storage,
@@ -253,6 +333,11 @@ pub struct Esp32s31AccessPointControl<
     rx_frame: &'storage mut [u8],
     tx_frame: &'storage mut [u8],
     data_rx: &'storage mut Esp32s31ApRxDispatcher,
+    rx_block_ack: &'storage mut RxBlockAckSessions<{ AP_MAX_CLIENTS }>,
+    rx_reorder: &'storage mut Esp32s31AccessPointRxReorder<'storage, DMA_BUFFER_SIZE>,
+    rx_reorder_storage:
+        &'storage RxReorderFrameStorage<DMA_BUFFER_SIZE, RX_REORDER_BACKING_SLOT_COUNT>,
+    rx_addba_in_flight: Option<RxBlockAckActivation>,
     rx_batch_used: usize,
     rx_batch_offset: usize,
     report: Esp32s31AccessPointControlReport,
@@ -297,6 +382,12 @@ where
         rx_frame: &'storage mut [u8],
         tx_frame: &'storage mut [u8],
         data_rx: &'storage mut Esp32s31ApRxDispatcher,
+        rx_block_ack: &'storage mut RxBlockAckSessions<{ AP_MAX_CLIENTS }>,
+        rx_reorder: &'storage mut Esp32s31AccessPointRxReorder<'storage, DMA_BUFFER_SIZE>,
+        rx_reorder_storage: &'storage RxReorderFrameStorage<
+            DMA_BUFFER_SIZE,
+            RX_REORDER_BACKING_SLOT_COUNT,
+        >,
     ) -> Self {
         let access_point = mac.engine().service_address();
         data_rx.reset(Esp32s31ApRxConfig {
@@ -307,6 +398,9 @@ where
                 flags: 0,
             },
         });
+        *rx_block_ack = RxBlockAckSessions::new();
+        let discarded_reorder_frames = rx_reorder.discard_all();
+        debug_assert_eq!(discarded_reorder_frames, 0);
         Self {
             receive,
             storage,
@@ -314,6 +408,10 @@ where
             rx_frame,
             tx_frame,
             data_rx,
+            rx_block_ack,
+            rx_reorder,
+            rx_reorder_storage,
+            rx_addba_in_flight: None,
             rx_batch_used: 0,
             rx_batch_offset: 0,
             report: Esp32s31AccessPointControlReport::default(),
@@ -363,9 +461,12 @@ where
         now_micros: u64,
     ) -> Result<(), Esp32s31AccessPointControlError>
     where
-        H: RxDma + TxHardware + Esp32s31ApRuntimeHardware,
+        H: RxDma + TxHardware + Esp32s31ApRuntimeHardware + RxBlockAckHardware,
     {
         if self.mac.tx_pending() || self.rx_batch_pending() {
+            return Ok(());
+        }
+        if self.service_rx_reorder_expiry(now_micros)? {
             return Ok(());
         }
         let mut staged = None;
@@ -375,7 +476,10 @@ where
         let unit_staging = &mut *self.tx_frame;
         let mac = &self.mac;
         let data_rx = &mut self.data_rx;
+        let rx_reorder = &mut self.rx_reorder;
+        let rx_reorder_storage = self.rx_reorder_storage;
         let report = &mut self.report;
+        let mut reorder_error = None;
         let progress = self
             .receive
             .service_completed_unit(hardware, self.storage, unit_staging, |segment| {
@@ -399,8 +503,16 @@ where
                                 report.rx_mic_failures = report.rx_mic_failures.saturating_add(1);
                             }
                             open_esp_radio_esp32s31_wifi_mac::rx::RxError::Quarantined => {
-                                report.rx_quarantined_frames =
-                                    report.rx_quarantined_frames.saturating_add(1);
+                                let duplicate_or_stale = data_rx
+                                    .reorder_key(segment)
+                                    .is_some_and(|key| rx_reorder.is_duplicate_or_stale(key));
+                                if duplicate_or_stale {
+                                    report.protected_data_duplicates =
+                                        report.protected_data_duplicates.saturating_add(1);
+                                } else {
+                                    report.rx_quarantined_frames =
+                                        report.rx_quarantined_frames.saturating_add(1);
+                                }
                             }
                             _ => {
                                 report.rx_view_rejected = report.rx_view_rejected.saturating_add(1);
@@ -412,49 +524,70 @@ where
                 };
                 let frame_control = u16::from_le_bytes([frame.mpdu[0], frame.mpdu[1]]);
                 if frame_control & 0x000c == 0x0008 && frame_control & 0x4000 != 0 {
-                    let source = frame
-                        .mpdu
-                        .get(10..16)
-                        .and_then(|bytes| <[u8; 6]>::try_from(bytes).ok());
                     report.protected_data_frames = report.protected_data_frames.saturating_add(1);
                     let mut sink = DeferredAccessPointRxSink::new(rx_frame);
-                    let dispatch = data_rx.dispatch_protected(
-                        segment,
-                        |peer| mac.engine().is_authorized_peer(peer),
-                        &mut sink,
-                    );
-                    let batch_used = sink.used();
-                    batch_exhausted = sink.exhausted;
-                    match dispatch {
-                        Esp32s31ApRxDispatch::Data {
-                            ethernet_frames, ..
-                        } => {
-                            activity_peer = source;
-                            if ethernet_frames != 0 {
-                                staged =
-                                    Some(StagedControlFrame::EthernetBatch { used: batch_used });
+                    let mut produced_data = false;
+                    let key = data_rx.reorder_key(segment);
+                    let mut dispatch =
+                        |ordered: open_esp_radio_esp32s31_wifi_mac::rx::RxSegment<'_>| {
+                            let peer =
+                                data_rx
+                                    .reorder_key(ordered)
+                                    .map(|key| key.peer)
+                                    .or_else(|| {
+                                        view_normalized_rx_frame(
+                                            &ordered,
+                                            RxIngressConfig {
+                                                ring_entry_limit: 1,
+                                                csi_config: 0,
+                                                flags: 0,
+                                            },
+                                        )
+                                        .ok()
+                                        .and_then(|frame| frame.mpdu.get(10..16))
+                                        .and_then(|bytes| <[u8; 6]>::try_from(bytes).ok())
+                                    });
+                            let outcome = data_rx.dispatch_protected(
+                                ordered,
+                                |peer| mac.engine().is_authorized_peer(peer),
+                                &mut sink,
+                            );
+                            produced_data |= observe_protected_dispatch(
+                                outcome,
+                                peer,
+                                report,
+                                &mut activity_peer,
+                            );
+                        };
+                    let reorder_progress = if let Some(key) = key {
+                        rx_reorder.ingest(
+                            rx_reorder_storage,
+                            segment,
+                            key,
+                            now_micros,
+                            &mut dispatch,
+                        )
+                    } else {
+                        dispatch(segment);
+                        Ok(Default::default())
+                    };
+                    match reorder_progress {
+                        Ok(progress) => {
+                            if progress.duplicate {
+                                report.protected_data_duplicates =
+                                    report.protected_data_duplicates.saturating_add(1);
+                            }
+                            if progress.dropped {
+                                report.protected_data_protocol_rejected =
+                                    report.protected_data_protocol_rejected.saturating_add(1);
                             }
                         }
-                        Esp32s31ApRxDispatch::Duplicate => {
-                            report.protected_data_duplicates =
-                                report.protected_data_duplicates.saturating_add(1);
-                        }
-                        Esp32s31ApRxDispatch::ForeignPeer => {
-                            report.protected_data_foreign =
-                                report.protected_data_foreign.saturating_add(1);
-                        }
-                        Esp32s31ApRxDispatch::Unauthorized => {
-                            report.protected_data_unauthorized =
-                                report.protected_data_unauthorized.saturating_add(1);
-                        }
-                        Esp32s31ApRxDispatch::Rejected(Esp32s31ApRxError::Radio(_)) => {
-                            report.protected_data_radio_rejected =
-                                report.protected_data_radio_rejected.saturating_add(1);
-                        }
-                        Esp32s31ApRxDispatch::Rejected(Esp32s31ApRxError::Data(_)) => {
-                            report.protected_data_protocol_rejected =
-                                report.protected_data_protocol_rejected.saturating_add(1);
-                        }
+                        Err(error) => reorder_error = Some(error),
+                    }
+                    let batch_used = sink.used();
+                    batch_exhausted = sink.exhausted;
+                    if produced_data {
+                        staged = Some(StagedControlFrame::EthernetBatch { used: batch_used });
                     }
                     if matches!(staged, Some(StagedControlFrame::EthernetBatch { .. })) {
                         return Esp32s31RecycledRxDirective::Pause;
@@ -486,6 +619,9 @@ where
                 }
             })
             .await?;
+        if let Some(error) = reorder_error {
+            return Err(error.into());
+        }
         if batch_exhausted {
             self.report.protected_data_protocol_rejected = self
                 .report
@@ -520,20 +656,13 @@ where
         };
         match staged {
             StagedControlFrame::Management { length } => {
-                let outcome = self.mac.publish_management(
+                if self.service_management(
                     hardware,
-                    &self.rx_frame[..length],
+                    length,
                     authenticator_nonce,
                     initial_replay_counter,
                     now_micros,
-                    self.tx_frame,
-                )?;
-                if matches!(
-                    outcome,
-                    open_esp_radio_esp32s31_wifi_ap::engine::Esp32s31ApManagementOutcome::Response {
-                        ..
-                    }
-                ) {
+                )? {
                     self.report.control_frames_staged =
                         self.report.control_frames_staged.saturating_add(1);
                 }
@@ -549,8 +678,270 @@ where
         Ok(())
     }
 
+    fn service_management<H>(
+        &mut self,
+        hardware: &mut H,
+        length: usize,
+        authenticator_nonce: [u8; 32],
+        initial_replay_counter: u64,
+        now_micros: u64,
+    ) -> Result<bool, Esp32s31AccessPointControlError>
+    where
+        H: TxHardware + Esp32s31ApRuntimeHardware + RxBlockAckHardware,
+    {
+        let request = parse_ap_management_request(
+            &self.rx_frame[..length],
+            self.mac.engine().service_address(),
+        );
+        if let Some(ApManagementRequest::BlockAck { peer, action }) = request {
+            match action {
+                BlockAckAction::AddbaRequest {
+                    dialog_token,
+                    tid,
+                    immediate,
+                    window,
+                    timeout_tu,
+                    starting_sequence,
+                    ..
+                } if self.mac.engine().is_authorized_peer(peer) => {
+                    let offered = self.rx_block_ack.offer(RxBlockAckRequest {
+                        peer,
+                        dialog_token,
+                        tid,
+                        immediate,
+                        requested_window: window,
+                        timeout_tu,
+                        starting_sequence,
+                    });
+                    if offered.is_err() {
+                        self.publish_declined_rx_addba(hardware, peer, dialog_token, tid, window)?;
+                        return Ok(true);
+                    }
+                    let activation = match self.rx_block_ack.begin_pending(
+                        open_esp_radio_esp32s31_hal::types::MacInterface::AccessPoint,
+                    ) {
+                        Ok(Some(activation)) => activation,
+                        Ok(None) => return Ok(false),
+                        Err(RxBlockAckSessionsError::NoFreeHardwareBank) => {
+                            let discarded = self.rx_block_ack.discard_pending(peer, tid);
+                            debug_assert!(discarded);
+                            self.publish_declined_rx_addba(
+                                hardware,
+                                peer,
+                                dialog_token,
+                                tid,
+                                window,
+                            )?;
+                            return Ok(true);
+                        }
+                        Err(error) => return Err(error.into()),
+                    };
+                    self.start_rx_addba_response(hardware, activation, now_micros)?;
+                    return Ok(true);
+                }
+                BlockAckAction::Delba {
+                    tid,
+                    initiator: true,
+                    ..
+                } => {
+                    if let Some(agreement) = self.rx_block_ack.stop(peer, tid) {
+                        self.release_rx_reorder(agreement.identity(), now_micros)?;
+                        hardware.clear_rx_block_ack(agreement.hardware_index)?;
+                    }
+                    return Ok(false);
+                }
+                _ => {}
+            }
+        }
+
+        let outcome = self.mac.publish_management(
+            hardware,
+            &self.rx_frame[..length],
+            authenticator_nonce,
+            initial_replay_counter,
+            now_micros,
+            self.tx_frame,
+        )?;
+        if let open_esp_radio_esp32s31_wifi_ap::engine::Esp32s31ApManagementOutcome::PeerRemoved {
+            peer,
+        } = outcome
+        {
+            self.discard_rx_peer(hardware, peer)?;
+        }
+        Ok(matches!(
+            outcome,
+            open_esp_radio_esp32s31_wifi_ap::engine::Esp32s31ApManagementOutcome::Response { .. }
+        ))
+    }
+
+    fn publish_declined_rx_addba<H: TxHardware>(
+        &mut self,
+        hardware: &mut H,
+        peer: [u8; 6],
+        dialog_token: u8,
+        tid: u8,
+        requested_window: u16,
+    ) -> Result<(), Esp32s31AccessPointControlError> {
+        let mut body = [0_u8; 9];
+        write_declined_addba_response(&mut body, dialog_token, tid, requested_window)
+            .map_err(RxBlockAckSessionsError::Response)?;
+        self.mac
+            .publish_rx_block_ack_response(hardware, peer, &body, self.tx_frame)?;
+        Ok(())
+    }
+
+    fn start_rx_addba_response<H>(
+        &mut self,
+        hardware: &mut H,
+        activation: RxBlockAckActivation,
+        now_micros: u64,
+    ) -> Result<(), Esp32s31AccessPointControlError>
+    where
+        H: TxHardware + Esp32s31ApRuntimeHardware + RxBlockAckHardware,
+    {
+        debug_assert!(self.rx_addba_in_flight.is_none());
+        if let Some(replaced) = activation.replaced() {
+            if let Err(error) = self.release_rx_reorder(replaced.identity(), now_micros) {
+                self.rx_block_ack.cancel(activation)?;
+                return Err(error);
+            }
+            if let Err(error) = hardware.clear_rx_block_ack(replaced.hardware_index) {
+                self.rx_block_ack.cancel(activation)?;
+                return Err(error.into());
+            }
+        }
+        if let Err(error) = hardware.program_rx_block_ack(activation.hardware()) {
+            self.rx_block_ack.cancel(activation)?;
+            return Err(error.into());
+        }
+        let negotiated = activation.negotiated();
+        if let Err(error) = self.rx_reorder.start(negotiated, |_| {}) {
+            let clear = hardware.clear_rx_block_ack(negotiated.hardware_index);
+            self.rx_block_ack.cancel(activation)?;
+            clear?;
+            return Err(error.into());
+        }
+        if let Err(error) = self.mac.publish_rx_block_ack_response(
+            hardware,
+            negotiated.peer,
+            activation.response_body(),
+            self.tx_frame,
+        ) {
+            let clear = hardware.clear_rx_block_ack(negotiated.hardware_index);
+            let _ = self.rx_reorder.stop_discard(negotiated.identity());
+            self.rx_block_ack.cancel(activation)?;
+            clear?;
+            return Err(error.into());
+        }
+        self.rx_addba_in_flight = Some(activation);
+        Ok(())
+    }
+
+    fn release_rx_reorder(
+        &mut self,
+        identity: open_esp_radio_esp32s31_wifi_mac::rx_ampdu::RxBlockAckIdentity,
+        now_micros: u64,
+    ) -> Result<(), Esp32s31AccessPointControlError> {
+        let mac = &self.mac;
+        let data_rx = &mut self.data_rx;
+        let report = &mut self.report;
+        let mut activity_peer = None;
+        let mut sink = DeferredAccessPointRxSink::new(self.rx_frame);
+        let _ = self.rx_reorder.stop(identity, |segment| {
+            let peer = data_rx.reorder_key(segment).map(|key| key.peer);
+            let outcome = data_rx.dispatch_protected(
+                segment,
+                |peer| mac.engine().is_authorized_peer(peer),
+                &mut sink,
+            );
+            let _ = observe_protected_dispatch(outcome, peer, report, &mut activity_peer);
+        });
+        if sink.exhausted {
+            return Err(Esp32s31AccessPointControlError::ReceiveBatchCapacity);
+        }
+        if let Some(peer) = activity_peer {
+            self.mac
+                .engine_mut()
+                .observe_peer_activity(peer, now_micros)?;
+        }
+        let used = sink.used();
+        if used != 0 {
+            self.rx_batch_used = used;
+            self.rx_batch_offset = 0;
+        }
+        Ok(())
+    }
+
+    fn discard_rx_peer<H: RxBlockAckHardware>(
+        &mut self,
+        hardware: &mut H,
+        peer: [u8; 6],
+    ) -> Result<(), Esp32s31AccessPointControlError> {
+        for agreement in self.rx_block_ack.stop_peer(peer).into_iter().flatten() {
+            let _ = self.rx_reorder.stop_discard(agreement.identity());
+            hardware.clear_rx_block_ack(agreement.hardware_index)?;
+        }
+        Ok(())
+    }
+
+    fn service_rx_reorder_expiry(
+        &mut self,
+        now_micros: u64,
+    ) -> Result<bool, Esp32s31AccessPointControlError> {
+        let mac = &self.mac;
+        let data_rx = &mut self.data_rx;
+        let report = &mut self.report;
+        let mut activity_peer = None;
+        let mut sink = DeferredAccessPointRxSink::new(self.rx_frame);
+        let dispatched = if self.rx_reorder.dispatch_pending(|segment| {
+            let peer = data_rx.reorder_key(segment).map(|key| key.peer);
+            let outcome = data_rx.dispatch_protected(
+                segment,
+                |peer| mac.engine().is_authorized_peer(peer),
+                &mut sink,
+            );
+            let _ = observe_protected_dispatch(outcome, peer, report, &mut activity_peer);
+        }) {
+            1
+        } else {
+            self.rx_reorder.expire_due(now_micros, |segment| {
+                let peer = data_rx.reorder_key(segment).map(|key| key.peer);
+                let outcome = data_rx.dispatch_protected(
+                    segment,
+                    |peer| mac.engine().is_authorized_peer(peer),
+                    &mut sink,
+                );
+                let _ = observe_protected_dispatch(outcome, peer, report, &mut activity_peer);
+            })
+        };
+        if sink.exhausted {
+            return Err(Esp32s31AccessPointControlError::ReceiveBatchCapacity);
+        }
+        if let Some(peer) = activity_peer {
+            self.mac
+                .engine_mut()
+                .observe_peer_activity(peer, now_micros)?;
+        }
+        let used = sink.used();
+        if used != 0 {
+            self.rx_batch_used = used;
+            self.rx_batch_offset = 0;
+            return Ok(true);
+        }
+        Ok(dispatched != 0)
+    }
+
     pub const fn rx_batch_pending(&self) -> bool {
         self.rx_batch_offset < self.rx_batch_used
+    }
+
+    pub(super) fn rx_work_due(&self, now_micros: u64) -> bool {
+        self.rx_batch_pending()
+            || self.rx_reorder.has_pending_release()
+            || self
+                .rx_reorder
+                .next_deadline()
+                .is_some_and(|deadline| deadline <= now_micros)
     }
 
     fn rx_batch_record(
@@ -656,12 +1047,24 @@ where
         wake: WifiTxWake,
     ) -> Result<WifiTxProgress, Esp32s31AccessPointControlError>
     where
-        H: Esp32s31ApRuntimeHardware + TxHardware,
+        H: Esp32s31ApRuntimeHardware + TxHardware + RxBlockAckHardware,
     {
         let (progress, action) = self
             .mac
             .service_tx(hardware, wake, Instant::now().as_micros())
             .await?;
+        if progress == WifiTxProgress::Complete
+            && let Some(activation) = self.rx_addba_in_flight.take()
+        {
+            let negotiated = activation.negotiated();
+            if action == Esp32s31ApTxCompletionAction::PublicationFailed {
+                hardware.clear_rx_block_ack(negotiated.hardware_index)?;
+                let _ = self.rx_reorder.stop_discard(negotiated.identity());
+                self.rx_block_ack.cancel(activation)?;
+            } else {
+                self.rx_block_ack.commit(activation)?;
+            }
+        }
         match action {
             Esp32s31ApTxCompletionAction::BeginWpa2 { peer } => {
                 let message1 = self.mac.engine().begin_wpa2::<EAPOL_CAPACITY>(peer)?;
@@ -690,7 +1093,10 @@ where
                 close,
                 stage: Esp32s31ApPeerDisconnectStage::Deauthentication,
                 ..
-            } => self.mac.engine_mut().complete_peer_close(hardware, close)?,
+            } => {
+                self.discard_rx_peer(hardware, close.peer)?;
+                self.mac.engine_mut().complete_peer_close(hardware, close)?;
+            }
             Esp32s31ApTxCompletionAction::None
             | Esp32s31ApTxCompletionAction::PublicationFailed => {}
         }
@@ -902,6 +1308,7 @@ where
             .into_iter()
             .chain(self.mac.engine().next_wpa2_retry_deadline())
             .chain(self.mac.next_tx_block_ack_deadline())
+            .chain(self.rx_reorder.next_deadline())
             .map(deadline_delay)
             .fold(beacon_delay_ms, u32::min))
     }
@@ -975,6 +1382,7 @@ where
         H: RxDma
             + TxHardware
             + Esp32s31ApRuntimeHardware
+            + RxBlockAckHardware
             + open_esp_radio_esp32s31_wifi_mac::tx_ampdu::HtAmpduHardware,
         F: Future<Output = ()>,
         N: FnMut() -> ([u8; 32], u64),
@@ -1073,7 +1481,15 @@ where
         >,
         Self,
     > {
-        if self.rx_batch_pending() {
+        if self.rx_batch_pending()
+            || self.rx_addba_in_flight.is_some()
+            || self.rx_reorder.has_pending_release()
+            || self
+                .rx_block_ack
+                .snapshots()
+                .into_iter()
+                .any(|entry| entry.is_some())
+        {
             return Err(self);
         }
         let Self {
@@ -1083,6 +1499,10 @@ where
             rx_frame,
             tx_frame,
             data_rx,
+            rx_block_ack,
+            rx_reorder,
+            rx_reorder_storage,
+            rx_addba_in_flight: _,
             rx_batch_used: _,
             rx_batch_offset: _,
             report,
@@ -1097,6 +1517,10 @@ where
                     rx_frame,
                     tx_frame,
                     data_rx,
+                    rx_block_ack,
+                    rx_reorder,
+                    rx_reorder_storage,
+                    rx_addba_in_flight: None,
                     rx_batch_used: 0,
                     rx_batch_offset: 0,
                     report,
@@ -1113,6 +1537,10 @@ where
                     rx_frame,
                     tx_frame,
                     data_rx,
+                    rx_block_ack,
+                    rx_reorder,
+                    rx_reorder_storage,
+                    rx_addba_in_flight: None,
                     rx_batch_used: 0,
                     rx_batch_offset: 0,
                     report,
@@ -1127,6 +1555,9 @@ where
             rx_frame,
             tx_frame,
             data_rx,
+            rx_block_ack,
+            rx_reorder,
+            rx_reorder_storage,
             engine,
             control_report: report,
             mac_report,

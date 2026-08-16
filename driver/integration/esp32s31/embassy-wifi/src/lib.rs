@@ -177,6 +177,8 @@ pub struct Esp32s31AccessPointObservation {
     pub tx_block_ack_agreements_operational: u32,
     pub tx_block_ack_responses_rejected: u32,
     pub tx_block_ack_negotiation_timeouts: u32,
+    /// Peer-originated RX ADDBA responses that reached terminal TX success.
+    pub rx_block_ack_responses_transmitted: u32,
     pub completed_rx_units: u32,
     pub completed_rx_descriptors: u32,
     pub recycled_rx_descriptors: u32,

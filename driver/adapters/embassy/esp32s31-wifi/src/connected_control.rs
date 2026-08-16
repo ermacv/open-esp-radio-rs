@@ -9,11 +9,12 @@ use core::future::Future;
 use embassy_futures::select::{Either, select};
 use open_esp_radio_embassy_net::RawMutex;
 use open_esp_radio_esp32s31_wifi_mac::crypto::{CryptoKeyError, StaGroupCcmpSlot};
+pub use open_esp_radio_esp32s31_wifi_mac::rx_ampdu::{RxReorderCommand, RxReorderCommandError};
 pub use open_esp_radio_esp32s31_wifi_sta::{
     connected_control::{
         ConnectedControlError, ConnectedControlReorder, ConnectedControlTx,
         ConnectedControlTxFailure, ConnectedControlTxKind, ConnectedDisconnectReason,
-        Esp32s31ConnectedControlCore, RxReorderCommand, RxReorderCommandError,
+        Esp32s31ConnectedControlCore,
     },
     connected_control_hardware::ConnectedControlHardware,
 };
@@ -287,7 +288,7 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
     pub fn with_rx_block_ack_maximum_window(
         mut self,
         maximum_window: u16,
-    ) -> Result<Self, open_esp_radio_esp32s31_wifi_mac::rx_ampdu::StaRxBlockAckSessionsError> {
+    ) -> Result<Self, open_esp_radio_esp32s31_wifi_mac::rx_ampdu::RxBlockAckSessionsError> {
         self.core.set_rx_block_ack_maximum_window(maximum_window)?;
         Ok(self)
     }
@@ -306,7 +307,7 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
 
     pub const fn rx_block_ack(
         &self,
-    ) -> &open_esp_radio_esp32s31_wifi_mac::rx_ampdu::StaRxBlockAckSessions {
+    ) -> &open_esp_radio_esp32s31_wifi_mac::rx_ampdu::RxBlockAckSessions {
         self.core.rx_block_ack()
     }
 

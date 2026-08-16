@@ -6,6 +6,7 @@
 
 #![forbid(unsafe_code)]
 
+use open_esp_radio_esp32s31_hal::RadioRuntimeOwner;
 use open_esp_radio_esp32s31_hal::types::{
     MacInterface, MacRxBlockAckEntryIndex, MacRxBlockAckStartingSequence, MacRxBlockAckTid,
     MacRxBlockAckWindow,
@@ -39,6 +40,51 @@ pub enum S31RxBlockAckAgreementError {
     Tid(u8),
     StartingSequence(u16),
     Window(u16),
+}
+
+/// Narrow hardware capability shared by station and access-point RX
+/// BlockAck control. It owns only one bank transaction at a time; agreement
+/// lifecycle and retained frames remain above this leaf.
+pub trait RxBlockAckHardware {
+    fn program_rx_block_ack(
+        &mut self,
+        agreement: S31RxBlockAckAgreement,
+    ) -> Result<(), S31RxBlockAckAgreementError>;
+
+    fn clear_rx_block_ack(&mut self, hardware_index: u8)
+    -> Result<(), S31RxBlockAckAgreementError>;
+}
+
+impl RxBlockAckHardware for WifiMacHal<'_> {
+    fn program_rx_block_ack(
+        &mut self,
+        agreement: S31RxBlockAckAgreement,
+    ) -> Result<(), S31RxBlockAckAgreementError> {
+        program(self, agreement)
+    }
+
+    fn clear_rx_block_ack(
+        &mut self,
+        hardware_index: u8,
+    ) -> Result<(), S31RxBlockAckAgreementError> {
+        clear(self, hardware_index)
+    }
+}
+
+impl RxBlockAckHardware for RadioRuntimeOwner {
+    fn program_rx_block_ack(
+        &mut self,
+        agreement: S31RxBlockAckAgreement,
+    ) -> Result<(), S31RxBlockAckAgreementError> {
+        program(&mut self.wifi_mac_hal(), agreement)
+    }
+
+    fn clear_rx_block_ack(
+        &mut self,
+        hardware_index: u8,
+    ) -> Result<(), S31RxBlockAckAgreementError> {
+        clear(&mut self.wifi_mac_hal(), hardware_index)
+    }
 }
 
 impl S31RxBlockAckAgreement {

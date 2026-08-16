@@ -260,6 +260,25 @@ impl<'storage> Esp32s31ApEngine<'storage> {
         Ok(self.service.begin_wpa2_frame(peer)?)
     }
 
+    /// Encode one AP recipient response to a peer-originated BlockAck action.
+    /// Agreement state, hardware publication and TX completion remain owned
+    /// by the caller; the engine owns only AP addressing and sequence space.
+    pub fn encode_rx_block_ack_response(
+        &mut self,
+        peer: [u8; 6],
+        body: &[u8],
+        output: &mut [u8],
+    ) -> Result<usize, Esp32s31ApEngineError> {
+        let sequence = self.service.next_management_sequence();
+        Ok(ApActionFrame {
+            access_point: self.service.address(),
+            peer,
+            sequence_number: sequence,
+            body,
+        }
+        .encode(output)?)
+    }
+
     pub fn handle_management<H: Esp32s31ApRuntimeHardware>(
         &mut self,
         hardware: &mut H,

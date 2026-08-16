@@ -913,6 +913,8 @@ pub struct WifiAccessPointEvidence {
     pub tx_block_ack_agreements_operational: u32,
     pub tx_block_ack_responses_rejected: u32,
     pub tx_block_ack_negotiation_timeouts: u32,
+    /// Peer-originated RX ADDBA responses completed by the AP hardware owner.
+    pub rx_block_ack_responses_transmitted: u32,
     /// Complete vendor-shaped RX units made visible to the AP protocol path.
     pub completed_rx_units: u32,
     pub completed_rx_descriptors: u32,

@@ -5,7 +5,10 @@
 //! runtime may recycle the descriptor.
 
 use open_esp_radio_esp32s31_wifi::protected_data_rx::view_protected_data;
-use open_esp_radio_esp32s31_wifi_mac::rx::{RxError, RxIngressConfig, RxPhyInfo, RxSegment};
+use open_esp_radio_esp32s31_wifi_mac::{
+    rx::{RxError, RxIngressConfig, RxPhyInfo, RxSegment},
+    rx_ampdu::{RxBlockAckMpduKey, rx_block_ack_mpdu_key},
+};
 use open_esp_radio_ieee80211::data::{
     DataDecapError, DataInterfaceRole, EthernetFrameParts, RxDuplicateFilter,
 };
@@ -69,6 +72,13 @@ impl Esp32s31ApRxDispatcher {
     pub fn reset(&mut self, config: Esp32s31ApRxConfig) {
         self.config = config;
         self.duplicates.fill_with(|| None);
+    }
+
+    /// Extract the same public ordering key used by connected-station RX.
+    /// Peer authorization and active-agreement lookup remain with the AP
+    /// owner because multiple stations can use the same TID concurrently.
+    pub fn reorder_key(&self, segment: RxSegment<'_>) -> Option<RxBlockAckMpduKey> {
+        rx_block_ack_mpdu_key(segment.buffer, self.config.access_point, None)
     }
 
     pub fn dispatch_protected<S, A>(
@@ -223,6 +233,11 @@ mod tests {
         let descriptor_word0 =
             192 | (((PUBLIC_HEADER_SIZE + SIGNAL) as u32) << LENGTH_SHIFT) | BIT_30 | BIT_31;
         let mut dispatcher = Esp32s31ApRxDispatcher::new(config());
+        assert_eq!(
+            dispatcher.reorder_key(segment(&storage, descriptor_word0)),
+            None,
+            "legacy data does not enter a BlockAck sequence space"
+        );
         let mut sink = Sink::default();
         assert_eq!(
             dispatcher.dispatch_protected(

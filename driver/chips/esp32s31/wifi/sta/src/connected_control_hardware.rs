@@ -8,21 +8,13 @@
 use open_esp_radio_esp32s31_wifi::cooperative_hardware::CooperativeRadioHardware;
 use open_esp_radio_esp32s31_wifi_mac::{
     crypto::{CryptoKeyError, StaGroupCcmpSlot},
-    rx_ampdu_hw::{S31RxBlockAckAgreement, S31RxBlockAckAgreementError},
+    rx_ampdu_hw::{RxBlockAckHardware, S31RxBlockAckAgreementError},
     tx::TxHardware,
 };
 
 /// ESP32-S31 register operations required by connected BlockAck control.
-pub trait ConnectedControlHardware: TxHardware {
+pub trait ConnectedControlHardware: TxHardware + RxBlockAckHardware {
     fn station_tsf(&mut self) -> u64;
-
-    fn program_rx_block_ack(
-        &mut self,
-        agreement: S31RxBlockAckAgreement,
-    ) -> Result<(), S31RxBlockAckAgreementError>;
-
-    fn clear_rx_block_ack(&mut self, hardware_index: u8)
-    -> Result<(), S31RxBlockAckAgreementError>;
 
     fn set_he_tid_enabled(
         &mut self,
@@ -46,20 +38,6 @@ pub trait ConnectedControlHardware: TxHardware {
 impl ConnectedControlHardware for CooperativeRadioHardware<'_> {
     fn station_tsf(&mut self) -> u64 {
         CooperativeRadioHardware::station_tsf(self)
-    }
-
-    fn program_rx_block_ack(
-        &mut self,
-        agreement: S31RxBlockAckAgreement,
-    ) -> Result<(), S31RxBlockAckAgreementError> {
-        CooperativeRadioHardware::program_rx_block_ack(self, agreement)
-    }
-
-    fn clear_rx_block_ack(
-        &mut self,
-        hardware_index: u8,
-    ) -> Result<(), S31RxBlockAckAgreementError> {
-        CooperativeRadioHardware::clear_rx_block_ack(self, hardware_index)
     }
 
     fn set_he_tid_enabled(

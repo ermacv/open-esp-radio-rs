@@ -20,7 +20,10 @@ use super::*;
 use crate::{
     connected_rx_protocol::{Esp32s31ConnectedRxProtocol, Esp32s31StagedRxQueue},
     embassy_irq::EmbassyMacIrqRuntime,
-    rx_reorder::{RxReorderCommand, RxReorderCommandResources, try_send_rx_reorder_command},
+    rx_reorder::{
+        RxBlockAckSnapshot, RxReorderCommand, RxReorderCommandResources,
+        try_send_rx_reorder_command,
+    },
 };
 
 const BASE: u32 = 0x2f00_1000;
@@ -644,11 +647,13 @@ fn negotiated_rx_block_ack_releases_staged_leases_in_sequence_order() {
     let (reorder_sender, reorder_receiver) = reorder_resources.split();
     try_send_rx_reorder_command(
         &reorder_sender,
-        RxReorderCommand::Start {
+        RxReorderCommand::Start(RxBlockAckSnapshot {
+            hardware_index: 0,
+            peer: [8, 9, 10, 11, 12, 13],
             tid: 0,
             starting_sequence: 100,
             window: 8,
-        },
+        }),
     )
     .unwrap();
     let irq = EmbassyMacIrqRuntime::<NoopRawMutex>::new();

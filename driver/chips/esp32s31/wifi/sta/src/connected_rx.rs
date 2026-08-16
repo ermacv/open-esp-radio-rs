@@ -24,6 +24,7 @@ use open_esp_radio_esp32s31_wifi_mac::{
         PUBLIC_HEADER_SIZE, RxError, RxIngressConfig, RxPhyInfo, decode_normalized_rx_metadata,
         extract_control, extract_management,
     },
+    rx_ampdu::{RxBlockAckMpduKey, rx_block_ack_mpdu_key},
     tx::{HeTriggerScheduledRate, HeTriggerScheduledRateError},
     tx_ampdu::{BlockAckAction, parse_block_ack_action},
 };
@@ -38,7 +39,6 @@ const DEAUTHENTICATION_FRAME_CONTROL: u16 = 0x00c0;
 const DATA_TYPE_MASK: u16 = 0x000c;
 const DATA_TYPE: u16 = 0x0008;
 const PROTECTED: u16 = 0x4000;
-const RETRY: u16 = 0x0800;
 const QOS_SUBTYPE: u16 = 0x0080;
 const TO_FROM_DS: u16 = 0x0300;
 const QOS_AMSDU_PRESENT: u8 = 0x80;
@@ -58,18 +58,6 @@ pub enum ConnectedRxProtection {
     Pairwise,
     Group,
     Other,
-}
-
-/// Public 802.11 ordering identity for one addressed protected QoS MPDU.
-///
-/// Both fields precede the encrypted body, so the async integration can make
-/// a receive BlockAck ordering decision without decrypting or mutating the
-/// dispatcher's duplicate history twice.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct ConnectedRxReorderKey {
-    pub tid: u8,
-    pub sequence: u16,
-    pub retry: bool,
 }
 
 /// One semantic event emitted by the connected frame dispatcher.
@@ -258,32 +246,12 @@ impl ConnectedRxDispatcher {
     /// Group, foreign, unprotected, non-QoS and fragmented frames remain on
     /// the direct dispatch path. Agreement state still decides whether the
     /// returned TID is currently reordered.
-    pub fn reorder_key(&self, segment: RxSegment<'_>) -> Option<ConnectedRxReorderKey> {
-        let raw = segment.buffer;
-        let frame_control = public_frame_control(raw)?;
-        if frame_control & (DATA_TYPE_MASK | PROTECTED | QOS_SUBTYPE)
-            != DATA_TYPE | PROTECTED | QOS_SUBTYPE
-        {
-            return None;
-        }
-        let frame_offset = PUBLIC_HEADER_SIZE;
-        if raw.get(frame_offset + 4..frame_offset + 10)? != self.config.station_address
-            || raw.get(frame_offset + 10..frame_offset + 16)? != self.config.bssid
-        {
-            return None;
-        }
-        let sequence_control =
-            u16::from_le_bytes([*raw.get(frame_offset + 22)?, *raw.get(frame_offset + 23)?]);
-        if sequence_control & 0x000f != 0 {
-            return None;
-        }
-        let qos_offset =
-            frame_offset + 24 + usize::from(frame_control & TO_FROM_DS == TO_FROM_DS) * 6;
-        Some(ConnectedRxReorderKey {
-            tid: *raw.get(qos_offset)? & 0x0f,
-            sequence: sequence_control >> 4,
-            retry: frame_control & RETRY != 0,
-        })
+    pub fn reorder_key(&self, segment: RxSegment<'_>) -> Option<RxBlockAckMpduKey> {
+        rx_block_ack_mpdu_key(
+            segment.buffer,
+            self.config.station_address,
+            Some(self.config.bssid),
+        )
     }
 
     /// Consume one staged S31 frame and publish its connected-station effects.
@@ -818,7 +786,8 @@ mod tests {
         let segment = segment(&storage, SIGNAL);
         assert_eq!(
             dispatcher.reorder_key(segment),
-            Some(ConnectedRxReorderKey {
+            Some(RxBlockAckMpduKey {
+                peer: BSSID,
                 tid: 0,
                 sequence: 0x123,
                 retry: false,

@@ -12,7 +12,7 @@ use open_esp_radio_esp32s31_wifi_mac::{
     capabilities::ESP32S31_MAC_SERVICE_CAPABILITIES,
     rate_control::{StaRateControlAssociation, StaTxRatePolicy},
     rx::RxIngressConfig,
-    rx_ampdu::{StaRxBlockAckSessions, StaRxBlockAckSessionsError},
+    rx_ampdu::{RxBlockAckSessions, RxBlockAckSessionsError},
     tx::{
         HeDcmRate, HeEdcaTxopLimit, HeMcs, HtGuardInterval, HtMcs, LegacyRate, TxPhyRate,
         TxSlotState,

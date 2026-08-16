@@ -101,6 +101,7 @@ where
         T: WifiTxTimer,
         H: TxHardware
             + Esp32s31ApRuntimeHardware
+            + RxBlockAckHardware
             + open_esp_radio_esp32s31_wifi_mac::tx_ampdu::HtAmpduHardware,
     {
         let destination = frame
@@ -307,6 +308,7 @@ where
         T: WifiTxTimer,
         H: TxHardware
             + Esp32s31ApRuntimeHardware
+            + RxBlockAckHardware
             + open_esp_radio_esp32s31_wifi_mac::tx_ampdu::HtAmpduHardware,
     {
         if self.deadline_micros.is_none() {

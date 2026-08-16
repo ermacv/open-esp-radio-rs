@@ -32,6 +32,7 @@ mod access_point_status;
 mod connected;
 mod facade;
 mod monitor;
+mod radio_resources;
 mod runtime;
 mod wifi_network;
 
@@ -41,7 +42,8 @@ pub use connected::{
     Esp32s31ConnectedRxObserver, Esp32s31MacIrqObservation, Esp32s31QualificationSnapshot,
     Esp32s31QualificationTxVector,
 };
-pub use connected::{Esp32s31WifiDevice, Esp32s31WifiProtocolRunner};
+pub use connected::Esp32s31WifiProtocolRunner;
+pub use radio_resources::Esp32s31WifiDevice;
 pub use facade::{
     Esp32s31NewError, Esp32s31Radio, Esp32s31RadioError, Esp32s31RadioInitialization,
     Esp32s31RadioParts, Esp32s31Wifi, Esp32s31WifiControl, Esp32s31WifiParts,
@@ -139,6 +141,7 @@ pub struct Esp32s31QualificationHooks {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Esp32s31AccessPointObservation {
     pub channel: u8,
+    pub bandwidth_mhz: u16,
     pub beacons_transmitted: u32,
     pub missed_beacon_intervals: u32,
     pub maximum_beacon_lateness_micros: u32,
@@ -169,6 +172,11 @@ pub struct Esp32s31AccessPointObservation {
     pub deauthentications_prepared: u32,
     pub deauthentications_published: u32,
     pub deauthentications_acknowledged: u32,
+    pub tx_block_ack_requests_prepared: u32,
+    pub tx_block_ack_responses_observed: u32,
+    pub tx_block_ack_agreements_operational: u32,
+    pub tx_block_ack_responses_rejected: u32,
+    pub tx_block_ack_negotiation_timeouts: u32,
     pub completed_rx_units: u32,
     pub completed_rx_descriptors: u32,
     pub recycled_rx_descriptors: u32,

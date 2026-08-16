@@ -5,6 +5,7 @@
 //! describes TSF, RX BlockAck and HE-TID operations, but no executor wakeups
 //! or Embassy task lifecycle.
 
+use open_esp_radio_esp32s31_wifi::cooperative_hardware::CooperativeRadioHardware;
 use open_esp_radio_esp32s31_wifi_mac::{
     crypto::{CryptoKeyError, StaGroupCcmpSlot},
     rx_ampdu_hw::{S31RxBlockAckAgreement, S31RxBlockAckAgreementError},
@@ -39,5 +40,42 @@ pub trait ConnectedControlHardware: TxHardware {
         _temporal_key: &[u8; 16],
     ) -> Result<(), CryptoKeyError> {
         Err(CryptoKeyError::HardwareRejected)
+    }
+}
+
+impl ConnectedControlHardware for CooperativeRadioHardware<'_> {
+    fn station_tsf(&mut self) -> u64 {
+        CooperativeRadioHardware::station_tsf(self)
+    }
+
+    fn program_rx_block_ack(
+        &mut self,
+        agreement: S31RxBlockAckAgreement,
+    ) -> Result<(), S31RxBlockAckAgreementError> {
+        CooperativeRadioHardware::program_rx_block_ack(self, agreement)
+    }
+
+    fn clear_rx_block_ack(
+        &mut self,
+        hardware_index: u8,
+    ) -> Result<(), S31RxBlockAckAgreementError> {
+        CooperativeRadioHardware::clear_rx_block_ack(self, hardware_index)
+    }
+
+    fn set_he_tid_enabled(
+        &mut self,
+        tid: u8,
+        enabled: bool,
+    ) -> Result<(), S31RxBlockAckAgreementError> {
+        CooperativeRadioHardware::set_he_tid_enabled(self, tid, enabled)
+    }
+
+    fn replace_sta_group_ccmp(
+        &mut self,
+        slot: &mut StaGroupCcmpSlot,
+        key_id: u8,
+        temporal_key: &[u8; 16],
+    ) -> Result<(), CryptoKeyError> {
+        CooperativeRadioHardware::replace_sta_group_ccmp(self, slot, key_id, temporal_key)
     }
 }

@@ -33,8 +33,6 @@ use open_esp_radio_esp32s31_wifi_mac::{
     tx_ampdu::HtAmpduHardware,
 };
 
-use crate::connected_control_hardware::ConnectedControlHardware;
-
 /// Short-lived radio facade over the task's sole opaque runtime owner.
 ///
 /// Every trait method borrows the register owner only for one synchronous
@@ -375,26 +373,26 @@ impl RxDma for CooperativeRadioHardware<'_> {
     }
 }
 
-impl ConnectedControlHardware for CooperativeRadioHardware<'_> {
-    fn station_tsf(&mut self) -> u64 {
+impl CooperativeRadioHardware<'_> {
+    pub fn station_tsf(&mut self) -> u64 {
         self.wifi_mac_hal().station_tsf()
     }
 
-    fn program_rx_block_ack(
+    pub fn program_rx_block_ack(
         &mut self,
         agreement: S31RxBlockAckAgreement,
     ) -> Result<(), S31RxBlockAckAgreementError> {
         rx_ampdu_hw::program(&mut self.wifi_mac_hal(), agreement)
     }
 
-    fn clear_rx_block_ack(
+    pub fn clear_rx_block_ack(
         &mut self,
         hardware_index: u8,
     ) -> Result<(), S31RxBlockAckAgreementError> {
         rx_ampdu_hw::clear(&mut self.wifi_mac_hal(), hardware_index)
     }
 
-    fn set_he_tid_enabled(
+    pub fn set_he_tid_enabled(
         &mut self,
         tid: u8,
         enabled: bool,
@@ -405,7 +403,7 @@ impl ConnectedControlHardware for CooperativeRadioHardware<'_> {
         Ok(())
     }
 
-    fn replace_sta_group_ccmp(
+    pub fn replace_sta_group_ccmp(
         &mut self,
         slot: &mut StaGroupCcmpSlot,
         key_id: u8,

@@ -7,13 +7,17 @@
 use crate::{
     block_ack::{BlockAckAction, parse_block_ack_action},
     ccmp::CCMP_HEADER_LEN,
+    channel::WifiChannel,
     data::{DataInterfaceRole, ETHERNET_HEADER_LEN, plan_data_encapsulation},
-    ht::{HT20_CAPABILITY_IE, ht20_operation_ie, supports_ht},
+    ht::{
+        HT_CAPABILITY_IE_LEN, HT_OPERATION_IE_LEN, HtPeerCapabilities, ht_capability_ie,
+        ht_operation_ie, ht_peer_capabilities,
+    },
 };
 
 const AP_LEGACY_ASSOCIATION_RESPONSE_BODY_LEN: usize = 51;
 pub const AP_ASSOCIATION_RESPONSE_BODY_LEN: usize =
-    AP_LEGACY_ASSOCIATION_RESPONSE_BODY_LEN + HT20_CAPABILITY_IE.len() + 24;
+    AP_LEGACY_ASSOCIATION_RESPONSE_BODY_LEN + HT_CAPABILITY_IE_LEN + HT_OPERATION_IE_LEN;
 pub const AP_AUTHENTICATION_RESPONSE_LEN: usize = 30;
 pub const AP_PEER_DISCONNECT_LEN: usize = MANAGEMENT_HEADER_LEN + 2;
 pub const AP_ASSOCIATION_RESPONSE_LEN: usize = 24 + AP_ASSOCIATION_RESPONSE_BODY_LEN;
@@ -277,8 +281,8 @@ pub enum ApManagementRequest<'a> {
         /// Highest legacy rate shared with the B/G ERP rate set advertised
         /// by this AP, in 500-kbit/s units. Zero means no common rate.
         maximum_legacy_rate_500kbps: u8,
-        /// The peer supplied a complete one-stream HT Capabilities IE.
-        ht_supported: bool,
+        /// Complete one-stream HT receive facts supplied by the peer.
+        ht_capabilities: Option<HtPeerCapabilities>,
         /// The peer supplied WMM information or HT, both of which imply QoS
         /// data framing for this profile.
         qos_supported: bool,
@@ -329,13 +333,13 @@ pub fn parse_ap_management_request<'a>(
         }
         0 => {
             let information_elements = frame.get(28..)?;
+            let ht_capabilities = ht_peer_capabilities(information_elements);
             Some(ApManagementRequest::Association {
                 peer,
                 rsn_ie: find_information_element(information_elements, 48),
                 maximum_legacy_rate_500kbps: maximum_ap_legacy_rate(information_elements),
-                ht_supported: supports_ht(information_elements),
-                qos_supported: supports_ht(information_elements)
-                    || supports_wmm(information_elements),
+                ht_capabilities,
+                qos_supported: ht_capabilities.is_some() || supports_wmm(information_elements),
             })
         }
         10 | 12 => {
@@ -470,15 +474,15 @@ pub fn write_open_authentication_response(
     Ok(AP_AUTHENTICATION_RESPONSE_LEN)
 }
 
-/// Encode the AP HT20 association response as one complete MPDU.
-pub fn write_ht20_association_response_frame(
+/// Encode the AP HT association response as one complete MPDU.
+pub fn write_ht_association_response_frame(
     output: &mut [u8],
     access_point: [u8; 6],
     peer: [u8; 6],
     status: u16,
     association_id: u16,
     management_sequence: u16,
-    primary_channel: u8,
+    channel: WifiChannel,
 ) -> Result<usize, ApAssociationResponseError> {
     if management_sequence > 0x0fff {
         return Err(ApAssociationResponseError::InvalidSequenceNumber);
@@ -494,7 +498,7 @@ pub fn write_ht20_association_response_frame(
     let body: &mut [u8; AP_ASSOCIATION_RESPONSE_BODY_LEN] = (&mut frame[MANAGEMENT_HEADER_LEN..])
         .try_into()
         .expect("checked association response body length");
-    write_ht20_association_response(body, status, association_id, primary_channel)?;
+    write_ht_association_response(body, status, association_id, channel)?;
     Ok(AP_ASSOCIATION_RESPONSE_LEN)
 }
 
@@ -546,22 +550,24 @@ fn write_management_header(
     frame[22..24].copy_from_slice(&(management_sequence << 4).to_le_bytes());
 }
 
-/// Build the finite AP HT20 association response body.
-pub fn write_ht20_association_response(
+/// Build the finite AP HT association response body.
+pub fn write_ht_association_response(
     body: &mut [u8; AP_ASSOCIATION_RESPONSE_BODY_LEN],
     status: u16,
     association_id: u16,
-    primary_channel: u8,
+    channel: WifiChannel,
 ) -> Result<(), ApAssociationResponseError> {
     if status == 0 && association_id & 0x3fff == 0 {
         return Err(ApAssociationResponseError::MissingAssociationId);
     }
     body[..AP_LEGACY_ASSOCIATION_RESPONSE_BODY_LEN]
         .copy_from_slice(&AP_LEGACY_ASSOCIATION_RESPONSE);
-    let ht_capability_end = AP_LEGACY_ASSOCIATION_RESPONSE_BODY_LEN + HT20_CAPABILITY_IE.len();
+    let ht_capability = ht_capability_ie(channel);
+    let ht_operation = ht_operation_ie(channel);
+    let ht_capability_end = AP_LEGACY_ASSOCIATION_RESPONSE_BODY_LEN + ht_capability.len();
     body[AP_LEGACY_ASSOCIATION_RESPONSE_BODY_LEN..ht_capability_end]
-        .copy_from_slice(&HT20_CAPABILITY_IE);
-    body[ht_capability_end..].copy_from_slice(&ht20_operation_ie(primary_channel));
+        .copy_from_slice(&ht_capability);
+    body[ht_capability_end..].copy_from_slice(&ht_operation);
     body[2..4].copy_from_slice(&status.to_le_bytes());
     let encoded_association_id = if status == 0 {
         0xc000 | (association_id & 0x3fff)
@@ -781,19 +787,26 @@ mod tests {
     }
 
     #[test]
-    fn association_response_owns_status_aid_and_ht20_capability() {
+    fn association_response_owns_status_aid_and_ht_channel_capability() {
         let mut body = [0; AP_ASSOCIATION_RESPONSE_BODY_LEN];
-        write_ht20_association_response(&mut body, 17, 0x0123, 6).unwrap();
+        let ht20 = WifiChannel::mhz20(6).unwrap();
+        write_ht_association_response(&mut body, 17, 0x0123, ht20).unwrap();
         assert_eq!(&body[2..4], &17_u16.to_le_bytes());
         assert_eq!(&body[4..6], &[0, 0]);
-        write_ht20_association_response(&mut body, 0, 1, 6).unwrap();
+        write_ht_association_response(&mut body, 0, 1, ht20).unwrap();
         assert_eq!(&body[4..6], &0xc001_u16.to_le_bytes());
         assert!(body.windows(2).any(|window| window == [45, 26]));
         assert!(body.windows(3).any(|window| window == [61, 22, 6]));
         assert_eq!(
-            write_ht20_association_response(&mut body, 0, 0, 6),
+            write_ht_association_response(&mut body, 0, 0, ht20),
             Err(ApAssociationResponseError::MissingAssociationId)
         );
+
+        let ht40 =
+            WifiChannel::new_2_4_ghz(6, crate::channel::WifiChannelWidth::Mhz40Below).unwrap();
+        write_ht_association_response(&mut body, 0, 1, ht40).unwrap();
+        assert!(body.windows(4).any(|window| window == [45, 26, 0x62, 0]));
+        assert!(body.windows(4).any(|window| window == [61, 22, 6, 0x07]));
     }
 
     #[test]
@@ -912,10 +925,39 @@ mod tests {
                 peer,
                 rsn_ie: Some(&association[39..42]),
                 maximum_legacy_rate_500kbps: 108,
-                ht_supported: false,
+                ht_capabilities: None,
                 qos_supported: false,
             })
         );
+    }
+
+    #[test]
+    fn association_retains_the_peers_complete_ht40_receive_facts() {
+        let access_point = [2, 0, 0, 0, 0, 1];
+        let peer = [2, 0, 0, 0, 0, 2];
+        let mut association = [0_u8; 62];
+        association[4..10].copy_from_slice(&access_point);
+        association[10..16].copy_from_slice(&peer);
+        association[16..22].copy_from_slice(&access_point);
+        association[28..34].copy_from_slice(&[1, 4, 0x82, 0x84, 0x0c, 0x6c]);
+        let channel =
+            WifiChannel::new_2_4_ghz(6, crate::channel::WifiChannelWidth::Mhz40Above).unwrap();
+        association[34..].copy_from_slice(&ht_capability_ie(channel));
+
+        let Some(ApManagementRequest::Association {
+            maximum_legacy_rate_500kbps,
+            ht_capabilities: Some(ht),
+            qos_supported,
+            ..
+        }) = parse_ap_management_request(&association, access_point)
+        else {
+            panic!("complete HT40 association request must parse");
+        };
+        assert_eq!(maximum_legacy_rate_500kbps, 108);
+        assert!(ht.supports_40_mhz());
+        assert!(ht.supports_short_guard_interval(crate::channel::WifiChannelWidth::Mhz40Above));
+        assert_eq!(ht.highest_rx_mcs(), 7);
+        assert!(qos_supported);
     }
 
     #[test]
@@ -930,14 +972,14 @@ mod tests {
         assert_eq!(&authentication[28..30], &17_u16.to_le_bytes());
 
         let mut association = [0; AP_ASSOCIATION_RESPONSE_LEN];
-        write_ht20_association_response_frame(
+        write_ht_association_response_frame(
             &mut association,
             access_point,
             peer,
             0,
             0xc001,
             8,
-            6,
+            WifiChannel::mhz20(6).unwrap(),
         )
         .unwrap();
         assert_eq!(&association[..2], &0x0010_u16.to_le_bytes());

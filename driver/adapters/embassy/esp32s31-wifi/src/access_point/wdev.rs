@@ -44,9 +44,8 @@ pub(super) struct Esp32s31AccessPointWdevServices<
         TX_BUFFER_SIZE,
     >,
     pub(super) hardware: &'run mut H,
-    pub(super) aggregate:
-        &'run mut Esp32s31AccessPointAmpdu<'ampdu, B, AMPDU_SLOTS, AMPDU_BUFFER_SIZE>,
-    pub(super) aggregate_deadline_micros: Option<u64>,
+    pub(super) network_tx:
+        Esp32s31AccessPointNetworkTx<'run, 'ampdu, B, AMPDU_SLOTS, AMPDU_BUFFER_SIZE>,
     pub(super) status_observer: O,
     pub(super) security_material: S,
     pub(super) set_link_state: L,
@@ -54,7 +53,6 @@ pub(super) struct Esp32s31AccessPointWdevServices<
     pub(super) delivery_observer: Option<&'run dyn RxNetworkDeliveryObserver>,
     pub(super) last_status_revision: u32,
     pub(super) network_link_up: bool,
-    pub(super) pending_network_rx: Option<usize>,
     pub(super) network_backpressure_since_micros: Option<u64>,
     pub(super) tx_pending_since_micros: Option<u64>,
     pub(super) network_tx_pending: Option<NetworkTxPending>,
@@ -110,7 +108,7 @@ where
     B: StableDmaBacking,
 {
     fn tx_pending(&self) -> bool {
-        self.aggregate_deadline_micros.is_some() || self.control.tx_pending()
+        self.network_tx.aggregate_pending() || self.control.tx_pending()
     }
 
     fn observe_role_state(&mut self) {
@@ -170,31 +168,85 @@ where
         }
     }
 
-    fn publish_network_rx(
-        &self,
-        network_rx: &mut dyn WdevNetworkRx,
-        frame: &[u8],
-    ) -> Result<(), RxEnqueueError> {
-        #[cfg(not(feature = "rx-delivery-observation"))]
+    /// Publish the retained AP Ethernet batch without consuming its cursor on
+    /// backpressure. The WDEV scheduler may service beacon/control/TX work and
+    /// retry the exact same record after the network capacity edge.
+    fn publish_pending_rx_batch(
+        &mut self,
+        network: &mut dyn WdevNetworkRx,
+    ) -> Result<WdevRxProgress, Esp32s31AccessPointWdevError> {
+        while let Some(record) = self
+            .control
+            .rx_batch_record()
+            .map_err(Esp32s31AccessPointWdevError::Control)?
         {
-            network_rx.try_send(frame)
-        }
-        #[cfg(feature = "rx-delivery-observation")]
-        {
-            let delivery = network_delivery_event(frame);
-            let mut before_publish = || {
-                if let (Some(observer), Some(event)) = (self.delivery_observer, delivery) {
-                    observer.admitted(event);
-                }
+            let frame = record.frame;
+            let next_offset = record.next_offset;
+            #[cfg(not(feature = "rx-delivery-observation"))]
+            let result = network.try_send_parts(frame);
+            #[cfg(feature = "rx-delivery-observation")]
+            let result = {
+                let delivery = RxNetworkDeliveryEvent { frame, raw: None };
+                let observer = self.delivery_observer;
+                let mut before_publish = || {
+                    if let Some(observer) = observer {
+                        observer.admitted(delivery);
+                    }
+                };
+                network.try_send_parts_observed(frame, &mut before_publish)
             };
-            let result = network_rx.try_send_observed(frame, &mut before_publish);
-            if let Err(error) = result
-                && let (Some(observer), Some(event)) = (self.delivery_observer, delivery)
-            {
-                observer.dropped(event, error);
+
+            match result {
+                Ok(()) => {
+                    let protocol = ethernet_parts_protocol(frame);
+                    self.control.commit_rx_batch_record(next_offset);
+                    self.control.report.ethernet_frames_staged =
+                        self.control.report.ethernet_frames_staged.saturating_add(1);
+                    match protocol {
+                        Some(EthernetProtocol::ArpRequest) => {
+                            self.control.report.ethernet_arp_requests_staged = self
+                                .control
+                                .report
+                                .ethernet_arp_requests_staged
+                                .saturating_add(1);
+                        }
+                        Some(EthernetProtocol::Ipv4Tcp) => {
+                            self.control.report.ethernet_tcp_frames_staged = self
+                                .control
+                                .report
+                                .ethernet_tcp_frames_staged
+                                .saturating_add(1);
+                        }
+                        _ => {}
+                    }
+                }
+                Err(RxEnqueueError::QueueFull) => {
+                    self.network_backpressure_since_micros
+                        .get_or_insert_with(|| Instant::now().as_micros());
+                    return Ok(WdevRxProgress::NetworkBackpressured);
+                }
+                Err(RxEnqueueError::InvalidLength(error)) => {
+                    #[cfg(feature = "rx-delivery-observation")]
+                    if let Some(observer) = self.delivery_observer {
+                        observer.dropped(
+                            RxNetworkDeliveryEvent { frame, raw: None },
+                            RxEnqueueError::InvalidLength(error),
+                        );
+                    }
+                    return Err(Esp32s31AccessPointWdevError::Network(error));
+                }
             }
-            result
         }
+
+        if let Some(started) = self.network_backpressure_since_micros.take() {
+            let elapsed = Instant::now().as_micros().saturating_sub(started);
+            self.control.report.maximum_network_backpressure_micros = self
+                .control
+                .report
+                .maximum_network_backpressure_micros
+                .max(u32::try_from(elapsed).unwrap_or(u32::MAX));
+        }
+        Ok(WdevRxProgress::Drained)
     }
 }
 
@@ -264,30 +316,13 @@ where
         network_rx: &'a mut dyn WdevNetworkRx,
     ) -> impl Future<Output = Result<WdevRxProgress, Self::Error>> + 'a {
         async move {
-            if let Some(length) = self.pending_network_rx {
-                match self.publish_network_rx(network_rx, &self.control.rx_frame[..length]) {
-                    Ok(()) => {
-                        self.pending_network_rx = None;
-                        if let Some(started) = self.network_backpressure_since_micros.take() {
-                            let elapsed = Instant::now().as_micros().saturating_sub(started);
-                            self.control.report.maximum_network_backpressure_micros = self
-                                .control
-                                .report
-                                .maximum_network_backpressure_micros
-                                .max(u32::try_from(elapsed).unwrap_or(u32::MAX));
-                        }
-                    }
-                    Err(RxEnqueueError::QueueFull) => {
-                        return Ok(WdevRxProgress::NetworkBackpressured);
-                    }
-                    Err(RxEnqueueError::InvalidLength(error)) => {
-                        return Err(Esp32s31AccessPointWdevError::Network(error));
-                    }
-                }
-            }
-
             let mut serviced_descriptors = 0_usize;
             loop {
+                if self.publish_pending_rx_batch(network_rx)?
+                    == WdevRxProgress::NetworkBackpressured
+                {
+                    return Ok(WdevRxProgress::NetworkBackpressured);
+                }
                 if serviced_descriptors == COUNT {
                     return Ok(WdevRxProgress::ProbePending);
                 }
@@ -313,8 +348,7 @@ where
                 let completed_before = self.control.report.completed_rx_descriptors;
                 let service_started = Instant::now().as_micros();
                 let (nonce, replay_counter) = (self.security_material)();
-                let ethernet_length = self
-                    .control
+                self.control
                     .service_rx(
                         self.hardware,
                         nonce,
@@ -341,19 +375,10 @@ where
                 self.observe_role_state();
                 self.observe_tx_started();
 
-                if let Some(length) = ethernet_length {
-                    match self.publish_network_rx(network_rx, &self.control.rx_frame[..length]) {
-                        Ok(()) => {}
-                        Err(RxEnqueueError::QueueFull) => {
-                            self.pending_network_rx = Some(length);
-                            self.network_backpressure_since_micros =
-                                Some(Instant::now().as_micros());
-                            return Ok(WdevRxProgress::NetworkBackpressured);
-                        }
-                        Err(RxEnqueueError::InvalidLength(error)) => {
-                            return Err(Esp32s31AccessPointWdevError::Network(error));
-                        }
-                    }
+                if self.publish_pending_rx_batch(network_rx)?
+                    == WdevRxProgress::NetworkBackpressured
+                {
+                    return Ok(WdevRxProgress::NetworkBackpressured);
                 }
                 if self.tx_pending() {
                     return Ok(WdevRxProgress::ProbePending);
@@ -408,7 +433,6 @@ where
     }
 
     fn service_stop(&mut self) -> Result<WdevStopProgress, Self::Error> {
-        self.pending_network_rx = None;
         let progress = self
             .control
             .service_stop(self.hardware)
@@ -428,7 +452,7 @@ where
 
     fn start_tx<'a>(
         &'a mut self,
-        mut frame: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+        frame: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
         network: &'a PinnedTxConsumer<
             'resources,
             M,
@@ -439,138 +463,10 @@ where
         >,
     ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a {
         async move {
-            let destination = frame
-                .as_slice()
-                .get(..6)
-                .and_then(|bytes| <[u8; 6]>::try_from(bytes).ok());
-            let agreement = destination
-                .filter(|peer| peer[0] & 1 == 0)
-                .and_then(|peer| {
-                    self.control
-                        .mac
-                        .engine()
-                        .tx_block_ack_agreement(peer)
-                        .map(|agreement| (peer, agreement))
-                });
-
-            let progress = if let Some((peer, agreement)) = agreement
-                && network.queue_len() != 0
-                && let Some(mut second) = network.try_receive()
-            {
-                let second_peer = second
-                    .as_slice()
-                    .get(..6)
-                    .and_then(|bytes| <[u8; 6]>::try_from(bytes).ok());
-                if second_peer != Some(peer) {
-                    network.requeue(second);
-                    self.control
-                        .start_network_tx(self.hardware, frame.as_slice())
-                        .map_err(Esp32s31AccessPointWdevError::Control)?
-                } else {
-                    let (engine, ordinary) =
-                        self.control.mac.try_aggregate_adapter().map_err(|error| {
-                            Esp32s31AccessPointWdevError::Control(
-                                Esp32s31AccessPointControlError::Mac(error),
-                            )
-                        })?;
-                    let rate = HtRate::new(
-                        HtMcs::Mcs7,
-                        HtGuardInterval::Long800Ns,
-                        HtChannelWidth::Mhz20,
-                    );
-                    let first_offset = frame.ethernet_offset();
-                    let first_length = frame.ethernet_length();
-                    let first_encoded = engine
-                        .encode_aggregate_ethernet_in_place(
-                            peer,
-                            frame.storage_mut(),
-                            first_offset,
-                            first_length,
-                        )
-                        .map_err(|error| {
-                            Esp32s31AccessPointWdevError::Control(
-                                Esp32s31AccessPointControlError::from(error),
-                            )
-                        })?;
-                    let aggregate = self.aggregate.active_mut();
-                    aggregate
-                        .begin(
-                            peer,
-                            rate,
-                            first_encoded.sequence_number,
-                            first_encoded.hardware_key_selector,
-                        )
-                        .map_err(Esp32s31AccessPointWdevError::Aggregate)?;
-                    aggregate
-                        .push(peer, frame, first_encoded)
-                        .map_err(Esp32s31AccessPointWdevError::Aggregate)?;
-
-                    let second_offset = second.ethernet_offset();
-                    let second_length = second.ethernet_length();
-                    let second_encoded = engine
-                        .encode_aggregate_ethernet_in_place(
-                            peer,
-                            second.storage_mut(),
-                            second_offset,
-                            second_length,
-                        )
-                        .map_err(|error| {
-                            Esp32s31AccessPointWdevError::Control(
-                                Esp32s31AccessPointControlError::from(error),
-                            )
-                        })?;
-                    aggregate
-                        .push(peer, second, second_encoded)
-                        .map_err(Esp32s31AccessPointWdevError::Aggregate)?;
-
-                    let target = usize::from(agreement.window).min(AMPDU_SLOTS);
-                    let mut admitted = 2_usize;
-                    while admitted < target {
-                        let Some(mut next) = network.try_receive() else {
-                            break;
-                        };
-                        let next_peer = next
-                            .as_slice()
-                            .get(..6)
-                            .and_then(|bytes| <[u8; 6]>::try_from(bytes).ok());
-                        if next_peer != Some(peer) {
-                            network.requeue(next);
-                            break;
-                        }
-                        let offset = next.ethernet_offset();
-                        let length = next.ethernet_length();
-                        let encoded = engine
-                            .encode_aggregate_ethernet_in_place(
-                                peer,
-                                next.storage_mut(),
-                                offset,
-                                length,
-                            )
-                            .map_err(|error| {
-                                Esp32s31AccessPointWdevError::Control(
-                                    Esp32s31AccessPointControlError::from(error),
-                                )
-                            })?;
-                        aggregate
-                            .push(peer, next, encoded)
-                            .map_err(Esp32s31AccessPointWdevError::Aggregate)?;
-                        admitted += 1;
-                    }
-                    aggregate
-                        .publish(ordinary, self.hardware)
-                        .map_err(Esp32s31AccessPointWdevError::Aggregate)?;
-                    self.aggregate_deadline_micros = Some(
-                        ordinary
-                            .now_micros()
-                            .saturating_add(ordinary.publication_timeout_micros()),
-                    );
-                    WifiTxProgress::Pending
-                }
-            } else {
-                self.control
-                    .start_network_tx(self.hardware, frame.as_slice())
-                    .map_err(Esp32s31AccessPointWdevError::Control)?
-            };
+            let progress = self
+                .network_tx
+                .start(self.control, self.hardware, frame, network)
+                .await?;
             if progress == WifiTxProgress::Pending {
                 debug_assert!(self.network_tx_pending.is_none());
                 self.network_tx_pending = Some(NetworkTxPending {
@@ -585,16 +481,7 @@ where
 
     fn wait_tx_deadline(&mut self) -> impl Future<Output = ()> + '_ {
         async move {
-            if let Some(deadline) = self.aggregate_deadline_micros {
-                let (_, ordinary) = self
-                    .control
-                    .mac
-                    .try_aggregate_adapter()
-                    .expect("aggregate publication leaves ordinary AP TX idle");
-                ordinary.wait_until(deadline).await;
-            } else {
-                self.control.wait_tx_deadline().await;
-            }
+            self.network_tx.wait_deadline(self.control).await;
         }
     }
 
@@ -613,103 +500,10 @@ where
                         self.control.report.tx_deadline_wakes.saturating_add(1);
                 }
             }
-            let progress = if self.aggregate_deadline_micros.is_some() {
-                let events = match wake {
-                    WifiTxWake::Interrupt { events } => events,
-                    WifiTxWake::Deadline => 0,
-                };
-                let tx_events =
-                    events & (MAC_INT_TX_COMPLETE | MAC_INT_TX_TIMEOUT | MAC_INT_COLLISION);
-                if tx_events.count_ones() > 1 {
-                    return Err(Esp32s31AccessPointWdevError::Aggregate(
-                        Esp32s31ApAmpduError::ConflictingInterruptEvents(tx_events),
-                    ));
-                }
-                if tx_events == MAC_INT_COLLISION {
-                    if !self
-                        .aggregate
-                        .active_mut()
-                        .abort_collision(self.hardware)
-                        .map_err(Esp32s31AccessPointWdevError::Aggregate)?
-                    {
-                        return Err(Esp32s31AccessPointWdevError::Aggregate(
-                            Esp32s31ApAmpduError::HardwareDidNotDetach,
-                        ));
-                    }
-                    self.aggregate_deadline_micros = None;
-                    WifiTxProgress::Complete
-                } else if tx_events == MAC_INT_TX_TIMEOUT || matches!(wake, WifiTxWake::Deadline) {
-                    if !self
-                        .aggregate
-                        .active_mut()
-                        .begin_timeout_abort(self.hardware)
-                        .map_err(Esp32s31AccessPointWdevError::Aggregate)?
-                    {
-                        return Err(Esp32s31AccessPointWdevError::Aggregate(
-                            Esp32s31ApAmpduError::HardwareDidNotDetach,
-                        ));
-                    }
-                    let (_, ordinary) =
-                        self.control.mac.try_aggregate_adapter().map_err(|error| {
-                            Esp32s31AccessPointWdevError::Control(
-                                Esp32s31AccessPointControlError::Mac(error),
-                            )
-                        })?;
-                    ordinary.after_micros(16).await;
-                    self.aggregate
-                        .active_mut()
-                        .finish_timeout_abort(self.hardware)
-                        .map_err(Esp32s31AccessPointWdevError::Aggregate)?;
-                    self.aggregate_deadline_micros = None;
-                    WifiTxProgress::Complete
-                } else {
-                    let aggregate_progress = {
-                        let (_, ordinary) =
-                            self.control.mac.try_aggregate_adapter().map_err(|error| {
-                                Esp32s31AccessPointWdevError::Control(
-                                    Esp32s31AccessPointControlError::Mac(error),
-                                )
-                            })?;
-                        self.aggregate
-                            .active_mut()
-                            .service_completion(ordinary, self.hardware)
-                            .map_err(Esp32s31AccessPointWdevError::Aggregate)?
-                    };
-                    match aggregate_progress {
-                        Esp32s31ApAmpduProgress::Complete => {
-                            self.aggregate_deadline_micros = None;
-                            WifiTxProgress::Complete
-                        }
-                        Esp32s31ApAmpduProgress::Republished => {
-                            let (_, ordinary) =
-                                self.control.mac.try_aggregate_adapter().map_err(|error| {
-                                    Esp32s31AccessPointWdevError::Control(
-                                        Esp32s31AccessPointControlError::Mac(error),
-                                    )
-                                })?;
-                            self.aggregate_deadline_micros = Some(
-                                ordinary
-                                    .now_micros()
-                                    .saturating_add(ordinary.publication_timeout_micros()),
-                            );
-                            WifiTxProgress::Pending
-                        }
-                        Esp32s31ApAmpduProgress::Pending => {
-                            if tx_events == MAC_INT_TX_COMPLETE {
-                                return Err(Esp32s31AccessPointWdevError::Aggregate(
-                                    Esp32s31ApAmpduError::CompletionInterruptWithoutState,
-                                ));
-                            }
-                            WifiTxProgress::Pending
-                        }
-                    }
-                }
-            } else {
-                self.control
-                    .service_tx(self.hardware, wake)
-                    .await
-                    .map_err(Esp32s31AccessPointWdevError::Control)?
-            };
+            let progress = self
+                .network_tx
+                .service(self.control, self.hardware, wake)
+                .await?;
             self.observe_role_state();
             self.observe_tx_started();
             self.observe_tx_terminal();
@@ -721,6 +515,136 @@ where
     }
 
     fn preferred_tx_batch_size(&self) -> usize {
-        AMPDU_SLOTS
+        if self.control.has_operational_tx_block_ack() {
+            AMPDU_SLOTS
+        } else {
+            1
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct NetworkRx {
+        capacity: usize,
+        frames: std::vec::Vec<std::vec::Vec<u8>>,
+    }
+
+    impl WdevNetworkRx for NetworkRx {
+        fn try_send(&mut self, frame: &[u8]) -> Result<(), RxEnqueueError> {
+            if self.frames.len() == self.capacity {
+                return Err(RxEnqueueError::QueueFull);
+            }
+            self.frames.push(frame.to_vec());
+            Ok(())
+        }
+
+        fn try_send_parts(&mut self, frame: EthernetFrameParts<'_>) -> Result<(), RxEnqueueError> {
+            if self.frames.len() == self.capacity {
+                return Err(RxEnqueueError::QueueFull);
+            }
+            let mut storage = std::vec![0; frame.length()];
+            frame.copy_to(&mut storage).expect("test frame fits");
+            self.frames.push(storage);
+            Ok(())
+        }
+
+        #[cfg(feature = "rx-delivery-observation")]
+        fn try_send_observed(
+            &mut self,
+            frame: &[u8],
+            before_publish: &mut dyn FnMut(),
+        ) -> Result<(), RxEnqueueError> {
+            let result = self.try_send(frame);
+            if result.is_ok() {
+                before_publish();
+            }
+            result
+        }
+
+        #[cfg(feature = "rx-delivery-observation")]
+        fn try_send_parts_observed(
+            &mut self,
+            frame: EthernetFrameParts<'_>,
+            before_publish: &mut dyn FnMut(),
+        ) -> Result<(), RxEnqueueError> {
+            let result = self.try_send_parts(frame);
+            if result.is_ok() {
+                before_publish();
+            }
+            result
+        }
+    }
+
+    fn pack(storage: &mut [u8], payloads: &[&[u8]]) -> usize {
+        let mut writer = crate::ethernet_rx::PackedEthernetWriter::new(storage);
+        for (index, payload) in payloads.iter().enumerate() {
+            writer
+                .push(EthernetFrameParts {
+                    destination: [2, 0, 0, 0, 0, 1],
+                    source: [2, 0, 0, 0, 0, 2],
+                    ether_type: 0x0800 + index as u16,
+                    payload,
+                })
+                .unwrap();
+        }
+        writer.used()
+    }
+
+    #[test]
+    fn ap_batch_publishes_every_amsdu_subframe() {
+        let mut storage = [0_u8; 128];
+        let used = pack(&mut storage, &[&[0; 20], &[1; 20]]);
+        let mut network = NetworkRx {
+            capacity: 2,
+            frames: std::vec::Vec::new(),
+        };
+        let mut offset = 0;
+        while let Some(record) = crate::ethernet_rx::record_at(&storage, used, offset).unwrap() {
+            network.try_send_parts(record.frame).unwrap();
+            offset = record.next_offset;
+        }
+
+        assert_eq!(offset, used);
+        assert_eq!(network.frames.len(), 2);
+        assert_eq!(&network.frames[0][14..], &[0; 20]);
+        assert_eq!(&network.frames[1][14..], &[1; 20]);
+    }
+
+    #[test]
+    fn ap_batch_retries_the_same_record_after_backpressure() {
+        let mut storage = [0_u8; 128];
+        let used = pack(&mut storage, &[&[0; 20], &[1; 20]]);
+        let mut network = NetworkRx {
+            capacity: 1,
+            frames: std::vec::Vec::new(),
+        };
+        let first = crate::ethernet_rx::record_at(&storage, used, 0)
+            .unwrap()
+            .unwrap();
+        network.try_send_parts(first.frame).unwrap();
+        let retained_offset = first.next_offset;
+        let second = crate::ethernet_rx::record_at(&storage, used, retained_offset)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            network.try_send_parts(second.frame),
+            Err(RxEnqueueError::QueueFull)
+        );
+
+        // Network consumption releases capacity. The publication cursor was
+        // not advanced by QueueFull, so the exact second record is retried.
+        network.frames.clear();
+        let retry = crate::ethernet_rx::record_at(&storage, used, retained_offset)
+            .unwrap()
+            .unwrap();
+        assert_eq!(retry.frame.payload, &[1; 20]);
+        network.try_send_parts(retry.frame).unwrap();
+
+        assert_eq!(network.frames.len(), 1);
+        assert_eq!(&network.frames[0][14..], &[1; 20]);
+        assert_eq!(retry.next_offset, used);
     }
 }

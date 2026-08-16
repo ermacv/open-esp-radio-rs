@@ -28,8 +28,7 @@ use open_esp_radio_esp32s31_wifi_mac::{
     },
     tx_ampdu::{
         AmpduFrameLayout, AmpduFrameSize, HeAmpduFrameRequest, HeAmpduPolicy, HtAmpduFrameRequest,
-        HtAmpduHardware, HtAmpduTxError, HtAmpduTxResources, RetainedAmpduDmaStorage,
-        RetainedDmaAmpduTx,
+        HtAmpduHardware, HtAmpduTxError, RetainedDmaAmpduTx,
     },
     tx_runtime::{AmpduRetryDecision, AmpduRetryError, AmpduRetryPolicy, AmpduRetryState},
 };
@@ -53,8 +52,9 @@ use crate::{
     aggregate_tx_observer::{
         AggregateBuildStop, AggregateTxObservation, AggregateTxObserver, NetworkSingleMpduReason,
     },
+    ampdu_resources::AggregateTxResources,
     connected_control::{ConnectedControlTimer, ConnectedControlTx},
-    connected_services::Esp32s31NetworkTxService,
+    wdev::services::WdevNetworkTxService,
     wdev::{WdevControlProgress, WifiTxProgress, WifiTxWake},
 };
 use open_esp_radio_esp32s31_wifi_sta::connected_control::ConnectedDisconnectReason;
@@ -69,102 +69,6 @@ pub struct Esp32s31ConnectedTxTeardownParts<R, A> {
     pub pairwise_key: StaPairwiseCcmpSlot,
     pub sequences: StaTxSequenceCounters,
     pub aggregate: A,
-}
-
-/// Descriptor arenas owned by one connected aggregate-TX scheduler.
-///
-/// `primary` is the only arena which may become hardware-owned. `standby`,
-/// when present, may be filled while `primary` is in flight but remains in the
-/// software-owned `Reserved` state until the outer scheduler admits its
-/// publication. The separate retention arenas hold the comparatively large
-/// network-lease and descriptor-identity tables. Embedded composition roots
-/// should allocate those arenas statically so this movable resource handle
-/// remains small across async boundaries.
-pub struct AggregateTxResources<'storage, B: 'storage, const SLOTS: usize, const BUFFER_SIZE: usize>
-{
-    primary: HtAmpduTxResources<'storage, SLOTS, BUFFER_SIZE>,
-    primary_retention: &'storage mut RetainedAmpduDmaStorage<B, SLOTS>,
-    standby: Option<HtAmpduTxResources<'storage, SLOTS, BUFFER_SIZE>>,
-    standby_retention: Option<&'storage mut RetainedAmpduDmaStorage<B, SLOTS>>,
-}
-
-impl<'storage, B: 'storage, const SLOTS: usize, const BUFFER_SIZE: usize>
-    AggregateTxResources<'storage, B, SLOTS, BUFFER_SIZE>
-{
-    pub const fn single(
-        primary: HtAmpduTxResources<'storage, SLOTS, BUFFER_SIZE>,
-        primary_retention: &'storage mut RetainedAmpduDmaStorage<B, SLOTS>,
-    ) -> Self {
-        Self {
-            primary,
-            primary_retention,
-            standby: None,
-            standby_retention: None,
-        }
-    }
-
-    pub const fn pipelined(
-        primary: HtAmpduTxResources<'storage, SLOTS, BUFFER_SIZE>,
-        primary_retention: &'storage mut RetainedAmpduDmaStorage<B, SLOTS>,
-        standby: HtAmpduTxResources<'storage, SLOTS, BUFFER_SIZE>,
-        standby_retention: &'storage mut RetainedAmpduDmaStorage<B, SLOTS>,
-    ) -> Self {
-        Self {
-            primary,
-            primary_retention,
-            standby: Some(standby),
-            standby_retention: Some(standby_retention),
-        }
-    }
-
-    pub const fn primary(&self) -> &HtAmpduTxResources<'storage, SLOTS, BUFFER_SIZE> {
-        &self.primary
-    }
-
-    pub const fn standby(&self) -> Option<&HtAmpduTxResources<'storage, SLOTS, BUFFER_SIZE>> {
-        self.standby.as_ref()
-    }
-
-    /// Decompose the arena at an exclusive role transition. Both roles must
-    /// return these exact owners; none of the descriptor or retention storage
-    /// is manufactured by the role adapter.
-    #[allow(clippy::type_complexity)]
-    pub fn into_parts(
-        self,
-    ) -> (
-        HtAmpduTxResources<'storage, SLOTS, BUFFER_SIZE>,
-        &'storage mut RetainedAmpduDmaStorage<B, SLOTS>,
-        Option<HtAmpduTxResources<'storage, SLOTS, BUFFER_SIZE>>,
-        Option<&'storage mut RetainedAmpduDmaStorage<B, SLOTS>>,
-    ) {
-        (
-            self.primary,
-            self.primary_retention,
-            self.standby,
-            self.standby_retention,
-        )
-    }
-
-    /// Reassemble the exact owners returned by a role-specific scheduler.
-    #[allow(clippy::type_complexity)]
-    pub fn from_parts(
-        primary: HtAmpduTxResources<'storage, SLOTS, BUFFER_SIZE>,
-        primary_retention: &'storage mut RetainedAmpduDmaStorage<B, SLOTS>,
-        standby: Option<HtAmpduTxResources<'storage, SLOTS, BUFFER_SIZE>>,
-        standby_retention: Option<&'storage mut RetainedAmpduDmaStorage<B, SLOTS>>,
-    ) -> Self {
-        assert_eq!(
-            standby.is_some(),
-            standby_retention.is_some(),
-            "standby descriptors and retention must cross role boundaries together"
-        );
-        Self {
-            primary,
-            primary_retention,
-            standby,
-            standby_retention,
-        }
-    }
 }
 
 /// Finite aggregate publication policy installed after Association.

@@ -547,6 +547,16 @@ fn enqueue_frame(device: &mut Device) {
 }
 
 #[test]
+fn aggregate_batch_window_includes_the_first_published_frame() {
+    assert!(!should_collect_network_batch(1, 1));
+    assert!(should_collect_network_batch(32, 1));
+    assert!(should_collect_network_batch(32, 2));
+    assert!(should_collect_network_batch(32, 31));
+    assert!(!should_collect_network_batch(32, 32));
+    assert!(!should_collect_network_batch(32, 0));
+}
+
+#[test]
 fn control_boundary_precedes_prepared_network_publication() {
     let resources = std::boxed::Box::leak(std::boxed::Box::new(Resources::new()));
     let pool = Pool::pin_static(std::boxed::Box::leak(std::boxed::Box::new(Pool::new())));

@@ -9,11 +9,12 @@
 //! the returned report, but do not reproduce these policy or hardware
 //! decisions.
 
+use crate::peer_policy::{StaPeerAssociationPlanError, StaPeerScanPolicy, StaWmmSource};
 use open_esp_radio_esp32s31_hal::types::MacHeBeamformingReportProfileError;
 use open_esp_radio_esp32s31_wifi_mac::{
     edca::EdcaParametersError,
     he::{He20InstallError, He20PeerHardware, program_he20_peer_state},
-    init::{StaNoiseFloorHardware, StaPeerAssociationPlanError, StaPeerScanPolicy, StaWmmSource},
+    init::StaNoiseFloorHardware,
     rate_control::{BeamformingReportHardware, StaLinkMetric, StaRateControlAssociation},
     tx::HtPeerAmpduParameters,
 };

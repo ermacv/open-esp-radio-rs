@@ -22,6 +22,9 @@ mode = "dhcp"
 ssid = "open-radio-device"
 passphrase = "replace-me-too"
 channel = 6
+# `mhz20`, `mhz40-above`, or `mhz40-below`; HT40 geometry must keep the
+# secondary channel inside channels 1..=13.
+channel_width = "mhz40-above"
 # Admission limit enforced before an association obtains an AID/key slot.
 # The ESP32-S31 AP implementation accepts 1..=15.
 client_limit = 4

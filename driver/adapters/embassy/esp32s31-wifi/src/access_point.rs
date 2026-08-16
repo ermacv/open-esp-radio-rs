@@ -38,9 +38,8 @@ use open_esp_radio_esp32s31_wifi_mac::{
     init::MAC_COLD_RX_INTERRUPT_MASK,
     irq::{MAC_INT_COLLISION, MAC_INT_TX_COMPLETE, MAC_INT_TX_TIMEOUT, MacInterruptRoute},
     rx::{RxDescriptorSnapshot, RxDma, RxIngressConfig, RxRingHalted, view_normalized_rx_frame},
-    tx::{HtChannelWidth, HtGuardInterval, HtMcs, HtRate, TxHardware},
+    tx::TxHardware,
 };
-#[cfg(feature = "rx-delivery-observation")]
 use open_esp_radio_ieee80211::data::EthernetFrameParts;
 use open_esp_radio_ieee80211::data::{
     DataInterfaceRole, IEEE80211_LEGACY_DATA_HEADER_LEN, IEEE80211_QOS_DATA_HEADER_LEN,
@@ -71,9 +70,11 @@ const EAPOL_ETHERTYPE: u16 = 0x888e;
 const EAPOL_CAPACITY: usize = 512;
 
 mod ampdu;
+mod network_tx;
 mod wdev;
 
 pub use ampdu::Esp32s31AccessPointAmpdu;
+use network_tx::Esp32s31AccessPointNetworkTx;
 use wdev::Esp32s31AccessPointWdevServices;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -123,6 +124,10 @@ pub struct Esp32s31AccessPointControlReport {
 pub enum Esp32s31AccessPointControlError {
     Receive(Esp32s31RxFrontierError),
     Mac(Esp32s31ApMacError),
+    /// The caller-provided RX scratch cannot retain one fully decoded batch.
+    ReceiveBatchCapacity,
+    /// A live BlockAck agreement lost its corresponding peer HT facts.
+    InvalidPeerHtRate,
     InvalidBeaconSchedule,
 }
 
@@ -199,7 +204,33 @@ impl From<open_esp_radio_esp32s31_wifi_ap::engine::Esp32s31ApEngineError>
 enum StagedControlFrame {
     Management { length: usize },
     Eapol { length: usize },
-    Ethernet,
+    EthernetBatch { used: usize },
+}
+
+struct DeferredAccessPointRxSink<'storage> {
+    frames: crate::ethernet_rx::PackedEthernetWriter<'storage>,
+    exhausted: bool,
+}
+
+impl<'storage> DeferredAccessPointRxSink<'storage> {
+    fn new(storage: &'storage mut [u8]) -> Self {
+        Self {
+            frames: crate::ethernet_rx::PackedEthernetWriter::new(storage),
+            exhausted: false,
+        }
+    }
+
+    const fn used(&self) -> usize {
+        self.frames.used()
+    }
+}
+
+impl Esp32s31ApRxSink for DeferredAccessPointRxSink<'_> {
+    fn publish(&mut self, event: Esp32s31ApRxEvent<'_>) {
+        if self.frames.push(event.frame).is_err() {
+            self.exhausted = true;
+        }
+    }
 }
 
 /// Control-plane owner for one active AP role.
@@ -222,6 +253,8 @@ pub struct Esp32s31AccessPointControl<
     rx_frame: &'storage mut [u8],
     tx_frame: &'storage mut [u8],
     data_rx: &'storage mut Esp32s31ApRxDispatcher,
+    rx_batch_used: usize,
+    rx_batch_offset: usize,
     report: Esp32s31AccessPointControlReport,
 }
 
@@ -281,6 +314,8 @@ where
             rx_frame,
             tx_frame,
             data_rx,
+            rx_batch_used: 0,
+            rx_batch_offset: 0,
             report: Esp32s31AccessPointControlReport::default(),
         }
     }
@@ -313,7 +348,9 @@ where
         self.receive.scheduler_snapshot()
     }
 
-    /// Recycle one complete RX unit and stage at most one deliverable MPDU.
+    /// Recycle one complete RX unit, stage at most one control MPDU, and
+    /// publish every protected Ethernet MSDU through the supplied bounded
+    /// sink before the borrowed RX view expires.
     ///
     /// The RX walker is always recycled before TX receives the PAC borrow.
     /// This avoids nested mutable access to one register owner and makes the
@@ -324,16 +361,16 @@ where
         authenticator_nonce: [u8; 32],
         initial_replay_counter: u64,
         now_micros: u64,
-    ) -> Result<Option<usize>, Esp32s31AccessPointControlError>
+    ) -> Result<(), Esp32s31AccessPointControlError>
     where
         H: RxDma + TxHardware + Esp32s31ApRuntimeHardware,
     {
-        if self.mac.tx_pending() {
-            return Ok(None);
+        if self.mac.tx_pending() || self.rx_batch_pending() {
+            return Ok(());
         }
         let mut staged = None;
-        let mut ethernet_length = None;
         let mut activity_peer = None;
+        let mut batch_exhausted = false;
         let rx_frame = &mut *self.rx_frame;
         let unit_staging = &mut *self.tx_frame;
         let mac = &self.mac;
@@ -379,33 +416,25 @@ where
                         .mpdu
                         .get(10..16)
                         .and_then(|bytes| <[u8; 6]>::try_from(bytes).ok());
-                    struct StageEthernet<'a> {
-                        storage: &'a mut [u8],
-                        length: &'a mut Option<usize>,
-                    }
-
-                    impl Esp32s31ApRxSink for StageEthernet<'_> {
-                        fn publish(&mut self, event: Esp32s31ApRxEvent<'_>) {
-                            if self.length.is_some() || event.frame.length() > self.storage.len() {
-                                return;
-                            }
-                            if event.frame.copy_to(self.storage).is_ok() {
-                                *self.length = Some(event.frame.length());
-                            }
-                        }
-                    }
-
-                    let mut sink = StageEthernet {
-                        storage: rx_frame,
-                        length: &mut ethernet_length,
-                    };
                     report.protected_data_frames = report.protected_data_frames.saturating_add(1);
-                    match data_rx.dispatch_protected(
+                    let mut sink = DeferredAccessPointRxSink::new(rx_frame);
+                    let dispatch = data_rx.dispatch_protected(
                         segment,
                         |peer| mac.engine().is_authorized_peer(peer),
                         &mut sink,
-                    ) {
-                        Esp32s31ApRxDispatch::Data { .. } => activity_peer = source,
+                    );
+                    let batch_used = sink.used();
+                    batch_exhausted = sink.exhausted;
+                    match dispatch {
+                        Esp32s31ApRxDispatch::Data {
+                            ethernet_frames, ..
+                        } => {
+                            activity_peer = source;
+                            if ethernet_frames != 0 {
+                                staged =
+                                    Some(StagedControlFrame::EthernetBatch { used: batch_used });
+                            }
+                        }
                         Esp32s31ApRxDispatch::Duplicate => {
                             report.protected_data_duplicates =
                                 report.protected_data_duplicates.saturating_add(1);
@@ -427,22 +456,7 @@ where
                                 report.protected_data_protocol_rejected.saturating_add(1);
                         }
                     }
-                    if ethernet_length.is_some() {
-                        report.ethernet_frames_staged =
-                            report.ethernet_frames_staged.saturating_add(1);
-                        let ethernet = &rx_frame[..ethernet_length.unwrap_or(0)];
-                        match ethernet_protocol(ethernet) {
-                            Some(EthernetProtocol::ArpRequest) => {
-                                report.ethernet_arp_requests_staged =
-                                    report.ethernet_arp_requests_staged.saturating_add(1);
-                            }
-                            Some(EthernetProtocol::Ipv4Tcp) => {
-                                report.ethernet_tcp_frames_staged =
-                                    report.ethernet_tcp_frames_staged.saturating_add(1);
-                            }
-                            _ => {}
-                        }
-                        staged = Some(StagedControlFrame::Ethernet);
+                    if matches!(staged, Some(StagedControlFrame::EthernetBatch { .. })) {
                         return Esp32s31RecycledRxDirective::Pause;
                     }
                     report.ignored_rx_frames = report.ignored_rx_frames.saturating_add(1);
@@ -472,6 +486,13 @@ where
                 }
             })
             .await?;
+        if batch_exhausted {
+            self.report.protected_data_protocol_rejected = self
+                .report
+                .protected_data_protocol_rejected
+                .saturating_add(1);
+            return Err(Esp32s31AccessPointControlError::ReceiveBatchCapacity);
+        }
         if let Some(peer) = activity_peer {
             self.mac
                 .engine_mut()
@@ -495,7 +516,7 @@ where
             .saturating_add(progress.discarded_units);
 
         let Some(staged) = staged else {
-            return Ok(None);
+            return Ok(());
         };
         match staged {
             StagedControlFrame::Management { length } => {
@@ -520,9 +541,34 @@ where
             StagedControlFrame::Eapol { length } => {
                 self.service_eapol(hardware, length, now_micros)?;
             }
-            StagedControlFrame::Ethernet => {}
+            StagedControlFrame::EthernetBatch { used } => {
+                self.rx_batch_used = used;
+                self.rx_batch_offset = 0;
+            }
         }
-        Ok(ethernet_length)
+        Ok(())
+    }
+
+    pub const fn rx_batch_pending(&self) -> bool {
+        self.rx_batch_offset < self.rx_batch_used
+    }
+
+    fn rx_batch_record(
+        &self,
+    ) -> Result<Option<crate::ethernet_rx::PackedEthernetRecord<'_>>, Esp32s31AccessPointControlError>
+    {
+        crate::ethernet_rx::record_at(self.rx_frame, self.rx_batch_used, self.rx_batch_offset)
+            .map_err(|_| Esp32s31AccessPointControlError::ReceiveBatchCapacity)
+    }
+
+    fn commit_rx_batch_record(&mut self, next_offset: usize) {
+        debug_assert!(next_offset > self.rx_batch_offset);
+        debug_assert!(next_offset <= self.rx_batch_used);
+        self.rx_batch_offset = next_offset;
+        if self.rx_batch_offset == self.rx_batch_used {
+            self.rx_batch_offset = 0;
+            self.rx_batch_used = 0;
+        }
     }
 
     fn service_eapol<H>(
@@ -673,6 +719,12 @@ where
 
     pub const fn mac_report(&self) -> Esp32s31ApMacReport {
         self.mac.report()
+    }
+
+    /// Whether the AP owns at least one operational downlink Block Ack
+    /// agreement and can therefore profitably collect a network TX batch.
+    pub fn has_operational_tx_block_ack(&self) -> bool {
+        self.mac.engine().has_operational_tx_block_ack()
     }
 
     pub const fn tx_pending(&self) -> bool {
@@ -943,8 +995,7 @@ where
         let services = Esp32s31AccessPointWdevServices {
             control: self,
             hardware,
-            aggregate,
-            aggregate_deadline_micros: None,
+            network_tx: Esp32s31AccessPointNetworkTx::new(aggregate),
             status_observer,
             security_material,
             set_link_state: |state| network.set_link_state(state),
@@ -952,7 +1003,6 @@ where
             delivery_observer,
             last_status_revision,
             network_link_up: false,
-            pending_network_rx: None,
             network_backpressure_since_micros: None,
             tx_pending_since_micros: Some(Instant::now().as_micros()),
             network_tx_pending: None,
@@ -1023,6 +1073,9 @@ where
         >,
         Self,
     > {
+        if self.rx_batch_pending() {
+            return Err(self);
+        }
         let Self {
             receive,
             storage,
@@ -1030,6 +1083,8 @@ where
             rx_frame,
             tx_frame,
             data_rx,
+            rx_batch_used: _,
+            rx_batch_offset: _,
             report,
         } = self;
         let ring = match receive.try_into_halted() {
@@ -1042,6 +1097,8 @@ where
                     rx_frame,
                     tx_frame,
                     data_rx,
+                    rx_batch_used: 0,
+                    rx_batch_offset: 0,
                     report,
                 });
             }
@@ -1056,6 +1113,8 @@ where
                     rx_frame,
                     tx_frame,
                     data_rx,
+                    rx_batch_used: 0,
+                    rx_batch_offset: 0,
                     report,
                 });
             }
@@ -1101,18 +1160,18 @@ fn ethernet_protocol(frame: &[u8]) -> Option<EthernetProtocol> {
     }
 }
 
-#[cfg(feature = "rx-delivery-observation")]
-fn network_delivery_event(frame: &[u8]) -> Option<RxNetworkDeliveryEvent<'_>> {
-    let destination = frame.get(..6)?.try_into().ok()?;
-    let source = frame.get(6..12)?.try_into().ok()?;
-    let ether_type = u16::from_be_bytes(frame.get(12..14)?.try_into().ok()?);
-    Some(RxNetworkDeliveryEvent {
-        frame: EthernetFrameParts {
-            destination,
-            source,
-            ether_type,
-            payload: frame.get(14..)?,
+fn ethernet_parts_protocol(frame: EthernetFrameParts<'_>) -> Option<EthernetProtocol> {
+    match frame.ether_type {
+        0x0800 => Some(if *frame.payload.get(9)? == 6 {
+            EthernetProtocol::Ipv4Tcp
+        } else {
+            EthernetProtocol::Ipv4Other
+        }),
+        0x0806 => match u16::from_be_bytes(frame.payload.get(6..8)?.try_into().ok()?) {
+            1 => Some(EthernetProtocol::ArpRequest),
+            2 => Some(EthernetProtocol::ArpReply),
+            _ => Some(EthernetProtocol::Other),
         },
-        raw: None,
-    })
+        _ => Some(EthernetProtocol::Other),
+    }
 }

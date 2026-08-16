@@ -151,7 +151,7 @@ impl<
     const SLOTS: usize,
     const AMPDU_BUFFER_SIZE: usize,
     const ORDINARY_BUFFER_SIZE: usize,
-> Esp32s31NetworkTxService<'resources, M, H, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>
+> WdevNetworkTxService<'resources, M, H, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>
     for Esp32s31ConnectedTx<
         'slot,
         'ampdu,

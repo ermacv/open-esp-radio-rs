@@ -1,7 +1,8 @@
 //! Bounded AP beacon storage and executor-time TSF publication.
 
 use open_esp_radio_ieee80211::{
-    beacon::{ApBeaconBuildError, WPA2_BEACON_CAPACITY, dtim, stamp, write_wpa2_ht20_beacon},
+    beacon::{ApBeaconBuildError, WPA2_BEACON_CAPACITY, dtim, stamp, write_wpa2_ht_beacon},
+    channel::WifiChannel,
     ssid::WifiSsid,
     tbtt::next_tbtt_delay,
 };
@@ -25,16 +26,16 @@ impl<'storage> Esp32s31ApBeacon<'storage> {
         storage: &'storage mut [u8; WPA2_BEACON_CAPACITY],
         access_point: [u8; 6],
         ssid: &WifiSsid,
-        primary_channel: u8,
+        channel: WifiChannel,
         beacon_interval_tu: u16,
         dtim_period: u8,
         management_sequence: u16,
     ) -> Result<Self, ApBeaconBuildError> {
-        let len = write_wpa2_ht20_beacon(
+        let len = write_wpa2_ht_beacon(
             storage,
             access_point,
             ssid,
-            primary_channel,
+            channel,
             beacon_interval_tu,
             dtim_period,
             management_sequence,
@@ -146,7 +147,16 @@ mod tests {
     fn static_storage_owns_beacon_dtim_and_next_deadline() {
         let mut storage = [0; WPA2_BEACON_CAPACITY];
         let ssid = WifiSsid::new(b"ap").unwrap();
-        let mut beacon = Esp32s31ApBeacon::new(&mut storage, [2; 6], &ssid, 6, 100, 2, 3).unwrap();
+        let mut beacon = Esp32s31ApBeacon::new(
+            &mut storage,
+            [2; 6],
+            &ssid,
+            WifiChannel::mhz20(6).unwrap(),
+            100,
+            2,
+            3,
+        )
+        .unwrap();
         let frame = beacon.prepare(102_400, 4, true, 0x02).unwrap();
         let (offset, count, period) = dtim(frame).unwrap();
         assert_eq!((count, period), (0, 2));
@@ -167,7 +177,16 @@ mod tests {
     fn late_publication_does_not_move_the_absolute_tbtt_schedule() {
         let mut storage = [0; WPA2_BEACON_CAPACITY];
         let ssid = WifiSsid::new(b"ap").unwrap();
-        let mut beacon = Esp32s31ApBeacon::new(&mut storage, [2; 6], &ssid, 6, 100, 2, 3).unwrap();
+        let mut beacon = Esp32s31ApBeacon::new(
+            &mut storage,
+            [2; 6],
+            &ssid,
+            WifiChannel::mhz20(6).unwrap(),
+            100,
+            2,
+            3,
+        )
+        .unwrap();
 
         beacon.prepare(102_400, 4, false, 0).unwrap();
         assert_eq!(beacon.next_delay(102_400), Some((204_800, 103)));

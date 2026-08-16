@@ -57,6 +57,13 @@ impl WifiChannel {
         self.width
     }
 
+    pub const fn bandwidth_mhz(self) -> u16 {
+        match self.width {
+            WifiChannelWidth::Mhz20 => 20,
+            WifiChannelWidth::Mhz40Above | WifiChannelWidth::Mhz40Below => 40,
+        }
+    }
+
     pub const fn primary_frequency_mhz(self) -> u16 {
         if self.primary == 14 {
             2_484

@@ -1,4 +1,4 @@
-//! Finite ESP32-S31 RX, control and network-TX services for one connected epoch.
+//! Finite role-neutral RX, control and network-TX service composition.
 
 use core::{
     convert::Infallible,
@@ -6,10 +6,6 @@ use core::{
 };
 
 use open_esp_radio_embassy_net::{PinnedTxConsumer, PinnedTxFrame, RawMutex};
-use open_esp_radio_esp32s31_wifi_mac::tx::TxHardware;
-use open_esp_radio_esp32s31_wifi_sta::single_mpdu_tx::{
-    Esp32s31SingleMpduTx, SingleMpduTxError, WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer,
-};
 
 use crate::wdev::{
     WdevControlContext, WdevControlProgress, WdevRxProgress, WdevServices, WifiTxProgress,
@@ -20,7 +16,7 @@ use crate::wdev::{
 /// staging ownership. Protocol dispatch belongs to a separate consumer.
 /// Implementations may await bounded reload timer edges but must not retain the
 /// mutable hardware borrow across an await.
-pub trait Esp32s31ConnectedRxService<H> {
+pub trait WdevRxService<H> {
     type Error;
 
     fn service<'a>(
@@ -30,7 +26,7 @@ pub trait Esp32s31ConnectedRxService<H> {
 }
 
 /// One owned control scheduler sharing the services owner's PAC and TX transaction.
-pub trait Esp32s31ControlService<H, X> {
+pub trait WdevControlService<H, X> {
     type Error;
     type Exit;
 
@@ -45,9 +41,9 @@ pub trait Esp32s31ControlService<H, X> {
 }
 
 #[derive(Clone, Copy, Debug, Default)]
-pub struct NoConnectedControl;
+pub struct NoWdevControl;
 
-impl<H, X> Esp32s31ControlService<H, X> for NoConnectedControl {
+impl<H, X> WdevControlService<H, X> for NoWdevControl {
     type Error = Infallible;
     type Exit = Infallible;
 
@@ -70,7 +66,7 @@ impl<H, X> Esp32s31ControlService<H, X> for NoConnectedControl {
 /// Taking the first lease by value is essential for referenced DMA. The
 /// service may synchronously claim further ready leases from `network`, but
 /// never retains the runner capability itself.
-pub trait Esp32s31NetworkTxService<
+pub trait WdevNetworkTxService<
     'resources,
     M: RawMutex,
     H,
@@ -163,11 +159,7 @@ pub trait Esp32s31NetworkTxService<
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Esp32s31ConnectedServicesError<
-    RxError,
-    ControlError = Infallible,
-    TxError = SingleMpduTxError,
-> {
+pub enum WdevServiceError<RxError, ControlError = Infallible, TxError = Infallible> {
     Rx(RxError),
     Control(ControlError),
     Tx(TxError),
@@ -175,25 +167,25 @@ pub enum Esp32s31ConnectedServicesError<
 
 /// Unique connected-epoch owner for the shared register capability, RX ring,
 /// connected control and the selected ordinary/aggregate TX owner.
-pub struct Esp32s31ConnectedServices<H, R, X, C = NoConnectedControl> {
+pub struct WdevServiceSet<H, R, X, C = NoWdevControl> {
     hardware: H,
     rx: R,
     tx: X,
     control: C,
 }
 
-impl<H, R, X> Esp32s31ConnectedServices<H, R, X, NoConnectedControl> {
+impl<H, R, X> WdevServiceSet<H, R, X, NoWdevControl> {
     pub const fn new(hardware: H, rx: R, tx: X) -> Self {
         Self {
             hardware,
             rx,
             tx,
-            control: NoConnectedControl,
+            control: NoWdevControl,
         }
     }
 }
 
-impl<H, R, X, C> Esp32s31ConnectedServices<H, R, X, C> {
+impl<H, R, X, C> WdevServiceSet<H, R, X, C> {
     pub const fn with_control(hardware: H, rx: R, tx: X, control: C) -> Self {
         Self {
             hardware,
@@ -257,14 +249,14 @@ impl<
     const TRAILER: usize,
     const QUEUE_DEPTH: usize,
 > WdevServices<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>
-    for Esp32s31ConnectedServices<H, R, X, C>
+    for WdevServiceSet<H, R, X, C>
 where
     M: RawMutex,
-    R: Esp32s31ConnectedRxService<H>,
-    X: Esp32s31NetworkTxService<'resources, M, H, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-    C: Esp32s31ControlService<H, X>,
+    R: WdevRxService<H>,
+    X: WdevNetworkTxService<'resources, M, H, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+    C: WdevControlService<H, X>,
 {
-    type Error = Esp32s31ConnectedServicesError<R::Error, C::Error, X::Error>;
+    type Error = WdevServiceError<R::Error, C::Error, X::Error>;
     type Exit = C::Exit;
 
     fn service_rx<'a>(
@@ -275,7 +267,7 @@ where
             self.rx
                 .service(&mut self.hardware)
                 .await
-                .map_err(Esp32s31ConnectedServicesError::Rx)
+                .map_err(WdevServiceError::Rx)
         }
     }
 
@@ -291,7 +283,7 @@ where
             self.control
                 .service(&mut self.hardware, &mut self.tx, context)
                 .await
-                .map_err(Esp32s31ConnectedServicesError::Control)
+                .map_err(WdevServiceError::Control)
         }
     }
 
@@ -319,7 +311,7 @@ where
             self.tx
                 .start(&mut self.hardware, frame, network)
                 .await
-                .map_err(Esp32s31ConnectedServicesError::Tx)
+                .map_err(WdevServiceError::Tx)
         }
     }
 
@@ -335,7 +327,7 @@ where
             self.tx
                 .service(&mut self.hardware, wake)
                 .await
-                .map_err(Esp32s31ConnectedServicesError::Tx)
+                .map_err(WdevServiceError::Tx)
         }
     }
 
@@ -366,14 +358,12 @@ where
             self.tx
                 .start_prepared(&mut self.hardware, network)
                 .await
-                .map_err(Esp32s31ConnectedServicesError::Tx)
+                .map_err(WdevServiceError::Tx)
         }
     }
 
     fn cancel_prepared_tx(&mut self) -> Result<(), Self::Error> {
-        self.tx
-            .cancel_prepared()
-            .map_err(Esp32s31ConnectedServicesError::Tx)
+        self.tx.cancel_prepared().map_err(WdevServiceError::Tx)
     }
 
     fn can_prepare_tx(&self) -> bool {
@@ -396,67 +386,7 @@ where
             self.tx
                 .prepare(frame, network)
                 .await
-                .map_err(Esp32s31ConnectedServicesError::Tx)
+                .map_err(WdevServiceError::Tx)
         }
-    }
-}
-
-impl<
-    'resources,
-    'slot,
-    M,
-    H,
-    P,
-    E,
-    T,
-    const FRAME_CAPACITY: usize,
-    const HEADROOM: usize,
-    const TRAILER: usize,
-    const QUEUE_DEPTH: usize,
-    const TX_BUFFER_SIZE: usize,
-> Esp32s31NetworkTxService<'resources, M, H, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>
-    for Esp32s31SingleMpduTx<'slot, P, E, T, TX_BUFFER_SIZE>
-where
-    M: RawMutex,
-    H: TxHardware,
-    P: WifiTxPowerProfile,
-    E: WifiTxEntropy,
-    T: WifiTxTimer,
-{
-    type Error = SingleMpduTxError;
-
-    fn start<'a>(
-        &'a mut self,
-        hardware: &'a mut H,
-        frame: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-        _network: &'a PinnedTxConsumer<
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            QUEUE_DEPTH,
-        >,
-    ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a {
-        async move {
-            let progress = Esp32s31SingleMpduTx::start(self, hardware, frame.ethernet())?;
-            // Ordinary TX copied the complete Ethernet body into its private
-            // pinned slot before publishing DMA, so the network lease is no
-            // longer hardware-visible at this boundary.
-            drop(frame);
-            Ok(progress)
-        }
-    }
-
-    fn wait_deadline(&mut self) -> impl Future<Output = ()> + '_ {
-        Esp32s31SingleMpduTx::wait_deadline(self)
-    }
-
-    fn service<'a>(
-        &'a mut self,
-        hardware: &'a mut H,
-        wake: WifiTxWake,
-    ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a {
-        Esp32s31SingleMpduTx::service(self, hardware, wake)
     }
 }

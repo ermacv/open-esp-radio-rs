@@ -17,13 +17,14 @@ use open_esp_radio_esp32s31_wifi::ordinary_tx::{WifiTxEntropy, WifiTxPowerProfil
 use open_esp_radio_esp32s31_wifi_sta::single_mpdu_tx::WifiTxResources;
 
 use crate::{
-    aggregate_tx::{AggregateTxResources, Esp32s31ConnectedTx, Esp32s31ConnectedTxTeardownParts},
+    aggregate_tx::{Esp32s31ConnectedTx, Esp32s31ConnectedTxTeardownParts},
+    ampdu_resources::AggregateTxResources,
     connected_control::{
         ConnectedControlError, ConnectedControlHardware, ConnectedControlShutdown,
         ConnectedControlTx, Esp32s31ConnectedControl,
     },
-    connected_services::Esp32s31ConnectedServices,
     rx_dma_service::{Esp32s31ConnectedRx, Esp32s31StoppedRx},
+    wdev::services::WdevServiceSet,
 };
 
 /// Control-plane shutdown capability used by the connected teardown port.
@@ -189,7 +190,7 @@ pub struct Esp32s31ConnectedStaTeardownSuccess<H, R, T, A, C> {
 pub enum Esp32s31ConnectedStaTeardownFailure<H, R, S, X, C, CE, RE> {
     Control {
         error: CE,
-        services: Esp32s31ConnectedServices<H, R, X, C>,
+        services: WdevServiceSet<H, R, X, C>,
         group_key: StaGroupCcmpSlot,
     },
     Rx {
@@ -216,7 +217,7 @@ impl Esp32s31ConnectedStaTeardownPort {
     /// station owners in the only hardware-safe order.
     #[allow(clippy::result_large_err, clippy::type_complexity)]
     pub fn try_teardown<H, R, X, C>(
-        services: Esp32s31ConnectedServices<H, R, X, C>,
+        services: WdevServiceSet<H, R, X, C>,
         group_key: StaGroupCcmpSlot,
     ) -> Result<
         Esp32s31ConnectedStaTeardownSuccess<H, R::Stopped, X::Resources, X::Aggregate, C::Report>,
@@ -234,7 +235,7 @@ impl Esp32s31ConnectedStaTeardownPort {
             Err(error) => {
                 return Err(Esp32s31ConnectedStaTeardownFailure::Control {
                     error,
-                    services: Esp32s31ConnectedServices::with_control(hardware, rx, tx, control),
+                    services: WdevServiceSet::with_control(hardware, rx, tx, control),
                     group_key,
                 });
             }
@@ -357,15 +358,12 @@ mod tests {
         control_failure: bool,
         rx_failure: bool,
         tx_active: bool,
-    ) -> (
-        Esp32s31ConnectedServices<Hardware, Rx, Tx, Control>,
-        StaGroupCcmpSlot,
-    ) {
+    ) -> (WdevServiceSet<Hardware, Rx, Tx, Control>, StaGroupCcmpSlot) {
         let pairwise =
             install_sta_pairwise_ccmp(hardware, [1, 2, 3, 4, 5, 6], &[0x11; 16]).unwrap();
         let group = install_sta_group_ccmp(hardware, 1, &[0x22; 16]).unwrap();
         (
-            Esp32s31ConnectedServices::with_control(
+            WdevServiceSet::with_control(
                 core::mem::take(hardware),
                 Rx(rx_failure),
                 Tx {

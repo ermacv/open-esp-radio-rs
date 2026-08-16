@@ -11,7 +11,7 @@ use open_esp_radio_esp32s31_wifi::{
     },
     tx::{WifiTxProgress, WifiTxWake},
 };
-use open_esp_radio_esp32s31_wifi_mac::tx::{LegacyRate, TxHardware};
+use open_esp_radio_esp32s31_wifi_mac::tx::{HtRate, LegacyRate, TxHardware};
 use open_esp_radio_ieee80211::ap::ApPeerDisconnectKind;
 use open_esp_radio_ieee80211::block_ack::TxBlockAckAlarm;
 use open_esp_radio_wifi_ap::{ApPeerClose, ApServiceError};
@@ -23,7 +23,8 @@ use crate::{
         Esp32s31ApRuntimeHardware,
     },
     tx::{
-        Esp32s31ApTx, Esp32s31ApTxClass, Esp32s31ApTxConfig, Esp32s31ApTxError, peer_legacy_rate,
+        Esp32s31ApTx, Esp32s31ApTxClass, Esp32s31ApTxConfig, Esp32s31ApTxError, peer_ht_rate,
+        peer_legacy_rate,
     },
 };
 
@@ -356,6 +357,11 @@ where
         self.block_ack_alarm = Some((peer, alarm));
         self.pending = Some(PendingPublication::BlockAckRequest { peer });
         Ok(true)
+    }
+
+    pub fn peer_ht_rate(&self, peer: [u8; 6]) -> Option<HtRate> {
+        let status = self.engine.peer_status(peer)?;
+        peer_ht_rate(self.engine.channel(), status.ht?)
     }
 
     pub fn next_tx_block_ack_deadline(&self) -> Option<u64> {
@@ -791,7 +797,7 @@ mod tests {
             &mut beacon,
             &mut pairwise,
             &WifiSsid::new(b"ap").unwrap(),
-            6,
+            open_esp_radio_ieee80211::channel::WifiChannel::mhz20(6).unwrap(),
             100,
             2,
         )

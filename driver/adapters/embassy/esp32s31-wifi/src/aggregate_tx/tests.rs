@@ -21,7 +21,7 @@ use open_esp_radio_esp32s31_wifi_mac::{
         HardwareOwnedTxDma, HeMcs, HeRate, HtChannelWidth, HtGuardInterval, HtMcs, HtRate,
         LegacyRate, PreparedTxDma, TxSlot,
     },
-    tx_ampdu::HtAmpduTxStorage,
+    tx_ampdu::{HtAmpduTxResources, HtAmpduTxStorage, RetainedAmpduDmaStorage},
     tx_runtime::WifiTxRuntimePolicy,
 };
 use open_esp_radio_esp32s31_wifi_sta::{

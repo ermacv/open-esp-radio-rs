@@ -28,11 +28,11 @@ pub use message::{
     Transport, TransportEvidence, TxAggregateTimingEvidence, TxRadioEvidence,
     WIFI_MONITOR_FRAME_CHUNK_MAX_LEN, WPA2_PASSPHRASE_MAX_LEN, WPA2_PASSPHRASE_MIN_LEN,
     WPA2_SSID_MAX_LEN, WifiAccessPointEvidence, WifiAccessPointRequest,
-    WifiAccessPointRequestError, WifiDataPlanePlacement, WifiMonitorCaptureRequest,
-    WifiMonitorEvidence, WifiMonitorEvidenceSource, WifiMonitorFrameChunk,
-    WifiMonitorFrameChunkError, WifiMonitorObserved, WifiMonitorPhyEvidence, WifiMonitorPhyFormat,
-    WifiMonitorRequest, WifiRole, WifiRoleFailureEvidence, WifiRoleFailureReason,
-    WifiRoleOperation, WifiRoleTransitionEvidence, WifiScanEvidence, WifiScanRequest, WireBody,
-    WireKind,
+    WifiAccessPointRequestError, WifiChannelWidth, WifiDataPlanePlacement,
+    WifiMonitorCaptureRequest, WifiMonitorEvidence, WifiMonitorEvidenceSource,
+    WifiMonitorFrameChunk, WifiMonitorFrameChunkError, WifiMonitorObserved, WifiMonitorPhyEvidence,
+    WifiMonitorPhyFormat, WifiMonitorRequest, WifiRole, WifiRoleFailureEvidence,
+    WifiRoleFailureReason, WifiRoleOperation, WifiRoleTransitionEvidence, WifiScanEvidence,
+    WifiScanRequest, WireBody, WireKind,
 };
 pub use stream_pattern::{fill_stream_pattern, stream_pattern_byte, stream_pattern_matches};

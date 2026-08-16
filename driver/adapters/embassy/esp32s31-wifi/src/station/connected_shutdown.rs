@@ -13,7 +13,6 @@ use open_esp_radio_esp32s31_wifi_mac::irq::MacInterruptRoute;
 use open_esp_radio_wifi_embassy::connected_tasks::{ConnectedTaskGroup, stop_connected_task_group};
 
 use crate::{
-    connected_services::Esp32s31ConnectedServices,
     connected_sta_teardown::{
         Esp32s31ConnectedStaControlTeardown, Esp32s31ConnectedStaRxTeardown,
         Esp32s31ConnectedStaTeardownFailure, Esp32s31ConnectedStaTeardownPort,
@@ -23,6 +22,7 @@ use crate::{
         Esp32s31MacInterruptEpoch, Esp32s31MacInterruptEpochDrain,
         Esp32s31MacInterruptEpochQuiesceError,
     },
+    wdev::services::WdevServiceSet,
     wdev::{WdevRunner, WdevServices},
 };
 
@@ -129,8 +129,7 @@ pub struct Esp32s31ConnectedEpochTeardownFailure<I, N, T, E> {
     pub error: E,
 }
 
-impl<I, N, H, R, X, C, T>
-    Esp32s31ConnectedEpochQuiesced<I, N, Esp32s31ConnectedServices<H, R, X, C>, T>
+impl<I, N, H, R, X, C, T> Esp32s31ConnectedEpochQuiesced<I, N, WdevServiceSet<H, R, X, C>, T>
 where
     H: CcmpKeyHardware,
     C: Esp32s31ConnectedStaControlTeardown<H, X>,
@@ -425,7 +424,7 @@ mod tests {
     }
 
     type TeardownServices =
-        Esp32s31ConnectedServices<TeardownHardware, TeardownRx, TeardownTx, TeardownControl>;
+        WdevServiceSet<TeardownHardware, TeardownRx, TeardownTx, TeardownControl>;
 
     fn teardown_frontier(
         control_failure: bool,
@@ -440,7 +439,7 @@ mod tests {
             .expect("test hardware installs its pairwise key");
         let group = install_sta_group_ccmp(&mut hardware, 1, &[0x22; 16])
             .expect("test hardware installs its group key");
-        let services = Esp32s31ConnectedServices::with_control(
+        let services = WdevServiceSet::with_control(
             hardware,
             TeardownRx { fail: rx_failure },
             TeardownTx {

@@ -25,6 +25,7 @@ use open_esp_radio_wifi_softmac::MacRxMetadata;
 
 use crate::{
     embassy_irq::EmbassyMacIrqRuntime,
+    ethernet_rx::PackedEthernetWriter,
     rx_pipeline_observer::{RxPipelineObservation, RxPipelineObserver},
     rx_reorder::{
         RX_REORDER_BACKING_SLOT_COUNT, RX_REORDER_CURRENT_SLOT, RX_REORDER_GAP_TIMEOUT_MICROS,
@@ -195,18 +196,20 @@ impl<S: ConnectedRxSink, const CAPACITY: usize, const SLOTS: usize>
 /// subframe, so the two-byte record prefix still leaves the packed output
 /// strictly smaller than its valid A-MSDU input.
 struct DeferredEthernetFrames<'storage> {
-    storage: &'storage mut [u8],
-    used: usize,
+    frames: PackedEthernetWriter<'storage>,
     metadata: Option<MacRxMetadata<RxPhyInfo>>,
 }
 
 impl<'storage> DeferredEthernetFrames<'storage> {
     fn new(storage: &'storage mut [u8]) -> Self {
         Self {
-            storage,
-            used: 0,
+            frames: PackedEthernetWriter::new(storage),
             metadata: None,
         }
+    }
+
+    const fn used(&self) -> usize {
+        self.frames.used()
     }
 }
 
@@ -223,25 +226,9 @@ impl ConnectedRxSink for DeferredEthernetFrames<'_> {
         } else {
             self.metadata = Some(metadata);
         }
-        let encoded_length = u16::try_from(frame.length())
-            .expect("staged RX capacity bounds a deferred Ethernet frame");
-        let record_length = frame
-            .length()
-            .checked_add(2)
-            .expect("deferred Ethernet record length cannot overflow");
-        let end = self
-            .used
-            .checked_add(record_length)
-            .expect("deferred A-MSDU plan length cannot overflow");
-        let record = self
-            .storage
-            .get_mut(self.used..end)
+        self.frames
+            .push(frame)
             .expect("A-MSDU output fits the constructor-qualified scratch buffer");
-        record[..2].copy_from_slice(&encoded_length.to_be_bytes());
-        frame
-            .copy_to(&mut record[2..])
-            .expect("deferred record has the exact Ethernet frame length");
-        self.used = end;
     }
 }
 

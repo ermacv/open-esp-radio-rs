@@ -3,7 +3,7 @@
 //! Board/HIL code supplies already allocated storage, a network RX sink and
 //! executor task placement. This module owns the driver relationships between
 //! the associated peer, RX dispatcher/protocol, control-TX handoff,
-//! ordinary/A-MPDU TX, BlockAck control and the final [`Esp32s31ConnectedServices`].
+//! ordinary/A-MPDU TX, BlockAck control and the final [`WdevServiceSet`].
 
 use embassy_sync::channel::Receiver;
 use open_esp_radio_embassy_net::{PinnedTxFrame, RawMutex};
@@ -37,14 +37,14 @@ use open_esp_radio_wifi_softmac::{
 use open_esp_radio_wifi_sta::link_monitor::{StaBeaconLossConfig, StaBeaconLossConfigError};
 
 use crate::{
-    aggregate_tx::{AggregateTxConfig, AggregateTxResources, Esp32s31ConnectedTx},
+    aggregate_tx::{AggregateTxConfig, Esp32s31ConnectedTx},
     aggregate_tx_observer::AggregateTxObserver,
+    ampdu_resources::AggregateTxResources,
     connected_control::Esp32s31ConnectedControl,
     connected_rx_protocol::{
         ConnectedRxProtocolSink, Esp32s31ConnectedRxProtocol, Esp32s31ConnectedRxProtocolStorage,
         Esp32s31StagedRxFrame,
     },
-    connected_services::Esp32s31ConnectedServices,
     control_mailbox::ConnectedControlReceiver,
     embassy_irq::EmbassyMacIrqRuntime,
     rx_pipeline_observer::RxPipelineObserver,
@@ -52,6 +52,7 @@ use crate::{
         RX_REORDER_BACKING_SLOT_COUNT, RxReorderCommandReceiver, RxReorderCommandSender,
         RxReorderFrameStorage,
     },
+    wdev::services::WdevServiceSet,
 };
 /// Stateless namespace for preparing and composing a connected owner graph.
 pub struct Esp32s31ConnectedStaPort;

@@ -128,6 +128,7 @@ fn qualify(
             request.channel = channel;
         }
         let channel = request.channel;
+        let bandwidth_mhz = request.channel_width.bandwidth_mhz();
         let started = capture.wait_access_point_start(
             capture.request_access_point_start(request)?,
             options.timeout,
@@ -139,14 +140,16 @@ fn qualify(
             .wait_access_point_stop(capture.request_access_point_stop()?, options.timeout)?;
         if stopped.generation != started.generation
             || stopped.channel != channel
+            || stopped.bandwidth_mhz != bandwidth_mhz
             || stopped.beacons_transmitted == 0
         {
             return Err(format!("access point returned inconsistent evidence: {stopped:?}").into());
         }
         println!(
-            "wifi_ap_generation={} channel={} beacons={} auth_responses={} assoc_responses={} authorizations={} max_associated={} max_authorized={} peer_removals={} auth_timeouts={} wpa2_windows={} wpa2_pending_on_stop={} wpa2_retries={} wpa2_failures={} wpa2_timeouts={} inactivity_timeouts={} disassoc_prepared={} disassoc_published={} disassoc_acked={} deauth_prepared={} deauth_published={} deauth_acked={} rx_units={} rx_descriptors={} recycled_rx_descriptors={} retained_rx_descriptors={} discarded_rx_units={} ignored_rx={} control_staged={} control_busy_drops={} ethernet_staged={} network_tx_rejected={} data_tx={} data_tx_attempts={} data_tx_retried={} data_tx_max_attempts={} data_tx_min_rate_kbps={} data_tx_ack_snr={}/{}/{} tx_hardware_failures={} tx_hardware_timeouts={} tx_collision_limits={} tx_last_hardware_status={}",
+            "wifi_ap_generation={} channel={} bandwidth_mhz={} beacons={} auth_responses={} assoc_responses={} authorizations={} max_associated={} max_authorized={} peer_removals={} auth_timeouts={} wpa2_windows={} wpa2_pending_on_stop={} wpa2_retries={} wpa2_failures={} wpa2_timeouts={} inactivity_timeouts={} disassoc_prepared={} disassoc_published={} disassoc_acked={} deauth_prepared={} deauth_published={} deauth_acked={} rx_units={} rx_descriptors={} recycled_rx_descriptors={} retained_rx_descriptors={} discarded_rx_units={} ignored_rx={} control_staged={} control_busy_drops={} ethernet_staged={} network_tx_rejected={} data_tx={} data_tx_attempts={} data_tx_retried={} data_tx_max_attempts={} data_tx_min_rate_kbps={} data_tx_ack_snr={}/{}/{} tx_hardware_failures={} tx_hardware_timeouts={} tx_collision_limits={} tx_last_hardware_status={}",
             stopped.generation,
             stopped.channel,
+            stopped.bandwidth_mhz,
             stopped.beacons_transmitted,
             stopped.authentication_responses,
             stopped.association_responses,

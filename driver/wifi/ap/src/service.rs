@@ -7,6 +7,7 @@ use open_esp_radio_ieee80211::block_ack::{
     AddbaRequest, BlockAckAction, OperationalTxBlockAck, TxBlockAckAlarm, TxBlockAckConfig,
     TxBlockAckError, TxBlockAckResponse, TxBlockAckSession,
 };
+use open_esp_radio_ieee80211::ht::HtPeerCapabilities;
 use open_esp_radio_wpa2::{
     OwnedEapolFrame, Pmk, Ptk, PtkContext,
     aes::{SoftwareAesKeyWrapError, software_aes128_key_wrap},
@@ -172,7 +173,7 @@ pub struct ApPeerClose {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ApAssociationCapabilities {
     pub maximum_legacy_rate_500kbps: u8,
-    pub ht_supported: bool,
+    pub ht: Option<HtPeerCapabilities>,
     pub qos_supported: bool,
 }
 
@@ -281,7 +282,7 @@ struct ApPeer {
     wpa2_retry: Wpa2Retry,
     wpa2_retry_alarm: Option<Wpa2RetryAlarm>,
     maximum_legacy_rate_500kbps: u8,
-    ht_supported: bool,
+    ht: Option<HtPeerCapabilities>,
     qos_supported: bool,
     tx_block_ack: TxBlockAckSession,
     last_activity_micros: u64,
@@ -325,7 +326,7 @@ impl ApPeer {
             // Authentication precedes rate negotiation. Keep the universally
             // compatible 1-Mbit/s value until Association succeeds.
             maximum_legacy_rate_500kbps: 2,
-            ht_supported: false,
+            ht: None,
             qos_supported: false,
             tx_block_ack: new_ap_tx_block_ack(),
             last_activity_micros: now_micros,
@@ -364,7 +365,7 @@ pub struct ApPeerStatus {
     pub association_id: u16,
     pub phase: ApPeerPhase,
     pub maximum_legacy_rate_500kbps: u8,
-    pub ht_supported: bool,
+    pub ht: Option<HtPeerCapabilities>,
     pub qos_supported: bool,
     pub tx_block_ack: Option<OperationalTxBlockAck>,
     pub last_activity_micros: u64,
@@ -440,7 +441,7 @@ impl<'peers> AccessPointService<'peers> {
                 association_id: peer.association_id,
                 phase: peer.phase,
                 maximum_legacy_rate_500kbps: peer.maximum_legacy_rate_500kbps,
-                ht_supported: peer.ht_supported,
+                ht: peer.ht,
                 qos_supported: peer.qos_supported,
                 tx_block_ack: peer.tx_block_ack.operational(),
                 last_activity_micros: peer.last_activity_micros,
@@ -458,12 +459,16 @@ impl<'peers> AccessPointService<'peers> {
                 association_id: peer.association_id,
                 phase: peer.phase,
                 maximum_legacy_rate_500kbps: peer.maximum_legacy_rate_500kbps,
-                ht_supported: peer.ht_supported,
+                ht: peer.ht,
                 qos_supported: peer.qos_supported,
                 tx_block_ack: peer.tx_block_ack.operational(),
                 last_activity_micros: peer.last_activity_micros,
                 deadline_micros: peer.deadline_micros,
             })
+    }
+
+    pub fn has_operational_tx_block_ack(&self) -> bool {
+        self.peers().any(|peer| peer.tx_block_ack.is_some())
     }
 
     pub fn associated_count(&self) -> u8 {
@@ -491,7 +496,7 @@ impl<'peers> AccessPointService<'peers> {
                 association_id: peer.association_id,
                 phase: peer.phase,
                 maximum_legacy_rate_500kbps: peer.maximum_legacy_rate_500kbps,
-                ht_supported: peer.ht_supported,
+                ht: peer.ht,
                 qos_supported: peer.qos_supported,
                 tx_block_ack: peer.tx_block_ack.operational(),
                 last_activity_micros: peer.last_activity_micros,
@@ -603,7 +608,7 @@ impl<'peers> AccessPointService<'peers> {
         existing.phase = ApPeerPhase::Securing;
         existing.wpa2 = Some(wpa2);
         existing.maximum_legacy_rate_500kbps = capabilities.maximum_legacy_rate_500kbps;
-        existing.ht_supported = capabilities.ht_supported;
+        existing.ht = capabilities.ht;
         existing.qos_supported = capabilities.qos_supported;
         existing.last_activity_micros = now_micros;
         existing.deadline_micros = now_micros.saturating_add(inactive_timeout_micros);
@@ -627,7 +632,7 @@ impl<'peers> AccessPointService<'peers> {
             .current_qos_sequence(AP_TX_BLOCK_ACK_TID)
             .expect("AP data TID is representable");
         let peer = self.checked_peer_mut(peer)?;
-        if peer.phase != ApPeerPhase::Authorized || !peer.ht_supported || !peer.qos_supported {
+        if peer.phase != ApPeerPhase::Authorized || peer.ht.is_none() || !peer.qos_supported {
             return Ok(None);
         }
         if peer.tx_block_ack.operational().is_some() || peer.tx_block_ack.is_awaiting() {
@@ -650,7 +655,16 @@ impl<'peers> AccessPointService<'peers> {
                 self.status_revision = self.status_revision.wrapping_add(1);
                 Ok(Some(response))
             }
-            BlockAckAction::Delba { tid, .. } if tid == AP_TX_BLOCK_ACK_TID => {
+            // This owner represents only AP-originated TX aggregation. A
+            // peer-originated DELBA (`initiator = true`) terminates the
+            // independent peer -> AP agreement and must not revoke our
+            // AP -> peer session. The recipient clears this TX agreement
+            // with `initiator = false`.
+            BlockAckAction::Delba {
+                tid,
+                initiator: false,
+                ..
+            } if tid == AP_TX_BLOCK_ACK_TID => {
                 peer.tx_block_ack.stop();
                 self.status_revision = self.status_revision.wrapping_add(1);
                 Ok(None)
@@ -1154,7 +1168,11 @@ impl Drop for AccessPointService<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use open_esp_radio_ieee80211::beacon::WPA2_PERSONAL_CCMP_PSK_RSN_IE;
+    use open_esp_radio_ieee80211::{
+        beacon::WPA2_PERSONAL_CCMP_PSK_RSN_IE,
+        channel::WifiChannel,
+        ht::{ht_capability_ie, ht_peer_capabilities},
+    };
     use open_esp_radio_wpa2::{
         EapolKeyMessage, OwnedEapolFrame, PtkContext, Wpa2Interface,
         aes::software_aes128_key_unwrap,
@@ -1171,14 +1189,17 @@ mod tests {
     const SUPPLICANT_RSN: [u8; 22] = [
         0x30, 20, 1, 0, 0, 0x0f, 0xac, 4, 1, 0, 0, 0x0f, 0xac, 4, 1, 0, 0, 0x0f, 0xac, 2, 0x0c, 0,
     ];
-    const HT_CAPABILITIES: ApAssociationCapabilities = ApAssociationCapabilities {
-        maximum_legacy_rate_500kbps: 108,
-        ht_supported: true,
-        qos_supported: true,
-    };
+    fn ht_capabilities() -> ApAssociationCapabilities {
+        ApAssociationCapabilities {
+            maximum_legacy_rate_500kbps: 108,
+            ht: ht_peer_capabilities(&ht_capability_ie(WifiChannel::mhz20(6).unwrap())),
+            qos_supported: true,
+        }
+    }
+
     const LEGACY_CAPABILITIES: ApAssociationCapabilities = ApAssociationCapabilities {
         maximum_legacy_rate_500kbps: 108,
-        ht_supported: false,
+        ht: None,
         qos_supported: false,
     };
 
@@ -1285,7 +1306,7 @@ mod tests {
         );
         service.authenticate_open(PEER, 0);
         service
-            .associate_wpa2(PEER, &WPA2_RSN, HT_CAPABILITIES, [7; 32], 9, 2_000)
+            .associate_wpa2(PEER, &WPA2_RSN, ht_capabilities(), [7; 32], 9, 2_000)
             .unwrap();
         assert_eq!(service.next_peer_deadline(), Some(10_002_000));
         service.observe_activity(PEER, 5_000_000).unwrap();
@@ -1310,7 +1331,7 @@ mod tests {
         service.authenticate_open(PEER, 0);
         assert_eq!(
             service
-                .associate_wpa2(PEER, &WPA2_RSN, HT_CAPABILITIES, [7; 32], 9, 1)
+                .associate_wpa2(PEER, &WPA2_RSN, ht_capabilities(), [7; 32], 9, 1)
                 .unwrap(),
             ApMlmeAction::AssociationResponse {
                 peer: PEER,
@@ -1353,7 +1374,7 @@ mod tests {
                     &WPA2_RSN,
                     ApAssociationCapabilities {
                         maximum_legacy_rate_500kbps: 0,
-                        ht_supported: false,
+                        ht: None,
                         qos_supported: false,
                     },
                     [7; 32],
@@ -1384,7 +1405,7 @@ mod tests {
         // Supplicants may add their own RSN capabilities. Message 3 must not
         // reflect those bytes back: it authenticates the AP's beacon RSN IE.
         service
-            .associate_wpa2(PEER, &SUPPLICANT_RSN, HT_CAPABILITIES, ANONCE, 9, 1)
+            .associate_wpa2(PEER, &SUPPLICANT_RSN, ht_capabilities(), ANONCE, 9, 1)
             .unwrap();
         let message1 = service.begin_wpa2_frame::<512>(PEER).unwrap();
         assert_eq!(
@@ -1484,7 +1505,7 @@ mod tests {
         let mut service = service(&mut storage);
         service.authenticate_open(PEER, 0);
         service
-            .associate_wpa2(PEER, &WPA2_RSN, HT_CAPABILITIES, [7; 32], 9, 1)
+            .associate_wpa2(PEER, &WPA2_RSN, ht_capabilities(), [7; 32], 9, 1)
             .unwrap();
         service.begin_wpa2_frame::<512>(PEER).unwrap();
         service.observe_wpa2_transmit(PEER, false, true, 0).unwrap();
@@ -1568,7 +1589,7 @@ mod tests {
                     .associate_wpa2(
                         peer,
                         &WPA2_RSN,
-                        HT_CAPABILITIES,
+                        ht_capabilities(),
                         [suffix; 32],
                         u64::from(suffix),
                         1,
@@ -1623,7 +1644,7 @@ mod tests {
         let mut service = service(&mut storage);
         service.authenticate_open(PEER, 1);
         service
-            .associate_wpa2(PEER, &WPA2_RSN, HT_CAPABILITIES, [7; 32], 9, 1)
+            .associate_wpa2(PEER, &WPA2_RSN, ht_capabilities(), [7; 32], 9, 1)
             .unwrap();
         service.checked_peer_mut(PEER).unwrap().phase = ApPeerPhase::Authorized;
 
@@ -1657,5 +1678,32 @@ mod tests {
         ));
         assert!(service.peer_status(PEER).unwrap().tx_block_ack.is_some());
         assert!(service.peer_status(OTHER).unwrap().tx_block_ack.is_none());
+
+        service
+            .on_tx_block_ack_action(
+                PEER,
+                BlockAckAction::Delba {
+                    tid: AP_TX_BLOCK_ACK_TID,
+                    initiator: true,
+                    reason: 37,
+                },
+            )
+            .unwrap();
+        assert!(
+            service.peer_status(PEER).unwrap().tx_block_ack.is_some(),
+            "peer-originated RX DELBA cannot revoke the AP-originated TX agreement"
+        );
+
+        service
+            .on_tx_block_ack_action(
+                PEER,
+                BlockAckAction::Delba {
+                    tid: AP_TX_BLOCK_ACK_TID,
+                    initiator: false,
+                    reason: 37,
+                },
+            )
+            .unwrap();
+        assert!(service.peer_status(PEER).unwrap().tx_block_ack.is_none());
     }
 }

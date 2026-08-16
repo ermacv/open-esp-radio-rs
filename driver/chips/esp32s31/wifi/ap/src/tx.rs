@@ -16,7 +16,12 @@ use open_esp_radio_esp32s31_wifi::{
     tx::{WifiTxProgress, WifiTxWake},
 };
 use open_esp_radio_esp32s31_wifi_mac::tx::{
-    HtAmpduTxConfig, HtRate, LegacyRate, LegacyTxQueue, TxHardware, TxPhyRate,
+    HtAmpduTxConfig, HtChannelWidth, HtGuardInterval, HtMcs, HtRate, LegacyRate, LegacyTxQueue,
+    TxHardware, TxPhyRate,
+};
+use open_esp_radio_ieee80211::{
+    channel::{WifiChannel, WifiChannelWidth},
+    ht::HtPeerCapabilities,
 };
 use open_esp_radio_wifi_softmac::{MacTxPlan, MacTxQueueState};
 
@@ -62,7 +67,7 @@ impl Esp32s31ApTxClass {
 
     const fn initial_rate(self) -> LegacyRate {
         match self {
-            // The AP advertises an ERP+HT20 BSS, so every associated peer
+            // The AP advertises an ERP+HT BSS, so every associated peer
             // still supports the mandatory 24 Mbit/s OFDM legacy rate. Keep
             // discovery and controlled-port setup on the maximally compatible
             // 1 Mbit/s path, but do not serialize ordinary data at that rate.
@@ -292,6 +297,31 @@ pub const fn peer_legacy_rate(maximum_rate_500kbps: u8) -> LegacyRate {
     }
 }
 
+/// Select the fastest one-stream HT vector admitted by both BSS geometry and
+/// the peer's observed receive capabilities.
+pub fn peer_ht_rate(channel: WifiChannel, peer: HtPeerCapabilities) -> Option<HtRate> {
+    let mcs = HtMcs::from_index(peer.highest_rx_mcs())?;
+    let (channel_width, guard_width) = match channel.width() {
+        WifiChannelWidth::Mhz20 => (HtChannelWidth::Mhz20, WifiChannelWidth::Mhz20),
+        width @ (WifiChannelWidth::Mhz40Above | WifiChannelWidth::Mhz40Below)
+            if peer.supports_40_mhz() =>
+        {
+            (HtChannelWidth::Mhz40, width)
+        }
+        WifiChannelWidth::Mhz40Above | WifiChannelWidth::Mhz40Below => {
+            (HtChannelWidth::Mhz20, WifiChannelWidth::Mhz20)
+        }
+    };
+    // The recovered retry table has a complete SGI schedule only for MCS7.
+    // Lower peer maxima therefore stay on their complete LGI schedules.
+    let guard_interval = if mcs == HtMcs::Mcs7 && peer.supports_short_guard_interval(guard_width) {
+        HtGuardInterval::Short400Ns
+    } else {
+        HtGuardInterval::Long800Ns
+    };
+    Some(HtRate::new(mcs, guard_interval, channel_width))
+}
+
 #[cfg(test)]
 mod tests {
     use core::{
@@ -433,6 +463,33 @@ mod tests {
         assert_eq!(
             Esp32s31ApTxClass::Data.publication_limit(LegacyRate::Ofdm54M),
             32
+        );
+    }
+
+    #[test]
+    fn peer_ht_rate_requires_matching_bss_and_peer_width() {
+        use open_esp_radio_ieee80211::ht::{ht_capability_ie, ht_peer_capabilities};
+
+        let ht40 = WifiChannel::new_2_4_ghz(6, WifiChannelWidth::Mhz40Above).unwrap();
+        let wide_peer = ht_peer_capabilities(&ht_capability_ie(ht40)).unwrap();
+        assert_eq!(
+            peer_ht_rate(ht40, wide_peer),
+            Some(HtRate::new(
+                HtMcs::Mcs7,
+                HtGuardInterval::Short400Ns,
+                HtChannelWidth::Mhz40,
+            ))
+        );
+
+        let narrow_peer =
+            ht_peer_capabilities(&ht_capability_ie(WifiChannel::mhz20(6).unwrap())).unwrap();
+        assert_eq!(
+            peer_ht_rate(ht40, narrow_peer),
+            Some(HtRate::new(
+                HtMcs::Mcs7,
+                HtGuardInterval::Short400Ns,
+                HtChannelWidth::Mhz20,
+            ))
         );
     }
 

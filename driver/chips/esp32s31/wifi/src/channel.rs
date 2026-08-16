@@ -14,12 +14,12 @@ use open_esp_radio_ieee80211::channel::{WifiChannel, WifiChannelWidth};
 
 /// Exact arguments accepted by the recovered ESP32-S31 PHY channel root.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct Esp32s31PhyChannel {
+pub struct Esp32s31PhyChannel {
     pub channel_or_frequency: u16,
     pub cbw: u8,
 }
 
-pub(crate) const fn lower_wifi_channel(channel: WifiChannel) -> Esp32s31PhyChannel {
+pub const fn lower_wifi_channel(channel: WifiChannel) -> Esp32s31PhyChannel {
     match channel.width() {
         WifiChannelWidth::Mhz20 => Esp32s31PhyChannel {
             channel_or_frequency: channel.primary() as u16,

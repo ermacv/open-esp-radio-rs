@@ -19,9 +19,8 @@ use open_esp_radio_esp32s31_hal::{
     wifi_bb::PhyWifiBbControl,
 };
 use open_esp_radio_esp32s31_phy::{PhyAsyncDelay, PhyTargetObserver, PhyTargetPortError};
-use open_esp_radio_esp32s31_wifi_sta::{
-    channel::Esp32s31ScanPhy, cooperative_hardware::CooperativeRadioHardware,
-};
+use open_esp_radio_esp32s31_wifi::cooperative_hardware::CooperativeRadioHardware;
+use open_esp_radio_esp32s31_wifi_sta::channel::Esp32s31ScanPhy;
 
 impl<'state, 'arena, P, O, D> Esp32s31ScanPhyPort<CooperativeRadioHardware<'arena>>
     for Esp32s31ScanPhy<'state, P, O, D>

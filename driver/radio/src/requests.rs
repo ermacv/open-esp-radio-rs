@@ -7,10 +7,7 @@
 
 use core::{fmt, num::NonZeroU16};
 
-use open_esp_radio_ieee80211::{
-    channel::{WifiChannel, WifiChannelWidth},
-    ssid::WifiSsid,
-};
+use open_esp_radio_ieee80211::{channel::WifiChannel, ssid::WifiSsid};
 pub use open_esp_radio_wifi_ap::{
     AccessPointClientLimit, AccessPointClientLimitError, AccessPointInactiveTimeout,
     AccessPointInactiveTimeoutError,
@@ -129,8 +126,8 @@ impl fmt::Debug for AccessPointSecurity {
 ///
 /// Beacon cadence, DTIM and peer capacity are implementation guarantees, not
 /// tuning switches: 100 TU, DTIM period 2 and a validated admission limit of
-/// 1..=15 clients. Wider channels are rejected before any hardware owner
-/// moves.
+/// 1..=15 clients. The typed channel owns valid HT20/HT40 geometry before any
+/// hardware owner moves.
 pub struct AccessPointRequest {
     ssid: WifiSsid,
     security: AccessPointSecurity,
@@ -150,9 +147,6 @@ impl AccessPointRequest {
         channel: WifiChannel,
         client_limit: AccessPointClientLimit,
     ) -> Result<Self, AccessPointRequestError> {
-        if channel.width() != WifiChannelWidth::Mhz20 {
-            return Err(AccessPointRequestError::UnsupportedChannelWidth);
-        }
         if channel.primary() == 14 {
             return Err(AccessPointRequestError::UnsupportedPrimaryChannel(14));
         }
@@ -224,16 +218,12 @@ impl fmt::Debug for AccessPointRequest {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AccessPointRequestError {
-    UnsupportedChannelWidth,
     UnsupportedPrimaryChannel(u8),
 }
 
 impl fmt::Display for AccessPointRequestError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::UnsupportedChannelWidth => {
-                formatter.write_str("the current access-point service supports only 20 MHz")
-            }
             Self::UnsupportedPrimaryChannel(channel) => write!(
                 formatter,
                 "the current access-point service does not support primary channel {channel}"
@@ -914,8 +904,8 @@ mod tests {
             WifiChannel::new_2_4_ghz(6, WifiChannelWidth::Mhz40Above).unwrap(),
             AccessPointClientLimit::new(4).unwrap(),
         )
-        .unwrap_err();
-        assert_eq!(wide, AccessPointRequestError::UnsupportedChannelWidth);
+        .unwrap();
+        assert_eq!(wide.channel().width(), WifiChannelWidth::Mhz40Above);
 
         let request = access_point_request().with_inactive_timeout(
             AccessPointInactiveTimeout::new(30).expect("valid inactivity timeout"),

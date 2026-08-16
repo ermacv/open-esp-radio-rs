@@ -4,18 +4,13 @@
 //! must copy or transfer every Ethernet view before returning, after which the
 //! runtime may recycle the descriptor.
 
-use open_esp_radio_esp32s31_wifi_mac::rx::{
-    RxError, RxIngressConfig, RxPhyInfo, RxSegment, decode_normalized_rx_metadata, view_ccmp_data,
-};
+use open_esp_radio_esp32s31_wifi::protected_data_rx::view_protected_data;
+use open_esp_radio_esp32s31_wifi_mac::rx::{RxError, RxIngressConfig, RxPhyInfo, RxSegment};
 use open_esp_radio_ieee80211::data::{
     DataDecapError, DataInterfaceRole, EthernetFrameParts, RxDuplicateFilter,
-    decapsulate_data_frames,
 };
 use open_esp_radio_wifi_ap::AP_MAX_CLIENTS;
-use open_esp_radio_wifi_softmac::{MacRxCryptoStatus, MacRxEvidence, MacRxMetadata};
-
-const RETRY: u16 = 0x0800;
-const QOS_SUBTYPE: u16 = 0x0080;
+use open_esp_radio_wifi_softmac::MacRxMetadata;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Esp32s31ApRxConfig {
@@ -86,7 +81,7 @@ impl Esp32s31ApRxDispatcher {
         S: Esp32s31ApRxSink,
         A: FnMut([u8; 6]) -> bool,
     {
-        let data = match view_ccmp_data(&segment, self.config.ingress) {
+        let data = match view_protected_data(segment, self.config.ingress) {
             Ok(data) => data,
             Err(error) => {
                 return Esp32s31ApRxDispatch::Rejected(Esp32s31ApRxError::Radio(error));
@@ -102,36 +97,18 @@ impl Esp32s31ApRxDispatcher {
         if !is_authorized(peer) {
             return Esp32s31ApRxDispatch::Unauthorized;
         }
-        let frame_control = u16::from_le_bytes([mpdu[0], mpdu[1]]);
-        let sequence_control = u16::from_le_bytes([mpdu[22], mpdu[23]]);
-        let tid = if frame_control & QOS_SUBTYPE != 0 && mpdu.len() >= 26 {
-            Some(mpdu[24] & 0x0f)
-        } else {
-            None
-        };
         let Some(duplicates) = self.duplicate_filter(peer) else {
             return Esp32s31ApRxDispatch::Unauthorized;
         };
-        if duplicates.is_duplicate(frame_control & RETRY != 0, sequence_control, tid) {
+        if duplicates.is_duplicate(data.retry, data.sequence_control, data.tid) {
             return Esp32s31ApRxDispatch::Duplicate;
         }
-        let Some(mut metadata) = decode_normalized_rx_metadata(segment.buffer) else {
-            return Esp32s31ApRxDispatch::Rejected(Esp32s31ApRxError::Radio(RxError::Metadata));
-        };
-        metadata.crypto =
-            MacRxEvidence::HardwareObserved(MacRxCryptoStatus::DecryptedAndIntegrityVerified);
-
-        let mut frames = match decapsulate_data_frames(
-            DataInterfaceRole::AccessPoint,
-            mpdu,
-            data.frame.payload_offset,
-            data.frame.payload_length,
-        ) {
-            Ok(frames) => frames,
+        let data = match data.decapsulate(DataInterfaceRole::AccessPoint) {
+            Ok(data) => data,
             Err(error) => return rejected_data(error),
         };
-        let amsdu = frames.is_amsdu();
-        metadata.amsdu = MacRxEvidence::ProtocolValidated(amsdu);
+        let mut frames = data.frames;
+        let amsdu = data.amsdu;
         let mut count = 0_u8;
         for frame in &mut frames {
             let frame = match frame {
@@ -140,9 +117,9 @@ impl Esp32s31ApRxDispatcher {
             };
             sink.publish(Esp32s31ApRxEvent {
                 frame,
-                raw: segment.buffer,
+                raw: data.raw,
                 amsdu,
-                metadata,
+                metadata: data.metadata,
             });
             count = count.saturating_add(1);
         }

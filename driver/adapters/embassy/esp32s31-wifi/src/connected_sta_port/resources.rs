@@ -184,7 +184,7 @@ pub struct Esp32s31ConnectedStaCompositionFailure<H, R, P, C, X> {
 
 /// Driver composition returned to the executor/application layer.
 pub struct Esp32s31ConnectedStaDrivers<H, R, X, C, P> {
-    pub services: Esp32s31ConnectedServices<H, R, X, C>,
+    pub services: WdevServiceSet<H, R, X, C>,
     pub protocol: P,
     pub report: Esp32s31ConnectedStaReport,
 }

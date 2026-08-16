@@ -8,7 +8,7 @@ use std::{
 };
 
 use open_esp_radio_hil_protocol::{
-    NetworkCredentials, NetworkIpv4Configuration, WifiDataPlanePlacement,
+    NetworkCredentials, NetworkIpv4Configuration, WifiChannelWidth, WifiDataPlanePlacement,
 };
 use serde::Deserialize;
 use zeroize::{Zeroize, Zeroizing};
@@ -76,6 +76,7 @@ struct RawAccessPointConfig {
     ssid: String,
     passphrase: String,
     channel: u8,
+    channel_width: WifiChannelWidth,
     #[serde(default = "default_ap_client_limit")]
     client_limit: u8,
     target_address: String,
@@ -91,6 +92,7 @@ pub(crate) struct AccessPointConfig {
     ssid: Zeroizing<String>,
     passphrase: Zeroizing<String>,
     channel: u8,
+    channel_width: WifiChannelWidth,
     client_limit: u8,
     target_address: Ipv4Addr,
     client_address: Ipv4Addr,
@@ -172,8 +174,12 @@ impl LabConfig {
             &raw.access_point.ssid,
             &raw.access_point.passphrase,
         )?;
-        if !(1..=13).contains(&raw.access_point.channel) {
-            return Err("HIL access-point channel must be in 1..=13".into());
+        if !raw
+            .access_point
+            .channel_width
+            .admits_primary(raw.access_point.channel)
+        {
+            return Err("HIL access-point channel geometry is invalid".into());
         }
         if !(1..=15).contains(&raw.access_point.client_limit) {
             return Err("HIL access-point client_limit must be in 1..=15".into());
@@ -270,6 +276,7 @@ impl LabConfig {
             ssid: Zeroizing::new(std::mem::take(&mut raw.access_point.ssid)),
             passphrase: Zeroizing::new(std::mem::take(&mut raw.access_point.passphrase)),
             channel: raw.access_point.channel,
+            channel_width: raw.access_point.channel_width,
             client_limit: raw.access_point.client_limit,
             target_address,
             client_address,
@@ -332,6 +339,7 @@ impl LabConfig {
                 ssid: Zeroizing::new(String::from("test-device-ap")),
                 passphrase: Zeroizing::new(String::from("test-password")),
                 channel: 6,
+                channel_width: WifiChannelWidth::Mhz40Above,
                 client_limit: 4,
                 target_address: Ipv4Addr::new(10, 43, 0, 1),
                 client_address: Ipv4Addr::new(10, 43, 0, 2),
@@ -415,6 +423,7 @@ impl AccessPointConfig {
             )
             .map_err(|error| format!("invalid HIL AP credentials: {error}"))?,
             channel: self.channel,
+            channel_width: self.channel_width,
             client_limit: self.client_limit,
             ipv4: NetworkIpv4Configuration::Static {
                 address: self.target_address.octets(),
@@ -432,7 +441,11 @@ impl AccessPointConfig {
         self.channel
     }
 
-    /// Exact 2.4-GHz center frequency owned by the validated AP channel.
+    pub(crate) const fn bandwidth_mhz(&self) -> u16 {
+        self.channel_width.bandwidth_mhz()
+    }
+
+    /// Exact primary-channel frequency used to constrain client scanning.
     pub(crate) const fn frequency_mhz(&self) -> u16 {
         2_407 + self.channel as u16 * 5
     }

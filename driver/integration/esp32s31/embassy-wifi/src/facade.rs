@@ -6,7 +6,7 @@ use open_esp_radio::{
     embassy_supervisor::{EmbassyWifiStartKind, EmbassyWifiSupervisorPort},
 };
 
-use crate::{connected::Esp32s31WifiDevice, monitor::Esp32s31MonitorFrames};
+use crate::{Esp32s31WifiDevice, monitor::Esp32s31MonitorFrames};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Esp32s31RadioError {

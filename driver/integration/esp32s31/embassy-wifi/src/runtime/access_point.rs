@@ -45,7 +45,7 @@ type ProductionAccessPointStopped = EmbassyAccessPointStopped<
 type ProductionAccessPointAmpdu =
     open_esp_radio_esp32s31_wifi_embassy::access_point::Esp32s31AccessPointAmpdu<
         'static,
-        ConnectedTxBacking,
+        RadioTxBacking,
         { open_esp_radio_esp32s31_wifi_embassy::resource_profile::ESP32S31_DEFAULT_TX_AMPDU_FRAME_COUNT },
         0,
     >;
@@ -54,11 +54,12 @@ type ProductionAccessPointAmpdu =
 #[inline(never)]
 fn publish_access_point_observation(
     hook: fn(crate::Esp32s31AccessPointObservation),
-    channel: u8,
+    channel: WifiChannel,
     report: &open_esp_radio_esp32s31_wifi_embassy::access_point::Esp32s31AccessPointRunReport,
 ) {
     hook(crate::Esp32s31AccessPointObservation {
-        channel,
+        channel: channel.primary(),
+        bandwidth_mhz: channel.bandwidth_mhz(),
         beacons_transmitted: report.mac.beacons_transmitted,
         missed_beacon_intervals: report.control.missed_beacon_intervals,
         maximum_beacon_lateness_micros: report.control.maximum_beacon_lateness_micros,
@@ -90,6 +91,11 @@ fn publish_access_point_observation(
         deauthentications_prepared: report.engine.deauthentications_prepared,
         deauthentications_published: report.mac.deauthentications_published,
         deauthentications_acknowledged: report.mac.deauthentications_acknowledged,
+        tx_block_ack_requests_prepared: report.engine.tx_block_ack_requests_prepared,
+        tx_block_ack_responses_observed: report.engine.tx_block_ack_responses_observed,
+        tx_block_ack_agreements_operational: report.engine.tx_block_ack_agreements_operational,
+        tx_block_ack_responses_rejected: report.engine.tx_block_ack_responses_rejected,
+        tx_block_ack_negotiation_timeouts: report.engine.tx_block_ack_negotiation_timeouts,
         completed_rx_units: report.control.completed_rx_units,
         completed_rx_descriptors: report.control.completed_rx_descriptors,
         recycled_rx_descriptors: report.control.recycled_rx_descriptors,
@@ -142,7 +148,7 @@ pub(super) struct ProductionAccessPointParked {
     board: ProductionStationBoardResources,
     station_address: [u8; 6],
     monitor: ProductionMonitorResources,
-    aggregate_tx: Option<ConnectedAmpduStorage>,
+    aggregate_tx: Option<RadioAmpduStorage>,
 }
 
 /// Exact station lifecycle state retained while AP temporarily owns Wi-Fi.
@@ -152,7 +158,7 @@ pub(super) struct ProductionAccessPointParked {
 /// register-arena capabilities; AP switching is not a hidden reset.
 enum ProductionAccessPointStationResume {
     Fresh {
-        network: StationNetwork,
+        network: WifiNetworkResources,
     },
     Returned {
         phase: ProductionAccessPointReturnedPhase,
@@ -165,22 +171,22 @@ enum ProductionAccessPointStationResume {
 
 enum ProductionAccessPointReturnedPhase {
     InitialScan {
-        network: StationNetwork,
+        network: WifiNetworkResources,
         identity: Esp32s31StaIdentity,
     },
     InitialJoin {
-        network: StationNetwork,
+        network: WifiNetworkResources,
         station: Esp32s31StaAttemptStation,
     },
     Disconnected {
-        network: ConnectedRunningNetwork,
+        network: RunningWifiNetwork,
         rx: ConnectedRxEpochResources,
         control: &'static ControlResources,
         station: Esp32s31StaAttemptStation,
         registers: Esp32s31RadioOwnerRepublish<'static>,
     },
     Reconnected {
-        network: StationNetwork,
+        network: WifiNetworkResources,
         rx: ConnectedRxEpochResources,
         control: &'static ControlResources,
         station: Esp32s31StaAttemptStation,
@@ -215,14 +221,14 @@ struct ProductionAccessPointStationResources {
     scan_table: &'static mut ScanTable,
     scan_frame: &'static mut [u8],
     ethernet: &'static mut [u8],
-    aggregate_tx: ConnectedAmpduStorage,
+    aggregate_tx: RadioAmpduStorage,
     resume: ProductionAccessPointStationResume,
     board: ProductionStationBoardResources,
     station_address: [u8; 6],
 }
 
 pub(super) struct ProductionAccessPointTask {
-    channel: u8,
+    channel: WifiChannel,
     owner: Esp32s31AccessPointRoleOwner<EspHalRadioPeripheral>,
     registers: RadioRuntimeOwner,
     interrupts: MacInterruptEpoch,
@@ -547,7 +553,7 @@ fn try_prepare_access_point_station_resources(
 
 fn restore_station_resources_after_access_point(
     parked: ProductionAccessPointParked,
-    aggregate_tx: ConnectedAmpduStorage,
+    aggregate_tx: RadioAmpduStorage,
     ring: open_esp_radio::esp32s31::wifi::mac::rx::RxRingHalted<'static, RX_DESCRIPTOR_COUNT>,
     scan_frame: &'static mut [u8],
     ethernet: &'static mut [u8],
@@ -711,13 +717,14 @@ impl ProductionWifiEpochRunner {
         let mut materialized = materialize_esp32s31_access_point(wifi, station);
         let requested_channel = request.channel();
         if requested_channel != current_channel {
+            let lowered_channel = lower_wifi_channel(requested_channel);
             let observer = NoopPhyTargetObserver;
             let (phy, platform) = materialized.owner.radio_mut();
             let mut channel =
                 Esp32s31ScanPhy::<_, _, EmbassyEsp32s31PhyDelay>::new(phy, platform, observer);
             if await_stack_boundary!(channel.select_channel(
-                u16::from(requested_channel.primary()),
-                0,
+                lowered_channel.channel_or_frequency,
+                lowered_channel.cbw,
                 &mut materialized.registers,
             ))
             .is_err()
@@ -929,7 +936,7 @@ impl ProductionWifiEpochRunner {
             beacon,
             pairwise_storage,
             &ssid,
-            channel.primary(),
+            channel,
             AccessPointRequest::BEACON_INTERVAL_TU,
             AccessPointRequest::DTIM_PERIOD,
         ) {
@@ -964,7 +971,7 @@ impl ProductionWifiEpochRunner {
         let aggregate = ProductionAccessPointAmpdu::new(
             aggregate_tx,
             maximum_aggregate_bytes,
-            4,
+            open_esp_radio::esp32s31::wifi::mac::tx_runtime::VENDOR_LONG_RETRY_LIMIT,
         );
         let mac = Esp32s31ApMac::new(
             engine,
@@ -982,7 +989,7 @@ impl ProductionWifiEpochRunner {
             rx_dispatcher,
         );
         Ok(ProductionAccessPointTask {
-            channel: channel.primary(),
+            channel,
             owner: materialized.owner,
             registers: materialized.registers,
             interrupts: mac_interrupt_epoch(materialized.interrupt_setup),
@@ -1346,7 +1353,11 @@ impl ProductionWifiEpochRunner {
                 "open-radio: access-point RX scheduler stop {:?}",
                 report.rx_scheduler,
             );
-           publish_access_point_observation(hooks.access_point, task.channel, report);
+            publish_access_point_observation(
+                hooks.access_point,
+                task.channel,
+                report,
+            );
         }
         if let Err(error) = result {
             #[cfg(feature = "qualification")]

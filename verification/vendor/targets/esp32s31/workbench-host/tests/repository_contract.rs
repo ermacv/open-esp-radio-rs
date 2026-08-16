@@ -246,6 +246,49 @@ fn reviewed_sta_ap_and_coex_boundaries_hide_register_mechanics() {
 }
 
 #[test]
+fn access_point_ht_width_is_one_end_to_end_typed_contract() {
+    let repository = repository_root();
+    let requests = fs::read_to_string(repository.join("driver/radio/src/requests.rs"))
+        .expect("read public AP request");
+    assert!(!requests.contains("channel.width() != WifiChannelWidth::Mhz20"));
+
+    let ht = fs::read_to_string(repository.join("driver/wifi/ieee80211/src/ht.rs"))
+        .expect("read portable HT profile");
+    assert!(ht.contains("pub const fn ht_capability_ie(channel: WifiChannel)"));
+    assert!(ht.contains("WifiChannelWidth::Mhz40Above"));
+    assert!(ht.contains("WifiChannelWidth::Mhz40Below"));
+
+    for path in [
+        "driver/wifi/ieee80211/src/ap.rs",
+        "driver/wifi/ieee80211/src/beacon.rs",
+        "driver/chips/esp32s31/wifi/ap/src/engine.rs",
+    ] {
+        let source = fs::read_to_string(repository.join(path)).expect("read AP HT owner");
+        assert!(!source.contains("write_ht20_association_response"));
+        assert!(!source.contains("write_wpa2_ht20_beacon"));
+    }
+
+    let runtime = fs::read_to_string(
+        repository.join("driver/integration/esp32s31/embassy-wifi/src/runtime/access_point.rs"),
+    )
+    .expect("read AP runtime");
+    assert!(runtime.contains("lower_wifi_channel(requested_channel)"));
+    assert!(runtime.contains("lowered_channel.channel_or_frequency"));
+    assert!(runtime.contains("lowered_channel.cbw"));
+
+    let network_tx = fs::read_to_string(
+        repository.join("driver/adapters/embassy/esp32s31-wifi/src/access_point/network_tx.rs"),
+    )
+    .expect("read AP network TX");
+    assert!(network_tx.contains(".peer_ht_rate(peer)"));
+    assert!(!network_tx.contains("HtChannelWidth::Mhz20"));
+
+    let protocol = fs::read_to_string(repository.join("hil/protocol/src/message.rs"))
+        .expect("read HIL AP request");
+    assert!(protocol.contains("pub channel_width: WifiChannelWidth"));
+}
+
+#[test]
 fn lmac_and_wdev_boundaries_do_not_recover_role_policy_or_legacy_runners() {
     let repository = repository_root();
     let chip_wifi = repository.join("driver/chips/esp32s31/wifi");
@@ -254,6 +297,11 @@ fn lmac_and_wdev_boundaries_do_not_recover_role_policy_or_legacy_runners() {
     assert!(
         !adapter.join("connected_runner.rs").exists() && !adapter.join("connected_runner").exists(),
         "the removed ConnectedRunner compatibility surface must not return"
+    );
+    assert!(
+        !adapter.join("connected_services.rs").exists()
+            && adapter.join("wdev/services.rs").is_file(),
+        "role-neutral WDEV services must not return to a STA-connected module"
     );
     let access_point =
         fs::read_to_string(adapter.join("access_point.rs")).expect("read AP adapter");
@@ -265,15 +313,64 @@ fn lmac_and_wdev_boundaries_do_not_recover_role_policy_or_legacy_runners() {
     );
     let access_point_wdev =
         fs::read_to_string(adapter.join("access_point/wdev.rs")).expect("read AP WDEV binding");
+    let compact_access_point_wdev = access_point_wdev
+        .chars()
+        .filter(|character| !character.is_whitespace())
+        .collect::<String>();
     assert!(
-        access_point_wdev.contains("start_network_tx")
-            && !access_point_wdev.contains(".mac.engine()"),
-        "the AP WDEV binding must delegate peer and frame policy to the AP owner"
+        compact_access_point_wdev.contains(".network_tx.start(")
+            && compact_access_point_wdev.contains(".network_tx.service(")
+            && compact_access_point_wdev.contains(".network_tx.wait_deadline("),
+        "the AP WDEV binding must delegate the complete network TX transaction"
     );
+    for forbidden in [
+        ".mac.engine(",
+        ".mac.try_aggregate_adapter(",
+        ".aggregate.active_mut(",
+        "HtMcs::",
+        "MAC_INT_TX_COMPLETE",
+        "MAC_INT_TX_TIMEOUT",
+        "MAC_INT_COLLISION",
+    ] {
+        assert!(
+            !compact_access_point_wdev.contains(forbidden),
+            "the AP WDEV binding recovered role TX policy through {forbidden}"
+        );
+    }
     assert!(
         !chip_wifi.join("mac/src/connected_rx.rs").exists()
             && !chip_wifi.join("mac/src/sta_ap_lifecycle.rs").exists(),
         "STA dispatch and WDEV lifecycle policy must not return to LMAC"
+    );
+    assert!(
+        chip_wifi.join("src/cooperative_hardware.rs").exists()
+            && !chip_wifi.join("sta/src/cooperative_hardware.rs").exists(),
+        "the AP/STA cooperative register facade must remain role-neutral without a legacy STA path"
+    );
+    assert!(
+        chip_wifi.join("src/protected_data_rx.rs").is_file(),
+        "AP/STA protected data validation must retain one role-neutral implementation"
+    );
+    let ap_rx = fs::read_to_string(chip_wifi.join("ap/src/rx.rs")).expect("read AP RX");
+    let sta_rx =
+        fs::read_to_string(chip_wifi.join("sta/src/connected_rx.rs")).expect("read STA RX");
+    for source in [&ap_rx, &sta_rx] {
+        assert!(source.contains("view_protected_data"));
+        assert!(!source.contains("view_ccmp_data"));
+        assert!(!source.contains("decapsulate_data_frames"));
+    }
+    let ap_wdev = fs::read_to_string(adapter.join("access_point/wdev.rs"))
+        .expect("read AP network RX publication");
+    assert!(ap_wdev.contains("commit_rx_batch_record"));
+    assert!(!ap_wdev.contains("ethernet_frames_dropped_network_backpressure"));
+    let aggregate_tx =
+        fs::read_to_string(adapter.join("aggregate_tx.rs")).expect("read STA aggregate TX");
+    let ampdu_resources = fs::read_to_string(adapter.join("ampdu_resources.rs"))
+        .expect("read role-neutral A-MPDU resources");
+    assert!(
+        !aggregate_tx.contains("struct AggregateTxResources")
+            && ampdu_resources.contains("pub struct AggregateTxResources"),
+        "AP/STA A-MPDU arenas must remain owned by the role-neutral resource module"
     );
 
     let mut mac_sources = Vec::new();
@@ -292,6 +389,11 @@ fn lmac_and_wdev_boundaries_do_not_recover_role_policy_or_legacy_runners() {
         mac_violations.is_empty(),
         "LMAC acquired role-policy imports: {mac_violations:#?}"
     );
+    let sta_link_hardware = fs::read_to_string(chip_wifi.join("mac/src/sta_link_policy.rs"))
+        .expect("read STA link hardware boundary");
+    assert!(!sta_link_hardware.contains("ScanRecord"));
+    assert!(!sta_link_hardware.contains("AssociationResponse"));
+    assert!(chip_wifi.join("sta/src/peer_policy.rs").is_file());
 
     let mut wdev_sources = vec![adapter.join("wdev.rs")];
     rust_files(&adapter.join("wdev"), &mut wdev_sources);
@@ -308,6 +410,29 @@ fn lmac_and_wdev_boundaries_do_not_recover_role_policy_or_legacy_runners() {
         wdev_violations.is_empty(),
         "role-neutral WDEV acquired role-policy imports: {wdev_violations:#?}"
     );
+
+    let integration = repository.join("driver/integration/esp32s31/embassy-wifi/src");
+    let resources = fs::read_to_string(integration.join("radio_resources.rs"))
+        .expect("read role-neutral integration resources");
+    for owner in [
+        "RadioTxBacking",
+        "RadioAmpduStorage",
+        "WifiNetworkResources",
+    ] {
+        assert!(resources.contains(owner), "radio resources lost {owner}");
+    }
+    let connected = fs::read_to_string(integration.join("connected.rs"))
+        .expect("read connected station composition");
+    for stale in [
+        "ConnectedTxBacking",
+        "ConnectedAmpduStorage",
+        "pub type StationNetwork",
+    ] {
+        assert!(
+            !connected.contains(stale),
+            "station composition restored stale shared-resource name {stale}"
+        );
+    }
 }
 
 #[test]

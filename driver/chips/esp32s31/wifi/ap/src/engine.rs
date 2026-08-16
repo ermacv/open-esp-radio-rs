@@ -12,15 +12,18 @@ use open_esp_radio_esp32s31_wifi_mac::{
     ap_tsf::{ApTsfHardware, reset_and_start_access_point_tsf, stop_access_point_tsf},
     crypto::{CcmpKeyHardware, CryptoKeyError},
 };
-use open_esp_radio_ieee80211::block_ack::{OperationalTxBlockAck, TxBlockAckAlarm};
+use open_esp_radio_ieee80211::block_ack::{
+    OperationalTxBlockAck, TxBlockAckAlarm, TxBlockAckResponse,
+};
 use open_esp_radio_ieee80211::{
     ap::{
         ApActionFrame, ApAssociationResponseError, ApDataFrame, ApDataFrameError,
         ApManagementRequest, ApPeerDisconnectKind, ApProtectedDataFrame, EncodedApFrame,
-        parse_ap_management_request, write_ap_peer_disconnect,
-        write_ht20_association_response_frame, write_open_authentication_response,
+        parse_ap_management_request, write_ap_peer_disconnect, write_ht_association_response_frame,
+        write_open_authentication_response,
     },
-    beacon::{ApBeaconBuildError, WPA2_BEACON_CAPACITY, write_wpa2_ht20_beacon},
+    beacon::{ApBeaconBuildError, WPA2_BEACON_CAPACITY, write_wpa2_ht_beacon},
+    channel::WifiChannel,
     ssid::WifiSsid,
 };
 use open_esp_radio_wifi_ap::{
@@ -139,6 +142,11 @@ pub struct Esp32s31ApEngineReport {
     pub inactivity_timeouts: u32,
     pub disassociations_prepared: u32,
     pub deauthentications_prepared: u32,
+    pub tx_block_ack_requests_prepared: u32,
+    pub tx_block_ack_responses_observed: u32,
+    pub tx_block_ack_agreements_operational: u32,
+    pub tx_block_ack_responses_rejected: u32,
+    pub tx_block_ack_negotiation_timeouts: u32,
 }
 
 /// Active AP policy and hardware-key owner.
@@ -150,7 +158,7 @@ pub struct Esp32s31ApEngine<'storage> {
     service: AccessPointService<'storage>,
     beacon: Esp32s31ApBeacon<'storage>,
     security: Esp32s31ApSecurity<'storage>,
-    primary_channel: u8,
+    channel: WifiChannel,
     report: Esp32s31ApEngineReport,
 }
 
@@ -165,15 +173,15 @@ impl<'storage> Esp32s31ApEngine<'storage> {
         beacon_storage: &'storage mut [u8; WPA2_BEACON_CAPACITY],
         pairwise_storage: &'storage mut Esp32s31ApPairwiseKeyStorage,
         ssid: &WifiSsid,
-        primary_channel: u8,
+        channel: WifiChannel,
         beacon_interval_tu: u16,
         dtim_period: u8,
     ) -> Result<Self, Esp32s31ApEngineStartFailure<'storage>> {
-        let beacon_len = match write_wpa2_ht20_beacon(
+        let beacon_len = match write_wpa2_ht_beacon(
             beacon_storage,
             service.address(),
             ssid,
-            primary_channel,
+            channel,
             beacon_interval_tu,
             dtim_period,
             0,
@@ -211,9 +219,13 @@ impl<'storage> Esp32s31ApEngine<'storage> {
             service,
             beacon,
             security,
-            primary_channel,
+            channel,
             report: Esp32s31ApEngineReport::default(),
         })
+    }
+
+    pub const fn channel(&self) -> WifiChannel {
+        self.channel
     }
 
     pub fn prepare_beacon(&mut self, executor_timestamp_micros: u64) -> Option<&mut [u8]> {
@@ -326,7 +338,7 @@ impl<'storage> Esp32s31ApEngine<'storage> {
                 peer,
                 rsn_ie,
                 maximum_legacy_rate_500kbps,
-                ht_supported,
+                ht_capabilities,
                 qos_supported,
             } => {
                 let Some(peer_status) = self.service.peer_status(peer) else {
@@ -343,14 +355,14 @@ impl<'storage> Esp32s31ApEngine<'storage> {
                     // state, retransmit the same successful association and
                     // do not start a second Message-1 transaction.
                     let sequence = self.service.next_management_sequence();
-                    let len = write_ht20_association_response_frame(
+                    let len = write_ht_association_response_frame(
                         output,
                         self.service.address(),
                         peer,
                         0,
                         peer_status.association_id,
                         sequence,
-                        self.primary_channel,
+                        self.channel,
                     )?;
                     self.report.association_responses_prepared =
                         self.report.association_responses_prepared.saturating_add(1);
@@ -367,7 +379,7 @@ impl<'storage> Esp32s31ApEngine<'storage> {
                     rsn_ie.unwrap_or(&[]),
                     ApAssociationCapabilities {
                         maximum_legacy_rate_500kbps,
-                        ht_supported,
+                        ht: ht_capabilities,
                         qos_supported,
                     },
                     authenticator_nonce,
@@ -383,14 +395,14 @@ impl<'storage> Esp32s31ApEngine<'storage> {
                     unreachable!("associate_wpa2 has one response action")
                 };
                 let sequence = self.service.next_management_sequence();
-                let len = write_ht20_association_response_frame(
+                let len = write_ht_association_response_frame(
                     output,
                     self.service.address(),
                     peer,
                     status,
                     association_id.unwrap_or(0),
                     sequence,
-                    self.primary_channel,
+                    self.channel,
                 )?;
                 self.report.association_responses_prepared =
                     self.report.association_responses_prepared.saturating_add(1);
@@ -433,7 +445,26 @@ impl<'storage> Esp32s31ApEngine<'storage> {
                 if self.service.peer_status(peer).is_none() {
                     return Ok(Esp32s31ApManagementOutcome::Ignored);
                 }
-                self.service.on_tx_block_ack_action(peer, action)?;
+                if let Some(response) = self.service.on_tx_block_ack_action(peer, action)? {
+                    self.report.tx_block_ack_responses_observed = self
+                        .report
+                        .tx_block_ack_responses_observed
+                        .saturating_add(1);
+                    match response {
+                        TxBlockAckResponse::Operational(_) => {
+                            self.report.tx_block_ack_agreements_operational = self
+                                .report
+                                .tx_block_ack_agreements_operational
+                                .saturating_add(1);
+                        }
+                        TxBlockAckResponse::Rejected(_) => {
+                            self.report.tx_block_ack_responses_rejected = self
+                                .report
+                                .tx_block_ack_responses_rejected
+                                .saturating_add(1);
+                        }
+                    }
+                }
                 Ok(Esp32s31ApManagementOutcome::Ignored)
             }
         }
@@ -458,6 +489,8 @@ impl<'storage> Esp32s31ApEngine<'storage> {
             body: &request.body,
         }
         .encode(output)?;
+        self.report.tx_block_ack_requests_prepared =
+            self.report.tx_block_ack_requests_prepared.saturating_add(1);
         Ok(Some((length, request.alarm)))
     }
 
@@ -465,12 +498,23 @@ impl<'storage> Esp32s31ApEngine<'storage> {
         self.service.peer_status(peer)?.tx_block_ack
     }
 
+    pub fn has_operational_tx_block_ack(&self) -> bool {
+        self.service.has_operational_tx_block_ack()
+    }
+
     pub fn observe_tx_block_ack_alarm(
         &mut self,
         peer: [u8; 6],
         alarm: TxBlockAckAlarm,
     ) -> Result<bool, Esp32s31ApEngineError> {
-        Ok(self.service.on_tx_block_ack_alarm(peer, alarm)?)
+        let expired = self.service.on_tx_block_ack_alarm(peer, alarm)?;
+        if expired {
+            self.report.tx_block_ack_negotiation_timeouts = self
+                .report
+                .tx_block_ack_negotiation_timeouts
+                .saturating_add(1);
+        }
+        Ok(expired)
     }
 
     /// Install the PTK only after message four has been MIC-verified, then
@@ -945,7 +989,7 @@ mod tests {
             &mut beacon,
             &mut pairwise,
             &ssid,
-            6,
+            WifiChannel::mhz20(6).unwrap(),
             100,
             2,
         )
@@ -1003,7 +1047,7 @@ mod tests {
             &mut beacon,
             &mut pairwise,
             &ssid,
-            6,
+            WifiChannel::mhz20(6).unwrap(),
             100,
             2,
         )
@@ -1147,7 +1191,7 @@ mod tests {
             &mut beacon,
             &mut pairwise,
             &ssid,
-            6,
+            WifiChannel::mhz20(6).unwrap(),
             100,
             2,
         )

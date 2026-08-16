@@ -12,10 +12,10 @@ use open_esp_radio_esp32s31_hal::RadioRuntimeOwner;
 use open_esp_radio_esp32s31_hal::radio_arena::{
     Esp32s31RadioOwnerArenaError, Esp32s31RadioOwnerRepublish,
 };
+use open_esp_radio_esp32s31_wifi::cooperative_hardware::CooperativeRadioHardware;
 use open_esp_radio_esp32s31_wifi_mac::irq::MacInterruptRoute;
-use open_esp_radio_esp32s31_wifi_sta::{
-    attempt::{Esp32s31StaAttemptSecurity, Esp32s31StaAttemptStation, Esp32s31StaIdentity},
-    cooperative_hardware::CooperativeRadioHardware,
+use open_esp_radio_esp32s31_wifi_sta::attempt::{
+    Esp32s31StaAttemptSecurity, Esp32s31StaAttemptStation, Esp32s31StaIdentity,
 };
 use open_esp_radio_ieee80211::channel::{WifiChannel, WifiChannelError};
 use open_esp_radio_wifi_embassy::station_network::{

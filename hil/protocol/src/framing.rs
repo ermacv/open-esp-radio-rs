@@ -568,12 +568,15 @@ mod tests {
     fn access_point_request_round_trips_without_debugging_the_secret() {
         extern crate std;
 
-        use crate::{NetworkCredentials, NetworkIpv4Configuration, WifiAccessPointRequest};
+        use crate::{
+            NetworkCredentials, NetworkIpv4Configuration, WifiAccessPointRequest, WifiChannelWidth,
+        };
 
         let request = WifiAccessPointRequest {
             credentials: NetworkCredentials::try_new(b"open-radio-ap", b"private-password")
                 .unwrap(),
             channel: 6,
+            channel_width: WifiChannelWidth::Mhz40Above,
             client_limit: 4,
             ipv4: NetworkIpv4Configuration::Static {
                 address: [10, 43, 0, 1],
@@ -582,6 +585,12 @@ mod tests {
             },
         };
         assert_eq!(request.validate(), Ok(()));
+        let mut invalid_geometry = request.clone();
+        invalid_geometry.channel = 13;
+        assert_eq!(
+            invalid_geometry.validate(),
+            Err(crate::WifiAccessPointRequestError::Channel)
+        );
         let debug = std::format!("{request:?}");
         assert!(!debug.contains("private-password"));
 

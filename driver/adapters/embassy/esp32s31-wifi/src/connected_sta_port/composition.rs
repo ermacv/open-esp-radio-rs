@@ -387,7 +387,7 @@ impl Esp32s31ConnectedStaPort {
         parts: Esp32s31ConnectedStaDriverParts<H, R, X, C, P>,
     ) -> Esp32s31ConnectedStaDrivers<H, R, X, C, P> {
         Esp32s31ConnectedStaDrivers {
-            services: Esp32s31ConnectedServices::with_control(
+            services: WdevServiceSet::with_control(
                 parts.hardware,
                 parts.rx,
                 parts.tx,

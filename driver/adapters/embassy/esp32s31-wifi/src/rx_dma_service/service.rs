@@ -14,7 +14,7 @@ impl<
     const DMA_BUFFER_SIZE: usize,
     const DMA_STORAGE_SIZE: usize,
     P,
-> Esp32s31ConnectedRxService<H>
+> WdevRxService<H>
     for Esp32s31ConnectedRx<
         'storage,
         'pool,

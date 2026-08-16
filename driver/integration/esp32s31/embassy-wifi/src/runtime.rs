@@ -19,6 +19,7 @@ use open_esp_radio::esp32s31::supervisor::{
     run_esp32s31_station_supervisor_epoch,
 };
 use open_esp_radio::esp32s31::wifi::device::tx::ControlTxConfig;
+use open_esp_radio::esp32s31::wifi::device::lower_wifi_channel;
 use open_esp_radio::esp32s31::wifi::sta::attempt::{
     Esp32s31StaAttemptObserver, Esp32s31StaAttemptSecurity, Esp32s31StaAttemptStage,
     Esp32s31StaAttemptStation, Esp32s31StaIdentity,
@@ -128,15 +129,17 @@ use static_cell::{ConstStaticCell, StaticCell};
 #[cfg(feature = "qualification")]
 use crate::connected::configure_mac_irq_observer;
 use crate::connected::{
-    ConnectedAmpduStorage, ConnectedDisconnectedEpoch, ConnectedReconnectedEpoch,
-    ConnectedTxBacking,
-    ConnectedRunningNetwork, ConnectedRxEpochResources, ConnectedRxProtocolStorage,
+    ConnectedDisconnectedEpoch, ConnectedReconnectedEpoch, ConnectedRxEpochResources,
+    ConnectedRxProtocolStorage,
     ConnectedStationEpoch, ConnectedStationFault, ConnectedStationOutcome,
     ConnectedStationResources, ConnectedStationRunExit, ConnectedStoppedRx, ControlResources,
-    Esp32s31WifiProtocolRunner, InitialConnectedStaticResources, MacInterruptEpoch, NetworkRunner,
-    StationNetwork, connected_config, initialize_connected_rx_protocol_runtime,
+    Esp32s31WifiProtocolRunner, InitialConnectedStaticResources, MacInterruptEpoch,
+    connected_config, initialize_connected_rx_protocol_runtime,
     initialize_connected_static_resources, initialize_ethernet_frame, initialize_station_network,
     mac_interrupt_epoch, run_connected,
+};
+use crate::radio_resources::{
+    NetworkRunner, RadioAmpduStorage, RadioTxBacking, RunningWifiNetwork, WifiNetworkResources,
 };
 use crate::monitor::{
     CaptureResources, MonitorMemory, MonitorResourcesError, ProductionMonitorBuildFailure,
@@ -246,7 +249,7 @@ type ProductionStationPhase = Esp32s31StationServicePhase<
         RX_DESCRIPTOR_COUNT,
         RX_BUFFER_SIZE,
     >,
-    StationNetwork,
+    WifiNetworkResources,
     ConnectedDisconnectedEpoch,
     ConnectedReconnectedEpoch,
     ProductionConnectedPhase,
@@ -254,7 +257,7 @@ type ProductionStationPhase = Esp32s31StationServicePhase<
 
 struct ProductionConnectedPhase {
     epoch: ConnectedStationEpoch,
-    network: StationNetwork,
+    network: WifiNetworkResources,
     station: Esp32s31StaAttemptStation,
     peer: open_esp_radio::esp32s31::wifi::sta::peer::Esp32s31ConnectedStaPeer,
     pairwise: open_esp_radio::esp32s31::wifi::mac::crypto::StaPairwiseCcmpSlot,
@@ -287,10 +290,10 @@ type ProductionStationStoppedPhase = Esp32s31StationStoppedPhaseResources<
         RX_DESCRIPTOR_COUNT,
         RX_BUFFER_SIZE,
     >,
-    StationNetwork,
-    ConnectedRunningNetwork,
+    WifiNetworkResources,
+    RunningWifiNetwork,
     ConnectedStoppedRx,
-    ConnectedAmpduStorage,
+    RadioAmpduStorage,
     &'static ControlResources,
     ConnectedRxEpochResources,
 >;
@@ -322,7 +325,7 @@ struct ProductionStationFreshResources {
     scan_table: &'static mut ScanTable,
     scan_frame: &'static mut [u8],
     ethernet: &'static mut [u8],
-    network: StationNetwork,
+    network: WifiNetworkResources,
     board: ProductionStationBoardResources,
     station_address: [u8; 6],
 }
@@ -472,7 +475,7 @@ struct ProductionInitialRxFault {
     _scan_table: &'static mut ScanTable,
     _scan_frame: &'static mut [u8],
     _ethernet: &'static mut [u8],
-    _network: StationNetwork,
+    _network: WifiNetworkResources,
     _board: ProductionStationBoardResources,
     _station_address: [u8; 6],
     _security: Esp32s31StaAttemptSecurity<'static>,
@@ -608,7 +611,7 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
             ProductionStationRuntime<'state>,
             RadioRuntimeOwner,
             Esp32s31ScanRx<'static, RX_DESCRIPTOR_COUNT, RX_BUFFER_SIZE, RX_BUFFER_STORAGE_SIZE>,
-            StationNetwork,
+            WifiNetworkResources,
         >,
         discovery: StationDiscovery,
     ) -> Esp32s31StationInitialScanExit<
@@ -621,7 +624,7 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
             RX_DESCRIPTOR_COUNT,
             RX_BUFFER_SIZE,
         >,
-        StationNetwork,
+        WifiNetworkResources,
         ProductionStationOwner<'state, 'security>,
         Esp32s31StaAttemptStage,
         ProductionStationFault<'state, 'security>,
@@ -808,7 +811,7 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
         'security,
         ProductionStationRuntime<'state>,
         ConnectedReconnectedEpoch,
-        StationNetwork,
+        WifiNetworkResources,
         ProductionStationOwner<'state, 'security>,
         Esp32s31StaAttemptStage,
         ProductionStationFault<'state, 'security>,
@@ -921,7 +924,7 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
             |disconnected| {
                 let (network, epoch) =
                     disconnected.prepare_reconnect::<EmbassyEsp32s31RxFrontierDelay>();
-                (StationNetwork::Running(network), epoch)
+                (WifiNetworkResources::Running(network), epoch)
             },
             |runtime, disconnected, station, security| {
                 ProductionStationOwner::new(
@@ -951,7 +954,7 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
                 RX_DESCRIPTOR_COUNT,
                 RX_BUFFER_SIZE,
             >,
-            StationNetwork,
+            WifiNetworkResources,
         >,
         context: StaAttemptContext,
     ) -> Esp32s31StationJoinExit<
@@ -1073,7 +1076,7 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
             'security,
             ProductionStationRuntime<'state>,
             ConnectedReconnectedEpoch,
-            StationNetwork,
+            WifiNetworkResources,
         >,
         context: StaAttemptContext,
     ) -> Esp32s31StationJoinExit<
@@ -1261,7 +1264,7 @@ impl<'state, 'security> Esp32s31StationEnginePort<'security, CriticalSectionRawM
         RX_DESCRIPTOR_COUNT,
         RX_BUFFER_SIZE,
     >;
-    type Network = StationNetwork;
+    type Network = WifiNetworkResources;
     type Disconnected = ConnectedDisconnectedEpoch;
     type Reconnected = ConnectedReconnectedEpoch;
     type Connected = ProductionConnectedPhase;

@@ -159,7 +159,7 @@ where
             let result = self
                 .dispatcher
                 .dispatch(segment, self.mpdu, &mut [], &mut deferred);
-            (result, deferred.used, deferred.metadata)
+            (result, deferred.used(), deferred.metadata)
         };
         if let (Some(observer), Some(started)) = (self.pipeline_observer, dispatch_started) {
             let (data, amsdu, amsdu_subframes) = match result {
@@ -180,13 +180,9 @@ where
         let raw = segment.buffer;
         let metadata = metadata.unwrap_or_else(MacRxMetadata::unavailable);
         let mut offset = 0_usize;
-        while offset < used {
-            let length = usize::from(u16::from_be_bytes([
-                self.ethernet[offset],
-                self.ethernet[offset + 1],
-            ]));
-            let start = offset + 2;
-            let end = start + length;
+        while let Some(record) = crate::ethernet_rx::record_at(self.ethernet, used, offset)
+            .expect("the private A-MSDU writer produces valid records")
+        {
             let wait_started = self.pipeline_observer.map(|observer| observer.now_micros());
             self.sink.wait_ready().await;
             if let (Some(observer), Some(started)) = (self.pipeline_observer, wait_started) {
@@ -194,23 +190,13 @@ where
                     micros: observer.elapsed_micros_since(started),
                 });
             }
-            let ethernet = &self.ethernet[start..end];
             self.sink.publish(ConnectedRxEvent::Ethernet {
-                frame: EthernetFrameParts {
-                    destination: ethernet[..6]
-                        .try_into()
-                        .expect("deferred Ethernet destination has six bytes"),
-                    source: ethernet[6..12]
-                        .try_into()
-                        .expect("deferred Ethernet source has six bytes"),
-                    ether_type: u16::from_be_bytes([ethernet[12], ethernet[13]]),
-                    payload: &ethernet[14..],
-                },
+                frame: record.frame,
                 raw,
                 amsdu: true,
                 metadata,
             });
-            offset = end;
+            offset = record.next_offset;
         }
         result
     }

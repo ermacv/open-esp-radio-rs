@@ -67,8 +67,11 @@ requested channels, returns a bounded value-only report and restores idle.
 It cannot associate. Station owns its separate candidate scan plus
 authentication, association, WPA2, connected and reconnect policy. Monitor is
 an exclusive capture role. The production STA API is deliberately always
-awake. AP v1 owns one 20 MHz ERP BSS, one WPA2-PSK/CCMP client and pairwise
-unicast Ethernet; it does not claim HT, AP+STA, group-data TX or power save.
+awake. AP owns one validated HT20 or HT40 ERP/HT BSS, a bounded peer table,
+WPA2-PSK/CCMP, per-peer Block Ack and pairwise HT A-MPDU unicast Ethernet.
+Each aggregate width and guard interval is bounded by the BSS geometry and the
+associated peer's observed HT capabilities. It does not claim AP+STA,
+group-data TX, HE or power save.
 BLE, Bluetooth, IEEE 802.15.4 and coexistence are not public runtime features
 and have no placeholder public owner types. Internal typed PAC/HAL/LMAC
 transactions exist for the reviewed Wi-Fi-side PTI/request leaves and COEX
@@ -129,6 +132,13 @@ HAL, PAC-owner re-exports, the removed broad PHY APIs and reintroduction of a
 leaf contains polling, delay, recovery, lifecycle policy or a composition of
 separately meaningful hardware operations, migrate that complete sequence to
 HAL and compare the compiled production entry before changing evidence.
+
+AP and STA share mechanisms only below their role policy. Common protected
+data validation/decapsulation lives in the chip Wi-Fi crate; bounded Ethernet
+batch retention and `WdevServiceSet` live in the Embassy WDEV adapter. The
+integration `radio_resources` module owns the one network/TX/A-MPDU allocation
+borrowed by mutually exclusive role epochs. AP/STA peer state, security,
+Block-Ack negotiation, rate policy and lifecycle remain separate owners.
 
 ## Extension rules
 

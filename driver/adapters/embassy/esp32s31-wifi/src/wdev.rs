@@ -18,18 +18,30 @@ pub use open_esp_radio_esp32s31_wifi::tx::{WifiTxProgress, WifiTxWake};
 pub use open_esp_radio_esp32s31_wifi::wdev::{
     WdevControlContext, WdevControlProgress, WdevRxProgress, WdevStopProgress,
 };
+use open_esp_radio_ieee80211::data::EthernetFrameParts;
 
 use crate::embassy_irq::EmbassyMacIrqRuntime;
+
+pub mod services;
 
 /// RX-only network publication capability exposed to one finite WDEV service.
 /// It cannot observe or claim network-owned TX slots.
 pub trait WdevNetworkRx {
     fn try_send(&mut self, frame: &[u8]) -> Result<(), RxEnqueueError>;
 
+    fn try_send_parts(&mut self, frame: EthernetFrameParts<'_>) -> Result<(), RxEnqueueError>;
+
     #[cfg(feature = "rx-delivery-observation")]
     fn try_send_observed(
         &mut self,
         frame: &[u8],
+        before_publish: &mut dyn FnMut(),
+    ) -> Result<(), RxEnqueueError>;
+
+    #[cfg(feature = "rx-delivery-observation")]
+    fn try_send_parts_observed(
+        &mut self,
+        frame: EthernetFrameParts<'_>,
         before_publish: &mut dyn FnMut(),
     ) -> Result<(), RxEnqueueError>;
 }
@@ -41,6 +53,16 @@ impl<M: RawMutex, const FRAME_CAPACITY: usize, const RX_QUEUE_DEPTH: usize> Wdev
         PinnedRxPublisher::try_send(self, frame)
     }
 
+    fn try_send_parts(&mut self, frame: EthernetFrameParts<'_>) -> Result<(), RxEnqueueError> {
+        PinnedRxPublisher::try_send_parts(
+            self,
+            frame.destination,
+            frame.source,
+            frame.ether_type,
+            frame.payload,
+        )
+    }
+
     #[cfg(feature = "rx-delivery-observation")]
     fn try_send_observed(
         &mut self,
@@ -48,6 +70,22 @@ impl<M: RawMutex, const FRAME_CAPACITY: usize, const RX_QUEUE_DEPTH: usize> Wdev
         before_publish: &mut dyn FnMut(),
     ) -> Result<(), RxEnqueueError> {
         PinnedRxPublisher::try_send_observed(self, frame, before_publish)
+    }
+
+    #[cfg(feature = "rx-delivery-observation")]
+    fn try_send_parts_observed(
+        &mut self,
+        frame: EthernetFrameParts<'_>,
+        before_publish: &mut dyn FnMut(),
+    ) -> Result<(), RxEnqueueError> {
+        PinnedRxPublisher::try_send_parts_observed(
+            self,
+            frame.destination,
+            frame.source,
+            frame.ether_type,
+            frame.payload,
+            before_publish,
+        )
     }
 }
 
@@ -218,7 +256,10 @@ where
 // explicit and bounded: a full window starts immediately, while sparse
 // traffic cannot be held beyond this deadline.
 const TX_BATCH_MAX_WAIT: Duration = Duration::from_millis(2);
-const TX_BATCH_MIN_FRAMES: usize = 2;
+
+const fn should_collect_network_batch(preferred: usize, available: usize) -> bool {
+    preferred > 1 && available != 0 && available < preferred
+}
 
 /// Terminal, non-error outcome of one role-neutral radio event loop.
 ///

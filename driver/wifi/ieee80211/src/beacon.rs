@@ -6,7 +6,8 @@
 //! timestamp and the beacon's advertised interval.
 
 use crate::{
-    ht::{HT20_CAPABILITY_IE, ht20_operation_ie},
+    channel::WifiChannel,
+    ht::{ht_capability_ie, ht_operation_ie},
     ssid::WifiSsid,
 };
 
@@ -37,21 +38,21 @@ pub enum ApBeaconBuildError {
     OutputTooSmall { required: usize },
 }
 
-/// Build one visible WPA2-Personal HT20/WMM beacon without allocating.
+/// Build one visible WPA2-Personal HT/WMM beacon without allocating.
 ///
 /// The caller owns timestamp/DTIM progression through [`stamp`]. This builder
 /// publishes the fixed first-AP profile only: 100 TU, one-byte TIM bitmap,
-/// CCMP, PSK, WMM and the qualified one-stream HT20 capability records.
-pub fn write_wpa2_ht20_beacon(
+/// CCMP, PSK, WMM and coherent one-stream HT capability records.
+pub fn write_wpa2_ht_beacon(
     output: &mut [u8],
     access_point: [u8; 6],
     ssid: &WifiSsid,
-    primary_channel: u8,
+    channel: WifiChannel,
     beacon_interval_tu: u16,
     dtim_period: u8,
     management_sequence: u16,
 ) -> Result<usize, ApBeaconBuildError> {
-    if !(1..=13).contains(&primary_channel) {
+    if !(1..=13).contains(&channel.primary()) {
         return Err(ApBeaconBuildError::InvalidPrimaryChannel);
     }
     if dtim_period == 0 {
@@ -61,6 +62,8 @@ pub fn write_wpa2_ht20_beacon(
         return Err(ApBeaconBuildError::InvalidSequenceNumber);
     }
 
+    let ht_capability = ht_capability_ie(channel);
+    let ht_operation = ht_operation_ie(channel);
     let required = MANAGEMENT_HEADER_LEN
         + BEACON_FIXED_BODY_LEN
         + 2
@@ -73,8 +76,8 @@ pub fn write_wpa2_ht20_beacon(
         + 2
         + EXTENDED_RATES.len()
         + WMM_PARAMETER_IE.len()
-        + HT20_CAPABILITY_IE.len()
-        + ht20_operation_ie(primary_channel).len();
+        + ht_capability.len()
+        + ht_operation.len();
     if output.len() < required {
         return Err(ApBeaconBuildError::OutputTooSmall { required });
     }
@@ -93,13 +96,13 @@ pub fn write_wpa2_ht20_beacon(
     let mut offset = MANAGEMENT_HEADER_LEN + BEACON_FIXED_BODY_LEN;
     write_element(frame, &mut offset, 0, ssid.as_bytes());
     write_element(frame, &mut offset, 1, &SUPPORTED_RATES);
-    write_element(frame, &mut offset, 3, &[primary_channel]);
+    write_element(frame, &mut offset, 3, &[channel.primary()]);
     write_element(frame, &mut offset, 5, &[dtim_period - 1, dtim_period, 0, 0]);
     copy_record(frame, &mut offset, &WPA2_PERSONAL_CCMP_PSK_RSN_IE);
     write_element(frame, &mut offset, 50, &EXTENDED_RATES);
     copy_record(frame, &mut offset, &WMM_PARAMETER_IE);
-    copy_record(frame, &mut offset, &HT20_CAPABILITY_IE);
-    copy_record(frame, &mut offset, &ht20_operation_ie(primary_channel));
+    copy_record(frame, &mut offset, &ht_capability);
+    copy_record(frame, &mut offset, &ht_operation);
     debug_assert_eq!(offset, required);
     Ok(required)
 }
@@ -224,9 +227,12 @@ pub fn stamp(bytes: &mut [u8], timestamp: u64, group_pending: bool) -> Option<(u
 mod tests {
     use super::{
         ApBeaconBuildError, WPA2_BEACON_CAPACITY, WPA2_PERSONAL_CCMP_PSK_RSN_IE, dtim, stamp,
-        write_wpa2_ht20_beacon,
+        write_wpa2_ht_beacon,
     };
-    use crate::ssid::WifiSsid;
+    use crate::{
+        channel::{WifiChannel, WifiChannelWidth},
+        ssid::WifiSsid,
+    };
 
     fn beacon() -> [u8; 44] {
         let mut bytes = [0_u8; 44];
@@ -263,7 +269,16 @@ mod tests {
         let ap = [0x02, 0, 0, 0, 0, 1];
         let ssid = WifiSsid::new(b"open-radio-ap").unwrap();
         let mut bytes = [0; WPA2_BEACON_CAPACITY];
-        let len = write_wpa2_ht20_beacon(&mut bytes, ap, &ssid, 6, 100, 2, 0x0abc).unwrap();
+        let len = write_wpa2_ht_beacon(
+            &mut bytes,
+            ap,
+            &ssid,
+            WifiChannel::mhz20(6).unwrap(),
+            100,
+            2,
+            0x0abc,
+        )
+        .unwrap();
 
         assert_eq!(&bytes[..2], &0x0080_u16.to_le_bytes());
         assert_eq!(&bytes[4..10], &[0xff; 6]);
@@ -282,11 +297,37 @@ mod tests {
     }
 
     #[test]
+    fn ht40_beacon_advertises_the_validated_secondary_channel() {
+        let ssid = WifiSsid::new(b"open-radio-ap").unwrap();
+        let mut bytes = [0; WPA2_BEACON_CAPACITY];
+        let channel = WifiChannel::new_2_4_ghz(6, WifiChannelWidth::Mhz40Above).unwrap();
+        let len = write_wpa2_ht_beacon(&mut bytes, [2; 6], &ssid, channel, 100, 2, 0).unwrap();
+        assert!(
+            bytes[..len]
+                .windows(4)
+                .any(|window| window == [45, 26, 0x62, 0])
+        );
+        assert!(
+            bytes[..len]
+                .windows(4)
+                .any(|window| window == [61, 22, 6, 0x05])
+        );
+    }
+
+    #[test]
     fn rejects_unrepresentable_beacon_policy_before_mutation() {
         let ssid = WifiSsid::new(b"ap").unwrap();
         let mut bytes = [0xaa; WPA2_BEACON_CAPACITY];
         assert_eq!(
-            write_wpa2_ht20_beacon(&mut bytes, [0; 6], &ssid, 14, 100, 2, 0),
+            write_wpa2_ht_beacon(
+                &mut bytes,
+                [0; 6],
+                &ssid,
+                WifiChannel::mhz20(14).unwrap(),
+                100,
+                2,
+                0,
+            ),
             Err(ApBeaconBuildError::InvalidPrimaryChannel)
         );
         assert!(bytes.iter().all(|byte| *byte == 0xaa));

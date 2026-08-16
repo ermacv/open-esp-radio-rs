@@ -10,6 +10,7 @@ Module map:
 - `channel`: persistent PHY/channel owner retained across scan and reconnect;
 - `association`: PHY/rate/power plan derived from a selected candidate;
 - `peer`: associated-peer WMM/HT/HE/rate-control programming;
+- `peer_policy`: value-only Scan/Association/WMM/HE plan consumed by `peer`;
 - `tx`: entropy, calibrated-power and monotonic-time ports plus TX resources;
 - `tx_epoch`: unique pre-connected control-TX ownership state;
 - `scan`: cold/running scan ordering and mandatory RX cleanup contract;

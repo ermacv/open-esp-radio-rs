@@ -13,7 +13,7 @@ use open_esp_radio_esp32s31_hal::RadioRuntimeOwner;
 use open_esp_radio_esp32s31_hal::radio_arena::{
     Esp32s31RadioOwnerArena, Esp32s31RadioOwnerArenaError,
 };
-use open_esp_radio_esp32s31_wifi_sta::cooperative_hardware::CooperativeRadioHardware;
+use open_esp_radio_esp32s31_wifi::cooperative_hardware::CooperativeRadioHardware;
 
 use crate::{
     rx_dma_service::{Esp32s31ConnectedRx, Esp32s31RxEpochResources},

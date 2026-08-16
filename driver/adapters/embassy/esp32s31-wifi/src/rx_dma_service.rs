@@ -24,12 +24,12 @@ use open_esp_radio_esp32s31_wifi_mac::{
 
 use crate::{
     connected_rx_protocol::Esp32s31StagedRxFrame,
-    connected_services::Esp32s31ConnectedRxService,
     embassy_rx::RxDmaObservationDelay,
     rx_pipeline_observer::{
         RxPipelineObservation, RxPipelineObserver, RxServiceObservation, RxStageDiscard,
     },
     wdev::WdevRxProgress,
+    wdev::services::WdevRxService,
 };
 
 /// Descriptor count and allocation geometry qualified by the ordinary S31

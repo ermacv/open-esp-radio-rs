@@ -6,23 +6,23 @@
 //! network stack or await an executor primitive. Those effects are published
 //! through [`ConnectedRxSink`] and belong to the integration runner.
 
+use open_esp_radio_esp32s31_wifi::protected_data_rx::view_protected_data;
 use open_esp_radio_esp32s31_wifi_dma::rx_ring::RxSegment;
 use open_esp_radio_ieee80211::{
-    data::{
-        DataDecapError, DataInterfaceRole, EthernetFrameParts, RxDuplicateFilter,
-        decapsulate_data_frames,
-    },
+    data::{DataDecapError, DataInterfaceRole, EthernetFrameParts, RxDuplicateFilter},
     ndpa::{HeNdpa, HeNdpaError},
     station::{StaDisconnect, parse_sta_disconnect},
     station_beacon::{StaBeaconError, StaBeaconObservation, parse_sta_beacon},
     trigger::{TriggerCommonInfo, TriggerParseError, parse_trigger_frame},
 };
-use open_esp_radio_wifi_softmac::{MacRxCryptoStatus, MacRxEvidence, MacRxMetadata};
+use open_esp_radio_wifi_softmac::MacRxMetadata;
+#[cfg(test)]
+use open_esp_radio_wifi_softmac::{MacRxCryptoStatus, MacRxEvidence};
 
 use open_esp_radio_esp32s31_wifi_mac::{
     rx::{
         PUBLIC_HEADER_SIZE, RxError, RxIngressConfig, RxPhyInfo, decode_normalized_rx_metadata,
-        extract_control, extract_management, view_ccmp_data,
+        extract_control, extract_management,
     },
     tx::{HeTriggerScheduledRate, HeTriggerScheduledRateError},
     tx_ampdu::{BlockAckAction, parse_block_ack_action},
@@ -439,14 +439,13 @@ impl ConnectedRxDispatcher {
                 sink.publish(ConnectedRxEvent::PeerDisconnect(disconnect));
                 ConnectedRxDispatch::PeerDisconnect
             }
-            _ => self.dispatch_data(segment, raw, frame_control, protection, sink),
+            _ => self.dispatch_data(segment, frame_control, protection, sink),
         }
     }
 
     fn dispatch_data<S: ConnectedRxSink>(
         &mut self,
         segment: RxSegment<'_>,
-        raw: &[u8],
         public_frame_control: u16,
         protection: ConnectedRxProtection,
         sink: &mut S,
@@ -454,47 +453,27 @@ impl ConnectedRxDispatcher {
         if public_frame_control & (DATA_TYPE_MASK | PROTECTED) != DATA_TYPE | PROTECTED {
             return ConnectedRxDispatch::Ignored;
         }
-        let data = match view_ccmp_data(&segment, self.config.ingress) {
+        let data = match view_protected_data(segment, self.config.ingress) {
             Ok(data) => data,
             Err(error) => return rejected(protection, ConnectedRxError::Rx(error)),
         };
-        let Some(mut metadata) = decode_normalized_rx_metadata(raw) else {
-            return rejected(protection, ConnectedRxError::Rx(RxError::Metadata));
-        };
-        // `view_ccmp_data` admits only the successful S31 RX state and rejects
-        // the dedicated MIC-failure state before exposing plaintext.
-        metadata.crypto =
-            MacRxEvidence::HardwareObserved(MacRxCryptoStatus::DecryptedAndIntegrityVerified);
         let mpdu = data.mpdu;
-        if data.frame.mpdu.length < 24 || mpdu[10..16] != self.config.bssid {
+        if mpdu[10..16] != self.config.bssid {
             return ConnectedRxDispatch::Ignored;
         }
-        let frame_control = u16::from_le_bytes([mpdu[0], mpdu[1]]);
-        let sequence_control = u16::from_le_bytes([mpdu[22], mpdu[23]]);
-        let tid = if frame_control & QOS_SUBTYPE != 0 && data.frame.mpdu.length >= 26 {
-            Some(mpdu[24] & 0x0f)
-        } else {
-            None
-        };
         if self
             .duplicate_filter
-            .is_duplicate(frame_control & RETRY != 0, sequence_control, tid)
+            .is_duplicate(data.retry, data.sequence_control, data.tid)
         {
             return ConnectedRxDispatch::Duplicate;
         }
 
-        let mpdu = &mpdu[..data.frame.mpdu.length];
-        let mut frames = match decapsulate_data_frames(
-            DataInterfaceRole::Station,
-            mpdu,
-            data.frame.payload_offset,
-            data.frame.payload_length,
-        ) {
-            Ok(frames) => frames,
+        let data = match data.decapsulate(DataInterfaceRole::Station) {
+            Ok(data) => data,
             Err(error) => return rejected(protection, ConnectedRxError::Data(error)),
         };
-        let amsdu = frames.is_amsdu();
-        metadata.amsdu = MacRxEvidence::ProtocolValidated(amsdu);
+        let mut frames = data.frames;
+        let amsdu = data.amsdu;
         let mut count = 0_u8;
         for frame in &mut frames {
             let frame = match frame {
@@ -503,9 +482,9 @@ impl ConnectedRxDispatcher {
             };
             sink.publish(ConnectedRxEvent::Ethernet {
                 frame,
-                raw,
+                raw: data.raw,
                 amsdu,
-                metadata,
+                metadata: data.metadata,
             });
             count = count.saturating_add(1);
         }

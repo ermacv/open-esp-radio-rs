@@ -217,7 +217,7 @@ where
     E: WifiTxEntropy,
     T: WifiTxTimer,
     F: FnOnce(
-        crate::connected_services::Esp32s31ConnectedServices<
+        crate::wdev::services::WdevServiceSet<
             H,
             R,
             Esp32s31ConnectedTx<

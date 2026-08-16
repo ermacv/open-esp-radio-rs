@@ -31,9 +31,9 @@ use open_esp_radio_wpa2::{
 };
 
 use crate::{
-    connected_services::Esp32s31ControlService,
     control_mailbox::ConnectedControlReceiver,
     rx_reorder::{RxReorderCommandSender, try_send_rx_reorder_command},
+    wdev::services::WdevControlService,
     wdev::{WdevControlContext, WdevControlProgress},
 };
 
@@ -490,7 +490,7 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
     }
 }
 
-impl<'resources, M, H, X, const CAPACITY: usize> Esp32s31ControlService<H, X>
+impl<'resources, M, H, X, const CAPACITY: usize> WdevControlService<H, X>
     for Esp32s31ConnectedControl<'resources, M, CAPACITY>
 where
     M: RawMutex,

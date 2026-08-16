@@ -3,7 +3,7 @@ use core::fmt;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-pub const PROTOCOL_VERSION: u16 = 46;
+pub const PROTOCOL_VERSION: u16 = 48;
 // Keep command envelopes small: startup artifacts are transferred as an
 // ordered CRC-protected stream, so a large per-command inline buffer only
 // inflates UART queues and executor futures without improving semantics.
@@ -604,12 +604,38 @@ pub struct WifiRoleFailureEvidence {
 
 /// Complete target-neutral configuration for the first AP role.
 ///
-/// Beacon interval (100 TU), DTIM period (2) and 20 MHz width are driver
-/// guarantees. Client admission remains explicit test input.
+/// Beacon interval (100 TU) and DTIM period (2) are driver guarantees. Channel
+/// width and client admission remain explicit test inputs.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum WifiChannelWidth {
+    Mhz20,
+    Mhz40Above,
+    Mhz40Below,
+}
+
+impl WifiChannelWidth {
+    pub const fn bandwidth_mhz(self) -> u16 {
+        match self {
+            Self::Mhz20 => 20,
+            Self::Mhz40Above | Self::Mhz40Below => 40,
+        }
+    }
+
+    pub const fn admits_primary(self, channel: u8) -> bool {
+        match self {
+            Self::Mhz20 => channel >= 1 && channel <= 13,
+            Self::Mhz40Above => channel >= 1 && channel <= 9,
+            Self::Mhz40Below => channel >= 5 && channel <= 13,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct WifiAccessPointRequest {
     pub credentials: NetworkCredentials,
     pub channel: u8,
+    pub channel_width: WifiChannelWidth,
     pub client_limit: u8,
     /// IP configuration owned by the HIL application while the AP role is
     /// active. This is deliberately outside the radio-driver request.
@@ -621,7 +647,7 @@ impl WifiAccessPointRequest {
         self.credentials
             .validate()
             .map_err(WifiAccessPointRequestError::Credentials)?;
-        if !(1..=13).contains(&self.channel) {
+        if !self.channel_width.admits_primary(self.channel) {
             return Err(WifiAccessPointRequestError::Channel);
         }
         if !(1..=15).contains(&self.client_limit) {
@@ -650,7 +676,8 @@ impl fmt::Display for WifiAccessPointRequestError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Credentials(error) => error.fmt(formatter),
-            Self::Channel => formatter.write_str("AP channel must be in 1..=13"),
+            Self::Channel => formatter
+                .write_str("AP primary channel and secondary-channel geometry are inconsistent"),
             Self::ClientLimit => formatter.write_str("AP client limit must be in 1..=15"),
             Self::Ipv4 => formatter
                 .write_str("AP mode requires a valid gateway-free static IPv4 configuration"),
@@ -845,6 +872,7 @@ pub struct WifiMonitorEvidence {
 pub struct WifiAccessPointEvidence {
     pub generation: u32,
     pub channel: u8,
+    pub bandwidth_mhz: u16,
     pub beacons_transmitted: u32,
     pub missed_beacon_intervals: u32,
     pub maximum_beacon_lateness_micros: u32,
@@ -880,6 +908,11 @@ pub struct WifiAccessPointEvidence {
     pub deauthentications_prepared: u32,
     pub deauthentications_published: u32,
     pub deauthentications_acknowledged: u32,
+    pub tx_block_ack_requests_prepared: u32,
+    pub tx_block_ack_responses_observed: u32,
+    pub tx_block_ack_agreements_operational: u32,
+    pub tx_block_ack_responses_rejected: u32,
+    pub tx_block_ack_negotiation_timeouts: u32,
     /// Complete vendor-shaped RX units made visible to the AP protocol path.
     pub completed_rx_units: u32,
     pub completed_rx_descriptors: u32,

@@ -33,14 +33,15 @@ extern crate std;
 pub mod access_point;
 pub mod aggregate_tx;
 pub mod aggregate_tx_observer;
+pub mod ampdu_resources;
 mod connected_control;
 pub mod connected_rx_protocol;
-pub mod connected_services;
 pub mod connected_sta_port;
 pub mod connected_sta_teardown;
 pub mod control_mailbox;
 pub mod embassy_irq;
 pub mod embassy_rx;
+mod ethernet_rx;
 #[cfg(target_arch = "riscv32")]
 mod join_time;
 pub mod monitor;

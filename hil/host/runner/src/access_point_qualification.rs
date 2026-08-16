@@ -1028,7 +1028,10 @@ fn stop_access_point(
     lab: &LabConfig,
 ) -> Result<open_esp_radio_hil_protocol::WifiAccessPointEvidence> {
     let evidence = capture.wait_access_point_stop(capture.request_access_point_stop()?, timeout)?;
-    if evidence.generation != generation || evidence.channel != lab.access_point.channel() {
+    if evidence.generation != generation
+        || evidence.channel != lab.access_point.channel()
+        || evidence.bandwidth_mhz != lab.access_point.bandwidth_mhz()
+    {
         return Err(format!("AP returned inconsistent stop evidence: {evidence:?}").into());
     }
     Ok(evidence)

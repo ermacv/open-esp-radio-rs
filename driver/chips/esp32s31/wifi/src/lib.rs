@@ -10,13 +10,15 @@
 #[cfg(any(target_arch = "riscv32", test))]
 mod channel;
 #[cfg(target_arch = "riscv32")]
-pub use channel::switch_esp32s31_wifi_channel;
+pub use channel::{Esp32s31PhyChannel, lower_wifi_channel, switch_esp32s31_wifi_channel};
 pub mod ampdu_tx;
 #[cfg(target_arch = "riscv32")]
 pub mod cold_start;
+pub mod cooperative_hardware;
 #[cfg(target_arch = "riscv32")]
 pub mod mac_start;
 pub mod ordinary_tx;
+pub mod protected_data_rx;
 #[cfg(target_arch = "riscv32")]
 pub mod runtime;
 pub mod tx;

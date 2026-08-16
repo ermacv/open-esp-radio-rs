@@ -29,28 +29,24 @@ use open_esp_radio::esp32s31::wifi::mac::irq::{
     IrqSink, MAC_INT_COLLISION, MAC_INT_RX_SUCCESS, MAC_INT_TX_COMPLETE, MAC_INT_TX_TIMEOUT,
 };
 use open_esp_radio::esp32s31::wifi::sta::attempt::Esp32s31StaAttemptSecurity;
-use open_esp_radio::esp32s31::wifi::sta::cooperative_hardware::CooperativeRadioHardware;
+use open_esp_radio::esp32s31::wifi::device::cooperative_hardware::CooperativeRadioHardware;
 use open_esp_radio::esp32s31::{
     hal::{MacInterruptSetup, RadioRuntimeOwner},
-    wifi::dma::tx_ampdu_storage::AmpduDmaStorage,
     wifi::mac::{
         crypto::{StaCcmpClearReport, StaGroupCcmpSlot},
         rx::RxIngressConfig,
         rx::RxRingError,
         rx_pool::RxStagePool,
         tx::{HeEdcaTxopLimit, HtGuardInterval, HtMcs, LegacyRate},
-        tx_ampdu::{HtAmpduTxError, HtAmpduTxResources, HtAmpduTxStorage, RetainedAmpduDmaStorage},
+        tx_ampdu::HtAmpduTxError,
     },
 };
 use open_esp_radio::wifi::{ieee80211::station::StaTxSequenceCounters, wpa2::Pmk};
-use open_esp_radio_embassy_net::{
-    PinnedTxFrame, PinnedTxPool, SharedPinnedRxQueue, SharedRxSplitPinnedDevice,
-    SplitPinnedRadioRunner, SplitPinnedResources,
-};
+use open_esp_radio_embassy_net::SharedPinnedRxQueue;
 #[cfg(feature = "qualification")]
 use open_esp_radio_esp32s31_wifi_embassy::connected_rx_protocol::ConnectedRxProtocolSink;
 use open_esp_radio_esp32s31_wifi_embassy::{
-    aggregate_tx::{AggregateTxResources, Esp32s31ConnectedTx},
+    aggregate_tx::Esp32s31ConnectedTx,
     connected_rx_protocol::{
         Esp32s31ConnectedRxProtocol, Esp32s31ConnectedRxProtocolStopped,
         Esp32s31ConnectedRxProtocolStorage, Esp32s31StagedRxQueue,
@@ -111,7 +107,7 @@ use open_esp_radio_wifi_embassy::{
         ConnectedTaskControlError, ConnectedTaskControlResources, ConnectedTaskEndpoint,
         ConnectedTaskReservation,
     },
-    station_network::{RunningStationNetwork, StationNetworkResources},
+    station_network::RunningStationNetwork,
 };
 use static_cell::ConstStaticCell;
 
@@ -119,54 +115,10 @@ use crate::runtime::{
     ControlTx, ProductionStationBoardResources, ProductionStationRuntime, RX_BUFFER_SIZE,
     RX_DESCRIPTOR_COUNT, RxStorage, TxStorage, production_station_runtime,
 };
-
-pub(super) const NETWORK_TX_HEADROOM: usize =
-    8 + open_esp_radio::wifi::ieee80211::station::STA_PROTECTED_QOS_ETHERNET_HEADROOM;
-pub(super) const TX_AMPDU_BUFFER_SIZE: usize = 0;
-
-type NetworkResources = SplitPinnedResources<
-    CriticalSectionRawMutex,
-    NETWORK_FRAME_CAPACITY,
-    NETWORK_TX_HEADROOM,
-    NETWORK_TX_TRAILER,
-    NETWORK_RX_QUEUE_DEPTH,
-    NETWORK_TX_QUEUE_DEPTH,
->;
-type NetworkTxPool = PinnedTxPool<
-    NETWORK_FRAME_CAPACITY,
-    NETWORK_TX_HEADROOM,
-    NETWORK_TX_TRAILER,
-    NETWORK_TX_QUEUE_DEPTH,
->;
-pub(super) type ConnectedTxBacking = PinnedTxFrame<
-    'static,
-    CriticalSectionRawMutex,
-    NETWORK_FRAME_CAPACITY,
-    NETWORK_TX_HEADROOM,
-    NETWORK_TX_TRAILER,
-    NETWORK_TX_QUEUE_DEPTH,
->;
-type ConnectedAmpduRetention = RetainedAmpduDmaStorage<ConnectedTxBacking, TX_AMPDU_FRAME_COUNT>;
-pub type Esp32s31WifiDevice = SharedRxSplitPinnedDevice<
-    'static,
-    CriticalSectionRawMutex,
-    NETWORK_FRAME_CAPACITY,
-    NETWORK_TX_HEADROOM,
-    NETWORK_TX_TRAILER,
-    NETWORK_RX_QUEUE_DEPTH,
-    NETWORK_TX_QUEUE_DEPTH,
-    RX_STAGE_CAPACITY,
-    RX_STAGE_SLOT_COUNT,
->;
-pub(super) type NetworkRunner = SplitPinnedRadioRunner<
-    'static,
-    CriticalSectionRawMutex,
-    NETWORK_FRAME_CAPACITY,
-    NETWORK_TX_HEADROOM,
-    NETWORK_TX_TRAILER,
-    NETWORK_RX_QUEUE_DEPTH,
-    NETWORK_TX_QUEUE_DEPTH,
->;
+use crate::radio_resources::{
+    Esp32s31WifiDevice, NETWORK_TX_HEADROOM, NetworkRunner, RadioAmpduStorage, RadioTxBacking,
+    RunningWifiNetwork, TX_AMPDU_BUFFER_SIZE, WifiNetworkResources,
+};
 pub(super) type ControlResources =
     ConnectedControlResources<CriticalSectionRawMutex, CONTROL_QUEUE_DEPTH>;
 type ControlPublisher =
@@ -313,8 +265,6 @@ pub(super) type ConnectedRxEpochResources = Esp32s31RxEpochResources<
     RX_BUFFER_SIZE,
     { RX_BUFFER_SIZE + 4 },
 >;
-pub(super) type ConnectedAmpduStorage =
-    AggregateTxResources<'static, ConnectedTxBacking, TX_AMPDU_FRAME_COUNT, TX_AMPDU_BUFFER_SIZE>;
 type ConnectedLiveTx = Esp32s31ConnectedTx<
     'static,
     'static,
@@ -357,7 +307,7 @@ type ConnectedControlAssemblyResources =
 type ConnectedTxAssemblyFailure = Esp32s31ConnectedStaTxHandoffFailure<
     'static,
     'static,
-    ConnectedTxBacking,
+    RadioTxBacking,
     open_esp_radio::esp32s31::phy::PhyTxTargetPowerProfile,
     fn() -> u32,
     open_esp_radio_esp32s31_wifi_embassy::tx_time::EmbassyWifiTxTimer,
@@ -383,7 +333,7 @@ type ConnectedTaskReservationOwner =
 type ConnectedDriverStarted = Esp32s31ConnectedEpochStarted<
     ConnectedHardware,
     ConnectedLiveRx,
-    ConnectedAmpduStorage,
+    RadioAmpduStorage,
     &'static ControlResources,
 >;
 type ConnectedDriverTeardownFailure = Esp32s31ConnectedDriverTeardownFailure<
@@ -405,17 +355,16 @@ pub type ConnectedReconnectedEpoch = Esp32s31ReconnectedStaEpoch<
         RX_BUFFER_SIZE,
     >,
     ConnectedRxEpochResources,
-    ConnectedAmpduStorage,
+    RadioAmpduStorage,
     &'static ControlResources,
 >;
 pub type ConnectedDisconnectedEpoch = Esp32s31DisconnectedStaEpoch<
     RunningStationNetwork<(), NetworkRunner>,
     ConnectedHardware,
     ConnectedStoppedRx,
-    ConnectedAmpduStorage,
+    RadioAmpduStorage,
     &'static ControlResources,
 >;
-pub(super) type ConnectedRunningNetwork = RunningStationNetwork<(), NetworkRunner>;
 pub type MacInterruptEpoch =
     Esp32s31MacInterruptEpoch<'static, EspHalMacInterruptRoute, CriticalSectionRawMutex>;
 
@@ -456,52 +405,6 @@ static RX_PROTOCOL_RUNTIME: ConstStaticCell<ConnectedRxProtocolStorage> =
     ConstStaticCell::new(Esp32s31ConnectedRxProtocolStorage::new());
 static CONTROL_RESOURCES: ConstStaticCell<ControlResources> =
     ConstStaticCell::new(ControlResources::new());
-// Network RX slots, pinned TX slots and Embassy socket state are the largest
-// standalone owners. Const static initialization guarantees they are never
-// returned by value through an async task stack during startup.
-static NETWORK_RESOURCES: ConstStaticCell<NetworkResources> =
-    ConstStaticCell::new(NetworkResources::new());
-// These pinned slots become the external backing addresses published through
-// ordinary and aggregate Wi-Fi TX descriptors. They must remain in the
-// ESP32-S31 Wi-Fi DMA aperture; CPU-only queue state stays in NETWORK_RESOURCES.
-#[allow(
-    unsafe_code,
-    reason = "the linker must retain production network TX backing in DMA-visible SRAM"
-)]
-#[unsafe(link_section = ".dma.bss.open_radio_network_tx")]
-static NETWORK_TX_POOL: ConstStaticCell<NetworkTxPool> = ConstStaticCell::new(NetworkTxPool::new());
-static TX_AMPDU_STORAGE: ConstStaticCell<
-    HtAmpduTxStorage<TX_AMPDU_FRAME_COUNT, TX_AMPDU_BUFFER_SIZE>,
-> = ConstStaticCell::new(HtAmpduTxStorage::new());
-// BUFFER_SIZE is zero: only the hardware-walked descriptor array in this
-// allocation needs the internal DMA aperture. Frame bytes remain owned by the
-// separately pinned NETWORK_TX_POOL leases.
-#[allow(
-    unsafe_code,
-    reason = "the linker must retain production A-MPDU descriptors in DMA-visible SRAM"
-)]
-#[unsafe(link_section = ".dma.bss.open_radio_tx_ampdu_descriptors")]
-static TX_AMPDU_DMA_STORAGE: ConstStaticCell<AmpduDmaStorage<TX_AMPDU_FRAME_COUNT, 0>> =
-    ConstStaticCell::new(AmpduDmaStorage::new());
-// Network lease tokens and their descriptor identities live for an entire
-// connected epoch. Keep this multi-slot arena static so it is borrowed by the
-// movable TX handle instead of being copied through nested async stack frames.
-static TX_AMPDU_RETENTION: ConstStaticCell<ConnectedAmpduRetention> =
-    ConstStaticCell::new(RetainedAmpduDmaStorage::new());
-// The standby arena remains software-owned while the primary descriptor chain
-// is in flight. Both arenas reference the same pinned network pool.
-static TX_AMPDU_STANDBY_STORAGE: ConstStaticCell<
-    HtAmpduTxStorage<TX_AMPDU_FRAME_COUNT, TX_AMPDU_BUFFER_SIZE>,
-> = ConstStaticCell::new(HtAmpduTxStorage::new());
-#[allow(
-    unsafe_code,
-    reason = "the linker must retain standby A-MPDU descriptors in DMA-visible SRAM"
-)]
-#[unsafe(link_section = ".dma.bss.open_radio_tx_ampdu_standby_descriptors")]
-static TX_AMPDU_STANDBY_DMA_STORAGE: ConstStaticCell<AmpduDmaStorage<TX_AMPDU_FRAME_COUNT, 0>> =
-    ConstStaticCell::new(AmpduDmaStorage::new());
-static TX_AMPDU_STANDBY_RETENTION: ConstStaticCell<ConnectedAmpduRetention> =
-    ConstStaticCell::new(RetainedAmpduDmaStorage::new());
 #[cfg(feature = "qualification")]
 static MAC_IRQ_OBSERVER: Mutex<
     CriticalSectionRawMutex,
@@ -532,11 +435,6 @@ struct ConnectedProtocolStart {
         ConnectedTaskEndpoint<'static, CriticalSectionRawMutex, ConnectedRxProtocolStoppedOwner>,
 }
 
-/// Persistent network device ownership is split before the radio runner
-/// starts. The application owns `Esp32s31WifiDevice`; this frontier retains
-/// only the radio-side queue endpoint across association epochs.
-pub type StationNetwork = StationNetworkResources<(), NetworkRunner, ()>;
-
 /// Hardware frontier accepted by one connected epoch.
 pub type ConnectedStationEpoch = Esp32s31ConnectedEpochResources<
     RadioRuntimeOwner,
@@ -557,7 +455,7 @@ type ConnectedRxFrontier = Esp32s31RxFrontier<
 type InitialConnectedResources = Esp32s31InitialConnectedEpochResources<
     'static,
     ConnectedRxEpochResources,
-    ConnectedAmpduStorage,
+    RadioAmpduStorage,
     &'static ControlResources,
 >;
 type ConnectedEpochStartFault = Esp32s31ConnectedEpochStartFailure<
@@ -565,7 +463,7 @@ type ConnectedEpochStartFault = Esp32s31ConnectedEpochStartFailure<
     ConnectedHardware,
     ConnectedRxFrontier,
     ConnectedRxEpochResources,
-    ConnectedAmpduStorage,
+    RadioAmpduStorage,
     &'static ControlResources,
     Esp32s31RxFrontierError,
 >;
@@ -574,7 +472,7 @@ type ConnectedEpochStartFault = Esp32s31ConnectedEpochStartFailure<
 /// activate any station IRQ or DMA epoch.
 pub(super) struct InitialConnectedStaticResources {
     registers: &'static Esp32s31RadioOwnerArena,
-    aggregate: Option<ConnectedAmpduStorage>,
+    aggregate: Option<RadioAmpduStorage>,
     control: &'static ControlResources,
 }
 
@@ -792,13 +690,13 @@ pub(super) struct InitialConnectedInitialization {
 }
 
 impl InitialConnectedStaticResources {
-    pub(super) fn take_aggregate(&mut self) -> ConnectedAmpduStorage {
+    pub(super) fn take_aggregate(&mut self) -> RadioAmpduStorage {
         self.aggregate
             .take()
             .expect("one STA or AP role exclusively owns the aggregate arena")
     }
 
-    pub(super) fn restore_aggregate(&mut self, aggregate: ConnectedAmpduStorage) {
+    pub(super) fn restore_aggregate(&mut self, aggregate: RadioAmpduStorage) {
         assert!(
             self.aggregate.replace(aggregate).is_none(),
             "aggregate arena cannot be restored over a live role owner"
@@ -811,7 +709,7 @@ impl InitialConnectedStaticResources {
     ) -> Esp32s31InitialConnectedEpochResources<
         'static,
         ConnectedRxEpochResources,
-        ConnectedAmpduStorage,
+        RadioAmpduStorage,
         &'static ControlResources,
     > {
         Esp32s31InitialConnectedEpochResources::new(
@@ -929,7 +827,7 @@ pub enum ConnectedStationFault<'state, 'security> {
     },
     DriverTeardown {
         _runtime: ProductionStationRuntime<'state>,
-        _network: ConnectedRunningNetwork,
+        _network: RunningWifiNetwork,
         _control_resources: &'static ControlResources,
         _outcome: ConnectedStationOutcome,
         _interrupt_drain:
@@ -942,14 +840,14 @@ pub enum ConnectedStationFault<'state, 'security> {
     },
     TxRestore {
         _runtime: ProductionStationRuntime<'state>,
-        _network: ConnectedRunningNetwork,
+        _network: RunningWifiNetwork,
         _control_resources: &'static ControlResources,
         _outcome: ConnectedStationOutcome,
         _interrupt_drain:
             open_esp_radio_esp32s31_wifi_embassy::embassy_irq::Esp32s31MacInterruptEpochDrain,
         _hardware: ConnectedHardware,
         _stopped_rx: ConnectedStoppedRx,
-        _aggregate: ConnectedAmpduStorage,
+        _aggregate: RadioAmpduStorage,
         _control_report: Esp32s31ConnectedControlShutdown,
         _keys: StaCcmpClearReport,
         _sequences: StaTxSequenceCounters,
@@ -972,7 +870,7 @@ pub type ConnectedStationResources<'state, 'security> = Esp32s31ConnectedService
     'security,
     ProductionStationRuntime<'state>,
     ConnectedStationEpoch,
-    StationNetwork,
+    WifiNetworkResources,
 >;
 
 pub(super) fn initialize_ethernet_frame() -> &'static mut [u8] {
@@ -990,15 +888,7 @@ pub(super) fn initialize_connected_rx_protocol_runtime() -> &'static mut Connect
 /// enter an active station epoch.
 pub(super) fn initialize_connected_static_resources()
 -> Result<InitialConnectedInitialization, HtAmpduTxError> {
-    let aggregate = AggregateTxResources::pipelined(
-        HtAmpduTxResources::pin_static(TX_AMPDU_STORAGE.take(), TX_AMPDU_DMA_STORAGE.take())?,
-        TX_AMPDU_RETENTION.take(),
-        HtAmpduTxResources::pin_static(
-            TX_AMPDU_STANDBY_STORAGE.take(),
-            TX_AMPDU_STANDBY_DMA_STORAGE.take(),
-        )?,
-        TX_AMPDU_STANDBY_RETENTION.take(),
-    );
+    let aggregate = crate::radio_resources::initialize_ampdu()?;
     let registers: &'static Esp32s31RadioOwnerArena = REGISTER_ARENA.take();
     Ok(InitialConnectedInitialization {
         resources: InitialConnectedStaticResources {
@@ -1794,20 +1684,12 @@ pub async fn run_connected<'state, 'security>(
 /// endpoint before the station lifecycle starts.
 pub fn initialize_station_network(
     station_address: [u8; 6],
-) -> (Esp32s31WifiDevice, StationNetwork) {
-    let network_resources = NETWORK_RESOURCES.take();
-    let tx_pool = NetworkTxPool::pin_static(NETWORK_TX_POOL.take());
-    let (device, runner) = network_resources.split(tx_pool, station_address);
+) -> (Esp32s31WifiDevice, WifiNetworkResources) {
     let (_shared_publisher, shared_consumer) = SHARED_NETWORK_RX_QUEUE.split(
         RX_STAGE_POOL.handoff_pool(),
         notify_shared_network_rx_release,
     );
-    (
-        device
-            .with_ingress_tx_reserve()
-            .with_shared_rx(shared_consumer),
-        StationNetwork::Unstarted { device: (), runner },
-    )
+    crate::radio_resources::initialize_network(station_address, shared_consumer)
 }
 
 /// Construct the reusable interrupt epoch retained by the station backend.

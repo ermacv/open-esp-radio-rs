@@ -32,7 +32,10 @@ use open_esp_radio::{
     },
     esp32s31::wifi::mac::rx::RxBasebandFormat,
     wifi::{
-        ieee80211::{channel::WifiChannel, station::StaAssociationPreference},
+        ieee80211::{
+            channel::{WifiChannel, WifiChannelWidth as DriverWifiChannelWidth},
+            station::StaAssociationPreference,
+        },
         softmac::MacRxEvidence,
         sta::station::StaReconnectPolicy,
         wpa2::Pmk,
@@ -57,7 +60,8 @@ use open_esp_radio_hil_protocol::{
     Capabilities, Event as HilEvent, FeatureCapabilities, MAX_WIRE_FRAME_BYTES, NetworkCredentials,
     NetworkInfo, NetworkIpv4Configuration, StartupArtifactDisposition, StationAttemptFailureReason,
     StationDisconnectReason, StationEpochEvidence, StationFailureStage, StationLifecycleEvent,
-    WIFI_MONITOR_FRAME_CHUNK_MAX_LEN, WifiAccessPointEvidence, WifiDataPlanePlacement,
+    WIFI_MONITOR_FRAME_CHUNK_MAX_LEN, WifiAccessPointEvidence,
+    WifiChannelWidth as HilWifiChannelWidth, WifiDataPlanePlacement,
     WifiMonitorCaptureRequest, WifiMonitorEvidence, WifiMonitorEvidenceSource,
     WifiMonitorFrameChunk, WifiMonitorObserved, WifiMonitorPhyEvidence, WifiMonitorPhyFormat,
     WifiRole, WifiRoleFailureEvidence, WifiRoleFailureReason, WifiRoleOperation,
@@ -131,6 +135,7 @@ static PHY_CALIBRATION_ARTIFACT: ConstStaticCell<
 > = ConstStaticCell::new([0; crate::phy_calibration_artifact::MAX_ENCODED_LEN]);
 static STATION_LIFECYCLE: Channel<CriticalSectionRawMutex, StationLinkEdge, 16> = Channel::new();
 static AP_CHANNEL: AtomicU32 = AtomicU32::new(0);
+static AP_BANDWIDTH_MHZ: AtomicU32 = AtomicU32::new(0);
 static AP_BEACONS: AtomicU32 = AtomicU32::new(0);
 static AP_MISSED_BEACON_INTERVALS: AtomicU32 = AtomicU32::new(0);
 static AP_MAXIMUM_BEACON_LATENESS_MICROS: AtomicU32 = AtomicU32::new(0);
@@ -160,6 +165,11 @@ static AP_DISASSOCIATIONS_ACKNOWLEDGED: AtomicU32 = AtomicU32::new(0);
 static AP_DEAUTHENTICATIONS_PREPARED: AtomicU32 = AtomicU32::new(0);
 static AP_DEAUTHENTICATIONS_PUBLISHED: AtomicU32 = AtomicU32::new(0);
 static AP_DEAUTHENTICATIONS_ACKNOWLEDGED: AtomicU32 = AtomicU32::new(0);
+static AP_TX_BLOCK_ACK_REQUESTS_PREPARED: AtomicU32 = AtomicU32::new(0);
+static AP_TX_BLOCK_ACK_RESPONSES_OBSERVED: AtomicU32 = AtomicU32::new(0);
+static AP_TX_BLOCK_ACK_AGREEMENTS_OPERATIONAL: AtomicU32 = AtomicU32::new(0);
+static AP_TX_BLOCK_ACK_RESPONSES_REJECTED: AtomicU32 = AtomicU32::new(0);
+static AP_TX_BLOCK_ACK_NEGOTIATION_TIMEOUTS: AtomicU32 = AtomicU32::new(0);
 static AP_COMPLETED_RX_UNITS: AtomicU32 = AtomicU32::new(0);
 static AP_COMPLETED_RX_DESCRIPTORS: AtomicU32 = AtomicU32::new(0);
 static AP_RECYCLED_RX_DESCRIPTORS: AtomicU32 = AtomicU32::new(0);
@@ -201,6 +211,7 @@ static AP_PROTECTED_DATA_PROTOCOL_REJECTED: AtomicU32 = AtomicU32::new(0);
 
 fn observe_access_point(observation: Esp32s31AccessPointObservation) {
     AP_CHANNEL.store(u32::from(observation.channel), Ordering::Release);
+    AP_BANDWIDTH_MHZ.store(u32::from(observation.bandwidth_mhz), Ordering::Release);
     AP_BEACONS.store(observation.beacons_transmitted, Ordering::Release);
     AP_MISSED_BEACON_INTERVALS.store(observation.missed_beacon_intervals, Ordering::Release);
     AP_MAXIMUM_BEACON_LATENESS_MICROS.store(
@@ -250,6 +261,26 @@ fn observe_access_point(observation: Esp32s31AccessPointObservation) {
     AP_DEAUTHENTICATIONS_PUBLISHED.store(observation.deauthentications_published, Ordering::Release);
     AP_DEAUTHENTICATIONS_ACKNOWLEDGED
         .store(observation.deauthentications_acknowledged, Ordering::Release);
+    AP_TX_BLOCK_ACK_REQUESTS_PREPARED.store(
+        observation.tx_block_ack_requests_prepared,
+        Ordering::Release,
+    );
+    AP_TX_BLOCK_ACK_RESPONSES_OBSERVED.store(
+        observation.tx_block_ack_responses_observed,
+        Ordering::Release,
+    );
+    AP_TX_BLOCK_ACK_AGREEMENTS_OPERATIONAL.store(
+        observation.tx_block_ack_agreements_operational,
+        Ordering::Release,
+    );
+    AP_TX_BLOCK_ACK_RESPONSES_REJECTED.store(
+        observation.tx_block_ack_responses_rejected,
+        Ordering::Release,
+    );
+    AP_TX_BLOCK_ACK_NEGOTIATION_TIMEOUTS.store(
+        observation.tx_block_ack_negotiation_timeouts,
+        Ordering::Release,
+    );
     AP_COMPLETED_RX_UNITS.store(observation.completed_rx_units, Ordering::Release);
     AP_COMPLETED_RX_DESCRIPTORS.store(observation.completed_rx_descriptors, Ordering::Release);
     AP_RECYCLED_RX_DESCRIPTORS.store(observation.recycled_rx_descriptors, Ordering::Release);
@@ -321,8 +352,13 @@ fn observe_access_point(observation: Esp32s31AccessPointObservation) {
     );
 }
 
-fn access_point_evidence(generation: u32, requested_channel: u8) -> WifiAccessPointEvidence {
+fn access_point_evidence(
+    generation: u32,
+    requested_channel: u8,
+    requested_bandwidth_mhz: u16,
+) -> WifiAccessPointEvidence {
     let observed_channel = AP_CHANNEL.load(Ordering::Acquire) as u8;
+    let observed_bandwidth_mhz = AP_BANDWIDTH_MHZ.load(Ordering::Acquire) as u16;
     let tx_failures = AP_TX_FAILURES.load(Ordering::Acquire);
     WifiAccessPointEvidence {
         generation,
@@ -330,6 +366,11 @@ fn access_point_evidence(generation: u32, requested_channel: u8) -> WifiAccessPo
             requested_channel
         } else {
             observed_channel
+        },
+        bandwidth_mhz: if observed_bandwidth_mhz == 0 {
+            requested_bandwidth_mhz
+        } else {
+            observed_bandwidth_mhz
         },
         beacons_transmitted: AP_BEACONS.load(Ordering::Acquire),
         missed_beacon_intervals: AP_MISSED_BEACON_INTERVALS.load(Ordering::Acquire),
@@ -363,6 +404,14 @@ fn access_point_evidence(generation: u32, requested_channel: u8) -> WifiAccessPo
         deauthentications_prepared: AP_DEAUTHENTICATIONS_PREPARED.load(Ordering::Acquire),
         deauthentications_published: AP_DEAUTHENTICATIONS_PUBLISHED.load(Ordering::Acquire),
         deauthentications_acknowledged: AP_DEAUTHENTICATIONS_ACKNOWLEDGED.load(Ordering::Acquire),
+        tx_block_ack_requests_prepared: AP_TX_BLOCK_ACK_REQUESTS_PREPARED.load(Ordering::Acquire),
+        tx_block_ack_responses_observed: AP_TX_BLOCK_ACK_RESPONSES_OBSERVED.load(Ordering::Acquire),
+        tx_block_ack_agreements_operational: AP_TX_BLOCK_ACK_AGREEMENTS_OPERATIONAL
+            .load(Ordering::Acquire),
+        tx_block_ack_responses_rejected: AP_TX_BLOCK_ACK_RESPONSES_REJECTED
+            .load(Ordering::Acquire),
+        tx_block_ack_negotiation_timeouts: AP_TX_BLOCK_ACK_NEGOTIATION_TIMEOUTS
+            .load(Ordering::Acquire),
         completed_rx_units: AP_COMPLETED_RX_UNITS.load(Ordering::Acquire),
         completed_rx_descriptors: AP_COMPLETED_RX_DESCRIPTORS.load(Ordering::Acquire),
         recycled_rx_descriptors: AP_RECYCLED_RX_DESCRIPTORS.load(Ordering::Acquire),
@@ -978,10 +1027,16 @@ fn access_point_request(
         .expect("validated HIL AP SSID must fit the driver request");
     let pmk = Pmk::derive(request.credentials.passphrase(), ssid.as_bytes())
         .expect("validated HIL AP credentials must derive a PMK");
+    let width = match request.channel_width {
+        HilWifiChannelWidth::Mhz20 => DriverWifiChannelWidth::Mhz20,
+        HilWifiChannelWidth::Mhz40Above => DriverWifiChannelWidth::Mhz40Above,
+        HilWifiChannelWidth::Mhz40Below => DriverWifiChannelWidth::Mhz40Below,
+    };
     AccessPointRequest::new(
         ssid,
         AccessPointSecurity::wpa2_personal(pmk),
-        WifiChannel::mhz20(request.channel).expect("console validates the AP channel"),
+        WifiChannel::new_2_4_ghz(request.channel, width)
+            .expect("console validates the AP channel geometry"),
         AccessPointClientLimit::new(request.client_limit)
             .expect("console validates the AP client limit"),
     )
@@ -1192,6 +1247,7 @@ async fn wifi_role_task(
         AccessPoint {
             owner: open_esp_radio::WifiAccessPoint<P>,
             channel: u8,
+            bandwidth_mhz: u16,
         },
         Monitor {
             owner: open_esp_radio::WifiMonitor<P>,
@@ -1213,7 +1269,11 @@ async fn wifi_role_task(
     let mut role = ProductWifiRole::Idle(control);
     loop {
         role = match role {
-            ProductWifiRole::AccessPoint { owner, channel } => {
+            ProductWifiRole::AccessPoint {
+                owner,
+                channel,
+                bandwidth_mhz,
+            } => {
                 let request_id = match receive_wifi_control_request().await {
                     WifiControlRequest::StopAccessPoint { request_id } => request_id,
                     _ => unreachable!(
@@ -1227,7 +1287,7 @@ async fn wifi_role_task(
                         set_wifi_role(WifiRole::Idle);
                         complete_access_point_stop(
                             request_id,
-                            access_point_evidence(generation, channel),
+                            access_point_evidence(generation, channel, bandwidth_mhz),
                         )
                         .await;
                         ProductWifiRole::Idle(idle)
@@ -1308,6 +1368,7 @@ async fn wifi_role_task(
                     request,
                 } => {
                     AP_CHANNEL.store(0, Ordering::Release);
+                    AP_BANDWIDTH_MHZ.store(0, Ordering::Release);
                     AP_BEACONS.store(0, Ordering::Release);
                     AP_MISSED_BEACON_INTERVALS.store(0, Ordering::Release);
                     AP_MAXIMUM_BEACON_LATENESS_MICROS.store(0, Ordering::Release);
@@ -1331,6 +1392,11 @@ async fn wifi_role_task(
                     AP_DEAUTHENTICATIONS_PREPARED.store(0, Ordering::Release);
                     AP_DEAUTHENTICATIONS_PUBLISHED.store(0, Ordering::Release);
                     AP_DEAUTHENTICATIONS_ACKNOWLEDGED.store(0, Ordering::Release);
+                    AP_TX_BLOCK_ACK_REQUESTS_PREPARED.store(0, Ordering::Release);
+                    AP_TX_BLOCK_ACK_RESPONSES_OBSERVED.store(0, Ordering::Release);
+                    AP_TX_BLOCK_ACK_AGREEMENTS_OPERATIONAL.store(0, Ordering::Release);
+                    AP_TX_BLOCK_ACK_RESPONSES_REJECTED.store(0, Ordering::Release);
+                    AP_TX_BLOCK_ACK_NEGOTIATION_TIMEOUTS.store(0, Ordering::Release);
                     AP_COMPLETED_RX_UNITS.store(0, Ordering::Release);
                     AP_COMPLETED_RX_DESCRIPTORS.store(0, Ordering::Release);
                     AP_RECYCLED_RX_DESCRIPTORS.store(0, Ordering::Release);
@@ -1362,6 +1428,7 @@ async fn wifi_role_task(
                     AP_PROTECTED_DATA_RADIO_REJECTED.store(0, Ordering::Release);
                     AP_PROTECTED_DATA_PROTOCOL_REJECTED.store(0, Ordering::Release);
                     let channel = request.channel;
+                    let bandwidth_mhz = request.channel_width.bandwidth_mhz();
                     match await_stack_boundary!(
                         idle.start_access_point(access_point_request(&request))
                     ) {
@@ -1377,7 +1444,11 @@ async fn wifi_role_task(
                                 },
                             )
                             .await;
-                            ProductWifiRole::AccessPoint { owner, channel }
+                            ProductWifiRole::AccessPoint {
+                                owner,
+                                channel,
+                                bandwidth_mhz,
+                            }
                         }
                         Err(WifiRoleStartFailure::Rejected {
                             wifi,

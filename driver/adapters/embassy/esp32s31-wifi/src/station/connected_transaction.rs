@@ -16,13 +16,13 @@ use open_esp_radio_esp32s31_wifi_mac::{
 use open_esp_radio_wifi_embassy::{await_stack_boundary, connected_tasks::ConnectedTaskGroup};
 
 use crate::{
-    connected_services::Esp32s31ConnectedServices,
     connected_sta_teardown::{
         Esp32s31ConnectedStaControlTeardown, Esp32s31ConnectedStaRxTeardown,
         Esp32s31ConnectedStaTeardownFailure, Esp32s31ConnectedStaTeardownSuccess,
         Esp32s31ConnectedStaTxTeardown,
     },
     embassy_irq::Esp32s31MacInterruptEpochDrain,
+    wdev::services::WdevServiceSet,
 };
 use crate::{embassy_irq::Esp32s31MacInterruptEpoch, wdev::WdevRunner};
 
@@ -235,8 +235,7 @@ pub struct Esp32s31ConnectedServiceTeardownFailure<X, I, N, T, E> {
     pub error: E,
 }
 
-impl<X, I, N, H, R, A, C, T>
-    Esp32s31ConnectedEpochStopped<X, I, N, Esp32s31ConnectedServices<H, R, A, C>, T>
+impl<X, I, N, H, R, A, C, T> Esp32s31ConnectedEpochStopped<X, I, N, WdevServiceSet<H, R, A, C>, T>
 where
     H: CcmpKeyHardware,
     C: Esp32s31ConnectedStaControlTeardown<H, A>,

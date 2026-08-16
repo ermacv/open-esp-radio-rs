@@ -4,7 +4,7 @@ use open_esp_radio_dma::StableDmaBacking;
 use open_esp_radio_esp32s31_wifi_ap::ampdu::Esp32s31ApAmpduTx;
 use open_esp_radio_esp32s31_wifi_mac::tx_ampdu::{HtAmpduTxResources, RetainedAmpduDmaStorage};
 
-use crate::aggregate_tx::AggregateTxResources;
+use crate::ampdu_resources::AggregateTxResources;
 
 /// AP lease of the role-neutral aggregate arenas.
 ///

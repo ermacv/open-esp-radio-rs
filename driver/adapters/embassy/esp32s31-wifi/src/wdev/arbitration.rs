@@ -133,10 +133,13 @@ where
                     .services
                     .prepared_tx_frame_count()
                     .saturating_add(self.network.tx_queue_len());
-                // A lone frame is not an aggregate and must retain the
-                // immediate low-latency path. Once a real multi-frame burst
-                // exists, collect only up to the negotiated target/deadline.
-                if preferred > 1 && available >= TX_BATCH_MIN_FRAMES && available < preferred {
+                // Only an aggregate-capable service advertises a preferred
+                // batch larger than one. Give its first frame a bounded
+                // publication window in which a second frame can arrive;
+                // otherwise a producer that publishes one lease per
+                // executor turn can never reach the aggregate path. Sparse
+                // traffic still leaves at the explicit deadline.
+                if should_collect_network_batch(preferred, available) {
                     let deadline = *tx_batch_deadline
                         .get_or_insert_with(|| Instant::now() + TX_BATCH_MAX_WAIT);
                     if Instant::now() < deadline {

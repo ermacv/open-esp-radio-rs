@@ -4,7 +4,9 @@ use std::{collections::BTreeSet, path::PathBuf};
 
 use crate::{
     Result, artifact,
-    interface_discovery::{InterfaceCallCandidate, InterfaceRoot, discover_interface_calls},
+    interface_discovery::{
+        InterfaceCallCandidate, InterfaceRoot, InterfaceSlotAssignment, discover_interface_calls,
+    },
 };
 
 use super::{LinkageSymbolLocation, ProjectLinkageInventory, build_project_linkage_inventory};
@@ -19,6 +21,12 @@ pub(crate) struct ProjectInterfaceDiscoveryOptions {
 pub(crate) struct DiscoveredInterfaceCall {
     pub(crate) artifact: usize,
     pub(crate) call: InterfaceCallCandidate,
+}
+
+#[derive(Clone)]
+pub(crate) struct DiscoveredInterfaceAssignment {
+    pub(crate) artifact: usize,
+    pub(crate) assignment: InterfaceSlotAssignment,
 }
 
 #[derive(Clone)]
@@ -46,6 +54,7 @@ pub(crate) struct ProjectInterfaceDiscovery {
     pub(crate) functions: Vec<usize>,
     pub(crate) reviewed_boundaries: Vec<usize>,
     pub(crate) calls: Vec<DiscoveredInterfaceCall>,
+    pub(crate) assignments: Vec<DiscoveredInterfaceAssignment>,
     pub(crate) decode_blockers: Vec<InterfaceDecodeBlocker>,
     pub(crate) failures: Vec<InterfaceDecodeFailure>,
 }
@@ -59,6 +68,7 @@ pub(crate) fn discover_project_interfaces(
     let mut functions = Vec::with_capacity(linkage.artifacts.len());
     let mut reviewed_boundaries = Vec::with_capacity(linkage.artifacts.len());
     let mut calls = Vec::new();
+    let mut assignments = Vec::new();
     let mut decode_blockers = Vec::new();
     let mut failures = Vec::new();
     for (artifact_index, artifact) in linkage.artifacts.iter().enumerate() {
@@ -114,6 +124,12 @@ pub(crate) fn discover_project_interfaces(
                                 call,
                             }),
                     );
+                    assignments.extend(discovered.assignments.into_iter().map(|assignment| {
+                        DiscoveredInterfaceAssignment {
+                            artifact: artifact_index,
+                            assignment,
+                        }
+                    }));
                 }
                 Err(error) => failures.push(InterfaceDecodeFailure {
                     artifact: artifact_index,
@@ -125,11 +141,15 @@ pub(crate) fn discover_project_interfaces(
         }
     }
     calls.sort_by(|left, right| (left.artifact, &left.call).cmp(&(right.artifact, &right.call)));
+    assignments.sort_by(|left, right| {
+        (left.artifact, &left.assignment).cmp(&(right.artifact, &right.assignment))
+    });
     Ok(ProjectInterfaceDiscovery {
         linkage,
         functions,
         reviewed_boundaries,
         calls,
+        assignments,
         decode_blockers,
         failures,
     })

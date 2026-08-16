@@ -54,6 +54,38 @@ pub(super) fn validate(facts: &InterfaceFacts) -> Result<()> {
     for call in &facts.calls {
         validate_call(facts, call, &mut call_keys)?;
     }
+    let mut assignment_keys = BTreeSet::new();
+    for assignment in &facts.assignments {
+        if facts.artifact(assignment.artifact).is_none() {
+            return Err(crate::Error::invalid(format!(
+                "interface assignment refers to unknown artifact {}",
+                assignment.artifact
+            )));
+        }
+        if assignment.function.is_empty() {
+            return Err(crate::Error::invalid(
+                "interface assignment has an empty producer function",
+            ));
+        }
+        if assignment.width != 32 {
+            return Err(crate::Error::invalid(format!(
+                "interface assignment has unsupported pointer width {}",
+                assignment.width
+            )));
+        }
+        validate_steps(
+            &assignment.container_path,
+            "interface assignment container path",
+        )?;
+        if !matches!(assignment.target, InterfaceFactRoot::RelocatedSymbol { .. }) {
+            return Err(crate::Error::invalid(
+                "interface assignment target lacks relocation provenance",
+            ));
+        }
+        if !assignment_keys.insert(assignment.clone()) {
+            return Err(crate::Error::invalid("duplicate interface assignment fact"));
+        }
+    }
     Ok(())
 }
 

@@ -113,11 +113,13 @@ sequencing.
 `phy_chip_set_chan` remains an explicit production-verification gap. The old
 target-owned self-verdict contract was removed because it normalized both traces
 and computed its own verdict instead of proving the compiled shipping entry.
-The retained observations show the first unreviewed difference at analog-I²C
-host selection: the vendor ROM path uses the recovered `0x1a00` configuration,
-while production uses the newer recovered `0x3fa00` configuration. Closing the
-gap requires a generic comparison of the compiled production boundary, with
-that difference and the remaining ordered effects reviewed explicitly.
+Its former `0x1a00` versus `0x3fa00` difference was a binding defect, not a
+reviewed hardware difference: cold ROM installs `phy_get_i2c_hostid_`, but
+`phy_get_romfunc_addr` replaces that table slot with archive
+`phy_get_i2c_hostid_new` before the qualified runtime path. The registered
+entry contract now preserves that cross-source identity and observes vendor
+`0x3fa00`. Closing the remaining gap still requires generic comparison of the
+complete compiled production boundary and every ordered effect.
 
 For concepts and schemas, start at
 [`tools/vendor-binary-workbench/README.md`](../../../../tools/vendor-binary-workbench/README.md).

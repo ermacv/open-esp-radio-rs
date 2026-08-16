@@ -1,4 +1,4 @@
-//! Typed consumer projection for schema-v5 interface discovery facts.
+//! Typed consumer projection for schema-v6 interface discovery facts.
 
 #![allow(
     dead_code,
@@ -17,9 +17,27 @@ pub(crate) struct StoredInterfaceFacts {
     analysis_scope: StoredAnalysisScope,
     pub(crate) artifacts: Vec<StoredInterfaceArtifact>,
     pub(crate) calls: Vec<StoredInterfaceCall>,
+    pub(crate) assignments: Vec<StoredInterfaceAssignment>,
     pub(crate) table_candidates: Vec<StoredInterfaceTable>,
     decode_blockers: Vec<StoredDecodeBlocker>,
     analysis_failures: Vec<StoredDecodeFailure>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct StoredInterfaceAssignment {
+    pub(crate) artifact: usize,
+    pub(crate) member: Option<String>,
+    pub(crate) function: String,
+    #[serde(deserialize_with = "hex_u32")]
+    pub(crate) function_address: u32,
+    #[serde(deserialize_with = "hex_u32")]
+    pub(crate) site: u32,
+    pub(crate) root: StoredInterfaceRoot,
+    pub(crate) container_path: Vec<StoredInterfaceStep>,
+    pub(crate) offset: i32,
+    pub(crate) width: u8,
+    pub(crate) target: StoredInterfaceRoot,
 }
 
 #[derive(Debug, Deserialize)]

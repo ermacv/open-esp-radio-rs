@@ -289,6 +289,7 @@ mod tests {
             semantic_annotation: None,
             execution_model_set: None,
             execution_model: None,
+            assignments: Vec::new(),
             functions: BTreeSet::new(),
             calls: Vec::new(),
         }
@@ -325,6 +326,7 @@ mod tests {
             }],
             tables: Vec::new(),
             calls: Vec::new(),
+            assignments: Vec::new(),
         }
     }
 

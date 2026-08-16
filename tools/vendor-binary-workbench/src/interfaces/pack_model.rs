@@ -175,8 +175,19 @@ pub(crate) struct ResolvedInterfaceSlot {
     pub(crate) semantic_annotation: Option<ResolvedSemanticAnnotation>,
     pub(crate) execution_model_set: Option<String>,
     pub(crate) execution_model: Option<ResolvedExternalCallExecutionModel>,
+    pub(crate) assignments: Vec<ResolvedInterfaceAssignment>,
     pub(crate) functions: BTreeSet<String>,
     pub(crate) calls: Vec<ResolvedInterfaceCall>,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(crate) struct ResolvedInterfaceAssignment {
+    pub(crate) member: Option<String>,
+    pub(crate) producer: String,
+    pub(crate) site: u32,
+    pub(crate) target_member: Option<String>,
+    pub(crate) target_symbol: String,
+    pub(crate) target_addend: i64,
 }
 
 /// Discovered slot evidence that has not yet been classified by a reviewed

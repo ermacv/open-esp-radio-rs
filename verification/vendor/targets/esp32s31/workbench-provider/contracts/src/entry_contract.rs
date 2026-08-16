@@ -38,19 +38,52 @@ const COLD_TARGETS: [FunctionTarget; 13] = [
 // phy_get_romfunc_addr replaces eleven slots in the linked image and retains
 // the ROM debug and tone-SAR callbacks at offsets 0x10 and 0x2c.
 const REGISTERED_TARGETS: [FunctionTarget; 13] = [
-    FunctionTarget::Symbol("phy_i2c_enter_critical"),
-    FunctionTarget::Symbol("phy_i2c_exit_critical"),
-    FunctionTarget::Symbol("phy_get_i2c_read_mask_new"),
-    FunctionTarget::Symbol("phy_get_i2c_hostid_new"),
+    FunctionTarget::SourceSymbol {
+        source: "archive",
+        symbol: "phy_i2c_enter_critical",
+    },
+    FunctionTarget::SourceSymbol {
+        source: "archive",
+        symbol: "phy_i2c_exit_critical",
+    },
+    FunctionTarget::SourceSymbol {
+        source: "archive",
+        symbol: "phy_get_i2c_read_mask_new",
+    },
+    FunctionTarget::SourceSymbol {
+        source: "archive",
+        symbol: "phy_get_i2c_hostid_new",
+    },
     FunctionTarget::Address(0x2f82_44fe),
-    FunctionTarget::Symbol("phy_set_rx_comp_new"),
-    FunctionTarget::Symbol("phy_set_tsens_power"),
-    FunctionTarget::Symbol("phy_set_tsens_range"),
-    FunctionTarget::Symbol("phy_get_tsens_value"),
-    FunctionTarget::Symbol("phy_wifi_get_tx_tab_new"),
-    FunctionTarget::Symbol("phy_bt_get_tx_tab_new"),
+    FunctionTarget::SourceSymbol {
+        source: "archive",
+        symbol: "phy_set_rx_comp_new",
+    },
+    FunctionTarget::SourceSymbol {
+        source: "archive",
+        symbol: "phy_set_tsens_power",
+    },
+    FunctionTarget::SourceSymbol {
+        source: "archive",
+        symbol: "phy_set_tsens_range",
+    },
+    FunctionTarget::SourceSymbol {
+        source: "archive",
+        symbol: "phy_get_tsens_value",
+    },
+    FunctionTarget::SourceSymbol {
+        source: "archive",
+        symbol: "phy_wifi_get_tx_tab_new",
+    },
+    FunctionTarget::SourceSymbol {
+        source: "archive",
+        symbol: "phy_bt_get_tx_tab_new",
+    },
     FunctionTarget::Address(0x2f82_66da),
-    FunctionTarget::Symbol("phy_txgain_comp_pacfg_new"),
+    FunctionTarget::SourceSymbol {
+        source: "archive",
+        symbol: "phy_txgain_comp_pacfg_new",
+    },
 ];
 
 const COLD_TABLE_SPEC: FunctionTableSpec = FunctionTableSpec {
@@ -110,5 +143,31 @@ mod tests {
                 (0..13).map(|index| index * 4).collect::<Vec<_>>()
             );
         }
+    }
+
+    #[test]
+    fn registered_contract_replaces_the_two_obsolete_rom_phy_callbacks() {
+        assert_eq!(
+            PHY_COLD_TABLE.targets().nth(3).unwrap().1,
+            FunctionTarget::Address(0x2f82_9fc0)
+        );
+        assert_eq!(
+            PHY_REGISTERED_TABLE.targets().nth(3).unwrap().1,
+            FunctionTarget::SourceSymbol {
+                source: "archive",
+                symbol: "phy_get_i2c_hostid_new",
+            }
+        );
+        assert_eq!(
+            PHY_COLD_TABLE.targets().nth(5).unwrap().1,
+            FunctionTarget::Address(0x2f82_78b0)
+        );
+        assert_eq!(
+            PHY_REGISTERED_TABLE.targets().nth(5).unwrap().1,
+            FunctionTarget::SourceSymbol {
+                source: "archive",
+                symbol: "phy_set_rx_comp_new",
+            }
+        );
     }
 }

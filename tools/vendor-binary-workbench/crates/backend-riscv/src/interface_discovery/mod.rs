@@ -13,13 +13,15 @@ mod model;
 mod state;
 pub use model::{
     InterfaceArgumentValue, InterfaceCallCandidate, InterfaceCallKind, InterfaceLoad,
-    InterfacePointer, InterfaceRoot, InterfaceSlotSelector, InterfaceSymbolAddressing,
+    InterfacePointer, InterfaceRoot, InterfaceSlotAssignment, InterfaceSlotSelector,
+    InterfaceSymbolAddressing,
 };
 use state::*;
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct InterfaceDiscovery {
     pub calls: Vec<InterfaceCallCandidate>,
+    pub assignments: Vec<InterfaceSlotAssignment>,
     pub decode_blockers: Vec<artifact::UnsupportedInstruction>,
 }
 
@@ -240,10 +242,34 @@ pub fn discover_interface_calls(
     }
 
     let mut calls = BTreeSet::new();
+    let mut assignments = BTreeSet::new();
     for (index, values) in states {
         let Some(decoded) = instructions[index].supported() else {
             continue;
         };
+        if let Inst::Sw { offset, src, base } = decoded.instruction
+            && let (Some(mut location), Some(target)) = (
+                values[usize::from(base.0)].as_pointer(),
+                values[usize::from(src.0)].as_pointer(),
+            )
+            && target.loads.is_empty()
+            && target.post_offset == 0
+            && matches!(target.root, InterfaceRoot::RelocatedSymbol { .. })
+        {
+            let slot_offset = location.post_offset.wrapping_add(offset.as_i32());
+            location.post_offset = 0;
+            assignments.insert(InterfaceSlotAssignment {
+                member: symbol.member.clone(),
+                function: symbol.name.clone(),
+                function_address: symbol.address as u32,
+                site: decoded.address as u32,
+                root: location.root,
+                container_loads: location.loads,
+                offset: slot_offset,
+                width: 32,
+                target: target.root,
+            });
+        }
         let Inst::Jalr { offset, base, dest } = decoded.instruction else {
             continue;
         };
@@ -276,6 +302,7 @@ pub fn discover_interface_calls(
 
     Ok(InterfaceDiscovery {
         calls: calls.into_iter().collect(),
+        assignments: assignments.into_iter().collect(),
         decode_blockers: decode_blockers.into_values().collect(),
     })
 }

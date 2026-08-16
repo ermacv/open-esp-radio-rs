@@ -468,6 +468,37 @@ pub(crate) fn load_project_interfaces(
     )?))
 }
 
+fn unique_observed_internal_target(
+    symbols: &[crate::artifact::ArtifactSymbolDefinition],
+    assignments: &[crate::interfaces::ResolvedInterfaceAssignment],
+) -> Option<u32> {
+    if assignments.is_empty() {
+        return None;
+    }
+
+    let mut targets = std::collections::BTreeSet::new();
+    for assignment in assignments {
+        if assignment.target_addend != 0 {
+            return None;
+        }
+        let addresses = symbols
+            .iter()
+            .filter(|symbol| symbol.addresses_resolved && symbol.name == assignment.target_symbol)
+            .map(|symbol| symbol.address as u32)
+            .collect::<std::collections::BTreeSet<_>>();
+        if addresses.len() != 1 {
+            return None;
+        }
+        targets.insert(*addresses.first().expect("one observed internal target"));
+    }
+
+    (targets.len() == 1).then(|| {
+        *targets
+            .first()
+            .expect("one unique observed internal target")
+    })
+}
+
 pub(crate) fn register_reviewed_external_calls(
     resolver: &mut ReferenceResolver,
     interfaces: &InterfaceWorkspace,
@@ -524,6 +555,7 @@ pub(crate) fn register_reviewed_external_calls(
         }
     }
     for slot in interfaces.bindings() {
+        let internal_target = unique_observed_internal_target(&resolver.symbols, &slot.assignments);
         let reviewed = ReviewedExternalCall {
             id: slot.id.clone(),
             contract: slot.contract.clone(),
@@ -560,6 +592,12 @@ pub(crate) fn register_reviewed_external_calls(
                 candidates.push(reviewed.clone());
                 candidates.sort();
             }
+            if let Some(target) = internal_target {
+                resolver
+                    .pointer_context
+                    .reviewed_internal_slots
+                    .insert((slot.contract.clone(), offset), target);
+            }
         }
         for call in &slot.calls {
             let mut reviewed = reviewed.clone();
@@ -578,6 +616,16 @@ pub(crate) fn register_reviewed_external_calls(
                 candidates.push(reviewed);
                 candidates.sort();
             }
+            if let Some(target) = internal_target {
+                resolver.pointer_context.reviewed_internal_calls.insert(
+                    StructuralCallSite::from_identity(
+                        call.member.clone(),
+                        call.function.clone(),
+                        call.site,
+                    ),
+                    target,
+                );
+            }
         }
     }
     let projected_calls = interfaces.project_link_unit_calls(source, origins);
@@ -588,6 +636,7 @@ pub(crate) fn register_reviewed_external_calls(
     );
     for projected in projected_calls {
         let slot = projected.binding;
+        let internal_target = unique_observed_internal_target(&resolver.symbols, &slot.assignments);
         let reviewed = ReviewedExternalCall {
             id: slot.id.clone(),
             contract: slot.contract.clone(),
@@ -614,19 +663,78 @@ pub(crate) fn register_reviewed_external_calls(
             evidence: ReviewedExternalCallEvidence::ArchiveOriginProjection,
             slot_load_site: projected.slot_load_site,
         };
+        let call_site =
+            StructuralCallSite::from_identity(projected.member, projected.function, projected.site);
         let candidates = resolver
             .pointer_context
             .reviewed_external_calls
-            .entry(StructuralCallSite::from_identity(
-                projected.member,
-                projected.function,
-                projected.site,
-            ))
+            .entry(call_site.clone())
             .or_default();
         if !candidates.contains(&reviewed) {
             candidates.push(reviewed);
             candidates.sort();
         }
+        if let Some(target) = internal_target {
+            resolver
+                .pointer_context
+                .reviewed_internal_calls
+                .insert(call_site, target);
+        }
+    }
+}
+
+#[cfg(test)]
+mod observed_internal_target_tests {
+    use super::*;
+
+    fn symbol(name: &str, address: u64) -> crate::artifact::ArtifactSymbolDefinition {
+        crate::artifact::ArtifactSymbolDefinition {
+            member: None,
+            name: name.to_owned(),
+            address,
+            bytes: vec![0x82, 0x80],
+            addresses_resolved: true,
+            memory_regions: Default::default(),
+            relocations: Vec::new(),
+        }
+    }
+
+    fn assignment(target: &str) -> crate::interfaces::ResolvedInterfaceAssignment {
+        crate::interfaces::ResolvedInterfaceAssignment {
+            member: Some("initializer.o".to_owned()),
+            producer: "install_callbacks".to_owned(),
+            site: 0x20,
+            target_member: Some("implementation.o".to_owned()),
+            target_symbol: target.to_owned(),
+            target_addend: 0,
+        }
+    }
+
+    #[test]
+    fn observed_target_resolution_uses_assignments_not_reviewed_slot_names() {
+        let symbols = vec![symbol("actual_target", 0x2000)];
+        assert_eq!(
+            unique_observed_internal_target(&symbols, &[assignment("actual_target")]),
+            Some(0x2000)
+        );
+    }
+
+    #[test]
+    fn observed_target_resolution_fails_closed_for_runtime_alternatives_or_aliases() {
+        let symbols = vec![
+            symbol("first", 0x2000),
+            symbol("second", 0x3000),
+            symbol("aliased", 0x4000),
+            symbol("aliased", 0x5000),
+        ];
+        assert_eq!(
+            unique_observed_internal_target(&symbols, &[assignment("first"), assignment("second")]),
+            None
+        );
+        assert_eq!(
+            unique_observed_internal_target(&symbols, &[assignment("aliased")]),
+            None
+        );
     }
 }
 

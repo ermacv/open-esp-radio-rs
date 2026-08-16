@@ -59,6 +59,64 @@ fn discovers_pointer_cell_table_slot_and_call_arguments() {
 }
 
 #[test]
+fn discovers_relocated_function_assignment_through_pointer_cell() {
+    let symbol = symbol(
+        vec![
+            0xb7, 0x07, 0x00, 0x00, // lui a5, %hi(g_services)
+            0x83, 0xa7, 0x07, 0x00, // lw a5, %lo(g_services)(a5)
+            0x37, 0x07, 0x00, 0x00, // lui a4, %hi(service_fn)
+            0x13, 0x07, 0x07, 0x00, // addi a4, a4, %lo(service_fn)
+            0x93, 0x87, 0x07, 0x08, // addi a5, a5, 128
+            0xd8, 0xc3, // sw a4, 4(a5)
+            0x67, 0x80, 0x00, 0x00, // ret
+        ],
+        vec![
+            artifact::SymbolRelocation {
+                address: 0,
+                kind: artifact::RelocationKind::Hi20,
+                symbol: "g_services".to_owned(),
+                addend: 0,
+            },
+            artifact::SymbolRelocation {
+                address: 4,
+                kind: artifact::RelocationKind::Lo12I,
+                symbol: "g_services".to_owned(),
+                addend: 0,
+            },
+            artifact::SymbolRelocation {
+                address: 8,
+                kind: artifact::RelocationKind::Hi20,
+                symbol: "service_fn".to_owned(),
+                addend: 0,
+            },
+            artifact::SymbolRelocation {
+                address: 12,
+                kind: artifact::RelocationKind::Lo12I,
+                symbol: "service_fn".to_owned(),
+                addend: 0,
+            },
+        ],
+    );
+
+    let discovery = discover_interface_calls(&symbol).unwrap();
+    assert_eq!(discovery.assignments.len(), 1);
+    let assignment = &discovery.assignments[0];
+    assert_eq!(assignment.site, 20);
+    assert_eq!(assignment.offset, 0x84);
+    assert_eq!(assignment.width, 32);
+    assert_eq!(assignment.container_loads.len(), 1);
+    assert_eq!(assignment.container_loads[0].offset, 0);
+    assert!(matches!(
+        assignment.root,
+        InterfaceRoot::RelocatedSymbol { ref symbol, .. } if symbol == "g_services"
+    ));
+    assert!(matches!(
+        assignment.target,
+        InterfaceRoot::RelocatedSymbol { ref symbol, .. } if symbol == "service_fn"
+    ));
+}
+
+#[test]
 fn floating_point_blocker_preserves_later_interface_call_evidence() {
     let symbol = symbol(
         vec![

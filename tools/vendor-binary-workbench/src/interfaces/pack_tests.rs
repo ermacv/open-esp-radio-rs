@@ -70,7 +70,7 @@ fn write_facts(path: &Path, digest: &str) {
         path,
         format!(
             r#"{{
-  "schema_version": 5,
+  "schema_version": 6,
   "command": "interfaces discover",
   "analysis_scope": {{
     "architecture":"riscv32",
@@ -127,6 +127,32 @@ fn write_facts(path: &Path, digest: &str) {
         "post_offset":4
       }}
     ]
+  }}],
+  "assignments": [{{
+    "artifact":0,
+    "member":"event.o",
+    "function":"init_services",
+    "function_address":"0x80",
+    "site":"0x98",
+    "root":{{
+      "kind":"relocated-symbol",
+      "canonical":"event.o::g_services",
+      "member":"event.o",
+      "symbol":"g_services",
+      "addend":0,
+      "addressing":"absolute"
+    }},
+    "container_path":[{{"site":"0x90","offset":0,"width":32}}],
+    "offset":16,
+    "width":32,
+    "target":{{
+      "kind":"relocated-symbol",
+      "canonical":"init.o::queue_send_from_isr",
+      "member":"init.o",
+      "symbol":"queue_send_from_isr",
+      "addend":0,
+      "addressing":"absolute"
+    }}
   }}],
   "table_candidates": [{{
     "artifact": 0,
@@ -513,6 +539,11 @@ fn reviewed_slot_links_observed_layout_to_reusable_semantics() {
     assert_eq!(workspace.bindings().len(), 1);
     assert_eq!(workspace.bindings()[0].anchor, "wifi-osi");
     assert_eq!(workspace.bindings()[0].calls.len(), 1);
+    assert_eq!(workspace.bindings()[0].assignments.len(), 1);
+    assert_eq!(
+        workspace.bindings()[0].assignments[0].target_symbol,
+        "queue_send_from_isr"
+    );
     assert_eq!(workspace.bindings()[0].calls[0].site, 0x120);
     assert_eq!(
         workspace.bindings()[0].calls[0].arguments[1].expression,

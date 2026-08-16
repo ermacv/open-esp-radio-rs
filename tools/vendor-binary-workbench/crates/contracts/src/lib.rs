@@ -265,6 +265,16 @@ impl Ord for ExternalCallModelRef {
 pub enum FunctionTarget {
     Address(u32),
     Symbol(&'static str),
+    /// A function supplied by another project source.
+    ///
+    /// The source qualifier is identity/provenance, not linker precedence.
+    /// The selected entry contract still has to resolve `symbol` to one exact
+    /// linked address. This is used for runtime-patched ROM tables whose slot
+    /// points at code from a static library.
+    SourceSymbol {
+        source: &'static str,
+        symbol: &'static str,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

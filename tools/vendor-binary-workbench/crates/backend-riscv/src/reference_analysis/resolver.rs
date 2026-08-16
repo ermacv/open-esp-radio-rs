@@ -339,16 +339,26 @@ impl ReferenceResolver {
                     SymbolicValue::FunctionTable(table),
                 );
             }
-            for (offset, target) in table.targets() {
-                let target = match target {
-                    FunctionTarget::Address(address) => address,
-                    FunctionTarget::Symbol(symbol) => {
+            for (offset, target_spec) in table.targets() {
+                let (target, qualified_identity) = match target_spec {
+                    FunctionTarget::Address(address) => (address, None),
+                    FunctionTarget::Symbol(symbol) => (
                         image.symbol_address(symbol).ok_or_else(|| {
                             format!(
                                 "entry contract {} requires function symbol {symbol}",
                                 entry_contract.id()
                             )
-                        })?
+                        })?,
+                        None,
+                    ),
+                    FunctionTarget::SourceSymbol { source, symbol } => {
+                        let address = image.symbol_address(symbol).ok_or_else(|| {
+                            format!(
+                                "entry contract {} requires function symbol {source}:{symbol}",
+                                entry_contract.id()
+                            )
+                        })?;
+                        (address, Some(format!("{source}::{symbol}")))
                     }
                 };
                 if !symbols_by_address.contains_key(&target) {
@@ -361,6 +371,22 @@ impl ReferenceResolver {
                 pointer_context
                     .function_table_slots
                     .insert((table, offset), target);
+                if let Some(identity) = qualified_identity {
+                    match pointer_context.function_target_identities.get(&target) {
+                        Some(existing) if existing != &identity => {
+                            return Err(format!(
+                                "entry contract {} assigns conflicting source identities {existing:?} and {identity:?} to target {target:#010x}",
+                                entry_contract.id()
+                            )
+                            .into());
+                        }
+                        _ => {
+                            pointer_context
+                                .function_target_identities
+                                .insert(target, identity);
+                        }
+                    }
+                }
             }
             if let Some(binding) = entry_spec.data_pointer_binding {
                 let pointer_symbol = binding.pointer_symbol;

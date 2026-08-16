@@ -457,6 +457,7 @@ display-type = "u16"
             return_model: crate::ExternalReturnModel::Constant(1),
             outputs: Vec::new(),
         }),
+        assignments: Vec::new(),
         functions: ["vendor_helper".to_owned()].into(),
         calls: vec![crate::interfaces::ResolvedInterfaceCall {
             artifact: 0,

@@ -265,6 +265,58 @@ fn apply_reviewed_external_call(
     StructuralCallControl::Advance(1)
 }
 
+fn apply_reviewed_internal_call(
+    pc: u32,
+    width: u8,
+    instruction: Inst,
+    offset: u32,
+    dest: Reg,
+    target: u32,
+    state: &mut StructuralTraceState,
+    pointer_context: &StructuralPointerContext,
+) -> StructuralCallControl {
+    if offset != 0 || !matches!(dest, Reg::ZERO | Reg::RA) {
+        state.reference_blockers.push(format!(
+            "unsupported reviewed internal call shape at {pc:#x}: {instruction}"
+        ));
+        return StructuralCallControl::Stop;
+    }
+    let arguments = structural_call_arguments(
+        &state.values,
+        &state.stack,
+        state.private_stack_may_be_modified_by_call,
+    );
+    state.private_stack_may_be_modified_by_call |= arguments
+        .iter()
+        .any(|argument| argument.private_stack_offset().is_some());
+    let token = state.next_call_token;
+    if dest == Reg::ZERO {
+        state.reference_events.push(DraftReferenceEvent::TailCall {
+            token,
+            site: pc,
+            target,
+            arguments,
+        });
+        state.return_value = SymbolicValue::CallResult(token);
+        return StructuralCallControl::Stop;
+    }
+    state.next_call_token += 1;
+    state.reference_events.push(DraftReferenceEvent::Call {
+        token,
+        site: pc,
+        target,
+        arguments,
+    });
+    structural_finish_call(
+        &mut state.values,
+        pc.wrapping_add(u32::from(width)),
+        token,
+        target,
+        pointer_context,
+    );
+    StructuralCallControl::Advance(1)
+}
+
 pub(super) fn apply_relocated_call(
     decoded: artifact::DecodedInstruction,
     next_instruction: Option<artifact::DecodedInstruction>,
@@ -624,6 +676,22 @@ pub(super) fn apply_call_instruction(
             else {
                 unreachable!()
             };
+            if let Some(target) = pointer_context
+                .reviewed_internal_slots
+                .get(&(contract.clone(), slot))
+                .copied()
+            {
+                return apply_reviewed_internal_call(
+                    pc as u32,
+                    width,
+                    instruction,
+                    offset.as_u32(),
+                    dest,
+                    target,
+                    state,
+                    pointer_context,
+                );
+            }
             let candidates = pointer_context
                 .reviewed_external_slots
                 .get(&(contract, slot))
@@ -637,6 +705,24 @@ pub(super) fn apply_call_instruction(
                 dest,
                 candidates,
                 state,
+            )
+        }
+        Inst::Jalr { offset, dest, .. }
+            if pointer_context
+                .reviewed_internal_calls
+                .contains_key(&StructuralCallSite::new(symbol, pc as u32)) =>
+        {
+            let target = pointer_context.reviewed_internal_calls
+                [&StructuralCallSite::new(symbol, pc as u32)];
+            apply_reviewed_internal_call(
+                pc as u32,
+                width,
+                instruction,
+                offset.as_u32(),
+                dest,
+                target,
+                state,
+                pointer_context,
             )
         }
         Inst::Jalr { offset, dest, .. }

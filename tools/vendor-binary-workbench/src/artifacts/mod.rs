@@ -73,7 +73,7 @@ pub(crate) const MMIO_FACTS: ArtifactSchema = ArtifactSchema {
 };
 
 pub(crate) const INTERFACE_FACTS: ArtifactSchema = ArtifactSchema {
-    version: 5,
+    version: 6,
     command: "interfaces discover",
 };
 
@@ -127,7 +127,7 @@ mod tests {
         assert_eq!(
             INTERFACE_FACTS,
             ArtifactSchema {
-                version: 5,
+                version: 6,
                 command: "interfaces discover",
             }
         );

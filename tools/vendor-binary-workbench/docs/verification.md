@@ -143,12 +143,16 @@ Migration happens one function at a time:
 5. delete obsolete probe/model glue after no current suite references it.
 
 The former ESP32-S31 `phy_chip_set_chan` self-verdict contract has been
-deleted. Its retained observations expose a real production-verification gap:
-the vendor ROM path uses the recovered `0x1a00` analog-I²C host configuration,
-while production uses the newer recovered `0x3fa00` configuration. A new
-generic comparison must bind the compiled shipping entry and classify that
-difference from target provenance and HIL evidence before it can be accepted
-or fixed. It must not be normalized into a whole-function match.
+deleted. Its retained `0x1a00` versus `0x3fa00` observation exposed a binding
+defect: it compared the cold ROM callback with production even though vendor
+`phy_get_romfunc_addr` replaces the slot with archive
+`phy_get_i2c_hostid_new`. Entry contracts may therefore declare
+source-qualified function-table targets. That is provenance for an observed
+runtime table value, not a global symbol override: direct cold-ROM calls remain
+ROM calls, while post-registration indirect calls resolve to the archive body.
+A new generic comparison must still bind and compare the complete compiled
+shipping entry. The corrected callback identity cannot be promoted into a
+whole-function match.
 
 ## Reports and gates
 
@@ -191,11 +195,12 @@ baseline, or broad normalization. Review it as a new bounded claim:
    both sides. The result may support that relation; it does not establish
    whole-function equivalence.
 
-The current `phy_chip_set_chan` difference is deliberately stopped before
-step 4: vendor writes `I2C_ANA_MST.ANA_CONF2 = 0x1a00`, while production writes
-`0x3fa00`. Until target provenance and discriminating HIL classify it, the
-qualification ledger keeps
-`channel-production-trace-difference-unreviewed` open.
+The obsolete `phy_chip_set_chan` `ANA_CONF2` difference must not be reviewed as
+an intentional platform refinement. Cold ROM writes `0x1a00`; the actual
+post-registration vendor path and production both use `0x3fa00`. The remaining
+verification result is `INCOMPLETE` until the complete compiled production
+boundary is compared; correcting call identity alone proves neither operation
+order nor whole-function equivalence.
 
 ## Commands
 

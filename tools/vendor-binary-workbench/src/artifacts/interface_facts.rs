@@ -7,8 +7,8 @@ use serde::Serialize;
 use crate::{
     Result,
     analysis::{
-        DiscoveredInterfaceCall, LinkageSymbolLocation, ProjectInterfaceDiscovery,
-        interface_root_linkage,
+        DiscoveredInterfaceAssignment, DiscoveredInterfaceCall, LinkageSymbolLocation,
+        ProjectInterfaceDiscovery, interface_root_linkage,
     },
     interface_discovery::{
         InterfaceArgumentValue, InterfaceCallCandidate, InterfaceCallKind, InterfaceLoad,
@@ -222,6 +222,36 @@ struct CallDocument {
     arguments: Vec<ArgumentDocument>,
 }
 
+#[derive(Serialize)]
+struct AssignmentDocument {
+    artifact: usize,
+    member: Option<String>,
+    function: String,
+    function_address: String,
+    site: String,
+    root: RootDocument,
+    container_path: Vec<LoadDocument>,
+    offset: i32,
+    width: u8,
+    target: RootDocument,
+}
+
+fn assignment_document(discovered: &DiscoveredInterfaceAssignment) -> AssignmentDocument {
+    let assignment = &discovered.assignment;
+    AssignmentDocument {
+        artifact: discovered.artifact,
+        member: assignment.member.clone(),
+        function: assignment.function.clone(),
+        function_address: format!("{:#x}", assignment.function_address),
+        site: format!("{:#x}", assignment.site),
+        root: (&assignment.root).into(),
+        container_path: assignment.container_loads.iter().map(Into::into).collect(),
+        offset: assignment.offset,
+        width: assignment.width,
+        target: (&assignment.target).into(),
+    }
+}
+
 fn call_document(
     discovery: &ProjectInterfaceDiscovery,
     discovered: &DiscoveredInterfaceCall,
@@ -401,6 +431,7 @@ pub(crate) struct InterfaceFactsDocument<'a> {
     analysis_scope: AnalysisScope,
     artifacts: Vec<ArtifactDocument<'a>>,
     calls: Vec<CallDocument>,
+    assignments: Vec<AssignmentDocument>,
     table_candidates: Vec<TableGroupDocument>,
     decode_blockers: Vec<DecodeBlockerDocument<'a>>,
     analysis_failures: Vec<DecodeFailureDocument<'a>>,
@@ -444,6 +475,11 @@ pub(crate) fn build_interface_facts(
             .calls
             .iter()
             .map(|call| call_document(discovery, call))
+            .collect(),
+        assignments: discovery
+            .assignments
+            .iter()
+            .map(assignment_document)
             .collect(),
         table_candidates: table_group_documents(discovery),
         decode_blockers: discovery

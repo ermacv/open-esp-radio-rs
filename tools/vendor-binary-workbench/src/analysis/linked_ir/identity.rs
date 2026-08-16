@@ -261,7 +261,14 @@ impl IrIdentityCatalog {
                 } else {
                     base
                 };
-                let value = namespace.map_or(value.clone(), |source| format!("{source}::{value}"));
+                let value = resolver
+                    .pointer_context
+                    .function_target_identities
+                    .get(&(symbol.address as u32))
+                    .cloned()
+                    .unwrap_or_else(|| {
+                        namespace.map_or(value.clone(), |source| format!("{source}::{value}"))
+                    });
                 (symbol_key(symbol), value)
             })
             .collect::<BTreeMap<_, _>>();
@@ -324,6 +331,38 @@ impl IrIdentityCatalog {
 mod tests {
     use super::*;
 
+    fn resolved_symbol(name: &str, address: u64) -> artifact::ArtifactSymbolDefinition {
+        artifact::ArtifactSymbolDefinition {
+            member: None,
+            name: name.to_owned(),
+            address,
+            bytes: vec![0x82, 0x80],
+            addresses_resolved: true,
+            memory_regions: Default::default(),
+            relocations: Vec::new(),
+        }
+    }
+
+    fn resolver_with(symbols: Vec<artifact::ArtifactSymbolDefinition>) -> ReferenceResolver {
+        let symbols_by_address = symbols
+            .iter()
+            .cloned()
+            .map(|symbol| (symbol.address as u32, symbol))
+            .collect();
+        ReferenceResolver {
+            symbols,
+            symbols_by_address,
+            symbol_ids: BTreeMap::new(),
+            exported_symbol_keys: BTreeSet::new(),
+            relocated_calls: BTreeMap::new(),
+            pointer_context: direct::StructuralPointerContext::default(),
+            data_symbols: Vec::new(),
+            data_objects: Vec::new(),
+            projected_direct_semantics: BTreeMap::new(),
+            projected_origins: BTreeMap::new(),
+        }
+    }
+
     #[test]
     fn classifies_symbolic_cfg_wrapper_as_aggregate() {
         let diagnostic = compact_diagnostic(
@@ -332,5 +371,31 @@ mod tests {
         );
 
         assert_eq!(diagnostic.kind, "aggregate");
+    }
+
+    #[test]
+    fn runtime_table_replacement_keeps_its_declared_source_identity() {
+        let old_rom = resolved_symbol("phy_set_rx_comp_", 0x2f82_78b0);
+        let replacement = resolved_symbol("phy_set_rx_comp_new", 0x1000_71ec);
+        let mut resolver = resolver_with(vec![old_rom.clone(), replacement.clone()]);
+        resolver.pointer_context.function_target_identities.insert(
+            replacement.address as u32,
+            "archive::phy_set_rx_comp_new".to_owned(),
+        );
+
+        let identities = IrIdentityCatalog::new(&resolver, Some("rom"));
+
+        assert_eq!(
+            identities.symbol(&old_rom),
+            "rom::phy_set_rx_comp_".to_owned()
+        );
+        assert_eq!(
+            identities.symbol(&replacement),
+            "archive::phy_set_rx_comp_new".to_owned()
+        );
+        assert_eq!(
+            identities.target(replacement.address as u32),
+            "archive::phy_set_rx_comp_new".to_owned()
+        );
     }
 }

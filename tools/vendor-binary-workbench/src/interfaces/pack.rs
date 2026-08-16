@@ -488,6 +488,40 @@ fn build_bindings(
             .iter()
             .filter(|slot| slot.status == ReviewStatus::Reviewed)
         {
+            let assignments = facts
+                .assignments
+                .iter()
+                .filter(|assignment| {
+                    assignment.width == slot.width
+                        && assignment.offset == slot.offset
+                        && assignment.container_path == anchor.container_path
+                        && selector_matches(&anchor.root, &assignment.root)
+                        && facts
+                            .artifact(assignment.artifact)
+                            .is_some_and(|artifact| artifact.sources.contains(&anchor.source))
+                })
+                .filter_map(|assignment| {
+                    let super::InterfaceFactRoot::RelocatedSymbol {
+                        member,
+                        symbol,
+                        addend,
+                        ..
+                    } = &assignment.target
+                    else {
+                        return None;
+                    };
+                    Some(super::ResolvedInterfaceAssignment {
+                        member: assignment.member.clone(),
+                        producer: assignment.function.clone(),
+                        site: assignment.site,
+                        target_member: member.clone(),
+                        target_symbol: symbol.clone(),
+                        target_addend: *addend,
+                    })
+                })
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .collect();
             let functions = matches
                 .iter()
                 .flat_map(|index| facts.tables[*index].slots.iter())
@@ -629,6 +663,7 @@ fn build_bindings(
                         outputs: model.outputs.to_vec(),
                     }
                 }),
+                assignments,
                 functions,
                 calls,
             });

@@ -87,6 +87,22 @@ pub(super) fn parse(input: &str) -> Result<InterfaceFacts> {
                 })
             })
             .collect::<Result<Vec<_>>>()?,
+        assignments: document
+            .assignments
+            .into_iter()
+            .map(|assignment| InterfaceAssignmentFact {
+                artifact: assignment.artifact,
+                member: assignment.member,
+                function: assignment.function,
+                function_address: assignment.function_address,
+                site: assignment.site,
+                root: root(assignment.root),
+                container_path: assignment.container_path.into_iter().map(step).collect(),
+                offset: assignment.offset,
+                width: assignment.width,
+                target: root(assignment.target),
+            })
+            .collect(),
     };
     super::validate::validate(&facts)?;
     Ok(facts)

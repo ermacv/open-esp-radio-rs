@@ -901,6 +901,79 @@ fn projected_relaxed_pointer_load_recovers_reviewed_table_call_and_arguments() {
 }
 
 #[test]
+fn observed_slot_assignment_promotes_reviewed_indirect_call_to_internal_code() {
+    let parent = artifact::ArtifactSymbolDefinition {
+        member: None,
+        name: "linked_parent".to_owned(),
+        address: 0x1000,
+        bytes: vec![
+            0x83, 0x27, 0x00, 0x00, // lw a5, 0(zero), relaxed pointer cell
+            0x03, 0xa3, 0x47, 0x08, // lw t1, 0x84(a5)
+            0x13, 0x05, 0x70, 0x00, // li a0, 7
+            0x67, 0x00, 0x03, 0x00, // jalr zero, 0(t1)
+        ],
+        addresses_resolved: true,
+        memory_regions: Default::default(),
+        relocations: Vec::new(),
+    };
+    let contract = "pack::net80211".to_owned();
+    let mut context = StructuralPointerContext::default();
+    context.relocated_pointer_symbols.insert(
+        "net80211_funcs".to_owned(),
+        SymbolicValue::ReviewedExternalTable(contract.clone()),
+    );
+    context.projected_relocations.insert(
+        StructuralCallSite::new(&parent, 0x1000),
+        vec![StructuralProjectedRelocation {
+            origin_member: Some("consumer.o".to_owned()),
+            origin_symbol: "linked_parent".to_owned(),
+            origin_offsets: vec![0, 4],
+            kind: artifact::RelocationKind::Lo12I,
+            symbol: "net80211_funcs".to_owned(),
+            addend: 0,
+            correspondence: "linker-relaxation",
+        }],
+    );
+    context.reviewed_external_slots.insert(
+        (contract.clone(), 0x84),
+        vec![ReviewedExternalCall {
+            id: "pack::net80211@+0x84".to_owned(),
+            contract: contract.clone(),
+            name: "hostap_input".to_owned(),
+            argument_types: vec!["u32".to_owned()],
+            return_type: "void".to_owned(),
+            variadic: false,
+            semantic_operation: None,
+            replacement_hint: None,
+            execution_model: None,
+            tail: true,
+            evidence: ReviewedExternalCallEvidence::ArchiveOriginProjection,
+            slot_load_site: Some(0x1004),
+        }],
+    );
+    context
+        .reviewed_internal_slots
+        .insert((contract, 0x84), 0x2000);
+
+    let trace = trace_binary_symbol(&parent, &map(), &BTreeMap::new(), &context, None).unwrap();
+
+    assert!(
+        trace.reference_blockers.is_empty(),
+        "{:#?}",
+        trace.reference_blockers
+    );
+    assert!(matches!(
+        trace.reference_events.as_slice(),
+        [DraftReferenceEvent::TailCall {
+            site: 0x100c,
+            target: 0x2000,
+            arguments,
+            ..
+        }] if arguments[0] == SymbolicValue::Constant(7)
+    ));
+}
+
+#[test]
 fn reviewed_void_external_call_is_an_executable_boundary_without_a_fake_result() {
     let parent = artifact::ArtifactSymbolDefinition {
         member: None,

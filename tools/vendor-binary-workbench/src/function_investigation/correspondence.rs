@@ -161,7 +161,7 @@ fn contracted_relocation_pair_matches(
         .any(|relocation| symbols.contains(relocation.symbol.as_str()));
     let relaxed_call = first_mnemonic == "auipc"
         && second_mnemonic == "jalr"
-        && runtime_mnemonic == "jal"
+        && matches!(runtime_mnemonic, "jal" | "j")
         && first
             .relocations
             .iter()
@@ -339,5 +339,55 @@ mod tests {
         assert_eq!(correspondence[0].kind, "linker-relaxation");
         assert_eq!(correspondence[0].relocation_symbols, ["g_state"]);
         assert!(!correspondence[0].semantic_equivalence_claim);
+    }
+
+    #[test]
+    fn relaxed_tail_call_keeps_following_global_pointer_relocation_aligned() {
+        let origin = body(
+            "fixture.a",
+            0,
+            vec![
+                instruction(0, 0, "auipc t1, 0", Some(("call", "sta_input"))),
+                instruction(4, 4, "jalr zero, 0(t1)", None),
+                instruction(8, 8, "lui a5, 0", Some(("hi20", "net80211_funcs"))),
+                instruction(12, 12, "lw a5, 0(a5)", Some(("lo12-i", "net80211_funcs"))),
+                instruction(16, 16, "li a3, 0", None),
+                instruction(18, 18, "li a2, 0", None),
+                instruction(20, 20, "lw a5, 132(a5)", None),
+                instruction(24, 24, "jalr zero, 0(a5)", None),
+            ],
+        );
+        let runtime = body(
+            "fixture.elf",
+            0x1000,
+            vec![
+                instruction(0, 0x1000, "j 2864", None),
+                instruction(4, 0x1004, "lw a5, 0(zero)", None),
+                instruction(8, 0x1008, "li a3, 0", None),
+                instruction(10, 0x100a, "li a2, 0", None),
+                instruction(12, 0x100c, "lw a5, 132(a5)", None),
+                instruction(16, 0x1010, "jalr zero, 0(a5)", None),
+            ],
+        );
+
+        let correspondence = origin_instruction_correspondence(&origin, &runtime);
+
+        assert!(correspondence.iter().any(|item| {
+            item.origin_offsets == [0, 4]
+                && item.runtime_address == 0x1000
+                && item.kind == "linker-relaxation"
+                && item.relocation_symbols == ["sta_input"]
+        }));
+        assert!(correspondence.iter().any(|item| {
+            item.origin_offsets == [8, 12]
+                && item.runtime_address == 0x1004
+                && item.kind == "linker-relaxation"
+                && item.relocation_symbols == ["net80211_funcs"]
+        }));
+        assert!(
+            !correspondence.iter().any(|item| {
+                item.origin_offsets.contains(&12) && item.runtime_address == 0x100c
+            })
+        );
     }
 }

@@ -105,6 +105,20 @@ pub(crate) struct InterfaceCallFact {
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(crate) struct InterfaceAssignmentFact {
+    pub(crate) artifact: usize,
+    pub(crate) member: Option<String>,
+    pub(crate) function: String,
+    pub(crate) function_address: u32,
+    pub(crate) site: u32,
+    pub(crate) root: InterfaceFactRoot,
+    pub(crate) container_path: Vec<InterfaceFactStep>,
+    pub(crate) offset: i32,
+    pub(crate) width: u8,
+    pub(crate) target: InterfaceFactRoot,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(crate) struct InterfaceRootLinkageFact {
     pub(crate) symbols: Vec<String>,
     pub(crate) resolutions: Vec<String>,
@@ -131,6 +145,7 @@ pub(crate) struct InterfaceFacts {
     pub(crate) artifacts: Vec<InterfaceFactArtifact>,
     pub(crate) tables: Vec<InterfaceTableFact>,
     pub(crate) calls: Vec<InterfaceCallFact>,
+    pub(crate) assignments: Vec<InterfaceAssignmentFact>,
 }
 
 impl InterfaceFacts {

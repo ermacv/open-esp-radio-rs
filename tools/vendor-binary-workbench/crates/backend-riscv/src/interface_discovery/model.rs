@@ -99,6 +99,25 @@ pub struct InterfacePointer {
     pub post_offset: i32,
 }
 
+/// One statically evidenced function-pointer store into a table slot.
+///
+/// Both sides retain relocation provenance.  This record says only that the
+/// producer function can store `target` at the described location; it does
+/// not claim that this producer has executed or that the assignment is the
+/// active runtime value.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct InterfaceSlotAssignment {
+    pub member: Option<String>,
+    pub function: String,
+    pub function_address: u32,
+    pub site: u32,
+    pub root: InterfaceRoot,
+    pub container_loads: Vec<InterfaceLoad>,
+    pub offset: i32,
+    pub width: u8,
+    pub target: InterfaceRoot,
+}
+
 impl InterfacePointer {
     pub fn canonical(&self) -> String {
         let mut value = self.root.canonical();

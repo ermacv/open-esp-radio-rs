@@ -104,7 +104,7 @@ fn interface_caller_and_relocated_root_join_inventory_locations() {
     fs::write(
         &interfaces_path,
         serde_json::to_string(&json!({
-            "schema_version": 5,
+            "schema_version": 6,
             "command": "interfaces discover",
             "analysis_scope": {
                 "architecture": "riscv32",
@@ -126,6 +126,7 @@ fn interface_caller_and_relocated_root_join_inventory_locations() {
                 "functions": 1,
                 "reviewed_boundaries": 0
             }],
+            "assignments": [],
             "calls": [{
                 "artifact": 0,
                 "member": null,

@@ -3,7 +3,7 @@ use core::fmt;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-pub const PROTOCOL_VERSION: u16 = 48;
+pub const PROTOCOL_VERSION: u16 = 52;
 // Keep command envelopes small: startup artifacts are transferred as an
 // ordered CRC-protected stream, so a large per-command inline buffer only
 // inflates UART queues and executor futures without improving semantics.
@@ -940,6 +940,20 @@ pub struct WifiAccessPointEvidence {
     pub network_tx_rejected_no_peer: u32,
     pub network_tx_rejected_destination: u32,
     pub network_tx_frames_rejected: u32,
+    /// Protected HT data MPDUs observed by the target RX boundary.
+    pub rx_ht_data_frames: u32,
+    /// Protected HT data MPDUs carried by an HT A-MPDU PPDU.
+    pub rx_ht_ampdu_data_frames: u32,
+    pub rx_rssi_samples: u32,
+    pub rx_rssi_sum_dbm: i32,
+    pub rx_rssi_min_dbm: i8,
+    pub rx_rssi_max_dbm: i8,
+    /// Protected HT40 data MPDUs grouped by hardware-observed MCS0..MCS7.
+    pub rx_ht40_mcs_frames: [u32; 8],
+    /// AP network A-MPDU transactions started with a typed HT vector.
+    pub tx_ht_aggregates: u32,
+    /// AP network A-MPDU transactions started with HT40 MCS7.
+    pub tx_ht40_mcs7_aggregates: u32,
     pub data_frames_transmitted: u32,
     /// Total hardware publications for data MPDUs, including retries.
     pub data_tx_attempts: u32,

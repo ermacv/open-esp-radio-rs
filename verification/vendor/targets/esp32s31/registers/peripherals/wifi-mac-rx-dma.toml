@@ -1209,6 +1209,10 @@ name = "SEQUENCE"
 bitOffset = 0
 bitWidth = 12
 
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0xFFF
+
 [[peripherals.registers]]
 
 [peripherals.registers.register]
@@ -1328,10 +1332,18 @@ name = "INDEX"
 bitOffset = 5
 bitWidth = 5
 
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0x1F
+
 [[peripherals.registers.register.fields]]
 name = "TID"
 bitOffset = 12
 bitWidth = 4
+
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0xF
 
 [[peripherals.registers.register.fields]]
 name = "WRITE"
@@ -1357,15 +1369,27 @@ name = "PEER_ADDRESS_TAIL"
 bitOffset = 0
 bitWidth = 16
 
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0xFFFF
+
 [[peripherals.registers.register.fields]]
 name = "INTERFACE"
 bitOffset = 16
 bitWidth = 2
 
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0x3
+
 [[peripherals.registers.register.fields]]
 name = "WINDOW"
 bitOffset = 18
 bitWidth = 7
+
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0x7F
 
 [[peripherals.registers]]
 
@@ -1375,6 +1399,16 @@ description = "Shared extra-SoftAP staging word carrying peer MAC bytes zero thr
 addressOffset = 0xEAC
 size = 32
 access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "PEER_ADDRESS_HEAD"
+description = "Peer MAC address bytes zero through three in little-endian order."
+bitOffset = 0
+bitWidth = 32
+
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0xFFFF_FFFF
 
 [[peripherals.registers]]
 
@@ -1389,6 +1423,10 @@ access = "read-write"
 name = "SEQUENCE"
 bitOffset = 0
 bitWidth = 12
+
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0xFFF
 
 [[peripherals.registers]]
 

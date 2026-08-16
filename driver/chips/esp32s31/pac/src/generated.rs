@@ -210,6 +210,29 @@ impl MacRxBlockAckEntryIndex {
     }
 }
 
+/// One of the eight extra-SoftAP receive BlockAck entries selected through the shared staging window.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct MacExtraSoftApRxBlockAckEntryIndex(u32);
+
+impl MacExtraSoftApRxBlockAckEntryIndex {
+    pub const MIN: u32 = 0x00000000;
+    pub const MAX: u32 = 0x00000007;
+
+    /// Construct a value only when it lies in the reviewed inclusive range.
+    pub const fn new(value: u32) -> Option<Self> {
+        if value <= 0x00000007 {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    /// Return the checked numeric value.
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
 /// Four-bit traffic identifier encoded by the reviewed receive BlockAck transaction.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct MacRxBlockAckTid(u32);

@@ -1,9 +1,15 @@
 schema = 3
 id = "access-point-icmp"
-description = "Local ICMP latency and loss through two WPA2 access-point epochs"
+description = "AP HT40 MCS7 latency and loss over 100 ICMP requests per WPA2 epoch"
+repetitions = 3
 image = "qualification"
 isolation = "reset"
-tags = ["qualification", "wifi", "access-point", "network", "icmp"]
+data_plane = "single-core"
+tags = ["qualification", "wifi", "access-point", "network", "single-client", "ht40", "icmp"]
+
+[link]
+phy = "ht40"
+minimum_mcs = 7
 
 [workload]
 kind = "access-point"
@@ -13,11 +19,13 @@ timeout_seconds = 90
 
 [workload.traffic]
 kind = "icmp"
-count = 20
-interval_ms = 100
+count = 100
+interval_ms = 20
 timeout_ms = 1000
 payload_bytes = 56
 
 [criteria]
 maximum_lost = 0
-maximum_p95_ms = 50
+maximum_p95_ms = 20
+require_no_beacon_loss = true
+minimum_concurrent_ap_clients = 1

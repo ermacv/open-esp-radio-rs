@@ -1,7 +1,7 @@
 use super::*;
 use crate::{
     connected_rx_protocol::Esp32s31StagedRxQueue, monitor_rx::Esp32s31MonitorRx,
-    rx_dma_service::Esp32s31ConnectedRx,
+    rx_dma_service::Esp32s31StagedRxProducer,
 };
 use core::{
     future::{Future, ready},
@@ -493,7 +493,7 @@ fn running_scan_rx_returns_the_exact_connected_epoch_resources() {
     let queue =
         Esp32s31StagedRxQueue::<NoopRawMutex, STAGE_SLOTS, STAGE_CAPACITY, STAGE_SLOTS>::new();
     let (sender, _receiver) = queue.split();
-    let connected = Esp32s31ConnectedRx::new(ring, &storage, &pool, TestDelay, sender);
+    let connected = Esp32s31StagedRxProducer::new(ring, &storage, &pool, TestDelay, sender);
     let stopped = connected
         .try_stop(&mut hardware)
         .unwrap_or_else(|_| panic!("mock connected ring must stop"));

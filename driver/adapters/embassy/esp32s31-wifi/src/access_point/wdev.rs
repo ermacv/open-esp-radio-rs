@@ -33,7 +33,7 @@ pub(super) struct Esp32s31AccessPointWdevServices<
     'beacon,
     'slot,
     'ampdu,
-    D,
+    RX,
     P,
     E,
     T,
@@ -53,7 +53,7 @@ pub(super) struct Esp32s31AccessPointWdevServices<
         'storage,
         'beacon,
         'slot,
-        D,
+        RX,
         P,
         E,
         T,
@@ -79,7 +79,7 @@ pub(super) struct Esp32s31AccessPointWdevServices<
 }
 
 impl<
-    D,
+    RX,
     P,
     E,
     T,
@@ -101,7 +101,7 @@ impl<
         '_,
         '_,
         '_,
-        D,
+        RX,
         P,
         E,
         T,
@@ -118,7 +118,6 @@ impl<
         AMPDU_BUFFER_SIZE,
     >
 where
-    D: Esp32s31RxFrontierDelay,
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
     T: WifiTxTimer,
@@ -272,7 +271,7 @@ where
 impl<
     'resources,
     M,
-    D,
+    RX,
     P,
     E,
     T,
@@ -297,7 +296,7 @@ impl<
         '_,
         '_,
         'resources,
-        D,
+        RX,
         P,
         E,
         T,
@@ -315,7 +314,6 @@ impl<
     >
 where
     M: RawMutex,
-    D: Esp32s31RxFrontierDelay,
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
     T: WifiTxTimer,
@@ -324,6 +322,7 @@ where
         + Esp32s31ApRuntimeHardware
         + RxBlockAckHardware
         + open_esp_radio_esp32s31_wifi_mac::tx_ampdu::HtAmpduHardware,
+    RX: AccessPointRxPipeline<H, COUNT>,
     O: FnMut(AccessPointServiceStatus),
     S: FnMut() -> ([u8; 32], u64),
     L: FnMut(LinkState),
@@ -352,23 +351,11 @@ where
                 {
                     return Ok(WdevRxProgress::ProbePending);
                 }
-                if self
-                    .control
-                    .receive
-                    .service_continuation(self.hardware)
-                    .map_err(|error| {
-                        Esp32s31AccessPointWdevError::Control(
-                            Esp32s31AccessPointControlError::from(error),
-                        )
-                    })?
-                    == Esp32s31RxFrontierContinuation::ProbePending
-                {
-                    Timer::after_micros(1).await;
-                }
                 let completed_before = self.control.report.completed_rx_descriptors;
                 let service_started = Instant::now().as_micros();
                 let (nonce, replay_counter) = (self.security_material)();
-                self.control
+                let rx_progress = self
+                    .control
                     .service_rx(
                         self.hardware,
                         nonce,
@@ -401,26 +388,14 @@ where
                     return Ok(WdevRxProgress::NetworkBackpressured);
                 }
                 if self.tx_pending() {
-                    return Ok(WdevRxProgress::ProbePending);
+                    // During an active TX transaction `service_rx` may only
+                    // stage/recycle the vendor RX-success frontier. Do not
+                    // self-repost merely because protocol consumption is
+                    // deferred; queued ownership is exposed by `has_rx_work`
+                    // immediately after TX reaches its terminal edge.
+                    return Ok(rx_progress);
                 }
-                if self
-                    .control
-                    .receive
-                    .service_continuation(self.hardware)
-                    .map_err(|error| {
-                        Esp32s31AccessPointWdevError::Control(
-                            Esp32s31AccessPointControlError::from(error),
-                        )
-                    })?
-                    == Esp32s31RxFrontierContinuation::ProbePending
-                {
-                    // One AP control pass can publish only one retained
-                    // Ethernet batch, whereas one network TX turn may own a
-                    // complete A-MPDU. Keep consuming this finite RX turn
-                    // until its descriptor quota is exhausted instead of
-                    // granting one aggregate TX turn after every MPDU. The
-                    // next iteration performs the required delayed hardware
-                    // observation before touching another descriptor.
+                if rx_progress == WdevRxProgress::ProbePending {
                     continue;
                 }
                 if self.control.report.completed_rx_descriptors == completed_before {
@@ -428,10 +403,6 @@ where
                 }
             }
         }
-    }
-
-    fn service_rx_during_tx(&self) -> bool {
-        false
     }
 
     fn has_rx_work(&self) -> bool {

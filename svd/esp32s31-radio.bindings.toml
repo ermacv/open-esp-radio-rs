@@ -13207,7 +13207,13 @@ peripheral-type = "WifiMacRxDma"
 peripheral-module = "wifi_mac_rx_dma"
 scope = []
 register-method = "extra_softap_rx_block_ack_peer_head"
-fields = []
+
+[[registers.fields]]
+svd-name = "PEER_ADDRESS_HEAD"
+method = "peer_address_head"
+bit-offset = 0
+bit-width = 32
+access = "read-write"
 
 [[registers]]
 address = 537939632

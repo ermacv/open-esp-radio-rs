@@ -8,10 +8,9 @@ use crate::rx_dma_service::{ESP32S31_RX_WALKER_ENABLE_SETTLE_US, Esp32s31RxDmaSt
 
 use super::state::Esp32s31RxFrontierState;
 use super::{
-    Esp32s31RecycledRxDirective, Esp32s31RecycledRxProgress, Esp32s31RxFrontier,
-    Esp32s31RxFrontierContinuation, Esp32s31RxFrontierDelay, Esp32s31RxFrontierDirective,
-    Esp32s31RxFrontierError, Esp32s31RxFrontierIntoLiveFailure, Esp32s31RxFrontierPhase,
-    Esp32s31RxFrontierProgress, Esp32s31RxFrontierSchedulerSnapshot,
+    Esp32s31RxFrontier, Esp32s31RxFrontierContinuation, Esp32s31RxFrontierDelay,
+    Esp32s31RxFrontierDirective, Esp32s31RxFrontierError, Esp32s31RxFrontierIntoLiveFailure,
+    Esp32s31RxFrontierPhase, Esp32s31RxFrontierProgress, Esp32s31RxFrontierSchedulerSnapshot,
     Esp32s31RxFrontierServiceProgress,
 };
 
@@ -437,118 +436,6 @@ where
             && !ring.exhausted_republication_probe_pending()
         {
             return Err(Esp32s31RxFrontierError::Ring(RxRingError::Corrupt));
-        }
-        Ok(progress)
-    }
-
-    /// Copy the first complete RX unit and defer descriptor reuse behind a
-    /// completed-unit guard.
-    ///
-    /// SOURCE[ROM_REV0_WDEV_APPEND_RX_BLOCKS]: `wDev_AppendRxBlocks` accepts
-    /// the exact head/count returned by one completed receive unit. The AP
-    /// path therefore reclaims a variable-size prefix rather than waiting for
-    /// a physical half-ring. Payload ownership and descriptor-link ownership
-    /// are nevertheless separate: LAST plus terminal completion permits an
-    /// independent payload copy, while a later completed unit is retained as
-    /// the generation-safe proof required before rewriting an earlier link.
-    /// `wDev_AppendRxBlocks` still remains one uninterrupted reload/base-repair
-    /// transaction whenever a guarded prefix becomes reusable.
-    pub async fn service_completed_unit<M, F, const DMA_STORAGE_SIZE: usize>(
-        &mut self,
-        hardware: &mut M,
-        storage: &'storage Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
-        staging: &mut [u8],
-        mut observe: F,
-    ) -> Result<Esp32s31RecycledRxProgress, Esp32s31RxFrontierError>
-    where
-        M: RxDma,
-        F: for<'frame> FnMut(RxSegment<'frame>) -> Esp32s31RecycledRxDirective,
-    {
-        let ring = self.live_mut()?;
-        // A cancelled caller can leave an already-published append pending.
-        // Finish that transaction before observing another ownership epoch.
-        ring.complete_pending_reload(hardware)?;
-        ring.observe_exhausted_republication(hardware);
-        // SOURCE[libpp:wdevProcessRxSucDataAll]: the vendor receive worker
-        // snapshots `hal_mac_rx_get_last_dscr`, processes through that finite
-        // frontier, and refreshes LAST before extending the pass. It does not
-        // wait for RX_NEXT_DESCRIPTOR before clearing and returning a node.
-        let (last_descriptor_low, next_descriptor_low) = hardware.with_ordered_cursor(|cursor| {
-            (cursor.last_descriptor_low(), cursor.next_descriptor_low())
-        });
-        // LAST is the ownership frontier for the following descriptor scan.
-        // Order that MMIO observation before reading uncached SRAM.
-        hardware.fence();
-        let frontier = storage.first_completed_unit_frontier_through_cursor(
-            ring,
-            last_descriptor_low,
-            next_descriptor_low,
-        )?;
-        if frontier.unit_count == 0 {
-            return Ok(Esp32s31RecycledRxProgress::default());
-        }
-        let unit = storage
-            .take_completed_unit(ring, frontier.descriptor_count)?
-            .ok_or(Esp32s31RxFrontierError::Ring(RxRingError::Corrupt))?;
-        let descriptor_count = unit.descriptor_count();
-        let descriptor_address = unit.metadata().descriptor_address();
-        let descriptor_word0 = unit.metadata().staged_word0();
-        let total_length = unit.total_length();
-
-        let staged = if total_length == 0 || total_length > staging.len() {
-            false
-        } else {
-            let mut offset = 0_usize;
-            for step in 0..descriptor_count {
-                let source = unit
-                    .segment(step)
-                    .ok_or(Esp32s31RxFrontierError::Ring(RxRingError::Corrupt))?;
-                let end = offset
-                    .checked_add(source.len())
-                    .ok_or(Esp32s31RxFrontierError::Ring(RxRingError::Overflow))?;
-                staging
-                    .get_mut(offset..end)
-                    .ok_or(Esp32s31RxFrontierError::Ring(RxRingError::Corrupt))?
-                    .copy_from_slice(source);
-                offset = end;
-            }
-            if offset != total_length {
-                return Err(Esp32s31RxFrontierError::Ring(RxRingError::Corrupt));
-            }
-            true
-        };
-
-        // The staging copy is independent of the DMA arena. Retain the
-        // descriptor image in `observed_mask` instead of rewriting its link
-        // while hardware may still hold a prefetched generation.
-        unit.retain_for_deferred_recycle();
-
-        let recycled_descriptors =
-            match storage.recycle_observed_prefix_with_guard(ring, hardware)? {
-                Some(append) => {
-                    // Do not yield between the append doorbell and the conditional
-                    // exhausted-list BASE repair recovered from the vendor body.
-                    ring.complete_pending_reload(hardware)?;
-                    u32::try_from(append.descriptor_count).unwrap_or(u32::MAX)
-                }
-                None => 0,
-            };
-
-        let mut progress = Esp32s31RecycledRxProgress {
-            completed_units: 1,
-            completed_descriptors: u32::try_from(descriptor_count).unwrap_or(u32::MAX),
-            recycled_descriptors,
-            discarded_units: u32::from(!staged),
-            paused: false,
-        };
-        if staged {
-            let segment = RxSegment {
-                descriptor_address,
-                descriptor_word0,
-                buffer: &staging[..total_length],
-                next_descriptor_address: 0,
-            };
-            progress.paused = observe(segment) == Esp32s31RecycledRxDirective::Pause;
         }
         Ok(progress)
     }

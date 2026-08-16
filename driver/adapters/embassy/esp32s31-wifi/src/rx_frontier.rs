@@ -11,10 +11,10 @@ mod state;
 mod time;
 
 pub use state::{
-    Esp32s31RecycledRxDirective, Esp32s31RecycledRxProgress, Esp32s31RxFrontier,
-    Esp32s31RxFrontierContinuation, Esp32s31RxFrontierDirective, Esp32s31RxFrontierError,
-    Esp32s31RxFrontierIntoLiveFailure, Esp32s31RxFrontierPhase, Esp32s31RxFrontierProgress,
-    Esp32s31RxFrontierSchedulerSnapshot, Esp32s31RxFrontierServiceProgress,
+    Esp32s31RxFrontier, Esp32s31RxFrontierContinuation, Esp32s31RxFrontierDirective,
+    Esp32s31RxFrontierError, Esp32s31RxFrontierIntoLiveFailure, Esp32s31RxFrontierPhase,
+    Esp32s31RxFrontierProgress, Esp32s31RxFrontierSchedulerSnapshot,
+    Esp32s31RxFrontierServiceProgress,
 };
 pub use time::{EmbassyEsp32s31RxFrontierDelay, Esp32s31RxFrontierDelay};
 

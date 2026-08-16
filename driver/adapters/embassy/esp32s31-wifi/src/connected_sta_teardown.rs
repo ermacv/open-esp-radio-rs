@@ -23,7 +23,7 @@ use crate::{
         ConnectedControlError, ConnectedControlHardware, ConnectedControlShutdown,
         ConnectedControlTx, Esp32s31ConnectedControl,
     },
-    rx_dma_service::{Esp32s31ConnectedRx, Esp32s31StoppedRx},
+    rx_dma_service::{Esp32s31StagedRxProducer, Esp32s31StoppedRx},
     wdev::services::WdevServiceSet,
 };
 
@@ -73,7 +73,7 @@ impl<
     const DMA_STORAGE_SIZE: usize,
     P,
 > Esp32s31ConnectedStaRxTeardown<H>
-    for Esp32s31ConnectedRx<
+    for Esp32s31StagedRxProducer<
         'storage,
         'pool,
         'queue,
@@ -106,7 +106,7 @@ where
     type Error = RxRingError;
 
     fn try_stop(self, hardware: &mut H) -> Result<Self::Stopped, (Self, Self::Error)> {
-        Esp32s31ConnectedRx::try_stop(self, hardware)
+        Esp32s31StagedRxProducer::try_stop(self, hardware)
     }
 }
 

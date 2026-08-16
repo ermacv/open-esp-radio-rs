@@ -3,8 +3,8 @@
 #![forbid(unsafe_code)]
 
 use super::{
-    MacInterface, MacRxBlockAckEntryIndex, MacRxBlockAckStartingSequence, MacRxBlockAckTid,
-    MacRxBlockAckWindow, RadioRegisters,
+    MacExtraSoftApRxBlockAckEntryIndex, MacInterface, MacRxBlockAckEntryIndex,
+    MacRxBlockAckStartingSequence, MacRxBlockAckTid, MacRxBlockAckWindow, RadioRegisters,
 };
 
 /// Result sampled for one completed TX hardware queue.
@@ -82,6 +82,25 @@ pub struct RxBlockAckEntrySnapshot {
     pub loaded_start_sequence: u16,
     pub bitmap_status: u64,
     pub bitmap_load: u64,
+}
+
+/// Latched projection of one indirect extra-SoftAP receive BlockAck bank.
+///
+/// SOURCE: complete `libpp.a[hal_ampdu.o]::
+/// hal_debug_read_extra_softap_rx_ba` selects each logical index through
+/// control bits 5..9, asserts agreement-update bit nine, reads the control,
+/// peer, policy and starting-sequence staging words, then releases the latch.
+/// The two bitmap words are the adjacent raw staging words used by complete
+/// `hal_agreement_clr_extra_softap_rx_ba`; they remain raw observations rather
+/// than a claimed protocol interpretation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ExtraSoftApRxBlockAckEntrySnapshot {
+    pub control: u32,
+    pub peer: [u8; 6],
+    pub interface: MacInterface,
+    pub window: u8,
+    pub starting_sequence: u16,
+    pub bitmap_staging_words: [u32; 2],
 }
 
 const fn rx_block_ack_images(
@@ -215,6 +234,234 @@ impl RadioRegisters {
             .modify(|_, w| w.valid().set_bit());
         // The final full-word zero is a distinct observable edge in the blob.
         super::svd::zero_register_write::clear_rx_block_ack_entry_control(block, register_index);
+    }
+
+    /// Program one extra-SoftAP receive BlockAck entry through the shared
+    /// staging window.
+    ///
+    /// SOURCE: complete `libpp.a[hal_ampdu.o]::
+    /// hal_agreement_add_extra_softap_rx_ba`, size `0x130`.
+    ///
+    /// This transaction is distinct from the eight direct ordinary banks.
+    /// The selected entry is staged, committed through update bit eight,
+    /// latched for the vendor's readback sequence through bit nine, and then
+    /// released. The diagnostic log call is intentionally outside the PAC;
+    /// its ordered volatile readback is retained here.
+    pub fn program_extra_softap_rx_block_ack_entry(
+        &mut self,
+        hardware_index: MacExtraSoftApRxBlockAckEntryIndex,
+        interface: MacInterface,
+        peer: [u8; 6],
+        tid: MacRxBlockAckTid,
+        starting_sequence: MacRxBlockAckStartingSequence,
+        window: MacRxBlockAckWindow,
+    ) -> bool {
+        let block = &self.peripherals.wifi_mac_rx_dma;
+        let index = hardware_index.get() as u8;
+        let images = rx_block_ack_images(interface, peer, tid, window);
+
+        block
+            .extra_softap_rx_block_ack_control()
+            .modify(|_, w| w.index().set(index));
+        super::svd::zero_based_field_write::extra_softap_rx_block_ack_peer_head(
+            block,
+            images.peer_head,
+        );
+        super::svd::zero_based_field_write::extra_softap_rx_block_ack_peer_tail_and_policy(
+            block,
+            images.peer_tail_and_policy as u16,
+            interface.bits() as u8,
+            window.get() as u8,
+        );
+        block
+            .extra_softap_rx_block_ack_start_sequence()
+            .modify(|_, w| w.sequence().set(starting_sequence.get() as u16));
+        super::svd::zero_register_write::clear_extra_softap_rx_block_ack_bitmap_low(block);
+        super::svd::zero_register_write::clear_extra_softap_rx_block_ack_bitmap_high(block);
+        super::svd::zero_based_field_write::extra_softap_rx_block_ack_active_control(
+            block,
+            true,
+            index,
+            tid.get() as u8,
+            true,
+            true,
+        );
+
+        block
+            .rx_block_ack_agreement_update()
+            .modify(|_, w| w.extra_softap_commit().set_bit());
+        block
+            .rx_block_ack_agreement_update()
+            .modify(|_, w| w.extra_softap_commit().clear_bit());
+        block
+            .rx_block_ack_agreement_update()
+            .modify(|_, w| w.extra_softap_readback_latch().set_bit());
+
+        // Preserve the complete vendor readback order. The values feed only
+        // wifi_log in the blob and therefore do not cross this PAC boundary.
+        let peer_tail_and_policy = block
+            .extra_softap_rx_block_ack_peer_tail_and_policy()
+            .read()
+            .bits();
+        let peer_head = block.extra_softap_rx_block_ack_peer_head().read().bits();
+        let observed_starting_sequence = block
+            .extra_softap_rx_block_ack_start_sequence()
+            .read()
+            .sequence()
+            .bits();
+        let _ = block
+            .extra_softap_rx_block_ack_peer_tail_and_policy()
+            .read();
+        let control = block.extra_softap_rx_block_ack_control().read().bits();
+
+        block
+            .rx_block_ack_agreement_update()
+            .modify(|_, w| w.extra_softap_readback_latch().clear_bit());
+
+        peer_head == images.peer_head
+            && peer_tail_and_policy == images.peer_tail_and_policy
+            && observed_starting_sequence == starting_sequence.get() as u16
+            && control == (images.active_control | (u32::from(index) << 5))
+    }
+
+    /// Move one live extra-SoftAP receive BlockAck entry to a new window.
+    ///
+    /// SOURCE: complete `libpp.a[hal_ampdu.o]::
+    /// hal_agreement_clr_extra_softap_rx_ba`, size `0xc6`.
+    ///
+    /// Despite the vendor leaf's `clr` name, this does not delete the entry.
+    /// It preserves peer, interface, TID and validity, replaces the starting
+    /// sequence and hardware window, clears the accumulated bitmap, and
+    /// commits the staged image. The vendor's TID argument feeds only its log
+    /// call and therefore does not cross this register-only boundary.
+    pub fn reset_extra_softap_rx_block_ack_window(
+        &mut self,
+        hardware_index: MacExtraSoftApRxBlockAckEntryIndex,
+        starting_sequence: MacRxBlockAckStartingSequence,
+        window: MacRxBlockAckWindow,
+    ) {
+        let block = &self.peripherals.wifi_mac_rx_dma;
+        let index = hardware_index.get() as u8;
+
+        block
+            .extra_softap_rx_block_ack_control()
+            .modify(|_, w| w.index().set(index));
+        block
+            .rx_block_ack_agreement_update()
+            .modify(|_, w| w.extra_softap_readback_latch().set_bit());
+        let _ = block.extra_softap_rx_block_ack_control().read();
+        block
+            .rx_block_ack_agreement_update()
+            .modify(|_, w| w.extra_softap_readback_latch().clear_bit());
+        block
+            .extra_softap_rx_block_ack_start_sequence()
+            .modify(|_, w| w.sequence().set(starting_sequence.get() as u16));
+        block
+            .extra_softap_rx_block_ack_peer_tail_and_policy()
+            .modify(|_, w| w.window().set(window.get() as u8));
+        super::svd::zero_register_write::clear_extra_softap_rx_block_ack_bitmap_low(block);
+        super::svd::zero_register_write::clear_extra_softap_rx_block_ack_bitmap_high(block);
+        block
+            .rx_block_ack_agreement_update()
+            .modify(|_, w| w.extra_softap_commit().set_bit());
+        block
+            .rx_block_ack_agreement_update()
+            .modify(|_, w| w.extra_softap_commit().clear_bit());
+    }
+
+    /// Latch and sample one indirect extra-SoftAP agreement without changing
+    /// its committed contents.
+    pub fn extra_softap_rx_block_ack_entry_snapshot(
+        &mut self,
+        hardware_index: MacExtraSoftApRxBlockAckEntryIndex,
+    ) -> ExtraSoftApRxBlockAckEntrySnapshot {
+        let block = &self.peripherals.wifi_mac_rx_dma;
+        let index = hardware_index.get() as u8;
+        block
+            .extra_softap_rx_block_ack_control()
+            .modify(|_, w| w.index().set(index));
+        block
+            .rx_block_ack_agreement_update()
+            .modify(|_, w| w.extra_softap_readback_latch().set_bit());
+
+        // Preserve the complete vendor diagnostic read order before sampling
+        // the two adjacent staging words.
+        let control = block.extra_softap_rx_block_ack_control().read().bits();
+        let peer_head = block.extra_softap_rx_block_ack_peer_head().read().bits();
+        let peer_tail_and_policy = block
+            .extra_softap_rx_block_ack_peer_tail_and_policy()
+            .read();
+        let starting_sequence = block
+            .extra_softap_rx_block_ack_start_sequence()
+            .read()
+            .sequence()
+            .bits();
+        let peer_head_again = block.extra_softap_rx_block_ack_peer_head().read().bits();
+        let control_again = block.extra_softap_rx_block_ack_control().read().bits();
+        let bitmap_staging_words = [
+            block.extra_softap_rx_block_ack_bitmap_low().read().bits(),
+            block.extra_softap_rx_block_ack_bitmap_high().read().bits(),
+        ];
+
+        block
+            .rx_block_ack_agreement_update()
+            .modify(|_, w| w.extra_softap_readback_latch().clear_bit());
+
+        debug_assert_eq!(peer_head, peer_head_again);
+        debug_assert_eq!(control, control_again);
+        let head = peer_head.to_le_bytes();
+        let tail = peer_tail_and_policy
+            .peer_address_tail()
+            .bits()
+            .to_le_bytes();
+        ExtraSoftApRxBlockAckEntrySnapshot {
+            control,
+            peer: [head[0], head[1], head[2], head[3], tail[0], tail[1]],
+            interface: match peer_tail_and_policy.interface().bits() {
+                0 => MacInterface::Station,
+                1 => MacInterface::AccessPoint,
+                2 => MacInterface::Context2,
+                3 => MacInterface::Context3,
+                _ => unreachable!("two-bit interface field cannot exceed three"),
+            },
+            window: peer_tail_and_policy.window().bits(),
+            starting_sequence,
+            bitmap_staging_words,
+        }
+    }
+
+    /// Delete one extra-SoftAP receive BlockAck entry.
+    ///
+    /// SOURCE: complete `libpp.a[hal_ampdu.o]::
+    /// hal_agreement_del_extra_softap_rx_ba`, size `0x94`.
+    pub fn delete_extra_softap_rx_block_ack_entry(
+        &mut self,
+        hardware_index: MacExtraSoftApRxBlockAckEntryIndex,
+    ) {
+        let block = &self.peripherals.wifi_mac_rx_dma;
+        let index = hardware_index.get() as u8;
+
+        block
+            .extra_softap_rx_block_ack_control()
+            .modify(|_, w| w.index().set(index));
+        block
+            .rx_block_ack_agreement_update()
+            .modify(|_, w| w.extra_softap_readback_latch().set_bit());
+        let _ = block.extra_softap_rx_block_ack_control().read();
+        block
+            .rx_block_ack_agreement_update()
+            .modify(|_, w| w.extra_softap_readback_latch().clear_bit());
+        block
+            .extra_softap_rx_block_ack_control()
+            .modify(|_, w| w.valid().clear_bit());
+        super::svd::zero_register_write::clear_extra_softap_rx_block_ack_bitmap_low(block);
+        super::svd::zero_register_write::clear_extra_softap_rx_block_ack_bitmap_high(block);
+        block
+            .rx_block_ack_agreement_update()
+            .modify(|_, w| w.extra_softap_commit().set_bit());
+        block
+            .rx_block_ack_agreement_update()
+            .modify(|_, w| w.extra_softap_commit().clear_bit());
     }
 
     /// Sample both hardware-maintained and software-load words of one entry.
@@ -502,7 +749,8 @@ impl RadioRegisters {
 #[cfg(test)]
 mod tests {
     use super::{
-        MacInterface, MacRxBlockAckTid, MacRxBlockAckWindow, RxBlockAckImages, rx_block_ack_images,
+        MacExtraSoftApRxBlockAckEntryIndex, MacInterface, MacRxBlockAckTid, MacRxBlockAckWindow,
+        RxBlockAckImages, rx_block_ack_images,
     };
 
     #[test]
@@ -520,5 +768,12 @@ mod tests {
                 active_control: 0xc000_6001,
             }
         );
+    }
+
+    #[test]
+    fn extra_softap_entry_domain_matches_the_vendor_allocator() {
+        assert!(MacExtraSoftApRxBlockAckEntryIndex::new(0).is_some());
+        assert!(MacExtraSoftApRxBlockAckEntryIndex::new(7).is_some());
+        assert!(MacExtraSoftApRxBlockAckEntryIndex::new(8).is_none());
     }
 }

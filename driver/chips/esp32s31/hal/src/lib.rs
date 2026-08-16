@@ -298,6 +298,19 @@ impl RadioRuntimeOwner {
         self.registers.mac_rx_dma_snapshot()
     }
 
+    /// Latch one indirect SoftAP receive-BA bank through the reviewed HAL
+    /// projection without exposing its PAC owner.
+    pub fn extra_softap_rx_block_ack_entry_snapshot(
+        &mut self,
+        index: u8,
+    ) -> Option<wifi_mac::ExtraSoftApRxBlockAckEntrySnapshot> {
+        let index = types::MacExtraSoftApRxBlockAckEntryIndex::new(u32::from(index))?;
+        Some(
+            self.wifi_mac_hal()
+                .extra_softap_rx_block_ack_entry_snapshot(index),
+        )
+    }
+
     /// Copy the reviewed HE transmit-vector readback for one queue.
     pub fn he_tx_vector_snapshot(&self, queue: u8) -> types::MacHeTxVectorSnapshot {
         self.registers.he_mac_tx_vector_snapshot(queue)
@@ -309,6 +322,10 @@ impl RadioRuntimeOwner {
         reservation: types::MacHeTbLinkReservation,
     ) -> types::MacHeTriggerTxQueueSnapshot {
         self.registers.he_trigger_based_queue_snapshot(reservation)
+    }
+
+    pub fn he_trigger_receive_diagnostics(&self) -> types::MacHeTriggerRxDiagnostics {
+        self.registers.he_trigger_receive_diagnostics()
     }
 
     pub(crate) fn from_pac(registers: RadioRegisters) -> Self {

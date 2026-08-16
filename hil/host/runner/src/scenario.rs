@@ -79,6 +79,14 @@ pub enum Direction {
     Bidirectional,
 }
 
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum AccessPointClient {
+    #[default]
+    Laptop,
+    OpenWrt,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum AccessPointTraffic {
@@ -204,6 +212,8 @@ pub enum Workload {
         cycles: u8,
         boots: u8,
         timeout_seconds: u16,
+        #[serde(default)]
+        client: AccessPointClient,
         traffic: AccessPointTraffic,
     },
 }
@@ -258,6 +268,8 @@ pub struct Scenario {
 #[serde(deny_unknown_fields)]
 pub struct LinkExpectation {
     pub phy: PhyExpectation,
+    #[serde(default)]
+    pub minimum_mcs: Option<u8>,
 }
 
 impl Scenario {
@@ -351,12 +363,31 @@ impl Scenario {
                 | Workload::WifiRole { .. }
                 | Workload::MonitorCapture { .. }
         );
-        if station_link_required != self.link.is_some() {
+        let link_allowed =
+            station_link_required || matches!(self.workload, Workload::AccessPoint { .. });
+        if (station_link_required && self.link.is_none()) || (!link_allowed && self.link.is_some())
+        {
             return Err(format!(
-                "{}: station workloads require exactly one `[link]` expectation",
+                "{}: this workload has an invalid `[link]` expectation",
                 self.source.display()
             )
             .into());
+        }
+        if let Some(link) = self.link
+            && let Some(minimum_mcs) = link.minimum_mcs
+        {
+            let maximum_mcs = match link.phy {
+                PhyExpectation::Ht20 | PhyExpectation::Ht40 => 7,
+                PhyExpectation::He20 => 9,
+            };
+            if minimum_mcs > maximum_mcs {
+                return Err(format!(
+                    "{}: minimum_mcs={minimum_mcs} exceeds the {} capability MCS{maximum_mcs}",
+                    self.source.display(),
+                    link.phy.id(),
+                )
+                .into());
+            }
         }
         match &self.workload {
             Workload::BootSmoke => {}
@@ -451,12 +482,31 @@ impl Scenario {
                 cycles,
                 boots,
                 timeout_seconds,
+                client,
                 traffic,
             } => {
                 bounded(*cycles, 2, 8, self, "cycles")?;
                 bounded(*boots, 1, 20, self, "boots")?;
                 bounded(*timeout_seconds, 20, 180, self, "timeout_seconds")?;
                 validate_access_point_traffic(traffic, self)?;
+                if *client == AccessPointClient::OpenWrt {
+                    if self.criteria.minimum_concurrent_ap_clients.unwrap_or(1) != 1 {
+                        return self.criteria_error(
+                            "an OpenWrt primary AP client requires exactly one concurrent client",
+                        );
+                    }
+                    if !matches!(
+                        traffic,
+                        AccessPointTraffic::Udp {
+                            direction: Direction::Rx,
+                            ..
+                        }
+                    ) {
+                        return self.criteria_error(
+                            "the OpenWrt primary AP client currently owns only UDP RX workloads",
+                        );
+                    }
+                }
             }
         }
         self.validate_criteria()?;
@@ -464,35 +514,52 @@ impl Scenario {
     }
 
     fn validate_criteria(&self) -> Result<()> {
-        let (rx_offer, tx_offer, udp, icmp, station_data_plane) = match &self.workload {
-            Workload::Udp {
-                rx_rate_bps,
-                tx_rate_bps,
-                ..
-            } => (*rx_rate_bps, *tx_rate_bps, true, false, true),
-            Workload::Tcp {
-                rx_rate_bps,
-                tx_rate_bps,
-                ..
-            } => (*rx_rate_bps, *tx_rate_bps, false, false, true),
-            Workload::Icmp { .. } => (None, None, false, true, true),
-            Workload::StationReconnect { .. } => (None, None, false, false, true),
-            Workload::AccessPoint { traffic, .. } => match traffic {
-                AccessPointTraffic::Udp {
+        let (rx_offer, tx_offer, udp, bidirectional_udp, icmp, station_data_plane) =
+            match &self.workload {
+                Workload::Udp {
+                    direction,
                     rx_rate_bps,
                     tx_rate_bps,
                     ..
-                } => (*rx_rate_bps, *tx_rate_bps, true, false, false),
-                AccessPointTraffic::Tcp {
+                } => (
+                    *rx_rate_bps,
+                    *tx_rate_bps,
+                    true,
+                    *direction == Direction::Bidirectional,
+                    false,
+                    true,
+                ),
+                Workload::Tcp {
                     rx_rate_bps,
                     tx_rate_bps,
                     ..
-                } => (*rx_rate_bps, *tx_rate_bps, false, false, false),
-                AccessPointTraffic::Icmp { .. } => (None, None, false, true, false),
-                AccessPointTraffic::None => (None, None, false, false, false),
-            },
-            _ => (None, None, false, false, false),
-        };
+                } => (*rx_rate_bps, *tx_rate_bps, false, false, false, true),
+                Workload::Icmp { .. } => (None, None, false, false, true, true),
+                Workload::StationReconnect { .. } => (None, None, false, false, false, true),
+                Workload::AccessPoint { traffic, .. } => match traffic {
+                    AccessPointTraffic::Udp {
+                        direction,
+                        rx_rate_bps,
+                        tx_rate_bps,
+                        ..
+                    } => (
+                        *rx_rate_bps,
+                        *tx_rate_bps,
+                        true,
+                        *direction == Direction::Bidirectional,
+                        false,
+                        false,
+                    ),
+                    AccessPointTraffic::Tcp {
+                        rx_rate_bps,
+                        tx_rate_bps,
+                        ..
+                    } => (*rx_rate_bps, *tx_rate_bps, false, false, false, false),
+                    AccessPointTraffic::Icmp { .. } => (None, None, false, false, true, false),
+                    AccessPointTraffic::None => (None, None, false, false, false, false),
+                },
+                _ => (None, None, false, false, false, false),
+            };
         if self.criteria.exact_delivery && !udp {
             return self.criteria_error("exact_delivery is valid only for UDP workloads");
         }
@@ -516,13 +583,7 @@ impl Scenario {
             }
         }
         if let Some(floor) = self.criteria.minimum_combined_bps {
-            if !matches!(
-                self.workload,
-                Workload::Udp {
-                    direction: Direction::Bidirectional,
-                    ..
-                }
-            ) {
+            if !bidirectional_udp {
                 return self
                     .criteria_error("minimum_combined_bps requires a bidirectional UDP workload");
             }
@@ -543,9 +604,13 @@ impl Scenario {
         {
             return self.criteria_error("loss and latency criteria are valid only for ICMP");
         }
-        if self.criteria.require_no_beacon_loss && !station_data_plane {
-            return self
-                .criteria_error("require_no_beacon_loss requires a station data-plane workload");
+        if self.criteria.require_no_beacon_loss
+            && !station_data_plane
+            && !matches!(self.workload, Workload::AccessPoint { .. })
+        {
+            return self.criteria_error(
+                "require_no_beacon_loss requires a station or access-point data-plane workload",
+            );
         }
         if let Some(minimum) = self.criteria.minimum_concurrent_ap_clients {
             if !matches!(self.workload, Workload::AccessPoint { .. }) {
@@ -749,6 +814,49 @@ mod tests {
             assert_eq!(scenario.repetitions, 5);
             assert_eq!(scenario.criteria.minimum_concurrent_ap_clients, Some(2));
         }
+    }
+
+    #[test]
+    fn ap_ht40_maximum_load_contract_has_four_qualified_gates() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios");
+        let catalog = Catalog::load(&root).unwrap();
+        for id in [
+            "access-point-single-client-ceiling-rx",
+            "access-point-single-client-ceiling-tx",
+            "access-point-single-client-ceiling-bidirectional",
+            "access-point-icmp",
+        ] {
+            let scenario = catalog.get(id).unwrap();
+            assert_eq!(scenario.repetitions, 3, "{id}");
+            assert_eq!(scenario.link.unwrap().phy, PhyExpectation::Ht40, "{id}");
+            assert_eq!(scenario.link.unwrap().minimum_mcs, Some(7), "{id}");
+            assert!(scenario.criteria.require_no_beacon_loss, "{id}");
+            assert!(
+                scenario.tags.iter().any(|tag| tag == "qualification"),
+                "{id}"
+            );
+        }
+
+        let bidirectional = catalog
+            .get("access-point-single-client-ceiling-bidirectional")
+            .unwrap();
+        assert_eq!(bidirectional.criteria.minimum_rx_bps, Some(40_000_000));
+        assert_eq!(bidirectional.criteria.minimum_tx_bps, Some(40_000_000));
+        assert_eq!(
+            bidirectional.criteria.minimum_combined_bps,
+            Some(80_000_000)
+        );
+
+        let icmp = catalog.get("access-point-icmp").unwrap();
+        assert!(matches!(
+            icmp.workload,
+            Workload::AccessPoint {
+                traffic: AccessPointTraffic::Icmp { count: 100, .. },
+                ..
+            }
+        ));
+        assert_eq!(icmp.criteria.maximum_lost, Some(0));
+        assert_eq!(icmp.criteria.maximum_p95_ms, Some(20));
     }
 
     #[test]

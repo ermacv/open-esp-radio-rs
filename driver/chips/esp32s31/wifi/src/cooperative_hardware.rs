@@ -392,6 +392,32 @@ impl CooperativeRadioHardware<'_> {
         rx_ampdu_hw::clear(&mut self.wifi_mac_hal(), hardware_index)
     }
 
+    pub fn program_extra_softap_rx_block_ack(
+        &mut self,
+        agreement: S31RxBlockAckAgreement,
+    ) -> Result<(), S31RxBlockAckAgreementError> {
+        rx_ampdu_hw::program_extra_softap(&mut self.wifi_mac_hal(), agreement)
+    }
+
+    pub fn clear_extra_softap_rx_block_ack(
+        &mut self,
+        hardware_index: u8,
+    ) -> Result<(), S31RxBlockAckAgreementError> {
+        rx_ampdu_hw::clear_extra_softap(&mut self.wifi_mac_hal(), hardware_index)
+    }
+
+    pub fn reset_extra_softap_rx_block_ack_window(
+        &mut self,
+        hardware_index: u8,
+        starting_sequence: u16,
+    ) -> Result<(), S31RxBlockAckAgreementError> {
+        rx_ampdu_hw::reset_extra_softap_window(
+            &mut self.wifi_mac_hal(),
+            hardware_index,
+            starting_sequence,
+        )
+    }
+
     pub fn set_he_tid_enabled(
         &mut self,
         tid: u8,
@@ -428,5 +454,31 @@ impl open_esp_radio_esp32s31_wifi_mac::rx_ampdu_hw::RxBlockAckHardware
         hardware_index: u8,
     ) -> Result<(), S31RxBlockAckAgreementError> {
         CooperativeRadioHardware::clear_rx_block_ack(self, hardware_index)
+    }
+
+    fn program_extra_softap_rx_block_ack(
+        &mut self,
+        agreement: S31RxBlockAckAgreement,
+    ) -> Result<(), S31RxBlockAckAgreementError> {
+        CooperativeRadioHardware::program_extra_softap_rx_block_ack(self, agreement)
+    }
+
+    fn clear_extra_softap_rx_block_ack(
+        &mut self,
+        hardware_index: u8,
+    ) -> Result<(), S31RxBlockAckAgreementError> {
+        CooperativeRadioHardware::clear_extra_softap_rx_block_ack(self, hardware_index)
+    }
+
+    fn reset_extra_softap_rx_block_ack_window(
+        &mut self,
+        hardware_index: u8,
+        starting_sequence: u16,
+    ) -> Result<(), S31RxBlockAckAgreementError> {
+        CooperativeRadioHardware::reset_extra_softap_rx_block_ack_window(
+            self,
+            hardware_index,
+            starting_sequence,
+        )
     }
 }

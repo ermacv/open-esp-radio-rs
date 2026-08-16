@@ -269,7 +269,7 @@ impl<
     pub fn with_live_ring(
         self,
         ring: RxRingLive<'storage, COUNT>,
-    ) -> Esp32s31ConnectedRx<
+    ) -> Esp32s31StagedRxProducer<
         'storage,
         'pool,
         'queue,
@@ -282,7 +282,7 @@ impl<
         DMA_BUFFER_SIZE,
         DMA_STORAGE_SIZE,
     > {
-        Esp32s31ConnectedRx {
+        Esp32s31StagedRxProducer {
             ring,
             storage: self.storage,
             pool: self.pool,
@@ -290,6 +290,7 @@ impl<
             delay: self.delay,
             pipeline_observer: self.pipeline_observer,
             admission: FullRxStageAdmission,
+            report: Esp32s31StagedRxProducerReport::default(),
         }
     }
 }
@@ -338,7 +339,7 @@ impl<
         self,
         hardware: &mut H,
     ) -> Result<
-        Esp32s31ConnectedRx<
+        Esp32s31StagedRxProducer<
             'storage,
             'pool,
             'queue,
@@ -368,7 +369,7 @@ impl<
             .after_micros(ESP32S31_RX_WALKER_ENABLE_SETTLE_US)
             .await;
         match ring.try_start(hardware) {
-            Ok(ring) => Ok(Esp32s31ConnectedRx {
+            Ok(ring) => Ok(Esp32s31StagedRxProducer {
                 ring,
                 storage,
                 pool,
@@ -376,6 +377,7 @@ impl<
                 delay,
                 pipeline_observer,
                 admission: FullRxStageAdmission,
+                report: Esp32s31StagedRxProducerReport::default(),
             }),
             Err((ring, error)) => Err((
                 Self {
@@ -405,7 +407,7 @@ impl<
     const DMA_BUFFER_SIZE: usize,
     const DMA_STORAGE_SIZE: usize,
 >
-    Esp32s31ConnectedRx<
+    Esp32s31StagedRxProducer<
         'storage,
         'pool,
         'queue,
@@ -439,6 +441,7 @@ impl<
             delay,
             pipeline_observer: None,
             admission: FullRxStageAdmission,
+            report: Esp32s31StagedRxProducerReport::default(),
         }
     }
 
@@ -455,7 +458,7 @@ impl<
     pub fn with_stage_admission_policy<P>(
         self,
         admission: P,
-    ) -> Esp32s31ConnectedRx<
+    ) -> Esp32s31StagedRxProducer<
         'storage,
         'pool,
         'queue,
@@ -469,7 +472,7 @@ impl<
         DMA_STORAGE_SIZE,
         P,
     > {
-        Esp32s31ConnectedRx {
+        Esp32s31StagedRxProducer {
             ring: self.ring,
             storage: self.storage,
             pool: self.pool,
@@ -477,6 +480,7 @@ impl<
             delay: self.delay,
             pipeline_observer: self.pipeline_observer,
             admission,
+            report: self.report,
         }
     }
 }
@@ -495,7 +499,7 @@ impl<
     const DMA_STORAGE_SIZE: usize,
     P,
 >
-    Esp32s31ConnectedRx<
+    Esp32s31StagedRxProducer<
         'storage,
         'pool,
         'queue,
@@ -516,6 +520,10 @@ impl<
 
     pub fn queued_frames(&self) -> usize {
         self.frames.len()
+    }
+
+    pub const fn report(&self) -> Esp32s31StagedRxProducerReport {
+        self.report
     }
 
     /// Confirm that DMA released the ring and return a stopped RX owner.
@@ -550,6 +558,7 @@ impl<
             delay,
             pipeline_observer,
             admission,
+            report,
         } = self;
         match ring.try_stop(hardware) {
             Ok(ring) => Ok(Esp32s31StoppedRx {
@@ -569,6 +578,7 @@ impl<
                     delay,
                     pipeline_observer,
                     admission,
+                    report,
                 },
                 error,
             )),

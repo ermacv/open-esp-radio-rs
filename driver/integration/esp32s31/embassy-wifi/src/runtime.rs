@@ -135,6 +135,7 @@ use crate::connected::{
     ConnectedStationEpoch, ConnectedStationFault, ConnectedStationOutcome,
     ConnectedStationResources, ConnectedStationRunExit, ConnectedStoppedRx, ControlResources,
     Esp32s31WifiProtocolRunner, InitialConnectedStaticResources, MacInterruptEpoch,
+    ProductionAccessPointRxPipeline, access_point_rx_pipeline,
     connected_config, initialize_connected_rx_protocol_runtime,
     initialize_connected_static_resources, initialize_ethernet_frame, initialize_station_network,
     mac_interrupt_epoch, run_connected,
@@ -2218,9 +2219,13 @@ pub async fn new(
                     },
                 )
             }),
-            rx_block_ack: AP_RX_BLOCK_ACK.init_with(
-                open_esp_radio::esp32s31::wifi::mac::rx_ampdu::RxBlockAckSessions::new,
-            ),
+            rx_block_ack: AP_RX_BLOCK_ACK.init_with(|| {
+                open_esp_radio::esp32s31::wifi::mac::rx_ampdu::RxBlockAckSessions::with_maximum_window(
+                    open_esp_radio_esp32s31_wifi_embassy::resource_profile::ESP32S31_DEFAULT_RX_REORDER_WINDOW
+                        as u16,
+                )
+                .expect("the production RX BlockAck window is statically validated")
+            }),
             rx_reorder: AP_RX_REORDER.init_with(Esp32s31AccessPointRxReorder::new),
             rx_reorder_storage: &crate::connected::RX_REORDER_STORAGE,
         },

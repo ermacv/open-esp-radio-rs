@@ -817,14 +817,17 @@ fn execute_workload(
             cycles,
             boots,
             timeout_seconds,
+            client,
             traffic,
         } => access_point_qualification::run(
             access_point_qualification::Config {
                 cycles: *cycles,
                 boots: *boots,
                 timeout: std::time::Duration::from_secs(u64::from(*timeout_seconds)),
+                client: *client,
                 traffic: traffic.clone(),
                 criteria: selected.criteria.clone(),
+                expected_link: selected.link,
                 require_rx_delivery_evidence: selected.image
                     == scenario::ImageClass::DiagnosticRxDelivery,
             },

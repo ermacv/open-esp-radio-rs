@@ -5,7 +5,7 @@ use std::{
     net::Ipv4Addr,
     process::{Command, Stdio},
     thread,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use zeroize::{Zeroize, Zeroizing};
@@ -36,6 +36,22 @@ pub(crate) struct SecondaryClientProbeEvidence {
 pub(crate) struct ControlledOpenWrtClient {
     fixture: OpenWrtConfig,
     restored: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct OpenWrtUdpTransmission {
+    pub(crate) bytes: u64,
+    pub(crate) datagrams: u64,
+    pub(crate) elapsed: Duration,
+    pub(crate) station_tx_packets: u64,
+    pub(crate) station_tx_retries: u64,
+    pub(crate) station_tx_failed: u64,
+    /// Frames received with an invalid FCS by the radio hosting the client.
+    ///
+    /// In an AP RX workload this includes control responses sent by the DUT,
+    /// most importantly Block ACK frames, even though the UDP payload travels
+    /// in the opposite direction.
+    pub(crate) radio_rx_fcs_errors: u64,
 }
 
 pub(crate) fn doctor(access_point: &AccessPointConfig, fixture: &OpenWrtConfig) -> Result<()> {
@@ -82,6 +98,21 @@ impl ControlledOpenWrtClient {
         let address = access_point.secondary_client_cidr().ok_or(
             "the AP scenario requires a second client but secondary_client_address is absent",
         )?;
+        Self::connect_at(access_point, fixture, address)
+    }
+
+    pub(crate) fn connect_primary(
+        access_point: &AccessPointConfig,
+        fixture: &OpenWrtConfig,
+    ) -> Result<Self> {
+        Self::connect_at(access_point, fixture, access_point.client_cidr())
+    }
+
+    fn connect_at(
+        access_point: &AccessPointConfig,
+        fixture: &OpenWrtConfig,
+        address: String,
+    ) -> Result<Self> {
         let (ssid, passphrase) = access_point.credentials();
         let target = access_point.target_address();
         let frequency_mhz = access_point.frequency_mhz();
@@ -94,7 +125,7 @@ impl ControlledOpenWrtClient {
         let script = Zeroizing::new(format!(
             "set -eu; \
              phy=$(cat {phy}); \
-             if test -f {PID_FILE}; then old_pid=$(cat {PID_FILE}); kill \"$old_pid\" 2>/dev/null || true; for attempt in $(seq 1 50); do kill -0 \"$old_pid\" 2>/dev/null || break; sleep 0.02; done; fi; \
+             if test -f {PID_FILE}; then old_pid=$(cat {PID_FILE}); kill \"$old_pid\" 2>/dev/null || true; for attempt in $(seq 1 5); do kill -0 \"$old_pid\" 2>/dev/null || break; sleep 1; done; fi; \
              iw dev {INTERFACE} del 2>/dev/null || true; \
              rm -f {PID_FILE} {CONFIG_FILE}; \
              iw phy \"$phy\" interface add {INTERFACE} type managed addr {CLIENT_MAC}; \
@@ -121,7 +152,7 @@ impl ControlledOpenWrtClient {
         if !output.status.success() {
             let _ = restore(fixture);
             return Err(format!(
-                "OpenWrt secondary AP client did not associate: status={} stdout={} stderr={}",
+                "OpenWrt AP client did not associate: status={} stdout={} stderr={}",
                 output.status,
                 String::from_utf8_lossy(&output.stdout).trim(),
                 String::from_utf8_lossy(&output.stderr).trim(),
@@ -144,6 +175,96 @@ impl ControlledOpenWrtClient {
         Ok(())
     }
 
+    pub(crate) fn send_udp(
+        &self,
+        target: Ipv4Addr,
+        port: u16,
+        rate_bps: u64,
+        duration: Duration,
+        payload_bytes: usize,
+    ) -> Result<OpenWrtUdpTransmission> {
+        let duration_seconds = duration.as_secs().max(1);
+        let script = format!(
+            "set -eu; \
+             command -v iperf >/dev/null; \
+             phy=$(cat /sys/class/net/{INTERFACE}/phy80211/name); \
+             fcs_counter=/sys/kernel/debug/ieee80211/$phy/statistics/dot11FCSErrorCount; \
+             test -r \"$fcs_counter\"; \
+             mac=$(iw dev {INTERFACE} link | awk '/Connected to/ {{print $3}}'); \
+             test -n \"$mac\"; \
+             before=$(iw dev {INTERFACE} station get \"$mac\"); \
+             before_fcs=$(cat \"$fcs_counter\"); \
+             before_packets=$(printf '%s\\n' \"$before\" | awk '/tx packets:/ {{print $3}}'); \
+             before_retries=$(printf '%s\\n' \"$before\" | awk '/tx retries:/ {{print $3}}'); \
+             before_failed=$(printf '%s\\n' \"$before\" | awk '/tx failed:/ {{print $3}}'); \
+             output=$(iperf -c {target} -p {port} -u -b {rate_bps} -t {duration_seconds} -l {payload_bytes} --no-udp-fin -e); \
+             datagrams=$(printf '%s\\n' \"$output\" | awk '/Sent [0-9]+ datagrams/ {{for (i=1; i<NF; i++) if ($i == \"Sent\") value=$(i+1)}} END {{print value}}'); \
+             test -n \"$datagrams\"; \
+             after=$(iw dev {INTERFACE} station get \"$mac\"); \
+             after_fcs=$(cat \"$fcs_counter\"); \
+             after_packets=$(printf '%s\\n' \"$after\" | awk '/tx packets:/ {{print $3}}'); \
+             after_retries=$(printf '%s\\n' \"$after\" | awk '/tx retries:/ {{print $3}}'); \
+             after_failed=$(printf '%s\\n' \"$after\" | awk '/tx failed:/ {{print $3}}'); \
+             printf 'datagrams=%s\\n' \"$datagrams\"; \
+             printf 'station_tx_packets=%s\\n' \"$((after_packets-before_packets))\"; \
+             printf 'station_tx_retries=%s\\n' \"$((after_retries-before_retries))\"; \
+             printf 'station_tx_failed=%s\\n' \"$((after_failed-before_failed))\"; \
+             printf 'radio_rx_fcs_errors=%s\\n' \"$((after_fcs-before_fcs))\""
+        );
+        let started = Instant::now();
+        let output = ssh(&self.fixture, &script)?;
+        let elapsed = started.elapsed();
+        if !output.status.success() {
+            return Err(format!(
+                "OpenWrt UDP source failed: status={} stdout={} stderr={}",
+                output.status,
+                String::from_utf8_lossy(&output.stdout).trim(),
+                String::from_utf8_lossy(&output.stderr).trim(),
+            )
+            .into());
+        }
+        let output = String::from_utf8(output.stdout)?;
+        let datagrams = tagged_u64(&output, "datagrams")?;
+        Ok(OpenWrtUdpTransmission {
+            bytes: datagrams.saturating_mul(u64::try_from(payload_bytes)?),
+            datagrams,
+            elapsed,
+            station_tx_packets: tagged_u64(&output, "station_tx_packets")?,
+            station_tx_retries: tagged_u64(&output, "station_tx_retries")?,
+            station_tx_failed: tagged_u64(&output, "station_tx_failed")?,
+            radio_rx_fcs_errors: tagged_u64(&output, "radio_rx_fcs_errors")?,
+        })
+    }
+
+    pub(crate) fn spawn_udp_rx_probe(
+        &self,
+        target: Ipv4Addr,
+        port: u16,
+    ) -> thread::JoinHandle<std::result::Result<(), String>> {
+        let fixture = self.fixture.clone();
+        thread::spawn(move || {
+            let script = format!(
+                "set -eu; command -v socat >/dev/null; \
+                 for attempt in $(seq 1 5); do \
+                   {{ printf '\\377\\377\\377\\377'; dd if=/dev/zero bs=60 count=1 2>/dev/null; }} \
+                     | socat -u STDIN UDP-DATAGRAM:{target}:{port}; \
+                   sleep 1; \
+                 done"
+            );
+            let output = ssh(&fixture, &script).map_err(|error| error.to_string())?;
+            if output.status.success() {
+                Ok(())
+            } else {
+                Err(format!(
+                    "OpenWrt UDP readiness probe failed: status={} stdout={} stderr={}",
+                    output.status,
+                    String::from_utf8_lossy(&output.stdout).trim(),
+                    String::from_utf8_lossy(&output.stderr).trim(),
+                ))
+            }
+        })
+    }
+
     /// Exercise this peer throughout the primary saturation workload.
     ///
     /// The probe is deliberately low-bandwidth: it proves that AP scheduling,
@@ -157,6 +278,15 @@ impl ControlledOpenWrtClient {
         let fixture = self.fixture.clone();
         thread::spawn(move || probe(&fixture, target, duration))
     }
+}
+
+fn tagged_u64(output: &str, key: &str) -> Result<u64> {
+    output
+        .lines()
+        .find_map(|line| line.strip_prefix(key)?.strip_prefix('='))
+        .ok_or_else(|| format!("OpenWrt output omitted `{key}`"))?
+        .parse()
+        .map_err(|error| format!("invalid OpenWrt `{key}` counter: {error}").into())
 }
 
 impl Drop for ControlledOpenWrtClient {

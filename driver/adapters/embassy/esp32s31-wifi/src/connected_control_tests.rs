@@ -117,6 +117,37 @@ impl RxBlockAckHardware for Hardware {
         self.clear_count += 1;
         Ok(())
     }
+
+    fn program_extra_softap_rx_block_ack(
+        &mut self,
+        agreement: S31RxBlockAckAgreement,
+    ) -> Result<(), S31RxBlockAckAgreementError> {
+        self.programmed = Some(agreement.validate()?);
+        Ok(())
+    }
+
+    fn clear_extra_softap_rx_block_ack(
+        &mut self,
+        hardware_index: u8,
+    ) -> Result<(), S31RxBlockAckAgreementError> {
+        self.clear_rx_block_ack(hardware_index)
+    }
+
+    fn reset_extra_softap_rx_block_ack_window(
+        &mut self,
+        hardware_index: u8,
+        starting_sequence: u16,
+    ) -> Result<(), S31RxBlockAckAgreementError> {
+        if hardware_index >= 8 {
+            return Err(S31RxBlockAckAgreementError::HardwareIndex(hardware_index));
+        }
+        if starting_sequence > 0x0fff {
+            return Err(S31RxBlockAckAgreementError::StartingSequence(
+                starting_sequence,
+            ));
+        }
+        Ok(())
+    }
 }
 
 impl ConnectedControlHardware for Hardware {

@@ -8,8 +8,8 @@
 
 use open_esp_radio_esp32s31_hal::RadioRuntimeOwner;
 use open_esp_radio_esp32s31_hal::types::{
-    MacInterface, MacRxBlockAckEntryIndex, MacRxBlockAckStartingSequence, MacRxBlockAckTid,
-    MacRxBlockAckWindow,
+    MacExtraSoftApRxBlockAckEntryIndex, MacInterface, MacRxBlockAckEntryIndex,
+    MacRxBlockAckStartingSequence, MacRxBlockAckTid, MacRxBlockAckWindow,
 };
 use open_esp_radio_esp32s31_hal::wifi_mac::WifiMacHal;
 
@@ -40,6 +40,7 @@ pub enum S31RxBlockAckAgreementError {
     Tid(u8),
     StartingSequence(u16),
     Window(u16),
+    HardwareReadbackMismatch,
 }
 
 /// Narrow hardware capability shared by station and access-point RX
@@ -53,6 +54,22 @@ pub trait RxBlockAckHardware {
 
     fn clear_rx_block_ack(&mut self, hardware_index: u8)
     -> Result<(), S31RxBlockAckAgreementError>;
+
+    fn program_extra_softap_rx_block_ack(
+        &mut self,
+        agreement: S31RxBlockAckAgreement,
+    ) -> Result<(), S31RxBlockAckAgreementError>;
+
+    fn clear_extra_softap_rx_block_ack(
+        &mut self,
+        hardware_index: u8,
+    ) -> Result<(), S31RxBlockAckAgreementError>;
+
+    fn reset_extra_softap_rx_block_ack_window(
+        &mut self,
+        hardware_index: u8,
+        starting_sequence: u16,
+    ) -> Result<(), S31RxBlockAckAgreementError>;
 }
 
 impl RxBlockAckHardware for WifiMacHal<'_> {
@@ -69,6 +86,28 @@ impl RxBlockAckHardware for WifiMacHal<'_> {
     ) -> Result<(), S31RxBlockAckAgreementError> {
         clear(self, hardware_index)
     }
+
+    fn program_extra_softap_rx_block_ack(
+        &mut self,
+        agreement: S31RxBlockAckAgreement,
+    ) -> Result<(), S31RxBlockAckAgreementError> {
+        program_extra_softap(self, agreement)
+    }
+
+    fn clear_extra_softap_rx_block_ack(
+        &mut self,
+        hardware_index: u8,
+    ) -> Result<(), S31RxBlockAckAgreementError> {
+        clear_extra_softap(self, hardware_index)
+    }
+
+    fn reset_extra_softap_rx_block_ack_window(
+        &mut self,
+        hardware_index: u8,
+        starting_sequence: u16,
+    ) -> Result<(), S31RxBlockAckAgreementError> {
+        reset_extra_softap_window(self, hardware_index, starting_sequence)
+    }
 }
 
 impl RxBlockAckHardware for RadioRuntimeOwner {
@@ -84,6 +123,28 @@ impl RxBlockAckHardware for RadioRuntimeOwner {
         hardware_index: u8,
     ) -> Result<(), S31RxBlockAckAgreementError> {
         clear(&mut self.wifi_mac_hal(), hardware_index)
+    }
+
+    fn program_extra_softap_rx_block_ack(
+        &mut self,
+        agreement: S31RxBlockAckAgreement,
+    ) -> Result<(), S31RxBlockAckAgreementError> {
+        program_extra_softap(&mut self.wifi_mac_hal(), agreement)
+    }
+
+    fn clear_extra_softap_rx_block_ack(
+        &mut self,
+        hardware_index: u8,
+    ) -> Result<(), S31RxBlockAckAgreementError> {
+        clear_extra_softap(&mut self.wifi_mac_hal(), hardware_index)
+    }
+
+    fn reset_extra_softap_rx_block_ack_window(
+        &mut self,
+        hardware_index: u8,
+        starting_sequence: u16,
+    ) -> Result<(), S31RxBlockAckAgreementError> {
+        reset_extra_softap_window(&mut self.wifi_mac_hal(), hardware_index, starting_sequence)
     }
 }
 
@@ -137,7 +198,7 @@ pub fn program(
     Ok(())
 }
 
-/// Remove one extra SoftAP receive BlockAck entry.
+/// Remove one ordinary receive BlockAck entry.
 ///
 /// The caller must recycle all retained software reorder slots first.
 pub fn clear(
@@ -150,6 +211,74 @@ pub fn clear(
     mmio.delete_rx_block_ack_entry(
         MacRxBlockAckEntryIndex::new(u32::from(hardware_index))
             .expect("validated receive BlockAck hardware index"),
+    );
+    Ok(())
+}
+
+/// Program the extra-SoftAP receive BlockAck entry selected by the vendor
+/// net80211 path for a SoftAP peer.
+pub fn program_extra_softap(
+    mmio: &mut WifiMacHal<'_>,
+    agreement: S31RxBlockAckAgreement,
+) -> Result<(), S31RxBlockAckAgreementError> {
+    let agreement = agreement.validate()?;
+    let matches = mmio.program_extra_softap_rx_block_ack_entry(
+        MacExtraSoftApRxBlockAckEntryIndex::new(u32::from(agreement.hardware_index))
+            .expect("validated extra-SoftAP receive BlockAck hardware index"),
+        agreement.interface,
+        agreement.peer,
+        MacRxBlockAckTid::new(u32::from(agreement.tid)).expect("validated receive BlockAck TID"),
+        MacRxBlockAckStartingSequence::new(u32::from(agreement.starting_sequence))
+            .expect("validated receive BlockAck starting sequence"),
+        MacRxBlockAckWindow::new(u32::from(agreement.window))
+            .expect("validated receive BlockAck window"),
+    );
+    if !matches {
+        return Err(S31RxBlockAckAgreementError::HardwareReadbackMismatch);
+    }
+    Ok(())
+}
+
+/// Remove one extra-SoftAP receive BlockAck entry.
+pub fn clear_extra_softap(
+    mmio: &mut WifiMacHal<'_>,
+    hardware_index: u8,
+) -> Result<(), S31RxBlockAckAgreementError> {
+    if hardware_index >= RX_BLOCK_ACK_CAPACITY {
+        return Err(S31RxBlockAckAgreementError::HardwareIndex(hardware_index));
+    }
+    mmio.delete_extra_softap_rx_block_ack_entry(
+        MacExtraSoftApRxBlockAckEntryIndex::new(u32::from(hardware_index))
+            .expect("validated extra-SoftAP receive BlockAck hardware index"),
+    );
+    Ok(())
+}
+
+/// Synchronize a live extra-SoftAP hardware bitmap after the software reorder
+/// machine is forced to advance beyond its current receive window.
+///
+/// The vendor caller always reloads the physical window with 64 entries even
+/// when the negotiated software reorder window is smaller.
+pub fn reset_extra_softap_window(
+    mmio: &mut WifiMacHal<'_>,
+    hardware_index: u8,
+    starting_sequence: u16,
+) -> Result<(), S31RxBlockAckAgreementError> {
+    if hardware_index >= RX_BLOCK_ACK_CAPACITY {
+        return Err(S31RxBlockAckAgreementError::HardwareIndex(hardware_index));
+    }
+    if starting_sequence > 0x0fff {
+        return Err(S31RxBlockAckAgreementError::StartingSequence(
+            starting_sequence,
+        ));
+    }
+    mmio.reset_extra_softap_rx_block_ack_window(
+        MacExtraSoftApRxBlockAckEntryIndex::new(u32::from(hardware_index))
+            .expect("validated extra-SoftAP receive BlockAck hardware index"),
+        MacRxBlockAckStartingSequence::new(u32::from(starting_sequence))
+            .expect("validated receive BlockAck starting sequence"),
+        MacRxBlockAckWindow::new(u32::from(crate::rx_ampdu::RX_BLOCK_ACK_MAX_WINDOW))
+            .expect("vendor receive BlockAck hardware window"),
     );
     Ok(())
 }

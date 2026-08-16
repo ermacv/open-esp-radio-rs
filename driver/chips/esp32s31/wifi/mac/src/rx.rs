@@ -127,6 +127,20 @@ pub struct RxPhyInfo {
     pub he_siga2: u16,
 }
 
+/// Typed IEEE 802.11n HT-SIG fields captured verbatim by the S31 RX prefix.
+///
+/// The prefix word called `he_siga1` by the public ABI overlaps the first
+/// 32 bits of the format-specific signal field. For HT PPDUs those bits are
+/// HT-SIG: MCS at 6:0, CBW at bit 7, Aggregation at bit 27 and Short GI at
+/// bit 31. The format discriminator is therefore checked before decoding.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct HtSignal {
+    pub mcs: u8,
+    pub channel_width_mhz: u8,
+    pub aggregation: bool,
+    pub short_guard_interval: bool,
+}
+
 /// PHY format published in the S31 RX-control prefix.
 ///
 /// SOURCE\[ESP_WIFI_SYS_S31_RX_BB_FORMAT]: public `esp-wifi-sys`
@@ -627,6 +641,22 @@ impl RxPhyInfo {
         }
     }
 
+    pub const fn ht_signal(self) -> Option<HtSignal> {
+        match self.baseband_format() {
+            RxBasebandFormat::Ht => Some(HtSignal {
+                mcs: (self.he_siga1 & 0x7f) as u8,
+                channel_width_mhz: if self.he_siga1 & (1 << 7) != 0 {
+                    40
+                } else {
+                    20
+                },
+                aggregation: self.he_siga1 & (1 << 27) != 0,
+                short_guard_interval: self.he_siga1 & (1 << 31) != 0,
+            }),
+            _ => None,
+        }
+    }
+
     /// HT-SIG Aggregation bit, when the RX vector is an HT PPDU.
     ///
     /// SOURCE: complete `libpp.a[hal_debug.o]::dbg_dump_rx_ppdu`,
@@ -634,9 +664,9 @@ impl RxPhyInfo {
     /// bytes `4..8`, shifts bit 27 into the sixth argument of the HT record and
     /// names it `Aggregation`.
     pub const fn ht_aggregation(self) -> Option<bool> {
-        match self.baseband_format() {
-            RxBasebandFormat::Ht => Some(self.he_siga1 & (1 << 27) != 0),
-            _ => None,
+        match self.ht_signal() {
+            Some(signal) => Some(signal.aggregation),
+            None => None,
         }
     }
 

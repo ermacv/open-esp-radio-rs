@@ -805,7 +805,7 @@ mod tests {
         let ht40 =
             WifiChannel::new_2_4_ghz(6, crate::channel::WifiChannelWidth::Mhz40Below).unwrap();
         write_ht_association_response(&mut body, 0, 1, ht40).unwrap();
-        assert!(body.windows(4).any(|window| window == [45, 26, 0x62, 0]));
+        assert!(body.windows(4).any(|window| window == [45, 26, 0x6e, 0x10]));
         assert!(body.windows(4).any(|window| window == [61, 22, 6, 0x07]));
     }
 

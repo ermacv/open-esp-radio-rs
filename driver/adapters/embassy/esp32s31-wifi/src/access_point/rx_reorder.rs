@@ -504,6 +504,33 @@ mod tests {
     }
 
     #[test]
+    fn out_of_window_mpdu_advances_only_the_software_reorder_frontier() {
+        let storage = RxReorderFrameStorage::<32>::new();
+        let mut reorder = Esp32s31AccessPointRxReorder::<32>::new();
+        reorder.start(agreement(3, PEER_A, 10), |_| {}).unwrap();
+        let bytes = [20];
+
+        let progress = reorder
+            .ingest(
+                &storage,
+                segment(20, &bytes),
+                RxBlockAckMpduKey {
+                    peer: PEER_A,
+                    tid: 6,
+                    sequence: 20,
+                    retry: false,
+                },
+                1_000,
+                |_| panic!("far successor remains buffered"),
+            )
+            .unwrap();
+
+        assert!(progress.active);
+        assert!(progress.buffered);
+        assert_eq!(progress.dispatched, 0);
+    }
+
+    #[test]
     fn peer_banks_keep_equal_tid_sequence_spaces_independent() {
         let storage = RxReorderFrameStorage::<32>::new();
         let mut reorder = Esp32s31AccessPointRxReorder::<32>::new();

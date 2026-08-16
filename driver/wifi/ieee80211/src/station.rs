@@ -40,10 +40,7 @@ const RSN_CAPABILITY_SPP_AMSDU_CAPABLE: u16 = 1 << 10;
 //
 // SOURCE[PROMOTED_HE20_PEER]: reviewed promoted HT20 capability image,
 // originally qualified by the strict ESP32-S31 STA WPA2/ADDBA throughput HIL.
-const HT20_CAPABILITY_IE: [u8; 28] = [
-    45, 26, 0x20, 0x00, 0x00, 0xff, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01, 0, 0, 0, 0, 0, 0, 0,
-    0, 0,
-];
+const HT20_CAPABILITY_IE: [u8; 28] = station_ht_capability_ie(0x0020, 0x00);
 // One-stream HT40 with short guard intervals for both 20 and 40 MHz and
 // spatial multiplexing power save disabled. Although the S31 has one receive
 // stream, advertising static SMPS (`0x0062`) made the controlled Linux HT40 AP
@@ -59,10 +56,7 @@ const HT20_CAPABILITY_IE: [u8; 28] = [
 // gated by the complete AP HT Capabilities/Operation IEs through
 // `ScanRecord::ht40_secondary_channel`; hardware CBW support is the complete
 // rev0 ROM `phy_bb_bss_cbw40` implementation promoted into the S31 PAC/HAL.
-const HT40_CAPABILITY_IE: [u8; 28] = [
-    45, 26, 0x6e, 0x00, 0x00, 0xff, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01, 0, 0, 0, 0, 0, 0, 0,
-    0, 0,
-];
+const HT40_CAPABILITY_IE: [u8; 28] = station_ht_capability_ie(0x006e, 0x00);
 // Exact HT20 capability carried beside the HE capability in the complete
 // vendor association request. It differs from the deliberately narrow
 // standalone HT20 profile above: SMPS is disabled, RX STBC is one stream,
@@ -71,10 +65,24 @@ const HT40_CAPABILITY_IE: [u8; 28] = [
 // SOURCE[HIL_VENDOR_HE20_NDPA_CBF_2026_07_24]: qualified frame 7624.
 // SOURCE: complete `libnet80211.a[ieee80211_ht.o]::
 // ieee80211_add_htcap_body` produces the same capability fields.
-const HE20_HT_CAPABILITY_IE: [u8; 28] = [
-    45, 26, 0x2c, 0x11, 0x17, 0xff, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01, 0, 0, 0, 0, 0, 0, 0,
-    0, 0,
-];
+const HE20_HT_CAPABILITY_IE: [u8; 28] = station_ht_capability_ie(0x112c, 0x17);
+
+/// Build the complete vendor-shaped one-stream HT capability image.
+///
+/// The Supported MCS Set begins at complete-IE byte five. Its byte 12 is the
+/// TX MCS parameters field, therefore it is complete-IE byte 17. Keeping this
+/// layout in one builder prevents AP/STA capability images from drifting.
+const fn station_ht_capability_ie(capability_info: u16, ampdu_parameters: u8) -> [u8; 28] {
+    let mut element = [0_u8; 28];
+    element[0] = 45;
+    element[1] = 26;
+    element[2] = capability_info as u8;
+    element[3] = (capability_info >> 8) as u8;
+    element[4] = ampdu_parameters;
+    element[5] = 0xff;
+    element[17] = 0x01;
+    element
+}
 // Exact one-stream HE20 MCS0-9 capability captured from the vendor
 // association request and retained as a comparison oracle.
 // This must not be relabelled HE40: complete
@@ -2158,6 +2166,19 @@ mod tests {
 
     const LOCAL: [u8; 6] = [0x02, 0, 0, 0x12, 0x34, 0x56];
     const BSSID: [u8; 6] = [0x30, 0x05, 0x5c, 0x11, 0x22, 0x33];
+
+    #[test]
+    fn station_ht_profiles_put_tx_parameters_in_supported_mcs_byte_twelve() {
+        for capability in [
+            HT20_CAPABILITY_IE,
+            HT40_CAPABILITY_IE,
+            HE20_HT_CAPABILITY_IE,
+        ] {
+            assert_eq!(capability[5], 0xff);
+            assert_eq!(capability[17], 0x01);
+            assert_eq!(capability[18], 0);
+        }
+    }
 
     fn authentication_response(status_code: u16) -> [u8; 30] {
         let mut frame = [0_u8; 30];

@@ -19,7 +19,9 @@ use open_esp_radio_hil_protocol::{
 use crate::{
     Result,
     controlled_client::ControlledClient,
-    controlled_openwrt_client::{ControlledOpenWrtClient, SecondaryClientProbeEvidence},
+    controlled_openwrt_client::{
+        ControlledOpenWrtClient, OpenWrtUdpTransmission, SecondaryClientProbeEvidence,
+    },
     lab_config::{LabConfig, StationFixtureConfig},
     paced_tcp::{
         Config as TcpConfig, HostReception as TcpReception, HostTransmission as TcpTransmission,
@@ -27,7 +29,9 @@ use crate::{
     },
     paced_udp::{Config as UdpConfig, HostTransmission as UdpTransmission, send as send_udp},
     rx_delivery,
-    scenario::{AccessPointTraffic, Criteria, Direction},
+    scenario::{
+        AccessPointClient, AccessPointTraffic, Criteria, Direction, LinkExpectation, PhyExpectation,
+    },
     traffic_capture::{SerialCapture, SessionEvidence, probe_udp_rx_ready},
     tx_traffic::{Burst, receive_bursts},
     udp_socket::{configure_qualification_receive_buffer, open_reverse_flow},
@@ -44,9 +48,37 @@ pub(crate) struct Config {
     pub(crate) cycles: u8,
     pub(crate) boots: u8,
     pub(crate) timeout: Duration,
+    pub(crate) client: AccessPointClient,
     pub(crate) traffic: AccessPointTraffic,
     pub(crate) criteria: Criteria,
+    pub(crate) expected_link: Option<LinkExpectation>,
     pub(crate) require_rx_delivery_evidence: bool,
+}
+
+enum ConnectedClients {
+    Laptop {
+        primary: ControlledClient,
+        secondary: Option<ControlledOpenWrtClient>,
+    },
+    OpenWrt {
+        primary: ControlledOpenWrtClient,
+    },
+}
+
+impl ConnectedClients {
+    fn openwrt_primary(&self) -> Option<&ControlledOpenWrtClient> {
+        match self {
+            Self::OpenWrt { primary } => Some(primary),
+            Self::Laptop { .. } => None,
+        }
+    }
+
+    fn secondary(&self) -> Option<&ControlledOpenWrtClient> {
+        match self {
+            Self::Laptop { secondary, .. } => secondary.as_ref(),
+            Self::OpenWrt { .. } => None,
+        }
+    }
 }
 
 #[derive(Serialize)]
@@ -112,6 +144,24 @@ struct TcpWorkload {
 }
 
 pub(crate) fn run(config: Config, output: &Path, lab: &LabConfig) -> Result<()> {
+    if let Some(expected_phy) = config.expected_link.map(|link| link.phy) {
+        let expected_bandwidth_mhz = match expected_phy {
+            PhyExpectation::Ht40 => 40,
+            PhyExpectation::Ht20 => 20,
+            PhyExpectation::He20 => {
+                return Err("AP qualification does not claim an HE20 PHY".into());
+            }
+        };
+        if lab.access_point.bandwidth_mhz() != expected_bandwidth_mhz {
+            return Err(format!(
+                "AP scenario requires {} ({} MHz), but the lab AP request is {} MHz",
+                expected_phy.id(),
+                expected_bandwidth_mhz,
+                lab.access_point.bandwidth_mhz(),
+            )
+            .into());
+        }
+    }
     fs::create_dir_all(output)?;
     let mut report = AccessPointReport {
         schema: 1,
@@ -197,8 +247,8 @@ fn qualify(capture: &SerialCapture, config: &Config, lab: &LabConfig) -> Result<
             ));
         }
 
-        let client = match ControlledClient::connect(&lab.access_point) {
-            Ok(client) => client,
+        let clients = match connect_clients(config.client, minimum_clients, lab) {
+            Ok(clients) => clients,
             Err(error) => {
                 return Err(cleanup_after_client_failure(
                     capture,
@@ -209,48 +259,13 @@ fn qualify(capture: &SerialCapture, config: &Config, lab: &LabConfig) -> Result<
                 ));
             }
         };
-        let secondary_client = if minimum_clients >= 2 {
-            let StationFixtureConfig::OpenWrt(fixture) = &lab.station_fixture else {
-                let restore = client.restore().err();
-                let error = with_cleanup_errors(
-                    "two-client AP qualification requires the OpenWrt fixture",
-                    restore,
-                    None,
-                    None,
-                    None,
-                );
-                return Err(cleanup_after_client_failure(
-                    capture,
-                    config.timeout,
-                    started.generation,
-                    lab,
-                    error,
-                ));
-            };
-            match ControlledOpenWrtClient::connect(&lab.access_point, fixture) {
-                Ok(client) => Some(client),
-                Err(error) => {
-                    let restore = client.restore().err();
-                    let error = with_cleanup_errors(error, restore, None, None, None);
-                    return Err(cleanup_after_client_failure(
-                        capture,
-                        config.timeout,
-                        started.generation,
-                        lab,
-                        error,
-                    ));
-                }
-            }
-        } else {
-            None
-        };
-        let secondary_probe = secondary_client.as_ref().map(|client| {
+        let secondary_probe = clients.secondary().map(|client| {
             client.spawn_probe(
                 lab.access_point.target_address(),
                 traffic_duration(&config.traffic),
             )
         });
-        let data_result = qualify_data_plane(capture, config, lab);
+        let data_result = qualify_data_plane(capture, config, lab, &clients);
         let secondary_probe_result = secondary_probe.map(|probe| {
             probe
                 .join()
@@ -261,7 +276,7 @@ fn qualify(capture: &SerialCapture, config: &Config, lab: &LabConfig) -> Result<
         // the qualification never exercises the driver's ordered
         // disassociation/deauthentication teardown.
         let stop_result = stop_access_point(capture, config.timeout, started.generation, lab);
-        let client_restore = restore_clients(client, secondary_client);
+        let client_restore = restore_clients(clients);
         let stop_stack_result = if stop_result.is_ok() {
             report_stack(capture, config.timeout, "ap-stopped")
         } else {
@@ -278,11 +293,12 @@ fn qualify(capture: &SerialCapture, config: &Config, lab: &LabConfig) -> Result<
                 Ok(stopped) => format!(
                     "{error}; AP TX evidence: data={} attempts={} retried_frames={} \
                      maximum_attempts={} minimum_final_rate_kbps={} ack_snr={}/{}/{} \
+                     tx_ht40_mcs7={}/{} \
                      ack_timeout_retries={} \
                      cts_timeout_retries={} collision_retries={} hardware_failures={} \
                      hardware_timeouts={} collision_limits={} last_hardware_status={} beacons={}; AP RX evidence: \
                      units={} descriptors={} recycled_descriptors={} retained_descriptors={} discarded_units={} \
-                     protected={} mic_failures={} quarantined={} duplicates={} \
+                     rx_ht40_mcs={:?} total_ht={} ht_ampdu={} rssi={}/{}/{}/{} protected={} mic_failures={} quarantined={} duplicates={} \
                      radio_rejected={} protocol_rejected={} ethernet_staged={} tcp_staged={}",
                     stopped.data_frames_transmitted,
                     stopped.data_tx_attempts,
@@ -292,6 +308,8 @@ fn qualify(capture: &SerialCapture, config: &Config, lab: &LabConfig) -> Result<
                     stopped.data_tx_ack_snr_samples,
                     stopped.data_tx_minimum_ack_snr_db,
                     stopped.data_tx_maximum_ack_snr_db,
+                    stopped.tx_ht40_mcs7_aggregates,
+                    stopped.tx_ht_aggregates,
                     stopped.tx_ack_timeout_retries,
                     stopped.tx_cts_timeout_retries,
                     stopped.tx_collision_retries,
@@ -305,6 +323,13 @@ fn qualify(capture: &SerialCapture, config: &Config, lab: &LabConfig) -> Result<
                     stopped.recycled_rx_descriptors,
                     stopped.retained_rx_descriptors,
                     stopped.discarded_rx_units,
+                    stopped.rx_ht40_mcs_frames,
+                    stopped.rx_ht_data_frames,
+                    stopped.rx_ht_ampdu_data_frames,
+                    stopped.rx_rssi_samples,
+                    stopped.rx_rssi_sum_dbm,
+                    stopped.rx_rssi_min_dbm,
+                    stopped.rx_rssi_max_dbm,
                     stopped.protected_data_frames,
                     stopped.rx_mic_failures,
                     stopped.rx_quarantined_frames,
@@ -343,6 +368,7 @@ fn qualify(capture: &SerialCapture, config: &Config, lab: &LabConfig) -> Result<
         let stopped = stop_result?;
         stop_stack_result?;
         restart_result?;
+        validate_mcs_evidence(&config.traffic, config.expected_link, &stopped)?;
         let unacknowledged_disconnects = stopped
             .disassociations_published
             .saturating_sub(stopped.disassociations_acknowledged)
@@ -406,6 +432,58 @@ fn qualify(capture: &SerialCapture, config: &Config, lab: &LabConfig) -> Result<
     Ok(cycles)
 }
 
+fn validate_mcs_evidence(
+    traffic: &AccessPointTraffic,
+    expected_link: Option<LinkExpectation>,
+    evidence: &open_esp_radio_hil_protocol::WifiAccessPointEvidence,
+) -> Result<()> {
+    let Some(LinkExpectation {
+        phy,
+        minimum_mcs: Some(minimum_mcs),
+    }) = expected_link
+    else {
+        return Ok(());
+    };
+    if phy != PhyExpectation::Ht40 || minimum_mcs != 7 {
+        return Err(format!(
+            "AP target MCS evidence currently supports only HT40 MCS7, requested {} MCS{minimum_mcs}",
+            phy.id(),
+        )
+        .into());
+    }
+    let (require_rx, require_tx) = match traffic {
+        AccessPointTraffic::Udp { direction, .. } | AccessPointTraffic::Tcp { direction, .. } => {
+            match direction {
+                Direction::Rx => (true, false),
+                Direction::Tx => (false, true),
+                Direction::Bidirectional => (true, true),
+            }
+        }
+        AccessPointTraffic::Icmp { .. } => (true, true),
+        AccessPointTraffic::None => {
+            return Err("AP minimum_mcs requires a data-plane workload".into());
+        }
+    };
+    if require_rx && evidence.rx_ht40_mcs_frames[7] == 0 {
+        return Err(format!(
+            "AP client-to-target path did not observe HT40 MCS7 protected data \
+             (HT40 MCS histogram={:?}, total HT frames={}, HT A-MPDU frames={})",
+            evidence.rx_ht40_mcs_frames,
+            evidence.rx_ht_data_frames,
+            evidence.rx_ht_ampdu_data_frames,
+        )
+        .into());
+    }
+    if require_tx && evidence.tx_ht40_mcs7_aggregates == 0 {
+        return Err(format!(
+            "AP target-to-client path did not publish an HT40 MCS7 aggregate (HT aggregates={})",
+            evidence.tx_ht_aggregates,
+        )
+        .into());
+    }
+    Ok(())
+}
+
 fn traffic_duration(traffic: &AccessPointTraffic) -> Duration {
     match traffic {
         AccessPointTraffic::None => Duration::from_secs(2),
@@ -422,20 +500,67 @@ fn traffic_duration(traffic: &AccessPointTraffic) -> Duration {
     }
 }
 
-fn restore_clients(
-    primary: ControlledClient,
-    secondary: Option<ControlledOpenWrtClient>,
-) -> Result<()> {
-    let secondary = secondary.map(ControlledOpenWrtClient::restore).transpose();
-    let primary = primary.restore();
-    match (primary, secondary) {
-        (Ok(()), Ok(_)) => Ok(()),
-        (Err(primary), Ok(_)) => Err(primary),
-        (Ok(()), Err(secondary)) => Err(secondary),
-        (Err(primary), Err(secondary)) => Err(format!(
-            "primary client restore failed: {primary}; secondary client restore failed: {secondary}",
-        )
-        .into()),
+fn connect_clients(
+    client: AccessPointClient,
+    minimum_clients: u8,
+    lab: &LabConfig,
+) -> Result<ConnectedClients> {
+    let openwrt_fixture = || -> Result<&crate::lab_config::OpenWrtConfig> {
+        match &lab.station_fixture {
+            StationFixtureConfig::OpenWrt(fixture) => Ok(fixture),
+            _ => Err("AP OpenWrt client requires the OpenWrt station fixture".into()),
+        }
+    };
+    match client {
+        AccessPointClient::OpenWrt => Ok(ConnectedClients::OpenWrt {
+            primary: ControlledOpenWrtClient::connect_primary(
+                &lab.access_point,
+                openwrt_fixture()?,
+            )?,
+        }),
+        AccessPointClient::Laptop => {
+            // Associate the observable OpenWrt peer first in two-client runs.
+            // This gives debugfs evidence for the first BA bank and exercises
+            // the laptop on the next independently allocated peer slot.
+            let secondary = if minimum_clients >= 2 {
+                Some(ControlledOpenWrtClient::connect(
+                    &lab.access_point,
+                    openwrt_fixture()?,
+                )?)
+            } else {
+                None
+            };
+            let primary = match ControlledClient::connect(&lab.access_point) {
+                Ok(primary) => primary,
+                Err(error) => {
+                    let restore = secondary
+                        .map(ControlledOpenWrtClient::restore)
+                        .transpose()
+                        .err();
+                    return Err(with_cleanup_errors(error, restore, None, None, None));
+                }
+            };
+            Ok(ConnectedClients::Laptop { primary, secondary })
+        }
+    }
+}
+
+fn restore_clients(clients: ConnectedClients) -> Result<()> {
+    match clients {
+        ConnectedClients::OpenWrt { primary } => primary.restore(),
+        ConnectedClients::Laptop { primary, secondary } => {
+            let secondary = secondary.map(ControlledOpenWrtClient::restore).transpose();
+            let primary = primary.restore();
+            match (primary, secondary) {
+                (Ok(()), Ok(_)) => Ok(()),
+                (Err(primary), Ok(_)) => Err(primary),
+                (Ok(()), Err(secondary)) => Err(secondary),
+                (Err(primary), Err(secondary)) => Err(format!(
+                    "primary client restore failed: {primary}; secondary client restore failed: {secondary}",
+                )
+                .into()),
+            }
+        }
     }
 }
 
@@ -443,6 +568,7 @@ fn qualify_data_plane(
     capture: &SerialCapture,
     config: &Config,
     lab: &LabConfig,
+    clients: &ConnectedClients,
 ) -> Result<TrafficReport> {
     match &config.traffic {
         AccessPointTraffic::None => Ok(TrafficReport::None),
@@ -469,6 +595,7 @@ fn qualify_data_plane(
             capture,
             config,
             lab,
+            clients,
             UdpWorkload {
                 direction: *direction,
                 duration: Duration::from_secs(u64::from(*duration_seconds)),
@@ -502,6 +629,7 @@ fn qualify_udp(
     capture: &SerialCapture,
     config: &Config,
     lab: &LabConfig,
+    clients: &ConnectedClients,
     workload: UdpWorkload,
 ) -> Result<TrafficReport> {
     let UdpWorkload {
@@ -515,7 +643,17 @@ fn qualify_udp(
     let target = lab.access_point.target_address();
     let host = lab.access_point.client_address();
     if rx_rate_bps.is_some() {
-        probe_udp_rx_ready(capture, target, UDP_RX_PORT, config.timeout)?;
+        let openwrt_probe = clients
+            .openwrt_primary()
+            .map(|client| client.spawn_udp_rx_probe(target, UDP_RX_PORT));
+        let readiness = probe_udp_rx_ready(capture, target, UDP_RX_PORT, config.timeout);
+        if let Some(probe) = openwrt_probe {
+            let result = probe
+                .join()
+                .map_err(|_| "OpenWrt UDP readiness probe thread panicked")?;
+            result.map_err(|error| -> Box<dyn std::error::Error> { error.into() })?;
+        }
+        readiness?;
     }
     let socket = if tx_rate_bps.is_some() {
         let socket = UdpSocket::bind(SocketAddrV4::new(host, UDP_HOST_PORT))?;
@@ -556,20 +694,36 @@ fn qualify_udp(
         payload: payload_bytes,
     });
     let receive_duration = duration.saturating_add(Duration::from_secs(2));
-    let data_plane = match (send_config, socket) {
-        (Some(send_config), Some(socket)) => {
-            let sender = thread::spawn(move || send_udp(send_config).map_err(|e| e.to_string()));
-            let received = receive_bursts(&socket, target, receive_duration);
-            let sent = sender
-                .join()
-                .map_err(|_| "AP UDP sender thread panicked")??;
-            Ok((Some(sent), Some(received?)))
+    let data_plane = if let Some(openwrt) = clients.openwrt_primary() {
+        match (rx_rate_bps, socket) {
+            (Some(rate), None) => openwrt
+                .send_udp(target, UDP_RX_PORT, rate, duration, payload_bytes)
+                .map(|sent| {
+                    (
+                        Some(openwrt_udp_transmission(sent, duration)),
+                        None,
+                        Some(sent),
+                    )
+                }),
+            _ => Err("OpenWrt AP client accepts only an RX-only UDP workload".into()),
         }
-        (Some(send_config), None) => send_udp(send_config).map(|sent| (Some(sent), None)),
-        (None, Some(socket)) => receive_bursts(&socket, target, receive_duration)
-            .map(|received| (None, Some(received)))
-            .map_err(Into::into),
-        (None, None) => Err("AP UDP workload has no data direction".into()),
+    } else {
+        match (send_config, socket) {
+            (Some(send_config), Some(socket)) => {
+                let sender =
+                    thread::spawn(move || send_udp(send_config).map_err(|e| e.to_string()));
+                let received = receive_bursts(&socket, target, receive_duration);
+                let sent = sender
+                    .join()
+                    .map_err(|_| "AP UDP sender thread panicked")??;
+                Ok((Some(sent), Some(received?), None))
+            }
+            (Some(send_config), None) => send_udp(send_config).map(|sent| (Some(sent), None, None)),
+            (None, Some(socket)) => receive_bursts(&socket, target, receive_duration)
+                .map(|received| (None, Some(received), None))
+                .map_err(Into::into),
+            (None, None) => Err("AP UDP workload has no data direction".into()),
+        }
     };
 
     let structured = capture.wait_for_session(session, config.timeout);
@@ -577,7 +731,7 @@ fn qualify_udp(
         .as_ref()
         .map(|_| capture.acknowledge_session(session))
         .unwrap_or(Ok(()));
-    let (host_tx, host_rx) =
+    let (host_tx, host_rx, openwrt_tx) =
         data_plane.map_err(|error| format!("AP UDP host path failed: {error}"))?;
     let structured = structured.map_err(|error| format!("AP UDP target failed: {error}"))?;
     acknowledgement?;
@@ -596,7 +750,33 @@ fn qualify_udp(
         report.tx_bytes = host_received.bytes;
         report.tx_units = host_received.datagrams;
     }
-    validate_rate_criteria(&report, &config.criteria)?;
+    validate_rate_criteria(&report, &config.criteria).map_err(|error| {
+        let source = host_tx.map(|host| {
+            format!(
+                "host UDP source={}bps datagrams={} maximum_lateness_us={} maximum_catch_up_datagrams={} deadline_resets={}",
+                host.throughput_bps(),
+                host.datagrams,
+                host.maximum_lateness_us(),
+                host.maximum_catch_up_datagrams,
+                host.deadline_resets,
+            )
+        });
+        let openwrt = openwrt_tx.map(|source| {
+            format!(
+                "OpenWrt station tx_packets={} tx_retries={} tx_failed={} radio_rx_fcs_errors={}",
+                source.station_tx_packets,
+                source.station_tx_retries,
+                source.station_tx_failed,
+                source.radio_rx_fcs_errors,
+            )
+        });
+        match (source, openwrt) {
+            (Some(source), Some(openwrt)) => format!("{error}; {source}; {openwrt}"),
+            (Some(source), None) => format!("{error}; {source}"),
+            (None, Some(openwrt)) => format!("{error}; {openwrt}"),
+            (None, None) => error.to_string(),
+        }
+    })?;
     Ok(TrafficReport::Udp(report))
 }
 
@@ -929,6 +1109,23 @@ fn session_report(direction: Direction, evidence: &SessionEvidence) -> SessionRe
     }
 }
 
+fn openwrt_udp_transmission(
+    source: OpenWrtUdpTransmission,
+    requested_duration: Duration,
+) -> UdpTransmission {
+    UdpTransmission {
+        bytes: source.bytes,
+        datagrams: source.datagrams,
+        // The remote process setup belongs outside the offered traffic
+        // interval reported by iperf. Use the scenario-owned duration rather
+        // than the encompassing SSH wall clock.
+        elapsed: requested_duration,
+        maximum_lateness: Duration::ZERO,
+        maximum_catch_up_datagrams: 1,
+        deadline_resets: 0,
+    }
+}
+
 fn validate_rate_criteria(report: &SessionReport, criteria: &Criteria) -> Result<()> {
     if report.elapsed_micros == 0 {
         return Err("AP transport reported zero elapsed time".into());
@@ -956,6 +1153,14 @@ fn validate_rate_criteria(report: &SessionReport, criteria: &Criteria) -> Result
             bitrate(report.tx_bytes)
         )
         .into());
+    }
+    if let Some(minimum) = criteria.minimum_combined_bps {
+        let combined = bitrate(report.rx_bytes).saturating_add(bitrate(report.tx_bytes));
+        if combined < u128::from(minimum) {
+            return Err(
+                format!("AP combined bitrate {combined} is below required {minimum}").into(),
+            );
+        }
     }
     Ok(())
 }
@@ -1282,5 +1487,55 @@ mod tests {
                 .unwrap(),
             1_000
         );
+    }
+
+    #[test]
+    fn ap_rate_gate_checks_combined_bidirectional_throughput() {
+        let report = SessionReport {
+            direction: Direction::Bidirectional,
+            rx_bytes: 2_000_000,
+            tx_bytes: 2_000_000,
+            rx_units: 0,
+            tx_units: 0,
+            elapsed_micros: 1_000_000,
+        };
+        let mut criteria = Criteria {
+            minimum_combined_bps: Some(32_000_000),
+            ..Criteria::default()
+        };
+        assert!(validate_rate_criteria(&report, &criteria).is_ok());
+        criteria.minimum_combined_bps = Some(32_000_001);
+        assert!(validate_rate_criteria(&report, &criteria).is_err());
+    }
+
+    #[test]
+    fn ap_ht40_mcs7_gate_is_directional_and_fails_closed() {
+        let link = Some(LinkExpectation {
+            phy: PhyExpectation::Ht40,
+            minimum_mcs: Some(7),
+        });
+        let rx = AccessPointTraffic::Udp {
+            direction: Direction::Rx,
+            duration_seconds: 1,
+            rx_rate_bps: Some(1),
+            tx_rate_bps: None,
+            payload_bytes: 1,
+        };
+        let tx = AccessPointTraffic::Udp {
+            direction: Direction::Tx,
+            duration_seconds: 1,
+            rx_rate_bps: None,
+            tx_rate_bps: Some(1),
+            payload_bytes: 1,
+        };
+        let mut observed = open_esp_radio_hil_protocol::WifiAccessPointEvidence::default();
+        assert!(validate_mcs_evidence(&rx, link, &observed).is_err());
+        observed.rx_ht_data_frames = 1;
+        observed.rx_ht40_mcs_frames[7] = 1;
+        assert!(validate_mcs_evidence(&rx, link, &observed).is_ok());
+        assert!(validate_mcs_evidence(&tx, link, &observed).is_err());
+        observed.tx_ht_aggregates = 1;
+        observed.tx_ht40_mcs7_aggregates = 1;
+        assert!(validate_mcs_evidence(&tx, link, &observed).is_ok());
     }
 }

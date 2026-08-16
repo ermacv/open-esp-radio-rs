@@ -15,7 +15,7 @@ use embassy_sync::channel::{Sender, TrySendError};
 use open_esp_radio_embassy_net::RawMutex;
 use open_esp_radio_esp32s31_wifi_dma::rx_storage::{RxDmaBuffer, RxDmaStorage};
 use open_esp_radio_esp32s31_wifi_mac::{
-    rx::{RxDma, RxRingError, RxRingHalted, RxRingLive, RxRingStopped},
+    rx::{RxDescriptorSnapshot, RxDma, RxRingError, RxRingHalted, RxRingLive, RxRingStopped},
     rx_pool::{
         RxDmaDeferredStageUnitOutcome, RxStageError, RxStagePool, RxStageTransactionError,
         VENDOR_LARGE_RX_PAYLOAD_CAPACITY, VENDOR_LARGE_RX_SLOT_COUNT,
@@ -55,7 +55,7 @@ pub type Esp32s31RxDmaStorage<
 ///
 /// The policy never receives a descriptor pointer, payload view or ring
 /// capability. It can narrow the admitted payload length, but ownership and
-/// descriptor reclaim remain exclusively inside [`Esp32s31ConnectedRx`].
+/// descriptor reclaim remain exclusively inside [`Esp32s31StagedRxProducer`].
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Esp32s31RxCompletedUnit {
     pub head_index: usize,
@@ -73,6 +73,21 @@ pub enum Esp32s31RxIngressObservation {
     },
     /// The copied unit was published into the independent staging queue.
     Staged(Esp32s31RxCompletedUnit),
+}
+
+/// Cumulative ownership progress of one live staged-RX producer epoch.
+///
+/// These counters describe real DMA units accepted by the common producer;
+/// they do not infer 802.11 protocol meaning. Role integrations may snapshot
+/// them to attribute scheduler latency without observing descriptor pointers.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct Esp32s31StagedRxProducerReport {
+    pub completed_units: u32,
+    pub completed_descriptors: u32,
+    pub staged_units: u32,
+    pub staged_bytes: u32,
+    pub discarded_units: u32,
+    pub recycled_descriptors: u32,
 }
 
 /// Admission policy at the completed-DMA-unit/staging boundary.
@@ -114,7 +129,7 @@ pub struct FullRxStageAdmission;
 impl Esp32s31RxStageAdmissionPolicy for FullRxStageAdmission {}
 
 /// Complete production RX owner for one running descriptor-ring epoch.
-pub struct Esp32s31ConnectedRx<
+pub struct Esp32s31StagedRxProducer<
     'storage,
     'pool,
     'queue,
@@ -136,6 +151,7 @@ pub struct Esp32s31ConnectedRx<
     delay: D,
     pipeline_observer: Option<&'pool dyn RxPipelineObserver>,
     admission: P,
+    report: Esp32s31StagedRxProducerReport,
 }
 
 /// Connected RX resources after the DMA walker is confirmed stopped.
@@ -222,8 +238,11 @@ pub struct Esp32s31PreparedRx<
     pipeline_observer: Option<&'pool dyn RxPipelineObserver>,
 }
 
+mod epoch;
 mod lifecycle;
 mod service;
+
+pub use epoch::Esp32s31StagedRxEpoch;
 
 #[cfg(test)]
 mod tests;

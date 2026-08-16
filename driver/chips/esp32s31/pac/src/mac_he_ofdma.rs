@@ -218,6 +218,10 @@ pub struct MacHeTriggerRxDiagnostics {
     pub cbw40_packet_count: u8,
     pub cbw80_packet_count: u8,
     pub qos_null_append_packet_count: u8,
+    pub ax_match_bssid1: bool,
+    pub ax_match_bssid0: bool,
+    pub bss_color_valid: bool,
+    pub rx_ampdu_auto_ack_valid: bool,
 }
 
 /// Non-latched hardware state for the HE sounding/feedback sequence.
@@ -765,6 +769,10 @@ impl RadioRegisters {
             cbw40_packet_count: counts.cbw40_packet_count().bits(),
             cbw80_packet_count: counts.cbw80_packet_count().bits(),
             qos_null_append_packet_count: counts.qos_null_append_packet_count().bits(),
+            ax_match_bssid1: counts.ax_match_bssid1().bit(),
+            ax_match_bssid0: counts.ax_match_bssid0().bit(),
+            bss_color_valid: counts.bss_color_valid().bit(),
+            rx_ampdu_auto_ack_valid: counts.rx_ampdu_auto_ack_valid().bit(),
         }
     }
 

@@ -123,6 +123,54 @@ pub struct MacRxDecodeErrorStatistics {
     pub nrx_he_sig_a_crc: u16,
 }
 
+/// Wrapping deltas for the ten-bit decoder counters.
+///
+/// These counters wrap at `0x400`, not at the Rust storage width. Keeping the
+/// arithmetic beside the recovered register representation prevents HIL
+/// consumers from accidentally interpreting a wrap as roughly 65k errors.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct MacRxDecodeErrorStatisticsDelta {
+    pub brx_agc: u16,
+    pub brx: u16,
+    pub nrx: u16,
+    pub nrx_abort: u16,
+    pub nrx_agc_exit: u16,
+    pub nrx_baseband_off: u16,
+    pub nrx_fdm_watchdog: u16,
+    pub nrx_restart: u16,
+    pub nrx_service: u16,
+    pub nrx_tx_over: u16,
+    pub nrx_unsupported: u16,
+    pub nrx_he_format: u16,
+    pub nrx_ht_sig: u16,
+    pub nrx_he_unsupported: u16,
+    pub nrx_he_sig_a_crc: u16,
+}
+
+impl MacRxDecodeErrorStatistics {
+    pub fn wrapping_delta_since(self, earlier: Self) -> MacRxDecodeErrorStatisticsDelta {
+        const MASK: u16 = 0x03ff;
+        let delta = |current: u16, previous: u16| current.wrapping_sub(previous) & MASK;
+        MacRxDecodeErrorStatisticsDelta {
+            brx_agc: delta(self.brx_agc, earlier.brx_agc),
+            brx: delta(self.brx, earlier.brx),
+            nrx: delta(self.nrx, earlier.nrx),
+            nrx_abort: delta(self.nrx_abort, earlier.nrx_abort),
+            nrx_agc_exit: delta(self.nrx_agc_exit, earlier.nrx_agc_exit),
+            nrx_baseband_off: delta(self.nrx_baseband_off, earlier.nrx_baseband_off),
+            nrx_fdm_watchdog: delta(self.nrx_fdm_watchdog, earlier.nrx_fdm_watchdog),
+            nrx_restart: delta(self.nrx_restart, earlier.nrx_restart),
+            nrx_service: delta(self.nrx_service, earlier.nrx_service),
+            nrx_tx_over: delta(self.nrx_tx_over, earlier.nrx_tx_over),
+            nrx_unsupported: delta(self.nrx_unsupported, earlier.nrx_unsupported),
+            nrx_he_format: delta(self.nrx_he_format, earlier.nrx_he_format),
+            nrx_ht_sig: delta(self.nrx_ht_sig, earlier.nrx_ht_sig),
+            nrx_he_unsupported: delta(self.nrx_he_unsupported, earlier.nrx_he_unsupported),
+            nrx_he_sig_a_crc: delta(self.nrx_he_sig_a_crc, earlier.nrx_he_sig_a_crc),
+        }
+    }
+}
+
 /// MAC/baseband hang counters exposed by the same complete decoder.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct MacRxHangStatistics {
@@ -130,6 +178,25 @@ pub struct MacRxHangStatistics {
     pub tx: u8,
     pub rx_tx_hang: u32,
     pub rx_tx_panic: u32,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct MacRxHangStatisticsDelta {
+    pub rx: u8,
+    pub tx: u8,
+    pub rx_tx_hang: u32,
+    pub rx_tx_panic: u32,
+}
+
+impl MacRxHangStatistics {
+    pub fn wrapping_delta_since(self, earlier: Self) -> MacRxHangStatisticsDelta {
+        MacRxHangStatisticsDelta {
+            rx: self.rx.wrapping_sub(earlier.rx),
+            tx: self.tx.wrapping_sub(earlier.tx),
+            rx_tx_hang: self.rx_tx_hang.wrapping_sub(earlier.rx_tx_hang),
+            rx_tx_panic: self.rx_tx_panic.wrapping_sub(earlier.rx_tx_panic),
+        }
+    }
 }
 
 /// One allocation-free view of every field printed by `dbg_read_rx_count`.
@@ -251,7 +318,10 @@ impl RadioRegisters {
 
 #[cfg(test)]
 mod tests {
-    use super::{MacRxPrimaryStatistics, MacRxPrimaryStatisticsDelta};
+    use super::{
+        MacRxDecodeErrorStatistics, MacRxDecodeErrorStatisticsDelta, MacRxHangStatistics,
+        MacRxHangStatisticsDelta, MacRxPrimaryStatistics, MacRxPrimaryStatisticsDelta,
+    };
 
     fn primary(mpdu_count: u16, buffer_full: u16) -> MacRxPrimaryStatistics {
         MacRxPrimaryStatistics {
@@ -302,6 +372,65 @@ mod tests {
                 fcs_error: 7,
                 buffer_full: 3,
                 ..MacRxPrimaryStatisticsDelta::default()
+            }
+        );
+    }
+
+    #[test]
+    fn decode_counter_delta_wraps_at_ten_bits() {
+        let earlier = MacRxDecodeErrorStatistics {
+            brx_agc: 0x03fe,
+            brx: 4,
+            nrx: 0,
+            nrx_abort: 0,
+            nrx_agc_exit: 0,
+            nrx_baseband_off: 0,
+            nrx_fdm_watchdog: 0,
+            nrx_restart: 0,
+            nrx_service: 0,
+            nrx_tx_over: 0,
+            nrx_unsupported: 0,
+            nrx_he_format: 0,
+            nrx_ht_sig: 0,
+            nrx_he_unsupported: 0,
+            nrx_he_sig_a_crc: 0,
+        };
+        let mut current = earlier;
+        current.brx_agc = 3;
+        current.brx = 9;
+
+        assert_eq!(
+            current.wrapping_delta_since(earlier),
+            MacRxDecodeErrorStatisticsDelta {
+                brx_agc: 5,
+                brx: 5,
+                ..MacRxDecodeErrorStatisticsDelta::default()
+            }
+        );
+    }
+
+    #[test]
+    fn hang_counter_delta_uses_each_hardware_storage_width() {
+        let earlier = MacRxHangStatistics {
+            rx: 0xff,
+            tx: 2,
+            rx_tx_hang: u32::MAX,
+            rx_tx_panic: 5,
+        };
+        let current = MacRxHangStatistics {
+            rx: 1,
+            tx: 7,
+            rx_tx_hang: 2,
+            rx_tx_panic: 9,
+        };
+
+        assert_eq!(
+            current.wrapping_delta_since(earlier),
+            MacRxHangStatisticsDelta {
+                rx: 2,
+                tx: 5,
+                rx_tx_hang: 3,
+                rx_tx_panic: 4,
             }
         );
     }

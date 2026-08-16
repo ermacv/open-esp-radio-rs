@@ -305,7 +305,7 @@ mod tests {
         assert!(
             bytes[..len]
                 .windows(4)
-                .any(|window| window == [45, 26, 0x62, 0])
+                .any(|window| window == [45, 26, 0x6e, 0x10])
         );
         assert!(
             bytes[..len]

@@ -191,6 +191,15 @@ static AP_NETWORK_TX_ARP_REPLIES: AtomicU32 = AtomicU32::new(0);
 static AP_NETWORK_TX_REJECTED_NO_PEER: AtomicU32 = AtomicU32::new(0);
 static AP_NETWORK_TX_REJECTED_DESTINATION: AtomicU32 = AtomicU32::new(0);
 static AP_NETWORK_TX_FRAMES_REJECTED: AtomicU32 = AtomicU32::new(0);
+static AP_RX_HT_DATA_FRAMES: AtomicU32 = AtomicU32::new(0);
+static AP_RX_HT_AMPDU_DATA_FRAMES: AtomicU32 = AtomicU32::new(0);
+static AP_RX_RSSI_SAMPLES: AtomicU32 = AtomicU32::new(0);
+static AP_RX_RSSI_SUM_DBM: AtomicU32 = AtomicU32::new(0);
+static AP_RX_RSSI_MIN_DBM: AtomicU32 = AtomicU32::new(0);
+static AP_RX_RSSI_MAX_DBM: AtomicU32 = AtomicU32::new(0);
+static AP_RX_HT40_MCS_FRAMES: [AtomicU32; 8] = [const { AtomicU32::new(0) }; 8];
+static AP_TX_HT_AGGREGATES: AtomicU32 = AtomicU32::new(0);
+static AP_TX_HT40_MCS7_AGGREGATES: AtomicU32 = AtomicU32::new(0);
 static AP_DATA_FRAMES_TRANSMITTED: AtomicU32 = AtomicU32::new(0);
 static AP_DATA_TX_ATTEMPTS: AtomicU32 = AtomicU32::new(0);
 static AP_DATA_TX_RETRIED_FRAMES: AtomicU32 = AtomicU32::new(0);
@@ -314,6 +323,20 @@ fn observe_access_point(observation: Esp32s31AccessPointObservation) {
         Ordering::Release,
     );
     AP_NETWORK_TX_FRAMES_REJECTED.store(observation.network_tx_frames_rejected, Ordering::Release);
+    AP_RX_HT_DATA_FRAMES.store(observation.rx_ht_data_frames, Ordering::Release);
+    AP_RX_HT_AMPDU_DATA_FRAMES.store(observation.rx_ht_ampdu_data_frames, Ordering::Release);
+    AP_RX_RSSI_SAMPLES.store(observation.rx_rssi_samples, Ordering::Release);
+    AP_RX_RSSI_SUM_DBM.store(observation.rx_rssi_sum_dbm as u32, Ordering::Release);
+    AP_RX_RSSI_MIN_DBM.store(observation.rx_rssi_min_dbm as u8 as u32, Ordering::Release);
+    AP_RX_RSSI_MAX_DBM.store(observation.rx_rssi_max_dbm as u8 as u32, Ordering::Release);
+    for (target, observed) in AP_RX_HT40_MCS_FRAMES
+        .iter()
+        .zip(observation.rx_ht40_mcs_frames)
+    {
+        target.store(observed, Ordering::Release);
+    }
+    AP_TX_HT_AGGREGATES.store(observation.tx_ht_aggregates, Ordering::Release);
+    AP_TX_HT40_MCS7_AGGREGATES.store(observation.tx_ht40_mcs7_aggregates, Ordering::Release);
     AP_DATA_FRAMES_TRANSMITTED.store(observation.data_frames_transmitted, Ordering::Release);
     AP_DATA_TX_ATTEMPTS.store(observation.data_tx_attempts, Ordering::Release);
     AP_DATA_TX_RETRIED_FRAMES.store(observation.data_tx_retried_frames, Ordering::Release);
@@ -440,6 +463,17 @@ fn access_point_evidence(
         network_tx_rejected_no_peer: AP_NETWORK_TX_REJECTED_NO_PEER.load(Ordering::Acquire),
         network_tx_rejected_destination: AP_NETWORK_TX_REJECTED_DESTINATION.load(Ordering::Acquire),
         network_tx_frames_rejected: AP_NETWORK_TX_FRAMES_REJECTED.load(Ordering::Acquire),
+        rx_ht_data_frames: AP_RX_HT_DATA_FRAMES.load(Ordering::Acquire),
+        rx_ht_ampdu_data_frames: AP_RX_HT_AMPDU_DATA_FRAMES.load(Ordering::Acquire),
+        rx_rssi_samples: AP_RX_RSSI_SAMPLES.load(Ordering::Acquire),
+        rx_rssi_sum_dbm: AP_RX_RSSI_SUM_DBM.load(Ordering::Acquire) as i32,
+        rx_rssi_min_dbm: AP_RX_RSSI_MIN_DBM.load(Ordering::Acquire) as u8 as i8,
+        rx_rssi_max_dbm: AP_RX_RSSI_MAX_DBM.load(Ordering::Acquire) as u8 as i8,
+        rx_ht40_mcs_frames: core::array::from_fn(|index| {
+            AP_RX_HT40_MCS_FRAMES[index].load(Ordering::Acquire)
+        }),
+        tx_ht_aggregates: AP_TX_HT_AGGREGATES.load(Ordering::Acquire),
+        tx_ht40_mcs7_aggregates: AP_TX_HT40_MCS7_AGGREGATES.load(Ordering::Acquire),
         data_frames_transmitted: AP_DATA_FRAMES_TRANSMITTED.load(Ordering::Acquire),
         data_tx_attempts: AP_DATA_TX_ATTEMPTS.load(Ordering::Acquire),
         data_tx_retried_frames: AP_DATA_TX_RETRIED_FRAMES.load(Ordering::Acquire),

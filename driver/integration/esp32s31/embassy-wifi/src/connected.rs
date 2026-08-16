@@ -79,7 +79,7 @@ use open_esp_radio_esp32s31_wifi_embassy::{
         ESP32S31_DEFAULT_RX_STAGE_SLOT_COUNT as RX_STAGE_SLOT_COUNT,
         ESP32S31_DEFAULT_TX_AMPDU_FRAME_COUNT as TX_AMPDU_FRAME_COUNT,
     },
-    rx_dma_service::{Esp32s31ConnectedRx, Esp32s31RxEpochResources, Esp32s31StoppedRx},
+    rx_dma_service::{Esp32s31StagedRxProducer, Esp32s31RxEpochResources, Esp32s31StoppedRx},
     rx_reorder::{RX_REORDER_BACKING_SLOT_COUNT, RxReorderCommandResources, RxReorderFrameStorage},
     sta_tx_epoch::Esp32s31StaTxEpochExt,
     station::{
@@ -161,7 +161,7 @@ type ConnectedRxProtocolStoppedOwner = Esp32s31ConnectedRxProtocolStopped<
     RX_STAGE_SLOT_COUNT,
     RX_REORDER_BACKING_SLOT_COUNT,
 >;
-type ConnectedLiveRx = Esp32s31ConnectedRx<
+type ConnectedLiveRx = Esp32s31StagedRxProducer<
     'static,
     'static,
     'static,
@@ -174,6 +174,33 @@ type ConnectedLiveRx = Esp32s31ConnectedRx<
     RX_BUFFER_SIZE,
     { RX_BUFFER_SIZE + 4 },
 >;
+pub(super) type ProductionAccessPointRxPipeline =
+    open_esp_radio_esp32s31_wifi_embassy::access_point::Esp32s31AccessPointRxPipeline<
+        'static,
+        'static,
+        'static,
+        EmbassyEsp32s31RxDmaObservationDelay,
+        CriticalSectionRawMutex,
+        RX_STAGE_SLOT_COUNT,
+        RX_DESCRIPTOR_COUNT,
+        RX_STAGE_CAPACITY,
+        RX_STAGE_SLOT_COUNT,
+        RX_BUFFER_SIZE,
+        { RX_BUFFER_SIZE + 4 },
+    >;
+
+pub(super) fn access_point_rx_pipeline(
+    ring: open_esp_radio::esp32s31::wifi::mac::rx::RxRingHalted<'static, RX_DESCRIPTOR_COUNT>,
+    storage: &'static RxStorage,
+) -> ProductionAccessPointRxPipeline {
+    open_esp_radio_esp32s31_wifi_embassy::access_point::Esp32s31AccessPointRxPipeline::from_halted(
+        ring,
+        storage,
+        &RX_STAGE_POOL,
+        &STAGED_RX_QUEUE,
+        EmbassyEsp32s31RxDmaObservationDelay,
+    )
+}
 
 #[cfg(feature = "qualification")]
 fn log_rx_ring_topology(label: &str, rx: &ConnectedLiveRx) {

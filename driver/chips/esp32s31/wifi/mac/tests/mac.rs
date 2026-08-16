@@ -4616,7 +4616,7 @@ fn staged_rx_metadata_decodes_only_instruction_proved_s31_fields() {
 #[test]
 fn normalized_ht_rx_metadata_uses_the_direct_ht_sig_aggregation_bit() {
     let mut metadata = [0_u8; 0x40];
-    metadata[4..8].copy_from_slice(&(1_u32 << 27).to_le_bytes());
+    metadata[4..8].copy_from_slice(&(7_u32 | (1 << 7) | (1 << 27) | (1 << 31)).to_le_bytes());
     metadata[0x1c] = 11;
     metadata[0x1f] = 0;
     metadata[0x25] = 2 << 4;
@@ -4624,6 +4624,14 @@ fn normalized_ht_rx_metadata_uses_the_direct_ht_sig_aggregation_bit() {
     let decoded = decode_normalized_rx_metadata(&metadata).unwrap();
     assert_eq!(decoded.s_mpdu, MacRxEvidence::HardwareObserved(false));
     assert_eq!(decoded.ampdu, MacRxEvidence::HardwareObserved(true));
+    let MacRxEvidence::HardwareObserved(phy) = decoded.rate else {
+        panic!("HT PHY metadata must remain hardware-observed");
+    };
+    let signal = phy.ht_signal().unwrap();
+    assert_eq!(signal.mcs, 7);
+    assert_eq!(signal.channel_width_mhz, 40);
+    assert!(signal.aggregation);
+    assert!(signal.short_guard_interval);
 
     metadata[4..8].fill(0);
     assert_eq!(

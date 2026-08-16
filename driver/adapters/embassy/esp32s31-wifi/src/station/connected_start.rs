@@ -16,7 +16,7 @@ use open_esp_radio_esp32s31_hal::radio_arena::{
 use open_esp_radio_esp32s31_wifi::cooperative_hardware::CooperativeRadioHardware;
 
 use crate::{
-    rx_dma_service::{Esp32s31ConnectedRx, Esp32s31RxEpochResources},
+    rx_dma_service::{Esp32s31RxEpochResources, Esp32s31StagedRxProducer},
     rx_frontier::{Esp32s31RxFrontier, Esp32s31RxFrontierDelay, Esp32s31RxFrontierError},
     station_epoch::{Esp32s31ReconnectedStaEpoch, Esp32s31ReconnectedStaEpochParts},
 };
@@ -142,7 +142,7 @@ impl<
 where
     PD: Esp32s31RxFrontierDelay,
 {
-    type Connected = Esp32s31ConnectedRx<
+    type Connected = Esp32s31StagedRxProducer<
         'storage,
         'pool,
         'queue,

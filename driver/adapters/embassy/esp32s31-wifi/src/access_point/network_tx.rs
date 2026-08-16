@@ -59,7 +59,7 @@ where
 {
     #[allow(clippy::too_many_arguments)]
     pub(super) async fn start<
-        D,
+        RX,
         P,
         E,
         T,
@@ -74,7 +74,7 @@ where
             '_,
             '_,
             '_,
-            D,
+            RX,
             P,
             E,
             T,
@@ -95,7 +95,6 @@ where
         >,
     ) -> Result<WifiTxProgress, Esp32s31AccessPointWdevError>
     where
-        D: Esp32s31RxFrontierDelay,
         P: WifiTxPowerProfile,
         E: WifiTxEntropy,
         T: WifiTxTimer,
@@ -219,11 +218,11 @@ where
             aggregate
                 .publish(ordinary, hardware)
                 .map_err(Esp32s31AccessPointWdevError::Aggregate)?;
-            self.deadline_micros = Some(
-                ordinary
-                    .now_micros()
-                    .saturating_add(ordinary.publication_timeout_micros()),
-            );
+            let deadline_micros = ordinary
+                .now_micros()
+                .saturating_add(ordinary.publication_timeout_micros());
+            self.deadline_micros = Some(deadline_micros);
+            control.observe_ht_aggregate(rate);
             return Ok(WifiTxProgress::Pending);
         }
 
@@ -233,7 +232,7 @@ where
     }
 
     pub(super) async fn wait_deadline<
-        D,
+        RX,
         P,
         E,
         T,
@@ -247,7 +246,7 @@ where
             '_,
             '_,
             '_,
-            D,
+            RX,
             P,
             E,
             T,
@@ -257,7 +256,6 @@ where
             TX_BUFFER_SIZE,
         >,
     ) where
-        D: Esp32s31RxFrontierDelay,
         P: WifiTxPowerProfile,
         E: WifiTxEntropy,
         T: WifiTxTimer,
@@ -274,7 +272,7 @@ where
     }
 
     pub(super) async fn service<
-        D,
+        RX,
         P,
         E,
         T,
@@ -289,7 +287,7 @@ where
             '_,
             '_,
             '_,
-            D,
+            RX,
             P,
             E,
             T,
@@ -302,7 +300,6 @@ where
         wake: WifiTxWake,
     ) -> Result<WifiTxProgress, Esp32s31AccessPointWdevError>
     where
-        D: Esp32s31RxFrontierDelay,
         P: WifiTxPowerProfile,
         E: WifiTxEntropy,
         T: WifiTxTimer,

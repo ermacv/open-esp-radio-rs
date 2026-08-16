@@ -87,6 +87,13 @@ max = 7
 sources = ["BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK"]
 
 [[bounded-domains]]
+name = "MacExtraSoftApRxBlockAckEntryIndex"
+description = "One of the eight extra-SoftAP receive BlockAck entries selected through the shared staging window."
+min = 0
+max = 7
+sources = ["BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK"]
+
+[[bounded-domains]]
 name = "MacRxBlockAckTid"
 description = "Four-bit traffic identifier encoded by the reviewed receive BlockAck transaction."
 min = 0
@@ -793,6 +800,27 @@ fields = ["ENABLE", "TID", "WRITE", "VALID"]
 sources = ["BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK"]
 
 [[zero-based-field-writes]]
+name = "extra_softap_rx_block_ack_peer_head"
+peripheral = "WIFI_MAC_RX_DMA"
+register = "EXTRA_SOFTAP_RX_BLOCK_ACK_PEER_HEAD"
+fields = ["PEER_ADDRESS_HEAD"]
+sources = ["BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK"]
+
+[[zero-based-field-writes]]
+name = "extra_softap_rx_block_ack_peer_tail_and_policy"
+peripheral = "WIFI_MAC_RX_DMA"
+register = "EXTRA_SOFTAP_RX_BLOCK_ACK_PEER_TAIL_AND_POLICY"
+fields = ["PEER_ADDRESS_TAIL", "INTERFACE", "WINDOW"]
+sources = ["BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK"]
+
+[[zero-based-field-writes]]
+name = "extra_softap_rx_block_ack_active_control"
+peripheral = "WIFI_MAC_RX_DMA"
+register = "EXTRA_SOFTAP_RX_BLOCK_ACK_CONTROL"
+fields = ["ENABLE", "INDEX", "TID", "WRITE", "VALID"]
+sources = ["BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK"]
+
+[[zero-based-field-writes]]
 name = "phy_i2c_command_memory"
 peripheral = "PHY_I2C_COMMAND_RAM"
 register = "COMMAND_MEMORY%s"
@@ -955,6 +983,18 @@ sources = ["BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK"]
 name = "clear_rx_block_ack_entry_control"
 peripheral = "WIFI_MAC_RX_DMA"
 register = "RX_BLOCK_ACK_ENTRY%s_CONTROL"
+sources = ["BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK"]
+
+[[zero-register-writes]]
+name = "clear_extra_softap_rx_block_ack_bitmap_low"
+peripheral = "WIFI_MAC_RX_DMA"
+register = "EXTRA_SOFTAP_RX_BLOCK_ACK_BITMAP_LOW"
+sources = ["BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK"]
+
+[[zero-register-writes]]
+name = "clear_extra_softap_rx_block_ack_bitmap_high"
+peripheral = "WIFI_MAC_RX_DMA"
+register = "EXTRA_SOFTAP_RX_BLOCK_ACK_BITMAP_HIGH"
 sources = ["BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK"]
 
 [[zero-register-writes]]

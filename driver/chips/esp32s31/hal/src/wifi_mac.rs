@@ -7,14 +7,17 @@
 use core::cell::RefMut;
 
 pub use crate::types::{
-    MacApReceivePolicySnapshot, MacInterface, MacItwtClearIndex, MacKeyInstallOutcome, MacPti,
-    MacRoleReceivePolicy, MacRxDmaSnapshot, MacRxPrimaryStatistics, MacRxStatisticsSnapshot,
+    ExtraSoftApRxBlockAckEntrySnapshot, MacApReceivePolicySnapshot, MacInterface,
+    MacItwtClearIndex, MacKeyInstallOutcome, MacPti, MacRoleReceivePolicy,
+    MacRxDecodeErrorStatistics, MacRxDecodeErrorStatisticsDelta, MacRxDmaSnapshot,
+    MacRxHangStatistics, MacRxHangStatisticsDelta, MacRxPrimaryStatistics, MacRxStatisticsSnapshot,
     MacStaApReceivePlan, MacStaPolicyMode, MacStaReceivePolicySnapshot, MacTxPowerTable,
     MacTxPtiCount, MacTxPtiProgram, MacTxQueueIndex,
 };
 use crate::types::{
-    MacHe20PeerConfig, MacHe20PeerError, MacHeBeamformingReportProfile, MacHeErSuAckRateProfile,
-    MacHeTbLinkReservation, MacHeTbProgramError, MacHeTbTidLimit, MacHeTid,
+    MacExtraSoftApRxBlockAckEntryIndex, MacHe20PeerConfig, MacHe20PeerError,
+    MacHeBeamformingReportProfile, MacHeErSuAckRateProfile, MacHeTbLinkReservation,
+    MacHeTbProgramError, MacHeTbTidLimit, MacHeTid, MacHeTriggerRxDiagnostics,
     MacHeTriggerTxQueueSnapshot, MacHeTxProgram, MacHeTxVectorSnapshot,
     MacHtAmpduCompletionRegisters, MacHtTxProgram, MacKeyEntryIndex, MacLegacyTxProgram,
     MacRxBlockAckEntryIndex, MacRxBlockAckStartingSequence, MacRxBlockAckTid, MacRxBlockAckWindow,
@@ -572,6 +575,11 @@ impl<'registers> WifiMacHal<'registers> {
             .he_trigger_based_queue_snapshot(reservation)
     }
 
+    /// Observe the non-latched RX diagnostic word decoded by the reviewed PAC.
+    pub fn he_trigger_receive_diagnostics(&self) -> MacHeTriggerRxDiagnostics {
+        self.pac().he_trigger_receive_diagnostics()
+    }
+
     pub fn rx_buffer_full_count(&mut self) -> u16 {
         self.pac_mut().mac_rx_buffer_full_count()
     }
@@ -666,6 +674,50 @@ impl<'registers> WifiMacHal<'registers> {
 
     pub fn delete_rx_block_ack_entry(&mut self, index: MacRxBlockAckEntryIndex) {
         self.pac_mut().delete_rx_block_ack_entry(index);
+    }
+
+    pub fn program_extra_softap_rx_block_ack_entry(
+        &mut self,
+        index: MacExtraSoftApRxBlockAckEntryIndex,
+        interface: MacInterface,
+        peer: [u8; 6],
+        tid: MacRxBlockAckTid,
+        starting_sequence: MacRxBlockAckStartingSequence,
+        window: MacRxBlockAckWindow,
+    ) -> bool {
+        self.pac_mut().program_extra_softap_rx_block_ack_entry(
+            index,
+            interface,
+            peer,
+            tid,
+            starting_sequence,
+            window,
+        )
+    }
+
+    pub fn delete_extra_softap_rx_block_ack_entry(
+        &mut self,
+        index: MacExtraSoftApRxBlockAckEntryIndex,
+    ) {
+        self.pac_mut().delete_extra_softap_rx_block_ack_entry(index);
+    }
+
+    pub fn reset_extra_softap_rx_block_ack_window(
+        &mut self,
+        index: MacExtraSoftApRxBlockAckEntryIndex,
+        starting_sequence: MacRxBlockAckStartingSequence,
+        window: MacRxBlockAckWindow,
+    ) {
+        self.pac_mut()
+            .reset_extra_softap_rx_block_ack_window(index, starting_sequence, window);
+    }
+
+    pub fn extra_softap_rx_block_ack_entry_snapshot(
+        &mut self,
+        index: MacExtraSoftApRxBlockAckEntryIndex,
+    ) -> ExtraSoftApRxBlockAckEntrySnapshot {
+        self.pac_mut()
+            .extra_softap_rx_block_ack_entry_snapshot(index)
     }
 
     pub fn set_he_trigger_based_tid_enabled(&mut self, tid: MacHeTid, enabled: bool) {

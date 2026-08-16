@@ -12127,6 +12127,12 @@
               <name>SEQUENCE</name>
               <bitOffset>0</bitOffset>
               <bitWidth>12</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>4095</maximum>
+                </range>
+              </writeConstraint>
             </field>
           </fields>
         </register>
@@ -12242,11 +12248,23 @@
               <name>INDEX</name>
               <bitOffset>5</bitOffset>
               <bitWidth>5</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>31</maximum>
+                </range>
+              </writeConstraint>
             </field>
             <field>
               <name>TID</name>
               <bitOffset>12</bitOffset>
               <bitWidth>4</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>15</maximum>
+                </range>
+              </writeConstraint>
             </field>
             <field>
               <name>WRITE</name>
@@ -12271,16 +12289,34 @@
               <name>PEER_ADDRESS_TAIL</name>
               <bitOffset>0</bitOffset>
               <bitWidth>16</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>65535</maximum>
+                </range>
+              </writeConstraint>
             </field>
             <field>
               <name>INTERFACE</name>
               <bitOffset>16</bitOffset>
               <bitWidth>2</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>3</maximum>
+                </range>
+              </writeConstraint>
             </field>
             <field>
               <name>WINDOW</name>
               <bitOffset>18</bitOffset>
               <bitWidth>7</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>127</maximum>
+                </range>
+              </writeConstraint>
             </field>
           </fields>
         </register>
@@ -12290,6 +12326,20 @@
           <addressOffset>0xEAC</addressOffset>
           <size>0x20</size>
           <access>read-write</access>
+          <fields>
+            <field>
+              <name>PEER_ADDRESS_HEAD</name>
+              <description>Peer MAC address bytes zero through three in little-endian order.</description>
+              <bitOffset>0</bitOffset>
+              <bitWidth>32</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>4294967295</maximum>
+                </range>
+              </writeConstraint>
+            </field>
+          </fields>
         </register>
         <register>
           <name>EXTRA_SOFTAP_RX_BLOCK_ACK_START_SEQUENCE</name>
@@ -12302,6 +12352,12 @@
               <name>SEQUENCE</name>
               <bitOffset>0</bitOffset>
               <bitWidth>12</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>4095</maximum>
+                </range>
+              </writeConstraint>
             </field>
           </fields>
         </register>

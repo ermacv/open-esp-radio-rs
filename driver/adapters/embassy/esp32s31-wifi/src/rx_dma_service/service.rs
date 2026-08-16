@@ -15,7 +15,7 @@ impl<
     const DMA_STORAGE_SIZE: usize,
     P,
 > WdevRxService<H>
-    for Esp32s31ConnectedRx<
+    for Esp32s31StagedRxProducer<
         'storage,
         'pool,
         'queue,
@@ -76,7 +76,10 @@ where
             let credits = pool_credits.min(queue_credits);
             let admission_budget = frontier.min(credits);
             let mut admitted = 0_usize;
+            let mut admitted_descriptors = 0_usize;
             let mut staged_bytes = 0_usize;
+            let mut staged_units = 0_usize;
+            let mut discarded_units = 0_usize;
             let mut remaining_descriptors = frontier_snapshot.descriptor_count;
 
             for _ in 0..admission_budget {
@@ -110,6 +113,7 @@ where
                     .checked_sub(unit_descriptor_count)
                     .ok_or(RxStageTransactionError::Ring(RxRingError::Corrupt))?;
                 admitted = admitted.saturating_add(1);
+                admitted_descriptors = admitted_descriptors.saturating_add(unit_descriptor_count);
                 let maximum_payload_length = self
                     .admission
                     .maximum_payload_length(unit_observation, STAGE_CAPACITY)
@@ -120,6 +124,7 @@ where
                 {
                     RxDmaDeferredStageUnitOutcome::Staged(frame) => frame,
                     RxDmaDeferredStageUnitOutcome::Discarded(error) => {
+                        discarded_units = discarded_units.saturating_add(1);
                         // Length is supplied by an untrusted receive unit. A
                         // malformed/FCS/oversize unit must not terminate the
                         // sole radio owner. It remains part of the same
@@ -145,6 +150,7 @@ where
                         continue;
                     }
                 };
+                staged_units = staged_units.saturating_add(1);
                 staged_bytes = staged_bytes.saturating_add(frame.length());
                 self.frames.try_send(frame).map_err(|error| match error {
                     TrySendError::Full(_) => RxStageTransactionError::Ring(RxRingError::Corrupt),
@@ -153,11 +159,10 @@ where
                     .observe(Esp32s31RxIngressObservation::Staged(unit_observation));
             }
 
-            if self
+            let recycled_descriptors = if let Some(append) = self
                 .storage
                 .recycle_observed_prefix_with_guard(&mut self.ring, hardware)
                 .map_err(RxStageTransactionError::Ring)?
-                .is_some()
             {
                 // The vendor append path does not yield between its reload
                 // doorbell and conditional BASE-repair suffix. Preserve that
@@ -172,7 +177,35 @@ where
                         micros: observer.elapsed_micros_since(started),
                     });
                 }
-            }
+                append.descriptor_count
+            } else {
+                0
+            };
+
+            self.report.completed_units = self
+                .report
+                .completed_units
+                .saturating_add(u32::try_from(admitted).unwrap_or(u32::MAX));
+            self.report.completed_descriptors = self
+                .report
+                .completed_descriptors
+                .saturating_add(u32::try_from(admitted_descriptors).unwrap_or(u32::MAX));
+            self.report.staged_units = self
+                .report
+                .staged_units
+                .saturating_add(u32::try_from(staged_units).unwrap_or(u32::MAX));
+            self.report.staged_bytes = self
+                .report
+                .staged_bytes
+                .saturating_add(u32::try_from(staged_bytes).unwrap_or(u32::MAX));
+            self.report.discarded_units = self
+                .report
+                .discarded_units
+                .saturating_add(u32::try_from(discarded_units).unwrap_or(u32::MAX));
+            self.report.recycled_descriptors = self
+                .report
+                .recycled_descriptors
+                .saturating_add(u32::try_from(recycled_descriptors).unwrap_or(u32::MAX));
 
             // A chained unit deliberately bounds one frontier scan. LAST may
             // already cover following complete units, so retain a cooperative

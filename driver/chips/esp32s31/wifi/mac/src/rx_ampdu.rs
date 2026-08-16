@@ -328,6 +328,21 @@ impl<const PEER_CAPACITY: usize> RxBlockAckSessions<PEER_CAPACITY> {
         self.maximum_window
     }
 
+    /// Clear every peer, pending request and active agreement while retaining
+    /// the integration-owned negotiated-window limit.
+    ///
+    /// Role transitions reuse the statically allocated session owner. The
+    /// resource profile, rather than the role implementation, owns how much
+    /// downstream reorder capacity is available; resetting an AP epoch must
+    /// therefore not silently restore the vendor maximum.
+    pub fn reset(&mut self) {
+        let maximum_window = self.maximum_window;
+        *self = Self {
+            maximum_window,
+            ..Self::new()
+        };
+    }
+
     /// Admit one parsed immediate ADDBA request into the shared pending bank.
     /// A newer request for the same peer/TID replaces the older unexecuted
     /// request without consuming another hardware-bank candidate.
@@ -1059,6 +1074,35 @@ mod tests {
 
         raw[PUBLIC_HEADER_SIZE + 22] |= 1;
         assert_eq!(rx_block_ack_mpdu_key(&raw, local, None), None);
+    }
+
+    #[test]
+    fn reset_clears_sessions_without_widening_the_integration_limit() {
+        let peer = [2, 0, 0, 0, 0, 1];
+        let mut sessions = RxBlockAckSessions::<1>::with_maximum_window(16).unwrap();
+        sessions
+            .offer(rx_request!(peer, 7, 0, true, 64, 0, 10))
+            .unwrap();
+        let activation = sessions
+            .begin_pending(MacInterface::AccessPoint)
+            .unwrap()
+            .unwrap();
+        sessions.commit(activation).unwrap();
+        assert!(sessions.snapshots().iter().any(Option::is_some));
+
+        sessions.reset();
+
+        assert_eq!(sessions.maximum_window(), 16);
+        assert!(sessions.snapshots().iter().all(Option::is_none));
+        sessions
+            .offer(rx_request!(peer, 8, 0, true, 64, 0, 20))
+            .unwrap();
+        let activation = sessions
+            .begin_pending(MacInterface::AccessPoint)
+            .unwrap()
+            .unwrap();
+        assert_eq!(activation.negotiated().window, 16);
+        assert_eq!(activation.hardware().window, RX_BLOCK_ACK_MAX_WINDOW);
     }
 
     #[test]

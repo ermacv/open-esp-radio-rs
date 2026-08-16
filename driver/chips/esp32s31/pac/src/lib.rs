@@ -66,13 +66,14 @@ pub use coex::{COEX_TIMER_COUNT, CoexTimerRegister};
 /// ```
 pub use generated::MacInterruptMask;
 pub use generated::{
-    CoexTimerClientValue, CoexTimerPtiValue, CoexTimerTickImage, MacInterface, MacItwtClearIndex,
-    MacKeyEntryIndex, MacPti, MacRxBlockAckEntryIndex, MacRxBlockAckStartingSequence,
-    MacRxBlockAckTid, MacRxBlockAckWindow, MacTxPtiCount, MacTxQueueIndex,
+    CoexTimerClientValue, CoexTimerPtiValue, CoexTimerTickImage,
+    MacExtraSoftApRxBlockAckEntryIndex, MacInterface, MacItwtClearIndex, MacKeyEntryIndex, MacPti,
+    MacRxBlockAckEntryIndex, MacRxBlockAckStartingSequence, MacRxBlockAckTid, MacRxBlockAckWindow,
+    MacTxPtiCount, MacTxQueueIndex,
 };
 pub use mac_block_ack::{
-    InternalTxBlockAckSnapshot, TxBlockAckDiagnosticSnapshot, TxBlockAckPayload,
-    TxBlockAckRegisterImage,
+    ExtraSoftApRxBlockAckEntrySnapshot, InternalTxBlockAckSnapshot, TxBlockAckDiagnosticSnapshot,
+    TxBlockAckPayload, TxBlockAckRegisterImage,
 };
 pub use mac_crypto::MacKeyInstallOutcome;
 pub use mac_he_beamforming::{
@@ -102,8 +103,9 @@ pub use mac_rx_policy::{
     MacStaReceivePolicySnapshot,
 };
 pub use mac_rx_statistics::{
-    MacHeColorCollisionSnapshot, MacRxDecodeErrorStatistics, MacRxHangStatistics,
-    MacRxPrimaryStatistics, MacRxPrimaryStatisticsDelta, MacRxStatisticsSnapshot,
+    MacHeColorCollisionSnapshot, MacRxDecodeErrorStatistics, MacRxDecodeErrorStatisticsDelta,
+    MacRxHangStatistics, MacRxHangStatisticsDelta, MacRxPrimaryStatistics,
+    MacRxPrimaryStatisticsDelta, MacRxStatisticsSnapshot,
 };
 pub use mac_tx::{
     MacHeTxProgram, MacHeTxVectorSnapshot, MacHtAmpduCompletionRegisters, MacHtTxProgram,

@@ -6,7 +6,7 @@ type ProductionAccessPointControl = Esp32s31AccessPointControl<
     'static,
     'static,
     'static,
-    EmbassyEsp32s31RxFrontierDelay,
+    ProductionAccessPointRxPipeline,
     PhyTxTargetPowerProfile,
     fn() -> u32,
     open_esp_radio_esp32s31_wifi_embassy::tx_time::EmbassyWifiTxTimer,
@@ -15,12 +15,8 @@ type ProductionAccessPointControl = Esp32s31AccessPointControl<
     RX_BUFFER_STORAGE_SIZE,
     TX_BUFFER_SIZE,
 >;
-type ProductionRxFrontier = Esp32s31RxFrontier<
-    'static,
-    EmbassyEsp32s31RxFrontierDelay,
-    RX_DESCRIPTOR_COUNT,
-    RX_BUFFER_SIZE,
->;
+type ProductionHaltedRx =
+    open_esp_radio::esp32s31::wifi::mac::rx::RxRingHalted<'static, RX_DESCRIPTOR_COUNT>;
 type ProductionScanRx =
     Esp32s31ScanRx<'static, RX_DESCRIPTOR_COUNT, RX_BUFFER_SIZE, RX_BUFFER_STORAGE_SIZE>;
 type ProductionWifiTxResources = WifiTxResources<
@@ -37,6 +33,7 @@ type ProductionAccessPointStopped = EmbassyAccessPointStopped<
     PhyTxTargetPowerProfile,
     fn() -> u32,
     open_esp_radio_esp32s31_wifi_embassy::tx_time::EmbassyWifiTxTimer,
+    ProductionAccessPointRxPipeline,
     RX_DESCRIPTOR_COUNT,
     RX_BUFFER_SIZE,
     RX_BUFFER_STORAGE_SIZE,
@@ -128,6 +125,15 @@ fn publish_access_point_observation(
         network_tx_rejected_no_peer: report.control.network_tx_rejected_no_peer,
         network_tx_rejected_destination: report.control.network_tx_rejected_destination,
         network_tx_frames_rejected: report.control.network_tx_frames_rejected,
+        rx_ht_data_frames: report.control.rx_ht_data_frames,
+        rx_ht_ampdu_data_frames: report.control.rx_ht_ampdu_data_frames,
+        rx_rssi_samples: report.control.rx_rssi_samples,
+        rx_rssi_sum_dbm: report.control.rx_rssi_sum_dbm,
+        rx_rssi_min_dbm: report.control.rx_rssi_min_dbm,
+        rx_rssi_max_dbm: report.control.rx_rssi_max_dbm,
+        rx_ht40_mcs_frames: report.control.rx_ht40_mcs_frames,
+        tx_ht_aggregates: report.control.tx_ht_aggregates,
+        tx_ht40_mcs7_aggregates: report.control.tx_ht40_mcs7_aggregates,
         data_frames_transmitted: report.mac.data_frames_transmitted,
         data_tx_attempts: report.mac.data_tx.attempts,
         data_tx_retried_frames: report.mac.data_tx.retried_frames,
@@ -257,7 +263,7 @@ pub(super) struct ProductionAccessPointPreflightFault {
     _access_point: ProductionAccessPointResources,
     _monitor: ProductionMonitorResources,
     _detached_control: Option<ControlTx>,
-    _receive: Option<ProductionRxFrontier>,
+    _ring: Option<ProductionHaltedRx>,
 }
 
 pub(super) struct ProductionAccessPointRxOwnerFault {
@@ -274,7 +280,7 @@ pub(super) struct ProductionAccessPointEngineFault {
     _owner: Esp32s31AccessPointRoleOwner<EspHalRadioPeripheral>,
     _registers: RadioRuntimeOwner,
     _interrupt_setup: open_esp_radio::esp32s31::hal::MacInterruptSetup,
-    _receive: ProductionRxFrontier,
+    _ring: ProductionHaltedRx,
     _transmit: ProductionWifiTxResources,
     _engine: open_esp_radio::esp32s31::wifi::ap::engine::Esp32s31ApEngineStartFailure<'static>,
     _parked: ProductionAccessPointParked,
@@ -290,7 +296,7 @@ pub(super) struct ProductionAccessPointSecurityMaterialFault {
     _owner: Esp32s31AccessPointRoleOwner<EspHalRadioPeripheral>,
     _registers: RadioRuntimeOwner,
     _interrupt_setup: open_esp_radio::esp32s31::hal::MacInterruptSetup,
-    _receive: ProductionRxFrontier,
+    _ring: ProductionHaltedRx,
     _transmit: ProductionWifiTxResources,
     _parked: ProductionAccessPointParked,
     _beacon: &'static mut [u8; open_esp_radio::wifi::ieee80211::beacon::WPA2_BEACON_CAPACITY],
@@ -769,7 +775,7 @@ impl ProductionWifiEpochRunner {
                         _access_point: access_point,
                         _monitor: monitor,
                         _detached_control: None,
-                        _receive: None,
+                        _ring: None,
                     },
                 });
             }
@@ -820,7 +826,7 @@ impl ProductionWifiEpochRunner {
                             _access_point: access_point,
                             _monitor: monitor,
                             _detached_control: None,
-                            _receive: None,
+                            _ring: None,
                         },
                     });
                 }
@@ -853,7 +859,6 @@ impl ProductionWifiEpochRunner {
                 });
             }
         };
-        let receive = Esp32s31RxFrontier::from_halted(halted);
         let control = match tx_epoch.take_control() {
             Ok(control) => control,
             Err(_) => {
@@ -877,7 +882,7 @@ impl ProductionWifiEpochRunner {
                         _access_point: access_point,
                         _monitor: monitor,
                         _detached_control: None,
-                        _receive: Some(receive),
+                        _ring: Some(halted),
                     },
                 });
             }
@@ -905,7 +910,7 @@ impl ProductionWifiEpochRunner {
                         _access_point: access_point,
                         _monitor: monitor,
                         _detached_control: Some(control),
-                        _receive: Some(receive),
+                        _ring: Some(halted),
                     },
                 });
             }
@@ -934,7 +939,7 @@ impl ProductionWifiEpochRunner {
                         _owner: materialized.owner,
                         _registers: materialized.registers,
                         _interrupt_setup: materialized.interrupt_setup,
-                        _receive: receive,
+                        _ring: halted,
                         _transmit: transmit,
                         _parked: ProductionAccessPointParked {
                             dma,
@@ -984,7 +989,7 @@ impl ProductionWifiEpochRunner {
                         _owner: materialized.owner,
                         _registers: materialized.registers,
                         _interrupt_setup: materialized.interrupt_setup,
-                        _receive: receive,
+                        _ring: halted,
                         _transmit: transmit,
                         _engine: engine,
                         _parked: ProductionAccessPointParked {
@@ -1020,9 +1025,9 @@ impl ProductionWifiEpochRunner {
                 publication_timeout_micros: TX_COMPLETION_TIMEOUT_US,
             },
         );
+        let receive = access_point_rx_pipeline(halted, dma.storage());
         let service = Esp32s31AccessPointControl::new(
             receive,
-            dma.storage(),
             mac,
             scan_frame,
             ethernet,
@@ -1130,14 +1135,18 @@ impl ProductionWifiEpochRunner {
                 });
             }
         };
+        let ring = match stopped.receive.try_into_halted() {
+            Ok(ring) => ring,
+            Err(_) => unreachable!("completed AP run returns a halted staged-RX producer"),
+        };
         if let Err((_error, returned_control)) = tx_epoch.restore_resources(stopped.transmit) {
             return Err(ProductionWifiFault::AccessPointTeardown {
                 _fault: ProductionAccessPointTeardownFault::TxRestore {
                     _owner: owner,
                     _registers: registers,
                     _interrupt_setup: interrupt_setup,
-                    _ring: stopped.ring,
-                    _storage: stopped.storage,
+                    _ring: ring,
+                    _storage: dma.storage(),
                     _rx_frame: stopped.rx_frame,
                     _tx_frame: stopped.tx_frame,
                     _data_rx: stopped.data_rx,
@@ -1192,7 +1201,7 @@ impl ProductionWifiEpochRunner {
                 aggregate_tx: None,
             },
             aggregate_tx,
-            stopped.ring,
+            ring,
             stopped.rx_frame,
             stopped.tx_frame,
         );
@@ -1341,7 +1350,33 @@ impl ProductionWifiEpochRunner {
             let rx_delta = rx_statistics_after
                 .primary
                 .wrapping_delta_since(rx_statistics_before.primary);
+            let rx_decode_delta = rx_statistics_after
+                .decode_errors
+                .wrapping_delta_since(rx_statistics_before.decode_errors);
+            let rx_hang_delta = rx_statistics_after
+                .hang
+                .wrapping_delta_since(rx_statistics_before.hang);
             let rx_policy_after = task.registers.access_point_receive_policy_snapshot();
+            let rx_match_after = task.registers.he_trigger_receive_diagnostics();
+            for index in 0..8 {
+                if let Some(snapshot) = task
+                    .registers
+                    .extra_softap_rx_block_ack_entry_snapshot(index)
+                    && snapshot.control & (1 << 30) != 0
+                {
+                    qualification_event!(
+                        "open-radio: access-point RX BA bank={} control={:#010x} peer={:02x?} interface={:?} window={} start={} bitmap_staging={:08x}/{:08x}",
+                        index,
+                        snapshot.control,
+                        snapshot.peer,
+                        snapshot.interface,
+                        snapshot.window,
+                        snapshot.starting_sequence,
+                        snapshot.bitmap_staging_words[0],
+                        snapshot.bitmap_staging_words[1],
+                    );
+                }
+            }
             let rx_head = task.service.rx_descriptor_snapshot(0);
             let rx_second = task.service.rx_descriptor_snapshot(1);
             let rx_tail = task
@@ -1383,16 +1418,63 @@ impl ProductionWifiEpochRunner {
                 rx_last,
             );
             qualification_event!(
-                "open-radio: access-point RX hardware delta mpdu={} data={} other_unicast={} fcs={} abort={} buffer_full={} fifo_overflow={} policy_before={:?} policy_after={:?}",
+                "open-radio: access-point RX hardware delta mpdu={} data={} other_unicast={} fcs={} abort={} abort_fcs_pass={} power_drop={} he_sig_b={} same_bm={} signal_field={} end={}",
                 rx_delta.mpdu_count,
                 rx_delta.data_success,
                 rx_delta.other_unicast,
                 rx_delta.fcs_error,
                 rx_delta.abort,
+                rx_delta.abort_fcs_pass,
+                rx_delta.power_drop_error,
+                rx_delta.he_sig_b_error,
+                rx_delta.same_bm_error,
+                rx_delta.signal_field,
+                rx_delta.end,
+            );
+            qualification_event!(
+                "open-radio: access-point RX hardware faults buffer_full={} fifo_overflow={} tkip={} bt_block={} freq_hop={} last_unmatched={} ack_irq={} rts_irq={}",
                 rx_delta.buffer_full,
                 rx_delta.fifo_overflow,
+                rx_delta.tkip_error,
+                rx_delta.bt_block_error,
+                rx_delta.frequency_hop_error,
+                rx_delta.last_unmatched_error,
+                rx_delta.ack_interrupt,
+                rx_delta.rts_interrupt,
+            );
+            qualification_event!(
+                "open-radio: access-point RX policy before={:?} after={:?}",
                 rx_policy_before,
                 rx_policy_after,
+            );
+            qualification_event!(
+                "open-radio: access-point RX match ax_bssid1={} ax_bssid0={} color_valid={} ampdu_auto_ack_valid={}",
+                rx_match_after.ax_match_bssid1,
+                rx_match_after.ax_match_bssid0,
+                rx_match_after.bss_color_valid,
+                rx_match_after.rx_ampdu_auto_ack_valid,
+            );
+            qualification_event!(
+                "open-radio: access-point RX decode delta brx_agc={} brx={} nrx={} nrx_abort={} nrx_agc_exit={} nrx_baseband_off={} nrx_fdm_watchdog={} nrx_restart={} nrx_service={} nrx_tx_over={} nrx_unsupported={} nrx_he_format={} nrx_ht_sig={} nrx_he_unsupported={} nrx_he_sig_a_crc={} hang_rx={} hang_tx={} rx_tx_hang={} rx_tx_panic={}",
+                rx_decode_delta.brx_agc,
+                rx_decode_delta.brx,
+                rx_decode_delta.nrx,
+                rx_decode_delta.nrx_abort,
+                rx_decode_delta.nrx_agc_exit,
+                rx_decode_delta.nrx_baseband_off,
+                rx_decode_delta.nrx_fdm_watchdog,
+                rx_decode_delta.nrx_restart,
+                rx_decode_delta.nrx_service,
+                rx_decode_delta.nrx_tx_over,
+                rx_decode_delta.nrx_unsupported,
+                rx_decode_delta.nrx_he_format,
+                rx_decode_delta.nrx_ht_sig,
+                rx_decode_delta.nrx_he_unsupported,
+                rx_decode_delta.nrx_he_sig_a_crc,
+                rx_hang_delta.rx,
+                rx_hang_delta.tx,
+                rx_hang_delta.rx_tx_hang,
+                rx_hang_delta.rx_tx_panic,
             );
         }
         #[cfg(feature = "qualification")]

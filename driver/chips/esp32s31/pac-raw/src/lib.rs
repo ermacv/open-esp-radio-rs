@@ -29810,11 +29810,11 @@ pub mod wifi_mac_rx_dma {
         #[doc = "Field `INDEX` reader - "]
         pub type IndexR = crate::FieldReader;
         #[doc = "Field `INDEX` writer - "]
-        pub type IndexW<'a, REG> = crate::FieldWriter<'a, REG, 5>;
+        pub type IndexW<'a, REG> = crate::FieldWriter<'a, REG, 5, u8, crate::Safe>;
         #[doc = "Field `TID` reader - "]
         pub type TidR = crate::FieldReader;
         #[doc = "Field `TID` writer - "]
-        pub type TidW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        pub type TidW<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
         #[doc = "Field `WRITE` reader - "]
         pub type WriteR = crate::BitReader;
         #[doc = "Field `WRITE` writer - "]
@@ -29903,15 +29903,15 @@ pub mod wifi_mac_rx_dma {
         #[doc = "Field `PEER_ADDRESS_TAIL` reader - "]
         pub type PeerAddressTailR = crate::FieldReader<u16>;
         #[doc = "Field `PEER_ADDRESS_TAIL` writer - "]
-        pub type PeerAddressTailW<'a, REG> = crate::FieldWriter<'a, REG, 16, u16>;
+        pub type PeerAddressTailW<'a, REG> = crate::FieldWriter<'a, REG, 16, u16, crate::Safe>;
         #[doc = "Field `INTERFACE` reader - "]
         pub type InterfaceR = crate::FieldReader;
         #[doc = "Field `INTERFACE` writer - "]
-        pub type InterfaceW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        pub type InterfaceW<'a, REG> = crate::FieldWriter<'a, REG, 2, u8, crate::Safe>;
         #[doc = "Field `WINDOW` reader - "]
         pub type WindowR = crate::FieldReader;
         #[doc = "Field `WINDOW` writer - "]
-        pub type WindowW<'a, REG> = crate::FieldWriter<'a, REG, 7>;
+        pub type WindowW<'a, REG> = crate::FieldWriter<'a, REG, 7, u8, crate::Safe>;
         impl R {
             #[doc = "Bits 0:15"]
             #[inline(always)]
@@ -29972,12 +29972,26 @@ pub mod wifi_mac_rx_dma {
         pub type R = crate::R<ExtraSoftapRxBlockAckPeerHeadSpec>;
         #[doc = "Register `EXTRA_SOFTAP_RX_BLOCK_ACK_PEER_HEAD` writer"]
         pub type W = crate::W<ExtraSoftapRxBlockAckPeerHeadSpec>;
-        impl core::fmt::Debug for R {
-            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-                write!(f, "{}", self.bits())
+        #[doc = "Field `PEER_ADDRESS_HEAD` reader - Peer MAC address bytes zero through three in little-endian order."]
+        pub type PeerAddressHeadR = crate::FieldReader<u32>;
+        #[doc = "Field `PEER_ADDRESS_HEAD` writer - Peer MAC address bytes zero through three in little-endian order."]
+        pub type PeerAddressHeadW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32, crate::Safe>;
+        impl R {
+            #[doc = "Bits 0:31 - Peer MAC address bytes zero through three in little-endian order."]
+            #[inline(always)]
+            pub fn peer_address_head(&self) -> PeerAddressHeadR {
+                PeerAddressHeadR::new(self.bits)
             }
         }
-        impl W {}
+        impl W {
+            #[doc = "Bits 0:31 - Peer MAC address bytes zero through three in little-endian order."]
+            #[inline(always)]
+            pub fn peer_address_head(
+                &mut self,
+            ) -> PeerAddressHeadW<'_, ExtraSoftapRxBlockAckPeerHeadSpec> {
+                PeerAddressHeadW::new(self, 0)
+            }
+        }
         #[doc = "Shared extra-SoftAP staging word carrying peer MAC bytes zero through three in little-endian order.\n\nYou can [`read`](crate::Reg::read) this register and get [`extra_softap_rx_block_ack_peer_head::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`extra_softap_rx_block_ack_peer_head::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct ExtraSoftapRxBlockAckPeerHeadSpec;
         impl crate::RegisterSpec for ExtraSoftapRxBlockAckPeerHeadSpec {
@@ -29987,7 +30001,7 @@ pub mod wifi_mac_rx_dma {
         impl crate::Readable for ExtraSoftapRxBlockAckPeerHeadSpec {}
         #[doc = "`write(|w| ..)` method takes [`extra_softap_rx_block_ack_peer_head::W`](W) writer structure"]
         impl crate::Writable for ExtraSoftapRxBlockAckPeerHeadSpec {
-            type Safety = crate::Unsafe;
+            type Safety = crate::Safe;
         }
     }
     #[doc = "EXTRA_SOFTAP_RX_BLOCK_ACK_START_SEQUENCE (rw) register accessor: Shared extra-SoftAP staging word carrying the twelve-bit starting sequence.\n\nYou can [`read`](crate::Reg::read) this register and get [`extra_softap_rx_block_ack_start_sequence::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`extra_softap_rx_block_ack_start_sequence::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@extra_softap_rx_block_ack_start_sequence`] module"]
@@ -30004,7 +30018,7 @@ pub mod wifi_mac_rx_dma {
         #[doc = "Field `SEQUENCE` reader - "]
         pub type SequenceR = crate::FieldReader<u16>;
         #[doc = "Field `SEQUENCE` writer - "]
-        pub type SequenceW<'a, REG> = crate::FieldWriter<'a, REG, 12, u16>;
+        pub type SequenceW<'a, REG> = crate::FieldWriter<'a, REG, 12, u16, crate::Safe>;
         impl R {
             #[doc = "Bits 0:11"]
             #[inline(always)]
@@ -33155,6 +33169,77 @@ pub mod zero_based_field_write {
         }
     }
 
+    /// Write `PEER_ADDRESS_HEAD` in `WIFI_MAC_RX_DMA`.`EXTRA_SOFTAP_RX_BLOCK_ACK_PEER_HEAD` while publishing zero to every other register bit.
+    #[inline]
+    pub fn extra_softap_rx_block_ack_peer_head(registers: &crate::WifiMacRxDma, value: u32) {
+        // SAFETY: the SVD extension explicitly qualifies the zero-based
+        // transaction, and generator validation proves every selected field
+        // accepts every value representable by its public argument type.
+        unsafe {
+            registers
+                .extra_softap_rx_block_ack_peer_head()
+                .write_with_zero(|writer| writer.peer_address_head().set(value));
+        }
+    }
+
+    /// Write `PEER_ADDRESS_TAIL`, `INTERFACE`, `WINDOW` in `WIFI_MAC_RX_DMA`.`EXTRA_SOFTAP_RX_BLOCK_ACK_PEER_TAIL_AND_POLICY` while publishing zero to every other register bit.
+    #[inline]
+    pub fn extra_softap_rx_block_ack_peer_tail_and_policy(
+        registers: &crate::WifiMacRxDma,
+        peer_address_tail_value: u16,
+        interface_value: u8,
+        window_value: u8,
+    ) {
+        // SAFETY: the SVD extension explicitly qualifies the zero-based
+        // transaction, and generator validation proves every selected field
+        // accepts every value representable by its public argument type.
+        unsafe {
+            registers
+                .extra_softap_rx_block_ack_peer_tail_and_policy()
+                .write_with_zero(|writer| {
+                    writer
+                        .peer_address_tail()
+                        .set(peer_address_tail_value)
+                        .interface()
+                        .set(interface_value)
+                        .window()
+                        .set(window_value)
+                });
+        }
+    }
+
+    /// Write `ENABLE`, `INDEX`, `TID`, `WRITE`, `VALID` in `WIFI_MAC_RX_DMA`.`EXTRA_SOFTAP_RX_BLOCK_ACK_CONTROL` while publishing zero to every other register bit.
+    #[inline]
+    pub fn extra_softap_rx_block_ack_active_control(
+        registers: &crate::WifiMacRxDma,
+        enable_value: bool,
+        index_value: u8,
+        tid_value: u8,
+        write_value: bool,
+        valid_value: bool,
+    ) {
+        // SAFETY: the SVD extension explicitly qualifies the zero-based
+        // transaction, and generator validation proves every selected field
+        // accepts every value representable by its public argument type.
+        unsafe {
+            registers
+                .extra_softap_rx_block_ack_control()
+                .write_with_zero(|writer| {
+                    writer
+                        .enable()
+                        .bit(enable_value)
+                        .index()
+                        .set(index_value)
+                        .tid()
+                        .set(tid_value)
+                        .write()
+                        .bit(write_value)
+                        .valid()
+                        .bit(valid_value)
+                });
+        }
+    }
+
     /// Write `BLOCK`, `REGISTER`, `DATA` in `PHY_I2C_COMMAND_RAM`.`COMMAND_MEMORY%s` while publishing zero to every other register bit.
     #[inline]
     pub fn phy_i2c_command_memory(
@@ -33660,6 +33745,30 @@ pub mod zero_register_write {
         unsafe {
             registers
                 .rx_block_ack_entry_control(index)
+                .write_with_zero(|writer| writer);
+        }
+    }
+
+    /// Publish zero to every bit of `WIFI_MAC_RX_DMA`.`EXTRA_SOFTAP_RX_BLOCK_ACK_BITMAP_LOW`.
+    #[inline]
+    pub fn clear_extra_softap_rx_block_ack_bitmap_low(registers: &crate::WifiMacRxDma) {
+        // SAFETY: the SVD extension and its provenance explicitly
+        // qualify a complete zero write to this ordinary register.
+        unsafe {
+            registers
+                .extra_softap_rx_block_ack_bitmap_low()
+                .write_with_zero(|writer| writer);
+        }
+    }
+
+    /// Publish zero to every bit of `WIFI_MAC_RX_DMA`.`EXTRA_SOFTAP_RX_BLOCK_ACK_BITMAP_HIGH`.
+    #[inline]
+    pub fn clear_extra_softap_rx_block_ack_bitmap_high(registers: &crate::WifiMacRxDma) {
+        // SAFETY: the SVD extension and its provenance explicitly
+        // qualify a complete zero write to this ordinary register.
+        unsafe {
+            registers
+                .extra_softap_rx_block_ack_bitmap_high()
                 .write_with_zero(|writer| writer);
         }
     }

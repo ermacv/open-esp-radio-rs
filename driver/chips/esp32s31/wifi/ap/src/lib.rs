@@ -10,6 +10,7 @@
 #[cfg(test)]
 extern crate std;
 
+pub mod ampdu;
 pub mod beacon;
 pub mod engine;
 pub mod mac;

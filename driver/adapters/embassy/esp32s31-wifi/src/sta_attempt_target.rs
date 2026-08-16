@@ -57,10 +57,8 @@ use open_esp_radio_wpa2::{
 
 use crate::{
     join_time::EmbassyStaJoinTimer,
-    preconnected_rx::{
-        Esp32s31PreconnectedRx, Esp32s31PreconnectedRxDelay, Esp32s31PreconnectedRxError,
-    },
     rx_dma_service::Esp32s31RxDmaStorage,
+    rx_frontier::{Esp32s31RxFrontier, Esp32s31RxFrontierDelay, Esp32s31RxFrontierError},
     sta_join_port::{
         Esp32s31StaJoinPort, Esp32s31StaJoinRadio, Esp32s31StaJoinRx, Esp32s31StaJoinStation,
         Esp32s31StaJoinStorage,

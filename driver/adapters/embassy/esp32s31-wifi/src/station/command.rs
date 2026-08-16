@@ -267,7 +267,7 @@ impl<'resources, M: RawMutex> Esp32s31StationController<'resources, M> {
 /// Single-consumer command side supplied to the concrete lifecycle backend.
 ///
 /// A connected backend must observe this future only at a cancellation-safe
-/// edge such as [`crate::connected_runner::ConnectedRunner::run_until`]. It records a
+/// edge such as [`crate::wdev::WdevRunner::run_until`]. It records a
 /// terminal command only when it returns `StaAttemptOutcome::Stopped`;
 /// `Reconnect` normally becomes a disconnected epoch instead.
 pub struct Esp32s31StationCommandReceiver<'resources, M: RawMutex> {
@@ -301,7 +301,7 @@ impl<M: RawMutex> Esp32s31StationCommandReceiver<'_, M> {
     /// Return a command which arrived before the backend reached a safe edge.
     ///
     /// This is primarily useful for `Reconnect`: an early request must remain
-    /// pending until the connected runner can end its epoch safely. A stronger
+    /// pending until the WDEV runner can end its epoch safely. A stronger
     /// command queued concurrently retains priority.
     pub fn defer(&mut self, command: Esp32s31StationCommand) -> bool {
         self.resources.request(command)

@@ -246,6 +246,116 @@ fn reviewed_sta_ap_and_coex_boundaries_hide_register_mechanics() {
 }
 
 #[test]
+fn lmac_and_wdev_boundaries_do_not_recover_role_policy_or_legacy_runners() {
+    let repository = repository_root();
+    let chip_wifi = repository.join("driver/chips/esp32s31/wifi");
+    let adapter = repository.join("driver/adapters/embassy/esp32s31-wifi/src");
+
+    assert!(
+        !adapter.join("connected_runner.rs").exists() && !adapter.join("connected_runner").exists(),
+        "the removed ConnectedRunner compatibility surface must not return"
+    );
+    let access_point =
+        fs::read_to_string(adapter.join("access_point.rs")).expect("read AP adapter");
+    assert!(
+        access_point.contains("WdevRunner::new")
+            && !access_point.contains("ApDataPlaneArbiter")
+            && !access_point.contains("wait_for_ap_work"),
+        "AP must use the role-neutral WDEV owner without a parallel scheduler"
+    );
+    let access_point_wdev =
+        fs::read_to_string(adapter.join("access_point/wdev.rs")).expect("read AP WDEV binding");
+    assert!(
+        access_point_wdev.contains("start_network_tx")
+            && !access_point_wdev.contains(".mac.engine()"),
+        "the AP WDEV binding must delegate peer and frame policy to the AP owner"
+    );
+    assert!(
+        !chip_wifi.join("mac/src/connected_rx.rs").exists()
+            && !chip_wifi.join("mac/src/sta_ap_lifecycle.rs").exists(),
+        "STA dispatch and WDEV lifecycle policy must not return to LMAC"
+    );
+
+    let mut mac_sources = Vec::new();
+    rust_files(&chip_wifi.join("mac/src"), &mut mac_sources);
+    let mac_violations = mac_sources
+        .into_iter()
+        .filter(|path| {
+            let source = fs::read_to_string(path).expect("read LMAC source");
+            source.contains("open_esp_radio_esp32s31_wifi_sta")
+                || source.contains("open_esp_radio_esp32s31_wifi_ap")
+                || source.contains("open_esp_radio_wifi_sta")
+                || source.contains("open_esp_radio_wifi_ap")
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        mac_violations.is_empty(),
+        "LMAC acquired role-policy imports: {mac_violations:#?}"
+    );
+
+    let mut wdev_sources = vec![adapter.join("wdev.rs")];
+    rust_files(&adapter.join("wdev"), &mut wdev_sources);
+    let wdev_violations = wdev_sources
+        .into_iter()
+        .filter(|path| {
+            let source = fs::read_to_string(path).expect("read WDEV source");
+            source.contains("open_esp_radio_esp32s31_wifi_sta")
+                || source.contains("open_esp_radio_esp32s31_wifi_ap")
+                || source.contains("ConnectedDisconnectReason")
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        wdev_violations.is_empty(),
+        "role-neutral WDEV acquired role-policy imports: {wdev_violations:#?}"
+    );
+}
+
+#[test]
+fn finite_rx_roles_share_one_frontier_owner_without_legacy_surfaces() {
+    let adapter = repository_root().join("driver/adapters/embassy/esp32s31-wifi/src");
+
+    for removed in [
+        adapter.join("preconnected_rx.rs"),
+        adapter.join("preconnected_rx"),
+        adapter.join("rx_ring_owner.rs"),
+    ] {
+        assert!(
+            !removed.exists(),
+            "removed RX ownership surface returned: {}",
+            removed.display()
+        );
+    }
+
+    let mut sources = Vec::new();
+    rust_files(&adapter, &mut sources);
+    let stale = sources
+        .iter()
+        .filter(|path| {
+            let source = fs::read_to_string(path).expect("read RX adapter source");
+            source.contains("preconnected_rx")
+                || source.contains("PreconnectedRx")
+                || source.contains("RxRingOwner")
+                || source.contains("RxRingPhase")
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        stale.is_empty(),
+        "legacy or parallel RX ownership vocabulary returned: {stale:#?}"
+    );
+
+    let frontier = fs::read_to_string(adapter.join("rx_frontier.rs"))
+        .expect("read canonical RX frontier facade");
+    assert!(frontier.contains("pub use state::{"));
+    for consumer in ["scan_rx.rs", "monitor_rx.rs", "access_point.rs"] {
+        let source = fs::read_to_string(adapter.join(consumer)).expect("read finite RX consumer");
+        assert!(
+            source.contains("Esp32s31RxFrontier"),
+            "{consumer} bypasses the canonical RX frontier owner"
+        );
+    }
+}
+
+#[test]
 fn cargo_alias_selects_the_product_host_and_keeps_build_output_visible() {
     let config = fs::read_to_string(repository_root().join(".cargo/config.toml")).unwrap();
     let alias = config
@@ -449,10 +559,11 @@ fn compiled_probe_operations_do_not_call_pac_validation_directly() {
         .collect::<Vec<_>>();
     assert_eq!(
         exported.len(),
-        3,
+        4,
         "PAC validation regained semantic operations"
     );
     assert!(pac_validation.contains("pub fn radio_registers()"));
+    assert!(pac_validation.contains("pub fn mac_interrupt_setup()"));
     assert!(pac_validation.contains("pub fn mac_interrupt_registers()"));
     assert!(pac_validation.contains("pub fn mac_power_interrupt_registers()"));
 

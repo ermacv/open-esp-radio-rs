@@ -87,7 +87,7 @@ use open_esp_radio_esp32s31_wifi_embassy::{
         Esp32s31AccessPointControl, Esp32s31AccessPointStopped as EmbassyAccessPointStopped,
     },
     phy_delay::EmbassyEsp32s31PhyDelay,
-    preconnected_rx::{EmbassyEsp32s31PreconnectedRxDelay, Esp32s31PreconnectedRx},
+    rx_frontier::{EmbassyEsp32s31RxFrontierDelay, Esp32s31RxFrontier},
     resource_profile::{
         ESP32S31_DEFAULT_RX_BUFFER_STORAGE_SIZE as RX_BUFFER_STORAGE_SIZE,
         ESP32S31_DEFAULT_TX_BUFFER_SIZE as TX_BUFFER_SIZE, Esp32s31DefaultWifiMemory,
@@ -129,6 +129,7 @@ use static_cell::{ConstStaticCell, StaticCell};
 use crate::connected::configure_mac_irq_observer;
 use crate::connected::{
     ConnectedAmpduStorage, ConnectedDisconnectedEpoch, ConnectedReconnectedEpoch,
+    ConnectedTxBacking,
     ConnectedRunningNetwork, ConnectedRxEpochResources, ConnectedRxProtocolStorage,
     ConnectedStationEpoch, ConnectedStationFault, ConnectedStationOutcome,
     ConnectedStationResources, ConnectedStationRunExit, ConnectedStoppedRx, ControlResources,
@@ -239,9 +240,9 @@ fn tx_entropy() -> u32 {
 type ProductionStationPhase = Esp32s31StationServicePhase<
     RadioRuntimeOwner,
     Esp32s31ScanRx<'static, RX_DESCRIPTOR_COUNT, RX_BUFFER_SIZE, RX_BUFFER_STORAGE_SIZE>,
-    Esp32s31PreconnectedRx<
+    Esp32s31RxFrontier<
         'static,
-        EmbassyEsp32s31PreconnectedRxDelay,
+        EmbassyEsp32s31RxFrontierDelay,
         RX_DESCRIPTOR_COUNT,
         RX_BUFFER_SIZE,
     >,
@@ -280,9 +281,9 @@ type ProductionStationStorage = Esp32s31StationStorageResources<
 type ProductionStationStoppedPhase = Esp32s31StationStoppedPhaseResources<
     'static,
     Esp32s31ScanRx<'static, RX_DESCRIPTOR_COUNT, RX_BUFFER_SIZE, RX_BUFFER_STORAGE_SIZE>,
-    Esp32s31PreconnectedRx<
+    Esp32s31RxFrontier<
         'static,
-        EmbassyEsp32s31PreconnectedRxDelay,
+        EmbassyEsp32s31RxFrontierDelay,
         RX_DESCRIPTOR_COUNT,
         RX_BUFFER_SIZE,
     >,
@@ -614,9 +615,9 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
         'security,
         ProductionStationRuntime<'state>,
         RadioRuntimeOwner,
-        Esp32s31PreconnectedRx<
+        Esp32s31RxFrontier<
             'static,
-            EmbassyEsp32s31PreconnectedRxDelay,
+            EmbassyEsp32s31RxFrontierDelay,
             RX_DESCRIPTOR_COUNT,
             RX_BUFFER_SIZE,
         >,
@@ -695,7 +696,7 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
             |receive| {
                 receive
                     .into_halted()
-                    .map(Esp32s31PreconnectedRx::from_halted)
+                    .map(Esp32s31RxFrontier::from_halted)
             },
             |runtime, hardware, receive, network, identity, security| {
                 ProductionStationOwner::new(
@@ -919,7 +920,7 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
             scan_result,
             |disconnected| {
                 let (network, epoch) =
-                    disconnected.prepare_reconnect::<EmbassyEsp32s31PreconnectedRxDelay>();
+                    disconnected.prepare_reconnect::<EmbassyEsp32s31RxFrontierDelay>();
                 (StationNetwork::Running(network), epoch)
             },
             |runtime, disconnected, station, security| {
@@ -944,9 +945,9 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
             'security,
             ProductionStationRuntime<'state>,
             RadioRuntimeOwner,
-            Esp32s31PreconnectedRx<
+            Esp32s31RxFrontier<
                 'static,
-                EmbassyEsp32s31PreconnectedRxDelay,
+                EmbassyEsp32s31RxFrontierDelay,
                 RX_DESCRIPTOR_COUNT,
                 RX_BUFFER_SIZE,
             >,
@@ -1254,9 +1255,9 @@ impl<'state, 'security> Esp32s31StationEnginePort<'security, CriticalSectionRawM
     type InitialHardware = RadioRuntimeOwner;
     type InitialScanRx =
         Esp32s31ScanRx<'static, RX_DESCRIPTOR_COUNT, RX_BUFFER_SIZE, RX_BUFFER_STORAGE_SIZE>;
-    type PreconnectedRx = Esp32s31PreconnectedRx<
+    type RxFrontier = Esp32s31RxFrontier<
         'static,
-        EmbassyEsp32s31PreconnectedRxDelay,
+        EmbassyEsp32s31RxFrontierDelay,
         RX_DESCRIPTOR_COUNT,
         RX_BUFFER_SIZE,
     >;
@@ -1284,7 +1285,7 @@ impl<'state, 'security> Esp32s31StationEnginePort<'security, CriticalSectionRawM
             'security,
             Self::Runtime,
             Self::InitialHardware,
-            Self::PreconnectedRx,
+            Self::RxFrontier,
             Self::Network,
             ProductionStationOwner<'state, 'security>,
             Self::Error,
@@ -1304,7 +1305,7 @@ impl<'state, 'security> Esp32s31StationEnginePort<'security, CriticalSectionRawM
             'security,
             Self::Runtime,
             Self::InitialHardware,
-            Self::PreconnectedRx,
+            Self::RxFrontier,
             Self::Network,
         >,
         context: StaAttemptContext,

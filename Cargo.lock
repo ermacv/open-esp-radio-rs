@@ -2097,6 +2097,7 @@ dependencies = [
 name = "open-esp-radio-esp32s31-wifi-ap"
 version = "0.1.0"
 dependencies = [
+ "open-esp-radio-dma",
  "open-esp-radio-esp32s31-hal",
  "open-esp-radio-esp32s31-phy",
  "open-esp-radio-esp32s31-wifi",
@@ -2125,6 +2126,7 @@ dependencies = [
  "embassy-futures",
  "embassy-sync 0.8.0",
  "embassy-time",
+ "open-esp-radio-dma",
  "open-esp-radio-embassy-net",
  "open-esp-radio-esp32s31-hal",
  "open-esp-radio-esp32s31-phy",
@@ -2173,6 +2175,7 @@ dependencies = [
  "open-esp-radio-esp32s31-hal",
  "open-esp-radio-esp32s31-phy",
  "open-esp-radio-esp32s31-wifi",
+ "open-esp-radio-esp32s31-wifi-dma",
  "open-esp-radio-esp32s31-wifi-mac",
  "open-esp-radio-ieee80211",
  "open-esp-radio-wifi-softmac",

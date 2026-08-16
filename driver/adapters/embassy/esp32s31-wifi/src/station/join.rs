@@ -32,8 +32,8 @@ use open_esp_radio_esp32s31_wifi_sta::{
 use open_esp_radio_wifi_sta::station::StaFailureDisposition;
 
 use crate::{
-    preconnected_rx::{Esp32s31PreconnectedRx, Esp32s31PreconnectedRxDelay},
     rx_dma_service::Esp32s31RxDmaStorage,
+    rx_frontier::{Esp32s31RxFrontier, Esp32s31RxFrontierDelay},
     sta_attempt_target::{
         Esp32s31StaAttemptChannel, Esp32s31StaAttemptRadio, Esp32s31StaAttemptStorage,
         Esp32s31StaAttemptTargetError, Esp32s31StaAttemptTargetOwner, Esp32s31StaAttemptTargetPort,
@@ -54,7 +54,7 @@ pub struct Esp32s31StationJoinReturned<
     const COUNT: usize,
     const DMA_BUFFER_SIZE: usize,
 > {
-    pub receive: Esp32s31PreconnectedRx<'storage, D, COUNT, DMA_BUFFER_SIZE>,
+    pub receive: Esp32s31RxFrontier<'storage, D, COUNT, DMA_BUFFER_SIZE>,
     pub station: Esp32s31StaAttemptStation,
     pub security: Esp32s31StaAttemptSecurity<'security>,
 }
@@ -113,7 +113,7 @@ pub struct Esp32s31StationJoinResources<
     pub phy: &'state mut PhyState,
     pub platform: &'state mut P,
     pub phy_observer: PO,
-    pub receive: Esp32s31PreconnectedRx<'storage, D, COUNT, DMA_BUFFER_SIZE>,
+    pub receive: Esp32s31RxFrontier<'storage, D, COUNT, DMA_BUFFER_SIZE>,
     pub rx_storage: &'storage Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
     pub transmit: &'transmit mut T,
     pub frame: &'scratch mut [u8],
@@ -182,7 +182,7 @@ where
     P: PhyWifiBbControl + PhyTemperatureSystemControl + PhyI2cMasterControl,
     PO: PhyTargetObserver,
     PD: PhyAsyncDelay,
-    D: Esp32s31PreconnectedRxDelay,
+    D: Esp32s31RxFrontierDelay,
     T: Esp32s31StaJoinTransmit<H> + Esp32s31Wpa2Transmit<H> + Esp32s31StaPeerTransmit + 'transmit,
     J: Esp32s31StaJoinObserver + Default,
     AO: Esp32s31StaAttemptObserver,

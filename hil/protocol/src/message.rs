@@ -3,7 +3,7 @@ use core::fmt;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-pub const PROTOCOL_VERSION: u16 = 43;
+pub const PROTOCOL_VERSION: u16 = 46;
 // Keep command envelopes small: startup artifacts are transferred as an
 // ordered CRC-protected stream, so a large per-command inline buffer only
 // inflates UART queues and executor futures without improving semantics.
@@ -568,7 +568,7 @@ pub struct StationEpochEvidence {
     pub runner_stopped: bool,
     pub scan_owners_returned: bool,
     pub join_completed: bool,
-    pub connected_runner_started: bool,
+    pub wdev_runner_started: bool,
 }
 
 /// Wi-Fi role represented by the target-side application owner.
@@ -851,6 +851,9 @@ pub struct WifiAccessPointEvidence {
     pub tx_interrupt_wakes: u32,
     pub tx_deadline_wakes: u32,
     pub maximum_tx_pending_micros: u32,
+    /// Longest network data transaction; excludes chained AP control frames.
+    pub maximum_network_tx_pending_micros: u32,
+    pub network_tx_attempts_at_maximum_pending: u8,
     pub maximum_rx_service_micros: u32,
     pub maximum_network_backpressure_micros: u32,
     pub authentication_responses: u32,
@@ -880,9 +883,12 @@ pub struct WifiAccessPointEvidence {
     /// Complete vendor-shaped RX units made visible to the AP protocol path.
     pub completed_rx_units: u32,
     pub completed_rx_descriptors: u32,
-    /// Descriptors returned to DMA immediately after copying their complete unit.
+    /// Descriptors safely rearmed and returned to DMA during the live epoch.
     pub recycled_rx_descriptors: u32,
-    /// Complete units intentionally discarded after their descriptors were recycled.
+    /// Completed descriptors retained until the walker is stopped because a
+    /// later completion was still serving as their generation guard.
+    pub retained_rx_descriptors: u32,
+    /// Complete units intentionally discarded after their payload was observed.
     pub discarded_rx_units: u32,
     pub ignored_rx_frames: u32,
     pub rx_mic_failures: u32,
@@ -900,6 +906,16 @@ pub struct WifiAccessPointEvidence {
     pub network_tx_rejected_destination: u32,
     pub network_tx_frames_rejected: u32,
     pub data_frames_transmitted: u32,
+    /// Total hardware publications for data MPDUs, including retries.
+    pub data_tx_attempts: u32,
+    /// Data MPDUs which required more than one hardware publication.
+    pub data_tx_retried_frames: u32,
+    pub data_tx_maximum_attempts: u8,
+    /// Lowest terminal legacy/HT rate observed after any retry ladder.
+    pub data_tx_minimum_final_rate_kbps: u32,
+    pub data_tx_ack_snr_samples: u32,
+    pub data_tx_minimum_ack_snr_db: i8,
+    pub data_tx_maximum_ack_snr_db: i8,
     pub tx_ack_timeout_retries: u32,
     pub tx_cts_timeout_retries: u32,
     pub tx_collision_retries: u32,
@@ -920,14 +936,14 @@ impl StationEpochEvidence {
         runner_stopped: true,
         scan_owners_returned: true,
         join_completed: true,
-        connected_runner_started: true,
+        wdev_runner_started: true,
     };
 
     pub const fn is_complete(self) -> bool {
         self.runner_stopped
             && self.scan_owners_returned
             && self.join_completed
-            && self.connected_runner_started
+            && self.wdev_runner_started
     }
 }
 

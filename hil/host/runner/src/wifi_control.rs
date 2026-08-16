@@ -144,7 +144,7 @@ fn qualify(
             return Err(format!("access point returned inconsistent evidence: {stopped:?}").into());
         }
         println!(
-            "wifi_ap_generation={} channel={} beacons={} auth_responses={} assoc_responses={} authorizations={} max_associated={} max_authorized={} peer_removals={} auth_timeouts={} wpa2_windows={} wpa2_pending_on_stop={} wpa2_retries={} wpa2_failures={} wpa2_timeouts={} inactivity_timeouts={} disassoc_prepared={} disassoc_published={} disassoc_acked={} deauth_prepared={} deauth_published={} deauth_acked={} rx_units={} rx_descriptors={} recycled_rx_descriptors={} discarded_rx_units={} ignored_rx={} control_staged={} control_busy_drops={} ethernet_staged={} network_tx_rejected={} data_tx={} tx_hardware_failures={} tx_hardware_timeouts={} tx_collision_limits={} tx_last_hardware_status={}",
+            "wifi_ap_generation={} channel={} beacons={} auth_responses={} assoc_responses={} authorizations={} max_associated={} max_authorized={} peer_removals={} auth_timeouts={} wpa2_windows={} wpa2_pending_on_stop={} wpa2_retries={} wpa2_failures={} wpa2_timeouts={} inactivity_timeouts={} disassoc_prepared={} disassoc_published={} disassoc_acked={} deauth_prepared={} deauth_published={} deauth_acked={} rx_units={} rx_descriptors={} recycled_rx_descriptors={} retained_rx_descriptors={} discarded_rx_units={} ignored_rx={} control_staged={} control_busy_drops={} ethernet_staged={} network_tx_rejected={} data_tx={} data_tx_attempts={} data_tx_retried={} data_tx_max_attempts={} data_tx_min_rate_kbps={} data_tx_ack_snr={}/{}/{} tx_hardware_failures={} tx_hardware_timeouts={} tx_collision_limits={} tx_last_hardware_status={}",
             stopped.generation,
             stopped.channel,
             stopped.beacons_transmitted,
@@ -170,6 +170,7 @@ fn qualify(
             stopped.completed_rx_units,
             stopped.completed_rx_descriptors,
             stopped.recycled_rx_descriptors,
+            stopped.retained_rx_descriptors,
             stopped.discarded_rx_units,
             stopped.ignored_rx_frames,
             stopped.control_frames_staged,
@@ -177,6 +178,13 @@ fn qualify(
             stopped.ethernet_frames_staged,
             stopped.network_tx_frames_rejected,
             stopped.data_frames_transmitted,
+            stopped.data_tx_attempts,
+            stopped.data_tx_retried_frames,
+            stopped.data_tx_maximum_attempts,
+            stopped.data_tx_minimum_final_rate_kbps,
+            stopped.data_tx_ack_snr_samples,
+            stopped.data_tx_minimum_ack_snr_db,
+            stopped.data_tx_maximum_ack_snr_db,
             stopped.tx_hardware_failures,
             stopped.tx_hardware_timeouts,
             stopped.tx_collision_limits,

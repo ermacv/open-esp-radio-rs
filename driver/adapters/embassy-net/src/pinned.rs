@@ -292,6 +292,7 @@ impl<
                 rx_pool: &resources.rx_pool,
                 free_tx: resources.free_tx.sender(),
                 ready_tx: resources.ready_tx.receiver(),
+                ready_tx_return: resources.ready_tx.sender(),
                 tx_published: &resources.tx_published,
                 tx_pool: pool,
                 link: &resources.link,
@@ -896,6 +897,24 @@ impl<'resources, M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: us
         Ok(())
     }
 
+    /// Publish one contiguous Ethernet frame while exposing the exact edge
+    /// before the claimed slot becomes visible to the network consumer.
+    #[cfg(feature = "rx-delivery-observation")]
+    pub fn try_send_observed(
+        &mut self,
+        frame: &[u8],
+        before_publish: impl FnOnce(),
+    ) -> Result<(), RxEnqueueError> {
+        Self::validate_length(frame.len()).map_err(RxEnqueueError::InvalidLength)?;
+        let lease = self.try_claim_slot()?;
+        let (index, ()) = lease.publish(frame.len(), |storage| storage.copy_from_slice(frame));
+        before_publish();
+        if let Err(TrySendError::Full(_)) = self.ready_rx.try_send(index) {
+            unreachable!("one ready entry exists per non-free pinned RX slot");
+        }
+        Ok(())
+    }
+
     pub fn try_send_parts(
         &mut self,
         destination: [u8; 6],
@@ -1005,6 +1024,7 @@ pub struct SplitPinnedRadioRunner<
     rx_pool: &'resources RxHandoffPool<FRAME_CAPACITY, RX_QUEUE_DEPTH>,
     free_tx: Sender<'resources, M, u8, TX_QUEUE_DEPTH>,
     ready_tx: Receiver<'resources, M, u8, TX_QUEUE_DEPTH>,
+    ready_tx_return: Sender<'resources, M, u8, TX_QUEUE_DEPTH>,
     tx_published: &'resources Signal<M, ()>,
     tx_pool: &'resources PinnedTxPool<FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
     link: &'resources SharedLinkState<M>,
@@ -1071,6 +1091,7 @@ impl<
         PinnedTxConsumer {
             free_tx: self.free_tx,
             ready_tx: self.ready_tx,
+            ready_tx_return: self.ready_tx_return,
             tx_pool: self.tx_pool,
         }
     }
@@ -1125,6 +1146,7 @@ pub struct PinnedTxConsumer<
 > {
     free_tx: Sender<'resources, M, u8, QUEUE_DEPTH>,
     ready_tx: Receiver<'resources, M, u8, QUEUE_DEPTH>,
+    ready_tx_return: Sender<'resources, M, u8, QUEUE_DEPTH>,
     tx_pool: &'resources PinnedTxPool<FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
 }
 
@@ -1165,6 +1187,21 @@ impl<
 
     pub fn queue_len(&self) -> usize {
         self.ready_tx.len()
+    }
+
+    /// Return a claimed but unmodified frame to the front-end ready queue.
+    ///
+    /// Aggregate builders use this when the next Ethernet frame belongs to a
+    /// different peer. The claim removed one queue entry, so publishing the
+    /// exact released index cannot exceed the bounded queue capacity.
+    pub fn requeue(
+        &self,
+        frame: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+    ) {
+        let index = frame.take_requeued_index();
+        if let Err(TrySendError::Full(_)) = self.ready_tx_return.try_send(index) {
+            unreachable!("a claimed pinned TX index leaves capacity for requeue");
+        }
     }
 }
 

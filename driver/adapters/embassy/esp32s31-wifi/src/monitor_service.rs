@@ -23,7 +23,7 @@ use crate::{
         Esp32s31MacInterruptEpochDrain, Esp32s31MacInterruptEpochQuiesceError,
     },
     monitor_rx::{Esp32s31MonitorRx, Esp32s31MonitorRxProgress},
-    rx_ring_owner::{Esp32s31RxRingOwnerError, Esp32s31RxRingPhase},
+    rx_frontier::{Esp32s31RxFrontierError, Esp32s31RxFrontierPhase},
 };
 
 /// Qualified interrupt mask retained by a standalone normalized monitor.
@@ -93,7 +93,7 @@ pub enum Esp32s31MonitorStopError<E> {
     /// The interrupt route is quiesced, but the DMA walker did not confirm its
     /// stop. The drain is retained as evidence for reset/recovery policy.
     Receive {
-        error: Esp32s31RxRingOwnerError,
+        error: Esp32s31RxFrontierError,
         interrupt_drain: Esp32s31MacInterruptEpochDrain,
     },
 }
@@ -101,14 +101,14 @@ pub enum Esp32s31MonitorStopError<E> {
 /// Terminal reason for a failed standalone monitor transaction.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Esp32s31MonitorRunError<E> {
-    Start(Esp32s31RxRingOwnerError),
+    Start(Esp32s31RxFrontierError),
     Activate(Esp32s31MacInterruptEpochActivateError<E>),
     ActivateStop {
         activation: Esp32s31MacInterruptEpochActivateError<E>,
         stop: Esp32s31MonitorStopError<E>,
     },
     Service {
-        error: Esp32s31RxRingOwnerError,
+        error: Esp32s31RxFrontierError,
         stop: Option<Esp32s31MonitorStopError<E>>,
     },
     Stop(Esp32s31MonitorStopError<E>),
@@ -189,7 +189,7 @@ where
         }
     }
 
-    pub fn receive_phase(&self) -> Esp32s31RxRingPhase {
+    pub fn receive_phase(&self) -> Esp32s31RxFrontierPhase {
         self.receive
             .as_ref()
             .expect("monitor owner was already extracted")
@@ -206,7 +206,7 @@ where
     /// Whether every hardware actor owned by this role has acknowledged its
     /// stopped edge.
     pub(crate) fn is_quiescent(&self) -> bool {
-        !self.interrupt_active() && self.receive_phase() != Esp32s31RxRingPhase::Live
+        !self.interrupt_active() && self.receive_phase() != Esp32s31RxFrontierPhase::Live
     }
 
     /// Borrow the radio registers and platform only after both asynchronous
@@ -217,7 +217,7 @@ where
         if self.interrupt_active() {
             return Err(Esp32s31MonitorStoppedAccessError::InterruptActive);
         }
-        if self.receive_phase() == Esp32s31RxRingPhase::Live {
+        if self.receive_phase() == Esp32s31RxFrontierPhase::Live {
             return Err(Esp32s31MonitorStoppedAccessError::ReceiveLive);
         }
         Ok((
@@ -436,7 +436,7 @@ where
         } else {
             Esp32s31MacInterruptEpochDrain::default()
         };
-        while self.receive_phase() == Esp32s31RxRingPhase::Live {
+        while self.receive_phase() == Esp32s31RxFrontierPhase::Live {
             let receive = self.receive.as_mut().expect("monitor RX owner exists");
             let hardware = self
                 .hardware
@@ -444,7 +444,7 @@ where
                 .expect("monitor hardware owner exists");
             match receive.stop(hardware) {
                 Ok(()) => {}
-                Err(Esp32s31RxRingOwnerError::Ring(
+                Err(Esp32s31RxFrontierError::Ring(
                     open_esp_radio_esp32s31_wifi_mac::rx::RxRingError::Busy,
                 )) => {
                     yield_now().await;
@@ -508,7 +508,7 @@ where
                 return;
             }
         }
-        if self.receive_phase() == Esp32s31RxRingPhase::Live {
+        if self.receive_phase() == Esp32s31RxFrontierPhase::Live {
             let stopped = {
                 let receive = self.receive.as_mut().expect("monitor RX owner exists");
                 let hardware = self
@@ -546,7 +546,7 @@ where
         if self.hardware.is_none() {
             return;
         }
-        if self.interrupt_active() || self.receive_phase() == Esp32s31RxRingPhase::Live {
+        if self.interrupt_active() || self.receive_phase() == Esp32s31RxFrontierPhase::Live {
             self.stop_on_drop();
         }
     }

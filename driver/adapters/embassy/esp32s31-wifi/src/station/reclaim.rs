@@ -24,8 +24,8 @@ use open_esp_radio_wifi_embassy::station_network::{
 
 use crate::{
     embassy_irq::Esp32s31MacInterruptEpoch,
-    preconnected_rx::{Esp32s31PreconnectedRx, Esp32s31PreconnectedRxDelay},
     rx_dma_service::{Esp32s31RxDmaStorage, Esp32s31RxEpochResources, Esp32s31StoppedRx},
+    rx_frontier::{Esp32s31RxFrontier, Esp32s31RxFrontierDelay},
     scan_rx::Esp32s31ScanRx,
     station_epoch::{Esp32s31DisconnectedStaEpoch, Esp32s31ReconnectedStaEpoch},
 };
@@ -139,7 +139,7 @@ type Esp32s31RebindableStationPhase<
 > = Esp32s31StationStoppedPhaseResources<
     'arena,
     Esp32s31ScanRx<'storage, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
-    Esp32s31PreconnectedRx<'storage, PD, COUNT, DMA_BUFFER_SIZE>,
+    Esp32s31RxFrontier<'storage, PD, COUNT, DMA_BUFFER_SIZE>,
     StationNetworkResources<ND, NR, NS>,
     RunningStationNetwork<NS, NR>,
     Esp32s31StoppedRx<
@@ -636,7 +636,7 @@ pub fn try_rebind_esp32s31_station_phase<
     >,
 >
 where
-    PD: Esp32s31PreconnectedRxDelay,
+    PD: Esp32s31RxFrontierDelay,
     M: RawMutex,
 {
     match resources {

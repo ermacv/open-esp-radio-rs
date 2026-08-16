@@ -6,7 +6,7 @@ type ProductionAccessPointControl = Esp32s31AccessPointControl<
     'static,
     'static,
     'static,
-    EmbassyEsp32s31PreconnectedRxDelay,
+    EmbassyEsp32s31RxFrontierDelay,
     PhyTxTargetPowerProfile,
     fn() -> u32,
     open_esp_radio_esp32s31_wifi_embassy::tx_time::EmbassyWifiTxTimer,
@@ -15,9 +15,9 @@ type ProductionAccessPointControl = Esp32s31AccessPointControl<
     RX_BUFFER_STORAGE_SIZE,
     TX_BUFFER_SIZE,
 >;
-type ProductionPreconnectedRx = Esp32s31PreconnectedRx<
+type ProductionRxFrontier = Esp32s31RxFrontier<
     'static,
-    EmbassyEsp32s31PreconnectedRxDelay,
+    EmbassyEsp32s31RxFrontierDelay,
     RX_DESCRIPTOR_COUNT,
     RX_BUFFER_SIZE,
 >;
@@ -42,6 +42,13 @@ type ProductionAccessPointStopped = EmbassyAccessPointStopped<
     RX_BUFFER_STORAGE_SIZE,
     TX_BUFFER_SIZE,
 >;
+type ProductionAccessPointAmpdu =
+    open_esp_radio_esp32s31_wifi_embassy::access_point::Esp32s31AccessPointAmpdu<
+        'static,
+        ConnectedTxBacking,
+        { open_esp_radio_esp32s31_wifi_embassy::resource_profile::ESP32S31_DEFAULT_TX_AMPDU_FRAME_COUNT },
+        0,
+    >;
 
 #[cfg(feature = "qualification")]
 #[inline(never)]
@@ -58,6 +65,10 @@ fn publish_access_point_observation(
         tx_interrupt_wakes: report.control.tx_interrupt_wakes,
         tx_deadline_wakes: report.control.tx_deadline_wakes,
         maximum_tx_pending_micros: report.control.maximum_tx_pending_micros,
+        maximum_network_tx_pending_micros: report.control.maximum_network_tx_pending_micros,
+        network_tx_attempts_at_maximum_pending: report
+            .control
+            .network_tx_attempts_at_maximum_pending,
         maximum_rx_service_micros: report.control.maximum_rx_service_micros,
         maximum_network_backpressure_micros: report.control.maximum_network_backpressure_micros,
         authentication_responses: report.mac.authentication_responses_transmitted,
@@ -82,6 +93,7 @@ fn publish_access_point_observation(
         completed_rx_units: report.control.completed_rx_units,
         completed_rx_descriptors: report.control.completed_rx_descriptors,
         recycled_rx_descriptors: report.control.recycled_rx_descriptors,
+        retained_rx_descriptors: report.control.retained_rx_descriptors,
         discarded_rx_units: report.control.discarded_rx_units,
         ignored_rx_frames: report.control.ignored_rx_frames,
         rx_mic_failures: report.control.rx_mic_failures,
@@ -99,6 +111,13 @@ fn publish_access_point_observation(
         network_tx_rejected_destination: report.control.network_tx_rejected_destination,
         network_tx_frames_rejected: report.control.network_tx_frames_rejected,
         data_frames_transmitted: report.mac.data_frames_transmitted,
+        data_tx_attempts: report.mac.data_tx.attempts,
+        data_tx_retried_frames: report.mac.data_tx.retried_frames,
+        data_tx_maximum_attempts: report.mac.data_tx.maximum_attempts,
+        data_tx_minimum_final_rate_kbps: report.mac.data_tx.minimum_final_rate_kbps,
+        data_tx_ack_snr_samples: report.mac.data_tx.ack_snr_samples,
+        data_tx_minimum_ack_snr_db: report.mac.data_tx.minimum_ack_snr_db,
+        data_tx_maximum_ack_snr_db: report.mac.data_tx.maximum_ack_snr_db,
         tx_ack_timeout_retries: report.mac.data_tx.ack_timeout_retries,
         tx_cts_timeout_retries: report.mac.data_tx.cts_timeout_retries,
         tx_collision_retries: report.mac.data_tx.collision_retries,
@@ -123,6 +142,7 @@ pub(super) struct ProductionAccessPointParked {
     board: ProductionStationBoardResources,
     station_address: [u8; 6],
     monitor: ProductionMonitorResources,
+    aggregate_tx: Option<ConnectedAmpduStorage>,
 }
 
 /// Exact station lifecycle state retained while AP temporarily owns Wi-Fi.
@@ -155,7 +175,6 @@ enum ProductionAccessPointReturnedPhase {
     Disconnected {
         network: ConnectedRunningNetwork,
         rx: ConnectedRxEpochResources,
-        aggregate_tx: ConnectedAmpduStorage,
         control: &'static ControlResources,
         station: Esp32s31StaAttemptStation,
         registers: Esp32s31RadioOwnerRepublish<'static>,
@@ -163,7 +182,6 @@ enum ProductionAccessPointReturnedPhase {
     Reconnected {
         network: StationNetwork,
         rx: ConnectedRxEpochResources,
-        aggregate_tx: ConnectedAmpduStorage,
         control: &'static ControlResources,
         station: Esp32s31StaAttemptStation,
         registers: Esp32s31RadioOwnerRepublish<'static>,
@@ -197,6 +215,7 @@ struct ProductionAccessPointStationResources {
     scan_table: &'static mut ScanTable,
     scan_frame: &'static mut [u8],
     ethernet: &'static mut [u8],
+    aggregate_tx: ConnectedAmpduStorage,
     resume: ProductionAccessPointStationResume,
     board: ProductionStationBoardResources,
     station_address: [u8; 6],
@@ -208,6 +227,7 @@ pub(super) struct ProductionAccessPointTask {
     registers: RadioRuntimeOwner,
     interrupts: MacInterruptEpoch,
     service: ProductionAccessPointControl,
+    aggregate: ProductionAccessPointAmpdu,
     parked: ProductionAccessPointParked,
 }
 
@@ -219,7 +239,7 @@ pub(super) struct ProductionAccessPointPreflightFault {
     _access_point: ProductionAccessPointResources,
     _monitor: ProductionMonitorResources,
     _detached_control: Option<ControlTx>,
-    _receive: Option<ProductionPreconnectedRx>,
+    _receive: Option<ProductionRxFrontier>,
 }
 
 pub(super) struct ProductionAccessPointRxOwnerFault {
@@ -236,7 +256,7 @@ pub(super) struct ProductionAccessPointEngineFault {
     _owner: Esp32s31AccessPointRoleOwner<EspHalRadioPeripheral>,
     _registers: RadioRuntimeOwner,
     _interrupt_setup: open_esp_radio::esp32s31::hal::MacInterruptSetup,
-    _receive: ProductionPreconnectedRx,
+    _receive: ProductionRxFrontier,
     _transmit: ProductionWifiTxResources,
     _engine: open_esp_radio::esp32s31::wifi::ap::engine::Esp32s31ApEngineStartFailure<'static>,
     _parked: ProductionAccessPointParked,
@@ -249,7 +269,7 @@ pub(super) struct ProductionAccessPointSecurityMaterialFault {
     _owner: Esp32s31AccessPointRoleOwner<EspHalRadioPeripheral>,
     _registers: RadioRuntimeOwner,
     _interrupt_setup: open_esp_radio::esp32s31::hal::MacInterruptSetup,
-    _receive: ProductionPreconnectedRx,
+    _receive: ProductionRxFrontier,
     _transmit: ProductionWifiTxResources,
     _parked: ProductionAccessPointParked,
     _beacon: &'static mut [u8; open_esp_radio::wifi::ieee80211::beacon::WPA2_BEACON_CAPACITY],
@@ -292,6 +312,14 @@ pub(super) enum ProductionAccessPointTeardownFault {
         _stopped: ProductionAccessPointStopped,
         _parked: ProductionAccessPointParked,
     },
+    Aggregate {
+        _owner: Esp32s31AccessPointRoleOwner<EspHalRadioPeripheral>,
+        _registers: RadioRuntimeOwner,
+        _interrupt_setup: open_esp_radio::esp32s31::hal::MacInterruptSetup,
+        _stopped: ProductionAccessPointStopped,
+        _aggregate: ProductionAccessPointAmpdu,
+        _parked: ProductionAccessPointParked,
+    },
     TxRestore {
         _owner: Esp32s31AccessPointRoleOwner<EspHalRadioPeripheral>,
         _registers: RadioRuntimeOwner,
@@ -322,9 +350,14 @@ fn try_prepare_access_point_station_resources(
                 scan_frame,
                 ethernet,
                 network,
-                board,
+                mut board,
                 station_address,
             } = fresh;
+            let aggregate_tx = board
+                .initial_connected
+                .as_mut()
+                .expect("fresh station owns initial connected resources")
+                .take_aggregate();
             return Ok(ProductionAccessPointStationResources {
                 dma,
                 rx_ring,
@@ -332,6 +365,7 @@ fn try_prepare_access_point_station_resources(
                 scan_table,
                 scan_frame,
                 ethernet,
+                aggregate_tx,
                 resume: ProductionAccessPointStationResume::Fresh { network },
                 board,
                 station_address,
@@ -341,7 +375,7 @@ fn try_prepare_access_point_station_resources(
     };
     let ProductionStationReusableResources {
         storage,
-        board,
+        mut board,
         phase,
         security,
         interrupt_route,
@@ -350,16 +384,24 @@ fn try_prepare_access_point_station_resources(
     } = returned;
     let (dma, tx_epoch, scan_table, scan_frame, ethernet) = storage.into_parts();
     let station_address = board.interface.interface.address;
-    let (ring, phase) = match phase {
+    let (ring, phase, aggregate_tx) = match phase {
         Esp32s31StationStoppedPhaseResources::InitialScan {
             receive,
             network,
             identity,
         } => match receive.into_halted() {
-            Ok(ring) => (
-                ring,
-                ProductionAccessPointReturnedPhase::InitialScan { network, identity },
-            ),
+            Ok(ring) => {
+                let aggregate_tx = board
+                    .initial_connected
+                    .as_mut()
+                    .expect("initial scan retains initial connected resources")
+                    .take_aggregate();
+                (
+                    ring,
+                    ProductionAccessPointReturnedPhase::InitialScan { network, identity },
+                    aggregate_tx,
+                )
+            }
             Err(receive) => {
                 return Err(ProductionStationResources::Returned(
                     ProductionStationReusableResources {
@@ -385,10 +427,18 @@ fn try_prepare_access_point_station_resources(
             network,
             station,
         } => match receive.try_into_halted() {
-            Ok(ring) => (
-                ring,
-                ProductionAccessPointReturnedPhase::InitialJoin { network, station },
-            ),
+            Ok(ring) => {
+                let aggregate_tx = board
+                    .initial_connected
+                    .as_mut()
+                    .expect("initial join retains initial connected resources")
+                    .take_aggregate();
+                (
+                    ring,
+                    ProductionAccessPointReturnedPhase::InitialJoin { network, station },
+                    aggregate_tx,
+                )
+            }
             Err(receive) => {
                 return Err(ProductionStationResources::Returned(
                     ProductionStationReusableResources {
@@ -423,11 +473,11 @@ fn try_prepare_access_point_station_resources(
                 ProductionAccessPointReturnedPhase::Disconnected {
                     network,
                     rx,
-                    aggregate_tx,
                     control,
                     station,
                     registers,
                 },
+                aggregate_tx,
             )
         }
         Esp32s31StationStoppedPhaseResources::Reconnected {
@@ -444,11 +494,11 @@ fn try_prepare_access_point_station_resources(
                 ProductionAccessPointReturnedPhase::Reconnected {
                     network,
                     rx,
-                    aggregate_tx,
                     control,
                     station,
                     registers,
                 },
+                aggregate_tx,
             ),
             Err(receive) => {
                 return Err(ProductionStationResources::Returned(
@@ -482,6 +532,7 @@ fn try_prepare_access_point_station_resources(
         scan_table,
         scan_frame,
         ethernet,
+        aggregate_tx,
         resume: ProductionAccessPointStationResume::Returned {
             phase,
             security,
@@ -496,6 +547,7 @@ fn try_prepare_access_point_station_resources(
 
 fn restore_station_resources_after_access_point(
     parked: ProductionAccessPointParked,
+    aggregate_tx: ConnectedAmpduStorage,
     ring: open_esp_radio::esp32s31::wifi::mac::rx::RxRingHalted<'static, RX_DESCRIPTOR_COUNT>,
     scan_frame: &'static mut [u8],
     ethernet: &'static mut [u8],
@@ -505,10 +557,36 @@ fn restore_station_resources_after_access_point(
         tx_epoch,
         scan_table,
         resume,
-        board,
+        mut board,
         station_address,
         monitor,
+        aggregate_tx: parked_aggregate,
     } = parked;
+    debug_assert!(
+        parked_aggregate.is_none(),
+        "a running AP task owns aggregate storage outside parked STA state"
+    );
+    let mut aggregate_tx = Some(aggregate_tx);
+    let uses_initial_resources = matches!(
+        &resume,
+        ProductionAccessPointStationResume::Fresh { .. }
+            | ProductionAccessPointStationResume::Returned {
+                phase: ProductionAccessPointReturnedPhase::InitialScan { .. }
+                    | ProductionAccessPointReturnedPhase::InitialJoin { .. },
+                ..
+            }
+    );
+    if uses_initial_resources {
+        board
+            .initial_connected
+            .as_mut()
+            .expect("initial station phase retains connected resources")
+            .restore_aggregate(
+                aggregate_tx
+                    .take()
+                    .expect("AP returns the aggregate owner exactly once"),
+            );
+    }
     let resources = match resume {
         ProductionAccessPointStationResume::Fresh { network } => {
             ProductionStationResources::Fresh(ProductionStationFreshResources {
@@ -540,7 +618,7 @@ fn restore_station_resources_after_access_point(
                 }
                 ProductionAccessPointReturnedPhase::InitialJoin { network, station } => {
                     Esp32s31StationStoppedPhaseResources::InitialJoin {
-                        receive: Esp32s31PreconnectedRx::from_halted(ring),
+                        receive: Esp32s31RxFrontier::from_halted(ring),
                         network,
                         station,
                     }
@@ -548,14 +626,15 @@ fn restore_station_resources_after_access_point(
                 ProductionAccessPointReturnedPhase::Disconnected {
                     network,
                     rx,
-                    aggregate_tx,
                     control,
                     station,
                     registers,
                 } => Esp32s31StationStoppedPhaseResources::Disconnected {
                     network,
                     receive: rx.with_halted_ring(ring),
-                    aggregate_tx,
+                    aggregate_tx: aggregate_tx
+                        .take()
+                        .expect("disconnected phase reclaims AP aggregate owner"),
                     control,
                     station,
                     registers,
@@ -563,15 +642,16 @@ fn restore_station_resources_after_access_point(
                 ProductionAccessPointReturnedPhase::Reconnected {
                     network,
                     rx,
-                    aggregate_tx,
                     control,
                     station,
                     registers,
                 } => Esp32s31StationStoppedPhaseResources::Reconnected {
                     network,
-                    receive: Esp32s31PreconnectedRx::from_halted(ring),
+                    receive: Esp32s31RxFrontier::from_halted(ring),
                     rx,
-                    aggregate_tx,
+                    aggregate_tx: aggregate_tx
+                        .take()
+                        .expect("reconnected phase reclaims AP aggregate owner"),
                     control,
                     station,
                     registers,
@@ -665,6 +745,7 @@ impl ProductionWifiEpochRunner {
             scan_table,
             scan_frame,
             ethernet,
+            aggregate_tx,
             resume,
             board,
             station_address,
@@ -693,6 +774,7 @@ impl ProductionWifiEpochRunner {
                                 scan_table,
                                 scan_frame,
                                 ethernet,
+                                aggregate_tx,
                                 resume,
                                 board,
                                 station_address,
@@ -722,6 +804,7 @@ impl ProductionWifiEpochRunner {
                             scan_table,
                             scan_frame,
                             ethernet,
+                            aggregate_tx,
                             resume,
                             board,
                             station_address,
@@ -732,7 +815,7 @@ impl ProductionWifiEpochRunner {
                 });
             }
         };
-        let receive = Esp32s31PreconnectedRx::from_halted(halted);
+        let receive = Esp32s31RxFrontier::from_halted(halted);
         let control = match tx_epoch.take_control() {
             Ok(control) => control,
             Err(_) => {
@@ -748,6 +831,7 @@ impl ProductionWifiEpochRunner {
                             scan_table,
                             scan_frame,
                             ethernet,
+                            aggregate_tx,
                             resume,
                             board,
                             station_address,
@@ -775,6 +859,7 @@ impl ProductionWifiEpochRunner {
                             scan_table,
                             scan_frame,
                             ethernet,
+                            aggregate_tx,
                             resume,
                             board,
                             station_address,
@@ -818,6 +903,7 @@ impl ProductionWifiEpochRunner {
                             board,
                             station_address,
                             monitor,
+                            aggregate_tx: Some(aggregate_tx),
                         },
                         _beacon: beacon,
                         _peer_storage: peer_storage,
@@ -865,6 +951,7 @@ impl ProductionWifiEpochRunner {
                             board,
                             station_address,
                             monitor,
+                            aggregate_tx: Some(aggregate_tx),
                         },
                         _rx_dispatcher: rx_dispatcher,
                         _rx_frame: scan_frame,
@@ -873,6 +960,12 @@ impl ProductionWifiEpochRunner {
                 });
             }
         };
+        let maximum_aggregate_bytes = transmit.policy.ht_ampdu().maximum_aggregate_bytes();
+        let aggregate = ProductionAccessPointAmpdu::new(
+            aggregate_tx,
+            maximum_aggregate_bytes,
+            4,
+        );
         let mac = Esp32s31ApMac::new(
             engine,
             transmit,
@@ -894,6 +987,7 @@ impl ProductionWifiEpochRunner {
             registers: materialized.registers,
             interrupts: mac_interrupt_epoch(materialized.interrupt_setup),
             service,
+            aggregate,
             parked: ProductionAccessPointParked {
                 dma,
                 tx_epoch,
@@ -902,6 +996,7 @@ impl ProductionWifiEpochRunner {
                 board,
                 station_address,
                 monitor,
+                aggregate_tx: None,
             },
         })
     }
@@ -916,6 +1011,7 @@ impl ProductionWifiEpochRunner {
             mut registers,
             interrupts,
             service,
+            aggregate,
             parked,
         } = task;
         let stopped = match service.try_finish(&mut registers) {
@@ -928,6 +1024,7 @@ impl ProductionWifiEpochRunner {
                         registers,
                         interrupts,
                         service,
+                        aggregate,
                         parked,
                     },
                 });
@@ -956,7 +1053,33 @@ impl ProductionWifiEpochRunner {
             board,
             station_address,
             monitor,
+            aggregate_tx: parked_aggregate,
         } = parked;
+        debug_assert!(parked_aggregate.is_none());
+        let aggregate_tx = match aggregate.try_into_resources() {
+            Ok(resources) => resources,
+            Err(aggregate) => {
+                return Err(ProductionWifiFault::AccessPointTeardown {
+                    _fault: ProductionAccessPointTeardownFault::Aggregate {
+                        _owner: owner,
+                        _registers: registers,
+                        _interrupt_setup: interrupt_setup,
+                        _stopped: stopped,
+                        _aggregate: aggregate,
+                        _parked: ProductionAccessPointParked {
+                            dma,
+                            tx_epoch,
+                            scan_table,
+                            resume,
+                            board,
+                            station_address,
+                            monitor,
+                            aggregate_tx: None,
+                        },
+                    },
+                });
+            }
+        };
         if let Err((_error, returned_control)) = tx_epoch.restore_resources(stopped.transmit) {
             return Err(ProductionWifiFault::AccessPointTeardown {
                 _fault: ProductionAccessPointTeardownFault::TxRestore {
@@ -978,6 +1101,7 @@ impl ProductionWifiEpochRunner {
                         board,
                         station_address,
                         monitor,
+                        aggregate_tx: Some(aggregate_tx),
                     },
                     _returned_control: returned_control,
                 },
@@ -1008,7 +1132,9 @@ impl ProductionWifiEpochRunner {
                 board,
                 station_address,
                 monitor,
+                aggregate_tx: None,
             },
+            aggregate_tx,
             stopped.ring,
             stopped.rx_frame,
             stopped.tx_frame,
@@ -1114,6 +1240,12 @@ impl ProductionWifiEpochRunner {
         let rx_statistics_before = task.registers.receive_statistics_snapshot();
         #[cfg(feature = "qualification")]
         let rx_policy_before = task.registers.access_point_receive_policy_snapshot();
+        #[cfg(feature = "qualification")]
+        let rx_delivery_observer = task
+            .parked
+            .board
+            .qualification
+            .and_then(|hooks| hooks.rx_delivery);
         let result = {
             let network = task.parked.resume.radio_runner();
             let (_, platform) = task.owner.radio_mut();
@@ -1122,6 +1254,9 @@ impl ProductionWifiEpochRunner {
                 &mut task.interrupts,
                 &*platform,
                 network,
+                &mut task.aggregate,
+                #[cfg(feature = "qualification")]
+                rx_delivery_observer,
                 wait_for_access_point_stop(endpoint),
                 |status| crate::access_point_status::publish_access_point_status(
                     generation, status

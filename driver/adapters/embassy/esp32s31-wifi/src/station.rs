@@ -97,7 +97,7 @@ pub type Esp32s31ConnectedDriverTeardownFailure<
     crate::connected_control::ConnectedControlError,
     RE,
 >;
-/// Concrete service aggregate used by the production connected runner while
+/// Concrete service aggregate used by the production WDEV runner while
 /// the Embassy control scheduler remains an implementation detail.
 pub type Esp32s31ConnectedDriverServices<'resources, M, H, R, X, const CONTROL_CAPACITY: usize> =
     crate::connected_services::Esp32s31ConnectedServices<

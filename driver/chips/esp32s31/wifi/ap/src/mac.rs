@@ -13,6 +13,7 @@ use open_esp_radio_esp32s31_wifi::{
 };
 use open_esp_radio_esp32s31_wifi_mac::tx::{LegacyRate, TxHardware};
 use open_esp_radio_ieee80211::ap::ApPeerDisconnectKind;
+use open_esp_radio_ieee80211::block_ack::TxBlockAckAlarm;
 use open_esp_radio_wifi_ap::{ApPeerClose, ApServiceError};
 use open_esp_radio_wpa2::frames::Wpa2TxFrame;
 
@@ -39,6 +40,9 @@ enum PendingPublication {
         retransmission: bool,
     },
     Data {
+        peer: [u8; 6],
+    },
+    BlockAckRequest {
         peer: [u8; 6],
     },
     PeerDisconnect {
@@ -171,6 +175,7 @@ pub struct Esp32s31ApMac<'beacon, 'slot, P, E, T, const BUFFER_SIZE: usize> {
     engine: Esp32s31ApEngine<'beacon>,
     transmit: Esp32s31ApTx<'slot, P, E, T, BUFFER_SIZE>,
     pending: Option<PendingPublication>,
+    block_ack_alarm: Option<([u8; 6], TxBlockAckAlarm)>,
     report: Esp32s31ApMacReport,
 }
 
@@ -190,6 +195,7 @@ where
             engine,
             transmit: Esp32s31ApTx::new(resources, config),
             pending: None,
+            block_ack_alarm: None,
             report: Esp32s31ApMacReport::default(),
         }
     }
@@ -200,6 +206,23 @@ where
 
     pub fn engine_mut(&mut self) -> &mut Esp32s31ApEngine<'beacon> {
         &mut self.engine
+    }
+
+    /// Borrow the AP encoder/key owner and the ordinary publication-policy
+    /// adapter together at an idle boundary. The shared retained-DMA A-MPDU
+    /// owner consumes these two narrow capabilities; it does not receive the
+    /// complete AP MAC or peer table.
+    pub fn try_aggregate_adapter(
+        &mut self,
+    ) -> Result<
+        (
+            &mut Esp32s31ApEngine<'beacon>,
+            &mut Esp32s31ApTx<'slot, P, E, T, BUFFER_SIZE>,
+        ),
+        Esp32s31ApMacError,
+    > {
+        self.require_idle()?;
+        Ok((&mut self.engine, &mut self.transmit))
     }
 
     pub const fn report(&self) -> Esp32s31ApMacReport {
@@ -268,6 +291,13 @@ where
             now_micros,
             scratch,
         )?;
+        if let Some(peer) = request
+            .get(10..16)
+            .and_then(|bytes| <[u8; 6]>::try_from(bytes).ok())
+            && self.engine.tx_block_ack_agreement(peer).is_some()
+        {
+            self.block_ack_alarm = None;
+        }
         let Esp32s31ApManagementOutcome::Response { len, begin_wpa2 } = outcome else {
             return Ok(outcome);
         };
@@ -305,6 +335,42 @@ where
             retransmission: frame.retransmission(),
         });
         Ok(())
+    }
+
+    pub fn publish_tx_block_ack_request<H: TxHardware>(
+        &mut self,
+        hardware: &mut H,
+        peer: [u8; 6],
+        now_micros: u64,
+        scratch: &mut [u8],
+    ) -> Result<bool, Esp32s31ApMacError> {
+        self.require_idle()?;
+        let Some((length, alarm)) = self
+            .engine
+            .prepare_tx_block_ack_request(peer, now_micros, scratch)?
+        else {
+            return Ok(false);
+        };
+        self.transmit
+            .start_encoded(hardware, Esp32s31ApTxClass::Management, &scratch[..length])?;
+        self.block_ack_alarm = Some((peer, alarm));
+        self.pending = Some(PendingPublication::BlockAckRequest { peer });
+        Ok(true)
+    }
+
+    pub fn next_tx_block_ack_deadline(&self) -> Option<u64> {
+        self.block_ack_alarm.map(|(_, alarm)| alarm.deadline_us)
+    }
+
+    pub fn expire_tx_block_ack(&mut self, now_micros: u64) -> Result<bool, Esp32s31ApMacError> {
+        let Some((peer, alarm)) = self.block_ack_alarm else {
+            return Ok(false);
+        };
+        if now_micros < alarm.deadline_us {
+            return Ok(false);
+        }
+        self.block_ack_alarm = None;
+        Ok(self.engine.observe_tx_block_ack_alarm(peer, alarm)?)
     }
 
     pub fn publish_ethernet<H>(
@@ -410,7 +476,12 @@ where
             .transmit
             .take_last_outcome()
             .expect("terminal AP TX retains an outcome");
-        if matches!(pending, PendingPublication::Data { .. }) {
+        if let PendingPublication::Data { peer } = pending
+            && peer[0] & 1 == 0
+        {
+            // Group traffic has no ACK and deliberately uses the 1-Mbit/s
+            // basic rate. Mixing it into per-peer retry/rate evidence makes a
+            // healthy broadcast look like a unicast rate-control collapse.
             self.report.data_tx.observe(outcome.report());
         }
         if !matches!(outcome, OrdinaryTxOutcome::Success(_)) {
@@ -500,6 +571,7 @@ where
                 }
                 Esp32s31ApTxCompletionAction::None
             }
+            PendingPublication::BlockAckRequest { .. } => Esp32s31ApTxCompletionAction::None,
             PendingPublication::PeerDisconnect { close, stage } => {
                 match stage {
                     Esp32s31ApPeerDisconnectStage::Disassociation => {
@@ -545,6 +617,7 @@ where
             engine,
             transmit,
             pending,
+            block_ack_alarm,
             report,
         } = self;
         if pending.is_some() {
@@ -552,6 +625,7 @@ where
                 engine,
                 transmit,
                 pending,
+                block_ack_alarm,
                 report,
             });
         }
@@ -561,6 +635,7 @@ where
                 engine,
                 transmit,
                 pending,
+                block_ack_alarm,
                 report,
             }),
         }

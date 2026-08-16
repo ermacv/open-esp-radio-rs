@@ -21,7 +21,7 @@ use open_esp_radio::esp32s31::hal::radio_arena::Esp32s31RadioOwnerArena;
 #[cfg(feature = "qualification")]
 use open_esp_radio::esp32s31::wifi::dma::descriptor::{rx_done, rx_rearm_word};
 #[cfg(feature = "qualification")]
-use open_esp_radio::esp32s31::wifi::mac::connected_rx::{
+use open_esp_radio::esp32s31::wifi::sta::connected_rx::{
     ConnectedRxEvent, ConnectedRxSink as MacConnectedRxSink,
 };
 #[cfg(feature = "qualification")]
@@ -69,8 +69,8 @@ use open_esp_radio_esp32s31_wifi_embassy::{
     embassy_rx::EmbassyEsp32s31RxDmaObservationDelay,
     monitor::Esp32s31MonitorInterrupts,
     network_rx::EmbassyNetConnectedRxSink,
-    preconnected_rx::{
-        EmbassyEsp32s31PreconnectedRxDelay, Esp32s31PreconnectedRx, Esp32s31PreconnectedRxError,
+    rx_frontier::{
+        EmbassyEsp32s31RxFrontierDelay, Esp32s31RxFrontier, Esp32s31RxFrontierError,
     },
     resource_profile::{
         ESP32S31_DEFAULT_CONTROL_QUEUE_DEPTH as CONTROL_QUEUE_DEPTH,
@@ -120,9 +120,9 @@ use crate::runtime::{
     RX_DESCRIPTOR_COUNT, RxStorage, TxStorage, production_station_runtime,
 };
 
-const NETWORK_TX_HEADROOM: usize =
+pub(super) const NETWORK_TX_HEADROOM: usize =
     8 + open_esp_radio::wifi::ieee80211::station::STA_PROTECTED_QOS_ETHERNET_HEADROOM;
-const TX_AMPDU_BUFFER_SIZE: usize = 0;
+pub(super) const TX_AMPDU_BUFFER_SIZE: usize = 0;
 
 type NetworkResources = SplitPinnedResources<
     CriticalSectionRawMutex,
@@ -138,7 +138,7 @@ type NetworkTxPool = PinnedTxPool<
     NETWORK_TX_TRAILER,
     NETWORK_TX_QUEUE_DEPTH,
 >;
-type ConnectedTxBacking = PinnedTxFrame<
+pub(super) type ConnectedTxBacking = PinnedTxFrame<
     'static,
     CriticalSectionRawMutex,
     NETWORK_FRAME_CAPACITY,
@@ -398,9 +398,9 @@ type ConnectedDriverTeardownFailure = Esp32s31ConnectedDriverTeardownFailure<
 >;
 pub type ConnectedReconnectedEpoch = Esp32s31ReconnectedStaEpoch<
     ConnectedHardware,
-    Esp32s31PreconnectedRx<
+    Esp32s31RxFrontier<
         'static,
-        EmbassyEsp32s31PreconnectedRxDelay,
+        EmbassyEsp32s31RxFrontierDelay,
         RX_DESCRIPTOR_COUNT,
         RX_BUFFER_SIZE,
     >,
@@ -540,17 +540,17 @@ pub type StationNetwork = StationNetworkResources<(), NetworkRunner, ()>;
 /// Hardware frontier accepted by one connected epoch.
 pub type ConnectedStationEpoch = Esp32s31ConnectedEpochResources<
     RadioRuntimeOwner,
-    Esp32s31PreconnectedRx<
+    Esp32s31RxFrontier<
         'static,
-        EmbassyEsp32s31PreconnectedRxDelay,
+        EmbassyEsp32s31RxFrontierDelay,
         RX_DESCRIPTOR_COUNT,
         RX_BUFFER_SIZE,
     >,
     ConnectedReconnectedEpoch,
 >;
-type ConnectedPreconnectedRx = Esp32s31PreconnectedRx<
+type ConnectedRxFrontier = Esp32s31RxFrontier<
     'static,
-    EmbassyEsp32s31PreconnectedRxDelay,
+    EmbassyEsp32s31RxFrontierDelay,
     RX_DESCRIPTOR_COUNT,
     RX_BUFFER_SIZE,
 >;
@@ -563,18 +563,18 @@ type InitialConnectedResources = Esp32s31InitialConnectedEpochResources<
 type ConnectedEpochStartFault = Esp32s31ConnectedEpochStartFailure<
     InitialConnectedResources,
     ConnectedHardware,
-    ConnectedPreconnectedRx,
+    ConnectedRxFrontier,
     ConnectedRxEpochResources,
     ConnectedAmpduStorage,
     &'static ControlResources,
-    Esp32s31PreconnectedRxError,
+    Esp32s31RxFrontierError,
 >;
 
 /// Initial-only connected resources materialized before the supervisor can
 /// activate any station IRQ or DMA epoch.
 pub(super) struct InitialConnectedStaticResources {
     registers: &'static Esp32s31RadioOwnerArena,
-    aggregate: ConnectedAmpduStorage,
+    aggregate: Option<ConnectedAmpduStorage>,
     control: &'static ControlResources,
 }
 
@@ -792,8 +792,21 @@ pub(super) struct InitialConnectedInitialization {
 }
 
 impl InitialConnectedStaticResources {
+    pub(super) fn take_aggregate(&mut self) -> ConnectedAmpduStorage {
+        self.aggregate
+            .take()
+            .expect("one STA or AP role exclusively owns the aggregate arena")
+    }
+
+    pub(super) fn restore_aggregate(&mut self, aggregate: ConnectedAmpduStorage) {
+        assert!(
+            self.aggregate.replace(aggregate).is_none(),
+            "aggregate arena cannot be restored over a live role owner"
+        );
+    }
+
     fn with_rx(
-        self,
+        mut self,
         rx: ConnectedRxEpochResources,
     ) -> Esp32s31InitialConnectedEpochResources<
         'static,
@@ -804,7 +817,7 @@ impl InitialConnectedStaticResources {
         Esp32s31InitialConnectedEpochResources::new(
             self.registers,
             rx,
-            self.aggregate,
+            self.take_aggregate(),
             self.control,
         )
     }
@@ -822,7 +835,7 @@ type ConnectedNetworkStarted<'state, 'security> = Esp32s31ConnectedNetworkStarte
 /// Normal outcome returned after all connected owners are quiescent.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ConnectedStationOutcome {
-    Disconnected(open_esp_radio_esp32s31_wifi_embassy::connected_runner::ConnectedDisconnectReason),
+    Disconnected(open_esp_radio::esp32s31::wifi::sta::connected_control::ConnectedDisconnectReason),
     ReconnectRequested,
     StationStopped(Esp32s31StationCommand),
     HardwareFailure,
@@ -890,7 +903,7 @@ pub enum ConnectedStationFault<'state, 'security> {
     InitialStaticResourcesUnavailable {
         _runtime: ProductionStationRuntime<'state>,
         _hardware: RadioRuntimeOwner,
-        _receive: ConnectedPreconnectedRx,
+        _receive: ConnectedRxFrontier,
         _stack: (),
         _network: NetworkRunner,
         _initial_network_task: Option<()>,
@@ -990,7 +1003,7 @@ pub(super) fn initialize_connected_static_resources()
     Ok(InitialConnectedInitialization {
         resources: InitialConnectedStaticResources {
             registers,
-            aggregate,
+            aggregate: Some(aggregate),
             control: &*CONTROL_RESOURCES.take(),
         },
         #[cfg(feature = "qualification")]
@@ -1630,7 +1643,7 @@ pub async fn run_connected<'state, 'security>(
     #[cfg(feature = "qualification")]
     QUALIFICATION_LINK_BANDWIDTH_MHZ.store(0, Ordering::Release);
     let outcome = stopped.exit;
-    qualification_event!("open-radio: connected runner stopped: {outcome:?}");
+    qualification_event!("open-radio: WDEV runner stopped: {outcome:?}");
     let shutdown = stopped.quiesced.tasks.shutdown();
     qualification_event!(
         "open-radio: RX protocol stopped queued={} retained={} commands={} active={}",

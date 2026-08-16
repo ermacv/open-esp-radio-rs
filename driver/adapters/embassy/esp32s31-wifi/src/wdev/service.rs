@@ -4,6 +4,7 @@ impl<
     'resources,
     'irq,
     M: RawMutex,
+    N,
     B,
     const FRAME_CAPACITY: usize,
     const HEADROOM: usize,
@@ -11,10 +12,11 @@ impl<
     const RX_QUEUE_DEPTH: usize,
     const TX_QUEUE_DEPTH: usize,
 >
-    ConnectedRunner<
+    WdevRunner<
         'resources,
         'irq,
         M,
+        N,
         B,
         FRAME_CAPACITY,
         HEADROOM,
@@ -23,16 +25,26 @@ impl<
         TX_QUEUE_DEPTH,
     >
 where
-    B: ConnectedRunnerServices<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+    N: WdevNetwork<
+            'resources,
+            M,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            RX_QUEUE_DEPTH,
+            TX_QUEUE_DEPTH,
+        >,
+    B: WdevServices<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
 {
     pub(super) async fn service_rx(&mut self) -> Result<(), B::Error> {
-        let progress = self.services.service_rx().await?;
-        self.rx_backpressured = progress == WifiRxProgress::Backpressured;
+        let progress = self.services.service_rx(&mut self.network_rx).await?;
+        self.rx_progress = progress;
+        self.network_turn_owed = progress == WdevRxProgress::ProbePending;
         // One service call owns exactly the completion frontier captured at
         // its start. Yield at that hardware epoch boundary so a separate
         // protocol task can consume staged ownership before another RX epoch.
         yield_now().await;
-        if progress == WifiRxProgress::ProbePending {
+        if progress == WdevRxProgress::ProbePending {
             // Direct BASE publication of an exhausted list has no reload
             // interrupt. Repost only after the cooperative boundary so the
             // next service observes hardware after a distinct executor turn.
@@ -67,12 +79,20 @@ where
         let mut progress = WifiTxProgress::Pending;
         while progress == WifiTxProgress::Pending {
             let irq = self.irq;
-            let rx_backpressured = self.rx_backpressured;
+            let rx_progress = self.rx_progress;
+            let service_rx_during_tx = self.services.service_rx_during_tx();
+            let network_rx = &mut self.network_rx;
             let wait_rx = async move {
-                if rx_backpressured {
-                    irq.wait_rx_capacity().await;
+                if !service_rx_during_tx {
+                    pending().await
                 } else {
-                    irq.wait_rx().await;
+                    match rx_progress {
+                        WdevRxProgress::StagingBackpressured => irq.wait_rx_capacity().await,
+                        WdevRxProgress::NetworkBackpressured => network_rx.wait_ready().await,
+                        WdevRxProgress::Drained | WdevRxProgress::ProbePending => {
+                            irq.wait_rx().await
+                        }
+                    }
                 }
             };
             let can_prepare = self.services.can_prepare_tx();

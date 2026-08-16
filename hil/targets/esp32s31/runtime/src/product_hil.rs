@@ -137,6 +137,8 @@ static AP_MAXIMUM_BEACON_LATENESS_MICROS: AtomicU32 = AtomicU32::new(0);
 static AP_TX_INTERRUPT_WAKES: AtomicU32 = AtomicU32::new(0);
 static AP_TX_DEADLINE_WAKES: AtomicU32 = AtomicU32::new(0);
 static AP_MAXIMUM_TX_PENDING_MICROS: AtomicU32 = AtomicU32::new(0);
+static AP_MAXIMUM_NETWORK_TX_PENDING_MICROS: AtomicU32 = AtomicU32::new(0);
+static AP_NETWORK_TX_ATTEMPTS_AT_MAXIMUM_PENDING: AtomicU32 = AtomicU32::new(0);
 static AP_MAXIMUM_RX_SERVICE_MICROS: AtomicU32 = AtomicU32::new(0);
 static AP_MAXIMUM_NETWORK_BACKPRESSURE_MICROS: AtomicU32 = AtomicU32::new(0);
 static AP_AUTHENTICATIONS: AtomicU32 = AtomicU32::new(0);
@@ -161,6 +163,7 @@ static AP_DEAUTHENTICATIONS_ACKNOWLEDGED: AtomicU32 = AtomicU32::new(0);
 static AP_COMPLETED_RX_UNITS: AtomicU32 = AtomicU32::new(0);
 static AP_COMPLETED_RX_DESCRIPTORS: AtomicU32 = AtomicU32::new(0);
 static AP_RECYCLED_RX_DESCRIPTORS: AtomicU32 = AtomicU32::new(0);
+static AP_RETAINED_RX_DESCRIPTORS: AtomicU32 = AtomicU32::new(0);
 static AP_DISCARDED_RX_UNITS: AtomicU32 = AtomicU32::new(0);
 static AP_IGNORED_RX_FRAMES: AtomicU32 = AtomicU32::new(0);
 static AP_RX_MIC_FAILURES: AtomicU32 = AtomicU32::new(0);
@@ -178,6 +181,13 @@ static AP_NETWORK_TX_REJECTED_NO_PEER: AtomicU32 = AtomicU32::new(0);
 static AP_NETWORK_TX_REJECTED_DESTINATION: AtomicU32 = AtomicU32::new(0);
 static AP_NETWORK_TX_FRAMES_REJECTED: AtomicU32 = AtomicU32::new(0);
 static AP_DATA_FRAMES_TRANSMITTED: AtomicU32 = AtomicU32::new(0);
+static AP_DATA_TX_ATTEMPTS: AtomicU32 = AtomicU32::new(0);
+static AP_DATA_TX_RETRIED_FRAMES: AtomicU32 = AtomicU32::new(0);
+static AP_DATA_TX_MAXIMUM_ATTEMPTS: AtomicU32 = AtomicU32::new(0);
+static AP_DATA_TX_MINIMUM_FINAL_RATE_KBPS: AtomicU32 = AtomicU32::new(0);
+static AP_DATA_TX_ACK_SNR_SAMPLES: AtomicU32 = AtomicU32::new(0);
+static AP_DATA_TX_MINIMUM_ACK_SNR_DB: AtomicU32 = AtomicU32::new(0);
+static AP_DATA_TX_MAXIMUM_ACK_SNR_DB: AtomicU32 = AtomicU32::new(0);
 static AP_TX_ACK_TIMEOUT_RETRIES: AtomicU32 = AtomicU32::new(0);
 static AP_TX_CTS_TIMEOUT_RETRIES: AtomicU32 = AtomicU32::new(0);
 static AP_TX_COLLISION_RETRIES: AtomicU32 = AtomicU32::new(0);
@@ -200,6 +210,14 @@ fn observe_access_point(observation: Esp32s31AccessPointObservation) {
     AP_TX_INTERRUPT_WAKES.store(observation.tx_interrupt_wakes, Ordering::Release);
     AP_TX_DEADLINE_WAKES.store(observation.tx_deadline_wakes, Ordering::Release);
     AP_MAXIMUM_TX_PENDING_MICROS.store(observation.maximum_tx_pending_micros, Ordering::Release);
+    AP_MAXIMUM_NETWORK_TX_PENDING_MICROS.store(
+        observation.maximum_network_tx_pending_micros,
+        Ordering::Release,
+    );
+    AP_NETWORK_TX_ATTEMPTS_AT_MAXIMUM_PENDING.store(
+        u32::from(observation.network_tx_attempts_at_maximum_pending),
+        Ordering::Release,
+    );
     AP_MAXIMUM_RX_SERVICE_MICROS.store(observation.maximum_rx_service_micros, Ordering::Release);
     AP_MAXIMUM_NETWORK_BACKPRESSURE_MICROS.store(
         observation.maximum_network_backpressure_micros,
@@ -235,6 +253,7 @@ fn observe_access_point(observation: Esp32s31AccessPointObservation) {
     AP_COMPLETED_RX_UNITS.store(observation.completed_rx_units, Ordering::Release);
     AP_COMPLETED_RX_DESCRIPTORS.store(observation.completed_rx_descriptors, Ordering::Release);
     AP_RECYCLED_RX_DESCRIPTORS.store(observation.recycled_rx_descriptors, Ordering::Release);
+    AP_RETAINED_RX_DESCRIPTORS.store(observation.retained_rx_descriptors, Ordering::Release);
     AP_DISCARDED_RX_UNITS.store(observation.discarded_rx_units, Ordering::Release);
     AP_IGNORED_RX_FRAMES.store(observation.ignored_rx_frames, Ordering::Release);
     AP_RX_MIC_FAILURES.store(observation.rx_mic_failures, Ordering::Release);
@@ -260,6 +279,25 @@ fn observe_access_point(observation: Esp32s31AccessPointObservation) {
     );
     AP_NETWORK_TX_FRAMES_REJECTED.store(observation.network_tx_frames_rejected, Ordering::Release);
     AP_DATA_FRAMES_TRANSMITTED.store(observation.data_frames_transmitted, Ordering::Release);
+    AP_DATA_TX_ATTEMPTS.store(observation.data_tx_attempts, Ordering::Release);
+    AP_DATA_TX_RETRIED_FRAMES.store(observation.data_tx_retried_frames, Ordering::Release);
+    AP_DATA_TX_MAXIMUM_ATTEMPTS.store(
+        u32::from(observation.data_tx_maximum_attempts),
+        Ordering::Release,
+    );
+    AP_DATA_TX_MINIMUM_FINAL_RATE_KBPS.store(
+        observation.data_tx_minimum_final_rate_kbps,
+        Ordering::Release,
+    );
+    AP_DATA_TX_ACK_SNR_SAMPLES.store(observation.data_tx_ack_snr_samples, Ordering::Release);
+    AP_DATA_TX_MINIMUM_ACK_SNR_DB.store(
+        u32::from(observation.data_tx_minimum_ack_snr_db as u8),
+        Ordering::Release,
+    );
+    AP_DATA_TX_MAXIMUM_ACK_SNR_DB.store(
+        u32::from(observation.data_tx_maximum_ack_snr_db as u8),
+        Ordering::Release,
+    );
     AP_TX_ACK_TIMEOUT_RETRIES.store(observation.tx_ack_timeout_retries, Ordering::Release);
     AP_TX_CTS_TIMEOUT_RETRIES.store(observation.tx_cts_timeout_retries, Ordering::Release);
     AP_TX_COLLISION_RETRIES.store(observation.tx_collision_retries, Ordering::Release);
@@ -299,6 +337,10 @@ fn access_point_evidence(generation: u32, requested_channel: u8) -> WifiAccessPo
         tx_interrupt_wakes: AP_TX_INTERRUPT_WAKES.load(Ordering::Acquire),
         tx_deadline_wakes: AP_TX_DEADLINE_WAKES.load(Ordering::Acquire),
         maximum_tx_pending_micros: AP_MAXIMUM_TX_PENDING_MICROS.load(Ordering::Acquire),
+        maximum_network_tx_pending_micros: AP_MAXIMUM_NETWORK_TX_PENDING_MICROS
+            .load(Ordering::Acquire),
+        network_tx_attempts_at_maximum_pending: AP_NETWORK_TX_ATTEMPTS_AT_MAXIMUM_PENDING
+            .load(Ordering::Acquire) as u8,
         maximum_rx_service_micros: AP_MAXIMUM_RX_SERVICE_MICROS.load(Ordering::Acquire),
         maximum_network_backpressure_micros: AP_MAXIMUM_NETWORK_BACKPRESSURE_MICROS
             .load(Ordering::Acquire),
@@ -324,6 +366,7 @@ fn access_point_evidence(generation: u32, requested_channel: u8) -> WifiAccessPo
         completed_rx_units: AP_COMPLETED_RX_UNITS.load(Ordering::Acquire),
         completed_rx_descriptors: AP_COMPLETED_RX_DESCRIPTORS.load(Ordering::Acquire),
         recycled_rx_descriptors: AP_RECYCLED_RX_DESCRIPTORS.load(Ordering::Acquire),
+        retained_rx_descriptors: AP_RETAINED_RX_DESCRIPTORS.load(Ordering::Acquire),
         discarded_rx_units: AP_DISCARDED_RX_UNITS.load(Ordering::Acquire),
         ignored_rx_frames: AP_IGNORED_RX_FRAMES.load(Ordering::Acquire),
         rx_mic_failures: AP_RX_MIC_FAILURES.load(Ordering::Acquire),
@@ -342,6 +385,16 @@ fn access_point_evidence(generation: u32, requested_channel: u8) -> WifiAccessPo
         network_tx_rejected_destination: AP_NETWORK_TX_REJECTED_DESTINATION.load(Ordering::Acquire),
         network_tx_frames_rejected: AP_NETWORK_TX_FRAMES_REJECTED.load(Ordering::Acquire),
         data_frames_transmitted: AP_DATA_FRAMES_TRANSMITTED.load(Ordering::Acquire),
+        data_tx_attempts: AP_DATA_TX_ATTEMPTS.load(Ordering::Acquire),
+        data_tx_retried_frames: AP_DATA_TX_RETRIED_FRAMES.load(Ordering::Acquire),
+        data_tx_maximum_attempts: AP_DATA_TX_MAXIMUM_ATTEMPTS.load(Ordering::Acquire) as u8,
+        data_tx_minimum_final_rate_kbps: AP_DATA_TX_MINIMUM_FINAL_RATE_KBPS
+            .load(Ordering::Acquire),
+        data_tx_ack_snr_samples: AP_DATA_TX_ACK_SNR_SAMPLES.load(Ordering::Acquire),
+        data_tx_minimum_ack_snr_db: AP_DATA_TX_MINIMUM_ACK_SNR_DB.load(Ordering::Acquire) as u8
+            as i8,
+        data_tx_maximum_ack_snr_db: AP_DATA_TX_MAXIMUM_ACK_SNR_DB.load(Ordering::Acquire) as u8
+            as i8,
         tx_ack_timeout_retries: AP_TX_ACK_TIMEOUT_RETRIES.load(Ordering::Acquire),
         tx_cts_timeout_retries: AP_TX_CTS_TIMEOUT_RETRIES.load(Ordering::Acquire),
         tx_collision_retries: AP_TX_COLLISION_RETRIES.load(Ordering::Acquire),

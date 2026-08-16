@@ -42,7 +42,7 @@ where
         + CcmpKeyHardware
         + 'hardware,
     C: Esp32s31StaAttemptChannel<H>,
-    D: Esp32s31PreconnectedRxDelay,
+    D: Esp32s31RxFrontierDelay,
     T: Esp32s31StaJoinTransmit<H> + Esp32s31Wpa2Transmit<H> + Esp32s31StaPeerTransmit + 'transmit,
     J: Esp32s31StaJoinObserver + Default,
 {

@@ -75,7 +75,7 @@ impl<M: RawMutex> EmbassyMacIrqRuntime<M> {
     }
 
     /// Schedule one RX bottom-half probe when an already-live DMA ring moves
-    /// from polling ownership to the interrupt-driven connected runner.
+    /// from polling ownership to the interrupt-driven WDEV runner.
     ///
     /// A completion may become durable before the CPU route is unmasked. Some
     /// interrupt controllers do not replay that old edge, so waiting only for

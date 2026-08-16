@@ -197,6 +197,48 @@ pub struct AmsduSubframes<'a> {
     failed: bool,
 }
 
+/// Role-neutral Ethernet views recovered from one validated data MPDU.
+///
+/// This iterator is the common STA/AP boundary for ordinary MSDU and A-MSDU
+/// decapsulation. Address admission, peer authorization and duplicate
+/// history remain with the role-specific receive owner; once admitted, both
+/// roles must interpret the data payload identically.
+#[derive(Clone, Debug)]
+pub struct DataDecapsulation<'a> {
+    frames: DataDecapsulationFrames<'a>,
+    amsdu: bool,
+}
+
+#[derive(Clone, Debug)]
+enum DataDecapsulationFrames<'a> {
+    Single(Option<EthernetFrameParts<'a>>),
+    Aggregate(AmsduSubframes<'a>),
+}
+
+impl DataDecapsulation<'_> {
+    pub const fn is_amsdu(&self) -> bool {
+        self.amsdu
+    }
+}
+
+impl<'a> Iterator for DataDecapsulation<'a> {
+    type Item = Result<EthernetFrameParts<'a>, DataDecapError>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match &mut self.frames {
+            DataDecapsulationFrames::Single(frame) => frame.take().map(Ok),
+            DataDecapsulationFrames::Aggregate(frames) => frames.next().map(|frame| {
+                frame.map(|frame| EthernetFrameParts {
+                    destination: frame.destination,
+                    source: frame.source,
+                    ether_type: frame.ether_type,
+                    payload: frame.payload,
+                })
+            }),
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DataDecapError {
     Truncated,
@@ -544,6 +586,51 @@ pub fn amsdu_subframes<'a>(
     })
 }
 
+/// Validate one role-addressed data MPDU and expose all contained Ethernet
+/// frames without allocation or chip/runtime policy.
+///
+/// A non-aggregate MPDU yields exactly one frame. An A-MSDU yields each
+/// validated subframe in wire order and reports a malformed later subframe at
+/// that exact iterator position. This preserves the observed publication
+/// order while keeping STA and AP payload interpretation in one owner.
+pub fn decapsulate_data_frames<'a>(
+    role: DataInterfaceRole,
+    mpdu: &'a [u8],
+    payload_offset: usize,
+    payload_length: usize,
+) -> Result<DataDecapsulation<'a>, DataDecapError> {
+    match plan_data_decapsulation(role, mpdu, payload_offset, payload_length) {
+        Ok(plan) => {
+            let payload_end = plan
+                .payload_offset
+                .checked_add(plan.payload_length)
+                .ok_or(DataDecapError::Truncated)?;
+            let payload = mpdu
+                .get(plan.payload_offset..payload_end)
+                .ok_or(DataDecapError::Truncated)?;
+            Ok(DataDecapsulation {
+                frames: DataDecapsulationFrames::Single(Some(EthernetFrameParts {
+                    destination: plan.destination,
+                    source: plan.source,
+                    ether_type: plan.ether_type,
+                    payload,
+                })),
+                amsdu: false,
+            })
+        }
+        Err(DataDecapError::AmsduUnsupported) => Ok(DataDecapsulation {
+            frames: DataDecapsulationFrames::Aggregate(amsdu_subframes(
+                role,
+                mpdu,
+                payload_offset,
+                payload_length,
+            )?),
+            amsdu: true,
+        }),
+        Err(error) => Err(error),
+    }
+}
+
 /// Copy one validated A-MSDU subframe into ordinary Ethernet-II storage.
 pub fn decapsulate_amsdu_subframe(
     subframe: AmsduSubframe<'_>,
@@ -787,6 +874,21 @@ mod tests {
         assert_eq!(&output[..6], &DESTINATION);
         assert_eq!(&output[6..12], &SOURCE);
         assert_eq!(&output[14..decoded.ethernet_length], &payload);
+
+        let mut frames = decapsulate_data_frames(
+            DataInterfaceRole::Station,
+            &mpdu[..mpdu_length],
+            llc_offset,
+            LLC_SNAP_HEADER_LEN + payload.len(),
+        )
+        .unwrap();
+        assert!(!frames.is_amsdu());
+        let frame = frames.next().unwrap().unwrap();
+        assert_eq!(frame.destination, DESTINATION);
+        assert_eq!(frame.source, SOURCE);
+        assert_eq!(frame.ether_type, 0x0806);
+        assert_eq!(frame.payload, payload);
+        assert!(frames.next().is_none());
     }
 
     #[test]
@@ -828,6 +930,38 @@ mod tests {
         assert_eq!(second.ether_type, 0x0806);
         assert_eq!(second.payload, &[3, 4, 5]);
         assert!(subframes.next().is_none());
+
+        let mut frames = decapsulate_data_frames(
+            DataInterfaceRole::Station,
+            &mpdu[..offset],
+            IEEE80211_QOS_DATA_HEADER_LEN,
+            offset - IEEE80211_QOS_DATA_HEADER_LEN,
+        )
+        .unwrap();
+        assert!(frames.is_amsdu());
+        let unified_first = frames.next().unwrap().unwrap();
+        assert_eq!(unified_first.destination, DESTINATION);
+        assert_eq!(unified_first.payload, &[1, 2]);
+        let unified_second = frames.next().unwrap().unwrap();
+        assert_eq!(unified_second.destination, [0xff; 6]);
+        assert_eq!(unified_second.ether_type, 0x0806);
+        assert_eq!(unified_second.payload, &[3, 4, 5]);
+        assert!(frames.next().is_none());
+
+        // Payload iteration is shared; only the DS direction is role policy.
+        let mut ap_mpdu = mpdu;
+        ap_mpdu[1] = IEEE80211_TO_DS;
+        let mut ap_frames = decapsulate_data_frames(
+            DataInterfaceRole::AccessPoint,
+            &ap_mpdu[..offset],
+            IEEE80211_QOS_DATA_HEADER_LEN,
+            offset - IEEE80211_QOS_DATA_HEADER_LEN,
+        )
+        .unwrap();
+        assert!(ap_frames.is_amsdu());
+        assert_eq!(ap_frames.next().unwrap().unwrap().payload, &[1, 2]);
+        assert_eq!(ap_frames.next().unwrap().unwrap().payload, &[3, 4, 5]);
+        assert!(ap_frames.next().is_none());
 
         let mut output = [0; 32];
         let length = decapsulate_amsdu_subframe(second, &mut output).unwrap();

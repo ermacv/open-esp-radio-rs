@@ -30,7 +30,7 @@ where
     D: RxDmaObservationDelay,
     H: RxDma,
 {
-    type Error = Esp32s31RxRingOwnerError;
+    type Error = Esp32s31RxFrontierError;
 
     fn prepare_initial(&mut self, hardware: &mut H) -> Result<(), Self::Error> {
         Self::prepare_initial(self, hardware)

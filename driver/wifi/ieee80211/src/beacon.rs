@@ -5,7 +5,10 @@
 //! locate the fixed-size TIM element and derive its phase from the executor
 //! timestamp and the beacon's advertised interval.
 
-use crate::ssid::WifiSsid;
+use crate::{
+    ht::{HT20_CAPABILITY_IE, ht20_operation_ie},
+    ssid::WifiSsid,
+};
 
 pub const WPA2_BEACON_CAPACITY: usize = 256;
 
@@ -34,14 +37,12 @@ pub enum ApBeaconBuildError {
     OutputTooSmall { required: usize },
 }
 
-/// Build one visible WPA2-Personal ERP/WMM beacon without allocating.
+/// Build one visible WPA2-Personal HT20/WMM beacon without allocating.
 ///
 /// The caller owns timestamp/DTIM progression through [`stamp`]. This builder
 /// publishes the fixed first-AP profile only: 100 TU, one-byte TIM bitmap,
-/// CCMP, PSK and the finite AP-v1 capability records. HT is deliberately not
-/// advertised: the initial AP handoff owns one Ethernet frame per RX MPDU and
-/// cannot yet deliver every subframe of an A-MSDU atomically.
-pub fn write_wpa2_erp_beacon(
+/// CCMP, PSK, WMM and the qualified one-stream HT20 capability records.
+pub fn write_wpa2_ht20_beacon(
     output: &mut [u8],
     access_point: [u8; 6],
     ssid: &WifiSsid,
@@ -71,7 +72,9 @@ pub fn write_wpa2_erp_beacon(
         + WPA2_PERSONAL_CCMP_PSK_RSN_IE.len()
         + 2
         + EXTENDED_RATES.len()
-        + WMM_PARAMETER_IE.len();
+        + WMM_PARAMETER_IE.len()
+        + HT20_CAPABILITY_IE.len()
+        + ht20_operation_ie(primary_channel).len();
     if output.len() < required {
         return Err(ApBeaconBuildError::OutputTooSmall { required });
     }
@@ -95,6 +98,8 @@ pub fn write_wpa2_erp_beacon(
     copy_record(frame, &mut offset, &WPA2_PERSONAL_CCMP_PSK_RSN_IE);
     write_element(frame, &mut offset, 50, &EXTENDED_RATES);
     copy_record(frame, &mut offset, &WMM_PARAMETER_IE);
+    copy_record(frame, &mut offset, &HT20_CAPABILITY_IE);
+    copy_record(frame, &mut offset, &ht20_operation_ie(primary_channel));
     debug_assert_eq!(offset, required);
     Ok(required)
 }
@@ -219,7 +224,7 @@ pub fn stamp(bytes: &mut [u8], timestamp: u64, group_pending: bool) -> Option<(u
 mod tests {
     use super::{
         ApBeaconBuildError, WPA2_BEACON_CAPACITY, WPA2_PERSONAL_CCMP_PSK_RSN_IE, dtim, stamp,
-        write_wpa2_erp_beacon,
+        write_wpa2_ht20_beacon,
     };
     use crate::ssid::WifiSsid;
 
@@ -254,11 +259,11 @@ mod tests {
     }
 
     #[test]
-    fn builds_the_bounded_first_wpa2_erp_beacon_without_false_ht_capability() {
+    fn builds_the_bounded_wpa2_ht20_beacon() {
         let ap = [0x02, 0, 0, 0, 0, 1];
         let ssid = WifiSsid::new(b"open-radio-ap").unwrap();
         let mut bytes = [0; WPA2_BEACON_CAPACITY];
-        let len = write_wpa2_erp_beacon(&mut bytes, ap, &ssid, 6, 100, 2, 0x0abc).unwrap();
+        let len = write_wpa2_ht20_beacon(&mut bytes, ap, &ssid, 6, 100, 2, 0x0abc).unwrap();
 
         assert_eq!(&bytes[..2], &0x0080_u16.to_le_bytes());
         assert_eq!(&bytes[4..10], &[0xff; 6]);
@@ -272,8 +277,8 @@ mod tests {
                 .any(|window| window == WPA2_PERSONAL_CCMP_PSK_RSN_IE)
         );
         assert!(bytes[..len].windows(3).any(|window| window == [3, 1, 6]));
-        assert!(!bytes[..len].windows(2).any(|window| window == [45, 26]));
-        assert!(!bytes[..len].windows(2).any(|window| window == [61, 22]));
+        assert!(bytes[..len].windows(2).any(|window| window == [45, 26]));
+        assert!(bytes[..len].windows(3).any(|window| window == [61, 22, 6]));
     }
 
     #[test]
@@ -281,7 +286,7 @@ mod tests {
         let ssid = WifiSsid::new(b"ap").unwrap();
         let mut bytes = [0xaa; WPA2_BEACON_CAPACITY];
         assert_eq!(
-            write_wpa2_erp_beacon(&mut bytes, [0; 6], &ssid, 14, 100, 2, 0),
+            write_wpa2_ht20_beacon(&mut bytes, [0; 6], &ssid, 14, 100, 2, 0),
             Err(ApBeaconBuildError::InvalidPrimaryChannel)
         );
         assert!(bytes.iter().all(|byte| *byte == 0xaa));

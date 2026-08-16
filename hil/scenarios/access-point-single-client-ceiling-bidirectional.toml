@@ -1,0 +1,25 @@
+schema = 3
+id = "access-point-single-client-ceiling-bidirectional"
+description = "Single-client AP balanced full-duplex ceiling characterization"
+repetitions = 1
+image = "qualification"
+isolation = "reset"
+tags = ["characterization", "wifi", "access-point", "network", "single-client", "ceiling", "bidirectional"]
+
+[workload]
+kind = "access-point"
+cycles = 2
+boots = 1
+timeout_seconds = 120
+
+[workload.traffic]
+kind = "udp"
+direction = "bidirectional"
+duration_seconds = 16
+rx_rate_bps = 30000000
+tx_rate_bps = 30000000
+payload_bytes = 1400
+
+[criteria]
+exact_delivery = false
+minimum_concurrent_ap_clients = 1

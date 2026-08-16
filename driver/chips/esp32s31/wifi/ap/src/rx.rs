@@ -8,8 +8,8 @@ use open_esp_radio_esp32s31_wifi_mac::rx::{
     RxError, RxIngressConfig, RxPhyInfo, RxSegment, decode_normalized_rx_metadata, view_ccmp_data,
 };
 use open_esp_radio_ieee80211::data::{
-    DataDecapError, DataInterfaceRole, EthernetFrameParts, RxDuplicateFilter, amsdu_subframes,
-    plan_data_decapsulation,
+    DataDecapError, DataInterfaceRole, EthernetFrameParts, RxDuplicateFilter,
+    decapsulate_data_frames,
 };
 use open_esp_radio_wifi_ap::AP_MAX_CLIENTS;
 use open_esp_radio_wifi_softmac::{MacRxCryptoStatus, MacRxEvidence, MacRxMetadata};
@@ -121,72 +121,34 @@ impl Esp32s31ApRxDispatcher {
         metadata.crypto =
             MacRxEvidence::HardwareObserved(MacRxCryptoStatus::DecryptedAndIntegrityVerified);
 
-        match plan_data_decapsulation(
+        let mut frames = match decapsulate_data_frames(
             DataInterfaceRole::AccessPoint,
             mpdu,
             data.frame.payload_offset,
             data.frame.payload_length,
         ) {
-            Ok(plan) => {
-                let Some(payload_end) = plan.payload_offset.checked_add(plan.payload_length) else {
-                    return rejected_data(DataDecapError::Truncated);
-                };
-                let Some(payload) = mpdu.get(plan.payload_offset..payload_end) else {
-                    return rejected_data(DataDecapError::Truncated);
-                };
-                metadata.amsdu = MacRxEvidence::ProtocolValidated(false);
-                sink.publish(Esp32s31ApRxEvent {
-                    frame: EthernetFrameParts {
-                        destination: plan.destination,
-                        source: plan.source,
-                        ether_type: plan.ether_type,
-                        payload,
-                    },
-                    raw: segment.buffer,
-                    amsdu: false,
-                    metadata,
-                });
-                Esp32s31ApRxDispatch::Data {
-                    ethernet_frames: 1,
-                    amsdu: false,
-                }
-            }
-            Err(DataDecapError::AmsduUnsupported) => {
-                let subframes = match amsdu_subframes(
-                    DataInterfaceRole::AccessPoint,
-                    mpdu,
-                    data.frame.payload_offset,
-                    data.frame.payload_length,
-                ) {
-                    Ok(subframes) => subframes,
-                    Err(error) => return rejected_data(error),
-                };
-                metadata.amsdu = MacRxEvidence::ProtocolValidated(true);
-                let mut count = 0_u8;
-                for subframe in subframes {
-                    let subframe = match subframe {
-                        Ok(subframe) => subframe,
-                        Err(error) => return rejected_data(error),
-                    };
-                    sink.publish(Esp32s31ApRxEvent {
-                        frame: EthernetFrameParts {
-                            destination: subframe.destination,
-                            source: subframe.source,
-                            ether_type: subframe.ether_type,
-                            payload: subframe.payload,
-                        },
-                        raw: segment.buffer,
-                        amsdu: true,
-                        metadata,
-                    });
-                    count = count.saturating_add(1);
-                }
-                Esp32s31ApRxDispatch::Data {
-                    ethernet_frames: count,
-                    amsdu: true,
-                }
-            }
-            Err(error) => rejected_data(error),
+            Ok(frames) => frames,
+            Err(error) => return rejected_data(error),
+        };
+        let amsdu = frames.is_amsdu();
+        metadata.amsdu = MacRxEvidence::ProtocolValidated(amsdu);
+        let mut count = 0_u8;
+        for frame in &mut frames {
+            let frame = match frame {
+                Ok(frame) => frame,
+                Err(error) => return rejected_data(error),
+            };
+            sink.publish(Esp32s31ApRxEvent {
+                frame,
+                raw: segment.buffer,
+                amsdu,
+                metadata,
+            });
+            count = count.saturating_add(1);
+        }
+        Esp32s31ApRxDispatch::Data {
+            ethernet_frames: count,
+            amsdu,
         }
     }
 

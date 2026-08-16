@@ -10,7 +10,6 @@ use open_esp_radio_embassy_net::{PinnedTxFrame, RawMutex};
 use open_esp_radio_esp32s31_wifi::ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer};
 use open_esp_radio_esp32s31_wifi_mac::{
     capabilities::ESP32S31_MAC_SERVICE_CAPABILITIES,
-    connected_rx::{ConnectedRxConfig, ConnectedRxDispatcher},
     rate_control::{StaRateControlAssociation, StaTxRatePolicy},
     rx::RxIngressConfig,
     rx_ampdu::{StaRxBlockAckSessions, StaRxBlockAckSessionsError},
@@ -20,6 +19,7 @@ use open_esp_radio_esp32s31_wifi_mac::{
     },
     tx_ampdu::{StaTxBlockAckSessions, TxBlockAckError},
 };
+use open_esp_radio_esp32s31_wifi_sta::connected_rx::{ConnectedRxConfig, ConnectedRxDispatcher};
 use open_esp_radio_esp32s31_wifi_sta::peer::{Esp32s31ConnectedStaPeer, Esp32s31StaConnectedLink};
 use open_esp_radio_esp32s31_wifi_sta::{
     control_tx::Esp32s31ControlTx,

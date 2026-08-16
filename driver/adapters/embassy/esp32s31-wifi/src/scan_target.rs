@@ -7,7 +7,7 @@
 //! HIL code.
 
 use crate::{
-    rx_ring_owner::Esp32s31RxRingOwnerError,
+    rx_frontier::Esp32s31RxFrontierError,
     scan_port::{Esp32s31ScanPhyPort, Esp32s31ScanReceivePort},
     scan_rx::{
         Esp32s31ScanFrameObserver, Esp32s31ScanObservationContext, Esp32s31ScanRx,
@@ -67,7 +67,7 @@ impl<H, const COUNT: usize, const DMA_BUFFER_SIZE: usize, const DMA_STORAGE_SIZE
 where
     H: open_esp_radio_esp32s31_wifi_mac::rx::RxDma,
 {
-    type Error = Esp32s31RxRingOwnerError;
+    type Error = Esp32s31RxFrontierError;
 
     fn prepare_initial(&mut self, hardware: &mut H) -> Result<(), Self::Error> {
         self.prepare_initial_or_retry(hardware)

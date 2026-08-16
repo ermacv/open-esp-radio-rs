@@ -51,9 +51,11 @@ pub use monitor::{
     Esp32s31MonitorFrames,
 };
 #[cfg(feature = "qualification")]
-pub use open_esp_radio_esp32s31_wifi_embassy::connected_runner::ConnectedDisconnectReason;
+pub use open_esp_radio::esp32s31::wifi::sta::connected_control::ConnectedDisconnectReason;
 #[cfg(feature = "qualification")]
-pub use open_esp_radio_esp32s31_wifi_embassy::network_rx::RxNetworkDeliveryObserver;
+pub use open_esp_radio_esp32s31_wifi_embassy::network_rx::{
+    RxNetworkDeliveryEvent, RxNetworkDeliveryObserver,
+};
 pub use runtime::{Esp32s31RadioRunner, Esp32s31RadioRunners, Esp32s31RadioSystem, new};
 pub use wifi_network::{Esp32s31WifiNetworkRunner, new_wifi_network};
 
@@ -143,6 +145,8 @@ pub struct Esp32s31AccessPointObservation {
     pub tx_interrupt_wakes: u32,
     pub tx_deadline_wakes: u32,
     pub maximum_tx_pending_micros: u32,
+    pub maximum_network_tx_pending_micros: u32,
+    pub network_tx_attempts_at_maximum_pending: u8,
     pub maximum_rx_service_micros: u32,
     pub maximum_network_backpressure_micros: u32,
     pub authentication_responses: u32,
@@ -168,6 +172,7 @@ pub struct Esp32s31AccessPointObservation {
     pub completed_rx_units: u32,
     pub completed_rx_descriptors: u32,
     pub recycled_rx_descriptors: u32,
+    pub retained_rx_descriptors: u32,
     pub discarded_rx_units: u32,
     pub ignored_rx_frames: u32,
     pub rx_mic_failures: u32,
@@ -185,6 +190,13 @@ pub struct Esp32s31AccessPointObservation {
     pub network_tx_rejected_destination: u32,
     pub network_tx_frames_rejected: u32,
     pub data_frames_transmitted: u32,
+    pub data_tx_attempts: u32,
+    pub data_tx_retried_frames: u32,
+    pub data_tx_maximum_attempts: u8,
+    pub data_tx_minimum_final_rate_kbps: u32,
+    pub data_tx_ack_snr_samples: u32,
+    pub data_tx_minimum_ack_snr_db: i8,
+    pub data_tx_maximum_ack_snr_db: i8,
     pub tx_ack_timeout_retries: u32,
     pub tx_cts_timeout_retries: u32,
     pub tx_collision_retries: u32,

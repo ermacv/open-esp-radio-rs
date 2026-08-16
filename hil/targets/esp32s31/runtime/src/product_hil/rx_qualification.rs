@@ -13,18 +13,21 @@ use core::sync::atomic::{AtomicU32, Ordering};
 #[cfg(feature = "rx-delivery-telemetry")]
 use embassy_sync::blocking_mutex::{Mutex, raw::CriticalSectionRawMutex};
 #[cfg(feature = "rx-delivery-telemetry")]
-use open_esp_radio::esp32s31::wifi::mac::connected_rx::ConnectedRxEvent as MacConnectedRxEvent;
-#[cfg(feature = "rx-delivery-telemetry")]
 use open_esp_radio::esp32s31::wifi::mac::rx::PUBLIC_HEADER_SIZE;
 use open_esp_radio::{
-    esp32s31::wifi::mac::{connected_rx::ConnectedRxEvent, rx::decode_rx_phy_info},
+    esp32s31::wifi::{
+        mac::rx::decode_rx_phy_info,
+        sta::connected_rx::ConnectedRxEvent,
+    },
     wifi::ieee80211::data::EthernetFrameParts,
 };
 #[cfg(feature = "rx-delivery-telemetry")]
 use open_esp_radio_embassy_net::{FrameLengthError, RxEnqueueError};
 use open_esp_radio_esp32s31_embassy_wifi::Esp32s31ConnectedRxObserver;
 #[cfg(feature = "rx-delivery-telemetry")]
-use open_esp_radio_esp32s31_embassy_wifi::RxNetworkDeliveryObserver;
+use open_esp_radio_esp32s31_embassy_wifi::{
+    RxNetworkDeliveryEvent, RxNetworkDeliveryObserver,
+};
 #[cfg(feature = "rx-delivery-telemetry")]
 use open_esp_radio_hil_esp32s31_telemetry::rx_delivery::{NetworkDropReason, RxDeliveryTracker};
 use open_esp_radio_hil_esp32s31_telemetry::rx_evidence::{
@@ -136,25 +139,19 @@ impl Esp32s31ConnectedRxObserver for HilConnectedRxObserver {
 
 #[cfg(feature = "rx-delivery-telemetry")]
 impl RxNetworkDeliveryObserver for HilConnectedRxObserver {
-    fn admitted(&self, event: &MacConnectedRxEvent<'_>) {
-        let MacConnectedRxEvent::Ethernet { frame, raw, .. } = *event else {
-            return;
-        };
-        let Some(sequence) = ipv4_udp_sequence(frame, self.udp_port) else {
+    fn admitted(&self, event: RxNetworkDeliveryEvent<'_>) {
+        let Some(sequence) = ipv4_udp_sequence(event.frame, self.udp_port) else {
             return;
         };
         RX_DELIVERY.lock(|tracker| {
             if let Some(tracker) = tracker.borrow_mut().as_mut() {
-                tracker.admitted(sequence, public_qos_sequence(raw));
+                tracker.admitted(sequence, event.raw.and_then(public_qos_sequence));
             }
         });
     }
 
-    fn dropped(&self, event: &MacConnectedRxEvent<'_>, error: RxEnqueueError) {
-        let MacConnectedRxEvent::Ethernet { frame, raw, .. } = *event else {
-            return;
-        };
-        let Some(sequence) = ipv4_udp_sequence(frame, self.udp_port) else {
+    fn dropped(&self, event: RxNetworkDeliveryEvent<'_>, error: RxEnqueueError) {
+        let Some(sequence) = ipv4_udp_sequence(event.frame, self.udp_port) else {
             return;
         };
         let reason = match error {
@@ -165,7 +162,11 @@ impl RxNetworkDeliveryObserver for HilConnectedRxObserver {
         };
         RX_DELIVERY.lock(|tracker| {
             if let Some(tracker) = tracker.borrow_mut().as_mut() {
-                tracker.dropped(sequence, public_qos_sequence(raw), reason);
+                tracker.dropped(
+                    sequence,
+                    event.raw.and_then(public_qos_sequence),
+                    reason,
+                );
             }
         });
     }

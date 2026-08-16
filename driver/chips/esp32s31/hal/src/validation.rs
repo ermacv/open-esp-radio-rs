@@ -10,7 +10,8 @@ use crate::types::{
     MacInterface, MacInterruptSnapshot, MacPowerInterruptSnapshot, TxBlockAckPayload,
 };
 use crate::{
-    RadioRuntimeOwner, validation_mac_interrupt_registers, validation_mac_power_interrupt_registers,
+    RadioRuntimeOwner, validation_mac_interrupt_registers, validation_mac_interrupt_setup,
+    validation_mac_power_interrupt_registers,
 };
 
 #[inline(always)]
@@ -40,10 +41,8 @@ pub fn hal_mac_interrupt_clr_event(events: u32) -> u32 {
 #[inline(always)]
 pub fn hal_disable_sta_beacon_filter() {
     let mut owner = owner();
-    let mut interrupts = validation_mac_interrupt_registers();
-    owner
-        .pac_mut()
-        .validation_disable_sta_beacon_filter(&mut interrupts.inner);
+    let mut setup = validation_mac_interrupt_setup();
+    let _ = setup.prepare_connected_sta_without_power_save(&mut owner);
 }
 
 #[inline(always)]

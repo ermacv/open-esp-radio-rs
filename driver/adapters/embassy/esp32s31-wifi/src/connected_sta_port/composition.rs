@@ -381,7 +381,7 @@ impl Esp32s31ConnectedStaPort {
     }
 
     /// Join the already prepared hardware/RX/TX/control owners into the only
-    /// services accepted by [`crate::connected_runner::ConnectedRunner`].
+    /// services accepted by [`crate::wdev::WdevRunner`].
     pub fn assemble<H, R, X, C, P>(
         plan: Esp32s31ConnectedStaPlan,
         parts: Esp32s31ConnectedStaDriverParts<H, R, X, C, P>,

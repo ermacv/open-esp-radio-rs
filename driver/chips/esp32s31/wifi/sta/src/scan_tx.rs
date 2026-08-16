@@ -118,7 +118,7 @@ impl Default for Esp32s31ScanTxState {
 /// The connected teardown returns the exact ordinary descriptor and disables
 /// both CPU and peripheral interrupt routes before this owner can exist. Probe
 /// completion may therefore use the same finite polling transaction as the
-/// pre-connected path without racing the connected runner. Re-entering a
+/// pre-connected path without racing the WDEV runner. Re-entering a
 /// connected epoch consumes the returned control owner and reactivates IRQs.
 pub struct Esp32s31RunningScanTx<'slot, 'interrupt, P, E, T, const BUFFER_SIZE: usize> {
     control: Esp32s31ControlTx<'slot, P, E, T, BUFFER_SIZE>,

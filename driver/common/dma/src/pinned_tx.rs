@@ -424,6 +424,17 @@ impl<const FRAME_CAPACITY: usize, const HEADROOM: usize, const TRAILER: usize>
         self.live = false;
         self.index
     }
+
+    fn requeue(mut self) -> u8 {
+        self.slot.claim(
+            self.index,
+            SLOT_RADIO,
+            SLOT_READY,
+            "only the live radio lease may requeue a pinned TX slot",
+        );
+        self.live = false;
+        self.index
+    }
 }
 
 // SAFETY: this non-Clone lease retains a separately pinned pool slot in the
@@ -449,11 +460,24 @@ pub trait IndexedStableDmaLease: StableDmaBacking {
     fn release_index(self) -> u8;
 }
 
+/// Stable lease which can return an unmodified radio claim to its ready queue.
+pub trait RequeueStableDmaLease: IndexedStableDmaLease {
+    fn requeue_index(self) -> u8;
+}
+
 impl<const FRAME_CAPACITY: usize, const HEADROOM: usize, const TRAILER: usize> IndexedStableDmaLease
     for PinnedDmaTxRadioLease<'_, FRAME_CAPACITY, HEADROOM, TRAILER>
 {
     fn release_index(self) -> u8 {
         self.release()
+    }
+}
+
+impl<const FRAME_CAPACITY: usize, const HEADROOM: usize, const TRAILER: usize> RequeueStableDmaLease
+    for PinnedDmaTxRadioLease<'_, FRAME_CAPACITY, HEADROOM, TRAILER>
+{
+    fn requeue_index(self) -> u8 {
+        self.requeue()
     }
 }
 
@@ -477,6 +501,23 @@ impl<B: IndexedStableDmaLease, R: DmaIndexReturn> ReturningStableDmaBacking<B, R
             backing: Some(backing),
             returner,
         }
+    }
+
+    /// Return an unmodified radio claim to its producer without publishing
+    /// its index through the normal free-slot capability.
+    ///
+    /// This is used by a queue owner which immediately republishes the same
+    /// index to a different owned queue. Taking the backing first makes the
+    /// wrapper's `Drop` implementation a no-op, so the index cannot be
+    /// returned twice.
+    pub fn take_requeued_index(mut self) -> u8
+    where
+        B: RequeueStableDmaLease,
+    {
+        self.backing
+            .take()
+            .expect("returning DMA backing remains live until requeue")
+            .requeue_index()
     }
 }
 

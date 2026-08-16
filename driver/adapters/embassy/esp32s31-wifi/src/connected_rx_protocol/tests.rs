@@ -1,5 +1,6 @@
 use open_esp_radio_embassy_net::NoopRawMutex;
-use open_esp_radio_esp32s31_wifi_mac::{connected_rx::ConnectedRxConfig, rx::RxIngressConfig};
+use open_esp_radio_esp32s31_wifi_mac::rx::RxIngressConfig;
+use open_esp_radio_esp32s31_wifi_sta::connected_rx::ConnectedRxConfig;
 use open_esp_radio_wifi_embassy::connected_tasks::{
     ConnectedTaskControlResources, ConnectedTaskGroup,
 };

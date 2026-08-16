@@ -14,9 +14,11 @@ pub mod service;
 
 pub use service::{
     AP_MAX_CLIENTS, AP_STATUS_INVALID_RSN, AP_STATUS_SUCCESS, AP_STATUS_TOO_MANY_STATIONS,
+    AP_TX_BLOCK_ACK_NEGOTIATION_TIMEOUT_MICROS, AP_TX_BLOCK_ACK_TID, AP_TX_BLOCK_ACK_WINDOW,
     AP_WPA2_FIRST_RETRY_INTERVAL_MICROS, AP_WPA2_RETRY_ATTEMPTS,
     AP_WPA2_SUBSEQUENT_RETRY_INTERVAL_MICROS, AccessPointClientLimit, AccessPointClientLimitError,
     AccessPointInactiveTimeout, AccessPointInactiveTimeoutError, AccessPointPeerStorage,
-    AccessPointService, AccessPointServiceStatus, ApMlmeAction, ApPeerClose, ApPeerCloseKind,
-    ApPeerPhase, ApPeerStatus, ApServiceError, ApWpa2Error, ApWpa2Progress, ApWpa2RetryProgress,
+    AccessPointService, AccessPointServiceStatus, ApAssociationCapabilities, ApMlmeAction,
+    ApPeerClose, ApPeerCloseKind, ApPeerPhase, ApPeerStatus, ApServiceError, ApWpa2Error,
+    ApWpa2Progress, ApWpa2RetryProgress,
 };

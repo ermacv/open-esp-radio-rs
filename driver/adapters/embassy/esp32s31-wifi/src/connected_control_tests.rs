@@ -9,13 +9,13 @@ use open_esp_radio_esp32s31_hal::types::{
     MacTxDetachReason, MacTxQueueDetached,
 };
 use open_esp_radio_esp32s31_wifi_mac::{
-    connected_rx::{ConnectedRxEvent, ConnectedRxSink},
     crypto::{CcmpKeyHardware, install_sta_pairwise_ccmp},
     rx_ampdu_hw::{S31RxBlockAckAgreement, S31RxBlockAckAgreementError},
     tx::{HardwareOwnedTxDma, LegacyRate, PreparedTxDma, TxCompletion, TxHardware, TxSlot},
     tx_ampdu::{BlockAckAction, STA_TX_BLOCK_ACK_TIDS, StaTxBlockAckSessions},
     tx_runtime::WifiTxRuntimePolicy,
 };
+use open_esp_radio_esp32s31_wifi_sta::connected_rx::{ConnectedRxEvent, ConnectedRxSink};
 use open_esp_radio_esp32s31_wifi_sta::single_mpdu_tx::{
     Esp32s31SingleMpduTx, SingleMpduTxConfig, SingleMpduTxOutcome, WifiTxPowerPair,
     WifiTxPowerProfile, WifiTxTimer,
@@ -28,9 +28,9 @@ use open_esp_radio_wifi_softmac::{MacRxMetadata, MacTxPlan};
 use open_esp_radio_wifi_sta::power_save::StaPowerSaveState;
 
 use crate::{
-    connected_runner::{WifiControlProgress, WifiTxProgress, WifiTxWake},
     control_mailbox::ConnectedControlResources,
     rx_reorder::{RxReorderCommand, RxReorderCommandResources, try_receive_rx_reorder_command},
+    wdev::{WdevControlProgress, WifiTxProgress, WifiTxWake},
 };
 
 use super::*;
@@ -280,31 +280,31 @@ fn initial_tx_block_ack_requests_follow_zero_seven_five_and_arm_alarms() {
     for tid in STA_TX_BLOCK_ACK_TIDS {
         assert_eq!(
             embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
-            Ok(WifiControlProgress::TxPending)
+            Ok(WdevControlProgress::TxPending)
         );
         finish_tx(&mut hardware, &mut tx, 0);
         assert_eq!(
             embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
-            Ok(WifiControlProgress::More)
+            Ok(WdevControlProgress::More)
         );
         assert!(control.tx_block_ack().alarm(tid).is_some());
     }
     assert_eq!(
         embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
-        Ok(WifiControlProgress::Idle)
+        Ok(WdevControlProgress::Idle)
     );
 
     embassy_futures::block_on(control.wait_ready(&mut tx));
     for tid in STA_TX_BLOCK_ACK_TIDS {
         assert_eq!(
             embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
-            Ok(WifiControlProgress::More)
+            Ok(WdevControlProgress::More)
         );
         assert_eq!(control.last_expired_tid(), Some(tid));
     }
     assert_eq!(
         embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
-        Ok(WifiControlProgress::TxPending),
+        Ok(WdevControlProgress::TxPending),
         "a missing ADDBA response consumes one bounded retry"
     );
     assert!(control.tx_block_ack().alarm(0).is_some());
@@ -346,7 +346,7 @@ fn rx_addba_hardware_is_committed_only_after_response_tx_success() {
 
     assert_eq!(
         embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
-        Ok(WifiControlProgress::TxPending)
+        Ok(WdevControlProgress::TxPending)
     );
     let agreement = hardware.programmed.unwrap();
     assert_eq!(agreement.tid, 3);
@@ -369,7 +369,7 @@ fn rx_addba_hardware_is_committed_only_after_response_tx_success() {
     finish_tx(&mut hardware, &mut tx, 0);
     assert_eq!(
         embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
-        Ok(WifiControlProgress::More)
+        Ok(WdevControlProgress::More)
     );
     assert_eq!(
         control.rx_block_ack().snapshots()[usize::from(agreement.hardware_index)]
@@ -389,7 +389,7 @@ fn rx_addba_hardware_is_committed_only_after_response_tx_success() {
     });
     assert_eq!(
         embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
-        Ok(WifiControlProgress::More)
+        Ok(WdevControlProgress::More)
     );
     assert_eq!(
         try_receive_rx_reorder_command(&reorder_receiver),
@@ -432,7 +432,7 @@ fn failed_rx_addba_response_rolls_back_hardware_and_software() {
     });
     assert_eq!(
         embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
-        Ok(WifiControlProgress::TxPending)
+        Ok(WdevControlProgress::TxPending)
     );
     let hardware_index = hardware.programmed.unwrap().hardware_index;
     assert!(matches!(
@@ -445,7 +445,7 @@ fn failed_rx_addba_response_rolls_back_hardware_and_software() {
     finish_tx(&mut hardware, &mut tx, 1);
     assert_eq!(
         embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
-        Ok(WifiControlProgress::More)
+        Ok(WdevControlProgress::More)
     );
     assert_eq!(hardware.cleared[0], Some(hardware_index));
     assert_eq!(
@@ -488,12 +488,12 @@ fn tx_addba_response_and_delba_toggle_he_tid_ownership() {
     let mut tx = make_tx(slot.as_mut(), &mut hardware, 1);
     assert_eq!(
         embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
-        Ok(WifiControlProgress::TxPending)
+        Ok(WdevControlProgress::TxPending)
     );
     finish_tx(&mut hardware, &mut tx, 0);
     assert_eq!(
         embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
-        Ok(WifiControlProgress::More)
+        Ok(WdevControlProgress::More)
     );
     publisher.publish(ConnectedRxEvent::BlockAck {
         action: BlockAckAction::AddbaResponse {
@@ -509,7 +509,7 @@ fn tx_addba_response_and_delba_toggle_he_tid_ownership() {
     });
     assert_eq!(
         embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
-        Ok(WifiControlProgress::More)
+        Ok(WdevControlProgress::More)
     );
     assert_eq!(control.stale_tx_block_ack_responses(), 1);
     assert_eq!(control.last_stale_tx_block_ack_token(), Some(42));
@@ -529,7 +529,7 @@ fn tx_addba_response_and_delba_toggle_he_tid_ownership() {
     });
     assert_eq!(
         embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
-        Ok(WifiControlProgress::More)
+        Ok(WdevControlProgress::More)
     );
     assert_eq!(hardware.he_tid[0], Some((0, true)));
 
@@ -543,7 +543,7 @@ fn tx_addba_response_and_delba_toggle_he_tid_ownership() {
     });
     assert_eq!(
         embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
-        Ok(WifiControlProgress::More)
+        Ok(WdevControlProgress::More)
     );
     assert_eq!(hardware.he_tid[1], Some((0, false)));
 }
@@ -568,25 +568,25 @@ fn beacon_loss_disconnects_only_after_bounded_active_probes() {
 
     assert_eq!(
         embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
-        Ok(WifiControlProgress::Idle)
+        Ok(WdevControlProgress::Idle)
     );
     for _ in 0..5 {
         embassy_futures::block_on(control.wait_ready(&mut tx));
         assert_eq!(
             embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
-            Ok(WifiControlProgress::TxPending)
+            Ok(WdevControlProgress::TxPending)
         );
         finish_tx(&mut hardware, &mut tx, 0);
         assert_eq!(
             embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
-            Ok(WifiControlProgress::More)
+            Ok(WdevControlProgress::More)
         );
     }
     embassy_futures::block_on(control.wait_ready(&mut tx));
     assert_eq!(
         embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
-        Ok(WifiControlProgress::Disconnected(
-            crate::connected_runner::ConnectedDisconnectReason::BeaconLoss
+        Ok(WdevControlProgress::Exit(
+            open_esp_radio_esp32s31_wifi_sta::connected_control::ConnectedDisconnectReason::BeaconLoss
         ))
     );
     assert!(control.beacon_lost());
@@ -616,23 +616,23 @@ fn associated_probe_response_cancels_beacon_loss_recovery() {
 
     assert_eq!(
         embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
-        Ok(WifiControlProgress::Idle)
+        Ok(WdevControlProgress::Idle)
     );
     embassy_futures::block_on(control.wait_ready(&mut tx));
     assert_eq!(
         embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
-        Ok(WifiControlProgress::TxPending)
+        Ok(WdevControlProgress::TxPending)
     );
     finish_tx(&mut hardware, &mut tx, 0);
     assert_eq!(
         embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
-        Ok(WifiControlProgress::More)
+        Ok(WdevControlProgress::More)
     );
 
     publisher.publish(ConnectedRxEvent::ProbeResponse);
     assert_eq!(
         embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
-        Ok(WifiControlProgress::More)
+        Ok(WdevControlProgress::More)
     );
     assert!(!control.beacon_lost());
     assert_eq!(
@@ -664,8 +664,8 @@ fn peer_deauthentication_disconnects_with_its_reason_code() {
     }));
     assert_eq!(
         embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
-        Ok(WifiControlProgress::Disconnected(
-            crate::connected_runner::ConnectedDisconnectReason::PeerDeauthentication {
+        Ok(WdevControlProgress::Exit(
+            open_esp_radio_esp32s31_wifi_sta::connected_control::ConnectedDisconnectReason::PeerDeauthentication {
                 reason_code: 4,
             }
         ))
@@ -703,23 +703,23 @@ fn shutdown_clears_rx_tx_block_ack_and_discards_late_control_events() {
     });
     assert_eq!(
         embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
-        Ok(WifiControlProgress::TxPending)
+        Ok(WdevControlProgress::TxPending)
     );
     finish_tx(&mut hardware, &mut tx, 0);
     assert_eq!(
         embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
-        Ok(WifiControlProgress::More)
+        Ok(WdevControlProgress::More)
     );
 
     control.queue_initial_tx_block_ack(1);
     assert_eq!(
         embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
-        Ok(WifiControlProgress::TxPending)
+        Ok(WdevControlProgress::TxPending)
     );
     finish_tx(&mut hardware, &mut tx, 0);
     assert_eq!(
         embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
-        Ok(WifiControlProgress::More)
+        Ok(WdevControlProgress::More)
     );
     publisher.publish(ConnectedRxEvent::BlockAck {
         action: BlockAckAction::AddbaResponse {
@@ -735,7 +735,7 @@ fn shutdown_clears_rx_tx_block_ack_and_discards_late_control_events() {
     });
     assert_eq!(
         embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
-        Ok(WifiControlProgress::More)
+        Ok(WdevControlProgress::More)
     );
     publisher.publish(beacon_event(idle_beacon()));
 
@@ -774,7 +774,7 @@ fn shutdown_clears_rx_tx_block_ack_and_discards_late_control_events() {
     );
     assert_eq!(
         embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
-        Ok(WifiControlProgress::Idle)
+        Ok(WdevControlProgress::Idle)
     );
 }
 
@@ -798,7 +798,7 @@ fn beacon_received_on_exact_deadline_refreshes_before_loss_check() {
 
     assert_eq!(
         embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
-        Ok(WifiControlProgress::Idle)
+        Ok(WdevControlProgress::Idle)
     );
     embassy_futures::block_on(control.wait_ready(&mut tx));
     publisher.publish(beacon_event(StaBeaconObservation {
@@ -809,7 +809,7 @@ fn beacon_received_on_exact_deadline_refreshes_before_loss_check() {
     }));
     assert_eq!(
         embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
-        Ok(WifiControlProgress::More)
+        Ok(WdevControlProgress::More)
     );
     assert!(!control.beacon_lost());
     assert_eq!(
@@ -842,9 +842,9 @@ fn doze_permit_requires_idle_beacon_and_acknowledged_pm_one() {
         embassy_futures::block_on(control.service_with_context(
             &mut hardware,
             &mut tx,
-            WifiControlContext::IDLE,
+            WdevControlContext::IDLE,
         )),
-        Ok(WifiControlProgress::TxPending)
+        Ok(WdevControlProgress::TxPending)
     );
     assert_eq!(
         control.power_save().unwrap().state(),
@@ -858,9 +858,9 @@ fn doze_permit_requires_idle_beacon_and_acknowledged_pm_one() {
         embassy_futures::block_on(control.service_with_context(
             &mut hardware,
             &mut tx,
-            WifiControlContext::IDLE,
+            WdevControlContext::IDLE,
         )),
-        Ok(WifiControlProgress::More)
+        Ok(WdevControlProgress::More)
     );
     assert_eq!(
         control.power_save().unwrap().state(),
@@ -901,11 +901,11 @@ fn queued_network_traffic_blocks_pm_one() {
         embassy_futures::block_on(control.service_with_context(
             &mut hardware,
             &mut tx,
-            WifiControlContext {
+            WdevControlContext {
                 network_tx_pending: true,
             },
         )),
-        Ok(WifiControlProgress::More)
+        Ok(WdevControlProgress::More)
     );
     assert_eq!(
         control.power_save().unwrap().state(),
@@ -935,13 +935,13 @@ fn failed_pm_one_returns_to_awake_without_a_permit() {
     publisher.publish(beacon_event(idle_beacon()));
     assert_eq!(
         embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
-        Ok(WifiControlProgress::TxPending)
+        Ok(WdevControlProgress::TxPending)
     );
 
     finish_tx(&mut hardware, &mut tx, 5);
     assert_eq!(
         embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
-        Ok(WifiControlProgress::More)
+        Ok(WdevControlProgress::More)
     );
     assert_eq!(
         control.power_save().unwrap().state(),
@@ -978,21 +978,21 @@ fn queued_network_traffic_restores_pm_zero_before_data() {
     publisher.publish(beacon_event(idle_beacon()));
     assert_eq!(
         embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
-        Ok(WifiControlProgress::TxPending)
+        Ok(WdevControlProgress::TxPending)
     );
     finish_tx(&mut hardware, &mut tx, 0);
     hardware.station_tsf = 1_001_000;
     assert_eq!(
         embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
-        Ok(WifiControlProgress::More)
+        Ok(WdevControlProgress::More)
     );
 
-    let pending = WifiControlContext {
+    let pending = WdevControlContext {
         network_tx_pending: true,
     };
     assert_eq!(
         embassy_futures::block_on(control.service_with_context(&mut hardware, &mut tx, pending,)),
-        Ok(WifiControlProgress::TxPending)
+        Ok(WdevControlProgress::TxPending)
     );
     assert_eq!(
         control.power_save().unwrap().state(),
@@ -1003,7 +1003,7 @@ fn queued_network_traffic_restores_pm_zero_before_data() {
     finish_tx(&mut hardware, &mut tx, 0);
     assert_eq!(
         embassy_futures::block_on(control.service_with_context(&mut hardware, &mut tx, pending,)),
-        Ok(WifiControlProgress::More)
+        Ok(WdevControlProgress::More)
     );
     assert_eq!(
         control.power_save().unwrap().state(),
@@ -1011,7 +1011,7 @@ fn queued_network_traffic_restores_pm_zero_before_data() {
     );
     assert_eq!(
         embassy_futures::block_on(control.service_with_context(&mut hardware, &mut tx, pending,)),
-        Ok(WifiControlProgress::Idle)
+        Ok(WdevControlProgress::Idle)
     );
 }
 
@@ -1036,27 +1036,27 @@ fn failed_pm_zero_disconnects_instead_of_releasing_queued_data() {
     publisher.publish(beacon_event(idle_beacon()));
     assert_eq!(
         embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
-        Ok(WifiControlProgress::TxPending)
+        Ok(WdevControlProgress::TxPending)
     );
     finish_tx(&mut hardware, &mut tx, 0);
     hardware.station_tsf = 1_001_000;
     assert_eq!(
         embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
-        Ok(WifiControlProgress::More)
+        Ok(WdevControlProgress::More)
     );
 
-    let pending = WifiControlContext {
+    let pending = WdevControlContext {
         network_tx_pending: true,
     };
     assert_eq!(
         embassy_futures::block_on(control.service_with_context(&mut hardware, &mut tx, pending,)),
-        Ok(WifiControlProgress::TxPending)
+        Ok(WdevControlProgress::TxPending)
     );
     finish_tx(&mut hardware, &mut tx, 5);
     assert_eq!(
         embassy_futures::block_on(control.service_with_context(&mut hardware, &mut tx, pending,)),
-        Ok(WifiControlProgress::Disconnected(
-            crate::connected_runner::ConnectedDisconnectReason::ActiveStateRestoreFailed
+        Ok(WdevControlProgress::Exit(
+            open_esp_radio_esp32s31_wifi_sta::connected_control::ConnectedDisconnectReason::ActiveStateRestoreFailed
         ))
     );
     assert_eq!(

@@ -13,11 +13,11 @@ use open_esp_radio_esp32s31_wifi_sta::wpa2::{
 use open_esp_radio_wpa2::runner::Wpa2RxProgress;
 
 use crate::{
-    preconnected_rx::{
-        Esp32s31PreconnectedRx, Esp32s31PreconnectedRxDelay, Esp32s31PreconnectedRxDirective,
-        Esp32s31PreconnectedRxError,
-    },
     rx_dma_service::Esp32s31RxDmaStorage,
+    rx_frontier::{
+        Esp32s31RxFrontier, Esp32s31RxFrontierDelay, Esp32s31RxFrontierDirective,
+        Esp32s31RxFrontierError,
+    },
 };
 
 /// Retained RX owner bound to its stable DMA allocation for WPA2.
@@ -28,7 +28,7 @@ pub struct Esp32s31Wpa2Rx<
     const DMA_BUFFER_SIZE: usize,
     const DMA_STORAGE_SIZE: usize,
 > {
-    owner: Esp32s31PreconnectedRx<'storage, D, COUNT, DMA_BUFFER_SIZE>,
+    owner: Esp32s31RxFrontier<'storage, D, COUNT, DMA_BUFFER_SIZE>,
     storage: &'storage Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
     station: Esp32s31Wpa2Station,
 }
@@ -37,7 +37,7 @@ impl<'storage, D, const COUNT: usize, const DMA_BUFFER_SIZE: usize, const DMA_ST
     Esp32s31Wpa2Rx<'storage, D, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>
 {
     pub const fn new(
-        owner: Esp32s31PreconnectedRx<'storage, D, COUNT, DMA_BUFFER_SIZE>,
+        owner: Esp32s31RxFrontier<'storage, D, COUNT, DMA_BUFFER_SIZE>,
         storage: &'storage Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
         station: Esp32s31Wpa2Station,
     ) -> Self {
@@ -48,7 +48,7 @@ impl<'storage, D, const COUNT: usize, const DMA_BUFFER_SIZE: usize, const DMA_ST
         }
     }
 
-    pub fn into_owner(self) -> Esp32s31PreconnectedRx<'storage, D, COUNT, DMA_BUFFER_SIZE> {
+    pub fn into_owner(self) -> Esp32s31RxFrontier<'storage, D, COUNT, DMA_BUFFER_SIZE> {
         self.owner
     }
 }
@@ -62,10 +62,10 @@ impl<
     const DMA_STORAGE_SIZE: usize,
 > Esp32s31Wpa2Receive<H> for Esp32s31Wpa2Rx<'storage, D, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>
 where
-    D: Esp32s31PreconnectedRxDelay,
+    D: Esp32s31RxFrontierDelay,
     H: RxDma,
 {
-    type Error = Esp32s31PreconnectedRxError;
+    type Error = Esp32s31RxFrontierError;
 
     fn service(
         &mut self,
@@ -91,9 +91,9 @@ where
                 });
                 if let Some(candidate) = candidate {
                     eapol = Some(candidate);
-                    Esp32s31PreconnectedRxDirective::Stop
+                    Esp32s31RxFrontierDirective::Stop
                 } else {
-                    Esp32s31PreconnectedRxDirective::Continue
+                    Esp32s31RxFrontierDirective::Continue
                 }
             })?;
         Ok(match eapol {

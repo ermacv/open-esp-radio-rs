@@ -137,16 +137,29 @@ pub struct HtAmpduTxCompletion {
 impl HtAmpduTxCompletion {
     /// Return whether a completed A-MPDU positively acknowledges one MPDU.
     ///
-    /// A nonzero TX status means no valid BlockAck was received. The hardware
-    /// result registers are not cleared as a separate transaction and may
-    /// still contain the preceding successful bitmap, so those bits must not
-    /// suppress an individual retry.
+    /// The ordinary TX status does not decide whether the BlockAck bitmap is
+    /// usable for a non-trigger A-MPDU. The vendor A-MPDU completion path reads
+    /// and applies the bitmap from its ACK-timeout/frame-exchange terminal path
+    /// as well as from a status-zero completion. The independent hardware
+    /// result bit is the validity edge: when it is clear, the bitmap words may
+    /// still contain the preceding successful result and must not suppress a
+    /// retry.
+    ///
+    /// Trigger-flow ACK timeout is a different vendor branch. If its packet
+    /// counters do not select `lmacProcessTBSuccess`, it remains a retry even
+    /// when the ordinary BlockAck result registers look populated. Only a
+    /// status-zero trigger completion may consume that bitmap.
     ///
     /// SOURCE\[HIL_OPEN_HT_AMPDU_PARTIAL_2026_07_29]: live HT40 MCS7 SGI
     /// four-stream TX load produced successful partial BlockAck completions
-    /// and status-five completions with stale nonzero bitmap words.
+    /// and status-five completions with stale nonzero bitmap words but a clear
+    /// BlockAck-received result.
+    ///
+    /// SOURCE: complete `libpp.a[lmac.o]::lmacEndFrameExchangeSequence`
+    /// status-five A-MPDU branch calls `hal_mac_tx_get_blockack`, publishes the
+    /// result through `ppTxqUpdateBitmap`, and then enters `ppResortTxAMPDU`.
     pub const fn acknowledges(self, sequence: u16) -> bool {
-        self.tx.status == 0
+        (!self.tx.trigger_flow || self.tx.status == 0)
             && self.block_ack_received
             && self.block_ack.block_ack.acknowledges(sequence)
     }

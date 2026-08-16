@@ -16,10 +16,8 @@ use open_esp_radio_esp32s31_hal::radio_arena::{
 use open_esp_radio_esp32s31_wifi_sta::cooperative_hardware::CooperativeRadioHardware;
 
 use crate::{
-    preconnected_rx::{
-        Esp32s31PreconnectedRx, Esp32s31PreconnectedRxDelay, Esp32s31PreconnectedRxError,
-    },
     rx_dma_service::{Esp32s31ConnectedRx, Esp32s31RxEpochResources},
+    rx_frontier::{Esp32s31RxFrontier, Esp32s31RxFrontierDelay, Esp32s31RxFrontierError},
     station_epoch::{Esp32s31ReconnectedStaEpoch, Esp32s31ReconnectedStaEpochParts},
 };
 
@@ -126,7 +124,7 @@ impl<
 >
     Esp32s31ConnectedRxMaterializer<
         CooperativeRadioHardware<'arena>,
-        Esp32s31PreconnectedRx<'storage, PD, COUNT, DMA_BUFFER_SIZE>,
+        Esp32s31RxFrontier<'storage, PD, COUNT, DMA_BUFFER_SIZE>,
     >
     for Esp32s31RxEpochResources<
         'storage,
@@ -142,7 +140,7 @@ impl<
         DMA_STORAGE_SIZE,
     >
 where
-    PD: Esp32s31PreconnectedRxDelay,
+    PD: Esp32s31RxFrontierDelay,
 {
     type Connected = Esp32s31ConnectedRx<
         'storage,
@@ -157,16 +155,16 @@ where
         DMA_BUFFER_SIZE,
         DMA_STORAGE_SIZE,
     >;
-    type Error = Esp32s31PreconnectedRxError;
+    type Error = Esp32s31RxFrontierError;
 
     async fn materialize(
         self,
-        receive: Esp32s31PreconnectedRx<'storage, PD, COUNT, DMA_BUFFER_SIZE>,
+        receive: Esp32s31RxFrontier<'storage, PD, COUNT, DMA_BUFFER_SIZE>,
         hardware: &mut CooperativeRadioHardware<'arena>,
     ) -> Result<
         Self::Connected,
         (
-            Esp32s31PreconnectedRx<'storage, PD, COUNT, DMA_BUFFER_SIZE>,
+            Esp32s31RxFrontier<'storage, PD, COUNT, DMA_BUFFER_SIZE>,
             Self,
             Self::Error,
         ),
@@ -351,23 +349,23 @@ mod tests {
         }
     }
 
-    struct TestPreconnectedRx;
+    struct TestRxFrontier;
     struct TestDelay;
 
-    impl Esp32s31PreconnectedRxDelay for TestDelay {
+    impl Esp32s31RxFrontierDelay for TestDelay {
         async fn after_micros(_micros: u32) {}
     }
 
-    impl Esp32s31StoppedStaRx for TestPreconnectedRx {
+    impl Esp32s31StoppedStaRx for TestRxFrontier {
         type Preconnected<D>
             = u8
         where
-            D: Esp32s31PreconnectedRxDelay;
+            D: Esp32s31RxFrontierDelay;
         type Persistent = TestRxResources;
 
         fn split_for_reconnect<D>(self) -> (Self::Preconnected<D>, Self::Persistent)
         where
-            D: Esp32s31PreconnectedRxDelay,
+            D: Esp32s31RxFrontierDelay,
         {
             (
                 17,
@@ -417,7 +415,7 @@ mod tests {
         let disconnected = Esp32s31DisconnectedStaEpoch::new(
             (),
             CooperativeRadioHardware::new(published),
-            TestPreconnectedRx,
+            TestRxFrontier,
             19_u16,
             20_u32,
         );

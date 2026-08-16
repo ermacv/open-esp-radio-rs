@@ -16,6 +16,7 @@ pub mod channel;
 pub mod classification;
 pub mod data;
 pub mod he;
+pub mod ht;
 pub mod management;
 pub mod ndpa;
 pub mod scan;

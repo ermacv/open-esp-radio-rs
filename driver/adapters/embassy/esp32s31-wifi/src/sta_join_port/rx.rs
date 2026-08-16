@@ -5,11 +5,11 @@ use open_esp_radio_esp32s31_wifi_sta::join::Esp32s31StaJoinReceive;
 use open_esp_radio_wifi_sta::join::{StaJoinRxDirective, StaJoinRxObserver};
 
 use crate::{
-    preconnected_rx::{
-        Esp32s31PreconnectedRx, Esp32s31PreconnectedRxDelay, Esp32s31PreconnectedRxDirective,
-        Esp32s31PreconnectedRxError,
-    },
     rx_dma_service::Esp32s31RxDmaStorage,
+    rx_frontier::{
+        Esp32s31RxFrontier, Esp32s31RxFrontierDelay, Esp32s31RxFrontierDirective,
+        Esp32s31RxFrontierError,
+    },
 };
 
 /// RX owner bound to the stable DMA storage used by every finite join phase.
@@ -20,7 +20,7 @@ pub struct Esp32s31StaJoinRx<
     const DMA_BUFFER_SIZE: usize,
     const DMA_STORAGE_SIZE: usize,
 > {
-    owner: Esp32s31PreconnectedRx<'storage, D, COUNT, DMA_BUFFER_SIZE>,
+    owner: Esp32s31RxFrontier<'storage, D, COUNT, DMA_BUFFER_SIZE>,
     storage: &'storage Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
 }
 
@@ -28,13 +28,13 @@ impl<'storage, D, const COUNT: usize, const DMA_BUFFER_SIZE: usize, const DMA_ST
     Esp32s31StaJoinRx<'storage, D, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>
 {
     pub const fn new(
-        owner: Esp32s31PreconnectedRx<'storage, D, COUNT, DMA_BUFFER_SIZE>,
+        owner: Esp32s31RxFrontier<'storage, D, COUNT, DMA_BUFFER_SIZE>,
         storage: &'storage Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
     ) -> Self {
         Self { owner, storage }
     }
 
-    pub fn into_owner(self) -> Esp32s31PreconnectedRx<'storage, D, COUNT, DMA_BUFFER_SIZE> {
+    pub fn into_owner(self) -> Esp32s31RxFrontier<'storage, D, COUNT, DMA_BUFFER_SIZE> {
         self.owner
     }
 }
@@ -49,10 +49,10 @@ impl<
 > Esp32s31StaJoinReceive<H>
     for Esp32s31StaJoinRx<'storage, D, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>
 where
-    D: Esp32s31PreconnectedRxDelay,
+    D: Esp32s31RxFrontierDelay,
     H: RxDma,
 {
-    type Error = Esp32s31PreconnectedRxError;
+    type Error = Esp32s31RxFrontierError;
 
     fn start<'a>(
         &'a mut self,
@@ -88,8 +88,8 @@ where
                 .ok();
                 let management = management.map(|parsed| &frame[..parsed.length]);
                 match observer.observe_completed(management) {
-                    StaJoinRxDirective::Continue => Esp32s31PreconnectedRxDirective::Continue,
-                    StaJoinRxDirective::Stop => Esp32s31PreconnectedRxDirective::Stop,
+                    StaJoinRxDirective::Continue => Esp32s31RxFrontierDirective::Continue,
+                    StaJoinRxDirective::Stop => Esp32s31RxFrontierDirective::Stop,
                 }
             })
             .map(|_| ())

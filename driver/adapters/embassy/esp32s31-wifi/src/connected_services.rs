@@ -11,9 +11,9 @@ use open_esp_radio_esp32s31_wifi_sta::single_mpdu_tx::{
     Esp32s31SingleMpduTx, SingleMpduTxError, WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer,
 };
 
-use crate::connected_runner::{
-    ConnectedRunnerServices, WifiControlContext, WifiControlProgress, WifiRxProgress,
-    WifiTxProgress, WifiTxWake,
+use crate::wdev::{
+    WdevControlContext, WdevControlProgress, WdevRxProgress, WdevServices, WifiTxProgress,
+    WifiTxWake,
 };
 
 /// One RX owner that copies a finite descriptor frontier into independent
@@ -26,19 +26,20 @@ pub trait Esp32s31ConnectedRxService<H> {
     fn service<'a>(
         &'a mut self,
         hardware: &'a mut H,
-    ) -> impl Future<Output = Result<WifiRxProgress, Self::Error>> + 'a;
+    ) -> impl Future<Output = Result<WdevRxProgress, Self::Error>> + 'a;
 }
 
 /// One owned control scheduler sharing the services owner's PAC and TX transaction.
 pub trait Esp32s31ControlService<H, X> {
     type Error;
+    type Exit;
 
     fn service<'a>(
         &'a mut self,
         hardware: &'a mut H,
         tx: &'a mut X,
-        context: WifiControlContext,
-    ) -> impl Future<Output = Result<WifiControlProgress, Self::Error>> + 'a;
+        context: WdevControlContext,
+    ) -> impl Future<Output = Result<WdevControlProgress<Self::Exit>, Self::Error>> + 'a;
 
     fn wait_ready<'a>(&'a mut self, tx: &'a mut X) -> impl Future<Output = ()> + 'a;
 }
@@ -48,14 +49,15 @@ pub struct NoConnectedControl;
 
 impl<H, X> Esp32s31ControlService<H, X> for NoConnectedControl {
     type Error = Infallible;
+    type Exit = Infallible;
 
     fn service<'a>(
         &'a mut self,
         _hardware: &'a mut H,
         _tx: &'a mut X,
-        _context: WifiControlContext,
-    ) -> impl Future<Output = Result<WifiControlProgress, Self::Error>> + 'a {
-        ready(Ok(WifiControlProgress::Idle))
+        _context: WdevControlContext,
+    ) -> impl Future<Output = Result<WdevControlProgress<Self::Exit>, Self::Error>> + 'a {
+        ready(Ok(WdevControlProgress::Idle))
     }
 
     fn wait_ready<'a>(&'a mut self, _tx: &'a mut X) -> impl Future<Output = ()> + 'a {
@@ -254,7 +256,7 @@ impl<
     const HEADROOM: usize,
     const TRAILER: usize,
     const QUEUE_DEPTH: usize,
-> ConnectedRunnerServices<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>
+> WdevServices<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>
     for Esp32s31ConnectedServices<H, R, X, C>
 where
     M: RawMutex,
@@ -263,8 +265,12 @@ where
     C: Esp32s31ControlService<H, X>,
 {
     type Error = Esp32s31ConnectedServicesError<R::Error, C::Error, X::Error>;
+    type Exit = C::Exit;
 
-    fn service_rx(&mut self) -> impl Future<Output = Result<WifiRxProgress, Self::Error>> + '_ {
+    fn service_rx<'a>(
+        &'a mut self,
+        _network_rx: &'a mut dyn crate::wdev::WdevNetworkRx,
+    ) -> impl Future<Output = Result<WdevRxProgress, Self::Error>> + 'a {
         async move {
             self.rx
                 .service(&mut self.hardware)
@@ -275,8 +281,8 @@ where
 
     fn service_control<'a>(
         &'a mut self,
-        context: WifiControlContext,
-    ) -> impl Future<Output = Result<WifiControlProgress, Self::Error>> + 'a
+        context: WdevControlContext,
+    ) -> impl Future<Output = Result<WdevControlProgress<Self::Exit>, Self::Error>> + 'a
     where
         'resources: 'a,
         M: 'a,

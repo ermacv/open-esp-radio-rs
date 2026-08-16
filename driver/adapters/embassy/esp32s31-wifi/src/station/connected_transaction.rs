@@ -15,7 +15,6 @@ use open_esp_radio_esp32s31_wifi_mac::{
 };
 use open_esp_radio_wifi_embassy::{await_stack_boundary, connected_tasks::ConnectedTaskGroup};
 
-use crate::{connected_runner::ConnectedRunner, embassy_irq::Esp32s31MacInterruptEpoch};
 use crate::{
     connected_services::Esp32s31ConnectedServices,
     connected_sta_teardown::{
@@ -25,6 +24,7 @@ use crate::{
     },
     embassy_irq::Esp32s31MacInterruptEpochDrain,
 };
+use crate::{embassy_irq::Esp32s31MacInterruptEpoch, wdev::WdevRunner};
 
 use super::{
     Esp32s31ConnectedEpochQuiesceFailure, Esp32s31ConnectedEpochQuiesced,
@@ -37,7 +37,7 @@ use super::{
 ///
 /// The trait hides network geometry from the transaction without weakening
 /// ownership: its only production implementation is the concrete
-/// [`ConnectedRunner`], and it inherits the consuming shutdown interface.
+/// [`WdevRunner`], and it inherits the consuming shutdown interface.
 #[doc(hidden)]
 pub trait Esp32s31ConnectedStationRunner<M: RawMutex>: Esp32s31ConnectedEpochRunnerOwner {
     type Error;
@@ -53,6 +53,7 @@ impl<
     'irq,
     RM,
     CM,
+    N,
     B,
     const FRAME_CAPACITY: usize,
     const HEADROOM: usize,
@@ -60,10 +61,11 @@ impl<
     const RX_QUEUE_DEPTH: usize,
     const TX_QUEUE_DEPTH: usize,
 > Esp32s31ConnectedStationRunner<CM>
-    for ConnectedRunner<
+    for WdevRunner<
         'resources,
         'irq,
         RM,
+        N,
         B,
         FRAME_CAPACITY,
         HEADROOM,
@@ -74,13 +76,23 @@ impl<
 where
     RM: open_esp_radio_embassy_net::RawMutex,
     CM: RawMutex,
-    B: crate::connected_runner::ConnectedRunnerServices<
+    N: crate::wdev::WdevNetwork<
+            'resources,
+            RM,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            RX_QUEUE_DEPTH,
+            TX_QUEUE_DEPTH,
+        >,
+    B: crate::wdev::WdevServices<
             'resources,
             RM,
             FRAME_CAPACITY,
             HEADROOM,
             TRAILER,
             TX_QUEUE_DEPTH,
+            Exit = open_esp_radio_esp32s31_wifi_sta::connected_control::ConnectedDisconnectReason,
         >,
 {
     type Error = B::Error;
@@ -93,7 +105,7 @@ where
     }
 }
 
-/// Observation-only wrapper around the connected runner future.
+/// Observation-only wrapper around the WDEV runner future.
 ///
 /// Implementations may count polls or measure residence time, but cannot
 /// replace the future's result or gain access to the runner owners. Generic
@@ -105,7 +117,7 @@ pub trait Esp32s31ConnectedRunObserver {
         F: Future + 'a;
 }
 
-/// Production observer which adds no work to the connected runner.
+/// Production observer which adds no work to the WDEV runner.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct NoopEsp32s31ConnectedRunObserver;
 
@@ -148,7 +160,7 @@ where
     C: Esp32s31ConnectedEpochRunnerOwner,
     G: ConnectedTaskGroup,
 {
-    /// Retry only the unfinished IRQ/task shutdown edge. The connected runner
+    /// Retry only the unfinished IRQ/task shutdown edge. The WDEV runner
     /// is never polled a second time and its previously classified exit is
     /// preserved across every failed attempt.
     pub async fn retry_quiesce(
@@ -426,7 +438,7 @@ mod tests {
             _control: &'a mut Esp32s31StationCommandReceiver<'_, NoopRawMutex>,
         ) -> impl Future<Output = Esp32s31ConnectedStationExit<Self::Error>> + 'a {
             ready(Esp32s31ConnectedStationExit::Disconnected(
-                crate::connected_runner::ConnectedDisconnectReason::BeaconLoss,
+                open_esp_radio_esp32s31_wifi_sta::connected_control::ConnectedDisconnectReason::BeaconLoss,
             ))
         }
     }
@@ -498,7 +510,7 @@ mod tests {
                 assert!(matches!(
                     exit,
                     Esp32s31ConnectedStationExit::Disconnected(
-                        crate::connected_runner::ConnectedDisconnectReason::BeaconLoss
+                        open_esp_radio_esp32s31_wifi_sta::connected_control::ConnectedDisconnectReason::BeaconLoss
                     )
                 ));
                 assert_eq!(runner.services, 31);

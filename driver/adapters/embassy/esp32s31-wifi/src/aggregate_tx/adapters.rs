@@ -47,52 +47,52 @@ impl<
         hardware: &mut H,
         body: &[u8],
         config: ActionTxConfig,
-    ) -> Result<WifiControlProgress, SingleMpduTxError> {
+    ) -> Result<WdevControlProgress<ConnectedDisconnectReason>, SingleMpduTxError> {
         if self.active() {
             return Err(SingleMpduTxError::Busy);
         }
         self.ordinary.start_action(hardware, body, config)?;
         self.active = ConnectedTxActive::Ordinary;
-        Ok(WifiControlProgress::TxPending)
+        Ok(WdevControlProgress::TxPending)
     }
 
     fn start_power_management_null<H: open_esp_radio_esp32s31_wifi_mac::tx::TxHardware>(
         &mut self,
         hardware: &mut H,
         power_management: StaPowerManagement,
-    ) -> Result<WifiControlProgress, SingleMpduTxError> {
+    ) -> Result<WdevControlProgress<ConnectedDisconnectReason>, SingleMpduTxError> {
         if self.active() {
             return Err(SingleMpduTxError::Busy);
         }
         self.ordinary
             .start_power_management_null(hardware, power_management)?;
         self.active = ConnectedTxActive::Ordinary;
-        Ok(WifiControlProgress::TxPending)
+        Ok(WdevControlProgress::TxPending)
     }
 
     fn start_beacon_probe<H: open_esp_radio_esp32s31_wifi_mac::tx::TxHardware>(
         &mut self,
         hardware: &mut H,
-    ) -> Result<WifiControlProgress, SingleMpduTxError> {
+    ) -> Result<WdevControlProgress<ConnectedDisconnectReason>, SingleMpduTxError> {
         if self.active() {
             return Err(SingleMpduTxError::Busy);
         }
         self.ordinary.start_beacon_probe(hardware)?;
         self.active = ConnectedTxActive::Ordinary;
-        Ok(WifiControlProgress::TxPending)
+        Ok(WdevControlProgress::TxPending)
     }
 
     fn start_protected_eapol<H: open_esp_radio_esp32s31_wifi_mac::tx::TxHardware>(
         &mut self,
         hardware: &mut H,
         payload: &[u8],
-    ) -> Result<WifiControlProgress, SingleMpduTxError> {
+    ) -> Result<WdevControlProgress<ConnectedDisconnectReason>, SingleMpduTxError> {
         if self.active() {
             return Err(SingleMpduTxError::Busy);
         }
         self.ordinary.start_protected_eapol(hardware, payload)?;
         self.active = ConnectedTxActive::Ordinary;
-        Ok(WifiControlProgress::TxPending)
+        Ok(WdevControlProgress::TxPending)
     }
 
     fn set_tx_block_ack_agreement(&mut self, tid: u8, agreement: Option<(u16, bool)>) {

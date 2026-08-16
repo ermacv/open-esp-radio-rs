@@ -248,6 +248,29 @@ fn observed_pinned_admission_precedes_network_visibility() {
     assert!(device.receive(&mut context()).is_some());
 }
 
+#[cfg(feature = "rx-delivery-observation")]
+#[test]
+fn observed_contiguous_admission_precedes_network_visibility() {
+    type TestResources =
+        SplitPinnedResources<NoopRawMutex, FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 1, 1>;
+    type TestPool = PinnedTxPool<FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 1>;
+    let resources = Box::leak(Box::new(TestResources::new()));
+    let pool = TestPool::pin_static(Box::leak(Box::new(TestPool::new())));
+    let (mut device, radio) = resources.split(pool, [0; 6]);
+    let mut publisher = radio.rx_publisher();
+    let mut callback_ran = false;
+
+    publisher
+        .try_send_observed(&[0xa5; ETHERNET_HEADER_LEN], || {
+            callback_ran = true;
+            assert!(device.receive(&mut context()).is_none());
+        })
+        .unwrap();
+
+    assert!(callback_ran);
+    assert!(device.receive(&mut context()).is_some());
+}
+
 #[test]
 fn link_and_device_metadata_match_radio_state() {
     let mut resources = Resources::<NoopRawMutex, FRAME_CAPACITY, 2>::new();
@@ -298,6 +321,35 @@ fn pinned_tx_slot_moves_between_network_and_radio_without_copying() {
     assert_eq!(frame.storage_mut().as_mut_ptr(), first_address);
     assert_eq!(&frame.storage_mut()[..TX_HEADROOM], &[0xc3; TX_HEADROOM]);
     assert_eq!(frame.ethernet(), &[0xa6; TEST_ETHERNET_LENGTH]);
+}
+
+#[test]
+fn rejected_aggregate_candidate_requeues_the_same_pinned_frame() {
+    type TestResources =
+        SplitPinnedResources<NoopRawMutex, FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 1, 2>;
+    type TestPool = PinnedTxPool<FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 2>;
+    let resources = Box::leak(Box::new(TestResources::new()));
+    let pool = TestPool::pin_static(Box::leak(Box::new(TestPool::new())));
+    let (mut device, radio) = resources.split(pool, [0; 6]);
+
+    for marker in [0x31, 0x72] {
+        device
+            .transmit(&mut context())
+            .unwrap()
+            .consume(TEST_ETHERNET_LENGTH, |frame| frame.fill(marker));
+    }
+    let consumer = radio.tx_consumer();
+    let first = consumer.try_receive().unwrap();
+    let mut second = consumer.try_receive().unwrap();
+    let second_address = second.storage_mut().as_mut_ptr();
+    assert_eq!(first.ethernet()[0], 0x31);
+    assert_eq!(second.ethernet()[0], 0x72);
+
+    consumer.requeue(second);
+    let mut reclaimed = consumer.try_receive().unwrap();
+    assert_eq!(reclaimed.ethernet()[0], 0x72);
+    assert_eq!(reclaimed.storage_mut().as_mut_ptr(), second_address);
+    assert_eq!(consumer.queue_len(), 0);
 }
 
 #[test]

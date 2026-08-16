@@ -6,7 +6,7 @@
 
 #![forbid(unsafe_code)]
 
-use crate::{MacInterruptRegisters, MacPowerInterruptRegisters, svd};
+use crate::{MacInterruptRegisters, MacInterruptSetup, MacPowerInterruptRegisters, svd};
 
 #[inline(always)]
 fn partitions() -> (
@@ -21,6 +21,14 @@ fn partitions() -> (
 pub fn radio_registers() -> crate::RadioRegisters {
     let (radio, _) = partitions();
     crate::RadioRegisters::from_peripherals(radio)
+}
+
+/// Construct the task-side interrupt setup owner used by the production
+/// connected-STA preparation transaction.
+#[inline(always)]
+pub fn mac_interrupt_setup() -> MacInterruptSetup {
+    let (_, interrupts) = partitions();
+    MacInterruptSetup::from_peripherals(interrupts)
 }
 
 /// Construct the disjoint hard-MAC interrupt capability for one probe image.

@@ -15,7 +15,7 @@ pub struct Esp32s31StaAttemptRadio<
 > {
     pub hardware: &'hardware mut H,
     pub channel: C,
-    pub receive: Esp32s31PreconnectedRx<'storage, D, COUNT, DMA_BUFFER_SIZE>,
+    pub receive: Esp32s31RxFrontier<'storage, D, COUNT, DMA_BUFFER_SIZE>,
     pub rx_storage: &'storage Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
     pub transmit: &'transmit mut T,
 }
@@ -48,7 +48,7 @@ impl<
     pub const fn new(
         hardware: &'hardware mut H,
         channel: C,
-        receive: Esp32s31PreconnectedRx<'storage, D, COUNT, DMA_BUFFER_SIZE>,
+        receive: Esp32s31RxFrontier<'storage, D, COUNT, DMA_BUFFER_SIZE>,
         rx_storage: &'storage Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
         transmit: &'transmit mut T,
     ) -> Self {

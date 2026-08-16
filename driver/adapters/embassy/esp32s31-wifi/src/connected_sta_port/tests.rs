@@ -1,10 +1,10 @@
 use super::*;
 use open_esp_radio_embassy_net::NoopRawMutex;
-use open_esp_radio_esp32s31_wifi_mac::connected_rx::{ConnectedRxEvent, ConnectedRxSink};
 use open_esp_radio_esp32s31_wifi_mac::rate_control::{
     HeLowMetricReportFeatures, StaLinkMetric, StaRateControlAssociation,
     StaRateControlAssociationInput, StaRateControlPhy,
 };
+use open_esp_radio_esp32s31_wifi_sta::connected_rx::{ConnectedRxEvent, ConnectedRxSink};
 use open_esp_radio_wifi_softmac::{
     WifiConfig, WifiMacAddress, WifiMonitorConfig, WifiStationConfig,
     interface::{BoundVirtualInterface, ChannelContextId, VifId, VifRole, VirtualInterface},

@@ -13,14 +13,18 @@ use core::{
 };
 
 use open_esp_radio_embassy_net::{PinnedTxConsumer, PinnedTxFrame, RawMutex};
+use open_esp_radio_esp32s31_hal::types::MacInterface;
+use open_esp_radio_esp32s31_wifi::ampdu_tx::{
+    AmpduTxRoleAdapter, HtAmpduPublicationInputs, ht_ampdu_publication_config,
+};
 use open_esp_radio_esp32s31_wifi::ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer};
 use open_esp_radio_esp32s31_wifi_mac::{
     crypto::StaPairwiseCcmpSlot,
     irq::{MAC_INT_COLLISION, MAC_INT_TX_COMPLETE, MAC_INT_TX_TIMEOUT},
     rate_control::{AmpduRateObservationError, StaRateControlAssociation, StaTxRatePolicy},
     tx::{
-        AmpduTxConfig, HeAmpduTxConfig, HeEdcaTxopLimit, HtAmpduTxConfig, LegacyTxQueue, TxCookie,
-        TxPhyRate, TxSlotState,
+        AmpduTxConfig, HeAmpduTxConfig, HeEdcaTxopLimit, LegacyTxQueue, TxCookie, TxPhyRate,
+        TxSlotState,
     },
     tx_ampdu::{
         AmpduFrameLayout, AmpduFrameSize, HeAmpduFrameRequest, HeAmpduPolicy, HtAmpduFrameRequest,
@@ -50,9 +54,10 @@ use crate::{
         AggregateBuildStop, AggregateTxObservation, AggregateTxObserver, NetworkSingleMpduReason,
     },
     connected_control::{ConnectedControlTimer, ConnectedControlTx},
-    connected_runner::{WifiControlProgress, WifiTxProgress, WifiTxWake},
     connected_services::Esp32s31NetworkTxService,
+    wdev::{WdevControlProgress, WifiTxProgress, WifiTxWake},
 };
+use open_esp_radio_esp32s31_wifi_sta::connected_control::ConnectedDisconnectReason;
 
 const AMPDU_ABORT_SETTLE_US: u64 = 16;
 const DATA_TID: u8 = 0;
@@ -118,6 +123,47 @@ impl<'storage, B: 'storage, const SLOTS: usize, const BUFFER_SIZE: usize>
 
     pub const fn standby(&self) -> Option<&HtAmpduTxResources<'storage, SLOTS, BUFFER_SIZE>> {
         self.standby.as_ref()
+    }
+
+    /// Decompose the arena at an exclusive role transition. Both roles must
+    /// return these exact owners; none of the descriptor or retention storage
+    /// is manufactured by the role adapter.
+    #[allow(clippy::type_complexity)]
+    pub fn into_parts(
+        self,
+    ) -> (
+        HtAmpduTxResources<'storage, SLOTS, BUFFER_SIZE>,
+        &'storage mut RetainedAmpduDmaStorage<B, SLOTS>,
+        Option<HtAmpduTxResources<'storage, SLOTS, BUFFER_SIZE>>,
+        Option<&'storage mut RetainedAmpduDmaStorage<B, SLOTS>>,
+    ) {
+        (
+            self.primary,
+            self.primary_retention,
+            self.standby,
+            self.standby_retention,
+        )
+    }
+
+    /// Reassemble the exact owners returned by a role-specific scheduler.
+    #[allow(clippy::type_complexity)]
+    pub fn from_parts(
+        primary: HtAmpduTxResources<'storage, SLOTS, BUFFER_SIZE>,
+        primary_retention: &'storage mut RetainedAmpduDmaStorage<B, SLOTS>,
+        standby: Option<HtAmpduTxResources<'storage, SLOTS, BUFFER_SIZE>>,
+        standby_retention: Option<&'storage mut RetainedAmpduDmaStorage<B, SLOTS>>,
+    ) -> Self {
+        assert_eq!(
+            standby.is_some(),
+            standby_retention.is_some(),
+            "standby descriptors and retention must cross role boundaries together"
+        );
+        Self {
+            primary,
+            primary_retention,
+            standby,
+            standby_retention,
+        }
     }
 }
 

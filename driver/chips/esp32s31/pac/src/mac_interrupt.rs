@@ -72,7 +72,6 @@ impl MacInterruptSetup {
             &registers.peripherals.wifi_mac_sta_beacon_filter,
             &self.peripheral,
         );
-        device_fence();
         ConnectedStaWithoutPowerSavePrepared { _private: () }
     }
 
@@ -109,14 +108,6 @@ impl MacInterruptSetup {
             },
         )
     }
-}
-
-#[cfg(feature = "validation-probes")]
-pub(crate) fn disable_sta_beacon_filter_for_validation(
-    control: &svd::WifiMacStaBeaconFilter,
-    interrupt: &svd::WifiMacInterrupt,
-) {
-    disable_sta_beacon_filter(control, interrupt);
 }
 
 /// Disjoint generated register capability intended for the hard power ISR.

@@ -82,7 +82,7 @@ impl<
         Self { scan, resources }
     }
 
-    pub const fn phase(&self) -> Esp32s31RxRingPhase {
+    pub const fn phase(&self) -> Esp32s31RxFrontierPhase {
         self.scan.phase()
     }
 
@@ -91,14 +91,11 @@ impl<
     pub fn prepare_initial<H: RxDma>(
         &mut self,
         hardware: &mut H,
-    ) -> Result<(), Esp32s31RxRingOwnerError> {
+    ) -> Result<(), Esp32s31RxFrontierError> {
         self.scan.prepare_next(hardware)
     }
 
-    pub async fn start<H: RxDma>(
-        &mut self,
-        hardware: &mut H,
-    ) -> Result<(), Esp32s31RxRingOwnerError>
+    pub async fn start<H: RxDma>(&mut self, hardware: &mut H) -> Result<(), Esp32s31RxFrontierError>
     where
         D: RxDmaObservationDelay,
     {
@@ -113,7 +110,7 @@ impl<
         &mut self,
         hardware: &mut H,
         context: &mut Esp32s31ScanObservationContext<'_, O, RECORDS>,
-    ) -> Result<Esp32s31ScanRxProgress, Esp32s31RxRingOwnerError>
+    ) -> Result<Esp32s31ScanRxProgress, Esp32s31RxFrontierError>
     where
         H: RxDma,
         O: Esp32s31ScanFrameObserver,
@@ -121,14 +118,14 @@ impl<
         self.scan.observe_management(hardware, context)
     }
 
-    pub fn stop<H: RxDma>(&mut self, hardware: &mut H) -> Result<(), Esp32s31RxRingOwnerError> {
+    pub fn stop<H: RxDma>(&mut self, hardware: &mut H) -> Result<(), Esp32s31RxFrontierError> {
         self.scan.stop(hardware)
     }
 
     pub fn prepare_next<H: RxDma>(
         &mut self,
         hardware: &mut H,
-    ) -> Result<(), Esp32s31RxRingOwnerError> {
+    ) -> Result<(), Esp32s31RxFrontierError> {
         self.scan.prepare_next(hardware)
     }
 

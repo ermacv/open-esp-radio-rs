@@ -11,7 +11,6 @@
 
 use core::future::Future;
 
-pub use crate::rx_ring_owner::Esp32s31RxRingOwnerError;
 use embassy_sync::channel::{Sender, TrySendError};
 use open_esp_radio_embassy_net::RawMutex;
 use open_esp_radio_esp32s31_wifi_dma::rx_storage::{RxDmaBuffer, RxDmaStorage};
@@ -24,13 +23,13 @@ use open_esp_radio_esp32s31_wifi_mac::{
 };
 
 use crate::{
-    connected_runner::WifiRxProgress,
     connected_rx_protocol::Esp32s31StagedRxFrame,
     connected_services::Esp32s31ConnectedRxService,
     embassy_rx::RxDmaObservationDelay,
     rx_pipeline_observer::{
         RxPipelineObservation, RxPipelineObserver, RxServiceObservation, RxStageDiscard,
     },
+    wdev::WdevRxProgress,
 };
 
 /// Descriptor count and allocation geometry qualified by the ordinary S31

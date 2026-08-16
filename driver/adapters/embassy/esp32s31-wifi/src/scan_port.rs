@@ -26,7 +26,7 @@ use open_esp_radio_wifi_sta::scan::StaScanChannelContext;
 
 use crate::{
     embassy_rx::RxDmaObservationDelay,
-    rx_ring_owner::Esp32s31RxRingOwnerError,
+    rx_frontier::Esp32s31RxFrontierError,
     scan_rx::{
         Esp32s31RunningScanRx, Esp32s31ScanFrameObserver, Esp32s31ScanObservationContext,
         Esp32s31ScanRxProgress,

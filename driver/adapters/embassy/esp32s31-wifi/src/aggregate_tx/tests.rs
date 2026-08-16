@@ -849,7 +849,7 @@ fn ordinary_control_tx_cannot_admit_a_standby_aggregate() {
             &[3, 0],
             ActionTxConfig::VENDOR_MANAGEMENT,
         ),
-        Ok(WifiControlProgress::TxPending),
+        Ok(WdevControlProgress::TxPending),
     );
     assert!(tx.active());
     assert!(!tx.can_prepare_network_tx());

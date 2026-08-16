@@ -239,7 +239,7 @@ fn scan_rx_hands_the_exact_halted_ring_to_the_next_phase() {
     let mut rx =
         Esp32s31ScanRx::prepare_initial(&mut hardware, &storage, RX_TEST_BASE, &RX_TEST_BUFFERS)
             .unwrap();
-    assert_eq!(rx.phase(), Esp32s31RxRingPhase::Prepared);
+    assert_eq!(rx.phase(), Esp32s31RxFrontierPhase::Prepared);
 
     rx.start(&mut hardware).unwrap();
     complete_test_beacon(&storage);
@@ -422,13 +422,13 @@ fn complete_initial_scan_can_prepare_the_same_ring_for_a_retry() {
             .unwrap();
 
     rx.prepare_initial_or_retry(&mut hardware).unwrap();
-    assert_eq!(rx.phase(), Esp32s31RxRingPhase::Prepared);
+    assert_eq!(rx.phase(), Esp32s31RxFrontierPhase::Prepared);
     rx.start(&mut hardware).unwrap();
     rx.stop(&mut hardware).unwrap();
-    assert_eq!(rx.phase(), Esp32s31RxRingPhase::Halted);
+    assert_eq!(rx.phase(), Esp32s31RxFrontierPhase::Halted);
 
     rx.prepare_initial_or_retry(&mut hardware).unwrap();
-    assert_eq!(rx.phase(), Esp32s31RxRingPhase::Prepared);
+    assert_eq!(rx.phase(), Esp32s31RxFrontierPhase::Prepared);
 }
 
 #[test]
@@ -443,22 +443,22 @@ fn scan_rx_retains_its_typed_phase_across_enable_and_disable_failure() {
     hardware.fail_enable = true;
     assert_eq!(
         rx.start(&mut hardware),
-        Err(Esp32s31RxRingOwnerError::Ring(RxRingError::Busy))
+        Err(Esp32s31RxFrontierError::Ring(RxRingError::Busy))
     );
-    assert_eq!(rx.phase(), Esp32s31RxRingPhase::Prepared);
+    assert_eq!(rx.phase(), Esp32s31RxFrontierPhase::Prepared);
 
     hardware.fail_enable = false;
     rx.start(&mut hardware).unwrap();
     hardware.fail_disable = true;
     assert_eq!(
         rx.stop(&mut hardware),
-        Err(Esp32s31RxRingOwnerError::Ring(RxRingError::Busy))
+        Err(Esp32s31RxFrontierError::Ring(RxRingError::Busy))
     );
-    assert_eq!(rx.phase(), Esp32s31RxRingPhase::Live);
+    assert_eq!(rx.phase(), Esp32s31RxFrontierPhase::Live);
 
     hardware.fail_disable = false;
     rx.stop(&mut hardware).unwrap();
-    assert_eq!(rx.phase(), Esp32s31RxRingPhase::Halted);
+    assert_eq!(rx.phase(), Esp32s31RxFrontierPhase::Halted);
 }
 
 #[test]
@@ -500,9 +500,9 @@ fn running_scan_rx_returns_the_exact_connected_epoch_resources() {
     let pool_address = stopped.pool() as *const _;
 
     let mut running = Esp32s31RunningScanRx::from_stopped(stopped);
-    assert_eq!(running.phase(), Esp32s31RxRingPhase::Halted);
+    assert_eq!(running.phase(), Esp32s31RxFrontierPhase::Halted);
     running.prepare_initial(&mut hardware).unwrap();
-    assert_eq!(running.phase(), Esp32s31RxRingPhase::Prepared);
+    assert_eq!(running.phase(), Esp32s31RxFrontierPhase::Prepared);
 
     let stopped = running
         .into_stopped()

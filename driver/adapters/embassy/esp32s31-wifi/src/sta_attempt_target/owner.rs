@@ -6,13 +6,13 @@ pub enum Esp32s31StaAttemptTargetError<J, W> {
     State(Esp32s31StaAttemptStateError),
     Candidate(Esp32s31StaPeerPortError),
     Channel(PhyTargetPortError),
-    Authentication(StaJoinError<Esp32s31StaJoinPortError<Esp32s31PreconnectedRxError, J>>),
-    Association(StaJoinError<Esp32s31StaJoinPortError<Esp32s31PreconnectedRxError, J>>),
+    Authentication(StaJoinError<Esp32s31StaJoinPortError<Esp32s31RxFrontierError, J>>),
+    Association(StaJoinError<Esp32s31StaJoinPortError<Esp32s31RxFrontierError, J>>),
     Peer(Esp32s31StaPeerPortError),
     Security(StaSecurityError),
     Wpa2Handshake(
         Wpa2HandshakeError<
-            Esp32s31Wpa2HandshakePortError<Esp32s31PreconnectedRxError, W>,
+            Esp32s31Wpa2HandshakePortError<Esp32s31RxFrontierError, W>,
             SoftwareAesKeyUnwrapError,
         >,
     ),
@@ -38,7 +38,7 @@ pub struct Esp32s31StaAttemptTargetOwner<
 > {
     pub(super) hardware: &'hardware mut H,
     pub(super) channel: C,
-    pub(super) receive: Option<Esp32s31PreconnectedRx<'storage, D, COUNT, DMA_BUFFER_SIZE>>,
+    pub(super) receive: Option<Esp32s31RxFrontier<'storage, D, COUNT, DMA_BUFFER_SIZE>>,
     pub(super) rx_storage: &'storage Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
     pub(super) transmit: &'transmit mut T,
     pub(super) frame: &'scratch mut [u8],

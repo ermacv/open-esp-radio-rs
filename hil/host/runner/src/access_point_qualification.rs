@@ -26,6 +26,7 @@ use crate::{
         exchange as exchange_tcp, receive as receive_tcp, send as send_tcp,
     },
     paced_udp::{Config as UdpConfig, HostTransmission as UdpTransmission, send as send_udp},
+    rx_delivery,
     scenario::{AccessPointTraffic, Criteria, Direction},
     traffic_capture::{SerialCapture, SessionEvidence, probe_udp_rx_ready},
     tx_traffic::{Burst, receive_bursts},
@@ -45,6 +46,7 @@ pub(crate) struct Config {
     pub(crate) timeout: Duration,
     pub(crate) traffic: AccessPointTraffic,
     pub(crate) criteria: Criteria,
+    pub(crate) require_rx_delivery_evidence: bool,
 }
 
 #[derive(Serialize)]
@@ -274,13 +276,22 @@ fn qualify(capture: &SerialCapture, config: &Config, lab: &LabConfig) -> Result<
         if let Err(error) = &data_result {
             let mut data_error = match stop_result.as_ref() {
                 Ok(stopped) => format!(
-                    "{error}; AP TX evidence: data={} ack_timeout_retries={} \
+                    "{error}; AP TX evidence: data={} attempts={} retried_frames={} \
+                     maximum_attempts={} minimum_final_rate_kbps={} ack_snr={}/{}/{} \
+                     ack_timeout_retries={} \
                      cts_timeout_retries={} collision_retries={} hardware_failures={} \
                      hardware_timeouts={} collision_limits={} last_hardware_status={} beacons={}; AP RX evidence: \
-                     units={} descriptors={} recycled_descriptors={} discarded_units={} \
+                     units={} descriptors={} recycled_descriptors={} retained_descriptors={} discarded_units={} \
                      protected={} mic_failures={} quarantined={} duplicates={} \
                      radio_rejected={} protocol_rejected={} ethernet_staged={} tcp_staged={}",
                     stopped.data_frames_transmitted,
+                    stopped.data_tx_attempts,
+                    stopped.data_tx_retried_frames,
+                    stopped.data_tx_maximum_attempts,
+                    stopped.data_tx_minimum_final_rate_kbps,
+                    stopped.data_tx_ack_snr_samples,
+                    stopped.data_tx_minimum_ack_snr_db,
+                    stopped.data_tx_maximum_ack_snr_db,
                     stopped.tx_ack_timeout_retries,
                     stopped.tx_cts_timeout_retries,
                     stopped.tx_collision_retries,
@@ -292,6 +303,7 @@ fn qualify(capture: &SerialCapture, config: &Config, lab: &LabConfig) -> Result<
                     stopped.completed_rx_units,
                     stopped.completed_rx_descriptors,
                     stopped.recycled_rx_descriptors,
+                    stopped.retained_rx_descriptors,
                     stopped.discarded_rx_units,
                     stopped.protected_data_frames,
                     stopped.rx_mic_failures,
@@ -361,7 +373,10 @@ fn qualify(capture: &SerialCapture, config: &Config, lab: &LabConfig) -> Result<
             || stopped.deauthentications_published < u32::from(minimum_clients)
             || stopped.deauthentications_prepared != stopped.deauthentications_published
             || stopped.completed_rx_units == 0
-            || stopped.completed_rx_descriptors != stopped.recycled_rx_descriptors
+            || stopped.completed_rx_descriptors
+                != stopped
+                    .recycled_rx_descriptors
+                    .saturating_add(stopped.retained_rx_descriptors)
             // Complete vendor `wifi_softap_stop` submits disassociation and
             // deauthentication back-to-back and does not make peer removal
             // conditional on their ACKs. Our owner waits for each terminal
@@ -566,8 +581,21 @@ fn qualify_udp(
         data_plane.map_err(|error| format!("AP UDP host path failed: {error}"))?;
     let structured = structured.map_err(|error| format!("AP UDP target failed: {error}"))?;
     acknowledgement?;
-    let report = session_report(direction, &structured);
-    validate_udp(host_tx, host_rx.as_deref(), structured)?;
+    let mut report = session_report(direction, &structured);
+    let host_received = validate_udp(
+        host_tx,
+        host_rx.as_deref(),
+        structured,
+        config.criteria.exact_delivery,
+        config.require_rx_delivery_evidence,
+    )?;
+    if let Some(host_received) = host_received {
+        // Target TX evidence counts frames admitted to the radio path. Under
+        // an intentionally saturated characterization workload, only the
+        // receiver can report delivered throughput.
+        report.tx_bytes = host_received.bytes;
+        report.tx_units = host_received.datagrams;
+    }
     validate_rate_criteria(&report, &config.criteria)?;
     Ok(TrafficReport::Udp(report))
 }
@@ -576,7 +604,9 @@ fn validate_udp(
     host_tx: Option<UdpTransmission>,
     host_rx: Option<&[Burst]>,
     evidence: SessionEvidence,
-) -> Result<()> {
+    require_exact_delivery: bool,
+    require_rx_delivery_evidence: bool,
+) -> Result<Option<Burst>> {
     if !evidence.finished.summary.passed || evidence.transport.transport_errors != 0 {
         return Err(format!(
             "AP UDP target failed: passed={} errors={}",
@@ -586,8 +616,12 @@ fn validate_udp(
     }
     match host_tx {
         Some(host) => {
-            if host.bytes != evidence.transport.rx_bytes
-                || host.datagrams != evidence.transport.rx_units
+            if (require_exact_delivery
+                && (host.bytes != evidence.transport.rx_bytes
+                    || host.datagrams != evidence.transport.rx_units))
+                || (!require_exact_delivery
+                    && (evidence.transport.rx_bytes > host.bytes
+                        || evidence.transport.rx_units > host.datagrams))
             {
                 return Err(format!(
                     "AP UDP RX mismatch: host={}/{} target={}/{}",
@@ -602,18 +636,36 @@ fn validate_udp(
                 .radio
                 .and_then(|radio| radio.rx)
                 .ok_or("AP UDP RX session did not publish typed RX radio evidence")?;
-            let expected_highest = u32::try_from(host.datagrams)
-                .ok()
-                .and_then(|datagrams| datagrams.checked_sub(1));
-            if rx.sequence_first != Some(0)
-                || rx.sequence_highest != expected_highest
-                || rx.sequence_gap_events != 0
-                || rx.sequence_forward_missing != 0
+            let expected_highest = require_exact_delivery
+                .then(|| {
+                    u32::try_from(host.datagrams)
+                        .ok()
+                        .and_then(|datagrams| datagrams.checked_sub(1))
+                })
+                .flatten();
+            if (require_exact_delivery
+                && (rx.sequence_first != Some(0)
+                    || rx.sequence_highest != expected_highest
+                    || rx.sequence_gap_events != 0
+                    || rx.sequence_forward_missing != 0))
                 || rx.sequence_backward != 0
                 || rx.sequence_duplicates != 0
                 || rx.sequence_unsequenced != 0
             {
                 return Err(format!("AP UDP RX ordering defect: {rx:?}").into());
+            }
+            if require_rx_delivery_evidence {
+                let delivery = evidence
+                    .rx_delivery
+                    .ok_or("AP diagnostic did not publish typed RX delivery evidence")?;
+                let assessment = rx_delivery::assess(host.datagrams, delivery);
+                if !assessment.exact() {
+                    return Err(format!(
+                        "typed AP RX delivery frontier is {}",
+                        assessment.frontier()
+                    )
+                    .into());
+                }
             }
         }
         None if evidence.transport.rx_bytes != 0 || evidence.transport.rx_units != 0 => {
@@ -636,7 +688,10 @@ fn validate_udp(
                 .into());
             }
             let host = qualified[0];
-            if host.missing != 0 || host.reordered != 0 || host.duplicates != 0 {
+            if (require_exact_delivery && host.missing != 0)
+                || host.reordered != 0
+                || host.duplicates != 0
+            {
                 return Err(format!(
                     "AP UDP TX ordering defect: missing={} reordered={} duplicates={} \
                      sequence_range={}..={} missing_runs={} largest_missing_run={} \
@@ -656,8 +711,12 @@ fn validate_udp(
                 )
                 .into());
             }
-            if host.bytes != evidence.transport.tx_bytes
-                || host.datagrams != evidence.transport.tx_units
+            if (require_exact_delivery
+                && (host.bytes != evidence.transport.tx_bytes
+                    || host.datagrams != evidence.transport.tx_units))
+                || (!require_exact_delivery
+                    && (host.bytes > evidence.transport.tx_bytes
+                        || host.datagrams > evidence.transport.tx_units))
             {
                 return Err(format!(
                     "AP UDP TX mismatch: target={}/{} host={}/{}",
@@ -668,13 +727,14 @@ fn validate_udp(
                 )
                 .into());
             }
+            return Ok(Some(host));
         }
         None if evidence.transport.tx_bytes != 0 || evidence.transport.tx_units != 0 => {
             return Err("AP UDP RX-only session reported transmitted traffic".into());
         }
         None => {}
     }
-    Ok(())
+    Ok(None)
 }
 
 fn qualify_tcp(
@@ -986,8 +1046,8 @@ const fn protocol_direction(direction: Direction) -> ProtocolDirection {
 mod tests {
     use super::*;
     use open_esp_radio_hil_protocol::{
-        Finished, RadioEvidence, ResultSummary, RxRadioEvidence, StackUsage, StackWatermark,
-        TransportEvidence,
+        Finished, RadioEvidence, ResultSummary, RxConsumerLedgerEvidence, RxDeliveryEvidence,
+        RxRadioEvidence, RxSequenceStageEvidence, StackUsage, StackWatermark, TransportEvidence,
     };
 
     fn evidence(rx_bytes: u64, tx_bytes: u64, rx_units: u64, tx_units: u64) -> SessionEvidence {
@@ -1053,7 +1113,16 @@ mod tests {
             started_at_zero: true,
             ..Burst::default()
         };
-        assert!(validate_udp(Some(sent), Some(&[received]), evidence(1_200, 1_200, 1, 1)).is_ok());
+        assert!(
+            validate_udp(
+                Some(sent),
+                Some(&[received]),
+                evidence(1_200, 1_200, 1, 1),
+                true,
+                false,
+            )
+            .is_ok()
+        );
     }
 
     #[test]
@@ -1065,7 +1134,16 @@ mod tests {
             started_at_zero: true,
             ..Burst::default()
         };
-        assert!(validate_udp(None, Some(&[received]), evidence(0, 1_200, 0, 1)).is_err());
+        assert!(
+            validate_udp(
+                None,
+                Some(&[received]),
+                evidence(0, 1_200, 0, 1),
+                true,
+                false,
+            )
+            .is_err()
+        );
     }
 
     #[test]
@@ -1086,7 +1164,85 @@ mod tests {
             .expect("RX evidence")
             .sequence_backward = 1;
 
-        assert!(validate_udp(Some(sent), None, reordered).is_err());
+        assert!(validate_udp(Some(sent), None, reordered, true, false).is_err());
+    }
+
+    #[test]
+    fn udp_characterization_reports_receiver_delivery_and_allows_loss() {
+        let sent = UdpTransmission {
+            bytes: 2_400,
+            datagrams: 2,
+            elapsed: Duration::from_secs(1),
+            maximum_lateness: Duration::ZERO,
+            maximum_catch_up_datagrams: 1,
+            deadline_resets: 0,
+        };
+        let received = Burst {
+            bytes: 1_200,
+            datagrams: 1,
+            missing: 1,
+            started_at_zero: true,
+            ..Burst::default()
+        };
+        let delivered = validate_udp(
+            Some(sent),
+            Some(&[received]),
+            evidence(1_200, 2_400, 1, 2),
+            false,
+            false,
+        )
+        .unwrap();
+
+        assert_eq!(delivered, Some(received));
+    }
+
+    #[test]
+    fn rx_delivery_diagnostic_fails_closed_without_publication_evidence() {
+        let sent = UdpTransmission {
+            bytes: 1_200,
+            datagrams: 1,
+            elapsed: Duration::from_secs(1),
+            maximum_lateness: Duration::ZERO,
+            maximum_catch_up_datagrams: 1,
+            deadline_resets: 0,
+        };
+
+        let error = validate_udp(Some(sent), None, evidence(1_200, 0, 1, 0), true, true)
+            .expect_err("diagnostic evidence must be mandatory");
+
+        assert!(error.to_string().contains("typed RX delivery evidence"));
+    }
+
+    #[test]
+    fn rx_delivery_diagnostic_rejects_evidence_from_the_wrong_publication_edge() {
+        let sent = UdpTransmission {
+            bytes: 1_200,
+            datagrams: 1,
+            elapsed: Duration::from_secs(1),
+            maximum_lateness: Duration::ZERO,
+            maximum_catch_up_datagrams: 1,
+            deadline_resets: 0,
+        };
+        let mut observed = evidence(1_200, 0, 1, 0);
+        observed.rx_delivery = Some(RxDeliveryEvidence {
+            udp_consumer: RxSequenceStageEvidence {
+                data_units: 1,
+                first: Some(0),
+                highest: Some(0),
+                ..Default::default()
+            },
+            consumer_ledger: RxConsumerLedgerEvidence {
+                unexpected_consumer: 1,
+                first_observed: Some(0),
+                ..Default::default()
+            },
+            ..Default::default()
+        });
+
+        let error = validate_udp(Some(sent), None, observed, true, true)
+            .expect_err("misplaced diagnostic evidence must fail closed");
+
+        assert!(error.to_string().contains("typed AP RX delivery frontier"));
     }
 
     #[test]

@@ -5,7 +5,7 @@ use core::sync::atomic::{AtomicU32, Ordering};
 use embassy_futures::select::select3;
 use embassy_sync::channel::{Channel, Receiver, Sender, TrySendError};
 use open_esp_radio_embassy_net::RawMutex;
-use open_esp_radio_esp32s31_wifi_mac::connected_rx::{
+use open_esp_radio_esp32s31_wifi_sta::connected_rx::{
     ConnectedRxControlEvent, ConnectedRxEvent, ConnectedRxSink,
 };
 use open_esp_radio_wpa2::{OwnedEapolFrame, Wpa2Interface};
@@ -254,9 +254,9 @@ impl<M: RawMutex, const CAPACITY: usize> ConnectedControlReceiver<'_, M, CAPACIT
 #[cfg(test)]
 mod tests {
     use open_esp_radio_embassy_net::NoopRawMutex;
-    use open_esp_radio_esp32s31_wifi_mac::{
-        connected_rx::{ConnectedRxControlEvent, ConnectedRxEvent, ConnectedRxSink},
-        tx_ampdu::BlockAckAction,
+    use open_esp_radio_esp32s31_wifi_mac::tx_ampdu::BlockAckAction;
+    use open_esp_radio_esp32s31_wifi_sta::connected_rx::{
+        ConnectedRxControlEvent, ConnectedRxEvent, ConnectedRxSink,
     };
     use open_esp_radio_ieee80211::{
         data::EthernetFrameParts,

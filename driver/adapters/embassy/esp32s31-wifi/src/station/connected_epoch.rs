@@ -4,21 +4,20 @@ use open_esp_radio_esp32s31_hal::{ConnectedStaInterruptPrepared, MacInterruptSet
 use open_esp_radio_esp32s31_wifi_mac::crypto::{StaGroupCcmpSlot, StaPairwiseCcmpSlot};
 use open_esp_radio_esp32s31_wifi_mac::{init::MAC_COLD_RX_INTERRUPT_MASK, irq::MacInterruptRoute};
 use open_esp_radio_esp32s31_wifi_sta::{
-    attempt::Esp32s31StaAttemptSecurity, peer::Esp32s31ConnectedStaPeer,
+    attempt::Esp32s31StaAttemptSecurity, connected_control::ConnectedDisconnectReason,
+    peer::Esp32s31ConnectedStaPeer,
 };
 use open_esp_radio_wifi_softmac::interface::BoundVirtualInterface;
 
 use crate::connected_sta_port::Esp32s31ConnectedStaConfig;
 use crate::{
-    connected_runner::{
-        ConnectedDisconnectReason, ConnectedRunner, ConnectedRunnerExit, ConnectedRunnerServices,
-    },
     embassy_irq::{Esp32s31MacInterruptEpoch, Esp32s31MacInterruptEpochActivateError},
+    wdev::{WdevRunner, WdevRunnerExit, WdevServices},
 };
 
 use super::{Esp32s31StationCommand, Esp32s31StationCommandReceiver};
 
-/// How a reconnect command reached the connected runner's safe stop edge.
+/// How a reconnect command reached the WDEV runner's safe stop edge.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Esp32s31StationReconnectSource {
     /// The command future won while the runner was still connected.
@@ -135,7 +134,7 @@ pub struct Esp32s31ConnectedServiceParts<'security, R, E, N> {
 ///
 /// Scan and join intentionally run with the route masked. A descriptor may
 /// complete between their last polling observation and route activation; the
-/// coalesced probe guarantees the connected runner checks that frontier even
+/// coalesced probe guarantees the WDEV runner checks that frontier even
 /// when hardware produces no later edge.
 pub fn activate_esp32s31_connected_epoch<'runtime, R, M>(
     interrupt: &mut Esp32s31MacInterruptEpoch<'runtime, R, M>,
@@ -186,7 +185,7 @@ pub(super) fn complete_connected_station_command<E, M: RawMutex>(
 
 /// Run one connected hardware owner until peer loss or a station command.
 ///
-/// `ConnectedRunner` observes the stop future only at a transaction-safe boundary.
+/// `WdevRunner` observes the stop future only at a transaction-safe boundary.
 /// A simultaneous peer disconnect is then coalesced with any still-pending
 /// application command before ownership is handed back to the outer lifecycle.
 pub async fn run_esp32s31_connected_station_epoch<
@@ -194,6 +193,7 @@ pub async fn run_esp32s31_connected_station_epoch<
     'irq,
     RM,
     CM,
+    N,
     B,
     const FRAME_CAPACITY: usize,
     const HEADROOM: usize,
@@ -201,10 +201,11 @@ pub async fn run_esp32s31_connected_station_epoch<
     const RX_QUEUE_DEPTH: usize,
     const TX_QUEUE_DEPTH: usize,
 >(
-    runner: &mut ConnectedRunner<
+    runner: &mut WdevRunner<
         'resources,
         'irq,
         RM,
+        N,
         B,
         FRAME_CAPACITY,
         HEADROOM,
@@ -217,17 +218,32 @@ pub async fn run_esp32s31_connected_station_epoch<
 where
     RM: NetworkRawMutex,
     CM: RawMutex,
-    B: ConnectedRunnerServices<'resources, RM, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+    N: crate::wdev::WdevNetwork<
+            'resources,
+            RM,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            RX_QUEUE_DEPTH,
+            TX_QUEUE_DEPTH,
+        >,
+    B: WdevServices<
+            'resources,
+            RM,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            TX_QUEUE_DEPTH,
+            Exit = ConnectedDisconnectReason,
+        >,
 {
     let requested_command = core::cell::Cell::new(None);
     let station_stop = async {
         requested_command.set(Some(control.wait().await));
     };
     match runner.run_until(station_stop).await {
-        Ok(ConnectedRunnerExit::Disconnected(reason)) => {
-            coalesce_disconnected_station_command(control, reason)
-        }
-        Ok(ConnectedRunnerExit::Stopped) => {
+        Ok(WdevRunnerExit::Role(reason)) => coalesce_disconnected_station_command(control, reason),
+        Ok(WdevRunnerExit::Stopped) => {
             let command = requested_command
                 .get()
                 .expect("a stopped station runner consumed one controller command");

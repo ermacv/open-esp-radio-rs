@@ -354,7 +354,12 @@ impl AmpduRetryDecision {
 /// Sequence numbers are kept independently of descriptor indices because a
 /// partial BlockAck retry compacts only missing MPDUs toward slot zero.
 pub struct AmpduRetryState<const CAPACITY: usize> {
-    sequences: [u16; CAPACITY],
+    first_sequence: u16,
+    /// Original aggregate indices still represented by the compacted
+    /// descriptor chain. Hardware BlockAck windows are bounded to 32 MPDUs,
+    /// so one mask preserves every non-contiguous sequence after compaction
+    /// without carrying a movable 32-entry sequence table.
+    pending_original_indices: u32,
     current_subframes: u8,
     policy: AmpduRetryPolicy,
     aggregate_attempts: u8,
@@ -386,14 +391,14 @@ impl<const CAPACITY: usize> AmpduRetryState<CAPACITY> {
                 capacity: CAPACITY,
             });
         }
-        let mut sequences = [0_u16; CAPACITY];
-        let mut index = 0_usize;
-        while index < subframes as usize {
-            sequences[index] = first_sequence.wrapping_add(index as u16) & IEEE80211_SEQUENCE_MASK;
-            index += 1;
-        }
+        let pending_original_indices = if subframes == 32 {
+            u32::MAX
+        } else {
+            (1_u32 << subframes) - 1
+        };
         Ok(Self {
-            sequences,
+            first_sequence: first_sequence & IEEE80211_SEQUENCE_MASK,
+            pending_original_indices,
             current_subframes: subframes,
             policy,
             aggregate_attempts: 1,
@@ -438,12 +443,17 @@ impl<const CAPACITY: usize> AmpduRetryState<CAPACITY> {
             .saturating_add(u16::from(observed_subframes));
 
         let mut retry_mask = 0_u32;
+        let mut retry_original_indices = 0_u32;
         let mut index = 0_usize;
         while index < observed_subframes as usize {
-            if completion.acknowledges(self.sequences[index]) {
+            let original_index = self.original_index(index as u8);
+            let sequence = self.first_sequence.wrapping_add(u16::from(original_index))
+                & IEEE80211_SEQUENCE_MASK;
+            if completion.acknowledges(sequence) {
                 self.acknowledged = self.acknowledged.saturating_add(1);
             } else {
                 retry_mask |= 1_u32 << index;
+                retry_original_indices |= 1_u32 << original_index;
             }
             index += 1;
         }
@@ -454,15 +464,7 @@ impl<const CAPACITY: usize> AmpduRetryState<CAPACITY> {
             return Ok(AmpduRetryDecision::Finish { retry_mask });
         }
 
-        let mut destination = 0_usize;
-        let mut source = 0_usize;
-        while source < observed_subframes as usize {
-            if retry_mask & (1_u32 << source) != 0 {
-                self.sequences[destination] = self.sequences[source];
-                destination += 1;
-            }
-            source += 1;
-        }
+        self.pending_original_indices = retry_original_indices;
         self.current_subframes = missing;
         self.aggregate_attempts = self.aggregate_attempts.saturating_add(1);
         Ok(AmpduRetryDecision::RetainAggregate { retry_mask })
@@ -473,7 +475,9 @@ impl<const CAPACITY: usize> AmpduRetryState<CAPACITY> {
     }
 
     pub const fn current_first_sequence(&self) -> u16 {
-        self.sequences[0]
+        self.first_sequence
+            .wrapping_add(self.pending_original_indices.trailing_zeros() as u16)
+            & IEEE80211_SEQUENCE_MASK
     }
 
     pub const fn aggregate_attempts(&self) -> u8 {
@@ -492,6 +496,19 @@ impl<const CAPACITY: usize> AmpduRetryState<CAPACITY> {
     /// semantics rather than an ordinary BlockAck.
     pub const fn trigger_flow_completions(&self) -> u8 {
         self.trigger_flow_completions
+    }
+
+    fn original_index(&self, compacted_index: u8) -> u8 {
+        let mut remaining = self.pending_original_indices;
+        let mut position = compacted_index;
+        loop {
+            let original = remaining.trailing_zeros() as u8;
+            if position == 0 {
+                return original;
+            }
+            remaining &= remaining - 1;
+            position -= 1;
+        }
     }
 }
 
@@ -712,19 +729,19 @@ mod tests {
     }
 
     #[test]
-    fn nonzero_status_ignores_a_stale_block_ack_bitmap() {
+    fn ack_timeout_completion_applies_a_received_block_ack_bitmap() {
         let mut state = AmpduRetryState::<4>::new(20, 2, HT_POLICY).unwrap();
         assert_eq!(
             state.observe(completion(5, 20, u64::MAX), 2),
-            Ok(AmpduRetryDecision::RetainAggregate { retry_mask: 0b11 })
+            Ok(AmpduRetryDecision::Finish { retry_mask: 0 })
         );
-        assert_eq!(state.acknowledged(), 0);
+        assert_eq!(state.acknowledged(), 2);
     }
 
     #[test]
     fn missing_block_ack_result_ignores_a_stale_success_bitmap() {
         let mut state = AmpduRetryState::<4>::new(20, 2, HT_POLICY).unwrap();
-        let mut stale = completion(0, 20, u64::MAX);
+        let mut stale = completion(5, 20, u64::MAX);
         stale.block_ack_received = false;
         assert_eq!(
             state.observe(stale, 2),

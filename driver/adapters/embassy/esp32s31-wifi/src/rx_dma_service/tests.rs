@@ -8,9 +8,11 @@ use open_esp_radio_embassy_net::NoopRawMutex;
 use open_esp_radio_esp32s31_wifi_dma::descriptor::{
     BIT_30, BIT_31, DESCRIPTOR_BYTES, LENGTH_SHIFT,
 };
-use open_esp_radio_esp32s31_wifi_mac::{
-    connected_rx::{ConnectedRxConfig, ConnectedRxDispatcher, ConnectedRxEvent, ConnectedRxSink},
-    rx::{PUBLIC_HEADER_SIZE, RxDmaBinding, RxDmaWalkerStopped, RxIngressConfig, RxRingStopped},
+use open_esp_radio_esp32s31_wifi_mac::rx::{
+    PUBLIC_HEADER_SIZE, RxDmaBinding, RxDmaWalkerStopped, RxIngressConfig, RxRingStopped,
+};
+use open_esp_radio_esp32s31_wifi_sta::connected_rx::{
+    ConnectedRxConfig, ConnectedRxDispatcher, ConnectedRxEvent, ConnectedRxSink,
 };
 use std::boxed::Box;
 
@@ -290,7 +292,7 @@ fn finite_service_uses_queue_credits_and_protocol_dispatch_returns_ownership() {
 
     assert_eq!(
         embassy_futures::block_on(service.service(&mut hardware)),
-        Ok(WifiRxProgress::Backpressured),
+        Ok(WdevRxProgress::StagingBackpressured),
     );
     assert_eq!(pool.claimed_slots(), 1);
     assert_eq!(pool.network_slots(), 1);
@@ -304,7 +306,7 @@ fn finite_service_uses_queue_credits_and_protocol_dispatch_returns_ownership() {
 
     assert_eq!(
         embassy_futures::block_on(service.service(&mut hardware)),
-        Ok(WifiRxProgress::Drained),
+        Ok(WdevRxProgress::Drained),
     );
     assert_eq!(service.ring().recycle_start(), 1);
     assert_eq!(protocol.queue_len(), 1);
@@ -442,7 +444,7 @@ fn exhausted_cursor_keeps_service_live_until_terminal_writeback_arrives() {
 
     assert_eq!(
         embassy_futures::block_on(service.service(&mut hardware)),
-        Ok(WifiRxProgress::ProbePending),
+        Ok(WdevRxProgress::ProbePending),
         "NEXT=0/LAST=tail must survive a delayed terminal descriptor writeback"
     );
     assert_eq!(receiver.len(), 3);
@@ -451,7 +453,7 @@ fn exhausted_cursor_keeps_service_live_until_terminal_writeback_arrives() {
         .write_word0(ESP32S31_RX_BUFFER_SIZE as u32 | (4 << LENGTH_SHIFT) | BIT_30 | BIT_31);
     assert_eq!(
         embassy_futures::block_on(service.service(&mut hardware)),
-        Ok(WifiRxProgress::ProbePending),
+        Ok(WdevRxProgress::ProbePending),
     );
     assert_eq!(receiver.len(), 4);
     assert_eq!(service.ring().observed_mask(), 0b1100);
@@ -496,7 +498,7 @@ fn finite_service_stages_a_descriptor_chain_as_one_contiguous_unit() {
 
     assert_eq!(
         embassy_futures::block_on(service.service(&mut hardware)),
-        Ok(WifiRxProgress::Drained),
+        Ok(WdevRxProgress::Drained),
     );
     let frame = receiver.try_receive().expect("one chained staged unit");
     assert_eq!(frame.segment().buffer, &[1, 2, 3, 4, 5, 6, 7, 8]);
@@ -548,20 +550,20 @@ fn completed_unit_guard_reclaims_the_preceding_observed_prefix() {
 
     assert_eq!(
         embassy_futures::block_on(service.service(&mut hardware)),
-        Ok(WifiRxProgress::ProbePending),
+        Ok(WdevRxProgress::ProbePending),
     );
     assert_eq!(
         embassy_futures::block_on(service.service(&mut hardware)),
-        Ok(WifiRxProgress::ProbePending),
+        Ok(WdevRxProgress::ProbePending),
     );
     hardware.next_descriptor_low = BASE & 0x000f_ffff;
     assert_eq!(
         embassy_futures::block_on(service.service(&mut hardware)),
-        Ok(WifiRxProgress::ProbePending),
+        Ok(WdevRxProgress::ProbePending),
     );
     assert_eq!(
         embassy_futures::block_on(service.service(&mut hardware)),
-        Ok(WifiRxProgress::Drained),
+        Ok(WdevRxProgress::Drained),
     );
     assert_eq!(storage.descriptors()[0].word0() & BIT_30, 0);
     assert_eq!(storage.descriptors()[1].word0() & BIT_30, 0);
@@ -672,7 +674,7 @@ fn negotiated_rx_block_ack_releases_staged_leases_in_sequence_order() {
 
     assert_eq!(
         embassy_futures::block_on(service.service(&mut hardware)),
-        Ok(WifiRxProgress::Backpressured),
+        Ok(WdevRxProgress::StagingBackpressured),
     );
     assert_eq!(pool.claimed_slots(), 3);
     embassy_futures::block_on(protocol.dispatch_next());
@@ -694,7 +696,7 @@ fn negotiated_rx_block_ack_releases_staged_leases_in_sequence_order() {
     );
     assert_eq!(
         embassy_futures::block_on(service.service(&mut hardware)),
-        Ok(WifiRxProgress::Drained),
+        Ok(WdevRxProgress::Drained),
     );
     service
         .try_stop(&mut hardware)
@@ -738,7 +740,7 @@ fn finite_service_discards_oversize_unit_and_keeps_the_ring_live() {
 
     assert_eq!(
         embassy_futures::block_on(service.service(&mut hardware)),
-        Ok(WifiRxProgress::Backpressured),
+        Ok(WdevRxProgress::StagingBackpressured),
     );
     assert_eq!(service.ring().recycle_start(), 0);
     assert_ne!(storage.descriptors()[0].word0() & BIT_30, 0);
@@ -752,13 +754,13 @@ fn finite_service_discards_oversize_unit_and_keeps_the_ring_live() {
 
     assert_eq!(
         embassy_futures::block_on(service.service(&mut hardware)),
-        Ok(WifiRxProgress::Drained),
+        Ok(WdevRxProgress::Drained),
     );
     assert_eq!(storage.descriptors()[0].word0() & BIT_30, 0);
     hardware.release_through(1, None);
     assert_eq!(
         embassy_futures::block_on(service.service(&mut hardware)),
-        Ok(WifiRxProgress::Drained),
+        Ok(WdevRxProgress::Drained),
     );
     assert_eq!(storage.descriptors()[0].word0() & BIT_30, 0);
 
@@ -769,7 +771,7 @@ fn finite_service_discards_oversize_unit_and_keeps_the_ring_live() {
     hardware.release_through(0, None);
     assert_eq!(
         embassy_futures::block_on(service.service(&mut hardware)),
-        Ok(WifiRxProgress::ProbePending),
+        Ok(WdevRxProgress::ProbePending),
     );
     let next = receiver.try_receive().expect("post-discard frame");
     assert_eq!(next.length(), 4);
@@ -777,11 +779,11 @@ fn finite_service_discards_oversize_unit_and_keeps_the_ring_live() {
     hardware.next_descriptor_low = (BASE + DESCRIPTOR_BYTES) & 0x000f_ffff;
     assert_eq!(
         embassy_futures::block_on(service.service(&mut hardware)),
-        Ok(WifiRxProgress::ProbePending),
+        Ok(WdevRxProgress::ProbePending),
     );
     assert_eq!(
         embassy_futures::block_on(service.service(&mut hardware)),
-        Ok(WifiRxProgress::Drained),
+        Ok(WdevRxProgress::Drained),
     );
     assert_eq!(pool.claimed_slots(), 0);
     service
@@ -823,7 +825,7 @@ fn one_shot_admission_discards_before_staging_then_observes_same_live_ring() {
     hardware.release_through(1, Some(0));
     assert_eq!(
         embassy_futures::block_on(service.service(&mut hardware)),
-        Ok(WifiRxProgress::Backpressured),
+        Ok(WdevRxProgress::StagingBackpressured),
     );
     assert_eq!(admission.0.load(Ordering::Acquire), 2);
     assert!(matches!(
@@ -833,7 +835,7 @@ fn one_shot_admission_discards_before_staging_then_observes_same_live_ring() {
 
     assert_eq!(
         embassy_futures::block_on(service.service(&mut hardware)),
-        Ok(WifiRxProgress::Drained),
+        Ok(WdevRxProgress::Drained),
     );
     assert_eq!(admission.0.load(Ordering::Acquire), 3);
     assert_eq!(
@@ -886,7 +888,7 @@ fn finite_service_accepts_a_unit_within_a_wider_negotiated_stage() {
 
     assert_eq!(
         embassy_futures::block_on(service.service(&mut hardware)),
-        Ok(WifiRxProgress::Backpressured),
+        Ok(WdevRxProgress::StagingBackpressured),
     );
     let frame = receiver.try_receive().expect("wide staged frame");
     assert_eq!(frame.length(), WIDE_STAGE_CAPACITY);
@@ -894,7 +896,7 @@ fn finite_service_accepts_a_unit_within_a_wider_negotiated_stage() {
     assert_eq!(pool.claimed_slots(), 0);
     assert_eq!(
         embassy_futures::block_on(service.service(&mut hardware)),
-        Ok(WifiRxProgress::Drained),
+        Ok(WdevRxProgress::Drained),
     );
     service
         .try_stop(&mut hardware)

@@ -136,7 +136,7 @@ from roughly 5.8 seconds to 5.3--5.4 seconds without changing the 200-tick
 dwell policy. The latest release image is 1,194,640 bytes and passed both
 placement and autonomous-source-graph audits.
 
-The same cell qualifies the extracted `Esp32s31PreconnectedRx` owner. HIL no
+The same cell qualifies the extracted `Esp32s31RxFrontier` owner. HIL no
 longer defines its own `Halted/Prepared/Live/Vacant` enum or its walker settle
 transition. The production owner carried the exact RX frontier through fresh
 Authentication, Association and WPA2 in every generation, including a valid
@@ -151,7 +151,7 @@ restored epoch and returns `Esp32s31ReconnectedStaEpoch`. All three generations
 crossed that exact transition and reused descriptor base `0x2f03ea50`.
 
 The same image routes both management-frame and EAPOL descriptor walks through
-`Esp32s31PreconnectedRx::service_completed`. HIL no longer forms unsafe DMA
+`Esp32s31RxFrontier::service_completed`. HIL no longer forms unsafe DMA
 buffer references or rearms descriptor halves in either backend. A terminal
 frame still stops before recycle and transfers the observed live-ring frontier
 to the next protocol phase. The release image remains 1,194,640 bytes.

@@ -599,8 +599,7 @@ fn validate_access_point_traffic(traffic: &AccessPointTraffic, scenario: &Scenar
                 "traffic.duration_seconds",
             )?;
             bounded(*payload_bytes, 64, 1472, scenario, "traffic.payload_bytes")?;
-            validate_direction_rates(*direction, *rx_rate_bps, *tx_rate_bps, scenario)?;
-            validate_ap_rates(*rx_rate_bps, *tx_rate_bps, scenario)
+            validate_direction_rates(*direction, *rx_rate_bps, *tx_rate_bps, scenario)
         }
         AccessPointTraffic::Tcp {
             direction,
@@ -617,19 +616,9 @@ fn validate_access_point_traffic(traffic: &AccessPointTraffic, scenario: &Scenar
                 "traffic.duration_seconds",
             )?;
             bounded(*chunk_bytes, 64, 32_768, scenario, "traffic.chunk_bytes")?;
-            validate_direction_rates(*direction, *rx_rate_bps, *tx_rate_bps, scenario)?;
-            validate_ap_rates(*rx_rate_bps, *tx_rate_bps, scenario)
+            validate_direction_rates(*direction, *rx_rate_bps, *tx_rate_bps, scenario)
         }
     }
-}
-
-fn validate_ap_rates(rx: Option<u64>, tx: Option<u64>, scenario: &Scenario) -> Result<()> {
-    for (name, rate) in [("traffic.rx_rate_bps", rx), ("traffic.tx_rate_bps", tx)] {
-        if let Some(rate) = rate {
-            bounded(rate, 100_000, 20_000_000, scenario, name)?;
-        }
-    }
-    Ok(())
 }
 
 fn bounded<T>(value: T, minimum: T, maximum: T, scenario: &Scenario, field: &str) -> Result<()>

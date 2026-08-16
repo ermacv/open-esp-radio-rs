@@ -6,44 +6,137 @@ use open_esp_radio_esp32s31_wifi_mac::rx::{
 
 use crate::rx_dma_service::{ESP32S31_RX_WALKER_ENABLE_SETTLE_US, Esp32s31RxDmaStorage};
 
-use super::state::Esp32s31PreconnectedRxState;
+use super::state::Esp32s31RxFrontierState;
 use super::{
-    Esp32s31PreconnectedRx, Esp32s31PreconnectedRxContinuation, Esp32s31PreconnectedRxDelay,
-    Esp32s31PreconnectedRxDirective, Esp32s31PreconnectedRxError,
-    Esp32s31PreconnectedRxIntoLiveFailure, Esp32s31PreconnectedRxPhase,
-    Esp32s31PreconnectedRxProgress, Esp32s31PreconnectedRxSchedulerSnapshot,
-    Esp32s31RecycledRxDirective, Esp32s31RecycledRxProgress,
+    Esp32s31RecycledRxDirective, Esp32s31RecycledRxProgress, Esp32s31RxFrontier,
+    Esp32s31RxFrontierContinuation, Esp32s31RxFrontierDelay, Esp32s31RxFrontierDirective,
+    Esp32s31RxFrontierError, Esp32s31RxFrontierIntoLiveFailure, Esp32s31RxFrontierPhase,
+    Esp32s31RxFrontierProgress, Esp32s31RxFrontierSchedulerSnapshot,
+    Esp32s31RxFrontierServiceProgress,
 };
 
 impl<'storage, D, const COUNT: usize, const DMA_BUFFER_SIZE: usize>
-    Esp32s31PreconnectedRx<'storage, D, COUNT, DMA_BUFFER_SIZE>
+    Esp32s31RxFrontier<'storage, D, COUNT, DMA_BUFFER_SIZE>
 where
-    D: Esp32s31PreconnectedRxDelay,
+    D: Esp32s31RxFrontierDelay,
 {
+    #[cfg(not(target_pointer_width = "32"))]
+    pub fn prepare_initial<M: RxDma, const DMA_STORAGE_SIZE: usize>(
+        hardware: &mut M,
+        storage: &'storage Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
+        descriptor_base: u32,
+        buffer_addresses: &'storage [u32; COUNT],
+    ) -> Result<Self, RxRingError> {
+        if DMA_BUFFER_SIZE > u32::MAX as usize {
+            return Err(RxRingError::Size);
+        }
+        storage
+            .prepare_ring(hardware, descriptor_base, buffer_addresses)
+            .map(Self::from_prepared)
+    }
+
+    #[cfg(target_pointer_width = "32")]
+    pub fn prepare_initial<M: RxDma, const DMA_STORAGE_SIZE: usize>(
+        hardware: &mut M,
+        storage: &'static Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
+        descriptor_base: u32,
+        buffer_addresses: &'storage [u32; COUNT],
+    ) -> Result<Self, RxRingError> {
+        if DMA_BUFFER_SIZE > u32::MAX as usize {
+            return Err(RxRingError::Size);
+        }
+        storage
+            .prepare_ring(hardware, descriptor_base, buffer_addresses)
+            .map(Self::from_prepared)
+    }
+
     pub const fn from_halted(ring: RxRingHalted<'storage, COUNT>) -> Self {
         Self {
-            state: Esp32s31PreconnectedRxState::Halted(ring),
+            state: Esp32s31RxFrontierState::Halted(ring),
             _delay: PhantomData,
         }
     }
 
     pub const fn from_prepared(ring: RxRingStopped<'storage, COUNT>) -> Self {
         Self {
-            state: Esp32s31PreconnectedRxState::Prepared(ring),
+            state: Esp32s31RxFrontierState::Prepared(ring),
             _delay: PhantomData,
         }
     }
 
-    pub const fn phase(&self) -> Esp32s31PreconnectedRxPhase {
+    pub const fn phase(&self) -> Esp32s31RxFrontierPhase {
         self.state.phase()
+    }
+
+    /// Prepare a halted ring without starting the DMA walker.
+    pub fn prepare_with_storage<M: RxDma, const DMA_STORAGE_SIZE: usize>(
+        &mut self,
+        hardware: &mut M,
+        storage: &'storage Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
+    ) -> Result<(), Esp32s31RxFrontierError> {
+        let state = core::mem::replace(&mut self.state, Esp32s31RxFrontierState::Vacant);
+        match state {
+            Esp32s31RxFrontierState::Halted(halted) => {
+                match storage.prepare_halted(halted, hardware) {
+                    Ok(prepared) => {
+                        self.state = Esp32s31RxFrontierState::Prepared(prepared);
+                        Ok(())
+                    }
+                    Err((halted, error)) => {
+                        self.state = Esp32s31RxFrontierState::Halted(halted);
+                        Err(error.into())
+                    }
+                }
+            }
+            prepared @ Esp32s31RxFrontierState::Prepared(_) => {
+                self.state = prepared;
+                Ok(())
+            }
+            live @ Esp32s31RxFrontierState::Live(_) => {
+                self.state = live;
+                Err(Esp32s31RxFrontierError::AlreadyStarted)
+            }
+            Esp32s31RxFrontierState::Vacant => Err(Esp32s31RxFrontierError::OwnerUnavailable),
+        }
+    }
+
+    /// Publish an already prepared ring after the role owner has satisfied
+    /// its executor-specific settle edge.
+    pub fn start_prepared<M: RxDma>(
+        &mut self,
+        hardware: &mut M,
+    ) -> Result<(), Esp32s31RxFrontierError> {
+        let state = core::mem::replace(&mut self.state, Esp32s31RxFrontierState::Vacant);
+        let Esp32s31RxFrontierState::Prepared(prepared) = state else {
+            self.state = state;
+            return Err(Esp32s31RxFrontierError::OwnerUnavailable);
+        };
+        match prepared.try_start(hardware) {
+            Ok(live) => {
+                self.state = Esp32s31RxFrontierState::Live(live);
+                Ok(())
+            }
+            Err((prepared, error)) => {
+                self.state = Esp32s31RxFrontierState::Prepared(prepared);
+                Err(error.into())
+            }
+        }
+    }
+
+    pub fn prepare_initial_or_retry<M: RxDma, const DMA_STORAGE_SIZE: usize>(
+        &mut self,
+        hardware: &mut M,
+        storage: &'storage Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
+    ) -> Result<(), Esp32s31RxFrontierError> {
+        self.prepare_with_storage(hardware, storage)
     }
 
     /// Move the current frontier into another finite phase while leaving an
     /// explicit vacant placeholder for its eventual returned owner.
-    pub fn take(&mut self) -> Result<Self, Esp32s31PreconnectedRxError> {
-        let state = core::mem::replace(&mut self.state, Esp32s31PreconnectedRxState::Vacant);
-        if matches!(state, Esp32s31PreconnectedRxState::Vacant) {
-            return Err(Esp32s31PreconnectedRxError::OwnerUnavailable);
+    pub fn take(&mut self) -> Result<Self, Esp32s31RxFrontierError> {
+        let state = core::mem::replace(&mut self.state, Esp32s31RxFrontierState::Vacant);
+        if matches!(state, Esp32s31RxFrontierState::Vacant) {
+            return Err(Esp32s31RxFrontierError::OwnerUnavailable);
         }
         Ok(Self {
             state,
@@ -62,39 +155,39 @@ where
         &mut self,
         hardware: &mut M,
         prepare_buffer: F,
-    ) -> Result<(), Esp32s31PreconnectedRxError>
+    ) -> Result<(), Esp32s31RxFrontierError>
     where
         M: RxDma,
         F: FnMut(usize) -> Result<(), RxRingError>,
     {
-        let state = core::mem::replace(&mut self.state, Esp32s31PreconnectedRxState::Vacant);
+        let state = core::mem::replace(&mut self.state, Esp32s31RxFrontierState::Vacant);
         let prepared = match state {
-            Esp32s31PreconnectedRxState::Halted(halted) => {
+            Esp32s31RxFrontierState::Halted(halted) => {
                 match halted.prepare(hardware, DMA_BUFFER_SIZE as u32, prepare_buffer) {
                     Ok(prepared) => prepared,
                     Err((halted, error)) => {
-                        self.state = Esp32s31PreconnectedRxState::Halted(halted);
+                        self.state = Esp32s31RxFrontierState::Halted(halted);
                         return Err(error.into());
                     }
                 }
             }
-            Esp32s31PreconnectedRxState::Prepared(prepared) => prepared,
-            live @ Esp32s31PreconnectedRxState::Live(_) => {
+            Esp32s31RxFrontierState::Prepared(prepared) => prepared,
+            live @ Esp32s31RxFrontierState::Live(_) => {
                 self.state = live;
-                return Err(Esp32s31PreconnectedRxError::AlreadyStarted);
+                return Err(Esp32s31RxFrontierError::AlreadyStarted);
             }
-            Esp32s31PreconnectedRxState::Vacant => {
-                return Err(Esp32s31PreconnectedRxError::OwnerUnavailable);
+            Esp32s31RxFrontierState::Vacant => {
+                return Err(Esp32s31RxFrontierError::OwnerUnavailable);
             }
         };
         D::after_micros(ESP32S31_RX_WALKER_ENABLE_SETTLE_US).await;
         match prepared.try_start(hardware) {
             Ok(live) => {
-                self.state = Esp32s31PreconnectedRxState::Live(live);
+                self.state = Esp32s31RxFrontierState::Live(live);
                 Ok(())
             }
             Err((prepared, error)) => {
-                self.state = Esp32s31PreconnectedRxState::Prepared(prepared);
+                self.state = Esp32s31RxFrontierState::Prepared(prepared);
                 Err(error.into())
             }
         }
@@ -105,67 +198,123 @@ where
         &mut self,
         hardware: &mut M,
         storage: &'storage Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
-    ) -> Result<(), Esp32s31PreconnectedRxError>
+    ) -> Result<(), Esp32s31RxFrontierError>
     where
         M: RxDma,
     {
-        let state = core::mem::replace(&mut self.state, Esp32s31PreconnectedRxState::Vacant);
+        let state = core::mem::replace(&mut self.state, Esp32s31RxFrontierState::Vacant);
         let prepared = match state {
-            Esp32s31PreconnectedRxState::Halted(halted) => {
+            Esp32s31RxFrontierState::Halted(halted) => {
                 match storage.prepare_halted(halted, hardware) {
                     Ok(prepared) => prepared,
                     Err((halted, error)) => {
-                        self.state = Esp32s31PreconnectedRxState::Halted(halted);
+                        self.state = Esp32s31RxFrontierState::Halted(halted);
                         return Err(error.into());
                     }
                 }
             }
-            Esp32s31PreconnectedRxState::Prepared(prepared) => prepared,
-            live @ Esp32s31PreconnectedRxState::Live(_) => {
+            Esp32s31RxFrontierState::Prepared(prepared) => prepared,
+            live @ Esp32s31RxFrontierState::Live(_) => {
                 self.state = live;
-                return Err(Esp32s31PreconnectedRxError::AlreadyStarted);
+                return Err(Esp32s31RxFrontierError::AlreadyStarted);
             }
-            Esp32s31PreconnectedRxState::Vacant => {
-                return Err(Esp32s31PreconnectedRxError::OwnerUnavailable);
+            Esp32s31RxFrontierState::Vacant => {
+                return Err(Esp32s31RxFrontierError::OwnerUnavailable);
             }
         };
         D::after_micros(ESP32S31_RX_WALKER_ENABLE_SETTLE_US).await;
         match prepared.try_start(hardware) {
             Ok(live) => {
-                self.state = Esp32s31PreconnectedRxState::Live(live);
+                self.state = Esp32s31RxFrontierState::Live(live);
                 Ok(())
             }
             Err((prepared, error)) => {
-                self.state = Esp32s31PreconnectedRxState::Prepared(prepared);
+                self.state = Esp32s31RxFrontierState::Prepared(prepared);
                 Err(error.into())
             }
         }
     }
 
-    pub fn stop<M: RxDma>(&mut self, hardware: &mut M) -> Result<(), Esp32s31PreconnectedRxError> {
-        let state = core::mem::replace(&mut self.state, Esp32s31PreconnectedRxState::Vacant);
-        let Esp32s31PreconnectedRxState::Live(live) = state else {
+    /// Visit every descriptor in one finite completed frontier and recycle
+    /// its contiguous observed prefix.
+    pub fn service_completed_frontier<M, F, const DMA_STORAGE_SIZE: usize>(
+        &mut self,
+        hardware: &mut M,
+        storage: &'storage Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
+        mut observe: F,
+    ) -> Result<Esp32s31RxFrontierServiceProgress, Esp32s31RxFrontierError>
+    where
+        M: RxDma,
+        F: FnMut(RxSegment<'_>),
+    {
+        let ring = self.live_mut()?;
+        ring.complete_pending_reload(hardware)?;
+        ring.observe_exhausted_republication(hardware);
+        let mut progress = Esp32s31RxFrontierServiceProgress {
+            reload_pending: ring.reload_pending(),
+            ..Esp32s31RxFrontierServiceProgress::default()
+        };
+        let frontier = ring.completed_descriptor_frontier();
+        for step in 0..frontier.descriptor_count {
+            let index = (frontier.start_index + step) % COUNT;
+            let Some(completed) = storage.take_completed(ring, index)? else {
+                return Err(Esp32s31RxFrontierError::Ring(RxRingError::Corrupt));
+            };
+            progress.completed_descriptors = progress.completed_descriptors.saturating_add(1);
+            observe(completed.segment());
+        }
+        if !progress.reload_pending
+            && let Some(append) = storage.recycle_completed_prefix::<COUNT, _>(ring, hardware)?
+        {
+            progress.recycled_descriptors =
+                u32::try_from(append.descriptor_count).unwrap_or(u32::MAX);
+        }
+        // A current-LAST completion is released by a later RX completion and
+        // therefore needs no synthetic wake. Only direct BASE republication
+        // can consume its sole IRQ edge and must keep a finite role runnable.
+        progress.service_probe_pending = ring.exhausted_republication_probe_pending();
+        Ok(progress)
+    }
+
+    pub fn stop<M: RxDma>(&mut self, hardware: &mut M) -> Result<(), Esp32s31RxFrontierError> {
+        let state = core::mem::replace(&mut self.state, Esp32s31RxFrontierState::Vacant);
+        let Esp32s31RxFrontierState::Live(live) = state else {
             self.state = state;
-            return Err(Esp32s31PreconnectedRxError::OwnerUnavailable);
+            return Err(Esp32s31RxFrontierError::OwnerUnavailable);
         };
         match live.try_stop(hardware) {
             Ok(halted) => {
-                self.state = Esp32s31PreconnectedRxState::Halted(halted);
+                self.state = Esp32s31RxFrontierState::Halted(halted);
                 Ok(())
             }
             Err((live, error)) => {
-                self.state = Esp32s31PreconnectedRxState::Live(live);
+                self.state = Esp32s31RxFrontierState::Live(live);
                 Err(error.into())
             }
         }
+    }
+
+    /// Poison a live arena before retaining this owner for board reset.
+    pub(crate) fn require_reset(&mut self) {
+        if let Esp32s31RxFrontierState::Live(ring) = &mut self.state {
+            ring.require_reset();
+        }
+    }
+
+    pub fn prepare_next<M: RxDma, const DMA_STORAGE_SIZE: usize>(
+        &mut self,
+        hardware: &mut M,
+        storage: &'storage Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
+    ) -> Result<(), Esp32s31RxFrontierError> {
+        self.prepare_with_storage(hardware, storage)
     }
 
     pub fn live_mut(
         &mut self,
-    ) -> Result<&mut RxRingLive<'storage, COUNT>, Esp32s31PreconnectedRxError> {
+    ) -> Result<&mut RxRingLive<'storage, COUNT>, Esp32s31RxFrontierError> {
         match &mut self.state {
-            Esp32s31PreconnectedRxState::Live(ring) => Ok(ring),
-            _ => Err(Esp32s31PreconnectedRxError::OwnerUnavailable),
+            Esp32s31RxFrontierState::Live(ring) => Ok(ring),
+            _ => Err(Esp32s31RxFrontierError::OwnerUnavailable),
         }
     }
 
@@ -176,21 +325,21 @@ where
     /// the terminal hardware image after the walker has been stopped.
     pub fn descriptor_snapshot(&self, index: usize) -> Option<RxDescriptorSnapshot> {
         match &self.state {
-            Esp32s31PreconnectedRxState::Halted(ring) => ring.descriptor_snapshot(index),
-            Esp32s31PreconnectedRxState::Prepared(ring) => ring.descriptor_snapshot(index),
-            Esp32s31PreconnectedRxState::Live(ring) => ring.descriptor_snapshot(index),
-            Esp32s31PreconnectedRxState::Vacant => None,
+            Esp32s31RxFrontierState::Halted(ring) => ring.descriptor_snapshot(index),
+            Esp32s31RxFrontierState::Prepared(ring) => ring.descriptor_snapshot(index),
+            Esp32s31RxFrontierState::Live(ring) => ring.descriptor_snapshot(index),
+            Esp32s31RxFrontierState::Vacant => None,
         }
     }
 
     /// Snapshot the live software frontier without exposing publication
     /// authority. AP fault evidence retains this before stop consumes the
     /// live owner and discards scheduler bookkeeping.
-    pub fn scheduler_snapshot(&self) -> Option<Esp32s31PreconnectedRxSchedulerSnapshot> {
-        let Esp32s31PreconnectedRxState::Live(ring) = &self.state else {
+    pub fn scheduler_snapshot(&self) -> Option<Esp32s31RxFrontierSchedulerSnapshot> {
+        let Esp32s31RxFrontierState::Live(ring) = &self.state else {
             return None;
         };
-        Some(Esp32s31PreconnectedRxSchedulerSnapshot {
+        Some(Esp32s31RxFrontierSchedulerSnapshot {
             recycle_start: ring.recycle_start(),
             accepted_tail: ring.accepted_tail(),
             observed_mask: ring.observed_mask(),
@@ -205,7 +354,7 @@ where
     /// of treating the absence of a new interrupt as an empty receive ring.
     pub const fn reload_pending(&self) -> bool {
         match &self.state {
-            Esp32s31PreconnectedRxState::Live(ring) => ring.reload_pending(),
+            Esp32s31RxFrontierState::Live(ring) => ring.reload_pending(),
             _ => false,
         }
     }
@@ -220,7 +369,7 @@ where
     pub fn service_continuation<M: RxDma>(
         &mut self,
         hardware: &mut M,
-    ) -> Result<Esp32s31PreconnectedRxContinuation, Esp32s31PreconnectedRxError> {
+    ) -> Result<Esp32s31RxFrontierContinuation, Esp32s31RxFrontierError> {
         let ring = self.live_mut()?;
         let probe_pending = ring.reload_pending()
             || ring.completion_release_probe_pending()
@@ -232,9 +381,9 @@ where
             || ring.completed_descriptor_frontier().descriptor_count != 0
             || ring.exhausted_terminal_writeback_pending(hardware);
         Ok(if probe_pending {
-            Esp32s31PreconnectedRxContinuation::ProbePending
+            Esp32s31RxFrontierContinuation::ProbePending
         } else {
-            Esp32s31PreconnectedRxContinuation::AwaitInterrupt
+            Esp32s31RxFrontierContinuation::AwaitInterrupt
         })
     }
 
@@ -250,13 +399,13 @@ where
         hardware: &mut M,
         storage: &'storage Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
         mut observe: F,
-    ) -> Result<Esp32s31PreconnectedRxProgress, Esp32s31PreconnectedRxError>
+    ) -> Result<Esp32s31RxFrontierProgress, Esp32s31RxFrontierError>
     where
         M: RxDma,
-        F: for<'frame> FnMut(RxSegment<'frame>) -> Esp32s31PreconnectedRxDirective,
+        F: for<'frame> FnMut(RxSegment<'frame>) -> Esp32s31RxFrontierDirective,
     {
         let ring = self.live_mut()?;
-        let mut progress = Esp32s31PreconnectedRxProgress::default();
+        let mut progress = Esp32s31RxFrontierProgress::default();
         let frontier = ring.completed_descriptor_frontier();
         // This finite port publishes one physical half at a time. Do not mark
         // a later descriptor observed merely because it was needed as the
@@ -265,13 +414,13 @@ where
         for step in 0..frontier.descriptor_count.min(COUNT / 2) {
             let index = (frontier.start_index + step) % COUNT;
             let Some(completed) = storage.take_completed(ring, index)? else {
-                return Err(Esp32s31PreconnectedRxError::Ring(RxRingError::Corrupt));
+                return Err(Esp32s31RxFrontierError::Ring(RxRingError::Corrupt));
             };
             progress.completed = progress.completed.saturating_add(1);
             match observe(completed.segment()) {
-                Esp32s31PreconnectedRxDirective::Continue => {}
-                Esp32s31PreconnectedRxDirective::Pause => break,
-                Esp32s31PreconnectedRxDirective::Stop => {
+                Esp32s31RxFrontierDirective::Continue => {}
+                Esp32s31RxFrontierDirective::Pause => break,
+                Esp32s31RxFrontierDirective::Stop => {
                     progress.stopped = true;
                     return Ok(progress);
                 }
@@ -287,27 +436,30 @@ where
             && !ring.completion_release_probe_pending()
             && !ring.exhausted_republication_probe_pending()
         {
-            return Err(Esp32s31PreconnectedRxError::Ring(RxRingError::Corrupt));
+            return Err(Esp32s31RxFrontierError::Ring(RxRingError::Corrupt));
         }
         Ok(progress)
     }
 
-    /// Copy, recycle and completely publish the first complete RX unit.
+    /// Copy the first complete RX unit and defer descriptor reuse behind a
+    /// completed-unit guard.
     ///
     /// SOURCE[ROM_REV0_WDEV_APPEND_RX_BLOCKS]: `wDev_AppendRxBlocks` accepts
     /// the exact head/count returned by one completed receive unit. The AP
-    /// path therefore must not retain descriptors until a physical half-ring
-    /// happens to complete. `wDev_AppendRxBlocks` does not return between its
-    /// reload doorbell and base-repair suffix. Preserve that transaction
-    /// boundary asynchronously: the observer sees the independent staging
-    /// copy only after hardware has accepted the returned descriptors.
+    /// path therefore reclaims a variable-size prefix rather than waiting for
+    /// a physical half-ring. Payload ownership and descriptor-link ownership
+    /// are nevertheless separate: LAST plus terminal completion permits an
+    /// independent payload copy, while a later completed unit is retained as
+    /// the generation-safe proof required before rewriting an earlier link.
+    /// `wDev_AppendRxBlocks` still remains one uninterrupted reload/base-repair
+    /// transaction whenever a guarded prefix becomes reusable.
     pub async fn service_completed_unit<M, F, const DMA_STORAGE_SIZE: usize>(
         &mut self,
         hardware: &mut M,
         storage: &'storage Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
         staging: &mut [u8],
         mut observe: F,
-    ) -> Result<Esp32s31RecycledRxProgress, Esp32s31PreconnectedRxError>
+    ) -> Result<Esp32s31RecycledRxProgress, Esp32s31RxFrontierError>
     where
         M: RxDma,
         F: for<'frame> FnMut(RxSegment<'frame>) -> Esp32s31RecycledRxDirective,
@@ -335,23 +487,9 @@ where
         if frontier.unit_count == 0 {
             return Ok(Esp32s31RecycledRxProgress::default());
         }
-        if !ring.observe_current_completed_unit_link_release(hardware, frontier.descriptor_count) {
-            // A repeated LAST/NEXT image is not an ownership proof. This
-            // finite wait can only help when hardware actually completes a
-            // later descriptor and advances LAST; otherwise retain the unit
-            // for the next RX service edge. It remains outside the reload
-            // suffix, which must be one uninterrupted transaction.
-            D::after_micros(1).await;
-            if !ring
-                .observe_current_completed_unit_link_release(hardware, frontier.descriptor_count)
-            {
-                return Ok(Esp32s31RecycledRxProgress::default());
-            }
-        }
-
         let unit = storage
             .take_completed_unit(ring, frontier.descriptor_count)?
-            .ok_or(Esp32s31PreconnectedRxError::Ring(RxRingError::Corrupt))?;
+            .ok_or(Esp32s31RxFrontierError::Ring(RxRingError::Corrupt))?;
         let descriptor_count = unit.descriptor_count();
         let descriptor_address = unit.metadata().descriptor_address();
         let descriptor_word0 = unit.metadata().staged_word0();
@@ -364,36 +502,42 @@ where
             for step in 0..descriptor_count {
                 let source = unit
                     .segment(step)
-                    .ok_or(Esp32s31PreconnectedRxError::Ring(RxRingError::Corrupt))?;
+                    .ok_or(Esp32s31RxFrontierError::Ring(RxRingError::Corrupt))?;
                 let end = offset
                     .checked_add(source.len())
-                    .ok_or(Esp32s31PreconnectedRxError::Ring(RxRingError::Overflow))?;
+                    .ok_or(Esp32s31RxFrontierError::Ring(RxRingError::Overflow))?;
                 staging
                     .get_mut(offset..end)
-                    .ok_or(Esp32s31PreconnectedRxError::Ring(RxRingError::Corrupt))?
+                    .ok_or(Esp32s31RxFrontierError::Ring(RxRingError::Corrupt))?
                     .copy_from_slice(source);
                 offset = end;
             }
             if offset != total_length {
-                return Err(Esp32s31PreconnectedRxError::Ring(RxRingError::Corrupt));
+                return Err(Esp32s31RxFrontierError::Ring(RxRingError::Corrupt));
             }
             true
         };
 
-        let append = unit
-            .recycle(hardware)?
-            .ok_or(Esp32s31PreconnectedRxError::Ring(RxRingError::Busy))?;
-        if append.descriptor_count != descriptor_count {
-            return Err(Esp32s31PreconnectedRxError::Ring(RxRingError::Corrupt));
-        }
+        // The staging copy is independent of the DMA arena. Retain the
+        // descriptor image in `observed_mask` instead of rewriting its link
+        // while hardware may still hold a prefetched generation.
+        unit.retain_for_deferred_recycle();
 
-        // Complete the exact vendor append suffix before protocol processing
-        // is allowed to borrow the same MAC register owner for a response TX.
-        ring.complete_pending_reload(hardware)?;
+        let recycled_descriptors =
+            match storage.recycle_observed_prefix_with_guard(ring, hardware)? {
+                Some(append) => {
+                    // Do not yield between the append doorbell and the conditional
+                    // exhausted-list BASE repair recovered from the vendor body.
+                    ring.complete_pending_reload(hardware)?;
+                    u32::try_from(append.descriptor_count).unwrap_or(u32::MAX)
+                }
+                None => 0,
+            };
 
         let mut progress = Esp32s31RecycledRxProgress {
             completed_units: 1,
             completed_descriptors: u32::try_from(descriptor_count).unwrap_or(u32::MAX),
+            recycled_descriptors,
             discarded_units: u32::from(!staged),
             paused: false,
         };
@@ -409,15 +553,13 @@ where
         Ok(progress)
     }
 
-    pub fn take_live(
-        &mut self,
-    ) -> Result<RxRingLive<'storage, COUNT>, Esp32s31PreconnectedRxError> {
-        let state = core::mem::replace(&mut self.state, Esp32s31PreconnectedRxState::Vacant);
+    pub fn take_live(&mut self) -> Result<RxRingLive<'storage, COUNT>, Esp32s31RxFrontierError> {
+        let state = core::mem::replace(&mut self.state, Esp32s31RxFrontierState::Vacant);
         match state {
-            Esp32s31PreconnectedRxState::Live(ring) => Ok(ring),
+            Esp32s31RxFrontierState::Live(ring) => Ok(ring),
             state => {
                 self.state = state;
-                Err(Esp32s31PreconnectedRxError::OwnerUnavailable)
+                Err(Esp32s31RxFrontierError::OwnerUnavailable)
             }
         }
     }
@@ -429,8 +571,8 @@ where
     /// this conversion as a substitute for stopping the walker.
     pub fn try_into_halted(self) -> Result<RxRingHalted<'storage, COUNT>, Self> {
         match self.state {
-            Esp32s31PreconnectedRxState::Halted(ring) => Ok(ring),
-            Esp32s31PreconnectedRxState::Prepared(ring) => Ok(ring.into_halted()),
+            Esp32s31RxFrontierState::Halted(ring) => Ok(ring),
+            Esp32s31RxFrontierState::Prepared(ring) => Ok(ring.into_halted()),
             state => Err(Self {
                 state,
                 _delay: PhantomData,
@@ -457,22 +599,22 @@ where
         storage: &'storage Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
     ) -> Result<
         RxRingLive<'storage, COUNT>,
-        Esp32s31PreconnectedRxIntoLiveFailure<'storage, D, COUNT, DMA_BUFFER_SIZE>,
+        Esp32s31RxFrontierIntoLiveFailure<'storage, D, COUNT, DMA_BUFFER_SIZE>,
     >
     where
         M: RxDma,
     {
-        if self.phase() == Esp32s31PreconnectedRxPhase::Live
+        if self.phase() == Esp32s31RxFrontierPhase::Live
             && let Err(error) = self.stop(hardware)
         {
-            return Err(Esp32s31PreconnectedRxIntoLiveFailure { owner: self, error });
+            return Err(Esp32s31RxFrontierIntoLiveFailure { owner: self, error });
         }
         if let Err(error) = self.start_with_storage(hardware, storage).await {
-            return Err(Esp32s31PreconnectedRxIntoLiveFailure { owner: self, error });
+            return Err(Esp32s31RxFrontierIntoLiveFailure { owner: self, error });
         }
         match self.take_live() {
             Ok(ring) => Ok(ring),
-            Err(error) => Err(Esp32s31PreconnectedRxIntoLiveFailure { owner: self, error }),
+            Err(error) => Err(Esp32s31RxFrontierIntoLiveFailure { owner: self, error }),
         }
     }
 }

@@ -11,6 +11,7 @@ description = "Executor-independent ESP32-S31 Wi-Fi station composition"
 open-esp-radio-esp32s31-hal = { path = "../../hal" }
 open-esp-radio-esp32s31-phy = { path = "../../phy" }
 open-esp-radio-esp32s31-wifi-mac = { path = "../mac" }
+open-esp-radio-esp32s31-wifi-dma = { path = "../dma" }
 open-esp-radio-esp32s31-wifi = { path = ".." }
 open-esp-radio-ieee80211 = { path = "../../../../wifi/ieee80211" }
 open-esp-radio-wifi-softmac = { path = "../../../../wifi/softmac" }

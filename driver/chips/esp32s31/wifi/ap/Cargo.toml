@@ -8,6 +8,7 @@ repository.workspace = true
 description = "Executor-independent ESP32-S31 Wi-Fi access-point composition"
 
 [dependencies]
+open-esp-radio-dma = { path = "../../../../common/dma" }
 open-esp-radio-esp32s31-hal = { path = "../../hal" }
 open-esp-radio-esp32s31-phy = { path = "../../phy" }
 open-esp-radio-esp32s31-wifi = { path = ".." }

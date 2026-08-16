@@ -5,8 +5,9 @@
 //! reorder-command sink and the shared TX owner.  No mailbox, executor timer
 //! or task wakeup is part of this state machine.
 
+use crate::connected_rx::ConnectedRxControlEvent;
+use open_esp_radio_esp32s31_wifi::wdev::{WdevControlContext, WdevControlProgress};
 use open_esp_radio_esp32s31_wifi_mac::{
-    connected_rx::ConnectedRxControlEvent,
     rx_ampdu::{StaRxBlockAckActivation, StaRxBlockAckSessions, StaRxBlockAckSessionsError},
     rx_ampdu_hw::S31RxBlockAckAgreementError,
     tx::TxHardware,
@@ -39,27 +40,6 @@ use crate::{
 // five times before returning to the disconnect path.
 const BEACON_PROBE_INTERVAL_MICROS: u64 = 500_000;
 const BEACON_PROBE_ATTEMPT_LIMIT: u8 = 5;
-
-/// Coherent runner-owned scheduling facts supplied to one control step.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct ConnectedControlContext {
-    pub network_tx_pending: bool,
-}
-
-impl ConnectedControlContext {
-    pub const IDLE: Self = Self {
-        network_tx_pending: false,
-    };
-}
-
-/// Result of one finite connected-control transition.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ConnectedControlProgress {
-    Idle,
-    More,
-    TxPending,
-    Disconnected(ConnectedDisconnectReason),
-}
 
 /// Protocol reason which ended one connected station epoch.
 ///
@@ -155,24 +135,24 @@ pub trait ConnectedControlTx {
         hardware: &mut H,
         body: &[u8],
         config: ActionTxConfig,
-    ) -> Result<ConnectedControlProgress, SingleMpduTxError>;
+    ) -> Result<WdevControlProgress<ConnectedDisconnectReason>, SingleMpduTxError>;
 
     fn start_beacon_probe<H: TxHardware>(
         &mut self,
         hardware: &mut H,
-    ) -> Result<ConnectedControlProgress, SingleMpduTxError>;
+    ) -> Result<WdevControlProgress<ConnectedDisconnectReason>, SingleMpduTxError>;
 
     fn start_power_management_null<H: TxHardware>(
         &mut self,
         hardware: &mut H,
         power_management: StaPowerManagement,
-    ) -> Result<ConnectedControlProgress, SingleMpduTxError>;
+    ) -> Result<WdevControlProgress<ConnectedDisconnectReason>, SingleMpduTxError>;
 
     fn start_protected_eapol<H: TxHardware>(
         &mut self,
         hardware: &mut H,
         payload: &[u8],
-    ) -> Result<ConnectedControlProgress, SingleMpduTxError>;
+    ) -> Result<WdevControlProgress<ConnectedDisconnectReason>, SingleMpduTxError>;
 
     /// Publish the negotiated TX BlockAck agreement for one TID.
     ///
@@ -196,9 +176,9 @@ where
     fn start_beacon_probe<H: TxHardware>(
         &mut self,
         hardware: &mut H,
-    ) -> Result<ConnectedControlProgress, SingleMpduTxError> {
+    ) -> Result<WdevControlProgress<ConnectedDisconnectReason>, SingleMpduTxError> {
         Esp32s31SingleMpduTx::start_beacon_probe(self, hardware)
-            .map(|_| ConnectedControlProgress::TxPending)
+            .map(|_| WdevControlProgress::TxPending)
     }
 
     fn now_micros(&self) -> u64 {
@@ -214,27 +194,27 @@ where
         hardware: &mut H,
         body: &[u8],
         config: ActionTxConfig,
-    ) -> Result<ConnectedControlProgress, SingleMpduTxError> {
+    ) -> Result<WdevControlProgress<ConnectedDisconnectReason>, SingleMpduTxError> {
         Esp32s31SingleMpduTx::start_action(self, hardware, body, config)
-            .map(|_| ConnectedControlProgress::TxPending)
+            .map(|_| WdevControlProgress::TxPending)
     }
 
     fn start_power_management_null<H: TxHardware>(
         &mut self,
         hardware: &mut H,
         power_management: StaPowerManagement,
-    ) -> Result<ConnectedControlProgress, SingleMpduTxError> {
+    ) -> Result<WdevControlProgress<ConnectedDisconnectReason>, SingleMpduTxError> {
         Esp32s31SingleMpduTx::start_power_management_null(self, hardware, power_management)
-            .map(|_| ConnectedControlProgress::TxPending)
+            .map(|_| WdevControlProgress::TxPending)
     }
 
     fn start_protected_eapol<H: TxHardware>(
         &mut self,
         hardware: &mut H,
         payload: &[u8],
-    ) -> Result<ConnectedControlProgress, SingleMpduTxError> {
+    ) -> Result<WdevControlProgress<ConnectedDisconnectReason>, SingleMpduTxError> {
         Esp32s31SingleMpduTx::start_protected_eapol(self, hardware, payload)
-            .map(|_| ConnectedControlProgress::TxPending)
+            .map(|_| WdevControlProgress::TxPending)
     }
 
     fn set_tx_block_ack_agreement(&mut self, _tid: u8, _agreement: Option<(u16, bool)>) {}
@@ -533,8 +513,8 @@ impl Esp32s31ConnectedControlCore {
         reorder: &mut R,
         event: Option<ConnectedRxControlEvent>,
         control_event_pending: bool,
-        context: ConnectedControlContext,
-    ) -> Result<ConnectedControlProgress, ConnectedControlError>
+        context: WdevControlContext,
+    ) -> Result<WdevControlProgress<ConnectedDisconnectReason>, ConnectedControlError>
     where
         H: ConnectedControlHardware,
         X: ConnectedControlTx,
@@ -596,7 +576,7 @@ impl Esp32s31ConnectedControlCore {
 
                     if advertised == StaPowerManagement::Active && !success {
                         self.pending_doze_permit = None;
-                        return Ok(ConnectedControlProgress::Disconnected(
+                        return Ok(WdevControlProgress::Exit(
                             ConnectedDisconnectReason::ActiveStateRestoreFailed,
                         ));
                     }
@@ -615,7 +595,7 @@ impl Esp32s31ConnectedControlCore {
                     return self.apply_power_save_decision(hardware, tx, decision);
                 }
             }
-            return Ok(ConnectedControlProgress::More);
+            return Ok(WdevControlProgress::More);
         }
 
         if let Some(event) = event {
@@ -634,7 +614,7 @@ impl Esp32s31ConnectedControlCore {
             {
                 self.initial_tx_block_ack[index] = true;
             }
-            return Ok(ConnectedControlProgress::More);
+            return Ok(WdevControlProgress::More);
         }
         if self
             .beacon_monitor
@@ -672,7 +652,7 @@ impl Esp32s31ConnectedControlCore {
             return self.start_tx_addba(hardware, tx, tid);
         }
 
-        Ok(ConnectedControlProgress::Idle)
+        Ok(WdevControlProgress::Idle)
     }
 
     fn apply_event<H, X, R>(
@@ -681,16 +661,16 @@ impl Esp32s31ConnectedControlCore {
         tx: &mut X,
         reorder: &mut R,
         event: ConnectedRxControlEvent,
-        context: ConnectedControlContext,
+        context: WdevControlContext,
         control_event_pending: bool,
-    ) -> Result<ConnectedControlProgress, ConnectedControlError>
+    ) -> Result<WdevControlProgress<ConnectedDisconnectReason>, ConnectedControlError>
     where
         H: ConnectedControlHardware,
         X: ConnectedControlTx,
         R: ConnectedControlReorder,
     {
         if let ConnectedRxControlEvent::PeerDisconnect(disconnect) = event {
-            return Ok(ConnectedControlProgress::Disconnected(disconnect.into()));
+            return Ok(WdevControlProgress::Exit(disconnect.into()));
         }
         if let ConnectedRxControlEvent::Beacon(observation) = event {
             self.beacon_probe_attempts = 0;
@@ -723,17 +703,17 @@ impl Esp32s31ConnectedControlCore {
                 };
                 return self.apply_power_save_decision(hardware, tx, decision);
             }
-            return Ok(ConnectedControlProgress::More);
+            return Ok(WdevControlProgress::More);
         }
         if let ConnectedRxControlEvent::ProbeResponse = event {
             self.beacon_probe_attempts = 0;
             if let Some(monitor) = &mut self.beacon_monitor {
                 monitor.observe_reachability(tx.now_micros())?;
             }
-            return Ok(ConnectedControlProgress::More);
+            return Ok(WdevControlProgress::More);
         }
         let ConnectedRxControlEvent::BlockAck(action) = event else {
-            return Ok(ConnectedControlProgress::More);
+            return Ok(WdevControlProgress::More);
         };
         match action {
             BlockAckAction::AddbaRequest {
@@ -754,7 +734,7 @@ impl Esp32s31ConnectedControlCore {
                     starting_sequence,
                 )?;
                 let Some(activation) = self.rx_block_ack.begin_pending(self.peer)? else {
-                    return Ok(ConnectedControlProgress::More);
+                    return Ok(WdevControlProgress::More);
                 };
                 self.start_rx_addba_response(hardware, tx, reorder, activation)
             }
@@ -767,7 +747,7 @@ impl Esp32s31ConnectedControlCore {
                             .stale_tx_block_ack_responses
                             .saturating_add(1);
                         self.observations.last_stale_tx_block_ack_token = Some(token);
-                        return Ok(ConnectedControlProgress::More);
+                        return Ok(WdevControlProgress::More);
                     }
                 };
                 let StaTxBlockAckResponse { tid, response } = response;
@@ -792,7 +772,7 @@ impl Esp32s31ConnectedControlCore {
                 } else if self.he_enabled {
                     hardware.set_he_tid_enabled(tid, false)?;
                 }
-                Ok(ConnectedControlProgress::More)
+                Ok(WdevControlProgress::More)
             }
             BlockAckAction::Delba { tid, initiator, .. } => {
                 if initiator {
@@ -807,14 +787,14 @@ impl Esp32s31ConnectedControlCore {
                         hardware.set_he_tid_enabled(tid, false)?;
                     }
                 }
-                Ok(ConnectedControlProgress::More)
+                Ok(WdevControlProgress::More)
             }
         }
     }
 
     fn has_pending_traffic(
         &self,
-        context: ConnectedControlContext,
+        context: WdevControlContext,
         control_event_pending: bool,
     ) -> bool {
         context.network_tx_pending
@@ -826,7 +806,7 @@ impl Esp32s31ConnectedControlCore {
         &mut self,
         hardware: &mut H,
         tx: &mut X,
-    ) -> Result<ConnectedControlProgress, ConnectedControlError>
+    ) -> Result<WdevControlProgress<ConnectedDisconnectReason>, ConnectedControlError>
     where
         H: ConnectedControlHardware,
         X: ConnectedControlTx,
@@ -847,7 +827,7 @@ impl Esp32s31ConnectedControlCore {
         hardware: &mut H,
         tx: &mut X,
         reorder: &mut R,
-    ) -> Result<ConnectedControlProgress, ConnectedControlError>
+    ) -> Result<WdevControlProgress<ConnectedDisconnectReason>, ConnectedControlError>
     where
         H: ConnectedControlHardware,
         X: ConnectedControlTx,
@@ -867,7 +847,7 @@ impl Esp32s31ConnectedControlCore {
         }
         self.beacon_probe_attempts = 0;
         self.beacon_lost = true;
-        Ok(ConnectedControlProgress::Disconnected(
+        Ok(WdevControlProgress::Exit(
             ConnectedDisconnectReason::BeaconLoss,
         ))
     }
@@ -877,7 +857,7 @@ impl Esp32s31ConnectedControlCore {
         hardware: &mut H,
         tx: &mut X,
         decision: StaPowerSaveDecision,
-    ) -> Result<ConnectedControlProgress, ConnectedControlError>
+    ) -> Result<WdevControlProgress<ConnectedDisconnectReason>, ConnectedControlError>
     where
         H: ConnectedControlHardware,
         X: ConnectedControlTx,
@@ -885,7 +865,7 @@ impl Esp32s31ConnectedControlCore {
         match decision {
             StaPowerSaveDecision::PermitDoze(permit) => {
                 self.pending_doze_permit = Some(permit);
-                Ok(ConnectedControlProgress::More)
+                Ok(WdevControlProgress::More)
             }
             StaPowerSaveDecision::SendPowerManagement(power_management) => {
                 self.pending_doze_permit = None;
@@ -895,7 +875,7 @@ impl Esp32s31ConnectedControlCore {
             }
             StaPowerSaveDecision::StayAwake(_) => {
                 self.pending_doze_permit = None;
-                Ok(ConnectedControlProgress::More)
+                Ok(WdevControlProgress::More)
             }
         }
     }
@@ -906,7 +886,7 @@ impl Esp32s31ConnectedControlCore {
         tx: &mut X,
         reorder: &mut R,
         activation: StaRxBlockAckActivation,
-    ) -> Result<ConnectedControlProgress, ConnectedControlError>
+    ) -> Result<WdevControlProgress<ConnectedDisconnectReason>, ConnectedControlError>
     where
         H: ConnectedControlHardware,
         X: ConnectedControlTx,
@@ -944,7 +924,7 @@ impl Esp32s31ConnectedControlCore {
             return Err(error.into());
         }
         self.in_flight = Some(ControlInFlight::RxAddba(activation));
-        Ok(ConnectedControlProgress::TxPending)
+        Ok(WdevControlProgress::TxPending)
     }
 
     fn start_tx_addba<H, X>(
@@ -952,7 +932,7 @@ impl Esp32s31ConnectedControlCore {
         hardware: &mut H,
         tx: &mut X,
         tid: u8,
-    ) -> Result<ConnectedControlProgress, ConnectedControlError>
+    ) -> Result<WdevControlProgress<ConnectedDisconnectReason>, ConnectedControlError>
     where
         H: ConnectedControlHardware,
         X: ConnectedControlTx,
@@ -968,7 +948,7 @@ impl Esp32s31ConnectedControlCore {
             return Err(error.into());
         }
         self.in_flight = Some(ControlInFlight::TxAddba { tid });
-        Ok(ConnectedControlProgress::TxPending)
+        Ok(WdevControlProgress::TxPending)
     }
 }
 
@@ -993,7 +973,7 @@ mod tests {
         core.initial_tx_block_ack[1] = true;
         core.tx_block_ack_attempts_remaining[1] = 1;
         assert!(core.has_immediate_work(false));
-        assert!(core.has_pending_traffic(ConnectedControlContext::IDLE, false));
+        assert!(core.has_pending_traffic(WdevControlContext::IDLE, false));
     }
 
     #[test]

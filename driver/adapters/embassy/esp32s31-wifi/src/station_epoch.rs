@@ -11,8 +11,8 @@ use core::marker::PhantomData;
 use embassy_sync::blocking_mutex::raw::RawMutex;
 
 use crate::{
-    preconnected_rx::{Esp32s31PreconnectedRx, Esp32s31PreconnectedRxDelay},
     rx_dma_service::{Esp32s31RxEpochResources, Esp32s31StoppedRx},
+    rx_frontier::{Esp32s31RxFrontier, Esp32s31RxFrontierDelay},
 };
 
 /// RX conversion required at the disconnected-to-reconnected boundary.
@@ -23,12 +23,12 @@ use crate::{
 pub trait Esp32s31StoppedStaRx {
     type Preconnected<D>
     where
-        D: Esp32s31PreconnectedRxDelay;
+        D: Esp32s31RxFrontierDelay;
     type Persistent;
 
     fn split_for_reconnect<D>(self) -> (Self::Preconnected<D>, Self::Persistent)
     where
-        D: Esp32s31PreconnectedRxDelay;
+        D: Esp32s31RxFrontierDelay;
 }
 
 impl<
@@ -59,9 +59,9 @@ impl<
     >
 {
     type Preconnected<P>
-        = Esp32s31PreconnectedRx<'storage, P, COUNT, DMA_BUFFER_SIZE>
+        = Esp32s31RxFrontier<'storage, P, COUNT, DMA_BUFFER_SIZE>
     where
-        P: Esp32s31PreconnectedRxDelay;
+        P: Esp32s31RxFrontierDelay;
     type Persistent = Esp32s31RxEpochResources<
         'storage,
         'pool,
@@ -78,10 +78,10 @@ impl<
 
     fn split_for_reconnect<P>(self) -> (Self::Preconnected<P>, Self::Persistent)
     where
-        P: Esp32s31PreconnectedRxDelay,
+        P: Esp32s31RxFrontierDelay,
     {
         let (ring, resources) = self.into_epoch_parts();
-        (Esp32s31PreconnectedRx::from_halted(ring), resources)
+        (Esp32s31RxFrontier::from_halted(ring), resources)
     }
 }
 
@@ -163,7 +163,7 @@ where
         Esp32s31ReconnectedStaEpoch<H, R::Preconnected<D>, R::Persistent, A, C>,
     )
     where
-        D: Esp32s31PreconnectedRxDelay,
+        D: Esp32s31RxFrontierDelay,
     {
         let (rx, rx_resources) = self.rx.split_for_reconnect::<D>();
         (
@@ -266,7 +266,7 @@ mod tests {
 
     struct TestDelay;
 
-    impl Esp32s31PreconnectedRxDelay for TestDelay {
+    impl Esp32s31RxFrontierDelay for TestDelay {
         async fn after_micros(_micros: u32) {}
     }
 
@@ -276,12 +276,12 @@ mod tests {
         type Preconnected<D>
             = (u8, PhantomData<D>)
         where
-            D: Esp32s31PreconnectedRxDelay;
+            D: Esp32s31RxFrontierDelay;
         type Persistent = u16;
 
         fn split_for_reconnect<D>(self) -> (Self::Preconnected<D>, Self::Persistent)
         where
-            D: Esp32s31PreconnectedRxDelay,
+            D: Esp32s31RxFrontierDelay,
         {
             ((self.0, PhantomData), u16::from(self.0) + 100)
         }

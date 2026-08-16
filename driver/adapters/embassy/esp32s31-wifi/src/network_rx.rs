@@ -5,7 +5,9 @@ use core::future::{Future, ready};
 use open_esp_radio_embassy_net::{
     PinnedRxPublisher, RawMutex, RxEnqueueError, SharedPinnedRxPublisher,
 };
-use open_esp_radio_esp32s31_wifi_mac::connected_rx::{ConnectedRxEvent, ConnectedRxSink};
+use open_esp_radio_esp32s31_wifi_sta::connected_rx::{ConnectedRxEvent, ConnectedRxSink};
+#[cfg(feature = "rx-delivery-observation")]
+use open_esp_radio_ieee80211::data::EthernetFrameParts;
 
 use crate::{
     connected_rx_protocol::{
@@ -23,10 +25,20 @@ use crate::{
 /// `rx-delivery-observation` feature is enabled. Diagnostic implementations
 /// must remain finite and non-blocking.
 #[cfg(feature = "rx-delivery-observation")]
-pub trait RxNetworkDeliveryObserver: Sync {
-    fn admitted(&self, event: &ConnectedRxEvent<'_>);
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RxNetworkDeliveryEvent<'frame> {
+    pub frame: EthernetFrameParts<'frame>,
+    /// Original normalized radio unit when the role retains it through the
+    /// network publication edge. AP publication has already copied its
+    /// Ethernet frame and therefore reports `None` here.
+    pub raw: Option<&'frame [u8]>,
+}
 
-    fn dropped(&self, event: &ConnectedRxEvent<'_>, error: RxEnqueueError);
+#[cfg(feature = "rx-delivery-observation")]
+pub trait RxNetworkDeliveryObserver: Sync {
+    fn admitted(&self, event: RxNetworkDeliveryEvent<'_>);
+
+    fn dropped(&self, event: RxNetworkDeliveryEvent<'_>, error: RxEnqueueError);
 }
 
 /// Copies Ethernet events into the bounded network queue and forwards every
@@ -172,7 +184,13 @@ impl<
     >
 {
     fn publish(&mut self, event: ConnectedRxEvent<'_>) {
-        if let ConnectedRxEvent::Ethernet { frame, .. } = event {
+        if let ConnectedRxEvent::Ethernet {
+            frame,
+            #[cfg(feature = "rx-delivery-observation")]
+            raw,
+            ..
+        } = event
+        {
             // Connected-state EAPOL belongs to the WPA2 control owner. It is
             // still forwarded to `observer` below, but must never escape into
             // embassy-net as application traffic.
@@ -198,7 +216,10 @@ impl<
                     frame.payload,
                     || {
                         if let Some(observer) = delivery_observer {
-                            observer.admitted(&event);
+                            observer.admitted(RxNetworkDeliveryEvent {
+                                frame,
+                                raw: Some(raw),
+                            });
                         }
                     },
                 )
@@ -211,7 +232,13 @@ impl<
                 Err(error) => {
                     #[cfg(feature = "rx-delivery-observation")]
                     if let Some(observer) = self.delivery_observer {
-                        observer.dropped(&event, error);
+                        observer.dropped(
+                            RxNetworkDeliveryEvent {
+                                frame,
+                                raw: Some(raw),
+                            },
+                            error,
+                        );
                     }
                     self.dropped = self.dropped.saturating_add(1);
                     self.last_enqueue_error = Some(error);
@@ -311,7 +338,15 @@ impl<
             }
             #[cfg(feature = "rx-delivery-observation")]
             if let Some(observer) = self.delivery_observer {
-                observer.admitted(&event);
+                observer.admitted(RxNetworkDeliveryEvent {
+                    frame: open_esp_radio_ieee80211::data::EthernetFrameParts {
+                        destination: ethernet.destination,
+                        source: ethernet.source,
+                        ether_type: ethernet.ether_type,
+                        payload,
+                    },
+                    raw: Some(raw),
+                });
             }
             self.observer.publish(event);
         }
@@ -350,7 +385,7 @@ mod tests {
     use open_esp_radio_embassy_net::{
         Driver as _, NoopRawMutex, PinnedTxPool, RxEnqueueError, SplitPinnedResources,
     };
-    use open_esp_radio_esp32s31_wifi_mac::connected_rx::{ConnectedRxEvent, ConnectedRxSink};
+    use open_esp_radio_esp32s31_wifi_sta::connected_rx::{ConnectedRxEvent, ConnectedRxSink};
     use open_esp_radio_ieee80211::data::EthernetFrameParts;
 
     use super::*;

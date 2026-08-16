@@ -12,19 +12,20 @@ use open_esp_radio_esp32s31_wifi_mac::{
     ap_tsf::{ApTsfHardware, reset_and_start_access_point_tsf, stop_access_point_tsf},
     crypto::{CcmpKeyHardware, CryptoKeyError},
 };
+use open_esp_radio_ieee80211::block_ack::{OperationalTxBlockAck, TxBlockAckAlarm};
 use open_esp_radio_ieee80211::{
     ap::{
-        ApAssociationResponseError, ApDataFrame, ApDataFrameError, ApManagementRequest,
-        ApPeerDisconnectKind, ApProtectedDataFrame, parse_ap_management_request,
-        write_ap_peer_disconnect, write_bg_association_response_frame,
-        write_open_authentication_response,
+        ApActionFrame, ApAssociationResponseError, ApDataFrame, ApDataFrameError,
+        ApManagementRequest, ApPeerDisconnectKind, ApProtectedDataFrame, EncodedApFrame,
+        parse_ap_management_request, write_ap_peer_disconnect,
+        write_ht20_association_response_frame, write_open_authentication_response,
     },
-    beacon::{ApBeaconBuildError, WPA2_BEACON_CAPACITY, write_wpa2_erp_beacon},
+    beacon::{ApBeaconBuildError, WPA2_BEACON_CAPACITY, write_wpa2_ht20_beacon},
     ssid::WifiSsid,
 };
 use open_esp_radio_wifi_ap::{
-    AccessPointService, ApMlmeAction, ApPeerClose, ApPeerCloseKind, ApPeerPhase, ApPeerStatus,
-    ApServiceError, ApWpa2Error, ApWpa2Progress, ApWpa2RetryProgress,
+    AccessPointService, ApAssociationCapabilities, ApMlmeAction, ApPeerClose, ApPeerCloseKind,
+    ApPeerPhase, ApPeerStatus, ApServiceError, ApWpa2Error, ApWpa2Progress, ApWpa2RetryProgress,
 };
 use open_esp_radio_wpa2::{OwnedEapolFrame, frames::Wpa2TxFrame};
 
@@ -101,6 +102,13 @@ pub struct Esp32s31ApProtectedFrame {
     pub hardware_key_selector: u8,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Esp32s31ApAggregateFrame {
+    pub encoded: EncodedApFrame,
+    pub hardware_key_selector: u8,
+    pub sequence_number: u16,
+}
+
 pub struct Esp32s31ApEngineStop<'storage> {
     pub service: AccessPointService<'storage>,
     pub beacon_storage: &'storage mut [u8; WPA2_BEACON_CAPACITY],
@@ -142,6 +150,7 @@ pub struct Esp32s31ApEngine<'storage> {
     service: AccessPointService<'storage>,
     beacon: Esp32s31ApBeacon<'storage>,
     security: Esp32s31ApSecurity<'storage>,
+    primary_channel: u8,
     report: Esp32s31ApEngineReport,
 }
 
@@ -160,7 +169,7 @@ impl<'storage> Esp32s31ApEngine<'storage> {
         beacon_interval_tu: u16,
         dtim_period: u8,
     ) -> Result<Self, Esp32s31ApEngineStartFailure<'storage>> {
-        let beacon_len = match write_wpa2_erp_beacon(
+        let beacon_len = match write_wpa2_ht20_beacon(
             beacon_storage,
             service.address(),
             ssid,
@@ -202,6 +211,7 @@ impl<'storage> Esp32s31ApEngine<'storage> {
             service,
             beacon,
             security,
+            primary_channel,
             report: Esp32s31ApEngineReport::default(),
         })
     }
@@ -316,6 +326,8 @@ impl<'storage> Esp32s31ApEngine<'storage> {
                 peer,
                 rsn_ie,
                 maximum_legacy_rate_500kbps,
+                ht_supported,
+                qos_supported,
             } => {
                 let Some(peer_status) = self.service.peer_status(peer) else {
                     // Vendor `hostap_recv_mgmt` treats a peer lookup miss as
@@ -331,13 +343,14 @@ impl<'storage> Esp32s31ApEngine<'storage> {
                     // state, retransmit the same successful association and
                     // do not start a second Message-1 transaction.
                     let sequence = self.service.next_management_sequence();
-                    let len = write_bg_association_response_frame(
+                    let len = write_ht20_association_response_frame(
                         output,
                         self.service.address(),
                         peer,
                         0,
                         peer_status.association_id,
                         sequence,
+                        self.primary_channel,
                     )?;
                     self.report.association_responses_prepared =
                         self.report.association_responses_prepared.saturating_add(1);
@@ -352,7 +365,11 @@ impl<'storage> Esp32s31ApEngine<'storage> {
                 let action = self.service.associate_wpa2(
                     peer,
                     rsn_ie.unwrap_or(&[]),
-                    maximum_legacy_rate_500kbps,
+                    ApAssociationCapabilities {
+                        maximum_legacy_rate_500kbps,
+                        ht_supported,
+                        qos_supported,
+                    },
                     authenticator_nonce,
                     initial_replay_counter,
                     now_micros,
@@ -366,13 +383,14 @@ impl<'storage> Esp32s31ApEngine<'storage> {
                     unreachable!("associate_wpa2 has one response action")
                 };
                 let sequence = self.service.next_management_sequence();
-                let len = write_bg_association_response_frame(
+                let len = write_ht20_association_response_frame(
                     output,
                     self.service.address(),
                     peer,
                     status,
                     association_id.unwrap_or(0),
                     sequence,
+                    self.primary_channel,
                 )?;
                 self.report.association_responses_prepared =
                     self.report.association_responses_prepared.saturating_add(1);
@@ -411,7 +429,48 @@ impl<'storage> Esp32s31ApEngine<'storage> {
                 self.report.peer_removals = self.report.peer_removals.saturating_add(1);
                 Ok(Esp32s31ApManagementOutcome::PeerRemoved { peer })
             }
+            ApManagementRequest::BlockAck { peer, action } => {
+                if self.service.peer_status(peer).is_none() {
+                    return Ok(Esp32s31ApManagementOutcome::Ignored);
+                }
+                self.service.on_tx_block_ack_action(peer, action)?;
+                Ok(Esp32s31ApManagementOutcome::Ignored)
+            }
         }
+    }
+
+    /// Prepare the AP-originated TID-0 ADDBA request for an authorized HT
+    /// peer. The peer table owns both the negotiation and its timer token.
+    pub fn prepare_tx_block_ack_request(
+        &mut self,
+        peer: [u8; 6],
+        now_micros: u64,
+        output: &mut [u8],
+    ) -> Result<Option<(usize, TxBlockAckAlarm)>, Esp32s31ApEngineError> {
+        let Some(request) = self.service.begin_tx_block_ack(peer, now_micros)? else {
+            return Ok(None);
+        };
+        let sequence = self.service.next_management_sequence();
+        let length = ApActionFrame {
+            access_point: self.service.address(),
+            peer,
+            sequence_number: sequence,
+            body: &request.body,
+        }
+        .encode(output)?;
+        Ok(Some((length, request.alarm)))
+    }
+
+    pub fn tx_block_ack_agreement(&self, peer: [u8; 6]) -> Option<OperationalTxBlockAck> {
+        self.service.peer_status(peer)?.tx_block_ack
+    }
+
+    pub fn observe_tx_block_ack_alarm(
+        &mut self,
+        peer: [u8; 6],
+        alarm: TxBlockAckAlarm,
+    ) -> Result<bool, Esp32s31ApEngineError> {
+        Ok(self.service.on_tx_block_ack_alarm(peer, alarm)?)
     }
 
     /// Install the PTK only after message four has been MIC-verified, then
@@ -512,13 +571,14 @@ impl<'storage> Esp32s31ApEngine<'storage> {
         output: &mut [u8],
     ) -> Result<Esp32s31ApProtectedFrame, Esp32s31ApEngineError> {
         let group = destination[0] & 1 != 0;
-        let (hardware_key_selector, ccmp_header) = if group {
+        let (hardware_key_selector, ccmp_header, peer_qos) = if group {
             if self.service.authorized_count() == 0 {
                 return Err(ApServiceError::WrongPeerPhase.into());
             }
             (
                 self.security.group_hardware_index(),
                 self.security.next_group_tx_ccmp_header(),
+                false,
             )
         } else {
             if self.service.peer_status(destination).is_none() {
@@ -527,18 +587,29 @@ impl<'storage> Esp32s31ApEngine<'storage> {
             if !self.service.is_authorized(destination) {
                 return Err(ApServiceError::WrongPeerPhase.into());
             }
+            let status = self
+                .service
+                .peer_status(destination)
+                .ok_or(ApServiceError::UnknownPeer)?;
             (
                 self.security.pairwise_hardware_index(destination)?,
                 self.security.next_pairwise_tx_ccmp_header(destination)?,
+                status.qos_supported,
             )
         };
-        let sequence_number = self.service.current_data_sequence();
+        let sequence_number = if peer_qos {
+            self.service
+                .current_qos_sequence(open_esp_radio_wifi_ap::AP_TX_BLOCK_ACK_TID)
+                .expect("AP TX data TID is representable")
+        } else {
+            self.service.current_data_sequence()
+        };
         let length = ApProtectedDataFrame {
             access_point: self.service.address(),
             peer: destination,
             sequence_number,
             user_priority: 0,
-            peer_qos: false,
+            peer_qos,
             ccmp_header,
             ethernet,
         }
@@ -546,11 +617,64 @@ impl<'storage> Esp32s31ApEngine<'storage> {
         // Advance only after the complete protected frame fits, but never as
         // an assertion side effect: release qualification must own the same
         // monotonic sequence space as debug tests.
-        let consumed_sequence_number = self.service.next_data_sequence();
+        let consumed_sequence_number = if peer_qos {
+            self.service
+                .next_qos_sequence(open_esp_radio_wifi_ap::AP_TX_BLOCK_ACK_TID)
+                .expect("AP TX data TID is representable")
+        } else {
+            self.service.next_data_sequence()
+        };
         debug_assert_eq!(consumed_sequence_number, sequence_number);
         Ok(Esp32s31ApProtectedFrame {
             length,
             hardware_key_selector,
+        })
+    }
+
+    /// AP-specific adapter from a network allocation to the role-neutral
+    /// retained A-MPDU backing contract.
+    pub fn encode_aggregate_ethernet_in_place(
+        &mut self,
+        peer: [u8; 6],
+        storage: &mut [u8],
+        ethernet_offset: usize,
+        ethernet_length: usize,
+    ) -> Result<Esp32s31ApAggregateFrame, Esp32s31ApEngineError> {
+        let status = self
+            .service
+            .peer_status(peer)
+            .ok_or(ApServiceError::UnknownPeer)?;
+        if status.phase != ApPeerPhase::Authorized
+            || !status.qos_supported
+            || status.tx_block_ack.is_none()
+        {
+            return Err(ApServiceError::WrongPeerPhase.into());
+        }
+        let hardware_key_selector = self.security.pairwise_hardware_index(peer)?;
+        let ccmp_header = self.security.next_pairwise_tx_ccmp_header(peer)?;
+        let sequence_number = self
+            .service
+            .current_qos_sequence(open_esp_radio_wifi_ap::AP_TX_BLOCK_ACK_TID)
+            .expect("AP TX data TID is representable");
+        let encoded = ApProtectedDataFrame {
+            access_point: self.service.address(),
+            peer,
+            sequence_number,
+            user_priority: open_esp_radio_wifi_ap::AP_TX_BLOCK_ACK_TID,
+            peer_qos: true,
+            ccmp_header,
+            ethernet: &[],
+        }
+        .encode_in_place(storage, ethernet_offset, ethernet_length)?;
+        let consumed = self
+            .service
+            .next_qos_sequence(open_esp_radio_wifi_ap::AP_TX_BLOCK_ACK_TID)
+            .expect("AP TX data TID is representable");
+        debug_assert_eq!(consumed, sequence_number);
+        Ok(Esp32s31ApAggregateFrame {
+            encoded,
+            hardware_key_selector,
+            sequence_number,
         })
     }
 

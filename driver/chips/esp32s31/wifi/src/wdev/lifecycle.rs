@@ -1,10 +1,10 @@
-//! Finite same-channel STA plus SoftAP ownership policy.
+//! Finite same-channel STA plus SoftAP WDEV ownership policy.
 //!
 //! Register qualification alone cannot prove that the two roles preserve one
 //! another while sharing the physical MAC. This state machine is the small,
 //! allocation-free policy boundary between independently reviewed register
-//! leaves and a future runtime orchestrator. It deliberately performs no MMIO
-//! and does not claim scheduler or DMA ownership.
+//! leaves and the role-neutral runtime orchestrator. It deliberately performs
+//! no MMIO and does not claim scheduler or DMA ownership.
 
 use open_esp_radio_ieee80211::channel::WifiChannel;
 

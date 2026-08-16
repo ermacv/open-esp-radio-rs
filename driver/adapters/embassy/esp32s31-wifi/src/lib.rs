@@ -34,7 +34,6 @@ pub mod access_point;
 pub mod aggregate_tx;
 pub mod aggregate_tx_observer;
 mod connected_control;
-pub mod connected_runner;
 pub mod connected_rx_protocol;
 pub mod connected_services;
 pub mod connected_sta_port;
@@ -54,12 +53,11 @@ mod monitor_service;
 pub mod network_rx;
 #[cfg(target_arch = "riscv32")]
 pub mod phy_delay;
-pub mod preconnected_rx;
 pub mod resource_profile;
 pub mod rx_dma_service;
+pub mod rx_frontier;
 pub mod rx_pipeline_observer;
 pub mod rx_reorder;
-mod rx_ring_owner;
 pub mod scan_port;
 pub mod scan_rx;
 #[cfg(target_arch = "riscv32")]
@@ -72,6 +70,7 @@ pub mod sta_tx_epoch;
 pub mod station;
 pub mod station_epoch;
 pub mod tx_time;
+pub mod wdev;
 #[cfg(target_arch = "riscv32")]
 mod wpa2_port;
 #[cfg(target_arch = "riscv32")]

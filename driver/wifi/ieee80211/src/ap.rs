@@ -5,18 +5,22 @@
 //! queues and wakeups stay with the radio owner.
 
 use crate::{
+    block_ack::{BlockAckAction, parse_block_ack_action},
     ccmp::CCMP_HEADER_LEN,
     data::{DataInterfaceRole, ETHERNET_HEADER_LEN, plan_data_encapsulation},
+    ht::{HT20_CAPABILITY_IE, ht20_operation_ie, supports_ht},
 };
 
-pub const AP_ASSOCIATION_RESPONSE_BODY_LEN: usize = 51;
+const AP_LEGACY_ASSOCIATION_RESPONSE_BODY_LEN: usize = 51;
+pub const AP_ASSOCIATION_RESPONSE_BODY_LEN: usize =
+    AP_LEGACY_ASSOCIATION_RESPONSE_BODY_LEN + HT20_CAPABILITY_IE.len() + 24;
 pub const AP_AUTHENTICATION_RESPONSE_LEN: usize = 30;
 pub const AP_PEER_DISCONNECT_LEN: usize = MANAGEMENT_HEADER_LEN + 2;
 pub const AP_ASSOCIATION_RESPONSE_LEN: usize = 24 + AP_ASSOCIATION_RESPONSE_BODY_LEN;
 
 const MANAGEMENT_HEADER_LEN: usize = 24;
 
-const AP_BG_ASSOCIATION_RESPONSE: [u8; AP_ASSOCIATION_RESPONSE_BODY_LEN] = [
+const AP_LEGACY_ASSOCIATION_RESPONSE: [u8; AP_LEGACY_ASSOCIATION_RESPONSE_BODY_LEN] = [
     0x31, 0x04, 0x00, 0x00, 0x01, 0xc0, 0x01, 0x08, 0x8b, 0x96, 0x82, 0x84, 0x0c, 0x18, 0x30, 0x60,
     0x32, 0x04, 0x6c, 0x12, 0x24, 0x48, 0x2a, 0x01, 0x00, 0xdd, 0x18, 0x00, 0x50, 0xf2, 0x02, 0x01,
     0x01, 0x04, 0x00, 0x03, 0xa4, 0x00, 0x00, 0x27, 0xa4, 0x00, 0x00, 0x42, 0x43, 0x5e, 0x00, 0x62,
@@ -119,6 +123,15 @@ pub struct ApProtectedDataFrame<'frame> {
     pub ethernet: &'frame [u8],
 }
 
+pub const AP_PROTECTED_QOS_ETHERNET_OVERHEAD: usize =
+    26 + CCMP_HEADER_LEN + 8 - ETHERNET_HEADER_LEN;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct EncodedApFrame {
+    pub offset: usize,
+    pub length: usize,
+}
+
 impl ApProtectedDataFrame<'_> {
     pub fn encode(self, output: &mut [u8]) -> Result<usize, ApDataFrameError> {
         if self.access_point[0] & 1 != 0 || self.access_point == [0; 6] {
@@ -175,6 +188,84 @@ impl ApProtectedDataFrame<'_> {
     }
 }
 
+impl ApProtectedDataFrame<'_> {
+    /// Convert an Ethernet-II frame in its owned allocation to an AP-originated
+    /// protected QoS MPDU without moving the payload.
+    pub fn encode_in_place(
+        self,
+        storage: &mut [u8],
+        ethernet_offset: usize,
+        ethernet_length: usize,
+    ) -> Result<EncodedApFrame, ApDataFrameError> {
+        if !self.peer_qos {
+            return Err(ApDataFrameError::InvalidUserPriority);
+        }
+        if self.sequence_number > 0x0fff {
+            return Err(ApDataFrameError::InvalidSequenceNumber);
+        }
+        if self.user_priority > 7 || ethernet_length < ETHERNET_HEADER_LEN {
+            return Err(if self.user_priority > 7 {
+                ApDataFrameError::InvalidUserPriority
+            } else {
+                ApDataFrameError::EthernetFrameTooShort
+            });
+        }
+        let ethernet_end = ethernet_offset.checked_add(ethernet_length).ok_or(
+            ApDataFrameError::OutputTooSmall {
+                required: usize::MAX,
+            },
+        )?;
+        if storage.len() < ethernet_end {
+            return Err(ApDataFrameError::OutputTooSmall {
+                required: ethernet_end,
+            });
+        }
+        let destination: [u8; 6] = storage[ethernet_offset..ethernet_offset + 6]
+            .try_into()
+            .expect("six-byte Ethernet destination");
+        if destination != self.peer {
+            return Err(ApDataFrameError::InvalidPeer);
+        }
+        let source: [u8; 6] = storage[ethernet_offset + 6..ethernet_offset + 12]
+            .try_into()
+            .expect("six-byte Ethernet source");
+        let ether_type =
+            u16::from_be_bytes([storage[ethernet_offset + 12], storage[ethernet_offset + 13]]);
+        let mut ethernet_header = [0_u8; ETHERNET_HEADER_LEN];
+        ethernet_header[..6].copy_from_slice(&destination);
+        ethernet_header[6..12].copy_from_slice(&source);
+        ethernet_header[12..14].copy_from_slice(&ether_type.to_be_bytes());
+        let mut plan = plan_data_encapsulation(
+            DataInterfaceRole::AccessPoint,
+            self.access_point,
+            self.access_point,
+            ethernet_header,
+            self.user_priority,
+            true,
+            false,
+        )
+        .ok_or(ApDataFrameError::InvalidUserPriority)?;
+        plan.header[1] |= 0x40;
+        let header_len = usize::from(plan.header_len);
+        let prefix_len = header_len + CCMP_HEADER_LEN + plan.llc_snap.len();
+        let headroom = prefix_len - ETHERNET_HEADER_LEN;
+        let frame_offset = ethernet_offset
+            .checked_sub(headroom)
+            .ok_or(ApDataFrameError::OutputTooSmall { required: headroom })?;
+        let frame_length = ethernet_length + headroom;
+        let frame = &mut storage[frame_offset..ethernet_end];
+        frame[..header_len].copy_from_slice(&plan.header[..header_len]);
+        frame[22..24].copy_from_slice(&(self.sequence_number << 4).to_le_bytes());
+        let ccmp_end = header_len + CCMP_HEADER_LEN;
+        frame[header_len..ccmp_end].copy_from_slice(&self.ccmp_header);
+        frame[ccmp_end..prefix_len].copy_from_slice(&plan.llc_snap);
+        Ok(EncodedApFrame {
+            offset: frame_offset,
+            length: frame_length,
+        })
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ApManagementRequest<'a> {
     OpenAuthentication {
@@ -186,6 +277,11 @@ pub enum ApManagementRequest<'a> {
         /// Highest legacy rate shared with the B/G ERP rate set advertised
         /// by this AP, in 500-kbit/s units. Zero means no common rate.
         maximum_legacy_rate_500kbps: u8,
+        /// The peer supplied a complete one-stream HT Capabilities IE.
+        ht_supported: bool,
+        /// The peer supplied WMM information or HT, both of which imply QoS
+        /// data framing for this profile.
+        qos_supported: bool,
     },
     Disassociation {
         peer: [u8; 6],
@@ -194,6 +290,10 @@ pub enum ApManagementRequest<'a> {
     Deauthentication {
         peer: [u8; 6],
         reason: u16,
+    },
+    BlockAck {
+        peer: [u8; 6],
+        action: BlockAckAction,
     },
 }
 
@@ -233,6 +333,9 @@ pub fn parse_ap_management_request<'a>(
                 peer,
                 rsn_ie: find_information_element(information_elements, 48),
                 maximum_legacy_rate_500kbps: maximum_ap_legacy_rate(information_elements),
+                ht_supported: supports_ht(information_elements),
+                qos_supported: supports_ht(information_elements)
+                    || supports_wmm(information_elements),
             })
         }
         10 | 12 => {
@@ -244,8 +347,63 @@ pub fn parse_ap_management_request<'a>(
                 Some(ApManagementRequest::Deauthentication { peer, reason })
             }
         }
+        13 => Some(ApManagementRequest::BlockAck {
+            peer,
+            action: parse_block_ack_action(frame.get(MANAGEMENT_HEADER_LEN..)?)?,
+        }),
         _ => None,
     }
+}
+
+/// One unprotected AP-originated Action management frame.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ApActionFrame<'a> {
+    pub access_point: [u8; 6],
+    pub peer: [u8; 6],
+    pub sequence_number: u16,
+    pub body: &'a [u8],
+}
+
+impl ApActionFrame<'_> {
+    pub fn encode(self, output: &mut [u8]) -> Result<usize, ApAssociationResponseError> {
+        if self.sequence_number > 0x0fff {
+            return Err(ApAssociationResponseError::InvalidSequenceNumber);
+        }
+        let required = MANAGEMENT_HEADER_LEN.checked_add(self.body.len()).ok_or(
+            ApAssociationResponseError::OutputTooSmall {
+                required: usize::MAX,
+            },
+        )?;
+        if output.len() < required {
+            return Err(ApAssociationResponseError::OutputTooSmall { required });
+        }
+        let frame = &mut output[..required];
+        frame.fill(0);
+        write_management_header(
+            frame,
+            0x00d0,
+            self.access_point,
+            self.peer,
+            self.sequence_number,
+        );
+        frame[MANAGEMENT_HEADER_LEN..].copy_from_slice(self.body);
+        Ok(required)
+    }
+}
+
+fn supports_wmm(bytes: &[u8]) -> bool {
+    let mut remaining = bytes;
+    while remaining.len() >= 2 {
+        let length = usize::from(remaining[1]);
+        let Some(record) = remaining.get(..length.saturating_add(2)) else {
+            return false;
+        };
+        if remaining[0] == 221 && length >= 6 && record[2..6] == [0x00, 0x50, 0xf2, 0x02] {
+            return true;
+        }
+        remaining = &remaining[record.len()..];
+    }
+    false
 }
 
 const AP_BG_LEGACY_RATES_500KBPS: [u8; 12] = [2, 4, 11, 22, 12, 18, 24, 36, 48, 72, 96, 108];
@@ -312,14 +470,15 @@ pub fn write_open_authentication_response(
     Ok(AP_AUTHENTICATION_RESPONSE_LEN)
 }
 
-/// Encode the AP-v1 B/G ERP association response as one complete MPDU.
-pub fn write_bg_association_response_frame(
+/// Encode the AP HT20 association response as one complete MPDU.
+pub fn write_ht20_association_response_frame(
     output: &mut [u8],
     access_point: [u8; 6],
     peer: [u8; 6],
     status: u16,
     association_id: u16,
     management_sequence: u16,
+    primary_channel: u8,
 ) -> Result<usize, ApAssociationResponseError> {
     if management_sequence > 0x0fff {
         return Err(ApAssociationResponseError::InvalidSequenceNumber);
@@ -335,7 +494,7 @@ pub fn write_bg_association_response_frame(
     let body: &mut [u8; AP_ASSOCIATION_RESPONSE_BODY_LEN] = (&mut frame[MANAGEMENT_HEADER_LEN..])
         .try_into()
         .expect("checked association response body length");
-    write_bg_association_response(body, status, association_id)?;
+    write_ht20_association_response(body, status, association_id, primary_channel)?;
     Ok(AP_ASSOCIATION_RESPONSE_LEN)
 }
 
@@ -387,20 +546,22 @@ fn write_management_header(
     frame[22..24].copy_from_slice(&(management_sequence << 4).to_le_bytes());
 }
 
-/// Build the finite AP-v1 B/G ERP association response body.
-///
-/// HT records are intentionally absent until AP RX can atomically hand every
-/// A-MSDU subframe to the network owner. This is an ordinary IEEE 802.11 byte
-/// transform and has no chip register dependency.
-pub fn write_bg_association_response(
+/// Build the finite AP HT20 association response body.
+pub fn write_ht20_association_response(
     body: &mut [u8; AP_ASSOCIATION_RESPONSE_BODY_LEN],
     status: u16,
     association_id: u16,
+    primary_channel: u8,
 ) -> Result<(), ApAssociationResponseError> {
     if status == 0 && association_id & 0x3fff == 0 {
         return Err(ApAssociationResponseError::MissingAssociationId);
     }
-    body.copy_from_slice(&AP_BG_ASSOCIATION_RESPONSE);
+    body[..AP_LEGACY_ASSOCIATION_RESPONSE_BODY_LEN]
+        .copy_from_slice(&AP_LEGACY_ASSOCIATION_RESPONSE);
+    let ht_capability_end = AP_LEGACY_ASSOCIATION_RESPONSE_BODY_LEN + HT20_CAPABILITY_IE.len();
+    body[AP_LEGACY_ASSOCIATION_RESPONSE_BODY_LEN..ht_capability_end]
+        .copy_from_slice(&HT20_CAPABILITY_IE);
+    body[ht_capability_end..].copy_from_slice(&ht20_operation_ie(primary_channel));
     body[2..4].copy_from_slice(&status.to_le_bytes());
     let encoded_association_id = if status == 0 {
         0xc000 | (association_id & 0x3fff)
@@ -551,17 +712,86 @@ mod tests {
     }
 
     #[test]
-    fn association_response_owns_status_and_aid_without_false_ht_capability() {
+    fn protected_ap_qos_frame_encodes_in_network_headroom_without_payload_copy() {
+        let access_point = [2, 0, 0, 0, 0, 1];
+        let peer = [2, 0, 0, 0, 0, 2];
+        let source = [2, 0, 0, 0, 0, 3];
+        let ethernet_offset = 40;
+        let mut storage = [0_u8; 96];
+        storage[ethernet_offset..ethernet_offset + 6].copy_from_slice(&peer);
+        storage[ethernet_offset + 6..ethernet_offset + 12].copy_from_slice(&source);
+        storage[ethernet_offset + 12..ethernet_offset + 14]
+            .copy_from_slice(&0x0800_u16.to_be_bytes());
+        storage[ethernet_offset + 14..ethernet_offset + 18].copy_from_slice(&[1, 2, 3, 4]);
+        let encoded = ApProtectedDataFrame {
+            access_point,
+            peer,
+            sequence_number: 7,
+            user_priority: 0,
+            peer_qos: true,
+            ccmp_header: [3, 0, 0, 0x20, 0, 0, 0, 0],
+            ethernet: &[],
+        }
+        .encode_in_place(&mut storage, ethernet_offset, 18)
+        .unwrap();
+        assert_eq!(
+            encoded.offset,
+            ethernet_offset - AP_PROTECTED_QOS_ETHERNET_OVERHEAD
+        );
+        assert_eq!(encoded.length, 18 + AP_PROTECTED_QOS_ETHERNET_OVERHEAD);
+        assert_eq!(
+            &storage[encoded.offset..encoded.offset + 2],
+            &0x4288_u16.to_le_bytes()
+        );
+        assert_eq!(
+            &storage[ethernet_offset + 14..ethernet_offset + 18],
+            &[1, 2, 3, 4]
+        );
+    }
+
+    #[test]
+    fn ap_action_frame_and_parser_preserve_per_peer_addba_identity() {
+        let access_point = [2, 0, 0, 0, 0, 1];
+        let peer = [2, 0, 0, 0, 0, 2];
+        let body = [3, 1, 7, 0, 0, 0x02, 0x08, 0, 0];
+        let mut frame = [0_u8; 40];
+        let length = ApActionFrame {
+            access_point,
+            peer,
+            sequence_number: 9,
+            body: &body,
+        }
+        .encode(&mut frame)
+        .unwrap();
+        // Reverse direction for the peer-originated response parsed by AP.
+        frame[4..10].copy_from_slice(&access_point);
+        frame[10..16].copy_from_slice(&peer);
+        assert!(matches!(
+            parse_ap_management_request(&frame[..length], access_point),
+            Some(ApManagementRequest::BlockAck {
+                peer: parsed_peer,
+                action: BlockAckAction::AddbaResponse {
+                    dialog_token: 7,
+                    tid: 0,
+                    window: 32,
+                    ..
+                },
+            }) if parsed_peer == peer
+        ));
+    }
+
+    #[test]
+    fn association_response_owns_status_aid_and_ht20_capability() {
         let mut body = [0; AP_ASSOCIATION_RESPONSE_BODY_LEN];
-        write_bg_association_response(&mut body, 17, 0x0123).unwrap();
+        write_ht20_association_response(&mut body, 17, 0x0123, 6).unwrap();
         assert_eq!(&body[2..4], &17_u16.to_le_bytes());
         assert_eq!(&body[4..6], &[0, 0]);
-        write_bg_association_response(&mut body, 0, 1).unwrap();
+        write_ht20_association_response(&mut body, 0, 1, 6).unwrap();
         assert_eq!(&body[4..6], &0xc001_u16.to_le_bytes());
-        assert!(!body.windows(2).any(|window| window == [45, 26]));
-        assert!(!body.windows(2).any(|window| window == [61, 22]));
+        assert!(body.windows(2).any(|window| window == [45, 26]));
+        assert!(body.windows(3).any(|window| window == [61, 22, 6]));
         assert_eq!(
-            write_bg_association_response(&mut body, 0, 0),
+            write_ht20_association_response(&mut body, 0, 0, 6),
             Err(ApAssociationResponseError::MissingAssociationId)
         );
     }
@@ -682,6 +912,8 @@ mod tests {
                 peer,
                 rsn_ie: Some(&association[39..42]),
                 maximum_legacy_rate_500kbps: 108,
+                ht_supported: false,
+                qos_supported: false,
             })
         );
     }
@@ -698,8 +930,16 @@ mod tests {
         assert_eq!(&authentication[28..30], &17_u16.to_le_bytes());
 
         let mut association = [0; AP_ASSOCIATION_RESPONSE_LEN];
-        write_bg_association_response_frame(&mut association, access_point, peer, 0, 0xc001, 8)
-            .unwrap();
+        write_ht20_association_response_frame(
+            &mut association,
+            access_point,
+            peer,
+            0,
+            0xc001,
+            8,
+            6,
+        )
+        .unwrap();
         assert_eq!(&association[..2], &0x0010_u16.to_le_bytes());
         assert_eq!(&association[22..24], &0x0080_u16.to_le_bytes());
         assert_eq!(&association[28..30], &0xc001_u16.to_le_bytes());

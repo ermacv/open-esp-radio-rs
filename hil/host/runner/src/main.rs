@@ -825,6 +825,8 @@ fn execute_workload(
                 timeout: std::time::Duration::from_secs(u64::from(*timeout_seconds)),
                 traffic: traffic.clone(),
                 criteria: selected.criteria.clone(),
+                require_rx_delivery_evidence: selected.image
+                    == scenario::ImageClass::DiagnosticRxDelivery,
             },
             output,
             lab,

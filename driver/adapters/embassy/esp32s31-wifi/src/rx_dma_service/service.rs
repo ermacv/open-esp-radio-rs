@@ -39,7 +39,7 @@ where
     fn service<'a>(
         &'a mut self,
         hardware: &'a mut H,
-    ) -> impl Future<Output = Result<WifiRxProgress, Self::Error>> + 'a {
+    ) -> impl Future<Output = Result<WdevRxProgress, Self::Error>> + 'a {
         async move {
             let service_started = self
                 .pipeline_observer
@@ -212,14 +212,14 @@ where
             }
 
             Ok(if credit_limited {
-                WifiRxProgress::Backpressured
+                WdevRxProgress::StagingBackpressured
             } else if completion_frontier_remaining
                 || exhausted_writeback_pending
                 || self.ring.exhausted_republication_probe_pending()
             {
-                WifiRxProgress::ProbePending
+                WdevRxProgress::ProbePending
             } else {
-                WifiRxProgress::Drained
+                WdevRxProgress::Drained
             })
         }
     }

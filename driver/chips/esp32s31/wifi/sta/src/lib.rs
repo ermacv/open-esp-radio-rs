@@ -35,6 +35,7 @@ pub mod attempt;
 pub mod channel;
 pub mod connected_control;
 pub mod connected_control_hardware;
+pub mod connected_rx;
 pub mod control_tx;
 pub mod cooperative_hardware;
 pub mod join;

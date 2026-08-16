@@ -12,10 +12,12 @@ use embassy_sync::channel::{Channel, Receiver, Sender};
 use embassy_time::{Duration, Instant, Timer};
 use open_esp_radio_embassy_net::RawMutex;
 use open_esp_radio_esp32s31_wifi_mac::{
-    connected_rx::{ConnectedRxDispatch, ConnectedRxDispatcher, ConnectedRxEvent, ConnectedRxSink},
     rx::RxPhyInfo,
     rx_ampdu::{RxAmpduError, RxAmpduMpdu, RxAmpduRelease, RxBlockAckReorderState},
     rx_pool::{NetworkRxFrame, VENDOR_LARGE_RX_PAYLOAD_CAPACITY, VENDOR_LARGE_RX_SLOT_COUNT},
+};
+use open_esp_radio_esp32s31_wifi_sta::connected_rx::{
+    ConnectedRxDispatch, ConnectedRxDispatcher, ConnectedRxEvent, ConnectedRxSink,
 };
 use open_esp_radio_ieee80211::data::EthernetFrameParts;
 use open_esp_radio_wifi_embassy::connected_tasks::ConnectedTaskEndpoint;
@@ -172,7 +174,7 @@ pub struct AlwaysReadyConnectedRxSink<S>(pub S);
 impl<S: ConnectedRxSink> ConnectedRxSink for AlwaysReadyConnectedRxSink<S> {
     fn publish(
         &mut self,
-        event: open_esp_radio_esp32s31_wifi_mac::connected_rx::ConnectedRxEvent<'_>,
+        event: open_esp_radio_esp32s31_wifi_sta::connected_rx::ConnectedRxEvent<'_>,
     ) {
         self.0.publish(event);
     }

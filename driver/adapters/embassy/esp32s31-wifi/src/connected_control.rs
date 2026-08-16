@@ -12,8 +12,8 @@ use open_esp_radio_esp32s31_wifi_mac::crypto::{CryptoKeyError, StaGroupCcmpSlot}
 pub use open_esp_radio_esp32s31_wifi_sta::{
     connected_control::{
         ConnectedControlError, ConnectedControlReorder, ConnectedControlTx,
-        ConnectedControlTxFailure, ConnectedControlTxKind, Esp32s31ConnectedControlCore,
-        RxReorderCommand, RxReorderCommandError,
+        ConnectedControlTxFailure, ConnectedControlTxKind, ConnectedDisconnectReason,
+        Esp32s31ConnectedControlCore, RxReorderCommand, RxReorderCommandError,
     },
     connected_control_hardware::ConnectedControlHardware,
 };
@@ -31,10 +31,10 @@ use open_esp_radio_wpa2::{
 };
 
 use crate::{
-    connected_runner::{WifiControlContext, WifiControlProgress},
     connected_services::Esp32s31ControlService,
     control_mailbox::ConnectedControlReceiver,
     rx_reorder::{RxReorderCommandSender, try_send_rx_reorder_command},
+    wdev::{WdevControlContext, WdevControlProgress},
 };
 
 /// Executor deadline capability kept outside the finite control core.
@@ -142,20 +142,24 @@ impl ConnectedWpa2Security {
         (self.supplicant, self.group)
     }
 
-    fn fail(&mut self, failure: ConnectedWpa2SecurityFailure) -> WifiControlProgress {
+    fn fail(
+        &mut self,
+        failure: ConnectedWpa2SecurityFailure,
+    ) -> WdevControlProgress<ConnectedDisconnectReason> {
         self.last_failure = Some(failure);
-        WifiControlProgress::Disconnected(
-            open_esp_radio_esp32s31_wifi_sta::connected_control::ConnectedDisconnectReason::GroupKeyHandshakeFailed,
-        )
+        WdevControlProgress::Exit(ConnectedDisconnectReason::GroupKeyHandshakeFailed)
     }
 
-    fn complete_tx<X: ConnectedControlTx>(&mut self, tx: &mut X) -> WifiControlProgress {
+    fn complete_tx<X: ConnectedControlTx>(
+        &mut self,
+        tx: &mut X,
+    ) -> WdevControlProgress<ConnectedDisconnectReason> {
         let Some(outcome) = tx.take_last_outcome() else {
             return self.fail(ConnectedWpa2SecurityFailure::MissingTxOutcome);
         };
         self.tx_in_flight = false;
         if outcome.is_success() {
-            WifiControlProgress::More
+            WdevControlProgress::More
         } else {
             self.fail(ConnectedWpa2SecurityFailure::TxOutcome(outcome))
         }
@@ -166,7 +170,7 @@ impl ConnectedWpa2Security {
         hardware: &mut H,
         tx: &mut X,
         frame: open_esp_radio_wpa2::OwnedEapolFrame,
-    ) -> WifiControlProgress {
+    ) -> WdevControlProgress<ConnectedDisconnectReason> {
         self.group_message1 = self.group_message1.saturating_add(1);
         let action = match self
             .supplicant
@@ -314,7 +318,7 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
 
     pub const fn last_event(
         &self,
-    ) -> Option<open_esp_radio_esp32s31_wifi_mac::connected_rx::ConnectedRxControlEvent> {
+    ) -> Option<open_esp_radio_esp32s31_wifi_sta::connected_rx::ConnectedRxControlEvent> {
         self.core.last_event()
     }
 
@@ -411,20 +415,22 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
         &'a mut self,
         hardware: &'a mut H,
         tx: &'a mut X,
-    ) -> impl Future<Output = Result<WifiControlProgress, ConnectedControlError>> + 'a
+    ) -> impl Future<
+        Output = Result<WdevControlProgress<ConnectedDisconnectReason>, ConnectedControlError>,
+    > + 'a
     where
         H: ConnectedControlHardware + 'a,
         X: ConnectedControlTx + 'a,
     {
-        self.service_with_context(hardware, tx, WifiControlContext::IDLE)
+        self.service_with_context(hardware, tx, WdevControlContext::IDLE)
     }
 
     pub async fn service_with_context<'a, H, X>(
         &'a mut self,
         hardware: &'a mut H,
         tx: &'a mut X,
-        context: WifiControlContext,
-    ) -> Result<WifiControlProgress, ConnectedControlError>
+        context: WdevControlContext,
+    ) -> Result<WdevControlProgress<ConnectedDisconnectReason>, ConnectedControlError>
     where
         H: ConnectedControlHardware + 'a,
         X: ConnectedControlTx + 'a,
@@ -466,8 +472,8 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
         }
         if let Some(frame) = self.receiver.try_receive_security() {
             let Some(security) = self.security.as_mut() else {
-                return Ok(WifiControlProgress::Disconnected(
-                    open_esp_radio_esp32s31_wifi_sta::connected_control::ConnectedDisconnectReason::GroupKeyHandshakeFailed,
+                return Ok(WdevControlProgress::Exit(
+                    ConnectedDisconnectReason::GroupKeyHandshakeFailed,
                 ));
             };
             return Ok(security.process(hardware, tx, frame).await);
@@ -492,13 +498,14 @@ where
     X: ConnectedControlTx + ConnectedControlTimer,
 {
     type Error = ConnectedControlError;
+    type Exit = ConnectedDisconnectReason;
 
     fn service<'a>(
         &'a mut self,
         hardware: &'a mut H,
         tx: &'a mut X,
-        context: WifiControlContext,
-    ) -> impl Future<Output = Result<WifiControlProgress, Self::Error>> + 'a {
+        context: WdevControlContext,
+    ) -> impl Future<Output = Result<WdevControlProgress<Self::Exit>, Self::Error>> + 'a {
         Esp32s31ConnectedControl::service_with_context(self, hardware, tx, context)
     }
 

@@ -384,6 +384,13 @@ mod tests {
         use crate::WifiAccessPointEvidence;
 
         let evidence = WifiAccessPointEvidence {
+            data_tx_attempts: u32::MAX,
+            data_tx_retried_frames: u32::MAX,
+            data_tx_maximum_attempts: u8::MAX,
+            data_tx_minimum_final_rate_kbps: u32::MAX,
+            data_tx_ack_snr_samples: u32::MAX,
+            data_tx_minimum_ack_snr_db: i8::MIN,
+            data_tx_maximum_ack_snr_db: i8::MAX,
             tx_ack_timeout_retries: u32::MAX,
             tx_cts_timeout_retries: u32::MAX,
             tx_collision_retries: u32::MAX,

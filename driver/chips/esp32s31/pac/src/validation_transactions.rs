@@ -6,18 +6,11 @@
 
 #![forbid(unsafe_code)]
 
-use crate::{MacInterface, MacInterruptRegisters, RadioRegisters};
+use crate::{MacInterface, RadioRegisters};
 
 impl RadioRegisters {
     pub fn validation_station_tsf(&self, low: Option<&mut u32>, high: Option<&mut u32>) {
         crate::mac_tsf::snapshot_station_tsf(&self.peripherals.wifi_mac_sta_tsf_load, low, high);
-    }
-
-    pub fn validation_disable_sta_beacon_filter(&mut self, interrupts: &mut MacInterruptRegisters) {
-        crate::mac_interrupt::disable_sta_beacon_filter_for_validation(
-            &self.peripherals.wifi_mac_sta_beacon_filter,
-            &interrupts.peripheral,
-        );
     }
 
     pub fn validation_set_mac_rx_walker_enabled(&mut self, enabled: bool) {

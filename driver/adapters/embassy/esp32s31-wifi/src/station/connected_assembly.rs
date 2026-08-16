@@ -13,7 +13,6 @@ use open_esp_radio_esp32s31_wifi::ordinary_tx::{WifiTxEntropy, WifiTxPowerProfil
 use crate::{
     aggregate_tx::Esp32s31ConnectedTx,
     connected_control::Esp32s31ConnectedControl,
-    connected_runner::{ConnectedRunner, ConnectedRunnerServices},
     connected_rx_protocol::{ConnectedRxProtocolSink, Esp32s31ConnectedRxProtocol},
     connected_sta_port::{
         Esp32s31ConnectedStaCompositionFailure, Esp32s31ConnectedStaControlResources,
@@ -21,6 +20,7 @@ use crate::{
         Esp32s31ConnectedStaRxProtocolResources, Esp32s31ConnectedStaTxHandoffFailure,
         Esp32s31ConnectedStaTxResources,
     },
+    wdev::{WdevRunner, WdevServices},
 };
 
 /// Complete running frontier returned by connected driver assembly.
@@ -136,10 +136,19 @@ pub fn assemble_esp32s31_connected_driver<
     >,
 ) -> Result<
     Esp32s31ConnectedDriverAssembly<
-        ConnectedRunner<
+        WdevRunner<
             'resources,
             'irq,
             M,
+            SplitPinnedRadioRunner<
+                'resources,
+                M,
+                FRAME_CAPACITY,
+                HEADROOM,
+                TRAILER,
+                RX_QUEUE_DEPTH,
+                TX_QUEUE_DEPTH,
+            >,
             B,
             FRAME_CAPACITY,
             HEADROOM,
@@ -230,7 +239,7 @@ where
             Esp32s31ConnectedControl<'control, M, CONTROL_CAPACITY>,
         >,
     ) -> B,
-    B: ConnectedRunnerServices<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+    B: WdevServices<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
 {
     let Esp32s31ConnectedDriverAssemblyResources {
         plan,
@@ -256,7 +265,7 @@ where
     };
     let services = map_services(drivers.services);
     Ok(Esp32s31ConnectedDriverAssembly {
-        runner: ConnectedRunner::new(irq, network, services),
+        runner: WdevRunner::new(irq, network, services),
         protocol: drivers.protocol,
         report: drivers.report,
     })

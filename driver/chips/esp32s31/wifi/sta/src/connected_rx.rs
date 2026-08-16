@@ -9,8 +9,8 @@
 use open_esp_radio_esp32s31_wifi_dma::rx_ring::RxSegment;
 use open_esp_radio_ieee80211::{
     data::{
-        DataDecapError, DataInterfaceRole, EthernetFrameParts, RxDuplicateFilter, amsdu_subframes,
-        plan_data_decapsulation,
+        DataDecapError, DataInterfaceRole, EthernetFrameParts, RxDuplicateFilter,
+        decapsulate_data_frames,
     },
     ndpa::{HeNdpa, HeNdpaError},
     station::{StaDisconnect, parse_sta_disconnect},
@@ -19,7 +19,7 @@ use open_esp_radio_ieee80211::{
 };
 use open_esp_radio_wifi_softmac::{MacRxCryptoStatus, MacRxEvidence, MacRxMetadata};
 
-use crate::{
+use open_esp_radio_esp32s31_wifi_mac::{
     rx::{
         PUBLIC_HEADER_SIZE, RxError, RxIngressConfig, RxPhyInfo, decode_normalized_rx_metadata,
         extract_control, extract_management, view_ccmp_data,
@@ -483,78 +483,35 @@ impl ConnectedRxDispatcher {
             return ConnectedRxDispatch::Duplicate;
         }
 
-        match plan_data_decapsulation(
+        let mpdu = &mpdu[..data.frame.mpdu.length];
+        let mut frames = match decapsulate_data_frames(
             DataInterfaceRole::Station,
-            &mpdu[..data.frame.mpdu.length],
+            mpdu,
             data.frame.payload_offset,
             data.frame.payload_length,
         ) {
-            Ok(plan) => {
-                metadata.amsdu = MacRxEvidence::ProtocolValidated(false);
-                let Some(payload_end) = plan.payload_offset.checked_add(plan.payload_length) else {
-                    return rejected(
-                        protection,
-                        ConnectedRxError::Data(DataDecapError::Truncated),
-                    );
-                };
-                let Some(payload) = mpdu.get(plan.payload_offset..payload_end) else {
-                    return rejected(
-                        protection,
-                        ConnectedRxError::Data(DataDecapError::Truncated),
-                    );
-                };
-                sink.publish(ConnectedRxEvent::Ethernet {
-                    frame: EthernetFrameParts {
-                        destination: plan.destination,
-                        source: plan.source,
-                        ether_type: plan.ether_type,
-                        payload,
-                    },
-                    raw,
-                    amsdu: false,
-                    metadata,
-                });
-                ConnectedRxDispatch::Data {
-                    ethernet_frames: 1,
-                    amsdu: false,
-                }
-            }
-            Err(DataDecapError::AmsduUnsupported) => {
-                let subframes = match amsdu_subframes(
-                    DataInterfaceRole::Station,
-                    &mpdu[..data.frame.mpdu.length],
-                    data.frame.payload_offset,
-                    data.frame.payload_length,
-                ) {
-                    Ok(subframes) => subframes,
-                    Err(error) => return rejected(protection, ConnectedRxError::Data(error)),
-                };
-                let mut count = 0_u8;
-                metadata.amsdu = MacRxEvidence::ProtocolValidated(true);
-                for subframe in subframes {
-                    let subframe = match subframe {
-                        Ok(subframe) => subframe,
-                        Err(error) => return rejected(protection, ConnectedRxError::Data(error)),
-                    };
-                    sink.publish(ConnectedRxEvent::Ethernet {
-                        frame: EthernetFrameParts {
-                            destination: subframe.destination,
-                            source: subframe.source,
-                            ether_type: subframe.ether_type,
-                            payload: subframe.payload,
-                        },
-                        raw,
-                        amsdu: true,
-                        metadata,
-                    });
-                    count = count.saturating_add(1);
-                }
-                ConnectedRxDispatch::Data {
-                    ethernet_frames: count,
-                    amsdu: true,
-                }
-            }
-            Err(error) => rejected(protection, ConnectedRxError::Data(error)),
+            Ok(frames) => frames,
+            Err(error) => return rejected(protection, ConnectedRxError::Data(error)),
+        };
+        let amsdu = frames.is_amsdu();
+        metadata.amsdu = MacRxEvidence::ProtocolValidated(amsdu);
+        let mut count = 0_u8;
+        for frame in &mut frames {
+            let frame = match frame {
+                Ok(frame) => frame,
+                Err(error) => return rejected(protection, ConnectedRxError::Data(error)),
+            };
+            sink.publish(ConnectedRxEvent::Ethernet {
+                frame,
+                raw,
+                amsdu,
+                metadata,
+            });
+            count = count.saturating_add(1);
+        }
+        ConnectedRxDispatch::Data {
+            ethernet_frames: count,
+            amsdu,
         }
     }
 }

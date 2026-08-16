@@ -14,7 +14,10 @@ use crate::{
         ESP32S31_RX_WALKER_ENABLE_SETTLE_US, Esp32s31RxDmaStorage, Esp32s31RxEpochResources,
         Esp32s31StoppedRx,
     },
-    rx_ring_owner::{Esp32s31RxRingOwner, Esp32s31RxRingOwnerError, Esp32s31RxRingPhase},
+    rx_frontier::{
+        EmbassyEsp32s31RxFrontierDelay, Esp32s31RxFrontier, Esp32s31RxFrontierError,
+        Esp32s31RxFrontierPhase,
+    },
 };
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -80,7 +83,8 @@ pub struct Esp32s31ScanRx<
     const DMA_BUFFER_SIZE: usize,
     const DMA_STORAGE_SIZE: usize,
 > {
-    receive: Esp32s31RxRingOwner<'storage, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
+    receive: Esp32s31RxFrontier<'storage, EmbassyEsp32s31RxFrontierDelay, COUNT, DMA_BUFFER_SIZE>,
+    storage: &'storage Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
 }
 
 impl<'storage, const COUNT: usize, const DMA_BUFFER_SIZE: usize, const DMA_STORAGE_SIZE: usize>
@@ -93,8 +97,8 @@ impl<'storage, const COUNT: usize, const DMA_BUFFER_SIZE: usize, const DMA_STORA
         descriptor_base: u32,
         buffer_addresses: &'storage [u32; COUNT],
     ) -> Result<Self, RxRingError> {
-        Esp32s31RxRingOwner::prepare_initial(hardware, storage, descriptor_base, buffer_addresses)
-            .map(|receive| Self { receive })
+        Esp32s31RxFrontier::prepare_initial(hardware, storage, descriptor_base, buffer_addresses)
+            .map(|receive| Self { receive, storage })
     }
 
     #[cfg(target_pointer_width = "32")]
@@ -104,8 +108,8 @@ impl<'storage, const COUNT: usize, const DMA_BUFFER_SIZE: usize, const DMA_STORA
         descriptor_base: u32,
         buffer_addresses: &'storage [u32; COUNT],
     ) -> Result<Self, RxRingError> {
-        Esp32s31RxRingOwner::prepare_initial(hardware, storage, descriptor_base, buffer_addresses)
-            .map(|receive| Self { receive })
+        Esp32s31RxFrontier::prepare_initial(hardware, storage, descriptor_base, buffer_addresses)
+            .map(|receive| Self { receive, storage })
     }
 
     pub const fn from_halted(
@@ -113,70 +117,77 @@ impl<'storage, const COUNT: usize, const DMA_BUFFER_SIZE: usize, const DMA_STORA
         storage: &'storage Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
     ) -> Self {
         Self {
-            receive: Esp32s31RxRingOwner::from_halted(ring, storage),
+            receive: Esp32s31RxFrontier::from_halted(ring),
+            storage,
         }
     }
 
-    pub const fn phase(&self) -> Esp32s31RxRingPhase {
+    pub const fn phase(&self) -> Esp32s31RxFrontierPhase {
         self.receive.phase()
     }
 
     pub fn prepare_initial_or_retry<H: RxDma>(
         &mut self,
         hardware: &mut H,
-    ) -> Result<(), Esp32s31RxRingOwnerError> {
-        self.receive.prepare_initial_or_retry(hardware)
+    ) -> Result<(), Esp32s31RxFrontierError> {
+        self.receive
+            .prepare_initial_or_retry(hardware, self.storage)
     }
 
-    pub fn start<H: RxDma>(&mut self, hardware: &mut H) -> Result<(), Esp32s31RxRingOwnerError> {
-        self.receive.start(hardware)
+    pub fn start<H: RxDma>(&mut self, hardware: &mut H) -> Result<(), Esp32s31RxFrontierError> {
+        self.receive.start_prepared(hardware)
     }
 
     pub fn observe_management<H, O, const RECORDS: usize>(
         &mut self,
         hardware: &mut H,
         context: &mut Esp32s31ScanObservationContext<'_, O, RECORDS>,
-    ) -> Result<Esp32s31ScanRxProgress, Esp32s31RxRingOwnerError>
+    ) -> Result<Esp32s31ScanRxProgress, Esp32s31RxFrontierError>
     where
         H: RxDma,
         O: Esp32s31ScanFrameObserver,
     {
         let mut progress = Esp32s31ScanRxProgress::default();
-        let ring = self.receive.service_completed(hardware, |segment| {
-            let rssi = segment.buffer[0] as i8;
-            match extract_management(
-                core::slice::from_ref(&segment),
-                RxIngressConfig {
-                    ring_entry_limit: 1,
-                    csi_config: 0,
-                    flags: 0,
-                },
-                context.frame,
-            ) {
-                Ok(frame) => {
-                    progress.parsed_management_frames =
-                        progress.parsed_management_frames.saturating_add(1);
-                    let frame = &context.frame[..frame.length];
-                    let outcome = context
-                        .table
-                        .observe_management(frame, context.channel, rssi);
-                    context.observer.observe(frame, rssi, outcome);
-                    match outcome {
-                        ScanObservation::Inserted { .. } => {
-                            progress.inserted_records = progress.inserted_records.saturating_add(1)
+        let ring = self
+            .receive
+            .service_completed_frontier(hardware, self.storage, |segment| {
+                let rssi = segment.buffer[0] as i8;
+                match extract_management(
+                    core::slice::from_ref(&segment),
+                    RxIngressConfig {
+                        ring_entry_limit: 1,
+                        csi_config: 0,
+                        flags: 0,
+                    },
+                    context.frame,
+                ) {
+                    Ok(frame) => {
+                        progress.parsed_management_frames =
+                            progress.parsed_management_frames.saturating_add(1);
+                        let frame = &context.frame[..frame.length];
+                        let outcome =
+                            context
+                                .table
+                                .observe_management(frame, context.channel, rssi);
+                        context.observer.observe(frame, rssi, outcome);
+                        match outcome {
+                            ScanObservation::Inserted { .. } => {
+                                progress.inserted_records =
+                                    progress.inserted_records.saturating_add(1)
+                            }
+                            ScanObservation::Updated { .. } => {
+                                progress.updated_records =
+                                    progress.updated_records.saturating_add(1)
+                            }
+                            _ => {}
                         }
-                        ScanObservation::Updated { .. } => {
-                            progress.updated_records = progress.updated_records.saturating_add(1)
-                        }
-                        _ => {}
+                    }
+                    Err(_) => {
+                        progress.malformed_or_irrelevant_frames =
+                            progress.malformed_or_irrelevant_frames.saturating_add(1);
                     }
                 }
-                Err(_) => {
-                    progress.malformed_or_irrelevant_frames =
-                        progress.malformed_or_irrelevant_frames.saturating_add(1);
-                }
-            }
-        })?;
+            })?;
         progress.completed_descriptors = ring.completed_descriptors;
         progress.recycled_descriptors = ring.recycled_descriptors;
         progress.reload_pending = ring.reload_pending;
@@ -184,21 +195,22 @@ impl<'storage, const COUNT: usize, const DMA_BUFFER_SIZE: usize, const DMA_STORA
         Ok(progress)
     }
 
-    pub fn stop<H: RxDma>(&mut self, hardware: &mut H) -> Result<(), Esp32s31RxRingOwnerError> {
+    pub fn stop<H: RxDma>(&mut self, hardware: &mut H) -> Result<(), Esp32s31RxFrontierError> {
         self.receive.stop(hardware)
     }
 
     pub fn prepare_next<H: RxDma>(
         &mut self,
         hardware: &mut H,
-    ) -> Result<(), Esp32s31RxRingOwnerError> {
-        self.receive.prepare_next(hardware)
+    ) -> Result<(), Esp32s31RxFrontierError> {
+        self.receive.prepare_next(hardware, self.storage)
     }
 
     pub fn into_halted(self) -> Result<RxRingHalted<'storage, COUNT>, Self> {
-        self.receive
-            .into_halted()
-            .map_err(|receive| Self { receive })
+        let Self { receive, storage } = self;
+        receive
+            .try_into_halted()
+            .map_err(|receive| Self { receive, storage })
     }
 }
 

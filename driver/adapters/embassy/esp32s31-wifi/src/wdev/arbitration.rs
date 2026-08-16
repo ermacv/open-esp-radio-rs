@@ -4,6 +4,7 @@ impl<
     'resources,
     'irq,
     M: RawMutex,
+    N,
     B,
     const FRAME_CAPACITY: usize,
     const HEADROOM: usize,
@@ -11,10 +12,11 @@ impl<
     const RX_QUEUE_DEPTH: usize,
     const TX_QUEUE_DEPTH: usize,
 >
-    ConnectedRunner<
+    WdevRunner<
         'resources,
         'irq,
         M,
+        N,
         B,
         FRAME_CAPACITY,
         HEADROOM,
@@ -23,15 +25,24 @@ impl<
         TX_QUEUE_DEPTH,
     >
 where
-    B: ConnectedRunnerServices<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+    N: WdevNetwork<
+            'resources,
+            M,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            RX_QUEUE_DEPTH,
+            TX_QUEUE_DEPTH,
+        >,
+    B: WdevServices<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
 {
-    /// Run the production radio event loop until connected policy proves the
-    /// peer is unreachable.
-    pub async fn run(&mut self) -> Result<ConnectedRunnerExit, B::Error> {
+    /// Run the production radio event loop until role policy reaches its
+    /// terminal edge.
+    pub async fn run(&mut self) -> Result<WdevRunnerExit<B::Exit>, B::Error> {
         self.run_until(pending()).await
     }
 
-    /// Run the production radio event loop until disconnect or caller stop.
+    /// Run the production radio event loop until a role exit or caller stop.
     ///
     /// RX is the first future in both selects. Embassy's ordered `select`
     /// therefore preserves the recovered `wDev_ProcessFiq` priority when RX
@@ -41,48 +52,80 @@ where
     ///
     /// `stop` is observed only at transaction boundaries. If it becomes ready
     /// during TX, the normal IRQ/deadline path first releases hardware; the
-    /// next idle boundary returns [`ConnectedRunnerExit::Stopped`]. This makes
+    /// next idle boundary returns [`WdevRunnerExit::Stopped`]. This makes
     /// cancellation bounded without inventing an unsafe descriptor abort.
-    pub async fn run_until<S>(&mut self, stop: S) -> Result<ConnectedRunnerExit, B::Error>
+    pub async fn run_until<S>(&mut self, stop: S) -> Result<WdevRunnerExit<B::Exit>, B::Error>
     where
         S: Future<Output = ()>,
     {
         let mut stop = core::pin::pin!(stop);
+        let mut stopping = false;
         let mut tx_batch_deadline = None;
         loop {
             // Poll the caller edge before servicing control. `ready(())`
             // makes this a non-blocking ordered probe, with stop winning an
             // exact tie before another transaction can begin.
-            if matches!(select(stop.as_mut(), ready(())).await, Either::First(())) {
+            if !stopping && matches!(select(stop.as_mut(), ready(())).await, Either::First(())) {
+                stopping = true;
+            }
+            if stopping {
                 self.services.cancel_prepared_tx()?;
-                self.network
-                    .set_link_state(open_esp_radio_embassy_net::LinkState::Down);
-                return Ok(ConnectedRunnerExit::Stopped);
+                match self.services.service_stop()? {
+                    WdevStopProgress::More => continue,
+                    WdevStopProgress::TxPending => {
+                        self.drive_active_tx().await?;
+                        continue;
+                    }
+                    WdevStopProgress::Stopped => {
+                        self.network
+                            .set_link_state(open_esp_radio_embassy_net::LinkState::Down);
+                        return Ok(WdevRunnerExit::Stopped);
+                    }
+                }
             }
             // No TX owner is live at this boundary. Drain stale transaction
             // wakes before a control or network publication can create a new
             // generation.
             self.discard_stale_tx_wakes();
-            let control_context = WifiControlContext {
+            let control_context = WdevControlContext {
                 network_tx_pending: self.network.tx_queue_len() != 0,
             };
             match self.services.service_control(control_context).await? {
-                WifiControlProgress::More => continue,
-                WifiControlProgress::TxPending => {
+                WdevControlProgress::More => continue,
+                WdevControlProgress::TxPending => {
                     self.drive_active_tx().await?;
                     continue;
                 }
-                WifiControlProgress::Disconnected(reason) => {
+                WdevControlProgress::Exit(exit) => {
                     self.services.cancel_prepared_tx()?;
                     self.network
                         .set_link_state(open_esp_radio_embassy_net::LinkState::Down);
-                    return Ok(ConnectedRunnerExit::Disconnected(reason));
+                    return Ok(WdevRunnerExit::Role(exit));
                 }
-                WifiControlProgress::Idle => {}
+                WdevControlProgress::Idle => {}
             }
 
             let network_tx_pending =
                 self.services.has_prepared_tx() || self.network.tx_queue_len() != 0;
+
+            // Consume a coalesced RX frontier before admitting a fresh
+            // network transaction, matching the recovered FIQ priority. If a
+            // previous finite RX pass reported a continuation while network
+            // TX is queued, admit exactly one network transaction first; the
+            // reposted RX signal remains pending for the following boundary.
+            let rx_can_run = matches!(
+                self.rx_progress,
+                WdevRxProgress::Drained | WdevRxProgress::ProbePending
+            );
+            if rx_can_run
+                && self.irq.rx_signaled()
+                && !(network_tx_pending && self.network_turn_owed)
+            {
+                self.irq.wait_rx().await;
+                self.service_rx().await?;
+                continue;
+            }
+
             let mut wait_for_batch_until = None;
             if network_tx_pending {
                 let preferred = self.services.preferred_tx_batch_size();
@@ -115,6 +158,7 @@ where
                             self.services.prepare_tx(frame, &network_tx).await?;
                         }
                         let network_tx = self.network.tx_consumer();
+                        self.network_turn_owed = false;
                         let progress = self.services.start_prepared_tx(&network_tx).await?;
                         if progress == WifiTxProgress::Pending {
                             self.drive_active_tx().await?;
@@ -126,6 +170,7 @@ where
                         continue;
                     };
                     let network_tx = self.network.tx_consumer();
+                    self.network_turn_owed = false;
                     let progress = self.services.start_tx(frame, &network_tx).await?;
                     if progress == WifiTxProgress::Pending {
                         self.drive_active_tx().await?;
@@ -137,12 +182,13 @@ where
             }
 
             let irq = self.irq;
-            let rx_backpressured = self.rx_backpressured;
+            let rx_progress = self.rx_progress;
+            let network_rx = &mut self.network_rx;
             let wait_rx = async move {
-                if rx_backpressured {
-                    irq.wait_rx_capacity().await;
-                } else {
-                    irq.wait_rx().await;
+                match rx_progress {
+                    WdevRxProgress::StagingBackpressured => irq.wait_rx_capacity().await,
+                    WdevRxProgress::NetworkBackpressured => network_rx.wait_ready().await,
+                    WdevRxProgress::Drained | WdevRxProgress::ProbePending => irq.wait_rx().await,
                 }
             };
             match select(
@@ -159,10 +205,7 @@ where
             .await
             {
                 Either::First(()) => {
-                    self.services.cancel_prepared_tx()?;
-                    self.network
-                        .set_link_state(open_esp_radio_embassy_net::LinkState::Down);
-                    return Ok(ConnectedRunnerExit::Stopped);
+                    stopping = true;
                 }
                 Either::Second(Either3::First(())) => self.service_rx().await?,
                 Either::Second(Either3::Second(())) => {}

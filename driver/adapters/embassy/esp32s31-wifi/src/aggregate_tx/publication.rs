@@ -697,8 +697,6 @@ where
         let (contention, contention_window) = self.ordinary.contention_publication(queue);
         match self.config.rate {
             TxPhyRate::Ht(rate) => {
-                let mut config = HtAmpduTxConfig::new(rate, aggregate_length, subframes)
-                    .ok_or(AggregateTxError::BufferSizeOverflow)?;
                 let data_power = self
                     .ordinary
                     .power_profile()
@@ -707,17 +705,27 @@ where
                     .ordinary
                     .power_profile()
                     .power_pair(rate.vendor_rts_rate().code());
-                config.data_power_primary = data_power.primary as u8;
-                config.data_power_alternate = data_power.alternate as u8;
-                config.rts_power_primary = rts_power.primary as u8;
-                config.rts_power_alternate = rts_power.alternate as u8;
-                config.protection_spacing = self.ordinary.policy().ht_ampdu().protection_spacing();
-                config.aifsn = contention.aifsn();
-                config.contention_window = contention_window;
-                config.scheduler_priority = queue.vendor_data_scheduler_priority();
-                config.pti = queue.vendor_data_packet_priority();
-                config.pti_count = 1;
-                config.hardware_key_selector = key;
+                let config = ht_ampdu_publication_config(
+                    AmpduTxRoleAdapter {
+                        interface: MacInterface::Station,
+                        hardware_key_selector: key,
+                    },
+                    HtAmpduPublicationInputs {
+                        rate,
+                        aggregate_length,
+                        subframes,
+                        protection_spacing: self.ordinary.policy().ht_ampdu().protection_spacing(),
+                        data_power_primary: data_power.primary as u8,
+                        data_power_alternate: data_power.alternate as u8,
+                        rts_power_primary: rts_power.primary as u8,
+                        rts_power_alternate: rts_power.alternate as u8,
+                        aifsn: contention.aifsn(),
+                        contention_window,
+                        scheduler_priority: queue.vendor_data_scheduler_priority(),
+                        packet_priority: queue.vendor_data_packet_priority(),
+                    },
+                )
+                .ok_or(AggregateTxError::BufferSizeOverflow)?;
                 Ok(AmpduTxConfig::Ht(config))
             }
             TxPhyRate::He(rate) => {

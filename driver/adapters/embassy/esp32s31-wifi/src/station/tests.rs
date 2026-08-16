@@ -90,7 +90,7 @@ fn peer_disconnect_coalesces_a_pending_reconnect_without_leaking_it() {
     assert!(matches!(
         coalesce_disconnected_station_command::<(), _>(
             &mut receiver,
-            crate::connected_runner::ConnectedDisconnectReason::BeaconLoss,
+            open_esp_radio_esp32s31_wifi_sta::connected_control::ConnectedDisconnectReason::BeaconLoss,
         ),
         Esp32s31ConnectedStationExit::ReconnectRequested {
             source: Esp32s31StationReconnectSource::CoalescedDisconnect,

@@ -390,7 +390,7 @@ fn one_irq_epoch_services_durable_rx_then_returns_every_owner() {
         ESP32S31_STANDALONE_MONITOR_INTERRUPT_MASK.bits()
     );
     assert!(!runtime.active.get());
-    assert_eq!(owner.receive_phase(), Esp32s31RxRingPhase::Halted);
+    assert_eq!(owner.receive_phase(), Esp32s31RxFrontierPhase::Halted);
     assert!(!owner.interrupt_active());
     let (hardware, _, sink, _, _) = match owner.try_into_parts() {
         Ok(parts) => parts,
@@ -513,7 +513,7 @@ fn activation_failure_rolls_the_started_ring_back_to_halted() {
         Ok(_) => panic!("route activation must fail"),
         Err(failure) => failure,
     };
-    assert_eq!(owner.receive_phase(), Esp32s31RxRingPhase::Halted);
+    assert_eq!(owner.receive_phase(), Esp32s31RxFrontierPhase::Halted);
     assert!(!owner.interrupt_active());
     assert!(matches!(
         failure.error,
@@ -523,7 +523,7 @@ fn activation_failure_rolls_the_started_ring_back_to_halted() {
     ));
     block_on(owner.stop())
         .unwrap_or_else(|_| panic!("caller can retry a transient quiesce failure"));
-    assert_eq!(owner.receive_phase(), Esp32s31RxRingPhase::Halted);
+    assert_eq!(owner.receive_phase(), Esp32s31RxFrontierPhase::Halted);
     assert!(!owner.interrupt_active());
 }
 
@@ -545,7 +545,7 @@ fn failed_irq_quiesce_keeps_the_rx_owner_live() {
         Ok(_) => panic!("route quiesce must fail"),
         Err(failure) => failure,
     };
-    assert_eq!(owner.receive_phase(), Esp32s31RxRingPhase::Live);
+    assert_eq!(owner.receive_phase(), Esp32s31RxFrontierPhase::Live);
     assert!(owner.interrupt_active());
     assert!(matches!(
         failure.error,
@@ -572,14 +572,14 @@ fn cancelled_run_keeps_owner_available_for_explicit_shutdown() {
         assert!(matches!(run.as_mut().poll(&mut context), Poll::Pending));
     }
 
-    assert_eq!(owner.receive_phase(), Esp32s31RxRingPhase::Live);
+    assert_eq!(owner.receive_phase(), Esp32s31RxFrontierPhase::Live);
     assert!(owner.interrupt_active());
     assert_eq!(
         owner.stopped_radio_mut().map(|_| ()),
         Err(Esp32s31MonitorStoppedAccessError::InterruptActive)
     );
     block_on(owner.stop()).unwrap_or_else(|_| panic!("cancelled monitor must remain recoverable"));
-    assert_eq!(owner.receive_phase(), Esp32s31RxRingPhase::Halted);
+    assert_eq!(owner.receive_phase(), Esp32s31RxFrontierPhase::Halted);
     assert!(!owner.interrupt_active());
     assert!(owner.stopped_radio_mut().is_ok());
 }
@@ -607,7 +607,7 @@ fn stop_waits_for_a_transient_dma_busy_edge() {
 
     block_on(owner.stop()).unwrap_or_else(|_| panic!("transient DMA busy is not a failure"));
 
-    assert_eq!(owner.receive_phase(), Esp32s31RxRingPhase::Halted);
+    assert_eq!(owner.receive_phase(), Esp32s31RxFrontierPhase::Halted);
     assert!(!owner.interrupt_active());
 }
 

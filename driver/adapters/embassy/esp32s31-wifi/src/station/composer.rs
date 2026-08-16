@@ -448,7 +448,7 @@ pub trait Esp32s31StationEnginePort<'security, M: RawMutex> {
     type Runtime;
     type InitialHardware;
     type InitialScanRx;
-    type PreconnectedRx;
+    type RxFrontier;
     type Network;
     type Disconnected;
     type Reconnected;
@@ -475,7 +475,7 @@ pub trait Esp32s31StationEnginePort<'security, M: RawMutex> {
             'security,
             Self::Runtime,
             Self::InitialHardware,
-            Self::PreconnectedRx,
+            Self::RxFrontier,
             Self::Network,
             Esp32s31StationEngineOwner<'security, M, Self>,
             Self::Error,
@@ -492,7 +492,7 @@ pub trait Esp32s31StationEnginePort<'security, M: RawMutex> {
             'security,
             Self::Runtime,
             Self::InitialHardware,
-            Self::PreconnectedRx,
+            Self::RxFrontier,
             Self::Network,
         >,
         context: StaAttemptContext,
@@ -633,7 +633,7 @@ pub type Esp32s31StationEngineOwner<'security, M, E> = Esp32s31StationServiceOwn
     Esp32s31StationServicePhase<
         <E as Esp32s31StationEnginePort<'security, M>>::InitialHardware,
         <E as Esp32s31StationEnginePort<'security, M>>::InitialScanRx,
-        <E as Esp32s31StationEnginePort<'security, M>>::PreconnectedRx,
+        <E as Esp32s31StationEnginePort<'security, M>>::RxFrontier,
         <E as Esp32s31StationEnginePort<'security, M>>::Network,
         <E as Esp32s31StationEnginePort<'security, M>>::Disconnected,
         <E as Esp32s31StationEnginePort<'security, M>>::Reconnected,
@@ -926,7 +926,7 @@ mod tests {
         type Runtime = u8;
         type InitialHardware = u16;
         type InitialScanRx = i16;
-        type PreconnectedRx = u32;
+        type RxFrontier = u32;
         type Network = u64;
         type Disconnected = u128;
         type Reconnected = usize;
@@ -951,7 +951,7 @@ mod tests {
                 'security,
                 Self::Runtime,
                 Self::InitialHardware,
-                Self::PreconnectedRx,
+                Self::RxFrontier,
                 Self::Network,
                 Esp32s31StationEngineOwner<'security, NoopRawMutex, Self>,
                 Self::Error,
@@ -969,7 +969,7 @@ mod tests {
                 'security,
                 Self::Runtime,
                 Self::InitialHardware,
-                Self::PreconnectedRx,
+                Self::RxFrontier,
                 Self::Network,
             >,
             _context: StaAttemptContext,
@@ -1094,7 +1094,7 @@ mod tests {
         type Runtime = u8;
         type InitialHardware = u16;
         type InitialScanRx = i16;
-        type PreconnectedRx = u32;
+        type RxFrontier = u32;
         type Network = u64;
         type Disconnected = u128;
         type Reconnected = usize;
@@ -1119,7 +1119,7 @@ mod tests {
                 'security,
                 Self::Runtime,
                 Self::InitialHardware,
-                Self::PreconnectedRx,
+                Self::RxFrontier,
                 Self::Network,
                 Esp32s31StationEngineOwner<'security, NoopRawMutex, Self>,
                 Self::Error,
@@ -1154,7 +1154,7 @@ mod tests {
                 'security,
                 Self::Runtime,
                 Self::InitialHardware,
-                Self::PreconnectedRx,
+                Self::RxFrontier,
                 Self::Network,
             >,
             _context: StaAttemptContext,

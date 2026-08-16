@@ -5,7 +5,9 @@
 //! the same finite IRQ/deadline transaction used by STA. It deliberately does
 //! not poll, spawn tasks or count a frame as transmitted before completion.
 
+use open_esp_radio_esp32s31_hal::types::MacInterface;
 use open_esp_radio_esp32s31_wifi::{
+    ampdu_tx::{AmpduTxRoleAdapter, HtAmpduPublicationInputs, ht_ampdu_publication_config},
     ordinary_tx::{
         OrdinaryTxError, OrdinaryTxInterface, OrdinaryTxOutcome, OrdinaryTxOwner, OrdinaryTxPlan,
         TX_CCMP_MIC_SIZE, TX_METADATA_SIZE, WifiTxEntropy, WifiTxPowerProfile, WifiTxResources,
@@ -13,7 +15,9 @@ use open_esp_radio_esp32s31_wifi::{
     },
     tx::{WifiTxProgress, WifiTxWake},
 };
-use open_esp_radio_esp32s31_wifi_mac::tx::{LegacyRate, LegacyTxQueue, TxHardware, TxPhyRate};
+use open_esp_radio_esp32s31_wifi_mac::tx::{
+    HtAmpduTxConfig, HtRate, LegacyRate, LegacyTxQueue, TxHardware, TxPhyRate,
+};
 use open_esp_radio_wifi_softmac::{MacTxPlan, MacTxQueueState};
 
 /// Runtime-independent publication policy for the initial AP implementation.
@@ -58,10 +62,10 @@ impl Esp32s31ApTxClass {
 
     const fn initial_rate(self) -> LegacyRate {
         match self {
-            // AP v1 advertises an ERP BSS, so every associated peer supports
-            // the mandatory 24 Mbit/s OFDM rate. Keep discovery and controlled
-            // port setup on the maximally compatible 1 Mbit/s path, but do
-            // not serialize ordinary data at that management rate.
+            // The AP advertises an ERP+HT20 BSS, so every associated peer
+            // still supports the mandatory 24 Mbit/s OFDM legacy rate. Keep
+            // discovery and controlled-port setup on the maximally compatible
+            // 1 Mbit/s path, but do not serialize ordinary data at that rate.
             Self::Data => LegacyRate::Ofdm24M,
             Self::Beacon | Self::Management | Self::Eapol => LegacyRate::Dsss1MLong,
         }
@@ -105,6 +109,68 @@ where
 
     pub fn queue_state(&self) -> MacTxQueueState {
         self.ordinary.queue_state()
+    }
+
+    pub const fn maximum_ht_aggregate_bytes(&self) -> u16 {
+        self.ordinary.policy().ht_ampdu().maximum_aggregate_bytes()
+    }
+
+    pub fn now_micros(&self) -> u64 {
+        self.ordinary.now_micros()
+    }
+
+    pub fn wait_until(
+        &mut self,
+        deadline_micros: u64,
+    ) -> impl core::future::Future<Output = ()> + '_ {
+        self.ordinary.wait_until(deadline_micros)
+    }
+
+    pub fn after_micros(&mut self, micros: u64) -> impl core::future::Future<Output = ()> + '_ {
+        self.ordinary.after_micros(micros)
+    }
+
+    pub const fn publication_timeout_micros(&self) -> u64 {
+        self.config.publication_timeout_micros
+    }
+
+    /// Build the AP-specific key/interface/power wrapper around the common
+    /// HT A-MPDU formatter. Frame retention and BlockAck completion remain in
+    /// the role-neutral aggregate owner.
+    pub fn ht_ampdu_config(
+        &mut self,
+        rate: HtRate,
+        aggregate_length: u16,
+        subframes: u8,
+        hardware_key_selector: u8,
+    ) -> Option<HtAmpduTxConfig> {
+        let queue = LegacyTxQueue::BestEffort;
+        let (contention, contention_window) = self.ordinary.contention_publication(queue);
+        let data_power = self.ordinary.power().power_pair(rate.power_lookup_code());
+        let rts_power = self
+            .ordinary
+            .power()
+            .power_pair(rate.vendor_rts_rate().code());
+        ht_ampdu_publication_config(
+            AmpduTxRoleAdapter {
+                interface: MacInterface::AccessPoint,
+                hardware_key_selector,
+            },
+            HtAmpduPublicationInputs {
+                rate,
+                aggregate_length,
+                subframes,
+                protection_spacing: self.ordinary.policy().ht_ampdu().protection_spacing(),
+                data_power_primary: data_power.primary as u8,
+                data_power_alternate: data_power.alternate as u8,
+                rts_power_primary: rts_power.primary as u8,
+                rts_power_alternate: rts_power.alternate as u8,
+                aifsn: contention.aifsn(),
+                contention_window,
+                scheduler_priority: queue.vendor_data_scheduler_priority(),
+                packet_priority: queue.vendor_data_packet_priority(),
+            },
+        )
     }
 
     /// Copy one portable encoded MPDU into the only ordinary DMA slot and

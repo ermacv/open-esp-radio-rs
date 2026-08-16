@@ -355,6 +355,18 @@ impl MacInterruptRegisters {
     }
 }
 
+/// Construct the task-side interrupt setup owner inside an isolated probe.
+///
+/// The returned value is the same finite capability consumed by production
+/// connected-STA setup; only its singleton acquisition is validation-only.
+#[cfg(feature = "validation-probes")]
+#[doc(hidden)]
+pub fn validation_mac_interrupt_setup() -> MacInterruptSetup {
+    MacInterruptSetup {
+        inner: open_esp_radio_esp32s31_pac::validation::mac_interrupt_setup(),
+    }
+}
+
 /// Construct the hard-MAC interrupt capability inside an isolated validation
 /// image without exposing the PAC partition.
 #[cfg(feature = "validation-probes")]

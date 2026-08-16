@@ -1,5 +1,5 @@
 use core::{
-    future::{Future, pending},
+    future::{Future, pending, ready},
     sync::atomic::{AtomicBool, Ordering},
     task::{Context, Poll},
 };
@@ -34,6 +34,11 @@ enum TestError {
     Finished,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum TestExit {
+    PeerLost,
+}
+
 struct Backend {
     irq: &'static EmbassyMacIrqRuntime<NoopRawMutex>,
     order: [u8; 3],
@@ -58,12 +63,16 @@ impl Backend {
     }
 }
 
-impl ConnectedRunnerServices<'static, NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>
+impl WdevServices<'static, NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>
     for Backend
 {
     type Error = TestError;
+    type Exit = TestExit;
 
-    fn service_rx(&mut self) -> impl Future<Output = Result<WifiRxProgress, Self::Error>> + '_ {
+    fn service_rx<'a>(
+        &'a mut self,
+        _network_rx: &'a mut dyn WdevNetworkRx,
+    ) -> impl Future<Output = Result<WdevRxProgress, Self::Error>> + 'a {
         async move {
             self.push(1);
             if self.backpressure_once {
@@ -71,19 +80,19 @@ impl ConnectedRunnerServices<'static, NoopRawMutex, FRAME_CAPACITY, HEADROOM, TR
                 if self.repost_rx_when_backpressured {
                     self.irq.publish(MAC_INT_RX_SUCCESS);
                 }
-                return Ok(WifiRxProgress::Backpressured);
+                return Ok(WdevRxProgress::StagingBackpressured);
             }
             if self.queue_control_on_rx {
                 self.control_pending = true;
             }
-            Ok(WifiRxProgress::Drained)
+            Ok(WdevRxProgress::Drained)
         }
     }
 
     fn service_control<'a>(
         &'a mut self,
-        context: WifiControlContext,
-    ) -> impl Future<Output = Result<WifiControlProgress, Self::Error>> + 'a
+        context: WdevControlContext,
+    ) -> impl Future<Output = Result<WdevControlProgress<Self::Exit>, Self::Error>> + 'a
     where
         'static: 'a,
         NoopRawMutex: 'a,
@@ -91,12 +100,10 @@ impl ConnectedRunnerServices<'static, NoopRawMutex, FRAME_CAPACITY, HEADROOM, TR
         async move {
             self.network_pending_seen |= context.network_tx_pending;
             if self.disconnect {
-                return Ok(WifiControlProgress::Disconnected(
-                    ConnectedDisconnectReason::BeaconLoss,
-                ));
+                return Ok(WdevControlProgress::Exit(TestExit::PeerLost));
             }
             if !self.control_pending {
-                return Ok(WifiControlProgress::Idle);
+                return Ok(WdevControlProgress::Idle);
             }
             self.control_pending = false;
             self.push(3);
@@ -171,16 +178,79 @@ struct RxProbeBackend {
     service_calls: u8,
 }
 
-impl ConnectedRunnerServices<'static, NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>
-    for RxProbeBackend
+struct NetworkBackpressureBackend {
+    service_calls: u8,
+}
+
+impl WdevServices<'static, NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>
+    for NetworkBackpressureBackend
 {
     type Error = TestError;
+    type Exit = TestExit;
 
-    fn service_rx(&mut self) -> impl Future<Output = Result<WifiRxProgress, Self::Error>> + '_ {
+    fn service_rx<'a>(
+        &'a mut self,
+        network_rx: &'a mut dyn WdevNetworkRx,
+    ) -> impl Future<Output = Result<WdevRxProgress, Self::Error>> + 'a {
         async move {
             self.service_calls = self.service_calls.saturating_add(1);
             if self.service_calls == 1 {
-                Ok(WifiRxProgress::ProbePending)
+                network_rx.try_send(&[0; 14]).unwrap();
+                Ok(WdevRxProgress::NetworkBackpressured)
+            } else {
+                Err(TestError::Finished)
+            }
+        }
+    }
+
+    fn start_tx<'a>(
+        &'a mut self,
+        _frame: PinnedTxFrame<
+            'static,
+            NoopRawMutex,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            QUEUE_DEPTH,
+        >,
+        _network: &'a PinnedTxConsumer<
+            'static,
+            NoopRawMutex,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            QUEUE_DEPTH,
+        >,
+    ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a {
+        pending()
+    }
+
+    fn wait_tx_deadline(&mut self) -> impl Future<Output = ()> + '_ {
+        pending()
+    }
+
+    fn service_tx<'a>(
+        &'a mut self,
+        _wake: WifiTxWake,
+    ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a {
+        pending()
+    }
+}
+
+impl WdevServices<'static, NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>
+    for RxProbeBackend
+{
+    type Error = TestError;
+    type Exit = TestExit;
+
+    fn service_rx<'a>(
+        &'a mut self,
+        _network_rx: &'a mut dyn WdevNetworkRx,
+    ) -> impl Future<Output = Result<WdevRxProgress, Self::Error>> + 'a {
+        async move {
+            self.service_calls = self.service_calls.saturating_add(1);
+            if self.service_calls == 1 {
+                Ok(WdevRxProgress::ProbePending)
             } else {
                 Err(TestError::Finished)
             }
@@ -226,12 +296,81 @@ struct CompletionFillBackend {
     count: usize,
 }
 
-impl ConnectedRunnerServices<'static, NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>
+struct ShutdownBackend {
+    stop_calls: u8,
+    tx_services: u8,
+}
+
+impl WdevServices<'static, NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>
+    for ShutdownBackend
+{
+    type Error = TestError;
+    type Exit = TestExit;
+
+    fn service_rx<'a>(
+        &'a mut self,
+        _network_rx: &'a mut dyn WdevNetworkRx,
+    ) -> impl Future<Output = Result<WdevRxProgress, Self::Error>> + 'a {
+        pending()
+    }
+
+    fn service_stop(&mut self) -> Result<WdevStopProgress, Self::Error> {
+        self.stop_calls = self.stop_calls.saturating_add(1);
+        if self.stop_calls == 1 {
+            Ok(WdevStopProgress::TxPending)
+        } else {
+            Ok(WdevStopProgress::Stopped)
+        }
+    }
+
+    fn start_tx<'a>(
+        &'a mut self,
+        _frame: PinnedTxFrame<
+            'static,
+            NoopRawMutex,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            QUEUE_DEPTH,
+        >,
+        _network: &'a PinnedTxConsumer<
+            'static,
+            NoopRawMutex,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            QUEUE_DEPTH,
+        >,
+    ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a {
+        pending()
+    }
+
+    fn wait_tx_deadline(&mut self) -> impl Future<Output = ()> + '_ {
+        ready(())
+    }
+
+    fn service_tx<'a>(
+        &'a mut self,
+        wake: WifiTxWake,
+    ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a {
+        async move {
+            assert_eq!(wake, WifiTxWake::Deadline);
+            self.tx_services = self.tx_services.saturating_add(1);
+            Ok(WifiTxProgress::Complete)
+        }
+    }
+}
+
+impl WdevServices<'static, NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>
     for CompletionFillBackend
 {
     type Error = TestError;
+    type Exit = TestExit;
 
-    fn service_rx(&mut self) -> impl Future<Output = Result<WifiRxProgress, Self::Error>> + '_ {
+    fn service_rx<'a>(
+        &'a mut self,
+        _network_rx: &'a mut dyn WdevNetworkRx,
+    ) -> impl Future<Output = Result<WdevRxProgress, Self::Error>> + 'a {
         pending()
     }
 
@@ -303,19 +442,23 @@ impl ConnectedRunnerServices<'static, NoopRawMutex, FRAME_CAPACITY, HEADROOM, TR
     }
 }
 
-impl ConnectedRunnerServices<'static, NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>
+impl WdevServices<'static, NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>
     for PreparedBackend
 {
     type Error = TestError;
+    type Exit = TestExit;
 
-    fn service_rx(&mut self) -> impl Future<Output = Result<WifiRxProgress, Self::Error>> + '_ {
+    fn service_rx<'a>(
+        &'a mut self,
+        _network_rx: &'a mut dyn WdevNetworkRx,
+    ) -> impl Future<Output = Result<WdevRxProgress, Self::Error>> + 'a {
         pending()
     }
 
     fn service_control<'a>(
         &'a mut self,
-        _context: WifiControlContext,
-    ) -> impl Future<Output = Result<WifiControlProgress, Self::Error>> + 'a
+        _context: WdevControlContext,
+    ) -> impl Future<Output = Result<WdevControlProgress<Self::Exit>, Self::Error>> + 'a
     where
         'static: 'a,
         NoopRawMutex: 'a,
@@ -325,9 +468,9 @@ impl ConnectedRunnerServices<'static, NoopRawMutex, FRAME_CAPACITY, HEADROOM, TR
                 self.control_pending = false;
                 self.order[self.count] = 1;
                 self.count += 1;
-                Ok(WifiControlProgress::More)
+                Ok(WdevControlProgress::More)
             } else {
-                Ok(WifiControlProgress::Idle)
+                Ok(WdevControlProgress::Idle)
             }
         }
     }
@@ -418,7 +561,7 @@ fn control_boundary_precedes_prepared_network_publication() {
         prepared: true,
         cancelled: false,
     };
-    let mut runner = ConnectedRunner::new(irq, network, services);
+    let mut runner = WdevRunner::new(irq, network, services);
 
     assert_eq!(
         embassy_futures::block_on(runner.run()),
@@ -442,14 +585,36 @@ fn caller_stop_cancels_software_owned_prepared_network_tx() {
         prepared: true,
         cancelled: false,
     };
-    let mut runner = ConnectedRunner::new(irq, network, services);
+    let mut runner = WdevRunner::new(irq, network, services);
 
     assert_eq!(
         embassy_futures::block_on(runner.run_until(core::future::ready(()))),
-        Ok(ConnectedRunnerExit::Stopped)
+        Ok(WdevRunnerExit::Stopped)
     );
     assert!(runner.services().cancelled);
     assert!(!runner.services().prepared);
+}
+
+#[test]
+fn caller_stop_drives_role_shutdown_tx_before_returning_owners() {
+    let resources = std::boxed::Box::leak(std::boxed::Box::new(Resources::new()));
+    let pool = Pool::pin_static(std::boxed::Box::leak(std::boxed::Box::new(Pool::new())));
+    let (_device, network) = resources.split(pool, [2, 3, 4, 5, 6, 7]);
+    let irq = std::boxed::Box::leak(std::boxed::Box::new(
+        EmbassyMacIrqRuntime::<NoopRawMutex>::new(),
+    ));
+    let services = ShutdownBackend {
+        stop_calls: 0,
+        tx_services: 0,
+    };
+    let mut runner = WdevRunner::new(irq, network, services);
+
+    assert_eq!(
+        embassy_futures::block_on(runner.run_until(core::future::ready(()))),
+        Ok(WdevRunnerExit::Stopped)
+    );
+    assert_eq!(runner.services().stop_calls, 2);
+    assert_eq!(runner.services().tx_services, 1);
 }
 
 #[test]
@@ -476,7 +641,7 @@ fn frame_arriving_inside_select_rechecks_control_as_network_pending() {
         repost_rx_when_backpressured: false,
         stop_after_tx: None,
     };
-    let mut runner = ConnectedRunner::new(irq, network, services);
+    let mut runner = WdevRunner::new(irq, network, services);
     let mut run = std::boxed::Box::pin(runner.run());
     let mut context = Context::from_waker(core::task::Waker::noop());
 
@@ -500,12 +665,37 @@ fn exhausted_rx_republication_is_serviced_again_without_a_new_hardware_irq() {
     ));
     irq.publish(MAC_INT_RX_SUCCESS);
     let services = RxProbeBackend { service_calls: 0 };
-    let mut runner = ConnectedRunner::new(irq, network, services);
+    let mut runner = WdevRunner::new(irq, network, services);
 
     assert_eq!(
         embassy_futures::block_on(runner.run()),
         Err(TestError::Finished)
     );
+    assert_eq!(runner.services().service_calls, 2);
+}
+
+#[test]
+fn network_backpressure_waits_for_the_network_rx_capacity_owner() {
+    let resources = std::boxed::Box::leak(std::boxed::Box::new(Resources::new()));
+    let pool = Pool::pin_static(std::boxed::Box::leak(std::boxed::Box::new(Pool::new())));
+    let (mut device, network) = resources.split(pool, [2, 3, 4, 5, 6, 7]);
+    let irq = std::boxed::Box::leak(std::boxed::Box::new(
+        EmbassyMacIrqRuntime::<NoopRawMutex>::new(),
+    ));
+    irq.publish(MAC_INT_RX_SUCCESS);
+    let services = NetworkBackpressureBackend { service_calls: 0 };
+    let mut runner = WdevRunner::new(irq, network, services);
+    let mut run = std::boxed::Box::pin(runner.run());
+    let mut context = Context::from_waker(core::task::Waker::noop());
+
+    assert_eq!(run.as_mut().poll(&mut context), Poll::Pending);
+    let received = device.receive(&mut context).unwrap();
+    drop(received);
+    assert_eq!(
+        embassy_futures::block_on(run.as_mut()),
+        Err(TestError::Finished)
+    );
+    drop(run);
     assert_eq!(runner.services().service_calls, 2);
 }
 
@@ -522,7 +712,7 @@ fn ready_network_frame_extends_standby_before_active_tx_completion() {
         order: [0; 2],
         count: 0,
     };
-    let mut runner = ConnectedRunner::new(irq, network, services);
+    let mut runner = WdevRunner::new(irq, network, services);
     let mut run = std::boxed::Box::pin(runner.run());
     let mut context = Context::from_waker(core::task::Waker::noop());
 
@@ -564,7 +754,7 @@ fn rx_is_serviced_before_tx_when_both_irqs_are_ready() {
         repost_rx_when_backpressured: false,
         stop_after_tx: None,
     };
-    let mut runner = ConnectedRunner::new(irq, network, services);
+    let mut runner = WdevRunner::new(irq, network, services);
 
     assert_eq!(
         embassy_futures::block_on(runner.run()),
@@ -604,7 +794,7 @@ fn staging_backpressure_gates_new_rx_edges_but_not_tx_completion() {
         repost_rx_when_backpressured: true,
         stop_after_tx: None,
     };
-    let mut runner = ConnectedRunner::new(irq, network, services);
+    let mut runner = WdevRunner::new(irq, network, services);
 
     assert_eq!(
         embassy_futures::block_on(runner.run()),
@@ -645,7 +835,7 @@ fn executor_deadline_services_tx_without_an_interrupt() {
         repost_rx_when_backpressured: false,
         stop_after_tx: None,
     };
-    let mut runner = ConnectedRunner::new(irq, network, services);
+    let mut runner = WdevRunner::new(irq, network, services);
 
     assert_eq!(
         embassy_futures::block_on(runner.run()),
@@ -680,7 +870,7 @@ fn rx_control_waits_for_the_active_network_tx_then_precedes_another_lease() {
         repost_rx_when_backpressured: false,
         stop_after_tx: None,
     };
-    let mut runner = ConnectedRunner::new(irq, network, services);
+    let mut runner = WdevRunner::new(irq, network, services);
 
     assert_eq!(
         embassy_futures::block_on(runner.run()),
@@ -714,11 +904,11 @@ fn caller_stop_publishes_link_down_and_returns_distinct_outcome() {
         repost_rx_when_backpressured: false,
         stop_after_tx: None,
     };
-    let mut runner = ConnectedRunner::new(irq, network, services);
+    let mut runner = WdevRunner::new(irq, network, services);
 
     assert_eq!(
         embassy_futures::block_on(runner.run_until(core::future::ready(()))),
-        Ok(ConnectedRunnerExit::Stopped)
+        Ok(WdevRunnerExit::Stopped)
     );
     let mut context = Context::from_waker(core::task::Waker::noop());
     assert!(matches!(
@@ -764,11 +954,11 @@ fn caller_stop_waits_for_active_tx_to_release_hardware() {
             Poll::Pending
         }
     });
-    let mut runner = ConnectedRunner::new(irq, network, services);
+    let mut runner = WdevRunner::new(irq, network, services);
 
     assert_eq!(
         embassy_futures::block_on(runner.run_until(stop_future)),
-        Ok(ConnectedRunnerExit::Stopped)
+        Ok(WdevRunnerExit::Stopped)
     );
     assert_eq!(runner.services().order[..2], [1, 2]);
     assert_eq!(
@@ -809,13 +999,11 @@ fn disconnected_control_edge_publishes_link_down_and_returns() {
         repost_rx_when_backpressured: false,
         stop_after_tx: None,
     };
-    let mut runner = ConnectedRunner::new(irq, network, services);
+    let mut runner = WdevRunner::new(irq, network, services);
 
     assert_eq!(
         embassy_futures::block_on(runner.run()),
-        Ok(ConnectedRunnerExit::Disconnected(
-            ConnectedDisconnectReason::BeaconLoss
-        ))
+        Ok(WdevRunnerExit::Role(TestExit::PeerLost))
     );
     let mut context = Context::from_waker(core::task::Waker::noop());
     assert!(matches!(

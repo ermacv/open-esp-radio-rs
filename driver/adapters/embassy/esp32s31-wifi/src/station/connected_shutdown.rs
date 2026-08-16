@@ -13,7 +13,6 @@ use open_esp_radio_esp32s31_wifi_mac::irq::MacInterruptRoute;
 use open_esp_radio_wifi_embassy::connected_tasks::{ConnectedTaskGroup, stop_connected_task_group};
 
 use crate::{
-    connected_runner::{ConnectedRunner, ConnectedRunnerServices},
     connected_services::Esp32s31ConnectedServices,
     connected_sta_teardown::{
         Esp32s31ConnectedStaControlTeardown, Esp32s31ConnectedStaRxTeardown,
@@ -24,6 +23,7 @@ use crate::{
         Esp32s31MacInterruptEpoch, Esp32s31MacInterruptEpochDrain,
         Esp32s31MacInterruptEpochQuiesceError,
     },
+    wdev::{WdevRunner, WdevServices},
 };
 
 /// Consuming owner interface needed by the common shutdown transaction.
@@ -42,6 +42,7 @@ impl<
     'resources,
     'irq,
     M,
+    N,
     B,
     const FRAME_CAPACITY: usize,
     const HEADROOM: usize,
@@ -49,10 +50,11 @@ impl<
     const RX_QUEUE_DEPTH: usize,
     const TX_QUEUE_DEPTH: usize,
 > Esp32s31ConnectedEpochRunnerOwner
-    for ConnectedRunner<
+    for WdevRunner<
         'resources,
         'irq,
         M,
+        N,
         B,
         FRAME_CAPACITY,
         HEADROOM,
@@ -62,17 +64,18 @@ impl<
     >
 where
     M: NetworkRawMutex,
-    B: ConnectedRunnerServices<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+    N: crate::wdev::WdevNetwork<
+            'resources,
+            M,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            RX_QUEUE_DEPTH,
+            TX_QUEUE_DEPTH,
+        >,
+    B: WdevServices<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
 {
-    type Network = open_esp_radio_embassy_net::SplitPinnedRadioRunner<
-        'resources,
-        M,
-        FRAME_CAPACITY,
-        HEADROOM,
-        TRAILER,
-        RX_QUEUE_DEPTH,
-        TX_QUEUE_DEPTH,
-    >;
+    type Network = N;
     type Services = B;
 
     fn into_connected_epoch_parts(self) -> (Self::Network, Self::Services) {

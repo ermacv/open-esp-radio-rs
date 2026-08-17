@@ -137,7 +137,50 @@ where
         >,
         delay: D,
     ) -> Self {
-        let resources = Esp32s31RxEpochResources::new(storage, pool, frames, delay);
+        Self::from_halted_resources(
+            ring,
+            Esp32s31RxEpochResources::new(storage, pool, frames, delay),
+        )
+    }
+
+    /// Bind the same value-only pipeline observer used by a connected STA to
+    /// a role-neutral halted RX epoch.
+    pub fn from_halted_with_pipeline_observer(
+        ring: RxRingHalted<'storage, COUNT>,
+        storage: &'storage Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
+        pool: &'pool RxStagePool<STAGE_SLOTS, STAGE_CAPACITY>,
+        frames: Sender<
+            'queue,
+            M,
+            Esp32s31StagedRxFrame<'pool, STAGE_CAPACITY, STAGE_SLOTS>,
+            QUEUE_DEPTH,
+        >,
+        delay: D,
+        observer: &'pool dyn RxPipelineObserver,
+    ) -> Self {
+        Self::from_halted_resources(
+            ring,
+            Esp32s31RxEpochResources::new(storage, pool, frames, delay)
+                .with_pipeline_observer(observer),
+        )
+    }
+
+    fn from_halted_resources(
+        ring: RxRingHalted<'storage, COUNT>,
+        resources: Esp32s31RxEpochResources<
+            'storage,
+            'pool,
+            'queue,
+            D,
+            M,
+            QUEUE_DEPTH,
+            COUNT,
+            STAGE_CAPACITY,
+            STAGE_SLOTS,
+            DMA_BUFFER_SIZE,
+            DMA_STORAGE_SIZE,
+        >,
+    ) -> Self {
         Self {
             state: Esp32s31StagedRxEpochState::Stopped(resources.with_halted_ring(ring)),
             report: Esp32s31StagedRxProducerReport::default(),

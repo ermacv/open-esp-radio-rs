@@ -1027,7 +1027,15 @@ impl ProductionWifiEpochRunner {
                 publication_timeout_micros: TX_COMPLETION_TIMEOUT_US,
             },
         );
-        let receive = access_point_rx_pipeline(halted, dma.storage());
+        let receive = access_point_rx_pipeline(
+            halted,
+            dma.storage(),
+            #[cfg(feature = "qualification")]
+            board
+                .qualification
+                .expect("qualification AP retains its pipeline observer")
+                .rx_pipeline,
+        );
         let service = Esp32s31AccessPointControl::new(
             receive,
             mac,
@@ -1333,6 +1341,7 @@ impl ProductionWifiEpochRunner {
                     None,
                     #[cfg(feature = "qualification")]
                     rx_delivery_observer,
+                    publish_shared_network_rx,
                     wait_for_access_point_stop(endpoint),
                     |status| crate::access_point_status::publish_access_point_status(
                         generation, status

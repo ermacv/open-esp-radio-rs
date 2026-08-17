@@ -198,7 +198,14 @@ where
             let wait_rx = async move {
                 match rx_progress {
                     WdevRxProgress::StagingBackpressured => irq.wait_rx_capacity().await,
-                    WdevRxProgress::NetworkBackpressured => network_rx.wait_ready().await,
+                    // Network ownership can remain unavailable for multiple
+                    // milliseconds. RX DMA is an independent lower frontier:
+                    // wake on either capacity or a new completion so a role
+                    // can keep copying and republishing descriptors into its
+                    // bounded staging reserve.
+                    WdevRxProgress::NetworkBackpressured => {
+                        let _ = select(network_rx.wait_ready(), irq.wait_rx()).await;
+                    }
                     WdevRxProgress::Drained | WdevRxProgress::ProbePending => irq.wait_rx().await,
                 }
             };

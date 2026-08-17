@@ -14,6 +14,10 @@ pub enum WdevRxProgress {
     /// Completed descriptors remain but the role's independent staging is full.
     StagingBackpressured,
     /// A decoded frame is retained while the final network RX queue is full.
+    ///
+    /// This is not permission to stop the independent DMA frontier: an
+    /// executor adapter must also wake for new RX completions so the role can
+    /// use any remaining staging credits to republish descriptors.
     NetworkBackpressured,
     /// A republished terminal descriptor needs another hardware observation.
     ProbePending,

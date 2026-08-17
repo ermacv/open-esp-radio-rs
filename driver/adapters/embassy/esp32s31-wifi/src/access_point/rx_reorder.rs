@@ -46,8 +46,8 @@ pub(super) struct Esp32s31AccessPointRxReorderProgress {
     pub hardware_window_reset: Option<Esp32s31AccessPointRxWindowReset>,
 }
 
-/// One vendor-equivalent synchronization edge for a newly activated
-/// extra-SoftAP receive BlockAck bank.
+/// One vendor-equivalent synchronization edge for a stale first A-MPDU on a
+/// newly activated extra-SoftAP receive BlockAck bank.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) struct Esp32s31AccessPointRxWindowReset {
     pub hardware_index: u8,
@@ -96,8 +96,9 @@ impl<'storage, const CAPACITY: usize> Esp32s31AccessPointRxReorder<'storage, CAP
         let released = self.banks.start(agreement)?;
         // SOURCE: complete `ht_recv_action_ba_addba_request` sets agreement
         // flag 0x40 after publishing the hardware entry. Complete
-        // `ieee80211_ampdu_reorder` consumes that flag on the first physical
-        // A-MPDU and reloads the entry with the resulting software frontier.
+        // `ieee80211_ampdu_reorder` consumes that flag when it observes the
+        // first physical A-MPDU. It reloads the hardware entry only when that
+        // MPDU is behind the current software sequence frontier.
         self.pending_hardware_window_reset[bank] = true;
         self.deadlines[bank] = None;
         if let Some(release) = released {
@@ -146,7 +147,7 @@ impl<'storage, const CAPACITY: usize> Esp32s31AccessPointRxReorder<'storage, CAP
         storage: &'storage RxReorderFrameStorage<CAPACITY, RX_REORDER_BACKING_SLOT_COUNT>,
         segment: RxSegment<'_>,
         key: RxBlockAckMpduKey,
-        ampdu_contained: bool,
+        ampdu_baseband_format: Option<u8>,
         now_micros: u64,
         mut dispatch: impl FnMut(RxSegment<'_>),
     ) -> Result<Esp32s31AccessPointRxReorderProgress, Esp32s31AccessPointRxReorderError> {
@@ -157,6 +158,32 @@ impl<'storage, const CAPACITY: usize> Esp32s31AccessPointRxReorder<'storage, CAP
                 ..Default::default()
             });
         };
+        let identity = RxBlockAckIdentity {
+            hardware_index: bank as u8,
+            peer: key.peer,
+            tid: key.tid,
+        };
+        let mut hardware_window_reset = None;
+        let mut resync_dispatched = 0_u8;
+        if let Some(baseband_format) = ampdu_baseband_format
+            && self.pending_hardware_window_reset[bank]
+        {
+            self.pending_hardware_window_reset[bank] = false;
+            let resync = self
+                .banks
+                .state_mut(bank)
+                .expect("one bank identity owns one reorder state")
+                .resynchronize_stale_initial_ampdu(key.sequence, baseband_format > 3)?;
+            if let Some((release, starting_sequence)) = resync {
+                resync_dispatched =
+                    self.dispatch_retained_release(release, identity, &mut dispatch);
+                self.deadlines[bank] = None;
+                hardware_window_reset = Some(Esp32s31AccessPointRxWindowReset {
+                    hardware_index: bank as u8,
+                    starting_sequence,
+                });
+            }
+        }
         let retain = self
             .banks
             .state(bank)
@@ -206,48 +233,35 @@ impl<'storage, const CAPACITY: usize> Esp32s31AccessPointRxReorder<'storage, CAP
             buffered: release.buffered,
             duplicate: release.rejected.is_some(),
             dropped: false,
-            dispatched: 0,
-            hardware_window_reset: None,
+            dispatched: resync_dispatched,
+            hardware_window_reset,
         };
         if release.buffered {
             let retained = retained.expect("predicted retained AP frame owns cold backing");
             debug_assert!(self.retained[slot].is_none());
             self.retained[slot] = Some(retained);
-            progress.dispatched = self.dispatch_release_with_current(
-                release,
-                RxBlockAckIdentity {
-                    hardware_index: bank as u8,
-                    peer: key.peer,
-                    tid: key.tid,
-                },
-                RX_REORDER_CURRENT_SLOT,
-                None,
-                &mut dispatch,
-            );
+            progress.dispatched =
+                progress
+                    .dispatched
+                    .saturating_add(self.dispatch_release_with_current(
+                        release,
+                        identity,
+                        RX_REORDER_CURRENT_SLOT,
+                        None,
+                        &mut dispatch,
+                    ));
         } else {
             debug_assert!(retained.is_none());
-            progress.dispatched = self.dispatch_release_with_current(
-                release,
-                RxBlockAckIdentity {
-                    hardware_index: bank as u8,
-                    peer: key.peer,
-                    tid: key.tid,
-                },
-                RX_REORDER_CURRENT_SLOT,
-                Some(segment),
-                &mut dispatch,
-            );
-        }
-        if ampdu_contained && self.pending_hardware_window_reset[bank] {
-            self.pending_hardware_window_reset[bank] = false;
-            progress.hardware_window_reset = Some(Esp32s31AccessPointRxWindowReset {
-                hardware_index: bank as u8,
-                starting_sequence: self
-                    .banks
-                    .state(bank)
-                    .expect("active AP reorder bank retains its state")
-                    .next_sequence(),
-            });
+            progress.dispatched =
+                progress
+                    .dispatched
+                    .saturating_add(self.dispatch_release_with_current(
+                        release,
+                        identity,
+                        RX_REORDER_CURRENT_SLOT,
+                        Some(segment),
+                        &mut dispatch,
+                    ));
         }
         Ok(progress)
     }
@@ -503,7 +517,7 @@ mod tests {
                     sequence: 11,
                     retry: false,
                 },
-                false,
+                None,
                 1_000,
                 |segment| released.push(segment.descriptor_address),
             )
@@ -522,7 +536,7 @@ mod tests {
                     sequence: 10,
                     retry: false,
                 },
-                false,
+                None,
                 1_001,
                 |segment| released.push(segment.descriptor_address),
             )
@@ -554,7 +568,7 @@ mod tests {
                     sequence: 20,
                     retry: false,
                 },
-                false,
+                None,
                 1_000,
                 |_| panic!("far successor remains buffered"),
             )
@@ -566,7 +580,7 @@ mod tests {
     }
 
     #[test]
-    fn first_physical_ampdu_after_activation_requests_one_hardware_window_reset() {
+    fn aligned_first_physical_ampdu_does_not_reset_the_hardware_window() {
         let storage = RxReorderFrameStorage::<32>::new();
         let mut reorder = Esp32s31AccessPointRxReorder::<32>::new();
         reorder.start(agreement(3, PEER_A, 10), |_| {}).unwrap();
@@ -579,25 +593,49 @@ mod tests {
         };
 
         let standalone = reorder
-            .ingest(&storage, segment(10, &bytes), key(10), false, 1, |_| {})
+            .ingest(&storage, segment(10, &bytes), key(10), None, 1, |_| {})
             .unwrap();
         assert_eq!(standalone.hardware_window_reset, None);
 
         let first_ampdu = reorder
-            .ingest(&storage, segment(11, &bytes), key(11), true, 2, |_| {})
+            .ingest(&storage, segment(11, &bytes), key(11), Some(2), 2, |_| {})
             .unwrap();
-        assert_eq!(
-            first_ampdu.hardware_window_reset,
-            Some(Esp32s31AccessPointRxWindowReset {
-                hardware_index: 3,
-                starting_sequence: 12,
-            })
-        );
+        assert_eq!(first_ampdu.hardware_window_reset, None);
 
         let next_ampdu = reorder
-            .ingest(&storage, segment(12, &bytes), key(12), true, 3, |_| {})
+            .ingest(&storage, segment(12, &bytes), key(12), Some(2), 3, |_| {})
             .unwrap();
         assert_eq!(next_ampdu.hardware_window_reset, None);
+    }
+
+    #[test]
+    fn stale_first_ht_ampdu_rebases_to_the_negotiated_sequence() {
+        let storage = RxReorderFrameStorage::<32>::new();
+        let mut reorder = Esp32s31AccessPointRxReorder::<32>::new();
+        reorder.start(agreement(3, PEER_A, 10), |_| {}).unwrap();
+        let bytes = [0];
+        let key = |sequence| RxBlockAckMpduKey {
+            peer: PEER_A,
+            tid: 6,
+            sequence,
+            retry: false,
+        };
+
+        reorder
+            .ingest(&storage, segment(10, &bytes), key(10), None, 1, |_| {})
+            .unwrap();
+        let stale_first_ampdu = reorder
+            .ingest(&storage, segment(10, &bytes), key(10), Some(2), 2, |_| {})
+            .unwrap();
+        assert_eq!(
+            stale_first_ampdu.hardware_window_reset,
+            Some(Esp32s31AccessPointRxWindowReset {
+                hardware_index: 3,
+                starting_sequence: 10,
+            })
+        );
+        assert!(!stale_first_ampdu.duplicate);
+        assert_eq!(stale_first_ampdu.dispatched, 1);
     }
 
     #[test]
@@ -619,7 +657,7 @@ mod tests {
                         sequence,
                         retry: false,
                     },
-                    false,
+                    None,
                     5_000,
                     |_| panic!("gap successor must remain retained"),
                 )
@@ -664,7 +702,7 @@ mod tests {
                     sequence: 101,
                     retry: false,
                 },
-                false,
+                None,
                 0,
                 |_| panic!("gap successor must remain retained"),
             )
@@ -680,7 +718,7 @@ mod tests {
                     sequence: 100,
                     retry: false,
                 },
-                false,
+                None,
                 1,
                 |segment| assert_eq!(segment.descriptor_address, 100),
             )
@@ -709,13 +747,13 @@ mod tests {
 
         let bytes = [11];
         reorder
-            .ingest(&storage, segment(11, &bytes), key(11), false, 0, |_| {})
+            .ingest(&storage, segment(11, &bytes), key(11), None, 0, |_| {})
             .unwrap();
         assert!(reorder.is_duplicate_or_stale(key(11)));
 
         let bytes = [10];
         reorder
-            .ingest(&storage, segment(10, &bytes), key(10), false, 1, |_| {})
+            .ingest(&storage, segment(10, &bytes), key(10), None, 1, |_| {})
             .unwrap();
         assert!(reorder.is_duplicate_or_stale(key(10)));
         assert!(!reorder.is_duplicate_or_stale(key(12)));
@@ -755,7 +793,7 @@ mod tests {
                             sequence: sequence as u16,
                             retry: false,
                         },
-                        false,
+                        None,
                         0,
                         |_| panic!("a leading gap retains every successor"),
                     )
@@ -775,7 +813,7 @@ mod tests {
                     sequence: 9,
                     retry: false,
                 },
-                false,
+                None,
                 1,
                 |_| panic!("exhausted backing cannot publish out of order"),
             )

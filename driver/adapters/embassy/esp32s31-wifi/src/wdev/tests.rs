@@ -752,6 +752,32 @@ fn network_backpressure_waits_for_the_network_rx_capacity_owner() {
 }
 
 #[test]
+fn network_backpressure_still_services_a_new_dma_frontier() {
+    let resources = std::boxed::Box::leak(std::boxed::Box::new(Resources::new()));
+    let pool = Pool::pin_static(std::boxed::Box::leak(std::boxed::Box::new(Pool::new())));
+    let (_device, network) = resources.split(pool, [2, 3, 4, 5, 6, 7]);
+    let irq = std::boxed::Box::leak(std::boxed::Box::new(
+        EmbassyMacIrqRuntime::<NoopRawMutex>::new(),
+    ));
+    irq.publish(MAC_INT_RX_SUCCESS);
+    let services = NetworkBackpressureBackend { service_calls: 0 };
+    let mut runner = WdevRunner::new(irq, network, services);
+    let mut run = std::boxed::Box::pin(runner.run());
+    let mut context = Context::from_waker(core::task::Waker::noop());
+
+    assert_eq!(run.as_mut().poll(&mut context), Poll::Pending);
+    // The final network queue is still occupied, but a later DMA completion
+    // must re-enter the role service instead of waiting for network capacity.
+    irq.publish(MAC_INT_RX_SUCCESS);
+    assert_eq!(
+        embassy_futures::block_on(run.as_mut()),
+        Err(TestError::Finished)
+    );
+    drop(run);
+    assert_eq!(runner.services().service_calls, 2);
+}
+
+#[test]
 fn ready_network_frame_extends_standby_before_active_tx_completion() {
     let resources = std::boxed::Box::leak(std::boxed::Box::new(Resources::new()));
     let pool = Pool::pin_static(std::boxed::Box::leak(std::boxed::Box::new(Pool::new())));

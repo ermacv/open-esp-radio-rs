@@ -27,6 +27,9 @@ pub mod services;
 /// RX-only network publication capability exposed to one finite WDEV service.
 /// It cannot observe or claim network-owned TX slots.
 pub trait WdevNetworkRx {
+    /// Number of copied RX frames still waiting in the owned network queue.
+    fn queue_len(&self) -> usize;
+
     fn try_send(&mut self, frame: &[u8]) -> Result<(), RxEnqueueError>;
 
     fn try_send_parts(&mut self, frame: EthernetFrameParts<'_>) -> Result<(), RxEnqueueError>;
@@ -49,6 +52,10 @@ pub trait WdevNetworkRx {
 impl<M: RawMutex, const FRAME_CAPACITY: usize, const RX_QUEUE_DEPTH: usize> WdevNetworkRx
     for PinnedRxPublisher<'_, M, FRAME_CAPACITY, RX_QUEUE_DEPTH>
 {
+    fn queue_len(&self) -> usize {
+        PinnedRxPublisher::queue_len(self)
+    }
+
     fn try_send(&mut self, frame: &[u8]) -> Result<(), RxEnqueueError> {
         PinnedRxPublisher::try_send(self, frame)
     }

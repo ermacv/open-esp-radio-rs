@@ -192,7 +192,18 @@ pub(super) type ProductionAccessPointRxPipeline =
 pub(super) fn access_point_rx_pipeline(
     ring: open_esp_radio::esp32s31::wifi::mac::rx::RxRingHalted<'static, RX_DESCRIPTOR_COUNT>,
     storage: &'static RxStorage,
+    #[cfg(feature = "qualification")] pipeline_observer: &'static dyn open_esp_radio_esp32s31_wifi_embassy::rx_pipeline_observer::RxPipelineObserver,
 ) -> ProductionAccessPointRxPipeline {
+    #[cfg(feature = "qualification")]
+    return open_esp_radio_esp32s31_wifi_embassy::access_point::Esp32s31AccessPointRxPipeline::from_halted_with_pipeline_observer(
+        ring,
+        storage,
+        &RX_STAGE_POOL,
+        &STAGED_RX_QUEUE,
+        EmbassyEsp32s31RxDmaObservationDelay,
+        pipeline_observer,
+    );
+    #[cfg(not(feature = "qualification"))]
     open_esp_radio_esp32s31_wifi_embassy::access_point::Esp32s31AccessPointRxPipeline::from_halted(
         ring,
         storage,
@@ -416,6 +427,10 @@ static STAGED_RX_QUEUE: Esp32s31StagedRxQueue<
 > = Esp32s31StagedRxQueue::new();
 static SHARED_NETWORK_RX_QUEUE: SharedPinnedRxQueue<CriticalSectionRawMutex, RX_STAGE_SLOT_COUNT> =
     SharedPinnedRxQueue::new();
+
+pub(super) fn publish_shared_network_rx(index: u8) {
+    SHARED_NETWORK_RX_QUEUE.publisher().publish(index);
+}
 
 #[inline(never)]
 fn notify_shared_network_rx_release() {

@@ -62,6 +62,7 @@ use open_esp_radio_wpa2::{OwnedEapolFrame, Wpa2Interface};
 use crate::network_rx::{RxNetworkDeliveryEvent, RxNetworkDeliveryObserver};
 use crate::{
     aggregate_tx_observer::{AggregateBuildStop, AggregateTxObservation, AggregateTxObserver},
+    connected_rx_protocol::StagedEthernetPublication,
     embassy_irq::{
         Esp32s31MacInterruptEpoch, Esp32s31MacInterruptEpochActivateError,
         Esp32s31MacInterruptEpochDrain, Esp32s31MacInterruptEpochQuiesceError,
@@ -76,6 +77,25 @@ use crate::{
 
 const EAPOL_ETHERTYPE: u16 = 0x888e;
 const EAPOL_CAPACITY: usize = 512;
+
+/// Select the lower DMA producer only when it can add useful ownership work.
+///
+/// An idle AP drains already-staged protocol owners before observing the DMA
+/// ring again. A TX-blocked AP cannot consume those owners, so it must keep
+/// staging the hardware frontier until the bounded pool reports backpressure.
+const fn should_observe_ap_rx_dma(protocol_blocked: bool, queued_frames: usize) -> bool {
+    protocol_blocked || queued_frames == 0
+}
+
+/// Keep one reorder release on a single ordered publication path after an
+/// older cold frame has entered the deferred batch.
+const fn can_publish_ap_rx_in_place(
+    current_staging_owner: bool,
+    current_is_amsdu: bool,
+    deferred_bytes: usize,
+) -> bool {
+    current_staging_owner && !current_is_amsdu && deferred_bytes == 0
+}
 
 mod ampdu;
 mod network_tx;
@@ -110,6 +130,12 @@ pub struct Esp32s31AccessPointControlReport {
     pub maximum_network_backpressure_micros: u32,
     pub completed_rx_units: u32,
     pub completed_rx_descriptors: u32,
+    /// Staged owners actually consumed by the AP protocol frontier.
+    ///
+    /// This is deliberately distinct from `completed_rx_descriptors`: one
+    /// DMA observation can stage a complete burst while the protocol owner
+    /// has advanced by only one frame.
+    pub serviced_staged_rx_frames: u32,
     pub recycled_rx_descriptors: u32,
     pub retained_rx_descriptors: u32,
     pub discarded_rx_units: u32,
@@ -282,6 +308,128 @@ impl Esp32s31ApRxSink for DeferredAccessPointRxSink<'_> {
         if self.frames.push(event.frame).is_err() {
             self.exhausted = true;
         }
+    }
+}
+
+/// Captures one ordinary Ethernet view as offsets inside its staging owner.
+/// The owner is converted in place only after the AP dispatcher and reorder
+/// state have accepted the frame.
+struct InPlaceAccessPointRxSink {
+    raw_start: usize,
+    raw_length: usize,
+    publication: Option<StagedEthernetPublication>,
+    unsupported: bool,
+}
+
+impl InPlaceAccessPointRxSink {
+    fn new(raw: &[u8]) -> Self {
+        Self {
+            raw_start: raw.as_ptr() as usize,
+            raw_length: raw.len(),
+            publication: None,
+            unsupported: false,
+        }
+    }
+}
+
+impl Esp32s31ApRxSink for InPlaceAccessPointRxSink {
+    fn publish(&mut self, event: Esp32s31ApRxEvent<'_>) {
+        let payload_start = event.frame.payload.as_ptr() as usize;
+        let payload_end = match payload_start.checked_add(event.frame.payload.len()) {
+            Some(end) => end,
+            None => {
+                self.unsupported = true;
+                return;
+            }
+        };
+        let raw_end = self.raw_start.saturating_add(self.raw_length);
+        if event.amsdu
+            || self.publication.is_some()
+            || payload_start < self.raw_start
+            || payload_end > raw_end
+        {
+            self.unsupported = true;
+            return;
+        }
+        self.publication = Some(StagedEthernetPublication {
+            destination: event.frame.destination,
+            source: event.frame.source,
+            ether_type: event.frame.ether_type,
+            payload_offset: payload_start - self.raw_start,
+            payload_length: event.frame.payload.len(),
+            metadata: event.metadata,
+        });
+    }
+}
+
+#[cfg(test)]
+mod in_place_rx_sink_tests {
+    use open_esp_radio_wifi_softmac::MacRxMetadata;
+
+    use super::*;
+
+    fn event<'a>(payload: &'a [u8], amsdu: bool) -> Esp32s31ApRxEvent<'a> {
+        Esp32s31ApRxEvent {
+            frame: EthernetFrameParts {
+                destination: [1, 2, 3, 4, 5, 6],
+                source: [7, 8, 9, 10, 11, 12],
+                ether_type: 0x0800,
+                payload,
+            },
+            raw: payload,
+            amsdu,
+            metadata: MacRxMetadata::unavailable(),
+        }
+    }
+
+    #[test]
+    fn captures_one_ordinary_frame_as_staging_offsets() {
+        let raw = [0_u8; 64];
+        let mut sink = InPlaceAccessPointRxSink::new(&raw);
+
+        sink.publish(event(&raw[17..43], false));
+
+        let publication = sink.publication.expect("ordinary frame is captured");
+        assert_eq!(publication.payload_offset, 17);
+        assert_eq!(publication.payload_length, 26);
+        assert!(!sink.unsupported);
+    }
+
+    #[test]
+    fn rejects_amsdu_and_payloads_outside_the_staging_owner() {
+        let raw = [0_u8; 64];
+        let external = [0_u8; 8];
+
+        let mut amsdu = InPlaceAccessPointRxSink::new(&raw);
+        amsdu.publish(event(&raw[16..24], true));
+        assert!(amsdu.publication.is_none());
+        assert!(amsdu.unsupported);
+
+        let mut outside = InPlaceAccessPointRxSink::new(&raw);
+        outside.publish(event(&external, false));
+        assert!(outside.publication.is_none());
+        assert!(outside.unsupported);
+    }
+
+    #[test]
+    fn idle_ap_drains_staged_protocol_owners_before_rescanning_dma() {
+        assert!(should_observe_ap_rx_dma(false, 0));
+        assert!(!should_observe_ap_rx_dma(false, 1));
+        assert!(!should_observe_ap_rx_dma(false, 32));
+    }
+
+    #[test]
+    fn tx_blocked_ap_keeps_draining_the_dma_frontier() {
+        assert!(should_observe_ap_rx_dma(true, 0));
+        assert!(should_observe_ap_rx_dma(true, 32));
+    }
+
+    #[test]
+    fn current_frame_joins_an_older_deferred_reorder_release() {
+        assert!(can_publish_ap_rx_in_place(true, false, 0));
+        assert!(!can_publish_ap_rx_in_place(true, false, 64));
+        assert!(!can_publish_ap_rx_in_place(true, true, 0));
+        assert!(!can_publish_ap_rx_in_place(false, false, 0));
     }
 }
 
@@ -474,18 +622,29 @@ where
     ///
     /// The common producer returns safe descriptors before AP parsing, WPA2,
     /// reorder, or network publication can extend the BUFFER_FULL interval.
-    pub async fn service_rx<H>(
+    pub async fn service_rx<H, Q>(
         &mut self,
         hardware: &mut H,
         authenticator_nonce: [u8; 32],
         initial_replay_counter: u64,
         now_micros: u64,
+        publish_shared_rx: &mut Q,
+        #[cfg(feature = "rx-delivery-observation")] delivery_observer: Option<
+            &dyn RxNetworkDeliveryObserver,
+        >,
     ) -> Result<WdevRxProgress, Esp32s31AccessPointControlError>
     where
         H: RxDma + TxHardware + Esp32s31ApRuntimeHardware + RxBlockAckHardware,
         R: AccessPointRxPipeline<H, COUNT>,
+        Q: FnMut(u8),
     {
-        let stage_progress = self.receive.stage_completed(hardware).await?;
+        let protocol_blocked = self.mac.tx_pending() || self.rx_batch_pending();
+        let queued_frames = self.receive.queued_frames();
+        let stage_progress = if should_observe_ap_rx_dma(protocol_blocked, queued_frames) {
+            self.receive.stage_completed(hardware).await?
+        } else {
+            WdevRxProgress::ProbePending
+        };
         let producer = self.receive.report();
         self.report.completed_rx_units = producer.completed_units;
         self.report.completed_rx_descriptors = producer.completed_descriptors;
@@ -497,7 +656,7 @@ where
         // complete DMA units into independent staging first. Protocol work is
         // deferred while TX owns the sole transmit transaction because a
         // management/EAPOL input may itself need to publish a response.
-        if self.mac.tx_pending() || self.rx_batch_pending() {
+        if protocol_blocked {
             return Ok(stage_progress);
         }
         if self.service_rx_reorder_expiry(now_micros)? {
@@ -507,14 +666,18 @@ where
         let Some(staged_frame) = self.receive.try_receive() else {
             return Ok(stage_progress);
         };
+        self.report.serviced_staged_rx_frames =
+            self.report.serviced_staged_rx_frames.saturating_add(1);
         self.service_staged_rx(
             hardware,
-            staged_frame.segment(),
+            staged_frame,
             authenticator_nonce,
             initial_replay_counter,
             now_micros,
+            publish_shared_rx,
+            #[cfg(feature = "rx-delivery-observation")]
+            delivery_observer,
         )?;
-        drop(staged_frame);
 
         Ok(
             if self.receive.queued_frames() != 0 || self.rx_batch_pending() || self.mac.tx_pending()
@@ -526,17 +689,28 @@ where
         )
     }
 
-    fn service_staged_rx<H>(
+    fn service_staged_rx<H, F, Q>(
         &mut self,
         hardware: &mut H,
-        segment: open_esp_radio_esp32s31_wifi_mac::rx::RxSegment<'_>,
+        staged_frame: F,
         authenticator_nonce: [u8; 32],
         initial_replay_counter: u64,
         now_micros: u64,
+        publish_shared_rx: &mut Q,
+        #[cfg(feature = "rx-delivery-observation")] delivery_observer: Option<
+            &dyn RxNetworkDeliveryObserver,
+        >,
     ) -> Result<(), Esp32s31AccessPointControlError>
     where
         H: TxHardware + Esp32s31ApRuntimeHardware + RxBlockAckHardware,
+        F: AccessPointStagedRxFrame,
+        Q: FnMut(u8),
     {
+        let mut staged_frame = Some(staged_frame);
+        let segment = staged_frame
+            .as_ref()
+            .expect("current AP staged frame is live")
+            .segment();
         let mut activity_peer = None;
         let mut batch_exhausted = false;
         let frame = match view_normalized_rx_frame(
@@ -580,6 +754,14 @@ where
             frame.metadata.ampdu,
             MacRxEvidence::HardwareObserved(true) | MacRxEvidence::ProtocolValidated(true)
         );
+        let ampdu_baseband_format = if ampdu_contained {
+            match frame.metadata.rate {
+                MacRxEvidence::HardwareObserved(phy) => Some(phy.baseband_format().raw()),
+                _ => None,
+            }
+        } else {
+            None
+        };
         if frame_control & 0x000c == 0x0008 && frame_control & 0x4000 != 0 {
             self.report.protected_data_frames = self.report.protected_data_frames.saturating_add(1);
             if let MacRxEvidence::HardwareObserved(rssi_dbm) = frame.metadata.rssi_dbm {
@@ -613,9 +795,22 @@ where
             let mac = &self.mac;
             let data_rx = &mut self.data_rx;
             let report = &mut self.report;
-            let mut sink = DeferredAccessPointRxSink::new(self.rx_frame);
+            let mut deferred = DeferredAccessPointRxSink::new(self.rx_frame);
+            let mut in_place = InPlaceAccessPointRxSink::new(segment.buffer);
             let mut produced_data = false;
             let key = data_rx.reorder_key(segment);
+            let current_buffer = segment.buffer.as_ptr();
+            let qos_control_offset = 24
+                + if frame_control & 0x0300 == 0x0300 {
+                    6
+                } else {
+                    0
+                };
+            let current_is_amsdu = frame_control & 0x0080 != 0
+                && frame
+                    .mpdu
+                    .get(qos_control_offset)
+                    .is_some_and(|control| control & 0x80 != 0);
             let mut dispatch = |ordered: open_esp_radio_esp32s31_wifi_mac::rx::RxSegment<'_>| {
                 let peer = data_rx
                     .reorder_key(ordered)
@@ -633,11 +828,21 @@ where
                         .and_then(|frame| frame.mpdu.get(10..16))
                         .and_then(|bytes| <[u8; 6]>::try_from(bytes).ok())
                     });
-                let outcome = data_rx.dispatch_protected(
-                    ordered,
-                    |peer| mac.engine().is_authorized_peer(peer),
-                    &mut sink,
-                );
+                let current = ordered.buffer.as_ptr() == current_buffer;
+                let outcome =
+                    if can_publish_ap_rx_in_place(current, current_is_amsdu, deferred.used()) {
+                        data_rx.dispatch_protected(
+                            ordered,
+                            |peer| mac.engine().is_authorized_peer(peer),
+                            &mut in_place,
+                        )
+                    } else {
+                        data_rx.dispatch_protected(
+                            ordered,
+                            |peer| mac.engine().is_authorized_peer(peer),
+                            &mut deferred,
+                        )
+                    };
                 produced_data |=
                     observe_protected_dispatch(outcome, peer, report, &mut activity_peer);
             };
@@ -646,7 +851,7 @@ where
                     self.rx_reorder_storage,
                     segment,
                     key,
-                    ampdu_contained,
+                    ampdu_baseband_format,
                     now_micros,
                     &mut dispatch,
                 )
@@ -654,6 +859,7 @@ where
                 dispatch(segment);
                 Ok(Default::default())
             }?;
+            drop(dispatch);
             if let Some(reset) = reorder_progress.hardware_window_reset {
                 hardware.reset_extra_softap_rx_block_ack_window(
                     reset.hardware_index,
@@ -670,12 +876,52 @@ where
                     .protected_data_protocol_rejected
                     .saturating_add(1);
             }
-            let batch_used = sink.used();
-            batch_exhausted = sink.exhausted;
-            if produced_data {
+            let batch_used = deferred.used();
+            batch_exhausted = deferred.exhausted || in_place.unsupported;
+            if batch_used != 0 {
                 self.rx_batch_used = batch_used;
                 self.rx_batch_offset = 0;
-            } else {
+            }
+            if let Some(ethernet) = in_place.publication {
+                let raw = segment.buffer;
+                let payload = &raw
+                    [ethernet.payload_offset..ethernet.payload_offset + ethernet.payload_length];
+                let ethernet_frame = EthernetFrameParts {
+                    destination: ethernet.destination,
+                    source: ethernet.source,
+                    ether_type: ethernet.ether_type,
+                    payload,
+                };
+                let protocol = ethernet_parts_protocol(ethernet_frame);
+                #[cfg(feature = "rx-delivery-observation")]
+                if let Some(observer) = delivery_observer {
+                    observer.admitted(RxNetworkDeliveryEvent {
+                        frame: ethernet_frame,
+                        raw: Some(raw),
+                    });
+                }
+                let current = staged_frame
+                    .take()
+                    .expect("in-place AP publication owns the current staging frame");
+                let index = current
+                    .publish_ethernet_in_place(ethernet)
+                    .map_err(|_| Esp32s31AccessPointControlError::ReceiveBatchCapacity)?;
+                publish_shared_rx(index);
+                self.report.ethernet_frames_staged =
+                    self.report.ethernet_frames_staged.saturating_add(1);
+                match protocol {
+                    Some(EthernetProtocol::ArpRequest) => {
+                        self.report.ethernet_arp_requests_staged =
+                            self.report.ethernet_arp_requests_staged.saturating_add(1);
+                    }
+                    Some(EthernetProtocol::Ipv4Tcp) => {
+                        self.report.ethernet_tcp_frames_staged =
+                            self.report.ethernet_tcp_frames_staged.saturating_add(1);
+                    }
+                    _ => {}
+                }
+            }
+            if !produced_data {
                 self.report.ignored_rx_frames = self.report.ignored_rx_frames.saturating_add(1);
             }
         } else if frame_control & 0x000c == 0 {
@@ -838,25 +1084,27 @@ where
                 return Err(error.into());
             }
         }
-        if let Err(error) = hardware.program_extra_softap_rx_block_ack(activation.hardware()) {
-            self.rx_block_ack.cancel(activation)?;
-            return Err(error.into());
-        }
         let negotiated = activation.negotiated();
-        if let Err(error) = self.rx_reorder.start(negotiated, |_| {}) {
-            let clear = hardware.clear_extra_softap_rx_block_ack(negotiated.hardware_index);
-            self.rx_block_ack.cancel(activation)?;
-            clear?;
-            return Err(error.into());
-        }
+        // SOURCE: complete vendor `ht_recv_action_ba_addba_request` first
+        // enqueues the successful ADDBA response through
+        // `ieee80211_send_action`, then publishes the receive agreement via
+        // `ic_add_extra_softap_rx_ba`. The staging bank must not become
+        // visible before the response publication edge.
         if let Err(error) = self.mac.publish_rx_block_ack_response(
             hardware,
             negotiated.peer,
             activation.response_body(),
             self.tx_frame,
         ) {
+            self.rx_block_ack.cancel(activation)?;
+            return Err(error.into());
+        }
+        if let Err(error) = hardware.program_extra_softap_rx_block_ack(activation.hardware()) {
+            self.rx_block_ack.cancel(activation)?;
+            return Err(error.into());
+        }
+        if let Err(error) = self.rx_reorder.start(negotiated, |_| {}) {
             let clear = hardware.clear_extra_softap_rx_block_ack(negotiated.hardware_index);
-            let _ = self.rx_reorder.stop_discard(negotiated.identity());
             self.rx_block_ack.cancel(activation)?;
             clear?;
             return Err(error.into());
@@ -1381,6 +1629,7 @@ where
         H,
         F,
         N,
+        Q,
         const FRAME_CAPACITY: usize,
         const HEADROOM: usize,
         const TRAILER: usize,
@@ -1412,6 +1661,7 @@ where
         #[cfg(feature = "rx-delivery-observation")] delivery_observer: Option<
             &dyn RxNetworkDeliveryObserver,
         >,
+        publish_shared_rx: Q,
         stop: F,
         mut status_observer: impl FnMut(AccessPointServiceStatus),
         security_material: N,
@@ -1427,6 +1677,7 @@ where
         R: AccessPointRxPipeline<H, COUNT>,
         F: Future<Output = ()>,
         N: FnMut() -> ([u8; 32], u64),
+        Q: FnMut(u8),
     {
         network.set_link_state(LinkState::Down);
         network.set_hardware_address(self.mac.engine().service_address());
@@ -1454,6 +1705,7 @@ where
             status_observer,
             security_material,
             set_link_state: |state| network.set_link_state(state),
+            publish_shared_rx,
             aggregate_tx_observer,
             #[cfg(feature = "rx-delivery-observation")]
             delivery_observer,
@@ -1461,6 +1713,7 @@ where
             network_link_up: false,
             block_ack_observation: BlockAckObservationState::default(),
             network_backpressure_since_micros: None,
+            owned_rx_ordering_barrier: false,
             tx_pending_since_micros: Some(Instant::now().as_micros()),
             network_tx_pending: None,
             next_control_delay_millis: 1,

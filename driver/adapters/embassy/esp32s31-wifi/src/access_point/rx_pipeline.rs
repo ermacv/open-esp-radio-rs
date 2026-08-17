@@ -8,16 +8,23 @@ use open_esp_radio_esp32s31_wifi_mac::{
 };
 
 use crate::{
-    connected_rx_protocol::{Esp32s31StagedRxFrame, Esp32s31StagedRxQueue},
+    connected_rx_protocol::{
+        Esp32s31StagedRxFrame, Esp32s31StagedRxQueue, StagedEthernetPublication,
+    },
     embassy_rx::RxDmaObservationDelay,
     rx_dma_service::{Esp32s31RxDmaStorage, Esp32s31StagedRxEpoch, Esp32s31StagedRxProducerReport},
     rx_frontier::Esp32s31RxFrontierSchedulerSnapshot,
+    rx_pipeline_observer::RxPipelineObserver,
     wdev::WdevRxProgress,
 };
 
 #[doc(hidden)]
 pub trait AccessPointStagedRxFrame {
     fn segment(&self) -> RxSegment<'_>;
+
+    fn publish_ethernet_in_place(self, ethernet: StagedEthernetPublication) -> Result<u8, Self>
+    where
+        Self: Sized;
 }
 
 impl<const CAPACITY: usize, const SLOTS: usize> AccessPointStagedRxFrame
@@ -25,6 +32,18 @@ impl<const CAPACITY: usize, const SLOTS: usize> AccessPointStagedRxFrame
 {
     fn segment(&self) -> RxSegment<'_> {
         Esp32s31StagedRxFrame::segment(self)
+    }
+
+    fn publish_ethernet_in_place(self, ethernet: StagedEthernetPublication) -> Result<u8, Self> {
+        Esp32s31StagedRxFrame::publish_ethernet_in_place(
+            self,
+            ethernet.destination,
+            ethernet.source,
+            ethernet.ether_type,
+            ethernet.payload_offset,
+            ethernet.payload_length,
+        )
+        .map_err(|(frame, _)| frame)
     }
 }
 
@@ -125,6 +144,25 @@ where
         let (sender, frames) = queue.split();
         Self {
             producer: Esp32s31StagedRxEpoch::from_halted(ring, storage, pool, sender, delay),
+            frames,
+        }
+    }
+
+    /// Attach value-only pipeline observations without exposing descriptor
+    /// ownership to the AP protocol layer.
+    pub fn from_halted_with_pipeline_observer(
+        ring: RxRingHalted<'storage, COUNT>,
+        storage: &'storage Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
+        pool: &'pool RxStagePool<STAGE_SLOTS, STAGE_CAPACITY>,
+        queue: &'queue Esp32s31StagedRxQueue<'pool, M, QUEUE_DEPTH, STAGE_CAPACITY, STAGE_SLOTS>,
+        delay: D,
+        observer: &'pool dyn RxPipelineObserver,
+    ) -> Self {
+        let (sender, frames) = queue.split();
+        Self {
+            producer: Esp32s31StagedRxEpoch::from_halted_with_pipeline_observer(
+                ring, storage, pool, sender, delay, observer,
+            ),
             frames,
         }
     }

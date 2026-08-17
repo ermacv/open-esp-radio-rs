@@ -11,20 +11,24 @@ pub(super) struct NetworkTxPending {
 #[derive(Default)]
 struct BoundedRxTurn<const LIMIT: usize> {
     observation_passes: usize,
-    serviced_descriptors: usize,
+    serviced_staged_frames: usize,
 }
 
 impl<const LIMIT: usize> BoundedRxTurn<LIMIT> {
-    fn observe(&mut self, completed_descriptors: usize) {
+    fn observe(&mut self, serviced_staged_frames: usize) {
         self.observation_passes = self.observation_passes.saturating_add(1);
-        self.serviced_descriptors = self
-            .serviced_descriptors
-            .saturating_add(completed_descriptors);
+        self.serviced_staged_frames = self
+            .serviced_staged_frames
+            .saturating_add(serviced_staged_frames);
     }
 
     fn has_budget(&self) -> bool {
-        self.observation_passes < LIMIT && self.serviced_descriptors < LIMIT
+        self.observation_passes < LIMIT && self.serviced_staged_frames < LIMIT
     }
+}
+
+const fn owned_rx_ordering_blocked(barrier: bool, copied_queue_len: usize) -> bool {
+    barrier && copied_queue_len != 0
 }
 
 #[derive(Default)]
@@ -61,6 +65,7 @@ pub(super) struct Esp32s31AccessPointWdevServices<
     O,
     S,
     L,
+    Q,
     B: 'ampdu,
     const COUNT: usize,
     const DMA_BUFFER_SIZE: usize,
@@ -88,6 +93,7 @@ pub(super) struct Esp32s31AccessPointWdevServices<
     pub(super) status_observer: O,
     pub(super) security_material: S,
     pub(super) set_link_state: L,
+    pub(super) publish_shared_rx: Q,
     pub(super) aggregate_tx_observer: Option<&'run dyn AggregateTxObserver>,
     #[cfg(feature = "rx-delivery-observation")]
     pub(super) delivery_observer: Option<&'run dyn RxNetworkDeliveryObserver>,
@@ -95,6 +101,10 @@ pub(super) struct Esp32s31AccessPointWdevServices<
     pub(super) network_link_up: bool,
     pub(super) block_ack_observation: BlockAckObservationState,
     pub(super) network_backpressure_since_micros: Option<u64>,
+    /// A cold/reordered frame was published through the copied queue. Since
+    /// the network device otherwise prioritizes shared zero-copy slots, no
+    /// later shared frame may be published until this queue drains.
+    pub(super) owned_rx_ordering_barrier: bool,
     pub(super) tx_pending_since_micros: Option<u64>,
     pub(super) network_tx_pending: Option<NetworkTxPending>,
     pub(super) next_control_delay_millis: u32,
@@ -109,6 +119,7 @@ impl<
     O,
     S,
     L,
+    Q,
     B,
     const COUNT: usize,
     const DMA_BUFFER_SIZE: usize,
@@ -131,6 +142,7 @@ impl<
         O,
         S,
         L,
+        Q,
         B,
         COUNT,
         DMA_BUFFER_SIZE,
@@ -145,6 +157,7 @@ where
     T: WifiTxTimer,
     O: FnMut(AccessPointServiceStatus),
     L: FnMut(LinkState),
+    Q: FnMut(u8),
     B: StableDmaBacking,
 {
     fn tx_pending(&self) -> bool {
@@ -247,6 +260,7 @@ where
 
             match result {
                 Ok(()) => {
+                    self.owned_rx_ordering_barrier = true;
                     let protocol = ethernet_parts_protocol(frame);
                     self.control.commit_rx_batch_record(next_offset);
                     self.control.report.ethernet_frames_staged =
@@ -310,6 +324,7 @@ impl<
     O,
     S,
     L,
+    Q,
     const FRAME_CAPACITY: usize,
     const HEADROOM: usize,
     const TRAILER: usize,
@@ -335,6 +350,7 @@ impl<
         O,
         S,
         L,
+        Q,
         PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
         COUNT,
         DMA_BUFFER_SIZE,
@@ -357,6 +373,7 @@ where
     O: FnMut(AccessPointServiceStatus),
     S: FnMut() -> ([u8; 32], u64),
     L: FnMut(LinkState),
+    Q: FnMut(u8),
 {
     type Error = Esp32s31AccessPointWdevError;
     type Exit = Infallible;
@@ -374,23 +391,39 @@ where
         network_rx: &'a mut dyn WdevNetworkRx,
     ) -> impl Future<Output = Result<WdevRxProgress, Self::Error>> + 'a {
         async move {
+            if owned_rx_ordering_blocked(self.owned_rx_ordering_barrier, network_rx.queue_len()) {
+                return Ok(WdevRxProgress::ProbePending);
+            }
+            if self.owned_rx_ordering_barrier {
+                self.owned_rx_ordering_barrier = false;
+            }
             let mut turn = BoundedRxTurn::<COUNT>::default();
             loop {
-                if self.publish_pending_rx_batch(network_rx)?
-                    == WdevRxProgress::NetworkBackpressured
+                let network_backpressured = self.publish_pending_rx_batch(network_rx)?
+                    == WdevRxProgress::NetworkBackpressured;
+                if owned_rx_ordering_blocked(self.owned_rx_ordering_barrier, network_rx.queue_len())
                 {
-                    return Ok(WdevRxProgress::NetworkBackpressured);
+                    return Ok(WdevRxProgress::ProbePending);
                 }
                 if !turn.has_budget() {
-                    return Ok(WdevRxProgress::ProbePending);
+                    return Ok(if network_backpressured {
+                        WdevRxProgress::NetworkBackpressured
+                    } else {
+                        WdevRxProgress::ProbePending
+                    });
                 }
                 if self
                     .control
                     .beacon_publication_due(Instant::now().as_micros() as u32)
                 {
-                    return Ok(WdevRxProgress::ProbePending);
+                    return Ok(if network_backpressured {
+                        WdevRxProgress::NetworkBackpressured
+                    } else {
+                        WdevRxProgress::ProbePending
+                    });
                 }
                 let completed_before = self.control.report.completed_rx_descriptors;
+                let serviced_before = self.control.report.serviced_staged_rx_frames;
                 let service_started = Instant::now().as_micros();
                 let (nonce, replay_counter) = (self.security_material)();
                 let rx_progress = self
@@ -400,6 +433,9 @@ where
                         nonce,
                         replay_counter,
                         Instant::now().as_micros(),
+                        &mut self.publish_shared_rx,
+                        #[cfg(feature = "rx-delivery-observation")]
+                        self.delivery_observer,
                     )
                     .await
                     .map_err(Esp32s31AccessPointWdevError::Control)?;
@@ -407,8 +443,8 @@ where
                     usize::try_from(
                         self.control
                             .report
-                            .completed_rx_descriptors
-                            .saturating_sub(completed_before),
+                            .serviced_staged_rx_frames
+                            .saturating_sub(serviced_before),
                     )
                     .unwrap_or(usize::MAX),
                 );
@@ -421,6 +457,15 @@ where
                 self.observe_role_state();
                 self.observe_tx_started();
 
+                // A retained Ethernet record must not block the lower DMA
+                // ownership frontier. `control.service_rx` stages and
+                // republishes completed descriptors before it observes
+                // `rx_batch_pending`, so the AP retains the same separation
+                // between descriptor drainage and upper delivery as the STA
+                // producer while the final network queue is full.
+                if network_backpressured {
+                    return Ok(WdevRxProgress::NetworkBackpressured);
+                }
                 if self.publish_pending_rx_batch(network_rx)?
                     == WdevRxProgress::NetworkBackpressured
                 {
@@ -635,9 +680,11 @@ mod tests {
     }
 
     #[test]
-    fn bounded_rx_turn_keeps_one_mpdu_publication_inside_the_same_turn() {
-        let mut turn = BoundedRxTurn::<4>::default();
+    fn staged_dma_burst_does_not_spend_unprocessed_protocol_budget() {
+        let mut turn = BoundedRxTurn::<32>::default();
 
+        // The producer may have staged all 32 DMA descriptors, but this turn
+        // accounts only the one staged owner actually consumed by AP RX.
         turn.observe(1);
 
         assert!(turn.has_budget());
@@ -669,7 +716,7 @@ mod tests {
     }
 
     #[test]
-    fn bounded_rx_turn_yields_at_or_beyond_its_descriptor_quota() {
+    fn bounded_rx_turn_yields_at_or_beyond_its_staged_frame_quota() {
         let mut exact = BoundedRxTurn::<4>::default();
         exact.observe(4);
         assert!(!exact.has_budget());
@@ -680,7 +727,7 @@ mod tests {
     }
 
     #[test]
-    fn bounded_rx_turn_yields_after_probes_without_descriptor_progress() {
+    fn bounded_rx_turn_yields_after_probes_without_staged_frame_progress() {
         let mut turn = BoundedRxTurn::<2>::default();
 
         turn.observe(0);
@@ -690,12 +737,23 @@ mod tests {
         assert!(!turn.has_budget());
     }
 
+    #[test]
+    fn copied_reorder_release_blocks_later_shared_publication_until_consumed() {
+        assert!(!owned_rx_ordering_blocked(false, 1));
+        assert!(!owned_rx_ordering_blocked(true, 0));
+        assert!(owned_rx_ordering_blocked(true, 1));
+    }
+
     struct NetworkRx {
         capacity: usize,
         frames: std::vec::Vec<std::vec::Vec<u8>>,
     }
 
     impl WdevNetworkRx for NetworkRx {
+        fn queue_len(&self) -> usize {
+            self.frames.len()
+        }
+
         fn try_send(&mut self, frame: &[u8]) -> Result<(), RxEnqueueError> {
             if self.frames.len() == self.capacity {
                 return Err(RxEnqueueError::QueueFull);

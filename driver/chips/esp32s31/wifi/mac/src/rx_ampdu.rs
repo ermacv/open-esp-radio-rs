@@ -827,6 +827,7 @@ impl RxAmpduRelease {
 /// owner maps that index to its independent frame storage and recycles every frame
 /// returned by `ingest`, `expire_gap`, or `stop`.
 pub struct RxBlockAckReorderState<const SLOT_CAPACITY: usize> {
+    starting_sequence: u16,
     next_sequence: u16,
     window: u16,
     occupied: u64,
@@ -842,6 +843,7 @@ impl<const SLOT_CAPACITY: usize> RxBlockAckReorderState<SLOT_CAPACITY> {
             return Err(RxAmpduError::InvalidSequence(starting_sequence));
         }
         Ok(Self {
+            starting_sequence,
             next_sequence: starting_sequence,
             window,
             occupied: 0,
@@ -859,6 +861,43 @@ impl<const SLOT_CAPACITY: usize> RxBlockAckReorderState<SLOT_CAPACITY> {
 
     pub const fn occupied(&self) -> u32 {
         self.occupied.count_ones()
+    }
+
+    /// Rebase the one-shot first-A-MPDU sequence mismatch handled by the
+    /// vendor reorder path.
+    ///
+    /// A newly negotiated agreement normally accepts the first aggregate in
+    /// the forward half of its sequence space. If that aggregate is instead
+    /// behind the current software frontier, the vendor releases all retained
+    /// frames and moves both the software and hardware windows. HT and older
+    /// formats first fall back to the negotiated SSN; only an aggregate that
+    /// is also behind that SSN moves the window to include its received
+    /// sequence. Newer formats use the received sequence directly.
+    pub fn resynchronize_stale_initial_ampdu(
+        &mut self,
+        sequence: u16,
+        use_received_sequence: bool,
+    ) -> Result<Option<(RxAmpduRelease, u16)>, RxAmpduError> {
+        if sequence > SEQUENCE_MASK {
+            return Err(RxAmpduError::InvalidSequence(sequence));
+        }
+        if forward_distance(self.next_sequence, sequence) < SEQUENCE_HALF_RANGE {
+            return Ok(None);
+        }
+
+        let mut next_sequence = self.starting_sequence;
+        if use_received_sequence
+            || forward_distance(self.starting_sequence, sequence) >= SEQUENCE_HALF_RANGE
+        {
+            next_sequence = wrapping_sequence(sequence, 1_u16.wrapping_sub(self.window));
+            if use_received_sequence {
+                next_sequence = sequence;
+            }
+        }
+
+        let released = self.stop();
+        self.next_sequence = next_sequence;
+        Ok(Some((released, next_sequence)))
     }
 
     /// Decide whether this sequence will remain owned after a successful

@@ -88,7 +88,9 @@ where
                 } else {
                     match rx_progress {
                         WdevRxProgress::StagingBackpressured => irq.wait_rx_capacity().await,
-                        WdevRxProgress::NetworkBackpressured => network_rx.wait_ready().await,
+                        WdevRxProgress::NetworkBackpressured => {
+                            let _ = select(network_rx.wait_ready(), irq.wait_rx()).await;
+                        }
                         WdevRxProgress::Drained | WdevRxProgress::ProbePending => {
                             irq.wait_rx().await
                         }

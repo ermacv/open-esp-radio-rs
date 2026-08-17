@@ -4,8 +4,8 @@ description = "Single-client AP HT40 MCS7 sustained 95 Mbit/s UDP receive qualif
 repetitions = 3
 image = "qualification"
 isolation = "reset"
-data_plane = "single-core"
-tags = ["qualification", "characterization", "wifi", "access-point", "network", "single-client", "ht40", "ceiling", "rx"]
+data_plane = "split-radio-network"
+tags = ["qualification", "characterization", "wifi", "access-point", "network", "single-client", "ht40", "split-core", "ceiling", "rx"]
 
 [link]
 phy = "ht40"

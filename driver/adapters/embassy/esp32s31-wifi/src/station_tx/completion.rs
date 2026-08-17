@@ -90,24 +90,25 @@ where
         wake: WifiTxWake,
         mut active: AggregateActive<SLOTS>,
     ) -> Result<WifiTxProgress, AggregateTxError> {
-        let interrupt_events = match wake {
-            WifiTxWake::Interrupt { events } => events,
-            WifiTxWake::Deadline => 0,
+        let service_event = match AggregateTxServiceEvent::classify(wake) {
+            Ok(event) => event,
+            Err(error) => {
+                return self.reset_required(AggregateTxResetReason::ConflictingInterruptEvents(
+                    error.events,
+                ));
+            }
         };
-        let tx_events =
-            interrupt_events & (MAC_INT_TX_COMPLETE | MAC_INT_TX_TIMEOUT | MAC_INT_COLLISION);
-        if tx_events.count_ones() > 1 {
-            return self.reset_required(AggregateTxResetReason::ConflictingInterruptEvents(
-                tx_events,
-            ));
-        }
 
-        if let Some(completion) = self.ampdu.acknowledge_completion(hardware)? {
-            let cookie = self.cookie.ok_or(AggregateTxError::MissingCookie)?;
-            self.ampdu.detach_completed(hardware, cookie)?;
-            let current_subframes = self.ampdu.frame_count();
-            let current_first_sequence = active.retry.current_first_sequence();
-            let decision = active.retry.observe(completion, current_subframes)?;
+        let cookie = self.cookie.ok_or(AggregateTxError::MissingCookie)?;
+        if let Some(observed) =
+            self.ampdu
+                .active_mut()
+                .observe_retry_completion(hardware, cookie, &mut active.retry)?
+        {
+            let completion = observed.completion;
+            let current_subframes = observed.subframes;
+            let current_first_sequence = observed.first_sequence;
+            let decision = observed.decision;
             self.rate_control.observe_tx_completion(completion.tx);
             // The retry owner has already validated both counts. An absent
             // A-MPDU rate arena disables adaptation but cannot alter DMA or
@@ -135,7 +136,10 @@ where
                 });
             }
             if let AmpduRetryDecision::RetainAggregate { retry_mask } = decision {
-                let aggregate = self.ampdu.retain_for_ampdu_retry(cookie, retry_mask)?;
+                let aggregate = self
+                    .ampdu
+                    .active_mut()
+                    .retain_for_ampdu_retry(cookie, retry_mask)?;
                 self.ordinary
                     .record_retry_failure(LegacyTxQueue::BestEffort);
                 let (_, contention_window) = self
@@ -169,7 +173,7 @@ where
             if individual_retry {
                 let index = retry_mask.trailing_zeros() as u8;
                 let (frame_length, hardware_mic_length) = {
-                    let (encoded, mic) = self.ampdu.completed_frame(cookie, index)?;
+                    let (encoded, mic) = self.ampdu.active_mut().completed_frame(cookie, index)?;
                     (self.ordinary.copy_encoded_retry(encoded)?, usize::from(mic))
                 };
                 self.release_completed()?;
@@ -222,20 +226,31 @@ where
             return Ok(WifiTxProgress::Complete);
         }
 
-        if tx_events == MAC_INT_TX_COMPLETE {
+        if service_event == AggregateTxServiceEvent::Completion {
             return self.reset_required(AggregateTxResetReason::CompletionInterruptWithoutState);
         }
-        if tx_events == MAC_INT_TX_TIMEOUT || matches!(wake, WifiTxWake::Deadline) {
+        if matches!(
+            service_event,
+            AggregateTxServiceEvent::HardwareTimeout | AggregateTxServiceEvent::ExecutorDeadline
+        ) {
             let cookie = self.cookie.ok_or(AggregateTxError::MissingCookie)?;
-            if !self.ampdu.begin_timeout_abort(hardware, cookie)? {
-                return self.reset_required(if matches!(wake, WifiTxWake::Deadline) {
-                    AggregateTxResetReason::ExecutorDeadline
-                } else {
-                    AggregateTxResetReason::TimeoutInterruptWithoutState
-                });
+            if !self
+                .ampdu
+                .active_mut()
+                .begin_timeout_abort(hardware, cookie)?
+            {
+                return self.reset_required(
+                    if service_event == AggregateTxServiceEvent::ExecutorDeadline {
+                        AggregateTxResetReason::ExecutorDeadline
+                    } else {
+                        AggregateTxResetReason::TimeoutInterruptWithoutState
+                    },
+                );
             }
             self.ordinary.after_micros(AMPDU_ABORT_SETTLE_US).await;
-            self.ampdu.finish_timeout_abort(hardware, cookie)?;
+            self.ampdu
+                .active_mut()
+                .finish_timeout_abort(hardware, cookie)?;
             self.release_frames();
             self.cookie = None;
             self.ordinary
@@ -254,9 +269,9 @@ where
             }
             return Ok(WifiTxProgress::Complete);
         }
-        if tx_events == MAC_INT_COLLISION {
+        if service_event == AggregateTxServiceEvent::Collision {
             let cookie = self.cookie.ok_or(AggregateTxError::MissingCookie)?;
-            if !self.ampdu.abort_collision(hardware, cookie)? {
+            if !self.ampdu.active_mut().abort_collision(hardware, cookie)? {
                 return self.reset_required(AggregateTxResetReason::CollisionInterruptWithoutState);
             }
             self.release_frames();

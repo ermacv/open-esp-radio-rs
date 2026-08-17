@@ -135,14 +135,14 @@ where
         let frame_size = AmpduFrameSize::new(frame_length, hardware_mic_length);
         let maximum_aggregate_bytes = self.ordinary.policy().ht_ampdu().maximum_aggregate_bytes();
         match self.config.rate {
-            TxPhyRate::Ht(rate) => Ok(self.ampdu.can_fit_fresh_referenced_ht_frame(
+            TxPhyRate::Ht(rate) => Ok(self.ampdu.active().can_fit_fresh_referenced_ht_frame(
                 frame_length,
                 hardware_mic_length,
                 rate,
                 maximum_aggregate_bytes,
                 dma_capacity,
             )?),
-            TxPhyRate::He(rate) => Ok(self.ampdu.can_fit_fresh_referenced_he_frame(
+            TxPhyRate::He(rate) => Ok(self.ampdu.active().can_fit_fresh_referenced_he_frame(
                 frame_size,
                 HeAmpduPolicy::new(
                     rate,
@@ -169,10 +169,10 @@ where
         // arena. Reinstall its byte ceiling at every Free -> Reserved edge so
         // a new batch cannot depend on cold scalar contents retained beside
         // hardware-owned words.
-        self.ampdu.configure_max_aggregate_bytes(
+        self.ampdu.active_mut().configure_max_aggregate_bytes(
             self.ordinary.policy().ht_ampdu().maximum_aggregate_bytes(),
         )?;
-        let cookie = self.ampdu.begin()?;
+        let cookie = self.ampdu.active_mut().begin()?;
         self.cookie = Some(cookie);
 
         let result = self.prepare_reserved(first, network, first_sequence, cookie);
@@ -193,7 +193,7 @@ where
         let frame_limit = self.aggregate_frame_limit(DATA_TID);
 
         let build_stop = loop {
-            if self.ampdu.held_backing_count() >= frame_limit {
+            if self.ampdu.active().held_backing_count() >= frame_limit {
                 break AggregateBuildStop::FrameLimit;
             }
             if !self.can_push(FRAME_CAPACITY)? {
@@ -210,7 +210,7 @@ where
             self.push_candidate(frame, network, admission)?;
         };
 
-        let aggregate = self.ampdu.prepared_aggregate(cookie)?;
+        let aggregate = self.ampdu.active().prepared_aggregate(cookie)?;
         let retry = AmpduRetryState::<SLOTS>::new(
             first_sequence,
             aggregate.subframes,
@@ -249,7 +249,7 @@ where
         self.push_candidate(first, network, admission)?;
         let frame_limit = self.aggregate_frame_limit(DATA_TID);
         let build_stop = loop {
-            if self.ampdu.held_backing_count() >= frame_limit {
+            if self.ampdu.active().held_backing_count() >= frame_limit {
                 break AggregateBuildStop::FrameLimit;
             }
             if !self.can_push(FRAME_CAPACITY)? {
@@ -261,7 +261,7 @@ where
             self.push_candidate(frame, network, admission)?;
         };
         let cookie = self.cookie.ok_or(AggregateTxError::MissingCookie)?;
-        let aggregate = self.ampdu.prepared_aggregate(cookie)?;
+        let aggregate = self.ampdu.active().prepared_aggregate(cookie)?;
         prepared.aggregate_length = aggregate.bytes;
         prepared.original_subframes = aggregate.subframes;
         prepared.build_stop = build_stop;
@@ -339,7 +339,7 @@ where
         // network preparation cross that boundary would mutate the next data
         // batch while connected control still owns the transaction.
         let base = matches!(self.active, ConnectedTxActive::Aggregate(_))
-            && self.standby_ampdu.is_some()
+            && self.ampdu.has_standby()
             && self.standby_error.is_none()
             && self.block_ack_operational(DATA_TID)
             && !matches!(self.config.rate, TxPhyRate::Legacy(_));
@@ -358,7 +358,7 @@ where
             ),
             Some(_) => {
                 let frame_limit = self.aggregate_frame_limit(DATA_TID);
-                self.standby_ampdu.as_ref().is_some_and(|owner| {
+                self.ampdu.standby().is_some_and(|owner| {
                     owner.held_backing_count() < frame_limit && owner.held_backing_count() < SLOTS
                 }) && matches!(self.can_push_standby(FRAME_CAPACITY), Ok(true))
             }
@@ -367,8 +367,8 @@ where
 
     fn can_push_standby(&self, ethernet_length: usize) -> Result<bool, AggregateTxError> {
         let ampdu = self
-            .standby_ampdu
-            .as_ref()
+            .ampdu
+            .standby()
             .ok_or(AggregateTxError::InvalidPublicationState)?;
         let cookie = self.standby_cookie.ok_or(AggregateTxError::MissingCookie)?;
         let frame_length = ethernet_length
@@ -410,11 +410,10 @@ where
         }
 
         let started = self.observer.map(|_| self.ordinary.now_micros());
-        let mut standby = self
-            .standby_ampdu
-            .take()
-            .expect("standby presence checked before preparation");
-        core::mem::swap(&mut *self.ampdu, &mut standby);
+        assert!(
+            self.ampdu.swap_active_standby(),
+            "standby presence checked before preparation"
+        );
         core::mem::swap(&mut self.cookie, &mut self.standby_cookie);
         let previous = self.standby_prepared.take();
         let extending = previous.is_some();
@@ -427,8 +426,10 @@ where
             self.cancel_current_reservation();
         }
         core::mem::swap(&mut self.cookie, &mut self.standby_cookie);
-        core::mem::swap(&mut *self.ampdu, &mut standby);
-        self.standby_ampdu = Some(standby);
+        assert!(
+            self.ampdu.swap_active_standby(),
+            "temporary standby selection preserves both arenas"
+        );
 
         match result {
             Ok(mut prepared) => {
@@ -465,13 +466,11 @@ where
                 micros: prepared.preparation_micros,
             });
         }
-        let mut standby = self
-            .standby_ampdu
-            .take()
-            .expect("prepared standby retains its arena");
-        core::mem::swap(&mut *self.ampdu, &mut standby);
+        assert!(
+            self.ampdu.swap_active_standby(),
+            "prepared standby retains its arena"
+        );
         core::mem::swap(&mut self.cookie, &mut self.standby_cookie);
-        self.standby_ampdu = Some(standby);
         if let Some(observer) = self.observer {
             observer.observe(AggregateTxObservation::StandbyPublished);
         }
@@ -490,7 +489,7 @@ where
         let hardware_mic_length = open_esp_radio_esp32s31_wifi::ordinary_tx::TX_CCMP_MIC_SIZE as u8;
         let frame_size = AmpduFrameSize::new(frame_length, hardware_mic_length);
         match self.config.rate {
-            TxPhyRate::Ht(rate) => Ok(self.ampdu.can_commit_referenced_ht_frame(
+            TxPhyRate::Ht(rate) => Ok(self.ampdu.active().can_commit_referenced_ht_frame(
                 cookie,
                 frame_length,
                 hardware_mic_length,
@@ -498,7 +497,7 @@ where
                 rate,
                 dma_capacity,
             )?),
-            TxPhyRate::He(rate) => Ok(self.ampdu.can_commit_referenced_he_frame(
+            TxPhyRate::He(rate) => Ok(self.ampdu.active().can_commit_referenced_he_frame(
                 cookie,
                 frame_size,
                 HeAmpduPolicy::new(
@@ -525,7 +524,7 @@ where
         let hardware_mic_length = open_esp_radio_esp32s31_wifi::ordinary_tx::TX_CCMP_MIC_SIZE as u8;
         let frame_size = AmpduFrameSize::new(frame_length, hardware_mic_length);
         match self.config.rate {
-            TxPhyRate::Ht(rate) => Ok(self.ampdu.can_commit_referenced_ht_frame(
+            TxPhyRate::Ht(rate) => Ok(self.ampdu.active().can_commit_referenced_ht_frame(
                 cookie,
                 frame_length,
                 hardware_mic_length,
@@ -533,7 +532,7 @@ where
                 rate,
                 dma_capacity,
             )?),
-            TxPhyRate::He(rate) => Ok(self.ampdu.can_commit_referenced_he_frame(
+            TxPhyRate::He(rate) => Ok(self.ampdu.active().can_commit_referenced_he_frame(
                 cookie,
                 frame_size,
                 HeAmpduPolicy::new(
@@ -567,7 +566,7 @@ where
         mut first: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
         second: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
     ) -> Result<(), AggregateTxError> {
-        if self.ampdu.held_backing_count() >= SLOTS {
+        if self.ampdu.active().held_backing_count() >= SLOTS {
             return Err(HtAmpduTxError::AggregateFull.into());
         }
         let metadata = self
@@ -602,11 +601,12 @@ where
             metadata_size,
         })?;
         match self.config.rate {
-            TxPhyRate::Ht(rate) => {
-                self.ampdu
-                    .commit_ht(cookie, first, HtAmpduFrameRequest::new(layout, 0, rate))?
-            }
-            TxPhyRate::He(rate) => self.ampdu.commit_he(
+            TxPhyRate::Ht(rate) => self.ampdu.active_mut().commit_ht(
+                cookie,
+                first,
+                HtAmpduFrameRequest::new(layout, 0, rate),
+            )?,
+            TxPhyRate::He(rate) => self.ampdu.active_mut().commit_he(
                 cookie,
                 first,
                 HeAmpduFrameRequest::new(
@@ -629,7 +629,7 @@ where
         mut frame: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
         admission: AggregateFrameAdmission,
     ) -> Result<(), AggregateTxError> {
-        if self.ampdu.held_backing_count() >= SLOTS
+        if self.ampdu.active().held_backing_count() >= SLOTS
             || (admission == AggregateFrameAdmission::NeedsExactCheck
                 && !self.can_push(frame.ethernet_length())?)
         {
@@ -666,11 +666,12 @@ where
             },
         )?;
         match self.config.rate {
-            TxPhyRate::Ht(rate) => {
-                self.ampdu
-                    .commit_ht(cookie, frame, HtAmpduFrameRequest::new(layout, 0, rate))?
-            }
-            TxPhyRate::He(rate) => self.ampdu.commit_he(
+            TxPhyRate::Ht(rate) => self.ampdu.active_mut().commit_ht(
+                cookie,
+                frame,
+                HtAmpduFrameRequest::new(layout, 0, rate),
+            )?,
+            TxPhyRate::He(rate) => self.ampdu.active_mut().commit_he(
                 cookie,
                 frame,
                 HeAmpduFrameRequest::new(
@@ -697,6 +698,9 @@ where
         let (contention, contention_window) = self.ordinary.contention_publication(queue);
         match self.config.rate {
             TxPhyRate::Ht(rate) => {
+                let role_policy = self
+                    .ht_role_policy(DATA_TID)?
+                    .ok_or(AggregateTxError::InvalidPublicationState)?;
                 let data_power = self
                     .ordinary
                     .power_profile()
@@ -706,12 +710,9 @@ where
                     .power_profile()
                     .power_pair(rate.vendor_rts_rate().code());
                 let config = ht_ampdu_publication_config(
-                    AmpduTxRoleAdapter {
-                        interface: MacInterface::Station,
-                        hardware_key_selector: key,
-                    },
+                    role_policy.role(),
                     HtAmpduPublicationInputs {
-                        rate,
+                        rate: role_policy.rate(),
                         aggregate_length,
                         subframes,
                         protection_spacing: self.ordinary.policy().ht_ampdu().protection_spacing(),
@@ -790,13 +791,13 @@ where
             .checked_add(self.config.completion_timeout_us)
             .ok_or(AggregateTxError::DeadlineOverflow)?;
         match active.config {
-            AmpduTxConfig::Ht(config) => self.ampdu.submit(
+            AmpduTxConfig::Ht(config) => self.ampdu.active_mut().submit(
                 hardware,
                 self.cookie.ok_or(AggregateTxError::MissingCookie)?,
                 LegacyTxQueue::BestEffort,
                 config,
             )?,
-            AmpduTxConfig::He(config) => self.ampdu.submit_he(
+            AmpduTxConfig::He(config) => self.ampdu.active_mut().submit_he(
                 hardware,
                 self.cookie.ok_or(AggregateTxError::MissingCookie)?,
                 LegacyTxQueue::BestEffort,

@@ -89,8 +89,7 @@ where
             });
         Ok(Self {
             ordinary: TeardownResource::new(ordinary),
-            ampdu: TeardownResource::new(ampdu),
-            standby_ampdu,
+            ampdu: TeardownResource::new(AggregateTxArenaPair::new(ampdu, standby_ampdu)),
             cookie: None,
             standby_cookie: None,
             standby_prepared: None,
@@ -261,9 +260,38 @@ where
     }
 
     pub(super) fn aggregate_frame_limit(&self, tid: u8) -> usize {
+        if matches!(self.config.rate, TxPhyRate::Ht(_)) {
+            return self
+                .ht_role_policy(tid)
+                .ok()
+                .flatten()
+                .map_or(0, |policy| usize::from(policy.frame_limit()));
+        }
         self.block_ack_window(tid).map_or(0, |window| {
             usize::from(window).min(usize::from(self.config.frame_limit))
         })
+    }
+
+    pub(super) fn ht_role_policy(
+        &self,
+        tid: u8,
+    ) -> Result<Option<HtAmpduTxRolePolicy>, AggregateTxError> {
+        let TxPhyRate::Ht(rate) = self.config.rate else {
+            return Ok(None);
+        };
+        let Some(window) = self.block_ack_window(tid) else {
+            return Ok(None);
+        };
+        Ok(Some(HtAmpduTxRolePolicy::new(
+            AmpduTxRoleAdapter {
+                interface: MacInterface::Station,
+                hardware_key_selector: self.ordinary.hardware_key_selector(),
+            },
+            rate,
+            window,
+            self.config.frame_limit,
+            SLOTS,
+        )?))
     }
 
     /// Take one terminal HMAC-visible aggregate exchange status.
@@ -301,7 +329,7 @@ where
     /// Portable queue state across the aggregate and ordinary descriptor
     /// owners that form one connected TX service.
     pub fn queue_state(&self) -> MacTxQueueState {
-        if self.ampdu.as_ref().get_ref().state() == TxSlotState::ResetRequired
+        if self.ampdu.active().as_ref().get_ref().state() == TxSlotState::ResetRequired
             || self.ordinary.queue_state() == MacTxQueueState::ResetRequired
         {
             MacTxQueueState::ResetRequired
@@ -327,11 +355,11 @@ where
 
     /// Primary aggregate metadata lifecycle state.
     pub fn aggregate_slot_state(&self) -> TxSlotState {
-        self.ampdu.state()
+        self.ampdu.active().state()
     }
 
     pub fn aggregate_slot_state_code(&self) -> u8 {
-        match self.ampdu.state() {
+        match self.ampdu.active().state() {
             TxSlotState::Free => 0,
             TxSlotState::Reserved => 1,
             TxSlotState::HardwareOwned => 2,
@@ -341,27 +369,25 @@ where
     }
 
     pub fn aggregate_metadata_is_free(&self) -> bool {
-        self.ampdu.state() == TxSlotState::Free
+        self.ampdu.active().state() == TxSlotState::Free
     }
 
     /// Whether the primary aggregate DMA arena is independently idle.
     pub fn aggregate_dma_is_free(&self) -> bool {
-        self.ampdu.dma_is_free()
+        self.ampdu.active().dma_is_free()
     }
 
     /// Standby aggregate metadata/DMA idle state when pipelining is present.
     pub fn standby_aggregate_is_fully_free(&self) -> Option<bool> {
-        self.standby_ampdu
-            .as_ref()
-            .map(|standby| standby.is_fully_free())
+        self.ampdu.standby().map(|standby| standby.is_fully_free())
     }
 
     pub fn aggregate_held_backings(&self) -> usize {
-        self.ampdu.held_backing_count()
+        self.ampdu.active().held_backing_count()
     }
 
     pub fn aggregate_metadata_address(&self) -> usize {
-        self.ampdu.metadata_address()
+        self.ampdu.active().metadata_address()
     }
 
     /// Whether either hardware-visible TX owner has been quarantined pending
@@ -398,24 +424,25 @@ where
         if self.active()
             || self.ordinary.active()
             || self.ordinary.queue_state() != MacTxQueueState::Ready
-            || !self.ampdu.is_fully_free()
+            || !self.ampdu.active().is_fully_free()
             || self.cookie.is_some()
             || self.standby_prepared.is_some()
             || self.standby_cookie.is_some()
             || self.standby_error.is_some()
             || self
-                .standby_ampdu
-                .as_ref()
+                .ampdu
+                .standby()
                 .is_some_and(|owner| !owner.is_fully_free())
         {
             return Err(self);
         }
         let ordinary = self.ordinary.take();
-        let (ampdu, primary_retention) = match self.ampdu.take().try_into_resources() {
+        let (active, standby) = self.ampdu.take().into_parts();
+        let (ampdu, primary_retention) = match active.try_into_resources() {
             Ok(resources) => resources,
             Err(_) => unreachable!("idle retained DMA owner must return its storage"),
         };
-        let standby = self.standby_ampdu.take().map(|owner| {
+        let standby = standby.map(|owner| {
             owner
                 .try_into_resources()
                 .unwrap_or_else(|_| unreachable!("idle standby owner must return its storage"))

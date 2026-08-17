@@ -17,13 +17,13 @@ use open_esp_radio_esp32s31_wifi::ordinary_tx::{WifiTxEntropy, WifiTxPowerProfil
 use open_esp_radio_esp32s31_wifi_sta::single_mpdu_tx::WifiTxResources;
 
 use crate::{
-    aggregate_tx::{Esp32s31ConnectedTx, Esp32s31ConnectedTxTeardownParts},
     ampdu_resources::AggregateTxResources,
     connected_control::{
         ConnectedControlError, ConnectedControlHardware, ConnectedControlShutdown,
         ConnectedControlTx, Esp32s31ConnectedControl,
     },
     rx_dma_service::{Esp32s31StagedRxProducer, Esp32s31StoppedRx},
+    station_tx::{Esp32s31ConnectedTx, Esp32s31ConnectedTxTeardownParts},
     wdev::services::WdevServiceSet,
 };
 

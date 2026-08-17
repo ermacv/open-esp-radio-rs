@@ -5,16 +5,68 @@
 //! authority and interface-specific publication configuration.
 
 use open_esp_radio_dma::StableDmaBacking;
+use open_esp_radio_esp32s31_hal::types::MacInterface;
+use open_esp_radio_esp32s31_wifi::ampdu_tx::{
+    AmpduTxRoleAdapter, HtAmpduTxRolePolicy, HtAmpduTxRolePolicyError,
+};
 use open_esp_radio_esp32s31_wifi_mac::{
     tx::{HtRate, LegacyTxQueue, TxCookie},
     tx_ampdu::{
         AmpduFrameLayout, AmpduFrameSize, HtAmpduFrameRequest, HtAmpduHardware, HtAmpduTxError,
-        HtAmpduTxResources, RetainedAmpduDmaStorage, RetainedDmaAmpduTx, TX_AMPDU_METADATA_SIZE,
+        HtAmpduTxResources, RetainedAmpduDmaStorage, RetainedAmpduRetryCompletionError,
+        RetainedDmaAmpduTx, TX_AMPDU_METADATA_SIZE,
     },
     tx_runtime::{AmpduRetryDecision, AmpduRetryError, AmpduRetryPolicy, AmpduRetryState},
 };
 
 use crate::{engine::Esp32s31ApAggregateFrame, tx::Esp32s31ApTx};
+
+/// AP peer decision captured before consuming a network lease into an
+/// aggregate transaction.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Esp32s31ApAggregateAdmission {
+    peer: [u8; 6],
+    rate: HtRate,
+    block_ack_window: u16,
+}
+
+impl Esp32s31ApAggregateAdmission {
+    pub(crate) const fn new(peer: [u8; 6], rate: HtRate, block_ack_window: u16) -> Self {
+        Self {
+            peer,
+            rate,
+            block_ack_window,
+        }
+    }
+
+    pub const fn peer(self) -> [u8; 6] {
+        self.peer
+    }
+
+    pub fn accepts_ethernet(self, ethernet: &[u8]) -> bool {
+        ethernet
+            .get(..6)
+            .and_then(|bytes| <[u8; 6]>::try_from(bytes).ok())
+            == Some(self.peer)
+    }
+
+    pub fn bind_policy(
+        self,
+        hardware_key_selector: u8,
+        arena_capacity: usize,
+    ) -> Result<HtAmpduTxRolePolicy, HtAmpduTxRolePolicyError> {
+        HtAmpduTxRolePolicy::new(
+            AmpduTxRoleAdapter {
+                interface: MacInterface::AccessPoint,
+                hardware_key_selector,
+            },
+            self.rate,
+            self.block_ack_window,
+            u8::try_from(arena_capacity).unwrap_or(u8::MAX),
+            arena_capacity,
+        )
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Esp32s31ApAmpduError {
@@ -30,6 +82,7 @@ pub enum Esp32s31ApAmpduError {
     CompletionInterruptWithoutState,
     Hardware(HtAmpduTxError),
     Retry(AmpduRetryError),
+    RolePolicy(HtAmpduTxRolePolicyError),
 }
 
 impl From<HtAmpduTxError> for Esp32s31ApAmpduError {
@@ -41,6 +94,21 @@ impl From<HtAmpduTxError> for Esp32s31ApAmpduError {
 impl From<AmpduRetryError> for Esp32s31ApAmpduError {
     fn from(error: AmpduRetryError) -> Self {
         Self::Retry(error)
+    }
+}
+
+impl From<RetainedAmpduRetryCompletionError> for Esp32s31ApAmpduError {
+    fn from(error: RetainedAmpduRetryCompletionError) -> Self {
+        match error {
+            RetainedAmpduRetryCompletionError::Hardware(error) => Self::Hardware(error),
+            RetainedAmpduRetryCompletionError::Retry(error) => Self::Retry(error),
+        }
+    }
+}
+
+impl From<HtAmpduTxRolePolicyError> for Esp32s31ApAmpduError {
+    fn from(error: HtAmpduTxRolePolicyError) -> Self {
+        Self::RolePolicy(error)
     }
 }
 
@@ -279,7 +347,10 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
         else {
             return Err(Esp32s31ApAmpduError::Idle);
         };
-        let Some(completion) = self.inner.acknowledge_completion(hardware)? else {
+        let Some(observed) = self
+            .inner
+            .observe_retry_completion(hardware, cookie, &mut retry)?
+        else {
             self.state = ApAmpduState::Hardware {
                 cookie,
                 rate,
@@ -288,10 +359,10 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
             };
             return Ok(Esp32s31ApAmpduProgress::Pending);
         };
-        self.inner.detach_completed(hardware, cookie)?;
-        let current_subframes = self.inner.frame_count();
-        let current_first_sequence = retry.current_first_sequence();
-        let decision = retry.observe(completion, current_subframes)?;
+        let completion = observed.completion;
+        let current_subframes = observed.subframes;
+        let current_first_sequence = observed.first_sequence;
+        let decision = observed.decision;
         let observation = Esp32s31ApAmpduCompletion {
             tx_status: completion.tx.status,
             block_ack_received: completion.block_ack_received,
@@ -398,5 +469,35 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
             state: ApAmpduState::Idle,
             attempt_limit,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use open_esp_radio_esp32s31_wifi_mac::tx::{HtChannelWidth, HtGuardInterval, HtMcs};
+
+    #[test]
+    fn admission_binds_one_peer_to_one_role_policy() {
+        let peer = [2, 3, 4, 5, 6, 7];
+        let admission = Esp32s31ApAggregateAdmission::new(
+            peer,
+            HtRate::new(
+                HtMcs::Mcs7,
+                HtGuardInterval::Long800Ns,
+                HtChannelWidth::Mhz40,
+            ),
+            16,
+        );
+        let mut ethernet = [0_u8; 14];
+        ethernet[..6].copy_from_slice(&peer);
+
+        assert!(admission.accepts_ethernet(&ethernet));
+        ethernet[5] ^= 1;
+        assert!(!admission.accepts_ethernet(&ethernet));
+        let policy = admission.bind_policy(8, 12).unwrap();
+        assert_eq!(policy.role().interface, MacInterface::AccessPoint);
+        assert_eq!(policy.role().hardware_key_selector, 8);
+        assert_eq!(policy.frame_limit(), 12);
     }
 }

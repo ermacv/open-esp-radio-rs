@@ -57,6 +57,7 @@ pub use request::{
 };
 
 use crate::tx::{LegacyTxQueue, TxCompletion, TxCookie, TxSlotState};
+use crate::tx_runtime::{AmpduRetryDecision, AmpduRetryError};
 pub const TX_AMPDU_METADATA_SIZE: usize = 8;
 const TX_FCS_SIZE: u16 = 4;
 const TX_AMPDU_DEFAULT_MAX_BYTES: u16 = 0x1fff;
@@ -132,6 +133,34 @@ pub struct HtAmpduTxCompletion {
     pub tx: TxCompletion,
     pub block_ack: HtBlockAckRegisters,
     pub block_ack_received: bool,
+}
+
+/// One completion observed after synchronizing the hardware, descriptor and
+/// retry owners in that order.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RetainedAmpduRetryCompletion {
+    pub completion: HtAmpduTxCompletion,
+    pub first_sequence: u16,
+    pub subframes: u8,
+    pub decision: AmpduRetryDecision,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RetainedAmpduRetryCompletionError {
+    Hardware(HtAmpduTxError),
+    Retry(AmpduRetryError),
+}
+
+impl From<HtAmpduTxError> for RetainedAmpduRetryCompletionError {
+    fn from(error: HtAmpduTxError) -> Self {
+        Self::Hardware(error)
+    }
+}
+
+impl From<AmpduRetryError> for RetainedAmpduRetryCompletionError {
+    fn from(error: AmpduRetryError) -> Self {
+        Self::Retry(error)
+    }
 }
 
 impl HtAmpduTxCompletion {

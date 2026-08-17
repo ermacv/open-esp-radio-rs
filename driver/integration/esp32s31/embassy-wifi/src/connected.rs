@@ -46,7 +46,7 @@ use open_esp_radio_embassy_net::SharedPinnedRxQueue;
 #[cfg(feature = "qualification")]
 use open_esp_radio_esp32s31_wifi_embassy::connected_rx_protocol::ConnectedRxProtocolSink;
 use open_esp_radio_esp32s31_wifi_embassy::{
-    aggregate_tx::Esp32s31ConnectedTx,
+    station_tx::Esp32s31ConnectedTx,
     connected_rx_protocol::{
         Esp32s31ConnectedRxProtocol, Esp32s31ConnectedRxProtocolStopped,
         Esp32s31ConnectedRxProtocolStorage, Esp32s31StagedRxQueue,

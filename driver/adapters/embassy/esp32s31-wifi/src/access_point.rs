@@ -16,6 +16,7 @@ use open_esp_radio_embassy_net::{
 };
 
 use open_esp_radio_esp32s31_wifi::{
+    ampdu_tx::HtAmpduTxRolePolicy,
     ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxResources, WifiTxTimer},
     tx::{WifiTxProgress, WifiTxWake},
 };
@@ -23,7 +24,10 @@ use open_esp_radio_esp32s31_wifi_ap::protocol::{
     AP_MAX_CLIENTS, AccessPointServiceStatus, ApPeerClose, ApWpa2RetryProgress,
 };
 use open_esp_radio_esp32s31_wifi_ap::{
-    ampdu::{Esp32s31ApAmpduCompletion, Esp32s31ApAmpduError, Esp32s31ApAmpduProgress},
+    ampdu::{
+        Esp32s31ApAggregateAdmission, Esp32s31ApAmpduCompletion, Esp32s31ApAmpduError,
+        Esp32s31ApAmpduProgress,
+    },
     engine::{Esp32s31ApRuntimeHardware, Esp32s31ApWpa2Outcome},
     mac::{
         Esp32s31ApMac, Esp32s31ApMacError, Esp32s31ApMacReport, Esp32s31ApPeerDisconnectStage,
@@ -36,7 +40,7 @@ use open_esp_radio_esp32s31_wifi_ap::{
 };
 use open_esp_radio_esp32s31_wifi_mac::{
     init::MAC_COLD_RX_INTERRUPT_MASK,
-    irq::{MAC_INT_COLLISION, MAC_INT_TX_COMPLETE, MAC_INT_TX_TIMEOUT, MacInterruptRoute},
+    irq::MacInterruptRoute,
     rx::{RxDescriptorSnapshot, RxDma, RxIngressConfig, view_normalized_rx_frame},
     rx_ampdu::{
         RxBlockAckActivation, RxBlockAckRequest, RxBlockAckSessions, RxBlockAckSessionsError,
@@ -61,6 +65,7 @@ use open_esp_radio_wpa2::{OwnedEapolFrame, Wpa2Interface};
 #[cfg(feature = "rx-delivery-observation")]
 use crate::network_rx::{RxNetworkDeliveryEvent, RxNetworkDeliveryObserver};
 use crate::{
+    aggregate_tx_common::AggregateTxServiceEvent,
     aggregate_tx_observer::{AggregateBuildStop, AggregateTxObservation, AggregateTxObserver},
     connected_rx_protocol::StagedEthernetPublication,
     embassy_irq::{
@@ -184,8 +189,6 @@ pub enum Esp32s31AccessPointControlError {
     Mac(Esp32s31ApMacError),
     /// The caller-provided RX scratch cannot retain one fully decoded batch.
     ReceiveBatchCapacity,
-    /// A live BlockAck agreement lost its corresponding peer HT facts.
-    InvalidPeerHtRate,
     InvalidBeaconSchedule,
     RxBlockAckSession(RxBlockAckSessionsError),
     RxBlockAckHardware(S31RxBlockAckAgreementError),
@@ -811,55 +814,58 @@ where
                     .mpdu
                     .get(qos_control_offset)
                     .is_some_and(|control| control & 0x80 != 0);
-            let mut dispatch = |ordered: open_esp_radio_esp32s31_wifi_mac::rx::RxSegment<'_>| {
-                let peer = data_rx
-                    .reorder_key(ordered)
-                    .map(|key| key.peer)
-                    .or_else(|| {
-                        view_normalized_rx_frame(
-                            &ordered,
-                            RxIngressConfig {
-                                ring_entry_limit: 1,
-                                csi_config: 0,
-                                flags: 0,
-                            },
-                        )
-                        .ok()
-                        .and_then(|frame| frame.mpdu.get(10..16))
-                        .and_then(|bytes| <[u8; 6]>::try_from(bytes).ok())
-                    });
-                let current = ordered.buffer.as_ptr() == current_buffer;
-                let outcome =
-                    if can_publish_ap_rx_in_place(current, current_is_amsdu, deferred.used()) {
-                        data_rx.dispatch_protected(
-                            ordered,
-                            |peer| mac.engine().is_authorized_peer(peer),
-                            &mut in_place,
-                        )
-                    } else {
-                        data_rx.dispatch_protected(
-                            ordered,
-                            |peer| mac.engine().is_authorized_peer(peer),
-                            &mut deferred,
-                        )
-                    };
-                produced_data |=
-                    observe_protected_dispatch(outcome, peer, report, &mut activity_peer);
-            };
-            let reorder_progress = if let Some(key) = key {
-                self.rx_reorder.ingest(
-                    self.rx_reorder_storage,
-                    segment,
-                    key,
-                    ampdu_baseband_format,
-                    now_micros,
-                    &mut dispatch,
-                )
-            } else {
-                dispatch(segment);
-                Ok(Default::default())
+            let reorder_progress = {
+                let mut dispatch = |ordered: open_esp_radio_esp32s31_wifi_mac::rx::RxSegment<
+                    '_,
+                >| {
+                    let peer = data_rx
+                        .reorder_key(ordered)
+                        .map(|key| key.peer)
+                        .or_else(|| {
+                            view_normalized_rx_frame(
+                                &ordered,
+                                RxIngressConfig {
+                                    ring_entry_limit: 1,
+                                    csi_config: 0,
+                                    flags: 0,
+                                },
+                            )
+                            .ok()
+                            .and_then(|frame| frame.mpdu.get(10..16))
+                            .and_then(|bytes| <[u8; 6]>::try_from(bytes).ok())
+                        });
+                    let current = ordered.buffer.as_ptr() == current_buffer;
+                    let outcome =
+                        if can_publish_ap_rx_in_place(current, current_is_amsdu, deferred.used()) {
+                            data_rx.dispatch_protected(
+                                ordered,
+                                |peer| mac.engine().is_authorized_peer(peer),
+                                &mut in_place,
+                            )
+                        } else {
+                            data_rx.dispatch_protected(
+                                ordered,
+                                |peer| mac.engine().is_authorized_peer(peer),
+                                &mut deferred,
+                            )
+                        };
+                    produced_data |=
+                        observe_protected_dispatch(outcome, peer, report, &mut activity_peer);
+                };
+                if let Some(key) = key {
+                    self.rx_reorder.ingest(
+                        self.rx_reorder_storage,
+                        segment,
+                        key,
+                        ampdu_baseband_format,
+                        now_micros,
+                        &mut dispatch,
+                    )
+                } else {
+                    dispatch(segment);
+                    Ok(Default::default())
+                }
             }?;
-            drop(dispatch);
             if let Some(reset) = reorder_progress.hardware_window_reset {
                 hardware.reset_extra_softap_rx_block_ack_window(
                     reset.hardware_index,

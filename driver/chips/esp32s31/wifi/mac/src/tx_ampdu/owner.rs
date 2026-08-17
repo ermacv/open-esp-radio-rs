@@ -18,7 +18,8 @@ use crate::tx::{HeAmpduTxConfig, HtAmpduTxConfig, LegacyTxQueue, TxCookie, TxSlo
 
 use super::{
     HeAmpduFrameRequest, HtAmpduFrameRequest, HtAmpduHardware, HtAmpduLength, HtAmpduTxCompletion,
-    HtAmpduTxError, HtAmpduTxStorage, TX_AMPDU_METADATA_SIZE,
+    HtAmpduTxError, HtAmpduTxStorage, RetainedAmpduRetryCompletion,
+    RetainedAmpduRetryCompletionError, TX_AMPDU_METADATA_SIZE,
 };
 
 /// Idle resources required by the safe external-buffer A-MPDU path.
@@ -266,6 +267,33 @@ impl<'storage, B: 'storage, const SLOTS: usize, const BUFFER_SIZE: usize>
 impl<B: StableDmaBacking, const SLOTS: usize, const BUFFER_SIZE: usize>
     RetainedDmaAmpduTx<'_, B, SLOTS, BUFFER_SIZE>
 {
+    /// Observe one hardware completion and apply it to the matching retry
+    /// state only after both descriptor owners have detached.
+    ///
+    /// AP and STA supply different publication policy, but neither role may
+    /// reorder these ownership edges or calculate BlockAck against a stale
+    /// descriptor count.
+    pub fn observe_retry_completion<H: HtAmpduHardware, const CAPACITY: usize>(
+        &mut self,
+        hardware: &mut H,
+        cookie: TxCookie,
+        retry: &mut crate::tx_runtime::AmpduRetryState<CAPACITY>,
+    ) -> Result<Option<RetainedAmpduRetryCompletion>, RetainedAmpduRetryCompletionError> {
+        let Some(completion) = self.acknowledge_completion(hardware)? else {
+            return Ok(None);
+        };
+        self.detach_completed(hardware, cookie)?;
+        let subframes = self.frame_count();
+        let first_sequence = retry.current_first_sequence();
+        let decision = retry.observe(completion, subframes)?;
+        Ok(Some(RetainedAmpduRetryCompletion {
+            completion,
+            first_sequence,
+            subframes,
+            decision,
+        }))
+    }
+
     /// Borrow a detached completed MPDU from its retained stable lease.
     ///
     /// The descriptor address is treated only as an identity to resolve the

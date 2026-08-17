@@ -280,8 +280,13 @@ fn access_point_ht_width_is_one_end_to_end_typed_contract() {
         repository.join("driver/adapters/embassy/esp32s31-wifi/src/access_point/network_tx.rs"),
     )
     .expect("read AP network TX");
-    assert!(network_tx.contains(".peer_ht_rate(peer)"));
+    assert!(network_tx.contains(".aggregate_admission("));
+    assert!(!network_tx.contains(".peer_ht_rate("));
     assert!(!network_tx.contains("HtChannelWidth::Mhz20"));
+    let ap_mac = fs::read_to_string(repository.join("driver/chips/esp32s31/wifi/ap/src/mac.rs"))
+        .expect("read AP MAC policy owner");
+    assert!(ap_mac.contains("pub fn aggregate_admission("));
+    assert!(ap_mac.contains("let rate = self.peer_ht_rate(peer)?;"));
 
     let protocol = fs::read_to_string(repository.join("hil/protocol/src/message.rs"))
         .expect("read HIL AP request");
@@ -363,12 +368,16 @@ fn lmac_and_wdev_boundaries_do_not_recover_role_policy_or_legacy_runners() {
         .expect("read AP network RX publication");
     assert!(ap_wdev.contains("commit_rx_batch_record"));
     assert!(!ap_wdev.contains("ethernet_frames_dropped_network_backpressure"));
-    let aggregate_tx =
-        fs::read_to_string(adapter.join("aggregate_tx.rs")).expect("read STA aggregate TX");
+    assert!(
+        !adapter.join("aggregate_tx.rs").exists() && !adapter.join("aggregate_tx").exists(),
+        "the removed role-ambiguous aggregate_tx module must not return"
+    );
+    let station_tx =
+        fs::read_to_string(adapter.join("station_tx.rs")).expect("read STA aggregate TX");
     let ampdu_resources = fs::read_to_string(adapter.join("ampdu_resources.rs"))
         .expect("read role-neutral A-MPDU resources");
     assert!(
-        !aggregate_tx.contains("struct AggregateTxResources")
+        !station_tx.contains("struct AggregateTxResources")
             && ampdu_resources.contains("pub struct AggregateTxResources"),
         "AP/STA A-MPDU arenas must remain owned by the role-neutral resource module"
     );

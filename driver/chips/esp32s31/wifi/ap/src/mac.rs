@@ -18,6 +18,7 @@ use open_esp_radio_wifi_ap::{ApPeerClose, ApServiceError};
 use open_esp_radio_wpa2::frames::Wpa2TxFrame;
 
 use crate::{
+    ampdu::Esp32s31ApAggregateAdmission,
     engine::{
         Esp32s31ApEngine, Esp32s31ApEngineError, Esp32s31ApManagementOutcome,
         Esp32s31ApRuntimeHardware,
@@ -381,6 +382,24 @@ where
     pub fn peer_ht_rate(&self, peer: [u8; 6]) -> Option<HtRate> {
         let status = self.engine.peer_status(peer)?;
         peer_ht_rate(self.engine.channel(), status.ht?)
+    }
+
+    /// Resolve one Ethernet lease to the AP peer/rate/BlockAck policy that
+    /// must remain stable for the complete aggregate build.
+    pub fn aggregate_admission(&self, ethernet: &[u8]) -> Option<Esp32s31ApAggregateAdmission> {
+        let peer = ethernet
+            .get(..6)
+            .and_then(|bytes| <[u8; 6]>::try_from(bytes).ok())?;
+        if peer[0] & 1 != 0 {
+            return None;
+        }
+        let agreement = self.engine.tx_block_ack_agreement(peer)?;
+        let rate = self.peer_ht_rate(peer)?;
+        Some(Esp32s31ApAggregateAdmission::new(
+            peer,
+            rate,
+            agreement.window,
+        ))
     }
 
     pub fn next_tx_block_ack_deadline(&self) -> Option<u64> {

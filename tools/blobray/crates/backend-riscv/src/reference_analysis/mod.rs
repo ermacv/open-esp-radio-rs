@@ -94,51 +94,6 @@ impl ReferenceAnalysisMemo {
     }
 }
 
-#[cfg(test)]
-mod memo_tests {
-    use super::*;
-
-    fn arguments() -> Rv32CallArguments {
-        std::array::from_fn(|index| SymbolicValue::Input { index: index as u8 })
-    }
-
-    fn trace(blocker: &str) -> FunctionAnalysis {
-        FunctionAnalysis {
-            symbol: "callee".to_owned(),
-            events: Vec::new(),
-            located_events: Vec::new(),
-            located_reference_events: Vec::new(),
-            reference_events: Vec::new(),
-            reference_dependencies: Vec::new(),
-            blockers: vec![blocker.to_owned()],
-            reference_blockers: Vec::new(),
-            return_value: SymbolicValue::Unknown,
-            reference_flow: None,
-            unresolved_branch: None,
-        }
-    }
-
-    #[test]
-    fn completed_ineligible_trace_is_exactly_keyed_but_recursion_is_not_cached() {
-        let memo = ReferenceAnalysisMemo::default();
-        let arguments = arguments();
-        let ineligible = trace("unmodeled-memory-load at 0x1000");
-        let reasons = ineligible.reference_failure_reasons();
-        memo.insert_completed(0x2000, &arguments, &ineligible, Some(&reasons));
-
-        assert_eq!(memo.entries(), 1);
-        assert_eq!(memo.get(0x2000, &arguments), Some(ineligible));
-        let mut different = arguments.clone();
-        different[0] = SymbolicValue::Constant(1);
-        assert!(memo.get(0x2000, &different).is_none());
-
-        let recursive = trace("recursive-call at 0x3000 to callee");
-        let reasons = recursive.reference_failure_reasons();
-        memo.insert_completed(0x3000, &arguments, &recursive, Some(&reasons));
-        assert!(memo.get(0x3000, &arguments).is_none());
-    }
-}
-
 use super::static_analysis::{
     StructuralCallSite, StructuralPointerContext, StructuralRelocatedCalls, StructuralTraceBudget,
     SymbolicStack, is_reference_only_blocker, trace_binary_symbol_bounded,
@@ -311,4 +266,49 @@ fn resolve_reference_trace_with_budget(
     }
 
     flatten_reference_trace(trace, context, specialized_arguments, visiting)
+}
+
+#[cfg(test)]
+mod memo_tests {
+    use super::*;
+
+    fn arguments() -> Rv32CallArguments {
+        std::array::from_fn(|index| SymbolicValue::Input { index: index as u8 })
+    }
+
+    fn trace(blocker: &str) -> FunctionAnalysis {
+        FunctionAnalysis {
+            symbol: "callee".to_owned(),
+            events: Vec::new(),
+            located_events: Vec::new(),
+            located_reference_events: Vec::new(),
+            reference_events: Vec::new(),
+            reference_dependencies: Vec::new(),
+            blockers: vec![blocker.to_owned()],
+            reference_blockers: Vec::new(),
+            return_value: SymbolicValue::Unknown,
+            reference_flow: None,
+            unresolved_branch: None,
+        }
+    }
+
+    #[test]
+    fn completed_ineligible_trace_is_exactly_keyed_but_recursion_is_not_cached() {
+        let memo = ReferenceAnalysisMemo::default();
+        let arguments = arguments();
+        let ineligible = trace("unmodeled-memory-load at 0x1000");
+        let reasons = ineligible.reference_failure_reasons();
+        memo.insert_completed(0x2000, &arguments, &ineligible, Some(&reasons));
+
+        assert_eq!(memo.entries(), 1);
+        assert_eq!(memo.get(0x2000, &arguments), Some(ineligible));
+        let mut different = arguments.clone();
+        different[0] = SymbolicValue::Constant(1);
+        assert!(memo.get(0x2000, &different).is_none());
+
+        let recursive = trace("recursive-call at 0x3000 to callee");
+        let reasons = recursive.reference_failure_reasons();
+        memo.insert_completed(0x3000, &arguments, &recursive, Some(&reasons));
+        assert!(memo.get(0x3000, &arguments).is_none());
+    }
 }

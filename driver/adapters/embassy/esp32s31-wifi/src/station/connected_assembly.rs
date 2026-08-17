@@ -11,7 +11,6 @@ use open_esp_radio_embassy_net::{PinnedTxFrame, SplitPinnedRadioRunner};
 use open_esp_radio_esp32s31_wifi::ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer};
 
 use crate::{
-    aggregate_tx::Esp32s31ConnectedTx,
     connected_control::Esp32s31ConnectedControl,
     connected_rx_protocol::{ConnectedRxProtocolSink, Esp32s31ConnectedRxProtocol},
     connected_sta_port::{
@@ -20,6 +19,7 @@ use crate::{
         Esp32s31ConnectedStaRxProtocolResources, Esp32s31ConnectedStaTxHandoffFailure,
         Esp32s31ConnectedStaTxResources,
     },
+    station_tx::Esp32s31ConnectedTx,
     wdev::{WdevRunner, WdevServices},
 };
 

@@ -4,6 +4,7 @@ use super::*;
 use crate::tx::{
     HeAmpduTxConfig, HeEdcaTxopLimit, HeRate, HtAmpduDensity, HtAmpduTxConfig, HtRate, TxHardware,
 };
+use crate::tx_runtime::{AmpduRetryDecision, AmpduRetryPolicy, AmpduRetryState};
 use open_esp_radio_dma::{HardwareOwnedTxDma, PinnedDmaTxPool, PreparedTxDma};
 use open_esp_radio_esp32s31_hal::types::{
     MacHeTbTidLimit, MacHeTid, MacHeTxVectorSnapshot, MacHtAmpduCompletionRegisters,
@@ -93,6 +94,10 @@ struct DetachingCompletionHardware {
 
 impl DetachingCompletionHardware {
     fn successful() -> Self {
+        Self::with_bitmap(u64::MAX)
+    }
+
+    fn with_bitmap(bitmap: u64) -> Self {
         Self {
             completion: Some(MacHtAmpduCompletionRegisters {
                 tx: MacTxCompletionRegisters {
@@ -104,8 +109,8 @@ impl DetachingCompletionHardware {
                     trigger_flow: false,
                 },
                 block_ack_control_and_sequence: 0,
-                block_ack_bitmap_low: u32::MAX,
-                block_ack_bitmap_high: u32::MAX,
+                block_ack_bitmap_low: bitmap as u32,
+                block_ack_bitmap_high: (bitmap >> 32) as u32,
                 block_ack_received: true,
             }),
         }
@@ -359,21 +364,35 @@ fn retained_dma_owner_preserves_backing_identity_through_selective_retry() {
 
     let aggregate = owner.prepared_aggregate(cookie).unwrap();
     let config = HtAmpduTxConfig::new(rate, aggregate.bytes, aggregate.subframes).unwrap();
-    let mut hardware = DetachingCompletionHardware::successful();
+    let mut retry = AmpduRetryState::<4>::new(
+        0,
+        4,
+        AmpduRetryPolicy {
+            attempt_limit: 2,
+            retain_single_mpdu: true,
+        },
+    )
+    .unwrap();
+    let mut hardware = DetachingCompletionHardware::with_bitmap(0b0101);
     owner
         .submit(&mut hardware, cookie, LegacyTxQueue::BestEffort, config)
         .unwrap();
-    assert!(
-        owner
-            .acknowledge_completion(&mut hardware)
-            .unwrap()
-            .is_some()
+    let observed = owner
+        .observe_retry_completion(&mut hardware, cookie, &mut retry)
+        .unwrap()
+        .unwrap();
+    assert_eq!(observed.first_sequence, 0);
+    assert_eq!(observed.subframes, 4);
+    assert_eq!(
+        observed.decision,
+        AmpduRetryDecision::RetainAggregate { retry_mask: 0b1010 }
     );
-    owner.detach_completed(&mut hardware, cookie).unwrap();
 
-    let retry = owner.retain_for_ampdu_retry(cookie, 0b1010).unwrap();
-    assert_eq!(retry.subframes, 2);
-    let retry_config = HtAmpduTxConfig::new(rate, retry.bytes, retry.subframes).unwrap();
+    let retained = owner
+        .retain_for_ampdu_retry(cookie, observed.decision.retry_mask())
+        .unwrap();
+    assert_eq!(retained.subframes, 2);
+    let retry_config = HtAmpduTxConfig::new(rate, retained.bytes, retained.subframes).unwrap();
     let mut hardware = DetachingCompletionHardware::successful();
     owner
         .submit(
@@ -383,13 +402,14 @@ fn retained_dma_owner_preserves_backing_identity_through_selective_retry() {
             retry_config,
         )
         .unwrap();
-    assert!(
-        owner
-            .acknowledge_completion(&mut hardware)
-            .unwrap()
-            .is_some()
+    let observed = owner
+        .observe_retry_completion(&mut hardware, cookie, &mut retry)
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        observed.decision,
+        AmpduRetryDecision::Finish { retry_mask: 0 }
     );
-    owner.detach_completed(&mut hardware, cookie).unwrap();
 
     let (first, _) = owner.completed_frame(cookie, 0).unwrap();
     assert_eq!(first[0], 1);

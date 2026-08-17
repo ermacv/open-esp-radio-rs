@@ -265,8 +265,8 @@ mod tests {
 
     use super::*;
     use crate::{
-        aggregate_tx::Esp32s31ConnectedTxTeardownParts,
         embassy_irq::{EmbassyMacIrqRuntime, EmbassyPowerIrqRuntime},
+        station_tx::Esp32s31ConnectedTxTeardownParts,
     };
 
     struct TestRoute {

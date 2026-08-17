@@ -6,9 +6,8 @@
 use super::*;
 
 struct PreparedStandby {
-    peer: [u8; 6],
-    rate: HtRate,
-    target: usize,
+    admission: Esp32s31ApAggregateAdmission,
+    policy: HtAmpduTxRolePolicy,
     admitted: usize,
     preparation_micros: u64,
 }
@@ -69,7 +68,7 @@ where
             && self
                 .prepared_standby
                 .as_ref()
-                .is_none_or(|batch| batch.admitted < batch.target)
+                .is_none_or(|batch| batch.admitted < usize::from(batch.policy.frame_limit()))
     }
 }
 
@@ -141,43 +140,21 @@ where
             + RxBlockAckHardware
             + open_esp_radio_esp32s31_wifi_mac::tx_ampdu::HtAmpduHardware,
     {
-        let destination = frame
-            .as_slice()
-            .get(..6)
-            .and_then(|bytes| <[u8; 6]>::try_from(bytes).ok());
-        let agreement = destination
-            .filter(|peer| peer[0] & 1 == 0)
-            .and_then(|peer| {
-                control
-                    .mac
-                    .engine()
-                    .tx_block_ack_agreement(peer)
-                    .map(|agreement| (peer, agreement))
-            });
+        let admission = control.mac.aggregate_admission(frame.as_slice());
 
-        if let Some((peer, agreement)) = agreement
+        if let Some(admission) = admission
             && network.queue_len() != 0
             && let Some(mut second) = network.try_receive()
         {
             let preparation_started = self.observer.map(|_| Instant::now().as_micros());
-            let second_peer = second
-                .as_slice()
-                .get(..6)
-                .and_then(|bytes| <[u8; 6]>::try_from(bytes).ok());
-            if second_peer != Some(peer) {
+            if !admission.accepts_ethernet(second.as_slice()) {
                 network.requeue(second);
                 return control
                     .start_network_tx(hardware, frame.as_slice())
                     .map_err(Esp32s31AccessPointWdevError::Control);
             }
 
-            let rate =
-                control
-                    .mac
-                    .peer_ht_rate(peer)
-                    .ok_or(Esp32s31AccessPointWdevError::Control(
-                        Esp32s31AccessPointControlError::InvalidPeerHtRate,
-                    ))?;
+            let peer = admission.peer();
             let (engine, ordinary) = control.mac.try_aggregate_adapter().map_err(|error| {
                 Esp32s31AccessPointWdevError::Control(Esp32s31AccessPointControlError::Mac(error))
             })?;
@@ -195,13 +172,17 @@ where
                         error,
                     ))
                 })?;
+            let policy = admission
+                .bind_policy(first_encoded.hardware_key_selector, SLOTS)
+                .map_err(Esp32s31ApAmpduError::from)
+                .map_err(Esp32s31AccessPointWdevError::Aggregate)?;
             let aggregate = self.aggregate.active_mut();
             aggregate
                 .begin(
                     peer,
-                    rate,
+                    policy.rate(),
                     first_encoded.sequence_number,
-                    first_encoded.hardware_key_selector,
+                    policy.role().hardware_key_selector,
                 )
                 .map_err(Esp32s31AccessPointWdevError::Aggregate)?;
             aggregate
@@ -226,17 +207,13 @@ where
                 .push(peer, second, second_encoded)
                 .map_err(Esp32s31AccessPointWdevError::Aggregate)?;
 
-            let target = usize::from(agreement.window).min(SLOTS);
+            let target = usize::from(policy.frame_limit());
             let mut admitted = 2_usize;
             while admitted < target {
                 let Some(mut next) = network.try_receive() else {
                     break;
                 };
-                let next_peer = next
-                    .as_slice()
-                    .get(..6)
-                    .and_then(|bytes| <[u8; 6]>::try_from(bytes).ok());
-                if next_peer != Some(peer) {
+                if !admission.accepts_ethernet(next.as_slice()) {
                     network.requeue(next);
                     break;
                 }
@@ -286,7 +263,7 @@ where
                 .now_micros()
                 .saturating_add(ordinary.publication_timeout_micros());
             self.deadline_micros = Some(deadline_micros);
-            control.observe_ht_aggregate(rate);
+            control.observe_ht_aggregate(policy.rate());
             return Ok(WifiTxProgress::Pending);
         }
 
@@ -342,20 +319,17 @@ where
         let started = self.observer.map(|_| Instant::now().as_micros());
 
         if let Some(batch) = self.prepared_standby.as_mut() {
-            let peer = frame
-                .as_slice()
-                .get(..6)
-                .and_then(|bytes| <[u8; 6]>::try_from(bytes).ok());
-            if peer != Some(batch.peer) {
+            if !batch.admission.accepts_ethernet(frame.as_slice()) {
                 network.requeue(frame);
                 return Ok(());
             }
+            let peer = batch.admission.peer();
             let offset = frame.ethernet_offset();
             let length = frame.ethernet_length();
             let encoded = control
                 .mac
                 .engine_mut()
-                .encode_aggregate_ethernet_in_place(batch.peer, frame.storage_mut(), offset, length)
+                .encode_aggregate_ethernet_in_place(peer, frame.storage_mut(), offset, length)
                 .map_err(|error| {
                     Esp32s31AccessPointWdevError::Control(Esp32s31AccessPointControlError::from(
                         error,
@@ -364,7 +338,7 @@ where
             self.aggregate
                 .standby_mut()
                 .expect("checked standby arena")
-                .push(batch.peer, frame, encoded)
+                .push(peer, frame, encoded)
                 .map_err(Esp32s31AccessPointWdevError::Aggregate)?;
             batch.admitted += 1;
             batch.preparation_micros = batch.preparation_micros.saturating_add(
@@ -383,34 +357,15 @@ where
             self.prepared_first = Some(frame);
             return Ok(());
         };
-        let first_peer = first
-            .as_slice()
-            .get(..6)
-            .and_then(|bytes| <[u8; 6]>::try_from(bytes).ok());
-        let second_peer = frame
-            .as_slice()
-            .get(..6)
-            .and_then(|bytes| <[u8; 6]>::try_from(bytes).ok());
-        let agreement = first_peer
-            .filter(|peer| Some(*peer) == second_peer && peer[0] & 1 == 0)
-            .and_then(|peer| {
-                control
-                    .mac
-                    .engine()
-                    .tx_block_ack_agreement(peer)
-                    .map(|agreement| (peer, agreement))
-            });
-        let Some((peer, agreement)) = agreement else {
+        let admission = control.mac.aggregate_admission(first.as_slice());
+        let Some(admission) =
+            admission.filter(|admission| admission.accepts_ethernet(frame.as_slice()))
+        else {
             network.requeue(first);
             network.requeue(frame);
             return Ok(());
         };
-        let rate = control
-            .mac
-            .peer_ht_rate(peer)
-            .ok_or(Esp32s31AccessPointWdevError::Control(
-                Esp32s31AccessPointControlError::InvalidPeerHtRate,
-            ))?;
+        let peer = admission.peer();
         let first_offset = first.ethernet_offset();
         let first_length = first.ethernet_length();
         let first_encoded = control
@@ -425,13 +380,17 @@ where
             .map_err(|error| {
                 Esp32s31AccessPointWdevError::Control(Esp32s31AccessPointControlError::from(error))
             })?;
+        let policy = admission
+            .bind_policy(first_encoded.hardware_key_selector, SLOTS)
+            .map_err(Esp32s31ApAmpduError::from)
+            .map_err(Esp32s31AccessPointWdevError::Aggregate)?;
         let standby = self.aggregate.standby_mut().expect("checked standby arena");
         standby
             .begin(
                 peer,
-                rate,
+                policy.rate(),
                 first_encoded.sequence_number,
-                first_encoded.hardware_key_selector,
+                policy.role().hardware_key_selector,
             )
             .map_err(Esp32s31AccessPointWdevError::Aggregate)?;
         standby
@@ -452,9 +411,8 @@ where
             .push(peer, frame, encoded)
             .map_err(Esp32s31AccessPointWdevError::Aggregate)?;
         self.prepared_standby = Some(PreparedStandby {
-            peer,
-            rate,
-            target: usize::from(agreement.window).min(SLOTS),
+            admission,
+            policy,
             admitted: 2,
             preparation_micros: self
                 .observer
@@ -533,7 +491,7 @@ where
         if let Some(observer) = self.observer {
             observer.observe(AggregateTxObservation::Prepared {
                 subframes: u8::try_from(batch.admitted).unwrap_or(u8::MAX),
-                stop: if batch.admitted == batch.target {
+                stop: if batch.admitted == usize::from(batch.policy.frame_limit()) {
                     AggregateBuildStop::FrameLimit
                 } else {
                     AggregateBuildStop::QueueEmpty
@@ -553,7 +511,7 @@ where
         let now = ordinary.now_micros();
         self.deadline_micros = Some(now.saturating_add(ordinary.publication_timeout_micros()));
         self.exchange_started_micros = publication_started;
-        control.observe_ht_aggregate(batch.rate);
+        control.observe_ht_aggregate(batch.policy.rate());
         if let Some(observer) = self.observer {
             let finished = Instant::now().as_micros();
             let started = publication_started.unwrap_or(finished);
@@ -665,17 +623,12 @@ where
                 .map_err(Esp32s31AccessPointWdevError::Control);
         }
 
-        let events = match wake {
-            WifiTxWake::Interrupt { events } => events,
-            WifiTxWake::Deadline => 0,
-        };
-        let tx_events = events & (MAC_INT_TX_COMPLETE | MAC_INT_TX_TIMEOUT | MAC_INT_COLLISION);
-        if tx_events.count_ones() > 1 {
-            return Err(Esp32s31AccessPointWdevError::Aggregate(
-                Esp32s31ApAmpduError::ConflictingInterruptEvents(tx_events),
-            ));
-        }
-        if tx_events == MAC_INT_COLLISION {
+        let service_event = AggregateTxServiceEvent::classify(wake).map_err(|error| {
+            Esp32s31AccessPointWdevError::Aggregate(
+                Esp32s31ApAmpduError::ConflictingInterruptEvents(error.events),
+            )
+        })?;
+        if service_event == AggregateTxServiceEvent::Collision {
             if !self
                 .aggregate
                 .active_mut()
@@ -689,7 +642,10 @@ where
             self.deadline_micros = None;
             return Ok(WifiTxProgress::Complete);
         }
-        if tx_events == MAC_INT_TX_TIMEOUT || matches!(wake, WifiTxWake::Deadline) {
+        if matches!(
+            service_event,
+            AggregateTxServiceEvent::HardwareTimeout | AggregateTxServiceEvent::ExecutorDeadline
+        ) {
             if !self
                 .aggregate
                 .active_mut()
@@ -756,7 +712,7 @@ where
                 Ok(WifiTxProgress::Pending)
             }
             Esp32s31ApAmpduProgress::Pending => {
-                if tx_events == MAC_INT_TX_COMPLETE {
+                if service_event == AggregateTxServiceEvent::Completion {
                     return Err(Esp32s31AccessPointWdevError::Aggregate(
                         Esp32s31ApAmpduError::CompletionInterruptWithoutState,
                     ));

@@ -822,8 +822,10 @@ mod tests {
             standard_memory_function: |_| None,
             wide_signed_divide: |_, _| None,
         }));
-        let mut context = StructuralPointerContext::default();
-        context.summary_hooks = Some(hooks);
+        let context = StructuralPointerContext {
+            summary_hooks: Some(hooks),
+            ..StructuralPointerContext::default()
+        };
         let mut relocated_calls = StructuralRelocatedCalls::new();
         relocated_calls.insert(
             StructuralCallSite::new(&owner, 0x1000),

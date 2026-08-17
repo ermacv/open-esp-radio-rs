@@ -37,7 +37,6 @@ use open_esp_radio_wifi_softmac::{
 use open_esp_radio_wifi_sta::link_monitor::{StaBeaconLossConfig, StaBeaconLossConfigError};
 
 use crate::{
-    aggregate_tx::{AggregateTxConfig, Esp32s31ConnectedTx},
     aggregate_tx_observer::AggregateTxObserver,
     ampdu_resources::AggregateTxResources,
     connected_control::Esp32s31ConnectedControl,
@@ -52,6 +51,7 @@ use crate::{
         RX_REORDER_BACKING_SLOT_COUNT, RxReorderCommandReceiver, RxReorderCommandSender,
         RxReorderFrameStorage,
     },
+    station_tx::{AggregateTxConfig, Esp32s31ConnectedTx},
     wdev::services::WdevServiceSet,
 };
 /// Stateless namespace for preparing and composing a connected owner graph.

@@ -1,10 +1,15 @@
-//! Connected HT/HE aggregate TX owner for the one production Wi-Fi runner.
+//! Station connected HT/HE TX owner for the production Wi-Fi runner.
 //!
 //! The owner retains every pinned `embassy-net` lease referenced by DMA until
 //! completion, queue detach, BlockAck processing and any retained aggregate
 //! retry. It shares the ordinary descriptor, key token, sequence spaces,
 //! contention state, power profile and clock through
 //! [`Esp32s31SingleMpduTx`]; no parallel HIL TX state exists.
+//!
+//! This module is intentionally station-specific: HE/A-MSDU policy, station
+//! rate control and individual-retry fallback do not belong to the AP owner.
+//! Role-neutral completion, retry and retained-DMA mechanics live below this
+//! adapter in the MAC and common ESP32-S31 Wi-Fi crates.
 
 use core::{
     future::Future,
@@ -15,12 +20,14 @@ use core::{
 use open_esp_radio_embassy_net::{PinnedTxConsumer, PinnedTxFrame, RawMutex};
 use open_esp_radio_esp32s31_hal::types::MacInterface;
 use open_esp_radio_esp32s31_wifi::ampdu_tx::{
-    AmpduTxRoleAdapter, HtAmpduPublicationInputs, ht_ampdu_publication_config,
+    AmpduTxRoleAdapter, HtAmpduPublicationInputs, HtAmpduTxRolePolicy, HtAmpduTxRolePolicyError,
+    ht_ampdu_publication_config,
 };
 use open_esp_radio_esp32s31_wifi::ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer};
+#[cfg(test)]
+use open_esp_radio_esp32s31_wifi_mac::irq::MAC_INT_TX_COMPLETE;
 use open_esp_radio_esp32s31_wifi_mac::{
     crypto::StaPairwiseCcmpSlot,
-    irq::{MAC_INT_COLLISION, MAC_INT_TX_COMPLETE, MAC_INT_TX_TIMEOUT},
     rate_control::{AmpduRateObservationError, StaRateControlAssociation, StaTxRatePolicy},
     tx::{
         AmpduTxConfig, HeAmpduTxConfig, HeEdcaTxopLimit, LegacyTxQueue, TxCookie, TxPhyRate,
@@ -28,7 +35,7 @@ use open_esp_radio_esp32s31_wifi_mac::{
     },
     tx_ampdu::{
         AmpduFrameLayout, AmpduFrameSize, HeAmpduFrameRequest, HeAmpduPolicy, HtAmpduFrameRequest,
-        HtAmpduHardware, HtAmpduTxError, RetainedDmaAmpduTx,
+        HtAmpduHardware, HtAmpduTxError, RetainedAmpduRetryCompletionError, RetainedDmaAmpduTx,
     },
     tx_runtime::{AmpduRetryDecision, AmpduRetryError, AmpduRetryPolicy, AmpduRetryState},
 };
@@ -52,7 +59,7 @@ use crate::{
     aggregate_tx_observer::{
         AggregateBuildStop, AggregateTxObservation, AggregateTxObserver, NetworkSingleMpduReason,
     },
-    ampdu_resources::AggregateTxResources,
+    ampdu_resources::{AggregateTxArenaPair, AggregateTxResources},
     connected_control::{ConnectedControlTimer, ConnectedControlTx},
     wdev::services::WdevNetworkTxService,
     wdev::{WdevControlProgress, WifiTxProgress, WifiTxWake},
@@ -124,6 +131,7 @@ pub enum AggregateTxError {
     Encode(StationFrameError),
     Aggregate(HtAmpduTxError),
     Retry(AmpduRetryError),
+    RolePolicy(HtAmpduTxRolePolicyError),
     Ordinary(SingleMpduTxError),
     /// An aggregate detached one MPDU into the ordinary owner, but that owner
     /// completed without publishing its normalized terminal status.
@@ -140,6 +148,21 @@ impl From<HtAmpduTxError> for AggregateTxError {
 impl From<AmpduRetryError> for AggregateTxError {
     fn from(error: AmpduRetryError) -> Self {
         Self::Retry(error)
+    }
+}
+
+impl From<RetainedAmpduRetryCompletionError> for AggregateTxError {
+    fn from(error: RetainedAmpduRetryCompletionError) -> Self {
+        match error {
+            RetainedAmpduRetryCompletionError::Hardware(error) => Self::Aggregate(error),
+            RetainedAmpduRetryCompletionError::Retry(error) => Self::Retry(error),
+        }
+    }
+}
+
+impl From<HtAmpduTxRolePolicyError> for AggregateTxError {
+    fn from(error: HtAmpduTxRolePolicyError) -> Self {
+        Self::RolePolicy(error)
     }
 }
 
@@ -241,19 +264,13 @@ pub struct Esp32s31ConnectedTx<
 {
     ordinary: TeardownResource<Esp32s31SingleMpduTx<'slot, P, E, T, ORDINARY_BUFFER_SIZE>>,
     ampdu: TeardownResource<
-        RetainedDmaAmpduTx<
-            'ampdu,
-            PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-            SLOTS,
-            AMPDU_BUFFER_SIZE,
-        >,
-    >,
-    standby_ampdu: Option<
-        RetainedDmaAmpduTx<
-            'ampdu,
-            PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-            SLOTS,
-            AMPDU_BUFFER_SIZE,
+        AggregateTxArenaPair<
+            RetainedDmaAmpduTx<
+                'ampdu,
+                PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+                SLOTS,
+                AMPDU_BUFFER_SIZE,
+            >,
         >,
     >,
     cookie: Option<TxCookie>,
@@ -276,6 +293,7 @@ mod completion;
 mod owner;
 mod publication;
 mod resources;
+use crate::aggregate_tx_common::AggregateTxServiceEvent;
 
 #[cfg(test)]
 mod tests;

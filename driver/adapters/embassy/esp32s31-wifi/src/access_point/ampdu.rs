@@ -3,7 +3,7 @@
 use open_esp_radio_dma::StableDmaBacking;
 use open_esp_radio_esp32s31_wifi_ap::ampdu::Esp32s31ApAmpduTx;
 
-use crate::ampdu_resources::AggregateTxResources;
+use crate::ampdu_resources::{AggregateTxArenaPair, AggregateTxResources};
 
 /// AP lease of the role-neutral aggregate arenas.
 ///
@@ -16,8 +16,7 @@ pub struct Esp32s31AccessPointAmpdu<
     const SLOTS: usize,
     const BUFFER_SIZE: usize,
 > {
-    active: Esp32s31ApAmpduTx<'storage, B, SLOTS, BUFFER_SIZE>,
-    standby: Option<Esp32s31ApAmpduTx<'storage, B, SLOTS, BUFFER_SIZE>>,
+    arenas: AggregateTxArenaPair<Esp32s31ApAmpduTx<'storage, B, SLOTS, BUFFER_SIZE>>,
 }
 
 impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_SIZE: usize>
@@ -55,21 +54,23 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
             (None, None) => None,
             _ => unreachable!("standby aggregate resources and retention move together"),
         };
-        Self { active, standby }
+        Self {
+            arenas: AggregateTxArenaPair::new(active, standby),
+        }
     }
 
     pub fn active_mut(&mut self) -> &mut Esp32s31ApAmpduTx<'storage, B, SLOTS, BUFFER_SIZE> {
-        &mut self.active
+        self.arenas.active_mut()
     }
 
     pub fn standby_mut(
         &mut self,
     ) -> Option<&mut Esp32s31ApAmpduTx<'storage, B, SLOTS, BUFFER_SIZE>> {
-        self.standby.as_mut()
+        self.arenas.standby_mut()
     }
 
     pub const fn has_standby(&self) -> bool {
-        self.standby.is_some()
+        self.arenas.has_standby()
     }
 
     pub fn publish_standby<P, E, T, const ORDINARY_BUFFER_SIZE: usize, H>(
@@ -93,11 +94,14 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
         H: open_esp_radio_esp32s31_wifi_mac::tx_ampdu::HtAmpduHardware,
     {
         let standby = self
-            .standby
-            .as_mut()
+            .arenas
+            .standby_mut()
             .ok_or(open_esp_radio_esp32s31_wifi_ap::ampdu::Esp32s31ApAmpduError::Idle)?;
         let prepared = standby.publish(ordinary, hardware)?;
-        core::mem::swap(&mut self.active, standby);
+        assert!(
+            self.arenas.swap_active_standby(),
+            "standby publication preserves the checked arena"
+        );
         Ok(prepared)
     }
 
@@ -105,7 +109,7 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
     pub fn try_into_resources(
         self,
     ) -> Result<AggregateTxResources<'storage, B, SLOTS, BUFFER_SIZE>, Self> {
-        let Self { active, standby } = self;
+        let (active, standby) = self.arenas.into_parts();
         match active.try_into_resources() {
             Ok((primary, primary_retention)) => {
                 let (standby, standby_retention) = match standby {
@@ -122,7 +126,9 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
                     standby_retention,
                 ))
             }
-            Err(active) => Err(Self { active, standby }),
+            Err(active) => Err(Self {
+                arenas: AggregateTxArenaPair::new(active, standby),
+            }),
         }
     }
 }

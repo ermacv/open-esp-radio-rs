@@ -475,6 +475,10 @@ pub fn write_open_authentication_response(
 }
 
 /// Encode the AP HT association response as one complete MPDU.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the frame writer keeps each independently reviewed 802.11 field explicit at its boundary"
+)]
 pub fn write_ht_association_response_frame(
     output: &mut [u8],
     access_point: [u8; 6],

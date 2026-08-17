@@ -31,7 +31,7 @@
 extern crate std;
 
 pub mod access_point;
-pub mod aggregate_tx;
+mod aggregate_tx_common;
 pub mod aggregate_tx_observer;
 pub mod ampdu_resources;
 mod connected_control;
@@ -70,6 +70,7 @@ mod sta_join_port;
 pub mod sta_tx_epoch;
 pub mod station;
 pub mod station_epoch;
+pub mod station_tx;
 pub mod tx_time;
 pub mod wdev;
 #[cfg(target_arch = "riscv32")]

@@ -764,6 +764,44 @@ fn linked_diagnostic_symbol_remains_a_modeled_boundary() {
 }
 
 #[test]
+fn linked_tail_diagnostic_symbol_terminates_without_a_link_register_blocker() {
+    let parent = artifact::ArtifactSymbolDefinition {
+        member: None,
+        name: "linked_tail_diagnostic_parent".to_owned(),
+        address: 0x1000,
+        bytes: vec![
+            0x6f, 0x00, 0x00, 0x00, // j wifi_log
+        ],
+        addresses_resolved: true,
+        memory_regions: Default::default(),
+        relocations: Vec::new(),
+    };
+    let relocations = direct::StructuralRelocatedCalls::from([(
+        StructuralCallSite::new(&parent, 0x1000),
+        ("wifi_log".to_owned(), Some(0x2f80_0040)),
+    )]);
+    let mut context = StructuralPointerContext::default();
+    context.diagnostic_calls.insert("wifi_log".to_owned(), 2);
+
+    let trace = trace_binary_symbol(&parent, &map(), &relocations, &context, None).unwrap();
+
+    assert!(
+        trace.reference_blockers.is_empty(),
+        "{:#?}",
+        trace.reference_blockers
+    );
+    assert!(matches!(
+        trace.reference_events.as_slice(),
+        [DraftReferenceEvent::DiagnosticCall {
+            site: 0x1000,
+            function,
+            argument_count: 2,
+            arguments,
+        }] if function == "wifi_log" && arguments.len() == 2
+    ));
+}
+
+#[test]
 fn modeled_direct_platform_call_propagates_constant_result() {
     let parent = artifact::ArtifactSymbolDefinition {
         member: None,

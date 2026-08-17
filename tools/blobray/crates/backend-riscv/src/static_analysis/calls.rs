@@ -451,7 +451,7 @@ pub(super) fn apply_relocated_call(
     }
 
     if let Some(&argument_count) = pointer_context.diagnostic_calls.get(name) {
-        if dest != Reg::RA {
+        if !matches!(dest, Reg::ZERO | Reg::RA) {
             state.reference_blockers.push(format!(
                 "unsupported-diagnostic-call-link-register at {pc:#x}: {name} uses {dest}"
             ));
@@ -469,6 +469,10 @@ pub(super) fn apply_relocated_call(
                 argument_count,
                 arguments,
             });
+        if dest == Reg::ZERO {
+            state.return_value = SymbolicValue::Unknown;
+            return StructuralCallControl::Stop;
+        }
         structural_finish_call_with_result(&mut state.values, return_pc, SymbolicValue::Unknown);
         return StructuralCallControl::Advance(instruction_count);
     }

@@ -3,7 +3,7 @@ use core::fmt;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-pub const PROTOCOL_VERSION: u16 = 52;
+pub const PROTOCOL_VERSION: u16 = 53;
 // Keep command envelopes small: startup artifacts are transferred as an
 // ordered CRC-protected stream, so a large per-command inline buffer only
 // inflates UART queues and executor futures without improving semantics.
@@ -169,6 +169,9 @@ pub struct FeatureCapabilities {
     /// This image instruments bounded Embassy task poll residence. Ordinary
     /// qualification images deliberately omit this timing perturbation.
     pub task_poll_evidence: bool,
+    /// Ordinary thread/task stacks live in external PSRAM while trap and CLIC
+    /// interrupt contexts use dedicated per-hart internal-SRAM stacks.
+    pub psram_task_stack: bool,
     /// This image publishes aggregate cooperative network scheduler evidence.
     pub network_scheduler_evidence: bool,
     /// Startup provisioning can select the data-plane executor topology

@@ -249,7 +249,13 @@ fn doctor(root: &std::path::Path, lab: &lab_config::LabConfig) -> Result<()> {
     }
     controlled_client::doctor()?;
     println!("controlled_client=PASS");
-    for program in ["cargo", "llvm-objcopy", "llvm-nm", "espflash"] {
+    for program in [
+        "cargo",
+        "llvm-objcopy",
+        "llvm-objdump",
+        "llvm-nm",
+        "espflash",
+    ] {
         require_program(program)?;
         println!("tool_{program}=PASS");
     }
@@ -280,7 +286,7 @@ fn print_artifacts(
 ) -> Result<()> {
     let report = ArtifactReport {
         image_class: class.id(),
-        profile: QUALIFIED_PROFILE,
+        profile: class.runtime_profile(),
         runtime_elf: artifacts.runtime_elf.display().to_string(),
         runtime_bin: artifacts.runtime_bin.display().to_string(),
         bootstrap_elf: artifacts.bootstrap_elf.display().to_string(),
@@ -482,7 +488,10 @@ fn validate_flashed_image(
     expected: scenario::ImageClass,
     output: &Path,
 ) -> Result<()> {
-    if expected == scenario::ImageClass::BootSmoke {
+    if matches!(
+        expected,
+        scenario::ImageClass::BootSmoke | scenario::ImageClass::BootSmokePsramStack
+    ) {
         return Ok(());
     }
     let capture = traffic_capture::SerialCapture::start_with_reset(&lab.device.serial);
@@ -494,11 +503,13 @@ fn validate_flashed_image(
     let observed = match (
         capabilities.features.task_poll_evidence,
         capabilities.features.rx_delivery_evidence,
+        capabilities.features.psram_task_stack,
     ) {
-        (false, false) => scenario::ImageClass::Qualification,
-        (true, false) => scenario::ImageClass::DiagnosticTaskPoll,
-        (false, true) => scenario::ImageClass::DiagnosticRxDelivery,
-        (true, true) => {
+        (false, false, false) => scenario::ImageClass::Qualification,
+        (true, false, false) => scenario::ImageClass::DiagnosticTaskPoll,
+        (false, true, false) => scenario::ImageClass::DiagnosticRxDelivery,
+        (false, false, true) => scenario::ImageClass::DiagnosticPsramStack,
+        _ => {
             return Err(
                 "flashed image advertises mutually exclusive diagnostic capabilities".into(),
             );
@@ -879,9 +890,11 @@ fn build_resolved(
     ensure_no_old_application_dependency(root)?;
     ensure_no_competing_log_writers(root)?;
     let manifest = root.join("hil/targets/esp32s31/Cargo.toml");
-    let output =
-        root.join("target/hil/esp32s31")
-            .join(format!("{}-{}", QUALIFIED_PROFILE, class.id()));
+    let output = root.join("target/hil/esp32s31").join(format!(
+        "{}-{}",
+        class.runtime_profile(),
+        class.id()
+    ));
     let runtime_target = output.join("cargo/runtime");
     let bootstrap_target = output.join("cargo/bootstrap");
     fs::create_dir_all(&output)?;
@@ -933,7 +946,7 @@ fn build_resolved(
         .arg(&runtime_bin);
     run_command(&mut objcopy, "flatten stage-two runtime")?;
     let crc = pack_runtime(&runtime_bin)?;
-    let placement = audit_runtime(&runtime_elf, &runtime_bin)?;
+    let placement = audit_runtime(&runtime_elf, &runtime_bin, class)?;
     fs::write(output.join("placement.txt"), placement)?;
 
     let mut bootstrap = cargo_command();
@@ -1364,7 +1377,7 @@ fn crc32(bytes: &[u8]) -> u32 {
     !crc
 }
 
-fn audit_runtime(elf: &Path, binary: &Path) -> Result<String> {
+fn audit_runtime(elf: &Path, binary: &Path, class: scenario::ImageClass) -> Result<String> {
     let output = Command::new(program_from_env("LLVM_NM", "llvm-nm"))
         .args(["--defined-only", "--numeric-sort"])
         .arg(elf)
@@ -1410,6 +1423,39 @@ fn audit_runtime(elf: &Path, binary: &Path) -> Result<String> {
     let binary_bytes = fs::metadata(binary)?.len();
 
     let in_sram = |start: u64, end: u64| start >= 0x2f00_0000 && end >= start && end <= 0x2f07_afc0;
+    let stack_placement_valid = if class.uses_psram_task_stack() {
+        let cpu0_irq_bottom = symbol("__runtime_cpu0_irq_stack_bottom")?;
+        let cpu0_irq_top = symbol("__runtime_cpu0_irq_stack_top")?;
+        let cpu1_irq_bottom = symbol("__runtime_cpu1_irq_stack_bottom")?;
+        let cpu1_irq_top = symbol("__runtime_cpu1_irq_stack_top")?;
+        let trap_entry = symbol("_start_trap")?;
+        let irq_entry_first = symbol("_runtime_psram_irq_entry_1")?;
+        let irq_entry_last = symbol("_runtime_psram_irq_entry_47")?;
+        let mtvt_source = symbol("_runtime_psram_mtvt_source")?;
+        let cpu0_mtvt = symbol("_mtvt_table")?;
+        let cpu1_mtvt = symbol("_mtvt_table2")?;
+        let all_irq_entries_in_sram = (1..=47).all(|number| {
+            symbols
+                .get(&format!("_runtime_psram_irq_entry_{number}"))
+                .is_some_and(|entry| in_sram(*entry, *entry + 4))
+        });
+        stack_bottom >= 0x5000_0000
+            && stack_top <= 0x5100_0000
+            && stack_top.saturating_sub(stack_bottom) == 0x3_0000
+            && in_sram(cpu0_irq_bottom, cpu0_irq_top)
+            && in_sram(cpu1_irq_bottom, cpu1_irq_top)
+            && cpu0_irq_top.saturating_sub(cpu0_irq_bottom) == 0x8000
+            && cpu1_irq_top.saturating_sub(cpu1_irq_bottom) == 0x8000
+            && in_sram(trap_entry, trap_entry + 4)
+            && in_sram(irq_entry_first, irq_entry_first + 4)
+            && in_sram(irq_entry_last, irq_entry_last + 4)
+            && in_sram(mtvt_source, mtvt_source + 48 * 4)
+            && in_sram(cpu0_mtvt, cpu0_mtvt + 48 * 4)
+            && in_sram(cpu1_mtvt, cpu1_mtvt + 48 * 4)
+            && all_irq_entries_in_sram
+    } else {
+        stack_top == 0x2f07_afc0 && stack_top.saturating_sub(stack_bottom) >= 0x1_0000
+    };
     if image_start != 0x5001_0000
         || payload_end <= image_start
         || payload_end - image_start != binary_bytes
@@ -1420,14 +1466,16 @@ fn audit_runtime(elf: &Path, binary: &Path) -> Result<String> {
         || !in_sram(isr_start, isr_end)
         || !in_sram(critical_start, critical_bss_end)
         || !in_sram(dma_start, dma_end)
-        || stack_top != 0x2f07_afc0
-        || stack_top.saturating_sub(stack_bottom) < 0x1_0000
+        || !stack_placement_valid
     {
         return Err("runtime ELF violates the PSRAM/PSRAM placement contract".into());
     }
+    if class.uses_psram_task_stack() {
+        audit_psram_stack_entry_instructions(elf)?;
+    }
 
     Ok(format!(
-        "profile={QUALIFIED_PROFILE}\n\
+        "profile={}\n\
          image={image_start:#010x}..{payload_end:#010x}\n\
          text={text_start:#010x}..{text_end:#010x}\n\
          data_start={data_start:#010x}\n\
@@ -1436,8 +1484,42 @@ fn audit_runtime(elf: &Path, binary: &Path) -> Result<String> {
          critical={critical_start:#010x}..{critical_bss_end:#010x}\n\
          dma={dma_start:#010x}..{dma_end:#010x}\n\
          stack={stack_bottom:#010x}..{stack_top:#010x}\n\
-         result=PASS\n"
+         result=PASS\n",
+        class.runtime_profile()
     ))
+}
+
+fn audit_psram_stack_entry_instructions(elf: &Path) -> Result<()> {
+    let mut names = vec!["_start_trap".to_owned()];
+    names.extend((1..=47).map(|number| format!("_runtime_psram_irq_entry_{number}")));
+    let output = Command::new(program_from_env("LLVM_OBJDUMP", "llvm-objdump"))
+        .arg("-d")
+        .arg(format!("--disassemble-symbols={}", names.join(",")))
+        .arg(elf)
+        .output()?;
+    if !output.status.success() {
+        return Err("llvm-objdump failed while auditing PSRAM stack entries".into());
+    }
+    let text = String::from_utf8(output.stdout)?;
+    for name in names {
+        let marker = format!("<{name}>:");
+        let tail = text
+            .split_once(&marker)
+            .map(|(_, tail)| tail)
+            .ok_or_else(|| format!("runtime disassembly lacks `{name}`"))?;
+        let instruction = tail
+            .lines()
+            .find_map(|line| line.trim().split_once(':').map(|(_, body)| body.trim()))
+            .filter(|body| !body.is_empty())
+            .ok_or_else(|| format!("runtime disassembly has no instruction for `{name}`"))?;
+        if !instruction.contains("csrrw") || !instruction.contains("sp, mscratch, sp") {
+            return Err(format!(
+                "`{name}` touches the interrupted stack before swapping to SRAM: `{instruction}`"
+            )
+            .into());
+        }
+    }
+    Ok(())
 }
 
 fn audit_application_image(path: &Path) -> Result<()> {
@@ -1486,7 +1568,7 @@ mod tests {
 
     #[test]
     fn image_classes_are_stable_and_do_not_use_workload_environment() {
-        assert_eq!(scenario::ImageClass::ALL.len(), 4);
+        assert_eq!(scenario::ImageClass::ALL.len(), 6);
         assert_eq!(scenario::ImageClass::Qualification.id(), "qualification");
         assert_eq!(
             scenario::ImageClass::DiagnosticTaskPoll.runtime_features(),
@@ -1495,6 +1577,18 @@ mod tests {
         assert_eq!(
             scenario::ImageClass::DiagnosticRxDelivery.runtime_features(),
             "open-radio-hil,rx-delivery-telemetry,code-psram,profile-psram-data"
+        );
+        assert_eq!(
+            scenario::ImageClass::DiagnosticPsramStack.runtime_features(),
+            "open-radio-hil,psram-task-stack,code-psram,profile-psram-data"
+        );
+        assert_eq!(
+            scenario::ImageClass::DiagnosticPsramStack.runtime_profile(),
+            "psram-code-psram-data-psram-stack"
+        );
+        assert_eq!(
+            scenario::ImageClass::BootSmokePsramStack.runtime_features(),
+            "boot-smoke,psram-task-stack,code-psram,profile-psram-data"
         );
     }
 

@@ -2056,6 +2056,7 @@ mod tests {
                     station_lifecycle_events: true,
                     rx_delivery_evidence: true,
                     task_poll_evidence: false,
+                    psram_task_stack: false,
                     network_scheduler_evidence: false,
                     data_plane_placement: true,
                     timebase_probe: true,

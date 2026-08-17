@@ -97,6 +97,14 @@ SECTIONS
     AT(ALIGN(ADDR(.critical.data) + SIZEOF(.critical.data), 64))
   {
     __runtime_critical_bss_start = ABSOLUTE(.);
+    . = ALIGN(16);
+    __runtime_cpu0_irq_stack_bottom = ABSOLUTE(.);
+    KEEP(*(.critical.bss.psram_task_stack.cpu0_irq));
+    __runtime_cpu0_irq_stack_top = ABSOLUTE(.);
+    . = ALIGN(16);
+    __runtime_cpu1_irq_stack_bottom = ABSOLUTE(.);
+    KEEP(*(.critical.bss.psram_task_stack.cpu1_irq));
+    __runtime_cpu1_irq_stack_top = ABSOLUTE(.);
     KEEP(*(.critical.bss .critical.bss.*));
     KEEP(*(.flash.critical.bss .flash.critical.bss.*));
     . = ALIGN(64);
@@ -190,8 +198,23 @@ SECTIONS
     __runtime_psram_noinit_end = ABSOLUTE(.);
   } > PSRAM_EXTERNAL
 
+  /* Opt-in thread-mode stacks. Interrupt/trap stacks remain in the critical
+     SRAM range above; these bytes are never DMA-visible and need no bootstrap
+     initialization. */
+  .psram.task_stacks ALIGN(__runtime_psram_noinit_end, 64) (NOLOAD) :
+  {
+    __runtime_cpu0_task_stack_bottom = ABSOLUTE(.);
+    KEEP(*(.psram.task_stack.cpu0));
+    __runtime_cpu0_task_stack_top = ABSOLUTE(.);
+    . = ALIGN(64);
+    __runtime_cpu1_task_stack_bottom = ABSOLUTE(.);
+    KEEP(*(.psram.task_stack.cpu1));
+    __runtime_cpu1_task_stack_top = ABSOLUTE(.);
+    . = ALIGN(64);
+  } > PSRAM_EXTERNAL
+
   .bss (RUNTIME_DATA_IN_PSRAM ?
-        ALIGN(__runtime_psram_noinit_end, 64) :
+        ALIGN(__runtime_cpu1_task_stack_top, 64) :
         ALIGN(ADDR(.data) + SIZEOF(.data), 64)) (NOLOAD) :
   {
     __runtime_data_bss_start = ABSOLUTE(.);
@@ -211,16 +234,17 @@ SECTIONS
   __sbss = __runtime_data_bss_start;
   __ebss = __runtime_data_bss_end;
 
-  /* The bootstrap hands the scheduler-free CPU0 Embassy executor an
-     internal-SRAM stack. Keep an explicit bounded range even when every
-     post-init application section is linked into PSRAM: hardware ISRs run on
-     the interrupted thread-mode stack. */
+  /* The control profile retains the inherited SRAM stack. The experimental
+     profile publishes the CPU0 PSRAM stack as the ordinary stack range; CLIC
+     and exception entries use separate per-hart SRAM stacks. */
   _dram_data_start = 0x2f000000;
-  _stack_end = ALIGN(RUNTIME_DATA_IN_PSRAM ?
-                     __runtime_dma_bss_end :
-                     __runtime_data_bss_end, 64);
+  _stack_end = PSRAM_TASK_STACKS ?
+               __runtime_cpu0_task_stack_bottom :
+               ALIGN(RUNTIME_DATA_IN_PSRAM ?
+                     __runtime_dma_bss_end : __runtime_data_bss_end, 64);
   _stack_end_cpu0 = _stack_end;
-  _stack_start = 0x2f07afc0;
+  _stack_start = PSRAM_TASK_STACKS ?
+                 __runtime_cpu0_task_stack_top : 0x2f07afc0;
   _stack_start_cpu0 = _stack_start;
 
   /DISCARD/ :
@@ -236,6 +260,8 @@ ASSERT(SIZEOF(.rtc_fast.unsupported) == 0,
        "runtime RTC-fast code/data requires an explicit bootstrap copy contract");
 ASSERT(__runtime_psram_noinit_end <= ORIGIN(PSRAM_EXTERNAL) + LENGTH(PSRAM_EXTERNAL),
        "PSRAM runtime explicit no-init storage does not fit");
+ASSERT(__runtime_cpu1_task_stack_top <= ORIGIN(PSRAM_EXTERNAL) + LENGTH(PSRAM_EXTERNAL),
+       "PSRAM runtime task stacks do not fit");
 ASSERT((RUNTIME_DATA_IN_PSRAM &&
         __runtime_data_bss_end <= ORIGIN(PSRAM_EXTERNAL) + LENGTH(PSRAM_EXTERNAL)) ||
        (!RUNTIME_DATA_IN_PSRAM &&
@@ -256,6 +282,13 @@ ASSERT(__runtime_dma_data_end <= ORIGIN(INTERNAL_LOW) + LENGTH(INTERNAL_LOW),
        "runtime initialized DMA state does not fit internal SRAM");
 ASSERT(__runtime_dma_bss_end <= ORIGIN(INTERNAL_LOW) + LENGTH(INTERNAL_LOW),
        "PSRAM runtime DMA storage does not fit internal SRAM");
+/* The bootstrap's largest post-LTO frame is below 0.5 KiB. Keep a bounded
+   8-KiB transient handoff margin until `_runtime_stack_bootstrap` switches
+   CPU0 to PSRAM; unlike the former 64-KiB hole this is not a task stack and
+   cannot silently grow. */
+ASSERT(__runtime_dma_bss_end <=
+       ORIGIN(INTERNAL_LOW) + LENGTH(INTERNAL_LOW) - 0x2000,
+       "runtime SRAM owners overlap the 8-KiB bootstrap handoff margin");
 ASSERT((__runtime_isr_load_start & 3) == 0 &&
        ((__runtime_isr_end - __runtime_isr_start) & 3) == 0,
        "PSRAM runtime interrupt copy must be word aligned");
@@ -275,6 +308,13 @@ ASSERT((__runtime_dma_data_load_start & 3) == 0 &&
        ((__runtime_dma_data_end - __runtime_dma_data_start) & 3) == 0,
        "runtime initialized DMA state copy must be word aligned");
 ASSERT(_stack_start - _stack_end >= 0x10000,
-       "PSRAM runtime leaves less than 64 KiB for the CPU0 stack");
+       "runtime leaves less than 64 KiB for the CPU0 task stack");
+ASSERT(!PSRAM_TASK_STACKS ||
+       (__runtime_cpu0_irq_stack_top - __runtime_cpu0_irq_stack_bottom == 0x8000 &&
+        __runtime_cpu1_irq_stack_top - __runtime_cpu1_irq_stack_bottom == 0x8000),
+       "PSRAM task-stack profile requires two exact 32-KiB SRAM IRQ stacks");
+ASSERT(!PSRAM_TASK_STACKS ||
+       (__runtime_cpu0_task_stack_top - __runtime_cpu0_task_stack_bottom == 0x30000),
+       "PSRAM task-stack profile requires one exact 192-KiB CPU0 stack");
 ASSERT(_runtime_start >= __runtime_text_start && _runtime_start < __runtime_text_end,
        "runtime entry point is outside executable text");

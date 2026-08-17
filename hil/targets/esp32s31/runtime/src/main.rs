@@ -19,6 +19,11 @@ compile_error!("select code-flash or code-psram");
 compile_error!("profile-psram-data and profile-sram-data are mutually exclusive");
 #[cfg(not(any(feature = "profile-psram-data", feature = "profile-sram-data")))]
 compile_error!("select profile-psram-data or profile-sram-data");
+#[cfg(all(
+    feature = "psram-task-stack",
+    not(all(feature = "code-psram", feature = "profile-psram-data"))
+))]
+compile_error!("psram-task-stack requires code-psram and profile-psram-data");
 
 #[cfg(feature = "open-radio-hil")]
 use core::sync::atomic::{AtomicPtr, AtomicU32, Ordering};
@@ -35,7 +40,7 @@ use embassy_time::{Duration, Timer};
 #[cfg(feature = "open-radio-hil")]
 use esp_hal::system::{CpuControl, Stack};
 use esp_hal::{
-    interrupt::software::SoftwareInterruptControl,
+    interrupt::software::{SoftwareInterrupt, SoftwareInterruptControl},
     timer::{OneShotTimer, timg::TimerGroup},
 };
 use open_esp_radio_esp32s31_embassy_runtime::Executor;
@@ -47,10 +52,13 @@ mod console;
 mod phy_calibration_artifact;
 #[cfg(feature = "open-radio-hil")]
 mod product_hil;
+#[cfg(feature = "psram-task-stack")]
+mod psram_task_stack;
 
 const DATA_SENTINEL: u32 = 0x5353_31d2;
 const INTERNAL_SRAM_START: u32 = 0x2f00_0000;
 const INTERNAL_SRAM_END: u32 = 0x2f07_afc0;
+#[cfg(not(feature = "psram-task-stack"))]
 const INTERNAL_STACK_END: u32 = INTERNAL_SRAM_END;
 #[cfg(feature = "open-radio-hil")]
 const STACK_PAINT_WORD: u32 = 0xa55a_a55a;
@@ -65,9 +73,13 @@ const STACK_PAINT_BOTTOM_RESERVE_BYTES: u32 = 256;
 // without moving any radio/network work away from CPU0. Both variants retain
 // the same independently checked 4-KiB runtime reserve.
 #[cfg(not(feature = "single-core-diagnostic"))]
-const APP_CORE_STACK_BYTES: usize = 16 * 1024;
+pub(crate) const APP_CORE_TASK_STACK_BYTES: usize = 16 * 1024;
 #[cfg(feature = "single-core-diagnostic")]
-const APP_CORE_STACK_BYTES: usize = 8 * 1024;
+pub(crate) const APP_CORE_TASK_STACK_BYTES: usize = 8 * 1024;
+#[cfg(feature = "psram-task-stack")]
+const APP_CORE_BOOTSTRAP_STACK_BYTES: usize = 8 * 1024;
+#[cfg(not(feature = "psram-task-stack"))]
+const APP_CORE_BOOTSTRAP_STACK_BYTES: usize = APP_CORE_TASK_STACK_BYTES;
 
 #[cfg(feature = "code-flash")]
 const PROFILE_CODE_START: u32 = 0x4000_0140;
@@ -89,8 +101,18 @@ const PROFILE_DATA_END: u32 = INTERNAL_SRAM_END;
 
 #[cfg(all(feature = "code-flash", feature = "profile-psram-data"))]
 const PROFILE_NAME: &core::ffi::CStr = c"flash-code-psram-data";
-#[cfg(all(feature = "code-psram", feature = "profile-psram-data"))]
+#[cfg(all(
+    feature = "code-psram",
+    feature = "profile-psram-data",
+    not(feature = "psram-task-stack")
+))]
 const PROFILE_NAME: &core::ffi::CStr = c"psram-code-psram-data";
+#[cfg(all(
+    feature = "code-psram",
+    feature = "profile-psram-data",
+    feature = "psram-task-stack"
+))]
+const PROFILE_NAME: &core::ffi::CStr = c"psram-code-psram-data-psram-stack";
 #[cfg(all(feature = "code-psram", feature = "profile-sram-data"))]
 const PROFILE_NAME: &core::ffi::CStr = c"psram-code-sram-data";
 
@@ -109,8 +131,8 @@ static APP_SEND_SPAWNER_PTR: AtomicPtr<SendSpawner> = AtomicPtr::new(ptr::null_m
 #[cfg(feature = "open-radio-hil")]
 static APP_STACK_PAINT_END: AtomicU32 = AtomicU32::new(0);
 #[cfg(feature = "open-radio-hil")]
-#[unsafe(link_section = ".critical.bss.open_radio_app_core_stack")]
-static mut APP_CORE_STACK: Stack<APP_CORE_STACK_BYTES> = Stack::new();
+#[unsafe(link_section = ".critical.bss.open_radio_app_core_bootstrap_stack")]
+static mut APP_CORE_STACK: Stack<APP_CORE_BOOTSTRAP_STACK_BYTES> = Stack::new();
 static mut INITIALIZED_DATA: u32 = DATA_SENTINEL;
 static mut BSS_PROBE: u32 = 0;
 
@@ -150,6 +172,14 @@ unsafe extern "C" {
     static __runtime_dma_data_end: u8;
     static __runtime_dma_bss_start: u8;
     static __runtime_dma_bss_end: u8;
+    #[cfg(feature = "psram-task-stack")]
+    static __runtime_cpu0_irq_stack_bottom: u8;
+    #[cfg(feature = "psram-task-stack")]
+    static __runtime_cpu0_irq_stack_top: u8;
+    #[cfg(feature = "psram-task-stack")]
+    static __runtime_cpu1_irq_stack_bottom: u8;
+    #[cfg(feature = "psram-task-stack")]
+    static __runtime_cpu1_irq_stack_top: u8;
     static _stack_end: u8;
     static _stack_start: u8;
 }
@@ -246,8 +276,26 @@ _runtime_start:
     addi a1, a1, 4
     j 15b
 16:
-    # Paint every currently unused CPU0 stack word before Rust starts. The
-    # reserved top margin contains the handoff frame and is counted as used.
+    call _runtime_stack_bootstrap
+    fence.i
+    la t0, _vector_table
+    ori t0, t0, 3
+    csrw mtvec, t0
+    la t0, _runtime_mtvt_table
+    csrw 0x307, t0
+    .option pop
+    li t0, 0x6000
+    csrrs zero, mstatus, t0
+    fscsr zero
+    tail runtime_main
+    .size _runtime_start, . - _runtime_start
+
+    # Control profile: paint the inherited SRAM stack. The PSRAM stack module
+    # supplies a strong `_runtime_stack_bootstrap` implementation.
+    .balign 4
+    .global _runtime_default_stack_bootstrap
+    .type _runtime_default_stack_bootstrap, @function
+_runtime_default_stack_bootstrap:
     la t0, _stack_end
     addi t0, t0, 256
     mv t1, sp
@@ -259,18 +307,8 @@ _runtime_start:
     addi t0, t0, 4
     j 17b
 18:
-    fence.i
-    la t0, _vector_table
-    ori t0, t0, 3
-    csrw mtvec, t0
-    la t0, _mtvt_table
-    csrw 0x307, t0
-    .option pop
-    li t0, 0x6000
-    csrrs zero, mstatus, t0
-    fscsr zero
-    tail runtime_main
-    .size _runtime_start, . - _runtime_start
+    ret
+    .size _runtime_default_stack_bootstrap, . - _runtime_default_stack_bootstrap
 "#
 );
 
@@ -308,6 +346,10 @@ extern "C" fn runtime_main() -> ! {
     let peripherals =
         esp_hal::init(esp_hal::Config::default().with_cpu_clock(esp_hal::clock::CpuClock::max()));
     unsafe { esp_hal::interrupt::reinitialize_vectoring_after_handoff() };
+    #[cfg(feature = "psram-task-stack")]
+    unsafe {
+        psram_task_stack::install_current_hart_interrupt_stack();
+    }
 
     let software_interrupts = SoftwareInterruptControl::new(peripherals.SW_INTERRUPT);
     let timer_group = TimerGroup::new(peripherals.TIMG0);
@@ -321,22 +363,17 @@ extern "C" fn runtime_main() -> ! {
             .start_app_core(
                 unsafe { &mut *ptr::addr_of_mut!(APP_CORE_STACK) },
                 move || {
-                    paint_app_core_stack();
-                    // Core 1 enters directly from ROM rather than through
-                    // `_runtime_start`, so hand global interrupt enable to
-                    // its executor explicitly after esp-hal has installed
-                    // the per-hart vector state.
-                    unsafe { asm!("csrsi mstatus, 8", options(nomem, nostack)) };
-                    APP_EXECUTOR
-                        .init(Executor::<1>::new(app_interrupt))
-                        .run(|spawner| {
-                            let Ok(network) = product_hil::secondary_network_task(spawner) else {
-                                fail(c"OPEN_RADIO_HIL runtime=FAIL reason=app-network-allocation\r\n");
-                            };
-                            spawner.spawn(network);
-                            let send_spawner = APP_SEND_SPAWNER.init(spawner.make_send());
-                            APP_SEND_SPAWNER_PTR.store(send_spawner, Ordering::Release);
-                        })
+                    #[cfg(feature = "psram-task-stack")]
+                    unsafe {
+                        // The ROM/ESP-HAL second-core entry requires its initial
+                        // stack in SRAM. Consume the captured token, abandon
+                        // that bootstrap call chain, and enter the non-returning
+                        // PSRAM task-stack trampoline.
+                        core::mem::forget(app_interrupt);
+                        psram_task_stack::enter_cpu1_task_context();
+                    }
+                    #[cfg(not(feature = "psram-task-stack"))]
+                    run_app_core(app_interrupt)
                 },
             )
             .unwrap_or_else(|_| fail(c"OPEN_RADIO_HIL runtime=FAIL reason=app-core-start\r\n"));
@@ -406,6 +443,38 @@ extern "C" fn runtime_main() -> ! {
     }
 }
 
+#[cfg(feature = "open-radio-hil")]
+fn run_app_core(app_interrupt: SoftwareInterrupt<'static, 1>) -> ! {
+    #[cfg(feature = "psram-task-stack")]
+    unsafe {
+        psram_task_stack::install_current_hart_interrupt_stack();
+    }
+    paint_app_core_stack();
+    // Core 1 enters directly from ROM rather than through `_runtime_start`,
+    // so hand global interrupt enable to its executor explicitly after the
+    // per-hart vector state and stack ownership are complete.
+    unsafe { asm!("csrsi mstatus, 8", options(nomem, nostack)) };
+    APP_EXECUTOR
+        .init(Executor::<1>::new(app_interrupt))
+        .run(|spawner| {
+            let Ok(network) = product_hil::secondary_network_task(spawner) else {
+                fail(c"OPEN_RADIO_HIL runtime=FAIL reason=app-network-allocation\r\n");
+            };
+            spawner.spawn(network);
+            let send_spawner = APP_SEND_SPAWNER.init(spawner.make_send());
+            APP_SEND_SPAWNER_PTR.store(send_spawner, Ordering::Release);
+        })
+}
+
+#[cfg(all(feature = "open-radio-hil", feature = "psram-task-stack"))]
+#[unsafe(no_mangle)]
+extern "C" fn runtime_cpu1_psram_main() -> ! {
+    // The original singleton was consumed and forgotten by the bootstrap
+    // closure immediately before the non-returning stack switch.
+    let app_interrupt = unsafe { SoftwareInterrupt::<1>::steal() };
+    run_app_core(app_interrupt)
+}
+
 #[cfg(feature = "boot-smoke")]
 #[embassy_executor::task]
 async fn boot_smoke() {
@@ -445,7 +514,31 @@ fn validate_runtime_layout() {
     let dma_bss_start = symbol(ptr::addr_of!(__runtime_dma_bss_start));
     let dma_bss_end = symbol(ptr::addr_of!(__runtime_dma_bss_end));
     let stack_bottom = symbol(ptr::addr_of!(_stack_end));
+    let stack_top = symbol(ptr::addr_of!(_stack_start));
     let stack = current_stack_pointer();
+
+    #[cfg(feature = "psram-task-stack")]
+    let interrupt_stacks_valid = {
+        let cpu0_bottom = symbol(ptr::addr_of!(__runtime_cpu0_irq_stack_bottom));
+        let cpu0_top = symbol(ptr::addr_of!(__runtime_cpu0_irq_stack_top));
+        let cpu1_bottom = symbol(ptr::addr_of!(__runtime_cpu1_irq_stack_bottom));
+        let cpu1_top = symbol(ptr::addr_of!(__runtime_cpu1_irq_stack_top));
+        range_in_internal_sram(cpu0_bottom, cpu0_top)
+            && range_in_internal_sram(cpu1_bottom, cpu1_top)
+            && cpu0_top - cpu0_bottom == psram_task_stack::IRQ_STACK_BYTES as u32
+            && cpu1_top - cpu1_bottom == psram_task_stack::IRQ_STACK_BYTES as u32
+    };
+    #[cfg(not(feature = "psram-task-stack"))]
+    let interrupt_stacks_valid = true;
+
+    #[cfg(feature = "psram-task-stack")]
+    let task_stack_valid = stack_bottom >= PROFILE_DATA_START
+        && stack_top <= PROFILE_DATA_END
+        && stack_top - stack_bottom == psram_task_stack::CPU0_TASK_STACK_BYTES as u32;
+    #[cfg(not(feature = "psram-task-stack"))]
+    let task_stack_valid = stack_top == INTERNAL_STACK_END
+        && stack_bottom < stack_top
+        && stack_top - stack_bottom >= 64 * 1024;
 
     let initialized_data = unsafe { ptr::addr_of!(INITIALIZED_DATA).read_volatile() };
     let bss_probe = unsafe { ptr::addr_of!(BSS_PROBE).read_volatile() };
@@ -467,7 +560,9 @@ fn validate_runtime_layout() {
         || !range_in_internal_sram(isr_start, isr_end)
         || !range_in_internal_sram(dma_data_start, dma_data_end)
         || !range_in_internal_sram(dma_bss_start, dma_bss_end)
-        || !(stack_bottom..INTERNAL_STACK_END).contains(&stack)
+        || !interrupt_stacks_valid
+        || !task_stack_valid
+        || !(stack_bottom..stack_top).contains(&stack)
         || !stack.is_multiple_of(16)
         || initialized_data != DATA_SENTINEL
         || bss_probe != 0
@@ -478,7 +573,10 @@ fn validate_runtime_layout() {
     {
         fail(c"OPEN_RADIO_HIL runtime=FAIL reason=layout\r\n");
     }
-    print(c"OPEN_RADIO_HIL placement=PASS isr=SRAM dma_probes=SRAM stack=SRAM\r\n");
+    #[cfg(feature = "psram-task-stack")]
+    print(c"OPEN_RADIO_HIL placement=PASS isr=SRAM dma_probes=SRAM task_stack=PSRAM irq_stack=SRAM\r\n");
+    #[cfg(not(feature = "psram-task-stack"))]
+    print(c"OPEN_RADIO_HIL placement=PASS isr=SRAM dma_probes=SRAM task_stack=SRAM\r\n");
 }
 
 fn range_in_internal_sram(start: u32, end: u32) -> bool {
@@ -497,10 +595,13 @@ fn current_stack_pointer() -> u32 {
 
 #[cfg(feature = "open-radio-hil")]
 fn paint_app_core_stack() {
+    #[cfg(feature = "psram-task-stack")]
+    let bottom = psram_task_stack::cpu1_task_stack_bottom();
+    #[cfg(not(feature = "psram-task-stack"))]
     let bottom = ptr::addr_of_mut!(APP_CORE_STACK) as *mut u8 as usize as u32;
     let paint_start = bottom + STACK_PAINT_BOTTOM_RESERVE_BYTES;
     let paint_end = current_stack_pointer().saturating_sub(STACK_PAINT_MARGIN_BYTES);
-    let maximum_end = bottom + APP_CORE_STACK_BYTES as u32;
+    let maximum_end = bottom + APP_CORE_TASK_STACK_BYTES as u32;
     if paint_end <= paint_start || paint_end > maximum_end {
         fail(c"OPEN_RADIO_HIL runtime=FAIL reason=app-stack-layout\r\n");
     }
@@ -519,8 +620,11 @@ pub(crate) fn stack_usage_snapshot() -> open_esp_radio_hil_protocol::StackUsage 
     let cpu0_paint_start = cpu0_bottom + STACK_PAINT_BOTTOM_RESERVE_BYTES;
     let cpu0_paint_end = cpu0_top.saturating_sub(STACK_PAINT_MARGIN_BYTES);
 
+    #[cfg(feature = "psram-task-stack")]
+    let cpu1_bottom = psram_task_stack::cpu1_task_stack_bottom();
+    #[cfg(not(feature = "psram-task-stack"))]
     let cpu1_bottom = ptr::addr_of!(APP_CORE_STACK) as *const u8 as usize as u32;
-    let cpu1_top = cpu1_bottom + APP_CORE_STACK_BYTES as u32;
+    let cpu1_top = cpu1_bottom + APP_CORE_TASK_STACK_BYTES as u32;
     let cpu1_paint_end = APP_STACK_PAINT_END.load(Ordering::Acquire);
 
     open_esp_radio_hil_protocol::StackUsage {

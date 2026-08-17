@@ -17,31 +17,40 @@ pub const SCENARIO_SCHEMA: u16 = 3;
 #[serde(rename_all = "kebab-case")]
 pub enum ImageClass {
     BootSmoke,
+    BootSmokePsramStack,
     Qualification,
     DiagnosticTaskPoll,
     DiagnosticRxDelivery,
+    DiagnosticPsramStack,
 }
 
 impl ImageClass {
-    pub const ALL: [Self; 4] = [
+    pub const ALL: [Self; 6] = [
         Self::BootSmoke,
+        Self::BootSmokePsramStack,
         Self::Qualification,
         Self::DiagnosticTaskPoll,
         Self::DiagnosticRxDelivery,
+        Self::DiagnosticPsramStack,
     ];
 
     pub const fn id(self) -> &'static str {
         match self {
             Self::BootSmoke => "boot-smoke",
+            Self::BootSmokePsramStack => "boot-smoke-psram-stack",
             Self::Qualification => "qualification",
             Self::DiagnosticTaskPoll => "diagnostic-task-poll",
             Self::DiagnosticRxDelivery => "diagnostic-rx-delivery",
+            Self::DiagnosticPsramStack => "diagnostic-psram-stack",
         }
     }
 
     pub const fn runtime_features(self) -> &'static str {
         match self {
             Self::BootSmoke => "boot-smoke,code-psram,profile-psram-data",
+            Self::BootSmokePsramStack => {
+                "boot-smoke,psram-task-stack,code-psram,profile-psram-data"
+            }
             Self::Qualification => "open-radio-hil,code-psram,profile-psram-data",
             Self::DiagnosticTaskPoll => {
                 "open-radio-hil,task-poll-telemetry,network-scheduler-telemetry,single-core-diagnostic,code-psram,profile-psram-data"
@@ -49,7 +58,23 @@ impl ImageClass {
             Self::DiagnosticRxDelivery => {
                 "open-radio-hil,rx-delivery-telemetry,code-psram,profile-psram-data"
             }
+            Self::DiagnosticPsramStack => {
+                "open-radio-hil,psram-task-stack,code-psram,profile-psram-data"
+            }
         }
+    }
+
+    pub const fn runtime_profile(self) -> &'static str {
+        match self {
+            Self::BootSmokePsramStack | Self::DiagnosticPsramStack => {
+                "psram-code-psram-data-psram-stack"
+            }
+            _ => "psram-code-psram-data",
+        }
+    }
+
+    pub const fn uses_psram_task_stack(self) -> bool {
+        matches!(self, Self::BootSmokePsramStack | Self::DiagnosticPsramStack)
     }
 }
 
@@ -299,14 +324,18 @@ impl Scenario {
             return Err(format!("{}: scenario description is empty", self.source.display()).into());
         }
         bounded(self.repetitions, 1, 20, self, "repetitions")?;
-        if self.image == ImageClass::BootSmoke && !matches!(self.workload, Workload::BootSmoke) {
+        let boot_smoke_image = matches!(
+            self.image,
+            ImageClass::BootSmoke | ImageClass::BootSmokePsramStack
+        );
+        if boot_smoke_image && !matches!(self.workload, Workload::BootSmoke) {
             return Err(format!(
                 "{}: boot-smoke image accepts only boot-smoke workload",
                 self.source.display()
             )
             .into());
         }
-        if self.image != ImageClass::BootSmoke && matches!(self.workload, Workload::BootSmoke) {
+        if !boot_smoke_image && matches!(self.workload, Workload::BootSmoke) {
             return Err(format!(
                 "{}: boot-smoke workload requires boot-smoke image",
                 self.source.display()

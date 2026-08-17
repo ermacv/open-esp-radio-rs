@@ -9,6 +9,8 @@ EXTERN(_default_start_trap);
 PROVIDE(abort = _default_abort);
 PROVIDE(_pre_init_trap = _default_abort);
 PROVIDE(_start_trap = _default_start_trap);
+PROVIDE(_runtime_stack_bootstrap = _runtime_default_stack_bootstrap);
+PROVIDE(_runtime_mtvt_table = _mtvt_table);
 PROVIDE(ExceptionHandler = abort);
 PROVIDE(DefaultHandler = EspDefaultHandler);
 PROVIDE(_start_DefaultHandler_trap = _start_trap);

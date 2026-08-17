@@ -1,0 +1,26 @@
+schema = 3
+id = "udp-bidirectional-ht40-psram-stack"
+description = "Experimental HT40 full-duplex run with ordinary task stacks in PSRAM and per-hart IRQ stacks in SRAM"
+repetitions = 3
+image = "diagnostic-psram-stack"
+isolation = "reset"
+data_plane = "split-radio-network"
+tags = ["diagnostic", "udp", "station", "full-duplex", "ht40", "split-core", "psram-stack"]
+
+[link]
+phy = "ht40"
+
+[workload]
+kind = "udp"
+direction = "bidirectional"
+duration_seconds = 16
+rx_rate_bps = 40000000
+tx_rate_bps = 40000000
+payload_bytes = 1472
+
+[criteria]
+exact_delivery = false
+minimum_rx_bps = 35000000
+minimum_tx_bps = 35000000
+minimum_combined_bps = 72000000
+require_no_beacon_loss = true

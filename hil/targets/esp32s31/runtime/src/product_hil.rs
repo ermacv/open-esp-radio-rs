@@ -827,6 +827,7 @@ pub const fn hil_capabilities() -> Capabilities {
             station_lifecycle_events: true,
             rx_delivery_evidence: OPEN_RADIO_RX_DELIVERY_TELEMETRY,
             task_poll_evidence: OPEN_RADIO_TASK_POLL_TELEMETRY,
+            psram_task_stack: cfg!(feature = "psram-task-stack"),
             network_scheduler_evidence: OPEN_RADIO_NETWORK_SCHEDULER_TELEMETRY,
             data_plane_placement: true,
             timebase_probe: true,

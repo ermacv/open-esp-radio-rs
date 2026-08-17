@@ -1,0 +1,12 @@
+schema = 3
+id = "boot-smoke-psram-stack"
+description = "Experimental single-core timer smoke with the task stack in PSRAM and the IRQ stack in SRAM"
+image = "boot-smoke-psram-stack"
+isolation = "reset"
+data_plane = "single-core"
+tags = ["diagnostic", "boot", "psram-stack"]
+
+[workload]
+kind = "boot-smoke"
+
+[criteria]

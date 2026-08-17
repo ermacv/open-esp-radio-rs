@@ -13,6 +13,7 @@ code-flash = []
 code-psram = []
 profile-psram-data = []
 profile-sram-data = []
+psram-task-stack = []
 boot-smoke = []
 open-radio-hil = [
     "dep:embassy-futures",

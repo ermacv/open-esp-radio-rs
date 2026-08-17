@@ -6,9 +6,11 @@ MEMORY
      their actual sizes instead of reserving fixed partitions. */
   RUNTIME_DATA (RWX) : ORIGIN = RUNTIME_DATA_ORIGIN, LENGTH = RUNTIME_DATA_LENGTH
 
-  /* Bootstrap hands off a stack at the physical SRAM top. Reserve its lowest
-     64 KiB boundary and pack every runtime SRAM section below it. */
-  INTERNAL_LOW (RWX) : ORIGIN = 0x2F000000, LENGTH = 0x0006AFC0
+  /* All application-owned internal SRAM is one arena. Section placement is
+     determined only by explicitly SRAM-qualified ISR, critical and DMA
+     inputs; there is no anonymous 64-KiB runtime-stack reservation. Linker
+     assertions retain only a bounded transient bootstrap handoff margin. */
+  INTERNAL_LOW (RWX) : ORIGIN = 0x2F000000, LENGTH = 0x0007AFC0
   RTC_FAST (RWX) : ORIGIN = 0x2E000000, LENGTH = 0x00008000
 
   /* xtask selects ordinary code as Flash XIP at the embedded-payload address

@@ -28,6 +28,7 @@ fn main() {
     let sram_data = env::var_os("CARGO_FEATURE_PROFILE_SRAM_DATA").is_some();
     let flash_code = env::var_os("CARGO_FEATURE_CODE_FLASH").is_some();
     let psram_code = env::var_os("CARGO_FEATURE_CODE_PSRAM").is_some();
+    let psram_task_stack = env::var_os("CARGO_FEATURE_PSRAM_TASK_STACK").is_some();
     assert!(
         psram_data ^ sram_data,
         "select exactly one data profile: profile-psram-data or profile-sram-data"
@@ -39,6 +40,10 @@ fn main() {
     assert!(
         !flash_code || psram_data,
         "the Flash-code profile requires profile-psram-data"
+    );
+    assert!(
+        !psram_task_stack || (psram_code && psram_data),
+        "the PSRAM task-stack experiment requires PSRAM code and data"
     );
 
     let (code_origin, code_length): (u32, u32) = if psram_code {
@@ -58,6 +63,7 @@ fn main() {
         ("RUNTIME_DATA_IN_PSRAM", u32::from(psram_data)),
         ("RUNTIME_DATA_ORIGIN", data_origin),
         ("RUNTIME_DATA_LENGTH", data_length),
+        ("PSRAM_TASK_STACKS", u32::from(psram_task_stack)),
     ] {
         println!("cargo:rustc-link-arg-bin={BIN}=--defsym={symbol}={value}");
     }

@@ -910,7 +910,12 @@ pub(crate) struct RxPipelineEvidence {
     pub(crate) reload_max_us: u64,
     pub(crate) dma_buffer_full_increments: u64,
     pub(crate) dma_buffer_full_service_samples: u64,
+    pub(crate) dma_buffer_full_between_services: u64,
+    pub(crate) dma_buffer_full_during_services: u64,
+    pub(crate) dma_buffer_full_between_service_samples: u64,
+    pub(crate) dma_buffer_full_during_service_samples: u64,
     pub(crate) dma_buffer_full_last_service: u64,
+    pub(crate) dma_buffer_full_last_phase: u64,
     pub(crate) dma_buffer_full_last_counter: u64,
     pub(crate) dma_buffer_full_last_frontier: u64,
     pub(crate) dma_buffer_full_last_admitted: u64,
@@ -1021,8 +1026,21 @@ impl RxPipelineEvidence {
         self.dma_buffer_full_service_samples = self
             .dma_buffer_full_service_samples
             .saturating_add(sample.dma_buffer_full_service_samples);
+        self.dma_buffer_full_between_services = self
+            .dma_buffer_full_between_services
+            .saturating_add(sample.dma_buffer_full_between_services);
+        self.dma_buffer_full_during_services = self
+            .dma_buffer_full_during_services
+            .saturating_add(sample.dma_buffer_full_during_services);
+        self.dma_buffer_full_between_service_samples = self
+            .dma_buffer_full_between_service_samples
+            .saturating_add(sample.dma_buffer_full_between_service_samples);
+        self.dma_buffer_full_during_service_samples = self
+            .dma_buffer_full_during_service_samples
+            .saturating_add(sample.dma_buffer_full_during_service_samples);
         if sample_has_buffer_full {
             self.dma_buffer_full_last_service = sample.dma_buffer_full_last_service;
+            self.dma_buffer_full_last_phase = sample.dma_buffer_full_last_phase;
             self.dma_buffer_full_last_counter = sample.dma_buffer_full_last_counter;
             self.dma_buffer_full_last_frontier = sample.dma_buffer_full_last_frontier;
             self.dma_buffer_full_last_admitted = sample.dma_buffer_full_last_admitted;
@@ -2009,7 +2027,14 @@ fn parse_device_report(log: &str) -> DeviceReport {
                 Some(RxPipelineEvidence {
                     dma_buffer_full_increments: field(line, "increments")?,
                     dma_buffer_full_service_samples: field(line, "samples")?,
+                    dma_buffer_full_between_services: field(line, "between").unwrap_or(0),
+                    dma_buffer_full_during_services: field(line, "during").unwrap_or(0),
+                    dma_buffer_full_between_service_samples: field(line, "between_samples")
+                        .unwrap_or(0),
+                    dma_buffer_full_during_service_samples: field(line, "during_samples")
+                        .unwrap_or(0),
                     dma_buffer_full_last_service: field(line, "last_service")?,
+                    dma_buffer_full_last_phase: field(line, "last_phase").unwrap_or(0),
                     dma_buffer_full_last_counter: field(line, "last_counter")?,
                     dma_buffer_full_last_frontier: field(line, "last_frontier")?,
                     dma_buffer_full_last_admitted: field(line, "last_admitted")?,
@@ -3271,7 +3296,7 @@ fn write_report(
              - A-MPDU provenance hardware true/false, protocol true/false: `{}` / `{}`, `{}` / `{}`\n\
              - Hardware BUFFER_FULL/FIFO_OVERFLOW: `{}` / `{}`\n\
              - DMA service calls/frontier/admitted: `{}` / `{}` / `{}`; max frontier/admitted: `{}` / `{}`\n\
-             - Service-observed BUFFER_FULL increments/samples: `{}` / `{}`; last boot service/counter/frontier/admitted/pool/queue/service time: `{}` / `{}` / `{}` / `{}` / `{}` / `{}` / `{} us`\n\
+             - Service-observed BUFFER_FULL increments/samples: `{}` / `{}`; between/during: `{}` / `{}` increments across `{}` / `{}` services; last boot service/phase/counter/frontier/admitted/pool/queue/service time: `{}` / `{}` / `{}` / `{}` / `{}` / `{}` / `{}` / `{} us`\n\
              - Frontier service buckets 0 / 1 / 2-3 / 4-7 / 8-15 / 16-31 / 32+: `{}` / `{}` / `{}` / `{}` / `{}` / `{}` / `{}`\n\
              - RX IRQ posts/wake epochs/hard entries/coalesced/sampled services/clock-skew rejects: `{}` / `{}` / `{}` / `{}` / `{}` / `{}`; sampled IRQ-to-service: `{:.2} us` average, `{}` us boot maximum\n\
              - MAC entry causes spurious / RX-work-only / RX-mixed / TX-only / TX-mixed / auxiliary-or-unknown-only: `{}` / `{}` / `{}` / `{}` / `{}` / `{}`; classified `{}` entries; extra snapshots `{}`, loop saturations `{}`, auxiliary STATUS OR `0x{:08x}`, unknown STATUS OR `0x{:08x}`\n\
@@ -3352,7 +3377,12 @@ fn write_report(
             pipeline.maximum_admitted,
             pipeline.dma_buffer_full_increments,
             pipeline.dma_buffer_full_service_samples,
+            pipeline.dma_buffer_full_between_services,
+            pipeline.dma_buffer_full_during_services,
+            pipeline.dma_buffer_full_between_service_samples,
+            pipeline.dma_buffer_full_during_service_samples,
             pipeline.dma_buffer_full_last_service,
+            pipeline.dma_buffer_full_last_phase,
             pipeline.dma_buffer_full_last_counter,
             pipeline.dma_buffer_full_last_frontier,
             pipeline.dma_buffer_full_last_admitted,
@@ -3802,7 +3832,7 @@ mod tests {
              ORXAG ampdu=5000 not_ampdu=0 hardware_ampdu=0 hardware_not_ampdu=0 protocol_ampdu=5000 protocol_not_ampdu=0 unavailable=0\n\
              ORXM m0=0 m1=0 m2=0 m3=0 m4=0 m5=0 m6=0 m7=20 m8=30 m9=4950 m10=0 m11=0 other=0\n\
              ORXS calls=5000 frontier=5000 admitted=5000 bytes=7800000 back=0 pool=0 queue=0 deferred_max=0 pool_min=4294967295 queue_min=4294967295 fmax=1 amax=1 service_us=100000 service_boot_max_us=24\n\
-             ORXB increments=2 samples=1 last_service=6123 last_counter=17 last_frontier=7 last_admitted=7 last_pool=60 last_queue=61 last_service_us=73\n\
+             ORXB increments=2 samples=1 between=1 during=1 between_samples=1 during_samples=1 last_service=6123 last_phase=3 last_counter=17 last_frontier=7 last_admitted=7 last_pool=60 last_queue=61 last_service_us=73\n\
              ORXD frames=5000 data=5000 waits=5000 wait_us=1000 wait_boot_max_us=2 dispatch_us=150000 dispatch_boot_max_us=35 publications=5000 bytes=7570000 publish_us=60000 publish_boot_max_us=15\n\
              ORXR starts=0 stops=0 start_tid=0 start_seq=6 window=8 first_samples=1 first_tid=0 first_start=6 first_seq=6 first_distance=0 buffered=3 released=5000 missing=0 stale=0 expiries=0 occupied=0 occupied_max=7\n\
              ORXF zero=0 one=5000 two_three=0 four_seven=0 eight_fifteen=0 sixteen_thirty_one=0 thirty_two_plus=0 irq_posts=5000 irq_epochs=5000 irq_entries=5000 irq_coalesced=0 irq_samples=5000 irq_skew=0 irq_service_us=25000 irq_service_boot_max_us=8\n\
@@ -3841,7 +3871,12 @@ mod tests {
         assert_eq!(rx.pipeline.service_us, 100_000);
         assert_eq!(rx.pipeline.dma_buffer_full_increments, 2);
         assert_eq!(rx.pipeline.dma_buffer_full_service_samples, 1);
+        assert_eq!(rx.pipeline.dma_buffer_full_between_services, 1);
+        assert_eq!(rx.pipeline.dma_buffer_full_during_services, 1);
+        assert_eq!(rx.pipeline.dma_buffer_full_between_service_samples, 1);
+        assert_eq!(rx.pipeline.dma_buffer_full_during_service_samples, 1);
         assert_eq!(rx.pipeline.dma_buffer_full_last_service, 6_123);
+        assert_eq!(rx.pipeline.dma_buffer_full_last_phase, 3);
         assert_eq!(rx.pipeline.dma_buffer_full_last_counter, 17);
         assert_eq!(rx.pipeline.dma_buffer_full_last_frontier, 7);
         assert_eq!(rx.pipeline.dma_buffer_full_last_admitted, 7);

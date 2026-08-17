@@ -44,7 +44,7 @@ where
             let service_started = self
                 .pipeline_observer
                 .map(|observer| observer.begin_service());
-            let hardware_buffer_full = self
+            let hardware_buffer_full_before = self
                 .pipeline_observer
                 .and_then(|_| hardware.buffer_full_count());
             // A direct BASE publication has no reload doorbell and may consume
@@ -230,6 +230,16 @@ where
 
             let credit_limited = admission_budget < frontier;
 
+            // Keep the two samples on opposite sides of the complete bounded
+            // transaction. Diagnostics can then distinguish saturation while
+            // the owner was elsewhere from saturation caused during staging
+            // and descriptor republication. With only the entry sample the
+            // counter increment was incorrectly paired with the following
+            // service context.
+            let hardware_buffer_full_after = self
+                .pipeline_observer
+                .and_then(|_| hardware.buffer_full_count());
+
             if let (Some(observer), Some(started)) = (self.pipeline_observer, service_started) {
                 observer.observe(RxPipelineObservation::ServiceCompleted(
                     RxServiceObservation {
@@ -239,7 +249,8 @@ where
                         admitted,
                         staged_bytes,
                         micros: observer.elapsed_micros_since(started),
-                        hardware_buffer_full,
+                        hardware_buffer_full_before,
+                        hardware_buffer_full_after,
                     },
                 ));
             }

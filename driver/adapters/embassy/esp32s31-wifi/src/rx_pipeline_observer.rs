@@ -13,7 +13,10 @@ pub struct RxServiceObservation {
     pub admitted: usize,
     pub staged_bytes: usize,
     pub micros: u64,
-    pub hardware_buffer_full: Option<u16>,
+    /// Hardware counter sampled immediately before this service transaction.
+    pub hardware_buffer_full_before: Option<u16>,
+    /// Hardware counter sampled after descriptor recycling/reload completes.
+    pub hardware_buffer_full_after: Option<u16>,
 }
 
 /// Length-class discard observed before a malformed unit is recycled.

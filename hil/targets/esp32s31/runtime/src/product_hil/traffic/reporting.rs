@@ -240,11 +240,17 @@ pub(in crate::product_hil) async fn log_open_radio_rx_pipeline_interval(
     .await;
     yield_now().await;
     runtime_log_reliably(format_args!(
-        "ORXB increments={} samples={} last_service={} last_counter={} \
+        "ORXB increments={} samples={} between={} during={} between_samples={} \
+         during_samples={} last_service={} last_phase={} last_counter={} \
          last_frontier={} last_admitted={} last_pool={} last_queue={} last_service_us={}",
         pipeline.dma_buffer_full_increments,
         pipeline.dma_buffer_full_service_samples,
+        pipeline.dma_buffer_full_between_services,
+        pipeline.dma_buffer_full_during_services,
+        pipeline.dma_buffer_full_between_service_samples,
+        pipeline.dma_buffer_full_during_service_samples,
         pipeline.dma_buffer_full_last_service,
+        pipeline.dma_buffer_full_last_phase,
         pipeline.dma_buffer_full_last_counter,
         pipeline.dma_buffer_full_last_frontier,
         pipeline.dma_buffer_full_last_admitted,

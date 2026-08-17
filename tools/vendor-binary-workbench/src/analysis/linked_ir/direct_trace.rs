@@ -630,138 +630,112 @@ pub(super) fn explore_direct_calls(
             return result;
         }
     };
-    let mut queue = VecDeque::from([BTreeMap::<u32, bool>::new()]);
-    let mut queued = BTreeSet::from([BTreeMap::<u32, bool>::new()]);
-    let mut explored_states = 0usize;
     let mut site_effect_counts = BTreeMap::<u32, usize>::new();
     let mut truncated_effect_sites = BTreeSet::<u32>::new();
-
-    while let Some(forced_branches) = queue.pop_front() {
-        if explored_states >= MAX_CALL_GRAPH_STATES {
-            record_blocker(
-                &mut result.blockers,
-                format!(
-                    "call graph exceeds the exploration limit of {MAX_CALL_GRAPH_STATES} states"
-                ),
-            );
-            break;
-        }
-        explored_states += 1;
-        let trace = match direct::trace_structural_program_with_branches_bounded(
-            symbol,
-            &program,
-            svd,
-            &resolver.relocated_calls,
-            &resolver.pointer_context,
-            None,
-            &forced_branches,
-            direct::StructuralTraceBudget {
-                max_instruction_steps: MAX_CALL_GRAPH_INSTRUCTION_STEPS_PER_TRACE,
-                max_events: MAX_CALL_GRAPH_EVENTS_PER_TRACE,
-            },
-        ) {
-            Ok(trace) => trace,
-            Err(error) => {
-                record_blocker(&mut result.blockers, error.to_string());
-                continue;
-            }
-        };
-        for effect in instruction_effects_for_trace(&trace, resolver, &[], &[]) {
-            record_site_effect(
-                &mut result,
-                &mut site_effect_counts,
-                &mut truncated_effect_sites,
-                effect,
-            );
-        }
-        let mut evidence = DirectTraceEvidence::default();
-        let read_sources = memory_read_sources_for_trace(&trace);
-        for event in &trace.reference_events {
-            collect_guarded_direct_event(
-                event,
-                resolver,
-                identities,
-                svd,
-                &read_sources,
-                &mut evidence,
-            );
-        }
-        result.calls.append(&mut evidence.calls);
-        result
-            .direct_mmio_predicates
-            .append(&mut evidence.direct_mmio_predicates);
-        for relocation in symbol.relocations.iter().filter(|relocation| {
-            matches!(
-                relocation.kind,
-                artifact::RelocationKind::Call | artifact::RelocationKind::CallPlt
-            )
-        }) {
-            let unresolved = format!(
-                "unresolved-call-relocation at {:#x}: {}",
-                relocation.address, relocation.symbol
-            );
-            if trace
-                .reference_blockers
-                .iter()
-                .any(|blocker| blocker == &unresolved)
-            {
-                result.calls.insert(LinkedCall {
-                    kind: "unresolved",
-                    target: relocation.symbol.clone(),
-                    site: Some(relocation.address),
-                    tail: artifact::relocated_call_is_tail(symbol, relocation.address)
-                        .unwrap_or(false),
-                    result_modeled: false,
-                    execution_model: None,
-                    semantics: Some(
-                        "unresolved call relocation; arguments and callee effects are unavailable"
-                            .to_owned(),
-                    ),
-                    semantic_operation: None,
-                    semantic_contract: None,
-                    replacement_hint: None,
-                    project_symbol: Some(relocation.symbol.clone()),
-                    project_candidates: Vec::new(),
-                    trampoline: None,
-                    argument_shapes: 1,
-                    arguments: Vec::new(),
-                    argument_bindings: Vec::new(),
-                    typed_arguments: Vec::new(),
-                    guard_paths: Some(vec![current_guard_path(&evidence.guards)]),
-                });
-            }
-        }
-        for blocker in &trace.reference_blockers {
-            record_blocker(&mut result.blockers, blocker);
-        }
-
-        let Some(branch) = trace.unresolved_branch else {
-            continue;
-        };
-        if forced_branches.len() >= MAX_CALL_GRAPH_BRANCH_DECISIONS {
-            record_blocker(
-                &mut result.blockers,
-                format!(
-                    "call graph exceeds the limit of {MAX_CALL_GRAPH_BRANCH_DECISIONS} branch decisions per path at {:#010x}",
-                    branch.site
-                ),
-            );
-            continue;
-        }
-        for taken in [false, true] {
-            let mut next = forced_branches.clone();
-            if next.insert(branch.site, taken).is_some() {
-                record_blocker(
-                    &mut result.blockers,
-                    format!(
-                        "call graph revisits branch {:#010x}; that path is incomplete",
-                        branch.site
-                    ),
+    let summary = direct::explore_structural_program_bounded(
+        symbol,
+        &program,
+        svd,
+        &resolver.relocated_calls,
+        &resolver.pointer_context,
+        None,
+        direct::StructuralTraceBudget {
+            max_instruction_steps: MAX_CALL_GRAPH_INSTRUCTION_STEPS_PER_TRACE,
+            max_events: MAX_CALL_GRAPH_EVENTS_PER_TRACE,
+        },
+        MAX_CALL_GRAPH_STATES,
+        MAX_CALL_GRAPH_BRANCH_DECISIONS,
+        |trace| {
+            let trace = match trace {
+                Ok(trace) => trace,
+                Err(error) => {
+                    record_blocker(&mut result.blockers, error.to_string());
+                    return;
+                }
+            };
+            for effect in instruction_effects_for_trace(&trace, resolver, &[], &[]) {
+                record_site_effect(
+                    &mut result,
+                    &mut site_effect_counts,
+                    &mut truncated_effect_sites,
+                    effect,
                 );
-            } else if queued.insert(next.clone()) {
-                queue.push_back(next);
             }
-        }
+            let mut evidence = DirectTraceEvidence::default();
+            let read_sources = memory_read_sources_for_trace(&trace);
+            for event in &trace.reference_events {
+                collect_guarded_direct_event(
+                    event,
+                    resolver,
+                    identities,
+                    svd,
+                    &read_sources,
+                    &mut evidence,
+                );
+            }
+            result.calls.append(&mut evidence.calls);
+            result
+                .direct_mmio_predicates
+                .append(&mut evidence.direct_mmio_predicates);
+            for relocation in symbol.relocations.iter().filter(|relocation| {
+                matches!(
+                    relocation.kind,
+                    artifact::RelocationKind::Call | artifact::RelocationKind::CallPlt
+                )
+            }) {
+                let unresolved = format!(
+                    "unresolved-call-relocation at {:#x}: {}",
+                    relocation.address, relocation.symbol
+                );
+                if trace
+                    .reference_blockers
+                    .iter()
+                    .any(|blocker| blocker == &unresolved)
+                {
+                    result.calls.insert(LinkedCall {
+                        kind: "unresolved",
+                        target: relocation.symbol.clone(),
+                        site: Some(relocation.address),
+                        tail: artifact::relocated_call_is_tail(symbol, relocation.address)
+                            .unwrap_or(false),
+                        result_modeled: false,
+                        execution_model: None,
+                        semantics: Some(
+                            "unresolved call relocation; arguments and callee effects are unavailable"
+                                .to_owned(),
+                        ),
+                        semantic_operation: None,
+                        semantic_contract: None,
+                        replacement_hint: None,
+                        project_symbol: Some(relocation.symbol.clone()),
+                        project_candidates: Vec::new(),
+                        trampoline: None,
+                        argument_shapes: 1,
+                        arguments: Vec::new(),
+                        argument_bindings: Vec::new(),
+                        typed_arguments: Vec::new(),
+                        guard_paths: Some(vec![current_guard_path(&evidence.guards)]),
+                    });
+                }
+            }
+            for blocker in &trace.reference_blockers {
+                record_blocker(&mut result.blockers, blocker);
+            }
+        },
+    );
+    for limit in summary.limits {
+        let message = match limit {
+            direct::StructuralExplorationLimit::States { maximum } => {
+                format!("call graph exceeds the exploration limit of {maximum} states")
+            }
+            direct::StructuralExplorationLimit::BranchDecisions { site, maximum } => format!(
+                "call graph exceeds the limit of {maximum} branch decisions per path at {site:#010x}"
+            ),
+            direct::StructuralExplorationLimit::RevisitedBranch { site } => {
+                format!("call graph revisits branch {site:#010x}; that path is incomplete")
+            }
+        };
+        record_blocker(&mut result.blockers, message);
     }
 
     result
@@ -834,7 +808,7 @@ mod tests {
             symbols_by_address: BTreeMap::new(),
             symbol_ids: BTreeMap::new(),
             exported_symbol_keys: BTreeSet::new(),
-            relocated_calls: BTreeMap::new(),
+            relocated_calls: direct::StructuralRelocatedCalls::new(),
             pointer_context: direct::StructuralPointerContext::default(),
             data_symbols: vec![artifact::ArtifactDataSymbolDefinition {
                 member: None,

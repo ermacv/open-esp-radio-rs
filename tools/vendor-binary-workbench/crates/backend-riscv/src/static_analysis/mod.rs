@@ -30,7 +30,7 @@ use alu::apply_alu_instruction;
 use calls::{StructuralCallControl, apply_call_instruction, apply_relocated_call};
 pub use context::{
     StructuralCallSite, StructuralPointerContext, StructuralProjectedRelocation,
-    StructuralRelocatedCalls,
+    StructuralRelocatedCallView, StructuralRelocatedCalls,
 };
 use memory::*;
 use memory_access::{apply_floating_memory_instruction, apply_memory_instruction};
@@ -346,6 +346,133 @@ pub struct StructuralProgram {
     loop_checkpoint_addresses: BTreeSet<u32>,
 }
 
+/// Why bounded artifact-wide CFG exploration stopped before scheduling every
+/// discovered path.  Consumers attach their own evidence vocabulary; the
+/// architecture backend owns only the control-flow fact.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StructuralExplorationLimit {
+    States { maximum: usize },
+    BranchDecisions { site: u32, maximum: usize },
+    RevisitedBranch { site: u32 },
+}
+
+/// Aggregate accounting for one function-local exploration.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct StructuralExplorationSummary {
+    pub explored_states: usize,
+    /// Instructions interpreted across the bounded path replays.
+    pub executed_instruction_steps: usize,
+    pub limits: Vec<StructuralExplorationLimit>,
+}
+
+struct StructuralTraceCursor {
+    state: StructuralTraceState,
+    instruction_index: usize,
+    instruction_steps: usize,
+    instruction_visits: BTreeMap<u32, u16>,
+    emitted_branch_decisions: BTreeSet<u32>,
+    checkpoints: BTreeMap<u32, StructuralCheckpoint>,
+}
+
+impl StructuralTraceCursor {
+    fn initial(specialized_arguments: Option<&Rv32CallArguments>) -> Self {
+        Self {
+            state: StructuralTraceState::new(specialized_arguments),
+            instruction_index: 0,
+            instruction_steps: 0,
+            instruction_visits: BTreeMap::new(),
+            emitted_branch_decisions: BTreeSet::new(),
+            checkpoints: BTreeMap::new(),
+        }
+    }
+}
+
+struct StructuralTraceRun {
+    analysis: FunctionAnalysis,
+    executed_instruction_steps: usize,
+}
+
+/// Explore every bounded input-dependent path of one already-decoded
+/// function.  MMIO discovery and linked-IR construction intentionally share
+/// this scheduler so path coverage, limits and future CFG-state caching cannot
+/// drift between projections.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the shared explorer retains the explicit backend trace contract"
+)]
+pub fn explore_structural_program_bounded(
+    symbol: &artifact::ArtifactSymbolDefinition,
+    program: &StructuralProgram,
+    svd: &MmioMap,
+    relocated_calls: &StructuralRelocatedCalls,
+    pointer_context: &StructuralPointerContext,
+    specialized_arguments: Option<&Rv32CallArguments>,
+    trace_budget: StructuralTraceBudget,
+    maximum_states: usize,
+    maximum_branch_decisions: usize,
+    mut observe: impl FnMut(Result<FunctionAnalysis>),
+) -> StructuralExplorationSummary {
+    let mut summary = StructuralExplorationSummary::default();
+    let mut queue = std::collections::VecDeque::from([BTreeMap::<u32, bool>::new()]);
+    let mut queued = BTreeSet::from([BTreeMap::<u32, bool>::new()]);
+    let relocated_calls = StructuralRelocatedCallView::new(symbol, relocated_calls);
+
+    while let Some(forced_branches) = queue.pop_front() {
+        if summary.explored_states >= maximum_states {
+            summary.limits.push(StructuralExplorationLimit::States {
+                maximum: maximum_states,
+            });
+            break;
+        }
+        summary.explored_states += 1;
+        let run = run_bound_structural_program_with_branches_bounded(
+            symbol,
+            program,
+            svd,
+            &relocated_calls,
+            pointer_context,
+            StructuralTraceCursor::initial(specialized_arguments),
+            &forced_branches,
+            trace_budget,
+        );
+        let run = match run {
+            Ok(run) => run,
+            Err(error) => {
+                observe(Err(error));
+                continue;
+            }
+        };
+        summary.executed_instruction_steps += run.executed_instruction_steps;
+        let branch = run.analysis.unresolved_branch.clone();
+        observe(Ok(run.analysis));
+
+        let Some(branch) = branch else {
+            continue;
+        };
+        if forced_branches.len() >= maximum_branch_decisions {
+            summary
+                .limits
+                .push(StructuralExplorationLimit::BranchDecisions {
+                    site: branch.site,
+                    maximum: maximum_branch_decisions,
+                });
+            continue;
+        }
+        for taken in [false, true] {
+            let mut next = forced_branches.clone();
+            if next.insert(branch.site, taken).is_some() {
+                summary
+                    .limits
+                    .push(StructuralExplorationLimit::RevisitedBranch { site: branch.site });
+            } else if queued.insert(next.clone()) {
+                queue.push_back(next);
+            }
+        }
+    }
+
+    summary
+}
+
 impl StructuralProgram {
     pub fn decode(symbol: &artifact::ArtifactSymbolDefinition) -> Result<Self> {
         let instructions = artifact::decode_symbol_for_analysis(symbol)?;
@@ -397,21 +524,51 @@ pub fn trace_structural_program_with_branches_bounded(
     forced_branches: &BTreeMap<u32, bool>,
     budget: StructuralTraceBudget,
 ) -> Result<FunctionAnalysis> {
-    let mut state = StructuralTraceState::new(specialized_arguments);
+    run_bound_structural_program_with_branches_bounded(
+        symbol,
+        program,
+        svd,
+        &StructuralRelocatedCallView::new(symbol, relocated_calls),
+        pointer_context,
+        StructuralTraceCursor::initial(specialized_arguments),
+        forced_branches,
+        budget,
+    )
+    .map(|run| run.analysis)
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the bound reusable structural program retains the explicit trace contract"
+)]
+fn run_bound_structural_program_with_branches_bounded(
+    symbol: &artifact::ArtifactSymbolDefinition,
+    program: &StructuralProgram,
+    svd: &MmioMap,
+    relocated_calls: &StructuralRelocatedCallView<'_>,
+    pointer_context: &StructuralPointerContext,
+    cursor: StructuralTraceCursor,
+    forced_branches: &BTreeMap<u32, bool>,
+    budget: StructuralTraceBudget,
+) -> Result<StructuralTraceRun> {
+    let started_instruction_steps = cursor.instruction_steps;
+    let StructuralTraceCursor {
+        mut state,
+        mut instruction_index,
+        mut instruction_steps,
+        mut instruction_visits,
+        mut emitted_branch_decisions,
+        mut checkpoints,
+    } = cursor;
     let instructions = &program.instructions;
     let instruction_indices = &program.instruction_indices;
     let loop_checkpoint_addresses = &program.loop_checkpoint_addresses;
-    let mut instruction_index = 0usize;
-    let mut instruction_steps = 0usize;
-    let mut instruction_visits = BTreeMap::<u32, u16>::new();
     // Reference-flow exploration forces one outcome per unresolved branch
     // site. A loop-invariant branch inside a concrete counted loop therefore
     // has one semantic decision even though the instruction executes many
     // times. Keep only its first event; otherwise flow construction would
     // incorrectly require both outcomes again inside the already selected
     // arm.
-    let mut emitted_forced_branch_decisions = BTreeSet::<u32>::new();
-    let mut checkpoints = BTreeMap::<u32, StructuralCheckpoint>::new();
     while let Some(decoded_or_blocker) = instructions.get(instruction_index).copied() {
         if instruction_steps >= budget.max_instruction_steps {
             state.blockers.push(format!(
@@ -602,14 +759,15 @@ pub fn trace_structural_program_with_branches_bounded(
                         state.values[0] = SymbolicValue::Constant(0);
                         continue;
                     }
-                    let Some(taken) = forced_branches.get(&(pc as u32)).copied() else {
+                    let selected = forced_branches.get(&(pc as u32)).copied();
+                    let Some(taken) = selected else {
                         state.blockers.push(format!(
                             "input-dependent control-flow at {pc:#x}: {instruction}"
                         ));
                         state.unresolved_branch = Some(condition);
                         break;
                     };
-                    if emitted_forced_branch_decisions.insert(pc as u32) {
+                    if emitted_branch_decisions.insert(pc as u32) {
                         state
                             .reference_events
                             .push(DraftReferenceEvent::BranchDecision { condition, taken });
@@ -681,5 +839,59 @@ pub fn trace_structural_program_with_branches_bounded(
     // Forced-path traces are later normalized into one structured CFG. Keep
     // common private-stack spills on every path until that merge; pruning
     // them independently makes otherwise identical prefixes path-dependent.
-    Ok(state.finish(symbol, !forced_branches.is_empty()))
+    Ok(StructuralTraceRun {
+        analysis: state.finish(symbol, !forced_branches.is_empty()),
+        executed_instruction_steps: instruction_steps - started_instruction_steps,
+    })
+}
+
+#[cfg(test)]
+mod exploration_tests {
+    use super::*;
+
+    #[test]
+    fn bounded_exploration_visits_every_discovered_path() {
+        let symbol = artifact::ArtifactSymbolDefinition {
+            member: None,
+            name: "branched".to_owned(),
+            address: 0x1000,
+            bytes: vec![
+                0x63, 0x08, 0x05, 0x00, // beq a0, zero, 0x1010
+                0xb7, 0x75, 0x10, 0x20, // lui a1, 0x20107
+                0x23, 0xa8, 0xc5, 0x02, // sw a2, 0x30(a1)
+                0x67, 0x80, 0x00, 0x00, // ret
+                0xb7, 0x75, 0x10, 0x20, // lui a1, 0x20107
+                0x23, 0xaa, 0xd5, 0x02, // sw a3, 0x34(a1)
+                0x67, 0x80, 0x00, 0x00, // ret
+            ],
+            addresses_resolved: true,
+            memory_regions: Default::default(),
+            relocations: Vec::new(),
+        };
+        let program = StructuralProgram::decode(&symbol).unwrap();
+        let mut traces = 0;
+        let summary = explore_structural_program_bounded(
+            &symbol,
+            &program,
+            &MmioMap {
+                registers: Vec::new(),
+                regions: Vec::new(),
+            },
+            &StructuralRelocatedCalls::new(),
+            &StructuralPointerContext::default(),
+            None,
+            StructuralTraceBudget::UNBOUNDED,
+            127,
+            12,
+            |trace| {
+                trace.unwrap();
+                traces += 1;
+            },
+        );
+
+        assert_eq!(traces, 3);
+        assert_eq!(summary.explored_states, 3);
+        assert_eq!(summary.executed_instruction_steps, 9);
+        assert!(summary.limits.is_empty());
+    }
 }

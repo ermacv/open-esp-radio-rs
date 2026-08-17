@@ -48,5 +48,22 @@ Generated outputs are disposable and reproducible. They must preserve source
 artifact identity/provenance and must not contain proprietary payloads or full
 disassembly dumps. A generated file cannot replace its reviewed input.
 
+## Internal persistent query store
+
+`generated/.workbench-cache/queries.sqlite3` and `objects-*.pack` are
+disposable local implementation state, not project formats and not evidence.
+SQLite owns query keys, dependency edges, project-local output bindings, and
+the active immutable pack generation. Small query values remain inline in
+SQLite. Pack generations own larger immutable query values and every
+restorable generated output, addressed by SHA-256. Reachability compaction
+atomically switches generations and removes unreferenced objects. A
+store-schema change recreates the database and packs. No reader for an
+obsolete cache schema is maintained.
+
+Do not commit, publish or hand-edit the store. Generated linked-IR bundles are
+the portable/public artifacts; reviewed TOML remains the accepted knowledge.
+The SQLite WAL requires a local filesystem and is not supported on a network
+share.
+
 Human output is not an automation API. Scripts use `--format json` and check
 the reported schema.

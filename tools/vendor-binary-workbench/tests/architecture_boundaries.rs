@@ -311,3 +311,46 @@ fn large_analysis_and_human_renderers_keep_functional_boundaries() {
         "shared or linked-IR section renderers write through the global line macro: {violations:#?}"
     );
 }
+
+#[test]
+fn persistent_query_store_is_application_owned_and_has_no_legacy_cache() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let mut files = Vec::new();
+    rust_files(&root, &mut files);
+    let owners = files
+        .iter()
+        .filter(|path| {
+            let source = fs::read_to_string(path).expect("read Workbench source");
+            source.contains("query_store")
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        owners
+            .iter()
+            .all(|path| path.starts_with(root.join("application"))),
+        "persistent query-store ownership escaped the application layer: {owners:#?}"
+    );
+
+    let legacy = files
+        .into_iter()
+        .filter_map(|path| {
+            let source = fs::read_to_string(&path).expect("read Workbench source");
+            source
+                .contains(".project-analyze-cache.json")
+                .then_some(path)
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        legacy.is_empty(),
+        "obsolete JSON project cache was restored: {legacy:#?}"
+    );
+
+    let store = fs::read_to_string(root.join("application/query_store.rs"))
+        .expect("read persistent query-store implementation");
+    for forbidden in ["qualification", "ledger", "driver/"] {
+        assert!(
+            !store.contains(forbidden),
+            "query store depends on non-analysis authority {forbidden:?}"
+        );
+    }
+}

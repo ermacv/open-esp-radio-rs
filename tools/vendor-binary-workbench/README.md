@@ -92,7 +92,7 @@ launcher below skips Cargo entirely.
 
    ```console
    tools/vendor-binary-workbench/scripts/run-limited \
-     project analyze --project radio-project/vendor-project.toml --jobs 1
+     project analyze --project radio-project/vendor-project.toml
    ```
 
 5. Review discovered registers and fields instead of promoting generated facts
@@ -155,18 +155,22 @@ in [architecture](docs/architecture.md).
 
 ## Resource safety
 
-Artifact-wide analysis defaults to one worker. Build the optimized binary once
-and use the hard-limit wrapper for real vendor inputs:
+Artifact-wide analysis defaults to four workers. The ESP32-S31 combined image
+uses about 450 MiB at that setting and analyzes roughly three times faster than
+the single-worker path. Build the optimized binary once and use the hard-limit
+wrapper for real vendor inputs:
 
 ```console
 CARGO_BUILD_JOBS=2 cargo build --profile workbench \
   -p open-radio-vendor-workbench-esp32s31-host --bin vendor-binary-workbench
 
 tools/vendor-binary-workbench/scripts/run-limited \
-  project analyze --check --project /path/to/vendor-project.toml --jobs 1
+  project analyze --check --project /path/to/vendor-project.toml
 ```
 
 The wrapper enforces a 1-GiB resident-memory limit and a 15-minute timeout.
+Use `--jobs 1` explicitly when working under a tighter memory budget; raise the
+worker count above four only after measuring the target project.
 User-systemd mode also disables swap. When a usable user-systemd scope is not
 available, a Linux watchdog measures the complete spawned process tree and
 enforces the same aggregate RSS and time limits without imposing a misleading

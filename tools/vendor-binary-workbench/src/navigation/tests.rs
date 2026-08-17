@@ -24,7 +24,7 @@ fn interface_caller_and_relocated_root_join_inventory_locations() {
     fs::write(
         &symbols_path,
         serde_json::to_string(&json!({
-            "schema_version": 4,
+            "schema_version": 5,
             "command": "symbols inventory",
             "linkage_mode": "association-only",
             "linker_resolution_claim": false,

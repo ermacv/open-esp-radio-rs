@@ -335,6 +335,26 @@ fn resolve_inputs(profile: &ProjectIrProfile, run_spec: &RunSpec) -> Result<Reso
     })
 }
 
+/// Exact caller-owned files that can affect one linked-IR profile. This is
+/// shared with the project-analysis cache so changing one link unit cannot
+/// invalidate every unrelated profile.
+pub(crate) fn profile_input_paths(
+    profile: &ProjectIrProfile,
+    run_spec: &RunSpec,
+) -> Result<Vec<PathBuf>> {
+    let inputs = resolve_inputs(profile, run_spec)?;
+    let mut paths = inputs
+        .artifacts
+        .into_iter()
+        .map(|(_, path)| path)
+        .chain(inputs.inventories.into_iter().map(|(_, path)| path))
+        .chain(inputs.companions)
+        .collect::<Vec<_>>();
+    paths.sort();
+    paths.dedup();
+    Ok(paths)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

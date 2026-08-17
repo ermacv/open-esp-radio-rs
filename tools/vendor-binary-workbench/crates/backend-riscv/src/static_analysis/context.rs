@@ -35,7 +35,106 @@ impl StructuralCallSite {
     }
 }
 
-pub type StructuralRelocatedCalls = BTreeMap<StructuralCallSite, (String, Option<u32>)>;
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+struct StructuralCallOwner {
+    member: Option<String>,
+    symbol: String,
+}
+
+impl StructuralCallOwner {
+    fn from_site(site: &StructuralCallSite) -> Self {
+        Self {
+            member: site.member.clone(),
+            symbol: site.symbol.clone(),
+        }
+    }
+
+    fn new(owner: &artifact::ArtifactSymbolDefinition) -> Self {
+        Self {
+            member: owner.member.clone(),
+            symbol: owner.name.clone(),
+        }
+    }
+}
+
+/// Exact relocated-call catalog with an owner-local execution index.
+///
+/// The exact map remains the evidence identity used by resolver operations.
+/// Structural tracing never scans it: every insertion also updates the
+/// immutable function-local `pc -> call` projection.
+#[derive(Clone, Debug, Default)]
+pub struct StructuralRelocatedCalls {
+    exact: BTreeMap<StructuralCallSite, (String, Option<u32>)>,
+    by_owner: BTreeMap<StructuralCallOwner, BTreeMap<u32, (String, Option<u32>)>>,
+}
+
+impl StructuralRelocatedCalls {
+    pub const fn new() -> Self {
+        Self {
+            exact: BTreeMap::new(),
+            by_owner: BTreeMap::new(),
+        }
+    }
+
+    pub fn insert(
+        &mut self,
+        site: StructuralCallSite,
+        call: (String, Option<u32>),
+    ) -> Option<(String, Option<u32>)> {
+        self.by_owner
+            .entry(StructuralCallOwner::from_site(&site))
+            .or_default()
+            .insert(site.address, call.clone());
+        self.exact.insert(site, call)
+    }
+
+    pub fn get(&self, site: &StructuralCallSite) -> Option<&(String, Option<u32>)> {
+        self.exact.get(site)
+    }
+
+    pub fn values(&self) -> impl Iterator<Item = &(String, Option<u32>)> {
+        self.exact.values()
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (&StructuralCallSite, &(String, Option<u32>))> {
+        self.exact.iter()
+    }
+}
+
+impl<const N: usize> From<[(StructuralCallSite, (String, Option<u32>)); N]>
+    for StructuralRelocatedCalls
+{
+    fn from(calls: [(StructuralCallSite, (String, Option<u32>)); N]) -> Self {
+        let mut catalog = Self::new();
+        for (site, call) in calls {
+            catalog.insert(site, call);
+        }
+        catalog
+    }
+}
+
+/// Function-local integer index derived once before tracing. The project
+/// catalog remains keyed by exact owner identity; the execution hot path does
+/// not rebuild that string identity for every instruction.
+#[derive(Debug, Default)]
+pub struct StructuralRelocatedCallView<'a> {
+    calls: Option<&'a BTreeMap<u32, (String, Option<u32>)>>,
+}
+
+impl<'a> StructuralRelocatedCallView<'a> {
+    pub fn new(
+        owner: &artifact::ArtifactSymbolDefinition,
+        calls: &'a StructuralRelocatedCalls,
+    ) -> Self {
+        Self {
+            calls: calls.by_owner.get(&StructuralCallOwner::new(owner)),
+        }
+    }
+
+    pub fn get(&self, address: u32) -> Option<&(String, Option<u32>)> {
+        self.calls.and_then(|calls| calls.get(&address))
+    }
+}
 
 /// One data relocation conservatively projected from an exact relocatable
 /// origin onto an instruction in the authoritative linked image.

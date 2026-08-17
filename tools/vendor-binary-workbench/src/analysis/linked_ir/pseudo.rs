@@ -218,6 +218,7 @@ pub(super) fn pseudo_value(value: &SymbolicValue) -> String {
             operation,
             left,
             right,
+            ..
         } => {
             let left = pseudo_value(left);
             let right = pseudo_value(right);

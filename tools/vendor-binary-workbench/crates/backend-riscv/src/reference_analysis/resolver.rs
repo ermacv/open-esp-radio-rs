@@ -603,6 +603,21 @@ impl ReferenceResolver {
         svd: &MmioMap,
         budget: StructuralTraceBudget,
     ) -> Result<FunctionAnalysis> {
+        self.trace_symbol_bounded_with_memo(
+            symbol,
+            svd,
+            budget,
+            &super::ReferenceAnalysisMemo::default(),
+        )
+    }
+
+    pub fn trace_symbol_bounded_with_memo(
+        &self,
+        symbol: &artifact::ArtifactSymbolDefinition,
+        svd: &MmioMap,
+        budget: StructuralTraceBudget,
+        memo: &super::ReferenceAnalysisMemo,
+    ) -> Result<FunctionAnalysis> {
         let identity = symbol_key(symbol);
         let symbol_id = *self
             .symbol_ids
@@ -615,6 +630,7 @@ impl ReferenceResolver {
             pointer_context: &self.pointer_context,
             svd,
             budget,
+            memo,
         };
         resolve_reference_trace_with_budget(symbol, &context, None, &mut visiting)
     }
@@ -699,7 +715,7 @@ mod tests {
             symbols_by_address: BTreeMap::new(),
             symbol_ids: BTreeMap::new(),
             exported_symbol_keys: BTreeSet::new(),
-            relocated_calls: BTreeMap::new(),
+            relocated_calls: StructuralRelocatedCalls::new(),
             pointer_context: StructuralPointerContext::default(),
             data_symbols,
             data_objects: Vec::new(),
@@ -808,10 +824,11 @@ mod tests {
         }));
         let mut context = StructuralPointerContext::default();
         context.summary_hooks = Some(hooks);
-        let relocated_calls = BTreeMap::from([(
+        let mut relocated_calls = StructuralRelocatedCalls::new();
+        relocated_calls.insert(
             StructuralCallSite::new(&owner, 0x1000),
             ("__ctzsi2".to_owned(), None),
-        )]);
+        );
         let mut visiting = BTreeSet::from([0x1000]);
 
         let trace = resolve_reference_trace(

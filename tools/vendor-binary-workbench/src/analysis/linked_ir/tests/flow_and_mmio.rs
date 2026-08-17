@@ -478,7 +478,7 @@ fn linked_absolute_table_base_is_not_reported_as_a_giant_context_offset() {
         symbols_by_address: BTreeMap::new(),
         symbol_ids: BTreeMap::new(),
         exported_symbol_keys: BTreeSet::new(),
-        relocated_calls: BTreeMap::new(),
+        relocated_calls: direct::StructuralRelocatedCalls::new(),
         pointer_context: direct::StructuralPointerContext::default(),
         data_symbols: vec![artifact::ArtifactDataSymbolDefinition {
             member: None,
@@ -564,7 +564,7 @@ fn linked_indexed_absolute_table_base_uses_the_sized_data_symbol() {
         symbols_by_address: BTreeMap::new(),
         symbol_ids: BTreeMap::new(),
         exported_symbol_keys: BTreeSet::new(),
-        relocated_calls: BTreeMap::new(),
+        relocated_calls: direct::StructuralRelocatedCalls::new(),
         pointer_context: direct::StructuralPointerContext::default(),
         data_symbols: vec![artifact::ArtifactDataSymbolDefinition {
             member: None,
@@ -599,11 +599,11 @@ fn linked_indexed_absolute_table_base_uses_the_sized_data_symbol() {
         reference_events: vec![DraftReferenceEvent::Memory {
             access: MemoryAccess::Read,
             width: 16,
-            address: SymbolicValue::Expression {
-                operation: ExpressionOperation::Add,
-                left: std::sync::Arc::new(SymbolicValue::Constant(0x1002_eec8)),
-                right: std::sync::Arc::new(SymbolicValue::input(0).shift_left(1)),
-            },
+            address: SymbolicValue::expression(
+                ExpressionOperation::Add,
+                SymbolicValue::Constant(0x1002_eec8),
+                SymbolicValue::input(0).shift_left(1),
+            ),
             region: "indexed RAM object".to_owned(),
             value: None,
         }],
@@ -669,7 +669,7 @@ fn instruction_effects_keep_exact_mmio_and_memory_sites() {
         symbols_by_address: BTreeMap::new(),
         symbol_ids: BTreeMap::new(),
         exported_symbol_keys: BTreeSet::new(),
-        relocated_calls: BTreeMap::new(),
+        relocated_calls: direct::StructuralRelocatedCalls::new(),
         pointer_context: direct::StructuralPointerContext::default(),
         data_symbols: Vec::new(),
         data_objects: Vec::new(),

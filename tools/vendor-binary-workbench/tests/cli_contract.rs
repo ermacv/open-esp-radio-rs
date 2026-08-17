@@ -474,11 +474,11 @@ fn focused_investigation_commands_are_part_of_the_typed_cli() {
 }
 
 #[test]
-fn artifact_wide_jobs_default_to_one_and_zero_is_rejected() {
+fn artifact_wide_jobs_default_to_four_and_zero_is_rejected() {
     let help = run(&["project", "analyze", "--help"]);
     assert!(help.status.success());
     let help = String::from_utf8(help.stdout).unwrap();
-    assert!(help.contains("[default: 1]"), "unexpected help: {help}");
+    assert!(help.contains("[default: 4]"), "unexpected help: {help}");
 
     let output = run(&[
         "project",
@@ -1386,7 +1386,7 @@ fn project_symbol_inventory_writes_and_checks_its_manifest_owned_report() {
     let report = directory.join("generated/symbols.json");
     let document: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&report).unwrap()).unwrap();
-    assert_eq!(document["schema_version"], 4);
+    assert_eq!(document["schema_version"], 5);
     assert_eq!(document["command"], "symbols inventory");
     assert!(document["summary"]["symbol_facts"].as_u64().unwrap() > 0);
     assert!(document["summary"]["executable_bytes"].as_u64().unwrap() > 0);

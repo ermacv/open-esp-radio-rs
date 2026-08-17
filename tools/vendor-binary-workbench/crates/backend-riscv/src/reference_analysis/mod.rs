@@ -15,9 +15,129 @@ use intrinsics::standard_memory_intrinsic_trace;
 pub use resolver::{ReferenceResolver, ReferenceSymbolKey};
 
 use std::{
+    cell::{Cell, RefCell},
     collections::{BTreeMap, BTreeSet, VecDeque},
     path::{Path, PathBuf},
 };
+
+const MAX_MEMOIZED_CALLEE_VARIANTS: usize = 2_048;
+
+/// Process-local immutable callee summaries shared by one analysis worker.
+///
+/// The exact target and complete RV32 symbolic argument array form the key.
+/// Completed eligible and ineligible traces enter the memo; a
+/// recursion-dependent failure cannot escape its original caller.
+pub struct ReferenceAnalysisMemo {
+    callee_cache: RefCell<BTreeMap<u32, Vec<(Rv32CallArguments, FunctionAnalysis)>>>,
+    entries: Cell<usize>,
+    hits: Cell<usize>,
+}
+
+impl Default for ReferenceAnalysisMemo {
+    fn default() -> Self {
+        Self {
+            callee_cache: RefCell::new(BTreeMap::new()),
+            entries: Cell::new(0),
+            hits: Cell::new(0),
+        }
+    }
+}
+
+impl ReferenceAnalysisMemo {
+    pub fn entries(&self) -> usize {
+        self.entries.get()
+    }
+
+    pub fn hits(&self) -> usize {
+        self.hits.get()
+    }
+
+    fn get(&self, target: u32, arguments: &Rv32CallArguments) -> Option<FunctionAnalysis> {
+        let trace = self
+            .callee_cache
+            .borrow()
+            .get(&target)
+            .and_then(|entries| {
+                entries
+                    .iter()
+                    .find(|(cached_arguments, _)| cached_arguments == arguments)
+            })
+            .map(|(_, trace)| trace.clone())?;
+        self.hits.set(self.hits.get() + 1);
+        Some(trace)
+    }
+
+    fn insert_completed(
+        &self,
+        target: u32,
+        arguments: &Rv32CallArguments,
+        trace: &FunctionAnalysis,
+        failure_reasons: Option<&[String]>,
+    ) {
+        let recursion_dependent = failure_reasons.is_some_and(|reasons| {
+            reasons
+                .iter()
+                .any(|reason| reason.contains("recursive-call"))
+        });
+        if recursion_dependent || self.entries.get() >= MAX_MEMOIZED_CALLEE_VARIANTS {
+            return;
+        }
+        let mut cache = self.callee_cache.borrow_mut();
+        let entries = cache.entry(target).or_default();
+        if !entries
+            .iter()
+            .any(|(cached_arguments, _)| cached_arguments == arguments)
+        {
+            entries.push((arguments.clone(), trace.clone()));
+            self.entries.set(self.entries.get() + 1);
+        }
+    }
+}
+
+#[cfg(test)]
+mod memo_tests {
+    use super::*;
+
+    fn arguments() -> Rv32CallArguments {
+        std::array::from_fn(|index| SymbolicValue::Input { index: index as u8 })
+    }
+
+    fn trace(blocker: &str) -> FunctionAnalysis {
+        FunctionAnalysis {
+            symbol: "callee".to_owned(),
+            events: Vec::new(),
+            located_events: Vec::new(),
+            located_reference_events: Vec::new(),
+            reference_events: Vec::new(),
+            reference_dependencies: Vec::new(),
+            blockers: vec![blocker.to_owned()],
+            reference_blockers: Vec::new(),
+            return_value: SymbolicValue::Unknown,
+            reference_flow: None,
+            unresolved_branch: None,
+        }
+    }
+
+    #[test]
+    fn completed_ineligible_trace_is_exactly_keyed_but_recursion_is_not_cached() {
+        let memo = ReferenceAnalysisMemo::default();
+        let arguments = arguments();
+        let ineligible = trace("unmodeled-memory-load at 0x1000");
+        let reasons = ineligible.reference_failure_reasons();
+        memo.insert_completed(0x2000, &arguments, &ineligible, Some(&reasons));
+
+        assert_eq!(memo.entries(), 1);
+        assert_eq!(memo.get(0x2000, &arguments), Some(ineligible));
+        let mut different = arguments.clone();
+        different[0] = SymbolicValue::Constant(1);
+        assert!(memo.get(0x2000, &different).is_none());
+
+        let recursive = trace("recursive-call at 0x3000 to callee");
+        let reasons = recursive.reference_failure_reasons();
+        memo.insert_completed(0x3000, &arguments, &recursive, Some(&reasons));
+        assert!(memo.get(0x3000, &arguments).is_none());
+    }
+}
 
 use super::static_analysis::{
     StructuralCallSite, StructuralPointerContext, StructuralRelocatedCalls, StructuralTraceBudget,
@@ -43,12 +163,14 @@ pub fn resolve_reference_trace(
     svd: &MmioMap,
     visiting: &mut BTreeSet<u32>,
 ) -> Result<FunctionAnalysis> {
+    let memo = ReferenceAnalysisMemo::default();
     let context = ReferenceCalleeContext {
         symbols_by_address,
         relocated_calls,
         pointer_context,
         svd,
         budget: StructuralTraceBudget::UNBOUNDED,
+        memo: &memo,
     };
     resolve_reference_trace_with_budget(symbol, &context, specialized_arguments, visiting)
 }

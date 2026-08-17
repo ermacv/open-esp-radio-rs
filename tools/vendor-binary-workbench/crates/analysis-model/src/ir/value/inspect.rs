@@ -133,6 +133,7 @@ impl SymbolicValue {
                 operation: ExpressionOperation::Add,
                 left,
                 right,
+                ..
             } => {
                 if let Some((argument, stride)) = right.scaled_input() {
                     return left
@@ -270,6 +271,7 @@ impl SymbolicValue {
                 operation: ExpressionOperation::Multiply,
                 left,
                 right,
+                ..
             } => match (left.direct_input_index(), right.as_constant()) {
                 (Some(argument), Some(stride)) => Some((argument, i64::from(stride))),
                 _ => match (right.direct_input_index(), left.as_constant()) {
@@ -281,6 +283,7 @@ impl SymbolicValue {
                 operation: ExpressionOperation::ShiftLeft,
                 left,
                 right,
+                ..
             } => {
                 let argument = left.direct_input_index()?;
                 let shift = right.as_constant()?;
@@ -301,30 +304,9 @@ impl SymbolicValue {
         }
         match self {
             Self::Expression {
-                operation: ExpressionOperation::Add,
-                left,
-                right,
-            } => match (left.caller_memory_location(), right.as_constant()) {
-                (Some((index, offset)), Some(constant)) => {
-                    Some((index, offset.wrapping_add(constant as i32)))
-                }
-                _ => match (right.caller_memory_location(), left.as_constant()) {
-                    (Some((index, offset)), Some(constant)) => {
-                        Some((index, offset.wrapping_add(constant as i32)))
-                    }
-                    _ => None,
-                },
-            },
-            Self::Expression {
-                operation: ExpressionOperation::Subtract,
-                left,
-                right,
-            } => match (left.caller_memory_location(), right.as_constant()) {
-                (Some((index, offset)), Some(constant)) => {
-                    Some((index, offset.wrapping_sub(constant as i32)))
-                }
-                _ => None,
-            },
+                caller_memory_location,
+                ..
+            } => *caller_memory_location,
             _ => None,
         }
     }
@@ -343,6 +325,7 @@ impl SymbolicValue {
                 operation: ExpressionOperation::Add,
                 left,
                 right,
+                ..
             } => match (left.private_stack_offset(), right.as_constant()) {
                 (Some(offset), Some(constant)) => Some(offset.wrapping_add(constant as i32)),
                 _ => match (right.private_stack_offset(), left.as_constant()) {
@@ -354,6 +337,7 @@ impl SymbolicValue {
                 operation: ExpressionOperation::Subtract,
                 left,
                 right,
+                ..
             } => match (left.private_stack_offset(), right.as_constant()) {
                 (Some(offset), Some(constant)) => Some(offset.wrapping_sub(constant as i32)),
                 _ => None,
@@ -595,6 +579,7 @@ impl SymbolicValue {
                 operation,
                 left,
                 right,
+                ..
             } => format!(
                 "expr:{operation:?}({},{})",
                 left.canonical(),

@@ -2,6 +2,7 @@
 
 use super::*;
 
+#[derive(Clone)]
 pub(super) struct StructuralTraceState {
     pub(super) values: [SymbolicValue; 32],
     pub(super) floating_values: [SymbolicValue; 32],

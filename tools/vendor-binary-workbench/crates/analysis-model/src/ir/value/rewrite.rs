@@ -29,23 +29,14 @@ impl SymbolicValue {
             operation,
             left,
             right,
+            ..
         } = self
         {
-            return Ok(Self::Expression {
-                operation: *operation,
-                left: Arc::new(left.substitute(
-                    arguments,
-                    read_tokens,
-                    memory_read_tokens,
-                    external_tokens,
-                )?),
-                right: Arc::new(right.substitute(
-                    arguments,
-                    read_tokens,
-                    memory_read_tokens,
-                    external_tokens,
-                )?),
-            });
+            return Ok(Self::expression_unbounded(
+                *operation,
+                left.substitute(arguments, read_tokens, memory_read_tokens, external_tokens)?,
+                right.substitute(arguments, read_tokens, memory_read_tokens, external_tokens)?,
+            ));
         }
         if let Self::FloatingPoint {
             operation,
@@ -256,25 +247,26 @@ impl SymbolicValue {
             operation,
             left,
             right,
+            ..
         } = self
         {
-            return Ok(Self::Expression {
-                operation: *operation,
-                left: Arc::new(left.rewrite_call_context(
+            return Ok(Self::expression_unbounded(
+                *operation,
+                left.rewrite_call_context(
                     read_tokens,
                     memory_read_tokens,
                     external_tokens,
                     call_results,
                     private_stack_reads,
-                )?),
-                right: Arc::new(right.rewrite_call_context(
+                )?,
+                right.rewrite_call_context(
                     read_tokens,
                     memory_read_tokens,
                     external_tokens,
                     call_results,
                     private_stack_reads,
-                )?),
-            });
+                )?,
+            ));
         }
         if let Self::FloatingPoint {
             operation,
@@ -465,13 +457,14 @@ impl SymbolicValue {
             operation,
             left,
             right,
+            ..
         } = self
         {
-            return Ok(Self::Expression {
-                operation: *operation,
-                left: Arc::new(left.rewrite_private_stack_context(private_stack_reads)?),
-                right: Arc::new(right.rewrite_private_stack_context(private_stack_reads)?),
-            });
+            return Ok(Self::expression_unbounded(
+                *operation,
+                left.rewrite_private_stack_context(private_stack_reads)?,
+                right.rewrite_private_stack_context(private_stack_reads)?,
+            ));
         }
         if let Self::FloatingPoint {
             operation,

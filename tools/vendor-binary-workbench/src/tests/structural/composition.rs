@@ -249,7 +249,7 @@ fn unused_callee_write_to_caller_private_stack_is_internal_scratch() {
     let trace = resolve_reference_trace(
         &parent,
         &symbols,
-        &BTreeMap::new(),
+        &direct::StructuralRelocatedCalls::new(),
         &StructuralPointerContext::default(),
         None,
         &map(),
@@ -299,7 +299,7 @@ fn consumed_callee_write_to_caller_private_stack_is_composed() {
     let trace = resolve_reference_trace(
         &parent,
         &symbols,
-        &BTreeMap::new(),
+        &direct::StructuralRelocatedCalls::new(),
         &StructuralPointerContext::default(),
         None,
         &map(),
@@ -347,7 +347,7 @@ fn callee_read_from_initialized_caller_private_stack_is_composed() {
     let trace = resolve_reference_trace(
         &parent,
         &symbols,
-        &BTreeMap::new(),
+        &direct::StructuralRelocatedCalls::new(),
         &StructuralPointerContext::default(),
         None,
         &map(),
@@ -378,7 +378,7 @@ fn entry_stack_argument_is_a_distinct_rv32_abi_input() {
     let trace = trace_binary_symbol(
         &symbol,
         &map(),
-        &BTreeMap::new(),
+        &direct::StructuralRelocatedCalls::new(),
         &StructuralPointerContext::default(),
         None,
     )
@@ -437,7 +437,7 @@ fn outgoing_stack_argument_is_substituted_into_a_direct_callee() {
     let trace = resolve_reference_trace(
         &parent,
         &symbols,
-        &BTreeMap::new(),
+        &direct::StructuralRelocatedCalls::new(),
         &StructuralPointerContext::default(),
         None,
         &map(),
@@ -485,7 +485,7 @@ fn incoming_stack_argument_survives_an_unrelated_callee_stack_write() {
     let trace = resolve_reference_trace(
         &parent,
         &symbols,
-        &BTreeMap::new(),
+        &direct::StructuralRelocatedCalls::new(),
         &StructuralPointerContext::default(),
         None,
         &map(),
@@ -536,7 +536,7 @@ fn pointer_reloaded_after_a_call_recovers_caller_memory_provenance() {
     let trace = resolve_reference_trace(
         &parent,
         &symbols,
-        &BTreeMap::new(),
+        &direct::StructuralRelocatedCalls::new(),
         &StructuralPointerContext::default(),
         None,
         &map(),
@@ -602,7 +602,7 @@ fn deferred_pointer_without_caller_memory_provenance_fails_closed() {
     let trace = resolve_reference_trace(
         &parent,
         &symbols,
-        &BTreeMap::new(),
+        &direct::StructuralRelocatedCalls::new(),
         &StructuralPointerContext::default(),
         None,
         &map(),

@@ -28,6 +28,7 @@ open-radio-vendor-analysis-model = { path = "crates/analysis-model" }
 open-radio-vendor-semantics = { path = "crates/semantics" }
 petgraph = { version = "=0.8.3", default-features = false }
 ratatui = { version = "=0.30.2", default-features = false, features = ["crossterm"] }
+rusqlite = { version = "=0.40.2", default-features = false, features = ["bundled"] }
 sha2 = "=0.10.9"
 serde = { version = "=1.0.229", features = ["derive"] }
 serde_json = { version = "=1.0.151", features = ["raw_value", "unbounded_depth"] }

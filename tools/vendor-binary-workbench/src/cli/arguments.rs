@@ -7,6 +7,12 @@ use clap::{Args, ValueEnum};
 use super::{NamedAddressRange, ProjectInputBinding, SourcePath, SourceValue};
 use crate::source_id::SourceId;
 
+/// Bounded default proven to stay below the Workbench wrapper's 1-GiB limit
+/// on the 3,132-function ESP32-S31 combined image while avoiding accidental
+/// single-core artifact analysis. Callers can still select one worker for a
+/// tighter memory budget or up to eight after measuring their own project.
+const DEFAULT_ANALYSIS_JOBS: u8 = 4;
+
 #[derive(Clone, Debug, Default, Args)]
 pub(crate) struct EmptyArgs {}
 
@@ -86,7 +92,7 @@ pub(crate) struct ProjectAnalyzeArgs {
     #[arg(long)]
     pub(crate) deny_unreviewed: bool,
     /// Worker threads for independent analysis.
-    #[arg(long, default_value_t = 1, value_parser = clap::value_parser!(u8).range(1..=8), value_name = "N")]
+    #[arg(long, default_value_t = DEFAULT_ANALYSIS_JOBS, value_parser = clap::value_parser!(u8).range(1..=8), value_name = "N")]
     pub(crate) jobs: u8,
 }
 
@@ -109,7 +115,7 @@ pub(crate) struct ProjectCheckArgs {
     #[arg(long)]
     pub(crate) deny_unreviewed: bool,
     /// Worker threads for independent analysis.
-    #[arg(long, default_value_t = 1, value_parser = clap::value_parser!(u8).range(1..=8), value_name = "N")]
+    #[arg(long, default_value_t = DEFAULT_ANALYSIS_JOBS, value_parser = clap::value_parser!(u8).range(1..=8), value_name = "N")]
     pub(crate) jobs: u8,
 }
 
@@ -319,7 +325,7 @@ pub(crate) struct MmioDiscoverArgs {
     #[arg(long, value_enum, default_value_t)]
     pub(crate) code_symbols: CodeSymbolSelectionArg,
     /// Worker threads used for independent function analysis.
-    #[arg(long, default_value_t = 1, value_parser = clap::value_parser!(u8).range(1..=8), value_name = "N")]
+    #[arg(long, default_value_t = DEFAULT_ANALYSIS_JOBS, value_parser = clap::value_parser!(u8).range(1..=8), value_name = "N")]
     pub(crate) jobs: u8,
     /// Write the machine-readable MMIO discovery report.
     #[arg(long)]
@@ -344,7 +350,7 @@ pub(crate) struct IrExportArgs {
     #[arg(long)]
     pub(crate) include_reachable: bool,
     /// Worker threads for artifact-wide independent functions.
-    #[arg(long, default_value_t = 1, value_parser = clap::value_parser!(u8).range(1..=8), value_name = "N")]
+    #[arg(long, default_value_t = DEFAULT_ANALYSIS_JOBS, value_parser = clap::value_parser!(u8).range(1..=8), value_name = "N")]
     pub(crate) jobs: u8,
     /// Registered entry contract used at the binary boundary.
     #[arg(long, default_value = "none")]
@@ -366,7 +372,7 @@ pub(crate) struct IrBuildArgs {
     #[arg(long)]
     pub(crate) check: bool,
     /// Worker threads for independent function-local analysis.
-    #[arg(long, default_value_t = 1, value_parser = clap::value_parser!(u8).range(1..=8), value_name = "N")]
+    #[arg(long, default_value_t = DEFAULT_ANALYSIS_JOBS, value_parser = clap::value_parser!(u8).range(1..=8), value_name = "N")]
     pub(crate) jobs: u8,
 }
 

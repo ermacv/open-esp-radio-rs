@@ -63,7 +63,7 @@ pub(crate) struct ArtifactSchema {
 }
 
 pub(crate) const SYMBOL_INVENTORY: ArtifactSchema = ArtifactSchema {
-    version: 4,
+    version: 5,
     command: "symbols inventory",
 };
 
@@ -78,7 +78,7 @@ pub(crate) const INTERFACE_FACTS: ArtifactSchema = ArtifactSchema {
 };
 
 pub(crate) const LINKED_IR: ArtifactSchema = ArtifactSchema {
-    version: 59,
+    version: 60,
     command: "ir export",
 };
 
@@ -113,7 +113,7 @@ mod tests {
         assert_eq!(
             SYMBOL_INVENTORY,
             ArtifactSchema {
-                version: 4,
+                version: 5,
                 command: "symbols inventory",
             }
         );
@@ -134,7 +134,7 @@ mod tests {
         assert_eq!(
             LINKED_IR,
             ArtifactSchema {
-                version: 59,
+                version: 60,
                 command: "ir export",
             }
         );

@@ -12,6 +12,7 @@ pub(crate) mod project_analysis;
 pub(crate) mod project_files;
 pub(crate) mod project_ir_build;
 pub(crate) mod project_publication;
+pub(crate) mod query_store;
 mod resolve;
 mod snapshot;
 pub(crate) mod status;

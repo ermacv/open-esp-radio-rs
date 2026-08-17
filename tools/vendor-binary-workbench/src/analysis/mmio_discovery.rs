@@ -5,7 +5,7 @@
 //! evidence, not a completeness claim.
 
 use std::{
-    collections::{BTreeMap, BTreeSet, VecDeque},
+    collections::{BTreeMap, BTreeSet},
     path::{Path, PathBuf},
     sync::{
         atomic::{AtomicUsize, Ordering},
@@ -382,78 +382,57 @@ fn explore_symbol(
             return result;
         }
     };
-    let mut queue = VecDeque::from([BTreeMap::<u32, bool>::new()]);
-    let mut queued = BTreeSet::from([BTreeMap::<u32, bool>::new()]);
-
-    while let Some(forced_branches) = queue.pop_front() {
-        if result.explored_states >= MAX_DISCOVERY_STATES {
-            result.diagnostics.insert((
-                "exploration",
-                format!(
-                    "symbolic CFG exceeds the discovery limit of {MAX_DISCOVERY_STATES} states"
-                ),
-            ));
-            break;
-        }
-        result.explored_states += 1;
-        let trace = match direct::trace_structural_program_with_branches_bounded(
-            symbol,
-            &program,
-            map,
-            relocated_calls,
-            pointer_context,
-            None,
-            &forced_branches,
-            direct::StructuralTraceBudget {
-                max_instruction_steps: MAX_DISCOVERY_INSTRUCTION_STEPS_PER_TRACE,
-                max_events: MAX_DISCOVERY_EVENTS_PER_TRACE,
-            },
-        ) {
-            Ok(trace) => trace,
-            Err(error) => {
-                result.diagnostics.insert(("decode", error.to_string()));
-                continue;
-            }
-        };
-        if merge_path_events(&mut result.events, &trace.located_events) {
-            result.diagnostics.insert((
-                "exploration",
-                format!(
-                    "function exceeds the discovery limit of {MAX_DISCOVERY_EVENTS_PER_FUNCTION} distinct observable events"
-                ),
-            ));
-        }
-        collect_trace_diagnostics(&trace, &mut result.diagnostics);
-
-        let Some(branch) = trace.unresolved_branch else {
-            result.terminal_paths += 1;
-            continue;
-        };
-        result.branch_sites.insert(branch.site);
-        if forced_branches.len() >= MAX_DISCOVERY_BRANCH_DECISIONS {
-            result.diagnostics.insert((
-                "exploration",
-                format!(
-                    "symbolic CFG exceeds the discovery limit of {MAX_DISCOVERY_BRANCH_DECISIONS} branch decisions per path at {:#010x}",
-                    branch.site
-                ),
-            ));
-            continue;
-        }
-        for taken in [false, true] {
-            let mut next = forced_branches.clone();
-            if next.insert(branch.site, taken).is_some() {
+    let summary = direct::explore_structural_program_bounded(
+        symbol,
+        &program,
+        map,
+        relocated_calls,
+        pointer_context,
+        None,
+        direct::StructuralTraceBudget {
+            max_instruction_steps: MAX_DISCOVERY_INSTRUCTION_STEPS_PER_TRACE,
+            max_events: MAX_DISCOVERY_EVENTS_PER_TRACE,
+        },
+        MAX_DISCOVERY_STATES,
+        MAX_DISCOVERY_BRANCH_DECISIONS,
+        |trace| {
+            let trace = match trace {
+                Ok(trace) => trace,
+                Err(error) => {
+                    result.diagnostics.insert(("decode", error.to_string()));
+                    return;
+                }
+            };
+            if merge_path_events(&mut result.events, &trace.located_events) {
                 result.diagnostics.insert((
                     "exploration",
                     format!(
-                        "symbolic CFG revisits branch {:#010x}; discovery stopped that path",
-                        branch.site
+                        "function exceeds the discovery limit of {MAX_DISCOVERY_EVENTS_PER_FUNCTION} distinct observable events"
                     ),
                 ));
-            } else if queued.insert(next.clone()) {
-                queue.push_back(next);
             }
-        }
+            collect_trace_diagnostics(&trace, &mut result.diagnostics);
+            if let Some(branch) = trace.unresolved_branch {
+                result.branch_sites.insert(branch.site);
+            } else {
+                result.terminal_paths += 1;
+            }
+        },
+    );
+    result.explored_states = summary.explored_states;
+    for limit in summary.limits {
+        let message = match limit {
+            direct::StructuralExplorationLimit::States { maximum } => {
+                format!("symbolic CFG exceeds the discovery limit of {maximum} states")
+            }
+            direct::StructuralExplorationLimit::BranchDecisions { site, maximum } => format!(
+                "symbolic CFG exceeds the discovery limit of {maximum} branch decisions per path at {site:#010x}"
+            ),
+            direct::StructuralExplorationLimit::RevisitedBranch { site } => {
+                format!("symbolic CFG revisits branch {site:#010x}; discovery stopped that path")
+            }
+        };
+        result.diagnostics.insert(("exploration", message));
     }
 
     result
@@ -563,7 +542,7 @@ pub(crate) fn discover_mmio(
     options: MmioDiscoveryOptions,
 ) -> Result<MmioDiscoveryReport> {
     let map = discovery_map(svd, ranges);
-    let relocated_calls = BTreeMap::new();
+    let relocated_calls = direct::StructuralRelocatedCalls::default();
     let pointer_context = StructuralPointerContext::default();
     let mut accumulators = BTreeMap::<(u32, u8), RegisterAccumulator>::new();
     let mut diagnostics = Vec::new();
@@ -770,7 +749,7 @@ mod tests {
         let exploration = explore_symbol(
             &symbol,
             &map,
-            &BTreeMap::new(),
+            &direct::StructuralRelocatedCalls::new(),
             &StructuralPointerContext::default(),
         );
         let addresses = exploration

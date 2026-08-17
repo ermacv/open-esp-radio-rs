@@ -818,7 +818,7 @@ mod tests {
             panic!("unexpected argument type")
         };
         assert!(!arguments.deny_unreviewed);
-        assert_eq!(arguments.jobs, 1);
+        assert_eq!(arguments.jobs, 4);
 
         let error =
             ParsedInvocation::parse(["project".to_owned(), "build".to_owned()]).unwrap_err();

@@ -22,7 +22,7 @@ fn indexed_absolute_ram_preserves_argument_stride_and_field_offset() {
     let trace = trace_binary_symbol(
         &symbol,
         &map(),
-        &BTreeMap::new(),
+        &direct::StructuralRelocatedCalls::new(),
         &StructuralPointerContext::default(),
         None,
     )
@@ -81,7 +81,7 @@ fn shifted_argument_index_preserves_absolute_table_read() {
     let trace = trace_binary_symbol(
         &symbol,
         &map(),
-        &BTreeMap::new(),
+        &direct::StructuralRelocatedCalls::new(),
         &StructuralPointerContext::default(),
         None,
     )
@@ -133,7 +133,7 @@ fn unsigned_set_less_than_keeps_snez_dataflow_codegen_ready() {
     let trace = trace_binary_symbol(
         &symbol,
         &map(),
-        &BTreeMap::new(),
+        &direct::StructuralRelocatedCalls::new(),
         &StructuralPointerContext::default(),
         None,
     )
@@ -175,7 +175,7 @@ fn single_read_backedge_becomes_a_structural_mmio_poll() {
     let trace = resolve_reference_trace(
         &symbol,
         &symbols,
-        &BTreeMap::new(),
+        &direct::StructuralRelocatedCalls::new(),
         &StructuralPointerContext::default(),
         None,
         &map(),
@@ -241,7 +241,7 @@ fn structural_poll_does_not_expose_an_unmodeled_final_read_value() {
     let trace = resolve_reference_trace(
         &symbol,
         &symbols,
-        &BTreeMap::new(),
+        &direct::StructuralRelocatedCalls::new(),
         &StructuralPointerContext::default(),
         None,
         &map(),
@@ -359,7 +359,7 @@ fn caller_owned_argument_ram_is_preserved_as_a_symbolic_memory_contract() {
     let trace = trace_binary_symbol(
         &symbol,
         &map(),
-        &BTreeMap::new(),
+        &direct::StructuralRelocatedCalls::new(),
         &StructuralPointerContext::default(),
         None,
     )
@@ -422,7 +422,7 @@ fn pointer_loaded_from_caller_ram_preserves_distinct_pointee_provenance() {
     let trace = trace_binary_symbol(
         &symbol,
         &map(),
-        &BTreeMap::new(),
+        &direct::StructuralRelocatedCalls::new(),
         &StructuralPointerContext::default(),
         None,
     )
@@ -468,7 +468,7 @@ fn floating_word_memory_preserves_context_address_and_value_provenance() {
     let trace = trace_binary_symbol(
         &symbol,
         &map(),
-        &BTreeMap::new(),
+        &direct::StructuralRelocatedCalls::new(),
         &StructuralPointerContext::default(),
         None,
     )
@@ -527,7 +527,7 @@ fn floating_bit_move_preserves_integer_argument_into_context_store() {
     let trace = trace_binary_symbol(
         &symbol,
         &map(),
-        &BTreeMap::new(),
+        &direct::StructuralRelocatedCalls::new(),
         &StructuralPointerContext::default(),
         None,
     )
@@ -579,7 +579,7 @@ fn floating_comparison_of_exact_bits_preserves_later_integer_control_data() {
     let trace = trace_binary_symbol(
         &symbol,
         &map(),
-        &BTreeMap::new(),
+        &direct::StructuralRelocatedCalls::new(),
         &StructuralPointerContext::default(),
         None,
     )
@@ -639,7 +639,7 @@ fn hi20_lo12_relocations_preserve_symbolic_data_reads_and_writes() {
     let trace = trace_binary_symbol(
         &symbol,
         &map(),
-        &BTreeMap::new(),
+        &direct::StructuralRelocatedCalls::new(),
         &StructuralPointerContext::default(),
         None,
     )
@@ -727,7 +727,14 @@ fn projected_origin_relocation_accepts_final_linked_low_immediate() {
         }],
     );
 
-    let trace = trace_binary_symbol(&symbol, &map(), &BTreeMap::new(), &context, None).unwrap();
+    let trace = trace_binary_symbol(
+        &symbol,
+        &map(),
+        &direct::StructuralRelocatedCalls::new(),
+        &context,
+        None,
+    )
+    .unwrap();
 
     assert!(
         !trace
@@ -775,7 +782,14 @@ fn projected_relaxed_unknown_pointer_cell_preserves_pointee_provenance() {
         }],
     );
 
-    let trace = trace_binary_symbol(&symbol, &map(), &BTreeMap::new(), &context, None).unwrap();
+    let trace = trace_binary_symbol(
+        &symbol,
+        &map(),
+        &direct::StructuralRelocatedCalls::new(),
+        &context,
+        None,
+    )
+    .unwrap();
 
     assert!(trace.is_reference_eligible(), "{trace:#?}");
     assert_eq!(trace.reference_events.len(), 2);
@@ -851,7 +865,14 @@ fn projected_relaxed_load_does_not_require_the_deleted_hi20_to_survive_projectio
         }],
     );
 
-    let trace = trace_binary_symbol(&symbol, &map(), &BTreeMap::new(), &context, None).unwrap();
+    let trace = trace_binary_symbol(
+        &symbol,
+        &map(),
+        &direct::StructuralRelocatedCalls::new(),
+        &context,
+        None,
+    )
+    .unwrap();
 
     assert!(trace.is_reference_eligible(), "{trace:#?}");
     assert!(matches!(
@@ -902,7 +923,7 @@ fn relocated_global_pointer_load_preserves_pointee_memory_provenance() {
     let trace = trace_binary_symbol(
         &symbol,
         &map(),
-        &BTreeMap::new(),
+        &direct::StructuralRelocatedCalls::new(),
         &StructuralPointerContext::default(),
         None,
     )
@@ -970,7 +991,7 @@ fn absolute_ram_pointer_load_preserves_pointee_memory_provenance() {
             registers: Vec::new(),
             regions: Vec::new(),
         },
-        &BTreeMap::new(),
+        &direct::StructuralRelocatedCalls::new(),
         &StructuralPointerContext::default(),
         None,
     )
@@ -1039,7 +1060,7 @@ fn mismatched_hi20_lo12_symbols_fail_closed() {
     let trace = trace_binary_symbol(
         &symbol,
         &map(),
-        &BTreeMap::new(),
+        &direct::StructuralRelocatedCalls::new(),
         &StructuralPointerContext::default(),
         None,
     )

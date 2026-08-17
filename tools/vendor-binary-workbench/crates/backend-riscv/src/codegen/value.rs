@@ -244,6 +244,7 @@ pub(super) fn render_value_scoped(
             operation,
             left,
             right,
+            ..
         } => {
             let left = render_value_scoped(
                 left,

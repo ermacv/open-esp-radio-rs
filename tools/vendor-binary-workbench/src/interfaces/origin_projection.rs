@@ -10,6 +10,26 @@ use super::{
 use crate::artifacts::LinkUnitOriginFact;
 use crate::{StructuralCallSite, StructuralProjectedRelocation};
 
+type FunctionCallKey = (usize, Option<String>, String, u32);
+
+fn function_call_key(call: &InterfaceCallFact) -> FunctionCallKey {
+    (
+        call.artifact,
+        call.member.clone(),
+        call.function.clone(),
+        call.function_address,
+    )
+}
+
+fn origin_call_key(
+    artifact: usize,
+    member: &Option<String>,
+    function: &str,
+    address: u32,
+) -> FunctionCallKey {
+    (artifact, member.clone(), function.to_owned(), address)
+}
+
 /// One reviewed slot binding projected onto an exact call instruction in the
 /// authoritative link unit.
 #[derive(Clone, Debug)]
@@ -43,6 +63,18 @@ impl InterfaceWorkspace {
             .iter()
             .map(|artifact| (artifact.sha256.as_deref(), artifact.index))
             .collect::<BTreeMap<_, _>>();
+        let contracts_by_id = self
+            .contracts()
+            .iter()
+            .map(|contract| (contract.id.as_str(), contract))
+            .collect::<BTreeMap<_, _>>();
+        let mut calls_by_function = BTreeMap::<FunctionCallKey, Vec<&InterfaceCallFact>>::new();
+        for call in &facts.calls {
+            calls_by_function
+                .entry(function_call_key(call))
+                .or_default()
+                .push(call);
+        }
         let mut projected = Vec::new();
 
         for origin in origins.iter().filter(|origin| {
@@ -73,38 +105,43 @@ impl InterfaceWorkspace {
                 continue;
             };
 
-            for linked_call in facts.calls.iter().filter(|call| {
-                call.artifact == linked_artifact
-                    && call.member == origin.linked_member
-                    && call.function == origin.symbol
-                    && call.function_address == linked_address
-            }) {
+            let linked_key = origin_call_key(
+                linked_artifact,
+                &origin.linked_member,
+                &origin.symbol,
+                linked_address,
+            );
+            let archive_key = origin_call_key(
+                archive_artifact,
+                &origin.origin_member,
+                &origin.symbol,
+                archive_address,
+            );
+            let Some(linked_calls) = calls_by_function.get(&linked_key) else {
+                continue;
+            };
+            let Some(archive_calls) = calls_by_function.get(&archive_key) else {
+                continue;
+            };
+
+            for linked_call in linked_calls {
                 let matching_bindings = self
                     .bindings()
                     .iter()
                     .filter(|binding| {
-                        let Some(contract) = self
-                            .contracts()
-                            .iter()
-                            .find(|contract| contract.id == binding.contract)
+                        let Some(contract) =
+                            contracts_by_id.get(binding.contract.as_str()).copied()
                         else {
                             return false;
                         };
-                        facts.calls.iter().any(|archive_call| {
-                            let origin_matches = archive_call_matches_origin(
-                                archive_call,
-                                archive_artifact,
-                                origin,
-                                archive_address,
-                            );
+                        archive_calls.iter().any(|archive_call| {
                             let binding_matches = archive_call_matches_binding(
                                 archive_call,
                                 binding,
                                 contract,
                                 facts,
                             );
-                            origin_matches
-                                && binding_matches
+                            binding_matches
                                 && (same_indirect_target_shape(archive_call, linked_call)
                                     || relocated_direct_target_matches(
                                         archive_call,
@@ -199,18 +236,6 @@ fn relocated_direct_target_matches(
                     && member == &origin.origin_member
             })
         })
-}
-
-fn archive_call_matches_origin(
-    call: &InterfaceCallFact,
-    archive_artifact: usize,
-    origin: &LinkUnitOriginFact,
-    archive_address: u32,
-) -> bool {
-    call.artifact == archive_artifact
-        && call.member == origin.origin_member
-        && call.function == origin.symbol
-        && call.function_address == archive_address
 }
 
 fn archive_call_matches_binding(

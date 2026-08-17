@@ -19,7 +19,7 @@ fn structurally_accounted_floating_load_does_not_block_later_integer_ir() {
     let trace = trace_binary_symbol(
         &symbol,
         &map(),
-        &BTreeMap::new(),
+        &direct::StructuralRelocatedCalls::new(),
         &StructuralPointerContext::default(),
         None,
     )
@@ -49,7 +49,7 @@ fn unsupported_floating_arithmetic_remains_a_blocker() {
     let trace = trace_binary_symbol(
         &symbol,
         &map(),
-        &BTreeMap::new(),
+        &direct::StructuralRelocatedCalls::new(),
         &StructuralPointerContext::default(),
         None,
     )
@@ -92,7 +92,7 @@ fn rx11ax_ampdu_float_slice_preserves_structural_value_flow() {
     let trace = trace_binary_symbol(
         &symbol,
         &map(),
-        &BTreeMap::new(),
+        &direct::StructuralRelocatedCalls::new(),
         &StructuralPointerContext::default(),
         None,
     )
@@ -149,7 +149,7 @@ fn floating_comparison_with_unknown_inputs_remains_a_blocker() {
     let trace = trace_binary_symbol(
         &symbol,
         &map(),
-        &BTreeMap::new(),
+        &direct::StructuralRelocatedCalls::new(),
         &StructuralPointerContext::default(),
         None,
     )
@@ -180,7 +180,7 @@ fn vendor_custom_decode_blocker_stops_unknown_control_flow() {
     let trace = trace_binary_symbol(
         &symbol,
         &map(),
-        &BTreeMap::new(),
+        &direct::StructuralRelocatedCalls::new(),
         &StructuralPointerContext::default(),
         None,
     )
@@ -211,7 +211,7 @@ fn forward_local_jump_skips_dead_instructions() {
     let trace = trace_binary_symbol(
         &symbol,
         &map(),
-        &BTreeMap::new(),
+        &direct::StructuralRelocatedCalls::new(),
         &StructuralPointerContext::default(),
         None,
     )
@@ -236,7 +236,7 @@ fn local_jump_loop_fails_closed() {
     let trace = trace_binary_symbol(
         &symbol,
         &map(),
-        &BTreeMap::new(),
+        &direct::StructuralRelocatedCalls::new(),
         &StructuralPointerContext::default(),
         None,
     )
@@ -268,7 +268,7 @@ fn constant_counted_loop_is_bounded_and_fully_unrolled() {
     let trace = trace_binary_symbol(
         &symbol,
         &map(),
-        &BTreeMap::new(),
+        &direct::StructuralRelocatedCalls::new(),
         &StructuralPointerContext::default(),
         None,
     )
@@ -301,7 +301,7 @@ fn calibration_sized_constant_loop_is_bounded_and_fully_unrolled() {
     let trace = trace_binary_symbol(
         &symbol,
         &map(),
-        &BTreeMap::new(),
+        &direct::StructuralRelocatedCalls::new(),
         &StructuralPointerContext::default(),
         None,
     )
@@ -335,7 +335,7 @@ fn backward_edge_to_an_unvisited_return_block_is_not_a_loop() {
     let trace = resolve_reference_trace(
         &symbol,
         &symbols,
-        &BTreeMap::new(),
+        &direct::StructuralRelocatedCalls::new(),
         &StructuralPointerContext::default(),
         None,
         &map(),
@@ -375,7 +375,7 @@ fn partial_cfg_keeps_indexed_memory_evidence_across_an_opaque_call() {
     let trace = resolve_reference_trace(
         &symbol,
         &symbols,
-        &BTreeMap::new(),
+        &direct::StructuralRelocatedCalls::new(),
         &StructuralPointerContext::default(),
         None,
         &map(),
@@ -454,7 +454,7 @@ fn partial_cfg_keeps_branch_evidence_across_unsupported_floating_arithmetic() {
     let trace = resolve_reference_trace(
         &symbol,
         &symbols,
-        &BTreeMap::new(),
+        &direct::StructuralRelocatedCalls::new(),
         &StructuralPointerContext::default(),
         None,
         &map(),
@@ -515,7 +515,7 @@ fn structured_cfg_resolves_common_stack_spills_on_each_complete_path() {
     let trace = resolve_reference_trace(
         &parent,
         &symbols,
-        &BTreeMap::new(),
+        &direct::StructuralRelocatedCalls::new(),
         &StructuralPointerContext::default(),
         None,
         &map(),
@@ -559,7 +559,7 @@ fn structured_cfg_composes_private_stack_memset_on_only_one_path() {
         memory_regions: Default::default(),
         relocations: Vec::new(),
     };
-    let relocations = BTreeMap::from([(
+    let relocations = direct::StructuralRelocatedCalls::from([(
         StructuralCallSite::new(&parent, 0x1014),
         ("memset".to_owned(), Some(0x2000)),
     )]);
@@ -637,7 +637,7 @@ fn delay_intrinsic_is_composed_without_decoding_its_rom_body() {
     let trace = resolve_reference_trace(
         &parent,
         &symbols,
-        &BTreeMap::new(),
+        &direct::StructuralRelocatedCalls::new(),
         &synthetic_delay_pointer_context(),
         None,
         &map(),
@@ -674,7 +674,7 @@ fn constant_conditional_branch_follows_only_the_feasible_edge() {
     let trace = trace_binary_symbol(
         &symbol,
         &map(),
-        &BTreeMap::new(),
+        &direct::StructuralRelocatedCalls::new(),
         &StructuralPointerContext::default(),
         None,
     )
@@ -702,7 +702,7 @@ fn symbolic_conditional_branch_fails_closed() {
     let trace = trace_binary_symbol(
         &symbol,
         &map(),
-        &BTreeMap::new(),
+        &direct::StructuralRelocatedCalls::new(),
         &StructuralPointerContext::default(),
         None,
     )
@@ -734,7 +734,7 @@ fn bounded_symbolic_cfg_becomes_structured_reference_flow() {
     let trace = resolve_reference_trace(
         &symbol,
         &BTreeMap::new(),
-        &BTreeMap::new(),
+        &direct::StructuralRelocatedCalls::new(),
         &StructuralPointerContext::default(),
         None,
         &map(),
@@ -807,7 +807,7 @@ fn loop_invariant_symbolic_branch_is_one_structured_decision() {
     let trace = resolve_reference_trace(
         &symbol,
         &BTreeMap::new(),
-        &BTreeMap::new(),
+        &direct::StructuralRelocatedCalls::new(),
         &StructuralPointerContext::default(),
         None,
         &map(),
@@ -868,7 +868,7 @@ fn constant_call_argument_specializes_a_child_branch() {
     let trace = resolve_reference_trace(
         &parent,
         &symbols,
-        &BTreeMap::new(),
+        &direct::StructuralRelocatedCalls::new(),
         &StructuralPointerContext::default(),
         None,
         &map(),

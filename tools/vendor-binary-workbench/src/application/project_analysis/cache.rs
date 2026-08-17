@@ -10,30 +10,13 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::Result;
 
-const CACHE_SCHEMA: u32 = 3;
-
-#[derive(Debug, Default, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-struct CacheDocument {
-    schema: u32,
-    stages: BTreeMap<String, CacheStage>,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-struct CacheStage {
-    signature: String,
-    outputs: BTreeMap<String, String>,
-}
-
 pub(super) struct ProjectAnalysisCache {
-    path: PathBuf,
-    document: CacheDocument,
+    store: Option<crate::application::query_store::QueryStore>,
+    store_error: Option<String>,
     digests: BTreeMap<PathBuf, DigestMemo>,
 }
 
@@ -45,19 +28,14 @@ struct DigestMemo {
 
 impl ProjectAnalysisCache {
     pub(super) fn load(project_manifest: &Path) -> Self {
-        let root = project_manifest.parent().unwrap_or_else(|| Path::new("."));
-        let path = root.join("generated/.project-analyze-cache.json");
-        let document = fs::read_to_string(&path)
-            .ok()
-            .and_then(|contents| serde_json::from_str::<CacheDocument>(&contents).ok())
-            .filter(|document| document.schema == CACHE_SCHEMA)
-            .unwrap_or_else(|| CacheDocument {
-                schema: CACHE_SCHEMA,
-                stages: BTreeMap::new(),
-            });
+        let (store, store_error) =
+            match crate::application::query_store::QueryStore::open(project_manifest) {
+                Ok(store) => (Some(store), None),
+                Err(error) => (None, Some(error.to_string())),
+            };
         Self {
-            path,
-            document,
+            store,
+            store_error,
             digests: BTreeMap::new(),
         }
     }
@@ -69,26 +47,41 @@ impl ProjectAnalysisCache {
         inputs: &[PathBuf],
         outputs: &[PathBuf],
     ) -> Result<bool> {
-        if outputs.iter().any(|path| !path.is_file()) {
-            return Ok(false);
-        }
         let signature = self.signature(stage, configuration, inputs)?;
-        let Some(cached) = self.document.stages.get(stage) else {
+        let Some(cached) = self.store()?.stage_output_digests(&signature)? else {
             return Ok(false);
         };
-        if cached.signature != signature || cached.outputs.len() != outputs.len() {
+        if cached.len() != outputs.len() {
             return Ok(false);
         }
-        let expected_outputs = cached.outputs.clone();
-        for path in outputs {
-            let key = path_key(path);
-            let Some(expected) = expected_outputs.get(&key) else {
-                return Ok(false);
-            };
-            if &self.digest(path)? != expected {
-                return Ok(false);
+        let mut restored = false;
+        for (path, expected) in outputs.iter().zip(&cached) {
+            let current = path
+                .is_file()
+                .then(|| self.digest(path))
+                .transpose()?
+                .is_some_and(|actual| &actual == expected);
+            if !current {
+                self.store()?.restore_output(expected, path)?;
+                self.digests.remove(path);
+                if self.digest(path)? != *expected {
+                    return Err(crate::Error::invalid(format!(
+                        "query cache restored {} with the wrong content digest",
+                        path.display()
+                    )));
+                }
+                restored = true;
             }
         }
+        if restored {
+            tracing::info!(cache_stage = stage, "restored generated outputs from CAS");
+        }
+        let paths = outputs
+            .iter()
+            .map(|path| path_key(path))
+            .collect::<Vec<_>>();
+        self.store_mut()?
+            .bind_restored_stage(stage, &signature, &paths, &cached)?;
         Ok(true)
     }
 
@@ -100,26 +93,32 @@ impl ProjectAnalysisCache {
         outputs: &[PathBuf],
     ) -> Result<()> {
         let signature = self.signature(stage, configuration, inputs)?;
-        let mut output_digests = BTreeMap::new();
+        let mut cached_outputs = Vec::with_capacity(outputs.len());
         for path in outputs {
             self.digests.remove(path);
-            output_digests.insert(path_key(path), self.digest(path)?);
+            cached_outputs.push((path_key(path), self.digest(path)?, path.clone()));
         }
-        self.document.stages.insert(
-            stage.to_owned(),
-            CacheStage {
-                signature,
-                outputs: output_digests,
-            },
-        );
-        if let Some(parent) = self.path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        fs::write(
-            &self.path,
-            serde_json::to_string_pretty(&self.document)? + "\n",
-        )?;
+        self.store_mut()?
+            .record_stage(stage, &signature, &cached_outputs)?;
         Ok(())
+    }
+
+    fn store(&self) -> Result<&crate::application::query_store::QueryStore> {
+        self.store.as_ref().ok_or_else(|| {
+            crate::Error::invalid(format!(
+                "persistent query store is unavailable: {}",
+                self.store_error.as_deref().unwrap_or("unknown error")
+            ))
+        })
+    }
+
+    fn store_mut(&mut self) -> Result<&mut crate::application::query_store::QueryStore> {
+        self.store.as_mut().ok_or_else(|| {
+            crate::Error::invalid(format!(
+                "persistent query store is unavailable: {}",
+                self.store_error.as_deref().unwrap_or("unknown error")
+            ))
+        })
     }
 
     fn signature(
@@ -133,7 +132,15 @@ impl ProjectAnalysisCache {
         inputs.dedup();
         let mut digest = Sha256::new();
         digest.update(b"vendor-binary-workbench-project-stage-v3\0");
-        digest.update(stage.as_bytes());
+        // A profile name is a project-local binding, not an analysis input.
+        // Equivalent linked-IR profiles with different IDs/output paths must
+        // address the same immutable query result.
+        let query_kind = if stage.starts_with("linked-ir:") {
+            "linked-ir"
+        } else {
+            stage
+        };
+        digest.update(query_kind.as_bytes());
         digest.update([0]);
         digest.update(env!("CARGO_PKG_VERSION").as_bytes());
         digest.update([0]);
@@ -219,11 +226,14 @@ impl ProjectAnalysisCache {
 /// generated document or analysis semantics change.  Input/output content
 /// hashes continue to protect project and caller-owned state.
 fn stage_revision(stage: &str) -> Result<u32> {
+    if stage.starts_with("linked-ir:") {
+        return Ok(35);
+    }
     match stage {
         "symbol-inventory" => Ok(2),
         "mmio-discovery" => Ok(4),
         "interface-discovery" => Ok(6),
-        "linked-ir" => Ok(33),
+        "linked-ir" => Ok(35),
         "event-replays" => Ok(1),
         "review-scopes" => Ok(5),
         "navigation-index" => Ok(2),
@@ -253,7 +263,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn cache_requires_unchanged_inputs_and_outputs() {
+    fn cache_restores_outputs_but_never_reuses_changed_inputs() {
         let directory = std::env::temp_dir().join(format!(
             "vendor-workbench-analysis-cache-{}",
             std::process::id()
@@ -298,7 +308,7 @@ mod tests {
 
         fs::write(&output, "output-b").unwrap();
         assert!(
-            !cache
+            cache
                 .is_current(
                     "linked-ir",
                     "profile=a",
@@ -307,8 +317,21 @@ mod tests {
                 )
                 .unwrap()
         );
+        assert_eq!(fs::read_to_string(&output).unwrap(), "output-a");
 
-        fs::write(&output, "output-a").unwrap();
+        fs::remove_file(&output).unwrap();
+        assert!(
+            cache
+                .is_current(
+                    "linked-ir",
+                    "profile=a",
+                    std::slice::from_ref(&input),
+                    std::slice::from_ref(&output)
+                )
+                .unwrap()
+        );
+        assert_eq!(fs::read_to_string(&output).unwrap(), "output-a");
+
         fs::write(&input, "input-a").unwrap();
         cache.digests.clear();
         assert!(
@@ -390,6 +413,45 @@ mod tests {
     }
 
     #[test]
+    fn equivalent_profile_bindings_restore_one_shared_result() {
+        let directory = std::env::temp_dir().join(format!(
+            "vendor-workbench-shared-profile-cache-{}",
+            std::process::id()
+        ));
+        let manifest = directory.join("vendor-project.toml");
+        let input = directory.join("vendor.a");
+        let focused = directory.join("generated/focused/functions.jsonl");
+        let renamed = directory.join("generated/renamed/functions.jsonl");
+        fs::create_dir_all(focused.parent().unwrap()).unwrap();
+        fs::write(&manifest, "schema = 3\n").unwrap();
+        fs::write(&input, "artifact-bytes").unwrap();
+        fs::write(&focused, "recovered-function").unwrap();
+
+        let mut cache = ProjectAnalysisCache::load(&manifest);
+        cache
+            .record(
+                "linked-ir:focused",
+                "sources=[vendor];roots=all",
+                std::slice::from_ref(&input),
+                std::slice::from_ref(&focused),
+            )
+            .unwrap();
+        assert!(
+            cache
+                .is_current(
+                    "linked-ir:renamed",
+                    "sources=[vendor];roots=all",
+                    std::slice::from_ref(&input),
+                    std::slice::from_ref(&renamed),
+                )
+                .unwrap()
+        );
+        assert_eq!(fs::read_to_string(renamed).unwrap(), "recovered-function");
+
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
     fn every_cached_generator_has_an_explicit_semantic_revision() {
         for stage in [
             "symbol-inventory",
@@ -414,5 +476,39 @@ mod tests {
             assert!(stage_revision(stage).unwrap() > 0);
         }
         assert!(stage_revision("new-unversioned-stage").is_err());
+    }
+
+    #[test]
+    fn linked_ir_profile_ids_are_bindings_not_query_inputs() {
+        let directory = std::env::temp_dir().join(format!(
+            "vendor-workbench-profile-query-key-{}",
+            std::process::id()
+        ));
+        if directory.is_dir() {
+            fs::remove_dir_all(&directory).unwrap();
+        }
+        fs::create_dir_all(&directory).unwrap();
+        let manifest = directory.join("vendor-project.toml");
+        let input = directory.join("artifact.elf");
+        fs::write(&input, "same-artifact").unwrap();
+        let mut cache = ProjectAnalysisCache::load(&manifest);
+
+        let focused = cache
+            .signature(
+                "linked-ir:focused-name",
+                "roots=all;include-reachable=true",
+                std::slice::from_ref(&input),
+            )
+            .unwrap();
+        let full = cache
+            .signature(
+                "linked-ir:different-name",
+                "roots=all;include-reachable=true",
+                std::slice::from_ref(&input),
+            )
+            .unwrap();
+
+        assert_eq!(focused, full);
+        fs::remove_dir_all(directory).unwrap();
     }
 }

@@ -463,10 +463,46 @@ impl SymbolicValue {
         {
             return Self::Unknown;
         }
+        Self::expression_unbounded(operation, left, right)
+    }
+
+    /// Rebuild an already-bounded expression after token or argument
+    /// substitution. Rewriting must preserve a previously accepted evidence
+    /// tree instead of applying the construction limit a second time.
+    pub(super) fn expression_unbounded(
+        operation: ExpressionOperation,
+        left: Self,
+        right: Self,
+    ) -> Self {
+        let caller_memory_location = match operation {
+            ExpressionOperation::Add => {
+                match (left.caller_memory_location(), right.as_constant()) {
+                    (Some((index, offset)), Some(constant)) => {
+                        Some((index, offset.wrapping_add(constant as i32)))
+                    }
+                    _ => match (right.caller_memory_location(), left.as_constant()) {
+                        (Some((index, offset)), Some(constant)) => {
+                            Some((index, offset.wrapping_add(constant as i32)))
+                        }
+                        _ => None,
+                    },
+                }
+            }
+            ExpressionOperation::Subtract => {
+                match (left.caller_memory_location(), right.as_constant()) {
+                    (Some((index, offset)), Some(constant)) => {
+                        Some((index, offset.wrapping_sub(constant as i32)))
+                    }
+                    _ => None,
+                }
+            }
+            _ => None,
+        };
         Self::Expression {
             operation,
             left: Arc::new(left),
             right: Arc::new(right),
+            caller_memory_location,
         }
     }
 

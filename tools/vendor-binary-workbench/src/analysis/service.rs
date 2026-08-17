@@ -1,9 +1,6 @@
 //! Artifact selection and user-facing trace extraction helpers.
 
-use std::{
-    collections::BTreeMap,
-    path::{Path, PathBuf},
-};
+use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
@@ -104,7 +101,7 @@ pub(crate) fn extract(input: &ArtifactSymbolSelector, svd: &MmioMap) -> Result<F
     Ok(trace_binary_symbol(
         symbol,
         svd,
-        &BTreeMap::new(),
+        &crate::direct::StructuralRelocatedCalls::default(),
         &StructuralPointerContext::default(),
         None,
     )?)

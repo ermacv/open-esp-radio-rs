@@ -176,6 +176,19 @@ fn origin_association(candidate_count: usize, applicable: bool) -> LinkUnitOrigi
     }
 }
 
+/// Whether one definition can participate in archive-origin navigation.
+///
+/// Local functions are deliberately included.  A linker keeps many useful
+/// `static`/constprop names in its symbol table, and their archive relocation
+/// records are required to recover indirect calls after relaxation.  This is
+/// still fail-closed: the caller accepts the association only when exact name
+/// and kind select one definition in the source-owned archive inventory.
+fn is_origin_text_definition(fact: &artifact::ArtifactSymbolFact) -> bool {
+    !fact.name.is_empty()
+        && fact.definition.is_definition()
+        && fact.kind == artifact::ArtifactSymbolKind::Text
+}
+
 fn definition_resolution(fact: &artifact::ArtifactSymbolFact) -> LinkageResolution {
     match fact.definition {
         artifact::ArtifactSymbolDefinitionState::Absolute => LinkageResolution::Absolute,
@@ -318,10 +331,7 @@ pub(crate) fn build_project_linkage_inventory(
             continue;
         }
         for (object, fact) in inventory.symbols() {
-            if fact.name.is_empty()
-                || !fact.is_exported_definition()
-                || fact.kind != artifact::ArtifactSymbolKind::Text
-            {
+            if !is_origin_text_definition(fact) {
                 continue;
             }
             for source in &inventory_sources[artifact_index] {
@@ -358,9 +368,7 @@ pub(crate) fn build_project_linkage_inventory(
                 };
             let origin_applicable = inventory.container != artifact::ArtifactContainerKind::Archive
                 && !authoritative_sources[artifact_index].is_empty()
-                && !fact.name.is_empty()
-                && fact.is_exported_definition()
-                && fact.kind == artifact::ArtifactSymbolKind::Text;
+                && is_origin_text_definition(fact);
             let origin_candidates = if origin_applicable {
                 authoritative_sources[artifact_index]
                     .iter()
@@ -413,6 +421,24 @@ pub(crate) fn build_project_linkage_inventory(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn local_symbol(
+        name: &str,
+        kind: artifact::ArtifactSymbolKind,
+    ) -> artifact::ArtifactSymbolFact {
+        artifact::ArtifactSymbolFact {
+            table: artifact::ArtifactSymbolTable::Static,
+            name: name.to_owned(),
+            address: 0,
+            size: 4,
+            binding: artifact::ArtifactSymbolBinding::Local,
+            visibility: artifact::ArtifactSymbolVisibility::Default,
+            kind,
+            definition: artifact::ArtifactSymbolDefinitionState::Section,
+            section: Some(".text.local".to_owned()),
+            scope: artifact::ArtifactSymbolScope::Compilation,
+        }
+    }
 
     fn location(artifact: usize) -> LinkageSymbolLocation {
         LinkageSymbolLocation {
@@ -493,5 +519,24 @@ mod tests {
             origin_association(2, true),
             LinkUnitOriginAssociation::AmbiguousNameAndKind
         );
+    }
+
+    #[test]
+    fn local_text_definitions_can_retain_unique_archive_relocations() {
+        let local = local_symbol(
+            "ampdu_rx_start.constprop.0",
+            artifact::ArtifactSymbolKind::Text,
+        );
+        assert!(!local.is_exported_definition());
+        assert!(is_origin_text_definition(&local));
+
+        assert!(!is_origin_text_definition(&local_symbol(
+            "g_local_state",
+            artifact::ArtifactSymbolKind::Data,
+        )));
+        assert!(!is_origin_text_definition(&local_symbol(
+            "",
+            artifact::ArtifactSymbolKind::Text,
+        )));
     }
 }

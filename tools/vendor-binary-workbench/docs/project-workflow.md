@@ -37,6 +37,34 @@ debt in review-scope details but do not make `project status` incomplete and
 are not silently promoted into mandatory verification claims. Only an explicit
 verification-policy requirement makes a production trace a Workbench gate.
 
+## Focused and full analysis
+
+Focused inspection, a selected IR profile and `project analyze` use the same
+recovery engine. Full project analysis enumerates all configured roots; it
+does not switch to a second bulk algorithm. The current persistent cutover
+reuses a complete immutable profile/stage projection, including explicit
+incomplete/blocker results, and restores its generated files from CAS. Reuse
+between only partially overlapping root sets requires the remaining
+function-granular query cutover and is not reported as a cache hit today.
+All stale IR profiles selected by one `project analyze` invocation enter the
+builder together, so shared catalogs and reviewed interface knowledge are
+loaded once. Cache-current profiles are not rebuilt.
+
+The local persistent store lives below `generated/.workbench-cache/`. Removing
+that directory only causes a cold recomputation. It never removes reviewed
+knowledge or generated publication artifacts. Profile IDs and output paths
+are bindings, so renaming an otherwise identical investigation does not change
+its analysis query key. Changing artifact bytes, provenance, ABI/backend
+revision or a semantic input read by the current stage creates a new key. Once
+function-granular persistence is enabled, that invalidation narrows to the
+affected query dependency closure.
+
+For performance measurements, set `VENDOR_WORKBENCH_REPORT_USAGE=1` when
+calling `scripts/run-limited`. This selects its process-session watchdog and
+prints elapsed time plus peak RSS for the complete Workbench process tree.
+External `/usr/bin/time` otherwise measures only the `systemd-run` wrapper on
+hosts where the systemd limiter is available.
+
 ## Creating a project
 
 ```console

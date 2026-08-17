@@ -8,6 +8,7 @@ pub(super) struct ReferenceCalleeContext<'a> {
     pub(super) pointer_context: &'a StructuralPointerContext,
     pub(super) svd: &'a MmioMap,
     pub(super) budget: StructuralTraceBudget,
+    pub(super) memo: &'a ReferenceAnalysisMemo,
 }
 
 #[derive(Clone, Debug)]
@@ -416,6 +417,16 @@ pub(super) fn resolve_reference_callee(
     {
         return trace.map(|trace| (callee.name.clone(), trace));
     }
+    if let Some(trace) = context.memo.get(target, arguments) {
+        if trace.is_reference_eligible() {
+            return Ok((callee.name.clone(), trace));
+        }
+        let causes = trace.reference_failure_reasons().join(" | ");
+        return Err(format!(
+            "callee-ineligible at {site:#010x}: {} [causes: {causes}]",
+            callee.name,
+        ));
+    }
     if !visiting.insert(target) {
         return Err(format!("recursive-call at {site:#010x} to {}", callee.name));
     }
@@ -423,11 +434,16 @@ pub(super) fn resolve_reference_callee(
         .map_err(|error| format!("callee-decode at {site:#010x}: {}: {error}", callee.name));
     visiting.remove(&target);
     let trace = result?;
-    if !trace.is_reference_eligible() {
-        let causes = trace.reference_failure_reasons().join(" | ");
+    let failure_reasons =
+        (!trace.is_reference_eligible()).then(|| trace.reference_failure_reasons());
+    context
+        .memo
+        .insert_completed(target, arguments, &trace, failure_reasons.as_deref());
+    if let Some(causes) = failure_reasons {
         return Err(format!(
-            "callee-ineligible at {site:#010x}: {} [causes: {causes}]",
+            "callee-ineligible at {site:#010x}: {} [causes: {}]",
             callee.name,
+            causes.join(" | "),
         ));
     }
     Ok((callee.name.clone(), trace))

@@ -453,7 +453,7 @@ fn direct_call_graph_survives_reference_summary_inlining() {
             ),
         ]),
         exported_symbol_keys: BTreeSet::new(),
-        relocated_calls: BTreeMap::from([(
+        relocated_calls: direct::StructuralRelocatedCalls::from([(
             direct::StructuralCallSite::new(&parent, 0x1000),
             ("vendor_child".to_owned(), Some(child_id)),
         )]),

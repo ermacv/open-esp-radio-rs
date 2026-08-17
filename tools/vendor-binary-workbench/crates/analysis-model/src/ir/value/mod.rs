@@ -109,6 +109,11 @@ pub enum SymbolicValue {
         operation: ExpressionOperation,
         left: Arc<SymbolicValue>,
         right: Arc<SymbolicValue>,
+        /// Cached affine caller-memory identity. Expression nodes are
+        /// immutable, so deriving this once at construction is equivalent to
+        /// recursively rediscovering it at every memory access and call
+        /// projection.
+        caller_memory_location: Option<(u8, i32)>,
     },
     /// Bit-level result of one reviewed IEEE-754 instruction. Operands are
     /// stored as raw 32-bit register images; no host floating-point assumption
@@ -410,15 +415,15 @@ mod tests {
             rounding: FloatingRoundingMode::Dynamic,
             operands: vec![
                 SymbolicValue::Input { index: 2 },
-                SymbolicValue::Expression {
-                    operation: ExpressionOperation::Add,
-                    left: Arc::new(SymbolicValue::CallResult(7)),
-                    right: Arc::new(SymbolicValue::MemoryImage {
+                SymbolicValue::expression(
+                    ExpressionOperation::Add,
+                    SymbolicValue::CallResult(7),
+                    SymbolicValue::MemoryImage {
                         read_token: 11,
                         and_mask: u32::MAX,
                         or_mask: 0,
-                    }),
-                },
+                    },
+                ),
             ]
             .into_boxed_slice(),
         };

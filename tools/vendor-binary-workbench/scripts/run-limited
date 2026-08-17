@@ -12,9 +12,21 @@ if [[ ! -x "$binary" ]]; then
 fi
 
 limit_backend="${VENDOR_WORKBENCH_LIMIT_BACKEND:-auto}"
+report_usage="${VENDOR_WORKBENCH_REPORT_USAGE:-0}"
 if [[ "$limit_backend" != "auto" && "$limit_backend" != "systemd" && "$limit_backend" != "watchdog" ]]; then
     echo "error: VENDOR_WORKBENCH_LIMIT_BACKEND must be auto, systemd, or watchdog" >&2
     exit 2
+fi
+if [[ "$report_usage" != "0" && "$report_usage" != "1" ]]; then
+    echo "error: VENDOR_WORKBENCH_REPORT_USAGE must be 0 or 1" >&2
+    exit 2
+fi
+
+# systemd owns the analyzed process as a sibling of this wrapper, so external
+# tools such as /usr/bin/time report only systemd-run's RSS. The watchdog owns
+# one private process session and can account the complete descendant tree.
+if [[ "$report_usage" == "1" && "$limit_backend" == "auto" ]]; then
+    limit_backend="watchdog"
 fi
 
 if [[ "$limit_backend" != "watchdog" ]] \
@@ -121,6 +133,10 @@ if [[ -n "$reason" ]]; then
     echo "error: workbench resource watchdog stopped the command: $reason" >&2
     echo "peak RSS: ${peak_rss_kib} KiB" >&2
     exit 137
+fi
+
+if [[ "$report_usage" == "1" ]]; then
+    echo "workbench usage: elapsed=${SECONDS}s peak_session_rss=${peak_rss_kib} KiB" >&2
 fi
 
 exit "$status"

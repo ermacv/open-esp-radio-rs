@@ -66,6 +66,7 @@ fn affine_input(value: &SymbolicValue) -> Option<AffineInput> {
             operation,
             left,
             right,
+            ..
         } => {
             let left = affine_input(left)?;
             let right = affine_input(right)?;
@@ -156,6 +157,7 @@ fn collect_evaluable_input_bits_masked(
             operation,
             left,
             right,
+            ..
         } => {
             let (left_mask, right_mask) = match operation {
                 ExpressionOperation::BitAnd => match (left.as_constant(), right.as_constant()) {
@@ -239,6 +241,7 @@ pub fn evaluate_for_input(value: &SymbolicValue, input_index: u8, input: u32) ->
             operation,
             left,
             right,
+            ..
         } => {
             let left = evaluate_for_input(left, input_index, input)?;
             let right = evaluate_for_input(right, input_index, input)?;

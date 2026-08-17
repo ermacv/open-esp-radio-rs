@@ -13,6 +13,7 @@ fn affine_base_and_offset(value: &SymbolicValue) -> (SymbolicValue, u32) {
             operation: ExpressionOperation::Add,
             left,
             right,
+            ..
         } => {
             if let Some(constant) = right.as_constant() {
                 let (base, offset) = affine_base_and_offset(left);
@@ -28,6 +29,7 @@ fn affine_base_and_offset(value: &SymbolicValue) -> (SymbolicValue, u32) {
             operation: ExpressionOperation::Subtract,
             left,
             right,
+            ..
         } if right.as_constant().is_some() => {
             let (base, offset) = affine_base_and_offset(left);
             (base, offset.wrapping_sub(right.as_constant().unwrap()))
@@ -42,11 +44,11 @@ fn affine_value(base: SymbolicValue, offset: u32) -> SymbolicValue {
     } else if offset == 0 {
         base
     } else {
-        SymbolicValue::Expression {
-            operation: ExpressionOperation::Add,
-            left: std::sync::Arc::new(base),
-            right: std::sync::Arc::new(SymbolicValue::Constant(offset)),
-        }
+        SymbolicValue::expression(
+            ExpressionOperation::Add,
+            base,
+            SymbolicValue::Constant(offset),
+        )
     }
 }
 

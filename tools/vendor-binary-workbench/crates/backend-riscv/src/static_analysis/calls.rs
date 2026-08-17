@@ -288,16 +288,29 @@ fn apply_reviewed_external_call(
     StructuralCallControl::Advance(1)
 }
 
-fn apply_reviewed_internal_call(
+#[derive(Clone, Copy)]
+struct ReviewedInternalCall {
     pc: u32,
     width: u8,
     instruction: Inst,
     offset: u32,
     dest: Reg,
     target: u32,
+}
+
+fn apply_reviewed_internal_call(
+    call: ReviewedInternalCall,
     state: &mut StructuralTraceState,
     pointer_context: &StructuralPointerContext,
 ) -> StructuralCallControl {
+    let ReviewedInternalCall {
+        pc,
+        width,
+        instruction,
+        offset,
+        dest,
+        target,
+    } = call;
     if offset != 0 || !matches!(dest, Reg::ZERO | Reg::RA) {
         state.reference_blockers.push(format!(
             "unsupported reviewed internal call shape at {pc:#x}: {instruction}"
@@ -344,13 +357,12 @@ pub(super) fn apply_relocated_call(
     decoded: artifact::DecodedInstruction,
     next_instruction: Option<artifact::DecodedInstruction>,
     symbol: &artifact::ArtifactSymbolDefinition,
-    relocated_calls: &StructuralRelocatedCalls,
+    relocated_calls: &StructuralRelocatedCallView<'_>,
     pointer_context: &StructuralPointerContext,
     state: &mut StructuralTraceState,
 ) -> StructuralCallControl {
     let pc = decoded.address;
-    let Some((name, target)) = relocated_calls.get(&StructuralCallSite::new(symbol, pc as u32))
-    else {
+    let Some((name, target)) = relocated_calls.get(pc as u32) else {
         return StructuralCallControl::NotCall;
     };
 
@@ -389,8 +401,11 @@ pub(super) fn apply_relocated_call(
     let standard_memory_function = pointer_context
         .summary_hooks
         .and_then(|hooks| (hooks.standard_memory_function)(name));
-    if target.is_none()
-        && let Some(function) = standard_memory_function
+    // The origin relocation supplies the exact public C identity. A linked
+    // definition does not make libc's implementation body an analysis target:
+    // use the standardized contract for both unresolved imports and resolved
+    // archive definitions.
+    if let Some(function) = standard_memory_function
         && let Some(result) = inline_standard_memory_intrinsic(
             function,
             &core::array::from_fn(|index| {
@@ -741,12 +756,14 @@ pub(super) fn apply_call_instruction(
                 .copied()
             {
                 return apply_reviewed_internal_call(
-                    pc as u32,
-                    width,
-                    instruction,
-                    offset.as_u32(),
-                    dest,
-                    target,
+                    ReviewedInternalCall {
+                        pc: pc as u32,
+                        width,
+                        instruction,
+                        offset: offset.as_u32(),
+                        dest,
+                        target,
+                    },
                     state,
                     pointer_context,
                 );
@@ -774,12 +791,14 @@ pub(super) fn apply_call_instruction(
             let target = pointer_context.reviewed_internal_calls
                 [&StructuralCallSite::new(symbol, pc as u32)];
             apply_reviewed_internal_call(
-                pc as u32,
-                width,
-                instruction,
-                offset.as_u32(),
-                dest,
-                target,
+                ReviewedInternalCall {
+                    pc: pc as u32,
+                    width,
+                    instruction,
+                    offset: offset.as_u32(),
+                    dest,
+                    target,
+                },
                 state,
                 pointer_context,
             )

@@ -195,8 +195,6 @@ pub fn reference_flow_input_indices(flow: &DraftReferenceFlow) -> BTreeSet<u8> {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
     use crate::{ExpressionOperation, FloatingPointOperation, FloatingRoundingMode};
 
     use super::*;
@@ -208,11 +206,11 @@ mod tests {
             rounding: FloatingRoundingMode::Dynamic,
             operands: vec![
                 SymbolicValue::Input { index: 3 },
-                SymbolicValue::Expression {
-                    operation: ExpressionOperation::Add,
-                    left: Arc::new(SymbolicValue::Input { index: 6 }),
-                    right: Arc::new(SymbolicValue::Constant(1)),
-                },
+                SymbolicValue::expression(
+                    ExpressionOperation::Add,
+                    SymbolicValue::Input { index: 6 },
+                    SymbolicValue::Constant(1),
+                ),
             ]
             .into_boxed_slice(),
         };

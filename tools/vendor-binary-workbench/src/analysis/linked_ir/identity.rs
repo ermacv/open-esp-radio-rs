@@ -354,7 +354,7 @@ mod tests {
             symbols_by_address,
             symbol_ids: BTreeMap::new(),
             exported_symbol_keys: BTreeSet::new(),
-            relocated_calls: BTreeMap::new(),
+            relocated_calls: direct::StructuralRelocatedCalls::new(),
             pointer_context: direct::StructuralPointerContext::default(),
             data_symbols: Vec::new(),
             data_objects: Vec::new(),

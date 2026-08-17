@@ -76,7 +76,7 @@ fn returning_direct_call_is_flattened_from_binary_symbols() {
     let trace = resolve_reference_trace(
         &parent,
         &symbols,
-        &BTreeMap::new(),
+        &direct::StructuralRelocatedCalls::new(),
         &StructuralPointerContext::default(),
         None,
         &map(),
@@ -124,7 +124,7 @@ fn direct_call_to_symbolic_cfg_callee_is_scoped_and_composed() {
     let trace = resolve_reference_trace(
         &parent,
         &symbols,
-        &BTreeMap::new(),
+        &direct::StructuralRelocatedCalls::new(),
         &StructuralPointerContext::default(),
         None,
         &map(),
@@ -201,7 +201,7 @@ fn nested_call_graph_keeps_each_composed_token_scope_local() {
         relocations: Vec::new(),
     };
     let symbols = BTreeMap::from([(0x1000, parent), (0x2000, child)]);
-    let relocations = BTreeMap::from([(
+    let relocations = direct::StructuralRelocatedCalls::from([(
         StructuralCallSite::new(&grandparent, 0x0800),
         ("branch_parent".to_owned(), Some(0x1000)),
     )]);
@@ -267,7 +267,7 @@ fn caller_cfg_can_branch_on_a_composed_callee_result() {
     let trace = resolve_reference_trace(
         &parent,
         &symbols,
-        &BTreeMap::new(),
+        &direct::StructuralRelocatedCalls::new(),
         &StructuralPointerContext::default(),
         None,
         &map(),
@@ -326,7 +326,7 @@ fn caller_cfg_rejects_an_unmodeled_callee_result_used_as_a_condition() {
     let trace = resolve_reference_trace(
         &parent,
         &symbols,
-        &BTreeMap::new(),
+        &direct::StructuralRelocatedCalls::new(),
         &synthetic_delay_pointer_context(),
         None,
         &map(),
@@ -369,7 +369,7 @@ fn caller_cfg_allows_an_unmodeled_callee_result_when_it_is_discarded() {
         relocations: Vec::new(),
     };
     let symbols = BTreeMap::from([(0x2000, delay)]);
-    let relocations = BTreeMap::from([(
+    let relocations = direct::StructuralRelocatedCalls::from([(
         StructuralCallSite::new(&parent, 0x1004),
         ("ets_delay_us".to_owned(), Some(0x2000)),
     )]);
@@ -419,7 +419,7 @@ fn relocated_returning_call_is_flattened_without_executing_auipc_jalr() {
         relocations: Vec::new(),
     };
     let symbols = BTreeMap::from([(0x2000, child)]);
-    let relocations = BTreeMap::from([(
+    let relocations = direct::StructuralRelocatedCalls::from([(
         StructuralCallSite::new(&parent, 0x1000),
         ("companion_child".to_owned(), Some(0x2000)),
     )]);
@@ -457,7 +457,7 @@ fn constant_size_memcpy_relocation_becomes_ordered_memory_effects() {
         memory_regions: Default::default(),
         relocations: Vec::new(),
     };
-    let relocations = BTreeMap::from([(
+    let relocations = direct::StructuralRelocatedCalls::from([(
         StructuralCallSite::new(&parent, 0x1004),
         ("memcpy".to_owned(), None),
     )]);
@@ -501,7 +501,7 @@ fn constant_size_memcpy_relocation_becomes_ordered_memory_effects() {
 }
 
 #[test]
-fn constant_size_memset_relocation_preserves_byte_and_return_pointer() {
+fn resolved_memset_relocation_preserves_standard_effects_and_return_pointer() {
     let parent = artifact::ArtifactSymbolDefinition {
         member: Some("memory.o".to_owned()),
         name: "fill_three".to_owned(),
@@ -516,9 +516,9 @@ fn constant_size_memset_relocation_preserves_byte_and_return_pointer() {
         memory_regions: Default::default(),
         relocations: Vec::new(),
     };
-    let relocations = BTreeMap::from([(
+    let relocations = direct::StructuralRelocatedCalls::from([(
         StructuralCallSite::new(&parent, 0x1004),
-        ("memset".to_owned(), None),
+        ("memset".to_owned(), Some(0x2000)),
     )]);
     let mut visiting = BTreeSet::from([0x1000]);
 
@@ -569,7 +569,7 @@ fn dynamic_size_memcpy_relocation_remains_fail_closed() {
         memory_regions: Default::default(),
         relocations: Vec::new(),
     };
-    let relocations = BTreeMap::from([(
+    let relocations = direct::StructuralRelocatedCalls::from([(
         StructuralCallSite::new(&parent, 0x1000),
         ("memcpy".to_owned(), None),
     )]);
@@ -608,7 +608,7 @@ fn unresolved_call_relocation_fails_closed() {
         memory_regions: Default::default(),
         relocations: Vec::new(),
     };
-    let relocations = BTreeMap::from([(
+    let relocations = direct::StructuralRelocatedCalls::from([(
         StructuralCallSite::new(&parent, 0x1000),
         ("missing_child".to_owned(), None),
     )]);
@@ -648,7 +648,7 @@ fn unresolved_returning_relocation_continues_with_abi_clobbers() {
         memory_regions: Default::default(),
         relocations: Vec::new(),
     };
-    let relocations = BTreeMap::from([(
+    let relocations = direct::StructuralRelocatedCalls::from([(
         StructuralCallSite::new(&parent, 0x1004),
         ("missing_child".to_owned(), None),
     )]);
@@ -702,7 +702,7 @@ fn unresolved_indirect_returning_call_continues_with_abi_clobbers() {
     let trace = trace_binary_symbol(
         &parent,
         &map(),
-        &BTreeMap::new(),
+        &direct::StructuralRelocatedCalls::new(),
         &StructuralPointerContext::default(),
         None,
     )
@@ -743,7 +743,7 @@ fn linked_diagnostic_symbol_remains_a_modeled_boundary() {
         memory_regions: Default::default(),
         relocations: Vec::new(),
     };
-    let relocations = BTreeMap::from([(
+    let relocations = direct::StructuralRelocatedCalls::from([(
         StructuralCallSite::new(&parent, 0x1000),
         ("wifi_log".to_owned(), Some(0x2f80_0040)),
     )]);
@@ -778,7 +778,7 @@ fn modeled_direct_platform_call_propagates_constant_result() {
         memory_regions: Default::default(),
         relocations: Vec::new(),
     };
-    let relocations = BTreeMap::from([(
+    let relocations = direct::StructuralRelocatedCalls::from([(
         StructuralCallSite::new(&parent, 0x1000),
         ("rtc_clk_xtal_freq_get".to_owned(), None),
     )]);
@@ -817,7 +817,7 @@ fn modeled_direct_wide_runtime_call_propagates_both_return_words() {
         memory_regions: Default::default(),
         relocations: Vec::new(),
     };
-    let relocations = BTreeMap::from([(
+    let relocations = direct::StructuralRelocatedCalls::from([(
         StructuralCallSite::new(&parent, 0x1000),
         ("__umoddi3".to_owned(), None),
     )]);
@@ -874,7 +874,14 @@ fn reviewed_indirect_call_keeps_abi_identity_without_claiming_execution_semantic
         }],
     );
 
-    let trace = trace_binary_symbol(&parent, &map(), &BTreeMap::new(), &context, None).unwrap();
+    let trace = trace_binary_symbol(
+        &parent,
+        &map(),
+        &direct::StructuralRelocatedCalls::new(),
+        &context,
+        None,
+    )
+    .unwrap();
 
     assert!(trace.blockers.is_empty(), "{trace:#?}");
     assert!(
@@ -943,7 +950,14 @@ fn alternative_reviewed_calls_with_the_same_abi_and_behavior_share_one_model() {
         ],
     );
 
-    let trace = trace_binary_symbol(&parent, &map(), &BTreeMap::new(), &context, None).unwrap();
+    let trace = trace_binary_symbol(
+        &parent,
+        &map(),
+        &direct::StructuralRelocatedCalls::new(),
+        &context,
+        None,
+    )
+    .unwrap();
 
     assert!(trace.blockers.is_empty(), "{trace:#?}");
     assert!(trace.reference_blockers.is_empty(), "{trace:#?}");
@@ -1012,7 +1026,14 @@ fn projected_relaxed_pointer_load_recovers_reviewed_table_call_and_arguments() {
         }],
     );
 
-    let trace = trace_binary_symbol(&parent, &map(), &BTreeMap::new(), &context, None).unwrap();
+    let trace = trace_binary_symbol(
+        &parent,
+        &map(),
+        &direct::StructuralRelocatedCalls::new(),
+        &context,
+        None,
+    )
+    .unwrap();
 
     assert!(!trace.reference_blockers.iter().any(|blocker| {
         blocker.contains("unresolved-indirect-call")
@@ -1086,7 +1107,14 @@ fn observed_slot_assignment_promotes_reviewed_indirect_call_to_internal_code() {
         .reviewed_internal_slots
         .insert((contract, 0x84), 0x2000);
 
-    let trace = trace_binary_symbol(&parent, &map(), &BTreeMap::new(), &context, None).unwrap();
+    let trace = trace_binary_symbol(
+        &parent,
+        &map(),
+        &direct::StructuralRelocatedCalls::new(),
+        &context,
+        None,
+    )
+    .unwrap();
 
     assert!(
         trace.reference_blockers.is_empty(),
@@ -1141,7 +1169,14 @@ fn reviewed_void_external_call_is_an_executable_boundary_without_a_fake_result()
         }],
     );
 
-    let trace = trace_binary_symbol(&parent, &map(), &BTreeMap::new(), &context, None).unwrap();
+    let trace = trace_binary_symbol(
+        &parent,
+        &map(),
+        &direct::StructuralRelocatedCalls::new(),
+        &context,
+        None,
+    )
+    .unwrap();
 
     assert!(trace.blockers.is_empty(), "{trace:#?}");
     assert!(trace.reference_blockers.is_empty(), "{trace:#?}");
@@ -1203,7 +1238,14 @@ fn reviewed_external_call_keeps_return_and_private_stack_output_independent() {
         }],
     );
 
-    let trace = trace_binary_symbol(&parent, &map(), &BTreeMap::new(), &context, None).unwrap();
+    let trace = trace_binary_symbol(
+        &parent,
+        &map(),
+        &direct::StructuralRelocatedCalls::new(),
+        &context,
+        None,
+    )
+    .unwrap();
 
     assert!(trace.blockers.is_empty(), "{trace:#?}");
     assert!(trace.reference_blockers.is_empty(), "{trace:#?}");
@@ -1213,6 +1255,7 @@ fn reviewed_external_call_keeps_return_and_private_stack_output_independent() {
             operation: ExpressionOperation::Add,
             left,
             right,
+            ..
         } if **left == SymbolicValue::ExternalResult(0)
             && matches!(right.bits()[0], BitSource::PrivateStack { read_token: 0, bit: 0, .. })
     ));
@@ -1240,7 +1283,7 @@ fn reviewed_external_call_keeps_return_and_private_stack_output_independent() {
     let flattened = resolve_reference_trace(
         &parent,
         &BTreeMap::new(),
-        &BTreeMap::new(),
+        &direct::StructuralRelocatedCalls::new(),
         &context,
         None,
         &map(),
@@ -1298,7 +1341,14 @@ fn reviewed_external_u64_result_keeps_a0_and_a1_independent() {
         }],
     );
 
-    let trace = trace_binary_symbol(&parent, &map(), &BTreeMap::new(), &context, None).unwrap();
+    let trace = trace_binary_symbol(
+        &parent,
+        &map(),
+        &direct::StructuralRelocatedCalls::new(),
+        &context,
+        None,
+    )
+    .unwrap();
 
     assert!(trace.blockers.is_empty(), "{trace:#?}");
     assert!(trace.reference_blockers.is_empty(), "{trace:#?}");

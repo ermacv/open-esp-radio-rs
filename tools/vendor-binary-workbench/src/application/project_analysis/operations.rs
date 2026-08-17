@@ -75,7 +75,10 @@ impl ResolvedProjectAnalysisOperations<'_> {
             .ok_or_else(|| crate::Error::invalid("memory-map is not configured"))
     }
 
-    fn linked_ir_inputs(&self) -> Vec<std::path::PathBuf> {
+    fn linked_ir_inputs(
+        &self,
+        profile: &crate::project_ir::ProjectIrProfile,
+    ) -> Result<Vec<std::path::PathBuf>> {
         let project = &self.session.project;
         let mut paths = vec![self.session.target_path.clone()];
         paths.extend(self.session.run_spec_path.iter().cloned());
@@ -88,9 +91,10 @@ impl ResolvedProjectAnalysisOperations<'_> {
             paths.push(pack.path.clone());
             paths.extend(pack.knowledge_packs.iter().cloned());
         }
-        if let Some(run_spec) = self.session.run_spec.as_ref() {
-            paths.extend(run_spec.inputs().iter().map(|input| input.path.clone()));
-        }
+        paths.extend(crate::application::project_ir_build::profile_input_paths(
+            profile,
+            self.run_spec()?,
+        )?);
         if let Some(code) = project.code.as_ref() {
             paths.push(code.pack.clone());
         }
@@ -102,7 +106,7 @@ impl ResolvedProjectAnalysisOperations<'_> {
         if let Some(symbols) = project.symbol_inventory.as_ref() {
             paths.push(symbols.output.clone());
         }
-        paths
+        Ok(paths)
     }
 
     fn common_inputs(&self) -> Vec<std::path::PathBuf> {
@@ -255,6 +259,17 @@ impl ResolvedProjectAnalysisOperations<'_> {
     /// from invalidating artifact-wide decoding and linked IR.
     fn stage_configuration(&self, stage: &str) -> String {
         let project = &self.session.project;
+        if let Some(profile_id) = stage.strip_prefix("linked-ir:") {
+            let profile = project
+                .ir_profiles
+                .iter()
+                .find(|profile| profile.id == profile_id)
+                .expect("linked-IR cache stage must name a configured profile");
+            return format!(
+                "sources={:?};roots={:?};include-reachable={};entry-contract={:?}",
+                profile.sources, profile.roots, profile.include_reachable, profile.entry_contract
+            );
+        }
         match stage.split_once(':').map_or(stage, |(owner, _)| owner) {
             "symbol-inventory" => format!("{:?}", project.symbol_inventory),
             "mmio-discovery" => format!(
@@ -293,12 +308,19 @@ impl ResolvedProjectAnalysisOperations<'_> {
         }
     }
 
-    fn linked_ir_outputs(&self) -> Vec<std::path::PathBuf> {
+    fn linked_ir_outputs(
+        &self,
+        profile: &crate::project_ir::ProjectIrProfile,
+    ) -> Vec<std::path::PathBuf> {
+        crate::artifacts::bundle_files(&profile.output).collect()
+    }
+
+    fn all_linked_ir_outputs(&self) -> Vec<std::path::PathBuf> {
         self.session
             .project
             .ir_profiles
             .iter()
-            .flat_map(|profile| crate::artifacts::bundle_files(&profile.output))
+            .flat_map(|profile| self.linked_ir_outputs(profile))
             .collect()
     }
 }
@@ -377,15 +399,49 @@ impl ProjectAnalysisOperations for ResolvedProjectAnalysisOperations<'_> {
     }
 
     fn build_linked_ir(&mut self, check: bool, jobs: usize) -> Result<StageRun> {
-        let inputs = self.linked_ir_inputs();
-        let outputs = self.linked_ir_outputs();
-        if self.cache_hit("linked-ir", check, &inputs, &outputs)? {
+        if check {
+            crate::application::project_ir_build::build_project_ir(
+                crate::application::project_ir_build::ProjectIrBuildRequest {
+                    profiles: Default::default(),
+                    check: true,
+                    jobs,
+                    refresh_review_scopes: false,
+                },
+                &self.session.project,
+                self.run_spec()?,
+                &self.session.mmio,
+                &self.session.target,
+            )?;
+            return Ok(StageRun::Executed);
+        }
+
+        // Resolve cache state for every profile before entering the expensive
+        // linker/analysis pipeline.  Building one stale profile at a time
+        // reloads the same code catalog and reviewed interface knowledge for
+        // each profile and prevents the analysis layer from sharing lazy
+        // function queries across the selected set.
+        let profiles = self.session.project.ir_profiles.clone();
+        let mut stale = Vec::new();
+        for profile in profiles {
+            let stage = format!("linked-ir:{}", profile.id);
+            let inputs = self.linked_ir_inputs(&profile)?;
+            let outputs = self.linked_ir_outputs(&profile);
+            if self.cache_hit(&stage, false, &inputs, &outputs)? {
+                continue;
+            }
+            stale.push((profile.id, stage, inputs, outputs));
+        }
+        if stale.is_empty() {
             return Ok(StageRun::Current);
         }
+
         crate::application::project_ir_build::build_project_ir(
             crate::application::project_ir_build::ProjectIrBuildRequest {
-                profiles: Default::default(),
-                check,
+                profiles: stale
+                    .iter()
+                    .map(|(profile, _, _, _)| profile.clone())
+                    .collect(),
+                check: false,
                 jobs,
                 refresh_review_scopes: false,
             },
@@ -394,7 +450,9 @@ impl ProjectAnalysisOperations for ResolvedProjectAnalysisOperations<'_> {
             &self.session.mmio,
             &self.session.target,
         )?;
-        self.cache_record("linked-ir", check, &inputs, &outputs)?;
+        for (_, stage, inputs, outputs) in stale {
+            self.cache_record(&stage, false, &inputs, &outputs)?;
+        }
         Ok(StageRun::Executed)
     }
 
@@ -499,7 +557,7 @@ impl ProjectAnalysisOperations for ResolvedProjectAnalysisOperations<'_> {
 
     fn build_review_scopes(&mut self, check: bool) -> Result<StageRun> {
         let mut inputs = self.common_inputs();
-        inputs.extend(self.linked_ir_outputs());
+        inputs.extend(self.all_linked_ir_outputs());
         if let Some(policy) = self
             .session
             .project
@@ -531,7 +589,7 @@ impl ProjectAnalysisOperations for ResolvedProjectAnalysisOperations<'_> {
 
     fn build_navigation(&mut self, check: bool) -> Result<StageRun> {
         let mut inputs = self.common_inputs();
-        inputs.extend(self.linked_ir_outputs());
+        inputs.extend(self.all_linked_ir_outputs());
         if let Some(symbols) = self.session.project.symbol_inventory.as_ref() {
             inputs.push(symbols.output.clone());
         }

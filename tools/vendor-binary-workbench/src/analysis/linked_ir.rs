@@ -12,9 +12,9 @@ use tracing_indicatif::span_ext::IndicatifSpanExt;
 use crate::{
     BitSource, BranchCondition, BranchOperation, DraftReferenceEvent, DraftReferenceFlow,
     DraftReferenceTerminator, ExpressionOperation, ExternalOutputModel, ExternalReturnModel,
-    FunctionAnalysis, MemoryAccess, MmioMap, ObservableEvent, ReferenceResolver,
-    ReviewedExternalCall, ReviewedExternalCallExecutionModel, SymbolicValue, artifact, direct,
-    external_result_call_token,
+    FunctionAnalysis, MemoryAccess, MmioMap, ObservableEvent, ReferenceAnalysisMemo,
+    ReferenceResolver, ReviewedExternalCall, ReviewedExternalCallExecutionModel, SymbolicValue,
+    artifact, direct, external_result_call_token,
 };
 
 const MAX_CALL_GRAPH_STATES: usize = 127;
@@ -692,8 +692,10 @@ fn build_linked_functions_for_roots(
     }
 
     let progress = linked_ir_progress_span(progress_label, scheduled.len());
+    let reference_memo = ReferenceAnalysisMemo::default();
 
     while let Some(symbol) = pending.pop_front() {
+        let function_started = std::time::Instant::now();
         let selection = if symbol.name.starts_with(symbol_prefix) {
             "symbol-prefix-root"
         } else {
@@ -711,12 +713,14 @@ fn build_linked_functions_for_roots(
             "local"
         };
         let decode_blockers = reachable_decode_blockers(symbol);
+        let direct_graph_started = std::time::Instant::now();
         let DirectCallGraph {
             calls: mut direct_calls,
             direct_mmio_predicates,
             mut blockers,
             site_effects,
         } = explore_direct_calls(symbol, resolver, &identities, svd);
+        let direct_graph_elapsed = direct_graph_started.elapsed();
         let mut indexed_dispatches = Vec::new();
         let mut recovered_indexed_dispatch_sites = BTreeSet::new();
         match indexed_dispatch_calls(symbol, resolver, &identities) {
@@ -765,13 +769,15 @@ fn build_linked_functions_for_roots(
         }
         let call_graph_messages = blockers.into_iter().collect::<Vec<_>>();
         let call_graph_diagnostics = compact_diagnostics(&call_graph_messages);
-        match resolver.trace_symbol_bounded(
+        let reference_trace_started = std::time::Instant::now();
+        match resolver.trace_symbol_bounded_with_memo(
             symbol,
             svd,
             direct::StructuralTraceBudget {
                 max_instruction_steps: MAX_CALL_GRAPH_INSTRUCTION_STEPS_PER_TRACE,
                 max_events: MAX_CALL_GRAPH_EVENTS_PER_TRACE,
             },
+            &reference_memo,
         ) {
             Ok(mut trace) => {
                 remove_recovered_indexed_dispatch_diagnostics(
@@ -950,6 +956,19 @@ fn build_linked_functions_for_roots(
                 });
             }
         }
+        let reference_trace_elapsed = reference_trace_started.elapsed();
+        let function_elapsed = function_started.elapsed();
+        if function_elapsed >= std::time::Duration::from_millis(100) {
+            tracing::debug!(
+                source,
+                function = function_identity,
+                bytes = symbol.bytes.len(),
+                direct_graph_ms = direct_graph_elapsed.as_millis(),
+                reference_trace_ms = reference_trace_elapsed.as_millis(),
+                function_ms = function_elapsed.as_millis(),
+                "slow linked-IR function analysis"
+            );
+        }
         progress.pb_inc(1);
         progress.pb_set_message(&format!("{source}: completed {function_identity}"));
         if functions.len().is_multiple_of(64)
@@ -975,6 +994,12 @@ fn build_linked_functions_for_roots(
     }
 
     progress.pb_set_finish_message(&format!("{source}: analyzed {} functions", functions.len()));
+    tracing::debug!(
+        source,
+        memo_entries = reference_memo.entries(),
+        memo_hits = reference_memo.hits(),
+        "completed worker-local reference-analysis memo"
+    );
 
     functions
 }

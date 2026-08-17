@@ -62,6 +62,96 @@ The schema-3 composition is deliberately layered:
 Pack order is not an override mechanism. Conflicting definitions fail closed.
 Two projects may reference the same chip pack without copying its address map.
 
+## Demand-driven analysis and persistent ownership
+
+There is one analysis engine. Focused inspection and artifact-wide analysis
+must never call different recovery algorithms:
+
+```text
+request/profile/full scheduler
+             |
+             v
+       immutable query API
+             |
+     +-------+--------+
+     | memory memo    | current process
+     | SQLite index   | identity, dependency edges, result location
+     | CAS packs      | large immutable serialized values
+     +-------+--------+
+             |
+             v
+       fact projections -> generated bundles
+```
+
+`full` means enumerating every function identity and requesting the same
+queries that focused inspection requests. It is scheduling policy, not a
+second analysis implementation. A profile is likewise a set of roots and
+projection options; profile names are never cache inputs. After the
+function-granular cutover, two profiles in one project that request an
+identical function query share one result.
+
+The persistent cutover is deliberately two steps. The implemented first step
+persists an immutable profile/stage projection and every generated output in
+CAS, so an identical request can be restored at another output path without
+running recovery. The second step is the function-granular cutover described
+by the query units below. Until that cutover lands, different root sets that
+only partially overlap still repeat the cold function analysis; the store must
+not advertise those inner computations as cache hits.
+
+Query ownership is layered:
+
+| Query unit | Owns | May consume | Must not consume |
+|---|---|---|---|
+| Artifact catalog | Sections, symbols, relocations, data objects and provenance | Artifact bytes and load mapping | Profiles, reviewed meaning, ledger |
+| Function body | Decode, instruction index, CFG and structural blockers | Artifact catalog, target ABI/backend revision | Vendor/chip semantics, profile identity |
+| Function facts | Direct calls, memory/MMIO effects, guards and unresolved facts | Function body, exact origin relocations | Reviewed hardware meaning, driver, qualification |
+| Semantic projection | Reviewed names/signatures and opaque boundary contracts | Function facts plus versioned add-on inputs | Inventing effects not authorized by a contract |
+| Link projection | Cross-function targets and transitive summaries | Function facts, artifact catalog, semantic projection | Profile presentation choices |
+| Profile projection | Root/reachability selection and generated documents | Cached query results | Re-running backend recovery |
+
+A query key contains the query kind and semantic revision, the digest and
+provenance identity of the exact artifact bytes it observes, target
+ABI/backend identity, and fingerprints of only the semantic inputs read by
+that query. It never contains output paths, profile names, timestamps, UI
+state, reviewed ledger state, or production-driver state. Results are
+immutable: changed inputs create a new key instead of mutating the meaning of
+an old result. Dependency edges permit precise transitive invalidation and
+make incomplete results cacheable; a blocker is a valid fact, not a cache
+failure.
+
+The persistent store is disposable Workbench state under
+`generated/.workbench-cache/`. SQLite in WAL mode owns the indexed query DAG,
+atomic bindings and content locations. Values up to 64 KiB are inline; larger
+query values are deduplicated into append-only SHA-256 CAS pack generations. Generated
+output files are always streamed into the same CAS and may be atomically
+restored; generated IR bundles remain publication artifacts and are not the
+cache database. Reviewed packs and the qualification ledger must never be
+copied into or modified by the store. A schema mismatch discards this derived
+store; there is no cache format compatibility layer.
+
+Pack lifetime is reachability-based. Query results and stage-output bindings
+are the only roots. When unreachable records exceed the bounded compaction
+threshold, the store streams all live objects into a new immutable generation,
+fsyncs it, atomically redirects SQLite, and only then removes old generations.
+A crash can therefore leave an unreferenced old or new pack, but never an
+index that points at partially written bytes; unreferenced generations are
+removed when the store reopens.
+
+Mutable symbolic continuations are intentionally not persistent query values.
+They are expensive to clone, couple the store to backend internals and do not
+form stable facts. The CFG explorer caches completed immutable results and
+replays bounded decision maps; MMIO discovery and linked-IR construction use
+the same explorer and the same typed limit reasons.
+
+Reference-call composition has a separate bounded worker-local memo. Its key
+is the exact linked target plus the complete RV32 symbolic argument array.
+Both eligible and completed ineligible traces are immutable reusable results;
+an ineligible cache hit must return the same fail-closed blocker. A result
+whose cause contains recursion is visiting-stack-dependent and is never
+memoized. The memo has a fixed entry ceiling and is discarded with its worker;
+it is an execution optimization, not evidence or a substitute for the future
+persistent function-facts query.
+
 ## Rust ownership and capability rules
 
 Ownership transfer, borrowing, and capability passing express hardware

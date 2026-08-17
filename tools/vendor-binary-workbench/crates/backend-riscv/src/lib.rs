@@ -86,7 +86,7 @@ pub use interface_discovery::{
     InterfaceLoad, InterfacePointer, InterfaceRoot, InterfaceSymbolAddressing,
     discover_interface_calls,
 };
-pub use reference_analysis::{ReferenceResolver, ReferenceSymbolKey};
+pub use reference_analysis::{ReferenceAnalysisMemo, ReferenceResolver, ReferenceSymbolKey};
 pub use static_analysis::{
     RiscvHarnessSpec, RiscvSummaryHooks, StructuralCallSite, StructuralPointerContext,
     StructuralProjectedRelocation, SymbolicStack, trace_binary_symbol,

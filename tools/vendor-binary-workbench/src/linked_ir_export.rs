@@ -471,8 +471,30 @@ pub(crate) fn load_project_interfaces(
     )?))
 }
 
+#[cfg(test)]
 fn unique_observed_internal_target(
     symbols: &[crate::artifact::ArtifactSymbolDefinition],
+    assignments: &[crate::interfaces::ResolvedInterfaceAssignment],
+) -> Option<u32> {
+    let addresses_by_name = observed_symbol_addresses(symbols);
+    unique_observed_internal_target_in(&addresses_by_name, assignments)
+}
+
+fn observed_symbol_addresses(
+    symbols: &[crate::artifact::ArtifactSymbolDefinition],
+) -> BTreeMap<String, std::collections::BTreeSet<u32>> {
+    let mut addresses_by_name = BTreeMap::<String, std::collections::BTreeSet<u32>>::new();
+    for symbol in symbols.iter().filter(|symbol| symbol.addresses_resolved) {
+        addresses_by_name
+            .entry(symbol.name.clone())
+            .or_default()
+            .insert(symbol.address as u32);
+    }
+    addresses_by_name
+}
+
+fn unique_observed_internal_target_in(
+    addresses_by_name: &BTreeMap<String, std::collections::BTreeSet<u32>>,
     assignments: &[crate::interfaces::ResolvedInterfaceAssignment],
 ) -> Option<u32> {
     if assignments.is_empty() {
@@ -484,11 +506,7 @@ fn unique_observed_internal_target(
         if assignment.target_addend != 0 {
             return None;
         }
-        let addresses = symbols
-            .iter()
-            .filter(|symbol| symbol.addresses_resolved && symbol.name == assignment.target_symbol)
-            .map(|symbol| symbol.address as u32)
-            .collect::<std::collections::BTreeSet<_>>();
+        let addresses = addresses_by_name.get(&assignment.target_symbol)?;
         if addresses.len() != 1 {
             return None;
         }
@@ -508,6 +526,17 @@ pub(crate) fn register_reviewed_external_calls(
     source: &str,
     origins: &[LinkUnitOriginFact],
 ) {
+    let addresses_by_name = observed_symbol_addresses(&resolver.symbols);
+    let internal_targets = interfaces
+        .bindings()
+        .iter()
+        .map(|binding| {
+            (
+                binding.id.as_str(),
+                unique_observed_internal_target_in(&addresses_by_name, &binding.assignments),
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
     for contract in interfaces.contracts() {
         let container_offset = match contract.container_path.as_slice() {
             [] => 0,
@@ -558,7 +587,7 @@ pub(crate) fn register_reviewed_external_calls(
         }
     }
     for slot in interfaces.bindings() {
-        let internal_target = unique_observed_internal_target(&resolver.symbols, &slot.assignments);
+        let internal_target = internal_targets.get(slot.id.as_str()).copied().flatten();
         let reviewed = ReviewedExternalCall {
             id: slot.id.clone(),
             contract: slot.contract.clone(),
@@ -643,7 +672,7 @@ pub(crate) fn register_reviewed_external_calls(
     );
     for projected in projected_calls {
         let slot = projected.binding;
-        let internal_target = unique_observed_internal_target(&resolver.symbols, &slot.assignments);
+        let internal_target = internal_targets.get(slot.id.as_str()).copied().flatten();
         let reviewed = ReviewedExternalCall {
             id: slot.id.clone(),
             contract: slot.contract.clone(),
@@ -687,61 +716,6 @@ pub(crate) fn register_reviewed_external_calls(
                 .reviewed_internal_calls
                 .insert(call_site, target);
         }
-    }
-}
-
-#[cfg(test)]
-mod observed_internal_target_tests {
-    use super::*;
-
-    fn symbol(name: &str, address: u64) -> crate::artifact::ArtifactSymbolDefinition {
-        crate::artifact::ArtifactSymbolDefinition {
-            member: None,
-            name: name.to_owned(),
-            address,
-            bytes: vec![0x82, 0x80],
-            addresses_resolved: true,
-            memory_regions: Default::default(),
-            relocations: Vec::new(),
-        }
-    }
-
-    fn assignment(target: &str) -> crate::interfaces::ResolvedInterfaceAssignment {
-        crate::interfaces::ResolvedInterfaceAssignment {
-            member: Some("initializer.o".to_owned()),
-            producer: "install_callbacks".to_owned(),
-            site: 0x20,
-            target_member: Some("implementation.o".to_owned()),
-            target_symbol: target.to_owned(),
-            target_addend: 0,
-        }
-    }
-
-    #[test]
-    fn observed_target_resolution_uses_assignments_not_reviewed_slot_names() {
-        let symbols = vec![symbol("actual_target", 0x2000)];
-        assert_eq!(
-            unique_observed_internal_target(&symbols, &[assignment("actual_target")]),
-            Some(0x2000)
-        );
-    }
-
-    #[test]
-    fn observed_target_resolution_fails_closed_for_runtime_alternatives_or_aliases() {
-        let symbols = vec![
-            symbol("first", 0x2000),
-            symbol("second", 0x3000),
-            symbol("aliased", 0x4000),
-            symbol("aliased", 0x5000),
-        ];
-        assert_eq!(
-            unique_observed_internal_target(&symbols, &[assignment("first"), assignment("second")]),
-            None
-        );
-        assert_eq!(
-            unique_observed_internal_target(&symbols, &[assignment("aliased")]),
-            None
-        );
     }
 }
 
@@ -815,4 +789,59 @@ pub(crate) fn field_candidate_summary(report: &LinkedIrReport) -> (usize, usize,
         .map(|predicate| predicate.sources.len())
         .sum();
     (registers, candidates, direct_predicates, direct_sources)
+}
+
+#[cfg(test)]
+mod observed_internal_target_tests {
+    use super::*;
+
+    fn symbol(name: &str, address: u64) -> crate::artifact::ArtifactSymbolDefinition {
+        crate::artifact::ArtifactSymbolDefinition {
+            member: None,
+            name: name.to_owned(),
+            address,
+            bytes: vec![0x82, 0x80],
+            addresses_resolved: true,
+            memory_regions: Default::default(),
+            relocations: Vec::new(),
+        }
+    }
+
+    fn assignment(target: &str) -> crate::interfaces::ResolvedInterfaceAssignment {
+        crate::interfaces::ResolvedInterfaceAssignment {
+            member: Some("initializer.o".to_owned()),
+            producer: "install_callbacks".to_owned(),
+            site: 0x20,
+            target_member: Some("implementation.o".to_owned()),
+            target_symbol: target.to_owned(),
+            target_addend: 0,
+        }
+    }
+
+    #[test]
+    fn observed_target_resolution_uses_assignments_not_reviewed_slot_names() {
+        let symbols = vec![symbol("actual_target", 0x2000)];
+        assert_eq!(
+            unique_observed_internal_target(&symbols, &[assignment("actual_target")]),
+            Some(0x2000)
+        );
+    }
+
+    #[test]
+    fn observed_target_resolution_fails_closed_for_runtime_alternatives_or_aliases() {
+        let symbols = vec![
+            symbol("first", 0x2000),
+            symbol("second", 0x3000),
+            symbol("aliased", 0x4000),
+            symbol("aliased", 0x5000),
+        ];
+        assert_eq!(
+            unique_observed_internal_target(&symbols, &[assignment("first"), assignment("second")]),
+            None
+        );
+        assert_eq!(
+            unique_observed_internal_target(&symbols, &[assignment("aliased")]),
+            None
+        );
+    }
 }

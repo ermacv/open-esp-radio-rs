@@ -9,6 +9,7 @@ use super::{
 };
 
 const STA_BEACON_FILTER_INTERRUPT: u32 = 1 << 15;
+const RX_DELIVERY_INTERRUPTS: u32 = (1 << 5) | (1 << 14) | (1 << 24);
 
 /// Proof that the connected-STA hardware policy was applied before IRQ activation.
 ///
@@ -171,6 +172,36 @@ impl MacInterruptRegisters {
     /// full-width store to the generated write-to-clear register.
     pub fn acknowledge_mac_interrupts(&mut self, snapshot: MacInterruptSnapshot) {
         interrupt_snapshot::acknowledge_mac_interrupt(&self.peripheral, snapshot.0);
+        device_fence();
+    }
+
+    /// Temporarily suppress the observed RX delivery group without changing
+    /// any other member of the reviewed runtime mask.
+    ///
+    /// This is a source-moderation operation, not an acknowledgement. The
+    /// hard ISR uses it before acknowledging the RX image. The group contains
+    /// RX_SUCCESS and the two auxiliary sources observed on every saturated
+    /// RX edge; TX and unrelated sources remain independently live.
+    pub fn mask_rx_delivery_interrupts(&mut self) {
+        self.peripheral.enable().modify(|reader, writer| {
+            writer
+                .event_mask()
+                .set(reader.event_mask().bits() & !RX_DELIVERY_INTERRUPTS)
+        });
+        device_fence();
+    }
+
+    /// Restore the RX delivery group while preserving the current mask.
+    ///
+    /// A latched RX status which arrived while masked becomes visible through
+    /// the level CPU route after this ordered write, so the task does not need
+    /// to fabricate a hardware completion edge.
+    pub fn unmask_rx_delivery_interrupts(&mut self) {
+        self.peripheral.enable().modify(|reader, writer| {
+            writer
+                .event_mask()
+                .set(reader.event_mask().bits() | RX_DELIVERY_INTERRUPTS)
+        });
         device_fence();
     }
 

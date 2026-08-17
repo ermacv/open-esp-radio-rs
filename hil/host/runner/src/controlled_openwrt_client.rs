@@ -1,11 +1,11 @@
-//! Scoped second AP client on the laboratory OpenWrt radio.
+//! Scoped controlled AP client on the laboratory OpenWrt radio.
 
 use std::{
     io::Write as _,
     net::Ipv4Addr,
     process::{Command, Stdio},
     thread,
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 use zeroize::{Zeroize, Zeroizing};
@@ -26,6 +26,8 @@ const INTERFACE: &str = "or-ap-client";
 const CLIENT_MAC: &str = "02:00:00:00:43:03";
 const PID_FILE: &str = "/var/run/open-radio-client.pid";
 const CONFIG_FILE: &str = "/var/run/open-radio-client.conf";
+const FORWARD_TABLE: &str = "open_radio_hil";
+const FORWARD_CHAIN: &str = "open_radio_hil_forward";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize)]
 pub(crate) struct SecondaryClientProbeEvidence {
@@ -35,34 +37,16 @@ pub(crate) struct SecondaryClientProbeEvidence {
 
 pub(crate) struct ControlledOpenWrtClient {
     fixture: OpenWrtConfig,
+    forward_address: Option<Ipv4Addr>,
     restored: bool,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct OpenWrtUdpTransmission {
-    pub(crate) bytes: u64,
-    pub(crate) datagrams: u64,
-    pub(crate) elapsed: Duration,
-    pub(crate) station_tx_packets: u64,
-    pub(crate) station_tx_retries: u64,
-    pub(crate) station_tx_failed: u64,
-    /// Frames received with an invalid FCS by the radio hosting the client.
-    ///
-    /// In an AP RX workload this includes control responses sent by the DUT,
-    /// most importantly Block ACK frames, even though the UDP payload travels
-    /// in the opposite direction.
-    pub(crate) radio_rx_fcs_errors: u64,
-}
-
 pub(crate) fn doctor(access_point: &AccessPointConfig, fixture: &OpenWrtConfig) -> Result<()> {
-    if access_point.secondary_client_cidr().is_none() {
-        return Ok(());
-    }
     let status = Command::new("sh")
         .args(["-c", "command -v wpa_passphrase >/dev/null"])
         .status()?;
     if !status.success() {
-        return Err("wpa_passphrase is required for the second AP client".into());
+        return Err("wpa_passphrase is required for the controlled OpenWrt AP client".into());
     }
     let script = format!(
         "set -eu; \
@@ -70,6 +54,9 @@ pub(crate) fn doctor(access_point: &AccessPointConfig, fixture: &OpenWrtConfig) 
          command -v ip >/dev/null; \
          command -v ping >/dev/null; \
          command -v wpa_supplicant >/dev/null; \
+         command -v nft >/dev/null; \
+         command -v fw4 >/dev/null; \
+         test \"$(sysctl -n net.ipv4.ip_forward)\" = 1; \
          test -r /sys/class/net/{}/phy80211/name; \
          phy=$(cat /sys/class/net/{}/phy80211/name); \
          iw phy \"$phy\" info | grep -q '#{{ managed }}'; \
@@ -82,7 +69,7 @@ pub(crate) fn doctor(access_point: &AccessPointConfig, fixture: &OpenWrtConfig) 
     let output = ssh(fixture, &script)?;
     if !output.status.success() {
         return Err(format!(
-            "OpenWrt fixture cannot host the second AP client: {}",
+            "OpenWrt fixture cannot host a controlled AP client: {}",
             String::from_utf8_lossy(&output.stderr).trim(),
         )
         .into());
@@ -98,20 +85,21 @@ impl ControlledOpenWrtClient {
         let address = access_point.secondary_client_cidr().ok_or(
             "the AP scenario requires a second client but secondary_client_address is absent",
         )?;
-        Self::connect_at(access_point, fixture, address)
+        Self::connect_at(access_point, fixture, address, false)
     }
 
     pub(crate) fn connect_primary(
         access_point: &AccessPointConfig,
         fixture: &OpenWrtConfig,
     ) -> Result<Self> {
-        Self::connect_at(access_point, fixture, access_point.client_cidr())
+        Self::connect_at(access_point, fixture, access_point.client_cidr(), true)
     }
 
     fn connect_at(
         access_point: &AccessPointConfig,
         fixture: &OpenWrtConfig,
         address: String,
+        install_host_forwarding: bool,
     ) -> Result<Self> {
         let (ssid, passphrase) = access_point.credentials();
         let target = access_point.target_address();
@@ -163,106 +151,47 @@ impl ControlledOpenWrtClient {
         // Keep this outside the measured workload and give the target time to
         // publish its controlled-port state.
         thread::sleep(Duration::from_millis(250));
+        let forward_address = if install_host_forwarding {
+            match install_forwarding(
+                fixture,
+                access_point.target_address(),
+                access_point.client_address(),
+            ) {
+                Ok(address) => Some(address),
+                Err(error) => {
+                    let restore_error = restore(fixture).err();
+                    return Err(match restore_error {
+                        Some(restore_error) => {
+                            format!("{error}; OpenWrt client cleanup also failed: {restore_error}")
+                                .into()
+                        }
+                        None => error,
+                    });
+                }
+            }
+        } else {
+            None
+        };
         Ok(Self {
             fixture: fixture.clone(),
+            forward_address,
             restored: false,
         })
+    }
+
+    /// Address reached by the wired host while OpenWrt owns the Wi-Fi peer.
+    ///
+    /// The scoped forwarding rules translate this management address to the
+    /// DUT AP address. The host therefore remains the traffic generator, but
+    /// every measured radio frame still crosses the controlled OpenWrt peer.
+    pub(crate) const fn forward_address(&self) -> Option<Ipv4Addr> {
+        self.forward_address
     }
 
     pub(crate) fn restore(mut self) -> Result<()> {
         restore(&self.fixture)?;
         self.restored = true;
         Ok(())
-    }
-
-    pub(crate) fn send_udp(
-        &self,
-        target: Ipv4Addr,
-        port: u16,
-        rate_bps: u64,
-        duration: Duration,
-        payload_bytes: usize,
-    ) -> Result<OpenWrtUdpTransmission> {
-        let duration_seconds = duration.as_secs().max(1);
-        let script = format!(
-            "set -eu; \
-             command -v iperf >/dev/null; \
-             phy=$(cat /sys/class/net/{INTERFACE}/phy80211/name); \
-             fcs_counter=/sys/kernel/debug/ieee80211/$phy/statistics/dot11FCSErrorCount; \
-             test -r \"$fcs_counter\"; \
-             mac=$(iw dev {INTERFACE} link | awk '/Connected to/ {{print $3}}'); \
-             test -n \"$mac\"; \
-             before=$(iw dev {INTERFACE} station get \"$mac\"); \
-             before_fcs=$(cat \"$fcs_counter\"); \
-             before_packets=$(printf '%s\\n' \"$before\" | awk '/tx packets:/ {{print $3}}'); \
-             before_retries=$(printf '%s\\n' \"$before\" | awk '/tx retries:/ {{print $3}}'); \
-             before_failed=$(printf '%s\\n' \"$before\" | awk '/tx failed:/ {{print $3}}'); \
-             output=$(iperf -c {target} -p {port} -u -b {rate_bps} -t {duration_seconds} -l {payload_bytes} --no-udp-fin -e); \
-             datagrams=$(printf '%s\\n' \"$output\" | awk '/Sent [0-9]+ datagrams/ {{for (i=1; i<NF; i++) if ($i == \"Sent\") value=$(i+1)}} END {{print value}}'); \
-             test -n \"$datagrams\"; \
-             after=$(iw dev {INTERFACE} station get \"$mac\"); \
-             after_fcs=$(cat \"$fcs_counter\"); \
-             after_packets=$(printf '%s\\n' \"$after\" | awk '/tx packets:/ {{print $3}}'); \
-             after_retries=$(printf '%s\\n' \"$after\" | awk '/tx retries:/ {{print $3}}'); \
-             after_failed=$(printf '%s\\n' \"$after\" | awk '/tx failed:/ {{print $3}}'); \
-             printf 'datagrams=%s\\n' \"$datagrams\"; \
-             printf 'station_tx_packets=%s\\n' \"$((after_packets-before_packets))\"; \
-             printf 'station_tx_retries=%s\\n' \"$((after_retries-before_retries))\"; \
-             printf 'station_tx_failed=%s\\n' \"$((after_failed-before_failed))\"; \
-             printf 'radio_rx_fcs_errors=%s\\n' \"$((after_fcs-before_fcs))\""
-        );
-        let started = Instant::now();
-        let output = ssh(&self.fixture, &script)?;
-        let elapsed = started.elapsed();
-        if !output.status.success() {
-            return Err(format!(
-                "OpenWrt UDP source failed: status={} stdout={} stderr={}",
-                output.status,
-                String::from_utf8_lossy(&output.stdout).trim(),
-                String::from_utf8_lossy(&output.stderr).trim(),
-            )
-            .into());
-        }
-        let output = String::from_utf8(output.stdout)?;
-        let datagrams = tagged_u64(&output, "datagrams")?;
-        Ok(OpenWrtUdpTransmission {
-            bytes: datagrams.saturating_mul(u64::try_from(payload_bytes)?),
-            datagrams,
-            elapsed,
-            station_tx_packets: tagged_u64(&output, "station_tx_packets")?,
-            station_tx_retries: tagged_u64(&output, "station_tx_retries")?,
-            station_tx_failed: tagged_u64(&output, "station_tx_failed")?,
-            radio_rx_fcs_errors: tagged_u64(&output, "radio_rx_fcs_errors")?,
-        })
-    }
-
-    pub(crate) fn spawn_udp_rx_probe(
-        &self,
-        target: Ipv4Addr,
-        port: u16,
-    ) -> thread::JoinHandle<std::result::Result<(), String>> {
-        let fixture = self.fixture.clone();
-        thread::spawn(move || {
-            let script = format!(
-                "set -eu; command -v socat >/dev/null; \
-                 for attempt in $(seq 1 5); do \
-                   {{ printf '\\377\\377\\377\\377'; dd if=/dev/zero bs=60 count=1 2>/dev/null; }} \
-                     | socat -u STDIN UDP-DATAGRAM:{target}:{port}; \
-                   sleep 1; \
-                 done"
-            );
-            let output = ssh(&fixture, &script).map_err(|error| error.to_string())?;
-            if output.status.success() {
-                Ok(())
-            } else {
-                Err(format!(
-                    "OpenWrt UDP readiness probe failed: status={} stdout={} stderr={}",
-                    output.status,
-                    String::from_utf8_lossy(&output.stdout).trim(),
-                    String::from_utf8_lossy(&output.stderr).trim(),
-                ))
-            }
-        })
     }
 
     /// Exercise this peer throughout the primary saturation workload.
@@ -280,21 +209,79 @@ impl ControlledOpenWrtClient {
     }
 }
 
-fn tagged_u64(output: &str, key: &str) -> Result<u64> {
-    output
-        .lines()
-        .find_map(|line| line.strip_prefix(key)?.strip_prefix('='))
-        .ok_or_else(|| format!("OpenWrt output omitted `{key}`"))?
-        .parse()
-        .map_err(|error| format!("invalid OpenWrt `{key}` counter: {error}").into())
-}
-
 impl Drop for ControlledOpenWrtClient {
     fn drop(&mut self) {
         if !self.restored {
             let _ = restore(&self.fixture);
         }
     }
+}
+
+fn install_forwarding(
+    fixture: &OpenWrtConfig,
+    target: Ipv4Addr,
+    client: Ipv4Addr,
+) -> Result<Ipv4Addr> {
+    let cleanup = cleanup_forwarding_script();
+    let script = format!(
+        "set -eu; \
+         cleanup_forwarding() {{ {cleanup}; }}; \
+         cleanup_forwarding; \
+         trap 'cleanup_forwarding' EXIT; \
+         host_ip=${{SSH_CLIENT%% *}}; \
+         route=$(ip -4 route get \"$host_ip\"); \
+         host_if=$(printf '%s\\n' \"$route\" | awk '{{for (i=1; i<=NF; i++) if ($i == \"dev\") {{print $(i+1); exit}}}}'); \
+         management_ip=$(printf '%s\\n' \"$route\" | awk '{{for (i=1; i<=NF; i++) if ($i == \"src\") {{print $(i+1); exit}}}}'); \
+         test -n \"$host_if\"; \
+         test -n \"$management_ip\"; \
+         nft add chain inet fw4 {FORWARD_CHAIN}; \
+         nft insert rule inet fw4 forward jump {FORWARD_CHAIN}; \
+         nft add rule inet fw4 {FORWARD_CHAIN} iifname \"$host_if\" oifname \"{INTERFACE}\" ip saddr \"$host_ip\" ip daddr {target} accept; \
+         nft add rule inet fw4 {FORWARD_CHAIN} iifname \"{INTERFACE}\" oifname \"$host_if\" ip saddr {target} ip daddr \"$host_ip\" accept; \
+         nft add table inet {FORWARD_TABLE}; \
+         nft 'add chain inet {FORWARD_TABLE} prerouting {{ type nat hook prerouting priority -101; policy accept; }}'; \
+         nft 'add chain inet {FORWARD_TABLE} postrouting {{ type nat hook postrouting priority 101; policy accept; }}'; \
+         nft add rule inet {FORWARD_TABLE} prerouting iifname \"$host_if\" ip saddr \"$host_ip\" ip daddr \"$management_ip\" udp dport {UDP_RX_PORT} dnat ip to {target}; \
+         nft add rule inet {FORWARD_TABLE} prerouting iifname \"$host_if\" ip saddr \"$host_ip\" ip daddr \"$management_ip\" udp dport {UDP_TX_PORT} dnat ip to {target}; \
+         nft add rule inet {FORWARD_TABLE} postrouting oifname \"{INTERFACE}\" ip saddr \"$host_ip\" ip daddr {target} udp dport {UDP_RX_PORT} snat ip to {client}; \
+         nft add rule inet {FORWARD_TABLE} postrouting oifname \"{INTERFACE}\" ip saddr \"$host_ip\" ip daddr {target} udp dport {UDP_TX_PORT} snat ip to {client}; \
+         nft add rule inet {FORWARD_TABLE} prerouting iifname \"$host_if\" ip saddr \"$host_ip\" ip daddr \"$management_ip\" icmp type echo-request dnat ip to {target}; \
+         nft add rule inet {FORWARD_TABLE} postrouting oifname \"{INTERFACE}\" ip saddr \"$host_ip\" ip daddr {target} icmp type echo-request snat ip to {client}; \
+         trap - EXIT; \
+         printf 'forward_address=%s\\n' \"$management_ip\"",
+        UDP_RX_PORT = 4_323,
+        UDP_TX_PORT = 4_324,
+    );
+    let output = ssh(fixture, &script)?;
+    if !output.status.success() {
+        return Err(format!(
+            "cannot install scoped OpenWrt AP forwarding: stdout={} stderr={}",
+            String::from_utf8_lossy(&output.stdout).trim(),
+            String::from_utf8_lossy(&output.stderr).trim(),
+        )
+        .into());
+    }
+    tagged_ipv4(&String::from_utf8(output.stdout)?, "forward_address")
+}
+
+fn cleanup_forwarding_script() -> String {
+    format!(
+        "nft delete table inet {FORWARD_TABLE} 2>/dev/null || true; \
+         for handle in $(nft -a list chain inet fw4 forward 2>/dev/null | awk '/jump {FORWARD_CHAIN}/ {{print $NF}}'); do \
+             nft delete rule inet fw4 forward handle \"$handle\" 2>/dev/null || true; \
+         done; \
+         nft flush chain inet fw4 {FORWARD_CHAIN} 2>/dev/null || true; \
+         nft delete chain inet fw4 {FORWARD_CHAIN} 2>/dev/null || true"
+    )
+}
+
+fn tagged_ipv4(output: &str, key: &str) -> Result<Ipv4Addr> {
+    output
+        .lines()
+        .find_map(|line| line.strip_prefix(key)?.strip_prefix('='))
+        .ok_or_else(|| format!("OpenWrt output omitted `{key}`"))?
+        .parse()
+        .map_err(|error| format!("invalid OpenWrt `{key}` address: {error}").into())
 }
 
 fn derive_psk(ssid: &str, passphrase: &str) -> Result<Zeroizing<String>> {
@@ -326,8 +313,10 @@ fn derive_psk(ssid: &str, passphrase: &str) -> Result<Zeroizing<String>> {
 }
 
 fn restore(fixture: &OpenWrtConfig) -> Result<()> {
+    let cleanup = cleanup_forwarding_script();
     let script = format!(
         "set -eu; \
+         {cleanup}; \
          if test -f {PID_FILE}; then kill $(cat {PID_FILE}) 2>/dev/null || true; fi; \
          iw dev {INTERFACE} del 2>/dev/null || true; \
          rm -f {PID_FILE} {CONFIG_FILE}"
@@ -424,6 +413,14 @@ mod tests {
                 transmitted: 10,
                 received: 10,
             }),
+        );
+    }
+
+    #[test]
+    fn forwarding_address_is_typed() {
+        assert_eq!(
+            tagged_ipv4("forward_address=192.168.178.2\n", "forward_address").unwrap(),
+            Ipv4Addr::new(192, 168, 178, 2),
         );
     }
 }

@@ -44,7 +44,13 @@ where
         // its start. Yield at that hardware epoch boundary so a separate
         // protocol task can consume staged ownership before another RX epoch.
         yield_now().await;
-        if progress == WdevRxProgress::ProbePending {
+        if progress == WdevRxProgress::Drained {
+            // S31 exposes a level CPU route. A completion racing the final
+            // ownership probe stays latched while masked and asserts the
+            // route as soon as this ordered unmask completes; adding a
+            // software probe here would duplicate every idle drain edge.
+            let _ = self.irq.unmask_rx_after_drain();
+        } else if progress == WdevRxProgress::ProbePending {
             // Direct BASE publication of an exhausted list has no reload
             // interrupt. Repost only after the cooperative boundary so the
             // next service observes hardware after a distinct executor turn.

@@ -10,6 +10,7 @@ use core::sync::atomic::{AtomicBool, Ordering};
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use open_esp_radio_esp32s31_wifi_dma::tx_storage::TxDmaStorage;
+use open_esp_radio_esp32s31_wifi_mac::rx::RX_GUARDED_RECLAIM_WINDOW_DESCRIPTORS;
 use open_esp_radio_ieee80211::{beacon::WPA2_BEACON_CAPACITY, scan::ScanTable};
 use static_cell::{ConstStaticCell, StaticCell};
 
@@ -25,8 +26,10 @@ pub const ESP32S31_DEFAULT_SCAN_RECORD_CAPACITY: usize = 32;
 
 pub const ESP32S31_DEFAULT_RX_STAGE_CAPACITY: usize = 1_700;
 // These slots form the latency-critical copy-before-DMA-reload working set and
-// stay in SRAM. Two complete negotiated BlockAck windows let one window remain
-// downstream while the next is copied out of the 64-descriptor DMA ring.
+// stay in SRAM. Guarded reclaim needs a 32-descriptor completed span: 16 copied
+// and returned, followed by 16 retained. The retained half remains unobserved
+// in the DMA ring and consumes no staging lease, leaving another 16 slots of
+// downstream elasticity in this 32-slot SRAM working set.
 pub const ESP32S31_DEFAULT_RX_STAGE_SLOT_COUNT: usize = 32;
 // Keep one complete negotiated HT BlockAck window of DMA descriptors in
 // reserve while software copies and republishes the preceding window. A
@@ -153,7 +156,9 @@ const _: () = assert!(ESP32S31_DEFAULT_RX_REORDER_WINDOW <= ESP32S31_DEFAULT_RX_
 const _: () =
     assert!(ESP32S31_DEFAULT_RX_STAGE_SLOT_COUNT >= 2 * ESP32S31_DEFAULT_RX_REORDER_WINDOW);
 const _: () =
-    assert!(ESP32S31_DEFAULT_RX_DESCRIPTOR_COUNT >= 2 * ESP32S31_DEFAULT_RX_REORDER_WINDOW);
+    assert!(ESP32S31_DEFAULT_RX_STAGE_SLOT_COUNT >= RX_GUARDED_RECLAIM_WINDOW_DESCRIPTORS);
+const _: () =
+    assert!(ESP32S31_DEFAULT_RX_DESCRIPTOR_COUNT >= RX_GUARDED_RECLAIM_WINDOW_DESCRIPTORS);
 const _: () =
     assert!(ESP32S31_DEFAULT_TX_AMPDU_FRAME_COUNT < ESP32S31_DEFAULT_NETWORK_TX_QUEUE_DEPTH);
 
@@ -174,6 +179,7 @@ mod tests {
             ESP32S31_DEFAULT_TX_AMPDU_FRAME_COUNT
         );
         assert_eq!(Esp32s31DefaultWifiResourceProfile::RX_REORDER_WINDOW, 16);
+        assert_eq!(Esp32s31DefaultWifiResourceProfile::RX_STAGE_SLOT_COUNT, 32);
     }
 
     #[test]

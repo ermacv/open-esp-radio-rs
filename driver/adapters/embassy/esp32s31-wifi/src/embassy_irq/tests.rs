@@ -1,5 +1,6 @@
 use core::cell::Cell;
 use std::rc::Rc;
+use std::sync::atomic::{AtomicU32, Ordering};
 
 use open_esp_radio_embassy_net::NoopRawMutex;
 use open_esp_radio_esp32s31_wifi_mac::irq::{
@@ -100,6 +101,19 @@ fn maps_one_combined_snapshot_to_bounded_rx_and_tx_wakes() {
     );
     // Three TX causes coalesce into one wake without losing their bits.
     assert_eq!(runtime.try_take_tx(), None);
+}
+
+#[test]
+fn repeated_rx_images_coalesce_the_wake_without_losing_irq_evidence() {
+    let runtime = EmbassyMacIrqRuntime::<NoopRawMutex>::new();
+
+    runtime.publish(MAC_INT_RX_SUCCESS);
+    runtime.publish(MAC_INT_RX_SUCCESS);
+
+    assert_eq!(runtime.rx_post_count(), 2);
+    assert!(runtime.rx_signaled());
+    embassy_futures::block_on(runtime.wait_rx());
+    assert!(!runtime.rx_signaled());
 }
 
 #[test]
@@ -300,6 +314,8 @@ fn retains_unhandled_evidence_through_the_irq_sink_contract() {
 
 struct Interrupt {
     status: u32,
+    rx_masked: Cell<bool>,
+    rx_was_masked_before_ack: Cell<bool>,
     acknowledged: Cell<Option<u32>>,
 }
 
@@ -310,7 +326,12 @@ impl MacInterrupt for Interrupt {
         self.status
     }
 
+    fn mask_rx_delivery(&mut self) {
+        self.rx_masked.set(true);
+    }
+
     fn acknowledge(&mut self, snapshot: Self::Snapshot) {
+        self.rx_was_masked_before_ack.set(self.rx_masked.get());
         self.acknowledged.set(Some(snapshot));
     }
 }
@@ -320,6 +341,8 @@ fn production_handler_acknowledges_before_publishing_embassy_work() {
     let status = MAC_INT_RX_SUCCESS | MAC_INT_TX_COMPLETE;
     let mut interrupt = Interrupt {
         status,
+        rx_masked: Cell::new(false),
+        rx_was_masked_before_ack: Cell::new(false),
         acknowledged: Cell::new(None),
     };
     let runtime = EmbassyMacIrqRuntime::<NoopRawMutex>::new();
@@ -329,6 +352,7 @@ fn production_handler_acknowledges_before_publishing_embassy_work() {
     assert_eq!(disposition, IrqDisposition::Posted);
     assert_eq!(snapshot.status, status);
     assert_eq!(interrupt.acknowledged.get(), Some(status));
+    assert!(!interrupt.rx_masked.get());
     assert!(runtime.rx_signaled());
     assert_eq!(runtime.try_take_tx(), Some(MAC_INT_TX_COMPLETE));
 }
@@ -337,6 +361,8 @@ fn production_handler_acknowledges_before_publishing_embassy_work() {
 fn spurious_status_neither_acknowledges_nor_wakes_embassy() {
     let mut interrupt = Interrupt {
         status: 0,
+        rx_masked: Cell::new(false),
+        rx_was_masked_before_ack: Cell::new(false),
         acknowledged: Cell::new(None),
     };
     let runtime = EmbassyMacIrqRuntime::<NoopRawMutex>::new();
@@ -348,6 +374,42 @@ fn spurious_status_neither_acknowledges_nor_wakes_embassy() {
     assert_eq!(interrupt.acknowledged.get(), None);
     assert!(!runtime.rx_signaled());
     assert_eq!(runtime.try_take_tx(), None);
+}
+
+static RX_UNMASK_CALLS: AtomicU32 = AtomicU32::new(0);
+
+fn record_rx_unmask() {
+    RX_UNMASK_CALLS.fetch_add(1, Ordering::Relaxed);
+}
+
+#[test]
+fn moderated_rx_masks_before_ack_and_restores_only_on_bottom_half_drain() {
+    RX_UNMASK_CALLS.store(0, Ordering::Relaxed);
+    let status = MAC_INT_RX_SUCCESS | MAC_INT_TX_COMPLETE;
+    let mut interrupt = Interrupt {
+        status,
+        rx_masked: Cell::new(false),
+        rx_was_masked_before_ack: Cell::new(false),
+        acknowledged: Cell::new(None),
+    };
+    let runtime = EmbassyMacIrqRuntime::<NoopRawMutex>::new_with_rx_moderation(record_rx_unmask);
+    runtime.begin_rx_moderation();
+
+    let (disposition, snapshot) = handle_mac_irq(&mut interrupt, &runtime);
+
+    assert_eq!(disposition, IrqDisposition::Posted);
+    assert_eq!(snapshot.status, status);
+    assert!(interrupt.rx_masked.get());
+    assert!(interrupt.rx_was_masked_before_ack.get());
+    assert_eq!(interrupt.acknowledged.get(), Some(status));
+    assert_eq!(runtime.try_take_tx(), Some(MAC_INT_TX_COMPLETE));
+    assert_eq!(RX_UNMASK_CALLS.load(Ordering::Relaxed), 0);
+
+    assert!(runtime.unmask_rx_after_drain());
+    assert_eq!(RX_UNMASK_CALLS.load(Ordering::Relaxed), 1);
+    runtime.end_rx_moderation();
+    assert!(!runtime.unmask_rx_after_drain());
+    assert_eq!(RX_UNMASK_CALLS.load(Ordering::Relaxed), 1);
 }
 
 struct PowerInterrupt {

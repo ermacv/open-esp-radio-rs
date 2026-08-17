@@ -162,9 +162,31 @@ where
 }
 
 async fn checkpoint_protocol_turn(completed: &mut usize) {
-    *completed += 1;
-    if *completed >= RX_PROTOCOL_DISPATCH_BUDGET {
+    if advance_protocol_turn(completed) {
         embassy_futures::yield_now().await;
-        *completed = 0;
+    }
+}
+
+fn advance_protocol_turn(completed: &mut usize) -> bool {
+    *completed += 1;
+    if *completed < RX_PROTOCOL_DISPATCH_BUDGET {
+        return false;
+    }
+    *completed = 0;
+    true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{RX_PROTOCOL_DISPATCH_BUDGET, advance_protocol_turn};
+
+    #[test]
+    fn protocol_turn_yields_at_the_configured_budget() {
+        let mut completed = 0;
+        for _ in 1..RX_PROTOCOL_DISPATCH_BUDGET {
+            assert!(!advance_protocol_turn(&mut completed));
+        }
+        assert!(advance_protocol_turn(&mut completed));
+        assert_eq!(completed, 0);
     }
 }

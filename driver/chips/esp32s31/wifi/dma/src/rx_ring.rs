@@ -34,7 +34,14 @@ const RX_EXHAUSTED_REPUBLICATION_ACCEPTED: u32 = 0x8000_0000;
 /// one and four descriptors permit stale RX writeback to terminate the live
 /// suffix, while retaining 16 completions avoids reusing any descriptor from
 /// the current maximum A-MPDU burst.
-const RX_RECLAIM_GUARD_DESCRIPTORS: usize = 16;
+pub const RX_RECLAIM_GUARD_DESCRIPTORS: usize = 16;
+/// Smallest cursor-proven completion span from which guarded reclaim may
+/// append one useful batch while retaining the complete hardware guard.
+///
+/// Only the first half needs an independent staging lease. The second half
+/// remains unobserved in the DMA ring and proves that hardware consumed the
+/// links which the append will rewrite.
+pub const RX_GUARDED_RECLAIM_WINDOW_DESCRIPTORS: usize = RX_RECLAIM_GUARD_DESCRIPTORS * 2;
 /// Exact maximum number of `APPEND_DESCRIPTOR_RELOAD` observations recovered
 /// from `wDev_AppendRxBlocks`.
 ///
@@ -256,6 +263,7 @@ enum RxRecycleGroupShape {
     EveryDescriptorTerminal,
     OneCompletedUnit,
     ObservedPrefixWithGuard,
+    ObservedPrefixWithCursorGuard,
 }
 
 /// Unique ownership of one complete, possibly chained, RX unit.
@@ -1524,6 +1532,60 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
         )
     }
 
+    /// Rearm one copied prefix behind a distinct completed suffix from the
+    /// caller's frozen hardware cursor.
+    ///
+    /// Unlike [`Self::recycle_observed_prefix_with_guard_owned`], the guard
+    /// descriptors remain unobserved and therefore need no staging slots.
+    /// LAST/NEXT still proves that hardware completed that suffix before the
+    /// prefix links are rewritten. The caller must end its frozen-frontier
+    /// scan after a successful append because descriptor addresses may be
+    /// reused by the new generation immediately.
+    pub(crate) fn recycle_observed_prefix_with_cursor_guard_owned<M, G, F>(
+        &mut self,
+        mmio: &mut M,
+        last_descriptor_low: u32,
+        next_descriptor_low: u32,
+        nonterminal_consumed: G,
+        prepare_buffer: F,
+    ) -> Result<Option<RxLiveAppend>, RxRingError>
+    where
+        M: RxDma,
+        G: FnMut(usize) -> bool,
+        F: FnMut(usize) -> Result<(), RxRingError>,
+    {
+        let guard = RX_RECLAIM_GUARD_DESCRIPTORS.min(COUNT / 2).max(1);
+        let observed = self.observed_prefix_len();
+        if observed < guard {
+            return Ok(None);
+        }
+        let completed_suffix = self.completed_unit_frontier_through_cursor_with(
+            last_descriptor_low,
+            next_descriptor_low,
+            nonterminal_consumed,
+        );
+        if completed_suffix.descriptor_count < guard {
+            return Ok(None);
+        }
+
+        let mut previous_terminal_end = None;
+        for step in 0..observed {
+            let index = wrap_add::<COUNT>(self.recycle_start, step);
+            if step + 1 >= guard && rx_done(self.descriptors[index].word0()) {
+                previous_terminal_end = Some(step + 1);
+            }
+        }
+        let Some(recycle_count) = previous_terminal_end else {
+            return Ok(None);
+        };
+        self.recycle_completed_group(
+            mmio,
+            recycle_count,
+            RxRecycleGroupShape::ObservedPrefixWithCursorGuard,
+            prepare_buffer,
+        )
+    }
+
     /// Raw/model unit recycle with caller-provided buffer preparation.
     #[cfg(any(not(target_pointer_width = "32"), feature = "validation-raw-dma"))]
     pub fn recycle_completed_unit<M, F>(
@@ -1572,7 +1634,8 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
             let valid_completion_shape = match shape {
                 RxRecycleGroupShape::EveryDescriptorTerminal => rx_done(word0),
                 RxRecycleGroupShape::OneCompletedUnit => rx_done(word0) == (step + 1 == group_size),
-                RxRecycleGroupShape::ObservedPrefixWithGuard => {
+                RxRecycleGroupShape::ObservedPrefixWithGuard
+                | RxRecycleGroupShape::ObservedPrefixWithCursorGuard => {
                     step + 1 != group_size || rx_done(word0)
                 }
             };
@@ -1622,7 +1685,9 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
             if !retained_complete_unit {
                 return Ok(None);
             }
-        } else if !self.observe_current_completed_unit_link_release(mmio, group_size) {
+        } else if shape != RxRecycleGroupShape::ObservedPrefixWithCursorGuard
+            && !self.observe_current_completed_unit_link_release(mmio, group_size)
+        {
             return Ok(None);
         }
         for step in 0..group_size {

@@ -7,6 +7,7 @@ record are therefore evidence, not current usage instructions.
 
 Current records:
 
+- [ESP32-S31 AP PSRAM-stack load characterization](2026-08-17-esp32s31-ap-psram-stack-load.md);
 - [ESP32-S31 HE RX A-MPDU containment](2026-08-04-esp32s31-he-rx-ampdu-containment.md);
 - [ESP32-S31 direct HT RX aggregation metadata](2026-08-04-esp32s31-ht-rx-aggregation-metadata.md);
 - [ESP32-S31 RX S-MPDU metadata](2026-08-04-esp32s31-rx-s-mpdu-metadata.md);

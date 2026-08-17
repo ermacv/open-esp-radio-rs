@@ -582,6 +582,65 @@ fn completed_unit_guard_reclaims_the_preceding_observed_prefix() {
 }
 
 #[test]
+fn production_ring_reclaims_before_a_32_slot_stage_pool_saturates() {
+    const COUNT: usize = 64;
+    const COMPLETED: usize = 40;
+    const STAGED_DEPTH: usize = 32;
+    const STAGE_CAPACITY: usize = 16;
+    const DMA_BUFFER_SIZE: usize = 16;
+    const DMA_STORAGE_SIZE: usize = 20;
+    let mut storage = Esp32s31RxDmaStorage::<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>::new();
+    let mut addresses = [0_u32; COUNT];
+    for (index, address) in addresses.iter_mut().enumerate() {
+        *address = 0x2f00_2000 + index as u32 * 0x20;
+        storage.buffer_mut(index).expect("test DMA buffer")[..4]
+            .copy_from_slice(&(index as u32).to_le_bytes());
+    }
+    let mut hardware = MockRxDma::default();
+    let stopped = RxRingStopped::prepare(
+        &mut hardware,
+        storage.descriptors(),
+        BASE,
+        &addresses,
+        DMA_BUFFER_SIZE as u32,
+        |_| Ok(()),
+    )
+    .unwrap();
+    let ring = stopped
+        .try_start(&mut hardware)
+        .map_err(|(_, error)| error)
+        .unwrap();
+    for index in 0..COMPLETED {
+        storage.descriptors()[index]
+            .write_word0(DMA_BUFFER_SIZE as u32 | (4 << LENGTH_SHIFT) | BIT_30 | BIT_31);
+    }
+    hardware.release_through(COMPLETED - 1, Some(COMPLETED));
+
+    let pool = RxStagePool::<STAGED_DEPTH, STAGE_CAPACITY>::new();
+    let queue =
+        Esp32s31StagedRxQueue::<NoopRawMutex, STAGED_DEPTH, STAGE_CAPACITY, STAGED_DEPTH>::new();
+    let (sender, receiver) = queue.split();
+    let mut service = Esp32s31StagedRxProducer::new(ring, &storage, &pool, NoDelay, sender);
+
+    assert_eq!(
+        embassy_futures::block_on(service.service(&mut hardware)),
+        Ok(WdevRxProgress::ProbePending),
+    );
+    assert_eq!(service.report().completed_descriptors, 16);
+    assert_eq!(service.report().recycled_descriptors, 16);
+    assert_eq!(service.ring().recycle_start(), 16);
+    assert_eq!(pool.claimed_slots(), 16);
+    for expected in 0_u32..16 {
+        let frame = receiver.try_receive().expect("staged prefix frame");
+        assert_eq!(frame.segment().buffer, expected.to_le_bytes());
+    }
+    assert_eq!(pool.claimed_slots(), 0);
+    service
+        .try_stop(&mut hardware)
+        .unwrap_or_else(|_| panic!("test RX service must stop"));
+}
+
+#[test]
 fn negotiated_rx_block_ack_releases_staged_leases_in_sequence_order() {
     const COUNT: usize = 4;
     const STAGED_DEPTH: usize = 3;

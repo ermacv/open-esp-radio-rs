@@ -5,13 +5,10 @@
 //! command, benchmark or qualification telemetry is part of this graph.
 
 #[cfg(feature = "qualification")]
-use core::{
-    cell::RefCell,
-    sync::atomic::{AtomicU32, Ordering},
-};
+use core::sync::atomic::{AtomicU32, Ordering};
 
 #[cfg(feature = "qualification")]
-use embassy_sync::blocking_mutex::Mutex;
+use embassy_sync::once_lock::OnceLock;
 use embassy_sync::{
     blocking_mutex::raw::CriticalSectionRawMutex,
     channel::{Channel, Receiver},
@@ -406,7 +403,10 @@ pub type ConnectedDisconnectedEpoch = Esp32s31DisconnectedStaEpoch<
 pub type MacInterruptEpoch =
     Esp32s31MacInterruptEpoch<'static, EspHalMacInterruptRoute, CriticalSectionRawMutex>;
 
-static IRQ_RUNTIME: EmbassyMacIrqRuntime<CriticalSectionRawMutex> = EmbassyMacIrqRuntime::new();
+static IRQ_RUNTIME: EmbassyMacIrqRuntime<CriticalSectionRawMutex> =
+    EmbassyMacIrqRuntime::new_with_rx_moderation(
+        open_esp_radio_esp32s31_wifi_esp_hal::mac_interrupt_epoch::unmask_active_mac_rx_delivery_interrupts,
+    );
 static POWER_IRQ_RUNTIME: EmbassyPowerIrqRuntime<CriticalSectionRawMutex> =
     EmbassyPowerIrqRuntime::new();
 // Every admitted frame is copied here before its DMA descriptors are returned.
@@ -451,10 +451,7 @@ static RX_PROTOCOL_RUNTIME: ConstStaticCell<ConnectedRxProtocolStorage> =
 static CONTROL_RESOURCES: ConstStaticCell<ControlResources> =
     ConstStaticCell::new(ControlResources::new());
 #[cfg(feature = "qualification")]
-static MAC_IRQ_OBSERVER: Mutex<
-    CriticalSectionRawMutex,
-    RefCell<Option<fn(Esp32s31MacIrqObservation)>>,
-> = Mutex::new(RefCell::new(None));
+static MAC_IRQ_OBSERVER: OnceLock<fn(Esp32s31MacIrqObservation)> = OnceLock::new();
 #[cfg(feature = "qualification")]
 static QUALIFICATION_LINK_BANDWIDTH_MHZ: AtomicU32 = AtomicU32::new(0);
 #[cfg(feature = "qualification")]
@@ -561,19 +558,17 @@ pub enum Esp32s31MacIrqObservation {
 
 #[cfg(feature = "qualification")]
 pub(super) fn configure_mac_irq_observer(observer: fn(Esp32s31MacIrqObservation)) {
-    MAC_IRQ_OBSERVER.lock(|slot| {
-        *slot.borrow_mut() = Some(observer);
-    });
+    MAC_IRQ_OBSERVER
+        .init(observer)
+        .unwrap_or_else(|_| panic!("MAC IRQ observer was configured more than once"));
 }
 
 #[cfg(feature = "qualification")]
 #[inline]
 fn observe_mac_irq(observation: Esp32s31MacIrqObservation) {
-    MAC_IRQ_OBSERVER.lock(|slot| {
-        if let Some(observer) = *slot.borrow() {
-            observer(observation);
-        }
-    });
+    if let Some(observer) = MAC_IRQ_OBSERVER.try_get() {
+        observer(observation);
+    }
 }
 
 #[cfg(feature = "qualification")]
@@ -596,6 +591,11 @@ impl IrqSink for QualificationMacIrqSink {
     #[inline]
     fn record_unhandled(&self, bits: u32) {
         IRQ_RUNTIME.record_unhandled(bits);
+    }
+
+    #[inline]
+    fn moderate_rx_success(&self) -> bool {
+        IrqSink::moderate_rx_success(&IRQ_RUNTIME)
     }
 }
 

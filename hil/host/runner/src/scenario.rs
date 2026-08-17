@@ -59,7 +59,7 @@ impl ImageClass {
                 "open-radio-hil,rx-delivery-telemetry,code-psram,profile-psram-data"
             }
             Self::DiagnosticPsramStack => {
-                "open-radio-hil,psram-task-stack,code-psram,profile-psram-data"
+                "open-radio-hil,psram-task-stack,task-poll-telemetry,network-scheduler-telemetry,code-psram,profile-psram-data"
             }
         }
     }
@@ -526,13 +526,10 @@ impl Scenario {
                     }
                     if !matches!(
                         traffic,
-                        AccessPointTraffic::Udp {
-                            direction: Direction::Rx,
-                            ..
-                        }
+                        AccessPointTraffic::Udp { .. } | AccessPointTraffic::Icmp { .. }
                     ) {
                         return self.criteria_error(
-                            "the OpenWrt primary AP client currently owns only UDP RX workloads",
+                            "the OpenWrt primary AP client supports UDP and ICMP workloads",
                         );
                     }
                 }
@@ -858,10 +855,31 @@ mod tests {
             let scenario = catalog.get(id).unwrap();
             assert_eq!(scenario.repetitions, 3, "{id}");
             assert_eq!(scenario.link.unwrap().phy, PhyExpectation::Ht40, "{id}");
-            assert_eq!(scenario.link.unwrap().minimum_mcs, Some(7), "{id}");
             assert!(scenario.criteria.require_no_beacon_loss, "{id}");
             assert!(
+                matches!(
+                    scenario.workload,
+                    Workload::AccessPoint {
+                        client: AccessPointClient::OpenWrt,
+                        ..
+                    }
+                ),
+                "{id} must use OpenWrt as the controlled RF peer",
+            );
+            assert!(
                 scenario.tags.iter().any(|tag| tag == "qualification"),
+                "{id}"
+            );
+        }
+
+        for id in [
+            "access-point-single-client-ceiling-rx",
+            "access-point-single-client-ceiling-tx",
+            "access-point-single-client-ceiling-bidirectional",
+        ] {
+            assert_eq!(
+                catalog.get(id).unwrap().link.unwrap().minimum_mcs,
+                Some(7),
                 "{id}"
             );
         }
@@ -877,6 +895,7 @@ mod tests {
         );
 
         let icmp = catalog.get("access-point-icmp").unwrap();
+        assert_eq!(icmp.link.unwrap().minimum_mcs, None);
         assert!(matches!(
             icmp.workload,
             Workload::AccessPoint {

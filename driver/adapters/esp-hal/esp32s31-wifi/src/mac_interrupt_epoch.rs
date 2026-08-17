@@ -14,8 +14,6 @@ use open_esp_radio_esp32s31_wifi_mac::irq::{
     IrqSink, MacInterruptRoute, PowerIrqSink, handle_mac_irq, handle_power_irq,
 };
 
-const MAX_ISR_SNAPSHOTS: u8 = 32;
-
 static MAC_INTERRUPT_REGISTERS: Mutex<RefCell<Option<MacInterruptRegisters>>> =
     Mutex::new(RefCell::new(None));
 static POWER_INTERRUPT_REGISTERS: Mutex<RefCell<Option<MacPowerInterruptRegisters>>> =
@@ -74,6 +72,23 @@ impl EspHalMacInterruptRoute {
     }
 }
 
+/// Restore the RX delivery source group for the installed MAC epoch.
+///
+/// The static register slot is the same unique capability borrowed by the
+/// hard handler. Entering a critical section prevents a same-core ISR from
+/// racing the enable-register RMW; no raw register authority escapes to the
+/// Embassy task.
+pub fn unmask_active_mac_rx_delivery_interrupts() {
+    critical_section::with(|critical_section| {
+        if let Some(interrupt) = MAC_INTERRUPT_REGISTERS
+            .borrow_ref_mut(critical_section)
+            .as_mut()
+        {
+            interrupt.unmask_rx_delivery_interrupts();
+        }
+    });
+}
+
 impl MacInterruptRoute for EspHalMacInterruptRoute {
     type Platform = EspHalRadioPeripheral;
     type Setup = MacInterruptSetup;
@@ -127,8 +142,13 @@ impl MacInterruptRoute for EspHalMacInterruptRoute {
     }
 }
 
-/// Service the active MAC register capability in recovered vendor priority
-/// until the status bank is empty or the finite ISR budget is exhausted.
+/// Service one complete MAC status image in recovered vendor priority.
+///
+/// ESP-HAL configures the CPU route as a level interrupt. The complete image
+/// is acknowledged before return; status which remains or arrives afterwards
+/// therefore retriggers the route. Reading until an empty image added one
+/// redundant MMIO read to every RX interrupt, while HIL observed no second
+/// non-zero snapshot in more than 100,000 entries per saturation run.
 #[inline]
 pub fn service_mac_interrupt<S: IrqSink>(sink: &S) -> EspHalMacInterruptServiceReport {
     critical_section::with(|critical_section| {
@@ -136,19 +156,12 @@ pub fn service_mac_interrupt<S: IrqSink>(sink: &S) -> EspHalMacInterruptServiceR
         let Some(interrupt) = registers.as_mut() else {
             return EspHalMacInterruptServiceReport::default();
         };
-        let mut report = EspHalMacInterruptServiceReport::default();
-        for _ in 0..MAX_ISR_SNAPSHOTS {
-            let (_, snapshot) = handle_mac_irq(interrupt, sink);
-            if snapshot.status == 0 {
-                break;
-            }
-            if report.nonzero_snapshots == 0 {
-                report.first_status = snapshot.status;
-            }
-            report.observed_status |= snapshot.status;
-            report.nonzero_snapshots += 1;
+        let (_, snapshot) = handle_mac_irq(interrupt, sink);
+        EspHalMacInterruptServiceReport {
+            first_status: snapshot.status,
+            observed_status: snapshot.status,
+            nonzero_snapshots: u8::from(snapshot.status != 0),
         }
-        report
     })
 }
 
@@ -160,15 +173,10 @@ pub fn service_power_interrupt<S: PowerIrqSink>(sink: &S) -> EspHalPowerInterrup
         let Some(interrupt) = registers.as_mut() else {
             return EspHalPowerInterruptServiceReport::default();
         };
-        let mut report = EspHalPowerInterruptServiceReport::default();
-        for _ in 0..MAX_ISR_SNAPSHOTS {
-            let (_, snapshot) = handle_power_irq(interrupt, sink);
-            if snapshot.status == 0 {
-                break;
-            }
-            report.observed_status |= snapshot.status;
-            report.nonzero_snapshots += 1;
+        let (_, snapshot) = handle_power_irq(interrupt, sink);
+        EspHalPowerInterruptServiceReport {
+            observed_status: snapshot.status,
+            nonzero_snapshots: u8::from(snapshot.status != 0),
         }
-        report
     })
 }

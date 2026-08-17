@@ -692,6 +692,18 @@ where
         )
     }
 
+    /// Consume one staged AP RX owner on the protocol hot path.
+    ///
+    /// Saturated AP RX keeps this routine resident for most of the radio-task
+    /// budget.  The S31 PSRAM-code profile therefore places the routine in the
+    /// semantic hot-text class; the board linker decides whether that class is
+    /// backed by internal executable SRAM.  This does not make the protocol
+    /// routine interrupt-safe and does not change its ownership semantics.
+    #[cfg_attr(
+        target_arch = "riscv32",
+        unsafe(link_section = ".hot.text.open_radio_ap_rx")
+    )]
+    #[inline(never)]
     fn service_staged_rx<H, F, Q>(
         &mut self,
         hardware: &mut H,
@@ -1690,9 +1702,11 @@ where
         self.start(hardware)
             .await
             .map_err(Esp32s31AccessPointRunError::Control)?;
-        interrupts
-            .activate(platform, MAC_COLD_RX_INTERRUPT_MASK)
-            .map_err(Esp32s31AccessPointRunError::InterruptActivate)?;
+        interrupts.mac_runtime().begin_rx_moderation();
+        if let Err(error) = interrupts.activate(platform, MAC_COLD_RX_INTERRUPT_MASK) {
+            interrupts.mac_runtime().end_rx_moderation();
+            return Err(Esp32s31AccessPointRunError::InterruptActivate(error));
+        }
         interrupts.mac_runtime().notify_rx_handoff();
         self.publish_beacon(hardware, Instant::now().as_micros())
             .map_err(Esp32s31AccessPointRunError::Control)?;
@@ -1752,9 +1766,10 @@ where
         self.report.retained_rx_descriptors = rx_scheduler
             .map(|snapshot| snapshot.observed_mask.count_ones())
             .unwrap_or(0);
-        let interrupt_drain = interrupts
-            .quiesce(platform)
-            .map_err(Esp32s31AccessPointRunError::InterruptQuiesce)?;
+        let interrupt_drain = interrupts.quiesce(platform);
+        interrupts.mac_runtime().end_rx_moderation();
+        let interrupt_drain =
+            interrupt_drain.map_err(Esp32s31AccessPointRunError::InterruptQuiesce)?;
         loop {
             match self.stop(hardware) {
                 Ok(()) => break,

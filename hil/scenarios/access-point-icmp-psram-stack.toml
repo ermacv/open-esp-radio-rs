@@ -1,11 +1,11 @@
 schema = 3
-id = "access-point-icmp"
-description = "AP HT40 MCS7 latency and loss over 100 ICMP requests per WPA2 epoch"
+id = "access-point-icmp-psram-stack"
+description = "Experimental AP HT40 MCS7 latency run with 100 ICMP requests and CPU task stacks in PSRAM"
 repetitions = 3
-image = "qualification"
+image = "diagnostic-psram-stack"
 isolation = "reset"
-data_plane = "single-core"
-tags = ["qualification", "wifi", "access-point", "network", "single-client", "ht40", "icmp"]
+data_plane = "split-radio-network"
+tags = ["diagnostic", "wifi", "access-point", "network", "single-client", "ht40", "split-core", "icmp", "psram-stack"]
 
 [link]
 phy = "ht40"

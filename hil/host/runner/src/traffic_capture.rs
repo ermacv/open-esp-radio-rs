@@ -1928,10 +1928,27 @@ pub(crate) fn probe_udp_rx_ready(
     port: u16,
     timeout: Duration,
 ) -> Result<UdpRxReady> {
+    probe_udp_rx_ready_via(capture, address_hint, None, port, timeout)
+}
+
+/// Prove UDP RX readiness while an explicit routed peer owns the host path.
+///
+/// `address_hint` remains the target identity published in typed evidence;
+/// `traffic_address` is only the address through which the probe reaches it.
+/// This distinction is required when a controlled OpenWrt Wi-Fi station
+/// forwards traffic from the wired HIL generator to the DUT AP.
+pub(crate) fn probe_udp_rx_ready_via(
+    capture: &SerialCapture,
+    address_hint: Ipv4Addr,
+    traffic_address: Option<Ipv4Addr>,
+    port: u16,
+    timeout: Duration,
+) -> Result<UdpRxReady> {
     let socket = UdpSocket::bind(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0))?;
     let mut address = address_hint;
-    if !address.is_unspecified() {
-        socket.connect(SocketAddrV4::new(address, port))?;
+    let mut connected_address = traffic_address.unwrap_or(address);
+    if !connected_address.is_unspecified() {
+        socket.connect(SocketAddrV4::new(connected_address, port))?;
     }
     socket.set_write_timeout(Some(Duration::from_millis(250)))?;
     let mut packet = [0x5a; RX_PROBE_PAYLOAD];
@@ -1942,7 +1959,10 @@ pub(crate) fn probe_udp_rx_ready(
             && discovered != address
         {
             address = discovered;
-            socket.connect(SocketAddrV4::new(address, port))?;
+            if traffic_address.is_none() {
+                connected_address = address;
+                socket.connect(SocketAddrV4::new(connected_address, port))?;
+            }
         }
         let rx_service_ready = capture.observed_udp_service(Direction::Rx, port);
         let tx_service_ready = capture.observed_udp_service(Direction::Tx, 4_324);

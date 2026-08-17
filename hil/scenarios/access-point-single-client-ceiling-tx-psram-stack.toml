@@ -1,11 +1,11 @@
 schema = 3
-id = "access-point-single-client-ceiling-tx"
-description = "Single-client AP HT40 MCS7 sustained 95 Mbit/s UDP transmit qualification"
+id = "access-point-single-client-ceiling-tx-psram-stack"
+description = "Experimental AP HT40 MCS7 saturated transmit run with CPU task stacks in PSRAM"
 repetitions = 3
-image = "qualification"
+image = "diagnostic-psram-stack"
 isolation = "reset"
-data_plane = "single-core"
-tags = ["qualification", "characterization", "wifi", "access-point", "network", "single-client", "ht40", "ceiling", "tx"]
+data_plane = "split-radio-network"
+tags = ["diagnostic", "wifi", "access-point", "network", "single-client", "ht40", "split-core", "ceiling", "tx", "psram-stack"]
 
 [link]
 phy = "ht40"

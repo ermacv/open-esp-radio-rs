@@ -509,6 +509,7 @@ fn validate_flashed_image(
         (true, false, false) => scenario::ImageClass::DiagnosticTaskPoll,
         (false, true, false) => scenario::ImageClass::DiagnosticRxDelivery,
         (false, false, true) => scenario::ImageClass::DiagnosticPsramStack,
+        (true, false, true) => scenario::ImageClass::DiagnosticPsramStack,
         _ => {
             return Err(
                 "flashed image advertises mutually exclusive diagnostic capabilities".into(),
@@ -1580,7 +1581,7 @@ mod tests {
         );
         assert_eq!(
             scenario::ImageClass::DiagnosticPsramStack.runtime_features(),
-            "open-radio-hil,psram-task-stack,code-psram,profile-psram-data"
+            "open-radio-hil,psram-task-stack,task-poll-telemetry,network-scheduler-telemetry,code-psram,profile-psram-data"
         );
         assert_eq!(
             scenario::ImageClass::DiagnosticPsramStack.runtime_profile(),

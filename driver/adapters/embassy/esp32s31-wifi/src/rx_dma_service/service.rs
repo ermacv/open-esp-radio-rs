@@ -75,6 +75,11 @@ where
             let queue_credits = self.frames.free_capacity();
             let credits = pool_credits.min(queue_credits);
             let admission_budget = frontier.min(credits);
+            let reclaim_guard = RX_RECLAIM_GUARD_DESCRIPTORS.min(COUNT / 2).max(1);
+            let cursor_guard_enabled = COUNT >= RX_RECLAIM_GUARD_DESCRIPTORS.saturating_mul(2);
+            let cursor_guard_batch = cursor_guard_enabled
+                && frontier_snapshot.descriptor_count >= reclaim_guard.saturating_mul(2)
+                && credits >= reclaim_guard;
             let mut admitted = 0_usize;
             let mut admitted_descriptors = 0_usize;
             let mut staged_bytes = 0_usize;
@@ -83,6 +88,9 @@ where
             let mut remaining_descriptors = frontier_snapshot.descriptor_count;
 
             for _ in 0..admission_budget {
+                if cursor_guard_batch && admitted_descriptors >= reclaim_guard {
+                    break;
+                }
                 let unit_frontier = self
                     .storage
                     .first_completed_unit_frontier_through_cursor(
@@ -98,6 +106,12 @@ where
                     return Err(RxStageTransactionError::Ring(RxRingError::Corrupt));
                 }
                 let unit_descriptor_count = unit_frontier.descriptor_count;
+                if cursor_guard_batch
+                    && admitted_descriptors != 0
+                    && remaining_descriptors.saturating_sub(unit_descriptor_count) < reclaim_guard
+                {
+                    break;
+                }
                 let unit = self
                     .storage
                     .take_completed_unit(&mut self.ring, unit_descriptor_count)
@@ -159,11 +173,27 @@ where
                     .observe(Esp32s31RxIngressObservation::Staged(unit_observation));
             }
 
-            let recycled_descriptors = if let Some(append) = self
-                .storage
-                .recycle_observed_prefix_with_guard(&mut self.ring, hardware)
-                .map_err(RxStageTransactionError::Ring)?
-            {
+            let cursor_guarded_append = if cursor_guard_enabled {
+                self.storage
+                    .recycle_observed_prefix_with_cursor_guard(
+                        &mut self.ring,
+                        hardware,
+                        last_descriptor_low,
+                        next_descriptor_low,
+                    )
+                    .map_err(RxStageTransactionError::Ring)?
+            } else {
+                None
+            };
+            let cursor_generation_changed = cursor_guarded_append.is_some();
+            let append = match cursor_guarded_append {
+                Some(append) => Some(append),
+                None => self
+                    .storage
+                    .recycle_observed_prefix_with_guard(&mut self.ring, hardware)
+                    .map_err(RxStageTransactionError::Ring)?,
+            };
+            let recycled_descriptors = if let Some(append) = append {
                 // The vendor append path does not yield between its reload
                 // doorbell and conditional BASE-repair suffix. Preserve that
                 // transaction boundary so a later completion cannot replace
@@ -211,16 +241,22 @@ where
             // already cover following complete units, so retain a cooperative
             // continuation instead of waiting for an IRQ which hardware has
             // already emitted for that frozen frontier.
-            let completion_frontier_remaining = self
-                .storage
-                .completed_unit_frontier_through_cursor(
-                    &self.ring,
-                    last_descriptor_low,
-                    next_descriptor_low,
-                )
-                .map_err(RxStageTransactionError::Ring)?
-                .unit_count
-                != 0;
+            let completion_frontier_remaining = if cursor_generation_changed {
+                // The appended prefix can be filled again immediately, so
+                // the old LAST/NEXT addresses no longer identify one
+                // generation. End this pass and take a fresh ordered cursor.
+                true
+            } else {
+                self.storage
+                    .completed_unit_frontier_through_cursor(
+                        &self.ring,
+                        last_descriptor_low,
+                        next_descriptor_low,
+                    )
+                    .map_err(RxStageTransactionError::Ring)?
+                    .unit_count
+                    != 0
+            };
             // The terminal cursor can precede the final descriptor writeback,
             // and that writeback has no guaranteed fresh RX-success edge.
             // Retain a cooperative pass until the exhausted finite list has
@@ -228,7 +264,7 @@ where
             let exhausted_writeback_pending =
                 self.ring.exhausted_terminal_writeback_pending(hardware);
 
-            let credit_limited = admission_budget < frontier;
+            let credit_limited = credits < frontier;
 
             // Keep the two samples on opposite sides of the complete bounded
             // transaction. Diagnostics can then distinguish saturation while
@@ -255,7 +291,7 @@ where
                 ));
             }
 
-            Ok(if credit_limited {
+            Ok(if credit_limited && !cursor_generation_changed {
                 WdevRxProgress::StagingBackpressured
             } else if completion_frontier_remaining
                 || exhausted_writeback_pending

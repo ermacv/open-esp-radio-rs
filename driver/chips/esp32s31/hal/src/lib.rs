@@ -365,6 +365,14 @@ impl MacInterruptRegisters {
         self.inner.acknowledge_mac_interrupts(snapshot);
     }
 
+    pub fn mask_rx_delivery_interrupts(&mut self) {
+        self.inner.mask_rx_delivery_interrupts();
+    }
+
+    pub fn unmask_rx_delivery_interrupts(&mut self) {
+        self.inner.unmask_rx_delivery_interrupts();
+    }
+
     pub fn deactivate(self, power: MacPowerInterruptRegisters) -> MacInterruptSetup {
         MacInterruptSetup {
             inner: self.inner.deactivate(power.inner),

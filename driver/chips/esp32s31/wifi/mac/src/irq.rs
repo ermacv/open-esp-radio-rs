@@ -80,6 +80,7 @@ pub trait MacInterrupt {
     type Snapshot: InterruptStatusSnapshot;
 
     fn status(&mut self) -> Self::Snapshot;
+    fn mask_rx_delivery(&mut self) {}
     fn acknowledge(&mut self, snapshot: Self::Snapshot);
 }
 
@@ -88,6 +89,10 @@ impl MacInterrupt for MacInterruptRegisters {
 
     fn status(&mut self) -> Self::Snapshot {
         self.mac_interrupt_status()
+    }
+
+    fn mask_rx_delivery(&mut self) {
+        self.mask_rx_delivery_interrupts();
     }
 
     fn acknowledge(&mut self, snapshot: Self::Snapshot) {
@@ -196,6 +201,11 @@ pub enum IrqDisposition {
 pub trait IrqSink {
     fn post(&self, mac_pending: u32);
     fn record_unhandled(&self, bits: u32);
+
+    /// Whether this connected epoch owns task-side RX source moderation.
+    fn moderate_rx_success(&self) -> bool {
+        false
+    }
 }
 
 /// Sink for an acknowledged but otherwise opaque WDEVPWR event image.
@@ -352,6 +362,11 @@ pub fn handle_mac_irq<M: MacInterrupt, S: IrqSink>(
         return (IrqDisposition::Spurious, snapshot);
     }
 
+    if handled & MAC_INT_RX_SUCCESS != 0 && sink.moderate_rx_success() {
+        // Mask before W1C. A completion racing this edge remains latched and
+        // becomes visible when the bottom half restores RX delivery.
+        interrupt.mask_rx_delivery();
+    }
     interrupt.acknowledge(status_snapshot);
     // Avoid an atomic RMW on every qualified RX interrupt. The two observed
     // auxiliary bits are acknowledged above but neither they nor a wholly

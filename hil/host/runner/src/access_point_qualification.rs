@@ -19,9 +19,7 @@ use open_esp_radio_hil_protocol::{
 use crate::{
     Result,
     controlled_client::ControlledClient,
-    controlled_openwrt_client::{
-        ControlledOpenWrtClient, OpenWrtUdpTransmission, SecondaryClientProbeEvidence,
-    },
+    controlled_openwrt_client::{ControlledOpenWrtClient, SecondaryClientProbeEvidence},
     lab_config::{LabConfig, StationFixtureConfig},
     paced_tcp::{
         Config as TcpConfig, HostReception as TcpReception, HostTransmission as TcpTransmission,
@@ -32,7 +30,7 @@ use crate::{
     scenario::{
         AccessPointClient, AccessPointTraffic, Criteria, Direction, LinkExpectation, PhyExpectation,
     },
-    traffic_capture::{SerialCapture, SessionEvidence, probe_udp_rx_ready},
+    traffic_capture::{SerialCapture, SessionEvidence, probe_udp_rx_ready_via},
     tx_traffic::{Burst, receive_bursts},
     udp_socket::{configure_qualification_receive_buffer, open_reverse_flow},
     wifi_control::{report_stack, require_transition, start_station, stop_station},
@@ -79,6 +77,15 @@ impl ConnectedClients {
             Self::OpenWrt { .. } => None,
         }
     }
+
+    fn traffic_target(&self, target: Ipv4Addr) -> Result<Ipv4Addr> {
+        match self {
+            Self::Laptop { .. } => Ok(target),
+            Self::OpenWrt { primary } => primary.forward_address().ok_or_else(|| {
+                "OpenWrt primary client omitted its wired forwarding address".into()
+            }),
+        }
+    }
 }
 
 #[derive(Serialize)]
@@ -109,7 +116,9 @@ enum TrafficReport {
         transmitted: u16,
         received: u16,
         lost: u16,
+        p50_micros: u64,
         p95_micros: u64,
+        p99_micros: u64,
     },
     Udp(SessionReport),
     Tcp(SessionReport),
@@ -570,6 +579,8 @@ fn qualify_data_plane(
     lab: &LabConfig,
     clients: &ConnectedClients,
 ) -> Result<TrafficReport> {
+    let target = lab.access_point.target_address();
+    let traffic_target = clients.traffic_target(target)?;
     match &config.traffic {
         AccessPointTraffic::None => Ok(TrafficReport::None),
         AccessPointTraffic::Icmp {
@@ -578,7 +589,8 @@ fn qualify_data_plane(
             timeout_ms,
             payload_bytes,
         } => qualify_icmp(
-            lab.access_point.target_address(),
+            traffic_target,
+            clients.openwrt_primary().is_none(),
             *count,
             *interval_ms,
             *timeout_ms,
@@ -641,25 +653,27 @@ fn qualify_udp(
     } = workload;
     let protocol_direction = protocol_direction(direction);
     let target = lab.access_point.target_address();
+    let traffic_target = clients.traffic_target(target)?;
     let host = lab.access_point.client_address();
     if rx_rate_bps.is_some() {
-        let openwrt_probe = clients
-            .openwrt_primary()
-            .map(|client| client.spawn_udp_rx_probe(target, UDP_RX_PORT));
-        let readiness = probe_udp_rx_ready(capture, target, UDP_RX_PORT, config.timeout);
-        if let Some(probe) = openwrt_probe {
-            let result = probe
-                .join()
-                .map_err(|_| "OpenWrt UDP readiness probe thread panicked")?;
-            result.map_err(|error| -> Box<dyn std::error::Error> { error.into() })?;
-        }
-        readiness?;
+        probe_udp_rx_ready_via(
+            capture,
+            target,
+            (traffic_target != target).then_some(traffic_target),
+            UDP_RX_PORT,
+            config.timeout,
+        )?;
     }
     let socket = if tx_rate_bps.is_some() {
-        let socket = UdpSocket::bind(SocketAddrV4::new(host, UDP_HOST_PORT))?;
+        let bind_address = if clients.openwrt_primary().is_some() {
+            Ipv4Addr::UNSPECIFIED
+        } else {
+            host
+        };
+        let socket = UdpSocket::bind(SocketAddrV4::new(bind_address, UDP_HOST_PORT))?;
         configure_qualification_receive_buffer(&socket)?;
         socket.set_read_timeout(Some(Duration::from_millis(100)))?;
-        socket.connect(SocketAddrV4::new(target, UDP_TX_SOURCE_PORT))?;
+        socket.connect(SocketAddrV4::new(traffic_target, UDP_TX_SOURCE_PORT))?;
         open_reverse_flow(&socket)?;
         Some(socket)
     } else {
@@ -687,43 +701,27 @@ fn qualify_udp(
         link_requirements: SessionLinkRequirements::NONE,
     })?;
     let send_config = rx_rate_bps.map(|rate| UdpConfig {
-        address: target,
+        address: traffic_target,
         port: UDP_RX_PORT,
         rate_bps: rate,
         duration,
         payload: payload_bytes,
     });
     let receive_duration = duration.saturating_add(Duration::from_secs(2));
-    let data_plane = if let Some(openwrt) = clients.openwrt_primary() {
-        match (rx_rate_bps, socket) {
-            (Some(rate), None) => openwrt
-                .send_udp(target, UDP_RX_PORT, rate, duration, payload_bytes)
-                .map(|sent| {
-                    (
-                        Some(openwrt_udp_transmission(sent, duration)),
-                        None,
-                        Some(sent),
-                    )
-                }),
-            _ => Err("OpenWrt AP client accepts only an RX-only UDP workload".into()),
+    let data_plane = match (send_config, socket) {
+        (Some(send_config), Some(socket)) => {
+            let sender = thread::spawn(move || send_udp(send_config).map_err(|e| e.to_string()));
+            let received = receive_bursts(&socket, traffic_target, receive_duration);
+            let sent = sender
+                .join()
+                .map_err(|_| "AP UDP sender thread panicked")??;
+            Ok((Some(sent), Some(received?)))
         }
-    } else {
-        match (send_config, socket) {
-            (Some(send_config), Some(socket)) => {
-                let sender =
-                    thread::spawn(move || send_udp(send_config).map_err(|e| e.to_string()));
-                let received = receive_bursts(&socket, target, receive_duration);
-                let sent = sender
-                    .join()
-                    .map_err(|_| "AP UDP sender thread panicked")??;
-                Ok((Some(sent), Some(received?), None))
-            }
-            (Some(send_config), None) => send_udp(send_config).map(|sent| (Some(sent), None, None)),
-            (None, Some(socket)) => receive_bursts(&socket, target, receive_duration)
-                .map(|received| (None, Some(received), None))
-                .map_err(Into::into),
-            (None, None) => Err("AP UDP workload has no data direction".into()),
-        }
+        (Some(send_config), None) => send_udp(send_config).map(|sent| (Some(sent), None)),
+        (None, Some(socket)) => receive_bursts(&socket, traffic_target, receive_duration)
+            .map(|received| (None, Some(received)))
+            .map_err(Into::into),
+        (None, None) => Err("AP UDP workload has no data direction".into()),
     };
 
     let structured = capture.wait_for_session(session, config.timeout);
@@ -731,7 +729,7 @@ fn qualify_udp(
         .as_ref()
         .map(|_| capture.acknowledge_session(session))
         .unwrap_or(Ok(()));
-    let (host_tx, host_rx, openwrt_tx) =
+    let (host_tx, host_rx) =
         data_plane.map_err(|error| format!("AP UDP host path failed: {error}"))?;
     let structured = structured.map_err(|error| format!("AP UDP target failed: {error}"))?;
     acknowledgement?;
@@ -761,20 +759,9 @@ fn qualify_udp(
                 host.deadline_resets,
             )
         });
-        let openwrt = openwrt_tx.map(|source| {
-            format!(
-                "OpenWrt station tx_packets={} tx_retries={} tx_failed={} radio_rx_fcs_errors={}",
-                source.station_tx_packets,
-                source.station_tx_retries,
-                source.station_tx_failed,
-                source.radio_rx_fcs_errors,
-            )
-        });
-        match (source, openwrt) {
-            (Some(source), Some(openwrt)) => format!("{error}; {source}; {openwrt}"),
-            (Some(source), None) => format!("{error}; {source}"),
-            (None, Some(openwrt)) => format!("{error}; {openwrt}"),
-            (None, None) => error.to_string(),
+        match source {
+            Some(source) => format!("{error}; {source}"),
+            None => error.to_string(),
         }
     })?;
     Ok(TrafficReport::Udp(report))
@@ -1032,6 +1019,7 @@ fn validate_tcp(
 
 fn qualify_icmp(
     target: Ipv4Addr,
+    bind_wifi_interface: bool,
     count: u16,
     interval_ms: u16,
     timeout_ms: u16,
@@ -1040,9 +1028,13 @@ fn qualify_icmp(
 ) -> Result<TrafficReport> {
     let interval_seconds = format!("{:.3}", f64::from(interval_ms) / 1_000.0);
     let timeout_seconds = format!("{:.3}", f64::from(timeout_ms) / 1_000.0);
-    let output = Command::new("ping")
-        .env("LC_ALL", "C")
-        .args(["-I", "wlan0", "-c"])
+    let mut command = Command::new("ping");
+    command.env("LC_ALL", "C");
+    if bind_wifi_interface {
+        command.args(["-I", "wlan0"]);
+    }
+    let output = command
+        .arg("-c")
         .arg(count.to_string())
         .args(["-i", &interval_seconds, "-W", &timeout_seconds, "-s"])
         .arg(payload_bytes.to_string())
@@ -1067,12 +1059,17 @@ fn qualify_icmp(
     if received == 0 {
         return Err(format!("AP client received no ICMP replies from {target}").into());
     }
-    let percentile_index = (samples_micros.len() * 95).div_ceil(100) - 1;
-    let p95_micros = samples_micros[percentile_index];
+    let p50_micros = percentile_micros(&samples_micros, 50);
+    let p95_micros = percentile_micros(&samples_micros, 95);
+    let p99_micros = percentile_micros(&samples_micros, 99);
     if let Some(maximum_ms) = criteria.maximum_p95_ms
         && p95_micros > u64::from(maximum_ms) * 1_000
     {
-        return Err(format!("AP ICMP p95={} us exceeds {} ms", p95_micros, maximum_ms).into());
+        return Err(format!(
+            "AP ICMP p50={p50_micros} us p95={p95_micros} us p99={p99_micros} us; \
+             p95 exceeds {maximum_ms} ms"
+        )
+        .into());
     }
     if !output.status.success() && lost == 0 {
         return Err(format!("ping failed despite complete replies: {}", stdout.trim()).into());
@@ -1081,8 +1078,17 @@ fn qualify_icmp(
         transmitted: count,
         received,
         lost,
+        p50_micros,
         p95_micros,
+        p99_micros,
     })
+}
+
+fn percentile_micros(sorted_samples: &[u64], percentile: usize) -> u64 {
+    let index = (sorted_samples.len() * percentile)
+        .div_ceil(100)
+        .saturating_sub(1);
+    sorted_samples[index]
 }
 
 fn ping_sample_micros(line: &str) -> Option<std::result::Result<u64, std::num::ParseFloatError>> {
@@ -1106,23 +1112,6 @@ fn session_report(direction: Direction, evidence: &SessionEvidence) -> SessionRe
         rx_units: evidence.transport.rx_units,
         tx_units: evidence.transport.tx_units,
         elapsed_micros: evidence.transport.elapsed_micros,
-    }
-}
-
-fn openwrt_udp_transmission(
-    source: OpenWrtUdpTransmission,
-    requested_duration: Duration,
-) -> UdpTransmission {
-    UdpTransmission {
-        bytes: source.bytes,
-        datagrams: source.datagrams,
-        // The remote process setup belongs outside the offered traffic
-        // interval reported by iperf. Use the scenario-owned duration rather
-        // than the encompassing SSH wall clock.
-        elapsed: requested_duration,
-        maximum_lateness: Duration::ZERO,
-        maximum_catch_up_datagrams: 1,
-        deadline_resets: 0,
     }
 }
 
@@ -1487,6 +1476,15 @@ mod tests {
                 .unwrap(),
             1_000
         );
+    }
+
+    #[test]
+    fn ap_icmp_uses_nearest_rank_percentiles() {
+        let samples = (1..=100).map(|sample| sample * 10).collect::<Vec<_>>();
+
+        assert_eq!(percentile_micros(&samples, 50), 500);
+        assert_eq!(percentile_micros(&samples, 95), 950);
+        assert_eq!(percentile_micros(&samples, 99), 990);
     }
 
     #[test]

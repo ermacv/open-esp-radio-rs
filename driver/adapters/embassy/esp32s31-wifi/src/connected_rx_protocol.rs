@@ -40,7 +40,9 @@ use crate::{
 ///
 /// A count is deterministic and free of timer reads in the production
 /// datapath. One dispatch always completes before yielding, so no staging or
-/// reorder owner is split across executor turns.
+/// reorder owner is split across executor turns. This matches the finite
+/// staging arena: a smaller quantum fragmented service into more executor
+/// turns without preventing hardware RX starvation under PSRAM-stack HIL.
 const RX_PROTOCOL_DISPATCH_BUDGET: usize = 32;
 
 /// Ownership released when a connected staged-RX epoch is stopped.

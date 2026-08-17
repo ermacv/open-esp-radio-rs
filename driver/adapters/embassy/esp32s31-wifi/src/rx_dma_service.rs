@@ -15,7 +15,10 @@ use embassy_sync::channel::{Sender, TrySendError};
 use open_esp_radio_embassy_net::RawMutex;
 use open_esp_radio_esp32s31_wifi_dma::rx_storage::{RxDmaBuffer, RxDmaStorage};
 use open_esp_radio_esp32s31_wifi_mac::{
-    rx::{RxDescriptorSnapshot, RxDma, RxRingError, RxRingHalted, RxRingLive, RxRingStopped},
+    rx::{
+        RX_RECLAIM_GUARD_DESCRIPTORS, RxDescriptorSnapshot, RxDma, RxRingError, RxRingHalted,
+        RxRingLive, RxRingStopped,
+    },
     rx_pool::{
         RxDmaDeferredStageUnitOutcome, RxStageError, RxStagePool, RxStageTransactionError,
         VENDOR_LARGE_RX_PAYLOAD_CAPACITY, VENDOR_LARGE_RX_SLOT_COUNT,

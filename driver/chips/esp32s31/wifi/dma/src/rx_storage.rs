@@ -602,6 +602,34 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
         })
     }
 
+    /// Return a copied prefix while retaining an unobserved completed suffix
+    /// as the full receive-burst guard.
+    #[allow(
+        unsafe_code,
+        reason = "the frozen cursor proves the completed suffix before prefix-buffer rearm"
+    )]
+    pub fn recycle_observed_prefix_with_cursor_guard<M: RxDma>(
+        &self,
+        ring: &mut RxRingLive<'_, COUNT>,
+        mmio: &mut M,
+        last_descriptor_low: u32,
+        next_descriptor_low: u32,
+    ) -> Result<Option<RxLiveAppend>, RxRingError> {
+        self.validate_live_ring(ring)?;
+        ring.recycle_observed_prefix_with_cursor_guard_owned(
+            mmio,
+            last_descriptor_low,
+            next_descriptor_low,
+            |index| self.buffers[index].leading_guard_overwritten(),
+            |index| {
+                // SAFETY: the ring limits mutation to the observed prefix and
+                // independently validates a complete suffix through the
+                // frozen hardware cursor.
+                unsafe { self.buffers[index].prepare_for_recycle() }
+            },
+        )
+    }
+
     fn validate_live_ring(&self, ring: &RxRingLive<'_, COUNT>) -> Result<(), RxRingError> {
         self.validate_ring_layout(
             ring.descriptor_base(),
@@ -1319,6 +1347,89 @@ mod tests {
             .expect("vendor reload suffix");
         assert_eq!(live.accepted_tail(), 1);
         assert!(live.topology_snapshot().valid);
+        assert!(live.try_stop(&mut mmio).is_ok());
+    }
+
+    #[test]
+    fn frozen_cursor_suffix_guards_unobserved_prefix_reclaim() {
+        const COUNT: usize = 4;
+        const BASE: u32 = 0x2f00_1000;
+        const ADDRESS_LOW_MASK: u32 = 0x000f_ffff;
+        let buffers = [0x2f00_2000, 0x2f00_2200, 0x2f00_2400, 0x2f00_2600];
+        let storage = RxDmaStorage::<COUNT, 16, 20>::new();
+        let mut mmio = MockRxDma::default();
+        let prepared = storage
+            .prepare_ring(&mut mmio, BASE, &buffers)
+            .expect("prepared owner");
+        let mut live = prepared
+            .try_start(&mut mmio)
+            .map_err(|(_, error)| error)
+            .expect("live epoch");
+
+        for index in 0..COUNT {
+            storage.descriptors()[index].write_word0(
+                16 | (4 << crate::descriptor::LENGTH_SHIFT)
+                    | crate::descriptor::BIT_30
+                    | crate::descriptor::BIT_31,
+            );
+        }
+        mmio.last_descriptor_low =
+            (BASE + 3 * crate::descriptor::DESCRIPTOR_BYTES) & ADDRESS_LOW_MASK;
+        mmio.next_descriptor_low = 0;
+
+        for index in 0..2 {
+            let unit = storage
+                .take_completed_unit(&mut live, 1)
+                .expect("completed prefix")
+                .unwrap_or_else(|| panic!("descriptor {index} was not transferred"));
+            unit.retain_for_deferred_recycle();
+        }
+        assert_eq!(live.observed_mask(), 0b0011);
+
+        let last_descriptor_low = mmio.last_descriptor_low;
+        let next_descriptor_low = mmio.next_descriptor_low;
+        assert_eq!(
+            storage
+                .completed_unit_frontier_through_cursor(
+                    &live,
+                    last_descriptor_low,
+                    next_descriptor_low,
+                )
+                .expect("completed guard suffix")
+                .descriptor_count,
+            2
+        );
+        let append = storage
+            .recycle_observed_prefix_with_cursor_guard(
+                &mut live,
+                &mut mmio,
+                last_descriptor_low,
+                next_descriptor_low,
+            )
+            .expect("cursor-guarded reclaim")
+            .expect("observed half appended behind unobserved completed half");
+        assert_eq!(append.head_index, 0);
+        assert_eq!(append.descriptor_count, 2);
+        assert_eq!(live.observed_mask(), 0);
+        assert_eq!(
+            storage.descriptors()[0].word0() & crate::descriptor::BIT_30,
+            0
+        );
+        assert_eq!(
+            storage.descriptors()[1].word0() & crate::descriptor::BIT_30,
+            0
+        );
+        assert_ne!(
+            storage.descriptors()[2].word0() & crate::descriptor::BIT_30,
+            0
+        );
+        assert_ne!(
+            storage.descriptors()[3].word0() & crate::descriptor::BIT_30,
+            0
+        );
+        live.complete_pending_reload(&mut mmio)
+            .expect("vendor reload suffix");
+        assert_eq!(live.accepted_tail(), 1);
         assert!(live.try_stop(&mut mmio).is_ok());
     }
 

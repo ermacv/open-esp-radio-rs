@@ -1,7 +1,7 @@
-use core::sync::atomic::{AtomicU32, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use open_esp_radio_embassy_net::{RawMutex, Signal};
-use open_esp_radio_esp32s31_wifi_mac::irq::{IrqSink, IrqState, IrqWork};
+use open_esp_radio_esp32s31_wifi_mac::irq::{IrqSink, IrqState, IrqWork, next_irq_work};
 
 /// Driver-owned S31 MAC interrupt handoff for one Embassy radio task.
 ///
@@ -26,6 +26,8 @@ pub struct EmbassyMacIrqRuntime<M: RawMutex> {
     tx: Signal<M, ()>,
     tx_pending: AtomicU32,
     rx_post_count: AtomicU32,
+    rx_moderation_active: AtomicBool,
+    unmask_rx_delivery: Option<fn()>,
 }
 
 /// Coalesced executor work discarded after an interrupt epoch is quiesced.
@@ -45,7 +47,50 @@ impl<M: RawMutex> EmbassyMacIrqRuntime<M> {
             tx: Signal::new(),
             tx_pending: AtomicU32::new(0),
             rx_post_count: AtomicU32::new(0),
+            rx_moderation_active: AtomicBool::new(false),
+            unmask_rx_delivery: None,
         }
+    }
+
+    /// Construct a runtime with a narrow platform callback for restoring the
+    /// RX delivery interrupt group after a bottom-half drain.
+    pub const fn new_with_rx_moderation(unmask_rx_delivery: fn()) -> Self {
+        Self {
+            state: IrqState::new(),
+            rx: Signal::new(),
+            rx_capacity: Signal::new(),
+            tx: Signal::new(),
+            tx_pending: AtomicU32::new(0),
+            rx_post_count: AtomicU32::new(0),
+            rx_moderation_active: AtomicBool::new(false),
+            unmask_rx_delivery: Some(unmask_rx_delivery),
+        }
+    }
+
+    /// Enable source moderation for one explicitly selected role epoch.
+    pub fn begin_rx_moderation(&self) {
+        assert!(
+            self.unmask_rx_delivery.is_some(),
+            "RX moderation requires a platform unmask capability"
+        );
+        self.rx_moderation_active.store(true, Ordering::Release);
+    }
+
+    /// Stop source moderation after the hardware interrupt route is closed.
+    pub fn end_rx_moderation(&self) {
+        self.rx_moderation_active.store(false, Ordering::Release);
+    }
+
+    /// Restore RX delivery after the bottom half proved the durable frontier
+    /// drained. Returns whether moderation was active for this epoch.
+    pub fn unmask_rx_after_drain(&self) -> bool {
+        if !self.rx_moderation_active.load(Ordering::Acquire) {
+            return false;
+        }
+        (self
+            .unmask_rx_delivery
+            .expect("active RX moderation retains its platform callback"))();
+        true
     }
 
     /// Publish one acknowledged MAC interrupt snapshot.
@@ -54,16 +99,25 @@ impl<M: RawMutex> EmbassyMacIrqRuntime<M> {
     /// has selected each work item in recovered vendor priority order.
     #[inline]
     pub fn publish(&self, mac_pending: u32) {
-        self.state.post(mac_pending);
-        while let Some(work) = self.state.try_take_next() {
+        // `publish` runs synchronously inside the sole MAC ISR. Do not move the
+        // already-local status image through IrqState's atomic producer and
+        // immediately consume it again in the same call. The Embassy signals
+        // and TX bit image are the durable cross-context handoff.
+        let mut pending = mac_pending;
+        while let Some(work) = next_irq_work(pending) {
+            pending &= !work.mac_bit();
             match work {
                 IrqWork::RxSuccess => {
                     self.rx_post_count.fetch_add(1, Ordering::Relaxed);
-                    self.rx.signal(());
+                    if !self.rx.signaled() {
+                        self.rx.signal(());
+                    }
                 }
                 IrqWork::TxComplete | IrqWork::TxTimeout | IrqWork::Collision => {
                     self.tx_pending.fetch_or(work.mac_bit(), Ordering::Release);
-                    self.tx.signal(());
+                    if !self.tx.signaled() {
+                        self.tx.signal(());
+                    }
                 }
             }
         }
@@ -169,6 +223,11 @@ impl<M: RawMutex> IrqSink for EmbassyMacIrqRuntime<M> {
     #[inline]
     fn record_unhandled(&self, bits: u32) {
         self.state.record_unhandled(bits);
+    }
+
+    #[inline]
+    fn moderate_rx_success(&self) -> bool {
+        self.rx_moderation_active.load(Ordering::Acquire)
     }
 }
 

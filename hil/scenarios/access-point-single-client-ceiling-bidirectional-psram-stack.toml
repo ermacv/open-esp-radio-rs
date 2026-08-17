@@ -1,11 +1,11 @@
 schema = 3
-id = "access-point-single-client-ceiling-bidirectional"
-description = "Single-client AP HT40 MCS7 saturated bidirectional UDP qualification"
+id = "access-point-single-client-ceiling-bidirectional-psram-stack"
+description = "Experimental AP HT40 MCS7 saturated bidirectional run with CPU task stacks in PSRAM"
 repetitions = 3
-image = "qualification"
+image = "diagnostic-psram-stack"
 isolation = "reset"
-data_plane = "single-core"
-tags = ["qualification", "characterization", "wifi", "access-point", "network", "single-client", "ht40", "ceiling", "bidirectional"]
+data_plane = "split-radio-network"
+tags = ["diagnostic", "wifi", "access-point", "network", "single-client", "ht40", "split-core", "ceiling", "bidirectional", "psram-stack"]
 
 [link]
 phy = "ht40"

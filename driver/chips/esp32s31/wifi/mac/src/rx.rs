@@ -17,7 +17,8 @@ pub use open_esp_radio_esp32s31_wifi_dma::{
         RxDmaWalkerStopped,
     },
     rx_ring::{
-        RX_BUFFER_SENTINEL, RX_DESCRIPTOR_RELOAD_ATTEMPT_LIMIT, RxCompletedDescriptor,
+        RX_BUFFER_SENTINEL, RX_DESCRIPTOR_RELOAD_ATTEMPT_LIMIT,
+        RX_GUARDED_RECLAIM_WINDOW_DESCRIPTORS, RX_RECLAIM_GUARD_DESCRIPTORS, RxCompletedDescriptor,
         RxCompletedDescriptorFrontier, RxCompletedUnit, RxCompletedUnitFrontier,
         RxDescriptorSnapshot, RxDmaArenaState, RxLiveAppend, RxReloadObservation, RxRingError,
         RxRingHalted, RxRingLive, RxRingStopped, RxRingTopologySnapshot, RxSegment,

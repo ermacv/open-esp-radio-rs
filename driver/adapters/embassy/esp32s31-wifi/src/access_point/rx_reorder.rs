@@ -43,6 +43,15 @@ pub(super) struct Esp32s31AccessPointRxReorderProgress {
     pub duplicate: bool,
     pub dropped: bool,
     pub dispatched: u8,
+    pub hardware_window_reset: Option<Esp32s31AccessPointRxWindowReset>,
+}
+
+/// One vendor-equivalent synchronization edge for a newly activated
+/// extra-SoftAP receive BlockAck bank.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct Esp32s31AccessPointRxWindowReset {
+    pub hardware_index: u8,
+    pub starting_sequence: u16,
 }
 
 #[derive(Clone, Copy)]
@@ -55,6 +64,7 @@ struct PendingReleasedFrame {
 /// storage; this value owns only their affine leases and sequence state.
 pub struct Esp32s31AccessPointRxReorder<'storage, const CAPACITY: usize> {
     banks: RxBlockAckReorderBanks<RX_REORDER_SLOT_DOMAIN>,
+    pending_hardware_window_reset: [bool; RX_BLOCK_ACK_BANK_COUNT],
     deadlines: [Option<u64>; RX_BLOCK_ACK_BANK_COUNT],
     retained: [Option<RxReorderFrame<'storage, CAPACITY, RX_REORDER_BACKING_SLOT_COUNT>>;
         RX_REORDER_BACKING_SLOT_COUNT],
@@ -67,6 +77,7 @@ impl<'storage, const CAPACITY: usize> Esp32s31AccessPointRxReorder<'storage, CAP
     pub const fn new() -> Self {
         Self {
             banks: RxBlockAckReorderBanks::new(),
+            pending_hardware_window_reset: [false; RX_BLOCK_ACK_BANK_COUNT],
             deadlines: [None; RX_BLOCK_ACK_BANK_COUNT],
             retained: [const { None }; RX_REORDER_BACKING_SLOT_COUNT],
             pending_released: [None; RX_REORDER_BACKING_SLOT_COUNT],
@@ -83,6 +94,11 @@ impl<'storage, const CAPACITY: usize> Esp32s31AccessPointRxReorder<'storage, CAP
         let bank = usize::from(agreement.hardware_index);
         let replaced = self.banks.identity(bank);
         let released = self.banks.start(agreement)?;
+        // SOURCE: complete `ht_recv_action_ba_addba_request` sets agreement
+        // flag 0x40 after publishing the hardware entry. Complete
+        // `ieee80211_ampdu_reorder` consumes that flag on the first physical
+        // A-MPDU and reloads the entry with the resulting software frontier.
+        self.pending_hardware_window_reset[bank] = true;
         self.deadlines[bank] = None;
         if let Some(release) = released {
             self.dispatch_retained_release(
@@ -103,6 +119,7 @@ impl<'storage, const CAPACITY: usize> Esp32s31AccessPointRxReorder<'storage, CAP
         let Some(release) = self.banks.stop(identity) else {
             return false;
         };
+        self.pending_hardware_window_reset[bank] = false;
         self.deadlines[bank] = None;
         self.dispatch_retained_release(release, identity, &mut dispatch);
         true
@@ -114,6 +131,7 @@ impl<'storage, const CAPACITY: usize> Esp32s31AccessPointRxReorder<'storage, CAP
         let Some(release) = self.banks.stop(identity) else {
             return discarded;
         };
+        self.pending_hardware_window_reset[bank] = false;
         self.deadlines[bank] = None;
         for released in release.iter() {
             if self.retained[usize::from(released.slot)].take().is_some() {
@@ -128,6 +146,7 @@ impl<'storage, const CAPACITY: usize> Esp32s31AccessPointRxReorder<'storage, CAP
         storage: &'storage RxReorderFrameStorage<CAPACITY, RX_REORDER_BACKING_SLOT_COUNT>,
         segment: RxSegment<'_>,
         key: RxBlockAckMpduKey,
+        ampdu_contained: bool,
         now_micros: u64,
         mut dispatch: impl FnMut(RxSegment<'_>),
     ) -> Result<Esp32s31AccessPointRxReorderProgress, Esp32s31AccessPointRxReorderError> {
@@ -188,6 +207,7 @@ impl<'storage, const CAPACITY: usize> Esp32s31AccessPointRxReorder<'storage, CAP
             duplicate: release.rejected.is_some(),
             dropped: false,
             dispatched: 0,
+            hardware_window_reset: None,
         };
         if release.buffered {
             let retained = retained.expect("predicted retained AP frame owns cold backing");
@@ -217,6 +237,17 @@ impl<'storage, const CAPACITY: usize> Esp32s31AccessPointRxReorder<'storage, CAP
                 Some(segment),
                 &mut dispatch,
             );
+        }
+        if ampdu_contained && self.pending_hardware_window_reset[bank] {
+            self.pending_hardware_window_reset[bank] = false;
+            progress.hardware_window_reset = Some(Esp32s31AccessPointRxWindowReset {
+                hardware_index: bank as u8,
+                starting_sequence: self
+                    .banks
+                    .state(bank)
+                    .expect("active AP reorder bank retains its state")
+                    .next_sequence(),
+            });
         }
         Ok(progress)
     }
@@ -296,6 +327,7 @@ impl<'storage, const CAPACITY: usize> Esp32s31AccessPointRxReorder<'storage, CAP
         let mut discarded = 0_u8;
         for bank in 0..RX_BLOCK_ACK_BANK_COUNT {
             self.deadlines[bank] = None;
+            self.pending_hardware_window_reset[bank] = false;
             let _ = self.banks.stop_bank(bank);
         }
         for retained in &mut self.retained {
@@ -471,6 +503,7 @@ mod tests {
                     sequence: 11,
                     retry: false,
                 },
+                false,
                 1_000,
                 |segment| released.push(segment.descriptor_address),
             )
@@ -489,6 +522,7 @@ mod tests {
                     sequence: 10,
                     retry: false,
                 },
+                false,
                 1_001,
                 |segment| released.push(segment.descriptor_address),
             )
@@ -520,6 +554,7 @@ mod tests {
                     sequence: 20,
                     retry: false,
                 },
+                false,
                 1_000,
                 |_| panic!("far successor remains buffered"),
             )
@@ -528,6 +563,41 @@ mod tests {
         assert!(progress.active);
         assert!(progress.buffered);
         assert_eq!(progress.dispatched, 0);
+    }
+
+    #[test]
+    fn first_physical_ampdu_after_activation_requests_one_hardware_window_reset() {
+        let storage = RxReorderFrameStorage::<32>::new();
+        let mut reorder = Esp32s31AccessPointRxReorder::<32>::new();
+        reorder.start(agreement(3, PEER_A, 10), |_| {}).unwrap();
+        let bytes = [0];
+        let key = |sequence| RxBlockAckMpduKey {
+            peer: PEER_A,
+            tid: 6,
+            sequence,
+            retry: false,
+        };
+
+        let standalone = reorder
+            .ingest(&storage, segment(10, &bytes), key(10), false, 1, |_| {})
+            .unwrap();
+        assert_eq!(standalone.hardware_window_reset, None);
+
+        let first_ampdu = reorder
+            .ingest(&storage, segment(11, &bytes), key(11), true, 2, |_| {})
+            .unwrap();
+        assert_eq!(
+            first_ampdu.hardware_window_reset,
+            Some(Esp32s31AccessPointRxWindowReset {
+                hardware_index: 3,
+                starting_sequence: 12,
+            })
+        );
+
+        let next_ampdu = reorder
+            .ingest(&storage, segment(12, &bytes), key(12), true, 3, |_| {})
+            .unwrap();
+        assert_eq!(next_ampdu.hardware_window_reset, None);
     }
 
     #[test]
@@ -549,6 +619,7 @@ mod tests {
                         sequence,
                         retry: false,
                     },
+                    false,
                     5_000,
                     |_| panic!("gap successor must remain retained"),
                 )
@@ -593,6 +664,7 @@ mod tests {
                     sequence: 101,
                     retry: false,
                 },
+                false,
                 0,
                 |_| panic!("gap successor must remain retained"),
             )
@@ -608,6 +680,7 @@ mod tests {
                     sequence: 100,
                     retry: false,
                 },
+                false,
                 1,
                 |segment| assert_eq!(segment.descriptor_address, 100),
             )
@@ -636,13 +709,13 @@ mod tests {
 
         let bytes = [11];
         reorder
-            .ingest(&storage, segment(11, &bytes), key(11), 0, |_| {})
+            .ingest(&storage, segment(11, &bytes), key(11), false, 0, |_| {})
             .unwrap();
         assert!(reorder.is_duplicate_or_stale(key(11)));
 
         let bytes = [10];
         reorder
-            .ingest(&storage, segment(10, &bytes), key(10), 1, |_| {})
+            .ingest(&storage, segment(10, &bytes), key(10), false, 1, |_| {})
             .unwrap();
         assert!(reorder.is_duplicate_or_stale(key(10)));
         assert!(!reorder.is_duplicate_or_stale(key(12)));
@@ -682,6 +755,7 @@ mod tests {
                             sequence: sequence as u16,
                             retry: false,
                         },
+                        false,
                         0,
                         |_| panic!("a leading gap retains every successor"),
                     )
@@ -701,6 +775,7 @@ mod tests {
                     sequence: 9,
                     retry: false,
                 },
+                false,
                 1,
                 |_| panic!("exhausted backing cannot publish out of order"),
             )

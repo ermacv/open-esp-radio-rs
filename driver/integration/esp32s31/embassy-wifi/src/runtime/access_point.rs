@@ -43,15 +43,16 @@ type ProductionAccessPointAmpdu =
     open_esp_radio_esp32s31_wifi_embassy::access_point::Esp32s31AccessPointAmpdu<
         'static,
         RadioTxBacking,
-        { open_esp_radio_esp32s31_wifi_embassy::resource_profile::ESP32S31_DEFAULT_TX_AMPDU_FRAME_COUNT },
+        {
+            open_esp_radio_esp32s31_wifi_embassy::resource_profile::ESP32S31_DEFAULT_TX_AMPDU_FRAME_COUNT
+        },
         0,
     >;
 type ProductionAccessPointRxBlockAck =
     open_esp_radio::esp32s31::wifi::mac::rx_ampdu::RxBlockAckSessions<
         { open_esp_radio::wifi::ap::AP_MAX_CLIENTS },
     >;
-type ProductionAccessPointRxReorder =
-    Esp32s31AccessPointRxReorder<'static, RX_BUFFER_SIZE>;
+type ProductionAccessPointRxReorder = Esp32s31AccessPointRxReorder<'static, RX_BUFFER_SIZE>;
 type ProductionAccessPointRxReorderStorage =
     open_esp_radio_esp32s31_wifi_embassy::rx_reorder::RxReorderFrameStorage<
         RX_BUFFER_SIZE,
@@ -358,8 +359,7 @@ pub(super) enum ProductionAccessPointTeardownFault {
         _storage: &'static RxStorage,
         _rx_frame: &'static mut [u8],
         _tx_frame: &'static mut [u8],
-        _data_rx:
-            &'static mut open_esp_radio::esp32s31::wifi::ap::rx::Esp32s31ApRxDispatcher,
+        _data_rx: &'static mut open_esp_radio::esp32s31::wifi::ap::rx::Esp32s31ApRxDispatcher,
         _rx_block_ack: &'static mut ProductionAccessPointRxBlockAck,
         _rx_reorder: &'static mut ProductionAccessPointRxReorder,
         _rx_reorder_storage: &'static ProductionAccessPointRxReorderStorage,
@@ -718,14 +718,16 @@ pub(super) struct ProductionAccessPointResources {
         &'static mut open_esp_radio::esp32s31::wifi::ap::security::Esp32s31ApPairwiseKeyStorage,
     pub(super) rx_dispatcher:
         &'static mut open_esp_radio::esp32s31::wifi::ap::rx::Esp32s31ApRxDispatcher,
-    pub(super) rx_block_ack: &'static mut open_esp_radio::esp32s31::wifi::mac::rx_ampdu::RxBlockAckSessions<
-        { open_esp_radio::wifi::ap::AP_MAX_CLIENTS },
-    >,
+    pub(super) rx_block_ack:
+        &'static mut open_esp_radio::esp32s31::wifi::mac::rx_ampdu::RxBlockAckSessions<
+            { open_esp_radio::wifi::ap::AP_MAX_CLIENTS },
+        >,
     pub(super) rx_reorder: &'static mut Esp32s31AccessPointRxReorder<'static, RX_BUFFER_SIZE>,
-    pub(super) rx_reorder_storage: &'static open_esp_radio_esp32s31_wifi_embassy::rx_reorder::RxReorderFrameStorage<
-        RX_BUFFER_SIZE,
-        { open_esp_radio_esp32s31_wifi_embassy::rx_reorder::RX_REORDER_BACKING_SLOT_COUNT },
-    >,
+    pub(super) rx_reorder_storage:
+        &'static open_esp_radio_esp32s31_wifi_embassy::rx_reorder::RxReorderFrameStorage<
+            RX_BUFFER_SIZE,
+            { open_esp_radio_esp32s31_wifi_embassy::rx_reorder::RX_REORDER_BACKING_SLOT_COUNT },
+        >,
 }
 
 impl ProductionWifiEpochRunner {
@@ -1315,30 +1317,46 @@ impl ProductionWifiEpochRunner {
         let result = {
             let network = task.parked.resume.radio_runner();
             let (_, platform) = task.owner.radio_mut();
-            await_stack_boundary!(task.service.run_until_stopped(
-                &mut task.registers,
-                &mut task.interrupts,
-                &*platform,
-                network,
-                &mut task.aggregate,
-                #[cfg(feature = "qualification")]
-                rx_delivery_observer,
-                wait_for_access_point_stop(endpoint),
-                |status| crate::access_point_status::publish_access_point_status(
-                    generation, status
-                ),
-                || {
-                    let mut nonce = [0_u8; 32];
-                    for word in nonce.chunks_exact_mut(4) {
-                        word.copy_from_slice(&self.trng.random().to_le_bytes());
-                    }
-                    let replay =
-                        (u64::from(self.trng.random()) << 32) | u64::from(self.trng.random());
-                    (nonce, replay)
-                },
-            ))
+            await_stack_boundary!(
+                task.service.run_until_stopped(
+                    &mut task.registers,
+                    &mut task.interrupts,
+                    &*platform,
+                    network,
+                    &mut task.aggregate,
+                    #[cfg(feature = "qualification")]
+                    task.parked
+                        .board
+                        .qualification
+                        .map(|hooks| hooks.aggregate_tx),
+                    #[cfg(not(feature = "qualification"))]
+                    None,
+                    #[cfg(feature = "qualification")]
+                    rx_delivery_observer,
+                    wait_for_access_point_stop(endpoint),
+                    |status| crate::access_point_status::publish_access_point_status(
+                        generation, status
+                    ),
+                    || {
+                        let mut nonce = [0_u8; 32];
+                        for word in nonce.chunks_exact_mut(4) {
+                            word.copy_from_slice(&self.trng.random().to_le_bytes());
+                        }
+                        let replay =
+                            (u64::from(self.trng.random()) << 32) | u64::from(self.trng.random());
+                        (nonce, replay)
+                    },
+                )
+            )
         };
         crate::access_point_status::publish_access_point_stopped();
+        #[cfg(feature = "qualification")]
+        if let Err(error) = &result {
+            // Publish the typed owner failure before the larger terminal RX
+            // snapshot. A saturated AP can fill the bounded diagnostic log;
+            // the cause must not be displaced by secondary state evidence.
+            log::error!("open-radio: access-point runtime fault: {error:?}");
+        }
         #[cfg(feature = "qualification")]
         {
             // A rare repeated STA/AP lifecycle failure leaves the AP receive
@@ -1485,17 +1503,11 @@ impl ProductionWifiEpochRunner {
                 "open-radio: access-point RX scheduler stop {:?}",
                 report.rx_scheduler,
             );
-            publish_access_point_observation(
-                hooks.access_point,
-                task.channel,
-                report,
-            );
+            publish_access_point_observation(hooks.access_point, task.channel, report);
         }
-        if let Err(error) = result {
-            #[cfg(feature = "qualification")]
-            log::error!("open-radio: access-point runtime fault: {error:?}");
+        if let Err(_error) = result {
             #[cfg(not(feature = "qualification"))]
-            let _ = error;
+            let _ = _error;
             let faulted = ProductionWifiFault::AccessPointRuntime { _task: task };
             endpoint
                 .respond(EmbassyWifiSupervisorResponse::Stop(Err(

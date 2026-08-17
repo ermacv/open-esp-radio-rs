@@ -12,6 +12,19 @@ pub const HT_OPERATION_IE_LEN: usize = 24;
 
 /// Build the complete one-stream HT Capabilities element for one BSS.
 pub const fn ht_capability_ie(channel: WifiChannel) -> [u8; HT_CAPABILITY_IE_LEN] {
+    ht_capability_ie_for_peer(channel, None)
+}
+
+/// Build the HT Capabilities element advertised to one known peer.
+///
+/// Complete vendor `ieee80211_add_htcap_body` negotiates the receive A-MPDU
+/// parameters in an association response: it selects the smaller maximum
+/// A-MPDU exponent and the larger minimum MPDU spacing. Beacons have no peer
+/// record and therefore retain the local interface value.
+pub const fn ht_capability_ie_for_peer(
+    channel: WifiChannel,
+    peer: Option<HtPeerCapabilities>,
+) -> [u8; HT_CAPABILITY_IE_LEN] {
     // `ieee80211_ht_attach` initializes the vendor interface capability at
     // offset `+0x14c` to `0x100c`: spatial multiplexing power save disabled
     // and DSSS/CCK reception permitted in 40 MHz. The shared vendor
@@ -33,18 +46,33 @@ pub const fn ht_capability_ie(channel: WifiChannel) -> [u8; HT_CAPABILITY_IE_LEN
     element[1] = 26;
     element[2] = capability_info as u8;
     element[3] = (capability_info >> 8) as u8;
-    // 65,535-byte receive A-MPDU with no artificial MPDU-density limit.
+    // 65,535-byte receive A-MPDU with no local MPDU-density limit.
     //
     // Complete vendor `ieee80211_ht_attach` derives only the two-bit maximum
     // A-MPDU exponent from the configured static RX-buffer count and stores
     // that value at interface offset `+0x148`. Complete
-    // `ieee80211_add_htcap_body` preserves its zero density bits while taking
-    // the smaller exponent from the interface and peer images. The production
     // S31 profile owns 64 RX descriptors, selecting exponent three by the same
-    // vendor thresholds. The former `0x17` incorrectly advertised density
-    // five (four microseconds) and made an AP peer apply a restriction absent
-    // from the vendor SoftAP profile.
-    element[4] = 0x03;
+    // vendor thresholds. For a peer-specific response the vendor keeps the
+    // stricter of both peers' limits rather than repeating this local value.
+    let local_ampdu_parameters = 0x03;
+    element[4] = match peer {
+        Some(peer) => {
+            let exponent = if local_ampdu_parameters & 0x03 < peer.ampdu_parameters & 0x03 {
+                local_ampdu_parameters & 0x03
+            } else {
+                peer.ampdu_parameters & 0x03
+            };
+            let local_spacing = local_ampdu_parameters & 0x1c;
+            let peer_spacing = peer.ampdu_parameters & 0x1c;
+            let spacing = if local_spacing > peer_spacing {
+                local_spacing
+            } else {
+                peer_spacing
+            };
+            exponent | spacing
+        }
+        None => local_ampdu_parameters,
+    };
     // One receive spatial stream, MCS0 through MCS7.
     element[5] = 0xff;
     // Supported MCS Set byte 12: TX MCS set is defined and equal to RX.
@@ -162,5 +190,23 @@ mod tests {
         assert!(peer.supports_40_mhz());
         assert!(peer.supports_short_guard_interval(WifiChannelWidth::Mhz40Above));
         assert_eq!(peer.highest_rx_mcs(), 7);
+    }
+
+    #[test]
+    fn peer_specific_capability_uses_vendor_ampdu_negotiation() {
+        let channel = WifiChannel::mhz20(6).unwrap();
+        let mut peer_record = ht_capability_ie(channel);
+        peer_record[4] = 0x17;
+        let peer = ht_peer_capabilities(&peer_record).unwrap();
+
+        assert_eq!(ht_capability_ie(channel)[4], 0x03);
+        assert_eq!(ht_capability_ie_for_peer(channel, Some(peer))[4], 0x17);
+
+        peer_record[4] = 0x15;
+        let stricter_exponent = ht_peer_capabilities(&peer_record).unwrap();
+        assert_eq!(
+            ht_capability_ie_for_peer(channel, Some(stricter_exponent))[4],
+            0x15
+        );
     }
 }

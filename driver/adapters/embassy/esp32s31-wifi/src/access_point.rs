@@ -23,7 +23,7 @@ use open_esp_radio_esp32s31_wifi_ap::protocol::{
     AP_MAX_CLIENTS, AccessPointServiceStatus, ApPeerClose, ApWpa2RetryProgress,
 };
 use open_esp_radio_esp32s31_wifi_ap::{
-    ampdu::{Esp32s31ApAmpduError, Esp32s31ApAmpduProgress},
+    ampdu::{Esp32s31ApAmpduCompletion, Esp32s31ApAmpduError, Esp32s31ApAmpduProgress},
     engine::{Esp32s31ApRuntimeHardware, Esp32s31ApWpa2Outcome},
     mac::{
         Esp32s31ApMac, Esp32s31ApMacError, Esp32s31ApMacReport, Esp32s31ApPeerDisconnectStage,
@@ -61,6 +61,7 @@ use open_esp_radio_wpa2::{OwnedEapolFrame, Wpa2Interface};
 #[cfg(feature = "rx-delivery-observation")]
 use crate::network_rx::{RxNetworkDeliveryEvent, RxNetworkDeliveryObserver};
 use crate::{
+    aggregate_tx_observer::{AggregateBuildStop, AggregateTxObservation, AggregateTxObserver},
     embassy_irq::{
         Esp32s31MacInterruptEpoch, Esp32s31MacInterruptEpochActivateError,
         Esp32s31MacInterruptEpochDrain, Esp32s31MacInterruptEpochQuiesceError,
@@ -90,7 +91,7 @@ pub use rx_pipeline::{
     Esp32s31AccessPointRxPipeline,
 };
 pub use rx_reorder::{Esp32s31AccessPointRxReorder, Esp32s31AccessPointRxReorderError};
-use wdev::Esp32s31AccessPointWdevServices;
+use wdev::{BlockAckObservationState, Esp32s31AccessPointWdevServices};
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct Esp32s31AccessPointControlReport {
@@ -575,6 +576,10 @@ where
             }
         };
         let frame_control = u16::from_le_bytes([frame.mpdu[0], frame.mpdu[1]]);
+        let ampdu_contained = matches!(
+            frame.metadata.ampdu,
+            MacRxEvidence::HardwareObserved(true) | MacRxEvidence::ProtocolValidated(true)
+        );
         if frame_control & 0x000c == 0x0008 && frame_control & 0x4000 != 0 {
             self.report.protected_data_frames = self.report.protected_data_frames.saturating_add(1);
             if let MacRxEvidence::HardwareObserved(rssi_dbm) = frame.metadata.rssi_dbm {
@@ -641,6 +646,7 @@ where
                     self.rx_reorder_storage,
                     segment,
                     key,
+                    ampdu_contained,
                     now_micros,
                     &mut dispatch,
                 )
@@ -648,6 +654,12 @@ where
                 dispatch(segment);
                 Ok(Default::default())
             }?;
+            if let Some(reset) = reorder_progress.hardware_window_reset {
+                hardware.reset_extra_softap_rx_block_ack_window(
+                    reset.hardware_index,
+                    reset.starting_sequence,
+                )?;
+            }
             if reorder_progress.duplicate {
                 self.report.protected_data_duplicates =
                     self.report.protected_data_duplicates.saturating_add(1);
@@ -1396,6 +1408,7 @@ where
             AMPDU_SLOTS,
             AMPDU_BUFFER_SIZE,
         >,
+        aggregate_tx_observer: Option<&dyn AggregateTxObserver>,
         #[cfg(feature = "rx-delivery-observation")] delivery_observer: Option<
             &dyn RxNetworkDeliveryObserver,
         >,
@@ -1428,17 +1441,25 @@ where
             .map_err(Esp32s31AccessPointRunError::Control)?;
         let (last_status_revision, status, _) = self.role_observation();
         status_observer(status);
+        if let Some(observer) = aggregate_tx_observer {
+            observer.observe(AggregateTxObservation::BlockAckOperational {
+                tid: 0,
+                operational: false,
+            });
+        }
         let services = Esp32s31AccessPointWdevServices {
             control: self,
             hardware,
-            network_tx: Esp32s31AccessPointNetworkTx::new(aggregate),
+            network_tx: Esp32s31AccessPointNetworkTx::new(aggregate, aggregate_tx_observer),
             status_observer,
             security_material,
             set_link_state: |state| network.set_link_state(state),
+            aggregate_tx_observer,
             #[cfg(feature = "rx-delivery-observation")]
             delivery_observer,
             last_status_revision,
             network_link_up: false,
+            block_ack_observation: BlockAckObservationState::default(),
             network_backpressure_since_micros: None,
             tx_pending_since_micros: Some(Instant::now().as_micros()),
             network_tx_pending: None,
@@ -1456,11 +1477,12 @@ where
                 Esp32s31AccessPointRunError::Aggregate(error)
             }
         })?;
-        let (_, services) = runner.into_parts();
+        let (_, mut services) = runner.into_parts();
         match exit {
             crate::wdev::WdevRunnerExit::Stopped => {}
             crate::wdev::WdevRunnerExit::Role(exit) => match exit {},
         }
+        services.clear_block_ack_observation();
         drop(services);
         let discarded_staged = self.receive.discard_queued();
         self.report.ignored_rx_frames = self

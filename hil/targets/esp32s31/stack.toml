@@ -63,8 +63,8 @@ reason = "role epoch future retains the exact station, AP or monitor return owne
 [[reviewed_frames]]
 function_contains = "run_access_point_service::{closure#0}"
 source_ends_with = "driver/integration/esp32s31/embassy-wifi/src/runtime/access_point.rs"
-max_bytes = 10240
-reason = "AP epoch future retains the halted DMA owner, exact STA resume frontier, explicit optional TBTT schedule and typed retry report until teardown; runtime painting still enforces aggregate CPU-stack headroom"
+max_bytes = 10752
+reason = "AP epoch future retains the halted DMA owner, exact STA resume frontier, both affine A-MPDU arenas for active/standby pipelining, explicit optional TBTT schedule and typed retry report until teardown; runtime painting still enforces 16-KiB CPU-stack headroom"
 
 [[reviewed_frames]]
 function_contains = "::__wifi_role_task_task::__wifi_role_task_task_inner_function::{closure#0}"

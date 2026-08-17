@@ -147,16 +147,13 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
         let payload_bytes = usize::from(flow.payload_bytes);
         let duration = Duration::from_millis(u64::from(duration_millis));
         let offered_rate_bps = flow.offered_rate_bps;
-        // Group pacing controls how much of the CPU-side UDP socket queue the
-        // load generator may fill between rate deadlines. AP v1 declares no
-        // BlockAck link requirement and owns one ordinary TX descriptor, so a
-        // station-sized group would create artificial burst/idle periods.
-        let pacing_group_datagrams = if session.config.link_requirements.tx_block_ack_tid.is_some()
-        {
-            config.pacing_group_datagrams
-        } else {
-            1
-        };
+        // Group pacing is a CPU-side load-generator property, not evidence of
+        // a negotiated radio capability. The bounded socket/WDEV queues own
+        // admission while interval telemetry independently proves whether TX
+        // actually used BlockAck/A-MPDU. Waiting after every datagram makes
+        // the Embassy timer itself the throughput ceiling at high offered
+        // rates.
+        let pacing_group_datagrams = config.pacing_group_datagrams;
         runtime_log(format_args!(
             "OPEN_RADIO_PHY_HIL result=PASS stage=udp-tx-session-start \
              session={} target={server}:{server_port} payload={payload_bytes} \
@@ -259,11 +256,10 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
         let tx_vector = qualification_sample(QualificationRequester::UdpTx)
             .await
             .tx_vector;
-        // A link vector belongs to the associated-STA A-MPDU datapath. AP v1
-        // intentionally exposes only legacy unicast TX, so a session whose
-        // link requirements are NONE has no such vector. Conversely, a host
-        // that explicitly required BlockAck must never receive a successful
-        // session without the associated-link evidence it requested.
+        // This live link vector belongs to the associated-STA datapath. AP
+        // rate/A-MPDU evidence is owned by its terminal role report instead.
+        // A station session that explicitly required BlockAck must never
+        // succeed without the associated-link evidence it requested.
         assert!(
             session.config.link_requirements.tx_block_ack_tid.is_none() || tx_vector.is_some(),
             "BlockAck-qualified TX session retains its associated link vector",

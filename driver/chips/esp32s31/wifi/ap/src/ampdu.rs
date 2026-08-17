@@ -55,10 +55,23 @@ pub struct Esp32s31ApPreparedAmpdu {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Esp32s31ApAmpduCompletion {
+    pub tx_status: u8,
+    pub block_ack_received: bool,
+    pub block_ack_control: u8,
+    pub first_sequence: u16,
+    pub starting_sequence: u16,
+    pub subframes: u8,
+    pub missing: u8,
+    pub acknowledged: u8,
+    pub aggregate_attempts: u8,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Esp32s31ApAmpduProgress {
     Pending,
-    Republished,
-    Complete,
+    Republished(Esp32s31ApAmpduCompletion),
+    Complete(Esp32s31ApAmpduCompletion),
 }
 
 enum ApAmpduState<const SLOTS: usize> {
@@ -276,7 +289,20 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
             return Ok(Esp32s31ApAmpduProgress::Pending);
         };
         self.inner.detach_completed(hardware, cookie)?;
-        let decision = retry.observe(completion, self.inner.frame_count())?;
+        let current_subframes = self.inner.frame_count();
+        let current_first_sequence = retry.current_first_sequence();
+        let decision = retry.observe(completion, current_subframes)?;
+        let observation = Esp32s31ApAmpduCompletion {
+            tx_status: completion.tx.status,
+            block_ack_received: completion.block_ack_received,
+            block_ack_control: completion.block_ack.control,
+            first_sequence: current_first_sequence,
+            starting_sequence: completion.block_ack.block_ack.starting_sequence,
+            subframes: current_subframes,
+            missing: decision.missing(),
+            acknowledged: retry.acknowledged(),
+            aggregate_attempts: retry.aggregate_attempts(),
+        };
         if let AmpduRetryDecision::RetainAggregate { retry_mask } = decision {
             let aggregate = self.inner.retain_for_ampdu_retry(cookie, retry_mask)?;
             let refreshed = ordinary
@@ -295,10 +321,10 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
                 hardware_key_selector,
                 retry,
             };
-            return Ok(Esp32s31ApAmpduProgress::Republished);
+            return Ok(Esp32s31ApAmpduProgress::Republished(observation));
         }
         self.inner.release_completed(cookie)?;
-        Ok(Esp32s31ApAmpduProgress::Complete)
+        Ok(Esp32s31ApAmpduProgress::Complete(observation))
     }
 
     pub fn cancel_build(&mut self) -> Result<(), Esp32s31ApAmpduError> {

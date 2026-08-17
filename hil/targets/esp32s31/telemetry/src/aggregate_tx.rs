@@ -251,6 +251,28 @@ impl AggregateTxCounters {
         }
     }
 
+    /// Publish the current operational state of one TX BlockAck TID.
+    ///
+    /// This is idempotent because role observers may report a complete state
+    /// snapshot on every bounded service turn. Transition evidence counts
+    /// actual edges, not repeated observations of the same state.
+    pub fn set_block_ack_operational(&self, tid: u8, operational: bool) {
+        let Some(mask) = 1_u32.checked_shl(u32::from(tid)) else {
+            return;
+        };
+        let previous = if operational {
+            self.block_ack_operational_tids
+                .fetch_or(mask, Ordering::AcqRel)
+        } else {
+            self.block_ack_operational_tids
+                .fetch_and(!mask, Ordering::AcqRel)
+        };
+        if (previous & mask != 0) != operational {
+            self.block_ack_operational_transitions
+                .fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
     pub(crate) fn record_network_single_mpdu(
         &self,
         reason: NetworkSingleMpduReason,
@@ -445,16 +467,7 @@ impl AggregateTxObserver for AggregateTxCounters {
     fn observe(&self, observation: AggregateTxObservation) {
         match observation {
             AggregateTxObservation::BlockAckOperational { tid, operational } => {
-                let mask = 1_u32.checked_shl(u32::from(tid)).unwrap_or(0);
-                if operational {
-                    self.block_ack_operational_tids
-                        .fetch_or(mask, Ordering::Release);
-                } else {
-                    self.block_ack_operational_tids
-                        .fetch_and(!mask, Ordering::Release);
-                }
-                self.block_ack_operational_transitions
-                    .fetch_add(1, Ordering::Relaxed);
+                self.set_block_ack_operational(tid, operational);
             }
             AggregateTxObservation::InterruptServiceStarted { at_micros } => {
                 self.record_tx_service_started(at_micros);
@@ -835,6 +848,15 @@ mod tests {
         let delta = operational.wrapping_delta_since(before);
         assert!(delta.block_ack_operational(0));
         assert_eq!(delta.block_ack_operational_transitions, 1);
+
+        counters.set_block_ack_operational(0, true);
+        assert_eq!(
+            counters
+                .snapshot()
+                .wrapping_delta_since(operational)
+                .block_ack_operational_transitions,
+            0
+        );
 
         counters.observe(AggregateTxObservation::BlockAckOperational {
             tid: 0,

@@ -10,7 +10,7 @@ use crate::{
     channel::WifiChannel,
     data::{DataInterfaceRole, ETHERNET_HEADER_LEN, plan_data_encapsulation},
     ht::{
-        HT_CAPABILITY_IE_LEN, HT_OPERATION_IE_LEN, HtPeerCapabilities, ht_capability_ie,
+        HT_CAPABILITY_IE_LEN, HT_OPERATION_IE_LEN, HtPeerCapabilities, ht_capability_ie_for_peer,
         ht_operation_ie, ht_peer_capabilities,
     },
 };
@@ -483,6 +483,7 @@ pub fn write_ht_association_response_frame(
     association_id: u16,
     management_sequence: u16,
     channel: WifiChannel,
+    peer_ht: Option<HtPeerCapabilities>,
 ) -> Result<usize, ApAssociationResponseError> {
     if management_sequence > 0x0fff {
         return Err(ApAssociationResponseError::InvalidSequenceNumber);
@@ -498,7 +499,7 @@ pub fn write_ht_association_response_frame(
     let body: &mut [u8; AP_ASSOCIATION_RESPONSE_BODY_LEN] = (&mut frame[MANAGEMENT_HEADER_LEN..])
         .try_into()
         .expect("checked association response body length");
-    write_ht_association_response(body, status, association_id, channel)?;
+    write_ht_association_response(body, status, association_id, channel, peer_ht)?;
     Ok(AP_ASSOCIATION_RESPONSE_LEN)
 }
 
@@ -556,13 +557,14 @@ pub fn write_ht_association_response(
     status: u16,
     association_id: u16,
     channel: WifiChannel,
+    peer_ht: Option<HtPeerCapabilities>,
 ) -> Result<(), ApAssociationResponseError> {
     if status == 0 && association_id & 0x3fff == 0 {
         return Err(ApAssociationResponseError::MissingAssociationId);
     }
     body[..AP_LEGACY_ASSOCIATION_RESPONSE_BODY_LEN]
         .copy_from_slice(&AP_LEGACY_ASSOCIATION_RESPONSE);
-    let ht_capability = ht_capability_ie(channel);
+    let ht_capability = ht_capability_ie_for_peer(channel, peer_ht);
     let ht_operation = ht_operation_ie(channel);
     let ht_capability_end = AP_LEGACY_ASSOCIATION_RESPONSE_BODY_LEN + ht_capability.len();
     body[AP_LEGACY_ASSOCIATION_RESPONSE_BODY_LEN..ht_capability_end]
@@ -790,21 +792,32 @@ mod tests {
     fn association_response_owns_status_aid_and_ht_channel_capability() {
         let mut body = [0; AP_ASSOCIATION_RESPONSE_BODY_LEN];
         let ht20 = WifiChannel::mhz20(6).unwrap();
-        write_ht_association_response(&mut body, 17, 0x0123, ht20).unwrap();
+        write_ht_association_response(&mut body, 17, 0x0123, ht20, None).unwrap();
         assert_eq!(&body[2..4], &17_u16.to_le_bytes());
         assert_eq!(&body[4..6], &[0, 0]);
-        write_ht_association_response(&mut body, 0, 1, ht20).unwrap();
+        write_ht_association_response(&mut body, 0, 1, ht20, None).unwrap();
         assert_eq!(&body[4..6], &0xc001_u16.to_le_bytes());
         assert!(body.windows(2).any(|window| window == [45, 26]));
         assert!(body.windows(3).any(|window| window == [61, 22, 6]));
+
+        let mut peer_ht_record = crate::ht::ht_capability_ie(ht20);
+        peer_ht_record[4] = 0x17;
+        let peer_ht = ht_peer_capabilities(&peer_ht_record).unwrap();
+        write_ht_association_response(&mut body, 0, 1, ht20, Some(peer_ht)).unwrap();
         assert_eq!(
-            write_ht_association_response(&mut body, 0, 0, ht20),
+            body[AP_LEGACY_ASSOCIATION_RESPONSE_BODY_LEN + 4],
+            0x17,
+            "association response must carry the vendor-negotiated peer spacing"
+        );
+
+        assert_eq!(
+            write_ht_association_response(&mut body, 0, 0, ht20, None),
             Err(ApAssociationResponseError::MissingAssociationId)
         );
 
         let ht40 =
             WifiChannel::new_2_4_ghz(6, crate::channel::WifiChannelWidth::Mhz40Below).unwrap();
-        write_ht_association_response(&mut body, 0, 1, ht40).unwrap();
+        write_ht_association_response(&mut body, 0, 1, ht40, None).unwrap();
         assert!(body.windows(4).any(|window| window == [45, 26, 0x6e, 0x10]));
         assert!(body.windows(4).any(|window| window == [61, 22, 6, 0x07]));
     }
@@ -942,7 +955,7 @@ mod tests {
         association[28..34].copy_from_slice(&[1, 4, 0x82, 0x84, 0x0c, 0x6c]);
         let channel =
             WifiChannel::new_2_4_ghz(6, crate::channel::WifiChannelWidth::Mhz40Above).unwrap();
-        association[34..].copy_from_slice(&ht_capability_ie(channel));
+        association[34..].copy_from_slice(&crate::ht::ht_capability_ie(channel));
 
         let Some(ApManagementRequest::Association {
             maximum_legacy_rate_500kbps,
@@ -980,6 +993,7 @@ mod tests {
             0xc001,
             8,
             WifiChannel::mhz20(6).unwrap(),
+            None,
         )
         .unwrap();
         assert_eq!(&association[..2], &0x0010_u16.to_le_bytes());

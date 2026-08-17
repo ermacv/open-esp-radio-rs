@@ -682,8 +682,8 @@ fn qualify_udp(
             payload_bytes: u16::try_from(payload_bytes).expect("validated UDP payload"),
             offered_rate_bps: Some(rate),
         }),
-        // The current AP capability contract is legacy unicast TX. Block Ack
-        // must be requested only after AP HT negotiation is implemented.
+        // Link negotiation is production state and is verified from the
+        // measured interval. It is not a load-generator pacing control.
         link_requirements: SessionLinkRequirements::NONE,
     })?;
     let send_config = rx_rate_bps.map(|rate| UdpConfig {

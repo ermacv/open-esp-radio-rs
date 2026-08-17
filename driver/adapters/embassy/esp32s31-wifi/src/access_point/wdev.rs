@@ -27,6 +27,26 @@ impl<const LIMIT: usize> BoundedRxTurn<LIMIT> {
     }
 }
 
+#[derive(Default)]
+pub(super) struct BlockAckObservationState {
+    operational: bool,
+}
+
+impl BlockAckObservationState {
+    fn update(&mut self, operational: bool, observer: Option<&dyn AggregateTxObserver>) {
+        if operational == self.operational {
+            return;
+        }
+        if let Some(observer) = observer {
+            observer.observe(AggregateTxObservation::BlockAckOperational {
+                tid: 0,
+                operational,
+            });
+        }
+        self.operational = operational;
+    }
+}
+
 pub(super) struct Esp32s31AccessPointWdevServices<
     'run,
     'storage,
@@ -68,10 +88,12 @@ pub(super) struct Esp32s31AccessPointWdevServices<
     pub(super) status_observer: O,
     pub(super) security_material: S,
     pub(super) set_link_state: L,
+    pub(super) aggregate_tx_observer: Option<&'run dyn AggregateTxObserver>,
     #[cfg(feature = "rx-delivery-observation")]
     pub(super) delivery_observer: Option<&'run dyn RxNetworkDeliveryObserver>,
     pub(super) last_status_revision: u32,
     pub(super) network_link_up: bool,
+    pub(super) block_ack_observation: BlockAckObservationState,
     pub(super) network_backpressure_since_micros: Option<u64>,
     pub(super) tx_pending_since_micros: Option<u64>,
     pub(super) network_tx_pending: Option<NetworkTxPending>,
@@ -144,6 +166,15 @@ where
             });
             self.network_link_up = authorized;
         }
+        self.block_ack_observation.update(
+            self.control.has_operational_tx_block_ack(),
+            self.aggregate_tx_observer,
+        );
+    }
+
+    pub(super) fn clear_block_ack_observation(&mut self) {
+        self.block_ack_observation
+            .update(false, self.aggregate_tx_observer);
     }
 
     fn observe_tx_started(&mut self) {
@@ -330,6 +361,14 @@ where
     type Error = Esp32s31AccessPointWdevError;
     type Exit = Infallible;
 
+    fn service_rx_during_tx(&self) -> bool {
+        // AP RX owns protocol actions as well as DMA drainage. Processing an
+        // action frame can publish a management response through the same
+        // ordinary TX owner currently borrowed by A-MPDU. Preserve the IRQ
+        // edge and run RX immediately after the active TX terminal edge.
+        false
+    }
+
     fn service_rx<'a>(
         &'a mut self,
         network_rx: &'a mut dyn WdevNetworkRx,
@@ -388,11 +427,10 @@ where
                     return Ok(WdevRxProgress::NetworkBackpressured);
                 }
                 if self.tx_pending() {
-                    // During an active TX transaction `service_rx` may only
-                    // stage/recycle the vendor RX-success frontier. Do not
-                    // self-repost merely because protocol consumption is
-                    // deferred; queued ownership is exposed by `has_rx_work`
-                    // immediately after TX reaches its terminal edge.
+                    // This RX turn started at an idle boundary but protocol
+                    // handling published a control response. Leave further
+                    // queued work visible until that response reaches its
+                    // terminal TX edge.
                     return Ok(rx_progress);
                 }
                 if rx_progress == WdevRxProgress::ProbePending {
@@ -487,6 +525,64 @@ where
         }
     }
 
+    fn has_prepared_tx(&self) -> bool {
+        self.network_tx.has_prepared()
+    }
+
+    fn prepared_tx_frame_count(&self) -> usize {
+        self.network_tx.prepared_frame_count()
+    }
+
+    fn can_prepare_tx(&self) -> bool {
+        self.network_tx.can_prepare()
+    }
+
+    fn prepare_tx<'a>(
+        &'a mut self,
+        frame: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+        network: &'a PinnedTxConsumer<
+            'resources,
+            M,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            TX_QUEUE_DEPTH,
+        >,
+    ) -> impl Future<Output = Result<(), Self::Error>> + 'a {
+        async move { self.network_tx.prepare(self.control, frame, network) }
+    }
+
+    fn start_prepared_tx<'a>(
+        &'a mut self,
+        network: &'a PinnedTxConsumer<
+            'resources,
+            M,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            TX_QUEUE_DEPTH,
+        >,
+    ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a {
+        async move {
+            let progress = self
+                .network_tx
+                .start_prepared(self.control, self.hardware, network)?;
+            if progress == WifiTxProgress::Pending {
+                debug_assert!(self.network_tx_pending.is_none());
+                self.network_tx_pending = Some(NetworkTxPending {
+                    started_micros: Instant::now().as_micros(),
+                    attempts_before: self.control.mac_report().data_tx.attempts,
+                });
+            }
+            self.observe_tx_started();
+            Ok(progress)
+        }
+    }
+
+    fn cancel_prepared_tx(&mut self) -> Result<(), Self::Error> {
+        self.network_tx.cancel_prepared()
+    }
+
     fn service_tx<'a>(
         &'a mut self,
         wake: WifiTxWake,
@@ -529,6 +625,15 @@ where
 mod tests {
     use super::*;
 
+    #[derive(Default)]
+    struct RecordingObserver(std::sync::Mutex<std::vec::Vec<AggregateTxObservation>>);
+
+    impl AggregateTxObserver for RecordingObserver {
+        fn observe(&self, observation: AggregateTxObservation) {
+            self.0.lock().unwrap().push(observation);
+        }
+    }
+
     #[test]
     fn bounded_rx_turn_keeps_one_mpdu_publication_inside_the_same_turn() {
         let mut turn = BoundedRxTurn::<4>::default();
@@ -536,6 +641,31 @@ mod tests {
         turn.observe(1);
 
         assert!(turn.has_budget());
+    }
+
+    #[test]
+    fn block_ack_readiness_is_published_only_on_live_state_edges() {
+        let observer = RecordingObserver::default();
+        let mut state = BlockAckObservationState::default();
+
+        state.update(false, Some(&observer));
+        state.update(true, Some(&observer));
+        state.update(true, Some(&observer));
+        state.update(false, Some(&observer));
+
+        assert_eq!(
+            *observer.0.lock().unwrap(),
+            [
+                AggregateTxObservation::BlockAckOperational {
+                    tid: 0,
+                    operational: true,
+                },
+                AggregateTxObservation::BlockAckOperational {
+                    tid: 0,
+                    operational: false,
+                },
+            ]
+        );
     }
 
     #[test]

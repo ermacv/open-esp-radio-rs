@@ -382,6 +382,7 @@ impl<'storage> Esp32s31ApEngine<'storage> {
                         peer_status.association_id,
                         sequence,
                         self.channel,
+                        peer_status.ht,
                     )?;
                     self.report.association_responses_prepared =
                         self.report.association_responses_prepared.saturating_add(1);
@@ -422,6 +423,7 @@ impl<'storage> Esp32s31ApEngine<'storage> {
                     association_id.unwrap_or(0),
                     sequence,
                     self.channel,
+                    ht_capabilities,
                 )?;
                 self.report.association_responses_prepared =
                     self.report.association_responses_prepared.saturating_add(1);

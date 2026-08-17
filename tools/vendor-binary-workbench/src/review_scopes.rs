@@ -226,7 +226,14 @@ fn load_profile_nodes(
     let mut nodes = BTreeMap::<String, FunctionNode>::new();
     for document in documents {
         for function in document.functions {
-            let mut dependencies = function.dependencies.clone();
+            // `dependencies` is a lossless structural inventory, so it also
+            // contains the implementation target of an opaque semantic call.
+            // A review scope is an analysis closure, not a raw relocation
+            // closure: once the exact C/runtime contract has been selected,
+            // the implementation body must not leak back into the scope and
+            // manufacture blockers for memcpy/memset/compiler-builtins.
+            let mut dependencies =
+                filtered_analysis_dependencies(&function.dependencies, &function.calls);
             dependencies.extend(function.calls.iter().filter_map(|call| {
                 effective_call_target(call, &project_definitions).map(ToOwned::to_owned)
             }));
@@ -826,6 +833,22 @@ fn linked_call_target<'a>(
     }
 }
 
+fn filtered_analysis_dependencies(
+    dependencies: &[String],
+    calls: &[crate::artifacts::StoredReviewCall],
+) -> Vec<String> {
+    let opaque_boundary_targets = calls
+        .iter()
+        .filter(|call| call.kind == "semantic-boundary")
+        .map(|call| call.target.as_str())
+        .collect::<BTreeSet<_>>();
+    dependencies
+        .iter()
+        .filter(|dependency| !opaque_boundary_targets.contains(dependency.as_str()))
+        .cloned()
+        .collect()
+}
+
 fn call_is_unresolved(
     call: &crate::artifacts::StoredReviewCall,
     definitions: &BTreeMap<String, Vec<String>>,
@@ -1058,6 +1081,28 @@ mod tests {
         assert_eq!(
             linked_call_target("internal", "consumer::child", None, &BTreeMap::new(),),
             Some("consumer::child")
+        );
+    }
+
+    #[test]
+    fn opaque_semantic_boundary_body_does_not_enter_review_scope_dependencies() {
+        let calls = [crate::artifacts::StoredReviewCall {
+            kind: "semantic-boundary".to_owned(),
+            target: "vendor::memcpy".to_owned(),
+            site: Some(0x1000),
+            project_symbol: None,
+            semantic_operation: Some("memory.copy".to_owned()),
+        }];
+
+        assert_eq!(
+            filtered_analysis_dependencies(
+                &[
+                    "vendor::ordinary_helper".to_owned(),
+                    "vendor::memcpy".to_owned(),
+                ],
+                &calls,
+            ),
+            ["vendor::ordinary_helper"]
         );
     }
 

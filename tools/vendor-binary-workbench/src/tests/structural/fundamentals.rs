@@ -821,6 +821,56 @@ fn projected_relaxed_unknown_pointer_cell_preserves_pointee_provenance() {
 }
 
 #[test]
+fn projected_relaxed_load_does_not_require_the_deleted_hi20_to_survive_projection() {
+    let symbol = artifact::ArtifactSymbolDefinition {
+        member: None,
+        name: "linked_pointer_read".to_owned(),
+        address: 0x1000,
+        bytes: vec![
+            0x83, 0x27, 0x00, 0x00, // lw a5, 0(zero), relaxed state pointer cell
+            0x03, 0xa5, 0x47, 0x00, // lw a0, 4(a5)
+            0x67, 0x80, 0x00, 0x00, // ret
+        ],
+        addresses_resolved: true,
+        memory_regions: Default::default(),
+        relocations: Vec::new(),
+    };
+    let mut context = StructuralPointerContext::default();
+    context.projected_relocations.insert(
+        StructuralCallSite::new(&symbol, 0x1000),
+        vec![StructuralProjectedRelocation {
+            origin_member: Some("pp.o".to_owned()),
+            origin_symbol: "linked_pointer_read".to_owned(),
+            // The linker removed the origin HI20 instruction.  Only the
+            // relocated load has a corresponding linked instruction.
+            origin_offsets: vec![0x28],
+            kind: artifact::RelocationKind::Lo12I,
+            symbol: "g_intr_lock_mux".to_owned(),
+            addend: 0,
+            correspondence: "linker-relaxation",
+        }],
+    );
+
+    let trace = trace_binary_symbol(&symbol, &map(), &BTreeMap::new(), &context, None).unwrap();
+
+    assert!(trace.is_reference_eligible(), "{trace:#?}");
+    assert!(matches!(
+        trace.reference_events.as_slice(),
+        [
+            DraftReferenceEvent::Memory {
+                access: MemoryAccess::Read,
+                address: SymbolicValue::SymbolAddress { symbol, .. },
+                ..
+            },
+            DraftReferenceEvent::Memory {
+                access: MemoryAccess::Read,
+                ..
+            }
+        ] if symbol == "g_intr_lock_mux"
+    ));
+}
+
+#[test]
 fn relocated_global_pointer_load_preserves_pointee_memory_provenance() {
     let symbol = artifact::ArtifactSymbolDefinition {
         member: Some("global_pointer.o".to_owned()),

@@ -125,12 +125,8 @@ pub fn discover_interface_calls(
                 let left = values[usize::from(src1.0)].clone();
                 let right = values[usize::from(src2.0)].clone();
                 let value = match (left, right) {
-                    (Value::Pointer(pointer), Value::Constant(offset))
-                    | (Value::Constant(offset), Value::Pointer(pointer)) => {
-                        Value::Pointer(pointer).add_constant(offset as i32)
-                    }
-                    (Value::Constant(left), Value::Constant(right)) => {
-                        Value::Constant(left.wrapping_add(right))
+                    (value, Value::Constant(offset)) | (Value::Constant(offset), value) => {
+                        value.add_constant(offset as i32)
                     }
                     (Value::Pointer(pointer), Value::Selector(selector))
                     | (Value::Selector(selector), Value::Pointer(pointer)) => {
@@ -254,7 +250,10 @@ pub fn discover_interface_calls(
             )
             && target.loads.is_empty()
             && target.post_offset == 0
-            && matches!(target.root, InterfaceRoot::RelocatedSymbol { .. })
+            && matches!(
+                target.root,
+                InterfaceRoot::RelocatedSymbol { .. } | InterfaceRoot::FunctionArgument { .. }
+            )
         {
             let slot_offset = location.post_offset.wrapping_add(offset.as_i32());
             location.post_offset = 0;
@@ -276,9 +275,6 @@ pub fn discover_interface_calls(
         if dest == Reg::ZERO && base == Reg::RA && offset.as_i32() == 0 {
             continue;
         }
-        let Some(target) = values[usize::from(base.0)].as_pointer() else {
-            continue;
-        };
         let kind = if dest == Reg::RA {
             InterfaceCallKind::Call
         } else if dest == Reg::ZERO {
@@ -286,18 +282,20 @@ pub fn discover_interface_calls(
         } else {
             InterfaceCallKind::LinkedJump(dest.0)
         };
-        calls.insert(InterfaceCallCandidate {
-            member: symbol.member.clone(),
-            function: symbol.name.clone(),
-            function_address: symbol.address as u32,
-            site: decoded.address as u32,
-            kind,
-            target,
-            jalr_offset: offset.as_i32(),
-            arguments: (0..RV32_REGISTER_ARGUMENT_COUNT)
-                .map(|argument| values[10 + argument].as_argument())
-                .collect(),
-        });
+        for target in values[usize::from(base.0)].as_pointers() {
+            calls.insert(InterfaceCallCandidate {
+                member: symbol.member.clone(),
+                function: symbol.name.clone(),
+                function_address: symbol.address as u32,
+                site: decoded.address as u32,
+                kind,
+                target,
+                jalr_offset: offset.as_i32(),
+                arguments: (0..RV32_REGISTER_ARGUMENT_COUNT)
+                    .map(|argument| values[10 + argument].as_argument())
+                    .collect(),
+            });
+        }
     }
 
     Ok(InterfaceDiscovery {

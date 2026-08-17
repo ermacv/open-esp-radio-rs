@@ -37,6 +37,13 @@ fn no_direct_external_semantic(_symbol: &str) -> Option<&'static DirectSemanticF
     None
 }
 
+fn no_direct_external_intrinsic(
+    _symbol: &str,
+    _arguments: &crate::Rv32CallArguments,
+) -> Option<crate::Rv32IntrinsicResult> {
+    None
+}
+
 fn no_reference_intrinsic(
     _symbol: &artifact::ArtifactSymbolDefinition,
     _svd: &MmioMap,
@@ -60,6 +67,7 @@ static SUMMARIES: RiscvSummaryHooks = RiscvSummaryHooks {
     secondary_return_target: no_secondary_return_target,
     direct_semantic: no_direct_semantic,
     direct_external_semantic: no_direct_external_semantic,
+    direct_external_intrinsic: no_direct_external_intrinsic,
     reference_intrinsic: no_reference_intrinsic,
     standard_memory_function: no_standard_memory_function,
     wide_signed_divide: no_wide_signed_divide,

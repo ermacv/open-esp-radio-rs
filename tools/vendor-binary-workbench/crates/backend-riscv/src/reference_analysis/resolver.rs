@@ -55,6 +55,14 @@ fn insert_preferred_symbol(
     }
 }
 
+fn unique_exported_address(
+    addresses_by_name: &BTreeMap<String, BTreeSet<u32>>,
+    name: &str,
+) -> Option<u32> {
+    let addresses = addresses_by_name.get(name)?;
+    (addresses.len() == 1).then(|| *addresses.first().expect("one exported address"))
+}
+
 impl ReferenceResolver {
     pub fn register_projected_direct_semantic(
         &mut self,
@@ -103,32 +111,44 @@ impl ReferenceResolver {
         symbol: &str,
         addend: i64,
     ) {
+        let site = StructuralCallSite::new(owner, runtime_address);
+        // Resolver construction may already have joined this exact unresolved
+        // relocation name to one exported companion definition.  Origin
+        // projection refines provenance; it must not erase that proven target.
+        // A different projected name is deliberately not preserved because
+        // folded/aliased linked stubs are precisely why origin identity wins.
+        let preserved_target = (addend == 0)
+            .then(|| self.relocated_calls.get(&site))
+            .flatten()
+            .and_then(|(existing_name, target)| {
+                (existing_name == symbol).then_some(*target).flatten()
+            });
         let matching_addresses = self
             .symbols
             .iter()
             .filter(|candidate| candidate.addresses_resolved && candidate.name == symbol)
             .map(|candidate| candidate.address as u32)
             .collect::<BTreeSet<_>>();
-        let target = if addend == 0 && matching_addresses.len() == 1 {
-            let address = *matching_addresses
-                .first()
-                .expect("one matching linked call target");
-            let aliases = self
-                .symbols
-                .iter()
-                .filter(|candidate| {
-                    candidate.addresses_resolved && candidate.address as u32 == address
-                })
-                .map(|candidate| candidate.name.as_str())
-                .collect::<BTreeSet<_>>();
-            (aliases.len() == 1).then_some(address)
-        } else {
-            None
-        };
-        self.relocated_calls.insert(
-            StructuralCallSite::new(owner, runtime_address),
-            (symbol.to_owned(), target),
-        );
+        let target = preserved_target.or_else(|| {
+            if addend == 0 && matching_addresses.len() == 1 {
+                let address = *matching_addresses
+                    .first()
+                    .expect("one matching linked call target");
+                let aliases = self
+                    .symbols
+                    .iter()
+                    .filter(|candidate| {
+                        candidate.addresses_resolved && candidate.address as u32 == address
+                    })
+                    .map(|candidate| candidate.name.as_str())
+                    .collect::<BTreeSet<_>>();
+                (aliases.len() == 1).then_some(address)
+            } else {
+                None
+            }
+        });
+        self.relocated_calls
+            .insert(site, (symbol.to_owned(), target));
     }
     pub fn load(
         artifact: &Path,
@@ -210,6 +230,16 @@ impl ReferenceResolver {
             .iter()
             .map(symbol_key)
             .collect::<BTreeSet<_>>();
+        let mut exported_addresses_by_name = BTreeMap::<String, BTreeSet<u32>>::new();
+        for symbol in exported_symbols
+            .iter()
+            .filter(|symbol| symbol.addresses_resolved)
+        {
+            exported_addresses_by_name
+                .entry(symbol.name.clone())
+                .or_default()
+                .insert(symbol.address as u32);
+        }
         let mut address_preferred_symbol_keys = exported_symbol_keys.clone();
         let mut symbols = if selection == artifact::CodeSymbolSelection::All {
             artifact::load_code_symbols(artifact, "", selection)?
@@ -282,6 +312,15 @@ impl ReferenceResolver {
                 "",
                 artifact::CodeSymbolSelection::Exported,
             )?;
+            for symbol in companion_exported_symbols
+                .iter()
+                .filter(|symbol| symbol.addresses_resolved)
+            {
+                exported_addresses_by_name
+                    .entry(symbol.name.clone())
+                    .or_default()
+                    .insert(symbol.address as u32);
+            }
             address_preferred_symbol_keys.extend(companion_exported_symbols.iter().map(symbol_key));
             let companion_symbols = if selection == artifact::CodeSymbolSelection::All {
                 artifact::load_code_symbols(companion, "", selection)?
@@ -420,7 +459,7 @@ impl ReferenceResolver {
         }
         let mut relocated_calls = StructuralRelocatedCalls::new();
         if let Some(image) = image.as_ref() {
-            for (address, call) in image.relocated_calls() {
+            for (address, (name, target)) in image.relocated_calls() {
                 let Some(owner) = symbols_by_address.values().find(|symbol| {
                     symbol.addresses_resolved
                         && address >= symbol.address as u32
@@ -428,7 +467,14 @@ impl ReferenceResolver {
                 }) else {
                     continue;
                 };
-                relocated_calls.insert(StructuralCallSite::new(owner, address), call);
+                // A deliberately partial linked oracle may leave a call
+                // undefined while a supplied companion image owns the exact
+                // exported implementation. Resolve only a unique exact-name
+                // address; aliases at one address are harmless, competing
+                // definitions remain explicitly unresolved.
+                let target =
+                    target.or_else(|| unique_exported_address(&exported_addresses_by_name, &name));
+                relocated_calls.insert(StructuralCallSite::new(owner, address), (name, target));
             }
         }
 
@@ -608,6 +654,26 @@ impl ReferenceResolver {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::RiscvSummaryHooks;
+
+    #[test]
+    fn unresolved_call_uses_only_a_unique_exact_exported_companion_address() {
+        let unique = BTreeMap::from([(
+            "read_hw_noisefloor".to_owned(),
+            BTreeSet::from([0x2f83_f2fc]),
+        )]);
+        assert_eq!(
+            unique_exported_address(&unique, "read_hw_noisefloor"),
+            Some(0x2f83_f2fc)
+        );
+
+        let ambiguous = BTreeMap::from([(
+            "memcpy".to_owned(),
+            BTreeSet::from([0x1000_1000, 0x2f80_2000]),
+        )]);
+        assert_eq!(unique_exported_address(&ambiguous, "memcpy"), None);
+        assert_eq!(unique_exported_address(&unique, "missing"), None);
+    }
 
     fn resolver_with_data_symbols(
         mut data_symbols: Vec<artifact::ArtifactDataSymbolDefinition>,
@@ -676,6 +742,102 @@ mod tests {
                 .relocated_calls
                 .get(&StructuralCallSite::new(&owner, 0x1000)),
             Some(&("__ctzsi2".to_owned(), None))
+        );
+    }
+
+    #[test]
+    fn projected_origin_preserves_an_exact_same_name_companion_target() {
+        let owner = artifact::ArtifactSymbolDefinition {
+            member: None,
+            name: "read_hw_noisefloor".to_owned(),
+            address: 0x1000,
+            bytes: vec![0; 8],
+            addresses_resolved: true,
+            memory_regions: Default::default(),
+            relocations: Vec::new(),
+        };
+        let mut resolver = resolver_with_data_symbols(Vec::new());
+        resolver.relocated_calls.insert(
+            StructuralCallSite::new(&owner, 0x1000),
+            ("phy_read_hw_noisefloor".to_owned(), Some(0x2f82_7d72)),
+        );
+
+        resolver.register_projected_call_relocation(&owner, 0x1000, "phy_read_hw_noisefloor", 0);
+
+        assert_eq!(
+            resolver
+                .relocated_calls
+                .get(&StructuralCallSite::new(&owner, 0x1000)),
+            Some(&("phy_read_hw_noisefloor".to_owned(), Some(0x2f82_7d72)))
+        );
+    }
+
+    #[test]
+    fn projected_folded_intrinsic_uses_exact_origin_name_and_value_semantics() {
+        let owner = artifact::ArtifactSymbolDefinition {
+            member: None,
+            name: "lmacProcessTxComplete".to_owned(),
+            address: 0x1000,
+            bytes: vec![
+                0xef, 0x00, 0x00, 0x00, // jal ra, 0 (origin relocation supplies identity)
+                0x67, 0x80, 0x00, 0x00, // ret
+            ],
+            addresses_resolved: true,
+            memory_regions: Default::default(),
+            relocations: Vec::new(),
+        };
+        let hooks = Box::leak(Box::new(RiscvSummaryHooks {
+            secondary_return_target: |_| false,
+            direct_semantic: |_| None,
+            direct_external_semantic: |_| None,
+            direct_external_intrinsic: |name, arguments| {
+                (name == "__ctzsi2").then(|| {
+                    (
+                        SymbolicValue::expression(
+                            crate::ExpressionOperation::CountTrailingZeros,
+                            arguments[0].clone(),
+                            SymbolicValue::Constant(0),
+                        ),
+                        None,
+                    )
+                })
+            },
+            reference_intrinsic: |_, _, _| None,
+            standard_memory_function: |_| None,
+            wide_signed_divide: |_, _| None,
+        }));
+        let mut context = StructuralPointerContext::default();
+        context.summary_hooks = Some(hooks);
+        let relocated_calls = BTreeMap::from([(
+            StructuralCallSite::new(&owner, 0x1000),
+            ("__ctzsi2".to_owned(), None),
+        )]);
+        let mut visiting = BTreeSet::from([0x1000]);
+
+        let trace = resolve_reference_trace(
+            &owner,
+            &BTreeMap::new(),
+            &relocated_calls,
+            &context,
+            None,
+            &MmioMap::new(crate::RegisterCatalog::default(), Vec::new()).unwrap(),
+            &mut visiting,
+        )
+        .unwrap();
+
+        assert_eq!(
+            trace.return_value,
+            SymbolicValue::expression(
+                crate::ExpressionOperation::CountTrailingZeros,
+                SymbolicValue::input(0),
+                SymbolicValue::Constant(0),
+            )
+        );
+        assert!(
+            trace
+                .reference_blockers
+                .iter()
+                .all(|blocker| !blocker.contains("unresolved-call-relocation"))
         );
     }
 

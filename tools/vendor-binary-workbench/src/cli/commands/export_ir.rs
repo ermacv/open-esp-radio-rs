@@ -48,7 +48,7 @@ pub(super) fn run(
             artifact.reviewed_code = catalog.reviewed_ranges(&artifact.source, &artifact.path)?;
         }
     }
-    let inventories = std::collections::BTreeMap::new();
+    let inventories = Vec::new();
     let (entry_contract, report) = analyze(crate::linked_ir_export::LinkedIrAnalysisRequest {
         artifacts: &artifacts,
         inventories: &inventories,

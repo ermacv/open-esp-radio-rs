@@ -254,17 +254,26 @@ fn add_projected_origin_calls(
     Ok(())
 }
 
+struct IndexedDispatchRecovery {
+    dispatches: Vec<LinkedIndexedDispatch>,
+    calls: Vec<LinkedCall>,
+    sites: BTreeSet<u32>,
+}
+
 fn indexed_dispatch_calls(
     owner: &artifact::ArtifactSymbolDefinition,
     resolver: &ReferenceResolver,
     identities: &IrIdentityCatalog,
-) -> crate::Result<Vec<LinkedCall>> {
+) -> crate::Result<IndexedDispatchRecovery> {
     let dispatches =
         artifact::recover_indexed_dispatches(owner, &resolver.data_objects, &resolver.symbols)?;
+    let mut recovered = Vec::new();
     let mut calls = Vec::new();
+    let mut sites = BTreeSet::new();
     for dispatch in dispatches {
-        for entry in dispatch.entries {
-            for callee in entry.callees {
+        sites.insert(dispatch.site);
+        for entry in &dispatch.entries {
+            for callee in &entry.callees {
                 let definition = callee
                     .address
                     .and_then(|address| resolver.symbols_by_address.get(&address))
@@ -312,8 +321,123 @@ fn indexed_dispatch_calls(
                 });
             }
         }
+        recovered.push(LinkedIndexedDispatch {
+            table: dispatch.table,
+            table_address: dispatch.table_address,
+            site: dispatch.site,
+            stride: dispatch.stride,
+            entries: dispatch
+                .entries
+                .into_iter()
+                .map(|entry| LinkedIndexedDispatchEntry {
+                    selector: entry.selector,
+                    case_target: entry.case_target,
+                    case_address: entry.case_address,
+                })
+                .collect(),
+        });
     }
-    Ok(calls)
+    Ok(IndexedDispatchRecovery {
+        dispatches: recovered,
+        calls,
+        sites,
+    })
+}
+
+fn annotate_indexed_dispatch_pseudo(
+    mut pseudo: String,
+    dispatches: &[LinkedIndexedDispatch],
+) -> String {
+    if dispatches.is_empty() {
+        return pseudo;
+    }
+    let mut notes = String::new();
+    for dispatch in dispatches {
+        notes.push_str(&format!(
+            "// INDEXED-DISPATCH {:#010x}: table={} address={} stride={} cases=",
+            dispatch.site,
+            dispatch.table,
+            dispatch.table_address.map_or_else(
+                || "unresolved".to_owned(),
+                |address| format!("{address:#010x}")
+            ),
+            dispatch.stride,
+        ));
+        for (index, entry) in dispatch.entries.iter().enumerate() {
+            if index != 0 {
+                notes.push_str(", ");
+            }
+            notes.push_str(&format!(
+                "{}=>{}@{:#010x}",
+                entry.selector, entry.case_target, entry.case_address
+            ));
+        }
+        notes.push('\n');
+    }
+    let insertion = pseudo.find('\n').map_or(0, |index| index + 1);
+    pseudo.insert_str(insertion, &notes);
+    pseudo
+}
+
+fn remove_recovered_indexed_dispatch_diagnostics(
+    trace: &mut FunctionAnalysis,
+    recovered_sites: &BTreeSet<u32>,
+) {
+    let is_recovered_site = |message: &str| {
+        compact_diagnostic(message)
+            .site
+            .is_some_and(|site| recovered_sites.contains(&site))
+    };
+    let is_recovered_dispatch_diagnostic = |message: &str, prefixes: &[&str]| {
+        prefixes.iter().any(|prefix| message.starts_with(prefix)) && is_recovered_site(message)
+    };
+    trace
+        .blockers
+        .retain(|message| !is_recovered_dispatch_diagnostic(message, &["call/jump instruction"]));
+    trace.reference_blockers.retain(|message| {
+        let direct = is_recovered_dispatch_diagnostic(
+            message,
+            &[
+                "unresolved-indirect-call",
+                "unresolved-indirect-control-flow",
+            ],
+        );
+        let aggregate = message.starts_with("symbolic-cfg: symbolic path has unsupported effects:")
+            && {
+                let diagnostic = compact_diagnostic(message);
+                diagnostic.fragments.iter().all(|fragment| {
+                    let fragment = fragment.message.as_str();
+                    if fragment.starts_with("symbolic-cfg: symbolic path has unsupported effects:")
+                        || fragment.starts_with("call/jump instruction")
+                        || fragment.starts_with("unresolved-indirect-control-flow")
+                    {
+                        return is_recovered_site(fragment);
+                    }
+                    if fragment.starts_with("unmodeled-memory-load") {
+                        return compact_diagnostic(fragment).site.is_some_and(|load_site| {
+                            recovered_sites.iter().any(|dispatch_site| {
+                                load_site < *dispatch_site && dispatch_site - load_site <= 4
+                            })
+                        });
+                    }
+                    fragment.starts_with("base ") || fragment.starts_with("offset=")
+                })
+            };
+        !(direct || aggregate)
+    });
+}
+
+fn remove_recovered_indexed_dispatch_call_graph_blockers(
+    blockers: &mut BTreeSet<String>,
+    recovered_sites: &BTreeSet<u32>,
+) {
+    blockers.retain(|message| {
+        let diagnostic = compact_diagnostic(message);
+        !(matches!(diagnostic.kind, "indirect-control-flow" | "call-boundary")
+            && diagnostic
+                .site
+                .is_some_and(|site| recovered_sites.contains(&site)))
+    });
 }
 
 fn annotate_direct_semantic_calls(
@@ -326,8 +450,10 @@ fn annotate_direct_semantic_calls(
         return;
     };
     for call in calls.iter_mut().filter(|call| {
-        matches!(call.kind, "internal" | "structural-relocation")
-            && call.semantic_operation.is_none()
+        matches!(
+            call.kind,
+            "internal" | "indexed-dispatch" | "structural-relocation"
+        ) && call.semantic_operation.is_none()
     }) {
         let (function, contract_source) =
             if let Some(symbol) = identities.selectable_symbol(&call.target) {
@@ -346,7 +472,7 @@ fn annotate_direct_semantic_calls(
                 let Some(site) = call.site else {
                     continue;
                 };
-                let Some((symbol, Some(_))) = resolver
+                let Some((symbol, _)) = resolver
                     .relocated_calls
                     .get(&crate::StructuralCallSite::new(owner, site))
                 else {
@@ -377,7 +503,10 @@ fn annotate_direct_semantic_calls(
             event_dispatch: linked_event_dispatch_contract(function.semantic),
         });
         if function.body_policy == crate::SemanticFunctionBodyPolicy::OpaqueBoundary
-            && matches!(call.kind, "internal" | "structural-relocation")
+            && matches!(
+                call.kind,
+                "internal" | "indexed-dispatch" | "structural-relocation"
+            )
         {
             call.kind = "semantic-boundary";
         }
@@ -588,8 +717,14 @@ fn build_linked_functions_for_roots(
             mut blockers,
             site_effects,
         } = explore_direct_calls(symbol, resolver, &identities, svd);
+        let mut indexed_dispatches = Vec::new();
+        let mut recovered_indexed_dispatch_sites = BTreeSet::new();
         match indexed_dispatch_calls(symbol, resolver, &identities) {
-            Ok(calls) => direct_calls.extend(calls),
+            Ok(recovery) => {
+                indexed_dispatches = recovery.dispatches;
+                direct_calls.extend(recovery.calls);
+                recovered_indexed_dispatch_sites = recovery.sites;
+            }
             Err(error) => {
                 blockers.insert(format!(
                     "indexed-dispatch recovery failed for {function_identity}: {error}"
@@ -605,6 +740,10 @@ fn build_linked_functions_for_roots(
                 "archive-origin call projection failed for {function_identity}: {error}"
             ));
         }
+        remove_recovered_indexed_dispatch_call_graph_blockers(
+            &mut blockers,
+            &recovered_indexed_dispatch_sites,
+        );
         let direct_mmio_predicates = direct_mmio_predicates.into_iter().collect::<Vec<_>>();
         let mut direct_calls = compact_calls(direct_calls);
         annotate_direct_semantic_calls(&mut direct_calls, symbol, resolver, &identities);
@@ -634,7 +773,11 @@ fn build_linked_functions_for_roots(
                 max_events: MAX_CALL_GRAPH_EVENTS_PER_TRACE,
             },
         ) {
-            Ok(trace) => {
+            Ok(mut trace) => {
+                remove_recovered_indexed_dispatch_diagnostics(
+                    &mut trace,
+                    &recovered_indexed_dispatch_sites,
+                );
                 let mut memory_accesses = memory_object_accesses_for_trace(&trace);
                 attribute_data_symbols(&mut memory_accesses, resolver);
                 let mut memory_fields = memory_object_fields_for_accesses(&memory_accesses);
@@ -702,6 +845,7 @@ fn build_linked_functions_for_roots(
                         )
                     })
                     .unwrap_or(expanded_pseudo);
+                let pseudo = annotate_indexed_dispatch_pseudo(pseudo, &indexed_dispatches);
                 functions.push(LinkedIrFunction {
                     source: source.to_owned(),
                     identity: function_identity.clone(),
@@ -731,6 +875,7 @@ fn build_linked_functions_for_roots(
                         .collect(),
                     projected_relocations: projected_relocations(symbol, resolver),
                     local_value_flow: local_value_flow(&trace),
+                    indexed_dispatches: indexed_dispatches.clone(),
                     calls,
                     direct_mmio_predicates,
                     mmio_accesses,
@@ -782,6 +927,7 @@ fn build_linked_functions_for_roots(
                     dependencies: Vec::new(),
                     projected_relocations: projected_relocations(symbol, resolver),
                     local_value_flow: Vec::new(),
+                    indexed_dispatches,
                     calls,
                     direct_mmio_predicates,
                     mmio_accesses: Vec::new(),

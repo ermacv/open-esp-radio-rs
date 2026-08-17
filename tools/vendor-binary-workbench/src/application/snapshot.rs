@@ -300,17 +300,18 @@ fn function_investigation(
     let Some(artifact) = artifact else {
         return Ok(None);
     };
-    let inventory = run_spec
+    let inventories = run_spec
         .inputs()
         .iter()
-        .find_map(|input| match &input.role {
+        .filter_map(|input| match &input.role {
             crate::run_spec::InputRole::SourceInventory(source)
                 if source.as_str() == fact.source =>
             {
-                Some(input.path.as_path())
+                Some(input.path.clone())
             }
             _ => None,
-        });
+        })
+        .collect::<Vec<_>>();
     crate::function_investigation::investigate(
         crate::function_investigation::FunctionInvestigationRequest {
             source: &fact.source,
@@ -320,7 +321,7 @@ fn function_investigation(
                 .rsplit_once("@0x")
                 .and_then(|(_, address)| u64::from_str_radix(address, 16).ok()),
             artifact,
-            inventory,
+            inventories: &inventories,
             member: fact.member.as_deref(),
             origin_member: None,
             graph_depth: 1,

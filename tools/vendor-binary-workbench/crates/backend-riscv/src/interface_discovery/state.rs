@@ -6,6 +6,8 @@ use rv_asm::{Inst, Reg};
 
 use super::*;
 
+const MAX_POINTER_ALTERNATIVES: usize = 8;
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) enum Value {
     Unknown,
@@ -13,6 +15,7 @@ pub(super) enum Value {
     Argument { index: u8, offset: i32 },
     Selector(InterfaceSlotSelector),
     Pointer(InterfacePointer),
+    PointerAlternatives(Vec<InterfacePointer>),
     IndexedPointer(InterfacePointer, InterfaceSlotSelector),
     GotAddress(InterfacePointer),
 }
@@ -36,6 +39,15 @@ impl Value {
                 pointer.post_offset = pointer.post_offset.wrapping_add(offset);
                 Self::Pointer(pointer)
             }
+            Self::PointerAlternatives(pointers) => pointer_alternatives(
+                pointers
+                    .into_iter()
+                    .map(|mut pointer| {
+                        pointer.post_offset = pointer.post_offset.wrapping_add(offset);
+                        pointer
+                    })
+                    .collect(),
+            ),
             Self::IndexedPointer(mut pointer, selector) => {
                 pointer.post_offset = pointer.post_offset.wrapping_add(offset);
                 Self::IndexedPointer(pointer, selector)
@@ -58,9 +70,10 @@ impl Value {
                 post_offset: *offset,
             }),
             Self::Pointer(pointer) => InterfaceArgumentValue::Pointer(pointer.clone()),
-            Self::Selector(_) | Self::IndexedPointer(_, _) | Self::GotAddress(_) => {
-                InterfaceArgumentValue::Unknown
-            }
+            Self::Selector(_)
+            | Self::PointerAlternatives(_)
+            | Self::IndexedPointer(_, _)
+            | Self::GotAddress(_) => InterfaceArgumentValue::Unknown,
         }
     }
 
@@ -73,6 +86,19 @@ impl Value {
                 post_offset: *offset,
             }),
             _ => None,
+        }
+    }
+
+    pub(super) fn as_pointers(&self) -> Vec<InterfacePointer> {
+        match self {
+            Self::Pointer(pointer) => vec![pointer.clone()],
+            Self::PointerAlternatives(pointers) => pointers.clone(),
+            Self::Argument { index, offset } => vec![InterfacePointer {
+                root: InterfaceRoot::FunctionArgument { index: *index },
+                loads: Vec::new(),
+                post_offset: *offset,
+            }],
+            _ => Vec::new(),
         }
     }
 
@@ -92,6 +118,17 @@ impl Value {
             Self::Constant(value) => Self::Constant(value.wrapping_shl(amount & 31)),
             _ => Self::Unknown,
         }
+    }
+}
+
+fn pointer_alternatives(mut pointers: Vec<InterfacePointer>) -> Value {
+    pointers.sort();
+    pointers.dedup();
+    match pointers.len() {
+        0 => Value::Unknown,
+        1 => Value::Pointer(pointers.pop().expect("one pointer alternative")),
+        2..=MAX_POINTER_ALTERNATIVES => Value::PointerAlternatives(pointers),
+        _ => Value::Unknown,
     }
 }
 
@@ -188,6 +225,19 @@ pub(super) fn low_relocation_value<'a>(
 }
 
 pub(super) fn append_load(value: Value, site: u32, offset: i32, width: u8) -> Value {
+    if let Value::PointerAlternatives(pointers) = value {
+        return pointer_alternatives(
+            pointers
+                .into_iter()
+                .filter_map(|pointer| {
+                    match append_load(Value::Pointer(pointer), site, offset, width) {
+                        Value::Pointer(pointer) => Some(pointer),
+                        _ => None,
+                    }
+                })
+                .collect(),
+        );
+    }
     let (mut pointer, selector) = match value {
         Value::Pointer(pointer) => (pointer, None),
         Value::IndexedPointer(pointer, selector) => (pointer, Some(selector)),
@@ -207,7 +257,10 @@ pub(super) fn append_load(value: Value, site: u32, offset: i32, width: u8) -> Va
             },
             None,
         ),
-        Value::Selector(_) | Value::GotAddress(_) | Value::Unknown => return Value::Unknown,
+        Value::Selector(_)
+        | Value::PointerAlternatives(_)
+        | Value::GotAddress(_)
+        | Value::Unknown => return Value::Unknown,
     };
     pointer.loads.push(InterfaceLoad {
         site,
@@ -296,7 +349,18 @@ fn merge_state(target: &mut RegisterState, incoming: &RegisterState) -> bool {
     let mut changed = false;
     for (target, incoming) in target.iter_mut().zip(incoming) {
         if target != incoming && *target != Value::Unknown {
-            *target = Value::Unknown;
+            let target_pointers = target.as_pointers();
+            let incoming_pointers = incoming.as_pointers();
+            *target = if target_pointers.is_empty() || incoming_pointers.is_empty() {
+                Value::Unknown
+            } else {
+                pointer_alternatives(
+                    target_pointers
+                        .into_iter()
+                        .chain(incoming_pointers)
+                        .collect(),
+                )
+            };
             changed = true;
         }
     }

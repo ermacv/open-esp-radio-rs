@@ -929,6 +929,26 @@ pub(crate) struct LinkedFunctionCompleteness {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub(crate) struct LinkedIndexedDispatchEntry {
+    pub(crate) selector: u32,
+    pub(crate) case_target: String,
+    pub(crate) case_address: u32,
+}
+
+/// A bounded selector table recovered from code and initialized data.
+///
+/// This is a structural fact only. It deliberately does not assign protocol
+/// meaning to the selector or to any case target.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub(crate) struct LinkedIndexedDispatch {
+    pub(crate) table: String,
+    pub(crate) table_address: Option<u32>,
+    pub(crate) site: u32,
+    pub(crate) stride: u8,
+    pub(crate) entries: Vec<LinkedIndexedDispatchEntry>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub(crate) struct LinkedIrFunction {
     pub(crate) source: String,
     pub(crate) identity: String,
@@ -948,6 +968,7 @@ pub(crate) struct LinkedIrFunction {
     pub(crate) dependencies: Vec<String>,
     pub(crate) projected_relocations: Vec<LinkedProjectedRelocation>,
     pub(crate) local_value_flow: Vec<LinkedLocalValueFlow>,
+    pub(crate) indexed_dispatches: Vec<LinkedIndexedDispatch>,
     pub(crate) calls: Vec<LinkedCall>,
     pub(crate) direct_mmio_predicates: Vec<LinkedDirectMmioPredicate>,
     pub(crate) mmio_accesses: Vec<LinkedMmioAccess>,

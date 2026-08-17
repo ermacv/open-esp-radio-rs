@@ -200,6 +200,7 @@ pub(crate) struct StoredFunction {
     dependencies: Vec<String>,
     pub(crate) projected_relocations: Vec<StoredProjectedRelocation>,
     pub(crate) local_value_flow: Vec<StoredLocalValueFlow>,
+    pub(crate) indexed_dispatches: Vec<StoredIndexedDispatch>,
     pub(crate) calls: Vec<StoredCall>,
     direct_mmio_predicates: Vec<StoredDirectMmioPredicate>,
     pub(crate) mmio_accesses: Vec<StoredMmioAccess>,
@@ -216,6 +217,24 @@ pub(crate) struct StoredFunction {
     reference_diagnostics: Vec<StoredDiagnostic>,
     pub(crate) decode_blockers: Vec<StoredDecodeBlocker>,
     pub(crate) pseudo: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct StoredIndexedDispatch {
+    pub(crate) table: String,
+    pub(crate) table_address: Option<u32>,
+    pub(crate) site: u32,
+    pub(crate) stride: u8,
+    pub(crate) entries: Vec<StoredIndexedDispatchEntry>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct StoredIndexedDispatchEntry {
+    pub(crate) selector: u32,
+    pub(crate) case_target: String,
+    pub(crate) case_address: u32,
 }
 
 #[derive(Debug, Deserialize, Serialize)]

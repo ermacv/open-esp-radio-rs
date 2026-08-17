@@ -184,6 +184,24 @@ effects = ["memory.allocate"]
 replacement = "rust.owned-allocation-policy"
 
 [[operations]]
+id = "wifi.rx.deliver-to-application"
+domain = "wifi"
+summary = "Deliver one received Wi-Fi buffer to the application callback and return its status"
+argument-roles = ["buffer", "length", "buffer-owner"]
+return-role = "status"
+effects = ["network.receive-delivery"]
+replacement = "wifi.rx.application-callback"
+
+[[operations]]
+id = "diagnostic.wifi-gpio-signal"
+domain = "diagnostic"
+summary = "Publish one Wi-Fi coexistence debug event through the configured GPIO callback"
+argument-roles = ["event", "signal-edge"]
+return-role = "none"
+effects = ["diagnostic.gpio-signal"]
+replacement = "diagnostic.typed-gpio-trace"
+
+[[operations]]
 id = "rtos.task.yield-from-isr"
 domain = "rtos"
 summary = "Request a scheduler yield after interrupt-context work"
@@ -605,3 +623,21 @@ argument-roles = ["link", "write-value", "wait-duration"]
 return-role = "none"
 effects = ["memory.output-write", "regdma.program"]
 replacement = "regdma.typed-link-builder"
+
+[[operations]]
+id = "memory.reference.retain"
+domain = "memory"
+summary = "Retain one externally owned network buffer"
+argument-roles = ["buffer"]
+return-role = "none"
+effects = ["memory.reference-retain"]
+replacement = "network-buffer.retain"
+
+[[operations]]
+id = "memory.reference.release"
+domain = "memory"
+summary = "Release one externally owned network buffer reference"
+argument-roles = ["buffer"]
+return-role = "none"
+effects = ["memory.reference-release"]
+replacement = "network-buffer.release"

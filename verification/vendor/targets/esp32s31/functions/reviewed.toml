@@ -23,6 +23,11 @@ source = "libnet80211"
 artifact-sha256 = "f850d4044a89888856a8d2ee50835e37c61f4dd92045ba4ea4dfa1b2cd7d77e8"
 
 [[inputs]]
+profile = "wifi-ap-data-path"
+source = "wifi-sta-ap-receive"
+artifact-sha256 = "c4d958d54cbad4b1da93b3672a0574f2f762854b2edc19490c6ebd41bb14ce0c"
+
+[[inputs]]
 profile = "wifi-sta-lifecycle"
 source = "wifi-sta-lifecycle"
 artifact-sha256 = "513f8d08ef1611e4937d17ee0938aebf68b7c9ec16c843ecf2612a48ef2096c1"

@@ -115,6 +115,8 @@ pub(super) fn apply_project_defaults(
 }
 
 pub(super) fn apply_run_spec_defaults(command: &mut Command, run_spec: &RunSpec) {
+    let use_default_function_inventories =
+        matches!(command, Command::InspectFunction(arguments) if arguments.inventory.is_empty());
     let use_default_companions = match command {
         Command::ExportIr(arguments) => arguments.companion.is_empty(),
         Command::InspectAnalyze(arguments) => arguments.companion.is_empty(),
@@ -151,9 +153,10 @@ pub(super) fn apply_run_spec_defaults(command: &mut Command, run_spec: &RunSpec)
                         args.artifact = Some(path.clone());
                     }
                     InputRole::SourceInventory(candidate)
-                        if source == Some(candidate.as_str()) && args.inventory.is_none() =>
+                        if source == Some(candidate.as_str())
+                            && use_default_function_inventories =>
                     {
-                        args.inventory = Some(path.clone());
+                        args.inventory.push(path.clone());
                     }
                     _ => {}
                 }

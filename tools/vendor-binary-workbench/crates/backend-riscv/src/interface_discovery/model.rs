@@ -101,10 +101,11 @@ pub struct InterfacePointer {
 
 /// One statically evidenced function-pointer store into a table slot.
 ///
-/// Both sides retain relocation provenance.  This record says only that the
-/// producer function can store `target` at the described location; it does
-/// not claim that this producer has executed or that the assignment is the
-/// active runtime value.
+/// Both sides retain provenance. A target may be a relocated function or a
+/// function argument supplied by a runtime registration call. This record
+/// says only that the producer can perform the store; it does not claim that
+/// the producer has executed, that an argument is executable code, or that
+/// the assignment is the active runtime value.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct InterfaceSlotAssignment {
     pub member: Option<String>,

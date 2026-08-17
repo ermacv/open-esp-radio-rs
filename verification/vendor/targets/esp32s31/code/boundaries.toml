@@ -113,7 +113,15 @@ artifact-sha256 = "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227
 
 [[inputs]]
 source = "wifi-sta-ap-receive"
-artifact-sha256 = "f4c9e33afc1446cb1fd6c010f6ab860b7d7823cebda899a6e4607ce0a67592d6"
+artifact-sha256 = "c4d958d54cbad4b1da93b3672a0574f2f762854b2edc19490c6ebd41bb14ce0c"
+
+[[inputs]]
+source = "wifi-sta-ap-receive"
+artifact-sha256 = "51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223"
+
+[[inputs]]
+source = "wifi-sta-ap-receive"
+artifact-sha256 = "f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e"
 
 [[inputs]]
 source = "wifi-sta-lifecycle"

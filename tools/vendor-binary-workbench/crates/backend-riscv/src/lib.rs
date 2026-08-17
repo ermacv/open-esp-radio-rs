@@ -61,6 +61,10 @@ pub const RV32_STACK_ARGUMENT_COUNT: usize = 8;
 pub const RV32_MODELED_ARGUMENT_COUNT: usize =
     RV32_REGISTER_ARGUMENT_COUNT + RV32_STACK_ARGUMENT_COUNT;
 pub type Rv32CallArguments = [SymbolicValue; RV32_MODELED_ARGUMENT_COUNT];
+/// Exact low word and optional high word returned by one pure RV32 runtime
+/// intrinsic. Keeping the pair explicit preserves the RV32 ABI for 64-bit
+/// compiler helpers without executing their linked support stubs.
+pub type Rv32IntrinsicResult = (SymbolicValue, Option<SymbolicValue>);
 
 pub fn encode_fence_set(set: rv_asm::FenceSet) -> u8 {
     u8::from(set.device_input) << 3

@@ -464,7 +464,7 @@ fn focused_investigation_commands_are_part_of_the_typed_cli() {
     let function = String::from_utf8(function.stdout).unwrap();
     assert!(function.contains("<SOURCE:SYMBOL>"));
     assert!(function.contains("Authoritative linked image"));
-    assert!(function.contains("Raw archive used as source inventory"));
+    assert!(function.contains("Raw archives used as source inventory"));
 
     let scope = run(&["inspect", "scope", "--help"]);
     assert!(scope.status.success());

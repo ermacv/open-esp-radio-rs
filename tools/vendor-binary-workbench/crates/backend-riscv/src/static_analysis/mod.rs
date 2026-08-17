@@ -12,9 +12,9 @@ use crate::{
     IndexedMmioRegister, LocatedObservableEvent, LocatedReferenceEvent, MemoryAccess,
     MemoryObjectLocation, MemoryObjectRoot, MmioMap, OPAQUE_POINTER_EXTERNAL_RESULT_TOKEN_FLAG,
     ObservableEvent, RV32_REGISTER_ARGUMENT_COUNT, RV32_STACK_ARGUMENT_COUNT, Result,
-    ReviewedExternalCall, Rv32CallArguments, SECONDARY_CALL_RESULT_TOKEN_FLAG,
-    StandardMemoryFunction, SymbolicValue, artifact, collect_evaluable_input_bits,
-    encode_fence_set, evaluate_for_input, indexed_mmio_domain,
+    ReviewedExternalCall, ReviewedExternalCallExecutionModel, Rv32CallArguments,
+    SECONDARY_CALL_RESULT_TOKEN_FLAG, StandardMemoryFunction, SymbolicValue, artifact,
+    collect_evaluable_input_bits, encode_fence_set, evaluate_for_input, indexed_mmio_domain,
 };
 
 mod alu;
@@ -75,6 +75,11 @@ pub struct RiscvSummaryHooks {
     pub direct_semantic:
         fn(&artifact::ArtifactSymbolDefinition) -> Option<&'static DirectSemanticFunctionSpec>,
     pub direct_external_semantic: fn(&str) -> Option<&'static DirectSemanticFunctionSpec>,
+    /// Exact pure result for a known external/compiler-runtime symbol. This
+    /// keeps folded or deliberately opaque linked stubs out of the analysis
+    /// target while preserving their standardized value semantics.
+    pub direct_external_intrinsic:
+        fn(&str, &Rv32CallArguments) -> Option<crate::Rv32IntrinsicResult>,
     pub reference_intrinsic: fn(
         &artifact::ArtifactSymbolDefinition,
         &MmioMap,

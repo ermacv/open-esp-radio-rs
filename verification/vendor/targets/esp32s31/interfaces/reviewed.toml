@@ -127,6 +127,7 @@ name = "mutex_lock"
 arguments = ["opaque-handle"]
 return = "i32"
 semantic = "rtos.mutex.lock"
+execution-model = "mutex-lock"
 
 [[anchors.slots]]
 offset = 0x058
@@ -137,6 +138,7 @@ name = "mutex_unlock"
 arguments = ["opaque-handle"]
 return = "i32"
 semantic = "rtos.mutex.unlock"
+execution-model = "mutex-unlock"
 
 [[anchors.slots]]
 offset = 0x064
@@ -268,6 +270,7 @@ name = "free"
 arguments = ["mut-ptr"]
 return = "void"
 semantic = "memory.deallocate"
+execution-model = "free"
 
 [[anchors.slots]]
 offset = 0x0b4
@@ -300,6 +303,7 @@ name = "wifi_pm_sleep_lock_acquire"
 arguments = []
 return = "void"
 semantic = "power.sleep-lock.acquire"
+execution-model = "wifi-pm-sleep-lock-acquire"
 
 [[anchors.slots]]
 offset = 0x0cc
@@ -330,6 +334,7 @@ name = "phy_enable"
 arguments = []
 return = "void"
 semantic = "radio.phy.enable"
+execution-model = "phy-enable"
 
 [[anchors.slots]]
 offset = 0x0e0
@@ -383,6 +388,7 @@ name = "wifi_clock_enable"
 arguments = []
 return = "void"
 semantic = "clock.wifi.enable"
+execution-model = "wifi-clock-enable"
 
 [[anchors.slots]]
 offset = 0x0fc
@@ -511,11 +517,12 @@ execution-model = "log-writev"
 offset = 0x158
 width = 32
 status = "reviewed"
-origin = "reviewed"
+origin = "observed"
 name = "malloc_internal"
 arguments = ["usize"]
 return = "mut-ptr"
 semantic = "memory.internal.allocate"
+execution-model = "malloc-internal"
 
 [[anchors.slots]]
 offset = 0x164
@@ -536,6 +543,7 @@ name = "wifi_malloc"
 arguments = ["usize"]
 return = "mut-ptr"
 semantic = "memory.allocate"
+execution-model = "wifi-malloc"
 
 [[anchors.slots]]
 offset = 0x174
@@ -589,6 +597,7 @@ name = "coex_wifi_request"
 arguments = ["u32", "u32", "u32"]
 return = "i32"
 semantic = "coexistence.wifi.request"
+execution-model = "coex-wifi-request"
 
 [[anchors.slots]]
 offset = 0x19c
@@ -642,6 +651,7 @@ name = "coex_schm_interval_get"
 arguments = []
 return = "u32"
 semantic = "coexistence.schedule.interval.get"
+execution-model = "coex-schedule-interval-get"
 
 [[anchors.slots]]
 offset = 0x1bc
@@ -652,6 +662,7 @@ name = "coex_schm_curr_period_get"
 arguments = []
 return = "u8"
 semantic = "coexistence.schedule.period.get"
+execution-model = "coex-schedule-current-period-get"
 
 [[anchors.slots]]
 offset = 0x1d0
@@ -682,6 +693,7 @@ name = "coex_schm_flexible_period_get"
 arguments = []
 return = "u8"
 semantic = "coexistence.schedule.flexible-period.get"
+execution-model = "coex-schedule-flexible-period-get"
 
 [[anchors.slots]]
 offset = 0x1e0
@@ -692,6 +704,7 @@ name = "coex_schm_get_phase_by_idx"
 arguments = ["i32"]
 return = "mut-ptr"
 semantic = "coexistence.schedule.phase.get"
+execution-model = "coex-schedule-phase-get"
 
 # Layout and ABI are pinned by esp-rs/esp-wifi-sys commit
 # ff57fc7a50ef56a631e81ceed36b66ff8e2a21c4,
@@ -898,7 +911,7 @@ semantic = "timer.arm-micros"
 offset = 0x44
 width = 32
 status = "reviewed"
-origin = "reviewed"
+origin = "observed"
 name = "debug_matrix_init"
 arguments = ["i32", "i32", "bool"]
 return = "i32"
@@ -950,3 +963,176 @@ origin = "observed"
 name = "hostap_input"
 arguments = ["mut-ptr", "mut-ptr", "u32", "u32"]
 return = "void"
+
+# `wifi_ap_reg_rxcb` stores the application-provided ESP-IDF `wifi_rxcb_t`
+# into this private pointer cell and `hostap_deliver_data` tail-calls it. The
+# ABI is pinned by the ESP32-S31 private Wi-Fi header: `esp_err_t (*)(void *,
+# uint16_t, void *)`. The callback target remains runtime-owned; this contract
+# names and types the boundary without inventing a concrete implementation.
+[[anchors]]
+id = "wifi-ap-rx-callback-v1"
+status = "reviewed"
+origin = "observed"
+source = "libnet80211"
+root-kind = "relocated-symbol"
+member = "ieee80211_hostap.o"
+symbol = ".LANCHOR22"
+addend = 0
+addressing = "absolute"
+container-path = []
+layout-version = "esp-idf-wifi-rxcb-v1"
+pointer-width = 32
+layout-size = 4
+slot-stride = 4
+execution-contract = "esp32s31-wifi-runtime-callbacks-v1"
+
+[[anchors.guards]]
+kind = "artifact-sha256"
+sha256 = "92550813de20ed0d51110dbd72b646e891a86a8a2f81fa53714ebf2ebf9c8f40"
+
+[[anchors.slots]]
+offset = 0
+width = 32
+status = "reviewed"
+origin = "observed"
+name = "wifi_ap_rx_callback"
+arguments = ["mut-ptr", "u16", "mut-ptr"]
+return = "i32"
+semantic = "wifi.rx.deliver-to-application"
+execution-model = "wifi-rx-callback"
+
+# `wifi_set_gpio_debug_cb` stores a runtime callback in this private libpp
+# pointer cell and `wifi_gpio_debug` tail-calls it. The ESP32-S31 coexistence
+# header pins the ABI as `void (*)(int, coex_gpio_debug_sig_t)`; the callback
+# target itself remains runtime-owned.
+[[anchors]]
+id = "wifi-gpio-debug-callback-v1"
+status = "reviewed"
+origin = "observed"
+source = "libpp"
+root-kind = "relocated-symbol"
+member = "pp_debug.o"
+symbol = ".LANCHOR0"
+addend = 0
+addressing = "absolute"
+container-path = []
+layout-version = "esp-idf-wifi-gpio-debug-callback-v1"
+pointer-width = 32
+layout-size = 4
+slot-stride = 4
+execution-contract = "esp32s31-wifi-runtime-callbacks-v1"
+
+[[anchors.guards]]
+kind = "artifact-sha256"
+sha256 = "f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e"
+
+[[anchors.slots]]
+offset = 0
+width = 32
+status = "reviewed"
+origin = "observed"
+name = "wifi_gpio_debug_callback"
+arguments = ["i32", "i32"]
+return = "void"
+semantic = "diagnostic.wifi-gpio-signal"
+execution-model = "wifi-gpio-debug-callback"
+
+# `esp_wifi_internal_reg_netstack_buf_cb` installs these callbacks. The
+# ESP32-S31 private Wi-Fi header fixes both ABIs as `void (*)(void *)`; the
+# archive call sites independently identify the two private pointer cells.
+[[anchors]]
+id = "netstack-buffer-ref-callback-v1"
+status = "reviewed"
+origin = "observed"
+source = "libnet80211"
+root-kind = "relocated-symbol"
+member = "ieee80211_output.o"
+symbol = "s_netstack_ref"
+addend = 0
+addressing = "absolute"
+container-path = []
+layout-version = "esp-idf-netstack-buffer-ref-v1"
+pointer-width = 32
+layout-size = 4
+slot-stride = 4
+execution-contract = "esp32s31-wifi-runtime-callbacks-v1"
+
+[[anchors.guards]]
+kind = "artifact-sha256"
+sha256 = "92550813de20ed0d51110dbd72b646e891a86a8a2f81fa53714ebf2ebf9c8f40"
+
+[[anchors.slots]]
+offset = 0
+width = 32
+status = "reviewed"
+origin = "observed"
+name = "netstack_buffer_ref"
+arguments = ["mut-ptr"]
+return = "void"
+semantic = "memory.reference.retain"
+execution-model = "netstack-buffer-ref"
+
+[[anchors]]
+id = "netstack-buffer-free-callback-v1"
+status = "reviewed"
+origin = "observed"
+source = "libnet80211"
+root-kind = "relocated-symbol"
+member = "ieee80211_output.o"
+symbol = "s_netstack_free"
+addend = 0
+addressing = "absolute"
+container-path = []
+layout-version = "esp-idf-netstack-buffer-free-v1"
+pointer-width = 32
+layout-size = 4
+slot-stride = 4
+execution-contract = "esp32s31-wifi-runtime-callbacks-v1"
+
+[[anchors.guards]]
+kind = "artifact-sha256"
+sha256 = "92550813de20ed0d51110dbd72b646e891a86a8a2f81fa53714ebf2ebf9c8f40"
+
+[[anchors.slots]]
+offset = 0
+width = 32
+status = "reviewed"
+origin = "observed"
+name = "netstack_buffer_free"
+arguments = ["mut-ptr"]
+return = "void"
+semantic = "memory.reference.release"
+execution-model = "netstack-buffer-free"
+
+# `rcUpdatePhyMode` stores one of the observed rc11B/rc11G/rcLoRa mapping
+# functions at rate-record offset 0x78. `rcUpdateRate` later calls that field
+# with the record's one-byte rate code and consumes the returned schedule
+# index. The active function remains runtime state, so the model deliberately
+# returns an uninterpreted value instead of selecting a PHY policy.
+[[anchors]]
+id = "rate-record-callbacks-v1"
+status = "reviewed"
+origin = "observed"
+source = "libpp"
+root-kind = "function-argument"
+argument = 0
+container-path = []
+layout-version = "esp32s31-rate-record-callbacks-v1"
+pointer-width = 32
+layout-size = 0x7c
+slot-stride = 4
+execution-contract = "esp32s31-wifi-runtime-callbacks-v1"
+
+[[anchors.guards]]
+kind = "artifact-sha256"
+sha256 = "f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e"
+
+[[anchors.slots]]
+offset = 0x78
+width = 32
+status = "reviewed"
+origin = "observed"
+name = "rate_to_schedule_index"
+arguments = ["u8"]
+return = "u8"
+execution-model = "rate-to-schedule-index"

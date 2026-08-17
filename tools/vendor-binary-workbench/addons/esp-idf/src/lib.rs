@@ -1,12 +1,13 @@
 //! Reusable ESP-IDF function semantics shared across chip providers.
 
 use open_radio_vendor_analysis_model::{
-    DirectSemanticFunctionSpec, DraftReferenceEvent, ExternalArgumentDirection,
-    ExternalArgumentSpec, ExternalReturnModel, ExternalSemanticSpec, FunctionAnalysis, MmioMap,
-    SemanticFunctionBodyPolicy, SymbolicValue,
+    DirectSemanticFunctionSpec, DraftReferenceEvent, ExpressionOperation,
+    ExternalArgumentDirection, ExternalArgumentSpec, ExternalReturnModel, ExternalSemanticSpec,
+    FunctionAnalysis, MmioMap, SemanticFunctionBodyPolicy, SymbolicValue,
 };
 use open_radio_vendor_backend_riscv::{
-    StructuralPointerContext, artifact::ArtifactSymbolDefinition,
+    Rv32CallArguments, Rv32IntrinsicResult, StructuralPointerContext,
+    artifact::ArtifactSymbolDefinition,
 };
 
 const DELAY_ARGUMENTS: &[ExternalArgumentSpec] = &[ExternalArgumentSpec {
@@ -29,6 +30,18 @@ const WIFI_MAC_ARGUMENTS: &[ExternalArgumentSpec] = &[
         name: "mac",
         c_type: "uint8_t[6]",
         direction: ExternalArgumentDirection::Output,
+    },
+];
+const ROUNDUP2_ARGUMENTS: &[ExternalArgumentSpec] = &[
+    ExternalArgumentSpec {
+        name: "value",
+        c_type: "uint32_t",
+        direction: ExternalArgumentDirection::Input,
+    },
+    ExternalArgumentSpec {
+        name: "alignment",
+        c_type: "uint32_t",
+        direction: ExternalArgumentDirection::Input,
     },
 ];
 
@@ -83,6 +96,23 @@ static ESP_WIFI_GET_MAC: DirectSemanticFunctionSpec = DirectSemanticFunctionSpec
     evidence: "exact ESP-IDF public symbol and documented SDK ABI; output memory is not execution-modeled",
 };
 
+static ROUNDUP2: DirectSemanticFunctionSpec = DirectSemanticFunctionSpec {
+    id: "esp-idf.roundup2",
+    source: "esp-idf-addon",
+    c_name: "roundup2",
+    argument_count: 2,
+    body_policy: SemanticFunctionBodyPolicy::OpaqueBoundary,
+    return_model: ExternalReturnModel::SymbolicU32,
+    semantic: ExternalSemanticSpec {
+        operation: "integer.round-up-power-of-two",
+        arguments: ROUNDUP2_ARGUMENTS,
+        return_type: "uint32_t",
+        replacement: None,
+        event_dispatch: None,
+    },
+    evidence: "exact ESP-IDF/BSD compatibility symbol and roundup2(value, alignment) ABI",
+};
+
 pub fn direct_semantic_function(
     symbol: &ArtifactSymbolDefinition,
 ) -> Option<&'static DirectSemanticFunctionSpec> {
@@ -96,8 +126,37 @@ pub fn direct_external_semantic_function(
         "ets_delay_us" => Some(&ETS_DELAY_US),
         "esp_wifi_get_mode" => Some(&ESP_WIFI_GET_MODE),
         "esp_wifi_get_mac" => Some(&ESP_WIFI_GET_MAC),
+        "roundup2" => Some(&ROUNDUP2),
         _ => None,
     }
+}
+
+/// Exact RV32 value model for reusable ESP-IDF compatibility helpers.
+pub fn direct_external_intrinsic(
+    name: &str,
+    arguments: &Rv32CallArguments,
+) -> Option<Rv32IntrinsicResult> {
+    if name != "roundup2" {
+        return None;
+    }
+    let value = arguments[0].clone();
+    let alignment = arguments[1].clone();
+    let alignment_minus_one = SymbolicValue::expression(
+        ExpressionOperation::Subtract,
+        alignment.clone(),
+        SymbolicValue::Constant(1),
+    );
+    let rounded_base =
+        SymbolicValue::expression(ExpressionOperation::Add, value, alignment_minus_one);
+    let alignment_mask = SymbolicValue::expression(
+        ExpressionOperation::Subtract,
+        SymbolicValue::Constant(0),
+        alignment,
+    );
+    Some((
+        SymbolicValue::expression(ExpressionOperation::BitAnd, rounded_base, alignment_mask),
+        None,
+    ))
 }
 
 /// Executable RV32 reference effect for ESP-IDF calls whose behavior is part
@@ -152,5 +211,8 @@ mod tests {
         );
         assert!(direct_external_semantic_function("vendor_ets_delay_us").is_none());
         assert!(direct_external_semantic_function("esp_wifi_internal_set_retry_counter").is_none());
+        let arguments = core::array::from_fn(|index| SymbolicValue::input(index as u8));
+        assert!(direct_external_intrinsic("roundup2", &arguments).is_some());
+        assert!(direct_external_intrinsic("vendor_roundup2", &arguments).is_none());
     }
 }

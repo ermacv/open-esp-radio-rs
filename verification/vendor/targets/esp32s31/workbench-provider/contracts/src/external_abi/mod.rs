@@ -214,6 +214,71 @@ const ESP32S31_WIFI_OSI_MODELS: &[ExternalCallModelSpec] = &[
         return_model: ExternalReturnModel::SymbolicU32,
         outputs: &[],
     },
+    ExternalCallModelSpec {
+        id: "mutex-lock",
+        return_model: ExternalReturnModel::SymbolicU32,
+        outputs: &[],
+    },
+    ExternalCallModelSpec {
+        id: "mutex-unlock",
+        return_model: ExternalReturnModel::SymbolicU32,
+        outputs: &[],
+    },
+    ExternalCallModelSpec {
+        id: "free",
+        return_model: ExternalReturnModel::Void,
+        outputs: &[],
+    },
+    ExternalCallModelSpec {
+        id: "malloc-internal",
+        return_model: ExternalReturnModel::OpaquePointer,
+        outputs: &[],
+    },
+    ExternalCallModelSpec {
+        id: "wifi-malloc",
+        return_model: ExternalReturnModel::OpaquePointer,
+        outputs: &[],
+    },
+    ExternalCallModelSpec {
+        id: "coex-wifi-request",
+        return_model: ExternalReturnModel::SymbolicU32,
+        outputs: &[],
+    },
+    ExternalCallModelSpec {
+        id: "phy-enable",
+        return_model: ExternalReturnModel::Void,
+        outputs: &[],
+    },
+    ExternalCallModelSpec {
+        id: "wifi-pm-sleep-lock-acquire",
+        return_model: ExternalReturnModel::Void,
+        outputs: &[],
+    },
+    ExternalCallModelSpec {
+        id: "wifi-clock-enable",
+        return_model: ExternalReturnModel::Void,
+        outputs: &[],
+    },
+    ExternalCallModelSpec {
+        id: "coex-schedule-interval-get",
+        return_model: ExternalReturnModel::SymbolicU32,
+        outputs: &[],
+    },
+    ExternalCallModelSpec {
+        id: "coex-schedule-current-period-get",
+        return_model: ExternalReturnModel::SymbolicU32,
+        outputs: &[],
+    },
+    ExternalCallModelSpec {
+        id: "coex-schedule-flexible-period-get",
+        return_model: ExternalReturnModel::SymbolicU32,
+        outputs: &[],
+    },
+    ExternalCallModelSpec {
+        id: "coex-schedule-phase-get",
+        return_model: ExternalReturnModel::OpaquePointer,
+        outputs: &[],
+    },
 ];
 
 const ESP32S31_WIFI_OSI_MODEL_SET: ExternalCallModelSetSpec = ExternalCallModelSetSpec {
@@ -241,10 +306,45 @@ const ESP32S31_COEX_ADAPTER_MODEL_SET: ExternalCallModelSetSpec = ExternalCallMo
     models: ESP32S31_COEX_ADAPTER_MODELS,
 };
 
+const ESP32S31_WIFI_RUNTIME_CALLBACKS: &[ExternalCallModelSpec] = &[
+    ExternalCallModelSpec {
+        id: "wifi-rx-callback",
+        return_model: ExternalReturnModel::SymbolicU32,
+        outputs: &[],
+    },
+    ExternalCallModelSpec {
+        id: "wifi-gpio-debug-callback",
+        return_model: ExternalReturnModel::Void,
+        outputs: &[],
+    },
+    ExternalCallModelSpec {
+        id: "netstack-buffer-ref",
+        return_model: ExternalReturnModel::Void,
+        outputs: &[],
+    },
+    ExternalCallModelSpec {
+        id: "netstack-buffer-free",
+        return_model: ExternalReturnModel::Void,
+        outputs: &[],
+    },
+    ExternalCallModelSpec {
+        id: "rate-to-schedule-index",
+        return_model: ExternalReturnModel::SymbolicU32,
+        outputs: &[],
+    },
+];
+const ESP32S31_WIFI_RUNTIME_CALLBACK_MODEL_SET: ExternalCallModelSetSpec =
+    ExternalCallModelSetSpec {
+        id: "esp32s31-wifi-runtime-callbacks-v1",
+        models: ESP32S31_WIFI_RUNTIME_CALLBACKS,
+    };
+
 pub const WIFI_OSI_MODELS_V9: ExternalCallModelSetRef =
     ExternalCallModelSetRef::new(&ESP32S31_WIFI_OSI_MODEL_SET);
 pub const COEX_ADAPTER_MODELS_V2: ExternalCallModelSetRef =
     ExternalCallModelSetRef::new(&ESP32S31_COEX_ADAPTER_MODEL_SET);
+pub const WIFI_RUNTIME_CALLBACKS_V1: ExternalCallModelSetRef =
+    ExternalCallModelSetRef::new(&ESP32S31_WIFI_RUNTIME_CALLBACK_MODEL_SET);
 pub const ENV_IS_CHIP_MODEL: ExternalCallModelRef =
     ExternalCallModelRef::new(&ESP32S31_WIFI_OSI_MODELS[0]);
 pub const RAND_MODEL: ExternalCallModelRef =

@@ -37,7 +37,7 @@ pub(crate) struct ProjectIrDocuments {
 
 pub(crate) struct ProjectProfileRequest<'a> {
     pub(crate) inputs: Vec<(String, PathBuf)>,
-    pub(crate) inventories: BTreeMap<String, PathBuf>,
+    pub(crate) inventories: Vec<(String, PathBuf)>,
     pub(crate) companions: Vec<PathBuf>,
     pub(crate) profile: &'a ProjectIrProfile,
     pub(crate) svd: &'a MmioMap,
@@ -122,7 +122,7 @@ pub(crate) fn generate_project_profile(
 
 pub(crate) struct LinkedIrAnalysisRequest<'a> {
     pub(crate) artifacts: &'a [IrArtifactInput],
-    pub(crate) inventories: &'a BTreeMap<String, PathBuf>,
+    pub(crate) inventories: &'a [(String, PathBuf)],
     pub(crate) companions: &'a [PathBuf],
     pub(crate) symbol_prefix: &'a str,
     pub(crate) include_reachable: bool,
@@ -161,6 +161,11 @@ pub(crate) fn analyze(
     validate_artifact_inputs(artifacts, companions)?;
     let mut reports = Vec::with_capacity(artifacts.len());
     for artifact in artifacts {
+        let source_inventories = inventories
+            .iter()
+            .filter(|(source, _)| source == &artifact.source)
+            .map(|(_, path)| path.as_path())
+            .collect::<Vec<_>>();
         let mut resolver = ReferenceResolver::load_all_code_with_reviewed_ranges(
             &artifact.path,
             companions,
@@ -172,6 +177,25 @@ pub(crate) fn analyze(
             source = artifact.source,
             rss_kib = ?crate::resource_usage::resident_set_kib(),
             "loaded linked-IR resolver"
+        );
+        register_projected_direct_semantics(
+            &mut resolver,
+            &artifact.source,
+            &artifact.path,
+            &source_inventories,
+            interface_origins,
+        )?;
+        register_projected_origins(
+            &mut resolver,
+            &artifact.source,
+            &artifact.path,
+            &source_inventories,
+            interface_origins,
+        )?;
+        tracing::debug!(
+            source = artifact.source,
+            rss_kib = ?crate::resource_usage::resident_set_kib(),
+            "registered projected semantics and exact archive origins"
         );
         if let Some(interfaces) = interfaces {
             register_reviewed_external_calls(
@@ -186,25 +210,6 @@ pub(crate) fn analyze(
                 "registered reviewed interface calls"
             );
         }
-        register_projected_direct_semantics(
-            &mut resolver,
-            &artifact.source,
-            &artifact.path,
-            inventories.get(&artifact.source).map(PathBuf::as_path),
-            interface_origins,
-        )?;
-        register_projected_origins(
-            &mut resolver,
-            &artifact.source,
-            &artifact.path,
-            inventories.get(&artifact.source).map(PathBuf::as_path),
-            interface_origins,
-        )?;
-        tracing::debug!(
-            source = artifact.source,
-            rss_kib = ?crate::resource_usage::resident_set_kib(),
-            "registered projected direct semantics"
-        );
         reports.push(build_linked_ir_for_source(
             &resolver,
             svd,
@@ -236,60 +241,59 @@ fn register_projected_origins(
     resolver: &mut ReferenceResolver,
     source: &str,
     linked_artifact: &Path,
-    inventory: Option<&Path>,
+    inventories: &[&Path],
     origins: &[LinkUnitOriginFact],
 ) -> Result<()> {
-    let Some(inventory) = inventory else {
-        return Ok(());
-    };
     let linked_digest = crate::artifact_sha256(linked_artifact)?;
-    let inventory_digest = crate::artifact_sha256(inventory)?;
-    let candidates = crate::artifact::load_code_symbols(
-        inventory,
-        "",
-        crate::artifact::CodeSymbolSelection::All,
-    )?
-    .into_iter()
-    .map(|symbol| {
-        (
-            (symbol.member.clone(), symbol.name.clone(), symbol.address),
-            symbol,
-        )
-    })
-    .collect::<BTreeMap<_, _>>();
     let mut registered = 0usize;
-    for origin in origins.iter().filter(|origin| {
-        origin.kind == "text"
-            && origin.linked_artifact_sha256 == linked_digest
-            && origin.origin_artifact_sha256 == inventory_digest
-            && origin
-                .linked_sources
-                .iter()
-                .any(|candidate| candidate == source)
-            && origin
-                .origin_sources
-                .iter()
-                .any(|candidate| candidate == source)
-    }) {
-        let Some(linked) = resolver.symbols.iter().find(|symbol| {
-            symbol.name == origin.symbol
-                && symbol.member == origin.linked_member
-                && symbol.address == origin.linked_address
-        }) else {
-            continue;
-        };
-        let key = (
-            origin.origin_member.clone(),
-            origin.symbol.clone(),
-            origin.origin_address,
-        );
-        let Some(archive) = candidates.get(&key) else {
-            continue;
-        };
-        let linked = linked.clone();
-        register_projected_relocations(resolver, &linked, archive)?;
-        resolver.register_projected_origin(&linked, archive.clone());
-        registered += 1;
+    for inventory in inventories {
+        let inventory_digest = crate::artifact_sha256(inventory)?;
+        let candidates = crate::artifact::load_code_symbols(
+            inventory,
+            "",
+            crate::artifact::CodeSymbolSelection::All,
+        )?
+        .into_iter()
+        .map(|symbol| {
+            (
+                (symbol.member.clone(), symbol.name.clone(), symbol.address),
+                symbol,
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+        for origin in origins.iter().filter(|origin| {
+            origin.kind == "text"
+                && origin.linked_artifact_sha256 == linked_digest
+                && origin.origin_artifact_sha256 == inventory_digest
+                && origin
+                    .linked_sources
+                    .iter()
+                    .any(|candidate| candidate == source)
+                && origin
+                    .origin_sources
+                    .iter()
+                    .any(|candidate| candidate == source)
+        }) {
+            let Some(linked) = resolver.symbols.iter().find(|symbol| {
+                symbol.name == origin.symbol
+                    && symbol.member == origin.linked_member
+                    && symbol.address == origin.linked_address
+            }) else {
+                continue;
+            };
+            let key = (
+                origin.origin_member.clone(),
+                origin.symbol.clone(),
+                origin.origin_address,
+            );
+            let Some(archive) = candidates.get(&key) else {
+                continue;
+            };
+            let linked = linked.clone();
+            register_projected_relocations(resolver, &linked, archive)?;
+            resolver.register_projected_origin(&linked, archive.clone());
+            registered += 1;
+        }
     }
     tracing::debug!(source, registered, "registered exact archive origins");
     Ok(())
@@ -369,62 +373,61 @@ fn register_projected_direct_semantics(
     resolver: &mut ReferenceResolver,
     source: &str,
     linked_artifact: &Path,
-    inventory: Option<&Path>,
+    inventories: &[&Path],
     origins: &[LinkUnitOriginFact],
 ) -> Result<()> {
-    let Some(inventory) = inventory else {
-        return Ok(());
-    };
     let Some(hooks) = resolver.pointer_context.summary_hooks else {
         return Ok(());
     };
     let linked_digest = crate::artifact_sha256(linked_artifact)?;
-    let inventory_digest = crate::artifact_sha256(inventory)?;
-    for origin in origins.iter().filter(|origin| {
-        origin.kind == "text"
-            && origin.linked_artifact_sha256 == linked_digest
-            && origin.origin_artifact_sha256 == inventory_digest
-            && origin
-                .linked_sources
+    for inventory in inventories {
+        let inventory_digest = crate::artifact_sha256(inventory)?;
+        for origin in origins.iter().filter(|origin| {
+            origin.kind == "text"
+                && origin.linked_artifact_sha256 == linked_digest
+                && origin.origin_artifact_sha256 == inventory_digest
+                && origin
+                    .linked_sources
+                    .iter()
+                    .any(|candidate| candidate == source)
+                && origin
+                    .origin_sources
+                    .iter()
+                    .any(|candidate| candidate == source)
+        }) {
+            let Some(linked) = resolver
+                .symbols
                 .iter()
-                .any(|candidate| candidate == source)
-            && origin
-                .origin_sources
-                .iter()
-                .any(|candidate| candidate == source)
-    }) {
-        let Some(linked) = resolver
-            .symbols
-            .iter()
-            .find(|symbol| {
-                symbol.name == origin.symbol
-                    && symbol.member == origin.linked_member
-                    && symbol.address == origin.linked_address
-            })
-            .cloned()
-        else {
-            continue;
-        };
-        let Some(archive) = crate::artifact::load_code_symbol_exact(
-            inventory,
-            origin.origin_member.as_deref(),
-            &origin.symbol,
-            origin.origin_address,
-        )?
-        else {
-            continue;
-        };
-        let Some(semantic) = (hooks.direct_semantic)(&archive) else {
-            continue;
-        };
-        resolver.register_projected_direct_semantic(&linked, semantic);
-        tracing::debug!(
-            source,
-            symbol = origin.symbol,
-            member = ?origin.origin_member,
-            semantic = semantic.id,
-            "projected exact reviewed semantic from unique archive origin"
-        );
+                .find(|symbol| {
+                    symbol.name == origin.symbol
+                        && symbol.member == origin.linked_member
+                        && symbol.address == origin.linked_address
+                })
+                .cloned()
+            else {
+                continue;
+            };
+            let Some(archive) = crate::artifact::load_code_symbol_exact(
+                inventory,
+                origin.origin_member.as_deref(),
+                &origin.symbol,
+                origin.origin_address,
+            )?
+            else {
+                continue;
+            };
+            let Some(semantic) = (hooks.direct_semantic)(&archive) else {
+                continue;
+            };
+            resolver.register_projected_direct_semantic(&linked, semantic);
+            tracing::debug!(
+                source,
+                symbol = origin.symbol,
+                member = ?origin.origin_member,
+                semantic = semantic.id,
+                "projected exact reviewed semantic from unique archive origin"
+            );
+        }
     }
     Ok(())
 }
@@ -628,7 +631,11 @@ pub(crate) fn register_reviewed_external_calls(
             }
         }
     }
-    let projected_calls = interfaces.project_link_unit_calls(source, origins);
+    let projected_calls = interfaces.project_link_unit_calls(
+        source,
+        origins,
+        &resolver.pointer_context.projected_relocations,
+    );
     tracing::debug!(
         source,
         projected_calls = projected_calls.len(),

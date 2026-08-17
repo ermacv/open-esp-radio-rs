@@ -232,6 +232,17 @@ impl SymbolicValue {
         call_results: &BTreeMap<u32, SymbolicValue>,
         private_stack_reads: &BTreeMap<u32, SymbolicValue>,
     ) -> std::result::Result<Self, String> {
+        // Preserve the replacement as a symbolic tree when the caller uses a
+        // whole call result. Converting it through `bits()` first destroys
+        // expressions (their bit image is intentionally unknown). Values
+        // which already select or transform individual result bits continue
+        // through the bit-source rewrite below.
+        if let Self::CallResult(call_token) = self {
+            return call_results
+                .get(call_token)
+                .cloned()
+                .ok_or_else(|| format!("call result {call_token} is not available"));
+        }
         if let Self::SymbolAddress { lo_addend, .. } = self {
             return lo_addend
                 .is_some()

@@ -11,6 +11,37 @@ use crate::{
 
 use super::{LinkageSymbolLocation, ProjectLinkageInventory, build_project_linkage_inventory};
 
+fn persistent_call_identity(
+    discovered: &DiscoveredInterfaceCall,
+) -> (usize, InterfaceCallCandidate) {
+    let mut call = discovered.call.clone();
+    // The persistent facts retain the final slot-load site, but intentionally
+    // compare container shape independently of the path-specific instruction
+    // that loaded each intermediate pointer. Normalize exactly that omitted
+    // provenance before deduplicating so the strict reader never receives two
+    // records that deserialize to the same fact.
+    let container_len = call.target.loads.len().saturating_sub(1);
+    for load in &mut call.target.loads[..container_len] {
+        load.site = 0;
+    }
+    for argument in &mut call.arguments {
+        if let crate::interface_discovery::InterfaceArgumentValue::Pointer(pointer) = argument {
+            for load in &mut pointer.loads {
+                load.site = 0;
+            }
+        }
+    }
+    if matches!(
+        call.kind,
+        crate::interface_discovery::InterfaceCallKind::LinkedJump(_)
+    ) {
+        // The stable fact vocabulary records this class as `linked-jump`; the
+        // exact architectural link register remains presentation evidence.
+        call.kind = crate::interface_discovery::InterfaceCallKind::LinkedJump(0);
+    }
+    (discovered.artifact, call)
+}
+
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) struct ProjectInterfaceDiscoveryOptions {
     pub(crate) name_prefix: String,
@@ -141,6 +172,7 @@ pub(crate) fn discover_project_interfaces(
         }
     }
     calls.sort_by(|left, right| (left.artifact, &left.call).cmp(&(right.artifact, &right.call)));
+    calls.dedup_by(|left, right| persistent_call_identity(left) == persistent_call_identity(right));
     assignments.sort_by(|left, right| {
         (left.artifact, &left.assignment).cmp(&(right.artifact, &right.assignment))
     });
@@ -190,4 +222,57 @@ pub(crate) fn interface_root_linkage(
         }
     }
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::interface_discovery::{
+        InterfaceCallKind, InterfaceLoad, InterfacePointer, InterfaceRoot,
+    };
+
+    fn call(container_site: u32, slot_site: u32) -> DiscoveredInterfaceCall {
+        DiscoveredInterfaceCall {
+            artifact: 0,
+            call: InterfaceCallCandidate {
+                member: Some("event.o".to_owned()),
+                function: "dispatch".to_owned(),
+                function_address: 0x1000,
+                site: 0x1020,
+                kind: InterfaceCallKind::Call,
+                target: InterfacePointer {
+                    root: InterfaceRoot::FunctionArgument { index: 0 },
+                    loads: vec![
+                        InterfaceLoad {
+                            site: container_site,
+                            offset: 4,
+                            width: 32,
+                            selector: None,
+                        },
+                        InterfaceLoad {
+                            site: slot_site,
+                            offset: 8,
+                            width: 32,
+                            selector: None,
+                        },
+                    ],
+                    post_offset: 0,
+                },
+                jalr_offset: 0,
+                arguments: Vec::new(),
+            },
+        }
+    }
+
+    #[test]
+    fn persistent_identity_ignores_only_unstored_container_load_sites() {
+        assert_eq!(
+            persistent_call_identity(&call(0x1004, 0x101c)),
+            persistent_call_identity(&call(0x1008, 0x101c)),
+        );
+        assert_ne!(
+            persistent_call_identity(&call(0x1004, 0x101c)),
+            persistent_call_identity(&call(0x1004, 0x1018)),
+        );
+    }
 }

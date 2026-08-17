@@ -26,6 +26,11 @@ const RISCV_SUMMARIES: RiscvSummaryHooks = RiscvSummaryHooks {
             .or_else(|| open_radio_vendor_addon_esp_idf::direct_external_semantic_function(symbol))
             .or_else(|| reviewed_summaries::direct_external_semantic_function(symbol))
     },
+    direct_external_intrinsic: |symbol, arguments| {
+        open_radio_vendor_addon_c::direct_external_intrinsic(symbol, arguments).or_else(|| {
+            open_radio_vendor_addon_esp_idf::direct_external_intrinsic(symbol, arguments)
+        })
+    },
     reference_intrinsic: |symbol, svd, context| {
         open_radio_vendor_addon_c::reference_intrinsic_trace(symbol, svd, context)
             .or_else(|| {

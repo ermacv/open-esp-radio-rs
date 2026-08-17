@@ -219,8 +219,16 @@ fn test_direct_external_semantic(symbol: &str) -> Option<&'static DirectSemantic
     match symbol {
         "ets_delay_us" => Some(&TEST_DELAY_DIRECT_SEMANTIC),
         "rtc_clk_xtal_freq_get" => Some(&TEST_XTAL_DIRECT_SEMANTIC),
+        "__umoddi3" => Some(&TEST_UMODDI3_DIRECT_SEMANTIC),
         _ => None,
     }
+}
+
+fn no_test_direct_external_intrinsic(
+    _symbol: &str,
+    _arguments: &crate::Rv32CallArguments,
+) -> Option<crate::Rv32IntrinsicResult> {
+    None
 }
 
 static TEST_DELAY_DIRECT_SEMANTIC: DirectSemanticFunctionSpec = DirectSemanticFunctionSpec {
@@ -261,6 +269,46 @@ static TEST_XTAL_DIRECT_SEMANTIC: DirectSemanticFunctionSpec = DirectSemanticFun
     evidence: "test-target-contract",
 };
 
+static TEST_WIDE_BINARY_WORD_ARGUMENTS: [ExternalArgumentSpec; 4] = [
+    ExternalArgumentSpec {
+        name: "lhs_low",
+        c_type: "u32",
+        direction: ExternalArgumentDirection::Input,
+    },
+    ExternalArgumentSpec {
+        name: "lhs_high",
+        c_type: "u32",
+        direction: ExternalArgumentDirection::Input,
+    },
+    ExternalArgumentSpec {
+        name: "rhs_low",
+        c_type: "u32",
+        direction: ExternalArgumentDirection::Input,
+    },
+    ExternalArgumentSpec {
+        name: "rhs_high",
+        c_type: "u32",
+        direction: ExternalArgumentDirection::Input,
+    },
+];
+
+static TEST_UMODDI3_DIRECT_SEMANTIC: DirectSemanticFunctionSpec = DirectSemanticFunctionSpec {
+    id: "test-umoddi3",
+    source: "test-c-addon",
+    c_name: "__umoddi3",
+    argument_count: 4,
+    body_policy: SemanticFunctionBodyPolicy::OpaqueBoundary,
+    return_model: ExternalReturnModel::SymbolicU64,
+    semantic: ExternalSemanticSpec {
+        operation: "integer.remainder-unsigned-64",
+        arguments: &TEST_WIDE_BINARY_WORD_ARGUMENTS,
+        return_type: "u64",
+        replacement: None,
+        event_dispatch: None,
+    },
+    evidence: "test-exact-compiler-runtime-symbol",
+};
+
 fn no_test_wide_divide(
     _symbol: &artifact::ArtifactSymbolDefinition,
     _arguments: &Rv32CallArguments,
@@ -272,6 +320,7 @@ static TEST_SUMMARIES: RiscvSummaryHooks = RiscvSummaryHooks {
     secondary_return_target: |_| false,
     direct_semantic: no_test_direct_semantic,
     direct_external_semantic: test_direct_external_semantic,
+    direct_external_intrinsic: no_test_direct_external_intrinsic,
     reference_intrinsic: test_reference_intrinsic,
     standard_memory_function: test_standard_memory_function,
     wide_signed_divide: no_test_wide_divide,

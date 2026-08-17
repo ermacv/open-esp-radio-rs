@@ -3,6 +3,7 @@
 use std::collections::BTreeSet;
 
 use object::elf::R_RISCV_32;
+use rv_asm::{Inst, Reg};
 
 use crate::Result;
 
@@ -35,6 +36,10 @@ pub fn recover_indexed_dispatches(
         .into_iter()
         .map(|instruction| LightweightInstruction {
             address: instruction.address(),
+            decoded: match &instruction {
+                AnalysisInstruction::Supported(decoded) => Some(decoded.instruction),
+                AnalysisInstruction::Unsupported(_) => None,
+            },
             control_flow: match instruction {
                 AnalysisInstruction::Supported(decoded) => {
                     classify_control_flow(decoded.address, decoded.instruction)
@@ -57,7 +62,7 @@ pub fn recover_indexed_dispatches(
         })
         .filter_map(|instruction| u32::try_from(instruction.address).ok())
         .collect::<Vec<_>>();
-    if indirect_sites.len() != 1 {
+    if indirect_sites.is_empty() {
         return Ok(Vec::new());
     }
 
@@ -91,10 +96,14 @@ pub fn recover_indexed_dispatches(
             }) else {
                 break;
             };
-            let Some(case_address) = relocation
-                .target_address
-                .and_then(|address| address.checked_add_signed(relocation.addend))
-            else {
+            let case_address = if let Some(address) = relocation.target_address {
+                address.checked_add_signed(relocation.addend)
+            } else if object.address.is_some() {
+                linked_initializer_word(&object.initializer, offset).map(u64::from)
+            } else {
+                None
+            };
+            let Some(case_address) = case_address else {
                 break;
             };
             if !(definition.address..function_end).contains(&case_address) {
@@ -111,10 +120,24 @@ pub fn recover_indexed_dispatches(
         if entries.len() < 2 {
             continue;
         }
+        let matching_sites = indirect_sites
+            .iter()
+            .copied()
+            .filter(|site| {
+                object
+                    .address
+                    .is_some_and(|address| site_references_table(&instructions, *site, address))
+            })
+            .collect::<Vec<_>>();
+        let site = match (indirect_sites.as_slice(), matching_sites.as_slice()) {
+            ([site], _) => *site,
+            (_, [site]) => *site,
+            _ => continue,
+        };
         output.push(ArtifactIndexedDispatch {
             table: object.name.clone(),
             table_address: object.address,
-            site: indirect_sites[0],
+            site,
             stride: ENTRY_WIDTH as u8,
             entries,
         });
@@ -125,7 +148,50 @@ pub fn recover_indexed_dispatches(
 
 struct LightweightInstruction {
     address: u64,
+    decoded: Option<Inst>,
     control_flow: FunctionControlFlow,
+}
+
+fn linked_initializer_word(initializer: &[u8], offset: u64) -> Option<u32> {
+    let offset = usize::try_from(offset).ok()?;
+    let end = offset.checked_add(4)?;
+    let bytes: [u8; 4] = initializer.get(offset..end)?.try_into().ok()?;
+    Some(u32::from_le_bytes(bytes))
+}
+
+/// Associate one read-only jump table with one of several indirect sites.
+/// GCC's RV32 switch lowering materializes the table base with LUI+ADDI in
+/// the same short dispatch sequence. Entry relocations and in-function case
+/// targets are validated independently; this only selects the owning site.
+fn site_references_table(
+    instructions: &[LightweightInstruction],
+    site: u32,
+    table_address: u32,
+) -> bool {
+    let Some(site_index) = instructions
+        .iter()
+        .position(|instruction| instruction.address == u64::from(site))
+    else {
+        return false;
+    };
+    let mut constants = [None; 32];
+    constants[usize::from(Reg::ZERO.0)] = Some(0_u32);
+    for instruction in &instructions[site_index.saturating_sub(12)..site_index] {
+        match instruction.decoded {
+            Some(Inst::Lui { uimm, dest }) => {
+                constants[usize::from(dest.0)] = Some(uimm.as_u32());
+            }
+            Some(Inst::Addi { imm, dest, src1 }) => {
+                constants[usize::from(dest.0)] = constants[usize::from(src1.0)]
+                    .map(|value| value.wrapping_add(imm.as_i32() as u32));
+            }
+            _ => {}
+        }
+        if constants.contains(&Some(table_address)) {
+            return true;
+        }
+    }
+    false
 }
 
 fn case_callees(
@@ -185,6 +251,47 @@ fn case_callees(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn linked_initializer_supplies_absolute_case_address_without_symbol_value() {
+        assert_eq!(
+            linked_initializer_word(&[0x9e, 0xfd, 0x04, 0x10], 0),
+            Some(0x1004_fd9e)
+        );
+        assert_eq!(linked_initializer_word(&[0; 3], 0), None);
+    }
+
+    #[test]
+    fn local_wifi_ap_link_unit_recovers_switches_beside_runtime_callbacks() {
+        let Some(artifact) = std::env::var_os("OPEN_RADIO_VENDOR_WIFI_AP_ELF") else {
+            return;
+        };
+        let artifact = std::path::Path::new(&artifact);
+        if !artifact.is_file() {
+            return;
+        }
+        let symbols =
+            super::super::load_code_symbols(artifact, "", super::super::CodeSymbolSelection::All)
+                .unwrap();
+        let objects = super::super::load_data_objects(artifact).unwrap();
+        for (function_name, table_name, site) in [
+            ("rssi_margin", ".L449", 0x1004_fc62),
+            ("esf_buf_alloc", ".L46", 0x1006_8c64),
+            ("esf_buf_recycle", ".L70", 0x1006_8ede),
+        ] {
+            let function = symbols
+                .iter()
+                .find(|symbol| symbol.name == function_name)
+                .unwrap();
+            let dispatches = recover_indexed_dispatches(function, &objects, &symbols).unwrap();
+            assert!(
+                dispatches
+                    .iter()
+                    .any(|dispatch| { dispatch.table == table_name && dispatch.site == site }),
+                "{function_name} dispatches were {dispatches:?}"
+            );
+        }
+    }
 
     #[test]
     fn local_libpp_link_unit_recovers_pp_task_selector_25() {

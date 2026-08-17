@@ -90,10 +90,13 @@ fn projected_relaxed_zero_address(
     // the encoded address is zero even though the authenticated origin still
     // proves which symbolic cell was referenced. Preserve that identity
     // without inventing the cell's runtime contents.
-    relocation.correspondence == "linker-relaxation"
-        && relocation.origin_offsets.len() > 1
-        && base.as_constant() == Some(0)
-        && offset == 0
+    // `origin_offsets` describes the origin instructions which survived the
+    // correspondence projection, not every instruction consumed by the
+    // linker relaxation.  A linker may delete the HI20 instruction entirely
+    // and project only the relocated load/store.  Requiring two surviving
+    // offsets therefore loses the exact symbol identity and misclassifies the
+    // final `0(zero)` encoding as a real null access.
+    relocation.correspondence == "linker-relaxation" && base.as_constant() == Some(0) && offset == 0
 }
 
 pub(super) fn apply_floating_memory_instruction(

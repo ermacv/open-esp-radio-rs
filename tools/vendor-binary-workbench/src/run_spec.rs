@@ -187,7 +187,12 @@ impl RunSpec {
                     format!("unsupported input role {:?}", entry.role),
                 ));
             };
-            if role != InputRole::Companion && !unique_roles.insert(role.clone()) {
+            let repeatable = role == InputRole::Companion
+                || matches!(
+                    role,
+                    InputRole::SourceInventory(_) | InputRole::SourceCompanion(_)
+                );
+            if !repeatable && !unique_roles.insert(role.clone()) {
                 return Err(invalid(
                     path,
                     &input,
@@ -270,6 +275,55 @@ mod tests {
         assert!(run.inputs[0].path.ends_with("inputs/libpp.elf"));
         assert_eq!(run.inputs[1].role.to_string(), "source-inventory:libpp");
         assert!(run.inputs[1].path.ends_with("inputs/libpp.a"));
+    }
+
+    #[test]
+    fn one_link_unit_accepts_multiple_ordered_origin_archives() {
+        let directory = std::env::temp_dir().join(format!(
+            "open-radio-workbench-multiple-inventories-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&directory).unwrap();
+        let path = directory.join("local.toml");
+        std::fs::write(
+            &path,
+            "schema = 1\n\n[[inputs]]\nrole = \"source-artifact:wifi\"\npath = \"wifi.elf\"\n\n[[inputs]]\nrole = \"source-inventory:wifi\"\npath = \"libnet80211.a\"\n\n[[inputs]]\nrole = \"source-inventory:wifi\"\npath = \"libpp.a\"\n",
+        )
+        .unwrap();
+        let run = RunSpec::load(&path).unwrap();
+        std::fs::remove_dir_all(directory).unwrap();
+        let inventories = run
+            .inputs()
+            .iter()
+            .filter(|input| matches!(input.role, InputRole::SourceInventory(_)))
+            .map(|input| input.path.file_name().unwrap().to_str().unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(inventories, ["libnet80211.a", "libpp.a"]);
+    }
+
+    #[test]
+    fn one_source_accepts_multiple_code_companions() {
+        let directory = std::env::temp_dir().join(format!(
+            "open-radio-workbench-multiple-source-companions-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&directory).unwrap();
+        let path = directory.join("local.toml");
+        std::fs::write(
+            &path,
+            "schema = 1\n\n[[inputs]]\nrole = \"source-artifact:wifi\"\npath = \"wifi.elf\"\n\n[[inputs]]\nrole = \"source-companion:wifi\"\npath = \"rom.elf\"\n\n[[inputs]]\nrole = \"source-companion:wifi\"\npath = \"libphy.a\"\n",
+        )
+        .unwrap();
+        let run = RunSpec::load(&path).unwrap();
+        std::fs::remove_dir_all(directory).unwrap();
+
+        assert_eq!(
+            run.inputs
+                .iter()
+                .filter(|input| matches!(input.role, InputRole::SourceCompanion(_)))
+                .count(),
+            2
+        );
     }
 
     #[test]

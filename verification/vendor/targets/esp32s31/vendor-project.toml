@@ -51,6 +51,18 @@ include-reachable = true
 entry-contract = "none"
 output = "generated/findings/libnet80211-all.ir"
 
+# Canonical cross-library image for the AP data path.  The separate libpp and
+# libnet80211 images remain useful for archive-local provenance, but cannot
+# resolve calls that cross their link boundary.  This existing combined image
+# contains both sides and therefore owns call-order analysis for AP RX/TX.
+[[analysis.ir]]
+id = "wifi-ap-data-path"
+sources = ["wifi-sta-ap-receive"]
+roots = "all"
+include-reachable = true
+entry-contract = "none"
+output = "generated/findings/wifi-ap-data-path.ir"
+
 [[analysis.ir]]
 id = "wifi-sta-lifecycle"
 sources = ["wifi-sta-lifecycle"]
@@ -167,6 +179,7 @@ profiles = [
     "archive-all",
     "libpp-all",
     "libnet80211-all",
+    "wifi-ap-data-path",
     "wifi-sta-lifecycle",
     "wifi-key-role",
     "coex-all",
@@ -278,6 +291,24 @@ roots = [
     "libpp:hal_mac_clr_bssid",
     "libpp:hal_rx_enable_bssid_check",
     "libpp:hal_rx_disable_bssid_check",
+]
+include-reachable = true
+
+[[review.scopes]]
+id = "wifi-ap-data-path"
+profiles = ["wifi-ap-data-path"]
+roots = [
+    "wifi-sta-ap-receive:lmacRxDone",
+    "wifi-sta-ap-receive:lmacProcessRxSucData",
+    "wifi-sta-ap-receive:wdevProcessRxSucDataAll",
+    "wifi-sta-ap-receive:ppRxPkt",
+    "wifi-sta-ap-receive:ampdu_dispatch",
+    "wifi-sta-ap-receive:hostap_input",
+    "wifi-sta-ap-receive:hostap_deliver_data",
+    "wifi-sta-ap-receive:ieee80211_output",
+    "wifi-sta-ap-receive:ppTxPkt",
+    "wifi-sta-ap-receive:ppTxProtoProc",
+    "wifi-sta-ap-receive:lmacProcessTxComplete",
 ]
 include-reachable = true
 

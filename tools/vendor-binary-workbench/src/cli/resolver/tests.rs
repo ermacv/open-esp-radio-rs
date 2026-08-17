@@ -1,6 +1,6 @@
 use super::*;
 use crate::{
-    cli::{ImageAuditArgs, IrExportArgs, ReferenceArgs},
+    cli::{ImageAuditArgs, InspectFunctionArgs, IrExportArgs, ReferenceArgs},
     project::DEFAULT_PROJECT_MANIFEST,
 };
 
@@ -134,6 +134,27 @@ fn all_default_companions_are_preserved_when_cli_has_none() {
     assert_eq!(arguments.companion.len(), 2);
     assert!(arguments.companion[0].ends_with("first.a"));
     assert!(arguments.companion[1].ends_with("second.a"));
+}
+
+#[test]
+fn function_investigation_receives_every_origin_archive_for_its_source() {
+    let (path, run_spec) = run_spec(
+        "function-origin-archives",
+        "[[inputs]]\nrole = \"source-artifact:wifi\"\npath = \"wifi.elf\"\n\n[[inputs]]\nrole = \"source-inventory:wifi\"\npath = \"libnet80211.a\"\n\n[[inputs]]\nrole = \"source-inventory:wifi\"\npath = \"libpp.a\"\n\n[[inputs]]\nrole = \"source-inventory:other\"\npath = \"other.a\"\n",
+    );
+    let mut command = Command::InspectFunction(InspectFunctionArgs {
+        selector: "wifi:lmacRxDone".to_owned(),
+        ..Default::default()
+    });
+    apply_run_spec_defaults(&mut command, &run_spec);
+    std::fs::remove_file(path).unwrap();
+    let Command::InspectFunction(arguments) = command else {
+        panic!("unexpected argument type")
+    };
+    assert!(arguments.artifact.unwrap().ends_with("wifi.elf"));
+    assert_eq!(arguments.inventory.len(), 2);
+    assert!(arguments.inventory[0].ends_with("libnet80211.a"));
+    assert!(arguments.inventory[1].ends_with("libpp.a"));
 }
 
 #[test]

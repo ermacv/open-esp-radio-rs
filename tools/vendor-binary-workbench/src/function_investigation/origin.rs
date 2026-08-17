@@ -4,14 +4,14 @@ use super::{
     FunctionInvestigationRequest, InvestigationLedgerEntry, OriginFunctionEvidence,
     correspondence::{origin_instruction_correspondence, origin_relocation_dependencies},
 };
-use crate::{ProjectSpec, Result, artifact, artifacts};
+use crate::{ProjectSpec, Result, artifact, artifact_sha256, artifacts};
 
 pub(super) fn origin_evidence(
     request: &FunctionInvestigationRequest<'_>,
     runtime: &artifact::FunctionBody,
     project: &ProjectSpec,
 ) -> Result<(Option<OriginFunctionEvidence>, InvestigationLedgerEntry)> {
-    let Some(inventory) = request.inventory else {
+    if request.inventories.is_empty() {
         return Ok((
             None,
             InvestigationLedgerEntry {
@@ -20,7 +20,7 @@ pub(super) fn origin_evidence(
                 detail: "selected source has no source-inventory input".to_owned(),
             },
         ));
-    };
+    }
     let inventory_report = project
         .symbol_inventory
         .as_ref()
@@ -43,15 +43,47 @@ pub(super) fn origin_evidence(
             .as_ref()
             .and_then(|origin| origin.origin_member.as_deref())
     });
-    if member.is_none() && association.is_none() {
-        let candidates = artifact::load_code_symbols(
-            inventory,
-            request.symbol,
-            artifact::CodeSymbolSelection::All,
-        )?
-        .into_iter()
-        .filter(|candidate| candidate.name == request.symbol)
-        .collect::<Vec<_>>();
+    let inventory = if let Some(association) = association.as_ref() {
+        let mut selected = None;
+        for inventory in request.inventories {
+            if artifact_sha256(inventory)? == association.origin_artifact_sha256 {
+                selected = Some(inventory.as_path());
+                break;
+            }
+        }
+        let Some(inventory) = selected else {
+            return Ok((
+                None,
+                InvestigationLedgerEntry {
+                    layer: "link-origin",
+                    status: "unavailable",
+                    detail: format!(
+                        "unique origin refers to archive digest {} which is not among the selected source inventories",
+                        association.origin_artifact_sha256
+                    ),
+                },
+            ));
+        };
+        inventory
+    } else {
+        let mut candidates = Vec::new();
+        for inventory in request.inventories {
+            candidates.extend(
+                artifact::load_code_symbols(
+                    inventory,
+                    request.symbol,
+                    artifact::CodeSymbolSelection::All,
+                )?
+                .into_iter()
+                .filter(|candidate| {
+                    candidate.name == request.symbol
+                        && request
+                            .origin_member
+                            .is_none_or(|member| candidate.member.as_deref() == Some(member))
+                })
+                .map(|candidate| (inventory.as_path(), candidate)),
+            );
+        }
         if candidates.len() != 1 {
             return Ok((
                 None,
@@ -64,19 +96,20 @@ pub(super) fn origin_evidence(
                     },
                     detail: if candidates.is_empty() {
                         format!(
-                            "raw inventory contains no exact symbol {:?}",
+                            "source inventories contain no exact symbol {:?}",
                             request.symbol
                         )
                     } else {
                         format!(
-                            "raw inventory contains {} candidates; pass --origin-member or generate a unique link-origin association",
+                            "source inventories contain {} candidates; pass --origin-member or generate a unique link-origin association",
                             candidates.len()
                         )
                     },
                 },
             ));
         }
-    }
+        candidates[0].0
+    };
     let body = artifact::inspect_function_body(inventory, member, request.symbol)?;
     let relocation_dependencies = origin_relocation_dependencies(&body);
     let instruction_correspondence = origin_instruction_correspondence(&body, runtime);
@@ -104,14 +137,18 @@ pub(super) fn origin_evidence(
             status,
             detail: if let Some(association) = association {
                 format!(
-                    "linked symbol associated by unique name/kind with archive member {}",
+                    "linked symbol associated by unique name/kind with archive {} member {}",
+                    inventory.display(),
                     association
                         .origin_member
                         .as_deref()
                         .unwrap_or("<linked-image>")
                 )
             } else {
-                "archive body selected without a generated unique-origin association".to_owned()
+                format!(
+                    "archive body selected from {} without a generated unique-origin association",
+                    inventory.display()
+                )
             },
         },
     ))

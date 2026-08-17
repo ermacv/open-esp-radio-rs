@@ -12,6 +12,7 @@ pub mod external_abi;
 const EXTERNAL_CALL_MODEL_SETS: &[open_radio_vendor_contracts::ExternalCallModelSetRef] = &[
     external_abi::WIFI_OSI_MODELS_V9,
     external_abi::COEX_ADAPTER_MODELS_V2,
+    external_abi::WIFI_RUNTIME_CALLBACKS_V1,
 ];
 const DIAGNOSTIC_CALLS: &[DiagnosticCallSpec] = &[
     DiagnosticCallSpec {

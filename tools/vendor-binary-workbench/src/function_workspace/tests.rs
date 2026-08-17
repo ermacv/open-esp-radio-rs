@@ -208,6 +208,7 @@ fn write_ir(path: &std::path::Path) {
         dependencies: Vec::new(),
         projected_relocations: Vec::new(),
         local_value_flow: Vec::new(),
+        indexed_dispatches: Vec::new(),
         calls,
         direct_mmio_predicates: Vec::new(),
         mmio_accesses: Vec::new(),

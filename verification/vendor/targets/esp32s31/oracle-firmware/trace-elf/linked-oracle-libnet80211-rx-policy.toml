@@ -1,6 +1,8 @@
 # Authoritative cross-archive execution unit for the two reviewed
-# wifi_set_rx_policy role branches. Archive extraction starts from the parent
-# and pulls only its actual libpp HAL dependency closure.
+# wifi_set_rx_policy role branches and the AP/STA data path reachable from the
+# selected libnet80211 roots.  Archive extraction follows the production link
+# order through libpp and then prefers flash PHY replacements over identically
+# named ROM implementations when libpp references them.
 schema = 1
 source = "libnet80211"
 linker-scripts = [
@@ -10,6 +12,7 @@ linker-scripts = [
 archives = [
     "../../../../../../_oracles/libnet80211.a",
     "../../../../../../_oracles/libpp.a",
+    "../../../../../../_oracles/libphy.a",
 ]
 entry-symbols = ["wifi_set_rx_policy"]
 stub-symbols = [

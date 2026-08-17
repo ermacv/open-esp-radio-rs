@@ -8,6 +8,7 @@ use super::{
     ResolvedInterfaceSlot,
 };
 use crate::artifacts::LinkUnitOriginFact;
+use crate::{StructuralCallSite, StructuralProjectedRelocation};
 
 /// One reviewed slot binding projected onto an exact call instruction in the
 /// authoritative link unit.
@@ -34,6 +35,7 @@ impl InterfaceWorkspace {
         &'a self,
         source: &str,
         origins: &[LinkUnitOriginFact],
+        projected_relocations: &BTreeMap<StructuralCallSite, Vec<StructuralProjectedRelocation>>,
     ) -> Vec<ProjectedInterfaceCall<'a>> {
         let facts = self.facts();
         let artifacts_by_digest = facts
@@ -89,17 +91,27 @@ impl InterfaceWorkspace {
                             return false;
                         };
                         facts.calls.iter().any(|archive_call| {
-                            archive_call_matches_origin(
+                            let origin_matches = archive_call_matches_origin(
                                 archive_call,
                                 archive_artifact,
                                 origin,
                                 archive_address,
-                            ) && archive_call_matches_binding(
+                            );
+                            let binding_matches = archive_call_matches_binding(
                                 archive_call,
                                 binding,
                                 contract,
                                 facts,
-                            ) && same_indirect_target_shape(archive_call, linked_call)
+                            );
+                            origin_matches
+                                && binding_matches
+                                && (same_indirect_target_shape(archive_call, linked_call)
+                                    || relocated_direct_target_matches(
+                                        archive_call,
+                                        linked_call,
+                                        origin,
+                                        projected_relocations,
+                                    ))
                         })
                     })
                     .collect::<Vec<_>>();
@@ -139,6 +151,56 @@ impl InterfaceWorkspace {
     }
 }
 
+/// Match a direct pointer-cell load whose instruction immediate changed when
+/// the linker assigned the cell its final address.  The relaxed shape alone
+/// is insufficient: the exact origin relocation must identify both the
+/// archive function and the pointer symbol used by the reviewed anchor.
+fn relocated_direct_target_matches(
+    archive: &InterfaceCallFact,
+    linked: &InterfaceCallFact,
+    origin: &LinkUnitOriginFact,
+    projected_relocations: &BTreeMap<StructuralCallSite, Vec<StructuralProjectedRelocation>>,
+) -> bool {
+    let super::InterfaceFactRoot::RelocatedSymbol {
+        member,
+        symbol,
+        addend,
+        ..
+    } = &archive.root
+    else {
+        return false;
+    };
+    if archive.container_depth != 0
+        || linked.container_depth != 0
+        || archive.loads.len() != 1
+        || linked.loads.len() != 1
+        || archive.kind != linked.kind
+        || archive.jalr_offset != linked.jalr_offset
+        || archive.loads[0].width != linked.loads[0].width
+        || archive.loads[0].selector != linked.loads[0].selector
+    {
+        return false;
+    }
+    let Some(load_site) = linked.slot_load_site else {
+        return false;
+    };
+    projected_relocations
+        .get(&StructuralCallSite::from_identity(
+            linked.member.clone(),
+            linked.function.clone(),
+            load_site,
+        ))
+        .is_some_and(|relocations| {
+            relocations.iter().any(|relocation| {
+                relocation.origin_member == origin.origin_member
+                    && relocation.origin_symbol == origin.symbol
+                    && relocation.symbol == *symbol
+                    && relocation.addend == *addend
+                    && member == &origin.origin_member
+            })
+        })
+}
+
 fn archive_call_matches_origin(
     call: &InterfaceCallFact,
     archive_artifact: usize,
@@ -163,44 +225,74 @@ fn archive_call_matches_binding(
     if slot.offset != binding.offset || slot.width != binding.width || slot.selector.is_some() {
         return false;
     }
-    let InterfaceRootSelector::AbsoluteAddress { address } = contract.root else {
-        return false;
-    };
-    let Some(first_contract_step) = contract.container_path.first() else {
-        return false;
-    };
     let call_container = &call.loads[..call.container_depth];
     if call_container.len() != contract.container_path.len()
-        || call_container.first().is_none_or(|step| {
-            step.width != first_contract_step.width || step.selector != first_contract_step.selector
-        })
-        || !call_container[1..]
+        || !call_container
             .iter()
-            .zip(&contract.container_path[1..])
+            .skip(1)
+            .zip(contract.container_path.iter().skip(1))
             .all(|(call, contract)| call == contract)
     {
         return false;
     }
-    let Some(pointer_cell) = address.checked_add_signed(first_contract_step.offset) else {
-        return false;
-    };
-    // Project inventory may contain unrelated linked test/oracle definitions
-    // of the same pointer symbol. They make the global association ambiguous,
-    // but they do not make this reviewed contract ambiguous: guards and source
-    // ownership identify the one candidate that can satisfy this anchor.
-    // This is semantic-contract selection, not a claim about linker choice.
-    call.root_linkage
-        .candidates
-        .iter()
-        .filter(|candidate| {
-            candidate.kind == "data"
-                && candidate.address == pointer_cell
-                && facts
-                    .artifact(candidate.artifact)
-                    .is_some_and(|artifact| artifact.sources.contains(&contract.source))
-        })
-        .count()
-        == 1
+    match (&contract.root, &call.root) {
+        (
+            InterfaceRootSelector::RelocatedSymbol {
+                member,
+                symbol,
+                addend,
+                addressing,
+            },
+            super::InterfaceFactRoot::RelocatedSymbol {
+                member: call_member,
+                symbol: call_symbol,
+                addend: call_addend,
+                addressing: call_addressing,
+            },
+        ) => {
+            call_container == contract.container_path
+                && member == call_member
+                && symbol == call_symbol
+                && addend == call_addend
+                && addressing == call_addressing
+        }
+        (
+            InterfaceRootSelector::FunctionArgument { argument },
+            super::InterfaceFactRoot::FunctionArgument {
+                argument: call_argument,
+            },
+        ) => call_container == contract.container_path && argument == call_argument,
+        (InterfaceRootSelector::AbsoluteAddress { address }, _) => {
+            let Some(first_contract_step) = contract.container_path.first() else {
+                return false;
+            };
+            if call_container.first().is_none_or(|step| {
+                step.width != first_contract_step.width
+                    || step.selector != first_contract_step.selector
+            }) {
+                return false;
+            }
+            let Some(pointer_cell) = address.checked_add_signed(first_contract_step.offset) else {
+                return false;
+            };
+            // Project inventory may contain unrelated linked test/oracle
+            // definitions of the same pointer symbol. Guards and source
+            // ownership select the candidate that can satisfy this anchor.
+            call.root_linkage
+                .candidates
+                .iter()
+                .filter(|candidate| {
+                    candidate.kind == "data"
+                        && candidate.address == pointer_cell
+                        && facts
+                            .artifact(candidate.artifact)
+                            .is_some_and(|artifact| artifact.sources.contains(&contract.source))
+                })
+                .count()
+                == 1
+        }
+        _ => false,
+    }
 }
 
 fn same_indirect_target_shape(left: &InterfaceCallFact, right: &InterfaceCallFact) -> bool {
@@ -351,6 +443,43 @@ mod tests {
     }
 
     #[test]
+    fn exact_relocated_callback_cell_matches_without_an_absolute_fixture() {
+        let call = call(1, Some("event.o"), 0, 0x40);
+        let mut contract = contract();
+        contract.root = InterfaceRootSelector::RelocatedSymbol {
+            member: Some("event.o".to_owned()),
+            symbol: "g_services".to_owned(),
+            addend: 0,
+            addressing: "absolute".to_owned(),
+        };
+        contract.container_path = vec![InterfaceFactStep {
+            offset: 0,
+            width: 32,
+            selector: None,
+        }];
+
+        assert!(archive_call_matches_binding(
+            &call,
+            &binding(),
+            &contract,
+            &facts(),
+        ));
+
+        contract.root = InterfaceRootSelector::RelocatedSymbol {
+            member: Some("other.o".to_owned()),
+            symbol: "g_services".to_owned(),
+            addend: 0,
+            addressing: "absolute".to_owned(),
+        };
+        assert!(!archive_call_matches_binding(
+            &call,
+            &binding(),
+            &contract,
+            &facts(),
+        ));
+    }
+
+    #[test]
     fn unrelated_project_definition_does_not_erase_unique_reviewed_anchor() {
         let mut call = call(1, Some("event.o"), 0, 0x40);
         call.root_linkage.resolutions = vec!["ambiguous-project".to_owned()];
@@ -388,5 +517,61 @@ mod tests {
         linked.loads[1].offset = 16;
         linked.kind = "tail-jump".to_owned();
         assert!(!same_indirect_target_shape(&archive, &linked));
+    }
+
+    #[test]
+    fn exact_origin_relocation_allows_a_linker_changed_pointer_cell_immediate() {
+        let mut archive = call(1, Some("event.o"), 0, 0x40);
+        archive.loads.truncate(1);
+        archive.container_depth = 0;
+        archive.slot_offset = Some(0);
+        archive.slot_load_site = Some(0x3c);
+        let mut linked = call(2, None, 0x1000, 0x1062);
+        linked.loads.truncate(1);
+        linked.loads[0].offset = 0x160;
+        linked.container_depth = 0;
+        linked.slot_offset = Some(0x160);
+        linked.slot_load_site = Some(0x105c);
+        linked.root = InterfaceFactRoot::AbsoluteAddress {
+            address: 0x1008_8000,
+        };
+        let origin = LinkUnitOriginFact {
+            linked_sources: vec!["rom".to_owned()],
+            linked_artifact_sha256: "22".repeat(32),
+            linked_member: None,
+            symbol: "post_event".to_owned(),
+            linked_address: 0x1000,
+            kind: "text".to_owned(),
+            origin_sources: vec!["rom".to_owned()],
+            origin_artifact_sha256: "11".repeat(32),
+            origin_member: Some("event.o".to_owned()),
+            origin_address: 0,
+        };
+        let relocations = BTreeMap::from([(
+            StructuralCallSite::from_identity(None, "post_event".to_owned(), 0x105c),
+            vec![StructuralProjectedRelocation {
+                origin_member: Some("event.o".to_owned()),
+                origin_symbol: "post_event".to_owned(),
+                origin_offsets: vec![0],
+                kind: crate::artifact::RelocationKind::Lo12I,
+                symbol: "g_services".to_owned(),
+                addend: 0,
+                correspondence: "same-shape",
+            }],
+        )]);
+
+        assert!(!same_indirect_target_shape(&archive, &linked));
+        assert!(relocated_direct_target_matches(
+            &archive,
+            &linked,
+            &origin,
+            &relocations,
+        ));
+
+        let mut wrong = relocations;
+        wrong.values_mut().next().unwrap()[0].symbol = "other_cell".to_owned();
+        assert!(!relocated_direct_target_matches(
+            &archive, &linked, &origin, &wrong,
+        ));
     }
 }

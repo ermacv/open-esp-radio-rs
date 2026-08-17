@@ -432,9 +432,9 @@ pub(crate) struct InspectFunctionArgs {
     /// Authoritative linked image for the selected source.
     #[arg(long)]
     pub(crate) artifact: Option<PathBuf>,
-    /// Raw archive used as source inventory and origin evidence.
+    /// Raw archives used as source inventory and origin evidence.
     #[arg(long)]
-    pub(crate) inventory: Option<PathBuf>,
+    pub(crate) inventory: Vec<PathBuf>,
     /// Member containing the runtime function when the primary artifact is an archive.
     #[arg(long)]
     pub(crate) member: Option<String>,

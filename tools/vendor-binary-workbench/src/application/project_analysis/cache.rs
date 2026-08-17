@@ -222,10 +222,10 @@ fn stage_revision(stage: &str) -> Result<u32> {
     match stage {
         "symbol-inventory" => Ok(2),
         "mmio-discovery" => Ok(4),
-        "interface-discovery" => Ok(3),
-        "linked-ir" => Ok(20),
+        "interface-discovery" => Ok(6),
+        "linked-ir" => Ok(33),
         "event-replays" => Ok(1),
-        "review-scopes" => Ok(3),
+        "review-scopes" => Ok(5),
         "navigation-index" => Ok(2),
         "code-boundary-review" => Ok(1),
         "register-review" => Ok(1),

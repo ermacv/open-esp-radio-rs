@@ -77,9 +77,12 @@ pub(super) fn validate(facts: &InterfaceFacts) -> Result<()> {
             &assignment.container_path,
             "interface assignment container path",
         )?;
-        if !matches!(assignment.target, InterfaceFactRoot::RelocatedSymbol { .. }) {
+        if !matches!(
+            assignment.target,
+            InterfaceFactRoot::RelocatedSymbol { .. } | InterfaceFactRoot::FunctionArgument { .. }
+        ) {
             return Err(crate::Error::invalid(
-                "interface assignment target lacks relocation provenance",
+                "interface assignment target lacks function-pointer provenance",
             ));
         }
         if !assignment_keys.insert(assignment.clone()) {

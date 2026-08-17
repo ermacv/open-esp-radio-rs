@@ -65,12 +65,96 @@ static C_MEMCPY_SEMANTIC: crate::DirectSemanticFunctionSpec = crate::DirectSeman
 };
 
 #[test]
+fn recovered_indexed_dispatch_removes_only_its_indirect_diagnostics() {
+    let mut trace = FunctionAnalysis {
+        symbol: "switch_with_callback".to_owned(),
+        events: Vec::new(),
+        located_events: Vec::new(),
+        located_reference_events: Vec::new(),
+        reference_events: Vec::new(),
+        reference_dependencies: Vec::new(),
+        blockers: vec![
+            "call/jump instruction at 0x1000: jalr zero, 0(a5)".to_owned(),
+            "call/jump instruction at 0x1010: jalr ra, 0(a6)".to_owned(),
+        ],
+        reference_blockers: vec![
+            "symbolic-cfg: symbolic path has unsupported effects: call/jump instruction at 0x1000: jalr zero, 0(a5); unmodeled-memory-load at 0x0ffe: lw a5, 0(a5); base a5 = expr:Add(arg0,const:0x2000); unresolved-indirect-control-flow at 0x1000: jalr zero, 0(a5); offset=+0x0".to_owned(),
+            "unresolved-indirect-call at 0x1010: jalr ra, 0(a6)".to_owned(),
+            "symbolic-cfg: symbolic path has unsupported effects: call/jump instruction at 0x1000: jalr zero, 0(a5); unmodeled-memory-store at 0x0ffc: sw a0, 0(a1); unresolved-indirect-control-flow at 0x1000: jalr zero, 0(a5); offset=+0x0".to_owned(),
+        ],
+        return_value: SymbolicValue::Unknown,
+        reference_flow: None,
+        unresolved_branch: None,
+    };
+
+    remove_recovered_indexed_dispatch_diagnostics(&mut trace, &BTreeSet::from([0x1000]));
+
+    assert_eq!(
+        trace.blockers,
+        ["call/jump instruction at 0x1010: jalr ra, 0(a6)"]
+    );
+    assert_eq!(
+        trace.reference_blockers,
+        [
+            "unresolved-indirect-call at 0x1010: jalr ra, 0(a6)",
+            "symbolic-cfg: symbolic path has unsupported effects: call/jump instruction at 0x1000: jalr zero, 0(a5); unmodeled-memory-store at 0x0ffc: sw a0, 0(a1); unresolved-indirect-control-flow at 0x1000: jalr zero, 0(a5); offset=+0x0",
+        ]
+    );
+}
+
+#[test]
+fn recovered_indexed_dispatch_removes_its_duplicate_call_graph_diagnostic() {
+    let mut blockers = BTreeSet::from([
+        "unresolved-indirect-control-flow at 0x1000: jalr zero, 0(a5); offset=+0x0".to_owned(),
+        "unresolved-indirect-call at 0x1010: jalr ra, 0(a6)".to_owned(),
+    ]);
+
+    remove_recovered_indexed_dispatch_call_graph_blockers(&mut blockers, &BTreeSet::from([0x1000]));
+
+    assert_eq!(
+        blockers,
+        BTreeSet::from(["unresolved-indirect-call at 0x1010: jalr ra, 0(a6)".to_owned()])
+    );
+}
+
+#[test]
+fn recovered_indexed_dispatch_is_visible_without_case_callees() {
+    let pseudo = annotate_indexed_dispatch_pseudo(
+        "// vendor symbol: choose\nfn choose() {}\n".to_owned(),
+        &[LinkedIndexedDispatch {
+            table: ".Lswitch".to_owned(),
+            table_address: Some(0x2000),
+            site: 0x1010,
+            stride: 4,
+            entries: vec![
+                LinkedIndexedDispatchEntry {
+                    selector: 0,
+                    case_target: ".Lzero".to_owned(),
+                    case_address: 0x1020,
+                },
+                LinkedIndexedDispatchEntry {
+                    selector: 1,
+                    case_target: ".Lone".to_owned(),
+                    case_address: 0x1030,
+                },
+            ],
+        }],
+    );
+
+    assert!(
+        pseudo.contains("INDEXED-DISPATCH 0x00001010: table=.Lswitch address=0x00002000 stride=4")
+    );
+    assert!(pseudo.contains("0=>.Lzero@0x00001020, 1=>.Lone@0x00001030"));
+}
+
+#[test]
 fn opaque_runtime_body_is_not_an_artifact_wide_analysis_root() {
     let runtime = symbol("memcpy", 0x2000, vec![0x67, 0x80, 0x00, 0x00]);
     let hooks = Box::leak(Box::new(crate::RiscvSummaryHooks {
         secondary_return_target: |_| false,
         direct_semantic: |symbol| (symbol.name == "memcpy").then_some(&C_MEMCPY_SEMANTIC),
         direct_external_semantic: |_| None,
+        direct_external_intrinsic: |_, _| None,
         reference_intrinsic: |_, _, _| None,
         standard_memory_function: |_| None,
         wide_signed_divide: |_, _| None,
@@ -99,6 +183,7 @@ fn authoritative_link_unit_symbol_names_and_types_a_direct_external_call() {
         direct_external_semantic: |name| {
             (name == "ets_delay_us").then_some(&LINK_UNIT_DELAY_SEMANTIC)
         },
+        direct_external_intrinsic: |_, _| None,
         reference_intrinsic: |_, _, _| None,
         standard_memory_function: |_| None,
         wide_signed_divide: |_, _| None,
@@ -159,6 +244,7 @@ fn unique_archive_origin_can_name_a_relaxed_internal_definition() {
         secondary_return_target: |_| false,
         direct_semantic: |_| None,
         direct_external_semantic: |_| None,
+        direct_external_intrinsic: |_, _| None,
         reference_intrinsic: |_, _, _| None,
         standard_memory_function: |_| None,
         wide_signed_divide: |_, _| None,
@@ -605,7 +691,7 @@ fn external_call_keeps_reviewed_table_slot_semantics() {
 }
 
 #[test]
-fn standard_memory_call_is_a_semantic_boundary_independent_of_its_body() {
+fn indexed_dispatch_standard_memory_call_is_a_semantic_boundary_independent_of_its_body() {
     let event = DraftReferenceEvent::Call {
         token: 0,
         site: 0x40,
@@ -623,6 +709,7 @@ fn standard_memory_call_is_a_semantic_boundary_independent_of_its_body() {
         secondary_return_target: |_| false,
         direct_semantic: |symbol| (symbol.name == "memcpy").then_some(&C_MEMCPY_SEMANTIC),
         direct_external_semantic: |name| (name == "memcpy").then_some(&C_MEMCPY_SEMANTIC),
+        direct_external_intrinsic: |_, _| None,
         reference_intrinsic: |_, _, _| None,
         standard_memory_function: |_| None,
         wide_signed_divide: |_, _| None,
@@ -636,6 +723,7 @@ fn standard_memory_call_is_a_semantic_boundary_independent_of_its_body() {
 
     collect_call_event(&event, &resolver, &identities, &mut calls);
     let mut calls = calls.into_iter().collect::<Vec<_>>();
+    calls[0].kind = "indexed-dispatch";
     annotate_direct_semantic_calls(&mut calls, &owner, &resolver, &identities);
 
     let call = calls.first().unwrap();

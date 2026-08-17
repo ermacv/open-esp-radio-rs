@@ -61,7 +61,9 @@ fn reference_value_error(
     value: &SymbolicValue,
     available: &BTreeMap<u32, bool>,
 ) -> Option<&'static str> {
-    if !value.is_resolved() {
+    if value.private_stack_offset().is_some() {
+        Some("private-stack pointer requires an explicit external input-memory model")
+    } else if !value.is_resolved() {
         Some("symbolic value is unresolved")
     } else if !value_call_results_available(value, available) {
         Some("symbolic value depends on an unavailable call result")
@@ -233,12 +235,26 @@ pub(super) fn validate_reference_events_detailed(
                 })
             }
             DraftReferenceEvent::DelayMicros { micros } => value_error("delay value", micros),
-            DraftReferenceEvent::ReviewedExternalCall { arguments, .. } => {
+            DraftReferenceEvent::ReviewedExternalCall {
+                site,
+                candidates,
+                arguments,
+                ..
+            } => {
+                let name = candidates
+                    .first()
+                    .map_or("<unknown-reviewed-call>", |candidate| {
+                        candidate.name.as_str()
+                    });
                 arguments.iter().enumerate().find_map(|(index, value)| {
-                    value_error(&format!("external-call argument {index}"), value)
+                    value_error(
+                        &format!("external call `{name}` at {site:#010x} argument {index}"),
+                        value,
+                    )
                 })
             }
             DraftReferenceEvent::ModeledDirectCall {
+                site,
                 function,
                 arguments,
                 ..
@@ -247,9 +263,17 @@ pub(super) fn validate_reference_events_detailed(
                 .take(usize::from(function.argument_count))
                 .enumerate()
                 .find_map(|(index, value)| {
-                    value_error(&format!("modeled-direct-call argument {index}"), value)
+                    value_error(
+                        &format!(
+                            "modeled direct call `{}` at {site:#010x} argument {index}",
+                            function.name
+                        ),
+                        value,
+                    )
                 }),
             DraftReferenceEvent::DiagnosticCall {
+                site,
+                function,
                 argument_count,
                 arguments,
                 ..
@@ -258,7 +282,10 @@ pub(super) fn validate_reference_events_detailed(
                 .take(usize::from(*argument_count))
                 .enumerate()
                 .find_map(|(index, value)| {
-                    value_error(&format!("diagnostic-call argument {index}"), value)
+                    value_error(
+                        &format!("diagnostic call `{function}` at {site:#010x} argument {index}"),
+                        value,
+                    )
                 }),
             DraftReferenceEvent::ComposedCall {
                 token,
@@ -399,7 +426,16 @@ pub(super) fn validate_reference_events_detailed(
 }
 
 pub fn reference_flow_calls_are_valid(flow: &DraftReferenceFlow) -> bool {
-    validate_reference_flow_with_calls_detailed(flow, BTreeMap::new()).is_ok()
+    reference_flow_call_validation_error(flow).is_none()
+}
+
+/// Explain the first unavailable call result in a structured reference flow.
+///
+/// The boolean predicate remains convenient for gates, but callers producing
+/// evidence must not collapse an exact failing branch/event into a generic
+/// "callee a0" message.
+pub fn reference_flow_call_validation_error(flow: &DraftReferenceFlow) -> Option<String> {
+    validate_reference_flow_with_calls_detailed(flow, BTreeMap::new()).err()
 }
 
 pub(super) fn validate_reference_flow_with_calls_detailed(
@@ -453,5 +489,78 @@ mod tests {
             &value,
             &BTreeMap::from([(4, true)])
         ));
+    }
+
+    #[test]
+    fn call_validation_reports_the_exact_branch_using_an_unmodeled_result() {
+        let flow = DraftReferenceFlow {
+            events: vec![DraftReferenceEvent::ComposedCall {
+                token: 0,
+                symbol: "opaque_callback".to_owned(),
+                arguments: Box::new([]),
+                flow: Box::new(DraftReferenceFlow {
+                    events: Vec::new(),
+                    terminator: DraftReferenceTerminator::Return(SymbolicValue::Unknown),
+                }),
+                result_modeled: false,
+            }],
+            terminator: DraftReferenceTerminator::Branch {
+                condition: BranchCondition {
+                    site: 0x4000_1234,
+                    operation: BranchOperation::NotEqual,
+                    left: SymbolicValue::CallResult(0),
+                    right: SymbolicValue::Constant(0),
+                },
+                taken: Box::new(DraftReferenceFlow {
+                    events: Vec::new(),
+                    terminator: DraftReferenceTerminator::Return(SymbolicValue::Constant(1)),
+                }),
+                not_taken: Box::new(DraftReferenceFlow {
+                    events: Vec::new(),
+                    terminator: DraftReferenceTerminator::Return(SymbolicValue::Constant(0)),
+                }),
+            },
+        };
+
+        assert_eq!(
+            reference_flow_call_validation_error(&flow).as_deref(),
+            Some(
+                "branch at 0x40001234 left operand: symbolic value depends on an unavailable call result"
+            )
+        );
+    }
+
+    #[test]
+    fn external_call_requires_a_model_before_consuming_private_stack_memory() {
+        let flow = DraftReferenceFlow {
+            events: vec![DraftReferenceEvent::ReviewedExternalCall {
+                token: 0,
+                site: 0x4000_5678,
+                candidates: vec![ReviewedExternalCall {
+                    id: "queue-send".to_owned(),
+                    contract: "test-rtos@+0x10".to_owned(),
+                    name: "queue_send".to_owned(),
+                    argument_types: vec!["opaque-handle".to_owned(), "const-ptr".to_owned()],
+                    return_type: "i32".to_owned(),
+                    variadic: false,
+                    semantic_operation: Some("rtos.queue.send".to_owned()),
+                    replacement_hint: None,
+                    execution_model: None,
+                    tail: false,
+                    evidence: ReviewedExternalCallEvidence::ObservedCallSite,
+                    slot_load_site: Some(0x4000_5670),
+                }],
+                arguments: vec![SymbolicValue::Constant(1), SymbolicValue::StackAddress(-16)]
+                    .into_boxed_slice(),
+            }],
+            terminator: DraftReferenceTerminator::Return(SymbolicValue::Constant(0)),
+        };
+
+        assert_eq!(
+            reference_flow_call_validation_error(&flow).as_deref(),
+            Some(
+                "event 0 external call `queue_send` at 0x40005678 argument 1: private-stack pointer requires an explicit external input-memory model"
+            )
+        );
     }
 }

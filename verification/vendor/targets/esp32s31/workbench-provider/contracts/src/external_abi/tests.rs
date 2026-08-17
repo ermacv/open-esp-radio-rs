@@ -4,7 +4,7 @@ use super::*;
 fn execution_models_contain_behavior_only() {
     let models = WIFI_OSI_MODELS_V9.spec();
     assert_eq!(models.id, "esp32s31-wifi-osi-v9");
-    assert_eq!(models.models.len(), 38);
+    assert_eq!(models.models.len(), 51);
     assert_eq!(
         WIFI_OSI_MODELS_V9.model("env-is-chip"),
         Some(ENV_IS_CHIP_MODEL)
@@ -42,6 +42,30 @@ fn execution_models_contain_behavior_only() {
             .spec()
             .return_model,
         ExternalReturnModel::SymbolicU32
+    );
+    assert_eq!(
+        WIFI_OSI_MODELS_V9
+            .model("mutex-unlock")
+            .unwrap()
+            .spec()
+            .return_model,
+        ExternalReturnModel::SymbolicU32
+    );
+    assert_eq!(
+        WIFI_OSI_MODELS_V9
+            .model("free")
+            .unwrap()
+            .spec()
+            .return_model,
+        ExternalReturnModel::Void
+    );
+    assert_eq!(
+        WIFI_OSI_MODELS_V9
+            .model("coex-schedule-phase-get")
+            .unwrap()
+            .spec()
+            .return_model,
+        ExternalReturnModel::OpaquePointer
     );
     assert!(WIFI_OSI_MODELS_V9.model("unreviewed-slot").is_none());
 }
@@ -137,4 +161,46 @@ fn coex_adapter_models_are_separate_and_target_exact() {
         ExternalReturnModel::Constant(40)
     );
     assert!(COEX_ADAPTER_MODELS_V2.model("env-is-chip").is_none());
+}
+
+#[test]
+fn wifi_runtime_callback_model_preserves_an_uninterpreted_esp_err_result() {
+    let callback = WIFI_RUNTIME_CALLBACKS_V1.model("wifi-rx-callback").unwrap();
+    assert_eq!(
+        callback.spec().return_model,
+        ExternalReturnModel::SymbolicU32
+    );
+    assert!(callback.spec().outputs.is_empty());
+    assert_eq!(
+        WIFI_RUNTIME_CALLBACKS_V1
+            .model("wifi-gpio-debug-callback")
+            .unwrap()
+            .spec()
+            .return_model,
+        ExternalReturnModel::Void
+    );
+    assert_eq!(
+        WIFI_RUNTIME_CALLBACKS_V1
+            .model("netstack-buffer-ref")
+            .unwrap()
+            .spec()
+            .return_model,
+        ExternalReturnModel::Void
+    );
+    assert_eq!(
+        WIFI_RUNTIME_CALLBACKS_V1
+            .model("netstack-buffer-free")
+            .unwrap()
+            .spec()
+            .return_model,
+        ExternalReturnModel::Void
+    );
+    assert_eq!(
+        WIFI_RUNTIME_CALLBACKS_V1
+            .model("rate-to-schedule-index")
+            .unwrap()
+            .spec()
+            .return_model,
+        ExternalReturnModel::SymbolicU32
+    );
 }

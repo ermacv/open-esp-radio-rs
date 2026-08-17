@@ -14,6 +14,36 @@ fn call_results_are_substituted_into_parent_dataflow() {
 }
 
 #[test]
+fn whole_call_result_preserves_a_symbolic_expression_during_substitution() {
+    let replacement = SymbolicValue::expression(
+        ExpressionOperation::ShiftRightArithmetic,
+        SymbolicValue::RegisterImage {
+            read_token: 0,
+            address: 0x2010_708c,
+            and_mask: 0x0000_0fff,
+            or_mask: 0xffff_f000,
+        },
+        SymbolicValue::Constant(2),
+    );
+    let value = SymbolicValue::CallResult(7).add_constant(2);
+    let call_results = BTreeMap::from([(7, replacement.clone())]);
+
+    let rewritten = value
+        .rewrite_call_context(&[], &[], &[], &call_results, &BTreeMap::new())
+        .unwrap();
+
+    assert_eq!(
+        rewritten,
+        SymbolicValue::expression(
+            ExpressionOperation::Add,
+            replacement,
+            SymbolicValue::Constant(2),
+        )
+    );
+    assert!(rewritten.is_resolved());
+}
+
+#[test]
 fn returning_direct_call_is_flattened_from_binary_symbols() {
     let parent = artifact::ArtifactSymbolDefinition {
         member: None,
@@ -123,7 +153,7 @@ fn direct_call_to_symbolic_cfg_callee_is_scoped_and_composed() {
     assert!(
         generated
             .source
-            .contains("ReferenceOutcome { exit_a0: Some(call_result0 & 0xffffffff_u32) }")
+            .contains("ReferenceOutcome { exit_a0: Some(call_result0) }")
     );
     assert_generated_reference_compiles("scoped-callee", &generated.source);
 }
@@ -772,6 +802,46 @@ fn modeled_direct_platform_call_propagates_constant_result() {
 }
 
 #[test]
+fn modeled_direct_wide_runtime_call_propagates_both_return_words() {
+    let parent = artifact::ArtifactSymbolDefinition {
+        member: None,
+        name: "wide_runtime_parent".to_owned(),
+        address: 0x1000,
+        bytes: vec![
+            0x97, 0x00, 0x00, 0x00, // auipc ra, 0
+            0xe7, 0x80, 0x00, 0x00, // jalr ra, 0(ra)
+            0x13, 0x85, 0x05, 0x00, // mv a0, a1
+            0x67, 0x80, 0x00, 0x00, // ret
+        ],
+        addresses_resolved: true,
+        memory_regions: Default::default(),
+        relocations: Vec::new(),
+    };
+    let relocations = BTreeMap::from([(
+        StructuralCallSite::new(&parent, 0x1000),
+        ("__umoddi3".to_owned(), None),
+    )]);
+    let context = synthetic_delay_pointer_context();
+
+    let trace = trace_binary_symbol(&parent, &map(), &relocations, &context, None).unwrap();
+
+    assert!(trace.blockers.is_empty(), "{:#?}", trace.blockers);
+    assert!(
+        trace.reference_blockers.is_empty(),
+        "{:#?}",
+        trace.reference_blockers
+    );
+    assert_eq!(trace.return_value, SymbolicValue::ExternalResultHigh(0));
+    assert!(matches!(
+        trace.reference_events.as_slice(),
+        [DraftReferenceEvent::ModeledDirectCall { function, arguments, .. }]
+            if function.name == "__umoddi3"
+                && function.return_model == ExternalReturnModel::SymbolicU64
+                && arguments.len() == 4
+    ));
+}
+
+#[test]
 fn reviewed_indirect_call_keeps_abi_identity_without_claiming_execution_semantics() {
     let parent = artifact::ArtifactSymbolDefinition {
         member: None,
@@ -825,6 +895,67 @@ fn reviewed_indirect_call_keeps_abi_identity_without_claiming_execution_semantic
             arguments,
             ..
         }] if candidates[0].name == "semphr_give" && arguments.len() == 1
+    ));
+}
+
+#[test]
+fn alternative_reviewed_calls_with_the_same_abi_and_behavior_share_one_model() {
+    let parent = artifact::ArtifactSymbolDefinition {
+        member: None,
+        name: "alternative_allocators".to_owned(),
+        address: 0x1000,
+        bytes: vec![
+            0xe7, 0x00, 0x03, 0x00, // jalr ra, 0(t1)
+            0x67, 0x80, 0x00, 0x00, // ret
+        ],
+        addresses_resolved: true,
+        memory_regions: Default::default(),
+        relocations: Vec::new(),
+    };
+    let candidate = |id: &str, name: &str, model: &str| ReviewedExternalCall {
+        id: id.to_owned(),
+        contract: "pack::wifi-osi".to_owned(),
+        name: name.to_owned(),
+        argument_types: vec!["usize".to_owned()],
+        return_type: "mut-ptr".to_owned(),
+        variadic: false,
+        semantic_operation: None,
+        replacement_hint: None,
+        execution_model: Some(ReviewedExternalCallExecutionModel {
+            id: model.to_owned(),
+            return_model: ExternalReturnModel::OpaquePointer,
+            outputs: Vec::new(),
+        }),
+        tail: false,
+        evidence: ReviewedExternalCallEvidence::ObservedCallSite,
+        slot_load_site: None,
+    };
+    let mut context = StructuralPointerContext::default();
+    context.reviewed_external_calls.insert(
+        StructuralCallSite::new(&parent, 0x1000),
+        vec![
+            candidate(
+                "pack::wifi-osi@+0x158",
+                "malloc_internal",
+                "malloc-internal",
+            ),
+            candidate("pack::wifi-osi@+0x168", "wifi_malloc", "wifi-malloc"),
+        ],
+    );
+
+    let trace = trace_binary_symbol(&parent, &map(), &BTreeMap::new(), &context, None).unwrap();
+
+    assert!(trace.blockers.is_empty(), "{trace:#?}");
+    assert!(trace.reference_blockers.is_empty(), "{trace:#?}");
+    assert!(matches!(
+        trace.return_value,
+        SymbolicValue::ExternalResult(token)
+            if token & OPAQUE_POINTER_EXTERNAL_RESULT_TOKEN_FLAG != 0
+    ));
+    assert!(matches!(
+        trace.reference_events.as_slice(),
+        [DraftReferenceEvent::ReviewedExternalCall { candidates, .. }]
+            if candidates.len() == 2
     ));
 }
 

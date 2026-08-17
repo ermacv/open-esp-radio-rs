@@ -59,6 +59,109 @@ fn discovers_pointer_cell_table_slot_and_call_arguments() {
 }
 
 #[test]
+fn preserves_bounded_pointer_alternatives_at_a_shared_tail_epilogue() {
+    let symbol = symbol(
+        vec![
+            0x11, 0xc5, // beqz a0, +12
+            0xb7, 0x07, 0x00, 0x00, // lui a5, %hi(g_services)
+            0x9c, 0x43, // lw a5, %lo(g_services)(a5)
+            0xfc, 0x4b, // lw a5, 84(a5)
+            0x29, 0xa0, // j +10
+            0xb7, 0x07, 0x00, 0x00, // lui a5, %hi(g_services)
+            0x9c, 0x43, // lw a5, %lo(g_services)(a5)
+            0xbc, 0x4f, // lw a5, 88(a5)
+            0x82, 0x87, // jr a5
+        ],
+        vec![
+            artifact::SymbolRelocation {
+                address: 2,
+                kind: artifact::RelocationKind::Hi20,
+                symbol: "g_services".to_owned(),
+                addend: 0,
+            },
+            artifact::SymbolRelocation {
+                address: 6,
+                kind: artifact::RelocationKind::Lo12I,
+                symbol: "g_services".to_owned(),
+                addend: 0,
+            },
+            artifact::SymbolRelocation {
+                address: 12,
+                kind: artifact::RelocationKind::Hi20,
+                symbol: "g_services".to_owned(),
+                addend: 0,
+            },
+            artifact::SymbolRelocation {
+                address: 16,
+                kind: artifact::RelocationKind::Lo12I,
+                symbol: "g_services".to_owned(),
+                addend: 0,
+            },
+        ],
+    );
+
+    let calls = discover_interface_calls(&symbol).unwrap();
+
+    assert_eq!(calls.len(), 2, "{calls:#?}");
+    assert!(
+        calls
+            .iter()
+            .all(|call| { call.site == 20 && call.kind == InterfaceCallKind::TailJump })
+    );
+    assert_eq!(
+        calls
+            .iter()
+            .map(|call| call.target.slot().unwrap().offset)
+            .collect::<BTreeSet<_>>(),
+        BTreeSet::from([84, 88])
+    );
+}
+
+#[test]
+fn local_wifi_ap_link_unit_preserves_esf_recycle_tail_slot_alternatives() {
+    let Some(artifact) = std::env::var_os("OPEN_RADIO_VENDOR_WIFI_AP_ELF") else {
+        return;
+    };
+    let artifact = std::path::Path::new(&artifact);
+    if !artifact.is_file() {
+        return;
+    }
+    let symbols =
+        artifact::load_code_symbols(artifact, "", artifact::CodeSymbolSelection::All).unwrap();
+    let function = symbols
+        .iter()
+        .find(|symbol| symbol.name == "esf_buf_recycle")
+        .unwrap();
+
+    let calls = discover_interface_calls(function).unwrap();
+    let tail_slots = calls
+        .iter()
+        .filter(|call| call.site == 0x1006_8f5e)
+        .filter_map(|call| call.target.slot().map(|slot| slot.offset))
+        .collect::<BTreeSet<_>>();
+
+    assert_eq!(tail_slots, BTreeSet::from([0x58]), "{calls:#?}");
+
+    let allocate = symbols
+        .iter()
+        .find(|symbol| symbol.name == "esf_buf_alloc_dynamic")
+        .unwrap();
+    let allocate_calls = discover_interface_calls(allocate).unwrap();
+    let recovered = allocate_calls
+        .iter()
+        .filter_map(|call| call.target.slot().map(|slot| (call.site, slot.offset)))
+        .collect::<BTreeSet<_>>();
+    assert!(
+        recovered.contains(&(0x1005_e724, 0x58)),
+        "{allocate_calls:#?}"
+    );
+    assert!(
+        recovered.contains(&(0x1005_e770, 0x158)),
+        "{allocate_calls:#?}"
+    );
+}
+
+#[test]
 fn discovers_relocated_function_assignment_through_pointer_cell() {
     let symbol = symbol(
         vec![
@@ -113,6 +216,30 @@ fn discovers_relocated_function_assignment_through_pointer_cell() {
     assert!(matches!(
         assignment.target,
         InterfaceRoot::RelocatedSymbol { ref symbol, .. } if symbol == "service_fn"
+    ));
+}
+
+#[test]
+fn runtime_registration_preserves_the_callback_argument_without_typing_it() {
+    let symbol = symbol(
+        vec![
+            0xb7, 0x07, 0x00, 0x00, // lui a5, 0
+            0x23, 0xa0, 0xb7, 0x00, // sw a1, 0(a5)
+            0x67, 0x80, 0x00, 0x00, // ret
+        ],
+        vec![artifact::SymbolRelocation {
+            address: 0,
+            kind: artifact::RelocationKind::Hi20,
+            symbol: "callback_cell".to_owned(),
+            addend: 0,
+        }],
+    );
+
+    let discovery = discover_interface_calls(&symbol).unwrap();
+    assert_eq!(discovery.assignments.len(), 1);
+    assert!(matches!(
+        discovery.assignments[0].target,
+        InterfaceRoot::FunctionArgument { index: 1 }
     ));
 }
 
@@ -184,6 +311,27 @@ fn discovers_context_relative_nested_callback_without_platform_knowledge() {
 }
 
 #[test]
+fn compressed_register_move_preserves_argument_root_for_object_method() {
+    let symbol = symbol(
+        vec![
+            0x2a, 0x84, // c.mv s0, a0 (decoded as add s0, zero, a0)
+            0x3c, 0x5c, // c.lw a5, 120(s0)
+            0x82, 0x97, // c.jalr a5
+            0x67, 0x80, 0x00, 0x00, // ret
+        ],
+        Vec::new(),
+    );
+
+    let calls = discover_interface_calls(&symbol).unwrap();
+    assert_eq!(calls.len(), 1);
+    assert_eq!(
+        calls[0].target.root,
+        InterfaceRoot::FunctionArgument { index: 0 }
+    );
+    assert_eq!(calls[0].target.loads[0].offset, 120);
+}
+
+#[test]
 fn preserves_affine_argument_indexed_slots_without_inventing_a_fixed_offset() {
     let symbol = symbol(
         vec![
@@ -229,7 +377,7 @@ fn preserves_affine_argument_indexed_slots_without_inventing_a_fixed_offset() {
 }
 
 #[test]
-fn control_flow_join_drops_conflicting_pointer_provenance() {
+fn control_flow_join_preserves_bounded_pointer_provenance_alternatives() {
     let symbol = symbol(
         vec![
             0x63, 0x04, 0xb5, 0x00, // beq a0, a1, +8
@@ -242,7 +390,18 @@ fn control_flow_join_drops_conflicting_pointer_provenance() {
     );
 
     let calls = discover_interface_calls(&symbol).unwrap();
-    assert!(calls.is_empty());
+    assert_eq!(calls.len(), 2);
+    let roots = calls
+        .iter()
+        .map(|call| call.target.root.clone())
+        .collect::<BTreeSet<_>>();
+    assert_eq!(
+        roots,
+        BTreeSet::from([
+            InterfaceRoot::FunctionArgument { index: 0 },
+            InterfaceRoot::FunctionArgument { index: 5 },
+        ])
+    );
 }
 
 #[test]

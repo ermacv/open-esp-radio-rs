@@ -1,6 +1,6 @@
 //! Serializable evidence models for focused function investigation.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
@@ -314,7 +314,7 @@ pub(crate) struct FunctionInvestigationRequest<'a> {
     pub(crate) symbol: &'a str,
     pub(crate) runtime_address: Option<u64>,
     pub(crate) artifact: &'a Path,
-    pub(crate) inventory: Option<&'a Path>,
+    pub(crate) inventories: &'a [PathBuf],
     pub(crate) member: Option<&'a str>,
     pub(crate) origin_member: Option<&'a str>,
     pub(crate) graph_depth: usize,

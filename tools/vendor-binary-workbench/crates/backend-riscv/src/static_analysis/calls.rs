@@ -75,6 +75,29 @@ fn structural_prepare_opaque_call(state: &mut StructuralTraceState, return_addre
     structural_finish_call_with_result(&mut state.values, return_address, SymbolicValue::Unknown);
 }
 
+fn common_reviewed_execution_model(
+    candidates: &[ReviewedExternalCall],
+) -> Option<&ReviewedExternalCallExecutionModel> {
+    let first = candidates.first()?;
+    let model = first.execution_model.as_ref()?;
+    candidates
+        .iter()
+        .skip(1)
+        .all(|candidate| {
+            candidate.argument_types == first.argument_types
+                && candidate.return_type == first.return_type
+                && candidate.variadic == first.variadic
+                && candidate
+                    .execution_model
+                    .as_ref()
+                    .is_some_and(|candidate_model| {
+                        candidate_model.return_model == model.return_model
+                            && candidate_model.outputs == model.outputs
+                    })
+        })
+        .then_some(model)
+}
+
 fn apply_reviewed_external_call(
     pc: u32,
     width: u8,
@@ -138,10 +161,10 @@ fn apply_reviewed_external_call(
     state.private_stack_may_be_modified_by_call |= arguments
         .iter()
         .any(|argument| argument.private_stack_offset().is_some());
-    let execution_model = match candidates.as_slice() {
-        [candidate] => candidate.execution_model.as_ref(),
-        _ => None,
-    };
+    // A branch may select two reviewed ABI slots before converging on one
+    // indirect call instruction. Keep both call identities as evidence, but
+    // execute the boundary when their ABI and modeled effects are identical.
+    let execution_model = common_reviewed_execution_model(&candidates);
     let mut secondary_result = None;
     let result = match execution_model.map(|model| model.return_model) {
         Some(ExternalReturnModel::Void) => SymbolicValue::Unknown,
@@ -435,6 +458,32 @@ pub(super) fn apply_relocated_call(
         return StructuralCallControl::Advance(instruction_count);
     }
 
+    let intrinsic_arguments = core::array::from_fn(|index| {
+        if index < RV32_REGISTER_ARGUMENT_COUNT {
+            state.values[10 + index].clone()
+        } else {
+            SymbolicValue::Unknown
+        }
+    });
+    if let Some((result, high_result)) = pointer_context
+        .summary_hooks
+        .and_then(|hooks| (hooks.direct_external_intrinsic)(name, &intrinsic_arguments))
+    {
+        if dest != Reg::RA {
+            state.reference_blockers.push(format!(
+                "unsupported-pure-intrinsic-link-register at {pc:#x}: {name} uses {dest}"
+            ));
+            return StructuralCallControl::Stop;
+        }
+        let removed = state.blockers.pop();
+        debug_assert!(removed.is_some_and(|blocker| blocker.starts_with("call/jump instruction")));
+        structural_finish_call_with_result(&mut state.values, return_pc, result);
+        if let Some(high_result) = high_result {
+            structural_set(&mut state.values, Reg::A1, high_result);
+        }
+        return StructuralCallControl::Advance(instruction_count);
+    }
+
     if let Some(function) = pointer_context
         .summary_hooks
         .and_then(|hooks| (hooks.direct_external_semantic)(name))
@@ -446,23 +495,30 @@ pub(super) fn apply_relocated_call(
             ));
             return StructuralCallControl::Stop;
         }
-        let result = match function.return_model {
-            ExternalReturnModel::Void => SymbolicValue::Unknown,
-            ExternalReturnModel::Constant(value) => SymbolicValue::Constant(value),
-            ExternalReturnModel::SymbolicU32 => {
-                SymbolicValue::ExternalResult(state.next_external_call_token)
-            }
-            ExternalReturnModel::SymbolicU64 => {
-                state.reference_blockers.push(format!(
-                    "unsupported-modeled-direct-wide-return at {pc:#x}: {name}"
-                ));
-                return StructuralCallControl::Stop;
-            }
-            ExternalReturnModel::AllocatedZeroed { .. } => SymbolicValue::ExternalResult(
-                state.next_external_call_token | ALLOCATED_EXTERNAL_RESULT_TOKEN_FLAG,
+        let (result, high_result) = match function.return_model {
+            ExternalReturnModel::Void => (SymbolicValue::Unknown, None),
+            ExternalReturnModel::Constant(value) => (SymbolicValue::Constant(value), None),
+            ExternalReturnModel::SymbolicU32 => (
+                SymbolicValue::ExternalResult(state.next_external_call_token),
+                None,
             ),
-            ExternalReturnModel::OpaquePointer => SymbolicValue::ExternalResult(
-                state.next_external_call_token | OPAQUE_POINTER_EXTERNAL_RESULT_TOKEN_FLAG,
+            ExternalReturnModel::SymbolicU64 => (
+                SymbolicValue::ExternalResult(state.next_external_call_token),
+                Some(SymbolicValue::ExternalResultHigh(
+                    state.next_external_call_token,
+                )),
+            ),
+            ExternalReturnModel::AllocatedZeroed { .. } => (
+                SymbolicValue::ExternalResult(
+                    state.next_external_call_token | ALLOCATED_EXTERNAL_RESULT_TOKEN_FLAG,
+                ),
+                None,
+            ),
+            ExternalReturnModel::OpaquePointer => (
+                SymbolicValue::ExternalResult(
+                    state.next_external_call_token | OPAQUE_POINTER_EXTERNAL_RESULT_TOKEN_FLAG,
+                ),
+                None,
             ),
             ExternalReturnModel::Unmodeled => unreachable!(),
         };
@@ -491,6 +547,9 @@ pub(super) fn apply_relocated_call(
             });
         state.next_external_call_token += 1;
         structural_finish_call_with_result(&mut state.values, return_pc, result);
+        if let Some(high_result) = high_result {
+            structural_set(&mut state.values, Reg::A1, high_result);
+        }
         return StructuralCallControl::Advance(instruction_count);
     }
 

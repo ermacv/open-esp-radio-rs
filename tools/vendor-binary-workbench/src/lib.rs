@@ -55,15 +55,14 @@ use open_radio_vendor_analysis_model::*;
 #[cfg(test)]
 use open_radio_vendor_analysis_model::{MmioRegion, Register};
 pub use open_radio_vendor_backend_riscv::RiscvHarnessSpec;
-#[cfg(test)]
-pub(crate) use open_radio_vendor_backend_riscv::Rv32CallArguments;
 pub use open_radio_vendor_backend_riscv::artifact::{
     FunctionBasicBlock, FunctionBody, FunctionControlFlow, FunctionControlFlowKind,
     FunctionInstruction, FunctionInstructionRelocation, FunctionLabel,
 };
 pub use open_radio_vendor_backend_riscv::execution::Scenario as ExecutionScenario;
 pub(crate) use open_radio_vendor_backend_riscv::{
-    artifact, codegen, direct_target_audit, execution, interface_discovery,
+    Rv32CallArguments, Rv32IntrinsicResult, artifact, codegen, direct_target_audit, execution,
+    interface_discovery,
 };
 pub(crate) use open_radio_vendor_execution_model as execution_model;
 pub use open_radio_vendor_execution_model::{

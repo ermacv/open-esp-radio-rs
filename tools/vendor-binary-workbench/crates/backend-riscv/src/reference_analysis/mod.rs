@@ -30,7 +30,8 @@ use crate::{
     LocatedReferenceEvent, MemoryAccess, MmioMap, ObservableEvent, RV32_MODELED_ARGUMENT_COUNT,
     RV32_REGISTER_ARGUMENT_COUNT, RV32_STACK_ARGUMENT_COUNT, Result, Rv32CallArguments,
     SECONDARY_CALL_RESULT_TOKEN_FLAG, SymbolicValue, artifact, execution,
-    reference_event_is_mmio_read, reference_flow_calls_are_valid,
+    reference_event_is_mmio_read, reference_flow_call_validation_error,
+    reference_flow_calls_are_valid,
 };
 
 pub fn resolve_reference_trace(
@@ -75,11 +76,12 @@ fn resolve_reference_trace_with_budget(
                     trace.reference_flow = Some(flow);
                 }
                 Ok(flow) => {
+                    let detail = reference_flow_call_validation_error(&flow)
+                        .unwrap_or_else(|| "unknown validation failure".to_owned());
                     trace.reference_flow = Some(flow);
-                    trace.reference_blockers.push(
-                        "reviewed-summary: composed call result is used without a modeled callee `a0`"
-                            .to_owned(),
-                    );
+                    trace.reference_blockers.push(format!(
+                        "reviewed-summary: composed call result is used without a modeled callee `a0`: {detail}"
+                    ));
                 }
                 Err(error) => {
                     trace.reference_flow = Some(original_flow);
@@ -141,10 +143,11 @@ fn resolve_reference_trace_with_budget(
                 let flow = match composed {
                     Ok(flow) if reference_flow_calls_are_valid(&flow) => flow,
                     Ok(flow) => {
-                        incomplete_effects.push(
-                            "symbolic-cfg: composed call result is used without a modeled callee `a0`"
-                                .to_owned(),
-                        );
+                        let detail = reference_flow_call_validation_error(&flow)
+                            .unwrap_or_else(|| "unknown validation failure".to_owned());
+                        incomplete_effects.push(format!(
+                            "symbolic-cfg: composed call result is used without a modeled callee `a0`: {detail}"
+                        ));
                         flow
                     }
                     Err(error) => {

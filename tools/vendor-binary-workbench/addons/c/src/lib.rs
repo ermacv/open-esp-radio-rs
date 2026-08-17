@@ -10,7 +10,8 @@ use open_radio_vendor_analysis_model::{
     SemanticFunctionBodyPolicy, StandardMemoryFunction, SymbolicValue,
 };
 use open_radio_vendor_backend_riscv::{
-    StructuralPointerContext, artifact::ArtifactSymbolDefinition,
+    Rv32CallArguments, Rv32IntrinsicResult, StructuralPointerContext,
+    artifact::ArtifactSymbolDefinition,
 };
 
 const DESTINATION: ExternalArgumentSpec = ExternalArgumentSpec {
@@ -41,6 +42,28 @@ const WORD_ARGUMENTS: &[ExternalArgumentSpec] = &[ExternalArgumentSpec {
     c_type: "unsigned int",
     direction: ExternalArgumentDirection::Input,
 }];
+const WIDE_BINARY_WORD_ARGUMENTS: &[ExternalArgumentSpec] = &[
+    ExternalArgumentSpec {
+        name: "left_low",
+        c_type: "uint32_t",
+        direction: ExternalArgumentDirection::Input,
+    },
+    ExternalArgumentSpec {
+        name: "left_high",
+        c_type: "uint32_t",
+        direction: ExternalArgumentDirection::Input,
+    },
+    ExternalArgumentSpec {
+        name: "right_low",
+        c_type: "uint32_t",
+        direction: ExternalArgumentDirection::Input,
+    },
+    ExternalArgumentSpec {
+        name: "right_high",
+        c_type: "uint32_t",
+        direction: ExternalArgumentDirection::Input,
+    },
+];
 const STRING: ExternalArgumentSpec = ExternalArgumentSpec {
     name: "string",
     c_type: "const char *",
@@ -174,6 +197,52 @@ pure_word_runtime_spec!(
     "c.runtime.ctzsi2",
     "__ctzsi2",
     "integer.trailing-zeros"
+);
+
+macro_rules! wide_runtime_spec {
+    ($name:ident, $id:literal, $symbol:literal, $operation:literal) => {
+        static $name: DirectSemanticFunctionSpec = DirectSemanticFunctionSpec {
+            id: $id,
+            source: "c-addon",
+            c_name: $symbol,
+            argument_count: 4,
+            body_policy: SemanticFunctionBodyPolicy::OpaqueBoundary,
+            return_model: ExternalReturnModel::SymbolicU64,
+            semantic: ExternalSemanticSpec {
+                operation: $operation,
+                arguments: WIDE_BINARY_WORD_ARGUMENTS,
+                return_type: "uint64_t",
+                replacement: None,
+                event_dispatch: None,
+            },
+            evidence: "exact compiler runtime symbol and standardized RV32 two-word ABI",
+        };
+    };
+}
+
+wide_runtime_spec!(
+    DIVDI3,
+    "c.runtime.divdi3",
+    "__divdi3",
+    "integer.divide-signed-64"
+);
+wide_runtime_spec!(
+    MODDI3,
+    "c.runtime.moddi3",
+    "__moddi3",
+    "integer.remainder-signed-64"
+);
+wide_runtime_spec!(
+    UDIVDI3,
+    "c.runtime.udivdi3",
+    "__udivdi3",
+    "integer.divide-unsigned-64"
+);
+wide_runtime_spec!(
+    UMODDI3,
+    "c.runtime.umoddi3",
+    "__umoddi3",
+    "integer.remainder-unsigned-64"
 );
 pure_word_runtime_spec!(
     CLZSI2,
@@ -336,6 +405,10 @@ pub fn direct_external_semantic_function(
         "__ctzsi2" => Some(&CTZSI2),
         "__clzsi2" => Some(&CLZSI2),
         "__popcountsi2" => Some(&POPCOUNTSI2),
+        "__divdi3" => Some(&DIVDI3),
+        "__moddi3" => Some(&MODDI3),
+        "__udivdi3" => Some(&UDIVDI3),
+        "__umoddi3" => Some(&UMODDI3),
         "memcmp" => Some(&MEMCMP),
         "strlen" => Some(&STRLEN),
         "strnlen" => Some(&STRNLEN),
@@ -354,18 +427,34 @@ pub fn direct_external_semantic_function(
     }
 }
 
+/// Exact value semantics for pure compiler-runtime boundaries. The caller's
+/// linked stub address is intentionally irrelevant: the origin relocation
+/// supplies the public symbol identity.
+pub fn direct_external_intrinsic(
+    name: &str,
+    arguments: &Rv32CallArguments,
+) -> Option<Rv32IntrinsicResult> {
+    let operation = match name {
+        "__ctzsi2" => ExpressionOperation::CountTrailingZeros,
+        "__clzsi2" => ExpressionOperation::CountLeadingZeros,
+        "__popcountsi2" => ExpressionOperation::PopulationCount,
+        _ => return None,
+    };
+    Some((
+        SymbolicValue::expression(operation, arguments[0].clone(), SymbolicValue::Constant(0)),
+        None,
+    ))
+}
+
 /// Exact symbolic summary for pure compiler-runtime word operations.
 pub fn reference_intrinsic_trace(
     symbol: &ArtifactSymbolDefinition,
     _svd: &MmioMap,
     _pointer_context: &StructuralPointerContext,
 ) -> Option<FunctionAnalysis> {
-    let operation = match symbol.name.as_str() {
-        "__ctzsi2" => ExpressionOperation::CountTrailingZeros,
-        "__clzsi2" => ExpressionOperation::CountLeadingZeros,
-        "__popcountsi2" => ExpressionOperation::PopulationCount,
-        _ => return None,
-    };
+    let arguments = core::array::from_fn(|index| SymbolicValue::input(index as u8));
+    let (return_value, high) = direct_external_intrinsic(&symbol.name, &arguments)?;
+    debug_assert!(high.is_none());
     Some(FunctionAnalysis {
         symbol: symbol.name.clone(),
         events: Vec::new(),
@@ -375,11 +464,7 @@ pub fn reference_intrinsic_trace(
         reference_dependencies: Vec::new(),
         blockers: Vec::new(),
         reference_blockers: Vec::new(),
-        return_value: SymbolicValue::expression(
-            operation,
-            SymbolicValue::input(0),
-            SymbolicValue::Constant(0),
-        ),
+        return_value,
         reference_flow: None,
         unresolved_branch: None,
     })
@@ -422,8 +507,30 @@ mod tests {
                 .return_model,
             ExternalReturnModel::SymbolicU32
         );
+        let umoddi3 = direct_external_semantic_function("__umoddi3").unwrap();
+        assert_eq!(umoddi3.return_model, ExternalReturnModel::SymbolicU64);
+        assert_eq!(umoddi3.argument_count, 4);
+        assert_eq!(
+            umoddi3.body_policy,
+            SemanticFunctionBodyPolicy::OpaqueBoundary
+        );
+        assert_eq!(umoddi3.semantic.operation, "integer.remainder-unsigned-64");
+        assert!(direct_external_semantic_function("vendor___umoddi3").is_none());
         assert!(direct_external_semantic_function("sprintf").is_none());
         assert!(direct_external_semantic_function("pp_printf").is_none());
+        let arguments = core::array::from_fn(|index| SymbolicValue::input(index as u8));
+        assert_eq!(
+            direct_external_intrinsic("__ctzsi2", &arguments),
+            Some((
+                SymbolicValue::expression(
+                    ExpressionOperation::CountTrailingZeros,
+                    SymbolicValue::input(0),
+                    SymbolicValue::Constant(0),
+                ),
+                None,
+            ))
+        );
+        assert!(direct_external_intrinsic("vendor_ctz", &arguments).is_none());
     }
 
     #[test]

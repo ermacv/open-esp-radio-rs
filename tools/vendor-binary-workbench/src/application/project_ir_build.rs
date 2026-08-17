@@ -35,7 +35,7 @@ struct BuiltProfileSummary<'a> {
 
 struct ResolvedInputs {
     artifacts: Vec<(String, PathBuf)>,
-    inventories: std::collections::BTreeMap<String, PathBuf>,
+    inventories: Vec<(String, PathBuf)>,
     companions: Vec<PathBuf>,
 }
 
@@ -442,5 +442,66 @@ mod tests {
                 && path == missing
                 && source.kind() == std::io::ErrorKind::NotFound
         ));
+    }
+
+    #[test]
+    fn profile_preserves_every_origin_archive_for_one_source() {
+        let directory = std::env::temp_dir().join(format!(
+            "vendor-workbench-project-multiple-inventories-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&directory).unwrap();
+        let path = directory.join("local.toml");
+        std::fs::write(
+            &path,
+            "schema = 1\n\n[[inputs]]\nrole = \"source-artifact:wifi\"\npath = \"wifi.elf\"\n\n[[inputs]]\nrole = \"source-inventory:wifi\"\npath = \"libnet80211.a\"\n\n[[inputs]]\nrole = \"source-inventory:wifi\"\npath = \"libpp.a\"\n",
+        )
+        .unwrap();
+        let run = RunSpec::load(&path).unwrap();
+        let mut selected = profile("wifi");
+        selected.sources = vec!["wifi".to_owned()];
+        let inputs = resolve_inputs(&selected, &run).unwrap();
+        std::fs::remove_dir_all(directory).unwrap();
+
+        assert_eq!(
+            inputs
+                .inventories
+                .iter()
+                .map(|(source, path)| (
+                    source.as_str(),
+                    path.file_name().unwrap().to_str().unwrap()
+                ))
+                .collect::<Vec<_>>(),
+            [("wifi", "libnet80211.a"), ("wifi", "libpp.a")]
+        );
+    }
+
+    #[test]
+    fn profile_preserves_every_code_companion_for_one_source() {
+        let directory = std::env::temp_dir().join(format!(
+            "vendor-workbench-project-multiple-companions-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&directory).unwrap();
+        let path = directory.join("local.toml");
+        std::fs::write(
+            &path,
+            "schema = 1\n\n[[inputs]]\nrole = \"source-artifact:wifi\"\npath = \"wifi.elf\"\n\n[[inputs]]\nrole = \"source-companion:wifi\"\npath = \"rom.elf\"\n\n[[inputs]]\nrole = \"source-companion:wifi\"\npath = \"libphy.a\"\n",
+        )
+        .unwrap();
+        let run = RunSpec::load(&path).unwrap();
+        let mut selected = profile("wifi");
+        selected.sources = vec!["wifi".to_owned()];
+        let inputs = resolve_inputs(&selected, &run).unwrap();
+        std::fs::remove_dir_all(directory).unwrap();
+
+        assert_eq!(
+            inputs
+                .companions
+                .iter()
+                .map(|path| path.file_name().unwrap().to_str().unwrap())
+                .collect::<Vec<_>>(),
+            ["libphy.a", "rom.elf"]
+        );
     }
 }

@@ -1,6 +1,6 @@
 # ESP32-C5 portability fixture
 
-This target proves that Workbench composition is not tied to ESP32-S31. It
+This target proves that Blobray composition is not tied to ESP32-S31. It
 shares the RV32 backend and ESP-IDF family knowledge pack, but deliberately
 contains no chip addresses, register names, SVD, compiled provider, or PAC
 publication policy.

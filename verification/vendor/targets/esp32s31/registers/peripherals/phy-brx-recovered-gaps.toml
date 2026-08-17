@@ -26,4 +26,4 @@ completeness = "unknown"
 
 [[review]]
 entity = "PHY_BRX_RECOVERED_GAPS.FREQUENCY_CORRECTION_CONTROL_OPAQUE"
-sources = ["ROM_REV0_PHY_WORKBENCH_GAPS"]
+sources = ["ROM_REV0_PHY_BLOBRAY_GAPS"]

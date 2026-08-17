@@ -2,6 +2,6 @@
 schema = 3
 id = "espressif-esp-idf-radio-v1"
 knowledge-packs = [
-    "../../../../tools/vendor-binary-workbench/catalogs/neutral-embedded.toml",
+    "../../../../tools/blobray/catalogs/neutral-embedded.toml",
     "../../knowledge/espressif/esp-idf.toml",
 ]

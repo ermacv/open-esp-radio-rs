@@ -3,7 +3,7 @@
 //! Link-time probes for compiled vendor/Rust MMIO comparison.
 //!
 //! These wrappers are test-harness artifacts, never driver entry points. Fat
-//! LTO inlines the safe HAL leaf into each retained symbol so the Workbench
+//! LTO inlines the safe HAL leaf into each retained symbol so Blobray
 //! verifier can compare the resulting instruction-level MMIO transaction
 //! sequence.
 
@@ -57,7 +57,7 @@ fn panic(_: &core::panic::PanicInfo<'_>) -> ! {
     }
 }
 
-/// Harness-only delay edge intercepted by the Workbench verifier before this body runs.
+/// Harness-only delay edge intercepted by the Blobray verifier before this body runs.
 #[unsafe(no_mangle)]
 #[inline(never)]
 pub extern "C" fn ets_delay_us(micros: u32) {
@@ -274,7 +274,7 @@ impl open_esp_radio_esp32s31_coex::CoexClockHardware for CoexProbeClock {
     {
         const COEX_LP_CLK_CONF: *const u32 = 0x2010_f008 as *const u32;
         // SAFETY: this validation-only implementation runs under the
-        // workbench MMIO executor. Each volatile read intentionally mirrors
+        // blobray MMIO executor. Each volatile read intentionally mirrors
         // one independent read in `coex_hw_timer_tick_get`.
         let selector = unsafe { core::ptr::read_volatile(COEX_LP_CLK_CONF) };
         // SAFETY: same validated MMIO word, deliberately sampled again.
@@ -728,7 +728,7 @@ struct OrdinaryTxProbeState {
 
 struct OrdinaryTxProbeCell<T>(core::cell::UnsafeCell<T>);
 
-// SAFETY: the Workbench executes this probe image on one thread and invokes
+// SAFETY: Blobray executes this probe image on one thread and invokes
 // its exported stateful entry serially.
 unsafe impl<T> Sync for OrdinaryTxProbeCell<T> {}
 

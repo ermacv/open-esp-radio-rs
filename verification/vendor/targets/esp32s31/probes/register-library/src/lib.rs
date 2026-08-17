@@ -4,7 +4,7 @@
 //!
 //! Register conformance must remain buildable while higher-level driver work
 //! is in progress. Fat LTO still inlines the production HAL/PAC leaves into
-//! the retained ABI symbol inspected by the Workbench.
+//! the retained ABI symbol inspected by Blobray.
 
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo<'_>) -> ! {

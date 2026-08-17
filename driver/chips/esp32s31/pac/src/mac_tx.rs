@@ -219,7 +219,7 @@ impl MacTxQueueDetached<'_> {
 
     /// Construct a detach edge in an isolated compiled-validation image.
     ///
-    /// This is unavailable in production feature sets. It lets a Workbench
+    /// This is unavailable in production feature sets. It lets a Blobray
     /// hardware double drive the exact upper DMA/LMAC state machine without
     /// claiming that a real target queue was detached.
     #[cfg(feature = "validation-probes")]

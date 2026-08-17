@@ -98,4 +98,4 @@ CARGO_TARGET_DIR="${repository_root}/target/verification/esp32s31-register-probe
         --jobs "${build_jobs}"
 
 echo "Analysis inputs are ready. Next:" >&2
-echo "  cargo vendor-binary-workbench --project ${script_dir}/vendor-project.toml --run-spec ${script_dir}/local.toml project status" >&2
+echo "  cargo blobray --project ${script_dir}/vendor-project.toml --run-spec ${script_dir}/local.toml project status" >&2

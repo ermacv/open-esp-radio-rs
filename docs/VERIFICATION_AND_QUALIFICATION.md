@@ -1,21 +1,21 @@
 # Verification and qualification contract
 
 This document is the canonical boundary between the production driver,
-Vendor Binary Workbench evidence, HIL records and the qualification ledger.
+Blobray evidence, HIL records and the qualification ledger.
 
 ## What answers which question
 
 | Source | Question it answers | May make the driver ready? |
 | --- | --- | --- |
 | `driver/` tests | Does production Rust satisfy its local invariants? | Required, not sufficient |
-| Workbench `production-trace` | Does a concrete vendor execution have the same ordered observable effects as the exact compiled production entry? | Yes, for the named bounded contract |
-| Workbench `shared-core` | Does a compiled probe exercise code shared with production? | No; supporting evidence only |
+| Blobray `production-trace` | Does a concrete vendor execution have the same ordered observable effects as the exact compiled production entry? | Yes, for the named bounded contract |
+| Blobray `shared-core` | Does a compiled probe exercise code shared with production? | No; supporting evidence only |
 | Environment model | Does an explicit environment make a comparison executable? | No; it is an input, not an implementation or verdict |
-| Workbench `static-analysis` | Do lifted, symbolic or generated traces agree? | No; supporting evidence only |
+| Blobray `static-analysis` | Do lifted, symbolic or generated traces agree? | No; supporting evidence only |
 | HIL record | Did the dated production composition work on hardware? | Required for hardware-qualified axes |
 | Qualification ledger | Are all required capability axes and dependencies closed? | **Sole readiness authority** |
 
-Workbench is intentionally broader than the qualification gate. Its analysis,
+Blobray is intentionally broader than the qualification gate. Its analysis,
 register discovery, environment models and focused investigations remain useful
 for understanding vendor code. They must not be described as product
 qualification unless their result reaches the ledger through the strict
@@ -64,7 +64,7 @@ a capability qualified.
 
 Other axes remain independent. A capability is `proof-ready` only when its own
 five axes are terminal; it is `ready` only when all dependencies are also
-ready. Workbench feature reports describe evidence closure inside Workbench;
+ready. Blobray feature reports describe evidence closure inside Blobray;
 they are not an alternative product-readiness ledger.
 
 ## Normal workflow
@@ -79,11 +79,11 @@ they are not an alternative product-readiness ledger.
 6. Review the index diff, then run the qualification checker and HIL cells.
 
 ```console
-cargo build --profile workbench \
-  -p open-radio-vendor-workbench-esp32s31-host \
-  --bin vendor-binary-workbench
+cargo build --profile blobray \
+  -p blobray-esp32s31 \
+  --bin blobray
 
-tools/vendor-binary-workbench/scripts/run-limited \
+tools/blobray/scripts/run-limited \
   project verify \
   --project verification/vendor/targets/esp32s31/vendor-project.toml \
   --run-spec verification/vendor/targets/esp32s31/local.toml
@@ -94,7 +94,7 @@ cargo qualification check \
 
 ## Scope control
 
-New Workbench features are frozen unless they directly unblock a named driver
+New Blobray features are frozen unless they directly unblock a named driver
 capability, repair a false result, preserve reproducibility, or reduce the
 maintenance cost of this workflow. Physical extraction into a separate
 repository remains a later task after this contract is stable and the full

@@ -1,0 +1,16 @@
+[package]
+name = "open-radio-vendor-addon-c"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+description = "C language and standard-library semantic boundaries for Blobray"
+
+[dependencies]
+open-radio-vendor-analysis-model = { path = "../../crates/analysis-model" }
+open-radio-vendor-backend-riscv = { path = "../../crates/backend-riscv" }
+
+[lints]
+workspace = true

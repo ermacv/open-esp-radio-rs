@@ -44,12 +44,12 @@ completeness = "unknown"
 
 [[review]]
 entity = "PHY_BTAGC_RECOVERED.RX_GAIN_FORCE_OPAQUE"
-sources = ["ROM_REV0_PHY_WORKBENCH_GAPS"]
+sources = ["ROM_REV0_PHY_BLOBRAY_GAPS"]
 
 [[review]]
 entity = "PHY_BTAGC_RECOVERED.GAIN_OFFSET_WORD_0_OPAQUE"
-sources = ["ROM_REV0_PHY_WORKBENCH_GAPS"]
+sources = ["ROM_REV0_PHY_BLOBRAY_GAPS"]
 
 [[review]]
 entity = "PHY_BTAGC_RECOVERED.GAIN_OFFSET_WORD_1_OPAQUE"
-sources = ["ROM_REV0_PHY_WORKBENCH_GAPS"]
+sources = ["ROM_REV0_PHY_BLOBRAY_GAPS"]

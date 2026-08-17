@@ -15,14 +15,14 @@ verification/
 ```
 
 The generic engine is temporarily implemented by
-[`tools/vendor-binary-workbench`](../tools/vendor-binary-workbench/README.md).
+[`tools/blobray`](../tools/blobray/README.md).
 Target packs live here so the engine does not own chip identity, ABI layout,
 SVD selection or reviewed vendor-function policy.
 
 Use the ESP32-S31 project entry point for repository workflows:
 
 ```console
-cargo vendor-binary-workbench project doctor \
+cargo blobray project doctor \
   --project verification/vendor/targets/esp32s31/vendor-project.toml
 ```
 
@@ -30,6 +30,6 @@ Artifact paths, revisions and authentication remain caller-owned. The target
 pack may report evidence identities but must not select a private input by a
 hard-coded path or digest.
 
-Evidence strength and the only path from a Workbench comparison to driver
+Evidence strength and the only path from a Blobray comparison to driver
 readiness are defined in the canonical
 [verification and qualification contract](../docs/VERIFICATION_AND_QUALIFICATION.md).

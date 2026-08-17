@@ -16,7 +16,7 @@ Each capability has five independent axes:
 - `implementation`: a production owner exists under `driver/*/src`;
 - `host-proof`: named host tests exercise the capability contract;
 - vendor evidence: version 2 derives `qualified`, `mapped` or `unmapped` from
-  the Workbench's compact evidence index; it is not manually declared;
+  Blobray's compact evidence index; it is not manually declared;
 - `hil-proof`: a dated hardware record contains the named qualification ID;
 - `async-proof`: waits are bounded scheduling edges or not applicable.
 

@@ -1,8 +1,8 @@
 # ESP32-S31 vendor-analysis project
 
 This directory is the reviewed ESP32-S31 configuration for Vendor Binary
-Workbench. `vendor-project.toml` is the entry point. The target host links the
-generic Workbench with ESP32-S31 knowledge contracts. Target addresses and
+Blobray. `vendor-project.toml` is the entry point. The target host links the
+generic Blobray with ESP32-S31 knowledge contracts. Target addresses and
 driver dependencies do not enter the generic package, and target code cannot
 return a comparison verdict.
 
@@ -13,7 +13,7 @@ vendor artifacts and compiled Rust probes. Initialize it from
 `local.example.toml` or with:
 
 ```console
-cargo vendor-binary-workbench project inputs init \
+cargo blobray project inputs init \
   --project verification/vendor/targets/esp32s31/vendor-project.toml \
   --bind source-artifact:rom=/path/to/esp32s31_rev0_rom.elf \
   --bind source-inventory:archive=/path/to/libphy.a \
@@ -28,17 +28,17 @@ paths. `project files` lists every required role.
 ## Normal workflow
 
 ```console
-cargo vendor-binary-workbench project doctor \
+cargo blobray project doctor \
   --project verification/vendor/targets/esp32s31/vendor-project.toml
 
-tools/vendor-binary-workbench/scripts/run-limited \
+tools/blobray/scripts/run-limited \
   project analyze \
   --project verification/vendor/targets/esp32s31/vendor-project.toml --jobs 1
 
-cargo vendor-binary-workbench project verify \
+cargo blobray project verify \
   --project verification/vendor/targets/esp32s31/vendor-project.toml
 
-cargo vendor-binary-workbench project check \
+cargo blobray project check \
   --project verification/vendor/targets/esp32s31/vendor-project.toml
 ```
 
@@ -60,7 +60,7 @@ IRQ: hardware -> WDEV FIQ -> pp_post -> ppTask -> PP/LMAC/PM/WDEV
 RX: WDEV indication -> LMAC completion -> pp_post -> ppTask -> PP/libnet80211
 ```
 
-The generic Workbench must not infer those subsystem names from symbol
+The generic Blobray must not infer those subsystem names from symbol
 prefixes. It recovers calls, indexed dispatch, event values, memory/MMIO
 effects and blockers. This target project reviews the reusable Espressif and
 ESP32-S31 meaning attached to those facts.
@@ -86,11 +86,11 @@ automatically recovered vendor equivalence.
 ## Register publication
 
 ```console
-cargo vendor-binary-workbench registers review \
+cargo blobray registers review \
   --project verification/vendor/targets/esp32s31/vendor-project.toml
-cargo vendor-binary-workbench registers validate \
+cargo blobray registers validate \
   --project verification/vendor/targets/esp32s31/vendor-project.toml
-cargo vendor-binary-workbench project publish \
+cargo blobray project publish \
   --project verification/vendor/targets/esp32s31/vendor-project.toml
 ```
 
@@ -122,4 +122,4 @@ entry contract now preserves that cross-source identity and observes vendor
 complete compiled production boundary and every ordered effect.
 
 For concepts and schemas, start at
-[`tools/vendor-binary-workbench/README.md`](../../../../tools/vendor-binary-workbench/README.md).
+[`tools/blobray/README.md`](../../../../tools/blobray/README.md).

@@ -1,7 +1,7 @@
 # PHY binary parity
 
 PHY parity is verified from compiled vendor and Rust code by
-[`vendor-binary-workbench`](../../tools/vendor-binary-workbench/README.md). The generated
+[`blobray`](../../tools/blobray/README.md). The generated
 report is the inventory and open-work list; this directory does not maintain a
 parallel, hand-written function ledger.
 

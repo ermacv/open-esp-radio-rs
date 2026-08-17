@@ -4,7 +4,7 @@ The editable source is the schema-2 project model under
 `verification/vendor/targets/esp32s31/registers/`. It is split into one TOML
 fragment per logical peripheral and keeps provenance in structured `[[review]]`
 records. The same model is loaded directly by the vendor validator and by the
-production PAC generator through the Workbench `crates/register-model` crate.
+production PAC generator through Blobray's `crates/register-model` crate.
 
 `esp32s31-radio.svd` is the generated, portable CMSIS-SVD representation. It
 contains hardware names and semantics, but no validator provenance tags,
@@ -12,14 +12,14 @@ discovery paths or target code-generation extensions. Do not edit it directly.
 Run:
 
 ```console
-cargo vendor-binary-workbench project publish \
+cargo blobray project publish \
   --project verification/vendor/targets/esp32s31/vendor-project.toml
 ```
 
 This materializes the SVD from the project model, validates the reviewed
 `registers/api.toml` transaction pack, and generates the internal
 `driver/chips/esp32s31/pac-raw/src/lib.rs`, plus the reviewed public domains in
-`driver/chips/esp32s31/pac/src/generated.rs`. Workbench `project publish
+`driver/chips/esp32s31/pac/src/generated.rs`. Blobray `project publish
 --check` verifies the SVD, raw PAC, closed-PAC module and binding index and
 rejects invalid or stale reviewed API references. A direct edit of a generated
 file therefore fails CI. Application and HAL code use the separate closed
@@ -28,7 +28,7 @@ file therefore fails CI. Application and HAL code use the separate closed
 `verification/vendor/targets/esp32s31/registers/api.toml` is target-owned
 reviewed policy, not CMSIS-SVD. It describes qualified compound transactions,
 constrained register-image helpers and ownership partitions. The adjacent
-evidence catalogs retain their provenance. Workbench validates every API
+evidence catalogs retain their provenance. Blobray validates every API
 register/field reference against the generic model before emitting Rust, so
 generic register/SVD code contains no ESP32-S31 helper semantics.
 

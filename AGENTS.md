@@ -13,7 +13,7 @@ This Rust 2024 workspace separates shipping code from evidence and tooling:
   is private input and must never be committed.
 - `qualification/` is the machine-checked capability ledger. `svd/` contains
   reviewed hardware descriptions. `tools/` contains repository utilities and
-  Vendor Binary Workbench.
+  Blobray.
 
 Keep tests beside their Rust modules (`#[cfg(test)]`) or in a crate's `tests/`
 directory. Do not place production behavior in verification probes.
@@ -30,9 +30,9 @@ tools/audit-source-only.sh
 ```
 
 Use `cargo test -p <package> <test_name>` for focused iteration. Build the
-Workbench with `cargo build --profile workbench -p
-open-radio-vendor-workbench-esp32s31-host --bin vendor-binary-workbench` and
-run real analyses through `tools/vendor-binary-workbench/scripts/run-limited`
+Blobray with `cargo build --profile blobray -p
+blobray-esp32s31 --bin blobray` and
+run real analyses through `tools/blobray/scripts/run-limited`
 to enforce its memory and time limits. HIL commands require attached hardware;
 follow `hil/targets/esp32s31/README.md`.
 
@@ -54,7 +54,7 @@ and must exercise compiled production code, not a shadow implementation.
 ## Commit & Pull Request Guidelines
 
 History follows Conventional Commit-style subjects such as
-`feat(workbench): ...`, `fix(esp32s31): ...`, and `refactor(workbench): ...`.
+`feat(blobray): ...`, `fix(esp32s31): ...`, and `refactor(blobray): ...`.
 Keep commits scoped and imperative. PRs should explain the affected ownership
 boundary, list checks run, link qualification/HIL evidence where applicable,
 and call out generated SVD/PAC changes. Never commit vendor binaries,

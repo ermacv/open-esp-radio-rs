@@ -34,7 +34,7 @@ Building and flashing the vendor runtime is an explicit hardware-oracle
 operation and is not part of `project analyze`, `project verify`, or the normal
 source-only HIL image classes.
 
-## Build the Workbench analysis inputs
+## Build the Blobray analysis inputs
 
 From the repository root, build every linked analysis ELF and the Rust
 comparison probe with the target-owned, sequential helper:

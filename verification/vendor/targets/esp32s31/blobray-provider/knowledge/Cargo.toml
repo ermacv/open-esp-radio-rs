@@ -1,0 +1,20 @@
+[package]
+name = "open-radio-vendor-knowledge-esp32s31"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+description = "ESP32-S31 reviewed vendor-code knowledge without production-driver dependencies"
+
+[dependencies]
+open-radio-vendor-addon-c = { path = "../../../../../../tools/blobray/addons/c" }
+open-radio-vendor-addon-esp-idf = { path = "../../../../../../tools/blobray/addons/esp-idf" }
+open-radio-vendor-backend-riscv = { path = "../../../../../../tools/blobray/crates/backend-riscv" }
+open-radio-vendor-execution-model = { path = "../../../../../../tools/blobray/crates/execution-model" }
+open-radio-vendor-harness-esp32s31 = { path = "../contracts" }
+open-radio-vendor-semantics = { path = "../../../../../../tools/blobray/crates/semantics" }
+
+[lints]
+workspace = true

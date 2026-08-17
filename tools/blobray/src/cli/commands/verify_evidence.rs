@@ -1,0 +1,112 @@
+//! Offline review of evidence emitted by a protected verification run.
+
+use super::super::*;
+
+use serde::Serialize;
+
+#[derive(Serialize)]
+struct EvidenceReviewReport {
+    schema_version: u32,
+    command: &'static str,
+    baseline: String,
+    report: String,
+    report_sha256: String,
+    candidate: Option<String>,
+    comparison: EvidenceComparison,
+}
+
+pub(super) fn run(arguments: VerifyEvidenceArgs) -> Result<bool> {
+    let report = arguments
+        .report
+        .ok_or("verify evidence requires --report")
+        .map_err(crate::Error::invalid)?;
+    let baseline = arguments
+        .evidence_baseline
+        .ok_or("verify evidence requires --evidence-baseline")
+        .map_err(crate::Error::invalid)?;
+    let evidence = load_evidence_report(&report)?;
+    let report_sha256 = artifact_sha256(&report)?;
+    let expected = load_evidence_baseline(&baseline)?;
+    let comparison = compare_evidence_baseline(&expected, &evidence);
+    let passed = comparison.passed;
+    if let Some(candidate) = arguments.candidate.as_deref() {
+        write_evidence_candidate(
+            candidate,
+            &[
+                ("accepted baseline", &baseline),
+                ("verification report", &report),
+            ],
+            &evidence,
+        )?;
+    }
+    let review = EvidenceReviewReport {
+        schema_version: 1,
+        command: "verify evidence",
+        baseline: baseline.display().to_string(),
+        report: report.display().to_string(),
+        report_sha256,
+        candidate: arguments.candidate.map(|path| path.display().to_string()),
+        comparison,
+    };
+    if !crate::cli::output::structured(&review) {
+        crate::cli::render::evidence_comparison(&review.comparison);
+        if let Some(candidate) = &review.candidate {
+            outputln!("\nCandidate: {candidate} ({} entries)", evidence.len());
+        }
+        outputln!("\nBaseline: {}", review.baseline);
+        outputln!("Report:   {}", review.report);
+        if crate::cli::output::details() {
+            outputln!("SHA-256: {}", review.report_sha256);
+        }
+    }
+    Ok(passed)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{env, fs};
+
+    use super::*;
+
+    #[test]
+    fn reviews_a_report_and_writes_only_the_separate_candidate() {
+        let suffix = std::process::id();
+        let directory = env::temp_dir();
+        let report = directory.join(format!("blobray-review-{suffix}.json"));
+        let baseline = directory.join(format!("blobray-review-{suffix}.toml"));
+        let candidate = directory.join(format!("blobray-review-{suffix}.candidate.toml"));
+        fs::write(
+            &report,
+            format!(
+                r#"{{"schema_version":{},"command":"verify inventory","evidence":[{{"source":"rom","symbol":"leaf","kind":"symbolic"}}]}}"#,
+                crate::verification::VERIFICATION_REPORT_SCHEMA
+            ),
+        )
+        .unwrap();
+        let document = "schema = 2\n\n[[evidence]]\nsource = \"rom\"\nsymbol = \"leaf\"\nkind = \"symbolic\"\n";
+        fs::write(&baseline, document).unwrap();
+
+        assert!(
+            run(VerifyEvidenceArgs {
+                report: Some(report.clone()),
+                evidence_baseline: Some(baseline.clone()),
+                candidate: Some(candidate.clone()),
+            })
+            .unwrap()
+        );
+        assert_eq!(fs::read_to_string(&candidate).unwrap(), document);
+
+        let error = run(VerifyEvidenceArgs {
+            report: Some(report.clone()),
+            evidence_baseline: Some(baseline.clone()),
+            candidate: Some(report.clone()),
+        })
+        .unwrap_err();
+        assert!(error.to_string().contains("verification report"));
+        assert!(fs::read_to_string(&report).unwrap().starts_with('{'));
+
+        fs::remove_file(report).unwrap();
+        fs::remove_file(baseline).unwrap();
+        fs::remove_file(candidate).unwrap();
+    }
+}

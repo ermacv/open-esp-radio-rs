@@ -9,9 +9,9 @@ Physical pointers, `steal` and raw register writers are not product APIs. The
 workspace architecture test permits this dependency only from the adjacent
 closed `pac` crate.
 
-Regenerate it through the ESP32-S31 Workbench project:
+Regenerate it through the ESP32-S31 Blobray project:
 
 ```console
-cargo vendor-binary-workbench project publish \
+cargo blobray project publish \
   --project verification/vendor/targets/esp32s31/vendor-project.toml
 ```

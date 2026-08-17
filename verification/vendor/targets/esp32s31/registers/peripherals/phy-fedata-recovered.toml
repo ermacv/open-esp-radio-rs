@@ -35,8 +35,8 @@ completeness = "unknown"
 
 [[review]]
 entity = "PHY_FEDATA_RECOVERED.RX_FILTER_MODE_OPAQUE"
-sources = ["ROM_REV0_PHY_WORKBENCH_GAPS"]
+sources = ["ROM_REV0_PHY_BLOBRAY_GAPS"]
 
 [[review]]
 entity = "PHY_FEDATA_RECOVERED.TX_RX_RESET_OPAQUE"
-sources = ["ROM_REV0_PHY_WORKBENCH_GAPS"]
+sources = ["ROM_REV0_PHY_BLOBRAY_GAPS"]

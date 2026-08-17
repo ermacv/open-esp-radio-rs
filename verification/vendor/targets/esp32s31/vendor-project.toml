@@ -190,7 +190,7 @@ profiles = [
 output = "generated/reports/function-review.md"
 
 # Human-sized review surfaces over artifact-wide IR. Roots may use the stable
-# SOURCE:SYMBOL shorthand; the workbench resolves the concrete archive identity
+# SOURCE:SYMBOL shorthand; Blobray resolves the concrete archive identity
 # and follows only calls present in the selected profiles.
 [review]
 output = "generated/findings/review-scopes.json"

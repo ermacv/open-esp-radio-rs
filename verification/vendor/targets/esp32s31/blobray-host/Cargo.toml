@@ -1,0 +1,25 @@
+[package]
+name = "blobray-esp32s31"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+default-run = "blobray"
+description = "open-esp-radio-rs host for the ESP32-S31 Blobray provider"
+
+[[bin]]
+name = "blobray"
+path = "src/main.rs"
+
+[dependencies]
+blobray = { path = "../../../../../tools/blobray", default-features = false }
+open-radio-vendor-knowledge-esp32s31 = { path = "../blobray-provider/knowledge" }
+serde_json = "=1.0.151"
+
+[dev-dependencies]
+toml_edit = "=0.25.13"
+
+[lints]
+workspace = true

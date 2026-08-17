@@ -332,7 +332,7 @@ impl RadioRegisters {
     /// Activate the exact first-interface SoftAP receive policy.
     ///
     /// SOURCE: complete `libnet80211.a::wifi_set_rx_policy`, case eight,
-    /// executed through the workbench with `a0=8`. It calls
+    /// executed through Blobray with `a0=8`. It calls
     /// `ic_set_mac(1, ap)`, `ic_set_bssid(1, ap)` and
     /// `ic_set_rx_policy(1, 0, 1, 1)`. Unlike station policy six it does not
     /// call `ic_set_rx_policy_ubssid_check`.

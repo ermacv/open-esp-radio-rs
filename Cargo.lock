@@ -214,6 +214,52 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b588b76d00fde79687d7646a9b5bdf3cc0f655e0bbd080335a95d7e96f3587da"
 
 [[package]]
+name = "blobray"
+version = "0.1.0"
+dependencies = [
+ "cargo_metadata",
+ "clap",
+ "clap_complete",
+ "clap_mangen",
+ "crossterm",
+ "indicatif",
+ "libc",
+ "miette",
+ "open-esp-radio-register-model",
+ "open-radio-vendor-analysis-model",
+ "open-radio-vendor-backend-riscv",
+ "open-radio-vendor-execution-model",
+ "open-radio-vendor-semantics",
+ "petgraph",
+ "ratatui",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "serde_stacker",
+ "sha2",
+ "svd-parser",
+ "svd-rs",
+ "svd2rust",
+ "syn 2.0.119",
+ "tabled",
+ "thiserror 2.0.19",
+ "toml_edit",
+ "tracing",
+ "tracing-indicatif",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "blobray-esp32s31"
+version = "0.1.0"
+dependencies = [
+ "blobray",
+ "open-radio-vendor-knowledge-esp32s31",
+ "serde_json",
+ "toml_edit",
+]
+
+[[package]]
 name = "block-buffer"
 version = "0.10.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2367,42 +2413,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "open-radio-vendor-binary-workbench"
-version = "0.1.0"
-dependencies = [
- "cargo_metadata",
- "clap",
- "clap_complete",
- "clap_mangen",
- "crossterm",
- "indicatif",
- "libc",
- "miette",
- "open-esp-radio-register-model",
- "open-radio-vendor-analysis-model",
- "open-radio-vendor-backend-riscv",
- "open-radio-vendor-execution-model",
- "open-radio-vendor-semantics",
- "petgraph",
- "ratatui",
- "rusqlite",
- "serde",
- "serde_json",
- "serde_stacker",
- "sha2",
- "svd-parser",
- "svd-rs",
- "svd2rust",
- "syn 2.0.119",
- "tabled",
- "thiserror 2.0.19",
- "toml_edit",
- "tracing",
- "tracing-indicatif",
- "tracing-subscriber",
-]
-
-[[package]]
 name = "open-radio-vendor-contracts"
 version = "0.1.0"
 dependencies = [
@@ -2443,16 +2453,6 @@ dependencies = [
  "open-radio-vendor-analysis-model",
  "serde",
  "thiserror 2.0.19",
- "toml_edit",
-]
-
-[[package]]
-name = "open-radio-vendor-workbench-esp32s31-host"
-version = "0.1.0"
-dependencies = [
- "open-radio-vendor-binary-workbench",
- "open-radio-vendor-knowledge-esp32s31",
- "serde_json",
  "toml_edit",
 ]
 

@@ -81,11 +81,19 @@ pub(super) fn run(invocation: ResolvedInvocation) -> Result<bool> {
         } => commands::run_interface_discovery(arguments, &run_spec, project.as_ref()),
         ResolvedInvocation::BuildIr {
             arguments,
+            project_manifest,
             project,
             run_spec,
             target,
             svd,
-        } => commands::run_ir_build(arguments, &project, &run_spec, &svd, &target),
+        } => commands::run_ir_build(
+            arguments,
+            &project_manifest,
+            &project,
+            &run_spec,
+            &svd,
+            &target,
+        ),
         ResolvedInvocation::VerifyEvidence(arguments) => commands::run_verify_evidence(arguments),
         ResolvedInvocation::Target {
             command,

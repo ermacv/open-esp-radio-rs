@@ -267,6 +267,8 @@ fn duplicate_private_names_get_stable_address_qualified_ir_identities() {
         ]
     );
 
+    let function_cache =
+        FunctionCacheRun::prepare(&resolver, resolver.symbols.iter(), &map, "primary", None);
     let serial = summarize_linked_ir_with_jobs(
         build_linked_functions_for_roots(
             LinkedFunctionBuild {
@@ -279,6 +281,7 @@ fn duplicate_private_names_get_stable_address_qualified_ir_identities() {
                 include_reachable: false,
             },
             resolver.symbols.iter().collect(),
+            &function_cache,
         ),
         1,
     );
@@ -290,6 +293,7 @@ fn duplicate_private_names_get_stable_address_qualified_ir_identities() {
             "primary",
             false,
             2,
+            &function_cache,
         ),
         2,
     );

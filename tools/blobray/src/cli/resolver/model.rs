@@ -83,6 +83,7 @@ pub(in crate::cli) enum ResolvedInvocation {
     },
     BuildIr {
         arguments: IrBuildArgs,
+        project_manifest: PathBuf,
         project: ProjectSpec,
         run_spec: RunSpec,
         target: TargetSpec,

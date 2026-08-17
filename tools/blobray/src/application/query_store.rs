@@ -19,9 +19,9 @@ use sha2::{Digest, Sha256};
 
 use crate::Result;
 
-const STORE_SCHEMA: i64 = 4;
+const STORE_SCHEMA: i64 = 7;
 const INLINE_VALUE_LIMIT: usize = 64 * 1024;
-const PACK_RECORD_MAGIC: &[u8; 8] = b"VBWQCAS1";
+const PACK_RECORD_MAGIC: &[u8; 8] = b"BLBRCAS1";
 const PACK_HEADER_BYTES: u64 = 8 + 32 + 8;
 const COMPACT_MIN_PACK_BYTES: u64 = 256 * 1024 * 1024;
 const COMPACT_MIN_RECLAIMABLE_BYTES: u64 = 64 * 1024 * 1024;
@@ -108,7 +108,7 @@ impl QueryStore {
                  );
                  INSERT OR IGNORE INTO cache_state(singleton, active_pack, next_pack_generation)
                  VALUES (1, 'objects-0.pack', 1);
-                 PRAGMA user_version=4;",
+                 PRAGMA user_version=7;",
             )
             .map_err(|error| store_error("initialize query database", error))?;
         let (active_pack, next_pack_generation) = connection
@@ -440,6 +440,83 @@ impl QueryStore {
             )));
         }
         Ok(Some(value))
+    }
+
+    /// Store many small immutable function facts in one SQLite transaction.
+    ///
+    /// Function workers never touch SQLite. The analysis layer collects misses
+    /// in memory and publishes them here after the parallel phase, avoiding a
+    /// transaction/fsync boundary for every analyzed symbol.
+    fn put_function_fact_batch(&mut self, facts: &[(String, Vec<u8>)]) -> Result<()> {
+        let mut inserts = Vec::new();
+        for (query_key, value) in facts {
+            let result_digest = sha256_hex(value);
+            let existing = self
+                .connection
+                .query_row(
+                    "SELECT kind, input_fingerprint, result_digest
+                     FROM query_results WHERE query_key = ?1",
+                    [query_key],
+                    |row| {
+                        Ok((
+                            row.get::<_, String>(0)?,
+                            row.get::<_, String>(1)?,
+                            row.get::<_, String>(2)?,
+                        ))
+                    },
+                )
+                .optional()
+                .map_err(|error| store_error("look up immutable function fact", error))?;
+            if let Some((kind, inputs, digest)) = existing {
+                if kind == "function-direct-fact"
+                    && inputs == query_key.as_str()
+                    && digest == result_digest
+                {
+                    continue;
+                }
+                return Err(crate::Error::invalid(format!(
+                    "function fact key {query_key:?} was reused for a different immutable result"
+                )));
+            }
+            inserts.push((query_key, value, result_digest));
+        }
+        if inserts.is_empty() {
+            return Ok(());
+        }
+        self.ensure_objects(inserts.iter().filter_map(|(_, value, digest)| {
+            (value.len() > INLINE_VALUE_LIMIT).then_some((digest.as_str(), value.as_slice()))
+        }))?;
+        let transaction = self
+            .connection
+            .transaction()
+            .map_err(|error| store_error("begin function-fact transaction", error))?;
+        {
+            let mut statement = transaction
+                .prepare(
+                    "INSERT INTO query_results(
+                         query_key, kind, input_fingerprint, result_digest, inline_value, object_digest
+                     ) VALUES (?1, 'function-direct-fact', ?1, ?2, ?3, ?4)",
+                )
+                .map_err(|error| store_error("prepare function-fact insert", error))?;
+            for (query_key, value, result_digest) in inserts {
+                let (inline_value, object_digest) = if value.len() <= INLINE_VALUE_LIMIT {
+                    (Some(value.as_slice()), None)
+                } else {
+                    (None, Some(result_digest.as_str()))
+                };
+                statement
+                    .execute(params![
+                        query_key,
+                        result_digest,
+                        inline_value,
+                        object_digest
+                    ])
+                    .map_err(|error| store_error("record function fact", error))?;
+            }
+        }
+        transaction
+            .commit()
+            .map_err(|error| store_error("commit function-fact transaction", error))
     }
 
     fn ensure_object(&mut self, digest: &str, value: &[u8]) -> Result<()> {
@@ -846,6 +923,54 @@ impl QueryStore {
     }
 }
 
+impl crate::analysis::FunctionFactStore for QueryStore {
+    fn load_function_facts(&self, keys: &[String]) -> Result<Vec<(String, Vec<u8>)>> {
+        let mut statement = self
+            .connection
+            .prepare(
+                "SELECT result_digest, inline_value, object_digest FROM query_results
+                 WHERE query_key = ?1 AND kind = 'function-direct-fact'",
+            )
+            .map_err(|error| store_error("prepare function-fact lookup", error))?;
+        let mut output = Vec::new();
+        for key in keys {
+            let row = statement
+                .query_row([key], |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, Option<Vec<u8>>>(1)?,
+                        row.get::<_, Option<String>>(2)?,
+                    ))
+                })
+                .optional()
+                .map_err(|error| store_error("read function fact", error))?;
+            let Some((expected_digest, inline, object_digest)) = row else {
+                continue;
+            };
+            let value = match (inline, object_digest) {
+                (Some(value), None) => value,
+                (None, Some(object_digest)) => self.read_object(&object_digest)?,
+                _ => {
+                    return Err(crate::Error::invalid(format!(
+                        "function fact {key:?} has an invalid value location"
+                    )));
+                }
+            };
+            if sha256_hex(&value) != expected_digest {
+                return Err(crate::Error::invalid(format!(
+                    "function fact {key:?} failed its content digest"
+                )));
+            }
+            output.push((key.clone(), value));
+        }
+        Ok(output)
+    }
+
+    fn store_function_facts(&mut self, facts: &[(String, Vec<u8>)]) -> Result<()> {
+        self.put_function_fact_batch(facts)
+    }
+}
+
 fn pack_files(root: &Path) -> Result<Vec<PathBuf>> {
     let mut paths = Vec::new();
     for entry in fs::read_dir(root)? {
@@ -1013,6 +1138,37 @@ mod tests {
             .unwrap_err();
         assert!(error.to_string().contains("different immutable result"));
         assert_eq!(store.get("function-key").unwrap().unwrap(), b"result-a");
+    }
+
+    #[test]
+    fn function_facts_are_published_as_one_immutable_batch() {
+        let manifest = manifest("function-fact-batch");
+        let mut store = QueryStore::open(&manifest).unwrap();
+        let facts = vec![
+            ("function-direct:a".to_owned(), b"fact-a".to_vec()),
+            ("function-direct:b".to_owned(), b"fact-b".to_vec()),
+            (
+                "function-direct:large".to_owned(),
+                vec![0x5a; INLINE_VALUE_LIMIT + 1],
+            ),
+        ];
+
+        store.put_function_fact_batch(&facts).unwrap();
+        store.put_function_fact_batch(&facts).unwrap();
+
+        assert_eq!(store.get("function-direct:a").unwrap().unwrap(), b"fact-a");
+        assert_eq!(store.get("function-direct:b").unwrap().unwrap(), b"fact-b");
+        assert_eq!(
+            <QueryStore as crate::analysis::FunctionFactStore>::load_function_facts(
+                &store,
+                &["function-direct:large".to_owned()]
+            )
+            .unwrap(),
+            vec![(
+                "function-direct:large".to_owned(),
+                vec![0x5a; INLINE_VALUE_LIMIT + 1]
+            )]
+        );
     }
 
     #[test]

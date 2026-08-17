@@ -185,12 +185,13 @@ pub(super) fn run_register_command(
 
 pub(super) fn run_ir_build(
     arguments: super::IrBuildArgs,
+    project_manifest: &std::path::Path,
     project: &crate::project::ProjectSpec,
     run_spec: &crate::run_spec::RunSpec,
     svd: &MmioMap,
     target: &TargetSpec,
 ) -> Result<bool> {
-    ir_build::run(arguments, project, run_spec, svd, target)
+    ir_build::run(arguments, project_manifest, project, run_spec, svd, target)
 }
 
 pub(super) fn run_target(

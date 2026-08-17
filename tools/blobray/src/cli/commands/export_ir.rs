@@ -49,20 +49,23 @@ pub(super) fn run(
         }
     }
     let inventories = Vec::new();
-    let (entry_contract, report) = analyze(crate::linked_ir_export::LinkedIrAnalysisRequest {
-        artifacts: &artifacts,
-        inventories: &inventories,
-        companions: &arguments.companion,
-        symbol_prefix: &arguments.symbol_prefix,
-        include_reachable: arguments.include_reachable,
-        entry_contract_id: &arguments.entry_contract,
-        svd,
-        target,
-        interfaces: interfaces.as_ref(),
-        interface_origins: &interface_origins,
-        jobs: usize::from(arguments.jobs),
-        compact_projected_actions: arguments.pseudo_rust.is_none(),
-    })?;
+    let (entry_contract, report) = analyze(
+        crate::linked_ir_export::LinkedIrAnalysisRequest {
+            artifacts: &artifacts,
+            inventories: &inventories,
+            companions: &arguments.companion,
+            symbol_prefix: &arguments.symbol_prefix,
+            include_reachable: arguments.include_reachable,
+            entry_contract_id: &arguments.entry_contract,
+            svd,
+            target,
+            interfaces: interfaces.as_ref(),
+            interface_origins: &interface_origins,
+            jobs: usize::from(arguments.jobs),
+            compact_projected_actions: arguments.pseudo_rust.is_none(),
+        },
+        None,
+    )?;
 
     let publications = arguments
         .output

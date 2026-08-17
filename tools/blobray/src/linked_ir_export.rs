@@ -21,8 +21,8 @@ use crate::{
     EntryContractRef, LinkedIrReport, LinkedIrSourceOptions, MmioMap, ReferenceResolver, Result,
     ReviewedExternalCall, ReviewedExternalCallEvidence, ReviewedExternalCallExecutionModel,
     StructuralCallSite, StructuralProjectedRelocation, TargetSpec, artifacts::LinkUnitOriginFact,
-    build_linked_ir_for_source, harnesses, interfaces::InterfaceWorkspace, link_project_calls,
-    merge_linked_ir_with_options, project_ir::ProjectIrProfile,
+    build_linked_ir_for_source_with_cache, harnesses, interfaces::InterfaceWorkspace,
+    link_project_calls, merge_linked_ir_with_options, project_ir::ProjectIrProfile,
 };
 
 #[derive(Debug)]
@@ -35,7 +35,7 @@ pub(crate) struct ProjectIrDocuments {
     pub(crate) field_candidates: usize,
 }
 
-pub(crate) struct ProjectProfileRequest<'a> {
+pub(crate) struct ProjectProfileRequest<'a, 'cache> {
     pub(crate) inputs: Vec<(String, PathBuf)>,
     pub(crate) inventories: Vec<(String, PathBuf)>,
     pub(crate) companions: Vec<PathBuf>,
@@ -46,10 +46,11 @@ pub(crate) struct ProjectProfileRequest<'a> {
     pub(crate) interfaces: Option<&'a InterfaceWorkspace>,
     pub(crate) interface_origins: &'a [LinkUnitOriginFact],
     pub(crate) jobs: usize,
+    pub(crate) function_fact_store: Option<&'cache mut dyn crate::analysis::FunctionFactStore>,
 }
 
 pub(crate) fn generate_project_profile(
-    request: ProjectProfileRequest<'_>,
+    request: ProjectProfileRequest<'_, '_>,
 ) -> Result<ProjectIrDocuments> {
     let ProjectProfileRequest {
         inputs,
@@ -62,6 +63,7 @@ pub(crate) fn generate_project_profile(
         interfaces,
         interface_origins,
         jobs,
+        function_fact_store,
     } = request;
     let started = std::time::Instant::now();
     let mut artifacts = inputs
@@ -72,20 +74,23 @@ pub(crate) fn generate_project_profile(
         artifact.reviewed_code =
             effective_code.reviewed_ranges(&artifact.source, &artifact.path)?;
     }
-    let (entry_contract, report) = analyze(LinkedIrAnalysisRequest {
-        artifacts: &artifacts,
-        inventories: &inventories,
-        companions: &companions,
-        symbol_prefix: profile.roots.symbol_prefix(),
-        include_reachable: profile.include_reachable,
-        entry_contract_id: &profile.entry_contract,
-        svd,
-        target,
-        interfaces,
-        interface_origins,
-        jobs,
-        compact_projected_actions: true,
-    })?;
+    let (entry_contract, report) = analyze(
+        LinkedIrAnalysisRequest {
+            artifacts: &artifacts,
+            inventories: &inventories,
+            companions: &companions,
+            symbol_prefix: profile.roots.symbol_prefix(),
+            include_reachable: profile.include_reachable,
+            entry_contract_id: &profile.entry_contract,
+            svd,
+            target,
+            interfaces,
+            interface_origins,
+            jobs,
+            compact_projected_actions: true,
+        },
+        function_fact_store,
+    )?;
     let (_, field_candidates, _, _) = field_candidate_summary(&report);
     let decode_blockers = report
         .functions
@@ -137,9 +142,10 @@ pub(crate) struct LinkedIrAnalysisRequest<'a> {
     pub(crate) compact_projected_actions: bool,
 }
 
-#[tracing::instrument(name = "build_linked_ir", skip(request))]
+#[tracing::instrument(name = "build_linked_ir", skip(request, function_fact_store))]
 pub(crate) fn analyze(
     request: LinkedIrAnalysisRequest<'_>,
+    mut function_fact_store: Option<&mut dyn crate::analysis::FunctionFactStore>,
 ) -> Result<(EntryContractRef, LinkedIrReport)> {
     let LinkedIrAnalysisRequest {
         artifacts,
@@ -210,7 +216,10 @@ pub(crate) fn analyze(
                 "registered reviewed interface calls"
             );
         }
-        reports.push(build_linked_ir_for_source(
+        let store = function_fact_store
+            .as_mut()
+            .map(|store| &mut **store as &mut dyn crate::analysis::FunctionFactStore);
+        reports.push(build_linked_ir_for_source_with_cache(
             &resolver,
             svd,
             LinkedIrSourceOptions {
@@ -221,6 +230,7 @@ pub(crate) fn analyze(
                 jobs,
                 compact_projected_actions,
             },
+            store,
         ));
     }
     if artifacts.len() > 1 {

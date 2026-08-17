@@ -12,6 +12,7 @@ use crate::{
 
 pub(super) fn run(
     arguments: IrBuildArgs,
+    project_manifest: &std::path::Path,
     project: &ProjectSpec,
     run_spec: &RunSpec,
     svd: &MmioMap,
@@ -31,6 +32,7 @@ pub(super) fn run(
             // build that owns the complete input set.
             refresh_review_scopes,
         },
+        project_manifest,
         project,
         run_spec,
         svd,

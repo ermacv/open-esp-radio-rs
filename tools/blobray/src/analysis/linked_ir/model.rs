@@ -2,7 +2,7 @@
 
 use std::ops::{Deref, Index};
 
-use serde::{Serialize, Serializer};
+use serde::{Deserialize, Serialize, Serializer};
 
 use crate::{MemoryObjectRoot, artifact};
 
@@ -235,7 +235,7 @@ pub(crate) struct ContextAccess {
     pub(crate) forced_one_mask: Option<u32>,
 }
 
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub(crate) enum LinkedMemoryObject {
     Argument {

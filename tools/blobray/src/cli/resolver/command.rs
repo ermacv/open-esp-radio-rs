@@ -244,6 +244,7 @@ pub(super) fn resolve_command(
         }
         Command::BuildIr(arguments) => {
             let ResolvedEnvironment {
+                project_path,
                 project,
                 target,
                 run_spec,
@@ -252,6 +253,9 @@ pub(super) fn resolve_command(
             } = environment;
             ResolvedInvocation::BuildIr {
                 arguments,
+                project_manifest: project_path.ok_or_else(|| {
+                    crate::Error::invalid("resolved IR build command has no project manifest")
+                })?,
                 project: project.ok_or_else(|| {
                     crate::Error::invalid("resolved IR build command has no project")
                 })?,

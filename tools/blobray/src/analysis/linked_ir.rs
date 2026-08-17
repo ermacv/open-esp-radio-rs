@@ -43,6 +43,9 @@ pub(crate) use calls::{effective_branch_operation, format_guard_path, format_gua
 mod direct_trace;
 
 use direct_trace::*;
+mod function_cache;
+
+use function_cache::*;
 mod scenario_suggestions;
 
 use scenario_suggestions::*;
@@ -570,10 +573,25 @@ pub(crate) struct LinkedIrSourceOptions<'a> {
     pub(crate) compact_projected_actions: bool,
 }
 
+#[cfg(test)]
 pub(crate) fn build_linked_ir_for_source(
     resolver: &ReferenceResolver,
     svd: &MmioMap,
     options: LinkedIrSourceOptions<'_>,
+) -> LinkedIrReport {
+    build_linked_ir_for_source_with_cache(resolver, svd, options, None)
+}
+
+pub(crate) trait FunctionFactStore {
+    fn load_function_facts(&self, keys: &[String]) -> crate::Result<Vec<(String, Vec<u8>)>>;
+    fn store_function_facts(&mut self, facts: &[(String, Vec<u8>)]) -> crate::Result<()>;
+}
+
+pub(crate) fn build_linked_ir_for_source_with_cache(
+    resolver: &ReferenceResolver,
+    svd: &MmioMap,
+    options: LinkedIrSourceOptions<'_>,
+    fact_store: Option<&mut dyn FunctionFactStore>,
 ) -> LinkedIrReport {
     let LinkedIrSourceOptions {
         symbol_prefix,
@@ -595,6 +613,13 @@ pub(crate) fn build_linked_ir_for_source(
         })
         .collect::<Vec<_>>();
     let jobs = linked_ir_worker_count(jobs, roots.len());
+    let function_cache = FunctionCacheRun::prepare(
+        resolver,
+        roots.iter().copied(),
+        svd,
+        source,
+        fact_store.as_deref(),
+    );
     let functions = if jobs > 1 && symbol_prefix.is_empty() {
         build_all_linked_functions_parallel(
             resolver,
@@ -603,6 +628,7 @@ pub(crate) fn build_linked_ir_for_source(
             source,
             namespace_identities,
             jobs,
+            &function_cache,
         )
     } else {
         build_linked_functions_for_roots(
@@ -616,8 +642,12 @@ pub(crate) fn build_linked_ir_for_source(
                 include_reachable,
             },
             roots,
+            &function_cache,
         )
     };
+    if let Some(store) = fact_store {
+        function_cache.persist(store);
+    }
     let function_analysis_elapsed = started.elapsed();
     tracing::debug!(
         source,
@@ -671,6 +701,7 @@ struct LinkedFunctionBuild<'a> {
 fn build_linked_functions_for_roots(
     build: LinkedFunctionBuild<'_>,
     roots: Vec<&artifact::ArtifactSymbolDefinition>,
+    function_cache: &FunctionCacheRun,
 ) -> Vec<LinkedIrFunction> {
     let LinkedFunctionBuild {
         resolver,
@@ -719,7 +750,9 @@ fn build_linked_functions_for_roots(
             direct_mmio_predicates,
             mut blockers,
             site_effects,
-        } = explore_direct_calls(symbol, resolver, &identities, svd);
+        } = function_cache.direct_graph(symbol, || {
+            explore_direct_calls(symbol, resolver, &identities, svd)
+        });
         let direct_graph_elapsed = direct_graph_started.elapsed();
         let mut indexed_dispatches = Vec::new();
         let mut recovered_indexed_dispatch_sites = BTreeSet::new();
@@ -1017,6 +1050,7 @@ fn build_all_linked_functions_parallel(
     source: &str,
     namespace_identities: bool,
     jobs: usize,
+    function_cache: &FunctionCacheRun,
 ) -> Vec<LinkedIrFunction> {
     // Long ROM routines dominate short thunks. Greedily balancing byte counts
     // gives every worker comparable input while retaining deterministic
@@ -1060,6 +1094,7 @@ fn build_all_linked_functions_parallel(
                             include_reachable: false,
                         },
                         roots,
+                        function_cache,
                     );
                     sender
                         .send((worker, functions))

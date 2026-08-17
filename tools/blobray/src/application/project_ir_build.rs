@@ -63,11 +63,14 @@ pub(crate) struct BuildDocument<'a> {
 
 pub(crate) fn build_project_ir<'a>(
     request: ProjectIrBuildRequest,
+    project_manifest: &Path,
     project: &'a ProjectSpec,
     run_spec: &RunSpec,
     svd: &MmioMap,
     target: &TargetSpec,
 ) -> Result<BuildDocument<'a>> {
+    let mut function_fact_store =
+        crate::application::query_store::QueryStore::open(project_manifest)?;
     let selected = select_profiles(&project.ir_profiles, &request.profiles)?;
     // Resolve and validate every selected input before loading catalogs or
     // beginning expensive analysis. A missing generated ELF must name its
@@ -99,6 +102,7 @@ pub(crate) fn build_project_ir<'a>(
                 interfaces: interfaces.as_ref(),
                 interface_origins: &interface_origins,
                 jobs: request.jobs,
+                function_fact_store: Some(&mut function_fact_store),
             })?;
         let ProjectIrDocuments {
             bundle,

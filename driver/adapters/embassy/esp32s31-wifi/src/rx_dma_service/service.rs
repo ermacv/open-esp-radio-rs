@@ -55,19 +55,13 @@ where
             // Freeze the completion frontier before any descriptor is rearmed.
             // A saturated producer can therefore only create a later epoch; it
             // cannot make this service call unbounded by refilling the ring.
-            let (last_descriptor_low, next_descriptor_low) =
-                hardware.with_ordered_cursor(|cursor| {
-                    (cursor.last_descriptor_low(), cursor.next_descriptor_low())
-                });
-            // LAST is the ownership frontier for the following descriptor
-            // scan. Make the MMIO observation precede all descriptor reads.
-            hardware.fence();
+            let mut frozen_cursor = self.ring.freeze_cursor(hardware);
             let frontier_snapshot = self
                 .storage
                 .completed_unit_frontier_through_cursor(
                     &self.ring,
-                    last_descriptor_low,
-                    next_descriptor_low,
+                    frozen_cursor.last_descriptor_low(),
+                    frozen_cursor.next_descriptor_low(),
                 )
                 .map_err(RxStageTransactionError::Ring)?;
             let frontier = frontier_snapshot.unit_count;
@@ -75,11 +69,6 @@ where
             let queue_credits = self.frames.free_capacity();
             let credits = pool_credits.min(queue_credits);
             let admission_budget = frontier.min(credits);
-            let reclaim_guard = RX_RECLAIM_GUARD_DESCRIPTORS.min(COUNT / 2).max(1);
-            let cursor_guard_enabled = COUNT >= RX_RECLAIM_GUARD_DESCRIPTORS.saturating_mul(2);
-            let cursor_guard_batch = cursor_guard_enabled
-                && frontier_snapshot.descriptor_count >= reclaim_guard.saturating_mul(2)
-                && credits >= reclaim_guard;
             let mut admitted = 0_usize;
             let mut admitted_descriptors = 0_usize;
             let mut staged_bytes = 0_usize;
@@ -88,15 +77,12 @@ where
             let mut remaining_descriptors = frontier_snapshot.descriptor_count;
 
             for _ in 0..admission_budget {
-                if cursor_guard_batch && admitted_descriptors >= reclaim_guard {
-                    break;
-                }
                 let unit_frontier = self
                     .storage
                     .first_completed_unit_frontier_through_cursor(
                         &self.ring,
-                        last_descriptor_low,
-                        next_descriptor_low,
+                        frozen_cursor.last_descriptor_low(),
+                        frozen_cursor.next_descriptor_low(),
                     )
                     .map_err(RxStageTransactionError::Ring)?;
                 if unit_frontier.unit_count != 1
@@ -106,12 +92,6 @@ where
                     return Err(RxStageTransactionError::Ring(RxRingError::Corrupt));
                 }
                 let unit_descriptor_count = unit_frontier.descriptor_count;
-                if cursor_guard_batch
-                    && admitted_descriptors != 0
-                    && remaining_descriptors.saturating_sub(unit_descriptor_count) < reclaim_guard
-                {
-                    break;
-                }
                 let unit = self
                     .storage
                     .take_completed_unit(&mut self.ring, unit_descriptor_count)
@@ -136,7 +116,7 @@ where
                     .pool
                     .stage_dma_unit_deferred_bounded(unit, maximum_payload_length)?
                 {
-                    RxDmaDeferredStageUnitOutcome::Staged(frame) => frame,
+                    RxDmaDeferredStageUnitOutcome::Staged(frame) => Some(frame),
                     RxDmaDeferredStageUnitOutcome::Discarded(error) => {
                         discarded_units = discarded_units.saturating_add(1);
                         // Length is supplied by an untrusted receive unit. A
@@ -161,39 +141,23 @@ where
                                     _ => unreachable!("length discard was matched above"),
                                 },
                             });
-                        continue;
+                        None
                     }
                 };
-                staged_units = staged_units.saturating_add(1);
-                staged_bytes = staged_bytes.saturating_add(frame.length());
-                self.frames.try_send(frame).map_err(|error| match error {
-                    TrySendError::Full(_) => RxStageTransactionError::Ring(RxRingError::Corrupt),
-                })?;
-                self.admission
-                    .observe(Esp32s31RxIngressObservation::Staged(unit_observation));
-            }
 
-            let cursor_guarded_append = if cursor_guard_enabled {
-                self.storage
-                    .recycle_observed_prefix_with_cursor_guard(
+                let append = self
+                    .storage
+                    .recycle_completed_unit_through_frozen_last(
                         &mut self.ring,
                         hardware,
-                        last_descriptor_low,
-                        next_descriptor_low,
+                        frozen_cursor,
+                        unit_descriptor_count,
                     )
                     .map_err(RxStageTransactionError::Ring)?
-            } else {
-                None
-            };
-            let cursor_generation_changed = cursor_guarded_append.is_some();
-            let append = match cursor_guarded_append {
-                Some(append) => Some(append),
-                None => self
-                    .storage
-                    .recycle_observed_prefix_with_guard(&mut self.ring, hardware)
-                    .map_err(RxStageTransactionError::Ring)?,
-            };
-            let recycled_descriptors = if let Some(append) = append {
+                    .ok_or(RxStageTransactionError::Ring(RxRingError::Busy))?;
+                if append.descriptor_count != unit_descriptor_count {
+                    return Err(RxStageTransactionError::Ring(RxRingError::Corrupt));
+                }
                 // The vendor append path does not yield between its reload
                 // doorbell and conditional BASE-repair suffix. Preserve that
                 // transaction boundary so a later completion cannot replace
@@ -207,10 +171,25 @@ where
                         micros: observer.elapsed_micros_since(started),
                     });
                 }
-                append.descriptor_count
-            } else {
-                0
-            };
+                if let Some(frame) = frame {
+                    staged_units = staged_units.saturating_add(1);
+                    staged_bytes = staged_bytes.saturating_add(frame.length());
+                    self.frames.try_send(frame).map_err(|error| match error {
+                        TrySendError::Full(_) => {
+                            RxStageTransactionError::Ring(RxRingError::Corrupt)
+                        }
+                    })?;
+                    self.admission
+                        .observe(Esp32s31RxIngressObservation::Staged(unit_observation));
+                }
+
+                // The append changed descriptor-address generation. Match the
+                // vendor walker by taking a new ordered LAST/NEXT image before
+                // examining the next software head.
+                frozen_cursor = self.ring.freeze_cursor(hardware);
+            }
+
+            let recycled_descriptors = admitted_descriptors;
 
             self.report.completed_units = self
                 .report
@@ -237,26 +216,21 @@ where
                 .recycled_descriptors
                 .saturating_add(u32::try_from(recycled_descriptors).unwrap_or(u32::MAX));
 
-            // A chained unit deliberately bounds one frontier scan. LAST may
-            // already cover following complete units, so retain a cooperative
-            // continuation instead of waiting for an IRQ which hardware has
-            // already emitted for that frozen frontier.
-            let completion_frontier_remaining = if cursor_generation_changed {
-                // The appended prefix can be filled again immediately, so
-                // the old LAST/NEXT addresses no longer identify one
-                // generation. End this pass and take a fresh ordered cursor.
-                true
-            } else {
-                self.storage
+            // Every append changes descriptor generation. Retain one
+            // cooperative post-append confirmation before the moderated IRQ
+            // source is unmasked; a completion can consume the republished
+            // unit while the current RX-success edge is still owned here.
+            let completion_frontier_remaining = recycled_descriptors != 0
+                || self
+                    .storage
                     .completed_unit_frontier_through_cursor(
                         &self.ring,
-                        last_descriptor_low,
-                        next_descriptor_low,
+                        frozen_cursor.last_descriptor_low(),
+                        frozen_cursor.next_descriptor_low(),
                     )
                     .map_err(RxStageTransactionError::Ring)?
                     .unit_count
-                    != 0
-            };
+                    != 0;
             // The terminal cursor can precede the final descriptor writeback,
             // and that writeback has no guaranteed fresh RX-success edge.
             // Retain a cooperative pass until the exhausted finite list has
@@ -291,7 +265,7 @@ where
                 ));
             }
 
-            Ok(if credit_limited && !cursor_generation_changed {
+            Ok(if credit_limited && recycled_descriptors == 0 {
                 WdevRxProgress::StagingBackpressured
             } else if completion_frontier_remaining
                 || exhausted_writeback_pending

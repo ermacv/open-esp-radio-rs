@@ -3,9 +3,9 @@
 //! DMA storage, the live descriptor frontier and independent staging storage
 //! are kept in one finite service. No DMA pointer escapes this owner: a
 //! completed unit is copied into independent staging before its lease is handed
-//! to the protocol consumer. A completed unit remains untouched until a later
-//! completed unit proves that DMA consumed its links; the protected prefix is
-//! then appended promptly without deliberately exhausting the finite list.
+//! to the protocol consumer. The service freezes LAST before copying and
+//! returns each copied complete unit in its own append/reload transaction;
+//! no fixed descriptor suffix is withheld from the live list.
 
 #![forbid(unsafe_code)]
 
@@ -15,10 +15,7 @@ use embassy_sync::channel::{Sender, TrySendError};
 use open_esp_radio_embassy_net::RawMutex;
 use open_esp_radio_esp32s31_wifi_dma::rx_storage::{RxDmaBuffer, RxDmaStorage};
 use open_esp_radio_esp32s31_wifi_mac::{
-    rx::{
-        RX_RECLAIM_GUARD_DESCRIPTORS, RxDescriptorSnapshot, RxDma, RxRingError, RxRingHalted,
-        RxRingLive, RxRingStopped,
-    },
+    rx::{RxDescriptorSnapshot, RxDma, RxRingError, RxRingHalted, RxRingLive, RxRingStopped},
     rx_pool::{
         RxDmaDeferredStageUnitOutcome, RxStageError, RxStagePool, RxStageTransactionError,
         VENDOR_LARGE_RX_PAYLOAD_CAPACITY, VENDOR_LARGE_RX_SLOT_COUNT,
@@ -69,7 +66,7 @@ pub struct Esp32s31RxCompletedUnit {
 /// A completed ingress transaction observed after its ownership edge.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Esp32s31RxIngressObservation {
-    /// The unit was discarded and retained for guarded deferred reclaim.
+    /// The unit was discarded and retained until the frozen-LAST reclaim.
     DiscardRetained {
         unit: Esp32s31RxCompletedUnit,
         reason: RxStageDiscard,

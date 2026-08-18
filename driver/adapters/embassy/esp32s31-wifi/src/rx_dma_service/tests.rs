@@ -295,7 +295,7 @@ fn finite_service_uses_queue_credits_and_protocol_dispatch_returns_ownership() {
 
     assert_eq!(
         embassy_futures::block_on(service.service(&mut hardware)),
-        Ok(WdevRxProgress::StagingBackpressured),
+        Ok(WdevRxProgress::ProbePending),
     );
     assert_eq!(pool.claimed_slots(), 1);
     assert_eq!(pool.network_slots(), 1);
@@ -303,19 +303,23 @@ fn finite_service_uses_queue_credits_and_protocol_dispatch_returns_ownership() {
     embassy_futures::block_on(protocol.dispatch_next());
     assert_eq!(pool.claimed_slots(), 0);
     assert_eq!(pool.network_slots(), 0);
-    assert_eq!(service.ring().recycle_start(), 0);
-    assert_ne!(storage.descriptors()[0].word0() & BIT_30, 0);
+    assert_eq!(service.ring().recycle_start(), 1);
+    assert_eq!(storage.descriptors()[0].word0() & BIT_30, 0);
     assert_ne!(storage.descriptors()[0].word0() & BIT_31, 0);
 
     assert_eq!(
         embassy_futures::block_on(service.service(&mut hardware)),
-        Ok(WdevRxProgress::Drained),
+        Ok(WdevRxProgress::ProbePending),
     );
-    assert_eq!(service.ring().recycle_start(), 1);
+    assert_eq!(service.ring().recycle_start(), 0);
     assert_eq!(protocol.queue_len(), 1);
     embassy_futures::block_on(protocol.dispatch_next());
     assert_eq!(pool.claimed_slots(), 0);
     assert_eq!(pool.network_slots(), 0);
+    assert_eq!(
+        embassy_futures::block_on(service.service(&mut hardware)),
+        Ok(WdevRxProgress::Drained),
+    );
     service
         .try_stop(&mut hardware)
         .unwrap_or_else(|_| panic!("test RX service must stop"));
@@ -459,7 +463,7 @@ fn exhausted_cursor_keeps_service_live_until_terminal_writeback_arrives() {
         Ok(WdevRxProgress::ProbePending),
     );
     assert_eq!(receiver.len(), 4);
-    assert_eq!(service.ring().observed_mask(), 0b1100);
+    assert_eq!(service.ring().observed_mask(), 0);
     service
         .try_stop(&mut hardware)
         .unwrap_or_else(|_| panic!("test RX service must stop"));
@@ -501,15 +505,15 @@ fn finite_service_stages_a_descriptor_chain_as_one_contiguous_unit() {
 
     assert_eq!(
         embassy_futures::block_on(service.service(&mut hardware)),
-        Ok(WdevRxProgress::Drained),
+        Ok(WdevRxProgress::ProbePending),
     );
     let frame = receiver.try_receive().expect("one chained staged unit");
     assert_eq!(frame.segment().buffer, &[1, 2, 3, 4, 5, 6, 7, 8]);
     assert_eq!(service.ring().recycle_start(), 0);
-    // With no later completed unit this chain remains the retained guard; a
-    // bare address sample cannot authorize rewriting either descriptor.
+    // The frozen LAST releases its complete chained unit inclusively, exactly
+    // as the vendor worker processes the descriptor equal to saved LAST.
     assert_ne!(storage.descriptors()[0].word0() & BIT_31, 0);
-    assert_ne!(storage.descriptors()[1].word0() & BIT_30, 0);
+    assert_eq!(storage.descriptors()[1].word0() & BIT_30, 0);
     drop(frame);
     assert_eq!(pool.claimed_slots(), 0);
     service
@@ -518,7 +522,7 @@ fn finite_service_stages_a_descriptor_chain_as_one_contiguous_unit() {
 }
 
 #[test]
-fn completed_unit_guard_reclaims_the_preceding_observed_prefix() {
+fn frozen_last_reclaims_every_complete_observed_unit_through_its_frontier() {
     const COUNT: usize = 4;
     const STAGE_CAPACITY: usize = 16;
     let mut storage = Esp32s31RxDmaStorage::<COUNT>::new();
@@ -555,10 +559,6 @@ fn completed_unit_guard_reclaims_the_preceding_observed_prefix() {
         embassy_futures::block_on(service.service(&mut hardware)),
         Ok(WdevRxProgress::ProbePending),
     );
-    assert_eq!(
-        embassy_futures::block_on(service.service(&mut hardware)),
-        Ok(WdevRxProgress::ProbePending),
-    );
     hardware.next_descriptor_low = BASE & 0x000f_ffff;
     assert_eq!(
         embassy_futures::block_on(service.service(&mut hardware)),
@@ -570,8 +570,8 @@ fn completed_unit_guard_reclaims_the_preceding_observed_prefix() {
     );
     assert_eq!(storage.descriptors()[0].word0() & BIT_30, 0);
     assert_eq!(storage.descriptors()[1].word0() & BIT_30, 0);
-    assert_ne!(storage.descriptors()[2].word0() & BIT_30, 0);
-    assert_ne!(storage.descriptors()[3].word0() & BIT_30, 0);
+    assert_eq!(storage.descriptors()[2].word0() & BIT_30, 0);
+    assert_eq!(storage.descriptors()[3].word0() & BIT_30, 0);
     assert!(!service.ring().exhausted_republication_probe_pending());
     let frame = receiver.try_receive().expect("one staged unit");
     assert_eq!(frame.segment().buffer, &[1, 2, 3, 4, 5, 6, 7, 8]);
@@ -626,11 +626,11 @@ fn production_ring_reclaims_before_a_32_slot_stage_pool_saturates() {
         embassy_futures::block_on(service.service(&mut hardware)),
         Ok(WdevRxProgress::ProbePending),
     );
-    assert_eq!(service.report().completed_descriptors, 16);
-    assert_eq!(service.report().recycled_descriptors, 16);
-    assert_eq!(service.ring().recycle_start(), 16);
-    assert_eq!(pool.claimed_slots(), 16);
-    for expected in 0_u32..16 {
+    assert_eq!(service.report().completed_descriptors, 32);
+    assert_eq!(service.report().recycled_descriptors, 32);
+    assert_eq!(service.ring().recycle_start(), 32);
+    assert_eq!(pool.claimed_slots(), 32);
+    for expected in 0_u32..32 {
         let frame = receiver.try_receive().expect("staged prefix frame");
         assert_eq!(frame.segment().buffer, expected.to_le_bytes());
     }
@@ -738,7 +738,7 @@ fn negotiated_rx_block_ack_releases_staged_leases_in_sequence_order() {
 
     assert_eq!(
         embassy_futures::block_on(service.service(&mut hardware)),
-        Ok(WdevRxProgress::StagingBackpressured),
+        Ok(WdevRxProgress::ProbePending),
     );
     assert_eq!(pool.claimed_slots(), 3);
     embassy_futures::block_on(protocol.dispatch_next());
@@ -757,6 +757,10 @@ fn negotiated_rx_block_ack_releases_staged_leases_in_sequence_order() {
     assert_eq!(
         reorder_storage.available_slots(),
         crate::rx_reorder::RX_REORDER_BACKING_SLOT_COUNT
+    );
+    assert_eq!(
+        embassy_futures::block_on(service.service(&mut hardware)),
+        Ok(WdevRxProgress::ProbePending),
     );
     assert_eq!(
         embassy_futures::block_on(service.service(&mut hardware)),
@@ -804,10 +808,10 @@ fn finite_service_discards_oversize_unit_and_keeps_the_ring_live() {
 
     assert_eq!(
         embassy_futures::block_on(service.service(&mut hardware)),
-        Ok(WdevRxProgress::StagingBackpressured),
+        Ok(WdevRxProgress::ProbePending),
     );
-    assert_eq!(service.ring().recycle_start(), 0);
-    assert_ne!(storage.descriptors()[0].word0() & BIT_30, 0);
+    assert_eq!(service.ring().recycle_start(), 1);
+    assert_eq!(storage.descriptors()[0].word0() & BIT_30, 0);
     assert_ne!(storage.descriptors()[0].word0() & BIT_31, 0);
     assert_eq!(pool.claimed_slots(), 0);
     assert!(matches!(
@@ -818,13 +822,17 @@ fn finite_service_discards_oversize_unit_and_keeps_the_ring_live() {
 
     assert_eq!(
         embassy_futures::block_on(service.service(&mut hardware)),
+        Ok(WdevRxProgress::ProbePending),
+    );
+    assert_eq!(
+        embassy_futures::block_on(service.service(&mut hardware)),
         Ok(WdevRxProgress::Drained),
     );
     assert_eq!(storage.descriptors()[0].word0() & BIT_30, 0);
     hardware.release_through(1, None);
     assert_eq!(
         embassy_futures::block_on(service.service(&mut hardware)),
-        Ok(WdevRxProgress::Drained),
+        Ok(WdevRxProgress::ProbePending),
     );
     assert_eq!(storage.descriptors()[0].word0() & BIT_30, 0);
 
@@ -841,10 +849,6 @@ fn finite_service_discards_oversize_unit_and_keeps_the_ring_live() {
     assert_eq!(next.length(), 4);
     drop(next);
     hardware.next_descriptor_low = (BASE + DESCRIPTOR_BYTES) & 0x000f_ffff;
-    assert_eq!(
-        embassy_futures::block_on(service.service(&mut hardware)),
-        Ok(WdevRxProgress::ProbePending),
-    );
     assert_eq!(
         embassy_futures::block_on(service.service(&mut hardware)),
         Ok(WdevRxProgress::Drained),
@@ -889,7 +893,7 @@ fn one_shot_admission_discards_before_staging_then_observes_same_live_ring() {
     hardware.release_through(1, Some(0));
     assert_eq!(
         embassy_futures::block_on(service.service(&mut hardware)),
-        Ok(WdevRxProgress::StagingBackpressured),
+        Ok(WdevRxProgress::ProbePending),
     );
     assert_eq!(admission.0.load(Ordering::Acquire), 2);
     assert!(matches!(
@@ -899,7 +903,7 @@ fn one_shot_admission_discards_before_staging_then_observes_same_live_ring() {
 
     assert_eq!(
         embassy_futures::block_on(service.service(&mut hardware)),
-        Ok(WdevRxProgress::Drained),
+        Ok(WdevRxProgress::ProbePending),
     );
     assert_eq!(admission.0.load(Ordering::Acquire), 3);
     assert_eq!(
@@ -910,7 +914,11 @@ fn one_shot_admission_discards_before_staging_then_observes_same_live_ring() {
         4
     );
 
-    assert_eq!(service.ring().recycle_start(), 1);
+    assert_eq!(
+        embassy_futures::block_on(service.service(&mut hardware)),
+        Ok(WdevRxProgress::Drained),
+    );
+    assert_eq!(service.ring().recycle_start(), 0);
     service
         .try_stop(&mut hardware)
         .unwrap_or_else(|_| panic!("test RX service must stop"));
@@ -952,12 +960,16 @@ fn finite_service_accepts_a_unit_within_a_wider_negotiated_stage() {
 
     assert_eq!(
         embassy_futures::block_on(service.service(&mut hardware)),
-        Ok(WdevRxProgress::StagingBackpressured),
+        Ok(WdevRxProgress::ProbePending),
     );
     let frame = receiver.try_receive().expect("wide staged frame");
     assert_eq!(frame.length(), WIDE_STAGE_CAPACITY);
     drop(frame);
     assert_eq!(pool.claimed_slots(), 0);
+    assert_eq!(
+        embassy_futures::block_on(service.service(&mut hardware)),
+        Ok(WdevRxProgress::ProbePending),
+    );
     assert_eq!(
         embassy_futures::block_on(service.service(&mut hardware)),
         Ok(WdevRxProgress::Drained),

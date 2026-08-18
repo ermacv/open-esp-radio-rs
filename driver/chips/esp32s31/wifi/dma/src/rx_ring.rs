@@ -28,20 +28,6 @@ pub const RX_BUFFER_SENTINEL: u32 = 0xdead_beef;
 
 const RX_DESCRIPTOR_ADDRESS_LOW_MASK: u32 = 0x000f_ffff;
 const RX_EXHAUSTED_REPUBLICATION_ACCEPTED: u32 = 0x8000_0000;
-/// Maximum completed burst retained between descriptor generations.
-///
-/// The production receive BlockAck window is 16. HIL showed that guards of
-/// one and four descriptors permit stale RX writeback to terminate the live
-/// suffix, while retaining 16 completions avoids reusing any descriptor from
-/// the current maximum A-MPDU burst.
-pub const RX_RECLAIM_GUARD_DESCRIPTORS: usize = 16;
-/// Smallest cursor-proven completion span from which guarded reclaim may
-/// append one useful batch while retaining the complete hardware guard.
-///
-/// Only the first half needs an independent staging lease. The second half
-/// remains unobserved in the DMA ring and proves that hardware consumed the
-/// links which the append will rewrite.
-pub const RX_GUARDED_RECLAIM_WINDOW_DESCRIPTORS: usize = RX_RECLAIM_GUARD_DESCRIPTORS * 2;
 /// Exact maximum number of `APPEND_DESCRIPTOR_RELOAD` observations recovered
 /// from `wDev_AppendRxBlocks`.
 ///
@@ -258,12 +244,35 @@ pub struct RxCompletedUnitFrontier {
     pub descriptor_count: usize,
 }
 
+/// One ordered hardware cursor bound to a live descriptor generation.
+///
+/// Addresses can be reused immediately after append. Keeping the generation
+/// and arena identity private prevents a stale LAST from authorizing mutation
+/// of descriptors which have already returned to hardware.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RxFrozenCursor {
+    last_descriptor_low: u32,
+    next_descriptor_low: u32,
+    descriptor_base: u32,
+    arena_identity: usize,
+    generation: u32,
+}
+
+impl RxFrozenCursor {
+    pub const fn last_descriptor_low(self) -> u32 {
+        self.last_descriptor_low
+    }
+
+    pub const fn next_descriptor_low(self) -> u32 {
+        self.next_descriptor_low
+    }
+}
+
 #[derive(Clone, Copy, Eq, PartialEq)]
 enum RxRecycleGroupShape {
     EveryDescriptorTerminal,
     OneCompletedUnit,
-    ObservedPrefixWithGuard,
-    ObservedPrefixWithCursorGuard,
+    OneCompletedUnitThroughFrozenLast,
 }
 
 /// Unique ownership of one complete, possibly chained, RX unit.
@@ -377,6 +386,7 @@ pub struct RxRingLive<'a, const COUNT: usize> {
     recycle_start: usize,
     accepted_tail: usize,
     pending_tail: Option<usize>,
+    cursor_generation: u32,
     completion_release_probe_pending: bool,
     exhausted_republication_head_low: Option<u32>,
     #[cfg(not(target_pointer_width = "32"))]
@@ -727,6 +737,7 @@ impl<'a, const COUNT: usize> RxRingStopped<'a, COUNT> {
             recycle_start: self.initial_start,
             accepted_tail: self.accepted_tail,
             pending_tail: None,
+            cursor_generation: 0,
             completion_release_probe_pending: false,
             exhausted_republication_head_low: None,
             #[cfg(not(target_pointer_width = "32"))]
@@ -1491,97 +1502,33 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
         )
     }
 
-    /// Rearm a completed window behind one full receive-burst guard.
+    /// Rearm exactly one copied RX unit released by a frozen vendor LAST.
     ///
-    /// Retaining 16 current completions keeps rearm outside the S31 receive
-    /// burst's observed prefetch/writeback horizon. The production 64-entry
-    /// ring therefore retains at least 32 additional descriptors beyond the
-    /// recycled window and guard. Smaller guards are unsafe: HIL reproduced a
-    /// zero NEXT with the untouched suffix still armed for guards of one and
-    /// four descriptors, and again when reclaim began after 17 completions.
-    pub(crate) fn recycle_observed_prefix_with_guard_owned<M, F>(
+    /// `wdevProcessRxSucDataAll` does not collect multiple complete units into
+    /// one returned chain. It counts one unit, transfers that exact
+    /// `head..tail` chain through `wDev_DiscardFrame`/`wDev_AppendRxBlocks`,
+    /// and only then refreshes LAST before examining the next software head.
+    /// Binding the operation to [`RxFrozenCursor`] prevents the descriptor
+    /// address from being reused as authority after this append changes the
+    /// ring generation.
+    pub(crate) fn recycle_completed_unit_through_frozen_last_owned<M, F>(
         &mut self,
         mmio: &mut M,
+        cursor: RxFrozenCursor,
+        descriptor_count: usize,
         prepare_buffer: F,
     ) -> Result<Option<RxLiveAppend>, RxRingError>
     where
         M: RxDma,
         F: FnMut(usize) -> Result<(), RxRingError>,
     {
-        let observed = self.observed_prefix_len();
-        let guard = RX_RECLAIM_GUARD_DESCRIPTORS.min(COUNT / 2).max(1);
-        if observed < guard.saturating_mul(2) {
+        if !self.frozen_cursor_releases_unit(cursor, descriptor_count) {
             return Ok(None);
         }
-        let maximum_recycle = observed - guard;
-        let mut previous_terminal_end = None;
-        for step in 0..maximum_recycle {
-            let index = wrap_add::<COUNT>(self.recycle_start, step);
-            if step + 1 >= guard && rx_done(self.descriptors[index].word0()) {
-                previous_terminal_end = Some(step + 1);
-            }
-        }
-        let Some(recycle_count) = previous_terminal_end else {
-            return Ok(None);
-        };
         self.recycle_completed_group(
             mmio,
-            recycle_count,
-            RxRecycleGroupShape::ObservedPrefixWithGuard,
-            prepare_buffer,
-        )
-    }
-
-    /// Rearm one copied prefix behind a distinct completed suffix from the
-    /// caller's frozen hardware cursor.
-    ///
-    /// Unlike [`Self::recycle_observed_prefix_with_guard_owned`], the guard
-    /// descriptors remain unobserved and therefore need no staging slots.
-    /// LAST/NEXT still proves that hardware completed that suffix before the
-    /// prefix links are rewritten. The caller must end its frozen-frontier
-    /// scan after a successful append because descriptor addresses may be
-    /// reused by the new generation immediately.
-    pub(crate) fn recycle_observed_prefix_with_cursor_guard_owned<M, G, F>(
-        &mut self,
-        mmio: &mut M,
-        last_descriptor_low: u32,
-        next_descriptor_low: u32,
-        nonterminal_consumed: G,
-        prepare_buffer: F,
-    ) -> Result<Option<RxLiveAppend>, RxRingError>
-    where
-        M: RxDma,
-        G: FnMut(usize) -> bool,
-        F: FnMut(usize) -> Result<(), RxRingError>,
-    {
-        let guard = RX_RECLAIM_GUARD_DESCRIPTORS.min(COUNT / 2).max(1);
-        let observed = self.observed_prefix_len();
-        if observed < guard {
-            return Ok(None);
-        }
-        let completed_suffix = self.completed_unit_frontier_through_cursor_with(
-            last_descriptor_low,
-            next_descriptor_low,
-            nonterminal_consumed,
-        );
-        if completed_suffix.descriptor_count < guard {
-            return Ok(None);
-        }
-
-        let mut previous_terminal_end = None;
-        for step in 0..observed {
-            let index = wrap_add::<COUNT>(self.recycle_start, step);
-            if step + 1 >= guard && rx_done(self.descriptors[index].word0()) {
-                previous_terminal_end = Some(step + 1);
-            }
-        }
-        let Some(recycle_count) = previous_terminal_end else {
-            return Ok(None);
-        };
-        self.recycle_completed_group(
-            mmio,
-            recycle_count,
-            RxRecycleGroupShape::ObservedPrefixWithCursorGuard,
+            descriptor_count,
+            RxRecycleGroupShape::OneCompletedUnitThroughFrozenLast,
             prepare_buffer,
         )
     }
@@ -1633,10 +1580,9 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
             };
             let valid_completion_shape = match shape {
                 RxRecycleGroupShape::EveryDescriptorTerminal => rx_done(word0),
-                RxRecycleGroupShape::OneCompletedUnit => rx_done(word0) == (step + 1 == group_size),
-                RxRecycleGroupShape::ObservedPrefixWithGuard
-                | RxRecycleGroupShape::ObservedPrefixWithCursorGuard => {
-                    step + 1 != group_size || rx_done(word0)
+                RxRecycleGroupShape::OneCompletedUnit
+                | RxRecycleGroupShape::OneCompletedUnitThroughFrozenLast => {
+                    rx_done(word0) == (step + 1 == group_size)
                 }
             };
             if !valid_completion_shape {
@@ -1670,26 +1616,20 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
             self.require_reset();
             return Err(RxRingError::Corrupt);
         }
-        // RX_DONE is CPU ownership of the payload, but not by itself proof
-        // that the walker has fetched this descriptor's link word. A deferred
-        // prefix carries a stronger proof: one complete, still-observed unit
-        // follows its terminal descriptor, so hardware necessarily consumed
-        // the prefix link in this software generation. Other paths retain the
-        // explicit ordered-cursor proof.
-        if shape == RxRecycleGroupShape::ObservedPrefixWithGuard {
-            let observed = self.observed_prefix_len();
-            let retained_complete_unit = observed > group_size
-                && (group_size..observed).any(|step| {
-                    rx_done(self.descriptors[wrap_add::<COUNT>(self.recycle_start, step)].word0())
-                });
-            if !retained_complete_unit {
-                return Ok(None);
-            }
-        } else if shape != RxRecycleGroupShape::ObservedPrefixWithCursorGuard
-            && !self.observe_current_completed_unit_link_release(mmio, group_size)
+        // The frozen-LAST path validates its generation-specific cursor proof
+        // before entering this mutation routine. Raw/model paths still need a
+        // fresh ownership observation here.
+        if !matches!(
+            shape,
+            RxRecycleGroupShape::OneCompletedUnitThroughFrozenLast
+        ) && !self.observe_current_completed_unit_link_release(mmio, group_size)
         {
             return Ok(None);
         }
+        let Some(next_cursor_generation) = self.cursor_generation.checked_add(1) else {
+            self.require_reset();
+            return Err(RxRingError::Corrupt);
+        };
         for step in 0..group_size {
             if let Err(error) = prepare_buffer(wrap_add::<COUNT>(self.recycle_start, step)) {
                 // The completed-unit token has already been consumed and an
@@ -1726,6 +1666,7 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
         if append_to_empty {
             mmio.fence();
             self.publish_exhausted_descriptor_base(mmio, head_address);
+            self.cursor_generation = next_cursor_generation;
             self.accepted_tail = tail_index;
             self.pending_tail = None;
             // A terminal-only list can be filled and exhausted without a
@@ -1759,6 +1700,7 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
         mmio.request_reload(&self.binding);
         mmio.fence();
 
+        self.cursor_generation = next_cursor_generation;
         self.pending_tail = Some(tail_index);
         self.observed_mask &= !group_mask;
         self.recycle_start = wrap_add::<COUNT>(self.recycle_start, group_size);
@@ -1802,6 +1744,23 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
 
     pub const fn accepted_tail(&self) -> usize {
         self.accepted_tail
+    }
+
+    /// Freeze one ordered LAST/NEXT image for this descriptor generation.
+    pub fn freeze_cursor<M: RxDma>(&self, mmio: &mut M) -> RxFrozenCursor {
+        let (last_descriptor_low, next_descriptor_low) = mmio.with_ordered_cursor(|cursor| {
+            (cursor.last_descriptor_low(), cursor.next_descriptor_low())
+        });
+        // Make both MMIO observations precede descriptor and payload reads by
+        // the caller which receives this generation-bound snapshot.
+        mmio.fence();
+        RxFrozenCursor {
+            last_descriptor_low,
+            next_descriptor_low,
+            descriptor_base: self.descriptor_base,
+            arena_identity: self.descriptors.as_ptr() as usize,
+            generation: self.cursor_generation,
+        }
     }
 
     /// Return whether an exhausted finite hardware list still owes software
@@ -1891,6 +1850,33 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
             next_descriptor_low,
             descriptor_count,
         )
+    }
+
+    /// Whether a frozen vendor-style LAST snapshot releases the current unit.
+    ///
+    /// `wdevProcessRxSucDataAll` mutates and returns the descriptor equal to
+    /// its saved LAST before taking another snapshot. Keep this proof separate
+    /// from the fallback live-cursor probe: it is valid only while the caller
+    /// has not appended anything since freezing `last_descriptor_low`.
+    fn frozen_cursor_releases_unit(&self, cursor: RxFrozenCursor, descriptor_count: usize) -> bool {
+        if descriptor_count == 0 || descriptor_count > COUNT {
+            return false;
+        }
+        if cursor.descriptor_base != self.descriptor_base
+            || cursor.arena_identity != self.descriptors.as_ptr() as usize
+            || cursor.generation != self.cursor_generation
+        {
+            return false;
+        }
+        let Some(last_index) =
+            descriptor_index(cursor.last_descriptor_low, self.descriptor_base, COUNT)
+        else {
+            return false;
+        };
+        let tail_distance = descriptor_count - 1;
+        let last_distance = (last_index + COUNT - self.recycle_start) % COUNT;
+        let accepted_distance = (self.accepted_tail + COUNT - self.recycle_start) % COUNT;
+        tail_distance <= last_distance && last_distance <= accepted_distance
     }
 
     fn completed_unit_link_released_from_ordered_snapshot(
@@ -2041,15 +2027,14 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
                 return Ok(None);
             }
             {
-                // Once the reload doorbell clears, an exhausted walker can
-                // only have stopped at the old accepted tail before seeing
-                // its new link, or at the new pending tail after traversing
-                // the append. Any other in-arena LAST value contradicts the
-                // single zero-terminated list and cannot authorize BASE
-                // repair.
-                if last_index != self.accepted_tail {
-                    return Err(RxRingError::Corrupt);
-                }
+                // SOURCE[`libpp:wDev_AppendRxBlocks`]: after reload clears,
+                // `NEXT=0` and `LAST != new_tail` lead directly to
+                // `BASE = LAST->next`. LAST may still name an earlier node of
+                // the accepted list when several completed units are detached
+                // and appended in one worker turn; it is not restricted to
+                // the immediately preceding software tail. Keep only the
+                // vendor's actual safety conditions: LAST and its nonzero
+                // successor must both belong to this descriptor arena.
                 let repair_head = self.descriptors[last_index].next_address();
                 if repair_head == 0
                     || descriptor_index_full(repair_head, self.descriptor_base, COUNT).is_none()

@@ -63,7 +63,7 @@ pub enum RxDmaStageUnitOutcome<'pool, const SLOTS: usize, const CAPACITY: usize>
 }
 
 /// Result after a completed DMA unit has been copied while its descriptor is
-/// retained for guarded deferred reclaim.
+/// retained for the service call's frozen-LAST reclaim.
 pub enum RxDmaDeferredStageUnitOutcome<'pool, const SLOTS: usize, const CAPACITY: usize> {
     Staged(NetworkRxFrame<'pool, SLOTS, CAPACITY>),
     /// Malformed length metadata was discarded while the descriptor remained
@@ -374,10 +374,9 @@ impl<const SLOTS: usize, const CAPACITY: usize> RxStagePool<SLOTS, CAPACITY> {
     /// Copy one completed unit without immediately rewriting its descriptor.
     ///
     /// The independent frame can be published immediately, while descriptor
-    /// ownership remains recorded in the ring until a later completed unit
-    /// proves that hardware consumed this unit's links. This removes the
-    /// address-reuse (ABA) ambiguity of using LAST/NEXT alone as a release
-    /// handshake while still replenishing the live list promptly.
+    /// ownership remains recorded in the ring until the producer returns this
+    /// exact unit through its frozen-LAST proof. That append invalidates the
+    /// cursor before any descriptor address can acquire a new generation.
     pub fn stage_dma_unit_deferred_bounded<
         'pool,
         const COUNT: usize,

@@ -54,9 +54,8 @@ pub(super) struct Esp32s31AccessPointRxWindowReset {
     pub starting_sequence: u16,
 }
 
-#[derive(Clone, Copy)]
-struct PendingReleasedFrame {
-    slot: u8,
+struct PendingReleasedFrame<'storage, const CAPACITY: usize> {
+    frame: RxReorderFrame<'storage, CAPACITY, RX_REORDER_BACKING_SLOT_COUNT>,
     identity: RxBlockAckIdentity,
 }
 
@@ -68,7 +67,8 @@ pub struct Esp32s31AccessPointRxReorder<'storage, const CAPACITY: usize> {
     deadlines: [Option<u64>; RX_BLOCK_ACK_BANK_COUNT],
     retained: [Option<RxReorderFrame<'storage, CAPACITY, RX_REORDER_BACKING_SLOT_COUNT>>;
         RX_REORDER_BACKING_SLOT_COUNT],
-    pending_released: [Option<PendingReleasedFrame>; RX_REORDER_BACKING_SLOT_COUNT],
+    pending_released:
+        [Option<PendingReleasedFrame<'storage, CAPACITY>>; RX_REORDER_BACKING_SLOT_COUNT],
     pending_released_head: usize,
     pending_released_count: usize,
 }
@@ -80,7 +80,7 @@ impl<'storage, const CAPACITY: usize> Esp32s31AccessPointRxReorder<'storage, CAP
             pending_hardware_window_reset: [false; RX_BLOCK_ACK_BANK_COUNT],
             deadlines: [None; RX_BLOCK_ACK_BANK_COUNT],
             retained: [const { None }; RX_REORDER_BACKING_SLOT_COUNT],
-            pending_released: [None; RX_REORDER_BACKING_SLOT_COUNT],
+            pending_released: [const { None }; RX_REORDER_BACKING_SLOT_COUNT],
             pending_released_head: 0,
             pending_released_count: 0,
         }
@@ -236,22 +236,18 @@ impl<'storage, const CAPACITY: usize> Esp32s31AccessPointRxReorder<'storage, CAP
             dispatched: resync_dispatched,
             hardware_window_reset,
         };
-        if release.buffered {
-            let retained = retained.expect("predicted retained AP frame owns cold backing");
+        if let Some(retained) = retained {
             debug_assert!(self.retained[slot].is_none());
             self.retained[slot] = Some(retained);
-            progress.dispatched =
-                progress
-                    .dispatched
-                    .saturating_add(self.dispatch_release_with_current(
-                        release,
-                        identity,
-                        RX_REORDER_CURRENT_SLOT,
-                        None,
-                        &mut dispatch,
-                    ));
+            // A frame predicted to require backing can still be released by
+            // this same ingest when a window advance closes a complete run.
+            // The release token names the retained slot, so keep that exact
+            // owner in the slot domain until dispatch consumes it instead of
+            // deriving ownership from the final `buffered` state.
+            progress.dispatched = progress
+                .dispatched
+                .saturating_add(self.dispatch_retained_release(release, identity, &mut dispatch));
         } else {
-            debug_assert!(retained.is_none());
             progress.dispatched =
                 progress
                     .dispatched
@@ -298,9 +294,7 @@ impl<'storage, const CAPACITY: usize> Esp32s31AccessPointRxReorder<'storage, CAP
         let Some(pending) = self.pop_pending_release() else {
             return false;
         };
-        let frame = self.retained[usize::from(pending.slot)]
-            .take()
-            .expect("queued AP release owns one retained frame");
+        let frame = pending.frame;
         let view = frame.segment();
         dispatch(view.as_segment());
         drop(view);
@@ -349,9 +343,10 @@ impl<'storage, const CAPACITY: usize> Esp32s31AccessPointRxReorder<'storage, CAP
                 discarded = discarded.saturating_add(1);
             }
         }
-        self.pending_released.fill(None);
-        self.pending_released_head = 0;
-        self.pending_released_count = 0;
+        while let Some(pending) = self.pop_pending_release() {
+            drop(pending);
+            discarded = discarded.saturating_add(1);
+        }
         discarded
     }
 
@@ -403,17 +398,27 @@ impl<'storage, const CAPACITY: usize> Esp32s31AccessPointRxReorder<'storage, CAP
             } else if !releases_current && !dispatched {
                 let frame = self.retained[slot]
                     .take()
-                    .expect("AP reorder release owns one retained frame");
+                    .unwrap_or_else(|| {
+                        panic!(
+                            "AP direct release lost backing slot={slot} current={current_slot} pending={} release={release:?}",
+                            self.pending_released_count,
+                        )
+                    });
                 let view = frame.segment();
                 dispatch(view.as_segment());
                 drop(view);
                 drop(frame);
                 dispatched = true;
             } else {
-                self.push_pending_release(PendingReleasedFrame {
-                    slot: released.slot,
-                    identity,
-                });
+                let frame = self.retained[slot]
+                    .take()
+                    .unwrap_or_else(|| {
+                        panic!(
+                            "AP queued release lost backing slot={slot} current={current_slot} pending={} release={release:?}",
+                            self.pending_released_count,
+                        )
+                    });
+                self.push_pending_release(PendingReleasedFrame { frame, identity });
             }
         }
         if release.rejected.is_some() {
@@ -423,7 +428,7 @@ impl<'storage, const CAPACITY: usize> Esp32s31AccessPointRxReorder<'storage, CAP
         u8::from(dispatched)
     }
 
-    fn push_pending_release(&mut self, pending: PendingReleasedFrame) {
+    fn push_pending_release(&mut self, pending: PendingReleasedFrame<'storage, CAPACITY>) {
         assert!(
             self.pending_released_count < self.pending_released.len(),
             "AP released-frame queue cannot exceed retained backing"
@@ -435,7 +440,7 @@ impl<'storage, const CAPACITY: usize> Esp32s31AccessPointRxReorder<'storage, CAP
         self.pending_released_count += 1;
     }
 
-    fn pop_pending_release(&mut self) -> Option<PendingReleasedFrame> {
+    fn pop_pending_release(&mut self) -> Option<PendingReleasedFrame<'storage, CAPACITY>> {
         if self.pending_released_count == 0 {
             return None;
         }
@@ -455,9 +460,8 @@ impl<'storage, const CAPACITY: usize> Esp32s31AccessPointRxReorder<'storage, CAP
                 .pop_pending_release()
                 .expect("snapshotted AP release count remains exact");
             if pending.identity == identity {
-                if self.retained[usize::from(pending.slot)].take().is_some() {
-                    discarded = discarded.saturating_add(1);
-                }
+                drop(pending);
+                discarded = discarded.saturating_add(1);
             } else {
                 self.push_pending_release(pending);
             }
@@ -544,6 +548,11 @@ mod tests {
         assert_eq!(current.dispatched, 1);
         assert_eq!(released, [10]);
         assert!(reorder.has_pending_release());
+        assert!(
+            reorder.retained.iter().all(Option::is_none),
+            "the pending queue must own the released backing, not a slot alias"
+        );
+        assert_eq!(storage.available_slots(), RX_REORDER_BACKING_SLOT_COUNT - 1);
         assert!(reorder.dispatch_pending(|segment| released.push(segment.descriptor_address)));
         assert_eq!(released, [10, 11]);
         assert!(!reorder.has_pending_release());
@@ -577,6 +586,57 @@ mod tests {
         assert!(progress.active);
         assert!(progress.buffered);
         assert_eq!(progress.dispatched, 0);
+    }
+
+    #[test]
+    fn window_advance_that_closes_a_full_run_retains_release_ownership() {
+        let storage = RxReorderFrameStorage::<32>::new();
+        let mut reorder = Esp32s31AccessPointRxReorder::<32>::new();
+        reorder.start(agreement(0, PEER_A, 0), |_| {}).unwrap();
+        let bytes = [0];
+        let mut released = std::vec::Vec::new();
+
+        for sequence in 1..8 {
+            let progress = reorder
+                .ingest(
+                    &storage,
+                    segment(sequence, &bytes),
+                    RxBlockAckMpduKey {
+                        peer: PEER_A,
+                        tid: 6,
+                        sequence: sequence as u16,
+                        retry: false,
+                    },
+                    None,
+                    sequence as u64,
+                    |_| panic!("the leading gap retains the partial run"),
+                )
+                .unwrap();
+            assert!(progress.buffered);
+        }
+
+        let progress = reorder
+            .ingest(
+                &storage,
+                segment(8, &bytes),
+                RxBlockAckMpduKey {
+                    peer: PEER_A,
+                    tid: 6,
+                    sequence: 8,
+                    retry: false,
+                },
+                None,
+                8,
+                |segment| released.push(segment.descriptor_address),
+            )
+            .unwrap();
+        assert!(!progress.buffered);
+        assert_eq!(progress.dispatched, 1);
+        assert_eq!(released, [1]);
+
+        while reorder.dispatch_pending(|segment| released.push(segment.descriptor_address)) {}
+        assert_eq!(released, [1, 2, 3, 4, 5, 6, 7, 8]);
+        assert_eq!(storage.available_slots(), RX_REORDER_BACKING_SLOT_COUNT);
     }
 
     #[test]

@@ -57,8 +57,8 @@ reason = "production station constructor transfers its unique resource graph int
 [[reviewed_frames]]
 function_contains = "ProductionWifiEpochRunner as"
 source_ends_with = "driver/integration/esp32s31/embassy-wifi/src/runtime.rs"
-max_bytes = 17920
-reason = "role epoch future retains the exact station, AP or monitor return ownership, including interface-scoped BlockAck state, the Rust rate-control owner and typed AP retry counters"
+max_bytes = 18176
+reason = "role epoch future retains separate physical, station, AP and monitor return owners, including interface-scoped BlockAck state, the Rust rate-control owner and typed AP retry counters"
 
 [[reviewed_frames]]
 function_contains = "run_access_point_service::{closure#0}"

@@ -445,6 +445,40 @@ fn lmac_and_wdev_boundaries_do_not_recover_role_policy_or_legacy_runners() {
 }
 
 #[test]
+fn production_wifi_supervisor_keeps_physical_and_role_owners_separate() {
+    let repository = repository_root();
+    let supervisor = fs::read_to_string(repository.join("driver/radio/src/esp32s31/supervisor.rs"))
+        .expect("read physical Wi-Fi supervisor");
+    assert!(supervisor.contains("pub physical: H"));
+
+    let runtime = fs::read_to_string(
+        repository.join("driver/integration/esp32s31/embassy-wifi/src/runtime.rs"),
+    )
+    .expect("read production Wi-Fi runtime");
+    let access_point = fs::read_to_string(
+        repository.join("driver/integration/esp32s31/embassy-wifi/src/runtime/access_point.rs"),
+    )
+    .expect("read production AP runtime");
+
+    for removed in [
+        "ProductionAccessPointStationResources",
+        "try_prepare_access_point_station_resources",
+        "restore_station_resources_after_access_point",
+        "parked_monitor",
+        "RefCell<Option<ProductionMonitorResources>>",
+    ] {
+        assert!(
+            !runtime.contains(removed) && !access_point.contains(removed),
+            "removed compatibility owner {removed} must not return"
+        );
+    }
+    assert!(access_point.contains("pub(super) struct ProductionWifiPhysicalResources"));
+    assert!(access_point.contains("pub(super) struct ProductionStationRoleResources"));
+    assert!(access_point.contains("join_station_activation_resources"));
+    assert!(access_point.contains("try_split_wifi_stopped_resources"));
+}
+
+#[test]
 fn finite_rx_roles_share_one_frontier_owner_without_legacy_surfaces() {
     let adapter = repository_root().join("driver/adapters/embassy/esp32s31-wifi/src");
 

@@ -177,15 +177,19 @@ fn publish_access_point_observation(
     });
 }
 
+pub(super) struct ProductionStationRoleResources {
+    scan_table: &'static mut ScanTable,
+    scan_frame: &'static mut [u8],
+    ethernet: &'static mut [u8],
+    resume: ProductionStationRoleResume,
+    board: ProductionStationBoardResources,
+    station_address: [u8; 6],
+}
+
 pub(super) struct ProductionAccessPointParked {
     dma: Esp32s31StationDmaResources<'static, RxStorage, RX_DESCRIPTOR_COUNT>,
     tx_epoch: &'static mut TxStorage,
-    scan_table: &'static mut ScanTable,
-    station_scan_frame: &'static mut [u8],
-    station_ethernet: &'static mut [u8],
-    resume: ProductionAccessPointStationResume,
-    board: ProductionStationBoardResources,
-    station_address: [u8; 6],
+    station: ProductionStationRoleResources,
     monitor: ProductionMonitorResources,
     aggregate_tx: Option<RadioAmpduStorage>,
 }
@@ -195,12 +199,12 @@ pub(super) struct ProductionAccessPointParked {
 /// Only the halted RX ring and the shared TX/network endpoints leave this
 /// frontier. The next STA epoch therefore resumes the same allocation and
 /// register-arena capabilities; AP switching is not a hidden reset.
-enum ProductionAccessPointStationResume {
+enum ProductionStationRoleResume {
     Fresh {
         network: WifiNetworkResources,
     },
     Returned {
-        phase: ProductionAccessPointReturnedPhase,
+        phase: ProductionStationReturnedPhase,
         security: Esp32s31StaAttemptSecurity<'static>,
         interrupt_route: EspHalMacInterruptRoute,
         mac_runtime: &'static EmbassyMacIrqRuntime<CriticalSectionRawMutex>,
@@ -208,7 +212,7 @@ enum ProductionAccessPointStationResume {
     },
 }
 
-enum ProductionAccessPointReturnedPhase {
+enum ProductionStationReturnedPhase {
     InitialScan {
         network: WifiNetworkResources,
         identity: Esp32s31StaIdentity,
@@ -233,37 +237,31 @@ enum ProductionAccessPointReturnedPhase {
     },
 }
 
-impl ProductionAccessPointStationResume {
+impl ProductionStationRoleResume {
     fn radio_runner(&self) -> &NetworkRunner {
         match self {
             Self::Fresh { network }
             | Self::Returned {
                 phase:
-                    ProductionAccessPointReturnedPhase::InitialScan { network, .. }
-                    | ProductionAccessPointReturnedPhase::InitialJoin { network, .. }
-                    | ProductionAccessPointReturnedPhase::Reconnected { network, .. },
+                    ProductionStationReturnedPhase::InitialScan { network, .. }
+                    | ProductionStationReturnedPhase::InitialJoin { network, .. }
+                    | ProductionStationReturnedPhase::Reconnected { network, .. },
                 ..
             } => network.radio_runner(),
             Self::Returned {
-                phase: ProductionAccessPointReturnedPhase::Disconnected { network, .. },
+                phase: ProductionStationReturnedPhase::Disconnected { network, .. },
                 ..
             } => network.radio_runner(),
         }
     }
 }
 
-struct ProductionAccessPointStationResources {
+pub(super) struct ProductionWifiPhysicalResources {
     dma: Esp32s31StationDmaResources<'static, RxStorage, RX_DESCRIPTOR_COUNT>,
     rx_ring:
         Option<open_esp_radio::esp32s31::wifi::mac::rx::RxRingHalted<'static, RX_DESCRIPTOR_COUNT>>,
     tx: ProductionOrdinaryTxResources,
-    scan_table: &'static mut ScanTable,
-    scan_frame: &'static mut [u8],
-    ethernet: &'static mut [u8],
     aggregate_tx: RadioAmpduStorage,
-    resume: ProductionAccessPointStationResume,
-    board: ProductionStationBoardResources,
-    station_address: [u8; 6],
 }
 
 pub(super) struct ProductionAccessPointTask {
@@ -280,7 +278,8 @@ pub(super) struct ProductionAccessPointPreflightFault {
     _owner: Esp32s31WifiRoleOwner<EspHalRadioPeripheral>,
     _registers: RadioRuntimeOwner,
     _interrupt_setup: open_esp_radio::esp32s31::hal::MacInterruptSetup,
-    _station: ProductionAccessPointStationResources,
+    _physical: ProductionWifiPhysicalResources,
+    _station_role: ProductionStationRoleResources,
     _access_point: ProductionAccessPointResources,
     _monitor: ProductionMonitorResources,
     _detached_control: Option<ControlTx>,
@@ -292,7 +291,8 @@ pub(super) struct ProductionAccessPointRxOwnerFault {
     _registers: RadioRuntimeOwner,
     _interrupt_setup: open_esp_radio::esp32s31::hal::MacInterruptSetup,
     _scan_rx: ProductionScanRx,
-    _station: ProductionAccessPointStationResources,
+    _physical: ProductionWifiPhysicalResources,
+    _station_role: ProductionStationRoleResources,
     _access_point: ProductionAccessPointResources,
     _monitor: ProductionMonitorResources,
 }
@@ -333,14 +333,6 @@ pub(super) struct ProductionAccessPointSecurityMaterialFault {
 }
 
 pub(super) enum ProductionAccessPointPreparationFault {
-    StationOwner {
-        _wifi: open_esp_radio::esp32s31::wifi::device::runtime::Esp32s31WifiStopped<
-            EspHalRadioPeripheral,
-        >,
-        _station: ProductionStationResources,
-        _access_point: ProductionAccessPointResources,
-        _monitor: ProductionMonitorResources,
-    },
     Preflight {
         _fault: ProductionAccessPointPreflightFault,
     },
@@ -392,12 +384,16 @@ pub(super) enum ProductionAccessPointTeardownFault {
     },
 }
 
-fn try_prepare_access_point_station_resources(
-    resources: ProductionStationResources,
-) -> Result<ProductionAccessPointStationResources, ProductionStationResources> {
+#[allow(clippy::result_large_err)]
+pub(super) fn try_split_wifi_stopped_resources(
+    resources: ProductionWifiStoppedResources,
+) -> Result<
+    (ProductionWifiPhysicalResources, ProductionStationRoleResources),
+    ProductionWifiStoppedResources,
+> {
     let returned = match resources {
-        ProductionStationResources::Fresh(fresh) => {
-            let ProductionStationFreshResources {
+        ProductionWifiStoppedResources::Fresh(fresh) => {
+            let ProductionWifiFreshResources {
                 dma,
                 rx_ring,
                 tx,
@@ -413,22 +409,26 @@ fn try_prepare_access_point_station_resources(
                 .as_mut()
                 .expect("fresh station owns initial connected resources")
                 .take_aggregate();
-            return Ok(ProductionAccessPointStationResources {
-                dma,
-                rx_ring,
-                tx,
-                scan_table,
-                scan_frame,
-                ethernet,
-                aggregate_tx,
-                resume: ProductionAccessPointStationResume::Fresh { network },
-                board,
-                station_address,
-            });
+            return Ok((
+                ProductionWifiPhysicalResources {
+                    dma,
+                    rx_ring,
+                    tx,
+                    aggregate_tx,
+                },
+                ProductionStationRoleResources {
+                    scan_table,
+                    scan_frame,
+                    ethernet,
+                    resume: ProductionStationRoleResume::Fresh { network },
+                    board,
+                    station_address,
+                },
+            ));
         }
-        ProductionStationResources::Returned(returned) => returned,
+        ProductionWifiStoppedResources::Returned(returned) => returned,
     };
-    let ProductionStationReusableResources {
+    let ProductionWifiReusableResources {
         storage,
         mut board,
         phase,
@@ -453,13 +453,13 @@ fn try_prepare_access_point_station_resources(
                     .take_aggregate();
                 (
                     ring,
-                    ProductionAccessPointReturnedPhase::InitialScan { network, identity },
+                    ProductionStationReturnedPhase::InitialScan { network, identity },
                     aggregate_tx,
                 )
             }
             Err(receive) => {
-                return Err(ProductionStationResources::Returned(
-                    ProductionStationReusableResources {
+                return Err(ProductionWifiStoppedResources::Returned(
+                    ProductionWifiReusableResources {
                         storage: ProductionStationStorage::new(
                             dma, tx_epoch, scan_table, scan_frame, ethernet,
                         ),
@@ -490,13 +490,13 @@ fn try_prepare_access_point_station_resources(
                     .take_aggregate();
                 (
                     ring,
-                    ProductionAccessPointReturnedPhase::InitialJoin { network, station },
+                    ProductionStationReturnedPhase::InitialJoin { network, station },
                     aggregate_tx,
                 )
             }
             Err(receive) => {
-                return Err(ProductionStationResources::Returned(
-                    ProductionStationReusableResources {
+                return Err(ProductionWifiStoppedResources::Returned(
+                    ProductionWifiReusableResources {
                         storage: ProductionStationStorage::new(
                             dma, tx_epoch, scan_table, scan_frame, ethernet,
                         ),
@@ -525,7 +525,7 @@ fn try_prepare_access_point_station_resources(
             let (ring, rx) = receive.into_epoch_parts();
             (
                 ring,
-                ProductionAccessPointReturnedPhase::Disconnected {
+                ProductionStationReturnedPhase::Disconnected {
                     network,
                     rx,
                     control,
@@ -546,7 +546,7 @@ fn try_prepare_access_point_station_resources(
         } => match receive.try_into_halted() {
             Ok(ring) => (
                 ring,
-                ProductionAccessPointReturnedPhase::Reconnected {
+                ProductionStationReturnedPhase::Reconnected {
                     network,
                     rx,
                     control,
@@ -556,8 +556,8 @@ fn try_prepare_access_point_station_resources(
                 aggregate_tx,
             ),
             Err(receive) => {
-                return Err(ProductionStationResources::Returned(
-                    ProductionStationReusableResources {
+                return Err(ProductionWifiStoppedResources::Returned(
+                    ProductionWifiReusableResources {
                         storage: ProductionStationStorage::new(
                             dma, tx_epoch, scan_table, scan_frame, ethernet,
                         ),
@@ -580,105 +580,113 @@ fn try_prepare_access_point_station_resources(
             }
         },
     };
-    Ok(ProductionAccessPointStationResources {
+    Ok((
+        ProductionWifiPhysicalResources {
+            dma,
+            rx_ring: Some(ring),
+            tx: ProductionOrdinaryTxResources::Epoch(tx_epoch),
+            aggregate_tx,
+        },
+        ProductionStationRoleResources {
+            scan_table,
+            scan_frame,
+            ethernet,
+            resume: ProductionStationRoleResume::Returned {
+                phase,
+                security,
+                interrupt_route,
+                mac_runtime,
+                power_runtime,
+            },
+            board,
+            station_address,
+        },
+    ))
+}
+
+pub(super) fn join_station_activation_resources(
+    physical: ProductionWifiPhysicalResources,
+    station: ProductionStationRoleResources,
+) -> ProductionWifiStoppedResources {
+    let ProductionWifiPhysicalResources {
         dma,
-        rx_ring: Some(ring),
-        tx: ProductionOrdinaryTxResources::Epoch(tx_epoch),
+        rx_ring,
+        tx,
+        aggregate_tx,
+    } = physical;
+    let ProductionStationRoleResources {
         scan_table,
         scan_frame,
         ethernet,
-        aggregate_tx,
-        resume: ProductionAccessPointStationResume::Returned {
-            phase,
-            security,
-            interrupt_route,
-            mac_runtime,
-            power_runtime,
-        },
-        board,
-        station_address,
-    })
-}
-
-fn restore_station_resources_after_access_point(
-    parked: ProductionAccessPointParked,
-    aggregate_tx: RadioAmpduStorage,
-    ring: open_esp_radio::esp32s31::wifi::mac::rx::RxRingHalted<'static, RX_DESCRIPTOR_COUNT>,
-) -> (ProductionStationResources, ProductionMonitorResources) {
-    let ProductionAccessPointParked {
-        dma,
-        tx_epoch,
-        scan_table,
-        station_scan_frame,
-        station_ethernet,
         resume,
         mut board,
         station_address,
-        monitor,
-        aggregate_tx: parked_aggregate,
-    } = parked;
-    debug_assert!(
-        parked_aggregate.is_none(),
-        "a running AP task owns aggregate storage outside parked STA state"
-    );
-    let mut aggregate_tx = Some(aggregate_tx);
-    let uses_initial_resources = matches!(
-        &resume,
-        ProductionAccessPointStationResume::Fresh { .. }
-            | ProductionAccessPointStationResume::Returned {
-                phase: ProductionAccessPointReturnedPhase::InitialScan { .. }
-                    | ProductionAccessPointReturnedPhase::InitialJoin { .. },
-                ..
-            }
-    );
-    if uses_initial_resources {
-        board
-            .initial_connected
-            .as_mut()
-            .expect("initial station phase retains connected resources")
-            .restore_aggregate(
-                aggregate_tx
-                    .take()
-                    .expect("AP returns the aggregate owner exactly once"),
-            );
-    }
-    let resources = match resume {
-        ProductionAccessPointStationResume::Fresh { network } => {
-            ProductionStationResources::Fresh(ProductionStationFreshResources {
+    } = station;
+    match resume {
+        ProductionStationRoleResume::Fresh { network } => {
+            board
+                .initial_connected
+                .as_mut()
+                .expect("fresh station retains connected resources")
+                .restore_aggregate(aggregate_tx);
+            ProductionWifiStoppedResources::Fresh(ProductionWifiFreshResources {
                 dma,
-                rx_ring: Some(ring),
-                tx: ProductionOrdinaryTxResources::Epoch(tx_epoch),
+                rx_ring,
+                tx,
                 scan_table,
-                scan_frame: station_scan_frame,
-                ethernet: station_ethernet,
+                scan_frame,
+                ethernet,
                 network,
                 board,
                 station_address,
             })
         }
-        ProductionAccessPointStationResume::Returned {
+        ProductionStationRoleResume::Returned {
             phase,
             security,
             interrupt_route,
             mac_runtime,
             power_runtime,
         } => {
+            let ring = rx_ring.expect("returned physical Wi-Fi resources own a halted RX ring");
+            let tx_epoch = match tx {
+                ProductionOrdinaryTxResources::Epoch(tx_epoch) => tx_epoch,
+                ProductionOrdinaryTxResources::Uninitialized(_) => {
+                    unreachable!("a returned Wi-Fi epoch owns initialized TX storage")
+                }
+            };
+            let mut aggregate_tx = Some(aggregate_tx);
+            if matches!(
+                &phase,
+                ProductionStationReturnedPhase::InitialScan { .. }
+                    | ProductionStationReturnedPhase::InitialJoin { .. }
+            ) {
+                board
+                    .initial_connected
+                    .as_mut()
+                    .expect("initial station phase retains connected resources")
+                    .restore_aggregate(
+                        aggregate_tx
+                            .take()
+                            .expect("the physical frontier owns aggregate storage"),
+                    );
+            }
             let phase = match phase {
-                ProductionAccessPointReturnedPhase::InitialScan { network, identity } => {
+                ProductionStationReturnedPhase::InitialScan { network, identity } => {
                     Esp32s31StationStoppedPhaseResources::InitialScan {
                         receive: Esp32s31ScanRx::from_halted(ring, dma.storage()),
                         network,
                         identity,
                     }
                 }
-                ProductionAccessPointReturnedPhase::InitialJoin { network, station } => {
+                ProductionStationReturnedPhase::InitialJoin { network, station } => {
                     Esp32s31StationStoppedPhaseResources::InitialJoin {
                         receive: Esp32s31RxFrontier::from_halted(ring),
                         network,
                         station,
                     }
                 }
-                ProductionAccessPointReturnedPhase::Disconnected {
+                ProductionStationReturnedPhase::Disconnected {
                     network,
                     rx,
                     control,
@@ -694,7 +702,7 @@ fn restore_station_resources_after_access_point(
                     station,
                     registers,
                 },
-                ProductionAccessPointReturnedPhase::Reconnected {
+                ProductionStationReturnedPhase::Reconnected {
                     network,
                     rx,
                     control,
@@ -712,13 +720,13 @@ fn restore_station_resources_after_access_point(
                     registers,
                 },
             };
-            ProductionStationResources::Returned(ProductionStationReusableResources {
-                        storage: ProductionStationStorage::new(
+            ProductionWifiStoppedResources::Returned(ProductionWifiReusableResources {
+                storage: ProductionStationStorage::new(
                     dma,
                     tx_epoch,
                     scan_table,
-                    station_scan_frame,
-                    station_ethernet,
+                    scan_frame,
+                    ethernet,
                 ),
                 board,
                 phase,
@@ -728,8 +736,7 @@ fn restore_station_resources_after_access_point(
                 power_runtime,
             })
         }
-    };
-    (resources, monitor)
+    }
 }
 
 /// Static resources reserved for one exclusive AP epoch.
@@ -759,24 +766,14 @@ impl ProductionWifiEpochRunner {
         wifi: open_esp_radio::esp32s31::wifi::device::runtime::Esp32s31WifiStopped<
             EspHalRadioPeripheral,
         >,
-        station: ProductionStationResources,
+        physical: ProductionWifiPhysicalResources,
+        station: ProductionStationRoleResources,
         access_point: ProductionAccessPointResources,
         monitor: ProductionMonitorResources,
         request: AccessPointRequest,
     ) -> Result<ProductionAccessPointTask, ProductionAccessPointPreparationFault> {
-        let station = match try_prepare_access_point_station_resources(station) {
-            Ok(station) => station,
-            Err(station) => {
-                return Err(ProductionAccessPointPreparationFault::StationOwner {
-                    _wifi: wifi,
-                    _station: station,
-                    _access_point: access_point,
-                    _monitor: monitor,
-                });
-            }
-        };
         let current_channel = wifi.current_channel();
-        let mut materialized = materialize_esp32s31_wifi_role(wifi, station);
+        let mut materialized = materialize_esp32s31_wifi_role(wifi, physical);
         let requested_channel = request.channel();
         if requested_channel != current_channel {
             let lowered_channel = lower_wifi_channel(requested_channel);
@@ -796,7 +793,8 @@ impl ProductionWifiEpochRunner {
                         _owner: materialized.owner,
                         _registers: materialized.registers,
                         _interrupt_setup: materialized.interrupt_setup,
-                        _station: materialized.resources,
+                        _physical: materialized.resources,
+                        _station_role: station,
                         _access_point: access_point,
                         _monitor: monitor,
                         _detached_control: None,
@@ -807,18 +805,20 @@ impl ProductionWifiEpochRunner {
             materialized.owner.set_current_channel(requested_channel);
         }
 
-        let ProductionAccessPointStationResources {
+        let ProductionWifiPhysicalResources {
             dma,
             rx_ring,
             tx,
+            aggregate_tx,
+        } = materialized.resources;
+        let ProductionStationRoleResources {
             scan_table,
             scan_frame,
             ethernet,
-            aggregate_tx,
             resume,
             board,
             station_address,
-        } = materialized.resources;
+        } = station;
         let power = materialized.owner.radio_mut().0.tx_target_power_profile();
         let tx_epoch = self.initialize_tx_epoch(tx, power);
         let scan_rx = match rx_ring {
@@ -836,14 +836,16 @@ impl ProductionWifiEpochRunner {
                             _owner: materialized.owner,
                             _registers: materialized.registers,
                             _interrupt_setup: materialized.interrupt_setup,
-                            _station: ProductionAccessPointStationResources {
+                            _physical: ProductionWifiPhysicalResources {
                                 dma,
                                 rx_ring: None,
                                 tx: ProductionOrdinaryTxResources::Epoch(tx_epoch),
+                                aggregate_tx,
+                            },
+                            _station_role: ProductionStationRoleResources {
                                 scan_table,
                                 scan_frame,
                                 ethernet,
-                                aggregate_tx,
                                 resume,
                                 board,
                                 station_address,
@@ -866,14 +868,16 @@ impl ProductionWifiEpochRunner {
                         _registers: materialized.registers,
                         _interrupt_setup: materialized.interrupt_setup,
                         _scan_rx: scan_rx,
-                        _station: ProductionAccessPointStationResources {
+                        _physical: ProductionWifiPhysicalResources {
                             dma,
                             rx_ring: None,
                             tx: ProductionOrdinaryTxResources::Epoch(tx_epoch),
+                            aggregate_tx,
+                        },
+                        _station_role: ProductionStationRoleResources {
                             scan_table,
                             scan_frame,
                             ethernet,
-                            aggregate_tx,
                             resume,
                             board,
                             station_address,
@@ -892,14 +896,16 @@ impl ProductionWifiEpochRunner {
                         _owner: materialized.owner,
                         _registers: materialized.registers,
                         _interrupt_setup: materialized.interrupt_setup,
-                        _station: ProductionAccessPointStationResources {
+                        _physical: ProductionWifiPhysicalResources {
                             dma,
                             rx_ring: None,
                             tx: ProductionOrdinaryTxResources::Epoch(tx_epoch),
+                            aggregate_tx,
+                        },
+                        _station_role: ProductionStationRoleResources {
                             scan_table,
                             scan_frame,
                             ethernet,
-                            aggregate_tx,
                             resume,
                             board,
                             station_address,
@@ -920,14 +926,16 @@ impl ProductionWifiEpochRunner {
                         _owner: materialized.owner,
                         _registers: materialized.registers,
                         _interrupt_setup: materialized.interrupt_setup,
-                        _station: ProductionAccessPointStationResources {
+                        _physical: ProductionWifiPhysicalResources {
                             dma,
                             rx_ring: None,
                             tx: ProductionOrdinaryTxResources::Epoch(tx_epoch),
+                            aggregate_tx,
+                        },
+                        _station_role: ProductionStationRoleResources {
                             scan_table,
                             scan_frame,
                             ethernet,
-                            aggregate_tx,
                             resume,
                             board,
                             station_address,
@@ -971,12 +979,14 @@ impl ProductionWifiEpochRunner {
                         _parked: ProductionAccessPointParked {
                             dma,
                             tx_epoch,
-                            scan_table,
-                            station_scan_frame: scan_frame,
-                            station_ethernet: ethernet,
-                            resume,
-                            board,
-                            station_address,
+                            station: ProductionStationRoleResources {
+                                scan_table,
+                                scan_frame,
+                                ethernet,
+                                resume,
+                                board,
+                                station_address,
+                            },
                             monitor,
                             aggregate_tx: Some(aggregate_tx),
                         },
@@ -1024,12 +1034,14 @@ impl ProductionWifiEpochRunner {
                         _parked: ProductionAccessPointParked {
                             dma,
                             tx_epoch,
-                            scan_table,
-                            station_scan_frame: scan_frame,
-                            station_ethernet: ethernet,
-                            resume,
-                            board,
-                            station_address,
+                            station: ProductionStationRoleResources {
+                                scan_table,
+                                scan_frame,
+                                ethernet,
+                                resume,
+                                board,
+                                station_address,
+                            },
                             monitor,
                             aggregate_tx: Some(aggregate_tx),
                         },
@@ -1086,12 +1098,14 @@ impl ProductionWifiEpochRunner {
             parked: ProductionAccessPointParked {
                 dma,
                 tx_epoch,
-                scan_table,
-                station_scan_frame: scan_frame,
-                station_ethernet: ethernet,
-                resume,
-                board,
-                station_address,
+                station: ProductionStationRoleResources {
+                    scan_table,
+                    scan_frame,
+                    ethernet,
+                    resume,
+                    board,
+                    station_address,
+                },
                 monitor,
                 aggregate_tx: None,
             },
@@ -1145,12 +1159,7 @@ impl ProductionWifiEpochRunner {
         let ProductionAccessPointParked {
             dma,
             tx_epoch,
-            scan_table,
-            station_scan_frame,
-            station_ethernet,
-            resume,
-            board,
-            station_address,
+            station,
             monitor,
             aggregate_tx: parked_aggregate,
         } = parked;
@@ -1168,12 +1177,7 @@ impl ProductionWifiEpochRunner {
                         _parked: ProductionAccessPointParked {
                             dma,
                             tx_epoch,
-                            scan_table,
-                            station_scan_frame,
-                            station_ethernet,
-                            resume,
-                            board,
-                            station_address,
+                            station,
                             monitor,
                             aggregate_tx: None,
                         },
@@ -1205,12 +1209,7 @@ impl ProductionWifiEpochRunner {
                     _parked: ProductionAccessPointParked {
                         dma,
                         tx_epoch,
-                        scan_table,
-                        station_scan_frame,
-                        station_ethernet,
-                        resume,
-                        board,
-                        station_address,
+                        station,
                         monitor,
                         aggregate_tx: Some(aggregate_tx),
                     },
@@ -1239,25 +1238,16 @@ impl ProductionWifiEpochRunner {
             rx_reorder: stopped.rx_reorder,
             rx_reorder_storage: stopped.rx_reorder_storage,
         };
-        let (station, monitor) = restore_station_resources_after_access_point(
-            ProductionAccessPointParked {
-                dma,
-                tx_epoch,
-                scan_table,
-                station_scan_frame,
-                station_ethernet,
-                resume,
-                board,
-                station_address,
-                monitor,
-                aggregate_tx: None,
-            },
+        let physical = ProductionWifiPhysicalResources {
+            dma,
+            rx_ring: Some(ring),
+            tx: ProductionOrdinaryTxResources::Epoch(tx_epoch),
             aggregate_tx,
-            ring,
-        );
+        };
         let wifi = owner.into_stopped(registers, interrupt_setup, ());
         Ok(Esp32s31WifiSupervisorStopped::new(
             wifi.wifi,
+            physical,
             station,
             access_point,
             monitor,
@@ -1328,9 +1318,10 @@ impl ProductionWifiEpochRunner {
         request: AccessPointRequest,
         generation: open_esp_radio::RadioSubsystemGeneration,
     ) -> EmbassyWifiRoleEpochOutcome<ProductionSupervisorStopped, ProductionWifiFault> {
-        let (wifi, station, access_point, monitor) = stopped.into_parts();
+        let (wifi, physical, station, access_point, monitor) = stopped.into_parts();
         let mut task = match await_stack_boundary!(self.prepare_access_point_task(
             wifi,
+            physical,
             station,
             access_point,
             monitor,
@@ -1359,11 +1350,12 @@ impl ProductionWifiEpochRunner {
         #[cfg(feature = "qualification")]
         let rx_delivery_observer = task
             .parked
+            .station
             .board
             .qualification
             .and_then(|hooks| hooks.rx_delivery);
         let result = {
-            let network = task.parked.resume.radio_runner();
+            let network = task.parked.station.resume.radio_runner();
             let (_, platform) = task.owner.radio_mut();
             await_stack_boundary!(
                 task.service.run_until_stopped(
@@ -1374,6 +1366,7 @@ impl ProductionWifiEpochRunner {
                     &mut task.aggregate,
                     #[cfg(feature = "qualification")]
                     task.parked
+                        .station
                         .board
                         .qualification
                         .map(|hooks| hooks.aggregate_tx),
@@ -1548,7 +1541,7 @@ impl ProductionWifiEpochRunner {
         };
         #[cfg(feature = "qualification")]
         if let Ok(report) = &result
-            && let Some(hooks) = task.parked.board.qualification
+            && let Some(hooks) = task.parked.station.board.qualification
         {
             qualification_event!(
                 "open-radio: access-point RX scheduler stop {:?}",

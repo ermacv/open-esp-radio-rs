@@ -5,7 +5,7 @@
 //! owner; no HIL protocol, telemetry or benchmark configuration is linked.
 
 use core::{
-    cell::{Cell, RefCell},
+    cell::Cell,
     future::Future,
     marker::PhantomData,
     pin::Pin,
@@ -157,6 +157,8 @@ mod access_point;
 use access_point::{
     ProductionAccessPointPreparationFault, ProductionAccessPointResources,
     ProductionAccessPointTask, ProductionAccessPointTeardownFault,
+    ProductionStationRoleResources, ProductionWifiPhysicalResources,
+    join_station_activation_resources, try_split_wifi_stopped_resources,
 };
 
 const MAC_HANDSHAKE_SAMPLE_LIMIT: u32 = 100_000;
@@ -318,7 +320,7 @@ type ProductionStationStoppedPhase = Esp32s31StationStoppedPhaseResources<
 /// reacquired from board singletons. `phase` and `security` describe an exact
 /// resume of the stopped service; converting them into a fresh station request
 /// is a separate, still-explicit normalization transaction.
-struct ProductionStationReusableResources<'security> {
+struct ProductionWifiReusableResources<'security> {
     storage: ProductionStationStorage,
     board: ProductionStationBoardResources,
     phase: ProductionStationStoppedPhase,
@@ -329,9 +331,9 @@ struct ProductionStationReusableResources<'security> {
 }
 
 type ProductionStationStopped<'security> =
-    Esp32s31WifiRoleStopped<EspHalRadioPeripheral, ProductionStationReusableResources<'security>>;
+    Esp32s31WifiRoleStopped<EspHalRadioPeripheral, ProductionWifiReusableResources<'security>>;
 
-struct ProductionStationFreshResources {
+struct ProductionWifiFreshResources {
     dma: Esp32s31StationDmaResources<'static, RxStorage, RX_DESCRIPTOR_COUNT>,
     rx_ring:
         Option<open_esp_radio::esp32s31::wifi::mac::rx::RxRingHalted<'static, RX_DESCRIPTOR_COUNT>>,
@@ -353,17 +355,18 @@ enum ProductionOrdinaryTxResources {
     Epoch(&'static mut TxStorage),
 }
 
-enum ProductionStationResources {
-    Fresh(ProductionStationFreshResources),
-    Returned(ProductionStationReusableResources<'static>),
+enum ProductionWifiStoppedResources {
+    Fresh(ProductionWifiFreshResources),
+    Returned(ProductionWifiReusableResources<'static>),
 }
 
-/// Extract the role-neutral resources needed by AP without erasing the exact
-/// station phase which returned them.
+/// Quiescent production frontier with physical hardware and each role's
+/// storage represented by independent owners.
 #[allow(clippy::result_large_err)]
 type ProductionSupervisorStopped = Esp32s31WifiSupervisorStopped<
     EspHalRadioPeripheral,
-    ProductionStationResources,
+    ProductionWifiPhysicalResources,
+    ProductionStationRoleResources,
     ProductionAccessPointResources,
     ProductionMonitorResources,
 >;
@@ -377,7 +380,6 @@ struct ProductionWifiEpochRunner {
     trng: Trng,
     station_control: &'static Esp32s31StationControlResources<CriticalSectionRawMutex>,
     monitor_capture: &'static CaptureResources,
-    parked_monitor: RefCell<Option<ProductionMonitorResources>>,
 }
 
 /// Eternal owner-holding task. PAC, DMA and ISR capabilities never leave this
@@ -457,20 +459,27 @@ enum ProductionWifiFault {
     },
     MonitorBuild {
         _failure: ProductionMonitorBuildFailure,
-        _station: ProductionStationResources,
+        _physical: ProductionWifiPhysicalResources,
+        _station: ProductionStationRoleResources,
     },
     MonitorChannel {
         _error: Esp32s31MonitorChannelSwitchError,
         _task: ProductionMonitorTask,
-        _station: ProductionStationResources,
+        _physical: ProductionWifiPhysicalResources,
+        _station: ProductionStationRoleResources,
     },
     MonitorRuntime {
         _task: ProductionMonitorTask,
-        _station: ProductionStationResources,
+        _physical: ProductionWifiPhysicalResources,
+        _station: ProductionStationRoleResources,
     },
-    StationResourceInvariant {
-        _stopped: ProductionStationStopped<'static>,
-        _runner: ProductionStationRunner<'static, 'static>,
+    StoppedOwner {
+        _wifi: open_esp_radio::esp32s31::wifi::device::runtime::Esp32s31WifiStopped<
+            EspHalRadioPeripheral,
+        >,
+        _resources: ProductionWifiStoppedResources,
+        _access_point: ProductionAccessPointResources,
+        _monitor: ProductionMonitorResources,
     },
 }
 
@@ -542,7 +551,7 @@ fn try_reclaim_production_station<'security>(
     Ok(role.into_stopped(
         registers,
         interrupt_setup,
-        ProductionStationReusableResources {
+        ProductionWifiReusableResources {
             storage,
             board,
             phase,
@@ -566,24 +575,33 @@ struct ProductionStationEnginePort<O> {
     scan_only: bool,
     scan_completed: Cell<bool>,
     access_point: ProductionAccessPointResources,
+    monitor: ProductionMonitorResources,
     _owner: PhantomData<fn() -> O>,
 }
 
 impl<O> ProductionStationEnginePort<O> {
-    fn new(access_point: ProductionAccessPointResources) -> Self {
+    fn new(
+        access_point: ProductionAccessPointResources,
+        monitor: ProductionMonitorResources,
+    ) -> Self {
         Self {
             scan_only: false,
             scan_completed: Cell::new(false),
             access_point,
+            monitor,
             _owner: PhantomData,
         }
     }
 
-    fn standalone_scan(access_point: ProductionAccessPointResources) -> Self {
+    fn standalone_scan(
+        access_point: ProductionAccessPointResources,
+        monitor: ProductionMonitorResources,
+    ) -> Self {
         Self {
             scan_only: true,
             scan_completed: Cell::new(false),
             access_point,
+            monitor,
             _owner: PhantomData,
         }
     }
@@ -592,8 +610,10 @@ impl<O> ProductionStationEnginePort<O> {
         self.scan_completed.get()
     }
 
-    fn into_access_point(self) -> ProductionAccessPointResources {
-        self.access_point
+    fn into_parked_roles(
+        self,
+    ) -> (ProductionAccessPointResources, ProductionMonitorResources) {
+        (self.access_point, self.monitor)
     }
 }
 
@@ -1474,15 +1494,15 @@ impl ProductionWifiEpochRunner {
         scan_only: bool,
     ) -> Result<(ProductionStationControl, ProductionStationTask), ProductionWifiFault> {
         let (discovery, security, reconnect) = request.into_parts();
-        let (wifi, station_resources, access_point_resources, monitor_resources) =
+        let (wifi, physical_resources, station_role, access_point_resources, monitor_resources) =
             stopped.into_parts();
-        let previous = self.parked_monitor.replace(Some(monitor_resources));
-        debug_assert!(previous.is_none(), "only one Wi-Fi role may be active");
+        let station_resources =
+            join_station_activation_resources(physical_resources, station_role);
         let security = self.fresh_security(security);
         let owner = match station_resources {
-            ProductionStationResources::Fresh(fresh) => {
+            ProductionWifiStoppedResources::Fresh(fresh) => {
                 let mut materialized = materialize_esp32s31_wifi_role(wifi, fresh);
-                let ProductionStationFreshResources {
+                let ProductionWifiFreshResources {
                     dma,
                     rx_ring,
                     tx,
@@ -1550,9 +1570,9 @@ impl ProductionWifiEpochRunner {
                     security,
                 )
             }
-            ProductionStationResources::Returned(returned) => {
+            ProductionWifiStoppedResources::Returned(returned) => {
                 let materialized = materialize_esp32s31_wifi_role(wifi, returned);
-                let ProductionStationReusableResources {
+                let ProductionWifiReusableResources {
                     storage,
                     board,
                     phase,
@@ -1628,9 +1648,12 @@ impl ProductionWifiEpochRunner {
             }
         };
         let port = if scan_only {
-            ProductionStationEnginePort::standalone_scan(access_point_resources)
+            ProductionStationEnginePort::standalone_scan(
+                access_point_resources,
+                monitor_resources,
+            )
         } else {
-            ProductionStationEnginePort::new(access_point_resources)
+            ProductionStationEnginePort::new(access_point_resources, monitor_resources)
         };
         #[cfg(feature = "qualification")]
         let runner = ProductionStationRunner::with_observer(
@@ -1715,7 +1738,6 @@ impl ProductionWifiEpochRunner {
         request: StationRequest,
         generation: open_esp_radio::RadioSubsystemGeneration,
     ) -> EmbassyWifiRoleEpochOutcome<ProductionSupervisorStopped, ProductionWifiFault> {
-        let parked_monitor = &self.parked_monitor;
         await_stack_boundary!(run_esp32s31_station_supervisor_epoch(
             endpoint,
             Esp32s31StationSupervisorEpoch::new(stopped, request, generation),
@@ -1779,25 +1801,31 @@ impl ProductionWifiEpochRunner {
                     };
                     let (owner, runner) = resources.into_parts();
                     match try_reclaim_production_station(owner) {
-                        Ok(stopped) => match parked_monitor.borrow_mut().take() {
-                            Some(monitor) => {
-                                let access_point = runner.into_port().into_access_point();
-                                EmbassyWifiRoleFrontier::Stopped(
+                        Ok(stopped) => {
+                            let (access_point, monitor) =
+                                runner.into_port().into_parked_roles();
+                            let resources =
+                                ProductionWifiStoppedResources::Returned(stopped.resources);
+                            match try_split_wifi_stopped_resources(resources) {
+                                Ok((physical, station)) => EmbassyWifiRoleFrontier::Stopped(
                                     Esp32s31WifiSupervisorStopped::new(
                                         stopped.wifi,
-                                        ProductionStationResources::Returned(stopped.resources),
+                                        physical,
+                                        station,
                                         access_point,
                                         monitor,
                                     ),
-                                )
+                                ),
+                                Err(resources) => EmbassyWifiRoleFrontier::Faulted(
+                                    ProductionWifiFault::StoppedOwner {
+                                        _wifi: stopped.wifi,
+                                        _resources: resources,
+                                        _access_point: access_point,
+                                        _monitor: monitor,
+                                    },
+                                ),
                             }
-                            None => EmbassyWifiRoleFrontier::Faulted(
-                                ProductionWifiFault::StationResourceInvariant {
-                                    _stopped: stopped,
-                                    _runner: runner,
-                                },
-                            ),
-                        },
+                        }
                         Err(failure) => {
                             EmbassyWifiRoleFrontier::Faulted(ProductionWifiFault::Reclaim {
                                 _station: failure,
@@ -1895,27 +1923,33 @@ impl EmbassyWifiRoleEpochRunner<CriticalSectionRawMutex> for ProductionWifiEpoch
                             return EmbassyWifiRoleEpochOutcome::Faulted(faulted);
                         }
                     };
-                    let Some(monitor) = self.parked_monitor.borrow_mut().take() else {
-                        let faulted = ProductionWifiFault::StationResourceInvariant {
-                            _stopped: stopped,
-                            _runner: runner,
-                        };
-                        endpoint
-                            .respond(EmbassyWifiSupervisorResponse::Scan(Err(
-                                WifiScanFailure::Faulted {
-                                    error: self.fault_error(&faulted),
-                                },
-                            )))
-                            .await;
-                        return EmbassyWifiRoleEpochOutcome::Faulted(faulted);
+                    let (access_point, monitor) = runner.into_port().into_parked_roles();
+                    let resources = ProductionWifiStoppedResources::Returned(stopped.resources);
+                    let stopped = match try_split_wifi_stopped_resources(resources) {
+                        Ok((physical, station)) => Esp32s31WifiSupervisorStopped::new(
+                            stopped.wifi,
+                            physical,
+                            station,
+                            access_point,
+                            monitor,
+                        ),
+                        Err(resources) => {
+                            let faulted = ProductionWifiFault::StoppedOwner {
+                                _wifi: stopped.wifi,
+                                _resources: resources,
+                                _access_point: access_point,
+                                _monitor: monitor,
+                            };
+                            endpoint
+                                .respond(EmbassyWifiSupervisorResponse::Scan(Err(
+                                    WifiScanFailure::Faulted {
+                                        error: self.fault_error(&faulted),
+                                    },
+                                )))
+                                .await;
+                            return EmbassyWifiRoleEpochOutcome::Faulted(faulted);
+                        }
                     };
-                    let access_point = runner.into_port().into_access_point();
-                    let stopped = Esp32s31WifiSupervisorStopped::new(
-                        stopped.wifi,
-                        ProductionStationResources::Returned(stopped.resources),
-                        access_point,
-                        monitor,
-                    );
                     let response = if completed {
                         Ok(report)
                     } else {
@@ -1947,8 +1981,13 @@ impl EmbassyWifiRoleEpochRunner<CriticalSectionRawMutex> for ProductionWifiEpoch
                     };
                     let channel = request.channel();
                     let snapshot_length = request.capture_policy().snapshot_length();
-                    let (wifi, station_resources, access_point_resources, monitor_resources) =
-                        stopped.into_parts();
+                    let (
+                        wifi,
+                        physical_resources,
+                        station_resources,
+                        access_point_resources,
+                        monitor_resources,
+                    ) = stopped.into_parts();
                     let discarded = self.monitor_capture.discard_queued();
                     crate::monitor::record_discarded_monitor_frames(discarded);
                     let (mut controller, mut task) = match prepare_esp32s31_monitor_task(
@@ -1960,6 +1999,7 @@ impl EmbassyWifiRoleEpochRunner<CriticalSectionRawMutex> for ProductionWifiEpoch
                         Err(failure) => {
                             let faulted = ProductionWifiFault::MonitorBuild {
                                 _failure: failure,
+                                _physical: physical_resources,
                                 _station: station_resources,
                             };
                             endpoint
@@ -1977,6 +2017,7 @@ impl EmbassyWifiRoleEpochRunner<CriticalSectionRawMutex> for ProductionWifiEpoch
                         let faulted = ProductionWifiFault::MonitorChannel {
                             _error: error,
                             _task: task,
+                            _physical: physical_resources,
                             _station: station_resources,
                         };
                         endpoint
@@ -2008,6 +2049,7 @@ impl EmbassyWifiRoleEpochRunner<CriticalSectionRawMutex> for ProductionWifiEpoch
                                 EmbassyWifiRoleFrontier::Stopped(
                                     Esp32s31WifiSupervisorStopped::new(
                                         stopped.wifi,
+                                        physical_resources,
                                         station_resources,
                                         access_point_resources,
                                         ProductionMonitorResources::from_stopped(stopped.resources),
@@ -2018,6 +2060,7 @@ impl EmbassyWifiRoleEpochRunner<CriticalSectionRawMutex> for ProductionWifiEpoch
                                 EmbassyWifiRoleFrontier::Faulted(
                                     ProductionWifiFault::MonitorRuntime {
                                         _task: task,
+                                        _physical: physical_resources,
                                         _station: station_resources,
                                     },
                                 )
@@ -2163,9 +2206,8 @@ pub async fn new(
         initialize_station_network(station_address, access_point_mac.bytes());
     let monitor = initialize_monitor_resources(monitor_memory)
         .map_err(|MonitorResourcesError::InUse| Esp32s31NewError::MonitorResources)?;
-    let stopped = Esp32s31WifiSupervisorStopped::new(
-        wifi,
-        ProductionStationResources::Fresh(ProductionStationFreshResources {
+    let initial_resources =
+        ProductionWifiStoppedResources::Fresh(ProductionWifiFreshResources {
             dma: Esp32s31StationDmaResources::new(
                 monitor_memory.storage(),
                 descriptor_base,
@@ -2185,7 +2227,15 @@ pub async fn new(
                 qualification,
             },
             station_address,
-        }),
+        });
+    let (physical, station) = match try_split_wifi_stopped_resources(initial_resources) {
+        Ok(resources) => resources,
+        Err(_) => unreachable!("fresh Wi-Fi resources are always splittable"),
+    };
+    let stopped = Esp32s31WifiSupervisorStopped::new(
+        wifi,
+        physical,
+        station,
         ProductionAccessPointResources {
             address: access_point_mac.bytes(),
             beacon: memory.ap_beacon,
@@ -2234,7 +2284,6 @@ pub async fn new(
             // leases fresh controller/task endpoints through `split()`.
             station_control: memory.station_control,
             monitor_capture: monitor.capture,
-            parked_monitor: RefCell::new(None),
         },
         stopped,
     ) {

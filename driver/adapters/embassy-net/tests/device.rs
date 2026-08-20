@@ -225,6 +225,42 @@ fn shared_staging_slot_reaches_device_without_a_second_pool_copy() {
     assert_eq!(shared_pool.claimed_slots(), 0);
 }
 
+#[test]
+fn copied_and_shared_rx_follow_one_publication_order() {
+    type TestResources =
+        SplitPinnedResources<NoopRawMutex, FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 3, 3>;
+    type TestPool = PinnedTxPool<FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 3>;
+    let resources = Box::leak(Box::new(TestResources::new()));
+    let tx_pool = TestPool::pin_static(Box::leak(Box::new(TestPool::new())));
+    let shared_pool = Box::leak(Box::new(RxHandoffPool::<FRAME_CAPACITY, 2>::new()));
+    let shared_queue = Box::leak(Box::new(SharedPinnedRxQueue::<NoopRawMutex, 2>::new()));
+    let (shared, consumer) = shared_queue.split(shared_pool, observe_shared_rx_release);
+    let (device, radio) = resources.split(tx_pool, [0; 6]);
+    let radio = radio.with_shared_rx_ordering(&consumer);
+    let mut copied = radio.rx_publisher();
+    let mut device = device.with_ingress_tx_reserve().with_shared_rx(consumer);
+
+    let publish_shared = |index: u8, byte: u8| {
+        let (index, ()) = shared_pool
+            .claim_radio(index)
+            .publish(TEST_ETHERNET_LENGTH, |frame| frame.fill(byte));
+        let index = shared_pool
+            .claim_network(index)
+            .republish(0, TEST_ETHERNET_LENGTH);
+        shared.publish(index);
+    };
+
+    publish_shared(0, 0x11);
+    copied.try_send(&[0x22; TEST_ETHERNET_LENGTH]).unwrap();
+    publish_shared(1, 0x33);
+
+    for expected in [0x11, 0x22, 0x33] {
+        let (rx, reply) = device.receive(&mut context()).unwrap();
+        rx.consume(|frame| assert_eq!(frame[0], expected));
+        drop(reply);
+    }
+}
+
 #[cfg(feature = "rx-delivery-observation")]
 #[test]
 fn observed_pinned_admission_precedes_network_visibility() {

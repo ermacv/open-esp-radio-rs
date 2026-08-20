@@ -43,7 +43,10 @@ pub const AP_WPA2_SUBSEQUENT_RETRY_INTERVAL_MICROS: u32 = 1_000_000;
 /// Retransmissions after the original M1 or M3 publication.
 pub const AP_WPA2_RETRY_ATTEMPTS: u8 = 3;
 pub const AP_TX_BLOCK_ACK_TID: u8 = 0;
-pub const AP_TX_BLOCK_ACK_WINDOW: u16 = 32;
+/// Bounded AP downlink window used for both negotiation and aggregate
+/// admission. Keeping the window at sixteen prevents one saturated downlink
+/// TXOP from monopolizing the medium against the peer's concurrent uplink.
+pub const AP_TX_BLOCK_ACK_WINDOW: u16 = 16;
 pub const AP_TX_BLOCK_ACK_NEGOTIATION_TIMEOUT_MICROS: u32 = 100_000;
 
 /// Validated inactivity policy for an associated SoftAP peer.
@@ -483,9 +486,13 @@ impl<'peers> AccessPointService<'peers> {
             .count() as u8
     }
 
+    #[inline(always)]
     pub fn is_authorized(&self, address: [u8; 6]) -> bool {
-        self.peer_status(address)
-            .is_some_and(|peer| peer.phase == ApPeerPhase::Authorized)
+        self.storage()
+            .peers
+            .iter()
+            .flatten()
+            .any(|peer| peer.address == address && peer.phase == ApPeerPhase::Authorized)
     }
 
     pub fn status(&self) -> AccessPointServiceStatus {

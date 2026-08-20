@@ -135,7 +135,7 @@ use crate::connected::{
     ConnectedStationEpoch, ConnectedStationFault, ConnectedStationOutcome,
     ConnectedStationResources, ConnectedStationRunExit, ConnectedStoppedRx, ControlResources,
     Esp32s31WifiProtocolRunner, InitialConnectedStaticResources, MacInterruptEpoch,
-    ProductionAccessPointRxPipeline, access_point_rx_pipeline,
+    ProductionAccessPointRxConsumer, ProductionAccessPointRxProducer, access_point_rx_pipeline,
     connected_config, initialize_connected_rx_protocol_runtime,
     initialize_connected_static_resources, initialize_ethernet_frame, initialize_station_network,
     mac_interrupt_epoch, publish_shared_network_rx, run_connected,

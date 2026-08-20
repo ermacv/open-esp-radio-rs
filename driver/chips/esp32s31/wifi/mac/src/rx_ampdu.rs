@@ -62,6 +62,7 @@ pub struct RxBlockAckMpduKey {
 /// supplies `expected_peer`; an AP leaves it absent and validates admission in
 /// its peer table after extraction. Group, foreign, unprotected, non-QoS and
 /// fragmented frames do not enter a reorder sequence space.
+#[inline(always)]
 pub fn rx_block_ack_mpdu_key(
     raw: &[u8],
     local_address: [u8; 6],
@@ -585,6 +586,7 @@ impl<const PEER_CAPACITY: usize> RxBlockAckSessions<PEER_CAPACITY> {
         core::array::from_fn(|index| self.snapshot_at(index))
     }
 
+    #[inline(always)]
     fn peer_index(&self, peer: [u8; 6]) -> Option<usize> {
         self.peers.iter().position(|entry| *entry == Some(peer))
     }
@@ -646,6 +648,7 @@ impl<const SLOT_CAPACITY: usize> RxBlockAckReorderBanks<SLOT_CAPACITY> {
         }
     }
 
+    #[inline(always)]
     pub fn find(&self, peer: [u8; 6], tid: u8) -> Option<usize> {
         self.identities
             .iter()
@@ -926,6 +929,7 @@ impl<const SLOT_CAPACITY: usize> RxBlockAckReorderState<SLOT_CAPACITY> {
         Ok(distance_after_advance != 0)
     }
 
+    #[inline(always)]
     pub fn ingest(&mut self, frame: RxAmpduMpdu) -> Result<RxAmpduRelease, RxAmpduError> {
         if frame.sequence > SEQUENCE_MASK {
             return Err(RxAmpduError::InvalidSequence(frame.sequence));
@@ -1000,6 +1004,7 @@ impl<const SLOT_CAPACITY: usize> RxBlockAckReorderState<SLOT_CAPACITY> {
         release
     }
 
+    #[inline(always)]
     fn advance(&mut self, count: u16, release: &mut RxAmpduRelease) {
         let retained_span = count.min(self.window);
         let released_before = release.count;
@@ -1018,6 +1023,7 @@ impl<const SLOT_CAPACITY: usize> RxBlockAckReorderState<SLOT_CAPACITY> {
         self.next_sequence = wrapping_sequence(self.next_sequence, count);
     }
 
+    #[inline(always)]
     fn release_contiguous(&mut self, release: &mut RxAmpduRelease) {
         let mut count = 0_u16;
         while count < self.window {

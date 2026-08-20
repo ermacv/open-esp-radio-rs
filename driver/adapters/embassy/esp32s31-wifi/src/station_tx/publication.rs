@@ -279,6 +279,17 @@ where
 
     fn observe_prepared(&self, prepared: &AggregatePrepared<SLOTS>) {
         if let Some(observer) = self.observer {
+            let bandwidth_mhz = match self.config.rate {
+                TxPhyRate::Ht(rate) => match rate.channel_width {
+                    open_esp_radio_esp32s31_wifi_mac::tx::HtChannelWidth::Mhz20 => 20,
+                    open_esp_radio_esp32s31_wifi_mac::tx::HtChannelWidth::Mhz40 => 40,
+                },
+                TxPhyRate::He(_) | TxPhyRate::Legacy(_) => 20,
+            };
+            observer.observe(AggregateTxObservation::RateSelected {
+                bandwidth_mhz,
+                nominal_kbps: self.config.rate.nominal_kbps(),
+            });
             observer.observe(AggregateTxObservation::Prepared {
                 subframes: prepared.original_subframes,
                 stop: prepared.build_stop,

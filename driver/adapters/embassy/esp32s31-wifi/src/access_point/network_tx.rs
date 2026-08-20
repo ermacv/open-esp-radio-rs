@@ -97,6 +97,7 @@ where
     #[allow(clippy::too_many_arguments)]
     pub(super) async fn start<
         RX,
+        C,
         P,
         E,
         T,
@@ -112,6 +113,7 @@ where
             '_,
             '_,
             RX,
+            C,
             P,
             E,
             T,
@@ -232,6 +234,7 @@ where
                 admitted += 1;
             }
             if let Some(observer) = self.observer {
+                observe_aggregate_rate(observer, policy.rate());
                 observer.observe(AggregateTxObservation::Prepared {
                     subframes: u8::try_from(admitted).unwrap_or(u8::MAX),
                     stop: if admitted == target {
@@ -275,6 +278,7 @@ where
     #[allow(clippy::too_many_arguments)]
     pub(super) fn prepare<
         RX,
+        C,
         P,
         E,
         T,
@@ -289,6 +293,7 @@ where
             '_,
             '_,
             RX,
+            C,
             P,
             E,
             T,
@@ -432,6 +437,7 @@ where
     #[allow(clippy::too_many_arguments)]
     pub(super) fn start_prepared<
         RX,
+        C,
         P,
         E,
         T,
@@ -447,6 +453,7 @@ where
             '_,
             '_,
             RX,
+            C,
             P,
             E,
             T,
@@ -489,6 +496,7 @@ where
                 .map_err(Esp32s31AccessPointWdevError::Control);
         };
         if let Some(observer) = self.observer {
+            observe_aggregate_rate(observer, batch.policy.rate());
             observer.observe(AggregateTxObservation::Prepared {
                 subframes: u8::try_from(batch.admitted).unwrap_or(u8::MAX),
                 stop: if batch.admitted == usize::from(batch.policy.frame_limit()) {
@@ -541,6 +549,7 @@ where
 
     pub(super) async fn wait_deadline<
         RX,
+        C,
         P,
         E,
         T,
@@ -555,6 +564,7 @@ where
             '_,
             '_,
             RX,
+            C,
             P,
             E,
             T,
@@ -581,6 +591,7 @@ where
 
     pub(super) async fn service<
         RX,
+        C,
         P,
         E,
         T,
@@ -596,6 +607,7 @@ where
             '_,
             '_,
             RX,
+            C,
             P,
             E,
             T,
@@ -629,6 +641,9 @@ where
             )
         })?;
         if service_event == AggregateTxServiceEvent::Collision {
+            let (_, ordinary) = control.mac.try_aggregate_adapter().map_err(|error| {
+                Esp32s31AccessPointWdevError::Control(Esp32s31AccessPointControlError::Mac(error))
+            })?;
             if !self
                 .aggregate
                 .active_mut()
@@ -639,7 +654,12 @@ where
                     Esp32s31ApAmpduError::HardwareDidNotDetach,
                 ));
             }
+            ordinary.reset_aggregate_contention();
             self.deadline_micros = None;
+            self.exchange_started_micros = None;
+            if let Some(observer) = self.observer {
+                observer.observe(AggregateTxObservation::Collision);
+            }
             return Ok(WifiTxProgress::Complete);
         }
         if matches!(
@@ -664,7 +684,12 @@ where
                 .active_mut()
                 .finish_timeout_abort(hardware)
                 .map_err(Esp32s31AccessPointWdevError::Aggregate)?;
+            ordinary.reset_aggregate_contention();
             self.deadline_micros = None;
+            self.exchange_started_micros = None;
+            if let Some(observer) = self.observer {
+                observer.observe(AggregateTxObservation::HardwareTimeout);
+            }
             return Ok(WifiTxProgress::Complete);
         }
 

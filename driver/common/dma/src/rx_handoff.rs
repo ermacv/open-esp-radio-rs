@@ -277,6 +277,7 @@ impl<const FRAME_CAPACITY: usize> RxNetworkLease<'_, FRAME_CAPACITY> {
         }
     }
 
+    #[inline(always)]
     pub fn with_frame<R>(&mut self, read: impl FnOnce(&mut [u8]) -> R) -> R {
         let offset = self.slot.offset();
         let length = self.slot.length();
@@ -293,6 +294,7 @@ impl<const FRAME_CAPACITY: usize> RxNetworkLease<'_, FRAME_CAPACITY> {
     /// This supports a protocol owner that formats its staged 802.11 storage
     /// as an Ethernet frame in place. The returned index is the only value
     /// that crosses the ready queue; this lease no longer owns the slot.
+    #[inline(always)]
     pub fn republish(mut self, offset: usize, length: usize) -> u8 {
         let current_offset = self.slot.offset();
         let current_end = current_offset

@@ -32,6 +32,55 @@ struct SharedHardwareAddress<M: RawMutex> {
     address: Mutex<M, Cell<[u8; 6]>>,
 }
 
+/// One publication frontier shared by copied and externally-backed RX slots.
+///
+/// The physical pools remain separate, but `embassy-net` observes this typed
+/// stream in exact publication order. Its capacity covers the complete S31
+/// production geometry (64 owned plus 32 shared slots) without relying on a
+/// priority rule between two independent queues.
+const ORDERED_RX_READY_CAPACITY: usize = 96;
+const ORDERED_RX_SHARED_BIT: u8 = 1 << 7;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum OrderedRxSource {
+    Owned(u8),
+    Shared(u8),
+}
+
+/// Compact typed encoding for the common ready frontier. Production pool
+/// indices are below 128, leaving the high bit as an unambiguous source tag
+/// while keeping each channel record one byte wide.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct OrderedRxReady(u8);
+
+const _: [(); 1] = [(); core::mem::size_of::<OrderedRxReady>()];
+
+impl OrderedRxReady {
+    fn owned(index: u8) -> Self {
+        assert!(
+            index < ORDERED_RX_SHARED_BIT,
+            "ordered owned RX index must fit in seven bits"
+        );
+        Self(index)
+    }
+
+    fn shared(index: u8) -> Self {
+        assert!(
+            index < ORDERED_RX_SHARED_BIT,
+            "ordered shared RX index must fit in seven bits"
+        );
+        Self(index | ORDERED_RX_SHARED_BIT)
+    }
+
+    const fn source(self) -> OrderedRxSource {
+        if self.0 & ORDERED_RX_SHARED_BIT == 0 {
+            OrderedRxSource::Owned(self.0)
+        } else {
+            OrderedRxSource::Shared(self.0 & !ORDERED_RX_SHARED_BIT)
+        }
+    }
+}
+
 impl<M: RawMutex> SharedHardwareAddress<M> {
     const fn new(address: [u8; 6]) -> Self {
         Self {
@@ -53,7 +102,7 @@ impl<M: RawMutex> SharedHardwareAddress<M> {
 /// The bytes remain in that external [`RxHandoffPool`]. This resource stores
 /// only the ownership publication edge consumed by the network device.
 pub struct SharedPinnedRxQueue<M: RawMutex, const SLOT_COUNT: usize> {
-    ready: Channel<M, u8, SLOT_COUNT>,
+    ready: Channel<M, OrderedRxReady, ORDERED_RX_READY_CAPACITY>,
     split: AtomicBool,
 }
 
@@ -75,8 +124,8 @@ impl<M: RawMutex, const SLOT_COUNT: usize> SharedPinnedRxQueue<M, SLOT_COUNT> {
     ) {
         assert!(SLOT_COUNT > 0, "shared pinned RX pool must not be empty");
         assert!(
-            SLOT_COUNT <= usize::from(u8::MAX) + 1,
-            "shared pinned RX index must fit in u8"
+            SLOT_COUNT <= usize::from(ORDERED_RX_SHARED_BIT),
+            "shared pinned RX index must fit in seven bits"
         );
         assert!(
             !self.split.swap(true, Ordering::AcqRel),
@@ -88,6 +137,7 @@ impl<M: RawMutex, const SLOT_COUNT: usize> SharedPinnedRxQueue<M, SLOT_COUNT> {
             },
             SharedPinnedRxConsumer {
                 ready: self.ready.receiver(),
+                ready_sender: self.ready.sender(),
                 pool,
                 on_release,
             },
@@ -115,7 +165,7 @@ impl<M: RawMutex, const SLOT_COUNT: usize> Default for SharedPinnedRxQueue<M, SL
 
 /// Protocol-side capability to publish one already formatted external slot.
 pub struct SharedPinnedRxPublisher<'resources, M: RawMutex, const SLOT_COUNT: usize> {
-    ready: Sender<'resources, M, u8, SLOT_COUNT>,
+    ready: Sender<'resources, M, OrderedRxReady, ORDERED_RX_READY_CAPACITY>,
 }
 
 impl<M: RawMutex, const SLOT_COUNT: usize> Clone for SharedPinnedRxPublisher<'_, M, SLOT_COUNT> {
@@ -127,9 +177,10 @@ impl<M: RawMutex, const SLOT_COUNT: usize> Clone for SharedPinnedRxPublisher<'_,
 impl<M: RawMutex, const SLOT_COUNT: usize> Copy for SharedPinnedRxPublisher<'_, M, SLOT_COUNT> {}
 
 impl<M: RawMutex, const SLOT_COUNT: usize> SharedPinnedRxPublisher<'_, M, SLOT_COUNT> {
+    #[inline(always)]
     pub fn publish(&self, index: u8) {
-        if let Err(TrySendError::Full(_)) = self.ready.try_send(index) {
-            unreachable!("one ready entry exists per retained shared RX slot");
+        if let Err(TrySendError::Full(_)) = self.ready.try_send(OrderedRxReady::shared(index)) {
+            unreachable!("ordered RX frontier covers every owned and shared slot");
         }
     }
 
@@ -144,7 +195,8 @@ pub struct SharedPinnedRxConsumer<
     const FRAME_CAPACITY: usize,
     const SLOT_COUNT: usize,
 > {
-    ready: Receiver<'resources, M, u8, SLOT_COUNT>,
+    ready: Receiver<'resources, M, OrderedRxReady, ORDERED_RX_READY_CAPACITY>,
+    ready_sender: Sender<'resources, M, OrderedRxReady, ORDERED_RX_READY_CAPACITY>,
     pool: &'resources RxHandoffPool<FRAME_CAPACITY, SLOT_COUNT>,
     on_release: fn(),
 }
@@ -289,6 +341,7 @@ impl<
                 free_rx: resources.free_rx.receiver(),
                 free_rx_return: resources.free_rx.sender(),
                 ready_rx: resources.ready_rx.sender(),
+                ordered_rx: None,
                 rx_pool: &resources.rx_pool,
                 free_tx: resources.free_tx.sender(),
                 ready_tx: resources.ready_tx.receiver(),
@@ -788,25 +841,33 @@ impl<
         if !self.inner.poll_reserve_ingress_tx(cx) {
             return None;
         }
-        if let Poll::Ready(index) = self.shared.ready.poll_receive(cx) {
-            let lease = self.shared.pool.claim_network(index);
-            let tx_index = self
-                .inner
-                .ingress_tx
-                .take()
-                .expect("shared ingress admission reserves one TX credit");
-            let tx = self.inner.take_tx_token(tx_index);
-            return Some((
+        let ready = match self.shared.ready.poll_receive(cx) {
+            Poll::Ready(ready) => ready,
+            Poll::Pending => return None,
+        };
+        let rx = match ready.source() {
+            OrderedRxSource::Owned(index) => {
+                let lease = self.inner.rx_pool.claim_network(index);
+                SharedPinnedReceiveToken::Owned(PinnedReceiveToken {
+                    free_rx: self.inner.free_rx,
+                    lease: Some(lease),
+                })
+            }
+            OrderedRxSource::Shared(index) => {
+                let lease = self.shared.pool.claim_network(index);
                 SharedPinnedReceiveToken::Shared(SharedPoolReceiveToken {
                     lease: Some(lease),
                     on_release: self.shared.on_release,
-                }),
-                tx,
-            ));
-        }
-        self.inner
-            .receive(cx)
-            .map(|(rx, tx)| (SharedPinnedReceiveToken::Owned(rx), tx))
+                })
+            }
+        };
+        let tx_index = self
+            .inner
+            .ingress_tx
+            .take()
+            .expect("ordered ingress admission reserves one TX credit");
+        let tx = self.inner.take_tx_token(tx_index);
+        Some((rx, tx))
     }
 
     fn transmit(&mut self, cx: &mut Context<'_>) -> Option<Self::TxToken<'_>> {
@@ -847,6 +908,7 @@ pub struct PinnedRxPublisher<
     free_rx: Receiver<'resources, M, u8, QUEUE_DEPTH>,
     free_rx_return: Sender<'resources, M, u8, QUEUE_DEPTH>,
     ready_rx: Sender<'resources, M, u8, QUEUE_DEPTH>,
+    ordered_rx: Option<Sender<'resources, M, OrderedRxReady, ORDERED_RX_READY_CAPACITY>>,
     rx_pool: &'resources RxHandoffPool<FRAME_CAPACITY, QUEUE_DEPTH>,
     reserved_rx: Option<u8>,
 }
@@ -884,10 +946,19 @@ impl<'resources, M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: us
         write: impl FnOnce(&mut [u8]) -> R,
     ) -> R {
         let (index, result) = lease.publish(length, write);
-        if let Err(TrySendError::Full(_)) = self.ready_rx.try_send(index) {
-            unreachable!("one ready entry exists per non-free pinned RX slot");
-        }
+        self.publish_index(index);
         result
+    }
+
+    fn publish_index(&self, index: u8) {
+        let published = if let Some(ordered) = self.ordered_rx {
+            ordered.try_send(OrderedRxReady::owned(index)).is_ok()
+        } else {
+            self.ready_rx.try_send(index).is_ok()
+        };
+        if !published {
+            unreachable!("one ordered or owned ready entry exists per non-free pinned RX slot");
+        }
     }
 
     pub fn try_send(&mut self, frame: &[u8]) -> Result<(), RxEnqueueError> {
@@ -909,9 +980,7 @@ impl<'resources, M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: us
         let lease = self.try_claim_slot()?;
         let (index, ()) = lease.publish(frame.len(), |storage| storage.copy_from_slice(frame));
         before_publish();
-        if let Err(TrySendError::Full(_)) = self.ready_rx.try_send(index) {
-            unreachable!("one ready entry exists per non-free pinned RX slot");
-        }
+        self.publish_index(index);
         Ok(())
     }
 
@@ -963,9 +1032,7 @@ impl<'resources, M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: us
             frame[14..].copy_from_slice(payload);
         });
         before_publish();
-        if let Err(TrySendError::Full(_)) = self.ready_rx.try_send(index) {
-            unreachable!("one ready entry exists per non-free pinned RX slot");
-        }
+        self.publish_index(index);
         Ok(())
     }
 
@@ -993,7 +1060,8 @@ impl<'resources, M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: us
     }
 
     pub fn queue_len(&self) -> usize {
-        self.ready_rx.len()
+        self.ordered_rx
+            .map_or_else(|| self.ready_rx.len(), |ready| ready.len())
     }
 }
 
@@ -1021,6 +1089,7 @@ pub struct SplitPinnedRadioRunner<
     free_rx: Receiver<'resources, M, u8, RX_QUEUE_DEPTH>,
     free_rx_return: Sender<'resources, M, u8, RX_QUEUE_DEPTH>,
     ready_rx: Sender<'resources, M, u8, RX_QUEUE_DEPTH>,
+    ordered_rx: Option<Sender<'resources, M, OrderedRxReady, ORDERED_RX_READY_CAPACITY>>,
     rx_pool: &'resources RxHandoffPool<FRAME_CAPACITY, RX_QUEUE_DEPTH>,
     free_tx: Sender<'resources, M, u8, TX_QUEUE_DEPTH>,
     ready_tx: Receiver<'resources, M, u8, TX_QUEUE_DEPTH>,
@@ -1050,6 +1119,26 @@ impl<
         TX_QUEUE_DEPTH,
     >
 {
+    /// Bind copied RX publications to the same typed frontier as shared
+    /// staging slots. The matching device must be wrapped with
+    /// [`SplitPinnedDevice::with_shared_rx`] using this exact consumer.
+    pub fn with_shared_rx_ordering<const SHARED_CAPACITY: usize, const SHARED_SLOTS: usize>(
+        mut self,
+        shared: &SharedPinnedRxConsumer<'resources, M, SHARED_CAPACITY, SHARED_SLOTS>,
+    ) -> Self {
+        assert!(
+            RX_QUEUE_DEPTH.saturating_add(SHARED_SLOTS) <= ORDERED_RX_READY_CAPACITY,
+            "ordered RX frontier must cover every owned and shared slot"
+        );
+        assert!(
+            RX_QUEUE_DEPTH <= usize::from(ORDERED_RX_SHARED_BIT)
+                && SHARED_SLOTS <= usize::from(ORDERED_RX_SHARED_BIT),
+            "ordered RX pool indices must fit in seven bits"
+        );
+        self.ordered_rx = Some(shared.ready_sender);
+        self
+    }
+
     /// Derive the receive-only capability before moving this runner into the
     /// production Wi-Fi event loop. The returned handle cannot observe or
     /// claim any network-owned TX slot.
@@ -1058,6 +1147,7 @@ impl<
             free_rx: self.free_rx,
             free_rx_return: self.free_rx_return,
             ready_rx: self.ready_rx,
+            ordered_rx: self.ordered_rx,
             rx_pool: self.rx_pool,
             reserved_rx: None,
         }

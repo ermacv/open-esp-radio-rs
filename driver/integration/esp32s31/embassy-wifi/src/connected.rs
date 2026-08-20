@@ -171,8 +171,8 @@ type ConnectedLiveRx = Esp32s31StagedRxProducer<
     RX_BUFFER_SIZE,
     { RX_BUFFER_SIZE + 4 },
 >;
-pub(super) type ProductionAccessPointRxPipeline =
-    open_esp_radio_esp32s31_wifi_embassy::access_point::Esp32s31AccessPointRxPipeline<
+pub(super) type ProductionAccessPointRxProducer =
+    open_esp_radio_esp32s31_wifi_embassy::access_point::Esp32s31AccessPointRxProducer<
         'static,
         'static,
         'static,
@@ -185,14 +185,26 @@ pub(super) type ProductionAccessPointRxPipeline =
         RX_BUFFER_SIZE,
         { RX_BUFFER_SIZE + 4 },
     >;
+pub(super) type ProductionAccessPointRxConsumer =
+    open_esp_radio_esp32s31_wifi_embassy::access_point::Esp32s31AccessPointRxConsumer<
+        'static,
+        'static,
+        CriticalSectionRawMutex,
+        RX_STAGE_SLOT_COUNT,
+        RX_STAGE_CAPACITY,
+        RX_STAGE_SLOT_COUNT,
+    >;
 
 pub(super) fn access_point_rx_pipeline(
     ring: open_esp_radio::esp32s31::wifi::mac::rx::RxRingHalted<'static, RX_DESCRIPTOR_COUNT>,
     storage: &'static RxStorage,
     #[cfg(feature = "qualification")] pipeline_observer: &'static dyn open_esp_radio_esp32s31_wifi_embassy::rx_pipeline_observer::RxPipelineObserver,
-) -> ProductionAccessPointRxPipeline {
+) -> (
+    ProductionAccessPointRxProducer,
+    ProductionAccessPointRxConsumer,
+) {
     #[cfg(feature = "qualification")]
-    return open_esp_radio_esp32s31_wifi_embassy::access_point::Esp32s31AccessPointRxPipeline::from_halted_with_pipeline_observer(
+    return open_esp_radio_esp32s31_wifi_embassy::access_point::Esp32s31AccessPointRxProducer::from_halted_with_pipeline_observer(
         ring,
         storage,
         &RX_STAGE_POOL,
@@ -201,7 +213,7 @@ pub(super) fn access_point_rx_pipeline(
         pipeline_observer,
     );
     #[cfg(not(feature = "qualification"))]
-    open_esp_radio_esp32s31_wifi_embassy::access_point::Esp32s31AccessPointRxPipeline::from_halted(
+    open_esp_radio_esp32s31_wifi_embassy::access_point::Esp32s31AccessPointRxProducer::from_halted(
         ring,
         storage,
         &RX_STAGE_POOL,
@@ -428,6 +440,7 @@ static STAGED_RX_QUEUE: Esp32s31StagedRxQueue<
 static SHARED_NETWORK_RX_QUEUE: SharedPinnedRxQueue<CriticalSectionRawMutex, RX_STAGE_SLOT_COUNT> =
     SharedPinnedRxQueue::new();
 
+#[inline(always)]
 pub(super) fn publish_shared_network_rx(index: u8) {
     SHARED_NETWORK_RX_QUEUE.publisher().publish(index);
 }

@@ -755,6 +755,7 @@ impl<'storage> Esp32s31ApEngine<'storage> {
         self.service.peer_status(peer)
     }
 
+    #[inline(always)]
     pub fn is_authorized_peer(&self, peer: [u8; 6]) -> bool {
         self.service.is_authorized(peer)
     }

@@ -768,6 +768,7 @@ pub struct NormalizedRxFrame<'frame> {
 /// It is therefore suitable for the promiscuous queue's synchronous monitor
 /// sink before the descriptor is recycled. Split DMA chains must first be
 /// copied into the existing contiguous staging owner.
+#[inline(always)]
 pub fn view_normalized_rx_frame<'frame>(
     segment: &RxSegment<'frame>,
     config: RxIngressConfig,
@@ -924,6 +925,7 @@ fn copy_frame(
 /// This is also the diagnostic boundary for a split hardware unit: callers
 /// can distinguish malformed metadata from a valid first segment whose
 /// remaining bytes are carried by following descriptors.
+#[inline(always)]
 pub fn first_segment_layout(
     segment: &RxSegment<'_>,
     config: RxIngressConfig,

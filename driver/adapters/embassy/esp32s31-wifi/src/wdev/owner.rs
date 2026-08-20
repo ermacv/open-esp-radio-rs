@@ -44,7 +44,7 @@ where
             network_rx,
             services,
             rx_progress: WdevRxProgress::Drained,
-            network_turn_owed: false,
+            rx_frame_deficit: 0,
         }
     }
 

@@ -135,6 +135,7 @@ pub(super) fn initialize_network(
     let network_resources = NETWORK_RESOURCES.take();
     let tx_pool = NetworkTxPool::pin_static(NETWORK_TX_POOL.take());
     let (device, runner) = network_resources.split(tx_pool, station_address);
+    let runner = runner.with_shared_rx_ordering(&shared);
     (
         device.with_ingress_tx_reserve().with_shared_rx(shared),
         WifiNetworkResources::Unstarted { device: (), runner },

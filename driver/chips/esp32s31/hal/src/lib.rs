@@ -311,6 +311,16 @@ impl RadioRuntimeOwner {
         )
     }
 
+    /// Sample one ordinary direct receive-BA bank without exposing its PAC
+    /// owner.
+    pub fn rx_block_ack_entry_snapshot(
+        &mut self,
+        index: u8,
+    ) -> Option<wifi_mac::RxBlockAckEntrySnapshot> {
+        let index = types::MacRxBlockAckEntryIndex::new(u32::from(index))?;
+        self.wifi_mac_hal().rx_block_ack_entry_snapshot(index)
+    }
+
     /// Copy the reviewed HE transmit-vector readback for one queue.
     pub fn he_tx_vector_snapshot(&self, queue: u8) -> types::MacHeTxVectorSnapshot {
         self.registers.he_mac_tx_vector_snapshot(queue)

@@ -16,14 +16,12 @@ use crate::console::{runtime_log, runtime_log_reliably};
 
 pub(in crate::product_hil) fn aggregate_tx_evidence(
     aggregate: AggregateTxCounterSnapshot,
-    bandwidth_mhz: u16,
-    aggregate_rate_kbps: u32,
 ) -> (RadioEvidence, TxAggregateTimingEvidence) {
     let radio = RadioEvidence {
         rx: None,
         tx: Some(TxRadioEvidence {
-            bandwidth_mhz,
-            aggregate_rate_kbps,
+            bandwidth_mhz: u16::try_from(aggregate.last_bandwidth_mhz).unwrap_or(u16::MAX),
+            aggregate_rate_kbps: aggregate.last_nominal_rate_kbps,
             aggregates_prepared: aggregate.aggregates_prepared,
             aggregate_publications: aggregate.aggregate_publications,
             aggregates_completed: aggregate.aggregates_completed,

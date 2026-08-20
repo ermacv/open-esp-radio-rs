@@ -392,6 +392,22 @@ impl CooperativeRadioHardware<'_> {
         rx_ampdu_hw::clear(&mut self.wifi_mac_hal(), hardware_index)
     }
 
+    pub fn reset_rx_block_ack_window(
+        &mut self,
+        hardware_index: u8,
+        tid: u8,
+        starting_sequence: u16,
+        window: u16,
+    ) -> Result<(), S31RxBlockAckAgreementError> {
+        rx_ampdu_hw::reset_window(
+            &mut self.wifi_mac_hal(),
+            hardware_index,
+            tid,
+            starting_sequence,
+            window,
+        )
+    }
+
     pub fn program_extra_softap_rx_block_ack(
         &mut self,
         agreement: S31RxBlockAckAgreement,
@@ -454,6 +470,22 @@ impl open_esp_radio_esp32s31_wifi_mac::rx_ampdu_hw::RxBlockAckHardware
         hardware_index: u8,
     ) -> Result<(), S31RxBlockAckAgreementError> {
         CooperativeRadioHardware::clear_rx_block_ack(self, hardware_index)
+    }
+
+    fn reset_rx_block_ack_window(
+        &mut self,
+        hardware_index: u8,
+        tid: u8,
+        starting_sequence: u16,
+        window: u16,
+    ) -> Result<(), S31RxBlockAckAgreementError> {
+        CooperativeRadioHardware::reset_rx_block_ack_window(
+            self,
+            hardware_index,
+            tid,
+            starting_sequence,
+            window,
+        )
     }
 
     fn program_extra_softap_rx_block_ack(

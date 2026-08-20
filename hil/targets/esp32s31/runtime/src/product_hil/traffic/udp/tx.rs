@@ -292,13 +292,9 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
             elapsed_micros: elapsed_us,
             transport_errors: send_errors,
         };
-        let aggregate_evidence = aggregate.zip(tx_vector).map(|(aggregate, tx_vector)| {
-            aggregate_tx_evidence(
-                aggregate,
-                tx_vector.bandwidth_mhz,
-                u32::try_from(tx_vector.aggregate_rate_kbps).unwrap_or(u32::MAX),
-            )
-        });
+        let aggregate_evidence = aggregate
+            .filter(|aggregate| aggregate.rate_selections != 0)
+            .map(aggregate_tx_evidence);
         complete_open_radio_bidirectional_direction(
             config.session_source.results,
             session.session_id,

@@ -376,6 +376,7 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
         };
         if let AmpduRetryDecision::RetainAggregate { retry_mask } = decision {
             let aggregate = self.inner.retain_for_ampdu_retry(cookie, retry_mask)?;
+            ordinary.record_aggregate_retry_failure();
             let refreshed = ordinary
                 .ht_ampdu_config(
                     rate,
@@ -393,6 +394,11 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
                 retry,
             };
             return Ok(Esp32s31ApAmpduProgress::Republished(observation));
+        }
+        if decision.missing() == 0 {
+            ordinary.record_aggregate_success();
+        } else {
+            ordinary.reset_aggregate_contention();
         }
         self.inner.release_completed(cookie)?;
         Ok(Esp32s31ApAmpduProgress::Complete(observation))

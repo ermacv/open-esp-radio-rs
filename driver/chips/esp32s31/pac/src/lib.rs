@@ -72,8 +72,8 @@ pub use generated::{
     MacTxPtiCount, MacTxQueueIndex,
 };
 pub use mac_block_ack::{
-    ExtraSoftApRxBlockAckEntrySnapshot, InternalTxBlockAckSnapshot, TxBlockAckDiagnosticSnapshot,
-    TxBlockAckPayload, TxBlockAckRegisterImage,
+    ExtraSoftApRxBlockAckEntrySnapshot, InternalTxBlockAckSnapshot, RxBlockAckEntrySnapshot,
+    TxBlockAckDiagnosticSnapshot, TxBlockAckPayload, TxBlockAckRegisterImage,
 };
 pub use mac_crypto::MacKeyInstallOutcome;
 pub use mac_he_beamforming::{

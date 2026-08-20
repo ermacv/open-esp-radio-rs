@@ -547,6 +547,7 @@ impl<const SLOTS: usize, const CAPACITY: usize> NetworkRxFrame<'_, SLOTS, CAPACI
     /// `payload_offset` is relative to [`Self::segment`]'s buffer. It must
     /// identify an already initialized payload range and leave fourteen bytes
     /// before it. No payload byte is copied.
+    #[inline(always)]
     pub fn publish_ethernet_in_place(
         self,
         destination: [u8; 6],

@@ -12,7 +12,7 @@ pub use crate::types::{
     MacRxDecodeErrorStatistics, MacRxDecodeErrorStatisticsDelta, MacRxDmaSnapshot,
     MacRxHangStatistics, MacRxHangStatisticsDelta, MacRxPrimaryStatistics, MacRxStatisticsSnapshot,
     MacStaApReceivePlan, MacStaPolicyMode, MacStaReceivePolicySnapshot, MacTxPowerTable,
-    MacTxPtiCount, MacTxPtiProgram, MacTxQueueIndex,
+    MacTxPtiCount, MacTxPtiProgram, MacTxQueueIndex, RxBlockAckEntrySnapshot,
 };
 use crate::types::{
     MacExtraSoftApRxBlockAckEntryIndex, MacHe20PeerConfig, MacHe20PeerError,
@@ -674,6 +674,24 @@ impl<'registers> WifiMacHal<'registers> {
 
     pub fn delete_rx_block_ack_entry(&mut self, index: MacRxBlockAckEntryIndex) {
         self.pac_mut().delete_rx_block_ack_entry(index);
+    }
+
+    pub fn rx_block_ack_entry_snapshot(
+        &self,
+        index: MacRxBlockAckEntryIndex,
+    ) -> Option<RxBlockAckEntrySnapshot> {
+        self.pac().rx_block_ack_entry_snapshot(index)
+    }
+
+    pub fn reset_rx_block_ack_window(
+        &mut self,
+        index: MacRxBlockAckEntryIndex,
+        tid: MacRxBlockAckTid,
+        starting_sequence: MacRxBlockAckStartingSequence,
+        window: MacRxBlockAckWindow,
+    ) {
+        self.pac_mut()
+            .reset_rx_block_ack_window(index, tid, starting_sequence, window);
     }
 
     pub fn program_extra_softap_rx_block_ack_entry(

@@ -178,6 +178,26 @@ where
         )
     }
 
+    /// Advance the shared BE contention state before republishing a retained
+    /// aggregate. The AP and STA paths must use the same recovered LMAC EDCA
+    /// transition: a retry is not a fresh exchange at ECWmin.
+    pub(crate) fn record_aggregate_retry_failure(&mut self) {
+        self.ordinary
+            .record_retry_failure(LegacyTxQueue::BestEffort);
+    }
+
+    /// Restore ECWmin after a fully acknowledged aggregate exchange.
+    pub(crate) fn record_aggregate_success(&mut self) {
+        self.ordinary.record_success(LegacyTxQueue::BestEffort);
+    }
+
+    /// Restore ECWmin after a terminal incomplete, collision, or timeout
+    /// result before a different MSDU exchange can claim the queue.
+    pub fn reset_aggregate_contention(&mut self) {
+        self.ordinary
+            .reset_terminal_exchange(LegacyTxQueue::BestEffort);
+    }
+
     /// Copy one portable encoded MPDU into the only ordinary DMA slot and
     /// publish it. A successful return means hardware owns the descriptor,
     /// not that the frame reached the air.
@@ -543,5 +563,44 @@ mod tests {
         assert_eq!(progress, Ok(WifiTxProgress::Complete));
         assert!(tx.take_last_outcome().unwrap().is_success());
         assert!(tx.try_into_resources().is_ok());
+    }
+
+    #[test]
+    fn aggregate_retry_uses_the_next_edca_contention_window() {
+        let mut slot = pin!(TxSlot::<256>::new_model());
+        let resources = WifiTxResources {
+            slot: slot.as_mut(),
+            policy: WifiTxRuntimePolicy::vendor_defaults(),
+            power: Power,
+            entropy: || u32::MAX,
+            timer: Timer,
+        };
+        let mut tx = Esp32s31ApTx::new(
+            resources,
+            Esp32s31ApTxConfig {
+                publication_timeout_micros: 1_000,
+            },
+        );
+        let rate = HtRate::new(
+            HtMcs::Mcs7,
+            HtGuardInterval::Short400Ns,
+            HtChannelWidth::Mhz40,
+        );
+
+        let initial = tx.ht_ampdu_config(rate, 8_000, 8, 1).unwrap();
+        assert_eq!(initial.contention_window, 15);
+
+        tx.record_aggregate_retry_failure();
+        let retry = tx.ht_ampdu_config(rate, 8_000, 8, 1).unwrap();
+        assert_eq!(retry.contention_window, 31);
+
+        tx.record_aggregate_success();
+        let next_exchange = tx.ht_ampdu_config(rate, 8_000, 8, 1).unwrap();
+        assert_eq!(next_exchange.contention_window, 15);
+
+        tx.record_aggregate_retry_failure();
+        tx.reset_aggregate_contention();
+        let after_terminal_failure = tx.ht_ampdu_config(rate, 8_000, 8, 1).unwrap();
+        assert_eq!(after_terminal_failure.contention_window, 15);
     }
 }

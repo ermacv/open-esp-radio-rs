@@ -280,15 +280,9 @@ pub(in crate::product_hil) async fn run_open_radio_tcp_benchmark<'a>(
             session.config.direction,
             HilDirection::Tx | HilDirection::Bidirectional
         )
-        .then_some(qualification.tx_vector)
-        .flatten()
-        .map(|tx_vector| {
-            aggregate_tx_evidence(
-                aggregate,
-                tx_vector.bandwidth_mhz,
-                u32::try_from(tx_vector.aggregate_rate_kbps).unwrap_or(u32::MAX),
-            )
-        });
+        .then_some(aggregate)
+        .filter(|aggregate| aggregate.rate_selections != 0)
+        .map(aggregate_tx_evidence);
         log_open_radio_ampdu_interval(aggregate_start, aggregate_counters).await;
         log_open_radio_task_poll_interval(
             task_poll_start,

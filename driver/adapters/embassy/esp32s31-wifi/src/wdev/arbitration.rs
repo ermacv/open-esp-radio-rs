@@ -105,16 +105,18 @@ where
                 WdevControlProgress::Idle => {}
             }
 
-            // A reorder timeout releases already-owned frames and therefore
-            // has no new MAC interrupt edge. Service that explicit software
-            // frontier before granting a new network TX transaction.
-            if self.services.has_rx_work() {
+            let network_tx_pending =
+                self.services.has_prepared_tx() || self.network.tx_queue_len() != 0;
+
+            // A staged protocol owner or reorder timeout has no new MAC IRQ
+            // edge, but it is still charged to the same frame deficit as an
+            // IRQ-originated RX turn. Under saturation it must yield one TX
+            // transaction at the configured quantum; otherwise this early
+            // software-work branch bypasses the fairness gate below.
+            if self.services.has_rx_work() && !(network_tx_pending && self.network_turn_owed()) {
                 self.service_rx().await?;
                 continue;
             }
-
-            let network_tx_pending =
-                self.services.has_prepared_tx() || self.network.tx_queue_len() != 0;
 
             // Consume a coalesced RX frontier before admitting a fresh
             // network transaction, matching the recovered FIQ priority. If a
@@ -127,7 +129,7 @@ where
             );
             if rx_can_run
                 && self.irq.rx_signaled()
-                && !(network_tx_pending && self.network_turn_owed)
+                && !(network_tx_pending && self.network_turn_owed())
             {
                 self.irq.wait_rx().await;
                 self.service_rx().await?;
@@ -168,8 +170,9 @@ where
                             let network_tx = self.network.tx_consumer();
                             self.services.prepare_tx(frame, &network_tx).await?;
                         }
+                        let admitted = self.services.prepared_tx_frame_count().max(1);
+                        self.account_tx_frames(admitted);
                         let network_tx = self.network.tx_consumer();
-                        self.network_turn_owed = false;
                         let progress = self.services.start_prepared_tx(&network_tx).await?;
                         if progress == WifiTxProgress::Pending {
                             self.drive_active_tx().await?;
@@ -180,8 +183,8 @@ where
                     let Some(frame) = self.network.try_receive_tx() else {
                         continue;
                     };
+                    self.account_tx_frames(1);
                     let network_tx = self.network.tx_consumer();
-                    self.network_turn_owed = false;
                     let progress = self.services.start_tx(frame, &network_tx).await?;
                     if progress == WifiTxProgress::Pending {
                         self.drive_active_tx().await?;

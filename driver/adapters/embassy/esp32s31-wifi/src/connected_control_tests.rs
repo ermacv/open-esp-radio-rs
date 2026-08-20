@@ -118,6 +118,30 @@ impl RxBlockAckHardware for Hardware {
         Ok(())
     }
 
+    fn reset_rx_block_ack_window(
+        &mut self,
+        hardware_index: u8,
+        tid: u8,
+        starting_sequence: u16,
+        window: u16,
+    ) -> Result<(), S31RxBlockAckAgreementError> {
+        if hardware_index >= 8 {
+            return Err(S31RxBlockAckAgreementError::HardwareIndex(hardware_index));
+        }
+        if tid > 7 {
+            return Err(S31RxBlockAckAgreementError::Tid(tid));
+        }
+        if starting_sequence > 0x0fff {
+            return Err(S31RxBlockAckAgreementError::StartingSequence(
+                starting_sequence,
+            ));
+        }
+        if window == 0 || window > 0x7f {
+            return Err(S31RxBlockAckAgreementError::Window(window));
+        }
+        Ok(())
+    }
+
     fn program_extra_softap_rx_block_ack(
         &mut self,
         agreement: S31RxBlockAckAgreement,

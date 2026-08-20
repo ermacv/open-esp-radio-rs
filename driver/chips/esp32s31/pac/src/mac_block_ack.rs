@@ -236,6 +236,49 @@ impl RadioRegisters {
         super::svd::zero_register_write::clear_rx_block_ack_entry_control(block, register_index);
     }
 
+    /// Move one live ordinary receive BlockAck entry to a new window.
+    ///
+    /// SOURCE: complete `libpp.a[hal_ampdu.o]::
+    /// hal_agreement_clr_rx_ba`, size `0x92`.
+    ///
+    /// The vendor clears validity with a full-word zero, reloads the starting
+    /// sequence and physical window, clears both bitmap load words, publishes
+    /// the ordinary-bank update bit, and finally restores the active control
+    /// word. Peer and interface fields remain unchanged.
+    pub fn reset_rx_block_ack_window(
+        &mut self,
+        hardware_index: MacRxBlockAckEntryIndex,
+        tid: MacRxBlockAckTid,
+        starting_sequence: MacRxBlockAckStartingSequence,
+        window: MacRxBlockAckWindow,
+    ) {
+        let block = &self.peripherals.wifi_mac_rx_dma;
+        let register_index = rx_block_ack_register_index(hardware_index);
+
+        super::svd::zero_register_write::clear_rx_block_ack_entry_control(block, register_index);
+        block
+            .rx_block_ack_entry_start_sequence_load(register_index)
+            .modify(|_, w| w.sequence().set(starting_sequence.get() as u16));
+        block
+            .rx_block_ack_entry_peer_tail_and_policy(register_index)
+            .modify(|_, w| w.window().set(window.get() as u8));
+        super::svd::zero_register_write::clear_rx_block_ack_bitmap_low_load(block, register_index);
+        super::svd::zero_register_write::clear_rx_block_ack_bitmap_high_load(block, register_index);
+        let update_bit = 1_u8 << hardware_index.get();
+        block.rx_block_ack_agreement_update().modify(|r, w| {
+            w.ordinary_entry_update()
+                .set(r.ordinary_entry_update().bits() | update_bit)
+        });
+        super::svd::zero_based_field_write::rx_block_ack_active_control(
+            block,
+            register_index,
+            true,
+            tid.get() as u8,
+            true,
+            true,
+        );
+    }
+
     /// Program one extra-SoftAP receive BlockAck entry through the shared
     /// staging window.
     ///

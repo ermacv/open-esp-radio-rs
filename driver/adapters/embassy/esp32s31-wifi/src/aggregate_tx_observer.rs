@@ -44,6 +44,13 @@ pub enum AggregateTxObservation {
         reason: NetworkSingleMpduReason,
         ethernet_length: usize,
     },
+    /// Actual PHY vector bound to a prepared aggregate. This observation is
+    /// role-neutral: AP qualification must not depend on the associated-STA
+    /// link snapshot to describe its own transmission.
+    RateSelected {
+        bandwidth_mhz: u16,
+        nominal_kbps: u32,
+    },
     Prepared {
         subframes: u8,
         stop: AggregateBuildStop,

@@ -145,6 +145,14 @@ static AP_MAXIMUM_TX_PENDING_MICROS: AtomicU32 = AtomicU32::new(0);
 static AP_MAXIMUM_NETWORK_TX_PENDING_MICROS: AtomicU32 = AtomicU32::new(0);
 static AP_NETWORK_TX_ATTEMPTS_AT_MAXIMUM_PENDING: AtomicU32 = AtomicU32::new(0);
 static AP_MAXIMUM_RX_SERVICE_MICROS: AtomicU32 = AtomicU32::new(0);
+static AP_MAXIMUM_RX_DMA_SERVICE_MICROS: AtomicU32 = AtomicU32::new(0);
+static AP_TOTAL_RX_DMA_SERVICE_MICROS: AtomicU32 = AtomicU32::new(0);
+static AP_RX_DMA_SERVICE_CALLS: AtomicU32 = AtomicU32::new(0);
+static AP_MAXIMUM_RX_PROTOCOL_SERVICE_MICROS: AtomicU32 = AtomicU32::new(0);
+static AP_MAXIMUM_RX_PROTECTED_DATA_SERVICE_MICROS: AtomicU32 = AtomicU32::new(0);
+static AP_TOTAL_RX_PROTECTED_DATA_SERVICE_MICROS: AtomicU32 = AtomicU32::new(0);
+static AP_MAXIMUM_RX_MANAGEMENT_SERVICE_MICROS: AtomicU32 = AtomicU32::new(0);
+static AP_MAXIMUM_RX_EAPOL_SERVICE_MICROS: AtomicU32 = AtomicU32::new(0);
 static AP_MAXIMUM_NETWORK_BACKPRESSURE_MICROS: AtomicU32 = AtomicU32::new(0);
 static AP_AUTHENTICATIONS: AtomicU32 = AtomicU32::new(0);
 static AP_ASSOCIATIONS: AtomicU32 = AtomicU32::new(0);
@@ -174,6 +182,8 @@ static AP_RX_BLOCK_ACK_RESPONSES_TRANSMITTED: AtomicU32 = AtomicU32::new(0);
 static AP_COMPLETED_RX_UNITS: AtomicU32 = AtomicU32::new(0);
 static AP_COMPLETED_RX_DESCRIPTORS: AtomicU32 = AtomicU32::new(0);
 static AP_RECYCLED_RX_DESCRIPTORS: AtomicU32 = AtomicU32::new(0);
+static AP_RX_HARDWARE_BUFFER_FULL: AtomicU32 = AtomicU32::new(0);
+static AP_RX_HARDWARE_FIFO_OVERFLOW: AtomicU32 = AtomicU32::new(0);
 static AP_RETAINED_RX_DESCRIPTORS: AtomicU32 = AtomicU32::new(0);
 static AP_DISCARDED_RX_UNITS: AtomicU32 = AtomicU32::new(0);
 static AP_IGNORED_RX_FRAMES: AtomicU32 = AtomicU32::new(0);
@@ -240,6 +250,35 @@ fn observe_access_point(observation: Esp32s31AccessPointObservation) {
         Ordering::Release,
     );
     AP_MAXIMUM_RX_SERVICE_MICROS.store(observation.maximum_rx_service_micros, Ordering::Release);
+    AP_MAXIMUM_RX_DMA_SERVICE_MICROS.store(
+        observation.maximum_rx_dma_service_micros,
+        Ordering::Release,
+    );
+    AP_TOTAL_RX_DMA_SERVICE_MICROS.store(
+        observation.total_rx_dma_service_micros,
+        Ordering::Release,
+    );
+    AP_RX_DMA_SERVICE_CALLS.store(observation.rx_dma_service_calls, Ordering::Release);
+    AP_MAXIMUM_RX_PROTOCOL_SERVICE_MICROS.store(
+        observation.maximum_rx_protocol_service_micros,
+        Ordering::Release,
+    );
+    AP_MAXIMUM_RX_PROTECTED_DATA_SERVICE_MICROS.store(
+        observation.maximum_rx_protected_data_service_micros,
+        Ordering::Release,
+    );
+    AP_TOTAL_RX_PROTECTED_DATA_SERVICE_MICROS.store(
+        observation.total_rx_protected_data_service_micros,
+        Ordering::Release,
+    );
+    AP_MAXIMUM_RX_MANAGEMENT_SERVICE_MICROS.store(
+        observation.maximum_rx_management_service_micros,
+        Ordering::Release,
+    );
+    AP_MAXIMUM_RX_EAPOL_SERVICE_MICROS.store(
+        observation.maximum_rx_eapol_service_micros,
+        Ordering::Release,
+    );
     AP_MAXIMUM_NETWORK_BACKPRESSURE_MICROS.store(
         observation.maximum_network_backpressure_micros,
         Ordering::Release,
@@ -298,6 +337,14 @@ fn observe_access_point(observation: Esp32s31AccessPointObservation) {
     AP_COMPLETED_RX_UNITS.store(observation.completed_rx_units, Ordering::Release);
     AP_COMPLETED_RX_DESCRIPTORS.store(observation.completed_rx_descriptors, Ordering::Release);
     AP_RECYCLED_RX_DESCRIPTORS.store(observation.recycled_rx_descriptors, Ordering::Release);
+    AP_RX_HARDWARE_BUFFER_FULL.store(
+        u32::from(observation.rx_hardware_buffer_full),
+        Ordering::Release,
+    );
+    AP_RX_HARDWARE_FIFO_OVERFLOW.store(
+        u32::from(observation.rx_hardware_fifo_overflow),
+        Ordering::Release,
+    );
     AP_RETAINED_RX_DESCRIPTORS.store(observation.retained_rx_descriptors, Ordering::Release);
     AP_DISCARDED_RX_UNITS.store(observation.discarded_rx_units, Ordering::Release);
     AP_IGNORED_RX_FRAMES.store(observation.ignored_rx_frames, Ordering::Release);
@@ -411,6 +458,19 @@ fn access_point_evidence(
         network_tx_attempts_at_maximum_pending: AP_NETWORK_TX_ATTEMPTS_AT_MAXIMUM_PENDING
             .load(Ordering::Acquire) as u8,
         maximum_rx_service_micros: AP_MAXIMUM_RX_SERVICE_MICROS.load(Ordering::Acquire),
+        maximum_rx_dma_service_micros: AP_MAXIMUM_RX_DMA_SERVICE_MICROS.load(Ordering::Acquire),
+        total_rx_dma_service_micros: AP_TOTAL_RX_DMA_SERVICE_MICROS.load(Ordering::Acquire),
+        rx_dma_service_calls: AP_RX_DMA_SERVICE_CALLS.load(Ordering::Acquire),
+        maximum_rx_protocol_service_micros: AP_MAXIMUM_RX_PROTOCOL_SERVICE_MICROS
+            .load(Ordering::Acquire),
+        maximum_rx_protected_data_service_micros:
+            AP_MAXIMUM_RX_PROTECTED_DATA_SERVICE_MICROS.load(Ordering::Acquire),
+        total_rx_protected_data_service_micros:
+            AP_TOTAL_RX_PROTECTED_DATA_SERVICE_MICROS.load(Ordering::Acquire),
+        maximum_rx_management_service_micros: AP_MAXIMUM_RX_MANAGEMENT_SERVICE_MICROS
+            .load(Ordering::Acquire),
+        maximum_rx_eapol_service_micros: AP_MAXIMUM_RX_EAPOL_SERVICE_MICROS
+            .load(Ordering::Acquire),
         maximum_network_backpressure_micros: AP_MAXIMUM_NETWORK_BACKPRESSURE_MICROS
             .load(Ordering::Acquire),
         authentication_responses: AP_AUTHENTICATIONS.load(Ordering::Acquire),
@@ -445,6 +505,8 @@ fn access_point_evidence(
         completed_rx_units: AP_COMPLETED_RX_UNITS.load(Ordering::Acquire),
         completed_rx_descriptors: AP_COMPLETED_RX_DESCRIPTORS.load(Ordering::Acquire),
         recycled_rx_descriptors: AP_RECYCLED_RX_DESCRIPTORS.load(Ordering::Acquire),
+        rx_hardware_buffer_full: AP_RX_HARDWARE_BUFFER_FULL.load(Ordering::Acquire) as u16,
+        rx_hardware_fifo_overflow: AP_RX_HARDWARE_FIFO_OVERFLOW.load(Ordering::Acquire) as u16,
         retained_rx_descriptors: AP_RETAINED_RX_DESCRIPTORS.load(Ordering::Acquire),
         discarded_rx_units: AP_DISCARDED_RX_UNITS.load(Ordering::Acquire),
         ignored_rx_frames: AP_IGNORED_RX_FRAMES.load(Ordering::Acquire),
@@ -1443,6 +1505,9 @@ async fn wifi_role_task(
                     AP_COMPLETED_RX_UNITS.store(0, Ordering::Release);
                     AP_COMPLETED_RX_DESCRIPTORS.store(0, Ordering::Release);
                     AP_RECYCLED_RX_DESCRIPTORS.store(0, Ordering::Release);
+                    AP_RX_HARDWARE_BUFFER_FULL.store(0, Ordering::Release);
+                    AP_RX_HARDWARE_FIFO_OVERFLOW.store(0, Ordering::Release);
+                    AP_RETAINED_RX_DESCRIPTORS.store(0, Ordering::Release);
                     AP_DISCARDED_RX_UNITS.store(0, Ordering::Release);
                     AP_IGNORED_RX_FRAMES.store(0, Ordering::Release);
                     AP_RX_MIC_FAILURES.store(0, Ordering::Release);

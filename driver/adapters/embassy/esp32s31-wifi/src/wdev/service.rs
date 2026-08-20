@@ -37,9 +37,47 @@ where
     B: WdevServices<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
 {
     pub(super) async fn service_rx(&mut self) -> Result<(), B::Error> {
-        let progress = self.services.service_rx(&mut self.network_rx).await?;
+        let context = WdevRxServiceContext {
+            maximum_protocol_frames: rx_protocol_frame_budget(
+                self.rx_frame_deficit,
+                self.services.has_prepared_tx() || self.network.tx_queue_len() != 0,
+            ),
+        };
+        let serviced_before = self.services.serviced_rx_frames();
+        let progress = self
+            .services
+            .service_rx(&mut self.network_rx, context)
+            .await?;
+        let serviced = self
+            .services
+            .serviced_rx_frames()
+            .saturating_sub(serviced_before);
+        self.rx_frame_deficit = self
+            .rx_frame_deficit
+            .saturating_add(i64::try_from(serviced).unwrap_or(i64::MAX));
+        self.complete_rx_service(progress).await;
+        Ok(())
+    }
+
+    async fn service_rx_during_tx(&mut self) -> Result<(), B::Error> {
+        let serviced_before = self.services.serviced_rx_frames();
+        let progress = self
+            .services
+            .service_rx_during_tx(&mut self.network_rx)
+            .await?;
+        let serviced = self
+            .services
+            .serviced_rx_frames()
+            .saturating_sub(serviced_before);
+        self.rx_frame_deficit = self
+            .rx_frame_deficit
+            .saturating_add(i64::try_from(serviced).unwrap_or(i64::MAX));
+        self.complete_rx_service(progress).await;
+        Ok(())
+    }
+
+    async fn complete_rx_service(&mut self, progress: WdevRxProgress) {
         self.rx_progress = progress;
-        self.network_turn_owed = progress == WdevRxProgress::ProbePending;
         // One service call owns exactly the completion frontier captured at
         // its start. Yield at that hardware epoch boundary so a separate
         // protocol task can consume staged ownership before another RX epoch.
@@ -56,7 +94,16 @@ where
             // next service observes hardware after a distinct executor turn.
             self.irq.notify_rx_handoff();
         }
-        Ok(())
+    }
+
+    pub(super) const fn network_turn_owed(&self) -> bool {
+        self.rx_frame_deficit >= RX_TX_FAIRNESS_QUANTUM_FRAMES as i64
+    }
+
+    pub(super) fn account_tx_frames(&mut self, frames: usize) {
+        self.rx_frame_deficit = self
+            .rx_frame_deficit
+            .saturating_sub(i64::try_from(frames.max(1)).unwrap_or(i64::MAX));
     }
 
     pub(super) fn discard_stale_tx_wakes(&self) {
@@ -83,10 +130,25 @@ where
 
     pub(super) async fn drive_active_tx(&mut self) -> Result<(), B::Error> {
         let mut progress = WifiTxProgress::Pending;
+        let mut rx_producer_serviced = false;
         while progress == WifiTxProgress::Pending {
+            // Preserve vendor RX-first ordering for the first simultaneous
+            // edge, but do not let a coalesced/reposted RX level starve an
+            // already terminal TX transaction. One DMA-only producer pass is
+            // enough to release the captured RX frontier; the next latched
+            // completion belongs to the active affine TX owner.
+            if rx_producer_serviced && let Some(events) = self.irq.try_take_tx() {
+                self.prepare_ready_tx_before_completion().await?;
+                progress = self
+                    .services
+                    .service_tx(WifiTxWake::Interrupt { events })
+                    .await?;
+                rx_producer_serviced = false;
+                continue;
+            }
             let irq = self.irq;
             let rx_progress = self.rx_progress;
-            let service_rx_during_tx = self.services.service_rx_during_tx();
+            let service_rx_during_tx = self.services.can_service_rx_during_tx();
             let network_rx = &mut self.network_rx;
             let wait_rx = async move {
                 if !service_rx_during_tx {
@@ -119,16 +181,21 @@ where
             )
             .await;
             match wake {
-                Either4::First(()) => self.service_rx().await?,
+                Either4::First(()) => {
+                    self.service_rx_during_tx().await?;
+                    rx_producer_serviced = true;
+                }
                 Either4::Second(events) => {
                     self.prepare_ready_tx_before_completion().await?;
                     progress = self
                         .services
                         .service_tx(WifiTxWake::Interrupt { events })
                         .await?;
+                    rx_producer_serviced = false;
                 }
                 Either4::Third(()) => {
                     progress = self.services.service_tx(WifiTxWake::Deadline).await?;
+                    rx_producer_serviced = false;
                 }
                 Either4::Fourth(frame) => {
                     let network = self.network.tx_consumer();

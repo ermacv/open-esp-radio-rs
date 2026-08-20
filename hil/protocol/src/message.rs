@@ -3,7 +3,7 @@ use core::fmt;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-pub const PROTOCOL_VERSION: u16 = 53;
+pub const PROTOCOL_VERSION: u16 = 56;
 // Keep command envelopes small: startup artifacts are transferred as an
 // ordered CRC-protected stream, so a large per-command inline buffer only
 // inflates UART queues and executor futures without improving semantics.
@@ -886,6 +886,14 @@ pub struct WifiAccessPointEvidence {
     pub maximum_network_tx_pending_micros: u32,
     pub network_tx_attempts_at_maximum_pending: u8,
     pub maximum_rx_service_micros: u32,
+    pub maximum_rx_dma_service_micros: u32,
+    pub total_rx_dma_service_micros: u32,
+    pub rx_dma_service_calls: u32,
+    pub maximum_rx_protocol_service_micros: u32,
+    pub maximum_rx_protected_data_service_micros: u32,
+    pub total_rx_protected_data_service_micros: u32,
+    pub maximum_rx_management_service_micros: u32,
+    pub maximum_rx_eapol_service_micros: u32,
     pub maximum_network_backpressure_micros: u32,
     pub authentication_responses: u32,
     pub association_responses: u32,
@@ -923,6 +931,10 @@ pub struct WifiAccessPointEvidence {
     pub completed_rx_descriptors: u32,
     /// Descriptors safely rearmed and returned to DMA during the live epoch.
     pub recycled_rx_descriptors: u32,
+    /// Hardware MAC RX BUFFER_FULL increments across the complete AP epoch.
+    pub rx_hardware_buffer_full: u16,
+    /// Hardware MAC RX FIFO overflow increments across the complete AP epoch.
+    pub rx_hardware_fifo_overflow: u16,
     /// Completed descriptors retained until the walker is stopped because a
     /// later completion was still serving as their generation guard.
     pub retained_rx_descriptors: u32,

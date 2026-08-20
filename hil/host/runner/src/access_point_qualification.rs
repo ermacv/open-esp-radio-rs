@@ -19,7 +19,10 @@ use open_esp_radio_hil_protocol::{
 use crate::{
     Result,
     controlled_client::ControlledClient,
-    controlled_openwrt_client::{ControlledOpenWrtClient, SecondaryClientProbeEvidence},
+    controlled_openwrt_client::{
+        ControlledOpenWrtClient, OpenWrtClientTxEvidence, OpenWrtClientTxObservation,
+        SecondaryClientProbeEvidence,
+    },
     lab_config::{LabConfig, StationFixtureConfig},
     paced_tcp::{
         Config as TcpConfig, HostReception as TcpReception, HostTransmission as TcpTransmission,
@@ -86,6 +89,12 @@ impl ConnectedClients {
             }),
         }
     }
+
+    fn begin_primary_tx_observation(&self) -> Result<Option<OpenWrtClientTxObservation>> {
+        self.openwrt_primary()
+            .map(ControlledOpenWrtClient::begin_tx_observation)
+            .transpose()
+    }
 }
 
 #[derive(Serialize)]
@@ -105,6 +114,7 @@ struct CycleReport {
     cycle: u8,
     traffic: TrafficReport,
     secondary_client: Option<SecondaryClientProbeEvidence>,
+    primary_client_tx: Option<OpenWrtClientTxEvidence>,
     access_point: open_esp_radio_hil_protocol::WifiAccessPointEvidence,
 }
 
@@ -274,7 +284,13 @@ fn qualify(capture: &SerialCapture, config: &Config, lab: &LabConfig) -> Result<
                 traffic_duration(&config.traffic),
             )
         });
+        let primary_tx_observation = clients.begin_primary_tx_observation();
         let data_result = qualify_data_plane(capture, config, lab, &clients);
+        let primary_tx_result = primary_tx_observation.and_then(|observation| {
+            observation
+                .map(OpenWrtClientTxObservation::finish)
+                .transpose()
+        });
         let secondary_probe_result = secondary_probe.map(|probe| {
             probe
                 .join()
@@ -300,15 +316,18 @@ fn qualify(capture: &SerialCapture, config: &Config, lab: &LabConfig) -> Result<
         if let Err(error) = &data_result {
             let mut data_error = match stop_result.as_ref() {
                 Ok(stopped) => format!(
-                    "{error}; AP TX evidence: data={} attempts={} retried_frames={} \
+                    "{error}; AP RX hardware: buffer_full={} fifo_overflow={}; AP TX evidence: data={} attempts={} retried_frames={} \
                      maximum_attempts={} minimum_final_rate_kbps={} ack_snr={}/{}/{} \
                      tx_ht40_mcs7={}/{} \
                      ack_timeout_retries={} \
                      cts_timeout_retries={} collision_retries={} hardware_failures={} \
                      hardware_timeouts={} collision_limits={} last_hardware_status={} beacons={}; AP RX evidence: \
                      units={} descriptors={} recycled_descriptors={} retained_descriptors={} discarded_units={} \
+                     max_service_us={}/{}/{} data/management/eapol={}/{}/{} dma_total_us/calls={}/{} data_total_us={} \
                      rx_ht40_mcs={:?} total_ht={} ht_ampdu={} rssi={}/{}/{}/{} protected={} mic_failures={} quarantined={} duplicates={} \
                      radio_rejected={} protocol_rejected={} ethernet_staged={} tcp_staged={}",
+                    stopped.rx_hardware_buffer_full,
+                    stopped.rx_hardware_fifo_overflow,
                     stopped.data_frames_transmitted,
                     stopped.data_tx_attempts,
                     stopped.data_tx_retried_frames,
@@ -332,6 +351,15 @@ fn qualify(capture: &SerialCapture, config: &Config, lab: &LabConfig) -> Result<
                     stopped.recycled_rx_descriptors,
                     stopped.retained_rx_descriptors,
                     stopped.discarded_rx_units,
+                    stopped.maximum_rx_service_micros,
+                    stopped.maximum_rx_dma_service_micros,
+                    stopped.maximum_rx_protocol_service_micros,
+                    stopped.maximum_rx_protected_data_service_micros,
+                    stopped.maximum_rx_management_service_micros,
+                    stopped.maximum_rx_eapol_service_micros,
+                    stopped.total_rx_dma_service_micros,
+                    stopped.rx_dma_service_calls,
+                    stopped.total_rx_protected_data_service_micros,
                     stopped.rx_ht40_mcs_frames,
                     stopped.rx_ht_data_frames,
                     stopped.rx_ht_ampdu_data_frames,
@@ -354,6 +382,21 @@ fn qualify(capture: &SerialCapture, config: &Config, lab: &LabConfig) -> Result<
                 data_error.push_str("; secondary AP client: ");
                 data_error.push_str(probe_error);
             }
+            match &primary_tx_result {
+                Ok(Some(evidence)) => data_error.push_str(&format!(
+                    "; OpenWrt AP-client TX: packets={} bytes={} retries={} failed={} duration_us={} tid0_aqm_drops={}",
+                    evidence.tx_packets,
+                    evidence.tx_bytes,
+                    evidence.tx_retries,
+                    evidence.tx_failed,
+                    evidence.tx_duration_micros,
+                    evidence.tid0_aqm_drops,
+                )),
+                Err(observation_error) => data_error.push_str(&format!(
+                    "; OpenWrt AP-client TX observation failed: {observation_error}"
+                )),
+                Ok(None) => {}
+            }
             return Err(with_cleanup_errors(
                 data_error,
                 client_restore.err(),
@@ -373,6 +416,7 @@ fn qualify(capture: &SerialCapture, config: &Config, lab: &LabConfig) -> Result<
         }
         let traffic = data_result?;
         let secondary_client = secondary_probe_result.transpose()?;
+        let primary_client_tx = primary_tx_result?;
         client_restore?;
         let stopped = stop_result?;
         stop_stack_result?;
@@ -386,6 +430,7 @@ fn qualify(capture: &SerialCapture, config: &Config, lab: &LabConfig) -> Result<
                     .deauthentications_published
                     .saturating_sub(stopped.deauthentications_acknowledged),
             );
+        validate_rx_hardware_health(cycle, &stopped)?;
         if stopped.beacons_transmitted == 0
             || stopped.missed_beacon_intervals != 0
             || stopped.maximum_beacon_lateness_micros >= 102_400
@@ -435,10 +480,25 @@ fn qualify(capture: &SerialCapture, config: &Config, lab: &LabConfig) -> Result<
             cycle,
             traffic,
             secondary_client,
+            primary_client_tx,
             access_point: stopped,
         });
     }
     Ok(cycles)
+}
+
+fn validate_rx_hardware_health(
+    cycle: u8,
+    evidence: &open_esp_radio_hil_protocol::WifiAccessPointEvidence,
+) -> Result<()> {
+    if evidence.rx_hardware_buffer_full != 0 || evidence.rx_hardware_fifo_overflow != 0 {
+        return Err(format!(
+            "AP cycle {cycle} exhausted hardware RX capacity: buffer_full={} fifo_overflow={}",
+            evidence.rx_hardware_buffer_full, evidence.rx_hardware_fifo_overflow,
+        )
+        .into());
+    }
+    Ok(())
 }
 
 fn validate_mcs_evidence(
@@ -1535,5 +1595,22 @@ mod tests {
         observed.tx_ht_aggregates = 1;
         observed.tx_ht40_mcs7_aggregates = 1;
         assert!(validate_mcs_evidence(&tx, link, &observed).is_ok());
+    }
+
+    #[test]
+    fn ap_hardware_rx_health_uses_terminal_mac_counters() {
+        let mut observed = open_esp_radio_hil_protocol::WifiAccessPointEvidence::default();
+        assert!(validate_rx_hardware_health(0, &observed).is_ok());
+
+        observed.rx_hardware_buffer_full = 1;
+        let error = validate_rx_hardware_health(2, &observed)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("cycle 2"));
+        assert!(error.contains("buffer_full=1"));
+
+        observed.rx_hardware_buffer_full = 0;
+        observed.rx_hardware_fifo_overflow = 1;
+        assert!(validate_rx_hardware_health(3, &observed).is_err());
     }
 }

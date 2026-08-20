@@ -49,7 +49,7 @@ impl RxDuplicateFilter {
         }
     }
 
-    #[inline(never)]
+    #[inline(always)]
     pub fn is_duplicate(&mut self, retry: bool, sequence_control: u16, tid: Option<u8>) -> bool {
         let index = match tid {
             Some(tid @ 0..=15) => usize::from(tid) + 1,
@@ -224,6 +224,7 @@ impl DataDecapsulation<'_> {
 impl<'a> Iterator for DataDecapsulation<'a> {
     type Item = Result<EthernetFrameParts<'a>, DataDecapError>;
 
+    #[inline(always)]
     fn next(&mut self) -> Option<Self::Item> {
         match &mut self.frames {
             DataDecapsulationFrames::Single(frame) => frame.take().map(Ok),
@@ -473,6 +474,7 @@ pub const fn plan_data_encapsulation_with_he_control(
 /// produced by the MAC crate. For protected frames the offset is after the
 /// retained CCMP header; a hardware-consumed MIC is therefore naturally
 /// excluded by `payload_length`.
+#[inline(always)]
 pub fn plan_data_decapsulation(
     role: DataInterfaceRole,
     mpdu: &[u8],
@@ -593,6 +595,7 @@ pub fn amsdu_subframes<'a>(
 /// validated subframe in wire order and reports a malformed later subframe at
 /// that exact iterator position. This preserves the observed publication
 /// order while keeping STA and AP payload interpretation in one owner.
+#[inline(always)]
 pub fn decapsulate_data_frames<'a>(
     role: DataInterfaceRole,
     mpdu: &'a [u8],

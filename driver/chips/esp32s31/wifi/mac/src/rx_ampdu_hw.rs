@@ -55,6 +55,14 @@ pub trait RxBlockAckHardware {
     fn clear_rx_block_ack(&mut self, hardware_index: u8)
     -> Result<(), S31RxBlockAckAgreementError>;
 
+    fn reset_rx_block_ack_window(
+        &mut self,
+        hardware_index: u8,
+        tid: u8,
+        starting_sequence: u16,
+        window: u16,
+    ) -> Result<(), S31RxBlockAckAgreementError>;
+
     fn program_extra_softap_rx_block_ack(
         &mut self,
         agreement: S31RxBlockAckAgreement,
@@ -85,6 +93,16 @@ impl RxBlockAckHardware for WifiMacHal<'_> {
         hardware_index: u8,
     ) -> Result<(), S31RxBlockAckAgreementError> {
         clear(self, hardware_index)
+    }
+
+    fn reset_rx_block_ack_window(
+        &mut self,
+        hardware_index: u8,
+        tid: u8,
+        starting_sequence: u16,
+        window: u16,
+    ) -> Result<(), S31RxBlockAckAgreementError> {
+        reset_window(self, hardware_index, tid, starting_sequence, window)
     }
 
     fn program_extra_softap_rx_block_ack(
@@ -123,6 +141,22 @@ impl RxBlockAckHardware for RadioRuntimeOwner {
         hardware_index: u8,
     ) -> Result<(), S31RxBlockAckAgreementError> {
         clear(&mut self.wifi_mac_hal(), hardware_index)
+    }
+
+    fn reset_rx_block_ack_window(
+        &mut self,
+        hardware_index: u8,
+        tid: u8,
+        starting_sequence: u16,
+        window: u16,
+    ) -> Result<(), S31RxBlockAckAgreementError> {
+        reset_window(
+            &mut self.wifi_mac_hal(),
+            hardware_index,
+            tid,
+            starting_sequence,
+            window,
+        )
     }
 
     fn program_extra_softap_rx_block_ack(
@@ -195,6 +229,21 @@ pub fn program(
         MacRxBlockAckWindow::new(u32::from(agreement.window))
             .expect("validated receive BlockAck window"),
     );
+    let snapshot = mmio
+        .rx_block_ack_entry_snapshot(
+            MacRxBlockAckEntryIndex::new(u32::from(agreement.hardware_index))
+                .expect("validated receive BlockAck hardware index"),
+        )
+        .expect("validated receive BlockAck hardware index has one direct bank");
+    let expected_control = 0xc000_0001 | (u32::from(agreement.tid) << 12);
+    if snapshot.control != expected_control
+        || snapshot.peer != agreement.peer
+        || snapshot.interface != agreement.interface
+        || u16::from(snapshot.window) != agreement.window
+        || snapshot.loaded_start_sequence != agreement.starting_sequence
+    {
+        return Err(S31RxBlockAckAgreementError::HardwareReadbackMismatch);
+    }
     Ok(())
 }
 
@@ -215,8 +264,43 @@ pub fn clear(
     Ok(())
 }
 
-/// Program the extra-SoftAP receive BlockAck entry selected by the vendor
-/// net80211 path for a SoftAP peer.
+/// Synchronize a live ordinary hardware bitmap after software advances its
+/// receive window.
+pub fn reset_window(
+    mmio: &mut WifiMacHal<'_>,
+    hardware_index: u8,
+    tid: u8,
+    starting_sequence: u16,
+    window: u16,
+) -> Result<(), S31RxBlockAckAgreementError> {
+    if hardware_index >= RX_BLOCK_ACK_CAPACITY {
+        return Err(S31RxBlockAckAgreementError::HardwareIndex(hardware_index));
+    }
+    if tid > S31_RX_BLOCK_ACK_MAX_TID {
+        return Err(S31RxBlockAckAgreementError::Tid(tid));
+    }
+    if starting_sequence > 0x0fff {
+        return Err(S31RxBlockAckAgreementError::StartingSequence(
+            starting_sequence,
+        ));
+    }
+    if window == 0 || window > 0x7f {
+        return Err(S31RxBlockAckAgreementError::Window(window));
+    }
+    mmio.reset_rx_block_ack_window(
+        MacRxBlockAckEntryIndex::new(u32::from(hardware_index))
+            .expect("validated receive BlockAck hardware index"),
+        MacRxBlockAckTid::new(u32::from(tid)).expect("validated receive BlockAck TID"),
+        MacRxBlockAckStartingSequence::new(u32::from(starting_sequence))
+            .expect("validated receive BlockAck starting sequence"),
+        MacRxBlockAckWindow::new(u32::from(window)).expect("validated receive BlockAck window"),
+    );
+    Ok(())
+}
+
+/// Program the indirect extra-SoftAP receive BlockAck entry used by the
+/// explicit additional-SoftAP interface path. Standard AP peers use the
+/// ordinary direct banks through [`program`].
 pub fn program_extra_softap(
     mmio: &mut WifiMacHal<'_>,
     agreement: S31RxBlockAckAgreement,

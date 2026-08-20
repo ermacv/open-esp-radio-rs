@@ -41,6 +41,31 @@ pub(crate) struct ControlledOpenWrtClient {
     restored: bool,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize)]
+pub(crate) struct OpenWrtClientTxEvidence {
+    pub(crate) tx_bytes: u64,
+    pub(crate) tx_packets: u64,
+    pub(crate) tx_retries: u64,
+    pub(crate) tx_failed: u64,
+    pub(crate) tx_duration_micros: u64,
+    pub(crate) tid0_aqm_drops: u64,
+}
+
+#[derive(Clone, Copy)]
+struct OpenWrtClientTxSnapshot {
+    tx_bytes: u64,
+    tx_packets: u64,
+    tx_retries: u64,
+    tx_failed: u64,
+    tx_duration_micros: u64,
+    tid0_aqm_drops: u64,
+}
+
+pub(crate) struct OpenWrtClientTxObservation {
+    fixture: OpenWrtConfig,
+    before: OpenWrtClientTxSnapshot,
+}
+
 pub(crate) fn doctor(access_point: &AccessPointConfig, fixture: &OpenWrtConfig) -> Result<()> {
     let status = Command::new("sh")
         .args(["-c", "command -v wpa_passphrase >/dev/null"])
@@ -188,6 +213,13 @@ impl ControlledOpenWrtClient {
         self.forward_address
     }
 
+    pub(crate) fn begin_tx_observation(&self) -> Result<OpenWrtClientTxObservation> {
+        Ok(OpenWrtClientTxObservation {
+            fixture: self.fixture.clone(),
+            before: snapshot_tx(&self.fixture)?,
+        })
+    }
+
     pub(crate) fn restore(mut self) -> Result<()> {
         restore(&self.fixture)?;
         self.restored = true;
@@ -206,6 +238,28 @@ impl ControlledOpenWrtClient {
     ) -> thread::JoinHandle<std::result::Result<SecondaryClientProbeEvidence, String>> {
         let fixture = self.fixture.clone();
         thread::spawn(move || probe(&fixture, target, duration))
+    }
+}
+
+impl OpenWrtClientTxObservation {
+    pub(crate) fn finish(self) -> Result<OpenWrtClientTxEvidence> {
+        let after = snapshot_tx(&self.fixture)?;
+        Ok(OpenWrtClientTxEvidence {
+            tx_bytes: counter_delta("TX bytes", self.before.tx_bytes, after.tx_bytes)?,
+            tx_packets: counter_delta("TX packets", self.before.tx_packets, after.tx_packets)?,
+            tx_retries: counter_delta("TX retries", self.before.tx_retries, after.tx_retries)?,
+            tx_failed: counter_delta("TX failed", self.before.tx_failed, after.tx_failed)?,
+            tx_duration_micros: counter_delta(
+                "TX duration",
+                self.before.tx_duration_micros,
+                after.tx_duration_micros,
+            )?,
+            tid0_aqm_drops: counter_delta(
+                "TID-0 AQM drops",
+                self.before.tid0_aqm_drops,
+                after.tid0_aqm_drops,
+            )?,
+        })
     }
 }
 
@@ -262,6 +316,57 @@ fn install_forwarding(
         .into());
     }
     tagged_ipv4(&String::from_utf8(output.stdout)?, "forward_address")
+}
+
+fn snapshot_tx(fixture: &OpenWrtConfig) -> Result<OpenWrtClientTxSnapshot> {
+    let script = format!(
+        "set -eu; \
+         stats=$(iw dev {INTERFACE} station dump); \
+         test -n \"$stats\"; \
+         set -- /sys/kernel/debug/ieee80211/*/netdev:{INTERFACE}/stations/*/aqm; \
+         test \"$#\" -eq 1; test -r \"$1\"; aqm=\"$1\"; \
+         printf 'tx_bytes=%s\\n' \"$(printf '%s\\n' \"$stats\" | awk '/^[[:space:]]*tx bytes:/ {{print $3}}')\"; \
+         printf 'tx_packets=%s\\n' \"$(printf '%s\\n' \"$stats\" | awk '/^[[:space:]]*tx packets:/ {{print $3}}')\"; \
+         printf 'tx_retries=%s\\n' \"$(printf '%s\\n' \"$stats\" | awk '/^[[:space:]]*tx retries:/ {{print $3}}')\"; \
+         printf 'tx_failed=%s\\n' \"$(printf '%s\\n' \"$stats\" | awk '/^[[:space:]]*tx failed:/ {{print $3}}')\"; \
+         printf 'tx_duration=%s\\n' \"$(printf '%s\\n' \"$stats\" | awk '/^[[:space:]]*tx duration:/ {{print $3}}')\"; \
+         printf 'tid0_aqm_drops=%s\\n' \"$(awk '$1 == 0 {{print $6}}' \"$aqm\")\""
+    );
+    let output = ssh(fixture, &script)?;
+    if !output.status.success() {
+        return Err(format!(
+            "cannot snapshot controlled OpenWrt AP-client TX counters: {}",
+            String::from_utf8_lossy(&output.stderr).trim(),
+        )
+        .into());
+    }
+    let output = String::from_utf8(output.stdout)?;
+    Ok(OpenWrtClientTxSnapshot {
+        tx_bytes: tagged_u64(&output, "tx_bytes")?,
+        tx_packets: tagged_u64(&output, "tx_packets")?,
+        tx_retries: tagged_u64(&output, "tx_retries")?,
+        tx_failed: tagged_u64(&output, "tx_failed")?,
+        tx_duration_micros: tagged_u64(&output, "tx_duration")?,
+        tid0_aqm_drops: tagged_u64(&output, "tid0_aqm_drops")?,
+    })
+}
+
+fn tagged_u64(output: &str, key: &str) -> Result<u64> {
+    output
+        .lines()
+        .find_map(|line| line.strip_prefix(key)?.strip_prefix('='))
+        .ok_or_else(|| format!("OpenWrt output omitted `{key}`"))?
+        .parse()
+        .map_err(|error| format!("invalid OpenWrt `{key}` counter: {error}").into())
+}
+
+fn counter_delta(name: &str, before: u64, after: u64) -> Result<u64> {
+    after.checked_sub(before).ok_or_else(|| {
+        format!(
+            "controlled OpenWrt AP-client `{name}` counter reset during the workload: {before} -> {after}"
+        )
+        .into()
+    })
 }
 
 fn cleanup_forwarding_script() -> String {
@@ -422,5 +527,13 @@ mod tests {
             tagged_ipv4("forward_address=192.168.178.2\n", "forward_address").unwrap(),
             Ipv4Addr::new(192, 168, 178, 2),
         );
+    }
+
+    #[test]
+    fn tx_snapshot_parser_and_counter_delta_are_strict() {
+        let output = "tx_bytes=100\ntx_packets=20\ntx_retries=3\ntx_failed=1\ntx_duration=77\ntid0_aqm_drops=0\n";
+        assert_eq!(tagged_u64(output, "tx_packets").unwrap(), 20);
+        assert_eq!(counter_delta("packets", 20, 27).unwrap(), 7);
+        assert!(counter_delta("packets", 27, 20).is_err());
     }
 }

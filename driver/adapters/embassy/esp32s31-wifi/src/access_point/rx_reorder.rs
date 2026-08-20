@@ -363,6 +363,7 @@ impl<'storage, const CAPACITY: usize> Esp32s31AccessPointRxReorder<'storage, CAP
         }
     }
 
+    #[inline(always)]
     fn dispatch_retained_release(
         &mut self,
         release: RxAmpduRelease,
@@ -372,6 +373,7 @@ impl<'storage, const CAPACITY: usize> Esp32s31AccessPointRxReorder<'storage, CAP
         self.dispatch_release_with_current(release, identity, usize::MAX, None, dispatch)
     }
 
+    #[inline(always)]
     fn dispatch_release_with_current(
         &mut self,
         release: RxAmpduRelease,

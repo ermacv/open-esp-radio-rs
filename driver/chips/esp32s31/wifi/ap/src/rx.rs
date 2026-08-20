@@ -77,6 +77,7 @@ impl Esp32s31ApRxDispatcher {
     /// Extract the same public ordering key used by connected-station RX.
     /// Peer authorization and active-agreement lookup remain with the AP
     /// owner because multiple stations can use the same TID concurrently.
+    #[inline(always)]
     pub fn reorder_key(&self, segment: RxSegment<'_>) -> Option<RxBlockAckMpduKey> {
         rx_block_ack_mpdu_key(segment.buffer, self.config.access_point, None)
     }
@@ -139,6 +140,7 @@ impl Esp32s31ApRxDispatcher {
         }
     }
 
+    #[inline(always)]
     fn duplicate_filter(&mut self, peer: [u8; 6]) -> Option<&mut RxDuplicateFilter> {
         if let Some(index) = self
             .duplicates

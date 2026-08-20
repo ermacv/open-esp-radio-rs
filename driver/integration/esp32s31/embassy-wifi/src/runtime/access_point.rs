@@ -6,7 +6,8 @@ type ProductionAccessPointControl = Esp32s31AccessPointControl<
     'static,
     'static,
     'static,
-    ProductionAccessPointRxPipeline,
+    ProductionAccessPointRxProducer,
+    ProductionAccessPointRxConsumer,
     PhyTxTargetPowerProfile,
     fn() -> u32,
     open_esp_radio_esp32s31_wifi_embassy::tx_time::EmbassyWifiTxTimer,
@@ -33,7 +34,8 @@ type ProductionAccessPointStopped = EmbassyAccessPointStopped<
     PhyTxTargetPowerProfile,
     fn() -> u32,
     open_esp_radio_esp32s31_wifi_embassy::tx_time::EmbassyWifiTxTimer,
-    ProductionAccessPointRxPipeline,
+    ProductionAccessPointRxProducer,
+    ProductionAccessPointRxConsumer,
     RX_DESCRIPTOR_COUNT,
     RX_BUFFER_SIZE,
     RX_BUFFER_STORAGE_SIZE,
@@ -65,6 +67,8 @@ fn publish_access_point_observation(
     hook: fn(crate::Esp32s31AccessPointObservation),
     channel: WifiChannel,
     report: &open_esp_radio_esp32s31_wifi_embassy::access_point::Esp32s31AccessPointRunReport,
+    rx_hardware_buffer_full: u16,
+    rx_hardware_fifo_overflow: u16,
 ) {
     hook(crate::Esp32s31AccessPointObservation {
         channel: channel.primary(),
@@ -80,6 +84,20 @@ fn publish_access_point_observation(
             .control
             .network_tx_attempts_at_maximum_pending,
         maximum_rx_service_micros: report.control.maximum_rx_service_micros,
+        maximum_rx_dma_service_micros: report.control.maximum_rx_dma_service_micros,
+        total_rx_dma_service_micros: report.control.total_rx_dma_service_micros,
+        rx_dma_service_calls: report.control.rx_dma_service_calls,
+        maximum_rx_protocol_service_micros: report.control.maximum_rx_protocol_service_micros,
+        maximum_rx_protected_data_service_micros: report
+            .control
+            .maximum_rx_protected_data_service_micros,
+        total_rx_protected_data_service_micros: report
+            .control
+            .total_rx_protected_data_service_micros,
+        maximum_rx_management_service_micros: report
+            .control
+            .maximum_rx_management_service_micros,
+        maximum_rx_eapol_service_micros: report.control.maximum_rx_eapol_service_micros,
         maximum_network_backpressure_micros: report.control.maximum_network_backpressure_micros,
         authentication_responses: report.mac.authentication_responses_transmitted,
         association_responses: report.mac.association_responses_transmitted,
@@ -109,6 +127,8 @@ fn publish_access_point_observation(
         completed_rx_units: report.control.completed_rx_units,
         completed_rx_descriptors: report.control.completed_rx_descriptors,
         recycled_rx_descriptors: report.control.recycled_rx_descriptors,
+        rx_hardware_buffer_full,
+        rx_hardware_fifo_overflow,
         retained_rx_descriptors: report.control.retained_rx_descriptors,
         discarded_rx_units: report.control.discarded_rx_units,
         ignored_rx_frames: report.control.ignored_rx_frames,
@@ -1027,7 +1047,7 @@ impl ProductionWifiEpochRunner {
                 publication_timeout_micros: TX_COMPLETION_TIMEOUT_US,
             },
         );
-        let receive = access_point_rx_pipeline(
+        let (receive, protocol_rx) = access_point_rx_pipeline(
             halted,
             dma.storage(),
             #[cfg(feature = "qualification")]
@@ -1038,6 +1058,7 @@ impl ProductionWifiEpochRunner {
         );
         let service = Esp32s31AccessPointControl::new(
             receive,
+            protocol_rx,
             mac,
             scan_frame,
             ethernet,
@@ -1367,7 +1388,7 @@ impl ProductionWifiEpochRunner {
             log::error!("open-radio: access-point runtime fault: {error:?}");
         }
         #[cfg(feature = "qualification")]
-        {
+        let (rx_hardware_buffer_full, rx_hardware_fifo_overflow) = {
             // A rare repeated STA/AP lifecycle failure leaves the AP receive
             // path after exactly one completed descriptor. Capture the
             // hardware-owned frontier before teardown republishes the ring;
@@ -1388,19 +1409,20 @@ impl ProductionWifiEpochRunner {
             for index in 0..8 {
                 if let Some(snapshot) = task
                     .registers
-                    .extra_softap_rx_block_ack_entry_snapshot(index)
+                    .rx_block_ack_entry_snapshot(index)
                     && snapshot.control & (1 << 30) != 0
                 {
                     qualification_event!(
-                        "open-radio: access-point RX BA bank={} control={:#010x} peer={:02x?} interface={:?} window={} start={} bitmap_staging={:08x}/{:08x}",
+                        "open-radio: access-point RX BA bank={} control={:#010x} peer={:02x?} interface={:?} window={} current={} loaded_start={} bitmap_status={:016x} bitmap_load={:016x}",
                         index,
                         snapshot.control,
                         snapshot.peer,
                         snapshot.interface,
                         snapshot.window,
-                        snapshot.starting_sequence,
-                        snapshot.bitmap_staging_words[0],
-                        snapshot.bitmap_staging_words[1],
+                        snapshot.current_sequence,
+                        snapshot.loaded_start_sequence,
+                        snapshot.bitmap_status,
+                        snapshot.bitmap_load,
                     );
                 }
             }
@@ -1503,7 +1525,8 @@ impl ProductionWifiEpochRunner {
                 rx_hang_delta.rx_tx_hang,
                 rx_hang_delta.rx_tx_panic,
             );
-        }
+            (rx_delta.buffer_full, rx_delta.fifo_overflow)
+        };
         #[cfg(feature = "qualification")]
         if let Ok(report) = &result
             && let Some(hooks) = task.parked.board.qualification
@@ -1512,7 +1535,13 @@ impl ProductionWifiEpochRunner {
                 "open-radio: access-point RX scheduler stop {:?}",
                 report.rx_scheduler,
             );
-            publish_access_point_observation(hooks.access_point, task.channel, report);
+            publish_access_point_observation(
+                hooks.access_point,
+                task.channel,
+                report,
+                rx_hardware_buffer_full,
+                rx_hardware_fifo_overflow,
+            );
         }
         if let Err(_error) = result {
             #[cfg(not(feature = "qualification"))]

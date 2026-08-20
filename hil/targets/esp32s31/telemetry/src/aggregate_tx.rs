@@ -34,6 +34,9 @@ pub struct AggregateTxCounters {
     network_single_ht_needs_pair: AtomicU32,
     network_single_fresh_aggregate_capacity: AtomicU32,
     network_single_fresh_capacity_lifetime_max_ethernet_length: AtomicU32,
+    rate_selections: AtomicU32,
+    last_bandwidth_mhz: AtomicU32,
+    last_nominal_rate_kbps: AtomicU32,
     aggregates_prepared: AtomicU32,
     standby_prepared: AtomicU32,
     standby_published: AtomicU32,
@@ -100,6 +103,9 @@ impl AggregateTxCounters {
             network_single_ht_needs_pair: AtomicU32::new(0),
             network_single_fresh_aggregate_capacity: AtomicU32::new(0),
             network_single_fresh_capacity_lifetime_max_ethernet_length: AtomicU32::new(0),
+            rate_selections: AtomicU32::new(0),
+            last_bandwidth_mhz: AtomicU32::new(0),
+            last_nominal_rate_kbps: AtomicU32::new(0),
             aggregates_prepared: AtomicU32::new(0),
             standby_prepared: AtomicU32::new(0),
             standby_published: AtomicU32::new(0),
@@ -173,6 +179,9 @@ impl AggregateTxCounters {
             network_single_fresh_capacity_lifetime_max_ethernet_length: self
                 .network_single_fresh_capacity_lifetime_max_ethernet_length
                 .load(Ordering::Relaxed),
+            rate_selections: self.rate_selections.load(Ordering::Relaxed),
+            last_bandwidth_mhz: self.last_bandwidth_mhz.load(Ordering::Relaxed),
+            last_nominal_rate_kbps: self.last_nominal_rate_kbps.load(Ordering::Relaxed),
             aggregates_prepared: self.aggregates_prepared.load(Ordering::Relaxed),
             standby_prepared: self.standby_prepared.load(Ordering::Relaxed),
             standby_published: self.standby_published.load(Ordering::Relaxed),
@@ -476,6 +485,16 @@ impl AggregateTxObserver for AggregateTxCounters {
                 reason,
                 ethernet_length,
             } => self.record_network_single_mpdu(reason, ethernet_length),
+            AggregateTxObservation::RateSelected {
+                bandwidth_mhz,
+                nominal_kbps,
+            } => {
+                self.last_bandwidth_mhz
+                    .store(u32::from(bandwidth_mhz), Ordering::Relaxed);
+                self.last_nominal_rate_kbps
+                    .store(nominal_kbps, Ordering::Relaxed);
+                self.rate_selections.fetch_add(1, Ordering::Relaxed);
+            }
             AggregateTxObservation::Prepared { subframes, stop } => {
                 self.record_prepared(subframes, stop);
             }
@@ -581,6 +600,11 @@ pub struct AggregateTxCounterSnapshot {
     pub network_single_fresh_aggregate_capacity: u32,
     /// Maximum rejected Ethernet length since boot, not an interval delta.
     pub network_single_fresh_capacity_lifetime_max_ethernet_length: u32,
+    pub rate_selections: u32,
+    /// Most recent actual aggregate vector, not an interval delta.
+    pub last_bandwidth_mhz: u32,
+    /// Most recent actual aggregate vector, not an interval delta.
+    pub last_nominal_rate_kbps: u32,
     pub aggregates_prepared: u32,
     pub standby_prepared: u32,
     pub standby_published: u32,
@@ -664,6 +688,11 @@ impl AggregateTxCounterSnapshot {
                 .wrapping_sub(earlier.network_single_fresh_aggregate_capacity),
             network_single_fresh_capacity_lifetime_max_ethernet_length: self
                 .network_single_fresh_capacity_lifetime_max_ethernet_length,
+            rate_selections: self
+                .rate_selections
+                .wrapping_sub(earlier.rate_selections),
+            last_bandwidth_mhz: self.last_bandwidth_mhz,
+            last_nominal_rate_kbps: self.last_nominal_rate_kbps,
             aggregates_prepared: self
                 .aggregates_prepared
                 .wrapping_sub(earlier.aggregates_prepared),
@@ -877,6 +906,10 @@ mod tests {
             reason: NetworkSingleMpduReason::BlockAckUnavailable,
             ethernet_length: 42,
         });
+        counters.observe(AggregateTxObservation::RateSelected {
+            bandwidth_mhz: 40,
+            nominal_kbps: 150_000,
+        });
         counters.observe(AggregateTxObservation::Prepared {
             subframes: 2,
             stop: AggregateBuildStop::QueueEmpty,
@@ -925,6 +958,9 @@ mod tests {
             delta.network_single_fresh_capacity_lifetime_max_ethernet_length,
             0
         );
+        assert_eq!(delta.rate_selections, 1);
+        assert_eq!(delta.last_bandwidth_mhz, 40);
+        assert_eq!(delta.last_nominal_rate_kbps, 150_000);
         assert_eq!(delta.aggregates_prepared, 2);
         assert_eq!(delta.aggregate_publications, 2);
         assert_eq!(delta.aggregates_completed, 1);

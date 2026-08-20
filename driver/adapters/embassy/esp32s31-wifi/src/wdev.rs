@@ -263,6 +263,27 @@ where
 // explicit and bounded: a full window starts immediately, while sparse
 // traffic cannot be held beyond this deadline.
 const TX_BATCH_MAX_WAIT: Duration = Duration::from_millis(2);
+const RX_TX_FAIRNESS_QUANTUM_FRAMES: u32 = 8;
+
+/// Scheduler-owned limit for one role-specific protocol RX turn.
+///
+/// `None` means no network TX is waiting and the role may use its own bounded
+/// batch. `Some` carries the exact remaining frame credit before WDEV owes the
+/// queued TX side another transaction.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct WdevRxServiceContext {
+    pub maximum_protocol_frames: Option<usize>,
+}
+
+fn rx_protocol_frame_budget(rx_frame_deficit: i64, network_tx_pending: bool) -> Option<usize> {
+    if !network_tx_pending {
+        return None;
+    }
+    let remaining = i64::from(RX_TX_FAIRNESS_QUANTUM_FRAMES)
+        .saturating_sub(rx_frame_deficit)
+        .max(1);
+    Some(usize::try_from(remaining).unwrap_or(usize::MAX))
+}
 
 const fn should_collect_network_batch(preferred: usize, available: usize) -> bool {
     preferred > 1 && available != 0 && available < preferred
@@ -313,12 +334,31 @@ pub trait WdevServices<
     fn service_rx<'a>(
         &'a mut self,
         network_rx: &'a mut dyn WdevNetworkRx,
+        context: WdevRxServiceContext,
     ) -> impl Future<Output = Result<WdevRxProgress, Self::Error>> + 'a;
 
-    /// Whether RX hardware may be inspected while a TX transaction owns the
-    /// shared descriptor domain.
-    fn service_rx_during_tx(&self) -> bool {
+    /// Whether the role exposes a DMA-only RX producer that is safe while a
+    /// TX transaction owns its protocol/control domain.
+    fn can_service_rx_during_tx(&self) -> bool {
         true
+    }
+
+    /// Service RX work proven safe while an active TX owns its transaction.
+    ///
+    /// The default preserves roles whose ordinary RX service is already safe.
+    /// A combined role must override this method and admit only its DMA
+    /// producer plus protocol work that cannot execute control or hardware
+    /// actions until the TX terminal edge.
+    fn service_rx_during_tx<'a>(
+        &'a mut self,
+        network_rx: &'a mut dyn WdevNetworkRx,
+    ) -> impl Future<Output = Result<WdevRxProgress, Self::Error>> + 'a {
+        self.service_rx(
+            network_rx,
+            WdevRxServiceContext {
+                maximum_protocol_frames: None,
+            },
+        )
     }
 
     /// Whether role-owned software RX work is ready without a fresh hardware
@@ -326,6 +366,15 @@ pub trait WdevServices<
     /// it must not report speculative hardware work.
     fn has_rx_work(&self) -> bool {
         false
+    }
+
+    /// Monotonic number of protocol frames completed by this role.
+    ///
+    /// WDEV uses the delta across one service call for frame-based RX/TX
+    /// fairness. DMA-only staging must not advance this counter: it releases
+    /// hardware ownership but has not consumed a protocol scheduling turn.
+    fn serviced_rx_frames(&self) -> u64 {
+        0
     }
 
     /// Apply at most one owned control event or publish one control frame.
@@ -463,7 +512,10 @@ pub struct WdevRunner<
     network_rx: PinnedRxPublisher<'resources, M, FRAME_CAPACITY, RX_QUEUE_DEPTH>,
     services: B,
     rx_progress: WdevRxProgress,
-    network_turn_owed: bool,
+    /// Signed RX-minus-TX frame balance. A negative value is retained across
+    /// transactions so a large aggregate cannot erase the RX credit it
+    /// consumed merely because the old unsigned counter saturated at zero.
+    rx_frame_deficit: i64,
 }
 
 mod arbitration;

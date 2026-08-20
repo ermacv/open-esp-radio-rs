@@ -30,6 +30,7 @@ pub struct ProtectedDataRxView<'frame> {
 
 /// Validate the chip RX/CCMP state and recover the role-independent public
 /// ordering identity. No peer state is read or mutated here.
+#[inline(always)]
 pub fn view_protected_data(
     segment: RxSegment<'_>,
     ingress: RxIngressConfig,
@@ -73,6 +74,7 @@ pub struct ProtectedDataDecapsulation<'frame> {
 
 impl<'frame> ProtectedDataRxView<'frame> {
     /// Apply only the portable STA/AP address mapping after role admission.
+    #[inline(always)]
     pub fn decapsulate(
         self,
         role: DataInterfaceRole,

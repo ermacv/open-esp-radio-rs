@@ -3,7 +3,7 @@ use core::future::Future;
 use embassy_sync::channel::Receiver;
 use open_esp_radio_embassy_net::RawMutex;
 use open_esp_radio_esp32s31_wifi_mac::{
-    rx::{RxDescriptorSnapshot, RxDma, RxRingHalted, RxSegment},
+    rx::{PUBLIC_HEADER_SIZE, RxDescriptorSnapshot, RxDma, RxRingHalted, RxSegment},
     rx_pool::{RxStagePool, RxStageTransactionError},
 };
 
@@ -34,6 +34,7 @@ impl<const CAPACITY: usize, const SLOTS: usize> AccessPointStagedRxFrame
         Esp32s31StagedRxFrame::segment(self)
     }
 
+    #[inline(always)]
     fn publish_ethernet_in_place(self, ethernet: StagedEthernetPublication) -> Result<u8, Self> {
         Esp32s31StagedRxFrame::publish_ethernet_in_place(
             self,
@@ -48,18 +49,28 @@ impl<const CAPACITY: usize, const SLOTS: usize> AccessPointStagedRxFrame
 }
 
 #[doc(hidden)]
-pub trait AccessPointRxObservation<const COUNT: usize> {
-    fn try_receive(&self) -> Option<Self::Frame>;
+pub trait AccessPointRxProtocolConsumer {
+    fn try_receive(&mut self) -> Option<Self::Frame>;
+    /// Consume only protected data while the radio owner has an active TX
+    /// transaction. A management or EAPOL frame remains the exact ordered
+    /// head and is returned later by [`Self::try_receive`].
+    fn try_receive_protected_data(&mut self) -> Option<Self::Frame>;
     type Frame: AccessPointStagedRxFrame;
     fn queued_frames(&self) -> usize;
-    fn discard_queued(&self) -> usize;
+    fn discard_queued(&mut self) -> usize;
+}
+
+#[doc(hidden)]
+pub trait AccessPointRxProducerObservation<const COUNT: usize> {
     fn report(&self) -> Esp32s31StagedRxProducerReport;
     fn descriptor_snapshot(&self, index: usize) -> Option<RxDescriptorSnapshot>;
     fn scheduler_snapshot(&self) -> Option<Esp32s31RxFrontierSchedulerSnapshot>;
 }
 
 #[doc(hidden)]
-pub trait AccessPointRxPipeline<H, const COUNT: usize>: AccessPointRxObservation<COUNT> {
+pub trait AccessPointRxProducer<H, const COUNT: usize>:
+    AccessPointRxProducerObservation<COUNT>
+{
     fn start(
         &mut self,
         hardware: &mut H,
@@ -71,11 +82,9 @@ pub trait AccessPointRxPipeline<H, const COUNT: usize>: AccessPointRxObservation
     fn stop(&mut self, hardware: &mut H) -> Result<(), RxStageTransactionError>;
 }
 
-/// One AP epoch's binding to the common role-neutral staged-RX producer.
-///
-/// The producer and consumer endpoints are kept together so an AP cannot
-/// publish DMA ownership into a queue for which it does not own a consumer.
-pub struct Esp32s31AccessPointRxPipeline<
+/// DMA-only AP endpoint. It can publish staged owners but cannot parse or
+/// consume them.
+pub struct Esp32s31AccessPointRxProducer<
     'storage,
     'pool,
     'queue,
@@ -88,7 +97,7 @@ pub struct Esp32s31AccessPointRxPipeline<
     const DMA_BUFFER_SIZE: usize,
     const DMA_STORAGE_SIZE: usize,
 > {
-    producer: Esp32s31StagedRxEpoch<
+    inner: Esp32s31StagedRxEpoch<
         'storage,
         'pool,
         'queue,
@@ -101,8 +110,32 @@ pub struct Esp32s31AccessPointRxPipeline<
         DMA_BUFFER_SIZE,
         DMA_STORAGE_SIZE,
     >,
+}
+
+/// Protocol-only AP endpoint. It owns staged frame leases but has no DMA,
+/// descriptor, PAC, or interrupt capability.
+pub struct Esp32s31AccessPointRxConsumer<
+    'pool,
+    'queue,
+    M: RawMutex,
+    const QUEUE_DEPTH: usize,
+    const STAGE_CAPACITY: usize,
+    const STAGE_SLOTS: usize,
+> {
     frames:
         Receiver<'queue, M, Esp32s31StagedRxFrame<'pool, STAGE_CAPACITY, STAGE_SLOTS>, QUEUE_DEPTH>,
+    deferred: Option<Esp32s31StagedRxFrame<'pool, STAGE_CAPACITY, STAGE_SLOTS>>,
+}
+
+fn is_protected_data(segment: RxSegment<'_>) -> bool {
+    let Some(frame_control) = segment
+        .buffer
+        .get(PUBLIC_HEADER_SIZE..PUBLIC_HEADER_SIZE + 2)
+        .map(|bytes| u16::from_le_bytes([bytes[0], bytes[1]]))
+    else {
+        return false;
+    };
+    frame_control & 0x000c == 0x0008 && frame_control & 0x4000 != 0
 }
 
 impl<
@@ -118,7 +151,7 @@ impl<
     const DMA_BUFFER_SIZE: usize,
     const DMA_STORAGE_SIZE: usize,
 >
-    Esp32s31AccessPointRxPipeline<
+    Esp32s31AccessPointRxProducer<
         'storage,
         'pool,
         'queue,
@@ -140,12 +173,20 @@ where
         pool: &'pool RxStagePool<STAGE_SLOTS, STAGE_CAPACITY>,
         queue: &'queue Esp32s31StagedRxQueue<'pool, M, QUEUE_DEPTH, STAGE_CAPACITY, STAGE_SLOTS>,
         delay: D,
-    ) -> Self {
+    ) -> (
+        Self,
+        Esp32s31AccessPointRxConsumer<'pool, 'queue, M, QUEUE_DEPTH, STAGE_CAPACITY, STAGE_SLOTS>,
+    ) {
         let (sender, frames) = queue.split();
-        Self {
-            producer: Esp32s31StagedRxEpoch::from_halted(ring, storage, pool, sender, delay),
-            frames,
-        }
+        (
+            Self {
+                inner: Esp32s31StagedRxEpoch::from_halted(ring, storage, pool, sender, delay),
+            },
+            Esp32s31AccessPointRxConsumer {
+                frames,
+                deferred: None,
+            },
+        )
     }
 
     /// Attach value-only pipeline observations without exposing descriptor
@@ -157,24 +198,29 @@ where
         queue: &'queue Esp32s31StagedRxQueue<'pool, M, QUEUE_DEPTH, STAGE_CAPACITY, STAGE_SLOTS>,
         delay: D,
         observer: &'pool dyn RxPipelineObserver,
-    ) -> Self {
+    ) -> (
+        Self,
+        Esp32s31AccessPointRxConsumer<'pool, 'queue, M, QUEUE_DEPTH, STAGE_CAPACITY, STAGE_SLOTS>,
+    ) {
         let (sender, frames) = queue.split();
-        Self {
-            producer: Esp32s31StagedRxEpoch::from_halted_with_pipeline_observer(
-                ring, storage, pool, sender, delay, observer,
-            ),
-            frames,
-        }
+        (
+            Self {
+                inner: Esp32s31StagedRxEpoch::from_halted_with_pipeline_observer(
+                    ring, storage, pool, sender, delay, observer,
+                ),
+            },
+            Esp32s31AccessPointRxConsumer {
+                frames,
+                deferred: None,
+            },
+        )
     }
 
     pub fn try_into_halted(self) -> Result<RxRingHalted<'storage, COUNT>, Self> {
-        let Self { producer, frames } = self;
-        match producer.try_into_halted() {
-            Ok(ring) => {
-                let _ = frames;
-                Ok(ring)
-            }
-            Err(producer) => Err(Self { producer, frames }),
+        let Self { inner } = self;
+        match inner.try_into_halted() {
+            Ok(ring) => Ok(ring),
+            Err(inner) => Err(Self { inner }),
         }
     }
 }
@@ -191,8 +237,8 @@ impl<
     const STAGE_SLOTS: usize,
     const DMA_BUFFER_SIZE: usize,
     const DMA_STORAGE_SIZE: usize,
-> AccessPointRxObservation<COUNT>
-    for Esp32s31AccessPointRxPipeline<
+> AccessPointRxProducerObservation<COUNT>
+    for Esp32s31AccessPointRxProducer<
         'storage,
         'pool,
         'queue,
@@ -208,35 +254,16 @@ impl<
 where
     D: RxDmaObservationDelay,
 {
-    type Frame = Esp32s31StagedRxFrame<'pool, STAGE_CAPACITY, STAGE_SLOTS>;
-
-    fn try_receive(&self) -> Option<Self::Frame> {
-        self.frames.try_receive().ok()
-    }
-
-    fn queued_frames(&self) -> usize {
-        self.frames.len()
-    }
-
-    fn discard_queued(&self) -> usize {
-        let mut discarded = 0_usize;
-        while let Ok(frame) = self.frames.try_receive() {
-            drop(frame);
-            discarded = discarded.saturating_add(1);
-        }
-        discarded
-    }
-
     fn report(&self) -> Esp32s31StagedRxProducerReport {
-        self.producer.report()
+        self.inner.report()
     }
 
     fn descriptor_snapshot(&self, index: usize) -> Option<RxDescriptorSnapshot> {
-        self.producer.descriptor_snapshot(index)
+        self.inner.descriptor_snapshot(index)
     }
 
     fn scheduler_snapshot(&self) -> Option<Esp32s31RxFrontierSchedulerSnapshot> {
-        self.producer.scheduler_snapshot()
+        self.inner.scheduler_snapshot()
     }
 }
 
@@ -253,8 +280,8 @@ impl<
     const STAGE_SLOTS: usize,
     const DMA_BUFFER_SIZE: usize,
     const DMA_STORAGE_SIZE: usize,
-> AccessPointRxPipeline<H, COUNT>
-    for Esp32s31AccessPointRxPipeline<
+> AccessPointRxProducer<H, COUNT>
+    for Esp32s31AccessPointRxProducer<
         'storage,
         'pool,
         'queue,
@@ -271,17 +298,90 @@ where
     D: RxDmaObservationDelay,
 {
     async fn start(&mut self, hardware: &mut H) -> Result<(), RxStageTransactionError> {
-        self.producer.start(hardware).await
+        self.inner.start(hardware).await
     }
 
     async fn stage_completed(
         &mut self,
         hardware: &mut H,
     ) -> Result<WdevRxProgress, RxStageTransactionError> {
-        self.producer.service(hardware).await
+        self.inner.service(hardware).await
     }
 
     fn stop(&mut self, hardware: &mut H) -> Result<(), RxStageTransactionError> {
-        self.producer.stop(hardware)
+        self.inner.stop(hardware)
+    }
+}
+
+impl<
+    'pool,
+    'queue,
+    M: RawMutex,
+    const QUEUE_DEPTH: usize,
+    const STAGE_CAPACITY: usize,
+    const STAGE_SLOTS: usize,
+> AccessPointRxProtocolConsumer
+    for Esp32s31AccessPointRxConsumer<'pool, 'queue, M, QUEUE_DEPTH, STAGE_CAPACITY, STAGE_SLOTS>
+{
+    type Frame = Esp32s31StagedRxFrame<'pool, STAGE_CAPACITY, STAGE_SLOTS>;
+
+    #[inline(always)]
+    fn try_receive(&mut self) -> Option<Self::Frame> {
+        self.deferred
+            .take()
+            .or_else(|| self.frames.try_receive().ok())
+    }
+
+    #[inline(always)]
+    fn try_receive_protected_data(&mut self) -> Option<Self::Frame> {
+        if self.deferred.is_some() {
+            return None;
+        }
+        let frame = self.frames.try_receive().ok()?;
+        if is_protected_data(frame.segment()) {
+            Some(frame)
+        } else {
+            self.deferred = Some(frame);
+            None
+        }
+    }
+
+    fn queued_frames(&self) -> usize {
+        self.frames.len() + usize::from(self.deferred.is_some())
+    }
+
+    fn discard_queued(&mut self) -> usize {
+        let mut discarded = usize::from(self.deferred.take().is_some());
+        while let Ok(frame) = self.frames.try_receive() {
+            drop(frame);
+            discarded = discarded.saturating_add(1);
+        }
+        discarded
+    }
+}
+
+#[cfg(test)]
+mod classification_tests {
+    use super::*;
+
+    #[test]
+    fn active_tx_admits_only_protected_data_to_protocol_processing() {
+        let mut protected = [0_u8; PUBLIC_HEADER_SIZE + 2];
+        protected[PUBLIC_HEADER_SIZE..].copy_from_slice(&0x4008_u16.to_le_bytes());
+        assert!(is_protected_data(RxSegment {
+            descriptor_address: 0,
+            descriptor_word0: 0,
+            buffer: &protected,
+            next_descriptor_address: 0,
+        }));
+
+        let mut management = protected;
+        management[PUBLIC_HEADER_SIZE..].copy_from_slice(&0_u16.to_le_bytes());
+        assert!(!is_protected_data(RxSegment {
+            descriptor_address: 0,
+            descriptor_word0: 0,
+            buffer: &management,
+            next_descriptor_address: 0,
+        }));
     }
 }

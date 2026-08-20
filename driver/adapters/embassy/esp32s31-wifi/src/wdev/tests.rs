@@ -73,6 +73,7 @@ impl WdevServices<'static, NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, QUEU
     fn service_rx<'a>(
         &'a mut self,
         _network_rx: &'a mut dyn WdevNetworkRx,
+        _context: WdevRxServiceContext,
     ) -> impl Future<Output = Result<WdevRxProgress, Self::Error>> + 'a {
         async move {
             self.push(1);
@@ -197,6 +198,7 @@ impl WdevServices<'static, NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, QUEU
     fn service_rx<'a>(
         &'a mut self,
         network_rx: &'a mut dyn WdevNetworkRx,
+        _context: WdevRxServiceContext,
     ) -> impl Future<Output = Result<WdevRxProgress, Self::Error>> + 'a {
         async move {
             self.service_calls = self.service_calls.saturating_add(1);
@@ -252,6 +254,7 @@ impl WdevServices<'static, NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, QUEU
     fn service_rx<'a>(
         &'a mut self,
         _network_rx: &'a mut dyn WdevNetworkRx,
+        _context: WdevRxServiceContext,
     ) -> impl Future<Output = Result<WdevRxProgress, Self::Error>> + 'a {
         async move {
             self.service_calls = self.service_calls.saturating_add(1);
@@ -316,6 +319,7 @@ impl WdevServices<'static, NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, QUEU
     fn service_rx<'a>(
         &'a mut self,
         _network_rx: &'a mut dyn WdevNetworkRx,
+        _context: WdevRxServiceContext,
     ) -> impl Future<Output = Result<WdevRxProgress, Self::Error>> + 'a {
         pending()
     }
@@ -376,6 +380,7 @@ impl WdevServices<'static, NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, QUEU
     fn service_rx<'a>(
         &'a mut self,
         _network_rx: &'a mut dyn WdevNetworkRx,
+        _context: WdevRxServiceContext,
     ) -> impl Future<Output = Result<WdevRxProgress, Self::Error>> + 'a {
         pending()
     }
@@ -457,6 +462,7 @@ impl WdevServices<'static, NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, QUEU
     fn service_rx<'a>(
         &'a mut self,
         _network_rx: &'a mut dyn WdevNetworkRx,
+        _context: WdevRxServiceContext,
     ) -> impl Future<Output = Result<WdevRxProgress, Self::Error>> + 'a {
         pending()
     }
@@ -705,6 +711,54 @@ fn due_software_rx_frontier_runs_without_forging_a_hardware_irq() {
     );
     assert_eq!(runner.services().order[..2], [1, 3]);
     assert!(!irq.rx_signaled());
+}
+
+#[test]
+fn due_software_rx_frontier_yields_to_tx_after_frame_deficit() {
+    let resources = std::boxed::Box::leak(std::boxed::Box::new(Resources::new()));
+    let pool = Pool::pin_static(std::boxed::Box::leak(std::boxed::Box::new(Pool::new())));
+    let (mut device, network) = resources.split(pool, [2, 3, 4, 5, 6, 7]);
+    enqueue_frame(&mut device);
+    let irq = std::boxed::Box::leak(std::boxed::Box::new(
+        EmbassyMacIrqRuntime::<NoopRawMutex>::new(),
+    ));
+    let services = Backend {
+        irq,
+        order: [0; 3],
+        count: 0,
+        publish_irq: false,
+        deadline_ready: true,
+        tx_wake: None,
+        queue_control_on_rx: false,
+        control_pending: false,
+        complete_tx_before_control: false,
+        disconnect: false,
+        network_pending_seen: false,
+        backpressure_once: false,
+        repost_rx_when_backpressured: false,
+        software_rx_work: true,
+        stop_after_tx: None,
+    };
+    let mut runner = WdevRunner::new(irq, network, services);
+    runner.rx_frame_deficit = i64::from(RX_TX_FAIRNESS_QUANTUM_FRAMES);
+
+    assert_eq!(
+        embassy_futures::block_on(runner.run()),
+        Err(TestError::Finished)
+    );
+    assert_eq!(runner.services().order[0], 2);
+    assert!(runner.services().software_rx_work);
+    runner.rx_frame_deficit = i64::from(RX_TX_FAIRNESS_QUANTUM_FRAMES);
+    runner.account_tx_frames(16);
+    assert_eq!(runner.rx_frame_deficit, -8);
+}
+
+#[test]
+fn queued_tx_exports_exact_remaining_rx_frame_credit() {
+    assert_eq!(rx_protocol_frame_budget(0, false), None);
+    assert_eq!(rx_protocol_frame_budget(0, true), Some(8));
+    assert_eq!(rx_protocol_frame_budget(8, true), Some(1));
+    assert_eq!(rx_protocol_frame_budget(-8, true), Some(16));
 }
 
 #[test]

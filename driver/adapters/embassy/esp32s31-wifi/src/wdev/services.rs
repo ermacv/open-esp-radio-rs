@@ -262,6 +262,7 @@ where
     fn service_rx<'a>(
         &'a mut self,
         _network_rx: &'a mut dyn crate::wdev::WdevNetworkRx,
+        _context: crate::wdev::WdevRxServiceContext,
     ) -> impl Future<Output = Result<WdevRxProgress, Self::Error>> + 'a {
         async move {
             self.rx

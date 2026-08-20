@@ -514,6 +514,10 @@ impl WifiServiceRequest {
     }
 
     /// Join a checked same-channel STA+AP topology to one combined request.
+    #[allow(
+        clippy::result_large_err,
+        reason = "a rejected no-alloc combined request must return both exact credential owners"
+    )]
     pub fn station_access_point(
         plan: WifiPlan,
         request: StationAccessPointRequest,
@@ -833,6 +837,10 @@ impl WifiSupervisorConfiguration {
         })
     }
 
+    #[allow(
+        clippy::result_large_err,
+        reason = "planning is no-alloc and must return the untouched combined credential owner"
+    )]
     pub fn plan_station_access_point(
         self,
         request: StationAccessPointRequest,

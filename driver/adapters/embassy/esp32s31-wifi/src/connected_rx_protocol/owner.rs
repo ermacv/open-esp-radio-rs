@@ -132,6 +132,25 @@ where
         shutdown
     }
 
+    /// Finish a queue-independent processor after its outer paired RX owner
+    /// has stopped and discarded the route-tagged queue.
+    ///
+    /// The returned value is identical to the standalone protocol terminal
+    /// owner: scratch and the persistent reorder arena cannot be recovered
+    /// before every retained protocol lease has been revoked.
+    pub fn into_stopped(
+        mut self,
+    ) -> Esp32s31ConnectedRxProtocolStopped<'scratch, 'pool, CAPACITY, SLOTS, REORDER_SLOTS> {
+        let shutdown = self.shutdown_discard();
+        let (mpdu, ethernet, runtime) = self.into_stopped_parts();
+        ConnectedRxProtocolStopped {
+            shutdown,
+            mpdu,
+            ethernet,
+            runtime,
+        }
+    }
+
     pub(super) fn into_stopped_parts(
         self,
     ) -> (

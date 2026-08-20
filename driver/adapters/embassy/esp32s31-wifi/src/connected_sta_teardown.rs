@@ -27,6 +27,33 @@ use crate::{
     wdev::services::WdevServiceSet,
 };
 
+/// RX owner already stopped by a wider physical composition.
+///
+/// STA+AP has one common DMA producer, so the paired boundary must stop it
+/// before either logical role is dismantled. Wrapping that exact stopped
+/// owner lets the ordinary STA teardown retain its control/TX/key ordering
+/// without attempting to stop the hardware a second time.
+pub struct Esp32s31AlreadyStoppedRx<R>(R);
+
+impl<R> Esp32s31AlreadyStoppedRx<R> {
+    pub const fn new(stopped: R) -> Self {
+        Self(stopped)
+    }
+
+    pub fn into_inner(self) -> R {
+        self.0
+    }
+}
+
+impl<H, R> Esp32s31ConnectedStaRxTeardown<H> for Esp32s31AlreadyStoppedRx<R> {
+    type Stopped = R;
+    type Error = core::convert::Infallible;
+
+    fn try_stop(self, _hardware: &mut H) -> Result<Self::Stopped, (Self, Self::Error)> {
+        Ok(self.0)
+    }
+}
+
 /// Control-plane shutdown capability used by the connected teardown port.
 pub trait Esp32s31ConnectedStaControlTeardown<H, X> {
     type Report;
@@ -388,6 +415,19 @@ mod tests {
         assert_eq!(stopped.aggregate, 7);
         assert_eq!(stopped.control, 2);
         assert_eq!(stopped.hardware.cleared, [1, 4]);
+    }
+
+    #[test]
+    fn already_stopped_rx_crosses_teardown_without_a_second_hardware_stop() {
+        let stopped = Esp32s31AlreadyStoppedRx::new(9_u8);
+        let returned =
+            <Esp32s31AlreadyStoppedRx<u8> as Esp32s31ConnectedStaRxTeardown<Hardware>>::try_stop(
+                stopped,
+                &mut Hardware::default(),
+            )
+            .unwrap_or_else(|_| unreachable!("already-stopped RX is infallible"));
+
+        assert_eq!(returned, 9);
     }
 
     #[test]

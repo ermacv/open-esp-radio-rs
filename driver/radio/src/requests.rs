@@ -294,6 +294,53 @@ impl fmt::Debug for StationRequest {
     }
 }
 
+/// One same-channel station plus SoftAP service request.
+///
+/// The station is connected first. Its associated channel becomes the sole
+/// physical channel context; the AP is started only when its requested
+/// channel is exactly that channel. No multi-channel scheduling fallback is
+/// permitted.
+pub struct StationAccessPointRequest {
+    station: StationRequest,
+    access_point: AccessPointRequest,
+}
+
+impl StationAccessPointRequest {
+    pub const fn new(station: StationRequest, access_point: AccessPointRequest) -> Self {
+        Self {
+            station,
+            access_point,
+        }
+    }
+
+    pub const fn station(&self) -> &StationRequest {
+        &self.station
+    }
+
+    pub const fn access_point(&self) -> &AccessPointRequest {
+        &self.access_point
+    }
+
+    pub const fn required_channel(&self) -> WifiChannel {
+        self.access_point.channel()
+    }
+
+    pub fn into_parts(self) -> (StationRequest, AccessPointRequest) {
+        (self.station, self.access_point)
+    }
+}
+
+impl fmt::Debug for StationAccessPointRequest {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("StationAccessPointRequest")
+            .field("station", &self.station)
+            .field("access_point", &self.access_point)
+            .field("channel_policy", &"station-associated-channel")
+            .finish()
+    }
+}
+
 /// Host/export capture policy independent of the DMA ring size.
 ///
 /// Queue capacity and DMA placement belong to `RadioResources<Profile>`.
@@ -395,6 +442,10 @@ pub enum WifiServiceRequest {
         plan: WifiPlan,
         request: AccessPointRequest,
     },
+    StationAccessPoint {
+        plan: WifiPlan,
+        request: StationAccessPointRequest,
+    },
     StandaloneMonitor {
         plan: WifiPlan,
         request: MonitorRequest,
@@ -462,6 +513,32 @@ impl WifiServiceRequest {
         Ok(Self::AccessPoint { plan, request })
     }
 
+    /// Join a checked same-channel STA+AP topology to one combined request.
+    pub fn station_access_point(
+        plan: WifiPlan,
+        request: StationAccessPointRequest,
+    ) -> Result<Self, WifiServiceRequestFailure<StationAccessPointRequest>> {
+        if plan.station().is_none() {
+            return Err(WifiServiceRequestFailure::new(
+                request,
+                WifiServiceRequestError::MissingStationTopology,
+            ));
+        }
+        if plan.access_point().is_none() {
+            return Err(WifiServiceRequestFailure::new(
+                request,
+                WifiServiceRequestError::MissingAccessPointTopology,
+            ));
+        }
+        if plan.monitor().is_some() {
+            return Err(WifiServiceRequestFailure::new(
+                request,
+                WifiServiceRequestError::UnexpectedTopologyRole,
+            ));
+        }
+        Ok(Self::StationAccessPoint { plan, request })
+    }
+
     /// Join a checked standalone-monitor topology to its runtime policy.
     pub fn standalone_monitor(
         plan: WifiPlan,
@@ -487,6 +564,7 @@ impl WifiServiceRequest {
             Self::StandaloneScan { plan, .. }
             | Self::Station { plan, .. }
             | Self::AccessPoint { plan, .. }
+            | Self::StationAccessPoint { plan, .. }
             | Self::StandaloneMonitor { plan, .. } => *plan,
         }
     }
@@ -494,9 +572,10 @@ impl WifiServiceRequest {
     pub const fn scan_request(&self) -> Option<&WifiScanRequest> {
         match self {
             Self::StandaloneScan { request, .. } => Some(request),
-            Self::Station { .. } | Self::AccessPoint { .. } | Self::StandaloneMonitor { .. } => {
-                None
-            }
+            Self::Station { .. }
+            | Self::AccessPoint { .. }
+            | Self::StationAccessPoint { .. }
+            | Self::StandaloneMonitor { .. } => None,
         }
     }
 
@@ -504,6 +583,7 @@ impl WifiServiceRequest {
         match self {
             Self::StandaloneScan { .. } => None,
             Self::Station { request, .. } => Some(request),
+            Self::StationAccessPoint { request, .. } => Some(request.station()),
             Self::AccessPoint { .. } | Self::StandaloneMonitor { .. } => None,
         }
     }
@@ -511,6 +591,7 @@ impl WifiServiceRequest {
     pub const fn access_point_request(&self) -> Option<&AccessPointRequest> {
         match self {
             Self::AccessPoint { request, .. } => Some(request),
+            Self::StationAccessPoint { request, .. } => Some(request.access_point()),
             Self::StandaloneScan { .. } | Self::Station { .. } | Self::StandaloneMonitor { .. } => {
                 None
             }
@@ -519,8 +600,21 @@ impl WifiServiceRequest {
 
     pub const fn monitor_request(&self) -> Option<&MonitorRequest> {
         match self {
-            Self::StandaloneScan { .. } | Self::Station { .. } | Self::AccessPoint { .. } => None,
+            Self::StandaloneScan { .. }
+            | Self::Station { .. }
+            | Self::AccessPoint { .. }
+            | Self::StationAccessPoint { .. } => None,
             Self::StandaloneMonitor { request, .. } => Some(request),
+        }
+    }
+
+    pub const fn station_access_point_request(&self) -> Option<&StationAccessPointRequest> {
+        match self {
+            Self::StationAccessPoint { request, .. } => Some(request),
+            Self::StandaloneScan { .. }
+            | Self::Station { .. }
+            | Self::AccessPoint { .. }
+            | Self::StandaloneMonitor { .. } => None,
         }
     }
 }
@@ -540,6 +634,11 @@ impl fmt::Debug for WifiServiceRequest {
                 .finish(),
             Self::AccessPoint { plan, request } => formatter
                 .debug_struct("AccessPoint")
+                .field("plan", plan)
+                .field("request", request)
+                .finish(),
+            Self::StationAccessPoint { plan, request } => formatter
+                .debug_struct("StationAccessPoint")
                 .field("plan", plan)
                 .field("request", request)
                 .finish(),
@@ -734,6 +833,41 @@ impl WifiSupervisorConfiguration {
         })
     }
 
+    pub fn plan_station_access_point(
+        self,
+        request: StationAccessPointRequest,
+    ) -> Result<WifiServiceRequest, WifiServicePlanningFailure<StationAccessPointRequest>> {
+        let Some(station) = self.station else {
+            return Err(WifiServicePlanningFailure {
+                request,
+                error: WifiServicePlanningError::StationNotProvisioned,
+            });
+        };
+        let Some(access_point) = self.access_point else {
+            return Err(WifiServicePlanningFailure {
+                request,
+                error: WifiServicePlanningError::AccessPointNotProvisioned,
+            });
+        };
+        let plan = match WifiConfig::station_access_point(station, access_point)
+            .validate(self.capabilities)
+        {
+            Ok(plan) => plan,
+            Err(error) => {
+                return Err(WifiServicePlanningFailure {
+                    request,
+                    error: WifiServicePlanningError::Topology(error),
+                });
+            }
+        };
+        WifiServiceRequest::station_access_point(plan, request).map_err(|failure| {
+            WifiServicePlanningFailure {
+                request: failure.request,
+                error: WifiServicePlanningError::Request(failure.error),
+            }
+        })
+    }
+
     pub fn plan_monitor(
         self,
         request: MonitorRequest,
@@ -852,6 +986,14 @@ mod tests {
         ..TEST_CAPABILITIES
     };
 
+    const STA_AP_TEST_CAPABILITIES: MacServiceCapabilities = MacServiceCapabilities {
+        interfaces: MacInterfaceCapabilities {
+            simultaneous_station_access_point: true,
+            ..AP_TEST_CAPABILITIES.interfaces
+        },
+        ..AP_TEST_CAPABILITIES
+    };
+
     fn station_request() -> StationRequest {
         StationRequest::new(
             WifiSsid::new(b"test-network").unwrap(),
@@ -913,6 +1055,32 @@ mod tests {
         assert_eq!(request.inactive_timeout().seconds(), 30);
         let (_, _, _, _, timeout) = request.into_parts();
         assert_eq!(timeout.seconds(), 30);
+    }
+
+    #[test]
+    fn combined_request_requires_one_checked_same_channel_owner_graph() {
+        let station = WifiStationConfig::new(WifiMacAddress::new([0x02, 0, 0, 0, 0, 1]).unwrap());
+        let access_point =
+            WifiAccessPointConfig::new(WifiMacAddress::new([0x02, 0, 0, 0, 0, 2]).unwrap());
+        let configuration = WifiSupervisorConfiguration::new(STA_AP_TEST_CAPABILITIES)
+            .with_station(station)
+            .with_access_point(access_point);
+        let service = configuration
+            .plan_station_access_point(StationAccessPointRequest::new(
+                station_request(),
+                access_point_request(),
+            ))
+            .unwrap();
+
+        assert!(service.plan().station().is_some());
+        assert!(service.plan().access_point().is_some());
+        assert_eq!(
+            service
+                .station_access_point_request()
+                .unwrap()
+                .required_channel(),
+            WifiChannel::mhz20(6).unwrap()
+        );
     }
 
     #[test]

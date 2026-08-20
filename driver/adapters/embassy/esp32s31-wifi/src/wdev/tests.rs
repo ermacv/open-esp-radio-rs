@@ -229,9 +229,10 @@ fn paired_runner_preserves_physical_tx_order_and_narrows_each_vif() {
         services.into_parts();
     assert_eq!(station_tx.started, 1);
     assert_eq!(access_point_tx.started, 1);
-    let (ordinary, _aggregate) = physical_tx
-        .into_resources()
-        .expect("both roles returned the physical pair");
+    let (ordinary, _aggregate) = match physical_tx.try_into_resources() {
+        Ok(resources) => resources,
+        Err(_) => panic!("both roles returned the physical pair"),
+    };
     assert_eq!(ordinary.lends, *order.lock().unwrap());
     assert_eq!(
         *order.lock().unwrap(),
@@ -301,7 +302,7 @@ fn paired_rx_generated_tx_is_driven_for_the_reported_ap_role() {
     let (_network, _endpoints, services) = runner.into_complete_parts();
     let (_hardware, physical, _rx, _station, access_point, _control) = services.into_parts();
     assert!(access_point.active.is_none());
-    assert!(physical.into_resources().is_ok());
+    assert!(physical.try_into_resources().is_ok());
 }
 
 struct Backend {

@@ -40,9 +40,11 @@ pub use rx_service::{
     Esp32s31StaApStationRxRole,
 };
 pub use station_role::{
-    Esp32s31StaApStationControlError, Esp32s31StaApStationPrepareFailure,
+    Esp32s31StaApStationControlError, Esp32s31StaApStationFinishFailure,
+    Esp32s31StaApStationFinishReason, Esp32s31StaApStationPrepareFailure,
     Esp32s31StaApStationPrepared, Esp32s31StaApStationRole, Esp32s31StaApStationTxError,
-    Esp32s31StaApStationTxOwnershipError, park_sta_ap_station_role, prepare_sta_ap_station,
+    Esp32s31StaApStationTxOwnershipError, finish_sta_ap_station, park_sta_ap_station_role,
+    prepare_sta_ap_station,
 };
 pub use station_rx_role::{Esp32s31StaApStationRxError, Esp32s31StaApStationRxSink};
 

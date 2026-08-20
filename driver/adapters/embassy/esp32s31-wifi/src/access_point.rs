@@ -296,6 +296,84 @@ pub struct Esp32s31AccessPointStopped<
     pub mac_report: Esp32s31ApMacReport,
 }
 
+/// Quiescent AP protocol owners returned by a paired STA+AP WDEV.
+///
+/// Physical RX is owned by the common paired producer and is intentionally
+/// absent.  Ordinary TX is returned here so the paired boundary can rejoin it
+/// with the shared physical owner before restoring the station graph.
+pub struct Esp32s31AccessPointProtocolStopped<
+    'storage,
+    'beacon,
+    'slot,
+    P,
+    E,
+    T,
+    const DMA_BUFFER_SIZE: usize,
+    const TX_BUFFER_SIZE: usize,
+> {
+    pub transmit: WifiTxResources<'slot, P, E, T, TX_BUFFER_SIZE>,
+    pub rx_frame: &'storage mut [u8],
+    pub tx_frame: &'storage mut [u8],
+    pub data_rx: &'storage mut Esp32s31ApRxDispatcher,
+    pub rx_block_ack: &'storage mut Esp32s31StaApRxBlockAck,
+    pub rx_reorder: &'storage mut Esp32s31AccessPointRxReorder<'storage, DMA_BUFFER_SIZE>,
+    pub rx_reorder_storage:
+        &'storage RxReorderFrameStorage<DMA_BUFFER_SIZE, RX_REORDER_BACKING_SLOT_COUNT>,
+    pub engine: open_esp_radio_esp32s31_wifi_ap::engine::Esp32s31ApEngineStop<'beacon>,
+    pub control_report: Esp32s31AccessPointControlReport,
+    pub mac_report: Esp32s31ApMacReport,
+}
+
+/// AP role-local owners after ordinary TX has returned to the paired
+/// physical owner.
+pub struct Esp32s31AccessPointProtocolFinished<'storage, 'beacon, const DMA_BUFFER_SIZE: usize> {
+    pub rx_frame: &'storage mut [u8],
+    pub tx_frame: &'storage mut [u8],
+    pub data_rx: &'storage mut Esp32s31ApRxDispatcher,
+    pub rx_block_ack: &'storage mut Esp32s31StaApRxBlockAck,
+    pub rx_reorder: &'storage mut Esp32s31AccessPointRxReorder<'storage, DMA_BUFFER_SIZE>,
+    pub rx_reorder_storage:
+        &'storage RxReorderFrameStorage<DMA_BUFFER_SIZE, RX_REORDER_BACKING_SLOT_COUNT>,
+    pub engine: open_esp_radio_esp32s31_wifi_ap::engine::Esp32s31ApEngineStop<'beacon>,
+    pub control_report: Esp32s31AccessPointControlReport,
+    pub mac_report: Esp32s31ApMacReport,
+}
+
+impl<'storage, 'beacon, 'slot, P, E, T, const DMA_BUFFER_SIZE: usize, const TX_BUFFER_SIZE: usize>
+    Esp32s31AccessPointProtocolStopped<
+        'storage,
+        'beacon,
+        'slot,
+        P,
+        E,
+        T,
+        DMA_BUFFER_SIZE,
+        TX_BUFFER_SIZE,
+    >
+{
+    pub fn into_parts(
+        self,
+    ) -> (
+        WifiTxResources<'slot, P, E, T, TX_BUFFER_SIZE>,
+        Esp32s31AccessPointProtocolFinished<'storage, 'beacon, DMA_BUFFER_SIZE>,
+    ) {
+        (
+            self.transmit,
+            Esp32s31AccessPointProtocolFinished {
+                rx_frame: self.rx_frame,
+                tx_frame: self.tx_frame,
+                data_rx: self.data_rx,
+                rx_block_ack: self.rx_block_ack,
+                rx_reorder: self.rx_reorder,
+                rx_reorder_storage: self.rx_reorder_storage,
+                engine: self.engine,
+                control_report: self.control_report,
+                mac_report: self.mac_report,
+            },
+        )
+    }
+}
+
 impl From<open_esp_radio_esp32s31_wifi_mac::rx_pool::RxStageTransactionError>
     for Esp32s31AccessPointControlError
 {
@@ -2356,6 +2434,91 @@ where
             Ok(WdevStopProgress::Stopped)
         }
     }
+
+    /// Consume a quiescent AP protocol role from the paired WDEV boundary.
+    ///
+    /// The common RX producer is intentionally not part of this transaction.
+    /// Any pending protocol, reorder, BlockAck, or TX state returns the exact
+    /// processor unchanged.
+    #[allow(clippy::result_large_err, clippy::type_complexity)]
+    pub fn try_finish_paired<H>(
+        self,
+        hardware: &mut H,
+    ) -> Result<
+        Esp32s31AccessPointProtocolStopped<
+            'storage,
+            'beacon,
+            'slot,
+            P,
+            E,
+            T,
+            DMA_BUFFER_SIZE,
+            TX_BUFFER_SIZE,
+        >,
+        Self,
+    >
+    where
+        H: Esp32s31ApRuntimeHardware,
+    {
+        if self.rx_batch_pending()
+            || self.rx_addba_in_flight.is_some()
+            || !self.protocol_actions.is_empty()
+            || self.rx_reorder.has_pending_release()
+            || self
+                .rx_block_ack
+                .snapshots_for(MacInterface::AccessPoint)
+                .into_iter()
+                .any(|entry| entry.is_some())
+        {
+            return Err(self);
+        }
+        let Self {
+            mac,
+            rx_frame,
+            tx_frame,
+            data_rx,
+            rx_block_ack,
+            rx_reorder,
+            rx_reorder_storage,
+            rx_addba_in_flight: _,
+            protocol_actions,
+            rx_batch_used: _,
+            rx_batch_offset: _,
+            report,
+        } = self;
+        let (engine, transmit, mac_report) = match mac.try_into_parts() {
+            Ok(parts) => parts,
+            Err(mac) => {
+                return Err(Self {
+                    mac,
+                    rx_frame,
+                    tx_frame,
+                    data_rx,
+                    rx_block_ack,
+                    rx_reorder,
+                    rx_reorder_storage,
+                    rx_addba_in_flight: None,
+                    protocol_actions,
+                    rx_batch_used: 0,
+                    rx_batch_offset: 0,
+                    report,
+                });
+            }
+        };
+        let engine = engine.stop(hardware);
+        Ok(Esp32s31AccessPointProtocolStopped {
+            transmit,
+            rx_frame,
+            tx_frame,
+            data_rx,
+            rx_block_ack,
+            rx_reorder,
+            rx_reorder_storage,
+            engine,
+            control_report: report,
+            mac_report,
+        })
+    }
 }
 
 impl<
@@ -2585,17 +2748,7 @@ where
         R: AccessPointRxProducer<H, COUNT>,
         C: AccessPointRxProtocolConsumer,
     {
-        if self.rx_batch_pending()
-            || self.protocol_rx.queued_frames() != 0
-            || self.rx_addba_in_flight.is_some()
-            || !self.protocol_actions.is_empty()
-            || self.rx_reorder.has_pending_release()
-            || self
-                .rx_block_ack
-                .snapshots_for(MacInterface::AccessPoint)
-                .into_iter()
-                .any(|entry| entry.is_some())
-        {
+        if self.protocol_rx.queued_frames() != 0 {
             return Err(self);
         }
         let Self {
@@ -2603,44 +2756,27 @@ where
             protocol_rx,
             processor,
         } = self;
-        let Esp32s31AccessPointProtocolProcessor {
-            mac,
+        let Esp32s31AccessPointProtocolStopped {
+            transmit,
             rx_frame,
             tx_frame,
             data_rx,
             rx_block_ack,
             rx_reorder,
             rx_reorder_storage,
-            rx_addba_in_flight: _,
-            protocol_actions,
-            rx_batch_used: _,
-            rx_batch_offset: _,
-            report,
-        } = processor;
-        let (engine, transmit, mac_report) = match mac.try_into_parts() {
-            Ok(parts) => parts,
-            Err(mac) => {
+            engine,
+            control_report,
+            mac_report,
+        } = match processor.try_finish_paired(hardware) {
+            Ok(stopped) => stopped,
+            Err(processor) => {
                 return Err(Self {
                     receive,
                     protocol_rx,
-                    processor: Esp32s31AccessPointProtocolProcessor {
-                        mac,
-                        rx_frame,
-                        tx_frame,
-                        data_rx,
-                        rx_block_ack,
-                        rx_reorder,
-                        rx_reorder_storage,
-                        rx_addba_in_flight: None,
-                        protocol_actions,
-                        rx_batch_used: 0,
-                        rx_batch_offset: 0,
-                        report,
-                    },
+                    processor,
                 });
             }
         };
-        let engine = engine.stop(hardware);
         Ok(Esp32s31AccessPointStopped {
             receive,
             protocol_rx,
@@ -2652,7 +2788,7 @@ where
             rx_reorder,
             rx_reorder_storage,
             engine,
-            control_report: report,
+            control_report,
             mac_report,
         })
     }

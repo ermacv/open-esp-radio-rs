@@ -67,6 +67,12 @@ pub struct WdevPairedRoleOwner<Active, Parked> {
 }
 
 impl<Active, Parked> WdevPairedRoleOwner<Active, Parked> {
+    pub const fn from_active(active: Active) -> Self {
+        Self {
+            state: WdevPairedRoleState::Active(active),
+        }
+    }
+
     pub const fn parked(parked: Parked) -> Self {
         Self {
             state: WdevPairedRoleState::Parked(parked),
@@ -159,10 +165,32 @@ impl<Active, Parked> WdevPairedRoleOwner<Active, Parked> {
         }
     }
 
-    pub fn into_parked(self) -> Result<Parked, Active> {
+    /// Consume a quiescent role while retaining the complete owner on error.
+    ///
+    /// Returning only the active payload would discard the role-state
+    /// boundary and make a higher-level rollback reconstruct it.  Paired
+    /// teardown therefore either receives the parked payload or the exact
+    /// original owner.
+    pub fn try_into_parked(self) -> Result<Parked, Self> {
         match self.state {
             WdevPairedRoleState::Parked(parked) => Ok(parked),
-            WdevPairedRoleState::Active(active) => Err(active),
+            WdevPairedRoleState::Active(active) => Err(Self {
+                state: WdevPairedRoleState::Active(active),
+            }),
+            WdevPairedRoleState::Transitioning => {
+                unreachable!("role transition cannot escape its owner method")
+            }
+        }
+    }
+
+    /// Consume an active role while retaining the complete owner when it is
+    /// already parked.
+    pub fn try_into_active(self) -> Result<Active, Self> {
+        match self.state {
+            WdevPairedRoleState::Active(active) => Ok(active),
+            WdevPairedRoleState::Parked(parked) => Err(Self {
+                state: WdevPairedRoleState::Parked(parked),
+            }),
             WdevPairedRoleState::Transitioning => {
                 unreachable!("role transition cannot escape its owner method")
             }
@@ -234,15 +262,17 @@ impl<Ordinary, Aggregate> WdevPairedPhysicalTx<Ordinary, Aggregate> {
         }
     }
 
-    pub fn into_resources(self) -> Result<(Ordinary, Aggregate), WdevPairedPhysicalTxError> {
+    /// Consume an available physical pair while retaining it unchanged when
+    /// a role still owns the finite hardware transaction.
+    pub fn try_into_resources(self) -> Result<(Ordinary, Aggregate), Self> {
         match self.state {
             WdevPairedPhysicalTxState::Available {
                 ordinary,
                 aggregate,
             } => Ok((ordinary, aggregate)),
-            WdevPairedPhysicalTxState::Lent(role) => {
-                Err(WdevPairedPhysicalTxError::AlreadyLent(role))
-            }
+            WdevPairedPhysicalTxState::Lent(role) => Err(Self {
+                state: WdevPairedPhysicalTxState::Lent(role),
+            }),
         }
     }
 }
@@ -267,7 +297,11 @@ mod physical_tx_tests {
         owner
             .restore(WdevPairRole::Second, ordinary, aggregate)
             .unwrap();
-        assert_eq!(owner.into_resources().unwrap(), (0x11, 0x2222));
+        let resources = match owner.try_into_resources() {
+            Ok(resources) => resources,
+            Err(_) => panic!("both roles returned the physical pair"),
+        };
+        assert_eq!(resources, (0x11, 0x2222));
     }
 
     #[test]
@@ -317,7 +351,7 @@ mod physical_tx_tests {
             role.try_park(|active| Ok::<_, (u32, u16)>(active as u8)),
             Err(WdevPairedRoleTransitionError::AlreadyParked)
         );
-        assert_eq!(role.into_parked(), Ok(8));
+        assert!(matches!(role.try_into_parked(), Ok(8)));
     }
 }
 

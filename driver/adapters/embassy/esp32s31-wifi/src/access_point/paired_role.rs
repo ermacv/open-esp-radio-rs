@@ -124,6 +124,29 @@ pub enum Esp32s31StaApAccessPointPairedControlError {
     Ownership(Esp32s31StaApAccessPointTxOwnershipError),
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Esp32s31StaApAccessPointFinishReason {
+    Activation(Esp32s31StaApAccessPointTxOwnershipError),
+    AggregateBusy,
+    ProtocolBusy,
+}
+
+/// Complete AP teardown result before the station reclaims physical TX.
+pub struct Esp32s31StaApAccessPointFinished<Stopped, NetworkTx, Security, SharedRx, PhysicalTx> {
+    pub stopped: Stopped,
+    pub network_tx: NetworkTx,
+    pub security_material: Security,
+    pub publish_shared_rx: SharedRx,
+    pub physical_tx: PhysicalTx,
+}
+
+/// Exact paired AP frontier retained when shutdown cannot cross an idle edge.
+pub struct Esp32s31StaApAccessPointFinishFailure<Role, PhysicalTx> {
+    pub reason: Esp32s31StaApAccessPointFinishReason,
+    pub role: Role,
+    pub physical_tx: PhysicalTx,
+}
+
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
 /// Return an initialized AP role to the already-existing paired physical
 /// owner. `physical` must record a prior `Second` lend used to construct
@@ -288,6 +311,206 @@ where
         network_backpressure_since_micros,
         #[cfg(feature = "rx-delivery-observation")]
         delivery_observer,
+    })
+}
+
+/// Stop and detach a quiescent paired AP role, returning the exact physical
+/// TX pair to the shared owner.
+///
+/// The paired WDEV must first drive `service_stop` to `Stopped`.  This
+/// transaction then verifies that both protocol and aggregate owners are
+/// idle, stops the AP engine, and restores ordinary/A-MPDU resources without
+/// constructing replacements.
+#[allow(clippy::result_large_err, clippy::type_complexity)]
+pub fn finish_sta_ap_access_point_role<
+    'storage,
+    'beacon,
+    'slot,
+    'ampdu,
+    P,
+    E,
+    T,
+    NetworkTx,
+    Security,
+    SharedRx,
+    B,
+    H,
+    const DMA_BUFFER_SIZE: usize,
+    const TX_BUFFER_SIZE: usize,
+    const AMPDU_SLOTS: usize,
+    const AMPDU_BUFFER_SIZE: usize,
+>(
+    mut role: Esp32s31StaApAccessPointRole<
+        WdevPairedRoleOwner<
+            Esp32s31StaApAccessPointTxActive<
+                Esp32s31AccessPointProtocolProcessor<
+                    'storage,
+                    'beacon,
+                    'slot,
+                    P,
+                    E,
+                    T,
+                    DMA_BUFFER_SIZE,
+                    TX_BUFFER_SIZE,
+                >,
+                Esp32s31AccessPointAmpdu<'ampdu, B, AMPDU_SLOTS, AMPDU_BUFFER_SIZE>,
+            >,
+            Esp32s31StaApAccessPointTxParked<
+                Esp32s31AccessPointProtocolProcessorParked<'storage, 'beacon, DMA_BUFFER_SIZE>,
+                super::ampdu::Esp32s31AccessPointAmpduParked,
+            >,
+        >,
+        NetworkTx,
+        Security,
+        SharedRx,
+    >,
+    mut physical_tx: WdevPairedPhysicalTx<
+        WifiTxResources<'slot, P, E, T, TX_BUFFER_SIZE>,
+        crate::ampdu_resources::AggregateTxResources<'ampdu, B, AMPDU_SLOTS, AMPDU_BUFFER_SIZE>,
+    >,
+    hardware: &mut H,
+) -> Result<
+    Esp32s31StaApAccessPointFinished<
+        Esp32s31AccessPointProtocolFinished<'storage, 'beacon, DMA_BUFFER_SIZE>,
+        NetworkTx,
+        Security,
+        SharedRx,
+        WdevPairedPhysicalTx<
+            WifiTxResources<'slot, P, E, T, TX_BUFFER_SIZE>,
+            crate::ampdu_resources::AggregateTxResources<'ampdu, B, AMPDU_SLOTS, AMPDU_BUFFER_SIZE>,
+        >,
+    >,
+    Esp32s31StaApAccessPointFinishFailure<
+        Esp32s31StaApAccessPointRole<
+            WdevPairedRoleOwner<
+                Esp32s31StaApAccessPointTxActive<
+                    Esp32s31AccessPointProtocolProcessor<
+                        'storage,
+                        'beacon,
+                        'slot,
+                        P,
+                        E,
+                        T,
+                        DMA_BUFFER_SIZE,
+                        TX_BUFFER_SIZE,
+                    >,
+                    Esp32s31AccessPointAmpdu<'ampdu, B, AMPDU_SLOTS, AMPDU_BUFFER_SIZE>,
+                >,
+                Esp32s31StaApAccessPointTxParked<
+                    Esp32s31AccessPointProtocolProcessorParked<'storage, 'beacon, DMA_BUFFER_SIZE>,
+                    super::ampdu::Esp32s31AccessPointAmpduParked,
+                >,
+            >,
+            NetworkTx,
+            Security,
+            SharedRx,
+        >,
+        WdevPairedPhysicalTx<
+            WifiTxResources<'slot, P, E, T, TX_BUFFER_SIZE>,
+            crate::ampdu_resources::AggregateTxResources<'ampdu, B, AMPDU_SLOTS, AMPDU_BUFFER_SIZE>,
+        >,
+    >,
+>
+where
+    P: WifiTxPowerProfile,
+    E: WifiTxEntropy,
+    T: WifiTxTimer,
+    B: StableDmaBacking + 'ampdu,
+    H: Esp32s31ApRuntimeHardware,
+{
+    if let Err(reason) = role.activate_tx(&mut physical_tx) {
+        return Err(Esp32s31StaApAccessPointFinishFailure {
+            reason: Esp32s31StaApAccessPointFinishReason::Activation(reason),
+            role,
+            physical_tx,
+        });
+    }
+    let Esp32s31StaApAccessPointRole {
+        protocol,
+        network_tx,
+        security_material,
+        publish_shared_rx,
+        network_backpressure_since_micros,
+        #[cfg(feature = "rx-delivery-observation")]
+        delivery_observer,
+    } = role;
+    let active = match protocol.try_into_active() {
+        Ok(active) => active,
+        Err(protocol) => {
+            return Err(Esp32s31StaApAccessPointFinishFailure {
+                reason: Esp32s31StaApAccessPointFinishReason::Activation(
+                    Esp32s31StaApAccessPointTxOwnershipError::AlreadyParked,
+                ),
+                role: Esp32s31StaApAccessPointRole {
+                    protocol,
+                    network_tx,
+                    security_material,
+                    publish_shared_rx,
+                    network_backpressure_since_micros,
+                    #[cfg(feature = "rx-delivery-observation")]
+                    delivery_observer,
+                },
+                physical_tx,
+            });
+        }
+    };
+    let (processor, aggregate) = active.into_parts();
+    let (aggregate_resources, aggregate_state) = match aggregate.try_park() {
+        Ok(parts) => parts,
+        Err(aggregate) => {
+            return Err(Esp32s31StaApAccessPointFinishFailure {
+                reason: Esp32s31StaApAccessPointFinishReason::AggregateBusy,
+                role: Esp32s31StaApAccessPointRole {
+                    protocol: WdevPairedRoleOwner::from_active(Esp32s31StaApAccessPointTxActive {
+                        processor,
+                        aggregate,
+                    }),
+                    network_tx,
+                    security_material,
+                    publish_shared_rx,
+                    network_backpressure_since_micros,
+                    #[cfg(feature = "rx-delivery-observation")]
+                    delivery_observer,
+                },
+                physical_tx,
+            });
+        }
+    };
+    let stopped = match processor.try_finish_paired(hardware) {
+        Ok(stopped) => stopped,
+        Err(processor) => {
+            return Err(Esp32s31StaApAccessPointFinishFailure {
+                reason: Esp32s31StaApAccessPointFinishReason::ProtocolBusy,
+                role: Esp32s31StaApAccessPointRole {
+                    protocol: WdevPairedRoleOwner::from_active(Esp32s31StaApAccessPointTxActive {
+                        processor,
+                        aggregate: Esp32s31AccessPointAmpdu::resume(
+                            aggregate_resources,
+                            aggregate_state,
+                        ),
+                    }),
+                    network_tx,
+                    security_material,
+                    publish_shared_rx,
+                    network_backpressure_since_micros,
+                    #[cfg(feature = "rx-delivery-observation")]
+                    delivery_observer,
+                },
+                physical_tx,
+            });
+        }
+    };
+    let (ordinary, stopped) = stopped.into_parts();
+    physical_tx
+        .restore(WdevPairRole::Second, ordinary, aggregate_resources)
+        .unwrap_or_else(|_| unreachable!("paired AP activation records the second role"));
+
+    Ok(Esp32s31StaApAccessPointFinished {
+        stopped,
+        network_tx,
+        security_material,
+        publish_shared_rx,
+        physical_tx,
     })
 }
 

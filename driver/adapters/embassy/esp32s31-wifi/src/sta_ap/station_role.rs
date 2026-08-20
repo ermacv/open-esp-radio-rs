@@ -23,7 +23,7 @@ use crate::{
             WdevPairRole, WdevPairedNetworkTxService, WdevPairedPhysicalTx,
             WdevPairedPhysicalTxError, WdevPairedRoleOwner, WdevPairedRoleTransitionError,
         },
-        services::WdevNetworkTxService,
+        services::{WdevNetworkTxService, WdevServiceSet},
     },
 };
 
@@ -51,6 +51,23 @@ pub struct Esp32s31StaApStationPrepareFailure<H, PhysicalRx, Station> {
     pub physical_rx: PhysicalRx,
     pub station: Station,
     pub report: Esp32s31ConnectedStaReport,
+}
+
+/// Why a paired station cannot return to the ordinary connected owner graph.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Esp32s31StaApStationFinishReason {
+    StationTxActive,
+    PhysicalTxLent(WdevPairRole),
+}
+
+/// Fail-closed paired-to-connected frontier.
+///
+/// The complete prepared graph is retained unchanged.  A caller may finish
+/// the outstanding transaction and retry; it never has to manufacture a TX
+/// owner from policy state.
+pub struct Esp32s31StaApStationFinishFailure<H, PhysicalRx, Station, PhysicalTx> {
+    pub reason: Esp32s31StaApStationFinishReason,
+    pub prepared: Esp32s31StaApStationPrepared<H, PhysicalRx, Station, PhysicalTx>,
 }
 
 /// One station role owner lent independently to common RX, TX and control
@@ -420,6 +437,190 @@ where
             report,
         }),
     }
+}
+
+/// Rejoin a quiescent paired STA role with the exact physical TX resources
+/// removed by [`prepare_sta_ap_station`].
+///
+/// This is the sole inverse cutover transaction.  It succeeds only after the
+/// paired WDEV has reached an idle terminal edge: neither logical role may
+/// retain ordinary or aggregate hardware authority.
+#[allow(clippy::type_complexity)]
+pub fn finish_sta_ap_station<
+    'resources,
+    'slot,
+    'ampdu,
+    M,
+    P,
+    E,
+    T,
+    H,
+    PhysicalRx,
+    Protocol,
+    Control,
+    const FRAME_CAPACITY: usize,
+    const HEADROOM: usize,
+    const TRAILER: usize,
+    const QUEUE_DEPTH: usize,
+    const SLOTS: usize,
+    const AMPDU_BUFFER_SIZE: usize,
+    const ORDINARY_BUFFER_SIZE: usize,
+>(
+    prepared: Esp32s31StaApStationPrepared<
+        H,
+        PhysicalRx,
+        Esp32s31StaApStationRole<
+            Protocol,
+            WdevPairedRoleOwner<
+                Esp32s31ConnectedTx<
+                    'slot,
+                    'ampdu,
+                    'resources,
+                    M,
+                    P,
+                    E,
+                    T,
+                    FRAME_CAPACITY,
+                    HEADROOM,
+                    TRAILER,
+                    QUEUE_DEPTH,
+                    SLOTS,
+                    AMPDU_BUFFER_SIZE,
+                    ORDINARY_BUFFER_SIZE,
+                >,
+                Esp32s31ConnectedTxParked<'ampdu, SLOTS>,
+            >,
+            Control,
+        >,
+        Esp32s31StaApStationPhysicalTx<
+            'resources,
+            'slot,
+            'ampdu,
+            M,
+            P,
+            E,
+            T,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            QUEUE_DEPTH,
+            SLOTS,
+            AMPDU_BUFFER_SIZE,
+            ORDINARY_BUFFER_SIZE,
+        >,
+    >,
+) -> Result<
+    Esp32s31ConnectedStaDrivers<
+        H,
+        PhysicalRx,
+        Esp32s31ConnectedTx<
+            'slot,
+            'ampdu,
+            'resources,
+            M,
+            P,
+            E,
+            T,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            QUEUE_DEPTH,
+            SLOTS,
+            AMPDU_BUFFER_SIZE,
+            ORDINARY_BUFFER_SIZE,
+        >,
+        Control,
+        Protocol,
+    >,
+    Esp32s31StaApStationFinishFailure<
+        H,
+        PhysicalRx,
+        Esp32s31StaApStationRole<
+            Protocol,
+            WdevPairedRoleOwner<
+                Esp32s31ConnectedTx<
+                    'slot,
+                    'ampdu,
+                    'resources,
+                    M,
+                    P,
+                    E,
+                    T,
+                    FRAME_CAPACITY,
+                    HEADROOM,
+                    TRAILER,
+                    QUEUE_DEPTH,
+                    SLOTS,
+                    AMPDU_BUFFER_SIZE,
+                    ORDINARY_BUFFER_SIZE,
+                >,
+                Esp32s31ConnectedTxParked<'ampdu, SLOTS>,
+            >,
+            Control,
+        >,
+        Esp32s31StaApStationPhysicalTx<
+            'resources,
+            'slot,
+            'ampdu,
+            M,
+            P,
+            E,
+            T,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            QUEUE_DEPTH,
+            SLOTS,
+            AMPDU_BUFFER_SIZE,
+            ORDINARY_BUFFER_SIZE,
+        >,
+    >,
+>
+where
+    M: RawMutex,
+    P: WifiTxPowerProfile,
+    E: WifiTxEntropy,
+    T: WifiTxTimer,
+    'resources: 'ampdu,
+{
+    if !prepared.station.tx.is_parked() {
+        return Err(Esp32s31StaApStationFinishFailure {
+            reason: Esp32s31StaApStationFinishReason::StationTxActive,
+            prepared,
+        });
+    }
+    if let Some(role) = prepared.physical_tx.lent_to() {
+        return Err(Esp32s31StaApStationFinishFailure {
+            reason: Esp32s31StaApStationFinishReason::PhysicalTxLent(role),
+            prepared,
+        });
+    }
+
+    let Esp32s31StaApStationPrepared {
+        hardware,
+        physical_rx,
+        station,
+        physical_tx,
+        report,
+    } = prepared;
+    let Esp32s31StaApStationRole {
+        rx: protocol,
+        tx,
+        control,
+    } = station;
+    let parked = tx
+        .try_into_parked()
+        .unwrap_or_else(|_| unreachable!("station TX was checked quiescent"));
+    let (ordinary, aggregate) = physical_tx
+        .try_into_resources()
+        .unwrap_or_else(|_| unreachable!("physical TX was checked available"));
+    let tx = Esp32s31ConnectedTx::resume(ordinary, aggregate, parked);
+
+    Ok(Esp32s31ConnectedStaDrivers {
+        services: WdevServiceSet::with_control(hardware, physical_rx, tx, control),
+        protocol,
+        report,
+    })
 }
 
 impl<Rx, Tx, Control> Esp32s31StaApStationRole<Rx, Tx, Control> {

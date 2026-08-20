@@ -186,6 +186,20 @@ pub(super) struct ProductionStationRoleResources {
     station_address: [u8; 6],
 }
 
+impl ProductionStationRoleResources {
+    pub(super) const fn station_address(&self) -> [u8; 6] {
+        self.station_address
+    }
+
+    pub(super) fn scan_storage(&mut self) -> (&mut ScanTable, &mut [u8]) {
+        (&mut *self.scan_table, &mut *self.scan_frame)
+    }
+
+    pub(super) fn scan_table(&self) -> &ScanTable {
+        self.scan_table
+    }
+}
+
 pub(super) struct ProductionAccessPointParked {
     dma: Esp32s31StationDmaResources<'static, RxStorage, RX_DESCRIPTOR_COUNT>,
     tx_epoch: &'static mut TxStorage,
@@ -262,6 +276,37 @@ pub(super) struct ProductionWifiPhysicalResources {
         Option<open_esp_radio::esp32s31::wifi::mac::rx::RxRingHalted<'static, RX_DESCRIPTOR_COUNT>>,
     tx: ProductionOrdinaryTxResources,
     aggregate_tx: RadioAmpduStorage,
+}
+
+impl ProductionWifiPhysicalResources {
+    pub(super) const fn new(
+        dma: Esp32s31StationDmaResources<'static, RxStorage, RX_DESCRIPTOR_COUNT>,
+        rx_ring: Option<
+            open_esp_radio::esp32s31::wifi::mac::rx::RxRingHalted<'static, RX_DESCRIPTOR_COUNT>,
+        >,
+        tx: ProductionOrdinaryTxResources,
+        aggregate_tx: RadioAmpduStorage,
+    ) -> Self {
+        Self {
+            dma,
+            rx_ring,
+            tx,
+            aggregate_tx,
+        }
+    }
+
+    pub(super) fn into_parts(
+        self,
+    ) -> (
+        Esp32s31StationDmaResources<'static, RxStorage, RX_DESCRIPTOR_COUNT>,
+        Option<
+            open_esp_radio::esp32s31::wifi::mac::rx::RxRingHalted<'static, RX_DESCRIPTOR_COUNT>,
+        >,
+        ProductionOrdinaryTxResources,
+        RadioAmpduStorage,
+    ) {
+        (self.dma, self.rx_ring, self.tx, self.aggregate_tx)
+    }
 }
 
 pub(super) struct ProductionAccessPointTask {
@@ -1289,6 +1334,18 @@ async fn wait_for_access_point_stop(
                         WifiStartFailure::rejected(
                             request,
                             Esp32s31RadioError::RoleActive(EmbassyWifiStartKind::AccessPoint),
+                        ),
+                    )))
+                    .await;
+            }
+            EmbassyWifiSupervisorCommand::StartStationAccessPoint(request) => {
+                endpoint
+                    .respond(EmbassyWifiSupervisorResponse::StationAccessPoint(Err(
+                        WifiStartFailure::rejected(
+                            request,
+                            Esp32s31RadioError::RoleActive(
+                                EmbassyWifiStartKind::StationAccessPoint,
+                            ),
                         ),
                     )))
                     .await;

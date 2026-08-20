@@ -13,10 +13,10 @@ use embassy_sync::{
 use open_esp_radio_wifi_embassy::{await_stack_boundary, stack_boundary::stack_poll};
 
 use crate::{
-    AccessPointRequest, MonitorRequest, RadioController, StationRequest, WifiIdle, WifiScanFailure,
-    WifiScanReport, WifiScanRequest, WifiServicePlanningError, WifiServiceRequest,
-    WifiStartFailure, WifiStartResult, WifiStopReport, WifiSupervisorConfiguration,
-    WifiSupervisorPort,
+    AccessPointRequest, MonitorRequest, RadioController, StationAccessPointRequest, StationRequest,
+    WifiIdle, WifiScanFailure, WifiScanReport, WifiScanRequest, WifiServicePlanningError,
+    WifiServiceRequest, WifiStartFailure, WifiStartResult, WifiStopReport,
+    WifiSupervisorConfiguration, WifiSupervisorPort,
 };
 
 /// Exactly one command is outstanding because the public controller requires
@@ -28,6 +28,7 @@ pub enum EmbassyWifiSupervisorCommand {
     Scan(WifiScanRequest),
     StartStation(StationRequest),
     StartAccessPoint(AccessPointRequest),
+    StartStationAccessPoint(StationAccessPointRequest),
     StartMonitor(MonitorRequest),
     Stop,
 }
@@ -38,6 +39,7 @@ pub enum EmbassyWifiStartKind {
     StandaloneScan,
     Station,
     AccessPoint,
+    StationAccessPoint,
     StandaloneMonitor,
 }
 
@@ -96,6 +98,7 @@ pub enum EmbassyWifiSupervisorResponse<E> {
     Scan(Result<WifiScanReport, WifiScanFailure<WifiScanRequest, E>>),
     Station(WifiStartResult<StationRequest, E>),
     AccessPoint(WifiStartResult<AccessPointRequest, E>),
+    StationAccessPoint(WifiStartResult<StationAccessPointRequest, E>),
     Monitor(WifiStartResult<MonitorRequest, E>),
     Stop(Result<WifiStopReport, E>),
     SupervisorUnavailable,
@@ -428,6 +431,33 @@ impl<M: RawMutex, E> WifiSupervisorPort for EmbassyWifiSupervisorPort<'_, M, E> 
         }
     }
 
+    async fn start_station_access_point(
+        &mut self,
+        request: StationAccessPointRequest,
+    ) -> WifiStartResult<StationAccessPointRequest, Self::Error> {
+        if !self.supervisor_available() {
+            return Err(WifiStartFailure::rejected(
+                request,
+                EmbassyWifiSupervisorError::SupervisorUnavailable,
+            ));
+        }
+        self.publish(EmbassyWifiSupervisorCommand::StartStationAccessPoint(
+            request,
+        ))
+        .await;
+        match self.completion().await {
+            EmbassyWifiSupervisorResponse::StationAccessPoint(result) => {
+                result.map_err(map_start_failure)
+            }
+            EmbassyWifiSupervisorResponse::SupervisorUnavailable => Err(WifiStartFailure::faulted(
+                EmbassyWifiSupervisorError::SupervisorUnavailable,
+            )),
+            _ => Err(WifiStartFailure::faulted(
+                EmbassyWifiSupervisorError::ResponseMismatch,
+            )),
+        }
+    }
+
     async fn start_monitor(
         &mut self,
         request: MonitorRequest,
@@ -579,6 +609,22 @@ where
                 }
             }
         }
+        EmbassyWifiSupervisorCommand::StartStationAccessPoint(request) => {
+            match configuration.plan_station_access_point(request) {
+                Ok(service) => EmbassyWifiStoppedDispatch::Start(service),
+                Err(failure) => {
+                    endpoint
+                        .respond(EmbassyWifiSupervisorResponse::StationAccessPoint(Err(
+                            WifiStartFailure::rejected(
+                                failure.request,
+                                planning_error(failure.error),
+                            ),
+                        )))
+                        .await;
+                    EmbassyWifiStoppedDispatch::Handled
+                }
+            }
+        }
         EmbassyWifiSupervisorCommand::StartMonitor(request) => {
             match configuration.plan_monitor(request) {
                 Ok(service) => EmbassyWifiStoppedDispatch::Start(service),
@@ -686,6 +732,12 @@ where
                     runner.fault_error(&faulted),
                 )))
             }
+            EmbassyWifiSupervisorCommand::StartStationAccessPoint(request) => {
+                EmbassyWifiSupervisorResponse::StationAccessPoint(Err(WifiStartFailure::rejected(
+                    request,
+                    runner.fault_error(&faulted),
+                )))
+            }
             EmbassyWifiSupervisorCommand::StartMonitor(request) => {
                 EmbassyWifiSupervisorResponse::Monitor(Err(WifiStartFailure::rejected(
                     request,
@@ -780,6 +832,14 @@ where
                 let error = active_start_error(EmbassyWifiStartKind::AccessPoint);
                 endpoint
                     .respond(EmbassyWifiSupervisorResponse::AccessPoint(Err(
+                        WifiStartFailure::rejected(request, error),
+                    )))
+                    .await;
+            }
+            Either::Second(EmbassyWifiSupervisorCommand::StartStationAccessPoint(request)) => {
+                let error = active_start_error(EmbassyWifiStartKind::StationAccessPoint);
+                endpoint
+                    .respond(EmbassyWifiSupervisorResponse::StationAccessPoint(Err(
                         WifiStartFailure::rejected(request, error),
                     )))
                     .await;

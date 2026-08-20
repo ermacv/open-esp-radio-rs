@@ -6,7 +6,9 @@
 
 use core::{fmt, future::Future};
 
-use crate::{AccessPointRequest, MonitorRequest, StationRequest, WifiScanRequest};
+use crate::{
+    AccessPointRequest, MonitorRequest, StationAccessPointRequest, StationRequest, WifiScanRequest,
+};
 
 pub const WIFI_SCAN_RESULT_CAPACITY: usize = 32;
 
@@ -247,6 +249,11 @@ pub trait WifiSupervisorPort {
         request: AccessPointRequest,
     ) -> impl Future<Output = WifiStartResult<AccessPointRequest, Self::Error>> + '_;
 
+    fn start_station_access_point(
+        &mut self,
+        request: StationAccessPointRequest,
+    ) -> impl Future<Output = WifiStartResult<StationAccessPointRequest, Self::Error>> + '_;
+
     fn start_monitor(
         &mut self,
         request: MonitorRequest,
@@ -345,6 +352,31 @@ impl<P: WifiSupervisorPort> WifiIdle<P> {
         }
     }
 
+    pub async fn start_station_access_point(
+        mut self,
+        request: StationAccessPointRequest,
+    ) -> Result<
+        WifiStationAccessPoint<P>,
+        WifiRoleStartFailure<Self, StationAccessPointRequest, P::Error>,
+    > {
+        match self.port.start_station_access_point(request).await {
+            Ok(report) => Ok(WifiStationAccessPoint {
+                port: self.port,
+                generation: report.generation(),
+            }),
+            Err(WifiStartFailure::Rejected { request, error }) => {
+                Err(WifiRoleStartFailure::Rejected {
+                    wifi: self,
+                    request,
+                    error,
+                })
+            }
+            Err(WifiStartFailure::Faulted { error }) => {
+                Err(WifiRoleStartFailure::Faulted { error })
+            }
+        }
+    }
+
     pub async fn start_monitor(
         mut self,
         request: MonitorRequest,
@@ -417,6 +449,27 @@ pub struct WifiStation<P> {
 pub struct WifiAccessPoint<P> {
     port: P,
     generation: RadioSubsystemGeneration,
+}
+
+/// Active same-channel station plus SoftAP composition. The physical RX, TX
+/// and IRQ owners remain unique inside the supervisor actor.
+pub struct WifiStationAccessPoint<P> {
+    port: P,
+    generation: RadioSubsystemGeneration,
+}
+
+impl<P: WifiSupervisorPort> WifiStationAccessPoint<P> {
+    pub const fn generation(&self) -> RadioSubsystemGeneration {
+        self.generation
+    }
+
+    pub async fn stop(mut self) -> Result<WifiIdle<P>, WifiRoleStopFailure<P::Error>> {
+        match self.port.stop().await {
+            Ok(report) if report.generation() == self.generation => Ok(WifiIdle::new(self.port)),
+            Ok(_) => Err(WifiRoleStopFailure::GenerationMismatch),
+            Err(error) => Err(WifiRoleStopFailure::Faulted(error)),
+        }
+    }
 }
 
 impl<P: WifiSupervisorPort> WifiAccessPoint<P> {

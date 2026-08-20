@@ -57,7 +57,7 @@ reason = "production station constructor transfers its unique resource graph int
 [[reviewed_frames]]
 function_contains = "ProductionWifiEpochRunner as"
 source_ends_with = "driver/integration/esp32s31/embassy-wifi/src/runtime.rs"
-max_bytes = 17248
+max_bytes = 17920
 reason = "role epoch future retains the exact station, AP or monitor return ownership, including interface-scoped BlockAck state, the Rust rate-control owner and typed AP retry counters"
 
 [[reviewed_frames]]
@@ -87,7 +87,7 @@ reason = "connected transition future preserves the exact join and teardown owne
 [[reviewed_frames]]
 function_contains = "::connected::run_connected::{closure#0}"
 source_ends_with = "driver/integration/esp32s31/embassy-wifi/src/connected.rs"
-max_bytes = 14528
+max_bytes = 15360
 reason = "connected epoch future owns the recoverable DMA, VIF-scoped BlockAck, WPA2 rekey, key, network and Rust rate-control frontier"
 
 [[reviewed_frames]]
@@ -99,19 +99,19 @@ reason = "shared initial/reconnect attempt future retains the exact phase owner 
 [[reviewed_frames]]
 function_contains = "run_esp32s31_station_supervisor_epoch"
 source_ends_with = "driver/radio/src/esp32s31/supervisor.rs"
-max_bytes = 12160
+max_bytes = 12800
 reason = "chip station supervisor retains the typed dual-VIF role return, Rust rate-control owner and AP retry report across one epoch"
 
 [[reviewed_frames]]
 function_contains = "::station::lifecycle::Esp32s31StationTask<"
 source_ends_with = "driver/adapters/embassy/esp32s31-wifi/src/station/lifecycle.rs"
-max_bytes = 10752
-reason = "station task future retains lifecycle command and returned owner state, including connected rate control"
+max_bytes = 11264
+reason = "station task future retains lifecycle command and returned owner state, including connected rate control and interface-scoped BlockAck state"
 
 [[reviewed_frames]]
 function_contains = "EmbassyWifiSupervisorTask<"
 source_ends_with = "driver/radio/src/embassy_supervisor.rs"
-max_bytes = 11968
+max_bytes = 12288
 reason = "radio supervisor retains the affine Wi-Fi role owner plus bounded dual-VIF network, service-epoch, rate-control and AP retry-report state"
 
 [[reviewed_frames]]

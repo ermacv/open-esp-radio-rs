@@ -82,7 +82,7 @@ owner driver/chips/esp32s31/wifi/mac/src/tx.rs TxSlot
 owner driver/chips/esp32s31/wifi/dma/src/rx_ring.rs complete_pending_reload
 owner driver/adapters/embassy/esp32s31-wifi/src/embassy_rx.rs complete_staged_rx_reload
 owner driver/adapters/embassy/esp32s31-wifi/src/wdev.rs WdevRunner
-owner driver/adapters/embassy/esp32s31-wifi/src/aggregate_tx.rs Esp32s31ConnectedTx
+owner driver/adapters/embassy/esp32s31-wifi/src/station_tx.rs Esp32s31ConnectedTx
 owner driver/adapters/embassy/esp32s31-wifi/src/connected_sta_port.rs Esp32s31ConnectedStaPort
 owner driver/adapters/embassy/esp32s31-wifi/src/connected_sta_teardown.rs Esp32s31ConnectedStaTeardownPort
 owner driver/adapters/embassy/esp32s31-wifi/src/rx_dma_service.rs Esp32s31PreparedRx
@@ -96,7 +96,7 @@ test driver/chips/esp32s31/wifi/mac/tests/mac.rs normalized_ht_rx_metadata_uses_
 test driver/chips/esp32s31/wifi/mac/tests/mac.rs normalized_rx_metadata_separates_format_validated_ampdu_from_ht_hardware_status
 test driver/chips/esp32s31/wifi/mac/tests/mac.rs station_key_teardown_consumes_and_clears_both_hardware_slots
 test driver/chips/esp32s31/wifi/mac/tests/mac.rs tx_slot_reproduces_the_migration_timeout_abort_order
-test driver/adapters/embassy/esp32s31-wifi/src/aggregate_tx/tests.rs idle_aggregate_returns_ordinary_and_storage_for_station_teardown
+test driver/adapters/embassy/esp32s31-wifi/src/station_tx/tests.rs idle_aggregate_returns_ordinary_and_storage_for_station_teardown
 test driver/adapters/embassy/esp32s31-wifi/src/connected_sta_teardown.rs teardown_orders_control_rx_tx_and_both_key_clears
 test driver/adapters/embassy/esp32s31-wifi/src/rx_frontier/tests.rs consuming_connected_promotion_returns_live_ring_or_exact_owner
 test driver/adapters/embassy/esp32s31-wifi/src/rx_dma_service/tests.rs connected_rx_stop_confirms_walker_off_and_preserves_static_resources

@@ -116,7 +116,8 @@ async fn access_point_task(_spawner: Spawner, radio: EspHalRadioPeripheral, trng
     } = radio.into_parts();
     let open_esp_radio_esp32s31_embassy_wifi::Esp32s31WifiParts {
         control: wifi,
-        device,
+        station_device: _,
+        access_point_device,
         monitor_frames: _,
         mut access_point_status,
     } = wifi.into_parts();
@@ -126,7 +127,7 @@ async fn access_point_task(_spawner: Spawner, radio: EspHalRadioPeripheral, trng
         dns_servers: Default::default(),
     });
     let (stack, network_runner) = open_esp_radio_esp32s31_embassy_wifi::new_wifi_network(
-        device,
+        access_point_device,
         network_config,
         NETWORK_RESOURCES.take(),
         u64::from_le_bytes([

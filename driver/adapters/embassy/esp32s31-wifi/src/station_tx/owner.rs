@@ -96,7 +96,7 @@ where
             standby_error: None,
             block_ack_windows: [0; 8],
             config,
-            rate_control,
+            rate_control: TeardownResource::new(rate_control),
             aggregate_rate_policy,
             active: ConnectedTxActive::Idle,
             last_aggregate_status: None,
@@ -398,6 +398,102 @@ where
     /// platform reset transaction.
     pub fn is_reset_required(&self) -> bool {
         self.queue_state() == MacTxQueueState::ResetRequired
+    }
+
+    /// Lend both physical TX owners to another logical role at a completely
+    /// idle scheduling boundary while retaining every station-local policy
+    /// and observation state.
+    #[allow(clippy::result_large_err, clippy::type_complexity)]
+    pub fn try_park(
+        mut self,
+    ) -> Result<
+        (
+            WifiTxResources<'slot, P, E, T, ORDINARY_BUFFER_SIZE>,
+            AggregateTxResources<
+                'ampdu,
+                PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+                SLOTS,
+                AMPDU_BUFFER_SIZE,
+            >,
+            Esp32s31ConnectedTxParked<'ampdu, SLOTS>,
+        ),
+        Self,
+    > {
+        if self.queue_state() != MacTxQueueState::Ready {
+            return Err(self);
+        }
+
+        let rate_control = self.rate_control.take();
+        let block_ack_windows = self.block_ack_windows;
+        let config = self.config;
+        let aggregate_rate_policy = self.aggregate_rate_policy;
+        let last_aggregate_status = self.last_aggregate_status;
+        let pending_ordinary_retry = self.pending_ordinary_retry;
+        let observer = self.observer;
+
+        match self.try_into_teardown_parts() {
+            Ok((resources, handoff, aggregate)) => Ok((
+                resources,
+                aggregate,
+                Esp32s31ConnectedTxParked {
+                    handoff,
+                    block_ack_windows,
+                    config,
+                    rate_control,
+                    aggregate_rate_policy,
+                    last_aggregate_status,
+                    pending_ordinary_retry,
+                    observer,
+                },
+            )),
+            Err(mut owner) => {
+                owner.rate_control.restore(rate_control);
+                Err(owner)
+            }
+        }
+    }
+
+    /// Rejoin station-local policy with the exact physical owners returned by
+    /// the AP role. No association, key, sequence, rate-control or BlockAck
+    /// state is reconstructed from values outside the parked capability.
+    pub fn resume(
+        resources: WifiTxResources<'slot, P, E, T, ORDINARY_BUFFER_SIZE>,
+        aggregate: AggregateTxResources<
+            'ampdu,
+            PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+            SLOTS,
+            AMPDU_BUFFER_SIZE,
+        >,
+        parked: Esp32s31ConnectedTxParked<'ampdu, SLOTS>,
+    ) -> Self {
+        let Esp32s31ConnectedTxParked {
+            handoff,
+            block_ack_windows,
+            config,
+            rate_control,
+            aggregate_rate_policy,
+            last_aggregate_status,
+            pending_ordinary_retry,
+            observer,
+        } = parked;
+        let ordinary = Esp32s31SingleMpduTx::new(resources, handoff);
+        let mut owner = match Self::new(
+            ordinary,
+            aggregate,
+            config,
+            rate_control,
+            aggregate_rate_policy,
+        ) {
+            Ok(owner) => owner,
+            Err(_) => unreachable!(
+                "a private parked connected-TX state preserves its validated configuration"
+            ),
+        };
+        owner.block_ack_windows = block_ack_windows;
+        owner.last_aggregate_status = last_aggregate_status;
+        owner.pending_ordinary_retry = pending_ordinary_retry;
+        owner.observer = observer;
+        owner
     }
 
     /// Recover the ordinary connected owner and descriptor-only aggregate

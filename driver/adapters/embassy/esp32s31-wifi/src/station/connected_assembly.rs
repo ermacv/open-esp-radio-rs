@@ -7,7 +7,7 @@
 //! statically dispatched service-decoration hook for qualification faults.
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
-use open_esp_radio_embassy_net::{PinnedTxFrame, SplitPinnedRadioRunner};
+use open_esp_radio_embassy_net::PinnedTxFrame;
 use open_esp_radio_esp32s31_wifi::ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer};
 
 use crate::{
@@ -76,6 +76,7 @@ pub fn assemble_esp32s31_connected_driver<
     R,
     B,
     F,
+    N,
     const RX_DEPTH: usize,
     const RX_CAPACITY: usize,
     const RX_SLOTS: usize,
@@ -93,15 +94,7 @@ pub fn assemble_esp32s31_connected_driver<
     resources: Esp32s31ConnectedDriverAssemblyResources<
         'irq,
         M,
-        SplitPinnedRadioRunner<
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            RX_QUEUE_DEPTH,
-            TX_QUEUE_DEPTH,
-        >,
+        N,
         H,
         R,
         Esp32s31ConnectedStaRxProtocolResources<
@@ -140,15 +133,7 @@ pub fn assemble_esp32s31_connected_driver<
             'resources,
             'irq,
             M,
-            SplitPinnedRadioRunner<
-                'resources,
-                M,
-                FRAME_CAPACITY,
-                HEADROOM,
-                TRAILER,
-                RX_QUEUE_DEPTH,
-                TX_QUEUE_DEPTH,
-            >,
+            N,
             B,
             FRAME_CAPACITY,
             HEADROOM,
@@ -170,15 +155,7 @@ pub fn assemble_esp32s31_connected_driver<
         >,
     >,
     Esp32s31ConnectedDriverAssemblyFailure<
-        SplitPinnedRadioRunner<
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            RX_QUEUE_DEPTH,
-            TX_QUEUE_DEPTH,
-        >,
+        N,
         Esp32s31ConnectedStaCompositionFailure<
             H,
             R,
@@ -212,6 +189,15 @@ pub fn assemble_esp32s31_connected_driver<
 >
 where
     M: RawMutex,
+    N: crate::wdev::WdevNetwork<
+            'resources,
+            M,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            RX_QUEUE_DEPTH,
+            TX_QUEUE_DEPTH,
+        >,
     S: ConnectedRxProtocolSink<RX_CAPACITY, RX_SLOTS>,
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
@@ -265,7 +251,12 @@ where
     };
     let services = map_services(drivers.services);
     Ok(Esp32s31ConnectedDriverAssembly {
-        runner: WdevRunner::new(irq, network, services),
+        runner: WdevRunner::new(
+            irq,
+            network,
+            crate::sta_ap::STA_NETWORK_INTERFACE_ID,
+            services,
+        ),
         protocol: drivers.protocol,
         report: drivers.report,
     })

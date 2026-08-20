@@ -1,4 +1,4 @@
-//! One production network scheduler shared by every Wi-Fi role.
+//! One production network scheduler for one permanent logical Wi-Fi device.
 
 use crate::Esp32s31WifiDevice;
 

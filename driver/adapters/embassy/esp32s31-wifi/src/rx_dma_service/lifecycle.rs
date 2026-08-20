@@ -206,7 +206,30 @@ impl<
         Self {
             storage,
             pool,
-            frames,
+            frames: Esp32s31StagedRxPublisher::standalone(frames),
+            delay,
+            pipeline_observer: None,
+        }
+    }
+
+    /// Bind one ordered fact-routed queue for a same-channel STA+AP epoch.
+    pub fn new_sta_ap(
+        storage: &'storage Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
+        pool: &'pool RxStagePool<STAGE_SLOTS, STAGE_CAPACITY>,
+        frames: Sender<
+            'queue,
+            M,
+            crate::sta_ap::Esp32s31StaApStagedRxFrame<'pool, STAGE_CAPACITY, STAGE_SLOTS>,
+            QUEUE_DEPTH,
+        >,
+        ingress: open_esp_radio_esp32s31_wifi_mac::rx::RxIngressConfig,
+        addresses: open_esp_radio_ieee80211::vif::StaApRxAddresses,
+        delay: D,
+    ) -> Self {
+        Self {
+            storage,
+            pool,
+            frames: Esp32s31StagedRxPublisher::sta_ap(frames, ingress, addresses),
             delay,
             pipeline_observer: None,
         }
@@ -437,7 +460,34 @@ impl<
             ring,
             storage,
             pool,
-            frames,
+            frames: Esp32s31StagedRxPublisher::standalone(frames),
+            delay,
+            pipeline_observer: None,
+            admission: FullRxStageAdmission,
+            report: Esp32s31StagedRxProducerReport::default(),
+        }
+    }
+
+    /// Create the sole physical producer for a same-channel STA+AP stream.
+    pub fn new_sta_ap(
+        ring: RxRingLive<'storage, COUNT>,
+        storage: &'storage Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
+        pool: &'pool RxStagePool<STAGE_SLOTS, STAGE_CAPACITY>,
+        delay: D,
+        frames: Sender<
+            'queue,
+            M,
+            crate::sta_ap::Esp32s31StaApStagedRxFrame<'pool, STAGE_CAPACITY, STAGE_SLOTS>,
+            QUEUE_DEPTH,
+        >,
+        ingress: open_esp_radio_esp32s31_wifi_mac::rx::RxIngressConfig,
+        addresses: open_esp_radio_ieee80211::vif::StaApRxAddresses,
+    ) -> Self {
+        Self {
+            ring,
+            storage,
+            pool,
+            frames: Esp32s31StagedRxPublisher::sta_ap(frames, ingress, addresses),
             delay,
             pipeline_observer: None,
             admission: FullRxStageAdmission,

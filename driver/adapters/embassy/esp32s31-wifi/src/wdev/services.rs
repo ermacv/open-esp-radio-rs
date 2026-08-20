@@ -5,7 +5,7 @@ use core::{
     future::{Future, pending, ready},
 };
 
-use open_esp_radio_embassy_net::{PinnedTxConsumer, PinnedTxFrame, RawMutex};
+use open_esp_radio_embassy_net::{PinnedTxFrame, PinnedTxInterfaceConsumer, RawMutex};
 
 use crate::wdev::{
     WdevControlContext, WdevControlProgress, WdevRxProgress, WdevServices, WifiTxProgress,
@@ -82,7 +82,7 @@ pub trait WdevNetworkTxService<
         &'a mut self,
         hardware: &'a mut H,
         frame: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-        network: &'a PinnedTxConsumer<
+        network: &'a PinnedTxInterfaceConsumer<
             'resources,
             M,
             FRAME_CAPACITY,
@@ -118,7 +118,7 @@ pub trait WdevNetworkTxService<
     fn start_prepared<'a>(
         &'a mut self,
         _hardware: &'a mut H,
-        _network: &'a PinnedTxConsumer<
+        _network: &'a PinnedTxInterfaceConsumer<
             'resources,
             M,
             FRAME_CAPACITY,
@@ -142,7 +142,7 @@ pub trait WdevNetworkTxService<
     fn prepare<'a>(
         &'a mut self,
         _frame: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-        _network: &'a PinnedTxConsumer<
+        _network: &'a PinnedTxInterfaceConsumer<
             'resources,
             M,
             FRAME_CAPACITY,
@@ -261,7 +261,7 @@ where
 
     fn service_rx<'a>(
         &'a mut self,
-        _network_rx: &'a mut dyn crate::wdev::WdevNetworkRx,
+        _network_rx: &'a mut dyn crate::wdev::WdevNetworkRxSet,
         _context: crate::wdev::WdevRxServiceContext,
     ) -> impl Future<Output = Result<WdevRxProgress, Self::Error>> + 'a {
         async move {
@@ -299,7 +299,7 @@ where
     fn start_tx<'a>(
         &'a mut self,
         frame: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-        network: &'a PinnedTxConsumer<
+        network: &'a PinnedTxInterfaceConsumer<
             'resources,
             M,
             FRAME_CAPACITY,
@@ -346,7 +346,7 @@ where
 
     fn start_prepared_tx<'a>(
         &'a mut self,
-        network: &'a PinnedTxConsumer<
+        network: &'a PinnedTxInterfaceConsumer<
             'resources,
             M,
             FRAME_CAPACITY,
@@ -374,7 +374,7 @@ where
     fn prepare_tx<'a>(
         &'a mut self,
         frame: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-        network: &'a PinnedTxConsumer<
+        network: &'a PinnedTxInterfaceConsumer<
             'resources,
             M,
             FRAME_CAPACITY,

@@ -5,7 +5,8 @@ use core::{
 };
 
 use open_esp_radio_embassy_net::{
-    Driver as _, NoopRawMutex, PinnedTxPool, SplitPinnedDevice, SplitPinnedResources, TxToken as _,
+    Driver as _, NetworkInterfaceId, NoopRawMutex, PinnedEndpointResources, PinnedNetworkRunner,
+    PinnedTxPool, PinnedTxResources, SplitPinnedDevice, TxToken as _,
 };
 use open_esp_radio_esp32s31_hal::types::{
     MacHeTbLinkReservation, MacHeTbProgramError, MacHeTbTidLimit, MacHeTid,
@@ -77,14 +78,7 @@ const TEST_RATE: HtRate = HtRate::new(
     HtChannelWidth::Mhz20,
 );
 
-type Resources = SplitPinnedResources<
-    NoopRawMutex,
-    TEST_FRAME_CAPACITY,
-    TEST_HEADROOM,
-    TEST_TRAILER,
-    TEST_QUEUE_DEPTH,
-    TEST_QUEUE_DEPTH,
->;
+type Resources = PinnedEndpointResources<NoopRawMutex, TEST_FRAME_CAPACITY, TEST_QUEUE_DEPTH>;
 type Pool = PinnedTxPool<TEST_FRAME_CAPACITY, TEST_HEADROOM, TEST_TRAILER, TEST_QUEUE_DEPTH>;
 type Device = SplitPinnedDevice<
     'static,
@@ -304,7 +298,7 @@ fn make_ordinary<'a, const BUFFER_SIZE: usize>(
 
 fn make_network() -> (
     Device,
-    open_esp_radio_embassy_net::SplitPinnedRadioRunner<
+    open_esp_radio_embassy_net::PinnedNetworkRunner<
         'static,
         NoopRawMutex,
         TEST_FRAME_CAPACITY,
@@ -316,7 +310,13 @@ fn make_network() -> (
 ) {
     let resources = std::boxed::Box::leak(std::boxed::Box::new(Resources::new()));
     let pool = Pool::pin_static(std::boxed::Box::leak(std::boxed::Box::new(Pool::new())));
-    resources.split(pool, STATION)
+    let tx_resources = std::boxed::Box::leak(std::boxed::Box::new(PinnedTxResources::new()));
+    let (provider, consumer) = tx_resources.split(pool);
+    let (device, rx) = resources.split(provider, NetworkInterfaceId::new(0), STATION);
+    (
+        device,
+        PinnedNetworkRunner::new(NetworkInterfaceId::new(0), rx, consumer),
+    )
 }
 
 #[test]
@@ -363,6 +363,70 @@ fn idle_aggregate_returns_ordinary_and_storage_for_station_teardown() {
     };
     assert_eq!(returned.aggregate.primary().state(), TxSlotState::Free);
     assert_eq!(returned.resources.slot.state(), TxSlotState::Free);
+    assert_eq!(returned.sequences.peek_non_qos(), 7);
+    returned.pairwise_key.clear(&mut hardware);
+}
+
+#[test]
+fn idle_station_tx_lends_physical_owners_without_losing_role_state() {
+    let mut hardware = Hardware::default();
+    let mut slot = core::pin::pin!(TxSlot::<TEST_BUFFER_SIZE>::new_model());
+    let ordinary = make_ordinary(slot.as_mut(), &mut hardware);
+    let mut ampdu = core::pin::pin!(HtAmpduTxStorage::<TEST_SLOTS, 0>::new());
+    let mut tx = Esp32s31ConnectedTx::<
+        NoopRawMutex,
+        _,
+        _,
+        _,
+        TEST_FRAME_CAPACITY,
+        TEST_HEADROOM,
+        TEST_TRAILER,
+        TEST_QUEUE_DEPTH,
+        TEST_SLOTS,
+        0,
+        TEST_BUFFER_SIZE,
+    >::new_for_test(
+        ordinary,
+        AggregateTxResources::single(
+            HtAmpduTxResources::new_model(ampdu.as_mut()).unwrap(),
+            std::boxed::Box::leak(std::boxed::Box::new(RetainedAmpduDmaStorage::new())),
+        ),
+        AggregateTxConfig {
+            rate: TxPhyRate::Ht(TEST_RATE),
+            frame_limit: TEST_SLOTS as u8,
+            attempt_limit: 2,
+            completion_timeout_us: 250_000,
+            he_txop_limit: HeEdcaTxopLimit::DEFAULT,
+        },
+    )
+    .unwrap();
+    tx.set_block_ack_agreement(0, Some((3, true)));
+
+    let (ordinary, aggregate, parked) = tx
+        .try_park()
+        .unwrap_or_else(|_| panic!("idle station TX must lend both physical owners"));
+    assert_eq!(ordinary.slot.state(), TxSlotState::Free);
+    assert_eq!(aggregate.primary().state(), TxSlotState::Free);
+
+    let tx = Esp32s31ConnectedTx::<
+        NoopRawMutex,
+        _,
+        _,
+        _,
+        TEST_FRAME_CAPACITY,
+        TEST_HEADROOM,
+        TEST_TRAILER,
+        TEST_QUEUE_DEPTH,
+        TEST_SLOTS,
+        0,
+        TEST_BUFFER_SIZE,
+    >::resume(ordinary, aggregate, parked);
+    assert_eq!(tx.block_ack_window(0), Some(3));
+    assert!(tx.block_ack_amsdu(0));
+
+    let returned = tx
+        .try_into_station_parts()
+        .unwrap_or_else(|_| panic!("resumed station TX remains cleanly reclaimable"));
     assert_eq!(returned.sequences.peek_non_qos(), 7);
     returned.pairwise_key.clear(&mut hardware);
 }
@@ -434,21 +498,17 @@ fn production_sized_he_frame_fits_a_fresh_default_txop_aggregate() {
     const HEADROOM: usize = TEST_HEADROOM;
     const TRAILER: usize = 12;
     const QUEUE_DEPTH: usize = 3;
-    type LargeResources = SplitPinnedResources<
-        NoopRawMutex,
-        FRAME_CAPACITY,
-        HEADROOM,
-        TRAILER,
-        QUEUE_DEPTH,
-        QUEUE_DEPTH,
-    >;
+    type LargeResources = PinnedEndpointResources<NoopRawMutex, FRAME_CAPACITY, QUEUE_DEPTH>;
     type LargePool = PinnedTxPool<FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>;
 
     let resources = std::boxed::Box::leak(std::boxed::Box::new(LargeResources::new()));
     let pool = LargePool::pin_static(std::boxed::Box::leak(
         std::boxed::Box::new(LargePool::new()),
     ));
-    let (mut device, network) = resources.split(pool, STATION);
+    let tx_resources = std::boxed::Box::leak(std::boxed::Box::new(PinnedTxResources::new()));
+    let (provider, consumer) = tx_resources.split(pool);
+    let (mut device, rx) = resources.split(provider, NetworkInterfaceId::new(0), STATION);
+    let network = PinnedNetworkRunner::new(NetworkInterfaceId::new(0), rx, consumer);
     for marker in 1..=2 {
         device
             .transmit(&mut context())
@@ -512,21 +572,17 @@ fn negotiated_amsdu_pairs_network_frames_inside_the_block_ack_window() {
     const HEADROOM: usize = TEST_HEADROOM;
     const TRAILER: usize = 1_632;
     const QUEUE_DEPTH: usize = 4;
-    type LargeResources = SplitPinnedResources<
-        NoopRawMutex,
-        FRAME_CAPACITY,
-        HEADROOM,
-        TRAILER,
-        QUEUE_DEPTH,
-        QUEUE_DEPTH,
-    >;
+    type LargeResources = PinnedEndpointResources<NoopRawMutex, FRAME_CAPACITY, QUEUE_DEPTH>;
     type LargePool = PinnedTxPool<FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>;
 
     let resources = std::boxed::Box::leak(std::boxed::Box::new(LargeResources::new()));
     let pool = LargePool::pin_static(std::boxed::Box::leak(
         std::boxed::Box::new(LargePool::new()),
     ));
-    let (mut device, network) = resources.split(pool, STATION);
+    let tx_resources = std::boxed::Box::leak(std::boxed::Box::new(PinnedTxResources::new()));
+    let (provider, consumer) = tx_resources.split(pool);
+    let (mut device, rx) = resources.split(provider, NetworkInterfaceId::new(0), STATION);
+    let network = PinnedNetworkRunner::new(NetworkInterfaceId::new(0), rx, consumer);
     for marker in 1..=4 {
         device
             .transmit(&mut context())
@@ -645,14 +701,8 @@ fn aggregate_never_exceeds_the_peer_negotiated_block_ack_window() {
 #[test]
 fn pipelined_arena_survives_current_retry_and_publishes_at_next_boundary() {
     const PIPELINE_DEPTH: usize = 6;
-    type PipelineResources = SplitPinnedResources<
-        NoopRawMutex,
-        TEST_FRAME_CAPACITY,
-        TEST_HEADROOM,
-        TEST_TRAILER,
-        PIPELINE_DEPTH,
-        PIPELINE_DEPTH,
-    >;
+    type PipelineResources =
+        PinnedEndpointResources<NoopRawMutex, TEST_FRAME_CAPACITY, PIPELINE_DEPTH>;
     type PipelinePool =
         PinnedTxPool<TEST_FRAME_CAPACITY, TEST_HEADROOM, TEST_TRAILER, PIPELINE_DEPTH>;
 
@@ -660,7 +710,10 @@ fn pipelined_arena_survives_current_retry_and_publishes_at_next_boundary() {
     let pool = PipelinePool::pin_static(std::boxed::Box::leak(std::boxed::Box::new(
         PipelinePool::new(),
     )));
-    let (mut device, network) = resources.split(pool, STATION);
+    let tx_resources = std::boxed::Box::leak(std::boxed::Box::new(PinnedTxResources::new()));
+    let (provider, consumer) = tx_resources.split(pool);
+    let (mut device, rx) = resources.split(provider, NetworkInterfaceId::new(0), STATION);
+    let network = PinnedNetworkRunner::new(NetworkInterfaceId::new(0), rx, consumer);
     for marker in 1..=3 {
         device
             .transmit(&mut context())
@@ -815,7 +868,10 @@ fn pipelined_arena_survives_current_retry_and_publishes_at_next_boundary() {
 fn ordinary_control_tx_cannot_admit_a_standby_aggregate() {
     let resources = std::boxed::Box::leak(std::boxed::Box::new(Resources::new()));
     let pool = Pool::pin_static(std::boxed::Box::leak(std::boxed::Box::new(Pool::new())));
-    let (mut device, network) = resources.split(pool, STATION);
+    let tx_resources = std::boxed::Box::leak(std::boxed::Box::new(PinnedTxResources::new()));
+    let (provider, consumer) = tx_resources.split(pool);
+    let (mut device, rx) = resources.split(provider, NetworkInterfaceId::new(0), STATION);
+    let network = PinnedNetworkRunner::new(NetworkInterfaceId::new(0), rx, consumer);
     send_frame(&mut device, 1);
 
     let mut hardware = Hardware::default();
@@ -863,7 +919,10 @@ fn ordinary_control_tx_cannot_admit_a_standby_aggregate() {
 fn rejected_standby_preparation_preserves_the_hardware_owned_primary() {
     let resources = std::boxed::Box::leak(std::boxed::Box::new(Resources::new()));
     let pool = Pool::pin_static(std::boxed::Box::leak(std::boxed::Box::new(Pool::new())));
-    let (mut device, network) = resources.split(pool, STATION);
+    let tx_resources = std::boxed::Box::leak(std::boxed::Box::new(PinnedTxResources::new()));
+    let (provider, consumer) = tx_resources.split(pool);
+    let (mut device, rx) = resources.split(provider, NetworkInterfaceId::new(0), STATION);
+    let network = PinnedNetworkRunner::new(NetworkInterfaceId::new(0), rx, consumer);
     send_frame(&mut device, 1);
     send_frame(&mut device, 2);
 

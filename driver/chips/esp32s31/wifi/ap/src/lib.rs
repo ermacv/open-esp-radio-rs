@@ -1,7 +1,7 @@
 #![no_std]
 #![forbid(unsafe_code)]
 
-//! Executor-independent ESP32-S31 access-point ownership.
+//! Executor-independent ESP32-S31 access-point implementation.
 //!
 //! This crate joins the portable AP protocol with S31-specific key slots and
 //! the role-neutral radio owner. DMA, IRQ routing and deadlines remain owned
@@ -14,8 +14,6 @@ pub mod ampdu;
 pub mod beacon;
 pub mod engine;
 pub mod mac;
-#[cfg(target_arch = "riscv32")]
-pub mod ownership;
 pub mod rx;
 pub mod security;
 pub mod tx;

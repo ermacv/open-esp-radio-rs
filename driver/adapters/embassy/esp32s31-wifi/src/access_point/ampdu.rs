@@ -17,6 +17,14 @@ pub struct Esp32s31AccessPointAmpdu<
     const BUFFER_SIZE: usize,
 > {
     arenas: AggregateTxArenaPair<Esp32s31ApAmpduTx<'storage, B, SLOTS, BUFFER_SIZE>>,
+    maximum_aggregate_bytes: u16,
+    attempt_limit: u8,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Esp32s31AccessPointAmpduParked {
+    maximum_aggregate_bytes: u16,
+    attempt_limit: u8,
 }
 
 impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_SIZE: usize>
@@ -56,6 +64,8 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
         };
         Self {
             arenas: AggregateTxArenaPair::new(active, standby),
+            maximum_aggregate_bytes,
+            attempt_limit,
         }
     }
 
@@ -106,10 +116,21 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
     }
 
     #[allow(clippy::result_large_err)]
-    pub fn try_into_resources(
+    pub fn try_park(
         self,
-    ) -> Result<AggregateTxResources<'storage, B, SLOTS, BUFFER_SIZE>, Self> {
-        let (active, standby) = self.arenas.into_parts();
+    ) -> Result<
+        (
+            AggregateTxResources<'storage, B, SLOTS, BUFFER_SIZE>,
+            Esp32s31AccessPointAmpduParked,
+        ),
+        Self,
+    > {
+        let Self {
+            arenas,
+            maximum_aggregate_bytes,
+            attempt_limit,
+        } = self;
+        let (active, standby) = arenas.into_parts();
         match active.try_into_resources() {
             Ok((primary, primary_retention)) => {
                 let (standby, standby_retention) = match standby {
@@ -119,17 +140,43 @@ impl<'storage, B: StableDmaBacking + 'storage, const SLOTS: usize, const BUFFER_
                     },
                     None => (None, None),
                 };
-                Ok(AggregateTxResources::from_parts(
-                    primary,
-                    primary_retention,
-                    standby,
-                    standby_retention,
+                Ok((
+                    AggregateTxResources::from_parts(
+                        primary,
+                        primary_retention,
+                        standby,
+                        standby_retention,
+                    ),
+                    Esp32s31AccessPointAmpduParked {
+                        maximum_aggregate_bytes,
+                        attempt_limit,
+                    },
                 ))
             }
             Err(active) => Err(Self {
                 arenas: AggregateTxArenaPair::new(active, standby),
+                maximum_aggregate_bytes,
+                attempt_limit,
             }),
         }
+    }
+
+    pub fn resume(
+        resources: AggregateTxResources<'storage, B, SLOTS, BUFFER_SIZE>,
+        parked: Esp32s31AccessPointAmpduParked,
+    ) -> Self {
+        Self::new(
+            resources,
+            parked.maximum_aggregate_bytes,
+            parked.attempt_limit,
+        )
+    }
+
+    #[allow(clippy::result_large_err)]
+    pub fn try_into_resources(
+        self,
+    ) -> Result<AggregateTxResources<'storage, B, SLOTS, BUFFER_SIZE>, Self> {
+        self.try_park().map(|(resources, _)| resources)
     }
 }
 

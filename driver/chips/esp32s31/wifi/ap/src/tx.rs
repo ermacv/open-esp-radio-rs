@@ -96,6 +96,13 @@ pub struct Esp32s31ApTx<'slot, P, E, T, const BUFFER_SIZE: usize> {
     config: Esp32s31ApTxConfig,
 }
 
+/// AP-local ordinary-TX policy retained while the physical descriptor owner
+/// is lent to the station role.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Esp32s31ApTxParked {
+    config: Esp32s31ApTxConfig,
+}
+
 impl<'slot, P, E, T, const BUFFER_SIZE: usize> Esp32s31ApTx<'slot, P, E, T, BUFFER_SIZE>
 where
     P: WifiTxPowerProfile,
@@ -285,15 +292,36 @@ where
         self.ordinary.wait_deadline()
     }
 
+    /// Lend the physical ordinary descriptor at an idle role boundary.
+    #[allow(clippy::result_large_err)]
+    pub fn try_park(
+        self,
+    ) -> Result<
+        (
+            WifiTxResources<'slot, P, E, T, BUFFER_SIZE>,
+            Esp32s31ApTxParked,
+        ),
+        Self,
+    > {
+        let Self { ordinary, config } = self;
+        match ordinary.try_into_resources() {
+            Ok(resources) => Ok((resources, Esp32s31ApTxParked { config })),
+            Err(ordinary) => Err(Self { ordinary, config }),
+        }
+    }
+
+    pub fn resume(
+        resources: WifiTxResources<'slot, P, E, T, BUFFER_SIZE>,
+        parked: Esp32s31ApTxParked,
+    ) -> Self {
+        Self::new(resources, parked.config)
+    }
+
     /// Recover the common TX capability only when no descriptor is owned by
     /// DMA and the queue is not quarantined for radio reset.
     #[allow(clippy::result_large_err)]
     pub fn try_into_resources(self) -> Result<WifiTxResources<'slot, P, E, T, BUFFER_SIZE>, Self> {
-        let Self { ordinary, config } = self;
-        match ordinary.try_into_resources() {
-            Ok(resources) => Ok(resources),
-            Err(ordinary) => Err(Self { ordinary, config }),
-        }
+        self.try_park().map(|(resources, _)| resources)
     }
 }
 
@@ -357,7 +385,7 @@ mod tests {
     use open_esp_radio_esp32s31_wifi::ordinary_tx::WifiTxPowerPair;
     use open_esp_radio_esp32s31_wifi_mac::{
         MacInterface,
-        tx::{HardwareOwnedTxDma, PreparedTxDma, TxSlot},
+        tx::{HardwareOwnedTxDma, PreparedTxDma, TxSlot, TxSlotState},
         tx_runtime::WifiTxRuntimePolicy,
     };
 
@@ -511,6 +539,33 @@ mod tests {
                 HtChannelWidth::Mhz20,
             ))
         );
+    }
+
+    #[test]
+    fn idle_ap_tx_lends_and_resumes_the_exact_ordinary_owner() {
+        let mut slot = pin!(TxSlot::<256>::new_model());
+        let tx = Esp32s31ApTx::new(
+            WifiTxResources {
+                slot: slot.as_mut(),
+                policy: WifiTxRuntimePolicy::vendor_defaults(),
+                power: Power,
+                entropy: || 0,
+                timer: Timer,
+            },
+            Esp32s31ApTxConfig {
+                publication_timeout_micros: 7_500,
+            },
+        );
+
+        let (resources, parked) = tx
+            .try_park()
+            .unwrap_or_else(|_| panic!("idle AP TX must lend its descriptor"));
+        assert_eq!(resources.slot.state(), TxSlotState::Free);
+
+        let tx = Esp32s31ApTx::resume(resources, parked);
+        assert_eq!(tx.publication_timeout_micros(), 7_500);
+        assert_eq!(tx.queue_state(), MacTxQueueState::Ready);
+        assert!(tx.try_into_resources().is_ok());
     }
 
     #[test]

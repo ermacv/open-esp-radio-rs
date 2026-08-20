@@ -7,23 +7,10 @@ impl<
     'irq,
     M: RawMutex,
     S,
-    const DEPTH: usize,
     const CAPACITY: usize,
     const SLOTS: usize,
     const REORDER_SLOTS: usize,
->
-    Esp32s31ConnectedRxProtocol<
-        'queue,
-        'pool,
-        'scratch,
-        'irq,
-        M,
-        S,
-        DEPTH,
-        CAPACITY,
-        SLOTS,
-        REORDER_SLOTS,
-    >
+> Esp32s31ConnectedRxProcessor<'queue, 'pool, 'scratch, 'irq, M, S, CAPACITY, SLOTS, REORDER_SLOTS>
 where
     S: ConnectedRxProtocolSink<CAPACITY, SLOTS>,
 {

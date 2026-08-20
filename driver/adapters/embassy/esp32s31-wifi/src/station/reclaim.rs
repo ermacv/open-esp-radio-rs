@@ -31,8 +31,8 @@ use crate::{
 };
 
 use super::{
-    Esp32s31StationRoleOwner, Esp32s31StationRuntimeResources, Esp32s31StationServiceOwner,
-    Esp32s31StationServicePhase, Esp32s31StationStorageResources,
+    Esp32s31StationRuntimeResources, Esp32s31StationServiceOwner, Esp32s31StationServicePhase,
+    Esp32s31StationStorageResources, Esp32s31WifiRoleOwner,
 };
 
 /// Exact non-PAC resources retained at the phase where station stop landed.
@@ -209,7 +209,7 @@ pub struct Esp32s31StationRuntimeReclaimed<
     const RECORDS: usize,
 > {
     registers: RadioRuntimeOwner,
-    role: Esp32s31StationRoleOwner<P>,
+    role: Esp32s31WifiRoleOwner<P>,
     interrupt: I,
     storage: Esp32s31StationStorageResources<'storage, D, T, RECORDS>,
     board: B,
@@ -226,7 +226,7 @@ impl<'storage, 'security, P, I, D, T, B, S, const RECORDS: usize>
         self,
     ) -> (
         RadioRuntimeOwner,
-        Esp32s31StationRoleOwner<P>,
+        Esp32s31WifiRoleOwner<P>,
         I,
         Esp32s31StationStorageResources<'storage, D, T, RECORDS>,
         B,
@@ -773,7 +773,7 @@ pub fn try_reclaim_esp32s31_station_runtime<
         Esp32s31StationRuntimeResources<
             'role,
             'storage,
-            Esp32s31StationRoleOwner<P>,
+            Esp32s31WifiRoleOwner<P>,
             I,
             D,
             T,
@@ -808,7 +808,7 @@ pub fn try_reclaim_esp32s31_station_runtime<
             Esp32s31StationRuntimeResources<
                 'role,
                 'storage,
-                Esp32s31StationRoleOwner<P>,
+                Esp32s31WifiRoleOwner<P>,
                 I,
                 D,
                 T,

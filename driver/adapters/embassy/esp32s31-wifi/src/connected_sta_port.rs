@@ -41,8 +41,8 @@ use crate::{
     ampdu_resources::AggregateTxResources,
     connected_control::Esp32s31ConnectedControl,
     connected_rx_protocol::{
-        ConnectedRxProtocolSink, Esp32s31ConnectedRxProtocol, Esp32s31ConnectedRxProtocolStorage,
-        Esp32s31StagedRxFrame,
+        ConnectedRxProtocolSink, Esp32s31ConnectedRxProcessor, Esp32s31ConnectedRxProtocol,
+        Esp32s31ConnectedRxProtocolStorage, Esp32s31StagedRxFrame,
     },
     control_mailbox::ConnectedControlReceiver,
     embassy_irq::EmbassyMacIrqRuntime,
@@ -70,8 +70,8 @@ pub use resources::{
     Esp32s31ConnectedStaCompositionFailure, Esp32s31ConnectedStaControlResources,
     Esp32s31ConnectedStaDriverParts, Esp32s31ConnectedStaDrivers,
     Esp32s31ConnectedStaNetworkTxDomain, Esp32s31ConnectedStaReport,
-    Esp32s31ConnectedStaRxProtocolResources, Esp32s31ConnectedStaTxHandoffFailure,
-    Esp32s31ConnectedStaTxResources,
+    Esp32s31ConnectedStaRxProcessorResources, Esp32s31ConnectedStaRxProtocolResources,
+    Esp32s31ConnectedStaTxHandoffFailure, Esp32s31ConnectedStaTxResources,
 };
 
 #[cfg(test)]

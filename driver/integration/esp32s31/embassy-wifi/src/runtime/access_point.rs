@@ -51,9 +51,7 @@ type ProductionAccessPointAmpdu =
         0,
     >;
 type ProductionAccessPointRxBlockAck =
-    open_esp_radio::esp32s31::wifi::mac::rx_ampdu::RxBlockAckSessions<
-        { open_esp_radio::wifi::ap::AP_MAX_CLIENTS },
-    >;
+    open_esp_radio_esp32s31_wifi_embassy::sta_ap::Esp32s31StaApRxBlockAck;
 type ProductionAccessPointRxReorder = Esp32s31AccessPointRxReorder<'static, RX_BUFFER_SIZE>;
 type ProductionAccessPointRxReorderStorage =
     open_esp_radio_esp32s31_wifi_embassy::rx_reorder::RxReorderFrameStorage<
@@ -183,6 +181,8 @@ pub(super) struct ProductionAccessPointParked {
     dma: Esp32s31StationDmaResources<'static, RxStorage, RX_DESCRIPTOR_COUNT>,
     tx_epoch: &'static mut TxStorage,
     scan_table: &'static mut ScanTable,
+    station_scan_frame: &'static mut [u8],
+    station_ethernet: &'static mut [u8],
     resume: ProductionAccessPointStationResume,
     board: ProductionStationBoardResources,
     station_address: [u8; 6],
@@ -268,7 +268,7 @@ struct ProductionAccessPointStationResources {
 
 pub(super) struct ProductionAccessPointTask {
     channel: WifiChannel,
-    owner: Esp32s31AccessPointRoleOwner<EspHalRadioPeripheral>,
+    owner: Esp32s31WifiRoleOwner<EspHalRadioPeripheral>,
     registers: RadioRuntimeOwner,
     interrupts: MacInterruptEpoch,
     service: ProductionAccessPointControl,
@@ -277,7 +277,7 @@ pub(super) struct ProductionAccessPointTask {
 }
 
 pub(super) struct ProductionAccessPointPreflightFault {
-    _owner: Esp32s31AccessPointRoleOwner<EspHalRadioPeripheral>,
+    _owner: Esp32s31WifiRoleOwner<EspHalRadioPeripheral>,
     _registers: RadioRuntimeOwner,
     _interrupt_setup: open_esp_radio::esp32s31::hal::MacInterruptSetup,
     _station: ProductionAccessPointStationResources,
@@ -288,7 +288,7 @@ pub(super) struct ProductionAccessPointPreflightFault {
 }
 
 pub(super) struct ProductionAccessPointRxOwnerFault {
-    _owner: Esp32s31AccessPointRoleOwner<EspHalRadioPeripheral>,
+    _owner: Esp32s31WifiRoleOwner<EspHalRadioPeripheral>,
     _registers: RadioRuntimeOwner,
     _interrupt_setup: open_esp_radio::esp32s31::hal::MacInterruptSetup,
     _scan_rx: ProductionScanRx,
@@ -298,7 +298,7 @@ pub(super) struct ProductionAccessPointRxOwnerFault {
 }
 
 pub(super) struct ProductionAccessPointEngineFault {
-    _owner: Esp32s31AccessPointRoleOwner<EspHalRadioPeripheral>,
+    _owner: Esp32s31WifiRoleOwner<EspHalRadioPeripheral>,
     _registers: RadioRuntimeOwner,
     _interrupt_setup: open_esp_radio::esp32s31::hal::MacInterruptSetup,
     _ring: ProductionHaltedRx,
@@ -314,7 +314,7 @@ pub(super) struct ProductionAccessPointEngineFault {
 }
 
 pub(super) struct ProductionAccessPointSecurityMaterialFault {
-    _owner: Esp32s31AccessPointRoleOwner<EspHalRadioPeripheral>,
+    _owner: Esp32s31WifiRoleOwner<EspHalRadioPeripheral>,
     _registers: RadioRuntimeOwner,
     _interrupt_setup: open_esp_radio::esp32s31::hal::MacInterruptSetup,
     _ring: ProductionHaltedRx,
@@ -357,14 +357,14 @@ pub(super) enum ProductionAccessPointPreparationFault {
 
 pub(super) enum ProductionAccessPointTeardownFault {
     Interrupt {
-        _owner: Esp32s31AccessPointRoleOwner<EspHalRadioPeripheral>,
+        _owner: Esp32s31WifiRoleOwner<EspHalRadioPeripheral>,
         _registers: RadioRuntimeOwner,
         _interrupts: MacInterruptEpoch,
         _stopped: ProductionAccessPointStopped,
         _parked: ProductionAccessPointParked,
     },
     Aggregate {
-        _owner: Esp32s31AccessPointRoleOwner<EspHalRadioPeripheral>,
+        _owner: Esp32s31WifiRoleOwner<EspHalRadioPeripheral>,
         _registers: RadioRuntimeOwner,
         _interrupt_setup: open_esp_radio::esp32s31::hal::MacInterruptSetup,
         _stopped: ProductionAccessPointStopped,
@@ -372,7 +372,7 @@ pub(super) enum ProductionAccessPointTeardownFault {
         _parked: ProductionAccessPointParked,
     },
     TxRestore {
-        _owner: Esp32s31AccessPointRoleOwner<EspHalRadioPeripheral>,
+        _owner: Esp32s31WifiRoleOwner<EspHalRadioPeripheral>,
         _registers: RadioRuntimeOwner,
         _interrupt_setup: open_esp_radio::esp32s31::hal::MacInterruptSetup,
         _ring: open_esp_radio::esp32s31::wifi::mac::rx::RxRingHalted<'static, RX_DESCRIPTOR_COUNT>,
@@ -604,13 +604,13 @@ fn restore_station_resources_after_access_point(
     parked: ProductionAccessPointParked,
     aggregate_tx: RadioAmpduStorage,
     ring: open_esp_radio::esp32s31::wifi::mac::rx::RxRingHalted<'static, RX_DESCRIPTOR_COUNT>,
-    scan_frame: &'static mut [u8],
-    ethernet: &'static mut [u8],
 ) -> (ProductionStationResources, ProductionMonitorResources) {
     let ProductionAccessPointParked {
         dma,
         tx_epoch,
         scan_table,
+        station_scan_frame,
+        station_ethernet,
         resume,
         mut board,
         station_address,
@@ -649,8 +649,8 @@ fn restore_station_resources_after_access_point(
                 rx_ring: Some(ring),
                 tx: ProductionOrdinaryTxResources::Epoch(tx_epoch),
                 scan_table,
-                scan_frame,
-                ethernet,
+                scan_frame: station_scan_frame,
+                ethernet: station_ethernet,
                 network,
                 board,
                 station_address,
@@ -713,8 +713,12 @@ fn restore_station_resources_after_access_point(
                 },
             };
             ProductionStationResources::Returned(ProductionStationReusableResources {
-                storage: ProductionStationStorage::new(
-                    dma, tx_epoch, scan_table, scan_frame, ethernet,
+                        storage: ProductionStationStorage::new(
+                    dma,
+                    tx_epoch,
+                    scan_table,
+                    station_scan_frame,
+                    station_ethernet,
                 ),
                 board,
                 phase,
@@ -733,15 +737,14 @@ pub(super) struct ProductionAccessPointResources {
     pub(super) address: [u8; 6],
     pub(super) beacon:
         &'static mut [u8; open_esp_radio::wifi::ieee80211::beacon::WPA2_BEACON_CAPACITY],
+    pub(super) rx_frame: &'static mut [u8],
+    pub(super) tx_frame: &'static mut [u8],
     pub(super) peer_storage: &'static mut open_esp_radio::wifi::ap::AccessPointPeerStorage,
     pub(super) pairwise_storage:
         &'static mut open_esp_radio::esp32s31::wifi::ap::security::Esp32s31ApPairwiseKeyStorage,
     pub(super) rx_dispatcher:
         &'static mut open_esp_radio::esp32s31::wifi::ap::rx::Esp32s31ApRxDispatcher,
-    pub(super) rx_block_ack:
-        &'static mut open_esp_radio::esp32s31::wifi::mac::rx_ampdu::RxBlockAckSessions<
-            { open_esp_radio::wifi::ap::AP_MAX_CLIENTS },
-        >,
+    pub(super) rx_block_ack: &'static mut ProductionAccessPointRxBlockAck,
     pub(super) rx_reorder: &'static mut Esp32s31AccessPointRxReorder<'static, RX_BUFFER_SIZE>,
     pub(super) rx_reorder_storage:
         &'static open_esp_radio_esp32s31_wifi_embassy::rx_reorder::RxReorderFrameStorage<
@@ -773,7 +776,7 @@ impl ProductionWifiEpochRunner {
             }
         };
         let current_channel = wifi.current_channel();
-        let mut materialized = materialize_esp32s31_access_point(wifi, station);
+        let mut materialized = materialize_esp32s31_wifi_role(wifi, station);
         let requested_channel = request.channel();
         if requested_channel != current_channel {
             let lowered_channel = lower_wifi_channel(requested_channel);
@@ -942,6 +945,8 @@ impl ProductionWifiEpochRunner {
         let ProductionAccessPointResources {
             address,
             beacon,
+            rx_frame,
+            tx_frame,
             peer_storage,
             pairwise_storage,
             rx_dispatcher,
@@ -967,6 +972,8 @@ impl ProductionWifiEpochRunner {
                             dma,
                             tx_epoch,
                             scan_table,
+                            station_scan_frame: scan_frame,
+                            station_ethernet: ethernet,
                             resume,
                             board,
                             station_address,
@@ -980,8 +987,8 @@ impl ProductionWifiEpochRunner {
                         _rx_block_ack: rx_block_ack,
                         _rx_reorder: rx_reorder,
                         _rx_reorder_storage: rx_reorder_storage,
-                        _rx_frame: scan_frame,
-                        _tx_frame: ethernet,
+                        _rx_frame: rx_frame,
+                        _tx_frame: tx_frame,
                     },
                 });
             }
@@ -1018,6 +1025,8 @@ impl ProductionWifiEpochRunner {
                             dma,
                             tx_epoch,
                             scan_table,
+                            station_scan_frame: scan_frame,
+                            station_ethernet: ethernet,
                             resume,
                             board,
                             station_address,
@@ -1028,8 +1037,8 @@ impl ProductionWifiEpochRunner {
                         _rx_block_ack: rx_block_ack,
                         _rx_reorder: rx_reorder,
                         _rx_reorder_storage: rx_reorder_storage,
-                        _rx_frame: scan_frame,
-                        _tx_frame: ethernet,
+                        _rx_frame: rx_frame,
+                        _tx_frame: tx_frame,
                     },
                 });
             }
@@ -1060,8 +1069,8 @@ impl ProductionWifiEpochRunner {
             receive,
             protocol_rx,
             mac,
-            scan_frame,
-            ethernet,
+            rx_frame,
+            tx_frame,
             rx_dispatcher,
             rx_block_ack,
             rx_reorder,
@@ -1078,6 +1087,8 @@ impl ProductionWifiEpochRunner {
                 dma,
                 tx_epoch,
                 scan_table,
+                station_scan_frame: scan_frame,
+                station_ethernet: ethernet,
                 resume,
                 board,
                 station_address,
@@ -1135,6 +1146,8 @@ impl ProductionWifiEpochRunner {
             dma,
             tx_epoch,
             scan_table,
+            station_scan_frame,
+            station_ethernet,
             resume,
             board,
             station_address,
@@ -1156,6 +1169,8 @@ impl ProductionWifiEpochRunner {
                             dma,
                             tx_epoch,
                             scan_table,
+                            station_scan_frame,
+                            station_ethernet,
                             resume,
                             board,
                             station_address,
@@ -1191,6 +1206,8 @@ impl ProductionWifiEpochRunner {
                         dma,
                         tx_epoch,
                         scan_table,
+                        station_scan_frame,
+                        station_ethernet,
                         resume,
                         board,
                         station_address,
@@ -1213,6 +1230,8 @@ impl ProductionWifiEpochRunner {
         let access_point = ProductionAccessPointResources {
             address,
             beacon: beacon_storage,
+            rx_frame: stopped.rx_frame,
+            tx_frame: stopped.tx_frame,
             peer_storage,
             pairwise_storage,
             rx_dispatcher: stopped.data_rx,
@@ -1225,6 +1244,8 @@ impl ProductionWifiEpochRunner {
                 dma,
                 tx_epoch,
                 scan_table,
+                station_scan_frame,
+                station_ethernet,
                 resume,
                 board,
                 station_address,
@@ -1233,8 +1254,6 @@ impl ProductionWifiEpochRunner {
             },
             aggregate_tx,
             ring,
-            stopped.rx_frame,
-            stopped.tx_frame,
         );
         let wifi = owner.into_stopped(registers, interrupt_setup, ());
         Ok(Esp32s31WifiSupervisorStopped::new(
@@ -1362,7 +1381,7 @@ impl ProductionWifiEpochRunner {
                     None,
                     #[cfg(feature = "qualification")]
                     rx_delivery_observer,
-                    publish_shared_network_rx,
+                    publish_access_point_shared_network_rx,
                     wait_for_access_point_stop(endpoint),
                     |status| crate::access_point_status::publish_access_point_status(
                         generation, status

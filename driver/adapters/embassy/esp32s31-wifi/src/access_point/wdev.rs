@@ -108,8 +108,9 @@ pub(super) struct Esp32s31AccessPointWdevServices<
         TX_BUFFER_SIZE,
     >,
     pub(super) hardware: &'run mut H,
-    pub(super) network_tx:
-        Esp32s31AccessPointNetworkTx<'run, 'ampdu, B, AMPDU_SLOTS, AMPDU_BUFFER_SIZE>,
+    pub(super) aggregate:
+        &'run mut Esp32s31AccessPointAmpdu<'ampdu, B, AMPDU_SLOTS, AMPDU_BUFFER_SIZE>,
+    pub(super) network_tx: Esp32s31AccessPointNetworkTx<'run, B>,
     pub(super) status_observer: O,
     pub(super) security_material: S,
     pub(super) set_link_state: L,
@@ -400,9 +401,10 @@ where
 
     fn service_rx_during_tx<'a>(
         &'a mut self,
-        network_rx: &'a mut dyn WdevNetworkRx,
+        network_rx: &'a mut dyn crate::wdev::WdevNetworkRxSet,
     ) -> impl Future<Output = Result<WdevRxProgress, Self::Error>> + 'a {
         async move {
+            let network_rx = network_rx.primary_mut();
             let network_backpressured =
                 self.publish_pending_rx_batch(network_rx)? == WdevRxProgress::NetworkBackpressured;
             if network_backpressured {
@@ -431,10 +433,11 @@ where
 
     fn service_rx<'a>(
         &'a mut self,
-        network_rx: &'a mut dyn WdevNetworkRx,
+        network_rx: &'a mut dyn crate::wdev::WdevNetworkRxSet,
         context: WdevRxServiceContext,
     ) -> impl Future<Output = Result<WdevRxProgress, Self::Error>> + 'a {
         async move {
+            let network_rx = network_rx.primary_mut();
             let protocol_frames = ap_rx_protocol_turn_limit(context);
             let mut turn = BoundedRxTurn::new(protocol_frames);
             loop {
@@ -587,7 +590,7 @@ where
     fn start_tx<'a>(
         &'a mut self,
         frame: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
-        network: &'a PinnedTxConsumer<
+        network: &'a PinnedTxInterfaceConsumer<
             'resources,
             M,
             FRAME_CAPACITY,
@@ -599,7 +602,7 @@ where
         async move {
             let progress = self
                 .network_tx
-                .start(self.control, self.hardware, frame, network)
+                .start(self.aggregate, self.control, self.hardware, frame, network)
                 .await?;
             if progress == WifiTxProgress::Pending {
                 debug_assert!(self.network_tx_pending.is_none());
@@ -628,13 +631,13 @@ where
     }
 
     fn can_prepare_tx(&self) -> bool {
-        self.network_tx.can_prepare()
+        self.network_tx.can_prepare(self.aggregate)
     }
 
     fn prepare_tx<'a>(
         &'a mut self,
         frame: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
-        network: &'a PinnedTxConsumer<
+        network: &'a PinnedTxInterfaceConsumer<
             'resources,
             M,
             FRAME_CAPACITY,
@@ -643,12 +646,15 @@ where
             TX_QUEUE_DEPTH,
         >,
     ) -> impl Future<Output = Result<(), Self::Error>> + 'a {
-        async move { self.network_tx.prepare(self.control, frame, network) }
+        async move {
+            self.network_tx
+                .prepare(self.aggregate, self.control, frame, network)
+        }
     }
 
     fn start_prepared_tx<'a>(
         &'a mut self,
-        network: &'a PinnedTxConsumer<
+        network: &'a PinnedTxInterfaceConsumer<
             'resources,
             M,
             FRAME_CAPACITY,
@@ -658,9 +664,12 @@ where
         >,
     ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a {
         async move {
-            let progress = self
-                .network_tx
-                .start_prepared(self.control, self.hardware, network)?;
+            let progress = self.network_tx.start_prepared(
+                self.aggregate,
+                self.control,
+                self.hardware,
+                network,
+            )?;
             if progress == WifiTxProgress::Pending {
                 debug_assert!(self.network_tx_pending.is_none());
                 self.network_tx_pending = Some(NetworkTxPending {
@@ -674,7 +683,7 @@ where
     }
 
     fn cancel_prepared_tx(&mut self) -> Result<(), Self::Error> {
-        self.network_tx.cancel_prepared()
+        self.network_tx.cancel_prepared(self.aggregate)
     }
 
     fn service_tx<'a>(
@@ -701,7 +710,7 @@ where
             }
             let progress = self
                 .network_tx
-                .service(self.control, self.hardware, wake)
+                .service(self.aggregate, self.control, self.hardware, wake)
                 .await?;
             self.observe_role_state();
             self.observe_tx_started();
@@ -841,6 +850,14 @@ mod tests {
             frame.copy_to(&mut storage).expect("test frame fits");
             self.frames.push(storage);
             Ok(())
+        }
+
+        fn poll_ready(&mut self, _context: &mut core::task::Context<'_>) -> core::task::Poll<()> {
+            if self.frames.len() < self.capacity {
+                core::task::Poll::Ready(())
+            } else {
+                core::task::Poll::Pending
+            }
         }
 
         #[cfg(feature = "rx-delivery-observation")]

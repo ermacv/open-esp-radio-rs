@@ -1,5 +1,5 @@
 schema = 3
-# Register-only projection of two cases from the fourteen-way vendor policy
+# Register-only projection of four cases from the fourteen-way vendor policy
 # dispatcher. This does not claim whole-function equivalence or identify the
 # still-untyped g_ic+0x74 word with a protocol lifecycle state.
 default-disposition = "not-yet-ported"

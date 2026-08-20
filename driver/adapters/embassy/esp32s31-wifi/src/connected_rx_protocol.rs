@@ -355,6 +355,37 @@ pub struct Esp32s31ConnectedRxProtocol<
     const REORDER_SLOTS: usize = RX_REORDER_BACKING_SLOT_COUNT,
 > {
     frames: Receiver<'queue, M, Esp32s31StagedRxFrame<'pool, CAPACITY, SLOTS>, DEPTH>,
+    processor: Esp32s31ConnectedRxProcessor<
+        'queue,
+        'pool,
+        'scratch,
+        'irq,
+        M,
+        S,
+        CAPACITY,
+        SLOTS,
+        REORDER_SLOTS,
+    >,
+}
+
+/// Queue-independent connected-station RX protocol processor.
+///
+/// It owns parsing, reorder state, output scratch and the station sink, but no
+/// source queue. Standalone STA scheduling wraps it in
+/// [`Esp32s31ConnectedRxProtocol`]; same-channel STA+AP scheduling can feed an
+/// already routed staging lease directly without manufacturing a second DMA
+/// producer or compatibility queue.
+pub struct Esp32s31ConnectedRxProcessor<
+    'queue,
+    'pool,
+    'scratch,
+    'irq,
+    M: RawMutex,
+    S,
+    const CAPACITY: usize = VENDOR_LARGE_RX_PAYLOAD_CAPACITY,
+    const SLOTS: usize = VENDOR_LARGE_RX_SLOT_COUNT,
+    const REORDER_SLOTS: usize = RX_REORDER_BACKING_SLOT_COUNT,
+> {
     irq: &'irq EmbassyMacIrqRuntime<M>,
     dispatcher: ConnectedRxDispatcher,
     sink: S,

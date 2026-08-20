@@ -7,34 +7,25 @@ impl<
     'irq,
     M: RawMutex,
     S,
-    const DEPTH: usize,
     const CAPACITY: usize,
     const SLOTS: usize,
     const REORDER_SLOTS: usize,
->
-    Esp32s31ConnectedRxProtocol<
-        'queue,
-        'pool,
-        'scratch,
-        'irq,
-        M,
-        S,
-        DEPTH,
-        CAPACITY,
-        SLOTS,
-        REORDER_SLOTS,
-    >
+> Esp32s31ConnectedRxProcessor<'queue, 'pool, 'scratch, 'irq, M, S, CAPACITY, SLOTS, REORDER_SLOTS>
 where
     S: ConnectedRxProtocolSink<CAPACITY, SLOTS>,
 {
-    pub(super) async fn accept_frame(
+    pub async fn dispatch_frame(
         &mut self,
         frame: Esp32s31StagedRxFrame<'pool, CAPACITY, SLOTS>,
     ) -> Option<ConnectedRxDispatch> {
         let Some(key) = self.dispatcher.reorder_key(frame.segment()) else {
             return Some(self.dispatch_owned_frame(frame).await);
         };
-        let bank = self.runtime.reorder_banks.find(key.peer, key.tid);
+        let bank = self.runtime.reorder_banks.find(
+            open_esp_radio_esp32s31_wifi_mac::MacInterface::Station,
+            key.peer,
+            key.tid,
+        );
         let active = bank.is_some();
         if let Some(observer) = self.pipeline_observer {
             observer.observe(RxPipelineObservation::ReorderIngress {
@@ -221,10 +212,16 @@ where
                     self.stop_reorder(bank).await
                 }
             }
-            RxReorderCommand::StopAll => {
+            RxReorderCommand::StopInterface(interface) => {
                 let mut result = None;
                 for bank in 0..RX_BLOCK_ACK_BANK_COUNT {
-                    if let Some(released) = self.stop_reorder(bank).await {
+                    if self
+                        .runtime
+                        .reorder_banks
+                        .identity(bank)
+                        .is_some_and(|identity| identity.interface == interface)
+                        && let Some(released) = self.stop_reorder(bank).await
+                    {
                         result = Some(released);
                     }
                 }

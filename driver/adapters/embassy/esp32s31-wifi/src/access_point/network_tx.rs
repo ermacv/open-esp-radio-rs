@@ -12,32 +12,20 @@ struct PreparedStandby {
     preparation_micros: u64,
 }
 
-pub(super) struct Esp32s31AccessPointNetworkTx<
-    'aggregate,
-    'storage,
-    B: 'storage,
-    const SLOTS: usize,
-    const BUFFER_SIZE: usize,
-> {
-    aggregate: &'aggregate mut Esp32s31AccessPointAmpdu<'storage, B, SLOTS, BUFFER_SIZE>,
-    observer: Option<&'aggregate dyn AggregateTxObserver>,
+pub struct Esp32s31AccessPointNetworkTx<'observer, B> {
+    observer: Option<&'observer dyn AggregateTxObserver>,
     deadline_micros: Option<u64>,
     exchange_started_micros: Option<u64>,
     prepared_first: Option<B>,
     prepared_standby: Option<PreparedStandby>,
 }
 
-impl<'aggregate, 'storage, B, const SLOTS: usize, const BUFFER_SIZE: usize>
-    Esp32s31AccessPointNetworkTx<'aggregate, 'storage, B, SLOTS, BUFFER_SIZE>
+impl<'observer, B> Esp32s31AccessPointNetworkTx<'observer, B>
 where
-    B: StableDmaBacking + 'storage,
+    B: StableDmaBacking,
 {
-    pub(super) const fn new(
-        aggregate: &'aggregate mut Esp32s31AccessPointAmpdu<'storage, B, SLOTS, BUFFER_SIZE>,
-        observer: Option<&'aggregate dyn AggregateTxObserver>,
-    ) -> Self {
+    pub const fn new(observer: Option<&'observer dyn AggregateTxObserver>) -> Self {
         Self {
-            aggregate,
             observer,
             deadline_micros: None,
             exchange_started_micros: None,
@@ -62,9 +50,12 @@ where
             })
     }
 
-    pub(super) fn can_prepare(&self) -> bool {
+    pub(super) fn can_prepare<const SLOTS: usize, const BUFFER_SIZE: usize>(
+        &self,
+        aggregate: &Esp32s31AccessPointAmpdu<'_, B, SLOTS, BUFFER_SIZE>,
+    ) -> bool {
         (self.deadline_micros.is_some() || self.has_prepared())
-            && self.aggregate.has_standby()
+            && aggregate.has_standby()
             && self
                 .prepared_standby
                 .as_ref()
@@ -73,58 +64,52 @@ where
 }
 
 impl<
-    'aggregate,
-    'storage,
-    'resources: 'storage,
+    'observer,
+    'resources,
     M,
     const FRAME_CAPACITY: usize,
     const HEADROOM: usize,
     const TRAILER: usize,
     const TX_QUEUE_DEPTH: usize,
-    const SLOTS: usize,
-    const BUFFER_SIZE: usize,
 >
     Esp32s31AccessPointNetworkTx<
-        'aggregate,
-        'storage,
+        'observer,
         PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
-        SLOTS,
-        BUFFER_SIZE,
     >
 where
     M: RawMutex,
 {
     #[allow(clippy::too_many_arguments)]
     pub(super) async fn start<
-        RX,
-        C,
         P,
         E,
         T,
         H,
-        const COUNT: usize,
         const DMA_BUFFER_SIZE: usize,
-        const DMA_STORAGE_SIZE: usize,
         const TX_BUFFER_SIZE: usize,
+        const SLOTS: usize,
+        const BUFFER_SIZE: usize,
     >(
         &mut self,
-        control: &mut Esp32s31AccessPointControl<
+        aggregate: &mut Esp32s31AccessPointAmpdu<
+            '_,
+            PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+            SLOTS,
+            BUFFER_SIZE,
+        >,
+        control: &mut Esp32s31AccessPointProtocolProcessor<
             '_,
             '_,
             '_,
-            RX,
-            C,
             P,
             E,
             T,
-            COUNT,
             DMA_BUFFER_SIZE,
-            DMA_STORAGE_SIZE,
             TX_BUFFER_SIZE,
         >,
         hardware: &mut H,
         mut frame: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
-        network: &PinnedTxConsumer<
+        network: &PinnedTxInterfaceConsumer<
             'resources,
             M,
             FRAME_CAPACITY,
@@ -178,8 +163,8 @@ where
                 .bind_policy(first_encoded.hardware_key_selector, SLOTS)
                 .map_err(Esp32s31ApAmpduError::from)
                 .map_err(Esp32s31AccessPointWdevError::Aggregate)?;
-            let aggregate = self.aggregate.active_mut();
-            aggregate
+            let active = aggregate.active_mut();
+            active
                 .begin(
                     peer,
                     policy.rate(),
@@ -187,7 +172,7 @@ where
                     policy.role().hardware_key_selector,
                 )
                 .map_err(Esp32s31AccessPointWdevError::Aggregate)?;
-            aggregate
+            active
                 .push(peer, frame, first_encoded)
                 .map_err(Esp32s31AccessPointWdevError::Aggregate)?;
 
@@ -205,7 +190,7 @@ where
                         error,
                     ))
                 })?;
-            aggregate
+            active
                 .push(peer, second, second_encoded)
                 .map_err(Esp32s31AccessPointWdevError::Aggregate)?;
 
@@ -228,7 +213,7 @@ where
                             Esp32s31AccessPointControlError::from(error),
                         )
                     })?;
-                aggregate
+                active
                     .push(peer, next, encoded)
                     .map_err(Esp32s31AccessPointWdevError::Aggregate)?;
                 admitted += 1;
@@ -250,7 +235,7 @@ where
                 });
             }
             let publication_started = self.observer.map(|_| Instant::now().as_micros());
-            aggregate
+            active
                 .publish(ordinary, hardware)
                 .map_err(Esp32s31AccessPointWdevError::Aggregate)?;
             if let Some(observer) = self.observer {
@@ -277,33 +262,33 @@ where
 
     #[allow(clippy::too_many_arguments)]
     pub(super) fn prepare<
-        RX,
-        C,
         P,
         E,
         T,
-        const COUNT: usize,
         const DMA_BUFFER_SIZE: usize,
-        const DMA_STORAGE_SIZE: usize,
         const TX_BUFFER_SIZE: usize,
+        const SLOTS: usize,
+        const BUFFER_SIZE: usize,
     >(
         &mut self,
-        control: &mut Esp32s31AccessPointControl<
+        aggregate: &mut Esp32s31AccessPointAmpdu<
+            '_,
+            PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+            SLOTS,
+            BUFFER_SIZE,
+        >,
+        control: &mut Esp32s31AccessPointProtocolProcessor<
             '_,
             '_,
             '_,
-            RX,
-            C,
             P,
             E,
             T,
-            COUNT,
             DMA_BUFFER_SIZE,
-            DMA_STORAGE_SIZE,
             TX_BUFFER_SIZE,
         >,
         mut frame: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
-        network: &PinnedTxConsumer<
+        network: &PinnedTxInterfaceConsumer<
             'resources,
             M,
             FRAME_CAPACITY,
@@ -317,7 +302,7 @@ where
         E: WifiTxEntropy,
         T: WifiTxTimer,
     {
-        if (!self.aggregate_pending() && !self.has_prepared()) || !self.aggregate.has_standby() {
+        if (!self.aggregate_pending() && !self.has_prepared()) || !aggregate.has_standby() {
             network.requeue(frame);
             return Ok(());
         }
@@ -340,7 +325,7 @@ where
                         error,
                     ))
                 })?;
-            self.aggregate
+            aggregate
                 .standby_mut()
                 .expect("checked standby arena")
                 .push(peer, frame, encoded)
@@ -389,7 +374,7 @@ where
             .bind_policy(first_encoded.hardware_key_selector, SLOTS)
             .map_err(Esp32s31ApAmpduError::from)
             .map_err(Esp32s31AccessPointWdevError::Aggregate)?;
-        let standby = self.aggregate.standby_mut().expect("checked standby arena");
+        let standby = aggregate.standby_mut().expect("checked standby arena");
         standby
             .begin(
                 peer,
@@ -410,7 +395,7 @@ where
             .map_err(|error| {
                 Esp32s31AccessPointWdevError::Control(Esp32s31AccessPointControlError::from(error))
             })?;
-        self.aggregate
+        aggregate
             .standby_mut()
             .expect("checked standby arena")
             .push(peer, frame, encoded)
@@ -436,34 +421,34 @@ where
 
     #[allow(clippy::too_many_arguments)]
     pub(super) fn start_prepared<
-        RX,
-        C,
         P,
         E,
         T,
         H,
-        const COUNT: usize,
         const DMA_BUFFER_SIZE: usize,
-        const DMA_STORAGE_SIZE: usize,
         const TX_BUFFER_SIZE: usize,
+        const SLOTS: usize,
+        const BUFFER_SIZE: usize,
     >(
         &mut self,
-        control: &mut Esp32s31AccessPointControl<
+        aggregate: &mut Esp32s31AccessPointAmpdu<
+            '_,
+            PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+            SLOTS,
+            BUFFER_SIZE,
+        >,
+        control: &mut Esp32s31AccessPointProtocolProcessor<
             '_,
             '_,
             '_,
-            RX,
-            C,
             P,
             E,
             T,
-            COUNT,
             DMA_BUFFER_SIZE,
-            DMA_STORAGE_SIZE,
             TX_BUFFER_SIZE,
         >,
         hardware: &mut H,
-        network: &PinnedTxConsumer<
+        network: &PinnedTxInterfaceConsumer<
             'resources,
             M,
             FRAME_CAPACITY,
@@ -481,11 +466,11 @@ where
             + RxBlockAckHardware
             + open_esp_radio_esp32s31_wifi_mac::tx_ampdu::HtAmpduHardware,
     {
-        while self.can_prepare() {
+        while self.can_prepare(aggregate) {
             let Some(frame) = network.try_receive() else {
                 break;
             };
-            self.prepare(control, frame, network)?;
+            self.prepare(aggregate, control, frame, network)?;
         }
         let Some(batch) = self.prepared_standby.take() else {
             let Some(frame) = self.prepared_first.take() else {
@@ -513,7 +498,7 @@ where
         let (_, ordinary) = control.mac.try_aggregate_adapter().map_err(|error| {
             Esp32s31AccessPointWdevError::Control(Esp32s31AccessPointControlError::Mac(error))
         })?;
-        self.aggregate
+        aggregate
             .publish_standby(ordinary, hardware)
             .map_err(Esp32s31AccessPointWdevError::Aggregate)?;
         let now = ordinary.now_micros();
@@ -532,10 +517,18 @@ where
         Ok(WifiTxProgress::Pending)
     }
 
-    pub(super) fn cancel_prepared(&mut self) -> Result<(), Esp32s31AccessPointWdevError> {
+    pub(super) fn cancel_prepared<const SLOTS: usize, const BUFFER_SIZE: usize>(
+        &mut self,
+        aggregate: &mut Esp32s31AccessPointAmpdu<
+            '_,
+            PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+            SLOTS,
+            BUFFER_SIZE,
+        >,
+    ) -> Result<(), Esp32s31AccessPointWdevError> {
         self.prepared_first = None;
         if self.prepared_standby.take().is_some() {
-            self.aggregate
+            aggregate
                 .standby_mut()
                 .expect("prepared batch owns standby arena")
                 .cancel_build()
@@ -548,29 +541,21 @@ where
     }
 
     pub(super) async fn wait_deadline<
-        RX,
-        C,
         P,
         E,
         T,
-        const COUNT: usize,
         const DMA_BUFFER_SIZE: usize,
-        const DMA_STORAGE_SIZE: usize,
         const TX_BUFFER_SIZE: usize,
     >(
         &mut self,
-        control: &mut Esp32s31AccessPointControl<
+        control: &mut Esp32s31AccessPointProtocolProcessor<
             '_,
             '_,
             '_,
-            RX,
-            C,
             P,
             E,
             T,
-            COUNT,
             DMA_BUFFER_SIZE,
-            DMA_STORAGE_SIZE,
             TX_BUFFER_SIZE,
         >,
     ) where
@@ -590,30 +575,30 @@ where
     }
 
     pub(super) async fn service<
-        RX,
-        C,
         P,
         E,
         T,
         H,
-        const COUNT: usize,
         const DMA_BUFFER_SIZE: usize,
-        const DMA_STORAGE_SIZE: usize,
         const TX_BUFFER_SIZE: usize,
+        const SLOTS: usize,
+        const BUFFER_SIZE: usize,
     >(
         &mut self,
-        control: &mut Esp32s31AccessPointControl<
+        aggregate: &mut Esp32s31AccessPointAmpdu<
+            '_,
+            PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+            SLOTS,
+            BUFFER_SIZE,
+        >,
+        control: &mut Esp32s31AccessPointProtocolProcessor<
             '_,
             '_,
             '_,
-            RX,
-            C,
             P,
             E,
             T,
-            COUNT,
             DMA_BUFFER_SIZE,
-            DMA_STORAGE_SIZE,
             TX_BUFFER_SIZE,
         >,
         hardware: &mut H,
@@ -644,8 +629,7 @@ where
             let (_, ordinary) = control.mac.try_aggregate_adapter().map_err(|error| {
                 Esp32s31AccessPointWdevError::Control(Esp32s31AccessPointControlError::Mac(error))
             })?;
-            if !self
-                .aggregate
+            if !aggregate
                 .active_mut()
                 .abort_collision(hardware)
                 .map_err(Esp32s31AccessPointWdevError::Aggregate)?
@@ -666,8 +650,7 @@ where
             service_event,
             AggregateTxServiceEvent::HardwareTimeout | AggregateTxServiceEvent::ExecutorDeadline
         ) {
-            if !self
-                .aggregate
+            if !aggregate
                 .active_mut()
                 .begin_timeout_abort(hardware)
                 .map_err(Esp32s31AccessPointWdevError::Aggregate)?
@@ -680,7 +663,7 @@ where
                 Esp32s31AccessPointWdevError::Control(Esp32s31AccessPointControlError::Mac(error))
             })?;
             ordinary.after_micros(16).await;
-            self.aggregate
+            aggregate
                 .active_mut()
                 .finish_timeout_abort(hardware)
                 .map_err(Esp32s31AccessPointWdevError::Aggregate)?;
@@ -698,8 +681,7 @@ where
             let (_, ordinary) = control.mac.try_aggregate_adapter().map_err(|error| {
                 Esp32s31AccessPointWdevError::Control(Esp32s31AccessPointControlError::Mac(error))
             })?;
-            let progress = self
-                .aggregate
+            let progress = aggregate
                 .active_mut()
                 .service_completion(ordinary, hardware)
                 .map_err(Esp32s31AccessPointWdevError::Aggregate)?;

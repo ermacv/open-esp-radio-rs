@@ -11,8 +11,8 @@ use embassy_futures::{
 };
 use embassy_time::{Duration, Instant, Timer};
 use open_esp_radio_embassy_net::{
-    LinkState, PinnedRxPublisher, PinnedTxConsumer, PinnedTxFrame, RawMutex, RxEnqueueError,
-    SplitPinnedRadioRunner,
+    DualPinnedNetworkRunner, LinkState, NetworkInterfaceId, PinnedNetworkRunner, PinnedRxPublisher,
+    PinnedTxFrame, PinnedTxInterfaceConsumer, RawMutex, RxEnqueueError,
 };
 pub use open_esp_radio_esp32s31_wifi::tx::{WifiTxProgress, WifiTxWake};
 pub use open_esp_radio_esp32s31_wifi::wdev::{
@@ -34,6 +34,9 @@ pub trait WdevNetworkRx {
 
     fn try_send_parts(&mut self, frame: EthernetFrameParts<'_>) -> Result<(), RxEnqueueError>;
 
+    /// Poll the next publication credit without allocating a boxed future.
+    fn poll_ready(&mut self, context: &mut core::task::Context<'_>) -> core::task::Poll<()>;
+
     #[cfg(feature = "rx-delivery-observation")]
     fn try_send_observed(
         &mut self,
@@ -47,6 +50,146 @@ pub trait WdevNetworkRx {
         frame: EthernetFrameParts<'_>,
         before_publish: &mut dyn FnMut(),
     ) -> Result<(), RxEnqueueError>;
+}
+
+/// RX publication authority presented to one WDEV services graph.
+///
+/// Standalone roles use only `primary_mut`. Same-channel compositions must
+/// select a concrete endpoint by identity after fact-only VIF routing. The
+/// trait has no fallback from an unknown identity to the primary endpoint.
+pub trait WdevNetworkRxSet {
+    fn primary_mut(&mut self) -> &mut dyn WdevNetworkRx;
+
+    fn get_mut(&mut self, interface: NetworkInterfaceId) -> Option<&mut dyn WdevNetworkRx>;
+
+    fn pair_mut(
+        &mut self,
+        first: NetworkInterfaceId,
+        second: NetworkInterfaceId,
+    ) -> Option<(&mut dyn WdevNetworkRx, &mut dyn WdevNetworkRx)>;
+
+    fn poll_primary_ready(
+        &mut self,
+        context: &mut core::task::Context<'_>,
+    ) -> core::task::Poll<()> {
+        self.primary_mut().poll_ready(context)
+    }
+
+    fn poll_any_ready(&mut self, context: &mut core::task::Context<'_>) -> core::task::Poll<()> {
+        self.poll_primary_ready(context)
+    }
+}
+
+impl<M: RawMutex, const FRAME_CAPACITY: usize, const RX_QUEUE_DEPTH: usize> WdevNetworkRxSet
+    for PinnedRxPublisher<'_, M, FRAME_CAPACITY, RX_QUEUE_DEPTH>
+{
+    fn primary_mut(&mut self) -> &mut dyn WdevNetworkRx {
+        self
+    }
+
+    fn get_mut(&mut self, _interface: NetworkInterfaceId) -> Option<&mut dyn WdevNetworkRx> {
+        None
+    }
+
+    fn pair_mut(
+        &mut self,
+        _first: NetworkInterfaceId,
+        _second: NetworkInterfaceId,
+    ) -> Option<(&mut dyn WdevNetworkRx, &mut dyn WdevNetworkRx)> {
+        None
+    }
+}
+
+/// Addressed RX publication endpoints owned by one physical WDEV.
+///
+/// A same-channel STA+AP scheduler must select the logical endpoint only
+/// after the common RX dispatcher has classified the retained 802.11 owner.
+/// Returning `None` for an unknown identity keeps that failure explicit; the
+/// caller must account and release the exact frame instead of publishing it
+/// through whichever role happens to be active.
+pub struct WdevNetworkRxEndpoints<A, B> {
+    first_interface: NetworkInterfaceId,
+    first: A,
+    second_interface: NetworkInterfaceId,
+    second: B,
+}
+
+impl<A, B> WdevNetworkRxEndpoints<A, B> {
+    pub fn new(
+        first_interface: NetworkInterfaceId,
+        first: A,
+        second_interface: NetworkInterfaceId,
+        second: B,
+    ) -> Self {
+        assert_ne!(
+            first_interface, second_interface,
+            "WDEV RX endpoints require distinct interface identities"
+        );
+        Self {
+            first_interface,
+            first,
+            second_interface,
+            second,
+        }
+    }
+
+    pub const fn first_interface(&self) -> NetworkInterfaceId {
+        self.first_interface
+    }
+
+    pub const fn second_interface(&self) -> NetworkInterfaceId {
+        self.second_interface
+    }
+
+    pub fn get_mut(&mut self, interface: NetworkInterfaceId) -> Option<&mut dyn WdevNetworkRx>
+    where
+        A: WdevNetworkRx,
+        B: WdevNetworkRx,
+    {
+        if interface == self.first_interface {
+            Some(&mut self.first)
+        } else if interface == self.second_interface {
+            Some(&mut self.second)
+        } else {
+            None
+        }
+    }
+
+    pub fn into_parts(self) -> (A, B) {
+        (self.first, self.second)
+    }
+}
+
+impl<A: WdevNetworkRx, B: WdevNetworkRx> WdevNetworkRxSet for WdevNetworkRxEndpoints<A, B> {
+    fn primary_mut(&mut self) -> &mut dyn WdevNetworkRx {
+        &mut self.first
+    }
+
+    fn get_mut(&mut self, interface: NetworkInterfaceId) -> Option<&mut dyn WdevNetworkRx> {
+        WdevNetworkRxEndpoints::get_mut(self, interface)
+    }
+
+    fn pair_mut(
+        &mut self,
+        first: NetworkInterfaceId,
+        second: NetworkInterfaceId,
+    ) -> Option<(&mut dyn WdevNetworkRx, &mut dyn WdevNetworkRx)> {
+        if first == self.first_interface && second == self.second_interface {
+            Some((&mut self.first, &mut self.second))
+        } else if first == self.second_interface && second == self.first_interface {
+            Some((&mut self.second, &mut self.first))
+        } else {
+            None
+        }
+    }
+
+    fn poll_any_ready(&mut self, context: &mut core::task::Context<'_>) -> core::task::Poll<()> {
+        if self.first.poll_ready(context).is_ready() {
+            core::task::Poll::Ready(())
+        } else {
+            self.second.poll_ready(context)
+        }
+    }
 }
 
 impl<M: RawMutex, const FRAME_CAPACITY: usize, const RX_QUEUE_DEPTH: usize> WdevNetworkRx
@@ -68,6 +211,12 @@ impl<M: RawMutex, const FRAME_CAPACITY: usize, const RX_QUEUE_DEPTH: usize> Wdev
             frame.ether_type,
             frame.payload,
         )
+    }
+
+    fn poll_ready(&mut self, context: &mut core::task::Context<'_>) -> core::task::Poll<()> {
+        let future = PinnedRxPublisher::wait_ready(self);
+        let mut future = core::pin::pin!(future);
+        Future::poll(future.as_mut(), context)
     }
 
     #[cfg(feature = "rx-delivery-observation")]
@@ -98,9 +247,9 @@ impl<M: RawMutex, const FRAME_CAPACITY: usize, const RX_QUEUE_DEPTH: usize> Wdev
 
 /// Radio-side network ownership consumed by [`WdevRunner`].
 ///
-/// An owned endpoint is returned by `into_parts` for station reassociation. A
-/// temporary AP epoch may instead pass a borrow of the same persistent
-/// endpoint; both expose exactly the same RX/TX queue operations.
+/// Single-VIF owners expose one RX endpoint. A dual owner selects between
+/// permanent STA/AP RX endpoints while retaining the sole tagged TX consumer.
+/// Role-specific semantics remain outside this scheduler contract.
 pub trait WdevNetwork<
     'resources,
     M: RawMutex + 'resources,
@@ -111,22 +260,47 @@ pub trait WdevNetwork<
     const TX_QUEUE_DEPTH: usize,
 >
 {
-    fn rx_publisher(&self) -> PinnedRxPublisher<'resources, M, FRAME_CAPACITY, RX_QUEUE_DEPTH>;
-    fn set_link_state(&self, state: LinkState);
-    fn tx_queue_len(&self) -> usize;
+    fn rx_publisher(
+        &self,
+        interface: NetworkInterfaceId,
+    ) -> PinnedRxPublisher<'resources, M, FRAME_CAPACITY, RX_QUEUE_DEPTH>;
+    fn set_link_state(&self, interface: NetworkInterfaceId, state: LinkState);
+    fn tx_queue_len(&self, interface: NetworkInterfaceId) -> usize;
     fn try_receive_tx(
         &self,
+        interface: NetworkInterfaceId,
     ) -> Option<PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>>;
     fn receive_tx(
         &self,
+        interface: NetworkInterfaceId,
     ) -> impl Future<
         Output = PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
     > + '_;
     fn tx_consumer(
         &self,
-    ) -> PinnedTxConsumer<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>;
-    fn wait_tx_ready(&self) -> impl Future<Output = ()> + '_;
+        interface: NetworkInterfaceId,
+    ) -> PinnedTxInterfaceConsumer<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>;
+    fn wait_tx_ready(&self, interface: NetworkInterfaceId) -> impl Future<Output = ()> + '_;
     fn wait_tx_publication(&self) -> impl Future<Output = ()> + '_;
+
+    /// Number of leases in the one physical tagged TX frontier.
+    ///
+    /// Unlike [`Self::tx_queue_len`], this does not filter by VIF. Combined
+    /// scheduling uses it to preserve publication order before dispatching a
+    /// lease to a role-specific encoder.
+    fn physical_tx_queue_len(&self) -> usize;
+
+    /// Claim the next physical tagged TX lease without filtering or requeue.
+    fn try_receive_physical_tx(
+        &self,
+    ) -> Option<PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>>;
+
+    /// Wait for and claim the next physical tagged TX lease.
+    fn receive_physical_tx(
+        &self,
+    ) -> impl Future<
+        Output = PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+    > + '_;
 }
 
 impl<
@@ -138,7 +312,7 @@ impl<
     const RX_QUEUE_DEPTH: usize,
     const TX_QUEUE_DEPTH: usize,
 > WdevNetwork<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, RX_QUEUE_DEPTH, TX_QUEUE_DEPTH>
-    for SplitPinnedRadioRunner<
+    for PinnedNetworkRunner<
         'resources,
         M,
         FRAME_CAPACITY,
@@ -148,45 +322,179 @@ impl<
         TX_QUEUE_DEPTH,
     >
 {
-    fn rx_publisher(&self) -> PinnedRxPublisher<'resources, M, FRAME_CAPACITY, RX_QUEUE_DEPTH> {
-        SplitPinnedRadioRunner::rx_publisher(self)
+    fn rx_publisher(
+        &self,
+        interface: NetworkInterfaceId,
+    ) -> PinnedRxPublisher<'resources, M, FRAME_CAPACITY, RX_QUEUE_DEPTH> {
+        assert_eq!(
+            interface,
+            self.interface(),
+            "single network owner cannot publish to another interface"
+        );
+        PinnedNetworkRunner::rx_publisher(self)
     }
 
-    fn set_link_state(&self, state: LinkState) {
-        SplitPinnedRadioRunner::set_link_state(self, state);
+    fn set_link_state(&self, interface: NetworkInterfaceId, state: LinkState) {
+        assert_eq!(
+            interface,
+            self.interface(),
+            "single network owner cannot change another interface"
+        );
+        PinnedNetworkRunner::set_link_state(self, state);
     }
 
-    fn tx_queue_len(&self) -> usize {
-        SplitPinnedRadioRunner::tx_queue_len(self)
+    fn tx_queue_len(&self, interface: NetworkInterfaceId) -> usize {
+        assert_eq!(interface, self.interface());
+        PinnedNetworkRunner::tx_queue_len(self)
     }
 
     fn try_receive_tx(
         &self,
+        interface: NetworkInterfaceId,
     ) -> Option<PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>>
     {
-        SplitPinnedRadioRunner::try_receive_tx(self)
+        assert_eq!(interface, self.interface());
+        PinnedNetworkRunner::try_receive_tx(self)
     }
 
     fn receive_tx(
         &self,
+        interface: NetworkInterfaceId,
     ) -> impl Future<
         Output = PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
     > + '_ {
-        SplitPinnedRadioRunner::receive_tx(self)
+        assert_eq!(interface, self.interface());
+        PinnedNetworkRunner::receive_tx(self)
     }
 
     fn tx_consumer(
         &self,
-    ) -> PinnedTxConsumer<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH> {
-        SplitPinnedRadioRunner::tx_consumer(self)
+        interface: NetworkInterfaceId,
+    ) -> PinnedTxInterfaceConsumer<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>
+    {
+        assert_eq!(interface, self.interface());
+        PinnedNetworkRunner::tx_consumer(self)
     }
 
-    fn wait_tx_ready(&self) -> impl Future<Output = ()> + '_ {
-        SplitPinnedRadioRunner::wait_tx_ready(self)
+    fn wait_tx_ready(&self, interface: NetworkInterfaceId) -> impl Future<Output = ()> + '_ {
+        assert_eq!(interface, self.interface());
+        PinnedNetworkRunner::wait_tx_ready(self)
     }
 
     fn wait_tx_publication(&self) -> impl Future<Output = ()> + '_ {
-        SplitPinnedRadioRunner::wait_tx_publication(self)
+        PinnedNetworkRunner::wait_tx_publication(self)
+    }
+
+    fn physical_tx_queue_len(&self) -> usize {
+        PinnedNetworkRunner::tx_queue_len(self)
+    }
+
+    fn try_receive_physical_tx(
+        &self,
+    ) -> Option<PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>>
+    {
+        PinnedNetworkRunner::try_receive_tx(self)
+    }
+
+    fn receive_physical_tx(
+        &self,
+    ) -> impl Future<
+        Output = PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+    > + '_ {
+        PinnedNetworkRunner::receive_tx(self)
+    }
+}
+
+impl<
+    'resources,
+    M: RawMutex + 'resources,
+    const FRAME_CAPACITY: usize,
+    const HEADROOM: usize,
+    const TRAILER: usize,
+    const RX_QUEUE_DEPTH: usize,
+    const TX_QUEUE_DEPTH: usize,
+> WdevNetwork<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, RX_QUEUE_DEPTH, TX_QUEUE_DEPTH>
+    for DualPinnedNetworkRunner<
+        'resources,
+        M,
+        FRAME_CAPACITY,
+        HEADROOM,
+        TRAILER,
+        RX_QUEUE_DEPTH,
+        TX_QUEUE_DEPTH,
+    >
+{
+    fn rx_publisher(
+        &self,
+        interface: NetworkInterfaceId,
+    ) -> PinnedRxPublisher<'resources, M, FRAME_CAPACITY, RX_QUEUE_DEPTH> {
+        DualPinnedNetworkRunner::rx_publisher(self, interface)
+    }
+
+    fn set_link_state(&self, interface: NetworkInterfaceId, state: LinkState) {
+        DualPinnedNetworkRunner::set_link_state(self, interface, state);
+    }
+
+    fn tx_queue_len(&self, interface: NetworkInterfaceId) -> usize {
+        DualPinnedNetworkRunner::tx_consumer(self).queue_len_for(interface)
+    }
+
+    fn try_receive_tx(
+        &self,
+        interface: NetworkInterfaceId,
+    ) -> Option<PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>>
+    {
+        DualPinnedNetworkRunner::tx_consumer(self).try_receive_for(interface)
+    }
+
+    fn receive_tx(
+        &self,
+        interface: NetworkInterfaceId,
+    ) -> impl Future<
+        Output = PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+    > + '_ {
+        let tx = DualPinnedNetworkRunner::tx_consumer(self);
+        async move { tx.receive_for(interface).await }
+    }
+
+    fn tx_consumer(
+        &self,
+        interface: NetworkInterfaceId,
+    ) -> PinnedTxInterfaceConsumer<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>
+    {
+        assert!(
+            interface == self.first_interface() || interface == self.second_interface(),
+            "TX interface does not belong to this radio owner"
+        );
+        DualPinnedNetworkRunner::tx_consumer(self).for_interface(interface)
+    }
+
+    fn wait_tx_ready(&self, interface: NetworkInterfaceId) -> impl Future<Output = ()> + '_ {
+        let tx = DualPinnedNetworkRunner::tx_consumer(self);
+        async move { tx.wait_ready_for(interface).await }
+    }
+
+    fn wait_tx_publication(&self) -> impl Future<Output = ()> + '_ {
+        DualPinnedNetworkRunner::wait_tx_publication(self)
+    }
+
+    fn physical_tx_queue_len(&self) -> usize {
+        DualPinnedNetworkRunner::tx_queue_len(self)
+    }
+
+    fn try_receive_physical_tx(
+        &self,
+    ) -> Option<PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>>
+    {
+        DualPinnedNetworkRunner::try_receive_tx(self)
+    }
+
+    fn receive_physical_tx(
+        &self,
+    ) -> impl Future<
+        Output = PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+    > + '_ {
+        DualPinnedNetworkRunner::receive_tx(self)
     }
 }
 
@@ -213,45 +521,71 @@ where
             TX_QUEUE_DEPTH,
         > + ?Sized,
 {
-    fn rx_publisher(&self) -> PinnedRxPublisher<'resources, M, FRAME_CAPACITY, RX_QUEUE_DEPTH> {
-        N::rx_publisher(*self)
+    fn rx_publisher(
+        &self,
+        interface: NetworkInterfaceId,
+    ) -> PinnedRxPublisher<'resources, M, FRAME_CAPACITY, RX_QUEUE_DEPTH> {
+        N::rx_publisher(*self, interface)
     }
 
-    fn set_link_state(&self, state: LinkState) {
-        N::set_link_state(*self, state);
+    fn set_link_state(&self, interface: NetworkInterfaceId, state: LinkState) {
+        N::set_link_state(*self, interface, state);
     }
 
-    fn tx_queue_len(&self) -> usize {
-        N::tx_queue_len(*self)
+    fn tx_queue_len(&self, interface: NetworkInterfaceId) -> usize {
+        N::tx_queue_len(*self, interface)
     }
 
     fn try_receive_tx(
         &self,
+        interface: NetworkInterfaceId,
     ) -> Option<PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>>
     {
-        N::try_receive_tx(*self)
+        N::try_receive_tx(*self, interface)
     }
 
     fn receive_tx(
         &self,
+        interface: NetworkInterfaceId,
     ) -> impl Future<
         Output = PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
     > + '_ {
-        N::receive_tx(*self)
+        N::receive_tx(*self, interface)
     }
 
     fn tx_consumer(
         &self,
-    ) -> PinnedTxConsumer<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH> {
-        N::tx_consumer(*self)
+        interface: NetworkInterfaceId,
+    ) -> PinnedTxInterfaceConsumer<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>
+    {
+        N::tx_consumer(*self, interface)
     }
 
-    fn wait_tx_ready(&self) -> impl Future<Output = ()> + '_ {
-        N::wait_tx_ready(*self)
+    fn wait_tx_ready(&self, interface: NetworkInterfaceId) -> impl Future<Output = ()> + '_ {
+        N::wait_tx_ready(*self, interface)
     }
 
     fn wait_tx_publication(&self) -> impl Future<Output = ()> + '_ {
         N::wait_tx_publication(*self)
+    }
+
+    fn physical_tx_queue_len(&self) -> usize {
+        N::physical_tx_queue_len(*self)
+    }
+
+    fn try_receive_physical_tx(
+        &self,
+    ) -> Option<PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>>
+    {
+        N::try_receive_physical_tx(*self)
+    }
+
+    fn receive_physical_tx(
+        &self,
+    ) -> impl Future<
+        Output = PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+    > + '_ {
+        N::receive_physical_tx(*self)
     }
 }
 
@@ -306,6 +640,45 @@ pub enum WdevRunnerExit<E> {
     Stopped,
 }
 
+/// Logical interfaces scheduled by one physical WDEV owner.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum WdevInterfaceScope {
+    Single(NetworkInterfaceId),
+    Pair {
+        first: NetworkInterfaceId,
+        second: NetworkInterfaceId,
+    },
+}
+
+impl WdevInterfaceScope {
+    pub fn pair(first: NetworkInterfaceId, second: NetworkInterfaceId) -> Self {
+        assert_ne!(first, second, "WDEV pair requires distinct interfaces");
+        Self::Pair { first, second }
+    }
+
+    pub const fn primary(self) -> NetworkInterfaceId {
+        match self {
+            Self::Single(interface)
+            | Self::Pair {
+                first: interface, ..
+            } => interface,
+        }
+    }
+
+    pub const fn contains(self, interface: NetworkInterfaceId) -> bool {
+        match self {
+            Self::Single(owned) => owned.value() == interface.value(),
+            Self::Pair { first, second } => {
+                first.value() == interface.value() || second.value() == interface.value()
+            }
+        }
+    }
+
+    pub const fn is_pair(self) -> bool {
+        matches!(self, Self::Pair { .. })
+    }
+}
+
 /// Finite chip-specific and role-specific operations used by [`WdevRunner`].
 ///
 /// An implementation normally owns the live RX descriptor ring, staging
@@ -333,7 +706,7 @@ pub trait WdevServices<
     /// Drain one snapshotted RX-success frontier into independent ownership.
     fn service_rx<'a>(
         &'a mut self,
-        network_rx: &'a mut dyn WdevNetworkRx,
+        network_rx: &'a mut dyn WdevNetworkRxSet,
         context: WdevRxServiceContext,
     ) -> impl Future<Output = Result<WdevRxProgress, Self::Error>> + 'a;
 
@@ -351,7 +724,7 @@ pub trait WdevServices<
     /// actions until the TX terminal edge.
     fn service_rx_during_tx<'a>(
         &'a mut self,
-        network_rx: &'a mut dyn WdevNetworkRx,
+        network_rx: &'a mut dyn WdevNetworkRxSet,
     ) -> impl Future<Output = Result<WdevRxProgress, Self::Error>> + 'a {
         self.service_rx(
             network_rx,
@@ -394,6 +767,20 @@ pub trait WdevServices<
         ready(Ok(WdevControlProgress::Idle))
     }
 
+    /// VIF that owns a role-generated live TX transaction.
+    ///
+    /// Standalone runners infer their sole interface. A paired runner requires
+    /// the combined services owner to report this identity before WDEV enters
+    /// the shared IRQ/deadline completion loop.
+    fn active_tx_interface(&self) -> Option<NetworkInterfaceId> {
+        None
+    }
+
+    /// VIF retained by a software-owned standby aggregate.
+    fn prepared_tx_interface(&self) -> Option<NetworkInterfaceId> {
+        None
+    }
+
     /// Advance role shutdown by one finite transition at an idle TX boundary.
     fn service_stop(&mut self) -> Result<WdevStopProgress, Self::Error> {
         Ok(WdevStopProgress::Stopped)
@@ -418,7 +805,7 @@ pub trait WdevServices<
     fn start_tx<'a>(
         &'a mut self,
         frame: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
-        network: &'a PinnedTxConsumer<
+        network: &'a PinnedTxInterfaceConsumer<
             'resources,
             M,
             FRAME_CAPACITY,
@@ -458,7 +845,7 @@ pub trait WdevServices<
 
     fn start_prepared_tx<'a>(
         &'a mut self,
-        _network: &'a PinnedTxConsumer<
+        _network: &'a PinnedTxInterfaceConsumer<
             'resources,
             M,
             FRAME_CAPACITY,
@@ -481,7 +868,7 @@ pub trait WdevServices<
     fn prepare_tx<'a>(
         &'a mut self,
         _frame: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
-        _network: &'a PinnedTxConsumer<
+        _network: &'a PinnedTxInterfaceConsumer<
             'resources,
             M,
             FRAME_CAPACITY,
@@ -506,11 +893,16 @@ pub struct WdevRunner<
     const TRAILER: usize,
     const RX_QUEUE_DEPTH: usize,
     const TX_QUEUE_DEPTH: usize,
+    R = PinnedRxPublisher<'resources, M, FRAME_CAPACITY, RX_QUEUE_DEPTH>,
 > {
+    resources: core::marker::PhantomData<&'resources ()>,
     irq: &'irq EmbassyMacIrqRuntime<M>,
     network: N,
-    network_rx: PinnedRxPublisher<'resources, M, FRAME_CAPACITY, RX_QUEUE_DEPTH>,
+    interfaces: WdevInterfaceScope,
+    network_rx: R,
     services: B,
+    active_tx_interface: Option<NetworkInterfaceId>,
+    prepared_tx_interface: Option<NetworkInterfaceId>,
     rx_progress: WdevRxProgress,
     /// Signed RX-minus-TX frame balance. A negative value is retained across
     /// transactions so a large aggregate cannot erase the RX credit it
@@ -520,6 +912,7 @@ pub struct WdevRunner<
 
 mod arbitration;
 mod owner;
+pub mod paired;
 mod service;
 
 #[cfg(test)]

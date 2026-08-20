@@ -7,7 +7,7 @@
 //! policy.
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
-use open_esp_radio_embassy_net::{LinkState, SplitPinnedRadioRunner};
+use open_esp_radio_embassy_net::{DualPinnedNetworkRunner, LinkState, PinnedNetworkRunner};
 
 /// Network ownership before the first association or after a finite connected
 /// epoch has returned its runner.
@@ -21,9 +21,9 @@ impl<D, R, S> StationNetworkResources<D, R, S> {
         matches!(self, Self::Running(_))
     }
 
-    /// Borrow the persistent radio-side network endpoint without changing
-    /// the station-specific one-time start marker. Standalone AP epochs use
-    /// the same queues and must not fabricate a second Embassy device.
+    /// Borrow the persistent physical radio-side network owner without
+    /// changing the station-specific one-time start marker. A dual owner may
+    /// retain distinct STA/AP RX endpoints while sharing one TX fabric.
     pub const fn radio_runner(&self) -> &R {
         match self {
             Self::Unstarted { runner, .. } => runner,
@@ -79,6 +79,12 @@ pub trait StationNetworkLink {
     fn publish_link_up(&self);
 }
 
+impl<N: StationNetworkLink + ?Sized> StationNetworkLink for &N {
+    fn publish_link_up(&self) {
+        N::publish_link_up(*self);
+    }
+}
+
 impl<
     'resources,
     M: RawMutex,
@@ -88,7 +94,7 @@ impl<
     const RX_QUEUE_DEPTH: usize,
     const TX_QUEUE_DEPTH: usize,
 > StationNetworkLink
-    for SplitPinnedRadioRunner<
+    for PinnedNetworkRunner<
         'resources,
         M,
         FRAME_CAPACITY,
@@ -100,6 +106,30 @@ impl<
 {
     fn publish_link_up(&self) {
         self.set_link_state(LinkState::Up);
+    }
+}
+
+impl<
+    'resources,
+    M: RawMutex,
+    const FRAME_CAPACITY: usize,
+    const HEADROOM: usize,
+    const TRAILER: usize,
+    const RX_QUEUE_DEPTH: usize,
+    const TX_QUEUE_DEPTH: usize,
+> StationNetworkLink
+    for DualPinnedNetworkRunner<
+        'resources,
+        M,
+        FRAME_CAPACITY,
+        HEADROOM,
+        TRAILER,
+        RX_QUEUE_DEPTH,
+        TX_QUEUE_DEPTH,
+    >
+{
+    fn publish_link_up(&self) {
+        self.set_link_state(self.first_interface(), LinkState::Up);
     }
 }
 

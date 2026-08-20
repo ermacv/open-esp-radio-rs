@@ -128,6 +128,80 @@ impl Esp32s31WifiRuntimeContext {
     }
 }
 
+/// Unique PHY/platform owner while any finite Wi-Fi role graph is active.
+///
+/// RX DMA, register and interrupt capabilities move independently into the
+/// concrete epoch. The owner is deliberately role-neutral: a same-channel
+/// STA+AP graph still has exactly one physical radio and must not manufacture
+/// separate station and access-point owners around it.
+pub struct Esp32s31WifiRoleOwner<P> {
+    platform: P,
+    context: Esp32s31WifiRuntimeContext,
+}
+
+impl<P> Esp32s31WifiRoleOwner<P> {
+    pub fn radio_mut(&mut self) -> (&mut PhyState, &mut P) {
+        (self.context.phy_mut(), &mut self.platform)
+    }
+
+    pub const fn current_channel(&self) -> WifiChannel {
+        self.context.current_channel()
+    }
+
+    pub fn set_current_channel(&mut self, channel: WifiChannel) {
+        self.context.set_current_channel(channel);
+    }
+
+    /// Reassemble stopped Wi-Fi only after the exact register and interrupt
+    /// setup owners have returned from the active epoch.
+    pub fn into_stopped<L>(
+        self,
+        registers: RadioRuntimeOwner,
+        interrupt_setup: MacInterruptSetup,
+        resources: L,
+    ) -> Esp32s31WifiRoleStopped<P, L> {
+        Esp32s31WifiRoleStopped {
+            wifi: self
+                .context
+                .into_stopped(self.platform, registers, interrupt_setup),
+            resources,
+        }
+    }
+}
+
+/// Exact transfer from stopped Wi-Fi into one finite role composition.
+pub struct Esp32s31WifiRoleMaterialized<P, L> {
+    pub owner: Esp32s31WifiRoleOwner<P>,
+    pub registers: RadioRuntimeOwner,
+    pub interrupt_setup: MacInterruptSetup,
+    pub resources: L,
+}
+
+/// Cleanly dematerialized finite role graph.
+pub struct Esp32s31WifiRoleStopped<P, L> {
+    pub wifi: Esp32s31WifiStopped<P>,
+    pub resources: L,
+}
+
+/// Consume the common stopped owner before starting any finite role graph.
+pub fn materialize_esp32s31_wifi_role<P, L>(
+    wifi: Esp32s31WifiStopped<P>,
+    resources: L,
+) -> Esp32s31WifiRoleMaterialized<P, L> {
+    let Esp32s31WifiRuntimeParts {
+        platform,
+        registers,
+        interrupt_setup,
+        context,
+    } = wifi.into_runtime_parts();
+    Esp32s31WifiRoleMaterialized {
+        owner: Esp32s31WifiRoleOwner { platform, context },
+        registers,
+        interrupt_setup,
+        resources,
+    }
+}
+
 /// Close the cold polling phase and enter the reusable stopped-runtime state.
 ///
 /// This is the only normal conversion from [`Esp32s31WifiMacReady`]. It masks

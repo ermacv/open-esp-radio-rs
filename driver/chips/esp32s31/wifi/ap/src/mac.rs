@@ -24,8 +24,8 @@ use crate::{
         Esp32s31ApRuntimeHardware,
     },
     tx::{
-        Esp32s31ApTx, Esp32s31ApTxClass, Esp32s31ApTxConfig, Esp32s31ApTxError, peer_ht_rate,
-        peer_legacy_rate,
+        Esp32s31ApTx, Esp32s31ApTxClass, Esp32s31ApTxConfig, Esp32s31ApTxError, Esp32s31ApTxParked,
+        peer_ht_rate, peer_legacy_rate,
     },
 };
 
@@ -181,6 +181,43 @@ pub struct Esp32s31ApMac<'beacon, 'slot, P, E, T, const BUFFER_SIZE: usize> {
     pending: Option<PendingPublication>,
     block_ack_alarm: Option<([u8; 6], TxBlockAckAlarm)>,
     report: Esp32s31ApMacReport,
+}
+
+/// AP protocol state with no ordinary descriptor or DMA publication owner.
+pub struct Esp32s31ApMacParked<'beacon> {
+    engine: Esp32s31ApEngine<'beacon>,
+    transmit: Esp32s31ApTxParked,
+    block_ack_alarm: Option<([u8; 6], TxBlockAckAlarm)>,
+    report: Esp32s31ApMacReport,
+}
+
+impl Esp32s31ApMacParked<'_> {
+    /// Observe the role-local beacon schedule without recovering the shared
+    /// ordinary-TX capability.
+    pub const fn beacon_publication_due(&self, now_micros: u32) -> bool {
+        self.engine.beacon_publication_due(now_micros)
+    }
+
+    /// Return the current beacon deadline while the physical TX owner is lent
+    /// to neither role.
+    pub const fn next_beacon_delay(&self, now_micros: u32) -> Option<(u32, u32)> {
+        self.engine.next_beacon_delay(now_micros)
+    }
+
+    /// Earliest AP protocol deadline which may require a future hardware
+    /// publication. This is observation only and grants no MMIO authority.
+    pub fn next_control_deadline(&self) -> Option<u64> {
+        self.engine
+            .next_peer_deadline()
+            .into_iter()
+            .chain(self.engine.next_wpa2_retry_deadline())
+            .chain(self.block_ack_alarm.map(|(_, alarm)| alarm.deadline_us))
+            .min()
+    }
+
+    pub fn has_operational_tx_block_ack(&self) -> bool {
+        self.engine.has_operational_tx_block_ack()
+    }
 }
 
 impl<'beacon, 'slot, P, E, T, const BUFFER_SIZE: usize>
@@ -652,15 +689,15 @@ where
         }
     }
 
-    /// Recover AP protocol and common TX resources only after TX is idle.
+    /// Lend the physical ordinary TX owner while preserving all AP-local
+    /// protocol, timer and observation state.
     #[allow(clippy::result_large_err, clippy::type_complexity)]
-    pub fn try_into_parts(
+    pub fn try_park(
         self,
     ) -> Result<
         (
-            Esp32s31ApEngine<'beacon>,
             WifiTxResources<'slot, P, E, T, BUFFER_SIZE>,
-            Esp32s31ApMacReport,
+            Esp32s31ApMacParked<'beacon>,
         ),
         Self,
     > {
@@ -680,16 +717,61 @@ where
                 report,
             });
         }
-        match transmit.try_into_resources() {
-            Ok(resources) => Ok((engine, resources, report)),
+        match transmit.try_park() {
+            Ok((resources, transmit)) => Ok((
+                resources,
+                Esp32s31ApMacParked {
+                    engine,
+                    transmit,
+                    block_ack_alarm,
+                    report,
+                },
+            )),
             Err(transmit) => Err(Self {
                 engine,
                 transmit,
-                pending,
+                pending: None,
                 block_ack_alarm,
                 report,
             }),
         }
+    }
+
+    pub fn resume(
+        resources: WifiTxResources<'slot, P, E, T, BUFFER_SIZE>,
+        parked: Esp32s31ApMacParked<'beacon>,
+    ) -> Self {
+        let Esp32s31ApMacParked {
+            engine,
+            transmit,
+            block_ack_alarm,
+            report,
+        } = parked;
+        Self {
+            engine,
+            transmit: Esp32s31ApTx::resume(resources, transmit),
+            pending: None,
+            block_ack_alarm,
+            report,
+        }
+    }
+
+    /// Recover AP protocol and common TX resources only after TX is idle.
+    #[allow(clippy::result_large_err, clippy::type_complexity)]
+    pub fn try_into_parts(
+        self,
+    ) -> Result<
+        (
+            Esp32s31ApEngine<'beacon>,
+            WifiTxResources<'slot, P, E, T, BUFFER_SIZE>,
+            Esp32s31ApMacReport,
+        ),
+        Self,
+    > {
+        self.try_park().map(|(resources, parked)| {
+            let Esp32s31ApMacParked { engine, report, .. } = parked;
+            (engine, resources, report)
+        })
     }
 }
 

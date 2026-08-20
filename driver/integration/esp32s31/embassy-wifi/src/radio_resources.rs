@@ -1,7 +1,7 @@
 //! Role-neutral network and aggregate-TX storage for the sole Wi-Fi runner.
 //!
-//! STA and AP borrow the same physical arenas in disjoint lifecycle epochs.
-//! Their allocation therefore belongs to the integration root, not to the
+//! STA and AP own distinct RX/link/MAC endpoints and share one tagged physical
+//! TX arena. All of that allocation belongs to the integration root, not to a
 //! station `connected` transaction.
 
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
@@ -12,8 +12,8 @@ use open_esp_radio::esp32s31::wifi::{
     },
 };
 use open_esp_radio_embassy_net::{
-    PinnedTxFrame, PinnedTxPool, SharedPinnedRxConsumer, SharedRxSplitPinnedDevice,
-    SplitPinnedRadioRunner, SplitPinnedResources,
+    DualPinnedNetworkRunner, PinnedEndpointResources, PinnedTxFrame, PinnedTxPool,
+    PinnedTxResources, SharedPinnedRxConsumer, SharedRxSplitPinnedDevice,
 };
 use open_esp_radio_esp32s31_wifi_embassy::{
     ampdu_resources::AggregateTxResources,
@@ -28,18 +28,22 @@ use open_esp_radio_esp32s31_wifi_embassy::{
     },
 };
 use open_esp_radio_wifi_embassy::station_network::{RunningStationNetwork, StationNetworkResources};
-use static_cell::ConstStaticCell;
+use static_cell::{ConstStaticCell, StaticCell};
 
 pub(super) const NETWORK_TX_HEADROOM: usize =
     8 + open_esp_radio::wifi::ieee80211::station::STA_PROTECTED_QOS_ETHERNET_HEADROOM;
 pub(super) const TX_AMPDU_BUFFER_SIZE: usize = 0;
 
-type NetworkResources = SplitPinnedResources<
+type NetworkResources = PinnedEndpointResources<
+    CriticalSectionRawMutex,
+    NETWORK_FRAME_CAPACITY,
+    NETWORK_RX_QUEUE_DEPTH,
+>;
+type NetworkTxResources = PinnedTxResources<
     CriticalSectionRawMutex,
     NETWORK_FRAME_CAPACITY,
     NETWORK_TX_HEADROOM,
     NETWORK_TX_TRAILER,
-    NETWORK_RX_QUEUE_DEPTH,
     NETWORK_TX_QUEUE_DEPTH,
 >;
 type NetworkTxPool = PinnedTxPool<
@@ -70,7 +74,15 @@ pub type Esp32s31WifiDevice = SharedRxSplitPinnedDevice<
     RX_STAGE_CAPACITY,
     RX_STAGE_SLOT_COUNT,
 >;
-pub(super) type NetworkRunner = SplitPinnedRadioRunner<
+
+/// Permanent application-side devices for the two logical Wi-Fi interfaces.
+/// Each device owns independent IP/link/RX state while both publish into the
+/// one physical tagged TX fabric.
+pub struct Esp32s31WifiDevices {
+    pub station: Esp32s31WifiDevice,
+    pub access_point: Esp32s31WifiDevice,
+}
+pub(super) type RadioNetworkRunner = DualPinnedNetworkRunner<
     'static,
     CriticalSectionRawMutex,
     NETWORK_FRAME_CAPACITY,
@@ -79,6 +91,7 @@ pub(super) type NetworkRunner = SplitPinnedRadioRunner<
     NETWORK_RX_QUEUE_DEPTH,
     NETWORK_TX_QUEUE_DEPTH,
 >;
+pub(super) type NetworkRunner = &'static RadioNetworkRunner;
 pub(super) type RadioAmpduStorage = AggregateTxResources<
     'static,
     RadioTxBacking,
@@ -90,6 +103,11 @@ pub(super) type RunningWifiNetwork = RunningStationNetwork<(), NetworkRunner>;
 
 static NETWORK_RESOURCES: ConstStaticCell<NetworkResources> =
     ConstStaticCell::new(NetworkResources::new());
+static ACCESS_POINT_NETWORK_RESOURCES: ConstStaticCell<NetworkResources> =
+    ConstStaticCell::new(NetworkResources::new());
+static NETWORK_TX_RESOURCES: ConstStaticCell<NetworkTxResources> =
+    ConstStaticCell::new(NetworkTxResources::new());
+static NETWORK_RUNNER: StaticCell<RadioNetworkRunner> = StaticCell::new();
 #[allow(
     unsafe_code,
     reason = "the linker must retain production network TX backing in DMA-visible SRAM"
@@ -125,19 +143,53 @@ static TX_AMPDU_STANDBY_RETENTION: ConstStaticCell<RadioAmpduRetention> =
 
 pub(super) fn initialize_network(
     station_address: [u8; 6],
-    shared: SharedPinnedRxConsumer<
+    access_point_address: [u8; 6],
+    station_shared: SharedPinnedRxConsumer<
         'static,
         CriticalSectionRawMutex,
         RX_STAGE_CAPACITY,
         RX_STAGE_SLOT_COUNT,
     >,
-) -> (Esp32s31WifiDevice, WifiNetworkResources) {
-    let network_resources = NETWORK_RESOURCES.take();
+    access_point_shared: SharedPinnedRxConsumer<
+        'static,
+        CriticalSectionRawMutex,
+        RX_STAGE_CAPACITY,
+        RX_STAGE_SLOT_COUNT,
+    >,
+) -> (Esp32s31WifiDevices, WifiNetworkResources) {
+    let station_resources = NETWORK_RESOURCES.take();
+    let access_point_resources = ACCESS_POINT_NETWORK_RESOURCES.take();
+    let network_tx_resources = NETWORK_TX_RESOURCES.take();
     let tx_pool = NetworkTxPool::pin_static(NETWORK_TX_POOL.take());
-    let (device, runner) = network_resources.split(tx_pool, station_address);
-    let runner = runner.with_shared_rx_ordering(&shared);
+    let (tx_provider, tx_consumer) = network_tx_resources.split(tx_pool);
+    let (station_device, station_rx) = station_resources.split(
+        tx_provider,
+        open_esp_radio_esp32s31_wifi_embassy::sta_ap::STA_NETWORK_INTERFACE_ID,
+        station_address,
+    );
+    let (access_point_device, access_point_rx) = access_point_resources.split(
+        tx_provider,
+        open_esp_radio_esp32s31_wifi_embassy::sta_ap::AP_NETWORK_INTERFACE_ID,
+        access_point_address,
+    );
+    let runner = DualPinnedNetworkRunner::new(
+        open_esp_radio_esp32s31_wifi_embassy::sta_ap::STA_NETWORK_INTERFACE_ID,
+        station_rx,
+        open_esp_radio_esp32s31_wifi_embassy::sta_ap::AP_NETWORK_INTERFACE_ID,
+        access_point_rx,
+        tx_consumer,
+    )
+    .with_shared_rx_ordering(&station_shared, &access_point_shared);
+    let runner = NETWORK_RUNNER.init(runner);
     (
-        device.with_ingress_tx_reserve().with_shared_rx(shared),
+        Esp32s31WifiDevices {
+            station: station_device
+                .with_ingress_tx_reserve()
+                .with_shared_rx(station_shared),
+            access_point: access_point_device
+                .with_ingress_tx_reserve()
+                .with_shared_rx(access_point_shared),
+        },
         WifiNetworkResources::Unstarted { device: (), runner },
     )
 }

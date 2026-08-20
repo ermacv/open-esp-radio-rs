@@ -7,36 +7,41 @@ use core::{
 
 use embassy_net::{Config, Ipv4Address, Ipv4Cidr, StackResources, StaticConfigV4};
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
-use open_esp_radio_embassy_net::{PinnedTxPool, SplitPinnedResources};
+use open_esp_radio_embassy_net::{
+    NetworkInterfaceId, PinnedEndpointResources, PinnedNetworkRunner, PinnedTxPool,
+    PinnedTxResources,
+};
 
 const FRAME_CAPACITY: usize = 1_536;
 const TX_HEADROOM: usize = 28;
 const TX_TRAILER: usize = 8;
 
 #[test]
-fn role_change_delivers_arp_to_the_reconfigured_embassy_stack() {
+fn permanent_access_point_endpoint_delivers_arp() {
     let done = Box::leak(Box::new(AtomicBool::new(false)));
     let executor = Box::leak(Box::new(embassy_executor::Executor::new()));
     executor.run_until(
         |spawner| {
-            spawner.spawn(run_role_change_arp_test(done).expect("test task allocates once"));
+            spawner.spawn(run_access_point_arp_test(done).expect("test task allocates once"));
         },
         || done.load(Ordering::Acquire),
     );
 }
 
 #[embassy_executor::task]
-async fn run_role_change_arp_test(done: &'static AtomicBool) {
-    type Resources =
-        SplitPinnedResources<NoopRawMutex, FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 2, 2>;
+async fn run_access_point_arp_test(done: &'static AtomicBool) {
+    type Resources = PinnedEndpointResources<NoopRawMutex, FRAME_CAPACITY, 2>;
     type TxPool = PinnedTxPool<FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 2>;
+    type TxResources = PinnedTxResources<NoopRawMutex, FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 2>;
 
     let resources = Box::leak(Box::new(Resources::new()));
+    let tx_resources = Box::leak(Box::new(TxResources::new()));
     let tx_pool = TxPool::pin_static(Box::leak(Box::new(TxPool::new())));
-    let station = [0x30, 0xed, 0xa0, 0xf3, 0xf6, 0xd0];
     let access_point = [0x32, 0xed, 0xa0, 0xf3, 0xf6, 0xd0];
     let client = [0x70, 0x15, 0xfb, 0xa8, 0x48, 0xf0];
-    let (device, radio) = resources.split(tx_pool, station);
+    let (provider, consumer) = tx_resources.split(tx_pool);
+    let (device, rx) = resources.split(provider, NetworkInterfaceId::new(1), access_point);
+    let radio = PinnedNetworkRunner::new(NetworkInterfaceId::new(1), rx, consumer);
     let stack_resources = Box::leak(Box::new(StackResources::<1>::new()));
     let (stack, mut runner) = embassy_net::new(
         device,
@@ -49,7 +54,6 @@ async fn run_role_change_arp_test(done: &'static AtomicBool) {
         1,
     );
 
-    radio.set_hardware_address(access_point);
     radio.set_link_state(embassy_net_driver::LinkState::Up);
     radio.try_send_rx(&arp_request(client)).unwrap();
 

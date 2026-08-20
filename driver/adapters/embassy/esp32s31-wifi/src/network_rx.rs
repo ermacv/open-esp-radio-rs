@@ -383,7 +383,8 @@ mod tests {
     use core::task::{Context, Waker};
 
     use open_esp_radio_embassy_net::{
-        Driver as _, NoopRawMutex, PinnedTxPool, RxEnqueueError, SplitPinnedResources,
+        Driver as _, NetworkInterfaceId, NoopRawMutex, PinnedEndpointResources,
+        PinnedNetworkRunner, PinnedTxPool, PinnedTxResources, RxEnqueueError,
     };
     use open_esp_radio_esp32s31_wifi_sta::connected_rx::{ConnectedRxEvent, ConnectedRxSink};
     use open_esp_radio_ieee80211::data::EthernetFrameParts;
@@ -421,19 +422,16 @@ mod tests {
         const HEADROOM: usize = 32;
         const TRAILER: usize = 8;
         const QUEUE_DEPTH: usize = 1;
-        type Resources = SplitPinnedResources<
-            NoopRawMutex,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            QUEUE_DEPTH,
-            QUEUE_DEPTH,
-        >;
+        type Resources = PinnedEndpointResources<NoopRawMutex, FRAME_CAPACITY, QUEUE_DEPTH>;
         type Pool = PinnedTxPool<FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>;
 
         let resources = std::boxed::Box::leak(std::boxed::Box::new(Resources::new()));
         let pool = Pool::pin_static(std::boxed::Box::leak(std::boxed::Box::new(Pool::new())));
-        let (mut device, runner) = resources.split(pool, [2, 3, 4, 5, 6, 7]);
+        let tx_resources = std::boxed::Box::leak(std::boxed::Box::new(PinnedTxResources::new()));
+        let (provider, consumer) = tx_resources.split(pool);
+        let (mut device, rx) =
+            resources.split(provider, NetworkInterfaceId::new(0), [2, 3, 4, 5, 6, 7]);
+        let runner = PinnedNetworkRunner::new(NetworkInterfaceId::new(0), rx, consumer);
         let pipeline_observer = PipelineObserver::default();
         let mut sink = EmbassyNetConnectedRxSink::<
             _,

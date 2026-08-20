@@ -6,6 +6,7 @@
 //! the current DMA descriptor.
 
 use open_esp_radio_esp32s31_wifi_mac::{
+    MacInterface,
     rx::RxSegment,
     rx_ampdu::{
         RX_BLOCK_ACK_BANK_COUNT, RxAmpduError, RxAmpduMpdu, RxAmpduRelease, RxBlockAckIdentity,
@@ -151,7 +152,10 @@ impl<'storage, const CAPACITY: usize> Esp32s31AccessPointRxReorder<'storage, CAP
         now_micros: u64,
         mut dispatch: impl FnMut(RxSegment<'_>),
     ) -> Result<Esp32s31AccessPointRxReorderProgress, Esp32s31AccessPointRxReorderError> {
-        let Some(bank) = self.banks.find(key.peer, key.tid) else {
+        let Some(bank) = self
+            .banks
+            .find(MacInterface::AccessPoint, key.peer, key.tid)
+        else {
             dispatch(segment);
             return Ok(Esp32s31AccessPointRxReorderProgress {
                 dispatched: 1,
@@ -160,6 +164,7 @@ impl<'storage, const CAPACITY: usize> Esp32s31AccessPointRxReorder<'storage, CAP
         };
         let identity = RxBlockAckIdentity {
             hardware_index: bank as u8,
+            interface: MacInterface::AccessPoint,
             peer: key.peer,
             tid: key.tid,
         };
@@ -315,7 +320,10 @@ impl<'storage, const CAPACITY: usize> Esp32s31AccessPointRxReorder<'storage, CAP
     /// hardware `rx_state`; it proves independently that publishing this
     /// sequence would be a duplicate or stale delivery.
     pub(super) fn is_duplicate_or_stale(&self, key: RxBlockAckMpduKey) -> bool {
-        let Some(bank) = self.banks.find(key.peer, key.tid) else {
+        let Some(bank) = self
+            .banks
+            .find(MacInterface::AccessPoint, key.peer, key.tid)
+        else {
             return false;
         };
         let state = self
@@ -488,6 +496,7 @@ mod tests {
     fn agreement(hardware_index: u8, peer: [u8; 6], starting_sequence: u16) -> RxBlockAckSnapshot {
         RxBlockAckSnapshot {
             hardware_index,
+            interface: MacInterface::AccessPoint,
             peer,
             tid: 6,
             window: 8,
@@ -836,6 +845,7 @@ mod tests {
                 .start(
                     RxBlockAckSnapshot {
                         hardware_index: bank as u8,
+                        interface: MacInterface::AccessPoint,
                         peer,
                         tid: 0,
                         window: 64,

@@ -45,8 +45,79 @@ impl Esp32s31ConnectedStaPort {
         M: RawMutex,
         S: ConnectedRxProtocolSink<CAPACITY, SLOTS>,
     {
-        let mut protocol = Esp32s31ConnectedRxProtocol::new_with_reorder_slots(
-            resources.frames,
+        let Esp32s31ConnectedStaRxProtocolResources {
+            frames,
+            irq,
+            sink,
+            mpdu,
+            ethernet,
+            reorder_commands,
+            reorder_storage,
+            runtime,
+            reorder_scratch,
+            pipeline_observer,
+        } = resources;
+        let processor = Self::build_rx_processor(
+            plan,
+            Esp32s31ConnectedStaRxProcessorResources {
+                irq,
+                sink,
+                mpdu,
+                ethernet,
+                reorder_commands,
+                reorder_storage,
+                runtime,
+                reorder_scratch,
+                pipeline_observer,
+            },
+        );
+        Esp32s31ConnectedRxProtocol::from_processor(frames, processor)
+    }
+
+    /// Build connected-station RX policy without choosing a source queue.
+    ///
+    /// This is the shared composition point for standalone STA and paired
+    /// STA+AP. Both receive the same dispatcher, reorder, control mailbox and
+    /// evidence bindings; only the outer physical producer differs.
+    pub fn build_rx_processor<
+        'queue,
+        'pool,
+        'scratch,
+        'irq,
+        M,
+        S,
+        const CAPACITY: usize,
+        const SLOTS: usize,
+        const REORDER_SLOTS: usize,
+    >(
+        plan: &Esp32s31ConnectedStaPlan,
+        resources: Esp32s31ConnectedStaRxProcessorResources<
+            'queue,
+            'pool,
+            'scratch,
+            'irq,
+            M,
+            S,
+            CAPACITY,
+            SLOTS,
+            REORDER_SLOTS,
+        >,
+    ) -> Esp32s31ConnectedRxProcessor<
+        'queue,
+        'pool,
+        'scratch,
+        'irq,
+        M,
+        S,
+        CAPACITY,
+        SLOTS,
+        REORDER_SLOTS,
+    >
+    where
+        M: RawMutex,
+        S: ConnectedRxProtocolSink<CAPACITY, SLOTS>,
+    {
+        let mut processor = Esp32s31ConnectedRxProcessor::new_with_reorder_slots(
             resources.irq,
             ConnectedRxDispatcher::new(plan.rx_config()),
             resources.sink,
@@ -57,11 +128,11 @@ impl Esp32s31ConnectedStaPort {
         .with_rx_reorder_commands(resources.reorder_commands)
         .with_rx_reorder_storage(resources.reorder_storage);
         if let Some(counters) = resources.pipeline_observer {
-            protocol = protocol.with_pipeline_observer(counters);
+            processor = processor.with_pipeline_observer(counters);
         }
         match resources.reorder_scratch {
-            Some(scratch) => protocol.with_rx_reorder_scratch(scratch),
-            None => protocol,
+            Some(scratch) => processor.with_rx_reorder_scratch(scratch),
+            None => processor,
         }
     }
 

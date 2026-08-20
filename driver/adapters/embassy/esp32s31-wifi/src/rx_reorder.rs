@@ -298,6 +298,7 @@ mod tests {
         let (sender, receiver) = resources.split();
         let snapshot = RxBlockAckSnapshot {
             hardware_index: 0,
+            interface: open_esp_radio_esp32s31_wifi_mac::MacInterface::Station,
             peer: [2, 0, 0, 0, 0, 1],
             tid: 3,
             starting_sequence: 0x0ffe,
@@ -307,13 +308,16 @@ mod tests {
         let stop = RxReorderCommand::Stop(snapshot.identity());
         try_send_rx_reorder_command(&sender, start).unwrap();
         try_send_rx_reorder_command(&sender, stop).unwrap();
-        try_send_rx_reorder_command(&sender, RxReorderCommand::StopAll).unwrap();
+        let stop_station = RxReorderCommand::StopInterface(
+            open_esp_radio_esp32s31_wifi_mac::MacInterface::Station,
+        );
+        try_send_rx_reorder_command(&sender, stop_station).unwrap();
 
         assert_eq!(try_receive_rx_reorder_command(&receiver), Some(start));
         assert_eq!(try_receive_rx_reorder_command(&receiver), Some(stop));
         assert_eq!(
             try_receive_rx_reorder_command(&receiver),
-            Some(RxReorderCommand::StopAll)
+            Some(stop_station)
         );
         assert_eq!(try_receive_rx_reorder_command(&receiver), None);
     }
@@ -327,6 +331,7 @@ mod tests {
                 &sender,
                 RxReorderCommand::Stop(RxBlockAckIdentity {
                     hardware_index: hardware_index as u8,
+                    interface: open_esp_radio_esp32s31_wifi_mac::MacInterface::Station,
                     peer: [2, 0, 0, 0, 0, 1],
                     tid: 0,
                 }),
@@ -334,8 +339,17 @@ mod tests {
             .unwrap();
         }
         assert_eq!(
-            try_send_rx_reorder_command(&sender, RxReorderCommand::StopAll),
-            Err(RxReorderCommandError::Full(RxReorderCommand::StopAll))
+            try_send_rx_reorder_command(
+                &sender,
+                RxReorderCommand::StopInterface(
+                    open_esp_radio_esp32s31_wifi_mac::MacInterface::Station,
+                ),
+            ),
+            Err(RxReorderCommandError::Full(
+                RxReorderCommand::StopInterface(
+                    open_esp_radio_esp32s31_wifi_mac::MacInterface::Station,
+                )
+            ))
         );
     }
 

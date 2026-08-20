@@ -130,6 +130,7 @@ pub enum RxBlockAckSessionsError {
     NonzeroTimeout(u16),
     InvalidStartingSequence(u16),
     ActivationBusy,
+    InterfaceActive(MacInterface),
     StaleActivation,
     NoFreePendingSlot,
     NoFreePeerSlot,
@@ -144,6 +145,12 @@ struct PendingRxBlockAck {
     dialog_token: u8,
     tid: u8,
     peer_index: u8,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct RxBlockAckPeer {
+    interface: MacInterface,
+    address: [u8; 6],
 }
 
 impl PendingRxBlockAck {
@@ -168,6 +175,7 @@ impl PendingRxBlockAck {
 /// into hardware-bank ownership.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RxBlockAckRequest {
+    pub interface: MacInterface,
     pub peer: [u8; 6],
     pub dialog_token: u8,
     pub tid: u8,
@@ -180,6 +188,7 @@ pub struct RxBlockAckRequest {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RxBlockAckSnapshot {
     pub hardware_index: u8,
+    pub interface: MacInterface,
     pub peer: [u8; 6],
     pub tid: u8,
     pub window: u16,
@@ -189,6 +198,7 @@ pub struct RxBlockAckSnapshot {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RxBlockAckIdentity {
     pub hardware_index: u8,
+    pub interface: MacInterface,
     pub peer: [u8; 6],
     pub tid: u8,
 }
@@ -197,6 +207,7 @@ impl RxBlockAckSnapshot {
     pub const fn identity(self) -> RxBlockAckIdentity {
         RxBlockAckIdentity {
             hardware_index: self.hardware_index,
+            interface: self.interface,
             peer: self.peer,
             tid: self.tid,
         }
@@ -210,7 +221,7 @@ impl RxBlockAckSnapshot {
 pub enum RxReorderCommand {
     Start(RxBlockAckSnapshot),
     Stop(RxBlockAckIdentity),
-    StopAll,
+    StopInterface(MacInterface),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -271,7 +282,7 @@ impl RxBlockAckActivation {
     }
 }
 
-/// Fixed owner of the eight ordinary S31 receive BlockAck banks.
+/// Fixed VIF-aware owner of the eight ordinary S31 receive BlockAck banks.
 ///
 /// SOURCE: complete `libnet80211.a[ieee80211_ht.o]::
 /// ampdu_rx_start.constprop.0` stores one independent agreement per peer/TID and
@@ -279,9 +290,11 @@ impl RxBlockAckActivation {
 /// `libpp.a[hal_ampdu.o]::hal_agreement_add_rx_ba` owns eight
 /// hardware banks and receives the literal hardware window 64 on the ordinary
 /// receive path. The protocol window and hardware window therefore remain
-/// deliberately distinct here.
+/// deliberately distinct here. One instance owns every active STA and AP
+/// agreement; peer identity includes the MAC interface so equal peer/TID
+/// values on different VIFs cannot alias one bank or reorder sequence space.
 pub struct RxBlockAckSessions<const PEER_CAPACITY: usize = 1> {
-    peers: [Option<[u8; 6]>; PEER_CAPACITY],
+    peers: [Option<RxBlockAckPeer>; PEER_CAPACITY],
     pending: [PendingRxBlockAck; RX_BLOCK_ACK_BANK_COUNT],
     active: [ActiveRxBlockAck; RX_BLOCK_ACK_BANK_COUNT],
     generation: u32,
@@ -329,14 +342,14 @@ impl<const PEER_CAPACITY: usize> RxBlockAckSessions<PEER_CAPACITY> {
         self.maximum_window
     }
 
-    /// Clear every peer, pending request and active agreement while retaining
-    /// the integration-owned negotiated-window limit.
+    /// Reinitialize the complete software bank image after the physical MAC
+    /// and all eight hardware agreements have already been reset.
     ///
     /// Role transitions reuse the statically allocated session owner. The
     /// resource profile, rather than the role implementation, owns how much
     /// downstream reorder capacity is available; resetting an AP epoch must
     /// therefore not silently restore the vendor maximum.
-    pub fn reset(&mut self) {
+    pub fn reset_after_hardware_reset(&mut self) {
         let maximum_window = self.maximum_window;
         *self = Self {
             maximum_window,
@@ -344,11 +357,45 @@ impl<const PEER_CAPACITY: usize> RxBlockAckSessions<PEER_CAPACITY> {
         };
     }
 
+    /// Prepare one inactive VIF without disturbing agreements owned by the
+    /// other interface.
+    ///
+    /// Active agreements must be stopped and cleared through their normal
+    /// hardware transaction before this edge. A transaction already in flight
+    /// is a global bank-owner boundary, so role start waits for it rather than
+    /// guessing which software generation hardware currently observes.
+    pub fn prepare_interface(
+        &mut self,
+        interface: MacInterface,
+    ) -> Result<(), RxBlockAckSessionsError> {
+        if self.in_flight.is_some() {
+            return Err(RxBlockAckSessionsError::ActivationBusy);
+        }
+        if self
+            .snapshots_for(interface)
+            .into_iter()
+            .any(|agreement| agreement.is_some())
+        {
+            return Err(RxBlockAckSessionsError::InterfaceActive(interface));
+        }
+        for pending in &mut self.pending {
+            if pending.occupied()
+                && self.peers[usize::from(pending.peer_index)]
+                    .is_some_and(|peer| peer.interface == interface)
+            {
+                *pending = PendingRxBlockAck::EMPTY;
+            }
+        }
+        self.reclaim_unused_peers();
+        Ok(())
+    }
+
     /// Admit one parsed immediate ADDBA request into the shared pending bank.
     /// A newer request for the same peer/TID replaces the older unexecuted
     /// request without consuming another hardware-bank candidate.
     pub fn offer(&mut self, request: RxBlockAckRequest) -> Result<(), RxBlockAckSessionsError> {
         let RxBlockAckRequest {
+            interface,
             peer,
             dialog_token,
             tid,
@@ -375,7 +422,7 @@ impl<const PEER_CAPACITY: usize> RxBlockAckSessions<PEER_CAPACITY> {
             ));
         }
         self.reclaim_unused_peers();
-        let existing_peer_index = self.peer_index(peer);
+        let existing_peer_index = self.peer_index(interface, peer);
         let pending_index = self
             .pending
             .iter()
@@ -396,7 +443,10 @@ impl<const PEER_CAPACITY: usize> RxBlockAckSessions<PEER_CAPACITY> {
                 .position(Option::is_none)
                 .ok_or(RxBlockAckSessionsError::NoFreePeerSlot)?,
         };
-        self.peers[peer_index] = Some(peer);
+        self.peers[peer_index] = Some(RxBlockAckPeer {
+            interface,
+            address: peer,
+        });
         self.pending[pending_index] = PendingRxBlockAck {
             peer_index: peer_index as u8,
             dialog_token,
@@ -411,7 +461,6 @@ impl<const PEER_CAPACITY: usize> RxBlockAckSessions<PEER_CAPACITY> {
     /// bank until the caller commits or cancels the returned transaction.
     pub fn begin_pending(
         &mut self,
-        interface: MacInterface,
     ) -> Result<Option<RxBlockAckActivation>, RxBlockAckSessionsError> {
         if self.in_flight.is_some() {
             return Err(RxBlockAckSessionsError::ActivationBusy);
@@ -461,7 +510,8 @@ impl<const PEER_CAPACITY: usize> RxBlockAckSessions<PEER_CAPACITY> {
         self.in_flight = Some(self.generation);
         let negotiated = RxBlockAckSnapshot {
             hardware_index: hardware_index as u8,
-            peer,
+            interface: peer.interface,
+            peer: peer.address,
             tid: request.tid,
             window,
             starting_sequence: request.starting_sequence,
@@ -470,8 +520,8 @@ impl<const PEER_CAPACITY: usize> RxBlockAckSessions<PEER_CAPACITY> {
             generation: self.generation,
             hardware: S31RxBlockAckAgreement {
                 hardware_index: hardware_index as u8,
-                interface,
-                peer,
+                interface: peer.interface,
+                peer: peer.address,
                 tid: request.tid,
                 starting_sequence: request.starting_sequence,
                 // The vendor ordinary receive hardware leaf receives 64 even
@@ -494,7 +544,7 @@ impl<const PEER_CAPACITY: usize> RxBlockAckSessions<PEER_CAPACITY> {
         self.in_flight = None;
         let snapshot = activation.negotiated;
         let peer_index = self
-            .peer_index(snapshot.peer)
+            .peer_index(snapshot.interface, snapshot.peer)
             .expect("activation peer remains retained until commit");
         self.active[usize::from(snapshot.hardware_index)] = ActiveRxBlockAck {
             window: snapshot.window,
@@ -519,8 +569,13 @@ impl<const PEER_CAPACITY: usize> RxBlockAckSessions<PEER_CAPACITY> {
     }
 
     /// Remove the software owner before the caller clears the returned bank.
-    pub fn stop(&mut self, peer: [u8; 6], tid: u8) -> Option<RxBlockAckSnapshot> {
-        let peer_index = self.peer_index(peer)?;
+    pub fn stop(
+        &mut self,
+        interface: MacInterface,
+        peer: [u8; 6],
+        tid: u8,
+    ) -> Option<RxBlockAckSnapshot> {
+        let peer_index = self.peer_index(interface, peer)?;
         let index = self.active.iter().position(|agreement| {
             agreement.occupied()
                 && usize::from(agreement.peer_index) == peer_index
@@ -534,8 +589,8 @@ impl<const PEER_CAPACITY: usize> RxBlockAckSessions<PEER_CAPACITY> {
 
     /// Remove an unexecuted request after the caller has explicitly declined
     /// it on air. Active agreement state is deliberately untouched.
-    pub fn discard_pending(&mut self, peer: [u8; 6], tid: u8) -> bool {
-        let Some(peer_index) = self.peer_index(peer) else {
+    pub fn discard_pending(&mut self, interface: MacInterface, peer: [u8; 6], tid: u8) -> bool {
+        let Some(peer_index) = self.peer_index(interface, peer) else {
             return false;
         };
         let mut discarded = false;
@@ -557,9 +612,10 @@ impl<const PEER_CAPACITY: usize> RxBlockAckSessions<PEER_CAPACITY> {
     /// allocation in AP peer teardown.
     pub fn stop_peer(
         &mut self,
+        interface: MacInterface,
         peer: [u8; 6],
     ) -> [Option<RxBlockAckSnapshot>; RX_BLOCK_ACK_BANK_COUNT] {
-        let Some(peer_index) = self.peer_index(peer) else {
+        let Some(peer_index) = self.peer_index(interface, peer) else {
             return [None; RX_BLOCK_ACK_BANK_COUNT];
         };
         for pending in &mut self.pending {
@@ -586,9 +642,25 @@ impl<const PEER_CAPACITY: usize> RxBlockAckSessions<PEER_CAPACITY> {
         core::array::from_fn(|index| self.snapshot_at(index))
     }
 
+    pub fn snapshots_for(
+        &self,
+        interface: MacInterface,
+    ) -> [Option<RxBlockAckSnapshot>; RX_BLOCK_ACK_BANK_COUNT] {
+        core::array::from_fn(|index| {
+            self.snapshot_at(index)
+                .filter(|agreement| agreement.interface == interface)
+        })
+    }
+
     #[inline(always)]
-    fn peer_index(&self, peer: [u8; 6]) -> Option<usize> {
-        self.peers.iter().position(|entry| *entry == Some(peer))
+    fn peer_index(&self, interface: MacInterface, peer: [u8; 6]) -> Option<usize> {
+        self.peers.iter().position(|entry| {
+            *entry
+                == Some(RxBlockAckPeer {
+                    interface,
+                    address: peer,
+                })
+        })
     }
 
     fn snapshot_at(&self, hardware_index: usize) -> Option<RxBlockAckSnapshot> {
@@ -598,8 +670,12 @@ impl<const PEER_CAPACITY: usize> RxBlockAckSessions<PEER_CAPACITY> {
         }
         Some(RxBlockAckSnapshot {
             hardware_index: hardware_index as u8,
+            interface: self.peers[usize::from(agreement.peer_index)]
+                .expect("occupied agreement owns one peer-table entry")
+                .interface,
             peer: self.peers[usize::from(agreement.peer_index)]
-                .expect("occupied agreement owns one peer-table entry"),
+                .expect("occupied agreement owns one peer-table entry")
+                .address,
             tid: agreement.tid,
             window: agreement.window,
             starting_sequence: agreement.starting_sequence,
@@ -649,13 +725,17 @@ impl<const SLOT_CAPACITY: usize> RxBlockAckReorderBanks<SLOT_CAPACITY> {
     }
 
     #[inline(always)]
-    pub fn find(&self, peer: [u8; 6], tid: u8) -> Option<usize> {
+    pub fn find(&self, interface: MacInterface, peer: [u8; 6], tid: u8) -> Option<usize> {
         self.identities
             .iter()
             .enumerate()
             .find_map(|(bank, identity)| {
                 identity
-                    .is_some_and(|identity| identity.peer == peer && identity.tid == tid)
+                    .is_some_and(|identity| {
+                        identity.interface == interface
+                            && identity.peer == peer
+                            && identity.tid == tid
+                    })
                     .then_some(bank)
             })
     }
@@ -1075,8 +1155,9 @@ mod tests {
     use super::*;
 
     macro_rules! rx_request {
-        ($peer:expr, $token:expr, $tid:expr, $immediate:expr, $window:expr, $timeout:expr, $start:expr) => {
+        ($interface:expr, $peer:expr, $token:expr, $tid:expr, $immediate:expr, $window:expr, $timeout:expr, $start:expr) => {
             RxBlockAckRequest {
+                interface: $interface,
                 peer: $peer,
                 dialog_token: $token,
                 tid: $tid,
@@ -1126,26 +1207,38 @@ mod tests {
         let peer = [2, 0, 0, 0, 0, 1];
         let mut sessions = RxBlockAckSessions::<1>::with_maximum_window(16).unwrap();
         sessions
-            .offer(rx_request!(peer, 7, 0, true, 64, 0, 10))
+            .offer(rx_request!(
+                MacInterface::AccessPoint,
+                peer,
+                7,
+                0,
+                true,
+                64,
+                0,
+                10
+            ))
             .unwrap();
-        let activation = sessions
-            .begin_pending(MacInterface::AccessPoint)
-            .unwrap()
-            .unwrap();
+        let activation = sessions.begin_pending().unwrap().unwrap();
         sessions.commit(activation).unwrap();
         assert!(sessions.snapshots().iter().any(Option::is_some));
 
-        sessions.reset();
+        sessions.reset_after_hardware_reset();
 
         assert_eq!(sessions.maximum_window(), 16);
         assert!(sessions.snapshots().iter().all(Option::is_none));
         sessions
-            .offer(rx_request!(peer, 8, 0, true, 64, 0, 20))
+            .offer(rx_request!(
+                MacInterface::AccessPoint,
+                peer,
+                8,
+                0,
+                true,
+                64,
+                0,
+                20
+            ))
             .unwrap();
-        let activation = sessions
-            .begin_pending(MacInterface::AccessPoint)
-            .unwrap()
-            .unwrap();
+        let activation = sessions.begin_pending().unwrap().unwrap();
         assert_eq!(activation.negotiated().window, 16);
         assert_eq!(activation.hardware().window, RX_BLOCK_ACK_MAX_WINDOW);
     }
@@ -1347,16 +1440,23 @@ mod tests {
         let peer = [0x30, 0xed, 0xa0, 0xf3, 0xf6, 0xd0];
         let mut sessions = RxBlockAckSessions::<RX_BLOCK_ACK_BANK_COUNT>::new();
         sessions
-            .offer(rx_request!(peer, 17, 7, true, 1023, 0, 0x0abc))
+            .offer(rx_request!(
+                MacInterface::Station,
+                peer,
+                17,
+                7,
+                true,
+                1023,
+                0,
+                0x0abc
+            ))
             .unwrap();
-        let activation = sessions
-            .begin_pending(MacInterface::Station)
-            .unwrap()
-            .unwrap();
+        let activation = sessions.begin_pending().unwrap().unwrap();
         assert_eq!(
             activation.negotiated(),
             RxBlockAckSnapshot {
                 hardware_index: 0,
+                interface: MacInterface::Station,
                 peer,
                 tid: 7,
                 window: RX_BLOCK_ACK_MAX_WINDOW,
@@ -1387,12 +1487,15 @@ mod tests {
             })
         );
         assert!(matches!(
-            sessions.begin_pending(MacInterface::Station),
+            sessions.begin_pending(),
             Err(RxBlockAckSessionsError::ActivationBusy)
         ));
         let snapshot = sessions.commit(activation).unwrap();
         assert_eq!(sessions.snapshots()[0], Some(snapshot));
-        assert_eq!(sessions.stop(peer, 7), Some(snapshot));
+        assert_eq!(
+            sessions.stop(MacInterface::Station, peer, 7),
+            Some(snapshot)
+        );
         assert_eq!(sessions.snapshots(), [None; RX_BLOCK_ACK_BANK_COUNT]);
     }
 
@@ -1402,13 +1505,19 @@ mod tests {
         let mut sessions = RxBlockAckSessions::<1>::with_maximum_window(32).unwrap();
         assert_eq!(sessions.maximum_window(), 32);
         sessions
-            .offer(rx_request!(peer, 17, 0, true, 64, 0, 123))
+            .offer(rx_request!(
+                MacInterface::Station,
+                peer,
+                17,
+                0,
+                true,
+                64,
+                0,
+                123
+            ))
             .unwrap();
 
-        let activation = sessions
-            .begin_pending(MacInterface::Station)
-            .unwrap()
-            .unwrap();
+        let activation = sessions.begin_pending().unwrap().unwrap();
         assert_eq!(activation.negotiated().window, 32);
         assert_eq!(activation.hardware().window, RX_BLOCK_ACK_MAX_WINDOW);
         assert_eq!(
@@ -1440,21 +1549,33 @@ mod tests {
         let peer = [0x30, 0xed, 0xa0, 0xf3, 0xf6, 0xd0];
         let mut sessions = RxBlockAckSessions::<RX_BLOCK_ACK_BANK_COUNT>::new();
         sessions
-            .offer(rx_request!(peer, 1, 0, true, 32, 0, 10))
+            .offer(rx_request!(
+                MacInterface::Station,
+                peer,
+                1,
+                0,
+                true,
+                32,
+                0,
+                10
+            ))
             .unwrap();
-        let first = sessions
-            .begin_pending(MacInterface::Station)
-            .unwrap()
-            .unwrap();
+        let first = sessions.begin_pending().unwrap().unwrap();
         let first_snapshot = sessions.commit(first).unwrap();
 
         sessions
-            .offer(rx_request!(peer, 2, 0, true, 16, 0, 20))
+            .offer(rx_request!(
+                MacInterface::Station,
+                peer,
+                2,
+                0,
+                true,
+                16,
+                0,
+                20
+            ))
             .unwrap();
-        let replacement = sessions
-            .begin_pending(MacInterface::Station)
-            .unwrap()
-            .unwrap();
+        let replacement = sessions.begin_pending().unwrap().unwrap();
         assert_eq!(replacement.replaced(), Some(first_snapshot));
         assert_eq!(replacement.hardware().hardware_index, 0);
         sessions.cancel(replacement).unwrap();
@@ -1466,23 +1587,68 @@ mod tests {
         let peer = [0x30, 0xed, 0xa0, 0xf3, 0xf6, 0xd0];
         let mut sessions = RxBlockAckSessions::<RX_BLOCK_ACK_BANK_COUNT>::new();
         assert_eq!(
-            sessions.offer(rx_request!(peer, 1, 0, false, 32, 0, 0)),
+            sessions.offer(rx_request!(
+                MacInterface::Station,
+                peer,
+                1,
+                0,
+                false,
+                32,
+                0,
+                0
+            )),
             Err(RxBlockAckSessionsError::DelayedPolicyUnsupported)
         );
         assert_eq!(
-            sessions.offer(rx_request!(peer, 1, 8, true, 32, 0, 0)),
+            sessions.offer(rx_request!(
+                MacInterface::Station,
+                peer,
+                1,
+                8,
+                true,
+                32,
+                0,
+                0
+            )),
             Err(RxBlockAckSessionsError::InvalidTid(8))
         );
         assert_eq!(
-            sessions.offer(rx_request!(peer, 1, 0, true, 0, 0, 0)),
+            sessions.offer(rx_request!(
+                MacInterface::Station,
+                peer,
+                1,
+                0,
+                true,
+                0,
+                0,
+                0
+            )),
             Err(RxBlockAckSessionsError::InvalidWindow(0))
         );
         assert_eq!(
-            sessions.offer(rx_request!(peer, 1, 0, true, 32, 1, 0)),
+            sessions.offer(rx_request!(
+                MacInterface::Station,
+                peer,
+                1,
+                0,
+                true,
+                32,
+                1,
+                0
+            )),
             Err(RxBlockAckSessionsError::NonzeroTimeout(1))
         );
         assert_eq!(
-            sessions.offer(rx_request!(peer, 1, 0, true, 32, 0, 0x1000)),
+            sessions.offer(rx_request!(
+                MacInterface::Station,
+                peer,
+                1,
+                0,
+                true,
+                32,
+                0,
+                0x1000
+            )),
             Err(RxBlockAckSessionsError::InvalidStartingSequence(0x1000))
         );
     }
@@ -1494,28 +1660,156 @@ mod tests {
         let mut sessions = RxBlockAckSessions::<RX_BLOCK_ACK_BANK_COUNT>::new();
 
         sessions
-            .offer(rx_request!(first_peer, 1, 0, true, 32, 0, 10))
+            .offer(rx_request!(
+                MacInterface::AccessPoint,
+                first_peer,
+                1,
+                0,
+                true,
+                32,
+                0,
+                10
+            ))
             .unwrap();
-        let first = sessions
-            .begin_pending(MacInterface::AccessPoint)
-            .unwrap()
-            .unwrap();
+        let first = sessions.begin_pending().unwrap().unwrap();
         assert_eq!(first.hardware().interface, MacInterface::AccessPoint);
         assert_eq!(first.hardware().hardware_index, 0);
         sessions.commit(first).unwrap();
 
         sessions
-            .offer(rx_request!(second_peer, 2, 0, true, 32, 0, 20))
+            .offer(rx_request!(
+                MacInterface::AccessPoint,
+                second_peer,
+                2,
+                0,
+                true,
+                32,
+                0,
+                20
+            ))
             .unwrap();
-        let second = sessions
-            .begin_pending(MacInterface::AccessPoint)
-            .unwrap()
-            .unwrap();
+        let second = sessions.begin_pending().unwrap().unwrap();
         assert_eq!(second.hardware().hardware_index, 1);
         sessions.commit(second).unwrap();
 
-        assert!(sessions.stop(first_peer, 0).is_some());
-        assert!(sessions.stop(second_peer, 0).is_some());
+        assert!(
+            sessions
+                .stop(MacInterface::AccessPoint, first_peer, 0)
+                .is_some()
+        );
+        assert!(
+            sessions
+                .stop(MacInterface::AccessPoint, second_peer, 0)
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn station_and_access_point_with_the_same_peer_tid_use_distinct_banks() {
+        let peer = [0x30, 0xed, 0xa0, 0xf3, 0xf6, 0xd0];
+        let mut sessions = RxBlockAckSessions::<2>::new();
+
+        sessions
+            .offer(rx_request!(
+                MacInterface::Station,
+                peer,
+                1,
+                0,
+                true,
+                16,
+                0,
+                10
+            ))
+            .unwrap();
+        sessions
+            .offer(rx_request!(
+                MacInterface::AccessPoint,
+                peer,
+                2,
+                0,
+                true,
+                16,
+                0,
+                20
+            ))
+            .unwrap();
+
+        let station = sessions.begin_pending().unwrap().unwrap();
+        assert_eq!(station.negotiated().interface, MacInterface::Station);
+        assert_eq!(station.negotiated().hardware_index, 0);
+        sessions.commit(station).unwrap();
+
+        let access_point = sessions.begin_pending().unwrap().unwrap();
+        assert_eq!(
+            access_point.negotiated().interface,
+            MacInterface::AccessPoint
+        );
+        assert_eq!(access_point.negotiated().hardware_index, 1);
+        sessions.commit(access_point).unwrap();
+
+        assert_eq!(
+            sessions.snapshots()[0].unwrap().interface,
+            MacInterface::Station
+        );
+        assert_eq!(
+            sessions.snapshots()[1].unwrap().interface,
+            MacInterface::AccessPoint
+        );
+    }
+
+    #[test]
+    fn preparing_access_point_preserves_station_banks() {
+        let station_peer = [0x30, 0xed, 0xa0, 0xf3, 0xf6, 0xd0];
+        let access_point_peer = [0x70, 0x15, 0xfb, 0xa8, 0x48, 0xf0];
+        let mut sessions = RxBlockAckSessions::<2>::new();
+        sessions
+            .offer(rx_request!(
+                MacInterface::Station,
+                station_peer,
+                1,
+                0,
+                true,
+                16,
+                0,
+                10
+            ))
+            .unwrap();
+        let station = sessions.begin_pending().unwrap().unwrap();
+        let station = sessions.commit(station).unwrap();
+        sessions
+            .offer(rx_request!(
+                MacInterface::AccessPoint,
+                access_point_peer,
+                2,
+                0,
+                true,
+                16,
+                0,
+                20
+            ))
+            .unwrap();
+
+        sessions
+            .prepare_interface(MacInterface::AccessPoint)
+            .unwrap();
+
+        assert_eq!(
+            sessions.snapshots_for(MacInterface::Station)[0],
+            Some(station)
+        );
+        assert!(
+            sessions
+                .snapshots_for(MacInterface::AccessPoint)
+                .into_iter()
+                .all(|entry| entry.is_none())
+        );
+        assert!(matches!(sessions.begin_pending(), Ok(None)));
+        assert_eq!(
+            sessions.prepare_interface(MacInterface::Station),
+            Err(RxBlockAckSessionsError::InterfaceActive(
+                MacInterface::Station
+            ))
+        );
     }
 
     #[test]
@@ -1524,28 +1818,47 @@ mod tests {
         for index in 0..RX_BLOCK_ACK_BANK_COUNT {
             let peer = [2, 0, 0, 0, 0, index as u8];
             sessions
-                .offer(rx_request!(peer, index as u8, 0, true, 32, 0, index as u16))
+                .offer(rx_request!(
+                    MacInterface::AccessPoint,
+                    peer,
+                    index as u8,
+                    0,
+                    true,
+                    32,
+                    0,
+                    index as u16
+                ))
                 .unwrap();
-            let activation = sessions
-                .begin_pending(MacInterface::AccessPoint)
-                .unwrap()
-                .unwrap();
+            let activation = sessions.begin_pending().unwrap().unwrap();
             sessions.commit(activation).unwrap();
         }
 
         let waiting_peer = [2, 0, 0, 0, 1, 0];
         sessions
-            .offer(rx_request!(waiting_peer, 9, 0, true, 32, 0, 100))
+            .offer(rx_request!(
+                MacInterface::AccessPoint,
+                waiting_peer,
+                9,
+                0,
+                true,
+                32,
+                0,
+                100
+            ))
             .unwrap();
         assert!(matches!(
-            sessions.begin_pending(MacInterface::AccessPoint),
+            sessions.begin_pending(),
             Err(RxBlockAckSessionsError::NoFreeHardwareBank)
         ));
 
         let released_peer = [2, 0, 0, 0, 0, 0];
-        assert!(sessions.stop(released_peer, 0).is_some());
+        assert!(
+            sessions
+                .stop(MacInterface::AccessPoint, released_peer, 0)
+                .is_some()
+        );
         let activation = sessions
-            .begin_pending(MacInterface::AccessPoint)
+            .begin_pending()
             .unwrap()
             .expect("bank release must admit the retained pending request");
         assert_eq!(activation.negotiated().peer, waiting_peer);
@@ -1557,16 +1870,34 @@ mod tests {
         let second_peer = [2, 0, 0, 0, 0, 2];
         let mut sessions = RxBlockAckSessions::<2>::new();
         sessions
-            .offer(rx_request!(first_peer, 1, 1, true, 16, 0, 10))
+            .offer(rx_request!(
+                MacInterface::AccessPoint,
+                first_peer,
+                1,
+                1,
+                true,
+                16,
+                0,
+                10
+            ))
             .unwrap();
         sessions
-            .offer(rx_request!(second_peer, 2, 1, true, 16, 0, 20))
+            .offer(rx_request!(
+                MacInterface::AccessPoint,
+                second_peer,
+                2,
+                1,
+                true,
+                16,
+                0,
+                20
+            ))
             .unwrap();
 
-        assert!(sessions.discard_pending(first_peer, 1));
-        assert!(!sessions.discard_pending(first_peer, 1));
+        assert!(sessions.discard_pending(MacInterface::AccessPoint, first_peer, 1));
+        assert!(!sessions.discard_pending(MacInterface::AccessPoint, first_peer, 1));
         let activation = sessions
-            .begin_pending(MacInterface::AccessPoint)
+            .begin_pending()
             .unwrap()
             .expect("other peer request remains pending");
         assert_eq!(activation.negotiated().peer, second_peer);
@@ -1578,26 +1909,47 @@ mod tests {
         let second_peer = [0x70, 0x15, 0xfb, 0xa8, 0x48, 0xf0];
         let mut sessions = RxBlockAckSessions::<RX_BLOCK_ACK_BANK_COUNT>::new();
         sessions
-            .offer(rx_request!(first_peer, 1, 0, true, 32, 0, 10))
+            .offer(rx_request!(
+                MacInterface::AccessPoint,
+                first_peer,
+                1,
+                0,
+                true,
+                32,
+                0,
+                10
+            ))
             .unwrap();
-        let active = sessions
-            .begin_pending(MacInterface::AccessPoint)
-            .unwrap()
-            .unwrap();
+        let active = sessions.begin_pending().unwrap().unwrap();
         sessions.commit(active).unwrap();
         sessions
-            .offer(rx_request!(first_peer, 2, 1, true, 32, 0, 20))
+            .offer(rx_request!(
+                MacInterface::AccessPoint,
+                first_peer,
+                2,
+                1,
+                true,
+                32,
+                0,
+                20
+            ))
             .unwrap();
         sessions
-            .offer(rx_request!(second_peer, 3, 1, true, 32, 0, 30))
+            .offer(rx_request!(
+                MacInterface::AccessPoint,
+                second_peer,
+                3,
+                1,
+                true,
+                32,
+                0,
+                30
+            ))
             .unwrap();
 
-        let stopped = sessions.stop_peer(first_peer);
+        let stopped = sessions.stop_peer(MacInterface::AccessPoint, first_peer);
         assert_eq!(stopped.into_iter().flatten().count(), 1);
-        let remaining = sessions
-            .begin_pending(MacInterface::AccessPoint)
-            .unwrap()
-            .unwrap();
+        let remaining = sessions.begin_pending().unwrap().unwrap();
         assert_eq!(remaining.negotiated().peer, second_peer);
     }
 }

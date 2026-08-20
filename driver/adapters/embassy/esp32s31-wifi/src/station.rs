@@ -17,8 +17,6 @@ mod connected_transaction;
 mod join;
 mod lifecycle;
 #[cfg(target_arch = "riscv32")]
-mod ownership;
-#[cfg(target_arch = "riscv32")]
 mod reclaim;
 mod resources;
 #[cfg(target_arch = "riscv32")]
@@ -120,10 +118,7 @@ pub use lifecycle::{
 #[cfg(target_arch = "riscv32")]
 pub use open_esp_radio_esp32s31_hal::radio_arena::Esp32s31RadioOwnerRepublish;
 #[cfg(target_arch = "riscv32")]
-pub use ownership::{
-    Esp32s31StationMaterialized, Esp32s31StationRoleOwner, Esp32s31StationStopped,
-    materialize_esp32s31_station,
-};
+use open_esp_radio_esp32s31_wifi::runtime::Esp32s31WifiRoleOwner;
 #[cfg(target_arch = "riscv32")]
 pub use reclaim::{
     Esp32s31StationInterruptEpochState, Esp32s31StationPhaseRebindFailure,
@@ -138,6 +133,20 @@ pub use resources::{
     Esp32s31StationDmaResources, Esp32s31StationRadioOwner, Esp32s31StationRadioResources,
     Esp32s31StationRuntimeParts, Esp32s31StationRuntimeResources, Esp32s31StationStorageResources,
 };
+
+#[cfg(target_arch = "riscv32")]
+impl<P> Esp32s31StationRadioOwner for Esp32s31WifiRoleOwner<P> {
+    type Platform = P;
+
+    fn radio_mut(
+        &mut self,
+    ) -> (
+        &mut open_esp_radio_esp32s31_phy::PhyState,
+        &mut Self::Platform,
+    ) {
+        Esp32s31WifiRoleOwner::radio_mut(self)
+    }
+}
 #[cfg(target_arch = "riscv32")]
 pub use scan::{
     ESP32S31_STATION_PROBE_DESCRIPTOR_CAPACITY, ESP32S31_STATION_PROBE_RATES,

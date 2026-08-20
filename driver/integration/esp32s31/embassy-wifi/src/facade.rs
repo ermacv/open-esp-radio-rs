@@ -6,7 +6,7 @@ use open_esp_radio::{
     embassy_supervisor::{EmbassyWifiStartKind, EmbassyWifiSupervisorPort},
 };
 
-use crate::{Esp32s31WifiDevice, monitor::Esp32s31MonitorFrames};
+use crate::{Esp32s31WifiDevice, Esp32s31WifiDevices, monitor::Esp32s31MonitorFrames};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Esp32s31RadioError {
@@ -37,7 +37,7 @@ pub type Esp32s31WifiControl =
 /// capture stream are independent consumers of the same supervised radio.
 pub struct Esp32s31Wifi {
     control: Esp32s31WifiControl,
-    device: Esp32s31WifiDevice,
+    devices: Esp32s31WifiDevices,
     monitor_frames: Esp32s31MonitorFrames,
     access_point_status: crate::Esp32s31AccessPointStatus,
     #[cfg(feature = "qualification")]
@@ -48,7 +48,8 @@ pub struct Esp32s31Wifi {
 /// PAC, DMA and interrupt state remain exclusively in [`Esp32s31RadioRunner`].
 pub struct Esp32s31WifiParts {
     pub control: Esp32s31WifiControl,
-    pub device: Esp32s31WifiDevice,
+    pub station_device: Esp32s31WifiDevice,
+    pub access_point_device: Esp32s31WifiDevice,
     pub monitor_frames: Esp32s31MonitorFrames,
     pub access_point_status: crate::Esp32s31AccessPointStatus,
     #[cfg(feature = "qualification")]
@@ -58,13 +59,13 @@ pub struct Esp32s31WifiParts {
 impl Esp32s31Wifi {
     pub(super) fn new(
         control: Esp32s31WifiControl,
-        device: Esp32s31WifiDevice,
+        devices: Esp32s31WifiDevices,
         monitor_frames: Esp32s31MonitorFrames,
         #[cfg(feature = "qualification")] qualification: crate::Esp32s31QualificationSnapshot,
     ) -> Self {
         Self {
             control,
-            device,
+            devices,
             monitor_frames,
             access_point_status: crate::Esp32s31AccessPointStatus::new(),
             #[cfg(feature = "qualification")]
@@ -75,7 +76,8 @@ impl Esp32s31Wifi {
     pub fn into_parts(self) -> Esp32s31WifiParts {
         Esp32s31WifiParts {
             control: self.control,
-            device: self.device,
+            station_device: self.devices.station,
+            access_point_device: self.devices.access_point,
             monitor_frames: self.monitor_frames,
             access_point_status: self.access_point_status,
             #[cfg(feature = "qualification")]

@@ -7,12 +7,13 @@
 use core::future::Future;
 
 use embassy_futures::select::{Either, select};
+use embassy_time::{Instant, Timer};
 use open_esp_radio_embassy_net::RawMutex;
 use open_esp_radio_esp32s31_wifi_mac::crypto::{CryptoKeyError, StaGroupCcmpSlot};
 pub use open_esp_radio_esp32s31_wifi_mac::rx_ampdu::{RxReorderCommand, RxReorderCommandError};
 pub use open_esp_radio_esp32s31_wifi_sta::{
     connected_control::{
-        ConnectedControlError, ConnectedControlReorder, ConnectedControlTx,
+        ConnectedControlError, ConnectedControlPorts, ConnectedControlReorder, ConnectedControlTx,
         ConnectedControlTxFailure, ConnectedControlTxKind, ConnectedDisconnectReason,
         Esp32s31ConnectedControlCore,
     },
@@ -34,6 +35,7 @@ use open_esp_radio_wpa2::{
 use crate::{
     control_mailbox::ConnectedControlReceiver,
     rx_reorder::{RxReorderCommandSender, try_send_rx_reorder_command},
+    sta_ap::Esp32s31StaApRxBlockAck,
     wdev::services::WdevControlService,
     wdev::{WdevControlContext, WdevControlProgress},
 };
@@ -237,6 +239,7 @@ impl<M: RawMutex> ConnectedControlReorder for EmbassyReorderSink<'_, '_, M> {
 pub struct Esp32s31ConnectedControl<'resources, M: RawMutex, const CAPACITY: usize> {
     receiver: ConnectedControlReceiver<'resources, M, CAPACITY>,
     core: Esp32s31ConnectedControlCore,
+    rx_block_ack: Esp32s31StaApRxBlockAck,
     rx_reorder_commands: Option<RxReorderCommandSender<'resources, M>>,
     security: Option<ConnectedWpa2Security>,
 }
@@ -253,6 +256,7 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
         Self {
             receiver,
             core: Esp32s31ConnectedControlCore::new(peer, he_enabled, tx_block_ack),
+            rx_block_ack: Esp32s31StaApRxBlockAck::new(),
             rx_reorder_commands: None,
             security: None,
         }
@@ -289,7 +293,7 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
         mut self,
         maximum_window: u16,
     ) -> Result<Self, open_esp_radio_esp32s31_wifi_mac::rx_ampdu::RxBlockAckSessionsError> {
-        self.core.set_rx_block_ack_maximum_window(maximum_window)?;
+        self.rx_block_ack = Esp32s31StaApRxBlockAck::with_maximum_window(maximum_window)?;
         Ok(self)
     }
 
@@ -305,10 +309,8 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
         self.core.queue_initial_tx_block_ack(attempt_limit);
     }
 
-    pub const fn rx_block_ack(
-        &self,
-    ) -> &open_esp_radio_esp32s31_wifi_mac::rx_ampdu::RxBlockAckSessions {
-        self.core.rx_block_ack()
+    pub const fn rx_block_ack(&self) -> &Esp32s31StaApRxBlockAck {
+        &self.rx_block_ack
     }
 
     pub const fn tx_block_ack(
@@ -372,7 +374,7 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
         H: ConnectedControlHardware,
         X: ConnectedControlTx,
     {
-        let shutdown = self.core.shutdown(hardware, tx)?;
+        let shutdown = self.core.shutdown(hardware, tx, &mut self.rx_block_ack)?;
         let mut discarded_events = 0_u8;
         while self.receiver.try_receive().is_some() {
             discarded_events = discarded_events.saturating_add(1);
@@ -388,11 +390,39 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
         })
     }
 
-    fn has_immediate_work(&self) -> bool {
+    pub fn has_immediate_work(&self) -> bool {
         self.security
             .as_ref()
             .is_some_and(ConnectedWpa2Security::tx_in_flight)
             || self.core.has_immediate_work(!self.receiver.is_empty())
+    }
+
+    /// Earliest role-local control deadline. Reading it does not require the
+    /// ordinary/A-MPDU publication capability.
+    pub fn next_alarm_deadline(&self) -> Option<u64> {
+        self.core.next_alarm_deadline()
+    }
+
+    /// Paired-runtime wait which deliberately owns no physical TX resource.
+    /// Embassy time is the production clock used by `EmbassyWifiTxTimer`, so
+    /// this preserves the standalone deadline epoch without lending DMA to a
+    /// sleeping station role.
+    pub async fn wait_ready_without_tx(&mut self) {
+        if self.has_immediate_work() {
+            return;
+        }
+        if let Some(deadline) = self.next_alarm_deadline() {
+            match select(
+                self.receiver.ready(),
+                Timer::at(Instant::from_micros(deadline)),
+            )
+            .await
+            {
+                Either::First(()) | Either::Second(()) => {}
+            }
+        } else {
+            self.receiver.ready().await;
+        }
     }
 
     /// Wait without consuming the event that made control work ready.
@@ -450,9 +480,12 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
         };
         if self.core.tx_in_flight() {
             return self.core.service_step(
-                hardware,
-                tx,
-                &mut reorder,
+                ConnectedControlPorts {
+                    hardware,
+                    tx,
+                    reorder: &mut reorder,
+                    rx_block_ack: &mut self.rx_block_ack,
+                },
                 None,
                 !self.receiver.is_empty(),
                 context,
@@ -463,9 +496,12 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
         // free. GTK rekey then precedes non-terminal BlockAck work.
         if let Some(event) = self.receiver.try_receive_terminal() {
             return self.core.service_step(
-                hardware,
-                tx,
-                &mut reorder,
+                ConnectedControlPorts {
+                    hardware,
+                    tx,
+                    reorder: &mut reorder,
+                    rx_block_ack: &mut self.rx_block_ack,
+                },
                 Some(event),
                 !self.receiver.is_empty(),
                 context,
@@ -481,9 +517,12 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
         }
         let event = self.receiver.try_receive_control();
         self.core.service_step(
-            hardware,
-            tx,
-            &mut reorder,
+            ConnectedControlPorts {
+                hardware,
+                tx,
+                reorder: &mut reorder,
+                rx_block_ack: &mut self.rx_block_ack,
+            },
             event,
             !self.receiver.is_empty(),
             context,

@@ -5,7 +5,7 @@
 
 use core::{
     num::NonZeroU16,
-    sync::atomic::{AtomicU32, Ordering},
+    sync::atomic::{AtomicU8, AtomicU32, Ordering},
 };
 
 use embassy_executor::{SendSpawner, Spawner};
@@ -93,9 +93,30 @@ pub(crate) const OPEN_RADIO_RX_DELIVERY_TELEMETRY: bool = cfg!(feature = "rx-del
 pub(crate) const OPEN_RADIO_TCP_CHUNK_CAPACITY: usize = 32_768;
 
 struct AppNetworkStart {
-    device: Esp32s31WifiDevice,
+    station_device: Esp32s31WifiDevice,
+    access_point_device: Esp32s31WifiDevice,
     ipv4: NetworkIpv4Configuration,
     seed: u64,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum HilNetworkInterface {
+    Station = 1,
+    AccessPoint = 2,
+}
+
+fn select_hil_network_interface(interface: HilNetworkInterface) {
+    let selected = interface as u8;
+    match SELECTED_NETWORK_INTERFACE.compare_exchange(
+        0,
+        selected,
+        Ordering::AcqRel,
+        Ordering::Acquire,
+    ) {
+        Ok(_) => NETWORK_INTERFACE_SELECTION.signal(interface),
+        Err(current) if current == selected => {}
+        Err(_) => panic!("one HIL boot cannot change its selected network interface"),
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -118,6 +139,9 @@ static NETWORK_RESOURCES: ConstStaticCell<StackResources<NETWORK_SOCKET_COUNT>> 
 static APP_NETWORK_START: Channel<CriticalSectionRawMutex, AppNetworkStart, 1> = Channel::new();
 static PRIMARY_NETWORK_START: Channel<CriticalSectionRawMutex, AppNetworkStart, 1> = Channel::new();
 static APP_NETWORK_READY: Signal<CriticalSectionRawMutex, ()> = Signal::new();
+static NETWORK_INTERFACE_SELECTION: Signal<CriticalSectionRawMutex, HilNetworkInterface> =
+    Signal::new();
+static SELECTED_NETWORK_INTERFACE: AtomicU8 = AtomicU8::new(0);
 static NETWORK_CONFIG_REQUESTS: Channel<CriticalSectionRawMutex, NetworkIpv4Configuration, 1> =
     Channel::new();
 static NETWORK_CONFIG_APPLIED: Channel<CriticalSectionRawMutex, (), 1> = Channel::new();
@@ -972,23 +996,24 @@ async fn network_config_task(stack: Stack<'static>) {
 /// CPU1-local network composition used only by the explicit split topology.
 #[embassy_executor::task]
 pub(crate) async fn secondary_network_task(spawner: Spawner) {
-    let AppNetworkStart { device, ipv4, seed } = APP_NETWORK_START.receive().await;
-    run_network_composition(spawner, device, ipv4, seed).await
+    run_network_composition(spawner, APP_NETWORK_START.receive().await).await
 }
 
 /// CPU0-local network composition used by the default single-core topology.
 #[embassy_executor::task]
 async fn primary_network_task(spawner: Spawner) {
-    let AppNetworkStart { device, ipv4, seed } = PRIMARY_NETWORK_START.receive().await;
-    run_network_composition(spawner, device, ipv4, seed).await
+    run_network_composition(spawner, PRIMARY_NETWORK_START.receive().await).await
 }
 
-async fn run_network_composition(
-    spawner: Spawner,
-    device: Esp32s31WifiDevice,
-    ipv4: NetworkIpv4Configuration,
-    seed: u64,
-) -> ! {
+async fn run_network_composition(spawner: Spawner, start: AppNetworkStart) -> ! {
+    let (device, ipv4, seed) = match NETWORK_INTERFACE_SELECTION.wait().await {
+        HilNetworkInterface::Station => (start.station_device, start.ipv4, start.seed),
+        HilNetworkInterface::AccessPoint => (
+            start.access_point_device,
+            start.ipv4,
+            start.seed ^ (1_u64 << 63),
+        ),
+    };
     let (stack, network_runner) =
         new_wifi_network(device, network_config(ipv4), NETWORK_RESOURCES.take(), seed);
     spawner.spawn(
@@ -1281,7 +1306,8 @@ pub async fn run(
     }
     let Esp32s31WifiParts {
         control,
-        device,
+        station_device,
+        access_point_device,
         monitor_frames,
         access_point_status: _,
         qualification,
@@ -1301,7 +1327,8 @@ pub async fn run(
         0x31,
     ]);
     let network_start = AppNetworkStart {
-        device,
+        station_device,
+        access_point_device,
         ipv4: startup_ipv4,
         seed,
     };
@@ -1317,16 +1344,6 @@ pub async fn run(
             APP_NETWORK_START.send(network_start).await;
         }
     }
-    APP_NETWORK_READY.wait().await;
-    let data_plane_core = match data_plane {
-        WifiDataPlanePlacement::SingleCore => 0,
-        WifiDataPlanePlacement::SplitRadioNetwork => 1,
-    };
-    runtime_log(format_args!(
-        "OPEN_RADIO_HIL data_plane={data_plane:?} radio_core=0 \
-         protocol_core=0 network_core={data_plane_core}",
-    ));
-
     spawner.spawn(
         wifi_role_task(
             control,
@@ -1336,6 +1353,15 @@ pub async fn run(
         )
         .expect("Wi-Fi role owner task must allocate once"),
     );
+    APP_NETWORK_READY.wait().await;
+    let data_plane_core = match data_plane {
+        WifiDataPlanePlacement::SingleCore => 0,
+        WifiDataPlanePlacement::SplitRadioNetwork => 1,
+    };
+    runtime_log(format_args!(
+        "OPEN_RADIO_HIL data_plane={data_plane:?} radio_core=0 \
+         protocol_core=0 network_core={data_plane_core}",
+    ));
 }
 
 #[embassy_executor::task]
@@ -1471,6 +1497,7 @@ async fn wifi_role_task(
                     request_id,
                     request,
                 } => {
+                    select_hil_network_interface(HilNetworkInterface::AccessPoint);
                     AP_CHANNEL.store(0, Ordering::Release);
                     AP_BANDWIDTH_MHZ.store(0, Ordering::Release);
                     AP_BEACONS.store(0, Ordering::Release);
@@ -1592,6 +1619,7 @@ async fn wifi_role_task(
                     request_id,
                     credentials: requested_credentials,
                 } => {
+                    select_hil_network_interface(HilNetworkInterface::Station);
                     let station = await_stack_boundary!(idle.start_station(station_request(
                         requested_credentials.ssid(),
                         requested_credentials.passphrase(),

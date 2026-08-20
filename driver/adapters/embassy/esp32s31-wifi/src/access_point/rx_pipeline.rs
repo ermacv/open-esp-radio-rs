@@ -127,7 +127,7 @@ pub struct Esp32s31AccessPointRxConsumer<
     deferred: Option<Esp32s31StagedRxFrame<'pool, STAGE_CAPACITY, STAGE_SLOTS>>,
 }
 
-fn is_protected_data(segment: RxSegment<'_>) -> bool {
+pub(super) fn is_protected_data(segment: RxSegment<'_>) -> bool {
     let Some(frame_control) = segment
         .buffer
         .get(PUBLIC_HEADER_SIZE..PUBLIC_HEADER_SIZE + 2)

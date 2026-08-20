@@ -174,11 +174,9 @@ where
                 if let Some(frame) = frame {
                     staged_units = staged_units.saturating_add(1);
                     staged_bytes = staged_bytes.saturating_add(frame.length());
-                    self.frames.try_send(frame).map_err(|error| match error {
-                        TrySendError::Full(_) => {
-                            RxStageTransactionError::Ring(RxRingError::Corrupt)
-                        }
-                    })?;
+                    self.frames
+                        .try_send(frame)
+                        .map_err(|_| RxStageTransactionError::Ring(RxRingError::Corrupt))?;
                     self.admission
                         .observe(Esp32s31RxIngressObservation::Staged(unit_observation));
                 }

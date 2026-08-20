@@ -27,6 +27,34 @@ pub struct Esp32s31ConnectedStaRxProtocolResources<
     pub pipeline_observer: Option<&'queue dyn RxPipelineObserver>,
 }
 
+/// Queue-independent connected-station RX resources.
+///
+/// Standalone STA attaches its own staging receiver after this processor is
+/// built. Same-channel STA+AP instead feeds already classified leases from
+/// the sole paired queue, so no compatibility receiver exists in that graph.
+pub struct Esp32s31ConnectedStaRxProcessorResources<
+    'queue,
+    'pool,
+    'scratch,
+    'irq,
+    M: RawMutex,
+    S,
+    const CAPACITY: usize,
+    const SLOTS: usize,
+    const REORDER_SLOTS: usize = RX_REORDER_BACKING_SLOT_COUNT,
+> {
+    pub irq: &'irq EmbassyMacIrqRuntime<M>,
+    pub sink: S,
+    pub mpdu: &'scratch mut [u8],
+    pub ethernet: &'scratch mut [u8],
+    pub reorder_commands: RxReorderCommandReceiver<'queue, M>,
+    pub reorder_storage: &'pool RxReorderFrameStorage<CAPACITY, REORDER_SLOTS>,
+    pub runtime:
+        &'pool mut Esp32s31ConnectedRxProtocolStorage<'pool, CAPACITY, SLOTS, REORDER_SLOTS>,
+    pub reorder_scratch: Option<&'scratch mut [u8]>,
+    pub pipeline_observer: Option<&'queue dyn RxPipelineObserver>,
+}
+
 /// Named resources consumed by the control-to-connected TX handoff.
 pub struct Esp32s31ConnectedStaTxResources<
     'slot,

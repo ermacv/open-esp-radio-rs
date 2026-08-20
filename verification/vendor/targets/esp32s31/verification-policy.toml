@@ -62,12 +62,12 @@ rationale = "The bounded transaction observes only the selected-rate descriptor 
 
 [[surfaces]]
 id = "wifi-ap-sta-receive-registers"
-description = "Sparse vendor receive-policy cases six and eight match the closed production PAC/HAL register transactions without claiming shared AP+STA runtime ownership."
+description = "Sparse vendor receive-policy cases two, six, eight and nine match the closed production PAC/HAL register transactions without claiming shared AP+STA runtime ownership."
 kind = "bounded-property"
 
 [[surfaces.requirements]]
 id = "sta-ap-receive-policy-projection"
-description = "Both observed policy-six submodes and policy eight match the production register projection."
+description = "Both observed policy-six submodes plus policy-eight AP enable and policy-two/policy-nine role-local disable match the production register projection."
 suite = "wifi-sta-ap-receive"
 source = "wifi-sta-ap-receive"
 symbol = "wifi_set_rx_policy"
@@ -78,7 +78,7 @@ id = "sta-ap-receive-policy"
 vendor = { source = "wifi-sta-ap-receive", symbol = "wifi_set_rx_policy", fingerprint = "sha256:16d45aa852e6cc8184bb39d5fe839c8db99a086f5a969dcbdaea1d1f6efab2dd" }
 disposition = "verified"
 requirement = "sta-ap-receive-policy-projection"
-rationale = "The bounded sparse selector domain contains only cases six and eight; the case-six g_ic word remains numeric Mode1/Mode2 rather than being assigned an unproved AP+STA meaning."
+rationale = "The bounded sparse selector domain contains cases two, six, eight and nine; the case-six g_ic word remains numeric Mode1/Mode2 rather than being assigned an unproved AP+STA meaning."
 
 [[surfaces]]
 id = "wifi-sta-connected-no-power-save"

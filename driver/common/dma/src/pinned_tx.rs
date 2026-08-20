@@ -495,6 +495,60 @@ pub struct ReturningStableDmaBacking<B: IndexedStableDmaLease, R: DmaIndexReturn
     returner: R,
 }
 
+/// Immutable CPU metadata paired with one stable DMA owner.
+///
+/// The tag is never part of the hardware-visible allocation. This wrapper is
+/// used when several logical producers share one physical DMA pool and the
+/// eventual consumer must select the correct protocol encoder.
+pub struct TaggedStableDmaBacking<T, B> {
+    tag: T,
+    backing: B,
+}
+
+impl<T, B> TaggedStableDmaBacking<T, B> {
+    pub const fn new(tag: T, backing: B) -> Self {
+        Self { tag, backing }
+    }
+
+    pub const fn tag(&self) -> &T {
+        &self.tag
+    }
+}
+
+impl<T: Copy, B: RequeueStableDmaLease, R: DmaIndexReturn>
+    TaggedStableDmaBacking<T, ReturningStableDmaBacking<B, R>>
+{
+    pub fn take_requeued_parts(self) -> (T, u8) {
+        (self.tag, self.backing.take_requeued_index())
+    }
+}
+
+impl<T, B> Deref for TaggedStableDmaBacking<T, B> {
+    type Target = B;
+
+    fn deref(&self) -> &Self::Target {
+        &self.backing
+    }
+}
+
+impl<T, B> DerefMut for TaggedStableDmaBacking<T, B> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.backing
+    }
+}
+
+// SAFETY: immutable CPU metadata cannot move, release, or alias the wrapped
+// stable backing. The exact allocation remains retained by `backing`.
+#[allow(
+    unsafe_code,
+    reason = "metadata wrapper retains the same audited stable DMA owner"
+)]
+unsafe impl<T, B: StableDmaBacking> StableDmaBacking for TaggedStableDmaBacking<T, B> {
+    fn stable_dma_region(&mut self) -> StableDmaRegion<'_> {
+        self.backing.stable_dma_region()
+    }
+}
+
 impl<B: IndexedStableDmaLease, R: DmaIndexReturn> ReturningStableDmaBacking<B, R> {
     pub const fn new(backing: B, returner: R) -> Self {
         Self {
@@ -631,6 +685,27 @@ mod tests {
         assert_eq!(returned.get(), None);
         drop(backing);
         assert_eq!(returned.get(), Some(0));
+        assert_eq!(pool.claim_network(0).release(), 0);
+    }
+
+    #[test]
+    fn tagged_requeue_preserves_metadata_without_free_queue_publication() {
+        let pool = TestPool::new();
+        let returned = Cell::new(None);
+        let backing = ReturningStableDmaBacking::new(
+            prepared_radio(&pool),
+            ReturnProbe {
+                pool: &pool,
+                returned: &returned,
+            },
+        );
+        let tagged = TaggedStableDmaBacking::new(7_u8, backing);
+
+        let (tag, index) = tagged.take_requeued_parts();
+        assert_eq!((tag, index), (7, 0));
+        assert_eq!(returned.get(), None);
+        assert_eq!(pool.slots[0].state.load(Ordering::Acquire), SLOT_READY);
+        drop(pool.claim_radio(index));
         assert_eq!(pool.claim_network(0).release(), 0);
     }
 

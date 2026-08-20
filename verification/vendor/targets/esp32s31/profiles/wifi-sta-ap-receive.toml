@@ -14,7 +14,7 @@ rust-symbol = "open_wifi_sta_ap_trace_wifi_set_rx_policy"
 compare-return = true
 [[profiles.argument-values]]
 index = 0
-values = [6, 8]
+values = [2, 6, 8, 9]
 [[profiles.argument-ranges]]
 index = 1
 min = 0x44332211
@@ -28,21 +28,47 @@ index = 3
 min = 1
 max = 2
 
+# Policy two disables only interface-zero receive admission. The address and
+# BSSID values are retained and the AP bank is not touched.
+[[profiles.cases]]
+name = "station-policy-two-disabled"
+arguments = [2, 0x44332211, 0x00006655, 1]
+mmio-reads = [{ address = 0x20104004, value = 0x12345678 }]
+[[profiles.cases.mmio-initial]]
+address = 0x20104004
+value = 0x12345678
+[[profiles.cases.mmio-initial]]
+address = 0x20104060
+value = 0xa5a50000
+[[profiles.cases.mmio-initial]]
+address = 0x201040d8
+value = 0x0001c285
+
+[[profiles.cases]]
+name = "station-policy-two-disabled-mode-two"
+arguments = [2, 0x44332211, 0x00006655, 2]
+mmio-reads = [{ address = 0x20104004, value = 0x12345678 }]
+[[profiles.cases.mmio-initial]]
+address = 0x20104004
+value = 0x12345678
+[[profiles.cases.mmio-initial]]
+address = 0x20104060
+value = 0xa5a50000
+[[profiles.cases.mmio-initial]]
+address = 0x201040d8
+value = 0x0001c285
+
 [[profiles.cases]]
 name = "station-policy-six"
 arguments = [6, 0x44332211, 0x00006655, 1]
 
 # g_ic owns a pointer to the active STA context. Policy six follows the
 # pointer to the BSSID at context +0x1460, then adds four bytes.
-[[profiles.cases.vendor-ram]]
-address = 0x100889dc
-value = 0x3fce2000
-[[profiles.cases.vendor-ram]]
-address = 0x100889ec
-value = 0x3fce4000
-[[profiles.cases.vendor-ram]]
-address = 0x10088a50
-value = 0
+vendor-ram-symbols = [
+    { target-symbol = "g_ic", offset = 0, value = 0x3fce2000, observe = false },
+    { target-symbol = "g_ic", offset = 0x10, value = 0x3fce4000, observe = false },
+    { target-symbol = "g_ic", offset = 0x74, value = 0, observe = false },
+]
 [[profiles.cases.vendor-ram]]
 address = 0x3fce3460
 value = 0x3fce3000
@@ -75,15 +101,11 @@ value = 0x0001c285
 [[profiles.cases]]
 name = "station-policy-six-mode-two"
 arguments = [6, 0x44332211, 0x00006655, 2]
-[[profiles.cases.vendor-ram]]
-address = 0x100889dc
-value = 0x3fce2000
-[[profiles.cases.vendor-ram]]
-address = 0x100889ec
-value = 0x3fce4000
-[[profiles.cases.vendor-ram]]
-address = 0x10088a50
-value = 1
+vendor-ram-symbols = [
+    { target-symbol = "g_ic", offset = 0, value = 0x3fce2000, observe = false },
+    { target-symbol = "g_ic", offset = 0x10, value = 0x3fce4000, observe = false },
+    { target-symbol = "g_ic", offset = 0x74, value = 1, observe = false },
+]
 [[profiles.cases.vendor-ram]]
 address = 0x3fce3460
 value = 0x3fce3000
@@ -114,15 +136,11 @@ name = "access-point-policy-eight-mode-one"
 arguments = [8, 0x44332211, 0x00006655, 1]
 
 # Policy eight reads the first SoftAP address directly from g_ic +0x214.
-[[profiles.cases.vendor-ram]]
-address = 0x100889ec
-value = 0x3fce4000
-[[profiles.cases.vendor-ram]]
-address = 0x10088bf0
-value = 0x44332211
-[[profiles.cases.vendor-ram]]
-address = 0x10088bf4
-value = 0x00006655
+vendor-ram-symbols = [
+    { target-symbol = "g_ic", offset = 0x10, value = 0x3fce4000, observe = false },
+    { target-symbol = "g_ic", offset = 0x214, value = 0x44332211, observe = false },
+    { target-symbol = "g_ic", offset = 0x218, value = 0x00006655, observe = false },
+]
 
 [[profiles.cases.mmio-initial]]
 address = 0x20104008
@@ -145,18 +163,51 @@ value = 0x0001c285
 [[profiles.cases]]
 name = "access-point-policy-eight-mode-two"
 arguments = [8, 0x44332211, 0x00006655, 2]
-[[profiles.cases.vendor-ram]]
-address = 0x100889ec
-value = 0x3fce4000
-[[profiles.cases.vendor-ram]]
-address = 0x10088bf0
-value = 0x44332211
-[[profiles.cases.vendor-ram]]
-address = 0x10088bf4
-value = 0x00006655
+vendor-ram-symbols = [
+    { target-symbol = "g_ic", offset = 0x10, value = 0x3fce4000, observe = false },
+    { target-symbol = "g_ic", offset = 0x214, value = 0x44332211, observe = false },
+    { target-symbol = "g_ic", offset = 0x218, value = 0x00006655, observe = false },
+]
 [[profiles.cases.mmio-initial]]
 address = 0x20104008
 value = 0x88776655
+[[profiles.cases.mmio-initial]]
+address = 0x2010400c
+value = 0x12345678
+[[profiles.cases.mmio-initial]]
+address = 0x20104064
+value = 0x01020304
+[[profiles.cases.mmio-initial]]
+address = 0x20104068
+value = 0xa5a50000
+[[profiles.cases.mmio-initial]]
+address = 0x201040dc
+value = 0x0001c285
+
+[[profiles.cases]]
+name = "access-point-policy-nine-disabled-mode-two"
+arguments = [9, 0x44332211, 0x00006655, 2]
+mmio-reads = [{ address = 0x2010400c, value = 0x12345678 }]
+[[profiles.cases.mmio-initial]]
+address = 0x2010400c
+value = 0x12345678
+[[profiles.cases.mmio-initial]]
+address = 0x20104064
+value = 0x01020304
+[[profiles.cases.mmio-initial]]
+address = 0x20104068
+value = 0xa5a50000
+[[profiles.cases.mmio-initial]]
+address = 0x201040dc
+value = 0x0001c285
+
+# Policy nine disables only interface-one receive admission. It does not
+# republish either address and is the reviewed leave-AP/preserve-STA register
+# edge needed by a same-channel composition.
+[[profiles.cases]]
+name = "access-point-policy-nine-disabled"
+arguments = [9, 0x44332211, 0x00006655, 1]
+mmio-reads = [{ address = 0x2010400c, value = 0x12345678 }]
 [[profiles.cases.mmio-initial]]
 address = 0x2010400c
 value = 0x12345678

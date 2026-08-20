@@ -63,6 +63,7 @@ pub mod scan_port;
 pub mod scan_rx;
 #[cfg(target_arch = "riscv32")]
 pub mod scan_target;
+pub mod sta_ap;
 #[cfg(target_arch = "riscv32")]
 pub mod sta_attempt_target;
 #[cfg(any(target_arch = "riscv32", test))]

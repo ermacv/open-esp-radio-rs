@@ -97,12 +97,10 @@ pub mod esp32s31 {
                 };
                 #[cfg(target_arch = "riscv32")]
                 pub use open_esp_radio_esp32s31_wifi_embassy::station::{
-                    Esp32s31StationMaterialized, Esp32s31StationPhaseRebindFailure,
-                    Esp32s31StationPhaseReclaimFailure, Esp32s31StationPhaseReclaimed,
-                    Esp32s31StationPhaseRestoreFailure, Esp32s31StationRoleOwner,
+                    Esp32s31StationPhaseRebindFailure, Esp32s31StationPhaseReclaimFailure,
+                    Esp32s31StationPhaseReclaimed, Esp32s31StationPhaseRestoreFailure,
                     Esp32s31StationRuntimeReclaimFailure, Esp32s31StationRuntimeReclaimed,
-                    Esp32s31StationStopped, Esp32s31StationStoppedPhaseResources,
-                    materialize_esp32s31_station, try_rebind_esp32s31_station_phase,
+                    Esp32s31StationStoppedPhaseResources, try_rebind_esp32s31_station_phase,
                     try_reclaim_esp32s31_station_phase, try_reclaim_esp32s31_station_runtime,
                     try_restore_esp32s31_station_phase,
                 };
@@ -149,9 +147,9 @@ pub mod esp32s31 {
     pub use start::{
         Esp32s31RadioReady, Esp32s31RadioStartConfig, Esp32s31RadioStartFailure,
         Esp32s31WifiMacPlatform, Esp32s31WifiMacReady, Esp32s31WifiMacStartConfig,
-        Esp32s31WifiMacStartFailure, Esp32s31WifiMacStartReport,
-        Esp32s31WifiRuntimeTransitionReport, Esp32s31WifiStart, Esp32s31WifiStartConfig,
-        Esp32s31WifiStartFailure, Esp32s31WifiStopped, enter_esp32s31_wifi_runtime,
-        start_esp32s31_radio,
+        Esp32s31WifiMacStartFailure, Esp32s31WifiMacStartReport, Esp32s31WifiRoleMaterialized,
+        Esp32s31WifiRoleOwner, Esp32s31WifiRoleStopped, Esp32s31WifiRuntimeTransitionReport,
+        Esp32s31WifiStart, Esp32s31WifiStartConfig, Esp32s31WifiStartFailure, Esp32s31WifiStopped,
+        enter_esp32s31_wifi_runtime, materialize_esp32s31_wifi_role, start_esp32s31_radio,
     };
 }

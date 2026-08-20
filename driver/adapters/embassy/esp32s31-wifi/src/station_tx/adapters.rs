@@ -181,7 +181,7 @@ where
         &'a mut self,
         hardware: &'a mut H,
         frame: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-        network: &'a PinnedTxConsumer<
+        network: &'a PinnedTxInterfaceConsumer<
             'resources,
             M,
             FRAME_CAPACITY,
@@ -220,7 +220,7 @@ where
     fn start_prepared<'a>(
         &'a mut self,
         hardware: &'a mut H,
-        network: &'a PinnedTxConsumer<
+        network: &'a PinnedTxInterfaceConsumer<
             'resources,
             M,
             FRAME_CAPACITY,
@@ -243,7 +243,7 @@ where
     fn prepare<'a>(
         &'a mut self,
         frame: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-        network: &'a PinnedTxConsumer<
+        network: &'a PinnedTxInterfaceConsumer<
             'resources,
             M,
             FRAME_CAPACITY,

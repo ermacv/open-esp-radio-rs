@@ -6,7 +6,75 @@
 //! leaves and the role-neutral runtime orchestrator. It deliberately performs
 //! no MMIO and does not claim scheduler or DMA ownership.
 
+use open_esp_radio_esp32s31_wifi_mac::sta_ap_registers::{
+    StaApRegisterHardware, configure_sta_ap_receive_registers,
+    disable_access_point_receive_registers, disable_station_receive_registers,
+};
 use open_esp_radio_ieee80211::channel::WifiChannel;
+
+/// Addresses required only when the second role joins the shared MAC.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct StaApReceiveIdentities {
+    pub station_address: [u8; 6],
+    pub station_bssid: [u8; 6],
+    pub access_point_address: [u8; 6],
+}
+
+/// Exact register consequence of one already-validated lifecycle edge.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StaApRegisterAction {
+    None,
+    ConfigureBoth(StaApReceiveIdentities),
+    DisableStationPreserveAccessPoint,
+    DisableAccessPointPreserveStation,
+}
+
+pub const fn sta_ap_register_action(
+    transition: StaApTransition,
+    identities: StaApReceiveIdentities,
+) -> StaApRegisterAction {
+    match transition {
+        StaApTransition::StartStationPreserveAccessPoint
+        | StaApTransition::StartAccessPointPreserveStation => {
+            StaApRegisterAction::ConfigureBoth(identities)
+        }
+        StaApTransition::StopStationPreserveAccessPoint => {
+            StaApRegisterAction::DisableStationPreserveAccessPoint
+        }
+        StaApTransition::StopAccessPointPreserveStation => {
+            StaApRegisterAction::DisableAccessPointPreserveStation
+        }
+        StaApTransition::StartStationCold
+        | StaApTransition::StartAccessPointCold
+        | StaApTransition::StopStationLastRole
+        | StaApTransition::StopAccessPointLastRole => StaApRegisterAction::None,
+    }
+}
+
+/// Apply the finite register half of a same-channel lifecycle transition.
+///
+/// Cold single-role entry/exit remains owned by its existing transaction.
+/// This function handles only edges that must preserve the other live role.
+pub fn apply_sta_ap_register_action<H: StaApRegisterHardware>(
+    hardware: &mut H,
+    action: StaApRegisterAction,
+) {
+    match action {
+        StaApRegisterAction::None => {}
+        StaApRegisterAction::ConfigureBoth(identities) => configure_sta_ap_receive_registers(
+            hardware,
+            identities.station_address,
+            identities.station_bssid,
+            identities.access_point_address,
+        ),
+        StaApRegisterAction::DisableStationPreserveAccessPoint => {
+            disable_station_receive_registers(hardware);
+        }
+        StaApRegisterAction::DisableAccessPointPreserveStation => {
+            disable_access_point_receive_registers(hardware);
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StaApRole {
@@ -182,6 +250,37 @@ impl Default for StaApLifecycle {
 mod tests {
     use super::*;
 
+    #[derive(Default)]
+    struct RegisterHardware {
+        configured: Option<open_esp_radio_esp32s31_wifi_mac::MacStaApReceivePlan>,
+        disabled: std::vec::Vec<open_esp_radio_esp32s31_wifi_mac::MacInterface>,
+    }
+
+    impl StaApRegisterHardware for RegisterHardware {
+        fn apply_sta_ap_receive_registers(
+            &mut self,
+            plan: open_esp_radio_esp32s31_wifi_mac::MacStaApReceivePlan,
+        ) {
+            self.configured = Some(plan);
+        }
+
+        fn disable_station_receive_registers(&mut self) {
+            self.disabled
+                .push(open_esp_radio_esp32s31_wifi_mac::MacInterface::Station);
+        }
+
+        fn disable_access_point_receive_registers(&mut self) {
+            self.disabled
+                .push(open_esp_radio_esp32s31_wifi_mac::MacInterface::AccessPoint);
+        }
+    }
+
+    const IDENTITIES: StaApReceiveIdentities = StaApReceiveIdentities {
+        station_address: [2, 0, 0, 0, 0, 1],
+        station_bssid: [2, 0, 0, 0, 0, 2],
+        access_point_address: [2, 0, 0, 0, 0, 3],
+    };
+
     fn channel(primary: u8) -> WifiChannel {
         WifiChannel::mhz20(primary).unwrap()
     }
@@ -281,5 +380,49 @@ mod tests {
             lifecycle.state(),
             StaApLifecycleState::AccessPoint { channel: shared }
         );
+    }
+
+    #[test]
+    fn preserve_edges_map_to_one_complete_register_action() {
+        let mut hardware = RegisterHardware::default();
+        apply_sta_ap_register_action(
+            &mut hardware,
+            sta_ap_register_action(StaApTransition::StartAccessPointPreserveStation, IDENTITIES),
+        );
+        let plan = hardware.configured.expect("combined plan");
+        assert_eq!(plan.station_address(), IDENTITIES.station_address);
+        assert_eq!(plan.station_bssid(), IDENTITIES.station_bssid);
+        assert_eq!(plan.access_point_address(), IDENTITIES.access_point_address);
+
+        apply_sta_ap_register_action(
+            &mut hardware,
+            sta_ap_register_action(StaApTransition::StopAccessPointPreserveStation, IDENTITIES),
+        );
+        apply_sta_ap_register_action(
+            &mut hardware,
+            sta_ap_register_action(StaApTransition::StopStationPreserveAccessPoint, IDENTITIES),
+        );
+        assert_eq!(
+            hardware.disabled,
+            [
+                open_esp_radio_esp32s31_wifi_mac::MacInterface::AccessPoint,
+                open_esp_radio_esp32s31_wifi_mac::MacInterface::Station,
+            ]
+        );
+    }
+
+    #[test]
+    fn cold_and_last_role_edges_do_not_duplicate_existing_transactions() {
+        for transition in [
+            StaApTransition::StartStationCold,
+            StaApTransition::StartAccessPointCold,
+            StaApTransition::StopStationLastRole,
+            StaApTransition::StopAccessPointLastRole,
+        ] {
+            assert_eq!(
+                sta_ap_register_action(transition, IDENTITIES),
+                StaApRegisterAction::None
+            );
+        }
     }
 }

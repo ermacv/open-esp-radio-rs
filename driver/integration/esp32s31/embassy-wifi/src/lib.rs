@@ -43,7 +43,7 @@ pub use connected::{
     Esp32s31QualificationTxVector,
 };
 pub use connected::Esp32s31WifiProtocolRunner;
-pub use radio_resources::Esp32s31WifiDevice;
+pub use radio_resources::{Esp32s31WifiDevice, Esp32s31WifiDevices};
 pub use facade::{
     Esp32s31NewError, Esp32s31Radio, Esp32s31RadioError, Esp32s31RadioInitialization,
     Esp32s31RadioParts, Esp32s31Wifi, Esp32s31WifiControl, Esp32s31WifiParts,

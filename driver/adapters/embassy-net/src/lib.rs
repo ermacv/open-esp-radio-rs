@@ -13,7 +13,8 @@
 //! descriptor and vendor-object pointers never escape into the network stack,
 //! and both directions apply explicit bounded backpressure.
 //!
-//! [`SplitPinnedResources`] provides the high-throughput alternative. On RX, the
+//! [`PinnedEndpointResources`] and [`PinnedTxResources`] provide the
+//! high-throughput alternative. On RX, the
 //! protocol adapter copies directly into a permanently located final slot and
 //! passes only its index to the network stack. On TX, the network stack writes
 //! directly into a separate permanently located slot with caller-selected
@@ -39,10 +40,11 @@ use embassy_sync::{
 mod pinned;
 
 pub use pinned::{
+    DualPinnedNetworkRunner, NetworkInterfaceId, PinnedEndpointResources, PinnedNetworkRunner,
     PinnedReceiveToken, PinnedRxPublisher, PinnedTransmitToken, PinnedTxConsumer, PinnedTxFrame,
-    PinnedTxPool, SharedPinnedReceiveToken, SharedPinnedRxConsumer, SharedPinnedRxPublisher,
-    SharedPinnedRxQueue, SharedPoolReceiveToken, SharedRxSplitPinnedDevice, SplitPinnedDevice,
-    SplitPinnedRadioRunner, SplitPinnedResources,
+    PinnedTxInterfaceConsumer, PinnedTxPool, PinnedTxProvider, PinnedTxResources,
+    SharedPinnedReceiveToken, SharedPinnedRxConsumer, SharedPinnedRxPublisher, SharedPinnedRxQueue,
+    SharedPoolReceiveToken, SharedRxSplitPinnedDevice, SplitPinnedDevice, SplitPinnedRxRunner,
 };
 
 /// Ethernet header length, excluding an FCS.

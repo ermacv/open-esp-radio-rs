@@ -7,28 +7,14 @@ impl<
     'irq,
     M: RawMutex,
     S,
-    const DEPTH: usize,
     const CAPACITY: usize,
     const SLOTS: usize,
     const REORDER_SLOTS: usize,
->
-    Esp32s31ConnectedRxProtocol<
-        'queue,
-        'pool,
-        'scratch,
-        'irq,
-        M,
-        S,
-        DEPTH,
-        CAPACITY,
-        SLOTS,
-        REORDER_SLOTS,
-    >
+> Esp32s31ConnectedRxProcessor<'queue, 'pool, 'scratch, 'irq, M, S, CAPACITY, SLOTS, REORDER_SLOTS>
 where
     S: ConnectedRxProtocolSink<CAPACITY, SLOTS>,
 {
     pub fn new_with_reorder_slots(
-        frames: Receiver<'queue, M, Esp32s31StagedRxFrame<'pool, CAPACITY, SLOTS>, DEPTH>,
         irq: &'irq EmbassyMacIrqRuntime<M>,
         dispatcher: ConnectedRxDispatcher,
         sink: S,
@@ -63,7 +49,6 @@ where
             "reorder slot identity must fit the MAC token"
         );
         Self {
-            frames,
             irq,
             dispatcher,
             sink,
@@ -85,8 +70,7 @@ where
         self
     }
 
-    /// Install cold backing for the MPDUs that actually cross a sequence gap.
-    /// In-order frames continue directly from the SRAM staging lease.
+    /// Install cold backing for MPDUs that actually cross a sequence gap.
     pub fn with_rx_reorder_storage(
         mut self,
         storage: &'pool RxReorderFrameStorage<CAPACITY, REORDER_SLOTS>,
@@ -95,9 +79,7 @@ where
         self
     }
 
-    /// Install one internal-SRAM readback scratch for a retained ordinary
-    /// MPDU. This avoids repeatedly parsing the cold PSRAM backing in place.
-    /// A-MSDU keeps its distinct output-scratch path.
+    /// Install one internal-SRAM readback scratch for a retained ordinary MPDU.
     pub fn with_rx_reorder_scratch(mut self, scratch: &'scratch mut [u8]) -> Self {
         assert!(
             scratch.len() >= CAPACITY,
@@ -124,23 +106,9 @@ where
         &mut self.sink
     }
 
-    pub fn queue_len(&self) -> usize {
-        self.frames.len()
-    }
-
-    /// Discard all ownership retained by the completed connected epoch.
-    ///
-    /// The connected control producer must already be stopped, otherwise it
-    /// could publish a new reorder command after the mailbox is drained. This
-    /// operation performs no PAC access and no sink publication: reconnect
-    /// teardown must not block on a full network queue merely to return RX
-    /// staging and cold-reorder leases.
+    /// Discard reorder/mailbox ownership retained by the protocol processor.
     pub fn shutdown_discard(&mut self) -> ConnectedRxProtocolShutdown {
         let mut shutdown = ConnectedRxProtocolShutdown::default();
-        while let Ok(frame) = self.frames.try_receive() {
-            drop(frame);
-            shutdown.queued_frames = shutdown.queued_frames.saturating_add(1);
-        }
         if let Some(commands) = &self.reorder_commands {
             while try_receive_rx_reorder_command(commands).is_some() {
                 shutdown.reorder_commands = shutdown.reorder_commands.saturating_add(1);
@@ -158,7 +126,7 @@ where
                 shutdown.retained_frames = shutdown.retained_frames.saturating_add(1);
             }
         }
-        if shutdown.queued_frames != 0 || shutdown.retained_frames != 0 {
+        if shutdown.retained_frames != 0 {
             self.irq.notify_rx_capacity();
         }
         shutdown
@@ -172,6 +140,215 @@ where
         &'pool mut Esp32s31ConnectedRxProtocolStorage<'pool, CAPACITY, SLOTS, REORDER_SLOTS>,
     ) {
         (self.mpdu, self.ethernet, self.runtime)
+    }
+}
+
+impl<'queue, 'pool, 'scratch, 'irq, M: RawMutex, S, const CAPACITY: usize, const SLOTS: usize>
+    Esp32s31ConnectedRxProcessor<
+        'queue,
+        'pool,
+        'scratch,
+        'irq,
+        M,
+        S,
+        CAPACITY,
+        SLOTS,
+        RX_REORDER_BACKING_SLOT_COUNT,
+    >
+where
+    S: ConnectedRxProtocolSink<CAPACITY, SLOTS>,
+{
+    pub fn new(
+        irq: &'irq EmbassyMacIrqRuntime<M>,
+        dispatcher: ConnectedRxDispatcher,
+        sink: S,
+        mpdu: &'scratch mut [u8],
+        ethernet: &'scratch mut [u8],
+        runtime: &'pool mut Esp32s31ConnectedRxProtocolStorage<
+            'pool,
+            CAPACITY,
+            SLOTS,
+            RX_REORDER_BACKING_SLOT_COUNT,
+        >,
+    ) -> Self {
+        Self::new_with_reorder_slots(irq, dispatcher, sink, mpdu, ethernet, runtime)
+    }
+}
+
+impl<
+    'queue,
+    'pool,
+    'scratch,
+    'irq,
+    M: RawMutex,
+    S,
+    const DEPTH: usize,
+    const CAPACITY: usize,
+    const SLOTS: usize,
+    const REORDER_SLOTS: usize,
+>
+    Esp32s31ConnectedRxProtocol<
+        'queue,
+        'pool,
+        'scratch,
+        'irq,
+        M,
+        S,
+        DEPTH,
+        CAPACITY,
+        SLOTS,
+        REORDER_SLOTS,
+    >
+where
+    S: ConnectedRxProtocolSink<CAPACITY, SLOTS>,
+{
+    pub fn new_with_reorder_slots(
+        frames: Receiver<'queue, M, Esp32s31StagedRxFrame<'pool, CAPACITY, SLOTS>, DEPTH>,
+        irq: &'irq EmbassyMacIrqRuntime<M>,
+        dispatcher: ConnectedRxDispatcher,
+        sink: S,
+        mpdu: &'scratch mut [u8],
+        ethernet: &'scratch mut [u8],
+        runtime: &'pool mut Esp32s31ConnectedRxProtocolStorage<
+            'pool,
+            CAPACITY,
+            SLOTS,
+            REORDER_SLOTS,
+        >,
+    ) -> Self {
+        Self {
+            frames,
+            processor: Esp32s31ConnectedRxProcessor::new_with_reorder_slots(
+                irq, dispatcher, sink, mpdu, ethernet, runtime,
+            ),
+        }
+    }
+
+    pub fn with_rx_reorder_commands(
+        mut self,
+        commands: RxReorderCommandReceiver<'queue, M>,
+    ) -> Self {
+        self.processor.reorder_commands = Some(commands);
+        self
+    }
+
+    pub fn with_rx_reorder_storage(
+        mut self,
+        storage: &'pool RxReorderFrameStorage<CAPACITY, REORDER_SLOTS>,
+    ) -> Self {
+        self.processor.reorder_storage = Some(storage);
+        self
+    }
+
+    pub fn with_rx_reorder_scratch(mut self, scratch: &'scratch mut [u8]) -> Self {
+        assert!(
+            scratch.len() >= CAPACITY,
+            "reorder readback scratch must cover one complete staged RX unit"
+        );
+        self.processor.reorder_scratch = Some(scratch);
+        self
+    }
+
+    pub fn with_pipeline_observer(mut self, observer: &'queue dyn RxPipelineObserver) -> Self {
+        self.processor.pipeline_observer = Some(observer);
+        self
+    }
+
+    pub const fn dispatcher(&self) -> &ConnectedRxDispatcher {
+        self.processor.dispatcher()
+    }
+
+    pub const fn sink(&self) -> &S {
+        self.processor.sink()
+    }
+
+    pub fn sink_mut(&mut self) -> &mut S {
+        self.processor.sink_mut()
+    }
+
+    pub fn queue_len(&self) -> usize {
+        self.frames.len()
+    }
+
+    /// Remove the standalone queue at a proven empty scheduling boundary.
+    ///
+    /// Same-channel STA+AP owns one different, route-tagged queue. Moving the
+    /// queue-independent processor into that composition is valid only after
+    /// the standalone producer has stopped and its consumer has drained every
+    /// staged lease. A non-empty queue returns the complete original owner.
+    pub fn try_into_processor(
+        self,
+    ) -> Result<
+        Esp32s31ConnectedRxProcessor<
+            'queue,
+            'pool,
+            'scratch,
+            'irq,
+            M,
+            S,
+            CAPACITY,
+            SLOTS,
+            REORDER_SLOTS,
+        >,
+        Self,
+    > {
+        if !self.frames.is_empty() {
+            return Err(self);
+        }
+        Ok(self.processor)
+    }
+
+    /// Reattach the standalone queue after the paired producer has stopped.
+    ///
+    /// The supplied queue must be empty: queued paired frames have a distinct
+    /// tagged type and must be drained before the station can resume its
+    /// standalone lifecycle.
+    pub fn from_processor(
+        frames: Receiver<'queue, M, Esp32s31StagedRxFrame<'pool, CAPACITY, SLOTS>, DEPTH>,
+        processor: Esp32s31ConnectedRxProcessor<
+            'queue,
+            'pool,
+            'scratch,
+            'irq,
+            M,
+            S,
+            CAPACITY,
+            SLOTS,
+            REORDER_SLOTS,
+        >,
+    ) -> Self {
+        assert_eq!(
+            frames.len(),
+            0,
+            "standalone STA resume requires an empty staged-RX queue"
+        );
+        Self { frames, processor }
+    }
+
+    pub fn shutdown_discard(&mut self) -> ConnectedRxProtocolShutdown {
+        let mut shutdown = ConnectedRxProtocolShutdown::default();
+        while let Ok(frame) = self.frames.try_receive() {
+            drop(frame);
+            shutdown.queued_frames = shutdown.queued_frames.saturating_add(1);
+        }
+        let retained = self.processor.shutdown_discard();
+        shutdown.retained_frames = retained.retained_frames;
+        shutdown.reorder_commands = retained.reorder_commands;
+        shutdown.active_reorders = retained.active_reorders;
+        if shutdown.queued_frames != 0 {
+            self.processor.irq.notify_rx_capacity();
+        }
+        shutdown
+    }
+
+    pub(super) fn into_stopped_parts(
+        self,
+    ) -> (
+        &'scratch mut [u8],
+        &'scratch mut [u8],
+        &'pool mut Esp32s31ConnectedRxProtocolStorage<'pool, CAPACITY, SLOTS, REORDER_SLOTS>,
+    ) {
+        self.processor.into_stopped_parts()
     }
 }
 
@@ -201,7 +378,6 @@ impl<
 where
     S: ConnectedRxProtocolSink<CAPACITY, SLOTS>,
 {
-    /// Construct the vendor-maximum 64-slot reorder profile.
     pub fn new(
         frames: Receiver<'queue, M, Esp32s31StagedRxFrame<'pool, CAPACITY, SLOTS>, DEPTH>,
         irq: &'irq EmbassyMacIrqRuntime<M>,

@@ -7,6 +7,9 @@
 //! station, access point or standalone monitor role is materialized. It does
 //! not own MLME policy, an executor, a network stack or board resources.
 
+#[cfg(test)]
+extern crate std;
+
 #[cfg(any(target_arch = "riscv32", test))]
 mod channel;
 #[cfg(target_arch = "riscv32")]

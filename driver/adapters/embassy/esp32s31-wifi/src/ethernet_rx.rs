@@ -28,6 +28,16 @@ impl<'storage> PackedEthernetWriter<'storage> {
         Self { storage, used: 0 }
     }
 
+    pub(crate) fn resume(
+        storage: &'storage mut [u8],
+        used: usize,
+    ) -> Result<Self, PackedEthernetError> {
+        if used > storage.len() {
+            return Err(PackedEthernetError::CorruptRecord);
+        }
+        Ok(Self { storage, used })
+    }
+
     pub(crate) const fn used(&self) -> usize {
         self.used
     }

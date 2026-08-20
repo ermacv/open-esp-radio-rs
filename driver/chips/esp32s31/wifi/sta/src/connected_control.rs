@@ -1,6 +1,8 @@
 //! Executor-independent control state for one connected ESP32-S31 station.
 //!
-//! This module owns BlockAck, beacon-loss and power-save transitions.  A
+//! This module owns station BlockAck protocol, beacon-loss and power-save
+//! transitions. The finite core does not own the physical RX BlockAck banks:
+//! its caller supplies the one VIF-aware bank owner shared by STA and AP. A
 //! runtime adapter supplies at most one received control event, a bounded
 //! reorder-command sink and the shared TX owner.  No mailbox, executor timer
 //! or task wakeup is part of this state machine.
@@ -104,6 +106,16 @@ impl ControlInFlight {
 /// Runtime-neutral sink for semantic RX reorder commands.
 pub trait ConnectedControlReorder {
     fn publish(&mut self, command: RxReorderCommand) -> Result<(), RxReorderCommandError>;
+}
+
+/// Mutually borrowed capabilities used by one finite connected-control step.
+/// Grouping them makes the ownership boundary explicit and prevents event and
+/// scheduling policy arguments from being confused with hardware owners.
+pub struct ConnectedControlPorts<'a, H, X, R, const PEER_CAPACITY: usize> {
+    pub hardware: &'a mut H,
+    pub tx: &'a mut X,
+    pub reorder: &'a mut R,
+    pub rx_block_ack: &'a mut RxBlockAckSessions<PEER_CAPACITY>,
 }
 
 /// Shared ordinary-TX capability consumed by connected control.
@@ -287,7 +299,6 @@ struct ConnectedControlObservations {
 pub struct Esp32s31ConnectedControlCore {
     peer: [u8; 6],
     he_enabled: bool,
-    rx_block_ack: RxBlockAckSessions,
     tx_block_ack: StaTxBlockAckSessions,
     initial_tx_block_ack: [bool; 3],
     tx_block_ack_attempts_remaining: [u8; 3],
@@ -305,7 +316,6 @@ impl Esp32s31ConnectedControlCore {
         Self {
             peer,
             he_enabled,
-            rx_block_ack: RxBlockAckSessions::new(),
             tx_block_ack,
             initial_tx_block_ack: [false; 3],
             tx_block_ack_attempts_remaining: [0; 3],
@@ -317,14 +327,6 @@ impl Esp32s31ConnectedControlCore {
             pending_doze_permit: None,
             observations: ConnectedControlObservations::default(),
         }
-    }
-
-    pub fn set_rx_block_ack_maximum_window(
-        &mut self,
-        maximum_window: u16,
-    ) -> Result<(), RxBlockAckSessionsError> {
-        self.rx_block_ack = RxBlockAckSessions::with_maximum_window(maximum_window)?;
-        Ok(())
     }
 
     pub fn enable_beacon_loss(&mut self, config: StaBeaconLossConfig) {
@@ -345,10 +347,6 @@ impl Esp32s31ConnectedControlCore {
         debug_assert!(attempt_limit != 0);
         self.initial_tx_block_ack.fill(true);
         self.tx_block_ack_attempts_remaining.fill(attempt_limit);
-    }
-
-    pub const fn rx_block_ack(&self) -> &RxBlockAckSessions {
-        &self.rx_block_ack
     }
 
     pub const fn tx_block_ack(&self) -> &StaTxBlockAckSessions {
@@ -420,10 +418,11 @@ impl Esp32s31ConnectedControlCore {
         }
     }
 
-    pub fn shutdown<H, X>(
+    pub fn shutdown<H, X, const PEER_CAPACITY: usize>(
         &mut self,
         hardware: &mut H,
         tx: &mut X,
+        rx_block_ack: &mut RxBlockAckSessions<PEER_CAPACITY>,
     ) -> Result<ConnectedControlCoreShutdown, ConnectedControlError>
     where
         H: ConnectedControlHardware,
@@ -439,7 +438,7 @@ impl Esp32s31ConnectedControlCore {
                         self.in_flight = Some(ControlInFlight::RxAddba(activation));
                         return Err(error.into());
                     }
-                    self.rx_block_ack.cancel(activation)?;
+                    rx_block_ack.cancel(activation)?;
                 }
                 ControlInFlight::TxAddba { tid } => {
                     self.tx_block_ack.stop(tid);
@@ -451,15 +450,17 @@ impl Esp32s31ConnectedControlCore {
         }
 
         let mut rx_block_ack_agreements = 0_u8;
-        for agreement in self.rx_block_ack.snapshots().into_iter().flatten() {
+        for agreement in rx_block_ack
+            .snapshots_for(MacInterface::Station)
+            .into_iter()
+            .flatten()
+        {
             hardware.clear_rx_block_ack(agreement.hardware_index)?;
-            let stopped = self.rx_block_ack.stop(self.peer, agreement.tid);
+            let stopped = rx_block_ack.stop(MacInterface::Station, self.peer, agreement.tid);
             debug_assert_eq!(stopped, Some(agreement));
             rx_block_ack_agreements = rx_block_ack_agreements.saturating_add(1);
         }
-        let maximum_window = self.rx_block_ack.maximum_window();
-        self.rx_block_ack = RxBlockAckSessions::with_maximum_window(maximum_window)
-            .expect("an existing RX BlockAck maximum remains valid");
+        rx_block_ack.prepare_interface(MacInterface::Station)?;
 
         let mut tx_block_ack_sessions = 0_u8;
         for tid in STA_TX_BLOCK_ACK_TIDS {
@@ -490,11 +491,9 @@ impl Esp32s31ConnectedControlCore {
     }
 
     /// Execute at most one finite transition.
-    pub fn service_step<H, X, R>(
+    pub fn service_step<H, X, R, const PEER_CAPACITY: usize>(
         &mut self,
-        hardware: &mut H,
-        tx: &mut X,
-        reorder: &mut R,
+        ports: ConnectedControlPorts<'_, H, X, R, PEER_CAPACITY>,
         event: Option<ConnectedRxControlEvent>,
         control_event_pending: bool,
         context: WdevControlContext,
@@ -504,6 +503,12 @@ impl Esp32s31ConnectedControlCore {
         X: ConnectedControlTx,
         R: ConnectedControlReorder,
     {
+        let ConnectedControlPorts {
+            hardware,
+            tx,
+            reorder,
+            rx_block_ack,
+        } = ports;
         if let Some(monitor) = &mut self.beacon_monitor {
             monitor.arm(tx.now_micros())?;
         }
@@ -520,12 +525,12 @@ impl Esp32s31ConnectedControlCore {
             }
             match in_flight {
                 ControlInFlight::RxAddba(activation) if success => {
-                    self.rx_block_ack.commit(activation)?;
+                    rx_block_ack.commit(activation)?;
                 }
                 ControlInFlight::RxAddba(activation) => {
                     hardware.clear_rx_block_ack(activation.hardware().hardware_index)?;
                     reorder.publish(RxReorderCommand::Stop(activation.negotiated().identity()))?;
-                    self.rx_block_ack.cancel(activation)?;
+                    rx_block_ack.cancel(activation)?;
                 }
                 ControlInFlight::TxAddba { .. } if success => {}
                 ControlInFlight::TxAddba { tid } => {
@@ -582,7 +587,17 @@ impl Esp32s31ConnectedControlCore {
 
         if let Some(event) = event {
             self.observations.last_event = Some(event);
-            return self.apply_event(hardware, tx, reorder, event, context, control_event_pending);
+            return self.apply_event(
+                ConnectedControlPorts {
+                    hardware,
+                    tx,
+                    reorder,
+                    rx_block_ack,
+                },
+                event,
+                context,
+                control_event_pending,
+            );
         }
 
         let now_micros = tx.now_micros();
@@ -606,7 +621,7 @@ impl Esp32s31ConnectedControlCore {
             if self.beacon_probe_attempts < BEACON_PROBE_ATTEMPT_LIMIT {
                 return self.start_beacon_probe(hardware, tx);
             }
-            return self.disconnect_for_beacon_loss(hardware, tx, reorder);
+            return self.disconnect_for_beacon_loss(hardware, tx, reorder, rx_block_ack);
         }
 
         if context.network_tx_pending
@@ -637,11 +652,9 @@ impl Esp32s31ConnectedControlCore {
         Ok(WdevControlProgress::Idle)
     }
 
-    fn apply_event<H, X, R>(
+    fn apply_event<H, X, R, const PEER_CAPACITY: usize>(
         &mut self,
-        hardware: &mut H,
-        tx: &mut X,
-        reorder: &mut R,
+        ports: ConnectedControlPorts<'_, H, X, R, PEER_CAPACITY>,
         event: ConnectedRxControlEvent,
         context: WdevControlContext,
         control_event_pending: bool,
@@ -651,6 +664,12 @@ impl Esp32s31ConnectedControlCore {
         X: ConnectedControlTx,
         R: ConnectedControlReorder,
     {
+        let ConnectedControlPorts {
+            hardware,
+            tx,
+            reorder,
+            rx_block_ack,
+        } = ports;
         if let ConnectedRxControlEvent::PeerDisconnect(disconnect) = event {
             return Ok(WdevControlProgress::Exit(disconnect.into()));
         }
@@ -707,7 +726,8 @@ impl Esp32s31ConnectedControlCore {
                 starting_sequence,
                 ..
             } => {
-                self.rx_block_ack.offer(RxBlockAckRequest {
+                rx_block_ack.offer(RxBlockAckRequest {
+                    interface: MacInterface::Station,
                     peer: self.peer,
                     dialog_token,
                     tid,
@@ -716,11 +736,10 @@ impl Esp32s31ConnectedControlCore {
                     timeout_tu,
                     starting_sequence,
                 })?;
-                let Some(activation) = self.rx_block_ack.begin_pending(MacInterface::Station)?
-                else {
+                let Some(activation) = rx_block_ack.begin_pending()? else {
                     return Ok(WdevControlProgress::More);
                 };
-                self.start_rx_addba_response(hardware, tx, reorder, activation)
+                self.start_rx_addba_response(hardware, tx, reorder, rx_block_ack, activation)
             }
             BlockAckAction::AddbaResponse { .. } => {
                 let response = match self.tx_block_ack.on_response_action(action)? {
@@ -760,7 +779,9 @@ impl Esp32s31ConnectedControlCore {
             }
             BlockAckAction::Delba { tid, initiator, .. } => {
                 if initiator {
-                    if let Some(agreement) = self.rx_block_ack.stop(self.peer, tid) {
+                    if let Some(agreement) =
+                        rx_block_ack.stop(MacInterface::Station, self.peer, tid)
+                    {
                         hardware.clear_rx_block_ack(agreement.hardware_index)?;
                         reorder.publish(RxReorderCommand::Stop(agreement.identity()))?;
                     }
@@ -806,22 +827,27 @@ impl Esp32s31ConnectedControlCore {
         Ok(progress)
     }
 
-    fn disconnect_for_beacon_loss<H, X, R>(
+    fn disconnect_for_beacon_loss<H, X, R, const PEER_CAPACITY: usize>(
         &mut self,
         hardware: &mut H,
         tx: &mut X,
         reorder: &mut R,
+        rx_block_ack: &mut RxBlockAckSessions<PEER_CAPACITY>,
     ) -> Result<WdevControlProgress<ConnectedDisconnectReason>, ConnectedControlError>
     where
         H: ConnectedControlHardware,
         X: ConnectedControlTx,
         R: ConnectedControlReorder,
     {
-        for agreement in self.rx_block_ack.snapshots().into_iter().flatten() {
-            self.rx_block_ack.stop(self.peer, agreement.tid);
+        for agreement in rx_block_ack
+            .snapshots_for(MacInterface::Station)
+            .into_iter()
+            .flatten()
+        {
+            rx_block_ack.stop(MacInterface::Station, self.peer, agreement.tid);
             hardware.clear_rx_block_ack(agreement.hardware_index)?;
         }
-        reorder.publish(RxReorderCommand::StopAll)?;
+        reorder.publish(RxReorderCommand::StopInterface(MacInterface::Station))?;
         for tid in STA_TX_BLOCK_ACK_TIDS {
             self.tx_block_ack.stop(tid);
             tx.set_tx_block_ack_agreement(tid, None);
@@ -864,11 +890,12 @@ impl Esp32s31ConnectedControlCore {
         }
     }
 
-    fn start_rx_addba_response<H, X, R>(
+    fn start_rx_addba_response<H, X, R, const PEER_CAPACITY: usize>(
         &mut self,
         hardware: &mut H,
         tx: &mut X,
         reorder: &mut R,
+        rx_block_ack: &mut RxBlockAckSessions<PEER_CAPACITY>,
         activation: RxBlockAckActivation,
     ) -> Result<WdevControlProgress<ConnectedDisconnectReason>, ConnectedControlError>
     where
@@ -879,7 +906,7 @@ impl Esp32s31ConnectedControlCore {
         if let Some(replaced) = activation.replaced() {
             if let Err(error) = reorder.publish(RxReorderCommand::Stop(replaced.identity())) {
                 hardware.clear_rx_block_ack(replaced.hardware_index)?;
-                self.rx_block_ack.cancel(activation)?;
+                rx_block_ack.cancel(activation)?;
                 return Err(error.into());
             }
             hardware.clear_rx_block_ack(replaced.hardware_index)?;
@@ -888,7 +915,7 @@ impl Esp32s31ConnectedControlCore {
         let negotiated = activation.negotiated();
         if let Err(error) = reorder.publish(RxReorderCommand::Start(negotiated)) {
             hardware.clear_rx_block_ack(activation.hardware().hardware_index)?;
-            self.rx_block_ack.cancel(activation)?;
+            rx_block_ack.cancel(activation)?;
             return Err(error.into());
         }
         if let Err(error) = tx.start_action(
@@ -898,7 +925,7 @@ impl Esp32s31ConnectedControlCore {
         ) {
             hardware.clear_rx_block_ack(activation.hardware().hardware_index)?;
             reorder.publish(RxReorderCommand::Stop(activation.negotiated().identity()))?;
-            self.rx_block_ack.cancel(activation)?;
+            rx_block_ack.cancel(activation)?;
             return Err(error.into());
         }
         self.in_flight = Some(ControlInFlight::RxAddba(activation));

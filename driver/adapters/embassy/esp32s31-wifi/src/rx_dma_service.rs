@@ -28,6 +28,7 @@ use crate::{
     rx_pipeline_observer::{
         RxPipelineObservation, RxPipelineObserver, RxServiceObservation, RxStageDiscard,
     },
+    sta_ap::Esp32s31StaApStagedRxFrame,
     wdev::WdevRxProgress,
     wdev::services::WdevRxService,
 };
@@ -128,6 +129,109 @@ pub struct FullRxStageAdmission;
 
 impl Esp32s31RxStageAdmissionPolicy for FullRxStageAdmission {}
 
+/// Permanent publication strategy owned by the single physical RX producer.
+///
+/// Standalone STA/AP epochs publish an unclassified lease to their sole
+/// protocol consumer. A same-channel STA+AP epoch instead publishes exactly
+/// one ordered stream carrying the fact-only VIF route. Neither variant owns
+/// protocol policy, and neither can manufacture or duplicate a staging lease.
+pub enum Esp32s31StagedRxPublisher<
+    'pool,
+    'queue,
+    M: RawMutex,
+    const QUEUE_DEPTH: usize,
+    const STAGE_CAPACITY: usize,
+    const STAGE_SLOTS: usize,
+> {
+    Standalone(
+        Sender<'queue, M, Esp32s31StagedRxFrame<'pool, STAGE_CAPACITY, STAGE_SLOTS>, QUEUE_DEPTH>,
+    ),
+    StaAp {
+        frames: Sender<
+            'queue,
+            M,
+            Esp32s31StaApStagedRxFrame<'pool, STAGE_CAPACITY, STAGE_SLOTS>,
+            QUEUE_DEPTH,
+        >,
+        ingress: open_esp_radio_esp32s31_wifi_mac::rx::RxIngressConfig,
+        addresses: open_esp_radio_ieee80211::vif::StaApRxAddresses,
+    },
+}
+
+impl<
+    'pool,
+    'queue,
+    M: RawMutex,
+    const QUEUE_DEPTH: usize,
+    const STAGE_CAPACITY: usize,
+    const STAGE_SLOTS: usize,
+> Esp32s31StagedRxPublisher<'pool, 'queue, M, QUEUE_DEPTH, STAGE_CAPACITY, STAGE_SLOTS>
+{
+    pub const fn standalone(
+        frames: Sender<
+            'queue,
+            M,
+            Esp32s31StagedRxFrame<'pool, STAGE_CAPACITY, STAGE_SLOTS>,
+            QUEUE_DEPTH,
+        >,
+    ) -> Self {
+        Self::Standalone(frames)
+    }
+
+    pub const fn sta_ap(
+        frames: Sender<
+            'queue,
+            M,
+            Esp32s31StaApStagedRxFrame<'pool, STAGE_CAPACITY, STAGE_SLOTS>,
+            QUEUE_DEPTH,
+        >,
+        ingress: open_esp_radio_esp32s31_wifi_mac::rx::RxIngressConfig,
+        addresses: open_esp_radio_ieee80211::vif::StaApRxAddresses,
+    ) -> Self {
+        Self::StaAp {
+            frames,
+            ingress,
+            addresses,
+        }
+    }
+
+    fn free_capacity(&self) -> usize {
+        match self {
+            Self::Standalone(frames) => frames.free_capacity(),
+            Self::StaAp { frames, .. } => frames.free_capacity(),
+        }
+    }
+
+    fn len(&self) -> usize {
+        match self {
+            Self::Standalone(frames) => frames.len(),
+            Self::StaAp { frames, .. } => frames.len(),
+        }
+    }
+
+    fn try_send(
+        &self,
+        frame: Esp32s31StagedRxFrame<'pool, STAGE_CAPACITY, STAGE_SLOTS>,
+    ) -> Result<(), Esp32s31StagedRxFrame<'pool, STAGE_CAPACITY, STAGE_SLOTS>> {
+        match self {
+            Self::Standalone(frames) => frames.try_send(frame).map_err(|error| match error {
+                TrySendError::Full(frame) => frame,
+            }),
+            Self::StaAp {
+                frames,
+                ingress,
+                addresses,
+            } => frames
+                .try_send(Esp32s31StaApStagedRxFrame::classify(
+                    frame, *ingress, *addresses,
+                ))
+                .map_err(|error| match error {
+                    TrySendError::Full(frame) => frame.into_frame(),
+                }),
+        }
+    }
+}
+
 /// Complete production RX owner for one running descriptor-ring epoch.
 pub struct Esp32s31StagedRxProducer<
     'storage,
@@ -146,8 +250,7 @@ pub struct Esp32s31StagedRxProducer<
     ring: RxRingLive<'storage, COUNT>,
     storage: &'storage Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
     pool: &'pool RxStagePool<STAGE_SLOTS, STAGE_CAPACITY>,
-    frames:
-        Sender<'queue, M, Esp32s31StagedRxFrame<'pool, STAGE_CAPACITY, STAGE_SLOTS>, QUEUE_DEPTH>,
+    frames: Esp32s31StagedRxPublisher<'pool, 'queue, M, QUEUE_DEPTH, STAGE_CAPACITY, STAGE_SLOTS>,
     delay: D,
     pipeline_observer: Option<&'pool dyn RxPipelineObserver>,
     admission: P,
@@ -176,8 +279,7 @@ pub struct Esp32s31StoppedRx<
     ring: RxRingHalted<'storage, COUNT>,
     storage: &'storage Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
     pool: &'pool RxStagePool<STAGE_SLOTS, STAGE_CAPACITY>,
-    frames:
-        Sender<'queue, M, Esp32s31StagedRxFrame<'pool, STAGE_CAPACITY, STAGE_SLOTS>, QUEUE_DEPTH>,
+    frames: Esp32s31StagedRxPublisher<'pool, 'queue, M, QUEUE_DEPTH, STAGE_CAPACITY, STAGE_SLOTS>,
     delay: D,
     pipeline_observer: Option<&'pool dyn RxPipelineObserver>,
 }
@@ -205,8 +307,7 @@ pub struct Esp32s31RxEpochResources<
 > {
     storage: &'storage Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
     pool: &'pool RxStagePool<STAGE_SLOTS, STAGE_CAPACITY>,
-    frames:
-        Sender<'queue, M, Esp32s31StagedRxFrame<'pool, STAGE_CAPACITY, STAGE_SLOTS>, QUEUE_DEPTH>,
+    frames: Esp32s31StagedRxPublisher<'pool, 'queue, M, QUEUE_DEPTH, STAGE_CAPACITY, STAGE_SLOTS>,
     delay: D,
     pipeline_observer: Option<&'pool dyn RxPipelineObserver>,
 }
@@ -232,8 +333,7 @@ pub struct Esp32s31PreparedRx<
     ring: RxRingStopped<'storage, COUNT>,
     storage: &'storage Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
     pool: &'pool RxStagePool<STAGE_SLOTS, STAGE_CAPACITY>,
-    frames:
-        Sender<'queue, M, Esp32s31StagedRxFrame<'pool, STAGE_CAPACITY, STAGE_SLOTS>, QUEUE_DEPTH>,
+    frames: Esp32s31StagedRxPublisher<'pool, 'queue, M, QUEUE_DEPTH, STAGE_CAPACITY, STAGE_SLOTS>,
     delay: D,
     pipeline_observer: Option<&'pool dyn RxPipelineObserver>,
 }

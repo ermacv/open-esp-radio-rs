@@ -91,7 +91,8 @@ async fn monitor_task(
     } = radio.into_parts();
     let open_esp_radio_esp32s31_embassy_wifi::Esp32s31WifiParts {
         control: wifi,
-        device: _,
+        station_device: _,
+        access_point_device: _,
         monitor_frames: frames,
         access_point_status: _,
     } = wifi.into_parts();

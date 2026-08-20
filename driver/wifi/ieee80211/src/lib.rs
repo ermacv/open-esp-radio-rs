@@ -26,4 +26,5 @@ pub mod station_beacon;
 pub mod station_power_save;
 pub mod tbtt;
 pub mod trigger;
+pub mod vif;
 pub mod wmm;

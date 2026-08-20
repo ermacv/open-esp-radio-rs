@@ -42,7 +42,14 @@ where
         &mut self,
         hardware: &mut H,
         first: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-        network: &PinnedTxConsumer<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+        network: &PinnedTxInterfaceConsumer<
+            'resources,
+            M,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            QUEUE_DEPTH,
+        >,
     ) -> Result<WifiTxProgress, AggregateTxError> {
         if self.active() || self.has_prepared_network_tx() {
             return Err(AggregateTxError::ActiveTransaction);
@@ -159,7 +166,14 @@ where
     fn prepare_aggregate(
         &mut self,
         first: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-        network: &PinnedTxConsumer<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+        network: &PinnedTxInterfaceConsumer<
+            'resources,
+            M,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            QUEUE_DEPTH,
+        >,
     ) -> Result<AggregatePrepared<SLOTS>, AggregateTxError> {
         let first_sequence = self
             .ordinary
@@ -185,7 +199,14 @@ where
     fn prepare_reserved(
         &mut self,
         first: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-        network: &PinnedTxConsumer<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+        network: &PinnedTxInterfaceConsumer<
+            'resources,
+            M,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            QUEUE_DEPTH,
+        >,
         first_sequence: u16,
         cookie: TxCookie,
     ) -> Result<AggregatePrepared<SLOTS>, AggregateTxError> {
@@ -238,7 +259,14 @@ where
     fn extend_reserved(
         &mut self,
         first: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-        network: &PinnedTxConsumer<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+        network: &PinnedTxInterfaceConsumer<
+            'resources,
+            M,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            QUEUE_DEPTH,
+        >,
         mut prepared: AggregatePrepared<SLOTS>,
     ) -> Result<AggregatePrepared<SLOTS>, AggregateTxError> {
         let admission = match self.config.rate {
@@ -318,7 +346,14 @@ where
     /// to MAC hardware at this edge.
     fn prepare_standby(
         &mut self,
-        network: &PinnedTxConsumer<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+        network: &PinnedTxInterfaceConsumer<
+            'resources,
+            M,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            QUEUE_DEPTH,
+        >,
     ) {
         if !self.can_prepare_network_tx() {
             return;
@@ -413,7 +448,14 @@ where
     pub(super) fn prepare_network_standby(
         &mut self,
         first: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-        network: &PinnedTxConsumer<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+        network: &PinnedTxInterfaceConsumer<
+            'resources,
+            M,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            QUEUE_DEPTH,
+        >,
     ) {
         if !self.can_prepare_network_tx() {
             drop(first);
@@ -459,7 +501,14 @@ where
     pub(super) fn start_prepared_network<H: HtAmpduHardware>(
         &mut self,
         hardware: &mut H,
-        network: &PinnedTxConsumer<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+        network: &PinnedTxInterfaceConsumer<
+            'resources,
+            M,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            QUEUE_DEPTH,
+        >,
     ) -> Result<WifiTxProgress, AggregateTxError> {
         if self.active() {
             return Err(AggregateTxError::ActiveTransaction);
@@ -560,7 +609,14 @@ where
     fn push_candidate(
         &mut self,
         first: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-        network: &PinnedTxConsumer<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+        network: &PinnedTxInterfaceConsumer<
+            'resources,
+            M,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            QUEUE_DEPTH,
+        >,
         admission: AggregateFrameAdmission,
     ) -> Result<(), AggregateTxError> {
         if self.block_ack_amsdu(DATA_TID)

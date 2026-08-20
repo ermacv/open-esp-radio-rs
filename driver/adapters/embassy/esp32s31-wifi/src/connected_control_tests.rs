@@ -9,8 +9,9 @@ use open_esp_radio_esp32s31_hal::types::{
     MacTxDetachReason, MacTxQueueDetached,
 };
 use open_esp_radio_esp32s31_wifi_mac::{
+    MacInterface,
     crypto::{CcmpKeyHardware, install_sta_pairwise_ccmp},
-    rx_ampdu::RxBlockAckSnapshot,
+    rx_ampdu::{RxBlockAckRequest, RxBlockAckSnapshot},
     rx_ampdu_hw::{RxBlockAckHardware, S31RxBlockAckAgreement, S31RxBlockAckAgreementError},
     tx::{HardwareOwnedTxDma, LegacyRate, PreparedTxDma, TxCompletion, TxHardware, TxSlot},
     tx_ampdu::{BlockAckAction, STA_TX_BLOCK_ACK_TIDS, StaTxBlockAckSessions},
@@ -409,6 +410,7 @@ fn rx_addba_hardware_is_committed_only_after_response_tx_success() {
     let agreement = hardware.programmed.unwrap();
     let snapshot = RxBlockAckSnapshot {
         hardware_index: agreement.hardware_index,
+        interface: open_esp_radio_esp32s31_wifi_mac::MacInterface::Station,
         peer: BSSID,
         tid: 3,
         starting_sequence: 0x123,
@@ -498,6 +500,7 @@ fn failed_rx_addba_response_rolls_back_hardware_and_software() {
     let agreement = hardware.programmed.unwrap();
     let snapshot = RxBlockAckSnapshot {
         hardware_index: agreement.hardware_index,
+        interface: open_esp_radio_esp32s31_wifi_mac::MacInterface::Station,
         peer: BSSID,
         tid: 3,
         starting_sequence: 0x123,
@@ -844,6 +847,49 @@ fn shutdown_clears_rx_tx_block_ack_and_discards_late_control_events() {
     assert_eq!(
         embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
         Ok(WdevControlProgress::Idle)
+    );
+}
+
+#[test]
+fn station_shutdown_preserves_access_point_rx_block_ack_banks() {
+    let resources = ConnectedControlResources::<NoopRawMutex, 1>::new();
+    let (_publisher, receiver) = resources.split();
+    let mut control = Esp32s31ConnectedControl::new(
+        receiver,
+        BSSID,
+        true,
+        StaTxBlockAckSessions::new(32, 100_000, true).unwrap(),
+    );
+    control
+        .rx_block_ack
+        .offer(RxBlockAckRequest {
+            interface: MacInterface::AccessPoint,
+            peer: [0x30, 0x31, 0x32, 0x33, 0x34, 0x35],
+            dialog_token: 1,
+            tid: 5,
+            immediate: true,
+            requested_window: 16,
+            timeout_tu: 0,
+            starting_sequence: 7,
+        })
+        .unwrap();
+    let activation = control.rx_block_ack.begin_pending().unwrap().unwrap();
+    let ap_agreement = activation.negotiated();
+    control.rx_block_ack.commit(activation).unwrap();
+
+    let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
+    let mut hardware = Hardware::default();
+    let mut tx = make_tx(slot.as_mut(), &mut hardware, 1);
+    assert_eq!(
+        control.shutdown(&mut hardware, &mut tx),
+        Ok(ConnectedControlShutdown::default())
+    );
+    assert_eq!(hardware.clear_count, 0);
+    assert_eq!(
+        control
+            .rx_block_ack()
+            .snapshots_for(MacInterface::AccessPoint)[usize::from(ap_agreement.hardware_index)],
+        Some(ap_agreement)
     );
 }
 

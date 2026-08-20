@@ -17,7 +17,7 @@ use core::{
     ops::{Deref, DerefMut},
 };
 
-use open_esp_radio_embassy_net::{PinnedTxConsumer, PinnedTxFrame, RawMutex};
+use open_esp_radio_embassy_net::{PinnedTxFrame, PinnedTxInterfaceConsumer, RawMutex};
 use open_esp_radio_esp32s31_hal::types::MacInterface;
 use open_esp_radio_esp32s31_wifi::ampdu_tx::{
     AmpduTxRoleAdapter, HtAmpduPublicationInputs, HtAmpduTxRolePolicy, HtAmpduTxRolePolicyError,
@@ -76,6 +76,23 @@ pub struct Esp32s31ConnectedTxTeardownParts<R, A> {
     pub pairwise_key: StaPairwiseCcmpSlot,
     pub sequences: StaTxSequenceCounters,
     pub aggregate: A,
+}
+
+/// Station-local TX policy retained while the one physical ordinary/A-MPDU
+/// owner is lent to the AP role.
+///
+/// This value contains no descriptor, DMA backing or hardware publication
+/// capability. Resuming it requires both exact physical owners returned by
+/// the other role.
+pub struct Esp32s31ConnectedTxParked<'observer, const SLOTS: usize> {
+    handoff: ConnectedTxHandoff,
+    block_ack_windows: [u8; 8],
+    config: AggregateTxConfig,
+    rate_control: StaRateControlAssociation,
+    aggregate_rate_policy: StaTxRatePolicy,
+    last_aggregate_status: Option<MacAmpduTxStatus<TxPhyRate>>,
+    pending_ordinary_retry: Option<MacAmpduTxStatus<TxPhyRate>>,
+    observer: Option<&'observer dyn AggregateTxObserver>,
 }
 
 /// Finite aggregate publication policy installed after Association.
@@ -223,6 +240,10 @@ impl<T> TeardownResource<T> {
     fn is_present(&self) -> bool {
         self.0.is_some()
     }
+
+    fn restore(&mut self, resource: T) {
+        assert!(self.0.replace(resource).is_none());
+    }
 }
 
 impl<T> Deref for TeardownResource<T> {
@@ -280,7 +301,7 @@ pub struct Esp32s31ConnectedTx<
     /// Peer-negotiated BlockAck window per QoS TID; zero means inactive.
     block_ack_windows: [u8; 8],
     config: AggregateTxConfig,
-    rate_control: StaRateControlAssociation,
+    rate_control: TeardownResource<StaRateControlAssociation>,
     aggregate_rate_policy: StaTxRatePolicy,
     active: ConnectedTxActive<SLOTS>,
     last_aggregate_status: Option<MacAmpduTxStatus<TxPhyRate>>,

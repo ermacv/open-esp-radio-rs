@@ -3,9 +3,10 @@ use super::*;
 impl<
     'resources,
     'irq,
-    M: RawMutex,
+    M: RawMutex + 'resources,
     N,
     B,
+    R,
     const FRAME_CAPACITY: usize,
     const HEADROOM: usize,
     const TRAILER: usize,
@@ -23,6 +24,7 @@ impl<
         TRAILER,
         RX_QUEUE_DEPTH,
         TX_QUEUE_DEPTH,
+        R,
     >
 where
     N: WdevNetwork<
@@ -35,6 +37,7 @@ where
             TX_QUEUE_DEPTH,
         >,
     B: WdevServices<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+    R: WdevNetworkRxSet,
 {
     /// Run the production radio event loop until role policy reaches its
     /// terminal edge.
@@ -70,15 +73,16 @@ where
             }
             if stopping {
                 self.services.cancel_prepared_tx()?;
+                self.prepared_tx_interface = None;
                 match self.services.service_stop()? {
                     WdevStopProgress::More => continue,
                     WdevStopProgress::TxPending => {
+                        self.active_tx_interface = Some(self.reported_active_tx_interface());
                         self.drive_active_tx().await?;
                         continue;
                     }
                     WdevStopProgress::Stopped => {
-                        self.network
-                            .set_link_state(open_esp_radio_embassy_net::LinkState::Down);
+                        self.set_scope_link_state(open_esp_radio_embassy_net::LinkState::Down);
                         return Ok(WdevRunnerExit::Stopped);
                     }
                 }
@@ -88,25 +92,26 @@ where
             // generation.
             self.discard_stale_tx_wakes();
             let control_context = WdevControlContext {
-                network_tx_pending: self.network.tx_queue_len() != 0,
+                network_tx_pending: self.network_tx_queue_len() != 0,
             };
             match self.services.service_control(control_context).await? {
                 WdevControlProgress::More => continue,
                 WdevControlProgress::TxPending => {
+                    self.active_tx_interface = Some(self.reported_active_tx_interface());
                     self.drive_active_tx().await?;
                     continue;
                 }
                 WdevControlProgress::Exit(exit) => {
                     self.services.cancel_prepared_tx()?;
-                    self.network
-                        .set_link_state(open_esp_radio_embassy_net::LinkState::Down);
+                    self.prepared_tx_interface = None;
+                    self.set_scope_link_state(open_esp_radio_embassy_net::LinkState::Down);
                     return Ok(WdevRunnerExit::Role(exit));
                 }
                 WdevControlProgress::Idle => {}
             }
 
             let network_tx_pending =
-                self.services.has_prepared_tx() || self.network.tx_queue_len() != 0;
+                self.services.has_prepared_tx() || self.network_tx_queue_len() != 0;
 
             // A staged protocol owner or reorder timeout has no new MAC IRQ
             // edge, but it is still charged to the same frame deficit as an
@@ -142,7 +147,7 @@ where
                 let available = self
                     .services
                     .prepared_tx_frame_count()
-                    .saturating_add(self.network.tx_queue_len());
+                    .saturating_add(self.network_tx_queue_len());
                 // Only an aggregate-capable service advertises a preferred
                 // batch larger than one. Give its first frame a bounded
                 // publication window in which a second frame can arrive;
@@ -164,29 +169,36 @@ where
                     // every immediately ready lease up to the negotiated
                     // target.
                     if self.services.has_prepared_tx() {
+                        let interface = self.retained_prepared_tx_interface();
                         if self.services.can_prepare_tx()
-                            && let Some(frame) = self.network.try_receive_tx()
+                            && let Some(frame) = self.network.try_receive_tx(interface)
                         {
-                            let network_tx = self.network.tx_consumer();
+                            assert_eq!(self.tx_interface_for(&frame), interface);
+                            let network_tx = self.tx_consumer_for(interface);
                             self.services.prepare_tx(frame, &network_tx).await?;
                         }
                         let admitted = self.services.prepared_tx_frame_count().max(1);
                         self.account_tx_frames(admitted);
-                        let network_tx = self.network.tx_consumer();
+                        let network_tx = self.tx_consumer_for(interface);
                         let progress = self.services.start_prepared_tx(&network_tx).await?;
+                        self.prepared_tx_interface =
+                            self.services.has_prepared_tx().then_some(interface);
                         if progress == WifiTxProgress::Pending {
+                            self.active_tx_interface = Some(interface);
                             self.drive_active_tx().await?;
                         }
                         continue;
                     }
 
-                    let Some(frame) = self.network.try_receive_tx() else {
+                    let Some(frame) = self.try_receive_network_tx() else {
                         continue;
                     };
+                    let interface = self.tx_interface_for(&frame);
                     self.account_tx_frames(1);
-                    let network_tx = self.network.tx_consumer();
+                    let network_tx = self.tx_consumer_for(interface);
                     let progress = self.services.start_tx(frame, &network_tx).await?;
                     if progress == WifiTxProgress::Pending {
+                        self.active_tx_interface = Some(interface);
                         self.drive_active_tx().await?;
                     }
                     continue;
@@ -207,11 +219,18 @@ where
                     // can keep copying and republishing descriptors into its
                     // bounded staging reserve.
                     WdevRxProgress::NetworkBackpressured => {
-                        let _ = select(network_rx.wait_ready(), irq.wait_rx()).await;
+                        let _ = select(
+                            core::future::poll_fn(|context| network_rx.poll_any_ready(context)),
+                            irq.wait_rx(),
+                        )
+                        .await;
                     }
                     WdevRxProgress::Drained | WdevRxProgress::ProbePending => irq.wait_rx().await,
                 }
             };
+            let network = &self.network;
+            let interfaces = self.interfaces;
+            let prepared_tx_interface = self.prepared_tx_interface;
             match select(
                 stop.as_mut(),
                 select3(wait_rx, self.services.wait_control_ready(), async {
@@ -219,7 +238,18 @@ where
                         let _ =
                             select(self.network.wait_tx_publication(), Timer::at(deadline)).await;
                     } else {
-                        self.network.wait_tx_ready().await;
+                        if let Some(interface) = prepared_tx_interface {
+                            network.wait_tx_ready(interface).await;
+                        } else {
+                            match interfaces {
+                                WdevInterfaceScope::Single(interface) => {
+                                    network.wait_tx_ready(interface).await
+                                }
+                                WdevInterfaceScope::Pair { .. } => {
+                                    network.wait_tx_publication().await
+                                }
+                            }
+                        }
                     }
                 }),
             )

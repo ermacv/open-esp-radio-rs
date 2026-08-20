@@ -1,7 +1,6 @@
 //! Permanently located RX/TX slots for bounded, copy-minimal network ownership.
 
 use core::{
-    cell::Cell,
     pin::Pin,
     sync::atomic::{AtomicBool, Ordering},
     task::{Context, Poll},
@@ -9,27 +8,38 @@ use core::{
 
 use embassy_net_driver::{Capabilities, Driver, HardwareAddress, LinkState};
 use embassy_sync::{
-    blocking_mutex::Mutex,
     blocking_mutex::raw::RawMutex,
     channel::{Channel, Receiver, Sender, TryReceiveError, TrySendError},
     signal::Signal,
 };
 use open_esp_radio_dma::{
     DmaIndexReturn, PinnedDmaTxNetworkLease, PinnedDmaTxPool, PinnedDmaTxRadioLease,
-    ReturningStableDmaBacking, RxHandoffPool, RxNetworkLease, RxRadioLease,
+    ReturningStableDmaBacking, RxHandoffPool, RxNetworkLease, RxRadioLease, TaggedStableDmaBacking,
 };
 
 use crate::{ETHERNET_HEADER_LEN, FrameLengthError, RxEnqueueError, SharedLinkState};
 
-/// Role-selected Ethernet identity shared by the persistent network device
-/// and the currently active radio epoch.
+/// Opaque identity of one logical network endpoint sharing a physical radio.
 ///
-/// The address is changed only while the link is down. Keeping it beside the
-/// queues allows one `embassy-net` device to survive sequential STA and AP
-/// epochs without manufacturing a second network owner or retaining the STA
-/// address in AP mode.
-struct SharedHardwareAddress<M: RawMutex> {
-    address: Mutex<M, Cell<[u8; 6]>>,
+/// The network adapter preserves this value but never assigns Wi-Fi meaning
+/// to it. The radio composition owns the mapping to STA, AP, or another VIF.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct NetworkInterfaceId(u8);
+
+impl NetworkInterfaceId {
+    pub const fn new(value: u8) -> Self {
+        Self(value)
+    }
+
+    pub const fn value(self) -> u8 {
+        self.0
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct PinnedTxReady {
+    interface: NetworkInterfaceId,
+    index: u8,
 }
 
 /// One publication frontier shared by copied and externally-backed RX slots.
@@ -78,22 +88,6 @@ impl OrderedRxReady {
         } else {
             OrderedRxSource::Shared(self.0 & !ORDERED_RX_SHARED_BIT)
         }
-    }
-}
-
-impl<M: RawMutex> SharedHardwareAddress<M> {
-    const fn new(address: [u8; 6]) -> Self {
-        Self {
-            address: Mutex::new(Cell::new(address)),
-        }
-    }
-
-    fn set(&self, address: [u8; 6]) {
-        self.address.lock(|current| current.set(address));
-    }
-
-    fn get(&self) -> [u8; 6] {
-        self.address.lock(Cell::get)
     }
 }
 
@@ -212,28 +206,39 @@ pub struct SharedPinnedRxConsumer<
 /// SOURCE: complete `libnet80211.a[ieee80211_output.o]::
 /// ieee80211_alloc_tx_buf` cache-TX/type-nine path and complete
 /// `libpp.a[esf_buf.o]::{esf_buf_setup,esf_buf_alloc}`.
-pub struct SplitPinnedResources<
+pub struct PinnedTxResources<
     M: RawMutex,
     const FRAME_CAPACITY: usize,
     const HEADROOM: usize,
     const TRAILER: usize,
-    const RX_QUEUE_DEPTH: usize,
     const TX_QUEUE_DEPTH: usize,
+> {
+    free_tx: Channel<M, u8, TX_QUEUE_DEPTH>,
+    ready_tx: Channel<M, PinnedTxReady, TX_QUEUE_DEPTH>,
+    tx_published: Signal<M, ()>,
+    split: AtomicBool,
+}
+
+/// Static storage owned by one permanent logical network endpoint.
+///
+/// STA and AP must each have their own instance. Only RX ownership, link state
+/// and the immutable Ethernet identity live here; physical TX storage belongs
+/// to [`PinnedTxResources`] and is shared explicitly.
+pub struct PinnedEndpointResources<
+    M: RawMutex,
+    const FRAME_CAPACITY: usize,
+    const RX_QUEUE_DEPTH: usize,
 > {
     free_rx: Channel<M, u8, RX_QUEUE_DEPTH>,
     ready_rx: Channel<M, u8, RX_QUEUE_DEPTH>,
     rx_pool: RxHandoffPool<FRAME_CAPACITY, RX_QUEUE_DEPTH>,
-    free_tx: Channel<M, u8, TX_QUEUE_DEPTH>,
-    ready_tx: Channel<M, u8, TX_QUEUE_DEPTH>,
-    tx_published: Signal<M, ()>,
     link: SharedLinkState<M>,
-    hardware_address: SharedHardwareAddress<M>,
     split: AtomicBool,
 }
 
 /// Permanently located storage for the TX allocations exposed to radio DMA.
 ///
-/// This is separate from [`SplitPinnedResources`] so a platform linker can place
+/// This is separate from [`PinnedTxResources`] so a platform linker can place
 /// only the DMA-visible bytes in internal SRAM while keeping RX queues and
 /// Embassy synchronization state in ordinary memory.
 pub type PinnedTxPool<
@@ -248,20 +253,14 @@ impl<
     const FRAME_CAPACITY: usize,
     const HEADROOM: usize,
     const TRAILER: usize,
-    const RX_QUEUE_DEPTH: usize,
     const TX_QUEUE_DEPTH: usize,
-> SplitPinnedResources<M, FRAME_CAPACITY, HEADROOM, TRAILER, RX_QUEUE_DEPTH, TX_QUEUE_DEPTH>
+> PinnedTxResources<M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>
 {
     pub const fn new() -> Self {
         Self {
-            free_rx: Channel::new(),
-            ready_rx: Channel::new(),
-            rx_pool: RxHandoffPool::new(),
             free_tx: Channel::new(),
             ready_tx: Channel::new(),
             tx_published: Signal::new(),
-            link: SharedLinkState::new(),
-            hardware_address: SharedHardwareAddress::new([0; 6]),
             split: AtomicBool::new(false),
         }
     }
@@ -269,33 +268,11 @@ impl<
     pub fn split<'resources>(
         &'resources mut self,
         pool: Pin<&'resources mut PinnedTxPool<FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>>,
-        station_address: [u8; 6],
     ) -> (
-        SplitPinnedDevice<
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            RX_QUEUE_DEPTH,
-            TX_QUEUE_DEPTH,
-        >,
-        SplitPinnedRadioRunner<
-            'resources,
-            M,
-            FRAME_CAPACITY,
-            HEADROOM,
-            TRAILER,
-            RX_QUEUE_DEPTH,
-            TX_QUEUE_DEPTH,
-        >,
+        PinnedTxProvider<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+        PinnedTxConsumer<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
     ) {
-        assert!(RX_QUEUE_DEPTH > 0, "pinned RX pool must not be empty");
         assert!(TX_QUEUE_DEPTH > 0, "pinned TX pool must not be empty");
-        assert!(
-            RX_QUEUE_DEPTH <= usize::from(u8::MAX) + 1,
-            "pinned RX pool index must fit in u8"
-        );
         assert!(
             TX_QUEUE_DEPTH <= usize::from(u8::MAX) + 1,
             "pinned TX pool index must fit in u8"
@@ -305,11 +282,6 @@ impl<
             !self.split.swap(true, Ordering::AcqRel),
             "pinned resources may only be split once"
         );
-        for index in 0..RX_QUEUE_DEPTH {
-            self.free_rx
-                .try_send(index as u8)
-                .expect("an empty free RX queue accepts every pool index");
-        }
         for index in 0..TX_QUEUE_DEPTH {
             self.free_tx
                 .try_send(index as u8)
@@ -318,38 +290,21 @@ impl<
         let pool: &'resources PinnedTxPool<FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH> =
             Pin::into_ref(pool).get_ref();
         let resources: &Self = self;
-        resources.hardware_address.set(station_address);
 
         (
-            SplitPinnedDevice {
-                ready_rx: resources.ready_rx.receiver(),
-                free_rx: resources.free_rx.sender(),
-                rx_pool: &resources.rx_pool,
+            PinnedTxProvider {
                 free_tx: resources.free_tx.receiver(),
                 free_tx_return: resources.free_tx.sender(),
                 ready_tx: resources.ready_tx.sender(),
                 tx_published: &resources.tx_published,
                 tx_pool: pool,
-                link: &resources.link,
-                hardware_address: &resources.hardware_address,
-                ingress_tx: None,
-                application_tx: None,
-                reserve_ingress_tx: false,
-                tx_reservation: (),
             },
-            SplitPinnedRadioRunner {
-                free_rx: resources.free_rx.receiver(),
-                free_rx_return: resources.free_rx.sender(),
-                ready_rx: resources.ready_rx.sender(),
-                ordered_rx: None,
-                rx_pool: &resources.rx_pool,
+            PinnedTxConsumer {
                 free_tx: resources.free_tx.sender(),
                 ready_tx: resources.ready_tx.receiver(),
                 ready_tx_return: resources.ready_tx.sender(),
                 tx_published: &resources.tx_published,
                 tx_pool: pool,
-                link: &resources.link,
-                hardware_address: &resources.hardware_address,
             },
         )
     }
@@ -360,14 +315,130 @@ impl<
     const FRAME_CAPACITY: usize,
     const HEADROOM: usize,
     const TRAILER: usize,
-    const RX_QUEUE_DEPTH: usize,
     const TX_QUEUE_DEPTH: usize,
-> Default
-    for SplitPinnedResources<M, FRAME_CAPACITY, HEADROOM, TRAILER, RX_QUEUE_DEPTH, TX_QUEUE_DEPTH>
+> Default for PinnedTxResources<M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>
 {
     fn default() -> Self {
         Self::new()
     }
+}
+
+impl<M: RawMutex, const FRAME_CAPACITY: usize, const RX_QUEUE_DEPTH: usize>
+    PinnedEndpointResources<M, FRAME_CAPACITY, RX_QUEUE_DEPTH>
+{
+    pub const fn new() -> Self {
+        Self {
+            free_rx: Channel::new(),
+            ready_rx: Channel::new(),
+            rx_pool: RxHandoffPool::new(),
+            link: SharedLinkState::new(),
+            split: AtomicBool::new(false),
+        }
+    }
+
+    pub fn split<
+        'resources,
+        const HEADROOM: usize,
+        const TRAILER: usize,
+        const TX_QUEUE_DEPTH: usize,
+    >(
+        &'resources mut self,
+        tx: PinnedTxProvider<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+        interface: NetworkInterfaceId,
+        hardware_address: [u8; 6],
+    ) -> (
+        SplitPinnedDevice<
+            'resources,
+            M,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            RX_QUEUE_DEPTH,
+            TX_QUEUE_DEPTH,
+        >,
+        SplitPinnedRxRunner<'resources, M, FRAME_CAPACITY, RX_QUEUE_DEPTH>,
+    ) {
+        assert!(RX_QUEUE_DEPTH > 0, "pinned RX pool must not be empty");
+        assert!(
+            RX_QUEUE_DEPTH <= usize::from(u8::MAX) + 1,
+            "pinned RX pool index must fit in u8"
+        );
+        assert!(
+            !self.split.swap(true, Ordering::AcqRel),
+            "pinned endpoint resources may only be split once"
+        );
+        for index in 0..RX_QUEUE_DEPTH {
+            self.free_rx
+                .try_send(index as u8)
+                .expect("an empty free RX queue accepts every pool index");
+        }
+        let resources: &Self = self;
+        (
+            SplitPinnedDevice {
+                ready_rx: resources.ready_rx.receiver(),
+                free_rx: resources.free_rx.sender(),
+                rx_pool: &resources.rx_pool,
+                free_tx: tx.free_tx,
+                free_tx_return: tx.free_tx_return,
+                ready_tx: tx.ready_tx,
+                interface,
+                tx_published: tx.tx_published,
+                tx_pool: tx.tx_pool,
+                link: &resources.link,
+                hardware_address,
+                ingress_tx: None,
+                application_tx: None,
+                reserve_ingress_tx: false,
+                tx_reservation: (),
+            },
+            SplitPinnedRxRunner {
+                free_rx: resources.free_rx.receiver(),
+                free_rx_return: resources.free_rx.sender(),
+                ready_rx: resources.ready_rx.sender(),
+                ordered_rx: None,
+                rx_pool: &resources.rx_pool,
+                link: &resources.link,
+            },
+        )
+    }
+}
+
+impl<M: RawMutex, const FRAME_CAPACITY: usize, const RX_QUEUE_DEPTH: usize> Default
+    for PinnedEndpointResources<M, FRAME_CAPACITY, RX_QUEUE_DEPTH>
+{
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Copyable authority for one logical endpoint to claim unique credits from
+/// the shared physical TX pool and publish tagged ready entries.
+pub struct PinnedTxProvider<
+    'resources,
+    M: RawMutex,
+    const FRAME_CAPACITY: usize,
+    const HEADROOM: usize,
+    const TRAILER: usize,
+    const QUEUE_DEPTH: usize,
+> {
+    free_tx: Receiver<'resources, M, u8, QUEUE_DEPTH>,
+    free_tx_return: Sender<'resources, M, u8, QUEUE_DEPTH>,
+    ready_tx: Sender<'resources, M, PinnedTxReady, QUEUE_DEPTH>,
+    tx_published: &'resources Signal<M, ()>,
+    tx_pool: &'resources PinnedTxPool<FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+}
+
+impl<M: RawMutex, const F: usize, const H: usize, const T: usize, const Q: usize> Clone
+    for PinnedTxProvider<'_, M, F, H, T, Q>
+{
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<M: RawMutex, const F: usize, const H: usize, const T: usize, const Q: usize> Copy
+    for PinnedTxProvider<'_, M, F, H, T, Q>
+{
 }
 
 pub struct SplitPinnedDevice<
@@ -384,11 +455,12 @@ pub struct SplitPinnedDevice<
     rx_pool: &'resources RxHandoffPool<FRAME_CAPACITY, RX_QUEUE_DEPTH>,
     free_tx: Receiver<'resources, M, u8, TX_QUEUE_DEPTH>,
     free_tx_return: Sender<'resources, M, u8, TX_QUEUE_DEPTH>,
-    ready_tx: Sender<'resources, M, u8, TX_QUEUE_DEPTH>,
+    ready_tx: Sender<'resources, M, PinnedTxReady, TX_QUEUE_DEPTH>,
+    interface: NetworkInterfaceId,
     tx_published: &'resources Signal<M, ()>,
     tx_pool: &'resources PinnedTxPool<FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
     link: &'resources SharedLinkState<M>,
-    hardware_address: &'resources SharedHardwareAddress<M>,
+    hardware_address: [u8; 6],
     /// One credit unavailable to ordinary egress and therefore available to
     /// satisfy the `Driver::receive` RX+TX-token contract under saturated TX.
     ingress_tx: Option<u8>,
@@ -469,6 +541,7 @@ impl<
         PinnedTransmitToken {
             free_tx: self.free_tx_return,
             ready_tx: self.ready_tx,
+            interface: self.interface,
             tx_published: self.tx_published,
             lease: Some(lease),
             _reservation: &mut self.tx_reservation,
@@ -661,7 +734,8 @@ pub struct PinnedTransmitToken<
     const QUEUE_DEPTH: usize,
 > {
     free_tx: Sender<'resources, M, u8, QUEUE_DEPTH>,
-    ready_tx: Sender<'resources, M, u8, QUEUE_DEPTH>,
+    ready_tx: Sender<'resources, M, PinnedTxReady, QUEUE_DEPTH>,
+    interface: NetworkInterfaceId,
     tx_published: &'resources Signal<M, ()>,
     lease: Option<PinnedDmaTxNetworkLease<'resources, FRAME_CAPACITY, HEADROOM, TRAILER>>,
     _reservation: &'device mut (),
@@ -686,7 +760,10 @@ impl<
         );
         let lease = self.lease.take().expect("TX token consumed once");
         let (index, result) = lease.publish(length, f);
-        if let Err(TrySendError::Full(_)) = self.ready_tx.try_send(index) {
+        if let Err(TrySendError::Full(_)) = self.ready_tx.try_send(PinnedTxReady {
+            interface: self.interface,
+            index,
+        }) {
             unreachable!("one ready entry exists per non-free pinned TX slot");
         }
         self.tx_published.signal(());
@@ -793,7 +870,7 @@ impl<
     }
 
     fn hardware_address(&self) -> HardwareAddress {
-        HardwareAddress::Ethernet(self.hardware_address.get())
+        HardwareAddress::Ethernet(self.hardware_address)
     }
 }
 
@@ -897,7 +974,7 @@ impl<
 /// frames to `embassy-net`.
 ///
 /// This view deliberately contains no TX capability. It can therefore be
-/// moved into an RX protocol sink while [`SplitPinnedRadioRunner`] remains the
+/// moved into an RX protocol sink while [`SplitPinnedRxRunner`] remains the
 /// unique owner of TX leases.
 pub struct PinnedRxPublisher<
     'resources,
@@ -1077,47 +1154,22 @@ impl<M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize> Drop
     }
 }
 
-pub struct SplitPinnedRadioRunner<
+pub struct SplitPinnedRxRunner<
     'resources,
     M: RawMutex,
     const FRAME_CAPACITY: usize,
-    const HEADROOM: usize,
-    const TRAILER: usize,
     const RX_QUEUE_DEPTH: usize,
-    const TX_QUEUE_DEPTH: usize,
 > {
     free_rx: Receiver<'resources, M, u8, RX_QUEUE_DEPTH>,
     free_rx_return: Sender<'resources, M, u8, RX_QUEUE_DEPTH>,
     ready_rx: Sender<'resources, M, u8, RX_QUEUE_DEPTH>,
     ordered_rx: Option<Sender<'resources, M, OrderedRxReady, ORDERED_RX_READY_CAPACITY>>,
     rx_pool: &'resources RxHandoffPool<FRAME_CAPACITY, RX_QUEUE_DEPTH>,
-    free_tx: Sender<'resources, M, u8, TX_QUEUE_DEPTH>,
-    ready_tx: Receiver<'resources, M, u8, TX_QUEUE_DEPTH>,
-    ready_tx_return: Sender<'resources, M, u8, TX_QUEUE_DEPTH>,
-    tx_published: &'resources Signal<M, ()>,
-    tx_pool: &'resources PinnedTxPool<FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
     link: &'resources SharedLinkState<M>,
-    hardware_address: &'resources SharedHardwareAddress<M>,
 }
 
-impl<
-    'resources,
-    M: RawMutex,
-    const FRAME_CAPACITY: usize,
-    const HEADROOM: usize,
-    const TRAILER: usize,
-    const RX_QUEUE_DEPTH: usize,
-    const TX_QUEUE_DEPTH: usize,
->
-    SplitPinnedRadioRunner<
-        'resources,
-        M,
-        FRAME_CAPACITY,
-        HEADROOM,
-        TRAILER,
-        RX_QUEUE_DEPTH,
-        TX_QUEUE_DEPTH,
-    >
+impl<'resources, M: RawMutex, const FRAME_CAPACITY: usize, const RX_QUEUE_DEPTH: usize>
+    SplitPinnedRxRunner<'resources, M, FRAME_CAPACITY, RX_QUEUE_DEPTH>
 {
     /// Bind copied RX publications to the same typed frontier as shared
     /// staging slots. The matching device must be wrapped with
@@ -1157,12 +1209,6 @@ impl<
         self.link.set(state);
     }
 
-    /// Select the MAC address for the next role while the persistent link is
-    /// down. The next link-up wake makes `embassy-net` observe the new value.
-    pub fn set_hardware_address(&self, address: [u8; 6]) {
-        self.hardware_address.set(address);
-    }
-
     pub fn try_send_rx(&self, frame: &[u8]) -> Result<(), RxEnqueueError> {
         let mut publisher = self.rx_publisher();
         publisher.try_send(frame)
@@ -1173,17 +1219,486 @@ impl<
         publisher.send(frame).await
     }
 
-    /// Derive the TX-only capability used by a radio encoder or aggregate
-    /// builder. Its type does not carry the unrelated receive queue depth.
-    pub fn tx_consumer(
+    pub fn rx_queue_len(&self) -> usize {
+        self.ready_rx.len()
+    }
+}
+
+/// Narrow radio-side capability for claiming ready network TX leases.
+///
+/// This value is the sole radio-side consumer created by [`PinnedTxResources`]
+/// and is
+/// independent of RX storage geometry. Aggregate construction may retain a
+/// reference to it while claiming additional frames without gaining access to
+/// link state or receive publication.
+pub struct PinnedTxConsumer<
+    'resources,
+    M: RawMutex,
+    const FRAME_CAPACITY: usize,
+    const HEADROOM: usize,
+    const TRAILER: usize,
+    const QUEUE_DEPTH: usize,
+> {
+    free_tx: Sender<'resources, M, u8, QUEUE_DEPTH>,
+    ready_tx: Receiver<'resources, M, PinnedTxReady, QUEUE_DEPTH>,
+    ready_tx_return: Sender<'resources, M, PinnedTxReady, QUEUE_DEPTH>,
+    tx_published: &'resources Signal<M, ()>,
+    tx_pool: &'resources PinnedTxPool<FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+}
+
+/// TX consumer narrowed to one logical interface.
+///
+/// Aggregate encoders receive this capability instead of the physical
+/// consumer. They may extend or requeue a batch, but can never claim a lease
+/// published by another VIF sharing the same hardware queue.
+pub struct PinnedTxInterfaceConsumer<
+    'resources,
+    M: RawMutex,
+    const FRAME_CAPACITY: usize,
+    const HEADROOM: usize,
+    const TRAILER: usize,
+    const QUEUE_DEPTH: usize,
+> {
+    physical: PinnedTxConsumer<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+    interface: NetworkInterfaceId,
+}
+
+impl<M: RawMutex, const F: usize, const H: usize, const T: usize, const Q: usize> Clone
+    for PinnedTxInterfaceConsumer<'_, M, F, H, T, Q>
+{
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<M: RawMutex, const F: usize, const H: usize, const T: usize, const Q: usize> Copy
+    for PinnedTxInterfaceConsumer<'_, M, F, H, T, Q>
+{
+}
+
+impl<M: RawMutex, const F: usize, const H: usize, const T: usize, const Q: usize> Clone
+    for PinnedTxConsumer<'_, M, F, H, T, Q>
+{
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<M: RawMutex, const F: usize, const H: usize, const T: usize, const Q: usize> Copy
+    for PinnedTxConsumer<'_, M, F, H, T, Q>
+{
+}
+
+impl<
+    'resources,
+    M: RawMutex,
+    const FRAME_CAPACITY: usize,
+    const HEADROOM: usize,
+    const TRAILER: usize,
+    const QUEUE_DEPTH: usize,
+> PinnedTxConsumer<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>
+{
+    pub const fn for_interface(
+        self,
+        interface: NetworkInterfaceId,
+    ) -> PinnedTxInterfaceConsumer<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>
+    {
+        PinnedTxInterfaceConsumer {
+            physical: self,
+            interface,
+        }
+    }
+
+    pub fn try_receive(
+        &self,
+    ) -> Option<PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>> {
+        match self.ready_tx.try_receive() {
+            Ok(ready) => Some(TaggedStableDmaBacking::new(
+                ready.interface,
+                ReturningStableDmaBacking::new(
+                    self.tx_pool.claim_radio(ready.index),
+                    PinnedTxReturn {
+                        free_tx: self.free_tx,
+                    },
+                ),
+            )),
+            Err(TryReceiveError::Empty) => None,
+        }
+    }
+
+    pub async fn receive(
+        &self,
+    ) -> PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH> {
+        let ready = self.ready_tx.receive().await;
+        TaggedStableDmaBacking::new(
+            ready.interface,
+            ReturningStableDmaBacking::new(
+                self.tx_pool.claim_radio(ready.index),
+                PinnedTxReturn {
+                    free_tx: self.free_tx,
+                },
+            ),
+        )
+    }
+
+    pub fn queue_len(&self) -> usize {
+        self.ready_tx.len()
+    }
+
+    /// Claim the first frame for one logical interface without destroying or
+    /// decoding frames published by another interface. A complete bounded
+    /// scan preserves every unmatched lease by requeueing it in the same
+    /// physical ready queue.
+    pub fn try_receive_for(
+        &self,
+        interface: NetworkInterfaceId,
+    ) -> Option<PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>> {
+        let available = self.queue_len();
+        for _ in 0..available {
+            let frame = self.try_receive()?;
+            if *frame.tag() == interface {
+                return Some(frame);
+            }
+            self.requeue(frame);
+        }
+        None
+    }
+
+    /// Count ready frames for one logical interface without releasing their
+    /// pinned ownership. This is intentionally bounded by the physical queue
+    /// depth and is used only by a role-specific scheduler frontier.
+    pub fn queue_len_for(&self, interface: NetworkInterfaceId) -> usize {
+        let available = self.queue_len();
+        let mut matching = 0;
+        for _ in 0..available {
+            let Some(frame) = self.try_receive() else {
+                break;
+            };
+            matching += usize::from(*frame.tag() == interface);
+            self.requeue(frame);
+        }
+        matching
+    }
+
+    pub async fn receive_for(
+        &self,
+        interface: NetworkInterfaceId,
+    ) -> PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH> {
+        loop {
+            if let Some(frame) = self.try_receive_for(interface) {
+                return frame;
+            }
+            self.wait_publication().await;
+        }
+    }
+
+    pub async fn wait_ready_for(&self, interface: NetworkInterfaceId) {
+        loop {
+            if self.queue_len_for(interface) != 0 {
+                return;
+            }
+            self.wait_publication().await;
+        }
+    }
+
+    pub async fn wait_publication(&self) {
+        self.tx_published.wait().await;
+    }
+
+    pub async fn wait_ready(&self) {
+        self.ready_tx.ready_to_receive().await;
+    }
+
+    /// Return a claimed but unmodified frame to the front-end ready queue.
+    ///
+    /// Aggregate builders use this when the next Ethernet frame belongs to a
+    /// different peer. The claim removed one queue entry, so publishing the
+    /// exact released index cannot exceed the bounded queue capacity.
+    pub fn requeue(
+        &self,
+        frame: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+    ) {
+        let (interface, index) = frame.take_requeued_parts();
+        let ready = PinnedTxReady { interface, index };
+        if let Err(TrySendError::Full(_)) = self.ready_tx_return.try_send(ready) {
+            unreachable!("a claimed pinned TX index leaves capacity for requeue");
+        }
+    }
+}
+
+impl<
+    'resources,
+    M: RawMutex,
+    const FRAME_CAPACITY: usize,
+    const HEADROOM: usize,
+    const TRAILER: usize,
+    const QUEUE_DEPTH: usize,
+> PinnedTxInterfaceConsumer<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>
+{
+    pub const fn interface(self) -> NetworkInterfaceId {
+        self.interface
+    }
+
+    pub fn try_receive(
+        &self,
+    ) -> Option<PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>> {
+        self.physical.try_receive_for(self.interface)
+    }
+
+    pub async fn receive(
+        &self,
+    ) -> PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH> {
+        self.physical.receive_for(self.interface).await
+    }
+
+    pub fn queue_len(&self) -> usize {
+        self.physical.queue_len_for(self.interface)
+    }
+
+    pub async fn wait_ready(&self) {
+        self.physical.wait_ready_for(self.interface).await;
+    }
+
+    pub fn requeue(
+        &self,
+        frame: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+    ) {
+        assert_eq!(
+            *frame.tag(),
+            self.interface,
+            "interface-narrowed TX owner cannot requeue another VIF's frame"
+        );
+        self.physical.requeue(frame);
+    }
+}
+
+/// Explicit single-endpoint radio composition.
+///
+/// Resource ownership remains split: the RX runner belongs to one permanent
+/// endpoint while the TX consumer belongs to the physical fabric. This
+/// convenience owner is useful for single-VIF schedulers and can be replaced
+/// by a multi-endpoint scheduler without recreating either resource.
+pub struct PinnedNetworkRunner<
+    'resources,
+    M: RawMutex,
+    const FRAME_CAPACITY: usize,
+    const HEADROOM: usize,
+    const TRAILER: usize,
+    const RX_QUEUE_DEPTH: usize,
+    const TX_QUEUE_DEPTH: usize,
+> {
+    interface: NetworkInterfaceId,
+    rx: SplitPinnedRxRunner<'resources, M, FRAME_CAPACITY, RX_QUEUE_DEPTH>,
+    tx: PinnedTxConsumer<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+}
+
+/// One physical radio-side owner for two permanent logical network endpoints.
+///
+/// RX and link-state publication are addressed by logical interface. TX is
+/// never duplicated or filtered: both network devices publish tagged leases
+/// into the single consumer retained by this value, and the Wi-Fi scheduler
+/// must dispatch every tag to its matching role encoder.
+pub struct DualPinnedNetworkRunner<
+    'resources,
+    M: RawMutex,
+    const FRAME_CAPACITY: usize,
+    const HEADROOM: usize,
+    const TRAILER: usize,
+    const RX_QUEUE_DEPTH: usize,
+    const TX_QUEUE_DEPTH: usize,
+> {
+    first_interface: NetworkInterfaceId,
+    first_rx: SplitPinnedRxRunner<'resources, M, FRAME_CAPACITY, RX_QUEUE_DEPTH>,
+    second_interface: NetworkInterfaceId,
+    second_rx: SplitPinnedRxRunner<'resources, M, FRAME_CAPACITY, RX_QUEUE_DEPTH>,
+    tx: PinnedTxConsumer<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+}
+
+impl<
+    'resources,
+    M: RawMutex,
+    const FRAME_CAPACITY: usize,
+    const HEADROOM: usize,
+    const TRAILER: usize,
+    const RX_QUEUE_DEPTH: usize,
+    const TX_QUEUE_DEPTH: usize,
+>
+    DualPinnedNetworkRunner<
+        'resources,
+        M,
+        FRAME_CAPACITY,
+        HEADROOM,
+        TRAILER,
+        RX_QUEUE_DEPTH,
+        TX_QUEUE_DEPTH,
+    >
+{
+    pub fn new(
+        first_interface: NetworkInterfaceId,
+        first_rx: SplitPinnedRxRunner<'resources, M, FRAME_CAPACITY, RX_QUEUE_DEPTH>,
+        second_interface: NetworkInterfaceId,
+        second_rx: SplitPinnedRxRunner<'resources, M, FRAME_CAPACITY, RX_QUEUE_DEPTH>,
+        tx: PinnedTxConsumer<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+    ) -> Self {
+        assert_ne!(
+            first_interface, second_interface,
+            "dual network endpoints require distinct interface identities"
+        );
+        Self {
+            first_interface,
+            first_rx,
+            second_interface,
+            second_rx,
+            tx,
+        }
+    }
+
+    pub const fn first_interface(&self) -> NetworkInterfaceId {
+        self.first_interface
+    }
+
+    pub const fn second_interface(&self) -> NetworkInterfaceId {
+        self.second_interface
+    }
+
+    fn rx_for(
+        &self,
+        interface: NetworkInterfaceId,
+    ) -> &SplitPinnedRxRunner<'resources, M, FRAME_CAPACITY, RX_QUEUE_DEPTH> {
+        if interface == self.first_interface {
+            &self.first_rx
+        } else if interface == self.second_interface {
+            &self.second_rx
+        } else {
+            panic!("network interface does not belong to this radio owner")
+        }
+    }
+
+    pub fn with_shared_rx_ordering<
+        const FIRST_SHARED_CAPACITY: usize,
+        const FIRST_SHARED_SLOTS: usize,
+        const SECOND_SHARED_CAPACITY: usize,
+        const SECOND_SHARED_SLOTS: usize,
+    >(
+        self,
+        first: &SharedPinnedRxConsumer<'resources, M, FIRST_SHARED_CAPACITY, FIRST_SHARED_SLOTS>,
+        second: &SharedPinnedRxConsumer<'resources, M, SECOND_SHARED_CAPACITY, SECOND_SHARED_SLOTS>,
+    ) -> Self {
+        Self {
+            first_rx: self.first_rx.with_shared_rx_ordering(first),
+            second_rx: self.second_rx.with_shared_rx_ordering(second),
+            ..self
+        }
+    }
+
+    pub fn rx_publisher(
+        &self,
+        interface: NetworkInterfaceId,
+    ) -> PinnedRxPublisher<'resources, M, FRAME_CAPACITY, RX_QUEUE_DEPTH> {
+        self.rx_for(interface).rx_publisher()
+    }
+
+    pub fn set_link_state(&self, interface: NetworkInterfaceId, state: LinkState) {
+        self.rx_for(interface).set_link_state(state);
+    }
+
+    pub fn try_receive_tx(
+        &self,
+    ) -> Option<PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>>
+    {
+        self.tx.try_receive()
+    }
+
+    pub async fn receive_tx(
+        &self,
+    ) -> PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH> {
+        self.tx.receive().await
+    }
+
+    pub const fn tx_consumer(
         &self,
     ) -> PinnedTxConsumer<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH> {
-        PinnedTxConsumer {
-            free_tx: self.free_tx,
-            ready_tx: self.ready_tx,
-            ready_tx_return: self.ready_tx_return,
-            tx_pool: self.tx_pool,
+        self.tx
+    }
+
+    pub async fn wait_tx_publication(&self) {
+        self.tx.wait_publication().await;
+    }
+
+    pub async fn wait_tx_ready(&self) {
+        self.tx.wait_ready().await;
+    }
+
+    pub fn tx_queue_len(&self) -> usize {
+        self.tx.queue_len()
+    }
+}
+
+impl<
+    'resources,
+    M: RawMutex,
+    const FRAME_CAPACITY: usize,
+    const HEADROOM: usize,
+    const TRAILER: usize,
+    const RX_QUEUE_DEPTH: usize,
+    const TX_QUEUE_DEPTH: usize,
+>
+    PinnedNetworkRunner<
+        'resources,
+        M,
+        FRAME_CAPACITY,
+        HEADROOM,
+        TRAILER,
+        RX_QUEUE_DEPTH,
+        TX_QUEUE_DEPTH,
+    >
+{
+    pub const fn new(
+        interface: NetworkInterfaceId,
+        rx: SplitPinnedRxRunner<'resources, M, FRAME_CAPACITY, RX_QUEUE_DEPTH>,
+        tx: PinnedTxConsumer<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+    ) -> Self {
+        Self { interface, rx, tx }
+    }
+
+    pub const fn interface(&self) -> NetworkInterfaceId {
+        self.interface
+    }
+
+    pub fn into_parts(
+        self,
+    ) -> (
+        SplitPinnedRxRunner<'resources, M, FRAME_CAPACITY, RX_QUEUE_DEPTH>,
+        PinnedTxConsumer<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+    ) {
+        (self.rx, self.tx)
+    }
+
+    pub fn with_shared_rx_ordering<const SHARED_CAPACITY: usize, const SHARED_SLOTS: usize>(
+        self,
+        shared: &SharedPinnedRxConsumer<'resources, M, SHARED_CAPACITY, SHARED_SLOTS>,
+    ) -> Self {
+        Self {
+            interface: self.interface,
+            rx: self.rx.with_shared_rx_ordering(shared),
+            tx: self.tx,
         }
+    }
+
+    pub fn rx_publisher(&self) -> PinnedRxPublisher<'resources, M, FRAME_CAPACITY, RX_QUEUE_DEPTH> {
+        self.rx.rx_publisher()
+    }
+
+    pub fn set_link_state(&self, state: LinkState) {
+        self.rx.set_link_state(state);
+    }
+
+    pub fn try_send_rx(&self, frame: &[u8]) -> Result<(), RxEnqueueError> {
+        self.rx.try_send_rx(frame)
+    }
+
+    pub async fn send_rx(&self, frame: &[u8]) -> Result<(), FrameLengthError> {
+        self.rx.send_rx(frame).await
     }
 
     pub fn try_receive_tx(
@@ -1199,99 +1714,27 @@ impl<
         self.tx_consumer().receive().await
     }
 
-    /// Wait for a network TX publication without claiming its pinned lease.
-    /// This edge is cancellation-safe and lets a scheduler coalesce up to its
-    /// negotiated aggregate target while RX/control remain selectable.
-    pub async fn wait_tx_publication(&self) {
-        self.tx_published.wait().await;
+    pub const fn tx_consumer(
+        &self,
+    ) -> PinnedTxInterfaceConsumer<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>
+    {
+        self.tx.for_interface(self.interface)
     }
 
-    /// Wait until at least one ready TX lease exists without consuming it.
+    pub async fn wait_tx_publication(&self) {
+        self.tx.wait_publication().await;
+    }
+
     pub async fn wait_tx_ready(&self) {
-        self.ready_tx.ready_to_receive().await;
+        self.tx_consumer().wait_ready().await;
     }
 
     pub fn rx_queue_len(&self) -> usize {
-        self.ready_rx.len()
+        self.rx.rx_queue_len()
     }
 
     pub fn tx_queue_len(&self) -> usize {
-        self.ready_tx.len()
-    }
-}
-
-/// Narrow radio-side capability for claiming ready network TX leases.
-///
-/// This value is cheap to copy from a [`SplitPinnedRadioRunner`] and is
-/// independent of RX storage geometry. Aggregate construction may retain a
-/// reference to it while claiming additional frames without gaining access to
-/// link state or receive publication.
-pub struct PinnedTxConsumer<
-    'resources,
-    M: RawMutex,
-    const FRAME_CAPACITY: usize,
-    const HEADROOM: usize,
-    const TRAILER: usize,
-    const QUEUE_DEPTH: usize,
-> {
-    free_tx: Sender<'resources, M, u8, QUEUE_DEPTH>,
-    ready_tx: Receiver<'resources, M, u8, QUEUE_DEPTH>,
-    ready_tx_return: Sender<'resources, M, u8, QUEUE_DEPTH>,
-    tx_pool: &'resources PinnedTxPool<FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-}
-
-impl<
-    'resources,
-    M: RawMutex,
-    const FRAME_CAPACITY: usize,
-    const HEADROOM: usize,
-    const TRAILER: usize,
-    const QUEUE_DEPTH: usize,
-> PinnedTxConsumer<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>
-{
-    pub fn try_receive(
-        &self,
-    ) -> Option<PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>> {
-        match self.ready_tx.try_receive() {
-            Ok(index) => Some(ReturningStableDmaBacking::new(
-                self.tx_pool.claim_radio(index),
-                PinnedTxReturn {
-                    free_tx: self.free_tx,
-                },
-            )),
-            Err(TryReceiveError::Empty) => None,
-        }
-    }
-
-    pub async fn receive(
-        &self,
-    ) -> PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH> {
-        let index = self.ready_tx.receive().await;
-        ReturningStableDmaBacking::new(
-            self.tx_pool.claim_radio(index),
-            PinnedTxReturn {
-                free_tx: self.free_tx,
-            },
-        )
-    }
-
-    pub fn queue_len(&self) -> usize {
-        self.ready_tx.len()
-    }
-
-    /// Return a claimed but unmodified frame to the front-end ready queue.
-    ///
-    /// Aggregate builders use this when the next Ethernet frame belongs to a
-    /// different peer. The claim removed one queue entry, so publishing the
-    /// exact released index cannot exceed the bounded queue capacity.
-    pub fn requeue(
-        &self,
-        frame: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-    ) {
-        let index = frame.take_requeued_index();
-        if let Err(TrySendError::Full(_)) = self.ready_tx_return.try_send(index) {
-            unreachable!("a claimed pinned TX index leaves capacity for requeue");
-        }
+        self.tx_consumer().queue_len()
     }
 }
 
@@ -1314,7 +1757,7 @@ impl<M: RawMutex, const QUEUE_DEPTH: usize> DmaIndexReturn for PinnedTxReturn<'_
 /// Dropping the lease first releases DMA ownership and then returns the index
 /// to `embassy-net`. Chip-specific MAC code retains this value through final
 /// completion, BlockAck processing and any retry.
-pub type PinnedTxFrame<
+type PinnedTxBacking<
     'resources,
     M,
     const FRAME_CAPACITY: usize,
@@ -1324,4 +1767,19 @@ pub type PinnedTxFrame<
 > = ReturningStableDmaBacking<
     PinnedDmaTxRadioLease<'resources, FRAME_CAPACITY, HEADROOM, TRAILER>,
     PinnedTxReturn<'resources, M, QUEUE_DEPTH>,
+>;
+
+/// One network-published DMA frame plus the logical endpoint that published
+/// it. The tag remains outside the DMA allocation and must be consumed before
+/// role-specific encoding begins.
+pub type PinnedTxFrame<
+    'resources,
+    M,
+    const FRAME_CAPACITY: usize,
+    const HEADROOM: usize,
+    const TRAILER: usize,
+    const QUEUE_DEPTH: usize,
+> = TaggedStableDmaBacking<
+    NetworkInterfaceId,
+    PinnedTxBacking<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
 >;

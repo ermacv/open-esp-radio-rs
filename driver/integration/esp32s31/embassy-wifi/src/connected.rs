@@ -52,6 +52,7 @@ use open_esp_radio_esp32s31_wifi_embassy::{
         Esp32s31ConnectedStaBlockAckPolicy, Esp32s31ConnectedStaCompositionFailure,
         Esp32s31ConnectedStaConfig, Esp32s31ConnectedStaConfigError,
         Esp32s31ConnectedStaControlResources, Esp32s31ConnectedStaNetworkTxDomain,
+        Esp32s31ConnectedStaPort,
         Esp32s31ConnectedStaRateConfig, Esp32s31ConnectedStaRxPolicy,
         Esp32s31ConnectedStaRxProtocolResources, Esp32s31ConnectedStaTxHandoffFailure,
         Esp32s31ConnectedStaTxPolicy, Esp32s31ConnectedStaTxResources,
@@ -81,18 +82,19 @@ use open_esp_radio_esp32s31_wifi_embassy::{
     sta_tx_epoch::Esp32s31StaTxEpochExt,
     station::{
         ConnectedControlShutdown as Esp32s31ConnectedControlShutdown, ConnectedWpa2Security,
-        Esp32s31ConnectedDriverAssembly, Esp32s31ConnectedDriverAssemblyResources,
+        Esp32s31ConnectedDriverAssemblyFailure,
         Esp32s31ConnectedDriverServices, Esp32s31ConnectedDriverTeardownFailure,
         Esp32s31ConnectedEpochResources, Esp32s31ConnectedEpochStartFailure,
         Esp32s31ConnectedEpochStarted, Esp32s31ConnectedNetworkStarted,
         Esp32s31ConnectedNetworkStartedParts, Esp32s31ConnectedServiceResources,
         Esp32s31ConnectedStationExit, Esp32s31InitialConnectedEpochResources,
         Esp32s31StationCommand, Esp32s31StationCommandReceiver, NoopEsp32s31ConnectedRunObserver,
-        activate_esp32s31_connected_epoch, assemble_esp32s31_connected_driver,
-        prepare_esp32s31_connected_service, run_and_quiesce_esp32s31_connected_epoch,
+        activate_esp32s31_connected_epoch, prepare_esp32s31_connected_service,
+        run_and_quiesce_esp32s31_connected_epoch,
         start_esp32s31_initial_connected_epoch, start_esp32s31_reconnected_connected_epoch,
     },
     station_epoch::{Esp32s31DisconnectedStaEpoch, Esp32s31ReconnectedStaEpoch},
+    wdev::WdevRunner,
 };
 use open_esp_radio_esp32s31_wifi_esp_hal::EspHalRadioPeripheral;
 use open_esp_radio_esp32s31_wifi_esp_hal::mac_interrupt_epoch::{
@@ -113,7 +115,7 @@ use crate::runtime::{
     RX_DESCRIPTOR_COUNT, RxStorage, TxStorage, production_station_runtime,
 };
 use crate::radio_resources::{
-    Esp32s31WifiDevice, NETWORK_TX_HEADROOM, NetworkRunner, RadioAmpduStorage, RadioTxBacking,
+    NETWORK_TX_HEADROOM, NetworkRunner, RadioAmpduStorage, RadioTxBacking,
     RunningWifiNetwork, TX_AMPDU_BUFFER_SIZE, WifiNetworkResources,
 };
 pub(super) type ControlResources =
@@ -437,12 +439,21 @@ static STAGED_RX_QUEUE: Esp32s31StagedRxQueue<
     RX_STAGE_CAPACITY,
     RX_STAGE_SLOT_COUNT,
 > = Esp32s31StagedRxQueue::new();
-static SHARED_NETWORK_RX_QUEUE: SharedPinnedRxQueue<CriticalSectionRawMutex, RX_STAGE_SLOT_COUNT> =
+static STATION_SHARED_NETWORK_RX_QUEUE: SharedPinnedRxQueue<
+    CriticalSectionRawMutex,
+    RX_STAGE_SLOT_COUNT,
+> = SharedPinnedRxQueue::new();
+static ACCESS_POINT_SHARED_NETWORK_RX_QUEUE: SharedPinnedRxQueue<
+    CriticalSectionRawMutex,
+    RX_STAGE_SLOT_COUNT,
+> =
     SharedPinnedRxQueue::new();
 
 #[inline(always)]
-pub(super) fn publish_shared_network_rx(index: u8) {
-    SHARED_NETWORK_RX_QUEUE.publisher().publish(index);
+pub(super) fn publish_access_point_shared_network_rx(index: u8) {
+    ACCESS_POINT_SHARED_NETWORK_RX_QUEUE
+        .publisher()
+        .publish(index);
 }
 
 #[inline(never)]
@@ -806,7 +817,7 @@ pub struct ConnectedStationReturn<'state, 'security> {
 }
 
 pub(super) struct ConnectedDriverAssemblyFault {
-    _role: open_esp_radio_esp32s31_wifi_embassy::station::Esp32s31StationRoleOwner<
+    _role: open_esp_radio::esp32s31::wifi::device::runtime::Esp32s31WifiRoleOwner<
         EspHalRadioPeripheral,
     >,
     _interrupt: MacInterruptEpoch,
@@ -1331,11 +1342,13 @@ pub async fn run_connected<'state, 'security>(
             .rx_pipeline,
     );
 
-    let network_rx = network_runner.rx_publisher();
+    let network_rx = network_runner.rx_publisher(
+        open_esp_radio_esp32s31_wifi_embassy::sta_ap::STA_NETWORK_INTERFACE_ID,
+    );
     let (control_publisher, control_receiver) = control_resources.split();
     let rx_sink = EmbassyNetConnectedRxSink::new_with_shared_rx(
         network_rx,
-        SHARED_NETWORK_RX_QUEUE.publisher(),
+        STATION_SHARED_NETWORK_RX_QUEUE.publisher(),
         control_publisher,
     );
     #[cfg(feature = "qualification")]
@@ -1355,14 +1368,12 @@ pub async fn run_connected<'state, 'security>(
     };
     let (reorder_sender, reorder_receiver) = RX_REORDER_COMMANDS.split();
     let tx_sequences = sequences;
-    let assembled =
-        match assemble_esp32s31_connected_driver(Esp32s31ConnectedDriverAssemblyResources {
+    let drivers =
+        match Esp32s31ConnectedStaPort::compose(
             plan,
-            irq: &IRQ_RUNTIME,
-            network: network_runner,
             hardware,
             rx,
-            protocol: Esp32s31ConnectedStaRxProtocolResources {
+            Esp32s31ConnectedStaRxProtocolResources {
                 frames: staged_receiver,
                 irq: &IRQ_RUNTIME,
                 sink: rx_sink,
@@ -1383,7 +1394,7 @@ pub async fn run_connected<'state, 'security>(
                     }
                 },
             },
-            tx: Esp32s31ConnectedStaTxResources {
+            Esp32s31ConnectedStaTxResources {
                 control: control_tx,
                 aggregate,
                 pairwise_key: pairwise,
@@ -1400,18 +1411,22 @@ pub async fn run_connected<'state, 'security>(
                 },
                 network_domain: Esp32s31ConnectedStaNetworkTxDomain::new(),
             },
-            control: Esp32s31ConnectedStaControlResources {
+            Esp32s31ConnectedStaControlResources {
                 receiver: control_receiver,
                 reorder_commands: reorder_sender,
             },
-            map_services: core::convert::identity::<ConnectedDriverServices>
-                as ConnectedServicesMapper,
-        }) {
-            Ok(assembled) => assembled,
-            Err(failure) => {
+        ) {
+            Ok(drivers) => drivers,
+            Err(composition) => {
                 qualification_event!(
                     "open-radio: connected TX handoff found a live owner; quarantined"
                 );
+                let failure = Esp32s31ConnectedDriverAssemblyFailure {
+                    network: network_runner,
+                    composition,
+                    map_services: core::convert::identity::<ConnectedDriverServices>
+                        as ConnectedServicesMapper,
+                };
                 return ConnectedStationRunExit::Faulted(ConnectedStationFault::DriverAssembly {
                     _fault: ConnectedDriverAssemblyFault {
                         _role: role,
@@ -1433,11 +1448,14 @@ pub async fn run_connected<'state, 'security>(
                 });
             }
         };
-    let Esp32s31ConnectedDriverAssembly {
-        runner: mut radio_runner,
-        protocol: rx_protocol,
-        report,
-    } = assembled;
+    let report = drivers.report;
+    let rx_protocol = drivers.protocol;
+    let mut radio_runner = WdevRunner::new(
+        &IRQ_RUNTIME,
+        network_runner,
+        open_esp_radio_esp32s31_wifi_embassy::sta_ap::STA_NETWORK_INTERFACE_ID,
+        drivers.services,
+    );
     if radio_runner
         .services_mut()
         .control_mut()
@@ -1742,12 +1760,23 @@ pub async fn run_connected<'state, 'security>(
 /// endpoint before the station lifecycle starts.
 pub fn initialize_station_network(
     station_address: [u8; 6],
-) -> (Esp32s31WifiDevice, WifiNetworkResources) {
-    let (_shared_publisher, shared_consumer) = SHARED_NETWORK_RX_QUEUE.split(
+    access_point_address: [u8; 6],
+) -> (crate::radio_resources::Esp32s31WifiDevices, WifiNetworkResources) {
+    let (_station_publisher, station_consumer) = STATION_SHARED_NETWORK_RX_QUEUE.split(
         RX_STAGE_POOL.handoff_pool(),
         notify_shared_network_rx_release,
     );
-    crate::radio_resources::initialize_network(station_address, shared_consumer)
+    let (_access_point_publisher, access_point_consumer) =
+        ACCESS_POINT_SHARED_NETWORK_RX_QUEUE.split(
+            RX_STAGE_POOL.handoff_pool(),
+            notify_shared_network_rx_release,
+        );
+    crate::radio_resources::initialize_network(
+        station_address,
+        access_point_address,
+        station_consumer,
+        access_point_consumer,
+    )
 }
 
 /// Construct the reusable interrupt epoch retained by the station backend.

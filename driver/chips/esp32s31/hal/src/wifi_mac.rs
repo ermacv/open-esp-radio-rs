@@ -326,6 +326,14 @@ impl<'registers> WifiMacHal<'registers> {
         self.configure_role_receive_policy(MacRoleReceivePolicy::AccessPoint { address });
     }
 
+    pub fn disable_access_point_receive_policy(&mut self) {
+        self.configure_role_receive_policy(MacRoleReceivePolicy::AccessPointDisabled);
+    }
+
+    pub fn disable_station_receive_policy(&mut self) {
+        self.configure_role_receive_policy(MacRoleReceivePolicy::StationDisabled);
+    }
+
     /// Program both reviewed receive contexts as one register composition.
     ///
     /// This does not claim simultaneous runtime ownership or select a channel.

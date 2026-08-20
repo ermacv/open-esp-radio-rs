@@ -21,7 +21,9 @@ pub use open_esp_radio_esp32s31_wifi::mac_start::{
     Esp32s31WifiMacStartFailure, Esp32s31WifiMacStartReport,
 };
 pub use open_esp_radio_esp32s31_wifi::runtime::{
+    Esp32s31WifiRoleMaterialized, Esp32s31WifiRoleOwner, Esp32s31WifiRoleStopped,
     Esp32s31WifiRuntimeTransitionReport, Esp32s31WifiStopped, enter_esp32s31_wifi_runtime,
+    materialize_esp32s31_wifi_role,
 };
 
 /// Inputs for the one common PHY/MAC transition.

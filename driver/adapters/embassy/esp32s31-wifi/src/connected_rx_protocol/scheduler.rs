@@ -31,18 +31,19 @@ where
     pub async fn dispatch_next(&mut self) -> ConnectedRxDispatch {
         loop {
             if let Some(command) = self
+                .processor
                 .reorder_commands
                 .as_ref()
                 .and_then(try_receive_rx_reorder_command)
             {
-                if let Some(result) = self.apply_reorder_command(command).await {
+                if let Some(result) = self.processor.apply_reorder_command(command).await {
                     return result;
                 }
                 continue;
             }
 
-            let next_gap = self.next_gap_deadline();
-            let frame = if let Some(commands) = &self.reorder_commands {
+            let next_gap = self.processor.next_gap_deadline();
+            let frame = if let Some(commands) = &self.processor.reorder_commands {
                 if let Some((tid, deadline)) = next_gap {
                     match select(
                         select(commands.receive(), self.frames.receive()),
@@ -51,14 +52,16 @@ where
                     .await
                     {
                         Either::First(Either::First(command)) => {
-                            if let Some(result) = self.apply_reorder_command(command).await {
+                            if let Some(result) =
+                                self.processor.apply_reorder_command(command).await
+                            {
                                 return result;
                             }
                             continue;
                         }
                         Either::First(Either::Second(frame)) => frame,
                         Either::Second(()) => {
-                            if let Some(result) = self.expire_reorder_gap(tid).await {
+                            if let Some(result) = self.processor.expire_reorder_gap(tid).await {
                                 return result;
                             }
                             continue;
@@ -67,7 +70,9 @@ where
                 } else {
                     match select(commands.receive(), self.frames.receive()).await {
                         Either::First(command) => {
-                            if let Some(result) = self.apply_reorder_command(command).await {
+                            if let Some(result) =
+                                self.processor.apply_reorder_command(command).await
+                            {
                                 return result;
                             }
                             continue;
@@ -79,7 +84,7 @@ where
                 match select(self.frames.receive(), Timer::at(deadline)).await {
                     Either::First(frame) => frame,
                     Either::Second(()) => {
-                        if let Some(result) = self.expire_reorder_gap(tid).await {
+                        if let Some(result) = self.processor.expire_reorder_gap(tid).await {
                             return result;
                         }
                         continue;
@@ -88,7 +93,7 @@ where
             } else {
                 self.frames.receive().await
             };
-            if let Some(result) = self.accept_frame(frame).await {
+            if let Some(result) = self.processor.dispatch_frame(frame).await {
                 return result;
             }
         }

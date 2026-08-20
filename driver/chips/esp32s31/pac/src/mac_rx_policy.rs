@@ -40,10 +40,42 @@ pub struct MacApReceivePolicySnapshot {
 /// service and lifecycle arbitration remain outside the PAC.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct MacStaApReceivePlan {
-    pub station_address: [u8; 6],
-    pub station_bssid: [u8; 6],
-    pub station_policy_mode: MacStaPolicyMode,
-    pub access_point_address: [u8; 6],
+    station_address: [u8; 6],
+    station_bssid: [u8; 6],
+    access_point_address: [u8; 6],
+}
+
+impl MacStaApReceivePlan {
+    /// Build the combined plan from the only station submode observed in a
+    /// vendor lifecycle image.
+    ///
+    /// Blobray finds two direct writers of the selector at `g_ic + 0x74` and
+    /// both publish zero. The distinct Mode2 register transaction remains
+    /// available through [`MacRoleReceivePolicy::Station`] for comparison,
+    /// but it is not accepted here as an AP+STA lifecycle meaning.
+    pub const fn observed_mode_one(
+        station_address: [u8; 6],
+        station_bssid: [u8; 6],
+        access_point_address: [u8; 6],
+    ) -> Self {
+        Self {
+            station_address,
+            station_bssid,
+            access_point_address,
+        }
+    }
+
+    pub const fn station_address(self) -> [u8; 6] {
+        self.station_address
+    }
+
+    pub const fn station_bssid(self) -> [u8; 6] {
+        self.station_bssid
+    }
+
+    pub const fn access_point_address(self) -> [u8; 6] {
+        self.access_point_address
+    }
 }
 
 /// The two complete queue-zero submodes selected inside
@@ -71,6 +103,12 @@ pub enum MacRoleReceivePolicy {
     AccessPoint {
         address: [u8; 6],
     },
+    /// Disable interface-zero receive admission without modifying the access
+    /// point context or either interface address.
+    StationDisabled,
+    /// Disable interface-one receive admission without modifying the station
+    /// context or either interface address.
+    AccessPointDisabled,
 }
 
 impl RadioRegisters {
@@ -359,11 +397,63 @@ impl RadioRegisters {
         interface.modify(|_, w| w.rx_policy_enable().set_bit());
     }
 
+    /// Disable only the first SoftAP receive context.
+    ///
+    /// SOURCE: complete `libnet80211.a::wifi_set_rx_policy`, case nine. It
+    /// calls only `ic_set_rx_policy(interface=1, mode=0, control=0,
+    /// management=0)`. The address and BSSID banks are deliberately retained
+    /// so a concurrent station context is not reconstructed or disturbed.
+    pub fn disable_ap_receive_policy(&mut self) {
+        let filter = self.peripherals.wifi_mac_rx_filter.policy(1);
+        let bssids = &self.peripherals.wifi_mac_bssid_policy;
+        let bssid = bssids.bssid_high(1);
+        let interface = self.peripherals.wifi_mac_interface_address.address_high(1);
+
+        filter.modify(|_, w| {
+            w.receive_management_not_check_bssid()
+                .clear_bit()
+                .pass_beacon()
+                .clear_bit()
+        });
+        bssid.modify(|_, w| w.interface_is_soft_ap().set_bit());
+        filter.modify(|_, w| w.dump_management_not_check_bssid().clear_bit());
+        bssid.modify(|_, w| w.address_check_enable().clear_bit());
+        interface.modify(|_, w| w.rx_policy_enable().clear_bit());
+    }
+
+    /// Disable only the infrastructure-station receive context.
+    ///
+    /// SOURCE: complete `libnet80211.a::wifi_set_rx_policy`, case two. It
+    /// calls `ic_set_rx_policy(interface=0, mode=0, control=0,
+    /// management=0)` followed by `ic_set_rx_policy_ubssid_check(0, false)`
+    /// and therefore preserves interface-one state.
+    pub fn disable_sta_receive_policy(&mut self) {
+        let filter = self.peripherals.wifi_mac_rx_filter.policy(0);
+        let bssids = &self.peripherals.wifi_mac_bssid_policy;
+        let bssid = bssids.bssid_high(0);
+        let interface = self.peripherals.wifi_mac_interface_address.address_high(0);
+
+        filter.modify(|_, w| {
+            w.receive_management_not_check_bssid()
+                .clear_bit()
+                .pass_beacon()
+                .clear_bit()
+        });
+        bssid.modify(|_, w| w.interface_is_soft_ap().clear_bit());
+        filter.modify(|_, w| w.dump_management_not_check_bssid().clear_bit());
+        bssid.modify(|_, w| w.address_check_enable().clear_bit());
+        interface.modify(|_, w| w.rx_policy_enable().clear_bit());
+        filter.modify(|_, w| w.receive_unicast_check_bssid().clear_bit());
+        filter.modify(|_, w| w.dump_unicast_check_bssid().clear_bit());
+    }
+
     /// Apply one finite role policy through the production PAC boundary.
     pub fn apply_role_receive_policy(&mut self, policy: MacRoleReceivePolicy) {
         match policy {
             MacRoleReceivePolicy::Station { bssid, mode } => self.apply_sta_policy_six(bssid, mode),
             MacRoleReceivePolicy::AccessPoint { address } => self.apply_ap_receive_policy(address),
+            MacRoleReceivePolicy::StationDisabled => self.disable_sta_receive_policy(),
+            MacRoleReceivePolicy::AccessPointDisabled => self.disable_ap_receive_policy(),
         }
     }
 
@@ -379,7 +469,7 @@ impl RadioRegisters {
         self.program_receive_interface_address(MacInterface::Station, plan.station_address);
         self.apply_role_receive_policy(MacRoleReceivePolicy::Station {
             bssid: plan.station_bssid,
-            mode: plan.station_policy_mode,
+            mode: MacStaPolicyMode::Mode1,
         });
         self.apply_role_receive_policy(MacRoleReceivePolicy::AccessPoint {
             address: plan.access_point_address,

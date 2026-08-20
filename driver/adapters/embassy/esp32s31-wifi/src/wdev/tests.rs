@@ -5,9 +5,12 @@ use core::{
 };
 
 use open_esp_radio_embassy_net::{
-    Driver as _, NoopRawMutex, PinnedTxPool, SplitPinnedDevice, SplitPinnedResources, TxToken as _,
+    Driver as _, DualPinnedNetworkRunner, NetworkInterfaceId, NoopRawMutex,
+    PinnedEndpointResources, PinnedNetworkRunner, PinnedTxPool, PinnedTxResources,
+    SplitPinnedDevice, TxToken as _,
 };
 use open_esp_radio_esp32s31_wifi_mac::irq::{MAC_INT_RX_SUCCESS, MAC_INT_TX_COMPLETE};
+use std::boxed::Box;
 
 use super::*;
 
@@ -16,8 +19,7 @@ const HEADROOM: usize = 32;
 const TRAILER: usize = 8;
 const QUEUE_DEPTH: usize = 1;
 
-type Resources =
-    SplitPinnedResources<NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH, QUEUE_DEPTH>;
+type Resources = PinnedEndpointResources<NoopRawMutex, FRAME_CAPACITY, QUEUE_DEPTH>;
 type Pool = PinnedTxPool<FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>;
 type Device = SplitPinnedDevice<
     'static,
@@ -29,6 +31,19 @@ type Device = SplitPinnedDevice<
     QUEUE_DEPTH,
 >;
 
+macro_rules! split_network {
+    ($resources:expr, $pool:expr) => {{
+        let tx_resources = std::boxed::Box::leak(std::boxed::Box::new(PinnedTxResources::new()));
+        let (provider, consumer) = tx_resources.split($pool);
+        let (device, rx) =
+            $resources.split(provider, NetworkInterfaceId::new(0), [2, 3, 4, 5, 6, 7]);
+        (
+            device,
+            PinnedNetworkRunner::new(NetworkInterfaceId::new(0), rx, consumer),
+        )
+    }};
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum TestError {
     Finished,
@@ -37,6 +52,256 @@ enum TestError {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum TestExit {
     PeerLost,
+}
+
+#[derive(Default)]
+struct EndpointRx {
+    frames: std::vec::Vec<std::vec::Vec<u8>>,
+}
+
+impl WdevNetworkRx for EndpointRx {
+    fn queue_len(&self) -> usize {
+        self.frames.len()
+    }
+
+    fn try_send(&mut self, frame: &[u8]) -> Result<(), RxEnqueueError> {
+        self.frames.push(frame.to_vec());
+        Ok(())
+    }
+
+    fn try_send_parts(&mut self, frame: EthernetFrameParts<'_>) -> Result<(), RxEnqueueError> {
+        let mut storage = std::vec![0; frame.length()];
+        frame
+            .copy_to(&mut storage)
+            .expect("test endpoint frame fits");
+        self.frames.push(storage);
+        Ok(())
+    }
+
+    fn poll_ready(&mut self, _context: &mut Context<'_>) -> Poll<()> {
+        Poll::Ready(())
+    }
+
+    #[cfg(feature = "rx-delivery-observation")]
+    fn try_send_observed(
+        &mut self,
+        frame: &[u8],
+        before_publish: &mut dyn FnMut(),
+    ) -> Result<(), RxEnqueueError> {
+        before_publish();
+        self.try_send(frame)
+    }
+
+    #[cfg(feature = "rx-delivery-observation")]
+    fn try_send_parts_observed(
+        &mut self,
+        frame: EthernetFrameParts<'_>,
+        before_publish: &mut dyn FnMut(),
+    ) -> Result<(), RxEnqueueError> {
+        before_publish();
+        self.try_send_parts(frame)
+    }
+}
+
+#[test]
+fn addressed_rx_endpoints_never_guess_an_unknown_vif() {
+    let station = NetworkInterfaceId::new(0);
+    let access_point = NetworkInterfaceId::new(1);
+    let mut endpoints = WdevNetworkRxEndpoints::new(
+        station,
+        EndpointRx::default(),
+        access_point,
+        EndpointRx::default(),
+    );
+
+    endpoints
+        .get_mut(access_point)
+        .expect("AP endpoint exists")
+        .try_send(&[1, 2, 3])
+        .expect("test endpoint accepts frame");
+    assert!(endpoints.get_mut(NetworkInterfaceId::new(2)).is_none());
+
+    let (station_rx, access_point_rx) = endpoints.into_parts();
+    assert!(station_rx.frames.is_empty());
+    assert_eq!(access_point_rx.frames, [std::vec![1, 2, 3]]);
+}
+
+#[test]
+fn runner_returns_both_addressed_rx_owners_after_combined_service() {
+    let resources = Box::leak(Box::new(Resources::new()));
+    let pool = Pool::pin_static(Box::leak(Box::new(Pool::new())));
+    let (_device, network) = split_network!(resources, pool);
+    let irq = Box::leak(Box::new(EmbassyMacIrqRuntime::new()));
+    irq.publish(MAC_INT_RX_SUCCESS);
+    let endpoints = WdevNetworkRxEndpoints::new(
+        crate::sta_ap::STA_NETWORK_INTERFACE_ID,
+        EndpointRx::default(),
+        crate::sta_ap::AP_NETWORK_INTERFACE_ID,
+        EndpointRx::default(),
+    );
+    let mut runner = WdevRunner::new_with_rx_set(
+        irq,
+        network,
+        crate::sta_ap::STA_NETWORK_INTERFACE_ID,
+        endpoints,
+        AddressedRxBackend,
+    );
+
+    assert_eq!(
+        embassy_futures::block_on(runner.run()),
+        Err(TestError::Finished)
+    );
+    let (_network, endpoints, _services) = runner.into_complete_parts();
+    let (station_rx, access_point_rx) = endpoints.into_parts();
+    assert!(station_rx.frames.is_empty());
+    assert_eq!(access_point_rx.frames, [std::vec![0x41, 0x50]]);
+}
+
+#[test]
+fn paired_runner_preserves_physical_tx_order_and_narrows_each_vif() {
+    type PairEndpoint = PinnedEndpointResources<NoopRawMutex, FRAME_CAPACITY, 1>;
+    type PairTxResources = PinnedTxResources<NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, 2>;
+    type PairPool = PinnedTxPool<FRAME_CAPACITY, HEADROOM, TRAILER, 2>;
+
+    let station_resources = Box::leak(Box::new(PairEndpoint::new()));
+    let access_point_resources = Box::leak(Box::new(PairEndpoint::new()));
+    let tx_resources = Box::leak(Box::new(PairTxResources::new()));
+    let tx_pool = PairPool::pin_static(Box::leak(Box::new(PairPool::new())));
+    let (provider, consumer) = tx_resources.split(tx_pool);
+    let (mut station_device, station_rx) = station_resources.split(
+        provider,
+        crate::sta_ap::STA_NETWORK_INTERFACE_ID,
+        [2, 0, 0, 0, 0, 1],
+    );
+    let (mut access_point_device, access_point_rx) = access_point_resources.split(
+        provider,
+        crate::sta_ap::AP_NETWORK_INTERFACE_ID,
+        [2, 0, 0, 0, 0, 2],
+    );
+    let network = DualPinnedNetworkRunner::new(
+        crate::sta_ap::STA_NETWORK_INTERFACE_ID,
+        station_rx,
+        crate::sta_ap::AP_NETWORK_INTERFACE_ID,
+        access_point_rx,
+        consumer,
+    );
+    let mut context = Context::from_waker(core::task::Waker::noop());
+    access_point_device
+        .transmit(&mut context)
+        .expect("AP owns one TX credit")
+        .consume(14, |frame| frame.fill(0xa0));
+    station_device
+        .transmit(&mut context)
+        .expect("STA owns the second TX credit")
+        .consume(14, |frame| frame.fill(0x50));
+
+    let irq = Box::leak(Box::new(EmbassyMacIrqRuntime::new()));
+    let order: &'static std::sync::Mutex<std::vec::Vec<NetworkInterfaceId>> =
+        Box::leak(Box::new(std::sync::Mutex::new(std::vec::Vec::new())));
+    let services = crate::wdev::paired::WdevPairedServiceSet::new(
+        crate::sta_ap::STA_NETWORK_INTERFACE_ID,
+        crate::sta_ap::AP_NETWORK_INTERFACE_ID,
+        (),
+        PairedPhysicalTx::new(PairedOrdinaryTx::default(), PairedAggregateTx),
+        PairedRx { starts_tx: false },
+        PairedRoleTx {
+            interface: crate::sta_ap::STA_NETWORK_INTERFACE_ID,
+            started: 0,
+            order,
+            active: None,
+        },
+        PairedRoleTx {
+            interface: crate::sta_ap::AP_NETWORK_INTERFACE_ID,
+            started: 0,
+            order,
+            active: None,
+        },
+        PairedControl,
+    );
+    let mut runner = crate::sta_ap::compose_sta_ap_wdev_runner(irq, network, services);
+
+    assert_eq!(
+        embassy_futures::block_on(runner.run()),
+        Ok(WdevRunnerExit::Role(TestExit::PeerLost))
+    );
+    let (_network, _endpoints, services) = runner.into_complete_parts();
+    let (_hardware, physical_tx, _rx, station_tx, access_point_tx, _control) =
+        services.into_parts();
+    assert_eq!(station_tx.started, 1);
+    assert_eq!(access_point_tx.started, 1);
+    let (ordinary, _aggregate) = physical_tx
+        .into_resources()
+        .expect("both roles returned the physical pair");
+    assert_eq!(ordinary.lends, *order.lock().unwrap());
+    assert_eq!(
+        *order.lock().unwrap(),
+        std::vec![
+            crate::sta_ap::AP_NETWORK_INTERFACE_ID,
+            crate::sta_ap::STA_NETWORK_INTERFACE_ID,
+        ]
+    );
+}
+
+#[test]
+fn paired_rx_generated_tx_is_driven_for_the_reported_ap_role() {
+    type PairEndpoint = PinnedEndpointResources<NoopRawMutex, FRAME_CAPACITY, 1>;
+    type PairTxResources = PinnedTxResources<NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, 2>;
+    type PairPool = PinnedTxPool<FRAME_CAPACITY, HEADROOM, TRAILER, 2>;
+
+    let station_resources = Box::leak(Box::new(PairEndpoint::new()));
+    let access_point_resources = Box::leak(Box::new(PairEndpoint::new()));
+    let tx_resources = Box::leak(Box::new(PairTxResources::new()));
+    let tx_pool = PairPool::pin_static(Box::leak(Box::new(PairPool::new())));
+    let (provider, consumer) = tx_resources.split(tx_pool);
+    let (_station_device, station_rx) = station_resources.split(
+        provider,
+        crate::sta_ap::STA_NETWORK_INTERFACE_ID,
+        [2, 0, 0, 0, 0, 1],
+    );
+    let (_access_point_device, access_point_rx) = access_point_resources.split(
+        provider,
+        crate::sta_ap::AP_NETWORK_INTERFACE_ID,
+        [2, 0, 0, 0, 0, 2],
+    );
+    let network = DualPinnedNetworkRunner::new(
+        crate::sta_ap::STA_NETWORK_INTERFACE_ID,
+        station_rx,
+        crate::sta_ap::AP_NETWORK_INTERFACE_ID,
+        access_point_rx,
+        consumer,
+    );
+    let irq = Box::leak(Box::new(EmbassyMacIrqRuntime::new()));
+    irq.publish(MAC_INT_RX_SUCCESS);
+    let order = Box::leak(Box::new(std::sync::Mutex::new(std::vec::Vec::new())));
+    let services = crate::wdev::paired::WdevPairedServiceSet::new(
+        crate::sta_ap::STA_NETWORK_INTERFACE_ID,
+        crate::sta_ap::AP_NETWORK_INTERFACE_ID,
+        (),
+        PairedPhysicalTx::new(PairedOrdinaryTx::default(), PairedAggregateTx),
+        PairedRx { starts_tx: true },
+        PairedRoleTx {
+            interface: crate::sta_ap::STA_NETWORK_INTERFACE_ID,
+            started: 0,
+            order,
+            active: None,
+        },
+        PairedRoleTx {
+            interface: crate::sta_ap::AP_NETWORK_INTERFACE_ID,
+            started: 0,
+            order,
+            active: None,
+        },
+        PairedControl,
+    );
+    let mut runner = crate::sta_ap::compose_sta_ap_wdev_runner(irq, network, services);
+
+    embassy_futures::block_on(runner.service_rx()).unwrap();
+
+    assert_eq!(runner.active_tx_interface, None);
+    let (_network, _endpoints, services) = runner.into_complete_parts();
+    let (_hardware, physical, _rx, _station, access_point, _control) = services.into_parts();
+    assert!(access_point.active.is_none());
+    assert!(physical.into_resources().is_ok());
 }
 
 struct Backend {
@@ -72,7 +337,7 @@ impl WdevServices<'static, NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, QUEU
 
     fn service_rx<'a>(
         &'a mut self,
-        _network_rx: &'a mut dyn WdevNetworkRx,
+        _network_rx: &'a mut dyn WdevNetworkRxSet,
         _context: WdevRxServiceContext,
     ) -> impl Future<Output = Result<WdevRxProgress, Self::Error>> + 'a {
         async move {
@@ -128,7 +393,7 @@ impl WdevServices<'static, NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, QUEU
             TRAILER,
             QUEUE_DEPTH,
         >,
-        _network: &'a PinnedTxConsumer<
+        _network: &'a PinnedTxInterfaceConsumer<
             'static,
             NoopRawMutex,
             FRAME_CAPACITY,
@@ -189,6 +454,261 @@ struct NetworkBackpressureBackend {
     service_calls: u8,
 }
 
+struct AddressedRxBackend;
+
+struct PairedRx {
+    starts_tx: bool,
+}
+
+#[derive(Debug, Default)]
+struct PairedOrdinaryTx {
+    lends: std::vec::Vec<NetworkInterfaceId>,
+}
+
+#[derive(Debug)]
+struct PairedAggregateTx;
+
+type PairedPhysicalTx =
+    crate::wdev::paired::WdevPairedPhysicalTx<PairedOrdinaryTx, PairedAggregateTx>;
+
+impl<H> crate::wdev::paired::WdevPairedRxService<H, PairedPhysicalTx, PairedRoleTx, PairedRoleTx>
+    for PairedRx
+{
+    type Error = TestError;
+
+    fn service<'a>(
+        &'a mut self,
+        _hardware: &'a mut H,
+        physical_tx: &'a mut PairedPhysicalTx,
+        _first_role: &'a mut PairedRoleTx,
+        second_role: &'a mut PairedRoleTx,
+        _first: &'a mut dyn WdevNetworkRx,
+        _second: &'a mut dyn WdevNetworkRx,
+        _context: WdevRxServiceContext,
+    ) -> impl Future<Output = Result<crate::wdev::paired::WdevPairedRxProgress, Self::Error>> + 'a
+    {
+        async move {
+            if !self.starts_tx {
+                return pending().await;
+            }
+            second_role.active = Some(
+                physical_tx
+                    .try_lend(crate::wdev::paired::WdevPairRole::Second)
+                    .unwrap(),
+            );
+            Ok(crate::wdev::paired::WdevPairedRxProgress::TxPending(
+                crate::wdev::paired::WdevPairRole::Second,
+            ))
+        }
+    }
+
+    fn service_during_tx<'a>(
+        &'a mut self,
+        _hardware: &'a mut H,
+        _physical_tx: &'a mut PairedPhysicalTx,
+        _first_role: &'a mut PairedRoleTx,
+        _second_role: &'a mut PairedRoleTx,
+        _first: &'a mut dyn WdevNetworkRx,
+        _second: &'a mut dyn WdevNetworkRx,
+    ) -> impl Future<Output = Result<WdevRxProgress, Self::Error>> + 'a {
+        async move {
+            if self.starts_tx {
+                Ok(WdevRxProgress::Drained)
+            } else {
+                pending().await
+            }
+        }
+    }
+}
+
+struct PairedRoleTx {
+    interface: NetworkInterfaceId,
+    started: usize,
+    order: &'static std::sync::Mutex<std::vec::Vec<NetworkInterfaceId>>,
+    active: Option<(PairedOrdinaryTx, PairedAggregateTx)>,
+}
+
+impl
+    crate::wdev::paired::WdevPairedNetworkTxService<
+        'static,
+        NoopRawMutex,
+        (),
+        PairedPhysicalTx,
+        FRAME_CAPACITY,
+        HEADROOM,
+        TRAILER,
+        2,
+    > for PairedRoleTx
+{
+    type Error = TestError;
+
+    fn start<'a>(
+        &'a mut self,
+        _hardware: &'a mut (),
+        physical_tx: &'a mut PairedPhysicalTx,
+        frame: PinnedTxFrame<'static, NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, 2>,
+        network: &'a PinnedTxInterfaceConsumer<
+            'static,
+            NoopRawMutex,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            2,
+        >,
+    ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a {
+        async move {
+            assert_eq!(*frame.tag(), self.interface);
+            assert_eq!(network.interface(), self.interface);
+            self.started += 1;
+            let role = if self.interface == crate::sta_ap::STA_NETWORK_INTERFACE_ID {
+                crate::wdev::paired::WdevPairRole::First
+            } else {
+                crate::wdev::paired::WdevPairRole::Second
+            };
+            let (mut ordinary, aggregate) = physical_tx.try_lend(role).unwrap();
+            ordinary.lends.push(self.interface);
+            physical_tx.restore(role, ordinary, aggregate).unwrap();
+            self.order.lock().unwrap().push(self.interface);
+            Ok(WifiTxProgress::Complete)
+        }
+    }
+
+    fn wait_deadline<'a>(
+        &'a mut self,
+        _physical_tx: &'a mut PairedPhysicalTx,
+    ) -> impl Future<Output = ()> + 'a {
+        async move {
+            if self.active.is_none() {
+                pending().await
+            }
+        }
+    }
+
+    fn service<'a>(
+        &'a mut self,
+        _hardware: &'a mut (),
+        physical_tx: &'a mut PairedPhysicalTx,
+        _wake: WifiTxWake,
+    ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a {
+        async move {
+            let Some((ordinary, aggregate)) = self.active.take() else {
+                return pending().await;
+            };
+            let role = if self.interface == crate::sta_ap::STA_NETWORK_INTERFACE_ID {
+                crate::wdev::paired::WdevPairRole::First
+            } else {
+                crate::wdev::paired::WdevPairRole::Second
+            };
+            physical_tx.restore(role, ordinary, aggregate).unwrap();
+            Ok(WifiTxProgress::Complete)
+        }
+    }
+}
+
+struct PairedControl;
+
+impl crate::wdev::paired::WdevPairedControlService<(), PairedPhysicalTx, PairedRoleTx, PairedRoleTx>
+    for PairedControl
+{
+    type Error = TestError;
+    type Exit = TestExit;
+
+    fn service<'a>(
+        &'a mut self,
+        _hardware: &'a mut (),
+        _physical_tx: &'a mut PairedPhysicalTx,
+        first_tx: &'a mut PairedRoleTx,
+        second_tx: &'a mut PairedRoleTx,
+        _context: WdevControlContext,
+    ) -> impl Future<
+        Output = Result<crate::wdev::paired::WdevPairedControlProgress<Self::Exit>, Self::Error>,
+    > + 'a {
+        async move {
+            if first_tx.started == 1 && second_tx.started == 1 {
+                Ok(crate::wdev::paired::WdevPairedControlProgress::Exit(
+                    TestExit::PeerLost,
+                ))
+            } else {
+                Ok(crate::wdev::paired::WdevPairedControlProgress::Idle)
+            }
+        }
+    }
+
+    fn stop(
+        &mut self,
+        _hardware: &mut (),
+        _physical_tx: &mut PairedPhysicalTx,
+        _first_tx: &mut PairedRoleTx,
+        _second_tx: &mut PairedRoleTx,
+    ) -> Result<crate::wdev::paired::WdevPairedStopProgress, Self::Error> {
+        Ok(crate::wdev::paired::WdevPairedStopProgress::Stopped)
+    }
+
+    fn wait_ready<'a>(
+        &'a mut self,
+        _physical_tx: &'a mut PairedPhysicalTx,
+        _first_tx: &'a mut PairedRoleTx,
+        _second_tx: &'a mut PairedRoleTx,
+    ) -> impl Future<Output = ()> + 'a {
+        pending()
+    }
+}
+
+impl WdevServices<'static, NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>
+    for AddressedRxBackend
+{
+    type Error = TestError;
+    type Exit = TestExit;
+
+    fn service_rx<'a>(
+        &'a mut self,
+        network_rx: &'a mut dyn WdevNetworkRxSet,
+        _context: WdevRxServiceContext,
+    ) -> impl Future<Output = Result<WdevRxProgress, Self::Error>> + 'a {
+        async move {
+            network_rx
+                .get_mut(crate::sta_ap::AP_NETWORK_INTERFACE_ID)
+                .expect("combined owner contains the AP endpoint")
+                .try_send(&[0x41, 0x50])
+                .expect("test endpoint accepts one frame");
+            Err(TestError::Finished)
+        }
+    }
+
+    fn start_tx<'a>(
+        &'a mut self,
+        _frame: PinnedTxFrame<
+            'static,
+            NoopRawMutex,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            QUEUE_DEPTH,
+        >,
+        _network: &'a PinnedTxInterfaceConsumer<
+            'static,
+            NoopRawMutex,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            QUEUE_DEPTH,
+        >,
+    ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a {
+        pending()
+    }
+
+    fn wait_tx_deadline(&mut self) -> impl Future<Output = ()> + '_ {
+        pending()
+    }
+
+    fn service_tx<'a>(
+        &'a mut self,
+        _wake: WifiTxWake,
+    ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a {
+        pending()
+    }
+}
+
 impl WdevServices<'static, NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>
     for NetworkBackpressureBackend
 {
@@ -197,13 +717,13 @@ impl WdevServices<'static, NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, QUEU
 
     fn service_rx<'a>(
         &'a mut self,
-        network_rx: &'a mut dyn WdevNetworkRx,
+        network_rx: &'a mut dyn WdevNetworkRxSet,
         _context: WdevRxServiceContext,
     ) -> impl Future<Output = Result<WdevRxProgress, Self::Error>> + 'a {
         async move {
             self.service_calls = self.service_calls.saturating_add(1);
             if self.service_calls == 1 {
-                network_rx.try_send(&[0; 14]).unwrap();
+                network_rx.primary_mut().try_send(&[0; 14]).unwrap();
                 Ok(WdevRxProgress::NetworkBackpressured)
             } else {
                 Err(TestError::Finished)
@@ -221,7 +741,7 @@ impl WdevServices<'static, NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, QUEU
             TRAILER,
             QUEUE_DEPTH,
         >,
-        _network: &'a PinnedTxConsumer<
+        _network: &'a PinnedTxInterfaceConsumer<
             'static,
             NoopRawMutex,
             FRAME_CAPACITY,
@@ -253,7 +773,7 @@ impl WdevServices<'static, NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, QUEU
 
     fn service_rx<'a>(
         &'a mut self,
-        _network_rx: &'a mut dyn WdevNetworkRx,
+        _network_rx: &'a mut dyn WdevNetworkRxSet,
         _context: WdevRxServiceContext,
     ) -> impl Future<Output = Result<WdevRxProgress, Self::Error>> + 'a {
         async move {
@@ -276,7 +796,7 @@ impl WdevServices<'static, NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, QUEU
             TRAILER,
             QUEUE_DEPTH,
         >,
-        _network: &'a PinnedTxConsumer<
+        _network: &'a PinnedTxInterfaceConsumer<
             'static,
             NoopRawMutex,
             FRAME_CAPACITY,
@@ -318,7 +838,7 @@ impl WdevServices<'static, NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, QUEU
 
     fn service_rx<'a>(
         &'a mut self,
-        _network_rx: &'a mut dyn WdevNetworkRx,
+        _network_rx: &'a mut dyn WdevNetworkRxSet,
         _context: WdevRxServiceContext,
     ) -> impl Future<Output = Result<WdevRxProgress, Self::Error>> + 'a {
         pending()
@@ -343,7 +863,7 @@ impl WdevServices<'static, NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, QUEU
             TRAILER,
             QUEUE_DEPTH,
         >,
-        _network: &'a PinnedTxConsumer<
+        _network: &'a PinnedTxInterfaceConsumer<
             'static,
             NoopRawMutex,
             FRAME_CAPACITY,
@@ -379,7 +899,7 @@ impl WdevServices<'static, NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, QUEU
 
     fn service_rx<'a>(
         &'a mut self,
-        _network_rx: &'a mut dyn WdevNetworkRx,
+        _network_rx: &'a mut dyn WdevNetworkRxSet,
         _context: WdevRxServiceContext,
     ) -> impl Future<Output = Result<WdevRxProgress, Self::Error>> + 'a {
         pending()
@@ -395,7 +915,7 @@ impl WdevServices<'static, NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, QUEU
             TRAILER,
             QUEUE_DEPTH,
         >,
-        _network: &'a PinnedTxConsumer<
+        _network: &'a PinnedTxInterfaceConsumer<
             'static,
             NoopRawMutex,
             FRAME_CAPACITY,
@@ -436,7 +956,7 @@ impl WdevServices<'static, NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, QUEU
             TRAILER,
             QUEUE_DEPTH,
         >,
-        _network: &'a PinnedTxConsumer<
+        _network: &'a PinnedTxInterfaceConsumer<
             'static,
             NoopRawMutex,
             FRAME_CAPACITY,
@@ -461,7 +981,7 @@ impl WdevServices<'static, NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, QUEU
 
     fn service_rx<'a>(
         &'a mut self,
-        _network_rx: &'a mut dyn WdevNetworkRx,
+        _network_rx: &'a mut dyn WdevNetworkRxSet,
         _context: WdevRxServiceContext,
     ) -> impl Future<Output = Result<WdevRxProgress, Self::Error>> + 'a {
         pending()
@@ -497,7 +1017,7 @@ impl WdevServices<'static, NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, QUEU
             TRAILER,
             QUEUE_DEPTH,
         >,
-        _network: &'a PinnedTxConsumer<
+        _network: &'a PinnedTxInterfaceConsumer<
             'static,
             NoopRawMutex,
             FRAME_CAPACITY,
@@ -526,7 +1046,7 @@ impl WdevServices<'static, NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, QUEU
 
     fn start_prepared_tx<'a>(
         &'a mut self,
-        _network: &'a PinnedTxConsumer<
+        _network: &'a PinnedTxInterfaceConsumer<
             'static,
             NoopRawMutex,
             FRAME_CAPACITY,
@@ -572,7 +1092,7 @@ fn aggregate_batch_window_includes_the_first_published_frame() {
 fn control_boundary_precedes_prepared_network_publication() {
     let resources = std::boxed::Box::leak(std::boxed::Box::new(Resources::new()));
     let pool = Pool::pin_static(std::boxed::Box::leak(std::boxed::Box::new(Pool::new())));
-    let (_device, network) = resources.split(pool, [2, 3, 4, 5, 6, 7]);
+    let (_device, network) = split_network!(resources, pool);
     let irq = std::boxed::Box::leak(std::boxed::Box::new(
         EmbassyMacIrqRuntime::<NoopRawMutex>::new(),
     ));
@@ -583,7 +1103,7 @@ fn control_boundary_precedes_prepared_network_publication() {
         prepared: true,
         cancelled: false,
     };
-    let mut runner = WdevRunner::new(irq, network, services);
+    let mut runner = WdevRunner::new(irq, network, NetworkInterfaceId::new(0), services);
 
     assert_eq!(
         embassy_futures::block_on(runner.run()),
@@ -596,7 +1116,7 @@ fn control_boundary_precedes_prepared_network_publication() {
 fn caller_stop_cancels_software_owned_prepared_network_tx() {
     let resources = std::boxed::Box::leak(std::boxed::Box::new(Resources::new()));
     let pool = Pool::pin_static(std::boxed::Box::leak(std::boxed::Box::new(Pool::new())));
-    let (_device, network) = resources.split(pool, [2, 3, 4, 5, 6, 7]);
+    let (_device, network) = split_network!(resources, pool);
     let irq = std::boxed::Box::leak(std::boxed::Box::new(
         EmbassyMacIrqRuntime::<NoopRawMutex>::new(),
     ));
@@ -607,7 +1127,7 @@ fn caller_stop_cancels_software_owned_prepared_network_tx() {
         prepared: true,
         cancelled: false,
     };
-    let mut runner = WdevRunner::new(irq, network, services);
+    let mut runner = WdevRunner::new(irq, network, NetworkInterfaceId::new(0), services);
 
     assert_eq!(
         embassy_futures::block_on(runner.run_until(core::future::ready(()))),
@@ -621,7 +1141,7 @@ fn caller_stop_cancels_software_owned_prepared_network_tx() {
 fn caller_stop_drives_role_shutdown_tx_before_returning_owners() {
     let resources = std::boxed::Box::leak(std::boxed::Box::new(Resources::new()));
     let pool = Pool::pin_static(std::boxed::Box::leak(std::boxed::Box::new(Pool::new())));
-    let (_device, network) = resources.split(pool, [2, 3, 4, 5, 6, 7]);
+    let (_device, network) = split_network!(resources, pool);
     let irq = std::boxed::Box::leak(std::boxed::Box::new(
         EmbassyMacIrqRuntime::<NoopRawMutex>::new(),
     ));
@@ -629,7 +1149,7 @@ fn caller_stop_drives_role_shutdown_tx_before_returning_owners() {
         stop_calls: 0,
         tx_services: 0,
     };
-    let mut runner = WdevRunner::new(irq, network, services);
+    let mut runner = WdevRunner::new(irq, network, NetworkInterfaceId::new(0), services);
 
     assert_eq!(
         embassy_futures::block_on(runner.run_until(core::future::ready(()))),
@@ -643,7 +1163,7 @@ fn caller_stop_drives_role_shutdown_tx_before_returning_owners() {
 fn frame_arriving_inside_select_rechecks_control_as_network_pending() {
     let resources = std::boxed::Box::leak(std::boxed::Box::new(Resources::new()));
     let pool = Pool::pin_static(std::boxed::Box::leak(std::boxed::Box::new(Pool::new())));
-    let (mut device, network) = resources.split(pool, [2, 3, 4, 5, 6, 7]);
+    let (mut device, network) = split_network!(resources, pool);
     let irq = std::boxed::Box::leak(std::boxed::Box::new(
         EmbassyMacIrqRuntime::<NoopRawMutex>::new(),
     ));
@@ -664,7 +1184,7 @@ fn frame_arriving_inside_select_rechecks_control_as_network_pending() {
         software_rx_work: false,
         stop_after_tx: None,
     };
-    let mut runner = WdevRunner::new(irq, network, services);
+    let mut runner = WdevRunner::new(irq, network, NetworkInterfaceId::new(0), services);
     let mut run = std::boxed::Box::pin(runner.run());
     let mut context = Context::from_waker(core::task::Waker::noop());
 
@@ -682,7 +1202,7 @@ fn frame_arriving_inside_select_rechecks_control_as_network_pending() {
 fn due_software_rx_frontier_runs_without_forging_a_hardware_irq() {
     let resources = std::boxed::Box::leak(std::boxed::Box::new(Resources::new()));
     let pool = Pool::pin_static(std::boxed::Box::leak(std::boxed::Box::new(Pool::new())));
-    let (_device, network) = resources.split(pool, [2, 3, 4, 5, 6, 7]);
+    let (_device, network) = split_network!(resources, pool);
     let irq = std::boxed::Box::leak(std::boxed::Box::new(
         EmbassyMacIrqRuntime::<NoopRawMutex>::new(),
     ));
@@ -703,7 +1223,7 @@ fn due_software_rx_frontier_runs_without_forging_a_hardware_irq() {
         software_rx_work: true,
         stop_after_tx: None,
     };
-    let mut runner = WdevRunner::new(irq, network, services);
+    let mut runner = WdevRunner::new(irq, network, NetworkInterfaceId::new(0), services);
 
     assert_eq!(
         embassy_futures::block_on(runner.run()),
@@ -717,7 +1237,7 @@ fn due_software_rx_frontier_runs_without_forging_a_hardware_irq() {
 fn due_software_rx_frontier_yields_to_tx_after_frame_deficit() {
     let resources = std::boxed::Box::leak(std::boxed::Box::new(Resources::new()));
     let pool = Pool::pin_static(std::boxed::Box::leak(std::boxed::Box::new(Pool::new())));
-    let (mut device, network) = resources.split(pool, [2, 3, 4, 5, 6, 7]);
+    let (mut device, network) = split_network!(resources, pool);
     enqueue_frame(&mut device);
     let irq = std::boxed::Box::leak(std::boxed::Box::new(
         EmbassyMacIrqRuntime::<NoopRawMutex>::new(),
@@ -739,7 +1259,7 @@ fn due_software_rx_frontier_yields_to_tx_after_frame_deficit() {
         software_rx_work: true,
         stop_after_tx: None,
     };
-    let mut runner = WdevRunner::new(irq, network, services);
+    let mut runner = WdevRunner::new(irq, network, NetworkInterfaceId::new(0), services);
     runner.rx_frame_deficit = i64::from(RX_TX_FAIRNESS_QUANTUM_FRAMES);
 
     assert_eq!(
@@ -765,13 +1285,13 @@ fn queued_tx_exports_exact_remaining_rx_frame_credit() {
 fn exhausted_rx_republication_is_serviced_again_without_a_new_hardware_irq() {
     let resources = std::boxed::Box::leak(std::boxed::Box::new(Resources::new()));
     let pool = Pool::pin_static(std::boxed::Box::leak(std::boxed::Box::new(Pool::new())));
-    let (_device, network) = resources.split(pool, [2, 3, 4, 5, 6, 7]);
+    let (_device, network) = split_network!(resources, pool);
     let irq = std::boxed::Box::leak(std::boxed::Box::new(
         EmbassyMacIrqRuntime::<NoopRawMutex>::new(),
     ));
     irq.publish(MAC_INT_RX_SUCCESS);
     let services = RxProbeBackend { service_calls: 0 };
-    let mut runner = WdevRunner::new(irq, network, services);
+    let mut runner = WdevRunner::new(irq, network, NetworkInterfaceId::new(0), services);
 
     assert_eq!(
         embassy_futures::block_on(runner.run()),
@@ -784,13 +1304,13 @@ fn exhausted_rx_republication_is_serviced_again_without_a_new_hardware_irq() {
 fn network_backpressure_waits_for_the_network_rx_capacity_owner() {
     let resources = std::boxed::Box::leak(std::boxed::Box::new(Resources::new()));
     let pool = Pool::pin_static(std::boxed::Box::leak(std::boxed::Box::new(Pool::new())));
-    let (mut device, network) = resources.split(pool, [2, 3, 4, 5, 6, 7]);
+    let (mut device, network) = split_network!(resources, pool);
     let irq = std::boxed::Box::leak(std::boxed::Box::new(
         EmbassyMacIrqRuntime::<NoopRawMutex>::new(),
     ));
     irq.publish(MAC_INT_RX_SUCCESS);
     let services = NetworkBackpressureBackend { service_calls: 0 };
-    let mut runner = WdevRunner::new(irq, network, services);
+    let mut runner = WdevRunner::new(irq, network, NetworkInterfaceId::new(0), services);
     let mut run = std::boxed::Box::pin(runner.run());
     let mut context = Context::from_waker(core::task::Waker::noop());
 
@@ -809,13 +1329,13 @@ fn network_backpressure_waits_for_the_network_rx_capacity_owner() {
 fn network_backpressure_still_services_a_new_dma_frontier() {
     let resources = std::boxed::Box::leak(std::boxed::Box::new(Resources::new()));
     let pool = Pool::pin_static(std::boxed::Box::leak(std::boxed::Box::new(Pool::new())));
-    let (_device, network) = resources.split(pool, [2, 3, 4, 5, 6, 7]);
+    let (_device, network) = split_network!(resources, pool);
     let irq = std::boxed::Box::leak(std::boxed::Box::new(
         EmbassyMacIrqRuntime::<NoopRawMutex>::new(),
     ));
     irq.publish(MAC_INT_RX_SUCCESS);
     let services = NetworkBackpressureBackend { service_calls: 0 };
-    let mut runner = WdevRunner::new(irq, network, services);
+    let mut runner = WdevRunner::new(irq, network, NetworkInterfaceId::new(0), services);
     let mut run = std::boxed::Box::pin(runner.run());
     let mut context = Context::from_waker(core::task::Waker::noop());
 
@@ -835,7 +1355,7 @@ fn network_backpressure_still_services_a_new_dma_frontier() {
 fn ready_network_frame_extends_standby_before_active_tx_completion() {
     let resources = std::boxed::Box::leak(std::boxed::Box::new(Resources::new()));
     let pool = Pool::pin_static(std::boxed::Box::leak(std::boxed::Box::new(Pool::new())));
-    let (mut device, network) = resources.split(pool, [2, 3, 4, 5, 6, 7]);
+    let (mut device, network) = split_network!(resources, pool);
     enqueue_frame(&mut device);
     let irq = std::boxed::Box::leak(std::boxed::Box::new(
         EmbassyMacIrqRuntime::<NoopRawMutex>::new(),
@@ -844,7 +1364,7 @@ fn ready_network_frame_extends_standby_before_active_tx_completion() {
         order: [0; 2],
         count: 0,
     };
-    let mut runner = WdevRunner::new(irq, network, services);
+    let mut runner = WdevRunner::new(irq, network, NetworkInterfaceId::new(0), services);
     let mut run = std::boxed::Box::pin(runner.run());
     let mut context = Context::from_waker(core::task::Waker::noop());
 
@@ -865,7 +1385,7 @@ fn ready_network_frame_extends_standby_before_active_tx_completion() {
 fn rx_is_serviced_before_tx_when_both_irqs_are_ready() {
     let resources = std::boxed::Box::leak(std::boxed::Box::new(Resources::new()));
     let pool = Pool::pin_static(std::boxed::Box::leak(std::boxed::Box::new(Pool::new())));
-    let (mut device, network) = resources.split(pool, [2, 3, 4, 5, 6, 7]);
+    let (mut device, network) = split_network!(resources, pool);
     enqueue_frame(&mut device);
     let irq = std::boxed::Box::leak(std::boxed::Box::new(
         EmbassyMacIrqRuntime::<NoopRawMutex>::new(),
@@ -887,7 +1407,7 @@ fn rx_is_serviced_before_tx_when_both_irqs_are_ready() {
         software_rx_work: false,
         stop_after_tx: None,
     };
-    let mut runner = WdevRunner::new(irq, network, services);
+    let mut runner = WdevRunner::new(irq, network, NetworkInterfaceId::new(0), services);
 
     assert_eq!(
         embassy_futures::block_on(runner.run()),
@@ -906,7 +1426,7 @@ fn rx_is_serviced_before_tx_when_both_irqs_are_ready() {
 fn staging_backpressure_gates_new_rx_edges_but_not_tx_completion() {
     let resources = std::boxed::Box::leak(std::boxed::Box::new(Resources::new()));
     let pool = Pool::pin_static(std::boxed::Box::leak(std::boxed::Box::new(Pool::new())));
-    let (mut device, network) = resources.split(pool, [2, 3, 4, 5, 6, 7]);
+    let (mut device, network) = split_network!(resources, pool);
     enqueue_frame(&mut device);
     let irq = std::boxed::Box::leak(std::boxed::Box::new(
         EmbassyMacIrqRuntime::<NoopRawMutex>::new(),
@@ -928,7 +1448,7 @@ fn staging_backpressure_gates_new_rx_edges_but_not_tx_completion() {
         software_rx_work: false,
         stop_after_tx: None,
     };
-    let mut runner = WdevRunner::new(irq, network, services);
+    let mut runner = WdevRunner::new(irq, network, NetworkInterfaceId::new(0), services);
 
     assert_eq!(
         embassy_futures::block_on(runner.run()),
@@ -948,7 +1468,7 @@ fn staging_backpressure_gates_new_rx_edges_but_not_tx_completion() {
 fn executor_deadline_services_tx_without_an_interrupt() {
     let resources = std::boxed::Box::leak(std::boxed::Box::new(Resources::new()));
     let pool = Pool::pin_static(std::boxed::Box::leak(std::boxed::Box::new(Pool::new())));
-    let (mut device, network) = resources.split(pool, [2, 3, 4, 5, 6, 7]);
+    let (mut device, network) = split_network!(resources, pool);
     enqueue_frame(&mut device);
     let irq = std::boxed::Box::leak(std::boxed::Box::new(
         EmbassyMacIrqRuntime::<NoopRawMutex>::new(),
@@ -970,7 +1490,7 @@ fn executor_deadline_services_tx_without_an_interrupt() {
         software_rx_work: false,
         stop_after_tx: None,
     };
-    let mut runner = WdevRunner::new(irq, network, services);
+    let mut runner = WdevRunner::new(irq, network, NetworkInterfaceId::new(0), services);
 
     assert_eq!(
         embassy_futures::block_on(runner.run()),
@@ -984,7 +1504,7 @@ fn executor_deadline_services_tx_without_an_interrupt() {
 fn rx_control_waits_for_the_active_network_tx_then_precedes_another_lease() {
     let resources = std::boxed::Box::leak(std::boxed::Box::new(Resources::new()));
     let pool = Pool::pin_static(std::boxed::Box::leak(std::boxed::Box::new(Pool::new())));
-    let (mut device, network) = resources.split(pool, [2, 3, 4, 5, 6, 7]);
+    let (mut device, network) = split_network!(resources, pool);
     enqueue_frame(&mut device);
     let irq = std::boxed::Box::leak(std::boxed::Box::new(
         EmbassyMacIrqRuntime::<NoopRawMutex>::new(),
@@ -1006,7 +1526,7 @@ fn rx_control_waits_for_the_active_network_tx_then_precedes_another_lease() {
         software_rx_work: false,
         stop_after_tx: None,
     };
-    let mut runner = WdevRunner::new(irq, network, services);
+    let mut runner = WdevRunner::new(irq, network, NetworkInterfaceId::new(0), services);
 
     assert_eq!(
         embassy_futures::block_on(runner.run()),
@@ -1019,7 +1539,7 @@ fn rx_control_waits_for_the_active_network_tx_then_precedes_another_lease() {
 fn caller_stop_publishes_link_down_and_returns_distinct_outcome() {
     let resources = std::boxed::Box::leak(std::boxed::Box::new(Resources::new()));
     let pool = Pool::pin_static(std::boxed::Box::leak(std::boxed::Box::new(Pool::new())));
-    let (mut device, network) = resources.split(pool, [2, 3, 4, 5, 6, 7]);
+    let (mut device, network) = split_network!(resources, pool);
     network.set_link_state(open_esp_radio_embassy_net::LinkState::Up);
     let irq = std::boxed::Box::leak(std::boxed::Box::new(
         EmbassyMacIrqRuntime::<NoopRawMutex>::new(),
@@ -1041,7 +1561,7 @@ fn caller_stop_publishes_link_down_and_returns_distinct_outcome() {
         software_rx_work: false,
         stop_after_tx: None,
     };
-    let mut runner = WdevRunner::new(irq, network, services);
+    let mut runner = WdevRunner::new(irq, network, NetworkInterfaceId::new(0), services);
 
     assert_eq!(
         embassy_futures::block_on(runner.run_until(core::future::ready(()))),
@@ -1060,7 +1580,7 @@ fn caller_stop_publishes_link_down_and_returns_distinct_outcome() {
 fn caller_stop_waits_for_active_tx_to_release_hardware() {
     let resources = std::boxed::Box::leak(std::boxed::Box::new(Resources::new()));
     let pool = Pool::pin_static(std::boxed::Box::leak(std::boxed::Box::new(Pool::new())));
-    let (mut device, network) = resources.split(pool, [2, 3, 4, 5, 6, 7]);
+    let (mut device, network) = split_network!(resources, pool);
     enqueue_frame(&mut device);
     network.set_link_state(open_esp_radio_embassy_net::LinkState::Up);
     let irq = std::boxed::Box::leak(std::boxed::Box::new(
@@ -1092,7 +1612,7 @@ fn caller_stop_waits_for_active_tx_to_release_hardware() {
             Poll::Pending
         }
     });
-    let mut runner = WdevRunner::new(irq, network, services);
+    let mut runner = WdevRunner::new(irq, network, NetworkInterfaceId::new(0), services);
 
     assert_eq!(
         embassy_futures::block_on(runner.run_until(stop_future)),
@@ -1116,7 +1636,7 @@ fn caller_stop_waits_for_active_tx_to_release_hardware() {
 fn disconnected_control_edge_publishes_link_down_and_returns() {
     let resources = std::boxed::Box::leak(std::boxed::Box::new(Resources::new()));
     let pool = Pool::pin_static(std::boxed::Box::leak(std::boxed::Box::new(Pool::new())));
-    let (mut device, network) = resources.split(pool, [2, 3, 4, 5, 6, 7]);
+    let (mut device, network) = split_network!(resources, pool);
     network.set_link_state(open_esp_radio_embassy_net::LinkState::Up);
     let irq = std::boxed::Box::leak(std::boxed::Box::new(
         EmbassyMacIrqRuntime::<NoopRawMutex>::new(),
@@ -1138,7 +1658,7 @@ fn disconnected_control_edge_publishes_link_down_and_returns() {
         software_rx_work: false,
         stop_after_tx: None,
     };
-    let mut runner = WdevRunner::new(irq, network, services);
+    let mut runner = WdevRunner::new(irq, network, NetworkInterfaceId::new(0), services);
 
     assert_eq!(
         embassy_futures::block_on(runner.run()),

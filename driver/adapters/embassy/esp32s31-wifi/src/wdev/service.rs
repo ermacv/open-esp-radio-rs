@@ -3,9 +3,10 @@ use super::*;
 impl<
     'resources,
     'irq,
-    M: RawMutex,
+    M: RawMutex + 'resources,
     N,
     B,
+    R,
     const FRAME_CAPACITY: usize,
     const HEADROOM: usize,
     const TRAILER: usize,
@@ -23,6 +24,7 @@ impl<
         TRAILER,
         RX_QUEUE_DEPTH,
         TX_QUEUE_DEPTH,
+        R,
     >
 where
     N: WdevNetwork<
@@ -35,12 +37,13 @@ where
             TX_QUEUE_DEPTH,
         >,
     B: WdevServices<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+    R: WdevNetworkRxSet,
 {
     pub(super) async fn service_rx(&mut self) -> Result<(), B::Error> {
         let context = WdevRxServiceContext {
             maximum_protocol_frames: rx_protocol_frame_budget(
                 self.rx_frame_deficit,
-                self.services.has_prepared_tx() || self.network.tx_queue_len() != 0,
+                self.services.has_prepared_tx() || self.network_tx_queue_len() != 0,
             ),
         };
         let serviced_before = self.services.serviced_rx_frames();
@@ -56,6 +59,10 @@ where
             .rx_frame_deficit
             .saturating_add(i64::try_from(serviced).unwrap_or(i64::MAX));
         self.complete_rx_service(progress).await;
+        if self.services.active_tx_interface().is_some() {
+            self.active_tx_interface = Some(self.reported_active_tx_interface());
+            self.drive_active_tx().await?;
+        }
         Ok(())
     }
 
@@ -121,11 +128,26 @@ where
         if !self.services.can_prepare_tx() {
             return Ok(());
         }
-        let Some(frame) = self.network.try_receive_tx() else {
+        let interface = self
+            .active_tx_interface
+            .expect("active TX preparation requires one VIF owner");
+        let Some(frame) = self.network.try_receive_tx(interface) else {
             return Ok(());
         };
-        let network = self.network.tx_consumer();
-        self.services.prepare_tx(frame, &network).await
+        let network = self.tx_consumer_for(interface);
+        self.services.prepare_tx(frame, &network).await?;
+        if self.services.has_prepared_tx() {
+            self.prepared_tx_interface = Some(interface);
+        }
+        Ok(())
+    }
+
+    async fn service_active_tx(&mut self, wake: WifiTxWake) -> Result<WifiTxProgress, B::Error> {
+        let progress = self.services.service_tx(wake).await?;
+        if progress == WifiTxProgress::Complete {
+            self.active_tx_interface = None;
+        }
+        Ok(progress)
     }
 
     pub(super) async fn drive_active_tx(&mut self) -> Result<(), B::Error> {
@@ -140,8 +162,7 @@ where
             if rx_producer_serviced && let Some(events) = self.irq.try_take_tx() {
                 self.prepare_ready_tx_before_completion().await?;
                 progress = self
-                    .services
-                    .service_tx(WifiTxWake::Interrupt { events })
+                    .service_active_tx(WifiTxWake::Interrupt { events })
                     .await?;
                 rx_producer_serviced = false;
                 continue;
@@ -157,7 +178,11 @@ where
                     match rx_progress {
                         WdevRxProgress::StagingBackpressured => irq.wait_rx_capacity().await,
                         WdevRxProgress::NetworkBackpressured => {
-                            let _ = select(network_rx.wait_ready(), irq.wait_rx()).await;
+                            let _ = select(
+                                core::future::poll_fn(|context| network_rx.poll_any_ready(context)),
+                                irq.wait_rx(),
+                            )
+                            .await;
                         }
                         WdevRxProgress::Drained | WdevRxProgress::ProbePending => {
                             irq.wait_rx().await
@@ -166,9 +191,12 @@ where
                 }
             };
             let can_prepare = self.services.can_prepare_tx();
+            let active_tx_interface = self.active_tx_interface;
             let wait_network = async {
                 if can_prepare {
-                    self.network.receive_tx().await
+                    let interface = active_tx_interface
+                        .expect("active TX network preparation requires one VIF owner");
+                    self.network.receive_tx(interface).await
                 } else {
                     pending().await
                 }
@@ -188,18 +216,25 @@ where
                 Either4::Second(events) => {
                     self.prepare_ready_tx_before_completion().await?;
                     progress = self
-                        .services
-                        .service_tx(WifiTxWake::Interrupt { events })
+                        .service_active_tx(WifiTxWake::Interrupt { events })
                         .await?;
                     rx_producer_serviced = false;
                 }
                 Either4::Third(()) => {
-                    progress = self.services.service_tx(WifiTxWake::Deadline).await?;
+                    progress = self.service_active_tx(WifiTxWake::Deadline).await?;
                     rx_producer_serviced = false;
                 }
                 Either4::Fourth(frame) => {
-                    let network = self.network.tx_consumer();
+                    let interface = self.tx_interface_for(&frame);
+                    let active = self
+                        .active_tx_interface
+                        .expect("active TX preparation requires one VIF owner");
+                    assert_eq!(interface, active, "prepared TX cannot cross VIFs");
+                    let network = self.tx_consumer_for(interface);
                     self.services.prepare_tx(frame, &network).await?;
+                    if self.services.has_prepared_tx() {
+                        self.prepared_tx_interface = Some(interface);
+                    }
                 }
             }
         }

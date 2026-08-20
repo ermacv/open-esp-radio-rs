@@ -18,7 +18,7 @@ mod rx_handoff;
 
 pub use pinned_tx::{
     DmaIndexReturn, IndexedStableDmaLease, PinnedDmaTxNetworkLease, PinnedDmaTxPool,
-    PinnedDmaTxRadioLease, ReturningStableDmaBacking,
+    PinnedDmaTxRadioLease, ReturningStableDmaBacking, TaggedStableDmaBacking,
 };
 pub use rx_handoff::{RxHandoffPool, RxNetworkLease, RxRadioLease};
 

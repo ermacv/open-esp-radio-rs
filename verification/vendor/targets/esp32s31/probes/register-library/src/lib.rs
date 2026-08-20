@@ -20,7 +20,7 @@ fn mac_address_from_words(low: u32, high: u32) -> [u8; 6] {
 }
 
 /// Register-only production projection of vendor `wifi_set_rx_policy` cases
-/// six and eight.
+/// two, six, eight and nine.
 ///
 /// Arguments one and two carry the reviewed global-context address into the
 /// Rust probe. Argument three selects the closed case-six register submode;
@@ -40,6 +40,7 @@ pub extern "C" fn open_wifi_sta_ap_trace_wifi_set_rx_policy(
 
     let address = mac_address_from_words(address_low, address_high);
     let policy = match policy {
+        2 => MacRoleReceivePolicy::StationDisabled,
         6 => {
             let mode = if mode == 2 {
                 MacStaPolicyMode::Mode2
@@ -52,6 +53,7 @@ pub extern "C" fn open_wifi_sta_ap_trace_wifi_set_rx_policy(
             }
         }
         8 => MacRoleReceivePolicy::AccessPoint { address },
+        9 => MacRoleReceivePolicy::AccessPointDisabled,
         _ => return 0,
     };
     validation_configure_role_receive_policy(policy);

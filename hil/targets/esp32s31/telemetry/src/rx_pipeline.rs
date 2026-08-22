@@ -7,7 +7,7 @@
 
 use core::sync::atomic::{AtomicU32, Ordering};
 
-use open_esp_radio_esp32s31_wifi_embassy::rx_pipeline_observer::{
+use open_esp_radio_esp32s31_wifi_embassy::diagnostics::rx_pipeline::{
     RxNetworkPublicationOutcome, RxPipelineObservation, RxPipelineObserver, RxServiceObservation,
     RxStageDiscard,
 };
@@ -25,8 +25,14 @@ pub struct RxPipelineCounters {
     frontier_sixteen_thirty_one_services: AtomicU32,
     frontier_thirty_two_plus_services: AtomicU32,
     completion_frontier_frames: AtomicU32,
+    completed_units: AtomicU32,
+    completed_descriptors: AtomicU32,
     admitted_frames: AtomicU32,
+    staged_units: AtomicU32,
     staged_bytes: AtomicU32,
+    discarded_units: AtomicU32,
+    recycled_descriptors: AtomicU32,
+    overload_recycled_descriptors: AtomicU32,
     stage_empty_discards: AtomicU32,
     stage_too_long_discards: AtomicU32,
     stage_overload_bulk_discards: AtomicU32,
@@ -118,8 +124,14 @@ impl RxPipelineCounters {
             frontier_sixteen_thirty_one_services: AtomicU32::new(0),
             frontier_thirty_two_plus_services: AtomicU32::new(0),
             completion_frontier_frames: AtomicU32::new(0),
+            completed_units: AtomicU32::new(0),
+            completed_descriptors: AtomicU32::new(0),
             admitted_frames: AtomicU32::new(0),
+            staged_units: AtomicU32::new(0),
             staged_bytes: AtomicU32::new(0),
+            discarded_units: AtomicU32::new(0),
+            recycled_descriptors: AtomicU32::new(0),
+            overload_recycled_descriptors: AtomicU32::new(0),
             stage_empty_discards: AtomicU32::new(0),
             stage_too_long_discards: AtomicU32::new(0),
             stage_overload_bulk_discards: AtomicU32::new(0),
@@ -270,8 +282,16 @@ impl RxPipelineCounters {
                 .frontier_thirty_two_plus_services
                 .load(Ordering::Relaxed),
             completion_frontier_frames: self.completion_frontier_frames.load(Ordering::Relaxed),
+            completed_units: self.completed_units.load(Ordering::Relaxed),
+            completed_descriptors: self.completed_descriptors.load(Ordering::Relaxed),
             admitted_frames: self.admitted_frames.load(Ordering::Relaxed),
+            staged_units: self.staged_units.load(Ordering::Relaxed),
             staged_bytes: self.staged_bytes.load(Ordering::Relaxed),
+            discarded_units: self.discarded_units.load(Ordering::Relaxed),
+            recycled_descriptors: self.recycled_descriptors.load(Ordering::Relaxed),
+            overload_recycled_descriptors: self
+                .overload_recycled_descriptors
+                .load(Ordering::Relaxed),
             stage_empty_discards: self.stage_empty_discards.load(Ordering::Relaxed),
             stage_too_long_discards: self.stage_too_long_discards.load(Ordering::Relaxed),
             stage_overload_bulk_discards: self.stage_overload_bulk_discards.load(Ordering::Relaxed),
@@ -382,11 +402,19 @@ impl RxPipelineCounters {
             frontier,
             pool_credits,
             queue_credits,
+            completed_units,
+            completed_descriptors,
             admitted,
+            staged_units,
             staged_bytes,
+            discarded_units,
+            recycled_descriptors,
             overload_discarded,
+            overload_recycled_descriptors,
             critical_reserve_admitted,
             critical_admission_blocked,
+            minimum_pool_credits: _,
+            minimum_queue_credits: _,
             micros,
             hardware_buffer_full_before: _,
             hardware_buffer_full_after: _,
@@ -403,8 +431,17 @@ impl RxPipelineCounters {
         }
         .fetch_add(1, Ordering::Relaxed);
         Self::add_usize(&self.completion_frontier_frames, frontier);
+        Self::add_usize(&self.completed_units, completed_units);
+        Self::add_usize(&self.completed_descriptors, completed_descriptors);
         Self::add_usize(&self.admitted_frames, admitted);
+        Self::add_usize(&self.staged_units, staged_units);
         Self::add_usize(&self.staged_bytes, staged_bytes);
+        Self::add_usize(&self.discarded_units, discarded_units);
+        Self::add_usize(&self.recycled_descriptors, recycled_descriptors);
+        Self::add_usize(
+            &self.overload_recycled_descriptors,
+            overload_recycled_descriptors,
+        );
         Self::add_usize(&self.overload_discarded_units, overload_discarded);
         Self::add_usize(&self.critical_reserve_admissions, critical_reserve_admitted);
         if critical_admission_blocked {
@@ -744,8 +781,14 @@ pub struct RxPipelineCounterSnapshot {
     pub frontier_sixteen_thirty_one_services: u32,
     pub frontier_thirty_two_plus_services: u32,
     pub completion_frontier_frames: u32,
+    pub completed_units: u32,
+    pub completed_descriptors: u32,
     pub admitted_frames: u32,
+    pub staged_units: u32,
     pub staged_bytes: u32,
+    pub discarded_units: u32,
+    pub recycled_descriptors: u32,
+    pub overload_recycled_descriptors: u32,
     pub stage_empty_discards: u32,
     pub stage_too_long_discards: u32,
     /// Bulk data units deliberately discarded and exactly recycled under overload.
@@ -871,8 +914,20 @@ impl RxPipelineCounterSnapshot {
             completion_frontier_frames: self
                 .completion_frontier_frames
                 .wrapping_sub(earlier.completion_frontier_frames),
+            completed_units: self.completed_units.wrapping_sub(earlier.completed_units),
+            completed_descriptors: self
+                .completed_descriptors
+                .wrapping_sub(earlier.completed_descriptors),
             admitted_frames: self.admitted_frames.wrapping_sub(earlier.admitted_frames),
+            staged_units: self.staged_units.wrapping_sub(earlier.staged_units),
             staged_bytes: self.staged_bytes.wrapping_sub(earlier.staged_bytes),
+            discarded_units: self.discarded_units.wrapping_sub(earlier.discarded_units),
+            recycled_descriptors: self
+                .recycled_descriptors
+                .wrapping_sub(earlier.recycled_descriptors),
+            overload_recycled_descriptors: self
+                .overload_recycled_descriptors
+                .wrapping_sub(earlier.overload_recycled_descriptors),
             stage_empty_discards: self
                 .stage_empty_discards
                 .wrapping_sub(earlier.stage_empty_discards),
@@ -1024,7 +1079,7 @@ mod tests {
     use core::sync::atomic::{AtomicU64, Ordering};
 
     use super::{RxPipelineCounters, RxServiceObservation};
-    use open_esp_radio_esp32s31_wifi_embassy::rx_pipeline_observer::{
+    use open_esp_radio_esp32s31_wifi_embassy::diagnostics::rx_pipeline::{
         RxNetworkPublicationOutcome, RxPipelineObservation, RxPipelineObserver, RxStageDiscard,
     };
 
@@ -1059,6 +1114,7 @@ mod tests {
             micros: 70,
             hardware_buffer_full_before: None,
             hardware_buffer_full_after: None,
+            ..RxServiceObservation::default()
         });
         counters.record_stage_discard(RxStageDiscard::Empty);
         counters.record_stage_discard(RxStageDiscard::TooLong);
@@ -1130,6 +1186,7 @@ mod tests {
             micros: 80,
             hardware_buffer_full_before: None,
             hardware_buffer_full_after: None,
+            ..RxServiceObservation::default()
         });
         counters.begin_service();
         counters.record_service(RxServiceObservation {
@@ -1144,6 +1201,7 @@ mod tests {
             micros: 1,
             hardware_buffer_full_before: None,
             hardware_buffer_full_after: None,
+            ..RxServiceObservation::default()
         });
         let delta = counters.snapshot().wrapping_delta_since(before);
 
@@ -1186,6 +1244,7 @@ mod tests {
             micros: 20,
             hardware_buffer_full_before: Some(0xfffe),
             hardware_buffer_full_after: Some(0xfffe),
+            ..RxServiceObservation::default()
         });
         let before = counters.snapshot();
 
@@ -1201,6 +1260,7 @@ mod tests {
             micros: 73,
             hardware_buffer_full_before: Some(1),
             hardware_buffer_full_after: Some(1),
+            ..RxServiceObservation::default()
         });
         let delta = counters.snapshot().wrapping_delta_since(before);
 
@@ -1237,6 +1297,7 @@ mod tests {
             micros: 810,
             hardware_buffer_full_before: Some(7),
             hardware_buffer_full_after: Some(9),
+            ..RxServiceObservation::default()
         });
         let delta = counters.snapshot().wrapping_delta_since(before);
 

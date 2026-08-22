@@ -18,6 +18,7 @@ pub mod ampdu_tx;
 #[cfg(target_arch = "riscv32")]
 pub mod cold_start;
 pub mod cooperative_hardware;
+pub mod datapath;
 #[cfg(target_arch = "riscv32")]
 pub mod mac_start;
 pub mod ordinary_tx;
@@ -25,4 +26,3 @@ pub mod protected_data_rx;
 #[cfg(target_arch = "riscv32")]
 pub mod runtime;
 pub mod tx;
-pub mod wdev;

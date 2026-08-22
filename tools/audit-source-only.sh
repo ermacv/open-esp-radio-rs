@@ -13,6 +13,7 @@ cd "$repo_root"
 cargo clippy --workspace --all-targets -- -D warnings
 
 tools/audit-driver-safety.sh
+tools/audit-driver-architecture.sh
 
 # Verify generated code from its canonical input instead of inspecting Rust
 # source text for particular identifiers or function spellings.
@@ -78,62 +79,6 @@ then
     exit 1
 fi
 
-# Generated references and qualification harnesses are development oracles,
-# never dependencies of a production crate. Audit each public production root
-# separately so a future optional feature cannot smuggle a tool/HIL crate into
-# the ordinary workspace graph while the PHY-only allowlist above still passes.
-production_packages=(
-    open-esp-radio
-    open-esp-radio-dma
-    open-esp-radio-embassy-net
-    open-esp-radio-esp32s31-coex
-    open-esp-radio-esp32s31-hal
-    open-esp-radio-esp32s31-pac
-    open-esp-radio-esp32s31-pac-raw
-    open-esp-radio-esp32s31-phy
-    open-esp-radio-esp32s31-wifi-embassy
-    open-esp-radio-esp32s31-wifi-dma
-    open-esp-radio-esp32s31-wifi-esp-hal
-    open-esp-radio-esp32s31-wifi-mac
-    open-esp-radio-esp32s31-wifi-sta
-    open-esp-radio-ieee80211
-    open-esp-radio-wifi-softmac
-    open-esp-radio-wifi-sta
-    open-esp-radio-wpa2
-)
-for package in "${production_packages[@]}"; do
-    cargo tree \
-        --package "$package" \
-        --target "$target_triple" \
-        --edges normal,build \
-        --prefix none >"$audit_dir/dependencies-$package"
-    if rg \
-        '^(blobray($|-)|vendor-code-validator|open-radio-vendor-|open-esp-radio-(hil-runner|hil-(protocol|.*telemetry)|verification-.*-probes|.*vendor-oracle))' \
-        "$audit_dir/dependencies-$package"
-    then
-        echo "qualification dependency survived in production package $package" >&2
-        exit 1
-    fi
-done
-
-# Station policy and chip-specific station composition are deliberately below
-# every executor/network adapter. Keep the rule executable as those crates
-# absorb more code from the former monolithic Embassy composition.
-for package in open-esp-radio-wifi-sta open-esp-radio-esp32s31-wifi-sta; do
-    cargo tree \
-        --package "$package" \
-        --target "$target_triple" \
-        --edges normal,build \
-        --prefix none >"$audit_dir/dependencies-$package-layer"
-    if rg \
-        '^(embassy-|esp-hal |open-esp-radio-(embassy-net|esp32s31-wifi-embassy|hil-))' \
-        "$audit_dir/dependencies-$package-layer"
-    then
-        echo "runtime or HIL dependency survived in station layer $package" >&2
-        exit 1
-    fi
-done
-
 if rg -n 'core::hint::spin_loop|spin_loop\(' driver --glob '*.rs'
 then
     echo "production source contains a CPU spin loop" >&2
@@ -153,9 +98,9 @@ fi
 # Build the exact final image from the locked dependencies. A sibling esp-hal
 # checkout is a useful HIL development override, but using it here would both
 # mutate the embedded lockfile and make this policy gate machine-dependent.
-env -u ESP_HAL_ROOT cargo hil image build qualification
+env -u ESP_HAL_ROOT cargo hil image build performance
 
-runtime_elf="target/hil/esp32s31/psram-code-psram-data-qualification/cargo/runtime/$target_triple/release/open-esp-radio-hil-esp32s31-runtime"
+runtime_elf="target/hil/esp32s31/psram-code-psram-data-psram-stack-performance/cargo/runtime/$target_triple/release/open-esp-radio-hil-esp32s31-runtime"
 test -f "$runtime_elf"
 
 # The linker script exposes absolute ESP32-S31 ECO0 ROM symbols even when no

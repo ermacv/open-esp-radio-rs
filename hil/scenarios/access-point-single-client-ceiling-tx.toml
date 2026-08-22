@@ -1,15 +1,14 @@
 schema = 3
 id = "access-point-single-client-ceiling-tx"
-description = "Single-client AP HT40 MCS7 sustained 95 Mbit/s UDP transmit qualification"
+description = "Observer-free single-client AP HT40 sustained 95 Mbit/s UDP transmit gate"
 repetitions = 3
-image = "qualification"
+image = "performance"
 isolation = "reset"
-data_plane = "single-core"
-tags = ["qualification", "characterization", "wifi", "access-point", "network", "single-client", "ht40", "ceiling", "tx"]
+data_plane = "split-radio-network"
+tags = ["qualification", "characterization", "wifi", "access-point", "network", "single-client", "ht40", "split-core", "ceiling", "tx"]
 
 [link]
 phy = "ht40"
-minimum_mcs = 7
 
 [workload]
 kind = "access-point"
@@ -28,5 +27,4 @@ payload_bytes = 1472
 [criteria]
 exact_delivery = false
 minimum_tx_bps = 95000000
-require_no_beacon_loss = true
 minimum_concurrent_ap_clients = 1

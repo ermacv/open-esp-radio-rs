@@ -29,11 +29,12 @@ use crate::{
 ///   bitmaps, while `rx_ampdu` and `tx_runtime` own reorder/retention policy.
 pub const ESP32S31_MAC_SERVICE_CAPABILITIES: MacServiceCapabilities = MacServiceCapabilities {
     interfaces: MacInterfaceCapabilities {
-        // This is the currently implemented owner graph, not the number of
-        // address-match slots visible in hardware.
+        // These are implemented owner graphs, not merely address-match slots
+        // visible in hardware. The concurrent graph retains one physical RX
+        // producer, one physical TX owner, and one IRQ epoch.
         station_interfaces: 1,
         access_point_interfaces: 1,
-        simultaneous_station_access_point: false,
+        simultaneous_station_access_point: true,
         standalone_monitor: true,
         monitor_with_interfaces: false,
         raw_monitor_tap: false,
@@ -124,7 +125,7 @@ mod tests {
         let interfaces = ESP32S31_MAC_SERVICE_CAPABILITIES.interfaces;
         assert_eq!(interfaces.station_interfaces, 1);
         assert_eq!(interfaces.access_point_interfaces, 1);
-        assert!(!interfaces.simultaneous_station_access_point);
+        assert!(interfaces.simultaneous_station_access_point);
         assert!(interfaces.standalone_monitor);
         assert!(!interfaces.monitor_with_interfaces);
         assert!(!interfaces.raw_monitor_tap);

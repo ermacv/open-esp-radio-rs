@@ -51,6 +51,7 @@ pub(crate) fn run(
     lab: &LabConfig,
     require_exact_delivery: bool,
     require_no_beacon_loss: bool,
+    require_driver_observation: bool,
 ) -> Result<()> {
     let mut options = parse_options(&arguments, lab)?;
     fs::create_dir_all(output)?;
@@ -118,6 +119,111 @@ pub(crate) fn run(
     if let Some(result) = beacon_loss {
         result?;
     }
+    let minimum_bps = options
+        .minimum_rate_bps
+        .unwrap_or_else(|| options.rate_bps.saturating_mul(9) / 10);
+    let typed_rx_kbps = structured
+        .transport
+        .rx_bytes
+        .saturating_mul(8)
+        .saturating_mul(1_000)
+        .checked_div(structured.transport.elapsed_micros.max(1))
+        .unwrap_or(0);
+    if !require_driver_observation {
+        if structured.radio.is_some()
+            || structured.tx_timing.is_some()
+            || structured.rx_delivery.is_some()
+            || structured.network_scheduler.is_some()
+        {
+            return Err("performance image published driver-internal evidence".into());
+        }
+        let expected_bytes = structured
+            .transport
+            .rx_units
+            .saturating_mul(options.payload as u64);
+        let failure = if !structured.finished.summary.passed {
+            Some(String::from(
+                "target did not complete the typed RX session normally",
+            ))
+        } else if structured.transport.tx_bytes != 0 || structured.transport.tx_units != 0 {
+            Some(String::from(
+                "RX-only session reported unexpected transmitted traffic",
+            ))
+        } else if structured.transport.transport_errors != 0 {
+            Some(format!(
+                "typed RX session reported {} transport errors",
+                structured.transport.transport_errors
+            ))
+        } else if structured.transport.rx_bytes != expected_bytes {
+            Some(format!(
+                "typed RX byte count {} does not match {} full payload datagrams",
+                structured.transport.rx_bytes, structured.transport.rx_units
+            ))
+        } else if host.throughput_bps() < minimum_bps {
+            Some(String::from(
+                "host failed to offer at least 90% of the requested RX rate",
+            ))
+        } else if typed_rx_kbps < minimum_bps / 1_000 {
+            Some(format!(
+                "device RX {typed_rx_kbps} kbit/s is below the acceptance floor"
+            ))
+        } else {
+            None
+        };
+        let result = if failure.is_some() { "FAIL" } else { "PASS" };
+        let failure_report = failure
+            .as_ref()
+            .map(|failure| format!("- Acceptance failure: `{failure}`\n"))
+            .unwrap_or_default();
+        fs::write(
+            output.join("report.md"),
+            format!(
+                "# Open-radio {} RX performance HIL\n\n\
+                 - Result: `{result}`\n\
+                 {failure_report}\
+                 - Evidence boundary: `transport, external host offer, stack watermark; driver observation not collected`\n\
+                 - Device: `{}`\n\
+                 - Requested/actual host offer: `{:.3}` / `{:.3} Mbit/s`\n\
+                 - Host payload: `{}` bytes in `{}` datagrams\n\
+                 - Target transport: `{}` bytes / `{}` datagrams / `{}` us (`{:.3} Mbit/s`)\n\
+                 - Stack minimum free: CPU0 `{}/{}` bytes (required `{}`); CPU1 `{}/{}` bytes (required `{}`)\n\
+                 - Evidence CRC32C: `0x{:08x}`\n\
+                 - Host pacing maximum lateness/catch-up/deadline resets: `{} us` / `{}` datagrams / `{}`\n\n\
+                 UART evidence is in [`uart.log`](uart.log).\n",
+                options.phy.id().to_uppercase(),
+                options.address,
+                options.rate_bps as f64 / 1_000_000.0,
+                host.throughput_bps() as f64 / 1_000_000.0,
+                host.bytes,
+                host.datagrams,
+                structured.transport.rx_bytes,
+                structured.transport.rx_units,
+                structured.transport.elapsed_micros,
+                typed_rx_kbps as f64 / 1_000.0,
+                structured.stack.cpu0.free_bytes,
+                structured.stack.cpu0.capacity_bytes,
+                structured.stack.cpu0.minimum_free_bytes,
+                structured.stack.cpu1.free_bytes,
+                structured.stack.cpu1.capacity_bytes,
+                structured.stack.cpu1.minimum_free_bytes,
+                structured.finished.evidence_crc32c,
+                host.maximum_lateness_us(),
+                host.maximum_catch_up_datagrams,
+                host.deadline_resets,
+            ),
+        )?;
+        if let Some(failure) = failure {
+            return Err(failure.into());
+        }
+        println!(
+            "OPENRADIOHOST result=PASS mode={}-rx-performance offered_kbps={} host_kbps={} rx_kbps={typed_rx_kbps} report={}",
+            options.phy.id(),
+            options.rate_bps / 1_000,
+            host.throughput_bps() / 1_000,
+            output.join("report.md").display(),
+        );
+        return Ok(());
+    }
     let raw_rx_radio = structured
         .radio
         .and_then(|evidence| evidence.rx)
@@ -142,16 +248,6 @@ pub(crate) fn run(
     let rx = text_assessment
         .map(|assessment| assessment.rx)
         .unwrap_or_else(|| RxQualification::from_typed(structured.transport, raw_rx_radio));
-    let minimum_bps = options
-        .minimum_rate_bps
-        .unwrap_or_else(|| options.rate_bps.saturating_mul(9) / 10);
-    let typed_rx_kbps = structured
-        .transport
-        .rx_bytes
-        .saturating_mul(8)
-        .saturating_mul(1_000)
-        .checked_div(structured.transport.elapsed_micros.max(1))
-        .unwrap_or(0);
     let structured_failure = {
         let evidence = structured;
         let expected_bytes = evidence

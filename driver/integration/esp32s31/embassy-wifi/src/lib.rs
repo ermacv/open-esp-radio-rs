@@ -1,6 +1,5 @@
 #![no_std]
 #![deny(unsafe_code)]
-#![cfg_attr(not(feature = "qualification"), allow(unused_variables))]
 
 //! Concrete ESP32-S31 Embassy radio composition.
 //!
@@ -8,78 +7,93 @@
 //! runner. Board firmware owns credentials, IP policy and sockets; it does not
 //! assemble PAC, DMA, ISR or role transactions.
 
-#[cfg(feature = "qualification")]
-macro_rules! qualification_event {
+#[cfg(feature = "diagnostics")]
+macro_rules! diagnostics_event {
     ($($argument:tt)*) => { log::info!($($argument)*) };
 }
 
-#[cfg(feature = "qualification")]
-macro_rules! qualification_debug {
+#[cfg(feature = "diagnostics")]
+macro_rules! diagnostics_debug {
     ($($argument:tt)*) => { log::debug!($($argument)*) };
 }
 
-#[cfg(not(feature = "qualification"))]
-macro_rules! qualification_event {
-    ($($argument:tt)*) => {{}};
+#[cfg(not(feature = "diagnostics"))]
+macro_rules! diagnostics_event {
+    ($($argument:tt)*) => {{
+        if false {
+            let _ = core::format_args!($($argument)*);
+        }
+    }};
 }
 
-#[cfg(not(feature = "qualification"))]
-macro_rules! qualification_debug {
-    ($($argument:tt)*) => {{}};
+#[cfg(not(feature = "diagnostics"))]
+macro_rules! diagnostics_debug {
+    ($($argument:tt)*) => {{
+        if false {
+            let _ = core::format_args!($($argument)*);
+        }
+    }};
 }
 
 mod access_point_status;
+mod composition;
 mod connected;
 mod facade;
 mod monitor;
 mod radio_resources;
 mod runtime;
+mod station_status;
 mod wifi_network;
 
 pub use access_point_status::{Esp32s31AccessPointStatus, Esp32s31AccessPointStatusSnapshot};
 pub use connected::Esp32s31WifiProtocolRunner;
-#[cfg(feature = "qualification")]
+#[cfg(feature = "diagnostics")]
 pub use connected::{
-    Esp32s31ConnectedRxObserver, Esp32s31MacIrqObservation, Esp32s31QualificationSnapshot,
-    Esp32s31QualificationTxVector,
+    Esp32s31ConnectedRxObserver, Esp32s31DiagnosticRxStatistics, Esp32s31DiagnosticSnapshot,
+    Esp32s31DiagnosticTxVector,
 };
+#[cfg(feature = "mac-irq-diagnostics")]
+pub use connected::Esp32s31MacIrqObservation;
 pub use facade::{
     Esp32s31NewError, Esp32s31Radio, Esp32s31RadioError, Esp32s31RadioInitialization,
     Esp32s31RadioParts, Esp32s31Wifi, Esp32s31WifiControl, Esp32s31WifiParts,
 };
 pub use monitor::{
-    ESP32S31_MONITOR_CAPTURE_CAPACITY, Esp32s31MonitorCaptureStatistics, Esp32s31MonitorFrame,
-    Esp32s31MonitorFrames,
+    ESP32S31_MONITOR_CAPTURE_CAPACITY, Esp32s31MonitorBasebandFormat,
+    Esp32s31MonitorCaptureStatistics, Esp32s31MonitorFrame, Esp32s31MonitorFrames,
+    Esp32s31MonitorPhyInfo,
 };
-#[cfg(feature = "qualification")]
-pub use open_esp_radio::esp32s31::wifi::sta::connected_control::ConnectedDisconnectReason;
-#[cfg(feature = "qualification")]
-pub use open_esp_radio_esp32s31_wifi_embassy::network_rx::{
+#[cfg(feature = "diagnostics")]
+pub use open_esp_radio_esp32s31_wifi_embassy::diagnostics::network::{
     RxNetworkDeliveryEvent, RxNetworkDeliveryObserver,
 };
+pub use open_esp_radio_esp32s31_wifi_sta::connected_control::ConnectedDisconnectReason;
 pub use radio_resources::{Esp32s31WifiDevice, Esp32s31WifiDevices};
 pub use runtime::{Esp32s31RadioRunner, Esp32s31RadioRunners, Esp32s31RadioSystem, new};
-pub use wifi_network::{Esp32s31WifiNetworkRunner, new_wifi_network};
+pub use station_status::{
+    Esp32s31StationLinkState, Esp32s31StationStatus, Esp32s31StationStatusSnapshot,
+};
+pub use wifi_network::Esp32s31WifiNetworkRunner;
 
 /// Board-derived radio identity. Reading eFuse remains an application
 /// responsibility; credentials are supplied separately to `start_station`.
 pub struct Esp32s31RadioConfig {
     pub(crate) station_mac: open_esp_radio::WifiMacAddress,
     pub(crate) access_point_mac: open_esp_radio::WifiMacAddress,
-    pub(crate) calibration: open_esp_radio::esp32s31::phy::PhyCalibrationIdentity,
-    pub(crate) initial_channel: open_esp_radio::wifi::ieee80211::channel::WifiChannel,
-    pub(crate) calibration_cache: Option<open_esp_radio::esp32s31::phy::PhyCalibrationCache>,
+    pub(crate) calibration: open_esp_radio_esp32s31_phy::PhyCalibrationIdentity,
+    pub(crate) initial_channel: open_esp_radio_ieee80211::channel::WifiChannel,
+    pub(crate) calibration_cache: Option<open_esp_radio_esp32s31_phy::PhyCalibrationCache>,
     pub(crate) maximum_tx_power_quarter_dbm: Option<i8>,
-    #[cfg(feature = "qualification")]
-    pub(crate) qualification: Option<Esp32s31QualificationHooks>,
+    #[cfg(feature = "diagnostics")]
+    pub(crate) diagnostics: Option<Esp32s31DiagnosticObservers>,
 }
 
 impl Esp32s31RadioConfig {
     pub const fn new(
         station_mac: open_esp_radio::WifiMacAddress,
         access_point_mac: open_esp_radio::WifiMacAddress,
-        calibration: open_esp_radio::esp32s31::phy::PhyCalibrationIdentity,
-        initial_channel: open_esp_radio::wifi::ieee80211::channel::WifiChannel,
+        calibration: open_esp_radio_esp32s31_phy::PhyCalibrationIdentity,
+        initial_channel: open_esp_radio_ieee80211::channel::WifiChannel,
     ) -> Self {
         Self {
             station_mac,
@@ -88,8 +102,8 @@ impl Esp32s31RadioConfig {
             initial_channel,
             calibration_cache: None,
             maximum_tx_power_quarter_dbm: None,
-            #[cfg(feature = "qualification")]
-            qualification: None,
+            #[cfg(feature = "diagnostics")]
+            diagnostics: None,
         }
     }
 
@@ -97,7 +111,7 @@ impl Esp32s31RadioConfig {
     /// validates its embedded identity before deciding whether it is reusable.
     pub fn with_calibration_cache(
         mut self,
-        cache: open_esp_radio::esp32s31::phy::PhyCalibrationCache,
+        cache: open_esp_radio_esp32s31_phy::PhyCalibrationCache,
     ) -> Self {
         self.calibration_cache = Some(cache);
         self
@@ -109,35 +123,37 @@ impl Esp32s31RadioConfig {
         self
     }
 
-    /// Attach value-only, non-blocking qualification observers. This API does
+    /// Attach value-only, non-blocking diagnostics observers. This API does
     /// not exist in production builds and grants no register or owner access.
-    #[cfg(feature = "qualification")]
-    pub const fn with_qualification_hooks(mut self, hooks: Esp32s31QualificationHooks) -> Self {
-        self.qualification = Some(hooks);
+    #[cfg(feature = "diagnostics")]
+    pub const fn with_diagnostic_observers(mut self, hooks: Esp32s31DiagnosticObservers) -> Self {
+        self.diagnostics = Some(hooks);
         self
     }
 }
 
-/// Optional HIL observers compiled only into qualification firmware.
-#[cfg(feature = "qualification")]
+/// Optional value-only observers compiled only into diagnostics firmware.
+#[cfg(feature = "diagnostics")]
 #[derive(Clone, Copy)]
-pub struct Esp32s31QualificationHooks {
-    pub rx_pipeline: &'static dyn open_esp_radio_esp32s31_wifi_embassy::rx_pipeline_observer::RxPipelineObserver,
-    pub aggregate_tx: &'static dyn open_esp_radio_esp32s31_wifi_embassy::aggregate_tx_observer::AggregateTxObserver,
+pub struct Esp32s31DiagnosticObservers {
+    pub rx_pipeline: &'static dyn open_esp_radio_esp32s31_wifi_embassy::diagnostics::rx_pipeline::RxPipelineObserver,
+    pub aggregate_tx: &'static dyn open_esp_radio_esp32s31_wifi_embassy::diagnostics::aggregate_tx::AggregateTxObserver,
     pub connected_rx: &'static dyn Esp32s31ConnectedRxObserver,
     pub rx_delivery: Option<
-        &'static dyn open_esp_radio_esp32s31_wifi_embassy::network_rx::RxNetworkDeliveryObserver,
+        &'static dyn open_esp_radio_esp32s31_wifi_embassy::diagnostics::network::RxNetworkDeliveryObserver,
     >,
+    #[cfg(feature = "mac-irq-diagnostics")]
     pub mac_irq: fn(Esp32s31MacIrqObservation),
     /// Continuous residence of each RX protocol future poll, in microseconds.
+    #[cfg(feature = "task-poll-telemetry")]
     pub protocol_task_poll: fn(u64),
-    pub station_lifecycle: fn(Esp32s31StationLifecycleObservation),
+    pub station_attempt: fn(Esp32s31StationAttemptObservation),
     pub access_point: fn(Esp32s31AccessPointObservation),
 }
 
 /// Value-only terminal AP epoch evidence emitted after TX, RX and IRQ have
 /// quiesced but before their typed owners return to role-neutral Wi-Fi.
-#[cfg(feature = "qualification")]
+#[cfg(feature = "diagnostics")]
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct Esp32s31AccessPointObservation {
     pub channel: u8,
@@ -187,18 +203,11 @@ pub struct Esp32s31AccessPointObservation {
     pub tx_block_ack_negotiation_timeouts: u32,
     /// Peer-originated RX ADDBA responses that reached terminal TX success.
     pub rx_block_ack_responses_transmitted: u32,
-    pub completed_rx_units: u32,
-    pub completed_rx_descriptors: u32,
-    pub recycled_rx_descriptors: u32,
     /// Hardware MAC RX BUFFER_FULL increments across the complete AP epoch.
     pub rx_hardware_buffer_full: u16,
     /// Hardware MAC RX FIFO overflow increments across the complete AP epoch.
     pub rx_hardware_fifo_overflow: u16,
     pub retained_rx_descriptors: u32,
-    pub discarded_rx_units: u32,
-    pub rx_overload_discarded_units: u32,
-    pub rx_critical_reserve_admissions: u32,
-    pub rx_critical_admission_blocked: u32,
     pub ignored_rx_frames: u32,
     pub rx_mic_failures: u32,
     pub rx_quarantined_frames: u32,
@@ -252,18 +261,16 @@ pub struct Esp32s31AccessPointObservation {
     pub protected_data_protocol_rejected: u32,
 }
 
-/// Value-only connected-link edge emitted to qualification firmware.
-#[cfg(feature = "qualification")]
+/// Value-only failed-attempt detail emitted to diagnostics firmware.
+#[cfg(feature = "diagnostics")]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Esp32s31StationLifecycleObservation {
-    Connected,
-    Disconnected(ConnectedDisconnectReason),
+pub enum Esp32s31StationAttemptObservation {
     AttemptFailed {
         attempt: u16,
-        stage: open_esp_radio::wifi::sta::station::StaLifecycleStage,
+        stage: open_esp_radio_wifi_sta::station::StaLifecycleStage,
     },
     RetryExhausted {
         attempts: u16,
-        stage: open_esp_radio::wifi::sta::station::StaLifecycleStage,
+        stage: open_esp_radio_wifi_sta::station::StaLifecycleStage,
     },
 }

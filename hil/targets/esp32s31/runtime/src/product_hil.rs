@@ -21,33 +21,32 @@ use esp_hal::{
     efuse::{self, InterfaceMacAddress},
     rng::Trng,
 };
-use open_esp_radio::esp32s31::wifi::embassy::await_stack_boundary;
+#[cfg(feature = "driver-observation")]
+use open_esp_radio::StaLifecycleStage;
 use open_esp_radio::{
-    AccessPointClientLimit, AccessPointRequest, AccessPointSecurity, MonitorCapturePolicy,
-    MonitorRequest, StationAccessPointRequest, StationRequest, StationScanChannels,
-    StationScanPolicy, StationSecurity, WifiMacAddress, WifiMonitorConfig, WifiRoleStartFailure,
-    WifiRoleStopFailure, WifiScanRequest as DriverWifiScanRequest, WifiSsid,
-    esp32s31::phy::{
-        PhyCalibrationIdentity, PhyCalibrationPath, phy_rfpll::phy_get_rf_cal_version,
-    },
-    esp32s31::wifi::mac::rx::RxBasebandFormat,
-    wifi::{
-        ieee80211::{
-            channel::{WifiChannel, WifiChannelWidth as DriverWifiChannelWidth},
-            station::StaAssociationPreference,
-        },
-        softmac::MacRxEvidence,
-        sta::station::StaReconnectPolicy,
-        wpa2::Pmk,
-    },
+    AccessPointClientLimit, AccessPointRequest, AccessPointSecurity, MacRxEvidence,
+    MonitorCapturePolicy, MonitorRequest, Pmk, StaAssociationPreference, StaReconnectPolicy,
+    StationAccessPointRequest, StationRequest, StationScanChannels, StationScanPolicy,
+    StationSecurity, WifiChannel, WifiChannelWidth as DriverWifiChannelWidth, WifiMacAddress,
+    WifiMonitorConfig, WifiRoleStartFailure, WifiRoleStopFailure,
+    WifiScanRequest as DriverWifiScanRequest, WifiSsid,
 };
+#[cfg(feature = "driver-observation")]
 use open_esp_radio_esp32s31_embassy_wifi::{
-    ConnectedDisconnectReason, Esp32s31AccessPointObservation, Esp32s31MacIrqObservation,
-    Esp32s31MonitorFrame, Esp32s31MonitorFrames, Esp32s31QualificationHooks,
-    Esp32s31QualificationSnapshot, Esp32s31RadioConfig, Esp32s31RadioParts, Esp32s31RadioRunner,
-    Esp32s31RadioRunners, Esp32s31RadioSystem, Esp32s31StationLifecycleObservation,
-    Esp32s31WifiControl, Esp32s31WifiDevice, Esp32s31WifiNetworkRunner, Esp32s31WifiParts,
-    Esp32s31WifiProtocolRunner, new_wifi_network,
+    Esp32s31AccessPointObservation, Esp32s31DiagnosticObservers, Esp32s31DiagnosticSnapshot,
+    Esp32s31StationAttemptObservation,
+};
+#[cfg(feature = "mac-irq-telemetry")]
+use open_esp_radio_esp32s31_embassy_wifi::Esp32s31MacIrqObservation;
+use open_esp_radio_esp32s31_embassy_wifi::{
+    ConnectedDisconnectReason, Esp32s31MonitorBasebandFormat, Esp32s31MonitorFrame,
+    Esp32s31MonitorFrames, Esp32s31MonitorPhyInfo, Esp32s31RadioConfig, Esp32s31RadioParts,
+    Esp32s31RadioRunner, Esp32s31RadioRunners, Esp32s31RadioSystem, Esp32s31StationLinkState,
+    Esp32s31StationStatus, Esp32s31WifiControl, Esp32s31WifiDevice, Esp32s31WifiNetworkRunner,
+    Esp32s31WifiParts, Esp32s31WifiProtocolRunner,
+};
+use open_esp_radio_esp32s31_phy::{
+    PhyCalibrationIdentity, PhyCalibrationPath, phy_rfpll::phy_get_rf_cal_version,
 };
 use open_esp_radio_esp32s31_wifi_esp_hal::EspHalRadioPeripheral;
 #[cfg(feature = "network-scheduler-telemetry")]
@@ -58,25 +57,29 @@ use open_esp_radio_hil_esp32s31_telemetry::{
 };
 use open_esp_radio_hil_protocol::{
     Capabilities, Event as HilEvent, FeatureCapabilities, MAX_WIRE_FRAME_BYTES, NetworkCredentials,
-    NetworkInfo, NetworkIpv4Configuration, StartupArtifactDisposition, StationAttemptFailureReason,
-    StationDisconnectReason, StationEpochEvidence, StationFailureStage, StationLifecycleEvent,
-    WIFI_MONITOR_FRAME_CHUNK_MAX_LEN, WifiAccessPointEvidence,
+    NetworkInfo, NetworkIpv4Configuration, StartupArtifactDisposition, StationDisconnectReason,
+    StationEpochEvidence, WIFI_MONITOR_FRAME_CHUNK_MAX_LEN, WifiAccessPointEvidence,
     WifiChannelWidth as HilWifiChannelWidth, WifiDataPlanePlacement, WifiMonitorCaptureRequest,
     WifiMonitorEvidence, WifiMonitorEvidenceSource, WifiMonitorFrameChunk, WifiMonitorObserved,
     WifiMonitorPhyEvidence, WifiMonitorPhyFormat, WifiNetworkInterface, WifiRole,
     WifiRoleFailureEvidence, WifiRoleFailureReason, WifiRoleOperation, WifiRoleTransitionEvidence,
     WifiScanEvidence, WifiStationAccessPointStopEvidence,
 };
+#[cfg(feature = "driver-observation")]
+use open_esp_radio_hil_protocol::{StationAttemptFailureReason, StationFailureStage};
+use open_esp_radio_wifi_embassy::await_stack_boundary;
 use static_cell::ConstStaticCell;
 
+use crate::console::publish_station_lifecycle;
 use crate::console::{
     WifiControlRequest, complete_access_point_start, complete_access_point_stop,
     complete_initialization, complete_monitor_capture, complete_monitor_start,
     complete_monitor_stop, complete_station_access_point_stop, complete_station_epoch_cycle,
     complete_wifi_role_failure, complete_wifi_role_transition, complete_wifi_scan,
     publish_event_reliably, publish_monitor_frame, publish_startup_artifact,
-    publish_station_lifecycle, receive_wifi_control_request, runtime_log, set_wifi_role,
+    receive_wifi_control_request, runtime_log, set_wifi_role,
 };
+use open_esp_radio_hil_protocol::StationLifecycleEvent;
 
 mod rx_qualification;
 mod traffic;
@@ -87,9 +90,11 @@ const NETWORK_SOCKET_COUNT: usize = 5;
 const SCAN_DWELL_MS: u16 = 200;
 const MAXIMUM_TX_POWER_QUARTER_DBM: i8 = 80;
 pub(crate) const OPEN_RADIO_TASK_POLL_TELEMETRY: bool = cfg!(feature = "task-poll-telemetry");
+pub(crate) const OPEN_RADIO_MAC_IRQ_TELEMETRY: bool = cfg!(feature = "mac-irq-telemetry");
 pub(crate) const OPEN_RADIO_NETWORK_SCHEDULER_TELEMETRY: bool =
     cfg!(feature = "network-scheduler-telemetry");
 pub(crate) const OPEN_RADIO_RX_DELIVERY_TELEMETRY: bool = cfg!(feature = "rx-delivery-telemetry");
+pub(crate) const OPEN_RADIO_DRIVER_OBSERVATION: bool = cfg!(feature = "driver-observation");
 pub(crate) const OPEN_RADIO_TCP_CHUNK_CAPACITY: usize = 32_768;
 
 struct AppNetworkStart {
@@ -114,9 +119,53 @@ pub(in crate::product_hil) enum QualificationRequester {
 
 #[derive(Clone, Copy)]
 pub(in crate::product_hil) struct QualificationSample {
-    pub rx_primary: Option<open_esp_radio::esp32s31::hal::wifi_mac::MacRxPrimaryStatistics>,
+    pub rx_primary: Option<ObservedRxStatistics>,
     pub rx_interrupt_posts: u32,
-    pub tx_vector: Option<open_esp_radio_esp32s31_embassy_wifi::Esp32s31QualificationTxVector>,
+    pub tx_vector: Option<ObservedTxVector>,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(in crate::product_hil) struct ObservedRxStatistics {
+    pub mpdu_count: u16,
+    pub data_success: u16,
+    pub fcs_error: u16,
+    pub buffer_full: u16,
+    pub fifo_overflow: u16,
+}
+
+impl ObservedRxStatistics {
+    pub const fn wrapping_delta_since(self, earlier: Self) -> Self {
+        Self {
+            mpdu_count: self.mpdu_count.wrapping_sub(earlier.mpdu_count),
+            data_success: self.data_success.wrapping_sub(earlier.data_success),
+            fcs_error: self.fcs_error.wrapping_sub(earlier.fcs_error),
+            buffer_full: self.buffer_full.wrapping_sub(earlier.buffer_full),
+            fifo_overflow: self.fifo_overflow.wrapping_sub(earlier.fifo_overflow),
+        }
+    }
+}
+
+#[cfg(feature = "driver-observation")]
+impl From<open_esp_radio_esp32s31_embassy_wifi::Esp32s31DiagnosticRxStatistics>
+    for ObservedRxStatistics
+{
+    fn from(
+        statistics: open_esp_radio_esp32s31_embassy_wifi::Esp32s31DiagnosticRxStatistics,
+    ) -> Self {
+        Self {
+            mpdu_count: statistics.mpdu_count,
+            data_success: statistics.data_success,
+            fcs_error: statistics.fcs_error,
+            buffer_full: statistics.buffer_full,
+            fifo_overflow: statistics.fifo_overflow,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(in crate::product_hil) struct ObservedTxVector {
+    pub bandwidth_mhz: u16,
+    pub aggregate_rate_kbps: u32,
 }
 
 static DIAGNOSTIC_STAGE: AtomicU32 = AtomicU32::new(0);
@@ -137,19 +186,25 @@ static ACCESS_POINT_NETWORK_CONFIG_REQUESTS: Channel<
 static STATION_NETWORK_CONFIG_APPLIED: Channel<CriticalSectionRawMutex, (), 1> = Channel::new();
 static ACCESS_POINT_NETWORK_CONFIG_APPLIED: Channel<CriticalSectionRawMutex, (), 1> =
     Channel::new();
+#[cfg(feature = "driver-observation")]
 static QUALIFICATION_REQUESTS: Channel<CriticalSectionRawMutex, QualificationRequester, 3> =
     Channel::new();
+#[cfg(feature = "driver-observation")]
 static UDP_RX_QUALIFICATION: Channel<CriticalSectionRawMutex, QualificationSample, 1> =
     Channel::new();
+#[cfg(feature = "driver-observation")]
 static UDP_TX_QUALIFICATION: Channel<CriticalSectionRawMutex, QualificationSample, 1> =
     Channel::new();
+#[cfg(feature = "driver-observation")]
 static TCP_QUALIFICATION: Channel<CriticalSectionRawMutex, QualificationSample, 1> = Channel::new();
+#[cfg(feature = "driver-observation")]
 static CONNECTED_RX_OBSERVER: ConstStaticCell<rx_qualification::HilConnectedRxObserver> =
     ConstStaticCell::new(rx_qualification::HilConnectedRxObserver::new(4_323));
 static PHY_CALIBRATION_ARTIFACT: ConstStaticCell<
     [u8; crate::phy_calibration_artifact::MAX_ENCODED_LEN],
 > = ConstStaticCell::new([0; crate::phy_calibration_artifact::MAX_ENCODED_LEN]);
 static STATION_LIFECYCLE: Channel<CriticalSectionRawMutex, StationLinkEdge, 16> = Channel::new();
+static STATION_TX_BLOCK_ACK_OPERATIONAL_TIDS: AtomicU32 = AtomicU32::new(0);
 static AP_CHANNEL: AtomicU32 = AtomicU32::new(0);
 static AP_BANDWIDTH_MHZ: AtomicU32 = AtomicU32::new(0);
 static AP_BEACONS: AtomicU32 = AtomicU32::new(0);
@@ -195,16 +250,16 @@ static AP_TX_BLOCK_ACK_AGREEMENTS_OPERATIONAL: AtomicU32 = AtomicU32::new(0);
 static AP_TX_BLOCK_ACK_RESPONSES_REJECTED: AtomicU32 = AtomicU32::new(0);
 static AP_TX_BLOCK_ACK_NEGOTIATION_TIMEOUTS: AtomicU32 = AtomicU32::new(0);
 static AP_RX_BLOCK_ACK_RESPONSES_TRANSMITTED: AtomicU32 = AtomicU32::new(0);
-static AP_COMPLETED_RX_UNITS: AtomicU32 = AtomicU32::new(0);
-static AP_COMPLETED_RX_DESCRIPTORS: AtomicU32 = AtomicU32::new(0);
-static AP_RECYCLED_RX_DESCRIPTORS: AtomicU32 = AtomicU32::new(0);
+static AP_RX_COMPLETED_UNITS_BASELINE: AtomicU32 = AtomicU32::new(0);
+static AP_RX_COMPLETED_DESCRIPTORS_BASELINE: AtomicU32 = AtomicU32::new(0);
+static AP_RX_RECYCLED_DESCRIPTORS_BASELINE: AtomicU32 = AtomicU32::new(0);
 static AP_RX_HARDWARE_BUFFER_FULL: AtomicU32 = AtomicU32::new(0);
 static AP_RX_HARDWARE_FIFO_OVERFLOW: AtomicU32 = AtomicU32::new(0);
 static AP_RETAINED_RX_DESCRIPTORS: AtomicU32 = AtomicU32::new(0);
-static AP_DISCARDED_RX_UNITS: AtomicU32 = AtomicU32::new(0);
-static AP_RX_OVERLOAD_DISCARDED_UNITS: AtomicU32 = AtomicU32::new(0);
-static AP_RX_CRITICAL_RESERVE_ADMISSIONS: AtomicU32 = AtomicU32::new(0);
-static AP_RX_CRITICAL_ADMISSION_BLOCKED: AtomicU32 = AtomicU32::new(0);
+static AP_RX_DISCARDED_UNITS_BASELINE: AtomicU32 = AtomicU32::new(0);
+static AP_RX_OVERLOAD_DISCARDED_UNITS_BASELINE: AtomicU32 = AtomicU32::new(0);
+static AP_RX_CRITICAL_RESERVE_ADMISSIONS_BASELINE: AtomicU32 = AtomicU32::new(0);
+static AP_RX_CRITICAL_ADMISSION_BLOCKED_BASELINE: AtomicU32 = AtomicU32::new(0);
 static AP_IGNORED_RX_FRAMES: AtomicU32 = AtomicU32::new(0);
 static AP_RX_MIC_FAILURES: AtomicU32 = AtomicU32::new(0);
 static AP_RX_QUARANTINED_FRAMES: AtomicU32 = AtomicU32::new(0);
@@ -252,6 +307,7 @@ static AP_RX_REORDER_GAP_TIMEOUTS: AtomicU32 = AtomicU32::new(0);
 static AP_PROTECTED_DATA_RADIO_REJECTED: AtomicU32 = AtomicU32::new(0);
 static AP_PROTECTED_DATA_PROTOCOL_REJECTED: AtomicU32 = AtomicU32::new(0);
 
+#[cfg(feature = "driver-observation")]
 fn observe_access_point(observation: Esp32s31AccessPointObservation) {
     AP_CHANNEL.store(u32::from(observation.channel), Ordering::Release);
     AP_BANDWIDTH_MHZ.store(u32::from(observation.bandwidth_mhz), Ordering::Release);
@@ -356,9 +412,6 @@ fn observe_access_point(observation: Esp32s31AccessPointObservation) {
         observation.rx_block_ack_responses_transmitted,
         Ordering::Release,
     );
-    AP_COMPLETED_RX_UNITS.store(observation.completed_rx_units, Ordering::Release);
-    AP_COMPLETED_RX_DESCRIPTORS.store(observation.completed_rx_descriptors, Ordering::Release);
-    AP_RECYCLED_RX_DESCRIPTORS.store(observation.recycled_rx_descriptors, Ordering::Release);
     AP_RX_HARDWARE_BUFFER_FULL.store(
         u32::from(observation.rx_hardware_buffer_full),
         Ordering::Release,
@@ -368,15 +421,6 @@ fn observe_access_point(observation: Esp32s31AccessPointObservation) {
         Ordering::Release,
     );
     AP_RETAINED_RX_DESCRIPTORS.store(observation.retained_rx_descriptors, Ordering::Release);
-    AP_DISCARDED_RX_UNITS.store(observation.discarded_rx_units, Ordering::Release);
-    AP_RX_OVERLOAD_DISCARDED_UNITS
-        .store(observation.rx_overload_discarded_units, Ordering::Release);
-    AP_RX_CRITICAL_RESERVE_ADMISSIONS.store(
-        observation.rx_critical_reserve_admissions,
-        Ordering::Release,
-    );
-    AP_RX_CRITICAL_ADMISSION_BLOCKED
-        .store(observation.rx_critical_admission_blocked, Ordering::Release);
     AP_IGNORED_RX_FRAMES.store(observation.ignored_rx_frames, Ordering::Release);
     AP_RX_MIC_FAILURES.store(observation.rx_mic_failures, Ordering::Release);
     AP_RX_QUARANTINED_FRAMES.store(observation.rx_quarantined_frames, Ordering::Release);
@@ -469,7 +513,21 @@ fn observe_access_point(observation: Esp32s31AccessPointObservation) {
 }
 
 fn reset_access_point_evidence() {
-    observe_access_point(Esp32s31AccessPointObservation::default());
+    #[cfg(feature = "driver-observation")]
+    {
+        observe_access_point(Esp32s31AccessPointObservation::default());
+        let rx = RX_PIPELINE.snapshot();
+        AP_RX_COMPLETED_UNITS_BASELINE.store(rx.completed_units, Ordering::Release);
+        AP_RX_COMPLETED_DESCRIPTORS_BASELINE.store(rx.completed_descriptors, Ordering::Release);
+        AP_RX_RECYCLED_DESCRIPTORS_BASELINE.store(rx.recycled_descriptors, Ordering::Release);
+        AP_RX_DISCARDED_UNITS_BASELINE.store(rx.discarded_units, Ordering::Release);
+        AP_RX_OVERLOAD_DISCARDED_UNITS_BASELINE
+            .store(rx.overload_discarded_units, Ordering::Release);
+        AP_RX_CRITICAL_RESERVE_ADMISSIONS_BASELINE
+            .store(rx.critical_reserve_admissions, Ordering::Release);
+        AP_RX_CRITICAL_ADMISSION_BLOCKED_BASELINE
+            .store(rx.critical_admission_blocked_services, Ordering::Release);
+    }
 }
 
 fn access_point_evidence(
@@ -480,6 +538,7 @@ fn access_point_evidence(
     let observed_channel = AP_CHANNEL.load(Ordering::Acquire) as u8;
     let observed_bandwidth_mhz = AP_BANDWIDTH_MHZ.load(Ordering::Acquire) as u16;
     let tx_failures = AP_TX_FAILURES.load(Ordering::Acquire);
+    let rx = RX_PIPELINE.snapshot();
     WifiAccessPointEvidence {
         generation,
         channel: if observed_channel == 0 {
@@ -545,16 +604,30 @@ fn access_point_evidence(
             .load(Ordering::Acquire),
         rx_block_ack_responses_transmitted: AP_RX_BLOCK_ACK_RESPONSES_TRANSMITTED
             .load(Ordering::Acquire),
-        completed_rx_units: AP_COMPLETED_RX_UNITS.load(Ordering::Acquire),
-        completed_rx_descriptors: AP_COMPLETED_RX_DESCRIPTORS.load(Ordering::Acquire),
-        recycled_rx_descriptors: AP_RECYCLED_RX_DESCRIPTORS.load(Ordering::Acquire),
+        completed_rx_units: rx
+            .completed_units
+            .wrapping_sub(AP_RX_COMPLETED_UNITS_BASELINE.load(Ordering::Acquire)),
+        completed_rx_descriptors: rx
+            .completed_descriptors
+            .wrapping_sub(AP_RX_COMPLETED_DESCRIPTORS_BASELINE.load(Ordering::Acquire)),
+        recycled_rx_descriptors: rx
+            .recycled_descriptors
+            .wrapping_sub(AP_RX_RECYCLED_DESCRIPTORS_BASELINE.load(Ordering::Acquire)),
         rx_hardware_buffer_full: AP_RX_HARDWARE_BUFFER_FULL.load(Ordering::Acquire) as u16,
         rx_hardware_fifo_overflow: AP_RX_HARDWARE_FIFO_OVERFLOW.load(Ordering::Acquire) as u16,
         retained_rx_descriptors: AP_RETAINED_RX_DESCRIPTORS.load(Ordering::Acquire),
-        discarded_rx_units: AP_DISCARDED_RX_UNITS.load(Ordering::Acquire),
-        rx_overload_discarded_units: AP_RX_OVERLOAD_DISCARDED_UNITS.load(Ordering::Acquire),
-        rx_critical_reserve_admissions: AP_RX_CRITICAL_RESERVE_ADMISSIONS.load(Ordering::Acquire),
-        rx_critical_admission_blocked: AP_RX_CRITICAL_ADMISSION_BLOCKED.load(Ordering::Acquire),
+        discarded_rx_units: rx
+            .discarded_units
+            .wrapping_sub(AP_RX_DISCARDED_UNITS_BASELINE.load(Ordering::Acquire)),
+        rx_overload_discarded_units: rx
+            .overload_discarded_units
+            .wrapping_sub(AP_RX_OVERLOAD_DISCARDED_UNITS_BASELINE.load(Ordering::Acquire)),
+        rx_critical_reserve_admissions: rx
+            .critical_reserve_admissions
+            .wrapping_sub(AP_RX_CRITICAL_RESERVE_ADMISSIONS_BASELINE.load(Ordering::Acquire)),
+        rx_critical_admission_blocked: rx
+            .critical_admission_blocked_services
+            .wrapping_sub(AP_RX_CRITICAL_ADMISSION_BLOCKED_BASELINE.load(Ordering::Acquire)),
         ignored_rx_frames: AP_IGNORED_RX_FRAMES.load(Ordering::Acquire),
         rx_mic_failures: AP_RX_MIC_FAILURES.load(Ordering::Acquire),
         rx_quarantined_frames: AP_RX_QUARANTINED_FRAMES.load(Ordering::Acquire),
@@ -619,41 +692,26 @@ fn access_point_evidence(
 enum StationLinkEdge {
     Connected,
     Disconnected(StationDisconnectReason),
+    #[cfg(feature = "driver-observation")]
     AttemptFailed {
         attempt: u16,
-        stage: open_esp_radio::wifi::sta::station::StaLifecycleStage,
+        stage: StaLifecycleStage,
     },
+    #[cfg(feature = "driver-observation")]
     RetryExhausted {
         attempts: u16,
-        stage: open_esp_radio::wifi::sta::station::StaLifecycleStage,
+        stage: StaLifecycleStage,
     },
 }
 
-fn observe_station_lifecycle(observation: Esp32s31StationLifecycleObservation) {
+#[cfg(feature = "driver-observation")]
+fn observe_station_attempt(observation: Esp32s31StationAttemptObservation) {
     log_station_rx_frontier(observation);
     let edge = match observation {
-        Esp32s31StationLifecycleObservation::Connected => StationLinkEdge::Connected,
-        Esp32s31StationLifecycleObservation::Disconnected(reason) => {
-            StationLinkEdge::Disconnected(match reason {
-                ConnectedDisconnectReason::BeaconLoss => StationDisconnectReason::BeaconLoss,
-                ConnectedDisconnectReason::PeerDeauthentication { reason_code } => {
-                    StationDisconnectReason::PeerDeauthentication { reason_code }
-                }
-                ConnectedDisconnectReason::PeerDisassociation { reason_code } => {
-                    StationDisconnectReason::PeerDisassociation { reason_code }
-                }
-                ConnectedDisconnectReason::ActiveStateRestoreFailed => {
-                    StationDisconnectReason::ActiveStateRestoreFailed
-                }
-                ConnectedDisconnectReason::GroupKeyHandshakeFailed => {
-                    StationDisconnectReason::GroupKeyHandshakeFailed
-                }
-            })
-        }
-        Esp32s31StationLifecycleObservation::AttemptFailed { attempt, stage } => {
+        Esp32s31StationAttemptObservation::AttemptFailed { attempt, stage } => {
             StationLinkEdge::AttemptFailed { attempt, stage }
         }
-        Esp32s31StationLifecycleObservation::RetryExhausted { attempts, stage } => {
+        Esp32s31StationAttemptObservation::RetryExhausted { attempts, stage } => {
             StationLinkEdge::RetryExhausted { attempts, stage }
         }
     };
@@ -662,7 +720,8 @@ fn observe_station_lifecycle(observation: Esp32s31StationLifecycleObservation) {
         .expect("qualification station lifecycle queue must not overflow");
 }
 
-fn log_station_rx_frontier(observation: Esp32s31StationLifecycleObservation) {
+#[cfg(feature = "driver-observation")]
+fn log_station_rx_frontier(observation: Esp32s31StationAttemptObservation) {
     let pipeline = RX_PIPELINE.snapshot();
     let irq = MAC_IRQ.snapshot();
     runtime_log(format_args!(
@@ -683,19 +742,22 @@ fn log_station_rx_frontier(observation: Esp32s31StationLifecycleObservation) {
     ));
 }
 
-// Qualification observers execute on the RX/TX hot paths. Their atomics stay
+// Driver observers execute on the RX/TX hot paths. Their atomics stay
 // in internal SRAM so measuring a production image does not introduce PSRAM
 // cache traffic into the path being measured.
 #[unsafe(link_section = ".critical.data.open_radio_rx_telemetry")]
 pub(crate) static RX_PIPELINE: RxPipelineCounters = RxPipelineCounters::new(now_micros);
-#[unsafe(link_section = ".critical.bss.open_radio_tx_telemetry")]
-pub(crate) static AGGREGATE_TX: AggregateTxCounters = AggregateTxCounters::new();
-#[unsafe(link_section = ".critical.bss.open_radio_rx_telemetry")]
+// This observer contains the non-zero `now_micros` function pointer. It must
+// be copied into SRAM as initialized data; placing it in a NOLOAD/BSS section
+// zeroes that pointer and traps on the first TX interrupt observation.
+#[unsafe(link_section = ".critical.data.open_radio_tx_telemetry")]
+pub(crate) static AGGREGATE_TX: AggregateTxCounters = AggregateTxCounters::with_clock(now_micros);
+#[unsafe(link_section = ".critical.data.open_radio_rx_telemetry")]
 pub(crate) static MAC_IRQ: MacIrqClassificationCounters = MacIrqClassificationCounters::new();
-#[unsafe(link_section = ".critical.bss.open_radio_task_poll_telemetry")]
+#[unsafe(link_section = ".critical.data.open_radio_task_poll_telemetry")]
 pub(crate) static TASK_POLLS: TaskPollSet = TaskPollSet::new();
 #[cfg(feature = "network-scheduler-telemetry")]
-#[unsafe(link_section = ".critical.bss.open_radio_network_scheduler_telemetry")]
+#[unsafe(link_section = ".critical.data.open_radio_network_scheduler_telemetry")]
 pub(crate) static NETWORK_SCHEDULER: NetworkSchedulerCounters = NetworkSchedulerCounters::new();
 
 fn now_micros() -> u64 {
@@ -717,22 +779,26 @@ fn protocol_observed<T>(evidence: MacRxEvidence<T>) -> Option<WifiMonitorObserve
 }
 
 fn protocol_rate(
-    evidence: MacRxEvidence<open_esp_radio::esp32s31::wifi::mac::rx::RxPhyInfo>,
+    evidence: MacRxEvidence<Esp32s31MonitorPhyInfo>,
 ) -> Option<WifiMonitorObserved<WifiMonitorPhyEvidence>> {
     protocol_observed(evidence).map(|observed| WifiMonitorObserved {
         source: observed.source,
         value: WifiMonitorPhyEvidence {
             format: match observed.value.baseband_format() {
-                RxBasebandFormat::Dot11b => WifiMonitorPhyFormat::Dot11b,
-                RxBasebandFormat::Ofdm => WifiMonitorPhyFormat::Ofdm,
-                RxBasebandFormat::Ht => WifiMonitorPhyFormat::Ht,
-                RxBasebandFormat::Vht => WifiMonitorPhyFormat::Vht,
-                RxBasebandFormat::HeSu => WifiMonitorPhyFormat::HeSu,
-                RxBasebandFormat::HeMu => WifiMonitorPhyFormat::HeMu,
-                RxBasebandFormat::HeExtendedRangeSu => WifiMonitorPhyFormat::HeExtendedRangeSu,
-                RxBasebandFormat::HeTriggerBased => WifiMonitorPhyFormat::HeTriggerBased,
-                RxBasebandFormat::VhtMu => WifiMonitorPhyFormat::VhtMu,
-                RxBasebandFormat::Unknown(raw) => WifiMonitorPhyFormat::Unknown(raw),
+                Esp32s31MonitorBasebandFormat::Dot11b => WifiMonitorPhyFormat::Dot11b,
+                Esp32s31MonitorBasebandFormat::Ofdm => WifiMonitorPhyFormat::Ofdm,
+                Esp32s31MonitorBasebandFormat::Ht => WifiMonitorPhyFormat::Ht,
+                Esp32s31MonitorBasebandFormat::Vht => WifiMonitorPhyFormat::Vht,
+                Esp32s31MonitorBasebandFormat::HeSu => WifiMonitorPhyFormat::HeSu,
+                Esp32s31MonitorBasebandFormat::HeMu => WifiMonitorPhyFormat::HeMu,
+                Esp32s31MonitorBasebandFormat::HeExtendedRangeSu => {
+                    WifiMonitorPhyFormat::HeExtendedRangeSu
+                }
+                Esp32s31MonitorBasebandFormat::HeTriggerBased => {
+                    WifiMonitorPhyFormat::HeTriggerBased
+                }
+                Esp32s31MonitorBasebandFormat::VhtMu => WifiMonitorPhyFormat::VhtMu,
+                Esp32s31MonitorBasebandFormat::Unknown(raw) => WifiMonitorPhyFormat::Unknown(raw),
             },
             hardware_rate_code: observed.value.rate,
             he_siga1: observed.value.he_siga1,
@@ -894,6 +960,7 @@ async fn run_finite_monitor_capture(
     idle
 }
 
+#[cfg(feature = "mac-irq-telemetry")]
 fn observe_mac_irq(observation: Esp32s31MacIrqObservation) {
     match observation {
         Esp32s31MacIrqObservation::RxEpoch => RX_PIPELINE.record_rx_irq_epoch(),
@@ -906,10 +973,9 @@ fn observe_mac_irq(observation: Esp32s31MacIrqObservation) {
     }
 }
 
+#[cfg(feature = "task-poll-telemetry")]
 fn observe_protocol_task_poll(elapsed_micros: u64) {
-    if OPEN_RADIO_TASK_POLL_TELEMETRY {
-        TASK_POLLS.protocol().record(elapsed_micros);
-    }
+    TASK_POLLS.protocol().record(elapsed_micros);
 }
 
 #[cfg(feature = "network-scheduler-telemetry")]
@@ -939,8 +1005,10 @@ pub const fn hil_capabilities() -> Capabilities {
             simultaneous_station_access_point: true,
             wifi_monitor_capture: true,
             station_lifecycle_events: true,
+            driver_observation_evidence: OPEN_RADIO_DRIVER_OBSERVATION,
             rx_delivery_evidence: OPEN_RADIO_RX_DELIVERY_TELEMETRY,
             task_poll_evidence: OPEN_RADIO_TASK_POLL_TELEMETRY,
+            mac_irq_evidence: OPEN_RADIO_MAC_IRQ_TELEMETRY,
             psram_task_stack: cfg!(feature = "psram-task-stack"),
             network_scheduler_evidence: OPEN_RADIO_NETWORK_SCHEDULER_TELEMETRY,
             data_plane_placement: true,
@@ -952,6 +1020,10 @@ pub const fn hil_capabilities() -> Capabilities {
 }
 
 #[embassy_executor::task]
+#[allow(
+    large_assignments,
+    reason = "the unique production radio runner is moved once into its static Embassy task arena; the linked-image stack audit remains authoritative"
+)]
 async fn radio_runner_task(runner: Esp32s31RadioRunner) {
     observe_open_radio_task_polls(
         runner.run(),
@@ -962,20 +1034,26 @@ async fn radio_runner_task(runner: Esp32s31RadioRunner) {
 }
 
 #[embassy_executor::task]
+#[allow(
+    large_assignments,
+    reason = "the unique protocol runner is moved once into its static Embassy task arena; the linked-image stack audit remains authoritative"
+)]
 async fn wifi_protocol_runner_task(runner: Esp32s31WifiProtocolRunner) {
     runner.run().await
 }
 
+#[cfg(feature = "driver-observation")]
 #[embassy_executor::task]
-async fn qualification_snapshot_task(snapshot: Esp32s31QualificationSnapshot) {
+async fn qualification_snapshot_task(snapshot: Esp32s31DiagnosticSnapshot) {
     loop {
         let requester = QUALIFICATION_REQUESTS.receive().await;
         let sample = QualificationSample {
-            rx_primary: snapshot
-                .rx_statistics()
-                .map(|statistics| statistics.primary),
+            rx_primary: snapshot.rx_statistics().map(ObservedRxStatistics::from),
             rx_interrupt_posts: snapshot.rx_interrupt_posts(),
-            tx_vector: snapshot.tx_vector(),
+            tx_vector: snapshot.tx_vector().map(|vector| ObservedTxVector {
+                bandwidth_mhz: vector.bandwidth_mhz,
+                aggregate_rate_kbps: vector.aggregate_rate_kbps,
+            }),
         };
         match requester {
             QualificationRequester::UdpRx => UDP_RX_QUALIFICATION.send(sample).await,
@@ -985,6 +1063,7 @@ async fn qualification_snapshot_task(snapshot: Esp32s31QualificationSnapshot) {
     }
 }
 
+#[cfg(feature = "driver-observation")]
 pub(in crate::product_hil) async fn qualification_sample(
     requester: QualificationRequester,
 ) -> QualificationSample {
@@ -993,6 +1072,17 @@ pub(in crate::product_hil) async fn qualification_sample(
         QualificationRequester::UdpRx => UDP_RX_QUALIFICATION.receive().await,
         QualificationRequester::UdpTx => UDP_TX_QUALIFICATION.receive().await,
         QualificationRequester::Tcp => TCP_QUALIFICATION.receive().await,
+    }
+}
+
+#[cfg(not(feature = "driver-observation"))]
+pub(in crate::product_hil) async fn qualification_sample(
+    _requester: QualificationRequester,
+) -> QualificationSample {
+    QualificationSample {
+        rx_primary: None,
+        rx_interrupt_posts: 0,
+        tx_vector: None,
     }
 }
 
@@ -1068,7 +1158,7 @@ fn start_network_endpoint(
     seed: u64,
     network_interface: WifiNetworkInterface,
 ) {
-    let (stack, network_runner) = new_wifi_network(device, config, resources, seed);
+    let (stack, network_runner) = Esp32s31WifiNetworkRunner::new(device, config, resources, seed);
     spawner.spawn(
         network_runner_task(network_runner).expect("network runner task pool must fit both roles"),
     );
@@ -1116,11 +1206,24 @@ async fn network_report_task(stack: Stack<'static>, network_interface: WifiNetwo
 }
 
 #[embassy_executor::task]
-async fn station_lifecycle_task() {
+async fn station_lifecycle_task(mut status: Esp32s31StationStatus) {
     let mut generation = 0_u32;
     let mut connected = false;
     loop {
-        match STATION_LIFECYCLE.receive().await {
+        let edge = match select(status.changed(), STATION_LIFECYCLE.receive()).await {
+            Either::First(snapshot) => {
+                STATION_TX_BLOCK_ACK_OPERATIONAL_TIDS.store(
+                    u32::from(snapshot.tx_block_ack_operational_tids),
+                    Ordering::Release,
+                );
+                station_status_edge(snapshot.state)
+            }
+            Either::Second(edge) => Some(edge),
+        };
+        let Some(edge) = edge else {
+            continue;
+        };
+        match edge {
             StationLinkEdge::Connected => {
                 if !connected {
                     publish_station_lifecycle(StationLifecycleEvent::Connected { generation })
@@ -1139,6 +1242,7 @@ async fn station_lifecycle_task() {
                     connected = false;
                 }
             }
+            #[cfg(feature = "driver-observation")]
             StationLinkEdge::AttemptFailed { attempt, stage } => {
                 publish_station_lifecycle(StationLifecycleEvent::AttemptFailed {
                     generation,
@@ -1148,6 +1252,7 @@ async fn station_lifecycle_task() {
                 })
                 .await;
             }
+            #[cfg(feature = "driver-observation")]
             StationLinkEdge::RetryExhausted { attempts, stage } => {
                 publish_station_lifecycle(StationLifecycleEvent::RetryExhausted {
                     generation,
@@ -1161,10 +1266,33 @@ async fn station_lifecycle_task() {
     }
 }
 
-const fn hil_failure_stage(
-    stage: open_esp_radio::wifi::sta::station::StaLifecycleStage,
-) -> StationFailureStage {
-    use open_esp_radio::wifi::sta::station::StaLifecycleStage as DriverStage;
+fn station_status_edge(state: Esp32s31StationLinkState) -> Option<StationLinkEdge> {
+    match state {
+        Esp32s31StationLinkState::Connected => Some(StationLinkEdge::Connected),
+        Esp32s31StationLinkState::Disconnected(Some(reason)) => Some(
+            StationLinkEdge::Disconnected(match reason {
+                ConnectedDisconnectReason::BeaconLoss => StationDisconnectReason::BeaconLoss,
+                ConnectedDisconnectReason::PeerDeauthentication { reason_code } => {
+                    StationDisconnectReason::PeerDeauthentication { reason_code }
+                }
+                ConnectedDisconnectReason::PeerDisassociation { reason_code } => {
+                    StationDisconnectReason::PeerDisassociation { reason_code }
+                }
+                ConnectedDisconnectReason::ActiveStateRestoreFailed => {
+                    StationDisconnectReason::ActiveStateRestoreFailed
+                }
+                ConnectedDisconnectReason::GroupKeyHandshakeFailed => {
+                    StationDisconnectReason::GroupKeyHandshakeFailed
+                }
+            }),
+        ),
+        Esp32s31StationLinkState::Disconnected(None) => None,
+    }
+}
+
+#[cfg(feature = "driver-observation")]
+const fn hil_failure_stage(stage: StaLifecycleStage) -> StationFailureStage {
+    use open_esp_radio::StaLifecycleStage as DriverStage;
     match stage {
         DriverStage::CandidateSelection => StationFailureStage::CandidateSelection,
         DriverStage::Authentication => StationFailureStage::Authentication,
@@ -1175,10 +1303,9 @@ const fn hil_failure_stage(
     }
 }
 
-const fn hil_failure_reason(
-    stage: open_esp_radio::wifi::sta::station::StaLifecycleStage,
-) -> StationAttemptFailureReason {
-    use open_esp_radio::wifi::sta::station::StaLifecycleStage as DriverStage;
+#[cfg(feature = "driver-observation")]
+const fn hil_failure_reason(stage: StaLifecycleStage) -> StationAttemptFailureReason {
+    use open_esp_radio::StaLifecycleStage as DriverStage;
     match stage {
         DriverStage::CandidateSelection => StationAttemptFailureReason::NoCandidate,
         DriverStage::Authentication | DriverStage::Association | DriverStage::Security => {
@@ -1295,7 +1422,6 @@ pub async fn run(
     trng: Trng,
 ) {
     DIAGNOSTIC_STAGE.store(10, Ordering::Release);
-    spawner.spawn(station_lifecycle_task().expect("station lifecycle task must allocate once"));
     let crate::console::StartupConfiguration {
         request_id: initialization_request_id,
         ipv4: startup_ipv4,
@@ -1314,6 +1440,7 @@ pub async fn run(
         .expect("ESP32-S31 station eFuse address must be unicast");
     let access_point_mac = WifiMacAddress::new(access_point_address)
         .expect("ESP32-S31 AP eFuse address must be unicast");
+    #[cfg(feature = "driver-observation")]
     let connected_rx_observer = CONNECTED_RX_OBSERVER.take();
     let config = Esp32s31RadioConfig::new(
         station_mac,
@@ -1325,8 +1452,9 @@ pub async fn run(
         },
         WifiChannel::mhz20(1).expect("initial channel is valid"),
     )
-    .with_maximum_tx_power_quarter_dbm(MAXIMUM_TX_POWER_QUARTER_DBM)
-    .with_qualification_hooks(Esp32s31QualificationHooks {
+    .with_maximum_tx_power_quarter_dbm(MAXIMUM_TX_POWER_QUARTER_DBM);
+    #[cfg(feature = "driver-observation")]
+    let config = config.with_diagnostic_observers(Esp32s31DiagnosticObservers {
         rx_pipeline: &RX_PIPELINE,
         aggregate_tx: &AGGREGATE_TX,
         connected_rx: connected_rx_observer,
@@ -1340,9 +1468,11 @@ pub async fn run(
                 None
             }
         },
+        #[cfg(feature = "mac-irq-telemetry")]
         mac_irq: observe_mac_irq,
+        #[cfg(feature = "task-poll-telemetry")]
         protocol_task_poll: observe_protocol_task_poll,
-        station_lifecycle: observe_station_lifecycle,
+        station_attempt: observe_station_attempt,
         access_point: observe_access_point,
     });
     let artifact_was_supplied = phy_calibration_artifact.is_some();
@@ -1399,12 +1529,19 @@ pub async fn run(
         station_device,
         access_point_device,
         monitor_frames,
+        station_status,
         access_point_status: _,
-        qualification,
+        #[cfg(feature = "driver-observation")]
+        diagnostics,
     } = wifi.into_parts();
     spawner.spawn(
-        qualification_snapshot_task(qualification)
-            .expect("qualification snapshot task must allocate once"),
+        station_lifecycle_task(station_status)
+            .expect("station lifecycle task must allocate once"),
+    );
+    #[cfg(feature = "driver-observation")]
+    spawner.spawn(
+        qualification_snapshot_task(diagnostics)
+            .expect("driver observation snapshot task must allocate once"),
     );
     let seed = u64::from_le_bytes([
         station_address[0],

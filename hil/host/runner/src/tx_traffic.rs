@@ -182,6 +182,7 @@ pub(crate) fn run(
     lab: &LabConfig,
     require_exact_delivery: bool,
     require_no_beacon_loss: bool,
+    require_driver_observation: bool,
 ) -> Result<()> {
     let mut options = parse_options(&arguments, lab)?;
     fs::create_dir_all(output)?;
@@ -292,19 +293,75 @@ pub(crate) fn run(
     let missing: u64 = qualified.iter().map(|burst| burst.missing).sum();
     let reordered: u64 = qualified.iter().map(|burst| burst.reordered).sum();
     let duplicates: u64 = qualified.iter().map(|burst| burst.duplicates).sum();
+    let device_floor_kbps = structured
+        .transport
+        .tx_bytes
+        .saturating_mul(8)
+        .saturating_mul(1_000)
+        .checked_div(structured.transport.elapsed_micros.max(1))
+        .unwrap_or(0);
+    let host_floor = qualified
+        .iter()
+        .map(|burst| burst.throughput_kbps())
+        .min()
+        .expect("at least one qualified burst");
+    if !require_driver_observation {
+        if structured.radio.is_some()
+            || structured.tx_timing.is_some()
+            || structured.rx_delivery.is_some()
+            || structured.network_scheduler.is_some()
+        {
+            return Err("performance image published driver-internal evidence".into());
+        }
+        if !structured.finished.summary.passed {
+            return Err("target did not complete the typed TX session normally".into());
+        }
+        if structured.transport.rx_bytes != 0 || structured.transport.rx_units != 0 {
+            return Err("TX-only session reported unexpected received traffic".into());
+        }
+        if structured.transport.transport_errors != 0 {
+            return Err(format!(
+                "typed TX session reported {} transport errors",
+                structured.transport.transport_errors
+            )
+            .into());
+        }
+        if let Some(required) = options.throughput_floor_bps {
+            let measured_host = host_floor.saturating_mul(1_000);
+            let measured_target = device_floor_kbps.saturating_mul(1_000);
+            if measured_host < required || measured_target < required {
+                return Err(format!(
+                    "TX throughput is below the configured floor: required={required} host={measured_host} target={measured_target} bit/s"
+                )
+                .into());
+            }
+        }
+        write_performance_report(
+            output,
+            TxPerformanceReport {
+                options: &options,
+                host_address,
+                bursts: &qualified,
+                host_floor_kbps: host_floor,
+                device_floor_kbps,
+                structured,
+                host_receive_buffer_bytes,
+            },
+        )?;
+        println!(
+            "OPENRADIOHOST result=PASS mode=tx-performance host_floor_kbps={host_floor} device_floor_kbps={device_floor_kbps} bursts={} host_receive_buffer_bytes={host_receive_buffer_bytes} report={}",
+            qualified.len(),
+            output.join("report.md").display(),
+        );
+        return Ok(());
+    }
     let (typed_tx, typed_timing) = structured.require_tx_radio(
         options.bandwidth_mhz,
         options.minimum_rate_kbps,
         u32::try_from(MIN_QUALIFIED_AGGREGATES).unwrap_or(u32::MAX),
     )?;
     let tx = TxQualification {
-        throughput_floor_kbps: structured
-            .transport
-            .tx_bytes
-            .saturating_mul(8)
-            .saturating_mul(1_000)
-            .checked_div(structured.transport.elapsed_micros.max(1))
-            .unwrap_or(0),
+        throughput_floor_kbps: device_floor_kbps,
         sample_count: 1,
         ampdu: AmpduEvidence::from_typed(typed_tx, typed_timing),
     };
@@ -368,11 +425,6 @@ pub(crate) fn run(
         )
         .into());
     }
-    let host_floor = qualified
-        .iter()
-        .map(|burst| burst.throughput_kbps())
-        .min()
-        .expect("at least one qualified burst");
     if let Some(required) = options.throughput_floor_bps {
         let measured_host = host_floor.saturating_mul(1_000);
         let measured_target = tx.throughput_floor_kbps.saturating_mul(1_000);
@@ -603,6 +655,71 @@ pub(crate) fn describe_bursts(bursts: &[Burst]) -> String {
         "observed_bursts={} observed_datagrams={datagrams} zero_started={zero_started} sequence_range={lowest:?}..={highest:?}",
         bursts.len(),
     )
+}
+
+struct TxPerformanceReport<'a> {
+    options: &'a Options,
+    host_address: Ipv4Addr,
+    bursts: &'a [Burst],
+    host_floor_kbps: u64,
+    device_floor_kbps: u64,
+    structured: crate::traffic_capture::SessionEvidence,
+    host_receive_buffer_bytes: usize,
+}
+
+fn write_performance_report(output: &Path, report: TxPerformanceReport<'_>) -> Result<()> {
+    let TxPerformanceReport {
+        options,
+        host_address,
+        bursts,
+        host_floor_kbps,
+        device_floor_kbps,
+        structured,
+        host_receive_buffer_bytes,
+    } = report;
+    let datagrams = bursts.iter().map(|burst| burst.datagrams).sum::<u64>();
+    let bytes = bursts.iter().map(|burst| burst.bytes).sum::<u64>();
+    let missing = bursts.iter().map(|burst| burst.missing).sum::<u64>();
+    let reordered = bursts.iter().map(|burst| burst.reordered).sum::<u64>();
+    let duplicates = bursts.iter().map(|burst| burst.duplicates).sum::<u64>();
+    let offered_rate = options
+        .offered_rate_bps
+        .map(|rate| format!("{:.3} Mbit/s", rate as f64 / 1_000_000.0))
+        .unwrap_or_else(|| String::from("saturated"));
+    fs::write(
+        output.join("report.md"),
+        format!(
+            "# Open-radio TX performance HIL\n\n\
+             - Result: `PASS`\n\
+             - Evidence boundary: `transport, external host sink, stack watermark; driver observation not collected`\n\
+             - Device/host: `{}` / `{host_address}`\n\
+             - Complete host bursts: `{}`; datagrams: `{datagrams}`; bytes: `{bytes}`\n\
+             - Payload / target offered-rate bound: `{}` bytes / `{offered_rate}`\n\
+             - Host/device throughput floor: `{:.3}` / `{:.3} Mbit/s`\n\
+             - Host missing/reordered/duplicate datagrams (informational): `{missing}` / `{reordered}` / `{duplicates}`\n\
+             - Host UDP `SO_RCVBUF` read-back: `{host_receive_buffer_bytes}` bytes\n\
+             - Target transport: `{}` bytes / `{}` datagrams / `{}` us\n\
+             - Stack minimum free: CPU0 `{}/{}` bytes (required `{}`); CPU1 `{}/{}` bytes (required `{}`)\n\
+             - Evidence CRC32C: `0x{:08x}`\n\n\
+             UART evidence is in [`uart.log`](uart.log).\n",
+            options.device,
+            bursts.len(),
+            options.payload,
+            host_floor_kbps as f64 / 1_000.0,
+            device_floor_kbps as f64 / 1_000.0,
+            structured.transport.tx_bytes,
+            structured.transport.tx_units,
+            structured.transport.elapsed_micros,
+            structured.stack.cpu0.free_bytes,
+            structured.stack.cpu0.capacity_bytes,
+            structured.stack.cpu0.minimum_free_bytes,
+            structured.stack.cpu1.free_bytes,
+            structured.stack.cpu1.capacity_bytes,
+            structured.stack.cpu1.minimum_free_bytes,
+            structured.finished.evidence_crc32c,
+        ),
+    )?;
+    Ok(())
 }
 
 struct TxReport<'a> {

@@ -110,6 +110,10 @@ async fn session_dispatcher_task() {
 }
 
 #[embassy_executor::task(pool_size = 2)]
+#[allow(
+    large_assignments,
+    reason = "the bounded session coordinator future is moved once into its static Embassy task arena"
+)]
 async fn udp_session_coordinator_task(network_interface: WifiNetworkInterface) {
     let resources = resources(network_interface);
     run_open_radio_bidirectional_session_coordinator(
@@ -122,6 +126,10 @@ async fn udp_session_coordinator_task(network_interface: WifiNetworkInterface) {
 }
 
 #[embassy_executor::task(pool_size = 2)]
+#[allow(
+    large_assignments,
+    reason = "the bounded UDP RX owner future is constructed in its final PSRAM-backed Embassy task arena"
+)]
 async fn udp_rx_task(stack: Stack<'static>, network_interface: WifiNetworkInterface) {
     let resources = resources(network_interface);
     let rx_metadata = resources
@@ -164,6 +172,10 @@ async fn udp_rx_task(stack: Stack<'static>, network_interface: WifiNetworkInterf
 }
 
 #[embassy_executor::task(pool_size = 2)]
+#[allow(
+    large_assignments,
+    reason = "the bounded UDP TX owner future is constructed in its final PSRAM-backed Embassy task arena"
+)]
 async fn udp_tx_task(stack: Stack<'static>, network_interface: WifiNetworkInterface) {
     let resources = resources(network_interface);
     let rx_metadata = resources
@@ -221,6 +233,10 @@ async fn udp_tx_task(stack: Stack<'static>, network_interface: WifiNetworkInterf
 }
 
 #[embassy_executor::task(pool_size = 2)]
+#[allow(
+    large_assignments,
+    reason = "the bounded TCP owner future is constructed in its final PSRAM-backed Embassy task arena"
+)]
 async fn tcp_task(stack: Stack<'static>, network_interface: WifiNetworkInterface) {
     let resources = resources(network_interface);
     log::info!("OPEN_RADIO_HIL stage=traffic-workload-start mode=runtime-dispatch");

@@ -6,7 +6,7 @@
 
 use core::sync::atomic::{AtomicU32, Ordering};
 
-use open_esp_radio_esp32s31_wifi_embassy::aggregate_tx_observer::{
+use open_esp_radio_esp32s31_wifi_embassy::diagnostics::aggregate_tx::{
     AggregateBuildStop, AggregateTxObservation, AggregateTxObserver, NetworkSingleMpduReason,
 };
 
@@ -26,6 +26,7 @@ pub const AGGREGATE_TX_PUBLICATION_BUCKETS: usize = 5;
 /// Relaxed atomics keep a HIL observer from adding synchronization to the
 /// radio path it is measuring.
 pub struct AggregateTxCounters {
+    now_micros: fn() -> u64,
     ap_udp_claim_highest: AtomicU32,
     ap_udp_claimed: AtomicU32,
     ap_udp_claim_backward: AtomicU32,
@@ -100,7 +101,12 @@ impl AggregateTxCounters {
     const IRQ_TIME_MASK: u32 = Self::IRQ_TIME_VALID - 1;
 
     pub const fn new() -> Self {
+        Self::with_clock(|| 0)
+    }
+
+    pub const fn with_clock(now_micros: fn() -> u64) -> Self {
         Self {
+            now_micros,
             ap_udp_claim_highest: AtomicU32::new(u32::MAX),
             ap_udp_claimed: AtomicU32::new(0),
             ap_udp_claim_backward: AtomicU32::new(0),
@@ -177,12 +183,8 @@ impl AggregateTxCounters {
         AggregateTxCounterSnapshot {
             ap_udp_claimed: self.ap_udp_claimed.load(Ordering::Relaxed),
             ap_udp_claim_backward: self.ap_udp_claim_backward.load(Ordering::Relaxed),
-            ap_udp_claim_first_previous: self
-                .ap_udp_claim_first_previous
-                .load(Ordering::Relaxed),
-            ap_udp_claim_first_sequence: self
-                .ap_udp_claim_first_sequence
-                .load(Ordering::Relaxed),
+            ap_udp_claim_first_previous: self.ap_udp_claim_first_previous.load(Ordering::Relaxed),
+            ap_udp_claim_first_sequence: self.ap_udp_claim_first_sequence.load(Ordering::Relaxed),
             ap_udp_claim_maximum_distance: self
                 .ap_udp_claim_maximum_distance
                 .load(Ordering::Relaxed),
@@ -496,6 +498,10 @@ impl AggregateTxCounters {
 }
 
 impl AggregateTxObserver for AggregateTxCounters {
+    fn now_micros(&self) -> u64 {
+        (self.now_micros)()
+    }
+
     fn observe(&self, observation: AggregateTxObservation) {
         match observation {
             AggregateTxObservation::BlockAckOperational { tid, operational } => {

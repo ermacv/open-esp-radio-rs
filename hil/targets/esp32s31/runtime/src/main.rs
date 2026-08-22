@@ -1,12 +1,5 @@
 #![no_main]
 #![no_std]
-// Embassy moves each generated task future once into its static task arena.
-// Those values are intentionally large and do not live on a CPU stack. Owned
-// driver crates remain under the 4 KiB `large_assignments` build lint, while
-// this final image is guarded by authoritative post-LTO `.stack_sizes` frames
-// and runtime high-water qualification.
-#![allow(large_assignments)]
-
 #[cfg(not(any(feature = "boot-smoke", feature = "open-radio-hil")))]
 compile_error!("select a HIL scenario feature: boot-smoke or open-radio-hil");
 #[cfg(all(feature = "boot-smoke", feature = "open-radio-hil"))]
@@ -39,13 +32,17 @@ use embassy_executor::SendSpawner;
 use embassy_time::{Duration, Timer};
 #[cfg(feature = "open-radio-hil")]
 use esp_hal::system::{CpuControl, Stack};
+#[cfg(feature = "open-radio-hil")]
+use esp_hal::interrupt::software::SoftwareInterrupt;
 use esp_hal::{
-    interrupt::software::{SoftwareInterrupt, SoftwareInterruptControl},
+    interrupt::software::SoftwareInterruptControl,
     timer::{OneShotTimer, timg::TimerGroup},
 };
 use open_esp_radio_esp32s31_embassy_runtime::Executor;
 use static_cell::StaticCell;
 
+#[cfg(feature = "boot-smoke")]
+mod boot_smoke_console;
 #[cfg(feature = "open-radio-hil")]
 mod console;
 #[cfg(feature = "open-radio-hil")]
@@ -68,17 +65,13 @@ const STACK_PAINT_MARGIN_BYTES: u32 = 256;
 const STACK_PAINT_BOTTOM_RESERVE_BYTES: u32 = 256;
 #[cfg(feature = "open-radio-hil")]
 // CPU1 runs the Embassy network executor in split images. Its nested async call
-// graph needs more than 10 KiB under sustained A-MPDU traffic. The single-core
-// task-poll image keeps only the idle control executor on CPU1, reclaiming SRAM
-// without moving any radio/network work away from CPU0. Both variants retain
-// the same independently checked 4-KiB runtime reserve.
-#[cfg(not(feature = "single-core-diagnostic"))]
+// graph needs more than 10 KiB under sustained A-MPDU traffic. All images keep
+// the same 16-KiB owner stack so runtime-selected placement cannot change the
+// executable resource graph or weaken the independently checked 4-KiB reserve.
 pub(crate) const APP_CORE_TASK_STACK_BYTES: usize = 16 * 1024;
-#[cfg(feature = "single-core-diagnostic")]
-pub(crate) const APP_CORE_TASK_STACK_BYTES: usize = 8 * 1024;
-#[cfg(feature = "psram-task-stack")]
+#[cfg(all(feature = "open-radio-hil", feature = "psram-task-stack"))]
 const APP_CORE_BOOTSTRAP_STACK_BYTES: usize = 8 * 1024;
-#[cfg(not(feature = "psram-task-stack"))]
+#[cfg(all(feature = "open-radio-hil", not(feature = "psram-task-stack")))]
 const APP_CORE_BOOTSTRAP_STACK_BYTES: usize = APP_CORE_TASK_STACK_BYTES;
 
 #[cfg(feature = "code-flash")]
@@ -397,8 +390,10 @@ extern "C" fn runtime_main() -> ! {
     unsafe { asm!("csrsi mstatus, 8", options(nomem, nostack)) };
 
     #[cfg(feature = "boot-smoke")]
-    executor.run(|spawner| {
-        let Ok(task) = boot_smoke() else {
+    executor.run(move |spawner| {
+        let Ok(task) = boot_smoke(boot_smoke_console::BootSmokeConsole::new(
+            peripherals.USB_DEVICE,
+        )) else {
             fail(c"OPEN_RADIO_HIL runtime=FAIL reason=task-allocation\r\n");
         };
         spawner.spawn(task);
@@ -477,10 +472,10 @@ extern "C" fn runtime_cpu1_psram_main() -> ! {
 
 #[cfg(feature = "boot-smoke")]
 #[embassy_executor::task]
-async fn boot_smoke() {
-    print(c"OPEN_RADIO_HIL embassy=START\r\n");
+async fn boot_smoke(mut console: boot_smoke_console::BootSmokeConsole) {
+    console.embassy_started();
     Timer::after(Duration::from_millis(50)).await;
-    print(c"OPEN_RADIO_HIL boot-smoke=PASS timer=PASS\r\n");
+    console.timer_passed();
     loop {
         Timer::after(Duration::from_secs(60)).await;
     }
@@ -488,6 +483,10 @@ async fn boot_smoke() {
 
 #[cfg(feature = "open-radio-hil")]
 #[embassy_executor::task]
+#[allow(
+    large_assignments,
+    reason = "the top-level HIL owner graph is moved once into its static Embassy task arena; runtime stack placement and linked-frame audits remain authoritative"
+)]
 async fn open_radio_hil_task(
     spawner: embassy_executor::Spawner,
     protocol_spawner: SendSpawner,

@@ -1,7 +1,7 @@
 schema = 3
 id = "access-point-tcp-bidirectional"
 description = "Two AP ownership epochs with exact simultaneous TCP delivery"
-image = "qualification"
+image = "correctness"
 isolation = "reset"
 tags = ["qualification", "wifi", "access-point", "network", "tcp", "bidirectional"]
 

@@ -1066,7 +1066,7 @@ mod tests {
         let resources = EmbassyWifiSupervisorControlResources::<NoopRawMutex, ()>::new();
         let (radio, mut endpoint) = resources.split().unwrap();
         let configuration = WifiSupervisorConfiguration::new(
-            crate::esp32s31::wifi::mac::capabilities::ESP32S31_MAC_SERVICE_CAPABILITIES,
+            open_esp_radio_esp32s31_wifi_mac::capabilities::ESP32S31_MAC_SERVICE_CAPABILITIES,
         )
         .with_station(WifiStationConfig::new(
             WifiMacAddress::new([0x02, 0, 0, 0, 0, 1]).unwrap(),
@@ -1110,7 +1110,7 @@ mod tests {
             EmbassyWifiSupervisorControlResources::<NoopRawMutex, WifiServicePlanningError>::new();
         let (radio, mut endpoint) = resources.split().unwrap();
         let configuration = WifiSupervisorConfiguration::new(
-            crate::esp32s31::wifi::mac::capabilities::ESP32S31_MAC_SERVICE_CAPABILITIES,
+            open_esp_radio_esp32s31_wifi_mac::capabilities::ESP32S31_MAC_SERVICE_CAPABILITIES,
         );
 
         let application = async { radio.into_wifi().start_station(station_request()).await };
@@ -1140,7 +1140,7 @@ mod tests {
     fn supervisor_actor_keeps_a_non_send_owner_across_role_epochs() {
         let resources = EmbassyWifiSupervisorControlResources::<NoopRawMutex, &'static str>::new();
         let configuration = WifiSupervisorConfiguration::new(
-            crate::esp32s31::wifi::mac::capabilities::ESP32S31_MAC_SERVICE_CAPABILITIES,
+            open_esp_radio_esp32s31_wifi_mac::capabilities::ESP32S31_MAC_SERVICE_CAPABILITIES,
         )
         .with_station(WifiStationConfig::new(
             WifiMacAddress::new([0x02, 0, 0, 0, 0, 1]).unwrap(),
@@ -1185,7 +1185,7 @@ mod tests {
     fn supervisor_prepare_failure_returns_runner_and_stopped_owner() {
         let resources = EmbassyWifiSupervisorControlResources::<NoopRawMutex, &'static str>::new();
         let configuration = WifiSupervisorConfiguration::new(
-            crate::esp32s31::wifi::mac::capabilities::ESP32S31_MAC_SERVICE_CAPABILITIES,
+            open_esp_radio_esp32s31_wifi_mac::capabilities::ESP32S31_MAC_SERVICE_CAPABILITIES,
         );
         let (_radio, _task) = prepare_embassy_wifi_supervisor(
             &resources,

@@ -133,24 +133,26 @@ async fn station_task(_spawner: Spawner, radio: EspHalRadioPeripheral, trng: Trn
         station_device,
         access_point_device: _,
         monitor_frames: _,
+        station_status: _,
         access_point_status: _,
     } = wifi.into_parts();
     let network = async move {
-        let (stack, runner) = open_esp_radio_esp32s31_embassy_wifi::new_wifi_network(
-            station_device,
-            Config::dhcpv4(Default::default()),
-            NETWORK_RESOURCES.take(),
-            u64::from_le_bytes([
-                station_address[0],
-                station_address[1],
-                station_address[2],
-                station_address[3],
-                station_address[4],
-                station_address[5],
-                0xa5,
-                0x31,
-            ]),
-        );
+        let (stack, runner) =
+            open_esp_radio_esp32s31_embassy_wifi::Esp32s31WifiNetworkRunner::new(
+                station_device,
+                Config::dhcpv4(Default::default()),
+                NETWORK_RESOURCES.take(),
+                u64::from_le_bytes([
+                    station_address[0],
+                    station_address[1],
+                    station_address[2],
+                    station_address[3],
+                    station_address[4],
+                    station_address[5],
+                    0xa5,
+                    0x31,
+                ]),
+            );
         let _stack = stack;
         runner.run().await;
     };

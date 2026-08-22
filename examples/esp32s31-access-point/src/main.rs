@@ -119,6 +119,7 @@ async fn access_point_task(_spawner: Spawner, radio: EspHalRadioPeripheral, trng
         station_device: _,
         access_point_device,
         monitor_frames: _,
+        station_status: _,
         mut access_point_status,
     } = wifi.into_parts();
     let network_config = Config::ipv4_static(StaticConfigV4 {
@@ -126,21 +127,22 @@ async fn access_point_task(_spawner: Spawner, radio: EspHalRadioPeripheral, trng
         gateway: None,
         dns_servers: Default::default(),
     });
-    let (stack, network_runner) = open_esp_radio_esp32s31_embassy_wifi::new_wifi_network(
-        access_point_device,
-        network_config,
-        NETWORK_RESOURCES.take(),
-        u64::from_le_bytes([
-            access_point_address[0],
-            access_point_address[1],
-            access_point_address[2],
-            access_point_address[3],
-            access_point_address[4],
-            access_point_address[5],
-            0xa5,
-            0x31,
-        ]),
-    );
+    let (stack, network_runner) =
+        open_esp_radio_esp32s31_embassy_wifi::Esp32s31WifiNetworkRunner::new(
+            access_point_device,
+            network_config,
+            NETWORK_RESOURCES.take(),
+            u64::from_le_bytes([
+                access_point_address[0],
+                access_point_address[1],
+                access_point_address[2],
+                access_point_address[3],
+                access_point_address[4],
+                access_point_address[5],
+                0xa5,
+                0x31,
+            ]),
+        );
     let application = async move {
         let access_point = async move {
             let active = wifi

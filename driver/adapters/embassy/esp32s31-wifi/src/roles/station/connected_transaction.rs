@@ -1,0 +1,589 @@
+//! Finite execution transaction for one composed connected station epoch.
+//!
+//! Composition roots may choose network services, task placement, observers
+//! and fault decorators, but they must not choose a different shutdown order.
+//! This module keeps the live runner opaque across its terminal edge, maps the
+//! exit while its service observations are still available, then proves IRQ
+//! and executor-task quiescence before returning any reusable owner.
+
+use core::future::Future;
+
+use embassy_sync::blocking_mutex::raw::RawMutex;
+use open_esp_radio_esp32s31_wifi_mac::{
+    crypto::{CcmpKeyHardware, StaGroupCcmpSlot},
+    irq::MacInterruptRoute,
+};
+use open_esp_radio_wifi_embassy::{await_stack_boundary, connected_tasks::ConnectedTaskGroup};
+
+use crate::{datapath::DatapathRunner, datapath::irq::Esp32s31MacInterruptEpoch};
+use crate::{
+    datapath::irq::Esp32s31MacInterruptEpochDrain,
+    datapath::services::SingleRoleServices,
+    roles::station::teardown::{
+        Esp32s31ConnectedStaControlTeardown, Esp32s31ConnectedStaRxTeardown,
+        Esp32s31ConnectedStaTeardownFailure, Esp32s31ConnectedStaTeardownSuccess,
+        Esp32s31ConnectedStaTxTeardown,
+    },
+};
+
+use super::{
+    Esp32s31ConnectedEpochQuiesceFailure, Esp32s31ConnectedEpochQuiesced,
+    Esp32s31ConnectedEpochRunnerOwner, Esp32s31ConnectedStationExit,
+    Esp32s31StationCommandReceiver, quiesce_esp32s31_connected_epoch,
+    run_esp32s31_connected_station_epoch,
+};
+
+/// Runner interface consumed by the common connected execution transaction.
+///
+/// The trait hides network geometry from the transaction without weakening
+/// ownership: its only production implementation is the concrete
+/// [`DatapathRunner`], and it inherits the consuming shutdown interface.
+#[doc(hidden)]
+pub trait Esp32s31ConnectedStationRunner<M: RawMutex>: Esp32s31ConnectedEpochRunnerOwner {
+    type Error;
+
+    fn run_station_epoch<'a>(
+        &'a mut self,
+        control: &'a mut Esp32s31StationCommandReceiver<'_, M>,
+    ) -> impl Future<Output = Esp32s31ConnectedStationExit<Self::Error>> + 'a;
+}
+
+impl<
+    'resources,
+    'irq,
+    RM,
+    CM,
+    N,
+    B,
+    const FRAME_CAPACITY: usize,
+    const HEADROOM: usize,
+    const TRAILER: usize,
+    const RX_QUEUE_DEPTH: usize,
+    const TX_QUEUE_DEPTH: usize,
+> Esp32s31ConnectedStationRunner<CM>
+    for DatapathRunner<
+        'resources,
+        'irq,
+        RM,
+        N,
+        B,
+        FRAME_CAPACITY,
+        HEADROOM,
+        TRAILER,
+        RX_QUEUE_DEPTH,
+        TX_QUEUE_DEPTH,
+    >
+where
+    RM: open_esp_radio_embassy_net::RawMutex,
+    CM: RawMutex,
+    N: crate::datapath::network::DatapathNetwork<
+            'resources,
+            RM,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            RX_QUEUE_DEPTH,
+            TX_QUEUE_DEPTH,
+        >,
+    B: crate::datapath::DatapathServices<
+            'resources,
+            RM,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            TX_QUEUE_DEPTH,
+            Exit = open_esp_radio_esp32s31_wifi_sta::connected_control::ConnectedDisconnectReason,
+        >,
+{
+    type Error = B::Error;
+
+    fn run_station_epoch<'a>(
+        &'a mut self,
+        control: &'a mut Esp32s31StationCommandReceiver<'_, CM>,
+    ) -> impl Future<Output = Esp32s31ConnectedStationExit<Self::Error>> + 'a {
+        run_esp32s31_connected_station_epoch(self, control)
+    }
+}
+
+/// Observation-only wrapper around the DATAPATH runner future.
+///
+/// Implementations may count polls or measure residence time, but cannot
+/// replace the future's result or gain access to the runner owners. Generic
+/// dispatch keeps the ordinary firmware path free of a vtable and permits the
+/// compiler to erase [`NoopEsp32s31ConnectedRunObserver`] completely.
+pub trait Esp32s31ConnectedRunObserver {
+    fn observe<'a, F>(&'a mut self, future: F) -> impl Future<Output = F::Output> + 'a
+    where
+        F: Future + 'a;
+}
+
+/// Production observer which adds no work to the DATAPATH runner.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct NoopEsp32s31ConnectedRunObserver;
+
+impl Esp32s31ConnectedRunObserver for NoopEsp32s31ConnectedRunObserver {
+    async fn observe<'a, F>(&'a mut self, future: F) -> F::Output
+    where
+        F: Future + 'a,
+    {
+        future.await
+    }
+}
+
+/// A classified finite runner exit paired with its proved quiescent owners.
+pub struct Esp32s31ConnectedEpochStopped<X, I, N, S, T> {
+    pub exit: X,
+    pub quiesced: Esp32s31ConnectedEpochQuiesced<I, N, S, T>,
+}
+
+/// Incomplete hardware stop retaining the already-classified runner exit and
+/// every owner needed to continue the same quiescence transaction.
+pub struct Esp32s31ConnectedRunQuiesceFailure<X, I, C, G, E> {
+    pub exit: X,
+    pub error: crate::datapath::irq::Esp32s31MacInterruptEpochQuiesceError<E>,
+    interrupt: I,
+    runner: C,
+    tasks: G,
+}
+
+impl<'runtime, X, R, IM, C, G>
+    Esp32s31ConnectedRunQuiesceFailure<
+        X,
+        Esp32s31MacInterruptEpoch<'runtime, R, IM>,
+        C,
+        G,
+        R::Error,
+    >
+where
+    R: MacInterruptRoute,
+    IM: RawMutex,
+    C: Esp32s31ConnectedEpochRunnerOwner,
+    G: ConnectedTaskGroup,
+{
+    /// Retry only the unfinished IRQ/task shutdown edge. The DATAPATH runner
+    /// is never polled a second time and its previously classified exit is
+    /// preserved across every failed attempt.
+    pub async fn retry_quiesce(
+        self,
+        platform: &R::Platform,
+    ) -> Result<
+        Esp32s31ConnectedEpochStopped<
+            X,
+            Esp32s31MacInterruptEpoch<'runtime, R, IM>,
+            C::Network,
+            C::Services,
+            G::Stopped,
+        >,
+        Self,
+    > {
+        match quiesce_esp32s31_connected_epoch(self.interrupt, platform, self.runner, self.tasks)
+            .await
+        {
+            Ok(quiesced) => Ok(Esp32s31ConnectedEpochStopped {
+                exit: self.exit,
+                quiesced,
+            }),
+            Err(Esp32s31ConnectedEpochQuiesceFailure::Interrupt {
+                error,
+                interrupt,
+                runner,
+                tasks,
+            }) => Err(Self {
+                exit: self.exit,
+                error,
+                interrupt,
+                runner,
+                tasks,
+            }),
+        }
+    }
+}
+
+impl<X, I, N, S, T> Esp32s31ConnectedEpochStopped<X, I, N, S, T> {
+    /// Remove an observation/fault decorator without releasing any other
+    /// stopped owner or separating the classified runner exit.
+    pub fn map_services<U>(
+        self,
+        map: impl FnOnce(S) -> U,
+    ) -> Esp32s31ConnectedEpochStopped<X, I, N, U, T> {
+        Esp32s31ConnectedEpochStopped {
+            exit: self.exit,
+            quiesced: self.quiesced.map_services(map),
+        }
+    }
+}
+
+/// Successful completion of the complete run, quiesce and driver teardown
+/// transaction.
+pub struct Esp32s31ConnectedEpochCompleted<X, I, N, T, D> {
+    pub exit: X,
+    pub interrupt: I,
+    pub interrupt_drain: Esp32s31MacInterruptEpochDrain,
+    pub network: N,
+    pub tasks: T,
+    pub driver: D,
+}
+
+/// Owner-preserving quarantined frontier after asynchronous quiescence
+/// succeeded but control/RX/TX/key teardown did not.
+pub struct Esp32s31ConnectedServiceTeardownFailure<X, I, N, T, E> {
+    pub exit: X,
+    pub interrupt: I,
+    pub interrupt_drain: Esp32s31MacInterruptEpochDrain,
+    pub network: N,
+    pub tasks: T,
+    pub error: E,
+}
+
+impl<X, I, N, H, R, A, C, T>
+    Esp32s31ConnectedEpochStopped<X, I, N, SingleRoleServices<H, R, A, C>, T>
+where
+    H: CcmpKeyHardware,
+    C: Esp32s31ConnectedStaControlTeardown<H, A>,
+    R: Esp32s31ConnectedStaRxTeardown<H>,
+    A: Esp32s31ConnectedStaTxTeardown,
+{
+    /// Complete the mandatory control/RX/TX/key teardown while retaining the
+    /// classified runner exit and all reusable owners on success or failure.
+    #[allow(clippy::type_complexity, clippy::result_large_err)]
+    pub fn try_teardown(
+        self,
+        group_key: StaGroupCcmpSlot,
+    ) -> Result<
+        Esp32s31ConnectedEpochCompleted<
+            X,
+            I,
+            N,
+            T,
+            Esp32s31ConnectedStaTeardownSuccess<
+                H,
+                R::Stopped,
+                A::Resources,
+                A::Aggregate,
+                C::Report,
+            >,
+        >,
+        Esp32s31ConnectedServiceTeardownFailure<
+            X,
+            I,
+            N,
+            T,
+            Esp32s31ConnectedStaTeardownFailure<H, R, R::Stopped, A, C, C::Error, R::Error>,
+        >,
+    > {
+        let Self { exit, quiesced } = self;
+        match quiesced.try_teardown(group_key) {
+            Ok(teardown) => Ok(Esp32s31ConnectedEpochCompleted {
+                exit,
+                interrupt: teardown.interrupt,
+                interrupt_drain: teardown.interrupt_drain,
+                network: teardown.network,
+                tasks: teardown.tasks,
+                driver: teardown.driver,
+            }),
+            Err(failure) => Err(Esp32s31ConnectedServiceTeardownFailure {
+                exit,
+                interrupt: failure.interrupt,
+                interrupt_drain: failure.interrupt_drain,
+                network: failure.network,
+                tasks: failure.tasks,
+                error: failure.error,
+            }),
+        }
+    }
+}
+
+/// Run one connected station owner and close every asynchronous publication
+/// frontier in the mandatory order.
+///
+/// `classify` executes immediately after the runner returns and before IRQ or
+/// task shutdown. It may derive copy-only policy/qualification evidence from
+/// `runner`, but cannot move any of its owners. A quiesce failure returns the
+/// complete runner through [`Esp32s31ConnectedEpochQuiesceFailure`] and never
+/// exposes a partial teardown result.
+#[allow(clippy::too_many_arguments)]
+pub async fn run_and_quiesce_esp32s31_connected_epoch<'runtime, R, IM, CM, C, G, O, X>(
+    interrupt: Esp32s31MacInterruptEpoch<'runtime, R, IM>,
+    platform: &R::Platform,
+    mut runner: C,
+    control: &mut Esp32s31StationCommandReceiver<'_, CM>,
+    tasks: G,
+    observer: &mut O,
+    classify: impl FnOnce(Esp32s31ConnectedStationExit<C::Error>, &C) -> X,
+) -> Result<
+    Esp32s31ConnectedEpochStopped<
+        X,
+        Esp32s31MacInterruptEpoch<'runtime, R, IM>,
+        C::Network,
+        C::Services,
+        G::Stopped,
+    >,
+    Esp32s31ConnectedRunQuiesceFailure<
+        X,
+        Esp32s31MacInterruptEpoch<'runtime, R, IM>,
+        C,
+        G,
+        R::Error,
+    >,
+>
+where
+    R: MacInterruptRoute,
+    IM: RawMutex,
+    CM: RawMutex,
+    C: Esp32s31ConnectedStationRunner<CM>,
+    G: ConnectedTaskGroup,
+    O: Esp32s31ConnectedRunObserver,
+{
+    // The runner's batching/select future is retained inside this transaction
+    // for ownership, but its poll frame is isolated from the quiesce frame.
+    // Without this boundary fat LTO combines both unrelated call chains into
+    // one 10-KiB CPU stack frame.
+    let raw_exit = await_stack_boundary!(observer.observe(runner.run_station_epoch(control)));
+    let exit = classify(raw_exit, &runner);
+    match quiesce_esp32s31_connected_epoch(interrupt, platform, runner, tasks).await {
+        Ok(quiesced) => Ok(Esp32s31ConnectedEpochStopped { exit, quiesced }),
+        Err(Esp32s31ConnectedEpochQuiesceFailure::Interrupt {
+            error,
+            interrupt,
+            runner,
+            tasks,
+        }) => Err(Esp32s31ConnectedRunQuiesceFailure {
+            exit,
+            error,
+            interrupt,
+            runner,
+            tasks,
+        }),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use core::future::ready;
+    use std::{cell::Cell, rc::Rc};
+
+    use embassy_futures::block_on;
+    use embassy_sync::blocking_mutex::raw::NoopRawMutex;
+
+    use super::*;
+    use crate::{
+        datapath::irq::{EmbassyMacIrqRuntime, EmbassyPowerIrqRuntime},
+        roles::station::Esp32s31StationControlResources,
+    };
+
+    struct TestRoute;
+
+    impl MacInterruptRoute for TestRoute {
+        type Platform = ();
+        type Setup = u32;
+        type Error = u8;
+
+        fn activate(
+            &mut self,
+            _platform: &Self::Platform,
+            setup: Self::Setup,
+            _event_mask: open_esp_radio_esp32s31_hal::types::MacInterruptMask,
+        ) -> Result<(), (Self::Error, Self::Setup)> {
+            let _ = setup;
+            Ok(())
+        }
+
+        fn quiesce(&mut self, _platform: &Self::Platform) -> Result<Self::Setup, Self::Error> {
+            Ok(19)
+        }
+    }
+
+    struct RetryRoute(Rc<Cell<u8>>);
+
+    impl MacInterruptRoute for RetryRoute {
+        type Platform = ();
+        type Setup = u32;
+        type Error = u8;
+
+        fn activate(
+            &mut self,
+            _platform: &Self::Platform,
+            _setup: Self::Setup,
+            _event_mask: open_esp_radio_esp32s31_hal::types::MacInterruptMask,
+        ) -> Result<(), (Self::Error, Self::Setup)> {
+            Ok(())
+        }
+
+        fn quiesce(&mut self, _platform: &Self::Platform) -> Result<Self::Setup, Self::Error> {
+            let attempt = self.0.get();
+            self.0.set(attempt + 1);
+            if attempt == 0 { Err(9) } else { Ok(19) }
+        }
+    }
+
+    struct TestRunner {
+        network: u32,
+        services: u16,
+    }
+
+    impl Esp32s31ConnectedEpochRunnerOwner for TestRunner {
+        type Network = u32;
+        type Services = u16;
+
+        fn into_connected_epoch_parts(self) -> (Self::Network, Self::Services) {
+            (self.network, self.services)
+        }
+    }
+
+    impl Esp32s31ConnectedStationRunner<NoopRawMutex> for TestRunner {
+        type Error = u8;
+
+        fn run_station_epoch<'a>(
+            &'a mut self,
+            _control: &'a mut Esp32s31StationCommandReceiver<'_, NoopRawMutex>,
+        ) -> impl Future<Output = Esp32s31ConnectedStationExit<Self::Error>> + 'a {
+            ready(Esp32s31ConnectedStationExit::Disconnected(
+                open_esp_radio_esp32s31_wifi_sta::connected_control::ConnectedDisconnectReason::BeaconLoss,
+            ))
+        }
+    }
+
+    struct OrderObserver(Rc<Cell<u8>>);
+
+    impl Esp32s31ConnectedRunObserver for OrderObserver {
+        async fn observe<'a, F>(&'a mut self, future: F) -> F::Output
+        where
+            F: Future + 'a,
+        {
+            assert_eq!(self.0.get(), 0);
+            self.0.set(1);
+            let output = future.await;
+            self.0.set(2);
+            output
+        }
+    }
+
+    struct ReadyTasks {
+        order: Rc<Cell<u8>>,
+        stopped: Option<u8>,
+    }
+
+    impl ConnectedTaskGroup for ReadyTasks {
+        type Stopped = u8;
+
+        fn request_stop(&mut self) {
+            assert_eq!(self.order.get(), 3);
+            self.order.set(4);
+        }
+
+        async fn wait_stopped(&mut self) -> Self::Stopped {
+            ready(self.stopped.take().expect("task owner returns once")).await
+        }
+    }
+
+    #[test]
+    fn transaction_classifies_the_live_exit_before_revealing_quiesced_owners() {
+        let mac = EmbassyMacIrqRuntime::<NoopRawMutex>::new();
+        let power = EmbassyPowerIrqRuntime::<NoopRawMutex>::new();
+        let mut interrupt = Esp32s31MacInterruptEpoch::new(TestRoute, 18, &mac, &power);
+        interrupt
+            .activate(
+                &(),
+                open_esp_radio_esp32s31_hal::types::MacInterruptMask::COLD_RX,
+            )
+            .expect("test interrupt epoch activates");
+        let control = Esp32s31StationControlResources::<NoopRawMutex>::new();
+        let (_controller, mut receiver) = control.split().expect("fresh control owner");
+        let order = Rc::new(Cell::new(0));
+        let mut observer = OrderObserver(order.clone());
+        let tasks = ReadyTasks {
+            order: order.clone(),
+            stopped: Some(23),
+        };
+
+        let stopped = block_on(run_and_quiesce_esp32s31_connected_epoch(
+            interrupt,
+            &(),
+            TestRunner {
+                network: 29,
+                services: 31,
+            },
+            &mut receiver,
+            tasks,
+            &mut observer,
+            |exit, runner| {
+                assert!(matches!(
+                    exit,
+                    Esp32s31ConnectedStationExit::Disconnected(
+                        open_esp_radio_esp32s31_wifi_sta::connected_control::ConnectedDisconnectReason::BeaconLoss
+                    )
+                ));
+                assert_eq!(runner.services, 31);
+                assert_eq!(order.get(), 2);
+                order.set(3);
+                37_u8
+            },
+        ))
+        .unwrap_or_else(|_| panic!("ready transaction must quiesce"));
+
+        assert_eq!(order.get(), 4);
+        assert_eq!(stopped.exit, 37);
+        assert_eq!(stopped.quiesced.network, 29);
+        assert_eq!(stopped.quiesced.services, 31);
+        assert_eq!(stopped.quiesced.tasks, 23);
+        assert!(!stopped.quiesced.interrupt.is_active());
+    }
+
+    #[test]
+    fn quiesce_retry_preserves_exit_runner_and_task_owners() {
+        let mac = EmbassyMacIrqRuntime::<NoopRawMutex>::new();
+        let power = EmbassyPowerIrqRuntime::<NoopRawMutex>::new();
+        let route_attempts = Rc::new(Cell::new(0));
+        let mut interrupt =
+            Esp32s31MacInterruptEpoch::new(RetryRoute(route_attempts.clone()), 18, &mac, &power);
+        interrupt
+            .activate(
+                &(),
+                open_esp_radio_esp32s31_hal::types::MacInterruptMask::COLD_RX,
+            )
+            .expect("test interrupt epoch activates");
+        let control = Esp32s31StationControlResources::<NoopRawMutex>::new();
+        let (_controller, mut receiver) = control.split().expect("fresh control owner");
+        let order = Rc::new(Cell::new(0));
+        let mut observer = OrderObserver(order.clone());
+        let tasks = ReadyTasks {
+            order: order.clone(),
+            stopped: Some(23),
+        };
+
+        let pending = match block_on(run_and_quiesce_esp32s31_connected_epoch(
+            interrupt,
+            &(),
+            TestRunner {
+                network: 29,
+                services: 31,
+            },
+            &mut receiver,
+            tasks,
+            &mut observer,
+            |_exit, _runner| {
+                order.set(3);
+                37_u8
+            },
+        )) {
+            Ok(_) => panic!("first route quiesce must remain pending"),
+            Err(pending) => pending,
+        };
+
+        assert_eq!(pending.exit, 37);
+        assert_eq!(route_attempts.get(), 1);
+        assert_eq!(
+            order.get(),
+            3,
+            "tasks must remain running after IRQ failure"
+        );
+        let stopped = block_on(pending.retry_quiesce(&()))
+            .unwrap_or_else(|_| panic!("second route quiesce must finish"));
+        assert_eq!(route_attempts.get(), 2);
+        assert_eq!(stopped.exit, 37);
+        assert_eq!(stopped.quiesced.network, 29);
+        assert_eq!(stopped.quiesced.services, 31);
+        assert_eq!(stopped.quiesced.tasks, 23);
+        assert_eq!(order.get(), 4);
+    }
+}

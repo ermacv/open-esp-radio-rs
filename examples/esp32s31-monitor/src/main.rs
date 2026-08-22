@@ -94,6 +94,7 @@ async fn monitor_task(
         station_device: _,
         access_point_device: _,
         monitor_frames: frames,
+        station_status: _,
         access_point_status: _,
     } = wifi.into_parts();
     let application = async move {

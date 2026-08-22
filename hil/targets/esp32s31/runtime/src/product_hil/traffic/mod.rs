@@ -9,7 +9,6 @@ mod udp;
 
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::Channel};
 use embassy_time::Timer;
-use open_esp_radio_hil_esp32s31_telemetry::aggregate_tx::AggregateTxCounters;
 use open_esp_radio_hil_protocol::SessionLinkRequirements;
 use open_esp_radio_hil_protocol::Transport;
 use open_esp_radio_hil_protocol::WifiNetworkInterface;
@@ -44,12 +43,24 @@ async fn run_session_dispatcher(
 /// from transport performance.
 async fn wait_session_link_requirements(
     requirements: SessionLinkRequirements,
-    aggregate_counters: &AggregateTxCounters,
+    network_interface: WifiNetworkInterface,
 ) {
     let Some(tid) = requirements.tx_block_ack_tid else {
         return;
     };
-    while !aggregate_counters.snapshot().block_ack_operational(tid) {
+    assert_eq!(
+        network_interface,
+        WifiNetworkInterface::Station,
+        "only the station role currently exports a functional TX BlockAck status",
+    );
+    let bit = 1_u32
+        .checked_shl(u32::from(tid))
+        .expect("validated BlockAck TID fits the functional status bitmap");
+    while crate::product_hil::STATION_TX_BLOCK_ACK_OPERATIONAL_TIDS
+        .load(core::sync::atomic::Ordering::Acquire)
+        & bit
+        == 0
+    {
         Timer::after_millis(10).await;
     }
 }

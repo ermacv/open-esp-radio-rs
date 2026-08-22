@@ -1,7 +1,7 @@
 schema = 3
 id = "wifi-scan"
 description = "Standalone full-band scan with target-side dwell timing"
-image = "qualification"
+image = "correctness"
 isolation = "reset"
 tags = ["qualification", "wifi", "scanner"]
 

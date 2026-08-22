@@ -9,7 +9,7 @@ description = "Application facade for the source-only Rust ESP radio stack"
 readme = "README.md"
 
 [features]
-default = ["esp32s31-wifi"]
+default = ["wifi"]
 wifi = [
     "dep:open-esp-radio-ieee80211",
     "dep:open-esp-radio-wifi-ap",
@@ -17,42 +17,16 @@ wifi = [
     "dep:open-esp-radio-wifi-sta",
     "dep:open-esp-radio-wpa2",
 ]
-esp32s31 = [
-    "dep:open-esp-radio-esp32s31-hal",
-    "dep:open-esp-radio-esp32s31-phy",
-]
-esp32s31-wifi = [
-    "esp32s31",
+wifi-embassy = [
     "wifi",
-    "dep:open-esp-radio-esp32s31-wifi",
-    "dep:open-esp-radio-esp32s31-wifi-dma",
-    "dep:open-esp-radio-esp32s31-wifi-mac",
-    "dep:open-esp-radio-esp32s31-wifi-ap",
-    "dep:open-esp-radio-esp32s31-wifi-sta",
-]
-esp32s31-wifi-embassy = [
-    "esp32s31-wifi",
     "dep:embassy-futures",
     "dep:embassy-sync",
     "dep:open-esp-radio-wifi-embassy",
-    "dep:open-esp-radio-esp32s31-wifi-embassy",
-]
-validation-raw-dma = [
-    "esp32s31-wifi",
-    "open-esp-radio-esp32s31-wifi-mac/validation-raw-dma",
 ]
 
 [dependencies]
 embassy-futures = { version = "0.1.2", optional = true }
 embassy-sync = { version = "0.8.0", optional = true }
-open-esp-radio-esp32s31-hal = { path = "../chips/esp32s31/hal", optional = true }
-open-esp-radio-esp32s31-wifi = { path = "../chips/esp32s31/wifi", optional = true }
-open-esp-radio-esp32s31-wifi-dma = { path = "../chips/esp32s31/wifi/dma", optional = true }
-open-esp-radio-esp32s31-wifi-mac = { path = "../chips/esp32s31/wifi/mac", optional = true }
-open-esp-radio-esp32s31-wifi-ap = { path = "../chips/esp32s31/wifi/ap", optional = true }
-open-esp-radio-esp32s31-wifi-sta = { path = "../chips/esp32s31/wifi/sta", optional = true }
-open-esp-radio-esp32s31-wifi-embassy = { path = "../adapters/embassy/esp32s31-wifi", optional = true }
-open-esp-radio-esp32s31-phy = { path = "../chips/esp32s31/phy", optional = true }
 open-esp-radio-ieee80211 = { path = "../wifi/ieee80211", optional = true }
 open-esp-radio-wifi-ap = { path = "../wifi/ap", optional = true }
 open-esp-radio-wifi-softmac = { path = "../wifi/softmac", optional = true }

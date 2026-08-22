@@ -1,7 +1,7 @@
 schema = 3
 id = "station-access-point-load"
 description = "Simultaneous same-channel STA+AP UDP bidirectional load with per-interface fairness, beacon timing, and RX hardware health"
-image = "diagnostic-psram-stack"
+image = "correctness"
 isolation = "reset"
 data_plane = "single-core"
 tags = ["wifi", "sta-ap", "udp", "fairness", "beacon", "psram-stack"]

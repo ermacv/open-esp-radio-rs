@@ -1,7 +1,7 @@
 schema = 3
 id = "tcp-bidirectional"
 description = "Simultaneous TCP receive and transmit"
-image = "qualification"
+image = "correctness"
 isolation = "reset"
 tags = ["qualification", "tcp", "station", "full-duplex"]
 

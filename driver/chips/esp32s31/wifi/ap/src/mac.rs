@@ -61,21 +61,21 @@ pub enum Esp32s31ApPeerDisconnectStage {
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct Esp32s31ApMacReport {
+pub struct Esp32s31ApMacObservation {
     pub beacons_transmitted: u32,
     pub authentication_responses_transmitted: u32,
     pub association_responses_transmitted: u32,
     pub eapol_frames_transmitted: u32,
     pub data_frames_transmitted: u32,
     pub rx_block_ack_responses_transmitted: u32,
-    pub data_tx: Esp32s31ApDataTxReport,
+    pub data_tx: Esp32s31ApDataTxObservation,
     /// Disconnect transactions accepted by the hardware TX owner.
     pub disassociations_published: u32,
     pub deauthentications_published: u32,
     /// Disconnect transactions whose terminal completion reported an ACK.
     pub disassociations_acknowledged: u32,
     pub deauthentications_acknowledged: u32,
-    pub tx_failures: Esp32s31ApTxFailureReport,
+    pub tx_failures: Esp32s31ApTxFailureObservation,
 }
 
 /// Aggregate terminal evidence for AP data-frame TX transactions.
@@ -83,7 +83,7 @@ pub struct Esp32s31ApMacReport {
 /// This is observation only: it consumes the already-decoded ordinary TX
 /// outcome and does not participate in retry, rate or queue decisions.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct Esp32s31ApDataTxReport {
+pub struct Esp32s31ApDataTxObservation {
     pub attempts: u32,
     pub retried_frames: u32,
     pub cts_timeout_retries: u32,
@@ -96,7 +96,8 @@ pub struct Esp32s31ApDataTxReport {
     pub maximum_ack_snr_db: i8,
 }
 
-impl Esp32s31ApDataTxReport {
+#[cfg(any(feature = "diagnostics", test))]
+impl Esp32s31ApDataTxObservation {
     fn observe(&mut self, report: open_esp_radio_esp32s31_wifi::ordinary_tx::OrdinaryTxReport) {
         let attempts = report.status.attempts;
         self.attempts = self.attempts.saturating_add(u32::from(attempts));
@@ -134,11 +135,21 @@ impl Esp32s31ApDataTxReport {
 /// undifferentiated `u32`, so retaining evidence does not enlarge the live AP
 /// owner or its executor future.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct Esp32s31ApTxFailureReport {
+pub struct Esp32s31ApTxFailureObservation {
     pub hardware_failures: u8,
     pub hardware_timeouts: u8,
     pub collision_limits: u8,
     pub last_hardware_status: u8,
+}
+
+/// Diagnostic state owned by the optional AP MAC observer.
+///
+/// This owner is absent from ordinary builds. It consumes already-decoded TX
+/// outcomes and never participates in publication, retry or rate decisions.
+#[cfg(any(feature = "diagnostics", test))]
+#[derive(Default)]
+struct Esp32s31ApMacObserver {
+    observation: Esp32s31ApMacObservation,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -180,7 +191,8 @@ pub struct Esp32s31ApMac<'beacon, 'slot, P, E, T, const BUFFER_SIZE: usize> {
     transmit: Esp32s31ApTx<'slot, P, E, T, BUFFER_SIZE>,
     pending: Option<PendingPublication>,
     block_ack_alarm: Option<([u8; 6], TxBlockAckAlarm)>,
-    report: Esp32s31ApMacReport,
+    #[cfg(any(feature = "diagnostics", test))]
+    observer: Esp32s31ApMacObserver,
 }
 
 /// AP protocol state with no ordinary descriptor or DMA publication owner.
@@ -188,7 +200,14 @@ pub struct Esp32s31ApMacParked<'beacon> {
     engine: Esp32s31ApEngine<'beacon>,
     transmit: Esp32s31ApTxParked,
     block_ack_alarm: Option<([u8; 6], TxBlockAckAlarm)>,
-    report: Esp32s31ApMacReport,
+    #[cfg(any(feature = "diagnostics", test))]
+    observer: Esp32s31ApMacObserver,
+}
+
+/// Quiescent AP MAC owners returned after the ordinary TX transaction parks.
+pub struct Esp32s31ApMacParts<'beacon, 'slot, P, E, T, const BUFFER_SIZE: usize> {
+    pub engine: Esp32s31ApEngine<'beacon>,
+    pub transmit: WifiTxResources<'slot, P, E, T, BUFFER_SIZE>,
 }
 
 impl Esp32s31ApMacParked<'_> {
@@ -237,7 +256,8 @@ where
             transmit: Esp32s31ApTx::new(resources, config),
             pending: None,
             block_ack_alarm: None,
-            report: Esp32s31ApMacReport::default(),
+            #[cfg(any(feature = "diagnostics", test))]
+            observer: Esp32s31ApMacObserver::default(),
         }
     }
 
@@ -266,8 +286,9 @@ where
         Ok((&mut self.engine, &mut self.transmit))
     }
 
-    pub const fn report(&self) -> Esp32s31ApMacReport {
-        self.report
+    #[cfg(any(feature = "diagnostics", test))]
+    pub fn observation(&self) -> Esp32s31ApMacObservation {
+        self.observer.observation
     }
 
     pub const fn tx_pending(&self) -> bool {
@@ -525,14 +546,23 @@ where
         // publication from an ACK that a departing peer may never return.
         self.transmit
             .start_encoded(hardware, Esp32s31ApTxClass::Management, &scratch[..length])?;
-        match stage {
-            Esp32s31ApPeerDisconnectStage::Disassociation => {
-                self.report.disassociations_published =
-                    self.report.disassociations_published.saturating_add(1);
-            }
-            Esp32s31ApPeerDisconnectStage::Deauthentication => {
-                self.report.deauthentications_published =
-                    self.report.deauthentications_published.saturating_add(1);
+        #[cfg(any(feature = "diagnostics", test))]
+        {
+            match stage {
+                Esp32s31ApPeerDisconnectStage::Disassociation => {
+                    self.observer.observation.disassociations_published = self
+                        .observer
+                        .observation
+                        .disassociations_published
+                        .saturating_add(1);
+                }
+                Esp32s31ApPeerDisconnectStage::Deauthentication => {
+                    self.observer.observation.deauthentications_published = self
+                        .observer
+                        .observation
+                        .deauthentications_published
+                        .saturating_add(1);
+                }
             }
         }
         self.pending = Some(PendingPublication::PeerDisconnect { close, stage });
@@ -557,31 +587,45 @@ where
             .transmit
             .take_last_outcome()
             .expect("terminal AP TX retains an outcome");
+        #[cfg(any(feature = "diagnostics", test))]
         if let PendingPublication::Data { peer } = pending
             && peer[0] & 1 == 0
         {
             // Group traffic has no ACK and deliberately uses the 1-Mbit/s
             // basic rate. Mixing it into per-peer retry/rate evidence makes a
             // healthy broadcast look like a unicast rate-control collapse.
-            self.report.data_tx.observe(outcome.report());
+            self.observer.observation.data_tx.observe(outcome.report());
         }
         if !matches!(outcome, OrdinaryTxOutcome::Success(_)) {
+            #[cfg(any(feature = "diagnostics", test))]
             match outcome {
                 OrdinaryTxOutcome::HardwareFailure(report) => {
-                    self.report.tx_failures.hardware_failures =
-                        self.report.tx_failures.hardware_failures.saturating_add(1);
-                    self.report.tx_failures.last_hardware_status = report
+                    self.observer.observation.tx_failures.hardware_failures = self
+                        .observer
+                        .observation
+                        .tx_failures
+                        .hardware_failures
+                        .saturating_add(1);
+                    self.observer.observation.tx_failures.last_hardware_status = report
                         .completion
                         .map(|completion| completion.status)
                         .unwrap_or(0);
                 }
                 OrdinaryTxOutcome::HardwareTimeout(_) => {
-                    self.report.tx_failures.hardware_timeouts =
-                        self.report.tx_failures.hardware_timeouts.saturating_add(1);
+                    self.observer.observation.tx_failures.hardware_timeouts = self
+                        .observer
+                        .observation
+                        .tx_failures
+                        .hardware_timeouts
+                        .saturating_add(1);
                 }
                 OrdinaryTxOutcome::CollisionLimit(_) => {
-                    self.report.tx_failures.collision_limits =
-                        self.report.tx_failures.collision_limits.saturating_add(1);
+                    self.observer.observation.tx_failures.collision_limits = self
+                        .observer
+                        .observation
+                        .tx_failures
+                        .collision_limits
+                        .saturating_add(1);
                 }
                 OrdinaryTxOutcome::Success(_) => unreachable!("checked failed AP publication"),
             }
@@ -613,21 +657,38 @@ where
         }
         let action = match pending {
             PendingPublication::Beacon => {
-                self.report.beacons_transmitted = self.report.beacons_transmitted.saturating_add(1);
+                #[cfg(any(feature = "diagnostics", test))]
+                {
+                    self.observer.observation.beacons_transmitted = self
+                        .observer
+                        .observation
+                        .beacons_transmitted
+                        .saturating_add(1);
+                }
                 Esp32s31ApTxCompletionAction::None
             }
             PendingPublication::Authentication => {
-                self.report.authentication_responses_transmitted = self
-                    .report
-                    .authentication_responses_transmitted
-                    .saturating_add(1);
+                #[cfg(any(feature = "diagnostics", test))]
+                {
+                    self.observer
+                        .observation
+                        .authentication_responses_transmitted = self
+                        .observer
+                        .observation
+                        .authentication_responses_transmitted
+                        .saturating_add(1);
+                }
                 Esp32s31ApTxCompletionAction::None
             }
             PendingPublication::Association { peer, begin_wpa2 } => {
-                self.report.association_responses_transmitted = self
-                    .report
-                    .association_responses_transmitted
-                    .saturating_add(1);
+                #[cfg(any(feature = "diagnostics", test))]
+                {
+                    self.observer.observation.association_responses_transmitted = self
+                        .observer
+                        .observation
+                        .association_responses_transmitted
+                        .saturating_add(1);
+                }
                 if begin_wpa2 {
                     Esp32s31ApTxCompletionAction::BeginWpa2 { peer }
                 } else {
@@ -638,15 +699,27 @@ where
                 peer,
                 retransmission,
             } => {
-                self.report.eapol_frames_transmitted =
-                    self.report.eapol_frames_transmitted.saturating_add(1);
+                #[cfg(any(feature = "diagnostics", test))]
+                {
+                    self.observer.observation.eapol_frames_transmitted = self
+                        .observer
+                        .observation
+                        .eapol_frames_transmitted
+                        .saturating_add(1);
+                }
                 self.engine
                     .observe_wpa2_transmit(peer, retransmission, true, now_micros)?;
                 Esp32s31ApTxCompletionAction::None
             }
             PendingPublication::Data { peer } => {
-                self.report.data_frames_transmitted =
-                    self.report.data_frames_transmitted.saturating_add(1);
+                #[cfg(any(feature = "diagnostics", test))]
+                {
+                    self.observer.observation.data_frames_transmitted = self
+                        .observer
+                        .observation
+                        .data_frames_transmitted
+                        .saturating_add(1);
+                }
                 if peer[0] & 1 == 0 {
                     self.engine.observe_peer_activity(peer, now_micros)?;
                 }
@@ -654,21 +727,32 @@ where
             }
             PendingPublication::BlockAckRequest { .. } => Esp32s31ApTxCompletionAction::None,
             PendingPublication::RxBlockAckResponse => {
-                self.report.rx_block_ack_responses_transmitted = self
-                    .report
-                    .rx_block_ack_responses_transmitted
-                    .saturating_add(1);
+                #[cfg(any(feature = "diagnostics", test))]
+                {
+                    self.observer.observation.rx_block_ack_responses_transmitted = self
+                        .observer
+                        .observation
+                        .rx_block_ack_responses_transmitted
+                        .saturating_add(1);
+                }
                 Esp32s31ApTxCompletionAction::None
             }
             PendingPublication::PeerDisconnect { close, stage } => {
+                #[cfg(any(feature = "diagnostics", test))]
                 match stage {
                     Esp32s31ApPeerDisconnectStage::Disassociation => {
-                        self.report.disassociations_acknowledged =
-                            self.report.disassociations_acknowledged.saturating_add(1);
+                        self.observer.observation.disassociations_acknowledged = self
+                            .observer
+                            .observation
+                            .disassociations_acknowledged
+                            .saturating_add(1);
                     }
                     Esp32s31ApPeerDisconnectStage::Deauthentication => {
-                        self.report.deauthentications_acknowledged =
-                            self.report.deauthentications_acknowledged.saturating_add(1);
+                        self.observer.observation.deauthentications_acknowledged = self
+                            .observer
+                            .observation
+                            .deauthentications_acknowledged
+                            .saturating_add(1);
                     }
                 }
                 Esp32s31ApTxCompletionAction::PeerDisconnectTerminal {
@@ -706,7 +790,8 @@ where
             transmit,
             pending,
             block_ack_alarm,
-            report,
+            #[cfg(any(feature = "diagnostics", test))]
+            observer,
         } = self;
         if pending.is_some() {
             return Err(Self {
@@ -714,7 +799,8 @@ where
                 transmit,
                 pending,
                 block_ack_alarm,
-                report,
+                #[cfg(any(feature = "diagnostics", test))]
+                observer,
             });
         }
         match transmit.try_park() {
@@ -724,7 +810,8 @@ where
                     engine,
                     transmit,
                     block_ack_alarm,
-                    report,
+                    #[cfg(any(feature = "diagnostics", test))]
+                    observer,
                 },
             )),
             Err(transmit) => Err(Self {
@@ -732,7 +819,8 @@ where
                 transmit,
                 pending: None,
                 block_ack_alarm,
-                report,
+                #[cfg(any(feature = "diagnostics", test))]
+                observer,
             }),
         }
     }
@@ -745,14 +833,16 @@ where
             engine,
             transmit,
             block_ack_alarm,
-            report,
+            #[cfg(any(feature = "diagnostics", test))]
+            observer,
         } = parked;
         Self {
             engine,
             transmit: Esp32s31ApTx::resume(resources, transmit),
             pending: None,
             block_ack_alarm,
-            report,
+            #[cfg(any(feature = "diagnostics", test))]
+            observer,
         }
     }
 
@@ -760,17 +850,13 @@ where
     #[allow(clippy::result_large_err, clippy::type_complexity)]
     pub fn try_into_parts(
         self,
-    ) -> Result<
-        (
-            Esp32s31ApEngine<'beacon>,
-            WifiTxResources<'slot, P, E, T, BUFFER_SIZE>,
-            Esp32s31ApMacReport,
-        ),
-        Self,
-    > {
+    ) -> Result<Esp32s31ApMacParts<'beacon, 'slot, P, E, T, BUFFER_SIZE>, Self> {
         self.try_park().map(|(resources, parked)| {
-            let Esp32s31ApMacParked { engine, report, .. } = parked;
-            (engine, resources, report)
+            let Esp32s31ApMacParked { engine, .. } = parked;
+            Esp32s31ApMacParts {
+                engine,
+                transmit: resources,
+            }
         })
     }
 }
@@ -945,7 +1031,7 @@ mod tests {
         );
 
         mac.publish_beacon(&mut hardware, 102_400).unwrap();
-        assert_eq!(mac.report().beacons_transmitted, 0);
+        assert_eq!(mac.observation().beacons_transmitted, 0);
         hardware.completion = Some(MacTxCompletionRegisters {
             aux_a: 0,
             aux_b: 0,
@@ -964,7 +1050,7 @@ mod tests {
         .unwrap();
         assert_eq!(progress, WifiTxProgress::Complete);
         assert_eq!(action, Esp32s31ApTxCompletionAction::None);
-        assert_eq!(mac.report().beacons_transmitted, 1);
+        assert_eq!(mac.observation().beacons_transmitted, 1);
         assert!(mac.try_into_parts().is_ok());
     }
 }

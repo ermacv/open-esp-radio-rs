@@ -146,13 +146,6 @@ _runtime_stack_bootstrap:
     ret
     .size _runtime_stack_bootstrap, . - _runtime_stack_bootstrap
 
-    .global _runtime_enter_cpu1_psram
-    .type _runtime_enter_cpu1_psram, @function
-_runtime_enter_cpu1_psram:
-    la sp, __runtime_cpu1_task_stack_top
-    tail runtime_cpu1_psram_main
-    .size _runtime_enter_cpu1_psram, . - _runtime_enter_cpu1_psram
-
     // Swap before the first memory access. The second CSR exchange preserves
     // the interrupted t0 in mscratch and gives t0 the other stack pointer:
     //
@@ -379,6 +372,27 @@ _runtime_psram_mtvt_source:
     .word _runtime_psram_irq_entry_47
     .size _runtime_psram_mtvt_source, . - _runtime_psram_mtvt_source
 
+    .option pop
+"#
+);
+
+// The boot-smoke image never starts CPU1. Keep the second-hart stack switch
+// out of that minimal link graph instead of satisfying it with an unreachable
+// alternate entry point.
+#[cfg(feature = "open-radio-hil")]
+core::arch::global_asm!(
+    r#"
+    .section .trap.psram_task_stack, "ax", @progbits
+    .option push
+    .option norelax
+    .option norvc
+    .balign 4
+    .global _runtime_enter_cpu1_psram
+    .type _runtime_enter_cpu1_psram, @function
+_runtime_enter_cpu1_psram:
+    la sp, __runtime_cpu1_task_stack_top
+    tail runtime_cpu1_psram_main
+    .size _runtime_enter_cpu1_psram, . - _runtime_enter_cpu1_psram
     .option pop
 "#
 );

@@ -18,5 +18,11 @@ open-esp-radio-wifi-ap = { path = "../../../../wifi/ap" }
 open-esp-radio-wifi-softmac = { path = "../../../../wifi/softmac" }
 open-esp-radio-wpa2 = { path = "../../../../wifi/wpa2" }
 
+[features]
+default = []
+# Value-only AP protocol/MAC observations. Ordinary builds retain no
+# diagnostic counters in the live AP owner graph.
+diagnostics = []
+
 [lints]
 workspace = true

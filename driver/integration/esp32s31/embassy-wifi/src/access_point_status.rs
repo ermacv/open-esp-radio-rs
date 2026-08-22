@@ -7,7 +7,7 @@ use embassy_sync::{
     signal::Signal,
 };
 
-use open_esp_radio::wifi::ap::{AP_MAX_CLIENTS, AccessPointServiceStatus, ApPeerStatus};
+use open_esp_radio_wifi_ap::{AP_MAX_CLIENTS, AccessPointServiceStatus, ApPeerStatus};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Esp32s31AccessPointStatusSnapshot {

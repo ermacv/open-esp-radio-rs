@@ -6,6 +6,7 @@ members = [
     "driver/adapters/embassy-net",
     "driver/adapters/embassy/wifi",
     "driver/adapters/embassy/esp32s31-coex",
+    "driver/adapters/embassy/esp32s31-platform",
     "driver/adapters/embassy/esp32s31-wifi",
     "driver/adapters/esp-hal/esp32s31-wifi",
     "driver/wifi/ap",
@@ -40,7 +41,6 @@ members = [
     "verification/vendor/targets/esp32s31/blobray-host",
 ]
 exclude = [
-    "driver/adapters/embassy/esp32s31-platform",
     "driver/integration/esp32s31/embassy-wifi",
     "examples/esp32s31-station",
     "hil/targets/esp32s31",

@@ -2,7 +2,7 @@ schema = 3
 id = "tcp-tx-ht40-split"
 description = "Split-core HT40 sustained TCP station-to-host transmission"
 repetitions = 3
-image = "qualification"
+image = "performance"
 isolation = "reset"
 data_plane = "split-radio-network"
 tags = ["qualification", "tcp", "station", "ht40", "split-core"]
@@ -19,4 +19,3 @@ chunk_bytes = 32768
 
 [criteria]
 minimum_tx_bps = 65000000
-require_no_beacon_loss = true

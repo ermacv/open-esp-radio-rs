@@ -658,6 +658,10 @@ async fn queue_event_reliably(session_id: u64, request_id: u32, body: Event) -> 
 /// runtime-configured sessions. Unsupported mutations receive an explicit
 /// response instead of being silently ignored.
 #[embassy_executor::task]
+#[allow(
+    large_assignments,
+    reason = "the protocol task moves bounded typed session results into its static Embassy arena; the linked-image stack audit remains authoritative"
+)]
 pub async fn protocol_task(capabilities: Capabilities) {
     publish_event_reliably(0, 0, Event::Hello(capabilities)).await;
     publish_event_reliably(

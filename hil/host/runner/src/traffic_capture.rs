@@ -371,9 +371,9 @@ impl SessionEvidence {
         {
             return Err("typed TX IRQ evidence contains no service edge".into());
         }
-        if tx.tx_publication_to_irq_samples == 0 {
-            return Err("typed TX evidence contains no publication-to-IRQ flight".into());
-        }
+        // Hard-IRQ timing is an intrusive diagnostic overlay, not part of the
+        // correctness image. Validate it when present, but do not make an
+        // otherwise complete TX/BlockAck observation depend on that overlay.
         if tx.hardware_timeouts != 0 || tx.collisions != 0 {
             return Err(format!("terminal typed A-MPDU failure: {tx:?}").into());
         }
@@ -2154,8 +2154,10 @@ mod tests {
                     simultaneous_station_access_point: true,
                     wifi_monitor_capture: true,
                     station_lifecycle_events: true,
+                    driver_observation_evidence: true,
                     rx_delivery_evidence: true,
                     task_poll_evidence: false,
+                    mac_irq_evidence: false,
                     psram_task_stack: false,
                     network_scheduler_evidence: false,
                     data_plane_placement: true,

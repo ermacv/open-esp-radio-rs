@@ -310,7 +310,7 @@ fn qualify(
         return Err(format!("monitor returned inconsistent evidence: {stopped:?}").into());
     }
     if stopped.captured_frames == 0 || stopped.captured_bytes == 0 {
-        return Err("monitor epoch captured no frames".into());
+        return Err(format!("monitor epoch captured no frames: {stopped:?}").into());
     }
     validate_elapsed(
         "monitor lifecycle",

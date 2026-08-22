@@ -1,9 +1,10 @@
 schema = 3
 id = "boot-smoke"
-description = "Bootstrap, PSRAM mapping and runtime startup"
+description = "Bootstrap, PSRAM mapping, PSRAM task stack, SRAM IRQ stack and runtime startup"
 image = "boot-smoke"
 isolation = "reset"
-tags = ["smoke"]
+data_plane = "single-core"
+tags = ["smoke", "psram-stack"]
 
 [workload]
 kind = "boot-smoke"

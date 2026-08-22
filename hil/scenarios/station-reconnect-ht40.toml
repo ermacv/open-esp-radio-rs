@@ -1,7 +1,7 @@
 schema = 3
 id = "station-reconnect-ht40"
 description = "HT40 repeated safe station teardown and reassociation"
-image = "qualification"
+image = "correctness"
 isolation = "reset"
 data_plane = "split-radio-network"
 tags = ["qualification", "station", "lifecycle", "ht40"]

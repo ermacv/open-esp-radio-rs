@@ -414,6 +414,10 @@ async fn log_open_radio_task_poll(task: &str, poll: TaskPollSnapshot) {
 /// preemption, which is intentional: a long task poll that blocks sibling
 /// Embassy work is harmful regardless of whether its body or an ISR consumed
 /// the interval.
+#[allow(
+    large_assignments,
+    reason = "the generic wrapper pins the already owner-rich future inside the final static Embassy task arena; linked-frame and runtime watermark audits remain authoritative"
+)]
 pub(in crate::product_hil) async fn observe_open_radio_task_polls<F: Future>(
     future: F,
     counters: &'static TaskPollCounters,

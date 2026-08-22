@@ -1,8 +1,8 @@
 schema = 3
 id = "access-point-single-client-load-tx"
-description = "Sustained single-client legacy AP outbound ceiling characterization"
+description = "Observer-free sustained single-client AP outbound performance baseline"
 repetitions = 1
-image = "qualification"
+image = "performance"
 isolation = "reset"
 tags = ["characterization", "wifi", "access-point", "network", "single-client", "load", "tx"]
 
@@ -11,6 +11,7 @@ kind = "access-point"
 cycles = 2
 boots = 1
 timeout_seconds = 180
+client = "open-wrt"
 
 [workload.traffic]
 kind = "udp"
@@ -20,6 +21,6 @@ tx_rate_bps = 16000000
 payload_bytes = 1400
 
 [criteria]
-exact_delivery = true
+exact_delivery = false
 minimum_tx_bps = 15200000
 minimum_concurrent_ap_clients = 1

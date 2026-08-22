@@ -1,0 +1,30 @@
+schema = 3
+id = "access-point-single-client-ceiling-bidirectional-task-poll"
+description = "Split-core AP HT40 saturated bidirectional UDP executor-residence diagnostic"
+repetitions = 1
+image = "diagnostic-task-poll"
+isolation = "reset"
+data_plane = "split-radio-network"
+tags = ["diagnostic", "wifi", "access-point", "network", "single-client", "ht40", "bidirectional", "task-poll", "split-core"]
+
+[link]
+phy = "ht40"
+
+[workload]
+kind = "access-point"
+cycles = 2
+boots = 1
+timeout_seconds = 120
+client = "open-wrt"
+
+[workload.traffic]
+kind = "udp"
+direction = "bidirectional"
+duration_seconds = 16
+rx_rate_bps = 100000000
+tx_rate_bps = 100000000
+payload_bytes = 1472
+
+[criteria]
+exact_delivery = false
+minimum_concurrent_ap_clients = 1

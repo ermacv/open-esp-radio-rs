@@ -2,7 +2,7 @@ use core::{
     future::Future,
     pin::pin,
     sync::atomic::{AtomicUsize, Ordering},
-    task::{Context, Waker},
+    task::{Context, Poll, Waker},
 };
 use std::{sync::Arc, task::Wake};
 
@@ -282,7 +282,7 @@ fn copied_and_shared_rx_follow_one_publication_order() {
     }
 }
 
-#[cfg(feature = "rx-delivery-observation")]
+#[cfg(feature = "diagnostics")]
 #[test]
 fn observed_pinned_admission_precedes_network_visibility() {
     type TestResources = PinnedEndpointResources<NoopRawMutex, FRAME_CAPACITY, 1>;
@@ -304,7 +304,7 @@ fn observed_pinned_admission_precedes_network_visibility() {
     assert!(device.receive(&mut context()).is_some());
 }
 
-#[cfg(feature = "rx-delivery-observation")]
+#[cfg(feature = "diagnostics")]
 #[test]
 fn observed_contiguous_admission_precedes_network_visibility() {
     type TestResources = PinnedEndpointResources<NoopRawMutex, FRAME_CAPACITY, 1>;
@@ -396,12 +396,10 @@ fn permanent_endpoints_keep_distinct_addresses_and_share_one_tx_fabric() {
     let station_interface = NetworkInterfaceId::new(3);
     let access_point_interface = NetworkInterfaceId::new(7);
     let (provider, consumer) = tx_resources.split(pool);
-    let (station_device, station_rx) =
+    let (mut station_device, station_rx) =
         station_resources.split(provider, station_interface, station);
-    let (access_point_device, access_point_rx) =
+    let (mut access_point_device, access_point_rx) =
         access_point_resources.split(provider, access_point_interface, access_point);
-    let mut station_device = station_device.with_tx_credit_limit(2);
-    let mut access_point_device = access_point_device.with_tx_credit_limit(2);
     let radio = DualPinnedNetworkRunner::new(
         station_interface,
         station_rx,
@@ -409,6 +407,42 @@ fn permanent_endpoints_keep_distinct_addresses_and_share_one_tx_fabric() {
         access_point_rx,
         consumer,
     );
+    radio.set_link_state(station_interface, LinkState::Up);
+
+    // A permanent but inactive peer must not halve the sole running role's
+    // batching frontier. The station may use the complete physical pool.
+    for marker in 0..4_u8 {
+        station_device
+            .transmit(&mut context())
+            .unwrap()
+            .consume(TEST_ETHERNET_LENGTH, |frame| frame.fill(marker));
+    }
+    assert!(station_device.transmit(&mut context()).is_none());
+    {
+        let mut publication = pin!(radio.wait_tx_publication());
+        assert!(matches!(
+            publication.as_mut().poll(&mut context()),
+            Poll::Ready(())
+        ));
+    }
+    let station_tx = radio.tx_consumer().for_interface(station_interface);
+    for marker in 0..4_u8 {
+        let frame = station_tx.try_receive().unwrap();
+        assert_eq!(frame.ethernet()[0], marker);
+        drop(frame);
+    }
+    {
+        let mut false_publication = pin!(radio.wait_tx_publication());
+        assert!(matches!(
+            false_publication.as_mut().poll(&mut context()),
+            Poll::Pending
+        ));
+    }
+
+    // Once both roles are active, a saturated endpoint may still use the
+    // complete physical pool. Fairness is applied at the real contention
+    // edge rather than by permanently halving standalone capacity.
+    radio.set_link_state(access_point_interface, LinkState::Up);
 
     assert_eq!(
         station_device.hardware_address(),
@@ -419,53 +453,60 @@ fn permanent_endpoints_keep_distinct_addresses_and_share_one_tx_fabric() {
         HardwareAddress::Ethernet(access_point)
     );
 
-    access_point_device
-        .transmit(&mut context())
-        .unwrap()
-        .consume(TEST_ETHERNET_LENGTH, |frame| frame.fill(0xa1));
-    station_device
-        .transmit(&mut context())
-        .unwrap()
-        .consume(TEST_ETHERNET_LENGTH, |frame| frame.fill(0x51));
-    access_point_device
-        .transmit(&mut context())
-        .unwrap()
-        .consume(TEST_ETHERNET_LENGTH, |frame| frame.fill(0xa2));
+    for marker in 0x51..=0x54_u8 {
+        station_device
+            .transmit(&mut context())
+            .unwrap()
+            .consume(TEST_ETHERNET_LENGTH, |frame| frame.fill(marker));
+    }
+
+    let station_wakes = Arc::new(AtomicUsize::new(0));
+    let access_point_wakes = Arc::new(AtomicUsize::new(0));
+    let station_waker = Waker::from(Arc::new(CountWake(station_wakes.clone())));
+    let access_point_waker = Waker::from(Arc::new(CountWake(access_point_wakes.clone())));
     assert!(
-        access_point_device.transmit(&mut context()).is_none(),
-        "one VIF cannot consume the peer's remaining physical credit"
+        station_device
+            .transmit(&mut Context::from_waker(&station_waker))
+            .is_none()
     );
-    station_device
-        .transmit(&mut context())
-        .unwrap()
-        .consume(TEST_ETHERNET_LENGTH, |frame| frame.fill(0x52));
+    assert!(
+        access_point_device
+            .transmit(&mut Context::from_waker(&access_point_waker))
+            .is_none()
+    );
+
     let consumer = radio.tx_consumer();
-    // Each VIF owns a FIFO; the sole physical consumer chooses between their
-    // visible heads. There is no invented cross-VIF ordering, and neither
-    // choice can rotate frames within the other interface.
-    assert_eq!(consumer.queue_len_for(station_interface), 2);
-    assert_eq!(consumer.queue_len_for(access_point_interface), 2);
     let station_tx = consumer.for_interface(station_interface);
     let access_point_tx = consumer.for_interface(access_point_interface);
     let station_first = station_tx.try_receive().unwrap();
     assert_eq!(*station_first.tag(), station_interface);
     assert_eq!(station_first.ethernet()[0], 0x51);
     drop(station_first);
-    let station_second = station_tx.try_receive().unwrap();
-    assert_eq!(station_second.ethernet()[0], 0x52);
-    drop(station_second);
-    assert_eq!(station_tx.queue_len(), 0);
-    assert_eq!(access_point_tx.queue_len(), 2);
+    assert_eq!(station_wakes.load(Ordering::Relaxed), 0);
+    assert_eq!(access_point_wakes.load(Ordering::Relaxed), 1);
+
+    access_point_device
+        .transmit(&mut Context::from_waker(&access_point_waker))
+        .expect("the waiting peer claims the returned credit")
+        .consume(TEST_ETHERNET_LENGTH, |frame| frame.fill(0xa1));
     let access_point_first = access_point_tx.try_receive().unwrap();
     assert_eq!(*access_point_first.tag(), access_point_interface);
     assert_eq!(access_point_first.ethernet()[0], 0xa1);
     drop(access_point_first);
-    let access_point_second = access_point_tx.try_receive().unwrap();
-    assert_eq!(access_point_second.ethernet()[0], 0xa2);
+
+    // Each VIF owns a FIFO. Granting the peer a returned credit must not
+    // rotate the already-published station frames.
+    for marker in 0x52..=0x54_u8 {
+        let frame = station_tx.try_receive().unwrap();
+        assert_eq!(frame.ethernet()[0], marker);
+        drop(frame);
+    }
+    assert_eq!(station_tx.queue_len(), 0);
+    assert_eq!(access_point_tx.queue_len(), 0);
 }
 
 #[test]
-fn empty_shared_tx_pool_does_not_ping_pong_endpoint_wakers() {
+fn returned_shared_tx_credit_wakes_one_waiting_peer() {
     type EndpointResources = PinnedEndpointResources<NoopRawMutex, FRAME_CAPACITY, 1>;
     type TestPool = PinnedTxPool<FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 1>;
     type TxResources = PinnedTxResources<NoopRawMutex, FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 1>;
@@ -474,10 +515,12 @@ fn empty_shared_tx_pool_does_not_ping_pong_endpoint_wakers() {
     let tx_resources = Box::leak(Box::new(TxResources::new()));
     let pool = TestPool::pin_static(Box::leak(Box::new(TestPool::new())));
     let (provider, consumer) = tx_resources.split(pool);
-    let (mut station, _station_rx) =
+    let (mut station, station_rx) =
         station_resources.split(provider, NetworkInterfaceId::new(0), [2, 0, 0, 0, 0, 1]);
-    let (mut access_point, _access_point_rx) =
+    let (mut access_point, access_point_rx) =
         access_point_resources.split(provider, NetworkInterfaceId::new(1), [2, 0, 0, 0, 0, 2]);
+    station_rx.set_link_state(LinkState::Up);
+    access_point_rx.set_link_state(LinkState::Up);
     station
         .transmit(&mut context())
         .expect("the sole physical credit starts free")
@@ -500,7 +543,7 @@ fn empty_shared_tx_pool_does_not_ping_pong_endpoint_wakers() {
             .try_receive()
             .expect("radio owns the published slot"),
     );
-    assert_eq!(station_wakes.load(Ordering::Relaxed), 1);
+    assert_eq!(station_wakes.load(Ordering::Relaxed), 0);
     assert_eq!(access_point_wakes.load(Ordering::Relaxed), 1);
 }
 

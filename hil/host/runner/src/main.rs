@@ -60,6 +60,21 @@ fn invalidate_previous_report(output: &Path) -> Result<()> {
     }
 }
 
+/// Starts one scenario from an empty generated-artifact directory.
+///
+/// A failed attempt is itself evidence. Keeping an older report beside the
+/// new `result.json` makes that evidence ambiguous, especially for workloads
+/// whose report is written only after every boot completes.
+fn reset_scenario_output(output: &Path) -> Result<()> {
+    match fs::remove_dir_all(output) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error.into()),
+    }
+    fs::create_dir_all(output)?;
+    Ok(())
+}
+
 const QUALIFIED_PROFILE: &str = "psram-code-psram-data";
 const TARGET: &str = "riscv32imafc-unknown-none-elf";
 const RUNTIME_BIN: &str = "open-esp-radio-hil-esp32s31-runtime";
@@ -388,7 +403,7 @@ fn run_scenario(
         lab.station_fixture.require_phy(link.phy)?;
     }
     let output = root.join("target/hil/esp32s31/runs").join(&selected.id);
-    fs::create_dir_all(&output)?;
+    reset_scenario_output(&output)?;
     fs::write(
         output.join("resolved-scenario.json"),
         serde_json::to_vec_pretty(selected)?,
@@ -490,10 +505,7 @@ fn validate_flashed_image(
     expected: scenario::ImageClass,
     output: &Path,
 ) -> Result<()> {
-    if matches!(
-        expected,
-        scenario::ImageClass::BootSmoke | scenario::ImageClass::BootSmokePsramStack
-    ) {
+    if expected == scenario::ImageClass::BootSmoke {
         return Ok(());
     }
     let capture = traffic_capture::SerialCapture::start_with_reset(&lab.device.serial);
@@ -503,15 +515,17 @@ fn validate_flashed_image(
     capture_result?;
 
     let observed = match (
+        capabilities.features.driver_observation_evidence,
         capabilities.features.task_poll_evidence,
         capabilities.features.rx_delivery_evidence,
+        capabilities.features.mac_irq_evidence,
         capabilities.features.psram_task_stack,
     ) {
-        (false, false, false) => scenario::ImageClass::Qualification,
-        (true, false, false) => scenario::ImageClass::DiagnosticTaskPoll,
-        (false, true, false) => scenario::ImageClass::DiagnosticRxDelivery,
-        (false, false, true) => scenario::ImageClass::DiagnosticPsramStack,
-        (true, false, true) => scenario::ImageClass::DiagnosticPsramStack,
+        (false, false, false, false, true) => scenario::ImageClass::Performance,
+        (true, false, false, false, true) => scenario::ImageClass::Correctness,
+        (true, false, false, true, true) => scenario::ImageClass::DiagnosticMacIrq,
+        (true, true, false, false, true) => scenario::ImageClass::DiagnosticTaskPoll,
+        (true, false, true, false, true) => scenario::ImageClass::DiagnosticRxDelivery,
         _ => {
             return Err(
                 "flashed image advertises mutually exclusive diagnostic capabilities".into(),
@@ -612,6 +626,7 @@ fn execute_workload(
                         lab,
                         selected.criteria.exact_delivery,
                         selected.criteria.require_no_beacon_loss,
+                        selected.image != scenario::ImageClass::Performance,
                     )
                 }
                 Direction::Tx => {
@@ -627,6 +642,7 @@ fn execute_workload(
                         lab,
                         selected.criteria.exact_delivery,
                         selected.criteria.require_no_beacon_loss,
+                        selected.image != scenario::ImageClass::Performance,
                     )
                 }
                 Direction::Bidirectional => {
@@ -651,10 +667,16 @@ fn execute_workload(
                         arguments,
                         output,
                         lab,
-                        selected.criteria.exact_delivery,
-                        selected.criteria.require_no_beacon_loss,
-                        selected.evidence.openwrt_tx_monitor_rx,
-                        selected.evidence.independent_laptop_monitor_rx,
+                        bidirectional::RunPolicy {
+                            require_exact_delivery: selected.criteria.exact_delivery,
+                            require_no_beacon_loss: selected.criteria.require_no_beacon_loss,
+                            capture_openwrt_tx_monitor_rx: selected.evidence.openwrt_tx_monitor_rx,
+                            capture_independent_laptop_monitor_rx: selected
+                                .evidence
+                                .independent_laptop_monitor_rx,
+                            require_driver_observation: selected.image
+                                != scenario::ImageClass::Performance,
+                        },
                     )
                 }
             }
@@ -843,6 +865,7 @@ fn execute_workload(
                 traffic: traffic.clone(),
                 criteria: selected.criteria.clone(),
                 expected_link: selected.link,
+                require_driver_observation: selected.image != scenario::ImageClass::Performance,
                 require_rx_delivery_evidence: selected.image
                     == scenario::ImageClass::DiagnosticRxDelivery,
             },
@@ -1366,6 +1389,7 @@ fn collect_rust_sources(directory: &Path, output: &mut Vec<PathBuf>) -> Result<(
 
 fn log_writer_token_allowed(path: &Path, token: &str) -> bool {
     match path.to_string_lossy().as_ref() {
+        "hil/targets/esp32s31/runtime/src/boot_smoke_console.rs" => token == "UsbSerialJtag",
         "hil/targets/esp32s31/runtime/src/console.rs" => token != "esp_println",
         "hil/targets/esp32s31/runtime/src/main.rs" => {
             matches!(token, "ets_printf" | "emergency_log")
@@ -1449,12 +1473,26 @@ fn audit_runtime(elf: &Path, binary: &Path, class: scenario::ImageClass) -> Resu
     let isr_start = symbol("__runtime_isr_start")?;
     let isr_end = symbol("__runtime_isr_end")?;
     let critical_start = symbol("__runtime_critical_data_start")?;
+    let critical_data_end = symbol("__runtime_critical_data_end")?;
     let critical_bss_end = symbol("__runtime_critical_bss_end")?;
     let dma_start = symbol("__runtime_dma_data_start")?;
     let dma_end = symbol("__runtime_dma_bss_end")?;
     let stack_bottom = symbol("_stack_end")?;
     let stack_top = symbol("_stack_start")?;
     let binary_bytes = fs::metadata(binary)?.len();
+    let initialized_observers_valid = if class == scenario::ImageClass::BootSmoke {
+        true
+    } else {
+        ["RX_PIPELINE", "AGGREGATE_TX", "MAC_IRQ", "TASK_POLLS"]
+            .into_iter()
+            .all(|expected| {
+                symbols.iter().any(|(name, address)| {
+                    name.contains(expected)
+                        && *address >= critical_start
+                        && *address < critical_data_end
+                })
+            })
+    };
 
     let in_sram = |start: u64, end: u64| start >= 0x2f00_0000 && end >= start && end <= 0x2f07_afc0;
     let stack_placement_valid = if class.uses_psram_task_stack() {
@@ -1500,6 +1538,7 @@ fn audit_runtime(elf: &Path, binary: &Path, class: scenario::ImageClass) -> Resu
         || !in_sram(isr_start, isr_end)
         || !in_sram(critical_start, critical_bss_end)
         || !in_sram(dma_start, dma_end)
+        || !initialized_observers_valid
         || !stack_placement_valid
     {
         return Err("runtime ELF violates the PSRAM/PSRAM placement contract".into());
@@ -1603,26 +1642,28 @@ mod tests {
     #[test]
     fn image_classes_are_stable_and_do_not_use_workload_environment() {
         assert_eq!(scenario::ImageClass::ALL.len(), 6);
-        assert_eq!(scenario::ImageClass::Qualification.id(), "qualification");
+        assert!(
+            scenario::ImageClass::ALL
+                .into_iter()
+                .all(scenario::ImageClass::uses_psram_task_stack)
+        );
+        assert_eq!(scenario::ImageClass::Performance.id(), "performance");
+        assert_eq!(scenario::ImageClass::Correctness.id(), "correctness");
+        assert_eq!(
+            scenario::ImageClass::Correctness.runtime_features(),
+            "open-radio-hil,driver-observation,psram-task-stack,code-psram,profile-psram-data"
+        );
+        assert_eq!(
+            scenario::ImageClass::DiagnosticMacIrq.runtime_features(),
+            "open-radio-hil,psram-task-stack,mac-irq-telemetry,code-psram,profile-psram-data"
+        );
         assert_eq!(
             scenario::ImageClass::DiagnosticTaskPoll.runtime_features(),
-            "open-radio-hil,task-poll-telemetry,network-scheduler-telemetry,single-core-diagnostic,code-psram,profile-psram-data"
-        );
-        assert_eq!(
-            scenario::ImageClass::DiagnosticRxDelivery.runtime_features(),
-            "open-radio-hil,rx-delivery-telemetry,code-psram,profile-psram-data"
-        );
-        assert_eq!(
-            scenario::ImageClass::DiagnosticPsramStack.runtime_features(),
             "open-radio-hil,psram-task-stack,task-poll-telemetry,network-scheduler-telemetry,code-psram,profile-psram-data"
         );
         assert_eq!(
-            scenario::ImageClass::DiagnosticPsramStack.runtime_profile(),
-            "psram-code-psram-data-psram-stack"
-        );
-        assert_eq!(
-            scenario::ImageClass::BootSmokePsramStack.runtime_features(),
-            "boot-smoke,psram-task-stack,code-psram,profile-psram-data"
+            scenario::ImageClass::DiagnosticRxDelivery.runtime_features(),
+            "open-radio-hil,psram-task-stack,rx-delivery-telemetry,code-psram,profile-psram-data"
         );
     }
 
@@ -1673,6 +1714,22 @@ mod tests {
         }
 
         assert!(!lockfile.exists());
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn scenario_output_reset_removes_stale_evidence() {
+        let directory = scratch_directory("scenario-output-reset");
+        let output = directory.join("target/hil/esp32s31/runs/example");
+        fs::create_dir_all(output.join("attempt-01")).unwrap();
+        fs::write(output.join("access-point-report.json"), b"stale").unwrap();
+        fs::write(output.join("attempt-01/result.json"), b"stale").unwrap();
+
+        reset_scenario_output(&output).unwrap();
+
+        assert!(output.is_dir());
+        assert!(!output.join("access-point-report.json").exists());
+        assert!(!output.join("attempt-01").exists());
         fs::remove_dir_all(directory).unwrap();
     }
 }

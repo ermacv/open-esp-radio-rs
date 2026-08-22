@@ -1,7 +1,7 @@
 schema = 3
 id = "udp-tx-he20-ceiling"
 description = "HE20 UDP station-to-host transmit ceiling with exact delivery"
-image = "qualification"
+image = "correctness"
 isolation = "reset"
 tags = ["qualification", "udp", "station", "ceiling"]
 

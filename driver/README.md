@@ -23,9 +23,8 @@ ESP32-S31 Embassy Wi-Fi runner (sole PAC/DMA/ISR owner)
     └────────────────┘
 ```
 
-Current source paths still reflect earlier fine-grained crates. Their public
-meaning is the boundary above; directory movement must not introduce another
-adapter API.
+The source tree follows the ownership boundary above. There is no compatibility
+module for the former vendor-derived `wdev` naming.
 
 - `radio`: public requests and typed role lifecycle.
 - `wifi/{ieee80211,softmac,sta,wpa2}`: portable Wi-Fi protocol logic.
@@ -52,6 +51,7 @@ Radio runner: Starting -> Ready -> Faulted
 Wi-Fi:        Idle -> Station -> Idle
               Idle -> Scan -> Idle
               Idle -> AccessPoint -> Idle
+              Idle -> Station+AccessPoint -> Idle
               Idle -> Monitor -> Idle
 ```
 
@@ -70,8 +70,11 @@ an exclusive capture role. The production STA API is deliberately always
 awake. AP owns one validated HT20 or HT40 ERP/HT BSS, a bounded peer table,
 WPA2-PSK/CCMP, per-peer Block Ack and pairwise HT A-MPDU unicast Ethernet.
 Each aggregate width and guard interval is bounded by the BSS geometry and the
-associated peer's observed HT capabilities. It does not claim AP+STA,
-group-data TX, HE or power save.
+associated peer's observed HT capabilities. The combined STA+AP role owns one
+same-channel physical RX producer, one physical TX owner and one IRQ epoch;
+the station association owns the channel and its loss tears down the complete
+pair before either role can be reused. AP does not claim group-data TX, HE or
+power save.
 BLE, Bluetooth, IEEE 802.15.4 and coexistence are not public runtime features
 and have no placeholder public owner types. Internal typed PAC/HAL/LMAC
 transactions exist for the reviewed Wi-Fi-side PTI/request leaves and COEX
@@ -81,10 +84,10 @@ until scheduler/lifecycle ownership and joint-radio hardware evidence exist.
 ISR handlers are private backend details: they record pending work and wake the
 runner. Examples contain no ISR, PAC, DMA or register assembly.
 
-The default resource profile fits a direct-to-flash internal-SRAM image.
-`high-throughput` selects the qualified 64-stage/40-RX/32-TX/32-A-MPDU
-envelope and requires product-owned initialized PSRAM placement for CPU-only
-state. DMA-visible and latency-critical owners remain in internal SRAM.
+The production profile executes ordinary code and task stacks from PSRAM.
+DMA-visible buffers, interrupt/trap stacks, critical data and the explicitly
+audited hot/interrupt call graph remain in internal SRAM. The placement audit
+fails if a DMA or interrupt owner crosses that boundary.
 
 ## Safety
 
@@ -134,11 +137,19 @@ separately meaningful hardware operations, migrate that complete sequence to
 HAL and compare the compiled production entry before changing evidence.
 
 AP and STA share mechanisms only below their role policy. Common protected
-data validation/decapsulation lives in the chip Wi-Fi crate; bounded Ethernet
-batch retention and `WdevServiceSet` live in the Embassy WDEV adapter. The
-integration `radio_resources` module owns the one network/TX/A-MPDU allocation
-borrowed by mutually exclusive role epochs. AP/STA peer state, security,
-Block-Ack negotiation, rate policy and lifecycle remain separate owners.
+data validation/decapsulation lives in the chip Wi-Fi crate. The Embassy
+adapter's role-neutral `datapath` owns scheduling, network queues, IRQ, DMA RX
+and physical TX; `StationRoleRuntime` and `AccessPointRoleRuntime` own their
+separate protocol states. `SingleRoleServices` and `ConcurrentRoleServices`
+only compose these owners. AP/STA peer state, security, Block-Ack negotiation,
+rate policy and lifecycle remain separate.
+
+Permanent STA and AP network endpoints share one finite physical TX credit
+pool. Each endpoint retains one ingress response credit. Ordinary egress uses
+the remaining pool elastically: an inactive peer imposes no quota, while every
+returned credit wakes one active endpoint which is actually waiting. Per-VIF
+FIFOs preserve publication order and the physical datapath scheduler owns
+cross-VIF frame fairness.
 
 ## Extension rules
 
@@ -157,4 +168,5 @@ Block-Ack negotiation, rate policy and lifecycle remain separate owners.
 - target checks build station, monitor and HIL with the pinned toolchain;
 - examples contain no unsafe/ISR/PAC/DMA code;
 - driver safety audit finds unsafe only in listed leaves;
-- UDP/TCP/ICMP HIL qualification independently guards STA and AP datapaths.
+- observer-free performance HIL measures UDP/TCP/ICMP transport independently
+  from correctness images and explicitly named diagnostics images.

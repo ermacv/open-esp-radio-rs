@@ -1,8 +1,8 @@
 schema = 3
 id = "access-point-single-client-bidirectional-8m"
-description = "Single-client legacy AP 8+8 Mbit/s bidirectional characterization"
+description = "Single-client AP 8+8 Mbit/s bidirectional baseline"
 repetitions = 1
-image = "qualification"
+image = "correctness"
 isolation = "reset"
 tags = ["characterization", "wifi", "access-point", "network", "single-client", "bidirectional"]
 

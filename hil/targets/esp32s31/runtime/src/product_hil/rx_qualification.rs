@@ -8,21 +8,24 @@
 
 #[cfg(feature = "rx-delivery-telemetry")]
 use core::cell::RefCell;
-use core::sync::atomic::{AtomicU32, Ordering};
+use core::sync::atomic::AtomicU32;
+#[cfg(feature = "driver-observation")]
+use core::sync::atomic::Ordering;
 
 #[cfg(feature = "rx-delivery-telemetry")]
 use embassy_sync::blocking_mutex::{Mutex, raw::CriticalSectionRawMutex};
 #[cfg(feature = "rx-delivery-telemetry")]
-use open_esp_radio::esp32s31::wifi::mac::rx::PUBLIC_HEADER_SIZE;
-use open_esp_radio::{
-    esp32s31::wifi::{mac::rx::decode_rx_phy_info, sta::connected_rx::ConnectedRxEvent},
-    wifi::ieee80211::data::EthernetFrameParts,
-};
-#[cfg(feature = "rx-delivery-telemetry")]
 use open_esp_radio_embassy_net::{FrameLengthError, RxEnqueueError};
+#[cfg(feature = "driver-observation")]
 use open_esp_radio_esp32s31_embassy_wifi::Esp32s31ConnectedRxObserver;
 #[cfg(feature = "rx-delivery-telemetry")]
 use open_esp_radio_esp32s31_embassy_wifi::{RxNetworkDeliveryEvent, RxNetworkDeliveryObserver};
+#[cfg(feature = "rx-delivery-telemetry")]
+use open_esp_radio_esp32s31_wifi_mac::rx::PUBLIC_HEADER_SIZE;
+#[cfg(feature = "driver-observation")]
+use open_esp_radio_esp32s31_wifi_mac::rx::decode_rx_phy_info;
+#[cfg(feature = "driver-observation")]
+use open_esp_radio_esp32s31_wifi_sta::connected_rx::ConnectedRxEvent;
 #[cfg(feature = "rx-delivery-telemetry")]
 use open_esp_radio_hil_esp32s31_telemetry::rx_delivery::{NetworkDropReason, RxDeliveryTracker};
 use open_esp_radio_hil_esp32s31_telemetry::rx_evidence::{
@@ -30,6 +33,8 @@ use open_esp_radio_hil_esp32s31_telemetry::rx_evidence::{
 };
 #[cfg(feature = "rx-delivery-telemetry")]
 use open_esp_radio_hil_protocol::{RxDeliveryEvidence, RxReorderDeliveryEvidence};
+#[cfg(feature = "driver-observation")]
+use open_esp_radio_ieee80211::data::EthernetFrameParts;
 
 pub(crate) static RX_PHY: RxPhyCounters = RxPhyCounters::new();
 pub(crate) static RX_S_MPDU: RxSmpduCounters = RxSmpduCounters::new();
@@ -41,11 +46,13 @@ static RX_DELIVERY: Mutex<CriticalSectionRawMutex, RefCell<Option<RxDeliveryTrac
 pub(crate) static LAST_FORMAT: AtomicU32 = AtomicU32::new(u32::MAX);
 pub(crate) static LAST_PHY: AtomicU32 = AtomicU32::new(u32::MAX);
 
+#[cfg(feature = "driver-observation")]
 pub(crate) struct HilConnectedRxObserver {
     udp_port: u16,
     phy_sample_cursor: AtomicU32,
 }
 
+#[cfg(feature = "driver-observation")]
 impl HilConnectedRxObserver {
     pub(crate) const fn new(udp_port: u16) -> Self {
         Self {
@@ -87,6 +94,7 @@ impl HilConnectedRxObserver {
     }
 }
 
+#[cfg(feature = "driver-observation")]
 impl Esp32s31ConnectedRxObserver for HilConnectedRxObserver {
     fn observe(&self, event: &ConnectedRxEvent<'_>) {
         match *event {
@@ -163,6 +171,7 @@ impl RxNetworkDeliveryObserver for HilConnectedRxObserver {
     }
 }
 
+#[cfg(feature = "driver-observation")]
 fn ipv4_udp_destination_port(frame: EthernetFrameParts<'_>) -> Option<u16> {
     if frame.ether_type != 0x0800 {
         return None;

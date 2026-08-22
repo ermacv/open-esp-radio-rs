@@ -17,22 +17,36 @@ embassy-sync = "0.8.0"
 embassy-time = "0.5.1"
 esp-hal = { git = "https://github.com/ermacv/esp-hal", rev = "7f914782f5c689a74f37df83b89a0827d3800323", default-features = false, features = ["esp32s31", "rt", "unstable"] }
 log = { version = "0.4.29", optional = true }
-open-esp-radio = { path = "../../../radio", default-features = false, features = ["esp32s31-wifi-embassy"] }
+open-esp-radio = { path = "../../../radio", default-features = false, features = ["wifi-embassy"] }
 open-esp-radio-esp32s31-wifi = { path = "../../../chips/esp32s31/wifi" }
+open-esp-radio-esp32s31-hal = { path = "../../../chips/esp32s31/hal" }
+open-esp-radio-esp32s31-phy = { path = "../../../chips/esp32s31/phy" }
+open-esp-radio-esp32s31-wifi-ap = { path = "../../../chips/esp32s31/wifi/ap" }
+open-esp-radio-esp32s31-wifi-dma = { path = "../../../chips/esp32s31/wifi/dma" }
+open-esp-radio-esp32s31-wifi-mac = { path = "../../../chips/esp32s31/wifi/mac" }
+open-esp-radio-esp32s31-wifi-sta = { path = "../../../chips/esp32s31/wifi/sta" }
 open-esp-radio-embassy-net = { path = "../../../adapters/embassy-net" }
 open-esp-radio-esp32s31-wifi-embassy = { path = "../../../adapters/embassy/esp32s31-wifi" }
 open-esp-radio-esp32s31-wifi-esp-hal = { path = "../../../adapters/esp-hal/esp32s31-wifi", features = ["esp32s31"] }
 open-esp-radio-wifi-embassy = { path = "../../../adapters/embassy/wifi" }
+open-esp-radio-ieee80211 = { path = "../../../wifi/ieee80211" }
+open-esp-radio-wifi-ap = { path = "../../../wifi/ap" }
+open-esp-radio-wifi-softmac = { path = "../../../wifi/softmac" }
+open-esp-radio-wifi-sta = { path = "../../../wifi/sta" }
+open-esp-radio-wpa2 = { path = "../../../wifi/wpa2" }
 static_cell = "2.1.1"
 
 [features]
 default = []
-qualification = [
+diagnostics = [
     "dep:log",
-    "embassy-net/cooperative-scheduler-telemetry",
-    "open-esp-radio-embassy-net/rx-delivery-observation",
-    "open-esp-radio-esp32s31-wifi-embassy/rx-delivery-observation",
+    "open-esp-radio-esp32s31-wifi-embassy/diagnostics",
 ]
+# Hard-IRQ callbacks are a deliberately separate diagnostic boundary. Enabling
+# ordinary value observers must not change the SRAM-closed interrupt call graph.
+mac-irq-diagnostics = ["diagnostics"]
+task-poll-telemetry = ["diagnostics"]
+network-scheduler-observation = ["embassy-net/cooperative-scheduler-telemetry"]
 
 [lints.rust]
 unsafe_op_in_unsafe_fn = "deny"

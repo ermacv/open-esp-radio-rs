@@ -416,7 +416,7 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
             transport_errors: receive_errors,
         };
         let passed = terminal_seen && receive_errors == 0;
-        let radio = RadioEvidence {
+        let radio = crate::product_hil::OPEN_RADIO_DRIVER_OBSERVATION.then_some(RadioEvidence {
             rx: Some(RxRadioEvidence {
                 phy_format: u8::try_from(rx_qualification::LAST_FORMAT.load(Ordering::Relaxed))
                     .unwrap_or(u8::MAX),
@@ -479,13 +479,13 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
                 mac_irq_classified_entries: mac_irq_entries,
             }),
             tx: None,
-        };
+        });
         complete_open_radio_bidirectional_direction(
             config.session_source.results,
             session.session_id,
             OpenRadioBidirectionalDirection::Rx,
             evidence,
-            Some(radio),
+            radio,
             None,
             rx_delivery,
             passed,

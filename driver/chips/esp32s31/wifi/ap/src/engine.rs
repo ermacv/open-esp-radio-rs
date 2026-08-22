@@ -117,12 +117,11 @@ pub struct Esp32s31ApEngineStop<'storage> {
     pub beacon_storage: &'storage mut [u8; WPA2_BEACON_CAPACITY],
     pub pairwise_storage: &'storage mut Esp32s31ApPairwiseKeyStorage,
     pub security: Esp32s31ApSecurityStopReport,
-    pub report: Esp32s31ApEngineReport,
 }
 
 /// Value-only observations from one AP ownership epoch.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct Esp32s31ApEngineReport {
+pub struct Esp32s31ApEngineObservation {
     pub beacons_prepared: u32,
     pub authentication_responses_prepared: u32,
     pub association_responses_prepared: u32,
@@ -149,6 +148,126 @@ pub struct Esp32s31ApEngineReport {
     pub tx_block_ack_negotiation_timeouts: u32,
 }
 
+#[cfg(any(feature = "diagnostics", test))]
+#[derive(Clone, Copy)]
+enum Esp32s31ApEngineObservationEvent {
+    BeaconPrepared,
+    AuthenticationResponsePrepared,
+    AssociationResponsePrepared { associated_peers: u8 },
+    PeerRemoved,
+    TxBlockAckResponseObserved,
+    TxBlockAckOperational,
+    TxBlockAckRejected,
+    TxBlockAckRequestPrepared,
+    TxBlockAckNegotiationTimeout,
+    PeerAuthorized { authorized_peers: u8 },
+    Wpa2ResponseWindow,
+    Wpa2Retransmission,
+    Wpa2HandshakeTimeout,
+    AuthenticationTimeout,
+    Wpa2HandshakeFailure,
+    InactivityTimeout,
+    Wpa2PendingOnStop,
+    DisassociationPrepared,
+    DeauthenticationPrepared,
+}
+
+#[cfg(any(feature = "diagnostics", test))]
+#[derive(Default)]
+struct Esp32s31ApEngineObserver {
+    observation: Esp32s31ApEngineObservation,
+}
+
+#[cfg(any(feature = "diagnostics", test))]
+impl Esp32s31ApEngineObserver {
+    fn observe(&mut self, event: Esp32s31ApEngineObservationEvent) {
+        let observation = &mut self.observation;
+        match event {
+            Esp32s31ApEngineObservationEvent::BeaconPrepared => {
+                observation.beacons_prepared = observation.beacons_prepared.saturating_add(1);
+            }
+            Esp32s31ApEngineObservationEvent::AuthenticationResponsePrepared => {
+                observation.authentication_responses_prepared = observation
+                    .authentication_responses_prepared
+                    .saturating_add(1);
+            }
+            Esp32s31ApEngineObservationEvent::AssociationResponsePrepared { associated_peers } => {
+                observation.association_responses_prepared =
+                    observation.association_responses_prepared.saturating_add(1);
+                observation.maximum_associated_peers =
+                    observation.maximum_associated_peers.max(associated_peers);
+            }
+            Esp32s31ApEngineObservationEvent::PeerRemoved => {
+                observation.peer_removals = observation.peer_removals.saturating_add(1);
+            }
+            Esp32s31ApEngineObservationEvent::TxBlockAckResponseObserved => {
+                observation.tx_block_ack_responses_observed = observation
+                    .tx_block_ack_responses_observed
+                    .saturating_add(1);
+            }
+            Esp32s31ApEngineObservationEvent::TxBlockAckOperational => {
+                observation.tx_block_ack_agreements_operational = observation
+                    .tx_block_ack_agreements_operational
+                    .saturating_add(1);
+            }
+            Esp32s31ApEngineObservationEvent::TxBlockAckRejected => {
+                observation.tx_block_ack_responses_rejected = observation
+                    .tx_block_ack_responses_rejected
+                    .saturating_add(1);
+            }
+            Esp32s31ApEngineObservationEvent::TxBlockAckRequestPrepared => {
+                observation.tx_block_ack_requests_prepared =
+                    observation.tx_block_ack_requests_prepared.saturating_add(1);
+            }
+            Esp32s31ApEngineObservationEvent::TxBlockAckNegotiationTimeout => {
+                observation.tx_block_ack_negotiation_timeouts = observation
+                    .tx_block_ack_negotiation_timeouts
+                    .saturating_add(1);
+            }
+            Esp32s31ApEngineObservationEvent::PeerAuthorized { authorized_peers } => {
+                observation.authorized_peers = observation.authorized_peers.saturating_add(1);
+                observation.maximum_authorized_peers =
+                    observation.maximum_authorized_peers.max(authorized_peers);
+            }
+            Esp32s31ApEngineObservationEvent::Wpa2ResponseWindow => {
+                observation.wpa2_response_windows =
+                    observation.wpa2_response_windows.saturating_add(1);
+            }
+            Esp32s31ApEngineObservationEvent::Wpa2Retransmission => {
+                observation.wpa2_retransmissions =
+                    observation.wpa2_retransmissions.saturating_add(1);
+            }
+            Esp32s31ApEngineObservationEvent::Wpa2HandshakeTimeout => {
+                observation.wpa2_handshake_timeouts =
+                    observation.wpa2_handshake_timeouts.saturating_add(1);
+            }
+            Esp32s31ApEngineObservationEvent::AuthenticationTimeout => {
+                observation.authentication_timeouts =
+                    observation.authentication_timeouts.saturating_add(1);
+            }
+            Esp32s31ApEngineObservationEvent::Wpa2HandshakeFailure => {
+                observation.wpa2_handshake_failures =
+                    observation.wpa2_handshake_failures.saturating_add(1);
+            }
+            Esp32s31ApEngineObservationEvent::InactivityTimeout => {
+                observation.inactivity_timeouts = observation.inactivity_timeouts.saturating_add(1);
+            }
+            Esp32s31ApEngineObservationEvent::Wpa2PendingOnStop => {
+                observation.wpa2_pending_on_stop =
+                    observation.wpa2_pending_on_stop.saturating_add(1);
+            }
+            Esp32s31ApEngineObservationEvent::DisassociationPrepared => {
+                observation.disassociations_prepared =
+                    observation.disassociations_prepared.saturating_add(1);
+            }
+            Esp32s31ApEngineObservationEvent::DeauthenticationPrepared => {
+                observation.deauthentications_prepared =
+                    observation.deauthentications_prepared.saturating_add(1);
+            }
+        }
+    }
+}
+
 /// Active AP policy and hardware-key owner.
 ///
 /// Dropping this value loses the only route back to role-neutral Wi-Fi, so a
@@ -159,7 +278,8 @@ pub struct Esp32s31ApEngine<'storage> {
     beacon: Esp32s31ApBeacon<'storage>,
     security: Esp32s31ApSecurity<'storage>,
     channel: WifiChannel,
-    report: Esp32s31ApEngineReport,
+    #[cfg(any(feature = "diagnostics", test))]
+    observer: Esp32s31ApEngineObserver,
 }
 
 impl<'storage> Esp32s31ApEngine<'storage> {
@@ -220,12 +340,19 @@ impl<'storage> Esp32s31ApEngine<'storage> {
             beacon,
             security,
             channel,
-            report: Esp32s31ApEngineReport::default(),
+            #[cfg(any(feature = "diagnostics", test))]
+            observer: Esp32s31ApEngineObserver::default(),
         })
     }
 
     pub const fn channel(&self) -> WifiChannel {
         self.channel
+    }
+
+    #[cfg(any(feature = "diagnostics", test))]
+    #[inline(always)]
+    fn observe(&mut self, event: Esp32s31ApEngineObservationEvent) {
+        self.observer.observe(event);
     }
 
     pub fn prepare_beacon(&mut self, executor_timestamp_micros: u64) -> Option<&mut [u8]> {
@@ -234,7 +361,9 @@ impl<'storage> Esp32s31ApEngine<'storage> {
             .beacon
             .prepare(executor_timestamp_micros, management_sequence, false, 0);
         if beacon.is_some() {
-            self.report.beacons_prepared = self.report.beacons_prepared.saturating_add(1);
+            #[cfg(any(feature = "diagnostics", test))]
+            self.observer
+                .observe(Esp32s31ApEngineObservationEvent::BeaconPrepared);
         }
         beacon
     }
@@ -314,10 +443,8 @@ impl<'storage> Esp32s31ApEngine<'storage> {
                         0,
                         sequence,
                     )?;
-                    self.report.authentication_responses_prepared = self
-                        .report
-                        .authentication_responses_prepared
-                        .saturating_add(1);
+                    #[cfg(any(feature = "diagnostics", test))]
+                    self.observe(Esp32s31ApEngineObservationEvent::AuthenticationResponsePrepared);
                     return Ok(Esp32s31ApManagementOutcome::Response {
                         len,
                         begin_wpa2: false,
@@ -344,10 +471,8 @@ impl<'storage> Esp32s31ApEngine<'storage> {
                     status,
                     sequence,
                 )?;
-                self.report.authentication_responses_prepared = self
-                    .report
-                    .authentication_responses_prepared
-                    .saturating_add(1);
+                #[cfg(any(feature = "diagnostics", test))]
+                self.observe(Esp32s31ApEngineObservationEvent::AuthenticationResponsePrepared);
                 Ok(Esp32s31ApManagementOutcome::Response {
                     len,
                     begin_wpa2: false,
@@ -384,8 +509,12 @@ impl<'storage> Esp32s31ApEngine<'storage> {
                         self.channel,
                         peer_status.ht,
                     )?;
-                    self.report.association_responses_prepared =
-                        self.report.association_responses_prepared.saturating_add(1);
+                    #[cfg(any(feature = "diagnostics", test))]
+                    self.observe(
+                        Esp32s31ApEngineObservationEvent::AssociationResponsePrepared {
+                            associated_peers: self.service.associated_count(),
+                        },
+                    );
                     return Ok(Esp32s31ApManagementOutcome::Response {
                         len,
                         begin_wpa2: false,
@@ -425,8 +554,6 @@ impl<'storage> Esp32s31ApEngine<'storage> {
                     self.channel,
                     ht_capabilities,
                 )?;
-                self.report.association_responses_prepared =
-                    self.report.association_responses_prepared.saturating_add(1);
                 if association_id.is_some() {
                     // Recovered `ic_set_sta` evidence gives the legacy B/G
                     // path a software transmit-rate context, represented here
@@ -435,11 +562,13 @@ impl<'storage> Esp32s31ApEngine<'storage> {
                     // state is installed later through the AID-owned key slot,
                     // so the current B/G AP has no unevidenced station-table
                     // MMIO operation to imitate.
-                    self.report.maximum_associated_peers = self
-                        .report
-                        .maximum_associated_peers
-                        .max(self.service.associated_count());
                 }
+                #[cfg(any(feature = "diagnostics", test))]
+                self.observe(
+                    Esp32s31ApEngineObservationEvent::AssociationResponsePrepared {
+                        associated_peers: self.service.associated_count(),
+                    },
+                );
                 Ok(Esp32s31ApManagementOutcome::Response {
                     len,
                     begin_wpa2: association_id.is_some(),
@@ -459,7 +588,8 @@ impl<'storage> Esp32s31ApEngine<'storage> {
                 }
                 self.security.clear_peer(hardware, peer)?;
                 self.service.remove_peer(peer)?;
-                self.report.peer_removals = self.report.peer_removals.saturating_add(1);
+                #[cfg(any(feature = "diagnostics", test))]
+                self.observe(Esp32s31ApEngineObservationEvent::PeerRemoved);
                 Ok(Esp32s31ApManagementOutcome::PeerRemoved { peer })
             }
             ApManagementRequest::BlockAck { peer, action } => {
@@ -467,22 +597,16 @@ impl<'storage> Esp32s31ApEngine<'storage> {
                     return Ok(Esp32s31ApManagementOutcome::Ignored);
                 }
                 if let Some(response) = self.service.on_tx_block_ack_action(peer, action)? {
-                    self.report.tx_block_ack_responses_observed = self
-                        .report
-                        .tx_block_ack_responses_observed
-                        .saturating_add(1);
+                    #[cfg(any(feature = "diagnostics", test))]
+                    self.observe(Esp32s31ApEngineObservationEvent::TxBlockAckResponseObserved);
                     match response {
                         TxBlockAckResponse::Operational(_) => {
-                            self.report.tx_block_ack_agreements_operational = self
-                                .report
-                                .tx_block_ack_agreements_operational
-                                .saturating_add(1);
+                            #[cfg(any(feature = "diagnostics", test))]
+                            self.observe(Esp32s31ApEngineObservationEvent::TxBlockAckOperational);
                         }
                         TxBlockAckResponse::Rejected(_) => {
-                            self.report.tx_block_ack_responses_rejected = self
-                                .report
-                                .tx_block_ack_responses_rejected
-                                .saturating_add(1);
+                            #[cfg(any(feature = "diagnostics", test))]
+                            self.observe(Esp32s31ApEngineObservationEvent::TxBlockAckRejected);
                         }
                     }
                 }
@@ -510,8 +634,8 @@ impl<'storage> Esp32s31ApEngine<'storage> {
             body: &request.body,
         }
         .encode(output)?;
-        self.report.tx_block_ack_requests_prepared =
-            self.report.tx_block_ack_requests_prepared.saturating_add(1);
+        #[cfg(any(feature = "diagnostics", test))]
+        self.observe(Esp32s31ApEngineObservationEvent::TxBlockAckRequestPrepared);
         Ok(Some((length, request.alarm)))
     }
 
@@ -530,10 +654,8 @@ impl<'storage> Esp32s31ApEngine<'storage> {
     ) -> Result<bool, Esp32s31ApEngineError> {
         let expired = self.service.on_tx_block_ack_alarm(peer, alarm)?;
         if expired {
-            self.report.tx_block_ack_negotiation_timeouts = self
-                .report
-                .tx_block_ack_negotiation_timeouts
-                .saturating_add(1);
+            #[cfg(any(feature = "diagnostics", test))]
+            self.observe(Esp32s31ApEngineObservationEvent::TxBlockAckNegotiationTimeout);
         }
         Ok(expired)
     }
@@ -560,11 +682,10 @@ impl<'storage> Esp32s31ApEngine<'storage> {
         self.security
             .install_pairwise(hardware, peer, association_id, ptk)?;
         self.service.authorize(peer, now_micros)?;
-        self.report.authorized_peers = self.report.authorized_peers.saturating_add(1);
-        self.report.maximum_authorized_peers = self
-            .report
-            .maximum_authorized_peers
-            .max(self.service.authorized_count());
+        #[cfg(any(feature = "diagnostics", test))]
+        self.observe(Esp32s31ApEngineObservationEvent::PeerAuthorized {
+            authorized_peers: self.service.authorized_count(),
+        });
         Ok(())
     }
 
@@ -743,8 +864,9 @@ impl<'storage> Esp32s31ApEngine<'storage> {
         })
     }
 
-    pub const fn report(&self) -> Esp32s31ApEngineReport {
-        self.report
+    #[cfg(any(feature = "diagnostics", test))]
+    pub fn observation(&self) -> Esp32s31ApEngineObservation {
+        self.observer.observation
     }
 
     pub const fn service_address(&self) -> [u8; 6] {
@@ -795,7 +917,8 @@ impl<'storage> Esp32s31ApEngine<'storage> {
             .service
             .observe_wpa2_transmit(peer, retransmission, acknowledged, now_micros)?
         {
-            self.report.wpa2_response_windows = self.report.wpa2_response_windows.saturating_add(1);
+            #[cfg(any(feature = "diagnostics", test))]
+            self.observe(Esp32s31ApEngineObservationEvent::Wpa2ResponseWindow);
         }
         Ok(())
     }
@@ -807,12 +930,12 @@ impl<'storage> Esp32s31ApEngine<'storage> {
         let progress = self.service.take_due_wpa2_retry(now_micros)?;
         match progress {
             ApWpa2RetryProgress::Transmit { .. } => {
-                self.report.wpa2_retransmissions =
-                    self.report.wpa2_retransmissions.saturating_add(1);
+                #[cfg(any(feature = "diagnostics", test))]
+                self.observe(Esp32s31ApEngineObservationEvent::Wpa2Retransmission);
             }
             ApWpa2RetryProgress::Close(_) => {
-                self.report.wpa2_handshake_timeouts =
-                    self.report.wpa2_handshake_timeouts.saturating_add(1);
+                #[cfg(any(feature = "diagnostics", test))]
+                self.observe(Esp32s31ApEngineObservationEvent::Wpa2HandshakeTimeout);
             }
             ApWpa2RetryProgress::None => {}
         }
@@ -832,19 +955,20 @@ impl<'storage> Esp32s31ApEngine<'storage> {
         let close = self.service.begin_due_peer_close(now_micros)?;
         match close.kind {
             ApPeerCloseKind::AuthenticationTimeout => {
-                self.report.authentication_timeouts =
-                    self.report.authentication_timeouts.saturating_add(1);
+                #[cfg(any(feature = "diagnostics", test))]
+                self.observe(Esp32s31ApEngineObservationEvent::AuthenticationTimeout);
             }
             ApPeerCloseKind::Wpa2HandshakeTimeout => {
-                self.report.wpa2_handshake_timeouts =
-                    self.report.wpa2_handshake_timeouts.saturating_add(1);
+                #[cfg(any(feature = "diagnostics", test))]
+                self.observe(Esp32s31ApEngineObservationEvent::Wpa2HandshakeTimeout);
             }
             ApPeerCloseKind::Wpa2HandshakeFailure => {
-                self.report.wpa2_handshake_failures =
-                    self.report.wpa2_handshake_failures.saturating_add(1);
+                #[cfg(any(feature = "diagnostics", test))]
+                self.observe(Esp32s31ApEngineObservationEvent::Wpa2HandshakeFailure);
             }
             ApPeerCloseKind::InactivityTimeout => {
-                self.report.inactivity_timeouts = self.report.inactivity_timeouts.saturating_add(1);
+                #[cfg(any(feature = "diagnostics", test))]
+                self.observe(Esp32s31ApEngineObservationEvent::InactivityTimeout);
             }
             ApPeerCloseKind::AccessPointStop => {}
         }
@@ -856,13 +980,15 @@ impl<'storage> Esp32s31ApEngine<'storage> {
         peer: [u8; 6],
     ) -> Result<ApPeerClose, Esp32s31ApEngineError> {
         let close = self.service.begin_wpa2_failure_close(peer)?;
-        self.report.wpa2_handshake_failures = self.report.wpa2_handshake_failures.saturating_add(1);
+        #[cfg(any(feature = "diagnostics", test))]
+        self.observe(Esp32s31ApEngineObservationEvent::Wpa2HandshakeFailure);
         Ok(close)
     }
 
     pub fn begin_stop_peer(&mut self) -> Option<ApPeerClose> {
         if self.service.next_wpa2_retry_deadline().is_some() {
-            self.report.wpa2_pending_on_stop = self.report.wpa2_pending_on_stop.saturating_add(1);
+            #[cfg(any(feature = "diagnostics", test))]
+            self.observe(Esp32s31ApEngineObservationEvent::Wpa2PendingOnStop);
         }
         self.service.begin_stop_peer()
     }
@@ -892,12 +1018,12 @@ impl<'storage> Esp32s31ApEngine<'storage> {
         )?;
         match kind {
             ApPeerDisconnectKind::Disassociation => {
-                self.report.disassociations_prepared =
-                    self.report.disassociations_prepared.saturating_add(1);
+                #[cfg(any(feature = "diagnostics", test))]
+                self.observe(Esp32s31ApEngineObservationEvent::DisassociationPrepared);
             }
             ApPeerDisconnectKind::Deauthentication => {
-                self.report.deauthentications_prepared =
-                    self.report.deauthentications_prepared.saturating_add(1);
+                #[cfg(any(feature = "diagnostics", test))]
+                self.observe(Esp32s31ApEngineObservationEvent::DeauthenticationPrepared);
             }
         }
         Ok(length)
@@ -917,7 +1043,8 @@ impl<'storage> Esp32s31ApEngine<'storage> {
         }
         self.security.clear_peer(hardware, close.peer)?;
         self.service.remove_peer(close.peer)?;
-        self.report.peer_removals = self.report.peer_removals.saturating_add(1);
+        #[cfg(any(feature = "diagnostics", test))]
+        self.observe(Esp32s31ApEngineObservationEvent::PeerRemoved);
         Ok(())
     }
 
@@ -932,7 +1059,6 @@ impl<'storage> Esp32s31ApEngine<'storage> {
             beacon_storage: self.beacon.into_storage(),
             pairwise_storage,
             security,
-            report: self.report,
         }
     }
 }
@@ -1035,18 +1161,19 @@ mod tests {
         );
         assert!(engine.prepare_beacon(102_400).is_some());
 
-        let stopped = engine.stop(&mut hardware);
+        let observation = engine.observation();
+        let _stopped = engine.stop(&mut hardware);
         assert_eq!(hardware.policy, Some(ap));
         assert_eq!(hardware.installed, [2]);
         assert_eq!(hardware.cleared, [2]);
         assert!(hardware.tsf_started);
         assert!(hardware.tsf_stopped);
         assert_eq!(
-            stopped.report,
-            Esp32s31ApEngineReport {
+            observation,
+            Esp32s31ApEngineObservation {
                 beacons_prepared: 1,
                 authentication_responses_prepared: 1,
-                ..Esp32s31ApEngineReport::default()
+                ..Esp32s31ApEngineObservation::default()
             }
         );
     }
@@ -1187,9 +1314,9 @@ mod tests {
 
         engine.complete_peer_close(&mut hardware, close).unwrap();
         assert!(engine.service_status().peers.iter().all(Option::is_none));
-        assert_eq!(engine.report().peer_removals, 1);
-        assert_eq!(engine.report().disassociations_prepared, 1);
-        assert_eq!(engine.report().deauthentications_prepared, 1);
+        assert_eq!(engine.observation().peer_removals, 1);
+        assert_eq!(engine.observation().disassociations_prepared, 1);
+        assert_eq!(engine.observation().deauthentications_prepared, 1);
         let _ = engine.stop(&mut hardware);
     }
 
@@ -1289,7 +1416,7 @@ mod tests {
                 .unwrap(),
             Esp32s31ApWpa2Outcome::PeerAuthorized { peer: authorized } if authorized == peer
         ));
-        assert_eq!(engine.report().authorized_peers, 1);
+        assert_eq!(engine.observation().authorized_peers, 1);
 
         let repeated_message4 = Wpa2TxFrame::<512>::message4(ap, 10)
             .unwrap()
@@ -1306,7 +1433,7 @@ mod tests {
                 .unwrap(),
             Esp32s31ApWpa2Outcome::None
         ));
-        assert_eq!(engine.report().authorized_peers, 1);
+        assert_eq!(engine.observation().authorized_peers, 1);
 
         let mut ethernet = [0_u8; 18];
         ethernet[..6].copy_from_slice(&peer);

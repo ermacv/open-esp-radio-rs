@@ -17,64 +17,66 @@ pub const SCENARIO_SCHEMA: u16 = 3;
 #[serde(rename_all = "kebab-case")]
 pub enum ImageClass {
     BootSmoke,
-    BootSmokePsramStack,
-    Qualification,
+    Performance,
+    Correctness,
+    DiagnosticMacIrq,
     DiagnosticTaskPoll,
     DiagnosticRxDelivery,
-    DiagnosticPsramStack,
 }
 
 impl ImageClass {
     pub const ALL: [Self; 6] = [
         Self::BootSmoke,
-        Self::BootSmokePsramStack,
-        Self::Qualification,
+        Self::Performance,
+        Self::Correctness,
+        Self::DiagnosticMacIrq,
         Self::DiagnosticTaskPoll,
         Self::DiagnosticRxDelivery,
-        Self::DiagnosticPsramStack,
     ];
 
     pub const fn id(self) -> &'static str {
         match self {
             Self::BootSmoke => "boot-smoke",
-            Self::BootSmokePsramStack => "boot-smoke-psram-stack",
-            Self::Qualification => "qualification",
+            Self::Performance => "performance",
+            Self::Correctness => "correctness",
+            Self::DiagnosticMacIrq => "diagnostic-mac-irq",
             Self::DiagnosticTaskPoll => "diagnostic-task-poll",
             Self::DiagnosticRxDelivery => "diagnostic-rx-delivery",
-            Self::DiagnosticPsramStack => "diagnostic-psram-stack",
         }
     }
 
     pub const fn runtime_features(self) -> &'static str {
         match self {
-            Self::BootSmoke => "boot-smoke,code-psram,profile-psram-data",
-            Self::BootSmokePsramStack => {
-                "boot-smoke,psram-task-stack,code-psram,profile-psram-data"
+            Self::BootSmoke => "boot-smoke,psram-task-stack,code-psram,profile-psram-data",
+            Self::Performance => "open-radio-hil,psram-task-stack,code-psram,profile-psram-data",
+            Self::Correctness => {
+                "open-radio-hil,driver-observation,psram-task-stack,code-psram,profile-psram-data"
             }
-            Self::Qualification => "open-radio-hil,code-psram,profile-psram-data",
+            Self::DiagnosticMacIrq => {
+                "open-radio-hil,psram-task-stack,mac-irq-telemetry,code-psram,profile-psram-data"
+            }
             Self::DiagnosticTaskPoll => {
-                "open-radio-hil,task-poll-telemetry,network-scheduler-telemetry,single-core-diagnostic,code-psram,profile-psram-data"
+                "open-radio-hil,psram-task-stack,task-poll-telemetry,network-scheduler-telemetry,code-psram,profile-psram-data"
             }
             Self::DiagnosticRxDelivery => {
-                "open-radio-hil,rx-delivery-telemetry,code-psram,profile-psram-data"
-            }
-            Self::DiagnosticPsramStack => {
-                "open-radio-hil,psram-task-stack,task-poll-telemetry,network-scheduler-telemetry,code-psram,profile-psram-data"
+                "open-radio-hil,psram-task-stack,rx-delivery-telemetry,code-psram,profile-psram-data"
             }
         }
     }
 
     pub const fn runtime_profile(self) -> &'static str {
         match self {
-            Self::BootSmokePsramStack | Self::DiagnosticPsramStack => {
-                "psram-code-psram-data-psram-stack"
-            }
-            _ => "psram-code-psram-data",
+            Self::BootSmoke
+            | Self::Performance
+            | Self::Correctness
+            | Self::DiagnosticMacIrq
+            | Self::DiagnosticTaskPoll
+            | Self::DiagnosticRxDelivery => "psram-code-psram-data-psram-stack",
         }
     }
 
     pub const fn uses_psram_task_stack(self) -> bool {
-        matches!(self, Self::BootSmokePsramStack | Self::DiagnosticPsramStack)
+        true
     }
 }
 
@@ -341,10 +343,7 @@ impl Scenario {
             return Err(format!("{}: scenario description is empty", self.source.display()).into());
         }
         bounded(self.repetitions, 1, 20, self, "repetitions")?;
-        let boot_smoke_image = matches!(
-            self.image,
-            ImageClass::BootSmoke | ImageClass::BootSmokePsramStack
-        );
+        let boot_smoke_image = self.image == ImageClass::BootSmoke;
         if boot_smoke_image && !matches!(self.workload, Workload::BootSmoke) {
             return Err(format!(
                 "{}: boot-smoke image accepts only boot-smoke workload",
@@ -355,15 +354,6 @@ impl Scenario {
         if !boot_smoke_image && matches!(self.workload, Workload::BootSmoke) {
             return Err(format!(
                 "{}: boot-smoke workload requires boot-smoke image",
-                self.source.display()
-            )
-            .into());
-        }
-        if self.image == ImageClass::DiagnosticTaskPoll
-            && self.data_plane != WifiDataPlanePlacement::SingleCore
-        {
-            return Err(format!(
-                "{}: diagnostic-task-poll image admits only single-core data-plane placement",
                 self.source.display()
             )
             .into());
@@ -424,6 +414,13 @@ impl Scenario {
         if let Some(link) = self.link
             && let Some(minimum_mcs) = link.minimum_mcs
         {
+            if self.image == ImageClass::Performance {
+                return Err(format!(
+                    "{}: performance images do not collect the driver observation required by minimum_mcs",
+                    self.source.display(),
+                )
+                .into());
+            }
             let maximum_mcs = match link.phy {
                 PhyExpectation::Ht20 | PhyExpectation::Ht40 => 7,
                 PhyExpectation::He20 => 9,
@@ -584,6 +581,30 @@ impl Scenario {
             }
             Workload::StationAccessPointReconnect { timeout_seconds } => {
                 bounded(*timeout_seconds, 30, 180, self, "timeout_seconds")?;
+            }
+        }
+        if self.image == ImageClass::Performance {
+            if self.criteria.exact_delivery {
+                return self.criteria_error(
+                    "performance images cannot claim exact delivery without driver observation",
+                );
+            }
+            if self.criteria.require_no_beacon_loss {
+                return self.criteria_error(
+                    "performance images cannot use the driver-observed beacon-loss verdict",
+                );
+            }
+            if !matches!(
+                self.workload,
+                Workload::Udp { .. }
+                    | Workload::Tcp { .. }
+                    | Workload::Icmp { .. }
+                    | Workload::AccessPoint { .. }
+                    | Workload::StationAccessPoint { .. }
+            ) {
+                return self.criteria_error(
+                    "performance images admit only externally measured network workloads",
+                );
             }
         }
         self.validate_criteria()?;
@@ -898,19 +919,59 @@ mod tests {
     }
 
     #[test]
-    fn ap_ht40_maximum_load_contract_has_four_qualified_gates() {
+    fn performance_catalog_is_observer_free_and_covers_both_roles() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios");
+        let catalog = Catalog::load(&root).unwrap();
+        let performance = catalog
+            .all()
+            .iter()
+            .filter(|scenario| scenario.image == ImageClass::Performance)
+            .collect::<Vec<_>>();
+        assert!(
+            performance.iter().any(|scenario| matches!(
+                scenario.workload,
+                Workload::Udp { .. } | Workload::Tcp { .. } | Workload::Icmp { .. }
+            )),
+            "performance catalog must exercise the station data plane",
+        );
+        assert!(
+            performance
+                .iter()
+                .any(|scenario| matches!(scenario.workload, Workload::AccessPoint { .. })),
+            "performance catalog must exercise the access-point data plane",
+        );
+        for scenario in performance {
+            assert!(!scenario.criteria.exact_delivery, "{}", scenario.id);
+            assert!(!scenario.criteria.require_no_beacon_loss, "{}", scenario.id);
+            assert!(
+                scenario.link.is_none_or(|link| link.minimum_mcs.is_none()),
+                "{}",
+                scenario.id
+            );
+            assert!(!scenario.evidence.openwrt_tx_monitor_rx, "{}", scenario.id);
+            assert!(
+                !scenario.evidence.independent_laptop_monitor_rx,
+                "{}",
+                scenario.id
+            );
+        }
+    }
+
+    #[test]
+    fn ap_ht40_ceiling_separates_performance_from_observed_correctness() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios");
         let catalog = Catalog::load(&root).unwrap();
         for id in [
             "access-point-single-client-ceiling-rx",
             "access-point-single-client-ceiling-tx",
             "access-point-single-client-ceiling-bidirectional",
-            "access-point-icmp",
         ] {
             let scenario = catalog.get(id).unwrap();
             assert_eq!(scenario.repetitions, 3, "{id}");
             assert_eq!(scenario.link.unwrap().phy, PhyExpectation::Ht40, "{id}");
-            assert!(scenario.criteria.require_no_beacon_loss, "{id}");
+            assert_eq!(scenario.image, ImageClass::Performance, "{id}");
+            assert!(!scenario.criteria.require_no_beacon_loss, "{id}");
+            assert_eq!(scenario.link.unwrap().minimum_mcs, None, "{id}");
             assert!(
                 matches!(
                     scenario.workload,
@@ -927,18 +988,6 @@ mod tests {
             );
         }
 
-        for id in [
-            "access-point-single-client-ceiling-rx",
-            "access-point-single-client-ceiling-tx",
-            "access-point-single-client-ceiling-bidirectional",
-        ] {
-            assert_eq!(
-                catalog.get(id).unwrap().link.unwrap().minimum_mcs,
-                Some(7),
-                "{id}"
-            );
-        }
-
         let bidirectional = catalog
             .get("access-point-single-client-ceiling-bidirectional")
             .unwrap();
@@ -950,6 +999,9 @@ mod tests {
         );
 
         let icmp = catalog.get("access-point-icmp").unwrap();
+        assert_eq!(icmp.image, ImageClass::Correctness);
+        assert_eq!(icmp.repetitions, 3);
+        assert!(icmp.criteria.require_no_beacon_loss);
         assert_eq!(icmp.link.unwrap().minimum_mcs, None);
         assert!(matches!(
             icmp.workload,

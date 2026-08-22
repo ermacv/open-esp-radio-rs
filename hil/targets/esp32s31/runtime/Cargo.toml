@@ -25,29 +25,43 @@ open-radio-hil = [
     "dep:open-esp-radio",
     "dep:open-esp-radio-embassy-net",
     "dep:open-esp-radio-esp32s31-embassy-wifi",
+    "dep:open-esp-radio-esp32s31-phy",
     "dep:open-esp-radio-esp32s31-wifi-esp-hal",
     "dep:open-esp-radio-hil-protocol",
     "dep:open-esp-radio-hil-esp32s31-telemetry",
+    "dep:open-esp-radio-wifi-embassy",
     "dep:postcard",
     "dep:serde",
 ]
+driver-observation = [
+    "dep:open-esp-radio-esp32s31-wifi-mac",
+    "dep:open-esp-radio-esp32s31-wifi-sta",
+    "dep:open-esp-radio-ieee80211",
+    "open-esp-radio-esp32s31-embassy-wifi/diagnostics",
+]
+# Intrusive hard-IRQ classification. This is never part of correctness or
+# performance images because it extends the SRAM-closed MAC ISR call graph.
+mac-irq-telemetry = [
+    "driver-observation",
+    "open-esp-radio-esp32s31-embassy-wifi/mac-irq-diagnostics",
+]
 # Diagnostic overlay for measuring continuous Embassy Future::poll
-# residence. Keep it out of ordinary throughput qualification because the
+# residence. Keep it out of correctness and performance images because the
 # per-poll timer reads and atomics are intentionally observable overhead.
-task-poll-telemetry = []
+task-poll-telemetry = [
+    "driver-observation",
+    "open-esp-radio-esp32s31-embassy-wifi/task-poll-telemetry",
+]
 # Diagnostic-only aggregate evidence for the bounded embassy-net scheduler.
-# Both the callback and its atomics are absent from qualification images.
+# Both the callback and its atomics are absent from correctness/performance.
 network-scheduler-telemetry = [
     "embassy-net/cooperative-scheduler-telemetry",
+    "open-esp-radio-esp32s31-embassy-wifi/network-scheduler-observation",
     "open-esp-radio-hil-esp32s31-telemetry/network-scheduler",
 ]
-# The task-poll image qualifies only CPU0 data-plane scenarios. CPU1 retains
-# its idle control executor, but does not need the 16-KiB network call-chain
-# stack reserved by images that admit split-radio-network placement.
-single-core-diagnostic = []
 # Diagnostic overlay proving each UDP RX delivery frontier from software
 # reorder output through network admission and application consumption.
-rx-delivery-telemetry = []
+rx-delivery-telemetry = ["driver-observation"]
 
 [dependencies]
 embassy-executor.workspace = true
@@ -62,10 +76,15 @@ heapless = { workspace = true, optional = true }
 open-esp-radio = { workspace = true, optional = true }
 open-esp-radio-embassy-net = { workspace = true, optional = true }
 open-esp-radio-esp32s31-embassy-wifi = { workspace = true, optional = true }
+open-esp-radio-esp32s31-phy = { workspace = true, optional = true }
+open-esp-radio-esp32s31-wifi-mac = { workspace = true, optional = true }
+open-esp-radio-esp32s31-wifi-sta = { path = "../../../../driver/chips/esp32s31/wifi/sta", optional = true }
 open-esp-radio-esp32s31-embassy-runtime.workspace = true
 open-esp-radio-esp32s31-wifi-esp-hal = { workspace = true, features = ["esp32s31"], optional = true }
 open-esp-radio-hil-protocol = { workspace = true, optional = true }
 open-esp-radio-hil-esp32s31-telemetry = { workspace = true, optional = true }
+open-esp-radio-ieee80211 = { workspace = true, optional = true }
+open-esp-radio-wifi-embassy = { workspace = true, optional = true }
 postcard = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
 static_cell.workspace = true

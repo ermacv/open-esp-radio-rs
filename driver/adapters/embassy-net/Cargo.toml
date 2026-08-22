@@ -10,7 +10,7 @@ description = "Bounded, owned Ethernet frame boundary between open ESP radio tas
 [features]
 default = []
 # Exposes the exact pre-publication edge only to diagnostic compositions.
-rx-delivery-observation = []
+diagnostics = []
 
 [dependencies]
 embassy-net-driver = "0.2"

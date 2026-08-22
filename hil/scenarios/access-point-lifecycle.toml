@@ -1,7 +1,7 @@
 schema = 3
 id = "access-point-lifecycle"
 description = "Repeated cold-boot and ownership qualification for one WPA2 access point"
-image = "qualification"
+image = "correctness"
 isolation = "reset"
 tags = ["qualification", "wifi", "access-point", "lifecycle"]
 

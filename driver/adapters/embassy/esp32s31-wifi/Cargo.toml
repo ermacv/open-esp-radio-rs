@@ -30,11 +30,16 @@ static_cell = "2.1.1"
 [dev-dependencies]
 critical-section = { version = "1.2.0", features = ["std"] }
 embassy-time = { version = "0.5.1", features = ["generic-queue-64", "std"] }
+open-esp-radio-esp32s31-wifi-ap = { path = "../../../chips/esp32s31/wifi/ap", features = ["diagnostics"] }
 
 [features]
 default = []
-# Keeps exact RX delivery observation out of the ordinary driver surface.
-rx-delivery-observation = ["open-esp-radio-embassy-net/rx-delivery-observation"]
+# Value-only driver observers. Ordinary/performance builds do not retain
+# diagnostic counters or invoke observation clocks.
+diagnostics = [
+    "open-esp-radio-embassy-net/diagnostics",
+    "open-esp-radio-esp32s31-wifi-ap/diagnostics",
+]
 
 [lints]
 workspace = true

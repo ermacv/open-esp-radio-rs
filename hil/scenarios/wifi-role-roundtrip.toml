@@ -1,7 +1,7 @@
 schema = 3
 id = "wifi-role-roundtrip"
 description = "Station, idle, scan and monitor ownership roundtrip"
-image = "qualification"
+image = "correctness"
 isolation = "reset"
 tags = ["qualification", "wifi", "lifecycle"]
 

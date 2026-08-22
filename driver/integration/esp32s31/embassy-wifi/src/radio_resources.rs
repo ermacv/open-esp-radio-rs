@@ -5,19 +5,13 @@
 //! station `connected` transaction.
 
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
-use open_esp_radio::esp32s31::wifi::{
-    dma::tx_ampdu_storage::AmpduDmaStorage,
-    mac::tx_ampdu::{
-        HtAmpduTxError, HtAmpduTxResources, HtAmpduTxStorage, RetainedAmpduDmaStorage,
-    },
-};
 use open_esp_radio_embassy_net::{
     DualPinnedNetworkRunner, PinnedEndpointResources, PinnedTxFrame, PinnedTxPool,
     PinnedTxResources, SharedPinnedRxConsumer, SharedRxSplitPinnedDevice,
 };
+use open_esp_radio_esp32s31_wifi_dma::tx_ampdu_storage::AmpduDmaStorage;
 use open_esp_radio_esp32s31_wifi_embassy::{
-    ampdu_resources::AggregateTxResources,
-    resource_profile::{
+    composition::resources::{
         ESP32S31_DEFAULT_NETWORK_FRAME_CAPACITY as NETWORK_FRAME_CAPACITY,
         ESP32S31_DEFAULT_NETWORK_RX_QUEUE_DEPTH as NETWORK_RX_QUEUE_DEPTH,
         ESP32S31_DEFAULT_NETWORK_TX_QUEUE_DEPTH as NETWORK_TX_QUEUE_DEPTH,
@@ -26,6 +20,10 @@ use open_esp_radio_esp32s31_wifi_embassy::{
         ESP32S31_DEFAULT_RX_STAGE_SLOT_COUNT as RX_STAGE_SLOT_COUNT,
         ESP32S31_DEFAULT_TX_AMPDU_FRAME_COUNT as TX_AMPDU_FRAME_COUNT,
     },
+    datapath::tx::resources::AggregateTxResources,
+};
+use open_esp_radio_esp32s31_wifi_mac::tx_ampdu::{
+    HtAmpduTxError, HtAmpduTxResources, HtAmpduTxStorage, RetainedAmpduDmaStorage,
 };
 use open_esp_radio_wifi_embassy::station_network::{
     RunningStationNetwork, StationNetworkResources,
@@ -33,7 +31,7 @@ use open_esp_radio_wifi_embassy::station_network::{
 use static_cell::{ConstStaticCell, StaticCell};
 
 pub(super) const NETWORK_TX_HEADROOM: usize =
-    8 + open_esp_radio::wifi::ieee80211::station::STA_PROTECTED_QOS_ETHERNET_HEADROOM;
+    8 + open_esp_radio_ieee80211::station::STA_PROTECTED_QOS_ETHERNET_HEADROOM;
 pub(super) const TX_AMPDU_BUFFER_SIZE: usize = 0;
 
 type NetworkResources = PinnedEndpointResources<
@@ -162,18 +160,18 @@ pub(super) fn initialize_network(
     let (tx_provider, tx_consumer) = network_tx_resources.split(tx_pool);
     let (station_device, station_rx) = station_resources.split(
         tx_provider,
-        open_esp_radio_esp32s31_wifi_embassy::sta_ap::STA_NETWORK_INTERFACE_ID,
+        open_esp_radio_esp32s31_wifi_embassy::roles::concurrent::STA_NETWORK_INTERFACE_ID,
         station_address,
     );
     let (access_point_device, access_point_rx) = access_point_resources.split(
         tx_provider,
-        open_esp_radio_esp32s31_wifi_embassy::sta_ap::AP_NETWORK_INTERFACE_ID,
+        open_esp_radio_esp32s31_wifi_embassy::roles::concurrent::AP_NETWORK_INTERFACE_ID,
         access_point_address,
     );
     let runner = DualPinnedNetworkRunner::new(
-        open_esp_radio_esp32s31_wifi_embassy::sta_ap::STA_NETWORK_INTERFACE_ID,
+        open_esp_radio_esp32s31_wifi_embassy::roles::concurrent::STA_NETWORK_INTERFACE_ID,
         station_rx,
-        open_esp_radio_esp32s31_wifi_embassy::sta_ap::AP_NETWORK_INTERFACE_ID,
+        open_esp_radio_esp32s31_wifi_embassy::roles::concurrent::AP_NETWORK_INTERFACE_ID,
         access_point_rx,
         tx_consumer,
     )
@@ -182,11 +180,9 @@ pub(super) fn initialize_network(
     (
         Esp32s31WifiDevices {
             station: station_device
-                .with_tx_credit_limit(NETWORK_TX_QUEUE_DEPTH / 2)
                 .with_ingress_tx_reserve()
                 .with_shared_rx(station_shared),
             access_point: access_point_device
-                .with_tx_credit_limit(NETWORK_TX_QUEUE_DEPTH / 2)
                 .with_ingress_tx_reserve()
                 .with_shared_rx(access_point_shared),
         },

@@ -1,7 +1,7 @@
 schema = 3
 id = "icmp-latency"
 description = "Connected-station ICMP latency and loss"
-image = "qualification"
+image = "correctness"
 isolation = "reset"
 tags = ["qualification", "icmp", "station"]
 

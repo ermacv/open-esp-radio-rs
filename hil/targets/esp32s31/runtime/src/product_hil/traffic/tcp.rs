@@ -95,7 +95,11 @@ pub(in crate::product_hil) async fn run_open_radio_tcp_benchmark<'a>(
 
     loop {
         let session = sessions.receive().await;
-        wait_session_link_requirements(session.config.link_requirements, aggregate_counters).await;
+        wait_session_link_requirements(
+            session.config.link_requirements,
+            config.network_interface,
+        )
+        .await;
         publish_event_reliably(
             session.session_id,
             0,
@@ -123,7 +127,8 @@ pub(in crate::product_hil) async fn run_open_radio_tcp_benchmark<'a>(
             .rx_primary;
         let task_poll_start = TASK_POLLS.snapshot();
         let pipeline_start = pipeline_counters.snapshot();
-        let aggregate_start = aggregate_counters.snapshot();
+        let aggregate_start = crate::product_hil::OPEN_RADIO_DRIVER_OBSERVATION
+            .then(|| aggregate_counters.snapshot());
         let connection_timeout = duration + Duration::from_secs(5);
         let connected =
             match with_timeout(connection_timeout, socket.accept(config.local_port)).await {
@@ -275,17 +280,20 @@ pub(in crate::product_hil) async fn run_open_radio_tcp_benchmark<'a>(
             u8::from(rx.eof),
             u8::from(rx.pattern_ok),
         ));
-        let aggregate = aggregate_counters
-            .snapshot()
-            .wrapping_delta_since(aggregate_start);
-        let aggregate_evidence = matches!(
-            session.config.direction,
-            HilDirection::Tx | HilDirection::Bidirectional
-        )
-        .then_some(aggregate)
-        .filter(|aggregate| aggregate.rate_selections != 0)
-        .map(aggregate_tx_evidence);
-        log_open_radio_ampdu_interval(aggregate_start, aggregate_counters).await;
+        let aggregate = aggregate_start
+            .map(|earlier| aggregate_counters.snapshot().wrapping_delta_since(earlier));
+        let aggregate_evidence = aggregate
+            .filter(|_| {
+                matches!(
+                    session.config.direction,
+                    HilDirection::Tx | HilDirection::Bidirectional
+                )
+            })
+            .filter(|aggregate| aggregate.rate_selections != 0)
+            .map(aggregate_tx_evidence);
+        if let Some(aggregate_start) = aggregate_start {
+            log_open_radio_ampdu_interval(aggregate_start, aggregate_counters).await;
+        }
         log_open_radio_task_poll_interval(
             task_poll_start,
             OPEN_RADIO_TASK_POLL_TELEMETRY,

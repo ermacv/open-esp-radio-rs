@@ -1,7 +1,7 @@
 schema = 3
 id = "access-point-two-client-smoke"
 description = "Two simultaneous WPA2 clients across two access-point ownership epochs"
-image = "qualification"
+image = "correctness"
 isolation = "reset"
 tags = ["qualification", "wifi", "access-point", "lifecycle", "multi-client"]
 

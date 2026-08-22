@@ -1,7 +1,7 @@
 schema = 3
 id = "udp-bidirectional-ht40-split-soak"
 description = "Five-minute split-core HT40 full-duplex stability gate"
-image = "qualification"
+image = "correctness"
 isolation = "reset"
 data_plane = "split-radio-network"
 tags = ["qualification", "udp", "station", "full-duplex", "ht40", "split-core", "soak"]

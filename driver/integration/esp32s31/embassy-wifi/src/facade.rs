@@ -39,9 +39,10 @@ pub struct Esp32s31Wifi {
     control: Esp32s31WifiControl,
     devices: Esp32s31WifiDevices,
     monitor_frames: Esp32s31MonitorFrames,
+    station_status: crate::Esp32s31StationStatus,
     access_point_status: crate::Esp32s31AccessPointStatus,
-    #[cfg(feature = "qualification")]
-    qualification: crate::Esp32s31QualificationSnapshot,
+    #[cfg(feature = "diagnostics")]
+    diagnostics: crate::Esp32s31DiagnosticSnapshot,
 }
 
 /// Named application capabilities materialized from the Wi-Fi subsystem.
@@ -51,9 +52,10 @@ pub struct Esp32s31WifiParts {
     pub station_device: Esp32s31WifiDevice,
     pub access_point_device: Esp32s31WifiDevice,
     pub monitor_frames: Esp32s31MonitorFrames,
+    pub station_status: crate::Esp32s31StationStatus,
     pub access_point_status: crate::Esp32s31AccessPointStatus,
-    #[cfg(feature = "qualification")]
-    pub qualification: crate::Esp32s31QualificationSnapshot,
+    #[cfg(feature = "diagnostics")]
+    pub diagnostics: crate::Esp32s31DiagnosticSnapshot,
 }
 
 impl Esp32s31Wifi {
@@ -61,15 +63,16 @@ impl Esp32s31Wifi {
         control: Esp32s31WifiControl,
         devices: Esp32s31WifiDevices,
         monitor_frames: Esp32s31MonitorFrames,
-        #[cfg(feature = "qualification")] qualification: crate::Esp32s31QualificationSnapshot,
+        #[cfg(feature = "diagnostics")] diagnostics: crate::Esp32s31DiagnosticSnapshot,
     ) -> Self {
         Self {
             control,
             devices,
             monitor_frames,
+            station_status: crate::Esp32s31StationStatus::new(),
             access_point_status: crate::Esp32s31AccessPointStatus::new(),
-            #[cfg(feature = "qualification")]
-            qualification,
+            #[cfg(feature = "diagnostics")]
+            diagnostics,
         }
     }
 
@@ -79,9 +82,10 @@ impl Esp32s31Wifi {
             station_device: self.devices.station,
             access_point_device: self.devices.access_point,
             monitor_frames: self.monitor_frames,
+            station_status: self.station_status,
             access_point_status: self.access_point_status,
-            #[cfg(feature = "qualification")]
-            qualification: self.qualification,
+            #[cfg(feature = "diagnostics")]
+            diagnostics: self.diagnostics,
         }
     }
 }
@@ -121,7 +125,7 @@ impl Esp32s31Radio {
 /// Value-only cold-start evidence available without exposing PHY, register or
 /// calibration owners.
 pub struct Esp32s31RadioInitialization {
-    pub start: open_esp_radio::esp32s31::Esp32s31WifiMacStartReport,
-    pub transition: open_esp_radio::esp32s31::Esp32s31WifiRuntimeTransitionReport,
-    pub calibration_cache: Option<open_esp_radio::esp32s31::phy::PhyCalibrationCache>,
+    pub start: open_esp_radio_esp32s31_wifi::mac_start::Esp32s31WifiMacStartReport,
+    pub transition: open_esp_radio_esp32s31_wifi::runtime::Esp32s31WifiRuntimeTransitionReport,
+    pub calibration_cache: Option<open_esp_radio_esp32s31_phy::PhyCalibrationCache>,
 }

@@ -53,6 +53,7 @@ pub(crate) struct Config {
     pub(crate) traffic: AccessPointTraffic,
     pub(crate) criteria: Criteria,
     pub(crate) expected_link: Option<LinkExpectation>,
+    pub(crate) require_driver_observation: bool,
     pub(crate) require_rx_delivery_evidence: bool,
 }
 
@@ -115,7 +116,11 @@ struct CycleReport {
     traffic: TrafficReport,
     secondary_client: Option<SecondaryClientProbeEvidence>,
     primary_client_tx: Option<OpenWrtClientTxEvidence>,
-    access_point: open_esp_radio_hil_protocol::WifiAccessPointEvidence,
+    /// Intrusive driver-internal evidence is absent from observer-free
+    /// performance images. An omitted field is deliberately different from a
+    /// diagnostic snapshot whose counters all happened to be zero.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    access_point: Option<open_esp_radio_hil_protocol::WifiAccessPointEvidence>,
 }
 
 #[derive(Serialize)]
@@ -162,6 +167,13 @@ struct TcpWorkload {
     chunk_bytes: usize,
 }
 
+#[derive(Clone, Copy)]
+struct UdpEvidencePolicy {
+    exact_delivery: bool,
+    driver_observation: bool,
+    rx_delivery: bool,
+}
+
 pub(crate) fn run(config: Config, output: &Path, lab: &LabConfig) -> Result<()> {
     if let Some(expected_phy) = config.expected_link.map(|link| link.phy) {
         let expected_bandwidth_mhz = match expected_phy {
@@ -183,7 +195,7 @@ pub(crate) fn run(config: Config, output: &Path, lab: &LabConfig) -> Result<()> 
     }
     fs::create_dir_all(output)?;
     let mut report = AccessPointReport {
-        schema: 1,
+        schema: 2,
         boots: Vec::with_capacity(usize::from(config.boots)),
     };
     for boot in 0..config.boots {
@@ -424,17 +436,37 @@ fn qualify(capture: &SerialCapture, config: &Config, lab: &LabConfig) -> Result<
         let stopped = stop_result?;
         stop_stack_result?;
         restart_result?;
-        validate_mcs_evidence(&config.traffic, config.expected_link, &stopped)?;
-        let unacknowledged_disconnects = stopped
-            .disassociations_published
-            .saturating_sub(stopped.disassociations_acknowledged)
-            .saturating_add(
-                stopped
-                    .deauthentications_published
-                    .saturating_sub(stopped.deauthentications_acknowledged),
-            );
-        validate_rx_hardware_health(cycle, &stopped)?;
-        if stopped.beacons_transmitted == 0
+        if config.require_driver_observation {
+            validate_mcs_evidence(&config.traffic, config.expected_link, &stopped)?;
+            validate_access_point_observation(cycle, minimum_clients, &stopped)?;
+        }
+        let access_point = config.require_driver_observation.then_some(stopped);
+        cycles.push(CycleReport {
+            cycle,
+            traffic,
+            secondary_client,
+            primary_client_tx,
+            access_point,
+        });
+    }
+    Ok(cycles)
+}
+
+fn validate_access_point_observation(
+    cycle: u8,
+    minimum_clients: u8,
+    stopped: &open_esp_radio_hil_protocol::WifiAccessPointEvidence,
+) -> Result<()> {
+    let unacknowledged_disconnects = stopped
+        .disassociations_published
+        .saturating_sub(stopped.disassociations_acknowledged)
+        .saturating_add(
+            stopped
+                .deauthentications_published
+                .saturating_sub(stopped.deauthentications_acknowledged),
+        );
+    validate_rx_hardware_health(cycle, stopped)?;
+    if stopped.beacons_transmitted == 0
             || stopped.missed_beacon_intervals != 0
             || stopped.maximum_beacon_lateness_micros >= 102_400
             || stopped.authentication_responses == 0
@@ -474,20 +506,12 @@ fn qualify(capture: &SerialCapture, config: &Config, lab: &LabConfig) -> Result<
             || stopped.rx_quarantined_frames != 0
             || stopped.protected_data_radio_rejected != 0
             || stopped.protected_data_protocol_rejected != 0
-        {
-            return Err(
-                format!("AP cycle {cycle} lacks peer-visible MAC evidence: {stopped:?}").into(),
-            );
-        }
-        cycles.push(CycleReport {
-            cycle,
-            traffic,
-            secondary_client,
-            primary_client_tx,
-            access_point: stopped,
-        });
+    {
+        return Err(
+            format!("AP cycle {cycle} lacks peer-visible MAC evidence: {stopped:?}").into(),
+        );
     }
-    Ok(cycles)
+    Ok(())
 }
 
 fn validate_rx_hardware_health(
@@ -803,8 +827,11 @@ fn qualify_udp(
         host_tx,
         host_rx.as_deref(),
         structured,
-        config.criteria.exact_delivery,
-        config.require_rx_delivery_evidence,
+        UdpEvidencePolicy {
+            exact_delivery: config.criteria.exact_delivery,
+            driver_observation: config.require_driver_observation,
+            rx_delivery: config.require_rx_delivery_evidence,
+        },
     )?;
     if let Some(host_received) = host_received {
         // Target TX evidence counts frames admitted to the radio path. Under
@@ -836,8 +863,7 @@ fn validate_udp(
     host_tx: Option<UdpTransmission>,
     host_rx: Option<&[Burst]>,
     evidence: SessionEvidence,
-    require_exact_delivery: bool,
-    require_rx_delivery_evidence: bool,
+    policy: UdpEvidencePolicy,
 ) -> Result<Option<Burst>> {
     if !evidence.finished.summary.passed || evidence.transport.transport_errors != 0 {
         return Err(format!(
@@ -848,10 +874,10 @@ fn validate_udp(
     }
     match host_tx {
         Some(host) => {
-            if (require_exact_delivery
+            if (policy.exact_delivery
                 && (host.bytes != evidence.transport.rx_bytes
                     || host.datagrams != evidence.transport.rx_units))
-                || (!require_exact_delivery
+                || (!policy.exact_delivery
                     && (evidence.transport.rx_bytes > host.bytes
                         || evidence.transport.rx_units > host.datagrams))
             {
@@ -864,29 +890,32 @@ fn validate_udp(
                 )
                 .into());
             }
-            let rx = evidence
-                .radio
-                .and_then(|radio| radio.rx)
-                .ok_or("AP UDP RX session did not publish typed RX radio evidence")?;
-            let expected_highest = require_exact_delivery
-                .then(|| {
-                    u32::try_from(host.datagrams)
-                        .ok()
-                        .and_then(|datagrams| datagrams.checked_sub(1))
-                })
-                .flatten();
-            if (require_exact_delivery
-                && (rx.sequence_first != Some(0)
-                    || rx.sequence_highest != expected_highest
-                    || rx.sequence_gap_events != 0
-                    || rx.sequence_forward_missing != 0))
-                || rx.sequence_backward != 0
-                || rx.sequence_duplicates != 0
-                || rx.sequence_unsequenced != 0
-            {
-                return Err(format!("AP UDP RX ordering defect: {rx:?}").into());
+            if policy.driver_observation {
+                let rx = evidence
+                    .radio
+                    .and_then(|radio| radio.rx)
+                    .ok_or("AP UDP RX session did not publish typed RX radio evidence")?;
+                let expected_highest = policy
+                    .exact_delivery
+                    .then(|| {
+                        u32::try_from(host.datagrams)
+                            .ok()
+                            .and_then(|datagrams| datagrams.checked_sub(1))
+                    })
+                    .flatten();
+                if (policy.exact_delivery
+                    && (rx.sequence_first != Some(0)
+                        || rx.sequence_highest != expected_highest
+                        || rx.sequence_gap_events != 0
+                        || rx.sequence_forward_missing != 0))
+                    || rx.sequence_backward != 0
+                    || rx.sequence_duplicates != 0
+                    || rx.sequence_unsequenced != 0
+                {
+                    return Err(format!("AP UDP RX ordering defect: {rx:?}").into());
+                }
             }
-            if require_rx_delivery_evidence {
+            if policy.rx_delivery {
                 let delivery = evidence
                     .rx_delivery
                     .ok_or("AP diagnostic did not publish typed RX delivery evidence")?;
@@ -920,7 +949,7 @@ fn validate_udp(
                 .into());
             }
             let host = qualified[0];
-            if (require_exact_delivery && host.missing != 0)
+            if (policy.exact_delivery && host.missing != 0)
                 || host.reordered != 0
                 || host.duplicates != 0
             {
@@ -943,10 +972,10 @@ fn validate_udp(
                 )
                 .into());
             }
-            if (require_exact_delivery
+            if (policy.exact_delivery
                 && (host.bytes != evidence.transport.tx_bytes
                     || host.datagrams != evidence.transport.tx_units))
-                || (!require_exact_delivery
+                || (!policy.exact_delivery
                     && (host.bytes > evidence.transport.tx_bytes
                         || host.datagrams > evidence.transport.tx_units))
             {
@@ -1381,8 +1410,11 @@ mod tests {
                 Some(sent),
                 Some(&[received]),
                 evidence(1_200, 1_200, 1, 1),
-                true,
-                false,
+                UdpEvidencePolicy {
+                    exact_delivery: true,
+                    driver_observation: true,
+                    rx_delivery: false,
+                },
             )
             .is_ok()
         );
@@ -1402,8 +1434,11 @@ mod tests {
                 None,
                 Some(&[received]),
                 evidence(0, 1_200, 0, 1),
-                true,
-                false,
+                UdpEvidencePolicy {
+                    exact_delivery: true,
+                    driver_observation: true,
+                    rx_delivery: false,
+                },
             )
             .is_err()
         );
@@ -1427,7 +1462,19 @@ mod tests {
             .expect("RX evidence")
             .sequence_backward = 1;
 
-        assert!(validate_udp(Some(sent), None, reordered, true, false).is_err());
+        assert!(
+            validate_udp(
+                Some(sent),
+                None,
+                reordered,
+                UdpEvidencePolicy {
+                    exact_delivery: true,
+                    driver_observation: true,
+                    rx_delivery: false,
+                },
+            )
+            .is_err()
+        );
     }
 
     #[test]
@@ -1451,12 +1498,43 @@ mod tests {
             Some(sent),
             Some(&[received]),
             evidence(1_200, 2_400, 1, 2),
-            false,
-            false,
+            UdpEvidencePolicy {
+                exact_delivery: false,
+                driver_observation: true,
+                rx_delivery: false,
+            },
         )
         .unwrap();
 
         assert_eq!(delivered, Some(received));
+    }
+
+    #[test]
+    fn observer_free_udp_rx_accepts_transport_without_driver_evidence() {
+        let sent = UdpTransmission {
+            bytes: 1_200,
+            datagrams: 1,
+            elapsed: Duration::from_secs(1),
+            maximum_lateness: Duration::ZERO,
+            maximum_catch_up_datagrams: 1,
+            deadline_resets: 0,
+        };
+        let mut observed = evidence(1_200, 0, 1, 0);
+        observed.radio = None;
+
+        assert!(
+            validate_udp(
+                Some(sent),
+                None,
+                observed,
+                UdpEvidencePolicy {
+                    exact_delivery: false,
+                    driver_observation: false,
+                    rx_delivery: false,
+                },
+            )
+            .is_ok()
+        );
     }
 
     #[test]
@@ -1470,8 +1548,17 @@ mod tests {
             deadline_resets: 0,
         };
 
-        let error = validate_udp(Some(sent), None, evidence(1_200, 0, 1, 0), true, true)
-            .expect_err("diagnostic evidence must be mandatory");
+        let error = validate_udp(
+            Some(sent),
+            None,
+            evidence(1_200, 0, 1, 0),
+            UdpEvidencePolicy {
+                exact_delivery: true,
+                driver_observation: true,
+                rx_delivery: true,
+            },
+        )
+        .expect_err("diagnostic evidence must be mandatory");
 
         assert!(error.to_string().contains("typed RX delivery evidence"));
     }
@@ -1502,8 +1589,17 @@ mod tests {
             ..Default::default()
         });
 
-        let error = validate_udp(Some(sent), None, observed, true, true)
-            .expect_err("misplaced diagnostic evidence must fail closed");
+        let error = validate_udp(
+            Some(sent),
+            None,
+            observed,
+            UdpEvidencePolicy {
+                exact_delivery: true,
+                driver_observation: true,
+                rx_delivery: true,
+            },
+        )
+        .expect_err("misplaced diagnostic evidence must fail closed");
 
         assert!(error.to_string().contains("typed AP RX delivery frontier"));
     }
@@ -1618,5 +1714,26 @@ mod tests {
         observed.rx_hardware_buffer_full = 0;
         observed.rx_hardware_fifo_overflow = 1;
         assert!(validate_rx_hardware_health(3, &observed).is_err());
+    }
+
+    #[test]
+    fn performance_cycle_omits_unavailable_driver_observation() {
+        let report = AccessPointReport {
+            schema: 2,
+            boots: vec![BootReport {
+                boot: 0,
+                cycles: vec![CycleReport {
+                    cycle: 0,
+                    traffic: TrafficReport::None,
+                    secondary_client: None,
+                    primary_client_tx: None,
+                    access_point: None,
+                }],
+            }],
+        };
+
+        let json = serde_json::to_value(report).unwrap();
+        assert_eq!(json["schema"], 2);
+        assert!(json["boots"][0]["cycles"][0].get("access_point").is_none());
     }
 }

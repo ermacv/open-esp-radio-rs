@@ -1151,15 +1151,27 @@ struct DeviceReport {
     failures: Vec<String>,
 }
 
+pub(crate) struct RunPolicy {
+    pub(crate) require_exact_delivery: bool,
+    pub(crate) require_no_beacon_loss: bool,
+    pub(crate) capture_openwrt_tx_monitor_rx: bool,
+    pub(crate) capture_independent_laptop_monitor_rx: bool,
+    pub(crate) require_driver_observation: bool,
+}
+
 pub(crate) fn run(
     arguments: Vec<String>,
     output: &Path,
     lab: &LabConfig,
-    require_exact_delivery: bool,
-    require_no_beacon_loss: bool,
-    capture_openwrt_tx_monitor_rx: bool,
-    capture_independent_laptop_monitor_rx: bool,
+    policy: RunPolicy,
 ) -> Result<()> {
+    let RunPolicy {
+        require_exact_delivery,
+        require_no_beacon_loss,
+        capture_openwrt_tx_monitor_rx,
+        capture_independent_laptop_monitor_rx,
+        require_driver_observation,
+    } = policy;
     let mut options = parse_options(&arguments, lab)?;
     fs::create_dir_all(output)?;
     invalidate_previous_report(output)?;
@@ -1314,34 +1326,6 @@ pub(crate) fn run(
     if let Some(result) = beacon_loss {
         result?;
     }
-    let report = parse_device_report(&log);
-    let raw_rx_radio = structured
-        .radio
-        .and_then(|evidence| evidence.rx)
-        .ok_or("session did not publish typed RX radio evidence")?;
-    let mut qualification_failure = if require_exact_delivery {
-        structured.require_rx_radio(options.phy.expected_rx_format(), host.datagrams)
-    } else {
-        structured.require_rx_radio_health(options.phy.expected_rx_format())
-    }
-    .err()
-    .map(|error| error.to_string());
-    let text_assessment = assess_rx_report(&report, options.phy.expected_rx_format()).ok();
-    if let Some(failure) = text_assessment
-        .as_ref()
-        .and_then(|assessment| assessment.failure.as_deref())
-    {
-        eprintln!("diagnostic_text_warning={failure}");
-    }
-    let rx = text_assessment
-        .map(|assessment| assessment.rx)
-        .unwrap_or_else(|| {
-            let mut rx = RxQualification::from_typed(structured.transport, raw_rx_radio);
-            // A failed typed acceptance result must not hide independent
-            // diagnostic poll evidence from the same completed interval.
-            rx.task_polls = report.task_polls;
-            rx
-        });
     let rx_median = structured
         .transport
         .rx_bytes
@@ -1370,6 +1354,121 @@ pub(crate) fn run(
         .into());
     }
     let host_tx = qualified_tx_bursts[0];
+    if !require_driver_observation {
+        if structured.radio.is_some()
+            || structured.tx_timing.is_some()
+            || structured.rx_delivery.is_some()
+            || structured.network_scheduler.is_some()
+        {
+            return Err("performance image published driver-internal evidence".into());
+        }
+        let expected_rx_bytes = structured
+            .transport
+            .rx_units
+            .saturating_mul(options.payload as u64);
+        let expected_tx_bytes = structured
+            .transport
+            .tx_units
+            .saturating_mul(options.tx_payload as u64);
+        if !structured.finished.summary.passed
+            || structured.transport.transport_errors != 0
+            || structured.transport.rx_bytes != expected_rx_bytes
+            || structured.transport.tx_bytes != expected_tx_bytes
+        {
+            return Err(format!(
+                "target did not complete bidirectional performance session cleanly: passed={} errors={} rx={}/{} tx={}/{}",
+                structured.finished.summary.passed,
+                structured.transport.transport_errors,
+                structured.transport.rx_bytes,
+                expected_rx_bytes,
+                structured.transport.tx_bytes,
+                expected_tx_bytes,
+            )
+            .into());
+        }
+        let minimum_rx_bps = options
+            .rx_floor_bps
+            .unwrap_or_else(|| options.rate_bps.saturating_mul(9) / 10);
+        if host.throughput_bps() < minimum_rx_bps
+            || rx_median.saturating_mul(1_000) < minimum_rx_bps
+        {
+            return Err(format!(
+                "concurrent RX is below the configured floor: required={minimum_rx_bps} host={} target={} bit/s",
+                host.throughput_bps(),
+                rx_median.saturating_mul(1_000),
+            )
+            .into());
+        }
+        if let Some(required_tx_bps) = options.tx_floor_bps {
+            let measured_device = tx_floor.saturating_mul(1_000);
+            let measured_host = host_tx.throughput_kbps().saturating_mul(1_000);
+            if measured_device < required_tx_bps || measured_host < required_tx_bps {
+                return Err(format!(
+                    "concurrent TX is below the configured floor: required={required_tx_bps} device={measured_device} host={measured_host} bit/s"
+                )
+                .into());
+            }
+        }
+        if let Some(required_combined_bps) = options.combined_floor_bps {
+            let measured = rx_median.saturating_add(tx_floor).saturating_mul(1_000);
+            if measured < required_combined_bps {
+                return Err(format!(
+                    "combined throughput is below the configured floor: required={required_combined_bps} measured={measured} bit/s"
+                )
+                .into());
+            }
+        }
+        write_bidirectional_performance_report(
+            output,
+            BidirectionalPerformanceReport {
+                options: &options,
+                host_offer: host,
+                host_sink: host_tx,
+                structured,
+                rx_kbps: rx_median,
+                tx_kbps: tx_floor,
+                host_receive_buffer_bytes,
+            },
+        )?;
+        println!(
+            "OPENRADIOHOST result=PASS mode={}-bidirectional-performance offered_kbps={} host_kbps={} rx_kbps={rx_median} tx_kbps={tx_floor} host_tx_kbps={} combined_kbps={} report={}",
+            options.phy.name(),
+            options.rate_bps / 1_000,
+            host.throughput_bps() / 1_000,
+            host_tx.throughput_kbps(),
+            rx_median.saturating_add(tx_floor),
+            output.join("report.md").display(),
+        );
+        return Ok(());
+    }
+    let report = parse_device_report(&log);
+    let raw_rx_radio = structured
+        .radio
+        .and_then(|evidence| evidence.rx)
+        .ok_or("session did not publish typed RX radio evidence")?;
+    let mut qualification_failure = if require_exact_delivery {
+        structured.require_rx_radio(options.phy.expected_rx_format(), host.datagrams)
+    } else {
+        structured.require_rx_radio_health(options.phy.expected_rx_format())
+    }
+    .err()
+    .map(|error| error.to_string());
+    let text_assessment = assess_rx_report(&report, options.phy.expected_rx_format()).ok();
+    if let Some(failure) = text_assessment
+        .as_ref()
+        .and_then(|assessment| assessment.failure.as_deref())
+    {
+        eprintln!("diagnostic_text_warning={failure}");
+    }
+    let rx = text_assessment
+        .map(|assessment| assessment.rx)
+        .unwrap_or_else(|| {
+            let mut rx = RxQualification::from_typed(structured.transport, raw_rx_radio);
+            // A failed typed acceptance result must not hide independent
+            // diagnostic poll evidence from the same completed interval.
+            rx.task_polls = report.task_polls;
+            rx
+        });
     if let Some(required_floor) = options.tx_floor_bps {
         let measured_device = tx_floor.saturating_mul(1_000);
         let measured_host = host_tx.throughput_kbps().saturating_mul(1_000);
@@ -2453,9 +2552,9 @@ fn qualify_ampdu(report: &DeviceReport) -> Result<AmpduEvidence> {
     if ampdu.tx_irq_epochs != 0 && ampdu.tx_irq_samples.saturating_add(ampdu.tx_irq_skew) == 0 {
         return Err("TX IRQ timing sampled no service edge".into());
     }
-    if ampdu.tx_flight_samples == 0 {
-        return Err("TX timing sampled no aggregate publication-to-IRQ flight".into());
-    }
+    // Publication-to-IRQ timing is available only in the intrusive MAC-IRQ
+    // diagnostic image. The correctness image still owns complete aggregate
+    // and BlockAck accounting, so zero samples are valid here.
     if ampdu.timeout != 0 || ampdu.collision != 0 {
         return Err(format!(
             "terminal A-MPDU failure: timeout={} collision={}",
@@ -3043,6 +3142,80 @@ pub(crate) fn rx_reorder_markdown(reorder: RxReorderEvidence) -> String {
         reorder.maximum_occupied,
         reorder.window,
     )
+}
+
+struct BidirectionalPerformanceReport<'a> {
+    options: &'a Options,
+    host_offer: HostTransmission,
+    host_sink: Burst,
+    structured: SessionEvidence,
+    rx_kbps: u64,
+    tx_kbps: u64,
+    host_receive_buffer_bytes: usize,
+}
+
+fn write_bidirectional_performance_report(
+    output: &Path,
+    report: BidirectionalPerformanceReport<'_>,
+) -> Result<()> {
+    let BidirectionalPerformanceReport {
+        options,
+        host_offer,
+        host_sink,
+        structured,
+        rx_kbps,
+        tx_kbps,
+        host_receive_buffer_bytes,
+    } = report;
+    let target_tx_rate = options
+        .tx_rate_bps
+        .map(|rate| format!("{:.3} Mbit/s", rate as f64 / 1_000_000.0))
+        .unwrap_or_else(|| String::from("saturated"));
+    fs::write(
+        output.join("report.md"),
+        format!(
+            "# Open-radio {} bidirectional performance HIL\n\n\
+             - Result: `PASS`\n\
+             - Evidence boundary: `transport, external host source/sink, stack watermark; driver observation not collected`\n\
+             - Device: `{}`\n\
+             - Requested/actual downlink offer: `{:.3}` / `{:.3} Mbit/s`\n\
+             - Target uplink offered-rate bound: `{target_tx_rate}`\n\
+             - Target RX/TX throughput: `{:.3}` / `{:.3} Mbit/s`; combined `{:.3} Mbit/s`\n\
+             - Host received target TX: `{:.3} Mbit/s`, `{}` bytes in `{}` datagrams\n\
+             - Host target-TX missing/reordered/duplicate datagrams (informational): `{}` / `{}` / `{}`\n\
+             - Target transport RX/TX: `{}` / `{}` bytes; `{}` / `{}` datagrams; `{}` us\n\
+             - Host UDP `SO_RCVBUF` read-back: `{host_receive_buffer_bytes}` bytes\n\
+             - Stack minimum free: CPU0 `{}/{}` bytes (required `{}`); CPU1 `{}/{}` bytes (required `{}`)\n\
+             - Evidence CRC32C: `0x{:08x}`\n\n\
+             UART evidence is in [`uart.log`](uart.log).\n",
+            options.phy.name().to_uppercase(),
+            options.address,
+            options.rate_bps as f64 / 1_000_000.0,
+            host_offer.throughput_bps() as f64 / 1_000_000.0,
+            rx_kbps as f64 / 1_000.0,
+            tx_kbps as f64 / 1_000.0,
+            rx_kbps.saturating_add(tx_kbps) as f64 / 1_000.0,
+            host_sink.throughput_kbps() as f64 / 1_000.0,
+            host_sink.bytes,
+            host_sink.datagrams,
+            host_sink.missing,
+            host_sink.reordered,
+            host_sink.duplicates,
+            structured.transport.rx_bytes,
+            structured.transport.tx_bytes,
+            structured.transport.rx_units,
+            structured.transport.tx_units,
+            structured.transport.elapsed_micros,
+            structured.stack.cpu0.free_bytes,
+            structured.stack.cpu0.capacity_bytes,
+            structured.stack.cpu0.minimum_free_bytes,
+            structured.stack.cpu1.free_bytes,
+            structured.stack.cpu1.capacity_bytes,
+            structured.stack.cpu1.minimum_free_bytes,
+            structured.finished.evidence_crc32c,
+        ),
+    )?;
+    Ok(())
 }
 
 fn write_report(

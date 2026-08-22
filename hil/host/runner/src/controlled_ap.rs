@@ -54,8 +54,15 @@ impl ControlledAp {
             }
             StationFixtureConfig::OpenWrt(openwrt) => {
                 let radio = require_openwrt_ap_credentials(station, openwrt)?;
-                openwrt_action(openwrt, &radio, "up")?;
-                wait_for_openwrt_interface(openwrt, phy)?;
+                // `wifi up` may asynchronously replace an already-present
+                // hostapd netdev. Treating that stale netdev as ready lets the
+                // target begin association inside the reload window. A ready
+                // controlled AP needs no state transition; otherwise wait for
+                // both the requested PHY geometry and the new hostapd owner.
+                if !openwrt_interface_ready(openwrt, phy)? {
+                    openwrt_action(openwrt, &radio, "up")?;
+                    wait_for_openwrt_interface(openwrt, phy)?;
+                }
                 Ok(Self::OpenWrt(OpenWrtControlledAp {
                     config: openwrt.clone(),
                     radio,
@@ -213,27 +220,40 @@ fn openwrt_action(config: &OpenWrtConfig, radio: &str, action: &str) -> Result<(
 }
 
 fn wait_for_openwrt_interface(config: &OpenWrtConfig, phy: PhyExpectation) -> Result<()> {
-    let expected_width = match phy {
-        PhyExpectation::He20 | PhyExpectation::Ht20 => 20,
-        PhyExpectation::Ht40 => 40,
-    };
     for _ in 0..50 {
-        let output = openwrt_command(
-            config,
-            &format!(
-                "iw dev {} info 2>/dev/null | grep -Fq 'width: {expected_width} MHz'",
-                config.wireless_interface
-            ),
-        )?;
-        if output.status.success() {
+        if openwrt_interface_ready(config, phy)? {
             return Ok(());
         }
         thread::sleep(Duration::from_millis(100));
     }
+    let expected_width = expected_width(phy);
     Err(format!(
-        "controlled OpenWrt AP did not restore the required {expected_width} MHz interface"
+        "controlled OpenWrt AP did not restore an enabled {expected_width} MHz hostapd interface"
     )
     .into())
+}
+
+fn openwrt_interface_ready(config: &OpenWrtConfig, phy: PhyExpectation) -> Result<bool> {
+    Ok(openwrt_command(config, &openwrt_ready_script(config, phy))?
+        .status
+        .success())
+}
+
+fn openwrt_ready_script(config: &OpenWrtConfig, phy: PhyExpectation) -> String {
+    let interface = &config.wireless_interface;
+    let width = expected_width(phy);
+    format!(
+        "set -eu; iw dev {interface} info 2>/dev/null | grep -Fq 'width: {width} MHz'; \
+         ubus call hostapd.{interface} get_status 2>/dev/null | \
+         jsonfilter -e '@.status' | grep -Fxq ENABLED"
+    )
+}
+
+const fn expected_width(phy: PhyExpectation) -> u8 {
+    match phy {
+        PhyExpectation::He20 | PhyExpectation::Ht20 => 20,
+        PhyExpectation::Ht40 => 40,
+    }
 }
 
 fn wait_for_openwrt_interface_down(config: &OpenWrtConfig) -> Result<()> {
@@ -306,6 +326,23 @@ mod tests {
             required_profile_value(profile, "wpa_passphrase").unwrap(),
             "test-passphrase"
         );
+    }
+
+    #[test]
+    fn openwrt_readiness_requires_phy_geometry_and_enabled_hostapd_owner() {
+        let config = OpenWrtConfig {
+            ssh_target: String::from("fixture"),
+            wireless_interface: String::from("phy0-ap0"),
+            ingress_interface: String::from("lan1"),
+            monitor_interface: None,
+            phys: vec![PhyExpectation::Ht40],
+            independent_laptop_monitor: false,
+        };
+        let script = openwrt_ready_script(&config, PhyExpectation::Ht40);
+        assert!(script.contains("iw dev phy0-ap0 info"));
+        assert!(script.contains("width: 40 MHz"));
+        assert!(script.contains("hostapd.phy0-ap0 get_status"));
+        assert!(script.contains("grep -Fxq ENABLED"));
     }
 
     #[test]

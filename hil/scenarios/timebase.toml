@@ -1,7 +1,7 @@
 schema = 3
 id = "timebase"
 description = "Alarm and monotonic-clock agreement before radio initialization"
-image = "qualification"
+image = "correctness"
 isolation = "reset"
 tags = ["qualification", "timebase"]
 

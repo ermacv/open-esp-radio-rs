@@ -1,7 +1,7 @@
 schema = 3
 id = "monitor-capture"
 description = "Finite typed monitor capture exported as PCAPNG"
-image = "qualification"
+image = "correctness"
 isolation = "reset"
 tags = ["qualification", "wifi", "monitor"]
 

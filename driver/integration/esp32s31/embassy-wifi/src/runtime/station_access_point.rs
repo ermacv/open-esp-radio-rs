@@ -1,7 +1,16 @@
+#![expect(
+    clippy::large_enum_variant,
+    reason = "no-alloc paired frontier retains the complete connected or stopped owner graph"
+)]
+#![expect(
+    clippy::too_many_arguments,
+    reason = "the paired active transaction exposes each independent role, endpoint, and generation owner"
+)]
+
 //! Same-channel production STA+AP lifecycle transaction.
 //!
 //! This module is the only composition root allowed to turn a connected
-//! station frontier into the paired WDEV graph. It must retain one physical
+//! station frontier into the paired DATAPATH graph. It must retain one physical
 //! RX producer, one physical TX owner and one MAC interrupt epoch, then return
 //! every owner through the ordinary stopped supervisor frontier.
 
@@ -9,47 +18,44 @@ use core::future::ready;
 use embassy_time::Timer;
 
 use super::*;
-use open_esp_radio::wifi::ieee80211::vif::StaApRxAddresses;
 use open_esp_radio::{
     StationAccessPointRequest, StationRequest, StationScanChannels, StationScanPolicy,
 };
-use open_esp_radio_esp32s31_wifi::wdev::lifecycle::{
+use open_esp_radio_esp32s31_wifi::datapath::lifecycle::{
     StaApLifecycle, StaApReceiveIdentities, apply_sta_ap_register_action, sta_ap_register_action,
 };
 use open_esp_radio_esp32s31_wifi_embassy::{
-    access_point::{
-        Esp32s31AccessPointAmpdu, Esp32s31AccessPointProtocolProcessor,
-        network_tx::Esp32s31AccessPointNetworkTx,
-        paired_role::{
-            Esp32s31StaApAccessPointRole, finish_sta_ap_access_point_role,
-            park_sta_ap_access_point_role,
-        },
+    composition::resources::{
+        ESP32S31_DEFAULT_RX_REORDER_WINDOW as RX_REORDER_WINDOW,
+        ESP32S31_DEFAULT_TX_AMPDU_FRAME_COUNT as TX_AMPDU_FRAME_COUNT,
     },
-    connected_sta_port::{
+    datapath::rx::dma::{Esp32s31RxEpochResources, Esp32s31StagedRxEpoch},
+    datapath::rx::hardware::EmbassyEsp32s31RxDmaObservationDelay,
+    datapath::{DatapathRunnerExit, paired::DatapathPairRole, services::SingleRoleServices},
+    roles::access_point::{
+        AccessPointRoleRuntime, Esp32s31AccessPointAmpdu, Esp32s31AccessPointProtocolProcessor,
+        finish_sta_ap_access_point_role, network_tx::Esp32s31AccessPointNetworkTx,
+        park_sta_ap_access_point_role,
+    },
+    roles::concurrent::{
+        Esp32s31StaApControlExit, Esp32s31StaApRxService, Esp32s31StaApStationRxSink,
+        compose_sta_ap_datapath_runner, compose_sta_ap_datapath_services,
+    },
+    roles::station::port::{
         Esp32s31ConnectedStaControlResources, Esp32s31ConnectedStaDriverParts,
         Esp32s31ConnectedStaNetworkTxDomain, Esp32s31ConnectedStaPort,
         Esp32s31ConnectedStaRxProcessorResources, Esp32s31ConnectedStaTxResources,
     },
-    connected_sta_teardown::{Esp32s31AlreadyStoppedRx, Esp32s31ConnectedStaTeardownPort},
-    embassy_rx::EmbassyEsp32s31RxDmaObservationDelay,
-    resource_profile::{
-        ESP32S31_DEFAULT_RX_REORDER_WINDOW as RX_REORDER_WINDOW,
-        ESP32S31_DEFAULT_TX_AMPDU_FRAME_COUNT as TX_AMPDU_FRAME_COUNT,
-    },
-    rx_dma_service::{Esp32s31RxEpochResources, Esp32s31StagedRxEpoch},
-    sta_ap::{
-        Esp32s31StaApControlExit, Esp32s31StaApRxService, Esp32s31StaApStationPrepared,
-        Esp32s31StaApStationRxSink, compose_sta_ap_wdev_runner, compose_sta_ap_wdev_services,
-        finish_sta_ap_station, prepare_sta_ap_station,
-    },
-    station::{
+    roles::station::teardown::{Esp32s31AlreadyStoppedRx, Esp32s31ConnectedStaTeardownPort},
+    roles::station::{
         ConnectedWpa2Security, Esp32s31ConnectedEpochResources, Esp32s31ConnectedEpochStarted,
-        Esp32s31ConnectedNetworkStartedParts, activate_esp32s31_connected_epoch,
-        prepare_esp32s31_connected_service, start_esp32s31_initial_connected_epoch,
-        start_esp32s31_reconnected_connected_epoch,
+        Esp32s31ConnectedNetworkStartedParts, Esp32s31StaApStationPrepared,
+        activate_esp32s31_connected_epoch, finish_sta_ap_station,
+        prepare_esp32s31_connected_service, prepare_sta_ap_station,
+        start_esp32s31_initial_connected_epoch, start_esp32s31_reconnected_connected_epoch,
     },
-    wdev::{WdevRunnerExit, paired::WdevPairRole, services::WdevServiceSet},
 };
+use open_esp_radio_ieee80211::vif::StaApRxAddresses;
 use open_esp_radio_wifi_embassy::station_network::RunningStationNetwork;
 
 use crate::connected::{
@@ -99,7 +105,7 @@ impl ProductionWifiEpochRunner {
             Esp32s31StationExit::Stopped {
                 resources,
                 reason:
-                    open_esp_radio_esp32s31_wifi_embassy::station::Esp32s31StationStopReason::Backend,
+                    open_esp_radio_esp32s31_wifi_embassy::roles::station::Esp32s31StationStopReason::Backend,
                 ..
             } => resources,
             Esp32s31StationExit::Stopped { resources, .. }
@@ -199,7 +205,7 @@ impl ProductionWifiEpochRunner {
                     WifiStartFailure::faulted(Esp32s31RadioError::HardwareFault),
                 )))
                 .await;
-            qualification_event!("open-radio: paired cutover failed before connected frontier");
+            diagnostics_event!("open-radio: paired cutover failed before connected frontier");
             return EmbassyWifiRoleEpochOutcome::NotStarted(stopped);
         };
 
@@ -211,7 +217,7 @@ impl ProductionWifiEpochRunner {
             _,
             _,
         >(
-            open_esp_radio_esp32s31_wifi_embassy::station::Esp32s31ConnectedServiceResources::new(
+            open_esp_radio_esp32s31_wifi_embassy::roles::station::Esp32s31ConnectedServiceResources::new(
                 parts.runtime,
                 parts.epoch,
                 parts.network,
@@ -233,7 +239,7 @@ impl ProductionWifiEpochRunner {
                         WifiStartFailure::faulted(Esp32s31RadioError::HardwareFault),
                     )))
                     .await;
-                qualification_event!(
+                diagnostics_event!(
                     "open-radio: paired cutover rejected connected service policy: {:?}",
                     failure.error
                 );
@@ -256,7 +262,7 @@ impl ProductionWifiEpochRunner {
             let (runtime, _) = started.runtime_and_epoch_mut();
             runtime.radio().owner().current_channel()
         });
-        qualification_event!(
+        diagnostics_event!(
             "open-radio: paired channel station={station_channel:?} requested={:?}",
             access_point_request.channel()
         );
@@ -270,7 +276,7 @@ impl ProductionWifiEpochRunner {
                     )),
                 )))
                 .await;
-            qualification_event!("open-radio: paired cutover channel mismatch");
+            diagnostics_event!("open-radio: paired cutover channel mismatch");
             return EmbassyWifiRoleEpochOutcome::Faulted(
                 ProductionWifiFault::PairedChannelMismatch {
                     _started: started,
@@ -333,7 +339,7 @@ impl ProductionWifiEpochRunner {
     /// Own the active paired epoch after association, channel validation and
     /// interrupt activation. Keeping this as a separate poll boundary avoids
     /// retaining the large station-association transaction on the CPU stack
-    /// while the long-running dual-interface WDEV graph is active.
+    /// while the long-running dual-interface DATAPATH graph is active.
     async fn run_station_access_point_active(
         &mut self,
         endpoint: &mut EmbassyWifiSupervisorEndpoint<
@@ -346,7 +352,7 @@ impl ProductionWifiEpochRunner {
         access_point: ProductionAccessPointResources,
         monitor: ProductionMonitorResources,
         access_point_request: AccessPointRequest,
-        station_channel: open_esp_radio::wifi::ieee80211::channel::WifiChannel,
+        station_channel: open_esp_radio_ieee80211::channel::WifiChannel,
         generation: open_esp_radio::RadioSubsystemGeneration,
     ) -> EmbassyWifiRoleEpochOutcome<ProductionSupervisorStopped, ProductionWifiFault> {
         let Esp32s31ConnectedNetworkStartedParts {
@@ -434,7 +440,7 @@ impl ProductionWifiEpochRunner {
             match live_rx.try_stop(&mut hardware) {
                 Ok(stopped) => break stopped,
                 Err((returned, error)) => {
-                    qualification_event!(
+                    diagnostics_event!(
                         "open-radio: paired RX cutover stop still pending: {error:?}"
                     );
                     live_rx = returned;
@@ -469,8 +475,8 @@ impl ProductionWifiEpochRunner {
             rx_protocol_runtime,
             sta_ap_rx_batch,
             initial_connected,
-            #[cfg(feature = "qualification")]
-            qualification,
+            #[cfg(feature = "diagnostics")]
+            diagnostics,
         } = board;
         let Esp32s31StaAttemptSecurity {
             pmk,
@@ -495,11 +501,11 @@ impl ProductionWifiEpochRunner {
                 runtime: rx_protocol_runtime,
                 reorder_scratch: None,
                 pipeline_observer: {
-                    #[cfg(feature = "qualification")]
+                    #[cfg(feature = "diagnostics")]
                     {
-                        qualification.map(|hooks| hooks.rx_pipeline)
+                        diagnostics.map(|hooks| hooks.rx_pipeline)
                     }
-                    #[cfg(not(feature = "qualification"))]
+                    #[cfg(not(feature = "diagnostics"))]
                     {
                         None
                     }
@@ -514,15 +520,18 @@ impl ProductionWifiEpochRunner {
                 pairwise_key: pairwise,
                 sequences,
                 aggregate_tx_observer: {
-                    #[cfg(feature = "qualification")]
+                    #[cfg(feature = "diagnostics")]
                     {
-                        qualification.map(|hooks| hooks.aggregate_tx)
+                        diagnostics.map(|hooks| hooks.aggregate_tx)
                     }
-                    #[cfg(not(feature = "qualification"))]
+                    #[cfg(not(feature = "diagnostics"))]
                     {
                         None
                     }
                 },
+                tx_block_ack_status_sink: Some(
+                    crate::station_status::publish_station_tx_block_ack,
+                ),
                 network_domain: Esp32s31ConnectedStaNetworkTxDomain::new(),
             },
         )
@@ -551,8 +560,9 @@ impl ProductionWifiEpochRunner {
                 protocol: station_rx,
             },
         );
-        let prepared_station = prepare_sta_ap_station(station_drivers)
-            .unwrap_or_else(|_| unreachable!("new connected TX can be parked before WDEV runs"));
+        let prepared_station = prepare_sta_ap_station(station_drivers).unwrap_or_else(|_| {
+            unreachable!("new connected TX can be parked before DATAPATH runs")
+        });
 
         let Esp32s31StaApStationPrepared {
             mut hardware,
@@ -562,7 +572,7 @@ impl ProductionWifiEpochRunner {
             report: station_report,
         } = prepared_station;
         let (ordinary, aggregate_resources) = physical_tx
-            .try_lend(WdevPairRole::Second)
+            .try_lend(DatapathPairRole::Second)
             .unwrap_or_else(|_| unreachable!("station preparation returns available physical TX"));
         let (ssid, access_point_security, channel, client_limit, inactive_timeout) =
             access_point_request.into_parts();
@@ -577,6 +587,8 @@ impl ProductionWifiEpochRunner {
             rx_block_ack,
             rx_reorder,
             rx_reorder_storage,
+            #[cfg(feature = "diagnostics")]
+            observation_storage,
         } = access_point;
         assert!(
             core::ptr::eq(&super::PRODUCTION_RX_BLOCK_ACK, rx_block_ack),
@@ -615,7 +627,7 @@ impl ProductionWifiEpochRunner {
             .unwrap_or_else(|_| unreachable!("fresh paired lifecycle accepts its station owner"));
         debug_assert!(matches!(
             sta_ap_register_action(station_transition, receive_identities),
-            open_esp_radio_esp32s31_wifi::wdev::lifecycle::StaApRegisterAction::None
+            open_esp_radio_esp32s31_wifi::datapath::lifecycle::StaApRegisterAction::None
         ));
         let access_point_transition = lifecycle
             .start_access_point(channel)
@@ -628,7 +640,7 @@ impl ProductionWifiEpochRunner {
         let access_point_aggregate = Esp32s31AccessPointAmpdu::new(
             aggregate_resources,
             maximum_aggregate_bytes,
-            open_esp_radio::esp32s31::wifi::mac::tx_runtime::VENDOR_LONG_RETRY_LIMIT,
+            open_esp_radio_esp32s31_wifi_mac::tx_runtime::VENDOR_LONG_RETRY_LIMIT,
         );
         let access_point_mac = Esp32s31ApMac::new(
             engine,
@@ -645,18 +657,23 @@ impl ProductionWifiEpochRunner {
             rx_block_ack,
             rx_reorder,
             rx_reorder_storage,
+            #[cfg(feature = "diagnostics")]
+            observation_storage,
         );
+        #[cfg(feature = "diagnostics")]
+        let access_point_processor = access_point_processor
+            .with_terminal_observer(super::access_point::begin_access_point_observation());
         let access_point_network_tx = Esp32s31AccessPointNetworkTx::<RadioTxBacking>::new({
-            #[cfg(feature = "qualification")]
+            #[cfg(feature = "diagnostics")]
             {
-                qualification.map(|hooks| hooks.aggregate_tx)
+                diagnostics.map(|hooks| hooks.aggregate_tx)
             }
-            #[cfg(not(feature = "qualification"))]
+            #[cfg(not(feature = "diagnostics"))]
             {
                 None
             }
         });
-        let access_point_role = Esp32s31StaApAccessPointRole::new(
+        let access_point_role = AccessPointRoleRuntime::new(
             access_point_processor,
             access_point_network_tx,
             || {
@@ -677,15 +694,16 @@ impl ProductionWifiEpochRunner {
         )
         .unwrap_or_else(|_| unreachable!("new paired AP TX has no active transaction"));
 
-        let services = compose_sta_ap_wdev_services(
+        let services = compose_sta_ap_datapath_services(
             hardware,
             physical_tx,
             common_rx,
             station_role,
             access_point_role,
         );
-        let mut paired_runner = compose_sta_ap_wdev_runner(&IRQ_RUNTIME, network_runner, services);
-        #[cfg(feature = "qualification")]
+        let mut paired_runner =
+            compose_sta_ap_datapath_runner(&IRQ_RUNTIME, network_runner, services);
+        #[cfg(feature = "diagnostics")]
         let rx_statistics_before = paired_runner
             .services()
             .hardware()
@@ -705,23 +723,18 @@ impl ProductionWifiEpochRunner {
             super::access_point::wait_for_active_wifi_role_stop(endpoint),
         ));
         let (stop_requested, active_fault, station_disconnect) = match run_exit {
-            Ok(WdevRunnerExit::Stopped) => (true, false, None),
-            Ok(WdevRunnerExit::Role(Esp32s31StaApControlExit::Station(reason))) => {
+            Ok(DatapathRunnerExit::Stopped) => (true, false, None),
+            Ok(DatapathRunnerExit::Role(Esp32s31StaApControlExit::Station(reason))) => {
                 (false, false, Some(reason))
             }
             Err(error) => {
-                qualification_event!("open-radio: paired WDEV service failed: {error:?}");
+                diagnostics_event!("open-radio: paired DATAPATH service failed: {error:?}");
                 (false, true, None)
             }
         };
         if let Some(reason) = station_disconnect {
-            qualification_event!("open-radio: paired station disconnected reason={reason:?}");
-            #[cfg(feature = "qualification")]
-            if let Some(hooks) = qualification {
-                (hooks.station_lifecycle)(
-                    crate::Esp32s31StationLifecycleObservation::Disconnected(reason),
-                );
-            }
+            diagnostics_event!("open-radio: paired station disconnected reason={reason:?}");
+            crate::station_status::publish_station_disconnected(reason);
         }
         if !stop_requested {
             // Beacon loss or another station control exit tears down the
@@ -729,11 +742,11 @@ impl ProductionWifiEpochRunner {
             // whose upstream station association no longer owns.
             loop {
                 match await_stack_boundary!(paired_runner.run_until(ready(()))) {
-                    Ok(WdevRunnerExit::Stopped) => break,
-                    Ok(WdevRunnerExit::Role(_)) => {}
+                    Ok(DatapathRunnerExit::Stopped) => break,
+                    Ok(DatapathRunnerExit::Role(_)) => {}
                     Err(error) => {
-                        qualification_event!(
-                            "open-radio: paired WDEV rollback still pending: {error:?}"
+                        diagnostics_event!(
+                            "open-radio: paired DATAPATH rollback still pending: {error:?}"
                         );
                         Timer::after_millis(1).await;
                     }
@@ -745,11 +758,11 @@ impl ProductionWifiEpochRunner {
         loop {
             match interrupt_epoch.quiesce(&*platform) {
                 Ok(_) => break,
-                Err(open_esp_radio_esp32s31_wifi_embassy::embassy_irq::Esp32s31MacInterruptEpochQuiesceError::AlreadyQuiesced) => {
+                Err(open_esp_radio_esp32s31_wifi_embassy::datapath::irq::Esp32s31MacInterruptEpochQuiesceError::AlreadyQuiesced) => {
                     break;
                 }
-                Err(open_esp_radio_esp32s31_wifi_embassy::embassy_irq::Esp32s31MacInterruptEpochQuiesceError::Route(error)) => {
-                    qualification_event!(
+                Err(open_esp_radio_esp32s31_wifi_embassy::datapath::irq::Esp32s31MacInterruptEpochQuiesceError::Route(error)) => {
+                    diagnostics_event!(
                         "open-radio: paired MAC interrupt quiescence still pending: {error:?}"
                     );
                     Timer::after_millis(1).await;
@@ -767,9 +780,9 @@ impl ProductionWifiEpochRunner {
         ) = services.into_parts();
         common_rx
             .stop(&mut hardware)
-            .unwrap_or_else(|_| unreachable!("stopped paired WDEV has no live RX transaction"));
+            .unwrap_or_else(|_| unreachable!("stopped paired DATAPATH has no live RX transaction"));
         let route_report = common_rx.route_report();
-        qualification_event!(
+        diagnostics_event!(
             "open-radio: paired RX routes total={} sta={} ap={} foreign={} ambiguous={} malformed={} hardware_error={}",
             route_report.total(),
             route_report.station,
@@ -779,31 +792,21 @@ impl ProductionWifiEpochRunner {
             route_report.malformed,
             route_report.hardware_error,
         );
-        #[cfg(feature = "qualification")]
+        #[cfg(feature = "diagnostics")]
         let rx_statistics_delta = hardware
             .receive_statistics_snapshot()
             .primary
             .wrapping_delta_since(rx_statistics_before.primary);
         let (paired_rx, mut paired_consumer) = common_rx.into_parts();
-        let producer_report = paired_rx.report();
-        qualification_event!(
-            "open-radio: paired RX producer completed={} staged={} overload_dropped={} overload_recycled={} overload_sta={} overload_ap={} critical_reserved={} critical_blocked={} min_pool={:?} min_queue={:?}",
-            producer_report.completed_units,
-            producer_report.staged_units,
-            producer_report.overload_discarded_units,
-            producer_report.overload_recycled_descriptors,
-            producer_report.overload_station_units,
-            producer_report.overload_access_point_units,
-            producer_report.critical_reserve_admissions,
-            producer_report.critical_admission_blocked,
-            producer_report.minimum_pool_credits,
-            producer_report.minimum_queue_credits,
+        diagnostics_event!(
+            "open-radio: paired RX producer serviced_descriptors={}",
+            paired_rx.serviced_descriptors(),
         );
         let discarded = paired_consumer.discard_queued();
-        qualification_debug!(
+        diagnostics_debug!(
             "open-radio: paired RX stopped discarded={} serviced={}",
             discarded,
-            paired_rx.report().completed_units,
+            paired_rx.serviced_descriptors(),
         );
         let (standalone_sender, _standalone_receiver) = STAGED_RX_QUEUE.split();
         let stopped_rx = paired_rx
@@ -812,7 +815,7 @@ impl ProductionWifiEpochRunner {
 
         let access_point_finished =
             finish_sta_ap_access_point_role(access_point_role, physical_tx, &mut hardware)
-                .unwrap_or_else(|_| unreachable!("paired WDEV stop parks every AP TX owner"));
+                .unwrap_or_else(|_| unreachable!("paired DATAPATH stop parks every AP TX owner"));
         let access_point_transition = lifecycle
             .stop_access_point()
             .unwrap_or_else(|_| unreachable!("active paired lifecycle retains its AP role"));
@@ -823,21 +826,18 @@ impl ProductionWifiEpochRunner {
         lifecycle
             .stop_station()
             .unwrap_or_else(|_| unreachable!("paired teardown retains its final station role"));
-        let open_esp_radio_esp32s31_wifi_embassy::access_point::paired_role::Esp32s31StaApAccessPointFinished {
+        let open_esp_radio_esp32s31_wifi_embassy::roles::access_point::Esp32s31StaApAccessPointFinished {
             stopped: access_point_stopped,
             network_tx: _access_point_network_tx,
             security_material: _access_point_security_material,
             publish_shared_rx: _access_point_shared_rx,
             physical_tx,
         } = access_point_finished;
-        #[cfg(feature = "qualification")]
-        if let Some(hooks) = qualification {
-            super::access_point::publish_access_point_observation(
+        #[cfg(feature = "diagnostics")]
+        if let Some(hooks) = diagnostics {
+            super::access_point::publish_stored_access_point_observation(
                 hooks.access_point,
                 station_channel,
-                &access_point_stopped.control_report,
-                &access_point_stopped.mac_report,
-                &access_point_stopped.engine.report,
                 rx_statistics_delta.buffer_full,
                 rx_statistics_delta.fifo_overflow,
             );
@@ -850,9 +850,9 @@ impl ProductionWifiEpochRunner {
             report: station_report,
         };
         let station_drivers = finish_sta_ap_station(prepared_station)
-            .unwrap_or_else(|_| unreachable!("paired WDEV stop parks every station TX owner"));
+            .unwrap_or_else(|_| unreachable!("paired DATAPATH stop parks every station TX owner"));
 
-        let open_esp_radio_esp32s31_wifi_embassy::connected_sta_port::Esp32s31ConnectedStaDrivers {
+        let open_esp_radio_esp32s31_wifi_embassy::roles::station::port::Esp32s31ConnectedStaDrivers {
             services: station_services,
             protocol: station_protocol,
             report: _,
@@ -866,7 +866,7 @@ impl ProductionWifiEpochRunner {
         let (sta_ap_rx_batch, _control_publisher) = station_sink.into_parts();
         let (frame, ethernet, rx_protocol_runtime) = stopped_protocol.into_parts();
         let teardown = Esp32s31ConnectedStaTeardownPort::try_teardown(
-            WdevServiceSet::with_control(
+            SingleRoleServices::with_control(
                 hardware,
                 Esp32s31AlreadyStoppedRx::new(stopped_rx),
                 station_tx,
@@ -874,7 +874,7 @@ impl ProductionWifiEpochRunner {
             ),
             group,
         )
-        .unwrap_or_else(|_| unreachable!("paired WDEV stop returns idle station services"));
+        .unwrap_or_else(|_| unreachable!("paired DATAPATH stop returns idle station services"));
         tx_storage
             .restore_resources(teardown.tx_resources)
             .unwrap_or_else(|_| {
@@ -907,8 +907,8 @@ impl ProductionWifiEpochRunner {
                     rx_protocol_runtime,
                     sta_ap_rx_batch,
                     initial_connected,
-                    #[cfg(feature = "qualification")]
-                    qualification,
+                    #[cfg(feature = "diagnostics")]
+                    diagnostics,
                 },
             ),
             ProductionStationPhase::RunningScan {
@@ -917,12 +917,11 @@ impl ProductionWifiEpochRunner {
             },
             station_security,
         );
-        let open_esp_radio::esp32s31::wifi::ap::engine::Esp32s31ApEngineStop {
+        let open_esp_radio_esp32s31_wifi_ap::engine::Esp32s31ApEngineStop {
             service,
             beacon_storage,
             pairwise_storage,
             security: _,
-            report: _engine_report,
         } = access_point_stopped.engine;
         let access_point = ProductionAccessPointResources {
             address: service.address(),
@@ -935,6 +934,8 @@ impl ProductionWifiEpochRunner {
             rx_block_ack: access_point_stopped.rx_block_ack,
             rx_reorder: access_point_stopped.rx_reorder,
             rx_reorder_storage: access_point_stopped.rx_reorder_storage,
+            #[cfg(feature = "diagnostics")]
+            observation_storage: access_point_stopped.observation_storage,
         };
         let stopped = match try_reclaim_production_station(station_owner) {
             Ok(stopped) => stopped,

@@ -45,8 +45,8 @@ const PINNED_TX_CREDIT_WAKER_SLOTS: usize = 8;
 /// logical network devices may consume this physical free queue, so polling
 /// the channel directly would make their distinct task wakers replace and
 /// wake each other forever while the queue is empty. The queue remains the
-/// sole owner of free indices; this table only broadcasts real credit-return
-/// edges to the independently scheduled endpoints.
+/// sole owner of free indices; this table wakes one active waiter on each real
+/// credit-return edge.
 struct PinnedTxCreditWakers<M: RawMutex> {
     slots: [GenericAtomicWaker<M>; PINNED_TX_CREDIT_WAKER_SLOTS],
 }
@@ -65,6 +65,23 @@ impl<M: RawMutex> PinnedTxCreditWakers<M> {
     fn wake_all(&self) {
         for slot in &self.slots {
             slot.wake();
+        }
+    }
+
+    fn wake_waiter_after(
+        &self,
+        returned_by: NetworkInterfaceId,
+        active: &AtomicU32,
+        waiting: &AtomicU32,
+    ) {
+        let candidates = active.load(Ordering::Acquire) & waiting.load(Ordering::Acquire);
+        let start = (usize::from(returned_by.value()) + 1) % PINNED_TX_CREDIT_WAKER_SLOTS;
+        for offset in 0..PINNED_TX_CREDIT_WAKER_SLOTS {
+            let index = (start + offset) % PINNED_TX_CREDIT_WAKER_SLOTS;
+            if candidates & (1_u32 << index) != 0 {
+                self.slots[index].wake();
+                return;
+            }
         }
     }
 
@@ -253,10 +270,14 @@ pub struct PinnedTxResources<
     /// VIF, publication order is immutable.
     ready_tx: [Channel<M, u8, TX_QUEUE_DEPTH>; PINNED_TX_CREDIT_WAKER_SLOTS],
     next_interface: AtomicU32,
-    tx_outstanding: [AtomicU32; PINNED_TX_CREDIT_WAKER_SLOTS],
     tx_published: Signal<M, ()>,
     tx_credit_wakers: PinnedTxCreditWakers<M>,
+    tx_credit_waiters: AtomicU32,
     split: AtomicBool,
+    /// Radio-owned link activity for each logical endpoint. A permanent
+    /// network device may exist while its role is stopped, so credit sharing
+    /// must follow the active owner graph rather than the static device count.
+    tx_active: AtomicU32,
 }
 
 /// Static storage owned by one permanent logical network endpoint.
@@ -301,10 +322,11 @@ impl<
             free_tx: Channel::new(),
             ready_tx: [const { Channel::new() }; PINNED_TX_CREDIT_WAKER_SLOTS],
             next_interface: AtomicU32::new(0),
-            tx_outstanding: [const { AtomicU32::new(0) }; PINNED_TX_CREDIT_WAKER_SLOTS],
             tx_published: Signal::new(),
             tx_credit_wakers: PinnedTxCreditWakers::new(),
+            tx_credit_waiters: AtomicU32::new(0),
             split: AtomicBool::new(false),
+            tx_active: AtomicU32::new(0),
         }
     }
 
@@ -341,7 +363,8 @@ impl<
                 ready_tx: &resources.ready_tx,
                 tx_published: &resources.tx_published,
                 tx_credit_wakers: &resources.tx_credit_wakers,
-                tx_outstanding: &resources.tx_outstanding,
+                tx_credit_waiters: &resources.tx_credit_waiters,
+                tx_active: &resources.tx_active,
                 tx_pool: pool,
             },
             PinnedTxConsumer {
@@ -350,7 +373,8 @@ impl<
                 next_interface: &resources.next_interface,
                 tx_published: &resources.tx_published,
                 tx_credit_wakers: &resources.tx_credit_wakers,
-                tx_outstanding: &resources.tx_outstanding,
+                tx_credit_waiters: &resources.tx_credit_waiters,
+                tx_active: &resources.tx_active,
                 tx_pool: pool,
             },
         )
@@ -432,14 +456,15 @@ impl<M: RawMutex, const FRAME_CAPACITY: usize, const RX_QUEUE_DEPTH: usize>
                 interface,
                 tx_published: tx.tx_published,
                 tx_credit_wakers: tx.tx_credit_wakers,
-                tx_outstanding: &tx.tx_outstanding[usize::from(interface.value())],
+                tx_credit_waiters: tx.tx_credit_waiters,
+                tx_active: tx.tx_active,
                 tx_pool: tx.tx_pool,
                 link: &resources.link,
                 hardware_address,
                 ingress_tx: None,
                 application_tx: None,
                 reserve_ingress_tx: false,
-                tx_credit_limit: TX_QUEUE_DEPTH,
+                waiting_for_tx_credit: false,
                 tx_reservation: (),
             },
             SplitPinnedRxRunner {
@@ -449,6 +474,9 @@ impl<M: RawMutex, const FRAME_CAPACITY: usize, const RX_QUEUE_DEPTH: usize>
                 ordered_rx: None,
                 rx_pool: &resources.rx_pool,
                 link: &resources.link,
+                tx_active: tx.tx_active,
+                tx_interface: interface,
+                tx_credit_wakers: tx.tx_credit_wakers,
             },
         )
     }
@@ -477,7 +505,8 @@ pub struct PinnedTxProvider<
     ready_tx: &'resources [Channel<M, u8, QUEUE_DEPTH>; PINNED_TX_CREDIT_WAKER_SLOTS],
     tx_published: &'resources Signal<M, ()>,
     tx_credit_wakers: &'resources PinnedTxCreditWakers<M>,
-    tx_outstanding: &'resources [AtomicU32; PINNED_TX_CREDIT_WAKER_SLOTS],
+    tx_credit_waiters: &'resources AtomicU32,
+    tx_active: &'resources AtomicU32,
     tx_pool: &'resources PinnedTxPool<FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
 }
 
@@ -512,7 +541,8 @@ pub struct SplitPinnedDevice<
     interface: NetworkInterfaceId,
     tx_published: &'resources Signal<M, ()>,
     tx_credit_wakers: &'resources PinnedTxCreditWakers<M>,
-    tx_outstanding: &'resources AtomicU32,
+    tx_credit_waiters: &'resources AtomicU32,
+    tx_active: &'resources AtomicU32,
     tx_pool: &'resources PinnedTxPool<FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
     link: &'resources SharedLinkState<M>,
     hardware_address: [u8; 6],
@@ -521,9 +551,7 @@ pub struct SplitPinnedDevice<
     ingress_tx: Option<u8>,
     application_tx: Option<u8>,
     reserve_ingress_tx: bool,
-    /// Maximum number of physical credits which this logical endpoint may
-    /// retain in reserved, ready, aggregate or active hardware state.
-    tx_credit_limit: usize,
+    waiting_for_tx_credit: bool,
     tx_reservation: (),
 }
 
@@ -564,43 +592,17 @@ impl<
         self
     }
 
-    /// Bound one logical interface's share of the common physical TX pool.
-    ///
-    /// This is an ownership quota rather than a software queue preference:
-    /// the count remains charged while a frame is queued, aggregated,
-    /// retried or owned by hardware. It therefore prevents one saturated VIF
-    /// from consuming every credit before another VIF can publish work.
-    pub fn with_tx_credit_limit(mut self, limit: usize) -> Self {
-        assert!(limit > 0, "a TX endpoint needs at least one credit");
-        assert!(
-            limit <= TX_QUEUE_DEPTH,
-            "a logical TX credit limit cannot exceed the physical pool"
-        );
-        assert!(
-            usize::try_from(self.tx_outstanding.load(Ordering::Acquire)).unwrap_or(usize::MAX)
-                <= limit,
-            "the new TX credit limit is below already-owned credits"
-        );
-        self.tx_credit_limit = limit;
-        self
-    }
-
-    fn try_take_free_tx(&self) -> Option<u8> {
-        let outstanding =
-            usize::try_from(self.tx_outstanding.load(Ordering::Acquire)).unwrap_or(usize::MAX);
-        if outstanding >= self.tx_credit_limit {
-            return None;
-        }
+    fn try_take_free_tx(&mut self) -> Option<u8> {
         let index = self.free_tx.try_receive().ok()?;
-        let previous = self.tx_outstanding.fetch_add(1, Ordering::AcqRel);
-        assert!(
-            usize::try_from(previous).unwrap_or(usize::MAX) < self.tx_credit_limit,
-            "one endpoint exceeded its physical TX credit limit"
-        );
+        if self.waiting_for_tx_credit {
+            self.tx_credit_waiters
+                .fetch_and(!(1_u32 << self.interface.value()), Ordering::AcqRel);
+            self.waiting_for_tx_credit = false;
+        }
         Some(index)
     }
 
-    fn poll_free_tx(&self, cx: &mut Context<'_>) -> Poll<u8> {
+    fn poll_free_tx(&mut self, cx: &mut Context<'_>) -> Poll<u8> {
         if let Some(index) = self.try_take_free_tx() {
             return Poll::Ready(index);
         }
@@ -608,6 +610,11 @@ impl<
         // the ownership probe so a credit returned across the registration
         // edge cannot be lost.
         self.tx_credit_wakers.register(self.interface, cx);
+        if !self.waiting_for_tx_credit {
+            self.tx_credit_waiters
+                .fetch_or(1_u32 << self.interface.value(), Ordering::AcqRel);
+            self.waiting_for_tx_credit = true;
+        }
         match self.try_take_free_tx() {
             Some(index) => Poll::Ready(index),
             None => Poll::Pending,
@@ -659,7 +666,8 @@ impl<
             interface: self.interface,
             tx_published: self.tx_published,
             tx_credit_wakers: self.tx_credit_wakers,
-            tx_outstanding: self.tx_outstanding,
+            tx_credit_waiters: self.tx_credit_waiters,
+            tx_active: self.tx_active,
             lease: Some(lease),
             _reservation: &mut self.tx_reservation,
         }
@@ -830,6 +838,11 @@ impl<
     for SplitPinnedDevice<'_, M, FRAME_CAPACITY, HEADROOM, TRAILER, RX_QUEUE_DEPTH, TX_QUEUE_DEPTH>
 {
     fn drop(&mut self) {
+        if self.waiting_for_tx_credit {
+            self.tx_credit_waiters
+                .fetch_and(!(1_u32 << self.interface.value()), Ordering::AcqRel);
+            self.waiting_for_tx_credit = false;
+        }
         for index in [self.ingress_tx.take(), self.application_tx.take()]
             .into_iter()
             .flatten()
@@ -837,9 +850,11 @@ impl<
             if let Err(TrySendError::Full(_)) = self.free_tx_return.try_send(index) {
                 unreachable!("reserved pinned TX index was lost");
             }
-            let previous = self.tx_outstanding.fetch_sub(1, Ordering::AcqRel);
-            assert!(previous > 0, "reserved TX credit accounting underflow");
-            self.tx_credit_wakers.wake_all();
+            self.tx_credit_wakers.wake_waiter_after(
+                self.interface,
+                self.tx_active,
+                self.tx_credit_waiters,
+            );
         }
     }
 }
@@ -858,7 +873,8 @@ pub struct PinnedTransmitToken<
     interface: NetworkInterfaceId,
     tx_published: &'resources Signal<M, ()>,
     tx_credit_wakers: &'resources PinnedTxCreditWakers<M>,
-    tx_outstanding: &'resources AtomicU32,
+    tx_credit_waiters: &'resources AtomicU32,
+    tx_active: &'resources AtomicU32,
     lease: Option<PinnedDmaTxNetworkLease<'resources, FRAME_CAPACITY, HEADROOM, TRAILER>>,
     _reservation: &'device mut (),
 }
@@ -905,9 +921,11 @@ impl<
             if let Err(TrySendError::Full(_)) = self.free_tx.try_send(index) {
                 unreachable!("dropped pinned TX token returns its unique index");
             }
-            let previous = self.tx_outstanding.fetch_sub(1, Ordering::AcqRel);
-            assert!(previous > 0, "dropped TX token credit accounting underflow");
-            self.tx_credit_wakers.wake_all();
+            self.tx_credit_wakers.wake_waiter_after(
+                self.interface,
+                self.tx_active,
+                self.tx_credit_waiters,
+            );
         }
     }
 }
@@ -1170,7 +1188,7 @@ impl<'resources, M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: us
 
     /// Publish one contiguous Ethernet frame while exposing the exact edge
     /// before the claimed slot becomes visible to the network consumer.
-    #[cfg(feature = "rx-delivery-observation")]
+    #[cfg(feature = "diagnostics")]
     pub fn try_send_observed(
         &mut self,
         frame: &[u8],
@@ -1211,7 +1229,7 @@ impl<'resources, M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: us
     /// This method is absent from ordinary builds. `before_publish` runs after
     /// the frame copy but before insertion into `ready_rx`; failed admission
     /// never calls it.
-    #[cfg(feature = "rx-delivery-observation")]
+    #[cfg(feature = "diagnostics")]
     pub fn try_send_parts_observed(
         &mut self,
         destination: [u8; 6],
@@ -1289,6 +1307,9 @@ pub struct SplitPinnedRxRunner<
     ordered_rx: Option<Sender<'resources, M, OrderedRxReady, ORDERED_RX_READY_CAPACITY>>,
     rx_pool: &'resources RxHandoffPool<FRAME_CAPACITY, RX_QUEUE_DEPTH>,
     link: &'resources SharedLinkState<M>,
+    tx_active: &'resources AtomicU32,
+    tx_interface: NetworkInterfaceId,
+    tx_credit_wakers: &'resources PinnedTxCreditWakers<M>,
 }
 
 impl<'resources, M: RawMutex, const FRAME_CAPACITY: usize, const RX_QUEUE_DEPTH: usize>
@@ -1329,7 +1350,21 @@ impl<'resources, M: RawMutex, const FRAME_CAPACITY: usize, const RX_QUEUE_DEPTH:
     }
 
     pub fn set_link_state(&self, state: LinkState) {
-        self.link.set(state);
+        if state == LinkState::Up {
+            // Make this endpoint eligible for returned-credit notification
+            // before it becomes visible to its network stack.
+            self.tx_active
+                .fetch_or(1_u32 << self.tx_interface.value(), Ordering::AcqRel);
+            self.tx_credit_wakers.wake_all();
+            self.link.set(state);
+        } else {
+            // Stop network admission before removing the endpoint from the
+            // returned-credit notification set.
+            self.link.set(state);
+            self.tx_active
+                .fetch_and(!(1_u32 << self.tx_interface.value()), Ordering::AcqRel);
+            self.tx_credit_wakers.wake_all();
+        }
     }
 
     pub fn try_send_rx(&self, frame: &[u8]) -> Result<(), RxEnqueueError> {
@@ -1367,7 +1402,8 @@ pub struct PinnedTxConsumer<
     next_interface: &'resources AtomicU32,
     tx_published: &'resources Signal<M, ()>,
     tx_credit_wakers: &'resources PinnedTxCreditWakers<M>,
-    tx_outstanding: &'resources [AtomicU32; PINNED_TX_CREDIT_WAKER_SLOTS],
+    tx_credit_waiters: &'resources AtomicU32,
+    tx_active: &'resources AtomicU32,
     tx_pool: &'resources PinnedTxPool<FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
 }
 
@@ -1428,15 +1464,16 @@ impl<
         interface: NetworkInterfaceId,
         index: u8,
     ) -> PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH> {
-        self.tx_published.signal(());
         TaggedStableDmaBacking::new(
             interface,
             ReturningStableDmaBacking::new(
                 self.tx_pool.claim_radio(index),
                 PinnedTxReturn {
                     free_tx: self.free_tx,
+                    interface,
                     tx_credit_wakers: self.tx_credit_wakers,
-                    tx_outstanding: &self.tx_outstanding[usize::from(interface.value())],
+                    tx_credit_waiters: self.tx_credit_waiters,
+                    tx_active: self.tx_active,
                 },
             ),
         )
@@ -1858,8 +1895,10 @@ impl<
 #[doc(hidden)]
 pub struct PinnedTxReturn<'resources, M: RawMutex, const QUEUE_DEPTH: usize> {
     free_tx: Sender<'resources, M, u8, QUEUE_DEPTH>,
+    interface: NetworkInterfaceId,
     tx_credit_wakers: &'resources PinnedTxCreditWakers<M>,
-    tx_outstanding: &'resources AtomicU32,
+    tx_credit_waiters: &'resources AtomicU32,
+    tx_active: &'resources AtomicU32,
 }
 
 impl<M: RawMutex, const QUEUE_DEPTH: usize> DmaIndexReturn for PinnedTxReturn<'_, M, QUEUE_DEPTH> {
@@ -1867,9 +1906,11 @@ impl<M: RawMutex, const QUEUE_DEPTH: usize> DmaIndexReturn for PinnedTxReturn<'_
         if let Err(TrySendError::Full(_)) = self.free_tx.try_send(index) {
             unreachable!("radio lease returns its unique pinned TX index");
         }
-        let previous = self.tx_outstanding.fetch_sub(1, Ordering::AcqRel);
-        assert!(previous > 0, "radio TX credit accounting underflow");
-        self.tx_credit_wakers.wake_all();
+        self.tx_credit_wakers.wake_waiter_after(
+            self.interface,
+            self.tx_active,
+            self.tx_credit_waiters,
+        );
     }
 }
 

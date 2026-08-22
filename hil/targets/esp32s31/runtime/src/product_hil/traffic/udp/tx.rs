@@ -120,7 +120,11 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
             Some(session) => session,
             None => config.session_source.sessions.receive().await,
         };
-        wait_session_link_requirements(session.config.link_requirements, aggregate_counters).await;
+        wait_session_link_requirements(
+            session.config.link_requirements,
+            config.network_interface,
+        )
+        .await;
         publish_event_reliably(
             session.session_id,
             0,
@@ -150,7 +154,7 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
         let duration = Duration::from_millis(u64::from(duration_millis));
         let offered_rate_bps = flow.offered_rate_bps;
         // Group pacing is a CPU-side load-generator property, not evidence of
-        // a negotiated radio capability. The bounded socket/WDEV queues own
+        // a negotiated radio capability. The bounded socket/DATAPATH queues own
         // admission while interval telemetry independently proves whether TX
         // actually used BlockAck/A-MPDU. Waiting after every datagram makes
         // the Embassy timer itself the throughput ceiling at high offered
@@ -170,9 +174,12 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
         // The RX sibling can finish on the host terminal datagram while a
         // target aggregate is still in flight, so sampling there can tear one
         // logical publication across independent diagnostic atomics.
-        let aggregate_start = match session.config.direction {
-            HilDirection::Rx => None,
-            _ => Some(aggregate_counters.snapshot()),
+        let aggregate_start = if crate::product_hil::OPEN_RADIO_DRIVER_OBSERVATION
+            && session.config.direction != HilDirection::Rx
+        {
+            Some(aggregate_counters.snapshot())
+        } else {
+            None
         };
         let mut next_send = started;
         let mut bytes = 0_u64;
@@ -263,7 +270,9 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
         // A station session that explicitly required BlockAck must never
         // succeed without the associated-link evidence it requested.
         assert!(
-            session.config.link_requirements.tx_block_ack_tid.is_none() || tx_vector.is_some(),
+            !crate::product_hil::OPEN_RADIO_DRIVER_OBSERVATION
+                || session.config.link_requirements.tx_block_ack_tid.is_none()
+                || tx_vector.is_some(),
             "BlockAck-qualified TX session retains its associated link vector",
         );
         runtime_log(format_args!(

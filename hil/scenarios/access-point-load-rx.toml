@@ -1,8 +1,8 @@
 schema = 3
 id = "access-point-load-rx"
-description = "Sustained legacy AP inbound ceiling and exact-delivery qualification"
+description = "Sustained two-client AP inbound baseline with exact delivery"
 repetitions = 5
-image = "qualification"
+image = "correctness"
 isolation = "reset"
 tags = ["qualification", "wifi", "access-point", "network", "load", "rx"]
 

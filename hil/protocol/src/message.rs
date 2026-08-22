@@ -3,7 +3,7 @@ use core::fmt;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-pub const PROTOCOL_VERSION: u16 = 56;
+pub const PROTOCOL_VERSION: u16 = 58;
 // Keep command envelopes small: startup artifacts are transferred as an
 // ordered CRC-protected stream, so a large per-command inline buffer only
 // inflates UART queues and executor futures without improving semantics.
@@ -171,12 +171,19 @@ pub struct FeatureCapabilities {
     /// This image reliably reports connected generations and proved peer-loss
     /// transitions independently of lossy text diagnostics.
     pub station_lifecycle_events: bool,
+    /// This image installs driver-side value observers. Performance images
+    /// leave the observation graph absent from the compiled datapath.
+    pub driver_observation_evidence: bool,
     /// UDP RX sessions can return typed evidence for every delivery frontier
     /// from post-reorder publication through the application socket.
     pub rx_delivery_evidence: bool,
     /// This image instruments bounded Embassy task poll residence. Ordinary
     /// qualification images deliberately omit this timing perturbation.
     pub task_poll_evidence: bool,
+    /// This image samples MAC interrupt publication timestamps in the hard
+    /// ISR. Ordinary correctness and performance images keep that extended
+    /// SRAM call graph absent.
+    pub mac_irq_evidence: bool,
     /// Ordinary thread/task stacks live in external PSRAM while trap and CLIC
     /// interrupt contexts use dedicated per-hart internal-SRAM stacks.
     pub psram_task_stack: bool,

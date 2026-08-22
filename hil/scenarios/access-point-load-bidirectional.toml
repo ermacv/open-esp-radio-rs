@@ -1,8 +1,8 @@
 schema = 3
 id = "access-point-load-bidirectional"
-description = "Sustained balanced legacy AP bidirectional exact-delivery qualification"
+description = "Sustained balanced two-client AP baseline with exact delivery"
 repetitions = 5
-image = "qualification"
+image = "correctness"
 isolation = "reset"
 tags = ["qualification", "wifi", "access-point", "network", "load", "bidirectional"]
 

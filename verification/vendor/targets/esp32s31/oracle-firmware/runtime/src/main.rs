@@ -28,40 +28,36 @@ use esp_hal::{
     interrupt::software::SoftwareInterruptControl,
     timer::systimer::SystemTimer,
 };
-use open_esp_radio::esp32s31::wifi::dma::tx_storage::TxDmaStorage;
-use open_esp_radio::esp32s31::{
-    hal::{
-        ColdRadioRegisters, Radio, RadioRegisters, phy_i2c::PhyI2cMasterControl,
-        phy_temperature::PhyTemperatureSystemControl, wifi_bb::PhyWifiBbControl,
+use open_esp_radio_esp32s31_hal::{
+    ColdRadioRegisters, Radio, RadioRegisters, phy_i2c::PhyI2cMasterControl,
+    phy_temperature::PhyTemperatureSystemControl, wifi_bb::PhyWifiBbControl,
+};
+use open_esp_radio_esp32s31_phy::{
+    phy_channel::{
+        PhyChipChannelAction, PhyChipChannelCompletion, PhyChipChannelExternalBinding,
+        PhyChipChannelParameters, PhyChipChannelRequest, PhyChipChannelTransition,
     },
-    phy::{
-        phy_channel::{
-            PhyChipChannelAction, PhyChipChannelCompletion, PhyChipChannelExternalBinding,
-            PhyChipChannelParameters, PhyChipChannelRequest, PhyChipChannelTransition,
-        },
-        phy_cold::{PhyColdI2cAction, PhyColdI2cError, PhyColdI2cObservation, PhyColdMmioBinding},
-        phy_i2c::{PhyI2cAddress, PhyRfInitPrefixAction},
-        phy_state::{PhyConfig, PhyState},
-        phy_temperature::{
-            PhyTemperatureAction, PhyTemperatureCompletion, PhyTemperatureExternalBinding,
-            PhyTemperatureI2cBinding,
-        },
-    },
-    wifi::{
-        dma::descriptor::{Descriptor, rx_done},
-        mac::{
-            init::{
-                MacColdStartConfig, activate_promiscuous_receive,
-                configure_sta_link_receive_policy, initialize_wifi_mac,
-            },
-            rx::{
-                RxIngressConfig, RxSegment, build_cold_ring, extract_management, publish_cold_ring,
-            },
-            tx::{LegacyTxConfig, TxSlot},
-        },
+    phy_cold::{PhyColdI2cAction, PhyColdI2cError, PhyColdI2cObservation, PhyColdMmioBinding},
+    phy_i2c::{PhyI2cAddress, PhyRfInitPrefixAction},
+    phy_state::{PhyConfig, PhyState},
+    phy_temperature::{
+        PhyTemperatureAction, PhyTemperatureCompletion, PhyTemperatureExternalBinding,
+        PhyTemperatureI2cBinding,
     },
 };
-use open_esp_radio::wifi::ieee80211::station::{
+use open_esp_radio_esp32s31_wifi_dma::{
+    descriptor::{Descriptor, rx_done},
+    tx_storage::TxDmaStorage,
+};
+use open_esp_radio_esp32s31_wifi_mac::{
+    init::{
+        MacColdStartConfig, activate_promiscuous_receive, configure_sta_link_receive_policy,
+        initialize_wifi_mac,
+    },
+    rx::{RxIngressConfig, RxSegment, build_cold_ring, extract_management, publish_cold_ring},
+    tx::{LegacyTxConfig, TxSlot},
+};
+use open_esp_radio_ieee80211::station::{
     OpenAuthenticationRequest, parse_open_authentication_response,
 };
 use open_esp_radio_esp32s31_wifi_esp_hal::EspHalRadioPeripheral;
@@ -898,7 +894,7 @@ enum HilError {
 }
 
 async fn complete_i2c<P: PhyI2cMasterControl>(
-    mut binding: open_esp_radio::esp32s31::phy::phy_channel::PhyChipChannelI2cBinding,
+    mut binding: open_esp_radio_esp32s31_phy::phy_channel::PhyChipChannelI2cBinding,
     platform: &mut P,
 ) -> Result<PhyChipChannelCompletion, HilError> {
     for _ in 0..HARDWARE_EDGE_LIMIT {
@@ -931,7 +927,7 @@ async fn complete_i2c<P: PhyI2cMasterControl>(
 }
 
 async fn complete_temperature_i2c<P: PhyI2cMasterControl>(
-    mut binding: open_esp_radio::esp32s31::phy::phy_temperature::PhyTemperatureI2cBinding,
+    mut binding: open_esp_radio_esp32s31_phy::phy_temperature::PhyTemperatureI2cBinding,
     platform: &mut P,
 ) -> Result<PhyTemperatureCompletion, HilError> {
     for _ in 0..HARDWARE_EDGE_LIMIT {

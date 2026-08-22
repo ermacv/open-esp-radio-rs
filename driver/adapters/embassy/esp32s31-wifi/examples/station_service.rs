@@ -9,7 +9,7 @@ use core::future::{Future, ready};
 
 use embassy_futures::block_on;
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
-use open_esp_radio_esp32s31_wifi_embassy::station::{
+use open_esp_radio_esp32s31_wifi_embassy::roles::station::{
     Esp32s31StationAttemptRunner, Esp32s31StationCommandReceiver, Esp32s31StationConfig,
     Esp32s31StationControlResources, Esp32s31StationExit, Esp32s31StationStartResources,
     Esp32s31StationStopReason, prepare_esp32s31_station_task,
